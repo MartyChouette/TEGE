@@ -125,10 +125,15 @@ void EditorLayer::DrawMenuBar() {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Scene", "Ctrl+N")) {
-                if (m_World) {
+                if (m_SceneDirty) {
+                    m_UnsavedChangesAction = UnsavedAction::NewScene;
+                    m_ShowUnsavedChangesDialog = true;
+                } else if (m_World) {
                     m_World->Clear();
                     ClearSelection();
                     m_CurrentScenePath.clear();
+                    ClearDirty();
+                    UpdateWindowTitle();
                     m_HubPage = HubPage::WizardSetup;
                     m_SelectedTemplate = -1;
                     m_TemplateFilter = TMPL_ALL;
@@ -151,7 +156,13 @@ void EditorLayer::DrawMenuBar() {
                     : std::filesystem::path(m_CurrentScenePath).parent_path().string();
                 std::string path = FileDialog::OpenFile("Open Scene", filters, sceneDir);
                 if (!path.empty()) {
-                    OpenScene(path);
+                    if (m_SceneDirty) {
+                        m_PendingOpenPath = path;
+                        m_UnsavedChangesAction = UnsavedAction::OpenScene;
+                        m_ShowUnsavedChangesDialog = true;
+                    } else {
+                        OpenScene(path);
+                    }
                 }
             }
             if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
@@ -314,7 +325,10 @@ void EditorLayer::DrawMenuBar() {
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Exit", "Alt+F4")) {
-                if (m_Window) {
+                if (m_SceneDirty) {
+                    m_UnsavedChangesAction = UnsavedAction::Quit;
+                    m_ShowUnsavedChangesDialog = true;
+                } else if (m_Window) {
                     m_Window->Close();
                 }
             }
@@ -410,92 +424,111 @@ void EditorLayer::DrawMenuBar() {
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Tools")) {
-                bool particleEditor = IsPanelVisible(EditorPanel::ParticleEditor);
-                bool animGraph = IsPanelVisible(EditorPanel::AnimGraph);
-                bool dialogue = IsPanelVisible(EditorPanel::Dialogue);
-                bool visualScript = IsPanelVisible(EditorPanel::VisualScript);
-                bool profiler = IsPanelVisible(EditorPanel::Profiler);
-                if (ImGui::MenuItem("Particle Editor", nullptr, &particleEditor)) {
-                    SetPanelVisibility(EditorPanel::ParticleEditor, particleEditor);
-                }
-                if (ImGui::MenuItem("Animation Graph", nullptr, &animGraph)) {
-                    SetPanelVisibility(EditorPanel::AnimGraph, animGraph);
-                }
-                if (ImGui::MenuItem("Dialogue Editor", nullptr, &dialogue)) {
-                    SetPanelVisibility(EditorPanel::Dialogue, dialogue);
-                }
-                if (ImGui::MenuItem("Visual Script", nullptr, &visualScript)) {
-                    SetPanelVisibility(EditorPanel::VisualScript, visualScript);
-                }
-                if (ImGui::MenuItem("Profiler", nullptr, &profiler)) {
-                    SetPanelVisibility(EditorPanel::Profiler, profiler);
-                }
-                bool spriteImporter = IsPanelVisible(EditorPanel::SpriteSheetImport);
-                if (ImGui::MenuItem("Sprite Sheet Importer", nullptr, &spriteImporter)) {
-                    SetPanelVisibility(EditorPanel::SpriteSheetImport, spriteImporter);
-                }
-                bool pixelEditor = IsPanelVisible(EditorPanel::PixelEditorPanel);
-                if (ImGui::MenuItem("Pixel Editor", nullptr, &pixelEditor)) {
-                    SetPanelVisibility(EditorPanel::PixelEditorPanel, pixelEditor);
-                }
-                bool behaviorTree = IsPanelVisible(EditorPanel::BehaviorTree);
-                if (ImGui::MenuItem("Behavior Tree", nullptr, &behaviorTree)) {
-                    SetPanelVisibility(EditorPanel::BehaviorTree, behaviorTree);
-                }
-                bool questFlow = IsPanelVisible(EditorPanel::QuestFlow);
-                if (ImGui::MenuItem("Quest Flow", nullptr, &questFlow)) {
-                    SetPanelVisibility(EditorPanel::QuestFlow, questFlow);
-                }
-                bool dataAssets = IsPanelVisible(EditorPanel::DataAssets);
-                if (ImGui::MenuItem("Data Asset Editor...", nullptr, &dataAssets)) {
-                    SetPanelVisibility(EditorPanel::DataAssets, dataAssets);
-                }
-                bool pluginBrowser = IsPanelVisible(EditorPanel::PluginBrowser);
-                if (ImGui::MenuItem("Plugin Browser", nullptr, &pluginBrowser)) {
-                    SetPanelVisibility(EditorPanel::PluginBrowser, pluginBrowser);
-                }
-                bool proceduralGen = IsPanelVisible(EditorPanel::ProceduralGen);
-                if (ImGui::MenuItem("Procedural Generation", nullptr, &proceduralGen)) {
-                    SetPanelVisibility(EditorPanel::ProceduralGen, proceduralGen);
-                }
-                bool gitIntegration = IsPanelVisible(EditorPanel::GitIntegration);
-                if (ImGui::MenuItem("Git Integration", nullptr, &gitIntegration)) {
-                    SetPanelVisibility(EditorPanel::GitIntegration, gitIntegration);
-                }
-                bool networkPanel = IsPanelVisible(EditorPanel::NetworkPanel);
-                if (ImGui::MenuItem("Network Panel", nullptr, &networkPanel)) {
-                    SetPanelVisibility(EditorPanel::NetworkPanel, networkPanel);
-                }
-                bool collabPanel = IsPanelVisible(EditorPanel::Collaboration);
-                if (ImGui::MenuItem("Collaboration", nullptr, &collabPanel)) {
-                    SetPanelVisibility(EditorPanel::Collaboration, collabPanel);
-                }
-                bool flashPanel = IsPanelVisible(EditorPanel::FlashTimeline);
-                if (ImGui::MenuItem("Flash Timeline", nullptr, &flashPanel)) {
-                    SetPanelVisibility(EditorPanel::FlashTimeline, flashPanel);
-                }
-                bool vectorPanel = IsPanelVisible(EditorPanel::VectorDrawing);
-                if (ImGui::MenuItem("Vector Drawing", nullptr, &vectorPanel)) {
-                    SetPanelVisibility(EditorPanel::VectorDrawing, vectorPanel);
-                }
-                bool saveDebug = IsPanelVisible(EditorPanel::SaveDebug);
-                if (ImGui::MenuItem("Save Debug", nullptr, &saveDebug)) {
-                    SetPanelVisibility(EditorPanel::SaveDebug, saveDebug);
-                }
-                ImGui::Separator();
-                {
-                    bool sgOpen = m_ShaderGraphEditor.IsOpen();
-                    if (ImGui::MenuItem("Shader Graph", nullptr, &sgOpen)) {
-                        m_ShaderGraphEditor.SetGraph(&m_ShaderGraphData);
-                        m_ShaderGraphEditor.SetOpen(sgOpen);
+                // --- Scripting & Logic ---
+                if (ImGui::BeginMenu("Scripting & Logic")) {
+                    bool visualScript = IsPanelVisible(EditorPanel::VisualScript);
+                    if (ImGui::MenuItem("Visual Script", nullptr, &visualScript)) {
+                        SetPanelVisibility(EditorPanel::VisualScript, visualScript);
                     }
-                }
-                {
-                    bool agOpen = m_AudioGraphEditor.IsOpen();
-                    if (ImGui::MenuItem("Audio Event Graph", nullptr, &agOpen)) {
-                        m_AudioGraphEditor.SetGraph(&m_AudioGraphData);
-                        m_AudioGraphEditor.SetOpen(agOpen);
+                    bool behaviorTree = IsPanelVisible(EditorPanel::BehaviorTree);
+                    if (ImGui::MenuItem("Behavior Tree", nullptr, &behaviorTree)) {
+                        SetPanelVisibility(EditorPanel::BehaviorTree, behaviorTree);
                     }
+                    bool questFlow = IsPanelVisible(EditorPanel::QuestFlow);
+                    if (ImGui::MenuItem("Quest Flow", nullptr, &questFlow)) {
+                        SetPanelVisibility(EditorPanel::QuestFlow, questFlow);
+                    }
+                    bool dialogue = IsPanelVisible(EditorPanel::Dialogue);
+                    if (ImGui::MenuItem("Dialogue Editor", nullptr, &dialogue)) {
+                        SetPanelVisibility(EditorPanel::Dialogue, dialogue);
+                    }
+                    ImGui::EndMenu();
+                }
+                // --- Art & Animation ---
+                if (ImGui::BeginMenu("Art & Animation")) {
+                    bool pixelEditor = IsPanelVisible(EditorPanel::PixelEditorPanel);
+                    if (ImGui::MenuItem("Pixel Editor", nullptr, &pixelEditor)) {
+                        SetPanelVisibility(EditorPanel::PixelEditorPanel, pixelEditor);
+                    }
+                    bool spriteImporter = IsPanelVisible(EditorPanel::SpriteSheetImport);
+                    if (ImGui::MenuItem("Sprite Sheet Importer", nullptr, &spriteImporter)) {
+                        SetPanelVisibility(EditorPanel::SpriteSheetImport, spriteImporter);
+                    }
+                    bool vectorPanel = IsPanelVisible(EditorPanel::VectorDrawing);
+                    if (ImGui::MenuItem("Vector Drawing", nullptr, &vectorPanel)) {
+                        SetPanelVisibility(EditorPanel::VectorDrawing, vectorPanel);
+                    }
+                    bool animGraph = IsPanelVisible(EditorPanel::AnimGraph);
+                    if (ImGui::MenuItem("Animation Graph", nullptr, &animGraph)) {
+                        SetPanelVisibility(EditorPanel::AnimGraph, animGraph);
+                    }
+                    bool particleEditor = IsPanelVisible(EditorPanel::ParticleEditor);
+                    if (ImGui::MenuItem("Particle Editor", nullptr, &particleEditor)) {
+                        SetPanelVisibility(EditorPanel::ParticleEditor, particleEditor);
+                    }
+                    bool flashPanel = IsPanelVisible(EditorPanel::FlashTimeline);
+                    if (ImGui::MenuItem("Flash Timeline", nullptr, &flashPanel)) {
+                        SetPanelVisibility(EditorPanel::FlashTimeline, flashPanel);
+                    }
+                    ImGui::EndMenu();
+                }
+                // --- Rendering & Shaders ---
+                if (ImGui::BeginMenu("Rendering & Shaders")) {
+                    {
+                        bool sgOpen = m_ShaderGraphEditor.IsOpen();
+                        if (ImGui::MenuItem("Shader Graph", nullptr, &sgOpen)) {
+                            m_ShaderGraphEditor.SetGraph(&m_ShaderGraphData);
+                            m_ShaderGraphEditor.SetOpen(sgOpen);
+                        }
+                    }
+                    {
+                        bool agOpen = m_AudioGraphEditor.IsOpen();
+                        if (ImGui::MenuItem("Audio Event Graph", nullptr, &agOpen)) {
+                            m_AudioGraphEditor.SetGraph(&m_AudioGraphData);
+                            m_AudioGraphEditor.SetOpen(agOpen);
+                        }
+                    }
+                    bool proceduralGen = IsPanelVisible(EditorPanel::ProceduralGen);
+                    if (ImGui::MenuItem("Procedural Generation", nullptr, &proceduralGen)) {
+                        SetPanelVisibility(EditorPanel::ProceduralGen, proceduralGen);
+                    }
+                    ImGui::EndMenu();
+                }
+                // --- Collaboration & Version Control ---
+                if (ImGui::BeginMenu("Collaboration")) {
+                    bool gitIntegration = IsPanelVisible(EditorPanel::GitIntegration);
+                    if (ImGui::MenuItem("Git Integration", nullptr, &gitIntegration)) {
+                        SetPanelVisibility(EditorPanel::GitIntegration, gitIntegration);
+                    }
+                    bool collabPanel = IsPanelVisible(EditorPanel::Collaboration);
+                    if (ImGui::MenuItem("Collaborative Editing", nullptr, &collabPanel)) {
+                        SetPanelVisibility(EditorPanel::Collaboration, collabPanel);
+                    }
+                    bool networkPanel = IsPanelVisible(EditorPanel::NetworkPanel);
+                    if (ImGui::MenuItem("Network Panel", nullptr, &networkPanel)) {
+                        SetPanelVisibility(EditorPanel::NetworkPanel, networkPanel);
+                    }
+                    ImGui::EndMenu();
+                }
+                // --- Data & Debug ---
+                if (ImGui::BeginMenu("Data & Debug")) {
+                    bool profiler = IsPanelVisible(EditorPanel::Profiler);
+                    if (ImGui::MenuItem("Profiler", nullptr, &profiler)) {
+                        SetPanelVisibility(EditorPanel::Profiler, profiler);
+                    }
+                    bool dataAssets = IsPanelVisible(EditorPanel::DataAssets);
+                    if (ImGui::MenuItem("Data Asset Editor", nullptr, &dataAssets)) {
+                        SetPanelVisibility(EditorPanel::DataAssets, dataAssets);
+                    }
+                    bool pluginBrowser = IsPanelVisible(EditorPanel::PluginBrowser);
+                    if (ImGui::MenuItem("Plugin Browser", nullptr, &pluginBrowser)) {
+                        SetPanelVisibility(EditorPanel::PluginBrowser, pluginBrowser);
+                    }
+                    bool saveDebug = IsPanelVisible(EditorPanel::SaveDebug);
+                    if (ImGui::MenuItem("Save Debug", nullptr, &saveDebug)) {
+                        SetPanelVisibility(EditorPanel::SaveDebug, saveDebug);
+                    }
+                    ImGui::EndMenu();
                 }
                 {
                     bool pgOpen = m_ParticleGraphEditor.IsOpen();

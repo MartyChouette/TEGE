@@ -408,6 +408,18 @@ bool EditorSettings::Save(const std::string& path) const {
             j["recentVisualScriptNodes"].push_back(rn);
         }
 
+        // Layout persistence
+        j["visiblePanels"] = visiblePanels;
+        j["leftPanelWidth"] = leftPanelWidth;
+        j["rightPanelWidth"] = rightPanelWidth;
+        j["bottomPanelHeight"] = bottomPanelHeight;
+        j["gizmoOperation"] = gizmoOperation;
+        j["gizmoSpace"] = gizmoSpace;
+
+        // Auto-save
+        j["autoSaveEnabled"] = autoSaveEnabled;
+        j["autoSaveIntervalMinutes"] = autoSaveIntervalMinutes;
+
         std::ofstream file(savePath);
         if (!file.is_open()) {
             ENJIN_LOG_ERROR(Editor, "Failed to open settings file for writing: %s", savePath.c_str());
@@ -575,6 +587,24 @@ bool EditorSettings::Load(const std::string& path) {
                 }
             }
         }
+
+        // Layout persistence
+        if (j.contains("visiblePanels")) visiblePanels = j["visiblePanels"].get<u32>();
+        if (j.contains("leftPanelWidth")) leftPanelWidth = std::clamp(j["leftPanelWidth"].get<f32>(), 0.05f, 0.5f);
+        if (j.contains("rightPanelWidth")) rightPanelWidth = std::clamp(j["rightPanelWidth"].get<f32>(), 0.05f, 0.5f);
+        if (j.contains("bottomPanelHeight")) bottomPanelHeight = std::clamp(j["bottomPanelHeight"].get<f32>(), 0.05f, 0.5f);
+        if (j.contains("gizmoOperation")) {
+            u32 val = j["gizmoOperation"].get<u32>();
+            if (val <= 2) gizmoOperation = val;
+        }
+        if (j.contains("gizmoSpace")) {
+            u32 val = j["gizmoSpace"].get<u32>();
+            if (val <= 1) gizmoSpace = val;
+        }
+
+        // Auto-save
+        if (j.contains("autoSaveEnabled")) autoSaveEnabled = j["autoSaveEnabled"].get<bool>();
+        if (j.contains("autoSaveIntervalMinutes")) autoSaveIntervalMinutes = std::clamp(j["autoSaveIntervalMinutes"].get<f32>(), 1.0f, 60.0f);
 
         ENJIN_LOG_INFO(Editor, "Loaded editor settings from %s", loadPath.c_str());
         return true;

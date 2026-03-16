@@ -182,7 +182,11 @@ void EditorLayer::DrawHierarchyPanel() {
     if (m_FocusMode || !m_PlayMode.IsStopped()) {
         flags |= ImGuiWindowFlags_NoInputs;
     }
-    ImGui::Begin("Hierarchy", nullptr, flags);
+    bool panelOpen = true;
+    ImGui::Begin("Hierarchy", &panelOpen, flags);
+    if (!panelOpen) {
+        SetPanelVisibility(EditorPanel::Hierarchy, false);
+    }
 
     // Focus ring for keyboard navigation
     if (m_ShowFocusRing && m_FocusedPanel == FocusedPanel::Hierarchy) {

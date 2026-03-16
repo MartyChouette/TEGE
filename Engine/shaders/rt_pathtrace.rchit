@@ -14,7 +14,9 @@ layout(location = 1) rayPayloadInEXT vec4 pathPayload2;
 hitAttributeEXT vec2 attribs;
 
 void main() {
-    RTMaterial mat = fetchMaterial(gl_InstanceCustomIndexEXT);
+    // Use pre-baked simplified material: albedo and emissive are ready to use
+    // without texture lookups or per-ray computation.
+    RTSimplifiedMaterial smat = fetchSimplifiedMaterial(gl_InstanceCustomIndexEXT);
 
     // Compute hit world position
     vec3 hitPos = gl_WorldRayOriginEXT + gl_HitTEXT * gl_WorldRayDirectionEXT;
@@ -37,8 +39,8 @@ void main() {
         worldNormal = -worldNormal;
     }
 
-    // Payload 0: albedo + emissive in RGB, hit distance in W
-    vec3 color = mat.baseColor + mat.emissive;
+    // Payload 0: pre-baked albedo + emissive in RGB, hit distance in W
+    vec3 color = smat.albedo + smat.emissive;
     pathPayload = vec4(color, gl_HitTEXT);
 
     // Payload 1: world normal + material index (packed as float)

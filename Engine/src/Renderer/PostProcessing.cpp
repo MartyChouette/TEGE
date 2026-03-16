@@ -4592,8 +4592,51 @@ bool PostProcessing::CreateUniformBuffer() {
 
 void PostProcessing::UpdateUniformBuffer() {
     if (m_UniformBuffer) {
-        m_UniformBuffer->UploadData(&m_Settings, sizeof(PostProcessSettings));
+        // If depth-needing effects are enabled but no valid depth source was bound,
+        // suppress them in the uploaded copy to prevent sampling an invalid descriptor.
+        if (m_Settings.NeedsDepthBuffer() && !m_DepthSourceReady) {
+            PostProcessSettings safeSettings = m_Settings;
+            safeSettings.dofEnabled = 0;
+            safeSettings.tiltShiftEnabled = 0;
+            safeSettings.celOutlineEnabled = 0;
+            safeSettings.ssaoEnabled = 0;
+            safeSettings.contactShadowsEnabled = 0;
+            safeSettings.causticsEnabled = 0;
+            safeSettings.fogShaftsEnabled = 0;
+            safeSettings.godRaysEnabled = 0;
+            m_UniformBuffer->UploadData(&safeSettings, sizeof(PostProcessSettings));
+        } else {
+            m_UniformBuffer->UploadData(&m_Settings, sizeof(PostProcessSettings));
+        }
     }
+}
+
+void PostProcessing::UpdateDepthSource(VkImageView depthView) {
+    if (!m_Initialized || !m_Context || m_DescriptorSet == VK_NULL_HANDLE) {
+        return;
+    }
+
+    if (depthView == VK_NULL_HANDLE) {
+        m_DepthSourceReady = false;
+        return;
+    }
+
+    // Update descriptor binding 3 with the external depth image view
+    VkDescriptorImageInfo depthImageInfo{};
+    depthImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    depthImageInfo.imageView = depthView;
+    depthImageInfo.sampler = m_SceneSampler;
+
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = m_DescriptorSet;
+    write.dstBinding = 3;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.descriptorCount = 1;
+    write.pImageInfo = &depthImageInfo;
+
+    vkUpdateDescriptorSets(m_Context->GetDevice(), 1, &write, 0, nullptr);
+    m_DepthSourceReady = true;
 }
 
 bool PostProcessing::CreatePipeline() {

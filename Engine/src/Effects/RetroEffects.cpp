@@ -204,6 +204,11 @@ void RetroEffects::ApplyDreamcastPreset() {
     m_VertexJitter.enabled = false;
     m_GouraudOnly = false;
 
+    // Dreamcast signature: spherical environment mapping
+    m_SphereEnvMap = true;
+    m_SphereEnvStrength = 0.4f;
+    m_PosterizeLevels = 0.0f;  // Dreamcast had clean 24-bit color
+
     // Light fog
     m_Fog.enabled = true;
     m_Fog.color = Math::Vector3(0.6f, 0.65f, 0.75f);
@@ -493,6 +498,9 @@ void RetroEffects::ClearAllEffects() {
     m_Affine.enabled = false;
     m_VertexJitter.enabled = false;
     m_GouraudOnly = false;
+    m_SphereEnvMap = false;
+    m_SphereEnvStrength = 0.5f;
+    m_PosterizeLevels = 0.0f;
     m_CRT.enabled = false;
     m_Fog.enabled = false;
 }

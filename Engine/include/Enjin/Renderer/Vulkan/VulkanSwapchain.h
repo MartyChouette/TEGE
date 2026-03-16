@@ -54,6 +54,12 @@ public:
     bool IsVSyncEnabled() const { return m_VSyncEnabled; }
     VkPresentModeKHR GetCurrentPresentMode() const { return m_CurrentPresentMode; }
 
+    // HDR output control
+    void SetHDREnabled(bool enabled);
+    bool IsHDREnabled() const { return m_HDREnabled; }
+    u32 GetHDROutputMode() const { return m_HDROutputMode; }  // 0=SDR, 1=scRGB, 2=HDR10
+    bool IsHDRFormatAvailable() const;
+
 private:
     SwapchainSupportDetails QuerySwapchainSupport(VkPhysicalDevice device, VkSurfaceKHR surface);
     VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
@@ -93,6 +99,10 @@ private:
     // VSync state
     bool m_VSyncEnabled = false;
     VkPresentModeKHR m_CurrentPresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
+
+    // HDR state
+    bool m_HDREnabled = false;
+    u32 m_HDROutputMode = 0;  // 0=SDR, 1=scRGB, 2=HDR10
 };
 
 } // namespace Renderer

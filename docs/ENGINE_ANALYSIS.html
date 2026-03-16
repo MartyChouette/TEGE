@@ -355,7 +355,7 @@
     <div class="hero" id="hero">
         <div class="container hero-inner">
             <h1>Enjin Engine</h1>
-            <p class="subtitle">COMPREHENSIVE TECHNICAL ANALYSIS // 2026-03-08 // C++20 | VULKAN | CMAKE</p>
+            <p class="subtitle">COMPREHENSIVE TECHNICAL ANALYSIS // 2026-03-16 // C++20 | VULKAN | CMAKE</p>
             <div class="hero-stats">
                 <div class="stat-card">
                     <span class="stat-icon">&#9889;</span>
@@ -379,7 +379,7 @@
                 </div>
                 <div class="stat-card">
                     <span class="stat-icon">&#128142;</span>
-                    <div class="stat-number" data-target="19" data-suffix="">0</div>
+                    <div class="stat-number" data-target="25" data-suffix="">0</div>
                     <div class="stat-label">RT Shaders</div>
                 </div>
             </div>
@@ -429,7 +429,9 @@ graph TB
         VulkanPipeline["VulkanPipeline<br/>(Graphics Pipeline,<br/>Descriptor Sets)"]
         VulkanBuffer["VulkanBuffer<br/>(Vertex, Index, Uniform,<br/>Storage Buffers)"]
         RenderSystem["RenderSystem<br/>(Entity Rendering,<br/>Material Sort, Caching)"]
-        PostProcessing["PostProcessing<br/>(Bloom, Vignette, FXAA,<br/>DoF, Tilt-Shift, Film Grain,<br/>Color Grading, Stipple/Dither,<br/>SSAO, God Rays, Contact<br/>Shadows, Caustics, Fog Shafts)"]
+        PostProcessing["PostProcessing<br/>(Bloom, Vignette, FXAA/TAA,<br/>DoF, Tilt-Shift, Film Grain,<br/>Color Grading, Stipple/Dither,<br/>SSAO, God Rays, Contact<br/>Shadows, Caustics, Fog Shafts)"]
+        MotionVectors["MotionVectors<br/>(RG16F Per-Pixel Velocity)"]
+        TAA["TAA<br/>(Halton Jitter, Neighborhood<br/>Clamping, History Ping-Pong)"]
         ShadowSystem["Shadow System<br/>(4-Cascade CSM, Point<br/>Cubemap, Spot 2D Array)"]
         SpriteBatch["SpriteBatchRenderer<br/>(GPU Instanced)"]
         SpriteAtlas["SpriteTextureAtlas<br/>(4096x4096 Shelf-Pack)"]
@@ -449,6 +451,7 @@ graph TB
             SVGFDenoiser["SVGFDenoiser<br/>(3-Pass Compute)"]
             OIDNDenoiser["OIDNDenoiser<br/>(Intel Neural Denoise)"]
             RTCompositor["RTCompositor<br/>(Fullscreen Compute)"]
+            MaterialSSBO["Material SSBO<br/>(RT Binding 9)"]
         end
 
         subgraph AdvancedRendering["Advanced Rendering"]
@@ -774,6 +777,24 @@ graph TB
 <td>Full</td>
 <td>Basic</td>
 <td>Basic</td>
+</tr>
+<tr>
+<td><strong>Anti-Aliasing (TAA/FXAA)</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Basic</td>
+<td>Basic</td>
+</tr>
+<tr>
+<td><strong>Upscaling (DLSS/FSR/XeSS)</strong></td>
+<td>None</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
 </tr>
 <tr>
 <td><strong>Shadows (CSM/Point/Spot)</strong></td>
@@ -1492,15 +1513,26 @@ gantt
     Elemental System + AngelScript Bindings      :done, g12, 2026-03-05, 2026-03-07
     BSL 1.1 Open-Source License Decision         :done, g13, 2026-03-07, 2026-03-07
     Test Expansion (26 to 50 targets, 700+ cases):done, g14, 2026-03-01, 2026-03-08
+    Motion Vectors + TAA (Phase 1)              :done, g15, 2026-03-09, 2026-03-11
+    RT Material SSBO + OptiX Interop (Phase 2)  :done, g16, 2026-03-09, 2026-03-11
 
-    section Planned
+    section Rendering Roadmap
+    Path Tracer Polish (NEE/MIS/RR)             :active, r1, 2026-03-16, 2026-04-15
+    ReSTIR Light Selection                      :active, r2, 2026-04-15, 2026-06-01
+    Temporal RT Reuse                           :active, r3, 2026-06-01, 2026-07-15
+    Radiance Caching                            :active, r4, 2026-07-15, 2026-09-01
+    DLSS / FSR / XeSS Upscaling                 :active, r5, 2026-09-01, 2026-11-01
+    Additional AA (SMAA, MSAA)                  :active, r6, 2026-11-01, 2026-12-01
+    GPU-Driven Work Scheduling                  :active, r7, 2026-12-01, 2027-02-01
+
+    section Platforms
     macOS (MoltenVK)                            :active, pl1, 2026-03-01, 2026-06-01
     Console Platforms                           :active, pl2, 2026-06-01, 2027-06-01
     Mobile (Android/iOS)                        :active, pl3, 2026-09-01, 2027-03-01
     VR/XR (OpenXR)                              :active, pl4, 2027-01-01, 2027-06-01
 </pre>
                 </div>
-            </div><p class="desc"><strong>Note:</strong> There is a ~4-week gap between the initial Dec 23-25, 2025 foundation commits and the resumption of active development on Jan 22, 2026. The bulk of the engine (150+ features) was built in the subsequent 4 weeks (Jan 22 - Feb 17, 2026). Week 12 (Feb 17-19) focused on hardening: 120+ audit findings fixed, SimplePhysics removed, Steam Audio integrated, and test coverage expanded from 8 to 26 executables. Weeks 13-14 (Feb 20 - Mar 8) added GPU-driven rendering features: clustered lighting, HiZ occlusion culling, LOD hysteresis, VRS, virtual texturing, visibility buffer, 64-bit material sort keys, FrameAllocator, and material enhancements (transmission/SSS). Test coverage was further expanded to 50 CTest targets (~700+ cases). The BSL 1.1 open-source license was adopted on Mar 7.</p>
+            </div><p class="desc"><strong>Note:</strong> There is a ~4-week gap between the initial Dec 23-25, 2025 foundation commits and the resumption of active development on Jan 22, 2026. The bulk of the engine (150+ features) was built in the subsequent 4 weeks (Jan 22 - Feb 17, 2026). Week 12 (Feb 17-19) focused on hardening: 120+ audit findings fixed, SimplePhysics removed, Steam Audio integrated, and test coverage expanded from 8 to 26 executables. Weeks 13-14 (Feb 20 - Mar 8) added GPU-driven rendering features: clustered lighting, HiZ occlusion culling, LOD hysteresis, VRS, virtual texturing, visibility buffer, 64-bit material sort keys, FrameAllocator, and material enhancements (transmission/SSS). Test coverage was further expanded to 50 CTest targets (~700+ cases). The BSL 1.1 open-source license was adopted on Mar 7. Week 15 (Mar 9-11) added per-pixel motion vectors (RG16F velocity buffer), TAA with Halton jitter and neighborhood clamping, material SSBO for RT hit shaders (binding 9), and OptiX denoiser CUDA interop.</p>
         </section>
         <section class="section" id="section-4">
             <div class="section-header" data-accent="quaternary">
@@ -1636,8 +1668,8 @@ flowchart TB
         TiltShift --> CelOutlines["Cel Shading Outlines<br/>(Sobel Edge Detection)"]
         CelOutlines --> StippleDither["Stipple / Dither<br/>(8 Patterns, 3 Color<br/>Modes)"]
         StippleDither --> ColorGrading["Color Grading"]
-        ColorGrading --> FXAA["FXAA"]
-        FXAA --> Vignette["Vignette"]
+        ColorGrading --> AA["AA (FXAA or TAA)<br/>(TAA: Halton Jitter,<br/>Velocity Reprojection,<br/>History Ping-Pong)"]
+        AA --> Vignette["Vignette"]
         Vignette --> FilmGrain["Film Grain"]
         FilmGrain --> RetroFX["Retro Effects<br/>(CRT, Pixelation)"]
     end
@@ -2942,8 +2974,8 @@ graph TB
 
     <div class="container">
         <div class="footer">
-            <p><span class="footer-brand">Enjin Engine</span> &mdash; Comprehensive Technical Analysis &mdash; Updated 2026-03-08</p>
-            <p style="margin-top: 8px; font-family: ui-monospace, Cascadia Code, SF Mono, Consolas, monospace; font-size: 0.8em;">C++20 &middot; Vulkan &middot; CMake &middot; BSL 1.1</p>
+            <p><span class="footer-brand">TEGE</span> &mdash; An aesthetics-first game engine &mdash; Updated 2026-03-08</p>
+            <p style="margin-top: 8px; font-family: ui-monospace, Cascadia Code, SF Mono, Consolas, monospace; font-size: 0.8em;">C++20 &middot; Vulkan &middot; CMake &middot; BSL 1.1 &middot; &copy; 2026 Marty64</p>
         </div>
     </div>
 </div>

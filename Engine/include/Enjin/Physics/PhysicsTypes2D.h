@@ -58,6 +58,7 @@ struct ENJIN_API Body2DComponent {
 
     // Body properties
     bool isStatic = false;
+    bool isKinematic = false;       // Kinematic: position driven by ECS, triggers sensor events as visitor
     bool isSensor = false;          // Triggers callbacks but no physical response
     bool fixedRotation = false;
     f32 gravityScale = 1.0f;

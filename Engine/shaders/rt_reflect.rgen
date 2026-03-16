@@ -16,11 +16,26 @@ layout(binding = 13, set = 0) uniform LightData {
     vec4 cameraPos;
     float roughnessThreshold;
     float pad1, pad2, pad3;
+    // Fields at offset 144-160 (after the reflection-specific block)
+    uint maxBounces;
+    uint accumulatedSamples;
+    float sdfFallbackEnabled;   // >0.5 = SDF fallback active
+    float sdfMaxDistance;        // Max sphere-trace distance for SDF fallback
 } uLight;
 
 layout(location = 0) rayPayloadEXT vec4 reflectPayload;
 
+// Include rt_common.glsl before SDF SSBO so SDFObjectGPU is defined
 #include "rt_common.glsl"
+
+// SDF scene SSBO (binding 17) — packed SDFObjectGPU array
+layout(binding = 17, set = 0) readonly buffer SDFSceneSSBO {
+    uint sdfObjectCount;
+    uint _sdfPad0;
+    uint _sdfPad1;
+    uint _sdfPad2;
+    SDFObjectGPU sdfObjects[];
+};
 
 void main() {
     ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
@@ -60,6 +75,130 @@ void main() {
         reflectDir, uLight.maxDistance,
         0
     );
+
+    // Check for BVH miss (sentinel w == -2.0 from rt_reflect.rmiss)
+    if (reflectPayload.w == -2.0) {
+        vec3 skyColor = reflectPayload.rgb;  // Sky color computed in miss shader
+
+        // SDF fallback: sphere-trace SDF scene for distant reflections
+        if (uLight.sdfFallbackEnabled > 0.5 && sdfObjectCount > 0) {
+            int count = int(min(sdfObjectCount, 64u));  // Cap to avoid excessive iteration
+
+            vec3 sdfHitColor;
+            float sdfT = 0.0;
+            const int SDF_MAX_STEPS = 64;
+            const float SDF_EPSILON = 0.001;
+            bool sdfHit = false;
+
+            // Inline sphere trace (avoids array copy overhead from SSBO)
+            for (int step = 0; step < SDF_MAX_STEPS; ++step) {
+                vec3 p = rayOrigin + reflectDir * sdfT;
+
+                // Inline scene evaluation against SSBO objects
+                float sceneDist = 1e10;
+                vec3 sceneColor = vec3(1.0);
+                bool first = true;
+
+                for (int i = 0; i < count; ++i) {
+                    vec3 localP = p - sdfObjects[i].position;
+                    float d = sdfPrimitive(localP, sdfObjects[i].type, sdfObjects[i].scale);
+
+                    if (first) {
+                        sceneDist = d;
+                        sceneColor = sdfObjects[i].color;
+                        first = false;
+                        continue;
+                    }
+
+                    int op = int(sdfObjects[i].blendMode + 0.5);
+                    float prev = sceneDist;
+
+                    if (op == 0) sceneDist = sdfOpUnion(sceneDist, d);
+                    else if (op == 1) sceneDist = sdfOpSubtract(sceneDist, d);
+                    else if (op == 2) sceneDist = sdfOpIntersect(sceneDist, d);
+                    else if (op == 3) sceneDist = sdfOpSmoothUnion(sceneDist, d, sdfObjects[i].blendSmoothness);
+                    else if (op == 4) sceneDist = sdfOpSmoothSubtract(sceneDist, d, sdfObjects[i].blendSmoothness);
+                    else if (op == 5) sceneDist = sdfOpSmoothIntersect(sceneDist, d, sdfObjects[i].blendSmoothness);
+                    else sceneDist = sdfOpUnion(sceneDist, d);
+
+                    if (sceneDist != prev && sceneDist == d) {
+                        sceneColor = sdfObjects[i].color;
+                    }
+                }
+
+                if (sceneDist < SDF_EPSILON) {
+                    sdfHitColor = sceneColor;
+                    sdfHit = true;
+                    break;
+                }
+
+                sdfT += sceneDist;
+                if (sdfT > uLight.sdfMaxDistance) break;
+            }
+
+            if (sdfHit) {
+                // Shade SDF hit with simple NdotL from directional light
+                vec3 hitPoint = rayOrigin + reflectDir * sdfT;
+
+                // Compute SDF normal via central differences (inline)
+                const float h = 0.001;
+                float nx = 0.0, ny = 0.0, nz = 0.0;
+                // +X / -X
+                {
+                    vec3 pp = hitPoint + vec3(h, 0, 0);
+                    vec3 pm = hitPoint - vec3(h, 0, 0);
+                    float dp = 1e10, dm = 1e10;
+                    for (int i = 0; i < count; ++i) {
+                        float d1 = sdfPrimitive(pp - sdfObjects[i].position, sdfObjects[i].type, sdfObjects[i].scale);
+                        float d2 = sdfPrimitive(pm - sdfObjects[i].position, sdfObjects[i].type, sdfObjects[i].scale);
+                        dp = (i == 0) ? d1 : sdfOpUnion(dp, d1);
+                        dm = (i == 0) ? d2 : sdfOpUnion(dm, d2);
+                    }
+                    nx = dp - dm;
+                }
+                // +Y / -Y
+                {
+                    vec3 pp = hitPoint + vec3(0, h, 0);
+                    vec3 pm = hitPoint - vec3(0, h, 0);
+                    float dp = 1e10, dm = 1e10;
+                    for (int i = 0; i < count; ++i) {
+                        float d1 = sdfPrimitive(pp - sdfObjects[i].position, sdfObjects[i].type, sdfObjects[i].scale);
+                        float d2 = sdfPrimitive(pm - sdfObjects[i].position, sdfObjects[i].type, sdfObjects[i].scale);
+                        dp = (i == 0) ? d1 : sdfOpUnion(dp, d1);
+                        dm = (i == 0) ? d2 : sdfOpUnion(dm, d2);
+                    }
+                    ny = dp - dm;
+                }
+                // +Z / -Z
+                {
+                    vec3 pp = hitPoint + vec3(0, 0, h);
+                    vec3 pm = hitPoint - vec3(0, 0, h);
+                    float dp = 1e10, dm = 1e10;
+                    for (int i = 0; i < count; ++i) {
+                        float d1 = sdfPrimitive(pp - sdfObjects[i].position, sdfObjects[i].type, sdfObjects[i].scale);
+                        float d2 = sdfPrimitive(pm - sdfObjects[i].position, sdfObjects[i].type, sdfObjects[i].scale);
+                        dp = (i == 0) ? d1 : sdfOpUnion(dp, d1);
+                        dm = (i == 0) ? d2 : sdfOpUnion(dm, d2);
+                    }
+                    nz = dp - dm;
+                }
+                vec3 sdfN = normalize(vec3(nx, ny, nz));
+
+                // Simple directional light shading
+                vec3 L = normalize(-uLight.lightDir.xyz);
+                float NdotL = max(dot(sdfN, L), 0.0);
+                vec3 shadedColor = sdfHitColor * (0.2 + 0.8 * NdotL);
+
+                reflectPayload = vec4(shadedColor, 1.0);
+            } else {
+                // SDF miss too — use sky color from rmiss
+                reflectPayload = vec4(skyColor, 0.0);
+            }
+        } else {
+            // SDF fallback disabled or no SDF objects — use sky color
+            reflectPayload = vec4(skyColor, 0.0);
+        }
+    }
 
     imageStore(reflectionOutput, pixel, reflectPayload);
 }

@@ -462,7 +462,7 @@ void VulkanRenderer::BeginMainRenderPass() {
     renderPassInfo.renderArea.extent = m_Swapchain->GetExtent();
 
     std::array<VkClearValue, 3> clearValues{};
-    clearValues[0].color = { { 0.1f, 0.1f, 0.2f, 1.0f } };  // Dark blue to confirm clearing works
+    clearValues[0].color = { { 0.06f, 0.06f, 0.06f, 1.0f } };  // Near-black — blends with ImGui theme backgrounds
     clearValues[1].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };  // Velocity: zero motion
     clearValues[2].depthStencil = { 1.0f, 0 };
 
@@ -721,6 +721,83 @@ void VulkanRenderer::RequestVSyncChange(bool enabled) {
 
 bool VulkanRenderer::IsVSyncEnabled() const {
     return m_Swapchain ? m_Swapchain->IsVSyncEnabled() : false;
+}
+
+bool VulkanRenderer::RecreateRenderPass() {
+    if (m_RenderPass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(m_Context->GetDevice(), m_RenderPass, nullptr);
+        m_RenderPass = VK_NULL_HANDLE;
+    }
+    if (!CreateRenderPass()) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to recreate render pass");
+        return false;
+    }
+    // Framebuffers reference the render pass — rebuild them
+    m_Swapchain->SetRenderPass(m_RenderPass);
+    m_Swapchain->RecreateFramebuffers();
+    return true;
+}
+
+void VulkanRenderer::SetHDREnabled(bool enabled) {
+    if (!m_Swapchain) return;
+    if (m_Swapchain->IsHDREnabled() == enabled) return;
+
+    // Check HDR format availability before attempting the switch
+    if (enabled && !m_Swapchain->IsHDRFormatAvailable()) {
+        ENJIN_LOG_WARN(Renderer, "HDR requested but no HDR surface format available (enable Windows HDR in Display Settings)");
+        return;
+    }
+
+    WaitForAllFrames();
+    m_IsFrameStarted = false;
+    m_IsMainRenderPassActive = false;
+
+    // Save old format for rollback on failure
+    VkFormat oldFormat = m_Swapchain->GetImageFormat();
+
+    // Clear render pass BEFORE recreating swapchain: Recreate() would otherwise
+    // build framebuffers against the OLD render pass whose attachment format no
+    // longer matches the new swapchain image format (SRGB vs FP16/HDR10).
+    m_Swapchain->SetRenderPass(VK_NULL_HANDLE);
+
+    // Update swapchain HDR preference and recreate with new format
+    m_Swapchain->SetHDREnabled(enabled);
+    auto extent = m_Swapchain->GetExtent();
+    if (!m_Swapchain->Recreate(extent.width, extent.height, true)) {
+        // Swapchain recreation failed — revert HDR flag and try to recover
+        ENJIN_LOG_ERROR(Renderer, "HDR swapchain recreation failed, reverting to previous mode");
+        m_Swapchain->SetHDREnabled(!enabled);
+        m_Swapchain->Recreate(extent.width, extent.height, true);
+        RecreateRenderPass();
+        m_ImagesInFlight.assign(m_Swapchain->GetImageCount(), VK_NULL_HANDLE);
+        return;
+    }
+
+    // Render pass attachment 0 format must match the new swapchain format.
+    // This also sets the new render pass on the swapchain and rebuilds framebuffers.
+    RecreateRenderPass();
+
+    // Reset image tracking
+    m_ImagesInFlight.assign(m_Swapchain->GetImageCount(), VK_NULL_HANDLE);
+
+    // Notify external systems (post-processing, RenderSystem pipelines, etc.)
+    for (auto& callback : m_ResizeCallbacks) {
+        callback(extent.width, extent.height);
+    }
+
+    const char* modeNames[] = { "SDR", "scRGB", "HDR10" };
+    u32 mode = m_Swapchain->GetHDROutputMode();
+    ENJIN_LOG_INFO(Renderer, "HDR output %s (mode: %s)",
+        enabled ? "enabled" : "disabled",
+        mode < 3 ? modeNames[mode] : "Unknown");
+}
+
+bool VulkanRenderer::IsHDREnabled() const {
+    return m_Swapchain ? m_Swapchain->IsHDREnabled() : false;
+}
+
+u32 VulkanRenderer::GetHDROutputMode() const {
+    return m_Swapchain ? m_Swapchain->GetHDROutputMode() : 0;
 }
 
 } // namespace Renderer

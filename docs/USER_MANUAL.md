@@ -1,6 +1,6 @@
 # Enjin Engine User Manual
 
-Enjin is an open-source (BSL 1.1) game engine built from scratch using C++20 and the Vulkan graphics API. It features a complete editor with Dear ImGui, an Entity-Component-System (ECS) architecture, PBR materials, skeletal animation, AngelScript scripting, and modern rendering capabilities.
+Enjin is an open-source (BSL 1.1) game engine built with C++20 and the Vulkan graphics API. It features a complete editor with Dear ImGui, an Entity-Component-System (ECS) architecture, PBR materials, skeletal animation, AngelScript scripting, and modern rendering capabilities.
 
 This manual covers everything you need to get started and build games with Enjin.
 
@@ -42,6 +42,8 @@ This manual covers everything you need to get started and build games with Enjin
 30. [HTML5 Export](#30-html5-export)
 31. [Newgrounds.io Integration](#31-negroundsio-integration)
 32. [Networking & Security Settings](#32-networking--security-settings)
+33. [Debug Panels](#33-debug-panels)
+34. [Drop-Down Console](#34-drop-down-console)
 
 ---
 
@@ -192,6 +194,10 @@ Panels display helpful empty-state messages when there is nothing to show:
 | `Ctrl` + `V` | Paste entity |
 | `Ctrl` + `Z` | Undo |
 | `Ctrl` + `Y` | Redo |
+| `F1` | Toggle Game Debug panel |
+| `F2` | Toggle Debug Workstation panel |
+| `` ` `` (backtick) | Toggle drop-down console |
+| `F11` | Toggle focus mode (fullscreen game view) |
 
 ### Multi-Select
 
@@ -1733,6 +1739,8 @@ Five raster-tier screen-space effects run in the post-process shader using only 
 
 **Effect chain order** (all run in HDR before tone mapping): SSAO (multiply) -> Contact Shadows (multiply) -> Caustics (additive) -> God Rays (additive) -> Fog Shafts (blend) -> DoF -> Tilt-Shift -> Tone Mapping.
 
+**Depth dependency:** All five screen-space effects (SSAO, Contact Shadows, Fake Caustics, God Rays, Fog Shafts) require the depth buffer. Depth-dependent effects are automatically disabled in the editor when the depth buffer is unavailable.
+
 **Performance:** All sample counts are tunable. Estimated total cost is ~3 ms at 1080p on a GTX 1060-class GPU with default settings. Effects can be enabled/disabled individually.
 
 **PostProcessVolume blending:** All 5 effects support spatial blending via `PostProcessVolumeComponent` override bits (19-23).
@@ -3001,13 +3009,35 @@ Each effect can be independently enabled/disabled with its own configuration:
 
 ### Path Tracing Mode
 
-Progressive path tracer for reference-quality rendering:
+Progressive path tracer for reference-quality rendering with physically-based light transport:
 
-- **Max bounces** — Maximum ray bounce depth (default 8)
-- **Target SPP** — Target samples per pixel for convergence
+- **Max bounces** — Maximum ray bounce depth (default 4)
+- **Target SPP** — Target samples per pixel for convergence (default 1024)
 - **Progress bar** — Shows current SPP / target SPP
 - **Converged indicator** — Displays when target SPP is reached
 - **Reset button** — Clears accumulation buffer (automatically resets on camera/scene changes)
+
+#### Path Tracer Techniques
+
+| Technique | Description | Default |
+|-----------|-------------|---------|
+| **Next Event Estimation (NEE)** | Direct light sampling at each bounce. Randomly selects a light and traces a shadow ray toward it, dramatically improving convergence for scenes with explicit light sources. Supports directional, point, and spot lights via a packed NEE light SSBO. | Enabled |
+| **Multiple Importance Sampling (MIS)** | Combines BRDF sampling and light sampling PDFs using the power heuristic. Balances quality between direct illumination (NEE) and indirect bounces (BRDF sampling) to reduce variance across all material types. | Enabled |
+| **Russian Roulette** | Probabilistic path termination after a configurable minimum bounce depth. Survival probability is proportional to throughput luminance, with a configurable minimum probability floor. Terminates low-contribution paths early while remaining unbiased (throughput is divided by survival probability). | Min bounce: 3, Min prob: 0.05 |
+| **Firefly Clamping** | Clamps maximum radiance per sample to suppress firefly artifacts (bright outlier pixels). Applied both per-bounce (throughput clamping) and on the final accumulated radiance. | Clamp value: 10.0 |
+
+#### BRDF Model
+
+The path tracer uses a full Cook-Torrance BRDF with GGX importance sampling:
+- **GGX/Trowbridge-Reitz** normal distribution for microfacet specular
+- **Smith-Schlick** geometry term for self-shadowing
+- **Fresnel-Schlick** approximation for reflectance
+- **Cosine-weighted hemisphere** sampling for diffuse lobes
+- **Combined PDF** (mixture model) — metallic/roughness-adaptive blend of specular and diffuse sampling probabilities
+
+#### Simplified Materials for Deep Bounces
+
+After the first two bounces, the path tracer switches to pre-baked simplified materials (computed on the CPU) to reduce hit shader divergence. Simplified materials skip SSS, transmission, and caustics, using pre-computed F0, kDiffuse, and effectiveRoughness values. This provides a significant performance improvement for multi-bounce paths with minimal visible impact.
 
 ### Denoisers
 
@@ -3015,7 +3045,7 @@ Progressive path tracer for reference-quality rendering:
 
 The SVGF (Spatiotemporal Variance-Guided Filtering) denoiser smooths noisy RT output:
 
-1. **Temporal accumulation** — Blends current frame with history using motion vectors (configurable alpha)
+1. **Temporal accumulation** — Blends current frame with history using motion vectors from RT descriptor binding 4 (configurable alpha). The same per-pixel velocity buffer is shared with TAA for consistent temporal reprojection
 2. **Variance estimation** — Computes per-pixel variance from luminance moments
 3. **A-trous wavelet** — Edge-preserving spatial filter (configurable iteration count, default 5)
 
@@ -3027,7 +3057,7 @@ AI-based denoiser using trained neural networks. Requires the `ENJIN_RAYTRACING_
 
 #### OptiX (NVIDIA)
 
-NVIDIA's GPU-accelerated AI denoiser. Requires the `ENJIN_RAYTRACING_OPTIX` CMake flag and an NVIDIA GPU with OptiX support. Fastest denoiser option on supported hardware.
+NVIDIA's GPU-accelerated AI denoiser. Requires the `ENJIN_RAYTRACING_OPTIX` CMake flag and an NVIDIA GPU with OptiX support. Uses CUDA/Vulkan interop via `VK_KHR_external_memory` and `VK_KHR_external_semaphore` to share RT output buffers directly with the OptiX denoiser on the GPU, avoiding CPU readback. Fastest denoiser option on supported hardware.
 
 ### Scene Render Settings
 
@@ -3042,9 +3072,10 @@ All RT settings are saved/loaded with scene render settings (JSON). 24 configura
 
 1. **BLAS** (Bottom-Level Acceleration Structure) — One per unique mesh, cached by hash. Built lazily when new meshes appear
 2. **TLAS** (Top-Level Acceleration Structure) — Rebuilt each frame from entity transforms. Uses UPDATE mode when only transforms changed
-3. **RT dispatch** — After shadow pass, before main render pass. Each effect dispatches ray generation shaders
-4. **Denoise** — SVGF 3-pass compute shader smooths noisy RT output
-5. **Composite** — Compute shader multiplies shadows, adds reflections, multiplies AO, adds GI into scene HDR
+3. **Material SSBO** — A storage buffer at RT descriptor binding 9 provides full PBR material data (base color, metallic, roughness, emissive, transmission, IOR, thickness, SSS parameters) to RT closest-hit shaders, enabling physically accurate material responses during ray traversal
+4. **RT dispatch** — After shadow pass, before main render pass. Each effect dispatches ray generation shaders
+5. **Denoise** — SVGF 3-pass compute shader smooths noisy RT output
+6. **Composite** — Compute shader multiplies shadows, adds reflections, multiplies AO, adds GI into scene HDR
 
 The RT pipeline only runs for 3D scenes (`SceneRenderMode::Scene3D`). 2D and 2.5D scenes skip RT entirely with no performance impact.
 
@@ -3078,6 +3109,24 @@ Requires `ENJIN_VIRTUAL_TEXTURING=OFF` by default (opt-in). Page-based texture s
 #### Visibility Buffer
 
 Requires `ENJIN_VISIBILITY_BUFFER=OFF` by default (opt-in). Deferred material resolve render path: a lightweight visibility pass writes triangle/material IDs, then a fullscreen compute pass resolves materials. Reduces geometry bandwidth for complex scenes with many small triangles.
+
+#### Anti-Aliasing
+
+**TAA (Temporal Anti-Aliasing)** is the primary anti-aliasing method, selectable from Settings > Scene. It uses Halton 2,3 sub-pixel jitter sequences, neighborhood clamping to reduce ghosting, and velocity-based reprojection from the per-pixel motion vector buffer. Configurable sharpness (post-resolve sharpen pass) and feedback factor (history blend weight) let you balance stability against sharpness. TAA requires motion vectors to be active.
+
+**FXAA** is also available as a lighter-weight alternative that runs as a single post-process pass with no temporal component.
+
+Both options are selectable from **Settings > Scene > Post Processing**.
+
+#### Motion Vectors
+
+A per-pixel velocity buffer (RG16F format) stores screen-space motion vectors computed from the difference between current and previous frame projection matrices and per-object transforms. Motion vectors are used by:
+
+- **TAA** — velocity-based reprojection for temporal stability
+- **SVGF denoiser** — temporal accumulation and disocclusion detection (RT descriptor binding 4)
+- **Future upscalers** — the velocity buffer is designed to feed DLSS, FSR 2, and XeSS when integrated
+
+Motion vectors are generated for all rendered objects including skinned meshes (bone-aware velocity).
 
 #### Additional Optimizations
 
@@ -3256,4 +3305,191 @@ Enjin loads its runtime networking configuration from a JSON file so multiplayer
 **Notes**
 
 The `rateLimit` block controls per-sender packet and bandwidth throttling with a token-bucket burst allowance. The `security` block determines how many violations within a rolling window will trigger a temporary ban and optional kick. For competitive or high-traffic games, raise `maxBytesPerSecond`, `burstBytes`, and/or `maxPacketsPerSecond` to match your netcode needs.
+
+---
+
+## 33. Debug Panels
+
+Enjin provides two dedicated debug panels for runtime inspection, toggled with function keys. These panels are independent of the standard editor Console panel and designed for quick game and engine diagnostics.
+
+### Game Debug Panel (F1)
+
+Press **F1** to toggle the Game Debug panel. This panel is focused on debugging **your game** -- it shows scene state, physics bodies, scripts, audio sources, and gameplay systems.
+
+| Tab | Contents |
+|-----|----------|
+| **Scene** | Scene path, play mode status, entity count, selected entity details (name, ID, component list), and a clickable entity list for the entire scene. |
+| **Physics** | Physics backend type (Jolt 3D / Box2D 2D), collider wireframe toggle, counts of rigidbodies and each collider type (box, sphere, capsule), gravity zones, fluid volumes, and a scrollable list of all physics entities with body type tags. |
+| **Scripts** | Total script entity count, total script attachments, error count. Expandable tree view showing each scripted entity with script path, class name, and status indicators: `[running]` (green), `[initialized]` (yellow), `[disabled]` (gray), `[ERROR]` (red with tooltip). |
+| **Audio** | Audio source count, currently playing count. Expandable tree view per audio entity showing clip path, play status, channel (SFX/Music/UI/Voice), volume, pitch, 3D/loop flags. |
+| **Gameplay** | Active tweens (entities and playing count), particle emitters (total and playing), health components (total and dead count), interactables, pickups, and trigger zones. |
+
+### Debug Workstation (F2)
+
+Press **F2** to toggle the Debug Workstation. This panel is focused on **editor and engine internals** -- performance metrics, renderer state, ECS data, scene info, and system details.
+
+| Tab | Contents |
+|-----|----------|
+| **Performance** | Color-coded FPS (green/yellow/red), frame time (ms), min/max/avg/P50/P95/P99 frame time stats, frame time history graph (240-frame rolling window), render stats (draw calls, triangles, descriptor cache hit rate), entity count, memory usage (process, system RAM, GPU VRAM). |
+| **Renderer** | Scene render mode (2D/2.5D/3D) with sprite/tilemap/mesh counts, shadow state (enabled, distance, resolution, progressive cascades), ray tracing status (supported, enabled, mode, denoiser), OIT state, AA mode, upscaler status, wireframe/culling/cel shading/fog state, render target dimensions (editor viewport and game view), post-processing state (tone mapping, exposure, gamma, bloom, vignette, chromatic aberration). |
+| **ECS** | Total entity count, component counts for all major types (Transform, Mesh, Material, Light, Camera, Name, Notes, Text, Script, Skeleton, LOD, Parent, Tween), selected entity info (ID, name, position, scale), multi-select count. |
+| **Scene** | Scene path, scene name, project name and path, scene count, physics backend type, play mode status, focus mode state. |
+| **System** | Engine name and version, ImGui version, GPU name, Vulkan API and driver versions, swapchain dimensions, HDR output status, window and display size/scale, build configuration (Debug/Release), platform (Windows/Linux/macOS). |
+
+### PrepareRenderTargets
+
+Render target resizing is handled by `PrepareRenderTargets()`, which runs **before** command buffer recording to avoid destroying/recreating Vulkan resources while a command buffer is active. This prevents crashes with Vulkan hooks (OBS, RenderDoc) and fixes a crash that occurred with 4:3 aspect ratio windows. The function applies an 8-pixel resize threshold to avoid thrashing on minor size changes, and handles both editor viewport and game view render targets including post-processing pipeline updates.
+
+---
+
+## 34. Drop-Down Console
+
+Press the **backtick** key (`` ` ``, also known as grave accent or tilde) to toggle a Quake/Doom-style drop-down console. The console slides down from the top of the screen with a smooth animation, covering approximately 40% of the screen height.
+
+### Features
+
+- **Slide animation** -- Smoothly animates open/closed at 8x speed factor
+- **Auto-focus** -- Input field automatically receives keyboard focus when opened
+- **Command history** -- Press Up/Down arrow keys to cycle through previously entered commands
+- **Color-coded output** -- Errors in red, warnings in yellow, user input in green, normal output in light gray
+- **Shared log** -- The drop-down console shares the same log buffer as the editor Console panel; commands and output appear in both
+- **Backtick filtering** -- The backtick character is automatically filtered from input so it does not appear in commands
+
+Press `` ` `` again to close the console.
+
+### Console Command Reference
+
+All commands are case-insensitive. Type `help` for a full list, or `help <command>` for detailed usage of a specific command.
+
+#### General
+
+| Command | Description |
+|---------|-------------|
+| `help [cmd]` | Show full command list or detailed help for a specific command |
+| `clear` | Clear console output |
+| `stats` | Show scene statistics (entities, meshes, verts, tris, lights, cameras, FPS) |
+| `fps` | Show current FPS and frame time in milliseconds |
+| `version` | Show engine version string |
+
+#### Entities
+
+| Command | Description |
+|---------|-------------|
+| `list` | List all entities in the scene with IDs and names |
+| `select <id>` | Select entity by numeric ID |
+| `deselect` | Clear selection |
+| `create <name>` | Create an empty entity with a name (adds Name + Transform components) |
+| `delete` | Delete all selected entities |
+| `inspect` | Show selected entity details (transform, mesh stats, components) |
+
+#### Transform
+
+| Command | Description |
+|---------|-------------|
+| `pos <x> <y> <z>` | Set selected entity position |
+| `rot <x> <y> <z>` | Set selected entity rotation (degrees) |
+| `scale <x> <y> <z>` | Set selected entity scale (or `scale <s>` for uniform) |
+| `getpos` | Print selected entity position |
+
+#### Rendering
+
+| Command | Description |
+|---------|-------------|
+| `wireframe` | Toggle wireframe mode |
+| `shadows` | Toggle shadows |
+| `fog <density>` | Set fog density (0 = off, 0.01-0.1 typical) |
+| `ambient <r> <g> <b>` | Set ambient color (0.0-1.0 per channel) |
+| `culling` | Toggle backface culling |
+| `hdr` | Toggle HDR rendering |
+
+#### Retro Effects
+
+| Command | Description |
+|---------|-------------|
+| `flatshading` | Toggle PS1-style flat shading |
+| `vertexsnap` | Toggle PS1-style vertex snapping |
+| `affine` | Toggle affine texture mapping |
+| `gouraud` | Toggle Gouraud-only shading |
+| `stipple` | Toggle stipple transparency |
+
+#### Scene
+
+| Command | Description |
+|---------|-------------|
+| `save <path>` | Save scene to file |
+| `load <path>` | Load scene from file |
+| `play` | Start play mode |
+| `stop` | Stop play mode |
+| `pause` | Pause/resume play mode |
+
+#### Components
+
+| Command | Description |
+|---------|-------------|
+| `addcomp <type>` | Add component to selected entity |
+| `removecomp <type>` | Remove component from selected entity |
+| `setname <name>` | Set entity name |
+| `setnotes <text>` | Set entity notes |
+| `visible [true/false]` | Toggle or set entity visibility |
+| `components` | List all components on selected entity |
+
+Supported component types for `addcomp`/`removecomp`: `mesh`, `material`, `light`, `camera`, `script`, `audio`, `rigidbody`, `name`, `notes`, `sprite`, `particle`, `tween`, `lod`.
+
+#### Materials
+
+| Command | Description |
+|---------|-------------|
+| `setcolor <r> <g> <b>` | Set base color (0-1) |
+| `setemissive <r> <g> <b> <s>` | Set emissive color + strength |
+| `setmetallic <value>` | Set metallic (0-1) |
+| `setroughness <value>` | Set roughness (0-1) |
+| `setopacity <value>` | Set opacity (0-1) |
+
+#### Lights
+
+| Command | Description |
+|---------|-------------|
+| `lightcolor <r> <g> <b>` | Set light color |
+| `lightintensity <val>` | Set light intensity |
+| `lighttype <type>` | Set light type (`dir`/`point`/`spot`) |
+| `lightrange <val>` | Set light range |
+
+#### Camera
+
+| Command | Description |
+|---------|-------------|
+| `fov <degrees>` | Set camera field of view |
+| `near <value>` | Set camera near plane |
+| `far <value>` | Set camera far plane |
+
+#### Query
+
+| Command | Description |
+|---------|-------------|
+| `find <name>` | Find entities by name substring (case-insensitive) |
+| `count <component>` | Count entities with component type |
+| `children` | List children of selected entity |
+| `parent` | Show parent of selected entity |
+
+#### Bulk Operations
+
+| Command | Description |
+|---------|-------------|
+| `selectall` | Select all entities |
+| `hideall` | Hide all entities |
+| `showall` | Show all entities |
+| `deleteall confirm` | Delete all entities (requires "confirm" argument) |
+
+#### Debug
+
+| Command | Description |
+|---------|-------------|
+| `colliders` | Toggle collider wireframe display |
+| `grid` | Toggle editor grid |
+| `rain` | Toggle rain effect |
+| `snow <intensity>` | Set snow intensity (0 = off, 1 = normal, 2+ = blizzard) |
+| `shadowres <size>` | Set shadow resolution (512/1024/2048/4096) |
+| `shadowdist <dist>` | Set shadow distance |
+| `ambient_intensity <v>` | Set ambient intensity |
+| `curvature <value>` | Set world curvature strength |
 

@@ -828,6 +828,14 @@ void RenderSystem::Update(f32 deltaTime) {
     // Classify scene composition (2D / 2.5D / 3D) before rendering decisions
     ClassifySceneComposition();
 
+    // When main-pass rendering is skipped (editor viewport renders offscreen),
+    // skip all pre-pass work (shadows, culling, RT, clustered lighting) but still
+    // start the main render pass so ImGui has a valid pass to draw into.
+    if (m_SkipMainPassRendering) {
+        m_Renderer->BeginMainRenderPass();
+        return;
+    }
+
     // Build list of cullable objects for GPU frustum culling
     // Only done when we have 3D meshes and GPU culling is enabled.
     // In editor mode, skip culling entirely so all entities are visible for editing.
@@ -1127,13 +1135,6 @@ void RenderSystem::Update(f32 deltaTime) {
             });
     }
 
-    // In play mode, the game view renders via RenderToTarget() to an offscreen target
-    // which is composited as a fullscreen ImGui::Image. The main swapchain pass geometry
-    // is entirely occluded behind ImGui, so skip it to avoid double-drawing everything.
-    if (m_SkipMainPassRendering) {
-        return;
-    }
-
     // Render skybox first (behind all geometry)
     RenderSkybox(commandBuffer);
 
@@ -1258,7 +1259,7 @@ void RenderSystem::Update(f32 deltaTime) {
     }
 }
 
-void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera) {
+void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera, u32 viewportIndex) {
     if (!target || !target->IsValid() || !camera || !m_Renderer || !m_Initialized || !m_Pipeline) {
         return;
     }
@@ -1277,7 +1278,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     m_ActiveUniformBuffers = &m_OffscreenUniformBuffers;
     m_ActiveLightingBuffers = &m_OffscreenLightingBuffers;
     m_OffscreenMode = true;
-    m_CurrentViewportIndex = 0;
+    m_CurrentViewportIndex = viewportIndex;
 
     VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) {
@@ -2481,8 +2482,8 @@ void RenderSystem::CreateShadowPipeline() {
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.depthBiasEnable = true;
-    config.depthBiasConstant = 0.75f;
-    config.depthBiasSlope = 0.75f;
+    config.depthBiasConstant = 2.0f;
+    config.depthBiasSlope = 2.0f;
     config.hasColorAttachment = false;  // Depth-only pass
 
     m_ShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
@@ -2545,6 +2546,58 @@ void RenderSystem::RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 ver
     VkRect2D scissor{};
     scissor.offset = {0, 0};
     scissor.extent = extent;
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    Renderer::PushConstants pc{};
+    pc.model = Math::Matrix4::Identity();
+    pc.baseColor = Math::Vector3(0.0f, 0.0f, 0.0f);
+    pc.metallic = 0.0f;
+    pc.emissiveColor = color;
+    pc.roughness = 1.0f;
+    pc.emissiveStrength = 1.0f;
+    pc.opacity = opacity;
+    pc.alphaCutoff = 0.0f;
+    pc.flags = 0;
+    pc.parallaxScale = 0.0f;
+
+    vkCmdPushConstants(commandBuffer, m_LinePipeline->GetLayout(),
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+
+    VkBuffer buffers[] = {vertexBuffer->GetBuffer()};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
+
+    vkCmdDraw(commandBuffer, vertexCount, 1, firstVertex, 0);
+}
+
+void RenderSystem::RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 vertexCount,
+                                    u32 firstVertex, const Math::Vector3& color, f32 opacity,
+                                    u32 targetWidth, u32 targetHeight) {
+    if (!m_LinePipeline || !m_Renderer || !vertexBuffer || vertexCount == 0) return;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+
+    m_LinePipeline->Bind(commandBuffer);
+
+    // Use offscreen descriptor sets (camera matrices match the editor viewport camera)
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_LinePipeline->GetLayout(), 0, 1, &m_OffscreenDescriptorSets[currentFrame], 0, nullptr);
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<f32>(targetWidth);
+    viewport.height = static_cast<f32>(targetHeight);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = {targetWidth, targetHeight};
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     Renderer::PushConstants pc{};
@@ -3407,6 +3460,15 @@ void RenderSystem::UpdateFrameUniforms() {
     lighting.celDiffuseBands = m_CelShadingEnabled ? m_CelDiffuseBands : 0.0f;
     lighting.celSpecularCutoff = m_CelShadingEnabled ? m_CelSpecularCutoff : 0.0f;
 
+    // Pack shading model flags: bit0=GGX, bit1=Fresnel, bit2=EnergyConserv, bit3=GeometryTerm, bit4=SphereEnvMap
+    lighting.shadingFlags = (m_ShadingModel & 1u)
+        | (m_FresnelEnabled ? 2u : 0u)
+        | (m_EnergyConservation ? 4u : 0u)
+        | (m_GeometryTerm ? 8u : 0u)
+        | (m_SphereEnvMapEnabled ? 16u : 0u);
+    lighting.sphereEnvStrength = m_SphereEnvStrength;
+    lighting.posterizeLevels = m_PosterizeLevels;
+
     if (m_ActivePointShadowCount > 0 && lighting.pointLightCount > 1) {
         // Move shadow-casting lights to front: swap with non-shadow lights
         for (u32 s = 0; s < m_ActivePointShadowCount && s < lighting.pointLightCount; ++s) {
@@ -3590,6 +3652,17 @@ void RenderSystem::SetShadowResolution(u32 r) {
     // Defer the actual resize to FlushPendingChanges() where the GPU is already idle
     m_PendingShadowResolution = r;
     m_PendingRecreation = PendingRecreationType::PipelineOnly;
+}
+
+void RenderSystem::SetHDREnabled(bool enabled) {
+    if (!m_Renderer) return;
+    if (m_Renderer->IsHDREnabled() == enabled) return;
+
+    // VulkanRenderer::SetHDREnabled handles: swapchain recreate, render pass recreate,
+    // framebuffer recreate, and notifies resize callbacks. After that, our pipelines
+    // (which reference the render pass) must be recreated too.
+    m_Renderer->SetHDREnabled(enabled);
+    RecreatePipelines(true);  // GPU already idle from VulkanRenderer::SetHDREnabled
 }
 
 void RenderSystem::RecreatePipelines(bool gpuAlreadyIdle) {
@@ -4344,11 +4417,29 @@ void RenderSystem::RenderSprites() {
     }
 }
 
+bool RenderSystem::ShouldUpdateCascade(u32 cascade) const {
+    if (!m_CascadeProgressiveUpdate) return true;
+    u32 interval = (cascade <= 1) ? 1 : m_CascadeFarUpdateInterval;
+    // Stagger far cascades so they don't all update on the same frame
+    u32 offset = (cascade <= 1) ? 0 : (cascade - 2);
+    return ((m_ShadowFrameCounter + offset) % interval) == 0;
+}
+
 void RenderSystem::RenderShadowPass() {
     if (!m_ShadowMap || !m_ShadowPipeline) return;
 
     VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
+
+    // Progressive cascade updates: increment frame counter and detect camera teleport
+    m_ShadowFrameCounter++;
+    bool forceFullUpdate = false;
+    if (m_Camera) {
+        auto pos = m_Camera->GetPosition();
+        f32 dist = (pos - m_PrevShadowCameraPos).Length();
+        if (dist > 5.0f) forceFullUpdate = true;
+        m_PrevShadowCameraPos = pos;
+    }
 
     // Find the first directional light for shadow casting
     bool foundShadowLight = false;
@@ -4381,6 +4472,9 @@ void RenderSystem::RenderShadowPass() {
 
     // Render each cascade
     for (u32 cascade = 0; cascade < m_ShadowMap->GetCascadeCount(); ++cascade) {
+        // Progressive update: skip far cascades on non-update frames
+        if (!forceFullUpdate && !ShouldUpdateCascade(cascade)) continue;
+
         // Store cascade VP for RenderEntityShadow to pre-multiply with model matrix.
         // Push constants are embedded in the command buffer, so they're immune to
         // the HOST_COHERENT UBO race that was causing empty shadow maps.
@@ -4420,7 +4514,7 @@ void RenderSystem::RenderShadowPass() {
 
 void RenderSystem::RenderShadowPassForCamera(Renderer::Camera* camera) {
     if (!camera) { ENJIN_LOG_WARN(Renderer, "ShadowPassForCamera: no camera"); return; }
-    if (!m_ShadowsEnabled) { ENJIN_LOG_WARN(Renderer, "ShadowPassForCamera: shadows disabled"); return; }
+    if (!m_ShadowsEnabled) return;
     if (!m_ShadowMap) { ENJIN_LOG_WARN(Renderer, "ShadowPassForCamera: no shadow map"); return; }
     if (!m_ShadowPipeline) { ENJIN_LOG_WARN(Renderer, "ShadowPassForCamera: no shadow pipeline"); return; }
 
@@ -4502,8 +4596,8 @@ void RenderSystem::CreatePointShadowPipeline() {
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.depthBiasEnable = true;
-    config.depthBiasConstant = 0.5f;
-    config.depthBiasSlope = 0.5f;
+    config.depthBiasConstant = 1.5f;
+    config.depthBiasSlope = 1.5f;
     config.hasColorAttachment = false;
 
     m_PointShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
@@ -4526,8 +4620,8 @@ void RenderSystem::CreateSpotShadowPipeline() {
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.depthBiasEnable = true;
-    config.depthBiasConstant = 0.5f;
-    config.depthBiasSlope = 0.5f;
+    config.depthBiasConstant = 1.5f;
+    config.depthBiasSlope = 1.5f;
     config.hasColorAttachment = false;
 
     m_SpotShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
@@ -5515,8 +5609,8 @@ void RenderSystem::InitializeRayTracing() {
     auto* ctx = m_Renderer->GetContext();
     ENJIN_LOG_INFO(Renderer, "Initializing ray tracing subsystems...");
 
-    // Create RT descriptor set layout (17 bindings)
-    std::array<VkDescriptorSetLayoutBinding, 17> rtBindings{};
+    // Create RT descriptor set layout (19 bindings: 0-16 existing + 17 SDF + 18 simplified materials)
+    std::array<VkDescriptorSetLayoutBinding, 19> rtBindings{};
 
     // Binding 0: TLAS
     rtBindings[0].binding = 0;
@@ -5604,6 +5698,18 @@ void RenderSystem::InitializeRayTracing() {
     rtBindings[16].descriptorCount = 1;
     rtBindings[16].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
+    // Binding 17: SDF scene SSBO (SDF objects for reflection fallback sphere tracing)
+    rtBindings[17].binding = 17;
+    rtBindings[17].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    rtBindings[17].descriptorCount = 1;
+    rtBindings[17].stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
+    // Binding 18: Simplified material SSBO (pre-baked F0/kDiffuse/effectiveRoughness)
+    rtBindings[18].binding = 18;
+    rtBindings[18].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    rtBindings[18].descriptorCount = 1;
+    rtBindings[18].stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<u32>(rtBindings.size());
@@ -5619,7 +5725,7 @@ void RenderSystem::InitializeRayTracing() {
     poolSizes[0] = { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1 };
     poolSizes[1] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 7 };
     poolSizes[2] = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 };
-    poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5 };  // 9-12 + NEE light SSBO at 16
+    poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 7 };  // 9-12 + NEE light SSBO at 16 + SDF at 17 + simplified material SSBO at 18
     poolSizes[4] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 };
 
     VkDescriptorPoolCreateInfo poolInfo{};
@@ -5918,22 +6024,41 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         TransitionRTOutputImages(cmd);
         m_RTDescriptorsWritten = true;
     } else if (m_RTDescriptorsWritten && m_RTMaterialBuffer != VK_NULL_HANDLE) {
-        // Update binding 9 each frame to reflect current material data.
+        // Update bindings 9 and 18 each frame to reflect current material data.
         // The buffer contents are already uploaded via UploadRTMaterials() above;
-        // this ensures the descriptor points to the correct buffer after any reallocation.
+        // this ensures the descriptors point to the correct buffers after any reallocation.
         VkDescriptorBufferInfo matBufInfo{};
         matBufInfo.buffer = m_RTMaterialBuffer;
         matBufInfo.offset = 0;
         matBufInfo.range = VK_WHOLE_SIZE;
 
-        VkWriteDescriptorSet matWrite{};
-        matWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        matWrite.dstSet = m_RTDescriptorSet;
-        matWrite.dstBinding = 9;
-        matWrite.descriptorCount = 1;
-        matWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        matWrite.pBufferInfo = &matBufInfo;
-        vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &matWrite, 0, nullptr);
+        VkDescriptorBufferInfo simplifiedMatBufInfo{};
+        simplifiedMatBufInfo.buffer = (m_RTSimplifiedMaterialBuffer != VK_NULL_HANDLE)
+            ? m_RTSimplifiedMaterialBuffer : m_RTDummyBuffer;
+        simplifiedMatBufInfo.offset = 0;
+        simplifiedMatBufInfo.range = (m_RTSimplifiedMaterialBuffer != VK_NULL_HANDLE)
+            ? VK_WHOLE_SIZE : static_cast<VkDeviceSize>(256);
+
+        std::array<VkWriteDescriptorSet, 2> matWrites{};
+
+        // Binding 9: Full material SSBO
+        matWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        matWrites[0].dstSet = m_RTDescriptorSet;
+        matWrites[0].dstBinding = 9;
+        matWrites[0].descriptorCount = 1;
+        matWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        matWrites[0].pBufferInfo = &matBufInfo;
+
+        // Binding 18: Simplified material SSBO
+        matWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        matWrites[1].dstSet = m_RTDescriptorSet;
+        matWrites[1].dstBinding = 18;
+        matWrites[1].descriptorCount = 1;
+        matWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        matWrites[1].pBufferInfo = &simplifiedMatBufInfo;
+
+        vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
+                               static_cast<u32>(matWrites.size()), matWrites.data(), 0, nullptr);
     }
 }
 
@@ -6041,6 +6166,25 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
         m_PathTracer->Dispatch(cmd, m_RTDescriptorSet, invViewProj, cameraPos,
                                lightDir, m_RTFrameCount);
         return;
+    }
+
+    // Upload SDF scene data to SSBO (binding 17) for reflection fallback sphere tracing
+    if (m_RTSDFMapped && m_SDFScene) {
+        auto sdfObjects = m_SDFScene->GetObjectBuffer();
+        u32 sdfCount = std::min(static_cast<u32>(sdfObjects.size()), 256u);
+
+        // Buffer layout: [u32 objectCount, u32 pad0, u32 pad1, u32 pad2, SDFObjectGPU objects[...]]
+        u32 header[4] = { sdfCount, 0, 0, 0 };
+        std::memcpy(m_RTSDFMapped, header, sizeof(header));
+        if (sdfCount > 0) {
+            std::memcpy(static_cast<u8*>(m_RTSDFMapped) + 16,
+                        sdfObjects.data(),
+                        sdfCount * sizeof(Renderer::SDFObjectGPU));
+        }
+    } else if (m_RTSDFMapped) {
+        // No SDF scene — zero the object count
+        u32 zero = 0;
+        std::memcpy(m_RTSDFMapped, &zero, sizeof(zero));
     }
 
     // Hybrid mode — dispatch individual effects
@@ -6297,7 +6441,35 @@ void RenderSystem::CreateRTDummyResources() {
     // Create RT material SSBO (binding 9) — persistently mapped, host visible + coherent
     EnsureRTMaterialBuffer(RT_MATERIAL_BUFFER_INITIAL_CAPACITY);
 
-    ENJIN_LOG_INFO(Renderer, "RT dummy resources, light UBOs, NEE light SSBOs, and material SSBO created");
+    // Create RT simplified material SSBO (binding 18) — pre-baked material properties
+    EnsureRTSimplifiedMaterialBuffer(RT_MATERIAL_BUFFER_INITIAL_CAPACITY);
+
+    // Create SDF scene SSBO (binding 17) — persistently mapped for per-frame SDF object upload
+    {
+        VkBufferCreateInfo bufInfo{};
+        bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufInfo.size = RT_SDF_BUFFER_SIZE;
+        bufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        vkCreateBuffer(device, &bufInfo, nullptr, &m_RTSDFBuffer);
+
+        VkMemoryRequirements memReqs;
+        vkGetBufferMemoryRequirements(device, m_RTSDFBuffer, &memReqs);
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memReqs.size;
+        allocInfo.memoryTypeIndex = ctx->FindMemoryType(memReqs.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        vkAllocateMemory(device, &allocInfo, nullptr, &m_RTSDFMemory);
+        vkBindBufferMemory(device, m_RTSDFBuffer, m_RTSDFMemory, 0);
+        if (vkMapMemory(device, m_RTSDFMemory, 0, RT_SDF_BUFFER_SIZE, 0, &m_RTSDFMapped) != VK_SUCCESS) {
+            m_RTSDFMapped = nullptr;
+        } else {
+            std::memset(m_RTSDFMapped, 0, RT_SDF_BUFFER_SIZE);
+        }
+    }
+
+    ENJIN_LOG_INFO(Renderer, "RT dummy resources, light UBOs, NEE light SSBOs, material SSBO, simplified material SSBO, and SDF SSBO created");
 }
 
 void RenderSystem::EnsureRTMaterialBuffer(u32 requiredCapacity) {
@@ -6372,6 +6544,79 @@ void RenderSystem::EnsureRTMaterialBuffer(u32 requiredCapacity) {
                    newCapacity, static_cast<unsigned long long>(bufferSize));
 }
 
+void RenderSystem::EnsureRTSimplifiedMaterialBuffer(u32 requiredCapacity) {
+    if (requiredCapacity <= m_RTSimplifiedMaterialBufferCapacity && m_RTSimplifiedMaterialBuffer != VK_NULL_HANDLE) return;
+
+    auto* ctx = m_Renderer->GetContext();
+    VkDevice device = ctx->GetDevice();
+
+    // Destroy old buffer if exists
+    if (m_RTSimplifiedMaterialMapped) {
+        vkUnmapMemory(device, m_RTSimplifiedMaterialMemory);
+        m_RTSimplifiedMaterialMapped = nullptr;
+    }
+    if (m_RTSimplifiedMaterialBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device, m_RTSimplifiedMaterialBuffer, nullptr);
+        m_RTSimplifiedMaterialBuffer = VK_NULL_HANDLE;
+    }
+    if (m_RTSimplifiedMaterialMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, m_RTSimplifiedMaterialMemory, nullptr);
+        m_RTSimplifiedMaterialMemory = VK_NULL_HANDLE;
+    }
+
+    // Grow by at least 2x to avoid frequent reallocations
+    u32 newCapacity = m_RTSimplifiedMaterialBufferCapacity > 0
+        ? m_RTSimplifiedMaterialBufferCapacity * 2
+        : RT_MATERIAL_BUFFER_INITIAL_CAPACITY;
+    if (newCapacity < requiredCapacity) newCapacity = requiredCapacity;
+
+    // RTSimplifiedMaterialGPU is 64 bytes per entry
+    VkDeviceSize simplifiedBufSize = static_cast<VkDeviceSize>(newCapacity) * 64;
+
+    VkBufferCreateInfo simplifiedBufCI{};
+    simplifiedBufCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    simplifiedBufCI.size = simplifiedBufSize;
+    simplifiedBufCI.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    simplifiedBufCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(device, &simplifiedBufCI, nullptr, &m_RTSimplifiedMaterialBuffer) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create RT simplified material SSBO (%u entries)", newCapacity);
+        return;
+    }
+
+    VkMemoryRequirements smemReqs;
+    vkGetBufferMemoryRequirements(device, m_RTSimplifiedMaterialBuffer, &smemReqs);
+    VkMemoryAllocateInfo sallocInfo{};
+    sallocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    sallocInfo.allocationSize = smemReqs.size;
+    sallocInfo.memoryTypeIndex = ctx->FindMemoryType(smemReqs.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    if (vkAllocateMemory(device, &sallocInfo, nullptr, &m_RTSimplifiedMaterialMemory) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to allocate RT simplified material SSBO memory");
+        vkDestroyBuffer(device, m_RTSimplifiedMaterialBuffer, nullptr);
+        m_RTSimplifiedMaterialBuffer = VK_NULL_HANDLE;
+        return;
+    }
+
+    if (vkBindBufferMemory(device, m_RTSimplifiedMaterialBuffer, m_RTSimplifiedMaterialMemory, 0) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to bind RT simplified material SSBO memory");
+        return;
+    }
+
+    if (vkMapMemory(device, m_RTSimplifiedMaterialMemory, 0, simplifiedBufSize, 0, &m_RTSimplifiedMaterialMapped) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to map RT simplified material SSBO");
+        m_RTSimplifiedMaterialMapped = nullptr;
+        return;
+    }
+
+    std::memset(m_RTSimplifiedMaterialMapped, 0, static_cast<size_t>(simplifiedBufSize));
+    m_RTSimplifiedMaterialBufferCapacity = newCapacity;
+
+    ENJIN_LOG_INFO(Renderer, "RT simplified material SSBO created/resized: %u entries (%llu bytes)",
+                   newCapacity, static_cast<unsigned long long>(simplifiedBufSize));
+}
+
 void RenderSystem::DestroyRTDummyResources() {
     if (!m_Renderer || !m_Renderer->GetContext()) return;
     VkDevice device = m_Renderer->GetContext()->GetDevice();
@@ -6407,6 +6652,17 @@ void RenderSystem::DestroyRTDummyResources() {
     if (m_RTMaterialBuffer != VK_NULL_HANDLE) { vkDestroyBuffer(device, m_RTMaterialBuffer, nullptr); m_RTMaterialBuffer = VK_NULL_HANDLE; }
     if (m_RTMaterialMemory != VK_NULL_HANDLE) { vkFreeMemory(device, m_RTMaterialMemory, nullptr); m_RTMaterialMemory = VK_NULL_HANDLE; }
     m_RTMaterialBufferCapacity = 0;
+
+    // Destroy SDF scene SSBO
+    if (m_RTSDFMapped) { vkUnmapMemory(device, m_RTSDFMemory); m_RTSDFMapped = nullptr; }
+    if (m_RTSDFBuffer != VK_NULL_HANDLE) { vkDestroyBuffer(device, m_RTSDFBuffer, nullptr); m_RTSDFBuffer = VK_NULL_HANDLE; }
+    if (m_RTSDFMemory != VK_NULL_HANDLE) { vkFreeMemory(device, m_RTSDFMemory, nullptr); m_RTSDFMemory = VK_NULL_HANDLE; }
+
+    // Destroy RT simplified material SSBO
+    if (m_RTSimplifiedMaterialMapped) { vkUnmapMemory(device, m_RTSimplifiedMaterialMemory); m_RTSimplifiedMaterialMapped = nullptr; }
+    if (m_RTSimplifiedMaterialBuffer != VK_NULL_HANDLE) { vkDestroyBuffer(device, m_RTSimplifiedMaterialBuffer, nullptr); m_RTSimplifiedMaterialBuffer = VK_NULL_HANDLE; }
+    if (m_RTSimplifiedMaterialMemory != VK_NULL_HANDLE) { vkFreeMemory(device, m_RTSimplifiedMaterialMemory, nullptr); m_RTSimplifiedMaterialMemory = VK_NULL_HANDLE; }
+    m_RTSimplifiedMaterialBufferCapacity = 0;
 }
 
 void RenderSystem::UploadRTMaterials() {
@@ -6433,20 +6689,34 @@ void RenderSystem::UploadRTMaterials() {
     // Ensure buffer is large enough (indexed by entity ID, so need maxEntityId + 1 entries)
     u32 requiredCapacity = maxEntityId + 1;
     bool bufferGrew = (requiredCapacity > m_RTMaterialBufferCapacity);
-    if (bufferGrew) {
+    bool simplifiedBufferGrew = (requiredCapacity > m_RTSimplifiedMaterialBufferCapacity);
+    if (bufferGrew || simplifiedBufferGrew) {
         // GPU must be idle before reallocating a buffer that may be in-flight
         vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
-        EnsureRTMaterialBuffer(requiredCapacity);
+        if (bufferGrew) EnsureRTMaterialBuffer(requiredCapacity);
+        if (simplifiedBufferGrew) EnsureRTSimplifiedMaterialBuffer(requiredCapacity);
 
-        // Force descriptor re-write since the buffer handle changed
+        // Force descriptor re-write since a buffer handle changed
         m_RTDescriptorsWritten = false;
     }
 
     if (!m_RTMaterialMapped) return;
 
+    // GPU struct matching GLSL RTSimplifiedMaterial (std430 layout, 64 bytes)
+    struct RTSimplifiedMaterialGPU {
+        f32 albedo[3];          f32 effectiveRoughness;  // 16 bytes
+        f32 f0[3];              f32 kDiffuse;             // 16 bytes
+        f32 emissive[3];        f32 opacity;              // 16 bytes
+        f32 transmission;       f32 ior;  f32 _pad0;  f32 _pad1; // 16 bytes
+    };
+    static_assert(sizeof(RTSimplifiedMaterialGPU) == 64, "RTSimplifiedMaterialGPU must be 64 bytes for std430");
+
     // Upload MaterialGPU for each renderable entity, indexed by entity ID
     // (matches gl_InstanceCustomIndexEXT set in AddInstance)
     auto* dst = static_cast<MaterialGPU*>(m_RTMaterialMapped);
+    auto* sdst = m_RTSimplifiedMaterialMapped
+                 ? static_cast<RTSimplifiedMaterialGPU*>(m_RTSimplifiedMaterialMapped)
+                 : nullptr;
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
         auto* mesh = m_World->GetComponent<MeshComponent>(entity);
@@ -6469,6 +6739,40 @@ void RenderSystem::UploadRTMaterials() {
             dst[eid].ior = 1.5f;
             dst[eid].sssColor = Math::Vector3(1.0f, 0.2f, 0.1f);
             dst[eid].sssRadius = 1.0f;
+        }
+
+        // Pre-compute simplified material from the just-written MaterialGPU
+        if (sdst) {
+            const auto& m = dst[eid];
+            auto& s = sdst[eid];
+
+            // Albedo
+            s.albedo[0] = m.baseColor.x;
+            s.albedo[1] = m.baseColor.y;
+            s.albedo[2] = m.baseColor.z;
+
+            // Effective roughness (clamped to avoid singularities, matches fetchMaterial)
+            s.effectiveRoughness = std::max(m.roughness, 0.04f);
+
+            // F0: reflectance at normal incidence = mix(0.04, baseColor, metallic)
+            f32 oneMinusMetallic = 1.0f - m.metallic;
+            s.f0[0] = 0.04f * oneMinusMetallic + m.baseColor.x * m.metallic;
+            s.f0[1] = 0.04f * oneMinusMetallic + m.baseColor.y * m.metallic;
+            s.f0[2] = 0.04f * oneMinusMetallic + m.baseColor.z * m.metallic;
+
+            // kDiffuse: diffuse weight = (1 - metallic)
+            s.kDiffuse = oneMinusMetallic;
+
+            // Emissive: pre-multiply color * strength
+            s.emissive[0] = m.emissiveColor.x * m.emissiveStrength;
+            s.emissive[1] = m.emissiveColor.y * m.emissiveStrength;
+            s.emissive[2] = m.emissiveColor.z * m.emissiveStrength;
+
+            s.opacity = m.opacity;
+            s.transmission = m.transmission;
+            s.ior = m.ior;
+            s._pad0 = 0.0f;
+            s._pad1 = 0.0f;
         }
     }
 }
@@ -6552,8 +6856,26 @@ void RenderSystem::WriteRTDescriptors() {
     neeBufInfo.offset = 0;
     neeBufInfo.range = m_RTNEELightBuffer[frameIdx] ? static_cast<VkDeviceSize>(RT_NEE_LIGHT_BUFFER_SIZE) : 256;
 
-    // Build write array for all 17 bindings
-    std::array<VkWriteDescriptorSet, 17> writes{};
+    // Binding 17: SDF scene SSBO
+    VkDescriptorBufferInfo sdfBufInfo{};
+    sdfBufInfo.buffer = m_RTSDFBuffer ? m_RTSDFBuffer : m_RTDummyBuffer;
+    sdfBufInfo.offset = 0;
+    sdfBufInfo.range = m_RTSDFBuffer ? static_cast<VkDeviceSize>(RT_SDF_BUFFER_SIZE) : 256;
+
+    // Binding 18: Simplified material SSBO
+    VkDescriptorBufferInfo simplifiedMatBufInfo{};
+    if (m_RTSimplifiedMaterialBuffer != VK_NULL_HANDLE && m_RTSimplifiedMaterialBufferCapacity > 0) {
+        simplifiedMatBufInfo.buffer = m_RTSimplifiedMaterialBuffer;
+        simplifiedMatBufInfo.offset = 0;
+        simplifiedMatBufInfo.range = VK_WHOLE_SIZE;
+    } else {
+        simplifiedMatBufInfo.buffer = m_RTDummyBuffer;
+        simplifiedMatBufInfo.offset = 0;
+        simplifiedMatBufInfo.range = 256;
+    }
+
+    // Build write array for all 19 bindings
+    std::array<VkWriteDescriptorSet, 19> writes{};
 
     // Binding 0: TLAS
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -6633,9 +6955,25 @@ void RenderSystem::WriteRTDescriptors() {
     writes[16].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[16].pBufferInfo = &neeBufInfo;
 
+    // Binding 17: SDF scene SSBO
+    writes[17].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[17].dstSet = m_RTDescriptorSet;
+    writes[17].dstBinding = 17;
+    writes[17].descriptorCount = 1;
+    writes[17].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[17].pBufferInfo = &sdfBufInfo;
+
+    // Binding 18: Simplified material SSBO
+    writes[18].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[18].dstSet = m_RTDescriptorSet;
+    writes[18].dstBinding = 18;
+    writes[18].descriptorCount = 1;
+    writes[18].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[18].pBufferInfo = &simplifiedMatBufInfo;
+
     vkUpdateDescriptorSets(device, static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
 
-    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 17 bindings)");
+    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 19 bindings)");
 }
 
 void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {
@@ -6728,8 +7066,9 @@ void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math
         // Convergence
         u32 maxBounces;
         u32 accumulatedSamples;
-        u32 _pad0;
-        u32 _pad1;
+        // SDF fallback (reflection shader reads these at offset 152-160)
+        f32 sdfFallbackEnabled;   // >0.5 = SDF sphere-trace fallback active
+        f32 sdfMaxDistance;       // Max sphere-trace distance
     };
 
     RTLightData data{};
@@ -6767,6 +7106,15 @@ void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math
     // Convergence
     data.maxBounces = maxBounces;
     data.accumulatedSamples = accumulatedSamples;
+
+    // SDF fallback settings (read by reflection shader at offsets 152-160)
+    if (m_RTReflections && m_SDFScene && m_SDFScene->GetObjectCount() > 0) {
+        data.sdfFallbackEnabled = m_RTReflections->GetConfig().sdfFallback ? 1.0f : 0.0f;
+        data.sdfMaxDistance = m_RTReflections->GetConfig().sdfMaxDistance;
+    } else {
+        data.sdfFallbackEnabled = 0.0f;
+        data.sdfMaxDistance = 0.0f;
+    }
 
     std::memcpy(m_RTLightUBOMapped[frameIdx], &data, sizeof(data));
 

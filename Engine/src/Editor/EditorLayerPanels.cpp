@@ -121,22 +121,89 @@ namespace Enjin {
 namespace Editor {
 
 void EditorLayer::DrawConsolePanel() {
-    ImGui::Begin("Console");
+    bool panelOpen = true;
+    ImGui::Begin("Console", &panelOpen);
+    if (!panelOpen) {
+        SetPanelVisibility(EditorPanel::Console, false);
+    }
 
-    // Console output
+    // ── Feed tabs ──
+    const char* feedLabels[] = { "All", "Editor", "Runtime" };
+    for (int i = 0; i < 3; ++i) {
+        if (i > 0) ImGui::SameLine();
+        bool selected = (m_ConsoleFeedTab == i);
+        if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+        if (ImGui::SmallButton(feedLabels[i])) m_ConsoleFeedTab = i;
+        if (selected) ImGui::PopStyleColor();
+    }
+
+    ImGui::SameLine();
+    ImGui::TextDisabled("|");
+    ImGui::SameLine();
+
+    // ── Level filter toggles (colored) ──
+    auto toggleButton = [](const char* label, bool& active, const ImVec4& color) {
+        if (active) ImGui::PushStyleColor(ImGuiCol_Button, color);
+        else        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
+        if (ImGui::SmallButton(label)) active = !active;
+        ImGui::PopStyleColor();
+    };
+
+    toggleButton("Info",  m_ConsoleShowInfo,  ImVec4(0.20f, 0.40f, 0.60f, 1.0f));
+    ImGui::SameLine();
+    toggleButton("Warn",  m_ConsoleShowWarn,  ImVec4(0.60f, 0.50f, 0.10f, 1.0f));
+    ImGui::SameLine();
+    toggleButton("Error", m_ConsoleShowError, ImVec4(0.65f, 0.15f, 0.15f, 1.0f));
+
+    // ── Console output ──
     ImGui::BeginChild("ConsoleOutput", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), true);
-    if (m_ConsoleLog.empty()) {
+
+    // Classify categories into editor vs runtime feeds
+    // Editor: Editor, Asset, Assets, Build, Core
+    // Runtime: Game, Script, Physics, Audio, AI, Animation, Network, Renderer, Player, Procedural
+    auto isEditorCategory = [](LogCategory cat) -> bool {
+        return cat == LogCategory::Editor || cat == LogCategory::Asset ||
+               cat == LogCategory::Assets || cat == LogCategory::Build ||
+               cat == LogCategory::Core;
+    };
+
+    bool anyVisible = false;
+    for (const auto& entry : m_ConsoleLog) {
+        // Level filter
+        if (entry.level <= LogLevel::Info  && !m_ConsoleShowInfo)  continue;
+        if (entry.level == LogLevel::Warn  && !m_ConsoleShowWarn)  continue;
+        if (entry.level >= LogLevel::Error && !m_ConsoleShowError) continue;
+
+        // Feed filter
+        if (m_ConsoleFeedTab == 1 && !isEditorCategory(entry.category)) continue;
+        if (m_ConsoleFeedTab == 2 &&  isEditorCategory(entry.category)) continue;
+
+        // Color by level
+        ImVec4 color;
+        if (entry.level >= LogLevel::Error) {
+            color = ImVec4(1.0f, 0.35f, 0.35f, 1.0f);  // Red
+        } else if (entry.level == LogLevel::Warn) {
+            color = ImVec4(1.0f, 0.85f, 0.30f, 1.0f);  // Yellow
+        } else {
+            color = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);  // Light gray
+        }
+
+        ImGui::PushStyleColor(ImGuiCol_Text, color);
+        ImGui::TextUnformatted(entry.message.c_str());
+        ImGui::PopStyleColor();
+        anyVisible = true;
+    }
+
+    if (!anyVisible) {
         DrawEmptyState(">>", "Console Empty", "Messages will appear here");
     }
-    for (const auto& line : m_ConsoleLog) {
-        ImGui::TextUnformatted(line.c_str());
-    }
+
     if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
         ImGui::SetScrollHereY(1.0f);
     }
     ImGui::EndChild();
 
-    // Input line
+    // ── Input line ──
     static char inputBuf[256] = "";
     if (ImGui::InputText("##ConsoleInput", inputBuf, sizeof(inputBuf),
                          ImGuiInputTextFlags_EnterReturnsTrue)) {
@@ -205,7 +272,11 @@ void EditorLayer::RefreshAssetBrowserCache() {
 }
 
 void EditorLayer::DrawAssetBrowserPanel() {
-    ImGui::Begin("Asset Browser");
+    bool panelOpen = true;
+    ImGui::Begin("Asset Browser", &panelOpen);
+    if (!panelOpen) {
+        SetPanelVisibility(EditorPanel::AssetBrowser, false);
+    }
 
     // Initialize browse path to current working directory
     if (m_AssetBrowserPath.empty()) {
@@ -697,7 +768,11 @@ void EditorLayer::DrawAssetBrowserPanel() {
 
 
 void EditorLayer::DrawSceneListPanel() {
-    ImGui::Begin("Scene List", nullptr, ImGuiWindowFlags_None);
+    bool panelOpen = true;
+    ImGui::Begin("Scene List", &panelOpen, ImGuiWindowFlags_None);
+    if (!panelOpen) {
+        SetPanelVisibility(EditorPanel::SceneList, false);
+    }
 
     // Project header
     ImGui::Text("Project: %s", m_SceneManager.GetProjectName().c_str());
@@ -983,19 +1058,343 @@ void EditorLayer::ExecuteConsoleCommand(const std::string& command) {
     for (auto& c : cmdLower) c = static_cast<char>(std::tolower(c));
 
     if (cmdLower == "help") {
-        m_ConsoleLog.push_back("Available commands:");
-        m_ConsoleLog.push_back("  help              - Show this help");
-        m_ConsoleLog.push_back("  clear             - Clear console");
-        m_ConsoleLog.push_back("  list              - List all entities");
-        m_ConsoleLog.push_back("  select <id>       - Select entity by ID");
-        m_ConsoleLog.push_back("  create <name>     - Create empty entity");
-        m_ConsoleLog.push_back("  delete            - Delete selected entity");
-        m_ConsoleLog.push_back("  pos <x> <y> <z>   - Set selected entity position");
-        m_ConsoleLog.push_back("  wireframe         - Toggle wireframe mode");
-        m_ConsoleLog.push_back("  shadows           - Toggle shadows");
-        m_ConsoleLog.push_back("  stats             - Show scene statistics");
-        m_ConsoleLog.push_back("  save <path>       - Save scene");
-        m_ConsoleLog.push_back("  load <path>       - Load scene");
+        // Check if user asked for help on a specific command
+        std::string helpTopic;
+        iss >> helpTopic;
+        for (auto& c : helpTopic) c = static_cast<char>(std::tolower(c));
+
+        if (helpTopic.empty()) {
+            m_ConsoleLog.push_back("=============================================================");
+            m_ConsoleLog.push_back("  TEGE Console — Command Reference");
+            m_ConsoleLog.push_back("  Type 'help <command>' for detailed usage");
+            m_ConsoleLog.push_back("=============================================================");
+            m_ConsoleLog.push_back("");
+            m_ConsoleLog.push_back("--- GENERAL ---");
+            m_ConsoleLog.push_back("  help [cmd]            Show this list or detailed help");
+            m_ConsoleLog.push_back("  clear                 Clear console output");
+            m_ConsoleLog.push_back("  stats                 Show scene statistics");
+            m_ConsoleLog.push_back("  fps                   Show current FPS and frame time");
+            m_ConsoleLog.push_back("  version               Show engine version");
+            m_ConsoleLog.push_back("");
+            m_ConsoleLog.push_back("--- ENTITIES ---");
+            m_ConsoleLog.push_back("  list                  List all entities in the scene");
+            m_ConsoleLog.push_back("  select <id>           Select entity by ID");
+            m_ConsoleLog.push_back("  deselect              Clear selection");
+            m_ConsoleLog.push_back("  create <name>         Create an empty entity");
+            m_ConsoleLog.push_back("  delete                Delete selected entity(ies)");
+            m_ConsoleLog.push_back("  inspect               Show selected entity components");
+            m_ConsoleLog.push_back("");
+            m_ConsoleLog.push_back("--- TRANSFORM ---");
+            m_ConsoleLog.push_back("  pos <x> <y> <z>       Set selected entity position");
+            m_ConsoleLog.push_back("  rot <x> <y> <z>       Set selected entity rotation (degrees)");
+            m_ConsoleLog.push_back("  scale <x> <y> <z>     Set selected entity scale");
+            m_ConsoleLog.push_back("  getpos                Print selected entity position");
+            m_ConsoleLog.push_back("");
+            m_ConsoleLog.push_back("--- RENDERING ---");
+            m_ConsoleLog.push_back("  wireframe             Toggle wireframe mode");
+            m_ConsoleLog.push_back("  shadows               Toggle shadows");
+            m_ConsoleLog.push_back("  fog <density>         Set fog density (0 = off)");
+            m_ConsoleLog.push_back("  ambient <r> <g> <b>   Set ambient color (0.0-1.0)");
+            m_ConsoleLog.push_back("  culling               Toggle backface culling");
+            m_ConsoleLog.push_back("  hdr                   Toggle HDR rendering");
+            m_ConsoleLog.push_back("");
+            m_ConsoleLog.push_back("--- RETRO ---");
+            m_ConsoleLog.push_back("  flatshading           Toggle PS1-style flat shading");
+            m_ConsoleLog.push_back("  vertexsnap            Toggle PS1-style vertex snapping");
+            m_ConsoleLog.push_back("  affine                Toggle affine texture mapping");
+            m_ConsoleLog.push_back("  gouraud               Toggle Gouraud-only shading");
+            m_ConsoleLog.push_back("  stipple               Toggle stipple transparency");
+            m_ConsoleLog.push_back("");
+            m_ConsoleLog.push_back("--- SCENE ---");
+            m_ConsoleLog.push_back("  save <path>           Save scene to file");
+            m_ConsoleLog.push_back("  load <path>           Load scene from file");
+            m_ConsoleLog.push_back("  play                  Start play mode");
+            m_ConsoleLog.push_back("  stop                  Stop play mode");
+            m_ConsoleLog.push_back("  pause                 Pause play mode");
+            m_ConsoleLog.push_back("");
+            m_ConsoleLog.push_back("--- COMPONENTS ---");
+            m_ConsoleLog.push_back("  addcomp <type>        Add component to selected entity");
+            m_ConsoleLog.push_back("  removecomp <type>     Remove component from selected entity");
+            m_ConsoleLog.push_back("  setname <name>        Set entity name");
+            m_ConsoleLog.push_back("  setnotes <text>       Set entity notes");
+            m_ConsoleLog.push_back("  visible [true/false]  Toggle or set entity visibility");
+            m_ConsoleLog.push_back("  components            List all components on selected entity");
+            m_ConsoleLog.push_back("");
+            m_ConsoleLog.push_back("--- MATERIALS ---");
+            m_ConsoleLog.push_back("  setcolor <r> <g> <b>  Set base color (0-1)");
+            m_ConsoleLog.push_back("  setemissive <r> <g> <b> <s>  Set emissive color + strength");
+            m_ConsoleLog.push_back("  setmetallic <value>   Set metallic (0-1)");
+            m_ConsoleLog.push_back("  setroughness <value>  Set roughness (0-1)");
+            m_ConsoleLog.push_back("  setopacity <value>    Set opacity (0-1)");
+            m_ConsoleLog.push_back("");
+            m_ConsoleLog.push_back("--- LIGHTS ---");
+            m_ConsoleLog.push_back("  lightcolor <r> <g> <b>  Set light color");
+            m_ConsoleLog.push_back("  lightintensity <val>  Set light intensity");
+            m_ConsoleLog.push_back("  lighttype <type>      Set light type (dir/point/spot)");
+            m_ConsoleLog.push_back("  lightrange <val>      Set light range");
+            m_ConsoleLog.push_back("");
+            m_ConsoleLog.push_back("--- CAMERA ---");
+            m_ConsoleLog.push_back("  fov <degrees>         Set camera field of view");
+            m_ConsoleLog.push_back("  near <value>          Set camera near plane");
+            m_ConsoleLog.push_back("  far <value>           Set camera far plane");
+            m_ConsoleLog.push_back("");
+            m_ConsoleLog.push_back("--- QUERY ---");
+            m_ConsoleLog.push_back("  find <name>           Find entities by name substring");
+            m_ConsoleLog.push_back("  count <component>     Count entities with component type");
+            m_ConsoleLog.push_back("  children              List children of selected entity");
+            m_ConsoleLog.push_back("  parent                Show parent of selected entity");
+            m_ConsoleLog.push_back("");
+            m_ConsoleLog.push_back("--- BULK ---");
+            m_ConsoleLog.push_back("  selectall             Select all entities");
+            m_ConsoleLog.push_back("  hideall               Hide all entities");
+            m_ConsoleLog.push_back("  showall               Show all entities");
+            m_ConsoleLog.push_back("  deleteall confirm     Delete all entities");
+            m_ConsoleLog.push_back("");
+            m_ConsoleLog.push_back("--- DEBUG ---");
+            m_ConsoleLog.push_back("  colliders             Toggle collider wireframe display");
+            m_ConsoleLog.push_back("  grid                  Toggle editor grid");
+            m_ConsoleLog.push_back("  rain                  Toggle rain effect");
+            m_ConsoleLog.push_back("  snow <intensity>      Set snow intensity (0 = off)");
+            m_ConsoleLog.push_back("  shadowres <size>      Set shadow resolution (512-4096)");
+            m_ConsoleLog.push_back("  shadowdist <dist>     Set shadow distance");
+            m_ConsoleLog.push_back("  ambient_intensity <v> Set ambient intensity");
+            m_ConsoleLog.push_back("  curvature <value>     Set world curvature strength");
+            m_ConsoleLog.push_back("=============================================================");
+        } else if (helpTopic == "pos") {
+            m_ConsoleLog.push_back("pos <x> <y> <z>");
+            m_ConsoleLog.push_back("  Set the world position of the selected entity.");
+            m_ConsoleLog.push_back("  Example: pos 10 5.5 -3");
+        } else if (helpTopic == "rot") {
+            m_ConsoleLog.push_back("rot <x> <y> <z>");
+            m_ConsoleLog.push_back("  Set rotation of selected entity in degrees (Euler angles).");
+            m_ConsoleLog.push_back("  Example: rot 0 90 0  (rotate 90 degrees around Y)");
+        } else if (helpTopic == "scale") {
+            m_ConsoleLog.push_back("scale <x> <y> <z>");
+            m_ConsoleLog.push_back("  Set scale of selected entity.");
+            m_ConsoleLog.push_back("  Example: scale 2 2 2  (double size)");
+        } else if (helpTopic == "select") {
+            m_ConsoleLog.push_back("select <entity_id>");
+            m_ConsoleLog.push_back("  Select an entity by its numeric ID.");
+            m_ConsoleLog.push_back("  Use 'list' to see all entity IDs.");
+        } else if (helpTopic == "fog") {
+            m_ConsoleLog.push_back("fog <density>");
+            m_ConsoleLog.push_back("  Set fog density. 0 = no fog, 0.01-0.1 = typical range.");
+            m_ConsoleLog.push_back("  Example: fog 0.05");
+        } else if (helpTopic == "ambient") {
+            m_ConsoleLog.push_back("ambient <r> <g> <b>");
+            m_ConsoleLog.push_back("  Set ambient light color (0.0 to 1.0 per channel).");
+            m_ConsoleLog.push_back("  Example: ambient 0.2 0.2 0.3  (slightly blue ambient)");
+        } else if (helpTopic == "timescale") {
+            m_ConsoleLog.push_back("timescale <factor>");
+            m_ConsoleLog.push_back("  Set game time scale. 1.0 = normal, 0.5 = half speed, 2.0 = double.");
+            m_ConsoleLog.push_back("  0 = frozen. Negative values not supported.");
+        } else if (helpTopic == "snow") {
+            m_ConsoleLog.push_back("snow <intensity>");
+            m_ConsoleLog.push_back("  Set snow particle intensity. 0 = off, 1.0 = normal, 2.0+ = blizzard.");
+        } else {
+            m_ConsoleLog.push_back("No detailed help for '" + helpTopic + "'. Type 'help' for full list.");
+        }
+    } else if (cmdLower == "version") {
+        m_ConsoleLog.push_back("TEGE (The Enjin Game Engine) v" ENJIN_VERSION_STRING);
+    } else if (cmdLower == "fps") {
+        f32 fps = 1.0f / m_LastDeltaTime;
+        f32 ms = m_LastDeltaTime * 1000.0f;
+        m_ConsoleLog.push_back("FPS: " + std::to_string(static_cast<int>(fps)) + "  (" +
+            std::to_string(ms).substr(0, 5) + " ms/frame)");
+    } else if (cmdLower == "deselect") {
+        ClearSelection();
+        m_ConsoleLog.push_back("Selection cleared");
+    } else if (cmdLower == "inspect") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+        } else {
+            ECS::Entity e = m_PrimarySelected;
+            std::string name = "Entity " + std::to_string(e);
+            if (auto* nc = m_World->GetComponent<ECS::NameComponent>(e)) name = nc->name;
+            m_ConsoleLog.push_back("Inspecting: [" + std::to_string(e) + "] " + name);
+            if (m_World->HasComponent<ECS::TransformComponent>(e)) {
+                auto* t = m_World->GetComponent<ECS::TransformComponent>(e);
+                m_ConsoleLog.push_back("  Transform: pos(" +
+                    std::to_string(t->position.x) + ", " + std::to_string(t->position.y) + ", " + std::to_string(t->position.z) +
+                    ") visible=" + (t->visible ? "true" : "false"));
+            }
+            if (m_World->HasComponent<ECS::MeshComponent>(e)) {
+                auto* m = m_World->GetComponent<ECS::MeshComponent>(e);
+                m_ConsoleLog.push_back("  Mesh: " + std::to_string(m->vertices.size()) + " verts, " +
+                    std::to_string(m->indices.size() / 3) + " tris");
+            }
+            if (m_World->HasComponent<ECS::MaterialComponent>(e)) m_ConsoleLog.push_back("  Material: yes");
+            if (m_World->HasComponent<ECS::LightComponent>(e)) m_ConsoleLog.push_back("  Light: yes");
+            if (m_World->HasComponent<ECS::CameraComponent>(e)) m_ConsoleLog.push_back("  Camera: yes");
+            if (m_World->HasComponent<ECS::ScriptComponent>(e)) m_ConsoleLog.push_back("  Script: yes");
+        }
+    } else if (cmdLower == "getpos") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+        } else {
+            auto* t = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
+            if (t) {
+                m_ConsoleLog.push_back("Position: " + std::to_string(t->position.x) + ", " +
+                    std::to_string(t->position.y) + ", " + std::to_string(t->position.z));
+            } else {
+                m_ConsoleLog.push_back("Selected entity has no transform");
+            }
+        }
+    } else if (cmdLower == "rot") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        f32 x, y, z;
+        if (iss >> x >> y >> z) {
+            auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
+            if (transform) {
+                transform->rotation = Math::Quaternion::FromEuler(
+                    Math::Vector3(Math::Radians(x), Math::Radians(y), Math::Radians(z)));
+                m_ConsoleLog.push_back("Set rotation to " + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + " degrees");
+            } else {
+                m_ConsoleLog.push_back("Selected entity has no transform");
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: rot <x> <y> <z> (degrees)");
+        }
+    } else if (cmdLower == "scale") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        f32 x, y, z;
+        if (iss >> x >> y >> z) {
+            auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
+            if (transform) {
+                transform->scale = Math::Vector3(x, y, z);
+                m_ConsoleLog.push_back("Set scale to " + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z));
+            } else {
+                m_ConsoleLog.push_back("Selected entity has no transform");
+            }
+        } else {
+            // Single uniform scale
+            f32 s;
+            std::istringstream retry(command);
+            std::string skip; retry >> skip;
+            if (retry >> s) {
+                auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
+                if (transform) {
+                    transform->scale = Math::Vector3(s, s, s);
+                    m_ConsoleLog.push_back("Set uniform scale to " + std::to_string(s));
+                }
+            } else {
+                m_ConsoleLog.push_back("Usage: scale <x> <y> <z> or scale <uniform>");
+            }
+        }
+    } else if (cmdLower == "fog") {
+        f32 density;
+        if (iss >> density) {
+            if (m_RenderSystem) {
+                m_RenderSystem->SetFogParams(density, 10.0f, 100.0f, 0.5f);
+                m_ConsoleLog.push_back("Fog density set to " + std::to_string(density));
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: fog <density> (e.g. fog 0.05)");
+        }
+    } else if (cmdLower == "ambient") {
+        f32 r, g, b;
+        if (iss >> r >> g >> b) {
+            if (m_RenderSystem) {
+                m_RenderSystem->SetAmbientColor(Math::Vector3(r, g, b));
+                m_ConsoleLog.push_back("Ambient color set to " + std::to_string(r) + ", " + std::to_string(g) + ", " + std::to_string(b));
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: ambient <r> <g> <b> (0.0-1.0)");
+        }
+    } else if (cmdLower == "culling") {
+        if (m_RenderSystem) {
+            bool enabled = !m_RenderSystem->IsBackfaceCullingEnabled();
+            m_RenderSystem->SetBackfaceCullingEnabled(enabled);
+            m_ConsoleLog.push_back(std::string("Backface culling ") + (enabled ? "ON" : "OFF"));
+        }
+    } else if (cmdLower == "hdr") {
+        if (m_RenderSystem) {
+            bool enabled = !m_RenderSystem->IsHDREnabled();
+            m_RenderSystem->SetHDREnabled(enabled);
+            m_ConsoleLog.push_back(std::string("HDR ") + (enabled ? "ON" : "OFF"));
+        }
+    } else if (cmdLower == "flatshading") {
+        if (m_RenderSystem) {
+            m_RenderSystem->SetGlobalFlatShading(!m_RenderSystem->GetGlobalFlatShading());
+            m_ConsoleLog.push_back(std::string("Flat shading ") + (m_RenderSystem->GetGlobalFlatShading() ? "ON" : "OFF"));
+        }
+    } else if (cmdLower == "vertexsnap") {
+        if (m_RenderSystem) {
+            m_RenderSystem->SetGlobalVertexSnapping(!m_RenderSystem->GetGlobalVertexSnapping());
+            m_ConsoleLog.push_back(std::string("Vertex snapping ") + (m_RenderSystem->GetGlobalVertexSnapping() ? "ON" : "OFF"));
+        }
+    } else if (cmdLower == "affine") {
+        if (m_RenderSystem) {
+            m_RenderSystem->SetGlobalAffineTexturing(!m_RenderSystem->GetGlobalAffineTexturing());
+            m_ConsoleLog.push_back(std::string("Affine texturing ") + (m_RenderSystem->GetGlobalAffineTexturing() ? "ON" : "OFF"));
+        }
+    } else if (cmdLower == "gouraud") {
+        if (m_RenderSystem) {
+            m_RenderSystem->SetGlobalGouraudOnly(!m_RenderSystem->GetGlobalGouraudOnly());
+            m_ConsoleLog.push_back(std::string("Gouraud-only ") + (m_RenderSystem->GetGlobalGouraudOnly() ? "ON" : "OFF"));
+        }
+    } else if (cmdLower == "stipple") {
+        if (m_RenderSystem) {
+            m_RenderSystem->SetGlobalStippleTransparency(!m_RenderSystem->GetGlobalStippleTransparency());
+            m_ConsoleLog.push_back(std::string("Stipple transparency ") + (m_RenderSystem->GetGlobalStippleTransparency() ? "ON" : "OFF"));
+        }
+    } else if (cmdLower == "play") {
+        if (m_PlayMode.IsStopped()) {
+            m_PrePlayRenderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
+                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            StartPlayMode();
+            m_ConsoleLog.push_back("Play mode started");
+        } else {
+            m_ConsoleLog.push_back("Already in play mode");
+        }
+    } else if (cmdLower == "stop") {
+        if (!m_PlayMode.IsStopped()) {
+            m_PlayMode.Stop();
+            ClearSelection();
+            m_PrePlayRenderSettings.ApplyToRuntime(
+                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            m_ConsoleLog.push_back("Play mode stopped");
+        } else {
+            m_ConsoleLog.push_back("Not in play mode");
+        }
+    } else if (cmdLower == "pause") {
+        if (m_PlayMode.IsPlaying()) {
+            m_PlayMode.Pause();
+            m_ConsoleLog.push_back("Play mode paused");
+        } else if (m_PlayMode.IsPaused()) {
+            m_PlayMode.Resume();
+            m_ConsoleLog.push_back("Play mode resumed");
+        } else {
+            m_ConsoleLog.push_back("Not in play mode");
+        }
+    } else if (cmdLower == "colliders") {
+        m_ShowColliderWireframes = !m_ShowColliderWireframes;
+        m_ConsoleLog.push_back(std::string("Collider wireframes ") + (m_ShowColliderWireframes ? "ON" : "OFF"));
+    } else if (cmdLower == "grid") {
+        m_ShowGrid = !m_ShowGrid;
+        m_ConsoleLog.push_back(std::string("Grid ") + (m_ShowGrid ? "ON" : "OFF"));
+    } else if (cmdLower == "rain") {
+        if (m_RenderSystem) {
+            bool active = !m_RenderSystem->IsRainActive();
+            m_RenderSystem->SetRainActive(active);
+            m_ConsoleLog.push_back(std::string("Rain ") + (active ? "ON" : "OFF"));
+        }
+    } else if (cmdLower == "snow") {
+        f32 intensity;
+        if (iss >> intensity) {
+            if (m_RenderSystem) {
+                m_RenderSystem->SetSnowIntensity(intensity);
+                m_ConsoleLog.push_back("Snow intensity set to " + std::to_string(intensity));
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: snow <intensity> (0=off, 1=normal, 2+=blizzard)");
+        }
     } else if (cmdLower == "clear") {
         m_ConsoleLog.clear();
     } else if (cmdLower == "list") {
@@ -1112,6 +1511,635 @@ void EditorLayer::ExecuteConsoleCommand(const std::string& command) {
             OpenScene(path);
             m_ConsoleLog.push_back("Loaded scene from " + path);
         }
+    // =====================================================================
+    // Component commands
+    // =====================================================================
+    } else if (cmdLower == "addcomp") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        std::string type;
+        iss >> type;
+        for (auto& c : type) c = static_cast<char>(std::tolower(c));
+        ECS::Entity e = m_PrimarySelected;
+        if (type == "mesh") {
+            if (m_World->HasComponent<ECS::MeshComponent>(e)) { m_ConsoleLog.push_back("Entity already has MeshComponent"); }
+            else { m_World->AddComponent<ECS::MeshComponent>(e); m_ConsoleLog.push_back("Added MeshComponent"); }
+        } else if (type == "material") {
+            if (m_World->HasComponent<ECS::MaterialComponent>(e)) { m_ConsoleLog.push_back("Entity already has MaterialComponent"); }
+            else { m_World->AddComponent<ECS::MaterialComponent>(e); m_ConsoleLog.push_back("Added MaterialComponent"); }
+        } else if (type == "light") {
+            if (m_World->HasComponent<ECS::LightComponent>(e)) { m_ConsoleLog.push_back("Entity already has LightComponent"); }
+            else { m_World->AddComponent<ECS::LightComponent>(e); m_ConsoleLog.push_back("Added LightComponent"); }
+        } else if (type == "camera") {
+            if (m_World->HasComponent<ECS::CameraComponent>(e)) { m_ConsoleLog.push_back("Entity already has CameraComponent"); }
+            else { m_World->AddComponent<ECS::CameraComponent>(e); m_ConsoleLog.push_back("Added CameraComponent"); }
+        } else if (type == "script") {
+            if (m_World->HasComponent<ECS::ScriptComponent>(e)) { m_ConsoleLog.push_back("Entity already has ScriptComponent"); }
+            else { m_World->AddComponent<ECS::ScriptComponent>(e); m_ConsoleLog.push_back("Added ScriptComponent"); }
+        } else if (type == "audio") {
+            if (m_World->HasComponent<ECS::AudioSourceComponent>(e)) { m_ConsoleLog.push_back("Entity already has AudioSourceComponent"); }
+            else { m_World->AddComponent<ECS::AudioSourceComponent>(e); m_ConsoleLog.push_back("Added AudioSourceComponent"); }
+        } else if (type == "rigidbody") {
+            if (m_World->HasComponent<ECS::RigidbodyComponent>(e)) { m_ConsoleLog.push_back("Entity already has RigidbodyComponent"); }
+            else { m_World->AddComponent<ECS::RigidbodyComponent>(e); m_ConsoleLog.push_back("Added RigidbodyComponent"); }
+        } else if (type == "name") {
+            if (m_World->HasComponent<ECS::NameComponent>(e)) { m_ConsoleLog.push_back("Entity already has NameComponent"); }
+            else { m_World->AddComponent<ECS::NameComponent>(e); m_ConsoleLog.push_back("Added NameComponent"); }
+        } else if (type == "notes") {
+            if (m_World->HasComponent<ECS::NotesComponent>(e)) { m_ConsoleLog.push_back("Entity already has NotesComponent"); }
+            else { m_World->AddComponent<ECS::NotesComponent>(e); m_ConsoleLog.push_back("Added NotesComponent"); }
+        } else if (type == "sprite") {
+            if (m_World->HasComponent<ECS::Sprite2DComponent>(e)) { m_ConsoleLog.push_back("Entity already has Sprite2DComponent"); }
+            else { m_World->AddComponent<ECS::Sprite2DComponent>(e); m_ConsoleLog.push_back("Added Sprite2DComponent"); }
+        } else if (type == "particle") {
+            if (m_World->HasComponent<ECS::ParticleEmitterComponent>(e)) { m_ConsoleLog.push_back("Entity already has ParticleEmitterComponent"); }
+            else { m_World->AddComponent<ECS::ParticleEmitterComponent>(e); m_ConsoleLog.push_back("Added ParticleEmitterComponent"); }
+        } else if (type == "tween") {
+            if (m_World->HasComponent<ECS::TweenComponent>(e)) { m_ConsoleLog.push_back("Entity already has TweenComponent"); }
+            else { m_World->AddComponent<ECS::TweenComponent>(e); m_ConsoleLog.push_back("Added TweenComponent"); }
+        } else if (type == "lod") {
+            if (m_World->HasComponent<ECS::LODComponent>(e)) { m_ConsoleLog.push_back("Entity already has LODComponent"); }
+            else { m_World->AddComponent<ECS::LODComponent>(e); m_ConsoleLog.push_back("Added LODComponent"); }
+        } else {
+            m_ConsoleLog.push_back("Unknown component type: " + type);
+            m_ConsoleLog.push_back("  Types: mesh, material, light, camera, script, audio, rigidbody, name, notes, sprite, particle, tween, lod");
+        }
+    } else if (cmdLower == "removecomp") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        std::string type;
+        iss >> type;
+        for (auto& c : type) c = static_cast<char>(std::tolower(c));
+        ECS::Entity e = m_PrimarySelected;
+        if (type == "mesh") {
+            if (!m_World->HasComponent<ECS::MeshComponent>(e)) { m_ConsoleLog.push_back("Entity has no MeshComponent"); }
+            else { m_World->RemoveComponent<ECS::MeshComponent>(e); m_ConsoleLog.push_back("Removed MeshComponent"); }
+        } else if (type == "material") {
+            if (!m_World->HasComponent<ECS::MaterialComponent>(e)) { m_ConsoleLog.push_back("Entity has no MaterialComponent"); }
+            else { m_World->RemoveComponent<ECS::MaterialComponent>(e); m_ConsoleLog.push_back("Removed MaterialComponent"); }
+        } else if (type == "light") {
+            if (!m_World->HasComponent<ECS::LightComponent>(e)) { m_ConsoleLog.push_back("Entity has no LightComponent"); }
+            else { m_World->RemoveComponent<ECS::LightComponent>(e); m_ConsoleLog.push_back("Removed LightComponent"); }
+        } else if (type == "camera") {
+            if (!m_World->HasComponent<ECS::CameraComponent>(e)) { m_ConsoleLog.push_back("Entity has no CameraComponent"); }
+            else { m_World->RemoveComponent<ECS::CameraComponent>(e); m_ConsoleLog.push_back("Removed CameraComponent"); }
+        } else if (type == "script") {
+            if (!m_World->HasComponent<ECS::ScriptComponent>(e)) { m_ConsoleLog.push_back("Entity has no ScriptComponent"); }
+            else { m_World->RemoveComponent<ECS::ScriptComponent>(e); m_ConsoleLog.push_back("Removed ScriptComponent"); }
+        } else if (type == "audio") {
+            if (!m_World->HasComponent<ECS::AudioSourceComponent>(e)) { m_ConsoleLog.push_back("Entity has no AudioSourceComponent"); }
+            else { m_World->RemoveComponent<ECS::AudioSourceComponent>(e); m_ConsoleLog.push_back("Removed AudioSourceComponent"); }
+        } else if (type == "rigidbody") {
+            if (!m_World->HasComponent<ECS::RigidbodyComponent>(e)) { m_ConsoleLog.push_back("Entity has no RigidbodyComponent"); }
+            else { m_World->RemoveComponent<ECS::RigidbodyComponent>(e); m_ConsoleLog.push_back("Removed RigidbodyComponent"); }
+        } else if (type == "name") {
+            if (!m_World->HasComponent<ECS::NameComponent>(e)) { m_ConsoleLog.push_back("Entity has no NameComponent"); }
+            else { m_World->RemoveComponent<ECS::NameComponent>(e); m_ConsoleLog.push_back("Removed NameComponent"); }
+        } else if (type == "notes") {
+            if (!m_World->HasComponent<ECS::NotesComponent>(e)) { m_ConsoleLog.push_back("Entity has no NotesComponent"); }
+            else { m_World->RemoveComponent<ECS::NotesComponent>(e); m_ConsoleLog.push_back("Removed NotesComponent"); }
+        } else if (type == "sprite") {
+            if (!m_World->HasComponent<ECS::Sprite2DComponent>(e)) { m_ConsoleLog.push_back("Entity has no Sprite2DComponent"); }
+            else { m_World->RemoveComponent<ECS::Sprite2DComponent>(e); m_ConsoleLog.push_back("Removed Sprite2DComponent"); }
+        } else if (type == "particle") {
+            if (!m_World->HasComponent<ECS::ParticleEmitterComponent>(e)) { m_ConsoleLog.push_back("Entity has no ParticleEmitterComponent"); }
+            else { m_World->RemoveComponent<ECS::ParticleEmitterComponent>(e); m_ConsoleLog.push_back("Removed ParticleEmitterComponent"); }
+        } else if (type == "tween") {
+            if (!m_World->HasComponent<ECS::TweenComponent>(e)) { m_ConsoleLog.push_back("Entity has no TweenComponent"); }
+            else { m_World->RemoveComponent<ECS::TweenComponent>(e); m_ConsoleLog.push_back("Removed TweenComponent"); }
+        } else if (type == "lod") {
+            if (!m_World->HasComponent<ECS::LODComponent>(e)) { m_ConsoleLog.push_back("Entity has no LODComponent"); }
+            else { m_World->RemoveComponent<ECS::LODComponent>(e); m_ConsoleLog.push_back("Removed LODComponent"); }
+        } else {
+            m_ConsoleLog.push_back("Unknown component type: " + type);
+            m_ConsoleLog.push_back("  Types: mesh, material, light, camera, script, audio, rigidbody, name, notes, sprite, particle, tween, lod");
+        }
+    } else if (cmdLower == "setname") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        std::string name;
+        std::getline(iss >> std::ws, name);
+        if (name.empty()) {
+            m_ConsoleLog.push_back("Usage: setname <name>");
+            return;
+        }
+        ECS::Entity e = m_PrimarySelected;
+        auto* nc = m_World->GetComponent<ECS::NameComponent>(e);
+        if (!nc) {
+            m_World->AddComponent<ECS::NameComponent>(e, name);
+        } else {
+            nc->name = name;
+        }
+        m_ConsoleLog.push_back("Set name to '" + name + "'");
+    } else if (cmdLower == "setnotes") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        std::string text;
+        std::getline(iss >> std::ws, text);
+        if (text.empty()) {
+            m_ConsoleLog.push_back("Usage: setnotes <text>");
+            return;
+        }
+        ECS::Entity e = m_PrimarySelected;
+        auto* nc = m_World->GetComponent<ECS::NotesComponent>(e);
+        if (!nc) {
+            m_World->AddComponent<ECS::NotesComponent>(e, text);
+        } else {
+            nc->notes = text;
+        }
+        m_ConsoleLog.push_back("Set notes to '" + text + "'");
+    } else if (cmdLower == "visible") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        ECS::Entity e = m_PrimarySelected;
+        auto* transform = m_World->GetComponent<ECS::TransformComponent>(e);
+        if (!transform) {
+            m_ConsoleLog.push_back("Selected entity has no transform");
+            return;
+        }
+        std::string val;
+        iss >> val;
+        for (auto& c : val) c = static_cast<char>(std::tolower(c));
+        if (val == "true") {
+            transform->visible = true;
+        } else if (val == "false") {
+            transform->visible = false;
+        } else {
+            transform->visible = !transform->visible;
+        }
+        m_ConsoleLog.push_back(std::string("Visible: ") + (transform->visible ? "true" : "false"));
+    } else if (cmdLower == "components") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        ECS::Entity e = m_PrimarySelected;
+        std::string name = "Entity " + std::to_string(e);
+        if (auto* nc = m_World->GetComponent<ECS::NameComponent>(e)) name = nc->name;
+        m_ConsoleLog.push_back("Components on [" + std::to_string(e) + "] " + name + ":");
+        if (m_World->HasComponent<ECS::TransformComponent>(e)) m_ConsoleLog.push_back("  TransformComponent");
+        if (m_World->HasComponent<ECS::NameComponent>(e)) m_ConsoleLog.push_back("  NameComponent");
+        if (m_World->HasComponent<ECS::NotesComponent>(e)) m_ConsoleLog.push_back("  NotesComponent");
+        if (m_World->HasComponent<ECS::MeshComponent>(e)) m_ConsoleLog.push_back("  MeshComponent");
+        if (m_World->HasComponent<ECS::MaterialComponent>(e)) m_ConsoleLog.push_back("  MaterialComponent");
+        if (m_World->HasComponent<ECS::LightComponent>(e)) m_ConsoleLog.push_back("  LightComponent");
+        if (m_World->HasComponent<ECS::CameraComponent>(e)) m_ConsoleLog.push_back("  CameraComponent");
+        if (m_World->HasComponent<ECS::ScriptComponent>(e)) m_ConsoleLog.push_back("  ScriptComponent");
+        if (m_World->HasComponent<ECS::AudioSourceComponent>(e)) m_ConsoleLog.push_back("  AudioSourceComponent");
+        if (m_World->HasComponent<ECS::RigidbodyComponent>(e)) m_ConsoleLog.push_back("  RigidbodyComponent");
+        if (m_World->HasComponent<ECS::Sprite2DComponent>(e)) m_ConsoleLog.push_back("  Sprite2DComponent");
+        if (m_World->HasComponent<ECS::ParticleEmitterComponent>(e)) m_ConsoleLog.push_back("  ParticleEmitterComponent");
+        if (m_World->HasComponent<ECS::TweenComponent>(e)) m_ConsoleLog.push_back("  TweenComponent");
+        if (m_World->HasComponent<ECS::LODComponent>(e)) m_ConsoleLog.push_back("  LODComponent");
+        if (m_World->HasComponent<ECS::ParentComponent>(e)) m_ConsoleLog.push_back("  ParentComponent");
+        if (m_World->HasComponent<ECS::ChildrenComponent>(e)) m_ConsoleLog.push_back("  ChildrenComponent");
+    // =====================================================================
+    // Material commands
+    // =====================================================================
+    } else if (cmdLower == "setcolor") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        f32 r, g, b;
+        if (iss >> r >> g >> b) {
+            auto* mat = m_World->GetComponent<ECS::MaterialComponent>(m_PrimarySelected);
+            if (!mat) {
+                m_ConsoleLog.push_back("Selected entity has no MaterialComponent");
+            } else {
+                mat->baseColor = Math::Vector3(r, g, b);
+                m_ConsoleLog.push_back("Set base color to " + std::to_string(r) + ", " + std::to_string(g) + ", " + std::to_string(b));
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: setcolor <r> <g> <b> (0.0-1.0)");
+        }
+    } else if (cmdLower == "setemissive") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        f32 r, g, b, strength;
+        if (iss >> r >> g >> b >> strength) {
+            auto* mat = m_World->GetComponent<ECS::MaterialComponent>(m_PrimarySelected);
+            if (!mat) {
+                m_ConsoleLog.push_back("Selected entity has no MaterialComponent");
+            } else {
+                mat->emissiveColor = Math::Vector3(r, g, b);
+                mat->emissiveStrength = strength;
+                m_ConsoleLog.push_back("Set emissive to (" + std::to_string(r) + ", " + std::to_string(g) + ", " + std::to_string(b) +
+                    ") strength=" + std::to_string(strength));
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: setemissive <r> <g> <b> <strength>");
+        }
+    } else if (cmdLower == "setmetallic") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        f32 value;
+        if (iss >> value) {
+            auto* mat = m_World->GetComponent<ECS::MaterialComponent>(m_PrimarySelected);
+            if (!mat) {
+                m_ConsoleLog.push_back("Selected entity has no MaterialComponent");
+            } else {
+                mat->metallic = value;
+                m_ConsoleLog.push_back("Set metallic to " + std::to_string(value));
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: setmetallic <value> (0.0-1.0)");
+        }
+    } else if (cmdLower == "setroughness") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        f32 value;
+        if (iss >> value) {
+            auto* mat = m_World->GetComponent<ECS::MaterialComponent>(m_PrimarySelected);
+            if (!mat) {
+                m_ConsoleLog.push_back("Selected entity has no MaterialComponent");
+            } else {
+                mat->roughness = value;
+                m_ConsoleLog.push_back("Set roughness to " + std::to_string(value));
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: setroughness <value> (0.0-1.0)");
+        }
+    } else if (cmdLower == "setopacity") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        f32 value;
+        if (iss >> value) {
+            auto* mat = m_World->GetComponent<ECS::MaterialComponent>(m_PrimarySelected);
+            if (!mat) {
+                m_ConsoleLog.push_back("Selected entity has no MaterialComponent");
+            } else {
+                mat->opacity = value;
+                m_ConsoleLog.push_back("Set opacity to " + std::to_string(value));
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: setopacity <value> (0.0-1.0)");
+        }
+    // =====================================================================
+    // Light commands
+    // =====================================================================
+    } else if (cmdLower == "lightcolor") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        f32 r, g, b;
+        if (iss >> r >> g >> b) {
+            auto* light = m_World->GetComponent<ECS::LightComponent>(m_PrimarySelected);
+            if (!light) {
+                m_ConsoleLog.push_back("Selected entity has no LightComponent");
+            } else {
+                light->color = Math::Vector3(r, g, b);
+                m_ConsoleLog.push_back("Set light color to " + std::to_string(r) + ", " + std::to_string(g) + ", " + std::to_string(b));
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: lightcolor <r> <g> <b> (0.0-1.0)");
+        }
+    } else if (cmdLower == "lightintensity") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        f32 value;
+        if (iss >> value) {
+            auto* light = m_World->GetComponent<ECS::LightComponent>(m_PrimarySelected);
+            if (!light) {
+                m_ConsoleLog.push_back("Selected entity has no LightComponent");
+            } else {
+                light->intensity = value;
+                m_ConsoleLog.push_back("Set light intensity to " + std::to_string(value));
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: lightintensity <value>");
+        }
+    } else if (cmdLower == "lighttype") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        std::string type;
+        iss >> type;
+        for (auto& c : type) c = static_cast<char>(std::tolower(c));
+        auto* light = m_World->GetComponent<ECS::LightComponent>(m_PrimarySelected);
+        if (!light) {
+            m_ConsoleLog.push_back("Selected entity has no LightComponent");
+        } else if (type == "dir" || type == "directional") {
+            light->type = ECS::LightType::Directional;
+            m_ConsoleLog.push_back("Set light type to Directional");
+        } else if (type == "point") {
+            light->type = ECS::LightType::Point;
+            m_ConsoleLog.push_back("Set light type to Point");
+        } else if (type == "spot") {
+            light->type = ECS::LightType::Spot;
+            m_ConsoleLog.push_back("Set light type to Spot");
+        } else {
+            m_ConsoleLog.push_back("Usage: lighttype <dir|point|spot>");
+        }
+    } else if (cmdLower == "lightrange") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        f32 value;
+        if (iss >> value) {
+            auto* light = m_World->GetComponent<ECS::LightComponent>(m_PrimarySelected);
+            if (!light) {
+                m_ConsoleLog.push_back("Selected entity has no LightComponent");
+            } else {
+                light->range = value;
+                m_ConsoleLog.push_back("Set light range to " + std::to_string(value));
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: lightrange <value>");
+        }
+    // =====================================================================
+    // Query commands
+    // =====================================================================
+    } else if (cmdLower == "find") {
+        if (!m_World) {
+            m_ConsoleLog.push_back("Error: No world loaded");
+            return;
+        }
+        std::string searchTerm;
+        std::getline(iss >> std::ws, searchTerm);
+        if (searchTerm.empty()) {
+            m_ConsoleLog.push_back("Usage: find <name>");
+            return;
+        }
+        // Convert search term to lowercase for case-insensitive matching
+        std::string searchLower = searchTerm;
+        for (auto& c : searchLower) c = static_cast<char>(std::tolower(c));
+        u32 found = 0;
+        for (ECS::Entity entity : m_World->GetAllEntities()) {
+            auto* nc = m_World->GetComponent<ECS::NameComponent>(entity);
+            if (!nc) continue;
+            std::string nameLower = nc->name;
+            for (auto& c : nameLower) c = static_cast<char>(std::tolower(c));
+            if (nameLower.find(searchLower) != std::string::npos) {
+                m_ConsoleLog.push_back("  [" + std::to_string(entity) + "] " + nc->name);
+                found++;
+            }
+        }
+        if (found == 0) {
+            m_ConsoleLog.push_back("No entities found matching '" + searchTerm + "'");
+        } else {
+            m_ConsoleLog.push_back("Found " + std::to_string(found) + " matching entity(ies)");
+        }
+    } else if (cmdLower == "count") {
+        if (!m_World) {
+            m_ConsoleLog.push_back("Error: No world loaded");
+            return;
+        }
+        std::string type;
+        iss >> type;
+        for (auto& c : type) c = static_cast<char>(std::tolower(c));
+        u32 n = 0;
+        if (type == "mesh") {
+            n = static_cast<u32>(m_World->GetEntitiesWithComponent<ECS::MeshComponent>().size());
+        } else if (type == "material") {
+            n = static_cast<u32>(m_World->GetEntitiesWithComponent<ECS::MaterialComponent>().size());
+        } else if (type == "light") {
+            n = static_cast<u32>(m_World->GetEntitiesWithComponent<ECS::LightComponent>().size());
+        } else if (type == "camera") {
+            n = static_cast<u32>(m_World->GetEntitiesWithComponent<ECS::CameraComponent>().size());
+        } else if (type == "script") {
+            n = static_cast<u32>(m_World->GetEntitiesWithComponent<ECS::ScriptComponent>().size());
+        } else if (type == "audio") {
+            n = static_cast<u32>(m_World->GetEntitiesWithComponent<ECS::AudioSourceComponent>().size());
+        } else if (type == "rigidbody") {
+            n = static_cast<u32>(m_World->GetEntitiesWithComponent<ECS::RigidbodyComponent>().size());
+        } else if (type == "name") {
+            n = static_cast<u32>(m_World->GetEntitiesWithComponent<ECS::NameComponent>().size());
+        } else if (type == "notes") {
+            n = static_cast<u32>(m_World->GetEntitiesWithComponent<ECS::NotesComponent>().size());
+        } else if (type == "sprite") {
+            n = static_cast<u32>(m_World->GetEntitiesWithComponent<ECS::Sprite2DComponent>().size());
+        } else if (type == "particle") {
+            n = static_cast<u32>(m_World->GetEntitiesWithComponent<ECS::ParticleEmitterComponent>().size());
+        } else if (type == "tween") {
+            n = static_cast<u32>(m_World->GetEntitiesWithComponent<ECS::TweenComponent>().size());
+        } else if (type == "lod") {
+            n = static_cast<u32>(m_World->GetEntitiesWithComponent<ECS::LODComponent>().size());
+        } else if (type == "transform") {
+            n = static_cast<u32>(m_World->GetEntitiesWithComponent<ECS::TransformComponent>().size());
+        } else {
+            m_ConsoleLog.push_back("Usage: count <component>");
+            m_ConsoleLog.push_back("  Types: mesh, material, light, camera, script, audio, rigidbody, name, notes, sprite, particle, tween, lod, transform");
+            return;
+        }
+        m_ConsoleLog.push_back("Entities with " + type + ": " + std::to_string(n));
+    } else if (cmdLower == "children") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        ECS::Entity e = m_PrimarySelected;
+        const auto& kids = ECS::GetChildren(m_World, e);
+        if (kids.empty()) {
+            m_ConsoleLog.push_back("Entity has no children");
+        } else {
+            m_ConsoleLog.push_back("Children (" + std::to_string(kids.size()) + "):");
+            for (ECS::Entity child : kids) {
+                std::string name = "Entity " + std::to_string(child);
+                if (auto* nc = m_World->GetComponent<ECS::NameComponent>(child)) name = nc->name;
+                m_ConsoleLog.push_back("  [" + std::to_string(child) + "] " + name);
+            }
+        }
+    } else if (cmdLower == "parent") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        ECS::Entity e = m_PrimarySelected;
+        ECS::Entity p = ECS::GetParent(m_World, e);
+        if (p == ECS::INVALID_ENTITY) {
+            m_ConsoleLog.push_back("Entity has no parent (root entity)");
+        } else {
+            std::string name = "Entity " + std::to_string(p);
+            if (auto* nc = m_World->GetComponent<ECS::NameComponent>(p)) name = nc->name;
+            m_ConsoleLog.push_back("Parent: [" + std::to_string(p) + "] " + name);
+        }
+    // =====================================================================
+    // Camera commands
+    // =====================================================================
+    } else if (cmdLower == "fov") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        f32 degrees;
+        if (iss >> degrees) {
+            auto* cam = m_World->GetComponent<ECS::CameraComponent>(m_PrimarySelected);
+            if (!cam) {
+                m_ConsoleLog.push_back("Selected entity has no CameraComponent");
+            } else {
+                cam->fieldOfView = degrees;
+                m_ConsoleLog.push_back("Set FOV to " + std::to_string(degrees) + " degrees");
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: fov <degrees>");
+        }
+    } else if (cmdLower == "near") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        f32 value;
+        if (iss >> value) {
+            auto* cam = m_World->GetComponent<ECS::CameraComponent>(m_PrimarySelected);
+            if (!cam) {
+                m_ConsoleLog.push_back("Selected entity has no CameraComponent");
+            } else {
+                cam->nearPlane = value;
+                m_ConsoleLog.push_back("Set near plane to " + std::to_string(value));
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: near <value>");
+        }
+    } else if (cmdLower == "far") {
+        if (m_SelectedEntities.empty() || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        f32 value;
+        if (iss >> value) {
+            auto* cam = m_World->GetComponent<ECS::CameraComponent>(m_PrimarySelected);
+            if (!cam) {
+                m_ConsoleLog.push_back("Selected entity has no CameraComponent");
+            } else {
+                cam->farPlane = value;
+                m_ConsoleLog.push_back("Set far plane to " + std::to_string(value));
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: far <value>");
+        }
+    // =====================================================================
+    // Bulk commands
+    // =====================================================================
+    } else if (cmdLower == "selectall") {
+        if (!m_World) {
+            m_ConsoleLog.push_back("Error: No world loaded");
+            return;
+        }
+        ClearSelection();
+        const auto& entities = m_World->GetAllEntities();
+        for (ECS::Entity entity : entities) {
+            SelectEntity(entity, true);
+        }
+        m_ConsoleLog.push_back("Selected " + std::to_string(entities.size()) + " entities");
+    } else if (cmdLower == "hideall") {
+        if (!m_World) {
+            m_ConsoleLog.push_back("Error: No world loaded");
+            return;
+        }
+        u32 count = 0;
+        for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::TransformComponent>()) {
+            auto* t = m_World->GetComponent<ECS::TransformComponent>(entity);
+            if (t && t->visible) {
+                t->visible = false;
+                count++;
+            }
+        }
+        m_ConsoleLog.push_back("Hidden " + std::to_string(count) + " entities");
+    } else if (cmdLower == "showall") {
+        if (!m_World) {
+            m_ConsoleLog.push_back("Error: No world loaded");
+            return;
+        }
+        u32 count = 0;
+        for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::TransformComponent>()) {
+            auto* t = m_World->GetComponent<ECS::TransformComponent>(entity);
+            if (t && !t->visible) {
+                t->visible = true;
+                count++;
+            }
+        }
+        m_ConsoleLog.push_back("Shown " + std::to_string(count) + " entities");
+    } else if (cmdLower == "deleteall") {
+        if (!m_World) {
+            m_ConsoleLog.push_back("Error: No world loaded");
+            return;
+        }
+        std::string confirm;
+        iss >> confirm;
+        for (auto& c : confirm) c = static_cast<char>(std::tolower(c));
+        if (confirm != "confirm") {
+            m_ConsoleLog.push_back("WARNING: This will delete ALL entities in the scene.");
+            m_ConsoleLog.push_back("Type 'deleteall confirm' to proceed.");
+            return;
+        }
+        const auto& entities = m_World->GetAllEntities();
+        usize count = entities.size();
+        // Copy entity list since destruction modifies it
+        std::vector<ECS::Entity> toDelete(entities.begin(), entities.end());
+        ClearSelection();
+        for (ECS::Entity entity : toDelete) {
+            m_World->DestroyEntity(entity);
+        }
+        m_ConsoleLog.push_back("Deleted " + std::to_string(count) + " entities");
+    // =====================================================================
+    // System commands
+    // =====================================================================
+    } else if (cmdLower == "shadowres") {
+        u32 size;
+        if (iss >> size) {
+            if (size != 512 && size != 1024 && size != 2048 && size != 4096) {
+                m_ConsoleLog.push_back("Shadow resolution must be 512, 1024, 2048, or 4096");
+            } else if (m_RenderSystem) {
+                m_RenderSystem->SetShadowResolution(size);
+                m_ConsoleLog.push_back("Shadow resolution set to " + std::to_string(size));
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: shadowres <512|1024|2048|4096>");
+        }
+    } else if (cmdLower == "shadowdist") {
+        f32 dist;
+        if (iss >> dist) {
+            if (m_RenderSystem) {
+                m_RenderSystem->SetShadowDistance(dist);
+                m_ConsoleLog.push_back("Shadow distance set to " + std::to_string(dist));
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: shadowdist <distance>");
+        }
+    } else if (cmdLower == "ambient_intensity") {
+        f32 value;
+        if (iss >> value) {
+            if (m_RenderSystem) {
+                m_RenderSystem->SetAmbientIntensity(value);
+                m_ConsoleLog.push_back("Ambient intensity set to " + std::to_string(value));
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: ambient_intensity <value>");
+        }
+    } else if (cmdLower == "curvature") {
+        f32 value;
+        if (iss >> value) {
+            if (m_RenderSystem) {
+                m_RenderSystem->SetWorldCurvature(value);
+                m_ConsoleLog.push_back("World curvature set to " + std::to_string(value));
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: curvature <value>");
+        }
     } else {
         m_ConsoleLog.push_back("Unknown command: " + cmd + " (type 'help' for commands)");
     }
@@ -1124,10 +2152,13 @@ void EditorLayer::ExecuteConsoleCommand(const std::string& command) {
 
 
 void EditorLayer::DrawParticleEditorPanel() {
-    if (!ImGui::Begin("Particle Editor")) {
+    bool panelOpen = true;
+    if (!ImGui::Begin("Particle Editor", &panelOpen)) {
+        if (!panelOpen) SetPanelVisibility(EditorPanel::ParticleEditor, false);
         ImGui::End();
         return;
     }
+    if (!panelOpen) { SetPanelVisibility(EditorPanel::ParticleEditor, false); ImGui::End(); return; }
 
     if (!m_World) {
         DrawEmptyState("[ ]", "No World Loaded", "Open or create a scene to begin");
@@ -1426,10 +2457,13 @@ void EditorLayer::DrawParticleEditorPanel() {
 }
 
 void EditorLayer::DrawAnimGraphPanel() {
-    if (!ImGui::Begin("Animation Graph")) {
+    bool panelOpen = true;
+    if (!ImGui::Begin("Animation Graph", &panelOpen)) {
+        if (!panelOpen) SetPanelVisibility(EditorPanel::AnimGraph, false);
         ImGui::End();
         return;
     }
+    if (!panelOpen) { SetPanelVisibility(EditorPanel::AnimGraph, false); ImGui::End(); return; }
 
     if (!m_World) {
         DrawEmptyState("[ ]", "No World Loaded", "Open or create a scene to begin");
@@ -1453,10 +2487,13 @@ void EditorLayer::DrawAnimGraphPanel() {
 }
 
 void EditorLayer::DrawDialoguePanel() {
-    if (!ImGui::Begin("Dialogue Editor")) {
+    bool panelOpen = true;
+    if (!ImGui::Begin("Dialogue Editor", &panelOpen)) {
+        if (!panelOpen) SetPanelVisibility(EditorPanel::Dialogue, false);
         ImGui::End();
         return;
     }
+    if (!panelOpen) { SetPanelVisibility(EditorPanel::Dialogue, false); ImGui::End(); return; }
 
     if (!m_World) {
         DrawEmptyState("[ ]", "No World Loaded", "Open or create a scene to begin");
@@ -1682,10 +2719,13 @@ void EditorLayer::DrawDialoguePanel() {
 }
 
 void EditorLayer::DrawVisualScriptPanel() {
-    if (!ImGui::Begin("Visual Script Editor")) {
+    bool panelOpen = true;
+    if (!ImGui::Begin("Visual Script Editor", &panelOpen)) {
+        if (!panelOpen) SetPanelVisibility(EditorPanel::VisualScript, false);
         ImGui::End();
         return;
     }
+    if (!panelOpen) { SetPanelVisibility(EditorPanel::VisualScript, false); ImGui::End(); return; }
 
     bool isPlaying = IsPlaying();
 
@@ -1705,10 +2745,13 @@ void EditorLayer::DrawVisualScriptPanel() {
 }
 
 void EditorLayer::DrawPixelEditorPanel() {
-    if (!ImGui::Begin("Pixel Editor")) {
+    bool panelOpen = true;
+    if (!ImGui::Begin("Pixel Editor", &panelOpen)) {
+        if (!panelOpen) SetPanelVisibility(EditorPanel::PixelEditorPanel, false);
         ImGui::End();
         return;
     }
+    if (!panelOpen) { SetPanelVisibility(EditorPanel::PixelEditorPanel, false); ImGui::End(); return; }
 
     // Export as Prefab button (top toolbar)
     if (m_PixelEditor.HasCanvas()) {
@@ -1740,10 +2783,13 @@ void EditorLayer::DrawPixelEditorPanel() {
 }
 
 void EditorLayer::DrawSpriteSheetImporterPanel() {
-    if (!ImGui::Begin("Sprite Sheet Importer")) {
+    bool panelOpen = true;
+    if (!ImGui::Begin("Sprite Sheet Importer", &panelOpen)) {
+        if (!panelOpen) SetPanelVisibility(EditorPanel::SpriteSheetImport, false);
         ImGui::End();
         return;
     }
+    if (!panelOpen) { SetPanelVisibility(EditorPanel::SpriteSheetImport, false); ImGui::End(); return; }
 
     // Load button
     if (ImGui::Button("Load Sprite Sheet...")) {
@@ -1892,10 +2938,13 @@ void EditorLayer::DrawSpriteSheetImporterPanel() {
 // ============================================================================
 
 void EditorLayer::DrawBehaviorTreePanel() {
-    if (!ImGui::Begin("Behavior Tree")) {
+    bool panelOpen = true;
+    if (!ImGui::Begin("Behavior Tree", &panelOpen)) {
+        if (!panelOpen) SetPanelVisibility(EditorPanel::BehaviorTree, false);
         ImGui::End();
         return;
     }
+    if (!panelOpen) { SetPanelVisibility(EditorPanel::BehaviorTree, false); ImGui::End(); return; }
 
     if (!m_World) {
         DrawEmptyState("[ ]", "No World Loaded", "Open or create a scene to begin");
@@ -1923,10 +2972,13 @@ void EditorLayer::DrawBehaviorTreePanel() {
 
 
 void EditorLayer::DrawQuestFlowPanel() {
-    if (!ImGui::Begin("Quest Flow")) {
+    bool panelOpen = true;
+    if (!ImGui::Begin("Quest Flow", &panelOpen)) {
+        if (!panelOpen) SetPanelVisibility(EditorPanel::QuestFlow, false);
         ImGui::End();
         return;
     }
+    if (!panelOpen) { SetPanelVisibility(EditorPanel::QuestFlow, false); ImGui::End(); return; }
 
     if (!m_World) {
         DrawEmptyState("[ ]", "No World Loaded", "Open or create a scene to begin");
@@ -2214,10 +3266,13 @@ void EditorLayer::ExportManualAsHTML(const std::string& outputPath) {
 }
 
 void EditorLayer::DrawUserManualPanel() {
-    if (!ImGui::Begin("User Manual", nullptr)) {
+    bool panelOpen = true;
+    if (!ImGui::Begin("User Manual", &panelOpen)) {
+        if (!panelOpen) SetPanelVisibility(EditorPanel::UserManual, false);
         ImGui::End();
         return;
     }
+    if (!panelOpen) { SetPanelVisibility(EditorPanel::UserManual, false); ImGui::End(); return; }
 
     // Load on first access
     if (!m_ManualLoaded) {
@@ -2582,10 +3637,13 @@ void EditorLayer::DrawUserManualPanel() {
 // ============================================================================
 
 void EditorLayer::DrawDataAssetPanel() {
-    if (!ImGui::Begin("Data Asset Editor", nullptr)) {
+    bool panelOpen = true;
+    if (!ImGui::Begin("Data Asset Editor", &panelOpen)) {
+        if (!panelOpen) SetPanelVisibility(EditorPanel::DataAssets, false);
         ImGui::End();
         return;
     }
+    if (!panelOpen) { SetPanelVisibility(EditorPanel::DataAssets, false); ImGui::End(); return; }
 
     auto& registry = Assets::DataAssetRegistry::Get();
 
@@ -2936,10 +3994,13 @@ void EditorLayer::DrawDataAssetPanel() {
 
 
 void EditorLayer::DrawPluginBrowserPanel() {
-    if (!ImGui::Begin("Plugin Browser", nullptr)) {
+    bool panelOpen = true;
+    if (!ImGui::Begin("Plugin Browser", &panelOpen)) {
+        if (!panelOpen) SetPanelVisibility(EditorPanel::PluginBrowser, false);
         ImGui::End();
         return;
     }
+    if (!panelOpen) { SetPanelVisibility(EditorPanel::PluginBrowser, false); ImGui::End(); return; }
 
     // Search bar
     ImGui::SetNextItemWidth(200.0f);
@@ -3112,10 +4173,13 @@ void EditorLayer::DrawProceduralGenPanel() {
         m_ProcGraphEditor.Render();
     }
 
-    if (!ImGui::Begin("Procedural Generation", nullptr)) {
+    bool panelOpen = true;
+    if (!ImGui::Begin("Procedural Generation", &panelOpen)) {
+        if (!panelOpen) SetPanelVisibility(EditorPanel::ProceduralGen, false);
         ImGui::End();
         return;
     }
+    if (!panelOpen) { SetPanelVisibility(EditorPanel::ProceduralGen, false); ImGui::End(); return; }
 
     // Graph editor toggle
     if (ImGui::Button("Open Graph Editor")) {
@@ -3499,10 +4563,13 @@ void EditorLayer::DrawProceduralGenPanel() {
 
 
 void EditorLayer::DrawNetworkPanel() {
-    if (!ImGui::Begin("Network", nullptr, ImGuiWindowFlags_None)) {
+    bool panelOpen = true;
+    if (!ImGui::Begin("Network", &panelOpen, ImGuiWindowFlags_None)) {
+        if (!panelOpen) SetPanelVisibility(EditorPanel::NetworkPanel, false);
         ImGui::End();
         return;
     }
+    if (!panelOpen) { SetPanelVisibility(EditorPanel::NetworkPanel, false); ImGui::End(); return; }
 
     auto* netSystem = m_PlayMode.GetNetworkSystem();
     if (!netSystem) {
@@ -3619,10 +4686,13 @@ void EditorLayer::DrawNetworkPanel() {
 // ============================================================================
 
 void EditorLayer::DrawCollaborationPanel() {
-    if (!ImGui::Begin("Collaboration", nullptr, ImGuiWindowFlags_None)) {
+    bool panelOpen = true;
+    if (!ImGui::Begin("Collaboration", &panelOpen, ImGuiWindowFlags_None)) {
+        if (!panelOpen) SetPanelVisibility(EditorPanel::Collaboration, false);
         ImGui::End();
         return;
     }
+    if (!panelOpen) { SetPanelVisibility(EditorPanel::Collaboration, false); ImGui::End(); return; }
 
     CollabSessionState state = m_CollabSystem.GetState();
 
@@ -4043,10 +5113,13 @@ void EditorLayer::RegisterPaletteCommands() {
 
 
 void EditorLayer::DrawFlashTimelinePanel() {
-    if (!ImGui::Begin("Flash Timeline")) {
+    bool panelOpen = true;
+    if (!ImGui::Begin("Flash Timeline", &panelOpen)) {
+        if (!panelOpen) SetPanelVisibility(EditorPanel::FlashTimeline, false);
         ImGui::End();
         return;
     }
+    if (!panelOpen) { SetPanelVisibility(EditorPanel::FlashTimeline, false); ImGui::End(); return; }
 
     if (!m_World) {
         DrawEmptyState("[ ]", "No World Loaded", "Open or create a scene to begin");
@@ -4388,10 +5461,13 @@ void EditorLayer::DrawFlashTimelinePanel() {
 // ============================================================================
 
 void EditorLayer::DrawVectorDrawingPanel() {
-    if (!ImGui::Begin("Vector Drawing")) {
+    bool panelOpen = true;
+    if (!ImGui::Begin("Vector Drawing", &panelOpen)) {
+        if (!panelOpen) SetPanelVisibility(EditorPanel::VectorDrawing, false);
         ImGui::End();
         return;
     }
+    if (!panelOpen) { SetPanelVisibility(EditorPanel::VectorDrawing, false); ImGui::End(); return; }
 
     m_VectorDrawingEditor.Render(m_EditorSettings);
 
@@ -5317,6 +6393,1155 @@ void EditorLayer::DrawAudioMixer() {
     ImGui::EndChild();
 
     ImGui::End();
+}
+
+// (Removed duplicate DrawGameDebugPanel — canonical version is after DrawDebugWorkstation)
+#if 0
+
+    if (ImGui::BeginTabBar("GameDebugTabs")) {
+
+        // === Scene Overview ===
+        if (ImGui::BeginTabItem("Scene")) {
+            if (m_World) {
+                ImGui::Text("Entity Count: %zu", m_World->GetEntityCount());
+                ImGui::Separator();
+
+                // Count entities with key game components
+                u32 meshCount = 0, lightCount = 0, scriptCount = 0, audioCount = 0;
+                u32 cameraCount = 0, animatorCount = 0, body2dCount = 0;
+                u32 visibleCount = 0, hiddenCount = 0;
+
+                for (auto e : m_World->GetAllEntities()) {
+                    if (!m_World->IsValid(e)) continue;
+                    if (m_World->HasComponent<ECS::MeshComponent>(e)) meshCount++;
+                    if (m_World->HasComponent<ECS::LightComponent>(e)) lightCount++;
+                    if (m_World->HasComponent<ECS::ScriptComponent>(e)) scriptCount++;
+                    if (m_World->HasComponent<ECS::AudioSourceComponent>(e)) audioCount++;
+                    if (m_World->HasComponent<ECS::CameraComponent>(e)) cameraCount++;
+                    if (m_World->HasComponent<ECS::AnimatorComponent>(e)) animatorCount++;
+                    if (m_World->HasComponent<Physics::Body2DComponent>(e)) body2dCount++;
+                    if (auto* t = m_World->GetComponent<ECS::TransformComponent>(e)) {
+                        if (t->visible) visibleCount++; else hiddenCount++;
+                    }
+                }
+
+                ImGui::Columns(2, "SceneStats", false);
+                ImGui::Text("Meshes: %u", meshCount);
+                ImGui::Text("Lights: %u", lightCount);
+                ImGui::Text("Cameras: %u", cameraCount);
+                ImGui::Text("Animators: %u", animatorCount);
+                ImGui::NextColumn();
+                ImGui::Text("Scripts: %u", scriptCount);
+                ImGui::Text("Audio Sources: %u", audioCount);
+                ImGui::Text("Physics Bodies: %u", body2dCount);
+                ImGui::Text("Visible/Hidden: %u / %u", visibleCount, hiddenCount);
+                ImGui::Columns(1);
+
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "Scene: %s",
+                    m_SceneManager.GetCurrentSceneName().empty() ? "(unsaved)" : m_SceneManager.GetCurrentSceneName().c_str());
+            } else {
+                ImGui::TextDisabled("No world loaded");
+            }
+            ImGui::EndTabItem();
+        }
+
+        // === Physics ===
+        if (ImGui::BeginTabItem("Physics")) {
+            if (m_World) {
+                u32 bodyCount = 0, sensorCount = 0, kinematicCount = 0;
+                // Count 2D physics bodies
+                for (auto e : m_World->GetAllEntities()) {
+                    if (!m_World->IsValid(e)) continue;
+                    if (auto* b = m_World->GetComponent<Physics::Body2DComponent>(e)) {
+                        bodyCount++;
+                        if (b->isSensor) sensorCount++;
+                        if (b->isKinematic) kinematicCount++;
+                    }
+                }
+
+                // Count 3D rigidbodies
+                u32 rigidCount = 0;
+                for (auto e : m_World->GetAllEntities()) {
+                    if (!m_World->IsValid(e)) continue;
+                    if (m_World->HasComponent<ECS::RigidbodyComponent>(e)) rigidCount++;
+                }
+
+                ImGui::Text("2D Bodies: %u", bodyCount);
+                ImGui::Text("  Sensors: %u", sensorCount);
+                ImGui::Text("  Kinematic: %u", kinematicCount);
+                ImGui::Text("  Dynamic: %u", bodyCount - sensorCount - kinematicCount);
+                if (rigidCount > 0)
+                    ImGui::Text("3D Rigidbodies: %u", rigidCount);
+                ImGui::Separator();
+
+                // Collider visualization toggle
+                bool showColliders = m_ShowColliderWireframes;
+                if (ImGui::Checkbox("Show Collider Wireframes", &showColliders)) {
+                    m_ShowColliderWireframes = showColliders;
+                }
+
+                // List bodies with positions
+                ImGui::Separator();
+                ImGui::Text("Body Details:");
+                ImGui::BeginChild("PhysicsBodies", ImVec2(0, 0), true);
+                for (auto e : m_World->GetAllEntities()) {
+                    if (!m_World->IsValid(e)) continue;
+                    if (!m_World->HasComponent<Physics::Body2DComponent>(e)) continue;
+                    auto* b = m_World->GetComponent<Physics::Body2DComponent>(e);
+                    auto* t = m_World->GetComponent<ECS::TransformComponent>(e);
+                    std::string name = "Entity " + std::to_string(e);
+                    if (auto* nc = m_World->GetComponent<ECS::NameComponent>(e)) name = nc->name;
+
+                    const char* typeStr = b->isStatic ? "Static" :
+                                          b->isKinematic ? "Kinematic" : "Dynamic";
+                    ImGui::BulletText("[%llu] %s — %s%s", static_cast<unsigned long long>(e), name.c_str(),
+                        typeStr, b->isSensor ? " (Sensor)" : "");
+                    if (t) {
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("(%.1f, %.1f)", t->position.x, t->position.y);
+                    }
+                }
+                ImGui::EndChild();
+            } else {
+                ImGui::TextDisabled("No world loaded");
+            }
+            ImGui::EndTabItem();
+        }
+
+        // === Scripts ===
+        if (ImGui::BeginTabItem("Scripts")) {
+            if (m_World) {
+                u32 scriptCount = 0;
+                ImGui::BeginChild("ScriptList", ImVec2(0, 0), true);
+                for (auto e : m_World->GetAllEntities()) {
+                    if (!m_World->IsValid(e)) continue;
+                    if (auto* sc = m_World->GetComponent<ECS::ScriptComponent>(e)) {
+                        scriptCount++;
+                        std::string name = "Entity " + std::to_string(e);
+                        if (auto* nc = m_World->GetComponent<ECS::NameComponent>(e)) name = nc->name;
+
+                        bool open = ImGui::TreeNode(reinterpret_cast<void*>(static_cast<uintptr_t>(e)),
+                            "[%llu] %s (%zu scripts)", static_cast<unsigned long long>(e), name.c_str(), sc->scripts.size());
+                        if (open) {
+                            for (const auto& att : sc->scripts) {
+                                ImVec4 col = att.hasError ? ImVec4(1, 0.3f, 0.3f, 1) :
+                                             att.enabled ? ImVec4(0.8f, 0.8f, 0.8f, 1) : ImVec4(0.5f, 0.5f, 0.5f, 1);
+                                ImGui::TextColored(col, "  %s — %s%s",
+                                    att.className.c_str(),
+                                    att.scriptPath.empty() ? "(inline)" : att.scriptPath.c_str(),
+                                    att.hasError ? " [ERROR]" : "");
+                                if (att.hasError && !att.lastError.empty()) {
+                                    ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "    %s", att.lastError.c_str());
+                                }
+                            }
+                            ImGui::TreePop();
+                        }
+                    }
+                }
+                if (scriptCount == 0) {
+                    ImGui::TextDisabled("No scripted entities in scene");
+                }
+                ImGui::EndChild();
+            } else {
+                ImGui::TextDisabled("No world loaded");
+            }
+            ImGui::EndTabItem();
+        }
+
+        // === Audio ===
+        if (ImGui::BeginTabItem("Audio")) {
+            if (m_World) {
+                u32 sourceCount = 0, playingCount = 0;
+                ImGui::BeginChild("AudioList", ImVec2(0, 0), true);
+                for (auto e : m_World->GetAllEntities()) {
+                    if (!m_World->IsValid(e)) continue;
+                    if (auto* asc = m_World->GetComponent<ECS::AudioSourceComponent>(e)) {
+                        sourceCount++;
+                        if (asc->isPlaying) playingCount++;
+
+                        std::string name = "Entity " + std::to_string(e);
+                        if (auto* nc = m_World->GetComponent<ECS::NameComponent>(e)) name = nc->name;
+
+                        ImGui::PushID(static_cast<int>(e));
+                        if (asc->isPlaying) {
+                            ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.3f, 1.0f), ">> ");
+                        } else {
+                            ImGui::TextDisabled("   ");
+                        }
+                        ImGui::SameLine();
+                        ImGui::Text("[%llu] %s — %s", static_cast<unsigned long long>(e), name.c_str(),
+                            asc->clipPath.empty() ? "(no file)" : asc->clipPath.c_str());
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("vol:%.0f%%", asc->volume * 100.0f);
+                        ImGui::PopID();
+                    }
+                }
+                if (sourceCount == 0) {
+                    ImGui::TextDisabled("No audio sources in scene");
+                } else {
+                    ImGui::Separator();
+                    ImGui::Text("Total: %u sources, %u playing", sourceCount, playingCount);
+                }
+                ImGui::EndChild();
+            } else {
+                ImGui::TextDisabled("No world loaded");
+            }
+            ImGui::EndTabItem();
+        }
+
+        // === Gameplay ===
+        if (ImGui::BeginTabItem("Gameplay")) {
+            // Play mode status
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "Play Mode:");
+            ImGui::SameLine();
+            if (m_PlayMode.IsPlaying()) {
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "PLAYING");
+            } else if (m_PlayMode.IsPaused()) {
+                ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.2f, 1.0f), "PAUSED");
+            } else {
+                ImGui::TextDisabled("STOPPED");
+            }
+
+            ImGui::Separator();
+
+            // Quick play controls
+            if (m_PlayMode.IsStopped()) {
+                if (ImGui::Button("Play")) { StartPlayMode(); }
+            } else {
+                if (m_PlayMode.IsPlaying()) {
+                    if (ImGui::Button("Pause")) { m_PlayMode.Pause(); }
+                } else {
+                    if (ImGui::Button("Resume")) { m_PlayMode.Play(); }
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Stop")) { m_PlayMode.Stop(); }
+            }
+
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "Scene Info:");
+            ImGui::Text("Scene: %s",
+                m_SceneManager.GetCurrentSceneName().empty() ? "(unsaved)" : m_SceneManager.GetCurrentSceneName().c_str());
+            if (m_World) {
+                ImGui::Text("Entities: %zu", m_World->GetEntityCount());
+            }
+
+            ImGui::EndTabItem();
+        }
+
+        ImGui::EndTabBar();
+    }
+
+    ImGui::End();
+}
+#endif // DUPLICATE
+
+// ---------------------------------------------------------------------------
+// Debug Workstation (F2) — editor/engine debug metrics & tools window
+// ---------------------------------------------------------------------------
+void EditorLayer::DrawDebugWorkstation() {
+    ImGui::SetNextWindowSize(ImVec2(700, 500), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Debug Workstation", &m_ShowDebugWorkstation)) {
+        ImGui::End();
+        return;
+    }
+
+    if (ImGui::BeginTabBar("DebugTabs")) {
+
+        // =====================================================================
+        // Tab 1 — Performance
+        // =====================================================================
+        if (ImGui::BeginTabItem("Performance")) {
+            ImGuiIO& io = ImGui::GetIO();
+            f32 fps = io.Framerate;
+            f32 frameMs = fps > 0.0f ? 1000.0f / fps : 0.0f;
+
+            // Color FPS
+            ImVec4 fpsColor = fps >= 60.0f ? ImVec4(0.2f, 1.0f, 0.2f, 1.0f) :
+                              fps >= 30.0f ? ImVec4(1.0f, 1.0f, 0.2f, 1.0f) :
+                                             ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+            ImGui::TextColored(fpsColor, "FPS: %.1f", fps);
+            ImGui::SameLine(200);
+            ImGui::Text("Frame Time: %.2f ms", frameMs);
+
+            ImGui::Separator();
+
+            // Frame time stats from the existing ring buffer
+            ImGui::Text("Min: %.2f ms  Max: %.2f ms  Avg: %.2f ms", m_FrameTimeMin, m_FrameTimeMax, m_FrameTimeAvg);
+            ImGui::Text("P50: %.2f ms  P95: %.2f ms  P99: %.2f ms", m_FrameTimeP50, m_FrameTimeP95, m_FrameTimeP99);
+
+            // FPS graph using the existing frame time ring buffer
+            ImGui::Separator();
+            ImGui::Text("Frame Time History:");
+            f32 graphMax = m_FrameTimeMax > 0.0f ? m_FrameTimeMax * 1.5f : 33.3f;
+            if (graphMax < 16.7f) graphMax = 33.3f;
+
+            auto getter = [](void* data, int idx) -> float {
+                EditorLayer* self = static_cast<EditorLayer*>(data);
+                usize actualIdx = (self->m_FrameTimeIndex + static_cast<usize>(idx)) % FRAME_TIME_HISTORY_SIZE;
+                return self->m_FrameTimeHistory[actualIdx];
+            };
+            char overlay[64];
+            snprintf(overlay, sizeof(overlay), "%.1f ms", frameMs);
+            ImGui::PlotLines("##DbgFrameTime", getter, this,
+                             static_cast<int>(FRAME_TIME_HISTORY_SIZE),
+                             0, overlay, 0.0f, graphMax, ImVec2(ImGui::GetContentRegionAvail().x, 80));
+
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Render Stats --");
+            if (m_RenderSystem) {
+                ImGui::Text("Draw Calls: %u", m_RenderSystem->GetDrawCallCount());
+                u32 tris = m_RenderSystem->GetTriangleCount();
+                if (tris > 1000000)
+                    ImGui::Text("Triangles: %.2f M", static_cast<f32>(tris) / 1000000.0f);
+                else if (tris > 1000)
+                    ImGui::Text("Triangles: %.1f K", static_cast<f32>(tris) / 1000.0f);
+                else
+                    ImGui::Text("Triangles: %u", tris);
+
+                u32 totalDesc = m_RenderSystem->GetDescriptorCacheHits() + m_RenderSystem->GetDescriptorCacheWrites();
+                if (totalDesc > 0) {
+                    f32 hitRate = static_cast<f32>(m_RenderSystem->GetDescriptorCacheHits()) / static_cast<f32>(totalDesc) * 100.0f;
+                    ImGui::Text("Descriptor Cache Hit Rate: %.0f%%", hitRate);
+                }
+            } else {
+                ImGui::TextDisabled("RenderSystem not available");
+            }
+
+            if (m_World) {
+                ImGui::Text("Entities: %zu", m_World->GetEntityCount());
+            }
+
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Memory --");
+            f32 processMB = static_cast<f32>(m_PerfMetrics.processMemoryBytes) / (1024.0f * 1024.0f);
+            ImGui::Text("Process: %.1f MB", processMB);
+            if (m_PerfMetrics.totalPhysicalMemory > 0) {
+                f32 availMB = static_cast<f32>(m_PerfMetrics.availablePhysicalMemory) / (1024.0f * 1024.0f);
+                f32 totalMB = static_cast<f32>(m_PerfMetrics.totalPhysicalMemory) / (1024.0f * 1024.0f);
+                ImGui::Text("System: %.0f / %.0f MB", totalMB - availMB, totalMB);
+            }
+            if (m_PerfMetrics.gpuTotalBytes > 0) {
+                f32 gpuAllocMB = static_cast<f32>(m_PerfMetrics.gpuAllocatedBytes) / (1024.0f * 1024.0f);
+                f32 gpuTotalMB = static_cast<f32>(m_PerfMetrics.gpuTotalBytes) / (1024.0f * 1024.0f);
+                ImGui::Text("GPU VRAM: %.1f / %.0f MB", gpuAllocMB, gpuTotalMB);
+            }
+
+            ImGui::EndTabItem();
+        }
+
+        // =====================================================================
+        // Tab 2 — Renderer
+        // =====================================================================
+        if (ImGui::BeginTabItem("Renderer")) {
+            if (m_RenderSystem) {
+                // Scene classification
+                const auto& comp = m_RenderSystem->GetSceneComposition();
+                const char* modeStr = "Scene3D";
+                if (comp.mode == ECS::SceneRenderMode::Scene2D) modeStr = "Scene2D";
+                else if (comp.mode == ECS::SceneRenderMode::Scene2_5D) modeStr = "Scene2.5D";
+                ImGui::Text("Scene Mode: %s", modeStr);
+                ImGui::Text("  Sprites: %u  Tilemaps: %u  3D Meshes: %u",
+                            comp.spriteCount, comp.tilemapCount, comp.mesh3DCount);
+                ImGui::Text("  Shadow-casting Lights: %s", comp.hasShadowCastingLights ? "Yes" : "No");
+
+                ImGui::Separator();
+
+                // Shadows
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Shadows --");
+                ImGui::Text("Shadows: %s", m_RenderSystem->IsShadowsEnabled() ? "Enabled" : "Disabled");
+                ImGui::Text("Shadow Distance: %.1f", m_RenderSystem->GetShadowDistance());
+                ImGui::Text("Shadow Resolution: %u", m_RenderSystem->GetShadowResolution());
+                ImGui::Text("Progressive Cascades: %s", m_RenderSystem->IsCascadeProgressiveUpdate() ? "On" : "Off");
+
+                ImGui::Separator();
+
+#if !ENJIN_RENDERER_WEBGPU
+                // Ray Tracing
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Ray Tracing --");
+                ImGui::Text("RT Supported: %s", m_RenderSystem->IsRayTracingSupported() ? "Yes" : "No");
+                ImGui::Text("RT Enabled: %s", m_RenderSystem->IsRayTracingEnabled() ? "Yes" : "No");
+                if (m_RenderSystem->IsRayTracingEnabled()) {
+                    u32 rtMode = m_RenderSystem->GetRTMode();
+                    const char* rtModeNames[] = {"Hybrid", "Path Trace"};
+                    ImGui::Text("RT Mode: %s", rtMode < 2 ? rtModeNames[rtMode] : "Unknown");
+                    u32 denoiser = m_RenderSystem->GetDenoiserType();
+                    const char* denoiserNames[] = {"SVGF", "OIDN", "OptiX"};
+                    ImGui::Text("Denoiser: %s", denoiser < 3 ? denoiserNames[denoiser] : "Unknown");
+                }
+
+                ImGui::Text("OIT: %s", m_RenderSystem->IsOITEnabled() ? "Enabled" : "Disabled");
+
+                ImGui::Separator();
+#endif
+
+                // Anti-aliasing / upscaling
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Anti-Aliasing --");
+                u32 aaMode = m_RenderSystem->GetAAMode();
+                const char* aaNames[] = {"None", "FXAA", "TAA", "SMAA"};
+                ImGui::Text("AA Mode: %s", aaMode < 4 ? aaNames[aaMode] : "Unknown");
+                if (m_RenderSystem->IsUpscalerActive()) {
+                    u32 upType = m_RenderSystem->GetUpscalerType();
+                    const char* upNames[] = {"None", "FSR 2", "DLSS", "XeSS"};
+                    ImGui::Text("Upscaler: %s (sharpness %.2f)", upType < 4 ? upNames[upType] : "Unknown",
+                                m_RenderSystem->GetUpscalerSharpness());
+                }
+
+                ImGui::Separator();
+
+                // Shading
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Shading --");
+                ImGui::Text("Wireframe: %s", m_RenderSystem->IsWireframeEnabled() ? "On" : "Off");
+                ImGui::Text("Backface Culling: %s", m_RenderSystem->IsBackfaceCullingEnabled() ? "On" : "Off");
+                ImGui::Text("Cel Shading: %s", m_RenderSystem->IsCelShadingEnabled() ? "On" : "Off");
+                ImGui::Text("Fog Density: %.3f", m_RenderSystem->GetFogDensity());
+
+                ImGui::Separator();
+
+                // Render targets
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Render Targets --");
+                ImGui::Text("Editor Viewport: %u x %u", m_EditorViewportWidth, m_EditorViewportHeight);
+                ImGui::Text("Game View: %u x %u", m_GameViewWidth, m_GameViewHeight);
+            } else {
+                ImGui::TextDisabled("RenderSystem not available");
+            }
+
+            // Post-processing
+            if (m_PostProcessing) {
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Post-Processing --");
+                const auto& ppSettings = m_PostProcessing->GetSettings();
+                const char* tmNames[] = {"None", "Reinhard", "Reinhard Extended", "ACES", "Uncharted 2", "AgX"};
+                u32 tmMode = ppSettings.toneMappingMode;
+                ImGui::Text("Tone Mapping: %s", tmMode < 6 ? tmNames[tmMode] : "Unknown");
+                ImGui::Text("Exposure: %.2f  Gamma: %.2f", ppSettings.exposure, ppSettings.gamma);
+                ImGui::Text("Bloom: %s", ppSettings.bloomEnabled ? "On" : "Off");
+                ImGui::Text("Vignette: %s", ppSettings.vignetteEnabled ? "On" : "Off");
+                ImGui::Text("Chromatic Aberration: %s", ppSettings.chromaticAberrationEnabled ? "On" : "Off");
+            }
+
+            ImGui::EndTabItem();
+        }
+
+        // =====================================================================
+        // Tab 3 — ECS
+        // =====================================================================
+        if (ImGui::BeginTabItem("ECS")) {
+            if (m_World) {
+                usize entityCount = m_World->GetEntityCount();
+                ImGui::Text("Total Entities: %zu", entityCount);
+
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Component Counts --");
+
+                // Query counts for major component types
+                auto countOf = [&](const char* name, usize count) {
+                    if (count > 0)
+                        ImGui::Text("  %-28s %zu", name, count);
+                };
+                countOf("TransformComponent",   m_World->GetEntitiesWithComponent<ECS::TransformComponent>().size());
+                countOf("MeshComponent",         m_World->GetEntitiesWithComponent<ECS::MeshComponent>().size());
+                countOf("MaterialComponent",     m_World->GetEntitiesWithComponent<ECS::MaterialComponent>().size());
+                countOf("LightComponent",        m_World->GetEntitiesWithComponent<ECS::LightComponent>().size());
+                countOf("CameraComponent",       m_World->GetEntitiesWithComponent<ECS::CameraComponent>().size());
+                countOf("NameComponent",         m_World->GetEntitiesWithComponent<ECS::NameComponent>().size());
+                countOf("NotesComponent",        m_World->GetEntitiesWithComponent<ECS::NotesComponent>().size());
+                countOf("TextComponent",         m_World->GetEntitiesWithComponent<ECS::TextComponent>().size());
+                countOf("ScriptComponent",       m_World->GetEntitiesWithComponent<ECS::ScriptComponent>().size());
+                countOf("SkeletonComponent",     m_World->GetEntitiesWithComponent<ECS::SkeletonComponent>().size());
+                countOf("LODComponent",          m_World->GetEntitiesWithComponent<ECS::LODComponent>().size());
+                countOf("ParentComponent",       m_World->GetEntitiesWithComponent<ECS::ParentComponent>().size());
+                countOf("TweenComponent",        m_World->GetEntitiesWithComponent<ECS::TweenComponent>().size());
+
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Selection --");
+                if (m_PrimarySelected != ECS::INVALID_ENTITY) {
+                    ImGui::Text("Primary Selected: %llu", static_cast<unsigned long long>(m_PrimarySelected));
+                    auto* name = m_World->GetComponent<ECS::NameComponent>(m_PrimarySelected);
+                    if (name)
+                        ImGui::Text("  Name: %s", name->name.c_str());
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
+                    if (transform) {
+                        ImGui::Text("  Pos: (%.2f, %.2f, %.2f)", transform->position.x, transform->position.y, transform->position.z);
+                        ImGui::Text("  Scale: (%.2f, %.2f, %.2f)", transform->scale.x, transform->scale.y, transform->scale.z);
+                    }
+                } else {
+                    ImGui::TextDisabled("No entity selected");
+                }
+                ImGui::Text("Multi-select count: %zu", m_SelectedEntities.size());
+            } else {
+                ImGui::TextDisabled("World not available");
+            }
+            ImGui::EndTabItem();
+        }
+
+        // =====================================================================
+        // Tab 4 — Scene
+        // =====================================================================
+        if (ImGui::BeginTabItem("Scene")) {
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Scene Info --");
+            if (!m_CurrentScenePath.empty()) {
+                ImGui::Text("Scene Path: %s", m_CurrentScenePath.c_str());
+            } else {
+                ImGui::TextDisabled("No scene loaded (unsaved)");
+            }
+
+            ImGui::Text("Scene Name: %s", m_SceneManager.GetCurrentSceneName().c_str());
+            ImGui::Text("Project: %s", m_SceneManager.GetProjectName().c_str());
+            if (!m_SceneManager.GetProjectPath().empty()) {
+                ImGui::Text("Project Path: %s", m_SceneManager.GetProjectPath().c_str());
+            }
+            ImGui::Text("Scene Count: %zu", m_SceneManager.GetSceneCount());
+
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Physics --");
+            auto physType = m_SceneManager.GetPhysicsBackendType();
+            const char* physName = "Auto";
+            if (physType == Physics::PhysicsBackendType::Jolt) physName = "Jolt";
+            else if (physType == Physics::PhysicsBackendType::Box2D) physName = "Box2D";
+            ImGui::Text("Physics Backend: %s", physName);
+
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Play Mode --");
+            if (m_PlayMode.IsPlaying())
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Status: Playing");
+            else if (m_PlayMode.IsPaused())
+                ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.2f, 1.0f), "Status: Paused");
+            else
+                ImGui::TextDisabled("Status: Stopped");
+            ImGui::Text("Focus Mode: %s", m_FocusMode ? "On" : "Off");
+
+            ImGui::EndTabItem();
+        }
+
+        // =====================================================================
+        // Tab 5 — System
+        // =====================================================================
+        if (ImGui::BeginTabItem("System")) {
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Engine --");
+            ImGui::Text("Engine: Enjin (TEGE)");
+#ifdef ENJIN_VERSION_STRING
+            ImGui::Text("Version: %s", ENJIN_VERSION_STRING);
+#endif
+            ImGui::Text("ImGui Version: %s", IMGUI_VERSION);
+
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- GPU --");
+            if (!m_CachedGPUName.empty()) {
+                ImGui::Text("GPU: %s", m_CachedGPUName.c_str());
+            } else if (m_Renderer && m_Renderer->GetContext()) {
+                VkPhysicalDeviceProperties props;
+                vkGetPhysicalDeviceProperties(m_Renderer->GetContext()->GetPhysicalDevice(), &props);
+                m_CachedGPUName = props.deviceName;
+                ImGui::Text("GPU: %s", m_CachedGPUName.c_str());
+            } else {
+                ImGui::TextDisabled("GPU info not available");
+            }
+
+#if !ENJIN_RENDERER_WEBGPU
+            if (m_Renderer && m_Renderer->GetContext()) {
+                VkPhysicalDeviceProperties props;
+                vkGetPhysicalDeviceProperties(m_Renderer->GetContext()->GetPhysicalDevice(), &props);
+                ImGui::Text("Vulkan API: %u.%u.%u",
+                            VK_VERSION_MAJOR(props.apiVersion),
+                            VK_VERSION_MINOR(props.apiVersion),
+                            VK_VERSION_PATCH(props.apiVersion));
+                ImGui::Text("Driver Version: %u.%u.%u",
+                            VK_VERSION_MAJOR(props.driverVersion),
+                            VK_VERSION_MINOR(props.driverVersion),
+                            VK_VERSION_PATCH(props.driverVersion));
+            }
+
+            if (m_Renderer) {
+                VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+                ImGui::Text("Swapchain: %u x %u", extent.width, extent.height);
+                ImGui::Text("HDR Output: %s", m_RenderSystem && m_RenderSystem->IsHDREnabled() ? "Yes" : "No");
+            }
+#endif
+
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Window --");
+            if (m_Window) {
+                ImGui::Text("Window Size: %u x %u", m_Window->GetWidth(), m_Window->GetHeight());
+            }
+            ImGuiIO& io = ImGui::GetIO();
+            ImGui::Text("Display Size: %.0f x %.0f", io.DisplaySize.x, io.DisplaySize.y);
+            ImGui::Text("Display Scale: %.2f x %.2f", io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
+
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Build Configuration --");
+#ifdef NDEBUG
+            ImGui::Text("Build: Release");
+#else
+            ImGui::Text("Build: Debug");
+#endif
+#ifdef _WIN32
+            ImGui::Text("Platform: Windows");
+#elif defined(__linux__)
+            ImGui::Text("Platform: Linux");
+#elif defined(__APPLE__)
+            ImGui::Text("Platform: macOS");
+#else
+            ImGui::Text("Platform: Unknown");
+#endif
+
+            ImGui::EndTabItem();
+        }
+
+        ImGui::EndTabBar();
+    }
+
+    ImGui::End();
+}
+
+// ---------------------------------------------------------------------------
+// Game Debug Panel (F1) — focused on debugging the user's game
+// ---------------------------------------------------------------------------
+void EditorLayer::DrawGameDebugPanel() {
+    ImGui::SetNextWindowSize(ImVec2(600, 500), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Game Debug (F1)", &m_ShowGameDebug)) {
+        ImGui::End();
+        return;
+    }
+
+    if (ImGui::BeginTabBar("GameDebugTabs")) {
+
+        // =================================================================
+        // Tab 1 — Scene
+        // =================================================================
+        if (ImGui::BeginTabItem("Scene")) {
+            // Current scene path
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Scene Info --");
+            ImGui::Text("Scene Path: %s", m_CurrentScenePath.empty() ? "(unsaved)" : m_CurrentScenePath.c_str());
+
+            // Play mode status
+            const char* playStatus = "Stopped";
+            ImVec4 statusColor = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+            if (m_PlayMode.IsPlaying()) {
+                playStatus = "Playing";
+                statusColor = ImVec4(0.2f, 1.0f, 0.2f, 1.0f);
+            } else if (m_PlayMode.IsPaused()) {
+                playStatus = "Paused";
+                statusColor = ImVec4(1.0f, 1.0f, 0.2f, 1.0f);
+            }
+            ImGui::TextColored(statusColor, "Play Mode: %s", playStatus);
+
+            // Entity count
+            if (m_World) {
+                ImGui::Text("Entity Count: %zu", m_World->GetEntityCount());
+            } else {
+                ImGui::TextDisabled("No world loaded");
+            }
+
+            ImGui::Separator();
+
+            // Selected entity info
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Selected Entity --");
+            if (m_World && m_PrimarySelected != ECS::INVALID_ENTITY && m_World->IsValid(m_PrimarySelected)) {
+                auto* nameComp = m_World->GetComponent<ECS::NameComponent>(m_PrimarySelected);
+                ImGui::Text("Name: %s", nameComp ? nameComp->name.c_str() : "(unnamed)");
+                ImGui::Text("ID: %llu", static_cast<unsigned long long>(m_PrimarySelected));
+
+                // List components on the selected entity
+                ImGui::Text("Components:");
+                if (m_World->HasComponent<ECS::TransformComponent>(m_PrimarySelected))     ImGui::BulletText("Transform");
+                if (m_World->HasComponent<ECS::MeshComponent>(m_PrimarySelected))           ImGui::BulletText("Mesh");
+                if (m_World->HasComponent<ECS::MaterialComponent>(m_PrimarySelected))       ImGui::BulletText("Material");
+                if (m_World->HasComponent<ECS::LightComponent>(m_PrimarySelected))          ImGui::BulletText("Light");
+                if (m_World->HasComponent<ECS::CameraComponent>(m_PrimarySelected))         ImGui::BulletText("Camera");
+                if (m_World->HasComponent<ECS::RigidbodyComponent>(m_PrimarySelected))      ImGui::BulletText("Rigidbody");
+                if (m_World->HasComponent<ECS::BoxColliderComponent>(m_PrimarySelected))    ImGui::BulletText("BoxCollider");
+                if (m_World->HasComponent<ECS::SphereColliderComponent>(m_PrimarySelected)) ImGui::BulletText("SphereCollider");
+                if (m_World->HasComponent<ECS::CapsuleColliderComponent>(m_PrimarySelected))ImGui::BulletText("CapsuleCollider");
+                if (m_World->HasComponent<ECS::ScriptComponent>(m_PrimarySelected))         ImGui::BulletText("Script");
+                if (m_World->HasComponent<ECS::AudioSourceComponent>(m_PrimarySelected))    ImGui::BulletText("AudioSource");
+                if (m_World->HasComponent<ECS::ParticleEmitterComponent>(m_PrimarySelected))ImGui::BulletText("ParticleEmitter");
+                if (m_World->HasComponent<ECS::TweenComponent>(m_PrimarySelected))          ImGui::BulletText("Tween");
+                if (m_World->HasComponent<ECS::HealthComponent>(m_PrimarySelected))         ImGui::BulletText("Health");
+                if (m_World->HasComponent<ECS::GravityZoneComponent>(m_PrimarySelected))    ImGui::BulletText("GravityZone");
+                if (m_World->HasComponent<ECS::FluidVolumeComponent>(m_PrimarySelected))    ImGui::BulletText("FluidVolume");
+            } else {
+                ImGui::TextDisabled("No entity selected");
+            }
+
+            ImGui::Separator();
+
+            // List all entities
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- All Entities --");
+            if (m_World) {
+                const auto& entities = m_World->GetAllEntities();
+                if (entities.empty()) {
+                    ImGui::TextDisabled("No entities in scene");
+                } else {
+                    ImGui::BeginChild("EntityList", ImVec2(0, 0), true);
+                    for (auto entity : entities) {
+                        if (!m_World->IsValid(entity)) continue;
+                        auto* nameComp = m_World->GetComponent<ECS::NameComponent>(entity);
+                        const char* name = nameComp ? nameComp->name.c_str() : "(unnamed)";
+                        char label[256];
+                        snprintf(label, sizeof(label), "[%llu] %s", static_cast<unsigned long long>(entity), name);
+                        bool isSelected = (entity == m_PrimarySelected);
+                        if (ImGui::Selectable(label, isSelected)) {
+                            SelectEntity(entity);
+                        }
+                    }
+                    ImGui::EndChild();
+                }
+            }
+
+            ImGui::EndTabItem();
+        }
+
+        // =================================================================
+        // Tab 2 — Physics
+        // =================================================================
+        if (ImGui::BeginTabItem("Physics")) {
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Physics Backend --");
+            auto backendType = m_SceneManager.GetPhysicsBackendType();
+            const char* backendName = "Auto";
+            if (backendType == Physics::PhysicsBackendType::Jolt) backendName = "Jolt (3D)";
+            else if (backendType == Physics::PhysicsBackendType::Box2D) backendName = "Box2D (2D)";
+            ImGui::Text("Backend: %s", backendName);
+
+            ImGui::Separator();
+
+            // Collider wireframe toggle
+            ImGui::Checkbox("Show Collider Wireframes", &m_ShowColliderWireframes);
+
+            ImGui::Separator();
+
+            if (m_World) {
+                const auto& entities = m_World->GetAllEntities();
+
+                // Count physics entities
+                u32 rigidbodyCount = 0;
+                u32 boxColliderCount = 0;
+                u32 sphereColliderCount = 0;
+                u32 capsuleColliderCount = 0;
+                u32 gravityZoneCount = 0;
+                u32 fluidVolumeCount = 0;
+
+                for (auto entity : entities) {
+                    if (!m_World->IsValid(entity)) continue;
+                    if (m_World->HasComponent<ECS::RigidbodyComponent>(entity))       rigidbodyCount++;
+                    if (m_World->HasComponent<ECS::BoxColliderComponent>(entity))      boxColliderCount++;
+                    if (m_World->HasComponent<ECS::SphereColliderComponent>(entity))   sphereColliderCount++;
+                    if (m_World->HasComponent<ECS::CapsuleColliderComponent>(entity))  capsuleColliderCount++;
+                    if (m_World->HasComponent<ECS::GravityZoneComponent>(entity))      gravityZoneCount++;
+                    if (m_World->HasComponent<ECS::FluidVolumeComponent>(entity))      fluidVolumeCount++;
+                }
+
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Counts --");
+                ImGui::Text("Rigidbodies: %u", rigidbodyCount);
+                ImGui::Text("Box Colliders: %u", boxColliderCount);
+                ImGui::Text("Sphere Colliders: %u", sphereColliderCount);
+                ImGui::Text("Capsule Colliders: %u", capsuleColliderCount);
+                ImGui::Text("Gravity Zones: %u", gravityZoneCount);
+                ImGui::Text("Fluid Volumes: %u", fluidVolumeCount);
+
+                ImGui::Separator();
+
+                // List entities with physics bodies
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Physics Entities --");
+                ImGui::BeginChild("PhysicsEntityList", ImVec2(0, 0), true);
+                for (auto entity : entities) {
+                    if (!m_World->IsValid(entity)) continue;
+                    bool hasPhysics = m_World->HasComponent<ECS::RigidbodyComponent>(entity) ||
+                                      m_World->HasComponent<ECS::BoxColliderComponent>(entity) ||
+                                      m_World->HasComponent<ECS::SphereColliderComponent>(entity) ||
+                                      m_World->HasComponent<ECS::CapsuleColliderComponent>(entity);
+                    if (!hasPhysics) continue;
+
+                    auto* nameComp = m_World->GetComponent<ECS::NameComponent>(entity);
+                    const char* name = nameComp ? nameComp->name.c_str() : "(unnamed)";
+
+                    // Build a tag string showing which physics components it has
+                    std::string tags;
+                    if (m_World->HasComponent<ECS::RigidbodyComponent>(entity)) {
+                        auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
+                        if (rb) {
+                            const char* bodyTypeStr = "Dynamic";
+                            if (rb->bodyType == ECS::RigidbodyComponent::BodyType::Kinematic) bodyTypeStr = "Kinematic";
+                            else if (rb->bodyType == ECS::RigidbodyComponent::BodyType::Static) bodyTypeStr = "Static";
+                            tags += bodyTypeStr;
+                        }
+                    }
+                    if (m_World->HasComponent<ECS::BoxColliderComponent>(entity))      { if (!tags.empty()) tags += " | "; tags += "Box"; }
+                    if (m_World->HasComponent<ECS::SphereColliderComponent>(entity))    { if (!tags.empty()) tags += " | "; tags += "Sphere"; }
+                    if (m_World->HasComponent<ECS::CapsuleColliderComponent>(entity))   { if (!tags.empty()) tags += " | "; tags += "Capsule"; }
+
+                    char label[512];
+                    snprintf(label, sizeof(label), "[%llu] %s  (%s)",
+                             static_cast<unsigned long long>(entity), name, tags.c_str());
+                    if (ImGui::Selectable(label, entity == m_PrimarySelected)) {
+                        SelectEntity(entity);
+                    }
+                }
+                ImGui::EndChild();
+            } else {
+                ImGui::TextDisabled("No world loaded");
+            }
+
+            ImGui::EndTabItem();
+        }
+
+        // =================================================================
+        // Tab 3 — Scripts
+        // =================================================================
+        if (ImGui::BeginTabItem("Scripts")) {
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Script Components --");
+
+            if (m_World) {
+                const auto& entities = m_World->GetAllEntities();
+                u32 scriptEntityCount = 0;
+                u32 totalScripts = 0;
+                u32 errorCount = 0;
+
+                // First pass: count
+                for (auto entity : entities) {
+                    if (!m_World->IsValid(entity)) continue;
+                    auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
+                    if (!sc) continue;
+                    scriptEntityCount++;
+                    totalScripts += static_cast<u32>(sc->scripts.size());
+                    for (const auto& attachment : sc->scripts) {
+                        if (attachment.hasError) errorCount++;
+                    }
+                }
+
+                ImGui::Text("Entities with scripts: %u", scriptEntityCount);
+                ImGui::Text("Total script attachments: %u", totalScripts);
+                if (errorCount > 0) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Scripts with errors: %u", errorCount);
+                } else {
+                    ImGui::Text("Scripts with errors: 0");
+                }
+
+                ImGui::Separator();
+
+                ImGui::BeginChild("ScriptList", ImVec2(0, 0), true);
+                for (auto entity : entities) {
+                    if (!m_World->IsValid(entity)) continue;
+                    auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
+                    if (!sc || sc->scripts.empty()) continue;
+
+                    auto* nameComp = m_World->GetComponent<ECS::NameComponent>(entity);
+                    const char* name = nameComp ? nameComp->name.c_str() : "(unnamed)";
+
+                    bool nodeOpen = ImGui::TreeNode(reinterpret_cast<void*>(static_cast<uintptr_t>(entity)),
+                                                     "[%llu] %s", static_cast<unsigned long long>(entity), name);
+                    if (nodeOpen) {
+                        for (const auto& attachment : sc->scripts) {
+                            ImVec4 color = attachment.hasError ? ImVec4(1.0f, 0.3f, 0.3f, 1.0f) :
+                                           attachment.enabled ? ImVec4(0.8f, 0.8f, 0.8f, 1.0f) :
+                                                                ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
+                            ImGui::TextColored(color, "  %s", attachment.scriptPath.empty() ? "(no path)" : attachment.scriptPath.c_str());
+                            if (!attachment.className.empty()) {
+                                ImGui::SameLine();
+                                ImGui::TextDisabled("(%s)", attachment.className.c_str());
+                            }
+                            // Status indicators
+                            ImGui::SameLine();
+                            if (attachment.hasError) {
+                                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "[ERROR]");
+                                if (!attachment.lastError.empty() && ImGui::IsItemHovered()) {
+                                    ImGui::SetTooltip("%s", attachment.lastError.c_str());
+                                }
+                            } else if (!attachment.enabled) {
+                                ImGui::TextDisabled("[disabled]");
+                            } else if (attachment.started) {
+                                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "[running]");
+                            } else if (attachment.initialized) {
+                                ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.2f, 1.0f), "[initialized]");
+                            }
+                        }
+                        ImGui::TreePop();
+                    }
+                }
+                ImGui::EndChild();
+            } else {
+                ImGui::TextDisabled("No world loaded");
+            }
+
+            ImGui::EndTabItem();
+        }
+
+        // =================================================================
+        // Tab 4 — Audio
+        // =================================================================
+        if (ImGui::BeginTabItem("Audio")) {
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Audio Sources --");
+
+            if (m_World) {
+                const auto& entities = m_World->GetAllEntities();
+                u32 audioCount = 0;
+                u32 playingCount = 0;
+
+                // First pass: count
+                for (auto entity : entities) {
+                    if (!m_World->IsValid(entity)) continue;
+                    auto* audio = m_World->GetComponent<ECS::AudioSourceComponent>(entity);
+                    if (!audio) continue;
+                    audioCount++;
+                    if (audio->isPlaying) playingCount++;
+                }
+
+                ImGui::Text("Audio sources: %u", audioCount);
+                ImGui::Text("Currently playing: %u", playingCount);
+
+                ImGui::Separator();
+
+                ImGui::BeginChild("AudioList", ImVec2(0, 0), true);
+                for (auto entity : entities) {
+                    if (!m_World->IsValid(entity)) continue;
+                    auto* audio = m_World->GetComponent<ECS::AudioSourceComponent>(entity);
+                    if (!audio) continue;
+
+                    auto* nameComp = m_World->GetComponent<ECS::NameComponent>(entity);
+                    const char* name = nameComp ? nameComp->name.c_str() : "(unnamed)";
+
+                    // Channel name
+                    const char* channelName = "SFX";
+                    if (audio->channel == ECS::AudioChannel::Music) channelName = "Music";
+                    else if (audio->channel == ECS::AudioChannel::UI) channelName = "UI";
+                    else if (audio->channel == ECS::AudioChannel::Voice) channelName = "Voice";
+
+                    bool nodeOpen = ImGui::TreeNode(reinterpret_cast<void*>(static_cast<uintptr_t>(entity)),
+                                                     "[%llu] %s", static_cast<unsigned long long>(entity), name);
+                    if (nodeOpen) {
+                        ImGui::Text("  Clip: %s", audio->clipPath.empty() ? "(none)" : audio->clipPath.c_str());
+                        ImVec4 audioColor = audio->isPlaying ? ImVec4(0.2f, 1.0f, 0.2f, 1.0f) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+                        ImGui::TextColored(audioColor, "  Status: %s", audio->isPlaying ? "Playing" : "Stopped");
+                        ImGui::Text("  Channel: %s", channelName);
+                        ImGui::Text("  Volume: %.2f  Pitch: %.2f", audio->volume, audio->pitch);
+                        ImGui::Text("  3D: %s  Loop: %s", audio->is3D ? "Yes" : "No", audio->loop ? "Yes" : "No");
+                        ImGui::TreePop();
+                    }
+                }
+                ImGui::EndChild();
+            } else {
+                ImGui::TextDisabled("No world loaded");
+            }
+
+            ImGui::EndTabItem();
+        }
+
+        // =================================================================
+        // Tab 5 — Gameplay
+        // =================================================================
+        if (ImGui::BeginTabItem("Gameplay")) {
+            if (m_World) {
+                const auto& entities = m_World->GetAllEntities();
+
+                // Tweens
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Active Tweens --");
+                u32 tweenEntityCount = 0;
+                u32 activeTweenCount = 0;
+                for (auto entity : entities) {
+                    if (!m_World->IsValid(entity)) continue;
+                    auto* tc = m_World->GetComponent<ECS::TweenComponent>(entity);
+                    if (!tc) continue;
+                    tweenEntityCount++;
+                    for (const auto& t : tc->tweens) {
+                        if (t.isPlaying) activeTweenCount++;
+                    }
+                }
+                ImGui::Text("Entities with tweens: %u", tweenEntityCount);
+                ImGui::Text("Active tweens: %u", activeTweenCount);
+
+                ImGui::Separator();
+
+                // Particle emitters
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Particle Emitters --");
+                u32 emitterCount = 0;
+                u32 playingEmitters = 0;
+                for (auto entity : entities) {
+                    if (!m_World->IsValid(entity)) continue;
+                    auto* pe = m_World->GetComponent<ECS::ParticleEmitterComponent>(entity);
+                    if (!pe) continue;
+                    emitterCount++;
+                    if (pe->isPlaying) playingEmitters++;
+                }
+                ImGui::Text("Particle emitters: %u", emitterCount);
+                ImGui::Text("Currently playing: %u", playingEmitters);
+
+                ImGui::Separator();
+
+                // Health components
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Health --");
+                u32 healthCount = 0;
+                u32 deadCount = 0;
+                for (auto entity : entities) {
+                    if (!m_World->IsValid(entity)) continue;
+                    auto* hc = m_World->GetComponent<ECS::HealthComponent>(entity);
+                    if (!hc) continue;
+                    healthCount++;
+                    if (hc->isDead) deadCount++;
+                }
+                ImGui::Text("Entities with health: %u", healthCount);
+                if (deadCount > 0) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Dead entities: %u", deadCount);
+                } else {
+                    ImGui::Text("Dead entities: 0");
+                }
+
+                ImGui::Separator();
+
+                // Interactables and pickups
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Interaction --");
+                u32 interactableCount = 0;
+                u32 pickupCount = 0;
+                u32 triggerZoneCount = 0;
+                for (auto entity : entities) {
+                    if (!m_World->IsValid(entity)) continue;
+                    if (m_World->HasComponent<ECS::InteractableComponent>(entity))  interactableCount++;
+                    if (m_World->HasComponent<ECS::PickupComponent>(entity))        pickupCount++;
+                    if (m_World->HasComponent<ECS::TriggerZoneComponent>(entity))   triggerZoneCount++;
+                }
+                ImGui::Text("Interactables: %u", interactableCount);
+                ImGui::Text("Pickups: %u", pickupCount);
+                ImGui::Text("Trigger Zones: %u", triggerZoneCount);
+            } else {
+                ImGui::TextDisabled("No world loaded");
+            }
+
+            ImGui::EndTabItem();
+        }
+
+        ImGui::EndTabBar();
+    }
+
+    ImGui::End();
+}
+
+// ---------------------------------------------------------------------------
+// Quake/Doom-style drop-down console
+// ---------------------------------------------------------------------------
+void EditorLayer::DrawDropConsole(f32 deltaTime) {
+    // Animate slide: lerp m_DropConsoleAnim toward 1 (open) or 0 (closed)
+    f32 target = m_ShowDropConsole ? 1.0f : 0.0f;
+    constexpr f32 speed = 8.0f;
+    if (m_DropConsoleAnim < target)
+        m_DropConsoleAnim = std::min(m_DropConsoleAnim + speed * deltaTime, target);
+    else if (m_DropConsoleAnim > target)
+        m_DropConsoleAnim = std::max(m_DropConsoleAnim - speed * deltaTime, target);
+
+    if (m_DropConsoleAnim <= 0.001f) return;  // fully hidden — nothing to draw
+
+    ImGuiIO& io = ImGui::GetIO();
+    f32 consoleH = io.DisplaySize.y * 0.4f;
+    f32 visibleH = consoleH * m_DropConsoleAnim;
+
+    // Position: slides down from the top edge
+    ImGui::SetNextWindowPos(ImVec2(0, visibleH - consoleH));
+    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, consoleH));
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 8));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.05f, 0.07f, 0.92f));
+
+    if (ImGui::Begin("##DropConsole", nullptr, flags)) {
+        // Title bar
+        ImGui::TextColored(ImVec4(0.6f, 0.8f, 0.6f, 1.0f), "CONSOLE");
+        ImGui::SameLine(io.DisplaySize.x - 200);
+        ImGui::TextColored(ImVec4(0.4f, 0.45f, 0.5f, 1.0f), "Press ` to close");
+        ImGui::Separator();
+
+        // Scrollable log area (fill available space minus input line height)
+        f32 inputH = ImGui::GetFrameHeightWithSpacing() + 4;
+        ImGui::BeginChild("##DropConsoleLog", ImVec2(0, -inputH), false);
+
+        for (const auto& entry : m_ConsoleLog) {
+            // Color based on log level / content
+            ImVec4 color(0.75f, 0.75f, 0.75f, 1.0f);
+            if (entry.level >= LogLevel::Error)
+                color = ImVec4(1.0f, 0.35f, 0.35f, 1.0f);
+            else if (entry.level == LogLevel::Warn)
+                color = ImVec4(1.0f, 0.85f, 0.3f, 1.0f);
+            else if (!entry.message.empty() && entry.message[0] == '>')
+                color = ImVec4(0.5f, 0.8f, 0.5f, 1.0f);  // User input echo = green
+
+            ImGui::PushStyleColor(ImGuiCol_Text, color);
+            ImGui::TextUnformatted(entry.message.c_str());
+            ImGui::PopStyleColor();
+        }
+
+        // Auto-scroll to bottom when new output arrives
+        if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4.0f)
+            ImGui::SetScrollHereY(1.0f);
+
+        ImGui::EndChild();
+
+        // Input line
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), ">");
+        ImGui::SameLine();
+
+        // Auto-focus the input field when the console is open and animation is mostly done
+        if (m_ShowDropConsole && m_DropConsoleAnim > 0.5f) {
+            ImGui::SetKeyboardFocusHere();
+        }
+
+        ImGui::PushItemWidth(-1);
+        ImGuiInputTextFlags inputFlags = ImGuiInputTextFlags_EnterReturnsTrue |
+            ImGuiInputTextFlags_CallbackHistory | ImGuiInputTextFlags_CallbackCharFilter;
+
+        // Combined callback: history (up/down) + character filter (eat backtick)
+        auto callback = [](ImGuiInputTextCallbackData* data) -> int {
+            EditorLayer* self = static_cast<EditorLayer*>(data->UserData);
+
+            if (data->EventFlag == ImGuiInputTextFlags_CallbackCharFilter) {
+                // Eat the backtick/tilde character so it doesn't appear in the input
+                if (data->EventChar == '`' || data->EventChar == '~')
+                    return 1;  // Reject character
+                return 0;
+            }
+
+            if (data->EventFlag == ImGuiInputTextFlags_CallbackHistory) {
+                const int historySize = static_cast<int>(self->m_DropConsoleHistory.size());
+                if (data->EventKey == ImGuiKey_UpArrow) {
+                    if (self->m_DropConsoleHistoryPos < historySize - 1) {
+                        self->m_DropConsoleHistoryPos++;
+                        int idx = historySize - 1 - self->m_DropConsoleHistoryPos;
+                        data->DeleteChars(0, data->BufTextLen);
+                        data->InsertChars(0, self->m_DropConsoleHistory[idx].c_str());
+                    }
+                } else if (data->EventKey == ImGuiKey_DownArrow) {
+                    if (self->m_DropConsoleHistoryPos > 0) {
+                        self->m_DropConsoleHistoryPos--;
+                        int idx = historySize - 1 - self->m_DropConsoleHistoryPos;
+                        data->DeleteChars(0, data->BufTextLen);
+                        data->InsertChars(0, self->m_DropConsoleHistory[idx].c_str());
+                    } else {
+                        self->m_DropConsoleHistoryPos = -1;
+                        data->DeleteChars(0, data->BufTextLen);
+                    }
+                }
+            }
+            return 0;
+        };
+
+        if (ImGui::InputText("##DropConsoleInput", m_DropConsoleInput, sizeof(m_DropConsoleInput),
+                             inputFlags, callback, this)) {
+            if (m_DropConsoleInput[0] != '\0') {
+                std::string cmd(m_DropConsoleInput);
+                m_ConsoleLog.push_back("> " + cmd);
+                m_DropConsoleHistory.push_back(cmd);
+                m_DropConsoleHistoryPos = -1;
+                ExecuteConsoleCommand(cmd);
+                m_DropConsoleInput[0] = '\0';
+            }
+        }
+        ImGui::PopItemWidth();
+    }
+    ImGui::End();
+
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
 }
 
 } // namespace Editor

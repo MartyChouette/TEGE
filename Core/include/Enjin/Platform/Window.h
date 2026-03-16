@@ -22,6 +22,7 @@ public:
     using FocusCallback = std::function<void(bool)>;
     using IconifyCallback = std::function<void(bool)>;
     using DropCallback = std::function<void(int count, const char** paths)>;
+    using CloseCallback = std::function<bool()>; // Return false to cancel close
 
     virtual ~Window() = default;
 
@@ -41,9 +42,13 @@ public:
     virtual void SetFocusCallback(const FocusCallback& callback) = 0;
     virtual void SetIconifyCallback(const IconifyCallback& callback) = 0;
     virtual void SetDropCallback(const DropCallback& callback) = 0;
+    virtual void SetCloseCallback(const CloseCallback& callback) = 0;
 
     virtual bool IsFocused() const = 0;
     virtual bool IsIconified() const = 0;
+
+    // Set window title at runtime
+    virtual void SetTitle(const char* title) = 0;
 
     // Set window icon at runtime (PNG path)
     virtual void SetIcon(const char* iconPath) = 0;

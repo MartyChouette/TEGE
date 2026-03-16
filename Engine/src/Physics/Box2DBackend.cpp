@@ -177,8 +177,8 @@ void Box2DBackend::SyncECSToBox2D() {
         auto* body2d = m_World->GetComponent<Body2DComponent>(entity);
         if (!transform || !body2d) continue;
 
-        if (body2d->isStatic || body2d->isSensor) {
-            // Static/sensor bodies: update position if changed externally
+        if (body2d->isStatic || body2d->isSensor || body2d->isKinematic) {
+            // Static/sensor/kinematic bodies: update position from ECS
             b2Vec2 currentPos = b2Body_GetPosition(bodyId);
             Math::Vector2 ecsPos = GetPosition2D(*transform);
             f32 ecsAngle = GetRotationZ(*transform);
@@ -218,6 +218,8 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
 
     if (body2d->isStatic) {
         bodyDef.type = b2_staticBody;
+    } else if (body2d->isKinematic) {
+        bodyDef.type = b2_kinematicBody;
     } else {
         bodyDef.type = b2_dynamicBody;
     }
@@ -240,7 +242,11 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
     shapeDef.friction = std::clamp(body2d->material.friction, 0.0f, 1.0f);
     shapeDef.restitution = std::clamp(body2d->material.restitution, 0.0f, 1.0f);
     shapeDef.isSensor = body2d->isSensor;
-    shapeDef.enableSensorEvents = body2d->isSensor;
+    // Box2D v3: enableSensorEvents on non-sensor shapes controls whether
+    // they act as visitors for sensor overlap events. Sensors themselves
+    // ignore this flag. Enable for all dynamic/kinematic bodies so they
+    // can trigger sensor callbacks (damage, pickups, etc.).
+    shapeDef.enableSensorEvents = !body2d->isStatic;
     shapeDef.enableContactEvents = !body2d->isSensor;
 
     // Collision filtering (v3.0.0 uses uint32_t)
@@ -345,9 +351,9 @@ void Box2DBackend::SyncBox2DToECS() {
         auto* body2d = m_World->GetComponent<Body2DComponent>(entity);
         if (!transform || !body2d) continue;
 
-        // Only sync dynamic non-sensor bodies back to ECS.
-        // Sensor bodies are driven by ECS (controllers, AI, tweens) — don't overwrite.
-        if (body2d->isStatic || body2d->isSensor) continue;
+        // Only sync dynamic non-sensor non-kinematic bodies back to ECS.
+        // Sensor/kinematic bodies are driven by ECS (controllers, AI, tweens) — don't overwrite.
+        if (body2d->isStatic || body2d->isSensor || body2d->isKinematic) continue;
 
         // Position
         b2Vec2 pos = b2Body_GetPosition(bodyId);

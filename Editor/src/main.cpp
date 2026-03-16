@@ -201,9 +201,14 @@ public:
             return;
         }
 
-        // Update camera controller
+        // Update camera controller only when the editor viewport is hovered
+        // (or when already captured from a prior RMB press in the viewport)
         if (m_CameraController) {
-            m_CameraController->Update(deltaTime);
+            bool viewportHovered = m_EditorLayer && m_EditorLayer->IsEditorViewportHovered();
+            bool alreadyCaptured = m_CameraController->IsMouseCaptured();
+            if (viewportHovered || alreadyCaptured) {
+                m_CameraController->Update(deltaTime);
+            }
         }
     }
 
@@ -238,6 +243,14 @@ public:
         // any rendering commands that might reference old GPU resources
         if (m_RenderSystem) {
             m_RenderSystem->FlushPendingChanges();
+        }
+
+        // Resize render targets BEFORE command buffer recording.
+        // This avoids destroying/recreating Vulkan resources while a command
+        // buffer is in recording state, which crashes with Vulkan layer hooks
+        // (OBS game capture, RenderDoc, etc.) that hold resource references.
+        if (m_EditorLayer) {
+            m_EditorLayer->PrepareRenderTargets();
         }
 
         VkCommandBuffer cmd = m_Renderer->GetCurrentCommandBuffer();

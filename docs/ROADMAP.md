@@ -2,26 +2,47 @@
 
 This document captures detailed technical plans, performance findings, and strategic initiatives identified through codebase audits. It complements CLAUDE.md's feature roadmap with implementation-specific details.
 
-## Status Summary (2026-03-08)
+## Status Summary (2026-03-16)
 
-**150+ features complete.** Beta 0.8.5 hardening sprint complete — all audit issues resolved, 255+ new tests, security hardened. See `docs/AUDIT_HARDENING_SPRINT.md` for full sprint summary. BSL 1.1 license in place. Inno Setup installer functional with icon, license page, and file associations.
+**150+ features complete.** Beta 0.8.5 hardening sprint complete — all audit issues resolved, 255+ new tests, security hardened. See `docs/AUDIT_HARDENING_SPRINT.md` for full sprint summary. BSL 1.1 license in place. Inno Setup installer functional with icon, license page, and file associations. Path tracer polish (Phase 3) complete with NEE, MIS, Russian Roulette, and firefly clamping. Debug panels (F1/F2) and drop-down console added. Art Style Rendering System planned as P0 (8 visual aesthetics: pre-PBR, hand-painted, cel/toon, NPR, retro 3D, pixel art, material-expression, analog/degraded).
 
 ### Still Remaining
 
 | Category | Item | Priority |
 |----------|------|----------|
+| ~~**Renderer**~~ | ~~Path Tracer Polish (NEE, MIS, Russian Roulette, firefly clamping)~~ | ~~P1~~ DONE |
+| **Art Styles** | Shared Infrastructure — light ramp texture, normal-based outlines, specular map slot, paper/overlay texture | P0 |
+| **Art Styles** | Pre-PBR Realism — classic Blinn-Phong with specular maps, half-Lambert wrap lighting, scene specular strength | P0 |
+| **Art Styles** | Hand-Painted Stylization — artist light ramp textures (TF2/Genshin-style), light wrap amount, per-material ramp override | P0 |
+| **Art Styles** | Enhanced Cel/Toon — colored shadows, rim lighting (wire existing field), per-material band override, inverted-hull outlines | P0 |
+| **Art Styles** | NPR Illustrative — Tonal Art Map hatching (6-tone luminance layers), watercolor post-process (edge darkening, pigment pooling, granulation), pen/ink variation | P0 |
+| **Art Styles** | Pixel Art Polish — custom palette textures (PICO-8, Game Boy, NES, C64), resolution-coherent outlines, normal quantization | P0 |
+| **Art Styles** | Material-Expression Worlds — wire SSS into forward shader, matcap texture slot, procedural surface noise (Perlin/Worley/Simplex) | P0 |
+| **Art Styles** | Analog/Degraded Polish — film gate weave, light leak overlays, analog tape dropout | P0 |
+| **Art Styles** | Art Style Presets — editor dropdown (Realistic PBR, Classic Blinn-Phong, Hand-Painted, Toon/Anime, Low-Poly Retro, Pixel Art, NPR Sketch) | P0 |
+| **Renderer** | ReSTIR — Reservoir-based light sampling (DI, temporal/spatial reuse) | P1 |
+| **Renderer** | Temporal RT Reuse — carry ray results across frames, confidence-weighted | P2 |
+| **Renderer** | Radiance Caching — world-space irradiance cache, screen-space cache | P2 |
+| **Renderer** | DLSS / FSR / XeSS Upscaling (IUpscaler interface, 3 backends) | P2 |
+| **Renderer** | Additional AA (SMAA, MSAA runtime toggle, comparison mode) | P3 |
+| **Renderer** | GPU-Driven Work Scheduling (indirect draw, multi-draw, async compute overlap) | P3 |
 | **Release** | Splash screen (optional "Made with Enjin") | P2 |
 | **Platforms** | macOS (MoltenVK) | P2 |
 | **Platforms** | Xbox Series X/S (GDK/D3D12) | P2 |
 | **Platforms** | PlayStation 5 (PSDK/AGC) | P3 |
 | **Platforms** | Nintendo Switch 2 (Vulkan 1.3) | P3 |
-| **Platforms** | Mobile (Android/iOS) | P4 |
+| **Platforms** | Mobile (Android/iOS — render tiers, TBDR paths, touch input) | P4 |
 | **Platforms** | VR/XR (OpenXR) | P4 |
 
 ### Recently Completed
 
 | Category | Item |
 |----------|------|
+| **Renderer** | Path Tracer Polish — NEE (uniform light selection, shadow rays), MIS (power heuristic), Russian Roulette (configurable min bounce/probability), firefly clamping (per-bounce + final), Cook-Torrance BRDF with GGX importance sampling, simplified material fallback for deep bounces |
+| **Editor** | Game Debug Panel (F1) — 5-tab game-focused debug window (Scene/Physics/Scripts/Audio/Gameplay) with entity lists, physics body details, script status indicators, audio source state |
+| **Editor** | Debug Workstation (F2) — 5-tab engine-focused debug window (Performance/Renderer/ECS/Scene/System) with FPS/frame time graphs, percentile stats, render pipeline state, GPU/Vulkan info |
+| **Editor** | Drop-down Console (backtick) — Quake-style slide-down console with 60+ commands, command history, color-coded output, smooth animation |
+| **Editor** | PrepareRenderTargets — pre-command-buffer render target resizing, fixes 4:3 aspect ratio crash with Vulkan hooks (OBS, RenderDoc) |
 | **Release** | App icon — `installer/enjin.ico` (7 sizes: 16-256px) with PNG assets, wired into Inno Setup installer and editor exe |
 | **Release** | BSL 1.1 licensing — `LICENSE` file in place (4-year change date to Apache 2.0, free game use, no competing engine forks) |
 | **Release** | Inno Setup installer (`installer/EnjinSetup.iss`) — icon, license page, `.enjin` file associations, component selection, Start Menu/Desktop shortcuts |
@@ -43,11 +64,104 @@ This document captures detailed technical plans, performance findings, and strat
 | **RT** | OptiX AI Denoiser integration (NVIDIA) |
 | **RT** | RT Caustics (photon mapping / path traced) |
 | **RT** | RT Translucency (subsurface scattering) |
+| **RT** | Motion Vectors + TAA (per-pixel velocity, Halton jitter, neighborhood clamping) |
+| **RT** | Material SSBO for RT hit shaders (binding 9), OptiX denoiser CUDA interop |
 | **Flash** | Yarn Spinner / Twine dialogue import/export |
 | **Scripting** | Expose template-only features (particle presets, HUD widget, text component) to AS/VS/inspector |
 | **Assets** | Assimp skeletal animation import (FBX/DAE/all formats) |
 | **QA** | Beta 0.8 hardening: ECS, Renderer, Serialization, Asset Pack, Physics, Audio, Build Pipeline, Scripting & Networking |
 | **Bug Fix** | RT pipeline crash on pool-allocated entity BLAS builds |
+
+---
+
+## Art Style Rendering System (P0 — 2026-03-16)
+
+**Goal:** Support 8 distinct visual aesthetics beyond the default PBR pipeline, enabling developers to create games with any art direction without fighting the renderer.
+
+### Current Coverage
+
+| Style | Existing Support | Key Gaps |
+|-------|-----------------|----------|
+| Low-poly retro 3D | ~95% — vertex snap, affine textures, flat/Gouraud, UV quantize, stipple, resolution downscale | Texture page warping, polygon sort errors |
+| Analog/degraded | ~90% — VHS (tracking, wobble, bleed, noise), CRT (10 real presets, phosphor subpixels), film grain, chromatic aberration | Film gate weave, light leaks, tape dropout |
+| Pixel/3D hybrid | ~80% — resolution downscale, color quantization, Bayer dither, palette lock (4-256 colors) | Custom palette textures, resolution-coherent outlines, normal quantization |
+| Cel/toon | ~70% — diffuse bands (2-8), specular cutoff, Sobel depth outlines, per-material exclude | Colored shadows, rim lighting, per-material bands, inverted-hull outlines, normal edges |
+| NPR illustrative | ~40% — 8 stipple patterns (Crosshatch, Halftone, etc.), configurable density/color modes | Tonal Art Map hatching, watercolor effects, pen/ink variation, paper texture |
+| Pre-PBR realism | ~30% — Blinn-Phong shading model exists | Specular map slot, half-Lambert wrap, scene specular strength |
+| Hand-painted | ~10% — dither gradient flag, LUT grading | Light ramp textures, wrap lighting, per-material ramp override |
+| Material-expression | ~20% — SSS fields on MaterialComponent, PBR params, parallax mapping | SSS not wired in forward pass, no matcap textures, no procedural noise |
+
+### Phase 0: Shared Infrastructure
+
+Reusable building blocks that unlock multiple styles:
+
+- **Light ramp texture** (1D gradient LUT) — new descriptor binding, replace `NdotL` with artist-authored gradient sample in `calcBlinnPhong`/`calcBlinnPhongCel`. Fallback to current behavior when no ramp bound. Enables hand-painted + enhanced cel.
+- **Normal-based edge detection** — extend `applyCelOutline()` in `postprocess.frag` with Sobel on reconstructed normals (using existing `reconstructNormal()`). Add `celOutlineNormalWeight`/`celOutlineDepthWeight`. Improves outlines for cel, NPR, material worlds.
+- **Specular map texture slot** — new `specularTexturePath` on `MaterialComponent`. When `shadingModel == Blinn-Phong`, interpret as direct specular intensity instead of deriving from metallic. Enables pre-PBR realism.
+- **Paper/overlay texture** — bindable overlay in `PostProcessSettings`, applied as multiply/overlay blend after stipple. Enables watercolor and material-expression looks.
+
+### Phase 1: Pre-PBR Realism + Hand-Painted (Styles 1 & 2)
+
+- Classic Blinn-Phong with specular maps (not derived from metallic)
+- `halfLambert` toggle (`NdotL * 0.5 + 0.5`), scene-level `specularStrength` multiplier
+- Artist light ramp textures with `lightRampTexturePath` file picker
+- `lightWrapAmount` (0.0-1.0), per-material `lightRampOverride`
+- Files: `triangle.frag`, `SceneRenderSettings.h`, `EditorLayerRendering.cpp`
+
+### Phase 2: Enhanced Cel/Toon (Style 3)
+
+- `celShadowColor` (Vector3) in LightingUBO — tinted shadows instead of just dark
+- Rim lighting: wire existing `rimLightStrength` from MaterialComponent into shader
+- Per-material `celBandsOverride` (u8, 0 = use global) through push constants
+- Inverted-hull geometry outlines: backface extrusion pass, per-material `outlineWidth`/`outlineColor`
+- Files: `triangle.frag`, `Material.h`, `RenderSystem.cpp` (outline pass)
+
+### Phase 3: NPR Illustrative (Style 4)
+
+- Tonal Art Map (TAM) hatching: 6-tone luminance-layered atlas, interpolate layers by fragment brightness
+- Watercolor post-process: edge darkening, wet-edge diffusion (edge-aware Gaussian), paper texture overlay, color granulation (noise-modulated saturation)
+- Pen/ink line variation: curvature-driven outline thickness
+- Files: `postprocess.frag`, `PostProcessSettings`, `SceneRenderSettings.h`
+
+### Phase 4: Pixel Art Polish (Style 6)
+
+- Custom palette texture binding (1D Nx1 pixels), nearest-color matching in RGB/LAB space
+- Built-in palettes: PICO-8, CGA, EGA, Game Boy, NES, C64
+- Resolution-coherent outlines: render outlines at internal resolution before upscale
+- Normal quantization mode: snap normals to N cardinal directions for 2D-in-3D look
+
+### Phase 5: Material-Expression Worlds (Style 7)
+
+- Wire existing `sssIntensity`/`sssRadius`/`sssColor` into forward shader (wrap-lighting + offset samples)
+- Matcap texture slot replacing procedural sphere env map
+- Procedural surface noise: `noiseType` (Perlin/Worley/Simplex), `noiseScale`, `noiseStrength` as normal perturbation + color modulation
+
+### Phase 6: Analog/Degraded Polish (Style 8)
+
+- Film gate weave: per-frame UV jitter with low-frequency sine + randomization
+- Light leak / film burn: bindable overlay texture, additive blend, animated position
+- Analog tape dropout: horizontal signal loss bands in VHS filter
+
+### Art Style Presets (Editor UI)
+
+New "Art Style Quick Setup" dropdown in Rendering settings with one-click presets:
+- Realistic PBR (default)
+- Classic Blinn-Phong
+- Hand-Painted (TF2-like)
+- Toon/Anime
+- Low-Poly Retro
+- Pixel Art
+- NPR Sketch
+
+Each preset configures shadingModel, cel settings, post-process, retro flags, and ramp textures.
+
+### Key Files
+
+- `Engine/shaders/triangle.frag` — lighting model changes (ramp, SSS, specular, wrap, rim, cel color, normal quantize)
+- `Engine/shaders/postprocess.frag` — outlines, watercolor, TAM hatching, palette, paper overlay, film effects
+- `Engine/include/Enjin/Renderer/SceneRenderSettings.h` — all new scene-level parameters
+- `Engine/include/Enjin/ECS/Components/Material.h` — specular map, matcap, per-material cel overrides
+- `Engine/src/Editor/EditorLayerRendering.cpp` — art style presets, parameter controls
 
 ---
 
@@ -1228,6 +1342,172 @@ Only runs for `SceneRenderMode::Scene3D`. 2D/2.5D scenes skip the RT pipeline en
 
 ---
 
+## Rendering Pipeline Roadmap — Sparse Reconstruction-First
+
+The rendering pipeline is moving toward **sparse sampling + smart reconstruction**: render fewer true samples, choose them intelligently, reconstruct with temporal methods, denoisers, and neural models. This roadmap prioritizes importance-driven ray selection, temporal reuse, and radiance caching over brute-force path tracing.
+
+### Phase 1: Motion Vectors + TAA ✅ COMPLETE (2026-03-11)
+
+Foundation for all temporal techniques — upscalers, RT temporal reuse, ReSTIR temporal.
+
+- ~~Per-pixel velocity buffer (RG16F MRT attachment)~~ ✅
+- ~~TAA jitter injection (Halton 2,3)~~ ✅
+- ~~TAA resolve compute shader (neighborhood clamping, velocity reprojection)~~ ✅
+- ~~History ping-pong buffers with reset on camera cut/scene change~~ ✅
+- ~~Editor UI: AA dropdown (None/FXAA/TAA/SMAA), TAA sharpness/jitter/feedback sliders~~ ✅
+- ~~SceneRenderSettings: aaMode, taaSharpness, taaJitterScale, taaFeedbackMin/Max~~ ✅
+
+### Phase 2: Finish Ray Tracing ✅ COMPLETE (2026-03-11)
+
+- ~~Material SSBO for RT hit shaders (binding 9)~~ ✅
+- ~~Wire OptiX denoiser CUDA interop~~ ✅
+- ~~Recompile RT shaders → update RTShaderData.h~~ ✅
+
+Remaining RT work (vertex/index SSBOs, full material-correct .rchit shaders) deferred — functional but not material-accurate.
+
+### Phase 3: Path Tracer Polish ✅ DONE
+
+- ✅ **Next Event Estimation (NEE)** — direct light sampling at each bounce for faster convergence. Uniform random light selection across directional, point, and spot lights via packed NEE light SSBO (binding 16). Shadow rays for visibility testing.
+- ✅ **Multiple Importance Sampling (MIS)** — combine BRDF sampling + light sampling PDFs, power heuristic. Combined PDF uses metallic/roughness-adaptive specular probability. MIS weight applied to NEE contributions.
+- ✅ **Russian Roulette** — probabilistic bounce termination based on throughput luminance (configurable min bounce depth, default 3, and min survival probability, default 0.05). Throughput divided by survival probability to remain unbiased.
+- ✅ **Firefly clamping** — clamp outlier per-bounce throughput and final accumulated radiance (configurable clamp value, default 10.0)
+- ✅ **Accumulation reset** — detect camera/scene changes, reset SPP counter
+- ✅ **Progressive UI** — show current SPP count, convergence indicator, target SPP setting
+- ✅ **Cook-Torrance BRDF** — Full GGX microfacet model with Fresnel-Schlick, Smith-Schlick geometry, GGX importance sampling, cosine-weighted hemisphere diffuse sampling, combined mixture PDF
+- ✅ **Simplified materials** — Pre-baked CPU-side simplified materials (F0, kDiffuse, effectiveRoughness) for deep bounces (after bounce 1), reducing hit shader divergence. Skips SSS, transmission, caustics on deep paths.
+- **Reference mode** — high-SPP offline render-to-file for ground truth comparison (planned)
+
+### Phase 4: ReSTIR — Importance-Driven Light Selection
+
+The single biggest efficiency win for the RT pipeline. Focus limited ray budget on the most important lights and paths per pixel.
+
+- **Reservoir-based light sampling** — implement ReSTIR DI (direct illumination)
+  - Per-pixel light reservoir (candidate, weight, M count)
+  - Initial candidates: random light sampling weighted by estimated contribution
+  - Temporal reuse: carry reservoirs across frames using motion vectors (Phase 1)
+  - Spatial reuse: share reservoirs with neighbors for faster convergence
+- **Light PDF estimation** — approximate light contribution without tracing
+  - Distance-based falloff, solid angle, emission intensity
+  - Used for initial candidate generation and MIS weighting
+- **Integration with existing RT effects**
+  - RT Shadows: ReSTIR selects which lights to cast shadow rays toward
+  - RT GI: ReSTIR DI for direct bounce, importance-weighted indirect
+  - Path tracer: NEE (Phase 3) uses ReSTIR-selected lights
+- **Adaptive ray budget** — per-pixel ray count based on variance/importance
+  - High-variance regions (edges, specular, first-frame) get more rays
+  - Stable temporal regions get fewer rays
+  - Feed variance estimate to VRS (already have `VK_KHR_fragment_shading_rate`)
+- **Editor UI** — ReSTIR toggle, reservoir visualization debug mode, ray budget display
+
+### Phase 5: Temporal RT Reuse
+
+Carry ray-traced results across frames, not just denoise per-frame. The denoisers (SVGF/OIDN/OptiX) already do temporal filtering, but this goes deeper — reusing actual ray results.
+
+- **Temporal reprojection of RT outputs**
+  - Reproject previous frame's shadow/reflection/AO/GI using motion vectors
+  - Confidence-weighted blend: high confidence = reuse, low = retrace
+  - Disocclusion detection: new surfaces force fresh rays
+- **Temporal accumulation for GI**
+  - Multi-frame GI accumulation (like path tracer but for hybrid mode)
+  - Exponential moving average with configurable history length
+  - Reset on significant lighting/geometry changes
+- **Denoiser-aware temporal pipeline**
+  - Feed temporal reuse confidence to SVGF/OIDN as additional signal
+  - Reduce denoiser aggressiveness where temporal data is reliable
+  - Tighter feedback loop: reuse → denoise → display
+
+### Phase 6: Radiance Caching
+
+Cache and reuse indirect lighting instead of recomputing every frame. The most expensive part of GI is multi-bounce indirect — caching makes it tractable at real-time rates.
+
+- **World-space irradiance cache**
+  - Sparse 3D grid of cached irradiance probes (extends existing SH probe system)
+  - Probe placement: adaptive based on geometry density and lighting complexity
+  - Update rate: stagger probe updates across frames (not all probes every frame)
+- **Screen-space radiance cache**
+  - Cache indirect lighting results in screen space
+  - Temporal reprojection for cache reuse
+  - Invalidation on disocclusion or lighting change
+- **Cache-guided ray allocation**
+  - Regions with valid cache data → fewer rays needed
+  - Regions with stale/missing cache → prioritize ray budget there
+  - Feeds into adaptive ray budget from Phase 4
+- **Integration with RT GI**
+  - First bounce: ray traced (Phase 2)
+  - Second+ bounces: read from radiance cache where available, trace where not
+  - Progressive cache refinement over multiple frames
+
+### Phase 7: DLSS / FSR / XeSS Upscaling
+
+Shared prerequisite: Phase 1 (TAA jitter + velocity buffer + depth access) ✅
+
+- **IUpscaler interface** — abstract base for swappable upscaler backends
+- **FSR 2.0 / FSR 3.0** (AMD GPUOpen SDK) — **FIRST** (works on all GPUs)
+  - CMake flag: `ENJIN_UPSCALING_FSR` (OFF by default)
+- **DLSS 3.5** (NVIDIA Streamline SDK) — NVIDIA GPUs only, **SECOND**
+  - **DLSS Ray Reconstruction** — replaces RT denoisers with trained model (huge quality win at 1 SPP)
+  - CMake flag: `ENJIN_UPSCALING_DLSS` (OFF by default)
+- **XeSS** (Intel SDK) — all GPUs via DP4a, best on Intel Arc, **THIRD**
+  - CMake flag: `ENJIN_UPSCALING_XESS` (OFF by default)
+- **AdaptiveQuality integration** — hook upscaler render scale into existing quality level system
+- Editor UI and SceneRenderSettings already stubbed (upscalerType, upscalerQuality, upscalerSharpness)
+
+### Phase 8: Additional Antialiasing
+
+- **SMAA** — 3-pass post-process (edge detect, blend weight, neighborhood blend)
+- **MSAA runtime toggle** — pipeline recreation on sample count change
+- **AA comparison mode** — split-screen to compare methods
+
+### Phase 9: GPU-Driven Work Scheduling
+
+Move beyond CPU-organized draw submission. The GPU should manage more of the rendering workload itself.
+
+- **Indirect draw from GPU culling output**
+  - GPU culling (HiZ, already implemented) directly emits draw commands
+  - Eliminate CPU readback of visible object list
+  - `VK_KHR_draw_indirect_count` for variable-length draw lists
+- **Multi-draw indirect batching**
+  - Batch all draws per material/pipeline into single multi-draw-indirect calls
+  - Material sort keys (already 64-bit) drive batch boundaries
+- **Device-generated commands** (when Vulkan spec stabilizes)
+  - GPU-side pipeline/descriptor binding changes
+  - Full GPU-driven rendering loop for dynamic scenes
+- **Async compute overlap**
+  - RT dispatch on async compute queue while rasterization runs on graphics queue
+  - Denoiser on async compute overlapped with post-processing
+  - Already have queue family detection — wire actual concurrent usage
+
+### Phase 10: Mobile Support (separate major effort)
+
+#### 10a: Rendering Tier System
+- Capability tiers: High (Vulkan 1.3, desktop), Medium (Vulkan 1.1, mobile), Low (GLES)
+- Simplified shaders without RT, reduced post-processing
+- ASTC/ETC2 texture compression
+
+#### 10b: Android Port (FIRST)
+- ANativeWindow, touch input, Gradle+CMake, TBDR-aware render path
+- GPU quirk handling (Adreno, Mali, PowerVR)
+- Thermal throttling
+
+#### 10c: iOS Port (SECOND)
+- MoltenVK integration
+- Touch input + Safe Area, Xcode project
+
+#### 10d: Mobile Asset Pipeline
+- ASTC/ETC2, lower-res LODs, smaller `.enjpak`
+
+### Key Integration Notes
+
+- **Velocity buffer** ✅ — shared dependency for TAA, upscalers, RT temporal, ReSTIR temporal reuse
+- **RT descriptor binding 4** — motion vectors wired
+- **AdaptiveQuality** — render scale (0.5x-1.0x), upscalers plug in naturally
+- **VRS** — adaptive ray budget (Phase 4) feeds into existing `VK_KHR_fragment_shading_rate`
+- **Scene classification** (2D/2.5D/3D) — skip RT/TAA/ReSTIR in 2D-only scenes
+- **SH Light Probes** — existing probe system is foundation for radiance caching (Phase 6)
+- **Rendering philosophy**: Sparse reconstruction-first — spend fewer rays more deliberately, reuse across frames, reconstruct intelligently. Not brute-force path tracing.
+
+---
+
 ## Accessibility (Engine-Level)
 
 ### Editor Accessibility ✅ Complete
@@ -1568,4 +1848,4 @@ All 24 previously-tracked stubs have been resolved (Audit #4, 2026-02-14). Notab
 
 No outstanding stubs remain.
 
-*Last updated: 2026-03-08 — Roadmap audit: marked app icon (.ico, 7 sizes) done, BSL 1.1 licensing done, Inno Setup installer done. Added new rendering features: Clustered Forward Lighting, GPU Two-Phase HiZ Occlusion Culling, Variable Rate Shading, Virtual Texturing, Visibility Buffer, LOD hysteresis, 64-bit material sort keys, FrameAllocator, material transmission/SSS. Updated distribution section with Inno Setup as primary Windows installer.*
+*Last updated: 2026-03-16 — Added Rendering Pipeline Roadmap (10 phases: Motion Vectors+TAA ✅, Finish RT ✅, Path Tracer Polish ✅, ReSTIR, Temporal RT Reuse, Radiance Caching, DLSS/FSR/XeSS, Additional AA, GPU-Driven Work Scheduling, Mobile). Phases 1-3 complete. Added Game Debug Panel (F1), Debug Workstation (F2), drop-down console, PrepareRenderTargets fix.*

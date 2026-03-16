@@ -394,7 +394,9 @@ void EditorLayer::GitSwitchBranch(const std::string& branch) {
 }
 
 void EditorLayer::DrawGitIntegrationPanel() {
-    ImGui::Begin("Git Integration", nullptr, ImGuiWindowFlags_None);
+    bool panelOpen = true;
+    ImGui::Begin("Git Integration", &panelOpen, ImGuiWindowFlags_None);
+    if (!panelOpen) SetPanelVisibility(EditorPanel::GitIntegration, false);
 
     // Auto-detect repo on first open
     if (m_GitNeedsRefresh && m_GitRepoRoot.empty()) {

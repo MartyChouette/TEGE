@@ -92,6 +92,7 @@
 #include "Enjin/Math/Math.h"
 #include <stb_image.h>
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <ImGuizmo.h>
 #include <backends/imgui_impl_vulkan.h>
 #include <vulkan/vulkan.h>
@@ -127,7 +128,7 @@ namespace Editor {
 // File-scope pointer for the log callback (same pattern as GLFW callbacks).
 static EditorLayer* s_EditorLayerInstance = nullptr;
 
-static void EditorLogCallback(LogLevel /*level*/, LogCategory /*category*/, const char* formatted) {
+static void EditorLogCallback(LogLevel level, LogCategory category, const char* formatted) {
     if (!s_EditorLayerInstance) return;
 
     // formatted already ends with \n — strip it for console display
@@ -137,7 +138,7 @@ static void EditorLogCallback(LogLevel /*level*/, LogCategory /*category*/, cons
     }
     if (line.empty()) return;
 
-    s_EditorLayerInstance->PushConsoleMessage(line);
+    s_EditorLayerInstance->PushConsoleMessage(level, category, line);
 }
 
 // S19/S20/S23: Shell-escape a string for safe interpolation into shell commands (Unix only).
@@ -205,6 +206,13 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
         m_GameViewRenderTarget.reset();
     }
 
+    // Editor viewport render target (offscreen rendering for scene editing camera)
+    m_EditorViewportRT = std::make_unique<Renderer::RenderTarget>();
+    if (!m_EditorViewportRT->Create(renderer, m_EditorViewportWidth, m_EditorViewportHeight)) {
+        ENJIN_LOG_WARN(Editor, "Failed to create editor viewport render target");
+        m_EditorViewportRT.reset();
+    }
+
     // Post-processing pipeline (applies effects from scene RT to game view RT)
     if (m_GameViewRenderTarget && m_GameViewRenderTarget->IsValid()) {
         m_PostProcessing = std::make_unique<Renderer::PostProcessing>();
@@ -235,6 +243,14 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
         m_Window->SetIcon(m_EditorSettings.windowIconPath.c_str());
     }
 
+    // Apply persisted layout
+    m_VisiblePanels = static_cast<EditorPanel>(m_EditorSettings.visiblePanels);
+    m_Layout.leftWidth = m_EditorSettings.leftPanelWidth;
+    m_Layout.rightWidth = m_EditorSettings.rightPanelWidth;
+    m_Layout.bottomHeight = m_EditorSettings.bottomPanelHeight;
+    m_GizmoOperation = static_cast<GizmoOperation>(m_EditorSettings.gizmoOperation);
+    m_GizmoSpace = static_cast<GizmoSpace>(m_EditorSettings.gizmoSpace);
+
     // Initialize in-game pause menu system
     m_GameMenu.SetInputMap(&m_InputMap);
     m_GameMenu.SetEditorSettings(&m_EditorSettings);
@@ -264,6 +280,26 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
             OnFileDrop(count, paths);
         });
     }
+
+    // Intercept window close to prompt for unsaved changes
+    if (m_Window) {
+        m_Window->SetCloseCallback([this]() -> bool {
+            if (m_SceneDirty) {
+                m_UnsavedChangesAction = UnsavedAction::Quit;
+                m_ShowUnsavedChangesDialog = true;
+                return false; // Cancel close — dialog will handle it
+            }
+            return true; // Allow close
+        });
+    }
+
+    // Mark scene dirty whenever undo/redo state changes
+    m_UndoRedo.SetStateChangedCallback([this]() {
+        MarkDirty();
+    });
+
+    // Set initial window title
+    UpdateWindowTitle();
 
     // Wire collaborative editing callbacks
     m_CollabSystem.SetOnRemoteEdit([this](const Editor::EditOperation& op) {
@@ -433,6 +469,15 @@ void EditorLayer::InitializePlayMode() {
 }
 
 void EditorLayer::Shutdown() {
+    // Persist current layout state before shutdown
+    m_EditorSettings.visiblePanels = static_cast<u32>(m_VisiblePanels);
+    m_EditorSettings.leftPanelWidth = m_Layout.leftWidth;
+    m_EditorSettings.rightPanelWidth = m_Layout.rightWidth;
+    m_EditorSettings.bottomPanelHeight = m_Layout.bottomHeight;
+    m_EditorSettings.gizmoOperation = static_cast<u32>(m_GizmoOperation);
+    m_EditorSettings.gizmoSpace = static_cast<u32>(m_GizmoSpace);
+    m_EditorSettings.Save();
+
     // Disconnect log callback
     Logger::Get().SetLogCallback(nullptr);
     s_EditorLayerInstance = nullptr;
@@ -456,6 +501,10 @@ void EditorLayer::Shutdown() {
     if (m_GameViewRenderTarget) {
         m_GameViewRenderTarget->Destroy();
         m_GameViewRenderTarget.reset();
+    }
+    if (m_EditorViewportRT) {
+        m_EditorViewportRT->Destroy();
+        m_EditorViewportRT.reset();
     }
 
     // Clean up ImGui texture descriptors for sprite/tilemap previews
@@ -516,6 +565,16 @@ void EditorLayer::Update(f32 deltaTime) {
     if (!m_FeedbackLoaded) {
         m_FeedbackManager.LoadAll();
         m_FeedbackLoaded = true;
+    }
+
+    // Auto-save (only when dirty, not in play mode, has a save path)
+    if (m_EditorSettings.autoSaveEnabled && m_SceneDirty &&
+        !m_CurrentScenePath.empty() && m_PlayMode.IsStopped()) {
+        m_AutoSaveTimer += deltaTime;
+        if (m_AutoSaveTimer >= m_EditorSettings.autoSaveIntervalMinutes * 60.0f) {
+            m_AutoSaveTimer = 0.0f;
+            AutoSave();
+        }
     }
 
     // Update input action map each frame
@@ -636,7 +695,7 @@ void EditorLayer::Update(f32 deltaTime) {
         bool inPlayMode = !m_PlayMode.IsStopped();
         bool canUseCamera = !inPlayMode ||
             (Input::IsMouseButtonDown(MouseButton::Right) && !m_GameViewMouseCaptured);
-        m_CameraController->SetEnabled(!WantsKeyboardInput() && !usingGizmo && canUseCamera);
+        m_CameraController->SetEnabled(!ImGui::GetIO().WantTextInput && !usingGizmo && canUseCamera);
 
         // Set orbit target to selected entity position for MMB orbit
         if (m_PrimarySelected != ECS::INVALID_ENTITY && m_World && m_World->IsValid(m_PrimarySelected)) {
@@ -648,6 +707,8 @@ void EditorLayer::Update(f32 deltaTime) {
             // When no entity is selected, orbit around origin
             m_CameraController->SetOrbitTarget(Math::Vector3(0.0f, 0.0f, 0.0f));
         }
+
+        m_CameraController->Update(deltaTime);
     }
 
     // Gizmo mode shortcuts (1=translate, 2=rotate, 3=scale, 4=toggle space)
@@ -746,6 +807,16 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
 
+    // Quake-style drop-down console (backtick/tilde toggle)
+    // Placed outside WantTextInput so the console itself can capture text input.
+    if (Input::IsKeyPressed(KeyCode::GraveAccent)) {
+        m_ShowDropConsole = !m_ShowDropConsole;
+        if (m_ShowDropConsole) {
+            m_DropConsoleInput[0] = '\0';
+            m_DropConsoleHistoryPos = -1;
+        }
+    }
+
     // Register palette commands on first use
     if (!m_CommandsRegistered) {
         RegisterPaletteCommands();
@@ -760,6 +831,14 @@ void EditorLayer::Update(f32 deltaTime) {
 
     // Focus mode toggle (F11) and exit (Escape)
     // F11 toggles between editor view and fullscreen game view while playing
+    // F1 = Game Debug, F2 = Editor/Engine Debug
+    if (Input::IsKeyPressed(KeyCode::F1)) {
+        m_ShowGameDebug = !m_ShowGameDebug;
+    }
+    if (Input::IsKeyPressed(KeyCode::F2)) {
+        m_ShowDebugWorkstation = !m_ShowDebugWorkstation;
+    }
+
     if (Input::IsKeyPressed(KeyCode::F11)) {
         m_FocusMode = !m_FocusMode;
         if (m_FocusMode) {
@@ -992,8 +1071,136 @@ void EditorLayer::Update(f32 deltaTime) {
     }
 }
 
+void EditorLayer::PrepareRenderTargets() {
+    // Resize render targets BEFORE command buffer recording to avoid
+    // destroying/recreating Vulkan resources while a command buffer is active.
+    // This prevents crashes with Vulkan hooks (OBS, RenderDoc) that hold
+    // references to resources during command buffer recording.
+
+    // Editor viewport resize
+    if (m_EditorViewportRT && m_EditorViewportRT->IsValid() &&
+        m_EditorViewportWidth > 0 && m_EditorViewportHeight > 0) {
+        constexpr u32 VP_RESIZE_THRESHOLD = 8;
+        u32 curW = m_EditorViewportRT->GetWidth();
+        u32 curH = m_EditorViewportRT->GetHeight();
+        i32 dw = static_cast<i32>(m_EditorViewportWidth) - static_cast<i32>(curW);
+        i32 dh = static_cast<i32>(m_EditorViewportHeight) - static_cast<i32>(curH);
+        if ((dw < 0 ? -dw : dw) > VP_RESIZE_THRESHOLD ||
+            (dh < 0 ? -dh : dh) > VP_RESIZE_THRESHOLD) {
+            m_EditorViewportRT->Resize(m_EditorViewportWidth, m_EditorViewportHeight);
+        }
+    }
+
+    // Game View resize
+    if (!m_GameViewRenderTarget || !m_GameViewRenderTarget->IsValid()) return;
+    if (m_GameViewWidth == 0 || m_GameViewHeight == 0) return;
+
+    // In focus mode, render at full display resolution
+    if (m_FocusMode) {
+        ImGuiIO& io = ImGui::GetIO();
+        m_GameViewWidth = static_cast<u32>(io.DisplaySize.x);
+        m_GameViewHeight = static_cast<u32>(io.DisplaySize.y);
+    }
+
+    constexpr u32 RESIZE_THRESHOLD = 8;
+    u32 currentW = m_GameViewRenderTarget->GetWidth();
+    u32 currentH = m_GameViewRenderTarget->GetHeight();
+    i32 diffW = static_cast<i32>(m_GameViewWidth) - static_cast<i32>(currentW);
+    i32 diffH = static_cast<i32>(m_GameViewHeight) - static_cast<i32>(currentH);
+    bool needsResize = (diffW < 0 ? -diffW : diffW) > RESIZE_THRESHOLD ||
+                       (diffH < 0 ? -diffH : diffH) > RESIZE_THRESHOLD;
+
+    if (needsResize) {
+        if (m_SceneRenderTarget) {
+            m_SceneRenderTarget->Resize(m_GameViewWidth, m_GameViewHeight);
+        }
+        m_GameViewRenderTarget->Resize(m_GameViewWidth, m_GameViewHeight);
+
+        VkRenderPass effectRenderPass = (m_SceneRenderTarget && m_SceneRenderTarget->IsValid())
+            ? m_SceneRenderTarget->GetRenderPass()
+            : m_GameViewRenderTarget->GetRenderPass();
+
+        if (m_RenderSystem) {
+            m_RenderSystem->RecreateEffectPipelinesForRenderPass(effectRenderPass);
+        }
+
+        if (m_PostProcessing && m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
+            m_PostProcessing->OnResize(m_GameViewWidth, m_GameViewHeight);
+            m_PostProcessing->UpdateSourceImage(
+                m_SceneRenderTarget->GetColorImageView(),
+                m_SceneRenderTarget->GetSampler());
+        }
+    }
+
+    // One-shot: update effect pipelines for the appropriate render target's render pass
+    if (!m_EffectPipelinesUpdated && m_RenderSystem) {
+        VkRenderPass effectRenderPass = (m_SceneRenderTarget && m_SceneRenderTarget->IsValid())
+            ? m_SceneRenderTarget->GetRenderPass()
+            : m_GameViewRenderTarget->GetRenderPass();
+        m_RenderSystem->RecreateEffectPipelinesForRenderPass(effectRenderPass);
+        m_EffectPipelinesUpdated = true;
+    }
+}
+
 void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     ENJIN_PROFILE_SCOPE("Render");
+
+    // --- Editor viewport: render scene from editor camera to offscreen RT ---
+    // (Resize is handled by PrepareRenderTargets() before command buffer recording)
+    if (m_EditorViewportRT && m_EditorViewportRT->IsValid() &&
+        m_EditorViewportWidth > 0 && m_EditorViewportHeight > 0) {
+
+        // Shadow pass for editor camera (must run before RT render pass)
+        if (m_Camera && m_RenderSystem) {
+            m_RenderSystem->RenderShadowPassForCamera(m_Camera);
+        }
+
+        // Render scene to editor viewport RT
+        m_EditorViewportRT->Begin(commandBuffer);
+        if (m_RenderSystem && m_Camera) {
+            m_RenderSystem->RenderToTarget(m_EditorViewportRT.get(), m_Camera, 0);
+
+            // Render grid lines into the RT (uses offscreen descriptors written by RenderToTarget)
+            if (m_ShowGrid && m_GridVertexBuffer && m_GridVertexCount > 0) {
+                u32 vtW = m_EditorViewportRT->GetWidth();
+                u32 vtH = m_EditorViewportRT->GetHeight();
+                bool is2D = m_SceneManager.GetProjectMode() == Scene::ProjectMode::Mode2D;
+
+                // Rebuild grid mesh if needed
+                if (!m_GridVertexBuffer || m_GridSize != m_BuiltGridSize ||
+                    m_GridLines != m_BuiltGridLines || is2D != m_BuiltGridIs2D) {
+                    BuildGridMesh();
+                }
+                if (m_GridVertexBuffer && m_GridVertexCount > 0) {
+                    m_RenderSystem->RenderGridLines(m_GridVertexBuffer.get(), m_GridRegularCount,
+                        0, Math::Vector3(0.22f, 0.22f, 0.22f), 0.47f, vtW, vtH);
+                    m_RenderSystem->RenderGridLines(m_GridVertexBuffer.get(), 2,
+                        m_GridAxisXStart, Math::Vector3(0.7f, 0.24f, 0.24f), 0.8f, vtW, vtH);
+                    if (is2D) {
+                        m_RenderSystem->RenderGridLines(m_GridVertexBuffer.get(), 2,
+                            m_GridAxisZStart, Math::Vector3(0.24f, 0.7f, 0.24f), 0.8f, vtW, vtH);
+                    } else {
+                        m_RenderSystem->RenderGridLines(m_GridVertexBuffer.get(), 2,
+                            m_GridAxisZStart, Math::Vector3(0.24f, 0.24f, 0.7f), 0.8f, vtW, vtH);
+                    }
+                }
+            }
+
+            // Render weather particles in editor viewport
+            if (m_RenderSystem->GetMainPassWeather()) {
+                bool isRain = m_RenderSystem->GetMainPassWeatherIsRain();
+                m_RenderSystem->RenderWeatherParticles(
+                    *m_RenderSystem->GetMainPassWeather(), isRain,
+                    m_EditorViewportRT->GetWidth(), m_EditorViewportRT->GetHeight());
+            }
+        }
+        m_EditorViewportRT->End(commandBuffer);
+    }
+
+    // Skip main pass rendering (editor viewport is now offscreen)
+    if (m_RenderSystem) {
+        m_RenderSystem->SetSkipMainPassRendering(true);
+    }
 
     if (!m_GameViewRenderTarget || !m_GameViewRenderTarget->IsValid()) {
         return;
@@ -1028,56 +1235,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
 
     auto renderTimingStart = std::chrono::high_resolution_clock::now();
 
-    // In focus mode, render at full display resolution
-    if (m_FocusMode) {
-        ImGuiIO& io = ImGui::GetIO();
-        m_GameViewWidth = static_cast<u32>(io.DisplaySize.x);
-        m_GameViewHeight = static_cast<u32>(io.DisplaySize.y);
-    }
-
-    // Resize render targets if game view panel dimensions changed significantly.
-    // Use a threshold to avoid constant resize/pipeline recreation during window
-    // animations (fade-in, panel drag) where size changes by 1-2 pixels per frame.
-    constexpr u32 RESIZE_THRESHOLD = 8;
-    u32 currentW = m_GameViewRenderTarget->GetWidth();
-    u32 currentH = m_GameViewRenderTarget->GetHeight();
-    i32 diffW = static_cast<i32>(m_GameViewWidth) - static_cast<i32>(currentW);
-    i32 diffH = static_cast<i32>(m_GameViewHeight) - static_cast<i32>(currentH);
-    bool needsResize = (diffW < 0 ? -diffW : diffW) > RESIZE_THRESHOLD ||
-                       (diffH < 0 ? -diffH : diffH) > RESIZE_THRESHOLD;
-
-    if (needsResize && m_GameViewWidth > 0 && m_GameViewHeight > 0) {
-        if (m_SceneRenderTarget) {
-            m_SceneRenderTarget->Resize(m_GameViewWidth, m_GameViewHeight);
-        }
-        m_GameViewRenderTarget->Resize(m_GameViewWidth, m_GameViewHeight);
-
-        // Determine which render pass to use for effect pipelines
-        VkRenderPass effectRenderPass = (m_SceneRenderTarget && m_SceneRenderTarget->IsValid())
-            ? m_SceneRenderTarget->GetRenderPass()
-            : m_GameViewRenderTarget->GetRenderPass();
-
-        if (m_RenderSystem) {
-            m_RenderSystem->RecreateEffectPipelinesForRenderPass(effectRenderPass);
-        }
-
-        // Update post-processing: rebind source image and resize
-        if (m_PostProcessing && m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
-            m_PostProcessing->OnResize(m_GameViewWidth, m_GameViewHeight);
-            m_PostProcessing->UpdateSourceImage(
-                m_SceneRenderTarget->GetColorImageView(),
-                m_SceneRenderTarget->GetSampler());
-        }
-    }
-
-    // One-shot: update effect pipelines for the appropriate render target's render pass
-    if (!m_EffectPipelinesUpdated && m_RenderSystem) {
-        VkRenderPass effectRenderPass = (m_SceneRenderTarget && m_SceneRenderTarget->IsValid())
-            ? m_SceneRenderTarget->GetRenderPass()
-            : m_GameViewRenderTarget->GetRenderPass();
-        m_RenderSystem->RecreateEffectPipelinesForRenderPass(effectRenderPass);
-        m_EffectPipelinesUpdated = true;
-    }
+    // Render target resize is handled by PrepareRenderTargets() before command buffer recording.
 
     // Find game camera entity (use user-selected camera, or fall back to active camera)
     if (!m_World || !m_RenderSystem) {
@@ -1521,7 +1679,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         }
         m_RenderSystem->RenderElementalParticles(m_ElementalSystem, rtWidth, rtHeight);
     } else {
-        m_RenderSystem->RenderToTarget(sceneTarget, &gameCamera);
+        m_RenderSystem->RenderToTarget(sceneTarget, &gameCamera, 1);
         if (hasWeatherParticles) {
             m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight);
         }
@@ -1603,9 +1761,61 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             }
         }
 
+        // Transition scene depth for shader reading by post-process effects
+        // (caustics, SSAO, contact shadows, DoF, tilt-shift, cel outline, fog shafts, god rays)
+        bool depthBound = false;
+        if (m_SceneRenderTarget && m_SceneRenderTarget->IsValid() &&
+            m_SceneRenderTarget->GetDepthImage() != VK_NULL_HANDLE) {
+            VkImageMemoryBarrier depthBarrier{};
+            depthBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            depthBarrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            depthBarrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            depthBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            depthBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            depthBarrier.image = m_SceneRenderTarget->GetDepthImage();
+            depthBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            depthBarrier.subresourceRange.baseMipLevel = 0;
+            depthBarrier.subresourceRange.levelCount = 1;
+            depthBarrier.subresourceRange.baseArrayLayer = 0;
+            depthBarrier.subresourceRange.layerCount = 1;
+            depthBarrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+            depthBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+            vkCmdPipelineBarrier(commandBuffer,
+                VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                0, 0, nullptr, 0, nullptr, 1, &depthBarrier);
+
+            m_PostProcessing->UpdateDepthSource(m_SceneRenderTarget->GetDepthImageView());
+            depthBound = true;
+        }
+
         m_GameViewRenderTarget->Begin(commandBuffer);
         m_PostProcessing->ApplyToCurrentPass(commandBuffer, rtWidth, rtHeight);
         m_GameViewRenderTarget->End(commandBuffer);
+
+        // Transition scene depth back to attachment layout for next frame
+        if (depthBound) {
+            VkImageMemoryBarrier depthRestore{};
+            depthRestore.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            depthRestore.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            depthRestore.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            depthRestore.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            depthRestore.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            depthRestore.image = m_SceneRenderTarget->GetDepthImage();
+            depthRestore.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            depthRestore.subresourceRange.baseMipLevel = 0;
+            depthRestore.subresourceRange.levelCount = 1;
+            depthRestore.subresourceRange.baseArrayLayer = 0;
+            depthRestore.subresourceRange.layerCount = 1;
+            depthRestore.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            depthRestore.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+            vkCmdPipelineBarrier(commandBuffer,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+                0, 0, nullptr, 0, nullptr, 1, &depthRestore);
+        }
 
         // Restore original source image for next frame (avoid stale TAA reference)
         if (m_PostProcessing->IsTAAEnabled() && m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
@@ -1727,37 +1937,73 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     f32 screenW = io.DisplaySize.x;
     f32 screenH = io.DisplaySize.y;
     f32 s = m_EditorSettings.uiScale;
-    f32 menuBarH = 28.0f * s;
-    f32 panelGap = 4.0f * s;
-    f32 leftW = screenW * m_Layout.leftWidth;
-    f32 rightW = screenW * m_Layout.rightWidth;
-    f32 bottomH = screenH * m_Layout.bottomHeight;
-    f32 centerW = screenW - leftW - rightW - panelGap * 2.0f;
-    f32 centerH = screenH - menuBarH - bottomH - panelGap;
+    f32 menuBarH = ImGui::GetFrameHeight();  // Actual menu bar height
 
-    // When force layout is set (after template change), override positions once
-    ImGuiCond layoutCond = m_ForceLayout ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+    // --- DockSpace covering the full area below the menu bar ---
+    ImGuiID dockspaceId = ImGui::GetID("EnjinDockSpace");
 
-    // Game View position/size (auto-compute if -1)
-    f32 gvX = m_Layout.gameViewX >= 0 ? m_Layout.gameViewX : (leftW + panelGap + 20.0f * s);
-    f32 gvY = m_Layout.gameViewY >= 0 ? m_Layout.gameViewY : (menuBarH + 20.0f * s);
-    f32 gvW = m_Layout.gameViewW;
-    f32 gvH = m_Layout.gameViewH;
+    // Build the default dock layout on first use or when reset is requested
+    if (!m_DockingInitialized || m_ForceLayout) {
+        m_DockingInitialized = true;
 
-    // Panel edge positions with gaps
-    f32 centerX = leftW + panelGap;
-    f32 rightX = screenW - rightW;
-    f32 bottomY = menuBarH + centerH + panelGap;
+        ImGui::DockBuilderRemoveNode(dockspaceId);
+        ImGui::DockBuilderAddNode(dockspaceId, ImGuiDockNodeFlags_DockSpace);
+        ImGui::DockBuilderSetNodeSize(dockspaceId, ImVec2(screenW, screenH - menuBarH));
+        ImGui::DockBuilderSetNodePos(dockspaceId, ImVec2(0, menuBarH));
 
-    // Panels with layout-driven positions
+        // Split: left panel (Hierarchy)
+        ImGuiID dockLeft, dockRemaining;
+        ImGui::DockBuilderSplitNode(dockspaceId, ImGuiDir_Left, m_Layout.leftWidth, &dockLeft, &dockRemaining);
+
+        // Split: right panel (Inspector)
+        ImGuiID dockRight;
+        f32 rightRatio = m_Layout.rightWidth / (1.0f - m_Layout.leftWidth);
+        ImGui::DockBuilderSplitNode(dockRemaining, ImGuiDir_Right, rightRatio, &dockRight, &dockRemaining);
+
+        // Split: bottom panel (Console + Asset Browser)
+        ImGuiID dockBottom;
+        ImGui::DockBuilderSplitNode(dockRemaining, ImGuiDir_Down, m_Layout.bottomHeight, &dockBottom, &dockRemaining);
+
+        // Split left panel vertically: Hierarchy (top) + Scene List (bottom)
+        ImGuiID dockLeftBottom;
+        ImGui::DockBuilderSplitNode(dockLeft, ImGuiDir_Down, m_Layout.bottomHeight, &dockLeftBottom, &dockLeft);
+
+        // Split bottom panel: Console (left) + Asset Browser (right)
+        ImGuiID dockBottomRight;
+        ImGui::DockBuilderSplitNode(dockBottom, ImGuiDir_Right, 0.5f, &dockBottomRight, &dockBottom);
+
+        // Dock core panels into their nodes
+        ImGui::DockBuilderDockWindow("Hierarchy", dockLeft);
+        ImGui::DockBuilderDockWindow("Inspector", dockRight);
+        ImGui::DockBuilderDockWindow("Console", dockBottom);
+        ImGui::DockBuilderDockWindow("Asset Browser", dockBottomRight);
+        ImGui::DockBuilderDockWindow("Scene List", dockLeftBottom);
+
+        // Dock Scene and Game View into the center (tabbed)
+        ImGui::DockBuilderDockWindow("Scene", dockRemaining);
+        ImGui::DockBuilderDockWindow("Game View", dockRemaining);
+
+        ImGui::DockBuilderFinish(dockspaceId);
+    }
+
+    // Submit the DockSpace
+    ImGui::SetNextWindowPos(ImVec2(0, menuBarH));
+    ImGui::SetNextWindowSize(ImVec2(screenW, screenH - menuBarH));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGuiWindowFlags dockWindowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus |
+        ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoDocking;
+    ImGui::Begin("##DockSpaceHost", nullptr, dockWindowFlags);
+    ImGui::PopStyleVar(2);
+    ImGui::DockSpace(dockspaceId, ImVec2(0, 0), ImGuiDockNodeFlags_None);
+    ImGui::End();
+
+    // --- Core docked panels (positions managed by DockSpace) ---
     if (HasPanel(m_VisiblePanels, EditorPanel::Hierarchy)) {
-        ImGui::SetNextWindowPos(ImVec2(0, menuBarH), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(leftW, centerH), layoutCond);
         DrawHierarchyPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Inspector)) {
-        ImGui::SetNextWindowPos(ImVec2(rightX, menuBarH), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(rightW, centerH * m_Layout.inspectorSplit), layoutCond);
         DrawInspectorPanel();
     }
     // Unified settings window — any of the 5 old settings bits activates it
@@ -1789,132 +2035,113 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
             SetPanelVisibility(EditorPanel::RetroEffects, false);
             SetPanelVisibility(EditorPanel::Rendering, false);
 
-            ImGui::SetNextWindowPos(ImVec2(rightX - 310 * s, menuBarH + 50 * s), layoutCond);
-            ImGui::SetNextWindowSize(ImVec2(450 * s, 700 * s), layoutCond);
             DrawSettingsWindow();
         }
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Console)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX, bottomY), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(centerW * 0.5f, bottomH), layoutCond);
         DrawConsolePanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::AssetBrowser)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + centerW * 0.5f, bottomY), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(centerW * 0.5f, bottomH), layoutCond);
         DrawAssetBrowserPanel();
     }
     // PostProcessing and RetroEffects panels are now in the unified Settings window
+    if (HasPanel(m_VisiblePanels, EditorPanel::Viewport)) {
+        DrawViewportPanel();
+    }
     if (HasPanel(m_VisiblePanels, EditorPanel::GameView)) {
-        ImGui::SetNextWindowPos(ImVec2(gvX, gvY), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(gvW, gvH), layoutCond);
         DrawGameViewPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::SceneList)) {
-        ImGui::SetNextWindowPos(ImVec2(0, bottomY), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(leftW, bottomH), layoutCond);
         DrawSceneListPanel();
     }
     // Rendering panel is now in the unified Settings window
+
+    // --- Floating tool windows (not pre-docked, but user can dock them) ---
     if (HasPanel(m_VisiblePanels, EditorPanel::Profiler)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 20 * s, menuBarH + 20 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(520 * s, 450 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(520 * s, 450 * s), ImGuiCond_FirstUseEver);
         Debug::Profiler::Instance().DrawProfilerPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::ParticleEditor)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 340 * s, menuBarH + 20 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(380 * s, 600 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(380 * s, 600 * s), ImGuiCond_FirstUseEver);
         DrawParticleEditorPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::AnimGraph)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 20 * s, menuBarH + 20 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(700 * s, 500 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(700 * s, 500 * s), ImGuiCond_FirstUseEver);
         DrawAnimGraphPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Dialogue)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 40 * s, menuBarH + 40 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(750 * s, 550 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(750 * s, 550 * s), ImGuiCond_FirstUseEver);
         DrawDialoguePanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::VisualScript)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 60 * s, menuBarH + 60 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), ImGuiCond_FirstUseEver);
         DrawVisualScriptPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::SpriteSheetImport)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 80 * s, menuBarH + 80 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(700 * s, 500 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(700 * s, 500 * s), ImGuiCond_FirstUseEver);
         DrawSpriteSheetImporterPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::PixelEditorPanel)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 100 * s, menuBarH + 100 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), ImGuiCond_FirstUseEver);
         DrawPixelEditorPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::BehaviorTree)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 120 * s, menuBarH + 120 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), ImGuiCond_FirstUseEver);
         DrawBehaviorTreePanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::QuestFlow)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 140 * s, menuBarH + 140 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), ImGuiCond_FirstUseEver);
         DrawQuestFlowPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::UserManual)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 300 * s, menuBarH + 40 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(700 * s, 600 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(700 * s, 600 * s), ImGuiCond_FirstUseEver);
         DrawUserManualPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::DataAssets)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 350 * s, menuBarH + 40 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(800 * s, 550 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(800 * s, 550 * s), ImGuiCond_FirstUseEver);
         DrawDataAssetPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::PluginBrowser)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 350 * s, menuBarH + 40 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(800 * s, 500 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(800 * s, 500 * s), ImGuiCond_FirstUseEver);
         DrawPluginBrowserPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::ProceduralGen)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 300 * s, menuBarH + 30 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(650 * s, 600 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(650 * s, 600 * s), ImGuiCond_FirstUseEver);
         DrawProceduralGenPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::GitIntegration)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 250 * s, menuBarH + 30 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(550 * s, 600 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(550 * s, 600 * s), ImGuiCond_FirstUseEver);
         DrawGitIntegrationPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::NetworkPanel)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 200 * s, menuBarH + 30 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(450 * s, 500 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(450 * s, 500 * s), ImGuiCond_FirstUseEver);
         DrawNetworkPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Collaboration)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 200 * s, menuBarH + 30 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(450 * s, 550 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(450 * s, 550 * s), ImGuiCond_FirstUseEver);
         DrawCollaborationPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::FlashTimeline)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 400 * s, io.DisplaySize.y * 0.55f), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(800 * s, 350 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(800 * s, 350 * s), ImGuiCond_FirstUseEver);
         DrawFlashTimelinePanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::VectorDrawing)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 350 * s, menuBarH + 30 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(700 * s, 550 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(700 * s, 550 * s), ImGuiCond_FirstUseEver);
         DrawVectorDrawingPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::FeedbackPanel)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 350 * s, menuBarH + 40 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(720 * s, 580 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(720 * s, 580 * s), ImGuiCond_FirstUseEver);
         DrawFeedbackPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::SaveDebug)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 300 * s, menuBarH + 40 * s), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(620 * s, 500 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(620 * s, 500 * s), ImGuiCond_FirstUseEver);
         DrawSaveDebugPanel();
+    }
+    if (m_ShowGameDebug) {
+        DrawGameDebugPanel();
+    }
+    if (m_ShowDebugWorkstation) {
+        DrawDebugWorkstation();
     }
     if (m_ShowHTML5ExportDialog) {
         DrawHTML5ExportDialog();
@@ -1964,6 +2191,16 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawCrashReportDialog();
     }
 
+    // Unsaved changes confirmation dialog
+    if (m_ShowUnsavedChangesDialog) {
+        DrawUnsavedChangesDialog();
+    }
+
+    // Auto-save recovery dialog
+    if (m_ShowAutoSaveRecoveryDialog) {
+        DrawAutoSaveRecoveryDialog();
+    }
+
     // Clear the force flag after one frame
     if (m_ForceLayout) m_ForceLayout = false;
 
@@ -1994,33 +2231,41 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
             ImVec2(0, 0), io.DisplaySize, color);
     }
 
-    // Draw gizmos for selected entity
-    DrawGizmos();
+    // Clip all viewport overlays (gizmos, marquee, frustums) to the editor viewport panel
+    // Only draw when the viewport panel is actually visible
+    if (HasPanel(m_VisiblePanels, EditorPanel::Viewport)) {
+        ImDrawList* fgOverlay = ImGui::GetForegroundDrawList();
+        fgOverlay->PushClipRect(
+            ImVec2(m_EditorViewportImageMinX, m_EditorViewportImageMinY),
+            ImVec2(m_EditorViewportImageMaxX, m_EditorViewportImageMaxY), true);
 
-    // Draw marquee selection rectangle
-    DrawMarqueeRect();
+        // Draw gizmos for selected entity
+        DrawGizmos();
 
-    // Draw grid overlay
-    if (m_ShowGrid) {
-        DrawGrid();
-    }
+        // Draw marquee selection rectangle
+        DrawMarqueeRect();
 
-    // Draw camera frustum for all camera entities (or selected camera)
-    if (m_World) {
-        for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::CameraComponent>()) {
-            DrawCameraFrustum(entity);
+        // Grid is now rendered into the editor viewport RT in RenderOffscreen()
+
+        // Draw camera frustum for all camera entities (or selected camera)
+        if (m_World) {
+            for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::CameraComponent>()) {
+                DrawCameraFrustum(entity);
+            }
         }
+
+        fgOverlay->PopClipRect();
     }
 
     // Draw wireframe bounding boxes for weather zones and water volumes
-    if (m_World && m_Camera && m_Renderer) {
-        auto extent = m_Renderer->GetSwapchainExtent();
-        if (extent.width > 0 && extent.height > 0) {
+    // Overlays project world-space positions into the editor viewport's screen rect
+    if (HasPanel(m_VisiblePanels, EditorPanel::Viewport) && m_World && m_Camera) {
+        f32 sw = m_EditorViewportImageMaxX - m_EditorViewportImageMinX;
+        f32 sh = m_EditorViewportImageMaxY - m_EditorViewportImageMinY;
+        if (sw > 0 && sh > 0) {
             Math::Matrix4 viewMat = m_Camera->GetViewMatrix();
             Math::Matrix4 projMat = m_Camera->GetProjectionMatrix();
             Math::Matrix4 viewProj = projMat * viewMat;
-            f32 sw = static_cast<f32>(extent.width);
-            f32 sh = static_cast<f32>(extent.height);
 
             auto worldToScreen = [&](const Math::Vector3& worldPos, ImVec2& screenPos) -> bool {
                 Math::Vector4 clipPos = viewProj * Math::Vector4(worldPos.x, worldPos.y, worldPos.z, 1.0f);
@@ -2029,8 +2274,8 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                 f32 ndcY = clipPos.y / clipPos.w;
                 f32 ndcZ = clipPos.z / clipPos.w;
                 if (ndcZ < 0.0f || ndcZ > 1.0f) return false;
-                screenPos.x = (ndcX + 1.0f) * 0.5f * sw;
-                screenPos.y = (ndcY + 1.0f) * 0.5f * sh;
+                screenPos.x = (ndcX + 1.0f) * 0.5f * sw + m_EditorViewportImageMinX;
+                screenPos.y = (ndcY + 1.0f) * 0.5f * sh + m_EditorViewportImageMinY;
                 return true;
             };
 
@@ -2068,7 +2313,10 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                 drawLine3D(dl, corners[3], corners[7], color, thickness);
             };
 
-            ImDrawList* bgDrawList = ImGui::GetBackgroundDrawList();
+            ImDrawList* bgDrawList = ImGui::GetForegroundDrawList();
+            bgDrawList->PushClipRect(
+                ImVec2(m_EditorViewportImageMinX, m_EditorViewportImageMinY),
+                ImVec2(m_EditorViewportImageMaxX, m_EditorViewportImageMaxY), true);
 
             // Weather zone wireframe (light blue)
             for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::WeatherZoneComponent>()) {
@@ -2355,6 +2603,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     }
                 }
             }
+            bgDrawList->PopClipRect();
         }
     }
 
@@ -2473,6 +2722,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         m_GameMenu.Render(io.DisplaySize.x, io.DisplaySize.y);
     }
 
+    // Quake-style drop-down console (always on top of editor panels)
+    DrawDropConsole(m_LastDeltaTime);
+
     // Draw notification toasts (always on top)
     DrawNotifications(m_LastDeltaTime);
 
@@ -2568,14 +2820,17 @@ void EditorLayer::SelectRange(ECS::Entity from, ECS::Entity to) {
 }
 
 void EditorLayer::SelectEntitiesInRect(ImVec2 min, ImVec2 max) {
-    if (!m_World || !m_Camera || !m_Renderer) return;
-    auto extent = m_Renderer->GetSwapchainExtent();
-    if (extent.width == 0 || extent.height == 0) return;
+    if (!m_World || !m_Camera) return;
+    f32 vpW = m_EditorViewportImageMaxX - m_EditorViewportImageMinX;
+    f32 vpH = m_EditorViewportImageMaxY - m_EditorViewportImageMinY;
+    if (vpW <= 0 || vpH <= 0) return;
 
+    // Convert screen-space marquee to viewport-local coords
     auto entities = ScenePicker::PickEntitiesInScreenRect(
         m_World, m_Camera,
-        min.x, min.y, max.x, max.y,
-        static_cast<f32>(extent.width), static_cast<f32>(extent.height));
+        min.x - m_EditorViewportImageMinX, min.y - m_EditorViewportImageMinY,
+        max.x - m_EditorViewportImageMinX, max.y - m_EditorViewportImageMinY,
+        vpW, vpH);
 
     for (ECS::Entity e : entities) {
         m_SelectedEntities.insert(e);
@@ -2583,6 +2838,32 @@ void EditorLayer::SelectEntitiesInRect(ImVec2 min, ImVec2 max) {
     }
 }
 
+
+void EditorLayer::MarkDirty() {
+    if (!m_SceneDirty) {
+        m_SceneDirty = true;
+        UpdateWindowTitle();
+    }
+}
+
+void EditorLayer::ClearDirty() {
+    if (m_SceneDirty) {
+        m_SceneDirty = false;
+        m_AutoSaveTimer = 0.0f;
+        UpdateWindowTitle();
+    }
+}
+
+void EditorLayer::UpdateWindowTitle() {
+    if (!m_Window) return;
+    std::string title = "TEGE";
+    if (!m_CurrentScenePath.empty()) {
+        auto fname = std::filesystem::path(m_CurrentScenePath).filename().string();
+        title += " - " + fname;
+    }
+    if (m_SceneDirty) title += " *";
+    m_Window->SetTitle(title.c_str());
+}
 
 } // namespace Editor
 } // namespace Enjin

@@ -43,6 +43,7 @@ bool ImGuiLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer,
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
     // Setup custom Enjin style
     ImGui::StyleColorsDark();

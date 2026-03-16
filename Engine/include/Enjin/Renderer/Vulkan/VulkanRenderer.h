@@ -85,6 +85,13 @@ public:
     void RequestVSyncChange(bool enabled);
     bool IsVSyncEnabled() const;
 
+    // HDR output — recreates swapchain, render pass, and framebuffers
+    void SetHDREnabled(bool enabled);
+    bool IsHDREnabled() const;
+    u32 GetHDROutputMode() const;
+    // Recreate the main render pass (e.g., after swapchain format change)
+    bool RecreateRenderPass();
+
     // Register a callback to be notified after swapchain recreation (e.g., PostProcessing)
     using ResizeCallback = std::function<void(u32, u32)>;
     void AddResizeCallback(ResizeCallback callback) { m_ResizeCallbacks.push_back(std::move(callback)); }

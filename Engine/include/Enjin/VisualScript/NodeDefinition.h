@@ -27,6 +27,7 @@ namespace Networking {
 }
 namespace Scene {
     class StreamingManager;
+    class SceneManager;
 }
 
 namespace VisualScript {
@@ -63,6 +64,9 @@ struct ExecutionContext {
 
     // Streaming manager for level streaming nodes
     Scene::StreamingManager* streamingManager = nullptr;
+
+    // Scene manager for scene loading nodes
+    Scene::SceneManager* sceneManager = nullptr;
 
     // For event nodes, additional data
     std::string customEventName;

@@ -1832,6 +1832,8 @@ void EditorLayer::DrawSettingsWindow() {
     }
     if (!open) SetPanelVisibility(EditorPanel::EditorSettings, false);
 
+    ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+
     if (ImGui::BeginTabBar("SettingsTabs")) {
         // --- System tab ---
         ImGuiTabItemFlags systemFlags = (m_SettingsActiveTab == 0) ? ImGuiTabItemFlags_SetSelected : 0;
@@ -1882,15 +1884,41 @@ void EditorLayer::DrawSettingsWindow() {
             }
             ImGui::Separator();
 
+            // --- Lighting & Shadows ---
+            // Realistic lighting, outdoor scenes, architectural visualization, cinematic mood
+            ImGui::SeparatorText("Lighting & Shadows");
+            ImGui::TextDisabled("Realistic lighting, outdoor scenes, cinematic mood");
             DrawSettingsSection_Skybox();
-            DrawSettingsSection_Shadows();
             DrawSettingsSection_AmbientLighting();
-            DrawSettingsSection_CelShading();
-            DrawSettingsSection_DisplayOptions();
-            DrawSettingsSection_RayTracing();
+            DrawSettingsSection_ShadingModel();
+            DrawSettingsSection_Shadows();
             DrawSettingsSection_LightProbes();
+
+            // --- Ray Tracing ---
+            // Photorealistic reflections, soft shadows, global illumination (RTX / RDNA2+ GPU)
+            ImGui::SeparatorText("Ray Tracing & Path Tracing");
+            ImGui::TextDisabled("Photorealistic reflections, global illumination, path tracing (RTX/RDNA2+)");
+            DrawSettingsSection_RayTracing();
+
+            // --- Post-Processing & Cinematic ---
+            // Film looks, color grading, bloom, depth effects — works on all hardware
+            ImGui::SeparatorText("Post-Processing & Cinematic");
+            ImGui::TextDisabled("Film looks, color grading, bloom, depth effects — all hardware");
             DrawSettingsSection_PostProcessing();
+            DrawSettingsSection_CelShading();
+
+            // --- Stylized & Retro ---
+            // PS1/PS2/N64/Dreamcast aesthetics, pixel art, lo-fi, CRT nostalgia
+            ImGui::SeparatorText("Stylized & Retro");
+            ImGui::TextDisabled("PS1/PS2/N64/Dreamcast aesthetics, lo-fi visuals, CRT nostalgia");
             DrawSettingsSection_RetroEffects();
+            DrawSettingsSection_DreamcastEffects();
+
+            // --- Display & Environment ---
+            // World settings, weather, time of day, rendering modes
+            ImGui::SeparatorText("Display & Environment");
+            ImGui::TextDisabled("World settings, weather, time of day, rendering modes");
+            DrawSettingsSection_DisplayOptions();
             DrawSettingsSection_Environment();
             ImGui::PopID();
             ImGui::EndTabItem();
@@ -1899,6 +1927,7 @@ void EditorLayer::DrawSettingsWindow() {
         ImGui::EndTabBar();
     }
 
+    ImGui::PopItemWidth();
     ImGui::End();
 }
 
@@ -2276,9 +2305,11 @@ void EditorLayer::DrawShortcutsHelpModal() {
         {"Play Mode", "Ctrl+P", "Play / Stop"},
         {"Play Mode", "Ctrl+Shift+P", "Pause / Resume"},
         // Editor
-        {"Editor", "F1", "Toggle game menu"},
+        {"Editor", "F1", "Game Debug"},
+        {"Editor", "F2", "Engine Debug"},
         {"Editor", "F10", "Toggle input action map"},
         {"Editor", "Ctrl+Shift+/", "Keyboard shortcuts help"},
+        {"Editor", "` (Backtick)", "Toggle drop-down console"},
     };
 
     std::string filter;

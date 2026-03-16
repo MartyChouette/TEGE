@@ -2026,6 +2026,12 @@ void EditorLayer::DrawPlatformer2DController(ECS::Entity entity) {
             ImGui::TreePop();
         }
 
+        if (ImGui::TreeNode("Collision")) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Radius", &ctrl->collisionRadius, 0.05f, 0.05f, 5.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Height", &ctrl->collisionHeight, 0.1f, 0.1f, 10.0f);
+            ImGui::TreePop();
+        }
+
         if (ImGui::TreeNode("Wall Mechanics")) {
             InspectorUndo::Checkbox(m_UndoRedo, "Wall Jump", &ctrl->enableWallJump);
             InspectorUndo::Checkbox(m_UndoRedo, "Wall Slide", &ctrl->enableWallSlide);
@@ -2592,6 +2598,7 @@ void EditorLayer::DrawBody2DComponent(ECS::Entity entity) {
 
         // Body properties
         InspectorUndo::Checkbox(m_UndoRedo, "Static", &body->isStatic);
+        InspectorUndo::Checkbox(m_UndoRedo, "Kinematic", &body->isKinematic);
         InspectorUndo::Checkbox(m_UndoRedo, "Sensor", &body->isSensor);
         InspectorUndo::Checkbox(m_UndoRedo, "Fixed Rotation", &body->fixedRotation);
         InspectorUndo::DragFloat(m_UndoRedo, "Gravity Scale", &body->gravityScale, 0.1f, -10.0f, 10.0f);
@@ -2606,6 +2613,94 @@ void EditorLayer::DrawBody2DComponent(ECS::Entity entity) {
         }
 
         DrawCollisionFilteringUI(body->categoryBits, body->collisionMask);
+    }
+}
+
+void EditorLayer::DrawJoint2DComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Joint 2D", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("Joint2DCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<Physics::Joint2DComponent>(entity, "joint2D", "Joint 2D");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* joint = m_World->GetComponent<Physics::Joint2DComponent>(entity);
+        if (!joint) return;
+
+        // Joint type
+        const char* typeNames[] = { "Revolute", "Prismatic", "Distance", "Rope", "Weld" };
+        int typeIdx = static_cast<int>(joint->type);
+        if (ImGui::Combo("Type", &typeIdx, typeNames, 5)) {
+            joint->type = static_cast<Physics::Joint2DType>(typeIdx);
+        }
+
+        // Connected entity
+        u64 connId = static_cast<u64>(joint->connectedEntity);
+        if (ImGui::InputScalar("Connected Entity", ImGuiDataType_U64, &connId)) {
+            joint->connectedEntity = static_cast<ECS::Entity>(connId);
+        }
+        // Show name if valid
+        if (joint->connectedEntity != 0 && m_World->IsValid(joint->connectedEntity)) {
+            auto* name = m_World->GetComponent<ECS::NameComponent>(joint->connectedEntity);
+            if (name) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("(%s)", name->name.c_str());
+            }
+        }
+
+        // Anchors
+        f32 ancA[2] = { joint->anchorA.x, joint->anchorA.y };
+        if (ImGui::DragFloat2("Anchor A", ancA, 0.05f)) {
+            joint->anchorA = Math::Vector2(ancA[0], ancA[1]);
+        }
+        f32 ancB[2] = { joint->anchorB.x, joint->anchorB.y };
+        if (ImGui::DragFloat2("Anchor B", ancB, 0.05f)) {
+            joint->anchorB = Math::Vector2(ancB[0], ancB[1]);
+        }
+
+        ImGui::Separator();
+
+        // Type-specific properties
+        if (joint->type == Physics::Joint2DType::Revolute) {
+            InspectorUndo::Checkbox(m_UndoRedo, "Enable Limit##Rev", &joint->enableLimit);
+            if (joint->enableLimit) {
+                InspectorUndo::DragFloat(m_UndoRedo, "Lower Angle", &joint->lowerAngle, 0.01f, -6.28f, 6.28f);
+                InspectorUndo::DragFloat(m_UndoRedo, "Upper Angle", &joint->upperAngle, 0.01f, -6.28f, 6.28f);
+            }
+            InspectorUndo::Checkbox(m_UndoRedo, "Enable Motor##Rev", &joint->enableMotor);
+            if (joint->enableMotor) {
+                InspectorUndo::DragFloat(m_UndoRedo, "Motor Speed", &joint->motorSpeed, 0.1f, -100.0f, 100.0f);
+                InspectorUndo::DragFloat(m_UndoRedo, "Max Motor Torque", &joint->maxMotorTorque, 0.1f, 0.0f, 10000.0f);
+            }
+        } else if (joint->type == Physics::Joint2DType::Prismatic) {
+            f32 ax[2] = { joint->axis.x, joint->axis.y };
+            if (ImGui::DragFloat2("Axis", ax, 0.05f)) {
+                joint->axis = Math::Vector2(ax[0], ax[1]);
+            }
+            InspectorUndo::Checkbox(m_UndoRedo, "Enable Limit##Pris", &joint->enableLimit);
+            if (joint->enableLimit) {
+                InspectorUndo::DragFloat(m_UndoRedo, "Lower Translation", &joint->lowerTranslation, 0.05f, -100.0f, 100.0f);
+                InspectorUndo::DragFloat(m_UndoRedo, "Upper Translation", &joint->upperTranslation, 0.05f, -100.0f, 100.0f);
+            }
+            InspectorUndo::Checkbox(m_UndoRedo, "Enable Motor##Pris", &joint->enableMotor);
+            if (joint->enableMotor) {
+                InspectorUndo::DragFloat(m_UndoRedo, "Motor Speed##Pris", &joint->motorSpeed, 0.1f, -100.0f, 100.0f);
+                InspectorUndo::DragFloat(m_UndoRedo, "Max Motor Torque##Pris", &joint->maxMotorTorque, 0.1f, 0.0f, 10000.0f);
+            }
+        } else if (joint->type == Physics::Joint2DType::Distance || joint->type == Physics::Joint2DType::Rope) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Length", &joint->length, 0.05f, 0.0f, 1000.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Min Length", &joint->minLength, 0.05f, 0.0f, 1000.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Max Length", &joint->maxLength, 0.05f, 0.0f, 1000.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Stiffness", &joint->stiffness, 0.1f, 0.0f, 10000.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Damping", &joint->damping, 0.1f, 0.0f, 1000.0f);
+        }
+        // Weld has no extra parameters
+
+        ImGui::Separator();
+        InspectorUndo::Checkbox(m_UndoRedo, "Collide Connected", &joint->collideConnected);
     }
 }
 
@@ -4255,6 +4350,8 @@ void EditorLayer::DrawAIControllerComponent(ECS::Entity entity) {
         if (InspectorUndo::Combo(m_UndoRedo, "Current State", &state, states, 6)) {
             ai->currentState = static_cast<ECS::AIControllerComponent::AIState>(state);
         }
+
+        InspectorUndo::Checkbox(m_UndoRedo, "2D Mode", &ai->is2D);
 
         if (ImGui::TreeNode("Detection")) {
             InspectorUndo::DragFloat(m_UndoRedo, "Detection Range", &ai->detectionRange, 0.5f, 0.0f, 200.0f);
@@ -7259,8 +7356,9 @@ void EditorLayer::DrawCameraFrustum(ECS::Entity cameraEntity) {
         return;
     }
 
-    auto extent = m_Renderer->GetSwapchainExtent();
-    if (extent.width == 0 || extent.height == 0) {
+    f32 screenWidth = m_EditorViewportImageMaxX - m_EditorViewportImageMinX;
+    f32 screenHeight = m_EditorViewportImageMaxY - m_EditorViewportImageMinY;
+    if (screenWidth <= 0 || screenHeight <= 0) {
         return;
     }
 
@@ -7269,10 +7367,7 @@ void EditorLayer::DrawCameraFrustum(ECS::Entity cameraEntity) {
     Math::Matrix4 projMat = m_Camera->GetProjectionMatrix();
     Math::Matrix4 viewProj = projMat * viewMat;
 
-    f32 screenWidth = static_cast<f32>(extent.width);
-    f32 screenHeight = static_cast<f32>(extent.height);
-
-    // Project world position to screen (must match DrawGrid's worldToScreen)
+    // Project world position to editor viewport screen position
     auto worldToScreen = [&](const Math::Vector3& worldPos, ImVec2& screenPos) -> bool {
         Math::Vector4 clipPos = viewProj * Math::Vector4(worldPos.x, worldPos.y, worldPos.z, 1.0f);
         if (clipPos.w <= 0.001f) return false;
@@ -7280,12 +7375,12 @@ void EditorLayer::DrawCameraFrustum(ECS::Entity cameraEntity) {
         f32 ndcY = clipPos.y / clipPos.w;
         f32 ndcZ = clipPos.z / clipPos.w;
         if (ndcZ < 0.0f || ndcZ > 1.0f) return false;
-        screenPos.x = (ndcX + 1.0f) * 0.5f * screenWidth;
-        screenPos.y = (ndcY + 1.0f) * 0.5f * screenHeight;
+        screenPos.x = (ndcX + 1.0f) * 0.5f * screenWidth + m_EditorViewportImageMinX;
+        screenPos.y = (ndcY + 1.0f) * 0.5f * screenHeight + m_EditorViewportImageMinY;
         return true;
     };
 
-    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+    ImDrawList* drawList = ImGui::GetForegroundDrawList();
 
     // Calculate camera orientation
     Math::Vector3 camPos = transform->position;

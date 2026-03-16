@@ -127,6 +127,12 @@ struct alignas(16) LightingUBO {
     f32 celDiffuseBands;       // 0 = disabled, 2-8 = number of quantized bands
     f32 celSpecularCutoff;     // 0 = disabled, >0 = hard cutoff threshold for specular highlights
 
+    // Shading model flags: bit0=GGX, bit1=Fresnel, bit2=EnergyConserv, bit3=GeometryTerm, bit4=SphereEnvMap
+    u32 shadingFlags;
+    f32 sphereEnvStrength;     // Spherical environment map intensity (0=off, 0.5=subtle, 1.0=full)
+    f32 posterizeLevels;       // Color posterization: 0=disabled, 4-256 = discrete color levels per channel
+    f32 _padShading1;
+
     // Wind data for vegetation/weather shaders
     alignas(16) Math::Vector4 windData;  // xyz = wind direction * strength, w = time
 

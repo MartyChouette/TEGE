@@ -1,6 +1,6 @@
 # Enjin Engine -- Comprehensive Technical Analysis
 
-*Analysis Date: 2026-03-08*
+*Analysis Date: 2026-03-16*
 *Engine Version: Beta 0.8 (Active Development)*
 *Language: C++20 | Graphics API: Vulkan | Build System: CMake*
 
@@ -18,6 +18,7 @@
 8. [Performance Diagnostics Summary](#8-performance-diagnostics-summary)
 9. [Technical Debt Assessment](#9-technical-debt-assessment)
 10. [Feature Dependency Graph](#10-feature-dependency-graph)
+11. [Rendering Pipeline Roadmap](#11-rendering-pipeline-roadmap)
 
 ---
 
@@ -51,7 +52,7 @@ graph TB
         VulkanPipeline["VulkanPipeline<br/>(Graphics Pipeline,<br/>Descriptor Sets)"]
         VulkanBuffer["VulkanBuffer<br/>(Vertex, Index, Uniform,<br/>Storage Buffers)"]
         RenderSystem["RenderSystem<br/>(Entity Rendering,<br/>Material Sort, Caching,<br/>GPU HiZ Culling,<br/>Clustered Lighting)"]
-        PostProcessing["PostProcessing<br/>(Bloom, Vignette, FXAA,<br/>DoF, Tilt-Shift, Film Grain,<br/>Color Grading, Stipple/Dither,<br/>SSAO, God Rays, Contact<br/>Shadows, Caustics, Fog Shafts)"]
+        PostProcessing["PostProcessing<br/>(Bloom, Vignette, FXAA, TAA,<br/>DoF, Tilt-Shift, Film Grain,<br/>Color Grading, Stipple/Dither,<br/>SSAO, God Rays, Contact<br/>Shadows, Caustics, Fog Shafts)"]
         ShadowSystem["Shadow System<br/>(4-Cascade CSM, Point<br/>Cubemap, Spot 2D Array)"]
         SpriteBatch["SpriteBatchRenderer<br/>(GPU Instanced)"]
         SpriteAtlas["SpriteTextureAtlas<br/>(4096x4096 Shelf-Pack)"]
@@ -67,9 +68,12 @@ graph TB
             RTReflections["RTReflections (RGBA16F)"]
             RTAO["RTAO (R16F)"]
             RTGI["RTGI (RGBA16F)"]
+            MotionVectors["MotionVectors<br/>(RG16F MRT, Binding 4)"]
+            MaterialSSBO["Material SSBO<br/>(Hit Shader, Binding 9)"]
             PathTracer["PathTracer<br/>(Progressive Accumulation)"]
             SVGFDenoiser["SVGFDenoiser<br/>(3-Pass Compute)"]
             OIDNDenoiser["OIDNDenoiser<br/>(Intel Neural Denoise)"]
+            OptiXDenoiser["OptiXDenoiser<br/>(CUDA Interop)"]
             RTCompositor["RTCompositor<br/>(Fullscreen Compute)"]
         end
 
@@ -363,6 +367,8 @@ This matrix compares Enjin's current feature set against five established game e
 | **PBR Materials** | Full | Full | Full | Full | None | None |
 | **Ray Tracing** | Full | Full | None | Full | None | None |
 | **Post-Processing** | Full | Full | Full | Full | Basic | Basic |
+| **Anti-Aliasing (FXAA/TAA)** | Full | Full | Full | Full | None | None |
+| **Upscaling (DLSS/FSR/XeSS)** | Stub | Full | None | Full | None | None |
 | **Shadows (CSM/Point/Spot)** | Full | Full | Full | Full | None | None |
 | **Sprite Batching/Atlas** | Full | Full | Full | Partial | Full | Full |
 | **Skeletal Animation** | Full | Full | Full | Full | Basic | None |
@@ -420,12 +426,12 @@ This matrix compares Enjin's current feature set against five established game e
 
 | Engine | Full | Partial | Basic | Stub | None |
 |--------|------|---------|-------|------|------|
-| **Enjin** | 53 | 1 | 1 | 1 | 1 |
-| **Unity** | 37 | 7 | 2 | 0 | 7 |
-| **Godot** | 31 | 10 | 1 | 0 | 11 |
-| **Unreal** | 38 | 6 | 0 | 0 | 9 |
-| **GameMaker** | 14 | 5 | 9 | 0 | 24 |
-| **Construct** | 13 | 9 | 5 | 0 | 25 |
+| **Enjin** | 54 | 1 | 1 | 2 | 1 |
+| **Unity** | 39 | 7 | 2 | 0 | 7 |
+| **Godot** | 32 | 10 | 1 | 0 | 12 |
+| **Unreal** | 40 | 6 | 0 | 0 | 9 |
+| **GameMaker** | 14 | 5 | 9 | 0 | 26 |
+| **Construct** | 13 | 9 | 5 | 0 | 27 |
 
 Enjin achieves surprisingly broad feature coverage for a single-developer engine, now including Steam Audio HRTF spatial audio, sprite normal map lighting, and a 55-executable automated test suite. Its main gaps are mobile platform support and console certification (which require licensed devkits and partnership agreements).
 
@@ -545,6 +551,10 @@ gantt
     FrameAllocator (Per-Frame Linear Allocator) :done, b8, 2026-02-20, 2026-03-07
     Elemental System (Dot-Product Particles)    :done, b9, 2026-03-07, 2026-03-08
     29 Additional Unit Test Suites (26 -> 55)   :done, b10, 2026-02-20, 2026-03-08
+
+    section RT & AA Hardening (Weeks 15-16)
+    Motion Vectors + TAA (Phase 1)              :done, rt1, 2026-03-11, 2026-03-14
+    RT Material SSBO + OptiX Interop (Phase 2)  :done, rt2, 2026-03-14, 2026-03-16
 
     section Planned
     macOS (MoltenVK)                            :active, pl1, 2026-03-01, 2026-06-01
@@ -683,7 +693,8 @@ flowchart TB
         TiltShift --> CelOutlines["Cel Shading Outlines<br/>(Sobel Edge Detection)"]
         CelOutlines --> StippleDither["Stipple / Dither<br/>(8 Patterns, 3 Color<br/>Modes)"]
         StippleDither --> ColorGrading["Color Grading"]
-        ColorGrading --> FXAA["FXAA"]
+        ColorGrading --> TAAResolve["TAA Resolve<br/>(Neighborhood Clamping,<br/>Velocity Reprojection)"]
+        TAAResolve --> FXAA["FXAA"]
         FXAA --> Vignette["Vignette"]
         Vignette --> FilmGrain["Film Grain"]
         FilmGrain --> RetroFX["Retro Effects<br/>(CRT, Pixelation)"]
@@ -978,6 +989,9 @@ All performance issues from P0 through P6 have been resolved. The engine has und
 | **LOD with Hysteresis** | Screen-space projected size selection with 10% dead-zone transitions | Prevents LOD flickering, reduces vertex throughput |
 | **64-Bit Material Sort Keys** | Extended from 32-bit for finer-grained draw ordering | Better draw call batching across complex scenes |
 | **Per-Frame Linear Allocator** | `FrameAllocator` with single pointer bump, reset each frame | Near-zero allocation cost for transient data |
+| **Motion Vector MRT** | Per-pixel velocity buffer (RG16F) written during main pass via MRT output | Enables TAA, temporal upscaling, motion blur at ~0.3ms cost |
+| **TAA Resolve (Compute)** | Halton(2,3) jitter injection, neighborhood clamping, velocity reprojection, history ping-pong buffers | Sub-pixel stability, configurable sharpness/feedback/jitter |
+| **Material SSBO (RT)** | Material data uploaded to binding 9 for RT hit shaders | Correct shading in ray-traced hits without push constants |
 
 #### Current Performance Profile
 
@@ -987,6 +1001,8 @@ All performance issues from P0 through P6 have been resolved. The engine has und
 | **Frame Time (1000 Entities, 3D)** | < 16ms (60fps) | < 16ms with Jolt | Production physics backend |
 | **Frame Time (1000 Sprites, 2D)** | < 8ms | < 5ms | Atlas batching effective |
 | **Shadow Pass (4 CSM Cascades)** | < 4ms total | ~3ms | Caster caching helps |
+| **Motion Vector MRT** | < 0.5ms | ~0.3ms | RG16F per-pixel velocity, MRT output |
+| **TAA Resolve (Compute)** | < 0.5ms | ~0.3ms | Neighborhood clamping + velocity reprojection |
 | **Descriptor Cache Hit Rate** | > 70% | ~75-85% | Material sort driven |
 | **Entity Lookup (by name)** | < 0.01ms | O(1) | Hash map cache |
 | **Physics (1000 Colliders, Jolt)** | < 4ms | ~2-3ms | Multi-threaded Jolt |
@@ -1009,10 +1025,11 @@ It is **not positioned for AAA-scale** rendering (no Nanite-style mesh streaming
 pie title Frame Budget Breakdown (3D, 60fps)
     "Shadow Passes (CSM + Point + Spot)" : 3.0
     "Scene Classification + UBO Upload" : 0.5
-    "Main Render Pass (Opaque)" : 4.0
+    "Motion Vector MRT (RG16F)" : 0.3
+    "Main Render Pass (Opaque)" : 3.7
     "Sprite Batch Rendering" : 1.5
     "Particle Rendering" : 1.0
-    "Post-Processing Chain" : 2.5
+    "Post-Processing Chain (incl. TAA Resolve)" : 2.8
     "ECS Systems (Physics, AI, Scripts)" : 3.0
     "ImGui / Editor Overlay" : 1.0
     "Remaining Headroom" : 0.17
@@ -1149,9 +1166,20 @@ graph TB
         RTAO["RT AO"]
         RTGI["RT GI"]
         PathTrace["Path Tracer"]
+        MatSSBO["Material SSBO<br/>(Hit Shader, Binding 9)"]
         SVGF["SVGF Denoiser"]
         OIDN["OIDN Denoiser"]
+        OptiX["OptiX Denoiser<br/>(CUDA Interop)"]
         RTComp["RT Compositor"]
+    end
+
+    subgraph TemporalFeatures["Temporal & Upscaling"]
+        MotionVec["Motion Vectors<br/>(RG16F MRT)"]
+        TAA["TAA<br/>(Halton Jitter,<br/>Neighborhood Clamping)"]
+        Upscaler["IUpscaler<br/>(Planned: FSR/DLSS/XeSS)"]
+        ReSTIR["ReSTIR<br/>(Planned: DI,<br/>Temporal/Spatial Reuse)"]
+        TemporalRT["Temporal RT Reuse<br/>(Planned)"]
+        RadianceCache["Radiance Caching<br/>(Planned)"]
     end
 
     subgraph PhysicsFeatures["Physics Features"]
@@ -1323,6 +1351,7 @@ graph TB
     RTPipe --> RTAO
     RTPipe --> RTGI
     RTPipe --> PathTrace
+    RTPipe --> MatSSBO
     RTShadow --> SVGF
     RTReflect --> SVGF
     RTAO --> SVGF
@@ -1330,8 +1359,19 @@ graph TB
     RTShadow --> OIDN
     SVGF --> RTComp
     OIDN --> RTComp
+    OptiX --> RTComp
     RTComp --> RenderSys
     RenderSys --> AccelStruct
+
+    %% Temporal & Upscaling Dependencies
+    RenderSys --> MotionVec
+    MotionVec --> TAA
+    TAA --> PostProc
+    MotionVec --> Upscaler
+    MotionVec --> ReSTIR
+    MotionVec --> TemporalRT
+    TemporalRT --> RadianceCache
+    SHProbes --> RadianceCache
 
     %% Physics Dependencies
     World --> IPhysics
@@ -1452,6 +1492,7 @@ graph TB
     style VulkanDeps fill:#1a1a2a,stroke:#4a4a8a
     style ECSDeps fill:#2a1a1a,stroke:#8a4a4a
     style RTFeatures fill:#2a1a2a,stroke:#8a4a8a
+    style TemporalFeatures fill:#1a2a2a,stroke:#4a9a9a
     style AudioFeatures fill:#2a2a2a,stroke:#9a6a3a
     style TestFeatures fill:#1a2a1a,stroke:#6a9a6a
     style PhysicsFeatures fill:#1a2a2a,stroke:#4a8a8a
@@ -1480,6 +1521,27 @@ graph TB
 9. **Test infrastructure is a parallel tree**: Tests depend on core systems (World, Physics, Serializer, ScriptEngine) but nothing in production depends on tests. The 51 unit + 4 integration suites can be added or removed without affecting the engine.
 
 10. **Serializer is a trust boundary**: The scene serializer and asset packer have been hardened (array caps, type safety, path traversal prevention) because they process external data. The trust zone boundary map documents all such interaction points.
+
+11. **Motion vectors are a foundation dependency**: The per-pixel velocity buffer (RG16F MRT) is required by TAA, all temporal upscalers (DLSS/FSR/XeSS), ReSTIR temporal reuse, and temporal RT reprojection. It is the single most connected planned dependency in the rendering roadmap.
+
+---
+
+## 11. Rendering Pipeline Roadmap
+
+Completed and planned rendering phases, in dependency order. Phases 1-2 are shipped in Beta 0.8. Phases 3-10 are planned.
+
+| Phase | Feature | Status | Description |
+|-------|---------|--------|-------------|
+| **1** | Motion Vectors + TAA | **Done** (Mar 2026) | Per-pixel velocity buffer (RG16F MRT), TAA jitter injection (Halton 2,3), TAA resolve compute shader (neighborhood clamping, velocity reprojection), history ping-pong buffers, editor UI AA dropdown (None/FXAA/TAA/SMAA). SceneRenderSettings: aaMode, taaSharpness, taaJitterScale, taaFeedbackMin/Max |
+| **2** | RT Material SSBO + OptiX Interop | **Done** (Mar 2026) | Material SSBO for RT hit shaders (binding 9), OptiX denoiser CUDA interop wired |
+| **3** | Path Tracer Polish | Planned | Next Event Estimation (NEE), Multiple Importance Sampling (MIS), Russian Roulette path termination, firefly clamping |
+| **4** | ReSTIR | Planned | Reservoir-based importance-driven light selection (Direct Illumination), temporal/spatial reuse, adaptive ray budget feeding VRS |
+| **5** | Temporal RT Reuse | Planned | Carry ray results across frames, confidence-weighted reprojection, denoiser-aware temporal pipeline |
+| **6** | Radiance Caching | Planned | World-space irradiance cache extending SH probes, screen-space cache, cache-guided ray allocation |
+| **7** | DLSS / FSR / XeSS Upscaling | Planned | IUpscaler interface, FSR first (all GPUs), DLSS second (NVIDIA), XeSS third (Intel). Depends on motion vectors (Phase 1) |
+| **8** | Additional AA | Planned | SMAA (subpixel morphological), MSAA runtime toggle |
+| **9** | GPU-Driven Work Scheduling | Planned | Indirect draw from GPU culling, multi-draw indirect, device-generated commands, async compute overlap |
+| **10** | Mobile | Planned | Android first, iOS second, rendering tiers (low/medium/high), touch input, TBDR-optimized paths |
 
 ---
 

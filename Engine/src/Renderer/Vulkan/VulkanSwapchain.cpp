@@ -100,7 +100,34 @@ SwapchainSupportDetails VulkanSwapchain::QuerySwapchainSupport(VkPhysicalDevice 
 }
 
 VkSurfaceFormatKHR VulkanSwapchain::ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
-    // Prefer SRGB with 32-bit color
+    if (m_HDREnabled) {
+        // Try scRGB (FP16 linear) — simplest HDR path, Windows compositor handles conversion
+        for (const auto& format : availableFormats) {
+            if (format.format == VK_FORMAT_R16G16B16A16_SFLOAT &&
+                format.colorSpace == VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT) {
+                m_HDROutputMode = 1;  // scRGB
+                ENJIN_LOG_INFO(Renderer, "HDR: selected scRGB (FP16 linear)");
+                return format;
+            }
+        }
+
+        // Try HDR10 (10-bit PQ)
+        for (const auto& format : availableFormats) {
+            if (format.format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 &&
+                format.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT) {
+                m_HDROutputMode = 2;  // HDR10 PQ
+                ENJIN_LOG_INFO(Renderer, "HDR: selected HDR10 (10-bit PQ/ST.2084)");
+                return format;
+            }
+        }
+
+        ENJIN_LOG_WARN(Renderer, "HDR requested but no HDR surface format available, falling back to SDR");
+        m_HDROutputMode = 0;
+    } else {
+        m_HDROutputMode = 0;
+    }
+
+    // SDR: Prefer SRGB with 32-bit color
     for (const auto& format : availableFormats) {
         if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
             format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
@@ -110,6 +137,28 @@ VkSurfaceFormatKHR VulkanSwapchain::ChooseSwapSurfaceFormat(const std::vector<Vk
 
     // Fallback to first available
     return availableFormats[0];
+}
+
+void VulkanSwapchain::SetHDREnabled(bool enabled) {
+    if (m_HDREnabled == enabled) return;
+    m_HDREnabled = enabled;
+    ENJIN_LOG_INFO(Renderer, "HDR output %s — swapchain recreate required", enabled ? "enabled" : "disabled");
+}
+
+bool VulkanSwapchain::IsHDRFormatAvailable() const {
+    if (!m_Context || m_Surface == VK_NULL_HANDLE) return false;
+    u32 formatCount = 0;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(m_Context->GetPhysicalDevice(), m_Surface, &formatCount, nullptr);
+    if (formatCount == 0) return false;
+    std::vector<VkSurfaceFormatKHR> formats(formatCount);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(m_Context->GetPhysicalDevice(), m_Surface, &formatCount, formats.data());
+    for (const auto& f : formats) {
+        if ((f.format == VK_FORMAT_R16G16B16A16_SFLOAT && f.colorSpace == VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT) ||
+            (f.format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 && f.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 VkPresentModeKHR VulkanSwapchain::ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {

@@ -242,6 +242,14 @@ public:
     bool GetGouraudOnly() const { return m_GouraudOnly; }
     void SetGouraudOnly(bool enabled) { m_GouraudOnly = enabled; }
 
+    // Dreamcast-style effects
+    bool GetSphereEnvMap() const { return m_SphereEnvMap; }
+    void SetSphereEnvMap(bool enabled) { m_SphereEnvMap = enabled; }
+    f32 GetSphereEnvStrength() const { return m_SphereEnvStrength; }
+    void SetSphereEnvStrength(f32 v) { m_SphereEnvStrength = v; }
+    f32 GetPosterizeLevels() const { return m_PosterizeLevels; }
+    void SetPosterizeLevels(f32 v) { m_PosterizeLevels = v; }
+
     // Fog
     void SetFogSettings(const RetroFogSettings& settings) { m_Fog = settings; }
     RetroFogSettings& GetFogSettings() { return m_Fog; }
@@ -290,6 +298,9 @@ private:
     VHSSettings m_VHS;
     RetroFogSettings m_Fog;
     bool m_GouraudOnly = false;
+    bool m_SphereEnvMap = false;
+    f32 m_SphereEnvStrength = 0.5f;
+    f32 m_PosterizeLevels = 0.0f;
 
     TransitionSettings m_Transition;
     f32 m_TransitionProgress = 1.0f;

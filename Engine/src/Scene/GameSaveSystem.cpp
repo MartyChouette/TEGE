@@ -232,15 +232,34 @@ namespace Enjin::Scene
 
         nlohmann::json j = DataToJson(saveData);
 
+        // Atomic file save: write to temp file, then rename
         std::string filePath = GetSlotPath(slot);
-        std::ofstream file(filePath);
-        if (!file.is_open())
-            return false;
+        std::string tmpPath = filePath + ".tmp";
+        {
+            std::ofstream file(tmpPath);
+            if (!file.is_open())
+                return false;
 
-        file << j.dump(4);
-        file.close();
+            file << j.dump(4);
+            file.close();
 
-        return file.good() || !file.fail();
+            if (!file.good()) {
+                std::error_code ec;
+                std::filesystem::remove(tmpPath, ec);
+                return false;
+            }
+        }
+
+        {
+            std::error_code ec;
+            std::filesystem::rename(tmpPath, filePath, ec);
+            if (ec) {
+                std::filesystem::remove(tmpPath, ec);
+                return false;
+            }
+        }
+
+        return true;
     }
 
     bool GameSaveSystem::LoadFromSlot(u32 slot, GameSaveData& outData)

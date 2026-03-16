@@ -13,6 +13,7 @@
 #include "Enjin/Editor/PlayMode.h"
 #include "Enjin/Editor/EditorSettings.h"
 #include "Enjin/Debug/Profiler.h"
+#include "Enjin/Logging/Log.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/UISystem.h"
@@ -193,6 +194,7 @@ public:
     void Shutdown();
 
     void Update(f32 deltaTime);
+    void PrepareRenderTargets();                           // Call BEFORE command buffer recording
     void RenderOffscreen(VkCommandBuffer commandBuffer);  // Call BEFORE main render pass
     void Render(VkCommandBuffer commandBuffer);            // Call DURING main render pass
 
@@ -251,6 +253,11 @@ public:
     ECS::Entity GetSelectedEntity() const { return m_PrimarySelected; }
     void SetSelectedEntity(ECS::Entity entity);
 
+    // Unsaved changes tracking
+    bool IsSceneDirty() const { return m_SceneDirty; }
+    void MarkDirty();
+    void ClearDirty();
+
     // Callbacks
     using EntitySelectedCallback = std::function<void(ECS::Entity)>;
     void SetEntitySelectedCallback(EntitySelectedCallback callback) { m_OnEntitySelected = callback; }
@@ -258,9 +265,11 @@ public:
     // Check if UI wants input (for disabling camera when interacting with UI)
     bool WantsKeyboardInput() const;
     bool WantsMouseInput() const;
+    bool IsEditorViewportHovered() const { return m_EditorViewportHovered; }
 
     // Push a message to the editor console (used by Logger callback)
     void PushConsoleMessage(const std::string& message);
+    void PushConsoleMessage(LogLevel level, LogCategory category, const std::string& message);
 
 private:
     void InitializePlayMode();
@@ -299,6 +308,8 @@ private:
     void DrawSettingsSection_Skybox();
     void DrawSettingsSection_Shadows();
     void DrawSettingsSection_AmbientLighting();
+    void DrawSettingsSection_ShadingModel();
+    void DrawSettingsSection_DreamcastEffects();
     void DrawSettingsSection_CelShading();
     void DrawSettingsSection_DisplayOptions();
     void DrawSettingsSection_RayTracing();
@@ -333,6 +344,8 @@ private:
     void GitFetch();
     void GitSwitchBranch(const std::string& branch);
     void DrawStatsOverlay();
+    void DrawDebugWorkstation();   // F2 — Editor/Engine debug
+    void DrawGameDebugPanel();     // F1 — Game debug
     void DrawSplashScreen();
     void DrawBuildDialog();
 
@@ -470,6 +483,7 @@ private:
     void DrawPerFrameColliderComponent(ECS::Entity entity);
     void DrawPolygonCollider2DComponent(ECS::Entity entity);
     void DrawBody2DComponent(ECS::Entity entity);
+    void DrawJoint2DComponent(ECS::Entity entity);
 
     // Networking components
     void DrawNetworkIdentityComponent(ECS::Entity entity);
@@ -550,6 +564,8 @@ private:
     bool m_ShowDemoWindow = false;
     bool m_ShowStatsOverlay = true;
     bool m_ShowAboutDialog = false;
+    bool m_ShowDebugWorkstation = false;  // F2 — Editor/Engine debug
+    bool m_ShowGameDebug = false;          // F1 — Game debug
 
     // User Manual panel state
     struct ManualSection {
@@ -569,8 +585,26 @@ private:
     std::string m_CurrentScenePath;
 
     // Console log buffer
-    std::vector<std::string> m_ConsoleLog;
+    struct ConsoleEntry {
+        std::string message;
+        LogLevel level = LogLevel::Info;
+        LogCategory category = LogCategory::Editor;
+
+        ConsoleEntry() = default;
+        ConsoleEntry(const char* msg) : message(msg) {}          // NOLINT — allow implicit from literals
+        ConsoleEntry(const std::string& msg) : message(msg) {}   // NOLINT — allow implicit from string pushes
+        ConsoleEntry(std::string&& msg) : message(std::move(msg)) {}
+        ConsoleEntry(const std::string& msg, LogLevel lvl, LogCategory cat)
+            : message(msg), level(lvl), category(cat) {}
+    };
+    std::vector<ConsoleEntry> m_ConsoleLog;
     static constexpr usize MAX_CONSOLE_LINES = 1000;
+
+    // Console filter state
+    bool m_ConsoleShowInfo = true;
+    bool m_ConsoleShowWarn = true;
+    bool m_ConsoleShowError = true;
+    int  m_ConsoleFeedTab = 0;  // 0=All, 1=Editor, 2=Runtime
 
     // Helper methods
     void ImportModel(const std::string& path);
@@ -743,7 +777,7 @@ private:
     // Per-template layout configuration
     struct LayoutConfig {
         f32 leftWidth   = 0.18f;   // Hierarchy panel width ratio
-        f32 rightWidth  = 0.22f;   // Inspector panel width ratio
+        f32 rightWidth  = 0.25f;   // Inspector panel width ratio
         f32 bottomHeight = 0.22f;  // Console/Assets height ratio
         f32 inspectorSplit = 0.6f; // Inspector vs Settings vertical split
         f32 gameViewX = -1.0f;     // Game View X (-1 = auto: leftWidth + 20px)
@@ -769,6 +803,39 @@ private:
     // Render profiling (logs avg render time every 120 frames during play)
     f32 m_RenderProfileAccum = 0.0f;
     u32 m_RenderProfileFrames = 0;
+
+    // Editor viewport render target (offscreen rendering for scene editing camera)
+    std::unique_ptr<Renderer::RenderTarget> m_EditorViewportRT;
+    u32 m_EditorViewportWidth = 800;
+    u32 m_EditorViewportHeight = 600;
+    f32 m_EditorViewportImageMinX = 0.0f, m_EditorViewportImageMinY = 0.0f;
+    f32 m_EditorViewportImageMaxX = 0.0f, m_EditorViewportImageMaxY = 0.0f;
+    bool m_EditorViewportHovered = false;
+    bool m_EditorViewportFocused = false;
+
+    // Viewport aspect ratio constraint
+    enum class AspectRatio : u8 {
+        Free = 0,   // Fill panel
+        R16_9,      // 16:9  (1.778)
+        R16_10,     // 16:10 (1.600)
+        R21_9,      // 21:9  (2.333)
+        R4_3,       // 4:3   (1.333)
+        R3_2,       // 3:2   (1.500)
+        R9_16,      // 9:16  (0.5625) — mobile portrait
+        R9_20,      // 9:20  (0.450)  — modern phone portrait
+        Count
+    };
+    static constexpr const char* AspectRatioLabels[] = {
+        "Free", "16:9", "16:10", "21:9", "4:3", "3:2", "9:16", "9:20"
+    };
+    static constexpr f32 AspectRatioValues[] = {
+        0.0f, 16.0f/9.0f, 16.0f/10.0f, 21.0f/9.0f, 4.0f/3.0f, 3.0f/2.0f, 9.0f/16.0f, 9.0f/20.0f
+    };
+    AspectRatio m_SceneViewAspect = AspectRatio::Free;
+    AspectRatio m_GameViewAspect = AspectRatio::Free;
+
+    // Compute letterboxed image size from available space and aspect ratio
+    static ImVec2 ComputeAspectConstrainedSize(f32 availW, f32 availH, f32 aspect);
 
     // Post-processing (owned by editor, applied to Game View)
     std::unique_ptr<Renderer::PostProcessing> m_PostProcessing;
@@ -1236,6 +1303,14 @@ private:
     // Theme Preview
     void DrawThemePreview();
 
+    // Quake-style drop-down console
+    bool m_ShowDropConsole = false;
+    f32 m_DropConsoleAnim = 0.0f;  // 0=hidden, 1=fully visible (for slide animation)
+    char m_DropConsoleInput[512] = {};
+    std::vector<std::string> m_DropConsoleHistory;
+    int m_DropConsoleHistoryPos = -1;
+    void DrawDropConsole(f32 deltaTime);
+
     // Keyboard Shortcuts Help Modal
     bool m_ShowShortcutsHelp = false;
     char m_ShortcutSearchBuf[64] = "";
@@ -1257,6 +1332,20 @@ private:
     std::string m_PreviousCrashReport;
     void CheckForCrashReport();
     void DrawCrashReportDialog();
+
+    // Unsaved changes tracking (dirty flag system)
+    bool m_SceneDirty = false;
+    f32 m_AutoSaveTimer = 0.0f;
+    bool m_ShowUnsavedChangesDialog = false;
+    bool m_ShowAutoSaveRecoveryDialog = false;
+    std::string m_AutoSaveRecoveryPath;
+    std::string m_PendingOpenPath;
+    enum class UnsavedAction : u8 { None, Quit, NewScene, OpenScene };
+    UnsavedAction m_UnsavedChangesAction = UnsavedAction::None;
+    void UpdateWindowTitle();
+    void AutoSave();
+    void DrawUnsavedChangesDialog();
+    void DrawAutoSaveRecoveryDialog();
 };
 
 } // namespace Editor

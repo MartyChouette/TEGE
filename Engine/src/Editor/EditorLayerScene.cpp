@@ -148,6 +148,13 @@ void EditorLayer::SaveScene(const std::string& path) {
 
     if (result.success) {
         m_CurrentScenePath = path;
+        ClearDirty();
+
+        // Delete any auto-save file after a successful save
+        std::string autoSavePath = path + ".autosave";
+        std::error_code ec;
+        std::filesystem::remove(autoSavePath, ec);
+
         usize entityCount = m_World->GetEntityCount();
         std::stringstream ss;
         ss << "[Info] Saved scene to " << path << " (" << entityCount << " entities)";
@@ -210,9 +217,24 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
         m_CurrentScenePath = path;
         ClearSelection();
         m_UndoRedo.Clear();
+        ClearDirty();
+        UpdateWindowTitle();
 
         // Initialize scene lock manager for this scene
         m_SceneLockManager.SetScenePath(path);
+
+        // Check for auto-save file newer than the scene file
+        std::string autoSavePath = path + ".autosave";
+        std::error_code ec;
+        if (std::filesystem::exists(autoSavePath, ec)) {
+            auto sceneTime = std::filesystem::last_write_time(path, ec);
+            auto autoTime = std::filesystem::last_write_time(autoSavePath, ec);
+            if (autoTime > sceneTime) {
+                m_AutoSaveRecoveryPath = autoSavePath;
+                m_ShowAutoSaveRecoveryDialog = true;
+                ENJIN_LOG_INFO(Editor, "Auto-save recovery available: %s", autoSavePath.c_str());
+            }
+        }
 
         usize entityCount = result.entities.size();
         std::stringstream ss;
@@ -529,6 +551,29 @@ void EditorLayer::DuplicateSelectedEntities() {
     // After DuplicateEntity calls, the last duplicated entity is selected;
     // re-select all duplicated entities (they were selected one by one via DuplicateEntity's SelectEntity call)
     ENJIN_LOG_INFO(Editor, "Duplicated %zu entities", originals.size());
+}
+
+void EditorLayer::AutoSave() {
+    if (!m_World || m_CurrentScenePath.empty()) return;
+
+    std::string autoSavePath = m_CurrentScenePath + ".autosave";
+
+    Scene::SceneSerializer serializer(m_World);
+    if (m_RenderSystem) {
+        serializer.SetSkyboxConfig(m_RenderSystem->GetSkyboxConfig());
+    }
+
+    auto renderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
+        m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+    renderSettings.useProjectDefaults = m_CurrentSceneUsesProjectDefaults;
+    serializer.SetRenderSettings(renderSettings);
+
+    auto result = serializer.Save(autoSavePath);
+    if (result.success) {
+        ENJIN_LOG_INFO(Editor, "Auto-saved to %s", autoSavePath.c_str());
+    } else {
+        ENJIN_LOG_WARN(Editor, "Auto-save failed: %s", result.error.c_str());
+    }
 }
 
 } // namespace Editor

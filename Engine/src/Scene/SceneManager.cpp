@@ -231,13 +231,34 @@ bool SceneManager::SaveProject(const std::string& manifestPath) const {
         buildConfigJson["fullscreen"] = m_Fullscreen;
         root["buildConfig"] = buildConfigJson;
 
-        std::ofstream file(manifestPath);
-        if (!file.is_open()) {
-            ENJIN_LOG_ERROR(Asset, "Failed to write project file: %s", manifestPath.c_str());
-            return false;
+        // Atomic file save: write to temp file, then rename
+        std::string tmpPath = manifestPath + ".tmp";
+        {
+            std::ofstream file(tmpPath);
+            if (!file.is_open()) {
+                ENJIN_LOG_ERROR(Asset, "Failed to open temp file for writing: %s", tmpPath.c_str());
+                return false;
+            }
+            file << root.dump(2);
+            file.close();
+
+            if (!file.good()) {
+                std::error_code ec;
+                std::filesystem::remove(tmpPath, ec);
+                ENJIN_LOG_ERROR(Asset, "Write failed for temp file: %s", tmpPath.c_str());
+                return false;
+            }
         }
-        file << root.dump(2);
-        file.close();
+
+        {
+            std::error_code ec;
+            std::filesystem::rename(tmpPath, manifestPath, ec);
+            if (ec) {
+                std::filesystem::remove(tmpPath, ec);
+                ENJIN_LOG_ERROR(Asset, "Failed to rename temp file to project file: %s", ec.message().c_str());
+                return false;
+            }
+        }
 
         ENJIN_LOG_INFO(Asset, "Saved project '%s' to %s", m_ProjectName.c_str(), manifestPath.c_str());
         return true;

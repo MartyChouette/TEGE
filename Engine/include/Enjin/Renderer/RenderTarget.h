@@ -43,6 +43,7 @@ public:
     VkFramebuffer GetFramebuffer() const { return m_Framebuffer; }
     VkImageView GetColorImageView() const { return m_ColorImageView; }
     VkImageView GetDepthImageView() const { return m_DepthImageView; }
+    VkImage GetDepthImage() const { return m_DepthImage; }
     VkSampler GetSampler() const { return m_Sampler; }
     VkDescriptorSet GetImGuiTextureID() const { return m_ImGuiDescriptor; }
     VkImage GetColorImage() const { return m_ColorImage; }
@@ -69,6 +70,11 @@ private:
     VkImage m_ColorImage = VK_NULL_HANDLE;
     VkDeviceMemory m_ColorMemory = VK_NULL_HANDLE;
     VkImageView m_ColorImageView = VK_NULL_HANDLE;
+
+    // Velocity attachment (RG16F — matches main render pass MRT layout for pipeline compatibility)
+    VkImage m_VelocityImage = VK_NULL_HANDLE;
+    VkDeviceMemory m_VelocityMemory = VK_NULL_HANDLE;
+    VkImageView m_VelocityImageView = VK_NULL_HANDLE;
 
     // Depth attachment
     VkImage m_DepthImage = VK_NULL_HANDLE;

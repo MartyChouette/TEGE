@@ -74,6 +74,10 @@ layout(binding = 1) uniform LightingUBO {
     int spotShadowCount;
     float celDiffuseBands;     // 0 = disabled, 2-8 = quantization bands
     float celSpecularCutoff;   // 0 = disabled, >0 = hard specular cutoff
+    uint shadingFlags;         // bit0=GGX, bit1=Fresnel, bit2=EnergyConserv, bit3=GeometryTerm, bit4=SphereEnvMap
+    float sphereEnvStrength;   // Spherical environment map intensity (0=off)
+    float posterizeLevels;     // Color posterization levels (0=disabled)
+    float _padShading1;
     vec4 windData;  // xyz = wind direction * strength, w = time (unused in frag, layout must match)
     vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
@@ -418,38 +422,131 @@ float calcSpotShadow(vec3 fragPos, int shadowIdx) {
     return mix(1.0, shadow, lighting.shadowStrength);
 }
 
+// Shading flag bits (must match C++ packing)
+#define SHADING_GGX              (1u << 0)
+#define SHADING_FRESNEL          (1u << 1)
+#define SHADING_ENERGY_CONSERV   (1u << 2)
+#define SHADING_GEOMETRY_TERM    (1u << 3)
+#define SHADING_SPHERE_ENV       (1u << 4)
+
+const float PI = 3.14159265359;
+
+// --- Fresnel-Schlick approximation ---
+vec3 fresnelSchlick(float cosTheta, vec3 F0) {
+    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// --- GGX/Trowbridge-Reitz normal distribution ---
+float distributionGGX(float NdotH, float roughness) {
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float denom = NdotH * NdotH * (a2 - 1.0) + 1.0;
+    return a2 / (PI * denom * denom);
+}
+
+// --- Smith GGX geometry function (single direction) ---
+float geometrySchlickGGX(float NdotV, float roughness) {
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+    return NdotV / (NdotV * (1.0 - k) + k);
+}
+
+// --- Smith geometry (combined view + light) ---
+float geometrySmith(float NdotV, float NdotL, float roughness) {
+    return geometrySchlickGGX(NdotV, roughness) * geometrySchlickGGX(NdotL, roughness);
+}
+
 // Calculate Blinn-Phong lighting contribution
 vec3 calcBlinnPhong(vec3 lightDir, vec3 lightColor, float lightIntensity, vec3 normal, vec3 viewDir, vec3 albedo, float metallic, float shininess) {
-    // Diffuse (Lambert)
-    float diff = max(dot(normal, lightDir), 0.0);
-    vec3 diffuse = diff * lightColor * lightIntensity;
-
-    // Specular (Blinn-Phong)
+    float NdotL = max(dot(normal, lightDir), 0.0);
     vec3 halfwayDir = normalize(lightDir + viewDir);
-    float spec = pow(max(dot(normal, halfwayDir), 0.0), shininess);
-    vec3 specularColor = mix(vec3(0.04), albedo, metallic);
-    vec3 specular = spec * specularColor * lightColor * lightIntensity;
+    float NdotH = max(dot(normal, halfwayDir), 0.0);
+    float NdotV = max(dot(normal, viewDir), 0.001);
 
-    return diffuse * albedo * (1.0 - metallic) + specular;
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    uint flags = lighting.shadingFlags;
+
+    // Fresnel
+    vec3 F = ((flags & SHADING_FRESNEL) != 0u)
+        ? fresnelSchlick(max(dot(halfwayDir, viewDir), 0.0), F0)
+        : F0;
+
+    // Specular distribution: GGX or Blinn-Phong
+    float spec;
+    if ((flags & SHADING_GGX) != 0u) {
+        float roughness = clamp(sqrt(2.0 / (shininess + 2.0)), 0.04, 1.0);
+        spec = distributionGGX(NdotH, roughness);
+
+        // Geometry term
+        if ((flags & SHADING_GEOMETRY_TERM) != 0u) {
+            spec *= geometrySmith(NdotV, NdotL, roughness);
+        }
+
+        // Cook-Torrance denominator
+        spec /= max(4.0 * NdotV * NdotL, 0.001);
+    } else {
+        spec = pow(NdotH, shininess);
+    }
+
+    vec3 specular = spec * F * lightColor * lightIntensity;
+
+    // Diffuse with optional energy conservation
+    vec3 kD = vec3(1.0 - metallic);
+    if ((flags & SHADING_ENERGY_CONSERV) != 0u) {
+        kD *= (vec3(1.0) - F);
+    }
+    vec3 diffuse = NdotL * lightColor * lightIntensity;
+
+    return diffuse * albedo * kD + specular;
 }
 
 // Cel-shaded Blinn-Phong: quantize diffuse into bands, hard-cutoff specular
+// Respects shading flags (GGX, Fresnel, energy conservation, geometry term)
 vec3 calcBlinnPhongCel(vec3 lightDir, vec3 lightColor, float lightIntensity, vec3 normal, vec3 viewDir, vec3 albedo, float metallic, float shininess) {
+    float NdotL = max(dot(normal, lightDir), 0.0);
+    float NdotV = max(dot(normal, viewDir), 0.001);
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float NdotH = max(dot(normal, halfwayDir), 0.0);
+
     // Diffuse with band quantization
-    float diff = max(dot(normal, lightDir), 0.0);
     float bands = lighting.celDiffuseBands;
-    diff = floor(diff * bands + 0.5) / bands;
+    float diff = floor(NdotL * bands + 0.5) / bands;
     vec3 diffuse = diff * lightColor * lightIntensity;
 
-    // Specular with hard cutoff
-    vec3 halfwayDir = normalize(lightDir + viewDir);
-    float spec = pow(max(dot(normal, halfwayDir), 0.0), shininess);
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    uint flags = lighting.shadingFlags;
+
+    // Fresnel
+    vec3 F = ((flags & SHADING_FRESNEL) != 0u)
+        ? fresnelSchlick(max(dot(halfwayDir, viewDir), 0.0), F0)
+        : F0;
+
+    // Specular distribution: GGX or Blinn-Phong
+    float spec;
+    if ((flags & SHADING_GGX) != 0u) {
+        float roughness = clamp(sqrt(2.0 / (shininess + 2.0)), 0.04, 1.0);
+        spec = distributionGGX(NdotH, roughness);
+        if ((flags & SHADING_GEOMETRY_TERM) != 0u) {
+            spec *= geometrySmith(NdotV, NdotL, roughness);
+        }
+        spec /= max(4.0 * NdotV * NdotL, 0.001);
+    } else {
+        spec = pow(NdotH, shininess);
+    }
+
+    // Cel specular hard cutoff
     float cutoff = lighting.celSpecularCutoff;
     spec = (cutoff > 0.0 && spec > cutoff) ? 1.0 : ((cutoff > 0.0) ? 0.0 : spec);
-    vec3 specularColor = mix(vec3(0.04), albedo, metallic);
-    vec3 specular = spec * specularColor * lightColor * lightIntensity;
 
-    return diffuse * albedo * (1.0 - metallic) + specular;
+    vec3 specular = spec * F * lightColor * lightIntensity;
+
+    // Diffuse with optional energy conservation
+    vec3 kD = vec3(1.0 - metallic);
+    if ((flags & SHADING_ENERGY_CONSERV) != 0u) {
+        kD *= (vec3(1.0) - F);
+    }
+
+    return diffuse * albedo * kD + specular;
 }
 
 // Calculate attenuation for point/spot lights
@@ -1142,8 +1239,37 @@ void main() {
         result = mix(result, vec3(0.95, 0.97, 1.0), snowCoverage);
     }
 
+    // Spherical environment mapping (Dreamcast-style matcap sheen)
+    if ((lighting.shadingFlags & SHADING_SPHERE_ENV) != 0u && lighting.sphereEnvStrength > 0.0) {
+        // Reconstruct view-space normal without view matrix
+        vec3 vForward = normalize(lighting.cameraPos - fragWorldPos);
+        vec3 vRight = normalize(cross(vec3(0.0, 1.0, 0.0), vForward));
+        vec3 vUp = cross(vForward, vRight);
+        vec2 matcapUV = vec2(dot(normal, vRight), dot(normal, vUp)) * 0.5 + 0.5;
+
+        // Procedural matcap: metallic highlight ring + top-down gradient
+        float rim = length(matcapUV - vec2(0.5));
+        float highlight = smoothstep(0.45, 0.25, rim);   // bright center
+        float ring = smoothstep(0.3, 0.48, rim) * smoothstep(0.5, 0.48, rim); // bright ring at edge
+        float grad = matcapUV.y * 0.6 + 0.2;             // sky-ground gradient
+
+        vec3 envColor = vec3(0.25, 0.28, 0.35) * grad     // base ambient gradient
+                      + vec3(0.6, 0.65, 0.7) * highlight   // center specular
+                      + vec3(0.4, 0.45, 0.5) * ring;       // edge ring (Dreamcast sheen)
+
+        // Blend: metallic surfaces get full effect, dielectrics get subtle rim only
+        float envBlend = mix(ring * 0.3, 1.0, metallic) * lighting.sphereEnvStrength;
+        result = mix(result, result + envColor, envBlend);
+    }
+
     // Gamma correction
     result = pow(result, vec3(1.0 / 2.2));
+
+    // Color posterization (Dreamcast VQ-style banding)
+    if (lighting.posterizeLevels > 1.5) {
+        float levels = lighting.posterizeLevels;
+        result = floor(result * levels + 0.5) / levels;
+    }
 
     // Height-based distance fog (volumetric feel: thicker near ground, thins at height)
     float fogDensity = lighting.fogParams.x;

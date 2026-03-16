@@ -49,7 +49,12 @@ layout(binding = 1) uniform LightingUBO {
     float shadowMaxDistance;
     int pointShadowCount;
     int spotShadowCount;
-    vec2 _pointSpotPad;
+    float celDiffuseBands;
+    float celSpecularCutoff;
+    uint shadingFlags;
+    float sphereEnvStrength;
+    float posterizeLevels;
+    float _padShading1;
     vec4 windData;  // xyz = wind direction * strength, w = time
     vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity

@@ -222,14 +222,14 @@ void EditorLayer::DrawProjectHub() {
             ImFont* font = ImGui::GetFont();
             f32 cx = io.DisplaySize.x * 0.5f;
             const char* title = "TEGE";
-            f32 titleFontSize = 48.0f;
+            f32 titleFontSize = 64.0f;
             ImVec2 titleSz = font->CalcTextSizeA(titleFontSize, FLT_MAX, 0.0f, title);
-            ImVec2 titlePos(cx - titleSz.x * 0.5f, 32.0f);
+            ImVec2 titlePos(cx - titleSz.x * 0.5f, 28.0f);
             drawList->AddText(nullptr, titleFontSize, titlePos,
                 IM_COL32(199, 218, 196, 255), title);
 
             const char* subtitle = "Game Engine";
-            f32 subFontSize = 18.0f;
+            f32 subFontSize = 24.0f;
             ImVec2 subSz = font->CalcTextSizeA(subFontSize, FLT_MAX, 0.0f, subtitle);
             drawList->AddText(nullptr, subFontSize,
                 ImVec2(cx - subSz.x * 0.5f, titlePos.y + titleSz.y + 2.0f),
@@ -271,7 +271,7 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
         IM_COL32(60, 65, 80, 150), 1.0f);
 
     // Header
-    f32 headerFontSize = 20.0f;
+    f32 headerFontSize = 26.0f;
     const char* header = "Recent Projects";
     ImVec2 headerSz = font->CalcTextSizeA(headerFontSize, FLT_MAX, 0.0f, header);
     dl->AddText(nullptr, headerFontSize,
@@ -304,7 +304,7 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
     }
 
     // Project rows drawn directly on parent draw list (no child window)
-    f32 rowH = 60.0f;
+    f32 rowH = 72.0f;
     f32 rowPad = 4.0f;
     f32 rowW = sidebarW - 24.0f;
     f32 rowX = 8.0f;
@@ -432,8 +432,8 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
         ImVec2 bMin(x, y), bMax(x + w, y + h);
         bool hovered = (io.MousePos.x >= bMin.x && io.MousePos.x <= bMax.x &&
                        io.MousePos.y >= bMin.y && io.MousePos.y <= bMax.y);
-        dl->AddRectFilled(bMin, bMax, hovered ? bgHover : bgNormal, 6.0f);
-        f32 fontSize = 14.0f;
+        dl->AddRectFilled(bMin, bMax, hovered ? bgHover : bgNormal, 8.0f);
+        f32 fontSize = 24.0f;
         ImVec2 textSz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, label);
         dl->AddText(nullptr, fontSize,
             ImVec2(x + (w - textSz.x) * 0.5f, y + (h - textSz.y) * 0.5f),
@@ -441,32 +441,32 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
         return hovered && ImGui::IsMouseClicked(0);
     };
 
-    // ========== 3a. Header Bar (0-72px) ==========
-    f32 headerH = 72.0f;
+    // ========== 3a. Header Bar ==========
+    f32 headerH = 120.0f;
     dl->AddRectFilled(ImVec2(0, 0), ImVec2(area.x, headerH), IM_COL32(15, 16, 22, 255));
     dl->AddLine(ImVec2(0, headerH), ImVec2(area.x, headerH), IM_COL32(50, 55, 70, 180), 1.0f);
 
     // Left: TEGE branding
-    f32 brandFontSize = 32.0f;
+    f32 brandFontSize = 64.0f;
     const char* brandText = "TEGE";
     ImVec2 brandSz = font->CalcTextSizeA(brandFontSize, FLT_MAX, 0.0f, brandText);
     f32 brandY = (headerH - brandSz.y) * 0.5f;
     dl->AddText(nullptr, brandFontSize, ImVec2(24.0f, brandY), IM_COL32(199, 218, 196, 255), brandText);
 
-    f32 subFontSize = 13.0f;
+    f32 subFontSize = 24.0f;
     const char* subText = "Game Engine";
     ImVec2 subSz = font->CalcTextSizeA(subFontSize, FLT_MAX, 0.0f, subText);
     dl->AddText(nullptr, subFontSize,
-        ImVec2(24.0f + brandSz.x + 10.0f, brandY + brandSz.y - subSz.y - 2.0f),
-        IM_COL32(140, 160, 140, 160), subText);
+        ImVec2(24.0f + brandSz.x + 14.0f, brandY + brandSz.y - subSz.y - 2.0f),
+        IM_COL32(140, 160, 140, 180), subText);
 
     // Right: action buttons
-    f32 btnH = 36.0f, btnGap = 10.0f;
+    f32 btnH = 60.0f, btnGap = 14.0f;
     f32 btnY = (headerH - btnH) * 0.5f;
-    f32 btn3W = 120.0f; // Open Scene
-    f32 btn2W = 130.0f; // Open Project
-    f32 btn1W = 130.0f; // + New Project
-    f32 btnRightEdge = area.x - 24.0f;
+    f32 btn3W = 200.0f; // Open Scene
+    f32 btn2W = 210.0f; // Open Project
+    f32 btn1W = 220.0f; // + New Project
+    f32 btnRightEdge = area.x - 32.0f;
 
     // Open Scene (rightmost)
     f32 btn3X = btnRightEdge - btn3W;
@@ -513,8 +513,8 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
         m_HubPage = HubPage::WizardSetup;
     }
 
-    // ========== 3b. Project Cards Section (72px to area.y-52px) ==========
-    f32 bottomBarH = 52.0f;
+    // ========== 3b. Project Cards Section (100px to area.y-68px) ==========
+    f32 bottomBarH = 68.0f;
     f32 cardsTop = headerH;
     f32 cardsBottom = area.y - bottomBarH;
 
@@ -551,7 +551,7 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
     f32 sectionHeaderY = cardsTop + 20.0f;
 
     // "Your Projects" title
-    f32 sectionTitleSize = 20.0f;
+    f32 sectionTitleSize = 36.0f;
     dl->AddText(nullptr, sectionTitleSize,
         ImVec2(sectionPad, sectionHeaderY),
         IM_COL32(200, 205, 225, 240), "Your Projects");
@@ -559,8 +559,8 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
     // Filter pills (right-aligned)
     {
         const char* pillLabels[] = { "All", "Ready", "Missing" };
-        f32 pillFontSize = 12.0f;
-        f32 pillH = 24.0f, pillPad = 12.0f, pillGap = 6.0f;
+        f32 pillFontSize = 20.0f;
+        f32 pillH = 42.0f, pillPad = 22.0f, pillGap = 8.0f;
         f32 pillX = area.x - sectionPad;
 
         // Measure and draw right-to-left
@@ -594,7 +594,7 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
     }
 
     // Card grid area (scrollable child)
-    f32 gridTop = sectionHeaderY + 48.0f;
+    f32 gridTop = sectionHeaderY + 60.0f;
     f32 gridBottom = cardsBottom;
 
     ImGui::SetCursorScreenPos(ImVec2(0, gridTop));
@@ -604,7 +604,7 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
         ImDrawList* cdl = ImGui::GetWindowDrawList();
         ImVec2 scrollOrigin = ImGui::GetCursorScreenPos();
 
-        f32 cardW = 240.0f, cardH = 180.0f, cardGap = 16.0f;
+        f32 cardW = 520.0f, cardH = 380.0f, cardGap = 32.0f;
         i32 cardsPerRow = (std::max)(1, static_cast<i32>(std::floor((area.x - sectionPad * 2.0f) / (cardW + cardGap))));
         f32 gridW = cardsPerRow * cardW + (cardsPerRow - 1) * cardGap;
         f32 gridStartX = (area.x - gridW) * 0.5f;
@@ -612,7 +612,7 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
         if (filtered.empty()) {
             // Empty state
             f32 emptyY = scrollOrigin.y + 40.0f;
-            f32 emptyFontSize = 16.0f;
+            f32 emptyFontSize = 26.0f;
             const char* emptyMsg = "No projects yet. Create one to get started!";
             ImVec2 emptySz = font->CalcTextSizeA(emptyFontSize, FLT_MAX, 0.0f, emptyMsg);
             cdl->AddText(nullptr, emptyFontSize,
@@ -644,7 +644,7 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
             }
 
             // "+" text
-            f32 plusSize = 48.0f;
+            f32 plusSize = 80.0f;
             const char* plusText = "+";
             ImVec2 plusSz = font->CalcTextSizeA(plusSize, FLT_MAX, 0.0f, plusText);
             cdl->AddText(nullptr, plusSize,
@@ -694,7 +694,7 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
                     cdl->AddRect(cMin, cMax, IM_COL32(40, 45, 60, missing ? 80u : 150u), 8.0f);
 
                 // Thumbnail area (top 100px)
-                f32 thumbH = 100.0f;
+                f32 thumbH = 240.0f;
                 ImVec2 tMin(cx + 1, cy + 1);
                 ImVec2 tMax(cx + cardW - 1, cy + thumbH);
 
@@ -736,7 +736,7 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
                     if (initials.size() == 1 && proj->name.size() > 1)
                         initials += static_cast<char>(std::toupper(proj->name[1]));
                 }
-                f32 initialsFontSize = 36.0f;
+                f32 initialsFontSize = 80.0f;
                 ImVec2 initSz = font->CalcTextSizeA(initialsFontSize, FLT_MAX, 0.0f, initials.c_str());
                 ImU32 initCol = missing ? IM_COL32(200, 200, 210, 100) : IM_COL32(255, 255, 255, 220);
                 cdl->AddText(nullptr, initialsFontSize,
@@ -745,7 +745,7 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
 
                 // "Missing" badge overlay
                 if (missing) {
-                    f32 badgeFontSize = 11.0f;
+                    f32 badgeFontSize = 16.0f;
                     const char* badgeText = "Missing";
                     ImVec2 badgeSz = font->CalcTextSizeA(badgeFontSize, FLT_MAX, 0.0f, badgeText);
                     f32 badgePad = 6.0f;
@@ -760,20 +760,20 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
                 }
 
                 // Info area (bottom 80px)
-                f32 infoY = cy + thumbH + 10.0f;
-                f32 infoTextPad = 12.0f;
+                f32 infoY = cy + thumbH + 14.0f;
+                f32 infoTextPad = 16.0f;
 
                 // Project name
-                f32 nameFontSize = 15.0f;
+                f32 nameFontSize = 26.0f;
                 std::string nameClipped = EllipsizeText(proj->name.c_str(), cardW - infoTextPad * 2.0f, font, nameFontSize);
                 ImU32 nameCol = missing ? IM_COL32(140, 140, 150, 160) : IM_COL32(210, 215, 235, 255);
                 cdl->AddText(nullptr, nameFontSize,
                     ImVec2(cx + infoTextPad, infoY), nameCol, nameClipped.c_str());
 
                 // Parent path + status dot
-                f32 pathFontSize = 11.0f;
-                f32 pathY = infoY + nameFontSize + 6.0f;
-                f32 dotR = 4.0f;
+                f32 pathFontSize = 19.0f;
+                f32 pathY = infoY + nameFontSize + 8.0f;
+                f32 dotR = 5.0f;
                 f32 dotX = cx + cardW - infoTextPad - dotR;
                 f32 dotY = pathY + pathFontSize * 0.5f;
 
@@ -813,11 +813,11 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
     ImGui::EndChild();
     ImGui::PopStyleColor();
 
-    // ========== 3c. Bottom Bar (last 52px) ==========
+    // ========== 3c. Bottom Bar (last 68px) ==========
     f32 barY = area.y - bottomBarH;
     dl->AddLine(ImVec2(0, barY), ImVec2(area.x, barY), IM_COL32(50, 55, 70, 150), 1.0f);
 
-    f32 linkFontSize = 14.0f;
+    f32 linkFontSize = 22.0f;
     f32 linkY = barY + (bottomBarH - linkFontSize) * 0.5f;
 
     // Left: Demos link
@@ -1085,6 +1085,143 @@ namespace {
     constexpr int s_BuiltinCount = 51;
 } // anonymous namespace
 
+// Draw a procedural mini-preview for template cards (first 4 templates get custom art)
+static void DrawTemplateThumbnail(ImDrawList* dl, const char* templateId, ImVec2 tMin, ImVec2 tMax,
+                                   const ImVec4& accent, bool hovered) {
+    f32 w = tMax.x - tMin.x;
+    f32 h = tMax.y - tMin.y;
+
+    // Base gradient background
+    ImU32 bgTop = IM_COL32(
+        (int)(accent.x * 40), (int)(accent.y * 40), (int)(accent.z * 40), 255);
+    ImU32 bgBot = IM_COL32(
+        (int)(accent.x * 20), (int)(accent.y * 20), (int)(accent.z * 20), 255);
+    dl->AddRectFilledMultiColor(tMin, tMax, bgTop, bgTop, bgBot, bgBot);
+
+    ImU32 accentDim = IM_COL32(
+        (int)(accent.x * 150), (int)(accent.y * 150), (int)(accent.z * 150), hovered ? 200 : 120);
+    ImU32 accentBright = IM_COL32(
+        (int)(accent.x * 220), (int)(accent.y * 220), (int)(accent.z * 220), hovered ? 255 : 180);
+
+    std::string id(templateId);
+
+    if (id == "blank") {
+        // Blank: crosshair grid + empty canvas feel
+        ImU32 gridCol = IM_COL32(60, 60, 70, 80);
+        f32 step = 24.0f;
+        for (f32 x = tMin.x + step; x < tMax.x; x += step)
+            dl->AddLine(ImVec2(x, tMin.y), ImVec2(x, tMax.y), gridCol);
+        for (f32 y = tMin.y + step; y < tMax.y; y += step)
+            dl->AddLine(ImVec2(tMin.x, y), ImVec2(tMax.x, y), gridCol);
+        // Center crosshair
+        f32 cx = tMin.x + w * 0.5f, cy = tMin.y + h * 0.5f;
+        dl->AddLine(ImVec2(cx - 20, cy), ImVec2(cx + 20, cy), IM_COL32(120, 120, 140, 180), 1.5f);
+        dl->AddLine(ImVec2(cx, cy - 20), ImVec2(cx, cy + 20), IM_COL32(120, 120, 140, 180), 1.5f);
+        dl->AddCircle(ImVec2(cx, cy), 8.0f, IM_COL32(120, 120, 140, 120));
+    }
+    else if (id == "platformer") {
+        // 2D Platformer: ground, platforms, character silhouette, coins
+        // Ground
+        dl->AddRectFilled(ImVec2(tMin.x, tMax.y - 28), tMax, IM_COL32(50, 120, 50, 200));
+        dl->AddRectFilled(ImVec2(tMin.x, tMax.y - 32), ImVec2(tMax.x, tMax.y - 28), IM_COL32(70, 160, 70, 200));
+        // Platforms
+        dl->AddRectFilled(ImVec2(tMin.x + w * 0.15f, tMax.y - 70), ImVec2(tMin.x + w * 0.40f, tMax.y - 62), accentBright, 3.0f);
+        dl->AddRectFilled(ImVec2(tMin.x + w * 0.55f, tMax.y - 100), ImVec2(tMin.x + w * 0.80f, tMax.y - 92), accentBright, 3.0f);
+        dl->AddRectFilled(ImVec2(tMin.x + w * 0.30f, tMax.y - 130), ImVec2(tMin.x + w * 0.55f, tMax.y - 122), accentDim, 3.0f);
+        // Character (small rect person on ground)
+        f32 charX = tMin.x + w * 0.25f;
+        f32 charY = tMax.y - 28;
+        dl->AddRectFilled(ImVec2(charX - 7, charY - 22), ImVec2(charX + 7, charY), IM_COL32(220, 180, 120, 220), 2.0f);
+        dl->AddCircleFilled(ImVec2(charX, charY - 28), 8.0f, IM_COL32(220, 180, 120, 220));
+        // Coins
+        dl->AddCircleFilled(ImVec2(tMin.x + w * 0.65f, tMax.y - 115), 6.0f, IM_COL32(255, 215, 0, 200));
+        dl->AddCircleFilled(ImVec2(tMin.x + w * 0.72f, tMax.y - 115), 6.0f, IM_COL32(255, 215, 0, 200));
+        // Sky gradient hint (moon/sun)
+        dl->AddCircleFilled(ImVec2(tMax.x - 40, tMin.y + 30), 16.0f, IM_COL32(255, 230, 100, 100));
+    }
+    else if (id == "topdown2d") {
+        // Top-Down: dungeon room, walls, enemies, player dot
+        f32 roomPad = 20.0f;
+        ImVec2 rMin(tMin.x + roomPad, tMin.y + roomPad);
+        ImVec2 rMax(tMax.x - roomPad, tMax.y - roomPad);
+        // Floor
+        dl->AddRectFilled(rMin, rMax, IM_COL32(35, 30, 45, 220));
+        // Walls (thick border)
+        dl->AddRect(rMin, rMax, IM_COL32(80, 70, 100, 220), 0.0f, 0, 4.0f);
+        // Door openings (gaps in walls)
+        dl->AddRectFilled(ImVec2(rMin.x + (rMax.x - rMin.x) * 0.4f, rMin.y - 2),
+                          ImVec2(rMin.x + (rMax.x - rMin.x) * 0.6f, rMin.y + 4), IM_COL32(35, 30, 45, 220));
+        dl->AddRectFilled(ImVec2(rMax.x - 4, rMin.y + (rMax.y - rMin.y) * 0.4f),
+                          ImVec2(rMax.x + 2, rMin.y + (rMax.y - rMin.y) * 0.6f), IM_COL32(35, 30, 45, 220));
+        // Player (blue circle)
+        f32 cx = (rMin.x + rMax.x) * 0.5f, cy = (rMin.y + rMax.y) * 0.5f;
+        dl->AddCircleFilled(ImVec2(cx, cy), 8.0f, accentBright);
+        dl->AddCircle(ImVec2(cx, cy), 8.0f, IM_COL32(255, 255, 255, 120));
+        // Enemies (red diamonds)
+        auto diamond = [&](f32 ex, f32 ey, f32 r) {
+            dl->AddQuadFilled(ImVec2(ex, ey - r), ImVec2(ex + r, ey), ImVec2(ex, ey + r), ImVec2(ex - r, ey),
+                              IM_COL32(200, 60, 60, 200));
+        };
+        diamond(rMin.x + 40, rMin.y + 40, 6.0f);
+        diamond(rMax.x - 40, rMax.y - 40, 6.0f);
+        diamond(rMax.x - 50, rMin.y + 50, 5.0f);
+        // Health bar
+        f32 hbW = 50.0f, hbH = 6.0f;
+        dl->AddRectFilled(ImVec2(cx - hbW * 0.5f, cy + 16), ImVec2(cx + hbW * 0.5f, cy + 16 + hbH), IM_COL32(40, 40, 40, 200));
+        dl->AddRectFilled(ImVec2(cx - hbW * 0.5f, cy + 16), ImVec2(cx + hbW * 0.2f, cy + 16 + hbH), IM_COL32(60, 200, 60, 220));
+    }
+    else if (id == "thirdperson") {
+        // 3D Third Person: horizon, ground plane, character silhouette, shadow
+        // Sky
+        dl->AddRectFilledMultiColor(tMin, ImVec2(tMax.x, tMin.y + h * 0.5f),
+            IM_COL32(40, 50, 80, 255), IM_COL32(40, 50, 80, 255),
+            IM_COL32(60, 70, 100, 255), IM_COL32(60, 70, 100, 255));
+        // Ground plane (perspective floor)
+        f32 horizonY = tMin.y + h * 0.45f;
+        ImVec2 groundPts[4] = {
+            ImVec2(tMin.x, horizonY), ImVec2(tMax.x, horizonY),
+            ImVec2(tMax.x, tMax.y), ImVec2(tMin.x, tMax.y)
+        };
+        dl->AddConvexPolyFilled(groundPts, 4, IM_COL32(45, 55, 40, 220));
+        // Grid lines on ground (perspective)
+        for (int gi = 1; gi <= 4; ++gi) {
+            f32 t = gi / 5.0f;
+            f32 gy = horizonY + (tMax.y - horizonY) * t;
+            dl->AddLine(ImVec2(tMin.x, gy), ImVec2(tMax.x, gy), IM_COL32(60, 70, 55, 100));
+        }
+        // Character silhouette (center-right)
+        f32 charX = tMin.x + w * 0.45f;
+        f32 charBot = tMax.y - 20;
+        f32 charH = h * 0.45f;
+        // Body
+        dl->AddRectFilled(ImVec2(charX - 10, charBot - charH + 20), ImVec2(charX + 10, charBot), accentDim, 3.0f);
+        // Head
+        dl->AddCircleFilled(ImVec2(charX, charBot - charH + 10), 12.0f, accentDim);
+        // Shadow ellipse
+        dl->AddEllipseFilled(ImVec2(charX, charBot + 2), ImVec2(18.0f, 4.0f), IM_COL32(0, 0, 0, 80));
+        // Obstacles in distance
+        dl->AddRectFilled(ImVec2(tMin.x + w * 0.75f, horizonY + 10), ImVec2(tMin.x + w * 0.78f, horizonY + 30), IM_COL32(70, 60, 50, 180));
+        dl->AddRectFilled(ImVec2(tMin.x + w * 0.15f, horizonY + 15), ImVec2(tMin.x + w * 0.22f, horizonY + 25), IM_COL32(70, 60, 50, 180));
+        // Point light
+        dl->AddCircleFilled(ImVec2(tMin.x + w * 0.78f, horizonY - 10), 5.0f, IM_COL32(255, 200, 100, 180));
+        dl->AddCircle(ImVec2(tMin.x + w * 0.78f, horizonY - 10), 12.0f, IM_COL32(255, 200, 100, 60));
+    }
+    else {
+        // Default: accent-colored gradient with template initials
+        ImU32 topCol = IM_COL32(
+            (int)(accent.x * 80), (int)(accent.y * 80), (int)(accent.z * 80), hovered ? 200 : 160);
+        ImU32 botCol = IM_COL32(
+            (int)(accent.x * 40), (int)(accent.y * 40), (int)(accent.z * 40), hovered ? 200 : 160);
+        dl->AddRectFilledMultiColor(tMin, tMax, topCol, topCol, botCol, botCol);
+    }
+
+    // Subtle bottom edge fade-out
+    dl->AddRectFilledMultiColor(
+        ImVec2(tMin.x, tMax.y - 8), tMax,
+        IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0),
+        IM_COL32(20, 22, 30, 200), IM_COL32(20, 22, 30, 200));
+}
+
 // --------------------------------------------------
 // Wizard Step 2: template selection
 // --------------------------------------------------
@@ -1095,7 +1232,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
     f32 contentW = area.x - sidebarW;
 
     // Step indicator
-    f32 stepFontSize = 18.0f;
+    f32 stepFontSize = 22.0f;
     const char* stepText = "Step 2 of 2 -- Choose Template";
     ImVec2 stepSz = font->CalcTextSizeA(stepFontSize, FLT_MAX, 0.0f, stepText);
     f32 stepX = sidebarW + (contentW - stepSz.x) * 0.5f;
@@ -1123,9 +1260,9 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
     const char* filterLabels[] = { "All", "2D", "3D", "Multiplayer" };
     u32 filterValues[] = { TMPL_ALL, TMPL_2D, TMPL_3D, TMPL_MULTI };
 
-    f32 chipFontSize = 22.0f;
+    f32 chipFontSize = 26.0f;
     f32 chipPad = 12.0f;
-    f32 chipH = 48.0f;
+    f32 chipH = 56.0f;
     f32 chipPadX = 28.0f;
     ImVec2 chipTextSizes[4];
     f32 totalChipW = 0.0f;
@@ -1253,9 +1390,9 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
 
     // === Template grid (scrollable) ===
     f32 gridStartY = statusFilterY + sChipH + 15.0f;
-    f32 cardW = 280.0f;
-    f32 cardH = 180.0f;
-    f32 cardPad = 16.0f;
+    f32 cardW = 500.0f;
+    f32 cardH = 380.0f;
+    f32 cardPad = 28.0f;
     f32 maxRowWidth = contentW - 60.0f;
     int cardsPerRow = static_cast<int>((maxRowWidth + cardPad) / (cardW + cardPad));
     if (cardsPerRow < 1) cardsPerRow = 1;
@@ -1369,7 +1506,12 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
             ImU32 accentCol = IM_COL32(
                 (int)(accent.x * 255), (int)(accent.y * 255),
                 (int)(accent.z * 255), (hovered || selected) ? 255 : 180);
-            gridDl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 4.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
+            // Procedural thumbnail (top 200px)
+            ImVec2 thumbMin(cardPos.x + 1, cardPos.y + 1);
+            ImVec2 thumbMax(cardEnd.x - 1, cardPos.y + 200.0f);
+            DrawTemplateThumbnail(gridDl, s_BuiltinTemplates[i].id, thumbMin, thumbMax, accent, hovered);
+            // Thin accent bar above thumbnail
+            gridDl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 3.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
 
             ImU32 borderCol = selected ? IM_COL32(140, 160, 220, 255) :
                              (hovered  ? accentCol : IM_COL32(60, 65, 80, 150));
@@ -1379,7 +1521,11 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
             ImU32 mutedAccent = IM_COL32(
                 (int)(accent.x * 80), (int)(accent.y * 80),
                 (int)(accent.z * 80), 100);
-            gridDl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 4.0f), mutedAccent, 8.0f, ImDrawFlags_RoundCornersTop);
+            // Procedural thumbnail (top 200px, dimmed for locked)
+            ImVec2 thumbMin(cardPos.x + 1, cardPos.y + 1);
+            ImVec2 thumbMax(cardEnd.x - 1, cardPos.y + 200.0f);
+            DrawTemplateThumbnail(gridDl, s_BuiltinTemplates[i].id, thumbMin, thumbMax, accent, false);
+            gridDl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 3.0f), mutedAccent, 8.0f, ImDrawFlags_RoundCornersTop);
             gridDl->AddRect(cardPos, cardEnd, IM_COL32(45, 48, 58, 120), 8.0f, 0, 1.0f);
         }
 
@@ -1393,7 +1539,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
         // Template name — dimmed for locked
         ImU32 nameCol = isStable ? IM_COL32(220, 225, 245, 255) : IM_COL32(100, 105, 120, 160);
         DrawCenteredClippedText(gridDl, s_BuiltinTemplates[i].name, cardPos.x, cardW,
-            cardPos.y + 16.0f, nameCol);
+            cardPos.y + 210.0f, nameCol, 12.0f, font, 20.0f);
 
         // Maturity tier badge (top-left corner)
         {
@@ -1419,14 +1565,14 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
 
         const char* desc = s_BuiltinTemplates[i].description;
         std::string descStr(desc);
-        f32 lineY = cardPos.y + 42.0f;
+        f32 lineY = cardPos.y + 240.0f;
         std::istringstream iss(descStr);
         std::string line;
         ImU32 descCol = isStable ? IM_COL32(140, 145, 165, 200) : IM_COL32(80, 84, 95, 140);
         while (std::getline(iss, line, '\n')) {
             DrawCenteredClippedText(gridDl, line.c_str(), cardPos.x, cardW,
-                lineY, descCol);
-            lineY += 18.0f;
+                lineY, descCol, 12.0f, font, 17.0f);
+            lineY += 20.0f;
         }
 
         if (hovered) {
@@ -1468,7 +1614,12 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
         gridDl->AddRectFilled(cardPos, cardEnd, bgCol, 8.0f);
 
         ImU32 accentCol = (hovered || selected) ? IM_COL32(0, 200, 180, 255) : IM_COL32(0, 200, 180, 150);
-        gridDl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 4.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
+        // Default thumbnail for custom templates
+        ImVec2 cThumbMin(cardPos.x + 1, cardPos.y + 1);
+        ImVec2 cThumbMax(cardEnd.x - 1, cardPos.y + 200.0f);
+        ImVec4 cAccent(0.4f, 0.6f, 0.8f, 1.0f);
+        DrawTemplateThumbnail(gridDl, "custom", cThumbMin, cThumbMax, cAccent, hovered);
+        gridDl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 3.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
 
         ImU32 borderCol = selected ? IM_COL32(0, 220, 200, 255) :
                          (hovered  ? accentCol : IM_COL32(60, 65, 80, 150));
@@ -1482,11 +1633,11 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
         }
 
         DrawCenteredClippedText(gridDl, m_CustomTemplateNames[ci].c_str(), cardPos.x, cardW,
-            cardPos.y + 16.0f, IM_COL32(220, 225, 245, 255));
+            cardPos.y + 210.0f, IM_COL32(220, 225, 245, 255), 12.0f, font, 20.0f);
 
         const char* customLabel = "Custom Template";
-        DrawCenteredClippedText(gridDl, customLabel, cardPos.x, cardW, cardPos.y + 45.0f,
-            IM_COL32(0, 180, 160, 200));
+        DrawCenteredClippedText(gridDl, customLabel, cardPos.x, cardW, cardPos.y + 240.0f,
+            IM_COL32(0, 180, 160, 200), 12.0f, font, 17.0f);
 
         if (hovered && !mouseInBottomBar && ImGui::IsMouseClicked(0)) {
             int newSel = -(ci + 1);
@@ -1795,9 +1946,9 @@ void EditorLayer::DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 conten
 
     // Grid layout (offset by sidebar)
     f32 gridStartY = contentY + 8.0f + backSz.y + 12.0f + subSz.y + 24.0f;
-    f32 cardW = 280.0f;
-    f32 cardH = 180.0f;
-    f32 cardPad = 16.0f;
+    f32 cardW = 440.0f;
+    f32 cardH = 320.0f;
+    f32 cardPad = 24.0f;
     f32 maxRowWidth = contentW - 60.0f;
     int cardsPerRow = static_cast<int>((maxRowWidth + cardPad) / (cardW + cardPad));
     if (cardsPerRow < 1) cardsPerRow = 1;
@@ -1828,8 +1979,11 @@ void EditorLayer::DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 conten
                       (hovered ? IM_COL32(40, 45, 60, 255) : IM_COL32(25, 28, 35, 255));
         dl->AddRectFilled(cPos, cEnd, bgCol, 8.0f);
 
-        // Accent bar
-        dl->AddRectFilled(cPos, ImVec2(cEnd.x, cPos.y + 4.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
+        // Procedural thumbnail for demo cards
+        ImVec2 dThumbMin(cPos.x + 1, cPos.y + 1);
+        ImVec2 dThumbMax(cEnd.x - 1, cPos.y + 160.0f);
+        DrawTemplateThumbnail(dl, demos[i].templateId, dThumbMin, dThumbMax, accent, hovered && available);
+        dl->AddRectFilled(cPos, ImVec2(cEnd.x, cPos.y + 3.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
 
         // Border
         ImU32 borderCol = !available ? IM_COL32(45, 48, 58, 150) :
@@ -1839,18 +1993,18 @@ void EditorLayer::DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 conten
         // Name (clipped with ellipsis if wider than card)
         ImU32 nameCol = available ? IM_COL32(220, 225, 245, 255) : IM_COL32(120, 125, 140, 180);
         DrawCenteredClippedText(dl, demos[i].name, cPos.x, cardW,
-            cPos.y + 16.0f, nameCol);
+            cPos.y + 172.0f, nameCol, 12.0f, font, 16.0f);
 
         // Description (centered, multi-line, clipped per line)
-        f32 lineY = cPos.y + 42.0f;
+        f32 lineY = cPos.y + 198.0f;
         ImU32 descCol = available ? IM_COL32(140, 145, 165, 200) : IM_COL32(90, 95, 110, 140);
         std::string descStr(demos[i].description);
         std::istringstream iss(descStr);
         std::string line;
         while (std::getline(iss, line, '\n')) {
             DrawCenteredClippedText(dl, line.c_str(), cPos.x, cardW,
-                lineY, descCol);
-            lineY += 18.0f;
+                lineY, descCol, 12.0f, font, 14.0f);
+            lineY += 20.0f;
         }
 
         // "Coming Soon" badge overlay for unavailable demos
@@ -2006,9 +2160,10 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
     // --- Configure editor layout per template ---
     // Reset to defaults first
     m_Layout = LayoutConfig{};
-    // All templates use minimal panel set: Hierarchy, Inspector, Viewport, Console, AssetBrowser
+    // All templates use minimal panel set: Hierarchy, Inspector, Viewport, Console, AssetBrowser, GameView
     EditorPanel corePanels = EditorPanel::Hierarchy | EditorPanel::Inspector |
-                             EditorPanel::Viewport | EditorPanel::Console | EditorPanel::AssetBrowser;
+                             EditorPanel::Viewport | EditorPanel::Console | EditorPanel::AssetBrowser |
+                             EditorPanel::GameView;
     m_Layout.panels = corePanels;
 
     // 2D templates
@@ -2018,8 +2173,6 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.bottomHeight = 0.18f;
         m_Layout.gameViewW = 700.0f;
         m_Layout.gameViewH = 450.0f;
-        // Open Game View window, keep Inspector, close Stats overlay
-        m_Layout.panels = m_Layout.panels | EditorPanel::GameView;
         m_ShowStatsOverlay = false;
     }
     else if (templateId == "isometric" || templateId == "citybuilder" || templateId == "towerdefense") {
@@ -2332,14 +2485,15 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         return player;
     };
 
-    // --- 2D player with capsule2D mesh + sensor body for collision callbacks ---
+    // --- 2D player with capsule2D mesh + kinematic body for collision callbacks ---
     // NOTE: No Sprite2DComponent — entities without textures must render via the
     // 3D mesh pipeline. SpriteBatchRenderer ignores MeshComponent geometry and
     // requires a texture to be visible. Only add Sprite2DComponent when a texture is set.
-    // The player has a sensor Body2DComponent so Box2D can detect overlaps with
-    // pickups, hazards, and enemies. The sensor body doesn't interfere with the
-    // controller: SyncECSToBox2D pushes the controller position to Box2D, and
-    // SyncBox2DToECS skips sensor bodies (doesn't overwrite the transform).
+    // The player has a kinematic Body2DComponent so Box2D can detect overlaps with
+    // sensor-based pickups, hazards, and enemies. Kinematic bodies act as "visitors"
+    // to sensors in Box2D v3 (two sensors never trigger events with each other).
+    // SyncECSToBox2D pushes the controller position to Box2D, and SyncBox2DToECS
+    // skips kinematic bodies (doesn't overwrite the transform).
     auto createPlayer2D = [&](const std::string& name) -> ECS::Entity {
         ECS::Entity player = m_World->CreateEntity();
         m_World->AddComponent<ECS::NameComponent>(player, name);
@@ -2348,11 +2502,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(player);
         pmat.baseColor = Math::Vector3(0.2f, 0.4f, 0.9f);
         m_World->AddComponent<ECS::MeshComponent>(player, Renderer::MeshFactory::CreateCapsule2D(0.8f, 1.6f));
-        // Sensor body — enables pickup/damage/enemy collision callbacks
+        // Kinematic body — enables pickup/damage/enemy collision callbacks
         auto& body = m_World->AddComponent<Physics::Body2DComponent>(player);
         body.shapeType = Physics::Shape2DType::Box;
         body.box.halfExtents = Math::Vector2(0.4f, 0.8f);  // Match capsule dimensions
-        body.isSensor = true;
+        body.isKinematic = true;
         body.gravityScale = 0.0f;
         body.fixedRotation = true;
         return player;
@@ -3222,7 +3376,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
 
         // --- Render settings ---
         m_RenderSystem->SetShadowsEnabled(false);
-        m_RenderSystem->SetAmbientIntensity(0.25f);
+        m_RenderSystem->SetAmbientIntensity(0.1f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
             pp.fxaaEnabled = 1;

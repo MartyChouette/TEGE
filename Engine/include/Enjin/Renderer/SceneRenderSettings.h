@@ -27,6 +27,8 @@ struct SceneRenderSettings {
     f32 shadowDistance = 100.0f;    // Max shadow distance
     f32 shadowStrength = 1.0f;     // 0..1
     f32 shadowSoftness = 0.0f;     // 0 = hard, 1-5 = soft (Poisson disk texel radius)
+    bool cascadeProgressiveUpdate = false;  // Far CSM cascades update every N frames
+    u32 cascadeFarUpdateInterval = 2;       // Far cascade update frequency (2-8)
     bool backfaceCulling = false;
     bool wireframe = false;
     f32 ambientIntensity = 1.0f;
@@ -41,6 +43,9 @@ struct SceneRenderSettings {
     bool rainActive = false;
 
     // --- PostProcessSettings fields ---
+    // HDR output
+    bool hdrOutput = false;        // Enable HDR swapchain output
+
     // Tone mapping
     u32 toneMappingMode = 0;
     f32 exposure = 1.0f;
@@ -180,6 +185,17 @@ struct SceneRenderSettings {
     f32 tiltShiftBandWidth = 0.3f;
     f32 tiltShiftBlurAmount = 3.0f;
 
+    // --- Shading Model ---
+    u32 shadingModel = 0;              // 0=Blinn-Phong, 1=PBR (GGX)
+    bool fresnelEnabled = false;       // Fresnel-Schlick edge reflections
+    bool energyConservation = false;   // Diffuse/specular energy balance
+    bool geometryTerm = false;         // Smith GGX microfacet self-shadowing
+
+    // --- Dreamcast-style effects ---
+    bool sphereEnvMapEnabled = false;  // Spherical environment mapping (matcap sheen)
+    f32 sphereEnvStrength = 0.5f;      // Intensity of sphere env contribution
+    f32 posterizeLevels = 0.0f;        // 0=disabled, 4-256=color levels per channel
+
     // --- Cel Shading ---
     bool celShadingEnabled = false;
     f32 celDiffuseBands = 3.0f;
@@ -239,6 +255,8 @@ struct SceneRenderSettings {
     bool rtReflectionsEnabled = true;
     f32 rtReflectionMaxDistance = 50.0f;
     f32 rtReflectionRoughnessThreshold = 0.5f;
+    bool rtReflectionSDFFallback = true;
+    f32 rtReflectionSDFMaxDistance = 500.0f;
 
     // RT Ambient Occlusion
     bool rtAOEnabled = true;
@@ -259,6 +277,10 @@ struct SceneRenderSettings {
     bool rtPathTracerMIS = true;           // Multiple Importance Sampling
     f32 rtPathTracerRRMinBounce = 3.0f;    // Russian Roulette min bounce
     f32 rtPathTracerRRMinProb = 0.05f;     // Russian Roulette min survival probability
+
+    // Simplified RT Materials (pre-baked to reduce hit shader divergence)
+    bool rtSimplifiedMaterials = true;
+    u32 rtSimplifyAfterBounce = 1;  // Simplify material evaluation after this bounce depth
 
     // Denoiser
     bool rtDenoiserEnabled = true;

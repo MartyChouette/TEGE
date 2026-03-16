@@ -2,7 +2,7 @@
 
 ## Overview
 
-Enjin Engine is an open-source (BSL 1.1) 3D game engine built from scratch using C++20 and the Vulkan graphics API. It features a complete ImGui-based editor, an Entity-Component-System architecture, and modern rendering capabilities.
+Enjin Engine is an open-source (BSL 1.1) 3D game engine built with C++20 and the Vulkan graphics API. It features a complete ImGui-based editor, an Entity-Component-System architecture, and modern rendering capabilities.
 
 ## System Architecture
 
@@ -148,6 +148,8 @@ enjin/
 - 64-bit material sort keys (`[8:pipeline][16:material][24:texture][16:depth]`) for cache-friendly draw ordering
 - LOD with hysteresis dead-zones and screen-space projected size metric
 - Scene classification: `Scene2D` (sprites only, shadows skipped), `Scene2_5D` (sprites+lights), `Scene3D` (full pipeline)
+- Motion Vectors: Per-pixel velocity buffer (RG16F MRT attachment) for temporal techniques
+- TAA: Temporal anti-aliasing with Halton(2,3) jitter, neighborhood clamping, velocity reprojection, history ping-pong buffers, configurable sharpness/feedback; AA mode selection (None/FXAA/TAA/SMAA)
 
 ### Ray Tracing System
 
@@ -162,7 +164,7 @@ enjin/
 - `RTGlobalIllumination` - Multi-bounce diffuse GI
 - `RTTranslucency` - Translucency ray dispatch (transmission materials)
 - `RTCaustics` - Caustic light patterns from refractive surfaces
-- `PathTracer` - Progressive path tracer with accumulation buffer and SPP tracking
+- `PathTracer` - Progressive path tracer with accumulation buffer, SPP tracking, NEE, MIS, Russian Roulette, and firefly clamping
 - `SVGFDenoiser` - 3-pass compute denoiser (temporal accumulation, variance estimation, a-trous wavelet)
 - `RTCompositor` - Fullscreen compute shader compositing RT layers into scene HDR
 
@@ -171,10 +173,12 @@ enjin/
 - BLAS per unique mesh with hash-based deduplication
 - TLAS rebuilt per frame from entity transforms (UPDATE mode for transform-only changes)
 - Per-effect enable/disable with independent configuration
-- Progressive path tracing mode with automatic reset on camera/scene changes
+- Progressive path tracing mode with automatic reset on camera/scene changes, Cook-Torrance BRDF with GGX importance sampling, Next Event Estimation (NEE) with uniform light selection, Multiple Importance Sampling (MIS) using power heuristic, Russian Roulette path termination, firefly clamping (per-bounce and final), and simplified material fallback for deep bounces
 - SVGF denoising with configurable temporal alpha and a-trous iterations; optional OIDN and OptiX denoisers
+- OptiX denoiser CUDA interop wired (timeline semaphore sync, shared Vulkan/CUDA buffers)
+- Material SSBO in RT hit shaders (binding 9) for full PBR material access during ray traversal
 - RTCompositor enable flags: bits 0-5 (shadows/reflections/AO/GI/translucency/caustics)
-- RT descriptor set (16 bindings: 0-13 base, 14=translucency, 15=caustics; separate from main pipeline set 0)
+- RT descriptor set (16 bindings: 0-13 base, 4=motion vectors, 9=material SSBO, 14=translucency, 15=caustics; separate from main pipeline set 0)
 - Graceful fallback: placeholder SPIR-V stubs detected and skipped, raster path unaffected
 - Only active for Scene3D render mode (2D/2.5D scenes skip RT entirely)
 - Editor panel with per-effect toggles, config sliders, BLAS/instance stats
@@ -260,6 +264,10 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 
 **Features**:
 - 20+ editor panels (Hierarchy, Inspector, Console, Asset Browser, Editor Settings, Project Settings, Post Processing, Retro Effects, Rendering, Game View, Scene List, Stats Overlay, Profiler, Pixel Editor, Vector Drawing, Behavior Tree, Procedural Generation, Sprite Sheet Importer, Bug Reports & Feedback, Network, Animation Timeline, Visual Script, Quest Flow)
+- **Game Debug Panel (F1)** — Tabbed game-focused debug window with Scene, Physics, Scripts, Audio, and Gameplay tabs. Shows entity counts, physics body lists, script status with error indicators, audio source state, and gameplay system metrics (tweens, particles, health, interactables)
+- **Debug Workstation (F2)** — Tabbed engine-focused debug window with Performance, Renderer, ECS, Scene, and System tabs. Shows FPS/frame time graphs with percentile stats, render pipeline state (shadows, RT, AA, post-processing), component counts, scene/project info, GPU/Vulkan/system details
+- **Drop-down Console (`` ` ``)** — Quake/Doom-style console that slides down from the top of the screen with smooth animation. Supports 60+ commands across 10 categories (entities, transform, rendering, materials, lights, camera, scene, query, bulk, debug). Features command history (Up/Down arrows), color-coded output, and auto-focus input
+- **PrepareRenderTargets** — Pre-command-buffer render target resizing to prevent Vulkan resource destruction during recording (fixes 4:3 aspect ratio crash with Vulkan hooks)
 - Transform gizmos (translate, rotate, scale) via ImGuizmo
 - Entity selection via ray casting (click-to-select)
 - Entity clipboard (Cut/Copy/Paste via JSON serialization)
@@ -536,6 +544,17 @@ Binding 14: Cluster grid SSBO — clustered lighting (fragment shader)
 Binding 15: Cluster light index SSBO — clustered lighting (fragment shader)
 Binding 16: VT indirection texture — virtual texturing (fragment shader)
 Binding 17: VT physical atlas — virtual texturing (fragment shader)
+```
+
+**RT Descriptor Set** (separate from main pipeline set 0):
+```
+Binding  0-3:  Base RT bindings (TLAS, output image, camera UBO, lighting UBO)
+Binding  4:    Motion vectors (RG16F velocity buffer)
+Binding  5-8:  Scene data (vertex/index buffers, instance data, textures)
+Binding  9:    Material SSBO (full PBR material data for hit shaders)
+Binding 10-13: Additional scene data
+Binding 14:    Translucency output
+Binding 15:    Caustics output
 ```
 
 ## Push Constants (128 bytes, per-object)

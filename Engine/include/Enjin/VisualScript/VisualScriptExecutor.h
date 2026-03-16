@@ -72,6 +72,10 @@ public:
     void SetStreaming(Scene::StreamingManager* sm) { m_Streaming = sm; }
     Scene::StreamingManager* GetStreaming() const { return m_Streaming; }
 
+    // Scene manager for scene loading nodes
+    void SetSceneManager(Scene::SceneManager* sm) { m_SceneManager = sm; }
+    Scene::SceneManager* GetSceneManager() const { return m_SceneManager; }
+
     // Configuration
     void SetMaxIterations(u32 max) { m_MaxIterations = max; }
     u32 GetMaxIterations() const { return m_MaxIterations; }
@@ -110,6 +114,7 @@ private:
     Scripting::ScriptEngine* m_ScriptEngine = nullptr;
     Networking::NetworkSystem* m_Networking = nullptr;
     Scene::StreamingManager* m_Streaming = nullptr;
+    Scene::SceneManager* m_SceneManager = nullptr;
     u32 m_FunctionCallDepth = 0;
     static constexpr u32 MAX_CALL_DEPTH = 32;
 };

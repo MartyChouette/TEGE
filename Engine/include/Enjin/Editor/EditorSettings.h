@@ -176,6 +176,18 @@ struct EditorSettings {
 
     void AddRecentVisualScriptNode(const std::string& nodeTypeId);
 
+    // Layout persistence
+    u32 visiblePanels = 0xFFFFFFFF;   // EditorPanel bitmask - all visible by default
+    f32 leftPanelWidth = 0.18f;
+    f32 rightPanelWidth = 0.25f;
+    f32 bottomPanelHeight = 0.22f;
+    u32 gizmoOperation = 0;           // 0=Translate, 1=Rotate, 2=Scale
+    u32 gizmoSpace = 0;               // 0=Local, 1=World
+
+    // Auto-save
+    bool autoSaveEnabled = true;
+    f32 autoSaveIntervalMinutes = 5.0f;
+
     // Save/Load
     bool Save(const std::string& path = "") const;
     bool Load(const std::string& path = "");

@@ -85,9 +85,16 @@ public:
     void SetFocusCallback(const FocusCallback& callback) override { m_FocusCallback = callback; }
     void SetIconifyCallback(const IconifyCallback& callback) override { m_IconifyCallback = callback; }
     void SetDropCallback(const DropCallback& callback) override { m_DropCallback = callback; }
+    void SetCloseCallback(const CloseCallback& callback) override { (void)callback; } // Not applicable for web
 
     bool IsFocused() const override { return m_Focused; }
     bool IsIconified() const override { return false; } // Browsers don't iconify canvases
+
+    void SetTitle(const char* title) override {
+        if (title) {
+            EM_ASM({ document.title = UTF8ToString($0); }, title);
+        }
+    }
 
     void SetIcon(const char* iconPath) override { (void)iconPath; } // Not applicable for web
     void WaitEvents() override {} // No blocking wait in browser

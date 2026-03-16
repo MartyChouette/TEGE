@@ -75,26 +75,34 @@ bool RenderTarget::Resize(u32 width, u32 height) {
 }
 
 void RenderTarget::Begin(VkCommandBuffer cmd) {
-    // Transition color image to attachment layout
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.image = m_ColorImage;
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
-    barrier.srcAccessMask = 0;
-    barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    // Transition color and velocity images to attachment layout
+    std::array<VkImageMemoryBarrier, 2> barriers{};
+
+    barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barriers[0].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barriers[0].image = m_ColorImage;
+    barriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barriers[0].srcAccessMask = 0;
+    barriers[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barriers[1].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barriers[1].image = m_VelocityImage;
+    barriers[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barriers[1].srcAccessMask = 0;
+    barriers[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
     vkCmdPipelineBarrier(cmd,
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        0, 0, nullptr, 0, nullptr, 1, &barrier);
+        0, 0, nullptr, 0, nullptr,
+        static_cast<u32>(barriers.size()), barriers.data());
 
     // Begin render pass
     VkRenderPassBeginInfo rpBegin{};
@@ -104,9 +112,10 @@ void RenderTarget::Begin(VkCommandBuffer cmd) {
     rpBegin.renderArea.offset = {0, 0};
     rpBegin.renderArea.extent = {m_Width, m_Height};
 
-    std::array<VkClearValue, 2> clearValues{};
+    std::array<VkClearValue, 3> clearValues{};
     clearValues[0].color = {{0.1f, 0.1f, 0.15f, 1.0f}};  // Dark background
-    clearValues[1].depthStencil = {1.0f, 0};
+    clearValues[1].color = {{0.0f, 0.0f, 0.0f, 0.0f}};   // Velocity: zero motion
+    clearValues[2].depthStencil = {1.0f, 0};
     rpBegin.clearValueCount = static_cast<u32>(clearValues.size());
     rpBegin.pClearValues = clearValues.data();
 
@@ -212,6 +221,53 @@ bool RenderTarget::CreateImages() {
         return false;
     }
 
+    // Velocity image (RG16F — matches main render pass MRT for pipeline compatibility)
+    VkImageCreateInfo velInfo{};
+    velInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    velInfo.imageType = VK_IMAGE_TYPE_2D;
+    velInfo.format = VK_FORMAT_R16G16_SFLOAT;
+    velInfo.extent = {m_Width, m_Height, 1};
+    velInfo.mipLevels = 1;
+    velInfo.arrayLayers = 1;
+    velInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    velInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    velInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    velInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    velInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    if (vkCreateImage(device, &velInfo, nullptr, &m_VelocityImage) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create render target velocity image");
+        return false;
+    }
+
+    vkGetImageMemoryRequirements(device, m_VelocityImage, &memReqs);
+    memType = m_Context->FindMemoryType(memReqs.memoryTypeBits,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    allocInfo.allocationSize = memReqs.size;
+    allocInfo.memoryTypeIndex = memType;
+
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &m_VelocityMemory) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to allocate render target velocity memory");
+        return false;
+    }
+    vkBindImageMemory(device, m_VelocityImage, m_VelocityMemory, 0);
+
+    VkImageViewCreateInfo velViewInfo{};
+    velViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    velViewInfo.image = m_VelocityImage;
+    velViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    velViewInfo.format = VK_FORMAT_R16G16_SFLOAT;
+    velViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    velViewInfo.subresourceRange.baseMipLevel = 0;
+    velViewInfo.subresourceRange.levelCount = 1;
+    velViewInfo.subresourceRange.baseArrayLayer = 0;
+    velViewInfo.subresourceRange.layerCount = 1;
+
+    if (vkCreateImageView(device, &velViewInfo, nullptr, &m_VelocityImageView) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create render target velocity image view");
+        return false;
+    }
+
     // Depth image
     VkImageCreateInfo depthInfo{};
     depthInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -222,7 +278,7 @@ bool RenderTarget::CreateImages() {
     depthInfo.arrayLayers = 1;
     depthInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     depthInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    depthInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    depthInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     depthInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     depthInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
@@ -269,7 +325,7 @@ bool RenderTarget::CreateImages() {
 bool RenderTarget::CreateRenderPass() {
     VkDevice device = m_Context->GetDevice();
 
-    // Color attachment
+    // Attachment 0: Color
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = VK_FORMAT_B8G8R8A8_UNORM;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -280,29 +336,43 @@ bool RenderTarget::CreateRenderPass() {
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    // Depth attachment
+    // Attachment 1: Velocity (RG16F — matches main render pass MRT for pipeline compatibility)
+    VkAttachmentDescription velocityAttachment{};
+    velocityAttachment.format = VK_FORMAT_R16G16_SFLOAT;
+    velocityAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    velocityAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    velocityAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    velocityAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    velocityAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    velocityAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    velocityAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    // Attachment 2: Depth
     VkAttachmentDescription depthAttachment{};
     depthAttachment.format = VK_FORMAT_D32_SFLOAT;
     depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-    VkAttachmentReference colorRef{};
-    colorRef.attachment = 0;
-    colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    // Color attachment references (MRT: color + velocity — matches main render pass)
+    std::array<VkAttachmentReference, 2> colorAttachmentRefs{};
+    colorAttachmentRefs[0].attachment = 0;
+    colorAttachmentRefs[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachmentRefs[1].attachment = 1;
+    colorAttachmentRefs[1].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     VkAttachmentReference depthRef{};
-    depthRef.attachment = 1;
+    depthRef.attachment = 2;
     depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorRef;
+    subpass.colorAttachmentCount = static_cast<u32>(colorAttachmentRefs.size());
+    subpass.pColorAttachments = colorAttachmentRefs.data();
     subpass.pDepthStencilAttachment = &depthRef;
 
     VkSubpassDependency dependency{};
@@ -316,7 +386,7 @@ bool RenderTarget::CreateRenderPass() {
     dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
-    std::array<VkAttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
+    std::array<VkAttachmentDescription, 3> attachments = {colorAttachment, velocityAttachment, depthAttachment};
 
     VkRenderPassCreateInfo rpInfo{};
     rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -338,7 +408,7 @@ bool RenderTarget::CreateRenderPass() {
 bool RenderTarget::CreateFramebuffer() {
     VkDevice device = m_Context->GetDevice();
 
-    std::array<VkImageView, 2> attachments = {m_ColorImageView, m_DepthImageView};
+    std::array<VkImageView, 3> attachments = {m_ColorImageView, m_VelocityImageView, m_DepthImageView};
 
     VkFramebufferCreateInfo fbInfo{};
     fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -424,6 +494,18 @@ void RenderTarget::DestroyResources() {
     if (m_DepthMemory != VK_NULL_HANDLE) {
         vkFreeMemory(device, m_DepthMemory, nullptr);
         m_DepthMemory = VK_NULL_HANDLE;
+    }
+    if (m_VelocityImageView != VK_NULL_HANDLE) {
+        vkDestroyImageView(device, m_VelocityImageView, nullptr);
+        m_VelocityImageView = VK_NULL_HANDLE;
+    }
+    if (m_VelocityImage != VK_NULL_HANDLE) {
+        vkDestroyImage(device, m_VelocityImage, nullptr);
+        m_VelocityImage = VK_NULL_HANDLE;
+    }
+    if (m_VelocityMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, m_VelocityMemory, nullptr);
+        m_VelocityMemory = VK_NULL_HANDLE;
     }
     if (m_ColorImageView != VK_NULL_HANDLE) {
         vkDestroyImageView(device, m_ColorImageView, nullptr);

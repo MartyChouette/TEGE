@@ -2,7 +2,9 @@
 
 # TEGE — The Enjin Game Engine
 
-**A modern C++20/Vulkan game engine with a complete editor, 70+ ECS components, and everything you need to ship 2D and 3D games.**
+**An aesthetics-first game engine — preserving and expanding the digital aesthetics of yesterday for the storytellers of tomorrow.**
+
+*Modern C++20/Vulkan, complete editor, 70+ ECS components, and everything you need to ship 2D and 3D games.*
 
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](LICENSE)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
@@ -62,7 +64,9 @@ See [BUILD.md](docs/BUILD.md) for prerequisites and detailed platform instructio
 - **Vulkan Renderer** — Modern graphics with Blinn-Phong lighting, PBR materials, and deferred rendering framework
 - **Shadow Mapping** — 4-cascade CSM for directional lights, cubemap array shadows for point lights (up to 4), 2D array shadows for spot lights (up to 4), 16-sample Poisson disk PCF soft shadows, configurable softness radius, texel stabilization, distance fade, pipeline depth bias, per-entity shadow dither (by darkness/distance/angle) with 6 built-in patterns (Bayer 4x4/8x8, Blue Noise, Halftone, Crosshatch, Overlook)
 - **PBR Material System** — Base color, metallic, roughness, emissive, normal mapping, parallax occlusion mapping (4 modes: Basic/Steep/Occlusion/Relief), transmission/IOR/thickness for refractive materials, subsurface scattering (intensity/radius/color), receiveShadows toggle, dithered gradient banding (2-8 bands, 6 dither patterns), material presets (Glass, Water, Skin, Leaf)
-- **Post-Processing** — Bloom, vignette, color grading, FXAA, film grain, tone mapping, full-screen stipple/dither (8 combinable patterns, 3 color modes), post-process volumes with spatial blending (Box/Sphere shapes, priority-based, smoothstep falloff, selective override mask)
+- **Anti-Aliasing** — TAA (Halton jitter, neighborhood clamping, velocity reprojection, configurable sharpness/feedback), FXAA, selectable per-scene (None/FXAA/TAA/SMAA)
+- **Motion Vectors** — Per-pixel velocity buffer (RG16F MRT) for TAA, SVGF denoiser temporal accumulation, and future upscalers
+- **Post-Processing** — Bloom, vignette, color grading, film grain, tone mapping, full-screen stipple/dither (8 combinable patterns, 3 color modes), post-process volumes with spatial blending (Box/Sphere shapes, priority-based, smoothstep falloff, selective override mask), depth-dependent effects auto-disabled when depth unavailable
 - **Retro Effects** — PSX-style flat shading, affine texturing, vertex snapping, stipple transparency, CRT scanlines, dithering, color quantization
 - **Weather System** — Rain, snow, fog, storms with toggleable lightning
 - **Water Rendering** — 3D water plane with Gerstner waves, shore foam, freeze system, ocean mode
@@ -87,7 +91,7 @@ See [BUILD.md](docs/BUILD.md) for prerequisites and detailed platform instructio
 - **Per-Frame Linear Allocator** — Frame-scoped allocation for transient render data
 - **Sprite Texture Atlas** — Auto-packing small sprites into a single GPU texture for batched draws
 - **Descriptor Set Caching** — Per-entity texture caching with material sort for minimal GPU descriptor writes
-- **Ray Tracing Pipeline** — RT shadows, reflections, AO, GI, translucency (refraction/SSS), caustics (photon-traced), path tracing with 3 denoiser options (SVGF compute, OIDN Intel neural, OptiX NVIDIA CUDA), real depth buffer, RT composition pass
+- **Ray Tracing Pipeline** — RT shadows, reflections, AO, GI, translucency (refraction/SSS), caustics (photon-traced), path tracing with 3 denoiser options (SVGF compute, OIDN Intel neural, OptiX NVIDIA CUDA), material SSBO (binding 9), motion vectors (binding 4), real depth buffer, RT composition pass
 - **SH Light Probes** — L2 spherical harmonics irradiance probes with grid generation, baking, and renderer integration (LightingUBO + ambient blending)
 - **SDF Scene** — CPU-side signed distance field evaluation with 6 primitives, 6 boolean ops (incl. smooth), GPU buffer packing
 - **Order-Independent Transparency** — Weighted Blended OIT (McGuire & Bavoil 2013) with accumulation + revealage textures, fullscreen composite pipeline
@@ -406,6 +410,14 @@ All dependencies use permissive open-source licenses.
 - [Scripting API](docs/SCRIPTING_API.md) — Complete AngelScript API reference
 - [Roadmap](docs/ROADMAP.md) — Planned work and progress tracking
 
+## About
+
+I use AI heavily in implementation. I design, direct, and debug everything as rigorously as I know how. I am a single human trying to build accessible software far beyond my station.
+
+I cannot guarantee the safety or security of this software at this stage — I am one person. This software is provided as-is, without warranty of any kind. I am not liable for any damages arising from its use. By downloading and using TEGE, you accept that I am doing my best and you are placing your trust in me. I will do everything in my power to make this safe, secure software, and I hope that commitment becomes a guarantee when we reach a stable release.
+
+Thank you.
+
 ## License
 
 Licensed under the **Business Source License 1.1** (BSL 1.1). See [LICENSE](LICENSE) for details.
@@ -414,4 +426,4 @@ Licensed under the **Business Source License 1.1** (BSL 1.1). See [LICENSE](LICE
 
 ## Contributing
 
-Contributions welcome! Please open an issue first to discuss the change you would like to make.
+TEGE is not accepting outside contributions at this time. If you find a bug or have a feature request, feel free to [open an issue](https://github.com/your-org/enjin/issues).

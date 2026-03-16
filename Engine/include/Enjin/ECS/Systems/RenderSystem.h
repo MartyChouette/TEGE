@@ -69,6 +69,7 @@ namespace Enjin { namespace Effects {
 #include "Enjin/Memory/FrameAllocator.h"
 #include "Enjin/Renderer/HaltonSequence.h"
 
+#include <algorithm>
 #include <unordered_map>
 #include <unordered_set>
 #include <memory>
@@ -195,6 +196,15 @@ public:
     void SetCamera(Renderer::Camera* camera) { m_Camera = camera; }
     Renderer::Camera* GetCamera() const { return m_Camera; }
 
+#if !ENJIN_RENDERER_WEBGPU
+    Renderer::VulkanSwapchain* GetSwapchain() const { return m_Renderer ? m_Renderer->GetSwapchain() : nullptr; }
+
+    // HDR output — delegates to VulkanRenderer which handles swapchain + render pass + pipeline recreation
+    void SetHDREnabled(bool enabled);
+    bool IsHDREnabled() const { return m_Renderer ? m_Renderer->IsHDREnabled() : false; }
+    u32 GetHDROutputMode() const { return m_Renderer ? m_Renderer->GetHDROutputMode() : 0; }
+#endif
+
     // Editor mode: when true, GPU frustum culling is disabled so all entities
     // are visible in the scene view for editing. The Player leaves this false
     // so the game camera frustum culls normally.
@@ -211,7 +221,7 @@ public:
 
     // Render all entities to an offscreen render target using a custom camera
     // Must be called outside of the main render pass (before BeginMainRenderPass)
-    void RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera);
+    void RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera, u32 viewportIndex = 0);
 
     // Render multiple cameras to a single render target using viewport subdivision (splitscreen)
     // Each ViewportCamera defines a normalized rect within the target.
@@ -246,6 +256,12 @@ public:
     u32 GetShadowResolution() const;
     void SetShadowResolution(u32 r);
 
+    // Progressive cascade shadow updates — far cascades update every N frames
+    bool IsCascadeProgressiveUpdate() const { return m_CascadeProgressiveUpdate; }
+    void SetCascadeProgressiveUpdate(bool enabled) { m_CascadeProgressiveUpdate = enabled; }
+    u32 GetCascadeFarUpdateInterval() const { return m_CascadeFarUpdateInterval; }
+    void SetCascadeFarUpdateInterval(u32 interval) { m_CascadeFarUpdateInterval = std::clamp(interval, 2u, 8u); }
+
     bool IsBackfaceCullingEnabled() const { return m_BackfaceCulling; }
     void SetBackfaceCullingEnabled(bool enabled);
 
@@ -256,6 +272,11 @@ public:
     // Render line-list geometry with depth testing (for editor overlays)
     void RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 vertexCount,
                          u32 firstVertex, const Math::Vector3& color, f32 opacity);
+
+    // Render grid lines into an offscreen render target (uses offscreen descriptor sets)
+    void RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 vertexCount,
+                         u32 firstVertex, const Math::Vector3& color, f32 opacity,
+                         u32 targetWidth, u32 targetHeight);
 #endif
 
     f32 GetAmbientIntensity() const { return m_AmbientIntensity; }
@@ -354,6 +375,22 @@ public:
     void SetGlobalGouraudOnly(bool v) { m_GlobalGouraudOnly = v; }
     u8 GetGlobalVertexSnapResolution() const { return m_GlobalVertexSnapResolution; }
     void SetGlobalVertexSnapResolution(u8 v) { m_GlobalVertexSnapResolution = v; }
+
+    // Shading model
+    u32 GetShadingModel() const { return m_ShadingModel; }
+    void SetShadingModel(u32 model) { m_ShadingModel = model; }
+    bool IsFresnelEnabled() const { return m_FresnelEnabled; }
+    void SetFresnelEnabled(bool v) { m_FresnelEnabled = v; }
+    bool IsEnergyConservation() const { return m_EnergyConservation; }
+    void SetEnergyConservation(bool v) { m_EnergyConservation = v; }
+    bool IsGeometryTerm() const { return m_GeometryTerm; }
+    void SetGeometryTerm(bool v) { m_GeometryTerm = v; }
+    bool IsSphereEnvMapEnabled() const { return m_SphereEnvMapEnabled; }
+    void SetSphereEnvMapEnabled(bool v) { m_SphereEnvMapEnabled = v; }
+    f32 GetSphereEnvStrength() const { return m_SphereEnvStrength; }
+    void SetSphereEnvStrength(f32 v) { m_SphereEnvStrength = v; }
+    f32 GetPosterizeLevels() const { return m_PosterizeLevels; }
+    void SetPosterizeLevels(f32 v) { m_PosterizeLevels = v; }
 
     // Cel shading (lighting quantization)
     bool IsCelShadingEnabled() const { return m_CelShadingEnabled; }
@@ -505,6 +542,8 @@ private:
     bool m_ShadowsEnabled = true;
     f32 m_ShadowDistance = 100.0f;
     u32 m_PendingShadowResolution = 0; // 0 = no change pending
+    bool m_CascadeProgressiveUpdate = false;
+    u32 m_CascadeFarUpdateInterval = 2;   // Far cascades update every N frames (2-8)
 
     // Point light shadow mapping (cubemap array, up to 4 lights)
     std::unique_ptr<Renderer::PointLightShadowMap> m_PointShadowMap;
@@ -560,6 +599,15 @@ private:
     f32 m_SnowIntensity = 0.0f;
     f32 m_WorldCurvature = 0.0f;
 
+    // Shading model
+    u32 m_ShadingModel = 0;            // 0=Blinn-Phong, 1=PBR (GGX)
+    bool m_FresnelEnabled = false;
+    bool m_EnergyConservation = false;
+    bool m_GeometryTerm = false;
+    bool m_SphereEnvMapEnabled = false;
+    f32 m_SphereEnvStrength = 0.5f;
+    f32 m_PosterizeLevels = 0.0f;      // 0=disabled
+
     // Cel shading parameters
     bool m_CelShadingEnabled = false;
     f32 m_CelDiffuseBands = 3.0f;     // Number of quantized bands (2-8)
@@ -606,6 +654,11 @@ private:
     // Scene composition cache (auto-detected per frame, drives rendering decisions)
     SceneComposition m_SceneComposition;
     u32 m_DiagnosticFrameCounter = 0;
+
+    // Progressive cascade shadow updates — far cascades update less frequently
+    u32 m_ShadowFrameCounter = 0;
+    Math::Vector3 m_PrevShadowCameraPos{0, 0, 0};
+    bool ShouldUpdateCascade(u32 cascade) const;
 
     // Shadow caster cache — rebuilt when dirty, avoids per-cascade entity iteration
     std::vector<Entity> m_ShadowCasters;
@@ -872,11 +925,24 @@ private:
     void* m_RTMaterialMapped = nullptr;
     u32 m_RTMaterialBufferCapacity = 0;  // Current capacity in number of MaterialGPU entries
 
+    // RT simplified material SSBO (binding 18) — pre-baked material properties
+    // to reduce hit shader divergence and texture lookups on secondary bounces
+    VkBuffer m_RTSimplifiedMaterialBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_RTSimplifiedMaterialMemory = VK_NULL_HANDLE;
+    void* m_RTSimplifiedMaterialMapped = nullptr;
+    u32 m_RTSimplifiedMaterialBufferCapacity = 0;
+
     // NEE light SSBO (binding 16) — scene lights for path tracer direct light sampling
     VkBuffer m_RTNEELightBuffer[RT_FRAMES_IN_FLIGHT] = {};
     VkDeviceMemory m_RTNEELightMemory[RT_FRAMES_IN_FLIGHT] = {};
     void* m_RTNEELightMapped[RT_FRAMES_IN_FLIGHT] = {};
     static constexpr u32 RT_NEE_LIGHT_BUFFER_SIZE = 8192;  // Enough for all scene lights
+
+    // SDF scene SSBO (binding 17) — SDF objects for reflection fallback sphere tracing
+    VkBuffer m_RTSDFBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_RTSDFMemory = VK_NULL_HANDLE;
+    void* m_RTSDFMapped = nullptr;
+    static constexpr u32 RT_SDF_BUFFER_SIZE = 16 + 48 * 256;  // Header (16B) + up to 256 SDF objects
 
     bool m_RTDescriptorsWritten = false;
 
@@ -899,6 +965,7 @@ private:
     void TransitionRTOutputImages(VkCommandBuffer cmd);
     void UploadRTMaterials();
     void EnsureRTMaterialBuffer(u32 requiredCapacity);
+    void EnsureRTSimplifiedMaterialBuffer(u32 requiredCapacity);
     void UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math::Vector3& lightDir,
                           f32 lightIntensity, f32 shadowDistance, f32 shadowRadius, u32 frameCount,
                           f32 fireflyClamp, i32 enableNEE, i32 enableMIS,

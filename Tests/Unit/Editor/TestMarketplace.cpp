@@ -18,10 +18,10 @@ ENJIN_TEST(CatalogIntegrity, CatalogIsNotEmpty) {
     ENJIN_EXPECT_GT(mp.GetCatalog().size(), (size_t)0);
 }
 
-ENJIN_TEST(CatalogIntegrity, Exactly17Entries) {
+ENJIN_TEST(CatalogIntegrity, Exactly52Entries) {
     TemplateMarketplace mp;
     mp.Initialize("");
-    ENJIN_EXPECT_EQ(mp.GetCatalog().size(), (size_t)17);
+    ENJIN_EXPECT_EQ(mp.GetCatalog().size(), (size_t)52);
 }
 
 ENJIN_TEST(CatalogIntegrity, AllIDsAreUnique) {
@@ -65,7 +65,7 @@ ENJIN_TEST(CatalogIntegrity, AllFileSizesPositive) {
 ENJIN_TEST(CatalogIntegrity, AllProjectModesValid) {
     TemplateMarketplace mp;
     mp.Initialize("");
-    std::unordered_set<std::string> validModes = { "2D", "3D", "Mixed" };
+    std::unordered_set<std::string> validModes = { "2D", "3D", "Mixed", "Multi", "All" };
     for (auto& e : mp.GetCatalog()) {
         ENJIN_EXPECT_TRUE(validModes.count(e.projectMode) > 0);
     }

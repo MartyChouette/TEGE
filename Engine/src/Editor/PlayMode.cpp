@@ -279,6 +279,7 @@ void PlayMode::Play() {
     m_VisualScriptSystem.SetNetworking(&m_NetworkSystem);
     m_VisualScriptSystem.SetScriptEngine(&m_ScriptEngine);
     m_VisualScriptSystem.SetStreaming(&m_StreamingManager);
+    m_VisualScriptSystem.SetSceneManager(m_SceneManager);
     m_VisualScriptSystem.Initialize();
     ENJIN_LOG_INFO(Editor, "PlayMode: VisualScriptSystem initialized");
 

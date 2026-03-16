@@ -186,7 +186,6 @@ void Input::Update() {
 #endif
 
     // Calculate mouse delta
-    s_MousePositionPrev = s_MousePosition; // Note: on web, position set by callback
     if (s_FirstMouseMove) {
         s_MouseDelta = Math::Vector2(0.0f, 0.0f);
         s_SmoothedDelta = Math::Vector2(0.0f, 0.0f);
@@ -194,6 +193,7 @@ void Input::Update() {
     } else {
         s_MouseDelta = s_MousePosition - s_MousePositionPrev;
     }
+    s_MousePositionPrev = s_MousePosition;
 
     // Apply temporal smoothing if enabled
     if (s_MouseSmoothAmount > 0.0f) {

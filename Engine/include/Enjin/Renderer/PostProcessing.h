@@ -70,7 +70,7 @@ struct alignas(16) PostProcessSettings {
     alignas(4) u32 vignetteEnabled = 0;
     alignas(4) f32 vignetteIntensity = 0.3f;
     alignas(4) f32 vignetteSmoothness = 0.5f;
-    alignas(4) f32 _pad0;
+    alignas(4) u32 hdrOutputMode = 0;  // 0=SDR, 1=scRGB (FP16 linear), 2=HDR10 (PQ)
 
     // Chromatic aberration
     alignas(4) u32 chromaticAberrationEnabled = 0;
@@ -424,6 +424,15 @@ public:
     // Bind the external depth buffer for TAA (D32F from the scene pass)
     void SetDepthImageView(VkImageView depthView) { m_TAADepthView = depthView; }
 
+    // Check whether a valid depth source has been bound for depth-reading effects
+    bool IsDepthSourceReady() const { return m_DepthSourceReady; }
+
+    // Bind an external depth buffer for depth-reading post-process effects
+    // (caustics, SSAO, contact shadows, DoF, tilt-shift, cel outline, fog shafts, god rays).
+    // Must be called each frame before ApplyToCurrentPass() when depth effects are enabled.
+    // The depth image must already be in DEPTH_STENCIL_READ_ONLY_OPTIMAL layout.
+    void UpdateDepthSource(VkImageView depthView);
+
     // Get the TAA-resolved output image view (for subsequent passes to read)
     VkImageView GetTAAOutputImageView() const;
 
@@ -485,6 +494,7 @@ private:
     u32 m_Width = 0;
     u32 m_Height = 0;
     bool m_Initialized = false;
+    bool m_DepthSourceReady = false;  // True after UpdateDepthSource() provides valid depth
 
     // LUT texture resources
     std::string m_LUTPath;

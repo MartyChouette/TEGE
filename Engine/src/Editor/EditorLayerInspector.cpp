@@ -264,6 +264,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<Physics::Body2DComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<Physics::Body2DComponent>(e); },
             "body2D", DimensionTag::Only2D},
+        {"Joint 2D", "Physics", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<Physics::Joint2DComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<Physics::Joint2DComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<Physics::Joint2DComponent>(e); },
+            "joint2D", DimensionTag::Only2D},
         {"Trigger Zone", "Physics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TriggerZoneComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TriggerZoneComponent>(e); },
@@ -855,7 +860,14 @@ void EditorLayer::DrawInspectorPanel() {
     if (m_FocusMode || !m_PlayMode.IsStopped()) {
         flags |= ImGuiWindowFlags_NoInputs;
     }
-    ImGui::Begin("Inspector", nullptr, flags);
+    bool panelOpen = true;
+    ImGui::Begin("Inspector", &panelOpen, flags);
+    if (!panelOpen) {
+        SetPanelVisibility(EditorPanel::Inspector, false);
+    }
+
+    // Set proportional widget width so labels don't consume all space
+    ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
 
     // Focus ring for keyboard navigation
     if (m_ShowFocusRing && m_FocusedPanel == FocusedPanel::Inspector) {
@@ -1088,6 +1100,9 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<Physics::Body2DComponent>(m_PrimarySelected)) {
             DrawBody2DComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<Physics::Joint2DComponent>(m_PrimarySelected)) {
+            DrawJoint2DComponent(m_PrimarySelected);
         }
         if (m_World->HasComponent<ECS::TriggerZoneComponent>(m_PrimarySelected)) {
             DrawTriggerZoneComponent(m_PrimarySelected);
@@ -1796,6 +1811,7 @@ void EditorLayer::DrawInspectorPanel() {
         DrawEmptyState("< >", "No Entity Selected", "Select an entity in the Hierarchy to inspect it");
     }
 
+    ImGui::PopItemWidth();
     ImGui::End();
 }
 

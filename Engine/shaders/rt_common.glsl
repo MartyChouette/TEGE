@@ -136,6 +136,30 @@ RTMaterial fetchMaterial(uint instanceIndex) {
 }
 
 // ============================================================================
+// Simplified material (pre-baked on CPU to reduce hit shader divergence)
+// ============================================================================
+
+// Pre-computed material properties for RT shaders. CPU computes F0, kDiffuse,
+// effectiveRoughness, and pre-multiplied emissive so hit shaders skip expensive
+// per-ray material calculations (especially for secondary bounces).
+struct RTSimplifiedMaterial {
+    vec3 albedo;         float effectiveRoughness;  // 16 bytes
+    vec3 f0;             float kDiffuse;             // 16 bytes
+    vec3 emissive;       float opacity;              // 16 bytes
+    float transmission;  float ior;  float _pad0;  float _pad1; // 16 bytes
+};  // 64 bytes total
+
+// Per-entity simplified material SSBO (binding 18, pre-baked on CPU)
+layout(binding = 18, set = 0) readonly buffer SimplifiedMaterialBuffer {
+    RTSimplifiedMaterial simplifiedMaterials[];
+};
+
+// Fetch pre-baked simplified material for the hit instance
+RTSimplifiedMaterial fetchSimplifiedMaterial(uint instanceIndex) {
+    return simplifiedMaterials[instanceIndex];
+}
+
+// ============================================================================
 // Light data for path tracing
 // ============================================================================
 
@@ -401,6 +425,153 @@ vec3 sample_spot_light(RTLight light, vec3 hitPos, out vec3 lightDir, out float 
 
     lightPdf = 1.0;
     return light.color * light.intensity * attenuation * spotFactor;
+}
+
+// ============================================================================
+// SDF (Signed Distance Field) evaluation for RT fallback
+// ============================================================================
+
+// GPU-packed SDF object (48 bytes, matches C++ SDFObjectGPU)
+struct SDFObjectGPU {
+    vec3 position;       // World-space center
+    float type;          // Primitive type (0=Sphere, 1=Box, 2=Cylinder, 3=Torus, 4=Plane, 5=RoundedBox)
+    vec3 scale;          // Per-axis scale / half-extents
+    float blendMode;     // Boolean op (0=Union, 1=Subtract, 2=Intersect, 3-5=Smooth variants)
+    vec3 color;          // Albedo color
+    float blendSmoothness; // Smooth blend radius
+};
+
+// Evaluate a single SDF primitive at local-space position p
+float sdfPrimitive(vec3 p, float type, vec3 scale) {
+    int t = int(type + 0.5);
+
+    if (t == 0) {
+        // Sphere: radius = scale.x
+        return length(p) - scale.x;
+    } else if (t == 1) {
+        // Box: half-extents = scale
+        vec3 d = abs(p) - scale;
+        return length(max(d, 0.0)) + min(max(d.x, max(d.y, d.z)), 0.0);
+    } else if (t == 2) {
+        // Cylinder: radius = scale.x, half-height = scale.y
+        float dx = length(p.xz) - scale.x;
+        float dy = abs(p.y) - scale.y;
+        return length(max(vec2(dx, dy), 0.0)) + min(max(dx, dy), 0.0);
+    } else if (t == 3) {
+        // Torus: major = scale.x, minor = scale.y
+        float qx = length(p.xz) - scale.x;
+        return length(vec2(qx, p.y)) - scale.y;
+    } else if (t == 4) {
+        // Plane: Y-up at origin
+        return p.y;
+    } else if (t == 5) {
+        // Rounded box: half-extents = scale, corner radius = 0.05 (baked)
+        float r = 0.05;
+        vec3 d = abs(p) - scale + r;
+        return length(max(d, 0.0)) + min(max(d.x, max(d.y, d.z)), 0.0) - r;
+    }
+    return 1e10;
+}
+
+// SDF boolean operations
+float sdfOpUnion(float a, float b) { return min(a, b); }
+float sdfOpSubtract(float a, float b) { return max(a, -b); }
+float sdfOpIntersect(float a, float b) { return max(a, b); }
+
+float sdfOpSmoothUnion(float a, float b, float k) {
+    if (k <= 0.0) return min(a, b);
+    float h = max(k - abs(a - b), 0.0) / k;
+    return min(a, b) - h * h * k * 0.25;
+}
+
+float sdfOpSmoothSubtract(float a, float b, float k) {
+    if (k <= 0.0) return max(a, -b);
+    float h = max(k - abs(a + b), 0.0) / k;
+    return max(a, -b) + h * h * k * 0.25;
+}
+
+float sdfOpSmoothIntersect(float a, float b, float k) {
+    if (k <= 0.0) return max(a, b);
+    float h = max(k - abs(a - b), 0.0) / k;
+    return max(a, b) + h * h * k * 0.25;
+}
+
+// Evaluate entire SDF scene, also output the closest object's color
+float sdfEvaluateScene(vec3 p, SDFObjectGPU objects[], int objectCount, out vec3 hitColor) {
+    if (objectCount <= 0) return 1e10;
+
+    float result = 1e10;
+    hitColor = vec3(1.0);
+    bool first = true;
+
+    for (int i = 0; i < objectCount; ++i) {
+        vec3 localP = p - objects[i].position;
+        float dist = sdfPrimitive(localP, objects[i].type, objects[i].scale);
+
+        if (first) {
+            result = dist;
+            hitColor = objects[i].color;
+            first = false;
+            continue;
+        }
+
+        int op = int(objects[i].blendMode + 0.5);
+        float prev = result;
+
+        if (op == 0) result = sdfOpUnion(result, dist);
+        else if (op == 1) result = sdfOpSubtract(result, dist);
+        else if (op == 2) result = sdfOpIntersect(result, dist);
+        else if (op == 3) result = sdfOpSmoothUnion(result, dist, objects[i].blendSmoothness);
+        else if (op == 4) result = sdfOpSmoothSubtract(result, dist, objects[i].blendSmoothness);
+        else if (op == 5) result = sdfOpSmoothIntersect(result, dist, objects[i].blendSmoothness);
+        else result = sdfOpUnion(result, dist);
+
+        // Track color of the closest primitive
+        if (result != prev && result == dist) {
+            hitColor = objects[i].color;
+        }
+    }
+
+    return result;
+}
+
+// Sphere trace (ray march) through SDF scene
+// Returns distance to hit (negative = no hit), and sets hitColor to the SDF object color
+float sdfSphereTrace(vec3 rayOrigin, vec3 rayDir, float maxDist, SDFObjectGPU objects[],
+                     int objectCount, out vec3 hitColor) {
+    float t = 0.0;
+    const int MAX_STEPS = 64;
+    const float EPSILON = 0.001;
+
+    for (int step = 0; step < MAX_STEPS; ++step) {
+        vec3 p = rayOrigin + rayDir * t;
+        vec3 col;
+        float d = sdfEvaluateScene(p, objects, objectCount, col);
+
+        if (d < EPSILON) {
+            hitColor = col;
+            return t;
+        }
+
+        t += d;
+        if (t > maxDist) break;
+    }
+
+    hitColor = vec3(0.0);
+    return -1.0;
+}
+
+// Compute SDF normal via central differences
+vec3 sdfNormal(vec3 p, SDFObjectGPU objects[], int objectCount) {
+    const float h = 0.001;
+    vec3 dummy;
+    float dx = sdfEvaluateScene(p + vec3(h, 0, 0), objects, objectCount, dummy)
+             - sdfEvaluateScene(p - vec3(h, 0, 0), objects, objectCount, dummy);
+    float dy = sdfEvaluateScene(p + vec3(0, h, 0), objects, objectCount, dummy)
+             - sdfEvaluateScene(p - vec3(0, h, 0), objects, objectCount, dummy);
+    float dz = sdfEvaluateScene(p + vec3(0, 0, h), objects, objectCount, dummy)
+             - sdfEvaluateScene(p - vec3(0, 0, h), objects, objectCount, dummy);
+    return normalize(vec3(dx, dy, dz));
 }
 
 #endif // RT_COMMON_GLSL

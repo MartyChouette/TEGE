@@ -1928,13 +1928,20 @@ DiagnosticSnapshot EditorLayer::CaptureDiagnostics(bool includeScene) {
     // is unsafe and the diagnostics already capture the scene path.
     (void)includeScene;
 
+    // Extract plain message strings for the diagnostic snapshot
+    std::vector<std::string> logStrings;
+    logStrings.reserve(m_ConsoleLog.size());
+    for (const auto& entry : m_ConsoleLog) {
+        logStrings.push_back(entry.message);
+    }
+
     return DiagnosticSnapshot::Capture(
         m_PerfMetrics,
         fps,
         m_FrameTimeAvg,
         entityCount,
         m_CurrentScenePath,
-        m_ConsoleLog,
+        logStrings,
         static_cast<u32>(m_SelectedEntities.size()),
         sceneJson);
 }
@@ -2099,7 +2106,22 @@ void EditorLayer::DrawPlayModeDiffDialog() {
 // ============================================================================
 
 void EditorLayer::PushConsoleMessage(const std::string& message) {
-    m_ConsoleLog.push_back(message);
+    // Infer level from prefix tags in manually pushed messages
+    LogLevel level = LogLevel::Info;
+    if (message.find("[Error]") != std::string::npos || message.find("[FATAL]") != std::string::npos) {
+        level = LogLevel::Error;
+    } else if (message.find("[Warn]") != std::string::npos) {
+        level = LogLevel::Warn;
+    }
+    m_ConsoleLog.push_back({ message, level, LogCategory::Editor });
+    if (m_ConsoleLog.size() > MAX_CONSOLE_LINES) {
+        m_ConsoleLog.erase(m_ConsoleLog.begin(),
+            m_ConsoleLog.begin() + static_cast<ptrdiff_t>(m_ConsoleLog.size() - MAX_CONSOLE_LINES));
+    }
+}
+
+void EditorLayer::PushConsoleMessage(LogLevel level, LogCategory category, const std::string& message) {
+    m_ConsoleLog.push_back({ message, level, category });
     if (m_ConsoleLog.size() > MAX_CONSOLE_LINES) {
         m_ConsoleLog.erase(m_ConsoleLog.begin(),
             m_ConsoleLog.begin() + static_cast<ptrdiff_t>(m_ConsoleLog.size() - MAX_CONSOLE_LINES));
@@ -2145,6 +2167,200 @@ void EditorLayer::DrawCrashReportDialog() {
     }
 
     ImGui::End();
+}
+
+void EditorLayer::DrawUnsavedChangesDialog() {
+    ImGui::OpenPopup("Unsaved Changes");
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Unsaved Changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("You have unsaved changes.");
+        if (!m_CurrentScenePath.empty()) {
+            ImGui::TextDisabled("%s", std::filesystem::path(m_CurrentScenePath).filename().string().c_str());
+        }
+        ImGui::Spacing();
+        ImGui::Text("Do you want to save before continuing?");
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        if (ImGui::Button("Save", ImVec2(100, 0))) {
+            // Save, then proceed with the pending action
+            if (!m_CurrentScenePath.empty()) {
+                SaveScene(m_CurrentScenePath);
+            } else {
+                // No path — open Save As dialog
+                std::vector<FileFilter> filters = {
+                    { "Enjin Scene", "*.enjin" },
+                    { "All Files", "*.*" }
+                };
+                auto projRoot = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
+                std::string path = FileDialog::SaveFile("Save Scene", filters, projRoot, "scene.enjin");
+                if (!path.empty()) {
+                    SaveScene(path);
+                } else {
+                    // User cancelled save — stay in the dialog
+                    ImGui::EndPopup();
+                    return;
+                }
+            }
+
+            // Proceed with the action
+            UnsavedAction action = m_UnsavedChangesAction;
+            m_ShowUnsavedChangesDialog = false;
+            m_UnsavedChangesAction = UnsavedAction::None;
+            ImGui::CloseCurrentPopup();
+
+            switch (action) {
+                case UnsavedAction::Quit:
+                    if (m_Window) m_Window->Close();
+                    break;
+                case UnsavedAction::NewScene:
+                    if (m_World) {
+                        m_World->Clear();
+                        ClearSelection();
+                        m_CurrentScenePath.clear();
+                        ClearDirty();
+                        UpdateWindowTitle();
+                        m_HubPage = HubPage::WizardSetup;
+                        m_SelectedTemplate = -1;
+                        m_TemplateFilter = TMPL_ALL;
+                        m_TemplateSearchBuffer[0] = '\0';
+                        m_ShowProjectHub = true;
+                        m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
+                            m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+                        m_CurrentSceneUsesProjectDefaults = true;
+                    }
+                    break;
+                case UnsavedAction::OpenScene:
+                    if (!m_PendingOpenPath.empty()) {
+                        OpenScene(m_PendingOpenPath);
+                        m_PendingOpenPath.clear();
+                    }
+                    break;
+                default: break;
+            }
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Don't Save", ImVec2(100, 0))) {
+            // Discard changes and proceed
+            UnsavedAction action = m_UnsavedChangesAction;
+            m_ShowUnsavedChangesDialog = false;
+            m_UnsavedChangesAction = UnsavedAction::None;
+            ClearDirty();
+            ImGui::CloseCurrentPopup();
+
+            switch (action) {
+                case UnsavedAction::Quit:
+                    if (m_Window) m_Window->Close();
+                    break;
+                case UnsavedAction::NewScene:
+                    if (m_World) {
+                        m_World->Clear();
+                        ClearSelection();
+                        m_CurrentScenePath.clear();
+                        UpdateWindowTitle();
+                        m_HubPage = HubPage::WizardSetup;
+                        m_SelectedTemplate = -1;
+                        m_TemplateFilter = TMPL_ALL;
+                        m_TemplateSearchBuffer[0] = '\0';
+                        m_ShowProjectHub = true;
+                        m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
+                            m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+                        m_CurrentSceneUsesProjectDefaults = true;
+                    }
+                    break;
+                case UnsavedAction::OpenScene:
+                    if (!m_PendingOpenPath.empty()) {
+                        OpenScene(m_PendingOpenPath);
+                        m_PendingOpenPath.clear();
+                    }
+                    break;
+                default: break;
+            }
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(100, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            m_ShowUnsavedChangesDialog = false;
+            m_UnsavedChangesAction = UnsavedAction::None;
+            m_PendingOpenPath.clear();
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    } else {
+        // Popup was closed externally
+        m_ShowUnsavedChangesDialog = false;
+        m_UnsavedChangesAction = UnsavedAction::None;
+        m_PendingOpenPath.clear();
+    }
+}
+
+void EditorLayer::DrawAutoSaveRecoveryDialog() {
+    ImGui::OpenPopup("Auto-Save Recovery");
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Auto-Save Recovery", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("An auto-save file was found that is newer than the scene file.");
+        ImGui::TextDisabled("%s", m_AutoSaveRecoveryPath.c_str());
+        ImGui::Spacing();
+        ImGui::Text("Would you like to recover the auto-saved version?");
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        if (ImGui::Button("Recover", ImVec2(120, 0))) {
+            // Load the auto-save file instead
+            std::string recoveryPath = m_AutoSaveRecoveryPath;
+            m_ShowAutoSaveRecoveryDialog = false;
+            m_AutoSaveRecoveryPath.clear();
+            ImGui::CloseCurrentPopup();
+
+            if (m_World && !recoveryPath.empty()) {
+                Scene::SceneSerializer serializer(m_World);
+                auto result = serializer.Load(recoveryPath, true);
+                if (result.success) {
+                    // Apply loaded skybox config
+                    if (m_RenderSystem) {
+                        m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
+                    }
+                    const auto& loaded = serializer.GetRenderSettings();
+                    m_CurrentSceneUsesProjectDefaults = loaded.useProjectDefaults;
+                    if (loaded.useProjectDefaults) {
+                        m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
+                            m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+                    } else {
+                        loaded.ApplyToRuntime(
+                            m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+                    }
+                    MarkDirty(); // Recovered scene has unsaved changes
+                    ENJIN_LOG_INFO(Editor, "Recovered from auto-save: %s", recoveryPath.c_str());
+                    ShowNotification("Recovered auto-saved scene", NotificationType::Success);
+                } else {
+                    ENJIN_LOG_ERROR(Editor, "Failed to load auto-save: %s", result.error.c_str());
+                    ShowNotification("Failed to recover auto-save", NotificationType::Error);
+                }
+            }
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Discard", ImVec2(120, 0))) {
+            // Delete the auto-save and keep the normal scene
+            std::error_code ec;
+            std::filesystem::remove(m_AutoSaveRecoveryPath, ec);
+            m_ShowAutoSaveRecoveryDialog = false;
+            m_AutoSaveRecoveryPath.clear();
+            ImGui::CloseCurrentPopup();
+            ENJIN_LOG_INFO(Editor, "Discarded auto-save recovery");
+        }
+
+        ImGui::EndPopup();
+    } else {
+        m_ShowAutoSaveRecoveryDialog = false;
+        m_AutoSaveRecoveryPath.clear();
+    }
 }
 
 } // namespace Editor

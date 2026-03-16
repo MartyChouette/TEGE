@@ -2,6 +2,7 @@
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
+#include <imgui_internal.h>
 #include <GLFW/glfw3.h>
 #include <chrono>
 #include "Enjin/Logging/Log.h"
@@ -128,9 +129,88 @@ bool EditorLayer::SceneHasMouseLookController() const {
 }
 
 
+ImVec2 EditorLayer::ComputeAspectConstrainedSize(f32 availW, f32 availH, f32 aspect) {
+    if (aspect <= 0.0f) return ImVec2(availW, availH);  // Free
+    f32 panelAspect = availW / availH;
+    if (panelAspect > aspect) {
+        // Panel is wider than target — pillarbox (constrain width)
+        return ImVec2(availH * aspect, availH);
+    } else {
+        // Panel is taller than target — letterbox (constrain height)
+        return ImVec2(availW, availW / aspect);
+    }
+}
+
+void EditorLayer::DrawViewportPanel() {
+    bool panelOpen = true;
+    ImGui::Begin("Scene", &panelOpen);
+    if (!panelOpen) {
+        SetPanelVisibility(EditorPanel::Viewport, false);
+    }
+
+    // Aspect ratio dropdown (top-right of panel)
+    {
+        int current = static_cast<int>(m_SceneViewAspect);
+        ImGui::SetNextItemWidth(70.0f);
+        if (ImGui::Combo("##SceneAspect", &current, AspectRatioLabels, static_cast<int>(AspectRatio::Count))) {
+            m_SceneViewAspect = static_cast<AspectRatio>(current);
+        }
+    }
+
+    // Update desired render target size from available content region
+    ImVec2 availSize = ImGui::GetContentRegionAvail();
+    if (availSize.x > 0 && availSize.y > 0) {
+        m_EditorViewportWidth = static_cast<u32>(availSize.x);
+        m_EditorViewportHeight = static_cast<u32>(availSize.y);
+    }
+
+    // Compute constrained image size
+    f32 aspect = AspectRatioValues[static_cast<int>(m_SceneViewAspect)];
+    ImVec2 imgSize = ComputeAspectConstrainedSize(
+        static_cast<f32>(m_EditorViewportWidth),
+        static_cast<f32>(m_EditorViewportHeight), aspect);
+
+    // Center the image within the available space
+    f32 padX = (static_cast<f32>(m_EditorViewportWidth) - imgSize.x) * 0.5f;
+    f32 padY = (static_cast<f32>(m_EditorViewportHeight) - imgSize.y) * 0.5f;
+    if (padX > 0.0f || padY > 0.0f) {
+        ImVec2 cursorPos = ImGui::GetCursorPos();
+        ImGui::SetCursorPos(ImVec2(cursorPos.x + padX, cursorPos.y + padY));
+    }
+
+    // Display the editor viewport render target as an ImGui image
+    if (m_EditorViewportRT && m_EditorViewportRT->IsValid()) {
+        VkDescriptorSet texId = m_EditorViewportRT->GetImGuiTextureID();
+        if (texId != VK_NULL_HANDLE) {
+            ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texId)), imgSize);
+
+            // Track image screen bounds for gizmo/picking/overlay coordinate mapping
+            ImVec2 imgMin = ImGui::GetItemRectMin();
+            ImVec2 imgMax = ImGui::GetItemRectMax();
+            m_EditorViewportImageMinX = imgMin.x;
+            m_EditorViewportImageMinY = imgMin.y;
+            m_EditorViewportImageMaxX = imgMax.x;
+            m_EditorViewportImageMaxY = imgMax.y;
+            m_EditorViewportHovered = ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(imgMin, imgMax);
+            m_EditorViewportFocused = ImGui::IsWindowFocused();
+        }
+    } else {
+        // Fallback: dark rect when RT is not available
+        ImVec2 pos = ImGui::GetCursorScreenPos();
+        ImGui::GetWindowDrawList()->AddRectFilled(
+            pos, ImVec2(pos.x + availSize.x, pos.y + availSize.y),
+            IM_COL32(30, 30, 30, 255));
+        m_EditorViewportHovered = false;
+        m_EditorViewportFocused = false;
+    }
+
+    ImGui::End();
+}
+
+
 void EditorLayer::HandleViewportPicking() {
-    // Don't pick if ImGui wants the mouse (hovering over a panel)
-    if (WantsMouseInput()) {
+    // Don't pick if mouse is outside the editor viewport
+    if (!m_EditorViewportHovered) {
         // Cancel any active marquee if mouse enters a panel
         if (m_MarqueeDragging) {
             m_MarqueeDragging = false;
@@ -138,13 +218,14 @@ void EditorLayer::HandleViewportPicking() {
         return;
     }
 
-    if (!m_World || !m_Camera || !m_Renderer) {
+    if (!m_World || !m_Camera) {
         return;
     }
 
     Math::Vector2 mousePos = Input::GetMousePosition();
-    auto extent = m_Renderer->GetSwapchainExtent();
-    if (extent.width == 0 || extent.height == 0) return;
+    f32 vpW = m_EditorViewportImageMaxX - m_EditorViewportImageMinX;
+    f32 vpH = m_EditorViewportImageMaxY - m_EditorViewportImageMinY;
+    if (vpW <= 0 || vpH <= 0) return;
 
     bool ctrlHeld = Input::IsKeyDown(KeyCode::LeftControl) || Input::IsKeyDown(KeyCode::RightControl);
 
@@ -190,8 +271,9 @@ void EditorLayer::HandleViewportPicking() {
 
         ECS::Entity picked = ScenePicker::PickEntity(
             m_World, m_Camera,
-            mousePos.x, mousePos.y,
-            static_cast<f32>(extent.width), static_cast<f32>(extent.height)
+            mousePos.x - m_EditorViewportImageMinX,
+            mousePos.y - m_EditorViewportImageMinY,
+            vpW, vpH
         );
 
         f64 currentTime = ImGui::GetTime();
@@ -239,13 +321,14 @@ void EditorLayer::DrawMarqueeRect() {
 }
 
 void EditorLayer::DrawGizmos() {
-    if (m_SelectedEntities.empty() || !m_World || !m_Camera || !m_Renderer) {
+    if (m_SelectedEntities.empty() || !m_World || !m_Camera) {
         return;
     }
 
-    // Get viewport size
-    auto extent = m_Renderer->GetSwapchainExtent();
-    if (extent.width == 0 || extent.height == 0) {
+    // Get editor viewport size from the docked Scene window
+    f32 vpW = m_EditorViewportImageMaxX - m_EditorViewportImageMinX;
+    f32 vpH = m_EditorViewportImageMaxY - m_EditorViewportImageMinY;
+    if (vpW <= 0 || vpH <= 0) {
         return;
     }
 
@@ -280,10 +363,15 @@ void EditorLayer::DrawGizmos() {
         }
     }
 
-    // Set ImGuizmo to use the full screen as the viewport
+    // Set ImGuizmo to use the foreground draw list (renders on top of all panels)
+    // but tell it the Scene window is the interaction target
     ImGuizmo::SetOrthographic(m_CameraController && m_CameraController->IsOrthographic());
-    ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
-    ImGuizmo::SetRect(0, 0, static_cast<f32>(extent.width), static_cast<f32>(extent.height));
+    ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
+    ImGuizmo::SetRect(m_EditorViewportImageMinX, m_EditorViewportImageMinY, vpW, vpH);
+    ImGuiWindow* sceneWindow = ImGui::FindWindowByName("Scene");
+    if (sceneWindow) {
+        ImGuizmo::SetAlternativeWindow(sceneWindow);
+    }
 
     // Get camera matrices
     Math::Matrix4 viewMat = m_Camera->GetViewMatrix();
@@ -988,12 +1076,14 @@ void EditorLayer::HandleTerrainBrush(f32 deltaTime) {
     }
 
     Math::Vector2 mousePos = Input::GetMousePosition();
-    auto extent = m_Renderer->GetSwapchainExtent();
-    if (extent.width == 0 || extent.height == 0) return;
+    f32 bvpW = m_EditorViewportImageMaxX - m_EditorViewportImageMinX;
+    f32 bvpH = m_EditorViewportImageMaxY - m_EditorViewportImageMinY;
+    if (bvpW <= 0 || bvpH <= 0) return;
 
-    Ray ray = ScenePicker::ScreenToRay(m_Camera, mousePos.x, mousePos.y,
-                                        static_cast<f32>(extent.width),
-                                        static_cast<f32>(extent.height));
+    Ray ray = ScenePicker::ScreenToRay(m_Camera,
+                                        mousePos.x - m_EditorViewportImageMinX,
+                                        mousePos.y - m_EditorViewportImageMinY,
+                                        bvpW, bvpH);
 
     if (terrain3D) {
         Math::Vector3 hitPoint;
@@ -1123,12 +1213,14 @@ void EditorLayer::HandleTilemapBrush() {
     if (!tilemap || tilemap->width == 0 || tilemap->height == 0) return;
 
     Math::Vector2 mousePos = Input::GetMousePosition();
-    auto extent = m_Renderer->GetSwapchainExtent();
-    if (extent.width == 0 || extent.height == 0) return;
+    f32 tvpW = m_EditorViewportImageMaxX - m_EditorViewportImageMinX;
+    f32 tvpH = m_EditorViewportImageMaxY - m_EditorViewportImageMinY;
+    if (tvpW <= 0 || tvpH <= 0) return;
 
-    Ray ray = ScenePicker::ScreenToRay(m_Camera, mousePos.x, mousePos.y,
-                                        static_cast<f32>(extent.width),
-                                        static_cast<f32>(extent.height));
+    Ray ray = ScenePicker::ScreenToRay(m_Camera,
+                                        mousePos.x - m_EditorViewportImageMinX,
+                                        mousePos.y - m_EditorViewportImageMinY,
+                                        tvpW, tvpH);
 
     // Intersect ray with XY plane at entity Z position (same as 2D terrain)
     Math::Vector3 origin = transform ? transform->position : Math::Vector3(0.0f);

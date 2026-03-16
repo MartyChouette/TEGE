@@ -580,7 +580,7 @@
 
   <p>
     TEGE (The Enjin Game Engine) is an open-source (BSL 1.1) game engine built
-    entirely from scratch using <strong>C++20</strong> and the
+    with <strong>C++20</strong> and the
     <strong>Vulkan</strong> graphics API. It ships with a complete editor
     powered by Dear ImGui, an Entity-Component-System architecture with over 70
     component types, physically-based rendering, skeletal animation, and
@@ -7889,7 +7889,7 @@ pkg-config --modversion glfw3</code></pre>
         </tr>
         <tr>
           <td><strong>Post Processing</strong></td>
-          <td>Bloom, vignette, color grading, FXAA, film grain, depth of field, tilt-shift, stipple/dither, SSAO, god rays, contact shadows, caustics, fog shafts.</td>
+          <td>Bloom, vignette, color grading, FXAA/TAA, film grain, depth of field, tilt-shift, stipple/dither, SSAO, god rays, contact shadows, caustics, fog shafts. Depth-dependent effects auto-disabled when depth source unavailable.</td>
         </tr>
         <tr>
           <td><strong>Retro Effects</strong></td>
@@ -8109,6 +8109,22 @@ pkg-config --modversion glfw3</code></pre>
         <tr>
           <td><kbd>Ctrl</kbd> + <kbd>P</kbd></td>
           <td>Command palette (fuzzy search with 25+ commands)</td>
+        </tr>
+        <tr>
+          <td><kbd>F1</kbd></td>
+          <td>Toggle Game Debug panel (Scene/Physics/Scripts/Audio/Gameplay tabs)</td>
+        </tr>
+        <tr>
+          <td><kbd>F2</kbd></td>
+          <td>Toggle Debug Workstation panel (Performance/Renderer/ECS/Scene/System tabs)</td>
+        </tr>
+        <tr>
+          <td><kbd>`</kbd> (backtick)</td>
+          <td>Toggle Quake-style drop-down console</td>
+        </tr>
+        <tr>
+          <td><kbd>F11</kbd></td>
+          <td>Toggle focus mode (fullscreen game view)</td>
         </tr>
       </tbody>
     </table>
@@ -11833,7 +11849,7 @@ class PlayerCombat : TegeBehavior {
   <h2>Rendering Pipeline</h2>
 
   <p>
-    TEGE uses a custom Vulkan-based renderer built from scratch. The renderer drives every pixel
+    TEGE uses a custom Vulkan-based renderer. The renderer drives every pixel
     you see in the editor viewport and in exported games. It supports PBR materials, multi-light
     shadow mapping, skeletal animation with GPU skinning, instanced rendering, a full
     ray tracing pipeline on supported hardware, and GPU-driven performance optimizations including
@@ -12466,7 +12482,7 @@ glslangValidator -V Engine/shaders/triangle.frag -o Engine/shaders/triangle.frag
 
   <p>
     Path Tracing mode replaces the hybrid pipeline with a progressive, full path tracer for
-    reference-quality rendering:
+    reference-quality rendering with physically-based light transport:
   </p>
 
   <div class="table-wrapper">
@@ -12480,11 +12496,31 @@ glslangValidator -V Engine/shaders/triangle.frag -o Engine/shaders/triangle.frag
       <tbody>
         <tr>
           <td><strong>Max Bounces</strong></td>
-          <td>Maximum ray bounce depth (default 8). Higher values improve indirect lighting accuracy at the cost of performance.</td>
+          <td>Maximum ray bounce depth (default 4). Higher values improve indirect lighting accuracy at the cost of performance.</td>
         </tr>
         <tr>
           <td><strong>Target SPP</strong></td>
-          <td>Target samples per pixel for convergence. The renderer accumulates samples over multiple frames.</td>
+          <td>Target samples per pixel for convergence (default 1024). The renderer accumulates samples over multiple frames.</td>
+        </tr>
+        <tr>
+          <td><strong>Firefly Clamp</strong></td>
+          <td>Maximum radiance per sample (default 10.0). Suppresses bright outlier pixels (fireflies). Applied both per-bounce and on the final accumulated radiance.</td>
+        </tr>
+        <tr>
+          <td><strong>NEE (Next Event Estimation)</strong></td>
+          <td>Direct light sampling at each bounce. Randomly selects a light and traces a shadow ray for faster convergence. Supports directional, point, and spot lights. Enabled by default.</td>
+        </tr>
+        <tr>
+          <td><strong>MIS (Multiple Importance Sampling)</strong></td>
+          <td>Combines BRDF sampling and light sampling PDFs using the power heuristic, balancing quality across all material types. Enabled by default.</td>
+        </tr>
+        <tr>
+          <td><strong>Russian Roulette Min Bounce</strong></td>
+          <td>Bounce depth at which probabilistic path termination begins (default 3). Survival probability is proportional to throughput luminance.</td>
+        </tr>
+        <tr>
+          <td><strong>Russian Roulette Min Probability</strong></td>
+          <td>Minimum survival probability floor (default 0.05). Prevents overly aggressive termination of low-energy paths.</td>
         </tr>
         <tr>
           <td><strong>Progress Bar</strong></td>
@@ -12501,6 +12537,13 @@ glslangValidator -V Engine/shaders/triangle.frag -o Engine/shaders/triangle.frag
       </tbody>
     </table>
   </div>
+
+  <p>
+    The path tracer uses a full <strong>Cook-Torrance BRDF</strong> with GGX importance sampling
+    for specular lobes and cosine-weighted hemisphere sampling for diffuse. After the first two
+    bounces, pre-baked simplified materials are used to reduce hit shader divergence (skipping
+    SSS, transmission, and caustics on deep paths) with minimal visible impact.
+  </p>
 
   <h3 id="svgf-denoiser">SVGF Denoiser</h3>
 
@@ -12700,9 +12743,9 @@ glslangValidator -V Engine/shaders/triangle.frag -o Engine/shaders/triangle.frag
           <td>Global color correction. Exposure controls overall brightness; temperature shifts warm/cool.</td>
         </tr>
         <tr>
-          <td><strong>FXAA</strong></td>
-          <td>Toggle (on/off)</td>
-          <td>Fast Approximate Anti-Aliasing. Smooths jagged edges in a single post-process pass.</td>
+          <td><strong>Anti-Aliasing</strong></td>
+          <td>Mode (None / FXAA / TAA / SMAA), TAA sharpness, jitter scale, feedback</td>
+          <td>FXAA: fast single-pass edge smoothing. TAA: temporal anti-aliasing with Halton jitter, per-pixel velocity reprojection, neighborhood clamping, configurable sharpness and feedback. Selectable per-scene.</td>
         </tr>
         <tr>
           <td><strong>Film Grain</strong></td>
@@ -14526,6 +14569,152 @@ public:
 </section>
 
 <!-- ============================================================
+     Section 59 — Debug Panels
+     ============================================================ -->
+
+<section id="debug-panels" data-aos="fade-up">
+  <h2>Debug Panels</h2>
+
+  <p>
+    Enjin provides two dedicated debug panels for runtime inspection, toggled with function keys.
+    These panels are independent of the standard Console panel and designed for quick game and
+    engine diagnostics.
+  </p>
+
+  <h3 id="game-debug-f1">Game Debug Panel (F1)</h3>
+
+  <p>
+    Press <kbd>F1</kbd> to toggle the Game Debug panel. This panel focuses on debugging
+    <strong>your game</strong> &mdash; scene state, physics bodies, scripts, audio sources,
+    and gameplay systems.
+  </p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th>Tab</th><th>Contents</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Scene</strong></td>
+          <td>Scene path, play mode status, entity count, selected entity details (name, ID, component list), and a clickable entity list for the entire scene.</td>
+        </tr>
+        <tr>
+          <td><strong>Physics</strong></td>
+          <td>Physics backend type (Jolt/Box2D), collider wireframe toggle, counts of rigidbodies, box/sphere/capsule colliders, gravity zones, fluid volumes, and a scrollable list of all physics entities with body type tags.</td>
+        </tr>
+        <tr>
+          <td><strong>Scripts</strong></td>
+          <td>Total scripted entities, total script attachments, error count. Expandable tree view with per-script status: <span style="color:#2f2">[running]</span>, <span style="color:#ff0">[initialized]</span>, <span style="color:#888">[disabled]</span>, <span style="color:#f44">[ERROR]</span> with tooltip.</td>
+        </tr>
+        <tr>
+          <td><strong>Audio</strong></td>
+          <td>Audio source count, currently playing count. Expandable tree view per entity showing clip path, play status, channel (SFX/Music/UI/Voice), volume, pitch, 3D/loop flags.</td>
+        </tr>
+        <tr>
+          <td><strong>Gameplay</strong></td>
+          <td>Active tweens, particle emitters (total and playing), health components (total and dead), interactables, pickups, and trigger zones.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 id="debug-workstation-f2">Debug Workstation (F2)</h3>
+
+  <p>
+    Press <kbd>F2</kbd> to toggle the Debug Workstation. This panel focuses on
+    <strong>editor and engine internals</strong> &mdash; performance metrics, renderer state,
+    ECS data, scene info, and system details.
+  </p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th>Tab</th><th>Contents</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Performance</strong></td>
+          <td>Color-coded FPS (green/yellow/red), frame time with min/max/avg/P50/P95/P99, frame time history graph, render stats (draw calls, triangles, descriptor cache hit rate), entity count, memory (process, system RAM, GPU VRAM).</td>
+        </tr>
+        <tr>
+          <td><strong>Renderer</strong></td>
+          <td>Scene mode (2D/2.5D/3D), shadow state, ray tracing status (supported, enabled, mode, denoiser), OIT, AA mode, upscaler, wireframe/culling/cel/fog, render target sizes, post-processing state.</td>
+        </tr>
+        <tr>
+          <td><strong>ECS</strong></td>
+          <td>Total entity count, component counts for 12+ types, selected entity details, multi-select count.</td>
+        </tr>
+        <tr>
+          <td><strong>Scene</strong></td>
+          <td>Scene path, name, project name/path, scene count, physics backend, play mode and focus mode status.</td>
+        </tr>
+        <tr>
+          <td><strong>System</strong></td>
+          <td>Engine and ImGui versions, GPU name, Vulkan API/driver versions, swapchain dimensions, HDR output, window/display size and scale, build config (Debug/Release), platform.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================
+     Section 60 — Drop-Down Console
+     ============================================================ -->
+
+<section id="drop-console" data-aos="fade-up">
+  <h2>Drop-Down Console</h2>
+
+  <p>
+    Press the <kbd>`</kbd> (backtick) key to toggle a Quake/Doom-style drop-down console that
+    slides down from the top of the screen with a smooth animation, covering approximately 40%
+    of the screen height.
+  </p>
+
+  <h3 id="drop-console-features">Features</h3>
+
+  <ul>
+    <li><strong>Slide animation</strong> &mdash; smoothly animates open and closed</li>
+    <li><strong>Auto-focus</strong> &mdash; input field automatically receives keyboard focus</li>
+    <li><strong>Command history</strong> &mdash; press Up/Down arrow keys to cycle through previous commands</li>
+    <li><strong>Color-coded output</strong> &mdash; errors in red, warnings in yellow, user input in green</li>
+    <li><strong>Shared log</strong> &mdash; shares the same log buffer as the editor Console panel</li>
+    <li><strong>Backtick filtering</strong> &mdash; the backtick character is filtered from input</li>
+  </ul>
+
+  <h3 id="drop-console-commands">Console Commands</h3>
+
+  <p>
+    All commands are case-insensitive. Type <code>help</code> for a full list or
+    <code>help &lt;command&gt;</code> for detailed usage. Over 60 commands are available across
+    10 categories:
+  </p>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr><th>Category</th><th>Commands</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>General</strong></td><td><code>help</code>, <code>clear</code>, <code>stats</code>, <code>fps</code>, <code>version</code></td></tr>
+        <tr><td><strong>Entities</strong></td><td><code>list</code>, <code>select</code>, <code>deselect</code>, <code>create</code>, <code>delete</code>, <code>inspect</code></td></tr>
+        <tr><td><strong>Transform</strong></td><td><code>pos</code>, <code>rot</code>, <code>scale</code>, <code>getpos</code></td></tr>
+        <tr><td><strong>Rendering</strong></td><td><code>wireframe</code>, <code>shadows</code>, <code>fog</code>, <code>ambient</code>, <code>culling</code>, <code>hdr</code></td></tr>
+        <tr><td><strong>Retro</strong></td><td><code>flatshading</code>, <code>vertexsnap</code>, <code>affine</code>, <code>gouraud</code>, <code>stipple</code></td></tr>
+        <tr><td><strong>Scene</strong></td><td><code>save</code>, <code>load</code>, <code>play</code>, <code>stop</code>, <code>pause</code></td></tr>
+        <tr><td><strong>Components</strong></td><td><code>addcomp</code>, <code>removecomp</code>, <code>setname</code>, <code>setnotes</code>, <code>visible</code>, <code>components</code></td></tr>
+        <tr><td><strong>Materials</strong></td><td><code>setcolor</code>, <code>setemissive</code>, <code>setmetallic</code>, <code>setroughness</code>, <code>setopacity</code></td></tr>
+        <tr><td><strong>Lights</strong></td><td><code>lightcolor</code>, <code>lightintensity</code>, <code>lighttype</code>, <code>lightrange</code></td></tr>
+        <tr><td><strong>Camera</strong></td><td><code>fov</code>, <code>near</code>, <code>far</code></td></tr>
+        <tr><td><strong>Query</strong></td><td><code>find</code>, <code>count</code>, <code>children</code>, <code>parent</code></td></tr>
+        <tr><td><strong>Bulk</strong></td><td><code>selectall</code>, <code>hideall</code>, <code>showall</code>, <code>deleteall confirm</code></td></tr>
+        <tr><td><strong>Debug</strong></td><td><code>colliders</code>, <code>grid</code>, <code>rain</code>, <code>snow</code>, <code>shadowres</code>, <code>shadowdist</code>, <code>ambient_intensity</code>, <code>curvature</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ============================================================
      Section 61 — Profiler and Debug
      ============================================================ -->
 
@@ -15066,6 +15255,10 @@ void MySystem::Render() {
         <tr><td rowspan="3"><strong>File</strong></td><td><code>Ctrl+S</code></td><td>Save scene</td></tr>
         <tr><td><code>Ctrl+O</code></td><td>Open scene</td></tr>
         <tr><td><code>Ctrl+I</code></td><td>Import model</td></tr>
+        <tr><td rowspan="4"><strong>Debug</strong></td><td><code>F1</code></td><td>Toggle Game Debug panel</td></tr>
+        <tr><td><code>F2</code></td><td>Toggle Debug Workstation panel</td></tr>
+        <tr><td><code>`</code> (backtick)</td><td>Toggle drop-down console</td></tr>
+        <tr><td><code>F11</code></td><td>Toggle focus mode</td></tr>
       </tbody>
     </table>
   </div>
@@ -15080,8 +15273,9 @@ void MySystem::Render() {
 
 <footer>
   <p><strong>TEGE Game Engine</strong> &mdash; User Manual</p>
-  <p>Built from scratch with C++20 and Vulkan. Version 0.8 Beta.</p>
-  <p style="margin-top:8px;font-size:0.85em">&copy; 2025 TEGE Engine. All rights reserved.</p>
+  <p>An aesthetics-first game engine &mdash; preserving and expanding the digital aesthetics of yesterday for the storytellers of tomorrow.</p>
+  <p style="margin-top:8px;font-size:0.85em">Version 0.8 Beta &mdash; C++20 &middot; Vulkan &middot; BSL 1.1</p>
+  <p style="margin-top:4px;font-size:0.8em">&copy; 2026 Marty64 &mdash; BSL 1.1</p>
 </footer>
 
 <script>

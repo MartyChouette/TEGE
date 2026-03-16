@@ -44,15 +44,17 @@ Bitmask system: `categoryBits` (which groups it belongs to) and `collisionMask` 
 
 ## Ray Tracing Pipeline
 
-Full Vulkan RT pipeline with hybrid raster+RT rendering. All 19 RT shaders compiled to SPIR-V and embedded in `RTShaderData.h`. RT pipeline activates automatically on supported hardware.
+Full Vulkan RT pipeline with hybrid raster+RT rendering. All 25 RT shaders compiled to SPIR-V and embedded in `RTShaderData.h`. RT pipeline activates automatically on supported hardware.
 
 - **`RTCapabilities`** - Extension detection (`Query(VkPhysicalDevice)`) and properties. VulkanContext adds +1000 score for RT-capable GPUs
 - **`AccelerationStructureManager`** - BLAS cache by mesh hash (`RegisterMesh()`), per-frame TLAS rebuild (`BuildTLAS()`)
 - **`RTPipeline`** - RT pipeline + shader binding table (SBT) construction
-- **RT Effects** - `RTShadows` (R16F), `RTReflections` (RGBA16F), `RTAmbientOcclusion` (R16F), `RTGlobalIllumination` (RGBA16F), `PathTracer` (progressive accumulation)
+- **RT Effects** - `RTShadows` (R16F), `RTReflections` (RGBA16F), `RTAmbientOcclusion` (R16F), `RTGlobalIllumination` (RGBA16F), `PathTracer` (progressive accumulation with NEE, MIS, Russian Roulette, firefly clamping, Cook-Torrance BRDF, GGX importance sampling, simplified material fallback for deep bounces)
 - **`SVGFDenoiser`** - 3-pass compute: temporal accumulation, variance estimation, a-trous wavelet (5 iterations)
 - **`OIDNDenoiser`** - Intel OIDN alternative. CMake option `ENJIN_RAYTRACING_OIDN` (OFF by default)
+- **`OptiXDenoiser`** - NVIDIA OptiX denoiser with CUDA↔Vulkan interop (timeline semaphores, external memory). CMake option `ENJIN_RAYTRACING_OPTIX` (OFF by default)
 - **`RTCompositor`** - Fullscreen compute shader composites RT layers into scene HDR
+- **Material SSBO** - Per-instance material data (PBR properties, texture flags) uploaded to binding 9 for RT hit shaders, enabling full material evaluation in closest-hit programs
 - **Integration** - `RenderSystem::InitializeRayTracing()` creates RT descriptor set (14 bindings). Only for Scene3D mode
 
 **RT Descriptor Set (Set 1)**:
@@ -73,7 +75,7 @@ Binding 12: STORAGE_BUFFER (Per-instance transforms)
 Binding 13: UNIFORM_BUFFER (Light data)
 ```
 
-**20 GLSL Shaders** (`Engine/shaders/`): `rt_common.glsl`, `rt_shadow/reflect/ao/gi/pathtrace .rgen/.rmiss/.rchit`, `svgf_temporal/variance/atrous.comp`, `rt_composite.comp`
+**25 GLSL Shaders** (`Engine/shaders/`): `rt_common.glsl`, `rt_shadow/reflect/ao/gi/pathtrace .rgen/.rmiss/.rchit`, `rt_translucency/caustics .rgen/.rmiss/.rchit`, `svgf_temporal/variance/atrous.comp`, `rt_composite.comp`, `taa.comp`
 
 ## Sprite Texture Atlas
 
@@ -99,7 +101,12 @@ Per-entity texture (bindings 3/5/6/8/9) and bone buffer (binding 7) descriptor w
   - **Scene tab:** Skybox, Shadows, Ambient Lighting, Cel Shading, Display Options, Ray Tracing, Light Probes, Post Processing, Retro Effects, Environment
 - **`PlayMode`** - Play/Pause/Stop. On Stop, scene changes persist; `PlayModeDiff` shows what changed. Camera position is restored on stop.
 - **Multi-select:** `m_SelectedEntities` (unordered_set), `m_PrimarySelected` for inspector/gizmo
-- **Keyboard shortcuts:** `1/2/3` gizmo modes, `4` local/world, `WASD` fly cam, `Space/E` up, `Q/Ctrl` down, `Shift` sprint, RMB+mouse look, `Delete` delete, `Ctrl+D` duplicate, `F` focus
+- **Keyboard shortcuts:** `1/2/3` gizmo modes, `4` local/world, `WASD` fly cam, `Space/E` up, `Q/Ctrl` down, `Shift` sprint, RMB+mouse look, `Delete` delete, `Ctrl+D` duplicate, `F` focus, `F1` Game Debug panel, `F2` Debug Workstation panel, `` ` `` (backtick) drop-down console, `F11` focus mode
+- **Game Debug Panel (F1):** `DrawGameDebugPanel()` — tabbed panel (Scene/Physics/Scripts/Audio/Gameplay). Scene tab lists all entities with click-to-select. Physics tab shows backend type, collider counts, body details. Scripts tab shows per-entity script status with error indicators. Audio tab shows source list with play status and channel info. Gameplay tab shows tweens, particles, health, interactables. `m_ShowGameDebug` toggle.
+- **Debug Workstation (F2):** `DrawDebugWorkstation()` — tabbed panel (Performance/Renderer/ECS/Scene/System). Performance tab has color-coded FPS, frame time percentiles (P50/P95/P99), frame time graph, render stats (draw calls, triangles, descriptor cache hit rate), memory (process/system/GPU VRAM). Renderer tab shows scene mode, shadows, RT state, AA/upscaler, wireframe/fog/culling, render target sizes, post-processing. ECS tab lists component counts for 12+ types. Scene tab shows scene/project info, physics backend, play mode. System tab shows engine/ImGui version, GPU, Vulkan API version, driver version, swapchain, HDR, window/display sizes, build config, platform. `m_ShowDebugWorkstation` toggle.
+- **Drop-down Console (`` ` ``):** `DrawDropConsole(deltaTime)` — Quake-style console sliding from top of screen (40% height). `m_ShowDropConsole` toggle, `m_DropConsoleAnim` (0-1 lerp at 8x speed). Features: auto-focus input, command history (Up/Down), color-coded output (error=red, warn=yellow, input=green), backtick character filter. Shares `m_ConsoleLog` with Console panel. `ExecuteConsoleCommand()` handles 60+ commands across 10 categories (general, entities, transform, rendering, retro, scene, components, materials, lights, camera, query, bulk, debug).
+- **Console commands:** `help`, `clear`, `stats`, `fps`, `version`, `list`, `select <id>`, `deselect`, `create <name>`, `delete`, `inspect`, `getpos`, `pos/rot/scale`, `wireframe`, `shadows`, `fog <density>`, `ambient <r g b>`, `culling`, `hdr`, `flatshading`, `vertexsnap`, `affine`, `gouraud`, `stipple`, `save/load <path>`, `play/stop/pause`, `addcomp/removecomp <type>`, `setname/setnotes`, `visible`, `components`, `setcolor/setemissive/setmetallic/setroughness/setopacity`, `lightcolor/lightintensity/lighttype/lightrange`, `fov/near/far`, `find <name>`, `count <type>`, `children`, `parent`, `selectall`, `hideall/showall`, `deleteall confirm`, `colliders`, `grid`, `rain`, `snow <intensity>`, `shadowres/shadowdist`, `ambient_intensity`, `curvature`. Addable component types: mesh, material, light, camera, script, audio, rigidbody, name, notes, sprite, particle, tween, lod.
+- **PrepareRenderTargets:** `PrepareRenderTargets()` runs before command buffer recording. Resizes editor viewport and game view render targets with 8-pixel threshold to avoid thrashing. Handles focus mode (full display resolution), scene render target, post-processing pipeline updates, and effect pipeline recreation. Prevents crashes with Vulkan hooks (OBS, RenderDoc) that hold resource references during command buffer recording. Fixes 4:3 aspect ratio crash.
 - **Entity icons:** `GetEntityIcon()` — `[C]` Camera, `[L]` Light, `[M]` Mesh, `[S]` Sprite, `[T]` Tilemap, `[P]` Particle, `[A]` Audio, `[R]` Rigidbody, `[D]` Dialogue, `[V]` Visual Script, `[U]` UI Canvas, `[AI]` AI, `[BT]` Behavior Tree
 - **Empty states:** `DrawEmptyState()` helper renders centered icon, heading, body text, and optional CTA button
 
@@ -145,15 +152,15 @@ Per-entity texture (bindings 3/5/6/8/9) and bone buffer (binding 7) descriptor w
 ## Scripting Details
 
 - **AngelScript** via `TegeBehavior` base class with hot-reload
-- ~481 bound functions across math, entity, scene, input, physics (2D+3D), audio, components, sprites, coroutines, events, tweening, noise, rendering, post-processing, PP volumes, screen-space effects, input actions, dialogue, save/load, weather, particles, quests, cinematics, object pool, destructibles, UI canvas, localization, prefabs, networking, AI/BT, accessibility, procedural gen, camera presets, Newgrounds, audio event graph, plugins, MIDI input, Flash API shim
+- ~721 bound functions across math, entity, scene, input, physics (2D+3D), audio, components, sprites, coroutines, events, tweening, noise, rendering, post-processing, PP volumes, screen-space effects, input actions, dialogue, save/load, weather, particles, quests, cinematics, object pool, destructibles, UI canvas, localization, prefabs, networking, AI/BT, accessibility, procedural gen, camera presets, Newgrounds, audio event graph, plugins, MIDI input, Flash API shim
 - See `docs/SCRIPTING_API.md` for the complete API reference
-- **Visual scripting** (Blueprint-style) with 143+ built-in nodes, debugger with breakpoints/step-through
+- **Visual scripting** (Blueprint-style) with 146+ built-in nodes, debugger with breakpoints/step-through
 
 ## Current Feature Status
 
 150+ completed features. See `docs/USER_MANUAL.md` for component details, `docs/ROADMAP.md` for planned work.
 
-**Summary:** Vulkan rendering (PBR, CSM shadows, post-processing, RT pipeline, light probes, OIT), 70+ ECS components, ImGui editor (multi-select, undo/redo, 44 templates, marketplace), 2D sprites/tilemaps/atlas, 3D model import (glTF/FBX/OBJ/DAE/PLY/VOX), Jolt 3D + Box2D 2D physics, miniaudio + Steam Audio HRTF, AngelScript (~686 bindings) + visual scripting (143+ nodes), tiered save system, LAN multiplayer (HMAC-SHA256), weather/water/particles/procedural gen, asset pack pipeline + standalone player, Linux/Steam Deck support, comprehensive accessibility (11 themes, colorblind modes, switch access, screen reader).
+**Summary:** Vulkan rendering (PBR, CSM shadows, post-processing, RT pipeline with path tracer NEE/MIS/Russian Roulette/firefly clamping, motion vectors, TAA, light probes, OIT), 70+ ECS components, ImGui editor (multi-select, undo/redo, 44 templates, marketplace, F1 Game Debug panel, F2 Debug Workstation, Quake-style drop-down console with 60+ commands), 2D sprites/tilemaps/atlas, 3D model import (glTF/FBX/OBJ/DAE/PLY/VOX), Jolt 3D + Box2D 2D physics, miniaudio + Steam Audio HRTF, AngelScript (~721 bindings) + visual scripting (146+ nodes), tiered save system, LAN multiplayer (HMAC-SHA256), weather/water/particles/procedural gen, asset pack pipeline + standalone player, Linux/Steam Deck support, comprehensive accessibility (11 themes, colorblind modes, switch access, screen reader).
 
 ## Known Performance Issues (All Resolved)
 
@@ -193,7 +200,7 @@ Documented in `.enjin-boundaries.json`. Summary:
 |------|------|----------|
 | **security-critical** | HIGH | Networking, script engine, asset packer/reader, scene serializer, plugin loader. Validate everything. |
 | **trust-boundary** | HIGH | ScriptBindings, SceneSerializer, AssetReader, NetworkSerializer. Validation MUST happen here. |
-| **user-api** | MEDIUM | ECS components, ScriptBindings (686+ functions), VS NodeRegistry, InputAction. Additions safe, removals break scripts. |
+| **user-api** | MEDIUM | ECS components, ScriptBindings (721+ functions), VS NodeRegistry, InputAction. Additions safe, removals break scripts. |
 | **editor-internal** | LOW-MED | EditorLayer, panels, PlayMode. Still validate file paths and JSON. |
 | **renderer-internals** | LOW | Vulkan, RayTracing, PostProcessing. Always check VkResult. |
 | **gameplay-runtime** | LOW-MED | Physics, audio, AI, save/load. Cap iterations, guard divide-by-zero. |

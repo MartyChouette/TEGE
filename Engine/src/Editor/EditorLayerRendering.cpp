@@ -402,7 +402,7 @@ void EditorLayer::DrawPostProcessVolumeComponent(ECS::Entity entity) {
 
 void EditorLayer::DrawGameViewPanel() {
     // Set window to be larger by default for Game View
-    ImGui::SetNextWindowSize(ImVec2(640, 480), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(800, 540), ImGuiCond_FirstUseEver);
 
     // Add a colored title bar when playing, and lock the window so clicks go to the game
     bool isPlaying = m_PlayMode.IsPlaying();
@@ -416,7 +416,11 @@ void EditorLayer::DrawGameViewPanel() {
     if (isPlayActive) {
         gameViewFlags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
     }
-    ImGui::Begin("Game View", nullptr, gameViewFlags);
+    bool panelOpen = true;
+    ImGui::Begin("Game View", &panelOpen, gameViewFlags);
+    if (!panelOpen) {
+        SetPanelVisibility(EditorPanel::GameView, false);
+    }
 
     if (isPlaying) {
         ImGui::PopStyleColor(2);
@@ -496,9 +500,17 @@ void EditorLayer::DrawGameViewPanel() {
         Input::SetMouseCaptured(true);
     }
 
-    // Game View frame rate controls (right side)
-    ImGui::SameLine(ImGui::GetWindowWidth() - 220);
-    ImGui::SetNextItemWidth(80);
+    // Game View aspect ratio + frame rate controls (right side)
+    ImGui::SameLine(ImGui::GetWindowWidth() - 380);
+    {
+        int current = static_cast<int>(m_GameViewAspect);
+        ImGui::SetNextItemWidth(130.0f);
+        if (ImGui::Combo("##GameAspect", &current, AspectRatioLabels, static_cast<int>(AspectRatio::Count))) {
+            m_GameViewAspect = static_cast<AspectRatio>(current);
+        }
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(90);
     const char* fpsOptions[] = { "Max", "24", "30", "60", "120", "144", "240" };
     ImGui::Combo("##GameFPS", &m_GameViewFPSIndex, fpsOptions, 7);
     if (ImGui::IsItemHovered()) {
@@ -598,14 +610,12 @@ void EditorLayer::DrawGameViewPanel() {
         // Game View Preview
         ImVec2 availSize = ImGui::GetContentRegionAvail();
         if (availSize.x > 0 && availSize.y > 0) {
-            // Calculate aspect ratio for preview area (default 16:9)
-            f32 gameAspect = 16.0f / 9.0f;
-            f32 previewWidth = availSize.x;
-            f32 previewHeight = previewWidth / gameAspect;
-            if (previewHeight > availSize.y) {
-                previewHeight = availSize.y;
-                previewWidth = previewHeight * gameAspect;
-            }
+            // Calculate preview size using selected aspect ratio (default to 16:9 if Free)
+            f32 gameAspect = AspectRatioValues[static_cast<int>(m_GameViewAspect)];
+            if (gameAspect <= 0.0f) gameAspect = 16.0f / 9.0f;  // Free defaults to 16:9 for game view
+            ImVec2 previewSize = ComputeAspectConstrainedSize(availSize.x, availSize.y, gameAspect);
+            f32 previewWidth = previewSize.x;
+            f32 previewHeight = previewSize.y;
 
             // Update desired render target size (actual resize deferred to RenderOffscreen)
             u32 targetW = static_cast<u32>(previewWidth);
@@ -900,7 +910,9 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
     }
 
     if (ImGui::CollapsingHeader("Post Processing", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::TextDisabled("Bloom, color grading, film grain, depth of field, screen-space effects");
         auto& settings = m_PostProcessing->GetSettings();
+        bool hasDepth = m_PostProcessing->IsDepthSourceReady();
 
         // Tone Mapping
         if (ImGui::CollapsingHeader("Tone Mapping", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -924,11 +936,14 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
             if (ImGui::Checkbox("Enabled##Bloom", &bloomEnabled)) {
                 settings.bloomEnabled = bloomEnabled ? 1 : 0;
             }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Glow around bright areas.\nThreshold controls which pixels bloom; intensity controls the strength.");
 
             if (settings.bloomEnabled) {
                 ImGui::DragFloat("Threshold", &settings.bloomThreshold, 0.01f, 0.0f, 5.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Minimum brightness to trigger bloom (0 = everything blooms)");
                 ImGui::DragFloat("Intensity##Bloom", &settings.bloomIntensity, 0.01f, 0.0f, 2.0f);
                 ImGui::DragFloat("Radius", &settings.bloomRadius, 0.001f, 0.001f, 0.1f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Spread of the bloom glow");
             }
         }
 
@@ -938,10 +953,12 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
             if (ImGui::Checkbox("Enabled##Vignette", &vignetteEnabled)) {
                 settings.vignetteEnabled = vignetteEnabled ? 1 : 0;
             }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Darkens the edges and corners of the screen.\nSimulates lens falloff for a cinematic look.");
 
             if (settings.vignetteEnabled) {
                 ImGui::DragFloat("Intensity##Vignette", &settings.vignetteIntensity, 0.01f, 0.0f, 2.0f);
                 ImGui::DragFloat("Smoothness", &settings.vignetteSmoothness, 0.01f, 0.0f, 1.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("How gradually the darkening fades in from the edges");
             }
         }
 
@@ -951,6 +968,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
             if (ImGui::Checkbox("Enabled##CA", &caEnabled)) {
                 settings.chromaticAberrationEnabled = caEnabled ? 1 : 0;
             }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Splits RGB channels near screen edges.\nSimulates cheap lens imperfections for a gritty or cinematic feel.");
 
             if (settings.chromaticAberrationEnabled) {
                 ImGui::DragFloat("Intensity##CA", &settings.chromaticAberrationIntensity, 0.001f, 0.0f, 0.05f);
@@ -975,6 +993,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
             if (ImGui::Checkbox("Enabled##Grain", &grainEnabled)) {
                 settings.filmGrainEnabled = grainEnabled ? 1 : 0;
             }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Adds animated film grain noise over the image.\nGives a cinematic / retro film look.");
 
             if (settings.filmGrainEnabled) {
                 ImGui::DragFloat("Intensity##Grain", &settings.filmGrainIntensity, 0.001f, 0.0f, 0.2f);
@@ -983,10 +1002,13 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
 
         // Depth of Field
         if (ImGui::CollapsingHeader("Depth of Field")) {
+            if (!hasDepth) ImGui::BeginDisabled();
             bool dofEnabled = settings.dofEnabled != 0;
             if (ImGui::Checkbox("Enabled##DOF", &dofEnabled)) {
                 settings.dofEnabled = dofEnabled ? 1 : 0;
             }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("Simulates camera focus: blurs objects outside the focal range.\nReads the depth buffer to compute Circle of Confusion per pixel.");
 
             if (settings.dofEnabled) {
                 ImGui::DragFloat("Focal Distance", &settings.dofFocalDistance, 0.5f, 0.1f, 500.0f);
@@ -1009,20 +1031,25 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                     ImGui::SetTooltip("Visualize Circle of Confusion (red=near blur, green=in focus, blue=far blur)");
                 }
             }
+            if (!hasDepth) ImGui::EndDisabled();
         }
 
         // Tilt-Shift
         if (ImGui::CollapsingHeader("Tilt-Shift")) {
+            if (!hasDepth) ImGui::BeginDisabled();
             bool tsEnabled = settings.tiltShiftEnabled != 0;
             if (ImGui::Checkbox("Enabled##TiltShift", &tsEnabled)) {
                 settings.tiltShiftEnabled = tsEnabled ? 1 : 0;
             }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("Miniature / diorama effect.\nBlurs top and bottom of the screen based on depth.");
 
             if (settings.tiltShiftEnabled) {
                 ImGui::SliderFloat("Focus Y", &settings.tiltShiftFocusY, 0.0f, 1.0f);
                 ImGui::DragFloat("Band Width", &settings.tiltShiftBandWidth, 0.01f, 0.01f, 1.0f);
                 ImGui::DragFloat("Blur Amount", &settings.tiltShiftBlurAmount, 0.1f, 0.0f, 10.0f);
             }
+            if (!hasDepth) ImGui::EndDisabled();
         }
 
         // Anti-Aliasing
@@ -1203,6 +1230,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
             if (ImGui::Checkbox("Cel Outline##PP", &outlineOn)) {
                 s.celOutlineEnabled = outlineOn ? 1 : 0;
             }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Edge detection on the depth buffer.\nDraws dark outlines around geometry for a toon/cel look.");
             if (outlineOn) {
                 ImGui::SliderFloat("Outline Thickness##PP", &s.celOutlineThickness, 0.5f, 5.0f);
                 ImGui::SliderFloat("Outline Threshold##PP", &s.celOutlineThreshold, 0.001f, 0.5f);
@@ -1211,15 +1239,24 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // ================================================================
-        // Screen-Space Effects
+        // Depth-Based Effects (all read the scene depth buffer)
         // ================================================================
+        ImGui::Spacing();
+        ImGui::SeparatorText("Depth-Based Effects");
+        if (!hasDepth) {
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f),
+                "Scene depth not available — effects below will be inactive.");
+        }
 
         // SSAO
         if (ImGui::CollapsingHeader("SSAO (Ambient Occlusion)")) {
+            if (!hasDepth) ImGui::BeginDisabled();
             bool ssaoOn = settings.ssaoEnabled != 0;
             if (ImGui::Checkbox("Enabled##SSAO", &ssaoOn)) {
                 settings.ssaoEnabled = ssaoOn ? 1 : 0;
             }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("Screen-space ambient occlusion.\nDarkens creases and corners where light is occluded.\nReads the depth buffer to estimate local geometry.");
             if (settings.ssaoEnabled) {
                 ImGui::DragFloat("Radius##SSAO", &settings.ssaoRadius, 0.01f, 0.01f, 5.0f);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("World-space sample radius");
@@ -1231,14 +1268,18 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                     settings.ssaoSamples = static_cast<u32>(samples);
                 }
             }
+            if (!hasDepth) ImGui::EndDisabled();
         }
 
         // Contact Shadows
         if (ImGui::CollapsingHeader("Contact Shadows")) {
+            if (!hasDepth) ImGui::BeginDisabled();
             bool csOn = settings.contactShadowsEnabled != 0;
             if (ImGui::Checkbox("Enabled##ContactShadows", &csOn)) {
                 settings.contactShadowsEnabled = csOn ? 1 : 0;
             }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("Screen-space ray-marched contact shadows.\nAdds fine shadow detail near object edges that shadow maps miss.");
             if (settings.contactShadowsEnabled) {
                 ImGui::DragFloat("Ray Length##CS", &settings.contactShadowsLength, 0.001f, 0.001f, 0.5f, "%.4f");
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Screen-space ray march length (UV space)");
@@ -1248,14 +1289,18 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 }
                 ImGui::DragFloat("Intensity##CS", &settings.contactShadowsIntensity, 0.01f, 0.0f, 2.0f);
             }
+            if (!hasDepth) ImGui::EndDisabled();
         }
 
         // God Rays
         if (ImGui::CollapsingHeader("God Rays")) {
+            if (!hasDepth) ImGui::BeginDisabled();
             bool grOn = settings.godRaysEnabled != 0;
             if (ImGui::Checkbox("Enabled##GodRays", &grOn)) {
                 settings.godRaysEnabled = grOn ? 1 : 0;
             }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("Radial light shafts from a directional light source.\nRay-marches the depth buffer to detect occluders.");
             if (settings.godRaysEnabled) {
                 ImGui::DragFloat("Intensity##GR", &settings.godRaysIntensity, 0.01f, 0.0f, 2.0f);
                 ImGui::DragFloat("Decay##GR", &settings.godRaysDecay, 0.001f, 0.9f, 1.0f, "%.4f");
@@ -1269,14 +1314,18 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 ImGui::DragFloat("Weight##GR", &settings.godRaysWeight, 0.001f, 0.001f, 0.1f, "%.4f");
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Per-sample contribution weight");
             }
+            if (!hasDepth) ImGui::EndDisabled();
         }
 
         // Fake Caustics
         if (ImGui::CollapsingHeader("Fake Caustics")) {
+            if (!hasDepth) ImGui::BeginDisabled();
             bool fcOn = settings.causticsEnabled != 0;
             if (ImGui::Checkbox("Enabled##Caustics", &fcOn)) {
                 settings.causticsEnabled = fcOn ? 1 : 0;
             }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("Procedural animated caustics projected below a water plane.\nUses depth to reconstruct world position for the pattern.");
             if (settings.causticsEnabled) {
                 ImGui::DragFloat("Intensity##Caustics", &settings.causticsIntensity, 0.01f, 0.0f, 2.0f);
                 ImGui::DragFloat("Scale##Caustics", &settings.causticsScale, 0.01f, 0.1f, 10.0f);
@@ -1285,14 +1334,18 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 ImGui::DragFloat("Water Y##Caustics", &settings.causticsWaterY, 0.1f, -100.0f, 100.0f);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("World-space Y height of the water surface");
             }
+            if (!hasDepth) ImGui::EndDisabled();
         }
 
         // Fog Shafts
         if (ImGui::CollapsingHeader("Fog Shafts")) {
+            if (!hasDepth) ImGui::BeginDisabled();
             bool fsOn = settings.fogShaftsEnabled != 0;
             if (ImGui::Checkbox("Enabled##FogShafts", &fsOn)) {
                 settings.fogShaftsEnabled = fsOn ? 1 : 0;
             }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("Volumetric-look fog shafts via depth ray march.\nCreates atmospheric haze between camera and geometry.");
             if (settings.fogShaftsEnabled) {
                 ImGui::DragFloat("Intensity##FS", &settings.fogShaftsIntensity, 0.01f, 0.0f, 2.0f);
                 ImGui::DragFloat("Fog Density##FS", &settings.fogShaftsDensity, 0.001f, 0.001f, 0.5f, "%.4f");
@@ -1304,6 +1357,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 ImGui::DragFloat("Max Distance##FS", &settings.fogShaftsMaxDistance, 1.0f, 5.0f, 500.0f);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("World-space max march distance");
             }
+            if (!hasDepth) ImGui::EndDisabled();
         }
     }
 }
@@ -1311,6 +1365,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
 void EditorLayer::DrawSettingsSection_RetroEffects() {
     // === RETRO EFFECTS (PS1/N64/PS2/GameCube presets) ===
     if (ImGui::CollapsingHeader("Retro Effects", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::TextDisabled("Vertex snapping, affine textures, scanlines, dithering, color reduction");
         bool retroEnabled = m_RetroEffects.IsEnabled();
         if (ImGui::Checkbox("Enable Retro Effects", &retroEnabled)) {
             m_RetroEffects.SetEnabled(retroEnabled);
@@ -1547,6 +1602,7 @@ void EditorLayer::DrawSettingsSection_Skybox() {
             config.type = static_cast<Renderer::SkyboxType>(typeIdx);
             changed = true;
         }
+        ImGui::SetItemTooltip("None: no sky, clear color only.\nCubemap: 6-face texture for realistic skies.\nProcedural: gradient sky with sun direction.\nSolid Color: flat single color.");
 
         ImGui::Separator();
 
@@ -1640,10 +1696,12 @@ void EditorLayer::DrawSettingsSection_Shadows() {
 
     // === SHADOWS ===
     if (ImGui::CollapsingHeader("Shadows", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::TextDisabled("Cascaded shadow maps, soft shadows, per-entity dithering");
         bool shadows = m_RenderSystem->IsShadowsEnabled();
         if (ImGui::Checkbox("Shadows", &shadows)) {
             m_RenderSystem->SetShadowsEnabled(shadows);
         }
+        ImGui::SetItemTooltip("Enable real-time shadow mapping for directional, point, and spot lights.");
 
         if (shadows) {
             // Shadow resolution
@@ -1657,25 +1715,42 @@ void EditorLayer::DrawSettingsSection_Shadows() {
             if (ImGui::Combo("Shadow Resolution", &resIdx, resOptions, 4)) {
                 m_RenderSystem->SetShadowResolution(resValues[resIdx]);
             }
+            ImGui::SetItemTooltip("Shadow map texture resolution per light.\nHigher = sharper shadows, more VRAM.\n512 low, 2048 default, 4096 high-end.");
 
             // Shadow distance
             f32 shadowDist = m_RenderSystem->GetShadowDistance();
             if (ImGui::SliderFloat("Shadow Distance", &shadowDist, 10.0f, 500.0f, "%.0f")) {
                 m_RenderSystem->SetShadowDistance(shadowDist);
             }
+            ImGui::SetItemTooltip("Maximum distance from camera where shadows are rendered.\nFarther = more coverage but lower shadow detail per texel.");
 
             // Shadow strength
             f32 shadowStr = m_RenderSystem->GetShadowStrength();
             if (ImGui::SliderFloat("Shadow Strength", &shadowStr, 0.0f, 1.0f)) {
                 m_RenderSystem->SetShadowStrength(shadowStr);
             }
+            ImGui::SetItemTooltip("Shadow darkness. 1.0 = fully dark shadows, 0.0 = invisible.\nLower values soften the visual impact.");
 
             // Shadow softness
             f32 shadowSoft = m_RenderSystem->GetShadowSoftness();
             if (ImGui::SliderFloat("Shadow Softness", &shadowSoft, 0.0f, 5.0f, "%.1f")) {
                 m_RenderSystem->SetShadowSoftness(shadowSoft);
             }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 = hard edges, 1-5 = soft penumbra radius");
+            ImGui::SetItemTooltip("PCF filter radius for soft shadow edges.\n0 = hard pixel edges, 1-5 = progressively softer penumbra.");
+
+            // Progressive cascade updates
+            bool cascadeProg = m_RenderSystem->IsCascadeProgressiveUpdate();
+            if (ImGui::Checkbox("Progressive Cascade Updates", &cascadeProg)) {
+                m_RenderSystem->SetCascadeProgressiveUpdate(cascadeProg);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Far shadow cascades update every N frames instead of every frame.\nReduces shadow pass GPU cost.");
+            if (cascadeProg) {
+                int interval = static_cast<int>(m_RenderSystem->GetCascadeFarUpdateInterval());
+                if (ImGui::SliderInt("Far Cascade Update Interval", &interval, 2, 8)) {
+                    m_RenderSystem->SetCascadeFarUpdateInterval(static_cast<u32>(interval));
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("How many frames between far cascade updates.\nHigher = cheaper but more shadow lag.");
+            }
         }
     }
 }
@@ -1690,10 +1765,91 @@ void EditorLayer::DrawSettingsSection_AmbientLighting() {
         if (ImGui::ColorEdit3("Ambient Color", ambient)) {
             m_RenderSystem->SetAmbientColor(Math::Vector3(ambient[0], ambient[1], ambient[2]));
         }
+        ImGui::SetItemTooltip("Base color for ambient light applied uniformly to all surfaces.\nSimulates indirect light in the scene.");
 
         f32 ambientIntensity = m_RenderSystem->GetAmbientIntensity();
         if (ImGui::DragFloat("Ambient Intensity", &ambientIntensity, 0.05f, 0.0f, 5.0f)) {
             m_RenderSystem->SetAmbientIntensity(ambientIntensity);
+        }
+        ImGui::SetItemTooltip("Brightness of ambient light. 0 = pitch-black shadows,\nhigher values fill in areas not reached by direct lights.");
+    }
+}
+
+void EditorLayer::DrawSettingsSection_ShadingModel() {
+    if (!m_RenderSystem) return;
+
+    if (ImGui::CollapsingHeader("Shading Model")) {
+        const char* modelNames[] = { "Blinn-Phong", "PBR (GGX)" };
+        int model = static_cast<int>(m_RenderSystem->GetShadingModel());
+        if (ImGui::Combo("Specular Model", &model, modelNames, 2)) {
+            m_RenderSystem->SetShadingModel(static_cast<u32>(model));
+        }
+        ImGui::SetItemTooltip("Blinn-Phong: classic game lighting, tighter highlights.\nPBR (GGX): physically-based, softer highlights with long tails.");
+
+        bool fresnel = m_RenderSystem->IsFresnelEnabled();
+        if (ImGui::Checkbox("Fresnel##Shading", &fresnel)) {
+            m_RenderSystem->SetFresnelEnabled(fresnel);
+        }
+        ImGui::SetItemTooltip("Fresnel-Schlick: surfaces reflect more light at glancing angles.\nAdds rim/edge sheen. Metals look distinct from plastics.\nCost: negligible.");
+
+        bool energyConserv = m_RenderSystem->IsEnergyConservation();
+        if (ImGui::Checkbox("Energy Conservation##Shading", &energyConserv)) {
+            m_RenderSystem->SetEnergyConservation(energyConserv);
+        }
+        ImGui::SetItemTooltip("Ensures light out never exceeds light in.\nShiny surfaces get dimmer diffuse to balance bright specular.\nPrevents unnaturally glowing surfaces. Cost: free.");
+
+        bool geomTerm = m_RenderSystem->IsGeometryTerm();
+        if (ImGui::Checkbox("Geometry Term##Shading", &geomTerm)) {
+            m_RenderSystem->SetGeometryTerm(geomTerm);
+        }
+        ImGui::SetItemTooltip("Smith GGX microfacet self-shadowing.\nDarkens rough surfaces at grazing angles where micro-bumps\nblock light. Prevents flat-plastic look. Cost: minimal.");
+    }
+}
+
+void EditorLayer::DrawSettingsSection_DreamcastEffects() {
+    if (!m_RenderSystem) return;
+
+    if (ImGui::CollapsingHeader("Dreamcast Effects")) {
+        ImGui::TextDisabled("Sphere environment maps, modifier volume shadows — Dreamcast/6th-gen era");
+        // Spherical Environment Mapping
+        bool sphereEnv = m_RenderSystem->IsSphereEnvMapEnabled();
+        if (ImGui::Checkbox("Sphere Environment Map", &sphereEnv)) {
+            m_RenderSystem->SetSphereEnvMapEnabled(sphereEnv);
+        }
+        ImGui::SetItemTooltip("Dreamcast-style spherical environment mapping (matcap).\n"
+            "Adds a metallic sheen based on view-space normals.\n"
+            "Classic look from Sonic Adventure, Soul Calibur, Power Stone.");
+
+        if (sphereEnv) {
+            f32 envStr = m_RenderSystem->GetSphereEnvStrength();
+            if (ImGui::SliderFloat("Env Strength", &envStr, 0.0f, 1.0f)) {
+                m_RenderSystem->SetSphereEnvStrength(envStr);
+            }
+            ImGui::SetItemTooltip("Intensity of the sphere environment sheen.\n"
+                "0 = off, 0.3 = subtle, 0.5 = default, 1.0 = full Dreamcast gloss.");
+        }
+
+        ImGui::Separator();
+
+        // Color Posterization
+        f32 posterize = m_RenderSystem->GetPosterizeLevels();
+        bool posterizeOn = (posterize > 1.5f);
+        if (ImGui::Checkbox("Color Posterization", &posterizeOn)) {
+            m_RenderSystem->SetPosterizeLevels(posterizeOn ? 16.0f : 0.0f);
+        }
+        ImGui::SetItemTooltip("Quantize final colors to a limited palette per channel.\n"
+            "Simulates VQ texture compression and palettized rendering\n"
+            "from Dreamcast / Saturn / PS1 era hardware.");
+
+        if (posterizeOn) {
+            if (posterize < 2.0f) posterize = 16.0f;
+            if (ImGui::SliderFloat("Color Levels", &posterize, 4.0f, 256.0f, "%.0f")) {
+                m_RenderSystem->SetPosterizeLevels(posterize);
+            }
+            ImGui::SetItemTooltip("Color steps per channel.\n"
+                "4 = extreme banding (64 total colors)\n"
+                "16 = retro feel (4096 colors, Dreamcast-like)\n"
+                "64 = subtle banding\n256 = nearly invisible.");
         }
     }
 }
@@ -1703,19 +1859,23 @@ void EditorLayer::DrawSettingsSection_CelShading() {
 
     // === CEL SHADING ===
     if (ImGui::CollapsingHeader("Cel Shading")) {
+        ImGui::TextDisabled("Anime, cartoon, comic book styles — band quantization + edge outlines");
         bool celEnabled = m_RenderSystem->IsCelShadingEnabled();
         if (ImGui::Checkbox("Cel Shading##Rendering", &celEnabled)) {
             m_RenderSystem->SetCelShadingEnabled(celEnabled);
         }
+        ImGui::SetItemTooltip("Cartoon/toon-style shading. Quantizes lighting into\ndiscrete bands for a hand-drawn look.");
         if (celEnabled) {
             f32 celBands = m_RenderSystem->GetCelDiffuseBands();
             if (ImGui::SliderFloat("Diffuse Bands##Cel", &celBands, 2.0f, 8.0f, "%.0f")) {
                 m_RenderSystem->SetCelDiffuseBands(celBands);
             }
+            ImGui::SetItemTooltip("Number of distinct brightness steps.\n2 = stark light/shadow, 4-5 = common toon look, 8 = subtle banding.");
             f32 celSpec = m_RenderSystem->GetCelSpecularCutoff();
             if (ImGui::SliderFloat("Specular Cutoff##Cel", &celSpec, 0.0f, 1.0f)) {
                 m_RenderSystem->SetCelSpecularCutoff(celSpec);
             }
+            ImGui::SetItemTooltip("Hard threshold for specular highlights.\n0 = smooth specular (no cutoff), >0 = sharp on/off highlight.\nHigher values shrink the highlight.");
         }
     }
 }
@@ -1736,6 +1896,44 @@ void EditorLayer::DrawSettingsSection_DisplayOptions() {
         bool wireframe = m_RenderSystem->IsWireframeEnabled();
         if (ImGui::Checkbox("Wireframe", &wireframe)) {
             m_RenderSystem->SetWireframeEnabled(wireframe);
+        }
+        ImGui::SetItemTooltip("Render triangle edges only. Useful for debugging mesh topology.");
+
+        // HDR output
+        ImGui::Separator();
+        {
+            auto* swapchain = m_RenderSystem->GetSwapchain();
+            bool hdrAvailable = swapchain && swapchain->IsHDRFormatAvailable();
+            bool hdrEnabled = m_RenderSystem->IsHDREnabled();
+
+            if (!hdrAvailable && !hdrEnabled) {
+                ImGui::BeginDisabled();
+            }
+            if (ImGui::Checkbox("HDR Output", &hdrEnabled)) {
+                m_RenderSystem->SetHDREnabled(hdrEnabled);
+                // Update post-process settings with actual HDR mode
+                if (m_PostProcessing) {
+                    m_PostProcessing->GetSettings().hdrOutputMode = m_RenderSystem->GetHDROutputMode();
+                }
+            }
+            if (!hdrAvailable && !hdrEnabled) {
+                ImGui::EndDisabled();
+            }
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip(hdrAvailable
+                    ? "Enable HDR output on compatible displays.\n"
+                      "Prefers scRGB (FP16 linear), falls back to HDR10 (PQ/ST.2084)."
+                    : "HDR not available.\n"
+                      "Enable Windows HDR in Settings > Display > HDR first.");
+            }
+            if (m_RenderSystem->IsHDREnabled()) {
+                const char* modeNames[] = { "SDR", "scRGB (FP16)", "HDR10 (PQ)" };
+                u32 mode = m_RenderSystem->GetHDROutputMode();
+                ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "Active: %s",
+                    mode < 3 ? modeNames[mode] : "Unknown");
+            } else if (!hdrAvailable) {
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "No HDR formats detected");
+            }
         }
     }
 
@@ -1833,6 +2031,7 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
     {
         bool rtSupported = m_RenderSystem->IsRayTracingSupported();
         if (ImGui::CollapsingHeader("Ray Tracing")) {
+            ImGui::TextDisabled("Hardware-accelerated shadows, reflections, AO, GI, path tracing");
             if (rtSupported) {
                 ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "Supported");
             } else {
@@ -1845,6 +2044,7 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
                 if (ImGui::Checkbox("Enable Ray Tracing", &rtEnabled)) {
                     m_RenderSystem->SetRayTracingEnabled(rtEnabled);
                 }
+                ImGui::SetItemTooltip("Enable hardware-accelerated ray tracing (VK_KHR_ray_tracing_pipeline).\nAdds RT shadows, reflections, AO, GI, translucency, and caustics.");
 
                 if (rtEnabled) {
                     // Mode selection
@@ -1883,6 +2083,11 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
                                     ImGui::DragFloat("Max Distance##RTReflect", &cfg.maxDistance, 1.0f, 1.0f, 500.0f);
                                     ImGui::SliderFloat("Roughness Threshold", &cfg.roughnessThreshold, 0.0f, 1.0f);
                                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Skip reflections for surfaces rougher than this");
+                                    ImGui::Checkbox("SDF Distance Fallback", &cfg.sdfFallback);
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Use SDF sphere tracing for reflections beyond RT BVH range");
+                                    if (cfg.sdfFallback) {
+                                        ImGui::SliderFloat("SDF Max Distance", &cfg.sdfMaxDistance, 100.0f, 2000.0f);
+                                    }
                                 }
                                 ImGui::TreePop();
                             }
@@ -1895,7 +2100,9 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
                                 ImGui::Checkbox("Enabled##RTAO", &cfg.enabled);
                                 if (cfg.enabled) {
                                     ImGui::DragFloat("AO Radius", &cfg.radius, 0.1f, 0.1f, 20.0f);
+                                    ImGui::SetItemTooltip("World-space radius for AO rays. Larger = softer, wider occlusion.");
                                     ImGui::DragFloat("AO Power", &cfg.power, 0.1f, 0.1f, 5.0f);
+                                    ImGui::SetItemTooltip("Exponent applied to AO result. Higher = darker, more contrast.");
                                 }
                                 ImGui::TreePop();
                             }
@@ -1909,6 +2116,7 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
                                 if (cfg.enabled) {
                                     ImGui::DragFloat("Max Distance##RTGI", &cfg.maxDistance, 1.0f, 1.0f, 200.0f);
                                     ImGui::DragFloat("GI Intensity", &cfg.intensity, 0.1f, 0.0f, 5.0f);
+                                    ImGui::SetItemTooltip("Indirect light brightness multiplier.");
                                     int bounces = static_cast<int>(cfg.bounces);
                                     if (ImGui::SliderInt("Bounces", &bounces, 1, 4)) {
                                         cfg.bounces = static_cast<u32>(bounces);
@@ -1937,10 +2145,12 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
                             if (ImGui::SliderInt("Max Bounces", &maxBounces, 1, 16)) {
                                 cfg.maxBounces = static_cast<u32>(maxBounces);
                             }
+                            ImGui::SetItemTooltip("Maximum light bounces per path.\nMore bounces = more realistic indirect light, slower convergence.\n4 is a good default, 8+ for interiors.");
                             int targetSPP = static_cast<int>(cfg.targetSPP);
                             if (ImGui::DragInt("Target SPP", &targetSPP, 16, 1, 65536)) {
                                 cfg.targetSPP = static_cast<u32>(targetSPP);
                             }
+                            ImGui::SetItemTooltip("Samples Per Pixel target for convergence.\nHigher = cleaner image, longer render time.\n256 preview, 1024 default, 4096+ production.");
 
                             ImGui::Separator();
 
@@ -2001,6 +2211,7 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
                         if (ImGui::Combo("Denoiser", &denoiserType, denoiserNames, maxDenoiser + 1)) {
                             m_RenderSystem->SetDenoiserType(static_cast<u32>(denoiserType));
                         }
+                        ImGui::SetItemTooltip("SVGF: GPU temporal+spatial filter, fast, always available.\nOIDN: Intel ML denoiser, higher quality, runs on CPU.");
                     }
 
                     // SVGF settings
@@ -2040,6 +2251,30 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
                     }
                 }
 
+                // Simplified RT Materials
+                {
+                    ImGui::Separator();
+                    auto settings = Renderer::SceneRenderSettings::CaptureFromRuntime(
+                        m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+                    bool changed = false;
+                    if (ImGui::Checkbox("Simplified RT Materials", &settings.rtSimplifiedMaterials)) {
+                        changed = true;
+                    }
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pre-bake material properties to reduce hit shader divergence");
+                    if (settings.rtSimplifiedMaterials) {
+                        int bounce = static_cast<int>(settings.rtSimplifyAfterBounce);
+                        if (ImGui::SliderInt("Simplify After Bounce", &bounce, 0, 4)) {
+                            settings.rtSimplifyAfterBounce = static_cast<u32>(bounce);
+                            changed = true;
+                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Use simplified materials (no SSS/transmission) after this bounce depth");
+                    }
+                    if (changed) {
+                        settings.ApplyToRuntime(m_RenderSystem,
+                            m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+                    }
+                }
+
                 // Stats
                 if (auto* asManager = m_RenderSystem->GetASManager()) {
                     ImGui::Separator();
@@ -2057,6 +2292,7 @@ void EditorLayer::DrawSettingsSection_LightProbes() {
     // === LIGHT PROBES ===
     {
         if (ImGui::CollapsingHeader("Light Probes")) {
+            ImGui::TextDisabled("Baked indirect lighting for static scenes — interiors, walkthroughs");
             if (auto* shLighting = m_RenderSystem->GetSHLighting()) {
                 auto& grid = shLighting->GetGrid();
                 u32 probeCount = shLighting->GetProbeCount();

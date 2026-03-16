@@ -9,6 +9,7 @@
 #include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Physics/IPhysicsBackend2D.h"
 #include "Enjin/Networking/NetworkSystem.h"
+#include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Assets/DataAsset.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
@@ -5605,8 +5606,12 @@ void NodeRegistry::RegisterBuiltinNodes() {
             std::string sceneName = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
                 ? std::get<std::string>(inputs[1]) : "";
             if (!sceneName.empty()) {
-                // Scene loading is handled via the SceneManager bound externally
-                ENJIN_LOG_INFO(Script, "Scene_LoadScene requested: %s", sceneName.c_str());
+                if (ctx.sceneManager) {
+                    ENJIN_LOG_INFO(Script, "Scene_LoadScene: loading '%s'", sceneName.c_str());
+                    ctx.sceneManager->LoadScene(sceneName);
+                } else {
+                    ENJIN_LOG_WARN(Script, "Scene_LoadScene: no SceneManager bound, cannot load '%s'", sceneName.c_str());
+                }
             }
             ctx.nextFlowIndex = 0;
         };

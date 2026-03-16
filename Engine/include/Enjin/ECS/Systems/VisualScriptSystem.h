@@ -40,6 +40,9 @@ public:
     // Set streaming manager for level streaming nodes
     void SetStreaming(Scene::StreamingManager* sm) { m_Executor.SetStreaming(sm); }
 
+    // Set scene manager for scene loading nodes
+    void SetSceneManager(Scene::SceneManager* sm) { m_Executor.SetSceneManager(sm); }
+
     // Called once when play mode starts
     void Initialize();
 
