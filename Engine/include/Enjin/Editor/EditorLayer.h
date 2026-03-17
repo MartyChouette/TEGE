@@ -1202,7 +1202,7 @@ private:
 
     // GitHub Issues tab state
     char m_GitHubOwnerBuf[128] = "MartyChouette";
-    char m_GitHubRepoBuf[128] = "enjin";
+    char m_GitHubRepoBuf[128] = "TEGE";
     char m_GitHubTokenBuf[256] = {};
     i32 m_SelectedGitHubIssue = -1;
     char m_GitHubIssueSearchBuf[256] = {};

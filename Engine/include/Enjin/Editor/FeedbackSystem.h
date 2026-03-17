@@ -209,7 +209,7 @@ struct GitHubIssue {
 
 struct GitHubConfig {
     std::string owner = "MartyChouette";
-    std::string repo = "enjin";
+    std::string repo = "TEGE";
     std::string token;   // Personal access token (stored in config, not in code)
     bool enabled = true;
 };
