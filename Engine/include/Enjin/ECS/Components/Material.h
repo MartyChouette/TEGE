@@ -76,6 +76,7 @@ struct MaterialComponent {
 
     // Cel shading opt-out (per-material)
     bool excludeFromCelShading = false;
+    u8 lightRampOverride = 0;  // 0=use global, 1-4=override (smooth/warm/cool/anime)
 
     // Transmission (glass, water, thin surfaces)
     f32 transmission = 0.0f;        // 0=opaque, 1=fully transmissive

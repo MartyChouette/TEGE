@@ -165,8 +165,8 @@ struct alignas(16) PostProcessSettings {
     alignas(4) u32 lightLeakEnabled = 0;
     alignas(4) f32 lightLeakIntensity = 0.15f;        // Additive glow strength
     alignas(4) f32 lightLeakSpeed = 0.3f;              // Drift speed
-    alignas(4) f32 _analogPad0 = 0.0f;
-    alignas(4) f32 _analogPad1 = 0.0f;
+    alignas(4) u32 tamHatchingEnabled = 0;    // Tonal Art Map hatching
+    alignas(4) u32 watercolorEnabled = 0;     // Watercolor post-process
 
     // Color palette lock
     alignas(4) u32 paletteEnabled = 0;
@@ -311,6 +311,8 @@ struct alignas(16) PostProcessSettings {
         if (vhsEnabled) return true;
         if (filmGateWeaveEnabled) return true;
         if (lightLeakEnabled) return true;
+        if (tamHatchingEnabled) return true;
+        if (watercolorEnabled) return true;
         if (paletteEnabled) return true;
         if (dofEnabled) return true;
         if (tiltShiftEnabled) return true;

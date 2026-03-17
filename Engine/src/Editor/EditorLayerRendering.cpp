@@ -1619,6 +1619,28 @@ void EditorLayer::DrawSettingsSection_RetroEffects() {
                 ImGui::TreePop();
             }
 
+            // TAM Hatching (NPR)
+            if (ImGui::TreeNode("TAM Hatching")) {
+                auto& settings = m_PostProcessing->GetSettings();
+                bool tamOn = settings.tamHatchingEnabled != 0;
+                if (ImGui::Checkbox("Enabled##TAM", &tamOn)) {
+                    settings.tamHatchingEnabled = tamOn ? 1u : 0u;
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Tonal Art Map: 6-tone luminance-based hatching patterns\nfor a pen & ink / etching illustration look");
+                ImGui::TreePop();
+            }
+
+            // Watercolor
+            if (ImGui::TreeNode("Watercolor")) {
+                auto& settings = m_PostProcessing->GetSettings();
+                bool wcOn = settings.watercolorEnabled != 0;
+                if (ImGui::Checkbox("Enabled##Watercolor", &wcOn)) {
+                    settings.watercolorEnabled = wcOn ? 1u : 0u;
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Watercolor post-process: edge darkening,\npigment pooling, color granulation, wet-edge diffusion");
+                ImGui::TreePop();
+            }
+
             // Global Gouraud-only mode
             if (ImGui::TreeNode("Global Retro Shading")) {
                 bool gouraud = m_RetroEffects.GetGouraudOnly();

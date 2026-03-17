@@ -107,6 +107,25 @@ layout(push_constant) uniform PushConstants {
     float surfaceParam3;  // water: foamScale | artistic: rimLightStrength
 } material;
 
+// Material UBO (binding 2) — extended material data including SSS
+// Layout matches C++ MaterialGPU (std140, 80 bytes)
+layout(binding = 2) uniform MaterialUBO {
+    vec3  matBaseColor;
+    float matMetallic;
+    vec3  matEmissiveColor;
+    float matRoughness;
+    float matEmissiveStrength;
+    float matOpacity;
+    float matAlphaCutoff;
+    int   matFlags;
+    float matTransmission;
+    float matIOR;
+    float matThickness;
+    float matSSSIntensity;
+    vec3  matSSSColor;
+    float matSSSRadius;
+} materialData;
+
 // Material flag bits
 #define FLAG_DOUBLE_SIDED       (1 << 0)
 #define FLAG_CAST_SHADOWS       (1 << 1)
@@ -489,9 +508,9 @@ vec3 lightRamp(float NdotL) {
 // Calculate Blinn-Phong lighting contribution
 vec3 calcBlinnPhong(vec3 lightDir, vec3 lightColor, float lightIntensity, vec3 normal, vec3 viewDir, vec3 albedo, float metallic, float shininess) {
     float rawNdotL = dot(normal, lightDir);
-    float NdotL = ((lighting.shadingFlags & SHADING_HALF_LAMBERT) != 0u)
-        ? rawNdotL * 0.5 + 0.5  // Half-Lambert: softer falloff, no harsh terminator
-        : max(rawNdotL, 0.0);
+    // Light wrap: 0.0 = standard clamped, 0.5 = half-Lambert, 1.0 = full wrap
+    float wrapAmount = ((lighting.shadingFlags & SHADING_HALF_LAMBERT) != 0u) ? 0.5 : 0.0;
+    float NdotL = max(rawNdotL * (1.0 - wrapAmount) + wrapAmount, 0.0);
     vec3 halfwayDir = normalize(lightDir + viewDir);
     float NdotH = max(dot(normal, halfwayDir), 0.0);
     float NdotV = max(dot(normal, viewDir), 0.001);
@@ -1110,6 +1129,61 @@ void main() {
         }
     }
 #endif
+
+    // Subsurface scattering approximation (wrap lighting)
+    // Uses extended material data from MaterialUBO (binding 2)
+    if (materialData.matSSSIntensity > 0.0) {
+        float sssInt = materialData.matSSSIntensity;
+        float sssRad = materialData.matSSSRadius;
+        vec3  sssCol = materialData.matSSSColor;
+
+        vec3 sssContrib = vec3(0.0);
+
+        // Directional lights: wrap diffuse on the back side
+        for (uint i = 0u; i < lighting.directionalLightCount && i < MAX_DIRECTIONAL_LIGHTS; ++i) {
+            vec3 L = -normalize(lighting.directionalLights[i].direction);
+            vec3 lc = lighting.directionalLights[i].color * lighting.directionalLights[i].intensity;
+            float wrap = max(0.0, dot(normal, L) + sssRad) / (1.0 + sssRad);
+            sssContrib += wrap * lc;
+        }
+
+        // Point lights: wrap diffuse with attenuation
+        for (uint i = 0u; i < lighting.pointLightCount && i < MAX_POINT_LIGHTS; ++i) {
+            vec3 lv = lighting.pointLights[i].position - fragWorldPos;
+            float dist = length(lv);
+            if (dist > lighting.pointLights[i].range) continue;
+            vec3 L = normalize(lv);
+            float atten = calcAttenuation(dist,
+                lighting.pointLights[i].constantAtten,
+                lighting.pointLights[i].linearAtten,
+                lighting.pointLights[i].quadraticAtten);
+            vec3 lc = lighting.pointLights[i].color * lighting.pointLights[i].intensity * atten;
+            float wrap = max(0.0, dot(normal, L) + sssRad) / (1.0 + sssRad);
+            sssContrib += wrap * lc;
+        }
+
+        // Spot lights: wrap diffuse with attenuation and cone falloff
+        for (uint i = 0u; i < lighting.spotLightCount && i < MAX_SPOT_LIGHTS; ++i) {
+            vec3 lv = lighting.spotLights[i].position - fragWorldPos;
+            float dist = length(lv);
+            if (dist > lighting.spotLights[i].range) continue;
+            vec3 L = normalize(lv);
+            vec3 spotDir = normalize(lighting.spotLights[i].direction);
+            float theta = dot(L, -spotDir);
+            float spotFalloff = clamp((theta - lighting.spotLights[i].outerCutoff)
+                / (lighting.spotLights[i].innerCutoff - lighting.spotLights[i].outerCutoff), 0.0, 1.0);
+            if (spotFalloff <= 0.0) continue;
+            float atten = calcAttenuation(dist,
+                lighting.spotLights[i].constantAtten,
+                lighting.spotLights[i].linearAtten,
+                lighting.spotLights[i].quadraticAtten);
+            vec3 lc = lighting.spotLights[i].color * lighting.spotLights[i].intensity * atten * spotFalloff;
+            float wrap = max(0.0, dot(normal, L) + sssRad) / (1.0 + sssRad);
+            sssContrib += wrap * lc;
+        }
+
+        result += sssContrib * sssCol * albedo * sssInt;
+    }
 
     // Dithered transparency: alternating pixels between fragment color and blend color
     // Encoded in surfaceParam1 >= 200: pattern in fractional part, opacity in surfaceParam2,

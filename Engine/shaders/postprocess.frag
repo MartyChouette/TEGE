@@ -123,8 +123,8 @@ layout(binding = 1) uniform PostProcessSettings {
     uint lightLeakEnabled;
     float lightLeakIntensity;
     float lightLeakSpeed;
-    float _analogPad0;
-    float _analogPad1;
+    uint tamHatchingEnabled;   // Tonal Art Map hatching
+    uint watercolorEnabled;    // Watercolor post-process
 
     // Color palette lock
     uint paletteEnabled;
@@ -857,6 +857,88 @@ vec3 nearestPaletteColor(vec3 color, vec3 palette[16], int count) {
     return bestColor;
 }
 
+// ============================================================
+// Tonal Art Map (TAM) Hatching
+// ============================================================
+vec3 applyTAMHatching(vec3 color, vec2 uv) {
+    // Use luminance to select hatching intensity
+    float lum = dot(color, vec3(0.299, 0.587, 0.114));
+    vec2 screenPos = uv * vec2(settings.screenWidth, settings.screenHeight);
+
+    // 6-tone hatching layers (darkest to lightest)
+    float hatch = 1.0;
+
+    // Layer 1: dense diagonal lines (darkest areas)
+    if (lum < 0.2) {
+        float line1 = abs(sin((screenPos.x + screenPos.y) * 0.8)) > 0.5 ? 0.0 : 1.0;
+        float line2 = abs(sin((screenPos.x - screenPos.y) * 0.8)) > 0.5 ? 0.0 : 1.0;
+        hatch = min(line1, line2);
+    }
+    // Layer 2: cross-hatch
+    else if (lum < 0.35) {
+        float line1 = abs(sin((screenPos.x + screenPos.y) * 0.6)) > 0.6 ? 0.0 : 1.0;
+        float line2 = abs(sin((screenPos.x - screenPos.y) * 0.6)) > 0.65 ? 0.0 : 1.0;
+        hatch = min(line1, line2);
+    }
+    // Layer 3: single diagonal
+    else if (lum < 0.5) {
+        hatch = abs(sin((screenPos.x + screenPos.y) * 0.5)) > 0.55 ? 0.0 : 1.0;
+    }
+    // Layer 4: sparse diagonal
+    else if (lum < 0.65) {
+        hatch = abs(sin((screenPos.x + screenPos.y) * 0.4)) > 0.7 ? 0.0 : 1.0;
+    }
+    // Layer 5: very sparse dots
+    else if (lum < 0.8) {
+        float dot1 = length(fract(screenPos * 0.03) - 0.5);
+        hatch = dot1 > 0.35 ? 1.0 : 0.0;
+    }
+    // Layer 6: clean (lightest areas get no hatching)
+
+    // Preserve hue, apply hatching to value
+    vec3 hatchColor = color * hatch;
+    return hatchColor;
+}
+
+// ============================================================
+// Watercolor Post-Process
+// ============================================================
+vec3 applyWatercolor(vec3 color, vec2 uv) {
+    vec2 texelSize = 1.0 / vec2(settings.screenWidth, settings.screenHeight);
+
+    // Edge darkening: darken where depth/color discontinuities exist
+    float dC = texture(depthTexture, uv).r;
+    float dR = texture(depthTexture, uv + vec2(texelSize.x, 0.0)).r;
+    float dD = texture(depthTexture, uv + vec2(0.0, texelSize.y)).r;
+    float edge = abs(dC - dR) + abs(dC - dD);
+    edge = smoothstep(0.0, 0.02, edge);
+    color *= 1.0 - edge * 0.4; // darken edges
+
+    // Pigment pooling: slightly saturate and shift hue in dark areas
+    float lum = dot(color, vec3(0.299, 0.587, 0.114));
+    float pool = smoothstep(0.4, 0.0, lum) * 0.3;
+    color = mix(color, color * vec3(0.9, 0.85, 1.1), pool); // slight blue shift in darks
+
+    // Color granulation: noise-modulated saturation
+    float t = settings.time;
+    float grain = fract(sin(dot(uv * 500.0 + t * 0.1, vec2(12.9898, 78.233))) * 43758.5453);
+    float sat = dot(color, vec3(0.299, 0.587, 0.114));
+    color = mix(vec3(sat), color, 0.85 + grain * 0.15);
+
+    // Wet edge diffusion: subtle blur at color boundaries
+    vec3 blur = vec3(0.0);
+    for (int x = -1; x <= 1; x++) {
+        for (int y = -1; y <= 1; y++) {
+            blur += texture(sceneTexture, uv + vec2(x, y) * texelSize * 1.5).rgb;
+        }
+    }
+    blur /= 9.0;
+    float edgeMix = smoothstep(0.0, 0.01, edge) * 0.3;
+    color = mix(color, blur, edgeMix);
+
+    return color;
+}
+
 vec3 applyPaletteLock(vec3 color) {
     if (settings.paletteEnabled == 0) return color;
 
@@ -1507,6 +1589,16 @@ void main() {
 
     // Light leak / film burn overlay
     color = applyLightLeak(color, uv);
+
+    // NPR: watercolor post-process (edge darkening, pigment pooling, granulation)
+    if (settings.watercolorEnabled != 0u) {
+        color = applyWatercolor(color, uv);
+    }
+
+    // NPR: Tonal Art Map hatching (luminance-based procedural line work)
+    if (settings.tamHatchingEnabled != 0u) {
+        color = applyTAMHatching(color, uv);
+    }
 
     // Retro: dithering (apply before quantization for best results)
     vec2 screenPos = fragUV * vec2(settings.screenWidth, settings.screenHeight);
