@@ -135,12 +135,13 @@ bool CollaborativeEditingSystem::HostSession(u16 port, const std::string& userNa
     m_OperationLog.clear();
     m_Peers.clear();
 
-    // Add self as peer
+    // Add self as peer (host is always Owner)
     CollabPeer self;
     self.peerId = m_LocalPeerId;
     self.name = userName;
     self.connected = true;
     self.lastHeartbeat = m_Time;
+    self.permission = CollabPermission::Owner;
     m_Peers.push_back(self);
 
     ENJIN_LOG_INFO(Editor, "Hosting collaborative session on port %u as '%s'", port, userName.c_str());
@@ -618,6 +619,23 @@ EditOperation CollaborativeEditingSystem::DeserializeOperation(const u8* data, u
 
 void CollaborativeEditingSystem::HandleEditOp(u8 senderId, const u8* data, u32 size) {
     EditOperation op = DeserializeOperation(data, size);
+
+    // S-C2: Check permission level before allowing destructive operations
+    if (IsHost()) {
+        CollabPermission perm = CollabPermission::Viewer;
+        for (const auto& peer : m_Peers) {
+            if (peer.peerId == senderId) { perm = peer.permission; break; }
+        }
+        if (perm == CollabPermission::Viewer) {
+            ENJIN_LOG_WARN(Editor, "Collab: Viewer peer %u attempted edit op, rejecting", senderId);
+            return;
+        }
+        // Only Owner can delete entities
+        if (op.type == EditOpType::DeleteEntity && perm != CollabPermission::Owner) {
+            ENJIN_LOG_WARN(Editor, "Collab: Non-owner peer %u attempted entity delete, rejecting", senderId);
+            return;
+        }
+    }
 
     if (m_State == CollabSessionState::Syncing) {
         // Buffer operations during sync

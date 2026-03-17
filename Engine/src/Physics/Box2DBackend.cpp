@@ -3,6 +3,7 @@
 #include "Enjin/Physics/Box2DBackend.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 
@@ -124,13 +125,16 @@ void Box2DBackend::Update(f32 deltaTime) {
     // 2. Sync joint components to Box2D joints
     SyncJointsToBox2D();
 
-    // 3. Step the Box2D world
+    // 3. Apply gravity zone overrides
+    ApplyGravityZones();
+
+    // 4. Step the Box2D world
     b2World_Step(m_WorldId, deltaTime, static_cast<int>(m_SubStepCount));
 
-    // 4. Write Box2D state back to ECS
+    // 5. Write Box2D state back to ECS
     SyncBox2DToECS();
 
-    // 5. Process contact and sensor events
+    // 6. Process contact and sensor events
     ProcessEvents();
 }
 
@@ -164,14 +168,17 @@ void Box2DBackend::SyncECSToBox2D() {
         DestroyBodyForEntity(entity);
     }
 
-    // Update kinematic/static bodies and property changes
+    // Update kinematic/static bodies and property changes.
+    // Also sync sensor bodies from ECS → Box2D so that entities driven by
+    // controllers, AI, or tweens (player, pickups, enemies) keep their
+    // Box2D body in sync without Box2D overwriting their position.
     for (auto& [entity, bodyId] : m_EntityToBody) {
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         auto* body2d = m_World->GetComponent<Body2DComponent>(entity);
         if (!transform || !body2d) continue;
 
-        if (body2d->isStatic) {
-            // Static bodies: update position if changed externally
+        if (body2d->isStatic || body2d->isSensor || body2d->isKinematic) {
+            // Static/sensor/kinematic bodies: update position from ECS
             b2Vec2 currentPos = b2Body_GetPosition(bodyId);
             Math::Vector2 ecsPos = GetPosition2D(*transform);
             f32 ecsAngle = GetRotationZ(*transform);
@@ -189,6 +196,13 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
     auto* body2d = m_World->GetComponent<Body2DComponent>(entity);
     if (!transform || !body2d) return;
 
+    // Guard against duplicate body creation — destroy existing body first
+    if (m_EntityToBody.find(entity) != m_EntityToBody.end()) {
+        ENJIN_LOG_WARN(Physics, "CreateBodyForEntity called for entity %llu that already has a body — replacing",
+                       static_cast<unsigned long long>(entity));
+        DestroyBodyForEntity(entity);
+    }
+
     Math::Vector2 pos = GetPosition2D(*transform);
     f32 angle = GetRotationZ(*transform);
 
@@ -204,6 +218,8 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
 
     if (body2d->isStatic) {
         bodyDef.type = b2_staticBody;
+    } else if (body2d->isKinematic) {
+        bodyDef.type = b2_kinematicBody;
     } else {
         bodyDef.type = b2_dynamicBody;
     }
@@ -226,7 +242,11 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
     shapeDef.friction = std::clamp(body2d->material.friction, 0.0f, 1.0f);
     shapeDef.restitution = std::clamp(body2d->material.restitution, 0.0f, 1.0f);
     shapeDef.isSensor = body2d->isSensor;
-    shapeDef.enableSensorEvents = body2d->isSensor;
+    // Box2D v3: enableSensorEvents on non-sensor shapes controls whether
+    // they act as visitors for sensor overlap events. Sensors themselves
+    // ignore this flag. Enable for all dynamic/kinematic bodies so they
+    // can trigger sensor callbacks (damage, pickups, etc.).
+    shapeDef.enableSensorEvents = !body2d->isStatic;
     shapeDef.enableContactEvents = !body2d->isSensor;
 
     // Collision filtering (v3.0.0 uses uint32_t)
@@ -265,6 +285,8 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
                 }
             } else {
                 // Fallback to a unit box if polygon is invalid
+                ENJIN_LOG_WARN(Physics, "Polygon has %zu vertices (must be 3-8) for entity %llu — using unit box fallback",
+                               verts.size(), static_cast<unsigned long long>(entity));
                 b2Polygon box = b2MakeBox(0.5f, 0.5f);
                 b2CreatePolygonShape(bodyId, &shapeDef, &box);
             }
@@ -299,6 +321,21 @@ void Box2DBackend::DestroyBodyForEntity(ECS::Entity entity) {
     b2DestroyBody(it->second);
     m_BodyUserDataToEntity.erase(static_cast<uint64_t>(entity));
     m_EntityToBody.erase(it);
+
+    // Clean up stale collision/sensor pairs involving this entity
+    auto purgeEntity = [entity](std::unordered_set<u64>& pairs) {
+        for (auto pit = pairs.begin(); pit != pairs.end(); ) {
+            u64 key = *pit;
+            ECS::Entity a = static_cast<ECS::Entity>(key >> 32);
+            ECS::Entity b = static_cast<ECS::Entity>(key & 0xFFFFFFFF);
+            if (a == entity || b == entity)
+                pit = pairs.erase(pit);
+            else
+                ++pit;
+        }
+    };
+    purgeEntity(m_ActiveContacts);
+    purgeEntity(m_ActiveSensorContacts);
 }
 
 // ============================================================================
@@ -314,8 +351,9 @@ void Box2DBackend::SyncBox2DToECS() {
         auto* body2d = m_World->GetComponent<Body2DComponent>(entity);
         if (!transform || !body2d) continue;
 
-        // Only sync dynamic bodies back to ECS
-        if (body2d->isStatic) continue;
+        // Only sync dynamic non-sensor non-kinematic bodies back to ECS.
+        // Sensor/kinematic bodies are driven by ECS (controllers, AI, tweens) — don't overwrite.
+        if (body2d->isStatic || body2d->isSensor || body2d->isKinematic) continue;
 
         // Position
         b2Vec2 pos = b2Body_GetPosition(bodyId);
@@ -348,7 +386,9 @@ void Box2DBackend::SyncBox2DToECS() {
 // ============================================================================
 
 ECS::Entity Box2DBackend::ResolveEntity(b2ShapeId shapeId) const {
+    if (!b2Shape_IsValid(shapeId)) return 0;
     b2BodyId bodyId = b2Shape_GetBody(shapeId);
+    if (!b2Body_IsValid(bodyId)) return 0;
     void* userData = b2Body_GetUserData(bodyId);
     if (!userData) return 0;
     return UserDataToEntity(userData);
@@ -446,6 +486,11 @@ void Box2DBackend::ProcessEvents() {
         }
     }
 
+    // Carry forward active sensor contacts that haven't ended this frame
+    for (u64 prevKey : m_ActiveSensorContacts) {
+        newSensorContacts.insert(prevKey);
+    }
+
     for (int i = 0; i < sensors.endCount; ++i) {
         const b2SensorEndTouchEvent& evt = sensors.endEvents[i];
         if (!b2Shape_IsValid(evt.sensorShapeId) || !b2Shape_IsValid(evt.visitorShapeId)) continue;
@@ -478,7 +523,9 @@ bool Box2DBackend::Raycast(const Math::Vector2& origin, const Math::Vector2& dir
                            f32 maxDistance, RayHit2D& outHit, u32 layerMask) const {
     if (!m_Initialized) return false;
 
-    Math::Vector2 dir = direction.Normalized();
+    f32 dirLen = direction.Length();
+    if (dirLen < 0.0001f) return false;  // Zero-length direction
+    Math::Vector2 dir = direction * (1.0f / dirLen);
     b2Vec2 translation = { dir.x * maxDistance, dir.y * maxDistance };
 
     b2QueryFilter filter = b2DefaultQueryFilter();
@@ -523,7 +570,9 @@ std::vector<RayHit2D> Box2DBackend::RaycastAll(const Math::Vector2& origin, cons
     std::vector<RayHit2D> hits;
     if (!m_Initialized) return hits;
 
-    Math::Vector2 dir = direction.Normalized();
+    f32 dirLen = direction.Length();
+    if (dirLen < 0.0001f) return hits;  // Zero-length direction
+    Math::Vector2 dir = direction * (1.0f / dirLen);
     b2Vec2 translation = { dir.x * maxDistance, dir.y * maxDistance };
 
     b2QueryFilter filter = b2DefaultQueryFilter();
@@ -624,6 +673,60 @@ bool Box2DBackend::OverlapBox(const Math::Vector2& center, const Math::Vector2& 
 }
 
 // ============================================================================
+// Gravity Zones
+// ============================================================================
+
+void Box2DBackend::ApplyGravityZones() {
+    auto gravityZoneEntities = m_World->GetEntitiesWithComponent<ECS::GravityZoneComponent>();
+    if (gravityZoneEntities.empty()) return;
+
+    for (auto& [entity, bodyId] : m_EntityToBody) {
+        auto* body2d = m_World->GetComponent<Body2DComponent>(entity);
+        if (!body2d || body2d->isStatic || body2d->isSensor) continue;
+
+        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+        if (!transform) continue;
+
+        // Build a Vector3 with z=0 for ContainsPoint compatibility
+        Math::Vector3 bodyPos(transform->position.x, transform->position.y, 0.0f);
+
+        // Find highest-priority active gravity zone containing this body
+        i32 bestPriority = INT_MIN;
+        Math::Vector3 customGravity;
+        bool inZone = false;
+
+        for (ECS::Entity zoneEntity : gravityZoneEntities) {
+            auto* zone = m_World->GetComponent<ECS::GravityZoneComponent>(zoneEntity);
+            auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(zoneEntity);
+            if (!zone || !zoneTransform || !zone->isActive) continue;
+            if (zone->priority <= bestPriority) continue;
+
+            Math::Vector3 zoneCenter(zoneTransform->position.x, zoneTransform->position.y, 0.0f);
+            if (zone->ContainsPoint(zoneCenter, bodyPos)) {
+                customGravity = zone->GetGravityAt(zoneCenter, bodyPos);
+                bestPriority = zone->priority;
+                inZone = true;
+            }
+        }
+
+        if (inZone) {
+            // Disable world gravity for this body
+            b2Body_SetGravityScale(bodyId, 0.0f);
+            // Apply custom gravity as a force: F = gravity * gravityScale * mass
+            f32 mass = b2Body_GetMass(bodyId);
+            if (mass > 0.0001f) {
+                b2Vec2 force = { customGravity.x * body2d->gravityScale * mass,
+                                 customGravity.y * body2d->gravityScale * mass };
+                b2Body_ApplyForceToCenter(bodyId, force, true);
+            }
+        } else {
+            // Restore the component's gravity scale
+            b2Body_SetGravityScale(bodyId, body2d->gravityScale);
+        }
+    }
+}
+
+// ============================================================================
 // Joint Synchronization
 // ============================================================================
 
@@ -687,7 +790,11 @@ void Box2DBackend::CreateJointForEntity(ECS::Entity entity) {
             def.bodyIdB = bodyB;
             def.localAnchorA = ToBox2D(joint->anchorA);
             def.localAnchorB = ToBox2D(joint->anchorB);
-            def.localAxisA = ToBox2D(joint->axis.Normalized());
+            Math::Vector2 axis = joint->axis;
+            f32 axisLen = axis.Length();
+            if (axisLen < 0.0001f) axis = Math::Vector2(1.0f, 0.0f);  // Default to X axis
+            else axis = axis * (1.0f / axisLen);
+            def.localAxisA = ToBox2D(axis);
             def.collideConnected = joint->collideConnected;
             def.enableLimit = joint->enableLimit;
             def.lowerTranslation = joint->lowerTranslation;

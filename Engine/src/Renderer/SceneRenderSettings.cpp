@@ -38,6 +38,8 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.shadowDistance       = rs->GetShadowDistance();
         s.shadowStrength       = rs->GetShadowStrength();
         s.shadowSoftness       = rs->GetShadowSoftness();
+        s.cascadeProgressiveUpdate  = rs->IsCascadeProgressiveUpdate();
+        s.cascadeFarUpdateInterval  = rs->GetCascadeFarUpdateInterval();
         s.backfaceCulling      = rs->IsBackfaceCullingEnabled();
         s.wireframe            = rs->IsWireframeEnabled();
         s.ambientIntensity     = rs->GetAmbientIntensity();
@@ -59,6 +61,15 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.globalGouraudOnly          = rs->GetGlobalGouraudOnly();
         s.globalVertexSnapResolution = rs->GetGlobalVertexSnapResolution();
 
+        // Shading Model
+        s.shadingModel = rs->GetShadingModel();
+        s.fresnelEnabled = rs->IsFresnelEnabled();
+        s.energyConservation = rs->IsEnergyConservation();
+        s.geometryTerm = rs->IsGeometryTerm();
+        s.sphereEnvMapEnabled = rs->IsSphereEnvMapEnabled();
+        s.sphereEnvStrength = rs->GetSphereEnvStrength();
+        s.posterizeLevels = rs->GetPosterizeLevels();
+
         // Cel Shading
         s.celShadingEnabled = rs->IsCelShadingEnabled();
         s.celDiffuseBands = rs->GetCelDiffuseBands();
@@ -76,6 +87,8 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
             s.rtReflectionsEnabled = rtReflect->GetConfig().enabled;
             s.rtReflectionMaxDistance = rtReflect->GetConfig().maxDistance;
             s.rtReflectionRoughnessThreshold = rtReflect->GetConfig().roughnessThreshold;
+            s.rtReflectionSDFFallback = rtReflect->GetConfig().sdfFallback;
+            s.rtReflectionSDFMaxDistance = rtReflect->GetConfig().sdfMaxDistance;
         }
         if (auto* rtAO = rs->GetRTAO()) {
             s.rtAOEnabled = rtAO->GetConfig().enabled;
@@ -91,6 +104,11 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         if (auto* pathTracer = rs->GetPathTracer()) {
             s.rtPathTracerMaxBounces = pathTracer->GetConfig().maxBounces;
             s.rtPathTracerTargetSPP = pathTracer->GetConfig().targetSPP;
+            s.rtPathTracerFireflyClamp = pathTracer->GetConfig().fireflyClampValue;
+            s.rtPathTracerNEE = pathTracer->GetConfig().enableNEE;
+            s.rtPathTracerMIS = pathTracer->GetConfig().enableMIS;
+            s.rtPathTracerRRMinBounce = pathTracer->GetConfig().russianRouletteMinBounce;
+            s.rtPathTracerRRMinProb = pathTracer->GetConfig().russianRouletteMinProb;
         }
         if (auto* denoiser = rs->GetSVGFDenoiser()) {
             s.rtDenoiserEnabled = true;
@@ -110,6 +128,9 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
     }
 
     if (pp) {
+        // HDR output
+        s.hdrOutput                    = pp->hdrOutputMode != 0;
+
         // Tone mapping
         s.toneMappingMode              = pp->toneMappingMode;
         s.exposure                     = pp->exposure;
@@ -141,11 +162,21 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.filmGrainEnabled             = pp->filmGrainEnabled != 0;
         s.filmGrainIntensity           = pp->filmGrainIntensity;
 
-        // FXAA
+        // Anti-Aliasing
+        s.aaMode                       = pp->aaMode;
         s.fxaaEnabled                  = pp->fxaaEnabled != 0;
         s.fxaaSpanMax                  = pp->fxaaSpanMax;
         s.fxaaReduceMin                = pp->fxaaReduceMin;
         s.fxaaReduceMul                = pp->fxaaReduceMul;
+        s.taaSharpness                 = pp->taaSharpness;
+        s.taaJitterScale               = pp->taaJitterScale;
+        s.taaFeedbackMin               = pp->taaFeedbackMin;
+        s.taaFeedbackMax               = pp->taaFeedbackMax;
+
+        // Temporal Upscaling
+        s.upscalerType                 = pp->upscalerType;
+        s.upscalerQuality              = pp->upscalerQuality;
+        s.upscalerSharpness            = pp->upscalerSharpness;
 
         // Retro: Dithering
         s.ditherEnabled                = pp->ditherEnabled != 0;
@@ -179,6 +210,9 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.crtMaskPitch                 = pp->crtMaskPitch;
         s.crtBloomRadius               = pp->crtBloomRadius;
         s.crtBloomStrength             = pp->crtBloomStrength;
+        s.crtBloomSigma                = pp->crtBloomSigma;
+        s.crtModelPreset               = pp->crtModelPreset;
+        s.crtTVL                       = pp->crtTVL;
 
         // VHS
         s.vhsEnabled                   = pp->vhsEnabled != 0;
@@ -276,6 +310,8 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetShadowDistance(shadowDistance);
         rs->SetShadowStrength(shadowStrength);
         rs->SetShadowSoftness(shadowSoftness);
+        rs->SetCascadeProgressiveUpdate(cascadeProgressiveUpdate);
+        rs->SetCascadeFarUpdateInterval(cascadeFarUpdateInterval);
         rs->SetBackfaceCullingEnabled(backfaceCulling);
         rs->SetWireframeEnabled(wireframe);
         rs->SetAmbientIntensity(ambientIntensity);
@@ -294,6 +330,15 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetGlobalGouraudOnly(globalGouraudOnly);
         rs->SetGlobalVertexSnapResolution(static_cast<u8>(globalVertexSnapResolution));
 
+        // Shading Model
+        rs->SetShadingModel(shadingModel);
+        rs->SetFresnelEnabled(fresnelEnabled);
+        rs->SetEnergyConservation(energyConservation);
+        rs->SetGeometryTerm(geometryTerm);
+        rs->SetSphereEnvMapEnabled(sphereEnvMapEnabled);
+        rs->SetSphereEnvStrength(sphereEnvStrength);
+        rs->SetPosterizeLevels(posterizeLevels);
+
         // Cel Shading
         rs->SetCelShadingEnabled(celShadingEnabled);
         rs->SetCelDiffuseBands(celDiffuseBands);
@@ -311,6 +356,8 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
             rtReflect->GetConfig().enabled = rtReflectionsEnabled;
             rtReflect->GetConfig().maxDistance = rtReflectionMaxDistance;
             rtReflect->GetConfig().roughnessThreshold = rtReflectionRoughnessThreshold;
+            rtReflect->GetConfig().sdfFallback = rtReflectionSDFFallback;
+            rtReflect->GetConfig().sdfMaxDistance = rtReflectionSDFMaxDistance;
         }
         if (auto* rtAO = rs->GetRTAO()) {
             rtAO->GetConfig().enabled = rtAOEnabled;
@@ -326,6 +373,11 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         if (auto* pathTracer = rs->GetPathTracer()) {
             pathTracer->GetConfig().maxBounces = rtPathTracerMaxBounces;
             pathTracer->GetConfig().targetSPP = rtPathTracerTargetSPP;
+            pathTracer->GetConfig().fireflyClampValue = rtPathTracerFireflyClamp;
+            pathTracer->GetConfig().enableNEE = rtPathTracerNEE;
+            pathTracer->GetConfig().enableMIS = rtPathTracerMIS;
+            pathTracer->GetConfig().russianRouletteMinBounce = rtPathTracerRRMinBounce;
+            pathTracer->GetConfig().russianRouletteMinProb = rtPathTracerRRMinProb;
         }
         if (auto* denoiser = rs->GetSVGFDenoiser()) {
             denoiser->GetConfig().atrousIterations = rtDenoiserIterations;
@@ -350,6 +402,9 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         u32 savedScreenH = pp->screenHeight;
         u32 savedColorblindMode = pp->colorblindMode;
         f32 savedColorblindStrength = pp->colorblindStrength;
+
+        // HDR output — mode is set by swapchain, we just store the intent
+        // (actual mode depends on display capabilities; set via swapchain toggle)
 
         // Tone mapping
         pp->toneMappingMode              = toneMappingMode;
@@ -382,11 +437,21 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         pp->filmGrainEnabled             = filmGrainEnabled ? 1 : 0;
         pp->filmGrainIntensity           = filmGrainIntensity;
 
-        // FXAA
-        pp->fxaaEnabled                  = fxaaEnabled ? 1 : 0;
+        // Anti-Aliasing
+        pp->aaMode                       = aaMode;
+        pp->fxaaEnabled                  = (aaMode == 1) ? 1 : 0;
         pp->fxaaSpanMax                  = fxaaSpanMax;
         pp->fxaaReduceMin                = fxaaReduceMin;
         pp->fxaaReduceMul                = fxaaReduceMul;
+        pp->taaSharpness                 = taaSharpness;
+        pp->taaJitterScale               = taaJitterScale;
+        pp->taaFeedbackMin               = taaFeedbackMin;
+        pp->taaFeedbackMax               = taaFeedbackMax;
+
+        // Temporal Upscaling
+        pp->upscalerType                 = upscalerType;
+        pp->upscalerQuality              = upscalerQuality;
+        pp->upscalerSharpness            = upscalerSharpness;
 
         // Retro: Dithering
         pp->ditherEnabled                = ditherEnabled ? 1 : 0;
@@ -420,6 +485,9 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         pp->crtMaskPitch                 = crtMaskPitch;
         pp->crtBloomRadius               = crtBloomRadius;
         pp->crtBloomStrength             = crtBloomStrength;
+        pp->crtBloomSigma                = crtBloomSigma;
+        pp->crtModelPreset               = crtModelPreset;
+        pp->crtTVL                       = crtTVL;
 
         // VHS
         pp->vhsEnabled                   = vhsEnabled ? 1 : 0;
@@ -543,6 +611,8 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["shadowDistance"]    = RF(s.shadowDistance);
     j["shadowStrength"]    = RF(s.shadowStrength);
     j["shadowSoftness"]    = RF(s.shadowSoftness);
+    j["cascadeProgressiveUpdate"] = s.cascadeProgressiveUpdate;
+    j["cascadeFarUpdateInterval"] = s.cascadeFarUpdateInterval;
     j["backfaceCulling"]   = s.backfaceCulling;
     j["wireframe"]         = s.wireframe;
     j["ambientIntensity"]  = RF(s.ambientIntensity);
@@ -555,6 +625,9 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["snowIntensity"]     = RF(s.snowIntensity);
     j["worldCurvature"]    = RF(s.worldCurvature);
     j["rainActive"]        = s.rainActive;
+
+    // HDR output
+    j["hdrOutput"]         = s.hdrOutput;
 
     // Tone mapping
     j["toneMappingMode"]   = s.toneMappingMode;
@@ -587,11 +660,21 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["filmGrainEnabled"]    = s.filmGrainEnabled;
     j["filmGrainIntensity"]  = RF(s.filmGrainIntensity);
 
-    // FXAA
+    // Anti-Aliasing
+    j["aaMode"]            = s.aaMode;
     j["fxaaEnabled"]       = s.fxaaEnabled;
     j["fxaaSpanMax"]       = RF(s.fxaaSpanMax);
     j["fxaaReduceMin"]     = RF(s.fxaaReduceMin);
     j["fxaaReduceMul"]     = RF(s.fxaaReduceMul);
+    j["taaSharpness"]      = RF(s.taaSharpness);
+    j["taaJitterScale"]    = RF(s.taaJitterScale);
+    j["taaFeedbackMin"]    = RF(s.taaFeedbackMin);
+    j["taaFeedbackMax"]    = RF(s.taaFeedbackMax);
+
+    // Temporal Upscaling
+    j["upscalerType"]      = s.upscalerType;
+    j["upscalerQuality"]   = s.upscalerQuality;
+    j["upscalerSharpness"] = RF(s.upscalerSharpness);
 
     // Retro: Dithering
     j["ditherEnabled"]     = s.ditherEnabled;
@@ -625,6 +708,9 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["crtMaskPitch"]        = RF(s.crtMaskPitch);
     j["crtBloomRadius"]      = RF(s.crtBloomRadius);
     j["crtBloomStrength"]    = RF(s.crtBloomStrength);
+    j["crtBloomSigma"]       = RF(s.crtBloomSigma);
+    j["crtModelPreset"]      = RF(s.crtModelPreset);
+    j["crtTVL"]              = RF(s.crtTVL);
 
     // VHS
     j["vhsEnabled"]            = s.vhsEnabled;
@@ -678,6 +764,17 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["tiltShiftBandWidth"]    = RF(s.tiltShiftBandWidth);
     j["tiltShiftBlurAmount"]   = RF(s.tiltShiftBlurAmount);
 
+    // Shading Model
+    j["shadingModel"]          = s.shadingModel;
+    j["fresnelEnabled"]        = s.fresnelEnabled;
+    j["energyConservation"]    = s.energyConservation;
+    j["geometryTerm"]          = s.geometryTerm;
+
+    // Dreamcast-style effects
+    j["sphereEnvMapEnabled"]   = s.sphereEnvMapEnabled;
+    j["sphereEnvStrength"]     = RF(s.sphereEnvStrength);
+    j["posterizeLevels"]       = RF(s.posterizeLevels);
+
     // Cel Shading
     j["celShadingEnabled"]     = s.celShadingEnabled;
     j["celDiffuseBands"]       = s.celDiffuseBands;
@@ -724,6 +821,8 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["rtReflectionsEnabled"]          = s.rtReflectionsEnabled;
     j["rtReflectionMaxDistance"]       = RF(s.rtReflectionMaxDistance);
     j["rtReflectionRoughnessThreshold"] = RF(s.rtReflectionRoughnessThreshold);
+    j["rtReflectionSDFFallback"]       = s.rtReflectionSDFFallback;
+    j["rtReflectionSDFMaxDistance"]     = RF(s.rtReflectionSDFMaxDistance);
     j["rtAOEnabled"]                   = s.rtAOEnabled;
     j["rtAORadius"]                    = RF(s.rtAORadius);
     j["rtAOPower"]                     = RF(s.rtAOPower);
@@ -733,6 +832,13 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["rtGIBounces"]                   = s.rtGIBounces;
     j["rtPathTracerMaxBounces"]        = s.rtPathTracerMaxBounces;
     j["rtPathTracerTargetSPP"]         = s.rtPathTracerTargetSPP;
+    j["rtPathTracerFireflyClamp"]      = RF(s.rtPathTracerFireflyClamp);
+    j["rtPathTracerNEE"]               = s.rtPathTracerNEE;
+    j["rtPathTracerMIS"]               = s.rtPathTracerMIS;
+    j["rtPathTracerRRMinBounce"]       = RF(s.rtPathTracerRRMinBounce);
+    j["rtPathTracerRRMinProb"]         = RF(s.rtPathTracerRRMinProb);
+    j["rtSimplifiedMaterials"]         = s.rtSimplifiedMaterials;
+    j["rtSimplifyAfterBounce"]         = s.rtSimplifyAfterBounce;
     j["rtDenoiserEnabled"]             = s.rtDenoiserEnabled;
     j["rtDenoiserType"]                = s.rtDenoiserType;
     j["rtDenoiserIterations"]          = s.rtDenoiserIterations;
@@ -757,6 +863,8 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("shadowDistance"))   s.shadowDistance     = j["shadowDistance"].get<f32>();
     if (j.contains("shadowStrength"))   s.shadowStrength     = j["shadowStrength"].get<f32>();
     if (j.contains("shadowSoftness"))   s.shadowSoftness     = j["shadowSoftness"].get<f32>();
+    if (j.contains("cascadeProgressiveUpdate")) s.cascadeProgressiveUpdate = JB(j["cascadeProgressiveUpdate"]);
+    if (j.contains("cascadeFarUpdateInterval")) s.cascadeFarUpdateInterval = std::clamp(j["cascadeFarUpdateInterval"].get<u32>(), 2u, 8u);
     if (j.contains("backfaceCulling"))   s.backfaceCulling   = JB(j["backfaceCulling"]);
     if (j.contains("wireframe"))         s.wireframe         = JB(j["wireframe"]);
     if (j.contains("ambientIntensity"))  s.ambientIntensity  = j["ambientIntensity"].get<f32>();
@@ -769,6 +877,9 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("snowIntensity"))     s.snowIntensity     = j["snowIntensity"].get<f32>();
     if (j.contains("worldCurvature"))    s.worldCurvature    = j["worldCurvature"].get<f32>();
     if (j.contains("rainActive"))        s.rainActive        = JB(j["rainActive"]);
+
+    // HDR output
+    if (j.contains("hdrOutput"))         s.hdrOutput         = JB(j["hdrOutput"]);
 
     // Tone mapping
     if (j.contains("toneMappingMode"))   s.toneMappingMode   = j["toneMappingMode"].get<u32>();
@@ -801,11 +912,21 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("filmGrainEnabled"))    s.filmGrainEnabled    = JB(j["filmGrainEnabled"]);
     if (j.contains("filmGrainIntensity"))  s.filmGrainIntensity  = j["filmGrainIntensity"].get<f32>();
 
-    // FXAA
+    // Anti-Aliasing
+    if (j.contains("aaMode"))            s.aaMode            = j["aaMode"].get<u32>();
     if (j.contains("fxaaEnabled"))       s.fxaaEnabled       = JB(j["fxaaEnabled"]);
     if (j.contains("fxaaSpanMax"))       s.fxaaSpanMax       = j["fxaaSpanMax"].get<f32>();
     if (j.contains("fxaaReduceMin"))     s.fxaaReduceMin     = j["fxaaReduceMin"].get<f32>();
     if (j.contains("fxaaReduceMul"))     s.fxaaReduceMul     = j["fxaaReduceMul"].get<f32>();
+    if (j.contains("taaSharpness"))      s.taaSharpness      = j["taaSharpness"].get<f32>();
+    if (j.contains("taaJitterScale"))    s.taaJitterScale    = j["taaJitterScale"].get<f32>();
+    if (j.contains("taaFeedbackMin"))    s.taaFeedbackMin    = j["taaFeedbackMin"].get<f32>();
+    if (j.contains("taaFeedbackMax"))    s.taaFeedbackMax    = j["taaFeedbackMax"].get<f32>();
+
+    // Temporal Upscaling
+    if (j.contains("upscalerType"))      s.upscalerType      = j["upscalerType"].get<u32>();
+    if (j.contains("upscalerQuality"))   s.upscalerQuality   = j["upscalerQuality"].get<u32>();
+    if (j.contains("upscalerSharpness")) s.upscalerSharpness = j["upscalerSharpness"].get<f32>();
 
     // Retro: Dithering
     if (j.contains("ditherEnabled"))     s.ditherEnabled     = JB(j["ditherEnabled"]);
@@ -839,6 +960,9 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("crtMaskPitch"))        s.crtMaskPitch        = j["crtMaskPitch"].get<f32>();
     if (j.contains("crtBloomRadius"))      s.crtBloomRadius      = j["crtBloomRadius"].get<f32>();
     if (j.contains("crtBloomStrength"))    s.crtBloomStrength    = j["crtBloomStrength"].get<f32>();
+    if (j.contains("crtBloomSigma"))       s.crtBloomSigma       = j["crtBloomSigma"].get<f32>();
+    if (j.contains("crtModelPreset"))      s.crtModelPreset      = j["crtModelPreset"].get<f32>();
+    if (j.contains("crtTVL"))              s.crtTVL              = j["crtTVL"].get<f32>();
 
     // VHS
     if (j.contains("vhsEnabled"))            s.vhsEnabled            = JB(j["vhsEnabled"]);
@@ -893,6 +1017,17 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("tiltShiftBandWidth"))    s.tiltShiftBandWidth    = j["tiltShiftBandWidth"].get<f32>();
     if (j.contains("tiltShiftBlurAmount"))   s.tiltShiftBlurAmount   = j["tiltShiftBlurAmount"].get<f32>();
 
+    // Shading Model
+    if (j.contains("shadingModel"))          s.shadingModel          = j["shadingModel"].get<u32>();
+    if (j.contains("fresnelEnabled"))        s.fresnelEnabled        = JB(j["fresnelEnabled"]);
+    if (j.contains("energyConservation"))    s.energyConservation    = JB(j["energyConservation"]);
+    if (j.contains("geometryTerm"))          s.geometryTerm          = JB(j["geometryTerm"]);
+
+    // Dreamcast-style effects
+    if (j.contains("sphereEnvMapEnabled"))   s.sphereEnvMapEnabled   = JB(j["sphereEnvMapEnabled"]);
+    if (j.contains("sphereEnvStrength"))     s.sphereEnvStrength     = j["sphereEnvStrength"].get<f32>();
+    if (j.contains("posterizeLevels"))       s.posterizeLevels       = j["posterizeLevels"].get<f32>();
+
     // Cel Shading
     if (j.contains("celShadingEnabled"))     s.celShadingEnabled     = JB(j["celShadingEnabled"]);
     if (j.contains("celDiffuseBands"))       s.celDiffuseBands       = j["celDiffuseBands"].get<f32>();
@@ -939,6 +1074,8 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("rtReflectionsEnabled"))            s.rtReflectionsEnabled            = JB(j["rtReflectionsEnabled"]);
     if (j.contains("rtReflectionMaxDistance"))         s.rtReflectionMaxDistance         = j["rtReflectionMaxDistance"].get<f32>();
     if (j.contains("rtReflectionRoughnessThreshold")) s.rtReflectionRoughnessThreshold = j["rtReflectionRoughnessThreshold"].get<f32>();
+    if (j.contains("rtReflectionSDFFallback"))         s.rtReflectionSDFFallback         = JB(j["rtReflectionSDFFallback"]);
+    if (j.contains("rtReflectionSDFMaxDistance"))       s.rtReflectionSDFMaxDistance       = j["rtReflectionSDFMaxDistance"].get<f32>();
     if (j.contains("rtAOEnabled"))                    s.rtAOEnabled                    = JB(j["rtAOEnabled"]);
     if (j.contains("rtAORadius"))                     s.rtAORadius                     = j["rtAORadius"].get<f32>();
     if (j.contains("rtAOPower"))                      s.rtAOPower                      = j["rtAOPower"].get<f32>();
@@ -948,6 +1085,13 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("rtGIBounces"))                    s.rtGIBounces                    = j["rtGIBounces"].get<u32>();
     if (j.contains("rtPathTracerMaxBounces"))         s.rtPathTracerMaxBounces         = j["rtPathTracerMaxBounces"].get<u32>();
     if (j.contains("rtPathTracerTargetSPP"))          s.rtPathTracerTargetSPP          = j["rtPathTracerTargetSPP"].get<u32>();
+    if (j.contains("rtPathTracerFireflyClamp"))       s.rtPathTracerFireflyClamp       = j["rtPathTracerFireflyClamp"].get<f32>();
+    if (j.contains("rtPathTracerNEE"))                s.rtPathTracerNEE                = JB(j["rtPathTracerNEE"]);
+    if (j.contains("rtPathTracerMIS"))                s.rtPathTracerMIS                = JB(j["rtPathTracerMIS"]);
+    if (j.contains("rtPathTracerRRMinBounce"))        s.rtPathTracerRRMinBounce        = j["rtPathTracerRRMinBounce"].get<f32>();
+    if (j.contains("rtPathTracerRRMinProb"))          s.rtPathTracerRRMinProb          = j["rtPathTracerRRMinProb"].get<f32>();
+    if (j.contains("rtSimplifiedMaterials"))          s.rtSimplifiedMaterials          = JB(j["rtSimplifiedMaterials"]);
+    if (j.contains("rtSimplifyAfterBounce"))          s.rtSimplifyAfterBounce          = j["rtSimplifyAfterBounce"].get<u32>();
     if (j.contains("rtDenoiserEnabled"))              s.rtDenoiserEnabled              = JB(j["rtDenoiserEnabled"]);
     if (j.contains("rtDenoiserType"))                 s.rtDenoiserType                 = j["rtDenoiserType"].get<u32>();
     if (j.contains("rtDenoiserIterations"))           s.rtDenoiserIterations           = j["rtDenoiserIterations"].get<u32>();

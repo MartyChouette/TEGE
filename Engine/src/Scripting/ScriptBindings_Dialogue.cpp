@@ -3,6 +3,7 @@
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Systems/DialogueSystem.h"
+#include "Enjin/Logging/Log.h"
 #include <angelscript.h>
 #include <cassert>
 #include <string>
@@ -11,7 +12,7 @@ using namespace Enjin;
 using namespace Enjin::ECS;
 
 #define AS_CHECK(expr) \
-    do { int _r = (expr); assert(_r >= 0); (void)_r; } while(0)
+    do { int _r = (expr); if (_r < 0) { ENJIN_LOG_ERROR(Script, "AS registration failed (code %d) at %s:%d", _r, __FILE__, __LINE__); } } while(0)
 
 extern ECS::World* s_BindingsWorld;
 static ECS::DialogueSystem* s_BindingsDialogueSystem = nullptr;

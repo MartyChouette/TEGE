@@ -27,6 +27,8 @@ struct SceneRenderSettings {
     f32 shadowDistance = 100.0f;    // Max shadow distance
     f32 shadowStrength = 1.0f;     // 0..1
     f32 shadowSoftness = 0.0f;     // 0 = hard, 1-5 = soft (Poisson disk texel radius)
+    bool cascadeProgressiveUpdate = false;  // Far CSM cascades update every N frames
+    u32 cascadeFarUpdateInterval = 2;       // Far cascade update frequency (2-8)
     bool backfaceCulling = false;
     bool wireframe = false;
     f32 ambientIntensity = 1.0f;
@@ -41,6 +43,9 @@ struct SceneRenderSettings {
     bool rainActive = false;
 
     // --- PostProcessSettings fields ---
+    // HDR output
+    bool hdrOutput = false;        // Enable HDR swapchain output
+
     // Tone mapping
     u32 toneMappingMode = 0;
     f32 exposure = 1.0f;
@@ -72,11 +77,25 @@ struct SceneRenderSettings {
     bool filmGrainEnabled = false;
     f32 filmGrainIntensity = 0.05f;
 
+    // Anti-Aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA
+    u32 aaMode = 1;  // Default: FXAA
+
     // FXAA
     bool fxaaEnabled = true;
     f32 fxaaSpanMax = 8.0f;
     f32 fxaaReduceMin = 1.0f / 128.0f;
     f32 fxaaReduceMul = 1.0f / 8.0f;
+
+    // TAA (Temporal Anti-Aliasing)
+    f32 taaSharpness = 0.1f;       // Sharpening strength applied after TAA resolve (0 = off)
+    f32 taaJitterScale = 1.0f;     // Jitter magnitude multiplier (1.0 = standard Halton)
+    f32 taaFeedbackMin = 0.88f;    // Min history blend weight (low = more responsive, more flicker)
+    f32 taaFeedbackMax = 0.97f;    // Max history blend weight (high = smoother, more ghosting)
+
+    // Temporal Upscaling (FSR 2 / DLSS / XeSS — replaces TAA when active)
+    u32 upscalerType = 0;             // 0=None, 1=FSR2, 2=DLSS, 3=XeSS
+    u32 upscalerQuality = 2;          // 0=Performance, 1=Balanced, 2=Quality, 3=UltraQuality
+    f32 upscalerSharpness = 0.0f;     // Additional sharpening (0 = upscaler default)
 
     // Retro: Dithering
     bool ditherEnabled = false;
@@ -110,6 +129,9 @@ struct SceneRenderSettings {
     f32 crtMaskPitch = 1.0f;
     f32 crtBloomRadius = 1.5f;
     f32 crtBloomStrength = 0.3f;
+    f32 crtBloomSigma = 0.8f;
+    f32 crtModelPreset = 0.0f;
+    f32 crtTVL = 400.0f;
 
     // VHS filter
     bool vhsEnabled = false;
@@ -162,6 +184,17 @@ struct SceneRenderSettings {
     f32 tiltShiftFocusY = 0.5f;
     f32 tiltShiftBandWidth = 0.3f;
     f32 tiltShiftBlurAmount = 3.0f;
+
+    // --- Shading Model ---
+    u32 shadingModel = 0;              // 0=Blinn-Phong, 1=PBR (GGX)
+    bool fresnelEnabled = false;       // Fresnel-Schlick edge reflections
+    bool energyConservation = false;   // Diffuse/specular energy balance
+    bool geometryTerm = false;         // Smith GGX microfacet self-shadowing
+
+    // --- Dreamcast-style effects ---
+    bool sphereEnvMapEnabled = false;  // Spherical environment mapping (matcap sheen)
+    f32 sphereEnvStrength = 0.5f;      // Intensity of sphere env contribution
+    f32 posterizeLevels = 0.0f;        // 0=disabled, 4-256=color levels per channel
 
     // --- Cel Shading ---
     bool celShadingEnabled = false;
@@ -222,6 +255,8 @@ struct SceneRenderSettings {
     bool rtReflectionsEnabled = true;
     f32 rtReflectionMaxDistance = 50.0f;
     f32 rtReflectionRoughnessThreshold = 0.5f;
+    bool rtReflectionSDFFallback = true;
+    f32 rtReflectionSDFMaxDistance = 500.0f;
 
     // RT Ambient Occlusion
     bool rtAOEnabled = true;
@@ -237,6 +272,15 @@ struct SceneRenderSettings {
     // Path Tracer
     u32 rtPathTracerMaxBounces = 4;
     u32 rtPathTracerTargetSPP = 1024;
+    f32 rtPathTracerFireflyClamp = 10.0f;  // Max radiance per sample
+    bool rtPathTracerNEE = true;           // Next Event Estimation
+    bool rtPathTracerMIS = true;           // Multiple Importance Sampling
+    f32 rtPathTracerRRMinBounce = 3.0f;    // Russian Roulette min bounce
+    f32 rtPathTracerRRMinProb = 0.05f;     // Russian Roulette min survival probability
+
+    // Simplified RT Materials (pre-baked to reduce hit shader divergence)
+    bool rtSimplifiedMaterials = true;
+    u32 rtSimplifyAfterBounce = 1;  // Simplify material evaluation after this bounce depth
 
     // Denoiser
     bool rtDenoiserEnabled = true;

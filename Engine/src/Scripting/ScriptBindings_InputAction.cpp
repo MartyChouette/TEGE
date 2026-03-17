@@ -2,6 +2,7 @@
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/Logging/Log.h"
 #include <angelscript.h>
 #include <cassert>
 #include <string>
@@ -9,7 +10,7 @@
 using namespace Enjin;
 
 #define AS_CHECK(expr) \
-    do { int _r = (expr); assert(_r >= 0); (void)_r; } while(0)
+    do { int _r = (expr); if (_r < 0) { ENJIN_LOG_ERROR(Script, "AS registration failed (code %d) at %s:%d", _r, __FILE__, __LINE__); } } while(0)
 
 static InputSystem::InputActionMap* s_BindingsInputActionMap = nullptr;
 
@@ -156,7 +157,7 @@ void RegisterInputActionBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("bool InputAction_IsPressed(int action)", asFUNCTION(Input_IsActionPressed), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool InputAction_IsReleased(int action)", asFUNCTION(Input_IsActionReleased), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float InputAction_GetValue(int action)", asFUNCTION(Input_GetActionValue), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("Vec2 InputAction_GetMovement()", asFUNCTION(Input_GetMovementVector), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector2 InputAction_GetMovement()", asFUNCTION(Input_GetMovementVector), asCALL_CDECL));
 
     // Sensitivity
     AS_CHECK(engine->RegisterGlobalFunction("void InputAction_SetSensitivity(int action, float sensitivity)", asFUNCTION(Input_SetSensitivity), asCALL_CDECL));

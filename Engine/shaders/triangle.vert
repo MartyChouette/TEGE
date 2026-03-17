@@ -31,6 +31,8 @@ layout(push_constant) uniform PushConstants {
 layout(binding = 0) uniform UniformBufferObject {
     mat4 view;
     mat4 proj;
+    mat4 prevViewProj;   // Previous frame's view*proj for velocity computation
+    vec4 jitterOffset;   // xy = current jitter (NDC), zw = previous jitter
 } ubo;
 
 // Access lighting UBO for wind data and cascade matrices
@@ -52,7 +54,12 @@ layout(binding = 1) uniform LightingUBO {
     float shadowMaxDistance;
     int pointShadowCount;
     int spotShadowCount;
-    vec2 _pointSpotPad;
+    float celDiffuseBands;
+    float celSpecularCutoff;
+    uint shadingFlags;
+    float sphereEnvStrength;
+    float posterizeLevels;
+    float _padShading1;
     vec4 windData;  // xyz = wind direction * strength, w = time
     vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
@@ -81,7 +88,9 @@ struct ObjectData {
     float alphaCutoff;
     int flags;
     float parallaxScale;
-    float _objPad[3];
+    uint teleported;       // 1 = network snap/spawn (zero velocity), 0 = normal
+    float _objPad[2];
+    mat4 prevModel;        // Previous frame model matrix for velocity
 };
 layout(std430, binding = 13) readonly buffer ObjectDataSSBO {
     ObjectData objectData[];
@@ -94,6 +103,8 @@ layout(location = 3) out float fragViewDepth;  // View-space depth for cascade s
 layout(location = 4) out vec4 fragVertColor;
 layout(location = 5) out float fragClipW;
 layout(location = 6) out vec4 fragTangent;
+layout(location = 7) out vec4 fragCurClipPos;  // Current clip position (for velocity)
+layout(location = 8) out vec4 fragPrevClipPos; // Previous frame clip position (for velocity)
 
 // Flag bits (must match C++ Material.h and RenderSystem.cpp)
 #define FLAG_SKINNED          (1 << 3)
@@ -237,4 +248,12 @@ void main() {
 
     // Calculate view-space depth for cascaded shadow map selection
     fragViewDepth = -(ubo.view * worldPos).z;  // Positive distance from camera
+
+    // Per-pixel velocity: pass current and previous clip positions to fragment shader.
+    // Previous position uses current skinned position with previous frame's matrices.
+    // This captures camera motion, object motion, and approximates skeletal motion.
+    fragCurClipPos = clipPos;
+    vec4 prevWorldPos = pushConstants.model * vec4(skinnedPos, 1.0);  // fallback: current model
+    // TODO: use prevModel from ObjectData SSBO when indirect draws populate it
+    fragPrevClipPos = ubo.prevViewProj * prevWorldPos;
 }

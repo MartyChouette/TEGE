@@ -1,7 +1,7 @@
 # Enjin Engine -- Comprehensive Technical Analysis
 
-*Analysis Date: 2026-02-17*
-*Engine Version: Pre-release (Active Development)*
+*Analysis Date: 2026-03-16*
+*Engine Version: Beta 0.8 (Active Development)*
 *Language: C++20 | Graphics API: Vulkan | Build System: CMake*
 
 ---
@@ -18,6 +18,7 @@
 8. [Performance Diagnostics Summary](#8-performance-diagnostics-summary)
 9. [Technical Debt Assessment](#9-technical-debt-assessment)
 10. [Feature Dependency Graph](#10-feature-dependency-graph)
+11. [Rendering Pipeline Roadmap](#11-rendering-pipeline-roadmap)
 
 ---
 
@@ -50,8 +51,8 @@ graph TB
         VulkanRenderer["VulkanRenderer<br/>(Swapchain, Frame Sync)"]
         VulkanPipeline["VulkanPipeline<br/>(Graphics Pipeline,<br/>Descriptor Sets)"]
         VulkanBuffer["VulkanBuffer<br/>(Vertex, Index, Uniform,<br/>Storage Buffers)"]
-        RenderSystem["RenderSystem<br/>(Entity Rendering,<br/>Material Sort, Caching)"]
-        PostProcessing["PostProcessing<br/>(Bloom, Vignette, FXAA,<br/>DoF, Tilt-Shift, Film Grain,<br/>Color Grading, Stipple/Dither,<br/>SSAO, God Rays, Contact<br/>Shadows, Caustics, Fog Shafts)"]
+        RenderSystem["RenderSystem<br/>(Entity Rendering,<br/>Material Sort, Caching,<br/>GPU HiZ Culling,<br/>Clustered Lighting)"]
+        PostProcessing["PostProcessing<br/>(Bloom, Vignette, FXAA, TAA,<br/>DoF, Tilt-Shift, Film Grain,<br/>Color Grading, Stipple/Dither,<br/>SSAO, God Rays, Contact<br/>Shadows, Caustics, Fog Shafts)"]
         ShadowSystem["Shadow System<br/>(4-Cascade CSM, Point<br/>Cubemap, Spot 2D Array)"]
         SpriteBatch["SpriteBatchRenderer<br/>(GPU Instanced)"]
         SpriteAtlas["SpriteTextureAtlas<br/>(4096x4096 Shelf-Pack)"]
@@ -67,9 +68,12 @@ graph TB
             RTReflections["RTReflections (RGBA16F)"]
             RTAO["RTAO (R16F)"]
             RTGI["RTGI (RGBA16F)"]
+            MotionVectors["MotionVectors<br/>(RG16F MRT, Binding 4)"]
+            MaterialSSBO["Material SSBO<br/>(Hit Shader, Binding 9)"]
             PathTracer["PathTracer<br/>(Progressive Accumulation)"]
             SVGFDenoiser["SVGFDenoiser<br/>(3-Pass Compute)"]
             OIDNDenoiser["OIDNDenoiser<br/>(Intel Neural Denoise)"]
+            OptiXDenoiser["OptiXDenoiser<br/>(CUDA Interop)"]
             RTCompositor["RTCompositor<br/>(Fullscreen Compute)"]
         end
 
@@ -81,6 +85,14 @@ graph TB
             VXGI["Voxel Cone Tracing<br/>(Diffuse/Specular GI)"]
             NonEuclidean["Non-Euclidean Geometry<br/>(Portal, Hyperbolic,<br/>Spherical, Toroidal)"]
             Metaballs["Metaball Rendering<br/>(Marching Cubes)"]
+            ClusteredLighting["Clustered Forward Lighting<br/>(16x9x24 Grid,<br/>1024 Max Lights)"]
+            GPUCulling["GPU Two-Phase HiZ<br/>Occlusion Culling"]
+        end
+
+        subgraph OptionalPipelines["Optional Pipelines (CMake Flags)"]
+            VRS["Variable Rate Shading<br/>(VK_KHR_fragment_shading_rate)"]
+            VirtualTex["Virtual Texturing<br/>(Page-Based Streaming,<br/>Feedback Buffer)"]
+            VisibilityBuf["Visibility Buffer<br/>(Deferred Material Resolve)"]
         end
     end
 
@@ -110,13 +122,13 @@ graph TB
         IPhysicsBackend2D["IPhysicsBackend2D<br/>(Abstract 2D Interface)"]
         JoltBackend["JoltBackend<br/>(Jolt v5.2.0, Multi-threaded,<br/>CCD, 6 Joint Types)"]
         Box2DBackend["Box2DBackend<br/>(Box2D v3.0.0, Sub-stepping,<br/>5 Joint Types, CCD)"]
-        SimplePhysics["SimplePhysics<br/>(Legacy, Compile-Guarded)"]
-        PhysicsFactory["PhysicsBackendFactory<br/>(Auto/Jolt/Box2D/Simple)"]
+        PhysicsFactory["PhysicsBackendFactory<br/>(Auto/Jolt/Box2D)"]
         SpatialHash["SpatialHashGrid<br/>(Broad-Phase O(N) vs O(N^2))"]
     end
 
     subgraph AudioLayer["Audio"]
         SimpleAudio["SimpleAudio<br/>(miniaudio Backend)"]
+        SteamAudio["SteamAudioProcessor<br/>(HRTF Binaural Rendering,<br/>Occlusion + Transmission,<br/>Geometry-Aware 3D)"]
         Audio3D["3D Spatialization"]
         AudioMixing["Multi-Channel Mixing"]
         MIDIInput["MIDI Input<br/>(WinMM, 12 AS Bindings)"]
@@ -223,7 +235,7 @@ graph TB
         Window["Window (GLFW)"]
         Input["Input System"]
         MathLib["Math Library<br/>(Vector, Matrix, Quaternion,<br/>Spline, Noise)"]
-        Memory["Memory Allocators<br/>(Stack, Pool, Linear)"]
+        Memory["Memory Allocators<br/>(Stack, Pool, Linear,<br/>Frame)"]
         Logging["Logging<br/>(Thread-Safe, Categorized)"]
         Platform["Platform Abstraction<br/>(PlatformTarget)"]
         Types["Type Aliases<br/>(u8-u64, i8-i64, f32/f64)"]
@@ -263,6 +275,11 @@ graph TB
     RenderSystem --> ParticleRenderer
     RenderSystem --> Skybox
     RenderSystem --> SHProbes
+    RenderSystem --> ClusteredLighting
+    RenderSystem --> GPUCulling
+    VulkanContext --> VRS
+    VulkanContext --> VirtualTex
+    VulkanContext --> VisibilityBuf
     VulkanPipeline --> VulkanContext
     VulkanBuffer --> VulkanContext
     VulkanRenderer --> VulkanContext
@@ -284,10 +301,9 @@ graph TB
     SVGFDenoiser --> RTCompositor
     OIDNDenoiser --> RTCompositor
 
-    %% Physics
+    %% Physics (SimplePhysics removed Feb 2026)
     PhysicsFactory --> JoltBackend
     PhysicsFactory --> Box2DBackend
-    PhysicsFactory --> SimplePhysics
     JoltBackend --> IPhysicsBackend
     Box2DBackend --> IPhysicsBackend2D
     ControllerSystem --> IPhysicsBackend
@@ -325,9 +341,11 @@ graph TB
 ### Architectural Highlights
 
 - **Strict layering**: Core has zero Engine dependencies. Engine never references Editor or Player.
-- **Physics abstraction**: `IPhysicsBackend` / `IPhysicsBackend2D` interfaces allow swapping Jolt, Box2D, or SimplePhysics at runtime via `PhysicsBackendFactory`.
-- **Thread safety**: ECS World uses recursive mutex for structural operations; entity destruction is deferred and flushed at frame start.
-- **Compile guards**: SimplePhysics can be entirely compiled out via `ENJIN_PHYSICS_SIMPLE=OFF`.
+- **Physics abstraction**: `IPhysicsBackend` / `IPhysicsBackend2D` interfaces allow swapping Jolt or Box2D at runtime via `PhysicsBackendFactory`. The legacy SimplePhysics backend was removed entirely in Feb 2026, eliminating technical debt.
+- **Thread safety**: ECS World uses recursive mutex for structural operations; entity destruction is deferred and flushed at frame start. O(1) entity validation via `unordered_set` (Feb 2026 ECS audit).
+- **Spatial audio pipeline**: Steam Audio HRTF binaural rendering with geometry-aware occlusion and transmission, layered on top of the miniaudio backend.
+- **Hardened codebase**: 10+ audit rounds, 205+ findings fixed across Vulkan renderer, ECS, serialization, physics, and scripting subsystems. All VkResult calls checked; null guards on all physics/audio paths.
+- **Test infrastructure**: 55 test executables (51 unit + 4 integration) organized into `Tests/Unit/` and `Tests/Integration/` with a shared `EnjinTest.h` framework.
 
 ---
 
@@ -349,6 +367,8 @@ This matrix compares Enjin's current feature set against five established game e
 | **PBR Materials** | Full | Full | Full | Full | None | None |
 | **Ray Tracing** | Full | Full | None | Full | None | None |
 | **Post-Processing** | Full | Full | Full | Full | Basic | Basic |
+| **Anti-Aliasing (FXAA/TAA)** | Full | Full | Full | Full | None | None |
+| **Upscaling (DLSS/FSR/XeSS)** | Stub | Full | None | Full | None | None |
 | **Shadows (CSM/Point/Spot)** | Full | Full | Full | Full | None | None |
 | **Sprite Batching/Atlas** | Full | Full | Full | Partial | Full | Full |
 | **Skeletal Animation** | Full | Full | Full | Full | Basic | None |
@@ -397,19 +417,23 @@ This matrix compares Enjin's current feature set against five established game e
 | **Retro/CRT Effects** | Full | Basic | None | None | None | None |
 | **Flash/SWF Import** | Full | None | None | None | None | None |
 | **Newgrounds Integration** | Full | None | None | None | None | None |
+| **HRTF Binaural Audio** | Full | Partial | None | Full | None | None |
+| **Audio Occlusion/Transmission** | Full | Partial | None | Full | None | None |
+| **Sprite Normal Map Lighting** | Full | Full | Full | N/A | None | None |
+| **Automated Test Suite (55 CTest)** | Full | Full | Partial | Full | None | None |
 
 ### Summary by Engine
 
 | Engine | Full | Partial | Basic | Stub | None |
 |--------|------|---------|-------|------|------|
-| **Enjin** | 49 | 1 | 1 | 1 | 1 |
-| **Unity** | 37 | 7 | 2 | 0 | 7 |
-| **Godot** | 31 | 10 | 1 | 0 | 11 |
-| **Unreal** | 38 | 6 | 0 | 0 | 9 |
-| **GameMaker** | 14 | 5 | 9 | 0 | 24 |
-| **Construct** | 13 | 9 | 5 | 0 | 25 |
+| **Enjin** | 54 | 1 | 1 | 2 | 1 |
+| **Unity** | 39 | 7 | 2 | 0 | 7 |
+| **Godot** | 32 | 10 | 1 | 0 | 12 |
+| **Unreal** | 40 | 6 | 0 | 0 | 9 |
+| **GameMaker** | 14 | 5 | 9 | 0 | 26 |
+| **Construct** | 13 | 9 | 5 | 0 | 27 |
 
-Enjin achieves surprisingly broad feature coverage for a single-developer engine. Its main gaps are mobile platform support and console certification (which require licensed devkits and partnership agreements).
+Enjin achieves surprisingly broad feature coverage for a single-developer engine, now including Steam Audio HRTF spatial audio, sprite normal map lighting, and a 55-executable automated test suite. Its main gaps are mobile platform support and console certification (which require licensed devkits and partnership agreements).
 
 ---
 
@@ -499,6 +523,39 @@ gantt
     Networking Security (HMAC-SHA256)           :done, q4, 2026-02-16, 2026-02-17
     5+ Security/Stability Audit Rounds          :done, q5, 2026-02-11, 2026-02-17
 
+    section Hardening & Audio (Week 12)
+    SimplePhysics Legacy Backend Removed        :done, h1, 2026-02-18, 2026-02-18
+    Steam Audio HRTF Phase 1 (Binaural)         :done, h2, 2026-02-18, 2026-02-18
+    Steam Audio Phase 2 (Occlusion/Transmission):done, h3, 2026-02-18, 2026-02-18
+    ECS Tier 1 Audit (O(1) Validation, 40 Tests):done, h4, 2026-02-17, 2026-02-17
+    Vulkan Renderer Hardening (VkResult/Leaks)  :done, h5, 2026-02-17, 2026-02-18
+    80+ Medium-Severity Audit Fixes (23 Files)  :done, h6, 2026-02-17, 2026-02-18
+    42 More Audit Fixes (Physics/Script/Scene)  :done, h7, 2026-02-18, 2026-02-18
+    Serialization & Asset Pack Hardening        :done, h8, 2026-02-18, 2026-02-18
+    6 New Test Suites (Physics2D, VS, BT, UI, Net, Fuzz) :done, h9, 2026-02-17, 2026-02-17
+    3 More Test Suites + Unit/Integration Reorg :done, h10, 2026-02-19, 2026-02-19
+    MaturityTier Badges (Hub + Marketplace)     :done, h11, 2026-02-19, 2026-02-19
+    Sprite Normal Map Lighting + Drop Shadows   :done, h12, 2026-02-18, 2026-02-18
+    CSM Cascade Blending + Tether Rework        :done, h13, 2026-02-18, 2026-02-18
+    Player Auto Title Screen + Pause Menu       :done, h14, 2026-02-18, 2026-02-18
+    Editor Viewport Camera/Gizmos in Play Mode  :done, h15, 2026-02-18, 2026-02-18
+
+    section Beta 0.8 (Weeks 13-14)
+    Clustered Forward Lighting (16x9x24)        :done, b1, 2026-02-20, 2026-03-07
+    GPU Two-Phase HiZ Occlusion Culling         :done, b2, 2026-02-20, 2026-03-07
+    Variable Rate Shading (VK_KHR_fragment_shading_rate) :done, b3, 2026-02-20, 2026-03-07
+    Virtual Texturing (Page-Based Streaming)    :done, b4, 2026-02-20, 2026-03-07
+    Visibility Buffer (Deferred Material Resolve) :done, b5, 2026-02-20, 2026-03-07
+    LOD Hysteresis + Screen-Space Sizing        :done, b6, 2026-02-20, 2026-03-07
+    Material Enhancements (Transmission/SSS/64-bit Sort Keys) :done, b7, 2026-02-20, 2026-03-07
+    FrameAllocator (Per-Frame Linear Allocator) :done, b8, 2026-02-20, 2026-03-07
+    Elemental System (Dot-Product Particles)    :done, b9, 2026-03-07, 2026-03-08
+    29 Additional Unit Test Suites (26 -> 55)   :done, b10, 2026-02-20, 2026-03-08
+
+    section RT & AA Hardening (Weeks 15-16)
+    Motion Vectors + TAA (Phase 1)              :done, rt1, 2026-03-11, 2026-03-14
+    RT Material SSBO + OptiX Interop (Phase 2)  :done, rt2, 2026-03-14, 2026-03-16
+
     section Planned
     macOS (MoltenVK)                            :active, pl1, 2026-03-01, 2026-06-01
     Console Platforms                           :active, pl2, 2026-06-01, 2027-06-01
@@ -506,7 +563,7 @@ gantt
     VR/XR (OpenXR)                              :active, pl4, 2027-01-01, 2027-06-01
 ```
 
-**Note:** There is a ~4-week gap between the initial Dec 23-25, 2025 foundation commits and the resumption of active development on Jan 22, 2026. The bulk of the engine (150+ features) was built in the subsequent 4 weeks (Jan 22 - Feb 17, 2026).
+**Note:** There is a ~4-week gap between the initial Dec 23-25, 2025 foundation commits and the resumption of active development on Jan 22, 2026. The bulk of the engine (150+ features) was built in the subsequent 4 weeks (Jan 22 - Feb 17, 2026). Week 12 (Feb 17-19) focused on hardening: 120+ audit findings fixed, SimplePhysics removed, Steam Audio integrated, and test coverage expanded from 8 to 55 executables.
 
 ---
 
@@ -586,8 +643,10 @@ flowchart TB
     subgraph MainRenderPass["Main Render Pass"]
         MainPass["Begin Render Pass"] --> SkyboxR["Render Skybox<br/>(if type != None)"]
         SkyboxR --> SortEntities["Sort Entities by<br/>cachedTextureKey<br/>(Material Sort)"]
-        SortEntities --> FrustumCull["GPU Frustum Culling<br/>(Player Only)"]
-        FrustumCull --> OpaquePass["Opaque Pass"]
+        SortEntities --> LODSelect["LOD Selection<br/>(Screen-Space Size,<br/>Hysteresis)"]
+        LODSelect --> GPUCull["GPU Two-Phase HiZ<br/>Occlusion Culling"]
+        GPUCull --> ClusterAssign["Clustered Light<br/>Assignment (Compute)"]
+        ClusterAssign --> OpaquePass["Opaque Pass"]
 
         subgraph OpaqueLoop["Per-Entity Rendering"]
             OpaquePass --> CheckVisible{entity.visible?}
@@ -634,7 +693,8 @@ flowchart TB
         TiltShift --> CelOutlines["Cel Shading Outlines<br/>(Sobel Edge Detection)"]
         CelOutlines --> StippleDither["Stipple / Dither<br/>(8 Patterns, 3 Color<br/>Modes)"]
         StippleDither --> ColorGrading["Color Grading"]
-        ColorGrading --> FXAA["FXAA"]
+        ColorGrading --> TAAResolve["TAA Resolve<br/>(Neighborhood Clamping,<br/>Velocity Reprojection)"]
+        TAAResolve --> FXAA["FXAA"]
         FXAA --> Vignette["Vignette"]
         Vignette --> FilmGrain["Film Grain"]
         FilmGrain --> RetroFX["Retro Effects<br/>(CRT, Pixelation)"]
@@ -660,10 +720,17 @@ flowchart TB
 ### Key Pipeline Optimizations
 
 1. **Scene Classification Gate**: 2D-only scenes skip shadow passes entirely, saving 4+ render passes per frame.
-2. **Material Sort**: Entities sorted by `cachedTextureKey` so identical materials draw consecutively, maximizing descriptor cache hits.
+2. **Material Sort**: Entities sorted by 64-bit `cachedTextureKey` so identical materials draw consecutively, maximizing descriptor cache hits.
 3. **Descriptor Caching**: `m_LastBound` tracking skips `vkUpdateDescriptorSets` when texture/bone pointers are unchanged.
 4. **Play Mode Skip**: `m_SkipMainPassRendering` flag prevents double-drawing (offscreen Game View + main swapchain).
 5. **Shadow Caster Cache**: Pre-filtered list avoids redundant per-cascade entity iteration.
+6. **GPU Two-Phase HiZ Occlusion Culling**: Phase 0 culls against previous frame's depth pyramid; partial HiZ regeneration from visible objects; Phase 1 re-tests flagged objects against updated HiZ. Async compute overlap.
+7. **Clustered Forward Lighting**: 16x9x24 grid with up to 1024 lights. Light-cluster assignment via compute shader eliminates per-fragment light iteration.
+8. **LOD with Hysteresis**: Screen-space projected size selection with dead-zone transitions prevents LOD flickering.
+9. **Per-Frame Linear Allocator**: `FrameAllocator` provides O(1) allocation for transient per-frame data, reset each frame.
+10. **Variable Rate Shading** (optional, `ENJIN_VRS`): `VK_KHR_fragment_shading_rate` reduces shading rate in low-detail regions.
+11. **Virtual Texturing** (optional, `ENJIN_VIRTUAL_TEXTURING`): Page-based streaming with feedback buffer, indirection texture, and physical atlas (bindings 16-17).
+12. **Visibility Buffer** (optional, `ENJIN_VISIBILITY_BUFFER`): Deferred material resolve via compute shader, decoupling geometry from shading.
 
 ---
 
@@ -675,12 +742,13 @@ Enjin occupies a unique position in the game engine market by targeting several 
 
 | Audience Segment | Why Enjin Appeals | Primary Competitors |
 |---|---|---|
-| **Indie Developers** | All-in-one 2D+3D with built-in gameplay systems (save, quest, dialogue, AI) that competitors require plugins for | Unity, Godot |
+| **Indie Developers** | All-in-one 2D+3D with built-in gameplay systems (save, quest, dialogue, AI) that competitors require plugins for. Hardened codebase with 55 test suites builds production confidence | Unity, Godot |
 | **Flash Game Creators** | SWF import, AS2/AS3 transpiler, Newgrounds.io API, HTML5 export, Flash-style timeline editor -- no other engine offers this combination | None (Enjin is unique) |
 | **Retro Game Makers** | CRT effects, pixel editor, 9 retro resolution presets, dithered gradients, stipple patterns, sprite sheet workflow | GameMaker, Pico-8 |
 | **Students & Educators** | Built-in behavior trees, visual scripting, procedural generation, and comprehensive accessibility -- strong teaching tool | Godot, Scratch |
 | **Accessibility-First Developers** | 8 colorblind modes, screen reader, switch access, dwell-click, high contrast (WCAG AAA), font scaling, reduced motion -- most comprehensive in any engine | None (Enjin leads) |
-| **Hobbyist/Prototypers** | 44 startup templates, template marketplace, pixel editor, drag-and-drop import, visual scripting -- minimal barrier to entry | Construct, GameMaker |
+| **Hobbyist/Prototypers** | 44 startup templates with MaturityTier badges, template marketplace, pixel editor, drag-and-drop import, visual scripting -- minimal barrier to entry | Construct, GameMaker |
+| **Audio-Focused Developers** | Steam Audio HRTF binaural rendering with geometry-aware occlusion/transmission -- professional spatial audio without middleware | Unity (via plugin), Unreal |
 
 ### Competitive Advantages
 
@@ -691,6 +759,8 @@ Enjin occupies a unique position in the game engine market by targeting several 
 - **Flash ecosystem support** (SWF import, Newgrounds API)
 - **Deeper accessibility** (switch access, eye tracking, dwell-click, WCAG AAA themes)
 - **Shader graph with GLSL codegen** (Godot has visual shaders but different approach)
+- **Steam Audio HRTF spatial audio** with occlusion/transmission (Godot has no equivalent)
+- **Hardened codebase** with 10+ audit rounds and 55 test suites (Godot community-tested only)
 
 #### vs. Unity
 - **No license fees or runtime fees** (Unity's pricing has alienated developers)
@@ -699,6 +769,7 @@ Enjin occupies a unique position in the game engine market by targeting several 
 - **Retro/pixel art pipeline** built-in (Unity requires third-party assets)
 - **Accessibility-first design** (Unity's accessibility is addon-dependent)
 - **Simpler, focused scope** (less bloat than Unity's multi-purpose platform)
+- **Built-in Steam Audio HRTF** without middleware setup (Unity requires separate Steam Audio plugin)
 
 #### vs. Unreal
 - **Dramatically simpler** -- approachable for solo devs and small teams
@@ -733,6 +804,10 @@ Enjin occupies a unique position in the game engine market by targeting several 
 
 5. **9+ Procedural Generation Algorithms**: Cellular automata, BSP, diamond-square, L-system (3D stochastic), WFC, Voronoi, random walker, grammar rules, prefab assembler, fractal terrain with hydraulic/thermal erosion -- all with editor preview panels and script bindings.
 
+6. **Physics-Based Spatial Audio**: Steam Audio HRTF binaural rendering with geometry-aware occlusion and transmission. Collider meshes double as acoustic geometry -- no separate audio mesh authoring required. Fallback to miniaudio built-in spatialization on hardware without HRTF support.
+
+7. **Audited, Hardened Codebase**: 10+ systematic audit rounds with 205+ findings fixed across Vulkan renderer, ECS, serialization, physics, and scripting. Published audit reports demonstrate production-grade code quality. Trust zone boundary map documents all system interaction points.
+
 ### Market Gaps Filled
 
 - **Post-Flash web game development**: No engine specifically targets the Flash game community
@@ -740,10 +815,13 @@ Enjin occupies a unique position in the game engine market by targeting several 
 - **Solo dev all-in-one**: Reduces dependency on plugin ecosystems and third-party assets
 - **Retro game creation with modern tooling**: Bridges pixel art workflow with modern rendering pipeline
 - **Educational game engine**: Built-in visual scripting, behavior trees, and procedural generation make it ideal for teaching
+- **Indie spatial audio**: Professional HRTF audio without Wwise/FMOD middleware costs or setup complexity
 
 ---
 
 ## 6. Revenue Model Analysis
+
+> **Note (2026-03-08):** Enjin has adopted the Business Source License 1.1 (BSL 1.1) with a 4-year change date to Apache 2.0. Free to use for making and selling games; the only restriction is forking to sell as a competing engine product. The revenue models below are retained as historical analysis from the pre-licensing decision period.
 
 ### Model A: Pay-Per-Copy (One-Time Purchase)
 
@@ -872,11 +950,11 @@ For context, Godot reached ~2,500 monthly contributors and an estimated 500K-1M 
 | Risk | Severity | Mitigation |
 |---|---|---|
 | **Single-developer bus factor** | Critical | Open-source core, contributor onboarding docs, modular architecture |
-| **Godot momentum** | High | Differentiate via Flash revival, accessibility, built-in gameplay systems |
+| **Godot momentum** | High | Differentiate via Flash revival, accessibility, built-in gameplay systems, Steam Audio HRTF, and audited codebase |
 | **Unity/Unreal price corrections** | Medium | Enjin's unique features (retro, Flash, accessibility) are not price-dependent |
 | **Console certification barriers** | Medium | Partner with porting houses; focus on PC/web/mobile first |
 | **Community building** | High | Invest in documentation, tutorials, Discord, game jams |
-| **Performance perception** | Medium | Benchmark comparisons, demo projects, stress test results |
+| **Performance perception** | Medium | Benchmark comparisons, demo projects, 55 test suites, published audit reports build confidence |
 | **API stability concerns** | Medium | Semver, deprecation policy, migration guides |
 
 ---
@@ -885,7 +963,7 @@ For context, Godot reached ~2,500 monthly contributors and an estimated 500K-1M 
 
 ### Optimization Status
 
-All performance issues from P0 through P5 have been resolved. The engine has undergone 8+ rounds of auditing (performance + security + stability + feature wiring) with 350+ findings addressed across 5 formal audit reports.
+All performance issues from P0 through P6 have been resolved. The engine has undergone 10+ rounds of auditing (performance + security + stability + feature wiring) with 205+ findings fixed across 7 formal audit reports (AUDIT_2026_02_11 through AUDIT_2026_02_18, plus per-subsystem reports for ECS, Renderer, Serialization, Asset Pack, and Physics/Audio).
 
 #### Resolved Optimizations (Good Patterns)
 
@@ -906,6 +984,14 @@ All performance issues from P0 through P5 have been resolved. The engine has und
 | **Scene Classification** | 2D scenes skip shadow passes, minimal UBO upload, skip normal map descriptors | 4+ render passes eliminated for 2D |
 | **Sprite Atlas** | Runtime shelf-packing into 4096x4096 GPU texture | Many draw calls -> 1 instanced draw |
 | **Script Query Cache** | Single cached `GetEntitiesWithComponent<ScriptComponent>()` shared across Update/FixedUpdate/LateUpdate | 6 queries -> 1 per frame |
+| **GPU HiZ Occlusion Culling** | Two-phase compute: Phase 0 culls against previous depth pyramid, Phase 1 re-tests with updated HiZ. Async compute overlap | Eliminates overdraw from occluded objects |
+| **Clustered Forward Lighting** | 16x9x24 grid, compute shader assigns lights to clusters, fragment shader reads cluster data | O(1) light lookup per fragment vs. O(N) |
+| **LOD with Hysteresis** | Screen-space projected size selection with 10% dead-zone transitions | Prevents LOD flickering, reduces vertex throughput |
+| **64-Bit Material Sort Keys** | Extended from 32-bit for finer-grained draw ordering | Better draw call batching across complex scenes |
+| **Per-Frame Linear Allocator** | `FrameAllocator` with single pointer bump, reset each frame | Near-zero allocation cost for transient data |
+| **Motion Vector MRT** | Per-pixel velocity buffer (RG16F) written during main pass via MRT output | Enables TAA, temporal upscaling, motion blur at ~0.3ms cost |
+| **TAA Resolve (Compute)** | Halton(2,3) jitter injection, neighborhood clamping, velocity reprojection, history ping-pong buffers | Sub-pixel stability, configurable sharpness/feedback/jitter |
+| **Material SSBO (RT)** | Material data uploaded to binding 9 for RT hit shaders | Correct shading in ray-traced hits without push constants |
 
 #### Current Performance Profile
 
@@ -915,20 +1001,23 @@ All performance issues from P0 through P5 have been resolved. The engine has und
 | **Frame Time (1000 Entities, 3D)** | < 16ms (60fps) | < 16ms with Jolt | Production physics backend |
 | **Frame Time (1000 Sprites, 2D)** | < 8ms | < 5ms | Atlas batching effective |
 | **Shadow Pass (4 CSM Cascades)** | < 4ms total | ~3ms | Caster caching helps |
+| **Motion Vector MRT** | < 0.5ms | ~0.3ms | RG16F per-pixel velocity, MRT output |
+| **TAA Resolve (Compute)** | < 0.5ms | ~0.3ms | Neighborhood clamping + velocity reprojection |
 | **Descriptor Cache Hit Rate** | > 70% | ~75-85% | Material sort driven |
 | **Entity Lookup (by name)** | < 0.01ms | O(1) | Hash map cache |
 | **Physics (1000 Colliders, Jolt)** | < 4ms | ~2-3ms | Multi-threaded Jolt |
-| **Physics (1000 Colliders, Simple)** | < 16ms | ~18ms | Legacy -- not recommended |
+| **Entity Validation** | O(1) | O(1) | `unordered_set` for `IsValid()` (ECS audit) |
 
 #### Performance Tier Classification
 
 **Enjin sits firmly in the "Indie Production" tier**, capable of handling:
-- 2D games with thousands of sprites at 60fps (atlas batching)
-- 3D games with hundreds of entities and full shadow/lighting at 60fps
+- 2D games with thousands of sprites at 60fps (atlas batching + normal map lighting)
+- 3D games with hundreds of entities and full shadow/lighting at 60fps (CSM w/ cascade blending)
 - Ray tracing on supported hardware (RT-capable GPU required)
+- HRTF spatial audio with geometry-aware occlusion (Steam Audio)
 - LAN multiplayer with 20Hz state sync and client-side prediction
 
-It is **not positioned for AAA-scale** rendering (no virtual texturing, no Nanite-style mesh LOD, no massive open-world streaming), but it exceeds the requirements of its target market (indie/hobbyist/retro/Flash).
+It is **not positioned for AAA-scale** rendering (no Nanite-style mesh streaming), but with virtual texturing (page-based streaming), GPU two-phase HiZ occlusion culling, LOD with hysteresis and screen-space sizing, clustered forward lighting (1024 lights), and variable rate shading, it significantly exceeds the requirements of its target market (indie/hobbyist/retro/Flash).
 
 #### Frame Budget Breakdown (Typical 3D Scene, 16.67ms Budget)
 
@@ -936,10 +1025,11 @@ It is **not positioned for AAA-scale** rendering (no virtual texturing, no Nanit
 pie title Frame Budget Breakdown (3D, 60fps)
     "Shadow Passes (CSM + Point + Spot)" : 3.0
     "Scene Classification + UBO Upload" : 0.5
-    "Main Render Pass (Opaque)" : 4.0
+    "Motion Vector MRT (RG16F)" : 0.3
+    "Main Render Pass (Opaque)" : 3.7
     "Sprite Batch Rendering" : 1.5
     "Particle Rendering" : 1.0
-    "Post-Processing Chain" : 2.5
+    "Post-Processing Chain (incl. TAA Resolve)" : 2.8
     "ECS Systems (Physics, AI, Scripts)" : 3.0
     "ImGui / Editor Overlay" : 1.0
     "Remaining Headroom" : 0.17
@@ -955,11 +1045,11 @@ pie title Frame Budget Breakdown (3D, 60fps)
 |---|---|---|
 | **Architecture** | Strong | Clean 3-layer separation (Core/Engine/App), no circular dependencies |
 | **Thread Safety** | Good | ECS World uses recursive mutex (incl. IsValid/IsPendingDestruction), deferred destruction with set-cleared on Clear(), atomic refcounts |
-| **Error Handling** | Good | Vulkan error checks at 9+ sites, JSON `.contains()` validation, bounds checking, GPU loop caps (god rays 256, contact shadows 64) |
-| **Memory Management** | Good | Custom allocators (Stack/Pool/Linear), `reserve()` on hot-path vectors, no known leaks |
+| **Error Handling** | Strong | Vulkan VkResult checks at 25+ sites (all hardened Feb 2026), JSON `.contains()` validation, bounds checking, GPU loop caps, null guards on all physics/audio paths |
+| **Memory Management** | Good | Custom allocators (Stack/Pool/Linear/Frame), `reserve()` on hot-path vectors, per-frame `FrameAllocator` for transient data, leak-free Vulkan failure paths (verified in renderer audit) |
 | **API Consistency** | Good | Consistent naming conventions (Get/Set/Is), ENJIN_API export macro |
-| **Test Coverage** | Basic | Custom CTest framework with 4 unit tests (Math, ECS, PhysicsTypes, Memory) + 4 integration tests (Serializer, DungeonCrawler, SMT, StressTest). No third-party test framework (Catch2/GTest) |
-| **Documentation** | Strong | CLAUDE.md (~450 lines), 17+ doc files, generated API docs, inline tooltips |
+| **Test Coverage** | Good | Custom CTest framework with 51 unit test suites + 4 integration tests = 55 executables. 40 ECS test cases. Tests organized into `Tests/Unit/` and `Tests/Integration/` (expanded from 8 in Feb 2026 audit campaign) |
+| **Documentation** | Strong | CLAUDE.md (~150 lines), 28 doc files (incl. 12 audit reports), trust zone boundary map, generated API docs, inline tooltips |
 
 ### Areas Needing Refactoring
 
@@ -972,45 +1062,48 @@ pie title Frame Budget Breakdown (3D, 60fps)
 | **XOR obfuscation** | Asset pack uses trivially breakable XOR (not cryptographically secure) | Medium | Medium -- replace with AES-GCM |
 | **Script #include paths** | Resolved via `lexically_normal()` but not restricted to script directory | Medium | Low -- add path validation |
 | **32 editor panel bits** | All 32 bits of `EditorPanel` used; graph editors use `IsOpen()/SetOpen()` workaround | Low | Medium -- refactor to bitset or map |
-| **SimplePhysics legacy** | Still compilable via `ENJIN_PHYSICS_SIMPLE=ON` but redundant with Jolt/Box2D | Low | Low -- deprecation timeline |
+| ~~**SimplePhysics legacy**~~ | **RESOLVED** — Removed entirely (Feb 2026). Source files deleted, enum entry removed, factory updated. | ~~Low~~ | ~~Low~~ |
 
 ### Scalability Concerns
 
 | Concern | Current Limit | Mitigation Path |
 |---|---|---|
 | **Entity count** | Warning at 10,000+ | Archetype ECS migration for cache-friendly iteration |
-| **Draw calls** | Dependent on material variety | Indirect rendering already implemented |
+| **Draw calls** | Dependent on material variety | Indirect rendering + GPU HiZ culling reduces visible set |
 | **Shadow map resolution** | 2048^2 per CSM cascade, 1024^2 per spot, 512^2 per point face | Configurable, could add virtual shadow maps |
 | **Particle count** | 16,384 per emitter | GPU compute simulation would lift this |
 | **Visual script nodes** | Warning at 500+ | Subgraph/function nodes already mitigate this |
 | **Network players** | LAN scale (4-16 typical) | Dedicated server architecture for larger scale |
-| **Texture memory** | Single 4096x4096 atlas | Multiple atlas pages for larger sprite counts |
+| **Texture memory** | Single 4096x4096 atlas | Multiple atlas pages for larger sprite counts; Virtual Texturing available for 3D scenes (`ENJIN_VIRTUAL_TEXTURING`) |
 
 ### Maintenance Burden Estimate
 
 | Component | Files (actual) | Maintenance Level | Notes |
 |---|---|---|---|
 | Core Layer | ~24 | Low | Stable foundation, rarely changes |
-| Vulkan Renderer + RT | ~124 | High | Largest subsystem -- Vulkan, shadows, RT, post-process |
+| Vulkan Renderer + RT | ~151 | High | Largest subsystem -- Vulkan, shadows, RT, post-process, clustered lighting, HiZ culling, VRS, virtual texturing, visibility buffer |
 | ECS & Components | ~62 | Medium | Component count grows with features |
 | Editor | ~67 | High | UI code has high churn, user-facing |
 | Scripting & Visual Script | ~51 | Medium | Bindings grow with each feature |
 | Effects & Procedural | ~68 | Low | Self-contained, rarely touched after creation |
 | Build & Assets | ~43 | Low | Stable pipeline, import/export |
 | GUI & Localization | ~31 | Medium | UI canvas, dialogue, menus, localization |
-| Physics (3 backends) | ~24 | Low | Backends are stable, interfaces fixed |
+| Physics (2 backends) | ~18 | Low | Jolt + Box2D stable, SimplePhysics removed. Both hardened (null guards, input clamping) |
 | Gameplay & Networking | ~40 | Medium | Save system, quests, LAN multiplayer |
-| Accessibility & Audio | ~23 | Low | Content warnings, miniaudio backend |
+| Accessibility & Audio | ~25 | Low | Content warnings, miniaudio + Steam Audio HRTF backend |
+| Tests | ~55 | Low | 51 unit + 4 integration test files, shared EnjinTest.h framework |
 | Other (AI, Animation, Scene, Plugin, Input, Debug) | ~57 | Low | Many small self-contained modules |
-| **Total** | **~614** | **Medium overall** | Modular architecture helps |
+| **Total** | **~692** | **Medium overall** | Modular architecture helps; major debt reduced by audit campaign |
 
 ### Recommended Priority Actions
 
-1. **Expand unit test coverage** -- custom CTest framework exists with 4 unit + 4 integration tests, but coverage is minimal relative to codebase size. Consider adding Catch2 or GoogleTest for richer assertions
+1. ~~**Expand unit test coverage**~~ — **SIGNIFICANT PROGRESS**: Expanded from 8 to 55 test executables (51 unit + 4 integration) covering Physics2D, VisualScript, BehaviorTree, UISystem, Networking, StressFuzz, BuildPipeline, ScriptBindings, ElementalSystem, and more. Next: add coverage for Renderer subsystem
 2. **Extract EditorLayer panels** into individual classes to reduce file size and improve maintainability
 3. **Replace XOR obfuscation** with authenticated encryption for commercial releases
-4. **Restrict script #include paths** to project directory to prevent path traversal
-5. **Deprecation timeline for SimplePhysics** -- set a version target for removal
+4. **Restrict script #include paths** to project directory to prevent path traversal — *partially mitigated by `lexically_normal()` validation*
+5. ~~**Deprecation timeline for SimplePhysics**~~ — **COMPLETE**: Removed entirely Feb 2026
+6. **Asset pack format versioning** — Add version header to `.enjpak` format for forward compatibility (identified in serialization audit)
+7. **Address 13 remaining deferred audit findings** — Mostly low-severity items across asset pack format and string length validation
 
 ---
 
@@ -1031,7 +1124,7 @@ graph TB
     end
 
     subgraph VulkanDeps["Vulkan Foundation"]
-        VkContext["VulkanContext"]
+        VkContext["VulkanContext<br/>(25+ VkResult Checks)"]
         VkRenderer["VulkanRenderer"]
         VkPipeline["VulkanPipeline"]
         VkBuffer["VulkanBuffer"]
@@ -1039,16 +1132,16 @@ graph TB
     end
 
     subgraph ECSDeps["ECS Foundation"]
-        World["ECS::World"]
+        World["ECS::World<br/>(O(1) Entity Validation)"]
         Entity["ECS::Entity"]
         Components["Component Types"]
     end
 
     subgraph RenderFeatures["Rendering Features"]
         RenderSys["RenderSystem"]
-        Shadows["Shadow Mapping<br/>(CSM/Point/Spot)"]
+        Shadows["Shadow Mapping<br/>(CSM w/ Cascade Blending,<br/>Point/Spot)"]
         PostProc["Post-Processing"]
-        SpriteBatch["Sprite Batching"]
+        SpriteBatch["Sprite Batching<br/>(Normal Map Lighting,<br/>Drop Shadows)"]
         SpriteAtlas["Sprite Atlas"]
         ParticleRend["Particle Renderer"]
         Skybox["Skybox"]
@@ -1056,6 +1149,12 @@ graph TB
         OIT["OIT"]
         CelShade["Cel Shading"]
         RetroFX["Retro Effects"]
+        ClusteredLt["Clustered Forward Lighting<br/>(16x9x24, 1024 Lights)"]
+        GPUCull["GPU Two-Phase HiZ Culling"]
+        LODSys["LOD System<br/>(Hysteresis, Screen-Size)"]
+        VRSSys["Variable Rate Shading"]
+        VTSys["Virtual Texturing"]
+        VisBuf["Visibility Buffer"]
     end
 
     subgraph RTFeatures["Ray Tracing Features"]
@@ -1067,9 +1166,20 @@ graph TB
         RTAO["RT AO"]
         RTGI["RT GI"]
         PathTrace["Path Tracer"]
+        MatSSBO["Material SSBO<br/>(Hit Shader, Binding 9)"]
         SVGF["SVGF Denoiser"]
         OIDN["OIDN Denoiser"]
+        OptiX["OptiX Denoiser<br/>(CUDA Interop)"]
         RTComp["RT Compositor"]
+    end
+
+    subgraph TemporalFeatures["Temporal & Upscaling"]
+        MotionVec["Motion Vectors<br/>(RG16F MRT)"]
+        TAA["TAA<br/>(Halton Jitter,<br/>Neighborhood Clamping)"]
+        Upscaler["IUpscaler<br/>(Planned: FSR/DLSS/XeSS)"]
+        ReSTIR["ReSTIR<br/>(Planned: DI,<br/>Temporal/Spatial Reuse)"]
+        TemporalRT["Temporal RT Reuse<br/>(Planned)"]
+        RadianceCache["Radiance Caching<br/>(Planned)"]
     end
 
     subgraph PhysicsFeatures["Physics Features"]
@@ -1077,8 +1187,7 @@ graph TB
         IPhysics2D["IPhysicsBackend2D"]
         Jolt["Jolt Backend"]
         Box2D["Box2D Backend"]
-        SimplePhy["SimplePhysics"]
-        PhysicsFactory["Backend Factory"]
+        PhysicsFactory["Backend Factory<br/>(Jolt/Box2D Only)"]
         Collision["Collision Detection"]
         SpatialHash["Spatial Hash Grid"]
         Joints["Joint System"]
@@ -1121,7 +1230,7 @@ graph TB
         Hierarchy["Hierarchy Panel"]
         ScenePicker["Scene Picker"]
         Gizmos["Transform Gizmos"]
-        Templates["Template System"]
+        Templates["Template System<br/>(MaturityTier Badges)"]
         Marketplace["Template Marketplace"]
         Undo["Undo/Redo"]
         CmdPalette["Command Palette"]
@@ -1136,6 +1245,19 @@ graph TB
         ProcGen["Procedural Generation"]
         WindSys["Wind System"]
         WorldTime["World Time"]
+    end
+
+    subgraph AudioFeatures["Audio Features"]
+        SimpleAudioSys["SimpleAudio<br/>(miniaudio)"]
+        SteamAudioProc["SteamAudioProcessor<br/>(HRTF, Occlusion,<br/>Transmission)"]
+        AudioEvents["Audio Event Graph"]
+        MIDI["MIDI Input"]
+    end
+
+    subgraph TestFeatures["Test Infrastructure"]
+        TestFramework["EnjinTest.h Framework"]
+        UnitTests["22 Unit Test Suites"]
+        IntegrationTests["4 Integration Tests"]
     end
 
     subgraph NetworkFeatures["Networking"]
@@ -1209,6 +1331,17 @@ graph TB
     PostProc --> CelShade
     PostProc --> RetroFX
 
+    %% Advanced Rendering Dependencies
+    RenderSys --> ClusteredLt
+    RenderSys --> GPUCull
+    RenderSys --> LODSys
+    VkContext --> VRSSys
+    VkContext --> VTSys
+    VkContext --> VisBuf
+    RenderSys --> VRSSys
+    RenderSys --> VTSys
+    RenderSys --> VisBuf
+
     %% RT Dependencies
     VkContext --> RTCaps
     RTCaps --> AccelStruct
@@ -1218,6 +1351,7 @@ graph TB
     RTPipe --> RTAO
     RTPipe --> RTGI
     RTPipe --> PathTrace
+    RTPipe --> MatSSBO
     RTShadow --> SVGF
     RTReflect --> SVGF
     RTAO --> SVGF
@@ -1225,20 +1359,27 @@ graph TB
     RTShadow --> OIDN
     SVGF --> RTComp
     OIDN --> RTComp
+    OptiX --> RTComp
     RTComp --> RenderSys
     RenderSys --> AccelStruct
+
+    %% Temporal & Upscaling Dependencies
+    RenderSys --> MotionVec
+    MotionVec --> TAA
+    TAA --> PostProc
+    MotionVec --> Upscaler
+    MotionVec --> ReSTIR
+    MotionVec --> TemporalRT
+    TemporalRT --> RadianceCache
+    SHProbes --> RadianceCache
 
     %% Physics Dependencies
     World --> IPhysics
     World --> IPhysics2D
     IPhysics --> Jolt
     IPhysics2D --> Box2D
-    IPhysics --> SimplePhy
-    IPhysics2D --> SimplePhy
     PhysicsFactory --> Jolt
     PhysicsFactory --> Box2D
-    PhysicsFactory --> SimplePhy
-    SimplePhy --> Collision
     Collision --> SpatialHash
     IPhysics --> Joints
     Joints --> Ragdoll
@@ -1323,6 +1464,23 @@ graph TB
     UISys --> SwitchAccess
     UISys --> FontScale
 
+    %% Audio Dependencies
+    SimpleAudioSys --> SteamAudioProc
+    SteamAudioProc --> IPhysics
+    PlayMode --> SteamAudioProc
+    PlayerApp --> SteamAudioProc
+    Bindings --> SimpleAudioSys
+    SimpleAudioSys --> AudioEvents
+    Input --> MIDI
+
+    %% Test Infrastructure
+    TestFramework --> UnitTests
+    TestFramework --> IntegrationTests
+    World --> UnitTests
+    IPhysics --> UnitTests
+    SceneSerial --> IntegrationTests
+    ASEngine --> IntegrationTests
+
     %% Graph Editor Dependencies
     VkPipeline --> ShaderGraph
     Particles --> ParticleGraph
@@ -1334,6 +1492,9 @@ graph TB
     style VulkanDeps fill:#1a1a2a,stroke:#4a4a8a
     style ECSDeps fill:#2a1a1a,stroke:#8a4a4a
     style RTFeatures fill:#2a1a2a,stroke:#8a4a8a
+    style TemporalFeatures fill:#1a2a2a,stroke:#4a9a9a
+    style AudioFeatures fill:#2a2a2a,stroke:#9a6a3a
+    style TestFeatures fill:#1a2a1a,stroke:#6a9a6a
     style PhysicsFeatures fill:#1a2a2a,stroke:#4a8a8a
     style ScriptFeatures fill:#2a2a1a,stroke:#8a8a4a
     style GameplayFeatures fill:#2a1a2a,stroke:#8a4a8a
@@ -1345,7 +1506,7 @@ graph TB
 
 2. **ECS::World is the central hub**: Almost every system depends on World for entity management. This is appropriate for an ECS architecture but means World stability is critical.
 
-3. **Physics abstraction is well-isolated**: `IPhysicsBackend` cleanly separates consumers from implementations. Swapping backends requires zero changes to gameplay code.
+3. **Physics abstraction is well-isolated**: `IPhysicsBackend` cleanly separates consumers from implementations. Swapping between Jolt and Box2D requires zero changes to gameplay code. The legacy SimplePhysics backend has been fully removed.
 
 4. **Scripting has broad reach**: Script bindings touch nearly every system (physics, audio, UI, gameplay, effects, procedural gen). Adding new systems requires adding new bindings to remain accessible.
 
@@ -1355,12 +1516,39 @@ graph TB
 
 7. **RT pipeline is cleanly optional**: Ray tracing flows through `RTCapabilities` detection and gracefully falls back. The raster pipeline is completely independent.
 
+8. **Steam Audio is a cross-system dependency**: `SteamAudioProcessor` bridges audio with physics — it uses collider geometry for occlusion/transmission calculations. This is the only place audio and physics directly interact, and it gracefully falls back to miniaudio built-in spatialization when Steam Audio is unavailable.
+
+9. **Test infrastructure is a parallel tree**: Tests depend on core systems (World, Physics, Serializer, ScriptEngine) but nothing in production depends on tests. The 51 unit + 4 integration suites can be added or removed without affecting the engine.
+
+10. **Serializer is a trust boundary**: The scene serializer and asset packer have been hardened (array caps, type safety, path traversal prevention) because they process external data. The trust zone boundary map documents all such interaction points.
+
+11. **Motion vectors are a foundation dependency**: The per-pixel velocity buffer (RG16F MRT) is required by TAA, all temporal upscalers (DLSS/FSR/XeSS), ReSTIR temporal reuse, and temporal RT reprojection. It is the single most connected planned dependency in the rendering roadmap.
+
+---
+
+## 11. Rendering Pipeline Roadmap
+
+Completed and planned rendering phases, in dependency order. Phases 1-2 are shipped in Beta 0.8. Phases 3-10 are planned.
+
+| Phase | Feature | Status | Description |
+|-------|---------|--------|-------------|
+| **1** | Motion Vectors + TAA | **Done** (Mar 2026) | Per-pixel velocity buffer (RG16F MRT), TAA jitter injection (Halton 2,3), TAA resolve compute shader (neighborhood clamping, velocity reprojection), history ping-pong buffers, editor UI AA dropdown (None/FXAA/TAA/SMAA). SceneRenderSettings: aaMode, taaSharpness, taaJitterScale, taaFeedbackMin/Max |
+| **2** | RT Material SSBO + OptiX Interop | **Done** (Mar 2026) | Material SSBO for RT hit shaders (binding 9), OptiX denoiser CUDA interop wired |
+| **3** | Path Tracer Polish | Planned | Next Event Estimation (NEE), Multiple Importance Sampling (MIS), Russian Roulette path termination, firefly clamping |
+| **4** | ReSTIR | Planned | Reservoir-based importance-driven light selection (Direct Illumination), temporal/spatial reuse, adaptive ray budget feeding VRS |
+| **5** | Temporal RT Reuse | Planned | Carry ray results across frames, confidence-weighted reprojection, denoiser-aware temporal pipeline |
+| **6** | Radiance Caching | Planned | World-space irradiance cache extending SH probes, screen-space cache, cache-guided ray allocation |
+| **7** | DLSS / FSR / XeSS Upscaling | Planned | IUpscaler interface, FSR first (all GPUs), DLSS second (NVIDIA), XeSS third (Intel). Depends on motion vectors (Phase 1) |
+| **8** | Additional AA | Planned | SMAA (subpixel morphological), MSAA runtime toggle |
+| **9** | GPU-Driven Work Scheduling | Planned | Indirect draw from GPU culling, multi-draw indirect, device-generated commands, async compute overlap |
+| **10** | Mobile | Planned | Android first, iOS second, rendering tiers (low/medium/high), touch input, TBDR-optimized paths |
+
 ---
 
 ## Appendix: Data Sources
 
 All data in this document is derived from:
-- `CLAUDE.md` -- Primary project context (~450 lines of verified feature documentation)
+- `CLAUDE.md` -- Primary project context (~150 lines of verified feature documentation)
 - `docs/ROADMAP.md` -- Technical roadmap with implementation details and priority matrices
 - `docs/ARCHITECTURE.md` -- System architecture documentation
 - `docs/ENGINE_ANALYSIS.md` -- This document (comprehensive technical analysis)
@@ -1368,10 +1556,19 @@ All data in this document is derived from:
 - `docs/AUDIT_2026_02_12.md` -- Follow-up audit (96 findings)
 - `docs/AUDIT_2026_02_12_R2.md` -- Third audit round (83 findings)
 - `docs/AUDIT_2026_02_13.md` -- Fourth audit round
+- `docs/AUDIT_2026_02_18.md` -- Beta 0.8 audit report
+- `docs/AUDIT_2026_02_20.md` -- Post-beta audit round
+- `docs/AUDIT_ECS.md` -- ECS subsystem audit (O(1) validation, 40 tests)
+- `docs/AUDIT_RENDERER.md` -- Vulkan renderer hardening audit
+- `docs/AUDIT_SERIALIZATION.md` -- Serialization and type safety audit
+- `docs/AUDIT_ASSET_PACK.md` -- Asset packer security audit
+- `docs/AUDIT_PHYSICS_AUDIO.md` -- Physics and audio hardening audit
+- `docs/AUDIT_SCRIPTING_NETWORKING.md` -- Scripting and networking audit
+- `docs/AUDIT_HARDENING_SPRINT.md` -- Hardening sprint summary
 - `docs/SECURITY_AUDIT.md` -- Security audit (35 findings)
 
 Feature counts, component counts, binding counts, node counts, and all technical specifications reference verified codebase data as documented in these files. Market analysis figures are estimates based on publicly available industry data and reasonable projections for a new entrant.
 
 ---
 
-*Document updated 2026-02-17. Enjin Engine is proprietary software.*
+*Document updated 2026-03-08. Enjin Engine is licensed under BSL 1.1.*

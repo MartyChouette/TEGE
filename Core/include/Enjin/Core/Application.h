@@ -93,6 +93,13 @@ protected:
     using FrameSettingsCallback = std::function<f32()>;
     void SetTargetFPSCallback(FrameSettingsCallback cb) { m_TargetFPSCallback = std::move(cb); }
 
+    /**
+     * @brief Execute a single frame (update + render + frame limiting).
+     * Used directly by the Emscripten main loop callback, and called
+     * internally by MainLoop() on desktop platforms.
+     */
+    void RunOneFrame();
+
 private:
     void InitializeEngine();
     void ShutdownEngine();
@@ -105,6 +112,7 @@ private:
     bool m_Minimized = false;
     bool m_Focused = true;
     f32 m_LastFrameTime = 0.0f;
+    std::chrono::high_resolution_clock::time_point m_LastTime;
 
     // Frame rate limiting
     std::chrono::high_resolution_clock::time_point m_FrameStart;

@@ -1,5 +1,12 @@
 # Documentation Index
 
+**TEGE — The Enjin Game Engine**
+*An aesthetics-first game engine — preserving and expanding the digital aesthetics of yesterday for the storytellers of tomorrow.*
+
+See [About](../README.md#about) for the developer disclaimer.
+
+---
+
 ## Getting Started
 
 1. **[README.md](../README.md)** - Project overview and feature list
@@ -35,7 +42,7 @@
 | Terrain | `Enjin/ECS/Components/Terrain.h` | 3D heightmap sculpting (5 brush modes) and 2D polyline terrain |
 | AI | `Enjin/AI/AIBehaviors.h` | State-based AI, navmesh generation, A* pathfinding |
 | Render Backend | `Enjin/Renderer/RenderBackend.h` | Platform abstraction interface |
-| Ray Tracing | `Enjin/Renderer/RayTracing/` | RT pipeline, acceleration structures, SVGF denoiser, path tracer |
+| Ray Tracing | `Enjin/Renderer/RayTracing/` | RT pipeline, acceleration structures, SVGF/OIDN/OptiX denoisers, path tracer, material SSBO (binding 9), motion vectors (binding 4) |
 | Feedback | `Enjin/Editor/FeedbackSystem.h` | Bug reporting, feedback collection, diagnostics capture, JSON persistence |
 | Vector Drawing | `Enjin/Editor/VectorDrawingEditor.h` | 7 shape types, layers, SVG export, Flash symbol library |
 | HTML5 Export | `Enjin/Build/HTML5Exporter.h` | Canvas export, preloader, responsive scaling, Newgrounds embed |

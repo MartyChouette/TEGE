@@ -246,10 +246,9 @@ void GameMenuSystem::RenderGraphics(f32 w, f32 h) {
     }
 
     if (ImGui::Combo("Resolution", &currentRes,
-        [](void* data, int idx, const char** out_text) -> bool {
+        [](void* data, int idx) -> const char* {
             auto* res = static_cast<const std::array<Resolution, 6>*>(data);
-            *out_text = (*res)[idx].label;
-            return true;
+            return (*res)[idx].label;
         },
         (void*)&resolutions, static_cast<i32>(resolutions.size()))) {
         m_Graphics.resolutionWidth = resolutions[currentRes].w;

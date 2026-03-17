@@ -2,7 +2,7 @@
 
 ## Overview
 
-Enjin Engine is a proprietary, licensable 3D game engine built from scratch using C++20 and the Vulkan graphics API. It features a complete ImGui-based editor, an Entity-Component-System architecture, and modern rendering capabilities.
+Enjin Engine is an open-source (BSL 1.1) 3D game engine built with C++20 and the Vulkan graphics API. It features a complete ImGui-based editor, an Entity-Component-System architecture, and modern rendering capabilities.
 
 ## System Architecture
 
@@ -62,8 +62,8 @@ enjin/
 │   ├── include/Enjin/
 │   │   ├── Core/           # Application, Window, Input
 │   │   ├── Logging/        # Thread-safe categorized logging
-│   │   ├── Math/           # Vector, Matrix, Quaternion, Spline
-│   │   ├── Memory/         # Custom allocators (Stack, Pool, Linear)
+│   │   ├── Math/           # Vector, Matrix, Quaternion, Spline, Noise
+│   │   ├── Memory/         # Custom allocators (Stack, Pool, Linear, FrameAllocator)
 │   │   └── Platform/       # Platform abstraction, types
 │   └── src/
 │
@@ -84,20 +84,28 @@ enjin/
 │   │   ├── GUI/            # ImGui integration, Localization, DialogueTree, UICanvas, UISystem
 │   │   ├── Gameplay/       # TieredSaveSystem, SaveBackend, SaveLoadMenu, HUDSystem, QuestSystem, FootstepSystem, ObjectPool, CinematicSystem, DialogueAsset
 │   │   ├── Networking/     # LANMultiplayer, NetworkPanel, NewgroundsSaveBackend, SteamSaveBackend
-│   │   ├── Physics/        # IPhysicsBackend, JoltBackend, SimplePhysics, PhysicsWorld, ConstraintSolver, Physics2D
+│   │   ├── Physics/        # IPhysicsBackend, JoltBackend, Box2DBackend, SimplePhysics, PhysicsWorld, ConstraintSolver
 │   │   ├── Platform/       # FileDialog
 │   │   ├── Plugin/         # PluginSystem, HotReload
 │   │   ├── Procedural/     # LevelGenerator
-│   │   ├── Renderer/       # Vulkan renderer, RenderBackend abstraction
+│   │   ├── Renderer/       # Vulkan renderer, RenderBackend, ClusteredLighting
 │   │   │   ├── Vulkan/     # VulkanContext, Pipeline, Buffer, etc.
-│   │   │   └── RayTracing/ # RT pipeline, acceleration structures, denoiser
+│   │   │   ├── RayTracing/ # RT pipeline, acceleration structures, denoiser
+│   │   │   ├── GPUDriven/  # GPU culling, HiZ occlusion culling
+│   │   │   ├── VRS/        # Variable Rate Shading
+│   │   │   ├── VirtualTexture/ # Page-based virtual texture streaming
+│   │   │   └── VisibilityBuffer/ # Visibility buffer + material resolve
 │   │   ├── Scene/          # SceneSerializer, SceneManager, LevelStreaming
 │   │   ├── Scripting/      # AngelScript engine, bindings, coroutines, events
 │   │   └── VisualScript/   # NodeDefinition, NodeRegistry, VisualScriptExecutor
-│   ├── shaders/            # GLSL shaders (triangle.vert/frag, grass.vert/frag)
+│   ├── shaders/            # GLSL shaders (triangle.vert/frag, grass.vert/frag, compute shaders)
 │   └── src/
 │
 ├── Editor/                  # Editor application (main.cpp entry point)
+│
+├── Player/                  # Standalone game player (no editor/ImGui)
+│
+├── installer/               # Inno Setup installer (EnjinSetup.iss, icons)
 │
 ├── third_party/            # External dependencies
 │   ├── imgui/              # Dear ImGui (UI)
@@ -121,7 +129,8 @@ enjin/
 
 **Features**:
 - Blinn-Phong lighting with multi-light support
-- PBR material system with base color, normal, and height maps
+- PBR material system with base color, normal, height, metallic-roughness, and emissive maps
+- Material transmission (glass/water), IOR, thickness, subsurface scattering (intensity/radius/color)
 - Shadow mapping with PCF filtering (directional CSM, point cubemap, spot 2D array)
 - Skeletal animation with GPU skinning (bone SSBO)
 - Instanced grass rendering
@@ -136,6 +145,11 @@ enjin/
 - Screen-space effects (SSAO, god rays, contact shadows, caustics, fog shafts)
 - Dithered gradient rendering (per-material, 2-8 bands, 6 patterns)
 - Camera presets (9 built-in)
+- 64-bit material sort keys (`[8:pipeline][16:material][24:texture][16:depth]`) for cache-friendly draw ordering
+- LOD with hysteresis dead-zones and screen-space projected size metric
+- Scene classification: `Scene2D` (sprites only, shadows skipped), `Scene2_5D` (sprites+lights), `Scene3D` (full pipeline)
+- Motion Vectors: Per-pixel velocity buffer (RG16F MRT attachment) for temporal techniques
+- TAA: Temporal anti-aliasing with Halton(2,3) jitter, neighborhood clamping, velocity reprojection, history ping-pong buffers, configurable sharpness/feedback; AA mode selection (None/FXAA/TAA/SMAA)
 
 ### Ray Tracing System
 
@@ -148,7 +162,9 @@ enjin/
 - `RTReflections` - Single-bounce specular reflection dispatch
 - `RTAmbientOcclusion` - Short-range AO hemisphere sampling
 - `RTGlobalIllumination` - Multi-bounce diffuse GI
-- `PathTracer` - Progressive path tracer with accumulation buffer and SPP tracking
+- `RTTranslucency` - Translucency ray dispatch (transmission materials)
+- `RTCaustics` - Caustic light patterns from refractive surfaces
+- `PathTracer` - Progressive path tracer with accumulation buffer, SPP tracking, NEE, MIS, Russian Roulette, and firefly clamping
 - `SVGFDenoiser` - 3-pass compute denoiser (temporal accumulation, variance estimation, a-trous wavelet)
 - `RTCompositor` - Fullscreen compute shader compositing RT layers into scene HDR
 
@@ -157,14 +173,65 @@ enjin/
 - BLAS per unique mesh with hash-based deduplication
 - TLAS rebuilt per frame from entity transforms (UPDATE mode for transform-only changes)
 - Per-effect enable/disable with independent configuration
-- Progressive path tracing mode with automatic reset on camera/scene changes
-- SVGF denoising with configurable temporal alpha and a-trous iterations
-- RT descriptor set (14 bindings, separate from main pipeline set 0)
+- Progressive path tracing mode with automatic reset on camera/scene changes, Cook-Torrance BRDF with GGX importance sampling, Next Event Estimation (NEE) with uniform light selection, Multiple Importance Sampling (MIS) using power heuristic, Russian Roulette path termination, firefly clamping (per-bounce and final), and simplified material fallback for deep bounces
+- SVGF denoising with configurable temporal alpha and a-trous iterations; optional OIDN and OptiX denoisers
+- OptiX denoiser CUDA interop wired (timeline semaphore sync, shared Vulkan/CUDA buffers)
+- Material SSBO in RT hit shaders (binding 9) for full PBR material access during ray traversal
+- RTCompositor enable flags: bits 0-5 (shadows/reflections/AO/GI/translucency/caustics)
+- RT descriptor set (16 bindings: 0-13 base, 4=motion vectors, 9=material SSBO, 14=translucency, 15=caustics; separate from main pipeline set 0)
 - Graceful fallback: placeholder SPIR-V stubs detected and skipped, raster path unaffected
 - Only active for Scene3D render mode (2D/2.5D scenes skip RT entirely)
 - Editor panel with per-effect toggles, config sliders, BLAS/instance stats
 
 **Files**: `Engine/include/Enjin/Renderer/RayTracing/`, `Engine/src/Renderer/RayTracing/`, `Engine/shaders/rt_*.glsl`, `Engine/shaders/svgf_*.comp`, `Engine/shaders/rt_composite.comp`
+
+## Performance Optimization Subsystems
+
+### Clustered Forward Lighting
+Replaces brute-force per-fragment light loops with spatial cluster lookup. The screen is divided into a 16×9×24 grid (3456 clusters) with exponential depth slicing. A compute pre-pass assigns lights to clusters via sphere-AABB intersection tests. Fragments look up their cluster to evaluate only relevant lights. Enabled by default (`ENJIN_CLUSTERED_LIGHTING`).
+
+**Pipeline:** `light_cluster_bounds.comp` → `light_cluster_assign.comp` → fragment shader cluster lookup (bindings 14-15)
+
+### GPU Two-Phase HiZ Occlusion Culling
+Extends the existing GPU frustum culling with hierarchical Z-buffer occlusion testing. Phase 0 performs frustum + HiZ culling and generates a partial HiZ pyramid from visible objects. Phase 1 re-tests initially-occluded objects against the updated HiZ, recovering objects that were incorrectly culled. Always-on when HiZ pyramid is available.
+
+### Async Compute Overlap
+Overlaps compute workloads (GPU culling, light cluster assignment) with graphics work (shadow passes) using timeline semaphores. Uses the dedicated compute queue when available, falls back to graphics queue.
+
+**Frame timeline:**
+```
+Compute: [Cull Phase 0] [Light Cluster Assign]
+Graphics: [Shadow Pass] → wait compute → [Main Render Pass]
+```
+
+### Variable Rate Shading (VRS)
+Per-tile shading rate control via `VK_KHR_fragment_shading_rate`. Modes: Peripheral (distance-based), Content Adaptive (luminance variance), Motion Based (velocity), Full (combined). Generates a shading rate image via compute shader. Off by default (`ENJIN_VRS`).
+
+### Virtual Texturing
+Page-based texture streaming with 128×128 tiles in an 8K×8K physical atlas (4096 pages). Feedback buffer at 1/8 resolution identifies needed pages. Background streaming thread with LRU eviction. Lowest-mip fallback for unloaded pages. Off by default (`ENJIN_VIRTUAL_TEXTURING`).
+
+### Visibility Buffer
+Alternative render path: geometry-only pass writes triangle ID + instance ID to an R32G32_UINT buffer, followed by a full-screen compute resolve that fetches vertices, computes barycentrics, and evaluates materials. Reduces overdraw and bandwidth for complex scenes. Off by default (`ENJIN_VISIBILITY_BUFFER`).
+
+### CPU-Side Optimizations
+- **Per-frame linear allocator:** `FrameAllocator` (8 MB bump allocator reset each frame) with `FrameArray<T>` container, replaces hot-path `std::vector` allocations (`Core/include/Enjin/Memory/FrameAllocator.h`)
+- **64-bit material sort key:** `[8:pipeline][16:material][24:texture][16:depth]` layout for cache-friendly single-comparison sorting
+- **MaterialGPU:** 80-byte GPU-aligned struct with transmission/IOR/thickness/SSS fields (uploaded via Material UBO at binding 2)
+- **LOD hysteresis:** Directional dead-zones prevent LOD ping-ponging, with optional screen-space projected size metric
+
+### CMake Feature Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `ENJIN_CLUSTERED_LIGHTING` | ON | Clustered forward lighting (16x9x24 grid) |
+| `ENJIN_VRS` | OFF | Variable Rate Shading (`VK_KHR_fragment_shading_rate`) |
+| `ENJIN_VIRTUAL_TEXTURING` | OFF | Page-based virtual texture streaming |
+| `ENJIN_VISIBILITY_BUFFER` | OFF | Visibility buffer with deferred material resolve |
+| `ENJIN_PHYSICS_JOLT` | ON | Jolt Physics v5.2.0 (3D) |
+| `ENJIN_PHYSICS_BOX2D` | ON | Box2D v3.0.0 (2D) |
+| ~~`ENJIN_PHYSICS_SIMPLE`~~ | — | Removed (legacy backend retired) |
+| `ENJIN_RAYTRACING_OIDN` | — | Intel Open Image Denoise support |
+| `ENJIN_RAYTRACING_OPTIX` | — | NVIDIA OptiX denoiser support |
 
 ### ECS System
 
@@ -197,6 +264,10 @@ enjin/
 
 **Features**:
 - 20+ editor panels (Hierarchy, Inspector, Console, Asset Browser, Editor Settings, Project Settings, Post Processing, Retro Effects, Rendering, Game View, Scene List, Stats Overlay, Profiler, Pixel Editor, Vector Drawing, Behavior Tree, Procedural Generation, Sprite Sheet Importer, Bug Reports & Feedback, Network, Animation Timeline, Visual Script, Quest Flow)
+- **Game Debug Panel (F1)** — Tabbed game-focused debug window with Scene, Physics, Scripts, Audio, and Gameplay tabs. Shows entity counts, physics body lists, script status with error indicators, audio source state, and gameplay system metrics (tweens, particles, health, interactables)
+- **Debug Workstation (F2)** — Tabbed engine-focused debug window with Performance, Renderer, ECS, Scene, and System tabs. Shows FPS/frame time graphs with percentile stats, render pipeline state (shadows, RT, AA, post-processing), component counts, scene/project info, GPU/Vulkan/system details
+- **Drop-down Console (`` ` ``)** — Quake/Doom-style console that slides down from the top of the screen with smooth animation. Supports 60+ commands across 10 categories (entities, transform, rendering, materials, lights, camera, scene, query, bulk, debug). Features command history (Up/Down arrows), color-coded output, and auto-focus input
+- **PrepareRenderTargets** — Pre-command-buffer render target resizing to prevent Vulkan resource destruction during recording (fixes 4:3 aspect ratio crash with Vulkan hooks)
 - Transform gizmos (translate, rotate, scale) via ImGuizmo
 - Entity selection via ray casting (click-to-select)
 - Entity clipboard (Cut/Copy/Paste via JSON serialization)
@@ -236,7 +307,6 @@ enjin/
 **Backend Abstraction** (pluggable physics engines):
 - `IPhysicsBackend` — abstract 3D interface (SetWorld, Update, Raycast, MoveAndSlide, collision events, etc.)
 - `IPhysicsBackend2D` — abstract 2D interface (Initialize, Update, Raycast2D, OverlapCircle, collision callbacks, CCD)
-- `SimplePhysicsBackend` / `SimplePhysicsBackend2D` — adapters wrapping existing engines behind the interfaces
 - `JoltBackend` — Jolt Physics v5.2.0 backend (see below)
 - `PhysicsBackendFactory` — `CreatePhysicsBackend(type, mode)` creates backend by `PhysicsBackendType` (Auto/Jolt/Box2D) and `ProjectMode`. When `ENJIN_PHYSICS_JOLT=ON`, Auto selects Jolt for 3D/Mixed modes
 - CMake options: `ENJIN_PHYSICS_JOLT` (Jolt v5.2.0), `ENJIN_PHYSICS_BOX2D` (Box2D v3.0.0) — both ON by default
@@ -297,7 +367,12 @@ enjin/
 
 ### 2D Physics System
 
-**PhysicsWorld2D** (current default 2D backend — impulse-based dynamics):
+**Box2DBackend** (Box2D v3.0.0 — production 2D physics):
+- Full `IPhysicsBackend2D` implementation
+- Sensor bodies (`Body2DComponent::isSensor = true`): Box2D syncs positions from ECS (not to ECS), enabling collision callbacks for controller/AI/tween-driven entities without Box2D overwriting their positions
+- Bilateral collision filtering (same `categoryBits`/`collisionMask` bitmask as 3D)
+
+**PhysicsWorld2D** (legacy 2D backend — impulse-based dynamics):
 - Circle, Box, Polygon collision shapes
 - SAT (Separating Axis Theorem) collision detection
 - 5 joint types (Distance, Revolute, Prismatic, Weld, Wheel)
@@ -368,7 +443,7 @@ enjin/
 - `MeshFactory` - Primitive mesh generation (cube, sphere, plane, cylinder, cone, quad)
 - `BuildPipeline` - Full game export: scan, validate, pack `.enjpak`, copy player, manifest
 - `HTML5Exporter` - Canvas export, preloader, responsive scaling, Newgrounds embed template
-- Distribution: CMake CPack with NSIS installer (Start Menu/Desktop shortcuts, file associations), ZIP, TGZ, DEB
+- Distribution: Inno Setup installer (`installer/EnjinSetup.iss` with app icon, Start Menu/Desktop shortcuts), CMake CPack (ZIP, TGZ, DEB)
 
 ### Scripting System (AngelScript)
 
@@ -451,14 +526,35 @@ enjin/
 ## Descriptor Bindings
 
 ```
-Binding 0: View/Projection UBO (vertex shader)
-Binding 1: Lighting UBO with multi-light arrays (vertex + fragment)
-Binding 2: Material UBO (fragment shader)
-Binding 3: Base color texture sampler (fragment shader)
-Binding 4: Shadow map sampler (fragment shader)
-Binding 5: Height map for parallax mapping (fragment shader)
-Binding 6: Normal map (fragment shader)
-Binding 7: Bone matrix SSBO for skeletal animation (vertex shader)
+Binding  0: View/Projection UBO (vertex shader)
+Binding  1: Lighting UBO with multi-light arrays (vertex + fragment)
+Binding  2: Material UBO (fragment shader)
+Binding  3: Base color texture sampler (fragment shader)
+Binding  4: Shadow map array (fragment shader)
+Binding  5: Height map for parallax mapping (fragment shader)
+Binding  6: Normal map (fragment shader)
+Binding  7: Bone matrix SSBO for skeletal animation (vertex shader)
+Binding  8: Metallic-roughness texture (fragment shader)
+Binding  9: Emissive texture (fragment shader)
+Binding 10: Point shadow cubemaps (fragment shader)
+Binding 11: Spot shadow maps (fragment shader)
+Binding 12: Shadow data SSBO (fragment shader)
+Binding 13: Object data SSBO (vertex + fragment)
+Binding 14: Cluster grid SSBO — clustered lighting (fragment shader)
+Binding 15: Cluster light index SSBO — clustered lighting (fragment shader)
+Binding 16: VT indirection texture — virtual texturing (fragment shader)
+Binding 17: VT physical atlas — virtual texturing (fragment shader)
+```
+
+**RT Descriptor Set** (separate from main pipeline set 0):
+```
+Binding  0-3:  Base RT bindings (TLAS, output image, camera UBO, lighting UBO)
+Binding  4:    Motion vectors (RG16F velocity buffer)
+Binding  5-8:  Scene data (vertex/index buffers, instance data, textures)
+Binding  9:    Material SSBO (full PBR material data for hit shaders)
+Binding 10-13: Additional scene data
+Binding 14:    Translucency output
+Binding 15:    Caustics output
 ```
 
 ## Push Constants (128 bytes, per-object)
@@ -469,10 +565,26 @@ struct PushConstants {
     Vector3 baseColor;      // + metallic = 16 bytes
     Vector3 emissiveColor;  // + roughness = 16 bytes
     f32 emissiveStrength, opacity, alphaCutoff;
-    i32 flags;              // bit field: render/alpha/texture/retro flags
+    i32 flags;              // bit field (see layout below)
     f32 parallaxScale;      // + padding = 16 bytes
 };
 ```
+
+**Flags layout (32 bits):**
+- Bits 0-2: render mode
+- Bit 3: skinned
+- Bit 4: wind
+- Bits 5-7: water
+- Bits 8-9: alpha mode
+- Bit 10: height texture
+- Bit 11: ocean
+- Bit 12: UV quantize
+- Bit 13: gouraud
+- Bits 14-15: shadow dither mode
+- Bits 16-19: texture flags (base color, normal, metallic-roughness, emissive)
+- Bits 20-23: retro flags (flat shading, affine texturing, vertex snapping, stipple)
+- Bits 24-28: vertex snap resolution (/8)
+- Bits 29-31: shadow dither pattern
 
 ## Design Patterns
 
@@ -491,7 +603,7 @@ struct PushConstants {
 ## Code Conventions
 
 - **Types:** `u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, usize`
-- **Namespaces:** `Enjin::Core`, `Enjin::Math`, `Enjin::Renderer`, `Enjin::ECS`, `Enjin::Editor`, `Enjin::Scene`, `Enjin::Effects`, `Enjin::Gameplay`, `Enjin::Physics`, `Enjin::Scripting`, `Enjin::Debug`, `Enjin::Plugin`, `Enjin::Animation`, `Enjin::AI`
+- **Namespaces:** `Enjin::Core`, `Enjin::Math`, `Enjin::Renderer`, `Enjin::ECS`, `Enjin::Editor`, `Enjin::Scene`, `Enjin::Effects`, `Enjin::Gameplay`, `Enjin::Physics`, `Enjin::Scripting`, `Enjin::Debug`, `Enjin::Plugin`, `Enjin::Animation`, `Enjin::AI`, `Enjin::Accessibility`, `Enjin::InputSystem`, `Enjin::Build`
 - **Logging:** `ENJIN_LOG_INFO/WARN/ERROR/FATAL(Category, format, ...)`
-- **Log Categories:** Core, Renderer, Physics, Audio, Asset, Script, Editor, Game, AI, Assets, Procedural, Animation, Build, Player
+- **Log Categories:** Core, Renderer, Physics, Audio, Asset, Script, Editor, Game, AI, Assets, Procedural, Animation, Build, Player, Network
 - **API export:** `ENJIN_API` macro for DLL export

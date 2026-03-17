@@ -14,7 +14,7 @@ using namespace Enjin::Math;
 using namespace Enjin::ECS;
 
 #define AS_CHECK(expr) \
-    do { int _r = (expr); assert(_r >= 0); (void)_r; } while(0)
+    do { int _r = (expr); if (_r < 0) { ENJIN_LOG_ERROR(Script, "AS registration failed (code %d) at %s:%d", _r, __FILE__, __LINE__); } } while(0)
 
 extern ECS::World* s_BindingsWorld;
 
@@ -49,7 +49,7 @@ static void RaycastHit_CopyConstruct(const RaycastHit& other, RaycastHit* self) 
 }
 
 // ============================================================================
-// Physics functions — wired to SimplePhysics
+// Physics functions — wired to IPhysicsBackend
 // ============================================================================
 
 static bool Physics_Raycast(const Vector3& origin, const Vector3& direction, f32 maxDistance) {

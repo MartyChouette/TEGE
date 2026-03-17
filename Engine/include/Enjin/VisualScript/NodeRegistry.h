@@ -214,6 +214,7 @@ constexpr const char* CinematicStop        = "Cinematic_Stop";
 constexpr const char* ParticlePlay         = "Particle_Play";
 constexpr const char* ParticleStop         = "Particle_Stop";
 constexpr const char* ParticleBurst        = "Particle_Burst";
+constexpr const char* ParticlePreset       = "Particle_Preset";
 
 // Destructible
 constexpr const char* DestructibleDamage   = "Destructible_Damage";
@@ -353,6 +354,51 @@ constexpr const char* WaterSetColor          = "Water_SetColor";
 // HUD
 constexpr const char* HUDSetEnabled  = "HUD_SetEnabled";
 constexpr const char* HUDIsEnabled   = "HUD_IsEnabled";
+constexpr const char* HUDSetVisible  = "HUD_SetVisible";
+constexpr const char* HUDSetText     = "HUD_SetText";
+constexpr const char* HUDSetValue    = "HUD_SetValue";
+
+// Text
+constexpr const char* TextSetContent = "Text_SetContent";
+constexpr const char* TextSetColor   = "Text_SetColor";
+
+// Sprite2D
+constexpr const char* SpriteSetTexture       = "Sprite_SetTexture";
+constexpr const char* SpriteSetColor         = "Sprite_SetColor";
+constexpr const char* SpriteSetFlip          = "Sprite_SetFlip";
+constexpr const char* SpriteGetFlip          = "Sprite_GetFlip";
+
+// Light
+constexpr const char* LightSetColor          = "Light_SetColor";
+constexpr const char* LightSetIntensity      = "Light_SetIntensity";
+constexpr const char* LightGetIntensity      = "Light_GetIntensity";
+
+// Camera
+constexpr const char* CameraSetFOV           = "Camera_SetFOV";
+constexpr const char* CameraSetActive        = "Camera_SetActive";
+
+// Material
+constexpr const char* MaterialSetColor       = "Material_SetColor";
+constexpr const char* MaterialSetEmissive    = "Material_SetEmissive";
+constexpr const char* MaterialSetTransmission = "Material_SetTransmission";
+constexpr const char* MaterialSetSSS         = "Material_SetSSS";
+
+// Visibility
+constexpr const char* EntitySetVisible       = "Entity_SetVisible";
+constexpr const char* EntityIsVisible        = "Entity_IsVisible";
+
+// Object Pool
+constexpr const char* PoolAcquire            = "Pool_Acquire";
+constexpr const char* PoolRelease            = "Pool_Release";
+
+// Save Data
+constexpr const char* SaveDataSet            = "SaveData_Set";
+constexpr const char* SaveDataGet            = "SaveData_Get";
+constexpr const char* SaveDataHasTag         = "SaveData_HasTag";
+
+// Rigidbody
+constexpr const char* PhysicsSetKinematic    = "Physics_SetKinematic";
+constexpr const char* PhysicsGetAngularVelocity = "Physics_GetAngularVelocity";
 
 // Post-Process Volume
 constexpr const char* PPVolumeSetActive      = "PPVolume_SetActive";
@@ -366,6 +412,20 @@ constexpr const char* SSEffectSetContactShadows   = "SSEffect_SetContactShadows"
 constexpr const char* SSEffectSetGodRays          = "SSEffect_SetGodRays";
 constexpr const char* SSEffectSetCaustics         = "SSEffect_SetCaustics";
 constexpr const char* SSEffectSetFogShafts        = "SSEffect_SetFogShafts";
+
+// Elemental System
+constexpr const char* ElementalSpawnFire          = "Elemental_SpawnFire";
+constexpr const char* ElementalSpawnWater         = "Elemental_SpawnWater";
+constexpr const char* ElementalSpawnSnow          = "Elemental_SpawnSnow";
+constexpr const char* ElementalSpawnSteam         = "Elemental_SpawnSteam";
+constexpr const char* ElementalSpawnDebris        = "Elemental_SpawnDebris";
+constexpr const char* ElementalGetFireIntensity   = "Elemental_GetFireIntensity";
+constexpr const char* ElementalGetMoisture        = "Elemental_GetMoisture";
+constexpr const char* ElementalGetActiveCount     = "Elemental_GetActiveCount";
+constexpr const char* ElementalSetEmitterActive   = "Elemental_SetEmitterActive";
+constexpr const char* ElementalSetEmitterElement  = "Elemental_SetEmitterElement";
+constexpr const char* ElementalSetFlammability    = "Elemental_SetFlammability";
+constexpr const char* ElementalGetSurfaceState    = "Elemental_GetSurfaceState";
 
 } // namespace NodeTypes
 

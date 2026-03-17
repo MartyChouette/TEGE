@@ -2,6 +2,199 @@
 
 ---
 
+## 2026-02-26 (Session 38)
+
+### Particle Rendering Fix & 2D Gameplay Collision Overhaul
+
+**Particle double-rendering bug (EditorLayer):**
+`EditorLayer::RenderOffscreen` called `RenderParticles()` after `RenderToTarget()`/`RenderSplitscreen()` returned, but those methods already render particles internally using offscreen descriptor sets with the game camera's view/proj. After returning, the descriptor sets are restored to the main/editor pass. The extra calls rendered particles a second time with the wrong camera, causing them to appear screen-locked in 2D scenes. Removed the redundant calls.
+
+**Box2D sensor body sync (Box2DBackend):**
+`SyncECSToBox2D` now pushes ECS positions to Box2D for sensor bodies (not just static), so entities driven by controllers, AI, or tweens keep their Box2D body in sync. `SyncBox2DToECS` now skips sensor bodies, preventing Box2D from overwriting positions set by gameplay systems.
+
+**2D platformer template — collision wiring:**
+The player had no `Body2DComponent`, so Box2D never generated collision/sensor callbacks for it. Coins, keys, health potions, and speed boosts also lacked physics bodies. Enemies (slimes, bats, flyer, sky boss) used dynamic bodies that fought AI-driven movement.
+
+Fixed 12 entities across all 4 zones:
+- Player: added sensor `Body2DComponent` matching capsule dimensions
+- 8 coins (Meadow ×3, Tower ×3, Sky ×2): added sensor bodies for pickup detection
+- Health Potion, Cave Key, Speed Boost: added sensor bodies
+- 4 enemies (Slime ×2, Bat ×2, Flyer, Sky Boss): changed to sensor bodies — AI controls movement, sensors enable damage callbacks
+
+**TestTemplateCreator build fix:**
+Removed broken `SaveTemplate(root, nullptr, ...)` call that passed `nullptr` as `TemplateMetadata`.
+
+---
+
+## 2026-02-23 (Session 37)
+
+### Context-Aware Collider Selection & Expanded Smart Suggestions
+
+Smart Suggestions and Quick Setup patterns previously added `BoxColliderComponent` regardless of entity context. This adds intelligent collider shape selection based on entity components and mesh bounds, fixes Quick Setup gaps where enemies/NPCs had no colliders, and adds 4 new suggestion rules and 2 new Quick Setup patterns.
+
+**New helper system (`ChooseColliderForEntity`):**
+- `RecommendedCollider` enum (Box, Sphere, Capsule) and `ColliderRecommendation` struct with shape, sizing, center, isTrigger, reason
+- Priority-based selection: Sprite2D→Box(thin), Character/AI→Capsule(mesh-sized), Damage→Sphere trigger, Mesh AABB→aspect-ratio best-fit (tall→Capsule, uniform→Sphere, else→Box), Fallback→Box(1,1,1)
+- `ApplyColliderRecommendation()` reusable helper adds the correct component with sizing
+
+**Smart Suggestions updated (rules 3, 8 fixed + rules 9-12 added):**
+- `Suggestion::text` changed from `const char*` to `std::string`, added `tooltip` field for hover explanations
+- Added is2D detection (same pattern as Quick Setup)
+- Rule 3 (Health + no collider): Dynamic text "Add {Capsule/Sphere/Box} Collider for damage detection" based on entity context
+- Rule 8 (Damage + no collider): Always adds Sphere trigger for radius-based damage area
+- Rule 9: Rigidbody + no collider → best-fit collider ("Rigidbody needs collider for physics simulation")
+- Rule 10: Animator + no Skeleton → add Skeleton ("Animator requires skeleton with bone data")
+- Rule 11: NetworkIdentity + no NetworkTransform → add NetworkTransform ("Networked entity needs transform sync")
+- Rule 12: Health + no controller/AI + no Destructible → add Destructible ("Non-character health needs break behavior")
+
+**Quick Setup gaps fixed:**
+- "Make Patroller": Now adds capsule collider (3D) or box collider (2D) so enemy can be hit
+- "Setup NPC": Now adds sphere trigger (r=1.5, 3D) or box trigger (2D) for interaction detection
+
+**New Quick Setup patterns:**
+- "Setup Destructible": Health(25) + DestructibleComponent + best-fit collider from mesh
+- "Add Physics Object": Rigidbody(dynamic, gravity) + best-fit collider from mesh bounds
+
+**Totals:** 12 suggestion rules (was 8), 7 Quick Setup patterns (was 5). 1 file changed, 288 insertions. Clean build, zero errors.
+
+---
+
+## 2026-02-22 (Session 36)
+
+### RT Translucency, RT Caustics, OptiX Denoiser, Material Transmission/SSS
+
+Extended the ray tracing pipeline with two new effects (translucency and caustics), added an OptiX AI Denoiser option, and expanded MaterialComponent with physically-based transmission and subsurface scattering fields.
+
+**MaterialComponent extended (6 new fields):**
+- `transmission` (f32) — fraction of light transmitted through surface
+- `ior` (f32) — index of refraction (Snell's law)
+- `thickness` (f32) — medium thickness for absorption
+- `sssIntensity` (f32) — subsurface scattering strength
+- `sssRadius` (f32) — SSS diffusion radius
+- `sssColor` (Vector3) — SSS tint color
+- `MaterialGPU` expanded from 48 bytes to 80 bytes to accommodate the new fields
+
+**RT Translucency (new effect):**
+- `RTTranslucency` class — traces refraction rays using Snell's law with Fresnel term, SSS approximation for translucent media
+- Output at RT descriptor binding 14 (STORAGE_IMAGE, RGBA16F)
+- 3 new shaders: `rt_translucency.rgen`, `rt_translucency.rmiss`, `rt_translucency.rchit`
+- `rt_common.glsl` `RTMaterial` struct expanded with `transmission`, `ior`, `thickness`, `sssIntensity`, `sssColor`, `sssRadius`
+
+**RT Caustics (new effect):**
+- `RTCaustics` class — photon-traced caustic patterns from refractive surfaces (glass, water)
+- Output at RT descriptor binding 15 (STORAGE_IMAGE, RGBA16F)
+- 3 new shaders: `rt_caustics.rgen`, `rt_caustics.rmiss`, `rt_caustics.rchit`
+
+**OptiX AI Denoiser:**
+- `OptiXDenoiser` class implementing `IDenoiser` interface — CUDA-based GPU denoising via NVIDIA OptiX
+- 3 modes: LDR, HDR, Temporal
+- Compile-guarded with `ENJIN_RAYTRACING_OPTIX` CMake option
+
+**RTCompositor updated:**
+- Enable flags now include bit 4 (translucency) and bit 5 (caustics)
+- Push constants include `translucencyStrength` and `causticsStrength`
+
+**RT Descriptor Set expanded from 14 to 16 bindings:**
+- Binding 14: RT Translucency output (RGBA16F)
+- Binding 15: RT Caustics output (RGBA16F)
+
+**Inspector UI:**
+- New "Transmission / SSS" tree node in material inspector with DragFloat controls for all 6 fields
+- 4 material presets: Glass, Water, Skin, Leaf
+
+**Scripting:**
+- 13 new AngelScript bindings for material transmission/SSS/IOR (Set/Get pairs for transmission, IOR, thickness, sssIntensity, sssRadius, sssColor, plus SetSSSColor)
+- 2 new Visual Script nodes: Set Material Transmission, Set Material SSS
+
+**Totals:** +13 AS bindings (721 total), +2 VS nodes (146+ total), +6 RT shaders (25 total). Clean build, zero errors.
+
+---
+
+## 2026-02-22 (Session 35)
+
+### Add Skeletal Animation Import to Assimp Path (FBX/OBJ/DAE/all formats)
+
+The Assimp import pipeline previously ignored `aiMesh::mBones` and `aiScene::mAnimations`, producing static unskinned models from any rigged FBX/DAE file. This adds full bone weight extraction, skeleton building, and animation clip import using the same `Animation::Skeleton`/`BoneTrack` types the glTF path already uses.
+
+**AssimpLoader changes:**
+- Extract bone weights from `aiMesh::mBones` (up to 4 per vertex, globally deduplicated across meshes via `boneNameToGlobal` map)
+- Store `parentIndex` per node in the hierarchy for parent bone lookup
+- Extract animation channels from `aiScene::mAnimations` with tick-to-seconds conversion (`ticksPerSecond`, default 25 if reported as 0)
+- New structs: `AssimpBone`, `AssimpAnimChannel`, `AssimpAnimation`; new fields on `AssimpVertex` (`boneWeights`, `boneIndices`), `AssimpNode` (`parentIndex`), `AssimpScene` (`bones`, `animations`, `hasSkinning`)
+
+**SceneImporter changes:**
+- `ImportAssimp()` builds `Animation::Skeleton` from `scene.bones` — finds bind pose from matching scene nodes, walks `parentIndex` chain to find parent bones, applies axis conversion
+- `CreateEntityFromAssimpNode()` copies bone weights into `MeshComponent::Vertex`, attaches `SkeletonComponent` + `AnimatorComponent` to first skinned mesh node (flag-guarded to prevent duplicates), converts `AssimpAnimation` channels to `BoneTrack`s with axis conversion, auto-plays first clip
+- New `AssimpSkeletonContext` struct passed through recursion with shared skeleton + attached flag
+- Backward-compatible overload delegates to new signature
+
+**Static formats unaffected** — OBJ/PLY/STL produce empty bones/animations, `hasSkinning` stays false, no skeleton components added.
+
+4 files changed, 337 insertions. Clean build, zero errors.
+
+---
+
+## 2026-02-22 (Session 34)
+
+### Add Networking Config Editor UI in Project Settings
+
+Added a visual editor section under Settings > Project > Networking so users can configure all 15 `NetworkConfig` fields from within the editor instead of hand-editing `config/network_settings.json`.
+
+**UI layout (CollapsingHeader with sub-sections):**
+- **Connection** — Port (1024–65535), Max Players (2–64), Server IP
+- **Sync** — Sync Rate, Interpolation Delay, Prediction Correction Speed
+- **Rate Limiting** (TreeNode) — Max Packets/sec, Max KB/sec, Burst Packets, Burst KB (KB↔bytes conversion in UI)
+- **Security** (TreeNode) — Max Violations, Violation Window, Ban Duration, Kick on Violation
+
+**Also fixed:** `interpDelay` and `predictionCorrectionSpeed` were missing from JSON serialization — added `"interpolation"` sub-object to both `SaveToFile()` and `LoadFromFile()` in NetworkConfig.cpp, and updated the default `config/network_settings.json`.
+
+Config loads on project open (`MigrateEditorSettingsToProject`), saves on any field change. Follows the same `bool changed` + `SaveToFile()` pattern as `DrawSettingsSection_BuildConfig()`.
+
+4 files changed, 126 insertions. Clean build, zero errors.
+
+---
+
+## 2026-02-22 (Session 33)
+
+### Fix RT Pipeline Crash on Pool-Allocated Entity BLAS Reuse
+
+**Bug:** When entities were destroyed and their geometry pool regions freed, new entities could reuse the same pool offsets. The BLAS cache hashed meshes by GPU buffer address only (`vertAddr ^ idxAddr`), so identical addresses returned a stale BLAS pointing to freed GPU memory — crashing on ray trace dispatch.
+
+**Root cause:** Address-only BLAS cache key with no invalidation on entity destruction. The `MergedGeometryBuffer` pool allocator reuses freed regions (with coalescing), producing hash collisions between old (destroyed) and new entities.
+
+**Fix:**
+- Added `InvalidateMesh(meshHash)` to `AccelerationStructureManager` — destroys the BLAS GPU resources, removes from hash map, cancels pending builds, marks TLAS for full rebuild
+- `RenderSystem::OnEntityRemoved()` now computes the entity's mesh hash and calls `InvalidateMesh()` **before** freeing the pool allocation
+- `AddInstance()` already guards on `IsValid()`, so destroyed BLAS slots are safely skipped even in edge cases
+
+3 files changed, 52 insertions. Clean build, zero errors.
+
+---
+
+## 2026-02-21 (Session 32)
+
+### Expose Template-Used Features to Users
+
+Templates/demos must only use features users can reproduce from a blank project. Three internal-only features (particle presets, HUD widget scripting, text component scripting) were exposed across all user-facing surfaces.
+
+**Particle Presets — Centralized & Exposed:**
+- Moved `ApplyParticlePreset()` from 3 copy-pasted static functions (EditorLayerPanels, EditorLayerViewport, EditorLayerProjectHub) into a single shared `inline` in `Gameplay.h` — net -375 lines
+- Added inspector preset dropdown (combo box with 12 presets) in `DrawParticleEmitterComponent()`
+- Added `Particle_ApplyPreset(uint64, const string &in)` AngelScript binding
+- Added `Particle_Preset` Visual Script node (Entity + String → apply preset)
+
+**HUD Widget Scripting (new):**
+- New `ScriptBindings_HUD.cpp` with 13 AngelScript bindings: visibility, text get/set, value/max get/set, fill/text color, position, size, font size, bind field
+- 3 new VS nodes: HUD Set Visible, HUD Set Text, HUD Set Value
+
+**Text Component Scripting (new):**
+- New `ScriptBindings_Text.cpp` with 8 AngelScript bindings: content get/set, font size, text/bg color, bg opacity, alignment, wrap width — all setters trigger `dirty = true`
+- 2 new VS nodes: Text Set Content, Text Set Color
+
+**Totals:** +22 AS bindings (708 total), +6 VS nodes (144+ total). Clean build, zero errors.
+
+---
+
 ## 2026-02-17 (Session 31)
 
 ### Physics / Scripting / Serialization Audit — 26 Findings Fixed

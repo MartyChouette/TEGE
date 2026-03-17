@@ -76,7 +76,7 @@ Channel constants: `AUDIO_CHANNEL_SFX=0`, `AUDIO_CHANNEL_MUSIC=1`, `AUDIO_CHANNE
 ## Component Access
 
 - **Health**: `Health_Get/GetMax/SetCurrent(uint64)`, `Health_Damage(uint64, float)`
-- **Material**: `Material_SetBaseColor/GetBaseColor(uint64, Vector3)`, `Material_SetMetallic/SetRoughness(uint64, float)`
+- **Material**: `Material_SetBaseColor/GetBaseColor(uint64, Vector3)`, `Material_SetMetallic/SetRoughness(uint64, float)`, `Material_SetTransmission/GetTransmission(uint64, float)`, `Material_SetIOR/GetIOR(uint64, float)`, `Material_SetThickness/GetThickness(uint64, float)`, `Material_SetSSSIntensity/GetSSSIntensity(uint64, float)`, `Material_SetSSSRadius/GetSSSRadius(uint64, float)`, `Material_SetSSSColor/GetSSSColor(uint64, Vector3)`
 - **Light**: `Light_SetColor/SetIntensity(uint64, ...)`
 - **Camera**: `Camera_SetFOV/GetFOV(uint64, float)`
 - **AudioSource**: `AudioSource_Play/Stop/SetClip/SetVolume(uint64, ...)`
@@ -191,6 +191,33 @@ Permanent key-value storage that survives across runs and save slot deletion.
 - `Particle_SetAlpha(uint64, float startAlpha, float endAlpha)` — Fade over lifetime.
 - `Particle_SetLoop(uint64, bool)` — Enable/disable looping.
 - `Particle_SetGravity(uint64, float gx, float gy, float gz)` — Particle gravity vector.
+- `Particle_ApplyPreset(uint64, const string &in)` — Apply a named preset ("Fire", "Smoke", "Sparks", "Snow", "Rain", "Magic", "Explosion", "Water Splash", "Blood/Sap", "Lava", "Fountain", "Drip").
+
+## HUD Widget
+
+- `HUD_SetVisible(uint64, bool)` — Show/hide a HUD widget.
+- `HUD_IsVisible(uint64)` — Check widget visibility.
+- `HUD_SetText(uint64, const string &in)` — Set display text.
+- `HUD_GetText(uint64)` — Get current display text.
+- `HUD_SetValue(uint64, float current, float max)` — Set bar current/max values.
+- `HUD_GetValue(uint64)`, `HUD_GetMaxValue(uint64)` — Read bar values.
+- `HUD_SetFillColor(uint64, float r, float g, float b)` — Bar fill color.
+- `HUD_SetTextColor(uint64, float r, float g, float b)` — Label text color.
+- `HUD_SetPosition(uint64, float anchorX, float anchorY)` — Screen position (0-1 normalized).
+- `HUD_SetSize(uint64, float width, float height)` — Widget dimensions (normalized).
+- `HUD_SetFontSize(uint64, float)` — Font size in pixels.
+- `HUD_SetBindField(uint64, const string &in)` — Data binding field ("health", "stamina", "custom").
+
+## Text Component
+
+- `Text_SetContent(uint64, const string &in)` — Set text content (triggers re-rasterization).
+- `Text_GetContent(uint64)` — Get current text content.
+- `Text_SetFontSize(uint64, float)` — Font size in pixels.
+- `Text_SetColor(uint64, float r, float g, float b)` — Text color RGB.
+- `Text_SetBgColor(uint64, float r, float g, float b)` — Background color RGB.
+- `Text_SetBgOpacity(uint64, float)` — Background opacity (0-1).
+- `Text_SetAlignment(uint64, int)` — Horizontal alignment (0=Left, 1=Center, 2=Right).
+- `Text_SetWrapWidth(uint64, float)` — Word wrap width in pixels.
 
 ## Quest System
 

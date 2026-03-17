@@ -63,6 +63,9 @@ public:
     void SetEnabled(bool enabled) { m_Enabled = enabled; }
     bool IsEnabled() const { return m_Enabled; }
 
+    // Check if camera controller currently has mouse captured (RMB held)
+    bool IsMouseCaptured() const { return m_MouseCapturedByUs; }
+
     // Get current angles (for UI display)
     f32 GetYaw() const { return m_Yaw; }
     f32 GetPitch() const { return m_Pitch; }

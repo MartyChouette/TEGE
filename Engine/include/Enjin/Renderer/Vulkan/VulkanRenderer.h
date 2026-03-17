@@ -85,6 +85,13 @@ public:
     void RequestVSyncChange(bool enabled);
     bool IsVSyncEnabled() const;
 
+    // HDR output — recreates swapchain, render pass, and framebuffers
+    void SetHDREnabled(bool enabled);
+    bool IsHDREnabled() const;
+    u32 GetHDROutputMode() const;
+    // Recreate the main render pass (e.g., after swapchain format change)
+    bool RecreateRenderPass();
+
     // Register a callback to be notified after swapchain recreation (e.g., PostProcessing)
     using ResizeCallback = std::function<void(u32, u32)>;
     void AddResizeCallback(ResizeCallback callback) { m_ResizeCallbacks.push_back(std::move(callback)); }
@@ -95,6 +102,24 @@ public:
     void EndComputeCommandBuffer();
     void SubmitCompute();  // Submit compute queue, signal semaphore
     bool HasAsyncCompute() const { return m_ComputeCommandPool != VK_NULL_HANDLE; }
+
+    // Insert a pipeline barrier in the graphics command buffer that waits for the
+    // compute semaphore. Use this for mid-frame synchronization when graphics work
+    // depends on compute results (e.g., shadow pass finishes → wait for culling).
+    // This is a lighter-weight alternative to waiting at submit time.
+    void InsertComputeToGraphicsBarrier(VkCommandBuffer graphicsCmd, VkPipelineStageFlags dstStage);
+
+    // Signal from graphics to compute: allows compute queue to wait until a specific
+    // graphics stage completes (e.g., depth pass → compute can read depth for HiZ).
+    void SignalGraphicsToCompute(VkCommandBuffer graphicsCmd);
+    bool WasComputeSubmittedThisFrame() const { return m_ComputeSubmittedThisFrame; }
+
+    // Variable Rate Shading: set the shading rate image for the next render pass
+    void SetShadingRateImage(VkImageView imageView, VkExtent2D tileSize) {
+        m_ShadingRateImageView = imageView;
+        m_ShadingRateTileSize = tileSize;
+    }
+    void ClearShadingRateImage() { m_ShadingRateImageView = VK_NULL_HANDLE; }
 
 private:
     bool CreateSurface();
@@ -137,8 +162,14 @@ private:
     VkCommandPool m_ComputeCommandPool = VK_NULL_HANDLE;
     std::vector<VkCommandBuffer> m_ComputeCommandBuffers;
     std::vector<VkSemaphore> m_ComputeFinishedSemaphores;
+    std::vector<VkSemaphore> m_GraphicsToComputeSemaphores; // Graphics signals compute can start
     bool m_ComputeRecording = false;
     bool m_ComputeSubmittedThisFrame = false; // True if SubmitCompute was called
+    bool m_GraphicsToComputeSignaled = false; // True if SignalGraphicsToCompute was called
+
+    // VRS shading rate image (set by RenderSystem when VRS is active)
+    VkImageView m_ShadingRateImageView = VK_NULL_HANDLE;
+    VkExtent2D m_ShadingRateTileSize = { 16, 16 };
 
     bool CreateComputeResources();
     void DestroyComputeResources();

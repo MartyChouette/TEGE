@@ -13,6 +13,7 @@
 #include "Enjin/Editor/PlayMode.h"
 #include "Enjin/Editor/EditorSettings.h"
 #include "Enjin/Debug/Profiler.h"
+#include "Enjin/Logging/Log.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/UISystem.h"
@@ -29,6 +30,7 @@
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Effects/SeasonalWeather.h"
 #include "Enjin/Effects/ParticleSystem.h"
+#include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/Effects/FluidSimulation.h"
 #include "Enjin/Effects/FluidTerrainCoupling.h"
 #include "Enjin/Effects/CurlNoiseSystem.h"
@@ -66,6 +68,7 @@
 #include "Enjin/Editor/TemplateMarketplace.h"
 #include "Enjin/Scripting/AS3Transpiler.h"
 #include "Enjin/Networking/NewgroundsAPI.h"
+#include "Enjin/Networking/NetworkTypes.h"
 #include "Enjin/Build/HTML5Exporter.h"
 #include "Enjin/Plugin/PluginRepository.h"
 #include "Enjin/Procedural/ProceduralAlgorithms.h"
@@ -191,6 +194,7 @@ public:
     void Shutdown();
 
     void Update(f32 deltaTime);
+    void PrepareRenderTargets();                           // Call BEFORE command buffer recording
     void RenderOffscreen(VkCommandBuffer commandBuffer);  // Call BEFORE main render pass
     void Render(VkCommandBuffer commandBuffer);            // Call DURING main render pass
 
@@ -233,6 +237,9 @@ public:
     void SetPanelVisibility(EditorPanel panel, bool visible);
     bool IsPanelVisible(EditorPanel panel) const;
 
+    // Unified settings window
+    void OpenSettings(int tab);
+
     // Multi-select entity management
     void SelectEntity(ECS::Entity entity, bool addToSelection = false);
     void DeselectEntity(ECS::Entity entity);
@@ -246,6 +253,11 @@ public:
     ECS::Entity GetSelectedEntity() const { return m_PrimarySelected; }
     void SetSelectedEntity(ECS::Entity entity);
 
+    // Unsaved changes tracking
+    bool IsSceneDirty() const { return m_SceneDirty; }
+    void MarkDirty();
+    void ClearDirty();
+
     // Callbacks
     using EntitySelectedCallback = std::function<void(ECS::Entity)>;
     void SetEntitySelectedCallback(EntitySelectedCallback callback) { m_OnEntitySelected = callback; }
@@ -253,6 +265,11 @@ public:
     // Check if UI wants input (for disabling camera when interacting with UI)
     bool WantsKeyboardInput() const;
     bool WantsMouseInput() const;
+    bool IsEditorViewportHovered() const { return m_EditorViewportHovered; }
+
+    // Push a message to the editor console (used by Logger callback)
+    void PushConsoleMessage(const std::string& message);
+    void PushConsoleMessage(LogLevel level, LogCategory category, const std::string& message);
 
 private:
     void InitializePlayMode();
@@ -263,16 +280,43 @@ private:
     void DrawViewportPanel();
     void DrawConsolePanel();
     void DrawAssetBrowserPanel();
-    void DrawEditorSettingsPanel();
-    void DrawPostProcessingPanel();
     void DrawPostProcessVolumeComponent(ECS::Entity entity);
     void EvaluatePostProcessVolumes(const Math::Vector3& cameraPosition);
-    void DrawRetroEffectsPanel();
     void DrawGameViewPanel();
     void DrawSceneListPanel();
-    void DrawRenderingPanel();
-    void DrawBuildConfigSection();
-    void DrawProjectSettingsPanel();
+
+    // Unified settings window (3 tabs: System / Project / Scene)
+    void DrawSettingsWindow();
+
+    // Settings section drawers (extracted from monolithic panel functions)
+    // System tab sections
+    void DrawSettingsSection_Camera();
+    void DrawSettingsSection_EditorPerformance();
+    void DrawSettingsSection_ExternalIDE();
+    void DrawSettingsSection_Accessibility();
+    void DrawSettingsSection_Fonts();
+    // Project tab sections
+    void DrawSettingsSection_ProjectMode();
+    void DrawSettingsSection_WindowIcon();
+    void DrawSettingsSection_Physics();
+    void DrawSettingsSection_FrameRate();
+    void DrawSettingsSection_Audio();
+    void DrawSettingsSection_CollisionGroups();
+    void DrawSettingsSection_BuildConfig();
+    void DrawSettingsSection_Networking();
+    // Scene tab sections
+    void DrawSettingsSection_Skybox();
+    void DrawSettingsSection_Shadows();
+    void DrawSettingsSection_AmbientLighting();
+    void DrawSettingsSection_ShadingModel();
+    void DrawSettingsSection_DreamcastEffects();
+    void DrawSettingsSection_CelShading();
+    void DrawSettingsSection_DisplayOptions();
+    void DrawSettingsSection_RayTracing();
+    void DrawSettingsSection_LightProbes();
+    void DrawSettingsSection_PostProcessing();
+    void DrawSettingsSection_RetroEffects();
+    void DrawSettingsSection_Environment();
     void DrawParticleEditorPanel();
     void DrawAnimGraphPanel();
     void DrawDialoguePanel();
@@ -300,6 +344,8 @@ private:
     void GitFetch();
     void GitSwitchBranch(const std::string& branch);
     void DrawStatsOverlay();
+    void DrawDebugWorkstation();   // F2 — Editor/Engine debug
+    void DrawGameDebugPanel();     // F1 — Game debug
     void DrawSplashScreen();
     void DrawBuildDialog();
 
@@ -315,6 +361,7 @@ private:
     void DrawTextComponent(ECS::Entity entity);
     void DrawWeatherZoneComponent(ECS::Entity entity);
     void DrawWaterVolumeComponent(ECS::Entity entity);
+    void DrawWater3DComponent(ECS::Entity entity);
     void DrawGrassVolumeComponent(ECS::Entity entity);
     void DrawShrubVolumeComponent(ECS::Entity entity);
     void DrawTreeVolumeComponent(ECS::Entity entity);
@@ -324,6 +371,9 @@ private:
     void DrawGravityZoneComponent(ECS::Entity entity);
     void DrawFluidVolumeComponent(ECS::Entity entity);
     void DrawFluidTerrainCoupling(ECS::Entity entity);
+    void DrawElementalSurfaceComponent(ECS::Entity entity);
+    void DrawElementalEmitterComponent(ECS::Entity entity);
+    void DrawElementalVolumeComponent(ECS::Entity entity);
 
     // Controller components
     void DrawPlatformer2DController(ECS::Entity entity);
@@ -433,6 +483,7 @@ private:
     void DrawPerFrameColliderComponent(ECS::Entity entity);
     void DrawPolygonCollider2DComponent(ECS::Entity entity);
     void DrawBody2DComponent(ECS::Entity entity);
+    void DrawJoint2DComponent(ECS::Entity entity);
 
     // Networking components
     void DrawNetworkIdentityComponent(ECS::Entity entity);
@@ -513,6 +564,8 @@ private:
     bool m_ShowDemoWindow = false;
     bool m_ShowStatsOverlay = true;
     bool m_ShowAboutDialog = false;
+    bool m_ShowDebugWorkstation = false;  // F2 — Editor/Engine debug
+    bool m_ShowGameDebug = false;          // F1 — Game debug
 
     // User Manual panel state
     struct ManualSection {
@@ -532,8 +585,26 @@ private:
     std::string m_CurrentScenePath;
 
     // Console log buffer
-    std::vector<std::string> m_ConsoleLog;
+    struct ConsoleEntry {
+        std::string message;
+        LogLevel level = LogLevel::Info;
+        LogCategory category = LogCategory::Editor;
+
+        ConsoleEntry() = default;
+        ConsoleEntry(const char* msg) : message(msg) {}          // NOLINT — allow implicit from literals
+        ConsoleEntry(const std::string& msg) : message(msg) {}   // NOLINT — allow implicit from string pushes
+        ConsoleEntry(std::string&& msg) : message(std::move(msg)) {}
+        ConsoleEntry(const std::string& msg, LogLevel lvl, LogCategory cat)
+            : message(msg), level(lvl), category(cat) {}
+    };
+    std::vector<ConsoleEntry> m_ConsoleLog;
     static constexpr usize MAX_CONSOLE_LINES = 1000;
+
+    // Console filter state
+    bool m_ConsoleShowInfo = true;
+    bool m_ConsoleShowWarn = true;
+    bool m_ConsoleShowError = true;
+    int  m_ConsoleFeedTab = 0;  // 0=All, 1=Editor, 2=Runtime
 
     // Helper methods
     void ImportModel(const std::string& path);
@@ -658,6 +729,8 @@ private:
     char m_NewSceneName[128] = "Main";
     i32 m_SelectedTemplate = -1;
     u32 m_TemplateFilter = 0;             // 0 = All, bitmask for category filtering
+    i32 m_TemplateStatusFilter = -1;      // -1 = All, 0=Stable, 1=Beta, 2=Preview, 3=Experimental
+    i32 m_HubProjectFilter = 0;            // 0=All, 1=Ready, 2=Missing
 
     // Template category flags
     static constexpr u32 TMPL_ALL   = 0;
@@ -704,7 +777,7 @@ private:
     // Per-template layout configuration
     struct LayoutConfig {
         f32 leftWidth   = 0.18f;   // Hierarchy panel width ratio
-        f32 rightWidth  = 0.22f;   // Inspector panel width ratio
+        f32 rightWidth  = 0.25f;   // Inspector panel width ratio
         f32 bottomHeight = 0.22f;  // Console/Assets height ratio
         f32 inspectorSplit = 0.6f; // Inspector vs Settings vertical split
         f32 gameViewX = -1.0f;     // Game View X (-1 = auto: leftWidth + 20px)
@@ -731,6 +804,39 @@ private:
     f32 m_RenderProfileAccum = 0.0f;
     u32 m_RenderProfileFrames = 0;
 
+    // Editor viewport render target (offscreen rendering for scene editing camera)
+    std::unique_ptr<Renderer::RenderTarget> m_EditorViewportRT;
+    u32 m_EditorViewportWidth = 800;
+    u32 m_EditorViewportHeight = 600;
+    f32 m_EditorViewportImageMinX = 0.0f, m_EditorViewportImageMinY = 0.0f;
+    f32 m_EditorViewportImageMaxX = 0.0f, m_EditorViewportImageMaxY = 0.0f;
+    bool m_EditorViewportHovered = false;
+    bool m_EditorViewportFocused = false;
+
+    // Viewport aspect ratio constraint
+    enum class AspectRatio : u8 {
+        Free = 0,   // Fill panel
+        R16_9,      // 16:9  (1.778)
+        R16_10,     // 16:10 (1.600)
+        R21_9,      // 21:9  (2.333)
+        R4_3,       // 4:3   (1.333)
+        R3_2,       // 3:2   (1.500)
+        R9_16,      // 9:16  (0.5625) — mobile portrait
+        R9_20,      // 9:20  (0.450)  — modern phone portrait
+        Count
+    };
+    static constexpr const char* AspectRatioLabels[] = {
+        "Free", "16:9", "16:10", "21:9", "4:3", "3:2", "9:16", "9:20"
+    };
+    static constexpr f32 AspectRatioValues[] = {
+        0.0f, 16.0f/9.0f, 16.0f/10.0f, 21.0f/9.0f, 4.0f/3.0f, 3.0f/2.0f, 9.0f/16.0f, 9.0f/20.0f
+    };
+    AspectRatio m_SceneViewAspect = AspectRatio::Free;
+    AspectRatio m_GameViewAspect = AspectRatio::Free;
+
+    // Compute letterboxed image size from available space and aspect ratio
+    static ImVec2 ComputeAspectConstrainedSize(f32 availW, f32 availH, f32 aspect);
+
     // Post-processing (owned by editor, applied to Game View)
     std::unique_ptr<Renderer::PostProcessing> m_PostProcessing;
 
@@ -753,6 +859,9 @@ private:
     // Particle system (CPU simulation for ParticleEmitterComponent)
     Effects::ParticleSystem m_ParticleSystem;
 
+    // Elemental system (unified fire/water/earth/air particle simulation)
+    Effects::ElementalSystem m_ElementalSystem;
+
     // Fluid simulation (Stable Fluids solver for FluidVolumeComponent)
     Effects::FluidSimulation m_FluidSimulation;
 
@@ -771,6 +880,12 @@ private:
     // World curvature
     f32 m_WorldCurvature = 0.0f;
     bool m_WorldCurvatureEnabled = false;
+
+    // Unified settings window state
+    int m_SettingsActiveTab = 0;  // 0=System, 1=Project, 2=Scene
+
+    // One-time migration of deprecated EditorSettings fields to .enjinproject
+    void MigrateEditorSettingsToProject();
 
     // Per-scene render settings
     bool m_CurrentSceneUsesProjectDefaults = true;
@@ -908,6 +1023,7 @@ private:
     // Build dialog state
     bool m_ShowBuildDialog = false;
     Build::BuildConfig m_BuildConfig;
+    Networking::NetworkConfig m_NetworkConfig;
     Build::BuildResult m_BuildResult;
     bool m_BuildInProgress = false;
     bool m_BuildFinished = false;
@@ -1162,6 +1278,7 @@ private:
     Editor::TemplateMarketplace m_TemplateMarketplace;
     char m_MarketSearchBuf[128] = "";
     i32 m_MarketCategoryFilter = 0;   // 0=All, 1=Starter, 2=Genre, 3=Systems, 4=Retro, 5=Advanced
+    i32 m_MarketMaturityFilter = 0;   // 0=All, 1=Stable, 2=Beta, 3=Preview, 4=Experimental
     i32 m_MarketSortBy = 0;           // 0=Name, 1=Rating, 2=Downloads
     std::string m_MarketDetailId;     // ID of entry with detail popup open
 
@@ -1186,6 +1303,14 @@ private:
     // Theme Preview
     void DrawThemePreview();
 
+    // Quake-style drop-down console
+    bool m_ShowDropConsole = false;
+    f32 m_DropConsoleAnim = 0.0f;  // 0=hidden, 1=fully visible (for slide animation)
+    char m_DropConsoleInput[512] = {};
+    std::vector<std::string> m_DropConsoleHistory;
+    int m_DropConsoleHistoryPos = -1;
+    void DrawDropConsole(f32 deltaTime);
+
     // Keyboard Shortcuts Help Modal
     bool m_ShowShortcutsHelp = false;
     char m_ShortcutSearchBuf[64] = "";
@@ -1201,6 +1326,26 @@ private:
     bool m_ShowDeleteConfirm = false;
     std::vector<ECS::Entity> m_PendingDeleteEntities;
     void DrawDeleteConfirmModal();
+
+    // Crash report dialog (shown on next launch after a crash)
+    bool m_ShowCrashDialog = false;
+    std::string m_PreviousCrashReport;
+    void CheckForCrashReport();
+    void DrawCrashReportDialog();
+
+    // Unsaved changes tracking (dirty flag system)
+    bool m_SceneDirty = false;
+    f32 m_AutoSaveTimer = 0.0f;
+    bool m_ShowUnsavedChangesDialog = false;
+    bool m_ShowAutoSaveRecoveryDialog = false;
+    std::string m_AutoSaveRecoveryPath;
+    std::string m_PendingOpenPath;
+    enum class UnsavedAction : u8 { None, Quit, NewScene, OpenScene };
+    UnsavedAction m_UnsavedChangesAction = UnsavedAction::None;
+    void UpdateWindowTitle();
+    void AutoSave();
+    void DrawUnsavedChangesDialog();
+    void DrawAutoSaveRecoveryDialog();
 };
 
 } // namespace Editor

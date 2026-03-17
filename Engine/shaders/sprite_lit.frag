@@ -68,7 +68,12 @@ layout(binding = 1) uniform LightingUBO {
     float shadowMaxDistance;
     int pointShadowCount;
     int spotShadowCount;
-    vec2 _pointSpotPad;
+    float celDiffuseBands;
+    float celSpecularCutoff;
+    uint shadingFlags;
+    float sphereEnvStrength;
+    float posterizeLevels;
+    float _padShading1;
     vec4 windData;
     vec4 fogParams;
     vec4 fogColorSnow;
@@ -99,9 +104,9 @@ layout(push_constant) uniform PushConstants {
     float alphaCutoff;
     int flags;
     float parallaxScale;
-    float _pad0;
-    float _pad1;
-    float _pad2;
+    float surfaceParam1;
+    float surfaceParam2;
+    float surfaceParam3;
 } material;
 
 // Normal map flag (bit 17, same as triangle.frag FLAG_HAS_NORMAL_TEX)
@@ -221,6 +226,41 @@ void main() {
 
             result += calcBlinnPhong(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, shininess);
         }
+    }
+
+    // Dithered transparency: alternating pixels between fragment color and blend color
+    // Encoded in surfaceParam1 >= 200: pattern, opacity in surfaceParam2, blend color packed in surfaceParam3
+    if (material.surfaceParam1 >= 199.5 && material.surfaceParam1 < 300.0) {
+        float encoded = material.surfaceParam1 - 200.0;
+        int dtPattern = int(floor(encoded + 0.5));
+        float dtOpacity = material.surfaceParam2;
+
+        uint packedColor = floatBitsToUint(material.surfaceParam3);
+        vec3 blendColor = vec3(
+            float((packedColor >> 20) & 0x3FFu) / 1023.0,
+            float((packedColor >> 10) & 0x3FFu) / 1023.0,
+            float(packedColor & 0x3FFu) / 1023.0
+        );
+
+        ivec2 dtPos = ivec2(gl_FragCoord.xy);
+        bool useBlend = false;
+
+        if (dtPattern == 0)
+            useBlend = ((dtPos.x + dtPos.y) % 2) == 1;
+        else if (dtPattern == 1)
+            useBlend = (dtPos.y % 2) == 1;
+        else if (dtPattern == 2)
+            useBlend = (dtPos.x % 2) == 1;
+        else
+        {
+            int bx = dtPos.x % 2;
+            int by = dtPos.y % 2;
+            int val = bx + by * 2;
+            useBlend = val >= 2;
+        }
+
+        if (useBlend)
+            result = mix(blendColor, result, dtOpacity);
     }
 
     // Gamma correction

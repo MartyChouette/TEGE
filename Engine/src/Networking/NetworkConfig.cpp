@@ -43,6 +43,11 @@ bool NetworkConfig::SaveToFile(const std::string& path) const {
         {"kickOnViolation", kickOnViolation}
     };
 
+    j["interpolation"] = {
+        {"interpDelay", interpDelay},
+        {"predictionCorrectionSpeed", predictionCorrectionSpeed}
+    };
+
     std::ofstream out(savePath, std::ios::binary);
     if (!out) {
         ENJIN_LOG_WARN(Network, "NetworkConfig: Failed to open '%s' for writing", savePath.c_str());
@@ -90,6 +95,12 @@ bool NetworkConfig::LoadFromFile(const std::string& path) {
         if (sec.contains("violationWindowSeconds")) violationWindowSeconds = sec["violationWindowSeconds"].get<f32>();
         if (sec.contains("banSeconds")) banSeconds = sec["banSeconds"].get<f32>();
         if (sec.contains("kickOnViolation")) kickOnViolation = sec["kickOnViolation"].get<bool>();
+    }
+
+    if (j.contains("interpolation") && j["interpolation"].is_object()) {
+        auto& interp = j["interpolation"];
+        if (interp.contains("interpDelay")) interpDelay = interp["interpDelay"].get<f32>();
+        if (interp.contains("predictionCorrectionSpeed")) predictionCorrectionSpeed = interp["predictionCorrectionSpeed"].get<f32>();
     }
 
     ENJIN_LOG_INFO(Network, "NetworkConfig: Loaded settings from '%s'", loadPath.c_str());

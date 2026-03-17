@@ -16,7 +16,8 @@ enum class BuildTarget : u8 {
     macOS,
     Android,
     iOS,
-    WebGL,
+    WebGL,           // Legacy alias — use Web instead
+    Web = WebGL,     // WebAssembly + WebGPU
     NintendoSwitch   // Nintendo Switch (NVN graphics API)
 };
 
@@ -36,6 +37,7 @@ struct PlatformCapabilities {
     bool hasVulkan = false;
     bool hasOpenGLES = false;
     bool hasMetal = false;
+    bool hasWebGPU = false;
     bool hasTouchInput = false;
     bool hasAccelerometer = false;
     bool hasGyroscope = false;

@@ -36,10 +36,17 @@ public:
     // CPU query: returns wind vector at a world position (includes gusts + turbulence)
     Math::Vector3 GetWindAt(const Math::Vector3& pos) const;
 
+    // Convenience: wind force with sensitivity multiplier
+    Math::Vector3 GetWindForce(const Math::Vector3& pos, f32 windSensitivity) const;
+
     // GPU query: packed vec4 for shader upload (xyz = direction * strength, w = time)
     Math::Vector4 GetWindVector() const;
 
     f32 GetTime() const { return m_Time; }
+
+    // Fire thermal convection feedback (registered each frame by ElementalSystem)
+    void RegisterHeatSource(const Math::Vector3& pos, f32 intensity);
+    void ClearHeatSources();
 
 private:
     WindParams m_GlobalParams;
@@ -48,6 +55,15 @@ private:
     bool m_HasZoneOverride = false;
     Math::Vector3 m_ZoneDirection = Math::Vector3(1.0f, 0.0f, 0.0f);
     f32 m_ZoneStrength = 0.0f;
+
+    // Heat sources (max 8, re-registered each frame by ElementalSystem)
+    struct HeatSource {
+        Math::Vector3 position;
+        f32 intensity;
+    };
+    static constexpr u32 MAX_HEAT_SOURCES = 8;
+    HeatSource m_HeatSources[MAX_HEAT_SOURCES];
+    u32 m_HeatSourceCount = 0;
 
     f32 m_Time = 0.0f;
 };

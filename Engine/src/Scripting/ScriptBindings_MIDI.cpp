@@ -74,7 +74,7 @@ namespace Enjin {
 namespace Scripting {
 
 void RegisterMIDIBindings(asIScriptEngine* engine) {
-    #define AS_CHECK(expr) do { int _r = (expr); assert(_r >= 0); (void)_r; } while(0)
+    #define AS_CHECK(expr) do { int _r = (expr); if (_r < 0) { ENJIN_LOG_ERROR(Script, "AS registration failed (code %d) at %s:%d", _r, __FILE__, __LINE__); } } while(0)
 
     // Device management
     AS_CHECK(engine->RegisterGlobalFunction("uint32 MIDI_GetDeviceCount()",

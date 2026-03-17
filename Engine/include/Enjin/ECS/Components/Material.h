@@ -76,10 +76,27 @@ struct MaterialComponent {
     // Cel shading opt-out (per-material)
     bool excludeFromCelShading = false;
 
+    // Transmission (glass, water, thin surfaces)
+    f32 transmission = 0.0f;        // 0=opaque, 1=fully transmissive
+    f32 ior = 1.5f;                 // Index of refraction (1.0=vacuum, 1.33=water, 1.5=glass, 2.42=diamond)
+    f32 thickness = 0.0f;           // Thin-surface thickness for translucency falloff (0=solid)
+
+    // Subsurface Scattering
+    f32 sssIntensity = 0.0f;        // 0=off, >0=SSS strength
+    f32 sssRadius = 1.0f;           // Scatter radius in world units
+    Math::Vector3 sssColor = Math::Vector3(1.0f, 0.2f, 0.1f); // Scatter tint (skin/wax default)
+
     // Dithered gradient rendering (flat shading + banded lighting with dither transitions)
     bool ditherGradient = false;
     u8 ditherGradientBands = 4;        // 2-8 color quantization bands
     u8 ditherGradientPattern = 0;      // 0=Bayer4x4, 1=Bayer8x8, 2=BlueNoise, 3=Halftone, 4=Crosshatch, 5=Overlook
+
+    // Dithered transparency (CRT-style: alternating pixels between original and blend color,
+    // naturally blurred by phosphor bloom in post-process for perceived transparency)
+    bool ditherTransparency = false;
+    u8 ditherTransPattern = 0;  // 0=Checkerboard, 1=HStripe, 2=VStripe, 3=Bayer2x2
+    Math::Vector3 ditherTransBlendColor = Math::Vector3(0.7f, 0.85f, 1.0f); // light blue default
+    f32 ditherTransOpacity = 0.5f; // 0=all blend color, 1=all original, 0.5=even mix
 
     // Lightweight key for comparing/sorting texture combinations by pointer identity.
     // Texture cache guarantees pointer stability, so pointer comparison is sufficient.
@@ -114,6 +131,51 @@ struct MaterialComponent {
     mutable TextureKey cachedTextureKey;  // Updated when textureCacheDirty clears
     mutable bool textureCacheDirty = true;
 
+    // 64-bit material sort key for fast radix-friendly sorting.
+    // Layout: [8:pipeline][16:material hash][24:texture hash][16:depth]
+    // Pipeline: opaque=0, alpha-mask=1, alpha-blend=2 (ensures correct render order)
+    mutable u64 cachedSortKey = 0;
+
+    // Compute the sort key for a given camera distance.
+    // Call after texture cache is populated. Depth is quantized to 16 bits.
+    void ComputeSortKey(f32 depth) const {
+        // Pipeline bucket (8 bits)
+        u64 pipeline = 0;
+        if (alphaMode == AlphaMode::Mask) pipeline = 1;
+        else if (alphaMode == AlphaMode::Blend) pipeline = 2;
+
+        // Hash 5 texture pointers into 40 bits (16 material + 24 texture)
+        auto ptrHash = [](const void* p) -> u64 {
+            u64 v = reinterpret_cast<u64>(p);
+            v ^= v >> 16;
+            v *= 0x45d9f3b;
+            v ^= v >> 16;
+            return v;
+        };
+        u64 texHash = ptrHash(cachedBaseColorTexture)
+                    ^ (ptrHash(cachedHeightTexture) * 0x9E3779B97F4A7C15ULL)
+                    ^ (ptrHash(cachedNormalTexture) * 0x517CC1B727220A95ULL)
+                    ^ (ptrHash(cachedMetallicRoughnessTexture) * 0x6C62272E07BB0142ULL)
+                    ^ (ptrHash(cachedEmissiveTexture) * 0x62B821756295C58DULL);
+        u64 materialBits = (texHash >> 24) & 0xFFFF;   // 16 bits
+        u64 textureBits  = texHash & 0xFFFFFF;          // 24 bits
+
+        // Depth: front-to-back for opaque (minimize overdraw), back-to-front for blend
+        u32 depthU16;
+        if (pipeline <= 1) {
+            // Opaque/mask: front-to-back — smaller depth = lower key = drawn first
+            depthU16 = static_cast<u32>(Math::Clamp(depth / 10000.0f, 0.0f, 1.0f) * 65535.0f);
+        } else {
+            // Blend: back-to-front — larger depth = lower key = drawn first
+            depthU16 = 65535u - static_cast<u32>(Math::Clamp(depth / 10000.0f, 0.0f, 1.0f) * 65535.0f);
+        }
+
+        cachedSortKey = (pipeline << 56)
+                      | (materialBits << 40)
+                      | (textureBits << 16)
+                      | static_cast<u64>(depthU16);
+    }
+
     // Call when texture paths change to force re-lookup
     void InvalidateTextureCache() const {
         textureCacheDirty = true;
@@ -126,7 +188,7 @@ struct MaterialComponent {
     }
 };
 
-// GPU-aligned material data for shader upload
+// GPU-aligned material data for shader upload (80 bytes)
 struct alignas(16) MaterialGPU {
     alignas(16) Math::Vector3 baseColor;
     alignas(4) f32 metallic;
@@ -138,6 +200,15 @@ struct alignas(16) MaterialGPU {
     alignas(4) f32 opacity;
     alignas(4) f32 alphaCutoff;
     alignas(4) i32 flags; // Bit flags for various settings
+
+    // Transmission / SSS (new — row 3-4, offset 48)
+    alignas(4) f32 transmission;
+    alignas(4) f32 ior;
+    alignas(4) f32 thickness;
+    alignas(4) f32 sssIntensity;
+
+    alignas(16) Math::Vector3 sssColor;
+    alignas(4) f32 sssRadius;
 
     static MaterialGPU FromComponent(const MaterialComponent& mat) {
         MaterialGPU gpu;
@@ -183,6 +254,14 @@ struct alignas(16) MaterialGPU {
         if (mat.ditherGradient) {
             gpu.flags |= (1 << 20);  // Force flat shading
         }
+
+        // Transmission / SSS
+        gpu.transmission = mat.transmission;
+        gpu.ior = mat.ior;
+        gpu.thickness = mat.thickness;
+        gpu.sssIntensity = mat.sssIntensity;
+        gpu.sssColor = mat.sssColor;
+        gpu.sssRadius = mat.sssRadius;
 
         return gpu;
     }

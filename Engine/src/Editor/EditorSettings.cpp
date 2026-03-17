@@ -371,12 +371,15 @@ bool EditorSettings::Save(const std::string& path) const {
         j["gizmoNudgeFine"] = gizmoNudgeFine;
         j["gizmoRotateNudge"] = gizmoRotateNudge;
 
+        // Audio: enableHRTF/enableOcclusion/enableTransmission migrated to .enjinproject
+        // (still loaded from here for backward compat, but no longer written)
+
         // Surface Snap
         j["surfaceSnap"] = surfaceSnap;
         j["surfaceAlignNormal"] = surfaceAlignNormal;
 
-        // Window Icon
-        j["windowIconPath"] = windowIconPath;
+        // Window Icon: windowIconPath migrated to .enjinproject
+        // (still loaded from here for backward compat, but no longer written)
 
         // External IDE
         j["externalIDE"] = externalIDE;
@@ -404,6 +407,18 @@ bool EditorSettings::Save(const std::string& path) const {
         for (const auto& rn : recentVisualScriptNodes) {
             j["recentVisualScriptNodes"].push_back(rn);
         }
+
+        // Layout persistence
+        j["visiblePanels"] = visiblePanels;
+        j["leftPanelWidth"] = leftPanelWidth;
+        j["rightPanelWidth"] = rightPanelWidth;
+        j["bottomPanelHeight"] = bottomPanelHeight;
+        j["gizmoOperation"] = gizmoOperation;
+        j["gizmoSpace"] = gizmoSpace;
+
+        // Auto-save
+        j["autoSaveEnabled"] = autoSaveEnabled;
+        j["autoSaveIntervalMinutes"] = autoSaveIntervalMinutes;
 
         std::ofstream file(savePath);
         if (!file.is_open()) {
@@ -524,6 +539,11 @@ bool EditorSettings::Load(const std::string& path) {
         if (j.contains("gizmoNudgeFine")) gizmoNudgeFine = j["gizmoNudgeFine"].get<f32>();
         if (j.contains("gizmoRotateNudge")) gizmoRotateNudge = j["gizmoRotateNudge"].get<f32>();
 
+        // Audio
+        if (j.contains("enableHRTF")) enableHRTF = j["enableHRTF"].get<bool>();
+        if (j.contains("enableOcclusion")) enableOcclusion = j["enableOcclusion"].get<bool>();
+        if (j.contains("enableTransmission")) enableTransmission = j["enableTransmission"].get<bool>();
+
         // Surface Snap
         if (j.contains("surfaceSnap")) surfaceSnap = j["surfaceSnap"].get<bool>();
         if (j.contains("surfaceAlignNormal")) surfaceAlignNormal = j["surfaceAlignNormal"].get<bool>();
@@ -567,6 +587,24 @@ bool EditorSettings::Load(const std::string& path) {
                 }
             }
         }
+
+        // Layout persistence
+        if (j.contains("visiblePanels")) visiblePanels = j["visiblePanels"].get<u32>();
+        if (j.contains("leftPanelWidth")) leftPanelWidth = std::clamp(j["leftPanelWidth"].get<f32>(), 0.05f, 0.5f);
+        if (j.contains("rightPanelWidth")) rightPanelWidth = std::clamp(j["rightPanelWidth"].get<f32>(), 0.05f, 0.5f);
+        if (j.contains("bottomPanelHeight")) bottomPanelHeight = std::clamp(j["bottomPanelHeight"].get<f32>(), 0.05f, 0.5f);
+        if (j.contains("gizmoOperation")) {
+            u32 val = j["gizmoOperation"].get<u32>();
+            if (val <= 2) gizmoOperation = val;
+        }
+        if (j.contains("gizmoSpace")) {
+            u32 val = j["gizmoSpace"].get<u32>();
+            if (val <= 1) gizmoSpace = val;
+        }
+
+        // Auto-save
+        if (j.contains("autoSaveEnabled")) autoSaveEnabled = j["autoSaveEnabled"].get<bool>();
+        if (j.contains("autoSaveIntervalMinutes")) autoSaveIntervalMinutes = std::clamp(j["autoSaveIntervalMinutes"].get<f32>(), 1.0f, 60.0f);
 
         ENJIN_LOG_INFO(Editor, "Loaded editor settings from %s", loadPath.c_str());
         return true;

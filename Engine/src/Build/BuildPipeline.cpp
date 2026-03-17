@@ -1,6 +1,7 @@
 #include "Enjin/Build/BuildPipeline.h"
 #include "Enjin/Build/AssetPacker.h"
 #include "Enjin/Build/AssetReader.h"
+#include "Enjin/Build/HTML5Exporter.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Platform/Paths.h"
 #include <nlohmann/json.hpp>
@@ -23,6 +24,16 @@ BuildResult BuildPipeline::Execute(const BuildConfig& config) {
     m_DialoguePaths.clear();
     m_PrefabPaths.clear();
     m_DataAssetPaths.clear();
+
+    // Validate build config dimensions
+    if (config.windowWidth < 1 || config.windowWidth > 7680 ||
+        config.windowHeight < 1 || config.windowHeight > 4320) {
+        m_Result.success = false;
+        AddMessage(MessageSeverity::Error, "Invalid window dimensions: " +
+                   std::to_string(config.windowWidth) + "x" + std::to_string(config.windowHeight) +
+                   " (must be 1-7680 x 1-4320)");
+        return m_Result;
+    }
 
     AddMessage(MessageSeverity::Info, "Starting build...");
 
@@ -54,11 +65,31 @@ BuildResult BuildPipeline::Execute(const BuildConfig& config) {
         return m_Result;
     }
 
-    // Phase 4: Copy player
-    ReportProgress("Copying player", 0.8f);
-    if (!CopyPlayer(config.outputDir)) {
-        // Non-fatal: warn but continue (user may not have built the player)
-        AddMessage(MessageSeverity::Warning, "Player executable not found. Build the player target (EnjinPlayer) separately.");
+    // Phase 4: Copy player (desktop) or invoke Emscripten build (web)
+    ReportProgress("Building player", 0.8f);
+    if (config.target == BuildTargetPlatform::Web) {
+        std::string pakPath = (fs::path(config.outputDir) / "game.enjpak").string();
+        if (!HTML5Exporter::InvokeEmscriptenBuild(config.outputDir, pakPath)) {
+            AddMessage(MessageSeverity::Warning, "Emscripten build failed — WASM output may be missing. Ensure Emscripten SDK is installed.");
+        }
+
+        // Generate HTML shell
+        HTML5ExportConfig htmlConfig;
+        htmlConfig.outputDir = config.outputDir;
+        htmlConfig.title = config.windowTitle.empty() ? "Enjin Game" : config.windowTitle;
+        htmlConfig.width = config.windowWidth;
+        htmlConfig.height = config.windowHeight;
+        auto htmlResult = HTML5Exporter::Export(htmlConfig, config);
+        if (!htmlResult.success) {
+            AddMessage(MessageSeverity::Warning, "HTML export failed: " + htmlResult.error);
+        } else {
+            AddMessage(MessageSeverity::Info, "Web export: " + htmlResult.outputPath);
+        }
+    } else {
+        if (!CopyPlayer(config.outputDir)) {
+            // Non-fatal: warn but continue (user may not have built the player)
+            AddMessage(MessageSeverity::Warning, "Player executable not found. Build the player target (EnjinPlayer) separately.");
+        }
     }
 
     // Phase 5: Verify
@@ -216,62 +247,56 @@ bool BuildPipeline::ValidateAssets() {
                                std::to_string(entities.size()) + " entities (>10k)");
                 }
 
+                // Path traversal guard — validates and resolves an asset path
+                fs::path projectNorm = fs::path(m_ProjectDir).lexically_normal();
+                auto validateAssetPath = [&](const std::string& relPath,
+                                             std::set<std::string>& destSet,
+                                             const char* assetType,
+                                             bool required = false) {
+                    if (relPath.empty()) return;
+                    std::string absPath = (fs::path(m_ProjectDir) / relPath).string();
+                    if (!fs::exists(absPath)) {
+                        // Try relative to scene file
+                        absPath = (fs::path(scene.absolutePath).parent_path() / relPath).string();
+                    }
+                    // Security: validate path stays within project directory
+                    fs::path normalized = fs::path(absPath).lexically_normal();
+                    auto rel = normalized.lexically_relative(projectNorm);
+                    if (rel.string().find("..") == 0) {
+                        AddMessage(MessageSeverity::Error,
+                                   "Path traversal blocked: " + relPath +
+                                   " resolves outside project directory (in " + scene.name + ")", relPath);
+                        allValid = false;
+                        return;
+                    }
+                    if (fs::exists(absPath)) {
+                        destSet.insert(absPath);
+                    } else if (required) {
+                        AddMessage(MessageSeverity::Error,
+                                   std::string("Missing ") + assetType + ": " + relPath +
+                                   " (referenced in " + scene.name + ")", relPath);
+                        allValid = false;
+                    }
+                };
+
                 for (const auto& entity : entities) {
                     // Material texture paths
                     if (entity.contains("material")) {
                         const auto& mat = entity["material"];
-
-                        auto checkTexture = [&](const std::string& key) {
+                        for (const char* key : {"baseColorTexturePath", "normalTexturePath",
+                                                "heightTexturePath", "metallicRoughnessTexturePath",
+                                                "emissiveTexturePath"}) {
                             if (mat.contains(key)) {
-                                std::string texPath = mat[key].get<std::string>();
-                                if (!texPath.empty()) {
-                                    // Resolve relative to project dir
-                                    std::string absPath = (fs::path(m_ProjectDir) / texPath).string();
-                                    if (!fs::exists(absPath)) {
-                                        // Try relative to scene file
-                                        absPath = (fs::path(scene.absolutePath).parent_path() / texPath).string();
-                                    }
-                                    // Security: validate path stays within project directory
-                                    fs::path normalized = fs::path(absPath).lexically_normal();
-                                    fs::path projectNorm = fs::path(m_ProjectDir).lexically_normal();
-                                    auto relPath = normalized.lexically_relative(projectNorm);
-                                    if (relPath.string().find("..") == 0) {
-                                        AddMessage(MessageSeverity::Error,
-                                                   "Path traversal blocked: " + texPath +
-                                                   " resolves outside project directory (in " + scene.name + ")", texPath);
-                                        allValid = false;
-                                        return;
-                                    }
-                                    if (fs::exists(absPath)) {
-                                        m_TexturePaths.insert(absPath);
-                                    } else {
-                                        AddMessage(MessageSeverity::Error,
-                                                   "Missing texture: " + texPath +
-                                                   " (referenced in " + scene.name + ")", texPath);
-                                        allValid = false;
-                                    }
-                                }
+                                validateAssetPath(mat[key].get<std::string>(), m_TexturePaths, "texture", true);
                             }
-                        };
-
-                        checkTexture("baseColorTexturePath");
-                        checkTexture("normalTexturePath");
-                        checkTexture("heightTexturePath");
-                        checkTexture("metallicRoughnessTexturePath");
-                        checkTexture("emissiveTexturePath");
+                        }
                     }
 
                     // Sprite2D texture path
                     if (entity.contains("sprite2D")) {
                         const auto& sprite = entity["sprite2D"];
                         if (sprite.contains("texturePath")) {
-                            std::string texPath = sprite["texturePath"].get<std::string>();
-                            if (!texPath.empty()) {
-                                std::string absPath = (fs::path(m_ProjectDir) / texPath).string();
-                                if (fs::exists(absPath)) {
-                                    m_TexturePaths.insert(absPath);
-                                }
-                            }
+                            validateAssetPath(sprite["texturePath"].get<std::string>(), m_TexturePaths, "sprite texture");
                         }
                     }
 
@@ -279,13 +304,7 @@ bool BuildPipeline::ValidateAssets() {
                     if (entity.contains("audioSource")) {
                         const auto& audio = entity["audioSource"];
                         if (audio.contains("filePath")) {
-                            std::string audioPath = audio["filePath"].get<std::string>();
-                            if (!audioPath.empty()) {
-                                std::string absPath = (fs::path(m_ProjectDir) / audioPath).string();
-                                if (fs::exists(absPath)) {
-                                    m_AudioPaths.insert(absPath);
-                                }
-                            }
+                            validateAssetPath(audio["filePath"].get<std::string>(), m_AudioPaths, "audio file");
                         }
                     }
 
@@ -295,13 +314,7 @@ bool BuildPipeline::ValidateAssets() {
                         if (sc.contains("scripts") && sc["scripts"].is_array()) {
                             for (const auto& script : sc["scripts"]) {
                                 if (script.contains("path")) {
-                                    std::string scriptPath = script["path"].get<std::string>();
-                                    if (!scriptPath.empty()) {
-                                        std::string absPath = (fs::path(m_ProjectDir) / scriptPath).string();
-                                        if (fs::exists(absPath)) {
-                                            m_ScriptPaths.insert(absPath);
-                                        }
-                                    }
+                                    validateAssetPath(script["path"].get<std::string>(), m_ScriptPaths, "script");
                                 }
                             }
                         }
@@ -311,13 +324,7 @@ bool BuildPipeline::ValidateAssets() {
                     if (entity.contains("tilemap")) {
                         const auto& tm = entity["tilemap"];
                         if (tm.contains("tilesetPath")) {
-                            std::string texPath = tm["tilesetPath"].get<std::string>();
-                            if (!texPath.empty()) {
-                                std::string absPath = (fs::path(m_ProjectDir) / texPath).string();
-                                if (fs::exists(absPath)) {
-                                    m_TexturePaths.insert(absPath);
-                                }
-                            }
+                            validateAssetPath(tm["tilesetPath"].get<std::string>(), m_TexturePaths, "tileset texture");
                         }
                     }
 
@@ -326,13 +333,7 @@ bool BuildPipeline::ValidateAssets() {
                         const auto& tree = entity["treeVolume"];
                         for (const char* key : {"barkTexturePath", "canopyTexturePath"}) {
                             if (tree.contains(key)) {
-                                std::string texPath = tree[key].get<std::string>();
-                                if (!texPath.empty()) {
-                                    std::string absPath = (fs::path(m_ProjectDir) / texPath).string();
-                                    if (fs::exists(absPath)) {
-                                        m_TexturePaths.insert(absPath);
-                                    }
-                                }
+                                validateAssetPath(tree[key].get<std::string>(), m_TexturePaths, "tree texture");
                             }
                         }
                     }
@@ -341,13 +342,7 @@ bool BuildPipeline::ValidateAssets() {
                     if (entity.contains("shrubVolume")) {
                         const auto& shrub = entity["shrubVolume"];
                         if (shrub.contains("customAssetPath")) {
-                            std::string texPath = shrub["customAssetPath"].get<std::string>();
-                            if (!texPath.empty()) {
-                                std::string absPath = (fs::path(m_ProjectDir) / texPath).string();
-                                if (fs::exists(absPath)) {
-                                    m_TexturePaths.insert(absPath);
-                                }
-                            }
+                            validateAssetPath(shrub["customAssetPath"].get<std::string>(), m_TexturePaths, "shrub asset");
                         }
                     }
                 }

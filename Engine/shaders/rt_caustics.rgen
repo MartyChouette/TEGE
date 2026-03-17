@@ -1,0 +1,85 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+
+layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
+layout(binding = 15, set = 0, rgba16f) uniform image2D causticsOutput;
+layout(binding = 2, set = 0) uniform sampler2D depthTex;
+layout(binding = 3, set = 0) uniform sampler2D normalTex;
+
+layout(binding = 13, set = 0) uniform LightData {
+    vec4 lightDir;
+    vec4 lightColor;
+    mat4 invViewProj;
+    vec2 screenSize;
+    uint frameCount;
+    float maxDistance;
+    vec4 cameraPos;
+    float roughnessThreshold;
+    float pad1, pad2, pad3;
+} uLight;
+
+layout(location = 0) rayPayloadEXT vec4 causticPayload;
+
+#include "rt_common.glsl"
+
+// Snell's law refraction
+vec3 refractRay(vec3 I, vec3 N, float eta) {
+    float cosI = dot(-I, N);
+    float sin2T = eta * eta * (1.0 - cosI * cosI);
+    if (sin2T > 1.0) return reflect(I, N);
+    float cosT = sqrt(1.0 - sin2T);
+    return eta * I + (eta * cosI - cosT) * N;
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
+    vec2 uv = (vec2(pixel) + 0.5) / uLight.screenSize;
+
+    float depth = texture(depthTex, uv).r;
+    if (depth >= 1.0) {
+        imageStore(causticsOutput, pixel, vec4(0.0));
+        return;
+    }
+
+    // Reconstruct world position from depth
+    vec4 clipPos = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    vec4 worldPos = uLight.invViewProj * clipPos;
+    worldPos /= worldPos.w;
+
+    vec3 worldNormal = normalize(texture(normalTex, uv).xyz * 2.0 - 1.0);
+
+    // Trace a ray from light through this point to see if it hit a refractive surface
+    // Caustics = light concentration from refraction through curved/wavy surfaces
+    vec3 lightDir = normalize(uLight.lightDir.xyz);
+
+    // Cast ray from above (along light direction) toward this surface point
+    // Check if the ray passes through a transmissive object first
+    vec3 rayOrigin = worldPos.xyz - lightDir * uLight.maxDistance;
+
+    uint seed = init_rng(uvec2(pixel), uLight.frameCount);
+
+    // Jitter ray origin for soft caustics
+    vec3 T, B;
+    build_onb(-lightDir, T, B);
+    vec2 jitter = (rand_vec2(seed) - 0.5) * 0.1;
+    rayOrigin += jitter.x * T + jitter.y * B;
+
+    causticPayload = vec4(0.0);
+
+    traceRayEXT(topLevelAS,
+        gl_RayFlagsNoneEXT,
+        0xFF, 0, 0, 0,
+        rayOrigin, 0.001,
+        lightDir, uLight.maxDistance * 2.0,
+        0
+    );
+
+    // causticPayload.rgb = refracted light color, .a = caustic intensity
+    // The closest-hit shader determines if we hit a transmissive surface and traces
+    // a refracted continuation ray — the intensity is based on how concentrated
+    // the refracted rays are (ray differential / Jacobian)
+    vec3 causticColor = causticPayload.rgb * uLight.lightColor.rgb;
+    float causticIntensity = causticPayload.a;
+
+    imageStore(causticsOutput, pixel, vec4(causticColor, causticIntensity));
+}

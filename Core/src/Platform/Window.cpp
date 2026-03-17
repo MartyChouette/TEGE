@@ -1,3 +1,7 @@
+#include "Enjin/Platform/Platform.h"
+
+#if !ENJIN_PLATFORM_WEB  // Web platform uses WebWindow.cpp instead
+
 #include "Enjin/Platform/Window.h"
 #include "Enjin/Logging/Log.h"
 #include <iostream>
@@ -127,11 +131,32 @@ public:
         m_DropCallback = callback;
     }
 
+    void SetCloseCallback(const CloseCallback& callback) override {
+        m_CloseCallback = callback;
+        if (m_Window) {
+            glfwSetWindowCloseCallback(m_Window, [](GLFWwindow* window) {
+                GLFWWindow* self = static_cast<GLFWWindow*>(glfwGetWindowUserPointer(window));
+                if (self && self->m_CloseCallback) {
+                    if (!self->m_CloseCallback()) {
+                        // Callback returned false — cancel the close
+                        glfwSetWindowShouldClose(window, GLFW_FALSE);
+                    }
+                }
+            });
+        }
+    }
+
     bool IsFocused() const override { return m_Focused; }
     bool IsIconified() const override { return m_Iconified; }
 
     void WaitEvents() override {
         glfwWaitEvents();
+    }
+
+    void SetTitle(const char* title) override {
+        if (m_Window && title) {
+            glfwSetWindowTitle(m_Window, title);
+        }
     }
 
     void SetIcon(const char* iconPath) override {
@@ -200,6 +225,7 @@ private:
     FocusCallback m_FocusCallback;
     IconifyCallback m_IconifyCallback;
     DropCallback m_DropCallback;
+    CloseCallback m_CloseCallback;
     bool m_Focused = true;
     bool m_Iconified = false;
 };
@@ -233,3 +259,5 @@ void DestroyWindow(Window* window) {
 }
 
 } // namespace Enjin
+
+#endif // !ENJIN_PLATFORM_WEB

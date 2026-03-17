@@ -1,4 +1,5 @@
 #include "Enjin/Renderer/GPUDriven/GPUCulling.h"
+#include "Enjin/Renderer/GPUDriven/HiZPyramid.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
 #include "Enjin/Renderer/Vulkan/VulkanShader.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
@@ -69,6 +70,21 @@ void GPUCullingSystem::Shutdown() {
     m_VisibilityBuffer.reset();
     m_DrawCountBuffer.reset();
     m_ObjectDataBuffer.reset();
+    m_OcclusionFlagBuffer.reset();
+
+    // Destroy two-phase HiZ pipeline resources
+    if (m_CullHiZPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_Context->GetDevice(), m_CullHiZPipeline, nullptr);
+        m_CullHiZPipeline = VK_NULL_HANDLE;
+    }
+    if (m_HiZPipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(m_Context->GetDevice(), m_HiZPipelineLayout, nullptr);
+        m_HiZPipelineLayout = VK_NULL_HANDLE;
+    }
+    if (m_HiZDescriptorSetLayout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(m_Context->GetDevice(), m_HiZDescriptorSetLayout, nullptr);
+        m_HiZDescriptorSetLayout = VK_NULL_HANDLE;
+    }
 }
 
 VkBuffer GPUCullingSystem::GetIndirectDrawBuffer() const {
@@ -83,9 +99,13 @@ VkBuffer GPUCullingSystem::GetObjectDataBuffer() const {
     return m_ObjectDataBuffer ? m_ObjectDataBuffer->GetBuffer() : VK_NULL_HANDLE;
 }
 
+VkBuffer GPUCullingSystem::GetOcclusionFlagBuffer() const {
+    return m_OcclusionFlagBuffer ? m_OcclusionFlagBuffer->GetBuffer() : VK_NULL_HANDLE;
+}
+
 bool GPUCullingSystem::UploadObjectData(const void* data, usize sizeBytes) {
     if (!m_ObjectDataBuffer || !data || sizeBytes == 0) return false;
-    usize maxSize = static_cast<usize>(m_MaxObjects) * 128; // 128 bytes per ObjectData
+    usize maxSize = static_cast<usize>(m_MaxObjects) * OBJECT_DATA_GPU_SIZE;
     if (sizeBytes > maxSize) {
         ENJIN_LOG_WARN(Renderer, "ObjectData upload truncated: %zu > %zu bytes", sizeBytes, maxSize);
         sizeBytes = maxSize;
@@ -326,11 +346,20 @@ bool GPUCullingSystem::CreateBuffers() {
     }
 
     // Object data SSBO (per-object material/transform for indirect rendering)
-    // 128 bytes per object, matches ObjectDataGPU struct in triangle.vert/frag
-    usize objectDataSize = m_MaxObjects * 128;
+    // Matches ObjectDataGPU struct (192 bytes: model + prevModel + material fields + teleported flag)
+    usize objectDataSize = m_MaxObjects * OBJECT_DATA_GPU_SIZE;
     m_ObjectDataBuffer = std::make_unique<VulkanBuffer>(m_Context);
     if (!m_ObjectDataBuffer->Create(objectDataSize, BufferUsage::Storage, true)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create object data buffer");
+        return false;
+    }
+
+    // Occlusion flag buffer (per-object flags for two-phase culling)
+    usize occlusionFlagSize = m_MaxObjects * sizeof(u32);
+    m_OcclusionFlagBuffer = std::make_unique<VulkanBuffer>(m_Context);
+    VkBufferUsageFlags occFlagUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    if (!m_OcclusionFlagBuffer->Create(occlusionFlagSize, occFlagUsage, true)) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create occlusion flag buffer");
         return false;
     }
 
@@ -562,6 +591,345 @@ void GPUCullingSystem::UpdateDescriptorSet(VkCommandBuffer commandBuffer) {
 void GPUCullingSystem::UpdateFrustumPlanes(const Math::Matrix4& viewProj) {
     // Frustum planes are updated in ExecuteCulling
     (void)viewProj;
+}
+
+bool GPUCullingSystem::CreateHiZComputePipeline() {
+    if (m_HiZPipelineCreated) return m_CullHiZPipeline != VK_NULL_HANDLE;
+
+    m_HiZPipelineCreated = true;
+
+    // Descriptor set layout: 7 bindings (same as base + HiZ sampler + occlusion flags)
+    std::vector<VkDescriptorSetLayoutBinding> bindings(7);
+
+    // Bindings 0-4 same as base pipeline
+    for (u32 i = 0; i < 5; ++i) {
+        bindings[i].binding = i;
+        bindings[i].descriptorType = (i == 2) ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[i].descriptorCount = 1;
+        bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+
+    // Binding 5: Hi-Z pyramid sampler
+    bindings[5].binding = 5;
+    bindings[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[5].descriptorCount = 1;
+    bindings[5].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 6: Occlusion flag buffer
+    bindings[6].binding = 6;
+    bindings[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[6].descriptorCount = 1;
+    bindings[6].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = static_cast<u32>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
+
+    if (vkCreateDescriptorSetLayout(m_Context->GetDevice(), &layoutInfo, nullptr, &m_HiZDescriptorSetLayout) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create HiZ descriptor set layout");
+        return false;
+    }
+
+    // Push constant for phase selection
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    pushRange.offset = 0;
+    pushRange.size = sizeof(u32);
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &m_HiZDescriptorSetLayout;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushRange;
+
+    if (vkCreatePipelineLayout(m_Context->GetDevice(), &pipelineLayoutInfo, nullptr, &m_HiZPipelineLayout) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create HiZ pipeline layout");
+        return false;
+    }
+
+    // Descriptor pool for HiZ set
+    std::vector<VkDescriptorPoolSize> poolSizes = {
+        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5 },
+        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 },
+        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 }
+    };
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
+    poolInfo.pPoolSizes = poolSizes.data();
+    poolInfo.maxSets = 1;
+
+    VkDescriptorPool hizPool;
+    if (vkCreateDescriptorPool(m_Context->GetDevice(), &poolInfo, nullptr, &hizPool) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create HiZ descriptor pool");
+        return false;
+    }
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = hizPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &m_HiZDescriptorSetLayout;
+
+    if (vkAllocateDescriptorSets(m_Context->GetDevice(), &allocInfo, &m_HiZDescriptorSet) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to allocate HiZ descriptor set");
+        return false;
+    }
+
+    // Load cull_hiz.comp shader
+    VulkanShader computeShader(m_Context);
+    const char* shaderPaths[] = {
+        "shaders/cull_hiz.comp.spv",
+        "Engine/shaders/cull_hiz.comp.spv",
+        "../Engine/shaders/cull_hiz.comp.spv",
+        "../../Engine/shaders/cull_hiz.comp.spv",
+        "bin/shaders/cull_hiz.comp.spv"
+    };
+
+    bool loaded = false;
+    for (const char* path : shaderPaths) {
+        if (computeShader.LoadFromFile(path) && computeShader.GetModule() != VK_NULL_HANDLE) {
+            loaded = true;
+            ENJIN_LOG_INFO(Renderer, "Loaded HiZ cull shader from: %s", path);
+            break;
+        }
+    }
+
+    if (!loaded) {
+        ENJIN_LOG_WARN(Renderer, "HiZ cull shader not found, two-phase culling unavailable");
+        return false;
+    }
+
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.layout = m_HiZPipelineLayout;
+
+    VkPipelineShaderStageCreateInfo shaderStage{};
+    shaderStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shaderStage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    shaderStage.module = computeShader.GetModule();
+    shaderStage.pName = "main";
+    pipelineInfo.stage = shaderStage;
+
+    if (vkCreateComputePipelines(m_Context->GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_CullHiZPipeline) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create HiZ compute pipeline");
+        return false;
+    }
+
+    ENJIN_LOG_INFO(Renderer, "Two-phase HiZ culling pipeline created");
+    return true;
+}
+
+void GPUCullingSystem::UpdateDescriptorSetTwoPhase(VkCommandBuffer commandBuffer) {
+    (void)commandBuffer;
+    if (!m_HiZPyramid || m_HiZDescriptorSet == VK_NULL_HANDLE) return;
+
+    std::vector<VkWriteDescriptorSet> writes(7);
+    std::vector<VkDescriptorBufferInfo> bufferInfos(6);
+
+    // Buffers 0-4: same as base
+    VkBuffer buffers[] = {
+        m_ObjectBuffer->GetBuffer(),
+        m_IndirectDrawBuffer->GetBuffer(),
+        m_FrustumBuffer->GetBuffer(),
+        m_VisibilityBuffer->GetBuffer(),
+        m_DrawCountBuffer->GetBuffer()
+    };
+    VkDescriptorType types[] = {
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+        VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+    };
+    for (u32 i = 0; i < 5; ++i) {
+        bufferInfos[i].buffer = buffers[i];
+        bufferInfos[i].offset = 0;
+        bufferInfos[i].range = VK_WHOLE_SIZE;
+
+        writes[i] = {};
+        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[i].dstSet = m_HiZDescriptorSet;
+        writes[i].dstBinding = i;
+        writes[i].descriptorType = types[i];
+        writes[i].descriptorCount = 1;
+        writes[i].pBufferInfo = &bufferInfos[i];
+    }
+
+    // Binding 5: Hi-Z pyramid
+    VkDescriptorImageInfo hizImageInfo{};
+    hizImageInfo.sampler = m_HiZPyramid->GetSampler();
+    hizImageInfo.imageView = m_HiZPyramid->GetView();
+    hizImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    writes[5] = {};
+    writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[5].dstSet = m_HiZDescriptorSet;
+    writes[5].dstBinding = 5;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[5].descriptorCount = 1;
+    writes[5].pImageInfo = &hizImageInfo;
+
+    // Binding 6: Occlusion flag buffer
+    bufferInfos[5].buffer = m_OcclusionFlagBuffer->GetBuffer();
+    bufferInfos[5].offset = 0;
+    bufferInfos[5].range = VK_WHOLE_SIZE;
+
+    writes[6] = {};
+    writes[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[6].dstSet = m_HiZDescriptorSet;
+    writes[6].dstBinding = 6;
+    writes[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[6].descriptorCount = 1;
+    writes[6].pBufferInfo = &bufferInfos[5];
+
+    vkUpdateDescriptorSets(m_Context->GetDevice(), static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
+}
+
+bool GPUCullingSystem::ExecuteTwoPhase(
+    const Math::Matrix4& viewMatrix,
+    const Math::Matrix4& projectionMatrix,
+    VkCommandBuffer commandBuffer,
+    VkBuffer& outIndirectDrawBuffer,
+    u32& outDrawCount
+) {
+    if (!m_HiZPyramid || commandBuffer == VK_NULL_HANDLE || m_ObjectCount == 0) {
+        // Fall back to single-phase
+        return ExecuteCulling(viewMatrix, projectionMatrix, commandBuffer, outIndirectDrawBuffer, outDrawCount);
+    }
+
+    // Lazily create the HiZ pipeline on first use
+    if (!m_HiZPipelineCreated) {
+        if (!CreateHiZComputePipeline()) {
+            return ExecuteCulling(viewMatrix, projectionMatrix, commandBuffer, outIndirectDrawBuffer, outDrawCount);
+        }
+    }
+
+    if (m_CullHiZPipeline == VK_NULL_HANDLE) {
+        return ExecuteCulling(viewMatrix, projectionMatrix, commandBuffer, outIndirectDrawBuffer, outDrawCount);
+    }
+
+    // Upload frustum planes (same as single-phase)
+    Math::Matrix4 viewProj = projectionMatrix * viewMatrix;
+
+    struct FrustumData {
+        Math::Vector4 planes[6];
+        Math::Matrix4 viewProj;
+        f32 screenWidth;
+        f32 screenHeight;
+        f32 nearPlane;
+        f32 _pad;
+    } frustumData;
+
+    // Extract and normalize frustum planes
+    auto extractPlane = [&](int idx, float s0, float s1, float s2, float s3) {
+        frustumData.planes[idx] = Math::Vector4(s0, s1, s2, s3);
+        f32 len = Math::Sqrt(s0*s0 + s1*s1 + s2*s2);
+        if (len > Math::EPSILON) {
+            frustumData.planes[idx] = frustumData.planes[idx] / len;
+        }
+    };
+    extractPlane(0, viewProj.m[3]+viewProj.m[0], viewProj.m[7]+viewProj.m[4], viewProj.m[11]+viewProj.m[8], viewProj.m[15]+viewProj.m[12]);
+    extractPlane(1, viewProj.m[3]-viewProj.m[0], viewProj.m[7]-viewProj.m[4], viewProj.m[11]-viewProj.m[8], viewProj.m[15]-viewProj.m[12]);
+    extractPlane(2, viewProj.m[3]+viewProj.m[1], viewProj.m[7]+viewProj.m[5], viewProj.m[11]+viewProj.m[9], viewProj.m[15]+viewProj.m[13]);
+    extractPlane(3, viewProj.m[3]-viewProj.m[1], viewProj.m[7]-viewProj.m[5], viewProj.m[11]-viewProj.m[9], viewProj.m[15]-viewProj.m[13]);
+    extractPlane(4, viewProj.m[3]+viewProj.m[2], viewProj.m[7]+viewProj.m[6], viewProj.m[11]+viewProj.m[10], viewProj.m[15]+viewProj.m[14]);
+    extractPlane(5, viewProj.m[3]-viewProj.m[2], viewProj.m[7]-viewProj.m[6], viewProj.m[11]-viewProj.m[10], viewProj.m[15]-viewProj.m[14]);
+
+    frustumData.viewProj = viewProj;
+    frustumData.screenWidth = static_cast<f32>(m_HiZPyramid->GetWidth());
+    frustumData.screenHeight = static_cast<f32>(m_HiZPyramid->GetHeight());
+    frustumData.nearPlane = 0.01f;
+    frustumData._pad = 0.0f;
+
+    m_FrustumBuffer->UploadData(&frustumData, sizeof(frustumData));
+
+    // Update descriptors
+    UpdateDescriptorSetTwoPhase(commandBuffer);
+
+    u32 workgroupCount = (m_ObjectCount + 63) / 64;
+
+    // --- Phase 0: Frustum + previous-frame HiZ cull ---
+
+    // Clear draw count and occlusion flags
+    vkCmdFillBuffer(commandBuffer, m_DrawCountBuffer->GetBuffer(), 0, sizeof(u32), 0);
+    vkCmdFillBuffer(commandBuffer, m_OcclusionFlagBuffer->GetBuffer(), 0,
+                    m_ObjectCount * sizeof(u32), 0);
+
+    VkMemoryBarrier fillBarrier{};
+    fillBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    fillBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    fillBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    vkCmdPipelineBarrier(commandBuffer,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0, 1, &fillBarrier, 0, nullptr, 0, nullptr);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_CullHiZPipeline);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE,
+        m_HiZPipelineLayout, 0, 1, &m_HiZDescriptorSet, 0, nullptr);
+
+    // Phase 0 push constant
+    u32 phase = 0;
+    vkCmdPushConstants(commandBuffer, m_HiZPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(u32), &phase);
+    vkCmdDispatch(commandBuffer, workgroupCount, 1, 1);
+
+    // Barrier: phase 0 compute → HiZ regeneration (read visibility + indirect draw)
+    VkMemoryBarrier phase0Barrier{};
+    phase0Barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    phase0Barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    phase0Barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    vkCmdPipelineBarrier(commandBuffer,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+        0, 1, &phase0Barrier, 0, nullptr, 0, nullptr);
+
+    // Between phases: the caller should regenerate the HiZ pyramid from the depth buffer
+    // produced by rendering phase 0 visible objects. This is handled by RenderSystem.
+    // For now, we proceed to phase 1 using the same HiZ (still beneficial as phase 0
+    // removes the majority of occluded objects, and phase 1 recovers false negatives).
+
+    // --- Phase 1: Re-test occluded objects against (potentially updated) HiZ ---
+    phase = 1;
+    vkCmdPushConstants(commandBuffer, m_HiZPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(u32), &phase);
+    vkCmdDispatch(commandBuffer, workgroupCount, 1, 1);
+
+    // Final barrier: phase 1 compute → draw
+    VkMemoryBarrier finalBarrier{};
+    finalBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    finalBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    finalBarrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(commandBuffer,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        0, 1, &finalBarrier, 0, nullptr, 0, nullptr);
+
+    outIndirectDrawBuffer = m_IndirectDrawBuffer->GetBuffer();
+
+    // Read back visibility (lazy, from previous frame — same pattern as single-phase)
+    m_CachedVisibility.resize(m_ObjectCount);
+    void* mapped = m_VisibilityBuffer->Map();
+    if (mapped) {
+        const u32* vis = static_cast<const u32*>(mapped);
+        u32 visCount = 0;
+        for (u32 i = 0; i < m_ObjectCount; ++i) {
+            m_CachedVisibility[i] = vis[i];
+            if (vis[i] != 0) visCount++;
+        }
+        m_VisibilityBuffer->Unmap();
+        m_Stats.visibleObjects = visCount;
+        m_Stats.culledObjects = m_ObjectCount - visCount;
+    } else {
+        std::fill(m_CachedVisibility.begin(), m_CachedVisibility.end(), 1u);
+        m_Stats.visibleObjects = m_ObjectCount;
+        m_Stats.culledObjects = 0;
+    }
+
+    outDrawCount = m_ObjectCount;
+    m_Stats.totalObjects = m_ObjectCount;
+    return true;
 }
 
 } // namespace Renderer

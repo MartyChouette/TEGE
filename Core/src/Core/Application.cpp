@@ -1,6 +1,7 @@
 #include "Enjin/Core/Application.h"
 #include "Enjin/Core/Version.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Debug/CrashHandler.h"
 #include "Enjin/Platform/Window.h"
 #include "Enjin/Platform/Paths.h"
 #include "Enjin/Platform/Input.h"
@@ -9,7 +10,9 @@
 #include <iostream>
 #undef CreateWindow
 
-#if defined(ENJIN_PLATFORM_WINDOWS)
+#if ENJIN_PLATFORM_WEB
+    #include <emscripten.h>
+#elif defined(ENJIN_PLATFORM_WINDOWS)
     #ifndef WIN32_LEAN_AND_MEAN
         #define WIN32_LEAN_AND_MEAN
     #endif
@@ -63,17 +66,20 @@ int Application::Run() {
 }
 
 void Application::InitializeEngine() {
-#if defined(ENJIN_PLATFORM_WINDOWS)
+#if defined(ENJIN_PLATFORM_WINDOWS) && !ENJIN_PLATFORM_WEB
     // Set Windows timer resolution to 1ms for precise sleep_for() and frame pacing.
     // Without this, sleep granularity defaults to ~15.6ms causing severe frame jitter.
     timeBeginPeriod(1);
 #endif
 
+#if !ENJIN_PLATFORM_WEB
     // Make relative paths (like "enjin.log" or shader/assets folders) resolve
     // next to the executable, even when launched via double-click.
     Platform::SetWorkingDirectoryToExecutableDirectory();
+#endif
 
     Logger::Get().Initialize();
+    Debug::InstallCrashHandler();
     ENJIN_LOG_INFO(Core, "Initializing Enjin Engine...");
     
     // Create window (windowed mode)
@@ -89,7 +95,7 @@ void Application::InitializeEngine() {
     if (!m_Window) {
         ENJIN_LOG_FATAL(Core, "Failed to create window");
         std::cerr << "CRITICAL ERROR: Failed to create window!" << std::endl;
-#if defined(ENJIN_PLATFORM_WINDOWS)
+#if defined(ENJIN_PLATFORM_WINDOWS) && !ENJIN_PLATFORM_WEB
         // If launched as a GUI app (no console), show an error dialog.
         if (GetConsoleWindow() == nullptr) {
             MessageBoxA(nullptr,
@@ -129,70 +135,92 @@ void Application::ShutdownEngine() {
         m_Window = nullptr;
     }
 
+    Debug::UninstallCrashHandler();
     Logger::Get().Shutdown();
 
-#if defined(ENJIN_PLATFORM_WINDOWS)
+#if defined(ENJIN_PLATFORM_WINDOWS) && !ENJIN_PLATFORM_WEB
     timeEndPeriod(1);
 #endif
 }
 
 void Application::MainLoop() {
-    auto lastTime = std::chrono::high_resolution_clock::now();
+    m_LastTime = std::chrono::high_resolution_clock::now();
 
+#if ENJIN_PLATFORM_WEB
+    // On web, hand control to the browser's requestAnimationFrame loop.
+    // RunOneFrame is called once per frame; emscripten_set_main_loop_arg
+    // does not return until emscripten_cancel_main_loop() is called.
+    emscripten_set_main_loop_arg([](void* arg) {
+        static_cast<Application*>(arg)->RunOneFrame();
+    }, this, 0, true);
+#else
     while (m_Running) {
-        m_FrameStart = std::chrono::high_resolution_clock::now();
+        RunOneFrame();
+    }
+#endif
+}
 
-        // When minimized, wait for events instead of busy-spinning
-        if (m_Minimized && m_Window) {
-            m_Window->WaitEvents();
-            // Reset lastTime so we don't get a huge delta spike on restore
-            lastTime = std::chrono::high_resolution_clock::now();
-            m_FrameStart = lastTime;
-            if (m_Window->ShouldClose()) {
-                m_Running = false;
-                break;
-            }
-            continue;
+void Application::RunOneFrame() {
+    if (!m_Running) {
+#if ENJIN_PLATFORM_WEB
+        emscripten_cancel_main_loop();
+#endif
+        return;
+    }
+
+    m_FrameStart = std::chrono::high_resolution_clock::now();
+
+    // When minimized, wait for events instead of busy-spinning
+    if (m_Minimized && m_Window) {
+#if !ENJIN_PLATFORM_WEB
+        m_Window->WaitEvents();
+#endif
+        // Reset m_LastTime so we don't get a huge delta spike on restore
+        m_LastTime = std::chrono::high_resolution_clock::now();
+        m_FrameStart = m_LastTime;
+        if (m_Window->ShouldClose()) {
+            m_Running = false;
         }
+        return;
+    }
 
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        auto deltaTimeNs = std::chrono::duration_cast<std::chrono::nanoseconds>(currentTime - lastTime);
-        f32 deltaTime = static_cast<f32>(deltaTimeNs.count()) / 1'000'000'000.0f;
-        lastTime = currentTime;
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    auto deltaTimeNs = std::chrono::duration_cast<std::chrono::nanoseconds>(currentTime - m_LastTime);
+    f32 deltaTime = static_cast<f32>(deltaTimeNs.count()) / 1'000'000'000.0f;
+    m_LastTime = currentTime;
 
-        // Clamp delta time to prevent physics explosion after long pause/resume
-        if (deltaTime > 0.1f) {
-            deltaTime = 0.1f;
-        }
+    // Clamp delta time to prevent physics explosion after long pause/resume
+    if (deltaTime > 0.1f) {
+        deltaTime = 0.1f;
+    }
 
-        // Update window events
-        if (m_Window) {
-            m_Window->PollEvents();
-            if (m_Window->ShouldClose()) {
-                m_Running = false;
-                break;
-            }
-        }
-
-        // Update input system (must be after PollEvents)
-        Input::Update();
-
-        // Update idle state based on input activity
-        UpdateIdleState(deltaTime);
-
-        // Escape is handled by the editor layer (focus mode exit, play mode stop, etc.)
-
-        Update(deltaTime);
-        Render();
-
-        // Frame rate limiting
-        if (m_TargetFPSCallback) {
-            f32 targetFPS = m_TargetFPSCallback();
-            if (targetFPS > 0.0f) {
-                LimitFrameRate(targetFPS);
-            }
+    // Update window events
+    if (m_Window) {
+        m_Window->PollEvents();
+        if (m_Window->ShouldClose()) {
+            m_Running = false;
+            return;
         }
     }
+
+    // Update input system (must be after PollEvents)
+    Input::Update();
+
+    // Update idle state based on input activity
+    UpdateIdleState(deltaTime);
+
+    Update(deltaTime);
+    Render();
+
+    // Frame rate limiting (skipped on web — browser controls frame pacing)
+#if !ENJIN_PLATFORM_WEB
+    if (m_TargetFPSCallback) {
+        f32 targetFPS = m_TargetFPSCallback();
+        if (targetFPS > 0.0f) {
+            LimitFrameRate(targetFPS);
+        }
+    }
+#endif
 }
 
 void Application::LimitFrameRate(f32 targetFPS) {

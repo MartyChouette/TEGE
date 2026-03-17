@@ -130,6 +130,23 @@ void Logger::Log(LogLevel level, LogCategory category, const char* file, u32 lin
             RotateLogFile();
         }
     }
+
+    // Push to ring buffer (fixed-size, no heap allocation)
+    auto& entry = m_RingBuffer[m_RingHead];
+    entry.level = level;
+    entry.category = category;
+    // Copy the formatted log line (truncate if needed)
+    usize copyLen = static_cast<usize>(len);
+    if (copyLen >= sizeof(entry.message)) copyLen = sizeof(entry.message) - 1;
+    memcpy(entry.message, logEntry, copyLen);
+    entry.message[copyLen] = '\0';
+    m_RingHead = (m_RingHead + 1) % RING_BUFFER_SIZE;
+    if (m_RingCount < RING_BUFFER_SIZE) m_RingCount++;
+
+    // Fire external callback
+    if (m_LogCallback) {
+        m_LogCallback(level, category, logEntry);
+    }
 }
 
 void Logger::Trace(LogCategory category, const char* file, u32 line, const char* function, const char* format, ...) {
@@ -227,6 +244,17 @@ void Logger::FormatTimestamp(char* buf, usize bufSize) const {
     } else {
         snprintf(buf, bufSize, "0000-00-00 00:00:00");
     }
+}
+
+void Logger::SetLogCallback(LogCallback callback) {
+    std::lock_guard<std::mutex> lock(m_Mutex);
+    m_LogCallback = callback;
+}
+
+const LogEntry* Logger::GetRingBuffer(usize& outCount, usize& outHead) const {
+    outCount = m_RingCount;
+    outHead = m_RingHead;
+    return m_RingBuffer;
 }
 
 void Logger::RotateLogFile() {

@@ -1,6 +1,11 @@
+#include "Enjin/Platform/Platform.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/CoroutineScheduler.h"
 #include "Enjin/Logging/Log.h"
+
+// AngelScript compiles under Emscripten with AS_MAX_PORTABILITY (set in
+// cmake/EmscriptenToolchain.cmake). This disables JIT and uses generic
+// calling conventions, which is required for WASM.
 #include <scriptbuilder/scriptbuilder.h>
 #include <scriptstdstring/scriptstdstring.h>
 #include <scriptarray/scriptarray.h>
@@ -35,10 +40,10 @@ ScriptEngine::~ScriptEngine()
 // Init
 // ---------------------------------------------------------------------------
 
-bool ScriptEngine::Init()
+bool ScriptEngine::Initialize()
 {
     if (m_Engine) {
-        ENJIN_LOG_WARN(Script, "ScriptEngine::Init called but engine already initialized");
+        ENJIN_LOG_WARN(Script, "ScriptEngine::Initialize called but engine already initialized");
         return true;
     }
 
@@ -155,9 +160,13 @@ bool ScriptEngine::CompileScript(const std::string& path)
         }
     }
 
-    // Derive the module name from the filename (strip directory and extension)
+    // SC-3: Derive module name from parent directory + stem to avoid collisions
+    // when the same filename exists in different directories (e.g. "scripts/player.as"
+    // and "scripts/enemy/player.as" become "scripts_player" and "enemy_player").
     std::filesystem::path fsPath(path);
-    std::string moduleName = fsPath.stem().string();
+    std::string stem = fsPath.stem().string();
+    std::string parentDir = fsPath.parent_path().filename().string();
+    std::string moduleName = parentDir.empty() ? stem : (parentDir + "_" + stem);
 
     ENJIN_LOG_INFO(Script, "Compiling script '%s' as module '%s'",
                    path.c_str(), moduleName.c_str());

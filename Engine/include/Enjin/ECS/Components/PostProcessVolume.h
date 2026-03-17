@@ -207,6 +207,9 @@ inline void BlendPostProcessSettings(
         out.crtMaskPitch = lerpF(a.crtMaskPitch, b.crtMaskPitch, t);
         out.crtBloomRadius = lerpF(a.crtBloomRadius, b.crtBloomRadius, t);
         out.crtBloomStrength = lerpF(a.crtBloomStrength, b.crtBloomStrength, t);
+        out.crtBloomSigma = lerpF(a.crtBloomSigma, b.crtBloomSigma, t);
+        out.crtModelPreset = lerpF(a.crtModelPreset, b.crtModelPreset, t);
+        out.crtTVL = lerpF(a.crtTVL, b.crtTVL, t);
     }
     if (overrideMask & PostProcessVolumeComponent::OverrideVHS) {
         out.vhsEnabled = lerpU(a.vhsEnabled, b.vhsEnabled, t);

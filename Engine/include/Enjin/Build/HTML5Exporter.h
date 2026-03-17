@@ -36,9 +36,17 @@ struct HTML5ExportResult {
 // Generates browser-ready HTML/JS/CSS templates for WASM builds
 class ENJIN_API HTML5Exporter {
 public:
-    // Export HTML5 web shell
+    // Export HTML5 web shell (generates template files + optionally invokes Emscripten build)
     static HTML5ExportResult Export(const HTML5ExportConfig& config,
                                     const BuildConfig& buildConfig);
+
+    // Invoke Emscripten to compile the engine into WASM.
+    // Requires emcc to be on PATH (via emsdk activation).
+    // outputDir: where to place game.js + game.wasm + game.data
+    // enjpakPath: path to the packed .enjpak to preload
+    // Returns true if the build succeeded.
+    static bool InvokeEmscriptenBuild(const std::string& outputDir,
+                                       const std::string& enjpakPath);
 
 private:
     // Generate individual files

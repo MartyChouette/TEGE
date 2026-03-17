@@ -27,6 +27,14 @@ enum class TemplateQuality : std::uint8_t {
     Experimental     // Work-in-progress / beta
 };
 
+// Feature maturity tier — gates templates by the lowest-maturity feature they depend on
+enum class MaturityTier : std::uint8_t {
+    Stable = 0,      // Audited, tested, production-ready (Blue)
+    Beta = 1,        // Feature-complete, needs hardening (Green)
+    Preview = 2,     // Functional but incomplete (Amber)
+    Experimental = 3 // Prototypes, may break (Red)
+};
+
 // Sort options for marketplace browsing
 enum class MarketplaceSortBy : std::uint8_t {
     Name = 0,
@@ -52,6 +60,7 @@ struct MarketplaceEntry {
     u32 ratingCount = 0;
     usize fileSizeBytes = 0;
     TemplateQuality quality = TemplateQuality::Official;
+    MaturityTier maturity = MaturityTier::Stable;
 };
 
 // Template Marketplace — browse, search, install, and manage templates
@@ -77,6 +86,7 @@ public:
     // Helpers
     static const char* GetCategoryName(MarketplaceCategory cat);
     static const char* GetQualityName(TemplateQuality quality);
+    static const char* GetMaturityName(MaturityTier tier);
 
     // Panel open state (no EditorPanel bits left)
     bool IsOpen() const { return m_Open; }

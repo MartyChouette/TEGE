@@ -18,6 +18,8 @@ struct RTReflectionConfig {
     bool enabled = false;
     f32 maxDistance = 50.0f;       // Maximum reflection ray distance
     f32 roughnessThreshold = 0.5f; // Skip reflections for roughness above this
+    bool sdfFallback = true;       // Use SDF sphere tracing for reflections beyond BVH range
+    f32 sdfMaxDistance = 500.0f;   // Maximum distance for SDF fallback sphere tracing
 };
 
 // RT Reflections — single-bounce specular reflections

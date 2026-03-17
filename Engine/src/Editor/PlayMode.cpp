@@ -3,6 +3,7 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Effects/ParticleSystem.h"
 #include "Enjin/Effects/Water.h"
+#include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Platform/Input.h"
@@ -23,6 +24,7 @@
 #include "Enjin/Effects/FluidSimulation.h"
 #include "Enjin/Effects/FluidTerrainCoupling.h"
 #include "Enjin/Effects/CurlNoiseSystem.h"
+#include "Enjin/Effects/ElementalSystem.h"
 
 // Extern for visual script node access to systems
 extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
@@ -34,6 +36,8 @@ extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
 extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
 extern Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing;
 extern Enjin::Editor::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime;
+extern Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool;
+extern Enjin::Effects::ElementalSystem* s_VisualScriptElemental;
 
 namespace Enjin {
 namespace Editor {
@@ -75,7 +79,7 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
     m_StreamingManager.SetEnabled(false);
 
     // Initialize scripting engine
-    if (m_ScriptEngine.Init()) {
+    if (m_ScriptEngine.Initialize()) {
         Scripting::RegisterAllBindings(m_ScriptEngine.GetASEngine());
         m_ScriptEngine.SetWorld(world);
         m_ScriptEngine.SetScriptDirectory("scripts");
@@ -123,6 +127,28 @@ void PlayMode::Play() {
     // Save current editor state
     SaveEditorState();
     ENJIN_LOG_INFO(Editor, "PlayMode: SaveEditorState done");
+
+    // Re-create physics backends if project mode changed since Initialize()
+    // (e.g., user created a 2D template after editor startup initialized with Mode3D)
+    if (m_SceneManager) {
+        auto backendType = m_SceneManager->GetPhysicsBackendType();
+        auto projectMode = m_SceneManager->GetProjectMode();
+        bool need2D = (projectMode == Scene::ProjectMode::Mode2D || projectMode == Scene::ProjectMode::Mixed);
+        bool need3D = (projectMode == Scene::ProjectMode::Mode3D || projectMode == Scene::ProjectMode::Mixed);
+
+        if (need2D && !m_Physics2D) {
+            m_Physics2D = Physics::CreatePhysicsBackend2D(backendType, projectMode);
+            if (m_Physics2D) m_Physics2D->Initialize(m_World);
+            m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
+            ENJIN_LOG_INFO(Editor, "PlayMode: Created 2D physics backend on Play()");
+        }
+        if (need3D && !m_Physics) {
+            m_Physics = Physics::CreatePhysicsBackend(backendType, projectMode);
+            if (m_Physics) m_Physics->SetWorld(m_World);
+            m_ControllerSystem.SetPhysics(m_Physics.get());
+            ENJIN_LOG_INFO(Editor, "PlayMode: Created 3D physics backend on Play()");
+        }
+    }
 
     // Find the active game camera entity so controllers drive it instead of the editor camera
     ECS::Entity gameCam = ECS::CameraManager::GetActiveCamera(m_World);
@@ -179,6 +205,8 @@ void PlayMode::Play() {
     Scripting::SetBindingsInputActionMap(&m_InputMap);
     s_VisualScriptSaveSystem = &m_TieredSaveSystem;
     s_VisualScriptWeather = m_WeatherSystem;
+    s_VisualScriptElemental = m_ElementalSystem;
+    Scripting::SetBindingsElemental(m_ElementalSystem);
     s_VisualScriptHUD = &m_HUDSystem;
     s_VisualScriptSubtitleSystem = m_SubtitleSystem;
     s_VisualScriptAnnouncer = m_Announcer;
@@ -186,11 +214,22 @@ void PlayMode::Play() {
     s_VisualScriptPostProcessing = m_PostProcessing;
     s_VisualScriptWater = m_Water3D;
     s_VisualScriptAudioGraphRuntime = &m_AudioGraphRuntime;
+    s_VisualScriptObjectPool = &m_ObjectPool;
     ENJIN_LOG_INFO(Editor, "PlayMode: Script bindings set");
 
     // Initialize owned systems
     m_SimpleAudio.Initialize();
     m_SimpleAudio.SetWorld(m_World);
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+    // Apply HRTF setting from editor
+    if (m_EditorSettings) {
+        m_SimpleAudio.SetHRTFEnabled(m_EditorSettings->enableHRTF);
+        m_SimpleAudio.SetOcclusionEnabled(m_EditorSettings->enableOcclusion);
+        m_SimpleAudio.SetTransmissionEnabled(m_EditorSettings->enableTransmission);
+    }
+    // Build audio scene geometry from colliders for occlusion
+    m_SimpleAudio.BuildSteamAudioScene();
+#endif
     m_DestructibleSystem.Initialize(m_World);
     m_AudioGraphRuntime.Initialize(&m_SimpleAudio);
     if (m_CurlNoiseSystem) m_CurlNoiseSystem->Initialize(m_World);
@@ -240,6 +279,7 @@ void PlayMode::Play() {
     m_VisualScriptSystem.SetNetworking(&m_NetworkSystem);
     m_VisualScriptSystem.SetScriptEngine(&m_ScriptEngine);
     m_VisualScriptSystem.SetStreaming(&m_StreamingManager);
+    m_VisualScriptSystem.SetSceneManager(m_SceneManager);
     m_VisualScriptSystem.Initialize();
     ENJIN_LOG_INFO(Editor, "PlayMode: VisualScriptSystem initialized");
 
@@ -378,6 +418,7 @@ void PlayMode::Stop() {
     // Clear save/gameplay system bindings
     s_VisualScriptSaveSystem = nullptr;
     s_VisualScriptWeather = nullptr;
+    s_VisualScriptElemental = nullptr;
     s_VisualScriptWater = nullptr;
     s_VisualScriptHUD = nullptr;
     s_VisualScriptSubtitleSystem = nullptr;
@@ -385,6 +426,7 @@ void PlayMode::Stop() {
     s_VisualScriptAudio = nullptr;
     s_VisualScriptPostProcessing = nullptr;
     s_VisualScriptAudioGraphRuntime = nullptr;
+    s_VisualScriptObjectPool = nullptr;
     Scripting::SetBindingsWorld(nullptr);
     Scripting::SetBindingsRenderSystem(nullptr);
     Scripting::SetBindingsDialogueSystem(nullptr);
@@ -533,6 +575,16 @@ void PlayMode::Update(f32 deltaTime) {
                 *m_World->GetComponent<ECS::MeshComponent>(entity) = std::move(mesh);
             else
                 m_World->AddComponent<ECS::MeshComponent>(entity, std::move(mesh));
+        }
+        // Update Water3D animated surfaces
+        if (m_Water3D) {
+            m_Water3D->Update(deltaTime);
+            for (auto entity : m_World->GetEntitiesWithComponent<ECS::Water3DComponent>()) {
+                auto* water3d = m_World->GetComponent<ECS::Water3DComponent>(entity);
+                if (!water3d || !water3d->meshCreated) continue;
+                m_Water3D->Initialize(water3d->settings);
+                m_Water3D->UpdateEntityMesh(m_World, entity);
+            }
         }
         m_EntityEventBus.ProcessDeferred();
 

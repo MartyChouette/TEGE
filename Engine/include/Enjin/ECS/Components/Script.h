@@ -47,6 +47,7 @@ struct ScriptProperty {
     f32 rangeMax = 0.0f;
     bool hasRange = false;
     std::string tooltip;
+    std::string header;  // Section header from [Header("...")] annotation
 };
 
 // A single script attached to an entity

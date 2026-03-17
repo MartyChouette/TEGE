@@ -1,8 +1,19 @@
 cmake_minimum_required(VERSION 3.20)
 
-add_executable(EnjinPlayer
-    src/main.cpp
-)
+if(WIN32)
+    set(PLAYER_RC "${CMAKE_CURRENT_SOURCE_DIR}/resources.rc")
+endif()
+
+if(ENJIN_PLATFORM_WEB)
+    add_executable(EnjinPlayer
+        src/web_main.cpp
+    )
+else()
+    add_executable(EnjinPlayer
+        src/main.cpp
+        ${PLAYER_RC}
+    )
+endif()
 
 target_link_libraries(EnjinPlayer PRIVATE
     EnjinEngine

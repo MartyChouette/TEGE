@@ -9,8 +9,11 @@ layout(location = 3) in float fragViewDepth;  // View-space depth for cascade se
 layout(location = 4) in vec4 fragVertColor;
 layout(location = 5) in float fragClipW;
 layout(location = 6) in vec4 fragTangent;
+layout(location = 7) in vec4 fragCurClipPos;  // Current clip position (for velocity)
+layout(location = 8) in vec4 fragPrevClipPos; // Previous frame clip position (for velocity)
 
 layout(location = 0) out vec4 outColor;
+layout(location = 1) out vec2 outVelocity;    // Per-pixel screen-space motion vector (RG16F)
 
 // Light limits (must match C++ constants)
 #define MAX_DIRECTIONAL_LIGHTS 4
@@ -71,6 +74,10 @@ layout(binding = 1) uniform LightingUBO {
     int spotShadowCount;
     float celDiffuseBands;     // 0 = disabled, 2-8 = quantization bands
     float celSpecularCutoff;   // 0 = disabled, >0 = hard specular cutoff
+    uint shadingFlags;         // bit0=GGX, bit1=Fresnel, bit2=EnergyConserv, bit3=GeometryTerm, bit4=SphereEnvMap
+    float sphereEnvStrength;   // Spherical environment map intensity (0=off)
+    float posterizeLevels;     // Color posterization levels (0=disabled)
+    float _padShading1;
     vec4 windData;  // xyz = wind direction * strength, w = time (unused in frag, layout must match)
     vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
@@ -189,6 +196,37 @@ layout(std430, binding = 12) readonly buffer ShadowDataSSBO {
     int spotShadowCountSSBO;
     int _ssbo_pad[2];
 } shadowData;
+
+// --- Clustered forward lighting SSBOs (bindings 14-15) ---
+#ifdef CLUSTERED_LIGHTING
+#define CL_GRID_X 16u
+#define CL_GRID_Y 9u
+#define CL_GRID_Z 24u
+
+struct ClusterCell {
+    uint offset;
+    uint count;
+};
+
+layout(std430, binding = 14) readonly buffer ClusterGridSSBO {
+    float clScreenWidth;
+    float clScreenHeight;
+    float clNearPlane;
+    float clFarPlane;
+    ClusterCell clCells[];
+};
+
+// Packed light indices: bits 0-15 = UBO array index, bit 16 = type (0=point, 1=spot)
+layout(std430, binding = 15) readonly buffer ClusterLightIndexSSBO {
+    uint clLightIndices[];
+};
+#endif
+
+// --- Virtual texturing samplers (bindings 16-17) ---
+#ifdef VIRTUAL_TEXTURING
+layout(binding = 16) uniform sampler2D vtIndirectionTex;
+layout(binding = 17) uniform sampler2D vtPhysicalAtlas;
+#endif
 
 // 16-sample Poisson disk for soft shadow PCF
 const vec2 poissonDisk[16] = vec2[16](
@@ -384,38 +422,131 @@ float calcSpotShadow(vec3 fragPos, int shadowIdx) {
     return mix(1.0, shadow, lighting.shadowStrength);
 }
 
+// Shading flag bits (must match C++ packing)
+#define SHADING_GGX              (1u << 0)
+#define SHADING_FRESNEL          (1u << 1)
+#define SHADING_ENERGY_CONSERV   (1u << 2)
+#define SHADING_GEOMETRY_TERM    (1u << 3)
+#define SHADING_SPHERE_ENV       (1u << 4)
+
+const float PI = 3.14159265359;
+
+// --- Fresnel-Schlick approximation ---
+vec3 fresnelSchlick(float cosTheta, vec3 F0) {
+    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// --- GGX/Trowbridge-Reitz normal distribution ---
+float distributionGGX(float NdotH, float roughness) {
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float denom = NdotH * NdotH * (a2 - 1.0) + 1.0;
+    return a2 / (PI * denom * denom);
+}
+
+// --- Smith GGX geometry function (single direction) ---
+float geometrySchlickGGX(float NdotV, float roughness) {
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+    return NdotV / (NdotV * (1.0 - k) + k);
+}
+
+// --- Smith geometry (combined view + light) ---
+float geometrySmith(float NdotV, float NdotL, float roughness) {
+    return geometrySchlickGGX(NdotV, roughness) * geometrySchlickGGX(NdotL, roughness);
+}
+
 // Calculate Blinn-Phong lighting contribution
 vec3 calcBlinnPhong(vec3 lightDir, vec3 lightColor, float lightIntensity, vec3 normal, vec3 viewDir, vec3 albedo, float metallic, float shininess) {
-    // Diffuse (Lambert)
-    float diff = max(dot(normal, lightDir), 0.0);
-    vec3 diffuse = diff * lightColor * lightIntensity;
-
-    // Specular (Blinn-Phong)
+    float NdotL = max(dot(normal, lightDir), 0.0);
     vec3 halfwayDir = normalize(lightDir + viewDir);
-    float spec = pow(max(dot(normal, halfwayDir), 0.0), shininess);
-    vec3 specularColor = mix(vec3(0.04), albedo, metallic);
-    vec3 specular = spec * specularColor * lightColor * lightIntensity;
+    float NdotH = max(dot(normal, halfwayDir), 0.0);
+    float NdotV = max(dot(normal, viewDir), 0.001);
 
-    return diffuse * albedo * (1.0 - metallic) + specular;
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    uint flags = lighting.shadingFlags;
+
+    // Fresnel
+    vec3 F = ((flags & SHADING_FRESNEL) != 0u)
+        ? fresnelSchlick(max(dot(halfwayDir, viewDir), 0.0), F0)
+        : F0;
+
+    // Specular distribution: GGX or Blinn-Phong
+    float spec;
+    if ((flags & SHADING_GGX) != 0u) {
+        float roughness = clamp(sqrt(2.0 / (shininess + 2.0)), 0.04, 1.0);
+        spec = distributionGGX(NdotH, roughness);
+
+        // Geometry term
+        if ((flags & SHADING_GEOMETRY_TERM) != 0u) {
+            spec *= geometrySmith(NdotV, NdotL, roughness);
+        }
+
+        // Cook-Torrance denominator
+        spec /= max(4.0 * NdotV * NdotL, 0.001);
+    } else {
+        spec = pow(NdotH, shininess);
+    }
+
+    vec3 specular = spec * F * lightColor * lightIntensity;
+
+    // Diffuse with optional energy conservation
+    vec3 kD = vec3(1.0 - metallic);
+    if ((flags & SHADING_ENERGY_CONSERV) != 0u) {
+        kD *= (vec3(1.0) - F);
+    }
+    vec3 diffuse = NdotL * lightColor * lightIntensity;
+
+    return diffuse * albedo * kD + specular;
 }
 
 // Cel-shaded Blinn-Phong: quantize diffuse into bands, hard-cutoff specular
+// Respects shading flags (GGX, Fresnel, energy conservation, geometry term)
 vec3 calcBlinnPhongCel(vec3 lightDir, vec3 lightColor, float lightIntensity, vec3 normal, vec3 viewDir, vec3 albedo, float metallic, float shininess) {
+    float NdotL = max(dot(normal, lightDir), 0.0);
+    float NdotV = max(dot(normal, viewDir), 0.001);
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float NdotH = max(dot(normal, halfwayDir), 0.0);
+
     // Diffuse with band quantization
-    float diff = max(dot(normal, lightDir), 0.0);
     float bands = lighting.celDiffuseBands;
-    diff = floor(diff * bands + 0.5) / bands;
+    float diff = floor(NdotL * bands + 0.5) / bands;
     vec3 diffuse = diff * lightColor * lightIntensity;
 
-    // Specular with hard cutoff
-    vec3 halfwayDir = normalize(lightDir + viewDir);
-    float spec = pow(max(dot(normal, halfwayDir), 0.0), shininess);
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    uint flags = lighting.shadingFlags;
+
+    // Fresnel
+    vec3 F = ((flags & SHADING_FRESNEL) != 0u)
+        ? fresnelSchlick(max(dot(halfwayDir, viewDir), 0.0), F0)
+        : F0;
+
+    // Specular distribution: GGX or Blinn-Phong
+    float spec;
+    if ((flags & SHADING_GGX) != 0u) {
+        float roughness = clamp(sqrt(2.0 / (shininess + 2.0)), 0.04, 1.0);
+        spec = distributionGGX(NdotH, roughness);
+        if ((flags & SHADING_GEOMETRY_TERM) != 0u) {
+            spec *= geometrySmith(NdotV, NdotL, roughness);
+        }
+        spec /= max(4.0 * NdotV * NdotL, 0.001);
+    } else {
+        spec = pow(NdotH, shininess);
+    }
+
+    // Cel specular hard cutoff
     float cutoff = lighting.celSpecularCutoff;
     spec = (cutoff > 0.0 && spec > cutoff) ? 1.0 : ((cutoff > 0.0) ? 0.0 : spec);
-    vec3 specularColor = mix(vec3(0.04), albedo, metallic);
-    vec3 specular = spec * specularColor * lightColor * lightIntensity;
 
-    return diffuse * albedo * (1.0 - metallic) + specular;
+    vec3 specular = spec * F * lightColor * lightIntensity;
+
+    // Diffuse with optional energy conservation
+    vec3 kD = vec3(1.0 - metallic);
+    if ((flags & SHADING_ENERGY_CONSERV) != 0u) {
+        kD *= (vec3(1.0) - F);
+    }
+
+    return diffuse * albedo * kD + specular;
 }
 
 // Calculate attenuation for point/spot lights
@@ -521,6 +652,31 @@ float getDitherThreshold(ivec2 pos, int pattern) {
     if (pattern == 5) return overlookDither(pos);
     return bayerDither4x4(pos); // default (pattern 0)
 }
+
+#ifdef CLUSTERED_LIGHTING
+// Compute cluster index from screen position and view-space depth
+uint getClusterIndex() {
+    uint cx = min(uint(gl_FragCoord.x * float(CL_GRID_X) / clScreenWidth), CL_GRID_X - 1u);
+    uint cy = min(uint(gl_FragCoord.y * float(CL_GRID_Y) / clScreenHeight), CL_GRID_Y - 1u);
+    float depth = max(abs(fragViewDepth), clNearPlane);
+    float logRatio = log2(clFarPlane / clNearPlane);
+    uint cz = uint(log2(depth / clNearPlane) / logRatio * float(CL_GRID_Z));
+    cz = min(cz, CL_GRID_Z - 1u);
+    return cx + cy * CL_GRID_X + cz * CL_GRID_X * CL_GRID_Y;
+}
+#endif
+
+#ifdef VIRTUAL_TEXTURING
+// Sample through virtual texture indirection
+vec4 sampleVirtualTexture(vec2 uv) {
+    vec4 ind = texture(vtIndirectionTex, uv);
+    if (ind.w < 0.5) return vec4(1.0); // Page not loaded — fallback white
+    // ind.xy = physical page origin in atlas UV, ind.z = page size in atlas UV
+    vec2 withinPage = fract(uv * vec2(textureSize(vtIndirectionTex, 0)));
+    vec2 physicalUV = ind.xy + withinPage * ind.z;
+    return texture(vtPhysicalAtlas, physicalUV);
+}
+#endif
 
 void main() {
     // Resolve UV for affine texturing (undo the w-multiply from vertex shader)
@@ -641,7 +797,11 @@ void main() {
 
     // Sample base color texture if available
     if ((material.flags & FLAG_HAS_BASE_COLOR_TEX) != 0) {
+#ifdef VIRTUAL_TEXTURING
+        vec4 texColor = sampleVirtualTexture(uv);
+#else
         vec4 texColor = texture(baseColorTexture, uv);
+#endif
         albedo *= texColor.rgb;
     }
 
@@ -739,7 +899,72 @@ void main() {
             : calcBlinnPhong(lightDir, lightColor, intensity, normal, viewDir, albedo, metallic, shininess));
     }
 
-    // Process point lights
+    // Process point and spot lights
+#ifdef CLUSTERED_LIGHTING
+    // Clustered forward lighting: only evaluate lights assigned to this fragment's cluster
+    {
+        uint clIdx = getClusterIndex();
+        uint clOffset = clCells[clIdx].offset;
+        uint clCount = clCells[clIdx].count;
+
+        for (uint ci = 0u; ci < clCount; ++ci) {
+            uint packed = clLightIndices[clOffset + ci];
+            uint lightType = (packed >> 16u) & 1u;
+            uint i = packed & 0xFFFFu;
+
+            if (lightType == 0u) {
+                // Point light
+                vec3 lightPos = lighting.pointLights[i].position;
+                vec3 lightVec = lightPos - fragWorldPos;
+                float distance = length(lightVec);
+                vec3 lightDir = normalize(lightVec);
+                vec3 lightColor = lighting.pointLights[i].color;
+                float intensity = lighting.pointLights[i].intensity;
+                float atten = calcAttenuation(distance,
+                    lighting.pointLights[i].constantAtten,
+                    lighting.pointLights[i].linearAtten,
+                    lighting.pointLights[i].quadraticAtten);
+                float shadow = 1.0;
+                if (int(i) < lighting.pointShadowCount && (material.flags & FLAG_RECEIVE_SHADOWS) != 0) {
+                    shadow = calcPointShadow(fragWorldPos, int(i));
+                }
+                bool useCelPt = (lighting.celDiffuseBands >= 2.0) && ((material.flags & FLAG_EXCLUDE_CEL) == 0);
+                result += shadow * (useCelPt
+                    ? calcBlinnPhongCel(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess)
+                    : calcBlinnPhong(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess));
+            } else {
+                // Spot light
+                vec3 lightPos = lighting.spotLights[i].position;
+                vec3 lightVec = lightPos - fragWorldPos;
+                float distance = length(lightVec);
+                vec3 lightDir = normalize(lightVec);
+                vec3 spotDir = normalize(lighting.spotLights[i].direction);
+                float theta = dot(lightDir, -spotDir);
+                float innerCutoff = lighting.spotLights[i].innerCutoff;
+                float outerCutoff = lighting.spotLights[i].outerCutoff;
+                float epsilon = innerCutoff - outerCutoff;
+                float spotIntensity = clamp((theta - outerCutoff) / epsilon, 0.0, 1.0);
+                if (spotIntensity > 0.0) {
+                    vec3 lightColor = lighting.spotLights[i].color;
+                    float intensity = lighting.spotLights[i].intensity;
+                    float atten = calcAttenuation(distance,
+                        lighting.spotLights[i].constantAtten,
+                        lighting.spotLights[i].linearAtten,
+                        lighting.spotLights[i].quadraticAtten);
+                    float shadow = 1.0;
+                    if (int(i) < lighting.spotShadowCount && (material.flags & FLAG_RECEIVE_SHADOWS) != 0) {
+                        shadow = calcSpotShadow(fragWorldPos, int(i));
+                    }
+                    bool useCelSp = (lighting.celDiffuseBands >= 2.0) && ((material.flags & FLAG_EXCLUDE_CEL) == 0);
+                    result += shadow * (useCelSp
+                        ? calcBlinnPhongCel(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess)
+                        : calcBlinnPhong(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess));
+                }
+            }
+        }
+    }
+#else
+    // Brute-force point lights
     for (uint i = 0u; i < lighting.pointLightCount && i < MAX_POINT_LIGHTS; ++i) {
         vec3 lightPos = lighting.pointLights[i].position;
         vec3 lightVec = lightPos - fragWorldPos;
@@ -770,7 +995,7 @@ void main() {
             : calcBlinnPhong(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess));
     }
 
-    // Process spot lights
+    // Brute-force spot lights
     for (uint i = 0u; i < lighting.spotLightCount && i < MAX_SPOT_LIGHTS; ++i) {
         vec3 lightPos = lighting.spotLights[i].position;
         vec3 lightVec = lightPos - fragWorldPos;
@@ -810,6 +1035,45 @@ void main() {
                 ? calcBlinnPhongCel(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess)
                 : calcBlinnPhong(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess));
         }
+    }
+#endif
+
+    // Dithered transparency: alternating pixels between fragment color and blend color
+    // Encoded in surfaceParam1 >= 200: pattern in fractional part, opacity in surfaceParam2,
+    // blend color packed as 10-bit RGB in surfaceParam3
+    if (material.surfaceParam1 >= 199.5 && material.surfaceParam1 < 300.0) {
+        float encoded = material.surfaceParam1 - 200.0;
+        int dtPattern = int(floor(encoded + 0.5)); // 0=Checkerboard, 1=HStripe, 2=VStripe, 3=Bayer2x2
+        float dtOpacity = material.surfaceParam2;
+
+        // Unpack blend color from 10-bit packed float
+        uint packedColor = floatBitsToUint(material.surfaceParam3);
+        vec3 blendColor = vec3(
+            float((packedColor >> 20) & 0x3FFu) / 1023.0,
+            float((packedColor >> 10) & 0x3FFu) / 1023.0,
+            float(packedColor & 0x3FFu) / 1023.0
+        );
+
+        // Generate pattern based on screen-space pixel coordinates
+        ivec2 dtPos = ivec2(gl_FragCoord.xy);
+        bool useBlend = false;
+
+        if (dtPattern == 0) // Checkerboard
+            useBlend = ((dtPos.x + dtPos.y) % 2) == 1;
+        else if (dtPattern == 1) // H-Stripe
+            useBlend = (dtPos.y % 2) == 1;
+        else if (dtPattern == 2) // V-Stripe
+            useBlend = (dtPos.x % 2) == 1;
+        else // Bayer 2x2
+        {
+            int bx = dtPos.x % 2;
+            int by = dtPos.y % 2;
+            int val = bx + by * 2;
+            useBlend = val >= 2;
+        }
+
+        if (useBlend)
+            result = mix(blendColor, result, dtOpacity);
     }
 
     // Dithered gradient: quantize lighting into bands with dither transitions
@@ -926,6 +1190,45 @@ void main() {
         }
     }
 
+    // === ELEMENTAL SURFACE EFFECTS (PS1/PS2 style) ===
+    if (material.surfaceParam1 >= 299.5 && material.surfaceParam1 < 400.0) {
+        float charAmount = material.surfaceParam1 - 300.0;
+        float wetness = fract(material.surfaceParam2);
+        float snowCov = floor(material.surfaceParam2) / 256.0;
+        float frost = material.surfaceParam3;
+
+        // Fire charring: darken toward black/brown, ember glow pulses
+        if (charAmount > 0.01) {
+            vec3 charColor = vec3(0.08, 0.04, 0.02);
+            result = mix(result, charColor, charAmount * 0.8);
+            // Ember glow: pulsing orange in charred areas (PS2 lava-flow style)
+            float ember = sin(lighting.windData.w * 4.0 + fragWorldPos.x * 3.0) * 0.5 + 0.5;
+            result += vec3(1.0, 0.3, 0.0) * charAmount * ember * 0.15;
+        }
+
+        // Wetness: darken + subtle color shift (PS1 dark-when-wet trick)
+        if (wetness > 0.01) {
+            result *= mix(1.0, 0.6, wetness);
+            result = mix(result, result * vec3(0.9, 0.9, 1.0), wetness * 0.3);
+        }
+
+        // Snow coverage: blend to white on upward-facing surfaces
+        if (snowCov > 0.01) {
+            float snowMask = smoothstep(0.3, 0.8, normal.y) * snowCov;
+            // Dithered snow edge (very PS1)
+            float dither = fract(sin(dot(floor(gl_FragCoord.xy / 2.0), vec2(12.9898, 78.233))) * 43758.5453);
+            snowMask = step(dither, snowMask + 0.1) * snowCov;
+            result = mix(result, vec3(0.93, 0.96, 1.0), snowMask);
+        }
+
+        // Frost: blue-white tint with dithered crystal pattern
+        if (frost > 0.01) {
+            float crystal = fract(sin(dot(fragUV * 16.0, vec2(12.9898, 78.233))) * 43758.5453);
+            float frostPattern = step(crystal, frost);
+            result = mix(result, vec3(0.75, 0.88, 1.0), frostPattern * 0.5);
+        }
+    }
+
     // Add emission (modulated by emissive texture if present)
     result += material.emissiveColor * material.emissiveStrength * emissiveTexColor;
 
@@ -936,8 +1239,37 @@ void main() {
         result = mix(result, vec3(0.95, 0.97, 1.0), snowCoverage);
     }
 
+    // Spherical environment mapping (Dreamcast-style matcap sheen)
+    if ((lighting.shadingFlags & SHADING_SPHERE_ENV) != 0u && lighting.sphereEnvStrength > 0.0) {
+        // Reconstruct view-space normal without view matrix
+        vec3 vForward = normalize(lighting.cameraPos - fragWorldPos);
+        vec3 vRight = normalize(cross(vec3(0.0, 1.0, 0.0), vForward));
+        vec3 vUp = cross(vForward, vRight);
+        vec2 matcapUV = vec2(dot(normal, vRight), dot(normal, vUp)) * 0.5 + 0.5;
+
+        // Procedural matcap: metallic highlight ring + top-down gradient
+        float rim = length(matcapUV - vec2(0.5));
+        float highlight = smoothstep(0.45, 0.25, rim);   // bright center
+        float ring = smoothstep(0.3, 0.48, rim) * smoothstep(0.5, 0.48, rim); // bright ring at edge
+        float grad = matcapUV.y * 0.6 + 0.2;             // sky-ground gradient
+
+        vec3 envColor = vec3(0.25, 0.28, 0.35) * grad     // base ambient gradient
+                      + vec3(0.6, 0.65, 0.7) * highlight   // center specular
+                      + vec3(0.4, 0.45, 0.5) * ring;       // edge ring (Dreamcast sheen)
+
+        // Blend: metallic surfaces get full effect, dielectrics get subtle rim only
+        float envBlend = mix(ring * 0.3, 1.0, metallic) * lighting.sphereEnvStrength;
+        result = mix(result, result + envColor, envBlend);
+    }
+
     // Gamma correction
     result = pow(result, vec3(1.0 / 2.2));
+
+    // Color posterization (Dreamcast VQ-style banding)
+    if (lighting.posterizeLevels > 1.5) {
+        float levels = lighting.posterizeLevels;
+        result = floor(result * levels + 0.5) / levels;
+    }
 
     // Height-based distance fog (volumetric feel: thicker near ground, thins at height)
     float fogDensity = lighting.fogParams.x;
@@ -978,4 +1310,9 @@ void main() {
     }
 
     outColor = vec4(result, alpha);
+
+    // Per-pixel velocity: screen-space motion vector for TAA / temporal upscaling
+    vec2 curNDC  = fragCurClipPos.xy / fragCurClipPos.w;
+    vec2 prevNDC = fragPrevClipPos.xy / fragPrevClipPos.w;
+    outVelocity  = (curNDC - prevNDC) * 0.5;  // NDC is [-1,1], scale to [-0.5, 0.5] range
 }

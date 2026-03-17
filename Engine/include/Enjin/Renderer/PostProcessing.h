@@ -70,7 +70,7 @@ struct alignas(16) PostProcessSettings {
     alignas(4) u32 vignetteEnabled = 0;
     alignas(4) f32 vignetteIntensity = 0.3f;
     alignas(4) f32 vignetteSmoothness = 0.5f;
-    alignas(4) f32 _pad0;
+    alignas(4) u32 hdrOutputMode = 0;  // 0=SDR, 1=scRGB (FP16 linear), 2=HDR10 (PQ)
 
     // Chromatic aberration
     alignas(4) u32 chromaticAberrationEnabled = 0;
@@ -101,7 +101,7 @@ struct alignas(16) PostProcessSettings {
     // Screen resolution for effects
     alignas(4) u32 screenWidth = 1920;
     alignas(4) u32 screenHeight = 1080;
-    alignas(4) f32 _pad6;
+    alignas(4) u32 aaMode = 1;          // 0=None, 1=FXAA, 2=TAA, 3=SMAA
     alignas(4) f32 _pad7;
 
     // Retro: Dithering
@@ -140,9 +140,9 @@ struct alignas(16) PostProcessSettings {
     alignas(4) f32 crtMaskPitch = 1.0f;
     alignas(4) f32 crtBloomRadius = 1.5f;
     alignas(4) f32 crtBloomStrength = 0.3f;
-    alignas(4) f32 _crtPad0 = 0.0f;
-    alignas(4) f32 _crtPad1 = 0.0f;
-    alignas(4) f32 _crtPad2 = 0.0f;
+    alignas(4) f32 crtBloomSigma = 0.8f;      // Gaussian spread control for phosphor bloom
+    alignas(4) f32 crtModelPreset = 0.0f;      // Cast to uint in shader: CRT model index
+    alignas(4) f32 crtTVL = 400.0f;            // TV lines resolution
 
     // VHS filter
     alignas(4) u32 vhsEnabled = 0;
@@ -271,6 +271,17 @@ struct alignas(16) PostProcessSettings {
     alignas(4) f32 _fogShaftsPad0 = 0.0f;
     alignas(4) f32 _fogShaftsPad1 = 0.0f;
 
+    // TAA config (CPU-side only — used by the TAA compute pass, not the post-process UBO)
+    f32 taaSharpness   = 0.1f;     // Sharpening strength applied after TAA resolve (0 = off)
+    f32 taaJitterScale = 1.0f;     // Jitter magnitude multiplier (1.0 = standard Halton)
+    f32 taaFeedbackMin = 0.88f;    // Min history blend weight
+    f32 taaFeedbackMax = 0.97f;    // Max history blend weight
+
+    // Temporal upscaling config (CPU-side only — drives IUpscaler dispatch, not the UBO)
+    u32 upscalerType     = 0;      // 0=None, 1=FSR2, 2=DLSS, 3=XeSS
+    u32 upscalerQuality  = 2;      // 0=Performance, 1=Balanced, 2=Quality, 3=UltraQuality
+    f32 upscalerSharpness = 0.0f;  // Additional sharpening (0 = upscaler default)
+
     // Returns true if any post-processing effect is actually enabled or non-identity.
     // When false, the entire post-processing pass can be skipped (render direct to target).
     bool HasAnyActiveEffects() const {
@@ -280,6 +291,7 @@ struct alignas(16) PostProcessSettings {
         if (chromaticAberrationEnabled) return true;
         if (filmGrainEnabled) return true;
         if (fxaaEnabled) return true;
+        if (aaMode == 2) return true;  // TAA
         if (ditherEnabled) return true;
         if (colorQuantEnabled) return true;
         if (resDownscaleEnabled) return true;
@@ -400,6 +412,33 @@ public:
     // Called automatically by Apply() when tiltShiftEnabled is set.
     void ApplyTiltShift(VkCommandBuffer cmd);
 
+    // TAA (Temporal Anti-Aliasing) resolve pass.
+    // Dispatches a compute shader that blends the current jittered frame with clamped
+    // history to produce a temporally-stable output.  Call SetVelocityImageView() and
+    // SetDepthImageView() before the first Apply()/ApplyToCurrentPass() each frame.
+    void ApplyTAA(VkCommandBuffer cmd);
+
+    // Bind the external velocity buffer (RG16F from the MRT pass)
+    void SetVelocityImageView(VkImageView velocityView) { m_TAAVelocityView = velocityView; }
+
+    // Bind the external depth buffer for TAA (D32F from the scene pass)
+    void SetDepthImageView(VkImageView depthView) { m_TAADepthView = depthView; }
+
+    // Check whether a valid depth source has been bound for depth-reading effects
+    bool IsDepthSourceReady() const { return m_DepthSourceReady; }
+
+    // Bind an external depth buffer for depth-reading post-process effects
+    // (caustics, SSAO, contact shadows, DoF, tilt-shift, cel outline, fog shafts, god rays).
+    // Must be called each frame before ApplyToCurrentPass() when depth effects are enabled.
+    // The depth image must already be in DEPTH_STENCIL_READ_ONLY_OPTIMAL layout.
+    void UpdateDepthSource(VkImageView depthView);
+
+    // Get the TAA-resolved output image view (for subsequent passes to read)
+    VkImageView GetTAAOutputImageView() const;
+
+    // Check whether TAA resources are ready
+    bool IsTAAEnabled() const { return m_TAAReady && m_Settings.aaMode == 2; }
+
 private:
     bool CreateSceneRenderTarget(u32 width, u32 height);
     bool CreatePipeline();
@@ -416,6 +455,11 @@ private:
     void SeparableWeightedBlur(std::vector<f32>& color, const std::vector<f32>& coc,
                                 u32 w, u32 h, u32 channels, f32 maxRadius,
                                 std::vector<f32>& temp);
+
+    // TAA compute pipeline and history resources
+    bool CreateTAAResources();
+    void DestroyTAAResources();
+    bool CreateTAAComputePipeline();
 
     VulkanContext* m_Context = nullptr;
     VulkanRenderer* m_Renderer = nullptr;
@@ -450,6 +494,7 @@ private:
     u32 m_Width = 0;
     u32 m_Height = 0;
     bool m_Initialized = false;
+    bool m_DepthSourceReady = false;  // True after UpdateDepthSource() provides valid depth
 
     // LUT texture resources
     std::string m_LUTPath;
@@ -470,6 +515,33 @@ private:
     usize m_DofColorStagingSize = 0;
     usize m_DofDepthStagingSize = 0;
     bool m_DofStagingReady = false;
+
+    // =========================================================================
+    // TAA (Temporal Anti-Aliasing) compute pipeline and history buffers
+    // =========================================================================
+
+    // History ping-pong images (RGBA16F, same resolution as swapchain)
+    VkImage m_TAAHistoryImages[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    VkDeviceMemory m_TAAHistoryMemory[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    VkImageView m_TAAHistoryViews[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    u32 m_TAACurrentIndex = 0;   // Index of the "output / current" history buffer
+    u32 m_TAAFrameIndex = 0;     // Monotonic frame counter for the shader
+
+    // Sampler for reading TAA inputs (linear, clamp-to-edge)
+    VkSampler m_TAASampler = VK_NULL_HANDLE;
+
+    // Compute pipeline for TAA resolve
+    VkPipeline m_TAAComputePipeline = VK_NULL_HANDLE;
+    VkPipelineLayout m_TAAComputePipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_TAADescriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool m_TAADescriptorPool = VK_NULL_HANDLE;
+    VkDescriptorSet m_TAADescriptorSets[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+
+    // External image views set each frame by the caller
+    VkImageView m_TAAVelocityView = VK_NULL_HANDLE;
+    VkImageView m_TAADepthView = VK_NULL_HANDLE;
+
+    bool m_TAAReady = false;
 };
 
 } // namespace Renderer

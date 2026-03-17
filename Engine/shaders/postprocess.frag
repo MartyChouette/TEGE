@@ -28,7 +28,7 @@ layout(binding = 1) uniform PostProcessSettings {
     uint vignetteEnabled;
     float vignetteIntensity;
     float vignetteSmoothness;
-    float _pad0;
+    uint hdrOutputMode;  // 0=SDR, 1=scRGB, 2=HDR10 (PQ)
 
     // Chromatic aberration
     uint chromaticAberrationEnabled;
@@ -98,9 +98,9 @@ layout(binding = 1) uniform PostProcessSettings {
     float crtMaskPitch;
     float crtBloomRadius;
     float crtBloomStrength;
-    float _crtPad0;
-    float _crtPad1;
-    float _crtPad2;
+    float crtBloomSigma;
+    float crtModelPreset;
+    float crtTVL;
 
     // VHS filter
     uint vhsEnabled;
@@ -235,6 +235,23 @@ layout(binding = 3) uniform sampler2D depthTexture;
 #define TONEMAP_ACES 3
 #define TONEMAP_UNCHARTED2 4
 #define TONEMAP_AGX 5
+
+// HDR output mode constants
+#define HDR_OUTPUT_SDR   0
+#define HDR_OUTPUT_SCRGB 1
+#define HDR_OUTPUT_HDR10 2
+
+// PQ (Perceptual Quantizer) transfer function for HDR10 output (ST.2084)
+vec3 linearToPQ(vec3 L) {
+    // L is in [0, 1] range normalized to 10000 nits
+    const float m1 = 0.1593017578125;
+    const float m2 = 78.84375;
+    const float c1 = 0.8359375;
+    const float c2 = 18.8515625;
+    const float c3 = 18.6875;
+    vec3 Lm1 = pow(L, vec3(m1));
+    return pow((c1 + c2 * Lm1) / (1.0 + c3 * Lm1), vec3(m2));
+}
 
 // Reinhard tone mapping
 vec3 tonemapReinhard(vec3 color) {
@@ -677,17 +694,19 @@ vec3 applyCRTPhosphor(vec3 color, vec2 uv) {
         else mask = vec3(0.2, 0.2, 1.0);
     }
 
-    // Phosphor bloom: sample neighbors weighted by gaussian
+    // Phosphor bloom: sample neighbors weighted by configurable-sigma gaussian
     vec2 texelSize = 1.0 / vec2(settings.screenWidth, settings.screenHeight);
     float radius = settings.crtBloomRadius;
+    float sigma = max(settings.crtBloomSigma, 0.3);
+    int kernelRadius = min(int(ceil(sigma * 3.0)), 3);
     vec3 bloom = vec3(0.0);
     float totalWeight = 0.0;
 
-    for (int dy = -2; dy <= 2; dy++) {
-        for (int dx = -2; dx <= 2; dx++) {
+    for (int dy = -kernelRadius; dy <= kernelRadius; dy++) {
+        for (int dx = -kernelRadius; dx <= kernelRadius; dx++) {
             vec2 offset = vec2(float(dx), float(dy)) * texelSize * radius;
             float dist = length(vec2(float(dx), float(dy)));
-            float weight = exp(-dist * dist * 0.5);
+            float weight = exp(-dist * dist / (2.0 * sigma * sigma));
             bloom += texture(sceneTexture, uv + offset).rgb * weight;
             totalWeight += weight;
         }
@@ -1337,14 +1356,29 @@ void main() {
     // Full-screen stipple / dither (after palette lock, before gamma)
     color = applyStipple(color, screenPos);
 
-    // Gamma correction
-    color = pow(color, vec3(1.0 / settings.gamma));
+    // HDR / SDR output
+    if (settings.hdrOutputMode == HDR_OUTPUT_SCRGB) {
+        // scRGB: output linear values scaled to 80-nit reference white
+        // (1.0 = 80 nits SDR white, values > 1.0 are brighter)
+        // Skip gamma correction — compositor expects linear
+        outColor = vec4(color, 1.0);
+    } else if (settings.hdrOutputMode == HDR_OUTPUT_HDR10) {
+        // HDR10 PQ: apply ST.2084 transfer function
+        // Normalize to [0,1] range where 1.0 = 10000 nits
+        // Assume SDR white = 203 nits (ITU-R BT.2408 reference)
+        color = color * (203.0 / 10000.0);
+        color = linearToPQ(color);
+        outColor = vec4(color, 1.0);
+    } else {
+        // SDR: standard gamma correction
+        color = pow(color, vec3(1.0 / settings.gamma));
 
-    // CRT phosphor subpixel blending (before scanlines for best effect)
-    color = applyCRTPhosphor(color, fragUV);
+        // CRT phosphor subpixel blending (before scanlines for best effect)
+        color = applyCRTPhosphor(color, fragUV);
 
-    // CRT scanlines (applied after gamma, as the last effect)
-    color = applyCRT(color, fragUV);
+        // CRT scanlines (applied after gamma, as the last effect)
+        color = applyCRT(color, fragUV);
 
-    outColor = vec4(color, 1.0);
+        outColor = vec4(color, 1.0);
+    }
 }

@@ -142,6 +142,7 @@ bool VulkanRenderer::CreateSurface() {
 }
 
 bool VulkanRenderer::CreateRenderPass() {
+    // Attachment 0: Color (swapchain format)
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = m_Swapchain->GetImageFormat();
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -152,6 +153,18 @@ bool VulkanRenderer::CreateRenderPass() {
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
+    // Attachment 1: Velocity buffer (RG16F per-pixel motion vectors for TAA)
+    VkAttachmentDescription velocityAttachment{};
+    velocityAttachment.format = VulkanSwapchain::VELOCITY_FORMAT;
+    velocityAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    velocityAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    velocityAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    velocityAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    velocityAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    velocityAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    velocityAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    // Attachment 2: Depth
     VkAttachmentDescription depthAttachment{};
     depthAttachment.format = m_Swapchain->GetDepthFormat();
     depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -162,18 +175,21 @@ bool VulkanRenderer::CreateRenderPass() {
     depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0;
-    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    // Color attachment references (MRT: color + velocity)
+    std::array<VkAttachmentReference, 2> colorAttachmentRefs{};
+    colorAttachmentRefs[0].attachment = 0;
+    colorAttachmentRefs[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachmentRefs[1].attachment = 1;
+    colorAttachmentRefs[1].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     VkAttachmentReference depthAttachmentRef{};
-    depthAttachmentRef.attachment = 1;
+    depthAttachmentRef.attachment = 2;
     depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef;
+    subpass.colorAttachmentCount = static_cast<u32>(colorAttachmentRefs.size());
+    subpass.pColorAttachments = colorAttachmentRefs.data();
     subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
     VkSubpassDependency dependency{};
@@ -184,7 +200,7 @@ bool VulkanRenderer::CreateRenderPass() {
     dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
-    std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
+    std::array<VkAttachmentDescription, 3> attachments = { colorAttachment, velocityAttachment, depthAttachment };
 
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -201,7 +217,7 @@ bool VulkanRenderer::CreateRenderPass() {
         return false;
     }
 
-    ENJIN_LOG_INFO(Renderer, "Render pass created with depth attachment");
+    ENJIN_LOG_INFO(Renderer, "Render pass created with velocity + depth attachments");
     return true;
 }
 
@@ -445,12 +461,25 @@ void VulkanRenderer::BeginMainRenderPass() {
     renderPassInfo.renderArea.offset = { 0, 0 };
     renderPassInfo.renderArea.extent = m_Swapchain->GetExtent();
 
-    std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = { { 0.1f, 0.1f, 0.2f, 1.0f } };  // Dark blue to confirm clearing works
-    clearValues[1].depthStencil = { 1.0f, 0 };
+    std::array<VkClearValue, 3> clearValues{};
+    clearValues[0].color = { { 0.06f, 0.06f, 0.06f, 1.0f } };  // Near-black — blends with ImGui theme backgrounds
+    clearValues[1].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };  // Velocity: zero motion
+    clearValues[2].depthStencil = { 1.0f, 0 };
 
     renderPassInfo.clearValueCount = static_cast<u32>(clearValues.size());
     renderPassInfo.pClearValues = clearValues.data();
+
+    // Attach VRS shading rate image when available (VK_KHR_fragment_shading_rate)
+#ifdef ENJIN_VRS
+    VkRenderingFragmentShadingRateAttachmentInfoKHR vrsAttachment{};
+    if (m_ShadingRateImageView != VK_NULL_HANDLE) {
+        vrsAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_INFO_KHR;
+        vrsAttachment.imageView = m_ShadingRateImageView;
+        vrsAttachment.imageLayout = VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR;
+        vrsAttachment.shadingRateAttachmentTexelSize = m_ShadingRateTileSize;
+        renderPassInfo.pNext = &vrsAttachment;
+    }
+#endif
 
     vkCmdBeginRenderPass(m_CommandBuffers[m_CurrentFrame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     m_IsMainRenderPassActive = true;
@@ -570,6 +599,16 @@ bool VulkanRenderer::CreateComputeResources() {
         }
     }
 
+    // Graphics→Compute semaphores (allows compute to wait on graphics)
+    m_GraphicsToComputeSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        if (vkCreateSemaphore(m_Context->GetDevice(), &semInfo, nullptr, &m_GraphicsToComputeSemaphores[i]) != VK_SUCCESS) {
+            ENJIN_LOG_WARN(Renderer, "Failed to create graphics→compute semaphore %u", i);
+            DestroyComputeResources();
+            return false;
+        }
+    }
+
     ENJIN_LOG_INFO(Renderer, "Async compute resources initialized (queue family %u)",
                    m_Context->GetComputeQueueFamily());
     return true;
@@ -582,6 +621,10 @@ void VulkanRenderer::DestroyComputeResources() {
         if (sem != VK_NULL_HANDLE) vkDestroySemaphore(device, sem, nullptr);
     }
     m_ComputeFinishedSemaphores.clear();
+    for (auto sem : m_GraphicsToComputeSemaphores) {
+        if (sem != VK_NULL_HANDLE) vkDestroySemaphore(device, sem, nullptr);
+    }
+    m_GraphicsToComputeSemaphores.clear();
     m_ComputeCommandBuffers.clear();
     if (m_ComputeCommandPool != VK_NULL_HANDLE) {
         vkDestroyCommandPool(device, m_ComputeCommandPool, nullptr);
@@ -624,6 +667,17 @@ void VulkanRenderer::SubmitCompute() {
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &m_ComputeFinishedSemaphores[m_CurrentFrame];
 
+    // If graphics signaled us, wait on that semaphore before compute begins
+    VkSemaphore waitSem = VK_NULL_HANDLE;
+    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+    if (m_GraphicsToComputeSignaled) {
+        waitSem = m_GraphicsToComputeSemaphores[m_CurrentFrame];
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = &waitSem;
+        submitInfo.pWaitDstStageMask = &waitStage;
+        m_GraphicsToComputeSignaled = false;
+    }
+
     VkQueue computeQueue = m_Context->GetComputeQueue();
     VkResult submitResult = vkQueueSubmit(computeQueue, 1, &submitInfo, VK_NULL_HANDLE);
     if (submitResult == VK_ERROR_DEVICE_LOST) {
@@ -637,6 +691,29 @@ void VulkanRenderer::SubmitCompute() {
     m_ComputeSubmittedThisFrame = true;
 }
 
+void VulkanRenderer::InsertComputeToGraphicsBarrier(VkCommandBuffer graphicsCmd, VkPipelineStageFlags dstStage) {
+    // This is a memory barrier on the graphics command buffer.
+    // The actual semaphore wait happens at SubmitCommandBuffer() time.
+    // This barrier ensures proper memory visibility for compute→graphics data.
+    if (!m_ComputeSubmittedThisFrame) return;
+
+    VkMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    vkCmdPipelineBarrier(graphicsCmd,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, dstStage,
+        0, 1, &barrier, 0, nullptr, 0, nullptr);
+}
+
+void VulkanRenderer::SignalGraphicsToCompute(VkCommandBuffer graphicsCmd) {
+    // This method is called to signal the graphics→compute semaphore.
+    // The semaphore is signaled during graphics queue submit (added to signal list).
+    // For now, we set a flag that SubmitCompute will check.
+    (void)graphicsCmd;
+    m_GraphicsToComputeSignaled = true;
+}
+
 void VulkanRenderer::RequestVSyncChange(bool enabled) {
     m_VSyncChangeRequested = true;
     m_VSyncDesiredState = enabled;
@@ -644,6 +721,83 @@ void VulkanRenderer::RequestVSyncChange(bool enabled) {
 
 bool VulkanRenderer::IsVSyncEnabled() const {
     return m_Swapchain ? m_Swapchain->IsVSyncEnabled() : false;
+}
+
+bool VulkanRenderer::RecreateRenderPass() {
+    if (m_RenderPass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(m_Context->GetDevice(), m_RenderPass, nullptr);
+        m_RenderPass = VK_NULL_HANDLE;
+    }
+    if (!CreateRenderPass()) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to recreate render pass");
+        return false;
+    }
+    // Framebuffers reference the render pass — rebuild them
+    m_Swapchain->SetRenderPass(m_RenderPass);
+    m_Swapchain->RecreateFramebuffers();
+    return true;
+}
+
+void VulkanRenderer::SetHDREnabled(bool enabled) {
+    if (!m_Swapchain) return;
+    if (m_Swapchain->IsHDREnabled() == enabled) return;
+
+    // Check HDR format availability before attempting the switch
+    if (enabled && !m_Swapchain->IsHDRFormatAvailable()) {
+        ENJIN_LOG_WARN(Renderer, "HDR requested but no HDR surface format available (enable Windows HDR in Display Settings)");
+        return;
+    }
+
+    WaitForAllFrames();
+    m_IsFrameStarted = false;
+    m_IsMainRenderPassActive = false;
+
+    // Save old format for rollback on failure
+    VkFormat oldFormat = m_Swapchain->GetImageFormat();
+
+    // Clear render pass BEFORE recreating swapchain: Recreate() would otherwise
+    // build framebuffers against the OLD render pass whose attachment format no
+    // longer matches the new swapchain image format (SRGB vs FP16/HDR10).
+    m_Swapchain->SetRenderPass(VK_NULL_HANDLE);
+
+    // Update swapchain HDR preference and recreate with new format
+    m_Swapchain->SetHDREnabled(enabled);
+    auto extent = m_Swapchain->GetExtent();
+    if (!m_Swapchain->Recreate(extent.width, extent.height, true)) {
+        // Swapchain recreation failed — revert HDR flag and try to recover
+        ENJIN_LOG_ERROR(Renderer, "HDR swapchain recreation failed, reverting to previous mode");
+        m_Swapchain->SetHDREnabled(!enabled);
+        m_Swapchain->Recreate(extent.width, extent.height, true);
+        RecreateRenderPass();
+        m_ImagesInFlight.assign(m_Swapchain->GetImageCount(), VK_NULL_HANDLE);
+        return;
+    }
+
+    // Render pass attachment 0 format must match the new swapchain format.
+    // This also sets the new render pass on the swapchain and rebuilds framebuffers.
+    RecreateRenderPass();
+
+    // Reset image tracking
+    m_ImagesInFlight.assign(m_Swapchain->GetImageCount(), VK_NULL_HANDLE);
+
+    // Notify external systems (post-processing, RenderSystem pipelines, etc.)
+    for (auto& callback : m_ResizeCallbacks) {
+        callback(extent.width, extent.height);
+    }
+
+    const char* modeNames[] = { "SDR", "scRGB", "HDR10" };
+    u32 mode = m_Swapchain->GetHDROutputMode();
+    ENJIN_LOG_INFO(Renderer, "HDR output %s (mode: %s)",
+        enabled ? "enabled" : "disabled",
+        mode < 3 ? modeNames[mode] : "Unknown");
+}
+
+bool VulkanRenderer::IsHDREnabled() const {
+    return m_Swapchain ? m_Swapchain->IsHDREnabled() : false;
+}
+
+u32 VulkanRenderer::GetHDROutputMode() const {
+    return m_Swapchain ? m_Swapchain->GetHDROutputMode() : 0;
 }
 
 } // namespace Renderer

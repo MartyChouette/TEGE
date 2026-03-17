@@ -7,6 +7,12 @@
 
 namespace Enjin::Build {
 
+// Build target platform (matches Renderer::BuildTarget values)
+enum class BuildTargetPlatform : u8 {
+    Desktop,    // Windows/Linux/macOS native
+    Web         // WebAssembly + WebGPU
+};
+
 enum class MessageSeverity : u8 {
     Info,
     Warning,
@@ -27,6 +33,7 @@ struct BuildConfig {
     u32 windowWidth = 1280;
     u32 windowHeight = 720;
     bool fullscreen = false;
+    BuildTargetPlatform target = BuildTargetPlatform::Desktop;
 };
 
 struct BuildResult {

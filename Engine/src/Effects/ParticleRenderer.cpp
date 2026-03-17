@@ -1,9 +1,11 @@
 #include "Enjin/Effects/ParticleRenderer.h"
+#include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/Logging/Log.h"
 #include <cstring>
+#include <cmath>
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -167,6 +169,7 @@ void ParticleRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescrip
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.alphaBlend = true;
+    config.colorAttachmentCount = 2; // MRT: color + velocity
     config.customVertexInput = &vertexInput;
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
@@ -291,6 +294,98 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
     vkCmdBindIndexBuffer(commandBuffer, m_QuadIndexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
     // Draw instanced: 6 indices per quad, instanceCount instances
+    vkCmdDrawIndexed(commandBuffer, 6, instanceCount, 0, 0, 0);
+}
+
+void ParticleRenderer::RenderElementalParticles(VkCommandBuffer commandBuffer,
+                                                  const std::vector<VkDescriptorSet>& descriptorSets,
+                                                  u32 currentFrame,
+                                                  const ElementalSystem& elementalSystem,
+                                                  u32 viewportWidth,
+                                                  u32 viewportHeight) {
+    if (!m_Initialized || !m_Pipeline) return;
+
+    const auto& pool = elementalSystem.GetPool();
+    if (pool.activeCount == 0) return;
+
+    m_InstanceDataCache.clear();
+
+    for (u32 i = 0; i < pool.activeCount && m_InstanceDataCache.size() < MAX_PARTICLES; ++i) {
+        ParticleInstanceData inst;
+        inst.position = pool.positions[i];
+        inst.size = pool.sizes[i] * 2.0f;
+
+        // Alpha from lifetime ratio and intensity
+        f32 ageRatio = (pool.maxLifetimes[i] > 0.0f)
+            ? pool.lifetimes[i] / pool.maxLifetimes[i]
+            : 0.0f;
+        inst.alpha = pool.intensities[i] * Math::Min(1.0f, ageRatio * 3.0f); // fade in fast, fade out at end
+
+        // Velocity stretch for fast-moving particles (rain, debris)
+        f32 velLen = pool.velocities[i].Length();
+        if (velLen > 2.0f) {
+            inst.stretch = Math::Min(4.0f, velLen * 0.3f);
+            inst.stretchDirX = pool.velocities[i].x / velLen;
+            inst.stretchDirY = pool.velocities[i].y / velLen;
+        } else {
+            inst.stretch = 1.0f;
+            inst.stretchDirX = 0.0f;
+            inst.stretchDirY = 0.0f;
+        }
+
+        m_InstanceDataCache.push_back(inst);
+    }
+
+    u32 instanceCount = static_cast<u32>(m_InstanceDataCache.size());
+    if (instanceCount == 0) return;
+
+    m_InstanceBuffer->UploadData(m_InstanceDataCache.data(), instanceCount * sizeof(ParticleInstanceData));
+
+    m_Pipeline->Bind(commandBuffer);
+
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+
+    VkExtent2D extent;
+    if (viewportWidth > 0 && viewportHeight > 0) {
+        extent.width = viewportWidth;
+        extent.height = viewportHeight;
+    } else {
+        extent = m_Renderer->GetSwapchainExtent();
+    }
+    if (extent.width == 0 || extent.height == 0) return;
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<f32>(extent.width);
+    viewport.height = static_cast<f32>(extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = extent;
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    // Color derived from dominant element — encoded via push constants baseColor
+    // We render all elemental particles in one draw call with white base color;
+    // per-particle tinting is handled by the existing particle shader's alpha/falloff
+    Renderer::PushConstants pc{};
+    pc.model = Math::Matrix4::Identity();
+    pc.baseColor = Math::Vector3(1.0f, 0.8f, 0.6f); // warm tint for elemental
+    pc.metallic = 1.0f;
+    pc.opacity = 1.0f;
+    pc.flags = 0;
+
+    vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+
+    VkBuffer vertexBuffers[] = { m_QuadVertexBuffer->GetBuffer(), m_InstanceBuffer->GetBuffer() };
+    VkDeviceSize offsets[] = { 0, 0 };
+    vkCmdBindVertexBuffers(commandBuffer, 0, 2, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(commandBuffer, m_QuadIndexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
     vkCmdDrawIndexed(commandBuffer, 6, instanceCount, 0, 0, 0);
 }
 

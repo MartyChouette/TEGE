@@ -22,11 +22,15 @@ bool VulkanSwapchain::Initialize(VkSurfaceKHR surface, u32 width, u32 height) {
     if (!CreateDepthResources()) {
         return false;
     }
+    if (!CreateVelocityResources()) {
+        return false;
+    }
     return true;
 }
 
 void VulkanSwapchain::Shutdown() {
     DestroyFramebuffers();
+    DestroyVelocityResources();
     DestroyDepthResources();
     DestroyImageViews();
 
@@ -36,12 +40,13 @@ void VulkanSwapchain::Shutdown() {
     }
 }
 
-void VulkanSwapchain::Recreate(u32 width, u32 height, bool gpuAlreadyIdle) {
+bool VulkanSwapchain::Recreate(u32 width, u32 height, bool gpuAlreadyIdle) {
     if (!gpuAlreadyIdle) {
         vkDeviceWaitIdle(m_Context->GetDevice());
     }
 
     DestroyFramebuffers();
+    DestroyVelocityResources();
     DestroyDepthResources();
     DestroyImageViews();
 
@@ -53,17 +58,23 @@ void VulkanSwapchain::Recreate(u32 width, u32 height, bool gpuAlreadyIdle) {
 
     if (!CreateSwapchain(m_Surface, width, height) || !CreateImageViews()) {
         ENJIN_LOG_ERROR(Renderer, "Failed to recreate swapchain");
-        return;
+        return false;
     }
-    
+
     if (!CreateDepthResources()) {
         ENJIN_LOG_ERROR(Renderer, "Failed to recreate depth resources");
-        return;
+        return false;
+    }
+
+    if (!CreateVelocityResources()) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to recreate velocity resources");
+        return false;
     }
 
     if (m_RenderPass != VK_NULL_HANDLE) {
         RecreateFramebuffers();
     }
+    return true;
 }
 
 SwapchainSupportDetails VulkanSwapchain::QuerySwapchainSupport(VkPhysicalDevice device, VkSurfaceKHR surface) {
@@ -89,7 +100,34 @@ SwapchainSupportDetails VulkanSwapchain::QuerySwapchainSupport(VkPhysicalDevice 
 }
 
 VkSurfaceFormatKHR VulkanSwapchain::ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
-    // Prefer SRGB with 32-bit color
+    if (m_HDREnabled) {
+        // Try scRGB (FP16 linear) — simplest HDR path, Windows compositor handles conversion
+        for (const auto& format : availableFormats) {
+            if (format.format == VK_FORMAT_R16G16B16A16_SFLOAT &&
+                format.colorSpace == VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT) {
+                m_HDROutputMode = 1;  // scRGB
+                ENJIN_LOG_INFO(Renderer, "HDR: selected scRGB (FP16 linear)");
+                return format;
+            }
+        }
+
+        // Try HDR10 (10-bit PQ)
+        for (const auto& format : availableFormats) {
+            if (format.format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 &&
+                format.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT) {
+                m_HDROutputMode = 2;  // HDR10 PQ
+                ENJIN_LOG_INFO(Renderer, "HDR: selected HDR10 (10-bit PQ/ST.2084)");
+                return format;
+            }
+        }
+
+        ENJIN_LOG_WARN(Renderer, "HDR requested but no HDR surface format available, falling back to SDR");
+        m_HDROutputMode = 0;
+    } else {
+        m_HDROutputMode = 0;
+    }
+
+    // SDR: Prefer SRGB with 32-bit color
     for (const auto& format : availableFormats) {
         if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
             format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
@@ -99,6 +137,28 @@ VkSurfaceFormatKHR VulkanSwapchain::ChooseSwapSurfaceFormat(const std::vector<Vk
 
     // Fallback to first available
     return availableFormats[0];
+}
+
+void VulkanSwapchain::SetHDREnabled(bool enabled) {
+    if (m_HDREnabled == enabled) return;
+    m_HDREnabled = enabled;
+    ENJIN_LOG_INFO(Renderer, "HDR output %s — swapchain recreate required", enabled ? "enabled" : "disabled");
+}
+
+bool VulkanSwapchain::IsHDRFormatAvailable() const {
+    if (!m_Context || m_Surface == VK_NULL_HANDLE) return false;
+    u32 formatCount = 0;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(m_Context->GetPhysicalDevice(), m_Surface, &formatCount, nullptr);
+    if (formatCount == 0) return false;
+    std::vector<VkSurfaceFormatKHR> formats(formatCount);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(m_Context->GetPhysicalDevice(), m_Surface, &formatCount, formats.data());
+    for (const auto& f : formats) {
+        if ((f.format == VK_FORMAT_R16G16B16A16_SFLOAT && f.colorSpace == VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT) ||
+            (f.format == VK_FORMAT_A2B10G10R10_UNORM_PACK32 && f.colorSpace == VK_COLOR_SPACE_HDR10_ST2084_EXT)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 VkPresentModeKHR VulkanSwapchain::ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
@@ -222,9 +282,17 @@ bool VulkanSwapchain::CreateSwapchain(VkSurfaceKHR surface, u32 width, u32 heigh
         return false;
     }
 
-    vkGetSwapchainImagesKHR(m_Context->GetDevice(), m_Swapchain, &imageCount, nullptr);
+    result = vkGetSwapchainImagesKHR(m_Context->GetDevice(), m_Swapchain, &imageCount, nullptr);
+    if (result != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to get swapchain image count: %d", result);
+        return false;
+    }
     m_Images.resize(imageCount);
-    vkGetSwapchainImagesKHR(m_Context->GetDevice(), m_Swapchain, &imageCount, m_Images.data());
+    result = vkGetSwapchainImagesKHR(m_Context->GetDevice(), m_Swapchain, &imageCount, m_Images.data());
+    if (result != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to get swapchain images: %d", result);
+        return false;
+    }
 
     m_ImageFormat = surfaceFormat.format;
     m_Extent = extent;
@@ -281,12 +349,14 @@ void VulkanSwapchain::RecreateFramebuffers() {
     DestroyFramebuffers();
     m_Framebuffers.resize(m_ImageViews.size());
 
-    std::vector<VkImageView> attachments(2);
-    attachments[1] = m_DepthImageView; // Depth attachment is same for all framebuffers
+    // Attachment order must match render pass: [0]=color, [1]=velocity, [2]=depth
+    std::vector<VkImageView> attachments(3);
+    attachments[1] = m_VelocityImageView; // Velocity attachment (shared across frames)
+    attachments[2] = m_DepthImageView;    // Depth attachment (shared across frames)
 
     for (usize i = 0; i < m_ImageViews.size(); ++i) {
-        attachments[0] = m_ImageViews[i]; // Color attachment
-        
+        attachments[0] = m_ImageViews[i]; // Color attachment (per swapchain image)
+
         VkFramebufferCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         createInfo.renderPass = m_RenderPass;
@@ -382,7 +452,15 @@ bool VulkanSwapchain::CreateDepthResources() {
         return false;
     }
 
-    vkBindImageMemory(m_Context->GetDevice(), m_DepthImage, m_DepthImageMemory, 0);
+    result = vkBindImageMemory(m_Context->GetDevice(), m_DepthImage, m_DepthImageMemory, 0);
+    if (result != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to bind depth image memory: %d", result);
+        vkFreeMemory(m_Context->GetDevice(), m_DepthImageMemory, nullptr);
+        vkDestroyImage(m_Context->GetDevice(), m_DepthImage, nullptr);
+        m_DepthImage = VK_NULL_HANDLE;
+        m_DepthImageMemory = VK_NULL_HANDLE;
+        return false;
+    }
 
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -409,6 +487,104 @@ bool VulkanSwapchain::CreateDepthResources() {
     return true;
 }
 
+bool VulkanSwapchain::CreateVelocityResources() {
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.format = VELOCITY_FORMAT;
+    imageInfo.extent.width = m_Extent.width;
+    imageInfo.extent.height = m_Extent.height;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VkResult result = vkCreateImage(m_Context->GetDevice(), &imageInfo, nullptr, &m_VelocityImage);
+    if (result != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create velocity image: %d", result);
+        return false;
+    }
+
+    VkMemoryRequirements memRequirements;
+    vkGetImageMemoryRequirements(m_Context->GetDevice(), m_VelocityImage, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = m_Context->FindMemoryType(
+        memRequirements.memoryTypeBits,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+    );
+
+    if (allocInfo.memoryTypeIndex == UINT32_MAX) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to find suitable memory type for velocity buffer");
+        vkDestroyImage(m_Context->GetDevice(), m_VelocityImage, nullptr);
+        m_VelocityImage = VK_NULL_HANDLE;
+        return false;
+    }
+
+    result = vkAllocateMemory(m_Context->GetDevice(), &allocInfo, nullptr, &m_VelocityImageMemory);
+    if (result != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to allocate velocity image memory: %d", result);
+        vkDestroyImage(m_Context->GetDevice(), m_VelocityImage, nullptr);
+        m_VelocityImage = VK_NULL_HANDLE;
+        return false;
+    }
+
+    result = vkBindImageMemory(m_Context->GetDevice(), m_VelocityImage, m_VelocityImageMemory, 0);
+    if (result != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to bind velocity image memory: %d", result);
+        vkFreeMemory(m_Context->GetDevice(), m_VelocityImageMemory, nullptr);
+        vkDestroyImage(m_Context->GetDevice(), m_VelocityImage, nullptr);
+        m_VelocityImage = VK_NULL_HANDLE;
+        m_VelocityImageMemory = VK_NULL_HANDLE;
+        return false;
+    }
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = m_VelocityImage;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = VELOCITY_FORMAT;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    result = vkCreateImageView(m_Context->GetDevice(), &viewInfo, nullptr, &m_VelocityImageView);
+    if (result != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create velocity image view: %d", result);
+        vkFreeMemory(m_Context->GetDevice(), m_VelocityImageMemory, nullptr);
+        vkDestroyImage(m_Context->GetDevice(), m_VelocityImage, nullptr);
+        m_VelocityImage = VK_NULL_HANDLE;
+        m_VelocityImageMemory = VK_NULL_HANDLE;
+        return false;
+    }
+
+    ENJIN_LOG_INFO(Renderer, "Velocity buffer created: RG16F, %dx%d", m_Extent.width, m_Extent.height);
+    return true;
+}
+
+void VulkanSwapchain::DestroyVelocityResources() {
+    if (m_VelocityImageView != VK_NULL_HANDLE) {
+        vkDestroyImageView(m_Context->GetDevice(), m_VelocityImageView, nullptr);
+        m_VelocityImageView = VK_NULL_HANDLE;
+    }
+    if (m_VelocityImage != VK_NULL_HANDLE) {
+        vkDestroyImage(m_Context->GetDevice(), m_VelocityImage, nullptr);
+        m_VelocityImage = VK_NULL_HANDLE;
+    }
+    if (m_VelocityImageMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(m_Context->GetDevice(), m_VelocityImageMemory, nullptr);
+        m_VelocityImageMemory = VK_NULL_HANDLE;
+    }
+}
+
 void VulkanSwapchain::DestroyDepthResources() {
     if (m_DepthImageView != VK_NULL_HANDLE) {
         vkDestroyImageView(m_Context->GetDevice(), m_DepthImageView, nullptr);
@@ -433,7 +609,9 @@ void VulkanSwapchain::SetVSyncEnabled(bool enabled) {
     ENJIN_LOG_INFO(Renderer, "VSync %s, recreating swapchain...", enabled ? "enabled" : "disabled");
 
     // Recreate swapchain with new present mode
-    Recreate(m_Extent.width, m_Extent.height);
+    if (!Recreate(m_Extent.width, m_Extent.height)) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to recreate swapchain for VSync change");
+    }
 }
 
 } // namespace Renderer

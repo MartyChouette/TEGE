@@ -16,7 +16,12 @@ class RTPipeline;
 // Path tracer configuration
 struct PathTracerConfig {
     u32 maxBounces = 4;
-    u32 targetSPP = 1024;  // Target samples per pixel
+    u32 targetSPP = 1024;          // Target samples per pixel
+    f32 fireflyClampValue = 10.0f; // Max radiance per sample (clamping threshold)
+    bool enableNEE = true;         // Next Event Estimation (direct light sampling)
+    bool enableMIS = true;         // Multiple Importance Sampling
+    f32 russianRouletteMinBounce = 3; // Start Russian Roulette after this many bounces
+    f32 russianRouletteMinProb = 0.05f; // Minimum survival probability
 };
 
 // Progressive path tracer with accumulation buffer

@@ -25,7 +25,7 @@ public:
     bool Initialize(VkSurfaceKHR surface, u32 width, u32 height);
     void Shutdown();
 
-    void Recreate(u32 width, u32 height, bool gpuAlreadyIdle = false);
+    bool Recreate(u32 width, u32 height, bool gpuAlreadyIdle = false);
 
     VkSwapchainKHR GetSwapchain() const { return m_Swapchain; }
     VkFormat GetImageFormat() const { return m_ImageFormat; }
@@ -36,6 +36,11 @@ public:
     const std::vector<VkFramebuffer>& GetFramebuffers() const { return m_Framebuffers; }
     VkImageView GetDepthImageView() const { return m_DepthImageView; }
     VkFormat GetDepthFormat() const { return m_DepthFormat; }
+
+    // Velocity buffer for TAA / temporal upscaling (RG16F per-pixel motion vectors)
+    VkImageView GetVelocityImageView() const { return m_VelocityImageView; }
+    VkImage GetVelocityImage() const { return m_VelocityImage; }
+    static constexpr VkFormat VELOCITY_FORMAT = VK_FORMAT_R16G16_SFLOAT;
 
     VkFramebuffer GetFramebuffer(u32 index) const {
         return index < m_Framebuffers.size() ? m_Framebuffers[index] : VK_NULL_HANDLE;
@@ -49,6 +54,12 @@ public:
     bool IsVSyncEnabled() const { return m_VSyncEnabled; }
     VkPresentModeKHR GetCurrentPresentMode() const { return m_CurrentPresentMode; }
 
+    // HDR output control
+    void SetHDREnabled(bool enabled);
+    bool IsHDREnabled() const { return m_HDREnabled; }
+    u32 GetHDROutputMode() const { return m_HDROutputMode; }  // 0=SDR, 1=scRGB, 2=HDR10
+    bool IsHDRFormatAvailable() const;
+
 private:
     SwapchainSupportDetails QuerySwapchainSupport(VkPhysicalDevice device, VkSurfaceKHR surface);
     VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
@@ -59,6 +70,8 @@ private:
     void DestroyImageViews();
     bool CreateDepthResources();
     void DestroyDepthResources();
+    bool CreateVelocityResources();
+    void DestroyVelocityResources();
     VkFormat FindDepthFormat();
     void DestroyFramebuffers();
 
@@ -78,9 +91,18 @@ private:
     VkImageView m_DepthImageView = VK_NULL_HANDLE;
     VkFormat m_DepthFormat = VK_FORMAT_UNDEFINED;
 
+    // Velocity buffer resources (RG16F for TAA motion vectors)
+    VkImage m_VelocityImage = VK_NULL_HANDLE;
+    VkDeviceMemory m_VelocityImageMemory = VK_NULL_HANDLE;
+    VkImageView m_VelocityImageView = VK_NULL_HANDLE;
+
     // VSync state
     bool m_VSyncEnabled = false;
     VkPresentModeKHR m_CurrentPresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
+
+    // HDR state
+    bool m_HDREnabled = false;
+    u32 m_HDROutputMode = 0;  // 0=SDR, 1=scRGB, 2=HDR10
 };
 
 } // namespace Renderer

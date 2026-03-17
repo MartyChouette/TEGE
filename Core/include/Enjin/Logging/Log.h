@@ -38,6 +38,16 @@ enum class LogCategory : u8 {
     Count
 };
 
+// Ring buffer entry for crash handler context
+struct LogEntry {
+    char message[512];
+    LogLevel level;
+    LogCategory category;
+};
+
+// Callback fired after each log message is formatted (still under mutex)
+using LogCallback = void(*)(LogLevel level, LogCategory category, const char* formatted);
+
 class ENJIN_API Logger {
 public:
     static Logger& Get();
@@ -58,6 +68,12 @@ public:
     void Error(LogCategory category, const char* file, u32 line, const char* function, const char* format, ...);
     void Fatal(LogCategory category, const char* file, u32 line, const char* function, const char* format, ...);
 
+    // Log callback for editor console wiring
+    void SetLogCallback(LogCallback callback);
+
+    // Ring buffer access (for crash handler — reads without locking, process is stopped)
+    const LogEntry* GetRingBuffer(usize& outCount, usize& outHead) const;
+
 private:
     Logger() = default;
     ~Logger() = default;
@@ -69,6 +85,7 @@ private:
     void FormatTimestamp(char* buf, usize bufSize) const;
 
     static constexpr usize MAX_LOG_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+    static constexpr usize RING_BUFFER_SIZE = 128;
 
     LogLevel m_MinLogLevel = LogLevel::Info;
     bool m_CategoryEnabled[static_cast<usize>(LogCategory::Count)] = { true };
@@ -77,6 +94,14 @@ private:
     std::string m_LogFilePath;
     usize m_CurrentFileSize = 0;
     bool m_Initialized = false;
+
+    // Ring buffer for crash context
+    LogEntry m_RingBuffer[RING_BUFFER_SIZE] = {};
+    usize m_RingHead = 0;
+    usize m_RingCount = 0;
+
+    // External callback (e.g. editor console)
+    LogCallback m_LogCallback = nullptr;
 
     void RotateLogFile();
 };

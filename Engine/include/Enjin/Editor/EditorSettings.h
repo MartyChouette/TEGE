@@ -139,6 +139,11 @@ struct EditorSettings {
     f32 gizmoNudgeFine = 0.01f;       // Fine nudge (Ctrl+Arrow) units (0.001-1.0)
     f32 gizmoRotateNudge = 5.0f;      // Degrees per rotate nudge (1-45)
 
+    // Audio
+    bool enableHRTF = true;           // HRTF binaural audio (requires Steam Audio SDK)
+    bool enableOcclusion = true;      // Audio occlusion by geometry
+    bool enableTransmission = true;   // Frequency-dependent sound through walls
+
     // Surface Snap
     bool surfaceSnap = false;
     bool surfaceAlignNormal = true;
@@ -170,6 +175,18 @@ struct EditorSettings {
     static constexpr int MAX_RECENT_VS_NODES = 5;
 
     void AddRecentVisualScriptNode(const std::string& nodeTypeId);
+
+    // Layout persistence
+    u32 visiblePanels = 0xFFFFFFFF;   // EditorPanel bitmask - all visible by default
+    f32 leftPanelWidth = 0.18f;
+    f32 rightPanelWidth = 0.25f;
+    f32 bottomPanelHeight = 0.22f;
+    u32 gizmoOperation = 0;           // 0=Translate, 1=Rotate, 2=Scale
+    u32 gizmoSpace = 0;               // 0=Local, 1=World
+
+    // Auto-save
+    bool autoSaveEnabled = true;
+    f32 autoSaveIntervalMinutes = 5.0f;
 
     // Save/Load
     bool Save(const std::string& path = "") const;

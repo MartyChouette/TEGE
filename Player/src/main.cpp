@@ -1,4 +1,6 @@
 #include "Enjin/Core/Application.h"
+#include "Enjin/Core/Version.h"
+#include "Enjin/Debug/CrashHandler.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Platform/Paths.h"
@@ -35,6 +37,7 @@
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Effects/SeasonalWeather.h"
 #include "Enjin/Effects/Water.h"
+#include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/Audio/AudioSystem.h"
 #include "Enjin/Audio/SimpleAudio.h"
 #include "Enjin/Build/AssetReader.h"
@@ -87,6 +90,11 @@
 #include <algorithm>
 
 namespace fs = std::filesystem;
+
+// Crash context — file-scope pointers for function-pointer providers
+static Enjin::ECS::World* s_CrashWorld = nullptr;
+static char s_PlayerGPUNameBuf[256] = {};
+static char s_PlayerSceneNameBuf[256] = {};
 
 // Standalone game player — no editor, no ImGui
 class GamePlayer : public Enjin::Application {
@@ -233,7 +241,7 @@ public:
         Enjin::Audio::AudioManager::Get().Initialize();
 
         // Initialize scripting engine
-        if (m_ScriptEngine.Init()) {
+        if (m_ScriptEngine.Initialize()) {
             Enjin::Scripting::RegisterAllBindings(m_ScriptEngine.GetASEngine());
             m_ScriptEngine.SetWorld(m_World.get());
             m_ScriptEngine.SetScriptDirectory("scripts");
@@ -404,12 +412,33 @@ public:
         // Show splash screen before loading game
         SetupSplashScreen();
 
+        // Register crash context providers
+        s_CrashWorld = m_World.get();
+        if (m_Renderer && m_Renderer->GetContext()) {
+            VkPhysicalDeviceProperties props = {};
+            vkGetPhysicalDeviceProperties(m_Renderer->GetContext()->GetPhysicalDevice(), &props);
+            snprintf(s_PlayerGPUNameBuf, sizeof(s_PlayerGPUNameBuf), "%s", props.deviceName);
+        }
+        snprintf(s_PlayerSceneNameBuf, sizeof(s_PlayerSceneNameBuf), "%s", m_StartScene.c_str());
+
+        Enjin::Debug::CrashContext ctx;
+        ctx.engineVersion = []() -> const char* { return ENJIN_VERSION_STRING; };
+        ctx.gpuName = []() -> const char* { return s_PlayerGPUNameBuf; };
+        ctx.sceneName = []() -> const char* { return s_PlayerSceneNameBuf; };
+        ctx.entityCount = []() -> Enjin::u32 {
+            return s_CrashWorld ? static_cast<Enjin::u32>(s_CrashWorld->GetEntityCount()) : 0;
+        };
+        Enjin::Debug::SetCrashContext(ctx);
+
         m_Initialized = true;
         ENJIN_LOG_INFO(Player, "Player initialized");
     }
 
     void Shutdown() override {
         ENJIN_LOG_INFO(Player, "Player shutting down...");
+
+        s_CrashWorld = nullptr;
+        Enjin::Debug::SetCrashContext({});
 
         // Clear 2D physics collision callbacks before destroying systems they reference
         if (m_Physics2D) {
@@ -433,6 +462,7 @@ public:
             extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
             extern Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing;
             extern Enjin::Editor::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime;
+            extern Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool;
             s_VisualScriptSaveSystem = nullptr;
             s_VisualScriptWeather = nullptr;
             s_VisualScriptWater = nullptr;
@@ -442,6 +472,7 @@ public:
             s_VisualScriptAudio = nullptr;
             s_VisualScriptPostProcessing = nullptr;
             s_VisualScriptAudioGraphRuntime = nullptr;
+            s_VisualScriptObjectPool = nullptr;
         }
 
         // Shutdown gameplay systems before world is destroyed
@@ -691,6 +722,14 @@ public:
                 *m_World->GetComponent<Enjin::ECS::MeshComponent>(entity) = std::move(mesh);
             else
                 m_World->AddComponent<Enjin::ECS::MeshComponent>(entity, std::move(mesh));
+        }
+        // Update Water3D animated surfaces
+        m_Water3D.Update(deltaTime);
+        for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::Water3DComponent>()) {
+            auto* water3d = m_World->GetComponent<Enjin::ECS::Water3DComponent>(entity);
+            if (!water3d || !water3d->meshCreated) continue;
+            m_Water3D.Initialize(water3d->settings);
+            m_Water3D.UpdateEntityMesh(m_World.get(), entity);
         }
         m_FluidSimulation.Update(deltaTime, m_World.get());
         m_FluidTerrainCoupling.Update(deltaTime, m_World.get(), m_FluidSimulation);
@@ -1040,6 +1079,7 @@ private:
             extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
             extern Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing;
             extern Enjin::Editor::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime;
+            extern Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool;
             s_VisualScriptSaveSystem = &m_TieredSaveSystem;
             s_VisualScriptWeather = &m_WeatherSystem;
             s_VisualScriptWater = &m_Water3D;
@@ -1049,6 +1089,7 @@ private:
             s_VisualScriptAudio = &m_SimpleAudio;
             s_VisualScriptPostProcessing = m_PostProcessing.get();
             s_VisualScriptAudioGraphRuntime = &m_AudioGraphRuntime;
+            s_VisualScriptObjectPool = &m_ObjectPool;
         }
 
         // Wire dialogue system event bus and subtitle system
@@ -1259,6 +1300,11 @@ private:
         } catch (const std::exception&) {
             // JSON parse failure for content warnings is non-fatal
         }
+
+        // Build audio occlusion scene from colliders
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+        m_SimpleAudio.BuildSteamAudioScene();
+#endif
 
         ENJIN_LOG_INFO(Player, "Loaded scene: %s (%zu entities)", scenePath.c_str(), result.entities.size());
         return true;
@@ -1515,8 +1561,6 @@ private:
     Enjin::Effects::WorldTimeSystem m_WorldTime;
     Enjin::Effects::SeasonalWeatherSystem m_SeasonalWeather;
 
-    // Water3D — settings object for VS node access; rendering integration pending (no water
-    // render pass or shader pipeline in RenderSystem yet).
     Enjin::Effects::Water3D m_Water3D;
 
     // TODO(F11): RetroEffects — RetroEffects is a settings/config class (resolution, dither,

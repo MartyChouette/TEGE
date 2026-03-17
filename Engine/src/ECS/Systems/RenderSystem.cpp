@@ -4,6 +4,7 @@
 #include "Enjin/Effects/WeatherRenderer.h"
 #include "Enjin/Effects/ParticleRenderer.h"
 #include "Enjin/Effects/FluidRenderer.h"
+#include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/Effects/SpriteBatchRenderer.h"
 #include "Enjin/Effects/SpriteTextureAtlas.h"
 #include "Enjin/Effects/GrassRenderer.h"
@@ -16,6 +17,7 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/ECS/Components/ShrubVolume.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
@@ -25,6 +27,7 @@
 #include "Enjin/ECS/Components/LOD.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/Animation/IKSolver.h"
 #include "Enjin/Logging/Log.h"
@@ -40,14 +43,28 @@
 #include "Enjin/Renderer/RayTracing/RTReflections.h"
 #include "Enjin/Renderer/RayTracing/RTAmbientOcclusion.h"
 #include "Enjin/Renderer/RayTracing/RTGlobalIllumination.h"
+#include "Enjin/Renderer/RayTracing/RTTranslucency.h"
+#include "Enjin/Renderer/RayTracing/RTCaustics.h"
 #include "Enjin/Renderer/RayTracing/PathTracer.h"
 #include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
 #include "Enjin/Renderer/RayTracing/OIDNDenoiser.h"
+#include "Enjin/Renderer/RayTracing/OptiXDenoiser.h"
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
 #include "Enjin/Renderer/RayTracing/RTShaderData.h"
 #include "Enjin/Renderer/SHLightProbe.h"
 #include "Enjin/Renderer/SDFScene.h"
 #include "Enjin/Renderer/OITManager.h"
+#ifdef ENJIN_CLUSTERED_LIGHTING
+#include "Enjin/Renderer/ClusteredLighting.h"
+#endif
+#ifdef ENJIN_VISIBILITY_BUFFER
+#include "Enjin/Renderer/VisibilityBuffer/VisibilityBuffer.h"
+#endif
+#ifdef ENJIN_VRS
+#include "Enjin/Renderer/VRS/VariableRateShading.h"
+#endif
+#include "Enjin/Renderer/Upscaling/IUpscaler.h"
+#include "Enjin/Renderer/Upscaling/FSR2Upscaler.h"
 #include <cstring>
 #include <array>
 #include <algorithm>
@@ -300,6 +317,45 @@ void RenderSystem::Initialize() {
     m_SHLighting = std::make_unique<Renderer::SHLightingSystem>();
     m_SDFScene = std::make_unique<Renderer::SDFScene>();
 
+    // Per-frame linear allocator: 8 MB supports ~100K entities x 128B each
+    m_FrameAllocator = std::make_unique<FrameAllocator>(8 * 1024 * 1024);
+
+    // Initialize clustered forward lighting system
+#ifdef ENJIN_CLUSTERED_LIGHTING
+    {
+        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+        m_ClusteredLighting = std::make_unique<Renderer::ClusteredLightingSystem>(m_Renderer->GetContext());
+        if (!m_ClusteredLighting->Initialize(extent.width, extent.height)) {
+            ENJIN_LOG_WARN(Renderer, "Clustered lighting init failed — falling back to brute-force");
+            m_ClusteredLighting.reset();
+        }
+    }
+#endif
+
+    // Initialize visibility buffer renderer
+#ifdef ENJIN_VISIBILITY_BUFFER
+    {
+        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+        m_VisibilityBuffer = std::make_unique<Renderer::VisibilityBufferRenderer>(m_Renderer->GetContext());
+        if (!m_VisibilityBuffer->Initialize(extent.width, extent.height, m_Renderer->GetRenderPass())) {
+            ENJIN_LOG_WARN(Renderer, "Visibility buffer init failed — using standard forward path");
+            m_VisibilityBuffer.reset();
+        }
+    }
+#endif
+
+    // Initialize variable rate shading
+#ifdef ENJIN_VRS
+    if (m_Renderer->GetContext()->IsVRSSupported()) {
+        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+        m_VRS = std::make_unique<Renderer::VariableRateShading>(m_Renderer->GetContext());
+        if (!m_VRS->Initialize(extent.width, extent.height)) {
+            ENJIN_LOG_WARN(Renderer, "VRS init failed — shading rate control disabled");
+            m_VRS.reset();
+        }
+    }
+#endif
+
     m_Initialized = true;
     ENJIN_LOG_INFO(Renderer, "RenderSystem initialized");
 }
@@ -334,6 +390,17 @@ void RenderSystem::Shutdown() {
     m_ActiveDescriptorSets = nullptr;
     m_ActiveUniformBuffers = nullptr;
     m_ActiveLightingBuffers = nullptr;
+
+    // Clean up performance optimization subsystems
+#ifdef ENJIN_CLUSTERED_LIGHTING
+    if (m_ClusteredLighting) { m_ClusteredLighting->Shutdown(); m_ClusteredLighting.reset(); }
+#endif
+#ifdef ENJIN_VISIBILITY_BUFFER
+    if (m_VisibilityBuffer) { m_VisibilityBuffer->Shutdown(); m_VisibilityBuffer.reset(); }
+#endif
+#ifdef ENJIN_VRS
+    if (m_VRS) { m_VRS->Shutdown(); m_VRS.reset(); }
+#endif
 
     // Clean up weather, particle, grass, shrub, tree, and sprite batch renderers
     m_WeatherRenderer.reset();
@@ -506,6 +573,9 @@ void RenderSystem::Update(f32 deltaTime) {
     // Reset per-frame stats
     ResetFrameCounters();
 
+    // Reset per-frame linear allocator (all FrameArray allocations from previous frame are freed)
+    if (m_FrameAllocator) m_FrameAllocator->Reset();
+
     // Cache light entities once per frame (reused by UpdateFrameUniforms, SelectShadowLights, etc.)
     m_CachedLightEntities.clear();
     if (m_World) {
@@ -530,6 +600,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Auto-create meshes for water volume entities that don't have one yet
     EnsureWaterMeshes();
+    EnsureWater3DMeshes();
 
     // Regenerate terrain meshes when dirty (only iterate entities that have the component)
     {
@@ -757,6 +828,14 @@ void RenderSystem::Update(f32 deltaTime) {
     // Classify scene composition (2D / 2.5D / 3D) before rendering decisions
     ClassifySceneComposition();
 
+    // When main-pass rendering is skipped (editor viewport renders offscreen),
+    // skip all pre-pass work (shadows, culling, RT, clustered lighting) but still
+    // start the main render pass so ImGui has a valid pass to draw into.
+    if (m_SkipMainPassRendering) {
+        m_Renderer->BeginMainRenderPass();
+        return;
+    }
+
     // Build list of cullable objects for GPU frustum culling
     // Only done when we have 3D meshes and GPU culling is enabled.
     // In editor mode, skip culling entirely so all entities are visible for editing.
@@ -820,6 +899,43 @@ void RenderSystem::Update(f32 deltaTime) {
             CompositeRTResults(commandBuffer);
         }
     }
+
+    // Clustered forward lighting: build light list and assign to spatial clusters before main render pass
+#ifdef ENJIN_CLUSTERED_LIGHTING
+    if (m_ClusteredLighting && m_SceneComposition.mode != SceneRenderMode::Scene2D && m_Camera) {
+        VkCommandBuffer cmdBuf = m_Renderer->GetCurrentCommandBuffer();
+        if (cmdBuf != VK_NULL_HANDLE) {
+            // Build ClusterLight array from cached light entities
+            std::vector<Renderer::ClusterLight> clusterLights;
+            clusterLights.reserve(m_CachedLightEntities.size());
+            for (Entity e : m_CachedLightEntities) {
+                auto* light = m_World->GetComponent<LightComponent>(e);
+                auto* xform = m_World->GetComponent<TransformComponent>(e);
+                if (!light || light->type == LightType::Directional) continue;
+
+                Renderer::ClusterLight cl{};
+                cl.position = xform ? xform->position : Math::Vector3(0.0f);
+                cl.range = light->range;
+                cl.color = light->color;
+                cl.intensity = light->intensity;
+                if (light->type == LightType::Spot) {
+                    Math::Vector3 fwd(0.0f, 0.0f, -1.0f);
+                    cl.direction = xform ? xform->rotation.Rotate(fwd).Normalized() : Math::Vector3(0, -1, 0);
+                    cl.outerConeAngle = light->outerConeAngle;
+                } else {
+                    cl.direction = Math::Vector3(0.0f);
+                    cl.outerConeAngle = 0.0f;
+                }
+                clusterLights.push_back(cl);
+            }
+            if (!clusterLights.empty()) {
+                Math::Matrix4 viewMatrix = m_Camera->GetViewMatrix();
+                m_ClusteredLighting->AssignLights(cmdBuf, clusterLights.data(),
+                    static_cast<u32>(clusterLights.size()), viewMatrix);
+            }
+        }
+    }
+#endif
 
     // Periodic diagnostic warnings (every 300 frames)
     if (++m_DiagnosticFrameCounter >= 300) {
@@ -972,6 +1088,12 @@ void RenderSystem::Update(f32 deltaTime) {
     // Build the sorted render list every frame (needed by RenderToTarget() offscreen path too)
     {
         m_SortedRenderList.clear();
+
+        // Compute camera position for depth-aware sort key
+        Math::Vector3 camPos;
+        bool haveCam = (m_Camera != nullptr);
+        if (haveCam) camPos = m_Camera->GetPosition();
+
         for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
             auto* xform = m_World->GetComponent<TransformComponent>(entity);
             if (!xform || !xform->visible) continue;
@@ -990,26 +1112,27 @@ void RenderSystem::Update(f32 deltaTime) {
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
             if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
 
+            // Compute 64-bit sort key (pipeline | material/texture hash | depth)
+            auto* mat = m_World->GetComponent<MaterialComponent>(entity);
+            if (mat) {
+                f32 depth = haveCam ? (xform->position - camPos).Length() : 0.0f;
+                mat->ComputeSortKey(depth);
+            }
+
             m_SortedRenderList.push_back(entity);
         }
 
-        // Sort by cachedTextureKey so entities sharing textures are drawn consecutively,
-        // maximizing descriptor set cache hits (skipping redundant vkUpdateDescriptorSets)
+        // Sort by 64-bit material sort key: groups by pipeline (opaque→mask→blend),
+        // then by material/texture hash (minimizes descriptor set updates),
+        // then by depth (front-to-back for opaque, back-to-front for blend).
         std::sort(m_SortedRenderList.begin(), m_SortedRenderList.end(),
             [this](Entity a, Entity b) {
                 auto* matA = m_World->GetComponent<MaterialComponent>(a);
                 auto* matB = m_World->GetComponent<MaterialComponent>(b);
-                const auto& keyA = matA ? matA->cachedTextureKey : MaterialComponent::TextureKey{};
-                const auto& keyB = matB ? matB->cachedTextureKey : MaterialComponent::TextureKey{};
+                u64 keyA = matA ? matA->cachedSortKey : 0;
+                u64 keyB = matB ? matB->cachedSortKey : 0;
                 return keyA < keyB;
             });
-    }
-
-    // In play mode, the game view renders via RenderToTarget() to an offscreen target
-    // which is composited as a fullscreen ImGui::Image. The main swapchain pass geometry
-    // is entirely occluded behind ImGui, so skip it to avoid double-drawing everything.
-    if (m_SkipMainPassRendering) {
-        return;
     }
 
     // Render skybox first (behind all geometry)
@@ -1046,19 +1169,60 @@ void RenderSystem::Update(f32 deltaTime) {
         if (doLOD) camPos = m_Camera->GetPosition();
 
         for (Entity entity : m_SortedRenderList) {
-            // LOD selection (if camera is available)
+            // LOD selection with hysteresis (if camera is available)
             if (doLOD) {
                 auto* lod = m_World->GetComponent<LODComponent>(entity);
                 if (lod && lod->enabled && lod->levelCount > 1) {
                     auto* transform = m_World->GetComponent<TransformComponent>(entity);
                     if (transform) {
-                        f32 dist = (transform->position - camPos).Length();
-                        i32 newLOD = 0;
+                        f32 metric;
+                        if (lod->useScreenSize) {
+                            // Screen-space projected size: accounts for object scale.
+                            // Approximation: bounding sphere diameter / distance.
+                            auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+                            f32 dist = Math::Max((transform->position - camPos).Length(), 0.001f);
+                            f32 scale = Math::Max(Math::Max(
+                                Math::Abs(transform->scale.x),
+                                Math::Abs(transform->scale.y)),
+                                Math::Abs(transform->scale.z));
+                            // Use cached AABB extent as size estimate (if available)
+                            f32 objectSize = scale;
+                            if (mesh) {
+                                Math::Vector3 extent = mesh->cachedAABBMax - mesh->cachedAABBMin;
+                                objectSize = scale * Math::Max(Math::Max(extent.x, extent.y), extent.z);
+                            }
+                            // Screen metric: larger = closer/bigger = more detail needed
+                            // Invert so that larger metric means further away (matches distance thresholds)
+                            metric = dist / Math::Max(objectSize, 0.01f);
+                        } else {
+                            metric = (transform->position - camPos).Length();
+                        }
+
+                        // LOD selection with directional hysteresis bands.
+                        // When at LOD N, upgrading to N-1 (more detail) requires metric < threshold - hysteresis.
+                        // Downgrading to N+1 (less detail) requires metric > threshold + hysteresis.
+                        i32 newLOD = lod->activeLOD;
+                        f32 hyst = lod->hysteresisRatio;
                         for (i32 l = 0; l < lod->levelCount - 1; ++l) {
-                            if (dist > lod->levels[l].maxDistance) {
-                                newLOD = l + 1;
+                            f32 threshold = lod->levels[l].maxDistance;
+                            f32 band = threshold * hyst;
+                            if (l < lod->activeLOD) {
+                                // Considering upgrading to higher detail (lower LOD index)
+                                // Must be well within this level's range
+                                if (metric < threshold - band) {
+                                    newLOD = l;
+                                    break;
+                                }
+                            } else if (l >= lod->activeLOD) {
+                                // Considering downgrading to lower detail (higher LOD index)
+                                if (metric > threshold + band) {
+                                    newLOD = l + 1;
+                                } else {
+                                    break;
+                                }
                             }
                         }
+
                         if (newLOD != lod->activeLOD && newLOD < lod->levelCount) {
                             auto* mesh = m_World->GetComponent<MeshComponent>(entity);
                             if (mesh && lod->levels[newLOD].mesh.IsValid()) {
@@ -1095,7 +1259,7 @@ void RenderSystem::Update(f32 deltaTime) {
     }
 }
 
-void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera) {
+void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera, u32 viewportIndex) {
     if (!target || !target->IsValid() || !camera || !m_Renderer || !m_Initialized || !m_Pipeline) {
         return;
     }
@@ -1114,7 +1278,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     m_ActiveUniformBuffers = &m_OffscreenUniformBuffers;
     m_ActiveLightingBuffers = &m_OffscreenLightingBuffers;
     m_OffscreenMode = true;
-    m_CurrentViewportIndex = 0;
+    m_CurrentViewportIndex = viewportIndex;
 
     VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) {
@@ -1307,6 +1471,26 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     pushConstants.surfaceParam1 = 100.0f + static_cast<f32>(material->ditherGradientBands)
                         + static_cast<f32>(material->ditherGradientPattern) * 0.1f;
                 }
+                // Dithered transparency: encode pattern + opacity + blend color into surfaceParams
+                if (material->ditherTransparency) {
+                    pushConstants.surfaceParam1 = 200.0f + static_cast<f32>(material->ditherTransPattern);
+                    pushConstants.surfaceParam2 = material->ditherTransOpacity;
+                    u32 r = static_cast<u32>(material->ditherTransBlendColor.x * 1023.0f) & 0x3FF;
+                    u32 g = static_cast<u32>(material->ditherTransBlendColor.y * 1023.0f) & 0x3FF;
+                    u32 b = static_cast<u32>(material->ditherTransBlendColor.z * 1023.0f) & 0x3FF;
+                    u32 packed = (r << 20) | (g << 10) | b;
+                    pushConstants.surfaceParam3 = *reinterpret_cast<f32*>(&packed);
+                }
+                // Elemental surface effects: encode char/wet/snow/frost into surfaceParams
+                if (!material->ditherGradient && !material->ditherTransparency) {
+                    auto* elemSurface = m_World->GetComponent<ECS::ElementalSurfaceComponent>(entity);
+                    if (elemSurface && (elemSurface->charAmount > 0.01f || elemSurface->wetness > 0.01f ||
+                                        elemSurface->snowCoverage > 0.01f || elemSurface->frostAmount > 0.01f)) {
+                        pushConstants.surfaceParam1 = 300.0f + elemSurface->charAmount;
+                        pushConstants.surfaceParam2 = elemSurface->wetness + std::floor(elemSurface->snowCoverage * 256.0f);
+                        pushConstants.surfaceParam3 = elemSurface->frostAmount;
+                    }
+                }
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
                 pushConstants.metallic = 0.0f;
@@ -1362,6 +1546,14 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     pushConstants.baseColor.z * (1.0f - fp) + waterVol->iceColor.z * fp
                 );
                 pushConstants.opacity = pushConstants.opacity * (1.0f - fp) + waterVol->iceOpacity * fp;
+            } else if (m_World->HasComponent<Water3DComponent>(entity)) {
+                auto* water3d = m_World->GetComponent<Water3DComponent>(entity);
+                pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE for Water3D
+                pushConstants.parallaxScale = 0.0f; // no freeze — shader reads this as freezeProgress
+                if (water3d) {
+                    pushConstants.baseColor = water3d->settings.shallowColor;
+                    pushConstants.opacity = water3d->settings.opacity;
+                }
             }
 
             // Rasterize text texture if entity has a TextComponent
@@ -1661,6 +1853,26 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                     pushConstants.surfaceParam1 = 100.0f + static_cast<f32>(material->ditherGradientBands)
                         + static_cast<f32>(material->ditherGradientPattern) * 0.1f;
                 }
+                // Dithered transparency: encode pattern + opacity + blend color into surfaceParams
+                if (material->ditherTransparency) {
+                    pushConstants.surfaceParam1 = 200.0f + static_cast<f32>(material->ditherTransPattern);
+                    pushConstants.surfaceParam2 = material->ditherTransOpacity;
+                    u32 r = static_cast<u32>(material->ditherTransBlendColor.x * 1023.0f) & 0x3FF;
+                    u32 g = static_cast<u32>(material->ditherTransBlendColor.y * 1023.0f) & 0x3FF;
+                    u32 b = static_cast<u32>(material->ditherTransBlendColor.z * 1023.0f) & 0x3FF;
+                    u32 packed = (r << 20) | (g << 10) | b;
+                    pushConstants.surfaceParam3 = *reinterpret_cast<f32*>(&packed);
+                }
+                // Elemental surface effects: encode char/wet/snow/frost into surfaceParams
+                if (!material->ditherGradient && !material->ditherTransparency) {
+                    auto* elemSurface = m_World->GetComponent<ECS::ElementalSurfaceComponent>(entity);
+                    if (elemSurface && (elemSurface->charAmount > 0.01f || elemSurface->wetness > 0.01f ||
+                                        elemSurface->snowCoverage > 0.01f || elemSurface->frostAmount > 0.01f)) {
+                        pushConstants.surfaceParam1 = 300.0f + elemSurface->charAmount;
+                        pushConstants.surfaceParam2 = elemSurface->wetness + std::floor(elemSurface->snowCoverage * 256.0f);
+                        pushConstants.surfaceParam3 = elemSurface->frostAmount;
+                    }
+                }
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
                 pushConstants.metallic = 0.0f;
@@ -1712,6 +1924,14 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                     pushConstants.baseColor.z * (1.0f - fp) + waterVol->iceColor.z * fp
                 );
                 pushConstants.opacity = pushConstants.opacity * (1.0f - fp) + waterVol->iceOpacity * fp;
+            } else if (m_World->HasComponent<Water3DComponent>(entity)) {
+                auto* water3d = m_World->GetComponent<Water3DComponent>(entity);
+                pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE for Water3D
+                pushConstants.parallaxScale = 0.0f; // no freeze
+                if (water3d) {
+                    pushConstants.baseColor = water3d->settings.shallowColor;
+                    pushConstants.opacity = water3d->settings.opacity;
+                }
             }
 
             // Text rendering
@@ -1814,6 +2034,30 @@ void RenderSystem::OnEntityAdded(Entity entity) {
 }
 
 void RenderSystem::OnEntityRemoved(Entity entity) {
+    // Invalidate this entity's BLAS cache entry BEFORE freeing the pool allocation.
+    // Without this, freeing the pool region allows a future entity to reuse the same
+    // offsets, producing an identical address-based mesh hash that returns a stale BLAS
+    // built for the old (now-freed) geometry — causing a GPU crash on ray trace dispatch.
+    if (m_ASManager && m_RTEnabled &&
+        static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid) {
+        const auto& rd = m_EntityRenderData[static_cast<usize>(entity)];
+        VkDeviceAddress vertAddr = 0, idxAddr = 0;
+        if (rd.vertexBuffer && rd.indexBuffer) {
+            vertAddr = rd.vertexBuffer->GetDeviceAddress();
+            idxAddr = rd.indexBuffer->GetDeviceAddress();
+        } else if (rd.poolAlloc.valid && m_GeometryPool &&
+                   m_GeometryPool->GetVertexBuffer() && m_GeometryPool->GetIndexBuffer()) {
+            vertAddr = m_GeometryPool->GetVertexBuffer()->GetDeviceAddress()
+                     + static_cast<VkDeviceAddress>(rd.poolAlloc.vertexOffset) * sizeof(MeshComponent::Vertex);
+            idxAddr = m_GeometryPool->GetIndexBuffer()->GetDeviceAddress()
+                    + static_cast<VkDeviceAddress>(rd.poolAlloc.indexOffset) * sizeof(u32);
+        }
+        if (vertAddr != 0 && idxAddr != 0) {
+            u64 meshHash = vertAddr ^ (idxAddr << 32) ^ (idxAddr >> 32);
+            m_ASManager->InvalidateMesh(meshHash);
+        }
+    }
+
     // Free merged geometry pool allocation before erasing render data
     if (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid) {
         auto& rd = m_EntityRenderData[static_cast<usize>(entity)];
@@ -1823,6 +2067,7 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
         rd.Invalidate();
     }
     m_TextTextureCache.erase(entity);
+    m_PrevModelMatrices.erase(static_cast<u64>(entity));
 
     // Invalidate scene composition cache (removed entity may change 2D/3D classification)
     m_SceneComposition.dirty = true;
@@ -2020,18 +2265,32 @@ void RenderSystem::PerformGPUCulling() {
     // Submit objects for culling
     m_GPUCulling->SubmitObjects(m_CullableObjects);
 
-    // Execute GPU culling
     VkBuffer indirectBuffer;
     u32 drawCount;
+
+    // Use two-phase HiZ occlusion culling when Hi-Z pyramid is available
+    if (m_HiZPyramid && m_GPUCulling->HasHiZ()) {
+        if (m_GPUCulling->ExecuteTwoPhase(
+                m_Camera->GetViewMatrix(),
+                m_Camera->GetProjectionMatrix(),
+                commandBuffer,
+                indirectBuffer,
+                drawCount)) {
+            auto stats = m_GPUCulling->GetStats();
+            (void)stats;
+            return;
+        }
+    }
+
+    // Fallback to single-phase culling
     if (m_GPUCulling->ExecuteCulling(
             m_Camera->GetViewMatrix(),
             m_Camera->GetProjectionMatrix(),
             commandBuffer,
             indirectBuffer,
             drawCount)) {
-        // Culling stats are available via m_GPUCulling->GetStats()
         auto stats = m_GPUCulling->GetStats();
-        (void)stats; // Stats available for profiler display
+        (void)stats;
     }
 }
 
@@ -2119,8 +2378,48 @@ void RenderSystem::UploadObjectData() {
         }
 
         if (m_GlobalFlatShading) obj.flags |= (1 << 20);
-        obj._pad[0] = obj._pad[1] = obj._pad[2] = 0.0f;
+
+        // Populate previous-frame model matrix for motion vector computation.
+        // If no previous matrix exists (first frame for this entity), use current
+        // model and mark as teleported so the shader outputs zero velocity.
+        u64 entityId = static_cast<u64>(entity);
+        auto prevIt = m_PrevModelMatrices.find(entityId);
+        if (prevIt != m_PrevModelMatrices.end()) {
+            obj.prevModel = prevIt->second;
+            obj.teleported = 0;
+        } else {
+            obj.prevModel = obj.model;
+            obj.teleported = 1;
+        }
+
+        // Network teleport detection: if the transform was flagged as teleported
+        // this frame (large position snap, spawn, or respawn), force teleported = 1
+        // so the shader zeroes the motion vector and TAA doesn't ghost.
+        if (xform->teleportedThisFrame) {
+            obj.teleported = 1;
+            obj.prevModel = obj.model;  // Ensure prevModel matches current to zero velocity
+            xform->teleportedThisFrame = false;  // Consume the flag (once per frame)
+        }
+
+        obj._pad[0] = obj._pad[1] = 0.0f;
         idx++;
+    }
+
+    // After building the upload array, store current-frame model matrices
+    // for next frame's previous-model lookup.
+    {
+        u32 storeIdx = 0;
+        for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+            auto* xform = m_World->GetComponent<TransformComponent>(entity);
+            if (!xform || !xform->visible) continue;
+            if (m_World->GetComponent<Sprite2DComponent>(entity)) continue;
+            if (m_World->GetComponent<TilemapComponent>(entity)) continue;
+            auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+            if (!mesh || !mesh->IsValid()) continue;
+            if (storeIdx >= idx) break;
+            m_PrevModelMatrices[static_cast<u64>(entity)] = m_ObjectDataCPU[storeIdx].model;
+            storeIdx++;
+        }
     }
 
     // Upload to GPU via GPUCulling's ObjectData buffer
@@ -2162,6 +2461,7 @@ void RenderSystem::CreatePipeline() {
     config.cullMode = m_BackfaceCulling ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = m_WireframeMode ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
+    config.colorAttachmentCount = 2; // MRT: color + velocity
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
     if (!m_Pipeline->Create(config, m_VertexShader.get(), m_FragmentShader.get())) {
@@ -2182,8 +2482,8 @@ void RenderSystem::CreateShadowPipeline() {
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.depthBiasEnable = true;
-    config.depthBiasConstant = 0.75f;
-    config.depthBiasSlope = 0.75f;
+    config.depthBiasConstant = 2.0f;
+    config.depthBiasSlope = 2.0f;
     config.hasColorAttachment = false;  // Depth-only pass
 
     m_ShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
@@ -2209,6 +2509,7 @@ void RenderSystem::CreateLinePipeline() {
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.alphaBlend = true;
+    config.colorAttachmentCount = 2; // MRT: must match render pass
 
     m_LinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
     if (!m_LinePipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(),
@@ -2245,6 +2546,58 @@ void RenderSystem::RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 ver
     VkRect2D scissor{};
     scissor.offset = {0, 0};
     scissor.extent = extent;
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    Renderer::PushConstants pc{};
+    pc.model = Math::Matrix4::Identity();
+    pc.baseColor = Math::Vector3(0.0f, 0.0f, 0.0f);
+    pc.metallic = 0.0f;
+    pc.emissiveColor = color;
+    pc.roughness = 1.0f;
+    pc.emissiveStrength = 1.0f;
+    pc.opacity = opacity;
+    pc.alphaCutoff = 0.0f;
+    pc.flags = 0;
+    pc.parallaxScale = 0.0f;
+
+    vkCmdPushConstants(commandBuffer, m_LinePipeline->GetLayout(),
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+
+    VkBuffer buffers[] = {vertexBuffer->GetBuffer()};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
+
+    vkCmdDraw(commandBuffer, vertexCount, 1, firstVertex, 0);
+}
+
+void RenderSystem::RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 vertexCount,
+                                    u32 firstVertex, const Math::Vector3& color, f32 opacity,
+                                    u32 targetWidth, u32 targetHeight) {
+    if (!m_LinePipeline || !m_Renderer || !vertexBuffer || vertexCount == 0) return;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+
+    m_LinePipeline->Bind(commandBuffer);
+
+    // Use offscreen descriptor sets (camera matrices match the editor viewport camera)
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_LinePipeline->GetLayout(), 0, 1, &m_OffscreenDescriptorSets[currentFrame], 0, nullptr);
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<f32>(targetWidth);
+    viewport.height = static_cast<f32>(targetHeight);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = {targetWidth, targetHeight};
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     Renderer::PushConstants pc{};
@@ -2325,14 +2678,14 @@ void RenderSystem::CreateDescriptorSets() {
     const u32 offscreenSets = framesInFlight * MAX_SPLITSCREEN_VIEWPORTS;
     const u32 totalSets = framesInFlight + offscreenSets; // main + splitscreen offscreen
 
-    // Create descriptor pool (3 UBOs + 8 combined image samplers + 3 SSBOs per set)
+    // Create descriptor pool (3 UBOs + 10 combined image samplers + 5 SSBOs per set)
     std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = totalSets * 3;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = totalSets * 8;  // base color + shadow + height + normal + metallic-roughness + emissive + point shadow + spot shadow
+    poolSizes[1].descriptorCount = totalSets * 10;  // bindings 3-6, 8-11, 16-17
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[2].descriptorCount = totalSets * 3;  // bone matrices SSBO + shadow data SSBO + object data SSBO
+    poolSizes[2].descriptorCount = totalSets * 5;  // bindings 7, 12-15
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -2466,7 +2819,42 @@ void RenderSystem::CreateDescriptorSets() {
             objectDataBufferInfo.range = m_DefaultBoneBuffer->GetSize();
         }
 
-        std::array<VkWriteDescriptorSet, 14> descriptorWrites{};
+        // Clustered lighting grid SSBO (binding 14) - fallback to default bone buffer
+        VkDescriptorBufferInfo clusterGridBufferInfo{};
+#ifdef ENJIN_CLUSTERED_LIGHTING
+        if (m_ClusteredLighting && m_ClusteredLighting->GetLightGridBuffer() != VK_NULL_HANDLE) {
+            clusterGridBufferInfo.buffer = m_ClusteredLighting->GetLightGridBuffer();
+            clusterGridBufferInfo.offset = 0;
+            clusterGridBufferInfo.range = VK_WHOLE_SIZE;
+        } else
+#endif
+        if (m_DefaultBoneBuffer) {
+            clusterGridBufferInfo.buffer = m_DefaultBoneBuffer->GetBuffer();
+            clusterGridBufferInfo.offset = 0;
+            clusterGridBufferInfo.range = m_DefaultBoneBuffer->GetSize();
+        }
+
+        // Clustered lighting index SSBO (binding 15) - fallback to default bone buffer
+        VkDescriptorBufferInfo clusterIndexBufferInfo{};
+#ifdef ENJIN_CLUSTERED_LIGHTING
+        if (m_ClusteredLighting && m_ClusteredLighting->GetLightIndexBuffer() != VK_NULL_HANDLE) {
+            clusterIndexBufferInfo.buffer = m_ClusteredLighting->GetLightIndexBuffer();
+            clusterIndexBufferInfo.offset = 0;
+            clusterIndexBufferInfo.range = VK_WHOLE_SIZE;
+        } else
+#endif
+        if (m_DefaultBoneBuffer) {
+            clusterIndexBufferInfo.buffer = m_DefaultBoneBuffer->GetBuffer();
+            clusterIndexBufferInfo.offset = 0;
+            clusterIndexBufferInfo.range = m_DefaultBoneBuffer->GetSize();
+        }
+
+        // Virtual texturing indirection texture (binding 16) - fallback to white
+        VkDescriptorImageInfo vtIndirectionImageInfo = imageInfo;
+        // Virtual texturing physical atlas (binding 17) - fallback to white
+        VkDescriptorImageInfo vtAtlasImageInfo = imageInfo;
+
+        std::array<VkWriteDescriptorSet, 18> descriptorWrites{};
 
         // MVP descriptor
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -2594,6 +2982,42 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[13].descriptorCount = 1;
         descriptorWrites[13].pBufferInfo = &objectDataBufferInfo;
 
+        // Cluster grid SSBO descriptor (binding 14)
+        descriptorWrites[14].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[14].dstSet = m_DescriptorSets[i];
+        descriptorWrites[14].dstBinding = 14;
+        descriptorWrites[14].dstArrayElement = 0;
+        descriptorWrites[14].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[14].descriptorCount = 1;
+        descriptorWrites[14].pBufferInfo = &clusterGridBufferInfo;
+
+        // Cluster light index SSBO descriptor (binding 15)
+        descriptorWrites[15].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[15].dstSet = m_DescriptorSets[i];
+        descriptorWrites[15].dstBinding = 15;
+        descriptorWrites[15].dstArrayElement = 0;
+        descriptorWrites[15].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[15].descriptorCount = 1;
+        descriptorWrites[15].pBufferInfo = &clusterIndexBufferInfo;
+
+        // VT indirection texture descriptor (binding 16)
+        descriptorWrites[16].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[16].dstSet = m_DescriptorSets[i];
+        descriptorWrites[16].dstBinding = 16;
+        descriptorWrites[16].dstArrayElement = 0;
+        descriptorWrites[16].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[16].descriptorCount = 1;
+        descriptorWrites[16].pImageInfo = &vtIndirectionImageInfo;
+
+        // VT physical atlas descriptor (binding 17)
+        descriptorWrites[17].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[17].dstSet = m_DescriptorSets[i];
+        descriptorWrites[17].dstBinding = 17;
+        descriptorWrites[17].dstArrayElement = 0;
+        descriptorWrites[17].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[17].descriptorCount = 1;
+        descriptorWrites[17].pImageInfo = &vtAtlasImageInfo;
+
         vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
@@ -2694,8 +3118,28 @@ void RenderSystem::CreateDescriptorSets() {
                     offObjectDataInfo.range = m_DefaultBoneBuffer->GetSize();
                 }
 
-                std::array<VkWriteDescriptorSet, 14> offWrites{};
-                for (u32 w = 0; w < 14; ++w) {
+                // Offscreen cluster/VT fallback data
+                VkDescriptorBufferInfo offClusterGridInfo{};
+                VkDescriptorBufferInfo offClusterIdxInfo{};
+#ifdef ENJIN_CLUSTERED_LIGHTING
+                if (m_ClusteredLighting && m_ClusteredLighting->GetLightGridBuffer() != VK_NULL_HANDLE) {
+                    offClusterGridInfo.buffer = m_ClusteredLighting->GetLightGridBuffer();
+                    offClusterGridInfo.range = VK_WHOLE_SIZE;
+                    offClusterIdxInfo.buffer = m_ClusteredLighting->GetLightIndexBuffer();
+                    offClusterIdxInfo.range = VK_WHOLE_SIZE;
+                } else
+#endif
+                if (m_DefaultBoneBuffer) {
+                    offClusterGridInfo.buffer = m_DefaultBoneBuffer->GetBuffer();
+                    offClusterGridInfo.range = m_DefaultBoneBuffer->GetSize();
+                    offClusterIdxInfo.buffer = m_DefaultBoneBuffer->GetBuffer();
+                    offClusterIdxInfo.range = m_DefaultBoneBuffer->GetSize();
+                }
+                VkDescriptorImageInfo offVtIndInfo = offImageInfo;
+                VkDescriptorImageInfo offVtAtlasInfo = offImageInfo;
+
+                std::array<VkWriteDescriptorSet, 18> offWrites{};
+                for (u32 w = 0; w < 18; ++w) {
                     offWrites[w].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
                     offWrites[w].dstSet = m_OffscreenDescriptorSets[idx];
                     offWrites[w].dstBinding = w;
@@ -2730,6 +3174,14 @@ void RenderSystem::CreateDescriptorSets() {
                 offWrites[12].pBufferInfo = &offShadowDataInfo;
                 offWrites[13].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
                 offWrites[13].pBufferInfo = &offObjectDataInfo;
+                offWrites[14].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                offWrites[14].pBufferInfo = &offClusterGridInfo;
+                offWrites[15].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                offWrites[15].pBufferInfo = &offClusterIdxInfo;
+                offWrites[16].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                offWrites[16].pImageInfo = &offVtIndInfo;
+                offWrites[17].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                offWrites[17].pImageInfo = &offVtAtlasInfo;
 
                 vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
                     static_cast<u32>(offWrites.size()), offWrites.data(), 0, nullptr);
@@ -2747,6 +3199,7 @@ bool RenderSystem::IsPoolEligible(Entity entity) const {
     if (m_World->HasComponent<Terrain2DComponent>(entity)) return false;
     if (m_World->HasComponent<JellyMeshComponent>(entity)) return false;
     if (m_World->HasComponent<WaterVolumeComponent>(entity)) return false;
+    if (m_World->HasComponent<Water3DComponent>(entity)) return false;
     // Skinned meshes stay per-entity (bone deformation updates vertex data)
     if (m_World->HasComponent<AnimatorComponent>(entity)) return false;
     return true;
@@ -2850,7 +3303,34 @@ void RenderSystem::UpdateFrameUniforms() {
     Renderer::UniformBufferObject ubo{};
     ubo.view = m_Camera->GetViewMatrix();
     ubo.proj = m_Camera->GetProjectionMatrix();
+    ubo.prevViewProj = m_PrevViewProj;
+
+    // TAA / Upscaler jitter injection: apply sub-pixel Halton offset to the projection
+    // matrix so each frame samples a slightly different sub-pixel position. Both TAA
+    // and temporal upscalers (FSR 2, DLSS, XeSS) require jittered input.
+    if (m_AAMode == 2 || m_UpscalerType > 0) { // TAA or temporal upscaler
+        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+        if (extent.width > 0 && extent.height > 0) {
+            Math::Vector2 jitter = Renderer::HaltonJitter(m_TAAFrameCounter, extent.width, extent.height);
+            // Offset the projection matrix: translation in clip space X/Y
+            ubo.proj.m[8]  += jitter.x;  // m[2][0] in column-major
+            ubo.proj.m[9]  += jitter.y;  // m[2][1] in column-major
+            ubo.jitterOffset = Math::Vector4(jitter.x, jitter.y, m_PrevJitter.x, m_PrevJitter.y);
+            m_PrevJitter = jitter;
+        } else {
+            ubo.jitterOffset = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+        }
+        m_TAAFrameCounter++;
+    } else {
+        ubo.jitterOffset = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+        m_PrevJitter = Math::Vector2(0.0f, 0.0f);
+        m_TAAFrameCounter = 0;
+    }
+
     (*m_ActiveUniformBuffers)[GetActiveBufferIndex(currentFrame)]->UploadData(&ubo, sizeof(ubo));
+
+    // Store current viewProj for next frame's velocity computation
+    m_PrevViewProj = ubo.proj * ubo.view;
 
     // Update Lighting UBO with all lights in the scene
     LightingUBO lighting{};
@@ -2874,6 +3354,7 @@ void RenderSystem::UpdateFrameUniforms() {
         lighting.fogParams = Math::Vector4(m_FogDensity, m_FogStart, m_FogEnd, m_FogHeightFalloff);
         lighting.fogColorSnow = Math::Vector4(m_FogColor.x, m_FogColor.y, m_FogColor.z, m_SnowIntensity);
         (*m_ActiveLightingBuffers)[GetActiveBufferIndex(currentFrame)]->UploadData(&lighting, sizeof(lighting));
+        m_CachedLightingData = lighting;
         return;
     }
 
@@ -2979,6 +3460,15 @@ void RenderSystem::UpdateFrameUniforms() {
     lighting.celDiffuseBands = m_CelShadingEnabled ? m_CelDiffuseBands : 0.0f;
     lighting.celSpecularCutoff = m_CelShadingEnabled ? m_CelSpecularCutoff : 0.0f;
 
+    // Pack shading model flags: bit0=GGX, bit1=Fresnel, bit2=EnergyConserv, bit3=GeometryTerm, bit4=SphereEnvMap
+    lighting.shadingFlags = (m_ShadingModel & 1u)
+        | (m_FresnelEnabled ? 2u : 0u)
+        | (m_EnergyConservation ? 4u : 0u)
+        | (m_GeometryTerm ? 8u : 0u)
+        | (m_SphereEnvMapEnabled ? 16u : 0u);
+    lighting.sphereEnvStrength = m_SphereEnvStrength;
+    lighting.posterizeLevels = m_PosterizeLevels;
+
     if (m_ActivePointShadowCount > 0 && lighting.pointLightCount > 1) {
         // Move shadow-casting lights to front: swap with non-shadow lights
         for (u32 s = 0; s < m_ActivePointShadowCount && s < lighting.pointLightCount; ++s) {
@@ -3064,6 +3554,9 @@ void RenderSystem::UpdateFrameUniforms() {
     }
 
     (*m_ActiveLightingBuffers)[GetActiveBufferIndex(currentFrame)]->UploadData(&lighting, sizeof(lighting));
+
+    // Cache lighting data for RT/path tracer NEE access
+    m_CachedLightingData = lighting;
 
     // Upload shadow data SSBO for point/spot light shadows
     if (m_ShadowDataBuffer && m_ShadowsEnabled) {
@@ -3159,6 +3652,17 @@ void RenderSystem::SetShadowResolution(u32 r) {
     // Defer the actual resize to FlushPendingChanges() where the GPU is already idle
     m_PendingShadowResolution = r;
     m_PendingRecreation = PendingRecreationType::PipelineOnly;
+}
+
+void RenderSystem::SetHDREnabled(bool enabled) {
+    if (!m_Renderer) return;
+    if (m_Renderer->IsHDREnabled() == enabled) return;
+
+    // VulkanRenderer::SetHDREnabled handles: swapchain recreate, render pass recreate,
+    // framebuffer recreate, and notifies resize callbacks. After that, our pipelines
+    // (which reference the render pass) must be recreated too.
+    m_Renderer->SetHDREnabled(enabled);
+    RecreatePipelines(true);  // GPU already idle from VulkanRenderer::SetHDREnabled
 }
 
 void RenderSystem::RecreatePipelines(bool gpuAlreadyIdle) {
@@ -3568,6 +4072,26 @@ void RenderSystem::RenderEntity(Entity entity) {
             pushConstants.surfaceParam1 = 100.0f + static_cast<f32>(material->ditherGradientBands)
                 + static_cast<f32>(material->ditherGradientPattern) * 0.1f;
         }
+        // Dithered transparency: encode pattern + opacity + blend color into surfaceParams
+        if (material->ditherTransparency) {
+            pushConstants.surfaceParam1 = 200.0f + static_cast<f32>(material->ditherTransPattern);
+            pushConstants.surfaceParam2 = material->ditherTransOpacity;
+            u32 r = static_cast<u32>(material->ditherTransBlendColor.x * 1023.0f) & 0x3FF;
+            u32 g = static_cast<u32>(material->ditherTransBlendColor.y * 1023.0f) & 0x3FF;
+            u32 b = static_cast<u32>(material->ditherTransBlendColor.z * 1023.0f) & 0x3FF;
+            u32 packed = (r << 20) | (g << 10) | b;
+            pushConstants.surfaceParam3 = *reinterpret_cast<f32*>(&packed);
+        }
+        // Elemental surface effects: encode char/wet/snow/frost into surfaceParams
+        if (!material->ditherGradient && !material->ditherTransparency) {
+            auto* elemSurface = m_World->GetComponent<ECS::ElementalSurfaceComponent>(entity);
+            if (elemSurface && (elemSurface->charAmount > 0.01f || elemSurface->wetness > 0.01f ||
+                                elemSurface->snowCoverage > 0.01f || elemSurface->frostAmount > 0.01f)) {
+                pushConstants.surfaceParam1 = 300.0f + elemSurface->charAmount;
+                pushConstants.surfaceParam2 = elemSurface->wetness + std::floor(elemSurface->snowCoverage * 256.0f);
+                pushConstants.surfaceParam3 = elemSurface->frostAmount;
+            }
+        }
     } else {
         // Default material (light gray, non-metallic)
         pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
@@ -3646,6 +4170,14 @@ void RenderSystem::RenderEntity(Entity entity) {
             pushConstants.baseColor.z * (1.0f - fp) + waterVol->iceColor.z * fp
         );
         pushConstants.opacity = pushConstants.opacity * (1.0f - fp) + waterVol->iceOpacity * fp;
+    } else if (m_World->HasComponent<Water3DComponent>(entity)) {
+        auto* water3d = m_World->GetComponent<Water3DComponent>(entity);
+        pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE for Water3D
+        pushConstants.parallaxScale = 0.0f; // no freeze
+        if (water3d) {
+            pushConstants.baseColor = water3d->settings.shallowColor;
+            pushConstants.opacity = water3d->settings.opacity;
+        }
     }
 
     // Rasterize text texture if entity has a TextComponent
@@ -3885,11 +4417,29 @@ void RenderSystem::RenderSprites() {
     }
 }
 
+bool RenderSystem::ShouldUpdateCascade(u32 cascade) const {
+    if (!m_CascadeProgressiveUpdate) return true;
+    u32 interval = (cascade <= 1) ? 1 : m_CascadeFarUpdateInterval;
+    // Stagger far cascades so they don't all update on the same frame
+    u32 offset = (cascade <= 1) ? 0 : (cascade - 2);
+    return ((m_ShadowFrameCounter + offset) % interval) == 0;
+}
+
 void RenderSystem::RenderShadowPass() {
     if (!m_ShadowMap || !m_ShadowPipeline) return;
 
     VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
+
+    // Progressive cascade updates: increment frame counter and detect camera teleport
+    m_ShadowFrameCounter++;
+    bool forceFullUpdate = false;
+    if (m_Camera) {
+        auto pos = m_Camera->GetPosition();
+        f32 dist = (pos - m_PrevShadowCameraPos).Length();
+        if (dist > 5.0f) forceFullUpdate = true;
+        m_PrevShadowCameraPos = pos;
+    }
 
     // Find the first directional light for shadow casting
     bool foundShadowLight = false;
@@ -3922,6 +4472,9 @@ void RenderSystem::RenderShadowPass() {
 
     // Render each cascade
     for (u32 cascade = 0; cascade < m_ShadowMap->GetCascadeCount(); ++cascade) {
+        // Progressive update: skip far cascades on non-update frames
+        if (!forceFullUpdate && !ShouldUpdateCascade(cascade)) continue;
+
         // Store cascade VP for RenderEntityShadow to pre-multiply with model matrix.
         // Push constants are embedded in the command buffer, so they're immune to
         // the HOST_COHERENT UBO race that was causing empty shadow maps.
@@ -3961,7 +4514,7 @@ void RenderSystem::RenderShadowPass() {
 
 void RenderSystem::RenderShadowPassForCamera(Renderer::Camera* camera) {
     if (!camera) { ENJIN_LOG_WARN(Renderer, "ShadowPassForCamera: no camera"); return; }
-    if (!m_ShadowsEnabled) { ENJIN_LOG_WARN(Renderer, "ShadowPassForCamera: shadows disabled"); return; }
+    if (!m_ShadowsEnabled) return;
     if (!m_ShadowMap) { ENJIN_LOG_WARN(Renderer, "ShadowPassForCamera: no shadow map"); return; }
     if (!m_ShadowPipeline) { ENJIN_LOG_WARN(Renderer, "ShadowPassForCamera: no shadow pipeline"); return; }
 
@@ -4043,8 +4596,8 @@ void RenderSystem::CreatePointShadowPipeline() {
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.depthBiasEnable = true;
-    config.depthBiasConstant = 0.5f;
-    config.depthBiasSlope = 0.5f;
+    config.depthBiasConstant = 1.5f;
+    config.depthBiasSlope = 1.5f;
     config.hasColorAttachment = false;
 
     m_PointShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
@@ -4067,8 +4620,8 @@ void RenderSystem::CreateSpotShadowPipeline() {
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.depthBiasEnable = true;
-    config.depthBiasConstant = 0.5f;
-    config.depthBiasSlope = 0.5f;
+    config.depthBiasConstant = 1.5f;
+    config.depthBiasSlope = 1.5f;
     config.hasColorAttachment = false;
 
     m_SpotShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
@@ -4575,6 +5128,25 @@ void RenderSystem::EnsureWaterMeshes() {
     }
 }
 
+void RenderSystem::EnsureWater3DMeshes() {
+    for (Entity entity : m_World->GetEntitiesWithComponent<Water3DComponent>()) {
+        auto* water3d = m_World->GetComponent<Water3DComponent>(entity);
+        if (!water3d) continue;
+        if (water3d->meshCreated && m_World->GetComponent<MeshComponent>(entity)) continue;
+
+        // Use Water3D to build the initial mesh on this entity
+        Effects::Water3D builder;
+        builder.Initialize(water3d->settings);
+        builder.BuildEntityMesh(m_World, entity);
+
+        SetupEntityBuffers(entity);
+        water3d->meshCreated = true;
+
+        ENJIN_LOG_INFO(Renderer, "Created Water3D surface mesh for entity %llu (%.0f x %.0f)",
+            entity, water3d->settings.width, water3d->settings.depth);
+    }
+}
+
 void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& weather, bool isRain,
                                            u32 viewportWidth, u32 viewportHeight) {
     if (!m_WeatherRenderer || !m_Renderer || !m_Initialized || !m_ActiveDescriptorSets) return;
@@ -4598,6 +5170,20 @@ void RenderSystem::RenderParticles(u32 viewportWidth, u32 viewportHeight) {
     m_ParticleRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
                                GetActiveBufferIndex(currentFrame), m_World,
                                viewportWidth, viewportHeight);
+}
+
+void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem& elementalSystem,
+                                             u32 viewportWidth, u32 viewportHeight) {
+    if (!m_ParticleRenderer || !m_Renderer || !m_Initialized || !m_ActiveDescriptorSets) return;
+    if (elementalSystem.GetActiveCount() == 0) return;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    m_ParticleRenderer->RenderElementalParticles(commandBuffer, *m_ActiveDescriptorSets,
+                                                  GetActiveBufferIndex(currentFrame), elementalSystem,
+                                                  viewportWidth, viewportHeight);
 }
 
 void RenderSystem::RenderFluid(u32 viewportWidth, u32 viewportHeight) {
@@ -4835,10 +5421,17 @@ void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
+    // MRT: second attachment for velocity buffer (write zero velocity for skybox)
+    VkPipelineColorBlendAttachmentState velocityBlendAttachment{};
+    velocityBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+    std::array<VkPipelineColorBlendAttachmentState, 2> skyboxBlendAttachments = { colorBlendAttachment, velocityBlendAttachment };
+
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+    colorBlending.attachmentCount = 2; // MRT: color + velocity
+    colorBlending.pAttachments = skyboxBlendAttachments.data();
 
     VkPipelineShaderStageCreateInfo vertStage{};
     vertStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -5016,8 +5609,8 @@ void RenderSystem::InitializeRayTracing() {
     auto* ctx = m_Renderer->GetContext();
     ENJIN_LOG_INFO(Renderer, "Initializing ray tracing subsystems...");
 
-    // Create RT descriptor set layout (14 bindings)
-    std::array<VkDescriptorSetLayoutBinding, 14> rtBindings{};
+    // Create RT descriptor set layout (19 bindings: 0-16 existing + 17 SDF + 18 simplified materials)
+    std::array<VkDescriptorSetLayoutBinding, 19> rtBindings{};
 
     // Binding 0: TLAS
     rtBindings[0].binding = 0;
@@ -5087,6 +5680,36 @@ void RenderSystem::InitializeRayTracing() {
     rtBindings[13].descriptorCount = 1;
     rtBindings[13].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
+    // Binding 14: RT Translucency output (storage image)
+    rtBindings[14].binding = 14;
+    rtBindings[14].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    rtBindings[14].descriptorCount = 1;
+    rtBindings[14].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 15: RT Caustics output (storage image)
+    rtBindings[15].binding = 15;
+    rtBindings[15].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    rtBindings[15].descriptorCount = 1;
+    rtBindings[15].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 16: NEE light SSBO (scene lights for path tracer direct light sampling)
+    rtBindings[16].binding = 16;
+    rtBindings[16].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    rtBindings[16].descriptorCount = 1;
+    rtBindings[16].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
+    // Binding 17: SDF scene SSBO (SDF objects for reflection fallback sphere tracing)
+    rtBindings[17].binding = 17;
+    rtBindings[17].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    rtBindings[17].descriptorCount = 1;
+    rtBindings[17].stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
+    // Binding 18: Simplified material SSBO (pre-baked F0/kDiffuse/effectiveRoughness)
+    rtBindings[18].binding = 18;
+    rtBindings[18].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    rtBindings[18].descriptorCount = 1;
+    rtBindings[18].stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<u32>(rtBindings.size());
@@ -5100,9 +5723,9 @@ void RenderSystem::InitializeRayTracing() {
     // Create RT descriptor pool (includes all descriptor types used by RT bindings)
     std::array<VkDescriptorPoolSize, 5> poolSizes{};
     poolSizes[0] = { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1 };
-    poolSizes[1] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 5 };
+    poolSizes[1] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 7 };
     poolSizes[2] = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 };
-    poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4 };
+    poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 7 };  // 9-12 + NEE light SSBO at 16 + SDF at 17 + simplified material SSBO at 18
     poolSizes[4] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 };
 
     VkDescriptorPoolCreateInfo poolInfo{};
@@ -5184,6 +5807,18 @@ void RenderSystem::InitializeRayTracing() {
         m_RTGI.reset();
     }
 
+    m_RTTranslucency = std::make_unique<Renderer::RTTranslucency>(ctx);
+    if (!m_RTTranslucency->Initialize(width, height, m_RTDescriptorSetLayout)) {
+        ENJIN_LOG_WARN(Renderer, "RT Translucency initialization failed");
+        m_RTTranslucency.reset();
+    }
+
+    m_RTCaustics = std::make_unique<Renderer::RTCaustics>(ctx);
+    if (!m_RTCaustics->Initialize(width, height, m_RTDescriptorSetLayout)) {
+        ENJIN_LOG_WARN(Renderer, "RT Caustics initialization failed");
+        m_RTCaustics.reset();
+    }
+
     m_PathTracer = std::make_unique<Renderer::PathTracer>(ctx);
     if (!m_PathTracer->Initialize(width, height, m_RTDescriptorSetLayout)) {
         ENJIN_LOG_WARN(Renderer, "Path Tracer initialization failed");
@@ -5216,6 +5851,35 @@ void RenderSystem::InitializeRayTracing() {
             m_OIDNDenoiser->RegisterImageMapping(m_RTAO->GetOutputView(), m_RTAO->GetOutputImage(), VK_FORMAT_R16_SFLOAT);
         if (m_RTGI)
             m_OIDNDenoiser->RegisterImageMapping(m_RTGI->GetOutputView(), m_RTGI->GetOutputImage(), VK_FORMAT_R16G16B16A16_SFLOAT);
+        if (m_RTTranslucency)
+            m_OIDNDenoiser->RegisterImageMapping(m_RTTranslucency->GetOutputView(), m_RTTranslucency->GetOutputImage(), VK_FORMAT_R16G16B16A16_SFLOAT);
+        if (m_RTCaustics)
+            m_OIDNDenoiser->RegisterImageMapping(m_RTCaustics->GetOutputView(), m_RTCaustics->GetOutputImage(), VK_FORMAT_R16G16B16A16_SFLOAT);
+    }
+
+    // Initialize OptiX AI Denoiser (optional, compile-guarded)
+    if (Renderer::OptiXDenoiser::IsAvailable()) {
+        m_OptiXDenoiser = std::make_unique<Renderer::OptiXDenoiser>(ctx);
+        if (!m_OptiXDenoiser->Initialize(width, height)) {
+            ENJIN_LOG_WARN(Renderer, "OptiX AI Denoiser initialization failed — SVGF/OIDN will be used");
+            m_OptiXDenoiser.reset();
+        }
+    }
+
+    // Register RT output images with OptiX denoiser
+    if (m_OptiXDenoiser) {
+        if (m_RTShadows)
+            m_OptiXDenoiser->RegisterImageMapping(m_RTShadows->GetOutputView(), m_RTShadows->GetOutputImage(), VK_FORMAT_R16_SFLOAT);
+        if (m_RTReflections)
+            m_OptiXDenoiser->RegisterImageMapping(m_RTReflections->GetOutputView(), m_RTReflections->GetOutputImage(), VK_FORMAT_R16G16B16A16_SFLOAT);
+        if (m_RTAO)
+            m_OptiXDenoiser->RegisterImageMapping(m_RTAO->GetOutputView(), m_RTAO->GetOutputImage(), VK_FORMAT_R16_SFLOAT);
+        if (m_RTGI)
+            m_OptiXDenoiser->RegisterImageMapping(m_RTGI->GetOutputView(), m_RTGI->GetOutputImage(), VK_FORMAT_R16G16B16A16_SFLOAT);
+        if (m_RTTranslucency)
+            m_OptiXDenoiser->RegisterImageMapping(m_RTTranslucency->GetOutputView(), m_RTTranslucency->GetOutputImage(), VK_FORMAT_R16G16B16A16_SFLOAT);
+        if (m_RTCaustics)
+            m_OptiXDenoiser->RegisterImageMapping(m_RTCaustics->GetOutputView(), m_RTCaustics->GetOutputImage(), VK_FORMAT_R16G16B16A16_SFLOAT);
     }
 
     // Initialize RT compositor (uses RT descriptor set layout for pipeline compatibility)
@@ -5228,9 +5892,23 @@ void RenderSystem::InitializeRayTracing() {
     // Create dummy resources and RT light UBOs for descriptor binding
     CreateRTDummyResources();
 
-    // Register dummy image with OIDN so depth/normal/motion view lookups resolve
+    // Register dummy image with OIDN/OptiX so depth/normal/motion view lookups resolve
     if (m_OIDNDenoiser && m_RTDummyImageView != VK_NULL_HANDLE) {
         m_OIDNDenoiser->RegisterImageMapping(m_RTDummyImageView, m_RTDummyImage, VK_FORMAT_R8G8B8A8_UNORM);
+    }
+    if (m_OptiXDenoiser && m_RTDummyImageView != VK_NULL_HANDLE) {
+        m_OptiXDenoiser->RegisterImageMapping(m_RTDummyImageView, m_RTDummyImage, VK_FORMAT_R8G8B8A8_UNORM);
+    }
+
+    // Register velocity buffer with denoisers for temporal accumulation
+    auto* swapchain = m_Renderer->GetSwapchain();
+    if (swapchain && swapchain->GetVelocityImageView() != VK_NULL_HANDLE) {
+        VkImageView velView = swapchain->GetVelocityImageView();
+        VkImage velImage = swapchain->GetVelocityImage();
+        if (m_OIDNDenoiser)
+            m_OIDNDenoiser->RegisterImageMapping(velView, velImage, Renderer::VulkanSwapchain::VELOCITY_FORMAT);
+        if (m_OptiXDenoiser)
+            m_OptiXDenoiser->RegisterImageMapping(velView, velImage, Renderer::VulkanSwapchain::VELOCITY_FORMAT);
     }
 
     ENJIN_LOG_INFO(Renderer, "Ray tracing subsystems initialized (shadows=%s, reflections=%s, AO=%s, GI=%s, pathtracer=%s)",
@@ -5241,6 +5919,7 @@ void RenderSystem::InitializeRayTracing() {
 
 void RenderSystem::ShutdownRayTracing() {
     m_RTCompositor.reset();
+    m_OptiXDenoiser.reset();
     m_OIDNDenoiser.reset();
     m_SVGFDenoiser.reset();
     m_PathTracer.reset();
@@ -5272,6 +5951,14 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
 
     m_ASManager->ResetInstances();
 
+    // Cache pool buffer device addresses (computed once, reused for all pool entities)
+    VkDeviceAddress poolVertBase = 0;
+    VkDeviceAddress poolIdxBase = 0;
+    if (m_GeometryPool && m_GeometryPool->GetVertexBuffer() && m_GeometryPool->GetIndexBuffer()) {
+        poolVertBase = m_GeometryPool->GetVertexBuffer()->GetDeviceAddress();
+        poolIdxBase = m_GeometryPool->GetIndexBuffer()->GetDeviceAddress();
+    }
+
     // Add all mesh entities to the TLAS
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
@@ -5279,30 +5966,51 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         if (!transform || !mesh || !transform->visible) continue;
         if (mesh->vertices.empty() || mesh->indices.empty()) continue;
 
-        // Get or create entity render data for buffer addresses
-        // Pool-allocated entities are skipped — only per-entity buffers support BLAS building
-        // TODO: Add pool buffer BLAS support (requires debugging device address issues)
         if (static_cast<usize>(entity) >= m_EntityRenderData.size()) continue;
         const auto& rd = m_EntityRenderData[static_cast<usize>(entity)];
-        if (!rd.valid || !rd.vertexBuffer || !rd.indexBuffer) continue;
+        if (!rd.valid) continue;
 
-        VkDeviceAddress vertAddr = rd.vertexBuffer->GetDeviceAddress();
-        VkDeviceAddress idxAddr = rd.indexBuffer->GetDeviceAddress();
+        VkDeviceAddress vertAddr = 0;
+        VkDeviceAddress idxAddr = 0;
+        u32 vertexCount = 0;
+        u32 indexCount = 0;
+
+        if (rd.vertexBuffer && rd.indexBuffer) {
+            // Per-entity buffers (dynamic meshes, skinned, pool overflow)
+            vertAddr = rd.vertexBuffer->GetDeviceAddress();
+            idxAddr = rd.indexBuffer->GetDeviceAddress();
+            vertexCount = static_cast<u32>(mesh->vertices.size());
+            indexCount = static_cast<u32>(mesh->indices.size());
+        } else if (rd.poolAlloc.valid && poolVertBase != 0 && poolIdxBase != 0) {
+            // Pool-allocated: base address + byte offset into merged buffer
+            vertAddr = poolVertBase + static_cast<VkDeviceAddress>(rd.poolAlloc.vertexOffset) * sizeof(MeshComponent::Vertex);
+            idxAddr = poolIdxBase + static_cast<VkDeviceAddress>(rd.poolAlloc.indexOffset) * sizeof(u32);
+            vertexCount = rd.poolAlloc.vertexCount;
+            indexCount = rd.poolAlloc.indexCount;
+        } else {
+            continue;
+        }
+
         if (vertAddr == 0 || idxAddr == 0) continue;
 
-        // Hash based on buffer addresses (unique per mesh data)
+        // Hash based on buffer addresses (unique per mesh region)
         u64 meshHash = vertAddr ^ (idxAddr << 32) ^ (idxAddr >> 32);
 
         u32 blasId = m_ASManager->RegisterMesh(
             meshHash,
-            vertAddr, static_cast<u32>(mesh->vertices.size()), sizeof(MeshComponent::Vertex),
-            idxAddr, static_cast<u32>(mesh->indices.size()));
+            vertAddr, vertexCount, sizeof(MeshComponent::Vertex),
+            idxAddr, indexCount);
 
         // Build world model matrix (includes parent chain)
         Math::Matrix4 model = ECS::ComputeWorldMatrix(m_World, entity);
 
         m_ASManager->AddInstance(blasId, model, static_cast<u32>(entity));
     }
+
+    // Upload per-entity material data to the RT material SSBO (binding 9).
+    // Must happen before TLAS build so the buffer is valid when descriptors are written,
+    // and every frame thereafter since material properties can change at runtime.
+    UploadRTMaterials();
 
     // Flush BLAS builds and build/update TLAS
     if (m_ASManager->HasPendingBuilds()) {
@@ -5315,6 +6023,42 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         WriteRTDescriptors();
         TransitionRTOutputImages(cmd);
         m_RTDescriptorsWritten = true;
+    } else if (m_RTDescriptorsWritten && m_RTMaterialBuffer != VK_NULL_HANDLE) {
+        // Update bindings 9 and 18 each frame to reflect current material data.
+        // The buffer contents are already uploaded via UploadRTMaterials() above;
+        // this ensures the descriptors point to the correct buffers after any reallocation.
+        VkDescriptorBufferInfo matBufInfo{};
+        matBufInfo.buffer = m_RTMaterialBuffer;
+        matBufInfo.offset = 0;
+        matBufInfo.range = VK_WHOLE_SIZE;
+
+        VkDescriptorBufferInfo simplifiedMatBufInfo{};
+        simplifiedMatBufInfo.buffer = (m_RTSimplifiedMaterialBuffer != VK_NULL_HANDLE)
+            ? m_RTSimplifiedMaterialBuffer : m_RTDummyBuffer;
+        simplifiedMatBufInfo.offset = 0;
+        simplifiedMatBufInfo.range = (m_RTSimplifiedMaterialBuffer != VK_NULL_HANDLE)
+            ? VK_WHOLE_SIZE : static_cast<VkDeviceSize>(256);
+
+        std::array<VkWriteDescriptorSet, 2> matWrites{};
+
+        // Binding 9: Full material SSBO
+        matWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        matWrites[0].dstSet = m_RTDescriptorSet;
+        matWrites[0].dstBinding = 9;
+        matWrites[0].descriptorCount = 1;
+        matWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        matWrites[0].pBufferInfo = &matBufInfo;
+
+        // Binding 18: Simplified material SSBO
+        matWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        matWrites[1].dstSet = m_RTDescriptorSet;
+        matWrites[1].dstBinding = 18;
+        matWrites[1].descriptorCount = 1;
+        matWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        matWrites[1].pBufferInfo = &simplifiedMatBufInfo;
+
+        vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
+                               static_cast<u32>(matWrites.size()), matWrites.data(), 0, nullptr);
     }
 }
 
@@ -5370,8 +6114,33 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
     // Update RT light UBO with current frame data
     f32 shadowRadius = m_RTShadows ? m_RTShadows->GetConfig().radius : 0.01f;
     if (m_RTShadows) lightShadowDistance = m_RTShadows->GetConfig().maxDistance;
+
+    // Path tracer config for shader upload
+    f32 fireflyClamp = 10.0f;
+    i32 enableNEE = 1, enableMIS = 1, rrMinBounce = 3;
+    f32 rrMinProb = 0.05f;
+    u32 ptMaxBounces = 4, ptAccumulatedSamples = 0;
+    if (m_PathTracer) {
+        const auto& ptCfg = m_PathTracer->GetConfig();
+        fireflyClamp = ptCfg.fireflyClampValue;
+        enableNEE = ptCfg.enableNEE ? 1 : 0;
+        enableMIS = ptCfg.enableMIS ? 1 : 0;
+        rrMinBounce = static_cast<i32>(ptCfg.russianRouletteMinBounce);
+        rrMinProb = ptCfg.russianRouletteMinProb;
+        ptMaxBounces = ptCfg.maxBounces;
+        ptAccumulatedSamples = m_PathTracer->GetAccumulatedSamples();
+    }
+
+    // Light counts from cached forward renderer data
+    u32 dirLightCount = m_CachedLightingData.directionalLightCount;
+    u32 ptLightCount = m_CachedLightingData.pointLightCount;
+    u32 sptLightCount = m_CachedLightingData.spotLightCount;
+
     UpdateRTLightUBO(invViewProj, lightDir, lightIntensity, lightShadowDistance,
-                     shadowRadius, m_RTFrameCount);
+                     shadowRadius, m_RTFrameCount,
+                     fireflyClamp, enableNEE, enableMIS, rrMinBounce, rrMinProb,
+                     dirLightCount, ptLightCount, sptLightCount,
+                     ptMaxBounces, ptAccumulatedSamples);
 
     // Update TLAS descriptor (handle may change on rebuild)
     {
@@ -5399,6 +6168,25 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
         return;
     }
 
+    // Upload SDF scene data to SSBO (binding 17) for reflection fallback sphere tracing
+    if (m_RTSDFMapped && m_SDFScene) {
+        auto sdfObjects = m_SDFScene->GetObjectBuffer();
+        u32 sdfCount = std::min(static_cast<u32>(sdfObjects.size()), 256u);
+
+        // Buffer layout: [u32 objectCount, u32 pad0, u32 pad1, u32 pad2, SDFObjectGPU objects[...]]
+        u32 header[4] = { sdfCount, 0, 0, 0 };
+        std::memcpy(m_RTSDFMapped, header, sizeof(header));
+        if (sdfCount > 0) {
+            std::memcpy(static_cast<u8*>(m_RTSDFMapped) + 16,
+                        sdfObjects.data(),
+                        sdfCount * sizeof(Renderer::SDFObjectGPU));
+        }
+    } else if (m_RTSDFMapped) {
+        // No SDF scene — zero the object count
+        u32 zero = 0;
+        std::memcpy(m_RTSDFMapped, &zero, sizeof(zero));
+    }
+
     // Hybrid mode — dispatch individual effects
     if (m_RTShadows && m_RTShadows->GetConfig().enabled) {
         m_RTShadows->Dispatch(cmd, m_RTDescriptorSet, invViewProj, lightDir,
@@ -5416,27 +6204,38 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
         m_RTGI->Dispatch(cmd, m_RTDescriptorSet, invViewProj, lightDir,
                          cameraPos, m_RTFrameCount);
     }
+    if (m_RTTranslucency && m_RTTranslucency->GetConfig().enabled) {
+        m_RTTranslucency->Dispatch(cmd, m_RTDescriptorSet, invViewProj, cameraPos,
+                                    m_RTFrameCount);
+    }
+    if (m_RTCaustics && m_RTCaustics->GetConfig().enabled) {
+        m_RTCaustics->Dispatch(cmd, m_RTDescriptorSet, invViewProj, lightDir,
+                                m_RTFrameCount);
+    }
 }
 
 void RenderSystem::DenoiseRTOutputs(VkCommandBuffer cmd) {
     if (!m_RTEnabled || m_RTMode == 1) return;
 
-    // Select active denoiser based on type setting
+    // Select active denoiser based on type setting (0=SVGF, 1=OIDN, 2=OptiX)
     Renderer::IDenoiser* denoiser = nullptr;
-    if (m_DenoiserType == 1 && m_OIDNDenoiser) {
+    if (m_DenoiserType == 2 && m_OptiXDenoiser) {
+        denoiser = m_OptiXDenoiser.get();
+    } else if (m_DenoiserType == 1 && m_OIDNDenoiser) {
         denoiser = m_OIDNDenoiser.get();
     } else if (m_SVGFDenoiser) {
         denoiser = m_SVGFDenoiser.get();
     }
     if (!denoiser) return;
 
-    // Use real depth from swapchain; normals + motion vectors still use dummy
-    // (spatial denoising still works without motion vectors — just no temporal accumulation)
+    // Use real depth and velocity from swapchain when available; normals still use dummy
+    // (no G-buffer MRT normal output yet — will be wired when deferred normals are added)
     auto* swapchain = m_Renderer->GetSwapchain();
     VkImageView depthView = (swapchain && swapchain->GetDepthImageView() != VK_NULL_HANDLE)
         ? swapchain->GetDepthImageView() : m_RTDummyImageView;
     VkImageView normalView = m_RTDummyImageView;
-    VkImageView motionView = m_RTDummyImageView;
+    VkImageView motionView = (swapchain && swapchain->GetVelocityImageView() != VK_NULL_HANDLE)
+        ? swapchain->GetVelocityImageView() : m_RTDummyImageView;
 
     // Denoise shadow output (single channel R16F)
     if (m_RTShadows && m_RTShadows->GetConfig().enabled) {
@@ -5462,6 +6261,18 @@ void RenderSystem::DenoiseRTOutputs(VkCommandBuffer cmd) {
             m_RTGI->GetOutputView(), depthView, normalView, motionView,
             m_RTGI->GetOutputView());
     }
+    // Denoise translucency (RGBA16F)
+    if (m_RTTranslucency && m_RTTranslucency->GetConfig().enabled) {
+        denoiser->DenoiseColor(cmd,
+            m_RTTranslucency->GetOutputView(), depthView, normalView, motionView,
+            m_RTTranslucency->GetOutputView());
+    }
+    // Denoise caustics (RGBA16F)
+    if (m_RTCaustics && m_RTCaustics->GetConfig().enabled) {
+        denoiser->DenoiseColor(cmd,
+            m_RTCaustics->GetOutputView(), depthView, normalView, motionView,
+            m_RTCaustics->GetOutputView());
+    }
 }
 
 void RenderSystem::CompositeRTResults(VkCommandBuffer cmd) {
@@ -5469,12 +6280,14 @@ void RenderSystem::CompositeRTResults(VkCommandBuffer cmd) {
 
     VkExtent2D extent = m_Renderer->GetSwapchainExtent();
 
-    // Build enable flags: bit 0=shadow, 1=reflect, 2=ao, 3=gi
+    // Build enable flags: bit 0=shadow, 1=reflect, 2=ao, 3=gi, 4=translucency, 5=caustics
     u32 enableFlags = 0;
     if (m_RTShadows && m_RTShadows->GetConfig().enabled) enableFlags |= 1;
     if (m_RTReflections && m_RTReflections->GetConfig().enabled) enableFlags |= 2;
     if (m_RTAO && m_RTAO->GetConfig().enabled) enableFlags |= 4;
     if (m_RTGI && m_RTGI->GetConfig().enabled) enableFlags |= 8;
+    if (m_RTTranslucency && m_RTTranslucency->GetConfig().enabled) enableFlags |= 16;
+    if (m_RTCaustics && m_RTCaustics->GetConfig().enabled) enableFlags |= 32;
 
     if (enableFlags == 0) return;
 
@@ -5600,7 +6413,208 @@ void RenderSystem::CreateRTDummyResources() {
         std::memset(m_RTLightUBOMapped[i], 0, 256);
     }
 
-    ENJIN_LOG_INFO(Renderer, "RT dummy resources and light UBOs created");
+    // Create NEE light SSBOs (binding 16, per frame in flight — scene lights for path tracer)
+    for (u32 i = 0; i < RT_FRAMES_IN_FLIGHT; ++i) {
+        VkBufferCreateInfo bufInfo{};
+        bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufInfo.size = RT_NEE_LIGHT_BUFFER_SIZE;
+        bufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        vkCreateBuffer(device, &bufInfo, nullptr, &m_RTNEELightBuffer[i]);
+
+        VkMemoryRequirements memReqs;
+        vkGetBufferMemoryRequirements(device, m_RTNEELightBuffer[i], &memReqs);
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memReqs.size;
+        allocInfo.memoryTypeIndex = ctx->FindMemoryType(memReqs.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        vkAllocateMemory(device, &allocInfo, nullptr, &m_RTNEELightMemory[i]);
+        vkBindBufferMemory(device, m_RTNEELightBuffer[i], m_RTNEELightMemory[i], 0);
+        if (vkMapMemory(device, m_RTNEELightMemory[i], 0, RT_NEE_LIGHT_BUFFER_SIZE, 0, &m_RTNEELightMapped[i]) != VK_SUCCESS) {
+            m_RTNEELightMapped[i] = nullptr;
+            continue;
+        }
+        std::memset(m_RTNEELightMapped[i], 0, RT_NEE_LIGHT_BUFFER_SIZE);
+    }
+
+    // Create RT material SSBO (binding 9) — persistently mapped, host visible + coherent
+    EnsureRTMaterialBuffer(RT_MATERIAL_BUFFER_INITIAL_CAPACITY);
+
+    // Create RT simplified material SSBO (binding 18) — pre-baked material properties
+    EnsureRTSimplifiedMaterialBuffer(RT_MATERIAL_BUFFER_INITIAL_CAPACITY);
+
+    // Create SDF scene SSBO (binding 17) — persistently mapped for per-frame SDF object upload
+    {
+        VkBufferCreateInfo bufInfo{};
+        bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufInfo.size = RT_SDF_BUFFER_SIZE;
+        bufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        vkCreateBuffer(device, &bufInfo, nullptr, &m_RTSDFBuffer);
+
+        VkMemoryRequirements memReqs;
+        vkGetBufferMemoryRequirements(device, m_RTSDFBuffer, &memReqs);
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memReqs.size;
+        allocInfo.memoryTypeIndex = ctx->FindMemoryType(memReqs.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        vkAllocateMemory(device, &allocInfo, nullptr, &m_RTSDFMemory);
+        vkBindBufferMemory(device, m_RTSDFBuffer, m_RTSDFMemory, 0);
+        if (vkMapMemory(device, m_RTSDFMemory, 0, RT_SDF_BUFFER_SIZE, 0, &m_RTSDFMapped) != VK_SUCCESS) {
+            m_RTSDFMapped = nullptr;
+        } else {
+            std::memset(m_RTSDFMapped, 0, RT_SDF_BUFFER_SIZE);
+        }
+    }
+
+    ENJIN_LOG_INFO(Renderer, "RT dummy resources, light UBOs, NEE light SSBOs, material SSBO, simplified material SSBO, and SDF SSBO created");
+}
+
+void RenderSystem::EnsureRTMaterialBuffer(u32 requiredCapacity) {
+    if (requiredCapacity <= m_RTMaterialBufferCapacity && m_RTMaterialBuffer != VK_NULL_HANDLE) return;
+
+    auto* ctx = m_Renderer->GetContext();
+    VkDevice device = ctx->GetDevice();
+
+    // Destroy old buffer if exists
+    if (m_RTMaterialMapped) {
+        vkUnmapMemory(device, m_RTMaterialMemory);
+        m_RTMaterialMapped = nullptr;
+    }
+    if (m_RTMaterialBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device, m_RTMaterialBuffer, nullptr);
+        m_RTMaterialBuffer = VK_NULL_HANDLE;
+    }
+    if (m_RTMaterialMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, m_RTMaterialMemory, nullptr);
+        m_RTMaterialMemory = VK_NULL_HANDLE;
+    }
+
+    // Grow by at least 2x to avoid frequent reallocations
+    u32 newCapacity = m_RTMaterialBufferCapacity > 0
+        ? m_RTMaterialBufferCapacity * 2
+        : RT_MATERIAL_BUFFER_INITIAL_CAPACITY;
+    if (newCapacity < requiredCapacity) newCapacity = requiredCapacity;
+
+    VkDeviceSize bufferSize = static_cast<VkDeviceSize>(newCapacity) * sizeof(MaterialGPU);
+
+    VkBufferCreateInfo bufInfo{};
+    bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufInfo.size = bufferSize;
+    bufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(device, &bufInfo, nullptr, &m_RTMaterialBuffer) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create RT material SSBO (%u entries)", newCapacity);
+        return;
+    }
+
+    VkMemoryRequirements memReqs;
+    vkGetBufferMemoryRequirements(device, m_RTMaterialBuffer, &memReqs);
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memReqs.size;
+    allocInfo.memoryTypeIndex = ctx->FindMemoryType(memReqs.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &m_RTMaterialMemory) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to allocate RT material SSBO memory");
+        vkDestroyBuffer(device, m_RTMaterialBuffer, nullptr);
+        m_RTMaterialBuffer = VK_NULL_HANDLE;
+        return;
+    }
+
+    if (vkBindBufferMemory(device, m_RTMaterialBuffer, m_RTMaterialMemory, 0) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to bind RT material SSBO memory");
+        return;
+    }
+
+    if (vkMapMemory(device, m_RTMaterialMemory, 0, bufferSize, 0, &m_RTMaterialMapped) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to map RT material SSBO");
+        m_RTMaterialMapped = nullptr;
+        return;
+    }
+
+    std::memset(m_RTMaterialMapped, 0, static_cast<size_t>(bufferSize));
+    m_RTMaterialBufferCapacity = newCapacity;
+
+    ENJIN_LOG_INFO(Renderer, "RT material SSBO created/resized: %u entries (%llu bytes)",
+                   newCapacity, static_cast<unsigned long long>(bufferSize));
+}
+
+void RenderSystem::EnsureRTSimplifiedMaterialBuffer(u32 requiredCapacity) {
+    if (requiredCapacity <= m_RTSimplifiedMaterialBufferCapacity && m_RTSimplifiedMaterialBuffer != VK_NULL_HANDLE) return;
+
+    auto* ctx = m_Renderer->GetContext();
+    VkDevice device = ctx->GetDevice();
+
+    // Destroy old buffer if exists
+    if (m_RTSimplifiedMaterialMapped) {
+        vkUnmapMemory(device, m_RTSimplifiedMaterialMemory);
+        m_RTSimplifiedMaterialMapped = nullptr;
+    }
+    if (m_RTSimplifiedMaterialBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device, m_RTSimplifiedMaterialBuffer, nullptr);
+        m_RTSimplifiedMaterialBuffer = VK_NULL_HANDLE;
+    }
+    if (m_RTSimplifiedMaterialMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, m_RTSimplifiedMaterialMemory, nullptr);
+        m_RTSimplifiedMaterialMemory = VK_NULL_HANDLE;
+    }
+
+    // Grow by at least 2x to avoid frequent reallocations
+    u32 newCapacity = m_RTSimplifiedMaterialBufferCapacity > 0
+        ? m_RTSimplifiedMaterialBufferCapacity * 2
+        : RT_MATERIAL_BUFFER_INITIAL_CAPACITY;
+    if (newCapacity < requiredCapacity) newCapacity = requiredCapacity;
+
+    // RTSimplifiedMaterialGPU is 64 bytes per entry
+    VkDeviceSize simplifiedBufSize = static_cast<VkDeviceSize>(newCapacity) * 64;
+
+    VkBufferCreateInfo simplifiedBufCI{};
+    simplifiedBufCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    simplifiedBufCI.size = simplifiedBufSize;
+    simplifiedBufCI.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    simplifiedBufCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(device, &simplifiedBufCI, nullptr, &m_RTSimplifiedMaterialBuffer) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create RT simplified material SSBO (%u entries)", newCapacity);
+        return;
+    }
+
+    VkMemoryRequirements smemReqs;
+    vkGetBufferMemoryRequirements(device, m_RTSimplifiedMaterialBuffer, &smemReqs);
+    VkMemoryAllocateInfo sallocInfo{};
+    sallocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    sallocInfo.allocationSize = smemReqs.size;
+    sallocInfo.memoryTypeIndex = ctx->FindMemoryType(smemReqs.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    if (vkAllocateMemory(device, &sallocInfo, nullptr, &m_RTSimplifiedMaterialMemory) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to allocate RT simplified material SSBO memory");
+        vkDestroyBuffer(device, m_RTSimplifiedMaterialBuffer, nullptr);
+        m_RTSimplifiedMaterialBuffer = VK_NULL_HANDLE;
+        return;
+    }
+
+    if (vkBindBufferMemory(device, m_RTSimplifiedMaterialBuffer, m_RTSimplifiedMaterialMemory, 0) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to bind RT simplified material SSBO memory");
+        return;
+    }
+
+    if (vkMapMemory(device, m_RTSimplifiedMaterialMemory, 0, simplifiedBufSize, 0, &m_RTSimplifiedMaterialMapped) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to map RT simplified material SSBO");
+        m_RTSimplifiedMaterialMapped = nullptr;
+        return;
+    }
+
+    std::memset(m_RTSimplifiedMaterialMapped, 0, static_cast<size_t>(simplifiedBufSize));
+    m_RTSimplifiedMaterialBufferCapacity = newCapacity;
+
+    ENJIN_LOG_INFO(Renderer, "RT simplified material SSBO created/resized: %u entries (%llu bytes)",
+                   newCapacity, static_cast<unsigned long long>(simplifiedBufSize));
 }
 
 void RenderSystem::DestroyRTDummyResources() {
@@ -5622,6 +6636,145 @@ void RenderSystem::DestroyRTDummyResources() {
     if (m_RTDummyImageMemory) { vkFreeMemory(device, m_RTDummyImageMemory, nullptr); m_RTDummyImageMemory = VK_NULL_HANDLE; }
     if (m_RTDummyBuffer) { vkDestroyBuffer(device, m_RTDummyBuffer, nullptr); m_RTDummyBuffer = VK_NULL_HANDLE; }
     if (m_RTDummyBufferMemory) { vkFreeMemory(device, m_RTDummyBufferMemory, nullptr); m_RTDummyBufferMemory = VK_NULL_HANDLE; }
+
+    // Destroy NEE light SSBOs
+    for (u32 i = 0; i < RT_FRAMES_IN_FLIGHT; ++i) {
+        if (m_RTNEELightMapped[i]) {
+            vkUnmapMemory(device, m_RTNEELightMemory[i]);
+            m_RTNEELightMapped[i] = nullptr;
+        }
+        if (m_RTNEELightBuffer[i]) { vkDestroyBuffer(device, m_RTNEELightBuffer[i], nullptr); m_RTNEELightBuffer[i] = VK_NULL_HANDLE; }
+        if (m_RTNEELightMemory[i]) { vkFreeMemory(device, m_RTNEELightMemory[i], nullptr); m_RTNEELightMemory[i] = VK_NULL_HANDLE; }
+    }
+
+    // Destroy RT material SSBO
+    if (m_RTMaterialMapped) { vkUnmapMemory(device, m_RTMaterialMemory); m_RTMaterialMapped = nullptr; }
+    if (m_RTMaterialBuffer != VK_NULL_HANDLE) { vkDestroyBuffer(device, m_RTMaterialBuffer, nullptr); m_RTMaterialBuffer = VK_NULL_HANDLE; }
+    if (m_RTMaterialMemory != VK_NULL_HANDLE) { vkFreeMemory(device, m_RTMaterialMemory, nullptr); m_RTMaterialMemory = VK_NULL_HANDLE; }
+    m_RTMaterialBufferCapacity = 0;
+
+    // Destroy SDF scene SSBO
+    if (m_RTSDFMapped) { vkUnmapMemory(device, m_RTSDFMemory); m_RTSDFMapped = nullptr; }
+    if (m_RTSDFBuffer != VK_NULL_HANDLE) { vkDestroyBuffer(device, m_RTSDFBuffer, nullptr); m_RTSDFBuffer = VK_NULL_HANDLE; }
+    if (m_RTSDFMemory != VK_NULL_HANDLE) { vkFreeMemory(device, m_RTSDFMemory, nullptr); m_RTSDFMemory = VK_NULL_HANDLE; }
+
+    // Destroy RT simplified material SSBO
+    if (m_RTSimplifiedMaterialMapped) { vkUnmapMemory(device, m_RTSimplifiedMaterialMemory); m_RTSimplifiedMaterialMapped = nullptr; }
+    if (m_RTSimplifiedMaterialBuffer != VK_NULL_HANDLE) { vkDestroyBuffer(device, m_RTSimplifiedMaterialBuffer, nullptr); m_RTSimplifiedMaterialBuffer = VK_NULL_HANDLE; }
+    if (m_RTSimplifiedMaterialMemory != VK_NULL_HANDLE) { vkFreeMemory(device, m_RTSimplifiedMaterialMemory, nullptr); m_RTSimplifiedMaterialMemory = VK_NULL_HANDLE; }
+    m_RTSimplifiedMaterialBufferCapacity = 0;
+}
+
+void RenderSystem::UploadRTMaterials() {
+    if (!m_RTEnabled || !m_ASManager) return;
+
+    // Find the highest entity ID among renderable mesh entities to size the buffer
+    u32 maxEntityId = 0;
+    u32 entityCount = 0;
+    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+        auto* transform = m_World->GetComponent<TransformComponent>(entity);
+        auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+        if (!transform || !mesh || !transform->visible) continue;
+        if (mesh->vertices.empty() || mesh->indices.empty()) continue;
+        if (static_cast<usize>(entity) >= m_EntityRenderData.size()) continue;
+        if (!m_EntityRenderData[static_cast<usize>(entity)].valid) continue;
+
+        u32 eid = static_cast<u32>(entity);
+        if (eid > maxEntityId) maxEntityId = eid;
+        entityCount++;
+    }
+
+    if (entityCount == 0) return;
+
+    // Ensure buffer is large enough (indexed by entity ID, so need maxEntityId + 1 entries)
+    u32 requiredCapacity = maxEntityId + 1;
+    bool bufferGrew = (requiredCapacity > m_RTMaterialBufferCapacity);
+    bool simplifiedBufferGrew = (requiredCapacity > m_RTSimplifiedMaterialBufferCapacity);
+    if (bufferGrew || simplifiedBufferGrew) {
+        // GPU must be idle before reallocating a buffer that may be in-flight
+        vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+        if (bufferGrew) EnsureRTMaterialBuffer(requiredCapacity);
+        if (simplifiedBufferGrew) EnsureRTSimplifiedMaterialBuffer(requiredCapacity);
+
+        // Force descriptor re-write since a buffer handle changed
+        m_RTDescriptorsWritten = false;
+    }
+
+    if (!m_RTMaterialMapped) return;
+
+    // GPU struct matching GLSL RTSimplifiedMaterial (std430 layout, 64 bytes)
+    struct RTSimplifiedMaterialGPU {
+        f32 albedo[3];          f32 effectiveRoughness;  // 16 bytes
+        f32 f0[3];              f32 kDiffuse;             // 16 bytes
+        f32 emissive[3];        f32 opacity;              // 16 bytes
+        f32 transmission;       f32 ior;  f32 _pad0;  f32 _pad1; // 16 bytes
+    };
+    static_assert(sizeof(RTSimplifiedMaterialGPU) == 64, "RTSimplifiedMaterialGPU must be 64 bytes for std430");
+
+    // Upload MaterialGPU for each renderable entity, indexed by entity ID
+    // (matches gl_InstanceCustomIndexEXT set in AddInstance)
+    auto* dst = static_cast<MaterialGPU*>(m_RTMaterialMapped);
+    auto* sdst = m_RTSimplifiedMaterialMapped
+                 ? static_cast<RTSimplifiedMaterialGPU*>(m_RTSimplifiedMaterialMapped)
+                 : nullptr;
+    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+        auto* transform = m_World->GetComponent<TransformComponent>(entity);
+        auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+        if (!transform || !mesh || !transform->visible) continue;
+        if (mesh->vertices.empty() || mesh->indices.empty()) continue;
+        if (static_cast<usize>(entity) >= m_EntityRenderData.size()) continue;
+        if (!m_EntityRenderData[static_cast<usize>(entity)].valid) continue;
+
+        u32 eid = static_cast<u32>(entity);
+        auto* mat = m_World->GetComponent<MaterialComponent>(entity);
+        if (mat) {
+            dst[eid] = MaterialGPU::FromComponent(*mat);
+        } else {
+            // Default material for entities without a MaterialComponent
+            dst[eid] = MaterialGPU{};
+            dst[eid].baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+            dst[eid].roughness = 0.5f;
+            dst[eid].opacity = 1.0f;
+            dst[eid].alphaCutoff = 0.5f;
+            dst[eid].ior = 1.5f;
+            dst[eid].sssColor = Math::Vector3(1.0f, 0.2f, 0.1f);
+            dst[eid].sssRadius = 1.0f;
+        }
+
+        // Pre-compute simplified material from the just-written MaterialGPU
+        if (sdst) {
+            const auto& m = dst[eid];
+            auto& s = sdst[eid];
+
+            // Albedo
+            s.albedo[0] = m.baseColor.x;
+            s.albedo[1] = m.baseColor.y;
+            s.albedo[2] = m.baseColor.z;
+
+            // Effective roughness (clamped to avoid singularities, matches fetchMaterial)
+            s.effectiveRoughness = std::max(m.roughness, 0.04f);
+
+            // F0: reflectance at normal incidence = mix(0.04, baseColor, metallic)
+            f32 oneMinusMetallic = 1.0f - m.metallic;
+            s.f0[0] = 0.04f * oneMinusMetallic + m.baseColor.x * m.metallic;
+            s.f0[1] = 0.04f * oneMinusMetallic + m.baseColor.y * m.metallic;
+            s.f0[2] = 0.04f * oneMinusMetallic + m.baseColor.z * m.metallic;
+
+            // kDiffuse: diffuse weight = (1 - metallic)
+            s.kDiffuse = oneMinusMetallic;
+
+            // Emissive: pre-multiply color * strength
+            s.emissive[0] = m.emissiveColor.x * m.emissiveStrength;
+            s.emissive[1] = m.emissiveColor.y * m.emissiveStrength;
+            s.emissive[2] = m.emissiveColor.z * m.emissiveStrength;
+
+            s.opacity = m.opacity;
+            s.transmission = m.transmission;
+            s.ior = m.ior;
+            s._pad0 = 0.0f;
+            s._pad1 = 0.0f;
+        }
+    }
 }
 
 void RenderSystem::WriteRTDescriptors() {
@@ -5656,8 +6809,8 @@ void RenderSystem::WriteRTDescriptors() {
         samplerInfos[0].imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
     }
 
-    // Bindings 5-8: RT output images (storage image)
-    VkDescriptorImageInfo rtOutputInfos[4]{};
+    // Bindings 5-8: RT output images (storage image), 14-15: translucency, caustics
+    VkDescriptorImageInfo rtOutputInfos[6]{};
     rtOutputInfos[0].imageView = m_RTShadows ? m_RTShadows->GetOutputView() : m_RTDummyImageView;
     rtOutputInfos[0].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
     rtOutputInfos[1].imageView = m_RTReflections ? m_RTReflections->GetOutputView() : m_RTDummyImageView;
@@ -5666,13 +6819,29 @@ void RenderSystem::WriteRTDescriptors() {
     rtOutputInfos[2].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
     rtOutputInfos[3].imageView = m_RTGI ? m_RTGI->GetOutputView() : m_RTDummyImageView;
     rtOutputInfos[3].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    rtOutputInfos[4].imageView = m_RTTranslucency ? m_RTTranslucency->GetOutputView() : m_RTDummyImageView;
+    rtOutputInfos[4].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    rtOutputInfos[5].imageView = m_RTCaustics ? m_RTCaustics->GetOutputView() : m_RTDummyImageView;
+    rtOutputInfos[5].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-    // Bindings 9-12: Storage buffers (dummy for now — will be real vertex/index/material data later)
+    // Bindings 9-12: Storage buffers
+    // Binding 9 = material SSBO (real buffer), bindings 10-12 = dummy (vertex/index/transforms TBD)
     VkDescriptorBufferInfo dummyBufInfos[4]{};
-    for (auto& bi : dummyBufInfos) {
-        bi.buffer = m_RTDummyBuffer;
-        bi.offset = 0;
-        bi.range = 256;
+    // Binding 9: Material SSBO — use real buffer if available, otherwise dummy
+    if (m_RTMaterialBuffer != VK_NULL_HANDLE && m_RTMaterialBufferCapacity > 0) {
+        dummyBufInfos[0].buffer = m_RTMaterialBuffer;
+        dummyBufInfos[0].offset = 0;
+        dummyBufInfos[0].range = VK_WHOLE_SIZE;
+    } else {
+        dummyBufInfos[0].buffer = m_RTDummyBuffer;
+        dummyBufInfos[0].offset = 0;
+        dummyBufInfos[0].range = 256;
+    }
+    // Bindings 10-12: Still dummy (vertex/index/transforms — future work)
+    for (u32 i = 1; i < 4; ++i) {
+        dummyBufInfos[i].buffer = m_RTDummyBuffer;
+        dummyBufInfos[i].offset = 0;
+        dummyBufInfos[i].range = 256;
     }
 
     // Binding 13: RT light UBO
@@ -5681,8 +6850,32 @@ void RenderSystem::WriteRTDescriptors() {
     uboInfo.offset = 0;
     uboInfo.range = 256;
 
-    // Build write array for all 14 bindings
-    std::array<VkWriteDescriptorSet, 14> writes{};
+    // Binding 16: NEE light SSBO
+    VkDescriptorBufferInfo neeBufInfo{};
+    neeBufInfo.buffer = m_RTNEELightBuffer[frameIdx] ? m_RTNEELightBuffer[frameIdx] : m_RTDummyBuffer;
+    neeBufInfo.offset = 0;
+    neeBufInfo.range = m_RTNEELightBuffer[frameIdx] ? static_cast<VkDeviceSize>(RT_NEE_LIGHT_BUFFER_SIZE) : 256;
+
+    // Binding 17: SDF scene SSBO
+    VkDescriptorBufferInfo sdfBufInfo{};
+    sdfBufInfo.buffer = m_RTSDFBuffer ? m_RTSDFBuffer : m_RTDummyBuffer;
+    sdfBufInfo.offset = 0;
+    sdfBufInfo.range = m_RTSDFBuffer ? static_cast<VkDeviceSize>(RT_SDF_BUFFER_SIZE) : 256;
+
+    // Binding 18: Simplified material SSBO
+    VkDescriptorBufferInfo simplifiedMatBufInfo{};
+    if (m_RTSimplifiedMaterialBuffer != VK_NULL_HANDLE && m_RTSimplifiedMaterialBufferCapacity > 0) {
+        simplifiedMatBufInfo.buffer = m_RTSimplifiedMaterialBuffer;
+        simplifiedMatBufInfo.offset = 0;
+        simplifiedMatBufInfo.range = VK_WHOLE_SIZE;
+    } else {
+        simplifiedMatBufInfo.buffer = m_RTDummyBuffer;
+        simplifiedMatBufInfo.offset = 0;
+        simplifiedMatBufInfo.range = 256;
+    }
+
+    // Build write array for all 19 bindings
+    std::array<VkWriteDescriptorSet, 19> writes{};
 
     // Binding 0: TLAS
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -5738,9 +6931,49 @@ void RenderSystem::WriteRTDescriptors() {
     writes[13].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     writes[13].pBufferInfo = &uboInfo;
 
+    // Binding 14: RT Translucency output
+    writes[14].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[14].dstSet = m_RTDescriptorSet;
+    writes[14].dstBinding = 14;
+    writes[14].descriptorCount = 1;
+    writes[14].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[14].pImageInfo = &rtOutputInfos[4];
+
+    // Binding 15: RT Caustics output
+    writes[15].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[15].dstSet = m_RTDescriptorSet;
+    writes[15].dstBinding = 15;
+    writes[15].descriptorCount = 1;
+    writes[15].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[15].pImageInfo = &rtOutputInfos[5];
+
+    // Binding 16: NEE light SSBO
+    writes[16].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[16].dstSet = m_RTDescriptorSet;
+    writes[16].dstBinding = 16;
+    writes[16].descriptorCount = 1;
+    writes[16].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[16].pBufferInfo = &neeBufInfo;
+
+    // Binding 17: SDF scene SSBO
+    writes[17].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[17].dstSet = m_RTDescriptorSet;
+    writes[17].dstBinding = 17;
+    writes[17].descriptorCount = 1;
+    writes[17].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[17].pBufferInfo = &sdfBufInfo;
+
+    // Binding 18: Simplified material SSBO
+    writes[18].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[18].dstSet = m_RTDescriptorSet;
+    writes[18].dstBinding = 18;
+    writes[18].descriptorCount = 1;
+    writes[18].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[18].pBufferInfo = &simplifiedMatBufInfo;
+
     vkUpdateDescriptorSets(device, static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
 
-    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 14 bindings)");
+    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 19 bindings)");
 }
 
 void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {
@@ -5766,6 +6999,8 @@ void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {
     if (m_RTReflections) addBarrier(m_RTReflections->GetOutputImage());
     if (m_RTAO) addBarrier(m_RTAO->GetOutputImage());
     if (m_RTGI) addBarrier(m_RTGI->GetOutputImage());
+    if (m_RTTranslucency) addBarrier(m_RTTranslucency->GetOutputImage());
+    if (m_RTCaustics) addBarrier(m_RTCaustics->GetOutputImage());
     if (m_PathTracer) addBarrier(m_PathTracer->GetOutputImage());
 
     // Also transition the dummy image
@@ -5783,19 +7018,34 @@ void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {
 }
 
 void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math::Vector3& lightDir,
-                                     f32 lightIntensity, f32 shadowDistance, f32 shadowRadius, u32 frameCount) {
+                                     f32 lightIntensity, f32 shadowDistance, f32 shadowRadius, u32 frameCount,
+                                     f32 fireflyClamp, i32 enableNEE, i32 enableMIS,
+                                     i32 rrMinBounce, f32 rrMinProb,
+                                     u32 dirLightCount, u32 ptLightCount, u32 sptLightCount,
+                                     u32 maxBounces, u32 accumulatedSamples) {
     u32 frameIdx = m_Renderer->GetCurrentFrameIndex();
     if (!m_RTLightUBOMapped[frameIdx]) return;
 
     VkExtent2D extent = m_Renderer->GetSwapchainExtent();
 
-    // RT light UBO layout (std140):
-    // vec4 lightDir       (offset 0)
-    // vec4 lightColor     (offset 16)
-    // mat4 invViewProj    (offset 32)
-    // vec2 screenSize     (offset 96)
-    // uint frameCount     (offset 104)
-    // float shadowRadius  (offset 108)
+    // RT light UBO layout (std140, matches shader LightData uniform block):
+    // vec4 lightDir            (offset 0)
+    // vec4 lightColor          (offset 16)
+    // mat4 invViewProj         (offset 32)
+    // vec2 screenSize          (offset 96)
+    // uint frameCount          (offset 104)
+    // float shadowRadius       (offset 108)
+    // float fireflyClamp       (offset 112)
+    // int enableNEE            (offset 116)
+    // int enableMIS            (offset 120)
+    // int rrMinBounce          (offset 124)
+    // float rrMinProb          (offset 128)
+    // uint dirLightCount       (offset 132)
+    // uint pointLightCount     (offset 136)
+    // uint spotLightCount      (offset 140)
+    // uint maxBounces          (offset 144)
+    // uint accumulatedSamples  (offset 148)
+    // uint _pad[2]             (offset 152)  -- pad to 160 bytes
     struct RTLightData {
         f32 lightDir[4];
         f32 lightColor[4];
@@ -5803,6 +7053,22 @@ void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math
         f32 screenSize[2];
         u32 frameCount;
         f32 shadowRadius;
+        // Path tracer config
+        f32 fireflyClamp;
+        i32 enableNEE;
+        i32 enableMIS;
+        i32 rrMinBounce;
+        f32 rrMinProb;
+        // NEE light counts
+        u32 directionalLightCount;
+        u32 pointLightCount;
+        u32 spotLightCount;
+        // Convergence
+        u32 maxBounces;
+        u32 accumulatedSamples;
+        // SDF fallback (reflection shader reads these at offset 152-160)
+        f32 sdfFallbackEnabled;   // >0.5 = SDF sphere-trace fallback active
+        f32 sdfMaxDistance;       // Max sphere-trace distance
     };
 
     RTLightData data{};
@@ -5825,6 +7091,31 @@ void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math
     data.frameCount = frameCount;
     data.shadowRadius = shadowRadius;
 
+    // Path tracer config
+    data.fireflyClamp = fireflyClamp;
+    data.enableNEE = enableNEE;
+    data.enableMIS = enableMIS;
+    data.rrMinBounce = rrMinBounce;
+    data.rrMinProb = rrMinProb;
+
+    // NEE light counts
+    data.directionalLightCount = dirLightCount;
+    data.pointLightCount = ptLightCount;
+    data.spotLightCount = sptLightCount;
+
+    // Convergence
+    data.maxBounces = maxBounces;
+    data.accumulatedSamples = accumulatedSamples;
+
+    // SDF fallback settings (read by reflection shader at offsets 152-160)
+    if (m_RTReflections && m_SDFScene && m_SDFScene->GetObjectCount() > 0) {
+        data.sdfFallbackEnabled = m_RTReflections->GetConfig().sdfFallback ? 1.0f : 0.0f;
+        data.sdfMaxDistance = m_RTReflections->GetConfig().sdfMaxDistance;
+    } else {
+        data.sdfFallbackEnabled = 0.0f;
+        data.sdfMaxDistance = 0.0f;
+    }
+
     std::memcpy(m_RTLightUBOMapped[frameIdx], &data, sizeof(data));
 
     // Update descriptor binding 13 to point to this frame's UBO
@@ -5841,6 +7132,185 @@ void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math
     write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     write.pBufferInfo = &uboInfo;
     vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &write, 0, nullptr);
+
+    // Upload NEE light data to SSBO (binding 16) for path tracer direct light sampling
+    if (m_RTNEELightMapped[frameIdx] && (dirLightCount > 0 || ptLightCount > 0 || sptLightCount > 0)) {
+        // NEE light SSBO layout: packed RTLight structs (64 bytes each, matches rt_common.glsl)
+        // RTLight { vec3 position, float range, vec3 direction, float intensity,
+        //           vec3 color, int type, float innerCutoff, float outerCutoff, float _pad0, float _pad1 }
+        struct RTLightGPU {
+            f32 position[3]; f32 range;
+            f32 direction[3]; f32 intensity;
+            f32 color[3]; i32 type;
+            f32 innerCutoff; f32 outerCutoff;
+            f32 _pad0; f32 _pad1;
+        };
+
+        u8* dst = static_cast<u8*>(m_RTNEELightMapped[frameIdx]);
+        u32 offset = 0;
+        u32 maxLights = RT_NEE_LIGHT_BUFFER_SIZE / sizeof(RTLightGPU);
+        u32 totalLights = 0;
+
+        // Copy directional lights
+        for (u32 i = 0; i < dirLightCount && totalLights < maxLights; ++i) {
+            RTLightGPU light{};
+            light.position[0] = 0.0f; light.position[1] = 0.0f; light.position[2] = 0.0f;
+            light.range = 0.0f;  // Infinite for directional
+            light.direction[0] = m_CachedLightingData.directionalLights[i].direction.x;
+            light.direction[1] = m_CachedLightingData.directionalLights[i].direction.y;
+            light.direction[2] = m_CachedLightingData.directionalLights[i].direction.z;
+            light.intensity = m_CachedLightingData.directionalLights[i].intensity;
+            light.color[0] = m_CachedLightingData.directionalLights[i].color.x;
+            light.color[1] = m_CachedLightingData.directionalLights[i].color.y;
+            light.color[2] = m_CachedLightingData.directionalLights[i].color.z;
+            light.type = 0;
+            light.innerCutoff = 0.0f;
+            light.outerCutoff = 0.0f;
+            std::memcpy(dst + offset, &light, sizeof(RTLightGPU));
+            offset += sizeof(RTLightGPU);
+            totalLights++;
+        }
+
+        // Copy point lights
+        for (u32 i = 0; i < ptLightCount && totalLights < maxLights; ++i) {
+            RTLightGPU light{};
+            light.position[0] = m_CachedLightingData.pointLights[i].position.x;
+            light.position[1] = m_CachedLightingData.pointLights[i].position.y;
+            light.position[2] = m_CachedLightingData.pointLights[i].position.z;
+            light.range = m_CachedLightingData.pointLights[i].range;
+            light.direction[0] = 0.0f; light.direction[1] = 0.0f; light.direction[2] = 0.0f;
+            light.intensity = m_CachedLightingData.pointLights[i].intensity;
+            light.color[0] = m_CachedLightingData.pointLights[i].color.x;
+            light.color[1] = m_CachedLightingData.pointLights[i].color.y;
+            light.color[2] = m_CachedLightingData.pointLights[i].color.z;
+            light.type = 1;
+            light.innerCutoff = 0.0f;
+            light.outerCutoff = 0.0f;
+            std::memcpy(dst + offset, &light, sizeof(RTLightGPU));
+            offset += sizeof(RTLightGPU);
+            totalLights++;
+        }
+
+        // Copy spot lights
+        for (u32 i = 0; i < sptLightCount && totalLights < maxLights; ++i) {
+            RTLightGPU light{};
+            light.position[0] = m_CachedLightingData.spotLights[i].position.x;
+            light.position[1] = m_CachedLightingData.spotLights[i].position.y;
+            light.position[2] = m_CachedLightingData.spotLights[i].position.z;
+            light.range = m_CachedLightingData.spotLights[i].range;
+            light.direction[0] = m_CachedLightingData.spotLights[i].direction.x;
+            light.direction[1] = m_CachedLightingData.spotLights[i].direction.y;
+            light.direction[2] = m_CachedLightingData.spotLights[i].direction.z;
+            light.intensity = m_CachedLightingData.spotLights[i].intensity;
+            light.color[0] = m_CachedLightingData.spotLights[i].color.x;
+            light.color[1] = m_CachedLightingData.spotLights[i].color.y;
+            light.color[2] = m_CachedLightingData.spotLights[i].color.z;
+            light.type = 2;
+            light.innerCutoff = m_CachedLightingData.spotLights[i].innerCutoff;
+            light.outerCutoff = m_CachedLightingData.spotLights[i].outerCutoff;
+            std::memcpy(dst + offset, &light, sizeof(RTLightGPU));
+            offset += sizeof(RTLightGPU);
+            totalLights++;
+        }
+
+        // Update descriptor binding 16 to point to this frame's NEE light SSBO
+        VkDescriptorBufferInfo neeBufInfo{};
+        neeBufInfo.buffer = m_RTNEELightBuffer[frameIdx];
+        neeBufInfo.offset = 0;
+        neeBufInfo.range = VK_WHOLE_SIZE;
+
+        VkWriteDescriptorSet neeWrite{};
+        neeWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        neeWrite.dstSet = m_RTDescriptorSet;
+        neeWrite.dstBinding = 16;
+        neeWrite.descriptorCount = 1;
+        neeWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        neeWrite.pBufferInfo = &neeBufInfo;
+        vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &neeWrite, 0, nullptr);
+    }
+}
+
+// ============================================================================
+// TEMPORAL UPSCALING (FSR 2 / DLSS / XeSS)
+// ============================================================================
+
+void RenderSystem::SetUpscalerType(u32 type) {
+    if (type == m_UpscalerType) return;
+
+    // Tear down existing upscaler
+    if (m_Upscaler) {
+        m_Upscaler->Shutdown();
+        m_Upscaler.reset();
+    }
+
+    m_UpscalerType = type;
+
+    if (type == 0) {
+        ENJIN_LOG_INFO(Renderer, "Temporal upscaler disabled");
+        return;
+    }
+
+    // Create the requested backend
+    auto* ctx = m_Renderer->GetContext();
+    switch (type) {
+        case 1: // FSR 2
+            m_Upscaler = std::make_unique<Renderer::FSR2Upscaler>(ctx);
+            break;
+        case 2: // DLSS (stub)
+            ENJIN_LOG_WARN(Renderer, "DLSS upscaler not yet implemented");
+            m_UpscalerType = 0;
+            return;
+        case 3: // XeSS (stub)
+            ENJIN_LOG_WARN(Renderer, "XeSS upscaler not yet implemented");
+            m_UpscalerType = 0;
+            return;
+        default:
+            m_UpscalerType = 0;
+            return;
+    }
+
+    if (!m_Upscaler->IsAvailable()) {
+        ENJIN_LOG_WARN(Renderer, "%s upscaler SDK not compiled in", m_Upscaler->GetName());
+        m_Upscaler.reset();
+        m_UpscalerType = 0;
+        return;
+    }
+
+    // Initialize with current display resolution
+    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+    u32 renderW, renderH;
+    Renderer::IUpscaler::GetRenderResolution(
+        extent.width, extent.height,
+        static_cast<Renderer::UpscalerQuality>(m_UpscalerQuality),
+        renderW, renderH);
+
+    if (!m_Upscaler->Initialize(renderW, renderH, extent.width, extent.height,
+                                static_cast<Renderer::UpscalerQuality>(m_UpscalerQuality))) {
+        ENJIN_LOG_WARN(Renderer, "Failed to initialize %s upscaler", m_Upscaler->GetName());
+        m_Upscaler.reset();
+        m_UpscalerType = 0;
+        return;
+    }
+
+    ENJIN_LOG_INFO(Renderer, "%s upscaler active (%ux%u -> %ux%u)",
+                   m_Upscaler->GetName(), renderW, renderH, extent.width, extent.height);
+}
+
+void RenderSystem::SetUpscalerQuality(u32 quality) {
+    if (quality == m_UpscalerQuality) return;
+    m_UpscalerQuality = quality;
+
+    if (m_Upscaler && m_UpscalerType > 0) {
+        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+        u32 renderW, renderH;
+        Renderer::IUpscaler::GetRenderResolution(
+            extent.width, extent.height,
+            static_cast<Renderer::UpscalerQuality>(quality),
+            renderW, renderH);
+        m_Upscaler->Resize(renderW, renderH, extent.width, extent.height);
+        ENJIN_LOG_INFO(Renderer, "Upscaler quality changed: %ux%u -> %ux%u",
+                       renderW, renderH, extent.width, extent.height);
+    }
 }
 
 } // namespace ECS

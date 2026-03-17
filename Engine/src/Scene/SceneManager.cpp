@@ -31,6 +31,14 @@ void SceneManager::NewProject(const std::string& projectName) {
     m_CollisionGroupNames.clear();
     m_CollisionGroupNames.resize(32);
     m_CollisionGroupNames[0] = "Default";
+    m_EnableHRTF = true;
+    m_EnableOcclusion = true;
+    m_EnableTransmission = true;
+    m_WindowIconPath.clear();
+    m_WindowTitle = "Enjin Game";
+    m_WindowWidth = 1280;
+    m_WindowHeight = 720;
+    m_Fullscreen = false;
 }
 
 bool SceneManager::LoadProject(const std::string& manifestPath) {
@@ -100,7 +108,7 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
         m_PhysicsBackendType = Physics::PhysicsBackendType::Auto;
         if (root.contains("physicsBackend")) {
             int val = root["physicsBackend"].get<int>();
-            if (val >= 0 && val <= 3) m_PhysicsBackendType = static_cast<Physics::PhysicsBackendType>(val);
+            if (val >= 0 && val <= 2) m_PhysicsBackendType = static_cast<Physics::PhysicsBackendType>(val);
         }
 
         // Load project-level render defaults
@@ -125,6 +133,28 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
                 u32 val = fs["backgroundBehavior"].get<u32>();
                 if (val <= 2) m_GameFrameSettings.backgroundBehavior = static_cast<BackgroundBehavior>(val);
             }
+        }
+
+        // Load audio settings
+        if (root.contains("audio") && root["audio"].is_object()) {
+            const auto& audio = root["audio"];
+            if (audio.contains("enableHRTF")) m_EnableHRTF = audio["enableHRTF"].get<bool>();
+            if (audio.contains("enableOcclusion")) m_EnableOcclusion = audio["enableOcclusion"].get<bool>();
+            if (audio.contains("enableTransmission")) m_EnableTransmission = audio["enableTransmission"].get<bool>();
+        }
+
+        // Load window icon path
+        if (root.contains("windowIconPath")) {
+            m_WindowIconPath = root["windowIconPath"].get<std::string>();
+        }
+
+        // Load build config
+        if (root.contains("buildConfig") && root["buildConfig"].is_object()) {
+            const auto& bc = root["buildConfig"];
+            if (bc.contains("windowTitle")) m_WindowTitle = bc["windowTitle"].get<std::string>();
+            if (bc.contains("windowWidth")) m_WindowWidth = bc["windowWidth"].get<u32>();
+            if (bc.contains("windowHeight")) m_WindowHeight = bc["windowHeight"].get<u32>();
+            if (bc.contains("fullscreen")) m_Fullscreen = bc["fullscreen"].get<bool>();
         }
 
         ENJIN_LOG_INFO(Asset, "Loaded project '%s' with %zu scenes from %s",
@@ -181,13 +211,54 @@ bool SceneManager::SaveProject(const std::string& manifestPath) const {
         frameSettingsJson["backgroundBehavior"] = static_cast<u32>(m_GameFrameSettings.backgroundBehavior);
         root["frameSettings"] = frameSettingsJson;
 
-        std::ofstream file(manifestPath);
-        if (!file.is_open()) {
-            ENJIN_LOG_ERROR(Asset, "Failed to write project file: %s", manifestPath.c_str());
-            return false;
+        // Save audio settings
+        nlohmann::json audioJson;
+        audioJson["enableHRTF"] = m_EnableHRTF;
+        audioJson["enableOcclusion"] = m_EnableOcclusion;
+        audioJson["enableTransmission"] = m_EnableTransmission;
+        root["audio"] = audioJson;
+
+        // Save window icon path
+        if (!m_WindowIconPath.empty()) {
+            root["windowIconPath"] = m_WindowIconPath;
         }
-        file << root.dump(2);
-        file.close();
+
+        // Save build config
+        nlohmann::json buildConfigJson;
+        buildConfigJson["windowTitle"] = m_WindowTitle;
+        buildConfigJson["windowWidth"] = m_WindowWidth;
+        buildConfigJson["windowHeight"] = m_WindowHeight;
+        buildConfigJson["fullscreen"] = m_Fullscreen;
+        root["buildConfig"] = buildConfigJson;
+
+        // Atomic file save: write to temp file, then rename
+        std::string tmpPath = manifestPath + ".tmp";
+        {
+            std::ofstream file(tmpPath);
+            if (!file.is_open()) {
+                ENJIN_LOG_ERROR(Asset, "Failed to open temp file for writing: %s", tmpPath.c_str());
+                return false;
+            }
+            file << root.dump(2);
+            file.close();
+
+            if (!file.good()) {
+                std::error_code ec;
+                std::filesystem::remove(tmpPath, ec);
+                ENJIN_LOG_ERROR(Asset, "Write failed for temp file: %s", tmpPath.c_str());
+                return false;
+            }
+        }
+
+        {
+            std::error_code ec;
+            std::filesystem::rename(tmpPath, manifestPath, ec);
+            if (ec) {
+                std::filesystem::remove(tmpPath, ec);
+                ENJIN_LOG_ERROR(Asset, "Failed to rename temp file to project file: %s", ec.message().c_str());
+                return false;
+            }
+        }
 
         ENJIN_LOG_INFO(Asset, "Saved project '%s' to %s", m_ProjectName.c_str(), manifestPath.c_str());
         return true;

@@ -70,7 +70,7 @@ void VulkanPipeline::Bind(VkCommandBuffer commandBuffer) {
 }
 
 bool VulkanPipeline::CreateDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 14> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 18> bindings{};
 
     // UBO binding 0: model/view/projection matrices (vertex shader)
     bindings[0].binding = 0;
@@ -169,6 +169,34 @@ bool VulkanPipeline::CreateDescriptorSetLayout() {
     bindings[13].descriptorCount = 1;
     bindings[13].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[13].pImmutableSamplers = nullptr;
+
+    // SSBO binding 14: clustered lighting grid (fragment shader)
+    bindings[14].binding = 14;
+    bindings[14].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[14].descriptorCount = 1;
+    bindings[14].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[14].pImmutableSamplers = nullptr;
+
+    // SSBO binding 15: clustered lighting index list (fragment shader)
+    bindings[15].binding = 15;
+    bindings[15].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[15].descriptorCount = 1;
+    bindings[15].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[15].pImmutableSamplers = nullptr;
+
+    // Sampler binding 16: virtual texturing indirection texture (fragment shader)
+    bindings[16].binding = 16;
+    bindings[16].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[16].descriptorCount = 1;
+    bindings[16].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[16].pImmutableSamplers = nullptr;
+
+    // Sampler binding 17: virtual texturing physical atlas (fragment shader)
+    bindings[17].binding = 17;
+    bindings[17].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[17].descriptorCount = 1;
+    bindings[17].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[17].pImmutableSamplers = nullptr;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -335,7 +363,7 @@ bool VulkanPipeline::CreatePipeline(
     multisampling.alphaToCoverageEnable = VK_FALSE;
     multisampling.alphaToOneEnable = VK_FALSE;
 
-    // Color blending
+    // Color blending — supports MRT (multiple color attachments for velocity buffer)
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
                                            VK_COLOR_COMPONENT_G_BIT |
@@ -349,13 +377,23 @@ bool VulkanPipeline::CreatePipeline(
     colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
     colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
+    // Velocity attachment: no blending, write RG only
+    VkPipelineColorBlendAttachmentState velocityBlendAttachment{};
+    velocityBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
+    velocityBlendAttachment.blendEnable = VK_FALSE;
+
+    // Build attachment array: [0]=color, [1]=velocity (if MRT)
+    std::vector<VkPipelineColorBlendAttachmentState> blendAttachments;
+    u32 actualColorCount = config.hasColorAttachment ? config.colorAttachmentCount : 0;
+    if (actualColorCount >= 1) blendAttachments.push_back(colorBlendAttachment);
+    if (actualColorCount >= 2) blendAttachments.push_back(velocityBlendAttachment);
+
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
     colorBlending.logicOp = VK_LOGIC_OP_COPY;
-    // For depth-only passes (shadow mapping), no color attachments
-    colorBlending.attachmentCount = config.hasColorAttachment ? 1 : 0;
-    colorBlending.pAttachments = config.hasColorAttachment ? &colorBlendAttachment : nullptr;
+    colorBlending.attachmentCount = static_cast<u32>(blendAttachments.size());
+    colorBlending.pAttachments = blendAttachments.empty() ? nullptr : blendAttachments.data();
     colorBlending.blendConstants[0] = 0.0f;
     colorBlending.blendConstants[1] = 0.0f;
     colorBlending.blendConstants[2] = 0.0f;

@@ -1011,8 +1011,9 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
     u32 samplerBinding = 3; // Start after existing bindings 0-2
     std::unordered_map<u32, u32> nodeSamplerBinding;
     for (u32 nid : sorted) {
-        auto* node = nodeMap[nid];
-        if (!node) continue;
+        auto it = nodeMap.find(nid);
+        if (it == nodeMap.end() || !it->second) continue;
+        auto* node = it->second;
         if (node->type == ShaderNodeType::SampleTexture2D ||
             node->type == ShaderNodeType::SampleCubemap ||
             node->type == ShaderNodeType::TextureParameter ||
@@ -1024,8 +1025,9 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
     // --- Generate fragment shader body ---
     std::string body;
     for (u32 nid : sorted) {
-        auto* node = nodeMap[nid];
-        if (!node) continue;
+        auto it = nodeMap.find(nid);
+        if (it == nodeMap.end() || !it->second) continue;
+        auto* node = it->second;
 
         std::string var = NodeVar(nid);
         const char* outType = NodeOutType(node->type);

@@ -58,6 +58,7 @@ private:
     void SyncECSToBox2D();
     void SyncBox2DToECS();
     void SyncJointsToBox2D();
+    void ApplyGravityZones();
     void ProcessEvents();
 
     // Body management

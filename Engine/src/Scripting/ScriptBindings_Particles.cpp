@@ -9,7 +9,7 @@
 using namespace Enjin;
 
 #define AS_CHECK(expr) \
-    do { int _r = (expr); assert(_r >= 0); (void)_r; } while(0)
+    do { int _r = (expr); if (_r < 0) { ENJIN_LOG_ERROR(Script, "AS registration failed (code %d) at %s:%d", _r, __FILE__, __LINE__); } } while(0)
 
 extern ECS::World* s_BindingsWorld;
 
@@ -101,6 +101,12 @@ static void Particle_SetGravity(u64 entity, float gx, float gy, float gz) {
     if (emitter) emitter->gravity = Math::Vector3(gx, gy, gz);
 }
 
+static void Particle_ApplyPreset(u64 entity, const std::string& preset) {
+    if (!s_BindingsWorld) return;
+    auto* emitter = s_BindingsWorld->GetComponent<ECS::ParticleEmitterComponent>(entity);
+    if (emitter) ECS::ApplyParticlePreset(*emitter, preset);
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
@@ -140,6 +146,10 @@ void RegisterParticleBindings(asIScriptEngine* engine) {
         asFUNCTION(Particle_SetLoop), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Particle_SetGravity(uint64, float, float, float)",
         asFUNCTION(Particle_SetGravity), asCALL_CDECL));
+
+    // Preset
+    AS_CHECK(engine->RegisterGlobalFunction("void Particle_ApplyPreset(uint64, const string &in)",
+        asFUNCTION(Particle_ApplyPreset), asCALL_CDECL));
 }
 
 } // namespace Scripting

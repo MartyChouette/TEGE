@@ -52,7 +52,7 @@ void main() {
     aoPayload = 0.0;  // Assume occluded
 
     traceRayEXT(topLevelAS,
-        gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
+        gl_RayFlagsTerminateOnFirstHitEXT,
         0xFF, 0, 0, 0,
         rayOrigin, 0.001,
         rayDir, uLight.aoRadius,

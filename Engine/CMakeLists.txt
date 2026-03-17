@@ -67,7 +67,9 @@ target_link_libraries(EnjinEngine PUBLIC
 target_compile_features(EnjinEngine PUBLIC cxx_std_20)
 
 # Platform-specific networking and system libraries
-if(WIN32)
+if(ENJIN_PLATFORM_WEB)
+    # Emscripten provides networking via fetch API and WebSocket — no native libs needed
+elseif(WIN32)
     target_link_libraries(EnjinEngine PUBLIC ws2_32 winhttp)
 elseif(UNIX)
     # Linux/macOS: POSIX sockets are in libc (no extra link needed),
@@ -87,21 +89,29 @@ if(MSVC)
     target_compile_options(EnjinEngine PRIVATE /bigobj)
 endif()
 
-# Find Vulkan
-find_package(Vulkan REQUIRED)
-target_link_libraries(EnjinEngine PUBLIC Vulkan::Vulkan)
-
-# GLFW is already linked via EnjinCore, no need to link again
-# But we can verify it's available
-if(TARGET glfw)
-    message(STATUS "GLFW found via EnjinCore")
-elseif(TARGET glfw3)
-    message(STATUS "GLFW3 found")
+# --- Renderer backend selection (Vulkan vs WebGPU) ---
+if(ENJIN_PLATFORM_WEB)
+    # WebGPU backend — Emscripten provides <webgpu/webgpu.h> via -sUSE_WEBGPU=1
+    target_compile_definitions(EnjinEngine PUBLIC ENJIN_RENDERER_WEBGPU=1)
+    message(STATUS "Renderer backend: WebGPU (Emscripten)")
 else()
-    # GLFW should be found by Core, but check anyway
-    find_package(glfw3 QUIET)
-    if(glfw3_FOUND)
-        target_link_libraries(EnjinEngine PUBLIC glfw)
+    # Vulkan backend (desktop)
+    find_package(Vulkan REQUIRED)
+    target_link_libraries(EnjinEngine PUBLIC Vulkan::Vulkan)
+    message(STATUS "Renderer backend: Vulkan")
+
+    # GLFW is already linked via EnjinCore, no need to link again
+    # But we can verify it's available
+    if(TARGET glfw)
+        message(STATUS "GLFW found via EnjinCore")
+    elseif(TARGET glfw3)
+        message(STATUS "GLFW3 found")
+    else()
+        # GLFW should be found by Core, but check anyway
+        find_package(glfw3 QUIET)
+        if(glfw3_FOUND)
+            target_link_libraries(EnjinEngine PUBLIC glfw)
+        endif()
     endif()
 endif()
 
@@ -145,12 +155,7 @@ if(ENJIN_PHYSICS_BOX2D)
     message(STATUS "Box2D v3 enabled")
 endif()
 
-# Built-in SimplePhysics fallback (legacy) — can be disabled when Jolt+Box2D are available
-option(ENJIN_PHYSICS_SIMPLE "Enable built-in SimplePhysics fallback (legacy)" ON)
-if(ENJIN_PHYSICS_SIMPLE)
-    target_compile_definitions(EnjinEngine PUBLIC ENJIN_PHYSICS_SIMPLE)
-    message(STATUS "SimplePhysics fallback enabled")
-endif()
+# SimplePhysics legacy backend — REMOVED (source files deleted, Jolt + Box2D are production backends)
 
 # Intel Open Image Denoise — optional alternative RT denoiser (OFF by default, requires OIDN install)
 option(ENJIN_RAYTRACING_OIDN "Enable Intel OIDN denoiser backend for ray tracing" OFF)
@@ -163,6 +168,113 @@ if(ENJIN_RAYTRACING_OIDN)
     else()
         message(WARNING "OIDN not found — install Intel OIDN and set OpenImageDenoise_DIR, or disable ENJIN_RAYTRACING_OIDN")
     endif()
+endif()
+
+# NVIDIA OptiX AI Denoiser — optional GPU-based RT denoiser (OFF by default, requires OptiX SDK + CUDA)
+option(ENJIN_RAYTRACING_OPTIX "Enable NVIDIA OptiX AI Denoiser for ray tracing" OFF)
+if(ENJIN_RAYTRACING_OPTIX)
+    find_package(CUDAToolkit QUIET)
+    if(CUDAToolkit_FOUND)
+        find_path(OptiX_INCLUDE_DIR optix.h
+            HINTS "$ENV{OptiX_INSTALL_DIR}/include" "$ENV{OPTIX_PATH}/include"
+            PATH_SUFFIXES include)
+        if(OptiX_INCLUDE_DIR)
+            target_include_directories(EnjinEngine PUBLIC ${OptiX_INCLUDE_DIR})
+            target_link_libraries(EnjinEngine PUBLIC CUDA::cudart)
+            target_compile_definitions(EnjinEngine PUBLIC ENJIN_RAYTRACING_OPTIX)
+            message(STATUS "NVIDIA OptiX AI Denoiser enabled (OptiX: ${OptiX_INCLUDE_DIR})")
+        else()
+            message(WARNING "OptiX headers not found — set OptiX_INSTALL_DIR or OPTIX_PATH, or disable ENJIN_RAYTRACING_OPTIX")
+        endif()
+    else()
+        message(WARNING "CUDA not found — install CUDA Toolkit, or disable ENJIN_RAYTRACING_OPTIX")
+    endif()
+endif()
+
+# Steam Audio HRTF binaural rendering — optional, OFF by default
+option(ENJIN_AUDIO_STEAM_AUDIO "Enable Steam Audio HRTF binaural rendering" OFF)
+if(ENJIN_AUDIO_STEAM_AUDIO)
+    set(STEAM_AUDIO_DIR "${CMAKE_SOURCE_DIR}/third_party/steamaudio")
+    if(EXISTS "${STEAM_AUDIO_DIR}/include/phonon.h")
+        target_include_directories(EnjinEngine PUBLIC "${STEAM_AUDIO_DIR}/include")
+        if(WIN32)
+            target_link_libraries(EnjinEngine PUBLIC "${STEAM_AUDIO_DIR}/lib/windows-x64/phonon.lib")
+        elseif(APPLE)
+            target_link_libraries(EnjinEngine PUBLIC "${STEAM_AUDIO_DIR}/lib/osx/libphonon.dylib")
+        else()
+            target_link_libraries(EnjinEngine PUBLIC "${STEAM_AUDIO_DIR}/lib/linux-x64/libphonon.so")
+        endif()
+        target_compile_definitions(EnjinEngine PUBLIC ENJIN_AUDIO_STEAM_AUDIO)
+        message(STATUS "Steam Audio HRTF enabled")
+    else()
+        message(WARNING "ENJIN_AUDIO_STEAM_AUDIO enabled but SDK not found at third_party/steamaudio/")
+    endif()
+endif()
+
+# --- Performance Optimization Features ---
+
+# Clustered forward lighting — replaces brute-force light loop with spatial cluster lookup (ON by default)
+option(ENJIN_CLUSTERED_LIGHTING "Enable clustered forward lighting" ON)
+if(ENJIN_CLUSTERED_LIGHTING)
+    target_compile_definitions(EnjinEngine PUBLIC ENJIN_CLUSTERED_LIGHTING)
+    message(STATUS "Clustered forward lighting enabled")
+endif()
+
+# Variable Rate Shading — per-tile shading rate control via VK_KHR_fragment_shading_rate (OFF by default)
+option(ENJIN_VRS "Enable Variable Rate Shading" OFF)
+if(ENJIN_VRS)
+    target_compile_definitions(EnjinEngine PUBLIC ENJIN_VRS)
+    message(STATUS "Variable Rate Shading enabled")
+endif()
+
+# Virtual texturing — page-based streaming with feedback buffer (OFF by default)
+option(ENJIN_VIRTUAL_TEXTURING "Enable virtual texturing (page-based streaming)" OFF)
+if(ENJIN_VIRTUAL_TEXTURING)
+    target_compile_definitions(EnjinEngine PUBLIC ENJIN_VIRTUAL_TEXTURING)
+    message(STATUS "Virtual texturing enabled")
+endif()
+
+# Visibility buffer — alternative render path with deferred material evaluation (OFF by default)
+option(ENJIN_VISIBILITY_BUFFER "Enable visibility buffer render path" OFF)
+if(ENJIN_VISIBILITY_BUFFER)
+    target_compile_definitions(EnjinEngine PUBLIC ENJIN_VISIBILITY_BUFFER)
+    message(STATUS "Visibility buffer render path enabled")
+endif()
+
+# --- Temporal Upscaling ---
+
+# AMD FSR 2 — temporal upscaler, works on all GPUs (OFF by default, requires FidelityFX SDK)
+option(ENJIN_UPSCALING_FSR2 "Enable AMD FSR 2 temporal upscaling" OFF)
+if(ENJIN_UPSCALING_FSR2)
+    set(FSR2_SDK_DIR "${CMAKE_SOURCE_DIR}/third_party/FidelityFX-SDK" CACHE PATH "Path to FidelityFX SDK")
+    if(EXISTS "${FSR2_SDK_DIR}/include/FidelityFX/host/ffx_fsr2.h")
+        target_include_directories(EnjinEngine PUBLIC "${FSR2_SDK_DIR}/include")
+        find_library(FSR2_API_LIB ffx_fsr2_api HINTS "${FSR2_SDK_DIR}/lib")
+        find_library(FSR2_VK_LIB ffx_fsr2_api_vk HINTS "${FSR2_SDK_DIR}/lib")
+        if(FSR2_API_LIB AND FSR2_VK_LIB)
+            target_link_libraries(EnjinEngine PUBLIC ${FSR2_API_LIB} ${FSR2_VK_LIB})
+            target_compile_definitions(EnjinEngine PUBLIC ENJIN_UPSCALING_FSR2)
+            message(STATUS "AMD FSR 2 temporal upscaling enabled")
+        else()
+            message(WARNING "FSR 2 SDK found but libraries not located — set FSR2_SDK_DIR or disable ENJIN_UPSCALING_FSR2")
+        endif()
+    else()
+        message(WARNING "FSR 2 SDK not found at ${FSR2_SDK_DIR} — set FSR2_SDK_DIR or disable ENJIN_UPSCALING_FSR2")
+    endif()
+endif()
+
+# NVIDIA DLSS — temporal upscaler, NVIDIA GPUs only (OFF by default, requires Streamline SDK)
+option(ENJIN_UPSCALING_DLSS "Enable NVIDIA DLSS temporal upscaling" OFF)
+if(ENJIN_UPSCALING_DLSS)
+    target_compile_definitions(EnjinEngine PUBLIC ENJIN_UPSCALING_DLSS)
+    message(STATUS "NVIDIA DLSS temporal upscaling enabled (stub — SDK integration pending)")
+endif()
+
+# Intel XeSS — temporal upscaler, all GPUs via DP4a (OFF by default, requires XeSS SDK)
+option(ENJIN_UPSCALING_XESS "Enable Intel XeSS temporal upscaling" OFF)
+if(ENJIN_UPSCALING_XESS)
+    target_compile_definitions(EnjinEngine PUBLIC ENJIN_UPSCALING_XESS)
+    message(STATUS "Intel XeSS temporal upscaling enabled (stub — SDK integration pending)")
 endif()
 
 # Optional: Steam integration (cloud saves, achievements)

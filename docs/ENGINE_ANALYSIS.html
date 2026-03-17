@@ -149,6 +149,11 @@
             font-size: 1.25em; font-weight: 600;
             color: var(--primary-bright); margin: 36px 0 16px;
         }
+        h4 {
+            font-family: inherit;
+            font-size: 1.05em; font-weight: 600;
+            color: var(--primary-bright); margin: 24px 0 12px;
+        }
         p.desc { color: var(--text-secondary); margin-bottom: 24px; font-size: 0.95em; }
 
         /* ===== TABLES ===== */
@@ -264,58 +269,6 @@
         .highlight-box strong { color: var(--text); }
         .highlight-box p { color: var(--text-secondary); margin: 0; }
 
-        /* ===== TIMELINE ===== */
-        .timeline-scroll {
-            overflow-x: auto; margin: 24px 0; padding-bottom: 12px;
-        }
-        .timeline-scroll::-webkit-scrollbar { height: 6px; }
-        .timeline-scroll::-webkit-scrollbar-track { background: var(--surface); border-radius: 3px; }
-        .timeline-scroll::-webkit-scrollbar-thumb { background: var(--border-bright); border-radius: 3px; }
-        .timeline-track {
-            display: flex; gap: 4px; padding: 20px 16px;
-            min-width: max-content; position: relative;
-        }
-        .timeline-track::before {
-            content: ''; position: absolute;
-            top: 50%; left: 16px; right: 16px;
-            height: 2px; background: var(--border);
-        }
-        .timeline-phase {
-            position: relative; z-index: 1;
-            background: var(--surface2); border: 1px solid var(--border);
-            border-radius: 12px; padding: 16px 18px;
-            min-width: 195px; max-width: 225px;
-            border-top: 3px solid var(--phase-color, var(--primary));
-            opacity: 0; transform: translateY(16px);
-            transition: all 0.4s ease;
-        }
-        .timeline-phase.visible { opacity: 1; transform: translateY(0); }
-        .timeline-phase:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-            border-color: var(--phase-color, var(--primary));
-        }
-        .timeline-phase.current::after {
-            content: ''; position: absolute; top: -3px; left: 50%;
-            transform: translateX(-50%); width: 12px; height: 12px;
-            background: var(--phase-color); border-radius: 50%;
-            animation: pulse 2s ease-in-out infinite;
-        }
-        @keyframes pulse {
-            0%, 100% { box-shadow: 0 0 0 0 var(--phase-color); opacity: 1; }
-            50% { box-shadow: 0 0 0 8px transparent; opacity: 0.7; }
-        }
-        .timeline-phase.planned { border-style: dashed; opacity: 0.5; }
-        .timeline-phase.planned.visible { opacity: 0.6; }
-        .timeline-phase h4 {
-            font-family: inherit;
-            margin: 0 0 2px; color: var(--phase-color, var(--primary));
-            font-size: 0.92em; font-weight: 600;
-        }
-        .timeline-phase .date { font-size: 0.72em; color: var(--text-muted); margin-bottom: 8px; font-family: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace; }
-        .timeline-phase ul { font-size: 0.78em; padding-left: 14px; color: var(--text-secondary); }
-        .timeline-phase li { margin: 2px 0; }
-
         /* ===== COMPARISON GRID ===== */
         .comparison-grid {
             display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0;
@@ -339,6 +292,22 @@
         .info-list { padding-left: 24px; margin: 16px 0; }
         .info-list li { margin: 10px 0; color: var(--text-secondary); line-height: 1.6; }
         .info-list li strong { color: var(--text); }
+
+        /* ===== INLINE CODE ===== */
+        code {
+            background: var(--surface2); color: var(--cyan);
+            padding: 2px 6px; border-radius: 4px;
+            font-family: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+            font-size: 0.88em;
+        }
+        pre code {
+            display: block; padding: 16px; background: var(--surface);
+            border: 1px solid var(--border); border-radius: 8px;
+            overflow-x: auto; color: var(--text);
+        }
+
+        /* ===== STRIKETHROUGH ===== */
+        del { color: var(--text-muted); text-decoration: line-through; }
 
         /* ===== BACK TO TOP ===== */
         #back-to-top {
@@ -380,18 +349,17 @@
 
 <div id="reading-progress"></div>
 
-
 <div class="main-content">
 
     <!-- HERO -->
     <div class="hero" id="hero">
         <div class="container hero-inner">
             <h1>Enjin Engine</h1>
-            <p class="subtitle">COMPREHENSIVE TECHNICAL ANALYSIS // 2026-02-18 // C++20 | VULKAN | CMAKE</p>
+            <p class="subtitle">COMPREHENSIVE TECHNICAL ANALYSIS // 2026-03-16 // C++20 | VULKAN | CMAKE</p>
             <div class="hero-stats">
                 <div class="stat-card">
                     <span class="stat-icon">&#9889;</span>
-                    <div class="stat-number" data-target="49" data-suffix="">0</div>
+                    <div class="stat-number" data-target="56" data-suffix="">0</div>
                     <div class="stat-label">Full Features</div>
                 </div>
                 <div class="stat-card">
@@ -411,7 +379,7 @@
                 </div>
                 <div class="stat-card">
                     <span class="stat-icon">&#128142;</span>
-                    <div class="stat-number" data-target="19" data-suffix="">0</div>
+                    <div class="stat-number" data-target="25" data-suffix="">0</div>
                     <div class="stat-label">RT Shaders</div>
                 </div>
             </div>
@@ -419,612 +387,2257 @@
     </div>
 
     <div class="container">
+        <!-- Sections generated from markdown -->
+        <section class="section" id="section-0" style="display:none;"></section>
 
-        <!-- SECTION 1 -->
+        </section>
         <section class="section" id="section-1">
             <div class="section-header">
                 <span class="section-num">1</span>
-                <h2 class="section-title">System Architecture Diagram</h2>
-            </div>
-            <p class="desc">Strict 3-layer separation: Core (zero engine deps), Engine, and Application (Editor/Player). All inter-system communication flows through well-defined interfaces.</p>
-
+                <h2 class="section-title">1. System Architecture Diagram</h2>
+            </div><p class="desc">The Enjin engine is organized in a strict layered architecture. The <strong>Core</strong> layer has zero engine dependencies, the <strong>Engine</strong> layer builds on Core, and the <strong>Application</strong> layer (Editor, Player) consumes Engine. All inter-system communication flows through well-defined interfaces.</p>
             <div class="diagram-container">
                 <div class="diagram-controls">
-                    <button onclick="zoomDiagram('arch-diagram', 1.2)">Zoom +</button>
-                    <button onclick="zoomDiagram('arch-diagram', 0.8)">Zoom &minus;</button>
-                    <button onclick="resetDiagram('arch-diagram')">Reset</button>
+                    <button onclick="zoomDiagram('mermaid-100', 1.2)">Zoom +</button>
+                    <button onclick="zoomDiagram('mermaid-100', 0.8)">Zoom &minus;</button>
+                    <button onclick="resetDiagram('mermaid-100')">Reset</button>
                 </div>
                 <div class="diagram-viewport">
-<pre class="mermaid" id="arch-diagram">
+<pre class="mermaid" id="mermaid-100">
 graph TB
     subgraph ApplicationLayer["Application Layer"]
-        Editor["Editor App&lt;br/&gt;(EditorLayer, ImGui)"]
-        Player["Player App&lt;br/&gt;(Standalone Runtime)"]
-        Hub["Hub App&lt;br/&gt;(Project Launcher)"]
+        Editor["Editor App<br/>(EditorLayer, ImGui)"]
+        Player["Player App<br/>(Standalone Runtime)"]
+        Hub["Hub App<br/>(Project Launcher)"]
     end
 
     subgraph EditorSystems["Editor Systems"]
-        PlayMode["PlayMode&lt;br/&gt;(Play/Pause/Stop)"]
-        PlayModeDiff["PlayModeDiff&lt;br/&gt;(Cherry-pick Changes)"]
-        ScenePicker["ScenePicker&lt;br/&gt;(Ray Cast Selection)"]
-        Gizmos["ImGuizmo&lt;br/&gt;(Transform Gizmos)"]
-        TemplateSystem["Template System&lt;br/&gt;(44 Templates + Creator&lt;br/&gt;+ Marketplace)"]
-        InspectorUndo["Inspector Undo/Redo&lt;br/&gt;(PropertyEditCommand)"]
-        Panels["32 Editor Panels&lt;br/&gt;(Hierarchy, Inspector,&lt;br/&gt;Console, Asset Browser...)"]
-        Notifications["Toast Notifications&lt;br/&gt;(4 Types, Slide-in)"]
-        CommandPalette["Command Palette&lt;br/&gt;(Ctrl+P, Fuzzy Search)"]
+        PlayMode["PlayMode<br/>(Play/Pause/Stop)"]
+        PlayModeDiff["PlayModeDiff<br/>(Cherry-pick Changes)"]
+        ScenePicker["ScenePicker<br/>(Ray Cast Selection)"]
+        Gizmos["ImGuizmo<br/>(Transform Gizmos)"]
+        TemplateSystem["Template System<br/>(44 Templates + Creator<br/>+ Marketplace)"]
+        InspectorUndo["Inspector Undo/Redo<br/>(PropertyEditCommand)"]
+        Panels["32 Editor Panels<br/>(Hierarchy, Inspector,<br/>Console, Asset Browser...)"]
+        Notifications["Toast Notifications<br/>(4 Types, Slide-in)"]
+        CommandPalette["Command Palette<br/>(Ctrl+P, Fuzzy Search)"]
     end
 
     subgraph RendererLayer["Renderer"]
-        VulkanContext["VulkanContext&lt;br/&gt;(Instance, Device, Queues)"]
-        VulkanRenderer["VulkanRenderer&lt;br/&gt;(Swapchain, Frame Sync)"]
-        VulkanPipeline["VulkanPipeline&lt;br/&gt;(Graphics Pipeline,&lt;br/&gt;Descriptor Sets)"]
-        VulkanBuffer["VulkanBuffer&lt;br/&gt;(Vertex, Index, Uniform,&lt;br/&gt;Storage Buffers)"]
-        RenderSystem["RenderSystem&lt;br/&gt;(Entity Rendering,&lt;br/&gt;Material Sort, Caching)"]
-        PostProcessing["PostProcessing&lt;br/&gt;(Bloom, Vignette, FXAA,&lt;br/&gt;DoF, Tilt-Shift, SSAO,&lt;br/&gt;God Rays, Caustics)"]
-        ShadowSystem["Shadow System&lt;br/&gt;(4-Cascade CSM, Point&lt;br/&gt;Cubemap, Spot 2D Array)"]
-        SpriteBatch["SpriteBatchRenderer&lt;br/&gt;(GPU Instanced)"]
-        SpriteAtlas["SpriteTextureAtlas&lt;br/&gt;(4096x4096 Shelf-Pack)"]
-        ParticleRenderer["ParticleRenderer&lt;br/&gt;(GPU Instanced Billboards)"]
-        RetroEffects["RetroEffects&lt;br/&gt;(CRT, Pixelation, Dither)"]
-        Skybox["Skybox&lt;br/&gt;(Cubemap, Procedural)"]
+        VulkanContext["VulkanContext<br/>(Instance, Device, Queues)"]
+        VulkanRenderer["VulkanRenderer<br/>(Swapchain, Frame Sync)"]
+        VulkanPipeline["VulkanPipeline<br/>(Graphics Pipeline,<br/>Descriptor Sets)"]
+        VulkanBuffer["VulkanBuffer<br/>(Vertex, Index, Uniform,<br/>Storage Buffers)"]
+        RenderSystem["RenderSystem<br/>(Entity Rendering,<br/>Material Sort, Caching)"]
+        PostProcessing["PostProcessing<br/>(Bloom, Vignette, FXAA/TAA,<br/>DoF, Tilt-Shift, Film Grain,<br/>Color Grading, Stipple/Dither,<br/>SSAO, God Rays, Contact<br/>Shadows, Caustics, Fog Shafts)"]
+        MotionVectors["MotionVectors<br/>(RG16F Per-Pixel Velocity)"]
+        TAA["TAA<br/>(Halton Jitter, Neighborhood<br/>Clamping, History Ping-Pong)"]
+        ShadowSystem["Shadow System<br/>(4-Cascade CSM, Point<br/>Cubemap, Spot 2D Array)"]
+        SpriteBatch["SpriteBatchRenderer<br/>(GPU Instanced)"]
+        SpriteAtlas["SpriteTextureAtlas<br/>(4096x4096 Shelf-Pack)"]
+        ParticleRenderer["ParticleRenderer<br/>(GPU Instanced Billboards,<br/>16384 Particles)"]
+        RetroEffects["RetroEffects<br/>(CRT, Pixelation, Dither)"]
+        Skybox["Skybox<br/>(Cubemap, Procedural,<br/>Solid Color)"]
 
         subgraph RayTracing["Ray Tracing Pipeline"]
-            RTCapabilities["RTCapabilities"]
-            AccelStructures["AccelerationStructureManager"]
-            RTPipeline["RTPipeline + SBT"]
-            RTShadows["RT Shadows"]
-            RTReflections["RT Reflections"]
-            RTAO["RT AO"]
-            RTGI["RT GI"]
-            PathTracer["Path Tracer"]
-            SVGFDenoiser["SVGF Denoiser"]
-            OIDNDenoiser["OIDN Denoiser"]
-            RTCompositor["RT Compositor"]
+            RTCapabilities["RTCapabilities<br/>(Extension Detection)"]
+            AccelStructures["AccelerationStructureManager<br/>(BLAS Cache, TLAS Rebuild)"]
+            RTPipeline["RTPipeline<br/>(SBT Construction)"]
+            RTShadows["RTShadows (R16F)"]
+            RTReflections["RTReflections (RGBA16F)"]
+            RTAO["RTAO (R16F)"]
+            RTGI["RTGI (RGBA16F)"]
+            PathTracer["PathTracer<br/>(Progressive Accumulation)"]
+            SVGFDenoiser["SVGFDenoiser<br/>(3-Pass Compute)"]
+            OIDNDenoiser["OIDNDenoiser<br/>(Intel Neural Denoise)"]
+            RTCompositor["RTCompositor<br/>(Fullscreen Compute)"]
+            MaterialSSBO["Material SSBO<br/>(RT Binding 9)"]
         end
 
         subgraph AdvancedRendering["Advanced Rendering"]
-            SHProbes["SH Light Probes (L2)"]
-            SDFScene["SDF Scene"]
-            OIT["OIT (Weighted Blended)"]
-            CelShading["Cel Shading"]
-            VXGI["Voxel Cone Tracing"]
-            NonEuclidean["Non-Euclidean Geometry"]
-            Metaballs["Metaball Rendering"]
+            SHProbes["SH Light Probes<br/>(L2, Grid Baking)"]
+            SDFScene["SDF Scene<br/>(6 Primitives, 6 Ops)"]
+            OIT["OIT<br/>(Weighted Blended)"]
+            CelShading["Cel Shading<br/>(Band Quantization,<br/>Sobel Outlines)"]
+            VXGI["Voxel Cone Tracing<br/>(Diffuse/Specular GI)"]
+            NonEuclidean["Non-Euclidean Geometry<br/>(Portal, Hyperbolic,<br/>Spherical, Toroidal)"]
+            Metaballs["Metaball Rendering<br/>(Marching Cubes)"]
+        end
+
+        subgraph GPUDriven["GPU-Driven Pipeline"]
+            GPUCulling["GPUCulling<br/>(Two-Phase HiZ<br/>Occlusion Culling)"]
+            ClusteredLighting["ClusteredLighting<br/>(16x9x24 Grid,<br/>Compute Dispatch)"]
+            LODSystem["LOD System<br/>(Screen-Space Sizing,<br/>Hysteresis)"]
+            VRSSystem["Variable Rate Shading<br/>(VK_KHR_fragment_shading_rate)"]
+            VirtualTex["Virtual Texturing<br/>(Page Streaming,<br/>Indirection Table)"]
+            VisBuffer["Visibility Buffer<br/>(Deferred Material Resolve)"]
+            FrameAlloc["FrameAllocator<br/>(Per-Frame Linear Alloc)"]
         end
     end
 
     subgraph ECSLayer["ECS Architecture"]
-        World["ECS::World&lt;br/&gt;(Thread-Safe, Deferred Destroy)"]
+        World["ECS::World<br/>(Thread-Safe, Deferred<br/>Destroy, Name Cache)"]
+        Entity["ECS::Entity (u64 ID)"]
         Components["70+ Component Types"]
 
+        subgraph ComponentCategories["Component Categories"]
+            CoreComponents["Core: Transform, Mesh,<br/>Material, Light, Camera,<br/>Name, Notes"]
+            PhysicsComponents["Physics: Rigidbody,<br/>Box/Sphere/Capsule Collider,<br/>6 Joint Types, Ragdoll"]
+            GameplayComponents["Gameplay: Health, Damage,<br/>Inventory, SaveData,<br/>Quest, HUD, Cinematic"]
+            VisualComponents["Visual: Sprite2D, Tilemap,<br/>ParticleEmitter, Billboard,<br/>AnimatedSprite2D"]
+            ControllerComponents["Controllers: Platformer2D,<br/>TopDown2D/3D, FPS, TPS,<br/>Vehicle"]
+            AIComponents["AI: AIController,<br/>BehaviorTree, Waypoint,<br/>FollowTarget, LookAtTarget"]
+            NetworkComponents["Network: NetworkIdentity,<br/>NetworkTransform"]
+        end
+
         subgraph Systems["ECS Systems"]
-            ControllerSystem["ControllerSystem (6 Types)"]
-            AISystem["AISystem (Patrol/Chase/Flee)"]
+            ControllerSystem["ControllerSystem<br/>(6 Controller Types)"]
+            AISystem["AISystem<br/>(Patrol/Chase/Flee/<br/>Wander/Navmesh)"]
         end
     end
 
     subgraph PhysicsLayer["Physics"]
-        IPhysicsBackend["IPhysicsBackend (3D)"]
-        IPhysicsBackend2D["IPhysicsBackend2D (2D)"]
-        JoltBackend["Jolt v5.2.0"]
-        Box2DBackend["Box2D v3.0.0"]
-        SimplePhysics["SimplePhysics (Legacy)"]
-        PhysicsFactory["PhysicsBackendFactory"]
+        IPhysicsBackend["IPhysicsBackend<br/>(Abstract 3D Interface)"]
+        IPhysicsBackend2D["IPhysicsBackend2D<br/>(Abstract 2D Interface)"]
+        JoltBackend["JoltBackend<br/>(Jolt v5.2.0, Multi-threaded,<br/>CCD, 6 Joint Types)"]
+        Box2DBackend["Box2DBackend<br/>(Box2D v3.0.0, Sub-stepping,<br/>5 Joint Types, CCD)"]
+        PhysicsFactory["PhysicsBackendFactory<br/>(Auto/Jolt/Box2D)"]
+        SpatialHash["SpatialHashGrid<br/>(Broad-Phase O(N) vs O(N^2))"]
+    end
+
+    subgraph AudioLayer["Audio"]
+        SimpleAudio["SimpleAudio<br/>(miniaudio Backend)"]
+        SteamAudio["SteamAudioProcessor<br/>(HRTF Binaural Rendering,<br/>Occlusion + Transmission,<br/>Geometry-Aware 3D)"]
+        Audio3D["3D Spatialization"]
+        AudioMixing["Multi-Channel Mixing"]
+        MIDIInput["MIDI Input<br/>(WinMM, 12 AS Bindings)"]
+        AudioEventGraph["Audio Event Graph<br/>(Runtime Execution,<br/>.enjaudiopkg)"]
     end
 
     subgraph ScriptingLayer["Scripting"]
-        AngelScript["AngelScript (~844 Bindings)"]
-        VisualScript["Visual Scripting (222+ Nodes)"]
-        FlashShim["Flash API Shim (~40 Bindings)"]
+        AngelScript["AngelScript Engine<br/>(~844 Bindings,<br/>Hot-Reload)"]
+        TegeBehavior["TegeBehavior<br/>(Base Script Class)"]
+        VisualScript["Visual Scripting<br/>(222+ Nodes, Debugger,<br/>Profiler)"]
+        StateMachine["State Machines<br/>(Script Callbacks)"]
+        Coroutines["Coroutines<br/>(Yield/Resume)"]
+        EventBus["EventBus<br/>(Pub/Sub Events)"]
+        FlashShim["Flash API Shim<br/>(~40 Bindings,<br/>AS2/AS3 Transpiler)"]
+        DataAssets["DataAsset System<br/>(Schemas + Instances)"]
     end
 
-    subgraph CoreLayer["Core Layer"]
+    subgraph EffectsLayer["Effects & Procedural"]
+        Weather["WeatherSystem<br/>(Rain, Snow, Fog, Storm)"]
+        Water3D["Water3D<br/>(Gerstner Waves)"]
+        InteractiveWater["Interactive Water<br/>(Spring-Damper, Buoyancy)"]
+        ParticleSystem["ParticleSystem<br/>(CPU Sim, 5 Shapes,<br/>12 Presets)"]
+        FluidSim["Fluid Simulation<br/>(Stable Fluids, 5 Presets)"]
+        FluidTerrain["FluidTerrainCoupling<br/>(Erosion + Accumulate)"]
+        ReactionDiffusion["Reaction-Diffusion<br/>(Gray-Scott, 9 Presets)"]
+        CellularAutomata["CA Geometry<br/>(7 Rules, 3 Mesh Modes)"]
+        Physarum["Physarum Simulation<br/>(50K+ Agents)"]
+        FourierMesh["Fourier Mesh<br/>(DFT, 3D Extrusion)"]
+        Projection4D["4D Projection<br/>(5 Polytopes)"]
+        WindSystem["Wind System"]
+        WorldTime["World Time / Seasons"]
+
+        subgraph ProceduralGen["Procedural Generation"]
+            CellularAutomataGen["Cellular Automata<br/>(Cave Gen)"]
+            BSP["BSP<br/>(Room-Corridor Dungeons)"]
+            DiamondSquare["Diamond-Square<br/>(Heightmap Terrain)"]
+            LSystem["L-System<br/>(3D Stochastic Rules)"]
+            WFC["Wave Function Collapse<br/>(Tile-Based)"]
+            Voronoi["Voronoi<br/>(3 Distance Metrics)"]
+            RandomWalker["Random Walker"]
+            Grammar["Grammar Rules"]
+            PrefabAssembler["Prefab Assembler<br/>(Snap-Together Rooms)"]
+            FractalTerrain["Fractal Terrain<br/>(fBm, Erosion)"]
+        end
+    end
+
+    subgraph NetworkingLayer["Networking"]
+        LANMultiplayer["LAN Multiplayer<br/>(Host-Authoritative UDP)"]
+        NetworkSecurity["Network Security<br/>(HMAC-SHA256, Replay<br/>Protection)"]
+        HTTPClient["HTTP Client<br/>(WinHTTP + libcurl)"]
+        NewgroundsAPI["Newgrounds.io API<br/>(Medals, Scores, Cloud)"]
+        SteamBackend["Steam Save Backend<br/>(ENJIN_STEAM)"]
+    end
+
+    subgraph GUILayer["GUI / UI System"]
+        UICanvas["UICanvasComponent<br/>(Element Tree, Themes)"]
+        UISystem["UISystem<br/>(Layout, Render, Input,<br/>Focus Navigation)"]
+        UIWidgets["8 Widget Types<br/>(Panel, Button, Label,<br/>Image, Progress, Slider,<br/>Checkbox, Toggle)"]
+        NineSlice["Nine-Slice Sprites"]
+        DialogueBox["DialogueBoxComponent<br/>(Auto-Build UI)"]
+        FocusNav["Focus Navigation<br/>(Tab/DPad/Arrow, WCAG)"]
+    end
+
+    subgraph AccessibilityLayer["Accessibility"]
+        ColorblindFilter["Colorblind Filter<br/>(8 Modes + Safe Palettes)"]
+        SubtitleSystem["Subtitle System"]
+        ContentWarning["Content Warning System"]
+        ReducedMotion["Reduced Motion"]
+        ScreenReader["Screen Reader Announcer"]
+        SwitchAccess["Switch Access<br/>(One-Button Scanning)"]
+        DwellClick["Dwell-Click / Sticky Drag"]
+        AltInput["Alternative Input<br/>(Eye Tracking, Head<br/>Tracking, Sip-and-Puff)"]
+        HighContrast["High Contrast Themes<br/>(WCAG AAA 7:1+)"]
+        FontScaling["Font Scaling /<br/>Dyslexia Mode"]
+    end
+
+    subgraph BuildLayer["Build & Assets"]
+        BuildPipeline["BuildPipeline<br/>(Scan, Validate, Pack,<br/>NSIS Installer, CPack)"]
+        AssetPacker["AssetPacker<br/>(.enjpak, CRC32, XOR)"]
+        GLTFLoader["GLTFLoader<br/>(Native glTF/GLB)"]
+        AssimpLoader["AssimpLoader<br/>(FBX/OBJ/DAE/PLY/VOX)"]
+        SceneImporter["SceneImporter<br/>(Auto-Detect Format)"]
+        PrefabManager["PrefabManager<br/>(.enjprefab)"]
+        HTML5Export["HTML5 Export<br/>(Canvas, Preloader,<br/>Newgrounds Template)"]
+        SceneSerializer["SceneSerializer<br/>(JSON)"]
+        LevelStreaming["Level Streaming<br/>(StreamingVolume/Portal)"]
+    end
+
+    subgraph ToolsLayer["Graph Editors & Tools"]
+        ShaderGraph["Shader Graph<br/>(62 Nodes, GLSL Codegen,<br/>.enjshader)"]
+        ParticleGraph["Particle Graph<br/>(Compiler to Emitter,<br/>.enjparticle)"]
+        DialogueEditor["Dialogue Editor<br/>(7 Node Types, .enjdlg)"]
+        BehaviorTreeEditor["Behavior Tree Editor<br/>(20 Node Types)"]
+        QuestFlowEditor["Quest Flow Editor"]
+        TimelineEditor["Timeline Editor<br/>(Flash-Style, Keyframes)"]
+        PixelEditor["Pixel Editor<br/>(8 Tools, 9 Retro Presets)"]
+        VectorDrawing["Vector Drawing Editor<br/>(7 Shapes, SVG Export)"]
+        Profiler["Profiler<br/>(P50/P95/P99, CSV Export)"]
+        PluginSystem["Plugin System<br/>(Hot-Reload, PluginSDK.h)"]
+    end
+
+    subgraph CoreLayer["Core Layer (No Engine Dependencies)"]
         Application["Application"]
         Window["Window (GLFW)"]
-        MathLib["Math Library"]
-        Memory["Memory Allocators"]
-        Logging["Logging"]
+        Input["Input System"]
+        MathLib["Math Library<br/>(Vector, Matrix, Quaternion,<br/>Spline, Noise)"]
+        Memory["Memory Allocators<br/>(Stack, Pool, Linear)"]
+        Logging["Logging<br/>(Thread-Safe, Categorized)"]
+        Platform["Platform Abstraction<br/>(PlatformTarget)"]
+        Types["Type Aliases<br/>(u8-u64, i8-i64, f32/f64)"]
     end
 
+    %% Application -> Editor Systems
     Editor --> PlayMode
     Editor --> Panels
-    Player --> RenderSystem
+    Editor --> ScenePicker
+    Editor --> Gizmos
+    Editor --> TemplateSystem
+    Editor --> Notifications
+    Editor --> CommandPalette
+
+    %% Editor -> Engine
     PlayMode --> RenderSystem
     PlayMode --> PhysicsFactory
     PlayMode --> AngelScript
+    PlayMode --> VisualScript
+    PlayMode --> AISystem
+    PlayMode --> SimpleAudio
+
+    %% Player -> Engine
+    Player --> RenderSystem
+    Player --> PhysicsFactory
+    Player --> AngelScript
+    Player --> VisualScript
+    Player --> ParticleSystem
+    Player --> PostProcessing
+
+    %% Renderer connections
     RenderSystem --> VulkanPipeline
+    RenderSystem --> VulkanBuffer
     RenderSystem --> ShadowSystem
     RenderSystem --> SpriteBatch
-    SpriteBatch --> SpriteAtlas
+    RenderSystem --> SpriteAtlas
+    RenderSystem --> ParticleRenderer
+    RenderSystem --> Skybox
+    RenderSystem --> SHProbes
+    VulkanPipeline --> VulkanContext
+    VulkanBuffer --> VulkanContext
+    VulkanRenderer --> VulkanContext
+    PostProcessing --> VulkanPipeline
+    RetroEffects --> PostProcessing
+
+    %% RT connections
     RenderSystem --> AccelStructures
-    RTPipeline --> SVGFDenoiser
+    AccelStructures --> RTPipeline
+    RTPipeline --> RTShadows
+    RTPipeline --> RTReflections
+    RTPipeline --> RTAO
+    RTPipeline --> RTGI
+    RTPipeline --> PathTracer
+    RTShadows --> SVGFDenoiser
+    RTReflections --> SVGFDenoiser
+    RTAO --> SVGFDenoiser
+    RTGI --> SVGFDenoiser
     SVGFDenoiser --> RTCompositor
+    OIDNDenoiser --> RTCompositor
+
+    %% Physics
     PhysicsFactory --> JoltBackend
     PhysicsFactory --> Box2DBackend
     PhysicsFactory --> SimplePhysics
-    VulkanPipeline --> VulkanContext
-    VulkanRenderer --> VulkanContext
+    JoltBackend --> IPhysicsBackend
+    Box2DBackend --> IPhysicsBackend2D
+    ControllerSystem --> IPhysicsBackend
+    ControllerSystem --> IPhysicsBackend2D
+
+    %% ECS
+    World --> Entity
+    World --> Components
+    RenderSystem --> World
+    ControllerSystem --> World
+    AISystem --> World
+
+    %% Scripting
+    AngelScript --> TegeBehavior
+    AngelScript --> World
+    AngelScript --> SimpleAudio
+    VisualScript --> World
+    VisualScript --> IPhysicsBackend
+
+    %% Build
+    BuildPipeline --> AssetPacker
+    BuildPipeline --> SceneSerializer
+    SceneImporter --> GLTFLoader
+    SceneImporter --> AssimpLoader
+
+    %% Core dependencies
+    RenderSystem --> MathLib
+    World --> Memory
     Application --> Window
+    Window --> Input
+    Application --> Logging
+    Application --> Platform
 </pre>
                 </div>
-            </div>
-            <div class="highlight-box">
-                <p><strong>Architectural Highlights:</strong> Strict 3-layer separation (Core/Engine/App). Physics abstraction via <code>IPhysicsBackend</code> allows runtime backend swapping. Thread-safe ECS with deferred entity destruction.</p>
-            </div>
+            </div><h3>Architectural Highlights</h3><ul class="info-list"><li><strong>Strict layering</strong>: Core has zero Engine dependencies. Engine never references Editor or Player.</li><li><strong>Physics abstraction</strong>: <code>IPhysicsBackend</code> / <code>IPhysicsBackend2D</code> interfaces allow swapping Jolt or Box2D at runtime via <code>PhysicsBackendFactory</code>. The legacy SimplePhysics backend was removed entirely in Feb 2026, eliminating technical debt.</li><li><strong>Thread safety</strong>: ECS World uses recursive mutex for structural operations; entity destruction is deferred and flushed at frame start. O(1) entity validation via <code>unordered_set</code> (Feb 2026 ECS audit).</li><li><strong>Spatial audio pipeline</strong>: Steam Audio HRTF binaural rendering with geometry-aware occlusion and transmission, layered on top of the miniaudio backend.</li><li><strong>Hardened codebase</strong>: 10+ audit rounds, 205+ findings fixed across Vulkan renderer, ECS, serialization, physics, and scripting subsystems. All VkResult calls checked; null guards on all physics/audio paths.</li><li><strong>GPU-driven rendering</strong>: Two-phase HiZ occlusion culling, clustered forward lighting (16x9x24 grid), 64-bit material sort keys, per-frame linear allocator (<code>FrameAllocator</code>), async compute overlap, LOD with screen-space sizing and hysteresis. Optional subsystems behind CMake flags: Variable Rate Shading (<code>VK_KHR_fragment_shading_rate</code>), Virtual Texturing (page-based streaming), Visibility Buffer (deferred material resolve).</li><li><strong>Advanced materials</strong>: PBR with transmission, IOR, thickness, subsurface scattering (intensity/radius/color). <code>MaterialGPU</code> = 80 bytes.</li><li><strong>Test infrastructure</strong>: 50 CTest targets (~700+ test cases) organized into <code>Tests/Unit/</code> and <code>Tests/Integration/</code> with a shared <code>EnjinTest.h</code> framework.</li></ul>
         </section>
-
-        <!-- SECTION 2 -->
         <section class="section" id="section-2">
             <div class="section-header" data-accent="secondary">
                 <span class="section-num">2</span>
-                <h2 class="section-title">Feature Completeness Matrix</h2>
+                <h2 class="section-title">2. Feature Completeness Matrix</h2>
+            </div><p class="desc">This matrix compares Enjin&#39;s current feature set against five established game engines. Ratings are based on the depth and production-readiness of each feature area.</p><p class="desc"><strong>Rating Key:</strong></p><ul class="info-list"><li><strong>Full</strong> -- Feature-complete, production-ready, comparable to or exceeding competitors</li><li><strong>Partial</strong> -- Functional but missing some capabilities vs. competitors</li><li><strong>Basic</strong> -- Implemented but limited scope</li><li><strong>Stub</strong> -- Interface exists, minimal implementation</li><li><strong>None</strong> -- Not present</li></ul>
+        <div class="table-container">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr>
+<th>Category</th>
+<th>Enjin</th>
+<th>Unity</th>
+<th>Godot</th>
+<th>Unreal</th>
+<th>GameMaker</th>
+<th>Construct</th>
+</tr>
+</thead>
+                    <tbody><tr>
+<td><strong>2D Rendering</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+</tr>
+<tr>
+<td><strong>3D Rendering</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>PBR Materials</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Ray Tracing</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>None</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Post-Processing</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Basic</td>
+<td>Basic</td>
+</tr>
+<tr>
+<td><strong>Anti-Aliasing (TAA/FXAA)</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Basic</td>
+<td>Basic</td>
+</tr>
+<tr>
+<td><strong>Upscaling (DLSS/FSR/XeSS)</strong></td>
+<td>None</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Shadows (CSM/Point/Spot)</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Sprite Batching/Atlas</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Full</td>
+<td>Full</td>
+</tr>
+<tr>
+<td><strong>Skeletal Animation</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Basic</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Sprite Animation</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Full</td>
+<td>Full</td>
+</tr>
+<tr>
+<td><strong>3D Physics (Production)</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>2D Physics (Production)</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Basic</td>
+<td>Basic</td>
+</tr>
+<tr>
+<td><strong>Physics Joints</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Audio Engine</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+</tr>
+<tr>
+<td><strong>3D Spatial Audio</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>MIDI Input</strong></td>
+<td>Basic</td>
+<td>Partial</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Text Scripting</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Visual Scripting</strong></td>
+<td>Full</td>
+<td>Partial</td>
+<td>Full</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Full</td>
+</tr>
+<tr>
+<td><strong>Hot-Reload</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Full</td>
+<td>N/A</td>
+<td>N/A</td>
+</tr>
+<tr>
+<td><strong>State Machines</strong></td>
+<td>Full</td>
+<td>Partial</td>
+<td>Partial</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Editor (GUI)</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+</tr>
+<tr>
+<td><strong>Scene Hierarchy</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Basic</td>
+<td>Basic</td>
+</tr>
+<tr>
+<td><strong>Inspector/Properties</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Partial</td>
+</tr>
+<tr>
+<td><strong>Undo/Redo</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+</tr>
+<tr>
+<td><strong>Multi-Select</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Partial</td>
+</tr>
+<tr>
+<td><strong>Transform Gizmos</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Asset Browser</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Partial</td>
+</tr>
+<tr>
+<td><strong>Tilemap Editing</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>None</td>
+<td>Full</td>
+<td>Full</td>
+</tr>
+<tr>
+<td><strong>Terrain Sculpting</strong></td>
+<td>Partial</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Prefab System</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Build/Export Pipeline</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+</tr>
+<tr>
+<td><strong>HTML5 Export</strong></td>
+<td>Full</td>
+<td>Partial</td>
+<td>Full</td>
+<td>None</td>
+<td>Full</td>
+<td>Full</td>
+</tr>
+<tr>
+<td><strong>Console Support</strong></td>
+<td>Stub</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Full</td>
+<td>Full</td>
+<td>Partial</td>
+</tr>
+<tr>
+<td><strong>Mobile Support</strong></td>
+<td>None</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+</tr>
+<tr>
+<td><strong>LAN Multiplayer</strong></td>
+<td>Full</td>
+<td>Partial</td>
+<td>Partial</td>
+<td>Full</td>
+<td>Basic</td>
+<td>Partial</td>
+</tr>
+<tr>
+<td><strong>HTTP/REST Client</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+</tr>
+<tr>
+<td><strong>Save System</strong></td>
+<td>Full</td>
+<td>Basic</td>
+<td>Basic</td>
+<td>Partial</td>
+<td>Basic</td>
+<td>Basic</td>
+</tr>
+<tr>
+<td><strong>Quest System</strong></td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Dialogue Trees</strong></td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>AI / Behavior Trees</strong></td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Navmesh / Pathfinding</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Basic</td>
+<td>Partial</td>
+</tr>
+<tr>
+<td><strong>UI System (Runtime)</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Full</td>
+<td>Basic</td>
+<td>Full</td>
+</tr>
+<tr>
+<td><strong>Accessibility</strong></td>
+<td>Full</td>
+<td>Partial</td>
+<td>Partial</td>
+<td>Partial</td>
+<td>None</td>
+<td>Basic</td>
+</tr>
+<tr>
+<td><strong>Procedural Generation</strong></td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+<td>Partial</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Weather System</strong></td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Particle System</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Partial</td>
+</tr>
+<tr>
+<td><strong>Shader Graph</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Plugin/Extension System</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Partial</td>
+</tr>
+<tr>
+<td><strong>Profiler</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Full</td>
+<td>Basic</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Localization</strong></td>
+<td>Full</td>
+<td>Partial</td>
+<td>Full</td>
+<td>Full</td>
+<td>None</td>
+<td>Partial</td>
+</tr>
+<tr>
+<td><strong>Level Streaming</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>None</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Retro/CRT Effects</strong></td>
+<td>Full</td>
+<td>Basic</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Flash/SWF Import</strong></td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Newgrounds Integration</strong></td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>HRTF Binaural Audio</strong></td>
+<td>Full</td>
+<td>Partial</td>
+<td>None</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Audio Occlusion/Transmission</strong></td>
+<td>Full</td>
+<td>Partial</td>
+<td>None</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Sprite Normal Map Lighting</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Full</td>
+<td>N/A</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Automated Test Suite</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Partial</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Clustered Forward Lighting</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>None</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>GPU Occlusion Culling</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>None</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>LOD System</strong></td>
+<td>Full</td>
+<td>Full</td>
+<td>Basic</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Variable Rate Shading</strong></td>
+<td>Basic</td>
+<td>Partial</td>
+<td>None</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Virtual Texturing</strong></td>
+<td>Basic</td>
+<td>Full</td>
+<td>None</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>Visibility Buffer</strong></td>
+<td>Basic</td>
+<td>Partial</td>
+<td>None</td>
+<td>Full</td>
+<td>None</td>
+<td>None</td>
+</tr>
+</tbody>
+                </table>
             </div>
-            <p class="desc">Comparison of Enjin's current feature set against five established game engines across 53 feature categories.</p>
-
-            <div class="table-container">
-                <div class="table-scroll">
-                    <table>
-                        <thead>
-                            <tr><th>Category</th><th>Enjin</th><th>Unity</th><th>Godot</th><th>Unreal</th><th>GameMaker</th><th>Construct</th></tr>
-                        </thead>
-                        <tbody id="feature-matrix-body"></tbody>
-                    </table>
-                </div>
+        </div><h3>Summary by Engine</h3>
+        <div class="table-container">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr>
+<th>Engine</th>
+<th>Full</th>
+<th>Partial</th>
+<th>Basic</th>
+<th>Stub</th>
+<th>None</th>
+</tr>
+</thead>
+                    <tbody><tr>
+<td><strong>Enjin</strong></td>
+<td>56</td>
+<td>1</td>
+<td>4</td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td><strong>Unity</strong></td>
+<td>41</td>
+<td>9</td>
+<td>2</td>
+<td>0</td>
+<td>7</td>
+</tr>
+<tr>
+<td><strong>Godot</strong></td>
+<td>31</td>
+<td>10</td>
+<td>2</td>
+<td>0</td>
+<td>16</td>
+</tr>
+<tr>
+<td><strong>Unreal</strong></td>
+<td>44</td>
+<td>6</td>
+<td>0</td>
+<td>0</td>
+<td>9</td>
+</tr>
+<tr>
+<td><strong>GameMaker</strong></td>
+<td>14</td>
+<td>5</td>
+<td>9</td>
+<td>0</td>
+<td>30</td>
+</tr>
+<tr>
+<td><strong>Construct</strong></td>
+<td>13</td>
+<td>9</td>
+<td>5</td>
+<td>0</td>
+<td>31</td>
+</tr>
+</tbody>
+                </table>
             </div>
-
-            <h3>Summary by Engine</h3>
-            <div class="table-container">
-                <div class="table-scroll">
-                    <table>
-                        <thead><tr><th>Engine</th><th>Full</th><th>Partial</th><th>Basic</th><th>Stub</th><th>None</th></tr></thead>
-                        <tbody>
-                            <tr><td class="feature-name">Enjin</td><td>49</td><td>1</td><td>1</td><td>1</td><td>1</td></tr>
-                            <tr><td class="feature-name">Unity</td><td>37</td><td>7</td><td>2</td><td>0</td><td>7</td></tr>
-                            <tr><td class="feature-name">Godot</td><td>27</td><td>10</td><td>2</td><td>0</td><td>14</td></tr>
-                            <tr><td class="feature-name">Unreal</td><td>34</td><td>5</td><td>0</td><td>0</td><td>14</td></tr>
-                            <tr><td class="feature-name">GameMaker</td><td>10</td><td>4</td><td>7</td><td>0</td><td>32</td></tr>
-                            <tr><td class="feature-name">Construct</td><td>10</td><td>8</td><td>5</td><td>0</td><td>30</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+        </div><p class="desc">Enjin achieves surprisingly broad feature coverage for a single-developer engine, now including Steam Audio HRTF spatial audio, sprite normal map lighting, clustered forward lighting, GPU two-phase HiZ occlusion culling, LOD with hysteresis, and a 50-target automated test suite (~700+ test cases). Its main gaps are mobile platform support and console certification (which require licensed devkits and partnership agreements). Variable Rate Shading, Virtual Texturing, and Visibility Buffer are implemented behind compile-time feature flags (OFF by default).</p>
         </section>
-
-        <!-- SECTION 3 -->
         <section class="section" id="section-3">
             <div class="section-header" data-accent="tertiary">
                 <span class="section-num">3</span>
-                <h2 class="section-title">Engine Evolution Timeline</h2>
-            </div>
-            <p class="desc">Actual development history from git commits. The entire engine was built in ~8 weeks starting Dec 23, 2025. 150+ features shipped.</p>
-
-            <div class="timeline-scroll">
-                <div class="timeline-track" id="timeline-track">
-                    <div class="timeline-phase" style="--phase-color: #34d399">
-                        <h4>Foundation</h4>
-                        <div class="date">Dec 23 &ndash; 25, 2025</div>
-                        <ul><li>Project Init &amp; Core Layer</li><li>Vulkan Swapchain &amp; Windowing</li><li>3D Rendering Pipeline</li><li>GPU Culling &amp; Render Graph</li></ul>
-                    </div>
-                    <div class="timeline-phase" style="--phase-color: #60a5fa">
-                        <h4>Renderer &amp; Editor</h4>
-                        <div class="date">Jan 22 &ndash; 28, 2026</div>
-                        <ul><li>Shader Compilation &amp; Triangle Fix</li><li>Engine Infra (Input, glTF, ImGui)</li><li>Blinn-Phong &amp; PBR Materials</li><li>CSM Shadows &amp; Post-Processing</li><li>Scene Serialization &amp; FBX Import</li></ul>
-                    </div>
-                    <div class="timeline-phase" style="--phase-color: #a78bfa">
-                        <h4>Core Systems</h4>
-                        <div class="date">Jan 29 &ndash; 31, 2026</div>
-                        <ul><li>Weather, Water, Wind &amp; Vegetation</li><li>Skeletal Animation (GPU Skinning)</li><li>Physics &amp; Collision Detection</li><li>21 Templates &amp; Scene Management</li><li>Accessibility &amp; Input Remapping</li><li>Audio (miniaudio Backend)</li><li>Skybox, Undo/Redo, IK, Prefabs</li></ul>
-                    </div>
-                    <div class="timeline-phase" style="--phase-color: #fb923c">
-                        <h4>2D &amp; Build</h4>
-                        <div class="date">Feb 1 &ndash; 5, 2026</div>
-                        <ul><li>Build Pipeline &amp; Splitscreen</li><li>Terrain, 2D Tools, UI System</li><li>2.5D Lit Sprites &amp; Batch Renderer</li><li>Dialogue Trees &amp; State Machines</li><li>Tweening, Noise, Shader Hot-Reload</li><li>29 Enhanced Templates &amp; 2D Mode</li></ul>
-                    </div>
-                    <div class="timeline-phase" style="--phase-color: #4ade80">
-                        <h4>Visual Scripting &amp; Perf</h4>
-                        <div class="date">Feb 6 &ndash; 8, 2026</div>
-                        <ul><li>Visual Scripting (Phases 1-4)</li><li>Fence-Based GPU Sync (18 Systems)</li><li>Descriptor Caching &amp; Material Sort</li><li>Soft Shadows, Point/Spot Shadows</li><li>Sprite Atlas (4096&times;4096)</li></ul>
-                    </div>
-                    <div class="timeline-phase" style="--phase-color: #fbbf24">
-                        <h4>Massive Expansion</h4>
-                        <div class="date">Feb 9 &ndash; 10, 2026</div>
-                        <ul><li>AI/BT, 2D Physics, Proc Gen</li><li>Destructibles, Localization, Fluid Sim</li><li>RT Pipeline &amp; Collaborative Editing</li><li>Newgrounds API &amp; HTML5 Export</li><li>Vector Editor, Cel Shading, Save System</li></ul>
-                    </div>
-                    <div class="timeline-phase" style="--phase-color: #f87171">
-                        <h4>Physics &amp; Advanced</h4>
-                        <div class="date">Feb 11 &ndash; 14, 2026</div>
-                        <ul><li>Jolt v5.2.0 &amp; Box2D v3.0.0 Backends</li><li>OIT, SH Probes, SDF, DoF, POM</li><li>9 Exotic Rendering Systems</li><li>Shader/Audio/Particle Graphs</li><li>Linux/Steam Deck, Switch Stub</li><li>Template Marketplace, MIDI Input</li></ul>
-                    </div>
-                    <div class="timeline-phase current" style="--phase-color: #f59e0b">
-                        <h4>Polish &amp; Audits</h4>
-                        <div class="date">Feb 15 &ndash; 17, 2026</div>
-                        <ul><li>Audio Rewrite &amp; Audio Mixer</li><li>Post-Process Volumes &amp; SS Effects</li><li>InputAction, NSIS Installer</li><li>Networking Security (HMAC-SHA256)</li><li>5+ Security/Stability Audit Rounds</li></ul>
-                    </div>
-                    <div class="timeline-phase planned" style="--phase-color: #94a3b8">
-                        <h4>Planned</h4>
-                        <div class="date">Q2 2026+</div>
-                        <ul><li>macOS (MoltenVK)</li><li>WebAssembly / WebGPU</li><li>Console Platforms</li><li>Mobile (Android/iOS)</li><li>VR/XR (OpenXR)</li></ul>
-                    </div>
+                <h2 class="section-title">3. Engine Evolution Timeline</h2>
+            </div><p class="desc">This timeline shows the actual development history reconstructed from git commit dates. The entire engine was built in approximately 11 weeks, starting December 23, 2025.</p>
+            <div class="diagram-container">
+                <div class="diagram-controls">
+                    <button onclick="zoomDiagram('mermaid-200', 1.2)">Zoom +</button>
+                    <button onclick="zoomDiagram('mermaid-200', 0.8)">Zoom &minus;</button>
+                    <button onclick="resetDiagram('mermaid-200')">Reset</button>
                 </div>
-            </div>
-        </section>
+                <div class="diagram-viewport">
+<pre class="mermaid" id="mermaid-200">
+gantt
+    title Enjin Engine Development Phases (Actual Git History)
+    dateFormat YYYY-MM-DD
+    axisFormat %m/%d
 
-        <!-- SECTION 4 -->
+    section Foundation (Week 1)
+    Project Init & Vulkan Swapchain             :done, f1, 2025-12-23, 2025-12-24
+    3D Rendering Pipeline & GPU Culling         :done, f2, 2025-12-24, 2025-12-25
+    Core Layer (Types, Math, Platform)          :done, f3, 2025-12-23, 2025-12-25
+
+    section Renderer & Editor (Week 2)
+    Shader Compilation & Triangle Fix           :done, r1, 2026-01-22, 2026-01-27
+    Engine Infrastructure (Input, glTF, ImGui)  :done, r2, 2026-01-27, 2026-01-28
+    Blinn-Phong Lighting & PBR Materials        :done, r3, 2026-01-27, 2026-01-28
+    Shadow Mapping (CSM)                        :done, r4, 2026-01-28, 2026-01-28
+
+    section Core Systems (Week 3)
+    Post-Processing & Retro Effects             :done, s1, 2026-01-28, 2026-01-30
+    Weather, Water, Wind & Vegetation           :done, s2, 2026-01-29, 2026-01-30
+    Skeletal Animation (GPU Skinning)           :done, s3, 2026-01-30, 2026-01-30
+    Physics & Collision Detection               :done, s4, 2026-01-30, 2026-01-30
+    Parallax & Normal Mapping                   :done, s5, 2026-01-30, 2026-01-30
+
+    section Editor & Audio (Week 4)
+    Scene Management & 21 Templates             :done, e1, 2026-01-31, 2026-01-31
+    Accessibility, Input Remapping, UI System   :done, e2, 2026-01-31, 2026-01-31
+    Skybox, Undo/Redo, IK Solvers, Prefabs     :done, e3, 2026-01-31, 2026-01-31
+    Audio (miniaudio Backend)                   :done, e4, 2026-01-31, 2026-01-31
+    Build Pipeline & Splitscreen                :done, e5, 2026-02-01, 2026-02-01
+
+    section 2D Pipeline (Week 5)
+    Terrain Sculpting                           :done, d1, 2026-02-02, 2026-02-02
+    2D Editor Tools (Sprite, Tilemap)           :done, d2, 2026-02-02, 2026-02-02
+    Runtime UI System & 2.5D Lit Sprites        :done, d3, 2026-02-02, 2026-02-02
+    Particle & Sprite Batch Renderers           :done, d4, 2026-02-02, 2026-02-03
+    Collision Filtering (32-group Bitmask)      :done, d5, 2026-02-03, 2026-02-03
+
+    section Scripting & Tools (Week 6)
+    Dialogue Trees & State Machines             :done, t1, 2026-02-04, 2026-02-04
+    AngelScript Bindings & Shader Hot-Reload    :done, t2, 2026-02-04, 2026-02-04
+    Noise Library & Tweening (25 Easings)       :done, t3, 2026-02-04, 2026-02-04
+    29 Enhanced Templates & 2D/3D Mode          :done, t4, 2026-02-04, 2026-02-05
+    9-Slice, Asset Metadata, 2D Camera          :done, t5, 2026-02-05, 2026-02-05
+
+    section Visual Scripting & Perf (Week 7)
+    Visual Scripting (Phases 1-4)               :done, v1, 2026-02-06, 2026-02-06
+    Shadow Optimization & Descriptor Caching    :done, v2, 2026-02-06, 2026-02-08
+    Soft Shadows, Point/Spot Shadow Maps        :done, v3, 2026-02-07, 2026-02-08
+    Sprite Texture Atlas (4096x4096)            :done, v4, 2026-02-08, 2026-02-08
+    Fence-Based GPU Sync (18 Subsystems)        :done, v5, 2026-02-07, 2026-02-07
+
+    section Massive Expansion (Week 8)
+    AI/BT, 2D Physics, Proc Gen, Destructibles :done, m1, 2026-02-09, 2026-02-09
+    Localization, Fluid Sim, Pixel Editor       :done, m2, 2026-02-09, 2026-02-09
+    SVG, Empty States, Dialogue Box, Icons      :done, m3, 2026-02-09, 2026-02-09
+    RT Pipeline, Collaborative Editing          :done, m4, 2026-02-10, 2026-02-10
+    Newgrounds API, HTML5 Export, Vector Editor  :done, m5, 2026-02-10, 2026-02-10
+    Cel Shading, Save System, PlayMode Diff     :done, m6, 2026-02-10, 2026-02-10
+
+    section Physics & Platform (Week 9)
+    IPhysicsBackend + Jolt v5.2.0 Backend       :done, p1, 2026-02-11, 2026-02-11
+    Box2D v3.0.0 Backend                        :done, p2, 2026-02-11, 2026-02-11
+    Template Redesign (38 → 22 → 43)            :done, p3, 2026-02-12, 2026-02-13
+    Stipple/Dither, Camera Presets, DoF         :done, p4, 2026-02-12, 2026-02-12
+    OIT, SH Probes, SDF Scene, POM Modes        :done, p5, 2026-02-13, 2026-02-13
+    Physics Phase 4-5 (Jolt/Box2D Default)      :done, p6, 2026-02-13, 2026-02-13
+
+    section Advanced & Exotic (Week 10)
+    Linux/Steam Deck, Switch Stub, Hub App      :done, a1, 2026-02-14, 2026-02-14
+    9 Exotic Rendering Systems                  :done, a2, 2026-02-14, 2026-02-14
+    Shader/Audio/Particle Graphs, MIDI Input    :done, a3, 2026-02-14, 2026-02-14
+    Symbol Library, Newgrounds Game Page         :done, a4, 2026-02-14, 2026-02-14
+    Template Marketplace, Gamepad Editor         :done, a5, 2026-02-14, 2026-02-14
+
+    section Polish & Audits (Week 11)
+    Audio Rewrite (miniaudio), Audio Mixer      :done, q1, 2026-02-15, 2026-02-15
+    Post-Process Volumes, Screen-Space Effects  :done, q2, 2026-02-15, 2026-02-15
+    InputAction System, NSIS Installer          :done, q3, 2026-02-16, 2026-02-16
+    Networking Security (HMAC-SHA256)           :done, q4, 2026-02-16, 2026-02-17
+    5+ Security/Stability Audit Rounds          :done, q5, 2026-02-11, 2026-02-17
+
+    section Hardening & Audio (Week 12)
+    SimplePhysics Legacy Backend Removed        :done, h1, 2026-02-18, 2026-02-18
+    Steam Audio HRTF Phase 1 (Binaural)         :done, h2, 2026-02-18, 2026-02-18
+    Steam Audio Phase 2 (Occlusion/Transmission):done, h3, 2026-02-18, 2026-02-18
+    ECS Tier 1 Audit (O(1) Validation, 40 Tests):done, h4, 2026-02-17, 2026-02-17
+    Vulkan Renderer Hardening (VkResult/Leaks)  :done, h5, 2026-02-17, 2026-02-18
+    80+ Medium-Severity Audit Fixes (23 Files)  :done, h6, 2026-02-17, 2026-02-18
+    42 More Audit Fixes (Physics/Script/Scene)  :done, h7, 2026-02-18, 2026-02-18
+    Serialization & Asset Pack Hardening        :done, h8, 2026-02-18, 2026-02-18
+    6 New Test Suites (Physics2D, VS, BT, UI, Net, Fuzz) :done, h9, 2026-02-17, 2026-02-17
+    3 More Test Suites + Unit/Integration Reorg :done, h10, 2026-02-19, 2026-02-19
+    MaturityTier Badges (Hub + Marketplace)     :done, h11, 2026-02-19, 2026-02-19
+    Sprite Normal Map Lighting + Drop Shadows   :done, h12, 2026-02-18, 2026-02-18
+    CSM Cascade Blending + Tether Rework        :done, h13, 2026-02-18, 2026-02-18
+    Player Auto Title Screen + Pause Menu       :done, h14, 2026-02-18, 2026-02-18
+    Editor Viewport Camera/Gizmos in Play Mode  :done, h15, 2026-02-18, 2026-02-18
+
+    section GPU-Driven & Advanced (Weeks 13-14)
+    Clustered Forward Lighting (16x9x24)         :done, g1, 2026-02-20, 2026-02-25
+    GPU Two-Phase HiZ Occlusion Culling          :done, g2, 2026-02-20, 2026-02-25
+    LOD Hysteresis + Screen-Space Sizing         :done, g3, 2026-02-22, 2026-02-25
+    64-bit Material Sort Keys                    :done, g4, 2026-02-22, 2026-02-25
+    FrameAllocator (Per-Frame Linear Alloc)      :done, g5, 2026-02-23, 2026-02-25
+    Variable Rate Shading (VK_KHR)               :done, g6, 2026-02-25, 2026-03-01
+    Virtual Texturing (Page Streaming)           :done, g7, 2026-02-28, 2026-03-05
+    Visibility Buffer (Deferred Resolve)         :done, g8, 2026-03-01, 2026-03-05
+    Material Enhancements (Transmission/SSS)     :done, g9, 2026-02-25, 2026-03-01
+    Async Compute Overlap                        :done, g10, 2026-02-25, 2026-03-01
+    Box2D Sensor Body Sync                       :done, g11, 2026-03-03, 2026-03-05
+    Elemental System + AngelScript Bindings      :done, g12, 2026-03-05, 2026-03-07
+    BSL 1.1 Open-Source License Decision         :done, g13, 2026-03-07, 2026-03-07
+    Test Expansion (26 to 50 targets, 700+ cases):done, g14, 2026-03-01, 2026-03-08
+    Motion Vectors + TAA (Phase 1)              :done, g15, 2026-03-09, 2026-03-11
+    RT Material SSBO + OptiX Interop (Phase 2)  :done, g16, 2026-03-09, 2026-03-11
+
+    section Rendering Roadmap
+    Path Tracer Polish (NEE/MIS/RR)             :active, r1, 2026-03-16, 2026-04-15
+    ReSTIR Light Selection                      :active, r2, 2026-04-15, 2026-06-01
+    Temporal RT Reuse                           :active, r3, 2026-06-01, 2026-07-15
+    Radiance Caching                            :active, r4, 2026-07-15, 2026-09-01
+    DLSS / FSR / XeSS Upscaling                 :active, r5, 2026-09-01, 2026-11-01
+    Additional AA (SMAA, MSAA)                  :active, r6, 2026-11-01, 2026-12-01
+    GPU-Driven Work Scheduling                  :active, r7, 2026-12-01, 2027-02-01
+
+    section Platforms
+    macOS (MoltenVK)                            :active, pl1, 2026-03-01, 2026-06-01
+    Console Platforms                           :active, pl2, 2026-06-01, 2027-06-01
+    Mobile (Android/iOS)                        :active, pl3, 2026-09-01, 2027-03-01
+    VR/XR (OpenXR)                              :active, pl4, 2027-01-01, 2027-06-01
+</pre>
+                </div>
+            </div><p class="desc"><strong>Note:</strong> There is a ~4-week gap between the initial Dec 23-25, 2025 foundation commits and the resumption of active development on Jan 22, 2026. The bulk of the engine (150+ features) was built in the subsequent 4 weeks (Jan 22 - Feb 17, 2026). Week 12 (Feb 17-19) focused on hardening: 120+ audit findings fixed, SimplePhysics removed, Steam Audio integrated, and test coverage expanded from 8 to 26 executables. Weeks 13-14 (Feb 20 - Mar 8) added GPU-driven rendering features: clustered lighting, HiZ occlusion culling, LOD hysteresis, VRS, virtual texturing, visibility buffer, 64-bit material sort keys, FrameAllocator, and material enhancements (transmission/SSS). Test coverage was further expanded to 50 CTest targets (~700+ cases). The BSL 1.1 open-source license was adopted on Mar 7. Week 15 (Mar 9-11) added per-pixel motion vectors (RG16F velocity buffer), TAA with Halton jitter and neighborhood clamping, material SSBO for RT hit shaders (binding 9), and OptiX denoiser CUDA interop.</p>
+        </section>
         <section class="section" id="section-4">
             <div class="section-header" data-accent="quaternary">
                 <span class="section-num">4</span>
-                <h2 class="section-title">Rendering Pipeline Flowchart</h2>
-            </div>
-            <p class="desc">Complete rendering pipeline for a single frame, including the 2D/2.5D/3D branching logic.</p>
-
+                <h2 class="section-title">4. Rendering Pipeline Flowchart</h2>
+            </div><p class="desc">This diagram details the complete rendering pipeline for a single frame, including the 2D/2.5D/3D branching logic.</p>
             <div class="diagram-container">
                 <div class="diagram-controls">
-                    <button onclick="zoomDiagram('pipeline-diagram', 1.2)">Zoom +</button>
-                    <button onclick="zoomDiagram('pipeline-diagram', 0.8)">Zoom &minus;</button>
-                    <button onclick="resetDiagram('pipeline-diagram')">Reset</button>
+                    <button onclick="zoomDiagram('mermaid-300', 1.2)">Zoom +</button>
+                    <button onclick="zoomDiagram('mermaid-300', 0.8)">Zoom &minus;</button>
+                    <button onclick="resetDiagram('mermaid-300')">Reset</button>
                 </div>
                 <div class="diagram-viewport">
-<pre class="mermaid" id="pipeline-diagram">
+<pre class="mermaid" id="mermaid-300">
 flowchart TB
-    FrameStart["Frame Start"] --> FlushDestroy["Flush Deferred Entity Destruction"]
-    FlushDestroy --> UpdateSystems["Update ECS Systems"]
+    FrameStart["Frame Start<br/>(VulkanRenderer::BeginFrame)"] --> FlushDestroy["Flush Deferred<br/>Entity Destruction"]
+    FlushDestroy --> UpdateSystems["Update ECS Systems<br/>(Controllers, Physics,<br/>Scripts, AI)"]
     UpdateSystems --> ClassifyScene["ClassifySceneComposition()"]
 
     ClassifyScene --> Is2D{Scene Type?}
 
-    Is2D -->|Scene2D| Path2D["2D Fast Path"]
-    Is2D -->|Scene2_5D| Path25D["2.5D Path"]
-    Is2D -->|Scene3D| Path3D["3D Full Path"]
+    Is2D -->|Scene2D<br/>"Sprites/Tilemaps Only"| Path2D["2D Fast Path"]
+    Is2D -->|Scene2_5D<br/>"Sprites + Lights"| Path25D["2.5D Path"]
+    Is2D -->|Scene3D<br/>"3D Meshes Present"| Path3D["3D Full Path"]
 
     subgraph Path2DBlock["2D Pipeline"]
         Path2D --> SkipShadows2D["Skip ALL Shadow Passes"]
-        SkipShadows2D --> MinimalUBO["Minimal LightingUBO"]
+        SkipShadows2D --> MinimalUBO["Upload Minimal LightingUBO<br/>(Ambient + Fog Only)"]
+        MinimalUBO --> SkipNormalMap["Skip Normal Map<br/>Descriptor Writes"]
     end
 
     subgraph Path25DBlock["2.5D Pipeline"]
         Path25D --> SkipShadows25D["Skip Shadow Passes"]
-        SkipShadows25D --> FullLightingUBO["Full LightingUBO"]
+        SkipShadows25D --> FullLightingUBO["Upload Full LightingUBO<br/>(Lights for Lit Sprites)"]
+        FullLightingUBO --> BindNormalMap25D["Bind Normal Map<br/>Descriptors"]
     end
 
     subgraph Path3DBlock["3D Full Pipeline"]
-        Path3D --> ShadowCasterCache["Build Shadow Caster Cache"]
-        ShadowCasterCache --> DirShadow["4-Cascade CSM"]
-        ShadowCasterCache --> PointShadow["Point Light Cubemaps"]
-        ShadowCasterCache --> SpotShadow["Spot Light 2D Array"]
+        Path3D --> ShadowCasterCache["Build Shadow Caster<br/>Cache (Pre-filtered)"]
 
-        DirShadow --> FullUBO3D["Full LightingUBO + SH Probes"]
+        ShadowCasterCache --> DirShadow["Directional Light<br/>Shadow Pass"]
+        subgraph CSMCascades["4-Cascade CSM"]
+            DirShadow --> C0["Cascade 0<br/>(Near)"]
+            DirShadow --> C1["Cascade 1"]
+            DirShadow --> C2["Cascade 2"]
+            DirShadow --> C3["Cascade 3<br/>(Far)"]
+        end
+
+        ShadowCasterCache --> PointShadow["Point Light Shadows<br/>(Up to 4 Cubemaps,<br/>512^2 per face)"]
+        ShadowCasterCache --> SpotShadow["Spot Light Shadows<br/>(Up to 4, 2D Array,<br/>1024^2)"]
+
+        C3 --> FullUBO3D["Upload Full LightingUBO<br/>(Multi-Light Arrays,<br/>Shadow Data, SH Probes)"]
         PointShadow --> FullUBO3D
         SpotShadow --> FullUBO3D
+        FullUBO3D --> BindNormalMap3D["Bind Normal Map<br/>Descriptors"]
 
-        FullUBO3D --> RTCheck{RT Hardware?}
-        RTCheck -->|Yes| BuildTLAS["Rebuild TLAS"]
-        BuildTLAS --> DispatchRT["Dispatch RT Effects"]
-        DispatchRT --> Denoise["Denoise (SVGF/OIDN)"]
-        Denoise --> Composite["RT Compositor"]
+        BindNormalMap3D --> RTCheck{RT Hardware<br/>Available?}
+        RTCheck -->|Yes| RTPipelineExec["Ray Tracing Pipeline"]
+
+        subgraph RayTracingBlock["Ray Tracing (Scene3D Only)"]
+            RTPipelineExec --> BuildTLAS["Rebuild TLAS<br/>(Per-Frame)"]
+            BuildTLAS --> DispatchRT["Dispatch RT Effects"]
+            DispatchRT --> RTShadowsD["RT Shadows<br/>(1 SPP)"]
+            DispatchRT --> RTReflectD["RT Reflections<br/>(Specular)"]
+            DispatchRT --> RTAOD["RT AO<br/>(Hemisphere)"]
+            DispatchRT --> RTGID["RT GI<br/>(Multi-Bounce)"]
+            RTShadowsD --> Denoise["Denoise<br/>(SVGF or OIDN)"]
+            RTReflectD --> Denoise
+            RTAOD --> Denoise
+            RTGID --> Denoise
+            Denoise --> Composite["RT Compositor<br/>(Fullscreen Compute)"]
+        end
+
         RTCheck -->|No| SkipRT["Skip RT"]
     end
 
-    MinimalUBO --> MainPass
-    FullLightingUBO --> MainPass
+    SkipNormalMap --> MainPass
+    BindNormalMap25D --> MainPass
+    BindNormalMap3D --> MainPass
     Composite --> MainPass
     SkipRT --> MainPass
 
     subgraph MainRenderPass["Main Render Pass"]
-        MainPass["Begin Render Pass"] --> SkyboxR["Render Skybox"]
-        SkyboxR --> SortEntities["Sort by cachedTextureKey"]
-        SortEntities --> OpaquePass["Opaque Pass (Per-Entity)"]
-        OpaquePass --> SpritePass["Sprite Batch Rendering"]
-        SpritePass --> ParticlePass["Particle Rendering"]
-        ParticlePass --> VegetationPass["Vegetation Pass"]
-        VegetationPass --> WaterPass["Water Rendering"]
-        WaterPass --> DebugViz["Debug Visualization"]
+        MainPass["Begin Render Pass"] --> SkyboxR["Render Skybox<br/>(if type != None)"]
+        SkyboxR --> SortEntities["Sort Entities by<br/>64-bit Material Sort Key"]
+        SortEntities --> HiZCull["GPU Two-Phase HiZ<br/>Occlusion Culling"]
+        HiZCull --> ClusterAssign["Clustered Light<br/>Assignment (16x9x24)"]
+        ClusterAssign --> LODSelect["LOD Selection<br/>(Screen-Space + Hysteresis)"]
+        LODSelect --> OpaquePass["Opaque Pass"]
+
+        subgraph OpaqueLoop["Per-Entity Rendering"]
+            OpaquePass --> CheckVisible{entity.visible?}
+            CheckVisible -->|No| SkipEntity["Skip"]
+            CheckVisible -->|Yes| PushConstants["Upload Push Constants<br/>(128 bytes: Model Matrix,<br/>Material Props, Flags)"]
+            PushConstants --> DescCache{"Descriptor<br/>Cache Hit?"}
+            DescCache -->|Yes| SkipDescWrite["Skip Descriptor Write"]
+            DescCache -->|No| UpdateDesc["Update Descriptors<br/>(Bindings 3/5/6/7/8/9,<br/>14-15 Cluster, 16-17 VT)"]
+            SkipDescWrite --> DrawCall["vkCmdDrawIndexed"]
+            UpdateDesc --> DrawCall
+        end
+
+        DrawCall --> OITCheck{OIT Entities<br/>Present?}
+        OITCheck -->|Yes| OITPass["OIT Weighted Blended<br/>Pass + Composite"]
+        OITCheck -->|No| SkipOIT["Skip OIT"]
+
+        OITPass --> SpritePass
+        SkipOIT --> SpritePass
+
+        SpritePass["Sprite Batch Rendering"] --> AtlasCheck{"Atlas<br/>Sprites?"}
+        AtlasCheck -->|Yes| AtlasBatch["Single Instanced Draw<br/>(Atlas Texture)"]
+        AtlasCheck -->|No| IndividualDraw["Individual Draws<br/>(Oversized/Excluded)"]
+
+        AtlasBatch --> ParticlePass
+        IndividualDraw --> ParticlePass
+
+        ParticlePass["Particle Rendering<br/>(GPU Instanced Billboards)"]
+        ParticlePass --> VegetationPass["Vegetation Pass<br/>(Grass/Shrub/Tree)"]
+        VegetationPass --> WaterPass["Water Rendering<br/>(Gerstner Waves)"]
+        WaterPass --> DebugViz["Debug Visualization<br/>(Collider Wireframes,<br/>Joint Lines, SH Probes)"]
     end
 
     DebugViz --> PostProcess
 
     subgraph PostProcessBlock["Post-Processing Chain"]
-        PostProcess["Post-Processing"] --> Bloom["Bloom"]
-        Bloom --> DOF["Depth of Field"]
-        DOF --> CelOutlines["Cel Shading Outlines"]
-        CelOutlines --> StippleDither["Stipple / Dither"]
+        PostProcess["Post-Processing"] --> Bloom["Bloom<br/>(Threshold + Blur)"]
+        Bloom --> SSAO_PP["SSAO<br/>(Multiplicative, HDR)"]
+        SSAO_PP --> ContactShadows_PP["Contact Shadows<br/>(Ray March, HDR)"]
+        ContactShadows_PP --> Caustics_PP["Fake Caustics<br/>(Additive, HDR)"]
+        Caustics_PP --> GodRays_PP["God Rays<br/>(Radial Blur, HDR)"]
+        GodRays_PP --> FogShafts_PP["Fog Shafts<br/>(Volumetric, HDR)"]
+        FogShafts_PP --> DOF["Depth of Field<br/>(Poisson Disc)"]
+        DOF --> TiltShift["Tilt-Shift<br/>(Focus Band Blur)"]
+        TiltShift --> CelOutlines["Cel Shading Outlines<br/>(Sobel Edge Detection)"]
+        CelOutlines --> StippleDither["Stipple / Dither<br/>(8 Patterns, 3 Color<br/>Modes)"]
         StippleDither --> ColorGrading["Color Grading"]
-        ColorGrading --> FXAA["FXAA"]
-        FXAA --> Vignette["Vignette"]
+        ColorGrading --> AA["AA (FXAA or TAA)<br/>(TAA: Halton Jitter,<br/>Velocity Reprojection,<br/>History Ping-Pong)"]
+        AA --> Vignette["Vignette"]
         Vignette --> FilmGrain["Film Grain"]
-        FilmGrain --> RetroFX["Retro Effects"]
+        FilmGrain --> RetroFX["Retro Effects<br/>(CRT, Pixelation)"]
     end
 
-    RetroFX --> Present["Present (vkQueuePresentKHR)"]
+    RetroFX --> EditorOverlay
 
-    style Path2DBlock fill:#0a2a1a,stroke:#34d399
-    style Path25DBlock fill:#0a1a2a,stroke:#60a5fa
-    style Path3DBlock fill:#2a0a0a,stroke:#f87171
-    style PostProcessBlock fill:#0a1a2a,stroke:#a78bfa
+    subgraph EditorOverlayBlock["Editor Overlay (Editor Only)"]
+        EditorOverlay["ImGui Overlay"] --> ImGuiPanels["Editor Panels<br/>(Hierarchy, Inspector,<br/>Console, etc.)"]
+        ImGuiPanels --> GameView["Game View Viewport<br/>(RenderToTarget)"]
+        GameView --> GizmoOverlay["Gizmo Overlay<br/>(ImGuizmo)"]
+    end
+
+    GizmoOverlay --> Present["Present<br/>(vkQueuePresentKHR)"]
+
+    style Path2DBlock fill:#1a3a1a,stroke:#4a8a4a
+    style Path25DBlock fill:#2a2a3a,stroke:#6a6aaa
+    style Path3DBlock fill:#3a1a1a,stroke:#aa4a4a
+    style RayTracingBlock fill:#2a1a3a,stroke:#8a4aaa
+    style PostProcessBlock fill:#1a2a3a,stroke:#4a7aaa
 </pre>
                 </div>
-            </div>
-            <div class="highlight-box success">
-                <p><strong>Key Pipeline Optimizations:</strong> 2D scenes skip 4+ shadow passes. Material sort maximizes descriptor cache hits (~75-85%). Play Mode skip prevents double-drawing. Shadow caster cache avoids redundant per-cascade iteration.</p>
-            </div>
+            </div><h3>Key Pipeline Optimizations</h3><ol class="info-list"><li><strong>Scene Classification Gate</strong>: 2D-only scenes skip shadow passes entirely, saving 4+ render passes per frame.</li><li><strong>64-bit Material Sort Keys</strong>: Entities sorted by pipeline + material + texture key so identical materials draw consecutively, minimizing state changes and maximizing descriptor cache hits.</li><li><strong>GPU Two-Phase HiZ Occlusion Culling</strong>: Hierarchical-Z buffer used for two-pass GPU-driven occlusion culling via async compute, eliminating invisible geometry before draw submission.</li><li><strong>Clustered Forward Lighting</strong>: 16x9x24 grid subdivides the view frustum; lights assigned to clusters via compute shader. Per-fragment lookups reduce per-light cost from O(N) to O(K) where K is the cluster light count.</li><li><strong>LOD with Hysteresis</strong>: Screen-space LOD selection with hysteresis band prevents LOD popping during camera movement.</li><li><strong>Per-Frame Linear Allocator</strong>: <code>FrameAllocator</code> provides O(1) allocation with single reset per frame for transient render data.</li><li><strong>Descriptor Caching</strong>: <code>m_LastBound</code> tracking skips <code>vkUpdateDescriptorSets</code> when texture/bone pointers are unchanged.</li><li><strong>Play Mode Skip</strong>: <code>m_SkipMainPassRendering</code> flag prevents double-drawing (offscreen Game View + main swapchain).</li><li><strong>Shadow Caster Cache</strong>: Pre-filtered list avoids redundant per-cascade entity iteration.</li><li><strong>Async Compute Overlap</strong>: GPU culling and cluster assignment run on async compute queue, overlapping with CPU-side scene preparation.</li></ol>
         </section>
-
-        <!-- SECTION 5 -->
         <section class="section" id="section-5">
             <div class="section-header">
                 <span class="section-num">5</span>
-                <h2 class="section-title">Market Positioning Analysis</h2>
+                <h2 class="section-title">5. Market Positioning Analysis</h2>
+            </div><h3>Target Audience</h3><p class="desc">Enjin occupies a unique position in the game engine market by targeting several underserved audiences simultaneously:</p>
+        <div class="table-container">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr>
+<th>Audience Segment</th>
+<th>Why Enjin Appeals</th>
+<th>Primary Competitors</th>
+</tr>
+</thead>
+                    <tbody><tr>
+<td><strong>Indie Developers</strong></td>
+<td>All-in-one 2D+3D with built-in gameplay systems (save, quest, dialogue, AI) that competitors require plugins for. Hardened codebase with 50 test targets builds production confidence</td>
+<td>Unity, Godot</td>
+</tr>
+<tr>
+<td><strong>Flash Game Creators</strong></td>
+<td>SWF import, AS2/AS3 transpiler, Newgrounds.io API, HTML5 export, Flash-style timeline editor -- no other engine offers this combination</td>
+<td>None (Enjin is unique)</td>
+</tr>
+<tr>
+<td><strong>Retro Game Makers</strong></td>
+<td>CRT effects, pixel editor, 9 retro resolution presets, dithered gradients, stipple patterns, sprite sheet workflow</td>
+<td>GameMaker, Pico-8</td>
+</tr>
+<tr>
+<td><strong>Students &amp; Educators</strong></td>
+<td>Built-in behavior trees, visual scripting, procedural generation, and comprehensive accessibility -- strong teaching tool</td>
+<td>Godot, Scratch</td>
+</tr>
+<tr>
+<td><strong>Accessibility-First Developers</strong></td>
+<td>8 colorblind modes, screen reader, switch access, dwell-click, high contrast (WCAG AAA), font scaling, reduced motion -- most comprehensive in any engine</td>
+<td>None (Enjin leads)</td>
+</tr>
+<tr>
+<td><strong>Hobbyist/Prototypers</strong></td>
+<td>44 startup templates with MaturityTier badges, template marketplace, pixel editor, drag-and-drop import, visual scripting -- minimal barrier to entry</td>
+<td>Construct, GameMaker</td>
+</tr>
+<tr>
+<td><strong>Audio-Focused Developers</strong></td>
+<td>Steam Audio HRTF binaural rendering with geometry-aware occlusion/transmission -- professional spatial audio without middleware</td>
+<td>Unity (via plugin), Unreal</td>
+</tr>
+</tbody>
+                </table>
             </div>
-            <p class="desc">Enjin occupies a unique position targeting several underserved audiences simultaneously.</p>
-
-            <h3>Target Audience</h3>
-            <div class="table-container">
-                <div class="table-scroll">
-                    <table>
-                        <thead><tr><th>Audience</th><th>Why Enjin Appeals</th><th>Competitors</th></tr></thead>
-                        <tbody>
-                            <tr><td class="feature-name">Indie Developers</td><td>All-in-one 2D+3D with built-in gameplay systems (save, quest, dialogue, AI)</td><td>Unity, Godot</td></tr>
-                            <tr><td class="feature-name">Flash Game Creators</td><td>SWF import, AS2/AS3 transpiler, Newgrounds.io API, HTML5 export</td><td>None (unique)</td></tr>
-                            <tr><td class="feature-name">Retro Game Makers</td><td>CRT effects, pixel editor, dithered gradients, stipple patterns</td><td>GameMaker, Pico-8</td></tr>
-                            <tr><td class="feature-name">Students &amp; Educators</td><td>Built-in BTs, visual scripting, procedural generation</td><td>Godot, Scratch</td></tr>
-                            <tr><td class="feature-name">Accessibility-First</td><td>8 colorblind modes, screen reader, switch access, WCAG AAA</td><td>None (leads)</td></tr>
-                            <tr><td class="feature-name">Hobbyist/Prototypers</td><td>44 templates, marketplace, pixel editor, visual scripting</td><td>Construct, GameMaker</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <h3>Unique Selling Points</h3>
-            <div class="comparison-grid">
-                <div class="comparison-card">
-                    <h4>Flash Game Revival Platform</h4>
-                    <p>The only engine with SWF import, AS2/AS3 transpilation, Newgrounds.io integration (medals, scoreboards, cloud saves), HTML5 export with Newgrounds game page templates, and SharedObject persistence mapping.</p>
-                </div>
-                <div class="comparison-card">
-                    <h4>Accessibility Leadership</h4>
-                    <p>8 colorblind modes, screen reader announcer, switch access scanning, dwell-click, eye tracking, WCAG AAA high-contrast themes, dyslexia-friendly fonts, reduced motion, and runtime font scaling.</p>
-                </div>
-                <div class="comparison-card">
-                    <h4>All-in-One Gameplay Systems</h4>
-                    <p>Quest system, dialogue trees (7 node types), tiered save system (20 slots + cloud backends), AI with behavior trees and navmesh, cinematic camera, destructible environments &mdash; all built-in.</p>
-                </div>
-                <div class="comparison-card">
-                    <h4>9+ Procedural Gen Algorithms</h4>
-                    <p>Cellular automata, BSP, diamond-square, L-system (3D stochastic), WFC, Voronoi, random walker, grammar rules, prefab assembler, fractal terrain with hydraulic/thermal erosion.</p>
-                </div>
-            </div>
+        </div><h3>Competitive Advantages</h3><h4>vs. Godot</h4><ul class="info-list"><li><strong>Ray tracing pipeline</strong> (Godot has none)</li><li><strong>Production physics</strong> via Jolt + Box2D (Godot uses custom physics)</li><li><strong>Built-in gameplay systems</strong> (save/quest/dialogue/AI) -- Godot requires addons</li><li><strong>Flash ecosystem support</strong> (SWF import, Newgrounds API)</li><li><strong>Deeper accessibility</strong> (switch access, eye tracking, dwell-click, WCAG AAA themes)</li><li><strong>Shader graph with GLSL codegen</strong> (Godot has visual shaders but different approach)</li><li><strong>Steam Audio HRTF spatial audio</strong> with occlusion/transmission (Godot has no equivalent)</li><li><strong>Hardened codebase</strong> with 10+ audit rounds and 50 test targets (Godot community-tested only)</li></ul><h4>vs. Unity</h4><ul class="info-list"><li><strong>Open-source under BSL 1.1</strong> with free game development use (Unity&#39;s pricing has alienated developers)</li><li><strong>Built-in game systems</strong> without paid plugins (dialogue, quest, save, AI behavior trees)</li><li><strong>Flash game revival toolkit</strong> (unique to Enjin)</li><li><strong>Retro/pixel art pipeline</strong> built-in (Unity requires third-party assets)</li><li><strong>Accessibility-first design</strong> (Unity&#39;s accessibility is addon-dependent)</li><li><strong>Simpler, focused scope</strong> (less bloat than Unity&#39;s multi-purpose platform)</li><li><strong>Built-in Steam Audio HRTF</strong> without middleware setup (Unity requires separate Steam Audio plugin)</li></ul><h4>vs. Unreal</h4><ul class="info-list"><li><strong>Dramatically simpler</strong> -- approachable for solo devs and small teams</li><li><strong>2D as a first-class citizen</strong> (Unreal&#39;s 2D is an afterthought)</li><li><strong>Lightweight</strong> -- no multi-GB install or &quot;learning Unreal&quot; curve</li><li><strong>HTML5 export</strong> for web games (Unreal dropped HTML5)</li><li><strong>Visual scripting without the complexity</strong> of Unreal Blueprints</li></ul><h4>vs. GameMaker</h4><ul class="info-list"><li><strong>Full 3D support</strong> with ray tracing, PBR, skeletal animation</li><li><strong>Visual scripting</strong> (GameMaker only has GML)</li><li><strong>Production physics</strong> (Jolt/Box2D vs. GameMaker&#39;s basic collision)</li><li><strong>Shader graph, behavior trees, quest systems</strong> -- far deeper feature set</li><li><strong>Open-source under BSL 1.1</strong> (GameMaker requires paid license)</li></ul><h4>vs. Construct</h4><ul class="info-list"><li><strong>Full native C++ performance</strong> (Construct is browser-based JavaScript)</li><li><strong>Complete 3D pipeline</strong> (Construct is 2D-only with minimal 3D)</li><li><strong>Text scripting</strong> (AngelScript vs. Construct&#39;s event sheets only)</li><li><strong>Desktop/console export</strong> without additional licenses</li><li><strong>Advanced rendering</strong> (ray tracing, PBR, post-processing)</li></ul><h3>Unique Selling Points</h3><ol class="info-list"><li><p class="desc"><strong>Flash Game Revival Platform</strong>: The only engine with SWF import, AS2/AS3 transpilation, Newgrounds.io integration (medals, scoreboards, cloud saves), HTML5 export with Newgrounds game page templates, Flash-style timeline editor, and SharedObject persistence mapping. This is a market of one.</p></li><li><p class="desc"><strong>Accessibility Leadership</strong>: With 8 colorblind modes, screen reader announcer, switch access scanning, dwell-click, eye tracking stubs, WCAG AAA high-contrast themes, dyslexia-friendly fonts, reduced motion, and runtime font scaling, Enjin has the most comprehensive accessibility suite of any game engine on the market.</p></li><li><p class="desc"><strong>All-in-One Gameplay Systems</strong>: Quest system, dialogue trees with 7 node types, tiered save system with 20 slots and cloud backends, AI with behavior trees and navmesh, cinematic camera, destructible environments, HUD overlay -- all built-in, not plugins.</p></li><li><p class="desc"><strong>Retro Art Pipeline</strong>: Pixel editor with 9 retro resolution presets, CRT/scanline/dithering post-processing, dithered gradient rendering, full-screen stipple patterns, sprite sheet importer with auto-slicing -- purpose-built for retro game development.</p></li><li><p class="desc"><strong>9+ Procedural Generation Algorithms</strong>: Cellular automata, BSP, diamond-square, L-system (3D stochastic), WFC, Voronoi, random walker, grammar rules, prefab assembler, fractal terrain with hydraulic/thermal erosion -- all with editor preview panels and script bindings.</p></li><li><p class="desc"><strong>Physics-Based Spatial Audio</strong>: Steam Audio HRTF binaural rendering with geometry-aware occlusion and transmission. Collider meshes double as acoustic geometry -- no separate audio mesh authoring required. Fallback to miniaudio built-in spatialization on hardware without HRTF support.</p></li><li><p class="desc"><strong>Audited, Hardened Codebase</strong>: 10+ systematic audit rounds with 205+ findings fixed across Vulkan renderer, ECS, serialization, physics, and scripting. Published audit reports demonstrate production-grade code quality. Trust zone boundary map documents all system interaction points.</p></li></ol><h3>Market Gaps Filled</h3><ul class="info-list"><li><strong>Post-Flash web game development</strong>: No engine specifically targets the Flash game community</li><li><strong>Accessibility-first game creation</strong>: Existing engines treat accessibility as an afterthought</li><li><strong>Solo dev all-in-one</strong>: Reduces dependency on plugin ecosystems and third-party assets</li><li><strong>Retro game creation with modern tooling</strong>: Bridges pixel art workflow with modern rendering pipeline</li><li><strong>Educational game engine</strong>: Built-in visual scripting, behavior trees, and procedural generation make it ideal for teaching</li><li><strong>Indie spatial audio</strong>: Professional HRTF audio without Wwise/FMOD middleware costs or setup complexity</li></ul>
         </section>
-
-        <!-- SECTION 6 -->
         <section class="section" id="section-6">
             <div class="section-header" data-accent="secondary">
                 <span class="section-num">6</span>
-                <h2 class="section-title">Revenue Model Analysis</h2>
+                <h2 class="section-title">6. Licensing &amp; Revenue Model Analysis</h2>
+            </div><h3>Current License: BSL 1.1 (Business Source License)</h3><p class="desc">As of March 2026, Enjin is licensed under the <strong>Business Source License 1.1</strong>. Key terms:</p><ul class="info-list"><li><strong>Use Grant</strong>: Free to use Enjin to make and sell games. No fees, no revenue share, no restrictions on commercial game releases.</li><li><strong>Restriction</strong>: You may not fork Enjin and sell it as a competing game engine product.</li><li><strong>Change Date</strong>: 4 years from each release, the license automatically converts to <strong>Apache 2.0</strong> (fully permissive open source).</li><li><strong>Source Access</strong>: Full source code available to all users.</li></ul><p class="desc">This model eliminates all adoption friction while protecting against engine-as-a-product competition. Game developers pay nothing -- ever.</p><h3>Historical Analysis: Alternative Models Considered</h3><p class="desc"><em>The following models were evaluated prior to the BSL 1.1 decision and are retained for reference.</em></p><h4>Model A: Pay-Per-Copy (One-Time Purchase)</h4>
+        <div class="table-container">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr>
+<th>Tier</th>
+<th>Price</th>
+<th>Features</th>
+<th>Target User</th>
+</tr>
+</thead>
+                    <tbody><tr>
+<td><strong>Indie</strong></td>
+<td>$49</td>
+<td>Full engine, editor, 2D+3D, all built-in systems, community support</td>
+<td>Solo devs, students, hobbyists</td>
+</tr>
+<tr>
+<td><strong>Pro</strong></td>
+<td>$149</td>
+<td>Indie + commercial license, priority support, console export stubs, source access</td>
+<td>Small studios (1-5 people)</td>
+</tr>
+<tr>
+<td><strong>Enterprise</strong></td>
+<td>$499/seat</td>
+<td>Pro + multi-seat license, dedicated support channel, custom branding removal, build server license</td>
+<td>Studios (5+ people)</td>
+</tr>
+</tbody>
+                </table>
             </div>
-
-            <h3>Model A: Pay-Per-Copy (One-Time Purchase)</h3>
-            <div class="table-container"><div class="table-scroll"><table>
-                <thead><tr><th>Tier</th><th>Price</th><th>Target User</th></tr></thead>
-                <tbody>
-                    <tr><td class="feature-name">Indie</td><td>$49</td><td>Solo devs, students, hobbyists</td></tr>
-                    <tr><td class="feature-name">Pro</td><td>$149</td><td>Small studios (1-5 people)</td></tr>
-                    <tr><td class="feature-name">Enterprise</td><td>$499/seat</td><td>Studios (5+ people)</td></tr>
-                </tbody>
-            </table></div></div>
-
-            <h3>Model B: Free-to-Create (Revenue Share)</h3>
-            <div class="table-container"><div class="table-scroll"><table>
-                <thead><tr><th>Tier</th><th>Price</th><th>Revenue Share</th><th>Target User</th></tr></thead>
-                <tbody>
-                    <tr><td class="feature-name">Free / Personal</td><td>$0</td><td>5% above $100K/year gross</td><td>Everyone</td></tr>
-                    <tr><td class="feature-name">Education</td><td>$0</td><td>None</td><td>Schools, students</td></tr>
-                    <tr><td class="feature-name">Pro</td><td>$99/year</td><td>No revenue share</td><td>Clean licensing</td></tr>
-                    <tr><td class="feature-name">Enterprise</td><td>$299/year/seat</td><td>No revenue share</td><td>Studios</td></tr>
-                </tbody>
-            </table></div></div>
-
-            <h3>Revenue Projections Comparison</h3>
-            <div class="table-container"><div class="table-scroll"><table>
-                <thead><tr><th>Year</th><th>Model A (Pay-Per-Copy)</th><th>Model B (Free-to-Create)</th></tr></thead>
-                <tbody>
-                    <tr><td class="feature-name">Year 1</td><td>$152.7K</td><td>$27.8K</td></tr>
-                    <tr><td class="feature-name">Year 2</td><td>$389.2K</td><td>$141K</td></tr>
-                    <tr><td class="feature-name">Year 3</td><td>$763.4K</td><td>$446.9K</td></tr>
-                    <tr><td class="feature-name">Year 5</td><td>$1.53M</td><td>$1.38M</td></tr>
-                </tbody>
-            </table></div></div>
-
-            <div class="highlight-box success">
-                <p><strong>Recommendation:</strong> A hybrid approach &mdash; Free-to-Create with a $200K threshold, plus a one-time "$99 Pro Unlock" that permanently removes the revenue share obligation. Combines zero-barrier adoption with developer goodwill.</p>
+        </div><p class="desc"><strong>Pros:</strong></p><ul class="info-list"><li>Simple, transparent pricing that developers appreciate (post-Unity backlash)</li><li>No ongoing revenue obligations for developers</li><li>Competitive with GameMaker ($99) and Construct ($199/yr)</li><li>One-time cost removes friction for adoption</li><li>No surprise price changes or retroactive fee structures</li></ul><p class="desc"><strong>Cons:</strong></p><ul class="info-list"><li>Revenue is front-loaded with no recurring income</li><li>Must continuously release new versions to drive upgrade revenue</li><li>No revenue from successful games made with the engine</li><li>Harder to fund long-term development without recurring revenue</li><li>Price anchoring -- once purchased, users resist paying for upgrades</li></ul><p class="desc"><strong>Revenue Projections (Pay-Per-Copy):</strong></p>
+        <div class="table-container">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr>
+<th>Year</th>
+<th>Indie Sales</th>
+<th>Pro Sales</th>
+<th>Enterprise</th>
+<th>Total Revenue</th>
+</tr>
+</thead>
+                    <tbody><tr>
+<td>Year 1</td>
+<td>2,000 x $49 = $98K</td>
+<td>300 x $149 = $44.7K</td>
+<td>20 x $499 = $10K</td>
+<td><strong>$152.7K</strong></td>
+</tr>
+<tr>
+<td>Year 2</td>
+<td>5,000 x $49 = $245K</td>
+<td>800 x $149 = $119.2K</td>
+<td>50 x $499 = $25K</td>
+<td><strong>$389.2K</strong></td>
+</tr>
+<tr>
+<td>Year 3</td>
+<td>10,000 x $49 = $490K</td>
+<td>1,500 x $149 = $223.5K</td>
+<td>100 x $499 = $49.9K</td>
+<td><strong>$763.4K</strong></td>
+</tr>
+<tr>
+<td>Year 5</td>
+<td>20,000 x $49 = $980K</td>
+<td>3,000 x $149 = $447K</td>
+<td>200 x $499 = $99.8K</td>
+<td><strong>$1.53M</strong></td>
+</tr>
+</tbody>
+                </table>
             </div>
+        </div><h3>Model B: Free-to-Create (Revenue Share)</h3>
+        <div class="table-container">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr>
+<th>Tier</th>
+<th>Price</th>
+<th>Revenue Share</th>
+<th>Target User</th>
+</tr>
+</thead>
+                    <tbody><tr>
+<td><strong>Free / Personal</strong></td>
+<td>$0</td>
+<td>5% revenue share above $100K/year gross</td>
+<td>Everyone -- zero barrier to entry</td>
+</tr>
+<tr>
+<td><strong>Education</strong></td>
+<td>$0</td>
+<td>None</td>
+<td>Schools, students, non-commercial</td>
+</tr>
+<tr>
+<td><strong>Pro</strong></td>
+<td>$99/year</td>
+<td>No revenue share</td>
+<td>Devs wanting clean licensing</td>
+</tr>
+<tr>
+<td><strong>Enterprise</strong></td>
+<td>$299/year/seat</td>
+<td>No revenue share, priority support</td>
+<td>Studios</td>
+</tr>
+</tbody>
+                </table>
+            </div>
+        </div><p class="desc"><strong>Pros:</strong></p><ul class="info-list"><li>Zero barrier to entry maximizes adoption and community growth</li><li>Revenue scales with developer success (aligned incentives)</li><li>The $100K threshold means hobbyists and students never pay</li><li>Education tier builds next-generation developer loyalty</li><li>Follows proven Unity/Unreal model (but with fairer terms)</li><li>Recurring revenue from Pro/Enterprise subscriptions</li></ul><p class="desc"><strong>Cons:</strong></p><ul class="info-list"><li>Revenue share enforcement is difficult for small/solo devs</li><li>Revenue delayed until developers ship and succeed</li><li>Requires legal infrastructure for revenue share tracking</li><li>Pro tier must be compelling enough to convert free users</li><li>Community may resist any revenue share (Godot is fully free)</li></ul><p class="desc"><strong>Revenue Projections (Free-to-Create):</strong></p>
+        <div class="table-container">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr>
+<th>Year</th>
+<th>Users</th>
+<th>Pro Subs</th>
+<th>Enterprise Subs</th>
+<th>Rev Share (est.)</th>
+<th>Total Revenue</th>
+</tr>
+</thead>
+                    <tbody><tr>
+<td>Year 1</td>
+<td>10,000</td>
+<td>200 x $99 = $19.8K</td>
+<td>10 x $299 = $3K</td>
+<td>$5K</td>
+<td><strong>$27.8K</strong></td>
+</tr>
+<tr>
+<td>Year 2</td>
+<td>40,000</td>
+<td>1,000 x $99 = $99K</td>
+<td>40 x $299 = $12K</td>
+<td>$30K</td>
+<td><strong>$141K</strong></td>
+</tr>
+<tr>
+<td>Year 3</td>
+<td>100,000</td>
+<td>3,000 x $99 = $297K</td>
+<td>100 x $299 = $29.9K</td>
+<td>$120K</td>
+<td><strong>$446.9K</strong></td>
+</tr>
+<tr>
+<td>Year 5</td>
+<td>300,000</td>
+<td>8,000 x $99 = $792K</td>
+<td>300 x $299 = $89.7K</td>
+<td>$500K</td>
+<td><strong>$1.38M</strong></td>
+</tr>
+</tbody>
+                </table>
+            </div>
+        </div><h3>Model Comparison</h3>
+        <div class="table-container">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr>
+<th>Factor</th>
+<th>Model A (Pay-Per-Copy)</th>
+<th>Model B (Free-to-Create)</th>
+</tr>
+</thead>
+                    <tbody><tr>
+<td><strong>Barrier to Entry</strong></td>
+<td>$49 minimum</td>
+<td>$0</td>
+</tr>
+<tr>
+<td><strong>Year 1 Revenue</strong></td>
+<td>~$153K</td>
+<td>~$28K</td>
+</tr>
+<tr>
+<td><strong>Year 5 Revenue</strong></td>
+<td>~$1.53M</td>
+<td>~$1.38M</td>
+</tr>
+<tr>
+<td><strong>Break-Even Point</strong></td>
+<td>Immediate</td>
+<td>~Year 4</td>
+</tr>
+<tr>
+<td><strong>User Base Growth</strong></td>
+<td>Moderate</td>
+<td>Rapid</td>
+</tr>
+<tr>
+<td><strong>Community Size</strong></td>
+<td>Smaller but paying</td>
+<td>Larger, more engaged</td>
+</tr>
+<tr>
+<td><strong>Legal Complexity</strong></td>
+<td>Simple</td>
+<td>Revenue share tracking</td>
+</tr>
+<tr>
+<td><strong>Developer Goodwill</strong></td>
+<td>Neutral (fair price)</td>
+<td>High (free for most)</td>
+</tr>
+<tr>
+<td><strong>Long-term Sustainability</strong></td>
+<td>Needs upgrade sales</td>
+<td>Scales with ecosystem</td>
+</tr>
+<tr>
+<td><strong>Competitive Position</strong></td>
+<td>Like GameMaker/Construct</td>
+<td>Like Unity/Unreal (but fairer)</td>
+</tr>
+</tbody>
+                </table>
+            </div>
+        </div><h3>Outcome</h3><p class="desc"><strong>BSL 1.1 was selected</strong> as the licensing model, superseding the above alternatives. BSL 1.1 provides the maximum adoption advantage (zero cost, full source access, no revenue share) while protecting against competitive forking. The 4-year change date to Apache 2.0 builds long-term community trust and ensures the codebase becomes fully open over time. This approach aligns with the Enjin philosophy of removing all barriers for game developers.</p>
         </section>
-
-        <!-- SECTION 7 -->
         <section class="section" id="section-7">
             <div class="section-header" data-accent="tertiary">
                 <span class="section-num">7</span>
-                <h2 class="section-title">Market Share Potential</h2>
+                <h2 class="section-title">7. Market Share Potential</h2>
+            </div><h3>Total Addressable Market</h3><p class="desc">The global game engine market is estimated at $3.5-4.5B (2025), with the indie/hobbyist segment representing approximately $800M-1.2B. Key market metrics:</p>
+        <div class="table-container">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr>
+<th>Metric</th>
+<th>Estimate</th>
+<th>Source Basis</th>
+</tr>
+</thead>
+                    <tbody><tr>
+<td><strong>Game devs worldwide</strong></td>
+<td>~2.5M active</td>
+<td>GDC surveys, itch.io registrations</td>
+</tr>
+<tr>
+<td><strong>Indie developers</strong></td>
+<td>~1.5M</td>
+<td>Using non-AAA engines</td>
+</tr>
+<tr>
+<td><strong>Hobbyist/student devs</strong></td>
+<td>~800K</td>
+<td>Game jams, educational use</td>
+</tr>
+<tr>
+<td><strong>Flash game community</strong></td>
+<td>~50K-100K active</td>
+<td>Newgrounds, Kongregate legacy, web game forums</td>
+</tr>
+<tr>
+<td><strong>Game engine market CAGR</strong></td>
+<td>12-15%</td>
+<td>Industry reports</td>
+</tr>
+</tbody>
+                </table>
             </div>
-
-            <div class="table-container"><div class="table-scroll"><table>
-                <thead><tr><th>Timeframe</th><th>Users</th><th>Market Share (Indie)</th><th>Key Milestone</th></tr></thead>
-                <tbody>
-                    <tr><td class="feature-name">Year 1</td><td>5,000 - 15,000</td><td>0.3 - 1.0%</td><td>Launch, early adopters</td></tr>
-                    <tr><td class="feature-name">Year 2</td><td>25,000 - 50,000</td><td>1.7 - 3.3%</td><td>First games shipped</td></tr>
-                    <tr><td class="feature-name">Year 3</td><td>75,000 - 150,000</td><td>5 - 10%</td><td>Community established</td></tr>
-                    <tr><td class="feature-name">Year 5</td><td>200,000 - 400,000</td><td>13 - 27%</td><td>Mature ecosystem</td></tr>
-                </tbody>
-            </table></div></div>
-
-            <h3>Key Growth Drivers</h3>
-            <ul class="info-list">
-                <li><strong>Post-Unity migration wave</strong> &mdash; Pricing changes created lasting trust deficit</li>
-                <li><strong>Flash game nostalgia + revival</strong> &mdash; No dedicated modern engine for Flash community</li>
-                <li><strong>Accessibility regulations</strong> &mdash; EU Accessibility Act 2025, US Section 508</li>
-                <li><strong>Education market</strong> &mdash; Built-in visual scripting, BTs, procedural gen for teaching</li>
-                <li><strong>"Hit game" effect</strong> &mdash; A single commercially successful game boosts adoption dramatically</li>
-            </ul>
-
-            <h3>Risk Factors</h3>
-            <div class="table-container"><div class="table-scroll"><table>
-                <thead><tr><th>Risk</th><th>Severity</th><th>Mitigation</th></tr></thead>
-                <tbody>
-                    <tr><td class="feature-name">Single-developer bus factor</td><td><span class="badge badge-basic">Critical</span></td><td>Open-source core, contributor docs, modular architecture</td></tr>
-                    <tr><td class="feature-name">Godot momentum</td><td><span class="badge badge-partial">High</span></td><td>Differentiate via Flash revival, accessibility, gameplay systems</td></tr>
-                    <tr><td class="feature-name">Community building</td><td><span class="badge badge-partial">High</span></td><td>Documentation, tutorials, Discord, game jams</td></tr>
-                    <tr><td class="feature-name">Console certification</td><td><span class="badge badge-stub">Medium</span></td><td>Partner with porting houses; focus on PC/web first</td></tr>
-                </tbody>
-            </table></div></div>
+        </div><h3>Realistic Market Capture Estimates</h3>
+        <div class="table-container">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr>
+<th>Timeframe</th>
+<th>Users</th>
+<th>Market Share (of Indie)</th>
+<th>Key Milestone</th>
+</tr>
+</thead>
+                    <tbody><tr>
+<td><strong>Year 1</strong></td>
+<td>5,000-15,000</td>
+<td>0.3-1.0%</td>
+<td>Launch, early adopter community</td>
+</tr>
+<tr>
+<td><strong>Year 2</strong></td>
+<td>25,000-50,000</td>
+<td>1.7-3.3%</td>
+<td>First games shipped, word-of-mouth</td>
+</tr>
+<tr>
+<td><strong>Year 3</strong></td>
+<td>75,000-150,000</td>
+<td>5-10%</td>
+<td>Established community, tutorials, courses</td>
+</tr>
+<tr>
+<td><strong>Year 5</strong></td>
+<td>200,000-400,000</td>
+<td>13-27%</td>
+<td>Mature ecosystem, console support</td>
+</tr>
+</tbody>
+                </table>
+            </div>
+        </div><p class="desc">For context, Godot reached ~2,500 monthly contributors and an estimated 500K-1M users over 10 years. Enjin&#39;s broader built-in feature set could accelerate adoption but its single-developer origin may slow community trust-building.</p><h3>Key Growth Drivers</h3><ol class="info-list"><li><p class="desc"><strong>Post-Unity migration wave</strong>: Unity&#39;s pricing changes created a lasting trust deficit. Developers actively seeking alternatives have already boosted Godot significantly; Enjin could capture a portion of this migration.</p></li><li><p class="desc"><strong>Flash game nostalgia + revival</strong>: The Flash game community (Newgrounds, Kongregate legacy) has no dedicated modern engine. Enjin&#39;s SWF import, AS transpiler, and Newgrounds API integration make it the only viable migration path.</p></li><li><p class="desc"><strong>Accessibility regulations</strong>: Growing legal requirements for accessible software (EU Accessibility Act 2025, US Section 508) make Enjin&#39;s built-in accessibility suite increasingly valuable as a compliance advantage.</p></li><li><p class="desc"><strong>Education market</strong>: Universities and boot camps need engines with built-in visual scripting, behavior trees, and procedural generation for teaching. Enjin&#39;s all-in-one approach reduces setup time for curricula.</p></li><li><p class="desc"><strong>&quot;Hit game&quot; effect</strong>: A single commercially successful game built with Enjin would dramatically boost adoption (the &quot;Hollow Knight effect&quot; for Unity, &quot;Baldi&#39;s Basics&quot; for Unreal).</p></li></ol><h3>Risk Factors</h3>
+        <div class="table-container">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr>
+<th>Risk</th>
+<th>Severity</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+                    <tbody><tr>
+<td><strong>Single-developer bus factor</strong></td>
+<td>Critical</td>
+<td>Open-source core, contributor onboarding docs, modular architecture</td>
+</tr>
+<tr>
+<td><strong>Godot momentum</strong></td>
+<td>High</td>
+<td>Differentiate via Flash revival, accessibility, built-in gameplay systems, Steam Audio HRTF, and audited codebase</td>
+</tr>
+<tr>
+<td><strong>Unity/Unreal price corrections</strong></td>
+<td>Medium</td>
+<td>Enjin&#39;s unique features (retro, Flash, accessibility) are not price-dependent</td>
+</tr>
+<tr>
+<td><strong>Console certification barriers</strong></td>
+<td>Medium</td>
+<td>Partner with porting houses; focus on PC/web/mobile first</td>
+</tr>
+<tr>
+<td><strong>Community building</strong></td>
+<td>High</td>
+<td>Invest in documentation, tutorials, Discord, game jams</td>
+</tr>
+<tr>
+<td><strong>Performance perception</strong></td>
+<td>Medium</td>
+<td>Benchmark comparisons, demo projects, 50 test targets, published audit reports build confidence</td>
+</tr>
+<tr>
+<td><strong>API stability concerns</strong></td>
+<td>Medium</td>
+<td>Semver, deprecation policy, migration guides</td>
+</tr>
+</tbody>
+                </table>
+            </div>
+        </div>
         </section>
-
-        <!-- SECTION 8 -->
         <section class="section" id="section-8">
             <div class="section-header" data-accent="quaternary">
                 <span class="section-num">8</span>
-                <h2 class="section-title">Performance Diagnostics Summary</h2>
+                <h2 class="section-title">8. Performance Diagnostics Summary</h2>
+            </div><h3>Optimization Status</h3><p class="desc">All performance issues from P0 through P6 have been resolved. The engine has undergone 10+ rounds of auditing (performance + security + stability + feature wiring) with 205+ findings fixed across 7 formal audit reports (AUDIT_2026_02_11 through AUDIT_2026_02_18, plus per-subsystem reports for ECS, Renderer, Serialization, Asset Pack, and Physics/Audio).</p><h4>Resolved Optimizations (Good Patterns)</h4>
+        <div class="table-container">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr>
+<th>Category</th>
+<th>Optimization</th>
+<th>Impact</th>
+</tr>
+</thead>
+                    <tbody><tr>
+<td><strong>GPU Sync</strong></td>
+<td><code>vkDeviceWaitIdle()</code> replaced with fence-based <code>WaitForGPU()</code> across 18 subsystems</td>
+<td>Eliminated GPU stalls</td>
+</tr>
+<tr>
+<td><strong>Entity Iteration</strong></td>
+<td><code>GetAllEntities()</code> + filter replaced with <code>GetEntitiesWithComponent&lt;T&gt;()</code> everywhere</td>
+<td>O(N) -&gt; O(M) where M &lt;&lt; N</td>
+</tr>
+<tr>
+<td><strong>Descriptor Caching</strong></td>
+<td><code>m_LastBound</code> state tracks texture/bone pointers, skips unchanged <code>vkUpdateDescriptorSets</code></td>
+<td>~60-80% descriptor write reduction</td>
+</tr>
+<tr>
+<td><strong>Material Sort</strong></td>
+<td>Entities sorted by 64-bit material sort key (pipeline + material + texture) so identical materials draw consecutively</td>
+<td>Maximizes cache hits, minimizes state changes</td>
+</tr>
+<tr>
+<td><strong>Texture Caching</strong></td>
+<td><code>cachedBaseColorTexture</code> etc. on <code>MaterialComponent</code>, invalidated on path change</td>
+<td>Eliminates per-frame string lookups</td>
+</tr>
+<tr>
+<td><strong>Shadow Caster Cache</strong></td>
+<td>Pre-filtered shadow caster list avoids per-cascade redundant iteration</td>
+<td>4x reduction in shadow pass iteration</td>
+</tr>
+<tr>
+<td><strong>Play Mode Skip</strong></td>
+<td><code>m_SkipMainPassRendering</code> flag prevents double-draw during play mode</td>
+<td>Halves geometry rendering cost</td>
+</tr>
+<tr>
+<td><strong>Frame Pacing</strong></td>
+<td><code>timeBeginPeriod(1)</code> on Windows for 1ms sleep resolution + 2ms spin margin</td>
+<td>Eliminates 5-14ms frame jitter</td>
+</tr>
+<tr>
+<td><strong>Collision Broad-Phase</strong></td>
+<td><code>SpatialHashGrid</code> with oversized entity fallback</td>
+<td>100 colliders: 4950 pairs -&gt; ~200</td>
+</tr>
+<tr>
+<td><strong>Name Cache</strong></td>
+<td><code>m_NameCache</code> on World for O(1) <code>FindEntityByName()</code></td>
+<td>Script entity lookup from O(N) to O(1)</td>
+</tr>
+<tr>
+<td><strong>Quaternion Helpers</strong></td>
+<td><code>GetRotationZ()</code>, <code>GetForward()/GetRight()/GetUp()</code> avoid <code>ToEuler()</code>/<code>ToMatrix()</code></td>
+<td>Single atan2 vs. full decomposition</td>
+</tr>
+<tr>
+<td><strong>Component Flags</strong></td>
+<td>Pre-classified entity component flags avoid 6+ optional <code>GetComponent</code> calls</td>
+<td>Reduces per-entity branch count</td>
+</tr>
+<tr>
+<td><strong>Scene Classification</strong></td>
+<td>2D scenes skip shadow passes, minimal UBO upload, skip normal map descriptors</td>
+<td>4+ render passes eliminated for 2D</td>
+</tr>
+<tr>
+<td><strong>Sprite Atlas</strong></td>
+<td>Runtime shelf-packing into 4096x4096 GPU texture</td>
+<td>Many draw calls -&gt; 1 instanced draw</td>
+</tr>
+<tr>
+<td><strong>Script Query Cache</strong></td>
+<td>Single cached <code>GetEntitiesWithComponent&lt;ScriptComponent&gt;()</code> shared across Update/FixedUpdate/LateUpdate</td>
+<td>6 queries -&gt; 1 per frame</td>
+</tr>
+<tr>
+<td><strong>GPU HiZ Occlusion Culling</strong></td>
+<td>Two-phase hierarchical-Z culling via async compute eliminates invisible geometry before draw submission</td>
+<td>Significant draw call reduction in occluded scenes</td>
+</tr>
+<tr>
+<td><strong>Clustered Forward Lighting</strong></td>
+<td>16x9x24 frustum grid with compute-shader light assignment; per-fragment cluster lookup via SSBOs (bindings 14-15)</td>
+<td>Per-light cost O(N) -&gt; O(K) per fragment</td>
+</tr>
+<tr>
+<td><strong>64-bit Material Sort Keys</strong></td>
+<td>Pipeline + material + texture encoded in 64-bit key for cache-friendly draw ordering</td>
+<td>Minimizes pipeline/descriptor state changes</td>
+</tr>
+<tr>
+<td><strong>Per-Frame Linear Allocator</strong></td>
+<td><code>FrameAllocator</code> provides O(1) bump allocation for transient render data, reset once per frame</td>
+<td>Eliminates per-object heap allocations in render loop</td>
+</tr>
+<tr>
+<td><strong>LOD Hysteresis</strong></td>
+<td>Screen-space LOD selection with hysteresis band prevents rapid LOD switching during camera movement</td>
+<td>Eliminates LOD popping artifacts</td>
+</tr>
+<tr>
+<td><strong>Async Compute Overlap</strong></td>
+<td>GPU culling and cluster assignment dispatch on async compute queue, overlapping with CPU scene prep</td>
+<td>Better GPU utilization, reduced frame time</td>
+</tr>
+</tbody>
+                </table>
             </div>
-            <p class="desc">All P0&ndash;P6 performance issues resolved. 350+ findings addressed across 5+ audit rounds.</p>
-
+        </div><h4>Current Performance Profile</h4>
+        <div class="table-container">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr>
+<th>Metric</th>
+<th>Target</th>
+<th>Achieved</th>
+<th>Notes</th>
+</tr>
+</thead>
+                    <tbody><tr>
+<td><strong>Frame Time (Empty Scene)</strong></td>
+<td>&lt; 2ms</td>
+<td>~1ms</td>
+<td>Minimal overhead</td>
+</tr>
+<tr>
+<td><strong>Frame Time (1000 Entities, 3D)</strong></td>
+<td>&lt; 16ms (60fps)</td>
+<td>&lt; 16ms with Jolt</td>
+<td>Production physics backend</td>
+</tr>
+<tr>
+<td><strong>Frame Time (1000 Sprites, 2D)</strong></td>
+<td>&lt; 8ms</td>
+<td>&lt; 5ms</td>
+<td>Atlas batching effective</td>
+</tr>
+<tr>
+<td><strong>Shadow Pass (4 CSM Cascades)</strong></td>
+<td>&lt; 4ms total</td>
+<td>~3ms</td>
+<td>Caster caching helps</td>
+</tr>
+<tr>
+<td><strong>Descriptor Cache Hit Rate</strong></td>
+<td>&gt; 70%</td>
+<td>~75-85%</td>
+<td>Material sort driven</td>
+</tr>
+<tr>
+<td><strong>Entity Lookup (by name)</strong></td>
+<td>&lt; 0.01ms</td>
+<td>O(1)</td>
+<td>Hash map cache</td>
+</tr>
+<tr>
+<td><strong>Physics (1000 Colliders, Jolt)</strong></td>
+<td>&lt; 4ms</td>
+<td>~2-3ms</td>
+<td>Multi-threaded Jolt</td>
+</tr>
+<tr>
+<td><strong>Entity Validation</strong></td>
+<td>O(1)</td>
+<td>O(1)</td>
+<td><code>unordered_set</code> for <code>IsValid()</code> (ECS audit)</td>
+</tr>
+</tbody>
+                </table>
+            </div>
+        </div><h4>Performance Tier Classification</h4><p class="desc"><strong>Enjin sits firmly in the &quot;Indie Production&quot; tier</strong>, capable of handling:</p><ul class="info-list"><li>2D games with thousands of sprites at 60fps (atlas batching + normal map lighting)</li><li>3D games with hundreds of entities and full shadow/lighting at 60fps (CSM w/ cascade blending)</li><li>Ray tracing on supported hardware (RT-capable GPU required)</li><li>HRTF spatial audio with geometry-aware occlusion (Steam Audio)</li><li>LAN multiplayer with 20Hz state sync and client-side prediction</li></ul><p class="desc">With recent additions of virtual texturing (page-based streaming), LOD with hysteresis, GPU HiZ occlusion culling, and clustered forward lighting, the engine is closing the gap toward mid-tier production quality. It is <strong>not positioned for AAA-scale</strong> rendering (no Nanite-style mesh streaming, no massive open-world streaming), but it significantly exceeds the requirements of its target market (indie/hobbyist/retro/Flash) and can handle moderately complex 3D scenes efficiently.</p><h4>Frame Budget Breakdown (Typical 3D Scene, 16.67ms Budget)</h4>
             <div class="diagram-container">
                 <div class="diagram-controls">
-                    <button onclick="zoomDiagram('perf-diagram', 1.2)">Zoom +</button>
-                    <button onclick="zoomDiagram('perf-diagram', 0.8)">Zoom &minus;</button>
-                    <button onclick="resetDiagram('perf-diagram')">Reset</button>
+                    <button onclick="zoomDiagram('mermaid-400', 1.2)">Zoom +</button>
+                    <button onclick="zoomDiagram('mermaid-400', 0.8)">Zoom &minus;</button>
+                    <button onclick="resetDiagram('mermaid-400')">Reset</button>
                 </div>
                 <div class="diagram-viewport">
-<pre class="mermaid" id="perf-diagram">
+<pre class="mermaid" id="mermaid-400">
 pie title Frame Budget Breakdown (3D, 60fps)
-    "Shadow Passes (CSM + Point + Spot)" : 3.0
-    "Scene Classification + UBO Upload" : 0.5
-    "Main Render Pass (Opaque)" : 4.0
+    "Shadow Passes (CSM + Point + Spot)" : 2.5
+    "GPU Culling + Cluster Assign (Async)" : 0.8
+    "Scene Classification + UBO Upload" : 0.4
+    "Main Render Pass (Opaque)" : 3.5
     "Sprite Batch Rendering" : 1.5
     "Particle Rendering" : 1.0
     "Post-Processing Chain" : 2.5
     "ECS Systems (Physics, AI, Scripts)" : 3.0
     "ImGui / Editor Overlay" : 1.0
-    "Remaining Headroom" : 0.17
+    "Remaining Headroom" : 0.47
 </pre>
                 </div>
             </div>
-
-            <h3>Current Performance Profile</h3>
-            <div class="table-container"><div class="table-scroll"><table>
-                <thead><tr><th>Metric</th><th>Target</th><th>Achieved</th><th>Notes</th></tr></thead>
-                <tbody>
-                    <tr><td class="feature-name">Frame Time (Empty Scene)</td><td>&lt; 2ms</td><td>~1ms</td><td>Minimal overhead</td></tr>
-                    <tr><td class="feature-name">Frame Time (1000 Entities, 3D)</td><td>&lt; 16ms (60fps)</td><td>&lt; 16ms with Jolt</td><td>Production physics</td></tr>
-                    <tr><td class="feature-name">Frame Time (1000 Sprites, 2D)</td><td>&lt; 8ms</td><td>&lt; 5ms</td><td>Atlas batching</td></tr>
-                    <tr><td class="feature-name">Shadow Pass (4 CSM)</td><td>&lt; 4ms</td><td>~3ms</td><td>Caster caching</td></tr>
-                    <tr><td class="feature-name">Descriptor Cache Hit Rate</td><td>&gt; 70%</td><td>~75-85%</td><td>Material sort driven</td></tr>
-                    <tr><td class="feature-name">Physics (1000 Colliders, Jolt)</td><td>&lt; 4ms</td><td>~2-3ms</td><td>Multi-threaded</td></tr>
-                </tbody>
-            </table></div></div>
-
-            <h3>Resolved Optimization Categories</h3>
-            <div class="table-container"><div class="table-scroll"><table>
-                <thead><tr><th>Category</th><th>Optimization</th><th>Impact</th></tr></thead>
-                <tbody>
-                    <tr><td class="feature-name">GPU Sync</td><td>vkDeviceWaitIdle &rarr; fence-based WaitForGPU (18 subsystems)</td><td>Eliminated GPU stalls</td></tr>
-                    <tr><td class="feature-name">Entity Iteration</td><td>GetAllEntities+filter &rarr; GetEntitiesWithComponent</td><td>O(N) &rarr; O(M), M &laquo; N</td></tr>
-                    <tr><td class="feature-name">Descriptor Caching</td><td>m_LastBound tracking, skip unchanged writes</td><td>~60-80% write reduction</td></tr>
-                    <tr><td class="feature-name">Material Sort</td><td>Sort by cachedTextureKey for consecutive draws</td><td>Maximizes cache hits</td></tr>
-                    <tr><td class="feature-name">Scene Classification</td><td>2D scenes skip shadows + minimal UBO</td><td>4+ passes eliminated</td></tr>
-                    <tr><td class="feature-name">Collision Broad-Phase</td><td>SpatialHashGrid replaces O(N&sup2;)</td><td>4950 &rarr; ~200 pairs</td></tr>
-                    <tr><td class="feature-name">Frame Pacing</td><td>timeBeginPeriod(1) + 2ms spin margin</td><td>Eliminates 5-14ms jitter</td></tr>
-                </tbody>
-            </table></div></div>
         </section>
-
-        <!-- SECTION 9 -->
         <section class="section" id="section-9">
             <div class="section-header">
                 <span class="section-num">9</span>
-                <h2 class="section-title">Technical Debt Assessment</h2>
+                <h2 class="section-title">9. Technical Debt Assessment</h2>
+            </div><h3>Code Health Indicators</h3>
+        <div class="table-container">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr>
+<th>Metric</th>
+<th>Assessment</th>
+<th>Evidence</th>
+</tr>
+</thead>
+                    <tbody><tr>
+<td><strong>Architecture</strong></td>
+<td>Strong</td>
+<td>Clean 3-layer separation (Core/Engine/App), no circular dependencies</td>
+</tr>
+<tr>
+<td><strong>Thread Safety</strong></td>
+<td>Good</td>
+<td>ECS World uses recursive mutex (incl. IsValid/IsPendingDestruction), deferred destruction with set-cleared on Clear(), atomic refcounts</td>
+</tr>
+<tr>
+<td><strong>Error Handling</strong></td>
+<td>Strong</td>
+<td>Vulkan VkResult checks at 25+ sites (all hardened Feb 2026), JSON <code>.contains()</code> validation, bounds checking, GPU loop caps, null guards on all physics/audio paths</td>
+</tr>
+<tr>
+<td><strong>Memory Management</strong></td>
+<td>Good</td>
+<td>Custom allocators (Stack/Pool/Linear/Frame), per-frame <code>FrameAllocator</code> for transient render data, <code>reserve()</code> on hot-path vectors, leak-free Vulkan failure paths (verified in renderer audit)</td>
+</tr>
+<tr>
+<td><strong>API Consistency</strong></td>
+<td>Good</td>
+<td>Consistent naming conventions (Get/Set/Is), ENJIN_API export macro</td>
+</tr>
+<tr>
+<td><strong>Test Coverage</strong></td>
+<td>Good</td>
+<td>Custom CTest framework with 50 test targets and ~700+ test cases across unit and integration suites. Tests organized into <code>Tests/Unit/</code> and <code>Tests/Integration/</code> (expanded from 8 to 26 in Feb 2026 audit campaign, then to 50 in Mar 2026)</td>
+</tr>
+<tr>
+<td><strong>Documentation</strong></td>
+<td>Strong</td>
+<td>CLAUDE.md (~150 lines), CLAUDE_REFERENCE.md, 20+ doc files (incl. 7 audit reports), trust zone boundary map, generated API docs, inline tooltips</td>
+</tr>
+</tbody>
+                </table>
             </div>
-
-            <h3>Code Health Indicators</h3>
-            <div class="table-container"><div class="table-scroll"><table>
-                <thead><tr><th>Metric</th><th>Assessment</th><th>Evidence</th></tr></thead>
-                <tbody>
-                    <tr><td class="feature-name">Architecture</td><td><span class="badge badge-full">Strong</span></td><td>Clean 3-layer separation, no circular deps</td></tr>
-                    <tr><td class="feature-name">Thread Safety</td><td><span class="badge badge-full">Good</span></td><td>Recursive mutex, deferred destruction, atomic refcounts</td></tr>
-                    <tr><td class="feature-name">Error Handling</td><td><span class="badge badge-full">Good</span></td><td>Vulkan checks, JSON validation, bounds checking</td></tr>
-                    <tr><td class="feature-name">Memory Management</td><td><span class="badge badge-full">Good</span></td><td>Custom allocators, reserve(), no known leaks</td></tr>
-                    <tr><td class="feature-name">Test Coverage</td><td><span class="badge badge-basic">Basic</span></td><td>CTest: 4 unit + 4 integration tests</td></tr>
-                    <tr><td class="feature-name">Documentation</td><td><span class="badge badge-full">Strong</span></td><td>CLAUDE.md (~450 lines), 17+ doc files, API docs</td></tr>
-                </tbody>
-            </table></div></div>
-
-            <h3>Areas Needing Refactoring</h3>
-            <div class="table-container"><div class="table-scroll"><table>
-                <thead><tr><th>Area</th><th>Issue</th><th>Severity</th><th>Effort</th></tr></thead>
-                <tbody>
-                    <tr><td class="feature-name">EditorLayer size</td><td>Single file handles all 32 panels (~38,000 lines)</td><td><span class="badge badge-stub">Medium</span></td><td>High</td></tr>
-                    <tr><td class="feature-name">RenderSystem scope</td><td>Too many responsibilities (sprites, particles, vegetation, water, debug)</td><td><span class="badge badge-stub">Medium</span></td><td>High</td></tr>
-                    <tr><td class="feature-name">XOR obfuscation</td><td>Asset pack uses trivially breakable XOR</td><td><span class="badge badge-stub">Medium</span></td><td>Medium</td></tr>
-                    <tr><td class="feature-name">Push constant flags</td><td>32-bit flag field fully allocated</td><td><span class="badge badge-none">Low</span></td><td>Low</td></tr>
-                </tbody>
-            </table></div></div>
-
-            <h3>Recommended Priority Actions</h3>
-            <ol class="info-list">
-                <li><strong>Expand unit test coverage</strong> &mdash; CTest framework exists; add Catch2/GoogleTest for richer assertions</li>
-                <li><strong>Extract EditorLayer panels</strong> into individual classes</li>
-                <li><strong>Replace XOR obfuscation</strong> with authenticated encryption</li>
-                <li><strong>Restrict script #include paths</strong> to project directory</li>
-                <li><strong>Deprecation timeline</strong> for SimplePhysics</li>
-            </ol>
+        </div><h3>Areas Needing Refactoring</h3>
+        <div class="table-container">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr>
+<th>Area</th>
+<th>Issue</th>
+<th>Severity</th>
+<th>Effort</th>
+</tr>
+</thead>
+                    <tbody><tr>
+<td><strong>EditorLayer size</strong></td>
+<td>Single file handles all 32 panels, ~38,000 lines</td>
+<td>Medium</td>
+<td>High -- extract panel classes</td>
+</tr>
+<tr>
+<td><strong>RenderSystem scope</strong></td>
+<td>Handles sprites, particles, vegetation, water, debug viz -- too many responsibilities</td>
+<td>Medium</td>
+<td>High -- extract sub-renderers</td>
+</tr>
+<tr>
+<td><strong>Script binding files</strong></td>
+<td>30+ separate ScriptBindings_*.cpp files with similar patterns</td>
+<td>Low</td>
+<td>Medium -- code generation</td>
+</tr>
+<tr>
+<td><del><strong>Push constant flags</strong></del></td>
+<td><strong>RESOLVED</strong> -- 64-bit material sort keys now encode pipeline + material + texture; push constant flags field still 32-bit but usage rationalized with dedicated sort key</td>
+<td><del>Low</del></td>
+<td><del>Low</del></td>
+</tr>
+<tr>
+<td><strong>XOR obfuscation</strong></td>
+<td>Asset pack uses trivially breakable XOR (not cryptographically secure)</td>
+<td>Medium</td>
+<td>Medium -- replace with AES-GCM</td>
+</tr>
+<tr>
+<td><strong>Script #include paths</strong></td>
+<td>Resolved via <code>lexically_normal()</code> but not restricted to script directory</td>
+<td>Medium</td>
+<td>Low -- add path validation</td>
+</tr>
+<tr>
+<td><strong>32 editor panel bits</strong></td>
+<td>All 32 bits of <code>EditorPanel</code> used; graph editors use <code>IsOpen()/SetOpen()</code> workaround</td>
+<td>Low</td>
+<td>Medium -- refactor to bitset or map</td>
+</tr>
+<tr>
+<td><del><strong>SimplePhysics legacy</strong></del></td>
+<td><strong>RESOLVED</strong> — Removed entirely (Feb 2026). Source files deleted, enum entry removed, factory updated.</td>
+<td><del>Low</del></td>
+<td><del>Low</del></td>
+</tr>
+</tbody>
+                </table>
+            </div>
+        </div><h3>Scalability Concerns</h3>
+        <div class="table-container">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr>
+<th>Concern</th>
+<th>Current Limit</th>
+<th>Mitigation Path</th>
+</tr>
+</thead>
+                    <tbody><tr>
+<td><strong>Entity count</strong></td>
+<td>Warning at 10,000+</td>
+<td>Archetype ECS migration for cache-friendly iteration</td>
+</tr>
+<tr>
+<td><strong>Draw calls</strong></td>
+<td>Dependent on material variety</td>
+<td>Indirect rendering + GPU HiZ occlusion culling reduces visible draw count; 64-bit material sort keys minimize state changes</td>
+</tr>
+<tr>
+<td><strong>Shadow map resolution</strong></td>
+<td>2048^2 per CSM cascade, 1024^2 per spot, 512^2 per point face</td>
+<td>Configurable, could add virtual shadow maps</td>
+</tr>
+<tr>
+<td><strong>Particle count</strong></td>
+<td>16,384 per emitter</td>
+<td>GPU compute simulation would lift this</td>
+</tr>
+<tr>
+<td><strong>Visual script nodes</strong></td>
+<td>Warning at 500+</td>
+<td>Subgraph/function nodes already mitigate this</td>
+</tr>
+<tr>
+<td><strong>Network players</strong></td>
+<td>LAN scale (4-16 typical)</td>
+<td>Dedicated server architecture for larger scale</td>
+</tr>
+<tr>
+<td><strong>Texture memory</strong></td>
+<td>Single 4096x4096 atlas (sprites); Virtual Texturing available for large 3D scenes (CMake flag)</td>
+<td>Multiple atlas pages for sprites; VT page streaming for 3D texture-heavy scenes</td>
+</tr>
+</tbody>
+                </table>
+            </div>
+        </div><h3>Maintenance Burden Estimate</h3>
+        <div class="table-container">
+            <div class="table-scroll">
+                <table>
+                    <thead><tr>
+<th>Component</th>
+<th>Files (actual)</th>
+<th>Maintenance Level</th>
+<th>Notes</th>
+</tr>
+</thead>
+                    <tbody><tr>
+<td>Core Layer</td>
+<td>~24</td>
+<td>Low</td>
+<td>Stable foundation, rarely changes</td>
+</tr>
+<tr>
+<td>Vulkan Renderer + RT + GPU-Driven</td>
+<td>~140</td>
+<td>High</td>
+<td>Largest subsystem -- Vulkan, shadows, RT, post-process, clustered lighting, GPU culling, VRS, VT, visibility buffer</td>
+</tr>
+<tr>
+<td>ECS &amp; Components</td>
+<td>~62</td>
+<td>Medium</td>
+<td>Component count grows with features</td>
+</tr>
+<tr>
+<td>Editor</td>
+<td>~67</td>
+<td>High</td>
+<td>UI code has high churn, user-facing</td>
+</tr>
+<tr>
+<td>Scripting &amp; Visual Script</td>
+<td>~51</td>
+<td>Medium</td>
+<td>Bindings grow with each feature</td>
+</tr>
+<tr>
+<td>Effects &amp; Procedural</td>
+<td>~68</td>
+<td>Low</td>
+<td>Self-contained, rarely touched after creation</td>
+</tr>
+<tr>
+<td>Build &amp; Assets</td>
+<td>~43</td>
+<td>Low</td>
+<td>Stable pipeline, import/export</td>
+</tr>
+<tr>
+<td>GUI &amp; Localization</td>
+<td>~31</td>
+<td>Medium</td>
+<td>UI canvas, dialogue, menus, localization</td>
+</tr>
+<tr>
+<td>Physics (2 backends)</td>
+<td>~18</td>
+<td>Low</td>
+<td>Jolt + Box2D stable, SimplePhysics removed. Both hardened (null guards, input clamping)</td>
+</tr>
+<tr>
+<td>Gameplay &amp; Networking</td>
+<td>~40</td>
+<td>Medium</td>
+<td>Save system, quests, LAN multiplayer</td>
+</tr>
+<tr>
+<td>Accessibility &amp; Audio</td>
+<td>~25</td>
+<td>Low</td>
+<td>Content warnings, miniaudio + Steam Audio HRTF backend</td>
+</tr>
+<tr>
+<td>Tests</td>
+<td>~51</td>
+<td>Low</td>
+<td>50 CTest targets (~700+ test cases), shared EnjinTest.h framework</td>
+</tr>
+<tr>
+<td>Other (AI, Animation, Scene, Plugin, Input, Debug)</td>
+<td>~57</td>
+<td>Low</td>
+<td>Many small self-contained modules</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>~653</strong></td>
+<td><strong>Medium overall</strong></td>
+<td>Modular architecture helps; major debt reduced by audit campaign; GPU-driven features cleanly isolated behind CMake flags</td>
+</tr>
+</tbody>
+                </table>
+            </div>
+        </div><h3>Recommended Priority Actions</h3><ol class="info-list"><li><del><strong>Expand unit test coverage</strong></del> — <strong>COMPLETE</strong>: Expanded from 8 to 50 CTest targets with ~700+ test cases covering Physics2D, VisualScript, BehaviorTree, UISystem, Networking, StressFuzz, and more. All tests passing</li><li><strong>Extract EditorLayer panels</strong> into individual classes to reduce file size and improve maintainability</li><li><strong>Replace XOR obfuscation</strong> with authenticated encryption for commercial releases</li><li><strong>Restrict script #include paths</strong> to project directory to prevent path traversal — <em>partially mitigated by <code>lexically_normal()</code> validation</em></li><li><del><strong>Deprecation timeline for SimplePhysics</strong></del> — <strong>COMPLETE</strong>: Removed entirely Feb 2026</li><li><strong>Asset pack format versioning</strong> — Add version header to <code>.enjpak</code> format for forward compatibility (identified in serialization audit)</li><li><strong>Address 13 remaining deferred audit findings</strong> — Mostly low-severity items across asset pack format and string length validation</li></ol>
         </section>
-
-        <!-- SECTION 10 -->
         <section class="section" id="section-10">
             <div class="section-header" data-accent="secondary">
                 <span class="section-num">10</span>
-                <h2 class="section-title">Feature Dependency Graph</h2>
-            </div>
-            <p class="desc">Major feature dependencies illustrating the engine's internal coupling.</p>
-
+                <h2 class="section-title">10. Feature Dependency Graph</h2>
+            </div><p class="desc">This diagram shows which major features depend on which other features, illustrating the engine&#39;s internal coupling.</p>
             <div class="diagram-container">
                 <div class="diagram-controls">
-                    <button onclick="zoomDiagram('dep-diagram', 1.2)">Zoom +</button>
-                    <button onclick="zoomDiagram('dep-diagram', 0.8)">Zoom &minus;</button>
-                    <button onclick="resetDiagram('dep-diagram')">Reset</button>
+                    <button onclick="zoomDiagram('mermaid-500', 1.2)">Zoom +</button>
+                    <button onclick="zoomDiagram('mermaid-500', 0.8)">Zoom &minus;</button>
+                    <button onclick="resetDiagram('mermaid-500')">Reset</button>
                 </div>
                 <div class="diagram-viewport">
-<pre class="mermaid" id="dep-diagram">
+<pre class="mermaid" id="mermaid-500">
 graph TB
     subgraph CoreDeps["Core Dependencies"]
         Types["Types (u8-u64)"]
         MathLib["Math Library"]
         Logging["Logging System"]
         Memory["Memory Allocators"]
+        Platform["Platform Layer"]
         Window["Window (GLFW)"]
         Input["Input System"]
     end
 
     subgraph VulkanDeps["Vulkan Foundation"]
-        VkContext["VulkanContext"]
+        VkContext["VulkanContext<br/>(25+ VkResult Checks)"]
         VkRenderer["VulkanRenderer"]
         VkPipeline["VulkanPipeline"]
         VkBuffer["VulkanBuffer"]
+        VkImage["VulkanImage"]
     end
 
     subgraph ECSDeps["ECS Foundation"]
-        World["ECS::World"]
+        World["ECS::World<br/>(O(1) Entity Validation)"]
+        Entity["ECS::Entity"]
         Components["Component Types"]
     end
 
     subgraph RenderFeatures["Rendering Features"]
         RenderSys["RenderSystem"]
-        Shadows["Shadow Mapping"]
+        Shadows["Shadow Mapping<br/>(CSM w/ Cascade Blending,<br/>Point/Spot)"]
         PostProc["Post-Processing"]
-        SpriteBatch["Sprite Batching"]
+        SpriteBatch["Sprite Batching<br/>(Normal Map Lighting,<br/>Drop Shadows)"]
         SpriteAtlas["Sprite Atlas"]
         ParticleRend["Particle Renderer"]
         Skybox["Skybox"]
         SHProbes["SH Light Probes"]
         OIT["OIT"]
+        CelShade["Cel Shading"]
         RetroFX["Retro Effects"]
+        GPUCull["GPU HiZ Occlusion Culling"]
+        ClusteredLt["Clustered Forward Lighting<br/>(16x9x24)"]
+        LODSys["LOD System<br/>(Hysteresis)"]
+        MatSortKeys["64-bit Material Sort Keys"]
+        FrameAlloc["FrameAllocator"]
+    end
+
+    subgraph OptionalRender["Optional Render Features (CMake Flags)"]
+        VRSSys["Variable Rate Shading"]
+        VTSys["Virtual Texturing"]
+        VisBuf["Visibility Buffer"]
     end
 
     subgraph RTFeatures["Ray Tracing Features"]
@@ -1035,6 +2648,7 @@ graph TB
         RTReflect["RT Reflections"]
         RTAO["RT AO"]
         RTGI["RT GI"]
+        PathTrace["Path Tracer"]
         SVGF["SVGF Denoiser"]
         OIDN["OIDN Denoiser"]
         RTComp["RT Compositor"]
@@ -1045,56 +2659,164 @@ graph TB
         IPhysics2D["IPhysicsBackend2D"]
         Jolt["Jolt Backend"]
         Box2D["Box2D Backend"]
-        PhysicsFactory["Backend Factory"]
+        PhysicsFactory["Backend Factory<br/>(Jolt/Box2D Only)"]
+        Collision["Collision Detection"]
+        SpatialHash["Spatial Hash Grid"]
+        Joints["Joint System"]
+        Ragdoll["Ragdoll"]
     end
 
     subgraph ScriptFeatures["Scripting Features"]
         ASEngine["AngelScript Engine"]
         Bindings["Script Bindings (~844)"]
         VisScript["Visual Scripting"]
+        VSDebugger["VS Debugger"]
+        VSProfiler["VS Profiler"]
+        StateMachine["State Machines"]
+        Coroutines["Coroutines"]
+        EventBus["Event Bus"]
         FlashShim["Flash API Shim"]
         Transpiler["AS2/AS3 Transpiler"]
+        DataAssets["DataAsset System"]
     end
 
     subgraph GameplayFeatures["Gameplay Features"]
         SaveSystem["Tiered Save System"]
+        SaveBackends["Save Backends<br/>(Local/NG/Steam)"]
         QuestSys["Quest System"]
         DialogueSys["Dialogue System"]
         AISys["AI System"]
         BehaviorTree["Behavior Trees"]
-        Navmesh["Navmesh"]
+        Navmesh["Navmesh / A*"]
         Destructible["Destructible System"]
+        HUD["HUD System"]
+        Cinematic["Cinematic Camera"]
+        Localization["Localization"]
+        ObjectPool["Object Pooling"]
     end
 
     subgraph EditorFeatures["Editor Features"]
         EditorLayer["EditorLayer"]
         PlayMode["PlayMode"]
         Inspector["Inspector Panel"]
-        Templates["Template System"]
+        Hierarchy["Hierarchy Panel"]
+        ScenePicker["Scene Picker"]
+        Gizmos["Transform Gizmos"]
+        Templates["Template System<br/>(MaturityTier Badges)"]
+        Marketplace["Template Marketplace"]
         Undo["Undo/Redo"]
+        CmdPalette["Command Palette"]
+    end
+
+    subgraph EffectFeatures["Effects Features"]
+        Weather["Weather System"]
+        Water["Water3D"]
+        Particles["Particle System"]
+        FluidSim["Fluid Simulation"]
+        FluidTerrain["Fluid-Terrain Coupling"]
+        ProcGen["Procedural Generation"]
+        WindSys["Wind System"]
+        WorldTime["World Time"]
+    end
+
+    subgraph AudioFeatures["Audio Features"]
+        SimpleAudioSys["SimpleAudio<br/>(miniaudio)"]
+        SteamAudioProc["SteamAudioProcessor<br/>(HRTF, Occlusion,<br/>Transmission)"]
+        AudioEvents["Audio Event Graph"]
+        MIDI["MIDI Input"]
+    end
+
+    subgraph TestFeatures["Test Infrastructure"]
+        TestFramework["EnjinTest.h Framework"]
+        UnitTests["22 Unit Test Suites"]
+        IntegrationTests["4 Integration Tests"]
+    end
+
+    subgraph NetworkFeatures["Networking"]
+        LANMulti["LAN Multiplayer"]
+        NetSecurity["HMAC-SHA256 Auth"]
+        HTTP["HTTP Client"]
+        Newgrounds["Newgrounds API"]
+    end
+
+    subgraph BuildFeatures["Build & Export"]
+        BuildPipe["Build Pipeline"]
+        AssetPack["Asset Packer (.enjpak)"]
+        HTML5["HTML5 Export"]
+        PlayerApp["Player App"]
+        SceneSerial["Scene Serializer"]
+    end
+
+    subgraph UIFeatures["UI System"]
+        UICanvas["UICanvasComponent"]
+        UISys["UISystem"]
+        FocusNav["Focus Navigation"]
+        DialogueBox["Dialogue Box"]
+    end
+
+    subgraph AccessFeatures["Accessibility"]
+        Colorblind["Colorblind Filter"]
+        ScreenReader["Screen Reader"]
+        SwitchAccess["Switch Access"]
+        HighContrast["High Contrast"]
+        FontScale["Font Scaling"]
     end
 
     subgraph GraphEditors["Graph Editors"]
         ShaderGraph["Shader Graph"]
         AudioGraph["Audio Event Graph"]
         ParticleGraph["Particle Graph"]
+        DialogueEd["Dialogue Editor"]
+        BTEditor["BT Editor"]
+        QuestEditor["Quest Flow Editor"]
     end
 
+    %% Core -> Vulkan
     Types --> VkContext
+    Platform --> VkContext
+    MathLib --> VkBuffer
     Window --> VkRenderer
+
+    %% Vulkan -> Renderer
     VkContext --> VkRenderer
     VkContext --> VkPipeline
     VkContext --> VkBuffer
+    VkContext --> VkImage
     VkPipeline --> RenderSys
     VkBuffer --> RenderSys
+    VkImage --> RenderSys
+
+    %% ECS -> Renderer
     World --> RenderSys
+    Components --> RenderSys
+    MathLib --> World
+
+    %% Renderer -> Sub-features
     RenderSys --> Shadows
     RenderSys --> PostProc
     RenderSys --> SpriteBatch
     SpriteBatch --> SpriteAtlas
+    RenderSys --> ParticleRend
+    RenderSys --> Skybox
     RenderSys --> SHProbes
+    RenderSys --> OIT
+    PostProc --> CelShade
     PostProc --> RetroFX
+    RenderSys --> GPUCull
+    RenderSys --> ClusteredLt
+    RenderSys --> LODSys
+    RenderSys --> MatSortKeys
+    RenderSys --> FrameAlloc
+    RenderSys --> VRSSys
+    RenderSys --> VTSys
+    RenderSys --> VisBuf
+    VkContext --> ClusteredLt
+    VkContext --> GPUCull
+    VkContext --> VRSSys
+    VkContext --> VTSys
+    VkContext --> VisBuf
 
+    %% RT Dependencies
     VkContext --> RTCaps
     RTCaps --> AccelStruct
     AccelStruct --> RTPipe
@@ -1102,70 +2824,158 @@ graph TB
     RTPipe --> RTReflect
     RTPipe --> RTAO
     RTPipe --> RTGI
+    RTPipe --> PathTrace
     RTShadow --> SVGF
+    RTReflect --> SVGF
+    RTAO --> SVGF
+    RTGI --> SVGF
+    RTShadow --> OIDN
     SVGF --> RTComp
     OIDN --> RTComp
     RTComp --> RenderSys
+    RenderSys --> AccelStruct
 
+    %% Physics Dependencies
+    World --> IPhysics
+    World --> IPhysics2D
+    IPhysics --> Jolt
+    IPhysics2D --> Box2D
     PhysicsFactory --> Jolt
     PhysicsFactory --> Box2D
-    Jolt --> IPhysics
-    Box2D --> IPhysics2D
+    Collision --> SpatialHash
+    IPhysics --> Joints
+    Joints --> Ragdoll
 
+    %% Scripting Dependencies
     World --> ASEngine
     ASEngine --> Bindings
     Bindings --> IPhysics
+    Bindings --> IPhysics2D
     World --> VisScript
+    VisScript --> VSDebugger
+    VisScript --> VSProfiler
+    ASEngine --> Coroutines
+    ASEngine --> EventBus
+    ASEngine --> StateMachine
     ASEngine --> FlashShim
     FlashShim --> Transpiler
+    ASEngine --> DataAssets
 
+    %% Gameplay Dependencies
     World --> SaveSystem
+    SaveSystem --> SaveBackends
+    SaveBackends --> Newgrounds
     World --> QuestSys
     World --> DialogueSys
     World --> AISys
     AISys --> Navmesh
     AISys --> BehaviorTree
     IPhysics --> AISys
+    World --> Destructible
+    IPhysics --> Destructible
+    World --> Cinematic
+    World --> ObjectPool
 
+    %% Editor Dependencies
     RenderSys --> EditorLayer
     World --> EditorLayer
     EditorLayer --> PlayMode
     PlayMode --> IPhysics
     PlayMode --> ASEngine
+    PlayMode --> VisScript
     PlayMode --> AISys
+    EditorLayer --> Inspector
+    EditorLayer --> Hierarchy
+    EditorLayer --> ScenePicker
+    EditorLayer --> Gizmos
+    EditorLayer --> Templates
+    Templates --> Marketplace
+    EditorLayer --> Undo
+    EditorLayer --> CmdPalette
 
+    %% Effects Dependencies
+    World --> Weather
+    World --> Particles
+    RenderSys --> Water
+    FluidSim --> FluidTerrain
+    World --> ProcGen
+
+    %% Network Dependencies
+    World --> LANMulti
+    LANMulti --> NetSecurity
+    HTTP --> Newgrounds
+
+    %% Build Dependencies
+    SceneSerial --> BuildPipe
+    BuildPipe --> AssetPack
+    BuildPipe --> HTML5
+    BuildPipe --> PlayerApp
+    PlayerApp --> RenderSys
+    PlayerApp --> PhysicsFactory
+
+    %% UI Dependencies
+    World --> UICanvas
+    UICanvas --> UISys
+    UISys --> FocusNav
+    DialogueSys --> DialogueBox
+    UICanvas --> DialogueBox
+    UISys --> ScreenReader
+
+    %% Accessibility Dependencies
+    PostProc --> Colorblind
+    UISys --> SwitchAccess
+    UISys --> FontScale
+
+    %% Audio Dependencies
+    SimpleAudioSys --> SteamAudioProc
+    SteamAudioProc --> IPhysics
+    PlayMode --> SteamAudioProc
+    PlayerApp --> SteamAudioProc
+    Bindings --> SimpleAudioSys
+    SimpleAudioSys --> AudioEvents
+    Input --> MIDI
+
+    %% Test Infrastructure
+    TestFramework --> UnitTests
+    TestFramework --> IntegrationTests
+    World --> UnitTests
+    IPhysics --> UnitTests
+    SceneSerial --> IntegrationTests
+    ASEngine --> IntegrationTests
+
+    %% Graph Editor Dependencies
     VkPipeline --> ShaderGraph
-    DialogueSys --> ParticleGraph
+    Particles --> ParticleGraph
+    DialogueSys --> DialogueEd
+    BehaviorTree --> BTEditor
+    QuestSys --> QuestEditor
 
-    style CoreDeps fill:#0a1a0a,stroke:#34d399
-    style VulkanDeps fill:#0a0a1a,stroke:#60a5fa
-    style ECSDeps fill:#1a0a0a,stroke:#f87171
-    style RTFeatures fill:#1a0a1a,stroke:#a78bfa
-    style PhysicsFeatures fill:#0a1a1a,stroke:#22d3ee
-    style ScriptFeatures fill:#1a1a0a,stroke:#fbbf24
-    style GameplayFeatures fill:#1a0a1a,stroke:#ec4899
+    style CoreDeps fill:#1a2a1a,stroke:#4a8a4a
+    style VulkanDeps fill:#1a1a2a,stroke:#4a4a8a
+    style ECSDeps fill:#2a1a1a,stroke:#8a4a4a
+    style RTFeatures fill:#2a1a2a,stroke:#8a4a8a
+    style AudioFeatures fill:#2a2a2a,stroke:#9a6a3a
+    style TestFeatures fill:#1a2a1a,stroke:#6a9a6a
+    style PhysicsFeatures fill:#1a2a2a,stroke:#4a8a8a
+    style ScriptFeatures fill:#2a2a1a,stroke:#8a8a4a
+    style GameplayFeatures fill:#2a1a2a,stroke:#8a4a8a
+    style OptionalRender fill:#1a1a2a,stroke:#5a5aaa
 </pre>
                 </div>
-            </div>
-
-            <h3>Key Dependency Observations</h3>
-            <ul class="info-list">
-                <li><strong>VulkanContext is the foundation:</strong> Everything rendering-related flows through it</li>
-                <li><strong>ECS::World is the central hub:</strong> Almost every system depends on World</li>
-                <li><strong>Physics abstraction is well-isolated:</strong> IPhysicsBackend cleanly separates consumers from implementations</li>
-                <li><strong>Scripting has broad reach:</strong> Bindings touch nearly every system</li>
-                <li><strong>PlayMode is a system compositor:</strong> Wires together physics, scripting, VS, AI, audio</li>
-                <li><strong>Graph editors are leaf nodes:</strong> Can be added/removed without architectural impact</li>
-                <li><strong>RT pipeline is cleanly optional:</strong> Graceful fallback via RTCapabilities detection</li>
-            </ul>
+            </div><h3>Key Dependency Observations</h3><ol class="info-list"><li><p class="desc"><strong>VulkanContext is the foundation</strong>: Everything rendering-related flows through it, including the new GPU-driven subsystems (GPUCulling, ClusteredLighting, VRS, VirtualTexture, VisibilityBuffer). A backend abstraction layer exists (<code>RenderBackend</code>) but Vulkan is the only implementation.</p></li><li><p class="desc"><strong>ECS::World is the central hub</strong>: Almost every system depends on World for entity management. This is appropriate for an ECS architecture but means World stability is critical.</p></li><li><p class="desc"><strong>Physics abstraction is well-isolated</strong>: <code>IPhysicsBackend</code> cleanly separates consumers from implementations. Swapping between Jolt and Box2D requires zero changes to gameplay code. The legacy SimplePhysics backend has been fully removed.</p></li><li><p class="desc"><strong>Scripting has broad reach</strong>: Script bindings touch nearly every system (physics, audio, UI, gameplay, effects, procedural gen). Adding new systems requires adding new bindings to remain accessible.</p></li><li><p class="desc"><strong>PlayMode is a system compositor</strong>: It wires together physics, scripting, visual scripting, AI, audio, and more. It is the most complex integration point in the engine.</p></li><li><p class="desc"><strong>Graph editors are leaf nodes</strong>: Shader Graph, Audio Event Graph, and Particle Graph depend on their respective systems but nothing depends on them. They can be added or removed without architectural impact.</p></li><li><p class="desc"><strong>RT pipeline is cleanly optional</strong>: Ray tracing flows through <code>RTCapabilities</code> detection and gracefully falls back. The raster pipeline is completely independent.</p></li><li><p class="desc"><strong>GPU-driven features are modular</strong>: Clustered lighting (ON by default) and GPU HiZ culling are core optimizations. VRS, Virtual Texturing, and Visibility Buffer are behind CMake feature flags (OFF by default) and can be enabled independently without affecting the base pipeline.</p></li><li><p class="desc"><strong>Steam Audio is a cross-system dependency</strong>: <code>SteamAudioProcessor</code> bridges audio with physics — it uses collider geometry for occlusion/transmission calculations. This is the only place audio and physics directly interact, and it gracefully falls back to miniaudio built-in spatialization when Steam Audio is unavailable.</p></li><li><p class="desc"><strong>Test infrastructure is a parallel tree</strong>: Tests depend on core systems (World, Physics, Serializer, ScriptEngine) but nothing in production depends on tests. The 50 test targets can be added or removed without affecting the engine.</p></li><li><p class="desc"><strong>Serializer is a trust boundary</strong>: The scene serializer and asset packer have been hardened (array caps, type safety, path traversal prevention) because they process external data. The trust zone boundary map documents all such interaction points.</p></li></ol>
         </section>
-
+        <section class="section" id="section-11">
+            <div class="section-header">
+                <span class="section-num">11</span>
+                <h2 class="section-title">Appendix: Data Sources</h2>
+            </div><p class="desc">All data in this document is derived from:</p><ul class="info-list"><li><code>CLAUDE.md</code> -- Primary project context (~150 lines of verified feature documentation)</li><li><code>docs/ROADMAP.md</code> -- Technical roadmap with implementation details and priority matrices</li><li><code>docs/ARCHITECTURE.md</code> -- System architecture documentation</li><li><code>docs/ENGINE_ANALYSIS.md</code> -- This document (comprehensive technical analysis)</li><li><code>docs/AUDIT_2026_02_11.md</code> -- Comprehensive audit (98 findings)</li><li><code>docs/AUDIT_2026_02_12.md</code> -- Follow-up audit (96 findings)</li><li><code>docs/AUDIT_2026_02_12_R2.md</code> -- Third audit round (83 findings)</li><li><code>docs/AUDIT_2026_02_13.md</code> -- Fourth audit round</li><li><code>docs/AUDIT_2026_02_18.md</code> -- Beta 0.8 audit report</li><li><code>docs/AUDIT_ECS.md</code> -- ECS subsystem audit (O(1) validation, 40 tests)</li><li><code>docs/AUDIT_RENDERER.md</code> -- Vulkan renderer hardening audit</li><li><code>docs/AUDIT_SERIALIZATION.md</code> -- Serialization and type safety audit</li><li><code>docs/AUDIT_ASSET_PACK.md</code> -- Asset packer security audit</li><li><code>docs/AUDIT_PHYSICS_AUDIO.md</code> -- Physics and audio hardening audit</li><li><code>docs/SECURITY_AUDIT.md</code> -- Security audit (35 findings)</li></ul><p class="desc">Feature counts, component counts, binding counts, node counts, and all technical specifications reference verified codebase data as documented in these files. Market analysis figures are estimates based on publicly available industry data and reasonable projections for a new entrant.</p><p class="desc"><em>Document updated 2026-03-08. Enjin Engine is licensed under BSL 1.1 (Business Source License). Free to use for making games; 4-year change date to Apache 2.0.</em></p>
+        </section>
     </div><!-- /container -->
 
     <div class="container">
         <div class="footer">
-            <p><span class="footer-brand">Enjin Engine</span> &mdash; Comprehensive Technical Analysis &mdash; Updated 2026-02-18</p>
-            <p style="margin-top: 8px; font-family: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace; font-size: 0.8em;">C++20 &middot; Vulkan &middot; CMake &middot; Proprietary Software</p>
+            <p><span class="footer-brand">TEGE</span> &mdash; An aesthetics-first game engine &mdash; Updated 2026-03-08</p>
+            <p style="margin-top: 8px; font-family: ui-monospace, Cascadia Code, SF Mono, Consolas, monospace; font-size: 0.8em;">C++20 &middot; Vulkan &middot; CMake &middot; BSL 1.1 &middot; &copy; 2026 Marty64</p>
         </div>
     </div>
 </div>
@@ -1192,77 +3002,15 @@ mermaid.initialize({
         pie5: '#a78bfa', pie6: '#22d3ee', pie7: '#84cc16', pie8: '#ec4899'
     },
     flowchart: { curve: 'basis', useMaxWidth: false },
-    pie: { useMaxWidth: false, textPosition: 0.75 }
-});
-
-// Feature matrix data
-var featureData = [
-    ["2D Rendering","Full","Full","Full","Full","Full","Full"],
-    ["3D Rendering","Full","Full","Partial","Full","None","None"],
-    ["PBR Materials","Full","Full","Full","Full","None","None"],
-    ["Ray Tracing","Full","Full","None","Full","None","None"],
-    ["Post-Processing","Full","Full","Full","Full","Basic","Basic"],
-    ["Shadows (CSM/Point/Spot)","Full","Full","Full","Full","None","None"],
-    ["Sprite Batching/Atlas","Full","Full","Full","Partial","Full","Full"],
-    ["Skeletal Animation","Full","Full","Full","Full","Basic","None"],
-    ["Sprite Animation","Full","Full","Full","Partial","Full","Full"],
-    ["3D Physics (Production)","Full","Full","Full","Full","None","None"],
-    ["2D Physics (Production)","Full","Full","Full","Partial","Basic","Basic"],
-    ["Physics Joints","Full","Full","Full","Full","None","None"],
-    ["Audio Engine","Full","Full","Full","Full","Full","Full"],
-    ["3D Spatial Audio","Full","Full","Full","Full","None","None"],
-    ["MIDI Input","Basic","Partial","None","None","None","None"],
-    ["Text Scripting","Full","Full","Full","Full","Full","None"],
-    ["Visual Scripting","Full","Partial","Full","Full","Partial","Full"],
-    ["Hot-Reload","Full","Full","Partial","Full","N/A","N/A"],
-    ["State Machines","Full","Partial","Partial","Full","None","None"],
-    ["Editor (GUI)","Full","Full","Full","Full","Full","Full"],
-    ["Scene Hierarchy","Full","Full","Full","Full","Basic","Basic"],
-    ["Inspector/Properties","Full","Full","Full","Full","Partial","Partial"],
-    ["Undo/Redo","Full","Full","Full","Full","Full","Full"],
-    ["Multi-Select","Full","Full","Full","Full","Partial","Partial"],
-    ["Transform Gizmos","Full","Full","Full","Full","None","None"],
-    ["Asset Browser","Full","Full","Full","Full","Partial","Partial"],
-    ["Tilemap Editing","Full","Full","Full","None","Full","Full"],
-    ["Terrain Sculpting","Partial","Full","Partial","Full","None","None"],
-    ["Prefab System","Full","Full","Full","Full","None","None"],
-    ["Build/Export Pipeline","Full","Full","Full","Full","Full","Full"],
-    ["HTML5 Export","Full","Partial","Full","None","Full","Full"],
-    ["Console Support","Stub","Full","Partial","Full","Full","Partial"],
-    ["Mobile Support","None","Full","Full","Full","Full","Full"],
-    ["LAN Multiplayer","Full","Partial","Partial","Full","Basic","Partial"],
-    ["HTTP/REST Client","Full","Full","Partial","Full","Full","Full"],
-    ["Save System","Full","Basic","Basic","Partial","Basic","Basic"],
-    ["Quest System","Full","None","None","None","None","None"],
-    ["Dialogue Trees","Full","None","None","None","None","None"],
-    ["AI / Behavior Trees","Full","None","None","Full","None","None"],
-    ["Navmesh / Pathfinding","Full","Full","Full","Full","Basic","Partial"],
-    ["UI System (Runtime)","Full","Full","Partial","Full","Basic","Full"],
-    ["Accessibility","Full","Partial","Partial","Partial","None","Basic"],
-    ["Procedural Generation","Full","None","None","Partial","None","None"],
-    ["Weather System","Full","None","None","None","None","None"],
-    ["Particle System","Full","Full","Full","Full","Full","Partial"],
-    ["Shader Graph","Full","Full","Full","Full","None","None"],
-    ["Plugin/Extension System","Full","Full","Full","Full","Partial","Partial"],
-    ["Profiler","Full","Full","Partial","Full","Basic","None"],
-    ["Localization","Full","Partial","Full","Full","None","Partial"],
-    ["Level Streaming","Full","Full","None","Full","None","None"],
-    ["Retro/CRT Effects","Full","Basic","None","None","None","None"],
-    ["Flash/SWF Import","Full","None","None","None","None","None"],
-    ["Newgrounds Integration","Full","None","None","None","None","None"]
-];
-
-function badgeClass(l){l=l.toLowerCase();if(l==='full')return'badge-full';if(l==='partial')return'badge-partial';if(l==='basic')return'badge-basic';if(l==='stub')return'badge-stub';if(l==='n/a')return'badge-na';return'badge-none';}
-function barLevel(l){l=l.toLowerCase();if(l==='full')return'full';if(l==='partial')return'partial';if(l==='basic')return'basic';if(l==='stub')return'stub';if(l==='n/a')return'na';return'none';}
-
-var tbody=document.getElementById('feature-matrix-body');
-featureData.forEach(function(row){
-    var tr=document.createElement('tr');
-    var h='<td class="feature-name">'+row[0]+'</td>';
-    for(var i=1;i<row.length;i++){
-        h+='<td><div class="badge-with-bar"><span class="badge '+badgeClass(row[i])+'">'+row[i]+'</span><div class="completeness-bar" data-level="'+barLevel(row[i])+'"></div></div></td>';
+    pie: { useMaxWidth: false, textPosition: 0.75 },
+    gantt: {
+        useMaxWidth: false,
+        fontSize: 11,
+        barHeight: 20,
+        barGap: 4,
+        topPadding: 50,
+        sectionFontSize: 13
     }
-    tr.innerHTML=h;tbody.appendChild(tr);
 });
 
 // Diagram zoom
@@ -1280,17 +3028,11 @@ window.addEventListener('scroll',updateProgress,{passive:true});updateProgress()
 var sObs=new IntersectionObserver(function(e){e.forEach(function(en){if(en.isIntersecting)en.target.classList.add('visible');});},{threshold:0.05,rootMargin:'0px 0px -50px 0px'});
 document.querySelectorAll('.section').forEach(function(s){sObs.observe(s);});
 
-
 // Stat counter animation
 var statsAnimated=false;
 function animCounters(){if(statsAnimated)return;statsAnimated=true;document.querySelectorAll('.stat-number').forEach(function(el){var t=parseInt(el.getAttribute('data-target'),10);var sf=el.getAttribute('data-suffix')||'';var pf=el.getAttribute('data-prefix')||'';var dur=1500;var st=performance.now();function tick(n){var e=n-st;var p=Math.min(e/dur,1);var ea=1-Math.pow(1-p,3);var c=Math.round(ea*t);el.textContent=pf+c+sf;if(p<1)requestAnimationFrame(tick);}requestAnimationFrame(tick);});}
 var stObs=new IntersectionObserver(function(e){e.forEach(function(en){if(en.isIntersecting){animCounters();stObs.disconnect();}});},{threshold:0.5});
 var hs=document.querySelector('.hero-stats');if(hs)stObs.observe(hs);
-
-// Timeline entrance animation
-var tlObs=new IntersectionObserver(function(e){e.forEach(function(en){if(en.isIntersecting){en.target.querySelectorAll('.timeline-phase').forEach(function(p,i){setTimeout(function(){p.classList.add('visible');},i*120);});tlObs.unobserve(en.target);}});},{threshold:0.1});
-var tt=document.getElementById('timeline-track');if(tt)tlObs.observe(tt);
-
 </script>
 </body>
 </html>

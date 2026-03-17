@@ -1,3 +1,4 @@
+#include "Enjin/Platform/Platform.h"
 #include "Enjin/Networking/NetworkSystem.h"
 #include "Enjin/Networking/NetworkSecurity.h"
 #include "Enjin/ECS/Components/Transform.h"
@@ -7,6 +8,12 @@
 #include "Enjin/Debug/Profiler.h"
 #include <cmath>
 #include <algorithm>
+
+// NOTE: On web (ENJIN_PLATFORM_WEB), the NetworkTransport UDP backend is unavailable.
+// Emscripten does not support raw UDP sockets. A future WebSocket transport layer
+// will replace the UDP transport for web builds. For now, HostGame/JoinGame will
+// log warnings and return false on web, while the rest of the lobby/RPC logic
+// compiles unchanged (it doesn't directly call socket APIs).
 
 namespace Enjin {
 namespace Networking {
@@ -22,6 +29,11 @@ bool NetworkSystem::HostGame(u16 port, const std::string& playerName) {
     }
 
     LoadConfig();
+
+#if ENJIN_PLATFORM_WEB
+    ENJIN_LOG_WARN(Network, "NetworkSystem: Raw UDP not available on web — use WebSocket transport");
+    return false;
+#endif
 
     if (!m_Transport.Bind(port)) {
         ENJIN_LOG_ERROR(Network, "NetworkSystem: Failed to bind as host on port %u", port);
@@ -245,12 +257,22 @@ void NetworkSystem::RequestOwnership(NetworkId networkId) {
 // ============================================================================
 
 void NetworkSystem::RegisterRPC(const std::string& name, RPCCallback callback, bool reliable) {
+    u32 nameHash = FNV1aHash(name);
+
+    // NET-1: Detect hash collisions — reject if hash already registered with a different name
+    auto it = m_RPCRegistry.find(nameHash);
+    if (it != m_RPCRegistry.end() && it->second.name != name) {
+        ENJIN_LOG_ERROR(Network, "RPC hash collision: '%s' and '%s' produce the same hash 0x%08X — rejecting",
+                        name.c_str(), it->second.name.c_str(), nameHash);
+        return;
+    }
+
     RPCRegistration reg;
     reg.name = name;
-    reg.nameHash = FNV1aHash(name);
+    reg.nameHash = nameHash;
     reg.callback = callback;
     reg.reliable = reliable;
-    m_RPCRegistry[reg.nameHash] = reg;
+    m_RPCRegistry[nameHash] = reg;
 }
 
 void NetworkSystem::CallRPC(const std::string& name, PlayerId target, const u8* data, u32 size) {
@@ -980,9 +1002,9 @@ void NetworkSystem::HandleEntitySnapshot(const u8* payload, u32 size) {
     u32 offset = 0;
     u16 count = ReadU16(payload, offset, size);
 
-    // S17: Cap entity count to prevent excessive processing from malicious packets
-    if (count > 1024) {
-        ENJIN_LOG_WARN(Network, "NetworkSystem: Entity snapshot count %u exceeds cap, dropping", count);
+    // NET-5: Cap entity count to prevent excessive processing from malicious packets
+    if (count > 256) {
+        ENJIN_LOG_WARN(Network, "NetworkSystem: Entity snapshot count %u exceeds cap (256), dropping", count);
         return;
     }
 
@@ -1064,6 +1086,7 @@ void NetworkSystem::HandleEntitySpawn(const u8* payload, u32 size) {
     transform.position = position;
     transform.rotation = rotation;
     transform.scale = scale;
+    transform.teleportedThisFrame = true;  // Spawned entity — zero velocity to prevent TAA ghosting
     m_World->AddComponent<ECS::TransformComponent>(entity, transform);
 
     ECS::NetworkIdentityComponent netComp;
@@ -1108,6 +1131,18 @@ void NetworkSystem::HandleEntityDestroy(const u8* payload, u32 size) {
 void NetworkSystem::HandleOwnershipRequest(PlayerId senderId, const u8* payload, u32 size) {
     if (m_Role != NetworkRole::Host) return;
     if (size < 4) return;
+
+    // NET-3: Rate-limit ownership requests per player (max 1 per 500ms)
+    ConnectionInfo* senderConn = FindConnectionByPlayerId(senderId);
+    if (senderConn) {
+        f32 elapsed = m_Time - senderConn->lastOwnershipRequestTime;
+        if (elapsed < 0.5f) {
+            ENJIN_LOG_WARN(Network, "NetworkSystem: Ownership request rate-limited for player %u (%.0fms since last)",
+                           senderId, elapsed * 1000.0f);
+            return;
+        }
+        senderConn->lastOwnershipRequestTime = m_Time;
+    }
 
     u32 offset = 0;
     NetworkId netId = ReadU32(payload, offset, size);
@@ -1493,6 +1528,18 @@ void NetworkSystem::InterpolateRemoteEntities(f32 dt) {
         InterpolationState from, to;
         f32 t;
         if (it->second.GetInterpolationPair(renderTime, from, to, t)) {
+            // Detect teleport: if the interpolation endpoints are far apart,
+            // the entity was teleported or respawned.  Flag it so the render
+            // system zeroes the motion vector and TAA doesn't ghost.
+            constexpr f32 TELEPORT_THRESHOLD_SQ = 5.0f * 5.0f;  // 5 world units
+            f32 dx = to.position.x - from.position.x;
+            f32 dy = to.position.y - from.position.y;
+            f32 dz = to.position.z - from.position.z;
+            f32 distSq = dx * dx + dy * dy + dz * dz;
+            if (distSq > TELEPORT_THRESHOLD_SQ) {
+                transform->teleportedThisFrame = true;
+            }
+
             // Lerp position
             transform->position = Math::Vector3(
                 from.position.x + (to.position.x - from.position.x) * t,

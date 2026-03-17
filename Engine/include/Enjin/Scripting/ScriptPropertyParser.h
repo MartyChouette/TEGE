@@ -26,6 +26,7 @@ struct ParsedProperty {
     f32 rangeMax = 0.0f;
     bool hasRange = false;
     std::string tooltip;
+    std::string header;
 };
 
 // Parse all [Property]-annotated fields from a .as source string.

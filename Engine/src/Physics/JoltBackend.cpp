@@ -395,6 +395,13 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
     auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
     if (!transform) return;
 
+    // Guard against duplicate body creation — destroy existing body first
+    if (m_EntityToBody.find(entity) != m_EntityToBody.end()) {
+        ENJIN_LOG_WARN(Physics, "CreateBodyForEntity called for entity %llu that already has a body — replacing",
+                       static_cast<unsigned long long>(entity));
+        DestroyBodyForEntity(entity);
+    }
+
     auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
 
     // Determine shape
@@ -815,6 +822,7 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
         if (!lockA.Succeeded() || !lockB.Succeeded()) return nullptr;
 
         auto* c = settings.Create(lockA.GetBody(), lockB.GetBody());
+        if (!c) return nullptr;
         postCreate(c, lockA.GetBody(), lockB.GetBody());
         m_PhysicsSystem->AddConstraint(c);
         return c;
@@ -837,7 +845,7 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
         settings.mPoint2 = ToJoltR(FromJoltR(bodyInterface.GetPosition(bodyB)) + joint->anchorB);
         settings.mMinDistance = joint->restDistance - joint->tolerance;
         settings.mMaxDistance = joint->restDistance + joint->tolerance;
-        if (joint->stiffness < 1.0f) {
+        if (joint->stiffness < 1.0f && joint->stiffness > 0.0f) {
             settings.mLimitsSpringSettings.mFrequency = joint->stiffness * 10.0f;
             settings.mLimitsSpringSettings.mDamping = 0.5f;
         }
@@ -855,7 +863,9 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
         JPH::HingeConstraintSettings settings;
         settings.mPoint1 = ToJoltR(FromJoltR(bodyInterface.GetPosition(bodyA)) + joint->anchorA);
         settings.mPoint2 = ToJoltR(FromJoltR(bodyInterface.GetPosition(bodyB)) + joint->anchorB);
-        settings.mHingeAxis1 = ToJolt(joint->axis).Normalized();
+        JPH::Vec3 rawHingeAxis = ToJolt(joint->axis);
+        if (rawHingeAxis.LengthSq() < 1e-12f) rawHingeAxis = JPH::Vec3::sAxisY();
+        settings.mHingeAxis1 = rawHingeAxis.Normalized();
         settings.mHingeAxis2 = settings.mHingeAxis1;
         // Compute a perpendicular normal axis
         JPH::Vec3 up = JPH::Vec3::sAxisY();
@@ -864,8 +874,10 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
         settings.mNormalAxis2 = settings.mNormalAxis1;
 
         if (joint->useLimits) {
-            settings.mLimitsMin = joint->lowerLimit * DEG_TO_RAD;
-            settings.mLimitsMax = joint->upperLimit * DEG_TO_RAD;
+            f32 lo = std::min(joint->lowerLimit, joint->upperLimit) * DEG_TO_RAD;
+            f32 hi = std::max(joint->lowerLimit, joint->upperLimit) * DEG_TO_RAD;
+            settings.mLimitsMin = lo;
+            settings.mLimitsMax = hi;
         }
 
         bool useMotor = joint->useMotor;
@@ -900,9 +912,10 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
                     JPH::ConeConstraintSettings coneSettings;
                     coneSettings.mHalfConeAngle = coneAngle * (3.14159265358979323846f / 180.0f);
                     auto* cc = coneSettings.Create(bA, bB);
-                    m_PhysicsSystem->AddConstraint(cc);
-                    // PH-H8 fix: store cone constraint for cleanup in DestroyJointForEntity
-                    m_EntityToConeConstraint[jointEntity] = cc;
+                    if (cc) {
+                        m_PhysicsSystem->AddConstraint(cc);
+                        m_EntityToConeConstraint[jointEntity] = cc;
+                    }
                 }
             });
         break;
@@ -919,8 +932,8 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
         settings.mPoint2 = ToJoltR(FromJoltR(bodyInterface.GetPosition(bodyB)) + joint->anchorB);
         settings.mMinDistance = joint->minDistance > 0 ? joint->minDistance : 0.0f;
         settings.mMaxDistance = joint->maxDistance > 0 ? joint->maxDistance : 1000.0f;
-        settings.mLimitsSpringSettings.mStiffness = joint->springConstant;
-        settings.mLimitsSpringSettings.mDamping = joint->dampingCoefficient;
+        settings.mLimitsSpringSettings.mStiffness = std::max(joint->springConstant, 0.0f);
+        settings.mLimitsSpringSettings.mDamping = std::max(joint->dampingCoefficient, 0.0f);
 
         constraint = createConstraint(bodyA, bodyB, settings, noop);
         break;
@@ -947,7 +960,9 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
 
         JPH::SliderConstraintSettings settings;
         settings.mAutoDetectPoint = true;
-        settings.mSliderAxis1 = ToJolt(joint->slideAxis).Normalized();
+        JPH::Vec3 rawSliderAxis = ToJolt(joint->slideAxis);
+        if (rawSliderAxis.LengthSq() < 1e-12f) rawSliderAxis = JPH::Vec3::sAxisX();
+        settings.mSliderAxis1 = rawSliderAxis.Normalized();
         settings.mSliderAxis2 = settings.mSliderAxis1;
 
         if (joint->useLimits) {
@@ -1031,6 +1046,10 @@ void JoltBackend::ProcessContactEvents() {
     }
 
     // Detect exits: pairs that were in previous frame but not current
+    // Note: MakeCollisionPairKey stores min(a,b) in upper 32 bits, max(a,b) in lower.
+    // Exit events therefore report entities in canonical (min/max) order, which may
+    // differ from the original enter event ordering. This is by design — consumers
+    // should not rely on entityA/entityB ordering for identity.
     for (u64 prevPair : m_PreviousCollisionPairs) {
         if (m_CurrentCollisionPairs.find(prevPair) == m_CurrentCollisionPairs.end()) {
             ECS::Entity entityA = static_cast<ECS::Entity>(prevPair >> 32);
@@ -1161,7 +1180,7 @@ Math::Vector3 JoltBackend::MoveAndSlide(const Math::Vector3& position, const Mat
                                          const AABB& collider, f32 deltaTime, u32 layerMask) {
     if (!m_Initialized) return position + velocity * deltaTime;
 
-    // Fallback to simple AABB-based slide resolution (same as SimplePhysics)
+    // Fallback to simple AABB-based slide resolution
     // A full Jolt character controller would use JPH::CharacterVirtual,
     // but for API compatibility we do iterative shape cast + slide.
     Math::Vector3 newPos = position + velocity * deltaTime;
@@ -1281,7 +1300,7 @@ std::vector<ECS::Entity> JoltBackend::OverlapBox(const Math::Vector3& center, co
 }
 
 // ============================================================================
-// Stateless Collision Checks (same math as SimplePhysics)
+// Stateless Collision Checks
 // ============================================================================
 
 bool JoltBackend::CheckAABBCollision(const AABB& a, const AABB& b, CollisionResult& result) {

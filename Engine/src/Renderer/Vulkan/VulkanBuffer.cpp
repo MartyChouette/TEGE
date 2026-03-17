@@ -19,6 +19,15 @@ bool VulkanBuffer::Create(usize size, BufferUsage usage, bool hostVisible) {
 }
 
 bool VulkanBuffer::Create(usize size, VkBufferUsageFlags usageFlags, bool hostVisible) {
+    if (!m_Context || m_Context->GetDevice() == VK_NULL_HANDLE) {
+        ENJIN_LOG_ERROR(Renderer, "Cannot create buffer: null context or device");
+        return false;
+    }
+    if (size == 0) {
+        ENJIN_LOG_ERROR(Renderer, "Cannot create zero-size buffer");
+        return false;
+    }
+
     m_Size = size;
     m_UsageFlags = usageFlags;
     m_HostVisible = hostVisible;
@@ -43,12 +52,21 @@ bool VulkanBuffer::Create(usize size, VkBufferUsageFlags usageFlags, bool hostVi
         : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
 
     if (!AllocateMemory(properties)) {
+        vkDestroyBuffer(m_Context->GetDevice(), m_Buffer, nullptr);
+        m_Buffer = VK_NULL_HANDLE;
+        m_Size = 0;
         return false;
     }
 
     result = vkBindBufferMemory(m_Context->GetDevice(), m_Buffer, m_Memory, 0);
     if (result != VK_SUCCESS) {
         ENJIN_LOG_ERROR(Renderer, "Failed to bind buffer memory: %d", result);
+        vkFreeMemory(m_Context->GetDevice(), m_Memory, nullptr);
+        m_Memory = VK_NULL_HANDLE;
+        vkDestroyBuffer(m_Context->GetDevice(), m_Buffer, nullptr);
+        m_Buffer = VK_NULL_HANDLE;
+        m_Size = 0;
+        m_AllocatedSize = 0;
         return false;
     }
 
@@ -65,6 +83,17 @@ bool VulkanBuffer::Create(usize size, VkBufferUsageFlags usageFlags, bool hostVi
 }
 
 void VulkanBuffer::Destroy() {
+    if (!m_Context || m_Context->GetDevice() == VK_NULL_HANDLE) {
+        // Can't issue Vulkan calls without a valid device — just reset state
+        m_PersistentMapped = nullptr;
+        m_MappedData = nullptr;
+        m_Buffer = VK_NULL_HANDLE;
+        m_Memory = VK_NULL_HANDLE;
+        m_Size = 0;
+        m_AllocatedSize = 0;
+        return;
+    }
+
     // Unmap persistent mapping
     if (m_PersistentMapped) {
         vkUnmapMemory(m_Context->GetDevice(), m_Memory);
@@ -80,7 +109,7 @@ void VulkanBuffer::Destroy() {
     }
 
     if (m_Memory != VK_NULL_HANDLE) {
-        if (m_Context && m_AllocatedSize > 0) {
+        if (m_AllocatedSize > 0) {
             m_Context->TrackDeallocation(m_AllocatedSize);
         }
         vkFreeMemory(m_Context->GetDevice(), m_Memory, nullptr);
@@ -92,8 +121,12 @@ void VulkanBuffer::Destroy() {
 }
 
 bool VulkanBuffer::UploadData(const void* data, usize size, usize offset) {
-    if (size + offset > m_Size) {
-        ENJIN_LOG_ERROR(Renderer, "Data size exceeds buffer size");
+    if (!data) {
+        ENJIN_LOG_ERROR(Renderer, "UploadData called with null data pointer");
+        return false;
+    }
+    if (offset > m_Size || size > m_Size - offset) {
+        ENJIN_LOG_ERROR(Renderer, "Data size + offset exceeds buffer size");
         return false;
     }
 
@@ -123,6 +156,11 @@ void* VulkanBuffer::Map() {
     if (!m_HostVisible) {
         ENJIN_LOG_ERROR(Renderer, "Cannot map device-local buffer");
         return nullptr;
+    }
+
+    // Return persistent mapping if active (avoids double vkMapMemory)
+    if (m_PersistentMapped) {
+        return m_PersistentMapped;
     }
 
     if (m_MappedData) {

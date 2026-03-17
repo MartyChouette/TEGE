@@ -11,12 +11,14 @@
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/Animation/Animation.h"
 #include "Enjin/Renderer/MeshSimplifier.h"
 #include "Enjin/Logging/Log.h"
 #include <cfloat>
 #include <cmath>
 #include <filesystem>
 #include <algorithm>
+#include <unordered_map>
 
 namespace Enjin {
 namespace Assets {
@@ -637,10 +639,78 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
     // Count scene-level totals
     stats.meshCount = static_cast<u32>(scene.meshes.size());
     stats.materialCount = static_cast<u32>(scene.materials.size());
+    result.animationCount = static_cast<u32>(scene.animations.size());
+
+    // Build skeleton context if the scene has skinning data
+    AssimpSkeletonContext skelCtx;
+    if (scene.hasSkinning && effectiveOptions.importAnimations && !scene.bones.empty()) {
+        // Determine axis conversion flags
+        bool doAxisConvert = effectiveOptions.convertAxes && effectiveOptions.sourceApp != SourceApp::Auto;
+        SourceAppPreset preset = GetSourceAppPreset(effectiveOptions.sourceApp);
+        bool zToY = doAxisConvert && preset.zUpToYUp;
+        bool lToR = doAxisConvert && preset.leftToRight;
+
+        auto skeleton = std::make_shared<Animation::Skeleton>();
+        skeleton->name = "Skeleton";
+        skeleton->bones.resize(scene.bones.size());
+
+        // Build a lookup: bone name -> node index
+        std::unordered_map<std::string, i32> boneNameToNodeIdx;
+        for (i32 n = 0; n < static_cast<i32>(scene.nodes.size()); ++n) {
+            boneNameToNodeIdx[scene.nodes[n].name] = n;
+        }
+
+        // Build a lookup: bone name -> bone index
+        std::unordered_map<std::string, i32> boneNameToBoneIdx;
+        for (i32 b = 0; b < static_cast<i32>(scene.bones.size()); ++b) {
+            boneNameToBoneIdx[scene.bones[b].name] = b;
+        }
+
+        for (usize b = 0; b < scene.bones.size(); ++b) {
+            Animation::Bone& bone = skeleton->bones[b];
+            bone.name = scene.bones[b].name;
+            bone.inverseBindMatrix = scene.bones[b].offsetMatrix;
+
+            // Find matching node for bind pose
+            auto nodeIt = boneNameToNodeIdx.find(bone.name);
+            if (nodeIt != boneNameToNodeIdx.end()) {
+                i32 nodeIdx = nodeIt->second;
+                const AssimpNode& boneNode = scene.nodes[nodeIdx];
+                bone.bindPosition = boneNode.translation;
+                bone.bindRotation = boneNode.rotation;
+                bone.bindScale = boneNode.scale;
+
+                // Apply axis conversion to bind pose
+                if (zToY || lToR || effectiveOptions.flipX || effectiveOptions.flipY || effectiveOptions.flipZ) {
+                    bone.bindPosition = ConvertPosition(bone.bindPosition, zToY, lToR,
+                        effectiveOptions.flipX, effectiveOptions.flipY, effectiveOptions.flipZ);
+                    bone.bindRotation = ConvertRotation(bone.bindRotation, zToY, lToR);
+                }
+
+                // Find parent bone: walk up the node's parentIndex chain
+                bone.parentIndex = -1;
+                i32 parentNodeIdx = boneNode.parentIndex;
+                while (parentNodeIdx >= 0) {
+                    auto parentBoneIt = boneNameToBoneIdx.find(scene.nodes[parentNodeIdx].name);
+                    if (parentBoneIt != boneNameToBoneIdx.end()) {
+                        bone.parentIndex = parentBoneIt->second;
+                        break;
+                    }
+                    parentNodeIdx = scene.nodes[parentNodeIdx].parentIndex;
+                }
+            }
+        }
+
+        skelCtx.skeleton = skeleton;
+
+        ENJIN_LOG_INFO(Asset, "Built skeleton: %zu bones, %zu animations from %s",
+            scene.bones.size(), scene.animations.size(), filepath.c_str());
+    }
 
     // Create entities from root nodes
     for (i32 rootIndex : scene.rootNodes) {
-        ECS::Entity entity = CreateEntityFromAssimpNode(scene, rootIndex, world, effectiveOptions, result.entities, stats);
+        ECS::Entity entity = CreateEntityFromAssimpNode(scene, rootIndex, world, effectiveOptions,
+                                                         result.entities, stats, skelCtx);
         if (result.rootEntity == ECS::INVALID_ENTITY) {
             result.rootEntity = entity;
         }
@@ -764,10 +834,20 @@ ImportResult SceneImporter::Import(const std::string& filepath, ECS::World* worl
     return result;
 }
 
+// Backward-compatible overload (no skeleton context)
 ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, i32 nodeIndex,
                                                        ECS::World* world, const ImportOptions& options,
                                                        std::vector<ECS::Entity>& outEntities,
                                                        ImportStats& stats) {
+    AssimpSkeletonContext skelCtx;
+    return CreateEntityFromAssimpNode(scene, nodeIndex, world, options, outEntities, stats, skelCtx);
+}
+
+ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, i32 nodeIndex,
+                                                       ECS::World* world, const ImportOptions& options,
+                                                       std::vector<ECS::Entity>& outEntities,
+                                                       ImportStats& stats,
+                                                       AssimpSkeletonContext& skelCtx) {
     if (nodeIndex < 0 || nodeIndex >= static_cast<i32>(scene.nodes.size())) {
         return ECS::INVALID_ENTITY;
     }
@@ -807,6 +887,7 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         ? (node.meshIndex >= 0 ? std::vector<i32>{node.meshIndex} : std::vector<i32>{})
         : node.meshIndices;
 
+    bool nodeHasSkinning = false;
     if (!meshIndices.empty()) {
         ECS::MeshComponent meshComp;
 
@@ -837,6 +918,14 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                         vertex.tangent = Math::Vector4(tang3.x, tang3.y, tang3.z, assimpVert.tangent.w);
                     }
                     vertex.uv = assimpVert.texCoord;
+                    // Copy bone weights from Assimp vertex data
+                    vertex.boneWeights = assimpVert.boneWeights;
+                    vertex.boneIndices[0] = assimpVert.boneIndices[0];
+                    vertex.boneIndices[1] = assimpVert.boneIndices[1];
+                    vertex.boneIndices[2] = assimpVert.boneIndices[2];
+                    vertex.boneIndices[3] = assimpVert.boneIndices[3];
+                    // Track if any vertex has bone weights
+                    if (assimpVert.boneWeights.x > 0.0f) nodeHasSkinning = true;
                     meshComp.vertices.push_back(vertex);
                 }
 
@@ -968,9 +1057,95 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         }
     }
 
+    // Attach skeleton and animations to the first node with skinned mesh data
+    if (options.importAnimations && skelCtx.skeleton && !skelCtx.attached && nodeHasSkinning) {
+        skelCtx.attached = true;
+
+        // Add skeleton component
+        auto& skelComp = world->AddComponent<ECS::SkeletonComponent>(entity);
+        skelComp.skeleton = skelCtx.skeleton;
+        skelComp.sourceAssetPath = stats.sourceFilePath;
+
+        // Add animator component
+        auto& animComp = world->AddComponent<ECS::AnimatorComponent>(entity);
+        animComp.Initialize(skelCtx.skeleton);
+
+        // Convert Assimp animations to skeletal animations
+        for (const auto& assimpAnim : scene.animations) {
+            Animation::SkeletalAnimation skelAnim;
+            skelAnim.name = assimpAnim.name;
+            skelAnim.duration = assimpAnim.duration;
+
+            for (const auto& channel : assimpAnim.channels) {
+                // Find which bone this channel targets
+                i32 boneIndex = skelCtx.skeleton->FindBoneIndex(channel.nodeName);
+                if (boneIndex < 0) continue;
+
+                // Find or create a track for this bone
+                Animation::BoneTrack* track = nullptr;
+                for (auto& t : skelAnim.tracks) {
+                    if (t.boneIndex == boneIndex) {
+                        track = &t;
+                        break;
+                    }
+                }
+                if (!track) {
+                    skelAnim.tracks.push_back({});
+                    track = &skelAnim.tracks.back();
+                    track->boneIndex = boneIndex;
+                    track->boneName = skelCtx.skeleton->bones[boneIndex].name;
+                }
+
+                // Copy position keyframes with axis conversion
+                if (!channel.positions.empty()) {
+                    track->positionTimes = channel.positionTimes;
+                    track->positions.resize(channel.positions.size());
+                    for (usize k = 0; k < channel.positions.size(); ++k) {
+                        Math::Vector3 p = channel.positions[k];
+                        if (zToY || lToR || options.flipX || options.flipY || options.flipZ) {
+                            p = ConvertPosition(p, zToY, lToR, options.flipX, options.flipY, options.flipZ);
+                        }
+                        track->positions[k] = p;
+                    }
+                }
+
+                // Copy rotation keyframes with axis conversion
+                if (!channel.rotations.empty()) {
+                    track->rotationTimes = channel.rotationTimes;
+                    track->rotations.resize(channel.rotations.size());
+                    for (usize k = 0; k < channel.rotations.size(); ++k) {
+                        Math::Quaternion q = channel.rotations[k];
+                        if (zToY || lToR) {
+                            q = ConvertRotation(q, zToY, lToR);
+                        }
+                        track->rotations[k] = q;
+                    }
+                }
+
+                // Copy scale keyframes (no axis conversion needed for scale)
+                if (!channel.scales.empty()) {
+                    track->scaleTimes = channel.scaleTimes;
+                    track->scales = channel.scales;
+                }
+            }
+
+            if (!skelAnim.tracks.empty()) {
+                animComp.animator.AddAnimation(skelAnim);
+            }
+        }
+
+        // Auto-play first animation
+        if (!scene.animations.empty()) {
+            animComp.animator.Play(scene.animations[0].name);
+            ENJIN_LOG_INFO(Asset, "Auto-playing animation '%s' on entity '%s'",
+                scene.animations[0].name.c_str(), name.c_str());
+        }
+    }
+
     // Recursively create child entities with parent-child hierarchy
     for (i32 childIndex : node.children) {
-        ECS::Entity childEntity = CreateEntityFromAssimpNode(scene, childIndex, world, options, outEntities, stats);
+        ECS::Entity childEntity = CreateEntityFromAssimpNode(scene, childIndex, world, options,
+                                                              outEntities, stats, skelCtx);
         if (childEntity != ECS::INVALID_ENTITY) {
             ECS::SetParent(world, childEntity, entity);
         }

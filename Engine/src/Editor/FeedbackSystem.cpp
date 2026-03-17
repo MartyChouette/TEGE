@@ -225,13 +225,14 @@ static FeedbackEntry FeedbackFromJson(const json& j) {
 
 // ── Bug report CRUD ──────────────────────────────────────────────────
 
-BugReport& FeedbackManager::CreateBugReport() {
+u64 FeedbackManager::CreateBugReport() {
     BugReport report;
     report.id = m_NextBugId++;
     report.createdAt = CurrentTimestamp();
     report.updatedAt = report.createdAt;
+    u64 id = report.id;
     m_BugReports.push_back(std::move(report));
-    return m_BugReports.back();
+    return id;
 }
 
 void FeedbackManager::SaveBugReport(const BugReport& report) {
@@ -263,13 +264,14 @@ BugReport* FeedbackManager::GetBugReport(u64 id) {
 
 // ── Feedback CRUD ────────────────────────────────────────────────────
 
-FeedbackEntry& FeedbackManager::CreateFeedback() {
+u64 FeedbackManager::CreateFeedback() {
     FeedbackEntry entry;
     entry.id = m_NextFeedbackId++;
     entry.createdAt = CurrentTimestamp();
     entry.updatedAt = entry.createdAt;
+    u64 id = entry.id;
     m_FeedbackEntries.push_back(std::move(entry));
-    return m_FeedbackEntries.back();
+    return id;
 }
 
 void FeedbackManager::SaveFeedback(const FeedbackEntry& entry) {

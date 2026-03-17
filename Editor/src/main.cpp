@@ -1,9 +1,12 @@
 #include "Enjin/Core/Application.h"
+#include "Enjin/Core/Version.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Debug/CrashHandler.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
+#include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/CameraController.h"
 #include "Enjin/Editor/EditorLayer.h"
@@ -14,6 +17,12 @@
     #include <unistd.h>
     #include <cstdio>
 #endif
+
+// Crash context — file-scope pointers for function-pointer providers
+static Enjin::Renderer::VulkanRenderer* s_CrashRenderer = nullptr;
+static Enjin::ECS::World* s_CrashWorld = nullptr;
+static Enjin::Editor::EditorLayer* s_CrashEditor = nullptr;
+static char s_GPUNameBuf[256] = {};
 
 // Editor application
 class EditorApplication : public Enjin::Application {
@@ -121,11 +130,48 @@ public:
             return limitVal > 0 ? static_cast<Enjin::f32>(limitVal) : 0.0f;
         });
 
+        // Register crash context providers for enriched crash reports
+        s_CrashRenderer = m_Renderer.get();
+        s_CrashWorld = m_World.get();
+        s_CrashEditor = m_EditorLayer.get();
+
+        // Cache GPU name once (queried from Vulkan physical device)
+        if (m_Renderer && m_Renderer->GetContext()) {
+            VkPhysicalDeviceProperties props = {};
+            vkGetPhysicalDeviceProperties(m_Renderer->GetContext()->GetPhysicalDevice(), &props);
+            snprintf(s_GPUNameBuf, sizeof(s_GPUNameBuf), "%s", props.deviceName);
+        }
+
+        Enjin::Debug::CrashContext ctx;
+        ctx.engineVersion = []() -> const char* { return ENJIN_VERSION_STRING; };
+        ctx.gpuName = []() -> const char* { return s_GPUNameBuf; };
+        ctx.sceneName = []() -> const char* {
+            if (s_CrashEditor) {
+                auto& sm = s_CrashEditor->GetSceneManager();
+                const auto& name = sm.GetCurrentSceneName();
+                return name.empty() ? "(unsaved)" : name.c_str();
+            }
+            return "unknown";
+        };
+        ctx.entityCount = []() -> Enjin::u32 {
+            if (s_CrashWorld) {
+                return static_cast<Enjin::u32>(s_CrashWorld->GetEntityCount());
+            }
+            return 0;
+        };
+        Enjin::Debug::SetCrashContext(ctx);
+
         ENJIN_LOG_INFO(Editor, "Editor initialized - Use RMB + WASD to fly, scroll to adjust speed");
     }
 
     void Shutdown() override {
         ENJIN_LOG_INFO(Editor, "Enjin Editor shutting down...");
+
+        // Clear crash context pointers before teardown
+        s_CrashRenderer = nullptr;
+        s_CrashWorld = nullptr;
+        s_CrashEditor = nullptr;
+        Enjin::Debug::SetCrashContext({});
 
         Enjin::Audio::AudioManager::Get().Shutdown();
 
@@ -155,9 +201,14 @@ public:
             return;
         }
 
-        // Update camera controller
+        // Update camera controller only when the editor viewport is hovered
+        // (or when already captured from a prior RMB press in the viewport)
         if (m_CameraController) {
-            m_CameraController->Update(deltaTime);
+            bool viewportHovered = m_EditorLayer && m_EditorLayer->IsEditorViewportHovered();
+            bool alreadyCaptured = m_CameraController->IsMouseCaptured();
+            if (viewportHovered || alreadyCaptured) {
+                m_CameraController->Update(deltaTime);
+            }
         }
     }
 
@@ -192,6 +243,14 @@ public:
         // any rendering commands that might reference old GPU resources
         if (m_RenderSystem) {
             m_RenderSystem->FlushPendingChanges();
+        }
+
+        // Resize render targets BEFORE command buffer recording.
+        // This avoids destroying/recreating Vulkan resources while a command
+        // buffer is in recording state, which crashes with Vulkan layer hooks
+        // (OBS game capture, RenderDoc, etc.) that hold resource references.
+        if (m_EditorLayer) {
+            m_EditorLayer->PrepareRenderTargets();
         }
 
         VkCommandBuffer cmd = m_Renderer->GetCurrentCommandBuffer();
