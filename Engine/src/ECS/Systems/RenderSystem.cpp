@@ -3481,7 +3481,8 @@ void RenderSystem::UpdateFrameUniforms() {
         | (m_FresnelEnabled ? 2u : 0u)
         | (m_EnergyConservation ? 4u : 0u)
         | (m_GeometryTerm ? 8u : 0u)
-        | (m_SphereEnvMapEnabled ? 16u : 0u);
+        | (m_SphereEnvMapEnabled ? 16u : 0u)
+        | (m_HalfLambert ? 32u : 0u);
     lighting.sphereEnvStrength = m_SphereEnvStrength;
     lighting.posterizeLevels = m_PosterizeLevels;
     lighting.texturePageSize = m_TexturePageSize;
@@ -3489,6 +3490,7 @@ void RenderSystem::UpdateFrameUniforms() {
     // Pack retro settings into worldCurvature reserved fields
     lighting.worldCurvature.y = m_DepthSortJitter;
     lighting.worldCurvature.z = m_NormalQuantizeSteps;
+    lighting.worldCurvature.w = m_CelShadowMode;
 
     if (m_ActivePointShadowCount > 0 && lighting.pointLightCount > 1) {
         // Move shadow-casting lights to front: swap with non-shadow lights

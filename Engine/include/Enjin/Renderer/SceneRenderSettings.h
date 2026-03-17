@@ -162,6 +162,8 @@ struct SceneRenderSettings {
     f32 depthSortJitter = 0.0f;       // PS1 ordering table jitter (0=off)
     f32 lightRampMode = 0.0f;         // 0=off, 1=smooth, 2=warm, 3=cool, 4=anime
     f32 normalQuantizeSteps = 0.0f;   // Normal quantization (0=off, 4-16)
+    f32 celShadowMode = 0.0f;         // 0=off, 1=purple, 2=blue, 3=warm, 4=neutral cool
+    bool halfLambert = false;          // Half-Lambert soft light falloff
 
     // Full-screen stipple / dither
     bool stippleEnabled = false;

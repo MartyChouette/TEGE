@@ -1868,6 +1868,12 @@ void EditorLayer::DrawSettingsSection_ShadingModel() {
         }
         ImGui::SetItemTooltip("Smith GGX microfacet self-shadowing.\nDarkens rough surfaces at grazing angles where micro-bumps\nblock light. Prevents flat-plastic look. Cost: minimal.");
 
+        bool halfLambert = m_RenderSystem->IsHalfLambert();
+        if (ImGui::Checkbox("Half-Lambert##Shading", &halfLambert)) {
+            m_RenderSystem->SetHalfLambert(halfLambert);
+        }
+        ImGui::SetItemTooltip("Valve's Half-Lambert: NdotL*0.5+0.5.\nSofter light falloff, no harsh shadow terminator.\nUsed in TF2, Source Engine. Great for stylized/hand-painted.");
+
         ImGui::Separator();
         const char* rampNames[] = { "Off", "Smooth Step", "Warm Shadow", "Cool Shadow", "Anime" };
         int ramp = static_cast<int>(m_RenderSystem->GetLightRampMode());
@@ -1952,6 +1958,13 @@ void EditorLayer::DrawSettingsSection_CelShading() {
                 m_RenderSystem->SetCelSpecularCutoff(celSpec);
             }
             ImGui::SetItemTooltip("Hard threshold for specular highlights.\n0 = smooth specular (no cutoff), >0 = sharp on/off highlight.\nHigher values shrink the highlight.");
+
+            const char* shadowModes[] = { "Off", "Purple", "Blue", "Warm", "Neutral Cool" };
+            int shadowMode = static_cast<int>(m_RenderSystem->GetCelShadowMode());
+            if (ImGui::Combo("Shadow Tint##Cel", &shadowMode, shadowModes, 5)) {
+                m_RenderSystem->SetCelShadowMode(static_cast<f32>(shadowMode));
+            }
+            ImGui::SetItemTooltip("Tint shadow areas instead of pure black.\nGives a more stylized anime/cartoon look.");
         }
     }
 }

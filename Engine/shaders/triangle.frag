@@ -428,6 +428,7 @@ float calcSpotShadow(vec3 fragPos, int shadowIdx) {
 #define SHADING_ENERGY_CONSERV   (1u << 2)
 #define SHADING_GEOMETRY_TERM    (1u << 3)
 #define SHADING_SPHERE_ENV       (1u << 4)
+#define SHADING_HALF_LAMBERT     (1u << 5)  // NdotL * 0.5 + 0.5 (softer falloff)
 
 const float PI = 3.14159265359;
 
@@ -487,7 +488,10 @@ vec3 lightRamp(float NdotL) {
 
 // Calculate Blinn-Phong lighting contribution
 vec3 calcBlinnPhong(vec3 lightDir, vec3 lightColor, float lightIntensity, vec3 normal, vec3 viewDir, vec3 albedo, float metallic, float shininess) {
-    float NdotL = max(dot(normal, lightDir), 0.0);
+    float rawNdotL = dot(normal, lightDir);
+    float NdotL = ((lighting.shadingFlags & SHADING_HALF_LAMBERT) != 0u)
+        ? rawNdotL * 0.5 + 0.5  // Half-Lambert: softer falloff, no harsh terminator
+        : max(rawNdotL, 0.0);
     vec3 halfwayDir = normalize(lightDir + viewDir);
     float NdotH = max(dot(normal, halfwayDir), 0.0);
     float NdotV = max(dot(normal, viewDir), 0.001);
@@ -542,7 +546,24 @@ vec3 calcBlinnPhongCel(vec3 lightDir, vec3 lightColor, float lightIntensity, vec
     // Diffuse with band quantization
     float bands = lighting.celDiffuseBands;
     float diff = floor(NdotL * bands + 0.5) / bands;
-    vec3 diffuse = diff * lightColor * lightIntensity;
+
+    // Colored shadows: tint dark areas instead of pure black
+    float celShadowMode = lighting.worldCurvature.w;
+    vec3 shadowTint = vec3(0.0);
+    if (celShadowMode > 0.5) {
+        if (celShadowMode < 1.5) shadowTint = vec3(0.25, 0.15, 0.35);      // purple
+        else if (celShadowMode < 2.5) shadowTint = vec3(0.15, 0.2, 0.35);  // blue
+        else if (celShadowMode < 3.5) shadowTint = vec3(0.35, 0.2, 0.15);  // warm
+        else shadowTint = vec3(0.25, 0.25, 0.3);                            // neutral cool
+    }
+    vec3 diffuse = mix(shadowTint, vec3(1.0), diff) * lightColor * lightIntensity;
+
+    // Rim lighting (edge glow using view angle)
+    float rimStrength = material.surfaceParam3; // rimLightStrength from push constants
+    if (rimStrength > 0.0) {
+        float rim = pow(1.0 - NdotV, 3.0) * rimStrength;
+        diffuse += lightColor * lightIntensity * rim;
+    }
 
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
     uint flags = lighting.shadingFlags;

@@ -64,6 +64,8 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.depthSortJitter           = rs->GetDepthSortJitter();
         s.lightRampMode             = rs->GetLightRampMode();
         s.normalQuantizeSteps       = rs->GetNormalQuantizeSteps();
+        s.celShadowMode             = rs->GetCelShadowMode();
+        s.halfLambert               = rs->IsHalfLambert();
 
         // Shading Model
         s.shadingModel = rs->GetShadingModel();
@@ -337,6 +339,8 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetDepthSortJitter(depthSortJitter);
         rs->SetLightRampMode(lightRampMode);
         rs->SetNormalQuantizeSteps(normalQuantizeSteps);
+        rs->SetCelShadowMode(celShadowMode);
+        rs->SetHalfLambert(halfLambert);
 
         // Shading Model
         rs->SetShadingModel(shadingModel);
@@ -759,6 +763,8 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["depthSortJitter"]            = RF(s.depthSortJitter);
     j["lightRampMode"]              = RF(s.lightRampMode);
     j["normalQuantizeSteps"]        = RF(s.normalQuantizeSteps);
+    j["celShadowMode"]              = RF(s.celShadowMode);
+    j["halfLambert"]                = s.halfLambert;
 
     // Depth of Field
     j["dofEnabled"]            = s.dofEnabled;
@@ -1016,6 +1022,8 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("depthSortJitter"))            s.depthSortJitter            = j["depthSortJitter"].get<f32>();
     if (j.contains("lightRampMode"))              s.lightRampMode              = j["lightRampMode"].get<f32>();
     if (j.contains("normalQuantizeSteps"))        s.normalQuantizeSteps        = j["normalQuantizeSteps"].get<f32>();
+    if (j.contains("celShadowMode"))              s.celShadowMode              = j["celShadowMode"].get<f32>();
+    if (j.contains("halfLambert"))                s.halfLambert                = JB(j["halfLambert"]);
 
     // Depth of Field
     if (j.contains("dofEnabled"))            s.dofEnabled            = JB(j["dofEnabled"]);

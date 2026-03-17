@@ -385,6 +385,8 @@ public:
     // Light ramp (art style)
     f32 GetLightRampMode() const { return m_LightRampMode; }
     void SetLightRampMode(f32 v) { m_LightRampMode = v; }
+    f32 GetCelShadowMode() const { return m_CelShadowMode; }
+    void SetCelShadowMode(f32 v) { m_CelShadowMode = v; }
 
     // Shading model
     u32 GetShadingModel() const { return m_ShadingModel; }
@@ -397,6 +399,8 @@ public:
     void SetGeometryTerm(bool v) { m_GeometryTerm = v; }
     bool IsSphereEnvMapEnabled() const { return m_SphereEnvMapEnabled; }
     void SetSphereEnvMapEnabled(bool v) { m_SphereEnvMapEnabled = v; }
+    bool IsHalfLambert() const { return m_HalfLambert; }
+    void SetHalfLambert(bool v) { m_HalfLambert = v; }
     f32 GetSphereEnvStrength() const { return m_SphereEnvStrength; }
     void SetSphereEnvStrength(f32 v) { m_SphereEnvStrength = v; }
     f32 GetPosterizeLevels() const { return m_PosterizeLevels; }
@@ -615,6 +619,7 @@ private:
     bool m_EnergyConservation = false;
     bool m_GeometryTerm = false;
     bool m_SphereEnvMapEnabled = false;
+    bool m_HalfLambert = false;        // Half-Lambert soft falloff (pre-PBR/hand-painted)
     f32 m_SphereEnvStrength = 0.5f;
     f32 m_PosterizeLevels = 0.0f;      // 0=disabled
 
@@ -635,6 +640,7 @@ private:
     f32 m_DepthSortJitter = 0.0f;    // PS1 ordering table depth jitter (0=off, 0.001-0.01)
     f32 m_NormalQuantizeSteps = 0.0f; // Snap normals to N directions (0=off, 4-16)
     f32 m_LightRampMode = 0.0f;       // 0=off, 1=smooth step, 2=warm, 3=cool, 4=anime
+    f32 m_CelShadowMode = 0.0f;       // 0=off, 1=purple, 2=blue, 3=warm, 4=neutral cool
 
     // Textures — integer-keyed for O(1) lookup after initial load
     std::unique_ptr<Renderer::Texture> m_DefaultWhiteTexture;
