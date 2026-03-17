@@ -103,7 +103,7 @@ A pre-built Windows installer is available — no build tools required:
 - **Motion Vectors** — Per-pixel velocity buffer (RG16F) for TAA and temporal denoising
 - **Post-Processing** — Bloom, vignette, color grading, film grain, tone mapping, full-screen stipple/dither, depth of field (bokeh), tilt-shift, post-process volumes with spatial blending
 - **Ray Tracing Pipeline** — RT shadows, reflections, AO, GI, translucency, caustics, path tracing with 3 denoisers (SVGF, Intel OIDN, NVIDIA OptiX)
-- **Retro Effects** — PSX flat shading, affine texturing, vertex snapping, stipple transparency, CRT scanlines, color quantization
+- **Retro Effects** — PSX flat shading, affine texturing, vertex snapping, texture page warping, polygon sort jitter, stipple transparency, CRT scanlines (11 models), VHS with tape dropout, film gate weave, light leaks, 6 named palettes (PICO-8, Game Boy, NES, CGA, C64), normal quantization
 - **Environment** — Procedural gradient sky / cubemap skybox, weather system (rain, snow, fog, storms), water plane with Gerstner waves, instanced vegetation with wind
 - **GPU Optimizations** — Two-phase HiZ occlusion culling, clustered forward lighting (16x9x24), 64-bit material sort keys, per-frame linear allocator, descriptor set caching
 - **Advanced** — Variable Rate Shading, Virtual Texturing, Visibility Buffer, OIT, SH Light Probes, SDF scene, voxel cone tracing, non-Euclidean portals, world curvature

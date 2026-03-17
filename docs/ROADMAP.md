@@ -82,9 +82,9 @@ This document captures detailed technical plans, performance findings, and strat
 
 | Style | Existing Support | Key Gaps |
 |-------|-----------------|----------|
-| Low-poly retro 3D | ~95% — vertex snap, affine textures, flat/Gouraud, UV quantize, stipple, resolution downscale | Texture page warping, polygon sort errors |
-| Analog/degraded | ~90% — VHS (tracking, wobble, bleed, noise), CRT (10 real presets, phosphor subpixels), film grain, chromatic aberration | Film gate weave, light leaks, tape dropout |
-| Pixel/3D hybrid | ~80% — resolution downscale, color quantization, Bayer dither, palette lock (4-256 colors) | Custom palette textures, resolution-coherent outlines, normal quantization |
+| Low-poly retro 3D | 100% — vertex snap, affine textures, flat/Gouraud, UV quantize, stipple, resolution downscale, texture page warping, polygon sort jitter | None |
+| Analog/degraded | 100% — VHS (tracking, wobble, bleed, noise, tape dropout), CRT (10 real presets, phosphor subpixels), film grain, chromatic aberration, film gate weave, light leaks | None |
+| Pixel/3D hybrid | 100% — resolution downscale, color quantization, Bayer dither, palette lock (PICO-8, Game Boy, NES, CGA, C64 presets), normal quantization | None |
 | Cel/toon | ~70% — diffuse bands (2-8), specular cutoff, Sobel depth outlines, per-material exclude | Colored shadows, rim lighting, per-material bands, inverted-hull outlines, normal edges |
 | NPR illustrative | ~40% — 8 stipple patterns (Crosshatch, Halftone, etc.), configurable density/color modes | Tonal Art Map hatching, watercolor effects, pen/ink variation, paper texture |
 | Pre-PBR realism | ~30% — Blinn-Phong shading model exists | Specular map slot, half-Lambert wrap, scene specular strength |
