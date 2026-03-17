@@ -456,6 +456,35 @@ float geometrySmith(float NdotV, float NdotL, float roughness) {
     return geometrySchlickGGX(NdotV, roughness) * geometrySchlickGGX(NdotL, roughness);
 }
 
+// Procedural light ramp: remap NdotL for art-style lighting
+// Mode 0=off, 1=smooth step (TF2/hand-painted), 2=warm shadow, 3=cool shadow, 4=anime (hard 2-band)
+// Returns modified diffuse contribution (vec3 to allow shadow tinting)
+vec3 lightRamp(float NdotL) {
+    float mode = lighting.skyReflectColor.w; // packed in reserved field
+    if (mode < 0.5) return vec3(NdotL); // off
+
+    if (mode < 1.5) {
+        // Smooth step ramp: soft band transition (hand-painted look)
+        float ramp = smoothstep(0.0, 0.4, NdotL) * 0.5 + smoothstep(0.4, 0.8, NdotL) * 0.5;
+        return vec3(ramp);
+    } else if (mode < 2.5) {
+        // Warm shadow: shadow areas shift to warm amber
+        float ramp = smoothstep(0.0, 0.5, NdotL);
+        vec3 shadowColor = vec3(0.35, 0.2, 0.1); // warm amber shadow
+        return mix(shadowColor, vec3(1.0), ramp);
+    } else if (mode < 3.5) {
+        // Cool shadow: shadow areas shift to blue/purple
+        float ramp = smoothstep(0.0, 0.5, NdotL);
+        vec3 shadowColor = vec3(0.15, 0.12, 0.3); // cool purple shadow
+        return mix(shadowColor, vec3(1.0), ramp);
+    } else {
+        // Anime: hard 2-band with warm shadow tint
+        float ramp = step(0.35, NdotL);
+        vec3 shadowColor = vec3(0.6, 0.45, 0.5); // muted pink-purple shadow
+        return mix(shadowColor, vec3(1.0), ramp);
+    }
+}
+
 // Calculate Blinn-Phong lighting contribution
 vec3 calcBlinnPhong(vec3 lightDir, vec3 lightColor, float lightIntensity, vec3 normal, vec3 viewDir, vec3 albedo, float metallic, float shininess) {
     float NdotL = max(dot(normal, lightDir), 0.0);
@@ -495,7 +524,9 @@ vec3 calcBlinnPhong(vec3 lightDir, vec3 lightColor, float lightIntensity, vec3 n
     if ((flags & SHADING_ENERGY_CONSERV) != 0u) {
         kD *= (vec3(1.0) - F);
     }
-    vec3 diffuse = NdotL * lightColor * lightIntensity;
+    // Apply light ramp to diffuse (replaces raw NdotL with stylized ramp)
+    vec3 rampedDiffuse = lightRamp(NdotL);
+    vec3 diffuse = rampedDiffuse * lightColor * lightIntensity;
 
     return diffuse * albedo * kD + specular;
 }

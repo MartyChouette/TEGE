@@ -382,6 +382,10 @@ public:
     f32 GetNormalQuantizeSteps() const { return m_NormalQuantizeSteps; }
     void SetNormalQuantizeSteps(f32 v) { m_NormalQuantizeSteps = v; }
 
+    // Light ramp (art style)
+    f32 GetLightRampMode() const { return m_LightRampMode; }
+    void SetLightRampMode(f32 v) { m_LightRampMode = v; }
+
     // Shading model
     u32 GetShadingModel() const { return m_ShadingModel; }
     void SetShadingModel(u32 model) { m_ShadingModel = model; }
@@ -630,6 +634,7 @@ private:
     f32 m_TexturePageSize = 0.0f;    // PS1 VRAM texture page size (0=off, 64/128 typical)
     f32 m_DepthSortJitter = 0.0f;    // PS1 ordering table depth jitter (0=off, 0.001-0.01)
     f32 m_NormalQuantizeSteps = 0.0f; // Snap normals to N directions (0=off, 4-16)
+    f32 m_LightRampMode = 0.0f;       // 0=off, 1=smooth step, 2=warm, 3=cool, 4=anime
 
     // Textures — integer-keyed for O(1) lookup after initial load
     std::unique_ptr<Renderer::Texture> m_DefaultWhiteTexture;

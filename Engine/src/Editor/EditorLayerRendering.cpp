@@ -383,6 +383,8 @@ void EditorLayer::DrawPostProcessVolumeComponent(ECS::Entity entity) {
                 if (ImGui::Checkbox("Enabled##PPVolCel", &cel)) s.celOutlineEnabled = cel ? 1 : 0;
                 ImGui::DragFloat("Thickness##PPVolCel", &s.celOutlineThickness, 0.1f, 0.1f, 10.0f);
                 ImGui::DragFloat("Threshold##PPVolCel", &s.celOutlineThreshold, 0.01f, 0.0f, 1.0f);
+                ImGui::DragFloat("Depth Weight##PPVolCel", &s.celOutlineDepthWeight, 0.01f, 0.0f, 2.0f);
+                ImGui::DragFloat("Normal Weight##PPVolCel", &s.celOutlineNormalWeight, 0.01f, 0.0f, 2.0f);
                 f32 outColor[3] = { s.celOutlineColor.x, s.celOutlineColor.y, s.celOutlineColor.z };
                 if (ImGui::ColorEdit3("Color##PPVolCel", outColor)) {
                     s.celOutlineColor = Math::Vector3(outColor[0], outColor[1], outColor[2]);
@@ -1260,6 +1262,10 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
             if (outlineOn) {
                 ImGui::SliderFloat("Outline Thickness##PP", &s.celOutlineThickness, 0.5f, 5.0f);
                 ImGui::SliderFloat("Outline Threshold##PP", &s.celOutlineThreshold, 0.001f, 0.5f);
+                ImGui::SliderFloat("Depth Weight##PP", &s.celOutlineDepthWeight, 0.0f, 2.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Weight of depth-based edge detection");
+                ImGui::SliderFloat("Normal Weight##PP", &s.celOutlineNormalWeight, 0.0f, 2.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Weight of normal-based edge detection (catches surface detail depth misses)");
                 ImGui::ColorEdit3("Outline Color##PP", &s.celOutlineColor.x);
             }
         }
@@ -1861,6 +1867,18 @@ void EditorLayer::DrawSettingsSection_ShadingModel() {
             m_RenderSystem->SetGeometryTerm(geomTerm);
         }
         ImGui::SetItemTooltip("Smith GGX microfacet self-shadowing.\nDarkens rough surfaces at grazing angles where micro-bumps\nblock light. Prevents flat-plastic look. Cost: minimal.");
+
+        ImGui::Separator();
+        const char* rampNames[] = { "Off", "Smooth Step", "Warm Shadow", "Cool Shadow", "Anime" };
+        int ramp = static_cast<int>(m_RenderSystem->GetLightRampMode());
+        if (ImGui::Combo("Light Ramp", &ramp, rampNames, 5)) {
+            m_RenderSystem->SetLightRampMode(static_cast<f32>(ramp));
+        }
+        ImGui::SetItemTooltip("Stylized light ramp replaces raw NdotL:\n"
+            "Smooth Step: hand-painted (TF2/Genshin style)\n"
+            "Warm Shadow: amber-tinted shadows\n"
+            "Cool Shadow: blue/purple shadows\n"
+            "Anime: hard 2-band with pink-purple shadow");
     }
 }
 

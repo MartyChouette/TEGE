@@ -1419,6 +1419,14 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                             material->metallicRoughnessTexture = 1;
                         }
                     }
+                    // Specular map overrides metallic-roughness slot for pre-PBR shading
+                    if (!material->specularTexturePath.empty()) {
+                        auto tex = GetOrLoadTexture(material->specularTexturePath);
+                        if (tex && tex->IsValid()) {
+                            material->cachedMetallicRoughnessTexture = tex.get();
+                            material->metallicRoughnessTexture = 1;
+                        }
+                    }
                     if (!material->emissiveTexturePath.empty()) {
                         auto tex = GetOrLoadTexture(material->emissiveTexturePath);
                         if (tex && tex->IsValid()) {
@@ -1798,6 +1806,14 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                     }
                     if (!material->metallicRoughnessTexturePath.empty()) {
                         auto tex = GetOrLoadTexture(material->metallicRoughnessTexturePath);
+                        if (tex && tex->IsValid()) {
+                            material->cachedMetallicRoughnessTexture = tex.get();
+                            material->metallicRoughnessTexture = 1;
+                        }
+                    }
+                    // Specular map overrides metallic-roughness slot for pre-PBR shading
+                    if (!material->specularTexturePath.empty()) {
+                        auto tex = GetOrLoadTexture(material->specularTexturePath);
                         if (tex && tex->IsValid()) {
                             material->cachedMetallicRoughnessTexture = tex.get();
                             material->metallicRoughnessTexture = 1;
@@ -3547,7 +3563,7 @@ void RenderSystem::UpdateFrameUniforms() {
         } else if (skyConfig.type == Renderer::SkyboxType::SolidColor) {
             skyCol = skyConfig.solidColor;
         }
-        lighting.skyReflectColor = Math::Vector4(skyCol.x, skyCol.y, skyCol.z, 0.0f);
+        lighting.skyReflectColor = Math::Vector4(skyCol.x, skyCol.y, skyCol.z, m_LightRampMode);
     }
 
     // Query SH light probe irradiance at camera position

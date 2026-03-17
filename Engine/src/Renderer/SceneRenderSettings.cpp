@@ -62,6 +62,8 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.globalVertexSnapResolution = rs->GetGlobalVertexSnapResolution();
         s.texturePageSize           = rs->GetTexturePageSize();
         s.depthSortJitter           = rs->GetDepthSortJitter();
+        s.lightRampMode             = rs->GetLightRampMode();
+        s.normalQuantizeSteps       = rs->GetNormalQuantizeSteps();
 
         // Shading Model
         s.shadingModel = rs->GetShadingModel();
@@ -333,6 +335,8 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetGlobalVertexSnapResolution(static_cast<u8>(globalVertexSnapResolution));
         rs->SetTexturePageSize(texturePageSize);
         rs->SetDepthSortJitter(depthSortJitter);
+        rs->SetLightRampMode(lightRampMode);
+        rs->SetNormalQuantizeSteps(normalQuantizeSteps);
 
         // Shading Model
         rs->SetShadingModel(shadingModel);
@@ -753,6 +757,8 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["globalVertexSnapResolution"] = s.globalVertexSnapResolution;
     j["texturePageSize"]            = RF(s.texturePageSize);
     j["depthSortJitter"]            = RF(s.depthSortJitter);
+    j["lightRampMode"]              = RF(s.lightRampMode);
+    j["normalQuantizeSteps"]        = RF(s.normalQuantizeSteps);
 
     // Depth of Field
     j["dofEnabled"]            = s.dofEnabled;
@@ -1008,6 +1014,8 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("globalVertexSnapResolution")) s.globalVertexSnapResolution = j["globalVertexSnapResolution"].get<u32>();
     if (j.contains("texturePageSize"))            s.texturePageSize            = j["texturePageSize"].get<f32>();
     if (j.contains("depthSortJitter"))            s.depthSortJitter            = j["depthSortJitter"].get<f32>();
+    if (j.contains("lightRampMode"))              s.lightRampMode              = j["lightRampMode"].get<f32>();
+    if (j.contains("normalQuantizeSteps"))        s.normalQuantizeSteps        = j["normalQuantizeSteps"].get<f32>();
 
     // Depth of Field
     if (j.contains("dofEnabled"))            s.dofEnabled            = JB(j["dofEnabled"]);

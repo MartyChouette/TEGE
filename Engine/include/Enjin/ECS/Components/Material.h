@@ -36,6 +36,7 @@ struct MaterialComponent {
     std::string normalTexturePath;
     std::string metallicRoughnessTexturePath;
     std::string emissiveTexturePath;
+    std::string specularTexturePath;  // Pre-PBR: direct specular intensity map (used when shadingModel != GGX)
 
     // Rendering flags
     bool doubleSided = false;

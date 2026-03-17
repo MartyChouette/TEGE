@@ -200,9 +200,9 @@ struct alignas(16) PostProcessSettings {
     alignas(4) u32 celOutlineEnabled = 0;
     alignas(4) f32 celOutlineThickness = 1.0f;
     alignas(4) f32 celOutlineThreshold = 0.1f;    // Depth edge sensitivity
-    alignas(4) f32 _celPad0 = 0.0f;
+    alignas(4) f32 celOutlineNormalWeight = 0.0f; // Normal edge weight (0=depth only, 1=normal only)
     alignas(16) Math::Vector3 celOutlineColor = Math::Vector3(0.0f, 0.0f, 0.0f);
-    alignas(4) f32 _celPad1 = 0.0f;
+    alignas(4) f32 celOutlineDepthWeight = 1.0f;  // Depth edge weight (default=full)
 
     // Full-screen stipple / dither
     alignas(4) u32 stippleEnabled = 0;

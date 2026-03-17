@@ -146,7 +146,7 @@ struct alignas(16) LightingUBO {
     // World curvature (x = strength, yzw reserved)
     alignas(16) Math::Vector4 worldCurvature;
 
-    // Sky reflection color for water/ice surfaces (xyz = color, w = reserved)
+    // Sky reflection color for water/ice surfaces (xyz = color, w = lightRampMode: 0=off, 1=smooth, 2=warm, 3=cool, 4=anime)
     alignas(16) Math::Vector4 skyReflectColor;
 
     // SH light probe irradiance (xyz = RGB irradiance from nearest probe, w = blend weight 0 or 1)

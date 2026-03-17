@@ -158,9 +158,9 @@ layout(binding = 1) uniform PostProcessSettings {
     uint celOutlineEnabled;
     float celOutlineThickness;
     float celOutlineThreshold;
-    float _celPad0;
+    float celOutlineNormalWeight;  // 0=depth only, >0 adds normal edges
     vec3 celOutlineColor;
-    float _celPad1;
+    float celOutlineDepthWeight;  // default 1.0
 
     // Full-screen stipple / dither
     uint stippleEnabled;
@@ -1326,10 +1326,32 @@ vec3 applyCelOutline(vec3 color, vec2 uv) {
     // Linearize depth for better edge detection (Vulkan reversed Z: 1=near, 0=far)
     // Simple linearization: use 1/d to amplify differences at distance
 
-    // Sobel operators
+    // Sobel operators on depth
     float sobelX = (d00 + 2.0 * d01 + d02) - (d20 + 2.0 * d21 + d22);
     float sobelY = (d00 + 2.0 * d10 + d20) - (d02 + 2.0 * d12 + d22);
-    float edgeMagnitude = sqrt(sobelX * sobelX + sobelY * sobelY);
+    float depthEdge = sqrt(sobelX * sobelX + sobelY * sobelY);
+
+    // Normal-based edge detection (Sobel on reconstructed normals)
+    float normalEdge = 0.0;
+    if (settings.celOutlineNormalWeight > 0.0) {
+        vec3 n00 = reconstructNormal(uv + vec2(-thickness, -thickness) * texelSize);
+        vec3 n10 = reconstructNormal(uv + vec2( 0.0,      -thickness) * texelSize);
+        vec3 n20 = reconstructNormal(uv + vec2( thickness, -thickness) * texelSize);
+        vec3 n01 = reconstructNormal(uv + vec2(-thickness,  0.0)      * texelSize);
+        vec3 n21 = reconstructNormal(uv + vec2( thickness,  0.0)      * texelSize);
+        vec3 n02 = reconstructNormal(uv + vec2(-thickness,  thickness) * texelSize);
+        vec3 n12 = reconstructNormal(uv + vec2( 0.0,       thickness) * texelSize);
+        vec3 n22 = reconstructNormal(uv + vec2( thickness,  thickness) * texelSize);
+
+        // Sobel on each normal component, sum magnitudes
+        vec3 nSobelX = (n00 + 2.0 * n01 + n02) - (n20 + 2.0 * n21 + n22);
+        vec3 nSobelY = (n00 + 2.0 * n10 + n20) - (n02 + 2.0 * n12 + n22);
+        normalEdge = length(nSobelX) + length(nSobelY);
+    }
+
+    // Combine depth and normal edges with configurable weights
+    float edgeMagnitude = depthEdge * settings.celOutlineDepthWeight
+                        + normalEdge * settings.celOutlineNormalWeight;
 
     float edge = smoothstep(settings.celOutlineThreshold * 0.5, settings.celOutlineThreshold, edgeMagnitude);
     return mix(color, settings.celOutlineColor, edge);

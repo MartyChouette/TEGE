@@ -160,6 +160,8 @@ struct SceneRenderSettings {
     u32 globalVertexSnapResolution = 160;
     f32 texturePageSize = 0.0f;       // PS1 VRAM page size (0=off, 64/128)
     f32 depthSortJitter = 0.0f;       // PS1 ordering table jitter (0=off)
+    f32 lightRampMode = 0.0f;         // 0=off, 1=smooth, 2=warm, 3=cool, 4=anime
+    f32 normalQuantizeSteps = 0.0f;   // Normal quantization (0=off, 4-16)
 
     // Full-screen stipple / dither
     bool stippleEnabled = false;

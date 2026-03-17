@@ -172,6 +172,7 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["normalTexturePath"] = material.normalTexturePath;
     j["metallicRoughnessTexturePath"] = material.metallicRoughnessTexturePath;
     j["emissiveTexturePath"] = material.emissiveTexturePath;
+    j["specularTexturePath"] = material.specularTexturePath;
     j["doubleSided"] = material.doubleSided;
     j["castShadows"] = material.castShadows;
     j["receiveShadows"] = material.receiveShadows;
@@ -346,6 +347,9 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     }
     if (j.contains("emissiveTexturePath")) {
         material.emissiveTexturePath = SafeStr(j["emissiveTexturePath"], MAX_STR_PATH);
+    }
+    if (j.contains("specularTexturePath")) {
+        material.specularTexturePath = SafeStr(j["specularTexturePath"], MAX_STR_PATH);
     }
     material.doubleSided = j.contains("doubleSided") ? JB(j["doubleSided"]) : false;
     material.castShadows = j.contains("castShadows") ? JB(j["castShadows"]) : true;
