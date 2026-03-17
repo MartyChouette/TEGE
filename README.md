@@ -4,7 +4,7 @@
 
 <br><br>
 
-**An aesthetics-first game engine — preserving and expanding the digital aesthetics of yesterday for the storytellers of tomorrow.**
+**An aesthetics-first game engine**
 
 <br>
 
