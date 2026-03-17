@@ -1169,7 +1169,7 @@ private:
     FeedbackManager m_FeedbackManager;
     bool m_FeedbackLoaded = false;
 
-    enum class FeedbackTab : u8 { BugReports, Feedback, NewBug, NewFeedback };
+    enum class FeedbackTab : u8 { BugReports, Feedback, NewBug, NewFeedback, GitHubIssues, GitHubSettings };
     FeedbackTab m_FeedbackTab = FeedbackTab::BugReports;
 
     // Bug report form buffers
@@ -1200,7 +1200,18 @@ private:
     u64 m_SelectedFeedbackId = 0;
     char m_FeedbackEndpointBuf[512] = {};
 
+    // GitHub Issues tab state
+    char m_GitHubOwnerBuf[128] = "MartyChouette";
+    char m_GitHubRepoBuf[128] = "TEGE";
+    char m_GitHubTokenBuf[256] = {};
+    i32 m_SelectedGitHubIssue = -1;
+    char m_GitHubIssueSearchBuf[256] = {};
+    bool m_GitHubFetching = false;
+
     void DrawFeedbackPanel();
+    void DrawGitHubIssuesTab();
+    void DrawGitHubSettingsTab();
+    void QuickBugReport();  // F5 instant bug report with diagnostics
     void DrawSaveDebugPanel();
     void DrawPlayModeDiffDialog();
     void DrawBugReportList();

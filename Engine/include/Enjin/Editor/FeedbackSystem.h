@@ -4,6 +4,7 @@
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Editor/PerformanceStats.h"
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace Enjin {
@@ -190,6 +191,29 @@ struct FeedbackEntry {
     std::string updatedAt;
 };
 
+// ── GitHub issue (fetched from remote) ──────────────────────────────
+
+struct GitHubIssue {
+    i32 number = 0;
+    std::string title;
+    std::string body;
+    std::string state;       // "open" or "closed"
+    std::string createdAt;
+    std::string updatedAt;
+    std::string htmlUrl;
+    std::vector<std::string> labels;
+    std::string authorLogin;
+};
+
+// ── GitHub settings ─────────────────────────────────────────────────
+
+struct GitHubConfig {
+    std::string owner = "MartyChouette";
+    std::string repo = "TEGE";
+    std::string token;   // Personal access token (stored in config, not in code)
+    bool enabled = true;
+};
+
 // ── Feedback manager ─────────────────────────────────────────────────
 
 class ENJIN_API FeedbackManager {
@@ -215,9 +239,18 @@ public:
     void LoadAll(const std::string& dir = "");
     static std::string GetDefaultDirectory();
 
-    // Remote submission
+    // Remote submission (generic endpoint)
     bool SubmitBugReport(u64 id, const std::string& endpoint);
     bool SubmitFeedback(u64 id, const std::string& endpoint);
+
+    // GitHub Issues API integration
+    GitHubConfig& GetGitHubConfig() { return m_GitHubConfig; }
+    const GitHubConfig& GetGitHubConfig() const { return m_GitHubConfig; }
+    bool SubmitBugReportToGitHub(u64 id);
+    bool SubmitCrashReportToGitHub(const std::string& crashText);
+    bool FetchGitHubIssues(bool includeClosedRecent = false);
+    const std::vector<GitHubIssue>& GetGitHubIssues() const { return m_GitHubIssues; }
+    bool IsGitHubConfigured() const { return !m_GitHubConfig.token.empty() && m_GitHubConfig.enabled; }
 
     // Filter / Search
     std::vector<BugReport*> FilterBugReports(i32 statusFilter, i32 severityFilter);
@@ -242,6 +275,17 @@ private:
     std::vector<FeedbackEntry> m_FeedbackEntries;
     u64 m_NextBugId = 1;
     u64 m_NextFeedbackId = 1;
+
+    // GitHub integration
+    GitHubConfig m_GitHubConfig;
+    std::vector<GitHubIssue> m_GitHubIssues;
+
+    // Build a GitHub Issues API URL
+    std::string GitHubApiUrl(const std::string& path = "") const;
+    // Build auth headers for GitHub API
+    std::unordered_map<std::string, std::string> GitHubHeaders() const;
+    // Format a bug report as a GitHub issue body (markdown)
+    static std::string FormatBugReportAsMarkdown(const BugReport& report);
 };
 
 } // namespace Editor

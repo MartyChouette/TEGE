@@ -12,7 +12,7 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey.svg)]()
 [![Build](https://img.shields.io/badge/Build-CMake-064F8C.svg)](https://cmake.org/)
 
-[Website](https://www.marty64.net/enjin/) · [Documentation](docs/) · [Build Guide](docs/BUILD.md) · [Scripting API](docs/SCRIPTING_API.md)
+[Website](https://www.marty64.net/enjin/) · [Download](https://www.marty64.net/enjin/TEGE-0.9.0.zip) · [Documentation](docs/) · [Build Guide](docs/BUILD.md) · [Scripting API](docs/SCRIPTING_API.md)
 
 </div>
 
@@ -35,7 +35,7 @@
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-org/enjin.git && cd enjin
+git clone https://github.com/MartyChouette/TEGE.git && cd enjin
 
 # 2. Generate build files
 mkdir build && cd build && cmake ..
@@ -426,4 +426,4 @@ Licensed under the **Business Source License 1.1** (BSL 1.1). See [LICENSE](LICE
 
 ## Contributing
 
-TEGE is not accepting outside contributions at this time. If you find a bug or have a feature request, feel free to [open an issue](https://github.com/your-org/enjin/issues).
+TEGE is not accepting outside contributions at this time. If you find a bug or have a feature request, feel free to [open an issue](https://github.com/MartyChouette/TEGE/issues).

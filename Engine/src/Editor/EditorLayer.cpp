@@ -839,6 +839,11 @@ void EditorLayer::Update(f32 deltaTime) {
         m_ShowDebugWorkstation = !m_ShowDebugWorkstation;
     }
 
+    // F5 = Quick Bug Report (instant capture and submit to GitHub)
+    if (Input::IsKeyPressed(KeyCode::F5)) {
+        QuickBugReport();
+    }
+
     if (Input::IsKeyPressed(KeyCode::F11)) {
         m_FocusMode = !m_FocusMode;
         if (m_FocusMode) {
