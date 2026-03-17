@@ -78,6 +78,8 @@ cmake --build . --config Release
 ```
 
 > **Prerequisites:** CMake 3.20+, C++20 compiler, Vulkan SDK, GLFW3. See [BUILD.md](docs/BUILD.md) for full details.
+>
+> **First time?** See the [User Manual](docs/USER_MANUAL.md) for a walkthrough of the editor and how to get started.
 
 ### Windows Installer
 
