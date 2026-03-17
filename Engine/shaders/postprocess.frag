@@ -114,13 +114,23 @@ layout(binding = 1) uniform PostProcessSettings {
     uint vhsScreenTear;
     float vhsTearOffset;
     uint vhsInterlacing;
-    float _vhsPad0;
+    float vhsTapeDropout;
+
+    // Analog film effects
+    uint filmGateWeaveEnabled;
+    float filmGateWeaveIntensity;
+    float filmGateWeaveSpeed;
+    uint lightLeakEnabled;
+    float lightLeakIntensity;
+    float lightLeakSpeed;
+    float _analogPad0;
+    float _analogPad1;
 
     // Color palette lock
     uint paletteEnabled;
     uint paletteColors;
-    float _palPad0;
-    float _palPad1;
+    uint paletteMode;        // 0=per-channel, 1=PICO-8, 2=GameBoy, 3=NES, 4=CGA, 5=C64
+    uint normalQuantizeSteps; // 0=off, snap normals to N directions
 
     // Depth of Field
     uint dofEnabled;
@@ -768,18 +778,145 @@ vec3 applyVHS(vec2 uv) {
         }
     }
 
+    // Tape dropout: random horizontal bands of signal loss
+    if (settings.vhsTapeDropout > 0.0) {
+        // Generate dropout bands that scroll down the screen
+        float dropY = origUV.y + t * 0.15;
+        float band1 = fract(sin(floor(dropY * 40.0 + t * 3.0) * 127.1) * 43758.5453);
+        float band2 = fract(sin(floor(dropY * 80.0 + t * 7.0) * 311.7) * 43758.5453);
+        // Narrow bands that appear when hash is below threshold
+        float dropThreshold = settings.vhsTapeDropout * 0.15;
+        if (band1 < dropThreshold) {
+            // Full signal loss: white static
+            float noise = fract(sin(dot(origUV * 500.0, vec2(12.9898, 78.233)) + t) * 43758.5453);
+            color = mix(color, vec3(noise * 0.8 + 0.2), 0.85);
+        } else if (band2 < dropThreshold * 0.5) {
+            // Partial loss: horizontal shift + desaturation
+            color = vec3(dot(color, vec3(0.299, 0.587, 0.114)));
+        }
+    }
+
     return color;
 }
 
 // ============================================================
-// Color Palette Lock
+// Film Gate Weave
 // ============================================================
+vec2 applyFilmGateWeave(vec2 uv) {
+    if (settings.filmGateWeaveEnabled == 0) return uv;
+    float t = settings.time * settings.filmGateWeaveSpeed;
+    float intensity = settings.filmGateWeaveIntensity;
+    // Low-frequency sine + subtle randomization (simulates physical gate movement)
+    float weaveX = sin(t * 2.7 + 1.3) * 0.6 + sin(t * 6.1) * 0.3 + sin(t * 13.7) * 0.1;
+    float weaveY = sin(t * 3.1 + 0.7) * 0.5 + sin(t * 7.3) * 0.35 + sin(t * 11.3) * 0.15;
+    return uv + vec2(weaveX, weaveY) * intensity;
+}
+
+// ============================================================
+// Light Leak / Film Burn
+// ============================================================
+vec3 applyLightLeak(vec3 color, vec2 uv) {
+    if (settings.lightLeakEnabled == 0) return color;
+    float t = settings.time * settings.lightLeakSpeed;
+    float intensity = settings.lightLeakIntensity;
+
+    // Two drifting warm glow sources at screen edges
+    vec2 leak1Pos = vec2(0.1 + sin(t * 0.7) * 0.15, 0.2 + sin(t * 0.5 + 1.0) * 0.2);
+    vec2 leak2Pos = vec2(0.85 + sin(t * 0.6 + 2.0) * 0.1, 0.7 + cos(t * 0.4) * 0.15);
+
+    float d1 = 1.0 - smoothstep(0.0, 0.4, length(uv - leak1Pos));
+    float d2 = 1.0 - smoothstep(0.0, 0.35, length(uv - leak2Pos));
+
+    // Warm amber/orange tint
+    vec3 leak1Color = vec3(1.0, 0.6, 0.2) * d1 * d1;
+    vec3 leak2Color = vec3(1.0, 0.4, 0.15) * d2 * d2;
+
+    // Pulsing intensity
+    float pulse = 0.7 + 0.3 * sin(t * 1.3);
+
+    color += (leak1Color + leak2Color) * intensity * pulse;
+    return color;
+}
+
+// ============================================================
+// Color Palette Lock (with named palette presets)
+// ============================================================
+
+// Find nearest color in a palette array (RGB distance)
+vec3 nearestPaletteColor(vec3 color, vec3 palette[16], int count) {
+    float bestDist = 99999.0;
+    vec3 bestColor = palette[0];
+    for (int i = 0; i < count; i++) {
+        vec3 diff = color - palette[i];
+        float d = dot(diff, diff);
+        if (d < bestDist) {
+            bestDist = d;
+            bestColor = palette[i];
+        }
+    }
+    return bestColor;
+}
+
 vec3 applyPaletteLock(vec3 color) {
     if (settings.paletteEnabled == 0) return color;
 
-    float n = float(settings.paletteColors);
-    color = floor(color * (n - 1.0) + 0.5) / (n - 1.0);
-    return clamp(color, 0.0, 1.0);
+    // Mode 0: simple per-channel quantize
+    if (settings.paletteMode == 0u) {
+        float n = float(settings.paletteColors);
+        color = floor(color * (n - 1.0) + 0.5) / (n - 1.0);
+        return clamp(color, 0.0, 1.0);
+    }
+
+    // Named palette presets
+    vec3 pal[16];
+    int palCount = 16;
+
+    if (settings.paletteMode == 1u) {
+        // PICO-8 (16 colors)
+        pal[ 0]=vec3(0.000,0.000,0.000); pal[ 1]=vec3(0.114,0.169,0.326);
+        pal[ 2]=vec3(0.494,0.145,0.326); pal[ 3]=vec3(0.000,0.529,0.318);
+        pal[ 4]=vec3(0.671,0.322,0.212); pal[ 5]=vec3(0.373,0.341,0.310);
+        pal[ 6]=vec3(0.761,0.765,0.780); pal[ 7]=vec3(1.000,0.945,0.910);
+        pal[ 8]=vec3(1.000,0.000,0.302); pal[ 9]=vec3(1.000,0.639,0.000);
+        pal[10]=vec3(1.000,0.925,0.153); pal[11]=vec3(0.000,0.894,0.212);
+        pal[12]=vec3(0.161,0.678,1.000); pal[13]=vec3(0.514,0.463,0.612);
+        pal[14]=vec3(1.000,0.467,0.659); pal[15]=vec3(1.000,0.800,0.667);
+        palCount = 16;
+    } else if (settings.paletteMode == 2u) {
+        // Game Boy (4 colors)
+        pal[0]=vec3(0.059,0.220,0.059); pal[1]=vec3(0.188,0.384,0.188);
+        pal[2]=vec3(0.545,0.674,0.059); pal[3]=vec3(0.608,0.737,0.059);
+        palCount = 4;
+    } else if (settings.paletteMode == 3u) {
+        // NES (subset — 16 representative colors)
+        pal[ 0]=vec3(0.000,0.000,0.000); pal[ 1]=vec3(0.988,0.988,0.988);
+        pal[ 2]=vec3(0.671,0.671,0.671); pal[ 3]=vec3(0.376,0.376,0.376);
+        pal[ 4]=vec3(0.894,0.149,0.173); pal[ 5]=vec3(0.988,0.494,0.463);
+        pal[ 6]=vec3(0.000,0.000,0.659); pal[ 7]=vec3(0.208,0.463,0.988);
+        pal[ 8]=vec3(0.000,0.471,0.000); pal[ 9]=vec3(0.298,0.745,0.298);
+        pal[10]=vec3(0.988,0.843,0.000); pal[11]=vec3(0.988,0.631,0.282);
+        pal[12]=vec3(0.471,0.169,0.529); pal[13]=vec3(0.988,0.608,0.839);
+        pal[14]=vec3(0.000,0.659,0.659); pal[15]=vec3(0.659,0.471,0.325);
+        palCount = 16;
+    } else if (settings.paletteMode == 4u) {
+        // CGA (4 colors — palette 1 high)
+        pal[0]=vec3(0.000,0.000,0.000); pal[1]=vec3(0.333,1.000,1.000);
+        pal[2]=vec3(1.000,0.333,1.000); pal[3]=vec3(1.000,1.000,1.000);
+        palCount = 4;
+    } else if (settings.paletteMode == 5u) {
+        // C64 (16 colors)
+        pal[ 0]=vec3(0.000,0.000,0.000); pal[ 1]=vec3(1.000,1.000,1.000);
+        pal[ 2]=vec3(0.533,0.208,0.173); pal[ 3]=vec3(0.400,0.729,0.769);
+        pal[ 4]=vec3(0.545,0.231,0.580); pal[ 5]=vec3(0.349,0.616,0.263);
+        pal[ 6]=vec3(0.208,0.157,0.475); pal[ 7]=vec3(0.808,0.808,0.502);
+        pal[ 8]=vec3(0.545,0.345,0.106); pal[ 9]=vec3(0.349,0.243,0.000);
+        pal[10]=vec3(0.733,0.427,0.392); pal[11]=vec3(0.314,0.314,0.314);
+        pal[12]=vec3(0.471,0.471,0.471); pal[13]=vec3(0.588,0.859,0.482);
+        pal[14]=vec3(0.424,0.373,0.694); pal[15]=vec3(0.627,0.627,0.627);
+        palCount = 16;
+    }
+
+    return nearestPaletteColor(color, pal, palCount);
 }
 
 // ============================================================
@@ -1293,6 +1430,9 @@ void main() {
         uv = centered * 0.5 + 0.5;
     }
 
+    // Film gate weave: UV jitter before any sampling (simulates physical gate movement)
+    uv = applyFilmGateWeave(uv);
+
     // VHS: applied early because it warps UVs for the raw image sampling
     vec3 color;
     if (settings.vhsEnabled != 0) {
@@ -1342,6 +1482,9 @@ void main() {
 
     // Apply film grain
     color = applyFilmGrain(color, uv);
+
+    // Light leak / film burn overlay
+    color = applyLightLeak(color, uv);
 
     // Retro: dithering (apply before quantization for best results)
     vec2 screenPos = fragUV * vec2(settings.screenWidth, settings.screenHeight);

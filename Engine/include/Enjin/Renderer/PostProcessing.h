@@ -156,13 +156,23 @@ struct alignas(16) PostProcessSettings {
     alignas(4) u32 vhsScreenTear = 0;
     alignas(4) f32 vhsTearOffset = 0.0f;
     alignas(4) u32 vhsInterlacing = 0;
-    alignas(4) f32 _vhsPad0 = 0.0f;
+    alignas(4) f32 vhsTapeDropout = 0.0f;    // Tape dropout intensity (0=off, 0.1-0.5 typical)
+
+    // Analog film effects
+    alignas(4) u32 filmGateWeaveEnabled = 0;
+    alignas(4) f32 filmGateWeaveIntensity = 0.002f;  // UV jitter amount
+    alignas(4) f32 filmGateWeaveSpeed = 1.0f;         // Animation speed
+    alignas(4) u32 lightLeakEnabled = 0;
+    alignas(4) f32 lightLeakIntensity = 0.15f;        // Additive glow strength
+    alignas(4) f32 lightLeakSpeed = 0.3f;              // Drift speed
+    alignas(4) f32 _analogPad0 = 0.0f;
+    alignas(4) f32 _analogPad1 = 0.0f;
 
     // Color palette lock
     alignas(4) u32 paletteEnabled = 0;
     alignas(4) u32 paletteColors = 16;
-    alignas(4) f32 _palPad0 = 0.0f;
-    alignas(4) f32 _palPad1 = 0.0f;
+    alignas(4) u32 paletteMode = 0;        // 0=per-channel, 1=PICO-8, 2=GameBoy, 3=NES, 4=CGA, 5=C64
+    alignas(4) u32 normalQuantizeSteps = 0; // 0=off, 4-16 = snap normals to N cardinal directions
 
     // Depth of Field
     alignas(4) u32 dofEnabled = 0;
@@ -299,6 +309,8 @@ struct alignas(16) PostProcessSettings {
         if (lutEnabled) return true;
         if (crtPhosphorEnabled) return true;
         if (vhsEnabled) return true;
+        if (filmGateWeaveEnabled) return true;
+        if (lightLeakEnabled) return true;
         if (paletteEnabled) return true;
         if (dofEnabled) return true;
         if (tiltShiftEnabled) return true;

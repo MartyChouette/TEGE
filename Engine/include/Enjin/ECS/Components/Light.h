@@ -131,7 +131,7 @@ struct alignas(16) LightingUBO {
     u32 shadingFlags;
     f32 sphereEnvStrength;     // Spherical environment map intensity (0=off, 0.5=subtle, 1.0=full)
     f32 posterizeLevels;       // Color posterization: 0=disabled, 4-256 = discrete color levels per channel
-    f32 _padShading1;
+    f32 texturePageSize;   // Retro: PS1 texture page size in texels (0=disabled, 64/128 typical)
 
     // Wind data for vegetation/weather shaders
     alignas(16) Math::Vector4 windData;  // xyz = wind direction * strength, w = time

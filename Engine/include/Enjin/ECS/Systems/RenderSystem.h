@@ -375,6 +375,12 @@ public:
     void SetGlobalGouraudOnly(bool v) { m_GlobalGouraudOnly = v; }
     u8 GetGlobalVertexSnapResolution() const { return m_GlobalVertexSnapResolution; }
     void SetGlobalVertexSnapResolution(u8 v) { m_GlobalVertexSnapResolution = v; }
+    f32 GetTexturePageSize() const { return m_TexturePageSize; }
+    void SetTexturePageSize(f32 v) { m_TexturePageSize = v; }
+    f32 GetDepthSortJitter() const { return m_DepthSortJitter; }
+    void SetDepthSortJitter(f32 v) { m_DepthSortJitter = v; }
+    f32 GetNormalQuantizeSteps() const { return m_NormalQuantizeSteps; }
+    void SetNormalQuantizeSteps(f32 v) { m_NormalQuantizeSteps = v; }
 
     // Shading model
     u32 GetShadingModel() const { return m_ShadingModel; }
@@ -621,6 +627,9 @@ private:
     bool m_GlobalUVQuantize = false;
     bool m_GlobalGouraudOnly = false;
     u8 m_GlobalVertexSnapResolution = 160;
+    f32 m_TexturePageSize = 0.0f;    // PS1 VRAM texture page size (0=off, 64/128 typical)
+    f32 m_DepthSortJitter = 0.0f;    // PS1 ordering table depth jitter (0=off, 0.001-0.01)
+    f32 m_NormalQuantizeSteps = 0.0f; // Snap normals to N directions (0=off, 4-16)
 
     // Textures — integer-keyed for O(1) lookup after initial load
     std::unique_ptr<Renderer::Texture> m_DefaultWhiteTexture;

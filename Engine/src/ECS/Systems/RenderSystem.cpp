@@ -3468,6 +3468,11 @@ void RenderSystem::UpdateFrameUniforms() {
         | (m_SphereEnvMapEnabled ? 16u : 0u);
     lighting.sphereEnvStrength = m_SphereEnvStrength;
     lighting.posterizeLevels = m_PosterizeLevels;
+    lighting.texturePageSize = m_TexturePageSize;
+
+    // Pack retro settings into worldCurvature reserved fields
+    lighting.worldCurvature.y = m_DepthSortJitter;
+    lighting.worldCurvature.z = m_NormalQuantizeSteps;
 
     if (m_ActivePointShadowCount > 0 && lighting.pointLightCount > 1) {
         // Move shadow-casting lights to front: swap with non-shadow lights

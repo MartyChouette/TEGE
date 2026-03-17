@@ -344,8 +344,9 @@ private:
     void GitFetch();
     void GitSwitchBranch(const std::string& branch);
     void DrawStatsOverlay();
-    void DrawDebugWorkstation();   // F2 — Editor/Engine debug
-    void DrawGameDebugPanel();     // F1 — Game debug
+    void DrawDebugWorkstation();   // F2 — Editor/Engine debug (legacy)
+    void DrawGameDebugPanel();     // F1 — Game debug (legacy)
+    void DrawDebugOverlay();       // F1 — Transparent HUD overlay
     void DrawSplashScreen();
     void DrawBuildDialog();
 
@@ -564,8 +565,10 @@ private:
     bool m_ShowDemoWindow = false;
     bool m_ShowStatsOverlay = true;
     bool m_ShowAboutDialog = false;
-    bool m_ShowDebugWorkstation = false;  // F2 — Editor/Engine debug
-    bool m_ShowGameDebug = false;          // F1 — Game debug
+    bool m_ShowDebugWorkstation = false;  // F2 — Editor/Engine debug (legacy)
+    bool m_ShowGameDebug = false;          // F1 — Game debug (legacy)
+    bool m_ShowDebugOverlay = false;       // F1 — Transparent HUD overlay
+    u8 m_DebugOverlayDetail = 0;           // 0=compact, 1=detailed
 
     // User Manual panel state
     struct ManualSection {

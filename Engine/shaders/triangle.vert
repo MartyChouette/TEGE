@@ -59,7 +59,7 @@ layout(binding = 1) uniform LightingUBO {
     uint shadingFlags;
     float sphereEnvStrength;
     float posterizeLevels;
-    float _padShading1;
+    float texturePageSize;  // PS1 VRAM page size in texels (0=off)
     vec4 windData;  // xyz = wind direction * strength, w = time
     vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
@@ -217,6 +217,14 @@ void main() {
             snapped = floor(snapped * grid + 0.5) / grid;    // snap to grid
             clipPos.xy = snapped * clipPos.w;                 // back to clip
         }
+    }
+
+    // PS1-style polygon sort jitter: add depth noise to simulate ordering table errors
+    float depthJitter = lighting.worldCurvature.y; // packed in reserved field
+    if (depthJitter > 0.0 && (pushConstants.flags & FLAG_VERTEX_SNAPPING) != 0) {
+        // Hash based on world position to get stable per-triangle jitter
+        float h = fract(sin(dot(worldPos.xyz, vec3(12.9898, 78.233, 45.164))) * 43758.5453);
+        clipPos.z += (h - 0.5) * 2.0 * depthJitter * clipPos.w;
     }
 
     gl_Position = clipPos;

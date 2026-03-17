@@ -77,7 +77,7 @@ layout(binding = 1) uniform LightingUBO {
     uint shadingFlags;         // bit0=GGX, bit1=Fresnel, bit2=EnergyConserv, bit3=GeometryTerm, bit4=SphereEnvMap
     float sphereEnvStrength;   // Spherical environment map intensity (0=off)
     float posterizeLevels;     // Color posterization levels (0=disabled)
-    float _padShading1;
+    float texturePageSize;  // PS1 VRAM page size in texels (0=off)
     vec4 windData;  // xyz = wind direction * strength, w = time (unused in frag, layout must match)
     vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
@@ -682,6 +682,19 @@ void main() {
     // Resolve UV for affine texturing (undo the w-multiply from vertex shader)
     vec2 uv = fragUV / fragClipW;
 
+    // PS1-style texture page warping: add UV discontinuities at VRAM page boundaries
+    if (lighting.texturePageSize > 0.0 && (material.flags & FLAG_AFFINE_TEXTURING) != 0) {
+        float pageSize = lighting.texturePageSize;
+        // Compute distance to nearest page boundary (in UV space, assuming 256x256 VRAM)
+        vec2 pageUV = uv * 256.0 / pageSize;
+        vec2 pageFrac = fract(pageUV);
+        // Create subtle seam at page edges: snap UVs near boundaries
+        vec2 edgeDist = min(pageFrac, 1.0 - pageFrac);
+        float edgeThreshold = 0.03;  // ~3% of page width
+        vec2 warp = step(edgeDist, vec2(edgeThreshold)) * sign(pageFrac - 0.5) * 0.002;
+        uv += warp;
+    }
+
     // Parallax Occlusion Mapping: offset UV using height map before any texture sampling
     // Skip for water surfaces — POM is expensive and adds little visual value on water
     if ((material.flags & FLAG_HAS_HEIGHT_TEX) != 0 && material.parallaxScale > 0.0
@@ -721,6 +734,14 @@ void main() {
         normal = normalize(TBN * sampledNormal);
     } else {
         normal = normalize(fragNormal);
+    }
+
+    // Normal quantization: snap normals to N cardinal directions (pixel art / 2D-in-3D look)
+    float nqSteps = lighting.worldCurvature.z;
+    if (nqSteps >= 4.0) {
+        // Quantize each component to discrete steps
+        float s = nqSteps;
+        normal = normalize(floor(normal * s + 0.5) / s);
     }
 
     // Water surface: rain ripple normal perturbation — individual drop ripples

@@ -43,6 +43,7 @@ struct AffineSettings {
     f32 warpStrength = 1.0f;    // How much texture warps
     bool vertexSnapping = false; // Snap vertices to grid
     f32 snapGridSize = 1.0f;    // Grid size for vertex snap
+    f32 texturePageSize = 0.0f; // PS1 VRAM page size in texels (0=off, 64/128 typical)
 };
 
 // Vertex jitter/wobble (PS1 lack of sub-pixel precision)
@@ -51,6 +52,7 @@ struct VertexJitterSettings {
     f32 jitterAmount = 0.5f;    // Pixels of jitter
     bool snapToGrid = false;    // Snap to pixel grid
     u32 gridResolution = 160;   // Virtual resolution for snapping
+    f32 depthSortJitter = 0.0f; // PS1 ordering table jitter (0=off, 0.001-0.01 typical)
 };
 
 // CRT hardware model presets
@@ -142,6 +144,7 @@ struct VHSSettings {
     bool screenTear = false;
     f32 tearOffset = 0.0f;
     bool interlacing = false;
+    f32 tapeDropout = 0.0f;  // Signal loss band intensity (0=off, 0.1-0.5 typical)
 };
 
 // Color grading presets

@@ -7256,7 +7256,125 @@ void EditorLayer::DrawDebugWorkstation() {
 }
 
 // ---------------------------------------------------------------------------
-// Game Debug Panel (F1) — focused on debugging the user's game
+// Debug HUD Overlay (F1) — transparent always-on-top performance strip
+// ---------------------------------------------------------------------------
+void EditorLayer::DrawDebugOverlay() {
+    // Position at the top of the main viewport, full width
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    ImVec2 overlayPos(vp->WorkPos.x, vp->WorkPos.y);
+    ImVec2 overlaySize(vp->WorkSize.x, 0); // auto height
+
+    ImGui::SetNextWindowPos(overlayPos);
+    ImGui::SetNextWindowSize(ImVec2(overlaySize.x, 0));
+    ImGui::SetNextWindowBgAlpha(0.55f); // Semi-transparent
+
+    ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
+        ImGuiWindowFlags_NoDocking;
+
+    if (!ImGui::Begin("##DebugOverlay", &m_ShowDebugOverlay, flags)) {
+        ImGui::End();
+        return;
+    }
+
+    ImGuiIO& io = ImGui::GetIO();
+    f32 fps = io.Framerate;
+    f32 frameMs = fps > 0.0f ? 1000.0f / fps : 0.0f;
+
+    // FPS color
+    ImVec4 fpsColor = fps >= 60.0f ? ImVec4(0.3f, 1.0f, 0.4f, 1.0f) :
+                      fps >= 30.0f ? ImVec4(1.0f, 1.0f, 0.3f, 1.0f) :
+                                     ImVec4(1.0f, 0.35f, 0.35f, 1.0f);
+
+    // --- Compact line: FPS | Frame Time | Draw Calls | Triangles | Entities | Play Mode ---
+    ImGui::TextColored(fpsColor, "%.0f FPS", fps);
+    ImGui::SameLine(0, 16);
+    ImGui::TextColored(ImVec4(0.7f, 0.8f, 0.9f, 1.0f), "%.2f ms", frameMs);
+
+    if (m_RenderSystem) {
+        ImGui::SameLine(0, 16);
+        ImGui::Text("DC: %u", m_RenderSystem->GetDrawCallCount());
+
+        u32 tris = m_RenderSystem->GetTriangleCount();
+        ImGui::SameLine(0, 16);
+        if (tris > 1000000)
+            ImGui::Text("Tri: %.1fM", static_cast<f32>(tris) / 1000000.0f);
+        else if (tris > 1000)
+            ImGui::Text("Tri: %.1fK", static_cast<f32>(tris) / 1000.0f);
+        else
+            ImGui::Text("Tri: %u", tris);
+    }
+
+    if (m_World) {
+        ImGui::SameLine(0, 16);
+        ImGui::Text("Ent: %zu", m_World->GetEntityCount());
+    }
+
+    // Play mode indicator
+    if (!m_PlayMode.IsStopped()) {
+        ImGui::SameLine(0, 16);
+        if (m_PlayMode.IsPlaying())
+            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "PLAYING");
+        else if (m_PlayMode.IsPaused())
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "PAUSED");
+    }
+
+    // F2 hint
+    ImGui::SameLine(ImGui::GetContentRegionMax().x - 130);
+    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 0.7f), "F1 close | F2 detail");
+
+    // --- Detailed line (F2 to toggle) ---
+    if (m_DebugOverlayDetail >= 1) {
+        // Percentile stats
+        ImGui::TextColored(ImVec4(0.6f, 0.7f, 0.8f, 0.9f),
+            "P50: %.1f ms  P95: %.1f ms  P99: %.1f ms  |  Min: %.1f  Max: %.1f",
+            m_FrameTimeP50, m_FrameTimeP95, m_FrameTimeP99,
+            m_FrameTimeMin, m_FrameTimeMax);
+
+        if (m_RenderSystem) {
+            u32 hits = m_RenderSystem->GetDescriptorCacheHits();
+            u32 total = hits + m_RenderSystem->GetDescriptorCacheWrites();
+            ImGui::SameLine(0, 16);
+            if (total > 0) {
+                f32 hitRate = static_cast<f32>(hits) / static_cast<f32>(total) * 100.0f;
+                ImGui::Text("Cache: %.0f%%", hitRate);
+            }
+        }
+
+        // Memory
+        f32 processMB = static_cast<f32>(m_PerfMetrics.processMemoryBytes) / (1024.0f * 1024.0f);
+        ImGui::SameLine(0, 16);
+        ImGui::Text("Mem: %.0f MB", processMB);
+
+        // Selected entity
+        if (m_World && m_PrimarySelected != ECS::INVALID_ENTITY && m_World->IsValid(m_PrimarySelected)) {
+            auto* nameComp = m_World->GetComponent<ECS::NameComponent>(m_PrimarySelected);
+            ImGui::SameLine(0, 16);
+            ImGui::TextColored(ImVec4(0.8f, 0.9f, 1.0f, 0.8f), "Sel: %s",
+                nameComp ? nameComp->name.c_str() : "(unnamed)");
+        }
+
+        // Frame time graph (small, inline)
+        f32 graphMax = m_FrameTimeMax > 0.0f ? m_FrameTimeMax * 1.5f : 33.3f;
+        if (graphMax < 16.7f) graphMax = 33.3f;
+        auto getter = [](void* data, int idx) -> float {
+            EditorLayer* self = static_cast<EditorLayer*>(data);
+            usize actualIdx = (self->m_FrameTimeIndex + static_cast<usize>(idx)) % FRAME_TIME_HISTORY_SIZE;
+            return self->m_FrameTimeHistory[actualIdx];
+        };
+        ImGui::PlotLines("##OverlayGraph", getter, this,
+                         static_cast<int>(FRAME_TIME_HISTORY_SIZE),
+                         0, nullptr, 0.0f, graphMax, ImVec2(ImGui::GetContentRegionAvail().x, 36));
+    }
+
+    ImGui::End();
+}
+
+// ---------------------------------------------------------------------------
+// Game Debug Panel (F1 legacy) — focused on debugging the user's game
 // ---------------------------------------------------------------------------
 void EditorLayer::DrawGameDebugPanel() {
     ImGui::SetNextWindowSize(ImVec2(600, 500), ImGuiCond_FirstUseEver);

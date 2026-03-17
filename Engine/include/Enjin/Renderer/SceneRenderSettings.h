@@ -158,6 +158,8 @@ struct SceneRenderSettings {
     bool globalUVQuantize = false;
     bool globalGouraudOnly = false;
     u32 globalVertexSnapResolution = 160;
+    f32 texturePageSize = 0.0f;       // PS1 VRAM page size (0=off, 64/128)
+    f32 depthSortJitter = 0.0f;       // PS1 ordering table jitter (0=off)
 
     // Full-screen stipple / dither
     bool stippleEnabled = false;

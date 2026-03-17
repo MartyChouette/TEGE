@@ -831,12 +831,16 @@ void EditorLayer::Update(f32 deltaTime) {
 
     // Focus mode toggle (F11) and exit (Escape)
     // F11 toggles between editor view and fullscreen game view while playing
-    // F1 = Game Debug, F2 = Editor/Engine Debug
+    // F1 = Debug HUD overlay, F2 = cycle detail level
     if (Input::IsKeyPressed(KeyCode::F1)) {
-        m_ShowGameDebug = !m_ShowGameDebug;
+        m_ShowDebugOverlay = !m_ShowDebugOverlay;
     }
     if (Input::IsKeyPressed(KeyCode::F2)) {
-        m_ShowDebugWorkstation = !m_ShowDebugWorkstation;
+        if (m_ShowDebugOverlay) {
+            m_DebugOverlayDetail = (m_DebugOverlayDetail + 1) % 2;
+        } else {
+            m_ShowDebugOverlay = true;  // F2 also opens if closed
+        }
     }
 
     // F5 = Quick Bug Report (instant capture and submit to GitHub)
@@ -1042,6 +1046,7 @@ void EditorLayer::Update(f32 deltaTime) {
         settings.vhsScreenTear = vhs.screenTear ? 1 : 0;
         settings.vhsTearOffset = vhs.tearOffset;
         settings.vhsInterlacing = vhs.interlacing ? 1 : 0;
+        settings.vhsTapeDropout = vhs.tapeDropout;
 
         // Sync per-object retro overrides to RenderSystem
         if (m_RenderSystem) {
@@ -1053,6 +1058,8 @@ void EditorLayer::Update(f32 deltaTime) {
                 jitter.enabled ? static_cast<u8>(jitter.gridResolution) : 160);
             m_RenderSystem->SetGlobalGouraudOnly(m_RetroEffects.GetGouraudOnly());
             m_RenderSystem->SetGlobalUVQuantize(affine.enabled);
+            m_RenderSystem->SetTexturePageSize(affine.texturePageSize);
+            m_RenderSystem->SetDepthSortJitter(jitter.depthSortJitter);
         }
     } else if (m_PostProcessing) {
         // When retro effects are disabled, clear the retro post-process fields
@@ -1073,6 +1080,8 @@ void EditorLayer::Update(f32 deltaTime) {
         m_RenderSystem->SetGlobalStippleTransparency(false);
         m_RenderSystem->SetGlobalUVQuantize(false);
         m_RenderSystem->SetGlobalGouraudOnly(false);
+        m_RenderSystem->SetTexturePageSize(0.0f);
+        m_RenderSystem->SetDepthSortJitter(0.0f);
     }
 }
 
@@ -2142,6 +2151,10 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(620 * s, 500 * s), ImGuiCond_FirstUseEver);
         DrawSaveDebugPanel();
     }
+    if (m_ShowDebugOverlay) {
+        DrawDebugOverlay();
+    }
+    // Legacy panels (kept for backward compat, hidden by default)
     if (m_ShowGameDebug) {
         DrawGameDebugPanel();
     }

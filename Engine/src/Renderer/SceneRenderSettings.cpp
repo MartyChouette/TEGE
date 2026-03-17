@@ -60,6 +60,8 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.globalUVQuantize           = rs->GetGlobalUVQuantize();
         s.globalGouraudOnly          = rs->GetGlobalGouraudOnly();
         s.globalVertexSnapResolution = rs->GetGlobalVertexSnapResolution();
+        s.texturePageSize           = rs->GetTexturePageSize();
+        s.depthSortJitter           = rs->GetDepthSortJitter();
 
         // Shading Model
         s.shadingModel = rs->GetShadingModel();
@@ -329,6 +331,8 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetGlobalUVQuantize(globalUVQuantize);
         rs->SetGlobalGouraudOnly(globalGouraudOnly);
         rs->SetGlobalVertexSnapResolution(static_cast<u8>(globalVertexSnapResolution));
+        rs->SetTexturePageSize(texturePageSize);
+        rs->SetDepthSortJitter(depthSortJitter);
 
         // Shading Model
         rs->SetShadingModel(shadingModel);
@@ -747,6 +751,8 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["globalUVQuantize"]           = s.globalUVQuantize;
     j["globalGouraudOnly"]          = s.globalGouraudOnly;
     j["globalVertexSnapResolution"] = s.globalVertexSnapResolution;
+    j["texturePageSize"]            = RF(s.texturePageSize);
+    j["depthSortJitter"]            = RF(s.depthSortJitter);
 
     // Depth of Field
     j["dofEnabled"]            = s.dofEnabled;
@@ -1000,6 +1006,8 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("globalUVQuantize"))           s.globalUVQuantize           = JB(j["globalUVQuantize"]);
     if (j.contains("globalGouraudOnly"))          s.globalGouraudOnly          = JB(j["globalGouraudOnly"]);
     if (j.contains("globalVertexSnapResolution")) s.globalVertexSnapResolution = j["globalVertexSnapResolution"].get<u32>();
+    if (j.contains("texturePageSize"))            s.texturePageSize            = j["texturePageSize"].get<f32>();
+    if (j.contains("depthSortJitter"))            s.depthSortJitter            = j["depthSortJitter"].get<f32>();
 
     // Depth of Field
     if (j.contains("dofEnabled"))            s.dofEnabled            = JB(j["dofEnabled"]);

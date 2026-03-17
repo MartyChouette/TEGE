@@ -1161,11 +1161,37 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
             }
 
             if (settings.paletteEnabled) {
-                int colors = static_cast<int>(settings.paletteColors);
-                if (ImGui::SliderInt("Colors", &colors, 2, 256)) {
-                    settings.paletteColors = static_cast<u32>(colors);
+                const char* paletteModes[] = { "Per-Channel", "PICO-8", "Game Boy", "NES", "CGA", "C64" };
+                int mode = static_cast<int>(settings.paletteMode);
+                if (ImGui::Combo("Palette##PalMode", &mode, paletteModes, 6)) {
+                    settings.paletteMode = static_cast<u32>(mode);
                 }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Number of color levels per channel");
+
+                if (settings.paletteMode == 0) {
+                    int colors = static_cast<int>(settings.paletteColors);
+                    if (ImGui::SliderInt("Colors", &colors, 2, 256)) {
+                        settings.paletteColors = static_cast<u32>(colors);
+                    }
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Number of color levels per channel");
+                } else {
+                    ImGui::TextDisabled("Using named palette — color count is fixed");
+                }
+            }
+        }
+
+        // Normal Quantization (Pixel Art)
+        if (ImGui::CollapsingHeader("Normal Quantization")) {
+            f32 nqSteps = m_RenderSystem ? m_RenderSystem->GetNormalQuantizeSteps() : 0.0f;
+            bool nqEnabled = nqSteps >= 4.0f;
+            if (ImGui::Checkbox("Enabled##NormQuant", &nqEnabled)) {
+                if (m_RenderSystem) m_RenderSystem->SetNormalQuantizeSteps(nqEnabled ? 6.0f : 0.0f);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Snap normals to N cardinal directions (2D-in-3D faceted look)");
+            if (nqEnabled && m_RenderSystem) {
+                int steps = static_cast<int>(nqSteps);
+                if (ImGui::SliderInt("Directions", &steps, 4, 16)) {
+                    m_RenderSystem->SetNormalQuantizeSteps(static_cast<f32>(steps));
+                }
             }
         }
 
@@ -1551,6 +1577,38 @@ void EditorLayer::DrawSettingsSection_RetroEffects() {
                     ImGui::DragFloat("Blue Shift", &vhs.blueShift, 0.01f, 0.0f, 0.3f);
                     ImGui::Checkbox("Screen Tear", &vhs.screenTear);
                     ImGui::Checkbox("Interlacing", &vhs.interlacing);
+                    ImGui::DragFloat("Tape Dropout", &vhs.tapeDropout, 0.01f, 0.0f, 1.0f);
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Random horizontal signal loss bands (VHS degradation)");
+                }
+                ImGui::TreePop();
+            }
+
+            // Film Gate Weave
+            if (ImGui::TreeNode("Film Gate Weave")) {
+                auto& settings = m_PostProcessing->GetSettings();
+                bool weaveOn = settings.filmGateWeaveEnabled != 0;
+                if (ImGui::Checkbox("Enabled##GateWeave", &weaveOn)) {
+                    settings.filmGateWeaveEnabled = weaveOn ? 1u : 0u;
+                }
+                if (weaveOn) {
+                    ImGui::DragFloat("Intensity##GateWeave", &settings.filmGateWeaveIntensity, 0.0005f, 0.0f, 0.02f, "%.4f");
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("UV jitter amount (physical gate movement)");
+                    ImGui::DragFloat("Speed##GateWeave", &settings.filmGateWeaveSpeed, 0.1f, 0.1f, 5.0f);
+                }
+                ImGui::TreePop();
+            }
+
+            // Light Leaks
+            if (ImGui::TreeNode("Light Leaks")) {
+                auto& settings = m_PostProcessing->GetSettings();
+                bool leakOn = settings.lightLeakEnabled != 0;
+                if (ImGui::Checkbox("Enabled##LightLeak", &leakOn)) {
+                    settings.lightLeakEnabled = leakOn ? 1u : 0u;
+                }
+                if (leakOn) {
+                    ImGui::DragFloat("Intensity##LightLeak", &settings.lightLeakIntensity, 0.01f, 0.0f, 1.0f);
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Additive warm glow strength");
+                    ImGui::DragFloat("Speed##LightLeak", &settings.lightLeakSpeed, 0.05f, 0.0f, 2.0f);
                 }
                 ImGui::TreePop();
             }

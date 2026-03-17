@@ -45,12 +45,14 @@ void RetroEffects::ApplyPS1Preset() {
     m_Affine.warpStrength = 1.0f;
     m_Affine.vertexSnapping = true;
     m_Affine.snapGridSize = 1.0f;
+    m_Affine.texturePageSize = 64.0f; // PS1 VRAM pages were 64x64
 
     // Vertex jitter
     m_VertexJitter.enabled = true;
     m_VertexJitter.jitterAmount = 1.0f;
     m_VertexJitter.snapToGrid = true;
     m_VertexJitter.gridResolution = 160;
+    m_VertexJitter.depthSortJitter = 0.003f; // PS1 ordering table imprecision
 
     // PS1 used Gouraud shading
     m_GouraudOnly = true;

@@ -65,7 +65,7 @@ layout(binding = 1) uniform LightingUBO {
     uint shadingFlags;
     float sphereEnvStrength;
     float posterizeLevels;
-    float _padShading1;
+    float texturePageSize;
     vec4 windData;
     vec4 fogParams;
     vec4 fogColorSnow;
