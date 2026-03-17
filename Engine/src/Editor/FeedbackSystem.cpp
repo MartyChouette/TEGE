@@ -324,9 +324,17 @@ void FeedbackManager::SaveAll(const std::string& dir) {
     }
 
     json root;
-    root["version"] = 1;
+    root["version"] = 2;
     root["nextBugId"] = m_NextBugId;
     root["nextFeedbackId"] = m_NextFeedbackId;
+
+    // GitHub config
+    json gh;
+    gh["owner"] = m_GitHubConfig.owner;
+    gh["repo"] = m_GitHubConfig.repo;
+    gh["token"] = m_GitHubConfig.token;
+    gh["enabled"] = m_GitHubConfig.enabled;
+    root["github"] = gh;
 
     json bugs = json::array();
     for (const auto& r : m_BugReports) bugs.push_back(BugReportToJson(r));
@@ -366,6 +374,15 @@ void FeedbackManager::LoadAll(const std::string& dir) {
 
     if (root.contains("nextBugId"))      m_NextBugId = root["nextBugId"].get<u64>();
     if (root.contains("nextFeedbackId")) m_NextFeedbackId = root["nextFeedbackId"].get<u64>();
+
+    // GitHub config
+    if (root.contains("github")) {
+        const auto& gh = root["github"];
+        if (gh.contains("owner"))   m_GitHubConfig.owner = gh["owner"].get<std::string>();
+        if (gh.contains("repo"))    m_GitHubConfig.repo = gh["repo"].get<std::string>();
+        if (gh.contains("token"))   m_GitHubConfig.token = gh["token"].get<std::string>();
+        if (gh.contains("enabled")) m_GitHubConfig.enabled = gh["enabled"].get<bool>();
+    }
 
     m_BugReports.clear();
     if (root.contains("bugReports")) {
@@ -505,6 +522,247 @@ bool FeedbackManager::ExportAllAsJson(const std::string& path) {
     file << root.dump(2);
     file.close();
     ENJIN_LOG_INFO(Editor, "FeedbackManager: exported all data to %s", path.c_str());
+    return true;
+}
+
+// ── GitHub Issues API ────────────────────────────────────────────────
+
+std::string FeedbackManager::GitHubApiUrl(const std::string& path) const {
+    return "https://api.github.com/repos/" + m_GitHubConfig.owner + "/" + m_GitHubConfig.repo + path;
+}
+
+std::unordered_map<std::string, std::string> FeedbackManager::GitHubHeaders() const {
+    return {
+        {"Accept", "application/vnd.github+json"},
+        {"Authorization", "Bearer " + m_GitHubConfig.token},
+        {"Content-Type", "application/json"},
+        {"User-Agent", "TEGE-Engine"},
+        {"X-GitHub-Api-Version", "2022-11-28"}
+    };
+}
+
+std::string FeedbackManager::FormatBugReportAsMarkdown(const BugReport& report) {
+    std::string md;
+    md += "**Type:** " + std::string(ReportTypeLabel(report.type)) + "  \n";
+    md += "**Severity:** " + std::string(ReportSeverityLabel(report.severity)) + "  \n\n";
+
+    if (!report.description.empty()) {
+        md += "## Description\n" + report.description + "\n\n";
+    }
+    if (!report.stepsToReproduce.empty()) {
+        md += "## Steps to Reproduce\n" + report.stepsToReproduce + "\n\n";
+    }
+    if (!report.expectedBehavior.empty()) {
+        md += "## Expected Behavior\n" + report.expectedBehavior + "\n\n";
+    }
+    if (!report.actualBehavior.empty()) {
+        md += "## Actual Behavior\n" + report.actualBehavior + "\n\n";
+    }
+
+    // Diagnostics
+    const auto& d = report.diagnostics;
+    md += "## Diagnostics\n";
+    md += "| Metric | Value |\n|---|---|\n";
+    if (!d.engineVersion.empty()) md += "| Engine | " + d.engineVersion + " |\n";
+    if (!d.platform.empty())      md += "| Platform | " + d.platform + " |\n";
+    if (!d.gpuName.empty())       md += "| GPU | " + d.gpuName + " |\n";
+    if (d.fps > 0)        md += "| FPS | " + std::to_string(static_cast<i32>(d.fps)) + " |\n";
+    if (d.frameTimeMs > 0) md += "| Frame Time | " + std::to_string(d.frameTimeMs).substr(0, 5) + " ms |\n";
+    md += "| Draw Calls | " + std::to_string(d.drawCalls) + " |\n";
+    md += "| Entities | " + std::to_string(d.entityCount) + " |\n";
+    md += "| Triangles | " + std::to_string(d.triangleCount) + " |\n";
+    if (d.ramProcess > 0) {
+        md += "| RAM (Process) | " + std::to_string(d.ramProcess / (1024 * 1024)) + " MB |\n";
+    }
+    if (!d.scenePath.empty()) md += "| Scene | " + d.scenePath + " |\n";
+    md += "\n";
+
+    // Console log tail (collapsible)
+    if (!d.consoleLogTail.empty()) {
+        md += "<details><summary>Console Log (last " + std::to_string(d.consoleLogTail.size()) + " lines)</summary>\n\n```\n";
+        for (const auto& line : d.consoleLogTail) {
+            md += line + "\n";
+        }
+        md += "```\n</details>\n\n";
+    }
+
+    md += "\n---\n*Submitted from TEGE Editor*\n";
+    return md;
+}
+
+bool FeedbackManager::SubmitBugReportToGitHub(u64 id) {
+    if (!IsGitHubConfigured()) {
+        ENJIN_LOG_ERROR(Editor, "FeedbackManager: GitHub not configured (missing token)");
+        return false;
+    }
+
+    BugReport* report = GetBugReport(id);
+    if (!report) return false;
+
+    // Build labels based on type and severity
+    json labels = json::array();
+    labels.push_back("bug");
+    labels.push_back(std::string("type:") + ReportTypeLabel(report->type));
+    labels.push_back(std::string("severity:") + ReportSeverityLabel(report->severity));
+
+    json body;
+    body["title"] = "[Bug] " + report->title;
+    body["body"] = FormatBugReportAsMarkdown(*report);
+    body["labels"] = labels;
+
+    auto response = Networking::HTTPClient::Post(
+        GitHubApiUrl("/issues"), body.dump(), GitHubHeaders());
+
+    if (response.success && response.statusCode >= 200 && response.statusCode < 300) {
+        report->status = ReportStatus::Submitted;
+        report->updatedAt = CurrentTimestamp();
+
+        // Parse the issue number from the response
+        try {
+            auto respJson = json::parse(response.body);
+            if (respJson.contains("number")) {
+                i32 issueNum = respJson["number"].get<i32>();
+                ENJIN_LOG_INFO(Editor, "FeedbackManager: bug report #%llu submitted as GitHub issue #%d", id, issueNum);
+            }
+        } catch (...) {}
+
+        return true;
+    }
+
+    ENJIN_LOG_ERROR(Editor, "FeedbackManager: GitHub issue creation failed (%d): %s",
+                    response.statusCode, response.error.c_str());
+    return false;
+}
+
+bool FeedbackManager::SubmitCrashReportToGitHub(const std::string& crashText) {
+    if (!IsGitHubConfigured()) {
+        ENJIN_LOG_ERROR(Editor, "FeedbackManager: GitHub not configured (missing token)");
+        return false;
+    }
+
+    // Extract a summary line from the crash text for the title
+    std::string title = "[Crash] Engine crash";
+    // Try to find the exception line for a better title
+    auto pos = crashText.find("Exception:");
+    if (pos != std::string::npos) {
+        auto end = crashText.find('\n', pos);
+        if (end != std::string::npos && end - pos < 120) {
+            title = "[Crash] " + crashText.substr(pos, end - pos);
+        }
+    }
+
+    json labels = json::array();
+    labels.push_back("bug");
+    labels.push_back("type:Crash");
+    labels.push_back("severity:Critical");
+    labels.push_back("auto-submitted");
+
+    std::string body = "## Automatic Crash Report\n\n";
+    body += "This issue was automatically submitted by the TEGE crash handler.\n\n";
+    body += "```\n" + crashText + "\n```\n\n";
+    body += "---\n*Auto-submitted from TEGE Editor crash handler*\n";
+
+    json issueBody;
+    issueBody["title"] = title;
+    issueBody["body"] = body;
+    issueBody["labels"] = labels;
+
+    auto response = Networking::HTTPClient::Post(
+        GitHubApiUrl("/issues"), issueBody.dump(), GitHubHeaders());
+
+    if (response.success && response.statusCode >= 200 && response.statusCode < 300) {
+        ENJIN_LOG_INFO(Editor, "FeedbackManager: crash report submitted to GitHub Issues");
+        return true;
+    }
+
+    ENJIN_LOG_ERROR(Editor, "FeedbackManager: crash report GitHub submission failed (%d): %s",
+                    response.statusCode, response.error.c_str());
+    return false;
+}
+
+bool FeedbackManager::FetchGitHubIssues(bool includeClosedRecent) {
+    if (!IsGitHubConfigured()) {
+        ENJIN_LOG_ERROR(Editor, "FeedbackManager: GitHub not configured (missing token)");
+        return false;
+    }
+
+    // Fetch open issues, sorted by most recently updated
+    std::string url = GitHubApiUrl("/issues?state=open&sort=updated&direction=desc&per_page=50");
+
+    auto response = Networking::HTTPClient::Get(url, GitHubHeaders());
+    if (!response.success || response.statusCode < 200 || response.statusCode >= 300) {
+        ENJIN_LOG_ERROR(Editor, "FeedbackManager: failed to fetch GitHub issues (%d): %s",
+                        response.statusCode, response.error.c_str());
+        return false;
+    }
+
+    m_GitHubIssues.clear();
+    try {
+        auto issues = json::parse(response.body);
+        if (!issues.is_array()) return false;
+
+        for (const auto& j : issues) {
+            // Skip pull requests (GitHub API returns them mixed with issues)
+            if (j.contains("pull_request")) continue;
+
+            GitHubIssue issue;
+            issue.number = j.value("number", 0);
+            issue.title = j.value("title", "");
+            issue.body = j.value("body", "");
+            issue.state = j.value("state", "open");
+            issue.createdAt = j.value("created_at", "");
+            issue.updatedAt = j.value("updated_at", "");
+            issue.htmlUrl = j.value("html_url", "");
+
+            if (j.contains("user") && j["user"].contains("login")) {
+                issue.authorLogin = j["user"]["login"].get<std::string>();
+            }
+            if (j.contains("labels")) {
+                for (const auto& label : j["labels"]) {
+                    if (label.contains("name"))
+                        issue.labels.push_back(label["name"].get<std::string>());
+                }
+            }
+            m_GitHubIssues.push_back(std::move(issue));
+        }
+    } catch (const std::exception& e) {
+        ENJIN_LOG_ERROR(Editor, "FeedbackManager: failed to parse GitHub issues: %s", e.what());
+        return false;
+    }
+
+    // Optionally fetch recently closed issues too
+    if (includeClosedRecent) {
+        std::string closedUrl = GitHubApiUrl("/issues?state=closed&sort=updated&direction=desc&per_page=20");
+        auto closedResp = Networking::HTTPClient::Get(closedUrl, GitHubHeaders());
+        if (closedResp.success && closedResp.statusCode >= 200 && closedResp.statusCode < 300) {
+            try {
+                auto closedIssues = json::parse(closedResp.body);
+                if (closedIssues.is_array()) {
+                    for (const auto& j : closedIssues) {
+                        if (j.contains("pull_request")) continue;
+                        GitHubIssue issue;
+                        issue.number = j.value("number", 0);
+                        issue.title = j.value("title", "");
+                        issue.body = j.value("body", "");
+                        issue.state = j.value("state", "closed");
+                        issue.createdAt = j.value("created_at", "");
+                        issue.updatedAt = j.value("updated_at", "");
+                        issue.htmlUrl = j.value("html_url", "");
+                        if (j.contains("user") && j["user"].contains("login"))
+                            issue.authorLogin = j["user"]["login"].get<std::string>();
+                        if (j.contains("labels")) {
+                            for (const auto& label : j["labels"])
+                                if (label.contains("name"))
+                                    issue.labels.push_back(label["name"].get<std::string>());
+                        }
+                        m_GitHubIssues.push_back(std::move(issue));
+                    }
+                }
+            } catch (...) {}
+        }
+    }
+
+    ENJIN_LOG_INFO(Editor, "FeedbackManager: fetched %zu GitHub issues", m_GitHubIssues.size());
     return true;
 }
 

@@ -2160,6 +2160,30 @@ void EditorLayer::DrawCrashReportDialog() {
         ImGui::SetClipboardText(m_PreviousCrashReport.c_str());
     }
     ImGui::SameLine();
+
+    // Submit crash report to GitHub Issues
+    if (m_FeedbackManager.IsGitHubConfigured()) {
+        if (ImGui::Button("Submit to GitHub")) {
+            if (m_FeedbackManager.SubmitCrashReportToGitHub(m_PreviousCrashReport)) {
+                ENJIN_LOG_INFO(Editor, "Crash report submitted to GitHub Issues");
+                Debug::ClearPreviousCrashReport();
+                m_ShowCrashDialog = false;
+                m_PreviousCrashReport.clear();
+            } else {
+                ENJIN_LOG_ERROR(Editor, "Failed to submit crash report to GitHub");
+            }
+        }
+        ImGui::SameLine();
+    } else {
+        ImGui::BeginDisabled();
+        ImGui::Button("Submit to GitHub");
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Configure GitHub token in Help > Bug Reports & Feedback > Settings");
+        }
+        ImGui::SameLine();
+    }
+
     if (ImGui::Button("Dismiss")) {
         Debug::ClearPreviousCrashReport();
         m_ShowCrashDialog = false;

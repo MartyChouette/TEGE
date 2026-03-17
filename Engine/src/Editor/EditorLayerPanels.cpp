@@ -5688,6 +5688,16 @@ void EditorLayer::DrawFeedbackPanel() {
             DrawNewFeedbackForm();
             ImGui::EndTabItem();
         }
+        if (ImGui::BeginTabItem("GitHub Issues")) {
+            m_FeedbackTab = FeedbackTab::GitHubIssues;
+            DrawGitHubIssuesTab();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Settings")) {
+            m_FeedbackTab = FeedbackTab::GitHubSettings;
+            DrawGitHubSettingsTab();
+            ImGui::EndTabItem();
+        }
         ImGui::EndTabBar();
     }
 
@@ -5857,6 +5867,26 @@ void EditorLayer::DrawBugReportDetail(BugReport& report) {
             m_ConsoleLog.push_back("[Feedback] Bug report #" + std::to_string(report.id) + " submitted");
         } else {
             m_ConsoleLog.push_back("[Feedback] Failed to submit bug report #" + std::to_string(report.id));
+        }
+    }
+    ImGui::SameLine();
+    // Submit to GitHub Issues
+    if (m_FeedbackManager.IsGitHubConfigured()) {
+        if (ImGui::Button("Submit to GitHub")) {
+            if (m_FeedbackManager.SubmitBugReportToGitHub(report.id)) {
+                m_ConsoleLog.push_back({
+                    "[Feedback] Bug report #" + std::to_string(report.id) + " submitted to GitHub Issues"});
+            } else {
+                m_ConsoleLog.push_back({
+                    "[Feedback] Failed to submit bug report #" + std::to_string(report.id) + " to GitHub"});
+            }
+        }
+    } else {
+        ImGui::BeginDisabled();
+        ImGui::Button("Submit to GitHub");
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Configure GitHub token in the Settings tab");
         }
     }
     ImGui::SameLine();
@@ -6191,6 +6221,237 @@ void EditorLayer::DrawNewFeedbackForm() {
             }
             ResetFeedbackForm();
         }
+    }
+}
+
+// ============================================================================
+// QUICK BUG REPORT (F5)
+// ============================================================================
+
+void EditorLayer::QuickBugReport() {
+    // Ensure feedback system is loaded
+    if (!m_FeedbackLoaded) {
+        m_FeedbackManager.LoadAll();
+        m_FeedbackLoaded = true;
+    }
+
+    // Create a bug report with auto-captured diagnostics
+    u64 id = m_FeedbackManager.CreateBugReport();
+    auto* report = m_FeedbackManager.GetBugReport(id);
+    if (!report) return;
+
+    report->title = "Quick report at " + FeedbackManager::CurrentTimestamp();
+    report->type = ReportType::Bug;
+    report->severity = ReportSeverity::Medium;
+    report->description = "Quick bug report submitted via F5.";
+    report->diagnostics = CaptureDiagnostics(false);
+
+    // If GitHub is configured, submit directly
+    if (m_FeedbackManager.IsGitHubConfigured()) {
+        if (m_FeedbackManager.SubmitBugReportToGitHub(id)) {
+            m_ConsoleLog.push_back({
+                "[Bug Report] Quick report #" + std::to_string(id) + " submitted to GitHub"});
+            ENJIN_LOG_INFO(Editor, "Quick bug report #%llu submitted to GitHub", id);
+        } else {
+            m_ConsoleLog.push_back({
+                "[Bug Report] Quick report #" + std::to_string(id) + " saved locally (GitHub submit failed)"});
+        }
+    } else {
+        m_ConsoleLog.push_back({
+            "[Bug Report] Quick report #" + std::to_string(id) + " saved locally (GitHub not configured)"});
+    }
+
+    m_FeedbackManager.SaveAll();
+
+    // Open the feedback panel so the user can add more details
+    SetPanelVisibility(EditorPanel::FeedbackPanel, true);
+    m_FeedbackTab = FeedbackTab::BugReports;
+    m_SelectedBugReportId = id;
+}
+
+// ============================================================================
+// GITHUB ISSUES TAB
+// ============================================================================
+
+void EditorLayer::DrawGitHubIssuesTab() {
+    if (!m_FeedbackManager.IsGitHubConfigured()) {
+        DrawEmptyState("!", "GitHub Not Configured",
+            "Add your GitHub personal access token in the Settings tab to view and submit issues.",
+            "Go to Settings", [this]() { m_FeedbackTab = FeedbackTab::GitHubSettings; });
+        return;
+    }
+
+    // Toolbar
+    if (ImGui::Button("Refresh")) {
+        m_FeedbackManager.FetchGitHubIssues(true);
+    }
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(200);
+    ImGui::InputTextWithHint("##GHSearch", "Search issues...", m_GitHubIssueSearchBuf, sizeof(m_GitHubIssueSearchBuf));
+    ImGui::SameLine();
+
+    const auto& issues = m_FeedbackManager.GetGitHubIssues();
+    ImGui::Text("%zu issues", issues.size());
+
+    ImGui::Separator();
+
+    // Issue list
+    ImGui::BeginChild("GHIssueList", ImVec2(0, 0), true);
+
+    std::string searchFilter = m_GitHubIssueSearchBuf;
+
+    for (i32 i = 0; i < static_cast<i32>(issues.size()); ++i) {
+        const auto& issue = issues[i];
+
+        // Apply search filter
+        if (!searchFilter.empty()) {
+            if (!FeedbackManager::CaseInsensitiveContains(issue.title, searchFilter) &&
+                !FeedbackManager::CaseInsensitiveContains(issue.body, searchFilter))
+                continue;
+        }
+
+        ImGui::PushID(i);
+
+        // State indicator
+        if (issue.state == "open") {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 0.8f, 0.3f, 1.0f));
+            ImGui::Text("[open]");
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.3f, 0.8f, 1.0f));
+            ImGui::Text("[closed]");
+        }
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+
+        // Issue number + title (selectable)
+        char label[512];
+        snprintf(label, sizeof(label), "#%d %s", issue.number, issue.title.c_str());
+        bool selected = (m_SelectedGitHubIssue == i);
+        if (ImGui::Selectable(label, selected)) {
+            m_SelectedGitHubIssue = (m_SelectedGitHubIssue == i) ? -1 : i;
+        }
+
+        // Labels on same line
+        if (!issue.labels.empty()) {
+            ImGui::Indent(24);
+            for (const auto& lbl : issue.labels) {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.5f, 0.7f, 1.0f, 1.0f), "[%s]", lbl.c_str());
+            }
+            ImGui::Unindent(24);
+        }
+
+        // Show detail when selected
+        if (m_SelectedGitHubIssue == i) {
+            ImGui::Indent(16);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.7f, 1.0f));
+            ImGui::Text("Author: %s | Created: %s", issue.authorLogin.c_str(), issue.createdAt.c_str());
+            ImGui::PopStyleColor();
+
+            if (!issue.body.empty()) {
+                ImGui::Spacing();
+                ImGui::TextWrapped("%s", issue.body.c_str());
+            }
+
+            ImGui::Spacing();
+            if (!issue.htmlUrl.empty()) {
+                if (ImGui::SmallButton("Copy URL")) {
+                    ImGui::SetClipboardText(issue.htmlUrl.c_str());
+                }
+            }
+            ImGui::Unindent(16);
+            ImGui::Separator();
+        }
+
+        ImGui::PopID();
+    }
+
+    ImGui::EndChild();
+}
+
+// ============================================================================
+// GITHUB SETTINGS TAB
+// ============================================================================
+
+void EditorLayer::DrawGitHubSettingsTab() {
+    auto& config = m_FeedbackManager.GetGitHubConfig();
+
+    ImGui::TextWrapped("Configure GitHub integration to submit bug reports and crash reports as GitHub Issues, "
+                       "and to view incoming issues in the GitHub Issues tab.");
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Sync buffers from config on first draw
+    static bool initialized = false;
+    if (!initialized) {
+        strncpy(m_GitHubOwnerBuf, config.owner.c_str(), sizeof(m_GitHubOwnerBuf) - 1);
+        strncpy(m_GitHubRepoBuf, config.repo.c_str(), sizeof(m_GitHubRepoBuf) - 1);
+        strncpy(m_GitHubTokenBuf, config.token.c_str(), sizeof(m_GitHubTokenBuf) - 1);
+        initialized = true;
+    }
+
+    ImGui::Text("Repository Owner");
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputText("##GHOwner", m_GitHubOwnerBuf, sizeof(m_GitHubOwnerBuf));
+
+    ImGui::Spacing();
+    ImGui::Text("Repository Name");
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputText("##GHRepo", m_GitHubRepoBuf, sizeof(m_GitHubRepoBuf));
+
+    ImGui::Spacing();
+    ImGui::Text("Personal Access Token");
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputText("##GHToken", m_GitHubTokenBuf, sizeof(m_GitHubTokenBuf),
+                     ImGuiInputTextFlags_Password);
+    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.7f, 1.0f),
+        "Needs 'repo' scope. Settings > Developer settings > Personal access tokens on GitHub.");
+
+    ImGui::Spacing();
+    bool enabled = config.enabled;
+    if (ImGui::Checkbox("Enable GitHub Integration", &enabled)) {
+        config.enabled = enabled;
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    if (ImGui::Button("Save Settings")) {
+        config.owner = m_GitHubOwnerBuf;
+        config.repo = m_GitHubRepoBuf;
+        config.token = m_GitHubTokenBuf;
+        m_FeedbackManager.SaveAll();
+        ENJIN_LOG_INFO(Editor, "GitHub settings saved: %s/%s", config.owner.c_str(), config.repo.c_str());
+        m_ConsoleLog.push_back({"[Feedback] GitHub settings saved"});
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Test Connection")) {
+        // Temporarily apply buffer values
+        config.owner = m_GitHubOwnerBuf;
+        config.repo = m_GitHubRepoBuf;
+        config.token = m_GitHubTokenBuf;
+
+        if (m_FeedbackManager.FetchGitHubIssues(false)) {
+            auto count = m_FeedbackManager.GetGitHubIssues().size();
+            m_ConsoleLog.push_back({
+                "[Feedback] GitHub connection OK! Fetched " + std::to_string(count) + " issues"});
+            ENJIN_LOG_INFO(Editor, "GitHub test: fetched %zu issues", count);
+        } else {
+            m_ConsoleLog.push_back({"[Feedback] GitHub connection FAILED. Check token and repo."});
+            ENJIN_LOG_ERROR(Editor, "GitHub connection test failed");
+        }
+    }
+
+    // Status
+    ImGui::Spacing();
+    if (m_FeedbackManager.IsGitHubConfigured()) {
+        ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.3f, 1.0f), "Status: Configured (%s/%s)",
+            config.owner.c_str(), config.repo.c_str());
+    } else {
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "Status: Not configured (token required)");
     }
 }
 
