@@ -79,6 +79,14 @@ cmake --build . --config Release
 
 > **Prerequisites:** CMake 3.20+, C++20 compiler, Vulkan SDK, GLFW3. See [BUILD.md](docs/BUILD.md) for full details.
 
+### Windows Installer
+
+A pre-built Windows installer is available — no build tools required:
+
+1. Download **[TEGESetup-0.9.0.exe](https://www.marty64.net/enjin/TEGE-0.9.0.zip)** from the website
+2. Run the installer — it sets up the editor, player, and file associations (`.enjin`, `.enjscene`)
+3. Launch TEGE from the Start Menu or desktop shortcut
+
 ---
 
 ## Feature Breakdown
