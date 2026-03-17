@@ -11,15 +11,17 @@ This document captures detailed technical plans, performance findings, and strat
 | Category | Item | Priority |
 |----------|------|----------|
 | ~~**Renderer**~~ | ~~Path Tracer Polish (NEE, MIS, Russian Roulette, firefly clamping)~~ | ~~P1~~ DONE |
-| **Art Styles** | Shared Infrastructure — light ramp texture, normal-based outlines, specular map slot, paper/overlay texture | P0 |
-| **Art Styles** | Pre-PBR Realism — classic Blinn-Phong with specular maps, half-Lambert wrap lighting, scene specular strength | P0 |
-| **Art Styles** | Hand-Painted Stylization — artist light ramp textures (TF2/Genshin-style), light wrap amount, per-material ramp override | P0 |
-| **Art Styles** | Enhanced Cel/Toon — colored shadows, rim lighting (wire existing field), per-material band override, inverted-hull outlines | P0 |
-| **Art Styles** | NPR Illustrative — Tonal Art Map hatching (6-tone luminance layers), watercolor post-process (edge darkening, pigment pooling, granulation), pen/ink variation | P0 |
-| **Art Styles** | Pixel Art Polish — custom palette textures (PICO-8, Game Boy, NES, C64), resolution-coherent outlines, normal quantization | P0 |
-| **Art Styles** | Material-Expression Worlds — wire SSS into forward shader, matcap texture slot, procedural surface noise (Perlin/Worley/Simplex) | P0 |
-| **Art Styles** | Analog/Degraded Polish — film gate weave, light leak overlays, analog tape dropout | P0 |
+| ~~**Art Styles**~~ | ~~Shared Infrastructure — light ramp, normal-based outlines, specular map slot~~ | ~~P0~~ DONE |
+| ~~**Art Styles**~~ | ~~Pre-PBR Realism — half-Lambert wrap, specular map slot~~ | ~~P0~~ ~85% |
+| ~~**Art Styles**~~ | ~~Hand-Painted Stylization — light ramp (4 modes), wrap lighting, per-material ramp override~~ | ~~P0~~ ~90% |
+| **Art Styles** | Enhanced Cel/Toon — inverted-hull geometry outlines (remaining gap) | P0 |
+| **Art Styles** | NPR Illustrative — pen/ink curvature-driven outline variation (remaining gap) | P0 |
+| ~~**Art Styles**~~ | ~~Pixel Art Polish — PICO-8, Game Boy, NES, CGA, C64 palettes, normal quantization~~ | ~~P0~~ DONE |
+| **Art Styles** | Material-Expression Worlds — matcap texture slot, procedural surface noise (remaining gaps) | P0 |
+| ~~**Art Styles**~~ | ~~Analog/Degraded Polish — film gate weave, light leaks, tape dropout~~ | ~~P0~~ DONE |
 | **Art Styles** | Art Style Presets — editor dropdown (Realistic PBR, Classic Blinn-Phong, Hand-Painted, Toon/Anime, Low-Poly Retro, Pixel Art, NPR Sketch) | P0 |
+| **Renderer** | Reflection Probes — baked cubemaps with box projection, proximity blending, SSR fallback | P1 |
+| **Gameplay** | Dynamic Difficulty — read player stats (health, deaths, time, accuracy) + difficulty setting to auto-adjust AI aggression, damage, resources, hints | P1 |
 | **Renderer** | ReSTIR — Reservoir-based light sampling (DI, temporal/spatial reuse) | P1 |
 | **Renderer** | Temporal RT Reuse — carry ray results across frames, confidence-weighted | P2 |
 | **Renderer** | Radiance Caching — world-space irradiance cache, screen-space cache | P2 |
