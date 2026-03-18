@@ -25,6 +25,7 @@
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/DynamicDifficulty.h"
 #include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Components/LOD.h"
 #include "Enjin/ECS/Components/Script.h"
@@ -4057,6 +4058,86 @@ ECS::PoolableComponent DeserializePoolableComponent(const json& j) {
     return p;
 }
 
+json SerializeDynamicDifficultyComponent(const ECS::DynamicDifficultyComponent& dd) {
+    json j;
+    j["enabled"] = dd.enabled;
+    j["visibleToPlayer"] = dd.visibleToPlayer;
+    j["baseDifficulty"] = dd.baseDifficulty;
+    j["adjustmentRange"] = RF(dd.adjustmentRange);
+    j["smoothingRate"] = RF(dd.smoothingRate);
+
+    // Input metrics config
+    j["trackDeaths"] = dd.trackDeaths;
+    j["deathWeight"] = RF(dd.deathWeight);
+    j["deathWindow"] = dd.deathWindow;
+    j["trackHealth"] = dd.trackHealth;
+    j["healthWeight"] = RF(dd.healthWeight);
+    j["trackAccuracy"] = dd.trackAccuracy;
+    j["accuracyWeight"] = RF(dd.accuracyWeight);
+    j["trackTime"] = dd.trackTime;
+    j["timeWeight"] = RF(dd.timeWeight);
+    j["expectedCompletionTime"] = RF(dd.expectedCompletionTime);
+    j["trackResources"] = dd.trackResources;
+    j["resourceWeight"] = RF(dd.resourceWeight);
+    j["trackCheckpointHealth"] = dd.trackCheckpointHealth;
+    j["checkpointHealthWeight"] = RF(dd.checkpointHealthWeight);
+    j["playerEntity"] = static_cast<u64>(dd.playerEntity);
+
+    // Output adjustments config
+    j["adjustEnemyDamage"] = dd.adjustEnemyDamage;
+    j["enemyDamageRange"] = RF(dd.enemyDamageRange);
+    j["adjustEnemyHealth"] = dd.adjustEnemyHealth;
+    j["enemyHealthRange"] = RF(dd.enemyHealthRange);
+    j["adjustAIAggression"] = dd.adjustAIAggression;
+    j["aiAggressionRange"] = RF(dd.aiAggressionRange);
+    j["adjustResourceDrops"] = dd.adjustResourceDrops;
+    j["resourceDropRange"] = RF(dd.resourceDropRange);
+    j["adjustHintFrequency"] = dd.adjustHintFrequency;
+    j["deathsBeforeHint"] = dd.deathsBeforeHint;
+    j["adjustCheckpointFrequency"] = dd.adjustCheckpointFrequency;
+    j["checkpointRange"] = RF(dd.checkpointRange);
+    return j;
+}
+
+ECS::DynamicDifficultyComponent DeserializeDynamicDifficultyComponent(const json& j) {
+    ECS::DynamicDifficultyComponent dd;
+    if (j.contains("enabled")) dd.enabled = JB(j["enabled"]);
+    if (j.contains("visibleToPlayer")) dd.visibleToPlayer = JB(j["visibleToPlayer"]);
+    if (j.contains("baseDifficulty")) dd.baseDifficulty = std::min(j["baseDifficulty"].get<u32>(), 3u);
+    if (j.contains("adjustmentRange")) dd.adjustmentRange = j["adjustmentRange"].get<f32>();
+    if (j.contains("smoothingRate")) dd.smoothingRate = j["smoothingRate"].get<f32>();
+
+    if (j.contains("trackDeaths")) dd.trackDeaths = JB(j["trackDeaths"]);
+    if (j.contains("deathWeight")) dd.deathWeight = j["deathWeight"].get<f32>();
+    if (j.contains("deathWindow")) dd.deathWindow = j["deathWindow"].get<u32>();
+    if (j.contains("trackHealth")) dd.trackHealth = JB(j["trackHealth"]);
+    if (j.contains("healthWeight")) dd.healthWeight = j["healthWeight"].get<f32>();
+    if (j.contains("trackAccuracy")) dd.trackAccuracy = JB(j["trackAccuracy"]);
+    if (j.contains("accuracyWeight")) dd.accuracyWeight = j["accuracyWeight"].get<f32>();
+    if (j.contains("trackTime")) dd.trackTime = JB(j["trackTime"]);
+    if (j.contains("timeWeight")) dd.timeWeight = j["timeWeight"].get<f32>();
+    if (j.contains("expectedCompletionTime")) dd.expectedCompletionTime = j["expectedCompletionTime"].get<f32>();
+    if (j.contains("trackResources")) dd.trackResources = JB(j["trackResources"]);
+    if (j.contains("resourceWeight")) dd.resourceWeight = j["resourceWeight"].get<f32>();
+    if (j.contains("trackCheckpointHealth")) dd.trackCheckpointHealth = JB(j["trackCheckpointHealth"]);
+    if (j.contains("checkpointHealthWeight")) dd.checkpointHealthWeight = j["checkpointHealthWeight"].get<f32>();
+    if (j.contains("playerEntity")) dd.playerEntity = static_cast<ECS::Entity>(j["playerEntity"].get<u64>());
+
+    if (j.contains("adjustEnemyDamage")) dd.adjustEnemyDamage = JB(j["adjustEnemyDamage"]);
+    if (j.contains("enemyDamageRange")) dd.enemyDamageRange = j["enemyDamageRange"].get<f32>();
+    if (j.contains("adjustEnemyHealth")) dd.adjustEnemyHealth = JB(j["adjustEnemyHealth"]);
+    if (j.contains("enemyHealthRange")) dd.enemyHealthRange = j["enemyHealthRange"].get<f32>();
+    if (j.contains("adjustAIAggression")) dd.adjustAIAggression = JB(j["adjustAIAggression"]);
+    if (j.contains("aiAggressionRange")) dd.aiAggressionRange = j["aiAggressionRange"].get<f32>();
+    if (j.contains("adjustResourceDrops")) dd.adjustResourceDrops = JB(j["adjustResourceDrops"]);
+    if (j.contains("resourceDropRange")) dd.resourceDropRange = j["resourceDropRange"].get<f32>();
+    if (j.contains("adjustHintFrequency")) dd.adjustHintFrequency = JB(j["adjustHintFrequency"]);
+    if (j.contains("deathsBeforeHint")) dd.deathsBeforeHint = j["deathsBeforeHint"].get<u32>();
+    if (j.contains("adjustCheckpointFrequency")) dd.adjustCheckpointFrequency = JB(j["adjustCheckpointFrequency"]);
+    if (j.contains("checkpointRange")) dd.checkpointRange = j["checkpointRange"].get<f32>();
+    return dd;
+}
+
 json SerializeQuestStateComponent(const ECS::QuestStateComponent& q) {
     json j;
     j["questId"] = q.questId;
@@ -5983,6 +6064,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::QuestStateComponent>(entity)) {
                 entityJson["questState"] = SerializeQuestStateComponent(*m_World->GetComponent<ECS::QuestStateComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::DynamicDifficultyComponent>(entity)) {
+                entityJson["dynamicDifficulty"] = SerializeDynamicDifficultyComponent(*m_World->GetComponent<ECS::DynamicDifficultyComponent>(entity));
+            }
             if (m_World->HasComponent<ECS::HUDWidgetComponent>(entity)) {
                 entityJson["hudWidget"] = SerializeHUDWidgetComponent(*m_World->GetComponent<ECS::HUDWidgetComponent>(entity));
             }
@@ -6654,6 +6738,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("questState")) {
                 m_World->AddComponent<ECS::QuestStateComponent>(entity, DeserializeQuestStateComponent(entityJson["questState"]));
             }
+            if (entityJson.contains("dynamicDifficulty")) {
+                m_World->AddComponent<ECS::DynamicDifficultyComponent>(entity, DeserializeDynamicDifficultyComponent(entityJson["dynamicDifficulty"]));
+            }
             if (entityJson.contains("hudWidget")) {
                 m_World->AddComponent<ECS::HUDWidgetComponent>(entity, DeserializeHUDWidgetComponent(entityJson["hudWidget"]));
             }
@@ -7216,6 +7303,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::QuestStateComponent>(entity)) {
                 entityJson["questState"] = SerializeQuestStateComponent(*m_World->GetComponent<ECS::QuestStateComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::DynamicDifficultyComponent>(entity)) {
+                entityJson["dynamicDifficulty"] = SerializeDynamicDifficultyComponent(*m_World->GetComponent<ECS::DynamicDifficultyComponent>(entity));
             }
             if (m_World->HasComponent<ECS::HUDWidgetComponent>(entity)) {
                 entityJson["hudWidget"] = SerializeHUDWidgetComponent(*m_World->GetComponent<ECS::HUDWidgetComponent>(entity));
@@ -7814,6 +7904,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("questState")) {
                 m_World->AddComponent<ECS::QuestStateComponent>(entity, DeserializeQuestStateComponent(entityJson["questState"]));
             }
+            if (entityJson.contains("dynamicDifficulty")) {
+                m_World->AddComponent<ECS::DynamicDifficultyComponent>(entity, DeserializeDynamicDifficultyComponent(entityJson["dynamicDifficulty"]));
+            }
             if (entityJson.contains("hudWidget")) {
                 m_World->AddComponent<ECS::HUDWidgetComponent>(entity, DeserializeHUDWidgetComponent(entityJson["hudWidget"]));
             }
@@ -8193,6 +8286,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["poolable"] = SerializePoolableComponent(*world->GetComponent<ECS::PoolableComponent>(entity));
         if (world->HasComponent<ECS::QuestStateComponent>(entity))
             entityJson["questState"] = SerializeQuestStateComponent(*world->GetComponent<ECS::QuestStateComponent>(entity));
+        if (world->HasComponent<ECS::DynamicDifficultyComponent>(entity))
+            entityJson["dynamicDifficulty"] = SerializeDynamicDifficultyComponent(*world->GetComponent<ECS::DynamicDifficultyComponent>(entity));
         if (world->HasComponent<ECS::HUDWidgetComponent>(entity))
             entityJson["hudWidget"] = SerializeHUDWidgetComponent(*world->GetComponent<ECS::HUDWidgetComponent>(entity));
         if (world->HasComponent<GUI::UICanvasComponent>(entity))
@@ -8523,6 +8618,8 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             world->AddComponent<ECS::PoolableComponent>(entity, DeserializePoolableComponent(entityJson["poolable"]));
         if (entityJson.contains("questState"))
             world->AddComponent<ECS::QuestStateComponent>(entity, DeserializeQuestStateComponent(entityJson["questState"]));
+        if (entityJson.contains("dynamicDifficulty"))
+            world->AddComponent<ECS::DynamicDifficultyComponent>(entity, DeserializeDynamicDifficultyComponent(entityJson["dynamicDifficulty"]));
         if (entityJson.contains("hudWidget"))
             world->AddComponent<ECS::HUDWidgetComponent>(entity, DeserializeHUDWidgetComponent(entityJson["hudWidget"]));
         if (entityJson.contains("uiCanvas"))
@@ -8761,6 +8858,8 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializePoolableComponent(*world->GetComponent<ECS::PoolableComponent>(entity));
         else if (key == "questState" && world->HasComponent<ECS::QuestStateComponent>(entity))
             j = SerializeQuestStateComponent(*world->GetComponent<ECS::QuestStateComponent>(entity));
+        else if (key == "dynamicDifficulty" && world->HasComponent<ECS::DynamicDifficultyComponent>(entity))
+            j = SerializeDynamicDifficultyComponent(*world->GetComponent<ECS::DynamicDifficultyComponent>(entity));
         else if (key == "hudWidget" && world->HasComponent<ECS::HUDWidgetComponent>(entity))
             j = SerializeHUDWidgetComponent(*world->GetComponent<ECS::HUDWidgetComponent>(entity));
         else if (key == "uiCanvas" && world->HasComponent<GUI::UICanvasComponent>(entity))
@@ -8916,6 +9015,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "footstep") { world->AddComponent<ECS::FootstepComponent>(entity, DeserializeFootstepComponent(j)); return true; }
         if (key == "poolable") { world->AddComponent<ECS::PoolableComponent>(entity, DeserializePoolableComponent(j)); return true; }
         if (key == "questState") { world->AddComponent<ECS::QuestStateComponent>(entity, DeserializeQuestStateComponent(j)); return true; }
+        if (key == "dynamicDifficulty") { world->AddComponent<ECS::DynamicDifficultyComponent>(entity, DeserializeDynamicDifficultyComponent(j)); return true; }
         if (key == "hudWidget") { world->AddComponent<ECS::HUDWidgetComponent>(entity, DeserializeHUDWidgetComponent(j)); return true; }
         if (key == "uiCanvas") { world->AddComponent<GUI::UICanvasComponent>(entity, DeserializeUICanvasComponent(j)); return true; }
         if (key == "cinematicCamera") { world->AddComponent<ECS::CinematicCameraComponent>(entity, DeserializeCinematicCameraComponent(j)); return true; }

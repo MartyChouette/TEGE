@@ -14,6 +14,7 @@
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/DynamicDifficulty.h"
 #include "Enjin/ECS/Components/VisualScript.h"
 #include "Enjin/AI/BehaviorTree.h"
 #include "Enjin/Gameplay/QuestFlow.h"
@@ -387,6 +388,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SaveLoadMenuComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SaveLoadMenuComponent>(e); },
             "saveLoadMenu"},
+        {"Dynamic Difficulty", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DynamicDifficultyComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DynamicDifficultyComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::DynamicDifficultyComponent>(e); },
+            "dynamicDifficulty"},
         {"Visual Script", "Scripting", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::VisualScriptComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::VisualScriptComponent>(e); },
@@ -1519,6 +1525,9 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::TweenComponent>(m_PrimarySelected)) {
             DrawTweenComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::DynamicDifficultyComponent>(m_PrimarySelected)) {
+            DrawDynamicDifficultyComponent(m_PrimarySelected);
         }
 
         // Networking components

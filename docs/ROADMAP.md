@@ -21,7 +21,7 @@ This document captures detailed technical plans, performance findings, and strat
 | ~~**Art Styles**~~ | ~~Analog/Degraded Polish — film gate weave, light leaks, tape dropout~~ | ~~P0~~ DONE |
 | ~~**Art Styles**~~ | ~~Art Style Presets — editor dropdown (7 presets)~~ | ~~P0~~ DONE |
 | **Renderer** | Reflection Probes — box projection done (component, system, shader, editor UI, serialization), baked cubemaps + SSR fallback pending | P1 |
-| **Gameplay** | Dynamic Difficulty — read player stats (health, deaths, time, accuracy) + difficulty setting to auto-adjust AI aggression, damage, resources, hints | P1 |
+| ~~**Gameplay**~~ | ~~Dynamic Difficulty — read player stats (health, deaths, time, accuracy) + difficulty setting to auto-adjust AI aggression, damage, resources, hints~~ | ~~P1~~ DONE |
 | **Renderer** | ReSTIR — Reservoir-based light sampling (DI foundation done, temporal/spatial reuse pending) | P1 |
 | **Renderer** | Temporal RT Reuse — carry ray results across frames, confidence-weighted | P2 |
 | **Renderer** | Radiance Caching — world-space irradiance cache, screen-space cache | P2 |

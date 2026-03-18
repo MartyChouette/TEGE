@@ -462,6 +462,7 @@ private:
     void DrawUICanvasComponent(ECS::Entity entity);
     void DrawCinematicCameraComponent(ECS::Entity entity);
     void DrawTweenComponent(ECS::Entity entity);
+    void DrawDynamicDifficultyComponent(ECS::Entity entity);
 
     // Joint & Ragdoll components
     void DrawDistanceJointComponent(ECS::Entity entity);

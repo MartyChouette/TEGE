@@ -14,6 +14,7 @@
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/DynamicDifficulty.h"
 #include "Enjin/ECS/Components/VisualScript.h"
 #include "Enjin/AI/BehaviorTree.h"
 #include "Enjin/Gameplay/QuestFlow.h"
@@ -8575,6 +8576,186 @@ void EditorLayer::DrawElementalVolumeComponent(ECS::Entity entity) {
         InspectorUndo::DragFloat(m_UndoRedo, "Temperature Bias##ElemVol", &vol->temperatureBias, 0.5f, -50.0f, 50.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Wind Multiplier##ElemVol", &vol->windMultiplier, 0.1f, 0.0f, 5.0f);
         InspectorUndo::Checkbox(m_UndoRedo, "Kill On Contact##ElemVol", &vol->killOnContact);
+    }
+}
+
+// ============================================================================
+// DYNAMIC DIFFICULTY
+// ============================================================================
+
+void EditorLayer::DrawDynamicDifficultyComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Dynamic Difficulty", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("DynDiffCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::DynamicDifficultyComponent>(entity, "dynamicDifficulty", "Dynamic Difficulty");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* dd = m_World->GetComponent<ECS::DynamicDifficultyComponent>(entity);
+        if (!dd) return;
+
+        // --- Mode ---
+        if (ImGui::TreeNodeEx("Mode", ImGuiTreeNodeFlags_DefaultOpen)) {
+            InspectorUndo::Checkbox(m_UndoRedo, "Enabled##DD", &dd->enabled);
+            InspectorUndo::Checkbox(m_UndoRedo, "Visible to Player##DD", &dd->visibleToPlayer);
+
+            const char* difficulties[] = { "Easy", "Normal", "Hard", "Nightmare" };
+            int baseDiff = static_cast<int>(dd->baseDifficulty);
+            if (InspectorUndo::Combo(m_UndoRedo, "Base Difficulty", &baseDiff, difficulties, 4)) {
+                dd->baseDifficulty = static_cast<u32>(baseDiff);
+            }
+            InspectorUndo::DragFloat(m_UndoRedo, "Adjustment Range##DD", &dd->adjustmentRange, 0.01f, 0.0f, 1.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Smoothing Rate##DD", &dd->smoothingRate, 0.005f, 0.001f, 1.0f);
+            ImGui::TreePop();
+        }
+
+        // --- Input Metrics ---
+        if (ImGui::TreeNodeEx("Input Metrics", ImGuiTreeNodeFlags_DefaultOpen)) {
+            // Deaths
+            InspectorUndo::Checkbox(m_UndoRedo, "Track Deaths##DD", &dd->trackDeaths);
+            if (dd->trackDeaths) {
+                ImGui::Indent();
+                InspectorUndo::DragFloat(m_UndoRedo, "Death Weight##DD", &dd->deathWeight, 0.05f, 0.0f, 5.0f);
+                i32 deathWindow = static_cast<i32>(dd->deathWindow);
+                if (InspectorUndo::DragInt(m_UndoRedo, "Death Window (sec)##DD", &deathWindow, 1, 10, 3600)) {
+                    dd->deathWindow = static_cast<u32>(deathWindow);
+                }
+                ImGui::Text("Recent Deaths: %u", dd->recentDeaths);
+                ImGui::Unindent();
+            }
+
+            // Health
+            InspectorUndo::Checkbox(m_UndoRedo, "Track Health##DD", &dd->trackHealth);
+            if (dd->trackHealth) {
+                ImGui::Indent();
+                InspectorUndo::DragFloat(m_UndoRedo, "Health Weight##DD", &dd->healthWeight, 0.05f, 0.0f, 5.0f);
+                ImGui::Text("Player Entity: %llu", static_cast<unsigned long long>(dd->playerEntity));
+                ImGui::Unindent();
+            }
+
+            // Accuracy
+            InspectorUndo::Checkbox(m_UndoRedo, "Track Accuracy##DD", &dd->trackAccuracy);
+            if (dd->trackAccuracy) {
+                ImGui::Indent();
+                InspectorUndo::DragFloat(m_UndoRedo, "Accuracy Weight##DD", &dd->accuracyWeight, 0.05f, 0.0f, 5.0f);
+                ImGui::Text("Shots: %u / %u", dd->shotsHit, dd->shotsFired);
+                ImGui::Unindent();
+            }
+
+            // Time
+            InspectorUndo::Checkbox(m_UndoRedo, "Track Time##DD", &dd->trackTime);
+            if (dd->trackTime) {
+                ImGui::Indent();
+                InspectorUndo::DragFloat(m_UndoRedo, "Time Weight##DD", &dd->timeWeight, 0.05f, 0.0f, 5.0f);
+                InspectorUndo::DragFloat(m_UndoRedo, "Expected Time (sec)##DD", &dd->expectedCompletionTime, 1.0f, 1.0f, 7200.0f);
+                ImGui::Text("Elapsed: %.1f s", dd->elapsedTime);
+                ImGui::Unindent();
+            }
+
+            // Resources
+            InspectorUndo::Checkbox(m_UndoRedo, "Track Resources##DD", &dd->trackResources);
+            if (dd->trackResources) {
+                ImGui::Indent();
+                InspectorUndo::DragFloat(m_UndoRedo, "Resource Weight##DD", &dd->resourceWeight, 0.05f, 0.0f, 5.0f);
+                ImGui::Text("Resource Ratio: %.2f", dd->resourceRatio);
+                ImGui::Unindent();
+            }
+
+            // Checkpoint Health
+            InspectorUndo::Checkbox(m_UndoRedo, "Track Checkpoint Health##DD", &dd->trackCheckpointHealth);
+            if (dd->trackCheckpointHealth) {
+                ImGui::Indent();
+                InspectorUndo::DragFloat(m_UndoRedo, "Checkpoint Weight##DD", &dd->checkpointHealthWeight, 0.05f, 0.0f, 5.0f);
+                ImGui::Text("Last Checkpoint HP: %.0f%%", dd->lastCheckpointHealthPercent * 100.0f);
+                ImGui::Unindent();
+            }
+
+            ImGui::TreePop();
+        }
+
+        // --- Output Adjustments ---
+        if (ImGui::TreeNodeEx("Output Adjustments", ImGuiTreeNodeFlags_DefaultOpen)) {
+            // Enemy Damage
+            InspectorUndo::Checkbox(m_UndoRedo, "Adjust Enemy Damage##DD", &dd->adjustEnemyDamage);
+            if (dd->adjustEnemyDamage) {
+                ImGui::Indent();
+                InspectorUndo::DragFloat(m_UndoRedo, "Damage Range##DD", &dd->enemyDamageRange, 0.01f, 0.0f, 1.0f);
+                ImGui::Text("Multiplier: %.3f", dd->enemyDamageMultiplier);
+                ImGui::Unindent();
+            }
+
+            // Enemy Health
+            InspectorUndo::Checkbox(m_UndoRedo, "Adjust Enemy Health##DD", &dd->adjustEnemyHealth);
+            if (dd->adjustEnemyHealth) {
+                ImGui::Indent();
+                InspectorUndo::DragFloat(m_UndoRedo, "Health Range##DD", &dd->enemyHealthRange, 0.01f, 0.0f, 1.0f);
+                ImGui::Text("Multiplier: %.3f", dd->enemyHealthMultiplier);
+                ImGui::Unindent();
+            }
+
+            // AI Aggression
+            InspectorUndo::Checkbox(m_UndoRedo, "Adjust AI Aggression##DD", &dd->adjustAIAggression);
+            if (dd->adjustAIAggression) {
+                ImGui::Indent();
+                InspectorUndo::DragFloat(m_UndoRedo, "Aggression Range##DD", &dd->aiAggressionRange, 0.01f, 0.0f, 1.0f);
+                ImGui::Text("Multiplier: %.3f", dd->aiAggressionMultiplier);
+                ImGui::Unindent();
+            }
+
+            // Resource Drops
+            InspectorUndo::Checkbox(m_UndoRedo, "Adjust Resource Drops##DD", &dd->adjustResourceDrops);
+            if (dd->adjustResourceDrops) {
+                ImGui::Indent();
+                InspectorUndo::DragFloat(m_UndoRedo, "Drop Range##DD", &dd->resourceDropRange, 0.01f, 0.0f, 2.0f);
+                ImGui::Text("Multiplier: %.3f", dd->resourceDropMultiplier);
+                ImGui::Unindent();
+            }
+
+            // Hint Frequency
+            InspectorUndo::Checkbox(m_UndoRedo, "Adjust Hint Frequency##DD", &dd->adjustHintFrequency);
+            if (dd->adjustHintFrequency) {
+                ImGui::Indent();
+                i32 deathsBeforeHint = static_cast<i32>(dd->deathsBeforeHint);
+                if (InspectorUndo::DragInt(m_UndoRedo, "Deaths Before Hint##DD", &deathsBeforeHint, 1, 1, 20)) {
+                    dd->deathsBeforeHint = static_cast<u32>(deathsBeforeHint);
+                }
+                ImGui::Text("Hint Cooldown: %.1f s", dd->hintCooldown);
+                ImGui::Text("Hints Shown: %u", dd->hintsBeforeSection);
+                ImGui::Unindent();
+            }
+
+            // Checkpoint Frequency
+            InspectorUndo::Checkbox(m_UndoRedo, "Adjust Checkpoint Frequency##DD", &dd->adjustCheckpointFrequency);
+            if (dd->adjustCheckpointFrequency) {
+                ImGui::Indent();
+                InspectorUndo::DragFloat(m_UndoRedo, "Checkpoint Range##DD", &dd->checkpointRange, 0.01f, 0.0f, 1.0f);
+                ImGui::Text("Multiplier: %.3f", dd->checkpointMultiplier);
+                ImGui::Unindent();
+            }
+
+            ImGui::TreePop();
+        }
+
+        // --- Live Readout ---
+        if (ImGui::TreeNodeEx("Live Readout##DD", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Text("Raw Score: %.3f", dd->difficultyScore);
+            ImGui::Text("Smoothed Score: %.3f", dd->smoothedScore);
+
+            // Visual difficulty bar
+            ImVec4 barColor;
+            if (dd->smoothedScore < 0.3f) barColor = ImVec4(0.2f, 0.8f, 0.2f, 1.0f);       // Green = easy
+            else if (dd->smoothedScore < 0.6f) barColor = ImVec4(0.9f, 0.8f, 0.1f, 1.0f);   // Yellow = moderate
+            else barColor = ImVec4(0.9f, 0.2f, 0.2f, 1.0f);                                   // Red = hard
+
+            ImGui::PushStyleColor(ImGuiCol_PlotHistogram, barColor);
+            ImGui::ProgressBar(dd->smoothedScore, ImVec2(-1, 0), "");
+            ImGui::PopStyleColor();
+
+            ImGui::TreePop();
+        }
     }
 }
 
