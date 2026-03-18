@@ -377,6 +377,8 @@ Controls the visual surface properties of a mesh. Supports PBR rendering, textur
 | `fresnelPower` | f32 | 5.0 | Edge vs center reflection falloff (0.5-10). |
 | `rimLightStrength` | f32 | 0.0 | Additive rim/edge glow (0-3). |
 | `excludeFromCelShading` | bool | false | Opt out of scene-level cel shading. |
+| `outlineWidth` | f32 | 0.0 | Per-material geometry outline thickness in world units (0 = use global setting). |
+| `outlineColor` | Vector3 | (0, 0, 0) | Per-material outline color (used when `outlineWidth` > 0). |
 
 **Transmission and subsurface scattering** (for glass, water, skin, wax):
 

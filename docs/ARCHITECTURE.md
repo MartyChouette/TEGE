@@ -125,6 +125,7 @@ enjin/
 - `VulkanBuffer` - GPU buffers (vertex, index, uniform, storage)
 - `RenderSystem` - ECS system that renders entities with Mesh+Transform
 - `PostProcessing` - Bloom, vignette, color grading, FXAA, film grain, DoF, tilt-shift, stipple/dither, SSAO, god rays, contact shadows, caustics, fog shafts
+- Outline pipeline (cel shading) - Inverted-hull geometry outlines via separate backface-extrusion pipeline (`outline.vert`/`outline.frag`), per-material and global settings
 - `RenderTarget` - Offscreen rendering for Game View
 
 **Features**:
@@ -218,6 +219,11 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 - **64-bit material sort key:** `[8:pipeline][16:material][24:texture][16:depth]` layout for cache-friendly single-comparison sorting
 - **MaterialGPU:** 80-byte GPU-aligned struct with transmission/IOR/thickness/SSS fields (uploaded via Material UBO at binding 2)
 - **LOD hysteresis:** Directional dead-zones prevent LOD ping-ponging, with optional screen-space projected size metric
+- **Binary search keyframes:** `Animation.cpp::SampleKeyframes()` uses `std::upper_bound` for O(log N) lookups instead of O(N) linear scan
+- **Integer sprite sort keys:** `SpriteBatchRenderer` uses pre-hashed `usize` keys instead of `std::string` comparison in sort comparator
+- **Cached ECS storage pointers:** `World::GetComponentStorage<T>()` public API; `RenderSystem` caches 5 hot storage pointers, replacing 38 `GetComponent()` calls with direct `storage->Get()`
+- **Light entity list dirty flag:** `m_LightListDirty` gates rebuild on structural changes, with O(1) size-mismatch recovery
+- **Pre-allocated sprite shadow vectors:** `SpriteBatchRenderer` reuses member vectors, eliminating per-frame heap allocations in shadow pass
 
 ### CMake Feature Flags
 

@@ -10,7 +10,7 @@ For quick reference, see `CLAUDE.md`. For architecture overview, see `ARCHITECTU
 - **Key Components:**
   - `TransformComponent` - position, rotation (Euler), scale, `visible` bool
   - `MeshComponent` - vertices (position, normal, UV, color, tangent, boneWeights, boneIndices), indices
-  - `MaterialComponent` - PBR properties, textures (base color, normal, height), retro flags, dithered gradient (`ditherGradient`, `ditherGradientBands` 2-8, `ditherGradientPattern` 6 patterns)
+  - `MaterialComponent` - PBR properties, textures (base color, normal, height), retro flags, dithered gradient (`ditherGradient`, `ditherGradientBands` 2-8, `ditherGradientPattern` 6 patterns), cel outline (`outlineWidth`/`outlineColor` for inverted-hull geometry outlines)
   - `LightComponent` - Light data (direction, color, intensity)
   - `NameComponent` - Entity name string
   - `CameraComponent` - In-game cameras with projection
@@ -90,6 +90,14 @@ Binding 13: UNIFORM_BUFFER (Light data)
 ## Descriptor Set Caching
 
 Per-entity texture (bindings 3/5/6/8/9) and bone buffer (binding 7) descriptor writes are cached via `m_LastBound` state in `RenderSystem`. Main render loop sorts entities by `MaterialComponent::cachedTextureKey` so identical materials draw consecutively. `m_LastBound.Reset()` at each render pass boundary.
+
+## CPU-Side Performance Optimizations (P0 Sprint — 2026-03-17)
+
+- **Binary search keyframes:** `Animation.cpp::SampleKeyframes()` uses `std::upper_bound` for O(log N) lookups instead of O(N) linear scan
+- **Integer sprite sort keys:** `SpriteBatchRenderer` sorts by pre-hashed `usize` keys instead of `std::string` comparison
+- **Cached component storage pointers:** `World::GetComponentStorage<T>()` public API added. `RenderSystem` caches 5 hot storage pointers (Transform, Mesh, Material, Animator, Text), replacing 38 `GetComponent()` calls with direct `storage->Get()`
+- **Light entity list dirty flag:** `m_LightListDirty` gates rebuild on structural changes, with O(1) size-mismatch recovery
+- **Pre-allocated sprite shadow vectors:** `SpriteBatchRenderer` reuses member vectors for shadow instances, eliminating per-frame heap allocations
 
 ## Editor Details
 

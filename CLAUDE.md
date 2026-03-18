@@ -82,7 +82,7 @@ enjin/
 
 - **`ECS::World`** - Entity/component manager. Thread-safe structural ops. `DestroyEntity()` is deferred (flushed at `Update()` start). `IsValid()` returns false for pending-destruction entities.
 - **`ECS::Entity`** - u64 ID
-- **Key Components:** `TransformComponent` (position, rotation, scale, visible), `MeshComponent`, `MaterialComponent` (PBR + textures + transmission/IOR/thickness/sssIntensity/sssRadius/sssColor; MaterialGPU = 80 bytes), `LightComponent` (no direction field — extract from TransformComponent rotation), `NameComponent`, `CameraComponent`, `NotesComponent` (field: `.notes` not `.text`), `AnimatorComponent`, colliders (`Box/Sphere/Capsule` with `categoryBits`/`collisionMask` bitmask filtering), `PostProcessVolumeComponent`
+- **Key Components:** `TransformComponent` (position, rotation, scale, visible), `MeshComponent`, `MaterialComponent` (PBR + textures + transmission/IOR/thickness/sssIntensity/sssRadius/sssColor + outlineWidth/outlineColor for geometry outlines; MaterialGPU = 80 bytes), `LightComponent` (no direction field — extract from TransformComponent rotation), `NameComponent`, `CameraComponent`, `NotesComponent` (field: `.notes` not `.text`), `AnimatorComponent`, colliders (`Box/Sphere/Capsule` with `categoryBits`/`collisionMask` bitmask filtering), `PostProcessVolumeComponent`
 
 ### Collision Filtering
 

@@ -81,7 +81,7 @@ graph TB
             SHProbes["SH Light Probes<br/>(L2, Grid Baking)"]
             SDFScene["SDF Scene<br/>(6 Primitives, 6 Ops)"]
             OIT["OIT<br/>(Weighted Blended)"]
-            CelShading["Cel Shading<br/>(Band Quantization,<br/>Sobel Outlines)"]
+            CelShading["Cel Shading<br/>(Band Quantization,<br/>Sobel + Geometry Outlines)"]
             VXGI["Voxel Cone Tracing<br/>(Diffuse/Specular GI)"]
             NonEuclidean["Non-Euclidean Geometry<br/>(Portal, Hyperbolic,<br/>Spherical, Toroidal)"]
             Metaballs["Metaball Rendering<br/>(Marching Cubes)"]

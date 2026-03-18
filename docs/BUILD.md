@@ -268,11 +268,15 @@ cd Engine/shaders
 # Using glslc (from Vulkan SDK or glslang-tools)
 glslc triangle.vert -o triangle.vert.spv
 glslc triangle.frag -o triangle.frag.spv
+glslc outline.vert -o outline.vert.spv
+glslc outline.frag -o outline.frag.spv
 glslc cull.comp -o cull.comp.spv
 
 # Using glslangValidator (alternative)
 glslangValidator -V triangle.vert -o triangle.vert.spv
 glslangValidator -V triangle.frag -o triangle.frag.spv
+glslangValidator -V outline.vert -o outline.vert.spv
+glslangValidator -V outline.frag -o outline.frag.spv
 ```
 
 ### Ray tracing shader compilation
