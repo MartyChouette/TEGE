@@ -1,0 +1,249 @@
+#version 460
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// ReSTIR DI — Initial Candidate Generation (Importance-Weighted Light Selection)
+//
+// For each pixel, samples N candidate lights from the NEE light SSBO, selects one
+// proportional to its estimated contribution, and writes the result into a reservoir.
+// This is the foundation for full ReSTIR temporal/spatial reuse (future phases).
+//
+// Algorithm:
+//   1. Reconstruct world position from depth buffer
+//   2. For each of N candidate lights:
+//      a. Compute estimated contribution: emission * geometric_term (no shadow ray)
+//      b. Compute source PDF: 1/totalLights (uniform random selection)
+//      c. Compute weight: targetPDF / sourcePDF
+//      d. Stream into reservoir: with probability weight/weightSum, replace selected light
+//   3. Write reservoir to output buffer
+
+// --- Descriptor bindings (shared with RT descriptor set) ---
+
+// Binding 2: Depth buffer (for world position reconstruction)
+layout(binding = 2, set = 0) uniform sampler2D depthTex;
+
+// Binding 3: World normals (for geometric contribution estimate)
+layout(binding = 3, set = 0) uniform sampler2D normalTex;
+
+// Binding 13: RT light UBO (contains invViewProj, screenSize, frameCount)
+layout(binding = 13, set = 0) uniform LightData {
+    vec4 lightDir;      // xyz=direction, w=intensity
+    vec4 lightColor;    // xyz=color, w=shadowDistance
+    mat4 invViewProj;
+    vec2 screenSize;
+    uint frameCount;
+    float shadowRadius;
+    // Path tracer config (not used here)
+    float fireflyClamp;
+    int enableNEE;
+    int enableMIS;
+    int rrMinBounce;
+    float rrMinProb;
+    uint directionalLightCount;
+    uint pointLightCount;
+    uint spotLightCount;
+} uLight;
+
+// Binding 16: NEE light SSBO (scene lights — same format as path tracer)
+struct RTLight {
+    vec3 position;     // World position (point/spot) or unused (directional)
+    float range;       // Attenuation range, 0 = infinite (directional)
+    vec3 direction;    // Light direction
+    float intensity;   // Light intensity multiplier
+    vec3 color;        // RGB light color
+    int type;          // 0=directional, 1=point, 2=spot
+    float innerCutoff; // cos(innerConeAngle) for spot lights
+    float outerCutoff; // cos(outerConeAngle) for spot lights
+    float _pad0;
+    float _pad1;
+};
+
+layout(binding = 16, set = 0) readonly buffer NEELightBuffer {
+    RTLight lights[];
+};
+
+// Binding 19: Reservoir output buffer
+struct Reservoir {
+    uint selectedLight;  // Index into lights[]
+    float weightSum;     // Running weight sum (W)
+    float sampleWeight;  // Final unbiased weight for the selected sample
+    uint sampleCount;    // M — number of candidates seen
+};
+
+layout(binding = 19, set = 0) buffer ReservoirBuffer {
+    Reservoir reservoirs[];
+};
+
+// Push constants for per-dispatch parameters
+layout(push_constant) uniform PushConstants {
+    uint totalLightCount;     // Total number of lights in NEE SSBO
+    uint initialCandidates;   // N — number of candidates to sample per pixel
+    float distanceBias;       // Small bias for distance falloff
+    uint frameCount;          // Current frame (for RNG seed)
+} pc;
+
+// ============================================================================
+// RNG (PCG — same as rt_common.glsl)
+// ============================================================================
+
+uint pcg_hash(uint v) {
+    uint state = v * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float rand_float(inout uint seed) {
+    seed = pcg_hash(seed);
+    return float(seed) / 4294967296.0;
+}
+
+uint init_rng(uvec2 pixel, uint frame) {
+    return pcg_hash(pixel.x + pixel.y * 8192u + frame * 65536u);
+}
+
+// ============================================================================
+// Importance estimation (no shadow ray — geometric term only)
+// ============================================================================
+
+// Estimate the contribution of a light to a surface point, without tracing a shadow ray.
+// This is the "target PDF" (p_hat) in ReSTIR terminology.
+// Returns luminance-weighted estimated contribution (scalar).
+float estimateLightContribution(RTLight light, vec3 worldPos, vec3 worldNormal) {
+    vec3 toLight;
+    float attenuation = 1.0;
+    float geometricTerm;
+
+    if (light.type == 0) {
+        // Directional light — contribution is independent of distance
+        toLight = -light.direction;
+        geometricTerm = max(dot(worldNormal, toLight), 0.0);
+        // No distance falloff for directional
+    } else if (light.type == 1) {
+        // Point light
+        vec3 diff = light.position - worldPos;
+        float dist2 = dot(diff, diff);
+        float dist = sqrt(dist2);
+        toLight = diff / max(dist, 1e-6);
+        geometricTerm = max(dot(worldNormal, toLight), 0.0);
+
+        // Inverse-square falloff with range cutoff
+        attenuation = 1.0 / max(dist2, pc.distanceBias * pc.distanceBias);
+        if (light.range > 0.0 && dist > light.range) attenuation = 0.0;
+    } else {
+        // Spot light
+        vec3 diff = light.position - worldPos;
+        float dist2 = dot(diff, diff);
+        float dist = sqrt(dist2);
+        toLight = diff / max(dist, 1e-6);
+        geometricTerm = max(dot(worldNormal, toLight), 0.0);
+
+        attenuation = 1.0 / max(dist2, pc.distanceBias * pc.distanceBias);
+        if (light.range > 0.0 && dist > light.range) attenuation = 0.0;
+
+        // Spot cone falloff
+        float cosAngle = dot(-toLight, light.direction);
+        if (cosAngle <= light.outerCutoff) {
+            attenuation = 0.0;
+        } else if (cosAngle < light.innerCutoff) {
+            float t = (cosAngle - light.outerCutoff) /
+                      max(light.innerCutoff - light.outerCutoff, 1e-6);
+            attenuation *= t * t;
+        }
+    }
+
+    // Luminance of light color * intensity * attenuation * geometric term
+    vec3 emission = light.color * light.intensity;
+    float luminance = dot(emission, vec3(0.2126, 0.7152, 0.0722));
+    return luminance * attenuation * geometricTerm;
+}
+
+// ============================================================================
+// Reservoir streaming update
+// ============================================================================
+
+// Stream a candidate into the reservoir using weighted reservoir sampling (WRS).
+// With probability (weight / weightSum), replace the selected sample.
+void updateReservoir(inout Reservoir r, uint lightIndex, float weight, inout uint rng) {
+    r.weightSum += weight;
+    r.sampleCount += 1u;
+    if (rand_float(rng) < (weight / max(r.weightSum, 1e-10))) {
+        r.selectedLight = lightIndex;
+    }
+}
+
+// ============================================================================
+// Main
+// ============================================================================
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = ivec2(uLight.screenSize);
+    if (pixel.x >= size.x || pixel.y >= size.y) return;
+
+    uint reservoirIdx = uint(pixel.y) * uint(size.x) + uint(pixel.x);
+
+    // Early out: no lights
+    if (pc.totalLightCount == 0u) {
+        reservoirs[reservoirIdx] = Reservoir(0u, 0.0, 0.0, 0u);
+        return;
+    }
+
+    // Reconstruct world position from depth
+    vec2 uv = (vec2(pixel) + 0.5) / uLight.screenSize;
+    float depth = texture(depthTex, uv).r;
+
+    // Sky pixels — no surface to light
+    if (depth >= 1.0) {
+        reservoirs[reservoirIdx] = Reservoir(0u, 0.0, 0.0, 0u);
+        return;
+    }
+
+    vec4 clipPos = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    vec4 worldPos4 = uLight.invViewProj * clipPos;
+    vec3 worldPos = worldPos4.xyz / worldPos4.w;
+
+    vec3 worldNormal = normalize(texture(normalTex, uv).xyz * 2.0 - 1.0);
+
+    // Initialize reservoir
+    Reservoir r;
+    r.selectedLight = 0u;
+    r.weightSum = 0.0;
+    r.sampleWeight = 0.0;
+    r.sampleCount = 0u;
+
+    // Source PDF: uniform random selection over all lights
+    float sourcePdf = 1.0 / float(pc.totalLightCount);
+
+    // Initialize RNG
+    uint rng = init_rng(uvec2(pixel), pc.frameCount);
+
+    // Sample N candidates
+    uint N = min(pc.initialCandidates, pc.totalLightCount);
+    for (uint i = 0u; i < N; ++i) {
+        // Select a random light uniformly
+        uint lightIdx = uint(rand_float(rng) * float(pc.totalLightCount));
+        lightIdx = min(lightIdx, pc.totalLightCount - 1u);
+
+        // Estimate target PDF (p_hat) — importance without visibility
+        float targetPdf = estimateLightContribution(lights[lightIdx], worldPos, worldNormal);
+
+        // Weight for WRS: targetPdf / sourcePdf
+        // Since sourcePdf = 1/totalLights, weight = targetPdf * totalLights
+        float weight = targetPdf / max(sourcePdf, 1e-10);
+
+        updateReservoir(r, lightIdx, weight, rng);
+    }
+
+    // Compute the unbiased sample weight for the selected light:
+    //   W = (1/p_hat(selectedLight)) * (weightSum / M)
+    // This ensures E[W * p_hat(selectedLight)] = true contribution
+    float selectedTargetPdf = estimateLightContribution(
+        lights[r.selectedLight], worldPos, worldNormal);
+
+    if (selectedTargetPdf > 1e-10 && r.sampleCount > 0u) {
+        r.sampleWeight = (r.weightSum / float(r.sampleCount)) / selectedTargetPdf;
+    } else {
+        r.sampleWeight = 0.0;
+    }
+
+    reservoirs[reservoirIdx] = r;
+}

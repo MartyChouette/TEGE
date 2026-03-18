@@ -90,9 +90,11 @@ namespace Enjin { namespace Renderer {
     class OIDNDenoiser;
     class OptiXDenoiser;
     class RTCompositor;
+    class ReSTIR;
     class IUpscaler;
     class OITManager;
     class SHLightingSystem;
+    class ReflectionProbeSystem;
     class SDFScene;
     class ClusteredLightingSystem;
     class VisibilityBufferRenderer;
@@ -462,6 +464,7 @@ public:
     Renderer::OIDNDenoiser* GetOIDNDenoiser() { return m_OIDNDenoiser.get(); }
     Renderer::OptiXDenoiser* GetOptiXDenoiser() { return m_OptiXDenoiser.get(); }
     Renderer::RTCompositor* GetRTCompositor() { return m_RTCompositor.get(); }
+    Renderer::ReSTIR* GetReSTIR() { return m_ReSTIR.get(); }
 #endif
 
 #if !ENJIN_RENDERER_WEBGPU
@@ -476,6 +479,9 @@ public:
 
     // SH Light Probes
     Renderer::SHLightingSystem* GetSHLighting() { return m_SHLighting.get(); }
+
+    // Reflection Probes (box-projected environment reflections)
+    Renderer::ReflectionProbeSystem* GetReflectionProbes() { return m_ReflectionProbes.get(); }
 
     // SDF Scene
     Renderer::SDFScene* GetSDFScene() { return m_SDFScene.get(); }
@@ -965,6 +971,7 @@ private:
     std::unique_ptr<Renderer::OIDNDenoiser> m_OIDNDenoiser;
     std::unique_ptr<Renderer::OptiXDenoiser> m_OptiXDenoiser;
     std::unique_ptr<Renderer::RTCompositor> m_RTCompositor;
+    std::unique_ptr<Renderer::ReSTIR> m_ReSTIR;
     u32 m_DenoiserType = 0;  // 0=SVGF, 1=OIDN, 2=OptiX
 
     // RT descriptor set layout and pool
@@ -1020,6 +1027,9 @@ private:
 
     // --- SH Light Probes ---
     std::unique_ptr<Renderer::SHLightingSystem> m_SHLighting;
+
+    // --- Reflection Probes ---
+    std::unique_ptr<Renderer::ReflectionProbeSystem> m_ReflectionProbes;
 
     // --- SDF Scene (ray-marched primitives) ---
     std::unique_ptr<Renderer::SDFScene> m_SDFScene;

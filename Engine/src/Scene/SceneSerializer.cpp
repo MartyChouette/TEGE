@@ -16,6 +16,7 @@
 #include "Enjin/ECS/Components/CameraTrigger.h"
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include "Enjin/ECS/Components/GravityZone.h"
+#include "Enjin/ECS/Components/ReflectionProbe.h"
 #include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
@@ -862,6 +863,33 @@ ECS::GravityZoneComponent DeserializeGravityZoneComponent(const json& j) {
     if (j.contains("priority")) zone.priority = j["priority"].get<i32>();
     if (j.contains("isActive")) zone.isActive = JB(j["isActive"]);
     return zone;
+}
+
+// Reflection Probe
+json SerializeReflectionProbeComponent(const ECS::ReflectionProbeComponent& probe) {
+    json j;
+    j["boxMin"] = SerializeVector3(probe.boxMin);
+    j["boxMax"] = SerializeVector3(probe.boxMax);
+    j["resolution"] = probe.resolution;
+    j["intensity"] = probe.intensity;
+    j["priority"] = probe.priority;
+    j["baked"] = probe.baked;
+    j["isActive"] = probe.isActive;
+    j["blendDistance"] = probe.blendDistance;
+    return j;
+}
+
+ECS::ReflectionProbeComponent DeserializeReflectionProbeComponent(const json& j) {
+    ECS::ReflectionProbeComponent probe;
+    if (j.contains("boxMin")) probe.boxMin = DeserializeVector3(j["boxMin"]);
+    if (j.contains("boxMax")) probe.boxMax = DeserializeVector3(j["boxMax"]);
+    if (j.contains("resolution")) probe.resolution = j["resolution"].get<u32>();
+    if (j.contains("intensity")) probe.intensity = j["intensity"].get<f32>();
+    if (j.contains("priority")) probe.priority = j["priority"].get<u32>();
+    if (j.contains("baked")) probe.baked = JB(j["baked"]);
+    if (j.contains("isActive")) probe.isActive = JB(j["isActive"]);
+    if (j.contains("blendDistance")) probe.blendDistance = j["blendDistance"].get<f32>();
+    return probe;
 }
 
 // Elemental components
@@ -5650,6 +5678,10 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 entityJson["gravityZone"] = SerializeGravityZoneComponent(*zone);
             }
 
+            if (m_World->HasComponent<ECS::ReflectionProbeComponent>(entity)) {
+                entityJson["reflectionProbe"] = SerializeReflectionProbeComponent(*m_World->GetComponent<ECS::ReflectionProbeComponent>(entity));
+            }
+
             if (m_World->HasComponent<ECS::ElementalSurfaceComponent>(entity)) {
                 entityJson["elementalSurface"] = SerializeElementalSurfaceComponent(*m_World->GetComponent<ECS::ElementalSurfaceComponent>(entity));
             }
@@ -6326,6 +6358,10 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 m_World->AddComponent<ECS::GravityZoneComponent>(entity, zone);
             }
 
+            if (entityJson.contains("reflectionProbe")) {
+                m_World->AddComponent<ECS::ReflectionProbeComponent>(entity, DeserializeReflectionProbeComponent(entityJson["reflectionProbe"]));
+            }
+
             if (entityJson.contains("elementalSurface")) {
                 m_World->AddComponent<ECS::ElementalSurfaceComponent>(entity, DeserializeElementalSurfaceComponent(entityJson["elementalSurface"]));
             }
@@ -6874,6 +6910,10 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             if (m_World->HasComponent<ECS::GravityZoneComponent>(entity)) {
                 const auto* zone = m_World->GetComponent<ECS::GravityZoneComponent>(entity);
                 entityJson["gravityZone"] = SerializeGravityZoneComponent(*zone);
+            }
+
+            if (m_World->HasComponent<ECS::ReflectionProbeComponent>(entity)) {
+                entityJson["reflectionProbe"] = SerializeReflectionProbeComponent(*m_World->GetComponent<ECS::ReflectionProbeComponent>(entity));
             }
 
             if (m_World->HasComponent<ECS::ElementalSurfaceComponent>(entity)) {
@@ -7478,6 +7518,10 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 m_World->AddComponent<ECS::GravityZoneComponent>(entity, zone);
             }
 
+            if (entityJson.contains("reflectionProbe")) {
+                m_World->AddComponent<ECS::ReflectionProbeComponent>(entity, DeserializeReflectionProbeComponent(entityJson["reflectionProbe"]));
+            }
+
             if (entityJson.contains("elementalSurface")) {
                 m_World->AddComponent<ECS::ElementalSurfaceComponent>(entity, DeserializeElementalSurfaceComponent(entityJson["elementalSurface"]));
             }
@@ -7952,6 +7996,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["temperatureZone"] = SerializeTemperatureZoneComponent(*world->GetComponent<ECS::TemperatureZoneComponent>(entity));
         if (world->HasComponent<ECS::GravityZoneComponent>(entity))
             entityJson["gravityZone"] = SerializeGravityZoneComponent(*world->GetComponent<ECS::GravityZoneComponent>(entity));
+        if (world->HasComponent<ECS::ReflectionProbeComponent>(entity))
+            entityJson["reflectionProbe"] = SerializeReflectionProbeComponent(*world->GetComponent<ECS::ReflectionProbeComponent>(entity));
         if (world->HasComponent<ECS::ElementalSurfaceComponent>(entity))
             entityJson["elementalSurface"] = SerializeElementalSurfaceComponent(*world->GetComponent<ECS::ElementalSurfaceComponent>(entity));
         if (world->HasComponent<ECS::ElementalEmitterComponent>(entity))
@@ -8274,6 +8320,9 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         if (entityJson.contains("gravityZone")) {
             world->AddComponent<ECS::GravityZoneComponent>(entity, DeserializeGravityZoneComponent(entityJson["gravityZone"]));
         }
+        if (entityJson.contains("reflectionProbe")) {
+            world->AddComponent<ECS::ReflectionProbeComponent>(entity, DeserializeReflectionProbeComponent(entityJson["reflectionProbe"]));
+        }
         if (entityJson.contains("elementalSurface")) {
             world->AddComponent<ECS::ElementalSurfaceComponent>(entity, DeserializeElementalSurfaceComponent(entityJson["elementalSurface"]));
         }
@@ -8572,6 +8621,8 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeTemperatureZoneComponent(*world->GetComponent<ECS::TemperatureZoneComponent>(entity));
         else if (key == "gravityZone" && world->HasComponent<ECS::GravityZoneComponent>(entity))
             j = SerializeGravityZoneComponent(*world->GetComponent<ECS::GravityZoneComponent>(entity));
+        else if (key == "reflectionProbe" && world->HasComponent<ECS::ReflectionProbeComponent>(entity))
+            j = SerializeReflectionProbeComponent(*world->GetComponent<ECS::ReflectionProbeComponent>(entity));
         else if (key == "elementalSurface" && world->HasComponent<ECS::ElementalSurfaceComponent>(entity))
             j = SerializeElementalSurfaceComponent(*world->GetComponent<ECS::ElementalSurfaceComponent>(entity));
         else if (key == "elementalEmitter" && world->HasComponent<ECS::ElementalEmitterComponent>(entity))
@@ -8791,6 +8842,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "cameraTrigger") { world->AddComponent<ECS::CameraTriggerComponent>(entity, DeserializeCameraTriggerComponent(j)); return true; }
         if (key == "temperatureZone") { world->AddComponent<ECS::TemperatureZoneComponent>(entity, DeserializeTemperatureZoneComponent(j)); return true; }
         if (key == "gravityZone") { world->AddComponent<ECS::GravityZoneComponent>(entity, DeserializeGravityZoneComponent(j)); return true; }
+        if (key == "reflectionProbe") { world->AddComponent<ECS::ReflectionProbeComponent>(entity, DeserializeReflectionProbeComponent(j)); return true; }
         if (key == "elementalSurface") { world->AddComponent<ECS::ElementalSurfaceComponent>(entity, DeserializeElementalSurfaceComponent(j)); return true; }
         if (key == "elementalEmitter") { world->AddComponent<ECS::ElementalEmitterComponent>(entity, DeserializeElementalEmitterComponent(j)); return true; }
         if (key == "elementalVolume") { world->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(j)); return true; }

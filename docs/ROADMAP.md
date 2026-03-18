@@ -20,12 +20,12 @@ This document captures detailed technical plans, performance findings, and strat
 | ~~**Art Styles**~~ | ~~Material-Expression Worlds — matcap texture slot, procedural surface noise~~ | ~~P0~~ DONE |
 | ~~**Art Styles**~~ | ~~Analog/Degraded Polish — film gate weave, light leaks, tape dropout~~ | ~~P0~~ DONE |
 | ~~**Art Styles**~~ | ~~Art Style Presets — editor dropdown (7 presets)~~ | ~~P0~~ DONE |
-| **Renderer** | Reflection Probes — baked cubemaps with box projection, proximity blending, SSR fallback | P1 |
+| **Renderer** | Reflection Probes — box projection done (component, system, shader, editor UI, serialization), baked cubemaps + SSR fallback pending | P1 |
 | **Gameplay** | Dynamic Difficulty — read player stats (health, deaths, time, accuracy) + difficulty setting to auto-adjust AI aggression, damage, resources, hints | P1 |
-| **Renderer** | ReSTIR — Reservoir-based light sampling (DI, temporal/spatial reuse) | P1 |
+| **Renderer** | ReSTIR — Reservoir-based light sampling (DI foundation done, temporal/spatial reuse pending) | P1 |
 | **Renderer** | Temporal RT Reuse — carry ray results across frames, confidence-weighted | P2 |
 | **Renderer** | Radiance Caching — world-space irradiance cache, screen-space cache | P2 |
-| **Renderer** | DLSS / FSR / XeSS Upscaling (IUpscaler interface, 3 backends) | P2 |
+| **Renderer** | DLSS / FSR / XeSS Upscaling (IUpscaler interface, FSR built-in ✅, DLSS/XeSS pending) | P2 |
 | **Renderer** | Additional AA (SMAA, MSAA runtime toggle, comparison mode) | P3 |
 | **Renderer** | GPU-Driven Work Scheduling (indirect draw, multi-draw, async compute overlap) | P3 |
 | **Performance** | CPU Scalability Sprint — binary search keyframes, integer sprite sort, cache storage pointers, world matrix caching, bindless render path, batched material SSBO | P0 |
@@ -1428,13 +1428,13 @@ Remaining RT work (vertex/index SSBOs, full material-correct .rchit shaders) def
 
 The single biggest efficiency win for the RT pipeline. Focus limited ray budget on the most important lights and paths per pixel.
 
-- **Reservoir-based light sampling** — implement ReSTIR DI (direct illumination)
-  - Per-pixel light reservoir (candidate, weight, M count)
-  - Initial candidates: random light sampling weighted by estimated contribution
+- ~~**Reservoir-based light sampling** — implement ReSTIR DI (direct illumination)~~ FOUNDATION COMPLETE
+  - ~~Per-pixel light reservoir (candidate, weight, M count)~~ ✅
+  - ~~Initial candidates: random light sampling weighted by estimated contribution~~ ✅
   - Temporal reuse: carry reservoirs across frames using motion vectors (Phase 1)
   - Spatial reuse: share reservoirs with neighbors for faster convergence
-- **Light PDF estimation** — approximate light contribution without tracing
-  - Distance-based falloff, solid angle, emission intensity
+- ~~**Light PDF estimation** — approximate light contribution without tracing~~ ✅
+  - ~~Distance-based falloff, solid angle, emission intensity~~ ✅
   - Used for initial candidate generation and MIS weighting
 - **Integration with existing RT effects**
   - RT Shadows: ReSTIR selects which lights to cast shadow rays toward
@@ -1444,7 +1444,7 @@ The single biggest efficiency win for the RT pipeline. Focus limited ray budget 
   - High-variance regions (edges, specular, first-frame) get more rays
   - Stable temporal regions get fewer rays
   - Feed variance estimate to VRS (already have `VK_KHR_fragment_shading_rate`)
-- **Editor UI** — ReSTIR toggle, reservoir visualization debug mode, ray budget display
+- ~~**Editor UI** — ReSTIR toggle~~ ✅, reservoir visualization debug mode, ray budget display
 
 ### Phase 5: Temporal RT Reuse
 
@@ -1484,20 +1484,28 @@ Cache and reuse indirect lighting instead of recomputing every frame. The most e
   - Second+ bounces: read from radiance cache where available, trace where not
   - Progressive cache refinement over multiple frames
 
-### Phase 7: DLSS / FSR / XeSS Upscaling
+### Phase 7: DLSS / FSR / XeSS Upscaling — IN PROGRESS
 
 Shared prerequisite: Phase 1 (TAA jitter + velocity buffer + depth access) ✅
 
-- **IUpscaler interface** — abstract base for swappable upscaler backends
-- **FSR 2.0 / FSR 3.0** (AMD GPUOpen SDK) — **FIRST** (works on all GPUs)
-  - CMake flag: `ENJIN_UPSCALING_FSR` (OFF by default)
-- **DLSS 3.5** (NVIDIA Streamline SDK) — NVIDIA GPUs only, **SECOND**
+- ~~**IUpscaler interface** — abstract base for swappable upscaler backends~~ ✅
+  - `IUpscaler` base class with Initialize/Resize/Dispatch/Shutdown/ResetHistory
+  - `UpscalerInput` struct: color, depth, velocity, jitter, delta time, sharpness, camera cut
+  - `UpscalerQuality` enum: Performance (50%), Balanced (58%), Quality (67%), UltraQuality (77%)
+  - `GetRenderResolution()` helper computes optimal render size for each quality preset
+- ~~**FSR 2 (Built-in)** — Lanczos + CAS upscaler, always available (no SDK dependency)~~ ✅
+  - Pipeline: render at lower resolution → TAA resolve at low-res → Lanczos-2 upsample → CAS sharpen
+  - `upscale_lanczos.comp`: 4x4 tap Lanczos-2 separable filter compute shader
+  - `upscale_cas.comp`: Contrast Adaptive Sharpening compute shader (edge-aware, adaptive intensity)
+  - Jitter injection adjusted for render resolution when upscaler is active
+  - Editor UI: upscaler type/quality/sharpness controls with real-time sync to RenderSystem
+  - Scene serialization: upscalerType, upscalerQuality, upscalerSharpness saved/loaded
+- **DLSS 3.5** (NVIDIA Streamline SDK) — NVIDIA GPUs only, **NEXT**
   - **DLSS Ray Reconstruction** — replaces RT denoisers with trained model (huge quality win at 1 SPP)
   - CMake flag: `ENJIN_UPSCALING_DLSS` (OFF by default)
 - **XeSS** (Intel SDK) — all GPUs via DP4a, best on Intel Arc, **THIRD**
   - CMake flag: `ENJIN_UPSCALING_XESS` (OFF by default)
 - **AdaptiveQuality integration** — hook upscaler render scale into existing quality level system
-- Editor UI and SceneRenderSettings already stubbed (upscalerType, upscalerQuality, upscalerSharpness)
 
 ### Phase 8: Additional Antialiasing
 
@@ -1897,4 +1905,4 @@ All 24 previously-tracked stubs have been resolved (Audit #4, 2026-02-14). Notab
 
 No outstanding stubs remain.
 
-*Last updated: 2026-03-16 — Added Rendering Pipeline Roadmap (10 phases: Motion Vectors+TAA ✅, Finish RT ✅, Path Tracer Polish ✅, ReSTIR, Temporal RT Reuse, Radiance Caching, DLSS/FSR/XeSS, Additional AA, GPU-Driven Work Scheduling, Mobile). Phases 1-3 complete. Added Game Debug Panel (F1), Debug Workstation (F2), drop-down console, PrepareRenderTargets fix.*
+*Last updated: 2026-03-18 — ReSTIR DI foundation: per-pixel reservoir struct, importance-weighted light selection compute shader (binding 19), editor toggle. Temporal/spatial reuse planned. Phases 1-3 complete.*

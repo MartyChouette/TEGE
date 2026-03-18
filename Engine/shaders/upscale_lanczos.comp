@@ -1,0 +1,96 @@
+#version 450
+
+// Lanczos-2 Upscaling Compute Shader
+//
+// Upsamples a low-resolution input image to full display resolution using a
+// Lanczos-2 (4-tap) separable filter.  This provides sharper results than
+// bilinear or bicubic upscaling, with minimal ringing.  The filter is
+// evaluated in a single pass (non-separable 4x4 tap window) for simplicity;
+// the cost is acceptable at compute-shader speeds.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// --- Inputs ---
+layout(set = 0, binding = 0) uniform sampler2D inputColor;   // Low-res color (RGBA16F)
+
+// --- Output ---
+layout(set = 0, binding = 1, rgba16f) uniform writeonly image2D outputColor; // Full-res output
+
+// --- Push constants ---
+layout(push_constant) uniform UpscaleParams {
+    uvec2 outputSize;     // Display resolution (output)
+    uvec2 inputSize;      // Render resolution (input)
+    float sharpness;      // 0 = standard Lanczos, >0 = slightly sharper kernel
+    float _pad0;
+    float _pad1;
+    float _pad2;
+};
+
+// Lanczos-2 kernel: sinc(x) * sinc(x/2) for |x| < 2, else 0
+// Using the fast approximation to avoid transcendental functions.
+#define PI 3.14159265358979323846
+
+float sinc(float x) {
+    if (abs(x) < 1e-5) return 1.0;
+    float px = PI * x;
+    return sin(px) / px;
+}
+
+float lanczos2(float x) {
+    if (abs(x) >= 2.0) return 0.0;
+    return sinc(x) * sinc(x * 0.5);
+}
+
+void main() {
+    ivec2 outPixel = ivec2(gl_GlobalInvocationID.xy);
+
+    if (outPixel.x >= int(outputSize.x) || outPixel.y >= int(outputSize.y)) {
+        return;
+    }
+
+    // Map output pixel center to input texture coordinates
+    vec2 scale = vec2(inputSize) / vec2(outputSize);
+    vec2 srcCoord = (vec2(outPixel) + 0.5) * scale;  // In input pixel space
+    vec2 srcCenter = floor(srcCoord - 0.5) + 0.5;     // Nearest input pixel center
+
+    vec2 invInputSize = 1.0 / vec2(inputSize);
+
+    // 4x4 tap Lanczos-2 filter
+    vec4 totalColor = vec4(0.0);
+    float totalWeight = 0.0;
+
+    for (int dy = -1; dy <= 2; dy++) {
+        for (int dx = -1; dx <= 2; dx++) {
+            vec2 samplePos = srcCenter + vec2(dx, dy);
+            vec2 delta = srcCoord - samplePos;
+
+            float wx = lanczos2(delta.x);
+            float wy = lanczos2(delta.y);
+            float weight = wx * wy;
+
+            if (weight == 0.0) continue;
+
+            // Convert to UV for texture sampling (bilinear)
+            vec2 uv = samplePos * invInputSize;
+            vec4 sample_color = texture(inputColor, uv);
+
+            totalColor += sample_color * weight;
+            totalWeight += weight;
+        }
+    }
+
+    vec4 result = (totalWeight > 0.0) ? totalColor / totalWeight : vec4(0.0);
+
+    // Optional sharpening boost: slightly emphasize the center tap contribution
+    // by mixing with the center sample.  sharpness=0 gives pure Lanczos.
+    if (sharpness > 0.0) {
+        vec2 centerUV = srcCoord * invInputSize;
+        vec4 centerSample = texture(inputColor, centerUV);
+        result = mix(result, centerSample, sharpness * 0.15);
+    }
+
+    // Clamp to non-negative (Lanczos can produce slight negative ringing)
+    result = max(result, vec4(0.0));
+
+    imageStore(outputColor, outPixel, result);
+}

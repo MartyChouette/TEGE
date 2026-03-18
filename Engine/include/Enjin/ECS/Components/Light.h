@@ -152,6 +152,14 @@ struct alignas(16) LightingUBO {
     // SH light probe irradiance (xyz = RGB irradiance from nearest probe, w = blend weight 0 or 1)
     alignas(16) Math::Vector4 shProbeIrradiance;
 
+    // Reflection probe data (box-projected environment reflections)
+    // probePosition: xyz = world-space center, w = intensity (0 = no probe active)
+    alignas(16) Math::Vector4 reflectionProbePosition;
+    // probeBoxMin: xyz = world-space AABB min, w = blend distance
+    alignas(16) Math::Vector4 reflectionProbeBoxMin;
+    // probeBoxMax: xyz = world-space AABB max, w = reserved
+    alignas(16) Math::Vector4 reflectionProbeBoxMax;
+
     // Light data arrays
     DirectionalLightData directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLightData pointLights[MAX_POINT_LIGHTS];

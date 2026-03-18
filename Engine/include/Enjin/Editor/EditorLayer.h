@@ -371,6 +371,7 @@ private:
     void DrawCameraTriggerComponent(ECS::Entity entity);
     void DrawTemperatureZoneComponent(ECS::Entity entity);
     void DrawGravityZoneComponent(ECS::Entity entity);
+    void DrawReflectionProbeComponent(ECS::Entity entity);
     void DrawFluidVolumeComponent(ECS::Entity entity);
     void DrawFluidTerrainCoupling(ECS::Entity entity);
     void DrawElementalSurfaceComponent(ECS::Entity entity);

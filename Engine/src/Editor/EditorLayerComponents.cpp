@@ -34,6 +34,7 @@
 #include "Enjin/ECS/Components/CameraTrigger.h"
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include "Enjin/ECS/Components/GravityZone.h"
+#include "Enjin/ECS/Components/ReflectionProbe.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/ECS/Components/Elemental.h"
@@ -1876,6 +1877,88 @@ void EditorLayer::DrawGravityZoneComponent(ECS::Entity entity) {
         // Remove component
         if (ImGui::Button("Remove##GravityZone")) {
             RemoveComponentWithUndo<ECS::GravityZoneComponent>(entity, "gravityZone", "Gravity Zone");
+        }
+    }
+}
+
+void EditorLayer::DrawReflectionProbeComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Reflection Probe", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* probe = m_World->GetComponent<ECS::ReflectionProbeComponent>(entity);
+        if (!probe) return;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Active##ReflProbe", &probe->isActive);
+
+        // Box extents (min/max offsets from probe center)
+        f32 boxMin[3] = { probe->boxMin.x, probe->boxMin.y, probe->boxMin.z };
+        if (InspectorUndo::DragFloat3(m_UndoRedo, "Box Min##ReflProbe", boxMin,
+                [probe](f32 x, f32 y, f32 z) { probe->boxMin = Math::Vector3(x, y, z); },
+                0.5f, -500.0f, 0.0f)) {
+            probe->boxMin = Math::Vector3(boxMin[0], boxMin[1], boxMin[2]);
+        }
+
+        f32 boxMax[3] = { probe->boxMax.x, probe->boxMax.y, probe->boxMax.z };
+        if (InspectorUndo::DragFloat3(m_UndoRedo, "Box Max##ReflProbe", boxMax,
+                [probe](f32 x, f32 y, f32 z) { probe->boxMax = Math::Vector3(x, y, z); },
+                0.5f, 0.0f, 500.0f)) {
+            probe->boxMax = Math::Vector3(boxMax[0], boxMax[1], boxMax[2]);
+        }
+
+        // Quick size presets
+        ImGui::Text("Presets:");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Small Room")) {
+            probe->boxMin = Math::Vector3(-3.0f, -1.5f, -3.0f);
+            probe->boxMax = Math::Vector3(3.0f, 1.5f, 3.0f);
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Large Room")) {
+            probe->boxMin = Math::Vector3(-10.0f, -4.0f, -10.0f);
+            probe->boxMax = Math::Vector3(10.0f, 4.0f, 10.0f);
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Outdoor")) {
+            probe->boxMin = Math::Vector3(-50.0f, -10.0f, -50.0f);
+            probe->boxMax = Math::Vector3(50.0f, 30.0f, 50.0f);
+        }
+
+        ImGui::Separator();
+
+        // Intensity
+        InspectorUndo::DragFloat(m_UndoRedo, "Intensity##ReflProbe", &probe->intensity, 0.01f, 0.0f, 2.0f);
+
+        // Blend distance
+        InspectorUndo::DragFloat(m_UndoRedo, "Blend Distance##ReflProbe", &probe->blendDistance, 0.1f, 0.0f, 20.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("How far inside the box before reaching full influence (smooth edge falloff)");
+
+        // Priority
+        int priority = static_cast<int>(probe->priority);
+        if (ImGui::DragInt("Priority##ReflProbe", &priority, 1, 0, 100)) {
+            probe->priority = static_cast<u32>(priority);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Higher priority probes override lower ones when overlapping");
+
+        // Resolution (for future baking)
+        ImGui::Separator();
+        ImGui::TextDisabled("Baking (future)");
+        const char* resolutions[] = { "128", "256", "512" };
+        int resIdx = (probe->resolution == 128) ? 0 : (probe->resolution == 512) ? 2 : 1;
+        if (ImGui::Combo("Resolution##ReflProbe", &resIdx, resolutions, 3)) {
+            probe->resolution = (resIdx == 0) ? 128 : (resIdx == 2) ? 512 : 256;
+        }
+
+        // Bake button (stub — currently uses skybox as source)
+        if (ImGui::Button("Bake##ReflProbe")) {
+            probe->baked = true;
+            ENJIN_LOG_INFO(Renderer, "Reflection probe bake requested (using skybox fallback)");
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled(probe->baked ? "Baked (skybox)" : "Not baked");
+
+        ImGui::Separator();
+
+        // Remove component
+        if (ImGui::Button("Remove##ReflectionProbe")) {
+            RemoveComponentWithUndo<ECS::ReflectionProbeComponent>(entity, "reflectionProbe", "Reflection Probe");
         }
     }
 }

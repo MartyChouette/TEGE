@@ -243,25 +243,11 @@ endif()
 
 # --- Temporal Upscaling ---
 
-# AMD FSR 2 — temporal upscaler, works on all GPUs (OFF by default, requires FidelityFX SDK)
-option(ENJIN_UPSCALING_FSR2 "Enable AMD FSR 2 temporal upscaling" OFF)
-if(ENJIN_UPSCALING_FSR2)
-    set(FSR2_SDK_DIR "${CMAKE_SOURCE_DIR}/third_party/FidelityFX-SDK" CACHE PATH "Path to FidelityFX SDK")
-    if(EXISTS "${FSR2_SDK_DIR}/include/FidelityFX/host/ffx_fsr2.h")
-        target_include_directories(EnjinEngine PUBLIC "${FSR2_SDK_DIR}/include")
-        find_library(FSR2_API_LIB ffx_fsr2_api HINTS "${FSR2_SDK_DIR}/lib")
-        find_library(FSR2_VK_LIB ffx_fsr2_api_vk HINTS "${FSR2_SDK_DIR}/lib")
-        if(FSR2_API_LIB AND FSR2_VK_LIB)
-            target_link_libraries(EnjinEngine PUBLIC ${FSR2_API_LIB} ${FSR2_VK_LIB})
-            target_compile_definitions(EnjinEngine PUBLIC ENJIN_UPSCALING_FSR2)
-            message(STATUS "AMD FSR 2 temporal upscaling enabled")
-        else()
-            message(WARNING "FSR 2 SDK found but libraries not located — set FSR2_SDK_DIR or disable ENJIN_UPSCALING_FSR2")
-        endif()
-    else()
-        message(WARNING "FSR 2 SDK not found at ${FSR2_SDK_DIR} — set FSR2_SDK_DIR or disable ENJIN_UPSCALING_FSR2")
-    endif()
-endif()
+# FSR 2 built-in (Lanczos + CAS) — always available, no SDK dependency.
+# The built-in implementation renders at lower resolution, applies TAA, then
+# upscales via Lanczos-2 compute shader + CAS (Contrast Adaptive Sharpening).
+# Requires upscale_lanczos.comp.spv and upscale_cas.comp.spv to be compiled.
+message(STATUS "FSR 2 temporal upscaling (built-in Lanczos + CAS) — always available")
 
 # NVIDIA DLSS — temporal upscaler, NVIDIA GPUs only (OFF by default, requires Streamline SDK)
 option(ENJIN_UPSCALING_DLSS "Enable NVIDIA DLSS temporal upscaling" OFF)

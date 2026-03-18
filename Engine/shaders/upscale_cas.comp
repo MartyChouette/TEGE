@@ -1,0 +1,84 @@
+#version 450
+
+// Contrast Adaptive Sharpening (CAS) Compute Shader
+//
+// Inspired by AMD FidelityFX CAS.  Sharpens an image using an edge-aware
+// filter that adapts sharpening intensity based on local contrast.  Areas
+// with high contrast (edges) receive less sharpening to avoid ringing,
+// while areas with low contrast (smooth gradients) receive more to
+// recover detail lost during upscaling.
+//
+// This runs after Lanczos upscaling as a final quality pass.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// --- Inputs ---
+layout(set = 0, binding = 0) uniform sampler2D inputColor;  // Upscaled color (RGBA16F)
+
+// --- Output ---
+layout(set = 0, binding = 1, rgba16f) uniform writeonly image2D outputColor;
+
+// --- Push constants ---
+layout(push_constant) uniform CASParams {
+    uvec2 imageSize;      // Image resolution
+    float sharpness;      // Sharpening strength: 0.0 = off, 1.0 = maximum
+    float _pad0;
+};
+
+float Luminance(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+
+    if (pixel.x >= int(imageSize.x) || pixel.y >= int(imageSize.y)) {
+        return;
+    }
+
+    vec2 invSize = 1.0 / vec2(imageSize);
+    vec2 uv = (vec2(pixel) + 0.5) * invSize;
+
+    // 5-tap cross filter (center + 4 cardinal neighbors)
+    vec3 center = texture(inputColor, uv).rgb;
+    vec3 north  = texture(inputColor, uv + vec2(0.0, -invSize.y)).rgb;
+    vec3 south  = texture(inputColor, uv + vec2(0.0,  invSize.y)).rgb;
+    vec3 west   = texture(inputColor, uv + vec2(-invSize.x, 0.0)).rgb;
+    vec3 east   = texture(inputColor, uv + vec2( invSize.x, 0.0)).rgb;
+
+    // Compute local min and max luminance for contrast estimation
+    float lumCenter = Luminance(center);
+    float lumN = Luminance(north);
+    float lumS = Luminance(south);
+    float lumW = Luminance(west);
+    float lumE = Luminance(east);
+
+    float lumMin = min(lumCenter, min(min(lumN, lumS), min(lumW, lumE)));
+    float lumMax = max(lumCenter, max(max(lumN, lumS), max(lumW, lumE)));
+
+    // Adaptive sharpening weight: inversely proportional to local contrast.
+    // High contrast = less sharpening (avoid ringing at edges).
+    // Low contrast  = more sharpening (recover detail).
+    float contrast = lumMax - lumMin;
+    float maxSharpness = mix(0.0, -0.125, sharpness);  // CAS peak negative lobe
+
+    // Avoid division by zero: when contrast is very low, cap the sharpening
+    float peak = max(1.0 / (lumMin + 0.04) - 1.0 / (lumMax + 0.04), 0.0);
+    float weight = -1.0 / (mix(8.0, 5.0, clamp(peak * sharpness, 0.0, 1.0)));
+
+    // Apply CAS: weighted sum of center and neighbors
+    // The formula is: sharpened = (center + neighbors * w) / (1 + 4*w)
+    // where w is a negative weight (making it an unsharp mask with adaptive strength)
+    vec3 result = (center + (north + south + west + east) * weight) / (1.0 + 4.0 * weight);
+
+    // Clamp to prevent negative values or fireflies
+    result = max(result, vec3(0.0));
+
+    // Soft clamp: prevent the sharpened value from exceeding the local range by too much
+    float lumResult = Luminance(result);
+    if (lumResult > lumMax) {
+        result *= lumMax / max(lumResult, 1e-5);
+    }
+
+    imageStore(outputColor, pixel, vec4(result, 1.0));
+}

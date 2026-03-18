@@ -71,6 +71,8 @@
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Renderer/MeshFactory.h"
 #include "Enjin/Renderer/PostProcessing.h"
+#include "Enjin/Renderer/Upscaling/IUpscaler.h"
+#include "Enjin/Renderer/Upscaling/FSR2Upscaler.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Platform/FileDialog.h"
 #include "Enjin/Assets/Prefab.h"
@@ -1755,10 +1757,15 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             }
         }
 
-        // TAA resolve: compute dispatch must happen outside the render pass.
-        // Bind velocity/depth views and dispatch, then update the source image
-        // so subsequent post-processing reads the TAA-resolved output.
-        if (m_PostProcessing->IsTAAEnabled() && m_Renderer) {
+        // Temporal resolve: TAA and/or temporal upscaler.
+        // When an upscaler is active, TAA runs at the lower render resolution first,
+        // then the upscaler (Lanczos + CAS) upsamples to display resolution.
+        // When no upscaler is active, TAA runs at display resolution as before.
+        // Both compute dispatches must happen outside a render pass.
+        bool upscalerActive = m_RenderSystem && m_RenderSystem->IsUpscalerActive();
+
+        // TAA resolve pass (runs at render resolution — same as scene target)
+        if (m_PostProcessing->IsTAAEnabled() && m_Renderer && !upscalerActive) {
             auto* swapchain = m_Renderer->GetSwapchain();
             if (swapchain) {
                 m_PostProcessing->SetVelocityImageView(swapchain->GetVelocityImageView());
@@ -1772,6 +1779,61 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             VkImageView taaOutput = m_PostProcessing->GetTAAOutputImageView();
             if (taaOutput != VK_NULL_HANDLE && m_SceneRenderTarget) {
                 m_PostProcessing->UpdateSourceImage(taaOutput, m_SceneRenderTarget->GetSampler());
+            }
+        }
+
+        // Temporal upscaler dispatch (FSR 2 / DLSS / XeSS)
+        // Runs after TAA (if active) or directly on the jittered scene color.
+        // The upscaler takes the low-res color and upscales to display resolution.
+        if (upscalerActive && m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
+            auto* upscaler = m_RenderSystem->GetUpscaler();
+            if (upscaler) {
+                // Determine input: use TAA output if TAA ran, else scene color directly
+                VkImageView colorInput = VK_NULL_HANDLE;
+                if (m_PostProcessing->IsTAAEnabled()) {
+                    // TAA already ran at low res — use its output
+                    auto* swapchain = m_Renderer->GetSwapchain();
+                    if (swapchain) {
+                        m_PostProcessing->SetVelocityImageView(swapchain->GetVelocityImageView());
+                    }
+                    m_PostProcessing->SetDepthImageView(m_SceneRenderTarget->GetDepthImageView());
+                    m_PostProcessing->ApplyTAA(commandBuffer);
+                    colorInput = m_PostProcessing->GetTAAOutputImageView();
+                }
+
+                // Fall back to scene render target color if TAA didn't run
+                if (colorInput == VK_NULL_HANDLE) {
+                    colorInput = m_SceneRenderTarget->GetColorImageView();
+                }
+
+                // Build upscaler input
+                Renderer::UpscalerInput upInput{};
+                upInput.colorInput = colorInput;
+                upInput.depthInput = m_SceneRenderTarget->GetDepthImageView();
+                upInput.velocityInput = VK_NULL_HANDLE;
+                if (m_Renderer->GetSwapchain()) {
+                    upInput.velocityInput = m_Renderer->GetSwapchain()->GetVelocityImageView();
+                }
+                upInput.output = VK_NULL_HANDLE;  // Upscaler writes to its own internal image
+                upInput.jitterX = 0.0f;
+                upInput.jitterY = 0.0f;
+                upInput.deltaTime = m_LastDeltaTime;
+                upInput.cameraNear = 0.1f;
+                upInput.cameraFar = 1000.0f;
+                upInput.sharpness = m_RenderSystem->GetUpscalerSharpness();
+                upInput.cameraCut = false;
+
+                // Dispatch upscaler (Lanczos upsample + CAS sharpen)
+                upscaler->Dispatch(commandBuffer, upInput);
+
+                // Redirect post-processing to read from the upscaled output
+                auto* fsr2 = dynamic_cast<Renderer::FSR2Upscaler*>(upscaler);
+                if (fsr2) {
+                    VkImageView upscaledOutput = fsr2->GetOutputImageView();
+                    if (upscaledOutput != VK_NULL_HANDLE) {
+                        m_PostProcessing->UpdateSourceImage(upscaledOutput, m_SceneRenderTarget->GetSampler());
+                    }
+                }
             }
         }
 

@@ -57,6 +57,7 @@
 #include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
 #include "Enjin/Renderer/RayTracing/OIDNDenoiser.h"
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
+#include "Enjin/Renderer/RayTracing/ReSTIR.h"
 #include "Enjin/Renderer/RayTracing/AccelerationStructureManager.h"
 #include "Enjin/Renderer/SHLightProbe.h"
 #include "Enjin/Renderer/SDFScene.h"
@@ -7029,6 +7030,8 @@ void EditorLayer::DrawDebugWorkstation() {
                     u32 denoiser = m_RenderSystem->GetDenoiserType();
                     const char* denoiserNames[] = {"SVGF", "OIDN", "OptiX"};
                     ImGui::Text("Denoiser: %s", denoiser < 3 ? denoiserNames[denoiser] : "Unknown");
+                    auto* restir = m_RenderSystem->GetReSTIR();
+                    ImGui::Text("ReSTIR: %s", (restir && restir->GetConfig().enabled) ? "Enabled" : "Disabled");
                 }
 
                 ImGui::Text("OIT: %s", m_RenderSystem->IsOITEnabled() ? "Enabled" : "Disabled");

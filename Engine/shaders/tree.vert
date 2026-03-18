@@ -58,6 +58,9 @@ layout(binding = 1) uniform LightingUBO {
     vec4 worldCurvature; // x = strength, yzw reserved
     vec4 skyReflectColor;
     vec4 shProbeIrradiance;
+    vec4 reflectionProbePosition;
+    vec4 reflectionProbeBoxMin;
+    vec4 reflectionProbeBoxMax;
 } lighting;
 
 layout(location = 0) out vec3 fragWorldPos;

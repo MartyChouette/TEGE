@@ -348,6 +348,11 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetCelShadowMode(celShadowMode);
         rs->SetHalfLambert(halfLambert);
 
+        // Temporal Upscaling
+        rs->SetUpscalerSharpness(upscalerSharpness);
+        rs->SetUpscalerQuality(upscalerQuality);
+        rs->SetUpscalerType(upscalerType);  // Must be last — triggers init with quality/sharpness
+
         // Shading Model
         rs->SetShadingModel(shadingModel);
         rs->SetFresnelEnabled(fresnelEnabled);

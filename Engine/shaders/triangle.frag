@@ -86,6 +86,9 @@ layout(binding = 1) uniform LightingUBO {
     vec4 worldCurvature; // x = strength, yzw reserved (layout must match)
     vec4 skyReflectColor; // xyz = sky reflection color, w = reserved
     vec4 shProbeIrradiance; // xyz = SH probe irradiance, w = blend weight (0 or 1)
+    vec4 reflectionProbePosition; // xyz = probe center, w = intensity (0 = no probe)
+    vec4 reflectionProbeBoxMin;   // xyz = world AABB min, w = blend distance
+    vec4 reflectionProbeBoxMax;   // xyz = world AABB max, w = reserved
     DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLight pointLights[MAX_POINT_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];
@@ -1362,6 +1365,7 @@ void main() {
     }
 
     // Artistic surface: environment reflection + rim light (non-water, non-dither-gradient entities)
+    // Supports box-projected reflections when a reflection probe is active, with skybox fallback.
     if ((mat_flags & FLAG_WATER_SURFACE) == 0 && !isDitherGradient &&
         (mat_surfaceParam1 > 0.0 || mat_surfaceParam3 > 0.0)) {
         float reflectivity = mat_surfaceParam1;
@@ -1371,10 +1375,47 @@ void main() {
         float NdotV = max(dot(normal, viewDir), 0.0);
         float fresnel = reflectivity + (1.0 - reflectivity) * pow(1.0 - NdotV, fresnelPow);
 
-        // Fake environment: gradient from dark ground to sky color via reflected direction
         vec3 reflectDir = reflect(-viewDir, normal);
         vec3 skyCol = lighting.skyReflectColor.xyz;
-        vec3 envColor = mix(skyCol * 0.15, skyCol, clamp(reflectDir.y * 0.5 + 0.5, 0.0, 1.0));
+
+        // Box-projected reflection: correct the reflection vector to account for probe AABB.
+        // When a reflection probe is active (intensity > 0), the reflection ray is intersected
+        // with the probe's bounding box to find the point on the box where the reflection
+        // "hits", producing parallax-correct reflections for enclosed spaces.
+        float probeIntensity = lighting.reflectionProbePosition.w;
+        vec3 envColor;
+        if (probeIntensity > 0.0) {
+            vec3 probeCenter = lighting.reflectionProbePosition.xyz;
+            vec3 boxMin = lighting.reflectionProbeBoxMin.xyz;
+            vec3 boxMax = lighting.reflectionProbeBoxMax.xyz;
+
+            // Ray-box intersection: find the intersection of the reflection ray with the AABB
+            // from the fragment's world position. We compute t for each slab and take the min
+            // positive t (first exit point), then use that to get the box-projected direction.
+            vec3 rbMin = (boxMin - fragWorldPos) / reflectDir;
+            vec3 rbMax = (boxMax - fragWorldPos) / reflectDir;
+            vec3 rbMaxT = max(rbMin, rbMax);
+            float tBox = min(rbMaxT.x, min(rbMaxT.y, rbMaxT.z));
+
+            // The corrected reflection direction points from the probe center to the
+            // intersection point on the box (this is what a cubemap captured at the
+            // probe center would see).
+            vec3 hitPoint = fragWorldPos + reflectDir * tBox;
+            vec3 correctedDir = hitPoint - probeCenter;
+
+            // Use the corrected direction to sample environment (gradient approximation
+            // of the skybox cubemap — when actual cubemap sampling is added, this becomes
+            // a texture(samplerCube, correctedDir) call).
+            vec3 cDir = normalize(correctedDir);
+            envColor = mix(skyCol * 0.15, skyCol, clamp(cDir.y * 0.5 + 0.5, 0.0, 1.0));
+
+            // Blend between probe result and skybox fallback based on probe intensity
+            vec3 skyFallback = mix(skyCol * 0.15, skyCol, clamp(reflectDir.y * 0.5 + 0.5, 0.0, 1.0));
+            envColor = mix(skyFallback, envColor, probeIntensity);
+        } else {
+            // No probe: skybox gradient fallback
+            envColor = mix(skyCol * 0.15, skyCol, clamp(reflectDir.y * 0.5 + 0.5, 0.0, 1.0));
+        }
 
         // Add specular highlight from directional lights
         for (int i = 0; i < int(lighting.directionalLightCount); i++) {

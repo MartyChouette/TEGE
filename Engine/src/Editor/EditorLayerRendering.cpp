@@ -57,6 +57,7 @@
 #include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
 #include "Enjin/Renderer/RayTracing/OIDNDenoiser.h"
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
+#include "Enjin/Renderer/RayTracing/ReSTIR.h"
 #include "Enjin/Renderer/RayTracing/AccelerationStructureManager.h"
 #include "Enjin/Renderer/SHLightProbe.h"
 #include "Enjin/Renderer/SDFScene.h"
@@ -1083,10 +1084,14 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
 
         // Temporal Upscaling
         if (ImGui::CollapsingHeader("Upscaling")) {
-            const char* upscalerTypes[] = { "None", "FSR 2", "DLSS", "XeSS" };
+            const char* upscalerTypes[] = { "None", "FSR 2 (Built-in)", "DLSS", "XeSS" };
             int upType = static_cast<int>(settings.upscalerType);
             if (ImGui::Combo("Upscaler", &upType, upscalerTypes, IM_ARRAYSIZE(upscalerTypes))) {
                 settings.upscalerType = static_cast<u32>(upType);
+                // Immediately sync to RenderSystem so upscaler resources are created/destroyed
+                if (m_RenderSystem) {
+                    m_RenderSystem->SetUpscalerType(settings.upscalerType);
+                }
             }
 
             if (settings.upscalerType > 0) {
@@ -1094,18 +1099,21 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 int upQuality = static_cast<int>(settings.upscalerQuality);
                 if (ImGui::Combo("Quality##Upscaler", &upQuality, qualityModes, IM_ARRAYSIZE(qualityModes))) {
                     settings.upscalerQuality = static_cast<u32>(upQuality);
+                    if (m_RenderSystem) {
+                        m_RenderSystem->SetUpscalerQuality(settings.upscalerQuality);
+                    }
                 }
 
-                ImGui::SliderFloat("Sharpness##Upscaler", &settings.upscalerSharpness, 0.0f, 1.0f, "%.2f");
+                if (ImGui::SliderFloat("Sharpness##Upscaler", &settings.upscalerSharpness, 0.0f, 1.0f, "%.2f")) {
+                    if (m_RenderSystem) {
+                        m_RenderSystem->SetUpscalerSharpness(settings.upscalerSharpness);
+                    }
+                }
 
                 // Availability indicators
                 ImGui::Spacing();
-                ImGui::TextDisabled("Compiled backends:");
-#ifdef ENJIN_UPSCALING_FSR2
-                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  FSR 2: Available");
-#else
-                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "  FSR 2: Not compiled (ENJIN_UPSCALING_FSR2=OFF)");
-#endif
+                ImGui::TextDisabled("Backend availability:");
+                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  FSR 2: Built-in (Lanczos + CAS)");
 #ifdef ENJIN_UPSCALING_DLSS
                 ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  DLSS: Available");
 #else
@@ -1117,8 +1125,13 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "  XeSS: Not compiled");
 #endif
 
+                if (settings.upscalerType == 1) {
+                    ImGui::Spacing();
+                    ImGui::TextDisabled("Pipeline: TAA resolve (low-res) -> Lanczos upsample -> CAS sharpen");
+                }
+
                 if (settings.upscalerType > 0 && settings.aaMode == 2) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Note: TAA is bypassed when upscaler is active");
+                    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "TAA runs at render resolution, upscaler handles upsampling");
                 }
             }
         }
@@ -2286,6 +2299,38 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
                                     if (ImGui::SliderInt("Bounces", &bounces, 1, 4)) {
                                         cfg.bounces = static_cast<u32>(bounces);
                                     }
+                                }
+                                ImGui::TreePop();
+                            }
+                        }
+
+                        // ReSTIR (Importance-Weighted Light Selection)
+                        if (auto* restir = m_RenderSystem->GetReSTIR()) {
+                            auto& cfg = restir->GetConfig();
+                            if (ImGui::TreeNode("ReSTIR Light Selection")) {
+                                ImGui::Checkbox("Enabled##ReSTIR", &cfg.enabled);
+                                if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                    "Reservoir-based importance-weighted light selection.\n"
+                                    "Selects the most impactful light per pixel for RT shadow/GI rays.\n"
+                                    "Reduces noise when many lights are present.");
+                                if (cfg.enabled) {
+                                    int candidates = static_cast<int>(cfg.initialCandidates);
+                                    if (ImGui::SliderInt("Candidates##ReSTIR", &candidates, 1, 32)) {
+                                        cfg.initialCandidates = static_cast<u32>(candidates);
+                                    }
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Number of random light candidates to evaluate per pixel.\n"
+                                        "Higher = better selection, more compute cost.\n"
+                                        "8 is a good default for scenes with many lights.");
+                                    ImGui::DragFloat("Distance Bias##ReSTIR", &cfg.distanceBias, 0.01f, 0.001f, 1.0f, "%.3f");
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Minimum distance for falloff calculation (prevents division by zero)");
+
+                                    ImGui::Separator();
+                                    ImGui::TextDisabled("Temporal/Spatial Reuse (planned)");
+                                    ImGui::BeginDisabled();
+                                    ImGui::Checkbox("Temporal Reuse##ReSTIR", &cfg.temporalReuse);
+                                    ImGui::Checkbox("Spatial Reuse##ReSTIR", &cfg.spatialReuse);
+                                    ImGui::EndDisabled();
                                 }
                                 ImGui::TreePop();
                             }

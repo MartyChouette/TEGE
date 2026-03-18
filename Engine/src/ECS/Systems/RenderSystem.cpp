@@ -50,8 +50,10 @@
 #include "Enjin/Renderer/RayTracing/OIDNDenoiser.h"
 #include "Enjin/Renderer/RayTracing/OptiXDenoiser.h"
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
+#include "Enjin/Renderer/RayTracing/ReSTIR.h"
 #include "Enjin/Renderer/RayTracing/RTShaderData.h"
 #include "Enjin/Renderer/SHLightProbe.h"
+#include "Enjin/Renderer/ReflectionProbeSystem.h"
 #include "Enjin/Renderer/SDFScene.h"
 #include "Enjin/Renderer/OITManager.h"
 #ifdef ENJIN_CLUSTERED_LIGHTING
@@ -349,6 +351,7 @@ void RenderSystem::Initialize() {
     }
 
     m_SHLighting = std::make_unique<Renderer::SHLightingSystem>();
+    m_ReflectionProbes = std::make_unique<Renderer::ReflectionProbeSystem>();
     m_SDFScene = std::make_unique<Renderer::SDFScene>();
 
     // Per-frame linear allocator: 8 MB supports ~100K entities x 128B each
@@ -484,9 +487,10 @@ void RenderSystem::Shutdown() {
     }
     m_Skybox.Shutdown();
 
-    // Clean up OIT, SH light probes, and SDF scene
+    // Clean up OIT, SH light probes, reflection probes, and SDF scene
     if (m_OITManager) { m_OITManager->Shutdown(); m_OITManager.reset(); }
     m_SHLighting.reset();
+    m_ReflectionProbes.reset();
     m_SDFScene.reset();
 
     // Clean up ray tracing subsystems
@@ -3614,8 +3618,18 @@ void RenderSystem::UpdateFrameUniforms() {
     // and temporal upscalers (FSR 2, DLSS, XeSS) require jittered input.
     if (m_AAMode == 2 || m_UpscalerType > 0) { // TAA or temporal upscaler
         VkExtent2D extent = m_Renderer->GetSwapchainExtent();
-        if (extent.width > 0 && extent.height > 0) {
-            Math::Vector2 jitter = Renderer::HaltonJitter(m_TAAFrameCounter, extent.width, extent.height);
+        // When an upscaler is active, compute jitter relative to the lower render resolution
+        // so that sub-pixel offsets are correctly sized for the internal rendering target.
+        u32 jitterW = extent.width;
+        u32 jitterH = extent.height;
+        if (m_UpscalerType > 0 && m_Upscaler) {
+            Renderer::IUpscaler::GetRenderResolution(
+                extent.width, extent.height,
+                static_cast<Renderer::UpscalerQuality>(m_UpscalerQuality),
+                jitterW, jitterH);
+        }
+        if (jitterW > 0 && jitterH > 0) {
+            Math::Vector2 jitter = Renderer::HaltonJitter(m_TAAFrameCounter, jitterW, jitterH);
             // Offset the projection matrix: translation in clip space X/Y
             ubo.proj.m[8]  += jitter.x;  // m[2][0] in column-major
             ubo.proj.m[9]  += jitter.y;  // m[2][1] in column-major
@@ -3863,6 +3877,27 @@ void RenderSystem::UpdateFrameUniforms() {
         lighting.shProbeIrradiance = Math::Vector4(irr.x, irr.y, irr.z, 1.0f);
     } else {
         lighting.shProbeIrradiance = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+    }
+
+    // Query reflection probe at camera position for box-projected reflections
+    if (m_ReflectionProbes && m_SceneComposition.mode == SceneRenderMode::Scene3D && m_Camera) {
+        auto probe = m_ReflectionProbes->FindNearestProbe(m_World, m_Camera->GetPosition());
+        if (probe.intensity > 0.0f) {
+            lighting.reflectionProbePosition = Math::Vector4(
+                probe.probePosition.x, probe.probePosition.y, probe.probePosition.z, probe.intensity);
+            lighting.reflectionProbeBoxMin = Math::Vector4(
+                probe.boxMin.x, probe.boxMin.y, probe.boxMin.z, probe.blendDistance);
+            lighting.reflectionProbeBoxMax = Math::Vector4(
+                probe.boxMax.x, probe.boxMax.y, probe.boxMax.z, 0.0f);
+        } else {
+            lighting.reflectionProbePosition = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+            lighting.reflectionProbeBoxMin = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+            lighting.reflectionProbeBoxMax = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+        }
+    } else {
+        lighting.reflectionProbePosition = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+        lighting.reflectionProbeBoxMin = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+        lighting.reflectionProbeBoxMax = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
     }
 
     (*m_ActiveLightingBuffers)[GetActiveBufferIndex(currentFrame)]->UploadData(&lighting, sizeof(lighting));
@@ -6235,8 +6270,8 @@ void RenderSystem::InitializeRayTracing() {
     auto* ctx = m_Renderer->GetContext();
     ENJIN_LOG_INFO(Renderer, "Initializing ray tracing subsystems...");
 
-    // Create RT descriptor set layout (19 bindings: 0-16 existing + 17 SDF + 18 simplified materials)
-    std::array<VkDescriptorSetLayoutBinding, 19> rtBindings{};
+    // Create RT descriptor set layout (20 bindings: 0-16 existing + 17 SDF + 18 simplified materials + 19 ReSTIR reservoirs)
+    std::array<VkDescriptorSetLayoutBinding, 20> rtBindings{};
 
     // Binding 0: TLAS
     rtBindings[0].binding = 0;
@@ -6336,6 +6371,12 @@ void RenderSystem::InitializeRayTracing() {
     rtBindings[18].descriptorCount = 1;
     rtBindings[18].stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
+    // Binding 19: ReSTIR reservoir SSBO (per-pixel light selection results)
+    rtBindings[19].binding = 19;
+    rtBindings[19].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    rtBindings[19].descriptorCount = 1;
+    rtBindings[19].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<u32>(rtBindings.size());
@@ -6351,7 +6392,7 @@ void RenderSystem::InitializeRayTracing() {
     poolSizes[0] = { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1 };
     poolSizes[1] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 7 };
     poolSizes[2] = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 };
-    poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 7 };  // 9-12 + NEE light SSBO at 16 + SDF at 17 + simplified material SSBO at 18
+    poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 8 };  // 9-12 + NEE light SSBO at 16 + SDF at 17 + simplified material SSBO at 18 + ReSTIR reservoir at 19
     poolSizes[4] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 };
 
     VkDescriptorPoolCreateInfo poolInfo{};
@@ -6451,6 +6492,12 @@ void RenderSystem::InitializeRayTracing() {
         m_PathTracer.reset();
     }
 
+    m_ReSTIR = std::make_unique<Renderer::ReSTIR>(ctx);
+    if (!m_ReSTIR->Initialize(width, height, m_RTDescriptorSetLayout)) {
+        ENJIN_LOG_WARN(Renderer, "ReSTIR initialization failed");
+        m_ReSTIR.reset();
+    }
+
     // Initialize SVGF denoiser (always available as fallback)
     m_SVGFDenoiser = std::make_unique<Renderer::SVGFDenoiser>(ctx);
     if (!m_SVGFDenoiser->Initialize(width, height)) {
@@ -6537,14 +6584,15 @@ void RenderSystem::InitializeRayTracing() {
             m_OptiXDenoiser->RegisterImageMapping(velView, velImage, Renderer::VulkanSwapchain::VELOCITY_FORMAT);
     }
 
-    ENJIN_LOG_INFO(Renderer, "Ray tracing subsystems initialized (shadows=%s, reflections=%s, AO=%s, GI=%s, pathtracer=%s)",
+    ENJIN_LOG_INFO(Renderer, "Ray tracing subsystems initialized (shadows=%s, reflections=%s, AO=%s, GI=%s, pathtracer=%s, restir=%s)",
                    m_RTShadows ? "yes" : "no", m_RTReflections ? "yes" : "no",
                    m_RTAO ? "yes" : "no", m_RTGI ? "yes" : "no",
-                   m_PathTracer ? "yes" : "no");
+                   m_PathTracer ? "yes" : "no", m_ReSTIR ? "yes" : "no");
 }
 
 void RenderSystem::ShutdownRayTracing() {
     m_RTCompositor.reset();
+    m_ReSTIR.reset();
     m_OptiXDenoiser.reset();
     m_OIDNDenoiser.reset();
     m_SVGFDenoiser.reset();
@@ -6811,6 +6859,12 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
         // No SDF scene — zero the object count
         u32 zero = 0;
         std::memcpy(m_RTSDFMapped, &zero, sizeof(zero));
+    }
+
+    // ReSTIR — importance-weighted light selection (must run before RT shadows/GI)
+    if (m_ReSTIR && m_ReSTIR->GetConfig().enabled) {
+        u32 totalLightCount = dirLightCount + ptLightCount + sptLightCount;
+        m_ReSTIR->Dispatch(cmd, m_RTDescriptorSet, m_RTFrameCount, totalLightCount);
     }
 
     // Hybrid mode — dispatch individual effects
@@ -7500,8 +7554,20 @@ void RenderSystem::WriteRTDescriptors() {
         simplifiedMatBufInfo.range = 256;
     }
 
-    // Build write array for all 19 bindings
-    std::array<VkWriteDescriptorSet, 19> writes{};
+    // Binding 19: ReSTIR reservoir SSBO
+    VkDescriptorBufferInfo restirBufInfo{};
+    if (m_ReSTIR && m_ReSTIR->GetReservoirBuffer() != VK_NULL_HANDLE) {
+        restirBufInfo.buffer = m_ReSTIR->GetReservoirBuffer();
+        restirBufInfo.offset = 0;
+        restirBufInfo.range = VK_WHOLE_SIZE;
+    } else {
+        restirBufInfo.buffer = m_RTDummyBuffer;
+        restirBufInfo.offset = 0;
+        restirBufInfo.range = 256;
+    }
+
+    // Build write array for all 20 bindings
+    std::array<VkWriteDescriptorSet, 20> writes{};
 
     // Binding 0: TLAS
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -7597,9 +7663,17 @@ void RenderSystem::WriteRTDescriptors() {
     writes[18].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[18].pBufferInfo = &simplifiedMatBufInfo;
 
+    // Binding 19: ReSTIR reservoir SSBO
+    writes[19].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[19].dstSet = m_RTDescriptorSet;
+    writes[19].dstBinding = 19;
+    writes[19].descriptorCount = 1;
+    writes[19].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[19].pBufferInfo = &restirBufInfo;
+
     vkUpdateDescriptorSets(device, static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
 
-    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 19 bindings)");
+    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 20 bindings)");
 }
 
 void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {

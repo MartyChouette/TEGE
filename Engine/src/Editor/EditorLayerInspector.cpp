@@ -34,6 +34,7 @@
 #include "Enjin/ECS/Components/CameraTrigger.h"
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include "Enjin/ECS/Components/GravityZone.h"
+#include "Enjin/ECS/Components/ReflectionProbe.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/ECS/Components/Elemental.h"
@@ -541,6 +542,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PostProcessVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::PostProcessVolumeComponent>(e); },
             "postProcessVolume"},
+        {"Reflection Probe", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ReflectionProbeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ReflectionProbeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ReflectionProbeComponent>(e); },
+            "reflectionProbe", DimensionTag::Only3D},
         {"Elemental Surface", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ElementalSurfaceComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ElementalSurfaceComponent>(e); },
@@ -1022,6 +1028,11 @@ void EditorLayer::DrawInspectorPanel() {
         // Post-Process Volume component
         if (m_World->HasComponent<ECS::PostProcessVolumeComponent>(m_PrimarySelected)) {
             DrawPostProcessVolumeComponent(m_PrimarySelected);
+        }
+
+        // Reflection Probe component
+        if (m_World->HasComponent<ECS::ReflectionProbeComponent>(m_PrimarySelected)) {
+            DrawReflectionProbeComponent(m_PrimarySelected);
         }
 
         // Fluid Volume component

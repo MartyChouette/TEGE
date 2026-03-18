@@ -67,6 +67,9 @@ layout(binding = 1) uniform LightingUBO {
     vec4 worldCurvature; // x = strength, yzw reserved
     vec4 skyReflectColor; // xyz = sky reflection color, w = reserved
     vec4 shProbeIrradiance; // xyz = SH probe irradiance, w = blend weight
+    vec4 reflectionProbePosition;
+    vec4 reflectionProbeBoxMin;
+    vec4 reflectionProbeBoxMax;
     // Note: light arrays follow but we only need windData in vertex shader
 } lighting;
 
