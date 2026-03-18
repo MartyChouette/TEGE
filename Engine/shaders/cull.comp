@@ -14,7 +14,7 @@ struct CullableObject {
     uint indexCount;
     uint indexOffset;
     uint vertexOffset;
-    uint _pad0;
+    uint indirectEligible; // 1 = emit indirect draw command, 0 = visibility only
     uint _pad1;
     uint _pad2;
 };
@@ -102,8 +102,10 @@ void main() {
 
     visibility[index] = visible ? 1u : 0u;
 
-    if (visible) {
-        // Atomic compaction: allocate a slot in the output buffer
+    if (visible && obj.indirectEligible != 0u) {
+        // Atomic compaction: allocate a slot in the output buffer.
+        // Only indirect-eligible objects (non-textured, pool-allocated) emit draw commands.
+        // Textured entities are still visibility-tested but drawn via per-entity path.
         uint slot = atomicAdd(drawCount, 1);
 
         DrawCommand cmd;

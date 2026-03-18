@@ -746,6 +746,8 @@ private:
     std::vector<ObjectDataGPU> m_ObjectDataCPU;
     void UploadObjectData();
     void DrawIndirect(VkCommandBuffer commandBuffer);
+    // Entities drawn by DrawIndirect (non-textured pool entities) — skip in per-entity loop
+    std::vector<bool> m_IndirectDrawn;
 
     // Hi-Z occlusion culling (previous-frame depth pyramid)
     std::unique_ptr<Renderer::HiZPyramid> m_HiZPyramid;

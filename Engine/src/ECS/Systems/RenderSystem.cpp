@@ -1037,6 +1037,31 @@ void RenderSystem::Update(f32 deltaTime) {
         m_ActiveLightingBuffers = &m_OffscreenLightingBuffers;
         m_OffscreenMode = true;
 
+        // Build sorted render list once for all viewports (maximizes descriptor cache hits).
+        // Sort keys use depth=0 since splitscreen viewports have different cameras;
+        // the important part is grouping by texture/material hash, not depth ordering.
+        {
+            m_SortedRenderList.clear();
+            ECS::View<TransformComponent, MeshComponent> view(*m_World);
+            auto* matStorage = m_World->GetComponentStorage<MaterialComponent>();
+            m_SortedRenderList.reserve(view.UpperBound());
+            for (Entity entity : view) {
+                auto* xform = view.Get<TransformComponent>(entity);
+                if (!xform || !xform->visible) continue;
+                auto* mat = matStorage ? matStorage->Get(entity) : nullptr;
+                if (mat) mat->ComputeSortKey(0.0f);
+                m_SortedRenderList.push_back(entity);
+            }
+            std::sort(m_SortedRenderList.begin(), m_SortedRenderList.end(),
+                [matStorage](Entity a, Entity b) {
+                    auto* matA = matStorage ? matStorage->Get(a) : nullptr;
+                    auto* matB = matStorage ? matStorage->Get(b) : nullptr;
+                    u64 keyA = matA ? matA->cachedSortKey : 0;
+                    u64 keyB = matB ? matB->cachedSortKey : 0;
+                    return keyA < keyB;
+                });
+        }
+
         u32 viewportCount = static_cast<u32>(m_MainPassViewports.size());
         if (viewportCount > MAX_SPLITSCREEN_VIEWPORTS) viewportCount = MAX_SPLITSCREEN_VIEWPORTS;
 
@@ -1103,7 +1128,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
             {
             auto* spriteStorageVP = m_World->GetComponentStorage<Sprite2DComponent>();
-            for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+            for (Entity entity : m_SortedRenderList) {
                 auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                 if (!xform) continue;
                 if (!xform->visible) continue;
@@ -1241,6 +1266,14 @@ void RenderSystem::Update(f32 deltaTime) {
     // Single-pass LOD update + render — iterates renderable entities once
     // Reset last-bound state so no stale descriptor data carries from a previous pass
     m_LastBound.Reset(); m_GeometryPoolBound = false;
+
+    // Multi-draw indirect: batch all non-textured pool-eligible entities into a single
+    // vkCmdDrawIndexedIndirectCount call. Per-object data comes from ObjectData SSBO (binding 13).
+    // Skipped in editor mode (editor always uses per-entity draws for full control).
+    if (m_GPUCullingEnabled && !m_IsEditorMode && !m_CullableObjects.empty() && m_GeometryPool) {
+        DrawIndirect(commandBuffer);
+    }
+
     {
         Math::Vector3 camPos;
         bool doLOD = (m_Camera != nullptr);
@@ -2365,6 +2398,10 @@ void RenderSystem::BuildCullableObjectList() {
     m_CullableObjects.reserve(meshCount);
     m_EntityToCullIndex.resize(m_World->GetEntityCount(), UINT32_MAX);
 
+    // Track which entities are drawn via indirect (pool-eligible, non-textured)
+    m_IndirectDrawn.clear();
+    m_IndirectDrawn.resize(m_World->GetEntityCount(), false);
+
     u32 cullIndex = 0;
 
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
@@ -2408,14 +2445,38 @@ void RenderSystem::BuildCullableObjectList() {
         obj.indexCount = static_cast<u32>(mesh->indices.size());
 
         // Use pool offsets if entity has a merged geometry allocation
+        bool hasPoolAlloc = false;
         if (static_cast<usize>(entity) < m_EntityRenderData.size() &&
             m_EntityRenderData[static_cast<usize>(entity)].valid &&
             m_EntityRenderData[static_cast<usize>(entity)].poolAlloc.valid) {
             obj.indexOffset = m_EntityRenderData[static_cast<usize>(entity)].poolAlloc.indexOffset;
             obj.vertexOffset = m_EntityRenderData[static_cast<usize>(entity)].poolAlloc.vertexOffset;
+            hasPoolAlloc = true;
         } else {
             obj.indexOffset = 0;
             obj.vertexOffset = 0;
+        }
+
+        // Mark entity for indirect draw if pool-eligible and has no per-entity textures.
+        // Entities with textures (flags bits 16-19) need per-entity descriptor updates
+        // and must remain on the per-entity draw path. The indirectEligible flag on the
+        // CullableObject controls whether the GPU cull shader emits an indirect draw command.
+        if (hasPoolAlloc) {
+            auto* material = m_World->GetComponent<MaterialComponent>(entity);
+            bool hasTextures = false;
+            if (material) {
+                hasTextures = material->cachedBaseColorTexture != nullptr
+                    || material->cachedNormalTexture != nullptr
+                    || material->cachedMetallicRoughnessTexture != nullptr
+                    || material->cachedEmissiveTexture != nullptr
+                    || material->cachedMatcapTexture != nullptr;
+            }
+            if (!hasTextures) {
+                obj.indirectEligible = 1;
+                if (static_cast<usize>(entity) < m_IndirectDrawn.size()) {
+                    m_IndirectDrawn[static_cast<usize>(entity)] = true;
+                }
+            }
         }
 
         // Map entity to cull index
@@ -2613,7 +2674,19 @@ void RenderSystem::DrawIndirect(VkCommandBuffer commandBuffer) {
     // Bind the merged geometry pool (single VB + IB for all static meshes)
     if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
 
-    // Issue a single indirect draw call for all visible static meshes
+    // Push sentinel constants to signal indirect mode to shaders.
+    // parallaxScale = -1.0 tells the vertex/fragment shaders to read per-object data
+    // from the ObjectData SSBO (binding 13) indexed by gl_InstanceIndex instead of push constants.
+    Renderer::PushConstants indirectPC{};
+    indirectPC.parallaxScale = -1.0f;
+    vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+        sizeof(Renderer::PushConstants), &indirectPC);
+
+    // Issue a single indirect draw call for all visible static meshes.
+    // The GPU culling compute shader has compacted visible objects into a contiguous
+    // VkDrawIndexedIndirectCommand array. Each command's firstInstance encodes the
+    // original object index for SSBO lookup via gl_InstanceIndex.
     vkCmdDrawIndexedIndirectCount(
         commandBuffer,
         indirectBuffer,             // VkDrawIndexedIndirectCommand array
@@ -2623,6 +2696,8 @@ void RenderSystem::DrawIndirect(VkCommandBuffer commandBuffer) {
         m_GPUCulling->GetMaxObjects(), // maxDrawCount
         sizeof(VkDrawIndexedIndirectCommand) // stride
     );
+
+    m_DrawCallCount++;  // Single draw call for all indirect objects
 }
 
 void RenderSystem::CreatePipeline() {
@@ -4285,6 +4360,13 @@ void RenderSystem::CreateDefaultMesh() {
 
 void RenderSystem::RenderEntity(Entity entity) {
     if (!m_Pipeline || !m_Renderer) {
+        return;
+    }
+
+    // Skip entities already drawn by the multi-draw indirect batch
+    if (m_GPUCullingEnabled && !m_IsEditorMode &&
+        static_cast<usize>(entity) < m_IndirectDrawn.size() &&
+        m_IndirectDrawn[static_cast<usize>(entity)]) {
         return;
     }
 

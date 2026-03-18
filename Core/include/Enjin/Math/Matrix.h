@@ -1,6 +1,8 @@
 #pragma once
 
 #include "Enjin/Math/Vector.h"
+#include "Enjin/Math/Simd.h"
+#include <type_traits> // std::is_constant_evaluated
 
 namespace Enjin {
 namespace Math {
@@ -62,6 +64,14 @@ struct ENJIN_API Matrix4 {
     }
 
     constexpr Matrix4 operator*(const Matrix4& other) const {
+#if ENJIN_SIMD_SSE2
+        if (!std::is_constant_evaluated()) {
+            Matrix4 result;
+            Simd::Mat4MulSSE(m, other.m, result.m);
+            return result;
+        }
+#endif
+        // Scalar fallback (constexpr-compatible)
         Matrix4 result;
         for (usize col = 0; col < 4; ++col) {
             for (usize row = 0; row < 4; ++row) {
@@ -75,6 +85,15 @@ struct ENJIN_API Matrix4 {
     }
 
     constexpr Vector4 operator*(const Vector4& v) const {
+#if ENJIN_SIMD_SSE2
+        if (!std::is_constant_evaluated()) {
+            f32 vec[4] = { v.x, v.y, v.z, v.w };
+            f32 out[4];
+            Simd::Mat4MulVec4SSE(m, vec, out);
+            return Vector4(out[0], out[1], out[2], out[3]);
+        }
+#endif
+        // Scalar fallback
         return Vector4(
             m[0] * v.x + m[4] * v.y + m[8]  * v.z + m[12] * v.w,
             m[1] * v.x + m[5] * v.y + m[9]  * v.z + m[13] * v.w,

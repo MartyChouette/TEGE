@@ -34,11 +34,14 @@
 #if defined(_MSC_VER)
     #define ENJIN_COMPILER_MSVC
     #define ENJIN_FORCE_INLINE __forceinline
+    #define ENJIN_RESTRICT __restrict
 #elif defined(__GNUC__) || defined(__clang__)
     #define ENJIN_COMPILER_GCC
     #define ENJIN_FORCE_INLINE __attribute__((always_inline)) inline
+    #define ENJIN_RESTRICT __restrict__
 #else
     #define ENJIN_FORCE_INLINE inline
+    #define ENJIN_RESTRICT
 #endif
 
 // Debug/Release detection

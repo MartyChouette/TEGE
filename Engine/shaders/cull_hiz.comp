@@ -22,7 +22,7 @@ struct CullableObject {
     uint indexCount;
     uint indexOffset;
     uint vertexOffset;
-    uint _pad0;
+    uint indirectEligible; // 1 = emit indirect draw command, 0 = visibility only
     uint _pad1;
     uint _pad2;
 };
@@ -179,7 +179,7 @@ void main() {
         visibility[index] = visible ? 1u : 0u;
         occlusionFlags[index] = (occluded) ? 1u : 0u;
 
-        if (visible) {
+        if (visible && obj.indirectEligible != 0u) {
             uint slot = atomicAdd(drawCount, 1);
             DrawCommand cmd;
             cmd.indexCount = obj.indexCount;
@@ -205,14 +205,16 @@ void main() {
             visibility[index] = 1u;
             occlusionFlags[index] = 0u;
 
-            uint slot = atomicAdd(drawCount, 1);
-            DrawCommand cmd;
-            cmd.indexCount = obj.indexCount;
-            cmd.instanceCount = 1;
-            cmd.firstIndex = obj.indexOffset;
-            cmd.vertexOffset = int(obj.vertexOffset);
-            cmd.firstInstance = index;
-            drawCommands[slot] = cmd;
+            if (obj.indirectEligible != 0u) {
+                uint slot = atomicAdd(drawCount, 1);
+                DrawCommand cmd;
+                cmd.indexCount = obj.indexCount;
+                cmd.instanceCount = 1;
+                cmd.firstIndex = obj.indexOffset;
+                cmd.vertexOffset = int(obj.vertexOffset);
+                cmd.firstInstance = index;
+                drawCommands[slot] = cmd;
+            }
         }
     }
 }

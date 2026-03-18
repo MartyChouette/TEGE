@@ -11,8 +11,14 @@ namespace Renderer { class Texture; }
 
 namespace ECS {
 
-// Material component for surface properties
+// Material component for surface properties.
+// Field order is optimized for cache locality: hot render-path data (PBR values,
+// flags, texture indices) is packed into the first ~3 cache lines (~192 bytes).
+// Cold data (std::string texture paths, cached texture pointers, TextureKey) is
+// placed at the end so the render loop rarely touches those cache lines.
 struct MaterialComponent {
+    // ── Cache line 0 (bytes 0-63): PBR core + alpha + texture indices ──
+
     // Base color (albedo)
     Math::Vector3 baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
     f32 opacity = 1.0f;
@@ -25,36 +31,26 @@ struct MaterialComponent {
     Math::Vector3 emissiveColor = Math::Vector3(0.0f, 0.0f, 0.0f);
     f32 emissiveStrength = 0.0f;
 
+    // Alpha mode
+    enum class AlphaMode { Opaque, Mask, Blend } alphaMode = AlphaMode::Opaque;
+    f32 alphaCutoff = 0.5f;
+
     // Texture indices (-1 means no texture, used internally by render system)
     i32 baseColorTexture = -1;
     i32 normalTexture = -1;
     i32 metallicRoughnessTexture = -1;
     i32 emissiveTexture = -1;
 
-    // Texture file paths (set these to load textures)
-    std::string baseColorTexturePath;
-    std::string normalTexturePath;
-    std::string metallicRoughnessTexturePath;
-    std::string emissiveTexturePath;
-    std::string specularTexturePath;  // Pre-PBR: direct specular intensity map (used when shadingModel != GGX)
-    std::string matcapTexturePath;    // Matcap (Material Capture): 2D texture indexed by view-space normal
+    // ── Cache line 1 (bytes 64-127): flags, retro, artistic, outline ──
 
-    // Rendering flags
+    i32 heightTexture = -1;
+    i32 matcapTexture = -1;  // Matcap texture index (-1 = no matcap)
+
+    // Rendering flags (packed booleans)
     bool doubleSided = false;
     bool castShadows = true;
     bool receiveShadows = true;
-
-    // Alpha mode
-    enum class AlphaMode { Opaque, Mask, Blend } alphaMode = AlphaMode::Opaque;
-    f32 alphaCutoff = 0.5f;
-
-    // Height/parallax mapping
-    i32 heightTexture = -1;
-    std::string heightTexturePath;
-    f32 parallaxScale = 0.05f;
-    u32 parallaxMode = 0;       // 0=Basic, 1=Steep, 2=OcclusionMapping, 3=ReliefMapping
-    u32 pomMaxSteps = 32;       // Max ray-march steps for POM modes
-    f32 pomHeightScale = 0.05f; // Height scale for POM
+    bool excludeFromCelShading = false;
 
     // Retro rendering flags (per-material)
     bool flatShading = false;
@@ -70,18 +66,29 @@ struct MaterialComponent {
     // Shadow dither pattern: 0=Bayer4x4, 1=Bayer8x8, 2=BlueNoise, 3=Halftone, 4=Crosshatch, 5=Overlook
     u8 shadowDitherPattern = 0;
 
+    // Cel shading
+    u8 lightRampOverride = 0;  // 0=use global, 1-4=override (smooth/warm/cool/anime)
+
+    // Dithered gradient rendering (flat shading + banded lighting with dither transitions)
+    bool ditherGradient = false;
+    u8 ditherGradientBands = 4;        // 2-8 color quantization bands
+    u8 ditherGradientPattern = 0;      // 0=Bayer4x4, 1=Bayer8x8, 2=BlueNoise, 3=Halftone, 4=Crosshatch, 5=Overlook
+
+    // Dithered transparency (CRT-style: alternating pixels between original and blend color,
+    // naturally blurred by phosphor bloom in post-process for perceived transparency)
+    bool ditherTransparency = false;
+    u8 ditherTransPattern = 0;  // 0=Checkerboard, 1=HStripe, 2=VStripe, 3=Bayer2x2
+
     // Artistic surface controls (reuse water push constant slots for non-water entities)
     f32 reflectivity = 0.0f;      // 0-1: environment reflection strength
     f32 fresnelPower = 5.0f;      // 0.5-10: edge vs center reflection falloff
     f32 rimLightStrength = 0.0f;  // 0-3: additive rim/edge glow
 
-    // Cel shading opt-out (per-material)
-    bool excludeFromCelShading = false;
-    u8 lightRampOverride = 0;  // 0=use global, 1-4=override (smooth/warm/cool/anime)
-
     // Geometry outline (inverted-hull) — per-material override
     f32 outlineWidth = 0.0f;   // 0=use global, >0=per-material outline thickness (world units)
     Math::Vector3 outlineColor = Math::Vector3(0.0f, 0.0f, 0.0f); // Black default
+
+    // ── Cache line 2 (bytes 128-191): transmission, SSS, surface effects, sort key ──
 
     // Transmission (glass, water, thin surfaces)
     f32 transmission = 0.0f;        // 0=opaque, 1=fully transmissive
@@ -97,20 +104,42 @@ struct MaterialComponent {
     f32 surfaceNoiseScale = 0.0f;     // 0=off, >0 = noise frequency in world units (e.g., 2.0-20.0)
     f32 surfaceNoiseStrength = 0.0f;  // 0-1: how much noise darkens/lightens the diffuse color
 
-    // Dithered gradient rendering (flat shading + banded lighting with dither transitions)
-    bool ditherGradient = false;
-    u8 ditherGradientBands = 4;        // 2-8 color quantization bands
-    u8 ditherGradientPattern = 0;      // 0=Bayer4x4, 1=Bayer8x8, 2=BlueNoise, 3=Halftone, 4=Crosshatch, 5=Overlook
-
-    // Dithered transparency (CRT-style: alternating pixels between original and blend color,
-    // naturally blurred by phosphor bloom in post-process for perceived transparency)
-    bool ditherTransparency = false;
-    u8 ditherTransPattern = 0;  // 0=Checkerboard, 1=HStripe, 2=VStripe, 3=Bayer2x2
     Math::Vector3 ditherTransBlendColor = Math::Vector3(0.7f, 0.85f, 1.0f); // light blue default
     f32 ditherTransOpacity = 0.5f; // 0=all blend color, 1=all original, 0.5=even mix
 
-    // Matcap texture index (-1 = no matcap, used internally by render system)
-    i32 matcapTexture = -1;
+    // Height/parallax mapping
+    f32 parallaxScale = 0.05f;
+    u32 parallaxMode = 0;       // 0=Basic, 1=Steep, 2=OcclusionMapping, 3=ReliefMapping
+    u32 pomMaxSteps = 32;       // Max ray-march steps for POM modes
+    f32 pomHeightScale = 0.05f; // Height scale for POM
+
+    // 64-bit material sort key for fast radix-friendly sorting.
+    // Layout: [8:pipeline][16:material hash][24:texture hash][16:depth]
+    // Pipeline: opaque=0, alpha-mask=1, alpha-blend=2 (ensures correct render order)
+    mutable u64 cachedSortKey = 0;
+
+    // Texture cache dirty flag (checked every frame in RenderEntity)
+    mutable bool textureCacheDirty = true;
+
+    // ── Cold data (only touched on texture load, serialization, or inspector) ──
+
+    // Texture file paths (set these to load textures)
+    std::string baseColorTexturePath;
+    std::string normalTexturePath;
+    std::string metallicRoughnessTexturePath;
+    std::string emissiveTexturePath;
+    std::string specularTexturePath;  // Pre-PBR: direct specular intensity map (used when shadingModel != GGX)
+    std::string matcapTexturePath;    // Matcap (Material Capture): 2D texture indexed by view-space normal
+    std::string heightTexturePath;
+
+    // Cached texture pointers (mutable - cache only, not part of component state)
+    // Avoids per-frame string hash lookups in GetOrLoadTexture
+    mutable Renderer::Texture* cachedBaseColorTexture = nullptr;
+    mutable Renderer::Texture* cachedHeightTexture = nullptr;
+    mutable Renderer::Texture* cachedNormalTexture = nullptr;
+    mutable Renderer::Texture* cachedMetallicRoughnessTexture = nullptr;
+    mutable Renderer::Texture* cachedEmissiveTexture = nullptr;
+    mutable Renderer::Texture* cachedMatcapTexture = nullptr;
 
     // Lightweight key for comparing/sorting texture combinations by pointer identity.
     // Texture cache guarantees pointer stability, so pointer comparison is sufficient.
@@ -137,22 +166,7 @@ struct MaterialComponent {
             return matcap < o.matcap;
         }
     };
-
-    // Cached texture pointers (mutable - cache only, not part of component state)
-    // Avoids per-frame string hash lookups in GetOrLoadTexture
-    mutable Renderer::Texture* cachedBaseColorTexture = nullptr;
-    mutable Renderer::Texture* cachedHeightTexture = nullptr;
-    mutable Renderer::Texture* cachedNormalTexture = nullptr;
-    mutable Renderer::Texture* cachedMetallicRoughnessTexture = nullptr;
-    mutable Renderer::Texture* cachedEmissiveTexture = nullptr;
-    mutable Renderer::Texture* cachedMatcapTexture = nullptr;
     mutable TextureKey cachedTextureKey;  // Updated when textureCacheDirty clears
-    mutable bool textureCacheDirty = true;
-
-    // 64-bit material sort key for fast radix-friendly sorting.
-    // Layout: [8:pipeline][16:material hash][24:texture hash][16:depth]
-    // Pipeline: opaque=0, alpha-mask=1, alpha-blend=2 (ensures correct render order)
-    mutable u64 cachedSortKey = 0;
 
     // Compute the sort key for a given camera distance.
     // Call after texture cache is populated. Depth is quantized to 16 bits.

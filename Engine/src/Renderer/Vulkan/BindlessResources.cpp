@@ -32,6 +32,10 @@ bool BindlessResourceManager::Initialize() {
     // Pre-allocate texture/buffer arrays
     m_Textures.resize(MAX_TEXTURES);
     m_Buffers.resize(MAX_BUFFERS);
+    m_TextureCount = 0;
+    m_BufferCount = 0;
+    m_TextureHighWater = 0;
+    m_BufferHighWater = 0;
 
     ENJIN_LOG_INFO(Renderer, "Bindless Resource Manager initialized (max textures: %u, max buffers: %u)", 
         MAX_TEXTURES, MAX_BUFFERS);
@@ -63,18 +67,12 @@ BindlessHandle BindlessResourceManager::RegisterTexture(VkImageView imageView, V
 
     BindlessHandle handle = INVALID_BINDLESS_HANDLE;
 
-    // Reuse free slot if available
+    // Reuse free slot if available, otherwise append at high-water mark
     if (!m_FreeTextureSlots.empty()) {
         handle = m_FreeTextureSlots.back();
         m_FreeTextureSlots.pop_back();
-    } else {
-        // Find first free slot
-        for (u32 i = 0; i < MAX_TEXTURES; ++i) {
-            if (!m_Textures[i].valid) {
-                handle = i;
-                break;
-            }
-        }
+    } else if (m_TextureHighWater < MAX_TEXTURES) {
+        handle = m_TextureHighWater;
     }
 
     if (handle == INVALID_BINDLESS_HANDLE || handle >= MAX_TEXTURES) {
@@ -85,6 +83,8 @@ BindlessHandle BindlessResourceManager::RegisterTexture(VkImageView imageView, V
     m_Textures[handle].imageView = imageView;
     m_Textures[handle].sampler = sampler;
     m_Textures[handle].valid = true;
+    ++m_TextureCount;
+    if (handle + 1 > m_TextureHighWater) m_TextureHighWater = handle + 1;
 
     m_Dirty = true;
     ENJIN_LOG_DEBUG(Renderer, "Registered texture at handle %u", handle);
@@ -145,6 +145,7 @@ void BindlessResourceManager::UnregisterTexture(BindlessHandle handle) {
     m_Textures[handle].valid = false;
     m_Textures[handle].imageView = VK_NULL_HANDLE;
     m_Textures[handle].sampler = VK_NULL_HANDLE;
+    if (m_TextureCount > 0) --m_TextureCount;
 
     m_FreeTextureSlots.push_back(handle);
     m_Dirty = true;
@@ -158,18 +159,12 @@ BindlessHandle BindlessResourceManager::RegisterBuffer(VkBuffer buffer, VkDescri
 
     BindlessHandle handle = INVALID_BINDLESS_HANDLE;
 
-    // Reuse free slot if available
+    // Reuse free slot if available, otherwise append at high-water mark
     if (!m_FreeBufferSlots.empty()) {
         handle = m_FreeBufferSlots.back();
         m_FreeBufferSlots.pop_back();
-    } else {
-        // Find first free slot
-        for (u32 i = 0; i < MAX_BUFFERS; ++i) {
-            if (!m_Buffers[i].valid) {
-                handle = i;
-                break;
-            }
-        }
+    } else if (m_BufferHighWater < MAX_BUFFERS) {
+        handle = m_BufferHighWater;
     }
 
     if (handle == INVALID_BINDLESS_HANDLE || handle >= MAX_BUFFERS) {
@@ -180,6 +175,8 @@ BindlessHandle BindlessResourceManager::RegisterBuffer(VkBuffer buffer, VkDescri
     m_Buffers[handle].buffer = buffer;
     m_Buffers[handle].type = type;
     m_Buffers[handle].valid = true;
+    ++m_BufferCount;
+    if (handle + 1 > m_BufferHighWater) m_BufferHighWater = handle + 1;
 
     m_Dirty = true;
     ENJIN_LOG_DEBUG(Renderer, "Registered buffer at handle %u", handle);
@@ -193,6 +190,7 @@ void BindlessResourceManager::UnregisterBuffer(BindlessHandle handle) {
 
     m_Buffers[handle].valid = false;
     m_Buffers[handle].buffer = VK_NULL_HANDLE;
+    if (m_BufferCount > 0) --m_BufferCount;
 
     m_FreeBufferSlots.push_back(handle);
     m_Dirty = true;
@@ -236,10 +234,11 @@ bool BindlessResourceManager::CreateDescriptorSetLayout() {
     bindingFlags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
     
     std::vector<VkDescriptorBindingFlagsEXT> flags(bindings.size());
-    flags[0] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT | 
-               VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT |
-               VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT;
-    flags[1] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT | 
+    // VARIABLE_DESCRIPTOR_COUNT can only be set on the last binding in the layout (Vulkan spec).
+    // Binding 0 (textures) gets PARTIALLY_BOUND + UPDATE_AFTER_BIND only.
+    flags[0] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT |
+               VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT;
+    flags[1] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT |
                VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT |
                VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT;
     
@@ -322,76 +321,77 @@ bool BindlessResourceManager::AllocateDescriptorSet() {
 }
 
 void BindlessResourceManager::RebuildDescriptorSet() {
+    // Only iterate up to the high-water mark, not the full MAX capacity.
+    // With PARTIALLY_BOUND, unused slots beyond the high-water mark are never accessed.
+    u32 texCount = m_TextureHighWater;
+    u32 bufCount = m_BufferHighWater;
+
+    if (texCount == 0 && bufCount == 0) return;
+
     std::vector<VkWriteDescriptorSet> writes;
     std::vector<VkDescriptorImageInfo> imageInfos;
     std::vector<VkDescriptorBufferInfo> bufferInfos;
 
-    // Collect all valid textures
-    imageInfos.reserve(MAX_TEXTURES);
-    for (u32 i = 0; i < MAX_TEXTURES; ++i) {
-        if (m_Textures[i].valid) {
-            VkDescriptorImageInfo imageInfo{};
-            imageInfo.imageView = m_Textures[i].imageView;
-            imageInfo.sampler = m_Textures[i].sampler;
-            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            imageInfos.push_back(imageInfo);
-        } else {
-            // Use null descriptor for unused slots
-            VkDescriptorImageInfo imageInfo{};
-            imageInfo.imageView = VK_NULL_HANDLE;
-            imageInfo.sampler = VK_NULL_HANDLE;
-            imageInfo.imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-            imageInfos.push_back(imageInfo);
+    // Collect textures up to high-water mark
+    if (texCount > 0) {
+        imageInfos.resize(texCount);
+        for (u32 i = 0; i < texCount; ++i) {
+            if (m_Textures[i].valid) {
+                imageInfos[i].imageView = m_Textures[i].imageView;
+                imageInfos[i].sampler = m_Textures[i].sampler;
+                imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            } else {
+                // Null descriptor for unused slots (valid with PARTIALLY_BOUND)
+                imageInfos[i].imageView = VK_NULL_HANDLE;
+                imageInfos[i].sampler = VK_NULL_HANDLE;
+                imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            }
         }
+
+        VkWriteDescriptorSet textureWrite{};
+        textureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        textureWrite.dstSet = m_DescriptorSet;
+        textureWrite.dstBinding = 0;
+        textureWrite.dstArrayElement = 0;
+        textureWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        textureWrite.descriptorCount = texCount;
+        textureWrite.pImageInfo = imageInfos.data();
+        writes.push_back(textureWrite);
     }
 
-    // Collect all valid buffers
-    bufferInfos.reserve(MAX_BUFFERS);
-    for (u32 i = 0; i < MAX_BUFFERS; ++i) {
-        if (m_Buffers[i].valid) {
-            VkDescriptorBufferInfo bufferInfo{};
-            bufferInfo.buffer = m_Buffers[i].buffer;
-            bufferInfo.offset = 0;
-            bufferInfo.range = VK_WHOLE_SIZE;
-            bufferInfos.push_back(bufferInfo);
-        } else {
-            // Use null descriptor for unused slots
-            VkDescriptorBufferInfo bufferInfo{};
-            bufferInfo.buffer = VK_NULL_HANDLE;
-            bufferInfo.offset = 0;
-            bufferInfo.range = 0;
-            bufferInfos.push_back(bufferInfo);
+    // Collect buffers up to high-water mark
+    if (bufCount > 0) {
+        bufferInfos.resize(bufCount);
+        for (u32 i = 0; i < bufCount; ++i) {
+            if (m_Buffers[i].valid) {
+                bufferInfos[i].buffer = m_Buffers[i].buffer;
+                bufferInfos[i].offset = 0;
+                bufferInfos[i].range = VK_WHOLE_SIZE;
+            } else {
+                // Null descriptor for unused slots (valid with PARTIALLY_BOUND)
+                bufferInfos[i].buffer = VK_NULL_HANDLE;
+                bufferInfos[i].offset = 0;
+                bufferInfos[i].range = 0;
+            }
         }
+
+        VkWriteDescriptorSet bufferWrite{};
+        bufferWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        bufferWrite.dstSet = m_DescriptorSet;
+        bufferWrite.dstBinding = 1;
+        bufferWrite.dstArrayElement = 0;
+        bufferWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bufferWrite.descriptorCount = bufCount;
+        bufferWrite.pBufferInfo = bufferInfos.data();
+        writes.push_back(bufferWrite);
     }
-
-    // Write texture descriptors
-    VkWriteDescriptorSet textureWrite{};
-    textureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    textureWrite.dstSet = m_DescriptorSet;
-    textureWrite.dstBinding = 0;
-    textureWrite.dstArrayElement = 0;
-    textureWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    textureWrite.descriptorCount = MAX_TEXTURES;
-    textureWrite.pImageInfo = imageInfos.data();
-    writes.push_back(textureWrite);
-
-    // Write buffer descriptors
-    VkWriteDescriptorSet bufferWrite{};
-    bufferWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    bufferWrite.dstSet = m_DescriptorSet;
-    bufferWrite.dstBinding = 1;
-    bufferWrite.dstArrayElement = 0;
-    bufferWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    bufferWrite.descriptorCount = MAX_BUFFERS;
-    bufferWrite.pBufferInfo = bufferInfos.data();
-    writes.push_back(bufferWrite);
 
     // Update descriptor set
-    vkUpdateDescriptorSets(m_Context->GetDevice(), 
+    vkUpdateDescriptorSets(m_Context->GetDevice(),
         static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
 
-    ENJIN_LOG_DEBUG(Renderer, "Rebuilt bindless descriptor set (%u textures, %u buffers)", 
-        GetTextureCount(), GetBufferCount());
+    ENJIN_LOG_DEBUG(Renderer, "Rebuilt bindless descriptor set (%u textures, %u buffers)",
+        m_TextureCount, m_BufferCount);
 }
 
 } // namespace Renderer

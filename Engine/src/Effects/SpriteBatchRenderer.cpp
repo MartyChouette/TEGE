@@ -337,21 +337,20 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
         activePipeline = m_LitPipeline.get();
     }
 
-    // Collect all visible Sprite2DComponent entities (skip tilemaps)
-    struct SpriteEntry {
-        ECS::Entity entity;
-        i32 sortingLayer;
-        i32 orderInLayer;
-        const ECS::Sprite2DComponent* sprite;
-        const AtlasRegion* cachedAtlasRegion;  // Cached to avoid double GetRegion() lookup
-        bool isAtlased;  // Precomputed to avoid redundant GetRegion() in sort comparator
-        usize textureHash;    // Precomputed hash of texturePath for O(1) sort comparisons
-        usize normalMapHash;  // Precomputed hash of normalMapPath for O(1) sort comparisons
-    };
-
+    // Collect all visible Sprite2DComponent entities (skip tilemaps).
+    // This rebuild is O(N) per frame (cheap) and picks up visibility/entity changes.
+    // The expensive O(N log N) sort is skipped when sort keys haven't changed.
     static const std::hash<std::string> strHasher;
-    std::vector<SpriteEntry> sortedSprites;
-    sortedSprites.reserve(world->GetEntitiesWithComponent<ECS::Sprite2DComponent>().size());
+    m_SortedSprites.clear();  // Preserves capacity across frames
+    m_SortedSprites.reserve(world->GetEntitiesWithComponent<ECS::Sprite2DComponent>().size());
+
+    // Rolling hash of sort keys to detect changes (FNV-1a style mixing)
+    usize sortKeyHash = 0xcbf29ce484222325ULL;
+    auto hashMix = [](usize h, usize v) -> usize {
+        h ^= v;
+        h *= 0x100000001b3ULL;
+        return h;
+    };
 
     for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::Sprite2DComponent>()) {
         // Skip invisible entities
@@ -372,32 +371,47 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
         entry.isAtlased = entry.cachedAtlasRegion != nullptr;
         entry.textureHash = strHasher(sprite->texturePath);
         entry.normalMapHash = strHasher(sprite->normalMapPath);
-        sortedSprites.push_back(entry);
+        m_SortedSprites.push_back(entry);
+
+        // Accumulate sort key hash: entity ID + all fields that affect sort order
+        sortKeyHash = hashMix(sortKeyHash, static_cast<usize>(entity));
+        sortKeyHash = hashMix(sortKeyHash, static_cast<usize>(sprite->sortingLayer));
+        sortKeyHash = hashMix(sortKeyHash, static_cast<usize>(sprite->orderInLayer));
+        sortKeyHash = hashMix(sortKeyHash, entry.textureHash);
+        sortKeyHash = hashMix(sortKeyHash, entry.normalMapHash);
+        sortKeyHash = hashMix(sortKeyHash, static_cast<usize>(entry.isAtlased));
     }
 
-    if (sortedSprites.empty()) return;
+    if (m_SortedSprites.empty()) return;
 
-    // Sort by sorting layer (ascending), then order in layer (ascending)
-    // Tertiary sort groups by texture hash + normal map hash to maximize batching
-    // Uses precomputed hashes for O(1) comparisons instead of O(L) string comparisons
-    std::sort(sortedSprites.begin(), sortedSprites.end(),
-        [](const SpriteEntry& a, const SpriteEntry& b) {
-            if (a.sortingLayer != b.sortingLayer)
-                return a.sortingLayer < b.sortingLayer;
-            if (a.orderInLayer != b.orderInLayer)
-                return a.orderInLayer < b.orderInLayer;
-            // Tertiary sort by effective texture key to maximize batching within same layer
-            // Atlased sprites use precomputed flag so they group together
-            if (a.isAtlased != b.isAtlased) return a.isAtlased;  // Atlased first
-            if (a.isAtlased) {
-                // Both atlased — sub-sort by normal map hash to batch same normal maps together
+    // Delta sort: only re-sort when sort keys changed since last frame.
+    // When unchanged the previous frame's order is still valid — skip O(N log N).
+    // When keys DID change, use stable_sort which is O(N) on nearly-sorted data
+    // (most std implementations use TimSort or merge sort internally).
+    if (sortKeyHash != m_LastSortKeyHash) {
+        std::stable_sort(m_SortedSprites.begin(), m_SortedSprites.end(),
+            [](const SpriteEntry& a, const SpriteEntry& b) {
+                if (a.sortingLayer != b.sortingLayer)
+                    return a.sortingLayer < b.sortingLayer;
+                if (a.orderInLayer != b.orderInLayer)
+                    return a.orderInLayer < b.orderInLayer;
+                // Tertiary sort by effective texture key to maximize batching within same layer
+                // Atlased sprites use precomputed flag so they group together
+                if (a.isAtlased != b.isAtlased) return a.isAtlased;  // Atlased first
+                if (a.isAtlased) {
+                    // Both atlased — sub-sort by normal map hash to batch same normal maps together
+                    return a.normalMapHash < b.normalMapHash;
+                }
+                if (a.textureHash != b.textureHash)
+                    return a.textureHash < b.textureHash;
+                // Same base texture hash — sub-sort by normal map hash
                 return a.normalMapHash < b.normalMapHash;
-            }
-            if (a.textureHash != b.textureHash)
-                return a.textureHash < b.textureHash;
-            // Same base texture hash — sub-sort by normal map hash
-            return a.normalMapHash < b.normalMapHash;
-        });
+            });
+        m_LastSortKeyHash = sortKeyHash;
+    }
+
+    // Alias for readability in the rest of the function
+    auto& sortedSprites = m_SortedSprites;
 
     // Resolve viewport extent
     VkExtent2D extent;

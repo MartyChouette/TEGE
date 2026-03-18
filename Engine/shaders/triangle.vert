@@ -105,6 +105,7 @@ layout(location = 5) out float fragClipW;
 layout(location = 6) out vec4 fragTangent;
 layout(location = 7) out vec4 fragCurClipPos;  // Current clip position (for velocity)
 layout(location = 8) out vec4 fragPrevClipPos; // Previous frame clip position (for velocity)
+layout(location = 9) flat out int v_ObjectIndex; // >=0: indirect draw (SSBO index), -1: per-entity
 
 // Flag bits (must match C++ Material.h and RenderSystem.cpp)
 #define FLAG_SKINNED          (1 << 3)
@@ -121,12 +122,36 @@ layout(location = 8) out vec4 fragPrevClipPos; // Previous frame clip position (
 #define FLAG_GOURAUD_ONLY     (1 << 13)
 
 void main() {
+    // Multi-draw indirect mode: when parallaxScale == -1.0, per-object data comes from
+    // ObjectData SSBO (binding 13) indexed by gl_InstanceIndex (set via firstInstance).
+    // Otherwise, per-entity push constants are used (traditional path).
+    bool indirectMode = (pushConstants.parallaxScale == -1.0);
+    v_ObjectIndex = indirectMode ? gl_InstanceIndex : -1;
+
+    // Select data source: ObjectData SSBO for indirect draws, push constants otherwise
+    mat4 objModel;
+    int  objFlags;
+    float objParallaxScale;
+    mat4 objPrevModel;
+    if (indirectMode) {
+        ObjectData od = objectData[gl_InstanceIndex];
+        objModel = od.model;
+        objFlags = od.flags;
+        objParallaxScale = od.parallaxScale;
+        objPrevModel = od.prevModel;
+    } else {
+        objModel = pushConstants.model;
+        objFlags = pushConstants.flags;
+        objParallaxScale = pushConstants.parallaxScale;
+        objPrevModel = pushConstants.model; // fallback: use current model
+    }
+
     vec3 skinnedPos = inPosition;
     vec3 skinnedNormal = inNormal;
     vec3 skinnedTangent = inTangent.xyz;
 
     // Apply skeletal skinning if enabled and vertex has bone weights
-    if ((pushConstants.flags & FLAG_SKINNED) != 0) {
+    if ((objFlags & FLAG_SKINNED) != 0) {
         float weightSum = inBoneWeights.x + inBoneWeights.y + inBoneWeights.z + inBoneWeights.w;
         if (weightSum > 0.0) {
             mat4 skinMatrix = inBoneWeights.x * boneMatrices[inBoneIndices.x]
@@ -141,11 +166,11 @@ void main() {
     }
 
     // Transform vertex position to world space
-    vec4 worldPos = pushConstants.model * vec4(skinnedPos, 1.0);
+    vec4 worldPos = objModel * vec4(skinnedPos, 1.0);
 
     // Wind sway for vegetation (trees, bushes)
     // Uses vertex color red channel as sway weight (trunk=0, leaves=1)
-    if ((pushConstants.flags & FLAG_WIND_SWAY) != 0) {
+    if ((objFlags & FLAG_WIND_SWAY) != 0) {
         vec3 windDir = lighting.windData.xyz;
         float windTime = lighting.windData.w;
         float swayWeight = inColor.r;  // red = sway amplitude
@@ -162,8 +187,8 @@ void main() {
     }
 
     // Water surface wave displacement (gentle Gerstner-lite)
-    if ((pushConstants.flags & FLAG_WATER_SURFACE) != 0) {
-        float freezeProgress = pushConstants.parallaxScale;
+    if ((objFlags & FLAG_WATER_SURFACE) != 0) {
+        float freezeProgress = objParallaxScale;
         float waveFactor = 1.0 - freezeProgress; // 1=full waves, 0=frozen still
 
         float waterTime = lighting.windData.w;
@@ -173,7 +198,7 @@ void main() {
         // Shore dampening: vertex color G channel encodes edge distance (0=edge, 1=center)
         float edgeDist = inColor.g;
         float waveDampen = 1.0;
-        if ((pushConstants.flags & FLAG_WATER_SHORE) != 0) {
+        if ((objFlags & FLAG_WATER_SHORE) != 0) {
             waveDampen = smoothstep(0.0, 0.3, edgeDist);
         }
 
@@ -187,7 +212,7 @@ void main() {
 
         // Ocean mode: add larger, slower swell
         float wave3 = 0.0;
-        if ((pushConstants.flags & FLAG_WATER_OCEAN) != 0) {
+        if ((objFlags & FLAG_WATER_OCEAN) != 0) {
             float phase3 = dot(worldPos.xz, windDir.xz * 0.08) + waterTime * 0.6;
             wave3 = sin(phase3) * 0.35 * windMag;
         }
@@ -207,9 +232,9 @@ void main() {
     vec4 clipPos = ubo.proj * ubo.view * worldPos;
 
     // Vertex snapping (PS1-style): snap clip-space XY to a low-res grid
-    if ((pushConstants.flags & FLAG_VERTEX_SNAPPING) != 0) {
+    if ((objFlags & FLAG_VERTEX_SNAPPING) != 0) {
         // Extract snap resolution from bits 24-28 (5 bits, value*8 = actual resolution)
-        int snapRes = (pushConstants.flags >> 24) & 0x1F;
+        int snapRes = (objFlags >> 24) & 0x1F;
         if (snapRes > 0) {
             float grid = float(snapRes) * 8.0;
             // Snap in clip space (after perspective divide)
@@ -221,7 +246,7 @@ void main() {
 
     // PS1-style polygon sort jitter: add depth noise to simulate ordering table errors
     float depthJitter = lighting.worldCurvature.y; // packed in reserved field
-    if (depthJitter > 0.0 && (pushConstants.flags & FLAG_VERTEX_SNAPPING) != 0) {
+    if (depthJitter > 0.0 && (objFlags & FLAG_VERTEX_SNAPPING) != 0) {
         // Hash based on world position to get stable per-triangle jitter
         float h = fract(sin(dot(worldPos.xyz, vec3(12.9898, 78.233, 45.164))) * 43758.5453);
         clipPos.z += (h - 0.5) * 2.0 * depthJitter * clipPos.w;
@@ -230,11 +255,11 @@ void main() {
     gl_Position = clipPos;
 
     // Transform normal to world space (using normal matrix)
-    mat3 normalMatrix = transpose(inverse(mat3(pushConstants.model)));
+    mat3 normalMatrix = transpose(inverse(mat3(objModel)));
     fragNormal = normalize(normalMatrix * skinnedNormal);
 
     // Pass through UV - for affine texturing, multiply by w to undo perspective correction
-    if ((pushConstants.flags & FLAG_AFFINE_TEXTURING) != 0) {
+    if ((objFlags & FLAG_AFFINE_TEXTURING) != 0) {
         fragUV = inUV * clipPos.w;
         fragClipW = clipPos.w;
     } else {
@@ -243,7 +268,7 @@ void main() {
     }
 
     // UV quantization (PS1-style fixed-point UV): snap UV to low precision grid
-    if ((pushConstants.flags & FLAG_UV_QUANTIZE) != 0) {
+    if ((objFlags & FLAG_UV_QUANTIZE) != 0) {
         fragUV = floor(fragUV * 128.0) / 128.0;
     }
 
@@ -261,7 +286,9 @@ void main() {
     // Previous position uses current skinned position with previous frame's matrices.
     // This captures camera motion, object motion, and approximates skeletal motion.
     fragCurClipPos = clipPos;
-    vec4 prevWorldPos = pushConstants.model * vec4(skinnedPos, 1.0);  // fallback: current model
-    // TODO: use prevModel from ObjectData SSBO when indirect draws populate it
+    // Use previous-frame model matrix from ObjectData SSBO when available (indirect draws
+    // and per-entity draws that have been uploaded). Falls back to current model for entities
+    // without SSBO data (teleported = 1 zeroes velocity in that case anyway).
+    vec4 prevWorldPos = objPrevModel * vec4(skinnedPos, 1.0);
     fragPrevClipPos = ubo.prevViewProj * prevWorldPos;
 }

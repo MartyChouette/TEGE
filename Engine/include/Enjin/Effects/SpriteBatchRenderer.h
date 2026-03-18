@@ -19,6 +19,7 @@ namespace Enjin {
 namespace Effects {
 
 class SpriteTextureAtlas;  // Forward declaration
+struct AtlasRegion;        // Forward declaration for SpriteEntry::cachedAtlasRegion
 
 // Per-instance sprite data uploaded to GPU each frame.
 // Matches the sprite.vert shader instance attribute layout (locations 2-7).
@@ -119,6 +120,27 @@ private:
     };
     std::vector<ShadowBatchEntry> m_ShadowBatchEntries;
     std::vector<SpriteInstanceData> m_SortedShadowInstances;
+
+    // --- Delta sprite sorting ---
+    // Persistent sorted sprite list across frames. Rebuilt (O(N)) each frame to
+    // pick up visibility/entity changes, but only re-sorted when sort keys change.
+    struct SpriteEntry {
+        ECS::Entity entity;
+        i32 sortingLayer;
+        i32 orderInLayer;
+        const ECS::Sprite2DComponent* sprite;
+        const AtlasRegion* cachedAtlasRegion;
+        bool isAtlased;
+        usize textureHash;
+        usize normalMapHash;
+    };
+    std::vector<SpriteEntry> m_SortedSprites;
+
+    // Hash of all sort keys from the previous frame. When the hash matches, the
+    // relative order of sprites hasn't changed and we can skip the O(N log N) sort.
+    // The hash is computed over (entity, sortingLayer, orderInLayer, textureHash,
+    // normalMapHash, isAtlased) for every visible sprite in insertion order.
+    usize m_LastSortKeyHash = 0;
 
     // Texture atlas for packing small sprites into a single draw call
     SpriteTextureAtlas* m_Atlas = nullptr;

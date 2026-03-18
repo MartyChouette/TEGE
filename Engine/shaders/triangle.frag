@@ -11,6 +11,7 @@ layout(location = 5) in float fragClipW;
 layout(location = 6) in vec4 fragTangent;
 layout(location = 7) in vec4 fragCurClipPos;  // Current clip position (for velocity)
 layout(location = 8) in vec4 fragPrevClipPos; // Previous frame clip position (for velocity)
+layout(location = 9) flat in int v_ObjectIndex; // >=0: indirect draw (SSBO index), -1: per-entity
 
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec2 outVelocity;    // Per-pixel screen-space motion vector (RG16F)
@@ -185,19 +186,22 @@ layout(binding = 10) uniform samplerCubeArrayShadow pointShadowMaps;
 layout(binding = 11) uniform sampler2DArrayShadow spotShadowMaps;
 
 // Per-object data SSBO for indirect draws (binding 13)
-// Indexed by gl_InstanceIndex (set to original object index via firstInstance)
+// Indexed by gl_InstanceIndex (set to original object index via firstInstance).
+// Layout matches C++ ObjectDataGPU (std430, 192 bytes per entry).
 struct ObjectData {
-    mat4 model;
-    vec3 baseColor;
-    float metallic;
-    vec3 emissiveColor;
-    float roughness;
-    float emissiveStrength;
-    float opacity;
-    float alphaCutoff;
-    int flags;
-    float parallaxScale;
-    float _objPad[3];
+    mat4 model;              // 64 bytes
+    vec3 baseColor;          // 12 bytes
+    float metallic;          // 4 bytes
+    vec3 emissiveColor;      // 12 bytes
+    float roughness;         // 4 bytes
+    float emissiveStrength;  // 4 bytes
+    float opacity;           // 4 bytes
+    float alphaCutoff;       // 4 bytes
+    int flags;               // 4 bytes
+    float parallaxScale;     // 4 bytes
+    uint teleported;         // 4 bytes (1 = zero velocity)
+    float _objPad[2];        // 8 bytes
+    mat4 prevModel;          // 64 bytes
 };
 layout(std430, binding = 13) readonly buffer ObjectDataSSBO {
     ObjectData objectData[];
@@ -263,6 +267,22 @@ const vec2 poissonDisk[16] = vec2[16](
     vec2( 0.19984126,  0.78641367), vec2( 0.14383161, -0.14100790)
 );
 
+// Active material data — populated in main() from either push constants (per-entity path)
+// or ObjectData SSBO (multi-draw indirect path). Declared at file scope so helper
+// functions (calcShadowCSM, parallaxOcclusionMapping) can access them.
+vec3 mat_baseColor;
+float mat_metallic;
+vec3 mat_emissiveColor;
+float mat_roughness;
+float mat_emissiveStrength;
+float mat_opacity;
+float mat_alphaCutoff;
+int mat_flags;
+float mat_parallaxScale;
+float mat_surfaceParam1;
+float mat_surfaceParam2;
+float mat_surfaceParam3;
+
 // Calculate cascaded shadow factor using PCF (Percentage Closer Filtering)
 // Sample shadow from a single cascade (helper for blending)
 float sampleShadowCascade(int cascadeIdx, vec3 worldPos, vec2 texelSize) {
@@ -311,7 +331,7 @@ float sampleShadowCascade(int cascadeIdx, vec3 worldPos, vec2 texelSize) {
 
 float calcShadowCSM(float viewDepth, vec3 worldPos, vec3 normal, vec3 lightDir) {
     if (lighting.shadowEnabled == 0) return 1.0;
-    if ((material.flags & FLAG_RECEIVE_SHADOWS) == 0) return 1.0;
+    if ((mat_flags & FLAG_RECEIVE_SHADOWS) == 0) return 1.0;
 
     // Select cascade based on view-space depth
     int cascadeIdx = 3;  // default to furthest
@@ -582,7 +602,7 @@ vec3 calcBlinnPhongCel(vec3 lightDir, vec3 lightColor, float lightIntensity, vec
     vec3 diffuse = mix(shadowTint, vec3(1.0), diff) * lightColor * lightIntensity;
 
     // Rim lighting (edge glow using view angle)
-    float rimStrength = material.surfaceParam3; // rimLightStrength from push constants
+    float rimStrength = mat_surfaceParam3; // rimLightStrength from push constants
     if (rimStrength > 0.0) {
         float rim = pow(1.0 - NdotV, 3.0) * rimStrength;
         diffuse += lightColor * lightIntensity * rim;
@@ -640,7 +660,7 @@ vec2 parallaxOcclusionMapping(vec2 texCoords, vec3 viewDirTangent) {
     float currentLayerDepth = 0.0;
 
     // Direction to shift UV per layer (scaled by parallax amount)
-    vec2 P = viewDirTangent.xy * material.parallaxScale;
+    vec2 P = viewDirTangent.xy * mat_parallaxScale;
     vec2 deltaTexCoords = P / numLayers;
 
     vec2 currentTexCoords = texCoords;
@@ -754,11 +774,42 @@ vec4 sampleVirtualTexture(vec2 uv) {
 #endif
 
 void main() {
+
+    if (v_ObjectIndex >= 0) {
+        ObjectData od = objectData[v_ObjectIndex];
+        mat_baseColor = od.baseColor;
+        mat_metallic = od.metallic;
+        mat_emissiveColor = od.emissiveColor;
+        mat_roughness = od.roughness;
+        mat_emissiveStrength = od.emissiveStrength;
+        mat_opacity = od.opacity;
+        mat_alphaCutoff = od.alphaCutoff;
+        mat_flags = od.flags;
+        mat_parallaxScale = od.parallaxScale;
+        // Surface params not stored in ObjectData (pool-eligible entities don't use them)
+        mat_surfaceParam1 = 0.0;
+        mat_surfaceParam2 = 0.0;
+        mat_surfaceParam3 = 0.0;
+    } else {
+        mat_baseColor = material.baseColor;
+        mat_metallic = material.metallic;
+        mat_emissiveColor = material.emissiveColor;
+        mat_roughness = material.roughness;
+        mat_emissiveStrength = material.emissiveStrength;
+        mat_opacity = material.opacity;
+        mat_alphaCutoff = material.alphaCutoff;
+        mat_flags = material.flags;
+        mat_parallaxScale = material.parallaxScale;
+        mat_surfaceParam1 = material.surfaceParam1;
+        mat_surfaceParam2 = material.surfaceParam2;
+        mat_surfaceParam3 = material.surfaceParam3;
+    }
+
     // Resolve UV for affine texturing (undo the w-multiply from vertex shader)
     vec2 uv = fragUV / fragClipW;
 
     // PS1-style texture page warping: add UV discontinuities at VRAM page boundaries
-    if (lighting.texturePageSize > 0.0 && (material.flags & FLAG_AFFINE_TEXTURING) != 0) {
+    if (lighting.texturePageSize > 0.0 && (mat_flags & FLAG_AFFINE_TEXTURING) != 0) {
         float pageSize = lighting.texturePageSize;
         // Compute distance to nearest page boundary (in UV space, assuming 256x256 VRAM)
         vec2 pageUV = uv * 256.0 / pageSize;
@@ -772,8 +823,8 @@ void main() {
 
     // Parallax Occlusion Mapping: offset UV using height map before any texture sampling
     // Skip for water surfaces — POM is expensive and adds little visual value on water
-    if ((material.flags & FLAG_HAS_HEIGHT_TEX) != 0 && material.parallaxScale > 0.0
-        && (material.flags & FLAG_WATER_SURFACE) == 0) {
+    if ((mat_flags & FLAG_HAS_HEIGHT_TEX) != 0 && mat_parallaxScale > 0.0
+        && (mat_flags & FLAG_WATER_SURFACE) == 0) {
         // Build TBN matrix from interpolated normal and tangent
         vec3 N = normalize(fragNormal);
         vec3 T = normalize(fragTangent.xyz);
@@ -792,11 +843,11 @@ void main() {
 
     // Choose normal: flat shading, normal map, or interpolated vertex normal
     vec3 normal;
-    if ((material.flags & FLAG_FLAT_SHADING) != 0) {
+    if ((mat_flags & FLAG_FLAT_SHADING) != 0) {
         vec3 dFdxPos = dFdx(fragWorldPos);
         vec3 dFdyPos = dFdy(fragWorldPos);
         normal = normalize(cross(dFdxPos, dFdyPos));
-    } else if ((material.flags & FLAG_HAS_NORMAL_TEX) != 0) {
+    } else if ((mat_flags & FLAG_HAS_NORMAL_TEX) != 0) {
         // Sample normal map and transform from tangent space to world space
         vec3 N = normalize(fragNormal);
         vec3 T = normalize(fragTangent.xyz);
@@ -821,7 +872,7 @@ void main() {
 
     // Water surface: rain ripple normal perturbation — individual drop ripples
     // Optimized: 2 layers (down from 3), 5 neighbors (skip corners), early distance exit
-    if ((material.flags & FLAG_WATER_SURFACE) != 0 && (material.flags & FLAG_RAIN_RIPPLES) != 0) {
+    if ((mat_flags & FLAG_WATER_SURFACE) != 0 && (mat_flags & FLAG_RAIN_RIPPLES) != 0) {
         float waterTime = lighting.windData.w;
         vec2 worldXZ = fragWorldPos.xz;
 
@@ -887,12 +938,12 @@ void main() {
     vec3 viewDir = normalize(lighting.cameraPos - fragWorldPos);
 
     // Material properties - sample textures when available
-    vec3 albedo = material.baseColor;
-    float metallic = material.metallic;
-    float roughness = material.roughness;
+    vec3 albedo = mat_baseColor;
+    float metallic = mat_metallic;
+    float roughness = mat_roughness;
 
     // Sample base color texture if available
-    if ((material.flags & FLAG_HAS_BASE_COLOR_TEX) != 0) {
+    if ((mat_flags & FLAG_HAS_BASE_COLOR_TEX) != 0) {
 #ifdef VIRTUAL_TEXTURING
         vec4 texColor = sampleVirtualTexture(uv);
 #else
@@ -902,7 +953,7 @@ void main() {
     }
 
     // Sample metallic-roughness texture if available (glTF convention: G=roughness, B=metallic)
-    if ((material.flags & FLAG_HAS_METALLIC_TEX) != 0) {
+    if ((mat_flags & FLAG_HAS_METALLIC_TEX) != 0) {
         vec4 mrSample = texture(metallicRoughnessMap, uv);
         roughness *= mrSample.g;
         metallic *= mrSample.b;
@@ -910,31 +961,31 @@ void main() {
 
     // Sample emissive texture if available
     vec3 emissiveTexColor = vec3(1.0);
-    if ((material.flags & FLAG_HAS_EMISSIVE_TEX) != 0) {
+    if ((mat_flags & FLAG_HAS_EMISSIVE_TEX) != 0) {
         emissiveTexColor = texture(emissiveMap, uv).rgb;
     }
 
     // Multiply with vertex color (baked shadows / per-vertex lighting)
     // Skip for water surfaces: vertex color G channel stores edge distance, not color
-    if ((material.flags & FLAG_WATER_SURFACE) == 0) {
+    if ((mat_flags & FLAG_WATER_SURFACE) == 0) {
         albedo *= fragVertColor.rgb;
     }
 
     // Gouraud-only mode: skip per-pixel lighting, use vertex color as pre-computed lighting
-    if ((material.flags & FLAG_GOURAUD_ONLY) != 0) {
+    if ((mat_flags & FLAG_GOURAUD_ONLY) != 0) {
         vec3 result = albedo;
         // Add emission (modulated by emissive texture if present)
-        result += material.emissiveColor * material.emissiveStrength * emissiveTexColor;
+        result += mat_emissiveColor * mat_emissiveStrength * emissiveTexColor;
         // Gamma correction
         result = pow(result, vec3(1.0 / 2.2));
         // Alpha handling
-        float alpha = material.opacity * fragVertColor.a;
-        int alphaMode = (material.flags >> 8) & 0x3;
+        float alpha = mat_opacity * fragVertColor.a;
+        int alphaMode = (mat_flags >> 8) & 0x3;
         if (alphaMode == 1) {
-            if (alpha < material.alphaCutoff) discard;
+            if (alpha < mat_alphaCutoff) discard;
             alpha = 1.0;
         }
-        if ((material.flags & FLAG_STIPPLE_TRANS) != 0 && alpha < 1.0) {
+        if ((mat_flags & FLAG_STIPPLE_TRANS) != 0 && alpha < 1.0) {
             float threshold = bayerDither4x4(ivec2(gl_FragCoord.xy));
             if (alpha < threshold) discard;
             alpha = 1.0;
@@ -968,9 +1019,9 @@ void main() {
             shadow = calcShadowCSM(fragViewDepth, fragWorldPos, normal, lightDir);
 
             // Shadow dither: replace smooth shadow with binary dither pattern
-            int shadowDitherMode = (material.flags & FLAG_SHADOW_DITHER_MASK) >> FLAG_SHADOW_DITHER_SHIFT;
+            int shadowDitherMode = (mat_flags & FLAG_SHADOW_DITHER_MASK) >> FLAG_SHADOW_DITHER_SHIFT;
             if (shadowDitherMode > 0 && shadow < 1.0) {
-                int ditherPattern = (material.flags & FLAG_SHADOW_DITHER_PATTERN_MASK) >> FLAG_SHADOW_DITHER_PATTERN_SHIFT;
+                int ditherPattern = (mat_flags & FLAG_SHADOW_DITHER_PATTERN_MASK) >> FLAG_SHADOW_DITHER_PATTERN_SHIFT;
                 float ditherThreshold = getDitherThreshold(ivec2(gl_FragCoord.xy), ditherPattern);
                 float ditherFactor;
 
@@ -989,7 +1040,7 @@ void main() {
             }
         }
 
-        bool useCel = (lighting.celDiffuseBands >= 2.0) && ((material.flags & FLAG_EXCLUDE_CEL) == 0);
+        bool useCel = (lighting.celDiffuseBands >= 2.0) && ((mat_flags & FLAG_EXCLUDE_CEL) == 0);
         result += shadow * (useCel
             ? calcBlinnPhongCel(lightDir, lightColor, intensity, normal, viewDir, albedo, metallic, shininess)
             : calcBlinnPhong(lightDir, lightColor, intensity, normal, viewDir, albedo, metallic, shininess));
@@ -1021,10 +1072,10 @@ void main() {
                     lighting.pointLights[i].linearAtten,
                     lighting.pointLights[i].quadraticAtten);
                 float shadow = 1.0;
-                if (int(i) < lighting.pointShadowCount && (material.flags & FLAG_RECEIVE_SHADOWS) != 0) {
+                if (int(i) < lighting.pointShadowCount && (mat_flags & FLAG_RECEIVE_SHADOWS) != 0) {
                     shadow = calcPointShadow(fragWorldPos, int(i));
                 }
-                bool useCelPt = (lighting.celDiffuseBands >= 2.0) && ((material.flags & FLAG_EXCLUDE_CEL) == 0);
+                bool useCelPt = (lighting.celDiffuseBands >= 2.0) && ((mat_flags & FLAG_EXCLUDE_CEL) == 0);
                 result += shadow * (useCelPt
                     ? calcBlinnPhongCel(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess)
                     : calcBlinnPhong(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess));
@@ -1048,10 +1099,10 @@ void main() {
                         lighting.spotLights[i].linearAtten,
                         lighting.spotLights[i].quadraticAtten);
                     float shadow = 1.0;
-                    if (int(i) < lighting.spotShadowCount && (material.flags & FLAG_RECEIVE_SHADOWS) != 0) {
+                    if (int(i) < lighting.spotShadowCount && (mat_flags & FLAG_RECEIVE_SHADOWS) != 0) {
                         shadow = calcSpotShadow(fragWorldPos, int(i));
                     }
-                    bool useCelSp = (lighting.celDiffuseBands >= 2.0) && ((material.flags & FLAG_EXCLUDE_CEL) == 0);
+                    bool useCelSp = (lighting.celDiffuseBands >= 2.0) && ((mat_flags & FLAG_EXCLUDE_CEL) == 0);
                     result += shadow * (useCelSp
                         ? calcBlinnPhongCel(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess)
                         : calcBlinnPhong(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess));
@@ -1081,11 +1132,11 @@ void main() {
 
         // Point light shadow (indices 0..N-1 have shadow maps)
         float shadow = 1.0;
-        if (int(i) < lighting.pointShadowCount && (material.flags & FLAG_RECEIVE_SHADOWS) != 0) {
+        if (int(i) < lighting.pointShadowCount && (mat_flags & FLAG_RECEIVE_SHADOWS) != 0) {
             shadow = calcPointShadow(fragWorldPos, int(i));
         }
 
-        bool useCelPt = (lighting.celDiffuseBands >= 2.0) && ((material.flags & FLAG_EXCLUDE_CEL) == 0);
+        bool useCelPt = (lighting.celDiffuseBands >= 2.0) && ((mat_flags & FLAG_EXCLUDE_CEL) == 0);
         result += shadow * (useCelPt
             ? calcBlinnPhongCel(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess)
             : calcBlinnPhong(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess));
@@ -1122,11 +1173,11 @@ void main() {
 
             // Spot light shadow (indices 0..N-1 have shadow maps)
             float shadow = 1.0;
-            if (int(i) < lighting.spotShadowCount && (material.flags & FLAG_RECEIVE_SHADOWS) != 0) {
+            if (int(i) < lighting.spotShadowCount && (mat_flags & FLAG_RECEIVE_SHADOWS) != 0) {
                 shadow = calcSpotShadow(fragWorldPos, int(i));
             }
 
-            bool useCelSp = (lighting.celDiffuseBands >= 2.0) && ((material.flags & FLAG_EXCLUDE_CEL) == 0);
+            bool useCelSp = (lighting.celDiffuseBands >= 2.0) && ((mat_flags & FLAG_EXCLUDE_CEL) == 0);
             result += shadow * (useCelSp
                 ? calcBlinnPhongCel(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess)
                 : calcBlinnPhong(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess));
@@ -1192,13 +1243,13 @@ void main() {
     // Dithered transparency: alternating pixels between fragment color and blend color
     // Encoded in surfaceParam1 >= 200: pattern in fractional part, opacity in surfaceParam2,
     // blend color packed as 10-bit RGB in surfaceParam3
-    if (material.surfaceParam1 >= 199.5 && material.surfaceParam1 < 300.0) {
-        float encoded = material.surfaceParam1 - 200.0;
+    if (mat_surfaceParam1 >= 199.5 && mat_surfaceParam1 < 300.0) {
+        float encoded = mat_surfaceParam1 - 200.0;
         int dtPattern = int(floor(encoded + 0.5)); // 0=Checkerboard, 1=HStripe, 2=VStripe, 3=Bayer2x2
-        float dtOpacity = material.surfaceParam2;
+        float dtOpacity = mat_surfaceParam2;
 
         // Unpack blend color from 10-bit packed float
-        uint packedColor = floatBitsToUint(material.surfaceParam3);
+        uint packedColor = floatBitsToUint(mat_surfaceParam3);
         vec3 blendColor = vec3(
             float((packedColor >> 20) & 0x3FFu) / 1023.0,
             float((packedColor >> 10) & 0x3FFu) / 1023.0,
@@ -1230,9 +1281,9 @@ void main() {
     // Dithered gradient: quantize lighting into bands with dither transitions
     // Encoded in surfaceParam1 when > 1.0: surfaceParam1 = 100 + bands + pattern * 0.1
     bool isDitherGradient = false;
-    if ((material.flags & FLAG_FLAT_SHADING) != 0 && material.surfaceParam1 > 1.5) {
+    if ((mat_flags & FLAG_FLAT_SHADING) != 0 && mat_surfaceParam1 > 1.5) {
         isDitherGradient = true;
-        float encoded = material.surfaceParam1 - 100.0;
+        float encoded = mat_surfaceParam1 - 100.0;
         float bands = floor(encoded);  // 2-8
         int pattern = int(floor((encoded - bands) * 10.0 + 0.5));  // 0-5
 
@@ -1259,9 +1310,9 @@ void main() {
     }
 
     // Water surface: fresnel-like reflective sheen with freeze transition
-    if ((material.flags & FLAG_WATER_SURFACE) != 0) {
+    if ((mat_flags & FLAG_WATER_SURFACE) != 0) {
         float NdotV = max(dot(normal, viewDir), 0.0);
-        float freezeProgress = material.parallaxScale;
+        float freezeProgress = mat_parallaxScale;
         vec3 skyColor = lighting.skyReflectColor.xyz;
 
         // Fresnel transitions: water (low base, steep falloff) -> ice (higher base, broader)
@@ -1277,19 +1328,19 @@ void main() {
         result = mix(result, reflectColor, fresnel * reflectStrength);
 
         // Shore foam: procedural noise foam near edges
-        if ((material.flags & FLAG_WATER_SHORE) != 0 && material.surfaceParam2 > 0.0) {
+        if ((mat_flags & FLAG_WATER_SHORE) != 0 && mat_surfaceParam2 > 0.0) {
             float edgeDist = fragVertColor.g;  // 0=edge, 1=center
-            float shoreW = material.surfaceParam1;
+            float shoreW = mat_surfaceParam1;
 
             // Shallow water color blend near edges
             float shallowBlend = 1.0 - smoothstep(0.0, shoreW * 2.0, edgeDist);
             // shoreColor is approximated from baseColor lightened — we use fragVertColor.r channel
             // for the shore color R and use a brighter tint of the water
-            vec3 shoreColor = material.baseColor * 1.5 + vec3(0.1, 0.15, 0.1);
+            vec3 shoreColor = mat_baseColor * 1.5 + vec3(0.1, 0.15, 0.1);
             result = mix(result, shoreColor, shallowBlend * 0.4);
 
             // Multi-octave hash noise for foam pattern
-            float foamSc = material.surfaceParam3;
+            float foamSc = mat_surfaceParam3;
             float waterTime = lighting.windData.w;
             vec2 wp = fragWorldPos.xz;
 
@@ -1303,7 +1354,7 @@ void main() {
 
             // Animated threshold: foam appears and disappears
             float foamThreshold = smoothstep(shoreW, 0.0, edgeDist);
-            float foam = smoothstep(0.35, 0.65, noise) * foamThreshold * material.surfaceParam2;
+            float foam = smoothstep(0.35, 0.65, noise) * foamThreshold * mat_surfaceParam2;
 
             // Blend white foam into result
             result = mix(result, vec3(0.9, 0.95, 1.0), foam);
@@ -1311,11 +1362,11 @@ void main() {
     }
 
     // Artistic surface: environment reflection + rim light (non-water, non-dither-gradient entities)
-    if ((material.flags & FLAG_WATER_SURFACE) == 0 && !isDitherGradient &&
-        (material.surfaceParam1 > 0.0 || material.surfaceParam3 > 0.0)) {
-        float reflectivity = material.surfaceParam1;
-        float fresnelPow   = material.surfaceParam2;
-        float rimStrength   = material.surfaceParam3;
+    if ((mat_flags & FLAG_WATER_SURFACE) == 0 && !isDitherGradient &&
+        (mat_surfaceParam1 > 0.0 || mat_surfaceParam3 > 0.0)) {
+        float reflectivity = mat_surfaceParam1;
+        float fresnelPow   = mat_surfaceParam2;
+        float rimStrength   = mat_surfaceParam3;
 
         float NdotV = max(dot(normal, viewDir), 0.0);
         float fresnel = reflectivity + (1.0 - reflectivity) * pow(1.0 - NdotV, fresnelPow);
@@ -1342,11 +1393,11 @@ void main() {
     }
 
     // === ELEMENTAL SURFACE EFFECTS (PS1/PS2 style) ===
-    if (material.surfaceParam1 >= 299.5 && material.surfaceParam1 < 400.0) {
-        float charAmount = material.surfaceParam1 - 300.0;
-        float wetness = fract(material.surfaceParam2);
-        float snowCov = floor(material.surfaceParam2) / 256.0;
-        float frost = material.surfaceParam3;
+    if (mat_surfaceParam1 >= 299.5 && mat_surfaceParam1 < 400.0) {
+        float charAmount = mat_surfaceParam1 - 300.0;
+        float wetness = fract(mat_surfaceParam2);
+        float snowCov = floor(mat_surfaceParam2) / 256.0;
+        float frost = mat_surfaceParam3;
 
         // Fire charring: darken toward black/brown, ember glow pulses
         if (charAmount > 0.01) {
@@ -1381,7 +1432,7 @@ void main() {
     }
 
     // Add emission (modulated by emissive texture if present)
-    result += material.emissiveColor * material.emissiveStrength * emissiveTexColor;
+    result += mat_emissiveColor * mat_emissiveStrength * emissiveTexColor;
 
     // Snow accumulation: whiten upward-facing surfaces based on snow intensity
     float snowIntensity = lighting.fogColorSnow.w;
@@ -1392,9 +1443,9 @@ void main() {
 
     // === PROCEDURAL SURFACE NOISE (Material-Expression art style) ===
     // Encoded in surfaceParam1 range 400+: noiseScale = surfaceParam1 - 400, noiseStrength = surfaceParam2
-    if (material.surfaceParam1 >= 399.5 && material.surfaceParam1 < 500.0) {
-        float noiseScale = material.surfaceParam1 - 400.0;
-        float noiseStrength = material.surfaceParam2;
+    if (mat_surfaceParam1 >= 399.5 && mat_surfaceParam1 < 500.0) {
+        float noiseScale = mat_surfaceParam1 - 400.0;
+        float noiseStrength = mat_surfaceParam2;
 
         // 3D value noise based on world position (3 octaves for organic feel)
         vec3 wp = fragWorldPos * noiseScale;
@@ -1473,17 +1524,17 @@ void main() {
     }
 
     // Alpha handling
-    float alpha = material.opacity * fragVertColor.a;
-    int alphaMode = (material.flags >> 8) & 0x3;
+    float alpha = mat_opacity * fragVertColor.a;
+    int alphaMode = (mat_flags >> 8) & 0x3;
     if (alphaMode == 1) { // Mask mode
-        if (alpha < material.alphaCutoff) {
+        if (alpha < mat_alphaCutoff) {
             discard;
         }
         alpha = 1.0;
     }
 
     // Stipple transparency: screen-door dither pattern for alpha
-    if ((material.flags & FLAG_STIPPLE_TRANS) != 0 && alpha < 1.0) {
+    if ((mat_flags & FLAG_STIPPLE_TRANS) != 0 && alpha < 1.0) {
         float threshold = bayerDither4x4(ivec2(gl_FragCoord.xy));
         if (alpha < threshold) {
             discard;

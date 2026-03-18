@@ -43,7 +43,7 @@ struct CullableObject {
     u32 indexCount = 0;        // offset 104
     u32 indexOffset = 0;       // offset 108
     u32 vertexOffset = 0;      // offset 112
-    u32 _pad0 = 0;             // offset 116 (pad to 16-byte boundary)
+    u32 indirectEligible = 0;  // offset 116 — 1 = emit indirect draw command, 0 = visibility only
     u32 _pad1 = 0;             // offset 120
     u32 _pad2 = 0;             // offset 124
 

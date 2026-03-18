@@ -52,9 +52,9 @@ public:
     // Get bindless texture handle in shader: textures[handle]
     // Get bindless buffer handle in shader: buffers[handle]
 
-    // Statistics
-    u32 GetTextureCount() const { return static_cast<u32>(m_Textures.size()); }
-    u32 GetBufferCount() const { return static_cast<u32>(m_Buffers.size()); }
+    // Statistics (returns count of registered/valid entries, not capacity)
+    u32 GetTextureCount() const { return m_TextureCount; }
+    u32 GetBufferCount() const { return m_BufferCount; }
 
 private:
     bool CreateDescriptorSetLayout();
@@ -86,6 +86,10 @@ private:
 
     static constexpr u32 MAX_TEXTURES = 1000000; // 1 million textures
     static constexpr u32 MAX_BUFFERS = 100000;    // 100k buffers
+    u32 m_TextureCount = 0;    // Number of valid registered textures
+    u32 m_BufferCount = 0;     // Number of valid registered buffers
+    u32 m_TextureHighWater = 0; // Highest texture slot index + 1 (limits rebuild iteration)
+    u32 m_BufferHighWater = 0;  // Highest buffer slot index + 1 (limits rebuild iteration)
     bool m_Dirty = true;
 };
 

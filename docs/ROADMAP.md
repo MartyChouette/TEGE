@@ -287,7 +287,7 @@ Goal: eliminate CPU-side bottlenecks, maximize GPU utilization, and push entity 
 - [x] **Cache world matrices** — `ComputeWorldMatrix()` caches via `mutable` fields on TransformComponent (`cachedWorldMatrix` + `worldMatrixDirty`). Recursive caching shares parent results across siblings. All transforms marked dirty once per frame in a tight linear sweep. ✅
 - [x] **Batched material SSBO** — Binding 2 converted from UBO to `STORAGE_BUFFER_DYNAMIC`. All MaterialGPU data collected at frame start into single SSBO, uploaded once. Per-entity dynamic offset at draw time. Fixes latent SSS data race. ✅
 - [ ] **Wire bindless into main render path** — `BindlessResourceManager` exists but isn't used in hot path. Migrate material textures to descriptor indexing, eliminate per-entity descriptor set binds.
-- [ ] **Multi-draw indirect batching** — GPU culling writes per-object indirect draw commands, but CPU still dispatches per-entity `vkCmdDrawIndexed`. Consolidate into single `vkCmdDrawIndexedIndirectCount` call per material bucket.
+- [x] **Multi-draw indirect batching** — GPU culling compute shader emits compacted `VkDrawIndexedIndirectCommand` buffer with `indirectEligible` filter. Non-textured pool-eligible entities drawn via single `vkCmdDrawIndexedIndirectCount` call. Shaders read per-object data from ObjectData SSBO (binding 13) via `gl_InstanceIndex`. Textured entities remain on per-entity path. Previous-frame model matrix now sourced from SSBO for correct motion vectors. ✅
 - [x] **View-based ECS iteration** — `ECS::View<Components...>` variadic template added (`View.h`). Iterates smallest component set, batch-checks others, supports `Exclude()` filter. Sorted render list build loop converted as proof-of-concept. ✅
 
 #### Tier 3: Next-Gen Scalability (1-2 weeks each)
@@ -308,7 +308,7 @@ Goal: eliminate CPU-side bottlenecks, maximize GPU utilization, and push entity 
 |--------|---------|--------|-------|
 | 2D animated sprites at 60fps | ~500-1K | 2K-5K | Sprite batching + integer sort |
 | 3D skeletal actors at 60fps | ~100-500 | 500-2K | Binary search keyframes + SIMD bones |
-| Draw calls per frame (3D) | 1 per entity | 1 per material bucket | Multi-draw indirect |
+| Draw calls per frame (3D) | 1 per entity (textured), 1 total (non-textured pool) | 1 per material bucket | Multi-draw indirect (partial ✅, full with bindless) |
 | Descriptor set updates/frame | 1 per entity | 0 (bindless) | Descriptor indexing |
 | Animation keyframe lookup | O(N) linear | O(log N) binary | Animation.cpp |
 | Sprite sort comparator | String compare | u32 compare | SpriteBatchRenderer |
@@ -1509,13 +1509,15 @@ Shared prerequisite: Phase 1 (TAA jitter + velocity buffer + depth access) ✅
 
 Move beyond CPU-organized draw submission. The GPU should manage more of the rendering workload itself.
 
-- **Indirect draw from GPU culling output**
-  - GPU culling (HiZ, already implemented) directly emits draw commands
-  - Eliminate CPU readback of visible object list
-  - `VK_KHR_draw_indirect_count` for variable-length draw lists
-- **Multi-draw indirect batching**
-  - Batch all draws per material/pipeline into single multi-draw-indirect calls
-  - Material sort keys (already 64-bit) drive batch boundaries
+- **Indirect draw from GPU culling output** ✅
+  - GPU culling (HiZ + frustum) emits compacted indirect draw commands
+  - `indirectEligible` flag on CullableObject controls which entities emit draw commands
+  - `vkCmdDrawIndexedIndirectCount` for variable-length draw lists
+  - Non-textured pool entities batched; textured entities remain per-entity
+- **Multi-draw indirect batching** ✅ (partial — non-textured pool entities)
+  - Single `vkCmdDrawIndexedIndirectCount` replaces per-entity `vkCmdDrawIndexed`
+  - Shaders select data source: ObjectData SSBO (indirect) vs push constants (per-entity)
+  - Next: bindless textures to extend indirect draws to textured entities
 - **Device-generated commands** (when Vulkan spec stabilizes)
   - GPU-side pipeline/descriptor binding changes
   - Full GPU-driven rendering loop for dynamic scenes

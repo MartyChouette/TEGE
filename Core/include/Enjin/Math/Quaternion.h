@@ -2,6 +2,7 @@
 
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Math/Matrix.h"
+#include <type_traits> // std::is_constant_evaluated
 
 namespace Enjin {
 namespace Math {
@@ -74,6 +75,14 @@ struct ENJIN_API Quaternion {
     }
 
     constexpr Matrix4 ToMatrix() const {
+#if ENJIN_SIMD_SSE2
+        if (!std::is_constant_evaluated()) {
+            Matrix4 result;
+            Simd::QuatToMatSSE(&x, result.m);
+            return result;
+        }
+#endif
+        // Scalar fallback (constexpr-compatible)
         f32 xx = x * x;
         f32 yy = y * y;
         f32 zz = z * z;
