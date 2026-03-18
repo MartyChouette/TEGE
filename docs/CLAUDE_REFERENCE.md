@@ -8,7 +8,7 @@ For quick reference, see `CLAUDE.md`. For architecture overview, see `ARCHITECTU
 - **`ECS::World`** - Manages entities and components. Thread-safe: structural ops (Create/Destroy/Add/Remove/Clear) guarded by recursive mutex. `DestroyEntity()` is deferred — queued and flushed at `Update()` start. `DestroyEntityImmediate()` for rare cases needing instant removal. `IsValid()` returns false for pending-destruction entities. `Lock()`/`Unlock()` for external batch operations.
 - **`ECS::Entity`** - Just a u64 ID
 - **Key Components:**
-  - `TransformComponent` - position, rotation (Euler), scale, `visible` bool
+  - `TransformComponent` - position, rotation (Euler), scale, `visible` bool, cached world matrix with dirty flag
   - `MeshComponent` - vertices (position, normal, UV, color, tangent, boneWeights, boneIndices), indices
   - `MaterialComponent` - PBR properties, textures (base color, normal, height, matcap at binding 18), retro flags, dithered gradient (`ditherGradient`, `ditherGradientBands` 2-8, `ditherGradientPattern` 6 patterns), cel outline (`outlineWidth`/`outlineColor`), procedural surface noise (`surfaceNoiseScale`/`surfaceNoiseStrength`)
   - `LightComponent` - Light data (direction, color, intensity)
@@ -21,6 +21,8 @@ For quick reference, see `CLAUDE.md`. For architecture overview, see `ARCHITECTU
   - `SaveDataComponent` - Persistence marker with `PersistenceTier` (SceneState/RunState/MetaProgression), custom tags, and key-value data
   - `SaveLoadMenuComponent` - In-game save/load grid overlay with configurable columns, mode (Save/Load), and slot display
   - `PostProcessVolumeComponent` - Spatial PP blending with Box/Sphere shapes, priority, smoothstep blend radius, selective override mask (24 effect groups incl. 5 screen-space effects at bits 19-23), global volumes
+  - `ReflectionProbeComponent` - Box-projected reflections with `boxMin`/`boxMax`, `intensity`, `priority`, `blendDistance`, cubemap baking via editor button (binding 19)
+  - `DynamicDifficultyComponent` - Opt-in adaptive difficulty: 6 input metrics (deaths, health, accuracy, time, resources, checkpoint health), 6 output multipliers (enemy damage/health, AI aggression, resource drops, hints, checkpoints), transparent/hidden mode, player-chosen base difficulty with auto-adjustment band
 
 ### Collision Filtering
 
@@ -101,6 +103,20 @@ Per-entity texture (bindings 3/5/6/8/9/18) and bone buffer (binding 7) descripto
 - **Cached world matrices:** `TransformComponent` mutable `worldMatrixDirty` flag with recursive parent caching, O(1) for unchanged transforms across shadow/outline/main passes
 - **Batched material SSBO:** Binding 2 changed from UBO to `STORAGE_BUFFER_DYNAMIC`, single per-frame upload with dynamic offset per draw
 - **ECS View template:** `ECS::View<Components...>` variadic template (`View.h`) for cache-friendly filtered entity iteration with smallest-set optimization and `Exclude()` filter
+- **SIMD math:** SSE/SSE4.1 intrinsics for Matrix4 multiply, Vector3/4 dot/cross, Quaternion::ToMatrix (`Simd.h`). `constexpr` preserved via `std::is_constant_evaluated()`
+- **Slim MaterialComponent:** Fields reordered — PBR core in cache line 0, flags/artistic in line 1, cold string paths at tail
+- **Delta sprite sorting:** Persistent sorted list with FNV-1a hash fingerprint, skip sort when unchanged, `std::stable_sort` when dirty
+- **Multi-draw indirect:** Non-textured pool entities via single `vkCmdDrawIndexedIndirectCount`; textured pool entities grouped by texture hash via `IndirectDrawBatcher`
+- **Async compute:** `AsyncComputeScheduler` overlaps RT dispatch with rasterization on dedicated compute queue, timeline semaphores
+
+## Renderer Advanced Features
+
+- **Reflection probes:** `ReflectionProbeSystem` finds nearest probe per frame, box-projected cubemap reflections in `triangle.frag`. Cubemap baking renders 6 faces via `RenderToTarget`, stores as `VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT` image at binding 19
+- **ReSTIR:** 3-pass importance-weighted light selection (initial candidates → temporal reuse → spatial reuse). Ping-pong reservoir buffers at RT bindings 19-20, M capping, Jacobian correction, Hammersley neighbor sampling
+- **Temporal RT reuse:** Per-buffer history ping-pong for shadow/AO/reflection/GI, confidence-weighted reprojection with disocclusion detection, dispatched between RT effects and denoiser
+- **Radiance cache:** Screen-space tiled cache (32x32 pixels), depth/normal validity, directional light excluded, progressive refinement via hysteresis, stale mask bitfield, RT bindings 21-23
+- **Upscaling:** IUpscaler interface with FSR 2 (built-in Lanczos+CAS), DLSS 3.5 (stub), XeSS (stub). 4 quality modes (50-77% render scale)
+- **SMAA:** Single-pass edge-walking AA in postprocess.frag, 12-step progressive walk with sub-pixel smoothing, mode 3 in AA dropdown
 
 ## Editor Details
 

@@ -52,12 +52,12 @@
 |:---|:---|
 | **Complete Editor** | Hierarchy, inspector, viewport, play mode, undo/redo, command palette, project hub, 44 starter templates |
 | **70+ ECS Components** | Transform, mesh, material, lights, cameras, physics, AI, UI, audio, scripting — all with inspector UI |
-| **Vulkan PBR Renderer** | Cascaded shadows, post-processing, GPU culling, clustered lighting, full ray tracing pipeline |
+| **Vulkan PBR Renderer** | Cascaded shadows, reflection probes, ReSTIR, temporal RT reuse, radiance cache, FSR 2/DLSS/XeSS upscaling, SMAA, async compute |
 | **8 Art Styles** | Realistic PBR, Blinn-Phong, Hand-Painted, Cel/Toon, Low-Poly Retro, Pixel Art, NPR Sketch, Analog — one-click presets |
 | **Dual Scripting** | 721 AngelScript bindings with hot-reload + visual scripting with 146+ nodes and breakpoint debugging |
 | **Dual Physics** | Jolt 5.2.0 (3D) + Box2D 3.0.0 (2D), 5 character controller types, joints, ragdolls, sensors |
 | **Ship Everywhere** | Standalone builds, HTML5/WebAssembly, Newgrounds, Windows installer, Linux AppImage |
-| **Gameplay Out of the Box** | Save/load, quests, HUD, dialogue trees, destructibles, LAN multiplayer, localization |
+| **Gameplay Out of the Box** | Save/load, quests, HUD, dialogue trees, destructibles, LAN multiplayer, localization, dynamic difficulty |
 | **Accessibility Suite** | Colorblind correction (8 modes), screen reader, switch access, dyslexia mode, WCAG AAA themes |
 
 ---
@@ -100,13 +100,15 @@ A pre-built Windows installer is available — no build tools required:
 
 - **PBR Material System** — Base color, metallic, roughness, emissive, normal mapping, parallax occlusion (4 modes), transmission/IOR/thickness, subsurface scattering, matcap textures, procedural surface noise, material presets (Glass, Water, Skin, Leaf)
 - **Shadow Mapping** — 4-cascade CSM, cubemap point shadows, spot shadows, 16-sample Poisson PCF, 6 dither patterns (Bayer, Blue Noise, Halftone, Crosshatch, Overlook)
-- **Anti-Aliasing** — TAA (Halton jitter, neighborhood clamping, velocity reprojection), FXAA, per-scene selectable
+- **Anti-Aliasing** — TAA (Halton jitter, neighborhood clamping, velocity reprojection), FXAA, SMAA (edge-walking), per-scene selectable
 - **Motion Vectors** — Per-pixel velocity buffer (RG16F) for TAA and temporal denoising
 - **Post-Processing** — Bloom, vignette, color grading, film grain, tone mapping, full-screen stipple/dither, depth of field (bokeh), tilt-shift, post-process volumes with spatial blending
-- **Ray Tracing Pipeline** — RT shadows, reflections, AO, GI, translucency, caustics, path tracing with 3 denoisers (SVGF, Intel OIDN, NVIDIA OptiX)
+- **Ray Tracing Pipeline** — RT shadows, reflections, AO, GI, translucency, caustics, path tracing with 3 denoisers (SVGF, Intel OIDN, NVIDIA OptiX), ReSTIR light sampling (temporal + spatial reuse), temporal RT result reuse, screen-space radiance cache
+- **Upscaling** — FSR 2 (built-in Lanczos + CAS), DLSS 3.5 (stub), XeSS (stub) — 4 quality modes, IUpscaler interface for backend swap
+- **Reflection Probes** — Box-projected cubemap reflections, editor baking, proximity blending, priority override
 - **Retro Effects** — PSX flat shading, affine texturing, vertex snapping, texture page warping, polygon sort jitter, stipple transparency, CRT scanlines (11 models), VHS with tape dropout, film gate weave, light leaks, 6 named palettes (PICO-8, Game Boy, NES, CGA, C64), normal quantization, inverted-hull geometry outlines, NPR curvature-driven outline thickness
 - **Environment** — Procedural gradient sky / cubemap skybox, weather system (rain, snow, fog, storms), water plane with Gerstner waves, instanced vegetation with wind
-- **Optimizations** — GPU: two-phase HiZ occlusion culling, clustered forward lighting (16x9x24), batched material SSBO. CPU: binary search keyframes, integer sprite sort, cached ECS storage pointers, world matrix caching, ECS View template, 64-bit material sort keys, per-frame linear allocator, descriptor set caching
+- **Optimizations** — GPU: two-phase HiZ occlusion culling, clustered forward lighting (16x9x24), batched material SSBO, multi-draw indirect (texture-grouped), async compute overlap. CPU: SIMD math (SSE/SSE4.1), binary search keyframes, integer sprite sort, cached ECS storage pointers, world matrix caching, delta sprite sorting, ECS View template, 64-bit material sort keys, per-frame linear allocator, descriptor set caching
 - **Advanced** — Variable Rate Shading, Virtual Texturing, Visibility Buffer, OIT, SH Light Probes, SDF scene, voxel cone tracing, non-Euclidean portals, world curvature
 - **Camera** — 9 presets (Isometric, TopDown, SideScroller, FPS, TPS, Cinematic, SecurityCam, BirdsEye)
 

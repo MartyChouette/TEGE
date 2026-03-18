@@ -1771,6 +1771,61 @@ The editor includes 7 one-click presets accessible from **Settings > Scene > Art
 
 Presets set all relevant rendering parameters at once. After applying a preset, individual settings can still be tweaked.
 
+### Reflection Probes
+
+Reflection probes capture the scene environment as a cubemap for accurate reflections in enclosed spaces.
+
+**Adding a probe:** Add a `ReflectionProbeComponent` to any entity via the inspector (Add Component > Effects > Reflection Probe).
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `boxMin` | Vector3 | (-5,-5,-5) | Inner box offset from entity position. |
+| `boxMax` | Vector3 | (5,5,5) | Outer box offset from entity position. |
+| `intensity` | f32 | 1.0 | Reflection strength multiplier. |
+| `priority` | u32 | 0 | Higher priority probes override lower ones in overlapping regions. |
+| `blendDistance` | f32 | 1.0 | Smooth edge falloff distance for probe blending. |
+| `resolution` | u32 | 128 | Cubemap face resolution (128/256/512). |
+
+**Baking:** Click the **Bake** button in the inspector to render 6 cubemap faces from the probe position. The baked cubemap is used for box-projected reflections in the fragment shader. Re-bake after scene changes.
+
+**Box projection:** The reflection vector is corrected based on the probe's bounding box, so reflections appear correctly in rooms and corridors rather than stretching infinitely.
+
+### Dynamic Difficulty
+
+An adaptive difficulty system that reads player performance metrics and adjusts game parameters in real time.
+
+**Adding:** Add a `DynamicDifficultyComponent` to a singleton entity (typically the game manager).
+
+**Mode:**
+- `visibleToPlayer = false` — hidden/silent adaptation (Left 4 Dead style)
+- `visibleToPlayer = true` — transparent adaptation with HUD indicator
+- `baseDifficulty` — player-chosen base (0=Easy, 1=Normal, 2=Hard, 3=Nightmare)
+- `adjustmentRange` — how much the system can auto-adjust around the base (±20% default)
+
+**Input metrics** (all opt-in):
+
+| Metric | What It Reads | Struggle Signal |
+|--------|--------------|-----------------|
+| Deaths | Recent death count | More deaths = struggling |
+| Health | HealthComponent on player entity | Low health = struggling |
+| Accuracy | Shots fired vs hits | Low accuracy = struggling |
+| Time | Elapsed vs expected completion | Taking too long = struggling |
+| Resources | Current resource ratio | Low resources = struggling |
+| Checkpoint Health | Health % at last checkpoint | Arriving hurt = struggling |
+
+**Output multipliers** (all opt-in):
+
+| Output | Effect When Struggling |
+|--------|----------------------|
+| Enemy Damage | Reduced (enemies hit softer) |
+| Enemy Health | Reduced (enemies die faster) |
+| AI Aggression | Reduced (enemies attack less often) |
+| Resource Drops | Increased (more pickups spawn) |
+| Hint Frequency | Increased (show hints after N deaths) |
+| Checkpoint Frequency | Increased (save more often) |
+
+The system updates once per second, uses exponential moving average smoothing, and all multipliers are queryable from scripts via `Difficulty_GetMultiplier("enemyDamage")`.
+
 ### Retro Effects
 
 #### Per-Material

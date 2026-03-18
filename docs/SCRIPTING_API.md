@@ -84,6 +84,8 @@ Channel constants: `AUDIO_CHANNEL_SFX=0`, `AUDIO_CHANNEL_MUSIC=1`, `AUDIO_CHANNE
 - **Controller**: `Controller_SetMoveSpeed/GetVelocity(uint64, ...)` — works with all 5 controller types
 - **Camera2D**: `Camera2D_Shake(uint64, float intensity, float duration)`, `Camera2D_GetZoom/SetZoom(uint64, float)`, `Camera2D_AddTarget/RemoveTarget(uint64 camera, uint64 target)`, `Camera2D_ClearTargets(uint64)`, `Camera2D_SetDeadZone(uint64, float w, float h)`, `Camera2D_SetLookAhead(uint64, float distance, float smoothing)`, `Camera2D_SetFollowTarget/GetFollowTarget(uint64, uint64)`
 - **Existence checks**: `HasComponent_Health/Light/Camera/Material/AudioSource/Rigidbody/BoxCollider/Animator(uint64)`
+- **ReflectionProbe**: `ReflectionProbe_SetIntensity/GetIntensity(uint64, float)`, `ReflectionProbe_SetBoxMin/SetBoxMax(uint64, Vector3)`, `ReflectionProbe_Bake(uint64)`
+- **DynamicDifficulty**: `Difficulty_GetScore(uint64)`, `Difficulty_GetMultiplier(uint64, string)` — "enemyDamage"/"enemyHealth"/"aiAggression"/"resourceDrops", `Difficulty_SetBaseDifficulty/GetBaseDifficulty(uint64, uint)`, `Difficulty_RecordDeath(uint64)`, `Difficulty_RecordShot(uint64)`, `Difficulty_RecordHit(uint64)`, `Difficulty_RecordCheckpointHealth(uint64, float)`
 - **State Machine**: `SM_AddState(uint64, string)`, `SM_AddTransition(uint64, from, to)`, `SM_SetState/GetCurrentState/GetPreviousState(uint64)`, `SM_GetStateTime(uint64)`, `SM_SendTrigger(uint64, string)`, `SM_SetBool/GetBool(uint64, string, bool)`, `SM_SetFloat/GetFloat(uint64, string, float)`, `SM_SetInt/GetInt(uint64, string, int)`, `SM_HasState(uint64, string)`, `SM_SetOnEnter/SetOnUpdate/SetOnExit(uint64, stateName, funcName)`, `SM_GetOnEnter/GetOnUpdate/GetOnExit(uint64, stateName)`
 
 ## Coroutines

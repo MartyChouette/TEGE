@@ -128,6 +128,11 @@ enjin/
 - Outline pipeline (cel shading) - Inverted-hull geometry outlines (`outline.vert`/`outline.frag`), per-material width/color, NPR curvature-driven thickness (`celOutlineCurvatureWeight`)
 - `RenderTarget` - Offscreen rendering for Game View
 - Art Style Presets - 7 one-click presets (Realistic PBR, Classic Blinn-Phong, Hand-Painted, Toon/Anime, Low-Poly Retro, Pixel Art, NPR Sketch)
+- `ReflectionProbeSystem` - Box-projected cubemap reflections with per-probe baking, proximity blending
+- `AsyncComputeScheduler` - Overlaps RT dispatch with rasterization on dedicated compute queue
+- `IndirectDrawBatcher` - Groups textured pool entities by texture hash for batched indirect draws
+- IUpscaler - FSR 2 (built-in Lanczos+CAS), DLSS 3.5 (stub), XeSS (stub)
+- `DynamicDifficultySystem` - Adaptive difficulty with 6 input metrics and 6 output multipliers
 
 **Features**:
 - Blinn-Phong lighting with multi-light support
@@ -556,9 +561,10 @@ Binding 15: Cluster light index SSBO — clustered lighting (fragment shader)
 Binding 16: VT indirection texture — virtual texturing (fragment shader)
 Binding 17: VT physical atlas — virtual texturing (fragment shader)
 Binding 18: Matcap texture — material-expression art style (fragment shader)
+Binding 19: Reflection probe cubemap — baked environment (fragment shader)
 ```
 
-**RT Descriptor Set** (separate from main pipeline set 0):
+**RT Descriptor Set** (separate from main pipeline set 0, bindings 19-23):
 ```
 Binding  0-3:  Base RT bindings (TLAS, output image, camera UBO, lighting UBO)
 Binding  4:    Motion vectors (RG16F velocity buffer)
