@@ -1884,6 +1884,10 @@ void EditorLayer::DrawSettingsWindow() {
             }
             ImGui::Separator();
 
+            // --- Art Style Preset ---
+            DrawSettingsSection_ArtStylePreset();
+            ImGui::Separator();
+
             // --- Lighting & Shadows ---
             // Realistic lighting, outdoor scenes, architectural visualization, cinematic mood
             ImGui::SeparatorText("Lighting & Shadows");

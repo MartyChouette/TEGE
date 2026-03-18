@@ -247,6 +247,10 @@ layout(binding = 16) uniform sampler2D vtIndirectionTex;
 layout(binding = 17) uniform sampler2D vtPhysicalAtlas;
 #endif
 
+// Matcap (material capture) texture sampler (binding 18)
+// When bound to a real texture, replaces the procedural sphere env map
+layout(binding = 18) uniform sampler2D matcapMap;
+
 // 16-sample Poisson disk for soft shadow PCF
 const vec2 poissonDisk[16] = vec2[16](
     vec2(-0.94201624, -0.39906216), vec2( 0.94558609, -0.76890725),
@@ -1386,27 +1390,58 @@ void main() {
         result = mix(result, vec3(0.95, 0.97, 1.0), snowCoverage);
     }
 
-    // Spherical environment mapping (Dreamcast-style matcap sheen)
-    if ((lighting.shadingFlags & SHADING_SPHERE_ENV) != 0u && lighting.sphereEnvStrength > 0.0) {
+    // === PROCEDURAL SURFACE NOISE (Material-Expression art style) ===
+    // Encoded in surfaceParam1 range 400+: noiseScale = surfaceParam1 - 400, noiseStrength = surfaceParam2
+    if (material.surfaceParam1 >= 399.5 && material.surfaceParam1 < 500.0) {
+        float noiseScale = material.surfaceParam1 - 400.0;
+        float noiseStrength = material.surfaceParam2;
+
+        // 3D value noise based on world position (3 octaves for organic feel)
+        vec3 wp = fragWorldPos * noiseScale;
+        float n1 = fract(sin(dot(floor(wp.xy + wp.z * 0.31),  vec2(127.1, 311.7))) * 43758.5453);
+        float n2 = fract(sin(dot(floor(wp.yz + wp.x * 0.37),  vec2(269.5, 183.3))) * 43758.5453);
+        float n3 = fract(sin(dot(floor(wp.xz * 2.1 + wp.y * 0.53), vec2(419.2, 371.9))) * 43758.5453);
+        float noise = (n1 * 0.5 + n2 * 0.3 + n3 * 0.2);  // [0,1] range
+
+        // Center around 0.5 so noise darkens AND lightens equally
+        float noiseMod = mix(1.0, noise * 2.0, noiseStrength);  // 1.0 = no change, range [0,2] * strength
+        result *= clamp(noiseMod, 0.3, 1.7);  // Clamp to avoid extreme values
+    }
+
+    // Spherical environment mapping / matcap texture
+    // When a matcap texture is bound (binding 18), it replaces the procedural sphere env map.
+    // The matcap texture is sampled using view-space normal UVs regardless of the global sphere env flag.
+    {
         // Reconstruct view-space normal without view matrix
         vec3 vForward = normalize(lighting.cameraPos - fragWorldPos);
         vec3 vRight = normalize(cross(vec3(0.0, 1.0, 0.0), vForward));
         vec3 vUp = cross(vForward, vRight);
         vec2 matcapUV = vec2(dot(normal, vRight), dot(normal, vUp)) * 0.5 + 0.5;
 
-        // Procedural matcap: metallic highlight ring + top-down gradient
-        float rim = length(matcapUV - vec2(0.5));
-        float highlight = smoothstep(0.45, 0.25, rim);   // bright center
-        float ring = smoothstep(0.3, 0.48, rim) * smoothstep(0.5, 0.48, rim); // bright ring at edge
-        float grad = matcapUV.y * 0.6 + 0.2;             // sky-ground gradient
+        // Sample matcap texture — if it's the default white texture, fall back to procedural
+        vec4 matcapSample = texture(matcapMap, matcapUV);
+        bool hasMatcapTexture = (matcapSample.r < 0.99 || matcapSample.g < 0.99 || matcapSample.b < 0.99);
 
-        vec3 envColor = vec3(0.25, 0.28, 0.35) * grad     // base ambient gradient
-                      + vec3(0.6, 0.65, 0.7) * highlight   // center specular
-                      + vec3(0.4, 0.45, 0.5) * ring;       // edge ring (Dreamcast sheen)
+        if (hasMatcapTexture) {
+            // Per-material matcap texture: blend based on global strength (or full if no global env)
+            float matcapStrength = max(lighting.sphereEnvStrength, 0.5);
+            float envBlend = mix(0.3, 1.0, metallic) * matcapStrength;
+            result = mix(result, result * matcapSample.rgb + matcapSample.rgb * 0.2, envBlend);
+        } else if ((lighting.shadingFlags & SHADING_SPHERE_ENV) != 0u && lighting.sphereEnvStrength > 0.0) {
+            // Procedural matcap: metallic highlight ring + top-down gradient (Dreamcast-style sheen)
+            float rim = length(matcapUV - vec2(0.5));
+            float highlight = smoothstep(0.45, 0.25, rim);   // bright center
+            float ring = smoothstep(0.3, 0.48, rim) * smoothstep(0.5, 0.48, rim); // bright ring at edge
+            float grad = matcapUV.y * 0.6 + 0.2;             // sky-ground gradient
 
-        // Blend: metallic surfaces get full effect, dielectrics get subtle rim only
-        float envBlend = mix(ring * 0.3, 1.0, metallic) * lighting.sphereEnvStrength;
-        result = mix(result, result + envColor, envBlend);
+            vec3 envColor = vec3(0.25, 0.28, 0.35) * grad     // base ambient gradient
+                          + vec3(0.6, 0.65, 0.7) * highlight   // center specular
+                          + vec3(0.4, 0.45, 0.5) * ring;       // edge ring (Dreamcast sheen)
+
+            // Blend: metallic surfaces get full effect, dielectrics get subtle rim only
+            float envBlend = mix(ring * 0.3, 1.0, metallic) * lighting.sphereEnvStrength;
+            result = mix(result, result + envColor, envBlend);
+        }
     }
 
     // Gamma correction

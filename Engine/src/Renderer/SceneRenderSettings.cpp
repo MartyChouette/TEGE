@@ -262,6 +262,7 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.celOutlineEnabled            = pp->celOutlineEnabled != 0;
         s.celOutlineThickness          = pp->celOutlineThickness;
         s.celOutlineThreshold          = pp->celOutlineThreshold;
+        s.celOutlineCurvatureWeight    = pp->celOutlineCurvatureWeight;
         s.celOutlineColor              = pp->celOutlineColor;
 
         // Stipple
@@ -548,6 +549,7 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         pp->celOutlineEnabled            = celOutlineEnabled ? 1 : 0;
         pp->celOutlineThickness          = celOutlineThickness;
         pp->celOutlineThreshold          = celOutlineThreshold;
+        pp->celOutlineCurvatureWeight    = celOutlineCurvatureWeight;
         pp->celOutlineColor              = celOutlineColor;
 
         // Stipple
@@ -602,6 +604,225 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
 }
 
 // ---------------------------------------------------------------------------
+// Art Style Presets
+// ---------------------------------------------------------------------------
+
+void ApplyArtStylePreset(SceneRenderSettings& s, u32 presetIndex) {
+    s.artStylePreset = presetIndex;
+
+    switch (presetIndex) {
+    case 0: // Realistic PBR
+        s.shadingModel = 1;             // PBR (GGX)
+        s.fresnelEnabled = true;
+        s.energyConservation = true;
+        s.geometryTerm = true;
+        s.halfLambert = false;
+        s.celShadingEnabled = false;
+        s.celOutlineEnabled = false;
+        s.geometryOutlinesEnabled = false;
+        s.globalFlatShading = false;
+        s.globalAffineTexturing = false;
+        s.globalVertexSnapping = false;
+        s.globalGouraudOnly = false;
+        s.globalUVQuantize = false;
+        s.globalStippleTransparency = false;
+        s.sphereEnvMapEnabled = false;
+        s.posterizeLevels = 0.0f;
+        s.lightRampMode = 0.0f;
+        s.celShadowMode = 0.0f;
+        s.resDownscaleEnabled = false;
+        s.paletteEnabled = false;
+        s.colorQuantEnabled = false;
+        s.ditherEnabled = false;
+        s.stippleEnabled = false;
+        break;
+
+    case 1: // Classic Blinn-Phong
+        s.shadingModel = 0;             // Blinn-Phong
+        s.fresnelEnabled = false;
+        s.energyConservation = false;
+        s.geometryTerm = false;
+        s.halfLambert = false;
+        s.celShadingEnabled = false;
+        s.celOutlineEnabled = false;
+        s.geometryOutlinesEnabled = false;
+        s.globalFlatShading = false;
+        s.globalAffineTexturing = false;
+        s.globalVertexSnapping = false;
+        s.globalGouraudOnly = false;
+        s.globalUVQuantize = false;
+        s.globalStippleTransparency = false;
+        s.sphereEnvMapEnabled = false;
+        s.posterizeLevels = 0.0f;
+        s.lightRampMode = 0.0f;
+        s.celShadowMode = 0.0f;
+        s.resDownscaleEnabled = false;
+        s.paletteEnabled = false;
+        s.colorQuantEnabled = false;
+        s.ditherEnabled = false;
+        s.stippleEnabled = false;
+        break;
+
+    case 2: // Hand-Painted
+        s.shadingModel = 0;             // Blinn-Phong
+        s.fresnelEnabled = false;
+        s.energyConservation = false;
+        s.geometryTerm = false;
+        s.halfLambert = true;
+        s.celShadingEnabled = false;
+        s.celOutlineEnabled = false;
+        s.geometryOutlinesEnabled = false;
+        s.globalFlatShading = false;
+        s.globalAffineTexturing = false;
+        s.globalVertexSnapping = false;
+        s.globalGouraudOnly = false;
+        s.globalUVQuantize = false;
+        s.globalStippleTransparency = false;
+        s.sphereEnvMapEnabled = false;
+        s.posterizeLevels = 0.0f;
+        s.lightRampMode = 2.0f;         // Warm shadow ramp
+        s.celShadowMode = 0.0f;
+        s.resDownscaleEnabled = false;
+        s.paletteEnabled = false;
+        s.colorQuantEnabled = false;
+        s.ditherEnabled = false;
+        s.stippleEnabled = false;
+        break;
+
+    case 3: // Toon/Anime
+        s.shadingModel = 0;             // Blinn-Phong
+        s.fresnelEnabled = false;
+        s.energyConservation = false;
+        s.geometryTerm = false;
+        s.halfLambert = false;
+        s.celShadingEnabled = true;
+        s.celDiffuseBands = 4.0f;
+        s.celSpecularCutoff = 0.5f;
+        s.celShadowMode = 1.0f;         // Purple shadows
+        s.celOutlineEnabled = false;
+        s.geometryOutlinesEnabled = true;
+        s.geometryOutlineWidth = 0.02f;
+        s.geometryOutlineColor = Math::Vector3(0.0f, 0.0f, 0.0f);
+        s.globalFlatShading = false;
+        s.globalAffineTexturing = false;
+        s.globalVertexSnapping = false;
+        s.globalGouraudOnly = false;
+        s.globalUVQuantize = false;
+        s.globalStippleTransparency = false;
+        s.sphereEnvMapEnabled = false;
+        s.posterizeLevels = 0.0f;
+        s.lightRampMode = 4.0f;         // Anime ramp
+        s.resDownscaleEnabled = false;
+        s.paletteEnabled = false;
+        s.colorQuantEnabled = false;
+        s.ditherEnabled = false;
+        s.stippleEnabled = false;
+        break;
+
+    case 4: // Low-Poly Retro
+        s.shadingModel = 0;             // Blinn-Phong
+        s.fresnelEnabled = false;
+        s.energyConservation = false;
+        s.geometryTerm = false;
+        s.halfLambert = false;
+        s.celShadingEnabled = false;
+        s.celOutlineEnabled = false;
+        s.geometryOutlinesEnabled = false;
+        s.globalFlatShading = true;
+        s.globalAffineTexturing = true;
+        s.globalVertexSnapping = true;
+        s.globalVertexSnapResolution = 160;
+        s.globalGouraudOnly = false;
+        s.globalUVQuantize = false;
+        s.globalStippleTransparency = false;
+        s.sphereEnvMapEnabled = false;
+        s.posterizeLevels = 16.0f;
+        s.lightRampMode = 0.0f;
+        s.celShadowMode = 0.0f;
+        s.resDownscaleEnabled = false;
+        s.paletteEnabled = false;
+        s.colorQuantEnabled = false;
+        s.ditherEnabled = false;
+        s.stippleEnabled = false;
+        break;
+
+    case 5: // Pixel Art
+        s.shadingModel = 0;             // Blinn-Phong
+        s.fresnelEnabled = false;
+        s.energyConservation = false;
+        s.geometryTerm = false;
+        s.halfLambert = false;
+        s.celShadingEnabled = false;
+        s.celOutlineEnabled = false;
+        s.geometryOutlinesEnabled = false;
+        s.globalFlatShading = false;
+        s.globalAffineTexturing = false;
+        s.globalVertexSnapping = false;
+        s.globalGouraudOnly = false;
+        s.globalUVQuantize = false;
+        s.globalStippleTransparency = false;
+        s.sphereEnvMapEnabled = false;
+        s.posterizeLevels = 0.0f;
+        s.lightRampMode = 0.0f;
+        s.celShadowMode = 0.0f;
+        s.resDownscaleEnabled = true;
+        s.internalWidth = 320;
+        s.internalHeight = 240;
+        s.usePointFiltering = true;
+        s.paletteEnabled = true;
+        s.paletteColors = 16;
+        s.colorQuantEnabled = false;
+        s.ditherEnabled = true;
+        s.ditherPattern = 0;            // Bayer 2x2
+        s.ditherStrength = 1.0f;
+        s.stippleEnabled = false;
+        break;
+
+    case 6: // NPR Sketch
+        s.shadingModel = 0;             // Blinn-Phong
+        s.fresnelEnabled = false;
+        s.energyConservation = false;
+        s.geometryTerm = false;
+        s.halfLambert = false;
+        s.celShadingEnabled = true;
+        s.celDiffuseBands = 2.0f;
+        s.celSpecularCutoff = 0.8f;
+        s.celShadowMode = 0.0f;
+        s.celOutlineEnabled = true;
+        s.celOutlineThickness = 2.0f;
+        s.celOutlineThreshold = 0.1f;
+        s.celOutlineCurvatureWeight = 1.0f;   // Pen/ink style: thicker on curved edges
+        s.celOutlineColor = Math::Vector3(0.0f, 0.0f, 0.0f);
+        s.geometryOutlinesEnabled = false;
+        s.globalFlatShading = false;
+        s.globalAffineTexturing = false;
+        s.globalVertexSnapping = false;
+        s.globalGouraudOnly = false;
+        s.globalUVQuantize = false;
+        s.globalStippleTransparency = false;
+        s.sphereEnvMapEnabled = false;
+        s.posterizeLevels = 0.0f;
+        s.lightRampMode = 0.0f;
+        s.stippleEnabled = true;
+        s.stipplePatternMask = 16;      // Crosshatch pattern (bit 4)
+        s.stippleColorMode = 0;         // Monochrome
+        s.stippleScale = 1.0f;
+        s.stippleDensity = 0.5f;
+        s.stippleStrength = 0.7f;
+        s.stippleFgColor = Math::Vector3(0.0f, 0.0f, 0.0f);
+        s.stippleBgColor = Math::Vector3(1.0f, 1.0f, 0.95f);
+        s.resDownscaleEnabled = false;
+        s.paletteEnabled = false;
+        s.colorQuantEnabled = false;
+        s.ditherEnabled = false;
+        break;
+
+    default:
+        break;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // JSON helpers
 // ---------------------------------------------------------------------------
 
@@ -626,6 +847,7 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     json j;
 
     j["useProjectDefaults"] = s.useProjectDefaults;
+    j["artStylePreset"]    = s.artStylePreset;
 
     // RenderSystem
     j["shadowsEnabled"]    = s.shadowsEnabled;
@@ -810,6 +1032,7 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["celOutlineEnabled"]     = s.celOutlineEnabled;
     j["celOutlineThickness"]   = RF(s.celOutlineThickness);
     j["celOutlineThreshold"]   = RF(s.celOutlineThreshold);
+    j["celOutlineCurvatureWeight"] = RF(s.celOutlineCurvatureWeight);
     j["celOutlineColor"]       = SerializeVec3(s.celOutlineColor);
     j["geometryOutlinesEnabled"] = s.geometryOutlinesEnabled;
     j["geometryOutlineWidth"]    = RF(s.geometryOutlineWidth);
@@ -887,6 +1110,7 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     SceneRenderSettings s;
 
     if (j.contains("useProjectDefaults")) s.useProjectDefaults = JB(j["useProjectDefaults"]);
+    if (j.contains("artStylePreset"))    s.artStylePreset    = j["artStylePreset"].get<u32>();
 
     // RenderSystem
     if (j.contains("shadowsEnabled"))    s.shadowsEnabled    = JB(j["shadowsEnabled"]);
@@ -1072,6 +1296,7 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("celOutlineEnabled"))     s.celOutlineEnabled     = JB(j["celOutlineEnabled"]);
     if (j.contains("celOutlineThickness"))   s.celOutlineThickness   = j["celOutlineThickness"].get<f32>();
     if (j.contains("celOutlineThreshold"))   s.celOutlineThreshold   = j["celOutlineThreshold"].get<f32>();
+    if (j.contains("celOutlineCurvatureWeight")) s.celOutlineCurvatureWeight = j["celOutlineCurvatureWeight"].get<f32>();
     if (j.contains("celOutlineColor"))       s.celOutlineColor       = DeserializeVec3(j["celOutlineColor"], s.celOutlineColor);
     if (j.contains("geometryOutlinesEnabled")) s.geometryOutlinesEnabled = JB(j["geometryOutlinesEnabled"]);
     if (j.contains("geometryOutlineWidth"))    s.geometryOutlineWidth    = j["geometryOutlineWidth"].get<f32>();

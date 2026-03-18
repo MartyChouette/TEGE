@@ -37,6 +37,7 @@ struct MaterialComponent {
     std::string metallicRoughnessTexturePath;
     std::string emissiveTexturePath;
     std::string specularTexturePath;  // Pre-PBR: direct specular intensity map (used when shadingModel != GGX)
+    std::string matcapTexturePath;    // Matcap (Material Capture): 2D texture indexed by view-space normal
 
     // Rendering flags
     bool doubleSided = false;
@@ -92,6 +93,10 @@ struct MaterialComponent {
     f32 sssRadius = 1.0f;           // Scatter radius in world units
     Math::Vector3 sssColor = Math::Vector3(1.0f, 0.2f, 0.1f); // Scatter tint (skin/wax default)
 
+    // Procedural surface noise (stylized color variation based on world position)
+    f32 surfaceNoiseScale = 0.0f;     // 0=off, >0 = noise frequency in world units (e.g., 2.0-20.0)
+    f32 surfaceNoiseStrength = 0.0f;  // 0-1: how much noise darkens/lightens the diffuse color
+
     // Dithered gradient rendering (flat shading + banded lighting with dither transitions)
     bool ditherGradient = false;
     u8 ditherGradientBands = 4;        // 2-8 color quantization bands
@@ -104,6 +109,9 @@ struct MaterialComponent {
     Math::Vector3 ditherTransBlendColor = Math::Vector3(0.7f, 0.85f, 1.0f); // light blue default
     f32 ditherTransOpacity = 0.5f; // 0=all blend color, 1=all original, 0.5=even mix
 
+    // Matcap texture index (-1 = no matcap, used internally by render system)
+    i32 matcapTexture = -1;
+
     // Lightweight key for comparing/sorting texture combinations by pointer identity.
     // Texture cache guarantees pointer stability, so pointer comparison is sufficient.
     struct TextureKey {
@@ -112,10 +120,12 @@ struct MaterialComponent {
         Renderer::Texture* normal = nullptr;
         Renderer::Texture* metallicRoughness = nullptr;
         Renderer::Texture* emissive = nullptr;
+        Renderer::Texture* matcap = nullptr;
 
         bool operator==(const TextureKey& o) const {
             return baseColor == o.baseColor && height == o.height && normal == o.normal
-                && metallicRoughness == o.metallicRoughness && emissive == o.emissive;
+                && metallicRoughness == o.metallicRoughness && emissive == o.emissive
+                && matcap == o.matcap;
         }
         bool operator!=(const TextureKey& o) const { return !(*this == o); }
         bool operator<(const TextureKey& o) const {
@@ -123,7 +133,8 @@ struct MaterialComponent {
             if (height != o.height) return height < o.height;
             if (normal != o.normal) return normal < o.normal;
             if (metallicRoughness != o.metallicRoughness) return metallicRoughness < o.metallicRoughness;
-            return emissive < o.emissive;
+            if (emissive != o.emissive) return emissive < o.emissive;
+            return matcap < o.matcap;
         }
     };
 
@@ -134,6 +145,7 @@ struct MaterialComponent {
     mutable Renderer::Texture* cachedNormalTexture = nullptr;
     mutable Renderer::Texture* cachedMetallicRoughnessTexture = nullptr;
     mutable Renderer::Texture* cachedEmissiveTexture = nullptr;
+    mutable Renderer::Texture* cachedMatcapTexture = nullptr;
     mutable TextureKey cachedTextureKey;  // Updated when textureCacheDirty clears
     mutable bool textureCacheDirty = true;
 
@@ -190,6 +202,7 @@ struct MaterialComponent {
         cachedNormalTexture = nullptr;
         cachedMetallicRoughnessTexture = nullptr;
         cachedEmissiveTexture = nullptr;
+        cachedMatcapTexture = nullptr;
         cachedTextureKey = {};
     }
 };

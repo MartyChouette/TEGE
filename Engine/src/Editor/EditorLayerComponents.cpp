@@ -406,6 +406,23 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
             ImGui::SameLine();
             if (ImGui::Button("Clear##artistic")) { material->reflectivity = 0.0f; material->fresnelPower = 5.0f; material->rimLightStrength = 0.0f; }
 
+            ImGui::Separator();
+            ImGui::Text("Procedural Surface Noise");
+            InspectorUndo::DragFloat(m_UndoRedo, "Noise Scale", &material->surfaceNoiseScale, 0.1f, 0.0f, 50.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Noise frequency in world units (0 = off, 2-5 = fine grain, 10-20 = broad patches)");
+            if (material->surfaceNoiseScale > 0.0f) {
+                InspectorUndo::DragFloat(m_UndoRedo, "Noise Strength", &material->surfaceNoiseStrength, 0.005f, 0.0f, 1.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much noise modulates the diffuse color (0 = none, 0.3 = subtle, 1.0 = strong)");
+            }
+            // Noise presets
+            if (ImGui::Button("Stone##noise")) { material->surfaceNoiseScale = 5.0f; material->surfaceNoiseStrength = 0.25f; }
+            ImGui::SameLine();
+            if (ImGui::Button("Wood##noise")) { material->surfaceNoiseScale = 8.0f; material->surfaceNoiseStrength = 0.15f; }
+            ImGui::SameLine();
+            if (ImGui::Button("Dirt##noise")) { material->surfaceNoiseScale = 3.0f; material->surfaceNoiseStrength = 0.35f; }
+            ImGui::SameLine();
+            if (ImGui::Button("Clear##noise")) { material->surfaceNoiseScale = 0.0f; material->surfaceNoiseStrength = 0.0f; }
+
             ImGui::TreePop();
         }
 
@@ -577,6 +594,21 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
                 if (material->emissiveTexturePath.empty()) material->emissiveTexture = -1;
             }
             textureDrop(material->emissiveTexturePath, material->emissiveTexture);
+
+            // Matcap (Material Capture) texture path
+            char matcapPath[256];
+            strncpy(matcapPath, material->matcapTexturePath.c_str(), sizeof(matcapPath) - 1);
+            matcapPath[sizeof(matcapPath) - 1] = '\0';
+            if (InspectorUndo::InputText(m_UndoRedo, "Matcap", matcapPath, sizeof(matcapPath),
+                    [material](const std::string& val) {
+                        material->matcapTexturePath = val;
+                        if (val.empty()) material->matcapTexture = -1;
+                    })) {
+                material->matcapTexturePath = matcapPath;
+                if (material->matcapTexturePath.empty()) material->matcapTexture = -1;
+            }
+            textureDrop(material->matcapTexturePath, material->matcapTexture);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Material Capture texture: 2D image indexed by view-space normal for stylized lighting");
             ImGui::TreePop();
         }
 

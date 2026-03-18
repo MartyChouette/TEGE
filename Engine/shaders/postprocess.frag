@@ -161,6 +161,7 @@ layout(binding = 1) uniform PostProcessSettings {
     float celOutlineNormalWeight;  // 0=depth only, >0 adds normal edges
     vec3 celOutlineColor;
     float celOutlineDepthWeight;  // default 1.0
+    float celOutlineCurvatureWeight;  // curvature-driven thickness (0=off, 0-2 typical)
 
     // Full-screen stipple / dither
     uint stippleEnabled;
@@ -170,7 +171,6 @@ layout(binding = 1) uniform PostProcessSettings {
     float stippleDensity;
     float stippleStrength;
     float _stipplePad0;
-    float _stipplePad1;
     vec3 stippleFgColor;
     float _stipplePad2;
     vec3 stippleBgColor;
@@ -1394,6 +1394,28 @@ vec3 applyCelOutline(vec3 color, vec2 uv) {
 
     vec2 texelSize = vec2(1.0 / float(settings.screenWidth), 1.0 / float(settings.screenHeight));
     float thickness = settings.celOutlineThickness;
+
+    // Curvature-driven thickness variation (NPR pen/ink style)
+    // Estimate local curvature via Laplacian of normals: high curvature = thicker lines
+    if (settings.celOutlineCurvatureWeight > 0.0) {
+        vec3 nC  = reconstructNormal(uv);
+        vec3 nL  = reconstructNormal(uv + vec2(-1.0,  0.0) * texelSize);
+        vec3 nR  = reconstructNormal(uv + vec2( 1.0,  0.0) * texelSize);
+        vec3 nU  = reconstructNormal(uv + vec2( 0.0, -1.0) * texelSize);
+        vec3 nD  = reconstructNormal(uv + vec2( 0.0,  1.0) * texelSize);
+
+        // Laplacian of normals: difference of neighbors from center
+        vec3 laplacian = (nL + nR + nU + nD) - 4.0 * nC;
+        // Curvature magnitude: how much the surface bends at this pixel
+        // Dot with center normal emphasizes concavities/convexities over planar tilt
+        float curvature = length(laplacian);
+
+        // Modulate thickness: flat surfaces get thinner lines, curved edges get thicker
+        // Remap curvature (typically 0..~2) to a multiplier around 1.0
+        thickness *= (1.0 + settings.celOutlineCurvatureWeight * curvature * 5.0);
+        // Clamp to prevent excessively thick outlines
+        thickness = clamp(thickness, 0.5, settings.celOutlineThickness * 3.0);
+    }
 
     // Sample 3x3 depth neighborhood
     float d00 = texture(depthTexture, uv + vec2(-thickness, -thickness) * texelSize).r;

@@ -385,6 +385,7 @@ void EditorLayer::DrawPostProcessVolumeComponent(ECS::Entity entity) {
                 ImGui::DragFloat("Threshold##PPVolCel", &s.celOutlineThreshold, 0.01f, 0.0f, 1.0f);
                 ImGui::DragFloat("Depth Weight##PPVolCel", &s.celOutlineDepthWeight, 0.01f, 0.0f, 2.0f);
                 ImGui::DragFloat("Normal Weight##PPVolCel", &s.celOutlineNormalWeight, 0.01f, 0.0f, 2.0f);
+                ImGui::DragFloat("Curvature Weight##PPVolCel", &s.celOutlineCurvatureWeight, 0.01f, 0.0f, 2.0f);
                 f32 outColor[3] = { s.celOutlineColor.x, s.celOutlineColor.y, s.celOutlineColor.z };
                 if (ImGui::ColorEdit3("Color##PPVolCel", outColor)) {
                     s.celOutlineColor = Math::Vector3(outColor[0], outColor[1], outColor[2]);
@@ -1266,6 +1267,8 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Weight of depth-based edge detection");
                 ImGui::SliderFloat("Normal Weight##PP", &s.celOutlineNormalWeight, 0.0f, 2.0f);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Weight of normal-based edge detection (catches surface detail depth misses)");
+                ImGui::SliderFloat("Curvature Weight##PP", &s.celOutlineCurvatureWeight, 0.0f, 2.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Curvature-driven thickness variation (NPR pen/ink).\nThicker lines on curved edges, thinner on flat surfaces.");
                 ImGui::ColorEdit3("Outline Color##PP", &s.celOutlineColor.x);
             }
         }
@@ -1671,6 +1674,39 @@ void EditorLayer::DrawSettingsSection_RetroEffects() {
             }
         }
     }
+}
+
+void EditorLayer::DrawSettingsSection_ArtStylePreset() {
+    if (!m_RenderSystem) return;
+
+    const char* presetNames[] = {
+        "Realistic PBR",
+        "Classic Blinn-Phong",
+        "Hand-Painted",
+        "Toon / Anime",
+        "Low-Poly Retro",
+        "Pixel Art",
+        "NPR Sketch"
+    };
+    constexpr int presetCount = 7;
+
+    int current = static_cast<int>(m_ArtStylePreset);
+    if (ImGui::Combo("Art Style Preset", &current, presetNames, presetCount)) {
+        m_ArtStylePreset = static_cast<u32>(current);
+
+        // Build a SceneRenderSettings, apply the preset, then push to runtime
+        Renderer::SceneRenderSettings settings =
+            Renderer::SceneRenderSettings::CaptureFromRuntime(
+                m_RenderSystem,
+                m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+        Renderer::ApplyArtStylePreset(settings, m_ArtStylePreset);
+        settings.ApplyToRuntime(
+            m_RenderSystem,
+            m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+    }
+    ImGui::SetItemTooltip(
+        "Apply a preconfigured rendering style.\n"
+        "Individual settings can still be tweaked after choosing a preset.");
 }
 
 void EditorLayer::DrawSettingsSection_Skybox() {

@@ -305,6 +305,7 @@ private:
     void DrawSettingsSection_BuildConfig();
     void DrawSettingsSection_Networking();
     // Scene tab sections
+    void DrawSettingsSection_ArtStylePreset();
     void DrawSettingsSection_Skybox();
     void DrawSettingsSection_Shadows();
     void DrawSettingsSection_AmbientLighting();
@@ -892,6 +893,7 @@ private:
 
     // Per-scene render settings
     bool m_CurrentSceneUsesProjectDefaults = true;
+    u32 m_ArtStylePreset = 0;  // Tracks the Art Style Preset dropdown index
     Renderer::SceneRenderSettings m_PrePlayRenderSettings;
 
     // Terrain editing

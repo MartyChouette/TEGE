@@ -793,7 +793,8 @@ private:
         Renderer::Texture* height,
         Renderer::Texture* normal,
         Renderer::Texture* metallicRoughness,
-        Renderer::Texture* emissive);
+        Renderer::Texture* emissive,
+        Renderer::Texture* matcap = nullptr);
 
     // Split uniform updates: frame-level (once) vs per-entity (material only)
     void UpdateFrameUniforms();

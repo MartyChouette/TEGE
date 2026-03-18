@@ -214,6 +214,11 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["sssIntensity"] = RF(material.sssIntensity);
     j["sssRadius"] = RF(material.sssRadius);
     j["sssColor"] = SerializeVector3(material.sssColor);
+    // Matcap texture
+    j["matcapTexturePath"] = material.matcapTexturePath;
+    // Procedural surface noise
+    j["surfaceNoiseScale"] = RF(material.surfaceNoiseScale);
+    j["surfaceNoiseStrength"] = RF(material.surfaceNoiseStrength);
     return j;
 }
 
@@ -400,6 +405,11 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("sssIntensity")) material.sssIntensity = j["sssIntensity"].get<f32>();
     if (j.contains("sssRadius")) material.sssRadius = j["sssRadius"].get<f32>();
     if (j.contains("sssColor")) material.sssColor = DeserializeVector3(j["sssColor"]);
+    // Matcap texture
+    if (j.contains("matcapTexturePath")) material.matcapTexturePath = SafeStr(j["matcapTexturePath"], MAX_STR_PATH);
+    // Procedural surface noise
+    if (j.contains("surfaceNoiseScale")) material.surfaceNoiseScale = j["surfaceNoiseScale"].get<f32>();
+    if (j.contains("surfaceNoiseStrength")) material.surfaceNoiseStrength = j["surfaceNoiseStrength"].get<f32>();
     return material;
 }
 
@@ -999,6 +1009,7 @@ json SerializePPSettings(const Renderer::PostProcessSettings& s) {
     j["celOutlineEnabled"] = s.celOutlineEnabled;
     j["celOutlineThickness"] = RF(s.celOutlineThickness);
     j["celOutlineThreshold"] = RF(s.celOutlineThreshold);
+    j["celOutlineCurvatureWeight"] = RF(s.celOutlineCurvatureWeight);
     j["celOutlineColor"] = SerializeVector3(s.celOutlineColor);
     j["stippleEnabled"] = s.stippleEnabled;
     j["stipplePatternMask"] = s.stipplePatternMask;
@@ -1122,6 +1133,7 @@ Renderer::PostProcessSettings DeserializePPSettings(const json& j) {
     s.celOutlineEnabled = GU("celOutlineEnabled");
     s.celOutlineThickness = GF("celOutlineThickness", 1.0f);
     s.celOutlineThreshold = GF("celOutlineThreshold", 0.1f);
+    s.celOutlineCurvatureWeight = GF("celOutlineCurvatureWeight", 0.0f);
     if (j.contains("celOutlineColor")) s.celOutlineColor = DeserializeVector3(j["celOutlineColor"]);
     s.stippleEnabled = GU("stippleEnabled");
     s.stipplePatternMask = GU("stipplePatternMask");

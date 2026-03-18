@@ -1474,6 +1474,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             Renderer::Texture* texNormal = nullptr;
             Renderer::Texture* texMR = nullptr;
             Renderer::Texture* texEmissive = nullptr;
+            Renderer::Texture* texMatcap = nullptr;
 
             if (material) {
                 pushConstants.baseColor = material->baseColor;
@@ -1529,10 +1530,18 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                             material->emissiveTexture = 1;
                         }
                     }
+                    if (!material->matcapTexturePath.empty()) {
+                        auto tex = GetOrLoadTexture(material->matcapTexturePath);
+                        if (tex && tex->IsValid()) {
+                            material->cachedMatcapTexture = tex.get();
+                            material->matcapTexture = 1;
+                        }
+                    }
                     material->textureCacheDirty = false;
                     material->cachedTextureKey = { material->cachedBaseColorTexture,
                         material->cachedHeightTexture, material->cachedNormalTexture,
-                        material->cachedMetallicRoughnessTexture, material->cachedEmissiveTexture };
+                        material->cachedMetallicRoughnessTexture, material->cachedEmissiveTexture,
+                        material->cachedMatcapTexture };
                 }
 
                 // Use cached texture pointers
@@ -1541,6 +1550,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 texNormal = material->cachedNormalTexture;
                 texMR = material->cachedMetallicRoughnessTexture;
                 texEmissive = material->cachedEmissiveTexture;
+                texMatcap = material->cachedMatcapTexture;
 
                 pushConstants.flags = 0;
                 if (material->doubleSided) pushConstants.flags |= 1;
@@ -1593,6 +1603,13 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                         pushConstants.surfaceParam2 = elemSurface->wetness + std::floor(elemSurface->snowCoverage * 256.0f);
                         pushConstants.surfaceParam3 = elemSurface->frostAmount;
                     }
+                }
+                // Procedural surface noise: encode scale/strength into surfaceParams (range 400+)
+                // Only when no other effect has claimed the surfaceParam slots
+                if (!material->ditherGradient && !material->ditherTransparency &&
+                    material->surfaceNoiseScale > 0.0f && pushConstants.surfaceParam1 < 100.0f) {
+                    pushConstants.surfaceParam1 = 400.0f + material->surfaceNoiseScale;
+                    pushConstants.surfaceParam2 = material->surfaceNoiseStrength;
                 }
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
@@ -1679,8 +1696,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 pushConstants.flags |= (1 << 16); // HAS_BASE_COLOR_TEXTURE
             }
 
-            // Batched texture descriptor update (1 vkUpdateDescriptorSets call instead of 5)
-            UpdateEntityTextureDescriptors(boundTexture, texHeight, texNormal, texMR, texEmissive);
+            // Batched texture descriptor update (1 vkUpdateDescriptorSets call instead of 6)
+            UpdateEntityTextureDescriptors(boundTexture, texHeight, texNormal, texMR, texEmissive, texMatcap);
 
             // Upload bone matrices for skinned meshes
             AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
@@ -1880,6 +1897,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
             Renderer::Texture* texNormal = nullptr;
             Renderer::Texture* texMR = nullptr;
             Renderer::Texture* texEmissive = nullptr;
+            Renderer::Texture* texMatcap = nullptr;
 
             if (material) {
                 pushConstants.baseColor = material->baseColor;
@@ -1935,10 +1953,18 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                             material->emissiveTexture = 1;
                         }
                     }
+                    if (!material->matcapTexturePath.empty()) {
+                        auto tex = GetOrLoadTexture(material->matcapTexturePath);
+                        if (tex && tex->IsValid()) {
+                            material->cachedMatcapTexture = tex.get();
+                            material->matcapTexture = 1;
+                        }
+                    }
                     material->textureCacheDirty = false;
                     material->cachedTextureKey = { material->cachedBaseColorTexture,
                         material->cachedHeightTexture, material->cachedNormalTexture,
-                        material->cachedMetallicRoughnessTexture, material->cachedEmissiveTexture };
+                        material->cachedMetallicRoughnessTexture, material->cachedEmissiveTexture,
+                        material->cachedMatcapTexture };
                 }
 
                 // Use cached texture pointers
@@ -1947,6 +1973,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 texNormal = material->cachedNormalTexture;
                 texMR = material->cachedMetallicRoughnessTexture;
                 texEmissive = material->cachedEmissiveTexture;
+                texMatcap = material->cachedMatcapTexture;
 
                 pushConstants.flags = 0;
                 if (material->doubleSided) pushConstants.flags |= 1;
@@ -1997,6 +2024,13 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                         pushConstants.surfaceParam2 = elemSurface->wetness + std::floor(elemSurface->snowCoverage * 256.0f);
                         pushConstants.surfaceParam3 = elemSurface->frostAmount;
                     }
+                }
+                // Procedural surface noise: encode scale/strength into surfaceParams (range 400+)
+                // Only when no other effect has claimed the surfaceParam slots
+                if (!material->ditherGradient && !material->ditherTransparency &&
+                    material->surfaceNoiseScale > 0.0f && pushConstants.surfaceParam1 < 100.0f) {
+                    pushConstants.surfaceParam1 = 400.0f + material->surfaceNoiseScale;
+                    pushConstants.surfaceParam2 = material->surfaceNoiseStrength;
                 }
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
@@ -2077,8 +2111,8 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 pushConstants.flags |= (1 << 16);
             }
 
-            // Batched texture descriptor update (1 vkUpdateDescriptorSets call instead of 5)
-            UpdateEntityTextureDescriptors(boundTexture, texHeight, texNormal, texMR, texEmissive);
+            // Batched texture descriptor update (1 vkUpdateDescriptorSets call instead of 6)
+            UpdateEntityTextureDescriptors(boundTexture, texHeight, texNormal, texMR, texEmissive, texMatcap);
 
             // Upload bone matrices for skinned meshes
             AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
@@ -2861,7 +2895,7 @@ void RenderSystem::CreateDescriptorSets() {
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = totalSets * 2;   // bindings 0-1 (material moved to SSBO)
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = totalSets * 10;  // bindings 3-6, 8-11, 16-17
+    poolSizes[1].descriptorCount = totalSets * 11;  // bindings 3-6, 8-11, 16-18
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     poolSizes[2].descriptorCount = totalSets * 5;   // bindings 7, 12-15
     poolSizes[3].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
@@ -3034,7 +3068,10 @@ void RenderSystem::CreateDescriptorSets() {
         // Virtual texturing physical atlas (binding 17) - fallback to white
         VkDescriptorImageInfo vtAtlasImageInfo = imageInfo;
 
-        std::array<VkWriteDescriptorSet, 18> descriptorWrites{};
+        // Matcap texture (binding 18) - fallback to white (procedural matcap used when white)
+        VkDescriptorImageInfo matcapImageInfo = imageInfo;
+
+        std::array<VkWriteDescriptorSet, 19> descriptorWrites{};
 
         // MVP descriptor
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -3198,6 +3235,15 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[17].descriptorCount = 1;
         descriptorWrites[17].pImageInfo = &vtAtlasImageInfo;
 
+        // Matcap texture descriptor (binding 18)
+        descriptorWrites[18].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[18].dstSet = m_DescriptorSets[i];
+        descriptorWrites[18].dstBinding = 18;
+        descriptorWrites[18].dstArrayElement = 0;
+        descriptorWrites[18].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[18].descriptorCount = 1;
+        descriptorWrites[18].pImageInfo = &matcapImageInfo;
+
         vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
@@ -3317,9 +3363,10 @@ void RenderSystem::CreateDescriptorSets() {
                 }
                 VkDescriptorImageInfo offVtIndInfo = offImageInfo;
                 VkDescriptorImageInfo offVtAtlasInfo = offImageInfo;
+                VkDescriptorImageInfo offMatcapInfo = offImageInfo;
 
-                std::array<VkWriteDescriptorSet, 18> offWrites{};
-                for (u32 w = 0; w < 18; ++w) {
+                std::array<VkWriteDescriptorSet, 19> offWrites{};
+                for (u32 w = 0; w < 19; ++w) {
                     offWrites[w].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
                     offWrites[w].dstSet = m_OffscreenDescriptorSets[idx];
                     offWrites[w].dstBinding = w;
@@ -3362,6 +3409,8 @@ void RenderSystem::CreateDescriptorSets() {
                 offWrites[16].pImageInfo = &offVtIndInfo;
                 offWrites[17].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
                 offWrites[17].pImageInfo = &offVtAtlasInfo;
+                offWrites[18].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                offWrites[18].pImageInfo = &offMatcapInfo;
 
                 vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
                     static_cast<u32>(offWrites.size()), offWrites.data(), 0, nullptr);
@@ -4290,6 +4339,7 @@ void RenderSystem::RenderEntity(Entity entity) {
     Renderer::Texture* texNormal = nullptr;
     Renderer::Texture* texMR = nullptr;
     Renderer::Texture* texEmissive = nullptr;
+    Renderer::Texture* texMatcap = nullptr;
 
     if (material) {
         pushConstants.baseColor = material->baseColor;
@@ -4338,10 +4388,18 @@ void RenderSystem::RenderEntity(Entity entity) {
                     material->emissiveTexture = 1;
                 }
             }
+            if (!material->matcapTexturePath.empty()) {
+                auto tex = GetOrLoadTexture(material->matcapTexturePath);
+                if (tex && tex->IsValid()) {
+                    material->cachedMatcapTexture = tex.get();
+                    material->matcapTexture = 1;
+                }
+            }
             material->textureCacheDirty = false;
             material->cachedTextureKey = { material->cachedBaseColorTexture,
                 material->cachedHeightTexture, material->cachedNormalTexture,
-                material->cachedMetallicRoughnessTexture, material->cachedEmissiveTexture };
+                material->cachedMetallicRoughnessTexture, material->cachedEmissiveTexture,
+                material->cachedMatcapTexture };
         }
 
         // Use cached texture pointers
@@ -4350,6 +4408,7 @@ void RenderSystem::RenderEntity(Entity entity) {
         texNormal = material->cachedNormalTexture;
         texMR = material->cachedMetallicRoughnessTexture;
         texEmissive = material->cachedEmissiveTexture;
+        texMatcap = material->cachedMatcapTexture;
 
         // Compute flags same as MaterialGPU::FromComponent
         pushConstants.flags = 0;
@@ -4402,6 +4461,13 @@ void RenderSystem::RenderEntity(Entity entity) {
                 pushConstants.surfaceParam2 = elemSurface->wetness + std::floor(elemSurface->snowCoverage * 256.0f);
                 pushConstants.surfaceParam3 = elemSurface->frostAmount;
             }
+        }
+        // Procedural surface noise: encode scale/strength into surfaceParams (range 400+)
+        // Only when no other effect has claimed the surfaceParam slots
+        if (!material->ditherGradient && !material->ditherTransparency &&
+            material->surfaceNoiseScale > 0.0f && pushConstants.surfaceParam1 < 100.0f) {
+            pushConstants.surfaceParam1 = 400.0f + material->surfaceNoiseScale;
+            pushConstants.surfaceParam2 = material->surfaceNoiseStrength;
         }
     } else {
         // Default material (light gray, non-metallic)
@@ -4512,8 +4578,8 @@ void RenderSystem::RenderEntity(Entity entity) {
     }
 
     // Update texture descriptor if entity has a texture
-    // Batched texture descriptor update (1 vkUpdateDescriptorSets call instead of 5)
-    UpdateEntityTextureDescriptors(boundTexture, texHeight, texNormal, texMR, texEmissive);
+    // Batched texture descriptor update (1 vkUpdateDescriptorSets call instead of 6)
+    UpdateEntityTextureDescriptors(boundTexture, texHeight, texNormal, texMR, texEmissive, texMatcap);
 
     // Upload bone matrices for skinned meshes (cached storage avoids type-ID lookup)
     AnimatorComponent* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
@@ -5384,7 +5450,8 @@ void RenderSystem::UpdateEntityTextureDescriptors(
     Renderer::Texture* height,
     Renderer::Texture* normal,
     Renderer::Texture* metallicRoughness,
-    Renderer::Texture* emissive)
+    Renderer::Texture* emissive,
+    Renderer::Texture* matcap)
 {
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
     VkDescriptorSet dstSet = (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)];
@@ -5397,26 +5464,28 @@ void RenderSystem::UpdateEntityTextureDescriptors(
     Renderer::Texture* texNormal = (normal && normal->IsValid()) ? normal : defaultTex;
     Renderer::Texture* texMR = (metallicRoughness && metallicRoughness->IsValid()) ? metallicRoughness : defaultTex;
     Renderer::Texture* texEmissive = (emissive && emissive->IsValid()) ? emissive : defaultTex;
+    Renderer::Texture* texMatcap = (matcap && matcap->IsValid()) ? matcap : defaultTex;
 
     // Early out if no valid textures at all
     if (!texBase || !texBase->IsValid()) return;
 
     // Skip vkUpdateDescriptorSets if these textures are already bound
-    MaterialComponent::TextureKey currentKey{ texBase, texHeight, texNormal, texMR, texEmissive };
+    MaterialComponent::TextureKey currentKey{ texBase, texHeight, texNormal, texMR, texEmissive, texMatcap };
     if (currentKey == m_LastBound.textureKey) { ++m_DescriptorCacheHits; return; }
     m_LastBound.textureKey = currentKey;
     ++m_DescriptorCacheWrites;
 
     // Collect image infos (must persist until vkUpdateDescriptorSets returns)
-    VkDescriptorImageInfo imageInfos[5];
+    VkDescriptorImageInfo imageInfos[6];
     imageInfos[0] = texBase->GetDescriptorInfo();
     imageInfos[1] = texHeight->GetDescriptorInfo();
     imageInfos[2] = texNormal->GetDescriptorInfo();
     imageInfos[3] = texMR->GetDescriptorInfo();
     imageInfos[4] = texEmissive->GetDescriptorInfo();
+    imageInfos[5] = texMatcap->GetDescriptorInfo();
 
-    // Bindings: 3=baseColor, 5=height, 6=normal, 8=metallicRoughness, 9=emissive
-    VkWriteDescriptorSet writes[5] = {};
+    // Bindings: 3=baseColor, 5=height, 6=normal, 8=metallicRoughness, 9=emissive, 18=matcap
+    VkWriteDescriptorSet writes[6] = {};
 
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writes[0].dstSet = dstSet;
@@ -5458,8 +5527,16 @@ void RenderSystem::UpdateEntityTextureDescriptors(
     writes[4].descriptorCount = 1;
     writes[4].pImageInfo = &imageInfos[4];
 
-    // Single batched call instead of 5 individual calls
-    vkUpdateDescriptorSets(device, 5, writes, 0, nullptr);
+    writes[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[5].dstSet = dstSet;
+    writes[5].dstBinding = 18;
+    writes[5].dstArrayElement = 0;
+    writes[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[5].descriptorCount = 1;
+    writes[5].pImageInfo = &imageInfos[5];
+
+    // Single batched call instead of 6 individual calls
+    vkUpdateDescriptorSets(device, 6, writes, 0, nullptr);
 }
 
 void RenderSystem::UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer) {

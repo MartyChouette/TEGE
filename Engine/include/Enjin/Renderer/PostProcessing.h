@@ -203,6 +203,7 @@ struct alignas(16) PostProcessSettings {
     alignas(4) f32 celOutlineNormalWeight = 0.0f; // Normal edge weight (0=depth only, 1=normal only)
     alignas(16) Math::Vector3 celOutlineColor = Math::Vector3(0.0f, 0.0f, 0.0f);
     alignas(4) f32 celOutlineDepthWeight = 1.0f;  // Depth edge weight (default=full)
+    alignas(4) f32 celOutlineCurvatureWeight = 0.0f; // Curvature-driven thickness (0=off, 0-2 typical)
 
     // Full-screen stipple / dither
     alignas(4) u32 stippleEnabled = 0;
@@ -212,7 +213,6 @@ struct alignas(16) PostProcessSettings {
     alignas(4) f32 stippleDensity = 0.5f;    // Threshold bias 0.0-1.0
     alignas(4) f32 stippleStrength = 1.0f;   // Blend 0.0-1.0 with original
     alignas(4) f32 _stipplePad0 = 0.0f;
-    alignas(4) f32 _stipplePad1 = 0.0f;
     alignas(16) Math::Vector3 stippleFgColor = Math::Vector3(0.0f, 0.0f, 0.0f);  // Foreground/ink (black)
     alignas(4) f32 _stipplePad2 = 0.0f;
     alignas(16) Math::Vector3 stippleBgColor = Math::Vector3(1.0f, 1.0f, 1.0f);  // Background/paper (white)

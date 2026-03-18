@@ -15,11 +15,11 @@ This document captures detailed technical plans, performance findings, and strat
 | ~~**Art Styles**~~ | ~~Pre-PBR Realism — half-Lambert wrap, specular map slot~~ | ~~P0~~ ~85% |
 | ~~**Art Styles**~~ | ~~Hand-Painted Stylization — light ramp (4 modes), wrap lighting, per-material ramp override~~ | ~~P0~~ ~90% |
 | ~~**Art Styles**~~ | ~~Enhanced Cel/Toon — inverted-hull geometry outlines~~ | ~~P0~~ DONE |
-| **Art Styles** | NPR Illustrative — pen/ink curvature-driven outline variation (remaining gap) | P0 |
+| ~~**Art Styles**~~ | ~~NPR Illustrative — pen/ink curvature-driven outline variation~~ | ~~P0~~ DONE |
 | ~~**Art Styles**~~ | ~~Pixel Art Polish — PICO-8, Game Boy, NES, CGA, C64 palettes, normal quantization~~ | ~~P0~~ DONE |
-| **Art Styles** | Material-Expression Worlds — matcap texture slot, procedural surface noise (remaining gaps) | P0 |
+| ~~**Art Styles**~~ | ~~Material-Expression Worlds — matcap texture slot, procedural surface noise~~ | ~~P0~~ DONE |
 | ~~**Art Styles**~~ | ~~Analog/Degraded Polish — film gate weave, light leaks, tape dropout~~ | ~~P0~~ DONE |
-| **Art Styles** | Art Style Presets — editor dropdown (Realistic PBR, Classic Blinn-Phong, Hand-Painted, Toon/Anime, Low-Poly Retro, Pixel Art, NPR Sketch) | P0 |
+| ~~**Art Styles**~~ | ~~Art Style Presets — editor dropdown (7 presets)~~ | ~~P0~~ DONE |
 | **Renderer** | Reflection Probes — baked cubemaps with box projection, proximity blending, SSR fallback | P1 |
 | **Gameplay** | Dynamic Difficulty — read player stats (health, deaths, time, accuracy) + difficulty setting to auto-adjust AI aggression, damage, resources, hints | P1 |
 | **Renderer** | ReSTIR — Reservoir-based light sampling (DI, temporal/spatial reuse) | P1 |
@@ -89,10 +89,10 @@ This document captures detailed technical plans, performance findings, and strat
 | Analog/degraded | 100% — VHS (tracking, wobble, bleed, noise, tape dropout), CRT (10 real presets, phosphor subpixels), film grain, chromatic aberration, film gate weave, light leaks | None |
 | Pixel/3D hybrid | 100% — resolution downscale, color quantization, Bayer dither, palette lock (PICO-8, Game Boy, NES, CGA, C64 presets), normal quantization | None |
 | Cel/toon | 100% — diffuse bands (2-8), specular cutoff, Sobel depth+normal outlines, colored shadows, rim lighting, per-material ramp override, inverted-hull geometry outlines (per-material width/color) | None |
-| NPR illustrative | ~40% — 8 stipple patterns (Crosshatch, Halftone, etc.), configurable density/color modes | Tonal Art Map hatching, watercolor effects, pen/ink variation, paper texture |
+| NPR illustrative | ~60% — 8 stipple patterns, configurable density/color modes, curvature-driven outline thickness variation (pen/ink) | Tonal Art Map hatching, watercolor effects, paper texture |
 | Pre-PBR realism | ~30% — Blinn-Phong shading model exists | Specular map slot, half-Lambert wrap, scene specular strength |
 | Hand-painted | ~10% — dither gradient flag, LUT grading | Light ramp textures, wrap lighting, per-material ramp override |
-| Material-expression | ~20% — SSS fields on MaterialComponent, PBR params, parallax mapping | SSS not wired in forward pass, no matcap textures, no procedural noise |
+| Material-expression | 100% — SSS wired in forward shader (wrap lighting + offset samples), matcap texture slot (binding 18, per-material), procedural surface noise (3-octave world-space hash) | None |
 
 ### Phase 0: Shared Infrastructure
 
@@ -119,11 +119,11 @@ Reusable building blocks that unlock multiple styles:
 - ~~Inverted-hull geometry outlines: backface extrusion pass, per-material `outlineWidth`/`outlineColor`~~
 - Files: `outline.vert`, `outline.frag`, `Material.h`, `RenderSystem.cpp` (outline pipeline + pass)
 
-### Phase 3: NPR Illustrative (Style 4)
+### Phase 3: NPR Illustrative (Style 4) — Partially Complete
 
 - Tonal Art Map (TAM) hatching: 6-tone luminance-layered atlas, interpolate layers by fragment brightness
 - Watercolor post-process: edge darkening, wet-edge diffusion (edge-aware Gaussian), paper texture overlay, color granulation (noise-modulated saturation)
-- Pen/ink line variation: curvature-driven outline thickness
+- ~~Pen/ink line variation: curvature-driven outline thickness~~ ✅ — `celOutlineCurvatureWeight` in PostProcessSettings, Laplacian of normals modulates Sobel outline thickness
 - Files: `postprocess.frag`, `PostProcessSettings`, `SceneRenderSettings.h`
 
 ### Phase 4: Pixel Art Polish (Style 6)
@@ -133,11 +133,11 @@ Reusable building blocks that unlock multiple styles:
 - Resolution-coherent outlines: render outlines at internal resolution before upscale
 - Normal quantization mode: snap normals to N cardinal directions for 2D-in-3D look
 
-### Phase 5: Material-Expression Worlds (Style 7)
+### Phase 5: Material-Expression Worlds (Style 7) DONE
 
-- Wire existing `sssIntensity`/`sssRadius`/`sssColor` into forward shader (wrap-lighting + offset samples)
-- Matcap texture slot replacing procedural sphere env map
-- Procedural surface noise: `noiseType` (Perlin/Worley/Simplex), `noiseScale`, `noiseStrength` as normal perturbation + color modulation
+- ~~Wire existing `sssIntensity`/`sssRadius`/`sssColor` into forward shader (wrap-lighting + offset samples)~~ DONE
+- ~~Matcap texture slot replacing procedural sphere env map~~ DONE — binding 18 (`matcapMap`), per-material `matcapTexturePath`, samples real texture when bound, falls back to procedural Dreamcast-style sheen
+- ~~Procedural surface noise~~ DONE — `surfaceNoiseScale`/`surfaceNoiseStrength` on MaterialComponent, 3-octave world-space hash noise, encoded in surfaceParam range 400+
 
 ### Phase 6: Analog/Degraded Polish (Style 8)
 
@@ -145,18 +145,18 @@ Reusable building blocks that unlock multiple styles:
 - Light leak / film burn: bindable overlay texture, additive blend, animated position
 - Analog tape dropout: horizontal signal loss bands in VHS filter
 
-### Art Style Presets (Editor UI)
+### Art Style Presets (Editor UI) ✅ COMPLETE
 
-New "Art Style Quick Setup" dropdown in Rendering settings with one-click presets:
-- Realistic PBR (default)
-- Classic Blinn-Phong
-- Hand-Painted (TF2-like)
-- Toon/Anime
-- Low-Poly Retro
-- Pixel Art
-- NPR Sketch
+7 one-click presets in Settings > Scene > Art Style Preset dropdown:
+- ~~Realistic PBR~~ — GGX, Fresnel, energy conservation, geometry term
+- ~~Classic Blinn-Phong~~ — clean default, no stylized effects
+- ~~Hand-Painted~~ — half-Lambert + warm shadow ramp (TF2/Genshin-style)
+- ~~Toon/Anime~~ — 4-band cel, purple shadows, geometry outlines, anime ramp
+- ~~Low-Poly Retro~~ — flat shading, affine texturing, vertex snapping, 16-level posterization
+- ~~Pixel Art~~ — 320x240 downscale, point filtering, 16-color palette, Bayer dither
+- ~~NPR Sketch~~ — 2-band cel, Sobel outlines (2.0 thickness + curvature weight), crosshatch stipple
 
-Each preset configures shadingModel, cel settings, post-process, retro flags, and ramp textures.
+`ApplyArtStylePreset()` in SceneRenderSettings.cpp, `artStylePreset` serialized per scene.
 
 ### Key Files
 

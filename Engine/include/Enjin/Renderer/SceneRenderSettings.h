@@ -21,6 +21,11 @@ struct SceneRenderSettings {
     // --- Override flag ---
     bool useProjectDefaults = true;
 
+    // --- Art Style Preset ---
+    // 0=Realistic PBR, 1=Classic Blinn-Phong, 2=Hand-Painted, 3=Toon/Anime,
+    // 4=Low-Poly Retro, 5=Pixel Art, 6=NPR Sketch
+    u32 artStylePreset = 0;
+
     // --- RenderSystem fields ---
     bool shadowsEnabled = true;
     u32 shadowResolution = 2048;    // 512/1024/2048/4096
@@ -209,6 +214,7 @@ struct SceneRenderSettings {
     bool celOutlineEnabled = false;
     f32 celOutlineThickness = 1.0f;
     f32 celOutlineThreshold = 0.1f;
+    f32 celOutlineCurvatureWeight = 0.0f;  // Curvature-driven thickness (0=off, 0-2 typical)
     Math::Vector3 celOutlineColor = Math::Vector3(0.0f, 0.0f, 0.0f);
 
     // --- Geometry Outlines (inverted-hull) ---
@@ -311,6 +317,11 @@ struct SceneRenderSettings {
     void ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSettings* pp) const;
     static SceneRenderSettings Defaults() { return SceneRenderSettings{}; }
 };
+
+// Apply a named art style preset to the given settings struct.
+// presetIndex: 0=Realistic PBR, 1=Classic Blinn-Phong, 2=Hand-Painted,
+//              3=Toon/Anime, 4=Low-Poly Retro, 5=Pixel Art, 6=NPR Sketch
+void ApplyArtStylePreset(SceneRenderSettings& s, u32 presetIndex);
 
 // JSON serialization (free functions — usable from SceneSerializer and SceneManager)
 nlohmann::json SerializeRenderSettings(const SceneRenderSettings& s);

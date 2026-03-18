@@ -70,7 +70,7 @@ void VulkanPipeline::Bind(VkCommandBuffer commandBuffer) {
 }
 
 bool VulkanPipeline::CreateDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 18> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 19> bindings{};
 
     // UBO binding 0: model/view/projection matrices (vertex shader)
     bindings[0].binding = 0;
@@ -197,6 +197,13 @@ bool VulkanPipeline::CreateDescriptorSetLayout() {
     bindings[17].descriptorCount = 1;
     bindings[17].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[17].pImmutableSamplers = nullptr;
+
+    // Sampler binding 18: matcap texture (fragment shader)
+    bindings[18].binding = 18;
+    bindings[18].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[18].descriptorCount = 1;
+    bindings[18].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[18].pImmutableSamplers = nullptr;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
