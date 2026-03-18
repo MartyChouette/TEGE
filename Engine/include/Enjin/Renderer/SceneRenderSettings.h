@@ -286,6 +286,15 @@ struct SceneRenderSettings {
     f32 rtGIIntensity = 1.0f;
     u32 rtGIBounces = 1;
 
+    // Radiance Cache (screen-space irradiance caching for GI)
+    bool radianceCacheEnabled = false;
+    u32 radianceCacheTileSize = 32;
+    f32 radianceCacheMaxAge = 8.0f;
+    f32 radianceCacheDepthThreshold = 0.1f;
+    f32 radianceCacheNormalThreshold = 0.85f;
+    f32 radianceCacheHysteresis = 0.9f;
+    bool radianceCacheExcludeDirectional = true;
+
     // Path Tracer
     u32 rtPathTracerMaxBounces = 4;
     u32 rtPathTracerTargetSPP = 1024;

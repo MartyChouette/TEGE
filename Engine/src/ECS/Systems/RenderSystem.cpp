@@ -50,7 +50,9 @@
 #include "Enjin/Renderer/RayTracing/OIDNDenoiser.h"
 #include "Enjin/Renderer/RayTracing/OptiXDenoiser.h"
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
+#include "Enjin/Renderer/RayTracing/RTTemporalReuse.h"
 #include "Enjin/Renderer/RayTracing/ReSTIR.h"
+#include "Enjin/Renderer/RayTracing/RadianceCache.h"
 #include "Enjin/Renderer/RayTracing/RTShaderData.h"
 #include "Enjin/Renderer/SHLightProbe.h"
 #include "Enjin/Renderer/ReflectionProbeSystem.h"
@@ -67,6 +69,8 @@
 #endif
 #include "Enjin/Renderer/Upscaling/IUpscaler.h"
 #include "Enjin/Renderer/Upscaling/FSR2Upscaler.h"
+#include "Enjin/Renderer/Upscaling/DLSSUpscaler.h"
+#include "Enjin/Renderer/Upscaling/XeSSUpscaler.h"
 #include "Enjin/ECS/View.h"
 #include <cstring>
 #include <array>
@@ -329,6 +333,28 @@ void RenderSystem::Initialize() {
         }
     }
 
+    // Initialize texture-grouped indirect draw batcher
+    if (m_GPUCullingEnabled && m_GPUCulling) {
+        m_IndirectDrawBatcher = std::make_unique<Renderer::IndirectDrawBatcher>();
+        if (!m_IndirectDrawBatcher->Initialize(m_Renderer->GetContext(), m_GPUCulling->GetMaxObjects())) {
+            ENJIN_LOG_WARN(Renderer, "IndirectDrawBatcher init failed, textured entities use per-entity draws");
+            m_IndirectDrawBatcher.reset();
+        } else {
+            ENJIN_LOG_INFO(Renderer, "Texture-grouped indirect draw batching enabled");
+        }
+    }
+
+    // Initialize async compute scheduler for RT/denoise overlap
+    {
+        m_AsyncComputeScheduler = std::make_unique<Renderer::AsyncComputeScheduler>();
+        if (m_AsyncComputeScheduler->Initialize(m_Renderer->GetContext(), 2)) {
+            ENJIN_LOG_INFO(Renderer, "Async compute scheduler enabled (RT/denoise overlap)");
+        } else {
+            // Not an error — many GPUs share graphics/compute queue
+            m_AsyncComputeScheduler.reset();
+        }
+    }
+
     // Initialize thread pool and per-thread command buffer pools
     m_ThreadPool.Initialize();
     u32 framesInFlight = 2; // Matches VulkanRenderer::MAX_FRAMES_IN_FLIGHT
@@ -352,6 +378,7 @@ void RenderSystem::Initialize() {
 
     m_SHLighting = std::make_unique<Renderer::SHLightingSystem>();
     m_ReflectionProbes = std::make_unique<Renderer::ReflectionProbeSystem>();
+    m_ReflectionProbes->Initialize(m_Renderer->GetContext());
     m_SDFScene = std::make_unique<Renderer::SDFScene>();
 
     // Per-frame linear allocator: 8 MB supports ~100K entities x 128B each
@@ -455,6 +482,18 @@ void RenderSystem::Shutdown() {
     m_ThreadPool.Shutdown();
     m_CmdBufferPool.reset();
 
+    // Clean up async compute scheduler
+    if (m_AsyncComputeScheduler) {
+        m_AsyncComputeScheduler->Shutdown();
+        m_AsyncComputeScheduler.reset();
+    }
+
+    // Clean up texture-grouped indirect draw batcher
+    if (m_IndirectDrawBatcher) {
+        m_IndirectDrawBatcher->Shutdown();
+        m_IndirectDrawBatcher.reset();
+    }
+
     // Clean up GPU culling system
     if (m_GPUCulling) {
         m_GPUCulling->Shutdown();
@@ -490,7 +529,7 @@ void RenderSystem::Shutdown() {
     // Clean up OIT, SH light probes, reflection probes, and SDF scene
     if (m_OITManager) { m_OITManager->Shutdown(); m_OITManager.reset(); }
     m_SHLighting.reset();
-    m_ReflectionProbes.reset();
+    if (m_ReflectionProbes) { m_ReflectionProbes->Shutdown(); m_ReflectionProbes.reset(); }
     m_SDFScene.reset();
 
     // Clean up ray tracing subsystems
@@ -597,6 +636,15 @@ void RenderSystem::FlushPendingChanges() {
         }
         m_Skybox.SetConfig(m_PendingSkybox);
     }
+
+    // Process pending reflection probe bakes — renders 6 faces per probe.
+    // Safe to do here because no frame is in progress yet.
+    if (m_ReflectionProbes && m_ReflectionProbes->HasPendingBake()) {
+        m_Renderer->WaitForAllFrames();
+        m_ReflectionProbes->ProcessPendingBakes(m_World, this);
+        // Update descriptor binding 19 with the newly baked cubemap
+        UpdateProbeCubemapDescriptor();
+    }
 }
 
 void RenderSystem::Update(f32 deltaTime) {
@@ -623,6 +671,11 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Reset per-frame stats
     ResetFrameCounters();
+
+    // Begin async compute scheduler frame (reset per-frame state)
+    if (m_AsyncComputeScheduler) {
+        m_AsyncComputeScheduler->BeginFrame(m_Renderer->GetCurrentFrameIndex());
+    }
 
     // Reset material SSBO flag — will be rebuilt on first use this frame
     m_MaterialSSBOBuilt = false;
@@ -952,13 +1005,31 @@ void RenderSystem::Update(f32 deltaTime) {
     }
 
     // Ray tracing pass (after shadow passes, before main render pass)
+    // When async compute is available, dispatch RT effects and denoising on the compute
+    // queue so they overlap with main geometry rasterization on the graphics queue.
+    // TLAS rebuild stays on graphics (needs vertex/index buffer access).
+    // Compositing is deferred until after main pass when compute results are ready.
     if (m_RTEnabled && m_ASManager && m_SceneComposition.mode == SceneRenderMode::Scene3D) {
         VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
         if (commandBuffer != VK_NULL_HANDLE) {
             RebuildTLAS(commandBuffer);
-            DispatchRTEffects(commandBuffer);
-            DenoiseRTOutputs(commandBuffer);
-            CompositeRTResults(commandBuffer);
+
+            u32 frameIdx = m_Renderer->GetCurrentFrameIndex();
+            bool asyncRT = m_AsyncComputeScheduler &&
+                           m_AsyncComputeScheduler->ShouldUseAsync(Renderer::AsyncComputeWorkType::RTDispatch);
+
+            if (asyncRT) {
+                // Dispatch RT effects on async compute queue (overlaps with main geometry)
+                DispatchRTEffectsAsync(frameIdx);
+                // Denoising also runs on compute queue after RT finishes
+                // (submitted as part of the same compute command buffer)
+            } else {
+                // Single-queue fallback: RT effects + temporal reuse + denoise + composite on graphics queue
+                DispatchRTEffects(commandBuffer);
+                TemporalReuseRTOutputs(commandBuffer);
+                DenoiseRTOutputs(commandBuffer);
+                CompositeRTResults(commandBuffer);
+            }
         }
     }
 
@@ -1276,6 +1347,20 @@ void RenderSystem::Update(f32 deltaTime) {
     // Skipped in editor mode (editor always uses per-entity draws for full control).
     if (m_GPUCullingEnabled && !m_IsEditorMode && !m_CullableObjects.empty() && m_GeometryPool) {
         DrawIndirect(commandBuffer);
+
+        // Texture-grouped indirect draws: batch textured pool entities by texture set.
+        // Each batch shares the same descriptor state, reducing draw calls for textured meshes.
+        if (m_IndirectDrawBatcher && m_IndirectDrawBatcher->HasBatches()) {
+            DrawTexturedIndirect(commandBuffer);
+        }
+    }
+
+    // If RT effects were dispatched on async compute, wait for completion and composite.
+    // The compute queue ran RT dispatches + denoising while the main geometry was rasterizing.
+    if (m_AsyncComputeScheduler && m_AsyncComputeScheduler->WasComputeSubmitted() &&
+        m_AsyncComputeScheduler->GetLastWorkType() == Renderer::AsyncComputeWorkType::RTDispatch) {
+        m_AsyncComputeScheduler->WaitForCompute(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+        CompositeRTResults(commandBuffer);
     }
 
     {
@@ -2402,9 +2487,12 @@ void RenderSystem::BuildCullableObjectList() {
     m_CullableObjects.reserve(meshCount);
     m_EntityToCullIndex.resize(m_World->GetEntityCount(), UINT32_MAX);
 
-    // Track which entities are drawn via indirect (pool-eligible, non-textured)
+    // Track which entities are drawn via indirect (pool-eligible, non-textured or textured-batched)
     m_IndirectDrawn.clear();
     m_IndirectDrawn.resize(m_World->GetEntityCount(), false);
+
+    // Reset texture-grouped indirect draw batcher for this frame
+    if (m_IndirectDrawBatcher) m_IndirectDrawBatcher->Reset();
 
     u32 cullIndex = 0;
 
@@ -2476,7 +2564,21 @@ void RenderSystem::BuildCullableObjectList() {
                     || material->cachedMatcapTexture != nullptr;
             }
             if (!hasTextures) {
+                // Non-textured: GPU culling emits indirect draw commands directly
                 obj.indirectEligible = 1;
+                if (static_cast<usize>(entity) < m_IndirectDrawn.size()) {
+                    m_IndirectDrawn[static_cast<usize>(entity)] = true;
+                }
+            } else if (m_IndirectDrawBatcher && material) {
+                // Textured pool entity: add to texture-grouped indirect draw batcher.
+                // The batcher groups entities by texture set hash and issues one
+                // vkCmdDrawIndexedIndirect per group instead of per entity.
+                material->ComputeSortKey(0.0f);
+                u64 texHash = (material->cachedSortKey >> 16) & 0xFFFFFFFFFFULL; // 40 texture bits
+                m_IndirectDrawBatcher->AddEntity(
+                    static_cast<u32>(entity), texHash,
+                    obj.indexCount, obj.indexOffset, obj.vertexOffset,
+                    cullIndex);
                 if (static_cast<usize>(entity) < m_IndirectDrawn.size()) {
                     m_IndirectDrawn[static_cast<usize>(entity)] = true;
                 }
@@ -2490,6 +2592,13 @@ void RenderSystem::BuildCullableObjectList() {
 
         m_CullableObjects.push_back(obj);
         cullIndex++;
+    }
+
+    // Build texture-grouped indirect draw batches from accumulated textured entities
+    if (m_IndirectDrawBatcher) {
+        if (m_IndirectDrawBatcher->BuildBatches()) {
+            m_IndirectDrawBatcher->UploadCommands();
+        }
     }
 }
 
@@ -2702,6 +2811,101 @@ void RenderSystem::DrawIndirect(VkCommandBuffer commandBuffer) {
     );
 
     m_DrawCallCount++;  // Single draw call for all indirect objects
+}
+
+void RenderSystem::BuildTexturedIndirectBatches() {
+    // This is now done in BuildCullableObjectList � entities are added to the batcher
+    // during the main entity iteration loop, and batches are built/uploaded at the end.
+}
+
+void RenderSystem::DrawTexturedIndirect(VkCommandBuffer commandBuffer) {
+    if (!m_IndirectDrawBatcher || !m_IndirectDrawBatcher->HasBatches()) return;
+    if (!m_GeometryPool || !m_Pipeline) return;
+
+    VkBuffer indirectBuffer = m_IndirectDrawBatcher->GetIndirectBuffer();
+    if (indirectBuffer == VK_NULL_HANDLE) return;
+
+    // Bind the merged geometry pool (single VB + IB for all static meshes)
+    if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
+
+    // Push sentinel constants for indirect mode (same as non-textured path)
+    Renderer::PushConstants indirectPC{};
+    indirectPC.parallaxScale = -1.0f;
+    vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+        sizeof(Renderer::PushConstants), &indirectPC);
+
+    // Iterate texture draw batches: one indirect draw per texture group.
+    // Each batch shares the same texture set, so we bind textures once per batch.
+    for (const auto& batch : m_IndirectDrawBatcher->GetBatches()) {
+        // Bind textures from the representative entity of this batch
+        Entity representative = static_cast<Entity>(batch.representativeEntity);
+        auto* material = m_World->GetComponent<MaterialComponent>(representative);
+        if (material) {
+            UpdateEntityTextureDescriptors(
+                material->cachedBaseColorTexture,
+                material->cachedHeightTexture,
+                material->cachedNormalTexture,
+                material->cachedMetallicRoughnessTexture,
+                material->cachedEmissiveTexture,
+                material->cachedMatcapTexture);
+        }
+
+        // Issue indirect draw for all entities in this texture group
+        VkDeviceSize offset = static_cast<VkDeviceSize>(batch.firstCommand) * sizeof(VkDrawIndexedIndirectCommand);
+        vkCmdDrawIndexedIndirect(
+            commandBuffer,
+            indirectBuffer,
+            offset,
+            batch.commandCount,
+            sizeof(VkDrawIndexedIndirectCommand)
+        );
+
+        m_DrawCallCount++;
+    }
+}
+
+void RenderSystem::DispatchRTEffectsAsync(u32 frameIndex) {
+    if (!m_AsyncComputeScheduler || !m_RTEnabled) return;
+
+    // Record RT dispatches + denoising on async compute command buffer.
+    // BeginFrame was already called at the start of Update().
+    VkCommandBuffer computeCmd = m_AsyncComputeScheduler->BeginComputeWork(
+        frameIndex, Renderer::AsyncComputeWorkType::RTDispatch);
+    if (computeCmd == VK_NULL_HANDLE) {
+        // Fallback: run on graphics queue
+        VkCommandBuffer graphicsCmd = m_Renderer->GetCurrentCommandBuffer();
+        if (graphicsCmd != VK_NULL_HANDLE) {
+            DispatchRTEffects(graphicsCmd);
+            TemporalReuseRTOutputs(graphicsCmd);
+            DenoiseRTOutputs(graphicsCmd);
+            CompositeRTResults(graphicsCmd);
+        }
+        return;
+    }
+
+    // Record RT dispatches, temporal reuse, and denoising on the compute command buffer
+    DispatchRTEffects(computeCmd);
+    TemporalReuseRTOutputs(computeCmd);
+    DenoiseRTOutputs(computeCmd);
+
+    // Submit compute work � signal semaphore for graphics queue to wait on
+    m_AsyncComputeScheduler->SubmitComputeWork(frameIndex, false, true);
+
+    // Register the compute-finished semaphore with VulkanRenderer so the graphics
+    // queue submit waits for compute completion before present.
+    VkSemaphore computeSem = m_AsyncComputeScheduler->GetComputeFinishedSemaphore(frameIndex);
+    if (computeSem != VK_NULL_HANDLE) {
+        m_Renderer->AddExternalWaitSemaphore(computeSem,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    }
+}
+
+void RenderSystem::DenoiseRTOutputsAsync(u32 frameIndex) {
+    // Denoising is included in DispatchRTEffectsAsync (same compute command buffer).
+    // This method is available for future use if we want to split denoise into a
+    // separate compute submission that overlaps with post-processing.
+    (void)frameIndex;
 }
 
 void RenderSystem::CreatePipeline() {
@@ -2974,7 +3178,7 @@ void RenderSystem::CreateDescriptorSets() {
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = totalSets * 2;   // bindings 0-1 (material moved to SSBO)
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = totalSets * 11;  // bindings 3-6, 8-11, 16-18
+    poolSizes[1].descriptorCount = totalSets * 12;  // bindings 3-6, 8-11, 16-19
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     poolSizes[2].descriptorCount = totalSets * 5;   // bindings 7, 12-15
     poolSizes[3].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
@@ -3150,7 +3354,11 @@ void RenderSystem::CreateDescriptorSets() {
         // Matcap texture (binding 18) - fallback to white (procedural matcap used when white)
         VkDescriptorImageInfo matcapImageInfo = imageInfo;
 
-        std::array<VkWriteDescriptorSet, 19> descriptorWrites{};
+        // Baked reflection probe cubemap (binding 19) - fallback to white
+        // When a probe is baked, this is updated via UpdateProbeCubemapDescriptor()
+        VkDescriptorImageInfo probeCubemapImageInfo = imageInfo;
+
+        std::array<VkWriteDescriptorSet, 20> descriptorWrites{};
 
         // MVP descriptor
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -3323,6 +3531,15 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[18].descriptorCount = 1;
         descriptorWrites[18].pImageInfo = &matcapImageInfo;
 
+        // Baked reflection probe cubemap descriptor (binding 19)
+        descriptorWrites[19].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[19].dstSet = m_DescriptorSets[i];
+        descriptorWrites[19].dstBinding = 19;
+        descriptorWrites[19].dstArrayElement = 0;
+        descriptorWrites[19].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[19].descriptorCount = 1;
+        descriptorWrites[19].pImageInfo = &probeCubemapImageInfo;
+
         vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
@@ -3443,9 +3660,10 @@ void RenderSystem::CreateDescriptorSets() {
                 VkDescriptorImageInfo offVtIndInfo = offImageInfo;
                 VkDescriptorImageInfo offVtAtlasInfo = offImageInfo;
                 VkDescriptorImageInfo offMatcapInfo = offImageInfo;
+                VkDescriptorImageInfo offProbeCubemapInfo = offImageInfo;
 
-                std::array<VkWriteDescriptorSet, 19> offWrites{};
-                for (u32 w = 0; w < 19; ++w) {
+                std::array<VkWriteDescriptorSet, 20> offWrites{};
+                for (u32 w = 0; w < 20; ++w) {
                     offWrites[w].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
                     offWrites[w].dstSet = m_OffscreenDescriptorSets[idx];
                     offWrites[w].dstBinding = w;
@@ -3490,6 +3708,8 @@ void RenderSystem::CreateDescriptorSets() {
                 offWrites[17].pImageInfo = &offVtAtlasInfo;
                 offWrites[18].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
                 offWrites[18].pImageInfo = &offMatcapInfo;
+                offWrites[19].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                offWrites[19].pImageInfo = &offProbeCubemapInfo;
 
                 vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
                     static_cast<u32>(offWrites.size()), offWrites.data(), 0, nullptr);
@@ -3600,6 +3820,43 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
     }
 
     return &renderData;
+}
+
+void RenderSystem::UpdateProbeCubemapDescriptor() {
+    if (!m_ReflectionProbes || !m_ReflectionProbes->HasActiveBakedCubemap()) return;
+    if (!m_Renderer || !m_Pipeline) return;
+
+    VkDescriptorImageInfo cubemapInfo = m_ReflectionProbes->GetActiveBakedCubemapDescriptor();
+    if (cubemapInfo.imageView == VK_NULL_HANDLE) return;
+
+    VkDevice device = m_Renderer->GetContext()->GetDevice();
+
+    // Update binding 19 in all active descriptor sets (main + offscreen)
+    // Main pass descriptor sets
+    for (auto& descSet : m_DescriptorSets) {
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = descSet;
+        write.dstBinding = 19;
+        write.dstArrayElement = 0;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.descriptorCount = 1;
+        write.pImageInfo = &cubemapInfo;
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    }
+
+    // Offscreen descriptor sets
+    for (auto& descSet : m_OffscreenDescriptorSets) {
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = descSet;
+        write.dstBinding = 19;
+        write.dstArrayElement = 0;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.descriptorCount = 1;
+        write.pImageInfo = &cubemapInfo;
+        vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+    }
 }
 
 void RenderSystem::UpdateFrameUniforms() {
@@ -3887,8 +4144,14 @@ void RenderSystem::UpdateFrameUniforms() {
                 probe.probePosition.x, probe.probePosition.y, probe.probePosition.z, probe.intensity);
             lighting.reflectionProbeBoxMin = Math::Vector4(
                 probe.boxMin.x, probe.boxMin.y, probe.boxMin.z, probe.blendDistance);
+            // w = isBaked (1.0 = baked cubemap at binding 19, 0.0 = skybox gradient fallback)
             lighting.reflectionProbeBoxMax = Math::Vector4(
-                probe.boxMax.x, probe.boxMax.y, probe.boxMax.z, 0.0f);
+                probe.boxMax.x, probe.boxMax.y, probe.boxMax.z, probe.isBaked);
+
+            // When the active probe has a baked cubemap, update the descriptor for binding 19
+            if (probe.isBaked > 0.5f && m_ReflectionProbes->HasActiveBakedCubemap()) {
+                UpdateProbeCubemapDescriptor();
+            }
         } else {
             lighting.reflectionProbePosition = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
             lighting.reflectionProbeBoxMin = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
@@ -6270,8 +6533,8 @@ void RenderSystem::InitializeRayTracing() {
     auto* ctx = m_Renderer->GetContext();
     ENJIN_LOG_INFO(Renderer, "Initializing ray tracing subsystems...");
 
-    // Create RT descriptor set layout (20 bindings: 0-16 existing + 17 SDF + 18 simplified materials + 19 ReSTIR reservoirs)
-    std::array<VkDescriptorSetLayoutBinding, 20> rtBindings{};
+    // Create RT descriptor set layout (24 bindings: 0-16 existing + 17 SDF + 18 simplified materials + 19-20 ReSTIR + 21-23 radiance cache)
+    std::array<VkDescriptorSetLayoutBinding, 24> rtBindings{};
 
     // Binding 0: TLAS
     rtBindings[0].binding = 0;
@@ -6335,11 +6598,11 @@ void RenderSystem::InitializeRayTracing() {
         rtBindings[i].stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR;
     }
 
-    // Binding 13: Light data UBO
+    // Binding 13: Light data UBO (used by RT shaders + compute: ReSTIR, radiance cache)
     rtBindings[13].binding = 13;
     rtBindings[13].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     rtBindings[13].descriptorCount = 1;
-    rtBindings[13].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+    rtBindings[13].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
 
     // Binding 14: RT Translucency output (storage image)
     rtBindings[14].binding = 14;
@@ -6371,11 +6634,35 @@ void RenderSystem::InitializeRayTracing() {
     rtBindings[18].descriptorCount = 1;
     rtBindings[18].stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
-    // Binding 19: ReSTIR reservoir SSBO (per-pixel light selection results)
+    // Binding 19: ReSTIR reservoir SSBO — current frame (per-pixel light selection results)
     rtBindings[19].binding = 19;
     rtBindings[19].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     rtBindings[19].descriptorCount = 1;
     rtBindings[19].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
+    // Binding 20: ReSTIR reservoir SSBO — previous frame (ping-pong for temporal reuse)
+    rtBindings[20].binding = 20;
+    rtBindings[20].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    rtBindings[20].descriptorCount = 1;
+    rtBindings[20].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 21: Radiance cache tile buffer (per-tile cached irradiance + depth/normal/age)
+    rtBindings[21].binding = 21;
+    rtBindings[21].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    rtBindings[21].descriptorCount = 1;
+    rtBindings[21].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 22: Radiance cache stale tile mask (bitfield — 1 bit per tile)
+    rtBindings[22].binding = 22;
+    rtBindings[22].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    rtBindings[22].descriptorCount = 1;
+    rtBindings[22].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT | VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
+    // Binding 23: Radiance cache output image (full-resolution interpolated irradiance)
+    rtBindings[23].binding = 23;
+    rtBindings[23].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    rtBindings[23].descriptorCount = 1;
+    rtBindings[23].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -6390,9 +6677,9 @@ void RenderSystem::InitializeRayTracing() {
     // Create RT descriptor pool (includes all descriptor types used by RT bindings)
     std::array<VkDescriptorPoolSize, 5> poolSizes{};
     poolSizes[0] = { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1 };
-    poolSizes[1] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 7 };
+    poolSizes[1] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 8 };   // 5-8, 14-15, 23 + radiance cache output
     poolSizes[2] = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 };
-    poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 8 };  // 9-12 + NEE light SSBO at 16 + SDF at 17 + simplified material SSBO at 18 + ReSTIR reservoir at 19
+    poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 11 }; // 9-12, 16-20, 21-22 (radiance cache tile + stale mask)
     poolSizes[4] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 };
 
     VkDescriptorPoolCreateInfo poolInfo{};
@@ -6498,6 +6785,12 @@ void RenderSystem::InitializeRayTracing() {
         m_ReSTIR.reset();
     }
 
+    m_RadianceCache = std::make_unique<Renderer::RadianceCache>(ctx);
+    if (!m_RadianceCache->Initialize(width, height, m_RTDescriptorSetLayout)) {
+        ENJIN_LOG_WARN(Renderer, "Radiance cache initialization failed");
+        m_RadianceCache.reset();
+    }
+
     // Initialize SVGF denoiser (always available as fallback)
     m_SVGFDenoiser = std::make_unique<Renderer::SVGFDenoiser>(ctx);
     if (!m_SVGFDenoiser->Initialize(width, height)) {
@@ -6562,6 +6855,13 @@ void RenderSystem::InitializeRayTracing() {
         m_RTCompositor.reset();
     }
 
+    // Initialize RT temporal reuse (motion-vector-based history blending for RT outputs)
+    m_RTTemporalReuse = std::make_unique<Renderer::RTTemporalReuse>(ctx);
+    if (!m_RTTemporalReuse->Initialize(extent.width, extent.height)) {
+        ENJIN_LOG_WARN(Renderer, "RT Temporal Reuse initialization failed");
+        m_RTTemporalReuse.reset();
+    }
+
     // Create dummy resources and RT light UBOs for descriptor binding
     CreateRTDummyResources();
 
@@ -6591,6 +6891,7 @@ void RenderSystem::InitializeRayTracing() {
 }
 
 void RenderSystem::ShutdownRayTracing() {
+    m_RTTemporalReuse.reset();
     m_RTCompositor.reset();
     m_ReSTIR.reset();
     m_OptiXDenoiser.reset();
@@ -6734,6 +7035,7 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
                                static_cast<u32>(matWrites.size()), matWrites.data(), 0, nullptr);
     }
+
 }
 
 void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
@@ -6762,6 +7064,12 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
         m_PathTracer->ResetAccumulation();
         m_RTFrameCount = 0;
     }
+    if (cameraChanged && m_RadianceCache) {
+        m_RadianceCache->InvalidateAll();
+    }
+    // Note: temporal reuse does NOT reset on camera change — it handles reprojection
+    // via motion vectors and detects disocclusions automatically. Only reset on explicit
+    // camera cuts (scene load, teleport) which are handled by ResetHistory() calls.
 
     // Find primary directional light direction from its transform
     Math::Vector3 lightDir(0.0f, -1.0f, 0.0f);
@@ -6884,6 +7192,15 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
         m_RTGI->Dispatch(cmd, m_RTDescriptorSet, invViewProj, lightDir,
                          cameraPos, m_RTFrameCount);
     }
+
+    // Radiance cache — update tile validity and read cached irradiance.
+    // Runs after GI dispatch so it can absorb fresh GI results into cache tiles.
+    // The read pass interpolates tile irradiance to per-pixel output.
+    if (m_RadianceCache && m_RadianceCache->GetConfig().enabled) {
+        m_RadianceCache->DispatchUpdate(cmd, m_RTDescriptorSet, m_RTFrameCount);
+        m_RadianceCache->DispatchRead(cmd, m_RTDescriptorSet, m_RTFrameCount);
+    }
+
     if (m_RTTranslucency && m_RTTranslucency->GetConfig().enabled) {
         m_RTTranslucency->Dispatch(cmd, m_RTDescriptorSet, invViewProj, cameraPos,
                                     m_RTFrameCount);
@@ -6891,6 +7208,37 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
     if (m_RTCaustics && m_RTCaustics->GetConfig().enabled) {
         m_RTCaustics->Dispatch(cmd, m_RTDescriptorSet, invViewProj, lightDir,
                                 m_RTFrameCount);
+    }
+}
+
+void RenderSystem::TemporalReuseRTOutputs(VkCommandBuffer cmd) {
+    if (!m_RTEnabled || m_RTMode == 1 || !m_RTTemporalReuse) return;
+    if (!m_RTTemporalReuse->GetConfig().enabled) return;
+
+    // Obtain depth, normal, and motion views (same logic as DenoiseRTOutputs)
+    auto* swapchain = m_Renderer->GetSwapchain();
+    VkImageView depthView = (swapchain && swapchain->GetDepthImageView() != VK_NULL_HANDLE)
+        ? swapchain->GetDepthImageView() : m_RTDummyImageView;
+    VkImageView normalView = m_RTDummyImageView;
+    VkImageView motionView = (swapchain && swapchain->GetVelocityImageView() != VK_NULL_HANDLE)
+        ? swapchain->GetVelocityImageView() : m_RTDummyImageView;
+
+    // Temporal reuse for each enabled RT buffer (dispatch writes blended result back to output)
+    if (m_RTShadows && m_RTShadows->GetConfig().enabled) {
+        m_RTTemporalReuse->ReuseShadows(cmd, m_RTShadows->GetOutputView(),
+            depthView, normalView, motionView, m_RTShadows->GetOutputView());
+    }
+    if (m_RTAO && m_RTAO->GetConfig().enabled) {
+        m_RTTemporalReuse->ReuseAO(cmd, m_RTAO->GetOutputView(),
+            depthView, normalView, motionView, m_RTAO->GetOutputView());
+    }
+    if (m_RTReflections && m_RTReflections->GetConfig().enabled) {
+        m_RTTemporalReuse->ReuseReflections(cmd, m_RTReflections->GetOutputView(),
+            depthView, normalView, motionView, m_RTReflections->GetOutputView());
+    }
+    if (m_RTGI && m_RTGI->GetConfig().enabled) {
+        m_RTTemporalReuse->ReuseGI(cmd, m_RTGI->GetOutputView(),
+            depthView, normalView, motionView, m_RTGI->GetOutputView());
     }
 }
 
@@ -7554,7 +7902,7 @@ void RenderSystem::WriteRTDescriptors() {
         simplifiedMatBufInfo.range = 256;
     }
 
-    // Binding 19: ReSTIR reservoir SSBO
+    // Binding 19: ReSTIR reservoir SSBO -- current frame
     VkDescriptorBufferInfo restirBufInfo{};
     if (m_ReSTIR && m_ReSTIR->GetReservoirBuffer() != VK_NULL_HANDLE) {
         restirBufInfo.buffer = m_ReSTIR->GetReservoirBuffer();
@@ -7566,8 +7914,49 @@ void RenderSystem::WriteRTDescriptors() {
         restirBufInfo.range = 256;
     }
 
-    // Build write array for all 20 bindings
-    std::array<VkWriteDescriptorSet, 20> writes{};
+    // Binding 20: ReSTIR reservoir SSBO -- previous frame (ping-pong for temporal reuse)
+    VkDescriptorBufferInfo restirPrevBufInfo{};
+    if (m_ReSTIR && m_ReSTIR->GetPrevReservoirBuffer() != VK_NULL_HANDLE) {
+        restirPrevBufInfo.buffer = m_ReSTIR->GetPrevReservoirBuffer();
+        restirPrevBufInfo.offset = 0;
+        restirPrevBufInfo.range = VK_WHOLE_SIZE;
+    } else {
+        restirPrevBufInfo.buffer = m_RTDummyBuffer;
+        restirPrevBufInfo.offset = 0;
+        restirPrevBufInfo.range = 256;
+    }
+
+    // Binding 21: Radiance cache tile buffer
+    VkDescriptorBufferInfo rcTileBufInfo{};
+    if (m_RadianceCache && m_RadianceCache->GetTileBuffer() != VK_NULL_HANDLE) {
+        rcTileBufInfo.buffer = m_RadianceCache->GetTileBuffer();
+        rcTileBufInfo.offset = 0;
+        rcTileBufInfo.range = VK_WHOLE_SIZE;
+    } else {
+        rcTileBufInfo.buffer = m_RTDummyBuffer;
+        rcTileBufInfo.offset = 0;
+        rcTileBufInfo.range = 256;
+    }
+
+    // Binding 22: Radiance cache stale mask buffer
+    VkDescriptorBufferInfo rcStaleMaskBufInfo{};
+    if (m_RadianceCache && m_RadianceCache->GetStaleMaskBuffer() != VK_NULL_HANDLE) {
+        rcStaleMaskBufInfo.buffer = m_RadianceCache->GetStaleMaskBuffer();
+        rcStaleMaskBufInfo.offset = 0;
+        rcStaleMaskBufInfo.range = VK_WHOLE_SIZE;
+    } else {
+        rcStaleMaskBufInfo.buffer = m_RTDummyBuffer;
+        rcStaleMaskBufInfo.offset = 0;
+        rcStaleMaskBufInfo.range = 256;
+    }
+
+    // Binding 23: Radiance cache output image
+    VkDescriptorImageInfo rcOutputImgInfo{};
+    rcOutputImgInfo.imageView = m_RadianceCache ? m_RadianceCache->GetOutputView() : m_RTDummyImageView;
+    rcOutputImgInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    // Build write array for all 24 bindings
+    std::array<VkWriteDescriptorSet, 24> writes{};
 
     // Binding 0: TLAS
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -7671,9 +8060,41 @@ void RenderSystem::WriteRTDescriptors() {
     writes[19].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[19].pBufferInfo = &restirBufInfo;
 
+    // Binding 20: ReSTIR reservoir SSBO — previous frame (placeholder, temporal reuse not yet active)
+    writes[20].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[20].dstSet = m_RTDescriptorSet;
+    writes[20].dstBinding = 20;
+    writes[20].descriptorCount = 1;
+    writes[20].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[20].pBufferInfo = &restirPrevBufInfo;
+
+    // Binding 21: Radiance cache tile buffer
+    writes[21].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[21].dstSet = m_RTDescriptorSet;
+    writes[21].dstBinding = 21;
+    writes[21].descriptorCount = 1;
+    writes[21].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[21].pBufferInfo = &rcTileBufInfo;
+
+    // Binding 22: Radiance cache stale mask buffer
+    writes[22].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[22].dstSet = m_RTDescriptorSet;
+    writes[22].dstBinding = 22;
+    writes[22].descriptorCount = 1;
+    writes[22].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[22].pBufferInfo = &rcStaleMaskBufInfo;
+
+    // Binding 23: Radiance cache output image
+    writes[23].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[23].dstSet = m_RTDescriptorSet;
+    writes[23].dstBinding = 23;
+    writes[23].descriptorCount = 1;
+    writes[23].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[23].pImageInfo = &rcOutputImgInfo;
+
     vkUpdateDescriptorSets(device, static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
 
-    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 20 bindings)");
+    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 24 bindings)");
 }
 
 void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {
@@ -7702,6 +8123,7 @@ void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {
     if (m_RTTranslucency) addBarrier(m_RTTranslucency->GetOutputImage());
     if (m_RTCaustics) addBarrier(m_RTCaustics->GetOutputImage());
     if (m_PathTracer) addBarrier(m_PathTracer->GetOutputImage());
+    if (m_RadianceCache) addBarrier(m_RadianceCache->GetOutputImage());
 
     // Also transition the dummy image
     addBarrier(m_RTDummyImage);
@@ -7956,14 +8378,12 @@ void RenderSystem::SetUpscalerType(u32 type) {
         case 1: // FSR 2
             m_Upscaler = std::make_unique<Renderer::FSR2Upscaler>(ctx);
             break;
-        case 2: // DLSS (stub)
-            ENJIN_LOG_WARN(Renderer, "DLSS upscaler not yet implemented");
-            m_UpscalerType = 0;
-            return;
-        case 3: // XeSS (stub)
-            ENJIN_LOG_WARN(Renderer, "XeSS upscaler not yet implemented");
-            m_UpscalerType = 0;
-            return;
+        case 2: // DLSS
+            m_Upscaler = std::make_unique<Renderer::DLSSUpscaler>(ctx);
+            break;
+        case 3: // XeSS
+            m_Upscaler = std::make_unique<Renderer::XeSSUpscaler>(ctx);
+            break;
         default:
             m_UpscalerType = 0;
             return;

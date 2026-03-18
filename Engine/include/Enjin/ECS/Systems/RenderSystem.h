@@ -54,6 +54,8 @@ namespace Enjin { namespace Effects {
 #include "Enjin/Renderer/GPUDriven/GPUCulling.h"
 #include "Enjin/Renderer/GPUDriven/MergedGeometryBuffer.h"
 #include "Enjin/Renderer/GPUDriven/HiZPyramid.h"
+#include "Enjin/Renderer/GPUDriven/IndirectDrawBatcher.h"
+#include "Enjin/Renderer/AsyncComputeScheduler.h"
 #include "Enjin/Renderer/Vulkan/ThreadPool.h"
 #include "Enjin/Renderer/Vulkan/CommandBufferPool.h"
 #endif
@@ -90,7 +92,9 @@ namespace Enjin { namespace Renderer {
     class OIDNDenoiser;
     class OptiXDenoiser;
     class RTCompositor;
+    class RTTemporalReuse;
     class ReSTIR;
+    class RadianceCache;
     class IUpscaler;
     class OITManager;
     class SHLightingSystem;
@@ -464,7 +468,9 @@ public:
     Renderer::OIDNDenoiser* GetOIDNDenoiser() { return m_OIDNDenoiser.get(); }
     Renderer::OptiXDenoiser* GetOptiXDenoiser() { return m_OptiXDenoiser.get(); }
     Renderer::RTCompositor* GetRTCompositor() { return m_RTCompositor.get(); }
+    Renderer::RTTemporalReuse* GetRTTemporalReuse() { return m_RTTemporalReuse.get(); }
     Renderer::ReSTIR* GetReSTIR() { return m_ReSTIR.get(); }
+    Renderer::RadianceCache* GetRadianceCache() { return m_RadianceCache.get(); }
 #endif
 
 #if !ENJIN_RENDERER_WEBGPU
@@ -482,6 +488,13 @@ public:
 
     // Reflection Probes (box-projected environment reflections)
     Renderer::ReflectionProbeSystem* GetReflectionProbes() { return m_ReflectionProbes.get(); }
+
+    // Access the Vulkan renderer (needed by subsystems like reflection probe baking)
+    Renderer::VulkanRenderer* GetVulkanRenderer() const { return m_Renderer; }
+
+    // Update the reflection probe cubemap descriptor binding for all descriptor sets.
+    // Called after a probe is baked to bind the cubemap to the shader.
+    void UpdateProbeCubemapDescriptor();
 
     // SDF Scene
     Renderer::SDFScene* GetSDFScene() { return m_SDFScene.get(); }
@@ -755,6 +768,16 @@ private:
     // Entities drawn by DrawIndirect (non-textured pool entities) — skip in per-entity loop
     std::vector<bool> m_IndirectDrawn;
 
+    // Texture-grouped indirect draws: batch textured pool entities by texture set
+    std::unique_ptr<Renderer::IndirectDrawBatcher> m_IndirectDrawBatcher;
+    void BuildTexturedIndirectBatches();
+    void DrawTexturedIndirect(VkCommandBuffer commandBuffer);
+
+    // Async compute scheduler for RT/denoise overlap
+    std::unique_ptr<Renderer::AsyncComputeScheduler> m_AsyncComputeScheduler;
+    void DispatchRTEffectsAsync(u32 frameIndex);    // RT effects on async compute queue
+    void DenoiseRTOutputsAsync(u32 frameIndex);     // Denoiser on async compute queue
+
     // Hi-Z occlusion culling (previous-frame depth pyramid)
     std::unique_ptr<Renderer::HiZPyramid> m_HiZPyramid;
 
@@ -951,6 +974,7 @@ private:
     void ShutdownRayTracing();
     void RebuildTLAS(VkCommandBuffer cmd);
     void DispatchRTEffects(VkCommandBuffer cmd);
+    void TemporalReuseRTOutputs(VkCommandBuffer cmd);
     void DenoiseRTOutputs(VkCommandBuffer cmd);
     void CompositeRTResults(VkCommandBuffer cmd);
 
@@ -971,7 +995,9 @@ private:
     std::unique_ptr<Renderer::OIDNDenoiser> m_OIDNDenoiser;
     std::unique_ptr<Renderer::OptiXDenoiser> m_OptiXDenoiser;
     std::unique_ptr<Renderer::RTCompositor> m_RTCompositor;
+    std::unique_ptr<Renderer::RTTemporalReuse> m_RTTemporalReuse;
     std::unique_ptr<Renderer::ReSTIR> m_ReSTIR;
+    std::unique_ptr<Renderer::RadianceCache> m_RadianceCache;
     u32 m_DenoiserType = 0;  // 0=SVGF, 1=OIDN, 2=OptiX
 
     // RT descriptor set layout and pool

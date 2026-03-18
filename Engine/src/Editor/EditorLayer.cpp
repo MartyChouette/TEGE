@@ -73,6 +73,8 @@
 #include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Renderer/Upscaling/IUpscaler.h"
 #include "Enjin/Renderer/Upscaling/FSR2Upscaler.h"
+#include "Enjin/Renderer/Upscaling/DLSSUpscaler.h"
+#include "Enjin/Renderer/Upscaling/XeSSUpscaler.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Platform/FileDialog.h"
 #include "Enjin/Assets/Prefab.h"
@@ -1826,13 +1828,18 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                 // Dispatch upscaler (Lanczos upsample + CAS sharpen)
                 upscaler->Dispatch(commandBuffer, upInput);
 
-                // Redirect post-processing to read from the upscaled output
-                auto* fsr2 = dynamic_cast<Renderer::FSR2Upscaler*>(upscaler);
-                if (fsr2) {
-                    VkImageView upscaledOutput = fsr2->GetOutputImageView();
-                    if (upscaledOutput != VK_NULL_HANDLE) {
-                        m_PostProcessing->UpdateSourceImage(upscaledOutput, m_SceneRenderTarget->GetSampler());
-                    }
+                // Redirect post-processing to read from the upscaled output.
+                // Each backend exposes GetOutputImageView() — try all known types.
+                VkImageView upscaledOutput = VK_NULL_HANDLE;
+                if (auto* fsr2 = dynamic_cast<Renderer::FSR2Upscaler*>(upscaler)) {
+                    upscaledOutput = fsr2->GetOutputImageView();
+                } else if (auto* dlss = dynamic_cast<Renderer::DLSSUpscaler*>(upscaler)) {
+                    upscaledOutput = dlss->GetOutputImageView();
+                } else if (auto* xess = dynamic_cast<Renderer::XeSSUpscaler*>(upscaler)) {
+                    upscaledOutput = xess->GetOutputImageView();
+                }
+                if (upscaledOutput != VK_NULL_HANDLE) {
+                    m_PostProcessing->UpdateSourceImage(upscaledOutput, m_SceneRenderTarget->GetSampler());
                 }
             }
         }

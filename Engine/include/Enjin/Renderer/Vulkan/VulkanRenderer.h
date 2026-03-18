@@ -114,6 +114,11 @@ public:
     void SignalGraphicsToCompute(VkCommandBuffer graphicsCmd);
     bool WasComputeSubmittedThisFrame() const { return m_ComputeSubmittedThisFrame; }
 
+    // External semaphore wait: allows an external system (e.g., AsyncComputeScheduler)
+    // to add a semaphore that the graphics queue submit should wait on.
+    // The semaphore is consumed on the next SubmitCommandBuffer() call.
+    void AddExternalWaitSemaphore(VkSemaphore semaphore, VkPipelineStageFlags waitStage);
+
     // Variable Rate Shading: set the shading rate image for the next render pass
     void SetShadingRateImage(VkImageView imageView, VkExtent2D tileSize) {
         m_ShadingRateImageView = imageView;
@@ -166,6 +171,13 @@ private:
     bool m_ComputeRecording = false;
     bool m_ComputeSubmittedThisFrame = false; // True if SubmitCompute was called
     bool m_GraphicsToComputeSignaled = false; // True if SignalGraphicsToCompute was called
+
+    // External semaphores to wait on during graphics submit
+    struct ExternalWait {
+        VkSemaphore semaphore = VK_NULL_HANDLE;
+        VkPipelineStageFlags waitStage = 0;
+    };
+    std::vector<ExternalWait> m_ExternalWaitSemaphores;
 
     // VRS shading rate image (set by RenderSystem when VRS is active)
     VkImageView m_ShadingRateImageView = VK_NULL_HANDLE;

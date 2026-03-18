@@ -59,7 +59,7 @@ layout(binding = 1) uniform PostProcessSettings {
     // Screen resolution
     uint screenWidth;
     uint screenHeight;
-    float _pad6;
+    uint aaMode;          // 0=None, 1=FXAA, 2=TAA, 3=SMAA
     float _pad7;
 
     // Retro: Dithering
@@ -536,6 +536,157 @@ vec3 applyFXAA(vec2 uv) {
         return rgbA;
     }
     return rgbB;
+}
+
+// SMAA-lite (Enhanced Subpixel Morphological Anti-Aliasing)
+// Two-phase approach: edge detection via luma gradient, then directional blend
+// along detected edges with sub-pixel offsets for improved quality over FXAA.
+vec3 applySMAA(vec2 uv) {
+    vec2 texelSize = 1.0 / vec2(settings.screenWidth, settings.screenHeight);
+    const vec3 luma = vec3(0.2126, 0.7152, 0.0722);
+
+    // Phase 1: Edge detection using cross-shaped luma sampling
+    // Sample center and 4 cardinal neighbors
+    vec3 rgbC  = texture(sceneTexture, uv).rgb;
+    vec3 rgbN  = texture(sceneTexture, uv + vec2( 0.0, -1.0) * texelSize).rgb;
+    vec3 rgbS  = texture(sceneTexture, uv + vec2( 0.0,  1.0) * texelSize).rgb;
+    vec3 rgbW  = texture(sceneTexture, uv + vec2(-1.0,  0.0) * texelSize).rgb;
+    vec3 rgbE  = texture(sceneTexture, uv + vec2( 1.0,  0.0) * texelSize).rgb;
+
+    float lumaC = dot(rgbC, luma);
+    float lumaN = dot(rgbN, luma);
+    float lumaS = dot(rgbS, luma);
+    float lumaW = dot(rgbW, luma);
+    float lumaE = dot(rgbE, luma);
+
+    // Compute horizontal and vertical edge gradients
+    float edgeH = abs(lumaN - lumaC) + abs(lumaS - lumaC);
+    float edgeV = abs(lumaW - lumaC) + abs(lumaE - lumaC);
+
+    // Also sample diagonal neighbors for better edge classification
+    vec3 rgbNW = texture(sceneTexture, uv + vec2(-1.0, -1.0) * texelSize).rgb;
+    vec3 rgbNE = texture(sceneTexture, uv + vec2( 1.0, -1.0) * texelSize).rgb;
+    vec3 rgbSW = texture(sceneTexture, uv + vec2(-1.0,  1.0) * texelSize).rgb;
+    vec3 rgbSE = texture(sceneTexture, uv + vec2( 1.0,  1.0) * texelSize).rgb;
+
+    float lumaNW = dot(rgbNW, luma);
+    float lumaNE = dot(rgbNE, luma);
+    float lumaSW = dot(rgbSW, luma);
+    float lumaSE = dot(rgbSE, luma);
+
+    // Augment edge detection with diagonal contributions (weighted less)
+    edgeH += 0.5 * (abs(lumaNW - lumaNE) + abs(lumaSW - lumaSE));
+    edgeV += 0.5 * (abs(lumaNW - lumaSW) + abs(lumaNE - lumaSE));
+
+    // Adaptive edge threshold based on local contrast
+    float lumaMin = min(lumaC, min(min(lumaN, lumaS), min(lumaW, lumaE)));
+    float lumaMax = max(lumaC, max(max(lumaN, lumaS), max(lumaW, lumaE)));
+    float lumaRange = lumaMax - lumaMin;
+
+    // Skip anti-aliasing for low-contrast regions (no visible aliasing)
+    float edgeThreshold = max(0.05, lumaMax * 0.15);
+    if (lumaRange < edgeThreshold) {
+        return rgbC;
+    }
+
+    // Phase 2: Determine edge orientation and compute blend weights
+    bool isHorizontal = (edgeH >= edgeV);
+
+    // Select the two neighbors along the edge normal (perpendicular to edge)
+    float lumaPos = isHorizontal ? lumaS : lumaE;
+    float lumaNeg = isHorizontal ? lumaN : lumaW;
+
+    // Gradient along the edge normal
+    float gradPos = abs(lumaPos - lumaC);
+    float gradNeg = abs(lumaNeg - lumaC);
+
+    // Choose the direction with the steepest gradient
+    float gradMax = max(gradPos, gradNeg);
+    bool isNegDir = (gradNeg > gradPos);
+
+    // Sub-pixel blending factor from local contrast
+    float subPixelFactor = (lumaN + lumaS + lumaW + lumaE) * 0.25;
+    subPixelFactor = abs(subPixelFactor - lumaC);
+    subPixelFactor = clamp(subPixelFactor / lumaRange, 0.0, 1.0);
+    // Smooth the factor for better sub-pixel quality
+    subPixelFactor = subPixelFactor * subPixelFactor * (3.0 - 2.0 * subPixelFactor);
+
+    // Phase 3: Edge walking — search along the edge to find endpoints
+    // This determines how far the edge extends in each direction for proper blending
+    vec2 edgeStep = isHorizontal ? vec2(texelSize.x, 0.0) : vec2(0.0, texelSize.y);
+    float edgeSign = isNegDir ? -1.0 : 1.0;
+    vec2 normalStep = isHorizontal ? vec2(0.0, texelSize.y * edgeSign) : vec2(texelSize.x * edgeSign, 0.0);
+
+    // Offset UV to the edge center (between center pixel and the neighbor with steeper gradient)
+    vec2 edgeUV = uv + normalStep * 0.5;
+
+    // Search in positive and negative directions along the edge
+    float lumaEdge = (lumaC + (isNegDir ? lumaNeg : lumaPos)) * 0.5;
+    float gradThreshold = gradMax * 0.25;
+
+    // Search positive direction (up to 12 steps for quality)
+    vec2 uvPos = edgeUV + edgeStep;
+    float lumaDeltaPos = dot(texture(sceneTexture, uvPos).rgb, luma) - lumaEdge;
+    bool donePos = abs(lumaDeltaPos) >= gradThreshold;
+
+    // Unrolled search loop (12 steps for quality balance)
+    if (!donePos) { uvPos += edgeStep * 1.5; lumaDeltaPos = dot(texture(sceneTexture, uvPos).rgb, luma) - lumaEdge; donePos = abs(lumaDeltaPos) >= gradThreshold; }
+    if (!donePos) { uvPos += edgeStep * 2.0; lumaDeltaPos = dot(texture(sceneTexture, uvPos).rgb, luma) - lumaEdge; donePos = abs(lumaDeltaPos) >= gradThreshold; }
+    if (!donePos) { uvPos += edgeStep * 2.0; lumaDeltaPos = dot(texture(sceneTexture, uvPos).rgb, luma) - lumaEdge; donePos = abs(lumaDeltaPos) >= gradThreshold; }
+    if (!donePos) { uvPos += edgeStep * 2.0; lumaDeltaPos = dot(texture(sceneTexture, uvPos).rgb, luma) - lumaEdge; donePos = abs(lumaDeltaPos) >= gradThreshold; }
+    if (!donePos) { uvPos += edgeStep * 4.0; lumaDeltaPos = dot(texture(sceneTexture, uvPos).rgb, luma) - lumaEdge; donePos = abs(lumaDeltaPos) >= gradThreshold; }
+    if (!donePos) { uvPos += edgeStep * 4.0; lumaDeltaPos = dot(texture(sceneTexture, uvPos).rgb, luma) - lumaEdge; donePos = abs(lumaDeltaPos) >= gradThreshold; }
+    if (!donePos) { uvPos += edgeStep * 4.0; lumaDeltaPos = dot(texture(sceneTexture, uvPos).rgb, luma) - lumaEdge; donePos = abs(lumaDeltaPos) >= gradThreshold; }
+    if (!donePos) { uvPos += edgeStep * 8.0; lumaDeltaPos = dot(texture(sceneTexture, uvPos).rgb, luma) - lumaEdge; donePos = abs(lumaDeltaPos) >= gradThreshold; }
+    if (!donePos) { uvPos += edgeStep * 8.0; lumaDeltaPos = dot(texture(sceneTexture, uvPos).rgb, luma) - lumaEdge; donePos = abs(lumaDeltaPos) >= gradThreshold; }
+    if (!donePos) { uvPos += edgeStep * 8.0; lumaDeltaPos = dot(texture(sceneTexture, uvPos).rgb, luma) - lumaEdge; donePos = abs(lumaDeltaPos) >= gradThreshold; }
+    if (!donePos) { uvPos += edgeStep * 8.0; lumaDeltaPos = dot(texture(sceneTexture, uvPos).rgb, luma) - lumaEdge; }
+
+    // Search negative direction
+    vec2 uvNeg = edgeUV - edgeStep;
+    float lumaDeltaNeg = dot(texture(sceneTexture, uvNeg).rgb, luma) - lumaEdge;
+    bool doneNeg = abs(lumaDeltaNeg) >= gradThreshold;
+
+    if (!doneNeg) { uvNeg -= edgeStep * 1.5; lumaDeltaNeg = dot(texture(sceneTexture, uvNeg).rgb, luma) - lumaEdge; doneNeg = abs(lumaDeltaNeg) >= gradThreshold; }
+    if (!doneNeg) { uvNeg -= edgeStep * 2.0; lumaDeltaNeg = dot(texture(sceneTexture, uvNeg).rgb, luma) - lumaEdge; doneNeg = abs(lumaDeltaNeg) >= gradThreshold; }
+    if (!doneNeg) { uvNeg -= edgeStep * 2.0; lumaDeltaNeg = dot(texture(sceneTexture, uvNeg).rgb, luma) - lumaEdge; doneNeg = abs(lumaDeltaNeg) >= gradThreshold; }
+    if (!doneNeg) { uvNeg -= edgeStep * 2.0; lumaDeltaNeg = dot(texture(sceneTexture, uvNeg).rgb, luma) - lumaEdge; doneNeg = abs(lumaDeltaNeg) >= gradThreshold; }
+    if (!doneNeg) { uvNeg -= edgeStep * 4.0; lumaDeltaNeg = dot(texture(sceneTexture, uvNeg).rgb, luma) - lumaEdge; doneNeg = abs(lumaDeltaNeg) >= gradThreshold; }
+    if (!doneNeg) { uvNeg -= edgeStep * 4.0; lumaDeltaNeg = dot(texture(sceneTexture, uvNeg).rgb, luma) - lumaEdge; doneNeg = abs(lumaDeltaNeg) >= gradThreshold; }
+    if (!doneNeg) { uvNeg -= edgeStep * 4.0; lumaDeltaNeg = dot(texture(sceneTexture, uvNeg).rgb, luma) - lumaEdge; doneNeg = abs(lumaDeltaNeg) >= gradThreshold; }
+    if (!doneNeg) { uvNeg -= edgeStep * 8.0; lumaDeltaNeg = dot(texture(sceneTexture, uvNeg).rgb, luma) - lumaEdge; doneNeg = abs(lumaDeltaNeg) >= gradThreshold; }
+    if (!doneNeg) { uvNeg -= edgeStep * 8.0; lumaDeltaNeg = dot(texture(sceneTexture, uvNeg).rgb, luma) - lumaEdge; doneNeg = abs(lumaDeltaNeg) >= gradThreshold; }
+    if (!doneNeg) { uvNeg -= edgeStep * 8.0; lumaDeltaNeg = dot(texture(sceneTexture, uvNeg).rgb, luma) - lumaEdge; doneNeg = abs(lumaDeltaNeg) >= gradThreshold; }
+    if (!doneNeg) { uvNeg -= edgeStep * 8.0; lumaDeltaNeg = dot(texture(sceneTexture, uvNeg).rgb, luma) - lumaEdge; }
+
+    // Compute distances to edge endpoints
+    float distPos = isHorizontal ? (uvPos.x - uv.x) : (uvPos.y - uv.y);
+    float distNeg = isHorizontal ? (uv.x - uvNeg.x) : (uv.y - uvNeg.y);
+
+    // Use shorter distance for edge blend factor
+    float distMin = min(distPos, distNeg);
+    float edgeLen = distPos + distNeg;
+
+    // Edge blend factor based on position along the edge
+    float edgeBlend = 0.5 - distMin / edgeLen;
+
+    // Check if the sign matches — avoid blending across opposing gradients
+    bool isLumaCenterSmaller = lumaC < lumaEdge;
+    bool correctVariation = ((distPos < distNeg) ? lumaDeltaPos : lumaDeltaNeg) >= 0.0;
+    correctVariation = correctVariation != isLumaCenterSmaller;
+
+    // Zero out edge blend if gradient direction doesn't match
+    if (!correctVariation) {
+        edgeBlend = 0.0;
+    }
+
+    // Final blend is max of edge-walk blend and sub-pixel smoothing
+    float finalBlend = max(edgeBlend, subPixelFactor * 0.75);
+
+    // Apply the offset perpendicular to the edge
+    vec2 finalUV = uv + normalStep * finalBlend;
+
+    return texture(sceneTexture, finalUV).rgb;
 }
 
 // ============================================================
@@ -1560,10 +1711,15 @@ void main() {
     uv = applyFilmGateWeave(uv);
 
     // VHS: applied early because it warps UVs for the raw image sampling
+    // Anti-aliasing dispatch: 0=None, 1=FXAA, 2=TAA (compute pass, not here), 3=SMAA
     vec3 color;
     if (settings.vhsEnabled != 0) {
         color = applyVHS(uv);
-    } else if (settings.fxaaEnabled != 0 && settings.chromaticAberrationEnabled == 0) {
+    } else if (settings.aaMode == 3 && settings.chromaticAberrationEnabled == 0) {
+        // SMAA-lite: enhanced morphological edge-aware anti-aliasing
+        color = applySMAA(uv);
+    } else if (settings.aaMode == 1 && settings.chromaticAberrationEnabled == 0) {
+        // FXAA: fast approximate anti-aliasing
         color = applyFXAA(uv);
     } else {
         color = applyChromaticAberration(uv);

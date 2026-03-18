@@ -1,0 +1,188 @@
+#version 460
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// Radiance Cache — Update Pass
+//
+// For each tile in the screen-space radiance cache:
+//   1. Sample the center pixel's depth and normal from the current G-buffer
+//   2. Compare against the cached depth/normal from the previous frame
+//   3. If similar (within thresholds): keep cached irradiance, increment age
+//   4. If different or age > maxAge: mark tile as stale (needs re-tracing)
+//   5. If stale tile has fresh GI data: absorb it into the cache
+//
+// IMPORTANT: This shader does NOT trace any rays. It only manages cache validity.
+// The actual GI rays are traced by RTGlobalIllumination — which can optionally
+// consult the stale mask to skip tiles that already have valid cached irradiance.
+
+// --- Descriptor bindings (shared with RT descriptor set) ---
+
+// Binding 2: Depth buffer
+layout(binding = 2, set = 0) uniform sampler2D depthTex;
+
+// Binding 3: World normals
+layout(binding = 3, set = 0) uniform sampler2D normalTex;
+
+// Binding 8: GI output image (written by RTGlobalIllumination)
+layout(binding = 8, rgba16f) uniform image2D giImage;
+
+// Binding 13: RT light UBO
+layout(binding = 13, set = 0) uniform LightData {
+    vec4 lightDir;
+    vec4 lightColor;
+    mat4 invViewProj;
+    vec2 screenSize;
+    uint frameCount;
+    float shadowRadius;
+    float fireflyClamp;
+    int enableNEE;
+    int enableMIS;
+    int rrMinBounce;
+    float rrMinProb;
+    uint directionalLightCount;
+    uint pointLightCount;
+    uint spotLightCount;
+} uLight;
+
+// Binding 21: Radiance cache tile buffer
+struct RadianceCacheTile {
+    float irradianceR;
+    float irradianceG;
+    float irradianceB;
+    float depth;
+    float normalX;
+    float normalY;
+    float normalZ;
+    float age;
+};
+
+layout(binding = 21, set = 0) buffer TileBuffer {
+    RadianceCacheTile tiles[];
+};
+
+// Binding 22: Stale tile mask (bitfield — 1 bit per tile, packed into u32s)
+layout(binding = 22, set = 0) buffer StaleMaskBuffer {
+    uint staleMask[];
+};
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    uint tileSize;          // Tile dimension in pixels (16, 32, or 64)
+    uint tileCountX;        // Number of tiles horizontally
+    uint tileCountY;        // Number of tiles vertically
+    float maxAge;           // Maximum frames before forced re-trace
+    float depthThreshold;   // Relative depth difference for invalidation
+    float normalThreshold;  // Dot product threshold for invalidation
+    float hysteresis;       // Temporal blend factor
+    uint invalidateAll;     // 1 = force invalidate entire cache
+} pc;
+
+void main() {
+    uvec2 tileCoord = gl_GlobalInvocationID.xy;
+    if (tileCoord.x >= pc.tileCountX || tileCoord.y >= pc.tileCountY) return;
+
+    uint tileIdx = tileCoord.y * pc.tileCountX + tileCoord.x;
+
+    // Sample center pixel of this tile from the current G-buffer
+    vec2 centerPixel = vec2(tileCoord) * float(pc.tileSize) + float(pc.tileSize) * 0.5;
+    vec2 uv = centerPixel / uLight.screenSize;
+
+    // Clamp UV to valid range
+    uv = clamp(uv, vec2(0.0), vec2(1.0));
+
+    float currentDepth = texture(depthTex, uv).r;
+    vec3 currentNormal = normalize(texture(normalTex, uv).xyz * 2.0 - 1.0);
+
+    RadianceCacheTile tile = tiles[tileIdx];
+
+    // Determine if the cached tile is still valid
+    bool isValid = true;
+
+    // Force invalidation requested (camera cut, etc.)
+    if (pc.invalidateAll != 0u) {
+        isValid = false;
+    }
+
+    // Sky pixel — no surface to cache
+    if (currentDepth >= 1.0) {
+        isValid = false;
+    }
+
+    // Check depth continuity (relative difference)
+    if (isValid && tile.age > 0.0) {
+        float depthDiff = abs(currentDepth - tile.depth) / max(currentDepth, 1e-6);
+        if (depthDiff > pc.depthThreshold) {
+            isValid = false;
+        }
+    }
+
+    // Check normal continuity (dot product similarity)
+    if (isValid && tile.age > 0.0) {
+        vec3 cachedNormal = vec3(tile.normalX, tile.normalY, tile.normalZ);
+        float normalDot = dot(currentNormal, cachedNormal);
+        if (normalDot < pc.normalThreshold) {
+            isValid = false;
+        }
+    }
+
+    // Check age — force re-trace if too old
+    if (isValid && tile.age >= pc.maxAge) {
+        isValid = false;
+    }
+
+    // First frame (age == 0 and no valid data) — always stale
+    if (tile.depth == 0.0 && tile.age == 0.0) {
+        isValid = false;
+    }
+
+    // Update stale mask (1 bit per tile, packed into u32)
+    uint maskIdx = tileIdx / 32u;
+    uint maskBit = 1u << (tileIdx % 32u);
+
+    if (isValid) {
+        // Valid tile — increment age, keep cached irradiance
+        // Blend with fresh GI data if available (temporal accumulation)
+        ivec2 giPixel = ivec2(centerPixel);
+        ivec2 giSize = imageSize(giImage);
+        if (giPixel.x < giSize.x && giPixel.y < giSize.y) {
+            vec3 freshGI = imageLoad(giImage, giPixel).rgb;
+            // Only blend if we have nonzero fresh data (GI was actually dispatched)
+            if (dot(freshGI, freshGI) > 0.0) {
+                tile.irradianceR = mix(freshGI.r, tile.irradianceR, pc.hysteresis);
+                tile.irradianceG = mix(freshGI.g, tile.irradianceG, pc.hysteresis);
+                tile.irradianceB = mix(freshGI.b, tile.irradianceB, pc.hysteresis);
+            }
+        }
+        tile.age += 1.0;
+        tile.depth = currentDepth;
+        tile.normalX = currentNormal.x;
+        tile.normalY = currentNormal.y;
+        tile.normalZ = currentNormal.z;
+
+        // Clear stale bit
+        atomicAnd(staleMask[maskIdx], ~maskBit);
+    } else {
+        // Stale tile — absorb fresh GI data if available, otherwise zero out
+        ivec2 giPixel = ivec2(centerPixel);
+        ivec2 giSize = imageSize(giImage);
+        if (giPixel.x < giSize.x && giPixel.y < giSize.y && currentDepth < 1.0) {
+            vec3 freshGI = imageLoad(giImage, giPixel).rgb;
+            tile.irradianceR = freshGI.r;
+            tile.irradianceG = freshGI.g;
+            tile.irradianceB = freshGI.b;
+        } else {
+            tile.irradianceR = 0.0;
+            tile.irradianceG = 0.0;
+            tile.irradianceB = 0.0;
+        }
+        tile.depth = currentDepth;
+        tile.normalX = currentNormal.x;
+        tile.normalY = currentNormal.y;
+        tile.normalZ = currentNormal.z;
+        tile.age = 0.0;
+
+        // Set stale bit
+        atomicOr(staleMask[maskIdx], maskBit);
+    }
+
+    tiles[tileIdx] = tile;
+}

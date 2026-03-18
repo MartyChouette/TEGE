@@ -1,0 +1,269 @@
+#version 460
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// ReSTIR DI — Temporal Reuse
+//
+// Reprojects previous frame's reservoirs using motion vectors and merges them
+// with the current frame's initial candidate reservoirs. This dramatically
+// improves convergence by reusing light selection across frames.
+//
+// Algorithm:
+//   1. Read current reservoir from initial candidate pass
+//   2. Compute previous pixel location via motion vectors
+//   3. If previous pixel is valid (within bounds, similar depth/normal):
+//      a. Read previous frame's reservoir
+//      b. Cap previous reservoir's M to M_max (prevent stale sample dominance)
+//      c. Merge previous reservoir into current via weighted reservoir sampling
+//   4. Recompute unbiased sample weight for merged reservoir
+//   5. Write merged reservoir to output buffer
+
+// --- Descriptor bindings (shared with RT descriptor set) ---
+
+// Binding 2: Depth buffer (for depth similarity check)
+layout(binding = 2, set = 0) uniform sampler2D depthTex;
+
+// Binding 3: World normals (for normal similarity check)
+layout(binding = 3, set = 0) uniform sampler2D normalTex;
+
+// Binding 4: Motion vectors (RG16F — screen-space velocity in pixels)
+layout(binding = 4, set = 0) uniform sampler2D velocityTex;
+
+// Binding 13: RT light UBO
+layout(binding = 13, set = 0) uniform LightData {
+    vec4 lightDir;
+    vec4 lightColor;
+    mat4 invViewProj;
+    vec2 screenSize;
+    uint frameCount;
+    float shadowRadius;
+    float fireflyClamp;
+    int enableNEE;
+    int enableMIS;
+    int rrMinBounce;
+    float rrMinProb;
+    uint directionalLightCount;
+    uint pointLightCount;
+    uint spotLightCount;
+} uLight;
+
+// Binding 16: NEE light SSBO
+struct RTLight {
+    vec3 position;
+    float range;
+    vec3 direction;
+    float intensity;
+    vec3 color;
+    int type;
+    float innerCutoff;
+    float outerCutoff;
+    float _pad0;
+    float _pad1;
+};
+
+layout(binding = 16, set = 0) readonly buffer NEELightBuffer {
+    RTLight lights[];
+};
+
+// Binding 19: Current frame reservoir buffer (input from initial candidate pass, output after merge)
+struct Reservoir {
+    uint selectedLight;
+    float weightSum;
+    float sampleWeight;
+    uint sampleCount;
+};
+
+layout(binding = 19, set = 0) buffer ReservoirBuffer {
+    Reservoir reservoirs[];
+};
+
+// Binding 20: Previous frame reservoir buffer (read-only for temporal reuse)
+layout(binding = 20, set = 0) readonly buffer PrevReservoirBuffer {
+    Reservoir prevReservoirs[];
+};
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    uint totalLightCount;
+    uint temporalMaxHistory;  // M_max cap for temporal reservoir
+    float depthThreshold;     // Relative depth threshold for similarity (e.g., 0.1)
+    float normalThreshold;    // Normal dot product threshold (e.g., 0.9)
+    uint frameCount;
+} pc;
+
+// ============================================================================
+// RNG (PCG)
+// ============================================================================
+
+uint pcg_hash(uint v) {
+    uint state = v * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float rand_float(inout uint seed) {
+    seed = pcg_hash(seed);
+    return float(seed) / 4294967296.0;
+}
+
+uint init_rng(uvec2 pixel, uint frame) {
+    // Offset seed to avoid correlation with initial candidate pass
+    return pcg_hash(pixel.x + pixel.y * 8192u + frame * 65536u + 7919u);
+}
+
+// ============================================================================
+// Importance estimation (same as restir_initial.comp)
+// ============================================================================
+
+float estimateLightContribution(RTLight light, vec3 worldPos, vec3 worldNormal) {
+    vec3 toLight;
+    float attenuation = 1.0;
+    float geometricTerm;
+
+    if (light.type == 0) {
+        toLight = -light.direction;
+        geometricTerm = max(dot(worldNormal, toLight), 0.0);
+    } else if (light.type == 1) {
+        vec3 diff = light.position - worldPos;
+        float dist2 = dot(diff, diff);
+        float dist = sqrt(dist2);
+        toLight = diff / max(dist, 1e-6);
+        geometricTerm = max(dot(worldNormal, toLight), 0.0);
+        attenuation = 1.0 / max(dist2, 0.01);
+        if (light.range > 0.0 && dist > light.range) attenuation = 0.0;
+    } else {
+        vec3 diff = light.position - worldPos;
+        float dist2 = dot(diff, diff);
+        float dist = sqrt(dist2);
+        toLight = diff / max(dist, 1e-6);
+        geometricTerm = max(dot(worldNormal, toLight), 0.0);
+        attenuation = 1.0 / max(dist2, 0.01);
+        if (light.range > 0.0 && dist > light.range) attenuation = 0.0;
+        float cosAngle = dot(-toLight, light.direction);
+        if (cosAngle <= light.outerCutoff) {
+            attenuation = 0.0;
+        } else if (cosAngle < light.innerCutoff) {
+            float t = (cosAngle - light.outerCutoff) /
+                      max(light.innerCutoff - light.outerCutoff, 1e-6);
+            attenuation *= t * t;
+        }
+    }
+
+    vec3 emission = light.color * light.intensity;
+    float luminance = dot(emission, vec3(0.2126, 0.7152, 0.0722));
+    return luminance * attenuation * geometricTerm;
+}
+
+// ============================================================================
+// Main
+// ============================================================================
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = ivec2(uLight.screenSize);
+    if (pixel.x >= size.x || pixel.y >= size.y) return;
+
+    uint idx = uint(pixel.y) * uint(size.x) + uint(pixel.x);
+
+    // Read current reservoir from initial candidate pass
+    Reservoir current = reservoirs[idx];
+
+    // Early out: no lights or empty reservoir
+    if (pc.totalLightCount == 0u || current.sampleCount == 0u) return;
+
+    // Read motion vector to find previous pixel
+    vec2 uv = (vec2(pixel) + 0.5) / uLight.screenSize;
+    vec2 velocity = texture(velocityTex, uv).rg;
+
+    // Reproject: previous pixel = current pixel - velocity (velocity is in pixels)
+    vec2 prevPixelF = vec2(pixel) + 0.5 - velocity;
+    ivec2 prevPixel = ivec2(floor(prevPixelF));
+
+    // Bounds check
+    if (prevPixel.x < 0 || prevPixel.x >= size.x ||
+        prevPixel.y < 0 || prevPixel.y >= size.y) {
+        // No valid previous pixel — keep current reservoir unchanged
+        return;
+    }
+
+    // Similarity check: depth
+    float currentDepth = texture(depthTex, uv).r;
+    vec2 prevUV = (vec2(prevPixel) + 0.5) / uLight.screenSize;
+    float prevDepth = texture(depthTex, prevUV).r;
+
+    // Sky pixels don't have meaningful reservoirs
+    if (currentDepth >= 1.0 || prevDepth >= 1.0) return;
+
+    float depthRatio = abs(currentDepth - prevDepth) / max(currentDepth, 1e-6);
+    if (depthRatio > pc.depthThreshold) return;
+
+    // Similarity check: normals
+    vec3 currentNormal = normalize(texture(normalTex, uv).xyz * 2.0 - 1.0);
+    vec3 prevNormal = normalize(texture(normalTex, prevUV).xyz * 2.0 - 1.0);
+    if (dot(currentNormal, prevNormal) < pc.normalThreshold) return;
+
+    // Read previous frame's reservoir
+    uint prevIdx = uint(prevPixel.y) * uint(size.x) + uint(prevPixel.x);
+    Reservoir prev = prevReservoirs[prevIdx];
+
+    // Skip empty previous reservoirs
+    if (prev.sampleCount == 0u) return;
+
+    // Cap previous M to prevent stale samples from dominating
+    uint M_max = pc.temporalMaxHistory;
+    if (prev.sampleCount > M_max) {
+        prev.weightSum *= float(M_max) / float(prev.sampleCount);
+        prev.sampleCount = M_max;
+    }
+
+    // Reconstruct world position for re-evaluation of previous sample's target PDF
+    vec4 clipPos = vec4(uv * 2.0 - 1.0, currentDepth, 1.0);
+    vec4 worldPos4 = uLight.invViewProj * clipPos;
+    vec3 worldPos = worldPos4.xyz / worldPos4.w;
+
+    // Re-evaluate previous reservoir's selected light at current pixel's geometry
+    // This is critical for unbiased merging — the target PDF must be evaluated
+    // at the current pixel, not the previous one
+    float prevTargetPdf = 0.0;
+    if (prev.selectedLight < pc.totalLightCount) {
+        prevTargetPdf = estimateLightContribution(
+            lights[prev.selectedLight], worldPos, currentNormal);
+    }
+
+    // Merge previous reservoir into current using WRS
+    // Weight for merging = prevTargetPdf * prev.sampleWeight * prev.sampleCount
+    // (prev.sampleWeight = W = 1/p_hat * weightSum/M from the previous frame)
+    // Simplified: merge weight = prevTargetPdf * (prev.weightSum / prev.sampleCount) * prev.sampleCount
+    //                          = prevTargetPdf * prev.weightSum / 1
+    // But more correctly for reservoir combination:
+    //   weight_prev = p_hat_at_current(prev.selected) * prev.W * prev.M
+    // where prev.W = prev.sampleWeight
+    float mergeWeight = prevTargetPdf * prev.sampleWeight * float(prev.sampleCount);
+
+    // Initialize RNG for merge decision
+    uint rng = init_rng(uvec2(pixel), pc.frameCount);
+
+    // Stream previous reservoir's sample into current reservoir
+    float totalWeight = current.weightSum + mergeWeight;
+    uint totalM = current.sampleCount + prev.sampleCount;
+
+    if (totalWeight > 1e-10 && rand_float(rng) < (mergeWeight / totalWeight)) {
+        current.selectedLight = prev.selectedLight;
+    }
+    current.weightSum = totalWeight;
+    current.sampleCount = totalM;
+
+    // Recompute unbiased sample weight W = (1/p_hat) * (weightSum / M)
+    float selectedTargetPdf = 0.0;
+    if (current.selectedLight < pc.totalLightCount) {
+        selectedTargetPdf = estimateLightContribution(
+            lights[current.selectedLight], worldPos, currentNormal);
+    }
+
+    if (selectedTargetPdf > 1e-10 && current.sampleCount > 0u) {
+        current.sampleWeight = (current.weightSum / float(current.sampleCount)) / selectedTargetPdf;
+    } else {
+        current.sampleWeight = 0.0;
+    }
+
+    reservoirs[idx] = current;
+}

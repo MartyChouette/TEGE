@@ -1,0 +1,108 @@
+#version 460
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// RT Temporal Reuse — reproject previous frame's RT output using motion vectors,
+// validate against depth/normal consistency, blend with current noisy result.
+//
+// Handles both single-channel (R16F shadow/AO) and multi-channel (RGBA16F reflect/GI)
+// via the singleChannel flag in push constants.
+//
+// Outputs:
+//   - Blended RT result (written to both output and history)
+//   - Confidence value (written to confidence map): 0=freshly traced, 1=high confidence
+
+layout(binding = 0) uniform sampler2D currentInput;   // Current frame's noisy RT output
+layout(binding = 1) uniform sampler2D depthTex;        // Current frame depth (D32F)
+layout(binding = 2) uniform sampler2D normalTex;       // Current frame world normals (RGB)
+layout(binding = 3) uniform sampler2D motionTex;       // Motion vectors (RG16F, NDC delta)
+layout(binding = 4, rgba16f) uniform image2D historyImage;     // Previous frame's blended output (read+write)
+layout(binding = 5, rgba16f) uniform image2D outputImage;      // Blended output for this frame
+layout(binding = 6, r8) uniform image2D confidenceImage;       // Temporal confidence (0=fresh, 1=stable)
+
+layout(push_constant) uniform PushConstants {
+    float historyLength;          // Blend factor: 0=no reuse, 0.9=90% previous frame
+    float disocclusionThreshold;  // Depth ratio threshold for rejecting history
+    float normalThreshold;        // Normal dot-product threshold for rejecting history
+    int flags;                    // bit 0: singleChannel, bit 1: hasHistory
+} pc;
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(outputImage);
+    if (pixel.x >= size.x || pixel.y >= size.y) return;
+
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
+    bool singleChannel = (pc.flags & 1) != 0;
+    bool hasHistory = (pc.flags & 2) != 0;
+
+    // Read current frame's noisy RT result
+    vec4 currentColor = texture(currentInput, uv);
+
+    // First frame or reset — just write current as output + history, confidence = 0
+    if (!hasHistory) {
+        imageStore(outputImage, pixel, currentColor);
+        imageStore(historyImage, pixel, currentColor);
+        imageStore(confidenceImage, pixel, vec4(0.0));
+        return;
+    }
+
+    // Reproject using motion vectors (NDC-space delta)
+    vec2 motion = texture(motionTex, uv).xy;
+    vec2 prevUV = uv - motion;
+
+    // Bounds check on reprojected UV
+    bool validReproject = prevUV.x >= 0.0 && prevUV.x <= 1.0 &&
+                          prevUV.y >= 0.0 && prevUV.y <= 1.0;
+
+    float confidence = 0.0;
+    vec4 historyColor = vec4(0.0);
+
+    if (validReproject) {
+        // Fetch history at reprojected location
+        ivec2 prevPixel = ivec2(prevUV * vec2(size));
+        prevPixel = clamp(prevPixel, ivec2(0), size - 1);
+        historyColor = imageLoad(historyImage, prevPixel);
+
+        // --- Disocclusion detection ---
+        // Compare depth: if depth changed significantly, this is a new surface
+        float currentDepth = texture(depthTex, uv).r;
+        float prevDepth = texture(depthTex, prevUV).r;
+
+        // Depth similarity: ratio-based test (handles both near and far geometry)
+        float depthRatio = currentDepth / max(prevDepth, 1e-7);
+        float depthDiff = abs(depthRatio - 1.0);
+
+        // Normal similarity: dot product of current vs previous normals
+        vec3 currentNormal = normalize(texture(normalTex, uv).xyz * 2.0 - 1.0);
+        vec3 prevNormal = normalize(texture(normalTex, prevUV).xyz * 2.0 - 1.0);
+        float normalDot = dot(currentNormal, prevNormal);
+
+        // Reject history if surface changed
+        if (depthDiff > pc.disocclusionThreshold || normalDot < pc.normalThreshold) {
+            validReproject = false;
+        }
+    }
+
+    // Blend current with history
+    vec4 blended;
+    if (validReproject) {
+        // Valid history — blend with exponential moving average
+        float alpha = 1.0 - pc.historyLength;  // historyLength=0.9 -> alpha=0.1 (10% current)
+        blended = mix(historyColor, currentColor, alpha);
+        confidence = pc.historyLength;  // High confidence = reusing history
+    } else {
+        // Disocclusion or out-of-bounds — use current frame only
+        blended = currentColor;
+        confidence = 0.0;
+    }
+
+    // For single-channel buffers, zero out unused channels to keep clean data
+    if (singleChannel) {
+        blended.gba = vec3(0.0, 0.0, blended.a);
+    }
+
+    // Write blended result to both output and history for next frame
+    imageStore(outputImage, pixel, blended);
+    imageStore(historyImage, pixel, blended);
+    imageStore(confidenceImage, pixel, vec4(confidence));
+}

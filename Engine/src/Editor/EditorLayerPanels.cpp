@@ -58,6 +58,7 @@
 #include "Enjin/Renderer/RayTracing/OIDNDenoiser.h"
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
 #include "Enjin/Renderer/RayTracing/ReSTIR.h"
+#include "Enjin/Renderer/RayTracing/RadianceCache.h"
 #include "Enjin/Renderer/RayTracing/AccelerationStructureManager.h"
 #include "Enjin/Renderer/SHLightProbe.h"
 #include "Enjin/Renderer/SDFScene.h"
@@ -7032,6 +7033,13 @@ void EditorLayer::DrawDebugWorkstation() {
                     ImGui::Text("Denoiser: %s", denoiser < 3 ? denoiserNames[denoiser] : "Unknown");
                     auto* restir = m_RenderSystem->GetReSTIR();
                     ImGui::Text("ReSTIR: %s", (restir && restir->GetConfig().enabled) ? "Enabled" : "Disabled");
+                    auto* radianceCache = m_RenderSystem->GetRadianceCache();
+                    ImGui::Text("Radiance Cache: %s", (radianceCache && radianceCache->GetConfig().enabled) ? "Enabled" : "Disabled");
+                    if (radianceCache && radianceCache->GetConfig().enabled) {
+                        ImGui::Text("  Tiles: %ux%u (%u total, %upx)",
+                            radianceCache->GetTileCountX(), radianceCache->GetTileCountY(),
+                            radianceCache->GetTotalTileCount(), radianceCache->GetConfig().tileSize);
+                    }
                 }
 
                 ImGui::Text("OIT: %s", m_RenderSystem->IsOITEnabled() ? "Enabled" : "Disabled");

@@ -88,7 +88,7 @@ layout(binding = 1) uniform LightingUBO {
     vec4 shProbeIrradiance; // xyz = SH probe irradiance, w = blend weight (0 or 1)
     vec4 reflectionProbePosition; // xyz = probe center, w = intensity (0 = no probe)
     vec4 reflectionProbeBoxMin;   // xyz = world AABB min, w = blend distance
-    vec4 reflectionProbeBoxMax;   // xyz = world AABB max, w = reserved
+    vec4 reflectionProbeBoxMax;   // xyz = world AABB max, w = isBaked (1.0 = cubemap at binding 19)
     DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLight pointLights[MAX_POINT_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];
@@ -257,6 +257,11 @@ layout(binding = 17) uniform sampler2D vtPhysicalAtlas;
 // Matcap (material capture) texture sampler (binding 18)
 // When bound to a real texture, replaces the procedural sphere env map
 layout(binding = 18) uniform sampler2D matcapMap;
+
+// Baked reflection probe cubemap (binding 19)
+// When a reflection probe has been baked, this contains the captured environment.
+// reflectionProbeBoxMax.w signals whether to sample from this (1.0) or use gradient fallback (0.0).
+layout(binding = 19) uniform samplerCube probeCubemap;
 
 // 16-sample Poisson disk for soft shadow PCF
 const vec2 poissonDisk[16] = vec2[16](
@@ -1403,11 +1408,18 @@ void main() {
             vec3 hitPoint = fragWorldPos + reflectDir * tBox;
             vec3 correctedDir = hitPoint - probeCenter;
 
-            // Use the corrected direction to sample environment (gradient approximation
-            // of the skybox cubemap — when actual cubemap sampling is added, this becomes
-            // a texture(samplerCube, correctedDir) call).
+            // Sample environment from the corrected reflection direction.
+            // When the probe has a baked cubemap (reflectionProbeBoxMax.w == 1.0),
+            // sample from the actual cubemap texture. Otherwise use gradient fallback.
             vec3 cDir = normalize(correctedDir);
-            envColor = mix(skyCol * 0.15, skyCol, clamp(cDir.y * 0.5 + 0.5, 0.0, 1.0));
+            float probeBaked = lighting.reflectionProbeBoxMax.w;
+            if (probeBaked > 0.5) {
+                // Sample the baked cubemap with the box-projected direction
+                envColor = texture(probeCubemap, cDir).rgb;
+            } else {
+                // Gradient approximation of skybox
+                envColor = mix(skyCol * 0.15, skyCol, clamp(cDir.y * 0.5 + 0.5, 0.0, 1.0));
+            }
 
             // Blend between probe result and skybox fallback based on probe intensity
             vec3 skyFallback = mix(skyCol * 0.15, skyCol, clamp(reflectDir.y * 0.5 + 0.5, 0.0, 1.0));

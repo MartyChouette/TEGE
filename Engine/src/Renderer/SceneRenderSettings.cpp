@@ -5,6 +5,7 @@
 #include "Enjin/Renderer/RayTracing/RTReflections.h"
 #include "Enjin/Renderer/RayTracing/RTAmbientOcclusion.h"
 #include "Enjin/Renderer/RayTracing/RTGlobalIllumination.h"
+#include "Enjin/Renderer/RayTracing/RadianceCache.h"
 #include "Enjin/Renderer/RayTracing/PathTracer.h"
 #include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
 #include "Enjin/Renderer/RayTracing/OIDNDenoiser.h"
@@ -111,6 +112,15 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
             s.rtGIMaxDistance = rtGI->GetConfig().maxDistance;
             s.rtGIIntensity = rtGI->GetConfig().intensity;
             s.rtGIBounces = rtGI->GetConfig().bounces;
+        }
+        if (auto* rc = rs->GetRadianceCache()) {
+            s.radianceCacheEnabled = rc->GetConfig().enabled;
+            s.radianceCacheTileSize = rc->GetConfig().tileSize;
+            s.radianceCacheMaxAge = rc->GetConfig().maxAge;
+            s.radianceCacheDepthThreshold = rc->GetConfig().depthThreshold;
+            s.radianceCacheNormalThreshold = rc->GetConfig().normalThreshold;
+            s.radianceCacheHysteresis = rc->GetConfig().hysteresis;
+            s.radianceCacheExcludeDirectional = rc->GetConfig().excludeDirectional;
         }
         if (auto* pathTracer = rs->GetPathTracer()) {
             s.rtPathTracerMaxBounces = pathTracer->GetConfig().maxBounces;
@@ -397,6 +407,15 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
             rtGI->GetConfig().maxDistance = rtGIMaxDistance;
             rtGI->GetConfig().intensity = rtGIIntensity;
             rtGI->GetConfig().bounces = rtGIBounces;
+        }
+        if (auto* rc = rs->GetRadianceCache()) {
+            rc->GetConfig().enabled = radianceCacheEnabled;
+            rc->GetConfig().tileSize = radianceCacheTileSize;
+            rc->GetConfig().maxAge = radianceCacheMaxAge;
+            rc->GetConfig().depthThreshold = radianceCacheDepthThreshold;
+            rc->GetConfig().normalThreshold = radianceCacheNormalThreshold;
+            rc->GetConfig().hysteresis = radianceCacheHysteresis;
+            rc->GetConfig().excludeDirectional = radianceCacheExcludeDirectional;
         }
         if (auto* pathTracer = rs->GetPathTracer()) {
             pathTracer->GetConfig().maxBounces = rtPathTracerMaxBounces;
@@ -1089,6 +1108,13 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["rtGIMaxDistance"]               = RF(s.rtGIMaxDistance);
     j["rtGIIntensity"]                 = RF(s.rtGIIntensity);
     j["rtGIBounces"]                   = s.rtGIBounces;
+    j["radianceCacheEnabled"]          = s.radianceCacheEnabled;
+    j["radianceCacheTileSize"]         = s.radianceCacheTileSize;
+    j["radianceCacheMaxAge"]           = RF(s.radianceCacheMaxAge);
+    j["radianceCacheDepthThreshold"]   = RF(s.radianceCacheDepthThreshold);
+    j["radianceCacheNormalThreshold"]  = RF(s.radianceCacheNormalThreshold);
+    j["radianceCacheHysteresis"]       = RF(s.radianceCacheHysteresis);
+    j["radianceCacheExcludeDirectional"] = s.radianceCacheExcludeDirectional;
     j["rtPathTracerMaxBounces"]        = s.rtPathTracerMaxBounces;
     j["rtPathTracerTargetSPP"]         = s.rtPathTracerTargetSPP;
     j["rtPathTracerFireflyClamp"]      = RF(s.rtPathTracerFireflyClamp);
@@ -1353,6 +1379,13 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("rtGIMaxDistance"))                 s.rtGIMaxDistance                 = j["rtGIMaxDistance"].get<f32>();
     if (j.contains("rtGIIntensity"))                  s.rtGIIntensity                  = j["rtGIIntensity"].get<f32>();
     if (j.contains("rtGIBounces"))                    s.rtGIBounces                    = j["rtGIBounces"].get<u32>();
+    if (j.contains("radianceCacheEnabled"))           s.radianceCacheEnabled           = JB(j["radianceCacheEnabled"]);
+    if (j.contains("radianceCacheTileSize"))          s.radianceCacheTileSize          = j["radianceCacheTileSize"].get<u32>();
+    if (j.contains("radianceCacheMaxAge"))            s.radianceCacheMaxAge            = j["radianceCacheMaxAge"].get<f32>();
+    if (j.contains("radianceCacheDepthThreshold"))    s.radianceCacheDepthThreshold    = j["radianceCacheDepthThreshold"].get<f32>();
+    if (j.contains("radianceCacheNormalThreshold"))   s.radianceCacheNormalThreshold   = j["radianceCacheNormalThreshold"].get<f32>();
+    if (j.contains("radianceCacheHysteresis"))        s.radianceCacheHysteresis        = j["radianceCacheHysteresis"].get<f32>();
+    if (j.contains("radianceCacheExcludeDirectional")) s.radianceCacheExcludeDirectional = JB(j["radianceCacheExcludeDirectional"]);
     if (j.contains("rtPathTracerMaxBounces"))         s.rtPathTracerMaxBounces         = j["rtPathTracerMaxBounces"].get<u32>();
     if (j.contains("rtPathTracerTargetSPP"))          s.rtPathTracerTargetSPP          = j["rtPathTracerTargetSPP"].get<u32>();
     if (j.contains("rtPathTracerFireflyClamp"))       s.rtPathTracerFireflyClamp       = j["rtPathTracerFireflyClamp"].get<f32>();

@@ -348,18 +348,32 @@ void VulkanRenderer::SubmitCommandBuffer() {
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    // Wait on image available. Also wait on compute semaphore if async compute was submitted.
-    VkSemaphore waitSemaphores[2] = { m_ImageAvailableSemaphores[m_CurrentFrame], VK_NULL_HANDLE };
-    VkPipelineStageFlags waitStages[2] = {
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
-    };
+    // Wait on image available, compute semaphore (if submitted), and any external semaphores.
+    // Stack-allocated arrays sized for typical usage (image + compute + up to 6 external).
+    constexpr u32 MAX_WAIT_SEMAPHORES = 8;
+    VkSemaphore waitSemaphores[MAX_WAIT_SEMAPHORES];
+    VkPipelineStageFlags waitStages[MAX_WAIT_SEMAPHORES];
+
+    waitSemaphores[0] = m_ImageAvailableSemaphores[m_CurrentFrame];
+    waitStages[0] = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     u32 waitCount = 1;
+
     if (m_ComputeSubmittedThisFrame) {
-        waitSemaphores[1] = m_ComputeFinishedSemaphores[m_CurrentFrame];
-        waitCount = 2;
+        waitSemaphores[waitCount] = m_ComputeFinishedSemaphores[m_CurrentFrame];
+        waitStages[waitCount] = VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+        waitCount++;
         m_ComputeSubmittedThisFrame = false;
     }
+
+    // Append external wait semaphores (from AsyncComputeScheduler or other systems)
+    for (const auto& ext : m_ExternalWaitSemaphores) {
+        if (waitCount >= MAX_WAIT_SEMAPHORES) break;
+        waitSemaphores[waitCount] = ext.semaphore;
+        waitStages[waitCount] = ext.waitStage;
+        waitCount++;
+    }
+    m_ExternalWaitSemaphores.clear();
+
     submitInfo.waitSemaphoreCount = waitCount;
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
@@ -712,6 +726,11 @@ void VulkanRenderer::SignalGraphicsToCompute(VkCommandBuffer graphicsCmd) {
     // For now, we set a flag that SubmitCompute will check.
     (void)graphicsCmd;
     m_GraphicsToComputeSignaled = true;
+}
+
+void VulkanRenderer::AddExternalWaitSemaphore(VkSemaphore semaphore, VkPipelineStageFlags waitStage) {
+    if (semaphore == VK_NULL_HANDLE) return;
+    m_ExternalWaitSemaphores.push_back({ semaphore, waitStage });
 }
 
 void VulkanRenderer::RequestVSyncChange(bool enabled) {

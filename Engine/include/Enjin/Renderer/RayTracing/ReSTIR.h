@@ -30,26 +30,34 @@ struct ReSTIRConfig {
     // Importance weighting parameters
     f32 distanceBias = 0.1f;     // Small bias to avoid division by zero in distance falloff
 
-    // Temporal reuse (Phase 2 — infrastructure only, not yet dispatched)
+    // Temporal reuse — merge previous frame's reservoirs via motion vector reprojection
     bool temporalReuse = false;
     u32 temporalMaxHistory = 20; // Cap reservoir M to prevent stale samples dominating
+    f32 temporalDepthThreshold = 0.1f;  // Relative depth ratio threshold for reprojection validity
+    f32 temporalNormalThreshold = 0.9f; // Minimum normal dot product for reprojection validity
 
-    // Spatial reuse (Phase 2 — infrastructure only, not yet dispatched)
+    // Spatial reuse — share reservoir data between similar neighboring pixels
     bool spatialReuse = false;
     u32 spatialNeighbors = 5;    // K — number of random neighbors to combine
     f32 spatialRadius = 30.0f;   // Screen-space radius (pixels) for neighbor search
+    f32 spatialDepthThreshold = 0.1f;   // Relative depth ratio threshold for neighbor similarity
+    f32 spatialNormalThreshold = 0.9f;  // Minimum normal dot product for neighbor similarity
 };
 
 // ReSTIR Direct Illumination — importance-weighted light selection via compute shader.
 //
-// Phase 1 (current): Per-pixel importance-weighted light sampling.
-//   For each pixel, samples N candidate lights from the NEE light SSBO, selects one
-//   proportional to its estimated contribution (emission * solid-angle * visibility-estimate),
-//   and writes the selected light index + weight into a reservoir buffer.
-//   RTShadows and RTGI can then read the reservoir to focus rays on the most important lights.
+// Three-pass pipeline:
+//   Pass 1 (Initial): Per-pixel importance-weighted light sampling.
+//     For each pixel, samples N candidate lights from the NEE light SSBO, selects one
+//     proportional to its estimated contribution, and writes to a reservoir buffer.
 //
-// Phase 2 (future): Temporal reuse via motion vectors, spatial neighbor sharing.
-//   The Reservoir struct and buffer layout are designed for this extension.
+//   Pass 2 (Temporal): Reprojects previous frame's reservoirs via motion vectors.
+//     Merges temporally-accumulated reservoirs with current-frame candidates, capping M
+//     to prevent stale samples from dominating. Uses ping-pong buffers.
+//
+//   Pass 3 (Spatial): Shares reservoir data among spatially similar neighbors.
+//     Samples K random neighbors, checks depth/normal similarity, applies Jacobian
+//     correction, and merges neighbor reservoirs for improved convergence.
 class ENJIN_API ReSTIR {
 public:
     ReSTIR(VulkanContext* context);
@@ -59,21 +67,34 @@ public:
     void Resize(u32 width, u32 height);
     void Shutdown();
 
-    // Dispatch initial candidate selection (compute shader)
+    // Dispatch all enabled ReSTIR passes: initial → temporal → spatial
     // Must be called after NEE light SSBO is uploaded and before RTShadows/RTGI dispatch.
     void Dispatch(VkCommandBuffer cmd, VkDescriptorSet rtDescSet, u32 frameCount,
                   u32 totalLightCount);
 
-    // Reservoir buffer for binding into RT descriptor set
-    VkBuffer GetReservoirBuffer() const { return m_ReservoirBuffer; }
+    // Current frame's reservoir buffer for binding into RT descriptor set (binding 19)
+    VkBuffer GetReservoirBuffer() const { return m_ReservoirBuffers[m_CurrentBuffer]; }
+
+    // Previous frame's reservoir buffer for binding into RT descriptor set (binding 20)
+    VkBuffer GetPrevReservoirBuffer() const { return m_ReservoirBuffers[1 - m_CurrentBuffer]; }
+
     u32 GetReservoirCount() const { return m_Width * m_Height; }
 
     ReSTIRConfig& GetConfig() { return m_Config; }
     const ReSTIRConfig& GetConfig() const { return m_Config; }
 
 private:
-    void CreateReservoirBuffer();
-    void DestroyReservoirBuffer();
+    void CreateReservoirBuffers();
+    void DestroyReservoirBuffers();
+    bool CreateTemporalPipeline(VkDescriptorSetLayout rtDescLayout);
+    bool CreateSpatialPipeline(VkDescriptorSetLayout rtDescLayout);
+
+    void DispatchInitial(VkCommandBuffer cmd, VkDescriptorSet rtDescSet, u32 frameCount,
+                         u32 totalLightCount);
+    void DispatchTemporal(VkCommandBuffer cmd, VkDescriptorSet rtDescSet, u32 frameCount,
+                          u32 totalLightCount);
+    void DispatchSpatial(VkCommandBuffer cmd, VkDescriptorSet rtDescSet, u32 frameCount,
+                         u32 totalLightCount);
 
     VulkanContext* m_Context = nullptr;
     ReSTIRConfig m_Config;
@@ -81,13 +102,23 @@ private:
     u32 m_Height = 0;
 
     // Compute pipeline for initial candidate selection
-    VkPipeline m_Pipeline = VK_NULL_HANDLE;
-    VkPipelineLayout m_PipelineLayout = VK_NULL_HANDLE;
+    VkPipeline m_InitialPipeline = VK_NULL_HANDLE;
+    VkPipelineLayout m_InitialPipelineLayout = VK_NULL_HANDLE;
 
-    // Reservoir storage buffer (binding 19 in RT descriptor set)
-    // Layout: Reservoir[width * height], indexed by pixel (y * width + x)
-    VkBuffer m_ReservoirBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory m_ReservoirMemory = VK_NULL_HANDLE;
+    // Compute pipeline for temporal reuse
+    VkPipeline m_TemporalPipeline = VK_NULL_HANDLE;
+    VkPipelineLayout m_TemporalPipelineLayout = VK_NULL_HANDLE;
+
+    // Compute pipeline for spatial reuse
+    VkPipeline m_SpatialPipeline = VK_NULL_HANDLE;
+    VkPipelineLayout m_SpatialPipelineLayout = VK_NULL_HANDLE;
+
+    // Ping-pong reservoir storage buffers (binding 19 + 20 in RT descriptor set)
+    // Buffer[m_CurrentBuffer] = current frame output (binding 19)
+    // Buffer[1-m_CurrentBuffer] = previous frame data (binding 20)
+    VkBuffer m_ReservoirBuffers[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    VkDeviceMemory m_ReservoirMemory[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    u32 m_CurrentBuffer = 0;  // Toggles 0/1 each frame for ping-pong
 
     bool m_Initialized = false;
 };

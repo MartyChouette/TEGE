@@ -36,6 +36,7 @@
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/ReflectionProbe.h"
+#include "Enjin/Renderer/ReflectionProbeSystem.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/ECS/Components/Elemental.h"
@@ -1938,22 +1939,33 @@ void EditorLayer::DrawReflectionProbeComponent(ECS::Entity entity) {
         }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Higher priority probes override lower ones when overlapping");
 
-        // Resolution (for future baking)
+        // Resolution for cubemap baking
         ImGui::Separator();
-        ImGui::TextDisabled("Baking (future)");
+        ImGui::Text("Cubemap Baking");
         const char* resolutions[] = { "128", "256", "512" };
         int resIdx = (probe->resolution == 128) ? 0 : (probe->resolution == 512) ? 2 : 1;
         if (ImGui::Combo("Resolution##ReflProbe", &resIdx, resolutions, 3)) {
             probe->resolution = (resIdx == 0) ? 128 : (resIdx == 2) ? 512 : 256;
         }
 
-        // Bake button (stub — currently uses skybox as source)
+        // Bake button — queues a deferred bake (runs between frames)
         if (ImGui::Button("Bake##ReflProbe")) {
-            probe->baked = true;
-            ENJIN_LOG_INFO(Renderer, "Reflection probe bake requested (using skybox fallback)");
+            if (m_RenderSystem) {
+                auto* probeSystem = m_RenderSystem->GetReflectionProbes();
+                if (probeSystem) {
+                    probeSystem->RequestBake(static_cast<u64>(entity));
+                }
+            }
         }
         ImGui::SameLine();
-        ImGui::TextDisabled(probe->baked ? "Baked (skybox)" : "Not baked");
+        if (probe->baked && probe->cubemapTextureId >= 0) {
+            ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "Baked");
+        } else if (m_RenderSystem && m_RenderSystem->GetReflectionProbes() &&
+                   m_RenderSystem->GetReflectionProbes()->HasPendingBake()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Baking...");
+        } else {
+            ImGui::TextDisabled("Not baked");
+        }
 
         ImGui::Separator();
 

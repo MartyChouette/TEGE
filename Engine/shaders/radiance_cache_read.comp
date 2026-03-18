@@ -1,0 +1,155 @@
+#version 460
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// Radiance Cache — Read Pass
+//
+// For each pixel, reads the cached irradiance from the surrounding tiles and
+// performs bilinear interpolation to produce a smooth per-pixel indirect
+// lighting contribution. The result is written to a full-resolution output
+// image that the RT compositor can blend with the scene.
+//
+// Bilinear interpolation between the 4 nearest tile centers avoids tile-edge
+// artifacts while keeping the cache at tile resolution.
+
+// --- Descriptor bindings ---
+
+// Binding 2: Depth buffer (for depth-aware interpolation rejection)
+layout(binding = 2, set = 0) uniform sampler2D depthTex;
+
+// Binding 3: World normals (for normal-aware interpolation rejection)
+layout(binding = 3, set = 0) uniform sampler2D normalTex;
+
+// Binding 13: RT light UBO
+layout(binding = 13, set = 0) uniform LightData {
+    vec4 lightDir;
+    vec4 lightColor;
+    mat4 invViewProj;
+    vec2 screenSize;
+    uint frameCount;
+    float shadowRadius;
+    float fireflyClamp;
+    int enableNEE;
+    int enableMIS;
+    int rrMinBounce;
+    float rrMinProb;
+    uint directionalLightCount;
+    uint pointLightCount;
+    uint spotLightCount;
+} uLight;
+
+// Binding 21: Radiance cache tile buffer (read-only in this pass)
+struct RadianceCacheTile {
+    float irradianceR;
+    float irradianceG;
+    float irradianceB;
+    float depth;
+    float normalX;
+    float normalY;
+    float normalZ;
+    float age;
+};
+
+layout(binding = 21, set = 0) readonly buffer TileBuffer {
+    RadianceCacheTile tiles[];
+};
+
+// Output: full-resolution cached irradiance image (binding 23)
+layout(binding = 23, rgba16f) uniform image2D cachedIrradianceOutput;
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    uint tileSize;
+    uint tileCountX;
+    uint tileCountY;
+    float depthThreshold;   // Depth similarity for interpolation weight
+    float normalThreshold;  // Normal similarity for interpolation weight
+} pc;
+
+// Read a tile, clamping coordinates to the valid grid range
+RadianceCacheTile readTile(ivec2 tc) {
+    tc = clamp(tc, ivec2(0), ivec2(pc.tileCountX - 1u, pc.tileCountY - 1u));
+    uint idx = uint(tc.y) * pc.tileCountX + uint(tc.x);
+    return tiles[idx];
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = ivec2(uLight.screenSize);
+    if (pixel.x >= size.x || pixel.y >= size.y) return;
+
+    // Current pixel depth and normal
+    vec2 uv = (vec2(pixel) + 0.5) / uLight.screenSize;
+    float pixelDepth = texture(depthTex, uv).r;
+
+    // Sky pixels — no cached irradiance
+    if (pixelDepth >= 1.0) {
+        imageStore(cachedIrradianceOutput, pixel, vec4(0.0));
+        return;
+    }
+
+    vec3 pixelNormal = normalize(texture(normalTex, uv).xyz * 2.0 - 1.0);
+
+    // Compute fractional tile coordinate for this pixel.
+    // Tile centers are at (tileCoord + 0.5) * tileSize.
+    float tileSizeF = float(pc.tileSize);
+    vec2 tilePosF = (vec2(pixel) + 0.5) / tileSizeF - 0.5;  // Fractional tile index
+
+    // 4 nearest tile coordinates for bilinear interpolation
+    ivec2 t00 = ivec2(floor(tilePosF));
+    ivec2 t10 = t00 + ivec2(1, 0);
+    ivec2 t01 = t00 + ivec2(0, 1);
+    ivec2 t11 = t00 + ivec2(1, 1);
+
+    vec2 frac = tilePosF - vec2(t00);  // Fractional part [0,1)
+
+    // Read the 4 tiles
+    RadianceCacheTile tile00 = readTile(t00);
+    RadianceCacheTile tile10 = readTile(t10);
+    RadianceCacheTile tile01 = readTile(t01);
+    RadianceCacheTile tile11 = readTile(t11);
+
+    // Depth/normal-aware weighting — reject tiles that don't match the current surface
+    float w00 = 1.0, w10 = 1.0, w01 = 1.0, w11 = 1.0;
+
+    // Depth similarity weights
+    float dRef = max(pixelDepth, 1e-6);
+    w00 *= (abs(tile00.depth - pixelDepth) / dRef < pc.depthThreshold) ? 1.0 : 0.0;
+    w10 *= (abs(tile10.depth - pixelDepth) / dRef < pc.depthThreshold) ? 1.0 : 0.0;
+    w01 *= (abs(tile01.depth - pixelDepth) / dRef < pc.depthThreshold) ? 1.0 : 0.0;
+    w11 *= (abs(tile11.depth - pixelDepth) / dRef < pc.depthThreshold) ? 1.0 : 0.0;
+
+    // Normal similarity weights
+    vec3 n00 = vec3(tile00.normalX, tile00.normalY, tile00.normalZ);
+    vec3 n10 = vec3(tile10.normalX, tile10.normalY, tile10.normalZ);
+    vec3 n01 = vec3(tile01.normalX, tile01.normalY, tile01.normalZ);
+    vec3 n11 = vec3(tile11.normalX, tile11.normalY, tile11.normalZ);
+
+    w00 *= (dot(pixelNormal, n00) > pc.normalThreshold) ? 1.0 : 0.0;
+    w10 *= (dot(pixelNormal, n10) > pc.normalThreshold) ? 1.0 : 0.0;
+    w01 *= (dot(pixelNormal, n01) > pc.normalThreshold) ? 1.0 : 0.0;
+    w11 *= (dot(pixelNormal, n11) > pc.normalThreshold) ? 1.0 : 0.0;
+
+    // Bilinear interpolation weights
+    float b00 = (1.0 - frac.x) * (1.0 - frac.y);
+    float b10 = frac.x * (1.0 - frac.y);
+    float b01 = (1.0 - frac.x) * frac.y;
+    float b11 = frac.x * frac.y;
+
+    // Combined weights (bilinear * validity)
+    float wt00 = b00 * w00;
+    float wt10 = b10 * w10;
+    float wt01 = b01 * w01;
+    float wt11 = b11 * w11;
+    float totalWeight = wt00 + wt10 + wt01 + wt11;
+
+    vec3 result = vec3(0.0);
+    if (totalWeight > 1e-6) {
+        result += vec3(tile00.irradianceR, tile00.irradianceG, tile00.irradianceB) * wt00;
+        result += vec3(tile10.irradianceR, tile10.irradianceG, tile10.irradianceB) * wt10;
+        result += vec3(tile01.irradianceR, tile01.irradianceG, tile01.irradianceB) * wt01;
+        result += vec3(tile11.irradianceR, tile11.irradianceG, tile11.irradianceB) * wt11;
+        result /= totalWeight;
+    }
+
+    imageStore(cachedIrradianceOutput, pixel, vec4(result, 1.0));
+}

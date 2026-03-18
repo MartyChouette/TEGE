@@ -23,11 +23,11 @@ This document captures detailed technical plans, performance findings, and strat
 | **Renderer** | Reflection Probes — box projection done (component, system, shader, editor UI, serialization), baked cubemaps + SSR fallback pending | P1 |
 | ~~**Gameplay**~~ | ~~Dynamic Difficulty — read player stats (health, deaths, time, accuracy) + difficulty setting to auto-adjust AI aggression, damage, resources, hints~~ | ~~P1~~ DONE |
 | **Renderer** | ReSTIR — Reservoir-based light sampling (DI foundation done, temporal/spatial reuse pending) | P1 |
-| **Renderer** | Temporal RT Reuse — carry ray results across frames, confidence-weighted | P2 |
+| **Renderer** | Temporal RT Reuse — reprojection + history blend for shadow/AO/reflect/GI done, confidence map done, denoiser-aware feedback pending | P2 |
 | **Renderer** | Radiance Caching — world-space irradiance cache, screen-space cache | P2 |
 | **Renderer** | DLSS / FSR / XeSS Upscaling (IUpscaler interface, FSR built-in ✅, DLSS/XeSS pending) | P2 |
-| **Renderer** | Additional AA (SMAA, MSAA runtime toggle, comparison mode) | P3 |
-| **Renderer** | GPU-Driven Work Scheduling (indirect draw, multi-draw, async compute overlap) | P3 |
+| **Renderer** | Additional AA (SMAA ✅, MSAA runtime toggle, comparison mode) | P3 |
+| **Renderer** | GPU-Driven Work Scheduling (indirect draw ✅, multi-draw ✅, async compute overlap ✅) | P3 |
 | **Performance** | CPU Scalability Sprint — binary search keyframes, integer sprite sort, cache storage pointers, world matrix caching, bindless render path, batched material SSBO | P0 |
 | **Release** | Splash screen (optional "Made with Enjin") | P2 |
 | **Platforms** | macOS (MoltenVK) | P2 |
@@ -1446,19 +1446,23 @@ The single biggest efficiency win for the RT pipeline. Focus limited ray budget 
   - Feed variance estimate to VRS (already have `VK_KHR_fragment_shading_rate`)
 - ~~**Editor UI** — ReSTIR toggle~~ ✅, reservoir visualization debug mode, ray budget display
 
-### Phase 5: Temporal RT Reuse
+### Phase 5: Temporal RT Reuse (Foundation Complete)
 
 Carry ray-traced results across frames, not just denoise per-frame. The denoisers (SVGF/OIDN/OptiX) already do temporal filtering, but this goes deeper — reusing actual ray results.
 
-- **Temporal reprojection of RT outputs**
+- **Temporal reprojection of RT outputs** ✅
   - Reproject previous frame's shadow/reflection/AO/GI using motion vectors
-  - Confidence-weighted blend: high confidence = reuse, low = retrace
-  - Disocclusion detection: new surfaces force fresh rays
+  - Confidence-weighted blend: high confidence = reuse, low = retrace (configurable 0-0.99)
+  - Disocclusion detection via depth ratio + normal dot-product thresholds
+  - Per-buffer enable toggles (shadows, AO, reflections, GI)
+  - Compute shader: `rt_temporal_reuse.comp` (8x8 workgroups)
+  - History ping-pong images (RGBA16F) + R8 confidence map output
+  - Editor UI: TreeNode with blend/depth/normal sliders, per-buffer checkboxes, reset button
 - **Temporal accumulation for GI**
-  - Multi-frame GI accumulation (like path tracer but for hybrid mode)
-  - Exponential moving average with configurable history length
+  - Multi-frame GI accumulation (like path tracer but for hybrid mode) — covered by temporal reuse GI channel
+  - Exponential moving average with configurable history length ✅
   - Reset on significant lighting/geometry changes
-- **Denoiser-aware temporal pipeline**
+- **Denoiser-aware temporal pipeline** (pending)
   - Feed temporal reuse confidence to SVGF/OIDN as additional signal
   - Reduce denoiser aggressiveness where temporal data is reliable
   - Tighter feedback loop: reuse → denoise → display
@@ -1509,8 +1513,8 @@ Shared prerequisite: Phase 1 (TAA jitter + velocity buffer + depth access) ✅
 
 ### Phase 8: Additional Antialiasing
 
-- **SMAA** — 3-pass post-process (edge detect, blend weight, neighborhood blend)
-- **MSAA runtime toggle** — pipeline recreation on sample count change
+- ~~**SMAA** — morphological edge-aware AA with edge walking (SMAA-lite in post-process)~~ ✅
+- **MSAA runtime toggle** — pipeline recreation on sample count change (requires render pass modification)
 - **AA comparison mode** — split-screen to compare methods
 
 ### Phase 9: GPU-Driven Work Scheduling
@@ -1522,17 +1526,22 @@ Move beyond CPU-organized draw submission. The GPU should manage more of the ren
   - `indirectEligible` flag on CullableObject controls which entities emit draw commands
   - `vkCmdDrawIndexedIndirectCount` for variable-length draw lists
   - Non-textured pool entities batched; textured entities remain per-entity
-- **Multi-draw indirect batching** ✅ (partial — non-textured pool entities)
-  - Single `vkCmdDrawIndexedIndirectCount` replaces per-entity `vkCmdDrawIndexed`
+- **Multi-draw indirect batching** ✅
+  - Non-textured: single `vkCmdDrawIndexedIndirectCount` replaces per-entity `vkCmdDrawIndexed`
+  - Textured: `IndirectDrawBatcher` groups pool entities by texture set hash (CPU-side sort)
+  - One `vkCmdDrawIndexedIndirect` per texture group with shared descriptor binding
   - Shaders select data source: ObjectData SSBO (indirect) vs push constants (per-entity)
-  - Next: bindless textures to extend indirect draws to textured entities
+  - Future: bindless textures to collapse all texture groups into a single draw
 - **Device-generated commands** (when Vulkan spec stabilizes)
   - GPU-side pipeline/descriptor binding changes
   - Full GPU-driven rendering loop for dynamic scenes
-- **Async compute overlap**
-  - RT dispatch on async compute queue while rasterization runs on graphics queue
-  - Denoiser on async compute overlapped with post-processing
-  - Already have queue family detection — wire actual concurrent usage
+- **Async compute overlap** ✅
+  - `AsyncComputeScheduler`: dedicated compute queue with timeline semaphore support
+  - RT effects + temporal reuse + denoising dispatched on compute queue
+  - Overlaps with main geometry rasterization on graphics queue
+  - Graphics queue waits on compute-finished semaphore via `AddExternalWaitSemaphore`
+  - Graceful fallback to single-queue when dedicated compute unavailable
+  - Configurable per work type: `AsyncComputeConfig` (RT, denoise, culling)
 
 ### Phase 10: Mobile Support (separate major effort)
 

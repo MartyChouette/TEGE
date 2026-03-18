@@ -1,0 +1,317 @@
+#version 460
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// ReSTIR DI — Spatial Reuse
+//
+// Shares reservoir information between neighboring pixels to further improve
+// convergence. Each pixel samples K random neighbors within a screen-space radius
+// and merges similar neighbors' reservoirs into its own.
+//
+// Algorithm:
+//   1. Read current pixel's reservoir (output from initial or temporal pass)
+//   2. For K random neighbor offsets:
+//      a. Check bounds
+//      b. Check depth/normal similarity
+//      c. Compute Jacobian correction for geometry difference
+//      d. Merge neighbor's reservoir into current
+//   3. Recompute unbiased sample weight
+//   4. Write final reservoir
+
+// --- Descriptor bindings (shared with RT descriptor set) ---
+
+// Binding 2: Depth buffer
+layout(binding = 2, set = 0) uniform sampler2D depthTex;
+
+// Binding 3: World normals
+layout(binding = 3, set = 0) uniform sampler2D normalTex;
+
+// Binding 13: RT light UBO
+layout(binding = 13, set = 0) uniform LightData {
+    vec4 lightDir;
+    vec4 lightColor;
+    mat4 invViewProj;
+    vec2 screenSize;
+    uint frameCount;
+    float shadowRadius;
+    float fireflyClamp;
+    int enableNEE;
+    int enableMIS;
+    int rrMinBounce;
+    float rrMinProb;
+    uint directionalLightCount;
+    uint pointLightCount;
+    uint spotLightCount;
+} uLight;
+
+// Binding 16: NEE light SSBO
+struct RTLight {
+    vec3 position;
+    float range;
+    vec3 direction;
+    float intensity;
+    vec3 color;
+    int type;
+    float innerCutoff;
+    float outerCutoff;
+    float _pad0;
+    float _pad1;
+};
+
+layout(binding = 16, set = 0) readonly buffer NEELightBuffer {
+    RTLight lights[];
+};
+
+// Binding 19: Reservoir buffer (read-write — spatial reuse is done in-place)
+struct Reservoir {
+    uint selectedLight;
+    float weightSum;
+    float sampleWeight;
+    uint sampleCount;
+};
+
+layout(binding = 19, set = 0) buffer ReservoirBuffer {
+    Reservoir reservoirs[];
+};
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    uint totalLightCount;
+    uint spatialNeighbors;    // K — number of neighbors to sample
+    float spatialRadius;      // Screen-space radius in pixels
+    float depthThreshold;     // Relative depth threshold (e.g., 0.1)
+    float normalThreshold;    // Normal dot product threshold (e.g., 0.9)
+    uint frameCount;
+} pc;
+
+// ============================================================================
+// RNG (PCG)
+// ============================================================================
+
+uint pcg_hash(uint v) {
+    uint state = v * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float rand_float(inout uint seed) {
+    seed = pcg_hash(seed);
+    return float(seed) / 4294967296.0;
+}
+
+uint init_rng(uvec2 pixel, uint frame) {
+    // Offset seed to avoid correlation with temporal pass
+    return pcg_hash(pixel.x + pixel.y * 8192u + frame * 65536u + 104729u);
+}
+
+// ============================================================================
+// Hammersley low-discrepancy sequence for neighbor offsets
+// ============================================================================
+
+// Radical inverse base 2 (Van der Corput sequence)
+float radicalInverse(uint bits) {
+    bits = (bits << 16u) | (bits >> 16u);
+    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
+    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
+    bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
+    bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
+    return float(bits) * 2.3283064365386963e-10; // / 0x100000000
+}
+
+// Hammersley point i of N on unit square, rotated by a per-pixel random angle
+vec2 hammersleyDisk(uint i, uint N, float rotation) {
+    float xi1 = float(i) / float(N);
+    float xi2 = radicalInverse(i);
+
+    // Map to disk using concentric mapping, then rotate
+    float angle = 2.0 * 3.14159265359 * (xi1 + rotation);
+    float radius = sqrt(xi2);
+
+    return vec2(cos(angle), sin(angle)) * radius;
+}
+
+// ============================================================================
+// Importance estimation (same as restir_initial.comp)
+// ============================================================================
+
+float estimateLightContribution(RTLight light, vec3 worldPos, vec3 worldNormal) {
+    vec3 toLight;
+    float attenuation = 1.0;
+    float geometricTerm;
+
+    if (light.type == 0) {
+        toLight = -light.direction;
+        geometricTerm = max(dot(worldNormal, toLight), 0.0);
+    } else if (light.type == 1) {
+        vec3 diff = light.position - worldPos;
+        float dist2 = dot(diff, diff);
+        float dist = sqrt(dist2);
+        toLight = diff / max(dist, 1e-6);
+        geometricTerm = max(dot(worldNormal, toLight), 0.0);
+        attenuation = 1.0 / max(dist2, 0.01);
+        if (light.range > 0.0 && dist > light.range) attenuation = 0.0;
+    } else {
+        vec3 diff = light.position - worldPos;
+        float dist2 = dot(diff, diff);
+        float dist = sqrt(dist2);
+        toLight = diff / max(dist, 1e-6);
+        geometricTerm = max(dot(worldNormal, toLight), 0.0);
+        attenuation = 1.0 / max(dist2, 0.01);
+        if (light.range > 0.0 && dist > light.range) attenuation = 0.0;
+        float cosAngle = dot(-toLight, light.direction);
+        if (cosAngle <= light.outerCutoff) {
+            attenuation = 0.0;
+        } else if (cosAngle < light.innerCutoff) {
+            float t = (cosAngle - light.outerCutoff) /
+                      max(light.innerCutoff - light.outerCutoff, 1e-6);
+            attenuation *= t * t;
+        }
+    }
+
+    vec3 emission = light.color * light.intensity;
+    float luminance = dot(emission, vec3(0.2126, 0.7152, 0.0722));
+    return luminance * attenuation * geometricTerm;
+}
+
+// ============================================================================
+// Jacobian correction for spatial reuse
+// ============================================================================
+
+// When reusing a neighbor's light sample at the current pixel, the target PDF
+// changes due to different geometry. The Jacobian accounts for the ratio of
+// solid angles subtended by the light as seen from the two different pixels.
+// For distant lights this is ~1.0; for nearby point/spot lights it can differ.
+float computeJacobian(vec3 currentPos, vec3 neighborPos, vec3 lightPos, int lightType) {
+    if (lightType == 0) {
+        // Directional light — infinite distance, Jacobian = 1.0
+        return 1.0;
+    }
+
+    // Ratio of squared distances: (neighbor-to-light / current-to-light)^2
+    // This approximates the solid angle ratio for a point light
+    vec3 diffCurrent = lightPos - currentPos;
+    vec3 diffNeighbor = lightPos - neighborPos;
+    float dist2Current = dot(diffCurrent, diffCurrent);
+    float dist2Neighbor = dot(diffNeighbor, diffNeighbor);
+
+    // Clamp to avoid extreme corrections
+    float jacobian = dist2Neighbor / max(dist2Current, 1e-6);
+    return clamp(jacobian, 0.01, 100.0);
+}
+
+// ============================================================================
+// Main
+// ============================================================================
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = ivec2(uLight.screenSize);
+    if (pixel.x >= size.x || pixel.y >= size.y) return;
+
+    uint idx = uint(pixel.y) * uint(size.x) + uint(pixel.x);
+
+    // Early out: no lights
+    if (pc.totalLightCount == 0u) return;
+
+    // Read current reservoir
+    Reservoir current = reservoirs[idx];
+    if (current.sampleCount == 0u) return;
+
+    // Read current pixel's geometry
+    vec2 uv = (vec2(pixel) + 0.5) / uLight.screenSize;
+    float currentDepth = texture(depthTex, uv).r;
+
+    // Sky pixels — skip spatial reuse
+    if (currentDepth >= 1.0) return;
+
+    vec3 currentNormal = normalize(texture(normalTex, uv).xyz * 2.0 - 1.0);
+
+    // Reconstruct current world position
+    vec4 clipPos = vec4(uv * 2.0 - 1.0, currentDepth, 1.0);
+    vec4 worldPos4 = uLight.invViewProj * clipPos;
+    vec3 currentWorldPos = worldPos4.xyz / worldPos4.w;
+
+    // Initialize RNG
+    uint rng = init_rng(uvec2(pixel), pc.frameCount);
+    float rotation = rand_float(rng); // Per-pixel rotation for Hammersley
+
+    uint K = pc.spatialNeighbors;
+    float radius = pc.spatialRadius;
+
+    // Merge K neighbor reservoirs
+    for (uint i = 0u; i < K; ++i) {
+        // Generate neighbor offset using Hammersley sequence on a disk
+        vec2 offset = hammersleyDisk(i, K, rotation) * radius;
+        ivec2 neighborPixel = pixel + ivec2(round(offset));
+
+        // Bounds check
+        if (neighborPixel.x < 0 || neighborPixel.x >= size.x ||
+            neighborPixel.y < 0 || neighborPixel.y >= size.y) continue;
+
+        // Skip self
+        if (neighborPixel == pixel) continue;
+
+        // Similarity check: depth
+        vec2 neighborUV = (vec2(neighborPixel) + 0.5) / uLight.screenSize;
+        float neighborDepth = texture(depthTex, neighborUV).r;
+
+        if (neighborDepth >= 1.0) continue;
+
+        float depthRatio = abs(currentDepth - neighborDepth) / max(currentDepth, 1e-6);
+        if (depthRatio > pc.depthThreshold) continue;
+
+        // Similarity check: normals
+        vec3 neighborNormal = normalize(texture(normalTex, neighborUV).xyz * 2.0 - 1.0);
+        if (dot(currentNormal, neighborNormal) < pc.normalThreshold) continue;
+
+        // Read neighbor's reservoir
+        uint neighborIdx = uint(neighborPixel.y) * uint(size.x) + uint(neighborPixel.x);
+        Reservoir neighbor = reservoirs[neighborIdx];
+
+        if (neighbor.sampleCount == 0u) continue;
+        if (neighbor.selectedLight >= pc.totalLightCount) continue;
+
+        // Reconstruct neighbor's world position for Jacobian computation
+        vec4 neighborClip = vec4(neighborUV * 2.0 - 1.0, neighborDepth, 1.0);
+        vec4 neighborWorld4 = uLight.invViewProj * neighborClip;
+        vec3 neighborWorldPos = neighborWorld4.xyz / neighborWorld4.w;
+
+        // Re-evaluate neighbor's selected light at current pixel's geometry
+        float neighborTargetPdf = estimateLightContribution(
+            lights[neighbor.selectedLight], currentWorldPos, currentNormal);
+
+        // Jacobian correction for geometry difference
+        float jacobian = computeJacobian(
+            currentWorldPos, neighborWorldPos,
+            lights[neighbor.selectedLight].position,
+            lights[neighbor.selectedLight].type);
+
+        // Merge weight: target_pdf_at_current * neighbor.W * neighbor.M * jacobian
+        float mergeWeight = neighborTargetPdf * neighbor.sampleWeight *
+                           float(neighbor.sampleCount) * jacobian;
+
+        if (mergeWeight <= 0.0) continue;
+
+        // Stream neighbor's sample into current reservoir
+        float totalWeight = current.weightSum + mergeWeight;
+        if (totalWeight > 1e-10 && rand_float(rng) < (mergeWeight / totalWeight)) {
+            current.selectedLight = neighbor.selectedLight;
+        }
+        current.weightSum = totalWeight;
+        current.sampleCount += neighbor.sampleCount;
+    }
+
+    // Recompute unbiased sample weight W = (1/p_hat) * (weightSum / M)
+    float selectedTargetPdf = 0.0;
+    if (current.selectedLight < pc.totalLightCount) {
+        selectedTargetPdf = estimateLightContribution(
+            lights[current.selectedLight], currentWorldPos, currentNormal);
+    }
+
+    if (selectedTargetPdf > 1e-10 && current.sampleCount > 0u) {
+        current.sampleWeight = (current.weightSum / float(current.sampleCount)) / selectedTargetPdf;
+    } else {
+        current.sampleWeight = 0.0;
+    }
+
+    reservoirs[idx] = current;
+}

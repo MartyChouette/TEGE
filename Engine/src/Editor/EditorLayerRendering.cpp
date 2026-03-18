@@ -1,6 +1,7 @@
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
+#include "Enjin/Renderer/Upscaling/IUpscaler.h"
 #include "Enjin/Core/Version.h"
 #include <GLFW/glfw3.h>
 #include <chrono>
@@ -57,7 +58,9 @@
 #include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
 #include "Enjin/Renderer/RayTracing/OIDNDenoiser.h"
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
+#include "Enjin/Renderer/RayTracing/RTTemporalReuse.h"
 #include "Enjin/Renderer/RayTracing/ReSTIR.h"
+#include "Enjin/Renderer/RayTracing/RadianceCache.h"
 #include "Enjin/Renderer/RayTracing/AccelerationStructureManager.h"
 #include "Enjin/Renderer/SHLightProbe.h"
 #include "Enjin/Renderer/SDFScene.h"
@@ -1073,6 +1076,12 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 ImGui::DragFloat("Reduce Mul", &settings.fxaaReduceMul, 0.01f, 0.0f, 0.5f);
             }
 
+            // SMAA info
+            if (settings.aaMode == 3) {
+                ImGui::TextDisabled("Enhanced morphological AA with edge walking");
+                ImGui::TextDisabled("Higher quality than FXAA, no temporal artifacts");
+            }
+
             // TAA settings (CPU-side config for the TAA compute pass)
             if (settings.aaMode == 2) {
                 ImGui::SliderFloat("Sharpness", &settings.taaSharpness, 0.0f, 1.0f, "%.2f");
@@ -1114,20 +1123,49 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 ImGui::Spacing();
                 ImGui::TextDisabled("Backend availability:");
                 ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  FSR 2: Built-in (Lanczos + CAS)");
-#ifdef ENJIN_UPSCALING_DLSS
-                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  DLSS: Available");
-#else
-                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "  DLSS: Not compiled");
-#endif
-#ifdef ENJIN_UPSCALING_XESS
-                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  XeSS: Available");
-#else
-                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "  XeSS: Not compiled");
-#endif
 
+                // DLSS availability: requires NVIDIA GPU
+                if (m_RenderSystem && m_RenderSystem->GetUpscaler() &&
+                    m_RenderSystem->GetUpscalerType() == 2) {
+                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  DLSS: %s",
+                                       m_RenderSystem->GetUpscaler()->GetName());
+                } else {
+#ifdef ENJIN_UPSCALING_DLSS
+                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  DLSS: SDK linked (NVIDIA GPUs)");
+#else
+                    ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.5f, 1.0f), "  DLSS: Stub (Lanczos + CAS, NVIDIA GPUs only)");
+#endif
+                }
+
+                // XeSS availability: works on all GPUs (DP4a), best on Intel Arc
+                if (m_RenderSystem && m_RenderSystem->GetUpscaler() &&
+                    m_RenderSystem->GetUpscalerType() == 3) {
+                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  XeSS: %s",
+                                       m_RenderSystem->GetUpscaler()->GetName());
+                } else {
+#ifdef ENJIN_UPSCALING_XESS
+                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  XeSS: SDK linked (all GPUs via DP4a)");
+#else
+                    ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.5f, 1.0f), "  XeSS: Stub (Lanczos + CAS, all GPUs)");
+#endif
+                }
+
+                // Pipeline description based on active backend
+                ImGui::Spacing();
                 if (settings.upscalerType == 1) {
-                    ImGui::Spacing();
                     ImGui::TextDisabled("Pipeline: TAA resolve (low-res) -> Lanczos upsample -> CAS sharpen");
+                } else if (settings.upscalerType == 2) {
+#ifdef ENJIN_UPSCALING_DLSS
+                    ImGui::TextDisabled("Pipeline: DLSS Super Resolution (Streamline SDK)");
+#else
+                    ImGui::TextDisabled("Pipeline: Lanczos upsample -> CAS sharpen (DLSS SDK not linked)");
+#endif
+                } else if (settings.upscalerType == 3) {
+#ifdef ENJIN_UPSCALING_XESS
+                    ImGui::TextDisabled("Pipeline: XeSS temporal upscaling (Intel XeSS SDK)");
+#else
+                    ImGui::TextDisabled("Pipeline: Lanczos upsample -> CAS sharpen (XeSS SDK not linked)");
+#endif
                 }
 
                 if (settings.upscalerType > 0 && settings.aaMode == 2) {
@@ -2304,6 +2342,62 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
                             }
                         }
 
+                        // Radiance Cache (Screen-Space Irradiance Caching)
+                        if (auto* radianceCache = m_RenderSystem->GetRadianceCache()) {
+                            auto& cfg = radianceCache->GetConfig();
+                            if (ImGui::TreeNode("Radiance Cache")) {
+                                ImGui::Checkbox("Enabled##RadianceCache", &cfg.enabled);
+                                if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                    "Screen-space radiance cache for indirect lighting.\n"
+                                    "Caches GI results per tile and reuses across frames.\n"
+                                    "Reduces GI cost when the camera is mostly stationary.\n"
+                                    "Directional light is excluded (evaluated separately).");
+                                if (cfg.enabled) {
+                                    int tileSize = static_cast<int>(cfg.tileSize);
+                                    const char* tileSizeLabels[] = { "16", "32", "64" };
+                                    int tileSizeValues[] = { 16, 32, 64 };
+                                    int tileSizeIdx = (tileSize == 16) ? 0 : (tileSize == 64) ? 2 : 1;
+                                    if (ImGui::Combo("Tile Size##RC", &tileSizeIdx, tileSizeLabels, 3)) {
+                                        cfg.tileSize = static_cast<u32>(tileSizeValues[tileSizeIdx]);
+                                    }
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Pixel size of each cache tile.\n"
+                                        "Smaller = more accurate but more memory/compute.\n"
+                                        "32 is a good default.");
+                                    ImGui::DragFloat("Max Age##RC", &cfg.maxAge, 0.5f, 1.0f, 32.0f, "%.0f frames");
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Maximum frames before a cache tile is forced to re-trace.\n"
+                                        "Lower = fresher results but less savings.");
+                                    ImGui::DragFloat("Depth Threshold##RC", &cfg.depthThreshold, 0.01f, 0.01f, 0.5f, "%.3f");
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Relative depth difference that invalidates a tile.");
+                                    ImGui::DragFloat("Normal Threshold##RC", &cfg.normalThreshold, 0.01f, 0.5f, 1.0f, "%.3f");
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Dot product threshold for normal similarity.");
+                                    ImGui::DragFloat("Hysteresis##RC", &cfg.hysteresis, 0.01f, 0.0f, 1.0f, "%.2f");
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Temporal blend factor.\n"
+                                        "0 = no reuse (always use fresh GI).\n"
+                                        "1 = full reuse (never update from fresh GI).\n"
+                                        "0.9 is a good default.");
+                                    ImGui::Checkbox("Exclude Directional Light##RC", &cfg.excludeDirectional);
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Keep sun/moon out of the cache.\n"
+                                        "Critical for correct time-of-day transitions.");
+
+                                    ImGui::Separator();
+                                    ImGui::TextDisabled("Cache: %ux%u tiles (%u total)",
+                                        radianceCache->GetTileCountX(),
+                                        radianceCache->GetTileCountY(),
+                                        radianceCache->GetTotalTileCount());
+
+                                    if (ImGui::Button("Invalidate Cache##RC")) {
+                                        radianceCache->InvalidateAll();
+                                    }
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Force re-trace of all tiles next frame.");
+                                }
+                                ImGui::TreePop();
+                            }
+                        }
+
                         // ReSTIR (Importance-Weighted Light Selection)
                         if (auto* restir = m_RenderSystem->GetReSTIR()) {
                             auto& cfg = restir->GetConfig();
@@ -2326,11 +2420,86 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
                                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Minimum distance for falloff calculation (prevents division by zero)");
 
                                     ImGui::Separator();
-                                    ImGui::TextDisabled("Temporal/Spatial Reuse (planned)");
-                                    ImGui::BeginDisabled();
+                                    ImGui::Text("Temporal Reuse");
                                     ImGui::Checkbox("Temporal Reuse##ReSTIR", &cfg.temporalReuse);
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Reproject previous frame's light selection via motion vectors.\n"
+                                        "Dramatically improves convergence across frames.\n"
+                                        "Requires motion vector MRT output.");
+                                    if (cfg.temporalReuse) {
+                                        int maxHistory = static_cast<int>(cfg.temporalMaxHistory);
+                                        if (ImGui::SliderInt("Max History##ReSTIR", &maxHistory, 5, 60)) {
+                                            cfg.temporalMaxHistory = static_cast<u32>(maxHistory);
+                                        }
+                                        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                            "Maximum temporal sample count (M_max).\n"
+                                            "Higher = smoother but slower to adapt to lighting changes.\n"
+                                            "20-30 is a good default.");
+                                        ImGui::DragFloat("Depth Threshold##ReSTIRTemporal", &cfg.temporalDepthThreshold, 0.01f, 0.01f, 0.5f, "%.2f");
+                                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Relative depth ratio threshold for temporal reprojection validity");
+                                        ImGui::DragFloat("Normal Threshold##ReSTIRTemporal", &cfg.temporalNormalThreshold, 0.01f, 0.5f, 1.0f, "%.2f");
+                                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Minimum normal dot product for temporal reprojection validity");
+                                    }
+
+                                    ImGui::Separator();
+                                    ImGui::Text("Spatial Reuse");
                                     ImGui::Checkbox("Spatial Reuse##ReSTIR", &cfg.spatialReuse);
-                                    ImGui::EndDisabled();
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Share light selection between similar neighboring pixels.\n"
+                                        "Improves convergence by leveraging spatial coherence.\n"
+                                        "Small compute cost per additional neighbor.");
+                                    if (cfg.spatialReuse) {
+                                        int neighbors = static_cast<int>(cfg.spatialNeighbors);
+                                        if (ImGui::SliderInt("Neighbors##ReSTIR", &neighbors, 1, 16)) {
+                                            cfg.spatialNeighbors = static_cast<u32>(neighbors);
+                                        }
+                                        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                            "Number of random neighbors to sample (K).\n"
+                                            "Higher = better quality, more compute cost.\n"
+                                            "5-8 is a good balance.");
+                                        ImGui::DragFloat("Radius##ReSTIRSpatial", &cfg.spatialRadius, 1.0f, 5.0f, 100.0f, "%.0f px");
+                                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Screen-space search radius for neighbor sampling (pixels)");
+                                        ImGui::DragFloat("Depth Threshold##ReSTIRSpatial", &cfg.spatialDepthThreshold, 0.01f, 0.01f, 0.5f, "%.2f");
+                                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Relative depth ratio threshold for neighbor similarity");
+                                        ImGui::DragFloat("Normal Threshold##ReSTIRSpatial", &cfg.spatialNormalThreshold, 0.01f, 0.5f, 1.0f, "%.2f");
+                                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Minimum normal dot product for neighbor similarity");
+                                    }
+                                }
+                                ImGui::TreePop();
+                            }
+                        }
+
+                        // Temporal Reuse (motion-vector-based RT result reuse)
+                        if (auto* temporalReuse = m_RenderSystem->GetRTTemporalReuse()) {
+                            auto& cfg = temporalReuse->GetConfig();
+                            if (ImGui::TreeNode("Temporal Reuse")) {
+                                ImGui::Checkbox("Enabled##TemporalReuse", &cfg.enabled);
+                                if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                    "Carry ray-traced results across frames using motion vectors.\n"
+                                    "Reduces noise by blending with reprojected previous frame data.\n"
+                                    "Disoccluded surfaces are automatically detected and re-traced.");
+                                if (cfg.enabled) {
+                                    ImGui::SliderFloat("History Blend", &cfg.historyLength, 0.0f, 0.99f, "%.2f");
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "How much previous frame data to keep.\n"
+                                        "0.9 = 90%% history, 10%% new (smoothest, most lag).\n"
+                                        "0.5 = 50/50 blend. Lower = more responsive, more noise.");
+                                    ImGui::SliderFloat("Depth Threshold", &cfg.disocclusionThreshold, 0.01f, 0.5f, "%.2f");
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Depth ratio threshold for disocclusion detection.\nLower = stricter rejection of stale history.");
+                                    ImGui::SliderFloat("Normal Threshold", &cfg.normalThreshold, 0.5f, 1.0f, "%.2f");
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Normal dot-product threshold.\nHigher = stricter rejection at surface edges.");
+                                    ImGui::Separator();
+                                    ImGui::Checkbox("Shadows##TReuse", &cfg.reuseShadows);
+                                    ImGui::SameLine();
+                                    ImGui::Checkbox("AO##TReuse", &cfg.reuseAO);
+                                    ImGui::SameLine();
+                                    ImGui::Checkbox("Reflections##TReuse", &cfg.reuseReflections);
+                                    ImGui::SameLine();
+                                    ImGui::Checkbox("GI##TReuse", &cfg.reuseGI);
+                                    if (ImGui::Button("Reset History##TReuse")) {
+                                        temporalReuse->ResetHistory();
+                                    }
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Force re-trace all pixels next frame (e.g. after camera cut).");
                                 }
                                 ImGui::TreePop();
                             }

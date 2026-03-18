@@ -302,6 +302,7 @@ struct alignas(16) PostProcessSettings {
         if (filmGrainEnabled) return true;
         if (fxaaEnabled) return true;
         if (aaMode == 2) return true;  // TAA
+        if (aaMode == 3) return true;  // SMAA
         if (ditherEnabled) return true;
         if (colorQuantEnabled) return true;
         if (resDownscaleEnabled) return true;

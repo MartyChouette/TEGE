@@ -157,7 +157,7 @@ struct alignas(16) LightingUBO {
     alignas(16) Math::Vector4 reflectionProbePosition;
     // probeBoxMin: xyz = world-space AABB min, w = blend distance
     alignas(16) Math::Vector4 reflectionProbeBoxMin;
-    // probeBoxMax: xyz = world-space AABB max, w = reserved
+    // probeBoxMax: xyz = world-space AABB max, w = isBaked (1.0 = baked cubemap at binding 19)
     alignas(16) Math::Vector4 reflectionProbeBoxMax;
 
     // Light data arrays
