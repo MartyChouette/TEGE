@@ -130,6 +130,7 @@ void EditorLayer::DrawMenuBar() {
                     m_ShowUnsavedChangesDialog = true;
                 } else if (m_World) {
                     m_World->Clear();
+                    if (m_RenderSystem) m_RenderSystem->OnSceneClear();
                     ClearSelection();
                     m_CurrentScenePath.clear();
                     ClearDirty();
@@ -206,6 +207,7 @@ void EditorLayer::DrawMenuBar() {
             if (ImGui::MenuItem("New Project...")) {
                 if (m_World) {
                     m_World->Clear();
+                    if (m_RenderSystem) m_RenderSystem->OnSceneClear();
                     ClearSelection();
                     m_CurrentScenePath.clear();
                 }

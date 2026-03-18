@@ -2154,6 +2154,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
 
     // Clear existing scene and undo history
     m_World->Clear();
+    if (m_RenderSystem) m_RenderSystem->OnSceneClear();
     ClearSelection();
     m_UndoRedo.Clear();
 

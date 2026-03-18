@@ -210,11 +210,11 @@ void RenderSystem::Initialize() {
         CreateSpotShadowPipeline();
     }
 
-    // Create default white texture (used when no texture is bound)
+    // Create default white texture (used when no texture is bound).
+    // This MUST succeed — without it, every texture fallback path leads to a null deref.
     m_DefaultWhiteTexture = std::make_unique<Renderer::Texture>(m_Renderer->GetContext());
     if (!m_DefaultWhiteTexture->CreateSolidColor(255, 255, 255, 255)) {
-        ENJIN_LOG_WARN(Renderer, "Failed to create default white texture");
-        m_DefaultWhiteTexture.reset();
+        ENJIN_LOG_FATAL(Renderer, "Failed to create default white texture — rendering will be broken");
     }
 
     // Create default bone buffer (single identity matrix for static meshes)
@@ -439,6 +439,19 @@ void RenderSystem::Initialize() {
 
     m_Initialized = true;
     ENJIN_LOG_INFO(Renderer, "RenderSystem initialized");
+}
+
+void RenderSystem::OnSceneClear() {
+    m_EntityRenderData.clear();
+    m_SortedRenderList.clear();
+    m_EntityMaterialIndex.clear();
+    m_EntityToCullIndex.clear();
+    m_CullableObjects.clear();
+    m_CachedLightEntities.clear();
+    m_LastBound.Reset();
+    m_CachedMaterialStorage = nullptr;
+    m_MaterialSSBOBuilt = false;
+    m_LightListDirty = true;
 }
 
 void RenderSystem::Shutdown() {
@@ -1874,7 +1887,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
                 vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
                                  renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
-            } else {
+            } else if (renderData.vertexBuffer && renderData.indexBuffer) {
                 VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
                 VkDeviceSize offsets[] = { 0 };
                 vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
@@ -2289,7 +2302,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
                 vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
                                  renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
-            } else {
+            } else if (renderData.vertexBuffer && renderData.indexBuffer) {
                 VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
                 VkDeviceSize offsets[] = { 0 };
                 vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
@@ -5097,7 +5110,7 @@ void RenderSystem::RenderEntity(Entity entity) {
         }
         vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
                          renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
-    } else {
+    } else if (renderData.vertexBuffer && renderData.indexBuffer) {
         VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
@@ -5588,7 +5601,7 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
         if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
         vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
                          renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
-    } else {
+    } else if (renderData.vertexBuffer && renderData.indexBuffer) {
         VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
@@ -5947,15 +5960,14 @@ void RenderSystem::UpdateEntityTextureDescriptors(
 
     // Use default white texture for any nullptr slots
     Renderer::Texture* defaultTex = m_DefaultWhiteTexture.get();
+    if (!defaultTex || !defaultTex->IsValid()) return;
+
     Renderer::Texture* texBase = (baseColor && baseColor->IsValid()) ? baseColor : defaultTex;
     Renderer::Texture* texHeight = (height && height->IsValid()) ? height : defaultTex;
     Renderer::Texture* texNormal = (normal && normal->IsValid()) ? normal : defaultTex;
     Renderer::Texture* texMR = (metallicRoughness && metallicRoughness->IsValid()) ? metallicRoughness : defaultTex;
     Renderer::Texture* texEmissive = (emissive && emissive->IsValid()) ? emissive : defaultTex;
     Renderer::Texture* texMatcap = (matcap && matcap->IsValid()) ? matcap : defaultTex;
-
-    // Early out if no valid textures at all
-    if (!texBase || !texBase->IsValid()) return;
 
     // Skip vkUpdateDescriptorSets if these textures are already bound
     MaterialComponent::TextureKey currentKey{ texBase, texHeight, texNormal, texMR, texEmissive, texMatcap };

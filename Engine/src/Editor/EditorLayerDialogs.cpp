@@ -2242,6 +2242,7 @@ void EditorLayer::DrawUnsavedChangesDialog() {
                 case UnsavedAction::NewScene:
                     if (m_World) {
                         m_World->Clear();
+                        if (m_RenderSystem) m_RenderSystem->OnSceneClear();
                         ClearSelection();
                         m_CurrentScenePath.clear();
                         ClearDirty();
@@ -2282,6 +2283,7 @@ void EditorLayer::DrawUnsavedChangesDialog() {
                 case UnsavedAction::NewScene:
                     if (m_World) {
                         m_World->Clear();
+                        if (m_RenderSystem) m_RenderSystem->OnSceneClear();
                         ClearSelection();
                         m_CurrentScenePath.clear();
                         UpdateWindowTitle();

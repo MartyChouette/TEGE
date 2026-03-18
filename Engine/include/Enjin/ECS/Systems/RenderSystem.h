@@ -193,6 +193,10 @@ public:
     void Initialize();
     void Shutdown();
 
+    // Reset all per-entity caches (render data, material indices, sorted lists).
+    // Must be called after World::Clear() and before the next render frame.
+    void OnSceneClear();
+
     // Process deferred changes (skybox config, pipeline recreation) — call at frame start,
     // BEFORE any command buffer recording (RenderOffscreen, Update, etc.)
     void FlushPendingChanges();

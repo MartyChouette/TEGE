@@ -4961,6 +4961,7 @@ void EditorLayer::RegisterPaletteCommands() {
         [this]() {
             if (m_World) {
                 m_World->Clear();
+                if (m_RenderSystem) m_RenderSystem->OnSceneClear();
                 ClearSelection();
                 m_CurrentScenePath.clear();
             }
