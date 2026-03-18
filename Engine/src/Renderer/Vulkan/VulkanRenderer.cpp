@@ -4,6 +4,15 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <array>
+#ifdef _WIN32
+    #ifndef WIN32_LEAN_AND_MEAN
+        #define WIN32_LEAN_AND_MEAN
+    #endif
+    #include <windows.h>
+    #ifdef CreateWindow
+        #undef CreateWindow
+    #endif
+#endif
 
 /**
  * @file VulkanRenderer.cpp
@@ -30,12 +39,22 @@ bool VulkanRenderer::Initialize(Window* window) {
     m_Context = std::make_unique<VulkanContext>();
     if (!m_Context->Initialize()) {
         ENJIN_LOG_ERROR(Renderer, "Failed to initialize Vulkan context");
+        // VulkanContext::Initialize already shows a MessageBox for specific failures
+        m_Context.reset();
         return false;
     }
 
     // Create surface
     if (!CreateSurface()) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create Vulkan surface");
+#ifdef _WIN32
+        MessageBoxA(nullptr,
+            "Failed to create a Vulkan rendering surface.\n\n"
+            "This may indicate a GPU driver issue.\n\n"
+            "Check 'enjin.log' for details.",
+            "TEGE - Startup Error",
+            MB_OK | MB_ICONERROR);
+#endif
         return false;
     }
 
@@ -43,6 +62,14 @@ bool VulkanRenderer::Initialize(Window* window) {
     u32 presentQueueFamily = m_Context->FindPresentQueueFamily(m_Surface);
     if (presentQueueFamily == UINT32_MAX) {
         ENJIN_LOG_ERROR(Renderer, "No present queue family found");
+#ifdef _WIN32
+        MessageBoxA(nullptr,
+            "Your GPU does not support presenting to a window.\n\n"
+            "Please update your GPU drivers and try again.\n\n"
+            "Check 'enjin.log' for details.",
+            "TEGE - Startup Error",
+            MB_OK | MB_ICONERROR);
+#endif
         return false;
     }
 

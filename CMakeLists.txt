@@ -5,6 +5,13 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Use static MSVC runtime (/MT instead of /MD) so users don't need VC++ Redistributable
+# This must be set before any add_subdirectory() or target definitions so it propagates
+# to all targets including third-party libraries (imgui, Jolt, Box2D, assimp, etc.)
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 # Sanitizer options (for development builds)
 option(ENJIN_ENABLE_ASAN  "Enable AddressSanitizer"                        OFF)
 option(ENJIN_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer (GCC/Clang)"  OFF)

@@ -241,6 +241,14 @@ Window* CreateWindow(const WindowDesc& desc) {
         if (!glfwInit()) {
             ENJIN_LOG_ERROR(Core, "Failed to initialize GLFW");
             std::cerr << "CRITICAL ERROR: Failed to initialize GLFW!" << std::endl;
+#ifdef _WIN32
+            MessageBoxA(nullptr,
+                "Failed to initialize the windowing system (GLFW).\n\n"
+                "This may indicate a missing DLL or a system configuration issue.\n\n"
+                "Check 'enjin.log' next to the executable for details.",
+                "TEGE - Startup Error",
+                MB_OK | MB_ICONERROR);
+#endif
             return nullptr;
         }
         glfwInitialized = true;
@@ -248,6 +256,15 @@ Window* CreateWindow(const WindowDesc& desc) {
 
     GLFWWindow* window = new GLFWWindow(desc);
     if (!window->GetGLFWHandle()) {
+        ENJIN_LOG_ERROR(Core, "Window creation failed (GLFW returned null handle)");
+#ifdef _WIN32
+        MessageBoxA(nullptr,
+            "Failed to create the application window.\n\n"
+            "This may indicate a display driver issue or unsupported configuration.\n\n"
+            "Check 'enjin.log' next to the executable for details.",
+            "TEGE - Startup Error",
+            MB_OK | MB_ICONERROR);
+#endif
         delete window;
         return nullptr;
     }

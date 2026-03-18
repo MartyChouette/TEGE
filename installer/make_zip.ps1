@@ -14,6 +14,7 @@ Copy-Item "D:\GitHub\enjin\Engine\shaders\*.spv" "$staging\shaders\"
 Copy-Item "D:\GitHub\enjin\build\bin\Release\scripts\*" "$staging\scripts\"
 Copy-Item "D:\GitHub\enjin\installer\enjin.ico" "$staging\"
 Copy-Item "D:\GitHub\enjin\LICENSE" "$staging\"
+Copy-Item "D:\GitHub\enjin\Engine\resources\DIST_README.txt" "$staging\README.txt"
 
 New-Item -ItemType Directory -Path "$staging\docs" -Force | Out-Null
 Copy-Item "D:\GitHub\enjin\docs\USER_MANUAL.md" "$staging\docs\"

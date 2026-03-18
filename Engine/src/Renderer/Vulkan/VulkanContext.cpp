@@ -5,6 +5,15 @@
 #include <string>
 #include <cstring>
 #include <GLFW/glfw3.h>
+#ifdef _WIN32
+    #ifndef WIN32_LEAN_AND_MEAN
+        #define WIN32_LEAN_AND_MEAN
+    #endif
+    #include <windows.h>
+    #ifdef CreateWindow
+        #undef CreateWindow
+    #endif
+#endif
 
 namespace Enjin {
 namespace Renderer {
@@ -27,8 +36,34 @@ VulkanContext::~VulkanContext() {
 bool VulkanContext::Initialize() {
     ENJIN_LOG_INFO(Renderer, "Initializing Vulkan context...");
 
+    // Check if Vulkan is available before attempting to create an instance.
+    // glfwVulkanSupported() tries to load the Vulkan loader (vulkan-1.dll / libvulkan.so).
+    // If it fails, any vkCreateInstance call would crash or return an error.
+    if (!glfwVulkanSupported()) {
+        ENJIN_LOG_FATAL(Renderer, "Vulkan is not available on this system");
+#ifdef _WIN32
+        MessageBoxA(nullptr,
+            "Vulkan is not available on this system.\n\n"
+            "This usually means your GPU drivers are outdated or your graphics card does not support Vulkan.\n\n"
+            "Please update your GPU drivers and try again.\n\n"
+            "Check 'enjin.log' for details.",
+            "TEGE - Startup Error",
+            MB_OK | MB_ICONERROR);
+#endif
+        return false;
+    }
+
     if (!CreateInstance()) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create Vulkan instance");
+#ifdef _WIN32
+        MessageBoxA(nullptr,
+            "Failed to initialize Vulkan.\n\n"
+            "Your GPU drivers may be outdated or your system may not fully support Vulkan 1.3.\n\n"
+            "Please update your GPU drivers and try again.\n\n"
+            "Check 'enjin.log' for details.",
+            "TEGE - Startup Error",
+            MB_OK | MB_ICONERROR);
+#endif
         return false;
     }
 
@@ -40,11 +75,29 @@ bool VulkanContext::Initialize() {
 
     if (!SelectPhysicalDevice()) {
         ENJIN_LOG_ERROR(Renderer, "Failed to select physical device");
+#ifdef _WIN32
+        MessageBoxA(nullptr,
+            "No compatible GPU found.\n\n"
+            "TEGE requires a Vulkan-capable graphics card with swapchain support.\n\n"
+            "Please ensure your GPU drivers are up to date.\n\n"
+            "Check 'enjin.log' for details.",
+            "TEGE - Startup Error",
+            MB_OK | MB_ICONERROR);
+#endif
         return false;
     }
 
     if (!CreateLogicalDevice()) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create logical device");
+#ifdef _WIN32
+        MessageBoxA(nullptr,
+            "Failed to create a Vulkan device.\n\n"
+            "Your GPU may not support the required Vulkan features.\n\n"
+            "Please update your GPU drivers and try again.\n\n"
+            "Check 'enjin.log' for details.",
+            "TEGE - Startup Error",
+            MB_OK | MB_ICONERROR);
+#endif
         return false;
     }
 
@@ -502,6 +555,13 @@ u32 VulkanContext::FindMemoryType(u32 typeFilter, VkMemoryPropertyFlags properti
 std::vector<const char*> VulkanContext::GetRequiredExtensions() const {
     u32 glfwExtensionCount = 0;
     const char** glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+
+    // glfwGetRequiredInstanceExtensions returns nullptr if Vulkan is not supported
+    // (e.g., missing vulkan-1.dll or no Vulkan ICD installed)
+    if (!glfwExtensions || glfwExtensionCount == 0) {
+        ENJIN_LOG_ERROR(Renderer, "GLFW returned no Vulkan instance extensions (Vulkan may not be available)");
+        return {};
+    }
 
     std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 

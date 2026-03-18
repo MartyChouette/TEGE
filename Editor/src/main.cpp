@@ -13,7 +13,15 @@
 #include "Enjin/Audio/AudioSystem.h"
 #include <iostream>
 #include <memory>
-#if !defined(_WIN32)
+#if defined(_WIN32)
+    #ifndef WIN32_LEAN_AND_MEAN
+        #define WIN32_LEAN_AND_MEAN
+    #endif
+    #include <windows.h>
+    #ifdef CreateWindow
+        #undef CreateWindow
+    #endif
+#else
     #include <unistd.h>
     #include <cstdio>
 #endif
