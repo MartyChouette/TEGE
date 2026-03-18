@@ -14,7 +14,7 @@
 ; ============================================================
 
 #define AppName      "TEGE"
-#define AppVersion   "0.9.0"
+#define AppVersion   "0.9.5"
 #define AppPublisher "Marty Scott"
 #define AppURL       "https://www.marty64.net/enjin"
 #define AppExeName   "EnjinEditor.exe"
@@ -86,8 +86,10 @@ Source: "{#SourceRoot}\LICENSE";                DestDir: "{app}"; Components: ed
 Source: "{#SourceRoot}\docs\USER_MANUAL.md";   DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion
 Source: "{#SourceRoot}\docs\API_REFERENCE.md";  DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion skipifsourcedoesntexist
 Source: "{#SourceRoot}\docs\ARCHITECTURE.md";   DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion
-Source: "{#SourceRoot}\docs\BUILD.md";          DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion
-Source: "{#SourceRoot}\docs\manual.html";       DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#SourceRoot}\docs\BUILD.md";           DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion
+Source: "{#SourceRoot}\docs\SCRIPTING_API.md";   DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#SourceRoot}\docs\ROADMAP.md";         DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion skipifsourcedoesntexist
+Source: "{#SourceRoot}\docs\manual.html";        DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion skipifsourcedoesntexist
 
 ; ============================================================
 ; Shortcuts

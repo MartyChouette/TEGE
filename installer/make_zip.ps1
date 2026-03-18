@@ -1,5 +1,5 @@
-$staging = "D:\GitHub\enjin\installer\output\TEGE-0.9.0"
-$zip = "D:\GitHub\enjin\installer\output\TEGE-0.9.0.zip"
+$staging = "D:\GitHub\enjin\installer\output\TEGE-0.9.5"
+$zip = "D:\GitHub\enjin\installer\output\TEGE-0.9.5.zip"
 
 if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
 if (Test-Path $zip) { Remove-Item $zip -Force }
@@ -14,6 +14,13 @@ Copy-Item "D:\GitHub\enjin\Engine\shaders\*.spv" "$staging\shaders\"
 Copy-Item "D:\GitHub\enjin\build\bin\Release\scripts\*" "$staging\scripts\"
 Copy-Item "D:\GitHub\enjin\installer\enjin.ico" "$staging\"
 Copy-Item "D:\GitHub\enjin\LICENSE" "$staging\"
+
+New-Item -ItemType Directory -Path "$staging\docs" -Force | Out-Null
+Copy-Item "D:\GitHub\enjin\docs\USER_MANUAL.md" "$staging\docs\"
+Copy-Item "D:\GitHub\enjin\docs\ARCHITECTURE.md" "$staging\docs\"
+Copy-Item "D:\GitHub\enjin\docs\BUILD.md" "$staging\docs\"
+Copy-Item "D:\GitHub\enjin\docs\SCRIPTING_API.md" "$staging\docs\"
+Copy-Item "D:\GitHub\enjin\docs\ROADMAP.md" "$staging\docs\"
 
 Compress-Archive -Path "$staging\*" -DestinationPath $zip
 
