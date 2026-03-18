@@ -1,0 +1,173 @@
+#version 460
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// Surfel Lookup — Compute Pass
+//
+// For each pixel, finds nearby surfels and interpolates their irradiance weighted
+// by distance, normal alignment, and confidence. The result is blended with the
+// screen-space radiance cache output (binding 23) to produce the final cached
+// irradiance that the RT compositor uses.
+//
+// This pass runs AFTER the screen-space radiance cache read pass, so binding 23
+// already contains the screen-space cached irradiance.
+
+// --- Descriptor bindings (shared with RT descriptor set) ---
+
+// Binding 2: Depth buffer
+layout(binding = 2, set = 0) uniform sampler2D depthTex;
+
+// Binding 3: World normals
+layout(binding = 3, set = 0) uniform sampler2D normalTex;
+
+// Binding 13: RT light UBO
+layout(binding = 13, set = 0) uniform LightData {
+    vec4 lightDir;
+    vec4 lightColor;
+    mat4 invViewProj;
+    vec2 screenSize;
+    uint frameCount;
+    float shadowRadius;
+    float fireflyClamp;
+    int enableNEE;
+    int enableMIS;
+    int rrMinBounce;
+    float rrMinProb;
+    uint directionalLightCount;
+    uint pointLightCount;
+    uint spotLightCount;
+} uLight;
+
+// Binding 23: Screen-space radiance cache output (read as input)
+layout(binding = 23, rgba16f) readonly uniform image2D screenSpaceCacheImage;
+
+// Binding 24: Surfel buffer (read-only in this pass)
+struct Surfel {
+    float positionX;
+    float positionY;
+    float positionZ;
+    float normalX;
+    float normalY;
+    float normalZ;
+    float irradianceR;
+    float irradianceG;
+    float irradianceB;
+    float radius;
+    uint lastUpdateFrame;
+    float confidence;
+};
+
+layout(binding = 24, set = 0) readonly buffer SurfelBuffer {
+    Surfel surfels[];
+};
+
+// Binding 25: Surfel counter buffer (read-only)
+layout(binding = 25, set = 0) readonly buffer SurfelCounterBuffer {
+    uint surfelCounters[];
+};
+
+// Binding 26: Output image — blended surfel + screen-space irradiance
+layout(binding = 26, rgba16f) uniform image2D surfelOutputImage;
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    float blendWeight;      // 0 = screen-space only, 1 = surfel only
+    float surfelRadius;     // Search radius for nearby surfels
+    float normalThreshold;  // Dot product threshold for surfel-surface alignment
+    uint maxSurfels;        // Budget
+    uint maxSearchCount;    // Max surfels to evaluate per pixel
+    uint screenWidth;       // Screen width
+    uint screenHeight;      // Screen height
+    uint padding0;          // Alignment
+} pc;
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (pixel.x >= int(pc.screenWidth) || pixel.y >= int(pc.screenHeight)) return;
+
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(pc.screenWidth, pc.screenHeight);
+
+    float depth = texture(depthTex, uv).r;
+
+    // Sky pixels — pass through screen-space cache result unchanged
+    if (depth >= 1.0) {
+        vec4 ssCache = imageLoad(screenSpaceCacheImage, pixel);
+        imageStore(surfelOutputImage, pixel, ssCache);
+        return;
+    }
+
+    vec3 pixelNormal = normalize(texture(normalTex, uv).xyz * 2.0 - 1.0);
+
+    // Reconstruct world position from depth
+    vec4 clipPos = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    clipPos.y = -clipPos.y;  // Vulkan Y-flip
+    vec4 worldPos4 = uLight.invViewProj * clipPos;
+    vec3 worldPos = worldPos4.xyz / worldPos4.w;
+
+    // Read the screen-space cache result for this pixel
+    vec3 screenSpaceIrradiance = imageLoad(screenSpaceCacheImage, pixel).rgb;
+
+    // Find nearby surfels and interpolate their irradiance
+    uint activeCount = surfelCounters[0];
+    float searchRadiusSq = pc.surfelRadius * pc.surfelRadius * 9.0;  // 3x radius search
+
+    vec3 surfelIrradiance = vec3(0.0);
+    float totalWeight = 0.0;
+
+    // Linear scan of active surfels (simplified — no spatial hash).
+    // Cap the scan to maxSearchCount to bound per-pixel cost.
+    uint scanCount = min(activeCount, pc.maxSearchCount);
+    uint scanStride = max(1u, activeCount / scanCount);
+
+    for (uint i = 0u; i < activeCount && i < pc.maxSurfels; i += scanStride) {
+        Surfel s = surfels[i];
+
+        // Skip inactive surfels
+        if (s.radius <= 0.0) continue;
+
+        vec3 sPos = vec3(s.positionX, s.positionY, s.positionZ);
+        vec3 diff = sPos - worldPos;
+        float distSq = dot(diff, diff);
+
+        // Skip surfels outside search radius
+        if (distSq >= searchRadiusSq) continue;
+
+        // Normal alignment weight — surfels facing a similar direction contribute more
+        vec3 sNormal = vec3(s.normalX, s.normalY, s.normalZ);
+        float normalDot = dot(pixelNormal, sNormal);
+        if (normalDot < pc.normalThreshold) continue;
+
+        // Distance weight — inverse square falloff
+        float dist = sqrt(distSq);
+        float distWeight = 1.0 / (1.0 + distSq / (s.radius * s.radius));
+
+        // Normal alignment weight
+        float normalWeight = max(0.0, normalDot);
+
+        // Confidence weight — trust stable surfels more
+        float confidenceWeight = s.confidence;
+
+        float weight = distWeight * normalWeight * confidenceWeight;
+        if (weight < 0.001) continue;
+
+        surfelIrradiance += vec3(s.irradianceR, s.irradianceG, s.irradianceB) * weight;
+        totalWeight += weight;
+    }
+
+    // Normalize surfel contribution
+    vec3 surfelResult = vec3(0.0);
+    if (totalWeight > 0.001) {
+        surfelResult = surfelIrradiance / totalWeight;
+    }
+
+    // Blend surfel irradiance with screen-space cache result.
+    // blendWeight controls the mix: 0 = screen-space only, 1 = surfel only.
+    // When surfels have no coverage (totalWeight == 0), fall back to screen-space.
+    float effectiveBlend = pc.blendWeight;
+    if (totalWeight < 0.001) {
+        effectiveBlend = 0.0;  // No surfel coverage — use screen-space only
+    }
+
+    vec3 finalIrradiance = mix(screenSpaceIrradiance, surfelResult, effectiveBlend);
+
+    imageStore(surfelOutputImage, pixel, vec4(finalIrradiance, 1.0));
+}

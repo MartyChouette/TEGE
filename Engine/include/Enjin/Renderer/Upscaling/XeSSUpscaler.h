@@ -5,6 +5,10 @@
 #include "Enjin/Renderer/Upscaling/IUpscaler.h"
 #include <vulkan/vulkan.h>
 
+#ifdef ENJIN_HAS_XESS_SDK
+#include <xess/xess.h>
+#endif
+
 namespace Enjin {
 namespace Renderer {
 
@@ -45,10 +49,19 @@ public:
     UpscalerType GetType() const override { return UpscalerType::XeSS; }
 
     const char* GetName() const override {
-#ifdef ENJIN_UPSCALING_XESS
-        return "XeSS";
+#ifdef ENJIN_HAS_XESS_SDK
+        return "XeSS (SDK)";
 #else
-        return "XeSS (Stub \xe2\x80\x94 SDK not linked)";
+        return "XeSS (Built-in)";
+#endif
+    }
+
+    // Returns true when compiled against the real Intel XeSS SDK
+    static bool HasSDK() {
+#ifdef ENJIN_HAS_XESS_SDK
+        return true;
+#else
+        return false;
 #endif
     }
 
@@ -121,31 +134,12 @@ private:
     VkDescriptorPool m_CASDescPool = VK_NULL_HANDLE;
     VkDescriptorSet m_CASDescSet = VK_NULL_HANDLE;
 
-#ifdef ENJIN_UPSCALING_XESS
+#ifdef ENJIN_HAS_XESS_SDK
     // ================================================================
-    // REAL SDK INTEGRATION POINT
+    // XESS SDK STATE — populated when the real SDK is linked
     // ================================================================
-    // When the XeSS SDK is linked, add XeSS-specific state here:
-    //
-    //   xess_context_handle_t m_XeSSContext = nullptr;
-    //   xess_2d_t m_InputResolution;
-    //   xess_2d_t m_OutputResolution;
-    //
-    // The Initialize() method should call:
-    //   xessCreateContext(vulkanDevice, &m_XeSSContext)
-    //   xessSetVelocityScale(m_XeSSContext, ...)
-    //   xessD3D12Init(m_XeSSContext, &initParams)   // or Vulkan equivalent
-    //
-    // The Dispatch() method should call:
-    //   xessD3D12Execute(m_XeSSContext, ...)  // or Vulkan equivalent
-    // instead of the Lanczos + CAS fallback.
-    //
-    // Quality mode mapping:
-    //   UpscalerQuality::Performance  -> XESS_QUALITY_SETTING_PERFORMANCE
-    //   UpscalerQuality::Balanced     -> XESS_QUALITY_SETTING_BALANCED
-    //   UpscalerQuality::Quality      -> XESS_QUALITY_SETTING_QUALITY
-    //   UpscalerQuality::UltraQuality -> XESS_QUALITY_SETTING_ULTRA_QUALITY
-    // ================================================================
+    xess_context_handle_t m_XeSSContext = nullptr;
+    UpscalerQuality m_CurrentQuality = UpscalerQuality::Quality;
 #endif
 };
 

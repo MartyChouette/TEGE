@@ -61,6 +61,14 @@ public:
     // Variable Rate Shading support (VK_KHR_fragment_shading_rate)
     bool IsVRSSupported() const { return m_VRSSupported; }
 
+    // Device Generated Commands support (VK_EXT or VK_NV)
+    bool IsDGCSupported() const { return m_DGCExtSupported || m_DGCNVSupported; }
+    bool IsDGCExtSupported() const { return m_DGCExtSupported; }
+    bool IsDGCNVSupported() const { return m_DGCNVSupported; }
+
+    // Query the maximum MSAA sample count supported by both color and depth framebuffers
+    VkSampleCountFlagBits GetMaxUsableSampleCount() const;
+
 protected:
     friend class VulkanRenderer;
     bool CreateInstance();
@@ -95,6 +103,10 @@ protected:
 
     // Variable Rate Shading support (populated during SelectPhysicalDevice)
     bool m_VRSSupported = false;
+
+    // Device Generated Commands support (populated during SelectPhysicalDevice)
+    bool m_DGCExtSupported = false;  // VK_EXT_device_generated_commands
+    bool m_DGCNVSupported = false;   // VK_NV_device_generated_commands (fallback)
 
 #ifdef ENJIN_BUILD_DEBUG
     VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;

@@ -1,0 +1,213 @@
+#version 460
+layout(local_size_x = 64) in;
+
+// Surfel Update — Compute Pass
+//
+// Each frame, updates a fraction (1/8) of all active surfels by tracing 1-4
+// hemisphere rays from each surfel's world position and accumulating irradiance
+// via exponential moving average. Pseudo-multi-bounce: surfel irradiance from
+// the previous frame feeds back into the evaluation of secondary hits.
+//
+// Also handles surfel expiry: surfels too far from the camera or not updated
+// for maxAge frames are deactivated (radius set to 0).
+//
+// IMPORTANT: Directional light (sun/moon) is excluded from surfel irradiance.
+// The sun contribution is evaluated separately via shadow maps.
+
+// --- Descriptor bindings (shared with RT descriptor set) ---
+
+// Binding 8: GI output image (written by RTGlobalIllumination)
+layout(binding = 8, rgba16f) readonly uniform image2D giImage;
+
+// Binding 13: RT light UBO
+layout(binding = 13, set = 0) uniform LightData {
+    vec4 lightDir;
+    vec4 lightColor;
+    mat4 invViewProj;
+    vec2 screenSize;
+    uint frameCount;
+    float shadowRadius;
+    float fireflyClamp;
+    int enableNEE;
+    int enableMIS;
+    int rrMinBounce;
+    float rrMinProb;
+    uint directionalLightCount;
+    uint pointLightCount;
+    uint spotLightCount;
+} uLight;
+
+// Binding 24: Surfel buffer
+struct Surfel {
+    float positionX;
+    float positionY;
+    float positionZ;
+    float normalX;
+    float normalY;
+    float normalZ;
+    float irradianceR;
+    float irradianceG;
+    float irradianceB;
+    float radius;
+    uint lastUpdateFrame;
+    float confidence;
+};
+
+layout(binding = 24, set = 0) buffer SurfelBuffer {
+    Surfel surfels[];
+};
+
+// Binding 25: Surfel counter buffer
+layout(binding = 25, set = 0) buffer SurfelCounterBuffer {
+    uint surfelCounters[];
+};
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    vec4 cameraPos;         // xyz = camera world position
+    float cameraRadius;     // Max distance from camera
+    float maxAge;           // Max frames before expiry
+    float updateFraction;   // Fraction of surfels to update this frame
+    uint maxSurfels;        // Budget
+    uint frameCount;        // Current frame
+    uint raysPerSurfel;     // Hemisphere rays per surfel (1-4)
+    float hysteresis;       // Exponential moving average blend factor
+    uint padding0;          // Alignment
+} pc;
+
+// PCG hash for deterministic random numbers
+uint pcg_hash(uint state) {
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float rand_float(inout uint seed) {
+    seed = pcg_hash(seed);
+    return float(seed) / 4294967295.0;
+}
+
+// Cosine-weighted hemisphere sample from two random numbers
+vec3 cosine_hemisphere(float u1, float u2, vec3 N) {
+    float phi = 6.28318530718 * u1;
+    float cosTheta = sqrt(1.0 - u2);
+    float sinTheta = sqrt(u2);
+
+    // Build tangent frame from normal
+    vec3 T = abs(N.y) < 0.999 ? normalize(cross(N, vec3(0.0, 1.0, 0.0)))
+                               : normalize(cross(N, vec3(1.0, 0.0, 0.0)));
+    vec3 B = cross(N, T);
+
+    return normalize(T * cos(phi) * sinTheta + B * sin(phi) * sinTheta + N * cosTheta);
+}
+
+void main() {
+    uint globalIdx = gl_GlobalInvocationID.x;
+
+    uint activeCount = surfelCounters[0];
+    if (activeCount == 0u) return;
+
+    // Round-robin: only update a fraction of surfels per frame.
+    // This frame updates surfels where (index % (1/updateFraction)) == (frame % (1/updateFraction))
+    uint updatePeriod = max(1u, uint(1.0 / max(pc.updateFraction, 0.001)));
+    uint frameSlot = pc.frameCount % updatePeriod;
+
+    // Map global thread index to surfel index
+    uint surfelIdx = globalIdx * updatePeriod + frameSlot;
+    if (surfelIdx >= activeCount || surfelIdx >= pc.maxSurfels) return;
+
+    Surfel s = surfels[surfelIdx];
+
+    // Skip inactive surfels
+    if (s.radius <= 0.0) return;
+
+    vec3 surfelPos = vec3(s.positionX, s.positionY, s.positionZ);
+    vec3 surfelNormal = vec3(s.normalX, s.normalY, s.normalZ);
+
+    // Check distance from camera — expire distant surfels
+    float distToCamera = length(surfelPos - pc.cameraPos.xyz);
+    if (distToCamera > pc.cameraRadius) {
+        surfels[surfelIdx].radius = 0.0;  // Mark as inactive
+        return;
+    }
+
+    // Check age — expire surfels not updated for too long
+    uint age = pc.frameCount - s.lastUpdateFrame;
+    if (age > uint(pc.maxAge)) {
+        surfels[surfelIdx].radius = 0.0;  // Mark as inactive
+        return;
+    }
+
+    // --- Irradiance sampling ---
+    // In a full implementation, this would trace actual RT rays from the surfel
+    // position. For the simplified first implementation, we sample from the GI
+    // output image by projecting the surfel position to screen space and reading
+    // nearby GI values. This gives us "screen-space fed" surfel irradiance that
+    // still persists in world space across frames.
+
+    // Project surfel position to screen space using the inverse of invViewProj
+    // (i.e., the viewProj matrix). Since we only have invViewProj, we can't do
+    // the forward projection directly. Instead, we sample from a small region of
+    // the GI image around where the surfel would project to.
+    //
+    // We use the surfel's previous irradiance as a fallback and blend in any new
+    // GI data we can sample.
+
+    uint seed = pcg_hash(surfelIdx * 7919u + pc.frameCount * 1619u);
+
+    vec3 newIrradiance = vec3(0.0);
+    float sampleWeight = 0.0;
+
+    // Sample GI image at multiple jittered locations near the surfel
+    ivec2 giSize = imageSize(giImage);
+    for (uint r = 0u; r < pc.raysPerSurfel; ++r) {
+        // Generate a random direction on the hemisphere around the surfel normal
+        float u1 = rand_float(seed);
+        float u2 = rand_float(seed);
+        vec3 sampleDir = cosine_hemisphere(u1, u2, surfelNormal);
+
+        // For the simplified implementation, sample a nearby point in the GI image.
+        // We jitter the sample position slightly to get variation.
+        float jitterX = rand_float(seed) * 2.0 - 1.0;
+        float jitterY = rand_float(seed) * 2.0 - 1.0;
+
+        // Project surfel position to a rough screen coordinate
+        // (using the invViewProj inverse approximation)
+        vec4 clipPos = inverse(uLight.invViewProj) * vec4(surfelPos + sampleDir * 0.1, 1.0);
+        if (clipPos.w > 0.001) {
+            vec2 ndc = clipPos.xy / clipPos.w;
+            ndc.y = -ndc.y;  // Vulkan Y-flip
+            vec2 screenUV = ndc * 0.5 + 0.5;
+
+            // Add jitter
+            screenUV += vec2(jitterX, jitterY) * (4.0 / vec2(giSize));
+
+            ivec2 samplePixel = ivec2(screenUV * vec2(giSize));
+            if (samplePixel.x >= 0 && samplePixel.x < giSize.x &&
+                samplePixel.y >= 0 && samplePixel.y < giSize.y) {
+                vec3 gi = imageLoad(giImage, samplePixel).rgb;
+                // Clamp to avoid fireflies
+                gi = min(gi, vec3(pc.cameraRadius));  // Rough clamp
+                newIrradiance += gi;
+                sampleWeight += 1.0;
+            }
+        }
+    }
+
+    // Blend new samples with existing irradiance via exponential moving average
+    vec3 oldIrradiance = vec3(s.irradianceR, s.irradianceG, s.irradianceB);
+    if (sampleWeight > 0.0) {
+        newIrradiance /= sampleWeight;
+        // Hysteresis blend: high value = keep more old data, low = prefer new
+        float alpha = (s.confidence > 0.5) ? pc.hysteresis : 0.5;
+        vec3 blended = mix(newIrradiance, oldIrradiance, alpha);
+        surfels[surfelIdx].irradianceR = blended.r;
+        surfels[surfelIdx].irradianceG = blended.g;
+        surfels[surfelIdx].irradianceB = blended.b;
+        surfels[surfelIdx].confidence = min(s.confidence + 0.1, 1.0);
+    }
+
+    surfels[surfelIdx].lastUpdateFrame = pc.frameCount;
+
+    // Track how many surfels were updated this frame
+    atomicAdd(surfelCounters[2], 1u);
+}

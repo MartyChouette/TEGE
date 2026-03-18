@@ -61,6 +61,7 @@
 #include "Enjin/Renderer/RayTracing/RTTemporalReuse.h"
 #include "Enjin/Renderer/RayTracing/ReSTIR.h"
 #include "Enjin/Renderer/RayTracing/RadianceCache.h"
+#include "Enjin/Renderer/RayTracing/SurfelRadianceCache.h"
 #include "Enjin/Renderer/RayTracing/AccelerationStructureManager.h"
 #include "Enjin/Renderer/SHLightProbe.h"
 #include "Enjin/Renderer/SDFScene.h"
@@ -1061,12 +1062,17 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
 
         // Anti-Aliasing
         if (ImGui::CollapsingHeader("Anti-Aliasing")) {
-            const char* aaModes[] = { "None", "FXAA", "TAA", "SMAA" };
+            const char* aaModes[] = { "None", "FXAA", "TAA", "SMAA", "MSAA 2x", "MSAA 4x", "MSAA 8x" };
             int aaMode = static_cast<int>(settings.aaMode);
             if (ImGui::Combo("AA Mode", &aaMode, aaModes, IM_ARRAYSIZE(aaModes))) {
-                settings.aaMode = static_cast<u32>(aaMode);
+                u32 newMode = static_cast<u32>(aaMode);
+                settings.aaMode = newMode;
                 // Sync legacy fxaaEnabled flag
-                settings.fxaaEnabled = (settings.aaMode == 1) ? 1 : 0;
+                settings.fxaaEnabled = (newMode == 1) ? 1 : 0;
+                // MSAA modes (4/5/6) require render pass recreation via RenderSystem
+                if (m_RenderSystem) {
+                    m_RenderSystem->SetAAMode(newMode);
+                }
             }
 
             // FXAA settings
@@ -1088,6 +1094,22 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 ImGui::SliderFloat("Jitter Scale", &settings.taaJitterScale, 0.0f, 2.0f, "%.2f");
                 ImGui::SliderFloat("Feedback Min", &settings.taaFeedbackMin, 0.0f, 1.0f, "%.2f");
                 ImGui::SliderFloat("Feedback Max", &settings.taaFeedbackMax, 0.0f, 1.0f, "%.2f");
+            }
+
+            // MSAA info
+            if (settings.aaMode >= 4 && settings.aaMode <= 6) {
+                int sampleCount = 1 << (settings.aaMode - 3);  // 4->2x, 5->4x, 6->8x
+                ImGui::TextDisabled("Hardware multisampling at %dx", sampleCount);
+                ImGui::TextDisabled("Resolves to single-sample for post-processing");
+                if (m_RenderSystem) {
+                    u32 maxSamples = m_RenderSystem->GetMaxMSAASamples();
+                    if (static_cast<u32>(sampleCount) > maxSamples) {
+                        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+                            "GPU supports up to %dx MSAA", maxSamples);
+                    }
+                }
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
+                    "MSAA and TAA are mutually exclusive");
             }
         }
 
@@ -1124,29 +1146,49 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 ImGui::TextDisabled("Backend availability:");
                 ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  FSR 2: Built-in (Lanczos + CAS)");
 
-                // DLSS availability: requires NVIDIA GPU
-                if (m_RenderSystem && m_RenderSystem->GetUpscaler() &&
-                    m_RenderSystem->GetUpscalerType() == 2) {
-                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  DLSS: %s",
-                                       m_RenderSystem->GetUpscaler()->GetName());
-                } else {
-#ifdef ENJIN_UPSCALING_DLSS
-                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  DLSS: SDK linked (NVIDIA GPUs)");
+                // DLSS availability — green for SDK, yellow for built-in
+                {
+                    bool dlssActive = m_RenderSystem && m_RenderSystem->GetUpscaler() &&
+                                      m_RenderSystem->GetUpscalerType() == 2;
+#ifdef ENJIN_HAS_DLSS_SDK
+                    ImVec4 dlssColor(0.4f, 1.0f, 0.4f, 1.0f);  // green = SDK linked
+                    if (dlssActive) {
+                        ImGui::TextColored(dlssColor, "  DLSS: %s (SDK)",
+                                           m_RenderSystem->GetUpscaler()->GetName());
+                    } else {
+                        ImGui::TextColored(dlssColor, "  DLSS: SDK linked (NVIDIA GPUs)");
+                    }
 #else
-                    ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.5f, 1.0f), "  DLSS: Stub (Lanczos + CAS, NVIDIA GPUs only)");
+                    ImVec4 dlssColor(1.0f, 0.9f, 0.5f, 1.0f);  // yellow = built-in fallback
+                    if (dlssActive) {
+                        ImGui::TextColored(dlssColor, "  DLSS: %s (Built-in)",
+                                           m_RenderSystem->GetUpscaler()->GetName());
+                    } else {
+                        ImGui::TextColored(dlssColor, "  DLSS: Built-in (Lanczos + CAS, NVIDIA GPUs only)");
+                    }
 #endif
                 }
 
-                // XeSS availability: works on all GPUs (DP4a), best on Intel Arc
-                if (m_RenderSystem && m_RenderSystem->GetUpscaler() &&
-                    m_RenderSystem->GetUpscalerType() == 3) {
-                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  XeSS: %s",
-                                       m_RenderSystem->GetUpscaler()->GetName());
-                } else {
-#ifdef ENJIN_UPSCALING_XESS
-                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  XeSS: SDK linked (all GPUs via DP4a)");
+                // XeSS availability — green for SDK, yellow for built-in
+                {
+                    bool xessActive = m_RenderSystem && m_RenderSystem->GetUpscaler() &&
+                                      m_RenderSystem->GetUpscalerType() == 3;
+#ifdef ENJIN_HAS_XESS_SDK
+                    ImVec4 xessColor(0.4f, 1.0f, 0.4f, 1.0f);  // green = SDK linked
+                    if (xessActive) {
+                        ImGui::TextColored(xessColor, "  XeSS: %s (SDK)",
+                                           m_RenderSystem->GetUpscaler()->GetName());
+                    } else {
+                        ImGui::TextColored(xessColor, "  XeSS: SDK linked (all GPUs via DP4a)");
+                    }
 #else
-                    ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.5f, 1.0f), "  XeSS: Stub (Lanczos + CAS, all GPUs)");
+                    ImVec4 xessColor(1.0f, 0.9f, 0.5f, 1.0f);  // yellow = built-in fallback
+                    if (xessActive) {
+                        ImGui::TextColored(xessColor, "  XeSS: %s (Built-in)",
+                                           m_RenderSystem->GetUpscaler()->GetName());
+                    } else {
+                        ImGui::TextColored(xessColor, "  XeSS: Built-in (Lanczos + CAS, all GPUs)");
+                    }
 #endif
                 }
 
@@ -1155,13 +1197,13 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 if (settings.upscalerType == 1) {
                     ImGui::TextDisabled("Pipeline: TAA resolve (low-res) -> Lanczos upsample -> CAS sharpen");
                 } else if (settings.upscalerType == 2) {
-#ifdef ENJIN_UPSCALING_DLSS
+#ifdef ENJIN_HAS_DLSS_SDK
                     ImGui::TextDisabled("Pipeline: DLSS Super Resolution (Streamline SDK)");
 #else
                     ImGui::TextDisabled("Pipeline: Lanczos upsample -> CAS sharpen (DLSS SDK not linked)");
 #endif
                 } else if (settings.upscalerType == 3) {
-#ifdef ENJIN_UPSCALING_XESS
+#ifdef ENJIN_HAS_XESS_SDK
                     ImGui::TextDisabled("Pipeline: XeSS temporal upscaling (Intel XeSS SDK)");
 #else
                     ImGui::TextDisabled("Pipeline: Lanczos upsample -> CAS sharpen (XeSS SDK not linked)");
@@ -2393,6 +2435,79 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
                                         radianceCache->InvalidateAll();
                                     }
                                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Force re-trace of all tiles next frame.");
+                                }
+                                ImGui::TreePop();
+                            }
+                        }
+
+                        // Surfel Radiance Cache (World-Space Irradiance Caching)
+                        if (auto* surfelCache = m_RenderSystem->GetSurfelRadianceCache()) {
+                            auto& cfg = surfelCache->GetConfig();
+                            if (ImGui::TreeNode("Surfel Radiance Cache")) {
+                                ImGui::Checkbox("Enabled##SurfelRC", &cfg.enabled);
+                                if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                    "World-space surfel-based radiance cache.\n"
+                                    "Distributes surface elements (surfels) on visible geometry\n"
+                                    "and caches indirect irradiance that persists across frames\n"
+                                    "and camera movement. Supplements the screen-space cache.\n"
+                                    "Directional light is excluded (evaluated separately).");
+                                if (cfg.enabled) {
+                                    int maxSurfels = static_cast<int>(cfg.maxSurfels);
+                                    if (ImGui::DragInt("Max Surfels##SRC", &maxSurfels, 1024, 4096, 262144)) {
+                                        cfg.maxSurfels = static_cast<u32>(maxSurfels);
+                                    }
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Maximum number of surfels (surface elements).\n"
+                                        "64K is a good default for indie scenes.\n"
+                                        "Higher = better coverage but more memory/compute.");
+                                    ImGui::DragFloat("Surfel Radius##SRC", &cfg.surfelRadius, 0.05f, 0.1f, 5.0f, "%.2f");
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "World-space coverage radius per surfel.\n"
+                                        "Smaller = more detail but needs more surfels.\n"
+                                        "Larger = fewer surfels but lower detail.");
+                                    ImGui::DragFloat("Camera Radius##SRC", &cfg.cameraRadius, 1.0f, 10.0f, 200.0f, "%.0f");
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Only maintain surfels within this radius of the camera.");
+                                    ImGui::DragFloat("Blend Weight##SRC", &cfg.blendWeight, 0.01f, 0.0f, 1.0f, "%.2f");
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Blend with screen-space cache.\n"
+                                        "0 = screen-space only, 1 = surfel only.\n"
+                                        "0.5 is a good starting point.");
+                                    ImGui::DragFloat("Update Fraction##SRC", &cfg.updateFraction, 0.01f, 0.01f, 1.0f, "%.3f");
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Fraction of surfels updated per frame.\n"
+                                        "0.125 = 1/8 of surfels per frame (amortized).\n"
+                                        "Higher = fresher results but more compute.");
+                                    ImGui::DragFloat("Max Age##SRC", &cfg.maxAge, 1.0f, 4.0f, 128.0f, "%.0f frames");
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Frames before a surfel expires if not refreshed.");
+                                    ImGui::DragFloat("Normal Threshold##SRC", &cfg.normalThreshold, 0.01f, 0.3f, 1.0f, "%.2f");
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Dot product threshold for surfel-surface alignment.");
+
+                                    int raysPerSurfel = static_cast<int>(cfg.raysPerSurfel);
+                                    if (ImGui::SliderInt("Rays/Surfel##SRC", &raysPerSurfel, 1, 4)) {
+                                        cfg.raysPerSurfel = static_cast<u32>(raysPerSurfel);
+                                    }
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Hemisphere rays traced per surfel per update (1-4).");
+
+                                    int placementInterval = static_cast<int>(cfg.placementInterval);
+                                    if (ImGui::SliderInt("Placement Interval##SRC", &placementInterval, 1, 16)) {
+                                        cfg.placementInterval = static_cast<u32>(placementInterval);
+                                    }
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Re-evaluate surfel placement every N frames.");
+
+                                    ImGui::Checkbox("Exclude Directional Light##SRC", &cfg.excludeDirectional);
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Keep sun/moon out of surfel irradiance.\n"
+                                        "Critical for correct time-of-day transitions.");
+
+                                    ImGui::Separator();
+                                    ImGui::TextDisabled("Active surfels: %u / %u",
+                                        surfelCache->GetActiveSurfelCount(),
+                                        surfelCache->GetMaxSurfels());
+
+                                    if (ImGui::Button("Invalidate Surfels##SRC")) {
+                                        surfelCache->InvalidateAll();
+                                    }
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Clear all surfels and start fresh.");
                                 }
                                 ImGui::TreePop();
                             }

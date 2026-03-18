@@ -49,6 +49,10 @@ public:
     void SetRenderPass(VkRenderPass renderPass) { m_RenderPass = renderPass; }
     void RecreateFramebuffers();
 
+    // MSAA: set the multisample count for color/depth/velocity attachments
+    void SetMSAASamples(VkSampleCountFlagBits samples);
+    VkSampleCountFlagBits GetMSAASamples() const { return m_MSAASamples; }
+
     // VSync control
     void SetVSyncEnabled(bool enabled);
     bool IsVSyncEnabled() const { return m_VSyncEnabled; }
@@ -72,6 +76,8 @@ private:
     void DestroyDepthResources();
     bool CreateVelocityResources();
     void DestroyVelocityResources();
+    bool CreateMSAAResources();
+    void DestroyMSAAResources();
     VkFormat FindDepthFormat();
     void DestroyFramebuffers();
 
@@ -95,6 +101,18 @@ private:
     VkImage m_VelocityImage = VK_NULL_HANDLE;
     VkDeviceMemory m_VelocityImageMemory = VK_NULL_HANDLE;
     VkImageView m_VelocityImageView = VK_NULL_HANDLE;
+
+    // MSAA resources (only allocated when m_MSAASamples > 1)
+    VkSampleCountFlagBits m_MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    VkImage m_MSAAColorImage = VK_NULL_HANDLE;
+    VkDeviceMemory m_MSAAColorMemory = VK_NULL_HANDLE;
+    VkImageView m_MSAAColorImageView = VK_NULL_HANDLE;
+    VkImage m_MSAADepthImage = VK_NULL_HANDLE;
+    VkDeviceMemory m_MSAADepthMemory = VK_NULL_HANDLE;
+    VkImageView m_MSAADepthImageView = VK_NULL_HANDLE;
+    VkImage m_MSAAVelocityImage = VK_NULL_HANDLE;
+    VkDeviceMemory m_MSAAVelocityMemory = VK_NULL_HANDLE;
+    VkImageView m_MSAAVelocityImageView = VK_NULL_HANDLE;
 
     // VSync state
     bool m_VSyncEnabled = false;

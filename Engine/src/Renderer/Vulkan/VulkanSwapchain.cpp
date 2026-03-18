@@ -25,11 +25,17 @@ bool VulkanSwapchain::Initialize(VkSurfaceKHR surface, u32 width, u32 height) {
     if (!CreateVelocityResources()) {
         return false;
     }
+    if (m_MSAASamples > VK_SAMPLE_COUNT_1_BIT) {
+        if (!CreateMSAAResources()) {
+            return false;
+        }
+    }
     return true;
 }
 
 void VulkanSwapchain::Shutdown() {
     DestroyFramebuffers();
+    DestroyMSAAResources();
     DestroyVelocityResources();
     DestroyDepthResources();
     DestroyImageViews();
@@ -46,6 +52,7 @@ bool VulkanSwapchain::Recreate(u32 width, u32 height, bool gpuAlreadyIdle) {
     }
 
     DestroyFramebuffers();
+    DestroyMSAAResources();
     DestroyVelocityResources();
     DestroyDepthResources();
     DestroyImageViews();
@@ -69,6 +76,13 @@ bool VulkanSwapchain::Recreate(u32 width, u32 height, bool gpuAlreadyIdle) {
     if (!CreateVelocityResources()) {
         ENJIN_LOG_ERROR(Renderer, "Failed to recreate velocity resources");
         return false;
+    }
+
+    if (m_MSAASamples > VK_SAMPLE_COUNT_1_BIT) {
+        if (!CreateMSAAResources()) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to recreate MSAA resources");
+            return false;
+        }
     }
 
     if (m_RenderPass != VK_NULL_HANDLE) {
@@ -349,26 +363,56 @@ void VulkanSwapchain::RecreateFramebuffers() {
     DestroyFramebuffers();
     m_Framebuffers.resize(m_ImageViews.size());
 
-    // Attachment order must match render pass: [0]=color, [1]=velocity, [2]=depth
-    std::vector<VkImageView> attachments(3);
-    attachments[1] = m_VelocityImageView; // Velocity attachment (shared across frames)
-    attachments[2] = m_DepthImageView;    // Depth attachment (shared across frames)
+    if (m_MSAASamples > VK_SAMPLE_COUNT_1_BIT) {
+        // MSAA mode: attachment order must match render pass:
+        // [0]=MSAA color, [1]=MSAA velocity, [2]=MSAA depth,
+        // [3]=resolve color (swapchain), [4]=resolve velocity
+        std::vector<VkImageView> attachments(5);
+        attachments[0] = m_MSAAColorImageView;     // Multisampled color
+        attachments[1] = m_MSAAVelocityImageView;  // Multisampled velocity
+        attachments[2] = m_MSAADepthImageView;      // Multisampled depth
+        // attachments[3] is per-swapchain-image (resolve target)
+        attachments[4] = m_VelocityImageView;       // Velocity resolve target
 
-    for (usize i = 0; i < m_ImageViews.size(); ++i) {
-        attachments[0] = m_ImageViews[i]; // Color attachment (per swapchain image)
+        for (usize i = 0; i < m_ImageViews.size(); ++i) {
+            attachments[3] = m_ImageViews[i]; // Resolve color target (swapchain image)
 
-        VkFramebufferCreateInfo createInfo{};
-        createInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        createInfo.renderPass = m_RenderPass;
-        createInfo.attachmentCount = static_cast<u32>(attachments.size());
-        createInfo.pAttachments = attachments.data();
-        createInfo.width = m_Extent.width;
-        createInfo.height = m_Extent.height;
-        createInfo.layers = 1;
+            VkFramebufferCreateInfo createInfo{};
+            createInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            createInfo.renderPass = m_RenderPass;
+            createInfo.attachmentCount = static_cast<u32>(attachments.size());
+            createInfo.pAttachments = attachments.data();
+            createInfo.width = m_Extent.width;
+            createInfo.height = m_Extent.height;
+            createInfo.layers = 1;
 
-        VkResult result = vkCreateFramebuffer(m_Context->GetDevice(), &createInfo, nullptr, &m_Framebuffers[i]);
-        if (result != VK_SUCCESS) {
-            ENJIN_LOG_ERROR(Renderer, "Failed to create framebuffer %zu: %d", i, result);
+            VkResult result = vkCreateFramebuffer(m_Context->GetDevice(), &createInfo, nullptr, &m_Framebuffers[i]);
+            if (result != VK_SUCCESS) {
+                ENJIN_LOG_ERROR(Renderer, "Failed to create MSAA framebuffer %zu: %d", i, result);
+            }
+        }
+    } else {
+        // Non-MSAA: attachment order must match render pass: [0]=color, [1]=velocity, [2]=depth
+        std::vector<VkImageView> attachments(3);
+        attachments[1] = m_VelocityImageView; // Velocity attachment (shared across frames)
+        attachments[2] = m_DepthImageView;    // Depth attachment (shared across frames)
+
+        for (usize i = 0; i < m_ImageViews.size(); ++i) {
+            attachments[0] = m_ImageViews[i]; // Color attachment (per swapchain image)
+
+            VkFramebufferCreateInfo createInfo{};
+            createInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            createInfo.renderPass = m_RenderPass;
+            createInfo.attachmentCount = static_cast<u32>(attachments.size());
+            createInfo.pAttachments = attachments.data();
+            createInfo.width = m_Extent.width;
+            createInfo.height = m_Extent.height;
+            createInfo.layers = 1;
+
+            VkResult result = vkCreateFramebuffer(m_Context->GetDevice(), &createInfo, nullptr, &m_Framebuffers[i]);
+            if (result != VK_SUCCESS) {
+                ENJIN_LOG_ERROR(Renderer, "Failed to create framebuffer %zu: %d", i, result);
+            }
         }
     }
 }
@@ -600,6 +644,139 @@ void VulkanSwapchain::DestroyDepthResources() {
         vkFreeMemory(m_Context->GetDevice(), m_DepthImageMemory, nullptr);
         m_DepthImageMemory = VK_NULL_HANDLE;
     }
+}
+
+void VulkanSwapchain::SetMSAASamples(VkSampleCountFlagBits samples) {
+    m_MSAASamples = samples;
+}
+
+bool VulkanSwapchain::CreateMSAAResources() {
+    VkDevice device = m_Context->GetDevice();
+
+    // Helper to create a multisampled image + memory + view
+    auto createMSImage = [&](VkFormat format, VkImageUsageFlags usage, VkImageAspectFlags aspect,
+                             VkImage& outImage, VkDeviceMemory& outMemory, VkImageView& outView,
+                             const char* debugName) -> bool {
+        VkImageCreateInfo imageInfo{};
+        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageInfo.imageType = VK_IMAGE_TYPE_2D;
+        imageInfo.format = format;
+        imageInfo.extent = { m_Extent.width, m_Extent.height, 1 };
+        imageInfo.mipLevels = 1;
+        imageInfo.arrayLayers = 1;
+        imageInfo.samples = m_MSAASamples;
+        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imageInfo.usage = usage;
+        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        VkResult result = vkCreateImage(device, &imageInfo, nullptr, &outImage);
+        if (result != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create MSAA %s image: %d", debugName, result);
+            return false;
+        }
+
+        VkMemoryRequirements memReqs;
+        vkGetImageMemoryRequirements(device, outImage, &memReqs);
+
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memReqs.size;
+        allocInfo.memoryTypeIndex = m_Context->FindMemoryType(memReqs.memoryTypeBits,
+                                                              VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        if (allocInfo.memoryTypeIndex == UINT32_MAX) {
+            ENJIN_LOG_ERROR(Renderer, "No suitable memory type for MSAA %s", debugName);
+            vkDestroyImage(device, outImage, nullptr);
+            outImage = VK_NULL_HANDLE;
+            return false;
+        }
+
+        result = vkAllocateMemory(device, &allocInfo, nullptr, &outMemory);
+        if (result != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to allocate MSAA %s memory: %d", debugName, result);
+            vkDestroyImage(device, outImage, nullptr);
+            outImage = VK_NULL_HANDLE;
+            return false;
+        }
+
+        result = vkBindImageMemory(device, outImage, outMemory, 0);
+        if (result != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to bind MSAA %s memory: %d", debugName, result);
+            vkFreeMemory(device, outMemory, nullptr);
+            vkDestroyImage(device, outImage, nullptr);
+            outImage = VK_NULL_HANDLE;
+            outMemory = VK_NULL_HANDLE;
+            return false;
+        }
+
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = outImage;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = format;
+        viewInfo.subresourceRange.aspectMask = aspect;
+        viewInfo.subresourceRange.baseMipLevel = 0;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.baseArrayLayer = 0;
+        viewInfo.subresourceRange.layerCount = 1;
+
+        result = vkCreateImageView(device, &viewInfo, nullptr, &outView);
+        if (result != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create MSAA %s image view: %d", debugName, result);
+            vkFreeMemory(device, outMemory, nullptr);
+            vkDestroyImage(device, outImage, nullptr);
+            outImage = VK_NULL_HANDLE;
+            outMemory = VK_NULL_HANDLE;
+            return false;
+        }
+
+        return true;
+    };
+
+    // MSAA color attachment (transient — only needed during the render pass, not read afterwards)
+    if (!createMSImage(m_ImageFormat,
+                       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
+                       VK_IMAGE_ASPECT_COLOR_BIT,
+                       m_MSAAColorImage, m_MSAAColorMemory, m_MSAAColorImageView,
+                       "color")) {
+        return false;
+    }
+
+    // MSAA depth attachment
+    if (!createMSImage(m_DepthFormat,
+                       VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
+                       VK_IMAGE_ASPECT_DEPTH_BIT,
+                       m_MSAADepthImage, m_MSAADepthMemory, m_MSAADepthImageView,
+                       "depth")) {
+        return false;
+    }
+
+    // MSAA velocity attachment (RG16F)
+    if (!createMSImage(VELOCITY_FORMAT,
+                       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
+                       VK_IMAGE_ASPECT_COLOR_BIT,
+                       m_MSAAVelocityImage, m_MSAAVelocityMemory, m_MSAAVelocityImageView,
+                       "velocity")) {
+        return false;
+    }
+
+    ENJIN_LOG_INFO(Renderer, "MSAA resources created: %dx samples, %dx%d",
+                   static_cast<int>(m_MSAASamples), m_Extent.width, m_Extent.height);
+    return true;
+}
+
+void VulkanSwapchain::DestroyMSAAResources() {
+    VkDevice device = m_Context->GetDevice();
+
+    auto destroyMSImage = [&](VkImage& image, VkDeviceMemory& memory, VkImageView& view) {
+        if (view != VK_NULL_HANDLE) { vkDestroyImageView(device, view, nullptr); view = VK_NULL_HANDLE; }
+        if (image != VK_NULL_HANDLE) { vkDestroyImage(device, image, nullptr); image = VK_NULL_HANDLE; }
+        if (memory != VK_NULL_HANDLE) { vkFreeMemory(device, memory, nullptr); memory = VK_NULL_HANDLE; }
+    };
+
+    destroyMSImage(m_MSAAColorImage, m_MSAAColorMemory, m_MSAAColorImageView);
+    destroyMSImage(m_MSAADepthImage, m_MSAADepthMemory, m_MSAADepthImageView);
+    destroyMSImage(m_MSAAVelocityImage, m_MSAAVelocityMemory, m_MSAAVelocityImageView);
 }
 
 void VulkanSwapchain::SetVSyncEnabled(bool enabled) {

@@ -59,6 +59,7 @@
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
 #include "Enjin/Renderer/RayTracing/ReSTIR.h"
 #include "Enjin/Renderer/RayTracing/RadianceCache.h"
+#include "Enjin/Renderer/RayTracing/SurfelRadianceCache.h"
 #include "Enjin/Renderer/RayTracing/AccelerationStructureManager.h"
 #include "Enjin/Renderer/SHLightProbe.h"
 #include "Enjin/Renderer/SDFScene.h"
@@ -7040,6 +7041,14 @@ void EditorLayer::DrawDebugWorkstation() {
                             radianceCache->GetTileCountX(), radianceCache->GetTileCountY(),
                             radianceCache->GetTotalTileCount(), radianceCache->GetConfig().tileSize);
                     }
+                    auto* surfelCache = m_RenderSystem->GetSurfelRadianceCache();
+                    ImGui::Text("Surfel Cache: %s", (surfelCache && surfelCache->GetConfig().enabled) ? "Enabled" : "Disabled");
+                    if (surfelCache && surfelCache->GetConfig().enabled) {
+                        ImGui::Text("  Surfels: %u / %u (%.1fm radius)",
+                            surfelCache->GetActiveSurfelCount(),
+                            surfelCache->GetMaxSurfels(),
+                            surfelCache->GetConfig().cameraRadius);
+                    }
                 }
 
                 ImGui::Text("OIT: %s", m_RenderSystem->IsOITEnabled() ? "Enabled" : "Disabled");
@@ -7050,8 +7059,8 @@ void EditorLayer::DrawDebugWorkstation() {
                 // Anti-aliasing / upscaling
                 ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Anti-Aliasing --");
                 u32 aaMode = m_RenderSystem->GetAAMode();
-                const char* aaNames[] = {"None", "FXAA", "TAA", "SMAA"};
-                ImGui::Text("AA Mode: %s", aaMode < 4 ? aaNames[aaMode] : "Unknown");
+                const char* aaNames[] = {"None", "FXAA", "TAA", "SMAA", "MSAA 2x", "MSAA 4x", "MSAA 8x"};
+                ImGui::Text("AA Mode: %s", aaMode < 7 ? aaNames[aaMode] : "Unknown");
                 if (m_RenderSystem->IsUpscalerActive()) {
                     u32 upType = m_RenderSystem->GetUpscalerType();
                     const char* upNames[] = {"None", "FSR 2", "DLSS", "XeSS"};

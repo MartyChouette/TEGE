@@ -82,7 +82,7 @@ struct SceneRenderSettings {
     bool filmGrainEnabled = false;
     f32 filmGrainIntensity = 0.05f;
 
-    // Anti-Aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA
+    // Anti-Aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA, 4=MSAA 2x, 5=MSAA 4x, 6=MSAA 8x
     u32 aaMode = 1;  // Default: FXAA
 
     // FXAA

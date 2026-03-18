@@ -101,7 +101,7 @@ struct alignas(16) PostProcessSettings {
     // Screen resolution for effects
     alignas(4) u32 screenWidth = 1920;
     alignas(4) u32 screenHeight = 1080;
-    alignas(4) u32 aaMode = 1;          // 0=None, 1=FXAA, 2=TAA, 3=SMAA
+    alignas(4) u32 aaMode = 1;          // 0=None, 1=FXAA, 2=TAA, 3=SMAA, 4=MSAA 2x, 5=MSAA 4x, 6=MSAA 8x
     alignas(4) f32 _pad7;
 
     // Retro: Dithering

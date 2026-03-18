@@ -1,0 +1,173 @@
+#version 460
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// Surfel Placement — Compute Pass
+//
+// Spawns new surfels on visible geometry surfaces near the camera and removes
+// surfels that are too far away or too old. Runs every placementInterval frames
+// to amortize cost.
+//
+// For each screen tile (8x8 pixel blocks):
+//   1. Sample the center pixel's depth and normal from the G-buffer
+//   2. Reconstruct world position
+//   3. Check if the point is within cameraRadius of the camera
+//   4. Check if an existing surfel already covers this surface area
+//   5. If uncovered, allocate a new surfel from the free pool
+//   6. Also scan active surfels to expire old/distant ones
+
+// --- Descriptor bindings (shared with RT descriptor set) ---
+
+// Binding 2: Depth buffer
+layout(binding = 2, set = 0) uniform sampler2D depthTex;
+
+// Binding 3: World normals
+layout(binding = 3, set = 0) uniform sampler2D normalTex;
+
+// Binding 13: RT light UBO
+layout(binding = 13, set = 0) uniform LightData {
+    vec4 lightDir;
+    vec4 lightColor;
+    mat4 invViewProj;
+    vec2 screenSize;
+    uint frameCount;
+    float shadowRadius;
+    float fireflyClamp;
+    int enableNEE;
+    int enableMIS;
+    int rrMinBounce;
+    float rrMinProb;
+    uint directionalLightCount;
+    uint pointLightCount;
+    uint spotLightCount;
+} uLight;
+
+// Binding 24: Surfel buffer
+struct Surfel {
+    float positionX;
+    float positionY;
+    float positionZ;
+    float normalX;
+    float normalY;
+    float normalZ;
+    float irradianceR;
+    float irradianceG;
+    float irradianceB;
+    float radius;
+    uint lastUpdateFrame;
+    float confidence;
+};
+
+layout(binding = 24, set = 0) buffer SurfelBuffer {
+    Surfel surfels[];
+};
+
+// Binding 25: Surfel counter buffer
+// [0] = active count, [1] = next free slot, [2] = surfels updated this frame
+layout(binding = 25, set = 0) buffer SurfelCounterBuffer {
+    uint surfelCounters[];
+};
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    vec4 cameraPos;         // xyz = camera world position
+    float cameraRadius;     // Max distance from camera to maintain surfels
+    float surfelRadius;     // Coverage radius per surfel
+    float maxAge;           // Max frames before expiry
+    uint maxSurfels;        // Budget
+    uint frameCount;        // Current frame
+    float normalThreshold;  // Dot product threshold for coverage check
+    uint screenWidth;       // Screen width in pixels
+    uint screenHeight;      // Screen height in pixels
+} pc;
+
+// Simple spatial hash for surfel density checks
+uint spatialHash(vec3 pos, float cellSize) {
+    ivec3 cell = ivec3(floor(pos / cellSize));
+    return uint(cell.x * 73856093 ^ cell.y * 19349663 ^ cell.z * 83492791);
+}
+
+void main() {
+    uvec2 tileCoord = gl_GlobalInvocationID.xy;
+
+    // Each thread processes a tile of the screen
+    uint tileSize = 16u;  // Process every 16th pixel for placement
+    uvec2 pixel = tileCoord * tileSize + tileSize / 2u;
+
+    if (pixel.x >= pc.screenWidth || pixel.y >= pc.screenHeight) return;
+
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(pc.screenWidth, pc.screenHeight);
+
+    float depth = texture(depthTex, uv).r;
+
+    // Sky pixels — no surface to place surfels on
+    if (depth >= 1.0) return;
+
+    vec3 normal = normalize(texture(normalTex, uv).xyz * 2.0 - 1.0);
+
+    // Reconstruct world position from depth
+    vec4 clipPos = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    clipPos.y = -clipPos.y;  // Vulkan Y-flip
+    vec4 worldPos4 = uLight.invViewProj * clipPos;
+    vec3 worldPos = worldPos4.xyz / worldPos4.w;
+
+    // Check distance from camera
+    float distToCamera = length(worldPos - pc.cameraPos.xyz);
+    if (distToCamera > pc.cameraRadius) return;
+
+    // Check if any existing surfel already covers this location.
+    // Simple linear scan of active surfels — this is the "simplified first
+    // implementation" that avoids a spatial hash data structure.
+    uint activeCount = surfelCounters[0];
+    bool covered = false;
+    float coverageRadiusSq = pc.surfelRadius * pc.surfelRadius * 4.0;  // 2x radius for overlap margin
+
+    // Scan a subset of surfels for density check (cap at 256 to bound cost)
+    uint scanCount = min(activeCount, 256u);
+    uint scanStride = max(1u, activeCount / scanCount);
+
+    for (uint i = 0u; i < activeCount && i < pc.maxSurfels; i += scanStride) {
+        Surfel s = surfels[i];
+        if (s.radius <= 0.0) continue;  // Inactive surfel
+
+        vec3 sPos = vec3(s.positionX, s.positionY, s.positionZ);
+        float distSq = dot(sPos - worldPos, sPos - worldPos);
+        if (distSq < coverageRadiusSq) {
+            // Also check normal alignment
+            vec3 sNormal = vec3(s.normalX, s.normalY, s.normalZ);
+            if (dot(normal, sNormal) > pc.normalThreshold) {
+                covered = true;
+                break;
+            }
+        }
+    }
+
+    if (covered) return;
+
+    // Allocate a new surfel
+    uint slot = atomicAdd(surfelCounters[1], 1u);
+    if (slot >= pc.maxSurfels) {
+        // Budget exhausted — undo the increment
+        atomicAdd(surfelCounters[1], 0xFFFFFFFFu);  // Decrement (wrapping subtract)
+        return;
+    }
+
+    // Initialize surfel at this surface point
+    Surfel newSurfel;
+    newSurfel.positionX = worldPos.x;
+    newSurfel.positionY = worldPos.y;
+    newSurfel.positionZ = worldPos.z;
+    newSurfel.normalX = normal.x;
+    newSurfel.normalY = normal.y;
+    newSurfel.normalZ = normal.z;
+    newSurfel.irradianceR = 0.0;
+    newSurfel.irradianceG = 0.0;
+    newSurfel.irradianceB = 0.0;
+    newSurfel.radius = pc.surfelRadius;
+    newSurfel.lastUpdateFrame = pc.frameCount;
+    newSurfel.confidence = 0.0;
+
+    surfels[slot] = newSurfel;
+
+    // Update active count (track high-water mark)
+    atomicMax(surfelCounters[0], slot + 1u);
+}

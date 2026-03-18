@@ -195,25 +195,42 @@ bool VulkanContext::SelectPhysicalDevice() {
     // Query ray tracing capabilities
     m_RTCapabilities = RTCapabilities::Query(bestDevice);
 
-    // Probe VK_KHR_fragment_shading_rate support for Variable Rate Shading
-#ifdef ENJIN_VRS
+    // Probe device extension support for optional features (VRS, DGC)
     {
         u32 extCount = 0;
         vkEnumerateDeviceExtensionProperties(bestDevice, nullptr, &extCount, nullptr);
         std::vector<VkExtensionProperties> exts(extCount);
         vkEnumerateDeviceExtensionProperties(bestDevice, nullptr, &extCount, exts.data());
         for (const auto& ext : exts) {
+#ifdef ENJIN_VRS
             if (strcmp(ext.extensionName, VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME) == 0) {
                 m_VRSSupported = true;
-                ENJIN_LOG_INFO(Renderer, "VK_KHR_fragment_shading_rate supported");
-                break;
+            }
+#endif
+            if (strcmp(ext.extensionName, "VK_EXT_device_generated_commands") == 0) {
+                m_DGCExtSupported = true;
+            }
+            if (strcmp(ext.extensionName, "VK_NV_device_generated_commands") == 0) {
+                m_DGCNVSupported = true;
             }
         }
-        if (!m_VRSSupported) {
+
+#ifdef ENJIN_VRS
+        if (m_VRSSupported) {
+            ENJIN_LOG_INFO(Renderer, "VK_KHR_fragment_shading_rate supported");
+        } else {
             ENJIN_LOG_INFO(Renderer, "VK_KHR_fragment_shading_rate not supported — VRS disabled");
         }
-    }
 #endif
+
+        if (m_DGCExtSupported) {
+            ENJIN_LOG_INFO(Renderer, "VK_EXT_device_generated_commands supported");
+        } else if (m_DGCNVSupported) {
+            ENJIN_LOG_INFO(Renderer, "VK_NV_device_generated_commands supported (EXT not available)");
+        } else {
+            ENJIN_LOG_INFO(Renderer, "Device generated commands not supported — using multi-draw indirect");
+        }
+    }
 
     return true;
 }
@@ -307,6 +324,15 @@ bool VulkanContext::CreateLogicalDevice() {
         ENJIN_LOG_INFO(Renderer, "Enabling %zu ray tracing device extensions", rtExts.size());
     }
 
+    // Add device generated commands extension if supported
+    if (m_DGCExtSupported) {
+        deviceExtensions.push_back("VK_EXT_device_generated_commands");
+        ENJIN_LOG_INFO(Renderer, "Enabling VK_EXT_device_generated_commands extension");
+    } else if (m_DGCNVSupported) {
+        deviceExtensions.push_back("VK_NV_device_generated_commands");
+        ENJIN_LOG_INFO(Renderer, "Enabling VK_NV_device_generated_commands extension");
+    }
+
     // Add VRS extension if supported
 #ifdef ENJIN_VRS
     if (m_VRSSupported) {
@@ -320,7 +346,7 @@ bool VulkanContext::CreateLogicalDevice() {
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
     createInfo.queueCreateInfoCount = static_cast<u32>(queueCreateInfos.size());
 
-    // Build feature chain for RT support
+    // Build feature chain — used when RT or DGC requires pNext features
     VkPhysicalDeviceBufferDeviceAddressFeatures bdaFeatures{};
     bdaFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
     bdaFeatures.bufferDeviceAddress = VK_TRUE;
@@ -333,15 +359,62 @@ bool VulkanContext::CreateLogicalDevice() {
     rtPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
     rtPipelineFeatures.rayTracingPipeline = VK_TRUE;
 
+    // DGC feature structs — guarded for Vulkan SDK version compatibility.
+    // VK_EXT_device_generated_commands was introduced in Vulkan 1.3.275 (VK_HEADER_VERSION 275).
+    // VK_NV_device_generated_commands is available in older SDKs.
+#if defined(VK_EXT_device_generated_commands)
+    VkPhysicalDeviceDeviceGeneratedCommandsFeaturesEXT dgcExtFeatures{};
+    dgcExtFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_FEATURES_EXT;
+    dgcExtFeatures.deviceGeneratedCommands = VK_TRUE;
+#endif
+
+#if defined(VK_NV_device_generated_commands)
+    VkPhysicalDeviceDeviceGeneratedCommandsFeaturesNV dgcNVFeatures{};
+    dgcNVFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_FEATURES_NV;
+    dgcNVFeatures.deviceGeneratedCommands = VK_TRUE;
+#endif
+
     VkPhysicalDeviceFeatures2 deviceFeatures2{};
     deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     deviceFeatures2.features = deviceFeatures;
 
-    if (m_RTCapabilities.supported) {
-        // Chain: deviceFeatures2 -> bdaFeatures -> asFeatures -> rtPipelineFeatures
-        deviceFeatures2.pNext = &bdaFeatures;
-        bdaFeatures.pNext = &asFeatures;
-        asFeatures.pNext = &rtPipelineFeatures;
+    // Determine whether we need the pNext feature chain
+    bool needsFeatureChain = m_RTCapabilities.supported || m_DGCExtSupported || m_DGCNVSupported;
+
+    if (needsFeatureChain) {
+        // Build the pNext chain dynamically
+        void** chainTail = &deviceFeatures2.pNext;
+
+        // BDA is required by RT and by DGC (EXT variant uses device addresses)
+        if (m_RTCapabilities.supported || m_DGCExtSupported) {
+            *chainTail = &bdaFeatures;
+            chainTail = &bdaFeatures.pNext;
+        }
+
+        if (m_RTCapabilities.supported) {
+            *chainTail = &asFeatures;
+            chainTail = &asFeatures.pNext;
+            *chainTail = &rtPipelineFeatures;
+            chainTail = &rtPipelineFeatures.pNext;
+        }
+
+        // Chain DGC feature structs (prefer EXT over NV)
+        bool dgcChained = false;
+#if defined(VK_EXT_device_generated_commands)
+        if (m_DGCExtSupported && !dgcChained) {
+            *chainTail = &dgcExtFeatures;
+            chainTail = &dgcExtFeatures.pNext;
+            dgcChained = true;
+        }
+#endif
+#if defined(VK_NV_device_generated_commands)
+        if (m_DGCNVSupported && !dgcChained) {
+            *chainTail = &dgcNVFeatures;
+            chainTail = &dgcNVFeatures.pNext;
+            dgcChained = true;
+        }
+#endif
+        (void)chainTail; (void)dgcChained;
 
         createInfo.pNext = &deviceFeatures2;
         createInfo.pEnabledFeatures = nullptr;  // Use pNext chain instead
@@ -563,6 +636,24 @@ void VulkanContext::DestroyDebugMessenger() {
     }
 }
 #endif
+
+VkSampleCountFlagBits VulkanContext::GetMaxUsableSampleCount() const {
+    if (m_PhysicalDevice == VK_NULL_HANDLE) return VK_SAMPLE_COUNT_1_BIT;
+
+    VkPhysicalDeviceProperties props;
+    vkGetPhysicalDeviceProperties(m_PhysicalDevice, &props);
+
+    VkSampleCountFlags counts = props.limits.framebufferColorSampleCounts
+                              & props.limits.framebufferDepthSampleCounts;
+
+    if (counts & VK_SAMPLE_COUNT_64_BIT) return VK_SAMPLE_COUNT_64_BIT;
+    if (counts & VK_SAMPLE_COUNT_32_BIT) return VK_SAMPLE_COUNT_32_BIT;
+    if (counts & VK_SAMPLE_COUNT_16_BIT) return VK_SAMPLE_COUNT_16_BIT;
+    if (counts & VK_SAMPLE_COUNT_8_BIT)  return VK_SAMPLE_COUNT_8_BIT;
+    if (counts & VK_SAMPLE_COUNT_4_BIT)  return VK_SAMPLE_COUNT_4_BIT;
+    if (counts & VK_SAMPLE_COUNT_2_BIT)  return VK_SAMPLE_COUNT_2_BIT;
+    return VK_SAMPLE_COUNT_1_BIT;
+}
 
 } // namespace Renderer
 } // namespace Enjin

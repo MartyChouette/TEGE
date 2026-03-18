@@ -89,8 +89,14 @@ public:
     void SetHDREnabled(bool enabled);
     bool IsHDREnabled() const;
     u32 GetHDROutputMode() const;
-    // Recreate the main render pass (e.g., after swapchain format change)
+    // Recreate the main render pass (e.g., after swapchain format change or MSAA toggle)
     bool RecreateRenderPass();
+
+    // MSAA: set the multisample count (1, 2, 4, or 8). Triggers render pass + framebuffer
+    // recreation. The caller must also recreate all pipelines that reference this render pass.
+    // Returns false if the requested sample count is not supported by the hardware.
+    bool SetMSAASamples(VkSampleCountFlagBits samples);
+    VkSampleCountFlagBits GetMSAASamples() const { return m_MSAASamples; }
 
     // Register a callback to be notified after swapchain recreation (e.g., PostProcessing)
     using ResizeCallback = std::function<void(u32, u32)>;
@@ -178,6 +184,9 @@ private:
         VkPipelineStageFlags waitStage = 0;
     };
     std::vector<ExternalWait> m_ExternalWaitSemaphores;
+
+    // MSAA sample count (VK_SAMPLE_COUNT_1_BIT = no MSAA)
+    VkSampleCountFlagBits m_MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 
     // VRS shading rate image (set by RenderSystem when VRS is active)
     VkImageView m_ShadingRateImageView = VK_NULL_HANDLE;

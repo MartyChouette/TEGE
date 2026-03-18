@@ -53,6 +53,7 @@
 #include "Enjin/Renderer/RayTracing/RTTemporalReuse.h"
 #include "Enjin/Renderer/RayTracing/ReSTIR.h"
 #include "Enjin/Renderer/RayTracing/RadianceCache.h"
+#include "Enjin/Renderer/RayTracing/SurfelRadianceCache.h"
 #include "Enjin/Renderer/RayTracing/RTShaderData.h"
 #include "Enjin/Renderer/SHLightProbe.h"
 #include "Enjin/Renderer/ReflectionProbeSystem.h"
@@ -344,6 +345,22 @@ void RenderSystem::Initialize() {
         }
     }
 
+    // Initialize Device Generated Commands (DGC) — GPU generates entire command stream
+    if (m_GPUCullingEnabled && m_GPUCulling && m_Renderer->GetContext()->IsDGCSupported()) {
+        m_DGC = std::make_unique<Renderer::DeviceGeneratedCommands>();
+        if (!m_DGC->Initialize(m_Renderer->GetContext(), m_GPUCulling->GetMaxObjects())) {
+            ENJIN_LOG_INFO(Renderer, "DGC not available on this device, using multi-draw indirect");
+            m_DGC.reset();
+        } else {
+            // Create commands layout now that the pipeline exists
+            if (m_Pipeline && m_DGC->CreateCommandsLayout(m_Pipeline->GetLayout(), m_Pipeline->GetPipeline())) {
+                ENJIN_LOG_INFO(Renderer, "Device Generated Commands initialized (disabled by default, toggle in editor)");
+            } else {
+                ENJIN_LOG_INFO(Renderer, "DGC commands layout creation deferred (pipeline not ready)");
+            }
+        }
+    }
+
     // Initialize async compute scheduler for RT/denoise overlap
     {
         m_AsyncComputeScheduler = std::make_unique<Renderer::AsyncComputeScheduler>();
@@ -486,6 +503,12 @@ void RenderSystem::Shutdown() {
     if (m_AsyncComputeScheduler) {
         m_AsyncComputeScheduler->Shutdown();
         m_AsyncComputeScheduler.reset();
+    }
+
+    // Clean up Device Generated Commands
+    if (m_DGC) {
+        m_DGC->Shutdown();
+        m_DGC.reset();
     }
 
     // Clean up texture-grouped indirect draw batcher
@@ -1342,11 +1365,17 @@ void RenderSystem::Update(f32 deltaTime) {
     // Reset last-bound state so no stale descriptor data carries from a previous pass
     m_LastBound.Reset(); m_GeometryPoolBound = false;
 
-    // Multi-draw indirect: batch all non-textured pool-eligible entities into a single
-    // vkCmdDrawIndexedIndirectCount call. Per-object data comes from ObjectData SSBO (binding 13).
+    // GPU-driven rendering: DGC (if enabled) or multi-draw indirect fallback.
     // Skipped in editor mode (editor always uses per-entity draws for full control).
     if (m_GPUCullingEnabled && !m_IsEditorMode && !m_CullableObjects.empty() && m_GeometryPool) {
-        DrawIndirect(commandBuffer);
+        // Device Generated Commands: GPU generates push constants + draw calls directly.
+        // Eliminates ALL CPU-side draw call submission for non-textured pool entities.
+        if (m_DGC && m_DGC->IsEnabled()) {
+            DrawDGC(commandBuffer);
+        } else {
+            // Fallback: multi-draw indirect with parallaxScale = -1.0 sentinel
+            DrawIndirect(commandBuffer);
+        }
 
         // Texture-grouped indirect draws: batch textured pool entities by texture set.
         // Each batch shares the same descriptor state, reducing draw calls for textured meshes.
@@ -2814,7 +2843,7 @@ void RenderSystem::DrawIndirect(VkCommandBuffer commandBuffer) {
 }
 
 void RenderSystem::BuildTexturedIndirectBatches() {
-    // This is now done in BuildCullableObjectList � entities are added to the batcher
+    // This is now done in BuildCullableObjectList � entities are added to the batcher
     // during the main entity iteration loop, and batches are built/uploaded at the end.
 }
 
@@ -2865,6 +2894,47 @@ void RenderSystem::DrawTexturedIndirect(VkCommandBuffer commandBuffer) {
     }
 }
 
+void RenderSystem::DrawDGC(VkCommandBuffer commandBuffer) {
+    if (!m_DGC || !m_DGC->IsEnabled()) return;
+    if (!m_GPUCulling || !m_GeometryPool || !m_Pipeline) return;
+
+    // Bind the merged geometry pool (single VB + IB for all static meshes)
+    if (!m_GeometryPoolBound) {
+        m_GeometryPool->BindBuffers(commandBuffer);
+        m_GeometryPoolBound = true;
+    }
+
+    // Verify required buffers are available
+    VkBuffer objectBuffer = m_GPUCulling->GetObjectBuffer();
+    VkBuffer objectDataBuffer = m_GPUCulling->GetObjectDataBuffer();
+    VkBuffer visibilityBuffer = m_GPUCulling->GetVisibilityBuffer();
+    if (objectBuffer == VK_NULL_HANDLE || objectDataBuffer == VK_NULL_HANDLE ||
+        visibilityBuffer == VK_NULL_HANDLE) {
+        DrawIndirect(commandBuffer); // Fallback
+        return;
+    }
+
+    // Step 1: Generate DGC command sequences from culling results.
+    // The compute shader reads CullableObjects, ObjectData, and visibility flags,
+    // then writes push constant + draw indexed sequences into the DGC sequence buffer.
+    m_DGC->GenerateCommands(
+        commandBuffer,
+        objectBuffer,
+        objectDataBuffer,
+        visibilityBuffer,
+        static_cast<u32>(m_CullableObjects.size())
+    );
+
+    // Step 2: Preprocess the generated command stream
+    m_DGC->Preprocess(commandBuffer);
+
+    // Step 3: Bind graphics pipeline and execute DGC
+    m_Pipeline->Bind(commandBuffer);
+    m_DGC->Execute(commandBuffer);
+
+    m_DrawCallCount++; // Single DGC execution replaces all indirect draws
+}
+
 void RenderSystem::DispatchRTEffectsAsync(u32 frameIndex) {
     if (!m_AsyncComputeScheduler || !m_RTEnabled) return;
 
@@ -2889,7 +2959,7 @@ void RenderSystem::DispatchRTEffectsAsync(u32 frameIndex) {
     TemporalReuseRTOutputs(computeCmd);
     DenoiseRTOutputs(computeCmd);
 
-    // Submit compute work � signal semaphore for graphics queue to wait on
+    // Submit compute work � signal semaphore for graphics queue to wait on
     m_AsyncComputeScheduler->SubmitComputeWork(frameIndex, false, true);
 
     // Register the compute-finished semaphore with VulkanRenderer so the graphics
@@ -2917,6 +2987,7 @@ void RenderSystem::CreatePipeline() {
     config.cullMode = m_BackfaceCulling ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = m_WireframeMode ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
+    config.msaaSamples = m_Renderer->GetMSAASamples();
     config.colorAttachmentCount = 2; // MRT: color + velocity
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
@@ -2965,6 +3036,7 @@ void RenderSystem::CreateLinePipeline() {
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.alphaBlend = true;
+    config.msaaSamples = m_Renderer->GetMSAASamples();
     config.colorAttachmentCount = 2; // MRT: must match render pass
 
     m_LinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
@@ -2986,6 +3058,7 @@ void RenderSystem::CreateOutlinePipeline() {
     config.cullMode = VK_CULL_MODE_FRONT_BIT;  // Front-face culling: renders backfaces only (inverted hull)
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
+    config.msaaSamples = m_Renderer->GetMSAASamples();
     config.colorAttachmentCount = 2; // MRT: color + velocity (must match render pass)
 
     m_OutlinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
@@ -4380,6 +4453,41 @@ void RenderSystem::SetHDREnabled(bool enabled) {
     // (which reference the render pass) must be recreated too.
     m_Renderer->SetHDREnabled(enabled);
     RecreatePipelines(true);  // GPU already idle from VulkanRenderer::SetHDREnabled
+}
+
+void RenderSystem::SetAAMode(u32 mode) {
+    if (mode == m_AAMode) return;
+
+    u32 oldMode = m_AAMode;
+    m_AAMode = mode;
+
+    // MSAA modes (4=2x, 5=4x, 6=8x) require render pass + framebuffer + pipeline recreation
+    bool oldIsMSAA = oldMode >= 4 && oldMode <= 6;
+    bool newIsMSAA = mode >= 4 && mode <= 6;
+
+    if (newIsMSAA || oldIsMSAA) {
+        if (!m_Renderer) return;
+
+        VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
+        if (mode == 4) samples = VK_SAMPLE_COUNT_2_BIT;
+        else if (mode == 5) samples = VK_SAMPLE_COUNT_4_BIT;
+        else if (mode == 6) samples = VK_SAMPLE_COUNT_8_BIT;
+
+        if (!m_Renderer->SetMSAASamples(samples)) {
+            // Hardware doesn't support the requested count — revert
+            ENJIN_LOG_WARN(Renderer, "MSAA %dx not supported, reverting to previous AA mode", static_cast<int>(samples));
+            m_AAMode = oldMode;
+            return;
+        }
+
+        // Render pass changed — all pipelines must be recreated
+        RecreatePipelines(true);  // GPU already idle from SetMSAASamples
+    }
+}
+
+u32 RenderSystem::GetMaxMSAASamples() const {
+    if (!m_Renderer || !m_Renderer->GetContext()) return 1;
+    return static_cast<u32>(m_Renderer->GetContext()->GetMaxUsableSampleCount());
 }
 
 void RenderSystem::RecreatePipelines(bool gpuAlreadyIdle) {
@@ -6333,7 +6441,7 @@ void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
 
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampling.rasterizationSamples = m_Renderer->GetMSAASamples();
 
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -6533,8 +6641,8 @@ void RenderSystem::InitializeRayTracing() {
     auto* ctx = m_Renderer->GetContext();
     ENJIN_LOG_INFO(Renderer, "Initializing ray tracing subsystems...");
 
-    // Create RT descriptor set layout (24 bindings: 0-16 existing + 17 SDF + 18 simplified materials + 19-20 ReSTIR + 21-23 radiance cache)
-    std::array<VkDescriptorSetLayoutBinding, 24> rtBindings{};
+    // Create RT descriptor set layout (27 bindings: 0-16 existing + 17 SDF + 18 simplified materials + 19-20 ReSTIR + 21-23 radiance cache + 24-26 surfel cache)
+    std::array<VkDescriptorSetLayoutBinding, 27> rtBindings{};
 
     // Binding 0: TLAS
     rtBindings[0].binding = 0;
@@ -6664,6 +6772,24 @@ void RenderSystem::InitializeRayTracing() {
     rtBindings[23].descriptorCount = 1;
     rtBindings[23].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
+    // Binding 24: Surfel radiance cache buffer (world-space surfel array)
+    rtBindings[24].binding = 24;
+    rtBindings[24].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    rtBindings[24].descriptorCount = 1;
+    rtBindings[24].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 25: Surfel counter/metadata buffer (active count, free slot, update count)
+    rtBindings[25].binding = 25;
+    rtBindings[25].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    rtBindings[25].descriptorCount = 1;
+    rtBindings[25].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 26: Surfel radiance cache output image (blended surfel + screen-space irradiance)
+    rtBindings[26].binding = 26;
+    rtBindings[26].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    rtBindings[26].descriptorCount = 1;
+    rtBindings[26].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<u32>(rtBindings.size());
@@ -6677,9 +6803,9 @@ void RenderSystem::InitializeRayTracing() {
     // Create RT descriptor pool (includes all descriptor types used by RT bindings)
     std::array<VkDescriptorPoolSize, 5> poolSizes{};
     poolSizes[0] = { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1 };
-    poolSizes[1] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 8 };   // 5-8, 14-15, 23 + radiance cache output
+    poolSizes[1] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 9 };   // 5-8, 14-15, 23, 26 + radiance cache output + surfel output
     poolSizes[2] = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 };
-    poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 11 }; // 9-12, 16-20, 21-22 (radiance cache tile + stale mask)
+    poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 13 }; // 9-12, 16-20, 21-22, 24-25 (radiance cache + surfel cache)
     poolSizes[4] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 };
 
     VkDescriptorPoolCreateInfo poolInfo{};
@@ -6791,6 +6917,12 @@ void RenderSystem::InitializeRayTracing() {
         m_RadianceCache.reset();
     }
 
+    m_SurfelRadianceCache = std::make_unique<Renderer::SurfelRadianceCache>(ctx);
+    if (!m_SurfelRadianceCache->Initialize(width, height, m_RTDescriptorSetLayout)) {
+        ENJIN_LOG_WARN(Renderer, "Surfel radiance cache initialization failed");
+        m_SurfelRadianceCache.reset();
+    }
+
     // Initialize SVGF denoiser (always available as fallback)
     m_SVGFDenoiser = std::make_unique<Renderer::SVGFDenoiser>(ctx);
     if (!m_SVGFDenoiser->Initialize(width, height)) {
@@ -6884,13 +7016,15 @@ void RenderSystem::InitializeRayTracing() {
             m_OptiXDenoiser->RegisterImageMapping(velView, velImage, Renderer::VulkanSwapchain::VELOCITY_FORMAT);
     }
 
-    ENJIN_LOG_INFO(Renderer, "Ray tracing subsystems initialized (shadows=%s, reflections=%s, AO=%s, GI=%s, pathtracer=%s, restir=%s)",
+    ENJIN_LOG_INFO(Renderer, "Ray tracing subsystems initialized (shadows=%s, reflections=%s, AO=%s, GI=%s, pathtracer=%s, restir=%s, surfel_cache=%s)",
                    m_RTShadows ? "yes" : "no", m_RTReflections ? "yes" : "no",
                    m_RTAO ? "yes" : "no", m_RTGI ? "yes" : "no",
-                   m_PathTracer ? "yes" : "no", m_ReSTIR ? "yes" : "no");
+                   m_PathTracer ? "yes" : "no", m_ReSTIR ? "yes" : "no",
+                   m_SurfelRadianceCache ? "yes" : "no");
 }
 
 void RenderSystem::ShutdownRayTracing() {
+    m_SurfelRadianceCache.reset();
     m_RTTemporalReuse.reset();
     m_RTCompositor.reset();
     m_ReSTIR.reset();
@@ -7067,6 +7201,11 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
     if (cameraChanged && m_RadianceCache) {
         m_RadianceCache->InvalidateAll();
     }
+    if (cameraChanged && m_SurfelRadianceCache) {
+        // Surfel cache persists across camera movement (world-space), but on
+        // major teleport/cut we invalidate to avoid stale data from distant locations.
+        m_SurfelRadianceCache->InvalidateAll();
+    }
     // Note: temporal reuse does NOT reset on camera change — it handles reprojection
     // via motion vectors and detects disocclusions automatically. Only reset on explicit
     // camera cuts (scene load, teleport) which are handled by ResetHistory() calls.
@@ -7199,6 +7338,15 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
     if (m_RadianceCache && m_RadianceCache->GetConfig().enabled) {
         m_RadianceCache->DispatchUpdate(cmd, m_RTDescriptorSet, m_RTFrameCount);
         m_RadianceCache->DispatchRead(cmd, m_RTDescriptorSet, m_RTFrameCount);
+    }
+
+    // Surfel radiance cache — world-space surfel-based irradiance caching.
+    // Runs after screen-space radiance cache so it can blend with its output.
+    // Placement spawns/removes surfels, update traces rays, lookup interpolates per-pixel.
+    if (m_SurfelRadianceCache && m_SurfelRadianceCache->GetConfig().enabled) {
+        m_SurfelRadianceCache->DispatchPlacement(cmd, m_RTDescriptorSet, cameraPos, m_RTFrameCount);
+        m_SurfelRadianceCache->DispatchUpdate(cmd, m_RTDescriptorSet, cameraPos, m_RTFrameCount);
+        m_SurfelRadianceCache->DispatchLookup(cmd, m_RTDescriptorSet, m_RTFrameCount);
     }
 
     if (m_RTTranslucency && m_RTTranslucency->GetConfig().enabled) {
@@ -7955,8 +8103,37 @@ void RenderSystem::WriteRTDescriptors() {
     rcOutputImgInfo.imageView = m_RadianceCache ? m_RadianceCache->GetOutputView() : m_RTDummyImageView;
     rcOutputImgInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-    // Build write array for all 24 bindings
-    std::array<VkWriteDescriptorSet, 24> writes{};
+    // Binding 24: Surfel radiance cache buffer
+    VkDescriptorBufferInfo surfelBufInfo{};
+    if (m_SurfelRadianceCache && m_SurfelRadianceCache->GetSurfelBuffer() != VK_NULL_HANDLE) {
+        surfelBufInfo.buffer = m_SurfelRadianceCache->GetSurfelBuffer();
+        surfelBufInfo.offset = 0;
+        surfelBufInfo.range = VK_WHOLE_SIZE;
+    } else {
+        surfelBufInfo.buffer = m_RTDummyBuffer;
+        surfelBufInfo.offset = 0;
+        surfelBufInfo.range = 256;
+    }
+
+    // Binding 25: Surfel counter/metadata buffer
+    VkDescriptorBufferInfo surfelCounterBufInfo{};
+    if (m_SurfelRadianceCache && m_SurfelRadianceCache->GetSurfelCounterBuffer() != VK_NULL_HANDLE) {
+        surfelCounterBufInfo.buffer = m_SurfelRadianceCache->GetSurfelCounterBuffer();
+        surfelCounterBufInfo.offset = 0;
+        surfelCounterBufInfo.range = VK_WHOLE_SIZE;
+    } else {
+        surfelCounterBufInfo.buffer = m_RTDummyBuffer;
+        surfelCounterBufInfo.offset = 0;
+        surfelCounterBufInfo.range = 256;
+    }
+
+    // Binding 26: Surfel radiance cache output image
+    VkDescriptorImageInfo surfelOutputImgInfo{};
+    surfelOutputImgInfo.imageView = m_SurfelRadianceCache ? m_SurfelRadianceCache->GetOutputView() : m_RTDummyImageView;
+    surfelOutputImgInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    // Build write array for all 27 bindings
+    std::array<VkWriteDescriptorSet, 27> writes{};
 
     // Binding 0: TLAS
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -8092,9 +8269,33 @@ void RenderSystem::WriteRTDescriptors() {
     writes[23].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[23].pImageInfo = &rcOutputImgInfo;
 
+    // Binding 24: Surfel radiance cache buffer
+    writes[24].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[24].dstSet = m_RTDescriptorSet;
+    writes[24].dstBinding = 24;
+    writes[24].descriptorCount = 1;
+    writes[24].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[24].pBufferInfo = &surfelBufInfo;
+
+    // Binding 25: Surfel counter/metadata buffer
+    writes[25].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[25].dstSet = m_RTDescriptorSet;
+    writes[25].dstBinding = 25;
+    writes[25].descriptorCount = 1;
+    writes[25].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[25].pBufferInfo = &surfelCounterBufInfo;
+
+    // Binding 26: Surfel radiance cache output image
+    writes[26].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[26].dstSet = m_RTDescriptorSet;
+    writes[26].dstBinding = 26;
+    writes[26].descriptorCount = 1;
+    writes[26].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[26].pImageInfo = &surfelOutputImgInfo;
+
     vkUpdateDescriptorSets(device, static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
 
-    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 24 bindings)");
+    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 27 bindings)");
 }
 
 void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {
@@ -8124,6 +8325,7 @@ void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {
     if (m_RTCaustics) addBarrier(m_RTCaustics->GetOutputImage());
     if (m_PathTracer) addBarrier(m_PathTracer->GetOutputImage());
     if (m_RadianceCache) addBarrier(m_RadianceCache->GetOutputImage());
+    if (m_SurfelRadianceCache) addBarrier(m_SurfelRadianceCache->GetOutputImage());
 
     // Also transition the dummy image
     addBarrier(m_RTDummyImage);

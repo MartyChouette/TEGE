@@ -105,6 +105,10 @@ public:
     VkBuffer GetDrawCountBuffer() const;
     // Get the ObjectData SSBO (per-object material/transform for indirect draws)
     VkBuffer GetObjectDataBuffer() const;
+    // Get the CullableObject input buffer (for DGC command generation)
+    VkBuffer GetObjectBuffer() const;
+    // Get the per-object visibility buffer (for DGC command generation)
+    VkBuffer GetVisibilityBuffer() const;
     u32 GetMaxObjects() const { return m_MaxObjects; }
 
     // Upload per-object data to the ObjectData SSBO

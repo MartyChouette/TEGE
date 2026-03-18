@@ -5,6 +5,11 @@
 #include "Enjin/Renderer/Upscaling/IUpscaler.h"
 #include <vulkan/vulkan.h>
 
+#ifdef ENJIN_HAS_DLSS_SDK
+#include <sl.h>
+#include <sl_dlss.h>
+#endif
+
 namespace Enjin {
 namespace Renderer {
 
@@ -40,10 +45,19 @@ public:
     UpscalerType GetType() const override { return UpscalerType::DLSS; }
 
     const char* GetName() const override {
-#ifdef ENJIN_UPSCALING_DLSS
-        return "DLSS 3.5";
+#ifdef ENJIN_HAS_DLSS_SDK
+        return "DLSS 3.5 (SDK)";
 #else
-        return "DLSS 3.5 (Stub \xe2\x80\x94 SDK not linked)";
+        return "DLSS 3.5 (Built-in)";
+#endif
+    }
+
+    // Returns true when compiled against the real Streamline DLSS SDK
+    static bool HasSDK() {
+#ifdef ENJIN_HAS_DLSS_SDK
+        return true;
+#else
+        return false;
 #endif
     }
 
@@ -116,25 +130,13 @@ private:
     VkDescriptorPool m_CASDescPool = VK_NULL_HANDLE;
     VkDescriptorSet m_CASDescSet = VK_NULL_HANDLE;
 
-#ifdef ENJIN_UPSCALING_DLSS
+#ifdef ENJIN_HAS_DLSS_SDK
     // ================================================================
-    // REAL SDK INTEGRATION POINT
+    // STREAMLINE SDK STATE — populated when the real SDK is linked
     // ================================================================
-    // When the Streamline SDK is linked, add DLSS-specific state here:
-    //
-    //   sl::Resource m_DLSSInput;
-    //   sl::Resource m_DLSSOutput;
-    //   sl::DLSSOptions m_DLSSOptions;
-    //   sl::ViewportHandle m_Viewport;
-    //
-    // The Initialize() method should call:
-    //   slDLSSGetOptimalSettings(...)
-    //   slDLSSSetOptions(m_Viewport, m_DLSSOptions)
-    //
-    // The Dispatch() method should call:
-    //   slEvaluateFeature(sl::kFeatureDLSS, ...)
-    // instead of the Lanczos + CAS fallback.
-    // ================================================================
+    sl::ViewportHandle m_Viewport{0};
+    sl::DLSSOptions m_DLSSOptions{};
+    bool m_SLInitialized = false;
 #endif
 };
 

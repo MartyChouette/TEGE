@@ -55,6 +55,7 @@ namespace Enjin { namespace Effects {
 #include "Enjin/Renderer/GPUDriven/MergedGeometryBuffer.h"
 #include "Enjin/Renderer/GPUDriven/HiZPyramid.h"
 #include "Enjin/Renderer/GPUDriven/IndirectDrawBatcher.h"
+#include "Enjin/Renderer/GPUDriven/DeviceGeneratedCommands.h"
 #include "Enjin/Renderer/AsyncComputeScheduler.h"
 #include "Enjin/Renderer/Vulkan/ThreadPool.h"
 #include "Enjin/Renderer/Vulkan/CommandBufferPool.h"
@@ -95,6 +96,7 @@ namespace Enjin { namespace Renderer {
     class RTTemporalReuse;
     class ReSTIR;
     class RadianceCache;
+    class SurfelRadianceCache;
     class IUpscaler;
     class OITManager;
     class SHLightingSystem;
@@ -428,9 +430,12 @@ public:
     Math::Vector3 GetGeometryOutlineColor() const { return m_GeometryOutlineColor; }
     void SetGeometryOutlineColor(const Math::Vector3& c) { m_GeometryOutlineColor = c; }
 
-    // Anti-aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA
+    // Anti-aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA, 4=MSAA 2x, 5=MSAA 4x, 6=MSAA 8x
     u32 GetAAMode() const { return m_AAMode; }
-    void SetAAMode(u32 mode) { m_AAMode = mode; }
+    void SetAAMode(u32 mode);
+
+    // Maximum MSAA sample count supported by the GPU (queried at init)
+    u32 GetMaxMSAASamples() const;
 
     // Temporal upscaling (FSR 2, DLSS, XeSS — replaces TAA when active)
     u32 GetUpscalerType() const { return m_UpscalerType; }
@@ -471,6 +476,7 @@ public:
     Renderer::RTTemporalReuse* GetRTTemporalReuse() { return m_RTTemporalReuse.get(); }
     Renderer::ReSTIR* GetReSTIR() { return m_ReSTIR.get(); }
     Renderer::RadianceCache* GetRadianceCache() { return m_RadianceCache.get(); }
+    Renderer::SurfelRadianceCache* GetSurfelRadianceCache() { return m_SurfelRadianceCache.get(); }
 #endif
 
 #if !ENJIN_RENDERER_WEBGPU
@@ -773,6 +779,10 @@ private:
     void BuildTexturedIndirectBatches();
     void DrawTexturedIndirect(VkCommandBuffer commandBuffer);
 
+    // Device Generated Commands: GPU generates entire command stream (push constants + draws)
+    std::unique_ptr<Renderer::DeviceGeneratedCommands> m_DGC;
+    void DrawDGC(VkCommandBuffer commandBuffer);
+
     // Async compute scheduler for RT/denoise overlap
     std::unique_ptr<Renderer::AsyncComputeScheduler> m_AsyncComputeScheduler;
     void DispatchRTEffectsAsync(u32 frameIndex);    // RT effects on async compute queue
@@ -958,7 +968,7 @@ private:
     std::unique_ptr<Renderer::IUpscaler> m_Upscaler;
 
     // --- TAA (Temporal Anti-Aliasing) state ---
-    // Anti-aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA (mirrors SceneRenderSettings::aaMode)
+    // Anti-aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA, 4=MSAA 2x, 5=MSAA 4x, 6=MSAA 8x
     u32 m_AAMode = 1;
     // Frame counter for Halton jitter sequence cycling (incremented each frame)
     u32 m_TAAFrameCounter = 0;
@@ -998,6 +1008,7 @@ private:
     std::unique_ptr<Renderer::RTTemporalReuse> m_RTTemporalReuse;
     std::unique_ptr<Renderer::ReSTIR> m_ReSTIR;
     std::unique_ptr<Renderer::RadianceCache> m_RadianceCache;
+    std::unique_ptr<Renderer::SurfelRadianceCache> m_SurfelRadianceCache;
     u32 m_DenoiserType = 0;  // 0=SVGF, 1=OIDN, 2=OptiX
 
     // RT descriptor set layout and pool

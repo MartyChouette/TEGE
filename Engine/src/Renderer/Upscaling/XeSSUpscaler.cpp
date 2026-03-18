@@ -4,31 +4,36 @@
 #include "Enjin/Logging/Log.h"
 #include <cstring>
 
-// ============================================================================
-// REAL SDK INTEGRATION
-// ============================================================================
-// When ENJIN_UPSCALING_XESS is defined, include the Intel XeSS SDK headers:
-//
-//   #ifdef ENJIN_UPSCALING_XESS
-//   #include <xess/xess.h>
-//   #include <xess/xess_vk.h>
-//   #endif
-//
-// Then replace the Lanczos + CAS dispatch in Dispatch() with:
-//
-//   xess_vk_execute_params_t params{};
-//   params.inputWidth = m_RenderWidth;
-//   params.inputHeight = m_RenderHeight;
-//   params.jitterOffsetX = input.jitterX;
-//   params.jitterOffsetY = input.jitterY;
-//   params.exposureScale = 1.0f;
-//   params.resetHistory = input.cameraCut ? 1 : 0;
-//   params.inputColorTexture = ...;    // VkImage handles
-//   params.inputDepthTexture = ...;
-//   params.inputMotionVectors = ...;
-//   params.outputTexture = ...;
-//   xessVkExecute(m_XeSSContext, cmd, &params);
-// ============================================================================
+#ifdef ENJIN_HAS_XESS_SDK
+#include <xess/xess.h>
+#include <xess/xess_vk.h>
+
+// Map Enjin quality preset to XeSS quality setting
+static xess_quality_settings_t MapQualityToXeSS(Enjin::Renderer::UpscalerQuality quality) {
+    switch (quality) {
+        case Enjin::Renderer::UpscalerQuality::Performance:  return XESS_QUALITY_SETTING_PERFORMANCE;
+        case Enjin::Renderer::UpscalerQuality::Balanced:     return XESS_QUALITY_SETTING_BALANCED;
+        case Enjin::Renderer::UpscalerQuality::Quality:      return XESS_QUALITY_SETTING_QUALITY;
+        case Enjin::Renderer::UpscalerQuality::UltraQuality: return XESS_QUALITY_SETTING_ULTRA_QUALITY;
+        default:                                              return XESS_QUALITY_SETTING_QUALITY;
+    }
+}
+
+// XeSS logging callback — routes to Enjin logging system
+static void XeSSLogCallback(const char* message, xess_logging_level_t level) {
+    switch (level) {
+        case XESS_LOGGING_LEVEL_ERROR:
+            ENJIN_LOG_ERROR(Renderer, "XeSS SDK: %s", message);
+            break;
+        case XESS_LOGGING_LEVEL_WARNING:
+            ENJIN_LOG_WARN(Renderer, "XeSS SDK: %s", message);
+            break;
+        default:
+            ENJIN_LOG_INFO(Renderer, "XeSS SDK: %s", message);
+            break;
+    }
+}
+#endif
 
 namespace Enjin {
 namespace Renderer {
@@ -86,14 +91,18 @@ bool XeSSUpscaler::IsIntelGPU() const {
 }
 
 bool XeSSUpscaler::IsAvailable() const {
-#ifdef ENJIN_UPSCALING_XESS
-    // Real SDK: XeSS works on all GPUs with DP4a support (most modern GPUs).
-    // Intel Arc GPUs get XMX-accelerated path, others get DP4a shader path.
-    // TODO: Call xessIsOptimalDriver() / xessGetProperties() for full check.
-    return true;  // XeSS SDK supports all modern GPUs
+#ifdef ENJIN_HAS_XESS_SDK
+    // Real SDK: check driver compatibility via XeSS runtime.
+    // XeSS works on all GPUs with DP4a support (most modern GPUs).
+    // Intel Arc GPUs get the XMX-accelerated path, others get DP4a shaders.
+    if (m_XeSSContext) {
+        return xessIsOptimalDriver(m_XeSSContext) == XESS_RESULT_SUCCESS;
+    }
+    // Context not yet created — optimistically report available
+    return true;
 #else
-    // Stub mode: the Lanczos+CAS fallback runs on any GPU, so always available.
-    // XeSS is designed to be vendor-agnostic (unlike DLSS), so the stub
+    // Built-in fallback: the Lanczos+CAS pipeline runs on any GPU, so always available.
+    // XeSS is designed to be vendor-agnostic (unlike DLSS), so the built-in
     // reflects that by not restricting to Intel hardware.
     return true;
 #endif
@@ -114,57 +123,95 @@ bool XeSSUpscaler::Initialize(u32 renderWidth, u32 renderHeight,
     m_DisplayWidth = displayWidth;
     m_DisplayHeight = displayHeight;
 
-#ifdef ENJIN_UPSCALING_XESS
+#ifdef ENJIN_HAS_XESS_SDK
     // ================================================================
-    // REAL SDK INIT — replace this block when XeSS SDK is linked
+    // REAL SDK INIT — Intel XeSS context creation
     // ================================================================
-    // xess_result_t result = xessVkCreateContext(
-    //     m_Context->GetInstance(), m_Context->GetPhysicalDevice(),
-    //     m_Context->GetDevice(), &m_XeSSContext);
-    // if (result != XESS_RESULT_SUCCESS) return false;
-    //
-    // xess_vk_init_params_t initParams{};
-    // initParams.outputResolution = { displayWidth, displayHeight };
-    // initParams.qualitySetting = MapQuality(quality);
-    // initParams.initFlags = XESS_INIT_FLAG_RESPONSIVE_PIXEL_MASK_INPUT;
-    //
-    // result = xessVkInit(m_XeSSContext, &initParams);
-    // if (result != XESS_RESULT_SUCCESS) {
-    //     xessDestroyContext(m_XeSSContext);
-    //     m_XeSSContext = nullptr;
-    //     return false;
-    // }
-    //
-    // xess_2d_t optimalInput;
-    // xessGetInputResolution(m_XeSSContext, &displayWidth, &displayHeight,
-    //                         MapQuality(quality), &optimalInput);
-    // m_RenderWidth = optimalInput.x;
-    // m_RenderHeight = optimalInput.y;
-    // ================================================================
+    {
+        m_CurrentQuality = quality;
+
+        xess_result_t result = xessVkCreateContext(
+            m_Context->GetInstance(), m_Context->GetPhysicalDevice(),
+            m_Context->GetDevice(), &m_XeSSContext);
+        if (result != XESS_RESULT_SUCCESS) {
+            ENJIN_LOG_WARN(Renderer, "XeSS: xessVkCreateContext failed (result %d), "
+                           "falling back to built-in upscaler", static_cast<int>(result));
+            m_XeSSContext = nullptr;
+        }
+
+        if (m_XeSSContext) {
+            // Route XeSS log messages through Enjin logging
+            xessSetLoggingCallback(m_XeSSContext, XESS_LOGGING_LEVEL_WARNING, XeSSLogCallback);
+
+            // Initialize the XeSS context with Vulkan parameters
+            xess_vk_init_params_t initParams{};
+            initParams.outputResolution = { displayWidth, displayHeight };
+            initParams.qualitySetting = MapQualityToXeSS(quality);
+            initParams.initFlags = XESS_INIT_FLAG_RESPONSIVE_PIXEL_MASK_INPUT;
+
+            result = xessVkInit(m_XeSSContext, &initParams);
+            if (result != XESS_RESULT_SUCCESS) {
+                ENJIN_LOG_WARN(Renderer, "XeSS: xessVkInit failed (result %d), "
+                               "falling back to built-in upscaler", static_cast<int>(result));
+                xessDestroyContext(m_XeSSContext);
+                m_XeSSContext = nullptr;
+            }
+        }
+
+        if (m_XeSSContext) {
+            // Query the SDK's optimal input resolution for the selected quality
+            xess_2d_t optimalInput{};
+            result = xessGetInputResolution(m_XeSSContext, &displayWidth, &displayHeight,
+                                             MapQualityToXeSS(quality), &optimalInput);
+            if (result == XESS_RESULT_SUCCESS &&
+                optimalInput.x > 0 && optimalInput.y > 0) {
+                m_RenderWidth = optimalInput.x;
+                m_RenderHeight = optimalInput.y;
+                ENJIN_LOG_INFO(Renderer, "XeSS: SDK optimal render resolution %ux%u for %ux%u output",
+                               m_RenderWidth, m_RenderHeight, displayWidth, displayHeight);
+            }
+        }
+    }
+
+    if (m_XeSSContext) {
+        ENJIN_LOG_INFO(Renderer, "XeSS: Intel XeSS SDK initialized successfully");
+    } else {
+        ENJIN_LOG_INFO(Renderer, "XeSS: Using built-in Lanczos + CAS fallback");
+    }
 #endif
 
     // Create intermediate and output images at display resolution
+    // (needed for both SDK and fallback paths)
     if (!CreateImages()) {
         ENJIN_LOG_WARN(Renderer, "XeSS: Failed to create images");
         Shutdown();
         return false;
     }
 
-    // Create Lanczos and CAS compute pipelines (stub fallback)
-    if (!CreateComputePipelines()) {
-        ENJIN_LOG_WARN(Renderer, "XeSS: Failed to create compute pipelines");
-        Shutdown();
-        return false;
+#ifdef ENJIN_HAS_XESS_SDK
+    if (!m_XeSSContext) {
+#endif
+        // Create Lanczos and CAS compute pipelines (built-in fallback)
+        if (!CreateComputePipelines()) {
+            ENJIN_LOG_WARN(Renderer, "XeSS: Failed to create compute pipelines");
+            Shutdown();
+            return false;
+        }
+#ifdef ENJIN_HAS_XESS_SDK
     }
+#endif
 
     m_Initialized = true;
     m_HistoryReset = true;
 
     const char* gpuNote = IsIntelGPU() ? " [Intel GPU detected]" : " [non-Intel GPU]";
-    ENJIN_LOG_INFO(Renderer, "XeSS upscaler initialized (%ux%u -> %ux%u)%s%s",
+    const char* backend = "built-in Lanczos + CAS";
+#ifdef ENJIN_HAS_XESS_SDK
+    if (m_XeSSContext) backend = "Intel XeSS SDK";
+#endif
+    ENJIN_LOG_INFO(Renderer, "XeSS upscaler initialized (%ux%u -> %ux%u) [%s]%s",
                    renderWidth, renderHeight, displayWidth, displayHeight,
-                   IsCompiled() ? "" : " [stub: Lanczos + CAS]",
-                   gpuNote);
+                   backend, gpuNote);
     return true;
 }
 
@@ -189,33 +236,38 @@ void XeSSUpscaler::Resize(u32 renderWidth, u32 renderHeight,
 void XeSSUpscaler::Dispatch(VkCommandBuffer cmd, const UpscalerInput& input) {
     if (!m_Initialized) return;
 
-#ifdef ENJIN_UPSCALING_XESS
-    // ================================================================
-    // REAL SDK DISPATCH — replace this block when XeSS SDK is linked
-    // ================================================================
-    // xess_vk_execute_params_t params{};
-    // params.inputWidth = m_RenderWidth;
-    // params.inputHeight = m_RenderHeight;
-    // params.jitterOffsetX = input.jitterX;
-    // params.jitterOffsetY = input.jitterY;
-    // params.exposureScale = 1.0f;
-    // params.resetHistory = input.cameraCut ? 1 : 0;
-    // params.inputColorTexture = { colorImage, colorView, ... };
-    // params.inputDepthTexture = { depthImage, depthView, ... };
-    // params.inputMotionVectors = { mvecImage, mvecView, ... };
-    // params.outputTexture = { m_OutputImage, m_OutputImageView, ... };
-    //
-    // xess_result_t result = xessVkExecute(m_XeSSContext, cmd, &params);
-    // if (result == XESS_RESULT_SUCCESS) {
-    //     m_HistoryReset = false;
-    //     return;
-    // }
-    // // Fall through to Lanczos + CAS if XeSS dispatch fails
-    // ENJIN_LOG_WARN(Renderer, "XeSS dispatch failed (code %d), falling back to Lanczos+CAS", result);
-    // ================================================================
+#ifdef ENJIN_HAS_XESS_SDK
+    if (m_XeSSContext) {
+        // ================================================================
+        // REAL SDK DISPATCH — Intel XeSS evaluation
+        // ================================================================
+        xess_vk_execute_params_t params{};
+        params.inputWidth = m_RenderWidth;
+        params.inputHeight = m_RenderHeight;
+        params.jitterOffsetX = input.jitterX;
+        params.jitterOffsetY = input.jitterY;
+        params.exposureScale = 1.0f;
+        params.resetHistory = (input.cameraCut || m_HistoryReset) ? 1 : 0;
+
+        // Provide Vulkan resource handles for color, depth, motion vectors, output
+        params.pColorTexture = input.colorInput;
+        params.pDepthTexture = input.depthInput;
+        params.pVelocityTexture = input.velocityInput;
+        params.pOutputTexture = m_OutputImageView;
+
+        xess_result_t result = xessVkExecute(m_XeSSContext, cmd, &params);
+        if (result == XESS_RESULT_SUCCESS) {
+            m_HistoryReset = false;
+            return;
+        }
+
+        // SDK dispatch failed — fall through to built-in fallback
+        ENJIN_LOG_WARN(Renderer, "XeSS: xessVkExecute failed (result %d), "
+                       "falling back to Lanczos + CAS", static_cast<int>(result));
+    }
 #endif
 
-    // --- STUB FALLBACK: Lanczos + CAS (same as FSR2) ---
+    // --- BUILT-IN FALLBACK: Lanczos + CAS (same as FSR2) ---
 
     // Step 1: Lanczos upscale (low-res input -> display-res intermediate)
     DispatchLanczos(cmd, input.colorInput);
@@ -353,10 +405,10 @@ void XeSSUpscaler::DispatchCAS(VkCommandBuffer cmd, f32 sharpness) {
 
 void XeSSUpscaler::ResetHistory() {
     m_HistoryReset = true;
-#ifdef ENJIN_UPSCALING_XESS
-    // Real SDK: the resetHistory flag in xess_vk_execute_params_t will be
-    // set to 1 in the next Dispatch() call
-#endif
+    // The reset flag is consumed in the next Dispatch() call.
+    // For the real SDK path, xess_vk_execute_params_t::resetHistory is set to 1
+    // when m_HistoryReset is true. For the built-in path, this is a no-op since
+    // the Lanczos+CAS pipeline has no temporal state.
 }
 
 // ============================================================================
@@ -371,12 +423,12 @@ void XeSSUpscaler::Shutdown() {
         vkDeviceWaitIdle(device);
     }
 
-#ifdef ENJIN_UPSCALING_XESS
-    // Real SDK: destroy XeSS context
-    // if (m_XeSSContext) {
-    //     xessDestroyContext(m_XeSSContext);
-    //     m_XeSSContext = nullptr;
-    // }
+#ifdef ENJIN_HAS_XESS_SDK
+    if (m_XeSSContext) {
+        xessDestroyContext(m_XeSSContext);
+        m_XeSSContext = nullptr;
+        ENJIN_LOG_INFO(Renderer, "XeSS: Intel XeSS SDK context destroyed");
+    }
 #endif
 
     DestroyPipelines();

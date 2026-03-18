@@ -1,0 +1,175 @@
+#version 450
+
+// DGC Command Generation Compute Shader
+//
+// For each visible object (after GPU culling), generates a command sequence
+// consisting of push constants + draw indexed command. The output is consumed
+// by VK_EXT_device_generated_commands (or VK_NV_device_generated_commands).
+//
+// This eliminates the parallaxScale = -1.0 sentinel hack used by multi-draw
+// indirect, because each object gets its own push constants written by the GPU.
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// Push constant for object count
+layout(push_constant) uniform PushConstant {
+    uint objectCount;
+};
+
+// --- Input buffers (read-only) ---
+
+// CullableObject (layout matches C++ struct, std430)
+struct CullableObject {
+    vec4 boundsMin;
+    vec4 boundsMax;
+    mat4 transform;
+    uint meshIndex;
+    uint materialIndex;
+    uint indexCount;
+    uint indexOffset;
+    uint vertexOffset;
+    uint indirectEligible;
+    uint _pad1;
+    uint _pad2;
+};
+
+layout(set = 0, binding = 0) readonly buffer ObjectBuffer {
+    CullableObject objects[];
+};
+
+// ObjectDataGPU (192 bytes per object, layout matches C++ struct)
+// Fields: model(64) + baseColor(12) + metallic(4) + emissiveColor(12) + roughness(4)
+//       + emissiveStrength(4) + opacity(4) + alphaCutoff(4) + flags(4)
+//       + parallaxScale(4) + teleported(4) + pad(8) + prevModel(64)
+struct ObjectDataGPU {
+    mat4 model;                 // 64 bytes
+    vec3 baseColor;             // 12 bytes
+    float metallic;             // 4 bytes
+    vec3 emissiveColor;         // 12 bytes
+    float roughness;            // 4 bytes
+    float emissiveStrength;     // 4 bytes
+    float opacity;              // 4 bytes
+    float alphaCutoff;          // 4 bytes
+    int flags;                  // 4 bytes
+    float parallaxScale;        // 4 bytes
+    uint teleported;            // 4 bytes
+    float _pad[2];              // 8 bytes
+    mat4 prevModel;             // 64 bytes
+};
+
+layout(set = 0, binding = 1) readonly buffer ObjectDataBuffer {
+    ObjectDataGPU objectData[];
+};
+
+// Per-object visibility flags (from GPU culling)
+layout(set = 0, binding = 2) readonly buffer VisibilityBuffer {
+    uint visibility[];
+};
+
+// --- Output buffers ---
+
+// DGC command sequence: push constants (128 bytes) + draw indexed (20 bytes)
+// Total per-sequence: 148 bytes, padded to 160 bytes for alignment
+//
+// Push constants layout (matches PushConstants struct, 128 bytes):
+//   mat4 model            (64 bytes)
+//   vec3 baseColor        (12 bytes)
+//   float metallic        (4 bytes)
+//   vec3 emissiveColor    (12 bytes)
+//   float roughness       (4 bytes)
+//   float emissiveStrength (4 bytes)
+//   float opacity         (4 bytes)
+//   float alphaCutoff     (4 bytes)
+//   int flags             (4 bytes)
+//   float parallaxScale   (4 bytes)
+//   float surfaceParam1   (4 bytes)
+//   float surfaceParam2   (4 bytes)
+//   float surfaceParam3   (4 bytes)
+//
+// Draw indexed command (20 bytes):
+//   uint indexCount
+//   uint instanceCount
+//   uint firstIndex
+//   int  vertexOffset
+//   uint firstInstance
+
+// The sequence buffer is laid out as raw u32 words.
+// Each sequence is SEQUENCE_STRIDE_U32 words apart.
+//
+// Layout per sequence (in u32 words):
+//   [0..31]  = push constants (128 bytes = 32 u32s)
+//   [32..36] = draw indexed command (20 bytes = 5 u32s)
+//   [37..39] = padding to 160 bytes (40 u32s)
+
+const uint PUSH_CONSTANTS_U32 = 32;   // 128 bytes / 4
+const uint DRAW_COMMAND_U32 = 5;       // 20 bytes / 4
+const uint SEQUENCE_STRIDE_U32 = 40;   // 160 bytes / 4 (padded for alignment)
+
+layout(set = 0, binding = 3) writeonly buffer SequenceBuffer {
+    uint sequences[];
+};
+
+// Atomic counter for generated sequences
+layout(set = 0, binding = 4) buffer SequenceCountBuffer {
+    uint sequenceCount;
+};
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= objectCount) return;
+
+    // Skip non-visible objects
+    if (visibility[index] == 0u) return;
+
+    // Skip non-indirect-eligible objects (textured entities handled separately)
+    if (objects[index].indirectEligible == 0u) return;
+
+    // Atomically allocate a slot in the output sequence buffer
+    uint slot = atomicAdd(sequenceCount, 1);
+    uint baseOffset = slot * SEQUENCE_STRIDE_U32;
+
+    // --- Write push constants (128 bytes = 32 u32s) ---
+    ObjectDataGPU obj = objectData[index];
+
+    // Model matrix (16 floats = columns 0-3)
+    for (int col = 0; col < 4; col++) {
+        for (int row = 0; row < 4; row++) {
+            sequences[baseOffset + col * 4 + row] = floatBitsToUint(obj.model[col][row]);
+        }
+    }
+
+    // baseColor (3 floats) + metallic (1 float) at offset 16
+    sequences[baseOffset + 16] = floatBitsToUint(obj.baseColor.x);
+    sequences[baseOffset + 17] = floatBitsToUint(obj.baseColor.y);
+    sequences[baseOffset + 18] = floatBitsToUint(obj.baseColor.z);
+    sequences[baseOffset + 19] = floatBitsToUint(obj.metallic);
+
+    // emissiveColor (3 floats) + roughness (1 float) at offset 20
+    sequences[baseOffset + 20] = floatBitsToUint(obj.emissiveColor.x);
+    sequences[baseOffset + 21] = floatBitsToUint(obj.emissiveColor.y);
+    sequences[baseOffset + 22] = floatBitsToUint(obj.emissiveColor.z);
+    sequences[baseOffset + 23] = floatBitsToUint(obj.roughness);
+
+    // emissiveStrength, opacity, alphaCutoff, flags at offset 24
+    sequences[baseOffset + 24] = floatBitsToUint(obj.emissiveStrength);
+    sequences[baseOffset + 25] = floatBitsToUint(obj.opacity);
+    sequences[baseOffset + 26] = floatBitsToUint(obj.alphaCutoff);
+    sequences[baseOffset + 27] = uint(obj.flags);
+
+    // parallaxScale + surfaceParam1/2/3 at offset 28
+    // Note: surfaceParam1/2/3 are not in ObjectDataGPU — default to 0
+    sequences[baseOffset + 28] = floatBitsToUint(obj.parallaxScale);
+    sequences[baseOffset + 29] = 0u; // surfaceParam1
+    sequences[baseOffset + 30] = 0u; // surfaceParam2
+    sequences[baseOffset + 31] = 0u; // surfaceParam3
+
+    // --- Write draw indexed command (5 u32s) at offset 32 ---
+    CullableObject cullObj = objects[index];
+    sequences[baseOffset + 32] = cullObj.indexCount;     // indexCount
+    sequences[baseOffset + 33] = 1u;                     // instanceCount
+    sequences[baseOffset + 34] = cullObj.indexOffset;     // firstIndex
+    sequences[baseOffset + 35] = cullObj.vertexOffset;    // vertexOffset (as uint)
+    sequences[baseOffset + 36] = index;                   // firstInstance (object index)
+
+    // Padding words [37..39] are left uninitialized (not read by DGC)
+}

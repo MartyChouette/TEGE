@@ -142,82 +142,199 @@ bool VulkanRenderer::CreateSurface() {
 }
 
 bool VulkanRenderer::CreateRenderPass() {
-    // Attachment 0: Color (swapchain format)
-    VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = m_Swapchain->GetImageFormat();
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    const bool msaaEnabled = m_MSAASamples > VK_SAMPLE_COUNT_1_BIT;
 
-    // Attachment 1: Velocity buffer (RG16F per-pixel motion vectors for TAA)
-    VkAttachmentDescription velocityAttachment{};
-    velocityAttachment.format = VulkanSwapchain::VELOCITY_FORMAT;
-    velocityAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    velocityAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    velocityAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    velocityAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    velocityAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    velocityAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    velocityAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    if (!msaaEnabled) {
+        // ---- Non-MSAA render pass (original path) ----
+        // Attachment 0: Color (swapchain format)
+        VkAttachmentDescription colorAttachment{};
+        colorAttachment.format = m_Swapchain->GetImageFormat();
+        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-    // Attachment 2: Depth
-    VkAttachmentDescription depthAttachment{};
-    depthAttachment.format = m_Swapchain->GetDepthFormat();
-    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        // Attachment 1: Velocity buffer (RG16F per-pixel motion vectors for TAA)
+        VkAttachmentDescription velocityAttachment{};
+        velocityAttachment.format = VulkanSwapchain::VELOCITY_FORMAT;
+        velocityAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        velocityAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        velocityAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        velocityAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        velocityAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        velocityAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        velocityAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-    // Color attachment references (MRT: color + velocity)
-    std::array<VkAttachmentReference, 2> colorAttachmentRefs{};
-    colorAttachmentRefs[0].attachment = 0;
-    colorAttachmentRefs[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    colorAttachmentRefs[1].attachment = 1;
-    colorAttachmentRefs[1].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        // Attachment 2: Depth
+        VkAttachmentDescription depthAttachment{};
+        depthAttachment.format = m_Swapchain->GetDepthFormat();
+        depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-    VkAttachmentReference depthAttachmentRef{};
-    depthAttachmentRef.attachment = 2;
-    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        // Color attachment references (MRT: color + velocity)
+        std::array<VkAttachmentReference, 2> colorAttachmentRefs{};
+        colorAttachmentRefs[0].attachment = 0;
+        colorAttachmentRefs[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        colorAttachmentRefs[1].attachment = 1;
+        colorAttachmentRefs[1].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = static_cast<u32>(colorAttachmentRefs.size());
-    subpass.pColorAttachments = colorAttachmentRefs.data();
-    subpass.pDepthStencilAttachment = &depthAttachmentRef;
+        VkAttachmentReference depthAttachmentRef{};
+        depthAttachmentRef.attachment = 2;
+        depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        VkSubpassDescription subpass{};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount = static_cast<u32>(colorAttachmentRefs.size());
+        subpass.pColorAttachments = colorAttachmentRefs.data();
+        subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
-    std::array<VkAttachmentDescription, 3> attachments = { colorAttachment, velocityAttachment, depthAttachment };
+        VkSubpassDependency dependency{};
+        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        dependency.dstSubpass = 0;
+        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.srcAccessMask = 0;
+        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
-    VkRenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = static_cast<u32>(attachments.size());
-    renderPassInfo.pAttachments = attachments.data();
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &dependency;
+        std::array<VkAttachmentDescription, 3> attachments = { colorAttachment, velocityAttachment, depthAttachment };
 
-    VkResult result = vkCreateRenderPass(m_Context->GetDevice(), &renderPassInfo, nullptr, &m_RenderPass);
-    if (result != VK_SUCCESS) {
-        ENJIN_LOG_ERROR(Renderer, "Failed to create render pass: %d", result);
-        return false;
+        VkRenderPassCreateInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassInfo.attachmentCount = static_cast<u32>(attachments.size());
+        renderPassInfo.pAttachments = attachments.data();
+        renderPassInfo.subpassCount = 1;
+        renderPassInfo.pSubpasses = &subpass;
+        renderPassInfo.dependencyCount = 1;
+        renderPassInfo.pDependencies = &dependency;
+
+        VkResult result = vkCreateRenderPass(m_Context->GetDevice(), &renderPassInfo, nullptr, &m_RenderPass);
+        if (result != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create render pass: %d", result);
+            return false;
+        }
+
+        ENJIN_LOG_INFO(Renderer, "Render pass created with velocity + depth attachments");
+    } else {
+        // ---- MSAA render pass ----
+        // Attachment layout:
+        //   0: MSAA color (multisampled, rendered into)
+        //   1: MSAA velocity (multisampled, rendered into)
+        //   2: MSAA depth (multisampled, rendered into)
+        //   3: Resolve color (single-sample swapchain image)
+        //   4: Resolve velocity (single-sample, for post-processing readback)
+
+        // Attachment 0: MSAA color
+        VkAttachmentDescription msaaColor{};
+        msaaColor.format = m_Swapchain->GetImageFormat();
+        msaaColor.samples = m_MSAASamples;
+        msaaColor.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        msaaColor.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; // Resolved, not stored directly
+        msaaColor.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        msaaColor.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        msaaColor.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        msaaColor.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        // Attachment 1: MSAA velocity
+        VkAttachmentDescription msaaVelocity{};
+        msaaVelocity.format = VulkanSwapchain::VELOCITY_FORMAT;
+        msaaVelocity.samples = m_MSAASamples;
+        msaaVelocity.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        msaaVelocity.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        msaaVelocity.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        msaaVelocity.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        msaaVelocity.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        msaaVelocity.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        // Attachment 2: MSAA depth
+        VkAttachmentDescription msaaDepth{};
+        msaaDepth.format = m_Swapchain->GetDepthFormat();
+        msaaDepth.samples = m_MSAASamples;
+        msaaDepth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        msaaDepth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        msaaDepth.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        msaaDepth.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        msaaDepth.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        msaaDepth.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        // Attachment 3: Resolve color (single-sample swapchain image)
+        VkAttachmentDescription resolveColor{};
+        resolveColor.format = m_Swapchain->GetImageFormat();
+        resolveColor.samples = VK_SAMPLE_COUNT_1_BIT;
+        resolveColor.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        resolveColor.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        resolveColor.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        resolveColor.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        resolveColor.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        resolveColor.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+        // Attachment 4: Resolve velocity (single-sample, for post-processing)
+        VkAttachmentDescription resolveVelocity{};
+        resolveVelocity.format = VulkanSwapchain::VELOCITY_FORMAT;
+        resolveVelocity.samples = VK_SAMPLE_COUNT_1_BIT;
+        resolveVelocity.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        resolveVelocity.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        resolveVelocity.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        resolveVelocity.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        resolveVelocity.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        resolveVelocity.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        // Subpass: render to MSAA attachments, auto-resolve to single-sample targets
+        std::array<VkAttachmentReference, 2> colorRefs{};
+        colorRefs[0] = { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };  // MSAA color
+        colorRefs[1] = { 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };  // MSAA velocity
+
+        VkAttachmentReference depthRef = { 2, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL };
+
+        std::array<VkAttachmentReference, 2> resolveRefs{};
+        resolveRefs[0] = { 3, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };  // Resolve color
+        resolveRefs[1] = { 4, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };  // Resolve velocity
+
+        VkSubpassDescription subpass{};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount = static_cast<u32>(colorRefs.size());
+        subpass.pColorAttachments = colorRefs.data();
+        subpass.pDepthStencilAttachment = &depthRef;
+        subpass.pResolveAttachments = resolveRefs.data();
+
+        VkSubpassDependency dependency{};
+        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        dependency.dstSubpass = 0;
+        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.srcAccessMask = 0;
+        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+        std::array<VkAttachmentDescription, 5> attachments = {
+            msaaColor, msaaVelocity, msaaDepth, resolveColor, resolveVelocity
+        };
+
+        VkRenderPassCreateInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassInfo.attachmentCount = static_cast<u32>(attachments.size());
+        renderPassInfo.pAttachments = attachments.data();
+        renderPassInfo.subpassCount = 1;
+        renderPassInfo.pSubpasses = &subpass;
+        renderPassInfo.dependencyCount = 1;
+        renderPassInfo.pDependencies = &dependency;
+
+        VkResult result = vkCreateRenderPass(m_Context->GetDevice(), &renderPassInfo, nullptr, &m_RenderPass);
+        if (result != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create MSAA render pass: %d", result);
+            return false;
+        }
+
+        ENJIN_LOG_INFO(Renderer, "MSAA render pass created: %dx samples with color + velocity resolve",
+                       static_cast<int>(m_MSAASamples));
     }
 
-    ENJIN_LOG_INFO(Renderer, "Render pass created with velocity + depth attachments");
     return true;
 }
 
@@ -475,12 +592,20 @@ void VulkanRenderer::BeginMainRenderPass() {
     renderPassInfo.renderArea.offset = { 0, 0 };
     renderPassInfo.renderArea.extent = m_Swapchain->GetExtent();
 
-    std::array<VkClearValue, 3> clearValues{};
+    // Clear values must match render pass attachment count and order.
+    // Non-MSAA: [0]=color, [1]=velocity, [2]=depth  (3 attachments)
+    // MSAA:     [0]=MSAAcolor, [1]=MSAAvelocity, [2]=MSAAdepth, [3]=resolveColor, [4]=resolveVelocity (5 attachments)
+    const bool msaaActive = m_MSAASamples > VK_SAMPLE_COUNT_1_BIT;
+    std::array<VkClearValue, 5> clearValues{};
     clearValues[0].color = { { 0.06f, 0.06f, 0.06f, 1.0f } };  // Near-black — blends with ImGui theme backgrounds
-    clearValues[1].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };  // Velocity: zero motion
+    clearValues[1].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };     // Velocity: zero motion
     clearValues[2].depthStencil = { 1.0f, 0 };
+    if (msaaActive) {
+        clearValues[3].color = { { 0.0f, 0.0f, 0.0f, 0.0f } }; // Resolve color (don't-care but spec requires entry)
+        clearValues[4].color = { { 0.0f, 0.0f, 0.0f, 0.0f } }; // Resolve velocity
+    }
 
-    renderPassInfo.clearValueCount = static_cast<u32>(clearValues.size());
+    renderPassInfo.clearValueCount = msaaActive ? 5u : 3u;
     renderPassInfo.pClearValues = clearValues.data();
 
     // Attach VRS shading rate image when available (VK_KHR_fragment_shading_rate)
@@ -731,6 +856,59 @@ void VulkanRenderer::SignalGraphicsToCompute(VkCommandBuffer graphicsCmd) {
 void VulkanRenderer::AddExternalWaitSemaphore(VkSemaphore semaphore, VkPipelineStageFlags waitStage) {
     if (semaphore == VK_NULL_HANDLE) return;
     m_ExternalWaitSemaphores.push_back({ semaphore, waitStage });
+}
+
+bool VulkanRenderer::SetMSAASamples(VkSampleCountFlagBits samples) {
+    if (samples == m_MSAASamples) return true;
+
+    // Validate that the hardware supports the requested sample count
+    if (samples > VK_SAMPLE_COUNT_1_BIT) {
+        VkSampleCountFlagBits maxSamples = m_Context->GetMaxUsableSampleCount();
+        if (samples > maxSamples) {
+            ENJIN_LOG_WARN(Renderer, "MSAA %dx requested but hardware only supports up to %dx",
+                           static_cast<int>(samples), static_cast<int>(maxSamples));
+            return false;
+        }
+    }
+
+    WaitForAllFrames();
+    m_IsFrameStarted = false;
+    m_IsMainRenderPassActive = false;
+
+    m_MSAASamples = samples;
+
+    // Propagate to swapchain so it creates/destroys MSAA images on recreation
+    m_Swapchain->SetMSAASamples(samples);
+
+    // Clear render pass before framebuffer recreation
+    m_Swapchain->SetRenderPass(VK_NULL_HANDLE);
+
+    // Recreate MSAA images (destroy old ones, create new if samples > 1)
+    auto extent = m_Swapchain->GetExtent();
+    if (!m_Swapchain->Recreate(extent.width, extent.height, true)) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to recreate swapchain for MSAA change");
+        m_MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+        m_Swapchain->SetMSAASamples(VK_SAMPLE_COUNT_1_BIT);
+        m_Swapchain->Recreate(extent.width, extent.height, true);
+        RecreateRenderPass();
+        m_ImagesInFlight.assign(m_Swapchain->GetImageCount(), VK_NULL_HANDLE);
+        return false;
+    }
+
+    // Recreate render pass with new sample count, then rebuild framebuffers
+    RecreateRenderPass();
+
+    m_ImagesInFlight.assign(m_Swapchain->GetImageCount(), VK_NULL_HANDLE);
+
+    // Notify external systems (post-processing, RenderSystem pipelines, etc.)
+    for (auto& callback : m_ResizeCallbacks) {
+        callback(extent.width, extent.height);
+    }
+
+    ENJIN_LOG_INFO(Renderer, "MSAA %s (%dx samples)",
+                   samples > VK_SAMPLE_COUNT_1_BIT ? "enabled" : "disabled",
+                   static_cast<int>(samples));
+    return true;
 }
 
 void VulkanRenderer::RequestVSyncChange(bool enabled) {

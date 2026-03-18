@@ -4,29 +4,22 @@
 #include "Enjin/Logging/Log.h"
 #include <cstring>
 
-// ============================================================================
-// REAL SDK INTEGRATION
-// ============================================================================
-// When ENJIN_UPSCALING_DLSS is defined, include the Streamline SDK headers:
-//
-//   #ifdef ENJIN_UPSCALING_DLSS
-//   #include <sl.h>
-//   #include <sl_dlss.h>
-//   #include <sl_consts.h>
-//   #endif
-//
-// Then replace the Lanczos + CAS dispatch in Dispatch() with:
-//
-//   sl::DLSSOptions dlssOptions{};
-//   dlssOptions.mode = MapQualityToSLMode(quality);
-//   dlssOptions.outputWidth = m_DisplayWidth;
-//   dlssOptions.outputHeight = m_DisplayHeight;
-//   slDLSSSetOptions(m_Viewport, dlssOptions);
-//
-//   sl::ResourceTag tags[] = { colorTag, depthTag, mvecTag, outputTag };
-//   slSetTag(m_Viewport, tags, _countof(tags), cmd);
-//   slEvaluateFeature(sl::kFeatureDLSS, frame, cmd);
-// ============================================================================
+#ifdef ENJIN_HAS_DLSS_SDK
+#include <sl.h>
+#include <sl_dlss.h>
+#include <sl_consts.h>
+
+// Map Enjin quality preset to Streamline DLSS mode
+static sl::DLSSMode MapQualityToSLMode(Enjin::Renderer::UpscalerQuality quality) {
+    switch (quality) {
+        case Enjin::Renderer::UpscalerQuality::Performance:  return sl::DLSSMode::eMaxPerformance;
+        case Enjin::Renderer::UpscalerQuality::Balanced:     return sl::DLSSMode::eBalanced;
+        case Enjin::Renderer::UpscalerQuality::Quality:      return sl::DLSSMode::eMaxQuality;
+        case Enjin::Renderer::UpscalerQuality::UltraQuality: return sl::DLSSMode::eUltraQuality;
+        default:                                              return sl::DLSSMode::eMaxQuality;
+    }
+}
+#endif
 
 namespace Enjin {
 namespace Renderer {
@@ -84,14 +77,20 @@ bool DLSSUpscaler::IsNvidiaGPU() const {
 }
 
 bool DLSSUpscaler::IsAvailable() const {
-#ifdef ENJIN_UPSCALING_DLSS
-    // Real SDK: check NVIDIA hardware + Streamline runtime availability
-    // TODO: Also call slIsFeatureSupported(sl::kFeatureDLSS) here
-    return IsNvidiaGPU();
+    if (!IsNvidiaGPU()) return false;
+
+#ifdef ENJIN_HAS_DLSS_SDK
+    // Real SDK: verify DLSS feature support via Streamline runtime
+    sl::Feature feature = sl::kFeatureDLSS;
+    sl::FeatureRequirements reqs{};
+    if (slGetFeatureRequirements(feature, reqs) != sl::Result::eOk) {
+        return false;
+    }
+    return (reqs.flags & sl::FeatureRequirementFlags::eHardwareSupported) != 0;
 #else
-    // Stub mode: require NVIDIA GPU for DLSS branding consistency,
-    // even though the fallback Lanczos+CAS pipeline runs on any GPU.
-    return IsNvidiaGPU();
+    // Built-in fallback: require NVIDIA GPU for DLSS branding consistency,
+    // even though the Lanczos+CAS pipeline runs on any GPU.
+    return true;
 #endif
 }
 
@@ -110,43 +109,91 @@ bool DLSSUpscaler::Initialize(u32 renderWidth, u32 renderHeight,
     m_DisplayWidth = displayWidth;
     m_DisplayHeight = displayHeight;
 
-#ifdef ENJIN_UPSCALING_DLSS
+#ifdef ENJIN_HAS_DLSS_SDK
     // ================================================================
-    // REAL SDK INIT — replace this block when Streamline SDK is linked
+    // REAL SDK INIT — Streamline DLSS initialization
     // ================================================================
-    // sl::Preferences pref{};
-    // pref.showConsole = false;
-    // pref.logLevel = sl::LogLevel::eOff;
-    // slInit(pref);
-    //
-    // sl::DLSSOptimalSettings optSettings{};
-    // sl::DLSSOptions dlssOpt{};
-    // dlssOpt.mode = MapQualityToSLMode(quality);
-    // slDLSSGetOptimalSettings(dlssOpt, optSettings);
-    // m_RenderWidth = optSettings.optimalRenderWidth;
-    // m_RenderHeight = optSettings.optimalRenderHeight;
-    // ================================================================
+    {
+        sl::Preferences pref{};
+        pref.showConsole = false;
+        pref.logLevel = sl::LogLevel::eOff;
+        pref.featuresToLoad = &sl::kFeatureDLSS;
+        pref.numFeaturesToLoad = 1;
+
+        sl::Result initResult = slInit(pref);
+        if (initResult != sl::Result::eOk) {
+            ENJIN_LOG_ERROR(Renderer, "DLSS: Streamline slInit() failed (result %d)",
+                            static_cast<int>(initResult));
+            // Fall through to built-in fallback
+        } else {
+            m_SLInitialized = true;
+
+            // Load the DLSS feature
+            sl::Result loadResult = slSetFeatureLoaded(sl::kFeatureDLSS, true);
+            if (loadResult != sl::Result::eOk) {
+                ENJIN_LOG_WARN(Renderer, "DLSS: slSetFeatureLoaded failed (result %d), "
+                               "falling back to built-in upscaler",
+                               static_cast<int>(loadResult));
+                slShutdown();
+                m_SLInitialized = false;
+            } else {
+                // Query optimal render resolution for the selected quality mode
+                m_DLSSOptions.mode = MapQualityToSLMode(quality);
+                m_DLSSOptions.outputWidth = displayWidth;
+                m_DLSSOptions.outputHeight = displayHeight;
+
+                sl::DLSSOptimalSettings optSettings{};
+                sl::Result optResult = slDLSSGetOptimalSettings(m_DLSSOptions, optSettings);
+                if (optResult == sl::Result::eOk &&
+                    optSettings.optimalRenderWidth > 0 && optSettings.optimalRenderHeight > 0) {
+                    m_RenderWidth = optSettings.optimalRenderWidth;
+                    m_RenderHeight = optSettings.optimalRenderHeight;
+                    ENJIN_LOG_INFO(Renderer, "DLSS: SDK optimal render resolution %ux%u for %ux%u output",
+                                   m_RenderWidth, m_RenderHeight, displayWidth, displayHeight);
+                }
+
+                slDLSSSetOptions(m_Viewport, m_DLSSOptions);
+            }
+        }
+    }
+
+    if (m_SLInitialized) {
+        ENJIN_LOG_INFO(Renderer, "DLSS: Streamline SDK initialized successfully");
+    } else {
+        ENJIN_LOG_INFO(Renderer, "DLSS: Using built-in Lanczos + CAS fallback");
+    }
 #endif
 
     // Create intermediate and output images at display resolution
+    // (needed for both SDK and fallback paths)
     if (!CreateImages()) {
         ENJIN_LOG_WARN(Renderer, "DLSS: Failed to create images");
         Shutdown();
         return false;
     }
 
-    // Create Lanczos and CAS compute pipelines (stub fallback)
-    if (!CreateComputePipelines()) {
-        ENJIN_LOG_WARN(Renderer, "DLSS: Failed to create compute pipelines");
-        Shutdown();
-        return false;
+#ifdef ENJIN_HAS_DLSS_SDK
+    if (!m_SLInitialized) {
+#endif
+        // Create Lanczos and CAS compute pipelines (built-in fallback)
+        if (!CreateComputePipelines()) {
+            ENJIN_LOG_WARN(Renderer, "DLSS: Failed to create compute pipelines");
+            Shutdown();
+            return false;
+        }
+#ifdef ENJIN_HAS_DLSS_SDK
     }
+#endif
 
     m_Initialized = true;
     m_HistoryReset = true;
-    ENJIN_LOG_INFO(Renderer, "DLSS upscaler initialized (%ux%u -> %ux%u)%s",
-                   renderWidth, renderHeight, displayWidth, displayHeight,
-                   IsCompiled() ? "" : " [stub: Lanczos + CAS]");
+
+    const char* backend = "built-in Lanczos + CAS";
+#ifdef ENJIN_HAS_DLSS_SDK
+    if (m_SLInitialized) backend = "Streamline SDK";
+#endif
+    ENJIN_LOG_INFO(Renderer, "DLSS upscaler initialized (%ux%u -> %ux%u) [%s]",
+                   renderWidth, renderHeight, displayWidth, displayHeight, backend);
     return true;
 }
 
@@ -171,38 +218,60 @@ void DLSSUpscaler::Resize(u32 renderWidth, u32 renderHeight,
 void DLSSUpscaler::Dispatch(VkCommandBuffer cmd, const UpscalerInput& input) {
     if (!m_Initialized) return;
 
-#ifdef ENJIN_UPSCALING_DLSS
-    // ================================================================
-    // REAL SDK DISPATCH — replace this block when Streamline SDK is linked
-    // ================================================================
-    // sl::Resource colorRes = sl::Resource{ sl::ResourceType::eTex2d, input.colorInput, ... };
-    // sl::Resource depthRes = sl::Resource{ sl::ResourceType::eTex2d, input.depthInput, ... };
-    // sl::Resource mvecRes  = sl::Resource{ sl::ResourceType::eTex2d, input.velocityInput, ... };
-    // sl::Resource outRes   = sl::Resource{ sl::ResourceType::eTex2d, m_OutputImageView, ... };
-    //
-    // sl::ResourceTag tags[] = {
-    //     sl::ResourceTag{ &colorRes, sl::kBufferTypeScalingInputColor, ... },
-    //     sl::ResourceTag{ &depthRes, sl::kBufferTypeDepth, ... },
-    //     sl::ResourceTag{ &mvecRes,  sl::kBufferTypeMotionVectors, ... },
-    //     sl::ResourceTag{ &outRes,   sl::kBufferTypeScalingOutputColor, ... }
-    // };
-    //
-    // slSetTag(m_Viewport, tags, _countof(tags), cmd);
-    //
-    // sl::DLSSOptions dlssConsts{};
-    // dlssConsts.mode = m_CurrentMode;
-    // dlssConsts.sharpness = input.sharpness;
-    // dlssConsts.colorBuffersHDR = sl::Boolean::eTrue;
-    // dlssConsts.reset = input.cameraCut ? sl::Boolean::eTrue : sl::Boolean::eFalse;
-    // slDLSSSetOptions(m_Viewport, dlssConsts);
-    //
-    // slEvaluateFeature(sl::kFeatureDLSS, sl::FrameToken{}, cmd);
-    // m_HistoryReset = false;
-    // return;
-    // ================================================================
+#ifdef ENJIN_HAS_DLSS_SDK
+    if (m_SLInitialized) {
+        // ================================================================
+        // REAL SDK DISPATCH — Streamline DLSS evaluation
+        // ================================================================
+
+        // Tag resources for Streamline
+        sl::Resource colorRes{sl::ResourceType::eTex2d, nullptr, nullptr,
+                              nullptr, 0};
+        sl::Resource depthRes{sl::ResourceType::eTex2d, nullptr, nullptr,
+                              nullptr, 0};
+        sl::Resource mvecRes{sl::ResourceType::eTex2d, nullptr, nullptr,
+                             nullptr, 0};
+        sl::Resource outRes{sl::ResourceType::eTex2d, nullptr, nullptr,
+                            nullptr, 0};
+
+        // Streamline uses native API handles; pass Vulkan image views
+        // through the Vulkan interposer layer
+        colorRes.native = input.colorInput;
+        depthRes.native = input.depthInput;
+        mvecRes.native = input.velocityInput;
+        outRes.native = m_OutputImageView;
+
+        sl::ResourceTag tags[] = {
+            {&colorRes, sl::kBufferTypeScalingInputColor, sl::ResourceLifecycle::eValidUntilPresent, nullptr},
+            {&depthRes, sl::kBufferTypeDepth, sl::ResourceLifecycle::eValidUntilPresent, nullptr},
+            {&mvecRes,  sl::kBufferTypeMotionVectors, sl::ResourceLifecycle::eValidUntilPresent, nullptr},
+            {&outRes,   sl::kBufferTypeScalingOutputColor, sl::ResourceLifecycle::eValidUntilPresent, nullptr}
+        };
+
+        slSetTag(m_Viewport, tags, 4, cmd);
+
+        // Configure DLSS options for this frame
+        sl::DLSSOptions dlssConsts = m_DLSSOptions;
+        dlssConsts.sharpness = input.sharpness > 0.0f ? input.sharpness : 0.0f;
+        dlssConsts.colorBuffersHDR = sl::Boolean::eTrue;
+        dlssConsts.reset = (input.cameraCut || m_HistoryReset) ? sl::Boolean::eTrue : sl::Boolean::eFalse;
+        slDLSSSetOptions(m_Viewport, dlssConsts);
+
+        // Evaluate DLSS feature
+        sl::FrameToken frameToken{};
+        sl::Result result = slEvaluateFeature(sl::kFeatureDLSS, frameToken, cmd);
+        if (result == sl::Result::eOk) {
+            m_HistoryReset = false;
+            return;
+        }
+
+        // SDK dispatch failed — fall through to built-in fallback
+        ENJIN_LOG_WARN(Renderer, "DLSS: slEvaluateFeature failed (result %d), "
+                       "falling back to Lanczos + CAS", static_cast<int>(result));
+    }
 #endif
 
-    // --- STUB FALLBACK: Lanczos + CAS (same as FSR2) ---
+    // --- BUILT-IN FALLBACK: Lanczos + CAS (same as FSR2) ---
 
     // Step 1: Lanczos upscale (low-res input -> display-res intermediate)
     DispatchLanczos(cmd, input.colorInput);
@@ -340,10 +409,10 @@ void DLSSUpscaler::DispatchCAS(VkCommandBuffer cmd, f32 sharpness) {
 
 void DLSSUpscaler::ResetHistory() {
     m_HistoryReset = true;
-#ifdef ENJIN_UPSCALING_DLSS
-    // Real SDK: set reset flag for next Dispatch()
-    // The sl::DLSSOptions::reset flag will be set in the next Dispatch() call
-#endif
+    // The reset flag is consumed in the next Dispatch() call.
+    // For the real SDK path, sl::DLSSOptions::reset is set to eTrue when
+    // m_HistoryReset is true. For the built-in path, this is a no-op since
+    // the Lanczos+CAS pipeline has no temporal state.
 }
 
 // ============================================================================
@@ -358,10 +427,13 @@ void DLSSUpscaler::Shutdown() {
         vkDeviceWaitIdle(device);
     }
 
-#ifdef ENJIN_UPSCALING_DLSS
-    // Real SDK: release Streamline resources
-    // slFreeResources(...)
-    // slShutdown()
+#ifdef ENJIN_HAS_DLSS_SDK
+    if (m_SLInitialized) {
+        slSetFeatureLoaded(sl::kFeatureDLSS, false);
+        slShutdown();
+        m_SLInitialized = false;
+        ENJIN_LOG_INFO(Renderer, "DLSS: Streamline SDK shut down");
+    }
 #endif
 
     DestroyPipelines();

@@ -99,6 +99,14 @@ VkBuffer GPUCullingSystem::GetObjectDataBuffer() const {
     return m_ObjectDataBuffer ? m_ObjectDataBuffer->GetBuffer() : VK_NULL_HANDLE;
 }
 
+VkBuffer GPUCullingSystem::GetObjectBuffer() const {
+    return m_ObjectBuffer ? m_ObjectBuffer->GetBuffer() : VK_NULL_HANDLE;
+}
+
+VkBuffer GPUCullingSystem::GetVisibilityBuffer() const {
+    return m_VisibilityBuffer ? m_VisibilityBuffer->GetBuffer() : VK_NULL_HANDLE;
+}
+
 VkBuffer GPUCullingSystem::GetOcclusionFlagBuffer() const {
     return m_OcclusionFlagBuffer ? m_OcclusionFlagBuffer->GetBuffer() : VK_NULL_HANDLE;
 }
