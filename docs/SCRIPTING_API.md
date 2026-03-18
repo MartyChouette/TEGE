@@ -76,7 +76,7 @@ Channel constants: `AUDIO_CHANNEL_SFX=0`, `AUDIO_CHANNEL_MUSIC=1`, `AUDIO_CHANNE
 ## Component Access
 
 - **Health**: `Health_Get/GetMax/SetCurrent(uint64)`, `Health_Damage(uint64, float)`
-- **Material**: `Material_SetBaseColor/GetBaseColor(uint64, Vector3)`, `Material_SetMetallic/SetRoughness(uint64, float)`, `Material_SetTransmission/GetTransmission(uint64, float)`, `Material_SetIOR/GetIOR(uint64, float)`, `Material_SetThickness/GetThickness(uint64, float)`, `Material_SetSSSIntensity/GetSSSIntensity(uint64, float)`, `Material_SetSSSRadius/GetSSSRadius(uint64, float)`, `Material_SetSSSColor/GetSSSColor(uint64, Vector3)`
+- **Material**: `Material_SetBaseColor/GetBaseColor(uint64, Vector3)`, `Material_SetMetallic/SetRoughness(uint64, float)`, `Material_SetTransmission/GetTransmission(uint64, float)`, `Material_SetIOR/GetIOR(uint64, float)`, `Material_SetThickness/GetThickness(uint64, float)`, `Material_SetSSSIntensity/GetSSSIntensity(uint64, float)`, `Material_SetSSSRadius/GetSSSRadius(uint64, float)`, `Material_SetSSSColor/GetSSSColor(uint64, Vector3)`, `Material_SetOutlineWidth/GetOutlineWidth(uint64, float)`, `Material_SetOutlineColor/GetOutlineColor(uint64, Vector3)`, `Material_SetSurfaceNoiseScale/GetSurfaceNoiseScale(uint64, float)`, `Material_SetSurfaceNoiseStrength/GetSurfaceNoiseStrength(uint64, float)`
 - **Light**: `Light_SetColor/SetIntensity(uint64, ...)`
 - **Camera**: `Camera_SetFOV/GetFOV(uint64, float)`
 - **AudioSource**: `AudioSource_Play/Stop/SetClip/SetVolume(uint64, ...)`

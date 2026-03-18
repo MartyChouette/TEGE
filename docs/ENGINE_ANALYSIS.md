@@ -690,7 +690,7 @@ flowchart TB
         GodRays_PP --> FogShafts_PP["Fog Shafts<br/>(Volumetric, HDR)"]
         FogShafts_PP --> DOF["Depth of Field<br/>(Poisson Disc)"]
         DOF --> TiltShift["Tilt-Shift<br/>(Focus Band Blur)"]
-        TiltShift --> CelOutlines["Cel Shading Outlines<br/>(Sobel Edge Detection)"]
+        TiltShift --> CelOutlines["Cel Shading Outlines<br/>(Sobel + Curvature-Driven)"]
         CelOutlines --> StippleDither["Stipple / Dither<br/>(8 Patterns, 3 Color<br/>Modes)"]
         StippleDither --> ColorGrading["Color Grading"]
         ColorGrading --> TAAResolve["TAA Resolve<br/>(Neighborhood Clamping,<br/>Velocity Reprojection)"]

@@ -125,13 +125,15 @@ enjin/
 - `VulkanBuffer` - GPU buffers (vertex, index, uniform, storage)
 - `RenderSystem` - ECS system that renders entities with Mesh+Transform
 - `PostProcessing` - Bloom, vignette, color grading, FXAA, film grain, DoF, tilt-shift, stipple/dither, SSAO, god rays, contact shadows, caustics, fog shafts
-- Outline pipeline (cel shading) - Inverted-hull geometry outlines via separate backface-extrusion pipeline (`outline.vert`/`outline.frag`), per-material and global settings
+- Outline pipeline (cel shading) - Inverted-hull geometry outlines (`outline.vert`/`outline.frag`), per-material width/color, NPR curvature-driven thickness (`celOutlineCurvatureWeight`)
 - `RenderTarget` - Offscreen rendering for Game View
+- Art Style Presets - 7 one-click presets (Realistic PBR, Classic Blinn-Phong, Hand-Painted, Toon/Anime, Low-Poly Retro, Pixel Art, NPR Sketch)
 
 **Features**:
 - Blinn-Phong lighting with multi-light support
-- PBR material system with base color, normal, height, metallic-roughness, and emissive maps
+- PBR material system with base color, normal, height, metallic-roughness, emissive, and matcap maps
 - Material transmission (glass/water), IOR, thickness, subsurface scattering (intensity/radius/color)
+- Procedural surface noise (surfaceNoiseScale/surfaceNoiseStrength per material)
 - Shadow mapping with PCF filtering (directional CSM, point cubemap, spot 2D array)
 - Skeletal animation with GPU skinning (bone SSBO)
 - Instanced grass rendering
@@ -217,13 +219,16 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 ### CPU-Side Optimizations
 - **Per-frame linear allocator:** `FrameAllocator` (8 MB bump allocator reset each frame) with `FrameArray<T>` container, replaces hot-path `std::vector` allocations (`Core/include/Enjin/Memory/FrameAllocator.h`)
 - **64-bit material sort key:** `[8:pipeline][16:material][24:texture][16:depth]` layout for cache-friendly single-comparison sorting
-- **MaterialGPU:** 80-byte GPU-aligned struct with transmission/IOR/thickness/SSS fields (uploaded via Material UBO at binding 2)
+- **MaterialGPU:** 80-byte GPU-aligned struct with transmission/IOR/thickness/SSS fields (uploaded via batched Material SSBO at binding 2)
 - **LOD hysteresis:** Directional dead-zones prevent LOD ping-ponging, with optional screen-space projected size metric
 - **Binary search keyframes:** `Animation.cpp::SampleKeyframes()` uses `std::upper_bound` for O(log N) lookups instead of O(N) linear scan
 - **Integer sprite sort keys:** `SpriteBatchRenderer` uses pre-hashed `usize` keys instead of `std::string` comparison in sort comparator
 - **Cached ECS storage pointers:** `World::GetComponentStorage<T>()` public API; `RenderSystem` caches 5 hot storage pointers, replacing 38 `GetComponent()` calls with direct `storage->Get()`
 - **Light entity list dirty flag:** `m_LightListDirty` gates rebuild on structural changes, with O(1) size-mismatch recovery
 - **Pre-allocated sprite shadow vectors:** `SpriteBatchRenderer` reuses member vectors, eliminating per-frame heap allocations in shadow pass
+- **Cached world matrices:** `TransformComponent` mutable dirty flag with recursive parent caching, O(1) for unchanged transforms across multiple render passes
+- **Batched material SSBO:** Binding 2 converted from per-entity UBO to `STORAGE_BUFFER_DYNAMIC` with single per-frame upload and dynamic offset per draw
+- **ECS View template:** `ECS::View<Components...>` variadic template for efficient filtered multi-component iteration with smallest-set optimization
 
 ### CMake Feature Flags
 
@@ -534,7 +539,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 ```
 Binding  0: View/Projection UBO (vertex shader)
 Binding  1: Lighting UBO with multi-light arrays (vertex + fragment)
-Binding  2: Material UBO (fragment shader)
+Binding  2: Material SSBO (dynamic offset, batched per-frame) — fragment shader
 Binding  3: Base color texture sampler (fragment shader)
 Binding  4: Shadow map array (fragment shader)
 Binding  5: Height map for parallax mapping (fragment shader)
@@ -550,6 +555,7 @@ Binding 14: Cluster grid SSBO — clustered lighting (fragment shader)
 Binding 15: Cluster light index SSBO — clustered lighting (fragment shader)
 Binding 16: VT indirection texture — virtual texturing (fragment shader)
 Binding 17: VT physical atlas — virtual texturing (fragment shader)
+Binding 18: Matcap texture — material-expression art style (fragment shader)
 ```
 
 **RT Descriptor Set** (separate from main pipeline set 0):

@@ -391,6 +391,14 @@ Controls the visual surface properties of a mesh. Supports PBR rendering, textur
 | `sssRadius` | f32 | 1.0 | Scatter radius in world units. |
 | `sssColor` | Vector3 | (1, 0.2, 0.1) | Scatter tint color (skin/wax default). |
 
+**Material-expression and procedural noise:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `matcapTexturePath` | string | "" | Path to matcap (material capture) texture — 2D image indexed by view-space normal for stylized lighting. |
+| `surfaceNoiseScale` | f32 | 0.0 | Procedural noise frequency in world units (0 = off, 2-20 typical). |
+| `surfaceNoiseStrength` | f32 | 0.0 | How much noise modulates diffuse color (0-1). |
+
 **Retro rendering flags** (per-material):
 
 | Flag | Default | Description |
@@ -1746,6 +1754,22 @@ Five raster-tier screen-space effects run in the post-process shader using only 
 **Performance:** All sample counts are tunable. Estimated total cost is ~3 ms at 1080p on a GTX 1060-class GPU with default settings. Effects can be enabled/disabled individually.
 
 **PostProcessVolume blending:** All 5 effects support spatial blending via `PostProcessVolumeComponent` override bits (19-23).
+
+### Art Style Presets
+
+The editor includes 7 one-click presets accessible from **Settings > Scene > Art Style Preset**:
+
+| Preset | Description |
+|--------|-------------|
+| **Realistic PBR** | GGX shading, Fresnel, energy conservation, geometry term. No stylized effects. |
+| **Classic Blinn-Phong** | Pre-PBR shading model, clean default look. |
+| **Hand-Painted** | Half-Lambert + warm shadow ramp. TF2/Genshin-style painterly look. |
+| **Toon/Anime** | 4-band cel shading, purple shadows, geometry outlines, anime light ramp. |
+| **Low-Poly Retro** | Flat shading, affine texturing, vertex snapping (160px grid), 16-level posterization. |
+| **Pixel Art** | 320x240 downscale, point filtering, 16-color palette, Bayer dithering. |
+| **NPR Sketch** | 2-band cel, thick Sobel outlines with curvature variation, crosshatch stipple. |
+
+Presets set all relevant rendering parameters at once. After applying a preset, individual settings can still be tweaked.
 
 ### Retro Effects
 
