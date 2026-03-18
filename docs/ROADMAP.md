@@ -284,11 +284,11 @@ Goal: eliminate CPU-side bottlenecks, maximize GPU utilization, and push entity 
 
 #### Tier 2: Competitive Parity (1-2 days each)
 
-- [ ] **Cache world matrices** — `ComputeWorldMatrix()` walks parent chain with hash lookups at every level. Add dirty flag + cached world matrix on TransformComponent, recompute only on local transform change. 15-25% for hierarchies.
-- [ ] **Batched material SSBO** — `UpdateMaterialBuffer()` called per-entity; batch all material data into single SSBO upload per frame. Reduces CPU→GPU transfer overhead.
+- [x] **Cache world matrices** — `ComputeWorldMatrix()` caches via `mutable` fields on TransformComponent (`cachedWorldMatrix` + `worldMatrixDirty`). Recursive caching shares parent results across siblings. All transforms marked dirty once per frame in a tight linear sweep. ✅
+- [x] **Batched material SSBO** — Binding 2 converted from UBO to `STORAGE_BUFFER_DYNAMIC`. All MaterialGPU data collected at frame start into single SSBO, uploaded once. Per-entity dynamic offset at draw time. Fixes latent SSS data race. ✅
 - [ ] **Wire bindless into main render path** — `BindlessResourceManager` exists but isn't used in hot path. Migrate material textures to descriptor indexing, eliminate per-entity descriptor set binds.
 - [ ] **Multi-draw indirect batching** — GPU culling writes per-object indirect draw commands, but CPU still dispatches per-entity `vkCmdDrawIndexed`. Consolidate into single `vkCmdDrawIndexedIndirectCount` call per material bucket.
-- [ ] **View-based ECS iteration** — 31 separate `GetEntitiesWithComponent<T>()` calls per frame in RenderSystem. Implement ECS "view" that iterates smallest component set and batch-checks membership in others without hash lookups.
+- [x] **View-based ECS iteration** — `ECS::View<Components...>` variadic template added (`View.h`). Iterates smallest component set, batch-checks others, supports `Exclude()` filter. Sorted render list build loop converted as proof-of-concept. ✅
 
 #### Tier 3: Next-Gen Scalability (1-2 weeks each)
 

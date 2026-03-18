@@ -65,6 +65,7 @@
 #endif
 #include "Enjin/Renderer/Upscaling/IUpscaler.h"
 #include "Enjin/Renderer/Upscaling/FSR2Upscaler.h"
+#include "Enjin/ECS/View.h"
 #include <cstring>
 #include <array>
 #include <algorithm>
@@ -607,8 +608,20 @@ void RenderSystem::Update(f32 deltaTime) {
     // up once here (via type-ID hash) instead of once per entity in the hot loops.
     RefreshStorageCache();
 
+    // Mark all transform world-matrix caches dirty so each entity recomputes at most
+    // once this frame (across main pass, shadow pass, outline pass, etc.).
+    if (m_CachedTransformStorage) {
+        auto& transforms = m_CachedTransformStorage->GetComponents();
+        for (auto& t : transforms) {
+            t.worldMatrixDirty = true;
+        }
+    }
+
     // Reset per-frame stats
     ResetFrameCounters();
+
+    // Reset material SSBO flag — will be rebuilt on first use this frame
+    m_MaterialSSBOBuilt = false;
 
     // Reset per-frame linear allocator (all FrameArray allocations from previous frame are freed)
     if (m_FrameAllocator) m_FrameAllocator->Reset();
@@ -1057,6 +1070,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
             m_Camera = &viewCamera;
             UpdateFrameUniforms();
+            BuildMaterialSSBO();
 
             VkViewport vkViewport{};
             vkViewport.x = vc.viewportX * static_cast<f32>(extent.width);
@@ -1075,9 +1089,12 @@ void RenderSystem::Update(f32 deltaTime) {
             RenderSkybox(commandBuffer, &vkViewport, &scissor);
 
             m_Pipeline->Bind(commandBuffer);
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_Pipeline->GetLayout(), 0, 1,
-                &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
+            {
+                u32 zeroOff = 0;
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    m_Pipeline->GetLayout(), 0, 1,
+                    &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &zeroOff);
+            }
             vkCmdSetViewport(commandBuffer, 0, 1, &vkViewport);
             vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
@@ -1135,26 +1152,31 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Upload frame-level uniforms once (view/proj + lighting)
     UpdateFrameUniforms();
+    BuildMaterialSSBO();
 
     // Build the sorted render list every frame (needed by RenderToTarget() offscreen path too)
     {
         m_SortedRenderList.clear();
 
-        // Cache component storage pointers to avoid per-entity type-ID hash map lookups.
-        // Each GetComponent<T>(entity) does: hash(typeId) → find storage → hash(entity) → find index.
-        // By caching the storage pointer, we skip the first hash map lookup for every entity.
-        auto* xformStorage = m_World->GetComponentStorage<TransformComponent>();
+        // Multi-component view: iterates the smallest set (Transform or Mesh),
+        // filters to entities that have both. Excludes 2D sprites (separate pass).
+        // All storage pointers are cached in the View — no per-entity type-ID hash lookups.
+        ECS::View<TransformComponent, MeshComponent> view(*m_World);
+        view.Exclude(m_World->GetComponentStorage<Sprite2DComponent>());
+
+        // Also cache material storage for sort key computation (optional component)
         auto* matStorage = m_World->GetComponentStorage<MaterialComponent>();
-        auto* spriteStorage = m_World->GetComponentStorage<Sprite2DComponent>();
 
         // Compute camera position for depth-aware sort key
         Math::Vector3 camPos;
         bool haveCam = (m_Camera != nullptr);
         if (haveCam) camPos = m_Camera->GetPosition();
 
-        for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-            auto* xform = xformStorage ? xformStorage->Get(entity) : nullptr;
-            if (!xform || !xform->visible) continue;
+        m_SortedRenderList.reserve(view.UpperBound());
+
+        for (Entity entity : view) {
+            auto* xform = view.Get<TransformComponent>(entity);
+            if (!xform->visible) continue;
 
             // Skip GPU-culled entities (frustum culling — disabled in editor mode)
             if (m_GPUCullingEnabled && !m_IsEditorMode && m_GPUCulling && !m_CullableObjects.empty()) {
@@ -1166,9 +1188,6 @@ void RenderSystem::Update(f32 deltaTime) {
                     }
                 }
             }
-
-            // Skip 2D sprites — rendered in sorted pass after 3D geometry
-            if (spriteStorage && spriteStorage->Has(entity)) continue;
 
             // Compute 64-bit sort key (pipeline | material/texture hash | depth)
             auto* mat = matStorage ? matStorage->Get(entity) : nullptr;
@@ -1200,8 +1219,9 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Bind pipeline, descriptor set, viewport, and scissor once for all entities
     m_Pipeline->Bind(commandBuffer);
+    u32 matDynOffset = 0;
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
+        m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &matDynOffset);
 
     VkExtent2D extent = m_Renderer->GetSwapchainExtent();
     VkViewport viewport{};
@@ -1370,6 +1390,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
     // Upload frame-level uniforms to offscreen buffers (game camera view/proj + lighting)
     UpdateFrameUniforms();
+    BuildMaterialSSBO();
 
     m_ShadowDistance = prevShadowDist;
 
@@ -1396,8 +1417,11 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
     // Bind pipeline and descriptor set ONCE before the entity loop (not per-entity)
     m_Pipeline->Bind(commandBuffer);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        m_Pipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
+    {
+        u32 zeroOff = 0;
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_Pipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &zeroOff);
+    }
 
     // Use the sorted render list (sorted by cachedTextureKey) to maximize descriptor cache hits.
     // The main pass builds m_SortedRenderList each frame; reuse it for the offscreen path.
@@ -1431,8 +1455,13 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             if (!pRD) continue;
             EntityRenderData& renderData = *pRD;
 
-            // Update per-entity material UBO
-            UpdateMaterialBuffer(entity);
+            // Bind material SSBO at this entity's dynamic offset
+            {
+                u32 matIdx = GetMaterialIndex(entity);
+                u32 dynOffset = matIdx * m_MaterialSSBOStride;
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &dynOffset);
+            }
 
             // Push constants (world matrix includes parent chain)
             TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
@@ -1781,6 +1810,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
 
         // Upload frame-level uniforms to this viewport's offscreen buffers
         UpdateFrameUniforms();
+        BuildMaterialSSBO();
 
         // Compute pixel viewport rect
         VkViewport vkViewport{};
@@ -1805,9 +1835,12 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
 
         // Bind pipeline, descriptor set, viewport, and scissor once per viewport
         m_Pipeline->Bind(commandBuffer);
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_Pipeline->GetLayout(), 0, 1,
-            &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
+        {
+            u32 zeroOff = 0;
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_Pipeline->GetLayout(), 0, 1,
+                &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &zeroOff);
+        }
         vkCmdSetViewport(commandBuffer, 0, 1, &vkViewport);
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
@@ -1827,7 +1860,14 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
             if (!pRD) continue;
             EntityRenderData& renderData = *pRD;
 
-            UpdateMaterialBuffer(entity);
+            // Bind material SSBO at this entity's dynamic offset
+            {
+                u32 matIdx = GetMaterialIndex(entity);
+                u32 dynOffset = matIdx * m_MaterialSSBOStride;
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    m_Pipeline->GetLayout(), 0, 1,
+                    &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &dynOffset);
+            }
 
             // Build push constants (world matrix includes parent chain)
             TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
@@ -2650,8 +2690,11 @@ void RenderSystem::RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 ver
 
     m_LinePipeline->Bind(commandBuffer);
 
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        m_LinePipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
+    {
+        u32 zeroOff = 0;
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_LinePipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &zeroOff);
+    }
 
     VkExtent2D extent = m_Renderer->GetSwapchainExtent();
     VkViewport viewport{};
@@ -2703,8 +2746,11 @@ void RenderSystem::RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 ver
     m_LinePipeline->Bind(commandBuffer);
 
     // Use offscreen descriptor sets (camera matrices match the editor viewport camera)
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        m_LinePipeline->GetLayout(), 0, 1, &m_OffscreenDescriptorSets[currentFrame], 0, nullptr);
+    {
+        u32 zeroOff = 0;
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_LinePipeline->GetLayout(), 0, 1, &m_OffscreenDescriptorSets[currentFrame], 1, &zeroOff);
+    }
 
     VkViewport viewport{};
     viewport.x = 0.0f;
@@ -2767,11 +2813,23 @@ void RenderSystem::CreateUniformBuffers() {
             return;
         }
 
-        // Material uniform buffer
-        m_MaterialBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
-        if (!m_MaterialBuffers[i]->Create(sizeof(MaterialGPU), Renderer::BufferUsage::Uniform, true)) {
-            ENJIN_LOG_ERROR(Renderer, "Failed to create material buffer %u", i);
-            return;
+        // Material SSBO (batched) — query device alignment and allocate for initial capacity
+        {
+            if (m_MaterialSSBOStride == 0) {
+                VkPhysicalDeviceProperties devProps;
+                vkGetPhysicalDeviceProperties(m_Renderer->GetContext()->GetPhysicalDevice(), &devProps);
+                u32 minAlign = static_cast<u32>(devProps.limits.minStorageBufferOffsetAlignment);
+                if (minAlign == 0) minAlign = 16;
+                // Round sizeof(MaterialGPU) up to the required alignment
+                m_MaterialSSBOStride = ((static_cast<u32>(sizeof(MaterialGPU)) + minAlign - 1) / minAlign) * minAlign;
+                m_MaterialSSBOCapacity = 256;  // Initial capacity (grows as needed)
+            }
+            usize bufferSize = static_cast<usize>(m_MaterialSSBOStride) * m_MaterialSSBOCapacity;
+            m_MaterialBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+            if (!m_MaterialBuffers[i]->Create(bufferSize, Renderer::BufferUsage::Storage, true)) {
+                ENJIN_LOG_ERROR(Renderer, "Failed to create material SSBO %u", i);
+                return;
+            }
         }
 
         // Offscreen (game view) uniform buffers — one per viewport per frame for splitscreen
@@ -2799,13 +2857,15 @@ void RenderSystem::CreateDescriptorSets() {
     const u32 totalSets = framesInFlight + offscreenSets; // main + splitscreen offscreen
 
     // Create descriptor pool (3 UBOs + 10 combined image samplers + 5 SSBOs per set)
-    std::array<VkDescriptorPoolSize, 3> poolSizes{};
+    std::array<VkDescriptorPoolSize, 4> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = totalSets * 3;
+    poolSizes[0].descriptorCount = totalSets * 2;   // bindings 0-1 (material moved to SSBO)
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = totalSets * 10;  // bindings 3-6, 8-11, 16-17
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[2].descriptorCount = totalSets * 5;  // bindings 7, 12-15
+    poolSizes[2].descriptorCount = totalSets * 5;   // bindings 7, 12-15
+    poolSizes[3].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+    poolSizes[3].descriptorCount = totalSets * 1;   // binding 2 (batched material SSBO)
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -2851,10 +2911,10 @@ void RenderSystem::CreateDescriptorSets() {
         bufferInfos[1].offset = 0;
         bufferInfos[1].range = sizeof(LightingUBO);
 
-        // Material UBO
+        // Material SSBO (dynamic offset — range = one material entry stride)
         bufferInfos[2].buffer = m_MaterialBuffers[i]->GetBuffer();
         bufferInfos[2].offset = 0;
-        bufferInfos[2].range = sizeof(MaterialGPU);
+        bufferInfos[2].range = m_MaterialSSBOStride;
 
         // Default texture (binding 3)
         VkDescriptorImageInfo imageInfo{};
@@ -2994,12 +3054,12 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[1].descriptorCount = 1;
         descriptorWrites[1].pBufferInfo = &bufferInfos[1];
 
-        // Material descriptor
+        // Material SSBO descriptor (dynamic offset)
         descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[2].dstSet = m_DescriptorSets[i];
         descriptorWrites[2].dstBinding = 2;
         descriptorWrites[2].dstArrayElement = 0;
-        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
         descriptorWrites[2].descriptorCount = 1;
         descriptorWrites[2].pBufferInfo = &bufferInfos[2];
 
@@ -3171,10 +3231,10 @@ void RenderSystem::CreateDescriptorSets() {
                 offBufInfos[1].buffer = m_OffscreenLightingBuffers[idx]->GetBuffer();
                 offBufInfos[1].offset = 0;
                 offBufInfos[1].range = sizeof(LightingUBO);
-                // Share the material buffer — it's written per-draw-call anyway
+                // Share the material SSBO — batched per-frame, indexed via dynamic offset
                 offBufInfos[2].buffer = m_MaterialBuffers[i]->GetBuffer();
                 offBufInfos[2].offset = 0;
-                offBufInfos[2].range = sizeof(MaterialGPU);
+                offBufInfos[2].range = m_MaterialSSBOStride;
 
                 VkDescriptorImageInfo offImageInfo{};
                 if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
@@ -3270,7 +3330,7 @@ void RenderSystem::CreateDescriptorSets() {
                 offWrites[0].pBufferInfo = &offBufInfos[0];
                 offWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
                 offWrites[1].pBufferInfo = &offBufInfos[1];
-                offWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                offWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
                 offWrites[2].pBufferInfo = &offBufInfos[2];
                 offWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
                 offWrites[3].pImageInfo = &offImageInfo;
@@ -3711,9 +3771,116 @@ void RenderSystem::UpdateFrameUniforms() {
     }
 }
 
-void RenderSystem::UpdateMaterialBuffer(Entity entity) {
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+void RenderSystem::BuildMaterialSSBO() {
+    if (m_MaterialSSBOBuilt) return;
+    m_MaterialSSBOBuilt = true;
 
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    m_EntityMaterialIndex.clear();
+    m_MaterialSSBOCount = 0;
+
+    // Collect all renderable entities and build material data
+    const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
+    u32 entityCount = static_cast<u32>(meshEntities.size());
+    if (entityCount == 0) {
+        // Upload a single default material so the SSBO is never empty
+        MaterialComponent defaultMat;
+        defaultMat.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
+        MaterialGPU gpu = MaterialGPU::FromComponent(defaultMat);
+        m_MaterialBuffers[currentFrame]->UploadData(&gpu, sizeof(gpu), 0);
+        m_MaterialSSBOCount = 1;
+        return;
+    }
+
+    // Grow GPU buffer if needed (recreate with larger capacity)
+    if (entityCount > m_MaterialSSBOCapacity) {
+        u32 newCapacity = entityCount + (entityCount / 2);  // 1.5x growth
+        if (newCapacity < 256) newCapacity = 256;
+        usize bufferSize = static_cast<usize>(m_MaterialSSBOStride) * newCapacity;
+
+        m_Renderer->GetContext()->WaitForGPU();
+        m_MaterialBuffers[currentFrame] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+        if (!m_MaterialBuffers[currentFrame]->Create(bufferSize, Renderer::BufferUsage::Storage, true)) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to grow material SSBO to %u entries", newCapacity);
+            return;
+        }
+        m_MaterialSSBOCapacity = newCapacity;
+
+        // Must update the descriptor set to point to the new buffer
+        VkDescriptorBufferInfo bufInfo{};
+        bufInfo.buffer = m_MaterialBuffers[currentFrame]->GetBuffer();
+        bufInfo.offset = 0;
+        bufInfo.range = m_MaterialSSBOStride;
+
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = m_DescriptorSets[currentFrame];
+        write.dstBinding = 2;
+        write.dstArrayElement = 0;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+        write.descriptorCount = 1;
+        write.pBufferInfo = &bufInfo;
+        vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &write, 0, nullptr);
+
+        // Also update offscreen descriptor sets that share this material buffer
+        for (u32 v = 0; v < MAX_SPLITSCREEN_VIEWPORTS; ++v) {
+            u32 offIdx = GetOffscreenBufferIndex(currentFrame, v);
+            if (offIdx < m_OffscreenDescriptorSets.size()) {
+                VkWriteDescriptorSet offWrite = write;
+                offWrite.dstSet = m_OffscreenDescriptorSets[offIdx];
+                vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &offWrite, 0, nullptr);
+            }
+        }
+    }
+
+    // Resize CPU staging buffer
+    usize totalBytes = static_cast<usize>(m_MaterialSSBOStride) * entityCount;
+    if (m_MaterialSSBOData.size() < totalBytes) {
+        m_MaterialSSBOData.resize(totalBytes, 0);
+    }
+
+    // Fill material data for each entity
+    u32 index = 0;
+    for (Entity entity : meshEntities) {
+        MaterialGPU materialGPU;
+        MaterialComponent* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
+        if (material) {
+            materialGPU = MaterialGPU::FromComponent(*material);
+        } else {
+            MaterialComponent defaultMat;
+            defaultMat.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
+            defaultMat.metallic = 0.0f;
+            defaultMat.roughness = 0.5f;
+            materialGPU = MaterialGPU::FromComponent(defaultMat);
+        }
+
+        // Write to aligned offset in staging buffer
+        usize offset = static_cast<usize>(m_MaterialSSBOStride) * index;
+        std::memcpy(m_MaterialSSBOData.data() + offset, &materialGPU, sizeof(MaterialGPU));
+
+        m_EntityMaterialIndex[static_cast<u64>(entity)] = index;
+        ++index;
+    }
+
+    m_MaterialSSBOCount = index;
+
+    // Single batched upload to GPU
+    usize uploadSize = static_cast<usize>(m_MaterialSSBOStride) * m_MaterialSSBOCount;
+    m_MaterialBuffers[currentFrame]->UploadData(m_MaterialSSBOData.data(), uploadSize, 0);
+}
+
+u32 RenderSystem::GetMaterialIndex(Entity entity) const {
+    auto it = m_EntityMaterialIndex.find(static_cast<u64>(entity));
+    return (it != m_EntityMaterialIndex.end()) ? it->second : 0;
+}
+
+void RenderSystem::UpdateMaterialBuffer(Entity entity) {
+    // Legacy path: if BuildMaterialSSBO has already run, this is a no-op.
+    // For entities not in the SSBO (e.g., RenderToTarget one-off draws),
+    // write directly to index 0 as a fallback.
+    if (m_MaterialSSBOBuilt) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
     MaterialGPU materialGPU;
     MaterialComponent* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
     if (material) {
@@ -3725,7 +3892,7 @@ void RenderSystem::UpdateMaterialBuffer(Entity entity) {
         defaultMat.roughness = 0.5f;
         materialGPU = MaterialGPU::FromComponent(defaultMat);
     }
-    m_MaterialBuffers[currentFrame]->UploadData(&materialGPU, sizeof(materialGPU));
+    m_MaterialBuffers[currentFrame]->UploadData(&materialGPU, sizeof(materialGPU), 0);
 }
 
 // Legacy wrapper for RenderToTarget which needs both frame + material updates
@@ -4095,8 +4262,20 @@ void RenderSystem::RenderEntity(Entity entity) {
         return;
     }
 
-    // Update per-entity material UBO
-    UpdateMaterialBuffer(entity);
+    // Bind material SSBO at this entity's dynamic offset (or fallback to legacy upload)
+    if (m_MaterialSSBOBuilt) {
+        u32 matIdx = GetMaterialIndex(entity);
+        u32 dynOffset = matIdx * m_MaterialSSBOStride;
+        u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &dynOffset);
+    } else {
+        UpdateMaterialBuffer(entity);
+        u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+        u32 zeroOffset = 0;
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &zeroOffset);
+    }
 
     // Push model matrix and material for this entity (world matrix includes parent chain)
     Renderer::PushConstants pushConstants{};
@@ -4460,8 +4639,11 @@ void RenderSystem::RenderOutlinePass() {
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
     m_OutlinePipeline->Bind(commandBuffer);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        m_OutlinePipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
+    {
+        u32 zeroOff = 0;
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_OutlinePipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &zeroOff);
+    }
 
     for (Entity entity : m_SortedRenderList) {
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
@@ -4530,8 +4712,11 @@ void RenderSystem::RenderOutlinePassForTarget() {
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
     m_OutlinePipeline->Bind(commandBuffer);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        m_OutlinePipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
+    {
+        u32 zeroOff = 0;
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_OutlinePipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &zeroOff);
+    }
 
     const auto& renderList = m_SortedRenderList.empty()
         ? m_World->GetEntitiesWithComponent<MeshComponent>()
@@ -4757,14 +4942,17 @@ void RenderSystem::RenderShadowPass() {
         // Bind shadow pipeline
         m_ShadowPipeline->Bind(commandBuffer);
 
-        // Bind descriptor set (pipeline layout requires it even though shadow shader doesn't use UBO)
-        vkCmdBindDescriptorSets(
-            commandBuffer,
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_ShadowPipeline->GetLayout(),
-            0, 1, &m_DescriptorSets[currentFrame],
-            0, nullptr
-        );
+        // Bind descriptor set (pipeline layout requires it even though shadow shader doesn't use material)
+        {
+            u32 zeroOff = 0;
+            vkCmdBindDescriptorSets(
+                commandBuffer,
+                VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_ShadowPipeline->GetLayout(),
+                0, 1, &m_DescriptorSets[currentFrame],
+                1, &zeroOff
+            );
+        }
 
         // Render cached shadow-casting entities (rebuilt when dirty)
         // This avoids O(n) iteration per cascade — instead we iterate O(k) shadow casters
@@ -4968,8 +5156,11 @@ void RenderSystem::RenderPointShadowPass() {
             m_PointShadowMap->BeginFacePass(commandBuffer, lightIdx, face);
             m_PointShadowPipeline->Bind(commandBuffer);
 
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_PointShadowPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
+            {
+                u32 zeroOff = 0;
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    m_PointShadowPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &zeroOff);
+            }
 
             for (Entity entity : m_ShadowCasters) {
                 auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
@@ -5001,8 +5192,11 @@ void RenderSystem::RenderSpotShadowPass() {
         m_SpotShadowMap->BeginPass(commandBuffer, spotIdx);
         m_SpotShadowPipeline->Bind(commandBuffer);
 
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_SpotShadowPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
+        {
+            u32 zeroOff = 0;
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_SpotShadowPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &zeroOff);
+        }
 
         for (Entity entity : m_ShadowCasters) {
             auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;

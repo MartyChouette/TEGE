@@ -799,13 +799,25 @@ private:
     void UpdateFrameUniforms();
     void UpdateMaterialBuffer(Entity entity);
 
+    // Batched material SSBO — collects all MaterialGPU data at frame start, uploads once
+    void BuildMaterialSSBO();
+    u32 GetMaterialIndex(Entity entity) const;
+
     // Uniform buffers (one per frame in flight)
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_UniformBuffers;
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_LightingBuffers;
     LightingUBO m_CachedLightingData{};  // Cached copy of the latest lighting UBO for RT path tracer NEE
-    std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_MaterialBuffers;
+    std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_MaterialBuffers;  // Now SSBO (one per frame)
     std::vector<VkDescriptorSet> m_DescriptorSets;
     VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
+
+    // Material SSBO batching state
+    std::vector<u8> m_MaterialSSBOData;                 // CPU-side buffer (aligned MaterialGPU entries)
+    std::unordered_map<u64, u32> m_EntityMaterialIndex;  // Entity -> index into SSBO
+    u32 m_MaterialSSBOCount = 0;                         // Number of materials this frame
+    u32 m_MaterialSSBOStride = 0;                        // Bytes per material entry (aligned to device minimum)
+    u32 m_MaterialSSBOCapacity = 0;                      // Max materials the GPU buffer can hold
+    bool m_MaterialSSBOBuilt = false;                    // Set after BuildMaterialSSBO(), reset at frame start
 
     // Offscreen (game view) uniform buffers + descriptor sets
     // Separate from main pass so CPU writes don't overwrite each other

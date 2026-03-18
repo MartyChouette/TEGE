@@ -107,9 +107,9 @@ layout(push_constant) uniform PushConstants {
     float surfaceParam3;  // water: foamScale | artistic: rimLightStrength
 } material;
 
-// Material UBO (binding 2) — extended material data including SSS
-// Layout matches C++ MaterialGPU (std140, 80 bytes)
-layout(binding = 2) uniform MaterialUBO {
+// Material SSBO (binding 2) — batched material data with per-entity dynamic offset
+// Layout matches C++ MaterialGPU (std430, 80 bytes per entry)
+layout(std430, binding = 2) readonly buffer MaterialSSBO {
     vec3  matBaseColor;
     float matMetallic;
     vec3  matEmissiveColor;
@@ -1131,7 +1131,7 @@ void main() {
 #endif
 
     // Subsurface scattering approximation (wrap lighting)
-    // Uses extended material data from MaterialUBO (binding 2)
+    // Uses extended material data from MaterialSSBO (binding 2, dynamic offset per entity)
     if (materialData.matSSSIntensity > 0.0) {
         float sssInt = materialData.matSSSIntensity;
         float sssRad = materialData.matSSSRadius;

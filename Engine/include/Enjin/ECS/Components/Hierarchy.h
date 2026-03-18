@@ -110,23 +110,34 @@ inline bool IsRoot(World* world, Entity entity) {
 // Compute the world-space model matrix for an entity by walking up the parent chain.
 // Multiplies local transforms bottom-up: Grandparent * Parent * Child.
 // Returns local matrix for root entities (no parent). Depth-capped at 64 to prevent infinite loops.
+//
+// Results are cached on TransformComponent::cachedWorldMatrix.  The dirty flag is
+// reset once per frame by RenderSystem::Update(), so within a single frame an
+// entity's world matrix is computed at most once even when referenced by multiple
+// passes (main, shadow, outline, etc.).  Parent matrices computed along the way
+// are also cached, turning deep hierarchy walks into O(1) on subsequent calls.
 inline Math::Matrix4 ComputeWorldMatrix(World* world, Entity entity) {
     auto* transform = world->GetComponent<TransformComponent>(entity);
     if (!transform) return Math::Matrix4::Identity();
 
-    Math::Matrix4 result = transform->ToMatrix();
-
-    auto* pc = world->GetComponent<ParentComponent>(entity);
-    u32 depth = 0;
-    while (pc && pc->parent != INVALID_ENTITY && depth < 64) {
-        auto* parentTransform = world->GetComponent<TransformComponent>(pc->parent);
-        if (!parentTransform) break;
-        result = parentTransform->ToMatrix() * result;
-        pc = world->GetComponent<ParentComponent>(pc->parent);
-        ++depth;
+    // Fast path: return cached result if already computed this frame
+    if (!transform->worldMatrixDirty) {
+        return transform->cachedWorldMatrix;
     }
 
-    return result;
+    // No parent → local matrix is the world matrix
+    auto* pc = world->GetComponent<ParentComponent>(entity);
+    if (!pc || pc->parent == INVALID_ENTITY) {
+        transform->cachedWorldMatrix = transform->ToMatrix();
+        transform->worldMatrixDirty = false;
+        return transform->cachedWorldMatrix;
+    }
+
+    // Has parent → recurse (which will also cache parent results)
+    Math::Matrix4 parentWorld = ComputeWorldMatrix(world, pc->parent);
+    transform->cachedWorldMatrix = parentWorld * transform->ToMatrix();
+    transform->worldMatrixDirty = false;
+    return transform->cachedWorldMatrix;
 }
 
 } // namespace ECS

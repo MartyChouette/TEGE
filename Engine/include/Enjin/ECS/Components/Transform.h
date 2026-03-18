@@ -22,6 +22,14 @@ struct ENJIN_API TransformComponent : public IComponent {
     // Automatically cleared each frame after the render system consumes it.
     bool teleportedThisFrame = false;
 
+    // Cached world matrix — mutable so ComputeWorldMatrix can update the cache
+    // through const references.  The dirty flag is reset at the start of each
+    // frame (RenderSystem::Update) so every entity's world matrix is computed at
+    // most once per frame, even when rendered in multiple passes (main, shadow,
+    // outline, etc.).
+    mutable Math::Matrix4 cachedWorldMatrix;
+    mutable bool worldMatrixDirty = true;
+
     Math::Matrix4 ToMatrix() const {
         Math::Matrix4 translation = Math::Matrix4::Translation(position);
         Math::Matrix4 rotationMat = rotation.ToMatrix();
