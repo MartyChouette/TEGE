@@ -198,6 +198,8 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["fresnelPower"] = material.fresnelPower;
     j["rimLightStrength"] = material.rimLightStrength;
     j["excludeFromCelShading"] = material.excludeFromCelShading;
+    j["outlineWidth"] = material.outlineWidth;
+    j["outlineColor"] = SerializeVector3(material.outlineColor);
     j["ditherGradient"] = material.ditherGradient;
     j["ditherGradientBands"] = material.ditherGradientBands;
     j["ditherGradientPattern"] = material.ditherGradientPattern;
@@ -376,6 +378,8 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("fresnelPower")) material.fresnelPower = j["fresnelPower"].get<f32>();
     if (j.contains("rimLightStrength")) material.rimLightStrength = j["rimLightStrength"].get<f32>();
     if (j.contains("excludeFromCelShading")) material.excludeFromCelShading = JB(j["excludeFromCelShading"]);
+    if (j.contains("outlineWidth")) material.outlineWidth = j["outlineWidth"].get<f32>();
+    if (j.contains("outlineColor")) material.outlineColor = DeserializeVector3(j["outlineColor"]);
     if (j.contains("ditherGradient")) material.ditherGradient = JB(j["ditherGradient"]);
     if (j.contains("ditherGradientBands")) { u8 v = j["ditherGradientBands"].get<u8>(); if (v >= 2 && v <= 8) material.ditherGradientBands = v; }
     if (j.contains("ditherGradientPattern")) { u8 v = j["ditherGradientPattern"].get<u8>(); if (v <= 5) material.ditherGradientPattern = v; }

@@ -211,6 +211,11 @@ struct SceneRenderSettings {
     f32 celOutlineThreshold = 0.1f;
     Math::Vector3 celOutlineColor = Math::Vector3(0.0f, 0.0f, 0.0f);
 
+    // --- Geometry Outlines (inverted-hull) ---
+    bool geometryOutlinesEnabled = false;
+    f32 geometryOutlineWidth = 0.02f;  // World-space extrusion distance
+    Math::Vector3 geometryOutlineColor = Math::Vector3(0.0f, 0.0f, 0.0f); // Black default
+
     // --- Screen-Space Effects ---
     // God Rays
     bool godRaysEnabled = false;

@@ -78,6 +78,10 @@ struct MaterialComponent {
     bool excludeFromCelShading = false;
     u8 lightRampOverride = 0;  // 0=use global, 1-4=override (smooth/warm/cool/anime)
 
+    // Geometry outline (inverted-hull) — per-material override
+    f32 outlineWidth = 0.0f;   // 0=use global, >0=per-material outline thickness (world units)
+    Math::Vector3 outlineColor = Math::Vector3(0.0f, 0.0f, 0.0f); // Black default
+
     // Transmission (glass, water, thin surfaces)
     f32 transmission = 0.0f;        // 0=opaque, 1=fully transmissive
     f32 ior = 1.5f;                 // Index of refraction (1.0=vacuum, 1.33=water, 1.5=glass, 2.42=diamond)

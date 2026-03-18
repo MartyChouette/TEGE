@@ -447,6 +447,13 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
         InspectorUndo::Checkbox(m_UndoRedo, "Exclude From Cel Shading##Mat", &material->excludeFromCelShading);
         ImGui::SetItemTooltip("Exempt this material from the global cel shading effect");
 
+        // Per-material geometry outline override
+        ImGui::DragFloat("Outline Width##Mat", &material->outlineWidth, 0.001f, 0.0f, 0.2f, "%.3f");
+        ImGui::SetItemTooltip("Per-material outline width (0 = use global setting).\nInverted-hull backface extrusion in world units.");
+        if (material->outlineWidth > 0.0f) {
+            ImGui::ColorEdit3("Outline Color##Mat", &material->outlineColor.x);
+        }
+
         // Dithered gradient rendering
         InspectorUndo::Checkbox(m_UndoRedo, "Dithered Gradient##Mat", &material->ditherGradient);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Low-poly flat shading with banded lighting and dither transitions");

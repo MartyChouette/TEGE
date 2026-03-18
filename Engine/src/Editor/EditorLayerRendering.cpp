@@ -1988,6 +1988,24 @@ void EditorLayer::DrawSettingsSection_CelShading() {
             }
             ImGui::SetItemTooltip("Tint shadow areas instead of pure black.\nGives a more stylized anime/cartoon look.");
         }
+
+        ImGui::Separator();
+        bool geomOutlines = m_RenderSystem->IsGeometryOutlinesEnabled();
+        if (ImGui::Checkbox("Geometry Outlines##Cel", &geomOutlines)) {
+            m_RenderSystem->SetGeometryOutlinesEnabled(geomOutlines);
+        }
+        ImGui::SetItemTooltip("Inverted-hull outlines: extrude backfaces along normals\nfor thick, resolution-independent outlines around geometry.");
+        if (geomOutlines) {
+            f32 outWidth = m_RenderSystem->GetGeometryOutlineWidth();
+            if (ImGui::SliderFloat("Outline Width##GeomOutline", &outWidth, 0.001f, 0.1f, "%.3f")) {
+                m_RenderSystem->SetGeometryOutlineWidth(outWidth);
+            }
+            ImGui::SetItemTooltip("Extrusion distance in world units.\n0.01-0.03 typical for characters, 0.05+ for stylized look.");
+            Math::Vector3 outColor = m_RenderSystem->GetGeometryOutlineColor();
+            if (ImGui::ColorEdit3("Outline Color##GeomOutline", &outColor.x)) {
+                m_RenderSystem->SetGeometryOutlineColor(outColor);
+            }
+        }
     }
 }
 

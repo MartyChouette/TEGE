@@ -14,7 +14,7 @@ This document captures detailed technical plans, performance findings, and strat
 | ~~**Art Styles**~~ | ~~Shared Infrastructure — light ramp, normal-based outlines, specular map slot~~ | ~~P0~~ DONE |
 | ~~**Art Styles**~~ | ~~Pre-PBR Realism — half-Lambert wrap, specular map slot~~ | ~~P0~~ ~85% |
 | ~~**Art Styles**~~ | ~~Hand-Painted Stylization — light ramp (4 modes), wrap lighting, per-material ramp override~~ | ~~P0~~ ~90% |
-| **Art Styles** | Enhanced Cel/Toon — inverted-hull geometry outlines (remaining gap) | P0 |
+| ~~**Art Styles**~~ | ~~Enhanced Cel/Toon — inverted-hull geometry outlines~~ | ~~P0~~ DONE |
 | **Art Styles** | NPR Illustrative — pen/ink curvature-driven outline variation (remaining gap) | P0 |
 | ~~**Art Styles**~~ | ~~Pixel Art Polish — PICO-8, Game Boy, NES, CGA, C64 palettes, normal quantization~~ | ~~P0~~ DONE |
 | **Art Styles** | Material-Expression Worlds — matcap texture slot, procedural surface noise (remaining gaps) | P0 |
@@ -28,6 +28,7 @@ This document captures detailed technical plans, performance findings, and strat
 | **Renderer** | DLSS / FSR / XeSS Upscaling (IUpscaler interface, 3 backends) | P2 |
 | **Renderer** | Additional AA (SMAA, MSAA runtime toggle, comparison mode) | P3 |
 | **Renderer** | GPU-Driven Work Scheduling (indirect draw, multi-draw, async compute overlap) | P3 |
+| **Performance** | CPU Scalability Sprint — binary search keyframes, integer sprite sort, cache storage pointers, world matrix caching, bindless render path, batched material SSBO | P0 |
 | **Release** | Splash screen (optional "Made with Enjin") | P2 |
 | **Platforms** | macOS (MoltenVK) | P2 |
 | **Platforms** | Xbox Series X/S (GDK/D3D12) | P2 |
@@ -87,7 +88,7 @@ This document captures detailed technical plans, performance findings, and strat
 | Low-poly retro 3D | 100% — vertex snap, affine textures, flat/Gouraud, UV quantize, stipple, resolution downscale, texture page warping, polygon sort jitter | None |
 | Analog/degraded | 100% — VHS (tracking, wobble, bleed, noise, tape dropout), CRT (10 real presets, phosphor subpixels), film grain, chromatic aberration, film gate weave, light leaks | None |
 | Pixel/3D hybrid | 100% — resolution downscale, color quantization, Bayer dither, palette lock (PICO-8, Game Boy, NES, CGA, C64 presets), normal quantization | None |
-| Cel/toon | ~70% — diffuse bands (2-8), specular cutoff, Sobel depth outlines, per-material exclude | Colored shadows, rim lighting, per-material bands, inverted-hull outlines, normal edges |
+| Cel/toon | 100% — diffuse bands (2-8), specular cutoff, Sobel depth+normal outlines, colored shadows, rim lighting, per-material ramp override, inverted-hull geometry outlines (per-material width/color) | None |
 | NPR illustrative | ~40% — 8 stipple patterns (Crosshatch, Halftone, etc.), configurable density/color modes | Tonal Art Map hatching, watercolor effects, pen/ink variation, paper texture |
 | Pre-PBR realism | ~30% — Blinn-Phong shading model exists | Specular map slot, half-Lambert wrap, scene specular strength |
 | Hand-painted | ~10% — dither gradient flag, LUT grading | Light ramp textures, wrap lighting, per-material ramp override |
@@ -110,13 +111,13 @@ Reusable building blocks that unlock multiple styles:
 - `lightWrapAmount` (0.0-1.0), per-material `lightRampOverride`
 - Files: `triangle.frag`, `SceneRenderSettings.h`, `EditorLayerRendering.cpp`
 
-### Phase 2: Enhanced Cel/Toon (Style 3)
+### Phase 2: Enhanced Cel/Toon (Style 3) ✅ COMPLETE
 
-- `celShadowColor` (Vector3) in LightingUBO — tinted shadows instead of just dark
-- Rim lighting: wire existing `rimLightStrength` from MaterialComponent into shader
-- Per-material `celBandsOverride` (u8, 0 = use global) through push constants
-- Inverted-hull geometry outlines: backface extrusion pass, per-material `outlineWidth`/`outlineColor`
-- Files: `triangle.frag`, `Material.h`, `RenderSystem.cpp` (outline pass)
+- ~~`celShadowColor` (Vector3) in LightingUBO — tinted shadows instead of just dark~~
+- ~~Rim lighting: wire existing `rimLightStrength` from MaterialComponent into shader~~
+- ~~Per-material `celBandsOverride` (u8, 0 = use global) through push constants~~
+- ~~Inverted-hull geometry outlines: backface extrusion pass, per-material `outlineWidth`/`outlineColor`~~
+- Files: `outline.vert`, `outline.frag`, `Material.h`, `RenderSystem.cpp` (outline pipeline + pass)
 
 ### Phase 3: NPR Illustrative (Style 4)
 
@@ -268,6 +269,50 @@ Replaced linear scan in load/unload queues with `unordered_set` for O(1) duplica
 | ~~`std::map<string, string>`~~ | ~~`std::unordered_map`~~ | ~~DialogueTree.h:106, Gameplay.h:883~~ | ✅ RESOLVED |
 | ~~`unordered_map<Entity, RenderData>`~~ | ~~Dense vector indexed by entity~~ | ~~RenderSystem.h~~ | ✅ RESOLVED — `std::vector<EntityRenderData>` indexed by entity ID with `valid` flag, O(1) direct lookup |
 | ~~String-keyed texture cache~~ | ~~Integer-keyed or pointer cache~~ | ~~RenderSystem.h~~ | ✅ RESOLVED — `m_TexturePathToId` (path→u32 ID, only on first load) + `m_TextureById` (dense vector), eliminates per-frame string hashing |
+
+### CPU Performance & Scalability Sprint (P0 — 2026-03-17)
+
+Goal: eliminate CPU-side bottlenecks, maximize GPU utilization, and push entity throughput from ~500 to ~2000+ animated actors at 60fps.
+
+#### Tier 1: Quick Wins (1-2 hours each)
+
+- [x] **Binary search keyframes** — `SampleKeyframes()` switched from O(N) linear scan to O(log N) `std::upper_bound`. ✅
+- [x] **Integer sprite sort keys** — SpriteBatchRenderer sort comparator uses pre-hashed `usize` keys instead of `std::string` comparison. ✅
+- [x] **Cache ECS storage pointers** — `World::GetComponentStorage<T>()` added; RenderSystem caches 5 hot storage pointers per frame, 38 `GetComponent` calls replaced with direct `storage->Get()`. ✅
+- [x] **Maintain light entity list** — `m_LightListDirty` flag gates rebuild; set on entity add/remove, with O(1) size-mismatch fallback for dynamic component changes. ✅
+- [x] **Pre-allocate sprite shadow vectors** — 3 shadow-pass vectors moved to member variables; `clear()` preserves capacity across frames. ✅
+
+#### Tier 2: Competitive Parity (1-2 days each)
+
+- [ ] **Cache world matrices** — `ComputeWorldMatrix()` walks parent chain with hash lookups at every level. Add dirty flag + cached world matrix on TransformComponent, recompute only on local transform change. 15-25% for hierarchies.
+- [ ] **Batched material SSBO** — `UpdateMaterialBuffer()` called per-entity; batch all material data into single SSBO upload per frame. Reduces CPU→GPU transfer overhead.
+- [ ] **Wire bindless into main render path** — `BindlessResourceManager` exists but isn't used in hot path. Migrate material textures to descriptor indexing, eliminate per-entity descriptor set binds.
+- [ ] **Multi-draw indirect batching** — GPU culling writes per-object indirect draw commands, but CPU still dispatches per-entity `vkCmdDrawIndexed`. Consolidate into single `vkCmdDrawIndexedIndirectCount` call per material bucket.
+- [ ] **View-based ECS iteration** — 31 separate `GetEntitiesWithComponent<T>()` calls per frame in RenderSystem. Implement ECS "view" that iterates smallest component set and batch-checks membership in others without hash lookups.
+
+#### Tier 3: Next-Gen Scalability (1-2 weeks each)
+
+- [ ] **SIMD math library** — Vector.h / Matrix.h use scalar `f32` ops. Add SSE/AVX paths for matrix multiply, vector normalize, batch bone matrix interpolation. 2-4x math throughput.
+- [ ] **Slim MaterialComponent** — Currently ~400 B with 5 `std::string` paths + cached pointers + sort key. Split into hot data (~80 B: colors, floats, flags) and cold data (paths, cache) in separate component. 20-30% cache efficiency.
+- [ ] **Delta sprite sorting** — Maintain sorted order across frames; insert/remove on entity add/remove instead of full `std::sort` every frame. O(K) for K changes vs O(N log N).
+
+#### Tier 4: Architectural (1+ month, future)
+
+- [ ] Archetype-based ECS storage (group entities by component signature for cache-optimal multi-component iteration)
+- [ ] Task/mesh shader pipeline (VK_EXT_mesh_shader for geometry amplification)
+- [ ] Async scene serialization (offload to worker thread)
+
+#### Performance Targets
+
+| Metric | Current | Target | Notes |
+|--------|---------|--------|-------|
+| 2D animated sprites at 60fps | ~500-1K | 2K-5K | Sprite batching + integer sort |
+| 3D skeletal actors at 60fps | ~100-500 | 500-2K | Binary search keyframes + SIMD bones |
+| Draw calls per frame (3D) | 1 per entity | 1 per material bucket | Multi-draw indirect |
+| Descriptor set updates/frame | 1 per entity | 0 (bindless) | Descriptor indexing |
+| Animation keyframe lookup | O(N) linear | O(log N) binary | Animation.cpp |
+| Sprite sort comparator | String compare | u32 compare | SpriteBatchRenderer |
+| World matrix computation | Per-entity walk | Cached + dirty flag | TransformComponent |
 
 ### Physics: Jolt + Box2D Integration
 
@@ -918,7 +963,7 @@ All pipeline optimization items resolved: multi-threaded command buffer recordin
 - **Camera Presets** ✅ — 9 built-in presets (Isometric45/30, TopDown, SideScroller, FirstPerson, ThirdPerson, CinematicWide, SecurityCam, BirdsEye). `CameraPreset` enum with `ApplyCameraPreset()` returning configured camera + recommended rotation. Inspector dropdown in Camera component header. Script bindings: `Camera_ApplyPreset()`, `Camera_GetPresetName()`
 - **Tilt-Shift / Miniature Effect** ✅ — Post-process blur with configurable focus Y position, band width, and blur amount. Full PostProcessSettings UBO fields, SceneRenderSettings config, JSON serialization, editor UI. GPU shader: 25-tap blur weighted by screen-Y distance from focus band
 - **Bokeh Depth of Field** ✅ — Focal distance, focal range, near/far blur strength, bokeh size, aperture shape (Circle/Hexagon/Octagon), CoC debug visualization mode. Full pipeline infrastructure with serialization. GPU shader: 16-tap Poisson disc blur weighted by Circle of Confusion, depth linearization with camera near/far planes
-- ~~**Cel Shading / Toon Rendering**~~ ✅ — Configurable diffuse band quantization (2-8 bands) and hard specular cutoff in LightingUBO, per-material opt-out (`excludeFromCelShading`), post-process Sobel edge detection outlines on depth (configurable thickness, threshold, color), full editor UI in Rendering + Post-Processing settings, scene render settings serialization
+- ~~**Cel Shading / Toon Rendering**~~ ✅ — Diffuse band quantization (2-8), specular cutoff, colored shadow tints (5 modes), rim lighting, per-material light ramp override, post-process Sobel outlines (depth+normal weighted), **inverted-hull geometry outlines** (separate backface-extrusion pipeline, per-material `outlineWidth`/`outlineColor` override, skinned mesh support), full editor UI + scene serialization
 - ~~**Full-Screen Stippling & Dither**~~ ✅ — Post-process stipple/dither effect with 8 combinable patterns via bitmask (Bayer 4x4/8x8, Blue Noise, Halftone, Crosshatch, Overlook, Ordered 2x2, Floyd-Steinberg — any combination, thresholds averaged), 3 color modes (Monochrome, Duo-Tone, Full Color), configurable scale/density/strength, foreground/background color pickers, full editor UI in Settings > Scene > Post Processing with checkbox grid, scene render settings serialization
 
 ### Artistic Surface Materials ✅ COMPLETE

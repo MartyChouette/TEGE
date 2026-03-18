@@ -170,11 +170,10 @@ static T SampleKeyframes(const std::vector<f32>& times, const std::vector<T>& va
     if (time <= times.front()) return values.front();
     if (time >= times.back()) return values.back();
 
-    // Find keyframes
-    usize i = 0;
-    for (; i < times.size() - 1; ++i) {
-        if (time < times[i + 1]) break;
-    }
+    // Binary search for the keyframe interval
+    auto it = std::upper_bound(times.begin(), times.end(), time);
+    usize i = (it == times.begin()) ? 0 : static_cast<usize>(std::distance(times.begin(), it) - 1);
+    if (i >= times.size() - 1) i = times.size() - 2;
 
     // Interpolate
     f32 t1 = times[i];

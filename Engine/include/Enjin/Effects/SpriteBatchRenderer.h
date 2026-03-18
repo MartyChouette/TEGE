@@ -111,6 +111,15 @@ private:
     // Reusable instance data cache to avoid per-frame allocation
     std::vector<SpriteInstanceData> m_InstanceDataCache;
 
+    // Reusable shadow pass vectors (cleared each frame, capacity preserved)
+    std::vector<SpriteInstanceData> m_ShadowInstances;
+    struct ShadowBatchEntry {
+        std::string textureKey;
+        u32 instanceIdx;
+    };
+    std::vector<ShadowBatchEntry> m_ShadowBatchEntries;
+    std::vector<SpriteInstanceData> m_SortedShadowInstances;
+
     // Texture atlas for packing small sprites into a single draw call
     SpriteTextureAtlas* m_Atlas = nullptr;
 

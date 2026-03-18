@@ -81,6 +81,11 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.celDiffuseBands = rs->GetCelDiffuseBands();
         s.celSpecularCutoff = rs->GetCelSpecularCutoff();
 
+        // Geometry Outlines
+        s.geometryOutlinesEnabled = rs->IsGeometryOutlinesEnabled();
+        s.geometryOutlineWidth = rs->GetGeometryOutlineWidth();
+        s.geometryOutlineColor = rs->GetGeometryOutlineColor();
+
         // Ray Tracing
         s.rtEnabled = rs->IsRayTracingEnabled();
         s.rtMode = rs->GetRTMode();
@@ -355,6 +360,11 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetCelShadingEnabled(celShadingEnabled);
         rs->SetCelDiffuseBands(celDiffuseBands);
         rs->SetCelSpecularCutoff(celSpecularCutoff);
+
+        // Geometry Outlines
+        rs->SetGeometryOutlinesEnabled(geometryOutlinesEnabled);
+        rs->SetGeometryOutlineWidth(geometryOutlineWidth);
+        rs->SetGeometryOutlineColor(geometryOutlineColor);
 
         // Ray Tracing
         rs->SetRayTracingEnabled(rtEnabled);
@@ -801,6 +811,9 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["celOutlineThickness"]   = RF(s.celOutlineThickness);
     j["celOutlineThreshold"]   = RF(s.celOutlineThreshold);
     j["celOutlineColor"]       = SerializeVec3(s.celOutlineColor);
+    j["geometryOutlinesEnabled"] = s.geometryOutlinesEnabled;
+    j["geometryOutlineWidth"]    = RF(s.geometryOutlineWidth);
+    j["geometryOutlineColor"]    = SerializeVec3(s.geometryOutlineColor);
 
     // Screen-Space Effects
     j["godRaysEnabled"]          = s.godRaysEnabled;
@@ -1060,6 +1073,9 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("celOutlineThickness"))   s.celOutlineThickness   = j["celOutlineThickness"].get<f32>();
     if (j.contains("celOutlineThreshold"))   s.celOutlineThreshold   = j["celOutlineThreshold"].get<f32>();
     if (j.contains("celOutlineColor"))       s.celOutlineColor       = DeserializeVec3(j["celOutlineColor"], s.celOutlineColor);
+    if (j.contains("geometryOutlinesEnabled")) s.geometryOutlinesEnabled = JB(j["geometryOutlinesEnabled"]);
+    if (j.contains("geometryOutlineWidth"))    s.geometryOutlineWidth    = j["geometryOutlineWidth"].get<f32>();
+    if (j.contains("geometryOutlineColor"))    s.geometryOutlineColor    = DeserializeVec3(j["geometryOutlineColor"], s.geometryOutlineColor);
 
     // Screen-Space Effects
     if (j.contains("godRaysEnabled"))          s.godRaysEnabled          = JB(j["godRaysEnabled"]);

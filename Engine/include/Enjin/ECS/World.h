@@ -127,6 +127,26 @@ public:
         return storage->Has(entity);
     }
 
+    /**
+     * @brief Get direct access to a component storage for batch operations
+     *
+     * Returns the underlying ComponentStorage<T> pointer, bypassing the per-entity
+     * hash map lookup in GetComponent<T>(). Callers can then use storage->Get(entity)
+     * for O(1) lookups without the type-ID hash map indirection on each call.
+     *
+     * @tparam T The component type
+     * @return Pointer to the ComponentStorage<T>, or nullptr if no entities have this component
+     */
+    template<typename T>
+    ComponentStorage<T>* GetComponentStorage() {
+        return GetStorageMut<T>();
+    }
+
+    template<typename T>
+    const ComponentStorage<T>* GetComponentStorage() const {
+        return GetStorage<T>();
+    }
+
     // System management
     template<typename T, typename... Args>
     T* RegisterSystem(Args&&... args) {

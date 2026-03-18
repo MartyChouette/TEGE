@@ -83,6 +83,22 @@ RenderSystem::~RenderSystem() {
     Shutdown();
 }
 
+void RenderSystem::RefreshStorageCache() {
+    if (!m_World) {
+        m_CachedTransformStorage = nullptr;
+        m_CachedMeshStorage = nullptr;
+        m_CachedMaterialStorage = nullptr;
+        m_CachedAnimatorStorage = nullptr;
+        m_CachedTextStorage = nullptr;
+        return;
+    }
+    m_CachedTransformStorage = m_World->GetComponentStorage<TransformComponent>();
+    m_CachedMeshStorage = m_World->GetComponentStorage<MeshComponent>();
+    m_CachedMaterialStorage = m_World->GetComponentStorage<MaterialComponent>();
+    m_CachedAnimatorStorage = m_World->GetComponentStorage<AnimatorComponent>();
+    m_CachedTextStorage = m_World->GetComponentStorage<TextComponent>();
+}
+
 void RenderSystem::Initialize() {
     if (m_Initialized) {
         return;
@@ -132,6 +148,23 @@ void RenderSystem::Initialize() {
 
     // Create line pipeline for editor grid rendering
     CreateLinePipeline();
+
+    // Create outline shaders and pipeline (inverted-hull geometry outlines)
+    m_OutlineVertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    if (!m_OutlineVertexShader->LoadFromSPIRV(
+        reinterpret_cast<const u8*>(Renderer::ShaderData::OutlineVertexShaderData),
+        Renderer::ShaderData::OutlineVertexShaderDataSize)) {
+        ENJIN_LOG_WARN(Renderer, "Failed to load outline vertex shader");
+        m_OutlineVertexShader.reset();
+    }
+    m_OutlineFragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    if (!m_OutlineFragmentShader->LoadFromSPIRV(
+        reinterpret_cast<const u8*>(Renderer::ShaderData::OutlineFragmentShaderData),
+        Renderer::ShaderData::OutlineFragmentShaderDataSize)) {
+        ENJIN_LOG_WARN(Renderer, "Failed to load outline fragment shader");
+        m_OutlineFragmentShader.reset();
+    }
+    CreateOutlinePipeline();
 
     // Create cascaded shadow map
     m_ShadowMap = std::make_unique<Renderer::ShadowMap>(m_Renderer->GetContext());
@@ -570,18 +603,30 @@ void RenderSystem::Update(f32 deltaTime) {
     // wasn't called earlier this frame, e.g. in standalone Player without editor)
     FlushPendingChanges();
 
+    // Cache component storage pointers for this frame. Each storage pointer is looked
+    // up once here (via type-ID hash) instead of once per entity in the hot loops.
+    RefreshStorageCache();
+
     // Reset per-frame stats
     ResetFrameCounters();
 
     // Reset per-frame linear allocator (all FrameArray allocations from previous frame are freed)
     if (m_FrameAllocator) m_FrameAllocator->Reset();
 
-    // Cache light entities once per frame (reused by UpdateFrameUniforms, SelectShadowLights, etc.)
-    m_CachedLightEntities.clear();
+    // Rebuild cached light entity list only when dirty (entity add/remove with LightComponent).
+    // Also detect dynamic LightComponent add/remove on existing entities via count mismatch.
     if (m_World) {
-        for (auto e : m_World->GetEntitiesWithComponent<LightComponent>()) {
-            m_CachedLightEntities.push_back(e);
+        const auto& liveLights = m_World->GetEntitiesWithComponent<LightComponent>();
+        if (!m_LightListDirty && liveLights.size() != m_CachedLightEntities.size()) {
+            m_LightListDirty = true;
         }
+        if (m_LightListDirty) {
+            m_CachedLightEntities.assign(liveLights.begin(), liveLights.end());
+            m_LightListDirty = false;
+        }
+    } else if (m_LightListDirty) {
+        m_CachedLightEntities.clear();
+        m_LightListDirty = false;
     }
 
     // Reset per-thread command buffer pools for this frame
@@ -1039,8 +1084,10 @@ void RenderSystem::Update(f32 deltaTime) {
             // Reset descriptor cache for each viewport
             m_LastBound.Reset(); m_GeometryPoolBound = false;
 
+            {
+            auto* spriteStorageVP = m_World->GetComponentStorage<Sprite2DComponent>();
             for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-                auto* xform = m_World->GetComponent<TransformComponent>(entity);
+                auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                 if (!xform) continue;
                 if (!xform->visible) continue;
                 // Skip GPU-culled entities (frustum culling — disabled in editor mode)
@@ -1054,9 +1101,13 @@ void RenderSystem::Update(f32 deltaTime) {
                     }
                 }
                 // Skip 2D sprites — rendered in sorted pass after 3D geometry
-                if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+                if (spriteStorageVP && spriteStorageVP->Has(entity)) continue;
                 RenderEntity(entity);
             }
+            }
+
+            // Geometry outline pass (after 3D geometry)
+            RenderOutlinePass();
 
             // Sorted 2D sprite rendering pass (after 3D geometry)
             RenderSprites();
@@ -1089,13 +1140,20 @@ void RenderSystem::Update(f32 deltaTime) {
     {
         m_SortedRenderList.clear();
 
+        // Cache component storage pointers to avoid per-entity type-ID hash map lookups.
+        // Each GetComponent<T>(entity) does: hash(typeId) → find storage → hash(entity) → find index.
+        // By caching the storage pointer, we skip the first hash map lookup for every entity.
+        auto* xformStorage = m_World->GetComponentStorage<TransformComponent>();
+        auto* matStorage = m_World->GetComponentStorage<MaterialComponent>();
+        auto* spriteStorage = m_World->GetComponentStorage<Sprite2DComponent>();
+
         // Compute camera position for depth-aware sort key
         Math::Vector3 camPos;
         bool haveCam = (m_Camera != nullptr);
         if (haveCam) camPos = m_Camera->GetPosition();
 
         for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-            auto* xform = m_World->GetComponent<TransformComponent>(entity);
+            auto* xform = xformStorage ? xformStorage->Get(entity) : nullptr;
             if (!xform || !xform->visible) continue;
 
             // Skip GPU-culled entities (frustum culling — disabled in editor mode)
@@ -1110,10 +1168,10 @@ void RenderSystem::Update(f32 deltaTime) {
             }
 
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
-            if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+            if (spriteStorage && spriteStorage->Has(entity)) continue;
 
             // Compute 64-bit sort key (pipeline | material/texture hash | depth)
-            auto* mat = m_World->GetComponent<MaterialComponent>(entity);
+            auto* mat = matStorage ? matStorage->Get(entity) : nullptr;
             if (mat) {
                 f32 depth = haveCam ? (xform->position - camPos).Length() : 0.0f;
                 mat->ComputeSortKey(depth);
@@ -1126,9 +1184,9 @@ void RenderSystem::Update(f32 deltaTime) {
         // then by material/texture hash (minimizes descriptor set updates),
         // then by depth (front-to-back for opaque, back-to-front for blend).
         std::sort(m_SortedRenderList.begin(), m_SortedRenderList.end(),
-            [this](Entity a, Entity b) {
-                auto* matA = m_World->GetComponent<MaterialComponent>(a);
-                auto* matB = m_World->GetComponent<MaterialComponent>(b);
+            [matStorage](Entity a, Entity b) {
+                auto* matA = matStorage ? matStorage->Get(a) : nullptr;
+                auto* matB = matStorage ? matStorage->Get(b) : nullptr;
                 u64 keyA = matA ? matA->cachedSortKey : 0;
                 u64 keyB = matB ? matB->cachedSortKey : 0;
                 return keyA < keyB;
@@ -1168,18 +1226,23 @@ void RenderSystem::Update(f32 deltaTime) {
         bool doLOD = (m_Camera != nullptr);
         if (doLOD) camPos = m_Camera->GetPosition();
 
+        // Cache component storage pointers for the hot loop (avoids per-entity type-ID lookups)
+        auto* lodStorage = m_World->GetComponentStorage<LODComponent>();
+        auto* xformStorageLoop = m_World->GetComponentStorage<TransformComponent>();
+        auto* meshStorageLoop = m_World->GetComponentStorage<MeshComponent>();
+
         for (Entity entity : m_SortedRenderList) {
             // LOD selection with hysteresis (if camera is available)
             if (doLOD) {
-                auto* lod = m_World->GetComponent<LODComponent>(entity);
+                auto* lod = lodStorage ? lodStorage->Get(entity) : nullptr;
                 if (lod && lod->enabled && lod->levelCount > 1) {
-                    auto* transform = m_World->GetComponent<TransformComponent>(entity);
+                    auto* transform = xformStorageLoop ? xformStorageLoop->Get(entity) : nullptr;
                     if (transform) {
                         f32 metric;
                         if (lod->useScreenSize) {
                             // Screen-space projected size: accounts for object scale.
                             // Approximation: bounding sphere diameter / distance.
-                            auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+                            auto* mesh = meshStorageLoop ? meshStorageLoop->Get(entity) : nullptr;
                             f32 dist = Math::Max((transform->position - camPos).Length(), 0.001f);
                             f32 scale = Math::Max(Math::Max(
                                 Math::Abs(transform->scale.x),
@@ -1224,7 +1287,7 @@ void RenderSystem::Update(f32 deltaTime) {
                         }
 
                         if (newLOD != lod->activeLOD && newLOD < lod->levelCount) {
-                            auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+                            auto* mesh = meshStorageLoop ? meshStorageLoop->Get(entity) : nullptr;
                             if (mesh && lod->levels[newLOD].mesh.IsValid()) {
                                 *mesh = lod->levels[newLOD].mesh;
                                 if (static_cast<usize>(entity) < m_EntityRenderData.size())
@@ -1239,6 +1302,9 @@ void RenderSystem::Update(f32 deltaTime) {
             RenderEntity(entity);
         }
     }
+
+    // Geometry outline pass (inverted-hull backface extrusion, after main geometry)
+    RenderOutlinePass();
 
     // Render onion skin ghosts (editor viewport only, before sprites)
     RenderOnionSkinGhosts();
@@ -1623,6 +1689,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             m_TriangleCount += renderData.indexCount / 3;
         }
     }
+
+    // Geometry outline pass (inverted-hull backface extrusion, after main geometry)
+    RenderOutlinePassForTarget();
 
     // Sorted 2D sprite rendering pass (after 3D geometry)
     RenderSprites();
@@ -2036,6 +2105,11 @@ void RenderSystem::OnEntityAdded(Entity entity) {
     // Invalidate shadow caster cache (new entity may be a shadow caster)
     m_ShadowCastersDirty = true;
 
+    // Invalidate light entity cache (new entity may have a LightComponent)
+    if (m_World && m_World->HasComponent<LightComponent>(entity)) {
+        m_LightListDirty = true;
+    }
+
     // Cache player entity (first entity with any CharacterController)
     if (m_CachedPlayerEntity == INVALID_ENTITY && m_World) {
         bool hasController = m_World->HasComponent<ThirdPersonController>(entity) ||
@@ -2090,6 +2164,11 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
 
     // Invalidate shadow caster cache (removed entity may have been a shadow caster)
     m_ShadowCastersDirty = true;
+
+    // Invalidate light entity cache (removed entity may have had a LightComponent)
+    if (m_World && m_World->HasComponent<LightComponent>(entity)) {
+        m_LightListDirty = true;
+    }
 
     // Invalidate cached player entity — will be re-discovered lazily
     if (entity == m_CachedPlayerEntity) {
@@ -2170,23 +2249,27 @@ void RenderSystem::RebuildShadowCasterCache() {
     // Reserve approximate capacity based on mesh count
     m_ShadowCasters.reserve(m_SceneComposition.mesh3DCount > 0 ? m_SceneComposition.mesh3DCount : 64);
 
+    // Cache storage pointers to avoid per-entity type-ID hash lookups
+    auto* spriteStorageSC = m_World->GetComponentStorage<Sprite2DComponent>();
+    auto* tilemapStorageSC = m_World->GetComponentStorage<TilemapComponent>();
+
     // Iterate only entities with MeshComponent
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
         // Skip entities without transform
-        auto* xform = m_World->GetComponent<TransformComponent>(entity);
+        auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
         if (!xform) continue;
 
         // Skip 2D sprites — they never cast shadows
-        if (m_World->GetComponent<Sprite2DComponent>(entity)) continue;
+        if (spriteStorageSC && spriteStorageSC->Has(entity)) continue;
 
         // Skip tilemaps
-        if (m_World->GetComponent<TilemapComponent>(entity)) continue;
+        if (tilemapStorageSC && tilemapStorageSC->Has(entity)) continue;
 
         // Skip invisible entities
         if (!xform->visible) continue;
 
         // Check if material casts shadows (default: yes)
-        auto* material = m_World->GetComponent<MaterialComponent>(entity);
+        auto* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
         if (material && !material->castShadows) continue;
 
         m_ShadowCasters.push_back(entity);
@@ -2532,6 +2615,27 @@ void RenderSystem::CreateLinePipeline() {
             m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create line pipeline");
         m_LinePipeline.reset();
+    }
+}
+
+void RenderSystem::CreateOutlinePipeline() {
+    if (!m_Pipeline || !m_OutlineVertexShader || !m_OutlineFragmentShader) return;
+
+    Renderer::PipelineConfig config;
+    config.renderPass = m_Renderer->GetRenderPass();
+    config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    config.depthTest = true;
+    config.depthWrite = true;
+    config.cullMode = VK_CULL_MODE_FRONT_BIT;  // Front-face culling: renders backfaces only (inverted hull)
+    config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    config.polygonMode = VK_POLYGON_MODE_FILL;
+    config.colorAttachmentCount = 2; // MRT: color + velocity (must match render pass)
+
+    m_OutlinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (!m_OutlinePipeline->CreateWithLayout(config, m_OutlineVertexShader.get(), m_OutlineFragmentShader.get(),
+            m_Pipeline->GetDescriptorSetLayout())) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create outline pipeline");
+        m_OutlinePipeline.reset();
     }
 }
 
@@ -3376,9 +3480,10 @@ void RenderSystem::UpdateFrameUniforms() {
 
     bool hasAnyLight = false;
 
+    auto* lightStorageFU = m_World->GetComponentStorage<LightComponent>();
     for (Entity lightEntity : m_CachedLightEntities) {
-        LightComponent* light = m_World->GetComponent<LightComponent>(lightEntity);
-        TransformComponent* lightTransform = m_World->GetComponent<TransformComponent>(lightEntity);
+        LightComponent* light = lightStorageFU ? lightStorageFU->Get(lightEntity) : nullptr;
+        TransformComponent* lightTransform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(lightEntity) : nullptr;
         if (!light) continue;
 
         hasAnyLight = true;
@@ -3610,7 +3715,7 @@ void RenderSystem::UpdateMaterialBuffer(Entity entity) {
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
     MaterialGPU materialGPU;
-    MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
+    MaterialComponent* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
     if (material) {
         materialGPU = MaterialGPU::FromComponent(*material);
     } else {
@@ -3698,6 +3803,7 @@ void RenderSystem::RecreatePipelines(bool gpuAlreadyIdle) {
     }
 
     // Destroy all pipelines that share the descriptor set layout
+    m_OutlinePipeline.reset();
     m_LinePipeline.reset();
     m_ShadowPipeline.reset();
     m_Pipeline.reset();
@@ -3716,6 +3822,7 @@ void RenderSystem::RecreatePipelines(bool gpuAlreadyIdle) {
     if (m_Pipeline) {
         CreateDescriptorSets();
         CreateLinePipeline();
+        CreateOutlinePipeline();
         CreateShadowPipeline();
         CreatePointShadowPipeline();
         CreateSpotShadowPipeline();
@@ -3965,8 +4072,10 @@ void RenderSystem::RenderEntity(Entity entity) {
         return;
     }
 
-    TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
-    MeshComponent* mesh = m_World->GetComponent<MeshComponent>(entity);
+    // Use cached storage pointers (refreshed once per frame in RefreshStorageCache)
+    // to skip the type-ID hash map lookup that GetComponent<T>() does on every call.
+    TransformComponent* transform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
+    MeshComponent* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
 
     if (!transform || !mesh || !mesh->IsValid()) {
         return;
@@ -3993,8 +4102,8 @@ void RenderSystem::RenderEntity(Entity entity) {
     Renderer::PushConstants pushConstants{};
     pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
 
-    // Set material data
-    MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
+    // Set material data (cached storage avoids type-ID lookup)
+    MaterialComponent* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
     Renderer::Texture* boundTexture = nullptr;
 
     // Cached texture pointers for batched descriptor update
@@ -4203,8 +4312,8 @@ void RenderSystem::RenderEntity(Entity entity) {
         }
     }
 
-    // Rasterize text texture if entity has a TextComponent
-    TextComponent* textComp = m_World->GetComponent<TextComponent>(entity);
+    // Rasterize text texture if entity has a TextComponent (cached storage)
+    TextComponent* textComp = m_CachedTextStorage ? m_CachedTextStorage->Get(entity) : nullptr;
     if (textComp && textComp->dirty && !textComp->fontPath.empty() && !textComp->text.empty()) {
         auto pixels = m_TextRasterizer.Rasterize(*textComp);
         if (!pixels.empty()) {
@@ -4227,8 +4336,8 @@ void RenderSystem::RenderEntity(Entity entity) {
     // Batched texture descriptor update (1 vkUpdateDescriptorSets call instead of 5)
     UpdateEntityTextureDescriptors(boundTexture, texHeight, texNormal, texMR, texEmissive);
 
-    // Upload bone matrices for skinned meshes
-    AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+    // Upload bone matrices for skinned meshes (cached storage avoids type-ID lookup)
+    AnimatorComponent* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
     if (animComp && renderData.boneBuffer && animComp->animator.IsPlaying()) {
         const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
         if (!skinningMatrices.empty()) {
@@ -4342,6 +4451,143 @@ void RenderSystem::RenderOnionSkinGhosts() {
     }
 }
 
+void RenderSystem::RenderOutlinePass() {
+    if (!m_OutlinePipeline || !m_GeometryOutlinesEnabled || !m_Renderer || !m_World) return;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+
+    m_OutlinePipeline->Bind(commandBuffer);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_OutlinePipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
+
+    for (Entity entity : m_SortedRenderList) {
+        auto* transform = m_World->GetComponent<TransformComponent>(entity);
+        if (!transform || !transform->visible) continue;
+
+        auto* material = m_World->GetComponent<MaterialComponent>(entity);
+        // Skip entities excluded from cel shading (they don't get outlines)
+        if (material && material->excludeFromCelShading) continue;
+        // Skip 2D sprites
+        if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+        // Skip transparent objects
+        if (material && material->alphaMode == MaterialComponent::AlphaMode::Blend) continue;
+
+        EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
+            ? &m_EntityRenderData[static_cast<usize>(entity)] : nullptr;
+        if (!pRD || !pRD->valid) continue;
+        EntityRenderData& renderData = *pRD;
+
+        // Use per-material outline settings if set, otherwise global
+        f32 outlineWidth = (material && material->outlineWidth > 0.0f) ? material->outlineWidth : m_GeometryOutlineWidth;
+        Math::Vector3 outlineColor = (material && material->outlineWidth > 0.0f) ? material->outlineColor : m_GeometryOutlineColor;
+
+        // Build push constants — repurpose baseColor for outlineColor, metallic for outlineWidth
+        Renderer::PushConstants pc{};
+        pc.model = ECS::ComputeWorldMatrix(m_World, entity);
+        pc.baseColor = outlineColor;
+        pc.metallic = outlineWidth;
+        pc.flags = 0;
+
+        // Propagate skinned flag so outline follows skeletal animation
+        auto* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+        if (animComp && renderData.boneBuffer && animComp->animator.IsPlaying()) {
+            pc.flags |= (1 << 3); // FLAG_SKINNED
+            UpdateBoneDescriptor(renderData.boneBuffer.get());
+        } else if (m_DefaultBoneBuffer) {
+            UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+        }
+
+        vkCmdPushConstants(commandBuffer, m_OutlinePipeline->GetLayout(),
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+
+        // Bind vertex/index buffers and draw
+        if (renderData.poolAlloc.valid && m_GeometryPool) {
+            if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
+            vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
+                             renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
+        } else if (renderData.vertexBuffer && renderData.indexCount > 0) {
+            VkBuffer buffers[] = {renderData.vertexBuffer->GetBuffer()};
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
+            if (renderData.indexBuffer) {
+                vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+            }
+            vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+            m_GeometryPoolBound = false;
+        }
+    }
+}
+
+void RenderSystem::RenderOutlinePassForTarget() {
+    if (!m_OutlinePipeline || !m_GeometryOutlinesEnabled || !m_Renderer || !m_World) return;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+
+    m_OutlinePipeline->Bind(commandBuffer);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_OutlinePipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
+
+    const auto& renderList = m_SortedRenderList.empty()
+        ? m_World->GetEntitiesWithComponent<MeshComponent>()
+        : m_SortedRenderList;
+
+    for (Entity entity : renderList) {
+        auto* transform = m_World->GetComponent<TransformComponent>(entity);
+        if (!transform || !transform->visible) continue;
+
+        auto* material = m_World->GetComponent<MaterialComponent>(entity);
+        if (material && material->excludeFromCelShading) continue;
+        if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+        if (material && material->alphaMode == MaterialComponent::AlphaMode::Blend) continue;
+
+        EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
+            ? &m_EntityRenderData[static_cast<usize>(entity)] : nullptr;
+        if (!pRD || !pRD->valid) continue;
+        EntityRenderData& renderData = *pRD;
+
+        f32 outlineWidth = (material && material->outlineWidth > 0.0f) ? material->outlineWidth : m_GeometryOutlineWidth;
+        Math::Vector3 outlineColor = (material && material->outlineWidth > 0.0f) ? material->outlineColor : m_GeometryOutlineColor;
+
+        Renderer::PushConstants pc{};
+        pc.model = ECS::ComputeWorldMatrix(m_World, entity);
+        pc.baseColor = outlineColor;
+        pc.metallic = outlineWidth;
+        pc.flags = 0;
+
+        auto* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+        if (animComp && renderData.boneBuffer && animComp->animator.IsPlaying()) {
+            pc.flags |= (1 << 3);
+            UpdateBoneDescriptor(renderData.boneBuffer.get());
+        } else if (m_DefaultBoneBuffer) {
+            UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+        }
+
+        vkCmdPushConstants(commandBuffer, m_OutlinePipeline->GetLayout(),
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+
+        if (renderData.poolAlloc.valid && m_GeometryPool) {
+            if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
+            vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
+                             renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
+        } else if (renderData.vertexBuffer && renderData.indexCount > 0) {
+            VkBuffer buffers[] = {renderData.vertexBuffer->GetBuffer()};
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
+            if (renderData.indexBuffer) {
+                vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+            }
+            vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+            m_GeometryPoolBound = false;
+        }
+    }
+}
+
 void RenderSystem::RenderSprites() {
     if (!m_Pipeline || !m_Renderer || !m_World) return;
 
@@ -4353,9 +4599,9 @@ void RenderSystem::RenderSprites() {
     // Render tilemaps first (layer -1000, behind sprites) via the per-entity path
     // Tilemaps are complex meshes that don't benefit from instance batching — render directly
     for (Entity entity : m_World->GetEntitiesWithComponent<TilemapComponent>()) {
-        auto* xformTM = m_World->GetComponent<TransformComponent>(entity);
+        auto* xformTM = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
         if (!xformTM || !xformTM->visible) continue;
-        if (!m_World->GetComponent<MeshComponent>(entity)) continue;
+        if (!(m_CachedMeshStorage && m_CachedMeshStorage->Has(entity))) continue;
         RenderEntity(entity);
     }
 
@@ -4363,8 +4609,9 @@ void RenderSystem::RenderSprites() {
     if (m_SpriteBatchRenderer) {
         // Populate sprite texture atlas with all sprite textures before rendering
         if (m_SpriteAtlas) {
+            auto* spriteAtlasStorage = m_World->GetComponentStorage<Sprite2DComponent>();
             for (Entity entity : m_World->GetEntitiesWithComponent<Sprite2DComponent>()) {
-                auto* sprite = m_World->GetComponent<Sprite2DComponent>(entity);
+                auto* sprite = spriteAtlasStorage ? spriteAtlasStorage->Get(entity) : nullptr;
                 if (sprite && !sprite->texturePath.empty())
                     m_SpriteAtlas->RequestTexture(sprite->texturePath);
             }
@@ -4417,12 +4664,13 @@ void RenderSystem::RenderSprites() {
 
         std::vector<SpriteEntry> sprites;
         sprites.reserve(64);
+        auto* spriteFBStorage = m_World->GetComponentStorage<Sprite2DComponent>();
         for (Entity entity : m_World->GetEntitiesWithComponent<Sprite2DComponent>()) {
-            auto* sprite = m_World->GetComponent<Sprite2DComponent>(entity);
+            auto* sprite = spriteFBStorage ? spriteFBStorage->Get(entity) : nullptr;
             if (!sprite || !sprite->visible) continue;
-            auto* xformSprite = m_World->GetComponent<TransformComponent>(entity);
+            auto* xformSprite = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
             if (!xformSprite || !xformSprite->visible) continue;
-            if (!m_World->GetComponent<MeshComponent>(entity)) continue;
+            if (!(m_CachedMeshStorage && m_CachedMeshStorage->Has(entity))) continue;
 
             sprites.push_back({ entity, sprite->sortingLayer, sprite->orderInLayer });
         }
@@ -4469,11 +4717,12 @@ void RenderSystem::RenderShadowPass() {
 
     Math::Vector3 shadowLightDir(0.5f, 0.8f, 0.3f);
 
+    auto* lightStorageSP = m_World->GetComponentStorage<LightComponent>();
     for (Entity lightEntity : m_CachedLightEntities) {
-        LightComponent* light = m_World->GetComponent<LightComponent>(lightEntity);
+        LightComponent* light = lightStorageSP ? lightStorageSP->Get(lightEntity) : nullptr;
         if (!light || light->type != LightType::Directional || !light->castShadows) continue;
 
-        TransformComponent* lightTransform = m_World->GetComponent<TransformComponent>(lightEntity);
+        TransformComponent* lightTransform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(lightEntity) : nullptr;
         if (lightTransform) {
             Math::Vector3 forward(0.0f, 0.0f, -1.0f);
             shadowLightDir = lightTransform->rotation.Rotate(forward).Normalized();
@@ -4525,7 +4774,7 @@ void RenderSystem::RenderShadowPass() {
 
         for (Entity entity : m_ShadowCasters) {
             // Quick visibility check (may have changed since cache was built)
-            auto* xform = m_World->GetComponent<TransformComponent>(entity);
+            auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
             if (xform && !xform->visible) continue;
 
             RenderEntityShadow(entity, commandBuffer);
@@ -4573,8 +4822,8 @@ void RenderSystem::RenderShadowPassForCamera(Renderer::Camera* camera) {
 }
 
 void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer) {
-    TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
-    MeshComponent* mesh = m_World->GetComponent<MeshComponent>(entity);
+    TransformComponent* transform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
+    MeshComponent* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
 
     if (!transform || !mesh || !mesh->IsValid()) return;
 
@@ -4664,9 +4913,10 @@ void RenderSystem::SelectShadowLights() {
     if (!m_Camera) return;
     Math::Vector3 camPos = m_Camera->GetPosition();
 
+    auto* lightStorageSL = m_World->GetComponentStorage<LightComponent>();
     for (Entity lightEntity : m_CachedLightEntities) {
-        LightComponent* light = m_World->GetComponent<LightComponent>(lightEntity);
-        TransformComponent* lightTransform = m_World->GetComponent<TransformComponent>(lightEntity);
+        LightComponent* light = lightStorageSL ? lightStorageSL->Get(lightEntity) : nullptr;
+        TransformComponent* lightTransform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(lightEntity) : nullptr;
         if (!light || !light->castShadows || !lightTransform) continue;
 
         Math::Vector3 pos = lightTransform->position;
@@ -4722,7 +4972,7 @@ void RenderSystem::RenderPointShadowPass() {
                 m_PointShadowPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
 
             for (Entity entity : m_ShadowCasters) {
-                auto* xform = m_World->GetComponent<TransformComponent>(entity);
+                auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                 if (xform && !xform->visible) continue;
                 RenderEntityShadow(entity, commandBuffer);
             }
@@ -4755,7 +5005,7 @@ void RenderSystem::RenderSpotShadowPass() {
             m_SpotShadowPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
 
         for (Entity entity : m_ShadowCasters) {
-            auto* xform = m_World->GetComponent<TransformComponent>(entity);
+            auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
             if (xform && !xform->visible) continue;
             RenderEntityShadow(entity, commandBuffer);
         }

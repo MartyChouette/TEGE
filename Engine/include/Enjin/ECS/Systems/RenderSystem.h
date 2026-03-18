@@ -414,6 +414,14 @@ public:
     f32 GetCelSpecularCutoff() const { return m_CelSpecularCutoff; }
     void SetCelSpecularCutoff(f32 cutoff) { m_CelSpecularCutoff = cutoff; }
 
+    // Geometry outlines (inverted-hull)
+    bool IsGeometryOutlinesEnabled() const { return m_GeometryOutlinesEnabled; }
+    void SetGeometryOutlinesEnabled(bool enabled) { m_GeometryOutlinesEnabled = enabled; }
+    f32 GetGeometryOutlineWidth() const { return m_GeometryOutlineWidth; }
+    void SetGeometryOutlineWidth(f32 w) { m_GeometryOutlineWidth = w; }
+    Math::Vector3 GetGeometryOutlineColor() const { return m_GeometryOutlineColor; }
+    void SetGeometryOutlineColor(const Math::Vector3& c) { m_GeometryOutlineColor = c; }
+
     // Anti-aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA
     u32 GetAAMode() const { return m_AAMode; }
     void SetAAMode(u32 mode) { m_AAMode = mode; }
@@ -518,6 +526,17 @@ private:
     void RenderShadowPass();
 #endif
 
+    // Per-frame cached component storage pointers — refreshed once at the start of
+    // Update() to avoid repeated type-ID hash map lookups in hot render loops.
+    // Each GetComponent<T>(entity) does hash(typeId)->storage then hash(entity)->index;
+    // caching the storage pointer eliminates the first lookup for every entity.
+    void RefreshStorageCache();
+    ComponentStorage<TransformComponent>* m_CachedTransformStorage = nullptr;
+    ComponentStorage<MeshComponent>* m_CachedMeshStorage = nullptr;
+    ComponentStorage<MaterialComponent>* m_CachedMaterialStorage = nullptr;
+    ComponentStorage<AnimatorComponent>* m_CachedAnimatorStorage = nullptr;
+    ComponentStorage<TextComponent>* m_CachedTextStorage = nullptr;
+
     World* m_World = nullptr;
 #if ENJIN_RENDERER_WEBGPU
     Renderer::WebGPURenderer* m_Renderer = nullptr;
@@ -546,6 +565,14 @@ private:
     // Line rendering (editor grid)
     std::unique_ptr<Renderer::VulkanPipeline> m_LinePipeline;
     void CreateLinePipeline();
+
+    // Geometry outline (inverted-hull backface extrusion)
+    std::unique_ptr<Renderer::VulkanPipeline> m_OutlinePipeline;
+    std::unique_ptr<Renderer::VulkanShader> m_OutlineVertexShader;
+    std::unique_ptr<Renderer::VulkanShader> m_OutlineFragmentShader;
+    void CreateOutlinePipeline();
+    void RenderOutlinePass();
+    void RenderOutlinePassForTarget();  // Offscreen render target variant
 #endif
 
 #if !ENJIN_RENDERER_WEBGPU
@@ -628,6 +655,11 @@ private:
     f32 m_CelDiffuseBands = 3.0f;     // Number of quantized bands (2-8)
     f32 m_CelSpecularCutoff = 0.5f;   // Hard cutoff threshold for specular highlights
 
+    // Geometry outlines (inverted-hull backface extrusion)
+    bool m_GeometryOutlinesEnabled = false;
+    f32 m_GeometryOutlineWidth = 0.02f;   // Global outline width (world units)
+    Math::Vector3 m_GeometryOutlineColor = Math::Vector3(0.0f, 0.0f, 0.0f);
+
     // Global retro shader overrides (forced on all entities when true)
     bool m_GlobalFlatShading = false;
     bool m_GlobalAffineTexturing = false;
@@ -685,8 +717,9 @@ private:
     bool m_ShadowCastersDirty = true;
     void RebuildShadowCasterCache();
 
-    // Per-frame cached light entity list (populated once at start of Update, reused by all sub-functions)
+    // Cached light entity list — rebuilt only when dirty (entity add/remove or light count change)
     std::vector<Entity> m_CachedLightEntities;
+    bool m_LightListDirty = true;
 
 #if !ENJIN_RENDERER_WEBGPU
     // Merged geometry buffer (single VB+IB for all static 3D meshes)
