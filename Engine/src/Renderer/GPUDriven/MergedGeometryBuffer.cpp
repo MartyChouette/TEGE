@@ -179,6 +179,15 @@ void MergedGeometryBuffer::Free(const MeshAllocation& alloc) {
     m_UsedIndices -= alloc.indexCount;
 }
 
+void MergedGeometryBuffer::Clear() {
+    m_VertexFreeList.clear();
+    m_IndexFreeList.clear();
+    if (m_MaxVertices > 0) m_VertexFreeList.push_back({ 0, m_MaxVertices });
+    if (m_MaxIndices > 0) m_IndexFreeList.push_back({ 0, m_MaxIndices });
+    m_UsedVertices = 0;
+    m_UsedIndices = 0;
+}
+
 void MergedGeometryBuffer::BindBuffers(VkCommandBuffer cmd) const {
     if (!m_VertexBuffer || !m_IndexBuffer) return;
 

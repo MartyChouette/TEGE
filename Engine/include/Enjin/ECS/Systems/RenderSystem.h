@@ -196,6 +196,7 @@ public:
     // Reset all per-entity caches (render data, material indices, sorted lists).
     // Must be called after World::Clear() and before the next render frame.
     void OnSceneClear();
+    void FlushSceneClear();
 
     // Process deferred changes (skybox config, pipeline recreation) — call at frame start,
     // BEFORE any command buffer recording (RenderOffscreen, Update, etc.)
@@ -230,6 +231,7 @@ public:
     void SetSkipMainPassRendering(bool skip) { m_SkipMainPassRendering = skip; }
     bool IsSkipMainPassRendering() const { return m_SkipMainPassRendering; }
     bool IsEditorMode() const { return m_IsEditorMode; }
+    bool IsGameViewReady() { if (m_SceneClearCooldown > 0) { --m_SceneClearCooldown; return false; } return true; }
 
     // Render all entities to an offscreen render target using a custom camera
     // Must be called outside of the main render pass (before BeginMainRenderPass)
@@ -864,6 +866,8 @@ private:
     u32 m_MaterialSSBOStride = 0;                        // Bytes per material entry (aligned to device minimum)
     u32 m_MaterialSSBOCapacity = 0;                      // Max materials the GPU buffer can hold
     bool m_MaterialSSBOBuilt = false;                    // Set after BuildMaterialSSBO(), reset at frame start
+    bool m_SceneClearPending = false;                    // Deferred scene-clear flag (flushed at frame boundary)
+    u32 m_SceneClearCooldown = 0;                        // Skip game view for N frames after scene clear
 
     // Offscreen (game view) uniform buffers + descriptor sets
     // Separate from main pass so CPU writes don't overwrite each other

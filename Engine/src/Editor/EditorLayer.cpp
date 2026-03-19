@@ -524,6 +524,20 @@ void EditorLayer::Update(f32 deltaTime) {
     // Begin profiler frame measurement
     Debug::Profiler::Instance().BeginFrame();
 
+    // Handle deferred template application (requested during Render-phase ImGui).
+    // World::Clear() must not run during Render to avoid invalidating GPU resources
+    // still referenced by in-flight Vulkan command buffers.
+    if (!m_PendingTemplateId.empty()) {
+        std::string tmplId = std::move(m_PendingTemplateId);
+        std::string scenePath = std::move(m_PendingSceneLoadPath);
+        m_PendingTemplateId.clear();
+        m_PendingSceneLoadPath.clear();
+        ApplyTemplate(tmplId);
+        if (!scenePath.empty()) {
+            SaveScene(scenePath);
+        }
+    }
+
     // Handle deferred scene load (requested during Render-phase ImGui callbacks).
     // World::Clear() must not run during Render to avoid invalidating entity
     // references still in use by the current frame's draw calls.
@@ -1221,6 +1235,13 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     }
 
     if (!m_GameViewRenderTarget || !m_GameViewRenderTarget->IsValid()) {
+        return;
+    }
+
+    // Skip game view for a couple frames after scene clear — the GPU needs
+    // one full frame cycle to process stale command buffers before we can
+    // safely render into the game view with new descriptor sets.
+    if (m_RenderSystem && !m_RenderSystem->IsGameViewReady()) {
         return;
     }
 

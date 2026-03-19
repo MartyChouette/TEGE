@@ -1018,6 +1018,9 @@ private:
     // Deferred scene open (prevents World::Clear during Render-phase ImGui callbacks)
     std::string m_PendingSceneLoadPath;
 
+    // Deferred template application (same reason — must not Clear during Render)
+    std::string m_PendingTemplateId;
+
     // Deferred import (renders one "Loading..." frame before the blocking import)
     bool m_ImportPending = false;
     std::string m_ImportPendingPath;

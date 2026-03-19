@@ -442,6 +442,17 @@ void RenderSystem::Initialize() {
 }
 
 void RenderSystem::OnSceneClear() {
+    // Defer the actual clear to the next FlushPendingChanges() call at the
+    // frame boundary so we never tear down GPU resources mid-frame.
+    m_SceneClearPending = true;
+}
+
+void RenderSystem::FlushSceneClear() {
+    // Wait for in-flight GPU work before invalidating any resources
+    if (m_Renderer && m_Renderer->GetContext()) {
+        m_Renderer->GetContext()->WaitForGPU();
+    }
+
     m_EntityRenderData.clear();
     m_SortedRenderList.clear();
     m_EntityMaterialIndex.clear();
@@ -449,9 +460,24 @@ void RenderSystem::OnSceneClear() {
     m_CullableObjects.clear();
     m_CachedLightEntities.clear();
     m_LastBound.Reset();
+    // Null ALL cached storage pointers — World::Clear() destroyed the storages
+    // they pointed to, so these are dangling. They'll be refreshed in Update()
+    // via RefreshStorageCache(). Until then, render code null-checks these.
+    m_CachedTransformStorage = nullptr;
+    m_CachedMeshStorage = nullptr;
     m_CachedMaterialStorage = nullptr;
+    m_CachedAnimatorStorage = nullptr;
+    m_CachedTextStorage = nullptr;
     m_MaterialSSBOBuilt = false;
     m_LightListDirty = true;
+    m_SceneComposition.dirty = true;
+    m_SceneClearCooldown = 2;  // Skip game view for 2 frames (double-buffered)
+
+    // Invalidate RT acceleration structures so the driver doesn't access freed geometry
+    if (m_ASManager) {
+        m_ASManager->InvalidateAll();
+        m_ASManager->ResetInstances();
+    }
 }
 
 void RenderSystem::Shutdown() {
@@ -653,6 +679,12 @@ void RenderSystem::ProcessPendingRecreation() {
 
 void RenderSystem::FlushPendingChanges() {
     if (!m_Renderer || !m_Initialized) return;
+
+    // Flush deferred scene clear (set by OnSceneClear mid-frame)
+    if (m_SceneClearPending) {
+        m_SceneClearPending = false;
+        FlushSceneClear();
+    }
 
     // Apply deferred shadow resolution change before pipeline recreation
     // (ProcessPendingRecreation will wait for the GPU via WaitForAllFrames)
@@ -983,6 +1015,7 @@ void RenderSystem::Update(f32 deltaTime) {
     // skip all pre-pass work (shadows, culling, RT, clustered lighting) but still
     // start the main render pass so ImGui has a valid pass to draw into.
     if (m_SkipMainPassRendering) {
+        m_SkipMainPassRendering = false;  // Consume for this frame (RenderOffscreen sets it each frame)
         m_Renderer->BeginMainRenderPass();
         return;
     }
@@ -1544,12 +1577,23 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     // We just need to bind our pipeline and draw within the active render pass
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
-
+    u32 activeIdx = GetActiveBufferIndex(currentFrame);
     // Clamp shadow distance to match game camera far plane (keeps cascade splits consistent)
     f32 prevShadowDist = m_ShadowDistance;
     f32 camFar = camera->GetFarPlane();
     if (m_ShadowDistance > camFar) {
         m_ShadowDistance = camFar;
+    }
+
+    // Ensure light list is fresh (RenderOffscreen runs before Update where it's normally rebuilt)
+    if (m_LightListDirty && m_World) {
+        m_CachedLightEntities.clear();
+        auto* lightStorage = m_World->GetComponentStorage<LightComponent>();
+        if (lightStorage) {
+            const auto& liveLights = m_World->GetEntitiesWithComponent<LightComponent>();
+            m_CachedLightEntities.assign(liveLights.begin(), liveLights.end());
+        }
+        m_LightListDirty = false;
     }
 
     // Upload frame-level uniforms to offscreen buffers (game camera view/proj + lighting)
@@ -1624,7 +1668,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 u32 matIdx = GetMaterialIndex(entity);
                 u32 dynOffset = matIdx * m_MaterialSSBOStride;
                 vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &dynOffset);
+                    m_Pipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &dynOffset);
             }
 
             // Push constants (world matrix includes parent chain)

@@ -2130,12 +2130,11 @@ bool EditorLayer::CreateProjectOnDisk(const std::string& projectDir, const std::
         return false;
     }
 
-    // Apply template to populate the scene
-    ApplyTemplate(templateId);
-
-    // Save the scene file
-    fs::path sceneFilePath = projRoot / relativeScenePath;
-    SaveScene(sceneFilePath.string());
+    // Defer template application + scene save to Update() — World::Clear() must not
+    // run during Render because it invalidates GPU resources still referenced by
+    // in-flight Vulkan command buffers.
+    m_PendingTemplateId = templateId;
+    m_PendingSceneLoadPath = (projRoot / relativeScenePath).string();
 
     // Track as recent project and persist last project directory
     m_EditorSettings.AddRecentProject(manifestPath.string());

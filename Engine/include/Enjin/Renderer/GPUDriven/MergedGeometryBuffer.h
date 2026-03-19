@@ -44,6 +44,9 @@ public:
     // Return a region to the free list
     void Free(const MeshAllocation& alloc);
 
+    // Reset all allocations (free lists restored to full capacity, GPU buffers kept)
+    void Clear();
+
     // Bind the merged vertex + index buffers to a command buffer
     void BindBuffers(VkCommandBuffer cmd) const;
 
