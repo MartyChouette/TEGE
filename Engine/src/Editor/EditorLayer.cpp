@@ -1109,6 +1109,16 @@ void EditorLayer::PrepareRenderTargets() {
     // This prevents crashes with Vulkan hooks (OBS, RenderDoc) that hold
     // references to resources during command buffer recording.
 
+    // After scene clear, drain ALL GPU work before any resize.
+    // Previous frames' command buffers may still reference the old render target
+    // resources. WaitForGPU ensures those are fully processed before we destroy them.
+    if (m_RenderSystem && m_RenderSystem->IsSceneClearActive()) {
+        auto* renderer = m_RenderSystem->GetRenderer();
+        if (renderer && renderer->GetContext()) {
+            renderer->GetContext()->WaitForGPU();
+        }
+    }
+
     // Editor viewport resize
     if (m_EditorViewportRT && m_EditorViewportRT->IsValid() &&
         m_EditorViewportWidth > 0 && m_EditorViewportHeight > 0) {
@@ -1177,6 +1187,14 @@ void EditorLayer::PrepareRenderTargets() {
 void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     ENJIN_PROFILE_SCOPE("Render");
 
+    // Skip ALL offscreen rendering for a few frames after scene clear.
+    // The GPU may still be processing command buffers that reference destroyed
+    // resources from the previous scene. Waiting ensures those are fully drained.
+    if (m_RenderSystem && !m_RenderSystem->IsGameViewReady()) {
+        if (m_RenderSystem) m_RenderSystem->SetSkipMainPassRendering(true);
+        return;
+    }
+
     // --- Editor viewport: render scene from editor camera to offscreen RT ---
     // (Resize is handled by PrepareRenderTargets() before command buffer recording)
     if (m_EditorViewportRT && m_EditorViewportRT->IsValid() &&
@@ -1235,13 +1253,6 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     }
 
     if (!m_GameViewRenderTarget || !m_GameViewRenderTarget->IsValid()) {
-        return;
-    }
-
-    // Skip game view for a couple frames after scene clear — the GPU needs
-    // one full frame cycle to process stale command buffers before we can
-    // safely render into the game view with new descriptor sets.
-    if (m_RenderSystem && !m_RenderSystem->IsGameViewReady()) {
         return;
     }
 

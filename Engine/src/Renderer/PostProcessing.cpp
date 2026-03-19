@@ -4109,6 +4109,26 @@ void PostProcessing::OnResize(u32 width, u32 height) {
     DestroySceneRenderTarget();
     CreateSceneRenderTarget(width, height);
 
+    // Update descriptor set binding 3 (depth texture) to point to the new depth image view.
+    // DestroySceneRenderTarget nulled m_DepthImageView; CreateSceneRenderTarget made a new one.
+    // Without this update, the descriptor set still references the destroyed old image view.
+    if (m_DescriptorSet != VK_NULL_HANDLE && m_DepthImageView != VK_NULL_HANDLE && m_SceneSampler != VK_NULL_HANDLE) {
+        VkDescriptorImageInfo depthInfo{};
+        depthInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        depthInfo.imageView = m_DepthImageView;
+        depthInfo.sampler = m_SceneSampler;
+
+        VkWriteDescriptorSet depthWrite{};
+        depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        depthWrite.dstSet = m_DescriptorSet;
+        depthWrite.dstBinding = 3;
+        depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        depthWrite.descriptorCount = 1;
+        depthWrite.pImageInfo = &depthInfo;
+
+        vkUpdateDescriptorSets(m_Context->GetDevice(), 1, &depthWrite, 0, nullptr);
+    }
+
     // Recreate TAA history buffers at the new resolution
     DestroyTAAResources();
     if (!CreateTAAResources()) {

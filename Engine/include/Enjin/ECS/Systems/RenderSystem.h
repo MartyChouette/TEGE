@@ -232,6 +232,8 @@ public:
     bool IsSkipMainPassRendering() const { return m_SkipMainPassRendering; }
     bool IsEditorMode() const { return m_IsEditorMode; }
     bool IsGameViewReady() { if (m_SceneClearCooldown > 0) { --m_SceneClearCooldown; return false; } return true; }
+    bool IsSceneClearActive() const { return m_SceneClearCooldown > 0; }
+    Renderer::VulkanRenderer* GetRenderer() const { return m_Renderer; }
 
     // Render all entities to an offscreen render target using a custom camera
     // Must be called outside of the main render pass (before BeginMainRenderPass)
