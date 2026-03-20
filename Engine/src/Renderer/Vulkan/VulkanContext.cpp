@@ -368,6 +368,11 @@ bool VulkanContext::CreateLogicalDevice() {
     if (supportedFeatures.samplerAnisotropy) {
         deviceFeatures.samplerAnisotropy = VK_TRUE;
     }
+    // Required for MRT pipelines with different blend states per attachment
+    // (e.g., color attachment with full write mask + velocity attachment with write disabled)
+    if (supportedFeatures.independentBlend) {
+        deviceFeatures.independentBlend = VK_TRUE;
+    }
 
     std::vector<const char*> deviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
