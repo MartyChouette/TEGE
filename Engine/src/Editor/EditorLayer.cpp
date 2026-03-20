@@ -1680,9 +1680,9 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         EvaluatePostProcessVolumes(m_Camera->GetPosition());
     }
 
-    // PP shader produces teal corruption — root cause unresolved despite fixing:
-    // stale SPIR-V, dangling LUT descriptor, render pass mismatch, blend attachment count.
-    // Using blit path (proven correct) until PP shader is rewritten from scratch.
+    // Use blit to copy scene RT to game view RT. PP shader effects (FXAA, bloom,
+    // vignette) are not applied — the PP pipeline has an unresolved issue.
+    // TODO: Write a new minimal fullscreen pass to replace PostProcessing.cpp
     bool usePostProcessing = m_SceneRenderTarget && m_SceneRenderTarget->IsValid();
 
     // Choose render target: scene RT when post-processing is active, game view RT otherwise
