@@ -1680,11 +1680,11 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         EvaluatePostProcessVolumes(m_Camera->GetPosition());
     }
 
-    // Post-processing disabled: the PP pipeline has architectural issues (internal RT
-    // format mismatch, stale render pass handles after resize, descriptor binding confusion
-    // between internal HDR RT and external scene RT). Needs a dedicated rewrite.
-    // Scene renders directly to game view RT which works correctly.
-    bool usePostProcessing = false;
+    // Post-processing uses a blit-based path: scene renders to m_SceneRenderTarget,
+    // then the color image is blitted to m_GameViewRenderTarget. The PP fragment shader
+    // pipeline has descriptor binding issues that produce teal corruption, so we bypass
+    // it entirely and use vkCmdBlitImage which is proven to work correctly.
+    bool usePostProcessing = m_SceneRenderTarget && m_SceneRenderTarget->IsValid();
 
     // Choose render target: scene RT when post-processing is active, game view RT otherwise
     Renderer::RenderTarget* sceneTarget = usePostProcessing
@@ -1909,9 +1909,78 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             depthBound = true;
         }
 
-        m_GameViewRenderTarget->BeginPPPass(commandBuffer);
-        m_PostProcessing->ApplyToCurrentPass(commandBuffer, rtWidth, rtHeight);
-        m_GameViewRenderTarget->EndPPPass(commandBuffer);
+        // Blit scene RT color to game view RT (bypasses PP shader pipeline)
+        {
+            // Transition game view color to TRANSFER_DST
+            VkImageMemoryBarrier dstBarrier{};
+            dstBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            dstBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            dstBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            dstBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            dstBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            dstBarrier.image = m_GameViewRenderTarget->GetColorImage();
+            dstBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            dstBarrier.srcAccessMask = 0;
+            dstBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &dstBarrier);
+
+            // Scene RT color is already in SHADER_READ_ONLY after sceneTarget->End()
+            // Transition to TRANSFER_SRC
+            VkImageMemoryBarrier srcBarrier{};
+            srcBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            srcBarrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            srcBarrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            srcBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            srcBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            srcBarrier.image = m_SceneRenderTarget->GetColorImage();
+            srcBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            srcBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            srcBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &srcBarrier);
+
+            // Blit
+            VkImageBlit region{};
+            region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            region.srcOffsets[0] = {0, 0, 0};
+            region.srcOffsets[1] = {(i32)rtWidth, (i32)rtHeight, 1};
+            region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+            region.dstOffsets[0] = {0, 0, 0};
+            region.dstOffsets[1] = {(i32)m_GameViewRenderTarget->GetWidth(), (i32)m_GameViewRenderTarget->GetHeight(), 1};
+            vkCmdBlitImage(commandBuffer,
+                m_SceneRenderTarget->GetColorImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                m_GameViewRenderTarget->GetColorImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                1, &region, VK_FILTER_LINEAR);
+
+            // Transition game view color to SHADER_READ for ImGui
+            VkImageMemoryBarrier finalBarrier{};
+            finalBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            finalBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            finalBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            finalBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            finalBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            finalBarrier.image = m_GameViewRenderTarget->GetColorImage();
+            finalBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            finalBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            finalBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &finalBarrier);
+
+            // Transition scene RT color back to SHADER_READ for next frame
+            VkImageMemoryBarrier srcRestore{};
+            srcRestore.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            srcRestore.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            srcRestore.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            srcRestore.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            srcRestore.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            srcRestore.image = m_SceneRenderTarget->GetColorImage();
+            srcRestore.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            srcRestore.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            srcRestore.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &srcRestore);
+        }
 
         // Transition scene depth back to attachment layout for next frame
         if (depthBound) {
