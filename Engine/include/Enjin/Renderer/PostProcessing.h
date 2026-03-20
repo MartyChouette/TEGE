@@ -93,7 +93,7 @@ struct alignas(16) PostProcessSettings {
     alignas(4) f32 _pad5;
 
     // FXAA
-    alignas(4) u32 fxaaEnabled = 0;
+    alignas(4) u32 fxaaEnabled = 1;
     alignas(4) f32 fxaaSpanMax = 8.0f;
     alignas(4) f32 fxaaReduceMin = 1.0f / 128.0f;
     alignas(4) f32 fxaaReduceMul = 1.0f / 8.0f;
@@ -364,6 +364,7 @@ public:
 
     // Update the source image that post-processing reads from (rebinds descriptor set binding 0)
     void UpdateSourceImage(VkImageView imageView, VkSampler sampler);
+    void UpdateRenderPass(VkRenderPass newPass);
 
     // Settings
     PostProcessSettings& GetSettings() { return m_Settings; }

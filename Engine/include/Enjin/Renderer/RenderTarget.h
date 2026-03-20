@@ -38,8 +38,14 @@ public:
     // Returns empty vector on failure. Caller owns the data.
     std::vector<u8> CaptureToPixels() const;
 
+    // Begin/End a single-attachment render pass for post-processing output.
+    // Only touches the color image — velocity and depth are left untouched.
+    void BeginPPPass(VkCommandBuffer cmd);
+    void EndPPPass(VkCommandBuffer cmd);
+
     // Getters
     VkRenderPass GetRenderPass() const { return m_RenderPass; }
+    VkRenderPass GetPPRenderPass() const { return m_PPRenderPass; }
     VkFramebuffer GetFramebuffer() const { return m_Framebuffer; }
     VkImageView GetColorImageView() const { return m_ColorImageView; }
     VkImageView GetDepthImageView() const { return m_DepthImageView; }
@@ -55,6 +61,8 @@ private:
     bool CreateImages();
     bool CreateRenderPass();
     bool CreateFramebuffer();
+    bool CreatePPRenderPass();
+    bool CreatePPFramebuffer();
     bool CreateSampler();
     void RegisterImGuiTexture();
     void UnregisterImGuiTexture();
@@ -81,9 +89,13 @@ private:
     VkDeviceMemory m_DepthMemory = VK_NULL_HANDLE;
     VkImageView m_DepthImageView = VK_NULL_HANDLE;
 
-    // Render pass and framebuffer
+    // Render pass and framebuffer (MRT: color + velocity + depth)
     VkRenderPass m_RenderPass = VK_NULL_HANDLE;
     VkFramebuffer m_Framebuffer = VK_NULL_HANDLE;
+
+    // Single-attachment render pass for post-processing (color only, no velocity/depth)
+    VkRenderPass m_PPRenderPass = VK_NULL_HANDLE;
+    VkFramebuffer m_PPFramebuffer = VK_NULL_HANDLE;
 
     // Sampler for reading the color output
     VkSampler m_Sampler = VK_NULL_HANDLE;

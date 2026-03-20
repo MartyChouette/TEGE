@@ -29,6 +29,8 @@ bool RenderTarget::Create(VulkanRenderer* renderer, u32 width, u32 height) {
     if (!CreateImages()) return false;
     if (!CreateRenderPass()) return false;
     if (!CreateFramebuffer()) return false;
+    if (!CreatePPRenderPass()) return false;
+    if (!CreatePPFramebuffer()) return false;
     if (!CreateSampler()) return false;
 
     RegisterImGuiTexture();
@@ -66,6 +68,8 @@ bool RenderTarget::Resize(u32 width, u32 height) {
     if (!CreateImages()) return false;
     if (!CreateRenderPass()) return false;
     if (!CreateFramebuffer()) return false;
+    if (!CreatePPRenderPass()) return false;
+    if (!CreatePPFramebuffer()) return false;
     if (!CreateSampler()) return false;
 
     RegisterImGuiTexture();
@@ -439,6 +443,143 @@ bool RenderTarget::CreateFramebuffer() {
     return true;
 }
 
+bool RenderTarget::CreatePPRenderPass() {
+    VkDevice device = m_Context->GetDevice();
+
+    // Single color attachment — no velocity, no depth
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format = VK_FORMAT_B8G8R8A8_UNORM;
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;  // PP quad overwrites every pixel
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference colorRef{};
+    colorRef.attachment = 0;
+    colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorRef;
+
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    VkRenderPassCreateInfo rpInfo{};
+    rpInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    rpInfo.attachmentCount = 1;
+    rpInfo.pAttachments = &colorAttachment;
+    rpInfo.subpassCount = 1;
+    rpInfo.pSubpasses = &subpass;
+    rpInfo.dependencyCount = 1;
+    rpInfo.pDependencies = &dependency;
+
+    if (vkCreateRenderPass(device, &rpInfo, nullptr, &m_PPRenderPass) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create PP render pass");
+        return false;
+    }
+    return true;
+}
+
+bool RenderTarget::CreatePPFramebuffer() {
+    VkDevice device = m_Context->GetDevice();
+
+    VkImageView attachment = m_ColorImageView;
+
+    VkFramebufferCreateInfo fbInfo{};
+    fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    fbInfo.renderPass = m_PPRenderPass;
+    fbInfo.attachmentCount = 1;
+    fbInfo.pAttachments = &attachment;
+    fbInfo.width = m_Width;
+    fbInfo.height = m_Height;
+    fbInfo.layers = 1;
+
+    if (vkCreateFramebuffer(device, &fbInfo, nullptr, &m_PPFramebuffer) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create PP framebuffer");
+        return false;
+    }
+    return true;
+}
+
+void RenderTarget::BeginPPPass(VkCommandBuffer cmd) {
+    if (m_ColorImage == VK_NULL_HANDLE || m_PPRenderPass == VK_NULL_HANDLE || m_PPFramebuffer == VK_NULL_HANDLE) {
+        return;
+    }
+
+    // Transition color image for writing
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = m_ColorImage;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VkRenderPassBeginInfo rpBegin{};
+    rpBegin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    rpBegin.renderPass = m_PPRenderPass;
+    rpBegin.framebuffer = m_PPFramebuffer;
+    rpBegin.renderArea.offset = {0, 0};
+    rpBegin.renderArea.extent = {m_Width, m_Height};
+    rpBegin.clearValueCount = 0;
+    rpBegin.pClearValues = nullptr;
+
+    vkCmdBeginRenderPass(cmd, &rpBegin, VK_SUBPASS_CONTENTS_INLINE);
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<f32>(m_Width);
+    viewport.height = static_cast<f32>(m_Height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = {m_Width, m_Height};
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+}
+
+void RenderTarget::EndPPPass(VkCommandBuffer cmd) {
+    vkCmdEndRenderPass(cmd);
+
+    // Transition color image to shader-read for ImGui sampling
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = m_ColorImage;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &barrier);
+}
+
 bool RenderTarget::CreateSampler() {
     VkDevice device = m_Context->GetDevice();
 
@@ -486,6 +627,14 @@ void RenderTarget::DestroyResources() {
     if (m_Sampler != VK_NULL_HANDLE) {
         vkDestroySampler(device, m_Sampler, nullptr);
         m_Sampler = VK_NULL_HANDLE;
+    }
+    if (m_PPFramebuffer != VK_NULL_HANDLE) {
+        vkDestroyFramebuffer(device, m_PPFramebuffer, nullptr);
+        m_PPFramebuffer = VK_NULL_HANDLE;
+    }
+    if (m_PPRenderPass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(device, m_PPRenderPass, nullptr);
+        m_PPRenderPass = VK_NULL_HANDLE;
     }
     if (m_Framebuffer != VK_NULL_HANDLE) {
         vkDestroyFramebuffer(device, m_Framebuffer, nullptr);

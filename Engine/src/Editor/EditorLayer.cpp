@@ -221,7 +221,7 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     if (m_GameViewRenderTarget && m_GameViewRenderTarget->IsValid()) {
         m_PostProcessing = std::make_unique<Renderer::PostProcessing>();
         if (!m_PostProcessing->Initialize(renderer->GetContext(),
-                m_GameViewRenderTarget->GetRenderPass(),
+                m_GameViewRenderTarget->GetPPRenderPass(),
                 m_GameViewWidth, m_GameViewHeight, renderer)) {
             ENJIN_LOG_WARN(Editor, "Failed to initialize post-processing");
             m_PostProcessing.reset();
@@ -1171,6 +1171,8 @@ void EditorLayer::PrepareRenderTargets() {
             m_PostProcessing->UpdateSourceImage(
                 m_SceneRenderTarget->GetColorImageView(),
                 m_SceneRenderTarget->GetSampler());
+            // Recreate PP pipeline against the new PP render pass (old handle was destroyed by resize)
+            m_PostProcessing->UpdateRenderPass(m_GameViewRenderTarget->GetPPRenderPass());
         }
     }
 
@@ -1678,9 +1680,10 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         EvaluatePostProcessVolumes(m_Camera->GetPosition());
     }
 
-    // TODO: Post-processing pipeline has render pass compatibility issues causing
-    // teal/cyan color corruption in the game view. Disabled until the PP render pass
-    // is fixed to properly handle the MRT (color+velocity) render target format.
+    // Post-processing disabled: the PP pipeline has architectural issues (internal RT
+    // format mismatch, stale render pass handles after resize, descriptor binding confusion
+    // between internal HDR RT and external scene RT). Needs a dedicated rewrite.
+    // Scene renders directly to game view RT which works correctly.
     bool usePostProcessing = false;
 
     // Choose render target: scene RT when post-processing is active, game view RT otherwise
@@ -1906,9 +1909,9 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             depthBound = true;
         }
 
-        m_GameViewRenderTarget->Begin(commandBuffer);
+        m_GameViewRenderTarget->BeginPPPass(commandBuffer);
         m_PostProcessing->ApplyToCurrentPass(commandBuffer, rtWidth, rtHeight);
-        m_GameViewRenderTarget->End(commandBuffer);
+        m_GameViewRenderTarget->EndPPPass(commandBuffer);
 
         // Transition scene depth back to attachment layout for next frame
         if (depthBound) {
