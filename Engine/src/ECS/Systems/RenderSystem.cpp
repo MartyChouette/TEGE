@@ -4293,15 +4293,6 @@ void RenderSystem::UpdateFrameUniforms() {
         lighting.reflectionProbeBoxMax = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
     }
 
-    // Log every 120 frames (roughly every 2 seconds at 60fps)
-    static u32 s_lightDbg = 0;
-    if (++s_lightDbg % 120 == 1) {
-        ENJIN_LOG_INFO(Renderer, "LightingUBO: dir=%u pt=%u spt=%u cachedLights=%zu ambient=%.2f sceneMode=%d xformCache=%p",
-            lighting.directionalLightCount, lighting.pointLightCount, lighting.spotLightCount,
-            m_CachedLightEntities.size(), lighting.ambientIntensity, (int)m_SceneComposition.mode,
-            (void*)m_CachedTransformStorage);
-    }
-
     (*m_ActiveLightingBuffers)[GetActiveBufferIndex(currentFrame)]->UploadData(&lighting, sizeof(lighting));
 
     // Cache lighting data for RT/path tracer NEE access
