@@ -1088,132 +1088,12 @@ namespace {
 // Draw a procedural mini-preview for template cards (first 4 templates get custom art)
 static void DrawTemplateThumbnail(ImDrawList* dl, const char* templateId, ImVec2 tMin, ImVec2 tMax,
                                    const ImVec4& accent, bool hovered) {
-    f32 w = tMax.x - tMin.x;
-    f32 h = tMax.y - tMin.y;
-
-    // Base gradient background
-    ImU32 bgTop = IM_COL32(
-        (int)(accent.x * 40), (int)(accent.y * 40), (int)(accent.z * 40), 255);
-    ImU32 bgBot = IM_COL32(
-        (int)(accent.x * 20), (int)(accent.y * 20), (int)(accent.z * 20), 255);
-    dl->AddRectFilledMultiColor(tMin, tMax, bgTop, bgTop, bgBot, bgBot);
-
-    ImU32 accentDim = IM_COL32(
-        (int)(accent.x * 150), (int)(accent.y * 150), (int)(accent.z * 150), hovered ? 200 : 120);
-    ImU32 accentBright = IM_COL32(
-        (int)(accent.x * 220), (int)(accent.y * 220), (int)(accent.z * 220), hovered ? 255 : 180);
-
-    std::string id(templateId);
-
-    if (id == "blank") {
-        // Blank: crosshair grid + empty canvas feel
-        ImU32 gridCol = IM_COL32(60, 60, 70, 80);
-        f32 step = 24.0f;
-        for (f32 x = tMin.x + step; x < tMax.x; x += step)
-            dl->AddLine(ImVec2(x, tMin.y), ImVec2(x, tMax.y), gridCol);
-        for (f32 y = tMin.y + step; y < tMax.y; y += step)
-            dl->AddLine(ImVec2(tMin.x, y), ImVec2(tMax.x, y), gridCol);
-        // Center crosshair
-        f32 cx = tMin.x + w * 0.5f, cy = tMin.y + h * 0.5f;
-        dl->AddLine(ImVec2(cx - 20, cy), ImVec2(cx + 20, cy), IM_COL32(120, 120, 140, 180), 1.5f);
-        dl->AddLine(ImVec2(cx, cy - 20), ImVec2(cx, cy + 20), IM_COL32(120, 120, 140, 180), 1.5f);
-        dl->AddCircle(ImVec2(cx, cy), 8.0f, IM_COL32(120, 120, 140, 120));
-    }
-    else if (id == "platformer") {
-        // 2D Platformer: ground, platforms, character silhouette, coins
-        // Ground
-        dl->AddRectFilled(ImVec2(tMin.x, tMax.y - 28), tMax, IM_COL32(50, 120, 50, 200));
-        dl->AddRectFilled(ImVec2(tMin.x, tMax.y - 32), ImVec2(tMax.x, tMax.y - 28), IM_COL32(70, 160, 70, 200));
-        // Platforms
-        dl->AddRectFilled(ImVec2(tMin.x + w * 0.15f, tMax.y - 70), ImVec2(tMin.x + w * 0.40f, tMax.y - 62), accentBright, 3.0f);
-        dl->AddRectFilled(ImVec2(tMin.x + w * 0.55f, tMax.y - 100), ImVec2(tMin.x + w * 0.80f, tMax.y - 92), accentBright, 3.0f);
-        dl->AddRectFilled(ImVec2(tMin.x + w * 0.30f, tMax.y - 130), ImVec2(tMin.x + w * 0.55f, tMax.y - 122), accentDim, 3.0f);
-        // Character (small rect person on ground)
-        f32 charX = tMin.x + w * 0.25f;
-        f32 charY = tMax.y - 28;
-        dl->AddRectFilled(ImVec2(charX - 7, charY - 22), ImVec2(charX + 7, charY), IM_COL32(220, 180, 120, 220), 2.0f);
-        dl->AddCircleFilled(ImVec2(charX, charY - 28), 8.0f, IM_COL32(220, 180, 120, 220));
-        // Coins
-        dl->AddCircleFilled(ImVec2(tMin.x + w * 0.65f, tMax.y - 115), 6.0f, IM_COL32(255, 215, 0, 200));
-        dl->AddCircleFilled(ImVec2(tMin.x + w * 0.72f, tMax.y - 115), 6.0f, IM_COL32(255, 215, 0, 200));
-        // Sky gradient hint (moon/sun)
-        dl->AddCircleFilled(ImVec2(tMax.x - 40, tMin.y + 30), 16.0f, IM_COL32(255, 230, 100, 100));
-    }
-    else if (id == "topdown2d") {
-        // Top-Down: dungeon room, walls, enemies, player dot
-        f32 roomPad = 20.0f;
-        ImVec2 rMin(tMin.x + roomPad, tMin.y + roomPad);
-        ImVec2 rMax(tMax.x - roomPad, tMax.y - roomPad);
-        // Floor
-        dl->AddRectFilled(rMin, rMax, IM_COL32(35, 30, 45, 220));
-        // Walls (thick border)
-        dl->AddRect(rMin, rMax, IM_COL32(80, 70, 100, 220), 0.0f, 0, 4.0f);
-        // Door openings (gaps in walls)
-        dl->AddRectFilled(ImVec2(rMin.x + (rMax.x - rMin.x) * 0.4f, rMin.y - 2),
-                          ImVec2(rMin.x + (rMax.x - rMin.x) * 0.6f, rMin.y + 4), IM_COL32(35, 30, 45, 220));
-        dl->AddRectFilled(ImVec2(rMax.x - 4, rMin.y + (rMax.y - rMin.y) * 0.4f),
-                          ImVec2(rMax.x + 2, rMin.y + (rMax.y - rMin.y) * 0.6f), IM_COL32(35, 30, 45, 220));
-        // Player (blue circle)
-        f32 cx = (rMin.x + rMax.x) * 0.5f, cy = (rMin.y + rMax.y) * 0.5f;
-        dl->AddCircleFilled(ImVec2(cx, cy), 8.0f, accentBright);
-        dl->AddCircle(ImVec2(cx, cy), 8.0f, IM_COL32(255, 255, 255, 120));
-        // Enemies (red diamonds)
-        auto diamond = [&](f32 ex, f32 ey, f32 r) {
-            dl->AddQuadFilled(ImVec2(ex, ey - r), ImVec2(ex + r, ey), ImVec2(ex, ey + r), ImVec2(ex - r, ey),
-                              IM_COL32(200, 60, 60, 200));
-        };
-        diamond(rMin.x + 40, rMin.y + 40, 6.0f);
-        diamond(rMax.x - 40, rMax.y - 40, 6.0f);
-        diamond(rMax.x - 50, rMin.y + 50, 5.0f);
-        // Health bar
-        f32 hbW = 50.0f, hbH = 6.0f;
-        dl->AddRectFilled(ImVec2(cx - hbW * 0.5f, cy + 16), ImVec2(cx + hbW * 0.5f, cy + 16 + hbH), IM_COL32(40, 40, 40, 200));
-        dl->AddRectFilled(ImVec2(cx - hbW * 0.5f, cy + 16), ImVec2(cx + hbW * 0.2f, cy + 16 + hbH), IM_COL32(60, 200, 60, 220));
-    }
-    else if (id == "thirdperson") {
-        // 3D Third Person: horizon, ground plane, character silhouette, shadow
-        // Sky
-        dl->AddRectFilledMultiColor(tMin, ImVec2(tMax.x, tMin.y + h * 0.5f),
-            IM_COL32(40, 50, 80, 255), IM_COL32(40, 50, 80, 255),
-            IM_COL32(60, 70, 100, 255), IM_COL32(60, 70, 100, 255));
-        // Ground plane (perspective floor)
-        f32 horizonY = tMin.y + h * 0.45f;
-        ImVec2 groundPts[4] = {
-            ImVec2(tMin.x, horizonY), ImVec2(tMax.x, horizonY),
-            ImVec2(tMax.x, tMax.y), ImVec2(tMin.x, tMax.y)
-        };
-        dl->AddConvexPolyFilled(groundPts, 4, IM_COL32(45, 55, 40, 220));
-        // Grid lines on ground (perspective)
-        for (int gi = 1; gi <= 4; ++gi) {
-            f32 t = gi / 5.0f;
-            f32 gy = horizonY + (tMax.y - horizonY) * t;
-            dl->AddLine(ImVec2(tMin.x, gy), ImVec2(tMax.x, gy), IM_COL32(60, 70, 55, 100));
-        }
-        // Character silhouette (center-right)
-        f32 charX = tMin.x + w * 0.45f;
-        f32 charBot = tMax.y - 20;
-        f32 charH = h * 0.45f;
-        // Body
-        dl->AddRectFilled(ImVec2(charX - 10, charBot - charH + 20), ImVec2(charX + 10, charBot), accentDim, 3.0f);
-        // Head
-        dl->AddCircleFilled(ImVec2(charX, charBot - charH + 10), 12.0f, accentDim);
-        // Shadow ellipse
-        dl->AddEllipseFilled(ImVec2(charX, charBot + 2), ImVec2(18.0f, 4.0f), IM_COL32(0, 0, 0, 80));
-        // Obstacles in distance
-        dl->AddRectFilled(ImVec2(tMin.x + w * 0.75f, horizonY + 10), ImVec2(tMin.x + w * 0.78f, horizonY + 30), IM_COL32(70, 60, 50, 180));
-        dl->AddRectFilled(ImVec2(tMin.x + w * 0.15f, horizonY + 15), ImVec2(tMin.x + w * 0.22f, horizonY + 25), IM_COL32(70, 60, 50, 180));
-        // Point light
-        dl->AddCircleFilled(ImVec2(tMin.x + w * 0.78f, horizonY - 10), 5.0f, IM_COL32(255, 200, 100, 180));
-        dl->AddCircle(ImVec2(tMin.x + w * 0.78f, horizonY - 10), 12.0f, IM_COL32(255, 200, 100, 60));
-    }
-    else {
-        // Default: accent-colored gradient with template initials
-        ImU32 topCol = IM_COL32(
-            (int)(accent.x * 80), (int)(accent.y * 80), (int)(accent.z * 80), hovered ? 200 : 160);
-        ImU32 botCol = IM_COL32(
-            (int)(accent.x * 40), (int)(accent.y * 40), (int)(accent.z * 40), hovered ? 200 : 160);
-        dl->AddRectFilledMultiColor(tMin, tMax, topCol, topCol, botCol, botCol);
-    }
+    // Simple solid color fill using the template's accent color
+    u8 r = static_cast<u8>(accent.x * 255);
+    u8 g = static_cast<u8>(accent.y * 255);
+    u8 b = static_cast<u8>(accent.z * 255);
+    u8 a = hovered ? 220 : 180;
+    dl->AddRectFilled(tMin, tMax, IM_COL32(r, g, b, a), 4.0f);
 
     // Subtle bottom edge fade-out
     dl->AddRectFilledMultiColor(
@@ -2400,7 +2280,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetAmbientIntensity(0.15f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
         }
 
         return;
@@ -3379,7 +3259,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetAmbientIntensity(0.1f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.vignetteEnabled = 1;
             pp.vignetteIntensity = 0.2f;
             pp.vignetteSmoothness = 0.6f;
@@ -3887,7 +3767,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetAmbientIntensity(0.3f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.vignetteEnabled = 1;
             pp.vignetteIntensity = 0.3f;
             pp.vignetteSmoothness = 0.8f;
@@ -3989,7 +3869,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetFogParams(0.01f, 20.0f, 100.0f, 0.3f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.bloomEnabled = 1;
             pp.bloomThreshold = 0.9f;
             pp.bloomIntensity = 0.3f;
@@ -4097,7 +3977,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetShadowsEnabled(true);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.vignetteEnabled = 1;
             pp.vignetteIntensity = 0.2f;
         }
@@ -4199,7 +4079,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetAmbientIntensity(0.15f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
         }
 
     } else if (templateId == "survival") {
@@ -4341,7 +4221,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetFogParams(0.03f, 10.0f, 80.0f, 0.5f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.vignetteEnabled = 1;
             pp.vignetteIntensity = 0.25f;
             pp.filmGrainEnabled = 1;
@@ -4495,7 +4375,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetAmbientIntensity(0.15f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
         }
 
     } else if (templateId == "horror") {
@@ -4634,7 +4514,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetFogColor(Math::Vector3(0.05f, 0.05f, 0.08f));
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.vignetteEnabled = 1;
             pp.vignetteIntensity = 0.4f;
             pp.filmGrainEnabled = 1;
@@ -4773,7 +4653,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetAmbientIntensity(0.15f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.bloomEnabled = 1;
             pp.bloomThreshold = 1.0f;
             pp.bloomIntensity = 0.2f;
@@ -5069,7 +4949,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetAmbientIntensity(0.1f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.bloomEnabled = 1;
             pp.bloomThreshold = 1.0f;
             pp.bloomIntensity = 0.3f;
@@ -5231,7 +5111,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetAmbientIntensity(0.15f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
         }
 
     } else if (templateId == "narrative") {
@@ -5359,7 +5239,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetAmbientIntensity(0.1f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.vignetteEnabled = 1;
             pp.vignetteIntensity = 0.15f;
         }
@@ -5487,7 +5367,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetAmbientIntensity(0.15f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
         }
 
     } else if (templateId == "visualscript") {
@@ -5637,7 +5517,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetAmbientIntensity(0.15f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
         }
 
     } else if (templateId == "uicanvas") {
@@ -5817,7 +5697,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetAmbientIntensity(0.15f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
         }
 
     } else if (templateId == "accessibility") {
@@ -6092,7 +5972,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetAmbientIntensity(0.15f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
         }
 
     } else if (templateId == "pointclick") {
@@ -6441,7 +6321,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetAmbientIntensity(0.2f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.bloomEnabled = 1;
             pp.bloomThreshold = 0.5f;
             pp.bloomIntensity = 0.6f;
@@ -6767,7 +6647,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetAmbientIntensity(0.12f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.bloomEnabled = 1;
             pp.bloomThreshold = 0.7f;
             pp.bloomIntensity = 0.4f;
@@ -6951,7 +6831,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetAmbientIntensity(0.03f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.vignetteEnabled = 1;
             pp.vignetteIntensity = 0.3f;
         }
@@ -7070,7 +6950,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // Post-processing
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
         }
 
 
@@ -7507,7 +7387,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // Post-processing: FXAA
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
         }
 
         // Main Menu UI canvas
@@ -7756,7 +7636,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetShadowDistance(200.0f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
         }
     }
 
@@ -7951,7 +7831,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // Post-processing: FXAA, vignette
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.vignetteEnabled = 1;
             pp.vignetteIntensity = 0.15f;
         }
@@ -8199,7 +8079,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetAmbientIntensity(0.15f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
         }
 
         {
@@ -8426,7 +8306,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_RenderSystem->SetShadowsEnabled(true);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
         }
 
         // Spawn portal fire particles
@@ -8698,7 +8578,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // Post-processing
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.bloomEnabled = 1;
             pp.bloomThreshold = 1.0f;
             pp.bloomIntensity = 0.2f;
@@ -8988,7 +8868,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // Post-processing
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.bloomEnabled = 1;
             pp.bloomThreshold = 0.8f;
             pp.bloomIntensity = 0.25f;
@@ -9258,7 +9138,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // Post-processing
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.vignetteEnabled = 1;
             pp.vignetteIntensity = 0.2f;
         }
@@ -9788,7 +9668,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // Post-processing
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.vignetteEnabled = 1;
             pp.vignetteIntensity = 0.3f;
         }
@@ -10050,7 +9930,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // Post-processing
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
         }
 
         // Player magic aura
@@ -10464,7 +10344,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // Post-processing
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
         }
     }
 
@@ -10739,7 +10619,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // Post-processing: FXAA, vignette, film grain, chromatic aberration
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.vignetteEnabled = 1;
             pp.vignetteIntensity = 0.35f;
             pp.filmGrainEnabled = 1;
@@ -11170,7 +11050,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // Post-processing
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
         }
 
         // Collision groups
@@ -11679,7 +11559,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // Post-processing
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
             pp.bloomEnabled = 1;
             pp.bloomIntensity = 0.15f;
         }
@@ -11844,7 +11724,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
 
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
-            pp.fxaaEnabled = 1;
+            pp.fxaaEnabled = 0;
         }
     }
 

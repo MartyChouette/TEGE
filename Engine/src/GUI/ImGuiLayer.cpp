@@ -255,9 +255,11 @@ void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
         }
     }
 
-    // If no body font loaded, add the default font so heading/mono are separate
+    // If no body font loaded, add the default font at the configured size
     if (!m_BodyFont) {
-        m_BodyFont = io.Fonts->AddFontDefault();
+        ImFontConfig cfg;
+        cfg.SizePixels = fontConfig.bodyFontSize;
+        m_BodyFont = io.Fonts->AddFontDefault(&cfg);
     }
 
     // Load heading font (H1)

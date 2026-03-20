@@ -6441,7 +6441,7 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
     // Note: skybox pipeline is NOT recreated here — it was created for the swapchain
     // render pass in Initialize() and works in both passes via driver-level render pass
     // compatibility (SRGB/UNORM same memory layout). Destroying and recreating it here
-    // with the offscreen render pass would break the editor viewport's skybox rendering.
+    // would invalidate the descriptor set layout and break skybox rendering entirely.
 }
 
 void RenderSystem::SetSkybox(const Renderer::SkyboxConfig& config) {

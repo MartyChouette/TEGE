@@ -145,11 +145,11 @@ struct EditorFontConfig {
     std::string bodyFontPath;       // Path to body/UI font TTF/OTF (empty = default)
     std::string headingFontPath;    // Path to heading font TTF/OTF (empty = default)
     std::string monoFontPath;       // Path to monospace font TTF/OTF (empty = default)
-    f32 bodyFontSize = 17.0f;
-    f32 headingFontSize = 23.0f;
-    f32 h2FontSize = 18.0f;         // Section titles (uses heading font)
-    f32 smallFontSize = 14.0f;      // Labels, hints (uses body font)
-    f32 monoFontSize = 16.0f;
+    f32 bodyFontSize = 15.0f;
+    f32 headingFontSize = 19.0f;
+    f32 h2FontSize = 16.0f;         // Section titles (uses heading font)
+    f32 smallFontSize = 12.0f;      // Labels, hints (uses body font)
+    f32 monoFontSize = 14.0f;
 };
 
 // ImGui integration layer for Vulkan

@@ -1678,9 +1678,10 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         EvaluatePostProcessVolumes(m_Camera->GetPosition());
     }
 
-    bool usePostProcessing = m_PostProcessing && m_PostProcessing->IsInitialized() &&
-                             m_SceneRenderTarget && m_SceneRenderTarget->IsValid() &&
-                             m_PostProcessing->GetSettings().HasAnyActiveEffects();
+    // TODO: Post-processing pipeline has render pass compatibility issues causing
+    // teal/cyan color corruption in the game view. Disabled until the PP render pass
+    // is fixed to properly handle the MRT (color+velocity) render target format.
+    bool usePostProcessing = false;
 
     // Choose render target: scene RT when post-processing is active, game view RT otherwise
     Renderer::RenderTarget* sceneTarget = usePostProcessing
