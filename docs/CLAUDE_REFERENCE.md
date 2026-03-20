@@ -151,6 +151,11 @@ Per-entity texture (bindings 3/5/6/8/9/18) and bone buffer (binding 7) descripto
 - **`Water3D`** - 3D water plane with Gerstner waves
 - **`RetroEffects`** - CRT, pixelation, dithering post-processing
 - **`ParticleSystem`** - CPU simulation + GPU instanced billboard renderer (up to 16384 particles)
+- **`WindSystem`** - Global wind with gusts + turbulence. Drives vegetation sway, weather particles, water waves. Zone overrides via `WeatherZoneComponent`. Heat source feedback from fire. `GetWindAt(pos)` for CPU query, `GetWindVector()` packed vec4 for GPU (xyz=dir*strength, w=time)
+- **`TreeRenderer`** - GPU-instanced trees (trunk + canopy quads). Seasonal color blending, quadratic trunk bend, auto-collider generation. Shader: `tree.vert/frag`
+- **`GrassRenderer`** - GPU-instanced grass blades (7-vertex tapered strip). `height²` wind curve, player step bending, world curvature. Shader: `grass.vert/frag`
+- **`ShrubRenderer`** - GPU-instanced shrubs (3 intersecting quads). `height^1.5` wind curve (stiffer than grass). Shader: `shrub.vert/frag`
+- **`VegetationComponent`** - Tag for mesh entities. Enables `FLAG_WIND_SWAY` (bit 4) in vertex shader. Uses vertex color red channel as sway weight (0=trunk, 1=tips)
 - **`FluidTerrainCoupling`** - Erosion mode + accumulate mode. Files: `FluidTerrainCoupling.h/cpp`
 - **`ReactionDiffusion`** - Gray-Scott model, 9 presets. Files: `ReactionDiffusion.h/cpp`
 - **`CellularAutomataGeometry`** - 7 CA rules, 3 mesh modes. Files: `CellularAutomataGeometry.h/cpp`

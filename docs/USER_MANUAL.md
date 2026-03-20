@@ -1547,7 +1547,94 @@ A polyline-based 2D terrain for side-scrolling games. Control points define the 
 
 ---
 
-### 5.22 Animation
+### 5.22 Vegetation Components
+
+#### VegetationComponent
+
+A tag component that enables wind sway on any mesh entity. When attached, the vertex shader displaces vertices based on the global wind direction, strength, and time. The sway amount per-vertex is driven by the **vertex color red channel**: paint trunk vertices red=0 (no sway) and leaf/branch tips red=1 (full sway) in your DCC tool before export.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `swayStrength` | f32 | 1.0 | Multiplier for wind displacement amplitude. |
+| `swayFrequency` | f32 | 1.0 | Multiplier for wind animation speed. |
+| `useVertexColorWeight` | bool | true | When true, vertex color red channel scales sway per-vertex. |
+
+**How It Works:** The vertex shader applies two sine-wave displacements (a slow primary sway and a faster secondary rustle) along the wind direction. Each vertex's displacement is multiplied by its red channel value, so you get natural-looking motion where the trunk stays planted and leaves/branches move freely.
+
+**Preparing Models:** In Blender, Maya, or other DCC tools, paint the vertex color red channel as a gradient from 0 at the base to 1 at the tips. Export as glTF/GLB or FBX.
+
+> **Note:** The glTF loader does not currently import vertex colors (COLOR_0 attribute). Imported models will sway uniformly unless vertex color support is added. The procedural vegetation systems (TreeVolume, GrassVolume, ShrubVolume) bypass this limitation with hardcoded geometry.
+
+#### TreeVolumeComponent
+
+Defines a volume that procedurally places GPU-instanced trees. Each tree consists of tapered trunk quads and intersecting canopy quads, all animated by the wind system. Deciduous trees change color with the seasons; evergreen trees remain constant.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `halfExtents` | Vector3 | (20, 0, 20) | Bounding box half-size on the XZ plane. Y is ignored. |
+| `density` | u32 | 100 | Number of tree instances in the volume. |
+| `treeType` | TreeType | Deciduous | `Deciduous` (seasonal color changes) or `Evergreen`. |
+| `trunkHeight` | f32 | 2.0 | Height of the trunk section. |
+| `trunkWidth` | f32 | 0.15 | Base width of the trunk. |
+| `canopyRadius` | f32 | 1.0 | Radius of the canopy quads. |
+| `canopyOffset` | f32 | 1.5 | Y offset from base to canopy center. |
+| `trunkColor` | Vector3 | (0.35, 0.22, 0.1) | Trunk bark color. |
+| `canopyBaseColor` | Vector3 | (0.1, 0.35, 0.08) | Canopy color at the base. |
+| `canopyTipColor` | Vector3 | (0.2, 0.5, 0.15) | Canopy color at the tips. |
+| `springCanopyColor` | Vector3 | (0.3, 0.6, 0.2) | Canopy tint during spring (deciduous only). |
+| `summerCanopyColor` | Vector3 | (0.1, 0.35, 0.08) | Canopy tint during summer (deciduous only). |
+| `fallCanopyColor` | Vector3 | (0.7, 0.4, 0.1) | Canopy tint during autumn (deciduous only). |
+| `windSwayStrength` | f32 | 0.3 | Wind sway multiplier. |
+| `minHeightScale` | f32 | 0.6 | Minimum random height scale per instance. |
+| `maxHeightScale` | f32 | 1.4 | Maximum random height scale per instance. |
+| `canopyQuads` | u32 | 3 | Number of intersecting canopy quads (star pattern). |
+| `barkTexturePath` | string | "" | Optional bark texture. |
+| `canopyTexturePath` | string | "" | Optional canopy texture. |
+
+**Wind behavior:** Trunk vertices bend with a quadratic curve (`height²`) for smooth, natural bending. Canopy vertices sway linearly with the full wind force. Phase is based on world-space XZ position, so nearby trees sway in unison while distant trees are offset.
+
+**Seasons:** Deciduous trees blend between spring, summer, and fall canopy colors based on the `WorldTimeSystem`. In winter, the canopy geometry scales down to simulate bare branches. Evergreen trees stay fully leaved year-round.
+
+#### GrassVolumeComponent
+
+Defines a volume that procedurally places GPU-instanced grass blades. Each blade is a tapered 7-vertex strip that sways in the wind and bends away from the player.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `halfExtents` | Vector3 | (10, 0, 10) | Bounding box half-size on the XZ plane. Y is ignored. |
+| `density` | u32 | 5000 | Number of grass blade instances. |
+| `bladeHeight` | f32 | 0.3 | Blade height in world units. |
+| `bladeHeightVariance` | f32 | 0.1 | Random height variation per blade. |
+| `bladeWidth` | f32 | 0.03 | Blade width at the base. |
+| `baseColor` | Vector3 | (0.2, 0.5, 0.1) | Color at the blade root. |
+| `tipColor` | Vector3 | (0.4, 0.7, 0.2) | Color at the blade tip. |
+| `windSwayStrength` | f32 | 1.0 | Wind sway multiplier. |
+| `customAssetPath` | string | "" | Optional texture or model to override procedural blades. |
+
+**Wind behavior:** Grass uses `heightFraction²` displacement, keeping roots planted while tips move freely. Two sine-wave frequencies (slow + fast) create organic motion. Blades also bend away from the player within a step radius for interactive feedback.
+
+#### ShrubVolumeComponent
+
+Defines a volume that procedurally places GPU-instanced shrubs. Each shrub is a star pattern of intersecting quads.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `halfExtents` | Vector3 | (10, 0, 10) | Bounding box half-size on the XZ plane. Y is ignored. |
+| `density` | u32 | 500 | Number of shrub instances. |
+| `shrubHeight` | f32 | 0.6 | Shrub height in world units. |
+| `heightVariance` | f32 | 0.2 | Random height variation per shrub. |
+| `width` | f32 | 0.4 | Shrub width. |
+| `baseColor` | Vector3 | (0.15, 0.35, 0.1) | Color at the shrub base. |
+| `tipColor` | Vector3 | (0.3, 0.55, 0.15) | Color at the shrub tips. |
+| `windSwayStrength` | f32 | 0.5 | Wind sway multiplier. |
+| `quadsPerShrub` | u32 | 3 | Number of intersecting quads per shrub. |
+| `customAssetPath` | string | "" | Optional texture or model to override procedural shrubs. |
+
+**Wind behavior:** Shrubs use `heightFraction^1.5` displacement — stiffer than grass but more flexible than tree trunks. Slower primary frequency than grass for a heavier, bushier feel.
+
+---
+
+### 5.23 Animation
 
 #### SkeletonComponent
 
@@ -1852,11 +1939,38 @@ A day/night cycle system with configurable speed. As time advances, the sun posi
 
 ### Wind
 
-A global wind system that affects:
+A global wind system drives environmental motion across the engine. Configure wind parameters from **Settings > Scene > Environment** or via scripting.
 
-- Weather particles (rain, snow direction and speed).
-- Vegetation sway (trees, shrubs, grass).
-- Instanced grass rendering with wind-driven animation.
+**What wind affects:**
+
+- **Vegetation sway** — Trees, shrubs, and grass volumes animate based on wind direction and strength. Each vegetation type responds differently: grass is most reactive, shrubs are stiffer, and trees sway slowly with trunk bending.
+- **VegetationComponent meshes** — Any mesh entity with a `VegetationComponent` gets vertex-shader wind sway using the vertex color red channel as a per-vertex weight.
+- **Weather particles** — Rain, snow, and storm particles are pushed by wind direction and strength.
+- **Water surfaces** — Wave amplitude and direction follow wind.
+
+**Wind parameters:**
+
+| Parameter | Description |
+|-----------|-------------|
+| **Direction** | World-space XYZ vector for wind direction. |
+| **Strength** | Base wind force multiplier. |
+| **Gust Strength** | Amplitude of periodic gusts layered on top of base wind. |
+| **Gust Frequency** | How often gusts occur (Hz). |
+| **Turbulence** | High-frequency noise added to wind for organic variation. |
+
+**Zone overrides:** `WeatherZoneComponent` can override global wind within a region (e.g., calm inside a cave, strong gusts on a cliffside).
+
+**Scripting:** Use `Weather_SetWind(dirX, dirY, dirZ, strength)` in AngelScript to control wind at runtime.
+
+**Importing trees with wind:**
+
+1. Model your tree in Blender/Maya with vertex colors: paint the red channel as a 0→1 gradient from trunk base to branch tips.
+2. Export as glTF/GLB or FBX.
+3. Import into Enjin (drag into the viewport or File > Import).
+4. Select the tree entity and add a **VegetationComponent** via the Inspector (Add Component > Environment > Vegetation).
+5. Adjust **Sway Strength** and **Sway Frequency** to taste.
+
+> **Tip:** For forests, use `TreeVolumeComponent` instead — it GPU-instances hundreds of procedural trees with built-in wind animation, seasonal color changes, and automatic collision generation. See [Section 5.22: Vegetation Components](#522-vegetation-components).
 
 ---
 

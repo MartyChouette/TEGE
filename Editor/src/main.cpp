@@ -240,11 +240,15 @@ public:
 
         m_FrameFailCount = 0;
 
-        // Update camera aspect ratio
+        // Update editor camera aspect ratio (only for perspective/3D mode).
+        // For 2D scenes, the editor viewport uses an orthographic camera set by
+        // the template — don't overwrite it with perspective every frame.
         auto extent = m_Renderer->GetSwapchainExtent();
-        if (extent.width > 0 && extent.height > 0 && m_Camera) {
+        if (extent.width > 0 && extent.height > 0 && m_Camera && m_EditorLayer) {
             Enjin::f32 aspect = static_cast<Enjin::f32>(extent.width) / static_cast<Enjin::f32>(extent.height);
-            m_Camera->SetPerspective(45.0f, aspect, 0.1f, 1000.0f);
+            if (m_EditorLayer->GetSceneManager().GetProjectMode() != Enjin::Scene::ProjectMode::Mode2D) {
+                m_Camera->SetPerspective(45.0f, aspect, 0.1f, 1000.0f);
+            }
         }
 
         // Flush deferred changes (skybox config, pipeline recreation) before

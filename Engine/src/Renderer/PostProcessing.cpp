@@ -4736,10 +4736,18 @@ bool PostProcessing::CreatePipeline() {
                                            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     colorBlendAttachment.blendEnable = VK_FALSE;
 
+    // Velocity attachment: don't write anything from post-processing
+    VkPipelineColorBlendAttachmentState velocityBlendAttachment{};
+    velocityBlendAttachment.colorWriteMask = 0;  // No writes to velocity
+    velocityBlendAttachment.blendEnable = VK_FALSE;
+
+    // Must match render pass color attachment count (color + velocity = 2)
+    VkPipelineColorBlendAttachmentState blendAttachments[] = { colorBlendAttachment, velocityBlendAttachment };
+
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+    colorBlending.attachmentCount = 2;
+    colorBlending.pAttachments = blendAttachments;
 
     // No depth testing for post-process
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
