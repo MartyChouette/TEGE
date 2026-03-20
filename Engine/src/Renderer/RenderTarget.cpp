@@ -75,8 +75,16 @@ bool RenderTarget::Resize(u32 width, u32 height) {
 }
 
 void RenderTarget::Begin(VkCommandBuffer cmd) {
-    // Transition color and velocity images to attachment layout
-    std::array<VkImageMemoryBarrier, 2> barriers{};
+    if (m_ColorImage == VK_NULL_HANDLE || m_RenderPass == VK_NULL_HANDLE || m_Framebuffer == VK_NULL_HANDLE) {
+        ENJIN_LOG_ERROR(Renderer, "RenderTarget::Begin: null resource! color=%p pass=%p fb=%p vel=%p depth=%p",
+            (void*)(uintptr_t)m_ColorImage, (void*)(uintptr_t)m_RenderPass,
+            (void*)(uintptr_t)m_Framebuffer, (void*)(uintptr_t)m_VelocityImage,
+            (void*)(uintptr_t)m_DepthImage);
+        return;
+    }
+    // Transition color (and velocity if present) images to attachment layout
+    VkImageMemoryBarrier barriers[2]{};
+    u32 barrierCount = 0;
 
     barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -87,22 +95,26 @@ void RenderTarget::Begin(VkCommandBuffer cmd) {
     barriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
     barriers[0].srcAccessMask = 0;
     barriers[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barrierCount = 1;
 
-    barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    barriers[1].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barriers[1].image = m_VelocityImage;
-    barriers[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-    barriers[1].srcAccessMask = 0;
-    barriers[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    if (m_VelocityImage != VK_NULL_HANDLE) {
+        barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barriers[1].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barriers[1].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[1].image = m_VelocityImage;
+        barriers[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        barriers[1].srcAccessMask = 0;
+        barriers[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        barrierCount = 2;
+    }
 
     vkCmdPipelineBarrier(cmd,
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
         0, 0, nullptr, 0, nullptr,
-        static_cast<u32>(barriers.size()), barriers.data());
+        barrierCount, barriers);
 
     // Begin render pass
     VkRenderPassBeginInfo rpBegin{};
@@ -171,7 +183,7 @@ bool RenderTarget::CreateImages() {
     VkImageCreateInfo colorInfo{};
     colorInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     colorInfo.imageType = VK_IMAGE_TYPE_2D;
-    colorInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
+    colorInfo.format = VK_FORMAT_B8G8R8A8_SRGB;
     colorInfo.extent = {m_Width, m_Height, 1};
     colorInfo.mipLevels = 1;
     colorInfo.arrayLayers = 1;
@@ -209,7 +221,7 @@ bool RenderTarget::CreateImages() {
     colorViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     colorViewInfo.image = m_ColorImage;
     colorViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    colorViewInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
+    colorViewInfo.format = VK_FORMAT_B8G8R8A8_SRGB;
     colorViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     colorViewInfo.subresourceRange.baseMipLevel = 0;
     colorViewInfo.subresourceRange.levelCount = 1;
@@ -327,7 +339,7 @@ bool RenderTarget::CreateRenderPass() {
 
     // Attachment 0: Color
     VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = VK_FORMAT_B8G8R8A8_UNORM;
+    colorAttachment.format = VK_FORMAT_B8G8R8A8_SRGB;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
