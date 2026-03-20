@@ -62,7 +62,9 @@ std::unique_ptr<IPhysicsBackend2D> CreatePhysicsBackend2D(PhysicsBackendType typ
         ENJIN_LOG_WARN(Physics, "Jolt is a 3D backend — cannot use for 2D physics");
     }
 
-    ENJIN_LOG_ERROR(Physics, "No 2D physics backend available");
+    if (type != PhysicsBackendType::Auto) {
+        ENJIN_LOG_ERROR(Physics, "No 2D physics backend available");
+    }
     return nullptr;
 }
 
