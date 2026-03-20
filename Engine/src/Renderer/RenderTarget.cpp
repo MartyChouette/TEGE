@@ -183,7 +183,7 @@ bool RenderTarget::CreateImages() {
     VkImageCreateInfo colorInfo{};
     colorInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     colorInfo.imageType = VK_IMAGE_TYPE_2D;
-    colorInfo.format = VK_FORMAT_B8G8R8A8_SRGB;
+    colorInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
     colorInfo.extent = {m_Width, m_Height, 1};
     colorInfo.mipLevels = 1;
     colorInfo.arrayLayers = 1;
@@ -221,7 +221,7 @@ bool RenderTarget::CreateImages() {
     colorViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     colorViewInfo.image = m_ColorImage;
     colorViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    colorViewInfo.format = VK_FORMAT_B8G8R8A8_SRGB;
+    colorViewInfo.format = VK_FORMAT_B8G8R8A8_UNORM;
     colorViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     colorViewInfo.subresourceRange.baseMipLevel = 0;
     colorViewInfo.subresourceRange.levelCount = 1;
@@ -339,7 +339,7 @@ bool RenderTarget::CreateRenderPass() {
 
     // Attachment 0: Color
     VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = VK_FORMAT_B8G8R8A8_SRGB;
+    colorAttachment.format = VK_FORMAT_B8G8R8A8_UNORM;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
