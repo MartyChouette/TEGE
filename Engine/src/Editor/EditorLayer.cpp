@@ -1680,9 +1680,9 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         EvaluatePostProcessVolumes(m_Camera->GetPosition());
     }
 
-    // Use blit to copy scene RT to game view RT. PP shader effects (FXAA, bloom,
-    // vignette) are not applied — the PP pipeline has an unresolved issue.
-    // TODO: Write a new minimal fullscreen pass to replace PostProcessing.cpp
+    // Scene renders to m_SceneRenderTarget, then blit copies to m_GameViewRenderTarget.
+    // PP shader effects need RenderDoc debugging to fix (teal corruption persists
+    // despite removing internal HDR RT, fixing descriptors, recompiling shaders).
     bool usePostProcessing = m_SceneRenderTarget && m_SceneRenderTarget->IsValid();
 
     // Choose render target: scene RT when post-processing is active, game view RT otherwise
@@ -1911,17 +1911,15 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         // Blit scene RT color to game view RT
         {
             VkImageMemoryBarrier barriers[2]{};
-            barriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barriers[0] = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
             barriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
             barriers[0].newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
             barriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barriers[0].image = m_GameViewRenderTarget->GetColorImage();
             barriers[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-            barriers[0].srcAccessMask = 0;
             barriers[0].dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-            barriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            barriers[1] = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
             barriers[1].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             barriers[1].newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
             barriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -1930,7 +1928,6 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             barriers[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             barriers[1].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
             barriers[1].dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-
             vkCmdPipelineBarrier(commandBuffer,
                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 2, barriers);
@@ -1939,14 +1936,15 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
             region.srcOffsets[1] = {(i32)rtWidth, (i32)rtHeight, 1};
             region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-            region.dstOffsets[1] = {(i32)m_GameViewRenderTarget->GetWidth(), (i32)m_GameViewRenderTarget->GetHeight(), 1};
+            region.dstOffsets[1] = {(i32)m_GameViewRenderTarget->GetWidth(),
+                                   (i32)m_GameViewRenderTarget->GetHeight(), 1};
             vkCmdBlitImage(commandBuffer,
                 m_SceneRenderTarget->GetColorImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                 m_GameViewRenderTarget->GetColorImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 1, &region, VK_FILTER_LINEAR);
 
             VkImageMemoryBarrier restores[2]{};
-            restores[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            restores[0] = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
             restores[0].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
             restores[0].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             restores[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -1955,8 +1953,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             restores[0].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             restores[0].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             restores[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-            restores[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            restores[1] = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
             restores[1].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
             restores[1].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             restores[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -1965,7 +1962,6 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             restores[1].subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
             restores[1].srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
             restores[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
             vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 2, restores);
         }

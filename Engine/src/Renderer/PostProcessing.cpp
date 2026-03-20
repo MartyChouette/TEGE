@@ -4002,10 +4002,20 @@ bool PostProcessing::Initialize(VulkanContext* context, VkRenderPass renderPass,
 
     ENJIN_LOG_INFO(Renderer, "Initializing post-processing (%ux%u)", width, height);
 
-    // Create scene render target for HDR rendering
-    if (!CreateSceneRenderTarget(width, height)) {
-        ENJIN_LOG_ERROR(Renderer, "Failed to create scene render target");
-        return false;
+    // Create a sampler for reading the source scene texture
+    {
+        VkSamplerCreateInfo samplerInfo{};
+        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = VK_FILTER_LINEAR;
+        samplerInfo.minFilter = VK_FILTER_LINEAR;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.maxLod = 0.0f;
+        if (vkCreateSampler(context->GetDevice(), &samplerInfo, nullptr, &m_SceneSampler) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create PP scene sampler");
+            return false;
+        }
     }
 
     // Create uniform buffer
@@ -4079,8 +4089,11 @@ void PostProcessing::Shutdown() {
     // Clean up uniform buffer
     m_UniformBuffer.reset();
 
-    // Clean up scene render target
-    DestroySceneRenderTarget();
+    // Clean up scene sampler
+    if (m_SceneSampler != VK_NULL_HANDLE) {
+        vkDestroySampler(device, m_SceneSampler, nullptr);
+        m_SceneSampler = VK_NULL_HANDLE;
+    }
 
     m_Initialized = false;
     ENJIN_LOG_INFO(Renderer, "Post-processing shutdown");
@@ -4106,49 +4119,9 @@ void PostProcessing::OnResize(u32 width, u32 height) {
     if (m_Renderer) m_Renderer->WaitForAllFrames();
     else vkDeviceWaitIdle(m_Context->GetDevice());
     DestroyDofStagingBuffers();
-    DestroySceneRenderTarget();
-    CreateSceneRenderTarget(width, height);
-
-    // Update descriptor set binding 3 (depth texture) to point to the new depth image view.
-    // DestroySceneRenderTarget nulled m_DepthImageView; CreateSceneRenderTarget made a new one.
-    // Without this update, the descriptor set still references the destroyed old image view.
-    if (m_DescriptorSet != VK_NULL_HANDLE && m_DepthImageView != VK_NULL_HANDLE && m_SceneSampler != VK_NULL_HANDLE) {
-        VkDescriptorImageInfo depthInfo{};
-        depthInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        depthInfo.imageView = m_DepthImageView;
-        depthInfo.sampler = m_SceneSampler;
-
-        VkWriteDescriptorSet depthWrite{};
-        depthWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        depthWrite.dstSet = m_DescriptorSet;
-        depthWrite.dstBinding = 3;
-        depthWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        depthWrite.descriptorCount = 1;
-        depthWrite.pImageInfo = &depthInfo;
-
-        vkUpdateDescriptorSets(m_Context->GetDevice(), 1, &depthWrite, 0, nullptr);
-    }
-
-    // Update binding 2 (LUT placeholder) to the new internal scene image view.
-    // The old image view was destroyed by DestroySceneRenderTarget — without this,
-    // binding 2 becomes a dangling reference causing undefined behavior (teal corruption).
-    if (!m_LUTLoaded && m_DescriptorSet != VK_NULL_HANDLE &&
-        m_SceneImageView != VK_NULL_HANDLE && m_LUTSampler != VK_NULL_HANDLE) {
-        VkDescriptorImageInfo lutInfo{};
-        lutInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        lutInfo.imageView = m_SceneImageView;
-        lutInfo.sampler = m_LUTSampler;
-
-        VkWriteDescriptorSet lutWrite{};
-        lutWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        lutWrite.dstSet = m_DescriptorSet;
-        lutWrite.dstBinding = 2;
-        lutWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        lutWrite.descriptorCount = 1;
-        lutWrite.pImageInfo = &lutInfo;
-
-        vkUpdateDescriptorSets(m_Context->GetDevice(), 1, &lutWrite, 0, nullptr);
-    }
+    // No internal scene RT to recreate — PP is a pure pass-through.
+    // Descriptor bindings are refreshed by EditorLayer calling UpdateSourceImage()
+    // after resize, which sets bindings 0, 2, 3 to valid external image views.
 
     // Recreate TAA history buffers at the new resolution
     DestroyTAAResources();
@@ -4304,9 +4277,15 @@ void PostProcessing::UpdateSourceImage(VkImageView imageView, VkSampler sampler)
     imageInfo.imageView = imageView;
     imageInfo.sampler = sampler;
 
-    // Update binding 0 (scene source texture)
-    VkWriteDescriptorSet writes[2]{};
-    u32 writeCount = 1;
+    // Update binding 0 (scene source texture), and also set bindings 2 (LUT) and
+    // 3 (depth) to the same valid image as placeholders. The shader checks enable
+    // flags before sampling these, but Vulkan requires valid descriptors at all bindings.
+    VkDescriptorImageInfo lutPlaceholderInfo = imageInfo;
+    if (m_LUTSampler != VK_NULL_HANDLE) {
+        lutPlaceholderInfo.sampler = m_LUTSampler;
+    }
+
+    VkWriteDescriptorSet writes[3]{};
 
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writes[0].dstSet = m_DescriptorSet;
@@ -4315,25 +4294,22 @@ void PostProcessing::UpdateSourceImage(VkImageView imageView, VkSampler sampler)
     writes[0].descriptorCount = 1;
     writes[0].pImageInfo = &imageInfo;
 
-    // Also refresh binding 2 (LUT placeholder) to the same valid image view.
-    // Without this, binding 2 becomes a dangling reference after OnResize()
-    // destroys the internal scene RT whose image view was used as the placeholder.
-    VkDescriptorImageInfo lutPlaceholderInfo{};
-    if (!m_LUTLoaded && m_LUTSampler != VK_NULL_HANDLE) {
-        lutPlaceholderInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        lutPlaceholderInfo.imageView = imageView;
-        lutPlaceholderInfo.sampler = m_LUTSampler;
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = m_DescriptorSet;
+    writes[1].dstBinding = 2;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].descriptorCount = 1;
+    writes[1].pImageInfo = m_LUTLoaded ? &lutPlaceholderInfo : &imageInfo;
 
-        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[1].dstSet = m_DescriptorSet;
-        writes[1].dstBinding = 2;
-        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[1].descriptorCount = 1;
-        writes[1].pImageInfo = &lutPlaceholderInfo;
-        writeCount = 2;
-    }
+    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[2].dstSet = m_DescriptorSet;
+    writes[2].dstBinding = 3;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[2].descriptorCount = 1;
+    writes[2].pImageInfo = &imageInfo;
 
-    vkUpdateDescriptorSets(m_Context->GetDevice(), writeCount, writes, 0, nullptr);
+    vkUpdateDescriptorSets(m_Context->GetDevice(), 3, writes, 0, nullptr);
+    m_DepthSourceReady = false;  // Depth placeholder, not real depth
 }
 
 void PostProcessing::UpdateRenderPass(VkRenderPass newPass) {
@@ -4933,59 +4909,23 @@ bool PostProcessing::CreateDescriptorSets() {
         return false;
     }
 
-    // Write descriptor set
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = m_SceneImageView;
-    imageInfo.sampler = m_SceneSampler;
-
+    // Write only the UBO binding at init. Image bindings (0=scene, 2=LUT, 3=depth)
+    // are set later by UpdateSourceImage() and UpdateDepthSource() with valid external
+    // image views. No internal scene RT — PP is a pure pass-through.
     VkDescriptorBufferInfo bufferInfo{};
     bufferInfo.buffer = m_UniformBuffer ? m_UniformBuffer->GetBuffer() : VK_NULL_HANDLE;
     bufferInfo.offset = 0;
     bufferInfo.range = sizeof(PostProcessSettings);
 
-    // LUT initial binding: use scene image view as valid default (shader skips LUT when lutEnabled==0)
-    VkDescriptorImageInfo lutImageInfo{};
-    lutImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    lutImageInfo.imageView = m_SceneImageView;
-    lutImageInfo.sampler = m_LUTSampler;
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = m_DescriptorSet;
+    write.dstBinding = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    write.descriptorCount = 1;
+    write.pBufferInfo = &bufferInfo;
 
-    // Depth texture binding: use depth image view if available, else scene image as fallback
-    VkDescriptorImageInfo depthImageInfo{};
-    depthImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-    depthImageInfo.imageView = m_DepthImageView;
-    depthImageInfo.sampler = m_SceneSampler;  // Reuse scene sampler (nearest/linear both work)
-
-    VkWriteDescriptorSet writes[4]{};
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = m_DescriptorSet;
-    writes[0].dstBinding = 0;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[0].descriptorCount = 1;
-    writes[0].pImageInfo = &imageInfo;
-
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = m_DescriptorSet;
-    writes[1].dstBinding = 1;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[1].descriptorCount = 1;
-    writes[1].pBufferInfo = &bufferInfo;
-
-    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[2].dstSet = m_DescriptorSet;
-    writes[2].dstBinding = 2;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[2].descriptorCount = 1;
-    writes[2].pImageInfo = &lutImageInfo;
-
-    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[3].dstSet = m_DescriptorSet;
-    writes[3].dstBinding = 3;
-    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[3].descriptorCount = 1;
-    writes[3].pImageInfo = &depthImageInfo;
-
-    vkUpdateDescriptorSets(device, 4, writes, 0, nullptr);
+    vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
 
     ENJIN_LOG_INFO(Renderer, "Post-process descriptor sets created");
     return true;
