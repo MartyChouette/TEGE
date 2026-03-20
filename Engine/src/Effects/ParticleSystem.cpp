@@ -247,7 +247,9 @@ void ParticleSystem::Update(f32 deltaTime, ECS::World* world) {
     m_TotalActiveParticles = 0;
     m_TotalEmitterCount = 0;
 
-    for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::ParticleEmitterComponent>()) {
+    const auto& entities = world->GetEntitiesWithComponent<ECS::ParticleEmitterComponent>();
+    for (ECS::Entity entity : entities) {
+        if (!world->IsValid(entity)) continue;
         if (!world->HasComponent<ECS::TransformComponent>(entity)) continue;
 
         auto* emitter = world->GetComponent<ECS::ParticleEmitterComponent>(entity);
@@ -266,7 +268,6 @@ void ParticleSystem::Update(f32 deltaTime, ECS::World* world) {
         constexpr u32 MAX_EMITTER_PARTICLES = 16384;
         if (emitter->pool.maxParticles != emitter->maxParticles) {
             u32 newMax = std::min(emitter->maxParticles, MAX_EMITTER_PARTICLES);
-            // Gracefully expire particles beyond new limit before resizing
             if (newMax < emitter->pool.activeCount) {
                 for (u32 j = newMax; j < emitter->pool.activeCount; ++j) {
                     emitter->pool.particles[j].lifetime = 0.0f;

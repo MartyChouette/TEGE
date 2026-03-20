@@ -1647,6 +1647,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // Update particle emitter simulation
     m_ParticleSystem.Update(m_LastDeltaTime, m_World);
 
+
     // Update elemental system (fire/water/earth/air particle simulation)
     if (cameraTransform) {
         // Register fire thermal feedback to wind system
@@ -1717,7 +1718,6 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         }
     }
 
-    // Run shadow pass before starting the render target (shadow pass uses its own framebuffer)
     m_RenderSystem->RenderShadowPassForCamera(&gameCamera);
 
     // Render scene + effects into the chosen target

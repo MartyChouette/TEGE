@@ -279,6 +279,7 @@ void TreeRenderer::Render(VkCommandBuffer commandBuffer,
                            u32 viewportWidth,
                            u32 viewportHeight) {
     if (!m_Initialized || !m_Pipeline || !world) return;
+    u32 zeroOffset = 0;
 
     bool hasBound = false;
 
@@ -294,7 +295,7 @@ void TreeRenderer::Render(VkCommandBuffer commandBuffer,
             m_Pipeline->Bind(commandBuffer);
 
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+                m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 1, &zeroOffset);
 
             VkExtent2D extent;
             if (viewportWidth > 0 && viewportHeight > 0) {
