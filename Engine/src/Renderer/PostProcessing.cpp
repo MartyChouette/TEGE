@@ -4129,6 +4129,27 @@ void PostProcessing::OnResize(u32 width, u32 height) {
         vkUpdateDescriptorSets(m_Context->GetDevice(), 1, &depthWrite, 0, nullptr);
     }
 
+    // Update binding 2 (LUT placeholder) to the new internal scene image view.
+    // The old image view was destroyed by DestroySceneRenderTarget — without this,
+    // binding 2 becomes a dangling reference causing undefined behavior (teal corruption).
+    if (!m_LUTLoaded && m_DescriptorSet != VK_NULL_HANDLE &&
+        m_SceneImageView != VK_NULL_HANDLE && m_LUTSampler != VK_NULL_HANDLE) {
+        VkDescriptorImageInfo lutInfo{};
+        lutInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        lutInfo.imageView = m_SceneImageView;
+        lutInfo.sampler = m_LUTSampler;
+
+        VkWriteDescriptorSet lutWrite{};
+        lutWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        lutWrite.dstSet = m_DescriptorSet;
+        lutWrite.dstBinding = 2;
+        lutWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        lutWrite.descriptorCount = 1;
+        lutWrite.pImageInfo = &lutInfo;
+
+        vkUpdateDescriptorSets(m_Context->GetDevice(), 1, &lutWrite, 0, nullptr);
+    }
+
     // Recreate TAA history buffers at the new resolution
     DestroyTAAResources();
     if (!CreateTAAResources()) {
@@ -4283,15 +4304,36 @@ void PostProcessing::UpdateSourceImage(VkImageView imageView, VkSampler sampler)
     imageInfo.imageView = imageView;
     imageInfo.sampler = sampler;
 
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = m_DescriptorSet;
-    write.dstBinding = 0;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    write.descriptorCount = 1;
-    write.pImageInfo = &imageInfo;
+    // Update binding 0 (scene source texture)
+    VkWriteDescriptorSet writes[2]{};
+    u32 writeCount = 1;
 
-    vkUpdateDescriptorSets(m_Context->GetDevice(), 1, &write, 0, nullptr);
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = m_DescriptorSet;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[0].descriptorCount = 1;
+    writes[0].pImageInfo = &imageInfo;
+
+    // Also refresh binding 2 (LUT placeholder) to the same valid image view.
+    // Without this, binding 2 becomes a dangling reference after OnResize()
+    // destroys the internal scene RT whose image view was used as the placeholder.
+    VkDescriptorImageInfo lutPlaceholderInfo{};
+    if (!m_LUTLoaded && m_LUTSampler != VK_NULL_HANDLE) {
+        lutPlaceholderInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        lutPlaceholderInfo.imageView = imageView;
+        lutPlaceholderInfo.sampler = m_LUTSampler;
+
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = m_DescriptorSet;
+        writes[1].dstBinding = 2;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[1].descriptorCount = 1;
+        writes[1].pImageInfo = &lutPlaceholderInfo;
+        writeCount = 2;
+    }
+
+    vkUpdateDescriptorSets(m_Context->GetDevice(), writeCount, writes, 0, nullptr);
 }
 
 void PostProcessing::UpdateRenderPass(VkRenderPass newPass) {

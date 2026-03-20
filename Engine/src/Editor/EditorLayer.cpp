@@ -1680,10 +1680,10 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         EvaluatePostProcessVolumes(m_Camera->GetPosition());
     }
 
-    // Post-processing uses a blit-based path: scene renders to m_SceneRenderTarget,
-    // then the color image is blitted to m_GameViewRenderTarget. The PP fragment shader
-    // pipeline has descriptor binding issues that produce teal corruption, so we bypass
-    // it entirely and use vkCmdBlitImage which is proven to work correctly.
+    // PP uses blit path: scene renders to m_SceneRenderTarget, then vkCmdBlitImage
+    // copies to m_GameViewRenderTarget. The PP fragment shader has issues that produce
+    // teal corruption (root cause still under investigation). The blit path is correct
+    // and supports all scene rendering features.
     bool usePostProcessing = m_SceneRenderTarget && m_SceneRenderTarget->IsValid();
 
     // Choose render target: scene RT when post-processing is active, game view RT otherwise
@@ -1909,9 +1909,8 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             depthBound = true;
         }
 
-        // Blit scene RT color to game view RT (bypasses PP shader pipeline)
+        // Blit scene RT color to game view RT
         {
-            // Transition game view color to TRANSFER_DST
             VkImageMemoryBarrier dstBarrier{};
             dstBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
             dstBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -1925,8 +1924,6 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &dstBarrier);
 
-            // Scene RT color is already in SHADER_READ_ONLY after sceneTarget->End()
-            // Transition to TRANSFER_SRC
             VkImageMemoryBarrier srcBarrier{};
             srcBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
             srcBarrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -1940,7 +1937,6 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &srcBarrier);
 
-            // Blit
             VkImageBlit region{};
             region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
             region.srcOffsets[0] = {0, 0, 0};
@@ -1953,7 +1949,6 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                 m_GameViewRenderTarget->GetColorImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 1, &region, VK_FILTER_LINEAR);
 
-            // Transition game view color to SHADER_READ for ImGui
             VkImageMemoryBarrier finalBarrier{};
             finalBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
             finalBarrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -1967,7 +1962,6 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT,
                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &finalBarrier);
 
-            // Transition scene RT color back to SHADER_READ for next frame
             VkImageMemoryBarrier srcRestore{};
             srcRestore.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
             srcRestore.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
