@@ -591,16 +591,20 @@ private:
 #else
     // Rendering resources
     std::unique_ptr<Renderer::VulkanPipeline> m_Pipeline;
+    std::unique_ptr<Renderer::VulkanPipeline> m_OffscreenPipeline;  // m_Pipeline rebuilt for offscreen render pass (UNORM)
+    VkRenderPass m_OffscreenRenderPass = VK_NULL_HANDLE;  // Cached for pipeline recreation (not owned)
     std::unique_ptr<Renderer::VulkanShader> m_VertexShader;
     std::unique_ptr<Renderer::VulkanShader> m_FragmentShader;
     std::unique_ptr<Renderer::VulkanShader> m_ShadowVertexShader;
 
     // Line rendering (editor grid)
     std::unique_ptr<Renderer::VulkanPipeline> m_LinePipeline;
+    std::unique_ptr<Renderer::VulkanPipeline> m_OffscreenLinePipeline;
     void CreateLinePipeline();
 
     // Geometry outline (inverted-hull backface extrusion)
     std::unique_ptr<Renderer::VulkanPipeline> m_OutlinePipeline;
+    std::unique_ptr<Renderer::VulkanPipeline> m_OffscreenOutlinePipeline;
     std::unique_ptr<Renderer::VulkanShader> m_OutlineVertexShader;
     std::unique_ptr<Renderer::VulkanShader> m_OutlineFragmentShader;
     void CreateOutlinePipeline();

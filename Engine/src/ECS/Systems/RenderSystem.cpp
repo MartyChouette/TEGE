@@ -598,6 +598,7 @@ void RenderSystem::Shutdown() {
     ShutdownRayTracing();
 
     // Clean up line pipeline
+    m_OffscreenLinePipeline.reset();
     m_LinePipeline.reset();
 
     // Clean up shadow resources
@@ -618,6 +619,7 @@ void RenderSystem::Shutdown() {
     m_DefaultBoneBuffer.reset();
 
     // Clean up pipeline
+    m_OffscreenPipeline.reset();
     m_Pipeline.reset();
     m_FragmentShader.reset();
     m_VertexShader.reset();
@@ -1623,12 +1625,16 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     // Reset descriptor cache for this render pass
     m_LastBound.Reset(); m_GeometryPoolBound = false;
 
+    // Use offscreen pipeline (created for offscreen UNORM render pass) to avoid
+    // Vulkan spec violation from binding SRGB pipeline in UNORM render pass
+    auto* targetPipeline = m_OffscreenPipeline ? m_OffscreenPipeline.get() : m_Pipeline.get();
+
     // Bind pipeline and descriptor set ONCE before the entity loop (not per-entity)
-    m_Pipeline->Bind(commandBuffer);
+    targetPipeline->Bind(commandBuffer);
     {
         u32 zeroOff = 0;
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_Pipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &zeroOff);
+            targetPipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &zeroOff);
     }
 
     // Use the sorted render list (sorted by cachedTextureKey) to maximize descriptor cache hits.
@@ -1668,7 +1674,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 u32 matIdx = GetMaterialIndex(entity);
                 u32 dynOffset = matIdx * m_MaterialSSBOStride;
                 vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    m_Pipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &dynOffset);
+                    targetPipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &dynOffset);
             }
 
             // Push constants (world matrix includes parent chain)
@@ -1923,7 +1929,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 }
             }
 
-            vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
+            vkCmdPushConstants(commandBuffer, targetPipeline->GetLayout(),
                 VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                 sizeof(Renderer::PushConstants), &pushConstants);
 
@@ -2058,12 +2064,15 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         // Reset descriptor cache for each viewport
         m_LastBound.Reset(); m_GeometryPoolBound = false;
 
+        // Use offscreen pipeline (created for offscreen UNORM render pass)
+        auto* ssPipeline = m_OffscreenPipeline ? m_OffscreenPipeline.get() : m_Pipeline.get();
+
         // Bind pipeline, descriptor set, viewport, and scissor once per viewport
-        m_Pipeline->Bind(commandBuffer);
+        ssPipeline->Bind(commandBuffer);
         {
             u32 zeroOff = 0;
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_Pipeline->GetLayout(), 0, 1,
+                ssPipeline->GetLayout(), 0, 1,
                 &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &zeroOff);
         }
         vkCmdSetViewport(commandBuffer, 0, 1, &vkViewport);
@@ -2090,7 +2099,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 u32 matIdx = GetMaterialIndex(entity);
                 u32 dynOffset = matIdx * m_MaterialSSBOStride;
                 vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    m_Pipeline->GetLayout(), 0, 1,
+                    ssPipeline->GetLayout(), 0, 1,
                     &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &dynOffset);
             }
 
@@ -2338,7 +2347,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 }
             }
 
-            vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
+            vkCmdPushConstants(commandBuffer, ssPipeline->GetLayout(),
                 VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                 sizeof(Renderer::PushConstants), &pushConstants);
 
@@ -3190,13 +3199,15 @@ void RenderSystem::RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 ver
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
-    m_LinePipeline->Bind(commandBuffer);
+    // Use offscreen line pipeline (matches offscreen UNORM render pass)
+    auto* linePL = m_OffscreenLinePipeline ? m_OffscreenLinePipeline.get() : m_LinePipeline.get();
+    linePL->Bind(commandBuffer);
 
     // Use offscreen descriptor sets (camera matrices match the editor viewport camera)
     {
         u32 zeroOff = 0;
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_LinePipeline->GetLayout(), 0, 1, &m_OffscreenDescriptorSets[currentFrame], 1, &zeroOff);
+            linePL->GetLayout(), 0, 1, &m_OffscreenDescriptorSets[currentFrame], 1, &zeroOff);
     }
 
     VkViewport viewport{};
@@ -3225,7 +3236,7 @@ void RenderSystem::RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 ver
     pc.flags = 0;
     pc.parallaxScale = 0.0f;
 
-    vkCmdPushConstants(commandBuffer, m_LinePipeline->GetLayout(),
+    vkCmdPushConstants(commandBuffer, linePL->GetLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 
     VkBuffer buffers[] = {vertexBuffer->GetBuffer()};
@@ -4557,6 +4568,9 @@ void RenderSystem::RecreatePipelines(bool gpuAlreadyIdle) {
     }
 
     // Destroy all pipelines that share the descriptor set layout
+    m_OffscreenOutlinePipeline.reset();
+    m_OffscreenLinePipeline.reset();
+    m_OffscreenPipeline.reset();
     m_OutlinePipeline.reset();
     m_LinePipeline.reset();
     m_ShadowPipeline.reset();
@@ -4580,6 +4594,11 @@ void RenderSystem::RecreatePipelines(bool gpuAlreadyIdle) {
         CreateShadowPipeline();
         CreatePointShadowPipeline();
         CreateSpotShadowPipeline();
+
+        // Recreate offscreen pipelines if we have a cached offscreen render pass
+        if (m_OffscreenRenderPass != VK_NULL_HANDLE) {
+            RecreateEffectPipelinesForRenderPass(m_OffscreenRenderPass);
+        }
     }
 }
 
@@ -5322,11 +5341,13 @@ void RenderSystem::RenderOutlinePassForTarget() {
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
-    m_OutlinePipeline->Bind(commandBuffer);
+    // Use offscreen outline pipeline (matches offscreen UNORM render pass)
+    auto* outlinePL = m_OffscreenOutlinePipeline ? m_OffscreenOutlinePipeline.get() : m_OutlinePipeline.get();
+    outlinePL->Bind(commandBuffer);
     {
         u32 zeroOff = 0;
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_OutlinePipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &zeroOff);
+            outlinePL->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &zeroOff);
     }
 
     const auto& renderList = m_SortedRenderList.empty()
@@ -5364,7 +5385,7 @@ void RenderSystem::RenderOutlinePassForTarget() {
             UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
         }
 
-        vkCmdPushConstants(commandBuffer, m_OutlinePipeline->GetLayout(),
+        vkCmdPushConstants(commandBuffer, outlinePL->GetLayout(),
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 
         if (renderData.poolAlloc.valid && m_GeometryPool) {
@@ -6330,6 +6351,7 @@ void RenderSystem::RenderTrees(u32 viewportWidth, u32 viewportHeight) {
 
 void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass) {
     if (!m_Pipeline) return;
+    m_OffscreenRenderPass = renderPass;  // Cache for RecreatePipelines
     VkDescriptorSetLayout layout = m_Pipeline->GetDescriptorSetLayout();
 
     if (m_WeatherRenderer) {
@@ -6352,6 +6374,68 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
     }
     if (m_SpriteBatchRenderer) {
         m_SpriteBatchRenderer->RecreateForRenderPass(renderPass, layout);
+    }
+
+    // Recreate main pipeline for offscreen render pass (fixes SRGB vs UNORM format mismatch
+    // that causes NVIDIA driver crash on 2D scenes)
+    {
+        Renderer::PipelineConfig config;
+        config.renderPass = renderPass;
+        config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        config.depthTest = true;
+        config.depthWrite = true;
+        config.cullMode = m_BackfaceCulling ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
+        config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        config.polygonMode = m_WireframeMode ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
+        config.msaaSamples = VK_SAMPLE_COUNT_1_BIT;  // Offscreen RT is always 1 sample
+        config.colorAttachmentCount = 2; // MRT: color + velocity
+
+        m_OffscreenPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+        if (!m_OffscreenPipeline->Create(config, m_VertexShader.get(), m_FragmentShader.get())) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create offscreen pipeline");
+            m_OffscreenPipeline.reset();
+        }
+    }
+
+    // Offscreen line pipeline (editor grid inside offscreen render target)
+    {
+        Renderer::PipelineConfig config;
+        config.renderPass = renderPass;
+        config.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+        config.depthTest = true;
+        config.depthWrite = false;
+        config.cullMode = VK_CULL_MODE_NONE;
+        config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        config.polygonMode = VK_POLYGON_MODE_FILL;
+        config.alphaBlend = true;
+        config.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+        config.colorAttachmentCount = 2;
+
+        m_OffscreenLinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+        if (!m_OffscreenLinePipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(), layout)) {
+            ENJIN_LOG_WARN(Renderer, "Failed to create offscreen line pipeline");
+            m_OffscreenLinePipeline.reset();
+        }
+    }
+
+    // Offscreen outline pipeline (geometry outlines inside offscreen render target)
+    if (m_OutlineVertexShader && m_OutlineFragmentShader) {
+        Renderer::PipelineConfig config;
+        config.renderPass = renderPass;
+        config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        config.depthTest = true;
+        config.depthWrite = true;
+        config.cullMode = VK_CULL_MODE_FRONT_BIT;
+        config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        config.polygonMode = VK_POLYGON_MODE_FILL;
+        config.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+        config.colorAttachmentCount = 2;
+
+        m_OffscreenOutlinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+        if (!m_OffscreenOutlinePipeline->CreateWithLayout(config, m_OutlineVertexShader.get(), m_OutlineFragmentShader.get(), layout)) {
+            ENJIN_LOG_WARN(Renderer, "Failed to create offscreen outline pipeline");
+            m_OffscreenOutlinePipeline.reset();
+        }
     }
 
     // Note: skybox pipeline is NOT recreated here — it was created for the swapchain
