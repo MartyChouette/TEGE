@@ -133,12 +133,14 @@ void ControllerSystem::Update(f32 deltaTime) {
 
         // Lazy-create Jolt CharacterVirtual on first use
         if (m_Physics && !m_Physics->HasCharacterController(entity)) {
-            f32 radius = 0.3f, halfH = 0.5f;
+            f32 radius = 0.3f, totalHalfH = 0.8f;
             if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
                 radius = cap->radius;
-                halfH = cap->height * 0.5f;
+                // CapsuleColliderComponent height = cylinder height (between hemisphere centers)
+                // Total visual height = height + 2*radius, so totalHalfH = height/2 + radius
+                totalHalfH = cap->height * 0.5f + cap->radius;
             }
-            m_Physics->CreateCharacterController(entity, radius, halfH, transform->position);
+            m_Physics->CreateCharacterController(entity, radius, totalHalfH, transform->position);
         }
 
         UpdateThirdPerson(entity, *controller, *transform, deltaTime);
@@ -154,12 +156,12 @@ void ControllerSystem::Update(f32 deltaTime) {
 
         // Lazy-create Jolt CharacterVirtual on first use
         if (m_Physics && !m_Physics->HasCharacterController(entity)) {
-            f32 radius = 0.3f, halfH = 0.5f;
+            f32 radius = 0.3f, totalHalfH = 0.8f;
             if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
                 radius = cap->radius;
-                halfH = cap->height * 0.5f;
+                totalHalfH = cap->height * 0.5f + cap->radius;
             }
-            m_Physics->CreateCharacterController(entity, radius, halfH, transform->position);
+            m_Physics->CreateCharacterController(entity, radius, totalHalfH, transform->position);
         }
 
         UpdateFirstPerson(entity, *controller, *transform, deltaTime);
