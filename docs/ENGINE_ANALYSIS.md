@@ -68,7 +68,7 @@ graph TB
             RTReflections["RTReflections (RGBA16F)"]
             RTAO["RTAO (R16F)"]
             RTGI["RTGI (RGBA16F)"]
-            MotionVectors["MotionVectors<br/>(RG16F MRT, Binding 4)"]
+            MotionVectors["MotionVectors<br/>(RG16F, Binding 4)"]
             MaterialSSBO["Material SSBO<br/>(Hit Shader, Binding 9)"]
             PathTracer["PathTracer<br/>(Progressive Accumulation)"]
             SVGFDenoiser["SVGFDenoiser<br/>(3-Pass Compute)"]
@@ -989,7 +989,7 @@ All performance issues from P0 through P6 have been resolved. The engine has und
 | **LOD with Hysteresis** | Screen-space projected size selection with 10% dead-zone transitions | Prevents LOD flickering, reduces vertex throughput |
 | **64-Bit Material Sort Keys** | Extended from 32-bit for finer-grained draw ordering | Better draw call batching across complex scenes |
 | **Per-Frame Linear Allocator** | `FrameAllocator` with single pointer bump, reset each frame | Near-zero allocation cost for transient data |
-| **Motion Vector MRT** | Per-pixel velocity buffer (RG16F) written during main pass via MRT output | Enables TAA, temporal upscaling, motion blur at ~0.3ms cost |
+| **Motion Vectors** | Per-pixel velocity buffer (RG16F) written during main swapchain pass | Enables TAA, temporal upscaling, motion blur at ~0.3ms cost |
 | **TAA Resolve (Compute)** | Halton(2,3) jitter injection, neighborhood clamping, velocity reprojection, history ping-pong buffers | Sub-pixel stability, configurable sharpness/feedback/jitter |
 | **Material SSBO (RT)** | Material data uploaded to binding 9 for RT hit shaders | Correct shading in ray-traced hits without push constants |
 
@@ -1001,7 +1001,7 @@ All performance issues from P0 through P6 have been resolved. The engine has und
 | **Frame Time (1000 Entities, 3D)** | < 16ms (60fps) | < 16ms with Jolt | Production physics backend |
 | **Frame Time (1000 Sprites, 2D)** | < 8ms | < 5ms | Atlas batching effective |
 | **Shadow Pass (4 CSM Cascades)** | < 4ms total | ~3ms | Caster caching helps |
-| **Motion Vector MRT** | < 0.5ms | ~0.3ms | RG16F per-pixel velocity, MRT output |
+| **Motion Vectors** | < 0.5ms | ~0.3ms | RG16F per-pixel velocity |
 | **TAA Resolve (Compute)** | < 0.5ms | ~0.3ms | Neighborhood clamping + velocity reprojection |
 | **Descriptor Cache Hit Rate** | > 70% | ~75-85% | Material sort driven |
 | **Entity Lookup (by name)** | < 0.01ms | O(1) | Hash map cache |
@@ -1025,7 +1025,7 @@ It is **not positioned for AAA-scale** rendering (no Nanite-style mesh streaming
 pie title Frame Budget Breakdown (3D, 60fps)
     "Shadow Passes (CSM + Point + Spot)" : 3.0
     "Scene Classification + UBO Upload" : 0.5
-    "Motion Vector MRT (RG16F)" : 0.3
+    "Motion Vectors (RG16F)" : 0.3
     "Main Render Pass (Opaque)" : 3.7
     "Sprite Batch Rendering" : 1.5
     "Particle Rendering" : 1.0
@@ -1174,7 +1174,7 @@ graph TB
     end
 
     subgraph TemporalFeatures["Temporal & Upscaling"]
-        MotionVec["Motion Vectors<br/>(RG16F MRT)"]
+        MotionVec["Motion Vectors<br/>(RG16F)"]
         TAA["TAA<br/>(Halton Jitter,<br/>Neighborhood Clamping)"]
         Upscaler["IUpscaler<br/>(Planned: FSR/DLSS/XeSS)"]
         ReSTIR["ReSTIR<br/>(Planned: DI,<br/>Temporal/Spatial Reuse)"]
@@ -1522,7 +1522,7 @@ graph TB
 
 10. **Serializer is a trust boundary**: The scene serializer and asset packer have been hardened (array caps, type safety, path traversal prevention) because they process external data. The trust zone boundary map documents all such interaction points.
 
-11. **Motion vectors are a foundation dependency**: The per-pixel velocity buffer (RG16F MRT) is required by TAA, all temporal upscalers (DLSS/FSR/XeSS), ReSTIR temporal reuse, and temporal RT reprojection. It is the single most connected planned dependency in the rendering roadmap.
+11. **Motion vectors are a foundation dependency**: The per-pixel velocity buffer (RG16F) is required by TAA, all temporal upscalers (DLSS/FSR/XeSS), ReSTIR temporal reuse, and temporal RT reprojection. Written during the swapchain pass; offscreen render targets use single color + depth (no velocity). It is the single most connected planned dependency in the rendering roadmap.
 
 ---
 
@@ -1532,7 +1532,7 @@ Completed and planned rendering phases, in dependency order. Phases 1-2 are ship
 
 | Phase | Feature | Status | Description |
 |-------|---------|--------|-------------|
-| **1** | Motion Vectors + TAA | **Done** (Mar 2026) | Per-pixel velocity buffer (RG16F MRT), TAA jitter injection (Halton 2,3), TAA resolve compute shader (neighborhood clamping, velocity reprojection), history ping-pong buffers, editor UI AA dropdown (None/FXAA/TAA/SMAA). SceneRenderSettings: aaMode, taaSharpness, taaJitterScale, taaFeedbackMin/Max |
+| **1** | Motion Vectors + TAA | **Done** (Mar 2026) | Per-pixel velocity buffer (RG16F, swapchain MRT), TAA jitter injection (Halton 2,3), TAA resolve compute shader (neighborhood clamping, velocity reprojection), history ping-pong buffers, editor UI AA dropdown (None/FXAA/TAA/SMAA). SceneRenderSettings: aaMode, taaSharpness, taaJitterScale, taaFeedbackMin/Max |
 | **2** | RT Material SSBO + OptiX Interop | **Done** (Mar 2026) | Material SSBO for RT hit shaders (binding 9), OptiX denoiser CUDA interop wired |
 | **3** | Path Tracer Polish | Planned | Next Event Estimation (NEE), Multiple Importance Sampling (MIS), Russian Roulette path termination, firefly clamping |
 | **4** | ReSTIR | Planned | Reservoir-based importance-driven light selection (Direct Illumination), temporal/spatial reuse, adaptive ray budget feeding VRS |

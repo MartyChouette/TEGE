@@ -156,7 +156,7 @@ enjin/
 - 64-bit material sort keys (`[8:pipeline][16:material][24:texture][16:depth]`) for cache-friendly draw ordering
 - LOD with hysteresis dead-zones and screen-space projected size metric
 - Scene classification: `Scene2D` (sprites only, shadows skipped), `Scene2_5D` (sprites+lights), `Scene3D` (full pipeline)
-- Motion Vectors: Per-pixel velocity buffer (RG16F MRT attachment) for temporal techniques
+- Motion Vectors: Per-pixel velocity buffer (RG16F, swapchain MRT attachment; offscreen RTs use single color + depth) for temporal techniques
 - TAA: Temporal anti-aliasing with Halton(2,3) jitter, neighborhood clamping, velocity reprojection, history ping-pong buffers, configurable sharpness/feedback; AA mode selection (None/FXAA/TAA/SMAA)
 
 ### Ray Tracing System

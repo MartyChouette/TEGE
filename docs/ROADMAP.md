@@ -1397,7 +1397,7 @@ The rendering pipeline is moving toward **sparse sampling + smart reconstruction
 
 Foundation for all temporal techniques — upscalers, RT temporal reuse, ReSTIR temporal.
 
-- ~~Per-pixel velocity buffer (RG16F MRT attachment)~~ ✅
+- ~~Per-pixel velocity buffer (RG16F, swapchain MRT)~~ ✅
 - ~~TAA jitter injection (Halton 2,3)~~ ✅
 - ~~TAA resolve compute shader (neighborhood clamping, velocity reprojection)~~ ✅
 - ~~History ping-pong buffers with reset on camera cut/scene change~~ ✅
