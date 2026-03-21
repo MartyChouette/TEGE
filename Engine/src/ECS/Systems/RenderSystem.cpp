@@ -6355,25 +6355,25 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
     VkDescriptorSetLayout layout = m_Pipeline->GetDescriptorSetLayout();
 
     if (m_WeatherRenderer) {
-        m_WeatherRenderer->RecreateForRenderPass(renderPass, layout);
+        m_WeatherRenderer->RecreateForRenderPass(renderPass, layout, 1);
     }
     if (m_GrassRenderer) {
-        m_GrassRenderer->RecreateForRenderPass(renderPass, layout);
+        m_GrassRenderer->RecreateForRenderPass(renderPass, layout, 1);
     }
     if (m_ShrubRenderer) {
-        m_ShrubRenderer->RecreateForRenderPass(renderPass, layout);
+        m_ShrubRenderer->RecreateForRenderPass(renderPass, layout, 1);
     }
     if (m_ParticleRenderer) {
-        m_ParticleRenderer->RecreateForRenderPass(renderPass, layout);
+        m_ParticleRenderer->RecreateForRenderPass(renderPass, layout, 1);
     }
     if (m_FluidRenderer) {
-        m_FluidRenderer->RecreateForRenderPass(renderPass, layout);
+        m_FluidRenderer->RecreateForRenderPass(renderPass, layout, 1);
     }
     if (m_TreeRenderer) {
-        m_TreeRenderer->RecreateForRenderPass(renderPass, layout);
+        m_TreeRenderer->RecreateForRenderPass(renderPass, layout, 1);
     }
     if (m_SpriteBatchRenderer) {
-        m_SpriteBatchRenderer->RecreateForRenderPass(renderPass, layout);
+        m_SpriteBatchRenderer->RecreateForRenderPass(renderPass, layout, 1);
     }
 
     // Recreate main pipeline for offscreen render pass (fixes SRGB vs UNORM format mismatch
@@ -6388,7 +6388,7 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         config.polygonMode = m_WireframeMode ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
         config.msaaSamples = VK_SAMPLE_COUNT_1_BIT;  // Offscreen RT is always 1 sample
-        config.colorAttachmentCount = 2; // MRT: color + velocity
+        config.colorAttachmentCount = 1; // Single color output (no MRT velocity — avoids NVIDIA teal)
 
         m_OffscreenPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
         if (!m_OffscreenPipeline->Create(config, m_VertexShader.get(), m_FragmentShader.get())) {
@@ -6409,7 +6409,7 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         config.polygonMode = VK_POLYGON_MODE_FILL;
         config.alphaBlend = true;
         config.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
-        config.colorAttachmentCount = 2;
+        config.colorAttachmentCount = 1;
 
         m_OffscreenLinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
         if (!m_OffscreenLinePipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(), layout)) {
@@ -6429,7 +6429,7 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         config.polygonMode = VK_POLYGON_MODE_FILL;
         config.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
-        config.colorAttachmentCount = 2;
+        config.colorAttachmentCount = 1;
 
         m_OffscreenOutlinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
         if (!m_OffscreenOutlinePipeline->CreateWithLayout(config, m_OutlineVertexShader.get(), m_OutlineFragmentShader.get(), layout)) {

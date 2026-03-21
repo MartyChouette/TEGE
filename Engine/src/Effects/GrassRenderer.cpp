@@ -111,13 +111,13 @@ void GrassRenderer::CreateBladeMesh() {
     m_BladeIndexBuffer->UploadData(indices, sizeof(indices));
 }
 
-void GrassRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
+void GrassRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {
     if (!m_Initialized || !m_Renderer) return;
 
     m_Renderer->WaitForAllFrames();
     m_Pipeline.reset();
 
-    CreatePipelineWithPass(renderPass, sharedLayout);
+    CreatePipelineWithPass(renderPass, sharedLayout, colorAttachmentCount);
     if (!m_Pipeline) {
         ENJIN_LOG_ERROR(Renderer, "GrassRenderer: Failed to recreate pipeline for render pass");
     }
@@ -184,7 +184,7 @@ void GrassRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
     }
 }
 
-void GrassRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
+void GrassRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {
     // Reuse existing shaders if loaded, otherwise load them
     if (!m_VertexShader) {
         m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
@@ -236,7 +236,7 @@ void GrassRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptor
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.alphaBlend = false;
-    config.colorAttachmentCount = 2; // MRT: color + velocity
+    config.colorAttachmentCount = colorAttachmentCount; // MRT: color + velocity
     config.customVertexInput = &vertexInput;
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());

@@ -1680,11 +1680,11 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         EvaluatePostProcessVolumes(m_Camera->GetPosition());
     }
 
-    // PP shader produces teal — independentBlend fix resolved the MRT spec violation but
-    // the shader still corrupts output. Using blit. Root cause: the PP shader's embedded
-    // SPIR-V in ShaderData.h may not match the render pass or descriptor layout.
-    // TODO: Write a new minimal PP shader from scratch and embed fresh SPIR-V.
+    // Always render to scene RT then copy to game view RT.
+    // Never render directly to game view RT's MRT render pass (causes teal on NVIDIA).
     bool usePostProcessing = m_SceneRenderTarget && m_SceneRenderTarget->IsValid();
+    bool usePPShader = usePostProcessing && m_PostProcessing &&
+                       m_PostProcessing->IsInitialized();
 
     // Choose render target: scene RT when post-processing is active, game view RT otherwise
     Renderer::RenderTarget* sceneTarget = usePostProcessing
@@ -1909,8 +1909,13 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             depthBound = true;
         }
 
-        // Blit scene RT color to game view RT
-        {
+        if (usePPShader) {
+            // PP shader path: fullscreen triangle with effects
+            m_GameViewRenderTarget->BeginPPPass(commandBuffer);
+            m_PostProcessing->ApplyToCurrentPass(commandBuffer, rtWidth, rtHeight);
+            m_GameViewRenderTarget->EndPPPass(commandBuffer);
+        } else {
+            // Blit fallback: direct copy without effects
             VkImageMemoryBarrier barriers[2]{};
             barriers[0] = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
             barriers[0].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -1932,7 +1937,6 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             vkCmdPipelineBarrier(commandBuffer,
                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                 VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 2, barriers);
-
             VkImageBlit region{};
             region.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
             region.srcOffsets[1] = {(i32)rtWidth, (i32)rtHeight, 1};
@@ -1943,7 +1947,6 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                 m_SceneRenderTarget->GetColorImage(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                 m_GameViewRenderTarget->GetColorImage(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 1, &region, VK_FILTER_LINEAR);
-
             VkImageMemoryBarrier restores[2]{};
             restores[0] = {VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
             restores[0].oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;

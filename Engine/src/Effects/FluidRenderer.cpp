@@ -87,19 +87,19 @@ void FluidRenderer::CreateInstanceBuffer() {
     }
 }
 
-void FluidRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
+void FluidRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {
     if (!m_Initialized || !m_Renderer) return;
 
     m_Renderer->WaitForAllFrames();
     m_Pipeline.reset();
 
-    CreatePipelineWithPass(renderPass, sharedLayout);
+    CreatePipelineWithPass(renderPass, sharedLayout, colorAttachmentCount);
     if (!m_Pipeline) {
         ENJIN_LOG_ERROR(Renderer, "FluidRenderer: Failed to recreate pipeline for render pass");
     }
 }
 
-void FluidRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
+void FluidRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {
     // Use particle shaders as a base — fluid cells are similar billboard quads
     // Load the same particle shaders (reuse existing compiled SPIR-V)
     m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
@@ -169,7 +169,7 @@ void FluidRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptor
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.alphaBlend = true;
-    config.colorAttachmentCount = 2; // MRT: color + velocity
+    config.colorAttachmentCount = colorAttachmentCount; // MRT: color + velocity
     config.customVertexInput = &vertexInput;
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());

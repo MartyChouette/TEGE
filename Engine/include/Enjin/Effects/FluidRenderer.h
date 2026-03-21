@@ -35,7 +35,7 @@ public:
     bool Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout);
     void Shutdown();
 
-    void RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout);
+    void RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount = 2);
     bool ReloadShaders(const std::string& shaderDir, VkDescriptorSetLayout sharedLayout);
 
     // Set the fluid simulation to read grid data from
@@ -52,7 +52,7 @@ private:
     void CreateQuadBuffers();
     void CreateInstanceBuffer();
     void CreatePipeline(VkDescriptorSetLayout sharedLayout);
-    void CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout);
+    void CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount = 2);
 
     Renderer::VulkanRenderer* m_Renderer = nullptr;
     FluidSimulation* m_Simulation = nullptr;

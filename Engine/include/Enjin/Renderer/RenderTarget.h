@@ -79,17 +79,12 @@ private:
     VkDeviceMemory m_ColorMemory = VK_NULL_HANDLE;
     VkImageView m_ColorImageView = VK_NULL_HANDLE;
 
-    // Velocity attachment (RG16F — matches main render pass MRT layout for pipeline compatibility)
-    VkImage m_VelocityImage = VK_NULL_HANDLE;
-    VkDeviceMemory m_VelocityMemory = VK_NULL_HANDLE;
-    VkImageView m_VelocityImageView = VK_NULL_HANDLE;
-
     // Depth attachment
     VkImage m_DepthImage = VK_NULL_HANDLE;
     VkDeviceMemory m_DepthMemory = VK_NULL_HANDLE;
     VkImageView m_DepthImageView = VK_NULL_HANDLE;
 
-    // Render pass and framebuffer (MRT: color + velocity + depth)
+    // Render pass and framebuffer (color + depth, no MRT velocity)
     VkRenderPass m_RenderPass = VK_NULL_HANDLE;
     VkFramebuffer m_Framebuffer = VK_NULL_HANDLE;
 

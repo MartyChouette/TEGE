@@ -88,20 +88,20 @@ void WeatherRenderer::CreateInstanceBuffer() {
     }
 }
 
-void WeatherRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
+void WeatherRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {
     if (!m_Initialized || !m_Renderer) return;
 
     // Wait for GPU to finish using the old pipeline
     m_Renderer->WaitForAllFrames();
     m_Pipeline.reset();
 
-    CreatePipelineWithPass(renderPass, sharedLayout);
+    CreatePipelineWithPass(renderPass, sharedLayout, colorAttachmentCount);
     if (!m_Pipeline) {
         ENJIN_LOG_ERROR(Renderer, "WeatherRenderer: Failed to recreate pipeline for render pass");
     }
 }
 
-void WeatherRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
+void WeatherRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {
     // Load shaders
     m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
     if (!m_VertexShader->LoadFromSPIRV(
@@ -178,7 +178,7 @@ void WeatherRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescript
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.alphaBlend = true;
-    config.colorAttachmentCount = 2; // MRT: color + velocity
+    config.colorAttachmentCount = colorAttachmentCount; // MRT: color + velocity
     config.customVertexInput = &vertexInput;
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());

@@ -98,21 +98,21 @@ void SpriteBatchRenderer::CreateInstanceBuffer() {
     }
 }
 
-void SpriteBatchRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
+void SpriteBatchRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {
     if (!m_Initialized || !m_Renderer) return;
 
     m_Renderer->WaitForAllFrames();
     m_Pipeline.reset();
     m_LitPipeline.reset();
 
-    CreatePipelineWithPass(renderPass, sharedLayout);
-    CreateLitPipelineWithPass(renderPass, sharedLayout);
+    CreatePipelineWithPass(renderPass, sharedLayout, colorAttachmentCount);
+    CreateLitPipelineWithPass(renderPass, sharedLayout, colorAttachmentCount);
     if (!m_Pipeline) {
         ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to recreate pipeline for render pass");
     }
 }
 
-void SpriteBatchRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
+void SpriteBatchRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {
     // Load sprite shaders
     m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
     if (!m_VertexShader->LoadFromSPIRV(
@@ -208,7 +208,7 @@ void SpriteBatchRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDesc
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.alphaBlend = true;
-    config.colorAttachmentCount = 2; // MRT: color + velocity
+    config.colorAttachmentCount = colorAttachmentCount; // MRT: color + velocity
     config.customVertexInput = &vertexInput;
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
@@ -226,7 +226,7 @@ void SpriteBatchRenderer::CreateLitPipeline(VkDescriptorSetLayout sharedLayout) 
     CreateLitPipelineWithPass(m_Renderer->GetRenderPass(), sharedLayout);
 }
 
-void SpriteBatchRenderer::CreateLitPipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
+void SpriteBatchRenderer::CreateLitPipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {
     // Load lit sprite shaders
     m_LitVertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
     if (!m_LitVertexShader->LoadFromSPIRV(
@@ -311,7 +311,7 @@ void SpriteBatchRenderer::CreateLitPipelineWithPass(VkRenderPass renderPass, VkD
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.alphaBlend = true;
-    config.colorAttachmentCount = 2; // MRT: color + velocity
+    config.colorAttachmentCount = colorAttachmentCount; // MRT: color + velocity
     config.customVertexInput = &vertexInput;
 
     m_LitPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());

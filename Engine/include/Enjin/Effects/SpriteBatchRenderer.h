@@ -57,7 +57,7 @@ public:
     void Shutdown();
 
     // Recreate pipeline for a different render pass (e.g. render target vs swapchain)
-    void RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout);
+    void RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount = 2);
 
     // Hot-reload shaders from disk (compile GLSL → SPIR-V, recreate pipeline)
     bool ReloadShaders(const std::string& shaderDir, VkDescriptorSetLayout sharedLayout);
@@ -85,9 +85,9 @@ private:
     void CreateQuadBuffers();
     void CreateInstanceBuffer();
     void CreatePipeline(VkDescriptorSetLayout sharedLayout);
-    void CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout);
+    void CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount = 2);
     void CreateLitPipeline(VkDescriptorSetLayout sharedLayout);
-    void CreateLitPipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout);
+    void CreateLitPipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount = 2);
 
     Renderer::VulkanRenderer* m_Renderer = nullptr;
 
