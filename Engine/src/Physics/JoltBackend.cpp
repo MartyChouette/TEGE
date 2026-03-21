@@ -1228,13 +1228,16 @@ void JoltBackend::CreateCharacterController(ECS::Entity entity, f32 capsuleRadiu
     DestroyCharacterController(entity);
 
     JPH::CharacterVirtualSettings settings;
-    settings.mShape = new JPH::CapsuleShape(std::max(capsuleHalfHeight - capsuleRadius, 0.01f), capsuleRadius);
+    f32 stemHalfHeight = std::max(capsuleHalfHeight - capsuleRadius, 0.01f);
+    settings.mShape = new JPH::CapsuleShape(stemHalfHeight, capsuleRadius);
     settings.mMass = 70.0f;
     settings.mMaxSlopeAngle = JPH::DegreesToRadians(50.0f);
     settings.mMaxStrength = 100.0f;
     settings.mCharacterPadding = 0.02f;
     settings.mPenetrationRecoverySpeed = 1.0f;
     settings.mPredictiveContactDistance = 0.1f;
+    // Offset shape upward so entity position = capsule feet (bottom)
+    settings.mShapeOffset = JPH::Vec3(0, capsuleHalfHeight, 0);
 
     auto* character = new JPH::CharacterVirtual(
         &settings,
