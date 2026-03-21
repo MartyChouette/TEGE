@@ -423,10 +423,12 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
     f32 bounciness = 0.0f;
 
     if (auto* box = m_World->GetComponent<ECS::BoxColliderComponent>(entity)) {
+        // Collider size is in world space — not multiplied by transform scale.
+        // Templates set size to match the desired world dimensions directly.
         JPH::Vec3 halfExtents(
-            box->size.x * transform->scale.x * 0.5f,
-            box->size.y * transform->scale.y * 0.5f,
-            box->size.z * transform->scale.z * 0.5f
+            box->size.x * 0.5f,
+            box->size.y * 0.5f,
+            box->size.z * 0.5f
         );
         // Clamp to minimum valid size
         halfExtents = JPH::Vec3(
@@ -440,16 +442,17 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
         bounciness = box->bounciness;
         colliderInfo = {box->categoryBits, box->collisionMask, box->isTrigger, true};
     } else if (auto* sphere = m_World->GetComponent<ECS::SphereColliderComponent>(entity)) {
-        f32 maxScale = Math::Max(transform->scale.x, Math::Max(transform->scale.y, transform->scale.z));
-        f32 worldRadius = std::max(sphere->radius * maxScale, 0.01f);
+        // Sphere radius is in world space — not scaled by transform
+        f32 worldRadius = std::max(sphere->radius, 0.01f);
         shape = new JPH::SphereShape(worldRadius);
         colliderCenter = sphere->center;
         friction = sphere->friction;
         bounciness = sphere->bounciness;
         colliderInfo = {sphere->categoryBits, sphere->collisionMask, sphere->isTrigger, true};
     } else if (auto* capsule = m_World->GetComponent<ECS::CapsuleColliderComponent>(entity)) {
-        f32 worldRadius = std::max(capsule->radius * Math::Max(transform->scale.x, transform->scale.z), 0.01f);
-        f32 halfHeight = std::max((capsule->height * 0.5f - capsule->radius) * transform->scale.y, 0.01f);
+        // Capsule dimensions are in world space — not scaled by transform
+        f32 worldRadius = std::max(capsule->radius, 0.01f);
+        f32 halfHeight = std::max(capsule->height * 0.5f - capsule->radius, 0.01f);
 
         // Jolt CapsuleShape is aligned along Y by default
         JPH::ShapeRefC capsuleShape = new JPH::CapsuleShape(halfHeight, worldRadius);

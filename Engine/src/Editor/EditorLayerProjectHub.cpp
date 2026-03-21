@@ -2288,6 +2288,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
 
     // --- Collider helpers: auto-sized to match mesh primitive ---
     // 3D colliders — match the mesh shape
+    // 3D collider helpers — size is in WORLD space (not affected by transform scale).
     auto addBoxCollider3D = [&](ECS::Entity e, f32 w, f32 h, f32 d) {
         auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(e);
         col.size = Math::Vector3(w, h, d);
