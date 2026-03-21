@@ -1562,6 +1562,85 @@ Move beyond CPU-organized draw submission. The GPU should manage more of the ren
 #### 10d: Mobile Asset Pipeline
 - ASTC/ETC2, lower-res LODs, smaller `.enjpak`
 
+### Phase 11: Advanced ReSTIR (Research-Informed, 2026)
+
+Upgrade the existing ReSTIR DI foundation with latest techniques from NVIDIA RTXDI 2.0+ and academic research.
+
+- **Pairwise MIS bias correction** — replace 1/M normalization in spatial reuse with pairwise MIS weights. Eliminates shadow-edge darkening without extra rays. (Eurographics 2024)
+- **Permutation sampling** — decorrelate temporal reuse pattern to fix "boiling" artifacts. NVIDIA reports significant temporal stability improvement.
+- **Visibility reuse** — 1-bit visibility flag in reservoir prevents occluded samples from propagating through spatial reuse
+- **Confidence-weighted aging** — replace hard M_max cap with per-reservoir age/confidence tracking for graceful staleness decay
+- **ReSTIR GI** — extend reservoirs to store GI samples (secondary hit position + radiance). Jacobian correction for solid angle changes. Packed format (~32 bytes) to keep memory manageable. (Ouyang et al., 2021)
+- **ReGIR (world-space reservoirs)** — hash grid of pre-sampled light reservoirs for secondary bounces. 32K cells × 512 reservoirs. Resolution-independent, persistent across camera motion. (Boksansky et al., 2021)
+- **ReSTIR PT (path reuse via GRIS)** — hybrid shift mapping (random replay through specular chain + reconnection at first diffuse vertex). Full multi-bounce specular + diffuse GI at 1 path/pixel. (Lin et al., SIGGRAPH 2022)
+
+### Phase 12: Hash Grid Radiance Cache (Research-Informed, 2026)
+
+Replace or supplement surfel spatial hash with multi-resolution hash grid (instant-NGP style). Most impactful single GI technique for the engine.
+
+- **Multi-resolution hash grid** — 16 levels, 2^17 entries per level, 4 features per entry. ~32 MB total. Excellent spatial resolution (~1cm at finest level)
+- **Trilinear interpolation** across 8 corners per level, concatenated across levels
+- **Compute shader update** — trace rays from screen-space probes, scatter irradiance into hash grid via atomic EMA
+- **Integration** — use as alternative backend for bindings 24-26 (surfel cache), or new bindings alongside
+- **Radiance Cascades for 2D** — Alexander Sannikov's technique (Path of Exile 2). Multi-resolution angular + spatial cascade for beautiful 2D GI with emissive bounce. Target Scene2D/Scene2_5D modes.
+
+### Phase 13: Real-Time Denoising & Upscaling SDK Integration (2026)
+
+Production-grade denoising and upscaling beyond the built-in Lanczos+CAS path.
+
+- **NRD integration** — NVIDIA Real-time Denoisers (open source, Vulkan-native, vendor-agnostic). ReBLUR + SIGMA shadow denoiser. Complement existing OIDN/OptiX with a real-time option
+- **FSR 3.1 SDK** — FidelityFX open-source temporal upscaler (MIT license). Replace Lanczos+CAS with proper temporal accumulation. Frame generation via optical flow (decoupled from upscaling)
+- **DLSS Streamline SDK** — DLSS Super Resolution + Ray Reconstruction for NVIDIA GPUs. CMake: `ENJIN_UPSCALING_DLSS`
+- **XeSS SDK** — Intel upscaler with DP4a cross-vendor fallback. CMake: `ENJIN_UPSCALING_XESS`
+- **Neural Radiance Cache (NRC)** — NVIDIA NRC library (Vulkan-native). 1-2ms overhead, dramatically accelerates path tracer GI convergence. Requires Turing+ Tensor Cores
+
+### Phase 14: GPU-Driven Rendering & Modern Vulkan (2026)
+
+Leverage Vulkan 1.4 and new extensions to eliminate CPU bottlenecks.
+
+- **VK_EXT_shader_object** — eliminate pipeline permutations and compilation stutter. No more `RecreateEffectPipelinesForRenderPass()`. All 3 major vendors supported (2025)
+- **VK_EXT_device_generated_commands** — GPU-side draw call emission from culling output. Eliminate CPU draw call bottleneck entirely. NVIDIA + AMD production drivers (2025)
+- **VK_EXT_descriptor_buffer** — direct buffer-backed descriptors, massive CPU overhead reduction. Replace descriptor pool/set management. NVIDIA + AMD production (2023+)
+- **VK_KHR_dynamic_rendering** (core 1.3+) — migrate from VkRenderPass/VkFramebuffer to dynamic rendering. Simplify render graph
+- **GPU particle compute** — move ParticleSystem to compute shaders. Alive/dead list via atomics, indirect draw. 1M+ particles at 60fps. SDF collision via existing RT SDF binding 17
+
+### Phase 15: Nanite-Style Virtual Geometry (2026-2027)
+
+Meshlet-based continuous LOD with GPU-driven culling. Build on existing HiZ occlusion culling foundation.
+
+- **Meshlet preprocessing** — integrate meshoptimizer `clusterlod.h` (MIT) for DAG construction. 64 vertices / 126 triangles per meshlet
+- **Task + mesh shader pipeline** — `VK_EXT_mesh_shader` for per-meshlet frustum + cone + HiZ culling in task shader. Mesh shader outputs vertices directly
+- **Screen-space error LOD selection** — DAG traversal with `screenError = worldError * screenHeight / (2 * distance * tan(fov/2))`. Group-based decisions prevent boundary cracks
+- **Visibility buffer improvements** — add index buffer SSBO, PBR material resolve, material binning by type. Async compute for surface resolve
+- **Cluster streaming** — root pages always resident, streaming pages loaded/evicted by priority. Fixed GPU memory pool with page-based management
+
+### Phase 16: Advanced Shadows (2026)
+
+Modern shadow techniques beyond cascaded shadow maps.
+
+- **Progressive shadow caching** — split CSM into static (cached) + dynamic (per-frame) partitions. Static cascades only re-render on light/geometry change. (Pearl Abyss uses 6 cascades: 2 static + 1 terrain + 2 dynamic + 1 near-field)
+- **Hybrid raster + RT shadows** — AMD FidelityFX Classifier tiles screen, only RT penumbra regions. 0.7-2ms total vs 2-4ms full-screen RT
+- **Screen-space contact shadows** — depth buffer ray march (8-16 steps) for pixel-level contact detail. ~0.2ms
+- **PCSS improvements** — Vogel disk sampling, decoupled penumbra estimation at quarter-res, bilateral upsample
+- **Many-light shadow strategies** — ReSTIR-sampled shadow maps (top-K full shadow maps + imperfect shadow maps for rest). Bounded cost regardless of light count
+
+### Phase 17: Procedural Generation & WFC (2027)
+
+Tiny Glade-inspired procedural building system.
+
+- **Module authoring pipeline** — mesh module format with typed connection sockets (label + orientation)
+- **WFC/constraint solver** — graph-based constraint propagation with backtracking. Incremental local re-solve on edit
+- **Mesh stitching** — weld boundary vertices, recompute normals/tangents. Triplanar UV generation
+- **Procedural terrain** — extend existing ProceduralGen with SDF-based terrain sculpting
+
+### Phase 18: Neural Rendering (2027+)
+
+ML-assisted rendering techniques that run on consumer GPUs.
+
+- **Neural texture compression (NTC)** — NVIDIA RTXNTC SDK. 96% VRAM reduction. Requires `VK_NV_cooperative_vector` for fast path. Fallback to standard BC textures on non-NVIDIA
+- **Gaussian splatting renderer** — import format for photogrammetry assets. Reference: NVIDIA `vk_gaussian_splatting`. Specialized tool, not primary geometry path
+- **NRD learned denoisers** — if NRD adds neural denoiser modes beyond algorithmic ReBLUR/ReLAX
+
 ### Key Integration Notes
 
 - **Velocity buffer** ✅ — shared dependency for TAA, upscalers, RT temporal, ReSTIR temporal reuse
@@ -1570,6 +1649,8 @@ Move beyond CPU-organized draw submission. The GPU should manage more of the ren
 - **VRS** — adaptive ray budget (Phase 4) feeds into existing `VK_KHR_fragment_shading_rate`
 - **Scene classification** (2D/2.5D/3D) — skip RT/TAA/ReSTIR in 2D-only scenes
 - **SH Light Probes** — existing probe system is foundation for radiance caching (Phase 6)
+- **Hash grid** — natural upgrade path from surfel cache (Phase 12), shares bindings 24-26
+- **Mesh shaders** — natural evolution of existing GPU culling (Phase 15), uses HiZ pyramid already built
 - **Rendering philosophy**: Sparse reconstruction-first — spend fewer rays more deliberately, reuse across frames, reconstruct intelligently. Not brute-force path tracing.
 
 ---
