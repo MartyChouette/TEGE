@@ -1236,8 +1236,6 @@ void JoltBackend::CreateCharacterController(ECS::Entity entity, f32 capsuleRadiu
     settings.mCharacterPadding = 0.02f;
     settings.mPenetrationRecoverySpeed = 1.0f;
     settings.mPredictiveContactDistance = 0.1f;
-    // Offset shape upward so entity position = capsule feet (bottom)
-    settings.mShapeOffset = JPH::Vec3(0, capsuleHalfHeight, 0);
 
     auto* character = new JPH::CharacterVirtual(
         &settings,
