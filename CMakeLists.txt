@@ -113,12 +113,18 @@ if(ENJIN_BUILD_HUB)
 endif()
 
 if(ENJIN_BUILD_EXAMPLES)
+    # Examples output to bin/Examples/ to keep the main bin/ directory clean
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/Examples)
     add_subdirectory(Examples)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 endif()
 
 if(ENJIN_BUILD_TESTS)
     enable_testing()
+    # Tests output to bin/Tests/ to keep the main bin/ directory clean
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/Tests)
     add_subdirectory(Tests)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 endif()
 
 # =============================================================================
