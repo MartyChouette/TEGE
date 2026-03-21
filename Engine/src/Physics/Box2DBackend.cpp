@@ -138,6 +138,19 @@ void Box2DBackend::Update(f32 deltaTime) {
     ProcessEvents();
 }
 
+void Box2DBackend::SyncAndProcessEvents() {
+    if (!m_World || !m_Initialized) return;
+
+    // Re-sync kinematic body positions (controllers may have moved them)
+    SyncECSToBox2D();
+
+    // Mini-step with zero dt to trigger overlap detection without advancing simulation
+    b2World_Step(m_WorldId, 0.0f, 1);
+
+    // Fire any new sensor/collision events from the updated positions
+    ProcessEvents();
+}
+
 // ============================================================================
 // ECS → Box2D Sync
 // ============================================================================

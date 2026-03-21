@@ -533,6 +533,12 @@ void PlayMode::Update(f32 deltaTime) {
             m_ControllerSystem.Update(deltaTime);
             m_FlowerSystem.Update(deltaTime);
         }
+
+        // Re-sync controller-driven positions to Box2D and fire sensor events.
+        // Controllers move entities after the physics step, so without this
+        // second sync, sensor overlaps (damage, pickups) are 1 frame late.
+        if (m_Physics2D) m_Physics2D->SyncAndProcessEvents();
+
         auto t2 = std::chrono::high_resolution_clock::now();
 
         // Update scripts (handles hot-reload, lifecycle dispatch, coroutines)

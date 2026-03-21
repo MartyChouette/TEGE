@@ -22,6 +22,10 @@ public:
     virtual void Update(f32 deltaTime) = 0;
     virtual void Shutdown() = 0;
 
+    // Re-sync ECS positions to physics and fire any new collision/sensor events.
+    // Call after controller systems move entities to catch overlaps in the same frame.
+    virtual void SyncAndProcessEvents() {}
+
     // Gravity
     virtual void SetGravity(const Math::Vector2& gravity) = 0;
     virtual Math::Vector2 GetGravity() const = 0;
