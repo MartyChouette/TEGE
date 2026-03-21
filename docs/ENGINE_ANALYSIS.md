@@ -1017,7 +1017,7 @@ All performance issues from P0 through P6 have been resolved. The engine has und
 - HRTF spatial audio with geometry-aware occlusion (Steam Audio)
 - LAN multiplayer with 20Hz state sync and client-side prediction
 
-It is **not positioned for AAA-scale** rendering (no Nanite-style mesh streaming), but with virtual texturing (page-based streaming), GPU two-phase HiZ occlusion culling, LOD with hysteresis and screen-space sizing, clustered forward lighting (1024 lights), and variable rate shading, it significantly exceeds the requirements of its target market (indie/hobbyist/retro/Flash).
+It significantly exceeds the requirements of its target market (indie/hobbyist/retro/Flash) with virtual texturing (page-based streaming), GPU two-phase HiZ occlusion culling, LOD with hysteresis and screen-space sizing, clustered forward lighting (1024 lights), and variable rate shading. Nanite-style virtual geometry (meshlet LOD, task/mesh shaders) is planned for Phase 15.
 
 #### Frame Budget Breakdown (Typical 3D Scene, 16.67ms Budget)
 
@@ -1528,7 +1528,7 @@ graph TB
 
 ## 11. Rendering Pipeline Roadmap
 
-Completed and planned rendering phases, in dependency order. Phases 1-2 are shipped in Beta 0.8. Phases 3-10 are planned.
+Completed and planned rendering phases, in dependency order. Phases 1-3 shipped. Phases 4-10 in progress. Phases 11-18 research-informed (2026-2027).
 
 | Phase | Feature | Status | Description |
 |-------|---------|--------|-------------|
@@ -1542,6 +1542,14 @@ Completed and planned rendering phases, in dependency order. Phases 1-2 are ship
 | **8** | Additional AA | Planned | SMAA (subpixel morphological), MSAA runtime toggle |
 | **9** | GPU-Driven Work Scheduling | Planned | Indirect draw from GPU culling, multi-draw indirect, device-generated commands, async compute overlap |
 | **10** | Mobile | Planned | Android first, iOS second, rendering tiers (low/medium/high), touch input, TBDR-optimized paths |
+| **11** | Advanced ReSTIR | Planned | Pairwise MIS, permutation sampling, ReSTIR GI/PT via GRIS, ReGIR world-space reservoirs |
+| **12** | Hash Grid Radiance Cache | Planned | instant-NGP style multi-resolution hash grid (~32MB), 2D Radiance Cascades for Scene2D/2.5D |
+| **13** | Denoiser/Upscaler SDKs | Planned | NRD (vendor-agnostic), FSR 3.1 (open source), DLSS Streamline, XeSS, Neural Radiance Cache |
+| **14** | GPU-Driven Modern Vulkan | Planned | VK_EXT_shader_object, device_generated_commands, descriptor_buffer, dynamic_rendering |
+| **15** | Virtual Geometry | Planned | Nanite-style meshlets via meshoptimizer, task/mesh shaders, visibility buffer PBR resolve |
+| **16** | Advanced Shadows | Planned | Progressive caching (Pearl Abyss style), hybrid raster+RT, contact shadows, PCSS improvements |
+| **17** | Procedural Generation | Planned | WFC constraint solver (Tiny Glade inspired), module authoring, mesh stitching, SDF terrain |
+| **18** | Neural Rendering | Planned | Neural texture compression (NTC), Gaussian splatting import, cooperative vector ML inference |
 
 ---
 
