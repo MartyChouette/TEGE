@@ -2482,18 +2482,22 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                 }
             };
 
-            auto drawWireBox = [&](ImDrawList* dl, const Math::Vector3& center, const Math::Vector3& halfExt, ImU32 color, f32 thickness) {
-                // 8 corners of the AABB
-                Math::Vector3 corners[8] = {
-                    center + Math::Vector3(-halfExt.x, -halfExt.y, -halfExt.z),
-                    center + Math::Vector3( halfExt.x, -halfExt.y, -halfExt.z),
-                    center + Math::Vector3( halfExt.x, -halfExt.y,  halfExt.z),
-                    center + Math::Vector3(-halfExt.x, -halfExt.y,  halfExt.z),
-                    center + Math::Vector3(-halfExt.x,  halfExt.y, -halfExt.z),
-                    center + Math::Vector3( halfExt.x,  halfExt.y, -halfExt.z),
-                    center + Math::Vector3( halfExt.x,  halfExt.y,  halfExt.z),
-                    center + Math::Vector3(-halfExt.x,  halfExt.y,  halfExt.z),
+            auto drawWireBox = [&](ImDrawList* dl, const Math::Vector3& center, const Math::Vector3& halfExt, ImU32 color, f32 thickness, const Math::Quaternion& rotation = Math::Quaternion::Identity()) {
+                // 8 corners of the OBB (oriented bounding box)
+                Math::Vector3 localCorners[8] = {
+                    {-halfExt.x, -halfExt.y, -halfExt.z},
+                    { halfExt.x, -halfExt.y, -halfExt.z},
+                    { halfExt.x, -halfExt.y,  halfExt.z},
+                    {-halfExt.x, -halfExt.y,  halfExt.z},
+                    {-halfExt.x,  halfExt.y, -halfExt.z},
+                    { halfExt.x,  halfExt.y, -halfExt.z},
+                    { halfExt.x,  halfExt.y,  halfExt.z},
+                    {-halfExt.x,  halfExt.y,  halfExt.z},
                 };
+                Math::Vector3 corners[8];
+                for (int i = 0; i < 8; ++i) {
+                    corners[i] = center + rotation.Rotate(localCorners[i]);
+                }
                 // 12 edges: bottom 4, top 4, vertical 4
                 drawLine3D(dl, corners[0], corners[1], color, thickness);
                 drawLine3D(dl, corners[1], corners[2], color, thickness);
@@ -2586,7 +2590,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     }
                 };
 
-                // Box colliders (yellow)
+                // Box colliders (yellow, oriented to entity rotation)
                 for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::BoxColliderComponent>()) {
                     auto* box = m_World->GetComponent<ECS::BoxColliderComponent>(entity);
                     auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
@@ -2595,7 +2599,8 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         ImU32 color = sel ? IM_COL32(255, 220, 50, 220) : IM_COL32(255, 220, 50, 100);
                         f32 thick = sel ? 2.0f : 1.0f;
                         Math::Vector3 halfExt = box->size * 0.5f;
-                        drawWireBox(bgDrawList, transform->position + box->center, halfExt, color, thick);
+                        Math::Vector3 worldCenter = transform->position + transform->rotation.Rotate(box->center);
+                        drawWireBox(bgDrawList, worldCenter, halfExt, color, thick, transform->rotation);
                     }
                 }
 
@@ -2615,7 +2620,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     }
                 }
 
-                // Capsule colliders (orange, box approximation + end circles)
+                // Capsule colliders (orange, proper capsule wireframe)
                 for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::CapsuleColliderComponent>()) {
                     auto* capsule = m_World->GetComponent<ECS::CapsuleColliderComponent>(entity);
                     auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
@@ -2623,33 +2628,44 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         bool sel = IsSelected(entity);
                         ImU32 color = sel ? IM_COL32(255, 160, 40, 220) : IM_COL32(255, 160, 40, 100);
                         f32 thick = sel ? 2.0f : 1.0f;
-                        Math::Vector3 c = transform->position + capsule->center;
+                        Math::Vector3 c = transform->position + transform->rotation.Rotate(capsule->center);
                         f32 r = capsule->radius;
                         f32 halfH = capsule->height * 0.5f;
-                        // Draw as box approximation
-                        Math::Vector3 halfExt;
-                        Math::Vector3 axisU, axisV;
+                        f32 stemHalf = halfH - r;  // Half-height of the cylindrical section
+
+                        // Determine local axis and perpendicular axes
+                        Math::Vector3 localAxis, localU, localV;
                         switch (capsule->direction) {
                             case ECS::CapsuleColliderComponent::Direction::X:
-                                halfExt = Math::Vector3(halfH, r, r);
-                                axisU = {0,1,0}; axisV = {0,0,1};
-                                drawWireCircle(bgDrawList, c + Math::Vector3(halfH - r, 0, 0), r, axisU, axisV, color, thick, 16);
-                                drawWireCircle(bgDrawList, c - Math::Vector3(halfH - r, 0, 0), r, axisU, axisV, color, thick, 16);
-                                break;
+                                localAxis = {1,0,0}; localU = {0,1,0}; localV = {0,0,1}; break;
                             case ECS::CapsuleColliderComponent::Direction::Z:
-                                halfExt = Math::Vector3(r, r, halfH);
-                                axisU = {1,0,0}; axisV = {0,1,0};
-                                drawWireCircle(bgDrawList, c + Math::Vector3(0, 0, halfH - r), r, axisU, axisV, color, thick, 16);
-                                drawWireCircle(bgDrawList, c - Math::Vector3(0, 0, halfH - r), r, axisU, axisV, color, thick, 16);
-                                break;
+                                localAxis = {0,0,1}; localU = {1,0,0}; localV = {0,1,0}; break;
                             default: // Y
-                                halfExt = Math::Vector3(r, halfH, r);
-                                axisU = {1,0,0}; axisV = {0,0,1};
-                                drawWireCircle(bgDrawList, c + Math::Vector3(0, halfH - r, 0), r, axisU, axisV, color, thick, 16);
-                                drawWireCircle(bgDrawList, c - Math::Vector3(0, halfH - r, 0), r, axisU, axisV, color, thick, 16);
-                                break;
+                                localAxis = {0,1,0}; localU = {1,0,0}; localV = {0,0,1}; break;
                         }
-                        drawWireBox(bgDrawList, c, halfExt, color, thick);
+                        // Apply entity rotation
+                        Math::Vector3 axis = transform->rotation.Rotate(localAxis);
+                        Math::Vector3 u = transform->rotation.Rotate(localU);
+                        Math::Vector3 v = transform->rotation.Rotate(localV);
+
+                        Math::Vector3 top = c + axis * stemHalf;
+                        Math::Vector3 bot = c - axis * stemHalf;
+
+                        // End circles (at cylinder/hemisphere boundary)
+                        drawWireCircle(bgDrawList, top, r, u, v, color, thick, 20);
+                        drawWireCircle(bgDrawList, bot, r, u, v, color, thick, 20);
+
+                        // 4 vertical lines connecting the circles
+                        drawLine3D(bgDrawList, top + u * r, bot + u * r, color, thick);
+                        drawLine3D(bgDrawList, top - u * r, bot - u * r, color, thick);
+                        drawLine3D(bgDrawList, top + v * r, bot + v * r, color, thick);
+                        drawLine3D(bgDrawList, top - v * r, bot - v * r, color, thick);
+
+                        // Hemisphere profile arcs (2 arcs per cap, front/side view)
+                        drawWireCircle(bgDrawList, top, r, axis, u, color, thick, 12);
+                        drawWireCircle(bgDrawList, top, r, axis, v, color, thick, 12);
+                        drawWireCircle(bgDrawList, bot, r, axis, u, color, thick, 12);
+                        drawWireCircle(bgDrawList, bot, r, axis, v, color, thick, 12);
                     }
                 }
 
