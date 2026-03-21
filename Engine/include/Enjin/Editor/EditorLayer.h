@@ -707,6 +707,7 @@ private:
     // Deferred play mode stop (set during Render, executed at start of next Update
     // to avoid dangling pointers from mid-frame World::Clear)
     bool m_PendingPlayStop = false;
+    bool m_SkipNextRender = false;  // Skip one frame after Stop to let render caches refresh
 
     // Camera zone override (driven by CameraTriggerComponent)
     ECS::Entity m_CameraZoneOverride = ECS::INVALID_ENTITY;

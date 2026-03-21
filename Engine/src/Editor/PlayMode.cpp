@@ -709,7 +709,6 @@ void PlayMode::RestoreEditorState() {
         }
 
         usize entityCount = m_World->GetEntityCount();
-        ENJIN_LOG_DEBUG(Editor, "Restored editor state (%zu entities)", entityCount);
     } else {
         ENJIN_LOG_WARN(Editor, "No saved scene JSON to restore — editor state was empty");
     }

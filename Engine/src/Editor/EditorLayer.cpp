@@ -545,6 +545,7 @@ void EditorLayer::Update(f32 deltaTime) {
         std::string path = std::move(m_PendingSceneLoadPath);
         m_PendingSceneLoadPath.clear();
         if (!m_PlayMode.IsStopped()) {
+            if (m_Renderer) m_Renderer->WaitForAllFrames();
             m_PlayMode.Stop();
             ClearSelection();
         }
@@ -564,6 +565,9 @@ void EditorLayer::Update(f32 deltaTime) {
     if (m_PendingPlayStop) {
         m_PendingPlayStop = false;
         if (!m_PlayMode.IsStopped()) {
+            // Wait for GPU to finish all in-flight frames before Stop clears
+            // the world — otherwise the GPU may read destroyed entity data.
+            if (m_Renderer) m_Renderer->WaitForAllFrames();
             m_PlayMode.Stop();
             ClearSelection(); // Entities have new IDs after scene restore
             m_PrePlayRenderSettings.ApplyToRuntime(
@@ -576,6 +580,10 @@ void EditorLayer::Update(f32 deltaTime) {
             if (m_Renderer) {
                 m_Renderer->RequestVSyncChange(m_EditorSettings.editorVSync);
             }
+            // Skip rendering this frame — the world was just rebuilt and the
+            // render system's entity caches are stale.  Marking the flag lets
+            // RenderOffscreen() early-out safely; caches refresh next frame.
+            m_SkipNextRender = true;
         }
     }
 
@@ -898,6 +906,7 @@ void EditorLayer::Update(f32 deltaTime) {
             m_PlayMode.Pause();
         } else if (m_PlayMode.IsPaused()) {
             // Paused without menu: stop play mode
+            if (m_Renderer) m_Renderer->WaitForAllFrames();
             m_PlayMode.Stop();
             ClearSelection();
             m_PrePlayRenderSettings.ApplyToRuntime(
@@ -1188,6 +1197,13 @@ void EditorLayer::PrepareRenderTargets() {
 
 void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     ENJIN_PROFILE_SCOPE("Render");
+
+    // Skip one frame after PlayMode::Stop — the world was just rebuilt and
+    // the render system has stale entity caches that would crash.
+    if (m_SkipNextRender) {
+        m_SkipNextRender = false;
+        return;
+    }
 
     // Skip ALL offscreen rendering for a few frames after scene clear.
     // The GPU may still be processing command buffers that reference destroyed
