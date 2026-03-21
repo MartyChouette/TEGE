@@ -39,7 +39,7 @@ public:
     virtual std::vector<RaycastHit> RaycastAll(const Ray& ray, f32 maxDistance = 1000.0f, u32 layerMask = 0xFFFFFFFF) = 0;
 
     // Ground check
-    virtual bool CheckGround(const Math::Vector3& position, f32 checkDistance, RaycastHit& hit, u32 layerMask = 0xFFFFFFFF) = 0;
+    virtual bool CheckGround(const Math::Vector3& position, f32 checkDistance, RaycastHit& hit, u32 layerMask = 0xFFFFFFFF, ECS::Entity ignoreEntity = 0) = 0;
 
     // Character controller movement
     virtual Math::Vector3 MoveAndSlide(const Math::Vector3& position, const Math::Vector3& velocity,

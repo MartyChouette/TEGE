@@ -485,10 +485,10 @@ bool ControllerSystem::IsDashPressed() {
     return pressed;
 }
 
-bool ControllerSystem::CheckGround(const Math::Vector3& position, f32& groundY) {
+bool ControllerSystem::CheckGround(const Math::Vector3& position, f32& groundY, ECS::Entity selfEntity) {
     if (m_Physics) {
         Physics::RaycastHit hit;
-        if (m_Physics->CheckGround(position, 1.0f, hit)) {
+        if (m_Physics->CheckGround(position, 1.0f, hit, 0xFFFFFFFF, selfEntity)) {
             groundY = hit.point.y;
             return true;
         }
@@ -776,7 +776,7 @@ void ControllerSystem::UpdatePlatformer2D(Entity entity, Platformer2DController&
     f32 groundY = 0.0f;
     Entity groundEntity = INVALID_ENTITY;
     bool ground2D = CheckGround2D(transform.position, groundY, groundEntity, capsuleRadius, capsuleHalfHeight);
-    bool groundHit = ground2D || CheckGround(transform.position, groundY);
+    bool groundHit = ground2D || CheckGround(transform.position, groundY, entity);
     // For 2D raycasts, the hit point is the surface top. Standing offset = capsule half-height
     // so the capsule bottom sits on the surface.
     f32 standingY = ground2D ? (groundY + capsuleHalfHeight) : groundY;
@@ -1136,7 +1136,7 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
     // Ground check via physics raycast with Y=0 fallback
     {
         f32 groundY = 0.0f;
-        if (CheckGround(transform.position, groundY) && transform.position.y <= groundY && ctrl.velocity.y <= 0.0f) {
+        if (CheckGround(transform.position, groundY, entity) && transform.position.y <= groundY && ctrl.velocity.y <= 0.0f) {
             transform.position.y = groundY;
             ctrl.velocity.y = 0.0f;
             ctrl.isGrounded = true;
@@ -1421,7 +1421,7 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     // Ground check via physics raycast with Y=0 fallback
     {
         f32 groundY = 0.0f;
-        if (CheckGround(transform.position, groundY) && transform.position.y <= groundY && ctrl.velocity.y <= 0.0f) {
+        if (CheckGround(transform.position, groundY, entity) && transform.position.y <= groundY && ctrl.velocity.y <= 0.0f) {
             transform.position.y = groundY;
             ctrl.velocity.y = 0.0f;
             ctrl.isGrounded = true;
@@ -1570,7 +1570,7 @@ void ControllerSystem::UpdateVehicle(Entity entity, VehicleController& ctrl, Tra
 
     // Ground check (keep on ground)
     f32 groundY = 0.0f;
-    if (CheckGround(transform.position, groundY) && transform.position.y <= groundY + 0.1f) {
+    if (CheckGround(transform.position, groundY, entity) && transform.position.y <= groundY + 0.1f) {
         transform.position.y = groundY;
         ctrl.isGrounded = true;
     } else {

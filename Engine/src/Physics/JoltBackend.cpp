@@ -116,8 +116,12 @@ class EnjinBodyFilter final : public JPH::BodyFilter {
 public:
     const std::unordered_map<uint32_t, CollisionFilterData>* filterData = nullptr;
     u32 layerMask = 0xFFFFFFFF;
+    JPH::BodyID ignoreBodyID;  // Body to exclude from results (e.g. self)
 
     bool ShouldCollide(const JPH::BodyID& bodyID) const override {
+        // Skip the ignored body (prevents self-hit in ground checks)
+        if (!ignoreBodyID.IsInvalid() && bodyID == ignoreBodyID) return false;
+
         if (!filterData || layerMask == 0xFFFFFFFF) return true;
 
         auto it = filterData->find(bodyID.GetIndex());
@@ -1163,13 +1167,43 @@ std::vector<RaycastHit> JoltBackend::RaycastAll(const Ray& ray, f32 maxDistance,
 // Ground Check
 // ============================================================================
 
-bool JoltBackend::CheckGround(const Math::Vector3& position, f32 checkDistance, RaycastHit& hit, u32 layerMask) {
+bool JoltBackend::CheckGround(const Math::Vector3& position, f32 checkDistance, RaycastHit& hit, u32 layerMask, ECS::Entity ignoreEntity) {
+    if (!m_Initialized) return false;
+
     Ray ray;
     ray.origin = position;
     ray.direction = Math::Vector3(0, -1, 0);
 
-    hit = Raycast(ray, checkDistance, layerMask);
-    return hit.hit;
+    // Use custom raycast with self-exclusion to prevent hitting own collider
+    JPH::RRayCast joltRay(ToJoltR(ray.origin), JPH::Vec3(0, -checkDistance, 0));
+
+    JPH::RayCastResult castResult;
+    EnjinBodyFilter bodyFilter;
+    bodyFilter.filterData = &m_BodyFilterData;
+    bodyFilter.layerMask = layerMask;
+
+    // Exclude the requesting entity's own body
+    if (ignoreEntity != 0) {
+        auto it = m_EntityToBody.find(ignoreEntity);
+        if (it != m_EntityToBody.end()) {
+            bodyFilter.ignoreBodyID = it->second;
+        }
+    }
+
+    JPH::BroadPhaseLayerFilter bpFilter;
+    JPH::ObjectLayerFilter objFilter;
+    if (m_PhysicsSystem->GetNarrowPhaseQuery().CastRay(joltRay, castResult, bpFilter, objFilter, bodyFilter)) {
+        hit.hit = true;
+        hit.distance = castResult.mFraction * checkDistance;
+        hit.point = FromJoltR(joltRay.GetPointOnRay(castResult.mFraction));
+        hit.entity = 0;
+        auto it = m_BodyIndexToEntity.find(castResult.mBodyID.GetIndex());
+        if (it != m_BodyIndexToEntity.end()) {
+            hit.entity = it->second;
+        }
+        return true;
+    }
+    return false;
 }
 
 // ============================================================================

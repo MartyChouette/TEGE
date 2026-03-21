@@ -51,7 +51,7 @@ public:
     RaycastHit Raycast(const Ray& ray, f32 maxDistance = 1000.0f, u32 layerMask = 0xFFFFFFFF) override;
     std::vector<RaycastHit> RaycastAll(const Ray& ray, f32 maxDistance = 1000.0f, u32 layerMask = 0xFFFFFFFF) override;
 
-    bool CheckGround(const Math::Vector3& position, f32 checkDistance, RaycastHit& hit, u32 layerMask = 0xFFFFFFFF) override;
+    bool CheckGround(const Math::Vector3& position, f32 checkDistance, RaycastHit& hit, u32 layerMask = 0xFFFFFFFF, ECS::Entity ignoreEntity = 0) override;
 
     Math::Vector3 MoveAndSlide(const Math::Vector3& position, const Math::Vector3& velocity,
                                 const AABB& collider, f32 deltaTime, u32 layerMask = 0xFFFFFFFF) override;

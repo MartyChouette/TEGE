@@ -62,7 +62,7 @@ private:
     bool IsSprintHeld();
     bool IsCrouchPressed();
     bool IsDashPressed();
-    bool CheckGround(const Math::Vector3& position, f32& groundY);
+    bool CheckGround(const Math::Vector3& position, f32& groundY, Entity selfEntity = 0);
     bool CheckGround2D(const Math::Vector3& position, f32& groundY, Entity& groundEntity,
                        f32 capsuleRadius = 0.3f, f32 capsuleHalfHeight = 0.5f);
     bool CheckWall2D(const Math::Vector3& position, f32 moveDirX, f32& wallX,

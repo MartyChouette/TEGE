@@ -2335,6 +2335,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         gmat.roughness = 0.9f;
         m_World->AddComponent<ECS::MeshComponent>(ground, Renderer::MeshFactory::CreateCube(1.0f));
         addBoxCollider3D(ground, 50.0f, 0.1f, 50.0f);
+        auto& grb = m_World->AddComponent<ECS::RigidbodyComponent>(ground);
+        grb.bodyType = ECS::RigidbodyComponent::BodyType::Static;
         return ground;
     };
 
@@ -2353,6 +2355,9 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
     };
 
     // --- Common: 3D player with capsule mesh + matching capsule collider ---
+    // No RigidbodyComponent — controllers (ThirdPerson/FirstPerson) handle their
+    // own gravity, ground detection, and movement. A dynamic rigidbody would fight
+    // with the controller for position control.
     auto createPlayer3D = [&](const std::string& name) -> ECS::Entity {
         ECS::Entity player = m_World->CreateEntity();
         m_World->AddComponent<ECS::NameComponent>(player, name);
@@ -3797,6 +3802,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 m_World->AddComponent<ECS::MeshComponent>(obs, Renderer::MeshFactory::CreateCube(1.0f));
                 auto& ocol = m_World->AddComponent<ECS::BoxColliderComponent>(obs);
                 ocol.size = scl[i];
+                auto& orb = m_World->AddComponent<ECS::RigidbodyComponent>(obs);
+                orb.bodyType = ECS::RigidbodyComponent::BodyType::Static;
             }
         }
 
