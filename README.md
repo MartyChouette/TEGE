@@ -82,6 +82,26 @@ cmake --build . --config Release
 >
 > **First time?** See the [User Manual](docs/USER_MANUAL.md) for a walkthrough of the editor and how to get started.
 
+### SimpleApp — Quick 3D/2D Rendering
+
+For users who want Vulkan rendering without the full editor:
+
+```cpp
+#include "Enjin/SimpleApp.h"
+
+class MyApp : public Enjin::SimpleApp {
+    void OnStart() override {
+        AddPlane({0, 0, 0}, 20.0f);
+        AddCube({0, 0.5f, 0});
+        AddDirectionalLight({0.5f, -1, -0.3f});
+        SetCameraPosition({0, 4, 8});
+    }
+};
+ENJIN_SIMPLE_MAIN(MyApp)
+```
+
+Build with `-DENJIN_BUILD_EXAMPLES=ON`. See `Examples/Simple3D/` and `Examples/Simple2D/` for full examples.
+
 ### Windows Installer
 
 A pre-built Windows installer is available — no build tools required:
@@ -263,7 +283,8 @@ All dependencies use permissive open-source licenses.
 |:-------|:--------|:------------|
 | `ENJIN_BUILD_EDITOR` | ON | Editor application |
 | `ENJIN_BUILD_PLAYER` | ON | Standalone game player |
-| `ENJIN_BUILD_TESTS` | OFF | 1100+ unit tests |
+| `ENJIN_BUILD_TESTS` | OFF | 1100+ unit tests (output: `bin/Tests/`) |
+| `ENJIN_BUILD_EXAMPLES` | OFF | SimpleApp 2D/3D examples (output: `bin/Examples/`) |
 | `ENJIN_PHYSICS_JOLT` | ON | Jolt 5.2.0 (3D physics) |
 | `ENJIN_PHYSICS_BOX2D` | ON | Box2D 3.0.0 (2D physics) |
 | `ENJIN_CLUSTERED_LIGHTING` | ON | Clustered forward lighting |
