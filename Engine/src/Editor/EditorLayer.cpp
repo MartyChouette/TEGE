@@ -2661,11 +2661,27 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         drawLine3D(bgDrawList, top + v * r, bot + v * r, color, thick);
                         drawLine3D(bgDrawList, top - v * r, bot - v * r, color, thick);
 
-                        // Hemisphere profile arcs (2 arcs per cap, front/side view)
-                        drawWireCircle(bgDrawList, top, r, axis, u, color, thick, 12);
-                        drawWireCircle(bgDrawList, top, r, axis, v, color, thick, 12);
-                        drawWireCircle(bgDrawList, bot, r, axis, u, color, thick, 12);
-                        drawWireCircle(bgDrawList, bot, r, axis, v, color, thick, 12);
+                        // Middle ring (shows cylinder section)
+                        drawWireCircle(bgDrawList, c, r, u, v, color, thick, 20);
+
+                        // Hemisphere arcs (semicircles, outward-facing half only)
+                        constexpr f32 PI = 3.14159265f;
+                        auto drawSemiCircle = [&](const Math::Vector3& center, f32 radius,
+                                                   const Math::Vector3& aU, const Math::Vector3& aV,
+                                                   bool flipSign, i32 segs = 12) {
+                            for (i32 i = 0; i < segs; ++i) {
+                                f32 a0 = PI * static_cast<f32>(i) / static_cast<f32>(segs);
+                                f32 a1 = PI * static_cast<f32>(i + 1) / static_cast<f32>(segs);
+                                f32 sign = flipSign ? -1.0f : 1.0f;
+                                Math::Vector3 p0 = center + aU * (std::cos(a0) * radius * sign) + aV * (std::sin(a0) * radius);
+                                Math::Vector3 p1 = center + aU * (std::cos(a1) * radius * sign) + aV * (std::sin(a1) * radius);
+                                drawLine3D(bgDrawList, p0, p1, color, thick);
+                            }
+                        };
+                        drawSemiCircle(top, r, axis, u, false, 12);
+                        drawSemiCircle(top, r, axis, v, false, 12);
+                        drawSemiCircle(bot, r, axis, u, true, 12);
+                        drawSemiCircle(bot, r, axis, v, true, 12);
                     }
                 }
 

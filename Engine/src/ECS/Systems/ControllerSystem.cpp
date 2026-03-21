@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/ControllerSystem.h"
+#include "Enjin/Physics/PhysicsTypes.h"
 #include "Enjin/Physics/PhysicsTypes2D.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Camera.h"
@@ -1130,8 +1131,21 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         ctrl.isFalling = ctrl.velocity.y < 0;
     }
 
-    // Apply velocity
-    transform.position = transform.position + ctrl.velocity * dt;
+    // Apply velocity with collision sliding against obstacles
+    if (m_Physics && (ctrl.velocity.x != 0.0f || ctrl.velocity.y != 0.0f || ctrl.velocity.z != 0.0f)) {
+        f32 colRadius = 0.3f;
+        f32 colHalfH = 0.5f;
+        if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
+            colRadius = cap->radius;
+            colHalfH = cap->height * 0.5f;
+        }
+        Physics::AABB collider;
+        collider.min = Math::Vector3(-colRadius, -colHalfH, -colRadius);
+        collider.max = Math::Vector3(colRadius, colHalfH, colRadius);
+        transform.position = m_Physics->MoveAndSlide(transform.position, ctrl.velocity, collider, dt);
+    } else {
+        transform.position = transform.position + ctrl.velocity * dt;
+    }
 
     // Ground check via physics raycast with Y=0 fallback
     {
