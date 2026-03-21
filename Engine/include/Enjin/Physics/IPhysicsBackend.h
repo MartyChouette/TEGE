@@ -41,9 +41,24 @@ public:
     // Ground check
     virtual bool CheckGround(const Math::Vector3& position, f32 checkDistance, RaycastHit& hit, u32 layerMask = 0xFFFFFFFF, ECS::Entity ignoreEntity = 0) = 0;
 
-    // Character controller movement
+    // Character controller movement (legacy AABB slide)
     virtual Math::Vector3 MoveAndSlide(const Math::Vector3& position, const Math::Vector3& velocity,
                                         const AABB& collider, f32 deltaTime, u32 layerMask = 0xFFFFFFFF) = 0;
+
+    // Physics-based character controller (capsule collision, wall sliding, stair stepping)
+    enum class CharacterGroundState : u8 { OnGround, OnSteepGround, InAir };
+    struct CharacterState {
+        Math::Vector3 position;
+        Math::Vector3 groundNormal = Math::Vector3(0, 1, 0);
+        Math::Vector3 groundVelocity;  // Moving platform velocity
+        CharacterGroundState groundState = CharacterGroundState::InAir;
+    };
+    virtual void CreateCharacterController(ECS::Entity entity, f32 capsuleRadius, f32 capsuleHalfHeight,
+                                            const Math::Vector3& position) {}
+    virtual void DestroyCharacterController(ECS::Entity entity) {}
+    virtual CharacterState UpdateCharacterController(ECS::Entity entity, const Math::Vector3& velocity,
+                                                      f32 deltaTime) { return {}; }
+    virtual bool HasCharacterController(ECS::Entity entity) const { return false; }
 
     // Spatial queries
     virtual std::vector<ECS::Entity> GetCollidersInRadius(const Math::Vector3& center, f32 radius, u32 layerMask = 0xFFFFFFFF) = 0;

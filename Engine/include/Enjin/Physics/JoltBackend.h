@@ -16,6 +16,7 @@ namespace JPH {
     class JobSystemThreadPool;
     class BodyID;
     class Constraint;
+    class CharacterVirtual;
 }
 
 namespace Enjin {
@@ -65,6 +66,14 @@ public:
     ConstraintSolver* GetConstraintSolver() override { return nullptr; } // Jolt handles constraints internally
 
     const char* GetName() const override { return "Jolt Physics"; }
+
+    // Character controller (CharacterVirtual)
+    void CreateCharacterController(ECS::Entity entity, f32 capsuleRadius, f32 capsuleHalfHeight,
+                                    const Math::Vector3& position) override;
+    void DestroyCharacterController(ECS::Entity entity) override;
+    CharacterState UpdateCharacterController(ECS::Entity entity, const Math::Vector3& velocity,
+                                              f32 deltaTime) override;
+    bool HasCharacterController(ECS::Entity entity) const override;
 
 private:
     // Initialization
@@ -119,6 +128,9 @@ private:
 
     // Secondary cone constraints created alongside ball-socket joints (PH-H8 fix)
     std::unordered_map<ECS::Entity, JPH::Constraint*> m_EntityToConeConstraint;
+
+    // Character controllers (CharacterVirtual instances)
+    std::unordered_map<ECS::Entity, JPH::CharacterVirtual*> m_CharacterControllers;
 
     // Collision event tracking
     std::unordered_set<u64> m_PreviousCollisionPairs;

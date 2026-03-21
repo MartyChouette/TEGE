@@ -32,6 +32,7 @@
 #include <Jolt/Physics/Constraints/ConeConstraint.h>
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/Constraints/SliderConstraint.h>
+#include <Jolt/Physics/Character/CharacterVirtual.h>
 
 #include "Enjin/Physics/JoltBackend.h"
 #include "Enjin/Physics/JoltContactListener.h"
@@ -240,6 +241,12 @@ void JoltBackend::ShutdownJolt() {
     m_EntityToBody.clear();
     m_BodyIndexToEntity.clear();
     m_BodyFilterData.clear();
+
+    // Destroy all character controllers
+    for (auto& [entity, character] : m_CharacterControllers) {
+        delete character;
+    }
+    m_CharacterControllers.clear();
     m_EntityToConstraint.clear();
     m_EntityToConeConstraint.clear();
 
@@ -1204,6 +1211,118 @@ bool JoltBackend::CheckGround(const Math::Vector3& position, f32 checkDistance, 
         return true;
     }
     return false;
+}
+
+// ============================================================================
+// CharacterVirtual — proper capsule character controller
+// ============================================================================
+
+void JoltBackend::CreateCharacterController(ECS::Entity entity, f32 capsuleRadius, f32 capsuleHalfHeight,
+                                             const Math::Vector3& position) {
+    if (!m_Initialized || !m_PhysicsSystem) return;
+
+    // Destroy existing if re-creating
+    DestroyCharacterController(entity);
+
+    JPH::CharacterVirtualSettings settings;
+    settings.mShape = new JPH::CapsuleShape(std::max(capsuleHalfHeight - capsuleRadius, 0.01f), capsuleRadius);
+    settings.mMass = 70.0f;
+    settings.mMaxSlopeAngle = JPH::DegreesToRadians(50.0f);
+    settings.mMaxStrength = 100.0f;
+    settings.mCharacterPadding = 0.02f;
+    settings.mPenetrationRecoverySpeed = 1.0f;
+    settings.mPredictiveContactDistance = 0.1f;
+
+    auto* character = new JPH::CharacterVirtual(
+        &settings,
+        JPH::RVec3(position.x, position.y, position.z),
+        JPH::Quat::sIdentity(),
+        m_PhysicsSystem.get());
+
+    m_CharacterControllers[entity] = character;
+    ENJIN_LOG_INFO(Physics, "Created CharacterVirtual for entity %llu (r=%.2f h=%.2f)",
+                   (unsigned long long)entity, capsuleRadius, capsuleHalfHeight);
+}
+
+void JoltBackend::DestroyCharacterController(ECS::Entity entity) {
+    auto it = m_CharacterControllers.find(entity);
+    if (it != m_CharacterControllers.end()) {
+        delete it->second;
+        m_CharacterControllers.erase(it);
+    }
+}
+
+bool JoltBackend::HasCharacterController(ECS::Entity entity) const {
+    return m_CharacterControllers.find(entity) != m_CharacterControllers.end();
+}
+
+IPhysicsBackend::CharacterState JoltBackend::UpdateCharacterController(
+    ECS::Entity entity, const Math::Vector3& velocity, f32 deltaTime) {
+    CharacterState result;
+
+    auto it = m_CharacterControllers.find(entity);
+    if (it == m_CharacterControllers.end() || !m_Initialized) {
+        result.position = velocity; // Fallback: return velocity as-is (caller handles)
+        return result;
+    }
+
+    auto* character = it->second;
+
+    // Set desired velocity
+    character->SetLinearVelocity(JPH::Vec3(velocity.x, velocity.y, velocity.z));
+
+    // Exclude the character's own collider body from collision (if it has one)
+    EnjinBodyFilter bodyFilter;
+    bodyFilter.filterData = &m_BodyFilterData;
+    bodyFilter.layerMask = 0xFFFFFFFF;
+    auto bodyIt = m_EntityToBody.find(entity);
+    if (bodyIt != m_EntityToBody.end()) {
+        bodyFilter.ignoreBodyID = bodyIt->second;
+    }
+
+    // Extended update: handles stair stepping + stick to floor
+    JPH::CharacterVirtual::ExtendedUpdateSettings extSettings;
+    extSettings.mStickToFloorStepDown = JPH::Vec3(0, -0.5f, 0);
+    extSettings.mWalkStairsStepUp = JPH::Vec3(0, 0.4f, 0);
+    extSettings.mWalkStairsMinStepForward = 0.02f;
+    extSettings.mWalkStairsStepForwardTest = 0.15f;
+
+    JPH::BroadPhaseLayerFilter bpFilter;
+    JPH::ObjectLayerFilter objFilter;
+    JPH::ShapeFilter shapeFilter;
+
+    character->ExtendedUpdate(
+        deltaTime,
+        JPH::Vec3(0, -20.0f, 0),  // Gravity for contact force (not movement gravity)
+        extSettings,
+        bpFilter, objFilter, bodyFilter, shapeFilter,
+        *m_TempAllocator);
+
+    // Read back state
+    JPH::RVec3 pos = character->GetPosition();
+    result.position = Math::Vector3(static_cast<f32>(pos.GetX()),
+                                     static_cast<f32>(pos.GetY()),
+                                     static_cast<f32>(pos.GetZ()));
+
+    JPH::Vec3 gn = character->GetGroundNormal();
+    result.groundNormal = Math::Vector3(gn.GetX(), gn.GetY(), gn.GetZ());
+
+    JPH::Vec3 gv = character->GetGroundVelocity();
+    result.groundVelocity = Math::Vector3(gv.GetX(), gv.GetY(), gv.GetZ());
+
+    switch (character->GetGroundState()) {
+        case JPH::CharacterBase::EGroundState::OnGround:
+            result.groundState = CharacterGroundState::OnGround;
+            break;
+        case JPH::CharacterBase::EGroundState::OnSteepGround:
+            result.groundState = CharacterGroundState::OnSteepGround;
+            break;
+        default:
+            result.groundState = CharacterGroundState::InAir;
+            break;
+    }
+
+    return result;
 }
 
 // ============================================================================

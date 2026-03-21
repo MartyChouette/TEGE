@@ -130,6 +130,17 @@ void ControllerSystem::Update(f32 deltaTime) {
         if (!transform) continue;
         auto* possess = m_World->GetComponent<PossessableComponent>(entity);
         if (possess && !possess->isPossessed) continue;
+
+        // Lazy-create Jolt CharacterVirtual on first use
+        if (m_Physics && !m_Physics->HasCharacterController(entity)) {
+            f32 radius = 0.3f, halfH = 0.5f;
+            if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
+                radius = cap->radius;
+                halfH = cap->height * 0.5f;
+            }
+            m_Physics->CreateCharacterController(entity, radius, halfH, transform->position);
+        }
+
         UpdateThirdPerson(entity, *controller, *transform, deltaTime);
     }
 
@@ -140,6 +151,17 @@ void ControllerSystem::Update(f32 deltaTime) {
         if (!transform) continue;
         auto* possess = m_World->GetComponent<PossessableComponent>(entity);
         if (possess && !possess->isPossessed) continue;
+
+        // Lazy-create Jolt CharacterVirtual on first use
+        if (m_Physics && !m_Physics->HasCharacterController(entity)) {
+            f32 radius = 0.3f, halfH = 0.5f;
+            if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
+                radius = cap->radius;
+                halfH = cap->height * 0.5f;
+            }
+            m_Physics->CreateCharacterController(entity, radius, halfH, transform->position);
+        }
+
         UpdateFirstPerson(entity, *controller, *transform, deltaTime);
     }
 
@@ -1131,40 +1153,28 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         ctrl.isFalling = ctrl.velocity.y < 0;
     }
 
-    // Apply velocity
-    transform.position = transform.position + ctrl.velocity * dt;
+    // Character controller movement via Jolt CharacterVirtual
+    if (m_Physics && m_Physics->HasCharacterController(entity)) {
+        auto state = m_Physics->UpdateCharacterController(entity, ctrl.velocity, dt);
+        transform.position = state.position;
 
-    // Horizontal collision: push player out of overlapping colliders
-    if (m_Physics) {
-        f32 colRadius = 0.3f;
-        if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
-            colRadius = cap->radius;
-        }
-        f32 probeDistance = colRadius + 0.1f;
-        const Math::Vector3 dirs[] = {{1,0,0}, {-1,0,0}, {0,0,1}, {0,0,-1}};
-        for (const auto& dir : dirs) {
-            Physics::Ray ray;
-            ray.origin = transform.position + Math::Vector3(0, 0.3f, 0);
-            ray.direction = dir;
-            auto hits = m_Physics->RaycastAll(ray, probeDistance);
-            for (const auto& hit : hits) {
-                if (!hit.hit || hit.entity == entity) continue;
-                f32 penetration = probeDistance - hit.distance;
-                if (penetration > 0.0f) {
-                    transform.position = transform.position - dir * penetration;
-                    f32 velDot = ctrl.velocity.x * dir.x + ctrl.velocity.z * dir.z;
-                    if (velDot > 0.0f) {
-                        ctrl.velocity.x -= dir.x * velDot;
-                        ctrl.velocity.z -= dir.z * velDot;
-                    }
-                }
-                break; // Only handle closest non-self hit per direction
+        // Update ground state from physics
+        if (state.groundState == Physics::IPhysicsBackend::CharacterGroundState::OnGround ||
+            state.groundState == Physics::IPhysicsBackend::CharacterGroundState::OnSteepGround) {
+            if (ctrl.velocity.y <= 0.0f) {
+                ctrl.isGrounded = true;
+                ctrl.isJumping = false;
+                ctrl.isFalling = false;
+                ctrl.velocity.y = 0.0f;
             }
+        } else {
+            ctrl.isGrounded = false;
+            ctrl.isFalling = ctrl.velocity.y < 0.0f;
         }
-    }
+    } else {
+        // Fallback: direct position update with raycast ground check
+        transform.position = transform.position + ctrl.velocity * dt;
 
-    // Ground check via physics raycast with Y=0 fallback
-    {
         f32 groundY = 0.0f;
         if (CheckGround(transform.position, groundY, entity) && transform.position.y <= groundY && ctrl.velocity.y <= 0.0f) {
             transform.position.y = groundY;
