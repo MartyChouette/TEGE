@@ -1134,6 +1134,35 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
     // Apply velocity
     transform.position = transform.position + ctrl.velocity * dt;
 
+    // Horizontal collision: push player out of overlapping colliders
+    if (m_Physics) {
+        f32 colRadius = 0.3f;
+        if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
+            colRadius = cap->radius;
+        }
+        f32 probeDistance = colRadius + 0.1f;
+        const Math::Vector3 dirs[] = {{1,0,0}, {-1,0,0}, {0,0,1}, {0,0,-1}};
+        for (const auto& dir : dirs) {
+            Physics::Ray ray;
+            ray.origin = transform.position + Math::Vector3(0, 0.3f, 0);
+            ray.direction = dir;
+            auto hits = m_Physics->RaycastAll(ray, probeDistance);
+            for (const auto& hit : hits) {
+                if (!hit.hit || hit.entity == entity) continue;
+                f32 penetration = probeDistance - hit.distance;
+                if (penetration > 0.0f) {
+                    transform.position = transform.position - dir * penetration;
+                    f32 velDot = ctrl.velocity.x * dir.x + ctrl.velocity.z * dir.z;
+                    if (velDot > 0.0f) {
+                        ctrl.velocity.x -= dir.x * velDot;
+                        ctrl.velocity.z -= dir.z * velDot;
+                    }
+                }
+                break; // Only handle closest non-self hit per direction
+            }
+        }
+    }
+
     // Ground check via physics raycast with Y=0 fallback
     {
         f32 groundY = 0.0f;

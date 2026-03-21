@@ -79,11 +79,7 @@ void GameMenuSystem::RenderInViewport(f32 vpX, f32 vpY, f32 vpW, f32 vpH) {
         return;
     }
 
-    // Dark overlay only covers the game view area (behind editor panels)
-    ImDrawList* bgDraw = ImGui::GetBackgroundDrawList();
-    bgDraw->AddRectFilled(ImVec2(vpX, vpY), ImVec2(vpX + vpW, vpY + vpH), IM_COL32(0, 0, 0, 160));
-
-    // Center pause menu within the game view viewport
+    // Center pause menu within the game view viewport (no overlay dimming)
     const f32 buttonW = 260.0f;
     const f32 panelH = 260.0f;
 
@@ -177,10 +173,6 @@ void GameMenuSystem::RenderMainMenu(f32 w, f32 h) {
 // ---------------------------------------------------------------------------
 
 void GameMenuSystem::RenderPauseMenu(f32 w, f32 h) {
-    // Semi-transparent dark overlay
-    ImDrawList* draw = ImGui::GetForegroundDrawList();
-    draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), IM_COL32(0, 0, 0, 160));
-
     const f32 buttonW = 260.0f;
     const f32 panelH = 260.0f;
 
