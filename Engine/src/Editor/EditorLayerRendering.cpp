@@ -642,6 +642,12 @@ void EditorLayer::DrawGameViewPanel() {
             ImVec2 p0(pos.x + center.x, pos.y);
             ImVec2 p1(p0.x + previewWidth, p0.y + previewHeight);
 
+            // Cache game view screen bounds for pause overlay
+            m_GameViewScreenX = p0.x;
+            m_GameViewScreenY = p0.y;
+            m_GameViewScreenW = previewWidth;
+            m_GameViewScreenH = previewHeight;
+
             // Display render target texture or fallback dark rect
             VkDescriptorSet texId = m_GameViewRenderTarget ? m_GameViewRenderTarget->GetImGuiTextureID() : VK_NULL_HANDLE;
             bool usedImage = false;

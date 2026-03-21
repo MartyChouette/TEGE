@@ -801,6 +801,10 @@ private:
     std::unique_ptr<Renderer::RenderTarget> m_SceneRenderTarget;     // Scene pre-post-processing
     u32 m_GameViewWidth = 640;
     u32 m_GameViewHeight = 360;
+    f32 m_GameViewScreenX = 0;  // Screen-space position of game view content
+    f32 m_GameViewScreenY = 0;
+    f32 m_GameViewScreenW = 640;
+    f32 m_GameViewScreenH = 360;
 
     // Game View frame rate limiting (doesn't affect editor, only game view render)
     i32 m_GameViewFPSIndex = 0;  // 0=Unlimited, 1=24, 2=30, 3=60, 4=120, 5=144, 6=240
