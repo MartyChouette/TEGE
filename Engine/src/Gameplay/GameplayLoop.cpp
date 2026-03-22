@@ -300,7 +300,6 @@ void Wire2DCollisionCallbacks(Physics::IPhysicsBackend2D* physics2D,
         }
     });
     physics2D->SetOnSensorEnter([world, vsSystem, &deferredDestroys](const Physics::Contact2D& c) {
-        ENJIN_LOG_INFO(Game, "SENSOR ENTER: A=%llu B=%llu", (unsigned long long)c.entityA, (unsigned long long)c.entityB);
         if (vsSystem) {
             vsSystem->OnTriggerEnter(c.entityA, c.entityB, 0.0f);
             vsSystem->OnTriggerEnter(c.entityB, c.entityA, 0.0f);

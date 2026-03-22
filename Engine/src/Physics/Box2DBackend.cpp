@@ -267,8 +267,6 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
     bodyDef.angularVelocity = body2d->angularVelocity;
 
     b2BodyId bodyId = b2CreateBody(m_WorldId, &bodyDef);
-    ENJIN_LOG_INFO(Physics, "Box2D body created for entity %llu (sensor=%d, kinematic=%d, static=%d)",
-        (unsigned long long)entity, body2d->isSensor, body2d->isKinematic, body2d->isStatic);
 
     // Shape definition
     b2ShapeDef shapeDef = b2DefaultShapeDef();
@@ -505,9 +503,8 @@ void Box2DBackend::ProcessEvents() {
     m_NewSensorContactsCache.clear();
     auto& newSensorContacts = m_NewSensorContactsCache;
 
-    if (sensors.beginCount > 0) {
-        ENJIN_LOG_INFO(Physics, "Box2D sensor events: %d begin", sensors.beginCount);
-    }
+    // Sensor event count logged at debug level — useful for diagnosing
+    // overlap detection issues without spamming production logs.
     for (int i = 0; i < sensors.beginCount; ++i) {
         const b2SensorBeginTouchEvent& evt = sensors.beginEvents[i];
         ECS::Entity sensorEntity = ResolveEntity(evt.sensorShapeId);
