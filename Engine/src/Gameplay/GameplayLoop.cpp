@@ -28,21 +28,21 @@ void ProcessContactDamage(ECS::World* world, ECS::Entity entityA,
 
         // Mario-style stomp check: if the TARGET (player) is above the DAMAGER
         // (enemy) and falling, it's a stomp — kill the enemy instead of damaging
-        // the player. The player gets a small bounce upward.
+        // the player. Only stompable if the damager HAS a HealthComponent (enemies).
+        // Hazards (spikes, lava) have DamageComponent but no HealthComponent —
+        // they always damage the player and cannot be stomped.
         auto* targetCtrl = world->GetComponent<ECS::Platformer2DController>(target);
-        if (targetCtrl && targetCtrl->velocity.y < -1.0f) {
+        auto* enemyHp = world->GetComponent<ECS::HealthComponent>(damager);
+        if (targetCtrl && enemyHp && targetCtrl->velocity.y < -1.0f) {
             auto* targetT = world->GetComponent<ECS::TransformComponent>(target);
             auto* damagerT = world->GetComponent<ECS::TransformComponent>(damager);
             if (targetT && damagerT && targetT->position.y > damagerT->position.y + 0.3f) {
                 // Stomp! Kill the enemy, bounce the player
-                auto* enemyHp = world->GetComponent<ECS::HealthComponent>(damager);
-                if (enemyHp) {
-                    enemyHp->currentHealth = 0.0f;
-                    enemyHp->isDead = true;
-                    deferredDestroys.push_back(damager);
-                    ENJIN_LOG_INFO(Game, "STOMP: entity %llu stomped entity %llu",
-                        (unsigned long long)target, (unsigned long long)damager);
-                }
+                enemyHp->currentHealth = 0.0f;
+                enemyHp->isDead = true;
+                deferredDestroys.push_back(damager);
+                ENJIN_LOG_INFO(Game, "STOMP: entity %llu stomped entity %llu",
+                    (unsigned long long)target, (unsigned long long)damager);
                 // Bounce the player upward (small hop after stomp)
                 targetCtrl->velocity.y = targetCtrl->jumpForce * 0.6f;
                 targetCtrl->isGrounded = false;
