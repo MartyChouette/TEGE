@@ -85,6 +85,7 @@ private:
     Math::Vector2 m_Gravity = Math::Vector2(0.0f, -9.81f);
     u32 m_SubStepCount = 4;
     bool m_CCDEnabled = false;
+    f32 m_LastDeltaTime = 1.0f / 60.0f;
 
     // Box2D world handle
     b2WorldId m_WorldId = b2_nullWorldId;

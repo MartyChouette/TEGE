@@ -119,6 +119,8 @@ void Box2DBackend::SetCCDEnabled(bool enabled) {
 void Box2DBackend::Update(f32 deltaTime) {
     if (!m_World || !m_Initialized || deltaTime <= 0.0f) return;
 
+    m_LastDeltaTime = deltaTime;
+
     // 1. Sync ECS state to Box2D bodies
     SyncECSToBox2D();
 
@@ -144,8 +146,8 @@ void Box2DBackend::SyncAndProcessEvents() {
     // Re-sync kinematic body positions (controllers may have moved them)
     SyncECSToBox2D();
 
-    // Mini-step with zero dt to trigger overlap detection without advancing simulation
-    b2World_Step(m_WorldId, 0.0f, 1);
+    // Micro-step to trigger overlap detection without meaningful simulation advance
+    b2World_Step(m_WorldId, 0.0001f, 1);
 
     // Fire any new sensor/collision events from the updated positions
     ProcessEvents();
@@ -190,8 +192,26 @@ void Box2DBackend::SyncECSToBox2D() {
         auto* body2d = m_World->GetComponent<Body2DComponent>(entity);
         if (!transform || !body2d) continue;
 
-        if (body2d->isStatic || body2d->isSensor || body2d->isKinematic) {
-            // Static/sensor/kinematic bodies: update position from ECS
+        if (body2d->isKinematic) {
+            // Kinematic bodies: compute velocity to reach ECS position.
+            // Using SetLinearVelocity instead of SetTransform ensures Box2D
+            // properly detects sensor overlaps during the step.
+            b2Vec2 currentPos = b2Body_GetPosition(bodyId);
+            Math::Vector2 ecsPos = GetPosition2D(*transform);
+            f32 ecsAngle = GetRotationZ(*transform);
+            f32 dt = m_LastDeltaTime > 0.0f ? m_LastDeltaTime : (1.0f / 60.0f);
+
+            b2Vec2 vel = {(ecsPos.x - currentPos.x) / dt, (ecsPos.y - currentPos.y) / dt};
+            b2Body_SetLinearVelocity(bodyId, vel);
+
+            // Also set angle directly (rotation doesn't affect sensors much)
+            b2Rot currentRot = b2Body_GetRotation(bodyId);
+            f32 currentAngle = b2Rot_GetAngle(currentRot);
+            if (std::abs(currentAngle - ecsAngle) > 0.01f) {
+                b2Body_SetTransform(bodyId, currentPos, b2MakeRot(ecsAngle));
+            }
+        } else if (body2d->isStatic || body2d->isSensor) {
+            // Static/sensor bodies: teleport is fine (they don't need smooth motion)
             b2Vec2 currentPos = b2Body_GetPosition(bodyId);
             Math::Vector2 ecsPos = GetPosition2D(*transform);
             f32 ecsAngle = GetRotationZ(*transform);
@@ -247,6 +267,8 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
     bodyDef.angularVelocity = body2d->angularVelocity;
 
     b2BodyId bodyId = b2CreateBody(m_WorldId, &bodyDef);
+    ENJIN_LOG_INFO(Physics, "Box2D body created for entity %llu (sensor=%d, kinematic=%d, static=%d)",
+        (unsigned long long)entity, body2d->isSensor, body2d->isKinematic, body2d->isStatic);
 
     // Shape definition
     b2ShapeDef shapeDef = b2DefaultShapeDef();
@@ -481,6 +503,9 @@ void Box2DBackend::ProcessEvents() {
     m_NewSensorContactsCache.clear();
     auto& newSensorContacts = m_NewSensorContactsCache;
 
+    if (sensors.beginCount > 0) {
+        ENJIN_LOG_INFO(Physics, "Box2D sensor events: %d begin", sensors.beginCount);
+    }
     for (int i = 0; i < sensors.beginCount; ++i) {
         const b2SensorBeginTouchEvent& evt = sensors.beginEvents[i];
         ECS::Entity sensorEntity = ResolveEntity(evt.sensorShapeId);
