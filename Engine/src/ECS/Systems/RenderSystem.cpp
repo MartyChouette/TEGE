@@ -5390,7 +5390,7 @@ void RenderSystem::RenderOutlinePassForTarget() {
         pc.flags = 0;
 
         auto* animComp = m_World->GetComponent<AnimatorComponent>(entity);
-        if (animComp && renderData.boneBuffer && animComp->animator.IsPlaying()) {
+        if (animComp && renderData.boneBuffer) {
             pc.flags |= (1 << 3);
             UpdateBoneDescriptor(renderData.boneBuffer.get());
         } else if (m_DefaultBoneBuffer) {
