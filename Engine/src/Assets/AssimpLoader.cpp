@@ -58,7 +58,8 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
         aiProcess_JoinIdenticalVertices | // Optimize mesh
         aiProcess_FlipUVs |               // Flip V for Vulkan/OpenGL (origin bottom-left)
         aiProcess_LimitBoneWeights |      // Max 4 bones per vertex for GPU skinning
-        aiProcess_ValidateDataStructure;  // Validate the imported data
+        aiProcess_ValidateDataStructure | // Validate the imported data
+        aiProcess_PopulateArmatureData;   // Associate meshes with armatures for skinned models
 
     const aiScene* scene = importer.ReadFile(filepath, flags);
 

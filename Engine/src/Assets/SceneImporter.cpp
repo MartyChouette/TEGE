@@ -854,6 +854,18 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
 
     const AssimpNode& node = scene.nodes[nodeIndex];
 
+    // Skip Assimp FBX helper nodes ($AssimpFbx$_Translation, _PreRotation, etc.)
+    // These are transform decomposition artifacts that create unnecessary entities
+    // and intermediate transforms that break skinned mesh rendering.
+    bool isAssimpHelper = node.name.find("$AssimpFbx$") != std::string::npos;
+    if (isAssimpHelper) {
+        // Don't create an entity — just recurse into children
+        for (i32 childIdx : node.children) {
+            CreateEntityFromAssimpNode(scene, childIdx, world, options, outEntities, stats, skelCtx);
+        }
+        return ECS::INVALID_ENTITY;
+    }
+
     // Create entity
     ECS::Entity entity = world->CreateEntity();
     outEntities.push_back(entity);
