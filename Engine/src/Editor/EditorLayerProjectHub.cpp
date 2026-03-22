@@ -3201,7 +3201,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // HUD
         // ═══════════════════════════════════════════════════
         {
-            // Health Bar
+            // Health Bar — reads from player's HealthComponent each frame
             ECS::Entity hud = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(hud, "Health Bar Overlay");
             m_World->AddComponent<ECS::TransformComponent>(hud);
@@ -3213,6 +3213,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             hw.anchorY = 0.05f;
             hw.fillColor = Math::Vector3(0.8f, 0.2f, 0.2f);
             hw.bgColor = Math::Vector3(0.2f, 0.2f, 0.2f);
+            hw.sourceEntity = player;  // Link to player's HealthComponent for live updates
 
             // Coin Counter
             ECS::Entity coinHud = m_World->CreateEntity();
@@ -3723,6 +3724,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             hw.anchorY = 0.05f;
             hw.fillColor = Math::Vector3(0.8f, 0.2f, 0.2f);
             hw.bgColor = Math::Vector3(0.2f, 0.2f, 0.2f);
+            hw.sourceEntity = player;  // Link to player's HealthComponent for live updates
 
             // Coin Counter
             ECS::Entity coinHud = m_World->CreateEntity();
@@ -5622,6 +5624,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             hw.anchorY = 0.05f;
             hw.fillColor = Math::Vector3(0.8f, 0.2f, 0.2f);
             hw.bgColor = Math::Vector3(0.2f, 0.2f, 0.2f);
+            hw.sourceEntity = player;  // Link to player's HealthComponent for live updates
         }
 
         // Collectibles
