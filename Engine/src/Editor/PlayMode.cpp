@@ -660,6 +660,9 @@ void PlayMode::Update(f32 deltaTime) {
             m_StreamingManager.Update(m_Camera->GetPosition(), deltaTime);
         }
 
+        // Hazard overlap check (spikes, lava — bypasses Box2D sensor system)
+        Gameplay::GameplayLoop::CheckHazardOverlaps(m_World, deltaTime, m_DeferredDestroys);
+
         // Health system (regen, invulnerability timers, death)
         Gameplay::GameplayLoop::UpdateHealthSystems(m_World, deltaTime, m_DeferredDestroys);
 

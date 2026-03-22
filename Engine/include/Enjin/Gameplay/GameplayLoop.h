@@ -30,6 +30,12 @@ namespace GameplayLoop {
                                   ECS::Entity entityB,
                                   std::vector<ECS::Entity>& deferredDestroys);
 
+    // Per-frame AABB overlap check for damage hazards (spikes, lava).
+    // Bypasses Box2D sensor system which doesn't reliably detect stationary
+    // kinematic sensors overlapping moving kinematic visitors.
+    ENJIN_API void CheckHazardOverlaps(ECS::World* world, f32 deltaTime,
+                                        std::vector<ECS::Entity>& deferredDestroys);
+
     // Update health regeneration, shield regeneration, invulnerability timers,
     // death handling (player respawn vs NPC destroy), and pickup respawn timers.
     ENJIN_API void UpdateHealthSystems(ECS::World* world, f32 deltaTime,

@@ -162,6 +162,86 @@ void ProcessPickup(ECS::World* world, ECS::Entity entityA,
     tryPickup(entityB, entityA);
 }
 
+// Per-frame AABB overlap check for damage hazards (spikes, lava).
+// Box2D v3's sensor system doesn't reliably detect overlaps between
+// stationary kinematic sensors and moving kinematic visitors. This
+// manual check runs every frame and catches what sensors miss.
+void CheckHazardOverlaps(ECS::World* world, f32 deltaTime,
+                          std::vector<ECS::Entity>& deferredDestroys) {
+    if (!world) return;
+
+    // Find all player entities (entities with a controller + health)
+    for (auto player : world->GetEntitiesWithComponent<ECS::Platformer2DController>()) {
+        auto* playerT = world->GetComponent<ECS::TransformComponent>(player);
+        auto* playerHp = world->GetComponent<ECS::HealthComponent>(player);
+        if (!playerT || !playerHp || playerHp->isDead) continue;
+        if (playerHp->isInvulnerable || playerHp->invulnerabilityTimer > 0.0f) continue;
+
+        auto* playerCtrl = world->GetComponent<ECS::Platformer2DController>(player);
+        f32 pr = playerCtrl ? playerCtrl->collisionRadius : 0.4f;
+        f32 ph = playerCtrl ? playerCtrl->collisionHeight * 0.5f : 0.8f;
+
+        // Check against all entities with DamageComponent but no HealthComponent (hazards)
+        for (auto hazard : world->GetEntitiesWithComponent<ECS::DamageComponent>()) {
+            if (world->GetComponent<ECS::HealthComponent>(hazard)) continue;  // Skip enemies (handled by stomp/sensor)
+
+            auto* hazardT = world->GetComponent<ECS::TransformComponent>(hazard);
+            auto* hazardDmg = world->GetComponent<ECS::DamageComponent>(hazard);
+            auto* hazardBody = world->GetComponent<Physics::Body2DComponent>(hazard);
+            if (!hazardT || !hazardDmg || !hazardBody) continue;
+
+            // Get hazard AABB from Body2DComponent
+            f32 hx = 0.5f, hy = 0.5f;
+            if (hazardBody->shapeType == Physics::Shape2DType::Box) {
+                hx = hazardBody->box.halfExtents.x;
+                hy = hazardBody->box.halfExtents.y;
+            } else if (hazardBody->shapeType == Physics::Shape2DType::Polygon && !hazardBody->polygon.vertices.empty()) {
+                // Use bounding box of polygon vertices
+                hx = hy = 0;
+                for (const auto& v : hazardBody->polygon.vertices) {
+                    hx = Math::Max(hx, Math::Abs(v.x));
+                    hy = Math::Max(hy, Math::Abs(v.y));
+                }
+            }
+
+            // AABB overlap test (player capsule vs hazard box)
+            f32 dx = Math::Abs(playerT->position.x - hazardT->position.x);
+            f32 dy = Math::Abs(playerT->position.y - hazardT->position.y);
+            if (dx < pr + hx && dy < ph + hy) {
+                // Overlap — apply damage
+                if (hazardDmg->damageOnce) {
+                    bool alreadyHit = false;
+                    for (auto e : hazardDmg->damagedEntities) {
+                        if (e == player) { alreadyHit = true; break; }
+                    }
+                    if (alreadyHit) continue;
+                    hazardDmg->damagedEntities.push_back(player);
+                }
+
+                f32 remaining = hazardDmg->damage;
+                if (playerHp->currentShield > 0.0f) {
+                    f32 absorbed = Math::Min(remaining, playerHp->currentShield);
+                    playerHp->currentShield -= absorbed;
+                    remaining -= absorbed;
+                }
+                playerHp->currentHealth -= remaining;
+                playerHp->timeSinceLastDamage = 0.0f;
+                ENJIN_LOG_INFO(Game, "HAZARD: entity %llu dealt %.1f to player %llu (hp: %.1f/%.1f)",
+                    (unsigned long long)hazard, hazardDmg->damage,
+                    (unsigned long long)player, playerHp->currentHealth, playerHp->maxHealth);
+
+                if (playerHp->invulnerabilityTime > 0.0f) {
+                    playerHp->invulnerabilityTimer = playerHp->invulnerabilityTime;
+                }
+                if (playerHp->currentHealth <= 0.0f) {
+                    playerHp->currentHealth = 0.0f;
+                    playerHp->isDead = true;
+                }
+            }
+        }
+    }
+}
+
 void UpdateHealthSystems(ECS::World* world, f32 deltaTime,
                          std::vector<ECS::Entity>& deferredDestroys) {
     if (!world) return;
