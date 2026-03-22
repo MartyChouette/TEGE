@@ -854,11 +854,18 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
 
     const AssimpNode& node = scene.nodes[nodeIndex];
 
-    // Skip Assimp FBX helper nodes ($AssimpFbx$_Translation, _PreRotation, etc.)
-    // These are transform decomposition artifacts that create unnecessary entities
-    // and intermediate transforms that break skinned mesh rendering.
+    // Skip nodes that shouldn't become scene entities:
+    // 1. Assimp FBX helper nodes ($AssimpFbx$_Translation, _PreRotation, etc.)
+    // 2. Bone nodes in skinned models — bones are internal skeleton data, not scene entities.
+    //    Only mesh-bearing nodes and the root node need entities.
     bool isAssimpHelper = node.name.find("$AssimpFbx$") != std::string::npos;
-    if (isAssimpHelper) {
+    bool isBoneNode = false;
+    if (skelCtx.skeleton && !node.name.empty()) {
+        isBoneNode = skelCtx.skeleton->FindBoneIndex(node.name) >= 0;
+    }
+    // Keep the node if it has meshes (even if it's also a bone)
+    bool hasMeshes = !node.meshIndices.empty() || node.meshIndex >= 0;
+    if (isAssimpHelper || (isBoneNode && !hasMeshes)) {
         // Don't create an entity — just recurse into children
         for (i32 childIdx : node.children) {
             CreateEntityFromAssimpNode(scene, childIdx, world, options, outEntities, stats, skelCtx);
@@ -889,9 +896,18 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         pos = ConvertPosition(pos, zToY, lToR, options.flipX, options.flipY, options.flipZ);
         rot = ConvertRotation(rot, zToY, lToR);
     }
-    transform.position = pos * options.scale;
-    transform.rotation = rot;
-    transform.scale = node.scale * options.scale;
+    // Skinned mesh entities use identity transform — the skinning matrices
+    // handle all spatial transformation from bind-pose to world space.
+    // Applying the node's transform on top would double-transform the mesh.
+    if (skelCtx.skeleton && hasMeshes) {
+        transform.position = Math::Vector3(0.0f);
+        transform.rotation = Math::Quaternion::Identity();
+        transform.scale = Math::Vector3(1.0f);
+    } else {
+        transform.position = pos * options.scale;
+        transform.rotation = rot;
+        transform.scale = node.scale * options.scale;
+    }
 
     // Add mesh component if node has meshes
     // Combine all meshes referenced by this node into one MeshComponent
