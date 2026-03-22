@@ -2533,6 +2533,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 hp.maxHealth = 20.0f; hp.currentHealth = 20.0f;
                 auto& dmg = m_World->AddComponent<ECS::DamageComponent>(e);
                 dmg.damage = 10.0f;
+                dmg.knockbackForce = 6.0f;  // Push player back on side contact
                 auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(e);
                 ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
                 ai.patrolPoints = slimePatrols[i];
@@ -3397,6 +3398,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 hp.maxHealth = 30.0f; hp.currentHealth = 30.0f;
                 auto& dmg = m_World->AddComponent<ECS::DamageComponent>(e);
                 dmg.damage = 10.0f;
+                dmg.knockbackForce = 6.0f;  // Push player back on side contact
                 auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(e);
                 ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
                 ai.moveSpeed = 3.5f;
