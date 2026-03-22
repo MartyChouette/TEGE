@@ -1059,9 +1059,13 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         }
     }
 
-    // Attach skeleton and animations to the first node with skinned mesh data
-    if (options.importAnimations && skelCtx.skeleton && !skelCtx.attached && nodeHasSkinning) {
-        skelCtx.attached = true;
+    // Attach skeleton and animator to EVERY node with skinned mesh data.
+    // Previously only attached to the first skinned node, which left other
+    // skinned mesh entities without an AnimatorComponent — they rendered
+    // without bone transforms (distorted). All skinned meshes in the same
+    // model share the same skeleton and bone matrices.
+    if (options.importAnimations && skelCtx.skeleton && nodeHasSkinning) {
+        if (!skelCtx.attached) skelCtx.attached = true;
 
         // Add skeleton component
         auto& skelComp = world->AddComponent<ECS::SkeletonComponent>(entity);
