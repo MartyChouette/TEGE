@@ -572,13 +572,41 @@ bool Box2DBackend::Raycast(const Math::Vector2& origin, const Math::Vector2& dir
     filter.categoryBits = layerMask;
     filter.maskBits = layerMask;
 
-    b2RayResult result = b2World_CastRayClosest(m_WorldId, ToBox2D(origin), translation, filter);
+    // Use CastRay (callback) instead of CastRayClosest so we can skip sensors.
+    // Sensors (enemies, coins, pickups) should not block wall/ground raycasts.
+    struct RayCtx {
+        const Box2DBackend* self;
+        ECS::World* world;
+        RayHit2D bestHit;
+        f32 bestFraction;
+        bool found;
+    };
+    RayCtx ctx{ this, m_World, {}, 1.0f, false };
 
-    if (result.hit) {
-        outHit.point = FromBox2D(result.point);
-        outHit.normal = FromBox2D(result.normal);
-        outHit.distance = result.fraction * maxDistance;
-        outHit.entity = ResolveEntity(result.shapeId);
+    auto callback = [](b2ShapeId shapeId, b2Vec2 point, b2Vec2 normal, float fraction, void* context) -> float {
+        auto* c = static_cast<RayCtx*>(context);
+        ECS::Entity entity = c->self->ResolveEntity(shapeId);
+        // Skip sensor bodies (enemies, coins, pickups) — they shouldn't block movement
+        if (entity != 0 && c->world) {
+            auto* body2d = c->world->GetComponent<Physics::Body2DComponent>(entity);
+            if (body2d && body2d->isSensor) return 1.0f;  // Continue searching
+        }
+        if (fraction < c->bestFraction) {
+            c->bestFraction = fraction;
+            c->bestHit.point = FromBox2D(point);
+            c->bestHit.normal = FromBox2D(normal);
+            c->bestHit.distance = fraction;
+            c->bestHit.entity = entity;
+            c->found = true;
+        }
+        return fraction;  // Clip to this distance
+    };
+
+    b2World_CastRay(m_WorldId, ToBox2D(origin), translation, filter, callback, &ctx);
+
+    if (ctx.found) {
+        outHit = ctx.bestHit;
+        outHit.distance *= maxDistance;  // Convert fraction to actual distance
         return true;
     }
 
