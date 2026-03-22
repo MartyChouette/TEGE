@@ -503,8 +503,6 @@ void Box2DBackend::ProcessEvents() {
     m_NewSensorContactsCache.clear();
     auto& newSensorContacts = m_NewSensorContactsCache;
 
-    // Sensor event count logged at debug level — useful for diagnosing
-    // overlap detection issues without spamming production logs.
     for (int i = 0; i < sensors.beginCount; ++i) {
         const b2SensorBeginTouchEvent& evt = sensors.beginEvents[i];
         ECS::Entity sensorEntity = ResolveEntity(evt.sensorShapeId);
