@@ -72,50 +72,6 @@ void GameMenuSystem::Render(f32 screenW, f32 screenH) {
     }
 }
 
-void GameMenuSystem::RenderInViewport(f32 vpX, f32 vpY, f32 vpW, f32 vpH) {
-    if (m_CurrentScreen != MenuScreen::PauseMenu) {
-        // Non-pause screens still render fullscreen (options, etc.)
-        Render(ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);
-        return;
-    }
-
-    // Center pause menu within the game view viewport (no overlay dimming)
-    const f32 buttonW = 260.0f;
-    const f32 panelH = 260.0f;
-
-    ImGui::SetNextWindowPos(ImVec2(vpX + (vpW - buttonW - 60.0f) * 0.5f, vpY + (vpH - panelH) * 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(buttonW + 60.0f, panelH));
-    ImGui::Begin("##PauseMenu", nullptr,
-        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
-        ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings);
-
-    // Title
-    {
-        const char* title = "PAUSED";
-        ImVec2 titleSize = ImGui::CalcTextSize(title);
-        ImGui::SetCursorPosX((buttonW + 60.0f - titleSize.x) * 0.5f);
-        ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.95f), "%s", title);
-    }
-
-    ImGui::Dummy(ImVec2(0, 20));
-
-    auto CenterButton = [&](const char* label, const char* action) {
-        ImGui::SetCursorPosX((buttonW + 60.0f - buttonW) * 0.5f);
-        if (RenderMenuButton(label, buttonW)) {
-            if (m_Callback) m_Callback(action);
-        }
-        ImGui::Dummy(ImVec2(0, 6));
-    };
-
-    CenterButton("Resume",        "resume");
-    CenterButton("Options",       "options");
-    CenterButton("How to Play",   "how_to_play");
-    CenterButton("Quit to Menu",  "quit_to_menu");
-
-    ImGui::End();
-}
-
 // ---------------------------------------------------------------------------
 // Main Menu
 // ---------------------------------------------------------------------------

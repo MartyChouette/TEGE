@@ -67,8 +67,6 @@ public:
     bool IsMenuOpen() const;
 
     void Render(f32 screenW, f32 screenH);
-    // Render within a specific viewport rect (for editor game view overlay)
-    void RenderInViewport(f32 vpX, f32 vpY, f32 vpW, f32 vpH);
 
     void SetCallback(MenuCallback cb);
     const MenuCallback& GetCallback() const { return m_Callback; }
