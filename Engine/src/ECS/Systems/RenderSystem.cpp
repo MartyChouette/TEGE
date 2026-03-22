@@ -1913,15 +1913,21 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // Batched texture descriptor update (1 vkUpdateDescriptorSets call instead of 6)
             UpdateEntityTextureDescriptors(boundTexture, texHeight, texNormal, texMR, texEmissive, texMatcap);
 
-            // Upload bone matrices for skinned meshes
+            // Upload bone matrices for skinned meshes.
+            // Set FLAG_SKINNED whenever the entity has valid skinning matrices —
+            // not just when an animation is playing. Imported FBX models start in
+            // bind pose (not playing), but their vertices are in bone-local space
+            // and MUST be transformed by the bind pose skinning matrices to look
+            // correct. Without FLAG_SKINNED, raw bone-local vertices render as a
+            // distorted mess (the Mixamo import bug).
             AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
-            if (animComp && renderData.boneBuffer && animComp->animator.IsPlaying()) {
+            if (animComp && renderData.boneBuffer) {
                 const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
                 if (!skinningMatrices.empty()) {
                     renderData.boneBuffer->UploadData(skinningMatrices.data(),
                         skinningMatrices.size() * sizeof(Math::Matrix4));
                     UpdateBoneDescriptor(renderData.boneBuffer.get());
-                    pushConstants.flags |= (1 << 3); // FLAG_SKINNED
+                    pushConstants.flags |= (1 << 3); // FLAG_SKINNED — always when skeleton exists
                 }
             } else {
                 if (m_DefaultBoneBuffer) {
@@ -5150,9 +5156,10 @@ void RenderSystem::RenderEntity(Entity entity) {
     // Batched texture descriptor update (1 vkUpdateDescriptorSets call instead of 6)
     UpdateEntityTextureDescriptors(boundTexture, texHeight, texNormal, texMR, texEmissive, texMatcap);
 
-    // Upload bone matrices for skinned meshes (cached storage avoids type-ID lookup)
+    // Upload bone matrices for skinned meshes (cached storage avoids type-ID lookup).
+    // Always upload when skeleton exists, not just when animation is playing.
     AnimatorComponent* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
-    if (animComp && renderData.boneBuffer && animComp->animator.IsPlaying()) {
+    if (animComp && renderData.boneBuffer) {
         const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
         if (!skinningMatrices.empty()) {
             renderData.boneBuffer->UploadData(skinningMatrices.data(),
@@ -5308,9 +5315,9 @@ void RenderSystem::RenderOutlinePass() {
         pc.metallic = outlineWidth;
         pc.flags = 0;
 
-        // Propagate skinned flag so outline follows skeletal animation
+        // Propagate skinned flag so outline follows skeleton (playing or bind pose)
         auto* animComp = m_World->GetComponent<AnimatorComponent>(entity);
-        if (animComp && renderData.boneBuffer && animComp->animator.IsPlaying()) {
+        if (animComp && renderData.boneBuffer) {
             pc.flags |= (1 << 3); // FLAG_SKINNED
             UpdateBoneDescriptor(renderData.boneBuffer.get());
         } else if (m_DefaultBoneBuffer) {
