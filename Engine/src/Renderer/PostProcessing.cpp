@@ -6048,7 +6048,10 @@ bool PostProcessing::CreateSceneRenderTarget(u32 width, u32 height) {
         return false;
     }
 
-    vkBindImageMemory(device, m_SceneImage, m_SceneImageMemory, 0);
+    if (vkBindImageMemory(device, m_SceneImage, m_SceneImageMemory, 0) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to bind scene image memory");
+        return false;
+    }
 
     // Create image view
     VkImageViewCreateInfo viewInfo{};
@@ -6105,7 +6108,10 @@ bool PostProcessing::CreateSceneRenderTarget(u32 width, u32 height) {
         return false;
     }
 
-    vkBindImageMemory(device, m_DepthImage, m_DepthImageMemory, 0);
+    if (vkBindImageMemory(device, m_DepthImage, m_DepthImageMemory, 0) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to bind depth image memory");
+        return false;
+    }
 
     VkImageViewCreateInfo depthViewInfo{};
     depthViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -6632,7 +6638,12 @@ bool PostProcessing::LoadLUT(const std::string& filepath) {
         DestroyLUTResources();
         return false;
     }
-    vkBindImageMemory(device, m_LUTImage, m_LUTImageMemory, 0);
+    if (vkBindImageMemory(device, m_LUTImage, m_LUTImageMemory, 0) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to bind LUT image memory");
+        stbi_image_free(pixels);
+        DestroyLUTResources();
+        return false;
+    }
 
     // Upload via staging buffer — cast to VkDeviceSize before multiply to prevent int overflow
     VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4;
@@ -6671,7 +6682,12 @@ bool PostProcessing::LoadLUT(const std::string& filepath) {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &beginInfo);
+    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to begin LUT command buffer");
+        vkDestroyCommandPool(device, tempPool, nullptr);
+        DestroyLUTResources();
+        return false;
+    }
 
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -6699,13 +6715,20 @@ bool PostProcessing::LoadLUT(const std::string& filepath) {
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
         0, 0, nullptr, 0, nullptr, 1, &barrier);
 
-    vkEndCommandBuffer(cmd);
+    if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to end LUT command buffer");
+        vkDestroyCommandPool(device, tempPool, nullptr);
+        DestroyLUTResources();
+        return false;
+    }
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
-    vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+    if (vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to submit LUT upload commands");
+    }
     vkQueueWaitIdle(m_Context->GetGraphicsQueue());
 
     vkDestroyCommandPool(device, tempPool, nullptr);
@@ -6814,7 +6837,14 @@ bool PostProcessing::CreateDofStagingBuffers() {
             buffer = VK_NULL_HANDLE;
             return false;
         }
-        vkBindBufferMemory(device, buffer, memory, 0);
+        if (vkBindBufferMemory(device, buffer, memory, 0) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to bind staging buffer memory");
+            vkFreeMemory(device, memory, nullptr);
+            vkDestroyBuffer(device, buffer, nullptr);
+            buffer = VK_NULL_HANDLE;
+            memory = VK_NULL_HANDLE;
+            return false;
+        }
         return true;
     };
 
@@ -7467,7 +7497,11 @@ bool PostProcessing::CreateTAAResources() {
             return false;
         }
 
-        vkBindImageMemory(device, m_TAAHistoryImages[i], m_TAAHistoryMemory[i], 0);
+        if (vkBindImageMemory(device, m_TAAHistoryImages[i], m_TAAHistoryMemory[i], 0) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "TAA: Failed to bind history image memory %d", i);
+            DestroyTAAResources();
+            return false;
+        }
 
         VkImageViewCreateInfo viewInfo{};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;

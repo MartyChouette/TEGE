@@ -200,7 +200,10 @@ bool RenderTarget::CreateImages() {
         ENJIN_LOG_ERROR(Renderer, "Failed to allocate render target color memory");
         return false;
     }
-    vkBindImageMemory(device, m_ColorImage, m_ColorMemory, 0);
+    if (vkBindImageMemory(device, m_ColorImage, m_ColorMemory, 0) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to bind render target color image memory");
+        return false;
+    }
 
     // Color image view
     VkImageViewCreateInfo colorViewInfo{};
@@ -251,7 +254,10 @@ bool RenderTarget::CreateImages() {
         ENJIN_LOG_ERROR(Renderer, "Failed to allocate render target depth memory");
         return false;
     }
-    vkBindImageMemory(device, m_DepthImage, m_DepthMemory, 0);
+    if (vkBindImageMemory(device, m_DepthImage, m_DepthMemory, 0) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to bind render target depth image memory");
+        return false;
+    }
 
     // Depth image view
     VkImageViewCreateInfo depthViewInfo{};
@@ -640,7 +646,13 @@ std::vector<u8> RenderTarget::CaptureToPixels() const {
         vkDestroyCommandPool(device, tempPool, nullptr);
         return {};
     }
-    vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0);
+    if (vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to bind render target staging buffer memory");
+        vkFreeMemory(device, stagingMemory, nullptr);
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkDestroyCommandPool(device, tempPool, nullptr);
+        return {};
+    }
 
     // Allocate one-shot command buffer
     VkCommandBufferAllocateInfo cmdAllocInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
@@ -649,11 +661,24 @@ std::vector<u8> RenderTarget::CaptureToPixels() const {
     cmdAllocInfo.commandBufferCount = 1;
 
     VkCommandBuffer cmd;
-    vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmd);
+    if (vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmd) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to allocate render target readback command buffer");
+        vkFreeMemory(device, stagingMemory, nullptr);
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkDestroyCommandPool(device, tempPool, nullptr);
+        return {};
+    }
 
     VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &beginInfo);
+    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to begin render target readback command buffer");
+        vkFreeCommandBuffers(device, tempPool, 1, &cmd);
+        vkFreeMemory(device, stagingMemory, nullptr);
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkDestroyCommandPool(device, tempPool, nullptr);
+        return {};
+    }
 
     // Transition color image to TRANSFER_SRC
     VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
@@ -681,13 +706,22 @@ std::vector<u8> RenderTarget::CaptureToPixels() const {
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
-    vkEndCommandBuffer(cmd);
+    if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to end render target readback command buffer");
+        vkFreeCommandBuffers(device, tempPool, 1, &cmd);
+        vkFreeMemory(device, stagingMemory, nullptr);
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkDestroyCommandPool(device, tempPool, nullptr);
+        return {};
+    }
 
     // Submit and wait
     VkSubmitInfo submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
-    vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
+    if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to submit render target readback commands");
+    }
     vkQueueWaitIdle(queue);
     vkFreeCommandBuffers(device, tempPool, 1, &cmd);
 

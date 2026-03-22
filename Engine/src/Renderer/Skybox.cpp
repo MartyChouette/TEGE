@@ -520,7 +520,9 @@ void Skybox::UploadFaces(const std::vector<std::unique_ptr<u8[]>>& faceData, u32
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmdBuf;
-    vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+    if (vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to submit skybox upload commands");
+    }
     vkQueueWaitIdle(m_Context->GetGraphicsQueue());
 
     vkDestroyCommandPool(device, tempPool, nullptr);

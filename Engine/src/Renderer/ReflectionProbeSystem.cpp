@@ -539,7 +539,9 @@ bool ReflectionProbeSystem::UploadFacesToCubemap(
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
-    vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+    if (vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to submit reflection probe cubemap upload commands");
+    }
     vkQueueWaitIdle(m_Context->GetGraphicsQueue());
 
     // Cleanup staging resources

@@ -4001,7 +4001,12 @@ void RenderSystem::UpdateProbeCubemapDescriptor() {
 }
 
 void RenderSystem::UpdateFrameUniforms() {
-    if (!m_Camera) return;
+    if (!m_Camera) {
+        // No camera set — frame uniforms not uploaded. Scene will render with
+        // stale view/projection matrices. This is expected briefly during
+        // initialization or scene transitions.
+        return;
+    }
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
