@@ -2337,9 +2337,9 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
             // Batched texture descriptor update (1 vkUpdateDescriptorSets call instead of 6)
             UpdateEntityTextureDescriptors(boundTexture, texHeight, texNormal, texMR, texEmissive, texMatcap);
 
-            // Upload bone matrices for skinned meshes
+            // Upload bone matrices for skinned meshes (bind pose or animation)
             AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
-            if (animComp && renderData.boneBuffer && animComp->animator.IsPlaying()) {
+            if (animComp && renderData.boneBuffer) {
                 const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
                 if (!skinningMatrices.empty()) {
                     renderData.boneBuffer->UploadData(skinningMatrices.data(),
