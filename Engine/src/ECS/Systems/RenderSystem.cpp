@@ -1686,8 +1686,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             AnimatorComponent* preCheckAnim = m_World->GetComponent<AnimatorComponent>(entity);
             if (preCheckAnim && preCheckAnim->animator.GetSkeleton()) {
                 pushConstants.model = Math::Matrix4::Identity();
-                static bool logged = false;
-                if (!logged) { ENJIN_LOG_INFO(Renderer, "SKINNED RENDER PATH 1: entity %llu, identity model", (unsigned long long)entity); logged = true; }
+                static bool logged1 = false;
+                if (!logged1) { ENJIN_LOG_INFO(Renderer, "SKINNED PATH1: entity %llu has AnimatorComponent, boneBuffer=%p", (unsigned long long)entity, (void*)renderData.boneBuffer.get()); logged1 = true; }
             } else {
                 pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
             }
@@ -1930,14 +1930,55 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // and MUST be transformed by the bind pose skinning matrices to look
             // correct. Without FLAG_SKINNED, raw bone-local vertices render as a
             // distorted mess (the Mixamo import bug).
+            // Find AnimatorComponent — may be on this entity or a parent/sibling
+            // in the imported hierarchy. Mixamo FBX puts the mesh and skeleton on
+            // different entities, so we search up the parent chain.
             AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+            if (!animComp) {
+                // Search parent chain for animator
+                auto* pc = m_World->GetComponent<ECS::ParentComponent>(entity);
+                ECS::Entity searchEntity = pc ? pc->parent : ECS::INVALID_ENTITY;
+                while (searchEntity != ECS::INVALID_ENTITY && !animComp) {
+                    animComp = m_World->GetComponent<AnimatorComponent>(searchEntity);
+                    pc = m_World->GetComponent<ECS::ParentComponent>(searchEntity);
+                    searchEntity = pc ? pc->parent : ECS::INVALID_ENTITY;
+                }
+                // Also search siblings (children of parent)
+                if (!animComp) {
+                    pc = m_World->GetComponent<ECS::ParentComponent>(entity);
+                    if (pc && pc->parent != ECS::INVALID_ENTITY) {
+                        for (auto sibling : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
+                            animComp = m_World->GetComponent<AnimatorComponent>(sibling);
+                            if (animComp) break;
+                        }
+                    }
+                }
+            }
+
+            // Upload skinning matrices. If this entity doesn't have its own bone
+            // buffer but we found an animator in the hierarchy, create a temporary
+            // bone buffer or use the animator entity's buffer.
+            if (animComp && !renderData.boneBuffer) {
+                // This mesh entity has bone weights but no bone buffer — create one
+                // using the animator we found in the hierarchy.
+                usize boneCount = animComp->animator.GetSkeleton()
+                    ? animComp->animator.GetSkeleton()->bones.size() : 0;
+                if (boneCount > 0) {
+                    renderData.boneBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+                    if (!renderData.boneBuffer->Create(boneCount * sizeof(Math::Matrix4),
+                                                        Renderer::BufferUsage::Storage, true)) {
+                        renderData.boneBuffer.reset();
+                    }
+                }
+            }
+
             if (animComp && renderData.boneBuffer) {
                 const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
                 if (!skinningMatrices.empty()) {
                     renderData.boneBuffer->UploadData(skinningMatrices.data(),
                         skinningMatrices.size() * sizeof(Math::Matrix4));
                     UpdateBoneDescriptor(renderData.boneBuffer.get());
-                    pushConstants.flags |= (1 << 3); // FLAG_SKINNED — always when skeleton exists
+                    pushConstants.flags |= (1 << 3); // FLAG_SKINNED
                 }
             } else {
                 if (m_DefaultBoneBuffer) {
