@@ -2657,8 +2657,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                     Math::Vector2( 1.0f, -0.2f),  // Bottom-right
                     Math::Vector2( 0.0f,  0.2f),  // Top point
                 };
-                col.isStatic = true;
+                // Kinematic (not static) so Box2D v3 generates sensor overlap events.
+                // Static sensors don't reliably detect kinematic visitors in Box2D v3.
+                col.isKinematic = true;
                 col.isSensor = true;
+                col.gravityScale = 0.0f;  // Don't fall
             }
         }
 
@@ -2682,8 +2685,10 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& col = m_World->AddComponent<Physics::Body2DComponent>(lava);
             col.shapeType = Physics::Shape2DType::Box;
             col.box.halfExtents = Math::Vector2(2.0f, 0.25f);
-            col.isStatic = true;
+            // Kinematic (not static) so Box2D v3 generates sensor events
+            col.isKinematic = true;
             col.isSensor = true;
+            col.gravityScale = 0.0f;
         }
 
         // Bat ×2 (vertical patrol, cave)
@@ -2949,8 +2954,10 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& col = m_World->AddComponent<Physics::Body2DComponent>(spikes);
             col.shapeType = Physics::Shape2DType::Box;
             col.box.halfExtents = Math::Vector2(2.0f, 0.2f);
-            col.isStatic = true;
+            // Kinematic (not static) so Box2D v3 generates sensor events
+            col.isKinematic = true;
             col.isSensor = true;
+            col.gravityScale = 0.0f;
         }
 
         // Flyer enemy (tower, vertical patrol)
