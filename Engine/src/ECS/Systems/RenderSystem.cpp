@@ -1677,10 +1677,18 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     targetPipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &dynOffset);
             }
 
-            // Push constants (world matrix includes parent chain)
+            // Push constants (world matrix includes parent chain).
+            // For skinned meshes: use identity model matrix because skinning matrices
+            // already transform vertices from bone-local → world space. Applying the
+            // entity's parent hierarchy on top would double-transform the mesh.
             TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
             Renderer::PushConstants pushConstants{};
-            pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
+            AnimatorComponent* preCheckAnim = m_World->GetComponent<AnimatorComponent>(entity);
+            if (preCheckAnim && preCheckAnim->animator.GetSkeleton()) {
+                pushConstants.model = Math::Matrix4::Identity();
+            } else {
+                pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
+            }
 
             MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
             Renderer::Texture* boundTexture = nullptr;
@@ -2109,10 +2117,15 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                     &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &dynOffset);
             }
 
-            // Build push constants (world matrix includes parent chain)
+            // Build push constants — skinned meshes use identity model matrix
             TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
             Renderer::PushConstants pushConstants{};
-            pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
+            {
+                AnimatorComponent* ac = m_World->GetComponent<AnimatorComponent>(entity);
+                pushConstants.model = (ac && ac->animator.GetSkeleton())
+                    ? Math::Matrix4::Identity()
+                    : ECS::ComputeWorldMatrix(m_World, entity);
+            }
 
             MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
             Renderer::Texture* boundTexture = nullptr;
@@ -4901,9 +4914,14 @@ void RenderSystem::RenderEntity(Entity entity) {
             m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &zeroOffset);
     }
 
-    // Push model matrix and material for this entity (world matrix includes parent chain)
+    // Push model matrix — skinned meshes use identity (skinning already transforms to world space)
     Renderer::PushConstants pushConstants{};
-    pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
+    {
+        AnimatorComponent* ac = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
+        pushConstants.model = (ac && ac->animator.GetSkeleton())
+            ? Math::Matrix4::Identity()
+            : ECS::ComputeWorldMatrix(m_World, entity);
+    }
 
     // Set material data (cached storage avoids type-ID lookup)
     MaterialComponent* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
