@@ -715,11 +715,12 @@ void EditorLayer::Update(f32 deltaTime) {
     }
 
     // Camera controller handles its own input - disable during text input or gizmo use.
-    // During play mode, require RMB held so WASD doesn't conflict with game controllers.
+    // During active play (not paused), require RMB held so WASD doesn't conflict with game controllers.
+    // When paused, allow free camera navigation in scene view.
     if (m_CameraController) {
         bool usingGizmo = ImGuizmo::IsUsing();
-        bool inPlayMode = !m_PlayMode.IsStopped();
-        bool canUseCamera = !inPlayMode ||
+        bool activelyPlaying = m_PlayMode.IsPlaying();  // True only when running, not when paused
+        bool canUseCamera = !activelyPlaying ||
             (Input::IsMouseButtonDown(MouseButton::Right) && !m_GameViewMouseCaptured);
         m_CameraController->SetEnabled(!ImGui::GetIO().WantTextInput && !usingGizmo && canUseCamera);
 
