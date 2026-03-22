@@ -286,6 +286,13 @@ void UpdateHealthSystems(ECS::World* world, f32 deltaTime,
                 hp->currentHealth = hp->maxHealth;
                 hp->currentShield = hp->maxShield;
                 hp->invulnerabilityTimer = 1.0f;  // Brief invulnerability after respawn
+
+                // Reset all DamageComponent tracked lists so hazards/enemies
+                // can damage the player again after respawn
+                for (auto dmgEntity : world->GetEntitiesWithComponent<ECS::DamageComponent>()) {
+                    auto* dmg = world->GetComponent<ECS::DamageComponent>(dmgEntity);
+                    if (dmg) dmg->damagedEntities.clear();
+                }
                 auto* transform = world->GetComponent<ECS::TransformComponent>(entity);
                 if (transform) {
                     transform->position = Math::Vector3(0.0f, 2.0f, 0.0f);

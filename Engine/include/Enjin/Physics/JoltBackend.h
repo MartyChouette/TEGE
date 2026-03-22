@@ -74,6 +74,7 @@ public:
     CharacterState UpdateCharacterController(ECS::Entity entity, const Math::Vector3& velocity,
                                               f32 deltaTime) override;
     bool HasCharacterController(ECS::Entity entity) const override;
+    void DestroyAllCharacterControllers() override;
 
 private:
     // Initialization

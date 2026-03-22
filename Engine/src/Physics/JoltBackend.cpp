@@ -1260,6 +1260,13 @@ bool JoltBackend::HasCharacterController(ECS::Entity entity) const {
     return m_CharacterControllers.find(entity) != m_CharacterControllers.end();
 }
 
+void JoltBackend::DestroyAllCharacterControllers() {
+    for (auto& [entity, character] : m_CharacterControllers) {
+        delete character;
+    }
+    m_CharacterControllers.clear();
+}
+
 IPhysicsBackend::CharacterState JoltBackend::UpdateCharacterController(
     ECS::Entity entity, const Math::Vector3& velocity, f32 deltaTime) {
     CharacterState result;

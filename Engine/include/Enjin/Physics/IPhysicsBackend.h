@@ -56,6 +56,7 @@ public:
     virtual void CreateCharacterController(ECS::Entity entity, f32 capsuleRadius, f32 capsuleHalfHeight,
                                             const Math::Vector3& position) {}
     virtual void DestroyCharacterController(ECS::Entity entity) {}
+    virtual void DestroyAllCharacterControllers() {}
     virtual CharacterState UpdateCharacterController(ECS::Entity entity, const Math::Vector3& velocity,
                                                       f32 deltaTime) { return {}; }
     virtual bool HasCharacterController(ECS::Entity entity) const { return false; }

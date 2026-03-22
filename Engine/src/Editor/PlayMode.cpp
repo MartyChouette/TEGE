@@ -415,6 +415,11 @@ void PlayMode::Stop() {
         m_Physics2D->SetOnSensorExit(nullptr);
     }
 
+    // Destroy character controllers created during play (prevents memory leak
+    // across play/stop cycles — CharacterVirtual instances are per-entity and
+    // must be cleaned up when the scene is restored)
+    if (m_Physics) m_Physics->DestroyAllCharacterControllers();
+
     // Clear save/gameplay system bindings
     s_VisualScriptSaveSystem = nullptr;
     s_VisualScriptWeather = nullptr;

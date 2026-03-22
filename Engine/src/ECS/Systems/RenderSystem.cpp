@@ -3054,7 +3054,7 @@ void RenderSystem::CreatePipeline() {
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = m_WireframeMode ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
     config.msaaSamples = m_Renderer->GetMSAASamples();
-    config.colorAttachmentCount = 2; // MRT: color + velocity
+    config.colorAttachmentCount = 2; // Swapchain MRT: color + velocity (main pass only; offscreen uses 1)
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
     if (!m_Pipeline->Create(config, m_VertexShader.get(), m_FragmentShader.get())) {
@@ -3125,7 +3125,7 @@ void RenderSystem::CreateOutlinePipeline() {
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.msaaSamples = m_Renderer->GetMSAASamples();
-    config.colorAttachmentCount = 2; // MRT: color + velocity (must match render pass)
+    config.colorAttachmentCount = 2; // Swapchain MRT: color + velocity (main pass only; offscreen uses 1) (must match render pass)
 
     m_OutlinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
     if (!m_OutlinePipeline->CreateWithLayout(config, m_OutlineVertexShader.get(), m_OutlineFragmentShader.get(),
@@ -6602,7 +6602,7 @@ void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.attachmentCount = 2; // MRT: color + velocity
+    colorBlending.attachmentCount = 2; // Swapchain MRT: color + velocity (main pass only; offscreen uses 1)
     colorBlending.pAttachments = skyboxBlendAttachments.data();
 
     VkPipelineShaderStageCreateInfo vertStage{};
