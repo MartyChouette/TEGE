@@ -3999,8 +3999,26 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
 
     renderData.indexCount = static_cast<u32>(mesh->indices.size());
 
-    // Create bone SSBO if entity has a skeleton for animation
+    // Create bone SSBO if entity has a skeleton for animation.
+    // The AnimatorComponent may be on this entity or on a sibling (Mixamo FBX
+    // puts mesh and skeleton on different entities). Search globally if needed.
     AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+    if (!animComp) {
+        // Check if this mesh has bone weights — if so, find any AnimatorComponent
+        bool hasBoneWeights = false;
+        for (const auto& v : mesh->vertices) {
+            if (v.boneWeights.x > 0.0f) { hasBoneWeights = true; break; }
+        }
+        if (hasBoneWeights) {
+            for (auto animEntity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
+                auto* ac = m_World->GetComponent<AnimatorComponent>(animEntity);
+                if (ac && ac->animator.GetSkeleton()) {
+                    animComp = ac;
+                    break;
+                }
+            }
+        }
+    }
     if (animComp && animComp->animator.GetSkeleton()) {
         usize boneCount = animComp->animator.GetSkeleton()->bones.size();
         if (boneCount > 0) {
