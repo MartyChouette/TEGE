@@ -21,7 +21,10 @@ void ProcessContactDamage(ECS::World* world, ECS::Entity entityA,
     auto tryDamage = [&](ECS::Entity damager, ECS::Entity target) {
         auto* dmg = world->GetComponent<ECS::DamageComponent>(damager);
         auto* hp = world->GetComponent<ECS::HealthComponent>(target);
-        if (!dmg || !hp || hp->isDead) return;
+        if (!dmg || !hp) {
+            return;  // No damage or health component — skip
+        }
+        if (hp->isDead) return;
 
         // Check damageOnce -- skip if already damaged this entity
         if (dmg->damageOnce) {
@@ -43,6 +46,10 @@ void ProcessContactDamage(ECS::World* world, ECS::Entity entityA,
         }
         hp->currentHealth -= remaining;
         hp->timeSinceLastDamage = 0.0f;
+        // Diagnostic: log damage application for debugging sensor interactions
+        ENJIN_LOG_INFO(Game, "DAMAGE: entity %llu dealt %.1f to entity %llu (hp: %.1f/%.1f)",
+            (unsigned long long)damager, dmg->damage,
+            (unsigned long long)target, hp->currentHealth, hp->maxHealth);
 
         // Start invulnerability window
         if (hp->invulnerabilityTime > 0.0f) {
