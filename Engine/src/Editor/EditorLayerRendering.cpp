@@ -908,6 +908,42 @@ void EditorLayer::DrawGameViewPanel() {
         }
     }
 
+    // Render pause menu inside the Game View panel (not as a top-level window)
+    if (m_GameMenu.IsMenuOpen() && !m_FocusMode) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        // Draw buttons centered in the game view preview area
+        f32 btnW = 200.0f;
+        f32 btnH = 30.0f;
+        f32 spacing = 8.0f;
+        const char* labels[] = {"Resume", "Options", "How to Play", "Quit to Menu"};
+        const char* actions[] = {"resume", "options", "how_to_play", "quit_to_menu"};
+        f32 totalH = 4 * btnH + 3 * spacing + 30.0f; // buttons + title
+        f32 startX = m_GameViewScreenX + (m_GameViewScreenW - btnW) * 0.5f;
+        f32 startY = m_GameViewScreenY + (m_GameViewScreenH - totalH) * 0.5f;
+
+        // Title
+        const char* title = "PAUSED";
+        ImVec2 titleSize = ImGui::CalcTextSize(title);
+        dl->AddText(ImVec2(m_GameViewScreenX + (m_GameViewScreenW - titleSize.x) * 0.5f, startY),
+                    IM_COL32(255, 255, 255, 240), title);
+        startY += 30.0f;
+
+        // Buttons using invisible ImGui buttons for click handling
+        for (int i = 0; i < 4; ++i) {
+            ImVec2 bMin(startX, startY + i * (btnH + spacing));
+            ImVec2 bMax(startX + btnW, bMin.y + btnH);
+            bool hovered = ImGui::IsMouseHoveringRect(bMin, bMax);
+            dl->AddRectFilled(bMin, bMax,
+                hovered ? IM_COL32(80, 80, 120, 200) : IM_COL32(40, 40, 60, 180), 4.0f);
+            ImVec2 labelSize = ImGui::CalcTextSize(labels[i]);
+            dl->AddText(ImVec2(bMin.x + (btnW - labelSize.x) * 0.5f, bMin.y + (btnH - labelSize.y) * 0.5f),
+                        IM_COL32(255, 255, 255, 230), labels[i]);
+            if (hovered && ImGui::IsMouseClicked(0)) {
+                if (m_GameMenu.GetCallback()) m_GameMenu.GetCallback()(actions[i]);
+            }
+        }
+    }
+
     ImGui::End();
 }
 

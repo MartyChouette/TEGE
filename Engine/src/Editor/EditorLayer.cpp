@@ -2946,11 +2946,8 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawUIEditorOverlay();
     }
 
-    // Render pause menu overlay — only covers game view, not entire editor
-    if (m_GameMenu.IsMenuOpen()) {
-        m_GameMenu.RenderInViewport(m_GameViewScreenX, m_GameViewScreenY,
-                                     m_GameViewScreenW, m_GameViewScreenH);
-    }
+    // Pause menu is now rendered inside the Game View panel (DrawGameViewPanel)
+    // to prevent it from overlapping the Scene tab.
 
     // Quake-style drop-down console (always on top of editor panels)
     DrawDropConsole(m_LastDeltaTime);

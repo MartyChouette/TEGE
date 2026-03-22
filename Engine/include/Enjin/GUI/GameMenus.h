@@ -71,6 +71,7 @@ public:
     void RenderInViewport(f32 vpX, f32 vpY, f32 vpW, f32 vpH);
 
     void SetCallback(MenuCallback cb);
+    const MenuCallback& GetCallback() const { return m_Callback; }
     void SetGameTitle(const std::string& title);
 
 private:
