@@ -2649,8 +2649,13 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 dmg.destroyOnHit = false;
                 dmg.damageOnce = true;
                 auto& col = m_World->AddComponent<Physics::Body2DComponent>(spikes);
-                col.shapeType = Physics::Shape2DType::Box;
-                col.box.halfExtents = Math::Vector2(1.0f, 0.2f);
+                col.shapeType = Physics::Shape2DType::Polygon;
+                // Triangle collider matching the spike mesh visual (pointy top, flat base)
+                col.polygon.vertices = {
+                    Math::Vector2(-1.0f, -0.2f),  // Bottom-left
+                    Math::Vector2( 1.0f, -0.2f),  // Bottom-right
+                    Math::Vector2( 0.0f,  0.2f),  // Top point
+                };
                 col.isStatic = true;
                 col.isSensor = true;
             }

@@ -277,11 +277,13 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
     shapeDef.friction = std::clamp(body2d->material.friction, 0.0f, 1.0f);
     shapeDef.restitution = std::clamp(body2d->material.restitution, 0.0f, 1.0f);
     shapeDef.isSensor = body2d->isSensor;
-    // Box2D v3: enableSensorEvents on non-sensor shapes controls whether
-    // they act as visitors for sensor overlap events. Sensors themselves
-    // ignore this flag. Enable for all dynamic/kinematic bodies so they
-    // can trigger sensor callbacks (damage, pickups, etc.).
-    shapeDef.enableSensorEvents = !body2d->isStatic;
+    // Box2D v3 sensor event flags:
+    // - Sensor shapes MUST have enableSensorEvents=true to generate begin/end events
+    // - Visitor shapes (kinematic/dynamic) also need enableSensorEvents=true to participate
+    // - Static non-sensor shapes don't need sensor events (they're walls/platforms)
+    // BUG FIX: Previously set enableSensorEvents=!isStatic, which disabled events on
+    // static sensors (spikes, hazards). Static sensors need events to detect player overlap.
+    shapeDef.enableSensorEvents = body2d->isSensor || !body2d->isStatic;
     shapeDef.enableContactEvents = !body2d->isSensor;
 
     // Collision filtering (v3.0.0 uses uint32_t)
