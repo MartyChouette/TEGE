@@ -98,6 +98,9 @@ Bilateral bitmask: `(A.categoryBits & B.collisionMask) && (B.categoryBits & A.co
 - **Box2D kinematic bodies:** Use `b2Body_SetLinearVelocity` (not `b2Body_SetTransform`) to move kinematic bodies. Teleporting via SetTransform doesn't trigger sensor overlap events in Box2D v3.
 - **Box2D sensor events:** `enableSensorEvents` must be `true` on sensor shapes (even static ones). Formula: `enableSensorEvents = isSensor || !isStatic`.
 - **2D raycasts skip sensors:** `Box2DBackend::Raycast` uses a callback that filters out sensor bodies. Sensors should only interact via sensor begin/end events, never block wall/ground raycasts.
+- **2D collider halfExtents** are in WORLD SPACE (same as 3D). `Body2DComponent.box.halfExtents = (1.0, 0.5)` means the box is 2 units wide × 1 unit tall, regardless of entity transform scale. For capsule approximations: `halfExtents = (meshRadius, meshHalfHeight)`.
+- **Hazard sensors** (spikes, lava) must be `isKinematic = true` (not `isStatic`). Box2D v3 doesn't reliably fire sensor events between static sensors and kinematic visitors. Use `gravityScale = 0` to prevent falling.
+- **CheckHazardOverlaps** runs every frame as AABB overlap for hazards (DamageComponent + no HealthComponent). This is a workaround for Box2D v3's kinematic-kinematic sensor limitation.
 
 ### Renderer
 

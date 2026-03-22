@@ -568,8 +568,10 @@ private:
     bool m_ShowDemoWindow = false;
     bool m_ShowStatsOverlay = true;
     bool m_ShowAboutDialog = false;
-    bool m_ShowDebugWorkstation = false;  // F2 — Editor/Engine debug (legacy)
-    bool m_ShowGameDebug = false;          // F1 — Game debug (legacy)
+    bool m_ShowDebugWorkstation = false;  // F2 — Editor/Engine debug (legacy, superseded by m_ShowDebugOverlay)
+    bool m_ShowGameDebug = false;          // F1 — Game debug (legacy, superseded by m_ShowDebugOverlay)
+    // TODO: Remove m_ShowDebugWorkstation + m_ShowGameDebug and their draw functions
+    // once m_ShowDebugOverlay fully replaces both. Keep for now to avoid breaking F1/F2 keybinds.
     bool m_ShowDebugOverlay = false;       // F1 — Transparent HUD overlay
     u8 m_DebugOverlayDetail = 0;           // 0=compact, 1=detailed
 
