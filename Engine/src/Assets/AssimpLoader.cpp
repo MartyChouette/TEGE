@@ -47,15 +47,18 @@ std::vector<std::string> AssimpLoader::GetSupportedExtensions() {
 bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
     Assimp::Importer importer;
 
-    // Configure post-processing flags
+    // Configure post-processing flags.
+    // IMPORTANT: Use GenNormals (not GenSmoothNormals) — GenSmoothNormals OVERWRITES
+    // hand-crafted normals from DCC tools (Blender, Maya, Mixamo). GenNormals only
+    // generates normals when the mesh has none, preserving artist-authored normals.
     unsigned int flags =
         aiProcess_Triangulate |           // Triangulate all faces
-        aiProcess_GenSmoothNormals |      // Generate smooth normals if missing
-        aiProcess_CalcTangentSpace |      // Calculate tangents
+        aiProcess_GenNormals |            // Generate normals ONLY if missing (preserves existing)
+        aiProcess_CalcTangentSpace |      // Calculate tangents if missing
         aiProcess_JoinIdenticalVertices | // Optimize mesh
-        aiProcess_FlipUVs |               // Flip UVs for OpenGL/Vulkan
-        aiProcess_LimitBoneWeights |      // Limit bone weights
-        aiProcess_ValidateDataStructure;  // Validate the data
+        aiProcess_FlipUVs |               // Flip V for Vulkan/OpenGL (origin bottom-left)
+        aiProcess_LimitBoneWeights |      // Max 4 bones per vertex for GPU skinning
+        aiProcess_ValidateDataStructure;  // Validate the imported data
 
     const aiScene* scene = importer.ReadFile(filepath, flags);
 
@@ -255,6 +258,21 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
                 }
             }
             outScene.hasSkinning = true;
+
+            // Normalize bone weights so they sum to 1.0 per vertex.
+            // LimitBoneWeights caps at 4 but doesn't renormalize the remaining weights.
+            // Without normalization, skinned vertices can appear too dark or too bright.
+            for (auto& vert : primitive.vertices) {
+                f32 sum = vert.boneWeights.x + vert.boneWeights.y +
+                          vert.boneWeights.z + vert.boneWeights.w;
+                if (sum > 0.0001f && std::abs(sum - 1.0f) > 0.001f) {
+                    f32 invSum = 1.0f / sum;
+                    vert.boneWeights.x *= invSum;
+                    vert.boneWeights.y *= invSum;
+                    vert.boneWeights.z *= invSum;
+                    vert.boneWeights.w *= invSum;
+                }
+            }
         }
 
         // Indices

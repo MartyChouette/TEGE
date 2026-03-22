@@ -909,9 +909,11 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                     ECS::MeshComponent::Vertex vertex;
                     vertex.position = assimpVert.position;
                     vertex.normal = assimpVert.normal;
-                    // Apply axis conversion to vertex positions, normals, tangents
+                    // Apply axis conversion to vertex positions, normals, tangents.
+                    // Positions use ConvertPosition (includes flip overrides),
+                    // normals/tangents use ConvertNormal (direction-only, no scale).
                     if (zToY || lToR) {
-                        vertex.position = ConvertNormal(vertex.position, zToY, lToR);
+                        vertex.position = ConvertPosition(vertex.position, zToY, lToR, options.flipX, options.flipY, options.flipZ);
                         vertex.normal = ConvertNormal(vertex.normal, zToY, lToR);
                         Math::Vector3 tang3(assimpVert.tangent.x, assimpVert.tangent.y, assimpVert.tangent.z);
                         tang3 = ConvertNormal(tang3, zToY, lToR);
