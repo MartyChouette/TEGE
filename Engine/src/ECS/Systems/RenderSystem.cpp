@@ -4029,6 +4029,12 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
             if (!renderData.boneBuffer->Create(boneBufferSize, Renderer::BufferUsage::Storage, true)) {
                 ENJIN_LOG_ERROR(Renderer, "Failed to create bone buffer for entity %llu", entity);
                 renderData.boneBuffer.reset();
+            } else {
+                // Initialize bone buffer with identity matrices so bind-pose
+                // skinning is a no-op. Without this, the buffer contains garbage
+                // until the first animation frame uploads real matrices.
+                std::vector<Math::Matrix4> identityMatrices(boneCount, Math::Matrix4::Identity());
+                renderData.boneBuffer->UploadData(identityMatrices.data(), boneBufferSize);
             }
         }
     }

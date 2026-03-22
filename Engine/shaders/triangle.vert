@@ -168,20 +168,8 @@ void main() {
         }
     }
 
-    // Transform vertex position to world space.
-    // For skinned meshes: only apply scale from the model matrix (for cm→m conversion).
-    // The skinning matrices already handle position and rotation in bone space.
-    // Applying the full model matrix would double-transform the mesh via parent hierarchy.
-    vec4 worldPos;
-    if ((objFlags & FLAG_SKINNED) != 0) {
-        // Extract scale from model matrix diagonal (assumes no shear)
-        float sx = length(vec3(objModel[0][0], objModel[1][0], objModel[2][0]));
-        float sy = length(vec3(objModel[0][1], objModel[1][1], objModel[2][1]));
-        float sz = length(vec3(objModel[0][2], objModel[1][2], objModel[2][2]));
-        worldPos = vec4(skinnedPos * vec3(sx, sy, sz), 1.0);
-    } else {
-        worldPos = objModel * vec4(skinnedPos, 1.0);
-    }
+    // Transform vertex position to world space
+    vec4 worldPos = objModel * vec4(skinnedPos, 1.0);
 
     // Wind sway for vegetation (trees, bushes)
     // Uses vertex color red channel as sway weight (trunk=0, leaves=1)
