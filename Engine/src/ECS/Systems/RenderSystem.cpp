@@ -1966,6 +1966,14 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             if (animComp && renderData.boneBuffer) {
                 const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
                 if (!skinningMatrices.empty()) {
+                    // Log first matrix to verify it's identity
+                    static bool loggedMatrix = false;
+                    if (!loggedMatrix) {
+                        const auto& m = skinningMatrices[0];
+                        ENJIN_LOG_INFO(Renderer, "SKIN MATRIX[0]: [%.2f %.2f %.2f %.2f] [%.2f %.2f %.2f %.2f] ...",
+                            m.m[0], m.m[4], m.m[8], m.m[12], m.m[1], m.m[5], m.m[9], m.m[13]);
+                        loggedMatrix = true;
+                    }
                     renderData.boneBuffer->UploadData(skinningMatrices.data(),
                         skinningMatrices.size() * sizeof(Math::Matrix4));
                     UpdateBoneDescriptor(renderData.boneBuffer.get());

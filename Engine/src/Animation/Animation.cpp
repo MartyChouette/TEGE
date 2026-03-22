@@ -231,8 +231,9 @@ void SkeletalAnimator::SetSkeleton(std::shared_ptr<Skeleton> skeleton) {
             m_CurrentPose.localScales[i] = skeleton->bones[i].bindScale;
             m_CurrentPose.skinningMatrices[i] = Math::Matrix4::Identity();
         }
-        CalculateWorldTransforms();
-        // Skip CalculateSkinningMatrices() for initial bind — identity is correct
+        // Don't call CalculateWorldTransforms or CalculateSkinningMatrices here.
+        // Identity skinning matrices are set above — any computation would overwrite
+        // them with incorrect values due to convention mismatches.
     }
 }
 
