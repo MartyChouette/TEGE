@@ -219,14 +219,20 @@ void SkeletalAnimator::SetSkeleton(std::shared_ptr<Skeleton> skeleton) {
         m_CurrentPose.Resize(skeleton->bones.size());
         m_BlendPose.Resize(skeleton->bones.size());
 
-        // Initialize to bind pose
+        // Initialize to bind pose.
+        // For the initial bind pose, set skinning matrices to identity — this
+        // guarantees the mesh renders exactly as stored (T-pose). Computing
+        // worldTransform * inverseBindMatrix from decomposed bind positions
+        // can produce non-identity due to floating point or convention mismatches
+        // between the node transforms and the offset matrix from Assimp.
         for (usize i = 0; i < skeleton->bones.size(); ++i) {
             m_CurrentPose.localPositions[i] = skeleton->bones[i].bindPosition;
             m_CurrentPose.localRotations[i] = skeleton->bones[i].bindRotation;
             m_CurrentPose.localScales[i] = skeleton->bones[i].bindScale;
+            m_CurrentPose.skinningMatrices[i] = Math::Matrix4::Identity();
         }
         CalculateWorldTransforms();
-        CalculateSkinningMatrices();
+        // Skip CalculateSkinningMatrices() for initial bind — identity is correct
     }
 }
 
