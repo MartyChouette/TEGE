@@ -168,8 +168,15 @@ void main() {
         }
     }
 
-    // Transform vertex position to world space
-    vec4 worldPos = objModel * vec4(skinnedPos, 1.0);
+    // Transform vertex position to world space.
+    // Skinned meshes: skinning matrices already transform to world space,
+    // so skip the model matrix to avoid double-transformation.
+    vec4 worldPos;
+    if ((objFlags & FLAG_SKINNED) != 0) {
+        worldPos = vec4(skinnedPos, 1.0);
+    } else {
+        worldPos = objModel * vec4(skinnedPos, 1.0);
+    }
 
     // Wind sway for vegetation (trees, bushes)
     // Uses vertex color red channel as sway weight (trunk=0, leaves=1)
@@ -257,8 +264,14 @@ void main() {
 
     gl_Position = clipPos;
 
-    // Transform normal to world space (using normal matrix)
-    mat3 normalMatrix = transpose(inverse(mat3(objModel)));
+    // Transform normal to world space (using normal matrix).
+    // Skinned meshes: normals already in world space from skinning, use identity.
+    mat3 normalMatrix;
+    if ((objFlags & FLAG_SKINNED) != 0) {
+        normalMatrix = mat3(1.0);
+    } else {
+        normalMatrix = transpose(inverse(mat3(objModel)));
+    }
     fragNormal = normalize(normalMatrix * skinnedNormal);
 
     // Pass through UV - for affine texturing, multiply by w to undo perspective correction

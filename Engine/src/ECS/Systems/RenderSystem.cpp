@@ -1686,6 +1686,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             AnimatorComponent* preCheckAnim = m_World->GetComponent<AnimatorComponent>(entity);
             if (preCheckAnim && preCheckAnim->animator.GetSkeleton()) {
                 pushConstants.model = Math::Matrix4::Identity();
+                static bool logged = false;
+                if (!logged) { ENJIN_LOG_INFO(Renderer, "SKINNED RENDER PATH 1: entity %llu, identity model", (unsigned long long)entity); logged = true; }
             } else {
                 pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
             }
