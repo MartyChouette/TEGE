@@ -233,6 +233,15 @@ void CheckHazardOverlaps(ECS::World* world, f32 deltaTime,
                 if (playerHp->invulnerabilityTime > 0.0f) {
                     playerHp->invulnerabilityTimer = playerHp->invulnerabilityTime;
                 }
+
+                // Knockback: push player away from hazard
+                if (hazardDmg->knockbackForce > 0.0f && playerCtrl) {
+                    f32 dir = (playerT->position.x > hazardT->position.x) ? 1.0f : -1.0f;
+                    playerCtrl->velocity.x = dir * hazardDmg->knockbackForce;
+                    playerCtrl->velocity.y = hazardDmg->knockbackForce * 0.5f;
+                    playerCtrl->isGrounded = false;
+                }
+
                 if (playerHp->currentHealth <= 0.0f) {
                     playerHp->currentHealth = 0.0f;
                     playerHp->isDead = true;

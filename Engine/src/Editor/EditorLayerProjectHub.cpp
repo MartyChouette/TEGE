@@ -2648,7 +2648,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 auto& dmg = m_World->AddComponent<ECS::DamageComponent>(spikes);
                 dmg.damage = 25.0f;
                 dmg.destroyOnHit = false;
-                dmg.damageOnce = true;
+                dmg.damageOnce = false;  // Spikes hurt every time you touch them
+                dmg.knockbackForce = 8.0f;  // Bounce player away from spikes
                 auto& col = m_World->AddComponent<Physics::Body2DComponent>(spikes);
                 col.shapeType = Physics::Shape2DType::Polygon;
                 // Triangle collider matching the spike mesh visual (pointy top, flat base)
@@ -2950,7 +2951,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& dmg = m_World->AddComponent<ECS::DamageComponent>(spikes);
             dmg.damage = 25.0f;
             dmg.destroyOnHit = false;
-            dmg.damageOnce = true;
+            dmg.damageOnce = false;
+            dmg.knockbackForce = 8.0f;
             auto& col = m_World->AddComponent<Physics::Body2DComponent>(spikes);
             col.shapeType = Physics::Shape2DType::Box;
             col.box.halfExtents = Math::Vector2(2.0f, 0.2f);
