@@ -797,11 +797,12 @@ void ControllerSystem::UpdatePlatformer2D(Entity entity, Platformer2DController&
     // Step 2: Apply Y movement, then check for ground
     transform.position.y += ctrl.velocity.y * dt;
 
-    // Ground check via physics raycast (2D preferred for 2D controllers, then 3D fallback, then Y=0)
+    // Ground check via 2D physics raycast only — no 3D fallback for 2D controllers.
+    // The Y=0 fallback in CheckGround creates invisible floors between level zones.
     f32 groundY = 0.0f;
     Entity groundEntity = INVALID_ENTITY;
     bool ground2D = CheckGround2D(transform.position, groundY, groundEntity, capsuleRadius, capsuleHalfHeight);
-    bool groundHit = ground2D || CheckGround(transform.position, groundY, entity);
+    bool groundHit = ground2D;
     // For 2D raycasts, the hit point is the surface top. Standing offset = capsule half-height
     // so the capsule bottom sits on the surface.
     f32 standingY = ground2D ? (groundY + capsuleHalfHeight) : groundY;
