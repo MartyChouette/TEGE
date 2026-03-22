@@ -229,16 +229,17 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
 
                     AssimpBone bone;
                     bone.name = boneName;
-                    // Assimp aiMatrix4x4 is row-major: a1-a4 = row 0, b1-b4 = row 1, etc.
-                    // Math::Matrix4 constructor takes row-major order (m00,m01,m02,m03,m10,...).
-                    // IMPORTANT: Previously passed as transposed (columns instead of rows),
-                    // causing incorrect skinning transforms.
+                    // Assimp aiMatrix4x4 is row-major. Our Matrix4 constructor expects
+                    // row-major conceptual order but stores column-major for GPU.
+                    // Assimp uses row-vector convention (v * M) while our shader uses
+                    // column-vector (M * v), so we transpose by passing columns as rows.
+                    // This is intentional and matches the shader's multiplication order.
                     const aiMatrix4x4& m = aiBoneData->mOffsetMatrix;
                     bone.offsetMatrix = Math::Matrix4(
-                        m.a1, m.a2, m.a3, m.a4,   // Row 0
-                        m.b1, m.b2, m.b3, m.b4,   // Row 1
-                        m.c1, m.c2, m.c3, m.c4,   // Row 2
-                        m.d1, m.d2, m.d3, m.d4    // Row 3
+                        m.a1, m.b1, m.c1, m.d1,
+                        m.a2, m.b2, m.c2, m.d2,
+                        m.a3, m.b3, m.c3, m.d3,
+                        m.a4, m.b4, m.c4, m.d4
                     );
                     outScene.bones.push_back(bone);
                 }

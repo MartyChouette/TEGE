@@ -452,7 +452,10 @@ void SkeletalAnimator::CalculateSkinningMatrices() {
     if (!m_Skeleton) return;
 
     for (usize i = 0; i < m_Skeleton->bones.size(); ++i) {
-        m_CurrentPose.skinningMatrices[i] = m_CurrentPose.worldTransforms[i] * m_Skeleton->bones[i].inverseBindMatrix;
+        // Skinning: transform from bind-pose bone space → current bone world space.
+        // The inverse bind matrix is transposed (Assimp row-major → GPU column-major
+        // convention swap), so multiplication order is reversed from the textbook formula.
+        m_CurrentPose.skinningMatrices[i] = m_Skeleton->bones[i].inverseBindMatrix * m_CurrentPose.worldTransforms[i];
     }
 }
 
