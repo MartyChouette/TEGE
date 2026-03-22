@@ -1641,6 +1641,18 @@ ML-assisted rendering techniques that run on consumer GPUs.
 - **Gaussian splatting renderer** — import format for photogrammetry assets. Reference: NVIDIA `vk_gaussian_splatting`. Specialized tool, not primary geometry path
 - **NRD learned denoisers** — if NRD adds neural denoiser modes beyond algorithmic ReBLUR/ReLAX
 
+### Phase 19: Tege Rendering Language (2027+)
+
+Composable material expression library for aesthetics-first rendering. Each effect is a shader graph node artists can mix and match. See `docs/RENDERING_LANGUAGE.md` for full taxonomy.
+
+- **Screen-Derived** — Heat Veil, Broken Reflection, Ghosted Transmission, Fiber Breakup, Contact Foam
+- **Normal/Depth-Derived** — Edge Bloom, Thickness Tint, Staged Atmosphere, Depth Tint, Angle-Shift Color, Band Sheen, Fuzz Rim
+- **Projected** — Projected Caustics, Surface-Wake Caustics, Crack-Light Ice, Shape-Driven Flame, Surface Drift
+- **Event-Driven** — Pulsed Subsurface, Authored Light Script, Event Sparkle, Settling Haze
+- **Quantized/Layered** — Dithered Volume, Plane-Fog Stack, Layered Water Body, Blue-Body Ice, Layered Ember Body
+- **Material Taxonomy** — Surface-Bound, Transmissive, Participating Volume, View-Reactive, Event-Driven, Layer-Composed
+- **Naming Convention** — `[Domain]_[Behavior]_[Mode]` (e.g., `Glass_Ghosted_Screen`, `Snow_Sparkle_Event`)
+
 ### Key Integration Notes
 
 - **Velocity buffer** ✅ — shared dependency for TAA, upscalers, RT temporal, ReSTIR temporal reuse
