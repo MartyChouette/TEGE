@@ -1930,27 +1930,18 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // and MUST be transformed by the bind pose skinning matrices to look
             // correct. Without FLAG_SKINNED, raw bone-local vertices render as a
             // distorted mess (the Mixamo import bug).
-            // Find AnimatorComponent — may be on this entity or a parent/sibling
-            // in the imported hierarchy. Mixamo FBX puts the mesh and skeleton on
-            // different entities, so we search up the parent chain.
+            // Find AnimatorComponent — may be on this entity or anywhere in the
+            // scene (Mixamo FBX puts mesh and skeleton on different entities).
+            // If this entity has bone weights, find the first AnimatorComponent
+            // in the world to use its skinning matrices.
             AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
-            if (!animComp) {
-                // Search parent chain for animator
-                auto* pc = m_World->GetComponent<ECS::ParentComponent>(entity);
-                ECS::Entity searchEntity = pc ? pc->parent : ECS::INVALID_ENTITY;
-                while (searchEntity != ECS::INVALID_ENTITY && !animComp) {
-                    animComp = m_World->GetComponent<AnimatorComponent>(searchEntity);
-                    pc = m_World->GetComponent<ECS::ParentComponent>(searchEntity);
-                    searchEntity = pc ? pc->parent : ECS::INVALID_ENTITY;
-                }
-                // Also search siblings (children of parent)
-                if (!animComp) {
-                    pc = m_World->GetComponent<ECS::ParentComponent>(entity);
-                    if (pc && pc->parent != ECS::INVALID_ENTITY) {
-                        for (auto sibling : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
-                            animComp = m_World->GetComponent<AnimatorComponent>(sibling);
-                            if (animComp) break;
-                        }
+            if (!animComp && renderData.indexCount > 0) {
+                // This entity has bone weights but no animator — find one globally
+                for (auto animEntity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
+                    auto* ac = m_World->GetComponent<AnimatorComponent>(animEntity);
+                    if (ac && ac->animator.GetSkeleton()) {
+                        animComp = ac;
+                        break;
                     }
                 }
             }
