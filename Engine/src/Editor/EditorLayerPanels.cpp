@@ -192,7 +192,14 @@ void EditorLayer::DrawConsolePanel() {
         }
 
         ImGui::PushStyleColor(ImGuiCol_Text, color);
-        ImGui::TextUnformatted(entry.message.c_str());
+        ImGui::PushID(static_cast<int>(&entry - m_ConsoleLog.data()));
+        if (ImGui::Selectable(entry.message.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick)) {
+            ImGui::SetClipboardText(entry.message.c_str());
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Click to copy");
+        }
+        ImGui::PopID();
         ImGui::PopStyleColor();
         anyVisible = true;
     }

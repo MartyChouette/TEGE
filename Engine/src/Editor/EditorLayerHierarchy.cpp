@@ -179,7 +179,7 @@ static const char* GetEntityIcon(ECS::World* world, ECS::Entity entity) {
 
 void EditorLayer::DrawHierarchyPanel() {
     ImGuiWindowFlags flags = 0;
-    if (m_FocusMode || !m_PlayMode.IsStopped()) {
+    if (m_FocusMode) {
         flags |= ImGuiWindowFlags_NoInputs;
     }
     bool panelOpen = true;

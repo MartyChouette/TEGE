@@ -652,7 +652,6 @@ void EditorLayer::DrawGameViewPanel() {
             VkDescriptorSet texId = m_GameViewRenderTarget ? m_GameViewRenderTarget->GetImGuiTextureID() : VK_NULL_HANDLE;
             bool usedImage = false;
             if (texId != VK_NULL_HANDLE) {
-                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + center.x);
                 ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texId)),
                              ImVec2(previewWidth, previewHeight));
                 usedImage = true;
