@@ -4009,6 +4009,8 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
         for (const auto& v : mesh->vertices) {
             if (v.boneWeights.x > 0.0f) { hasBoneWeights = true; break; }
         }
+        ENJIN_LOG_INFO(Renderer, "BONE CHECK: entity %llu, %zu verts, hasBoneWeights=%d",
+            (unsigned long long)entity, mesh->vertices.size(), hasBoneWeights);
         if (hasBoneWeights) {
             for (auto animEntity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
                 auto* ac = m_World->GetComponent<AnimatorComponent>(animEntity);

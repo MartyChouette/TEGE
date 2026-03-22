@@ -896,13 +896,12 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         pos = ConvertPosition(pos, zToY, lToR, options.flipX, options.flipY, options.flipZ);
         rot = ConvertRotation(rot, zToY, lToR);
     }
-    // Skinned mesh entities use identity transform — the skinning matrices
-    // handle all spatial transformation from bind-pose to world space.
-    // Applying the node's transform on top would double-transform the mesh.
+    // Skinned mesh entities: keep scale (for cm→m conversion) but zero
+    // position/rotation since skinning handles spatial placement.
     if (skelCtx.skeleton && hasMeshes) {
         transform.position = Math::Vector3(0.0f);
         transform.rotation = Math::Quaternion::Identity();
-        transform.scale = Math::Vector3(1.0f);
+        transform.scale = Math::Vector3(options.scale, options.scale, options.scale);
     } else {
         transform.position = pos * options.scale;
         transform.rotation = rot;
