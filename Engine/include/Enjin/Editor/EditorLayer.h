@@ -30,6 +30,7 @@
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Effects/SeasonalWeather.h"
 #include "Enjin/Effects/ParticleSystem.h"
+#include "Enjin/ECS/Systems/ParallaxSystem.h"
 #include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/Effects/FluidSimulation.h"
 #include "Enjin/Effects/FluidTerrainCoupling.h"
@@ -199,11 +200,11 @@ public:
     void Render(VkCommandBuffer commandBuffer);            // Call DURING main render pass
 
     // Set the world to edit
-    void SetWorld(ECS::World* world) { m_World = world; m_SceneManager.SetWorld(world); }
+    void SetWorld(ECS::World* world) { m_World = world; m_SceneManager.SetWorld(world); m_ParallaxSystem.SetWorld(world); }
     ECS::World* GetWorld() const { return m_World; }
 
     // Set the camera for the viewport
-    void SetCamera(Renderer::Camera* camera) { m_Camera = camera; InitializePlayMode(); }
+    void SetCamera(Renderer::Camera* camera) { m_Camera = camera; m_ParallaxSystem.SetCamera(camera); InitializePlayMode(); }
     void SetCameraController(Renderer::CameraController* controller) { m_CameraController = controller; InitializePlayMode(); }
 
     // Returns true when splash screen or project hub covers the entire screen,
@@ -391,6 +392,7 @@ private:
     void DrawBoxColliderComponent(ECS::Entity entity);
     void DrawSphereColliderComponent(ECS::Entity entity);
     void DrawCapsuleColliderComponent(ECS::Entity entity);
+    void DrawMeshColliderComponent(ECS::Entity entity);
     void DrawCollisionFilteringUI(u32& categoryBits, u32& collisionMask);
     void DrawTriggerZoneComponent(ECS::Entity entity);
     void DrawDamageComponent(ECS::Entity entity);
@@ -398,6 +400,7 @@ private:
     void DrawPickupComponent(ECS::Entity entity);
     void DrawInventoryComponent(ECS::Entity entity);
     void DrawTimerComponent(ECS::Entity entity);
+    void DrawGameOverComponent(ECS::Entity entity);
     void DrawAudioSourceComponent(ECS::Entity entity);
     void DrawAudioListenerComponent(ECS::Entity entity);
     void DrawAudioMixer();
@@ -709,6 +712,8 @@ private:
     // Deferred play mode stop (set during Render, executed at start of next Update
     // to avoid dangling pointers from mid-frame World::Clear)
     bool m_PendingPlayStop = false;
+    bool m_PendingPlayRestart = false;  // Set alongside m_PendingPlayStop to re-enter play mode
+    bool m_PendingPlayStart = false;    // Deferred play mode start (for restart after stop)
     bool m_SkipNextRender = false;  // Skip one frame after Stop to let render caches refresh
 
     // Camera zone override (driven by CameraTriggerComponent)
@@ -871,6 +876,9 @@ private:
 
     // Particle system (CPU simulation for ParticleEmitterComponent)
     Effects::ParticleSystem m_ParticleSystem;
+
+    // Parallax scrolling background system (2D scenes)
+    ECS::ParallaxSystem m_ParallaxSystem;
 
     // Elemental system (unified fire/water/earth/air particle simulation)
     Effects::ElementalSystem m_ElementalSystem;

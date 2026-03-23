@@ -11,6 +11,7 @@ namespace Editor {
 // Editor theme options
 enum class EditorTheme : u32 {
     Dark = 0,
+    Glass,              // Frosted glass with subtle prismatic borders
     Light,
     HighContrastDark,
     HighContrastLight,

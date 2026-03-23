@@ -716,6 +716,9 @@ void EditorLayer::DrawGameViewPanel() {
                 drawList->AddRectFilled(p0, p1, IM_COL32(20, 20, 30, 255));
             }
 
+            // Render parallax scrolling backgrounds (2D scenes, ImGui overlay)
+            m_ParallaxSystem.Render(previewWidth, previewHeight);
+
             // Weather/grass/fog are now rendered in RenderOffscreen() inside the render target pass.
             // Here we only draw ImGui overlays (lightning flash, water).
 

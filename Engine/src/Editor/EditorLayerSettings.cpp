@@ -747,11 +747,11 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
 
         // Theme
         const char* themeNames[] = {
-            "Dark", "Light", "High Contrast Dark", "High Contrast Light",
+            "Dark", "Glass", "Light", "High Contrast Dark", "High Contrast Light",
             "SNES", "PS2", "Xbox", "Dreamcast", "Sega Saturn", "GBA", "DS"
         };
         int currentTheme = static_cast<int>(m_EditorSettings.theme);
-        if (ImGui::Combo("Theme", &currentTheme, themeNames, 11)) {
+        if (ImGui::Combo("Theme", &currentTheme, themeNames, 12)) {
             m_EditorSettings.theme = static_cast<EditorTheme>(currentTheme);
             m_ImGuiLayer->ApplyTheme(m_EditorSettings.theme, &m_EditorSettings.accentColors);
             settingsChanged = true;

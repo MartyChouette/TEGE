@@ -275,6 +275,15 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
             m_PendingPlayStop = true;
         } else if (action == "quit") {
             if (m_Window) m_Window->Close();
+        } else if (action == "game_over_restart") {
+            // Restart: stop play mode and immediately start again (reloads scene)
+            m_GameMenu.HideAll();
+            m_PendingPlayStop = true;
+            m_PendingPlayRestart = true;
+        } else if (action == "game_over_menu") {
+            // Return to menu: stop play mode
+            m_GameMenu.HideAll();
+            m_PendingPlayStop = true;
         }
     });
 
@@ -564,6 +573,8 @@ void EditorLayer::Update(f32 deltaTime) {
     // Handle deferred play mode stop (requested during previous frame's Render)
     if (m_PendingPlayStop) {
         m_PendingPlayStop = false;
+        bool wantsRestart = m_PendingPlayRestart;
+        m_PendingPlayRestart = false;
         if (!m_PlayMode.IsStopped()) {
             // Wait for GPU to finish all in-flight frames before Stop clears
             // the world — otherwise the GPU may read destroyed entity data.
@@ -584,6 +595,19 @@ void EditorLayer::Update(f32 deltaTime) {
             // render system's entity caches are stale.  Marking the flag lets
             // RenderOffscreen() early-out safely; caches refresh next frame.
             m_SkipNextRender = true;
+
+            // If restart was requested, re-enter play mode next frame
+            if (wantsRestart) {
+                m_PendingPlayStart = true;
+            }
+        }
+    }
+
+    // Handle deferred play restart (game over -> restart)
+    if (m_PendingPlayStart) {
+        m_PendingPlayStart = false;
+        if (m_PlayMode.IsStopped()) {
+            m_PlayMode.Play();
         }
     }
 
@@ -978,6 +1002,24 @@ void EditorLayer::Update(f32 deltaTime) {
 
     // Update play mode
     m_PlayMode.Update(deltaTime);
+
+    // Show game over screen when ready (player died or victory condition met)
+    if (m_PlayMode.IsGameOverReady() && !m_GameMenu.IsGameOverScreen()) {
+        // Find the GameOverComponent to get display parameters
+        for (auto entity : m_World->GetEntitiesWithComponent<ECS::GameOverComponent>()) {
+            auto* go = m_World->GetComponent<ECS::GameOverComponent>(entity);
+            if (go && go->triggered && go->screenVisible) {
+                const std::string& msg = go->won ? go->victoryMessage : go->defeatMessage;
+                m_GameMenu.ShowGameOver(go->won, msg, go->allowRestart, go->returnToMenu);
+                // Release mouse capture so the player can click buttons
+                if (m_GameViewMouseCaptured) {
+                    m_GameViewMouseCaptured = false;
+                    Input::SetMouseCaptured(false);
+                }
+                break;
+            }
+        }
+    }
 
     // Update audio during play mode
     if (!m_PlayMode.IsStopped()) {
@@ -1679,6 +1721,8 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // Update particle emitter simulation
     m_ParticleSystem.Update(m_LastDeltaTime, m_World);
 
+    // Update parallax scrolling backgrounds (auto-scroll advance)
+    m_ParallaxSystem.Update(m_LastDeltaTime);
 
     // Update elemental system (fire/water/earth/air particle simulation)
     if (cameraTransform) {
@@ -2101,6 +2145,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
             ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texId)),
                          io.DisplaySize);
         }
+
+        // Render parallax scrolling backgrounds (2D scenes)
+        m_ParallaxSystem.Render(io.DisplaySize.x, io.DisplaySize.y);
 
         ImGui::End();
 
@@ -2696,6 +2743,35 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         drawSemiCircle(top, r, axis, v, false, 12);
                         drawSemiCircle(bot, r, axis, u, true, 12);
                         drawSemiCircle(bot, r, axis, v, true, 12);
+                    }
+                }
+
+                // Mesh colliders (magenta wireframe from cached vertices)
+                for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::MeshColliderComponent>()) {
+                    auto* meshCol = m_World->GetComponent<ECS::MeshColliderComponent>(entity);
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                    if (meshCol && transform && meshCol->generated && !meshCol->vertices.empty()) {
+                        bool sel = IsSelected(entity);
+                        ImU32 color = sel ? IM_COL32(220, 80, 220, 220) : IM_COL32(220, 80, 220, 80);
+                        f32 thick = sel ? 2.0f : 1.0f;
+
+                        // Draw triangle edges if we have indices
+                        if (!meshCol->indices.empty() && meshCol->indices.size() % 3 == 0) {
+                            for (size_t i = 0; i + 2 < meshCol->indices.size(); i += 3) {
+                                auto transformVert = [&](const Math::Vector3& v) {
+                                    Math::Vector3 scaled(v.x * transform->scale.x,
+                                                        v.y * transform->scale.y,
+                                                        v.z * transform->scale.z);
+                                    return transform->position + transform->rotation.Rotate(scaled);
+                                };
+                                Math::Vector3 a = transformVert(meshCol->vertices[meshCol->indices[i]]);
+                                Math::Vector3 b = transformVert(meshCol->vertices[meshCol->indices[i + 1]]);
+                                Math::Vector3 c = transformVert(meshCol->vertices[meshCol->indices[i + 2]]);
+                                drawLine3D(bgDrawList, a, b, color, thick);
+                                drawLine3D(bgDrawList, b, c, color, thick);
+                                drawLine3D(bgDrawList, c, a, color, thick);
+                            }
+                        }
                     }
                 }
 
