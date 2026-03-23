@@ -293,8 +293,24 @@ void SkeletalAnimator::CrossFade(const std::string& name, f32 fadeTime) {
 void SkeletalAnimator::Stop() {
     m_IsPlaying = false;
     m_IsPaused = false;
+    // Preserve m_CurrentTime and m_NormalizedTime so the timeline slider
+    // shows where the animation was when stopped.
+}
+
+void SkeletalAnimator::StopAndReset() {
+    m_IsPlaying = false;
+    m_IsPaused = false;
     m_CurrentTime = 0.0f;
     m_NormalizedTime = 0.0f;
+    // Re-compute bind pose so the mesh snaps back to rest position
+    if (m_Skeleton && m_CurrentAnim) {
+        SkeletonPose bindPose;
+        bindPose.Resize(m_Skeleton->bones.size());
+        SampleAnimation(*m_CurrentAnim, 0.0f, bindPose);
+        m_CurrentPose = bindPose;
+        CalculateWorldTransforms();
+        CalculateSkinningMatrices();
+    }
 }
 
 void SkeletalAnimator::Pause() {
@@ -303,6 +319,20 @@ void SkeletalAnimator::Pause() {
 
 void SkeletalAnimator::Resume() {
     m_IsPaused = false;
+}
+
+void SkeletalAnimator::SetNormalizedTime(f32 t) {
+    if (!m_CurrentAnim || !m_Skeleton) return;
+    t = Math::Clamp(t, 0.0f, 1.0f);
+    m_NormalizedTime = t;
+    m_CurrentTime = t * m_CurrentAnim->duration;
+    // Sample and update pose at the new time
+    SkeletonPose sampledPose;
+    sampledPose.Resize(m_Skeleton->bones.size());
+    SampleAnimation(*m_CurrentAnim, m_CurrentTime, sampledPose);
+    m_CurrentPose = sampledPose;
+    CalculateWorldTransforms();
+    CalculateSkinningMatrices();
 }
 
 void SkeletalAnimator::Update(f32 deltaTime) {

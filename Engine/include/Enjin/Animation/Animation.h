@@ -295,9 +295,11 @@ public:
     // Playback control
     void Play(const std::string& name, f32 blendTime = 0.0f);
     void CrossFade(const std::string& name, f32 fadeTime);
-    void Stop();
+    void Stop();          // Stop playback, preserve current time
+    void StopAndReset();   // Stop playback and reset to frame 0
     void Pause();
     void Resume();
+    void SetNormalizedTime(f32 t); // Seek to position (0-1), updates pose
 
     void SetSpeed(f32 speed) { m_Speed = speed; }
     f32 GetSpeed() const { return m_Speed; }
@@ -311,6 +313,7 @@ public:
 
     f32 GetNormalizedTime() const { return m_NormalizedTime; }
     bool IsPlaying() const { return m_IsPlaying; }
+    bool IsPaused() const { return m_IsPaused; }
     bool IsBlending() const { return m_BlendTime > 0.0f && m_BlendProgress < 1.0f; }
 
     // Events

@@ -869,7 +869,7 @@ static int ScoreComponentMatch(const ComponentEntry& entry, const char* filter) 
 
 void EditorLayer::DrawInspectorPanel() {
     ImGuiWindowFlags flags = 0;
-    if (m_FocusMode || !m_PlayMode.IsStopped()) {
+    if (m_FocusMode) {
         flags |= ImGuiWindowFlags_NoInputs;
     }
     bool panelOpen = true;
@@ -1368,15 +1368,19 @@ void EditorLayer::DrawInspectorPanel() {
 
                     // Playing state indicator
                     bool isPlaying = animator.IsPlaying();
-                    ImGui::Text("State: %s", isPlaying ? "Playing" : "Stopped");
+                    bool isPaused = animator.IsPaused();
+                    const char* stateLabel = isPlaying ? (isPaused ? "Paused" : "Playing") : "Stopped";
+                    ImGui::Text("State: %s", stateLabel);
                     if (animator.IsBlending()) {
                         ImGui::SameLine();
                         ImGui::TextDisabled("(blending)");
                     }
 
-                    // Normalized time progress bar
+                    // Scrubable timeline slider — drag to seek through the animation
                     f32 normalizedTime = animator.GetNormalizedTime();
-                    ImGui::ProgressBar(normalizedTime, ImVec2(-1, 0));
+                    if (ImGui::SliderFloat("##Timeline", &normalizedTime, 0.0f, 1.0f, "%.2f")) {
+                        animator.SetNormalizedTime(normalizedTime);
+                    }
 
                     // Speed
                     f32 speed = animator.GetSpeed();
@@ -1384,10 +1388,22 @@ void EditorLayer::DrawInspectorPanel() {
                         animator.SetSpeed(speed);
                     }
 
-                    // Play / Stop buttons
-                    if (isPlaying) {
+                    // Play / Pause / Stop buttons
+                    if (isPlaying && !isPaused) {
+                        if (ImGui::Button("Pause##Animator")) {
+                            animator.Pause();
+                        }
+                        ImGui::SameLine();
                         if (ImGui::Button("Stop##Animator")) {
-                            animator.Stop();
+                            animator.StopAndReset();
+                        }
+                    } else if (isPlaying && isPaused) {
+                        if (ImGui::Button("Resume##Animator")) {
+                            animator.Resume();
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::Button("Stop##Animator")) {
+                            animator.StopAndReset();
                         }
                     } else {
                         if (!currentName.empty()) {

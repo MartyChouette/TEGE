@@ -16,6 +16,7 @@
 #include "Enjin/Logging/Log.h"
 #include <cfloat>
 #include <cmath>
+#include <cstring>
 #include <filesystem>
 #include <algorithm>
 #include <unordered_map>
@@ -822,12 +823,23 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
             scene.bones.size(), scene.animations.size(), filepath.c_str());
     }
 
-    // Create entities from root nodes
+    // Create a single root entity named after the file to keep the hierarchy clean.
+    // All imported mesh entities are nested under this root.
+    std::filesystem::path importPath(filepath);
+    std::string rootName = importPath.stem().string();
+    ECS::Entity importRoot = world->CreateEntity();
+    world->AddComponent<ECS::NameComponent>(importRoot, rootName);
+    auto& rootTransform = world->AddComponent<ECS::TransformComponent>(importRoot);
+    rootTransform.scale = Math::Vector3(effectiveOptions.scale, effectiveOptions.scale, effectiveOptions.scale);
+    result.entities.push_back(importRoot);
+    result.rootEntity = importRoot;
+
+    // Create entities from root nodes, parented under the import root
     for (i32 rootIndex : scene.rootNodes) {
         ECS::Entity entity = CreateEntityFromAssimpNode(scene, rootIndex, world, effectiveOptions,
                                                          result.entities, stats, skelCtx);
-        if (result.rootEntity == ECS::INVALID_ENTITY) {
-            result.rootEntity = entity;
+        if (entity != ECS::INVALID_ENTITY) {
+            ECS::SetParent(world, entity, importRoot);
         }
     }
 
@@ -992,8 +1004,15 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
     ECS::Entity entity = world->CreateEntity();
     outEntities.push_back(entity);
 
-    // Add name component
+    // Add name component — clean up common DCC prefixes for readability
     std::string name = node.name.empty() ? "Node_" + std::to_string(nodeIndex) : node.name;
+    const char* cleanPrefixes[] = { "mixamorig:", "mixamorig_", "Armature|" };
+    for (const char* prefix : cleanPrefixes) {
+        if (name.find(prefix) == 0) {
+            name = name.substr(std::strlen(prefix));
+            break;
+        }
+    }
     world->AddComponent<ECS::NameComponent>(entity, name);
     stats.entityNames.push_back(name);
 
@@ -1011,16 +1030,17 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         pos = ConvertPosition(pos, zToY, lToR, options.flipX, options.flipY, options.flipZ);
         rot = ConvertRotation(rot, zToY, lToR);
     }
-    // Skinned mesh entities: keep scale (for cm→m conversion) but zero
-    // position/rotation since skinning handles spatial placement.
+    // Scale is applied on the import root entity, so children use
+    // their node-local transforms without additional scale multiplication.
     if (skelCtx.skeleton && hasMeshes) {
+        // Skinned mesh: identity transform — skinning handles placement.
         transform.position = Math::Vector3(0.0f);
         transform.rotation = Math::Quaternion::Identity();
-        transform.scale = Math::Vector3(options.scale, options.scale, options.scale);
+        transform.scale = Math::Vector3(1.0f);
     } else {
-        transform.position = pos * options.scale;
+        transform.position = pos;
         transform.rotation = rot;
-        transform.scale = node.scale * options.scale;
+        transform.scale = node.scale;
     }
 
     // Add mesh component if node has meshes

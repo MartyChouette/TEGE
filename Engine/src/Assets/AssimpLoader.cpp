@@ -6,6 +6,7 @@
 #include <assimp/postprocess.h>
 
 #include <filesystem>
+#include <fstream>
 #include <algorithm>
 #include <functional>
 #include <unordered_map>
@@ -140,21 +141,53 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
             mat.doubleSided = (twoSided != 0);
         }
 
-        // Textures
+        // Textures — extract embedded textures (paths starting with '*') to disk
+        // so the render system can load them as normal image files.
+        auto resolveEmbedded = [&](const std::string& rawPath) -> std::string {
+            if (rawPath.empty() || rawPath[0] != '*') return rawPath;
+            const aiTexture* embTex = scene->GetEmbeddedTexture(rawPath.c_str());
+            if (!embTex) return rawPath;
+
+            // Determine extension from the embedded texture hint
+            std::string ext = embTex->achFormatHint[0] ? std::string(".") + embTex->achFormatHint : ".png";
+            // Save next to the model file: modelname_texN.ext
+            namespace fs = std::filesystem;
+            std::string baseName = fs::path(filepath).stem().string();
+            std::string outName = baseName + "_tex" + rawPath.substr(1) + ext;
+            fs::path outPath = fs::path(outScene.basePath) / outName;
+
+            if (!fs::exists(outPath)) {
+                std::ofstream ofs(outPath, std::ios::binary);
+                if (ofs.is_open()) {
+                    if (embTex->mHeight == 0) {
+                        // Compressed (PNG/JPG): mWidth = byte count
+                        ofs.write(reinterpret_cast<const char*>(embTex->pcData), embTex->mWidth);
+                    } else {
+                        // Raw RGBA: mWidth * mHeight * 4 bytes
+                        ofs.write(reinterpret_cast<const char*>(embTex->pcData),
+                                  embTex->mWidth * embTex->mHeight * 4);
+                    }
+                    ENJIN_LOG_INFO(Asset, "Extracted embedded texture '%s' -> %s",
+                        rawPath.c_str(), outPath.string().c_str());
+                }
+            }
+            return outPath.string();
+        };
+
         aiString texPath;
         if (aiMat->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) == AI_SUCCESS ||
             aiMat->GetTexture(aiTextureType_BASE_COLOR, 0, &texPath) == AI_SUCCESS) {
-            mat.baseColorTexture = texPath.C_Str();
+            mat.baseColorTexture = resolveEmbedded(texPath.C_Str());
         }
         if (aiMat->GetTexture(aiTextureType_NORMALS, 0, &texPath) == AI_SUCCESS ||
             aiMat->GetTexture(aiTextureType_HEIGHT, 0, &texPath) == AI_SUCCESS) {
-            mat.normalTexture = texPath.C_Str();
+            mat.normalTexture = resolveEmbedded(texPath.C_Str());
         }
         if (aiMat->GetTexture(aiTextureType_METALNESS, 0, &texPath) == AI_SUCCESS) {
-            mat.metallicRoughnessTexture = texPath.C_Str();
+            mat.metallicRoughnessTexture = resolveEmbedded(texPath.C_Str());
         }
         if (aiMat->GetTexture(aiTextureType_EMISSIVE, 0, &texPath) == AI_SUCCESS) {
-            mat.emissiveTexture = texPath.C_Str();
+            mat.emissiveTexture = resolveEmbedded(texPath.C_Str());
         }
     }
 
