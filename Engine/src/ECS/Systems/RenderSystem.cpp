@@ -5862,7 +5862,8 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
                 skinningMatrices.size() * sizeof(Math::Matrix4));
             UpdateBoneDescriptor(renderData.boneBuffer.get());
             pushConstants.flags |= (1 << 3); // FLAG_SKINNED
-            pushConstants.model = m_CurrentCascadeVP; // identity model for skinned
+            // Include entity's world matrix for parent scale (cm→m conversion)
+            pushConstants.model = m_CurrentCascadeVP * ECS::ComputeWorldMatrix(m_World, entity);
         } else {
             pushConstants.model = m_CurrentCascadeVP * ECS::ComputeWorldMatrix(m_World, entity);
         }

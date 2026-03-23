@@ -831,26 +831,35 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
     world->AddComponent<ECS::NameComponent>(importRoot, rootName);
     auto& rootTransform = world->AddComponent<ECS::TransformComponent>(importRoot);
 
-    // Auto-detect FBX unit scale from mesh bounds.
-    // Mixamo/Maya FBX uses cm (170cm character), engine grid is ~1 unit per meter.
-    // Compute scale so the tallest mesh dimension fits to ~1.8 units (human height).
+    // Auto-detect FBX unit scale from mesh bounding box.
+    // Mixamo/Maya FBX uses cm (170cm character), engine grid ≈ 1 unit per meter.
+    // Scale so the tallest dimension maps to ~1.8 units (average human height).
     f32 unitScale = effectiveOptions.scale;
-    f32 maxDim = 0.0f;
+    Math::Vector3 boundsMin(FLT_MAX, FLT_MAX, FLT_MAX);
+    Math::Vector3 boundsMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
     for (const auto& mesh : scene.meshes) {
         for (const auto& prim : mesh.primitives) {
             for (const auto& v : prim.vertices) {
-                maxDim = Math::Max(maxDim, std::abs(v.position.x));
-                maxDim = Math::Max(maxDim, std::abs(v.position.y));
-                maxDim = Math::Max(maxDim, std::abs(v.position.z));
+                boundsMin.x = Math::Min(boundsMin.x, v.position.x);
+                boundsMin.y = Math::Min(boundsMin.y, v.position.y);
+                boundsMin.z = Math::Min(boundsMin.z, v.position.z);
+                boundsMax.x = Math::Max(boundsMax.x, v.position.x);
+                boundsMax.y = Math::Max(boundsMax.y, v.position.y);
+                boundsMax.z = Math::Max(boundsMax.z, v.position.z);
             }
         }
     }
-    if (maxDim > 10.0f) {
-        // Model is likely in cm or mm — scale so max extent ≈ 1.8 units
-        unitScale *= 1.8f / maxDim;
-        ENJIN_LOG_INFO(Asset, "FBX auto-scale: maxDim=%.1f, applying scale=%.4f", maxDim, unitScale);
+    f32 height = boundsMax.y - boundsMin.y; // Y-up height
+    if (height < 1.0f) height = boundsMax.z - boundsMin.z; // Try Z-up
+    if (height > 10.0f) {
+        // Target ~0.9 units so a human is roughly 1 grid square tall.
+        // Users can scale up via the root entity's transform if needed.
+        unitScale *= 0.9f / height;
+        ENJIN_LOG_INFO(Asset, "FBX auto-scale: height=%.1f, bounds=[%.1f,%.1f,%.1f]-[%.1f,%.1f,%.1f], scale=%.4f",
+            height, boundsMin.x, boundsMin.y, boundsMin.z, boundsMax.x, boundsMax.y, boundsMax.z, unitScale);
     }
     rootTransform.scale = Math::Vector3(unitScale, unitScale, unitScale);
+    skelCtx.unitScale = unitScale; // Pass to skinned mesh entities
     result.entities.push_back(importRoot);
     result.rootEntity = importRoot;
 
@@ -1098,10 +1107,12 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
     // Scale is applied on the import root entity, so children use
     // their node-local transforms without additional scale multiplication.
     if (skelCtx.skeleton && hasMeshes) {
-        // Skinned mesh: identity transform — skinning handles placement.
+        // Skinned mesh: zero position/rotation (skinning handles placement),
+        // apply auto-computed scale directly (cm→m) so it works regardless
+        // of parent-child hierarchy propagation through ComputeWorldMatrix.
         transform.position = Math::Vector3(0.0f);
         transform.rotation = Math::Quaternion::Identity();
-        transform.scale = Math::Vector3(1.0f);
+        transform.scale = Math::Vector3(skelCtx.unitScale, skelCtx.unitScale, skelCtx.unitScale);
     } else {
         transform.position = pos;
         transform.rotation = rot;

@@ -130,6 +130,7 @@ private:
         std::shared_ptr<Animation::Skeleton> skeleton;
         bool attached = false;       // True after skeleton is attached to first skinned node
         ECS::Entity bodyEntity = 0;  // First skinned mesh entity — subsequent meshes merge into this
+        f32 unitScale = 1.0f;        // Auto-computed scale (cm→m) for skinned mesh entities
     };
 
     // Overload with skeleton context for skinned mesh import
