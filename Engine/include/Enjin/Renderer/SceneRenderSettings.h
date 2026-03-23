@@ -315,6 +315,20 @@ struct SceneRenderSettings {
     f32 rtDenoiserTemporalAlpha = 0.05f; // SVGF: temporal blend factor
     u32 rtOIDNQuality = 1;              // OIDN: 0=Fast, 1=Default, 2=High
 
+    // ReSTIR (Reservoir-based Spatiotemporal Importance Resampling)
+    bool restirEnabled = false;
+    u32 restirInitialCandidates = 8;     // N — random light candidates per pixel (1-32)
+    f32 restirDistanceBias = 0.1f;       // Minimum distance for falloff (prevents div-by-zero)
+    bool restirTemporalReuse = false;    // Reproject previous frame's reservoirs via motion vectors
+    u32 restirTemporalMaxHistory = 20;   // M_max cap to prevent stale sample dominance
+    f32 restirTemporalDepthThreshold = 0.1f;   // Relative depth ratio for reprojection validity
+    f32 restirTemporalNormalThreshold = 0.9f;  // Normal dot product for reprojection validity
+    bool restirSpatialReuse = false;     // Share reservoirs with similar neighbors
+    u32 restirSpatialNeighbors = 5;      // K — number of neighbors to sample
+    f32 restirSpatialRadius = 30.0f;     // Screen-space neighbor search radius (pixels)
+    f32 restirSpatialDepthThreshold = 0.1f;    // Relative depth threshold for neighbor similarity
+    f32 restirSpatialNormalThreshold = 0.9f;   // Normal dot product for neighbor similarity
+
     // Composite strengths
     f32 rtShadowStrength = 1.0f;
     f32 rtReflectionStrength = 0.5f;

@@ -1,0 +1,152 @@
+#version 450
+
+// FSR 1.0 EASU — Edge Adaptive Spatial Upsampling Compute Shader
+//
+// Implements AMD FidelityFX FSR 1.0-style edge-adaptive spatial upscaling.
+// Unlike the basic Lanczos filter, EASU detects edges in the low-resolution
+// input and adapts its filter kernel to avoid blurring across them. This
+// produces sharper upscaled results with fewer artifacts than Lanczos,
+// especially on geometric edges and high-contrast textures.
+//
+// Algorithm:
+//   1. For each output pixel, compute the corresponding position in the
+//      low-resolution input.
+//   2. Sample a 3x3 neighborhood of input pixels around that position.
+//   3. Compute local gradient direction and magnitude to detect edges.
+//   4. Shape the reconstruction filter to be elongated along edges
+//      (sharper across edges, wider along edges).
+//   5. Apply the shaped filter with Lanczos-style windowed sinc weights.
+//
+// This shader replaces the Lanczos upscale pass when FSR 1.0 mode is active.
+// It is followed by the RCAS (Robust Contrast Adaptive Sharpening) pass
+// for final detail recovery.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// --- Inputs ---
+layout(set = 0, binding = 0) uniform sampler2D inputColor;  // Low-res color (RGBA16F)
+
+// --- Output ---
+layout(set = 0, binding = 1, rgba16f) uniform writeonly image2D outputColor; // Full-res output
+
+// --- Push constants ---
+layout(push_constant) uniform EASUParams {
+    uvec2 outputSize;     // Display resolution (output)
+    uvec2 inputSize;      // Render resolution (input)
+    float sharpness;      // Additional sharpening control (0 = standard, 0-1)
+    float _pad0;
+    float _pad1;
+    float _pad2;
+};
+
+// Luminance for edge detection
+float Luminance(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+// Lanczos-2 kernel component (used as base for edge-adaptive weighting)
+float lanczos2(float x) {
+    if (abs(x) < 1e-5) return 1.0;
+    if (abs(x) >= 2.0) return 0.0;
+    float px = 3.14159265 * x;
+    return sin(px) / px * sin(px * 0.5) / (px * 0.5);
+}
+
+void main() {
+    ivec2 outPixel = ivec2(gl_GlobalInvocationID.xy);
+    if (outPixel.x >= int(outputSize.x) || outPixel.y >= int(outputSize.y)) {
+        return;
+    }
+
+    vec2 invInputSize = 1.0 / vec2(inputSize);
+
+    // Map output pixel to input texture space
+    vec2 scale = vec2(inputSize) / vec2(outputSize);
+    vec2 srcCoord = (vec2(outPixel) + 0.5) * scale;  // In input pixel space
+    vec2 srcCenter = floor(srcCoord - 0.5) + 0.5;     // Nearest input pixel center
+    vec2 frac_offset = srcCoord - srcCenter;           // Sub-pixel offset
+
+    // Sample 3x3 neighborhood for edge analysis + 4x4 for reconstruction
+    // Use a combined pass for efficiency
+    vec3 samples[4][4];
+    float lum[4][4];
+
+    for (int dy = -1; dy <= 2; dy++) {
+        for (int dx = -1; dx <= 2; dx++) {
+            vec2 samplePos = srcCenter + vec2(dx, dy);
+            vec2 uv = samplePos * invInputSize;
+            vec3 c = texture(inputColor, uv).rgb;
+            samples[dy + 1][dx + 1] = c;
+            lum[dy + 1][dx + 1] = Luminance(c);
+        }
+    }
+
+    // Compute gradient from the central 3x3 region (indices [0..2][0..2] of the 4x4)
+    // Sobel-like horizontal and vertical gradients
+    float gx = -lum[0][0] + lum[0][2]
+             - 2.0 * lum[1][0] + 2.0 * lum[1][2]
+             - lum[2][0] + lum[2][2];
+
+    float gy = -lum[0][0] - 2.0 * lum[0][1] - lum[0][2]
+             + lum[2][0] + 2.0 * lum[2][1] + lum[2][2];
+
+    float gradMag = sqrt(gx * gx + gy * gy);
+
+    // Normalize gradient direction (perpendicular to edge)
+    vec2 gradDir = vec2(0.0);
+    if (gradMag > 0.01) {
+        gradDir = vec2(gx, gy) / gradMag;
+    }
+
+    // Edge strength controls how much the filter elongates along edges.
+    // Strong edges -> more anisotropic filter (sharper across edges).
+    // Weak/no edges -> isotropic filter (standard Lanczos behavior).
+    float edgeStrength = clamp(gradMag * 4.0, 0.0, 1.0);
+
+    // Edge direction (parallel to edge, perpendicular to gradient)
+    vec2 edgeDir = vec2(-gradDir.y, gradDir.x);
+
+    // Compute filter weights with edge-adaptive anisotropy.
+    // Along the edge direction, widen the filter (more blur = smoother edges).
+    // Across the edge, narrow the filter (sharper = preserves edges).
+    // The anisotropy ratio scales with edgeStrength.
+    float anisotropy = mix(1.0, 2.0, edgeStrength); // Along-edge stretch
+    float sharpAcross = mix(1.0, 0.6, edgeStrength * (1.0 + sharpness)); // Cross-edge narrow
+
+    vec4 totalColor = vec4(0.0);
+    float totalWeight = 0.0;
+
+    for (int dy = -1; dy <= 2; dy++) {
+        for (int dx = -1; dx <= 2; dx++) {
+            vec2 delta = frac_offset - vec2(dx, dy);
+
+            // Project delta onto edge-parallel and edge-perpendicular directions
+            float dAlongEdge = dot(delta, edgeDir);
+            float dAcrossEdge = dot(delta, gradDir);
+
+            // Apply anisotropic scaling: widen along edges, narrow across
+            float scaledAlong = dAlongEdge / anisotropy;
+            float scaledAcross = dAcrossEdge * sharpAcross;
+
+            // Reconstruct the effective distance for the kernel
+            float effDist = sqrt(scaledAlong * scaledAlong + scaledAcross * scaledAcross);
+
+            // For weak edges, fall back to isotropic distance
+            float isoDist = length(delta);
+            effDist = mix(isoDist, effDist, edgeStrength);
+
+            float weight = lanczos2(effDist);
+            if (weight <= 0.0) continue;
+
+            totalColor += vec4(samples[dy + 1][dx + 1], 1.0) * weight;
+            totalWeight += weight;
+        }
+    }
+
+    vec3 result = (totalWeight > 0.0) ? totalColor.rgb / totalWeight : vec3(0.0);
+
+    // Clamp to non-negative (Lanczos kernels can produce slight ringing)
+    result = max(result, vec3(0.0));
+
+    imageStore(outputColor, outPixel, vec4(result, 1.0));
+}

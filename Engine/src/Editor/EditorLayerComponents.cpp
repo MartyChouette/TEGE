@@ -38,6 +38,7 @@
 #include "Enjin/ECS/Components/ReflectionProbe.h"
 #include "Enjin/Renderer/ReflectionProbeSystem.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
+#include "Enjin/ECS/Components/ArtStyle.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/Text.h"
@@ -8883,6 +8884,241 @@ void EditorLayer::DrawDynamicDifficultyComponent(ECS::Entity entity) {
             ImGui::PopStyleColor();
 
             ImGui::TreePop();
+        }
+    }
+}
+
+// ============================================================================
+// ART STYLE
+// ============================================================================
+
+void EditorLayer::DrawArtStyleComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Art Style", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("ArtStyleCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::ArtStyleComponent>(entity, "artStyle", "Art Style");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* as = m_World->GetComponent<ECS::ArtStyleComponent>(entity);
+        if (!as) return;
+
+        // Style selector
+        const char* styleNames[] = {
+            "Inherit (Scene Default)", "Pre-PBR", "Hand-Painted", "Cel / Toon",
+            "NPR Illustrative", "Retro 3D", "Pixel Art", "Material Expression",
+            "Analog / Degraded"
+        };
+        int styleIdx = static_cast<int>(as->style);
+        if (InspectorUndo::Combo(m_UndoRedo, "Style", &styleIdx, styleNames, 9)) {
+            as->style = static_cast<ECS::ArtStyleType>(styleIdx);
+        }
+        ImGui::SetItemTooltip(
+            "Override the scene-level art style for this entity.\n"
+            "'Inherit' uses whatever the scene is set to.");
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Propagate to Children##AS", &as->propagateToChildren);
+        ImGui::SetItemTooltip("Apply this style to all child entities in the hierarchy.");
+
+        ImGui::Separator();
+
+        // Show only the parameters for the active style
+        switch (as->style) {
+        case ECS::ArtStyleType::PrePBR:
+            if (ImGui::TreeNodeEx("Pre-PBR Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+                InspectorUndo::Checkbox(m_UndoRedo, "Half-Lambert##AS", &as->prePBR_halfLambert);
+                ImGui::SetItemTooltip("Soft light wrapping (NdotL * 0.5 + 0.5).\nGives a less harsh terminator line.");
+                InspectorUndo::Checkbox(m_UndoRedo, "Flat Shading##AS", &as->prePBR_flatShading);
+                InspectorUndo::Checkbox(m_UndoRedo, "Gouraud Only##AS", &as->prePBR_gouraudOnly);
+                ImGui::SetItemTooltip("Per-vertex lighting only (no per-pixel).\nClassic N64/PS2 look.");
+                InspectorUndo::DragFloat(m_UndoRedo, "Specular Strength##AS", &as->prePBR_specularStrength, 0.01f, 0.0f, 2.0f);
+                ImGui::TreePop();
+            }
+            break;
+
+        case ECS::ArtStyleType::HandPainted:
+            if (ImGui::TreeNodeEx("Hand-Painted Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+                InspectorUndo::DragFloat(m_UndoRedo, "Light Wrap##AS", &as->handPainted_lightWrapAmount, 0.01f, 0.0f, 1.0f);
+                ImGui::SetItemTooltip("How much light wraps around the surface.\n0 = standard Lambert, 1 = full wrap.");
+                const char* rampModes[] = { "Off", "Smooth", "Warm", "Cool", "Anime" };
+                int ramp = static_cast<int>(as->handPainted_lightRampMode);
+                if (InspectorUndo::Combo(m_UndoRedo, "Light Ramp##AS", &ramp, rampModes, 5)) {
+                    as->handPainted_lightRampMode = static_cast<u8>(ramp);
+                }
+                InspectorUndo::DragFloat(m_UndoRedo, "Saturation Boost##AS", &as->handPainted_saturationBoost, 0.01f, -0.5f, 0.5f);
+                ImGui::TreePop();
+            }
+            break;
+
+        case ECS::ArtStyleType::CelToon:
+            if (ImGui::TreeNodeEx("Cel/Toon Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+                InspectorUndo::DragFloat(m_UndoRedo, "Diffuse Bands##AS", &as->cel_diffuseBands, 0.1f, 2.0f, 8.0f);
+                ImGui::SetItemTooltip("Number of discrete shading bands (2=stark, 8=smooth banding).");
+                InspectorUndo::DragFloat(m_UndoRedo, "Specular Cutoff##AS", &as->cel_specularCutoff, 0.01f, 0.0f, 1.0f);
+                InspectorUndo::DragFloat(m_UndoRedo, "Outline Width##AS", &as->cel_outlineWidth, 0.001f, 0.0f, 0.1f);
+                {
+                    f32 oc[3] = { as->cel_outlineColor.x, as->cel_outlineColor.y, as->cel_outlineColor.z };
+                    if (InspectorUndo::ColorEdit3(m_UndoRedo, "Outline Color##AS", oc,
+                            [as](f32 r, f32 g, f32 b) { as->cel_outlineColor = Math::Vector3(r, g, b); })) {
+                        as->cel_outlineColor = Math::Vector3(oc[0], oc[1], oc[2]);
+                    }
+                }
+                InspectorUndo::DragFloat(m_UndoRedo, "Rim Strength##AS", &as->cel_rimStrength, 0.01f, 0.0f, 3.0f);
+                const char* shadowModes[] = { "Dark", "Purple", "Blue", "Warm", "Neutral Cool" };
+                int shadow = static_cast<int>(as->cel_shadowMode);
+                if (InspectorUndo::Combo(m_UndoRedo, "Shadow Mode##AS", &shadow, shadowModes, 5)) {
+                    as->cel_shadowMode = static_cast<u8>(shadow);
+                }
+                const char* rampModes[] = { "Off", "Smooth", "Warm", "Cool", "Anime" };
+                int ramp = static_cast<int>(as->cel_lightRampMode);
+                if (InspectorUndo::Combo(m_UndoRedo, "Light Ramp##ASCel", &ramp, rampModes, 5)) {
+                    as->cel_lightRampMode = static_cast<u8>(ramp);
+                }
+                ImGui::TreePop();
+            }
+            break;
+
+        case ECS::ArtStyleType::NPR:
+            if (ImGui::TreeNodeEx("NPR Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+                InspectorUndo::Checkbox(m_UndoRedo, "Cel Outline##AS", &as->npr_celOutline);
+                if (as->npr_celOutline) {
+                    ImGui::Indent();
+                    InspectorUndo::DragFloat(m_UndoRedo, "Outline Thickness##AS", &as->npr_outlineThickness, 0.1f, 0.5f, 5.0f);
+                    InspectorUndo::DragFloat(m_UndoRedo, "Curvature Weight##AS", &as->npr_curvatureWeight, 0.01f, 0.0f, 2.0f);
+                    ImGui::SetItemTooltip("Curvature-driven outline thickness variation.\n0 = uniform, higher = ink pen feel.");
+                    ImGui::Unindent();
+                }
+                i32 stipple = static_cast<i32>(as->npr_stipplePatternMask);
+                if (InspectorUndo::DragInt(m_UndoRedo, "Stipple Patterns##AS", &stipple, 1, 0, 255)) {
+                    as->npr_stipplePatternMask = static_cast<u32>(stipple);
+                }
+                InspectorUndo::DragFloat(m_UndoRedo, "Stipple Density##AS", &as->npr_stippleDensity, 0.01f, 0.0f, 1.0f);
+                InspectorUndo::DragFloat(m_UndoRedo, "Stipple Strength##AS", &as->npr_stippleStrength, 0.01f, 0.0f, 1.0f);
+                i32 bands = static_cast<i32>(as->npr_diffuseBands);
+                if (InspectorUndo::DragInt(m_UndoRedo, "Diffuse Bands##ASNPR", &bands, 1, 2, 8)) {
+                    as->npr_diffuseBands = static_cast<u8>(bands);
+                }
+                ImGui::TreePop();
+            }
+            break;
+
+        case ECS::ArtStyleType::Retro:
+            if (ImGui::TreeNodeEx("Retro 3D Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+                InspectorUndo::Checkbox(m_UndoRedo, "Vertex Snapping##AS", &as->retro_vertexSnapping);
+                if (as->retro_vertexSnapping) {
+                    ImGui::Indent();
+                    i32 res = static_cast<i32>(as->retro_snapResolution);
+                    if (InspectorUndo::DragInt(m_UndoRedo, "Snap Resolution##AS", &res, 8, 80, 320)) {
+                        as->retro_snapResolution = static_cast<u8>(res);
+                    }
+                    ImGui::SetItemTooltip("Virtual grid resolution for vertex snapping.\nLower = more jitter (PS1 look).");
+                    ImGui::Unindent();
+                }
+                InspectorUndo::Checkbox(m_UndoRedo, "Affine Texturing##AS", &as->retro_affineTexturing);
+                ImGui::SetItemTooltip("Non-perspective-correct texture mapping (PS1).");
+                InspectorUndo::Checkbox(m_UndoRedo, "UV Quantize##AS", &as->retro_uvQuantize);
+                InspectorUndo::Checkbox(m_UndoRedo, "Flat Shading##ASRetro", &as->retro_flatShading);
+                InspectorUndo::DragFloat(m_UndoRedo, "Texture Page Size##AS", &as->retro_texturePageSize, 1.0f, 0.0f, 256.0f);
+                ImGui::SetItemTooltip("PS1 VRAM page size in texels.\n0 = off, 64/128 typical.");
+                InspectorUndo::DragFloat(m_UndoRedo, "Posterize Levels##AS", &as->retro_posterizeLevels, 1.0f, 4.0f, 256.0f);
+                ImGui::TreePop();
+            }
+            break;
+
+        case ECS::ArtStyleType::PixelArt:
+            if (ImGui::TreeNodeEx("Pixel Art Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+                i32 colors = static_cast<i32>(as->pixel_paletteColors);
+                if (InspectorUndo::DragInt(m_UndoRedo, "Palette Colors##AS", &colors, 1, 2, 256)) {
+                    as->pixel_paletteColors = static_cast<u32>(colors);
+                }
+                const char* paletteModes[] = { "Per-Channel", "PICO-8", "Game Boy", "NES", "CGA", "C64" };
+                int pm = static_cast<int>(as->pixel_paletteMode);
+                if (InspectorUndo::Combo(m_UndoRedo, "Palette##AS", &pm, paletteModes, 6)) {
+                    as->pixel_paletteMode = static_cast<u32>(pm);
+                }
+                InspectorUndo::Checkbox(m_UndoRedo, "Point Filtering##AS", &as->pixel_pointFiltering);
+                ImGui::SetItemTooltip("Nearest-neighbor texture sampling for crispy pixels.");
+                i32 nq = static_cast<i32>(as->pixel_normalQuantizeSteps);
+                if (InspectorUndo::DragInt(m_UndoRedo, "Normal Quantize##AS", &nq, 1, 0, 16)) {
+                    as->pixel_normalQuantizeSteps = static_cast<u32>(nq);
+                }
+                ImGui::SetItemTooltip("0 = off, 4-16 = snap normals to N cardinal directions.\nGives a 2D-in-3D look.");
+                ImGui::TreePop();
+            }
+            break;
+
+        case ECS::ArtStyleType::MaterialExpression:
+            if (ImGui::TreeNodeEx("Material Expression Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+                InspectorUndo::DragFloat(m_UndoRedo, "Surface Noise Scale##AS", &as->matExpr_surfaceNoiseScale, 0.1f, 0.0f, 50.0f);
+                InspectorUndo::DragFloat(m_UndoRedo, "Surface Noise Strength##AS", &as->matExpr_surfaceNoiseStrength, 0.01f, 0.0f, 1.0f);
+                ImGui::SetItemTooltip("Procedural world-space noise on the diffuse color.");
+                InspectorUndo::DragFloat(m_UndoRedo, "SSS Intensity##AS", &as->matExpr_sssIntensity, 0.01f, 0.0f, 3.0f);
+                if (as->matExpr_sssIntensity > 0.0f) {
+                    ImGui::Indent();
+                    InspectorUndo::DragFloat(m_UndoRedo, "SSS Radius##AS", &as->matExpr_sssRadius, 0.1f, 0.1f, 10.0f);
+                    {
+                        f32 sc[3] = { as->matExpr_sssColor.x, as->matExpr_sssColor.y, as->matExpr_sssColor.z };
+                        if (InspectorUndo::ColorEdit3(m_UndoRedo, "SSS Color##AS", sc,
+                                [as](f32 r, f32 g, f32 b) { as->matExpr_sssColor = Math::Vector3(r, g, b); })) {
+                            as->matExpr_sssColor = Math::Vector3(sc[0], sc[1], sc[2]);
+                        }
+                    }
+                    ImGui::Unindent();
+                }
+                ImGui::TreePop();
+            }
+            break;
+
+        case ECS::ArtStyleType::Analog:
+            if (ImGui::TreeNodeEx("Analog Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+                InspectorUndo::Checkbox(m_UndoRedo, "Film Grain##AS", &as->analog_filmGrain);
+                if (as->analog_filmGrain) {
+                    ImGui::Indent();
+                    InspectorUndo::DragFloat(m_UndoRedo, "Grain Intensity##AS", &as->analog_filmGrainIntensity, 0.005f, 0.0f, 0.5f);
+                    ImGui::Unindent();
+                }
+                InspectorUndo::Checkbox(m_UndoRedo, "Chromatic Aberration##AS", &as->analog_chromaticAberration);
+                if (as->analog_chromaticAberration) {
+                    ImGui::Indent();
+                    InspectorUndo::DragFloat(m_UndoRedo, "Aberration Intensity##AS", &as->analog_chromaticIntensity, 0.001f, 0.0f, 0.05f);
+                    ImGui::Unindent();
+                }
+                InspectorUndo::Checkbox(m_UndoRedo, "VHS Filter##AS", &as->analog_vhsEnabled);
+                if (as->analog_vhsEnabled) {
+                    ImGui::Indent();
+                    InspectorUndo::DragFloat(m_UndoRedo, "Tracking##AS", &as->analog_vhsTrackingIntensity, 0.01f, 0.0f, 1.0f);
+                    ImGui::Unindent();
+                }
+                InspectorUndo::Checkbox(m_UndoRedo, "CRT Scanlines##AS", &as->analog_crtEnabled);
+                if (as->analog_crtEnabled) {
+                    ImGui::Indent();
+                    InspectorUndo::DragFloat(m_UndoRedo, "Scanline Intensity##AS", &as->analog_scanlineIntensity, 0.01f, 0.0f, 1.0f);
+                    ImGui::Unindent();
+                }
+                InspectorUndo::Checkbox(m_UndoRedo, "Film Gate Weave##AS", &as->analog_filmGateWeave);
+                if (as->analog_filmGateWeave) {
+                    ImGui::Indent();
+                    InspectorUndo::DragFloat(m_UndoRedo, "Weave Intensity##AS", &as->analog_gateWeaveIntensity, 0.001f, 0.0f, 0.02f);
+                    ImGui::Unindent();
+                }
+                InspectorUndo::Checkbox(m_UndoRedo, "Light Leaks##AS", &as->analog_lightLeaks);
+                if (as->analog_lightLeaks) {
+                    ImGui::Indent();
+                    InspectorUndo::DragFloat(m_UndoRedo, "Leak Intensity##AS", &as->analog_lightLeakIntensity, 0.01f, 0.0f, 1.0f);
+                    ImGui::Unindent();
+                }
+                ImGui::TreePop();
+            }
+            break;
+
+        case ECS::ArtStyleType::Inherit:
+        default:
+            ImGui::TextDisabled("This entity uses the scene-level art style.");
+            ImGui::TextDisabled("Choose a style above to override per-entity.");
+            break;
         }
     }
 }

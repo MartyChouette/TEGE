@@ -1,0 +1,129 @@
+#version 450
+
+// RCAS — Robust Contrast Adaptive Sharpening Compute Shader
+//
+// AMD FidelityFX FSR 1.0 RCAS-inspired sharpening pass.  Designed to run
+// after EASU (or Lanczos) upscaling to recover detail lost during the
+// upsampling process.  Compared to the basic CAS implementation:
+//
+//   - Uses a 5-tap diamond (not cross) plus 4 diagonal taps for better
+//     edge-aware behavior on diagonal features.
+//   - Computes local contrast from min/max luminance across the full
+//     8-neighbor region plus center.
+//   - Applies a "robust" sharpening formula that limits enhancement based
+//     on the local signal-to-noise ratio (contrast vs. noise floor).
+//   - Handles HDR input gracefully by operating in a perceptual luminance
+//     space (sqrt) and converting back.
+//
+// This shader can also be used standalone (without EASU) as a high-quality
+// sharpening pass for any rendered image.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// --- Inputs ---
+layout(set = 0, binding = 0) uniform sampler2D inputColor;  // Input color (RGBA16F)
+
+// --- Output ---
+layout(set = 0, binding = 1, rgba16f) uniform writeonly image2D outputColor;
+
+// --- Push constants ---
+layout(push_constant) uniform RCASParams {
+    uvec2 imageSize;      // Image resolution
+    float sharpness;      // Sharpening strength: 0.0 = off, 1.0 = maximum
+    float denoise;        // Noise-aware damping: 0.0 = none, 1.0 = max denoise
+};
+
+float PerceptualLum(vec3 c) {
+    // Use sqrt-based perceptual luminance for better edge response in HDR
+    return sqrt(dot(c, vec3(0.2126, 0.7152, 0.0722)));
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (pixel.x >= int(imageSize.x) || pixel.y >= int(imageSize.y)) {
+        return;
+    }
+
+    vec2 invSize = 1.0 / vec2(imageSize);
+    vec2 uv = (vec2(pixel) + 0.5) * invSize;
+
+    // 9-tap neighborhood: center + 4 cardinal + 4 diagonal
+    vec3 c  = texture(inputColor, uv).rgb;
+    vec3 n  = texture(inputColor, uv + vec2( 0.0, -invSize.y)).rgb;
+    vec3 s  = texture(inputColor, uv + vec2( 0.0,  invSize.y)).rgb;
+    vec3 w  = texture(inputColor, uv + vec2(-invSize.x,  0.0)).rgb;
+    vec3 e  = texture(inputColor, uv + vec2( invSize.x,  0.0)).rgb;
+    vec3 nw = texture(inputColor, uv + vec2(-invSize.x, -invSize.y)).rgb;
+    vec3 ne = texture(inputColor, uv + vec2( invSize.x, -invSize.y)).rgb;
+    vec3 sw = texture(inputColor, uv + vec2(-invSize.x,  invSize.y)).rgb;
+    vec3 se = texture(inputColor, uv + vec2( invSize.x,  invSize.y)).rgb;
+
+    // Perceptual luminance for all 9 samples
+    float lumC  = PerceptualLum(c);
+    float lumN  = PerceptualLum(n);
+    float lumS  = PerceptualLum(s);
+    float lumW  = PerceptualLum(w);
+    float lumE  = PerceptualLum(e);
+    float lumNW = PerceptualLum(nw);
+    float lumNE = PerceptualLum(ne);
+    float lumSW = PerceptualLum(sw);
+    float lumSE = PerceptualLum(se);
+
+    // Compute local extrema across all 9 samples
+    float lumMin = min(lumC, min(min(lumN, lumS), min(lumW, lumE)));
+    lumMin = min(lumMin, min(min(lumNW, lumNE), min(lumSW, lumSE)));
+    float lumMax = max(lumC, max(max(lumN, lumS), max(lumW, lumE)));
+    lumMax = max(lumMax, max(max(lumNW, lumNE), max(lumSW, lumSE)));
+
+    // Local contrast: range / peak
+    // High contrast = strong edge = less sharpening needed (already sharp)
+    // Low contrast = flat area or lost detail = more sharpening useful
+    float contrast = lumMax - lumMin;
+    float peak = max(lumMax, 0.04);  // Avoid division by near-zero in dark areas
+
+    // "Robust" damping factor: inversely proportional to contrast,
+    // but capped to prevent ringing. The damping increases when the
+    // noise floor is high relative to the signal (denoise parameter).
+    float noiseFloor = denoise * 0.02;
+    float signalToNoise = contrast / max(peak, 1e-5);
+
+    // Adaptive sharpening weight: negative lobe of the unsharp mask.
+    // Stronger sharpening when contrast is low (lost detail), weaker on edges.
+    // The formula is designed so that:
+    //   - At sharpness=1.0, maximum negative lobe is -0.25 (quarter pixel)
+    //   - At sharpness=0.0, weight is 0 (no sharpening)
+    //   - Edges (high contrast) naturally receive less sharpening
+    float adaptiveSharp = sharpness * (1.0 - clamp(signalToNoise * 2.0, 0.0, 0.7));
+    adaptiveSharp = max(adaptiveSharp - noiseFloor, 0.0);
+
+    // Compute the sharpening weight for the unsharp mask
+    // Negative weight = sharpen, magnitude increases with adaptiveSharp
+    float w_sharp = -adaptiveSharp * 0.25;
+
+    // Cardinal neighbors get full weight, diagonals get half weight
+    // (they are sqrt(2) further away, so less relevant for sharpening)
+    float w_cardinal = w_sharp;
+    float w_diagonal = w_sharp * 0.5;
+
+    // Total weight for normalization
+    float totalW = 1.0 + 4.0 * w_cardinal + 4.0 * w_diagonal;
+
+    // Apply the filter
+    vec3 result = c
+                + (n + s + w + e) * w_cardinal
+                + (nw + ne + sw + se) * w_diagonal;
+    result /= totalW;
+
+    // Clamp to prevent negatives from the sharpening kernel
+    result = max(result, vec3(0.0));
+
+    // Soft luminance clamp: prevent the sharpened result from exceeding
+    // the local range by more than a small margin, to avoid ringing.
+    float lumResult = PerceptualLum(result);
+    float maxAllowed = lumMax * 1.05;  // Allow 5% overshoot for detail
+    if (lumResult > maxAllowed && lumResult > 0.0) {
+        result *= maxAllowed / lumResult;
+    }
+
+    imageStore(outputColor, pixel, vec4(result, 1.0));
+}

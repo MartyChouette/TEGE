@@ -22,10 +22,10 @@ This document captures detailed technical plans, performance findings, and strat
 | ~~**Art Styles**~~ | ~~Art Style Presets — editor dropdown (7 presets)~~ | ~~P0~~ DONE |
 | **Renderer** | Reflection Probes — box projection done (component, system, shader, editor UI, serialization), baked cubemaps + SSR fallback pending | P1 |
 | ~~**Gameplay**~~ | ~~Dynamic Difficulty — read player stats (health, deaths, time, accuracy) + difficulty setting to auto-adjust AI aggression, damage, resources, hints~~ | ~~P1~~ DONE |
-| **Renderer** | ReSTIR — Reservoir-based light sampling (DI foundation done, temporal/spatial reuse pending) | P1 |
+| **Renderer** | ReSTIR — Reservoir-based light sampling (DI + temporal + spatial reuse complete, rt_shadow ReSTIR consumption done, settings serialization done) | P1 |
 | **Renderer** | Temporal RT Reuse — reprojection + history blend for shadow/AO/reflect/GI done, confidence map done, denoiser-aware feedback pending | P2 |
 | **Renderer** | Radiance Caching — world-space irradiance cache, screen-space cache | P2 |
-| **Renderer** | DLSS / FSR / XeSS Upscaling (IUpscaler interface, FSR built-in ✅, DLSS/XeSS pending) | P2 |
+| **Renderer** | DLSS / FSR / XeSS Upscaling (IUpscaler interface, FSR built-in ✅ with EASU+RCAS+temporal, DLSS/XeSS pending) | P2 |
 | **Renderer** | Additional AA (SMAA ✅, MSAA runtime toggle, comparison mode) | P3 |
 | **Renderer** | GPU-Driven Work Scheduling (indirect draw ✅, multi-draw ✅, async compute overlap ✅) | P3 |
 | **Performance** | CPU Scalability Sprint — binary search keyframes, integer sprite sort, cache storage pointers, world matrix caching, bindless render path, batched material SSBO | P0 |

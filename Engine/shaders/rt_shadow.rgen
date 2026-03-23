@@ -13,7 +13,46 @@ layout(binding = 13, set = 0) uniform LightData {
     vec2 screenSize;
     uint frameCount;
     float shadowRadius;
+    // Path tracer config (not used here, but layout must match)
+    float fireflyClamp;
+    int enableNEE;
+    int enableMIS;
+    int rrMinBounce;
+    float rrMinProb;
+    uint directionalLightCount;
+    uint pointLightCount;
+    uint spotLightCount;
 } uLight;
+
+// ReSTIR reservoir buffer (binding 19) — per-pixel importance-selected light
+struct Reservoir {
+    uint selectedLight;  // Index into NEE light SSBO
+    float weightSum;     // Running weight sum
+    float sampleWeight;  // Unbiased weight for the selected sample (W)
+    uint sampleCount;    // M — number of candidates that contributed
+};
+
+layout(binding = 19, set = 0) readonly buffer ReservoirBuffer {
+    Reservoir reservoirs[];
+};
+
+// NEE light SSBO (binding 16) — scene lights for ReSTIR-guided shadow rays
+struct RTLightShadow {
+    vec3 position;
+    float range;
+    vec3 direction;
+    float intensity;
+    vec3 color;
+    int type;          // 0=directional, 1=point, 2=spot
+    float innerCutoff;
+    float outerCutoff;
+    float _pad0;
+    float _pad1;
+};
+
+layout(binding = 16, set = 0) readonly buffer NEELightBuffer {
+    RTLightShadow neeLights[];
+};
 
 layout(location = 0) rayPayloadEXT float shadowPayload;
 
@@ -35,14 +74,47 @@ void main() {
     worldPos /= worldPos.w;
 
     vec3 worldNormal = normalize(texture(normalTex, uv).xyz * 2.0 - 1.0);
-
-    // Shadow ray toward light
     vec3 rayOrigin = worldPos.xyz + worldNormal * 0.001;
-    vec3 rayDir = normalize(-uLight.lightDir.xyz);
-    float tMax = uLight.lightColor.w;  // shadowDistance
+
+    uint seed = init_rng(uvec2(pixel), uLight.frameCount);
+
+    // Check if ReSTIR has selected a valid light for this pixel.
+    // When ReSTIR is active (sampleCount > 0, sampleWeight > 0), cast the shadow
+    // ray toward the importance-selected light instead of only the primary directional.
+    // This gives much better multi-light shadow convergence — the reservoir has already
+    // chosen the most impactful light via importance weighting + temporal/spatial reuse.
+    uint totalLights = uLight.directionalLightCount + uLight.pointLightCount + uLight.spotLightCount;
+    uint reservoirIdx = uint(pixel.y) * uint(uLight.screenSize.x) + uint(pixel.x);
+    Reservoir r = reservoirs[reservoirIdx];
+
+    bool useReSTIR = (r.sampleCount > 0u && r.sampleWeight > 0.0 &&
+                      r.selectedLight < totalLights && totalLights > 0u);
+
+    vec3 rayDir;
+    float tMax;
+
+    if (useReSTIR) {
+        // Cast shadow ray toward the ReSTIR-selected light
+        RTLightShadow light = neeLights[r.selectedLight];
+
+        if (light.type == 0) {
+            // Directional light — ray direction is opposite light direction
+            rayDir = normalize(-light.direction);
+            tMax = uLight.lightColor.w;  // shadowDistance
+        } else {
+            // Point or spot light — ray toward light position
+            vec3 toLight = light.position - worldPos.xyz;
+            float dist = length(toLight);
+            rayDir = toLight / max(dist, 1e-6);
+            tMax = dist - 0.01;  // Stop just before the light source
+        }
+    } else {
+        // Fallback: primary directional light (original behavior)
+        rayDir = normalize(-uLight.lightDir.xyz);
+        tMax = uLight.lightColor.w;
+    }
 
     // Optional: jitter for soft shadows
-    uint seed = init_rng(uvec2(pixel), uLight.frameCount);
     if (uLight.shadowRadius > 0.0) {
         vec3 T, B;
         build_onb(rayDir, T, B);
@@ -65,5 +137,17 @@ void main() {
         0               // payload location
     );
 
-    imageStore(shadowOutput, pixel, vec4(shadowPayload));
+    // When using ReSTIR, modulate the shadow result by the reservoir weight.
+    // This ensures the shadow contribution is correctly importance-weighted:
+    // the final value is shadow_visibility * W, where W accounts for the
+    // probability of having selected this particular light.
+    float result = shadowPayload;
+    if (useReSTIR) {
+        // Clamp the reservoir weight to avoid extreme values from
+        // low-probability selections (defensive, should rarely trigger)
+        float w = clamp(r.sampleWeight, 0.0, 10.0);
+        result *= w;
+    }
+
+    imageStore(shadowOutput, pixel, vec4(result));
 }

@@ -10,14 +10,20 @@ namespace Renderer {
 
 class VulkanContext;
 
-// Built-in FSR 2-style temporal upscaler (Lanczos + CAS).
+// Built-in FSR 2-style temporal upscaler.
 //
 // Provides the same IUpscaler interface as the SDK-based implementation,
 // but uses engine-native compute shaders instead of the AMD FidelityFX SDK.
-// Pipeline: render at lower resolution -> TAA resolve at lower res ->
-//           Lanczos-2 upscale to display res -> CAS sharpening.
 //
-// Always available (no SDK dependency).  Quality modes control the render
+// Full pipeline (when all stages are available):
+//   1. EASU (Edge Adaptive Spatial Upscale) — low-res -> display-res
+//      Falls back to Lanczos-2 if EASU shader not compiled.
+//   2. Temporal Accumulation — motion-vector-aware history blend at display-res
+//      Skipped if velocity input is unavailable or on first frame.
+//   3. RCAS (Robust Contrast Adaptive Sharpening) — detail recovery
+//      Falls back to basic CAS if RCAS shader not compiled.
+//
+// Always available (no SDK dependency). Quality modes control the render
 // scale: Performance=50%, Balanced=58%, Quality=67%, UltraQuality=77%.
 class ENJIN_API FSR2Upscaler : public IUpscaler {
 public:
@@ -43,8 +49,13 @@ public:
     // Get the upscaled output image view (display resolution, RGBA16F)
     VkImageView GetOutputImageView() const { return m_OutputImageView; }
 
-    // Get the intermediate (post-Lanczos) image view (for debugging)
+    // Get the intermediate (post-EASU/Lanczos) image view (for debugging)
     VkImageView GetIntermediateImageView() const { return m_IntermediateImageView; }
+
+    // Query which sub-pipelines are active (for debug display)
+    bool IsEASUActive() const { return m_EASUPipeline != VK_NULL_HANDLE; }
+    bool IsRCASActive() const { return m_RCASPipeline != VK_NULL_HANDLE; }
+    bool IsTemporalActive() const { return m_TemporalPipeline != VK_NULL_HANDLE; }
 
 private:
     bool CreateComputePipelines();
@@ -52,11 +63,17 @@ private:
     void DestroyImages();
     void DestroyPipelines();
 
-    // Lanczos upscale dispatch (low-res -> display-res)
+    // Spatial upscale: EASU (preferred) or Lanczos (fallback)
     void DispatchLanczos(VkCommandBuffer cmd, VkImageView inputView);
+    void DispatchEASU(VkCommandBuffer cmd, VkImageView inputView);
 
-    // CAS sharpening dispatch (display-res -> display-res)
+    // Temporal accumulation (motion-vector-aware history blend)
+    void DispatchTemporal(VkCommandBuffer cmd, VkImageView currentView,
+                          VkImageView velocityView, VkImageView depthView);
+
+    // Sharpening: RCAS (preferred) or CAS (fallback)
     void DispatchCAS(VkCommandBuffer cmd, f32 sharpness);
+    void DispatchRCAS(VkCommandBuffer cmd, f32 sharpness);
 
     VulkanContext* m_Context = nullptr;
     u32 m_RenderWidth = 0;
@@ -65,33 +82,61 @@ private:
     u32 m_DisplayHeight = 0;
     bool m_Initialized = false;
     bool m_HistoryReset = false;
+    bool m_HasHistory = false;   // True after at least one frame has been accumulated
 
-    // --- Intermediate image (Lanczos output, display resolution) ---
+    // --- Intermediate image (EASU/Lanczos output, display resolution) ---
     VkImage m_IntermediateImage = VK_NULL_HANDLE;
     VkDeviceMemory m_IntermediateMemory = VK_NULL_HANDLE;
     VkImageView m_IntermediateImageView = VK_NULL_HANDLE;
 
-    // --- Output image (CAS output or Lanczos output if sharpness=0) ---
+    // --- Output image (RCAS/CAS output, display resolution) ---
     VkImage m_OutputImage = VK_NULL_HANDLE;
     VkDeviceMemory m_OutputMemory = VK_NULL_HANDLE;
     VkImageView m_OutputImageView = VK_NULL_HANDLE;
 
+    // --- Temporal history images (ping-pong pair, display resolution) ---
+    VkImage m_HistoryImages[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    VkDeviceMemory m_HistoryMemory[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    VkImageView m_HistoryViews[2] = { VK_NULL_HANDLE, VK_NULL_HANDLE };
+    u32 m_CurrentHistory = 0;  // Ping-pong index (0 or 1)
+
     // --- Sampler ---
     VkSampler m_LinearSampler = VK_NULL_HANDLE;
 
-    // --- Lanczos compute pipeline ---
+    // --- Lanczos compute pipeline (fallback spatial upscale) ---
     VkPipeline m_LanczosPipeline = VK_NULL_HANDLE;
     VkPipelineLayout m_LanczosPipelineLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_LanczosDescSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool m_LanczosDescPool = VK_NULL_HANDLE;
     VkDescriptorSet m_LanczosDescSet = VK_NULL_HANDLE;
 
-    // --- CAS compute pipeline ---
+    // --- CAS compute pipeline (fallback sharpening) ---
     VkPipeline m_CASPipeline = VK_NULL_HANDLE;
     VkPipelineLayout m_CASPipelineLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_CASDescSetLayout = VK_NULL_HANDLE;
     VkDescriptorPool m_CASDescPool = VK_NULL_HANDLE;
     VkDescriptorSet m_CASDescSet = VK_NULL_HANDLE;
+
+    // --- EASU compute pipeline (edge-adaptive spatial upscale) ---
+    VkPipeline m_EASUPipeline = VK_NULL_HANDLE;
+    VkPipelineLayout m_EASUPipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_EASUDescSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool m_EASUDescPool = VK_NULL_HANDLE;
+    VkDescriptorSet m_EASUDescSet = VK_NULL_HANDLE;
+
+    // --- RCAS compute pipeline (robust contrast adaptive sharpening) ---
+    VkPipeline m_RCASPipeline = VK_NULL_HANDLE;
+    VkPipelineLayout m_RCASPipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_RCASDescSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool m_RCASDescPool = VK_NULL_HANDLE;
+    VkDescriptorSet m_RCASDescSet = VK_NULL_HANDLE;
+
+    // --- Temporal accumulation compute pipeline ---
+    VkPipeline m_TemporalPipeline = VK_NULL_HANDLE;
+    VkPipelineLayout m_TemporalPipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_TemporalDescSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool m_TemporalDescPool = VK_NULL_HANDLE;
+    VkDescriptorSet m_TemporalDescSet = VK_NULL_HANDLE;
 };
 
 } // namespace Renderer

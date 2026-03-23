@@ -7,6 +7,7 @@
 #include "Enjin/Renderer/RayTracing/RTGlobalIllumination.h"
 #include "Enjin/Renderer/RayTracing/RadianceCache.h"
 #include "Enjin/Renderer/RayTracing/PathTracer.h"
+#include "Enjin/Renderer/RayTracing/ReSTIR.h"
 #include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
 #include "Enjin/Renderer/RayTracing/OIDNDenoiser.h"
 #include <algorithm>
@@ -139,6 +140,20 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.rtDenoiserType = rs->GetDenoiserType();
         if (auto* oidn = rs->GetOIDNDenoiser()) {
             s.rtOIDNQuality = static_cast<u32>(oidn->GetConfig().quality);
+        }
+        if (auto* restir = rs->GetReSTIR()) {
+            s.restirEnabled = restir->GetConfig().enabled;
+            s.restirInitialCandidates = restir->GetConfig().initialCandidates;
+            s.restirDistanceBias = restir->GetConfig().distanceBias;
+            s.restirTemporalReuse = restir->GetConfig().temporalReuse;
+            s.restirTemporalMaxHistory = restir->GetConfig().temporalMaxHistory;
+            s.restirTemporalDepthThreshold = restir->GetConfig().temporalDepthThreshold;
+            s.restirTemporalNormalThreshold = restir->GetConfig().temporalNormalThreshold;
+            s.restirSpatialReuse = restir->GetConfig().spatialReuse;
+            s.restirSpatialNeighbors = restir->GetConfig().spatialNeighbors;
+            s.restirSpatialRadius = restir->GetConfig().spatialRadius;
+            s.restirSpatialDepthThreshold = restir->GetConfig().spatialDepthThreshold;
+            s.restirSpatialNormalThreshold = restir->GetConfig().spatialNormalThreshold;
         }
         if (auto* compositor = rs->GetRTCompositor()) {
             s.rtShadowStrength = compositor->GetConfig().shadowStrength;
@@ -433,6 +448,20 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetDenoiserType(rtDenoiserType);
         if (auto* oidn = rs->GetOIDNDenoiser()) {
             oidn->GetConfig().quality = static_cast<Renderer::OIDNQuality>(std::min(rtOIDNQuality, 2u));
+        }
+        if (auto* restir = rs->GetReSTIR()) {
+            restir->GetConfig().enabled = restirEnabled;
+            restir->GetConfig().initialCandidates = restirInitialCandidates;
+            restir->GetConfig().distanceBias = restirDistanceBias;
+            restir->GetConfig().temporalReuse = restirTemporalReuse;
+            restir->GetConfig().temporalMaxHistory = restirTemporalMaxHistory;
+            restir->GetConfig().temporalDepthThreshold = restirTemporalDepthThreshold;
+            restir->GetConfig().temporalNormalThreshold = restirTemporalNormalThreshold;
+            restir->GetConfig().spatialReuse = restirSpatialReuse;
+            restir->GetConfig().spatialNeighbors = restirSpatialNeighbors;
+            restir->GetConfig().spatialRadius = restirSpatialRadius;
+            restir->GetConfig().spatialDepthThreshold = restirSpatialDepthThreshold;
+            restir->GetConfig().spatialNormalThreshold = restirSpatialNormalThreshold;
         }
         if (auto* compositor = rs->GetRTCompositor()) {
             compositor->GetConfig().shadowStrength = rtShadowStrength;
@@ -1129,6 +1158,18 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["rtDenoiserIterations"]          = s.rtDenoiserIterations;
     j["rtDenoiserTemporalAlpha"]       = RF(s.rtDenoiserTemporalAlpha);
     j["rtOIDNQuality"]                 = s.rtOIDNQuality;
+    j["restirEnabled"]                 = s.restirEnabled;
+    j["restirInitialCandidates"]       = s.restirInitialCandidates;
+    j["restirDistanceBias"]            = RF(s.restirDistanceBias);
+    j["restirTemporalReuse"]           = s.restirTemporalReuse;
+    j["restirTemporalMaxHistory"]      = s.restirTemporalMaxHistory;
+    j["restirTemporalDepthThreshold"]  = RF(s.restirTemporalDepthThreshold);
+    j["restirTemporalNormalThreshold"] = RF(s.restirTemporalNormalThreshold);
+    j["restirSpatialReuse"]            = s.restirSpatialReuse;
+    j["restirSpatialNeighbors"]        = s.restirSpatialNeighbors;
+    j["restirSpatialRadius"]           = RF(s.restirSpatialRadius);
+    j["restirSpatialDepthThreshold"]   = RF(s.restirSpatialDepthThreshold);
+    j["restirSpatialNormalThreshold"]  = RF(s.restirSpatialNormalThreshold);
     j["rtShadowStrength"]              = RF(s.rtShadowStrength);
     j["rtReflectionStrength"]          = RF(s.rtReflectionStrength);
     j["rtAOStrength"]                  = RF(s.rtAOStrength);
@@ -1400,6 +1441,18 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("rtDenoiserIterations"))           s.rtDenoiserIterations           = j["rtDenoiserIterations"].get<u32>();
     if (j.contains("rtDenoiserTemporalAlpha"))        s.rtDenoiserTemporalAlpha        = j["rtDenoiserTemporalAlpha"].get<f32>();
     if (j.contains("rtOIDNQuality"))                  s.rtOIDNQuality                  = j["rtOIDNQuality"].get<u32>();
+    if (j.contains("restirEnabled"))                  s.restirEnabled                  = JB(j["restirEnabled"]);
+    if (j.contains("restirInitialCandidates"))        s.restirInitialCandidates        = j["restirInitialCandidates"].get<u32>();
+    if (j.contains("restirDistanceBias"))             s.restirDistanceBias             = j["restirDistanceBias"].get<f32>();
+    if (j.contains("restirTemporalReuse"))            s.restirTemporalReuse            = JB(j["restirTemporalReuse"]);
+    if (j.contains("restirTemporalMaxHistory"))       s.restirTemporalMaxHistory       = j["restirTemporalMaxHistory"].get<u32>();
+    if (j.contains("restirTemporalDepthThreshold"))   s.restirTemporalDepthThreshold   = j["restirTemporalDepthThreshold"].get<f32>();
+    if (j.contains("restirTemporalNormalThreshold"))  s.restirTemporalNormalThreshold  = j["restirTemporalNormalThreshold"].get<f32>();
+    if (j.contains("restirSpatialReuse"))             s.restirSpatialReuse             = JB(j["restirSpatialReuse"]);
+    if (j.contains("restirSpatialNeighbors"))         s.restirSpatialNeighbors         = j["restirSpatialNeighbors"].get<u32>();
+    if (j.contains("restirSpatialRadius"))            s.restirSpatialRadius            = j["restirSpatialRadius"].get<f32>();
+    if (j.contains("restirSpatialDepthThreshold"))    s.restirSpatialDepthThreshold    = j["restirSpatialDepthThreshold"].get<f32>();
+    if (j.contains("restirSpatialNormalThreshold"))   s.restirSpatialNormalThreshold   = j["restirSpatialNormalThreshold"].get<f32>();
     if (j.contains("rtShadowStrength"))               s.rtShadowStrength               = j["rtShadowStrength"].get<f32>();
     if (j.contains("rtReflectionStrength"))            s.rtReflectionStrength            = j["rtReflectionStrength"].get<f32>();
     if (j.contains("rtAOStrength"))                   s.rtAOStrength                   = j["rtAOStrength"].get<f32>();

@@ -99,12 +99,18 @@ void FSR2Upscaler::Resize(u32 renderWidth, u32 renderHeight,
 void FSR2Upscaler::Dispatch(VkCommandBuffer cmd, const UpscalerInput& input) {
     if (!m_Initialized) return;
 
-    // Step 1: Lanczos upscale (low-res input -> display-res intermediate)
-    DispatchLanczos(cmd, input.colorInput);
-
-    // Memory barrier: Lanczos write -> CAS read
     VkMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+
+    // Step 1: Spatial upscale (low-res input -> display-res intermediate)
+    // Prefer EASU (edge-adaptive) over Lanczos when available
+    if (m_EASUPipeline) {
+        DispatchEASU(cmd, input.colorInput);
+    } else {
+        DispatchLanczos(cmd, input.colorInput);
+    }
+
+    // Barrier: spatial upscale write -> temporal/sharpening read
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     vkCmdPipelineBarrier(cmd,
@@ -112,12 +118,36 @@ void FSR2Upscaler::Dispatch(VkCommandBuffer cmd, const UpscalerInput& input) {
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         0, 1, &barrier, 0, nullptr, 0, nullptr);
 
-    // Step 2: CAS sharpening (intermediate -> output)
-    // When sharpness is 0, CAS still runs as a light contrast-aware pass
-    f32 sharpness = input.sharpness > 0.0f ? input.sharpness : 0.2f;
-    DispatchCAS(cmd, sharpness);
+    // Step 2: Temporal accumulation (intermediate + history -> intermediate)
+    // Only if temporal pipeline is available, velocity input is provided,
+    // and this is not a camera cut / first frame.
+    bool doTemporal = (m_TemporalPipeline != VK_NULL_HANDLE &&
+                       input.velocityInput != VK_NULL_HANDLE &&
+                       !input.cameraCut && !m_HistoryReset);
 
-    // Memory barrier: CAS write -> subsequent reads (post-processing)
+    if (doTemporal) {
+        DispatchTemporal(cmd, m_IntermediateImageView,
+                         input.velocityInput, input.depthInput);
+
+        // Barrier: temporal write -> sharpening read
+        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            0, 1, &barrier, 0, nullptr, 0, nullptr);
+    }
+
+    // Step 3: Sharpening (intermediate -> output)
+    // Prefer RCAS (robust) over CAS (basic) when available
+    f32 sharpness = input.sharpness > 0.0f ? input.sharpness : 0.2f;
+    if (m_RCASPipeline) {
+        DispatchRCAS(cmd, sharpness);
+    } else {
+        DispatchCAS(cmd, sharpness);
+    }
+
+    // Barrier: sharpening write -> subsequent reads (post-processing)
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     vkCmdPipelineBarrier(cmd,
@@ -126,6 +156,7 @@ void FSR2Upscaler::Dispatch(VkCommandBuffer cmd, const UpscalerInput& input) {
         0, 1, &barrier, 0, nullptr, 0, nullptr);
 
     m_HistoryReset = false;
+    m_HasHistory = true;
 }
 
 // ============================================================================
@@ -241,11 +272,244 @@ void FSR2Upscaler::DispatchCAS(VkCommandBuffer cmd, f32 sharpness) {
 }
 
 // ============================================================================
+// DISPATCH EASU (Edge Adaptive Spatial Upscale)
+// ============================================================================
+
+void FSR2Upscaler::DispatchEASU(VkCommandBuffer cmd, VkImageView inputView) {
+    // Update descriptor set: bind input image to binding 0
+    VkDescriptorImageInfo inputInfo{};
+    inputInfo.sampler = m_LinearSampler;
+    inputInfo.imageView = inputView;
+    inputInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkDescriptorImageInfo outputInfo{};
+    outputInfo.imageView = m_IntermediateImageView;
+    outputInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    VkWriteDescriptorSet writes[2]{};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = m_EASUDescSet;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[0].pImageInfo = &inputInfo;
+
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = m_EASUDescSet;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorCount = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[1].pImageInfo = &outputInfo;
+
+    vkUpdateDescriptorSets(m_Context->GetDevice(), 2, writes, 0, nullptr);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_EASUPipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+        m_EASUPipelineLayout, 0, 1, &m_EASUDescSet, 0, nullptr);
+
+    // Same push constants as Lanczos (same layout)
+    LanczosPushConstants pc{};
+    pc.outputWidth = m_DisplayWidth;
+    pc.outputHeight = m_DisplayHeight;
+    pc.inputWidth = m_RenderWidth;
+    pc.inputHeight = m_RenderHeight;
+    pc.sharpness = 0.0f;
+    vkCmdPushConstants(cmd, m_EASUPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
+        0, sizeof(LanczosPushConstants), &pc);
+
+    u32 groupsX = (m_DisplayWidth + 7) / 8;
+    u32 groupsY = (m_DisplayHeight + 7) / 8;
+    vkCmdDispatch(cmd, groupsX, groupsY, 1);
+}
+
+// ============================================================================
+// DISPATCH RCAS (Robust Contrast Adaptive Sharpening)
+// ============================================================================
+
+void FSR2Upscaler::DispatchRCAS(VkCommandBuffer cmd, f32 sharpness) {
+    VkDescriptorImageInfo inputInfo{};
+    inputInfo.sampler = m_LinearSampler;
+    inputInfo.imageView = m_IntermediateImageView;
+    inputInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    VkDescriptorImageInfo outputInfo{};
+    outputInfo.imageView = m_OutputImageView;
+    outputInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    VkWriteDescriptorSet writes[2]{};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = m_RCASDescSet;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[0].pImageInfo = &inputInfo;
+
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = m_RCASDescSet;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorCount = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[1].pImageInfo = &outputInfo;
+
+    vkUpdateDescriptorSets(m_Context->GetDevice(), 2, writes, 0, nullptr);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_RCASPipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+        m_RCASPipelineLayout, 0, 1, &m_RCASDescSet, 0, nullptr);
+
+    // RCAS push constants: imageSize(uvec2) + sharpness(f32) + denoise(f32)
+    struct RCASPushConstants {
+        u32 imageWidth;
+        u32 imageHeight;
+        f32 sharpness;
+        f32 denoise;
+    };
+
+    RCASPushConstants pc{};
+    pc.imageWidth = m_DisplayWidth;
+    pc.imageHeight = m_DisplayHeight;
+    pc.sharpness = sharpness;
+    pc.denoise = 0.0f;  // No denoising by default
+    vkCmdPushConstants(cmd, m_RCASPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
+        0, sizeof(RCASPushConstants), &pc);
+
+    u32 groupsX = (m_DisplayWidth + 7) / 8;
+    u32 groupsY = (m_DisplayHeight + 7) / 8;
+    vkCmdDispatch(cmd, groupsX, groupsY, 1);
+}
+
+// ============================================================================
+// DISPATCH TEMPORAL (Motion-Vector-Aware Temporal Accumulation)
+// ============================================================================
+
+void FSR2Upscaler::DispatchTemporal(VkCommandBuffer cmd, VkImageView currentView,
+                                     VkImageView velocityView, VkImageView depthView) {
+    if (!m_TemporalPipeline || !m_HasHistory) return;
+
+    // Previous history is the buffer we read from; current is the buffer we write to.
+    // After dispatch, swap for next frame.
+    u32 readIdx = 1 - m_CurrentHistory;
+    u32 writeIdx = m_CurrentHistory;
+
+    VkDescriptorImageInfo inputInfos[4]{};
+    // Binding 0: current upscaled color (intermediate image)
+    inputInfos[0].sampler = m_LinearSampler;
+    inputInfos[0].imageView = currentView;
+    inputInfos[0].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    // Binding 1: history (previous frame's accumulated result)
+    inputInfos[1].sampler = m_LinearSampler;
+    inputInfos[1].imageView = m_HistoryViews[readIdx];
+    inputInfos[1].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    // Binding 2: velocity texture
+    inputInfos[2].sampler = m_LinearSampler;
+    inputInfos[2].imageView = velocityView;
+    inputInfos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    // Binding 3: depth texture
+    inputInfos[3].sampler = m_LinearSampler;
+    inputInfos[3].imageView = depthView;
+    inputInfos[3].imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+    VkDescriptorImageInfo outputInfo{};
+    outputInfo.imageView = m_HistoryViews[writeIdx];
+    outputInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    VkWriteDescriptorSet writes[5]{};
+    for (u32 i = 0; i < 4; ++i) {
+        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[i].dstSet = m_TemporalDescSet;
+        writes[i].dstBinding = i;
+        writes[i].descriptorCount = 1;
+        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[i].pImageInfo = &inputInfos[i];
+    }
+
+    writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[4].dstSet = m_TemporalDescSet;
+    writes[4].dstBinding = 4;
+    writes[4].descriptorCount = 1;
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[4].pImageInfo = &outputInfo;
+
+    vkUpdateDescriptorSets(m_Context->GetDevice(), 5, writes, 0, nullptr);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_TemporalPipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+        m_TemporalPipelineLayout, 0, 1, &m_TemporalDescSet, 0, nullptr);
+
+    // Push constants for temporal accumulation
+    struct TemporalPushConstants {
+        u32 displayWidth;
+        u32 displayHeight;
+        u32 renderWidth;
+        u32 renderHeight;
+        f32 feedbackMin;
+        f32 feedbackMax;
+        f32 sharpness;
+        u32 flags;
+    };
+
+    TemporalPushConstants pc{};
+    pc.displayWidth = m_DisplayWidth;
+    pc.displayHeight = m_DisplayHeight;
+    pc.renderWidth = m_RenderWidth;
+    pc.renderHeight = m_RenderHeight;
+    pc.feedbackMin = 0.88f;
+    pc.feedbackMax = 0.97f;
+    pc.sharpness = 0.1f;
+    pc.flags = (m_HasHistory ? 1u : 0u);  // bit 0 = hasHistory
+
+    vkCmdPushConstants(cmd, m_TemporalPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
+        0, sizeof(TemporalPushConstants), &pc);
+
+    u32 groupsX = (m_DisplayWidth + 7) / 8;
+    u32 groupsY = (m_DisplayHeight + 7) / 8;
+    vkCmdDispatch(cmd, groupsX, groupsY, 1);
+
+    // After temporal pass, copy the accumulated result back to the intermediate
+    // image so the sharpening pass reads the temporally accumulated data.
+    // Use a memory barrier + blit.
+    VkMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0, 1, &barrier, 0, nullptr, 0, nullptr);
+
+    // Copy history write buffer -> intermediate for sharpening
+    VkImageCopy region{};
+    region.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.srcSubresource.layerCount = 1;
+    region.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.dstSubresource.layerCount = 1;
+    region.extent = { m_DisplayWidth, m_DisplayHeight, 1 };
+
+    vkCmdCopyImage(cmd,
+        m_HistoryImages[writeIdx], VK_IMAGE_LAYOUT_GENERAL,
+        m_IntermediateImage, VK_IMAGE_LAYOUT_GENERAL,
+        1, &region);
+
+    // Barrier: copy write -> compute read
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0, 1, &barrier, 0, nullptr, 0, nullptr);
+
+    // Swap history buffers for next frame
+    m_CurrentHistory = 1 - m_CurrentHistory;
+}
+
+// ============================================================================
 // RESET HISTORY
 // ============================================================================
 
 void FSR2Upscaler::ResetHistory() {
     m_HistoryReset = true;
+    m_HasHistory = false;
 }
 
 // ============================================================================
@@ -349,6 +613,15 @@ bool FSR2Upscaler::CreateImages() {
         return false;
     }
 
+    // Create temporal history ping-pong images (display resolution)
+    for (u32 i = 0; i < 2; ++i) {
+        if (!createImage(m_HistoryImages[i], m_HistoryMemory[i], m_HistoryViews[i])) {
+            ENJIN_LOG_WARN(Renderer, "FSR 2: Failed to create history image %u — temporal disabled", i);
+            // Non-fatal: temporal accumulation is optional
+            break;
+        }
+    }
+
     // Create linear sampler for texture reads
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -392,8 +665,13 @@ bool FSR2Upscaler::CreateImages() {
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(cmd, &beginInfo);
 
-    VkImageMemoryBarrier barriers[2]{};
-    for (int i = 0; i < 2; i++) {
+    // Count how many images need layout transitions (2 base + 0-2 history)
+    u32 barrierCount = 2;
+    if (m_HistoryImages[0] != VK_NULL_HANDLE) barrierCount++;
+    if (m_HistoryImages[1] != VK_NULL_HANDLE) barrierCount++;
+
+    VkImageMemoryBarrier barriers[4]{};
+    for (u32 i = 0; i < barrierCount; i++) {
         barriers[i].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         barriers[i].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         barriers[i].newLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -409,11 +687,13 @@ bool FSR2Upscaler::CreateImages() {
     }
     barriers[0].image = m_IntermediateImage;
     barriers[1].image = m_OutputImage;
+    if (m_HistoryImages[0] != VK_NULL_HANDLE) barriers[2].image = m_HistoryImages[0];
+    if (m_HistoryImages[1] != VK_NULL_HANDLE) barriers[3].image = m_HistoryImages[1];
 
     vkCmdPipelineBarrier(cmd,
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        0, 0, nullptr, 0, nullptr, 2, barriers);
+        0, 0, nullptr, 0, nullptr, barrierCount, barriers);
 
     vkEndCommandBuffer(cmd);
 
@@ -448,6 +728,11 @@ void FSR2Upscaler::DestroyImages() {
 
     destroyImage(m_IntermediateImage, m_IntermediateMemory, m_IntermediateImageView);
     destroyImage(m_OutputImage, m_OutputMemory, m_OutputImageView);
+
+    // Destroy temporal history images
+    for (u32 i = 0; i < 2; ++i) {
+        destroyImage(m_HistoryImages[i], m_HistoryMemory[i], m_HistoryViews[i]);
+    }
 }
 
 // ============================================================================
@@ -606,7 +891,155 @@ bool FSR2Upscaler::CreateComputePipelines() {
         return false;
     }
 
-    ENJIN_LOG_INFO(Renderer, "FSR 2: Compute pipelines created (Lanczos + CAS)");
+    // --- EASU pipeline (optional — edge-adaptive spatial upscale) ---
+    const char* easuPaths[] = {
+        "shaders/upscale_easu.comp.spv",
+        "Engine/shaders/upscale_easu.comp.spv",
+        "../Engine/shaders/upscale_easu.comp.spv",
+        "../../Engine/shaders/upscale_easu.comp.spv"
+    };
+
+    if (createPipeline("upscale_easu.comp", easuPaths, 4,
+                         sizeof(LanczosPushConstants),
+                         m_EASUDescSetLayout, m_EASUDescPool,
+                         m_EASUDescSet, m_EASUPipelineLayout, m_EASUPipeline)) {
+        ENJIN_LOG_INFO(Renderer, "FSR 2: EASU (edge-adaptive upscale) pipeline created");
+    } else {
+        ENJIN_LOG_INFO(Renderer, "FSR 2: EASU shader not found, falling back to Lanczos");
+    }
+
+    // --- RCAS pipeline (optional — robust contrast adaptive sharpening) ---
+    const char* rcasPaths[] = {
+        "shaders/upscale_rcas.comp.spv",
+        "Engine/shaders/upscale_rcas.comp.spv",
+        "../Engine/shaders/upscale_rcas.comp.spv",
+        "../../Engine/shaders/upscale_rcas.comp.spv"
+    };
+
+    if (createPipeline("upscale_rcas.comp", rcasPaths, 4,
+                         sizeof(CASPushConstants),
+                         m_RCASDescSetLayout, m_RCASDescPool,
+                         m_RCASDescSet, m_RCASPipelineLayout, m_RCASPipeline)) {
+        ENJIN_LOG_INFO(Renderer, "FSR 2: RCAS (robust sharpening) pipeline created");
+    } else {
+        ENJIN_LOG_INFO(Renderer, "FSR 2: RCAS shader not found, falling back to CAS");
+    }
+
+    // --- Temporal accumulation pipeline (optional — motion-vector history blend) ---
+    // This uses a 5-binding descriptor set (4 samplers + 1 storage image) and
+    // 32 bytes of push constants, so we create it manually (not via createPipeline).
+    {
+        const char* temporalPaths[] = {
+            "shaders/upscale_temporal_accumulate.comp.spv",
+            "Engine/shaders/upscale_temporal_accumulate.comp.spv",
+            "../Engine/shaders/upscale_temporal_accumulate.comp.spv",
+            "../../Engine/shaders/upscale_temporal_accumulate.comp.spv"
+        };
+
+        // 5-binding descriptor set: 4 combined image samplers + 1 storage image
+        VkDescriptorSetLayoutBinding tempBindings[5]{};
+        for (u32 i = 0; i < 4; ++i) {
+            tempBindings[i].binding = i;
+            tempBindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            tempBindings[i].descriptorCount = 1;
+            tempBindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+        }
+        tempBindings[4].binding = 4;
+        tempBindings[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        tempBindings[4].descriptorCount = 1;
+        tempBindings[4].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+        VkDescriptorSetLayoutCreateInfo tempLayoutInfo{};
+        tempLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        tempLayoutInfo.bindingCount = 5;
+        tempLayoutInfo.pBindings = tempBindings;
+
+        bool tempOk = (vkCreateDescriptorSetLayout(device, &tempLayoutInfo, nullptr, &m_TemporalDescSetLayout) == VK_SUCCESS);
+
+        if (tempOk) {
+            VkDescriptorPoolSize tempPoolSizes[2]{};
+            tempPoolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            tempPoolSizes[0].descriptorCount = 4;
+            tempPoolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+            tempPoolSizes[1].descriptorCount = 1;
+
+            VkDescriptorPoolCreateInfo tempPoolInfo{};
+            tempPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+            tempPoolInfo.maxSets = 1;
+            tempPoolInfo.poolSizeCount = 2;
+            tempPoolInfo.pPoolSizes = tempPoolSizes;
+            tempOk = (vkCreateDescriptorPool(device, &tempPoolInfo, nullptr, &m_TemporalDescPool) == VK_SUCCESS);
+        }
+
+        if (tempOk) {
+            VkDescriptorSetAllocateInfo tempAllocInfo{};
+            tempAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            tempAllocInfo.descriptorPool = m_TemporalDescPool;
+            tempAllocInfo.descriptorSetCount = 1;
+            tempAllocInfo.pSetLayouts = &m_TemporalDescSetLayout;
+            tempOk = (vkAllocateDescriptorSets(device, &tempAllocInfo, &m_TemporalDescSet) == VK_SUCCESS);
+        }
+
+        if (tempOk) {
+            VkPushConstantRange tempPCRange{};
+            tempPCRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+            tempPCRange.offset = 0;
+            tempPCRange.size = 32;  // 4 u32s + 3 f32s + 1 u32
+
+            VkPipelineLayoutCreateInfo tempPipeLayoutInfo{};
+            tempPipeLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+            tempPipeLayoutInfo.setLayoutCount = 1;
+            tempPipeLayoutInfo.pSetLayouts = &m_TemporalDescSetLayout;
+            tempPipeLayoutInfo.pushConstantRangeCount = 1;
+            tempPipeLayoutInfo.pPushConstantRanges = &tempPCRange;
+            tempOk = (vkCreatePipelineLayout(device, &tempPipeLayoutInfo, nullptr, &m_TemporalPipelineLayout) == VK_SUCCESS);
+        }
+
+        if (tempOk) {
+            VulkanShader shader(m_Context);
+            bool loaded = false;
+            for (u32 i = 0; i < 4; i++) {
+                if (shader.LoadFromFile(temporalPaths[i]) && shader.GetModule() != VK_NULL_HANDLE) {
+                    loaded = true;
+                    break;
+                }
+            }
+
+            if (loaded) {
+                VkPipelineShaderStageCreateInfo stage{};
+                stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+                stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+                stage.module = shader.GetModule();
+                stage.pName = "main";
+
+                VkComputePipelineCreateInfo pipeInfo{};
+                pipeInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+                pipeInfo.stage = stage;
+                pipeInfo.layout = m_TemporalPipelineLayout;
+
+                tempOk = (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipeInfo, nullptr, &m_TemporalPipeline) == VK_SUCCESS);
+            } else {
+                tempOk = false;
+            }
+        }
+
+        if (tempOk) {
+            ENJIN_LOG_INFO(Renderer, "FSR 2: Temporal accumulation pipeline created");
+        } else {
+            ENJIN_LOG_INFO(Renderer, "FSR 2: Temporal accumulation shader not found, temporal reuse disabled");
+            // Clean up partial temporal resources
+            if (m_TemporalDescPool) { vkDestroyDescriptorPool(device, m_TemporalDescPool, nullptr); m_TemporalDescPool = VK_NULL_HANDLE; }
+            if (m_TemporalDescSetLayout) { vkDestroyDescriptorSetLayout(device, m_TemporalDescSetLayout, nullptr); m_TemporalDescSetLayout = VK_NULL_HANDLE; }
+            if (m_TemporalPipelineLayout) { vkDestroyPipelineLayout(device, m_TemporalPipelineLayout, nullptr); m_TemporalPipelineLayout = VK_NULL_HANDLE; }
+            m_TemporalDescSet = VK_NULL_HANDLE;
+            m_TemporalPipeline = VK_NULL_HANDLE;
+        }
+    }
+
+    ENJIN_LOG_INFO(Renderer, "FSR 2: Compute pipelines created (Lanczos + CAS%s%s%s)",
+                   m_EASUPipeline ? " + EASU" : "",
+                   m_RCASPipeline ? " + RCAS" : "",
+                   m_TemporalPipeline ? " + Temporal" : "");
     return true;
 }
 
@@ -628,6 +1061,12 @@ void FSR2Upscaler::DestroyPipelines() {
                      m_LanczosDescSetLayout, m_LanczosDescPool, m_LanczosDescSet);
     destroyPipeline(m_CASPipeline, m_CASPipelineLayout,
                      m_CASDescSetLayout, m_CASDescPool, m_CASDescSet);
+    destroyPipeline(m_EASUPipeline, m_EASUPipelineLayout,
+                     m_EASUDescSetLayout, m_EASUDescPool, m_EASUDescSet);
+    destroyPipeline(m_RCASPipeline, m_RCASPipelineLayout,
+                     m_RCASDescSetLayout, m_RCASDescPool, m_RCASDescSet);
+    destroyPipeline(m_TemporalPipeline, m_TemporalPipelineLayout,
+                     m_TemporalDescSetLayout, m_TemporalDescPool, m_TemporalDescSet);
 }
 
 } // namespace Renderer
