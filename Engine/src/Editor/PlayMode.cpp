@@ -123,6 +123,7 @@ void PlayMode::Play() {
     }
 
     ENJIN_LOG_INFO(Editor, "PlayMode::Play() starting...");
+    m_GameOverReady = false;
 
     // Save current editor state
     SaveEditorState();
@@ -381,6 +382,8 @@ void PlayMode::Stop() {
     if (m_State == PlayState::Stopped) {
         return;
     }
+
+    m_GameOverReady = false;
 
     // Destroy pooled objects before shutting down scripts (scripts may reference pooled entities)
     m_ObjectPool.DestroyAll(m_World);
@@ -670,6 +673,9 @@ void PlayMode::Update(f32 deltaTime) {
 
         // Health system (regen, invulnerability timers, death)
         Gameplay::GameplayLoop::UpdateHealthSystems(m_World, deltaTime, m_DeferredDestroys);
+
+        // Game over state (player death / victory detection)
+        m_GameOverReady = Gameplay::GameplayLoop::UpdateGameOverState(m_World, deltaTime);
 
         // Flush deferred entity destroys (from damage/pickup callbacks)
         Gameplay::GameplayLoop::FlushDeferredDestroys(m_World, m_DeferredDestroys);

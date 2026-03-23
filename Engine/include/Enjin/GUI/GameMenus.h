@@ -21,7 +21,8 @@ enum class MenuScreen : u8 {
     Graphics,
     Audio,
     Controls,
-    HowToPlay
+    HowToPlay,
+    GameOver
 };
 
 struct GraphicsSettings {
@@ -72,6 +73,10 @@ public:
     const MenuCallback& GetCallback() const { return m_Callback; }
     void SetGameTitle(const std::string& title);
 
+    // Game over screen
+    void ShowGameOver(bool won, const std::string& message, bool allowRestart, bool returnToMenu);
+    bool IsGameOverScreen() const { return m_CurrentScreen == MenuScreen::GameOver; }
+
 private:
     MenuScreen m_CurrentScreen = MenuScreen::None;
     GraphicsSettings m_Graphics;
@@ -90,7 +95,14 @@ private:
     void RenderAudio(f32 w, f32 h);
     void RenderControls(f32 w, f32 h);
     void RenderHowToPlay(f32 w, f32 h);
+    void RenderGameOver(f32 w, f32 h);
     bool RenderMenuButton(const char* label, f32 width, bool selected = false);
+
+    // Game over state
+    bool m_GameOverWon = false;
+    std::string m_GameOverMessage;
+    bool m_GameOverAllowRestart = true;
+    bool m_GameOverReturnToMenu = true;
 };
 
 } // namespace Enjin::GUI

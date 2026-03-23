@@ -20,6 +20,8 @@
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
+#include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
+#include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
@@ -39,6 +41,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
@@ -324,6 +327,7 @@ void JoltBackend::SyncECSToJolt() {
     addEntities(m_World->GetEntitiesWithComponent<ECS::BoxColliderComponent>());
     addEntities(m_World->GetEntitiesWithComponent<ECS::SphereColliderComponent>());
     addEntities(m_World->GetEntitiesWithComponent<ECS::CapsuleColliderComponent>());
+    addEntities(m_World->GetEntitiesWithComponent<ECS::MeshColliderComponent>());
 
     auto& bodyInterface = m_PhysicsSystem->GetBodyInterface();
 
@@ -472,6 +476,74 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
         friction = capsule->friction;
         bounciness = capsule->bounciness;
         colliderInfo = {capsule->categoryBits, capsule->collisionMask, capsule->isTrigger, true};
+    } else if (auto* meshCol = m_World->GetComponent<ECS::MeshColliderComponent>(entity)) {
+        // Auto-generate collision geometry from MeshComponent if needed
+        if (meshCol->autoGenerate && !meshCol->generated) {
+            auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
+            if (mesh && mesh->IsValid()) {
+                meshCol->vertices.clear();
+                meshCol->vertices.reserve(mesh->vertices.size());
+                for (const auto& v : mesh->vertices) {
+                    meshCol->vertices.push_back(v.position);
+                }
+                meshCol->indices = mesh->indices;
+                meshCol->generated = true;
+            }
+        }
+
+        if (meshCol->generated && !meshCol->vertices.empty()) {
+            if (meshCol->convex) {
+                // Build convex hull — Jolt computes the hull from the point cloud
+                JPH::Array<JPH::Vec3> points;
+                points.reserve(meshCol->vertices.size());
+                for (const auto& v : meshCol->vertices) {
+                    points.push_back(JPH::Vec3(v.x, v.y, v.z));
+                }
+                JPH::ConvexHullShapeSettings hullSettings(points.data(), static_cast<int>(points.size()));
+                hullSettings.mMaxConvexRadius = 0.05f;
+                auto result = hullSettings.Create();
+                if (result.IsValid()) {
+                    shape = result.Get();
+                } else {
+                    ENJIN_LOG_WARN(Physics, "MeshCollider convex hull creation failed for entity %llu",
+                                   static_cast<unsigned long long>(entity));
+                }
+            } else {
+                // Triangle mesh — static bodies only
+                if (!rb || rb->bodyType == ECS::RigidbodyComponent::BodyType::Static) {
+                    JPH::TriangleList triangles;
+                    if (!meshCol->indices.empty() && meshCol->indices.size() % 3 == 0) {
+                        triangles.reserve(meshCol->indices.size() / 3);
+                        for (size_t i = 0; i + 2 < meshCol->indices.size(); i += 3) {
+                            const auto& v0 = meshCol->vertices[meshCol->indices[i]];
+                            const auto& v1 = meshCol->vertices[meshCol->indices[i + 1]];
+                            const auto& v2 = meshCol->vertices[meshCol->indices[i + 2]];
+                            triangles.push_back(JPH::Triangle(
+                                JPH::Float3(v0.x, v0.y, v0.z),
+                                JPH::Float3(v1.x, v1.y, v1.z),
+                                JPH::Float3(v2.x, v2.y, v2.z)));
+                        }
+                    }
+                    if (!triangles.empty()) {
+                        JPH::MeshShapeSettings meshSettings(triangles);
+                        auto result = meshSettings.Create();
+                        if (result.IsValid()) {
+                            shape = result.Get();
+                        } else {
+                            ENJIN_LOG_WARN(Physics, "MeshCollider triangle mesh creation failed for entity %llu",
+                                           static_cast<unsigned long long>(entity));
+                        }
+                    }
+                } else {
+                    ENJIN_LOG_WARN(Physics, "MeshCollider triangle mesh mode requires static body (entity %llu)",
+                                   static_cast<unsigned long long>(entity));
+                }
+            }
+
+            friction = meshCol->friction;
+            bounciness = meshCol->bounciness;
+            colliderInfo = {meshCol->categoryBits, meshCol->collisionMask, meshCol->isTrigger, true};
+        }
     }
 
     if (!shape) return;
@@ -604,6 +676,11 @@ ColliderInfo JoltBackend::GetColliderInfo(ECS::Entity entity) {
         info.collisionMask = capsule->collisionMask;
         info.isTrigger = capsule->isTrigger;
         info.hasCollider = true;
+    } else if (auto* meshCol = m_World->GetComponent<ECS::MeshColliderComponent>(entity)) {
+        info.categoryBits = meshCol->categoryBits;
+        info.collisionMask = meshCol->collisionMask;
+        info.isTrigger = meshCol->isTrigger;
+        info.hasCollider = true;
     }
     return info;
 }
@@ -654,6 +731,16 @@ void JoltBackend::SyncJoltToECS() {
                 halfHeight = box->size.y * transform->scale.y * 0.5f;
             } else if (auto* capsule = m_World->GetComponent<ECS::CapsuleColliderComponent>(entity)) {
                 halfHeight = capsule->height * transform->scale.y * 0.5f;
+            } else if (auto* meshCol = m_World->GetComponent<ECS::MeshColliderComponent>(entity)) {
+                // Approximate half-height from cached mesh vertices AABB
+                if (meshCol->generated && !meshCol->vertices.empty()) {
+                    f32 minY = meshCol->vertices[0].y, maxY = meshCol->vertices[0].y;
+                    for (const auto& v : meshCol->vertices) {
+                        if (v.y < minY) minY = v.y;
+                        if (v.y > maxY) maxY = v.y;
+                    }
+                    halfHeight = (maxY - minY) * transform->scale.y * 0.5f;
+                }
             }
 
             JPH::RRayCast shortRay(
@@ -1392,6 +1479,24 @@ Math::Vector3 JoltBackend::MoveAndSlide(const Math::Vector3& position, const Mat
                 f32 r = capsule->radius * Math::Max(transform->scale.x, transform->scale.z);
                 f32 h = capsule->height * transform->scale.y;
                 entityAABB = AABB::FromCenterSize(worldCenter, Math::Vector3(r * 2, h, r * 2));
+            } else if (auto* meshCol = m_World->GetComponent<ECS::MeshColliderComponent>(entity)) {
+                // Compute AABB from cached mesh vertices
+                if (meshCol->generated && !meshCol->vertices.empty()) {
+                    Math::Vector3 mn = meshCol->vertices[0], mx = meshCol->vertices[0];
+                    for (const auto& v : meshCol->vertices) {
+                        mn.x = std::min(mn.x, v.x); mn.y = std::min(mn.y, v.y); mn.z = std::min(mn.z, v.z);
+                        mx.x = std::max(mx.x, v.x); mx.y = std::max(mx.y, v.y); mx.z = std::max(mx.z, v.z);
+                    }
+                    Math::Vector3 worldCenter = transform->position + (mn + mx) * 0.5f;
+                    Math::Vector3 worldSize(
+                        (mx.x - mn.x) * transform->scale.x,
+                        (mx.y - mn.y) * transform->scale.y,
+                        (mx.z - mn.z) * transform->scale.z
+                    );
+                    entityAABB = AABB::FromCenterSize(worldCenter, worldSize);
+                } else {
+                    continue;
+                }
             } else {
                 continue;
             }

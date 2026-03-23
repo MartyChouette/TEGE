@@ -140,6 +140,9 @@ public:
     void SetCurlNoiseSystem(Effects::CurlNoiseSystem* cn) { m_CurlNoiseSystem = cn; }
     void SetEditorSettings(EditorSettings* settings) { m_EditorSettings = settings; }
 
+    // Game over state (set by UpdateGameOverState in Update)
+    bool IsGameOverReady() const { return m_GameOverReady; }
+
     // Play mode diff dialog
     bool HasPendingDiff() const { return m_ShowDiffDialog; }
     PlayModeDiff& GetDiff() { return m_PlayModeDiff; }
@@ -263,6 +266,9 @@ private:
 
     // Deferred entity destruction list (shared with GameplayLoop functions)
     std::vector<ECS::Entity> m_DeferredDestroys;
+
+    // Game over
+    bool m_GameOverReady = false;
 
     // Play mode diff
     PlayModeDiff m_PlayModeDiff;

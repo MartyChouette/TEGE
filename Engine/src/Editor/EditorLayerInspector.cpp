@@ -92,6 +92,7 @@
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Effects/VoronoiMeshFracture.h"
 #include "Enjin/Effects/InteractiveWater.h"
+#include "Enjin/ECS/Components/ParallaxMachine.h"
 #include "Enjin/Math/Math.h"
 #include <stb_image.h>
 #include <imgui.h>
@@ -251,6 +252,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CapsuleColliderComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::CapsuleColliderComponent>(e); },
             "capsuleCollider"},
+        {"Mesh Collider", "Physics", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::MeshColliderComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MeshColliderComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::MeshColliderComponent>(e); },
+            "meshCollider"},
         {"Polygon Collider 2D", "Physics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PolygonCollider2DComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PolygonCollider2DComponent>(e); },
@@ -308,6 +314,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TimerComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TimerComponent>(e); },
             "timer"},
+        {"Game Over", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::GameOverComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GameOverComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::GameOverComponent>(e); },
+            "gameOver"},
         {"Possessable", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PossessableComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PossessableComponent>(e); },
@@ -590,6 +601,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Camera2DBoundsComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::Camera2DBoundsComponent>(e); },
             "camera2DBounds", DimensionTag::Only2D},
+        {"Parallax Machine", "2D Graphics", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ParallaxMachineComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ParallaxMachineComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ParallaxMachineComponent>(e); },
+            "parallaxMachine", DimensionTag::Only2D},
 
         // -- Scripting --
         {"Script", "Scripting", nullptr,
@@ -1109,6 +1125,9 @@ void EditorLayer::DrawInspectorPanel() {
         if (m_World->HasComponent<ECS::CapsuleColliderComponent>(m_PrimarySelected)) {
             DrawCapsuleColliderComponent(m_PrimarySelected);
         }
+        if (m_World->HasComponent<ECS::MeshColliderComponent>(m_PrimarySelected)) {
+            DrawMeshColliderComponent(m_PrimarySelected);
+        }
         if (m_World->HasComponent<ECS::PolygonCollider2DComponent>(m_PrimarySelected)) {
             DrawPolygonCollider2DComponent(m_PrimarySelected);
         }
@@ -1138,6 +1157,9 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::TimerComponent>(m_PrimarySelected)) {
             DrawTimerComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::GameOverComponent>(m_PrimarySelected)) {
+            DrawGameOverComponent(m_PrimarySelected);
         }
         if (m_World->HasComponent<ECS::AudioSourceComponent>(m_PrimarySelected)) {
             DrawAudioSourceComponent(m_PrimarySelected);
@@ -1243,6 +1265,87 @@ void EditorLayer::DrawInspectorPanel() {
         if (m_World->HasComponent<ECS::Camera2DBoundsComponent>(m_PrimarySelected)) {
             DrawCamera2DBoundsComponent(m_PrimarySelected);
         }
+
+        // Parallax Machine component
+        if (m_World->HasComponent<ECS::ParallaxMachineComponent>(m_PrimarySelected)) {
+            bool pmOpen = ImGui::CollapsingHeader("[||] Parallax Machine", ImGuiTreeNodeFlags_DefaultOpen);
+            if (ImGui::BeginPopupContextItem("ParallaxMachineCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::ParallaxMachineComponent>(m_PrimarySelected, "parallaxMachine", "Parallax Machine");
+                    ImGui::EndPopup();
+                } else {
+                    ImGui::EndPopup();
+                }
+            }
+            if (pmOpen) {
+                auto* pm = m_World->GetComponent<ECS::ParallaxMachineComponent>(m_PrimarySelected);
+                if (pm) {
+                    ImGui::Checkbox("Enabled##Parallax", &pm->enabled);
+                    ImGui::DragFloat("Global Speed##Parallax", &pm->globalSpeed, 0.01f, 0.0f, 10.0f, "%.2f");
+                    ImGui::DragFloat2("Origin##Parallax", &pm->origin.x, 0.1f);
+                    ImGui::DragFloat2("Auto-Scroll Speed##Parallax", &pm->autoScrollSpeed.x, 0.01f);
+
+                    ImGui::Separator();
+                    ImGui::Text("Layers (%zu)", pm->layers.size());
+
+                    int removeIdx = -1;
+                    for (int i = 0; i < static_cast<int>(pm->layers.size()); ++i) {
+                        auto& layer = pm->layers[i];
+                        ImGui::PushID(i);
+
+                        std::string headerLabel = layer.texturePath.empty()
+                            ? "Layer " + std::to_string(i)
+                            : "Layer " + std::to_string(i) + " (" + layer.texturePath + ")";
+
+                        bool layerOpen = ImGui::TreeNode(headerLabel.c_str());
+
+                        // Per-layer remove button on same line as tree node
+                        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 20.0f);
+                        if (ImGui::SmallButton("X##RemoveLayer")) {
+                            removeIdx = i;
+                        }
+
+                        if (layerOpen) {
+                            // Texture path
+                            char texPath[256];
+                            strncpy(texPath, layer.texturePath.c_str(), sizeof(texPath) - 1);
+                            texPath[sizeof(texPath) - 1] = '\0';
+                            if (ImGui::InputText("Texture", texPath, sizeof(texPath))) {
+                                layer.texturePath = texPath;
+                            }
+
+                            ImGui::DragFloat("Distance", &layer.distance, 0.1f, 0.01f, 100.0f, "%.2f");
+                            ImGui::DragFloat("Speed Multiplier", &layer.speedMultiplier, 0.01f, 0.0f, 10.0f, "%.2f");
+                            ImGui::DragFloat2("Offset", &layer.offset.x, 0.1f);
+                            ImGui::DragFloat2("Scale", &layer.scale.x, 0.1f, 0.01f, 1000.0f);
+                            ImGui::ColorEdit3("Tint", &layer.tint.x);
+                            ImGui::DragFloat("Alpha", &layer.alpha, 0.01f, 0.0f, 1.0f, "%.2f");
+                            ImGui::Checkbox("Repeat X", &layer.repeatX);
+                            ImGui::SameLine();
+                            ImGui::Checkbox("Repeat Y", &layer.repeatY);
+                            ImGui::Checkbox("Visible", &layer.visible);
+                            ImGui::DragInt("Sort Order", &layer.sortOrder, 1, -100, 100);
+
+                            ImGui::TreePop();
+                        }
+                        ImGui::PopID();
+                    }
+
+                    // Remove layer if requested (deferred to avoid iterator invalidation)
+                    if (removeIdx >= 0 && removeIdx < static_cast<int>(pm->layers.size())) {
+                        pm->layers.erase(pm->layers.begin() + removeIdx);
+                    }
+
+                    // Add layer button
+                    if (ImGui::Button("+ Add Layer##Parallax")) {
+                        ECS::ParallaxLayer newLayer;
+                        newLayer.sortOrder = static_cast<i32>(pm->layers.size());
+                        pm->layers.push_back(newLayer);
+                    }
+                }
+            }
+        }
+
         if (m_World->HasComponent<ECS::DialogueComponent>(m_PrimarySelected)) {
             DrawDialogueComponent(m_PrimarySelected);
         }
@@ -1971,6 +2074,7 @@ static bool EntityHasAnyCollider(ECS::World* world, ECS::Entity entity) {
     return world->HasComponent<ECS::BoxColliderComponent>(entity) ||
            world->HasComponent<ECS::SphereColliderComponent>(entity) ||
            world->HasComponent<ECS::CapsuleColliderComponent>(entity) ||
+           world->HasComponent<ECS::MeshColliderComponent>(entity) ||
            world->HasComponent<ECS::PolygonCollider2DComponent>(entity) ||
            world->HasComponent<ECS::TriggerZoneComponent>(entity);
 }

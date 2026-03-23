@@ -279,26 +279,43 @@ void UpdateHealthSystems(ECS::World* world, f32 deltaTime,
 
         // Death handling -- destroy non-player entities, respawn players
         if (hp->isDead) {
-            auto* ctrl = world->GetComponent<ECS::Platformer2DController>(entity);
-            if (ctrl) {
-                // Player death: respawn at Y=2 above origin
-                hp->isDead = false;
-                hp->currentHealth = hp->maxHealth;
-                hp->currentShield = hp->maxShield;
-                hp->invulnerabilityTimer = 1.0f;  // Brief invulnerability after respawn
+            // Check if any player controller is present
+            bool isPlayer = world->GetComponent<ECS::Platformer2DController>(entity) ||
+                            world->GetComponent<ECS::TopDown2DController>(entity) ||
+                            world->GetComponent<ECS::FirstPersonController>(entity) ||
+                            world->GetComponent<ECS::ThirdPersonController>(entity);
 
-                // Reset all DamageComponent tracked lists so hazards/enemies
-                // can damage the player again after respawn
-                for (auto dmgEntity : world->GetEntitiesWithComponent<ECS::DamageComponent>()) {
-                    auto* dmg = world->GetComponent<ECS::DamageComponent>(dmgEntity);
-                    if (dmg) dmg->damagedEntities.clear();
+            if (isPlayer) {
+                // If a GameOverComponent exists, skip auto-respawn — let the
+                // game over system handle the defeat state instead.
+                bool hasGameOver = false;
+                for (auto goEntity : world->GetEntitiesWithComponent<ECS::GameOverComponent>()) {
+                    (void)goEntity;
+                    hasGameOver = true;
+                    break;
                 }
-                auto* transform = world->GetComponent<ECS::TransformComponent>(entity);
-                if (transform) {
-                    transform->position = Math::Vector3(0.0f, 2.0f, 0.0f);
+
+                if (!hasGameOver) {
+                    // Legacy behaviour: respawn at Y=2 above origin
+                    hp->isDead = false;
+                    hp->currentHealth = hp->maxHealth;
+                    hp->currentShield = hp->maxShield;
+                    hp->invulnerabilityTimer = 1.0f;
+
+                    for (auto dmgEntity : world->GetEntitiesWithComponent<ECS::DamageComponent>()) {
+                        auto* dmg = world->GetComponent<ECS::DamageComponent>(dmgEntity);
+                        if (dmg) dmg->damagedEntities.clear();
+                    }
+                    auto* transform = world->GetComponent<ECS::TransformComponent>(entity);
+                    if (transform) {
+                        transform->position = Math::Vector3(0.0f, 2.0f, 0.0f);
+                    }
+                    auto* ctrl = world->GetComponent<ECS::Platformer2DController>(entity);
+                    if (ctrl) {
+                        ctrl->velocity = Math::Vector3(0.0f);
+                        ctrl->isGrounded = false;
+                    }
                 }
-                ctrl->velocity = Math::Vector3(0.0f);
-                ctrl->isGrounded = false;
             } else {
                 // Non-player death: destroy entity
                 deferredDestroys.push_back(entity);
@@ -409,6 +426,116 @@ void Wire2DCollisionCallbacks(Physics::IPhysicsBackend2D* physics2D,
             vsSystem->OnTriggerExit(c.entityB, c.entityA, 0.0f);
         }
     });
+}
+
+bool UpdateGameOverState(ECS::World* world, f32 deltaTime) {
+    if (!world) return false;
+
+    // Find all GameOverComponent entities
+    for (auto entity : world->GetEntitiesWithComponent<ECS::GameOverComponent>()) {
+        auto* go = world->GetComponent<ECS::GameOverComponent>(entity);
+        if (!go) continue;
+
+        // Already triggered — tick the delay timer
+        if (go->triggered) {
+            if (!go->screenVisible) {
+                go->delayTimer += deltaTime;
+                if (go->delayTimer >= go->delay) {
+                    go->screenVisible = true;
+                    return true;  // Signal caller to show game over UI
+                }
+            }
+            // Screen already visible — keep returning true
+            return go->screenVisible;
+        }
+
+        // --- Defeat check: any player entity is dead ---
+        bool playerDead = false;
+        auto check = [&](auto entities) {
+            for (auto e : entities) {
+                auto* hp = world->GetComponent<ECS::HealthComponent>(e);
+                if (hp && hp->isDead) {
+                    playerDead = true;
+                    return;
+                }
+            }
+        };
+        check(world->GetEntitiesWithComponent<ECS::Platformer2DController>());
+        if (!playerDead) check(world->GetEntitiesWithComponent<ECS::TopDown2DController>());
+        if (!playerDead) check(world->GetEntitiesWithComponent<ECS::FirstPersonController>());
+        if (!playerDead) check(world->GetEntitiesWithComponent<ECS::ThirdPersonController>());
+
+        if (playerDead) {
+            go->triggered = true;
+            go->won = false;
+            go->delayTimer = 0.0f;
+            go->screenVisible = false;
+            ENJIN_LOG_INFO(Game, "Game Over triggered: DEFEAT");
+            continue;  // Let the delay tick next frame
+        }
+
+        // --- Victory check 1: all enemies defeated ---
+        if (go->victoryOnAllEnemiesDefeated) {
+            bool anyEnemyAlive = false;
+            for (auto dmgEntity : world->GetEntitiesWithComponent<ECS::DamageComponent>()) {
+                auto* hp = world->GetComponent<ECS::HealthComponent>(dmgEntity);
+                if (!hp) continue;  // Pure hazards (no HealthComponent) are not enemies
+                // Skip player entities (they have controllers)
+                if (world->GetComponent<ECS::Platformer2DController>(dmgEntity)) continue;
+                if (world->GetComponent<ECS::TopDown2DController>(dmgEntity)) continue;
+                if (world->GetComponent<ECS::FirstPersonController>(dmgEntity)) continue;
+                if (world->GetComponent<ECS::ThirdPersonController>(dmgEntity)) continue;
+                if (!hp->isDead) {
+                    anyEnemyAlive = true;
+                    break;
+                }
+            }
+            // Only trigger victory if there were enemies to begin with
+            bool hasEnemies = false;
+            for (auto dmgEntity : world->GetEntitiesWithComponent<ECS::DamageComponent>()) {
+                auto* hp = world->GetComponent<ECS::HealthComponent>(dmgEntity);
+                if (!hp) continue;
+                if (world->GetComponent<ECS::Platformer2DController>(dmgEntity)) continue;
+                if (world->GetComponent<ECS::TopDown2DController>(dmgEntity)) continue;
+                if (world->GetComponent<ECS::FirstPersonController>(dmgEntity)) continue;
+                if (world->GetComponent<ECS::ThirdPersonController>(dmgEntity)) continue;
+                hasEnemies = true;
+                break;
+            }
+            if (hasEnemies && !anyEnemyAlive) {
+                go->triggered = true;
+                go->won = true;
+                go->delayTimer = 0.0f;
+                go->screenVisible = false;
+                ENJIN_LOG_INFO(Game, "Game Over triggered: VICTORY (all enemies defeated)");
+                continue;
+            }
+        }
+
+        // --- Victory check 2: trigger zone reached ---
+        if (go->victoryTriggerEntity != 0) {
+            auto* trigger = world->GetComponent<ECS::TriggerZoneComponent>(go->victoryTriggerEntity);
+            if (trigger && !trigger->entitiesInside.empty()) {
+                // Check if any entity inside the trigger is a player
+                for (auto inside : trigger->entitiesInside) {
+                    bool isPlayer = world->GetComponent<ECS::Platformer2DController>(inside) ||
+                                    world->GetComponent<ECS::TopDown2DController>(inside) ||
+                                    world->GetComponent<ECS::FirstPersonController>(inside) ||
+                                    world->GetComponent<ECS::ThirdPersonController>(inside);
+                    if (isPlayer) {
+                        go->triggered = true;
+                        go->won = true;
+                        go->delayTimer = 0.0f;
+                        go->screenVisible = false;
+                        ENJIN_LOG_INFO(Game, "Game Over triggered: VICTORY (trigger zone reached)");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    return false;
 }
 
 } // namespace GameplayLoop

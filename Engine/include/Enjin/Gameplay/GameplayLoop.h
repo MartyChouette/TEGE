@@ -62,6 +62,13 @@ namespace GameplayLoop {
                                              ECS::VisualScriptSystem* vsSystem,
                                              std::vector<ECS::Entity>& deferredDestroys);
 
+    // Update game over state: checks player death (defeat) and enemy
+    // elimination / victory trigger (victory). Call once per frame after
+    // UpdateHealthSystems. Returns true when a GameOverComponent has been
+    // triggered and its delay has elapsed (i.e. the game over screen should
+    // be shown).
+    ENJIN_API bool UpdateGameOverState(ECS::World* world, f32 deltaTime);
+
 } // namespace GameplayLoop
 
 } // namespace Gameplay

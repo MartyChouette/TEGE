@@ -38,6 +38,7 @@
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/Flower.h"
+#include "Enjin/ECS/Components/ParallaxMachine.h"
 #ifndef _WIN32
 #include <unistd.h>
 #endif
@@ -3247,6 +3248,64 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         }
 
         // ═══════════════════════════════════════════════════
+        // Parallax Background
+        // ═══════════════════════════════════════════════════
+        {
+            ECS::Entity bg = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bg, "Parallax Background");
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(bg);
+            t.position = Math::Vector3(0.0f, 0.0f, -1.0f);
+            auto& pm = m_World->AddComponent<ECS::ParallaxMachineComponent>(bg);
+            pm.globalSpeed = 1.0f;
+            pm.enabled = true;
+
+            // Sky layer (farthest, barely moves)
+            ECS::ParallaxLayer sky;
+            sky.texturePath = "sky.png";
+            sky.distance = 10.0f;
+            sky.speedMultiplier = 1.0f;
+            sky.offset = Math::Vector2(0.0f, 2.0f);
+            sky.scale = Math::Vector2(40.0f, 20.0f);
+            sky.tint = Math::Vector3(0.4f, 0.6f, 0.9f);
+            sky.alpha = 1.0f;
+            sky.repeatX = true;
+            sky.repeatY = false;
+            sky.visible = true;
+            sky.sortOrder = 0;
+            pm.layers.push_back(sky);
+
+            // Mountains layer (mid-distance)
+            ECS::ParallaxLayer mountains;
+            mountains.texturePath = "mountains.png";
+            mountains.distance = 5.0f;
+            mountains.speedMultiplier = 1.0f;
+            mountains.offset = Math::Vector2(0.0f, -1.0f);
+            mountains.scale = Math::Vector2(30.0f, 10.0f);
+            mountains.tint = Math::Vector3(0.3f, 0.35f, 0.5f);
+            mountains.alpha = 0.9f;
+            mountains.repeatX = true;
+            mountains.repeatY = false;
+            mountains.visible = true;
+            mountains.sortOrder = 1;
+            pm.layers.push_back(mountains);
+
+            // Trees layer (closest, scrolls fastest)
+            ECS::ParallaxLayer trees;
+            trees.texturePath = "trees.png";
+            trees.distance = 2.0f;
+            trees.speedMultiplier = 1.0f;
+            trees.offset = Math::Vector2(0.0f, -3.0f);
+            trees.scale = Math::Vector2(25.0f, 8.0f);
+            trees.tint = Math::Vector3(0.2f, 0.4f, 0.2f);
+            trees.alpha = 0.8f;
+            trees.repeatX = true;
+            trees.repeatY = false;
+            trees.visible = true;
+            trees.sortOrder = 2;
+            pm.layers.push_back(trees);
+        }
+
+        // ═══════════════════════════════════════════════════
         // Notes
         // ═══════════════════════════════════════════════════
         {
@@ -3271,7 +3330,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 "- Sky Boss (dark red, 100 HP): Idle until triggered, knockback, Sparks aura\n\n"
                 "Pickups: Coins x8, Health Potion x1, Key x1, Speed Boost x1\n"
                 "Objects: Crates x3, Torches x3, Spikes x3, Lava pit, Locked door, Teleporter, Moving platforms x3\n"
-                "HUD: Health bar, coin counter, key indicator\n\n"
+                "HUD: Health bar, coin counter, key indicator\n"
+                "Parallax: 3-layer scrolling background (sky, mountains, trees)\n\n"
                 "Controls: WASD/Arrows to move, Space to jump (double tap for double jump)\n"
                 "Wall jump: Jump toward wall + press away";
         }

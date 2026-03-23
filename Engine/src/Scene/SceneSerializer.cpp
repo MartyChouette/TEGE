@@ -43,6 +43,7 @@
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Effects/InteractiveWater.h"
+#include "Enjin/ECS/Components/ParallaxMachine.h"
 #include "Enjin/Physics/PhysicsTypes2D.h"
 #include "Enjin/Logging/Log.h"
 
@@ -2080,6 +2081,54 @@ ECS::CapsuleColliderComponent DeserializeCapsuleColliderComponent(const json& j)
 }
 
 // ============================================================================
+// Mesh Collider Component
+// ============================================================================
+
+json SerializeMeshColliderComponent(const ECS::MeshColliderComponent& col) {
+    json j;
+    j["convex"] = col.convex;
+    j["autoGenerate"] = col.autoGenerate;
+    j["isTrigger"] = col.isTrigger;
+    j["friction"] = RF(col.friction);
+    j["bounciness"] = RF(col.bounciness);
+    j["categoryBits"] = col.categoryBits;
+    j["collisionMask"] = col.collisionMask;
+    // Serialize cached vertices if generated (avoid re-generating on load)
+    if (col.generated && !col.vertices.empty()) {
+        json verts = json::array();
+        for (const auto& v : col.vertices) {
+            verts.push_back(SerializeVector3(v));
+        }
+        j["vertices"] = verts;
+        if (!col.convex && !col.indices.empty()) {
+            j["indices"] = col.indices;
+        }
+    }
+    return j;
+}
+
+ECS::MeshColliderComponent DeserializeMeshColliderComponent(const json& j) {
+    ECS::MeshColliderComponent col;
+    if (j.contains("convex")) col.convex = JB(j["convex"]);
+    if (j.contains("autoGenerate")) col.autoGenerate = JB(j["autoGenerate"]);
+    if (j.contains("isTrigger")) col.isTrigger = JB(j["isTrigger"]);
+    if (j.contains("friction")) col.friction = j["friction"].get<f32>();
+    if (j.contains("bounciness")) col.bounciness = j["bounciness"].get<f32>();
+    if (j.contains("categoryBits")) col.categoryBits = j["categoryBits"].get<u32>();
+    if (j.contains("collisionMask")) col.collisionMask = j["collisionMask"].get<u32>();
+    if (j.contains("vertices") && j["vertices"].is_array()) {
+        for (const auto& vj : j["vertices"]) {
+            col.vertices.push_back(DeserializeVector3(vj));
+        }
+        col.generated = !col.vertices.empty();
+    }
+    if (j.contains("indices") && j["indices"].is_array()) {
+        col.indices = j["indices"].get<std::vector<u32>>();
+    }
+    return col;
+}
+
+// ============================================================================
 // Health & Damage
 // ============================================================================
 
@@ -2155,6 +2204,34 @@ ECS::DamageComponent DeserializeDamageComponent(const json& j) {
         }
     }
     return d;
+}
+
+// ============================================================================
+// Game Over
+// ============================================================================
+
+json SerializeGameOverComponent(const ECS::GameOverComponent& go) {
+    json j;
+    j["delay"] = RF(go.delay);
+    j["victoryMessage"] = go.victoryMessage;
+    j["defeatMessage"] = go.defeatMessage;
+    j["allowRestart"] = go.allowRestart;
+    j["returnToMenu"] = go.returnToMenu;
+    j["victoryOnAllEnemiesDefeated"] = go.victoryOnAllEnemiesDefeated;
+    j["victoryTriggerEntity"] = static_cast<u64>(go.victoryTriggerEntity);
+    return j;
+}
+
+ECS::GameOverComponent DeserializeGameOverComponent(const json& j) {
+    ECS::GameOverComponent go;
+    if (j.contains("delay")) go.delay = j["delay"].get<f32>();
+    if (j.contains("victoryMessage")) go.victoryMessage = j["victoryMessage"].get<std::string>();
+    if (j.contains("defeatMessage")) go.defeatMessage = j["defeatMessage"].get<std::string>();
+    if (j.contains("allowRestart")) go.allowRestart = JB(j["allowRestart"]);
+    if (j.contains("returnToMenu")) go.returnToMenu = JB(j["returnToMenu"]);
+    if (j.contains("victoryOnAllEnemiesDefeated")) go.victoryOnAllEnemiesDefeated = JB(j["victoryOnAllEnemiesDefeated"]);
+    if (j.contains("victoryTriggerEntity")) go.victoryTriggerEntity = static_cast<ECS::Entity>(j["victoryTriggerEntity"].get<u64>());
+    return go;
 }
 
 // ============================================================================
@@ -2570,6 +2647,71 @@ ECS::Camera2DBoundsComponent DeserializeCamera2DBoundsComponent(const json& j) {
         }
     }
     return cb;
+}
+
+// ============================================================================
+// Parallax Machine
+// ============================================================================
+
+json SerializeParallaxLayer(const ECS::ParallaxLayer& layer) {
+    json j;
+    j["texturePath"] = layer.texturePath;
+    j["distance"] = RF(layer.distance);
+    j["speedMultiplier"] = RF(layer.speedMultiplier);
+    j["offset"] = SerializeVector2(layer.offset);
+    j["scale"] = SerializeVector2(layer.scale);
+    j["tint"] = SerializeVector3(layer.tint);
+    j["alpha"] = RF(layer.alpha);
+    j["repeatX"] = layer.repeatX;
+    j["repeatY"] = layer.repeatY;
+    j["visible"] = layer.visible;
+    j["sortOrder"] = layer.sortOrder;
+    return j;
+}
+
+ECS::ParallaxLayer DeserializeParallaxLayer(const json& j) {
+    ECS::ParallaxLayer layer;
+    if (j.contains("texturePath")) layer.texturePath = j["texturePath"].get<std::string>().substr(0, MAX_STR_PATH);
+    if (j.contains("distance")) layer.distance = j["distance"].get<f32>();
+    if (j.contains("speedMultiplier")) layer.speedMultiplier = j["speedMultiplier"].get<f32>();
+    if (j.contains("offset")) layer.offset = DeserializeVector2(j["offset"]);
+    if (j.contains("scale")) layer.scale = DeserializeVector2(j["scale"]);
+    if (j.contains("tint")) layer.tint = DeserializeVector3(j["tint"]);
+    if (j.contains("alpha")) layer.alpha = j["alpha"].get<f32>();
+    if (j.contains("repeatX")) layer.repeatX = JB(j["repeatX"]);
+    if (j.contains("repeatY")) layer.repeatY = JB(j["repeatY"]);
+    if (j.contains("visible")) layer.visible = JB(j["visible"]);
+    if (j.contains("sortOrder")) layer.sortOrder = j["sortOrder"].get<i32>();
+    return layer;
+}
+
+json SerializeParallaxMachineComponent(const ECS::ParallaxMachineComponent& pm) {
+    json j;
+    j["enabled"] = pm.enabled;
+    j["globalSpeed"] = RF(pm.globalSpeed);
+    j["origin"] = SerializeVector2(pm.origin);
+    j["autoScrollSpeed"] = SerializeVector2(pm.autoScrollSpeed);
+    json layersArr = json::array();
+    for (const auto& layer : pm.layers) {
+        layersArr.push_back(SerializeParallaxLayer(layer));
+    }
+    j["layers"] = layersArr;
+    return j;
+}
+
+ECS::ParallaxMachineComponent DeserializeParallaxMachineComponent(const json& j) {
+    ECS::ParallaxMachineComponent pm;
+    if (j.contains("enabled")) pm.enabled = JB(j["enabled"]);
+    if (j.contains("globalSpeed")) pm.globalSpeed = j["globalSpeed"].get<f32>();
+    if (j.contains("origin")) pm.origin = DeserializeVector2(j["origin"]);
+    if (j.contains("autoScrollSpeed")) pm.autoScrollSpeed = DeserializeVector2(j["autoScrollSpeed"]);
+    if (j.contains("layers") && j["layers"].is_array()) {
+        for (const auto& layerJson : j["layers"]) {
+            if (pm.layers.size() >= 64) break;  // Cap layer count
+            pm.layers.push_back(DeserializeParallaxLayer(layerJson));
+        }
+    }
+    return pm;
 }
 
 // ============================================================================
@@ -5924,6 +6066,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::CapsuleColliderComponent>(entity)) {
                 entityJson["capsuleCollider"] = SerializeCapsuleColliderComponent(*m_World->GetComponent<ECS::CapsuleColliderComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::MeshColliderComponent>(entity)) {
+                entityJson["meshCollider"] = SerializeMeshColliderComponent(*m_World->GetComponent<ECS::MeshColliderComponent>(entity));
+            }
 
             // Health & Damage
             if (m_World->HasComponent<ECS::HealthComponent>(entity)) {
@@ -5931,6 +6076,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             }
             if (m_World->HasComponent<ECS::DamageComponent>(entity)) {
                 entityJson["damage"] = SerializeDamageComponent(*m_World->GetComponent<ECS::DamageComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::GameOverComponent>(entity)) {
+                entityJson["gameOver"] = SerializeGameOverComponent(*m_World->GetComponent<ECS::GameOverComponent>(entity));
             }
 
             // Damage Resistance
@@ -5977,6 +6125,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             }
             if (m_World->HasComponent<ECS::Camera2DBoundsComponent>(entity)) {
                 entityJson["camera2DBounds"] = SerializeCamera2DBoundsComponent(*m_World->GetComponent<ECS::Camera2DBoundsComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::ParallaxMachineComponent>(entity)) {
+                entityJson["parallaxMachine"] = SerializeParallaxMachineComponent(*m_World->GetComponent<ECS::ParallaxMachineComponent>(entity));
             }
 
             // Logic
@@ -6608,6 +6759,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("capsuleCollider")) {
                 m_World->AddComponent<ECS::CapsuleColliderComponent>(entity, DeserializeCapsuleColliderComponent(entityJson["capsuleCollider"]));
             }
+            if (entityJson.contains("meshCollider")) {
+                m_World->AddComponent<ECS::MeshColliderComponent>(entity, DeserializeMeshColliderComponent(entityJson["meshCollider"]));
+            }
 
             // Health & Damage
             if (entityJson.contains("health")) {
@@ -6615,6 +6769,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             }
             if (entityJson.contains("damage")) {
                 m_World->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(entityJson["damage"]));
+            }
+            if (entityJson.contains("gameOver")) {
+                m_World->AddComponent<ECS::GameOverComponent>(entity, DeserializeGameOverComponent(entityJson["gameOver"]));
             }
             if (entityJson.contains("damageResistance")) {
                 m_World->AddComponent<ECS::DamageResistanceComponent>(entity, DeserializeDamageResistanceComponent(entityJson["damageResistance"]));
@@ -6659,6 +6816,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             }
             if (entityJson.contains("camera2DBounds")) {
                 m_World->AddComponent<ECS::Camera2DBoundsComponent>(entity, DeserializeCamera2DBoundsComponent(entityJson["camera2DBounds"]));
+            }
+            if (entityJson.contains("parallaxMachine")) {
+                m_World->AddComponent<ECS::ParallaxMachineComponent>(entity, DeserializeParallaxMachineComponent(entityJson["parallaxMachine"]));
             }
 
             // Logic
@@ -7164,6 +7324,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             if (m_World->HasComponent<ECS::CapsuleColliderComponent>(entity)) {
                 entityJson["capsuleCollider"] = SerializeCapsuleColliderComponent(*m_World->GetComponent<ECS::CapsuleColliderComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::MeshColliderComponent>(entity)) {
+                entityJson["meshCollider"] = SerializeMeshColliderComponent(*m_World->GetComponent<ECS::MeshColliderComponent>(entity));
+            }
 
             // Health & Damage
             if (m_World->HasComponent<ECS::HealthComponent>(entity)) {
@@ -7171,6 +7334,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::DamageComponent>(entity)) {
                 entityJson["damage"] = SerializeDamageComponent(*m_World->GetComponent<ECS::DamageComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::GameOverComponent>(entity)) {
+                entityJson["gameOver"] = SerializeGameOverComponent(*m_World->GetComponent<ECS::GameOverComponent>(entity));
             }
 
             // Damage Resistance
@@ -7217,6 +7383,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::Camera2DBoundsComponent>(entity)) {
                 entityJson["camera2DBounds"] = SerializeCamera2DBoundsComponent(*m_World->GetComponent<ECS::Camera2DBoundsComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::ParallaxMachineComponent>(entity)) {
+                entityJson["parallaxMachine"] = SerializeParallaxMachineComponent(*m_World->GetComponent<ECS::ParallaxMachineComponent>(entity));
             }
 
             // Logic
@@ -7774,6 +7943,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("capsuleCollider")) {
                 m_World->AddComponent<ECS::CapsuleColliderComponent>(entity, DeserializeCapsuleColliderComponent(entityJson["capsuleCollider"]));
             }
+            if (entityJson.contains("meshCollider")) {
+                m_World->AddComponent<ECS::MeshColliderComponent>(entity, DeserializeMeshColliderComponent(entityJson["meshCollider"]));
+            }
 
             // Health & Damage
             if (entityJson.contains("health")) {
@@ -7781,6 +7953,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             }
             if (entityJson.contains("damage")) {
                 m_World->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(entityJson["damage"]));
+            }
+            if (entityJson.contains("gameOver")) {
+                m_World->AddComponent<ECS::GameOverComponent>(entity, DeserializeGameOverComponent(entityJson["gameOver"]));
             }
             if (entityJson.contains("damageResistance")) {
                 m_World->AddComponent<ECS::DamageResistanceComponent>(entity, DeserializeDamageResistanceComponent(entityJson["damageResistance"]));
@@ -7825,6 +8000,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             }
             if (entityJson.contains("camera2DBounds")) {
                 m_World->AddComponent<ECS::Camera2DBoundsComponent>(entity, DeserializeCamera2DBoundsComponent(entityJson["camera2DBounds"]));
+            }
+            if (entityJson.contains("parallaxMachine")) {
+                m_World->AddComponent<ECS::ParallaxMachineComponent>(entity, DeserializeParallaxMachineComponent(entityJson["parallaxMachine"]));
             }
 
             // Logic
@@ -8205,11 +8383,15 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["sphereCollider"] = SerializeSphereColliderComponent(*world->GetComponent<ECS::SphereColliderComponent>(entity));
         if (world->HasComponent<ECS::CapsuleColliderComponent>(entity))
             entityJson["capsuleCollider"] = SerializeCapsuleColliderComponent(*world->GetComponent<ECS::CapsuleColliderComponent>(entity));
+        if (world->HasComponent<ECS::MeshColliderComponent>(entity))
+            entityJson["meshCollider"] = SerializeMeshColliderComponent(*world->GetComponent<ECS::MeshColliderComponent>(entity));
         // Gameplay
         if (world->HasComponent<ECS::HealthComponent>(entity))
             entityJson["health"] = SerializeHealthComponent(*world->GetComponent<ECS::HealthComponent>(entity));
         if (world->HasComponent<ECS::DamageComponent>(entity))
             entityJson["damage"] = SerializeDamageComponent(*world->GetComponent<ECS::DamageComponent>(entity));
+        if (world->HasComponent<ECS::GameOverComponent>(entity))
+            entityJson["gameOver"] = SerializeGameOverComponent(*world->GetComponent<ECS::GameOverComponent>(entity));
         if (world->HasComponent<ECS::DamageResistanceComponent>(entity))
             entityJson["damageResistance"] = SerializeDamageResistanceComponent(*world->GetComponent<ECS::DamageResistanceComponent>(entity));
         if (world->HasComponent<ECS::TriggerZoneComponent>(entity))
@@ -8235,6 +8417,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["tilemap"] = SerializeTilemapComponent(*world->GetComponent<ECS::TilemapComponent>(entity));
         if (world->HasComponent<ECS::Camera2DBoundsComponent>(entity))
             entityJson["camera2DBounds"] = SerializeCamera2DBoundsComponent(*world->GetComponent<ECS::Camera2DBoundsComponent>(entity));
+        if (world->HasComponent<ECS::ParallaxMachineComponent>(entity))
+            entityJson["parallaxMachine"] = SerializeParallaxMachineComponent(*world->GetComponent<ECS::ParallaxMachineComponent>(entity));
         // State/Dialogue/Tween
         if (world->HasComponent<ECS::StateMachineComponent>(entity))
             entityJson["stateMachine"] = SerializeStateMachineComponent(*world->GetComponent<ECS::StateMachineComponent>(entity));
@@ -8543,11 +8727,15 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             world->AddComponent<ECS::SphereColliderComponent>(entity, DeserializeSphereColliderComponent(entityJson["sphereCollider"]));
         if (entityJson.contains("capsuleCollider"))
             world->AddComponent<ECS::CapsuleColliderComponent>(entity, DeserializeCapsuleColliderComponent(entityJson["capsuleCollider"]));
+        if (entityJson.contains("meshCollider"))
+            world->AddComponent<ECS::MeshColliderComponent>(entity, DeserializeMeshColliderComponent(entityJson["meshCollider"]));
         // Gameplay
         if (entityJson.contains("health"))
             world->AddComponent<ECS::HealthComponent>(entity, DeserializeHealthComponent(entityJson["health"]));
         if (entityJson.contains("damage"))
             world->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(entityJson["damage"]));
+        if (entityJson.contains("gameOver"))
+            world->AddComponent<ECS::GameOverComponent>(entity, DeserializeGameOverComponent(entityJson["gameOver"]));
         if (entityJson.contains("damageResistance"))
             world->AddComponent<ECS::DamageResistanceComponent>(entity, DeserializeDamageResistanceComponent(entityJson["damageResistance"]));
         if (entityJson.contains("triggerZone"))
@@ -8573,6 +8761,8 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             world->AddComponent<ECS::TilemapComponent>(entity, DeserializeTilemapComponent(entityJson["tilemap"]));
         if (entityJson.contains("camera2DBounds"))
             world->AddComponent<ECS::Camera2DBoundsComponent>(entity, DeserializeCamera2DBoundsComponent(entityJson["camera2DBounds"]));
+        if (entityJson.contains("parallaxMachine"))
+            world->AddComponent<ECS::ParallaxMachineComponent>(entity, DeserializeParallaxMachineComponent(entityJson["parallaxMachine"]));
         // State/Dialogue/Tween
         if (entityJson.contains("stateMachine"))
             world->AddComponent<ECS::StateMachineComponent>(entity, DeserializeStateMachineComponent(entityJson["stateMachine"]));
@@ -8784,10 +8974,14 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeSphereColliderComponent(*world->GetComponent<ECS::SphereColliderComponent>(entity));
         else if (key == "capsuleCollider" && world->HasComponent<ECS::CapsuleColliderComponent>(entity))
             j = SerializeCapsuleColliderComponent(*world->GetComponent<ECS::CapsuleColliderComponent>(entity));
+        else if (key == "meshCollider" && world->HasComponent<ECS::MeshColliderComponent>(entity))
+            j = SerializeMeshColliderComponent(*world->GetComponent<ECS::MeshColliderComponent>(entity));
         else if (key == "health" && world->HasComponent<ECS::HealthComponent>(entity))
             j = SerializeHealthComponent(*world->GetComponent<ECS::HealthComponent>(entity));
         else if (key == "damage" && world->HasComponent<ECS::DamageComponent>(entity))
             j = SerializeDamageComponent(*world->GetComponent<ECS::DamageComponent>(entity));
+        else if (key == "gameOver" && world->HasComponent<ECS::GameOverComponent>(entity))
+            j = SerializeGameOverComponent(*world->GetComponent<ECS::GameOverComponent>(entity));
         else if (key == "damageResistance" && world->HasComponent<ECS::DamageResistanceComponent>(entity))
             j = SerializeDamageResistanceComponent(*world->GetComponent<ECS::DamageResistanceComponent>(entity));
         else if (key == "triggerZone" && world->HasComponent<ECS::TriggerZoneComponent>(entity))
@@ -8810,6 +9004,8 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeTilemapComponent(*world->GetComponent<ECS::TilemapComponent>(entity));
         else if (key == "camera2DBounds" && world->HasComponent<ECS::Camera2DBoundsComponent>(entity))
             j = SerializeCamera2DBoundsComponent(*world->GetComponent<ECS::Camera2DBoundsComponent>(entity));
+        else if (key == "parallaxMachine" && world->HasComponent<ECS::ParallaxMachineComponent>(entity))
+            j = SerializeParallaxMachineComponent(*world->GetComponent<ECS::ParallaxMachineComponent>(entity));
         else if (key == "stateMachine" && world->HasComponent<ECS::StateMachineComponent>(entity))
             j = SerializeStateMachineComponent(*world->GetComponent<ECS::StateMachineComponent>(entity));
         else if (key == "dialogue" && world->HasComponent<ECS::DialogueComponent>(entity))
@@ -8978,8 +9174,10 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "perFrameCollider") { world->AddComponent<ECS::PerFrameColliderComponent>(entity, DeserializePerFrameColliderComponent(j)); return true; }
         if (key == "sphereCollider") { world->AddComponent<ECS::SphereColliderComponent>(entity, DeserializeSphereColliderComponent(j)); return true; }
         if (key == "capsuleCollider") { world->AddComponent<ECS::CapsuleColliderComponent>(entity, DeserializeCapsuleColliderComponent(j)); return true; }
+        if (key == "meshCollider") { world->AddComponent<ECS::MeshColliderComponent>(entity, DeserializeMeshColliderComponent(j)); return true; }
         if (key == "health") { world->AddComponent<ECS::HealthComponent>(entity, DeserializeHealthComponent(j)); return true; }
         if (key == "damage") { world->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(j)); return true; }
+        if (key == "gameOver") { world->AddComponent<ECS::GameOverComponent>(entity, DeserializeGameOverComponent(j)); return true; }
         if (key == "damageResistance") { world->AddComponent<ECS::DamageResistanceComponent>(entity, DeserializeDamageResistanceComponent(j)); return true; }
         if (key == "triggerZone") { world->AddComponent<ECS::TriggerZoneComponent>(entity, DeserializeTriggerZoneComponent(j)); return true; }
         if (key == "interactable") { world->AddComponent<ECS::InteractableComponent>(entity, DeserializeInteractableComponent(j)); return true; }
@@ -8991,6 +9189,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "animatedSprite2D") { world->AddComponent<ECS::AnimatedSprite2DComponent>(entity, DeserializeAnimatedSprite2DComponent(j)); return true; }
         if (key == "tilemap") { world->AddComponent<ECS::TilemapComponent>(entity, DeserializeTilemapComponent(j)); return true; }
         if (key == "camera2DBounds") { world->AddComponent<ECS::Camera2DBoundsComponent>(entity, DeserializeCamera2DBoundsComponent(j)); return true; }
+        if (key == "parallaxMachine") { world->AddComponent<ECS::ParallaxMachineComponent>(entity, DeserializeParallaxMachineComponent(j)); return true; }
         if (key == "stateMachine") { world->AddComponent<ECS::StateMachineComponent>(entity, DeserializeStateMachineComponent(j)); return true; }
         if (key == "dialogue") { world->AddComponent<ECS::DialogueComponent>(entity, DeserializeDialogueComponent(j)); return true; }
         if (key == "dialogueBox") { world->AddComponent<ECS::DialogueBoxComponent>(entity, DeserializeDialogueBoxComponent(j)); return true; }

@@ -234,6 +234,12 @@ public:
                 m_GameStarted = false;
             } else if (action == "quit") {
                 if (GetWindow()) GetWindow()->Close();
+            } else if (action == "game_over_restart") {
+                m_GameMenu.HideAll();
+                if (!m_StartScene.empty()) LoadSceneFromPack(m_StartScene);
+            } else if (action == "game_over_menu") {
+                m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
+                m_GameStarted = false;
             }
         });
 
@@ -804,6 +810,22 @@ public:
 
         // Health system (regen, invulnerability, death) and deferred entity destruction
         Enjin::Gameplay::GameplayLoop::UpdateHealthSystems(m_World.get(), deltaTime, m_DeferredDestroys);
+
+        // Game over state (player death / victory detection)
+        if (Enjin::Gameplay::GameplayLoop::UpdateGameOverState(m_World.get(), deltaTime)) {
+            if (!m_GameMenu.IsGameOverScreen()) {
+                for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::GameOverComponent>()) {
+                    auto* go = m_World->GetComponent<Enjin::ECS::GameOverComponent>(entity);
+                    if (go && go->triggered && go->screenVisible) {
+                        const std::string& msg = go->won ? go->victoryMessage : go->defeatMessage;
+                        m_GameMenu.ShowGameOver(go->won, msg, go->allowRestart, go->returnToMenu);
+                        Enjin::Input::SetMouseCaptured(false);
+                        break;
+                    }
+                }
+            }
+        }
+
         Enjin::Gameplay::GameplayLoop::FlushDeferredDestroys(m_World.get(), m_DeferredDestroys);
 
         // Resource regeneration

@@ -66,6 +66,7 @@ void GameMenuSystem::Render(f32 screenW, f32 screenH) {
         case MenuScreen::Audio:      RenderAudio(screenW, screenH);     break;
         case MenuScreen::Controls:   RenderControls(screenW, screenH);  break;
         case MenuScreen::HowToPlay:  RenderHowToPlay(screenW, screenH); break;
+        case MenuScreen::GameOver:   RenderGameOver(screenW, screenH);  break;
         case MenuScreen::None:
         default:
             break;
@@ -596,6 +597,67 @@ bool GameMenuSystem::RenderMenuButton(const char* label, f32 width, bool selecte
     ImGui::PopStyleVar(2);
 
     return pressed;
+}
+
+// ---------------------------------------------------------------------------
+// Game Over Screen
+// ---------------------------------------------------------------------------
+
+void GameMenuSystem::ShowGameOver(bool won, const std::string& message,
+                                   bool allowRestart, bool returnToMenu) {
+    m_GameOverWon = won;
+    m_GameOverMessage = message;
+    m_GameOverAllowRestart = allowRestart;
+    m_GameOverReturnToMenu = returnToMenu;
+    m_CurrentScreen = MenuScreen::GameOver;
+}
+
+void GameMenuSystem::RenderGameOver(f32 w, f32 h) {
+    // Full-screen dark overlay (heavier than pause for finality)
+    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    ImU32 overlayColor = m_GameOverWon ? IM_COL32(5, 15, 5, 220)
+                                       : IM_COL32(18, 5, 5, 220);
+    draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), overlayColor);
+
+    const f32 panelW = 360.0f;
+    const f32 panelH = 260.0f;
+
+    ImGui::SetNextWindowPos(ImVec2((w - panelW) * 0.5f, (h - panelH) * 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(panelW, panelH));
+    ImGui::Begin("##GameOver", nullptr,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoSavedSettings);
+
+    // Message
+    ImVec4 messageColor = m_GameOverWon ? ImVec4(0.3f, 1.0f, 0.3f, 1.0f)
+                                        : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+    {
+        ImVec2 textSize = ImGui::CalcTextSize(m_GameOverMessage.c_str());
+        ImGui::SetCursorPosX((panelW - textSize.x) * 0.5f);
+        ImGui::TextColored(messageColor, "%s", m_GameOverMessage.c_str());
+    }
+
+    ImGui::Dummy(ImVec2(0, 40));
+
+    const f32 buttonW = 240.0f;
+
+    auto CenterButton = [&](const char* label, const char* action) {
+        ImGui::SetCursorPosX((panelW - buttonW) * 0.5f);
+        if (RenderMenuButton(label, buttonW)) {
+            if (m_Callback) m_Callback(action);
+        }
+        ImGui::Dummy(ImVec2(0, 6));
+    };
+
+    if (m_GameOverAllowRestart) {
+        CenterButton("Restart", "game_over_restart");
+    }
+    if (m_GameOverReturnToMenu) {
+        CenterButton("Main Menu", "game_over_menu");
+    }
+
+    ImGui::End();
 }
 
 } // namespace Enjin::GUI

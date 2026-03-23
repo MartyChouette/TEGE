@@ -4155,6 +4155,68 @@ void EditorLayer::DrawCapsuleColliderComponent(ECS::Entity entity) {
     }
 }
 
+void EditorLayer::DrawMeshColliderComponent(ECS::Entity entity) {
+    bool meshOpen = ImGui::CollapsingHeader("Mesh Collider", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("MeshColliderCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::MeshColliderComponent>(entity, "meshCollider", "Mesh Collider");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (meshOpen) {
+        auto* col = m_World->GetComponent<ECS::MeshColliderComponent>(entity);
+        if (!col) return;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Convex", &col->convex);
+        ImGui::SetItemTooltip("Convex hull (dynamic/static) or triangle mesh (static only)");
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Auto Generate", &col->autoGenerate);
+        ImGui::SetItemTooltip("Automatically generate collision from MeshComponent on first use");
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Is Trigger", &col->isTrigger);
+        ImGui::SetItemTooltip("Trigger colliders detect overlap but don't block movement");
+
+        // Regenerate button
+        if (ImGui::Button("Regenerate")) {
+            auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
+            if (mesh && mesh->IsValid()) {
+                col->vertices.clear();
+                col->vertices.reserve(mesh->vertices.size());
+                for (const auto& v : mesh->vertices) {
+                    col->vertices.push_back(v.position);
+                }
+                col->indices = mesh->indices;
+                col->generated = true;
+            } else {
+                ENJIN_LOG_WARN(Editor, "Cannot regenerate mesh collider: entity has no valid MeshComponent");
+            }
+        }
+        ImGui::SetItemTooltip("Rebuild collision geometry from current mesh vertices");
+
+        // Status display
+        if (col->generated) {
+            ImGui::Text("Vertices: %zu", col->vertices.size());
+            if (!col->convex) {
+                ImGui::Text("Triangles: %zu", col->indices.size() / 3);
+            }
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "Not generated yet");
+        }
+
+        if (ImGui::TreeNode("Physics Material##Mesh")) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Friction", &col->friction, 0.05f, 0.0f, 1.0f);
+            ImGui::SetItemTooltip("Surface friction (0 = ice, 1 = rubber)");
+            InspectorUndo::DragFloat(m_UndoRedo, "Bounciness", &col->bounciness, 0.05f, 0.0f, 1.0f);
+            ImGui::SetItemTooltip("Restitution (0 = no bounce, 1 = full bounce)");
+            ImGui::TreePop();
+        }
+
+        DrawCollisionFilteringUI(col->categoryBits, col->collisionMask);
+    }
+}
+
 void EditorLayer::DrawCollisionFilteringUI(u32& categoryBits, u32& collisionMask) {
     if (ImGui::TreeNode("Collision Filtering")) {
         const auto& groupNames = m_SceneManager.GetCollisionGroupNames();
@@ -4452,6 +4514,60 @@ void EditorLayer::DrawTimerComponent(ECS::Entity entity) {
         if (ImGui::BeginPopupContextItem("TimerContext")) {
             if (ImGui::MenuItem("Remove Component")) {
                 RemoveComponentWithUndo<ECS::TimerComponent>(entity, "timer", "Timer");
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawGameOverComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Game Over", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* go = m_World->GetComponent<ECS::GameOverComponent>(entity);
+        if (!go) return;
+
+        // Messages
+        char victoryBuf[256];
+        strncpy(victoryBuf, go->victoryMessage.c_str(), sizeof(victoryBuf) - 1);
+        victoryBuf[sizeof(victoryBuf) - 1] = '\0';
+        if (InspectorUndo::InputText(m_UndoRedo, "Victory Message", victoryBuf, sizeof(victoryBuf),
+                [go](const std::string& val) { go->victoryMessage = val; })) {
+            go->victoryMessage = victoryBuf;
+        }
+
+        char defeatBuf[256];
+        strncpy(defeatBuf, go->defeatMessage.c_str(), sizeof(defeatBuf) - 1);
+        defeatBuf[sizeof(defeatBuf) - 1] = '\0';
+        if (InspectorUndo::InputText(m_UndoRedo, "Defeat Message", defeatBuf, sizeof(defeatBuf),
+                [go](const std::string& val) { go->defeatMessage = val; })) {
+            go->defeatMessage = defeatBuf;
+        }
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Delay", &go->delay, 0.1f, 0.0f, 10.0f);
+        ImGui::SetItemTooltip("Seconds before the game over screen appears");
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Allow Restart", &go->allowRestart);
+        InspectorUndo::Checkbox(m_UndoRedo, "Return to Menu", &go->returnToMenu);
+
+        ImGui::Separator();
+        ImGui::Text("Victory Conditions");
+
+        InspectorUndo::Checkbox(m_UndoRedo, "All Enemies Defeated", &go->victoryOnAllEnemiesDefeated);
+        ImGui::SetItemTooltip("Win when all entities with Damage+Health (non-player) are dead");
+
+        // Victory trigger entity
+        u64 triggerID = static_cast<u64>(go->victoryTriggerEntity);
+        if (ImGui::InputScalar("Victory Trigger Entity", ImGuiDataType_U64, &triggerID)) {
+            go->victoryTriggerEntity = static_cast<ECS::Entity>(triggerID);
+        }
+        ImGui::SetItemTooltip("Entity ID of a TriggerZone that triggers victory when a player enters (0 = disabled)");
+
+        // Runtime status
+        ImGui::Separator();
+        ImGui::Text("Status: %s", go->triggered ? (go->won ? "VICTORY" : "DEFEAT") : "Waiting");
+
+        if (ImGui::BeginPopupContextItem("GameOverContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                RemoveComponentWithUndo<ECS::GameOverComponent>(entity, "gameOver", "Game Over");
             }
             ImGui::EndPopup();
         }

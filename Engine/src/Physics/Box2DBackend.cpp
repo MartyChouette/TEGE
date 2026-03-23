@@ -3,6 +3,8 @@
 #include "Enjin/Physics/Box2DBackend.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
@@ -339,6 +341,56 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
             capsule.radius = r;
             b2CreateCapsuleShape(bodyId, &shapeDef, &capsule);
             break;
+        }
+    }
+
+    // MeshCollider override: project mesh vertices to XY and create convex polygon
+    if (auto* meshCol = m_World->GetComponent<ECS::MeshColliderComponent>(entity)) {
+        if (meshCol->autoGenerate && !meshCol->generated) {
+            auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
+            if (mesh && mesh->IsValid()) {
+                meshCol->vertices.clear();
+                meshCol->vertices.reserve(mesh->vertices.size());
+                for (const auto& v : mesh->vertices) {
+                    meshCol->vertices.push_back(v.position);
+                }
+                meshCol->indices = mesh->indices;
+                meshCol->generated = true;
+            }
+        }
+
+        if (meshCol->generated && !meshCol->vertices.empty()) {
+            // Project 3D vertices to 2D (XY plane) and build convex hull
+            // Box2D supports max 8 vertices per polygon
+            b2Vec2 points[8];
+            int count = static_cast<int>(std::min(meshCol->vertices.size(), static_cast<size_t>(8)));
+
+            if (meshCol->vertices.size() <= 8) {
+                for (int i = 0; i < count; ++i) {
+                    points[i] = { meshCol->vertices[i].x, meshCol->vertices[i].y };
+                }
+            } else {
+                // Sample vertices evenly when there are more than 8
+                for (int i = 0; i < 8; ++i) {
+                    size_t idx = (i * meshCol->vertices.size()) / 8;
+                    points[i] = { meshCol->vertices[idx].x, meshCol->vertices[idx].y };
+                }
+            }
+
+            b2Hull hull = b2ComputeHull(points, count);
+            if (hull.count > 0) {
+                // Override collision filter from mesh collider
+                shapeDef.filter.categoryBits = meshCol->categoryBits;
+                shapeDef.filter.maskBits = meshCol->collisionMask;
+                shapeDef.isSensor = meshCol->isTrigger;
+                shapeDef.friction = std::clamp(meshCol->friction, 0.0f, 1.0f);
+                shapeDef.restitution = std::clamp(meshCol->bounciness, 0.0f, 1.0f);
+                b2Polygon poly = b2MakePolygon(&hull, 0.0f);
+                b2CreatePolygonShape(bodyId, &shapeDef, &poly);
+            } else {
+                ENJIN_LOG_WARN(Physics, "MeshCollider 2D hull failed for entity %llu — mesh has %zu vertices",
+                               static_cast<unsigned long long>(entity), meshCol->vertices.size());
+            }
         }
     }
 

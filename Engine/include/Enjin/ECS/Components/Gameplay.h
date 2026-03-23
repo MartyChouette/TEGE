@@ -163,6 +163,26 @@ struct CapsuleColliderComponent {
     u32 collisionMask = 0xFFFFFFFF;
 };
 
+// Mesh Collider — generates collision shape from entity's mesh vertices
+struct MeshColliderComponent {
+    bool convex = true;           // true = convex hull, false = triangle mesh (static only)
+    bool autoGenerate = true;     // auto-generate from MeshComponent on first use
+    bool generated = false;       // internal: set after vertices are populated
+    bool isTrigger = false;
+
+    // Physics material
+    f32 friction = 0.5f;
+    f32 bounciness = 0.0f;
+
+    // Collision filtering
+    u32 categoryBits = 1;
+    u32 collisionMask = 0xFFFFFFFF;
+
+    // Cached collision geometry (populated from MeshComponent or manually)
+    std::vector<Math::Vector3> vertices;
+    std::vector<u32> indices;  // used for triangle mesh mode
+};
+
 // Trigger Zone - fires events when entities enter/exit
 struct TriggerZoneComponent {
     enum class Shape : u8 { Box, Sphere };
@@ -2061,6 +2081,35 @@ struct FractureConfigComponent {
 
     // Impact bias (fragments cluster around impact point)
     f32 impactBias = 0.5f;              // 0 = uniform, 1 = fully biased to impact
+};
+
+// ============================================================================
+// GAME OVER
+// ============================================================================
+
+// Attach to an entity (typically a singleton "GameManager" entity) to define
+// game over / victory behaviour. The GameplayLoop checks for player death
+// and enemy elimination to trigger the appropriate state.
+struct GameOverComponent {
+    bool triggered = false;             // Set when game over is activated
+    bool won = false;                   // true = victory, false = defeat
+
+    f32 delay = 1.0f;                   // Seconds before showing game over screen
+    f32 delayTimer = 0.0f;             // Runtime countdown (not serialized)
+    bool screenVisible = false;        // Runtime: true once delay has elapsed
+
+    std::string victoryMessage = "You Win!";
+    std::string defeatMessage = "Game Over";
+
+    bool allowRestart = true;          // Show "Restart" button
+    bool returnToMenu = true;          // Show "Main Menu" button
+
+    // Victory condition: all enemies defeated
+    // An "enemy" is any entity with both DamageComponent and HealthComponent
+    bool victoryOnAllEnemiesDefeated = true;
+
+    // Victory condition: trigger zone reached (set entity ID, 0 = disabled)
+    Entity victoryTriggerEntity = 0;   // INVALID_ENTITY
 };
 
 } // namespace ECS
