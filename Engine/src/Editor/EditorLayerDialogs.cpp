@@ -1265,10 +1265,18 @@ void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOpt
             }
         }
 
-        // Select the root entity and focus camera on it
+        // Select the root entity and focus camera on the first child with a mesh
+        // (the root is just a transform node for scale, it has no geometry)
         if (result.rootEntity != ECS::INVALID_ENTITY) {
             SelectEntity(result.rootEntity);
-            FocusOnEntity(result.rootEntity);
+            ECS::Entity focusTarget = result.rootEntity;
+            for (auto e : result.entities) {
+                if (e != result.rootEntity && m_World->HasComponent<ECS::MeshComponent>(e)) {
+                    focusTarget = e;
+                    break;
+                }
+            }
+            FocusOnEntity(focusTarget);
         }
 
         // Save .enjinasset metadata

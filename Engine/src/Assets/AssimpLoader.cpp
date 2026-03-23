@@ -74,7 +74,7 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
     std::filesystem::path path(filepath);
     outScene.basePath = path.parent_path().string();
 
-    // Extract creator/DCC tool from scene metadata (FBX stores this)
+    // Extract creator/DCC tool and unit scale from scene metadata (FBX stores this)
     if (scene->mMetaData) {
         aiString creatorStr;
         if (scene->mMetaData->Get("Creator", creatorStr)) {
@@ -85,6 +85,11 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
             if (scene->mMetaData->Get("SourceAsset_Generator", appStr)) {
                 outScene.creator = appStr.C_Str();
             }
+        }
+        // FBX UnitScaleFactor: 1.0 = cm (Mixamo, Maya default), 100.0 = meters
+        double unitScale = 1.0;
+        if (scene->mMetaData->Get("UnitScaleFactor", unitScale)) {
+            outScene.unitScaleFactor = static_cast<f32>(unitScale);
         }
     }
 

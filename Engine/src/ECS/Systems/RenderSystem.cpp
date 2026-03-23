@@ -1688,7 +1688,10 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             Renderer::PushConstants pushConstants{};
             AnimatorComponent* preCheckAnim = m_World->GetComponent<AnimatorComponent>(entity);
             if (preCheckAnim && preCheckAnim->animator.GetSkeleton()) {
-                pushConstants.model = Math::Matrix4::Identity();
+                // Use the entity's world matrix (includes parent scale for unit conversion,
+                // e.g. 0.01 for cm→m). The entity's own transform is identity for skinned
+                // meshes, so this only applies the parent hierarchy scale.
+                pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
             } else {
                 pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
             }

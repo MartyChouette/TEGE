@@ -830,7 +830,27 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
     ECS::Entity importRoot = world->CreateEntity();
     world->AddComponent<ECS::NameComponent>(importRoot, rootName);
     auto& rootTransform = world->AddComponent<ECS::TransformComponent>(importRoot);
-    rootTransform.scale = Math::Vector3(effectiveOptions.scale, effectiveOptions.scale, effectiveOptions.scale);
+
+    // Auto-detect FBX unit scale from mesh bounds.
+    // Mixamo/Maya FBX uses cm (170cm character), engine grid is ~1 unit per meter.
+    // Compute scale so the tallest mesh dimension fits to ~1.8 units (human height).
+    f32 unitScale = effectiveOptions.scale;
+    f32 maxDim = 0.0f;
+    for (const auto& mesh : scene.meshes) {
+        for (const auto& prim : mesh.primitives) {
+            for (const auto& v : prim.vertices) {
+                maxDim = Math::Max(maxDim, std::abs(v.position.x));
+                maxDim = Math::Max(maxDim, std::abs(v.position.y));
+                maxDim = Math::Max(maxDim, std::abs(v.position.z));
+            }
+        }
+    }
+    if (maxDim > 10.0f) {
+        // Model is likely in cm or mm — scale so max extent ≈ 1.8 units
+        unitScale *= 1.8f / maxDim;
+        ENJIN_LOG_INFO(Asset, "FBX auto-scale: maxDim=%.1f, applying scale=%.4f", maxDim, unitScale);
+    }
+    rootTransform.scale = Math::Vector3(unitScale, unitScale, unitScale);
     result.entities.push_back(importRoot);
     result.rootEntity = importRoot;
 
@@ -992,12 +1012,57 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
     }
     // Keep the node if it has meshes (even if it's also a bone)
     bool hasMeshes = !node.meshIndices.empty() || node.meshIndex >= 0;
-    if (isAssimpHelper || (isBoneNode && !hasMeshes)) {
+    // Skip nodes that shouldn't become entities:
+    // - Assimp helper nodes ($AssimpFbx$)
+    // - Bone nodes without meshes
+    // - For skinned models: ALL nodes without meshes (end effectors, empty transforms)
+    bool skipNode = isAssimpHelper || (isBoneNode && !hasMeshes);
+    if (!skipNode && skelCtx.skeleton && !hasMeshes) {
+        skipNode = true; // Skip empty nodes in skinned models
+    }
+    if (skipNode) {
         // Don't create an entity — just recurse into children
         for (i32 childIdx : node.children) {
             CreateEntityFromAssimpNode(scene, childIdx, world, options, outEntities, stats, skelCtx);
         }
         return ECS::INVALID_ENTITY;
+    }
+
+    // For skinned models: merge ALL mesh nodes into one "Body" entity.
+    // Mixamo and other DCC tools split characters into many mesh parts (hands,
+    // face, clothing, eyes) which clutters the hierarchy. After the first skinned
+    // mesh entity is created, all subsequent mesh nodes append their geometry
+    // to it instead of creating separate entities.
+    if (skelCtx.skeleton && hasMeshes && skelCtx.bodyEntity != 0) {
+        auto* bodyMesh = world->GetComponent<ECS::MeshComponent>(skelCtx.bodyEntity);
+        if (bodyMesh) {
+            const auto& meshIndices = node.meshIndices.empty()
+                ? (node.meshIndex >= 0 ? std::vector<i32>{node.meshIndex} : std::vector<i32>{})
+                : node.meshIndices;
+            for (i32 mi : meshIndices) {
+                if (mi < 0 || mi >= static_cast<i32>(scene.meshes.size())) continue;
+                for (const auto& prim : scene.meshes[mi].primitives) {
+                    u32 voff = static_cast<u32>(bodyMesh->vertices.size());
+                    for (const auto& av : prim.vertices) {
+                        ECS::MeshComponent::Vertex v;
+                        v.position = av.position;
+                        v.normal = av.normal;
+                        v.uv = av.texCoord;
+                        v.boneWeights = av.boneWeights;
+                        for (int s = 0; s < 4; ++s) v.boneIndices[s] = av.boneIndices[s];
+                        bodyMesh->vertices.push_back(v);
+                    }
+                    for (u32 idx : prim.indices) {
+                        bodyMesh->indices.push_back(idx + voff);
+                    }
+                }
+            }
+            // Recurse children but don't create entity for this node
+            for (i32 childIdx : node.children) {
+                CreateEntityFromAssimpNode(scene, childIdx, world, options, outEntities, stats, skelCtx);
+            }
+            return ECS::INVALID_ENTITY;
+        }
     }
 
     // Create entity
@@ -1228,6 +1293,13 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
     // model share the same skeleton and bone matrices.
     if (options.importAnimations && skelCtx.skeleton && nodeHasSkinning) {
         if (!skelCtx.attached) skelCtx.attached = true;
+        // Track the first skinned entity so subsequent skinned meshes merge into it
+        if (skelCtx.bodyEntity == 0) {
+            skelCtx.bodyEntity = entity;
+            // Rename to "Body" for a cleaner hierarchy
+            auto* nc = world->GetComponent<ECS::NameComponent>(entity);
+            if (nc) nc->name = "Body";
+        }
 
         // Add skeleton component
         auto& skelComp = world->AddComponent<ECS::SkeletonComponent>(entity);
