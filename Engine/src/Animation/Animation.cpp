@@ -356,11 +356,15 @@ void SkeletalAnimator::Update(f32 deltaTime) {
 
     if (!m_CurrentAnim) return;
 
+    // Track previous time for event firing
+    m_PreviousTime = m_CurrentTime;
+
     // Update time
     m_CurrentTime += dt;
     f32 duration = m_CurrentAnim->duration;
 
     // Handle play modes
+    bool looped = false;
     switch (m_CurrentAnim->playMode) {
         case PlayMode::Once:
             if (m_CurrentTime >= duration) {
@@ -372,6 +376,7 @@ void SkeletalAnimator::Update(f32 deltaTime) {
             if (duration <= 0.0f) { m_CurrentTime = 0.0f; break; }
             while (m_CurrentTime >= duration) {
                 m_CurrentTime -= duration;
+                looped = true;
             }
             break;
         case PlayMode::PingPong:
@@ -417,11 +422,19 @@ void SkeletalAnimator::Update(f32 deltaTime) {
     CalculateWorldTransforms();
     CalculateSkinningMatrices();
 
-    // Check for events
-    if (m_OnEvent) {
+    // Fire animation events that occurred between m_PreviousTime and m_CurrentTime.
+    // Handles loop wrapping: if we looped, fire events from [prevTime, duration) and [0, currentTime).
+    if (m_OnEvent && !m_CurrentAnim->events.empty()) {
         for (const auto& event : m_CurrentAnim->events) {
-            // Simple check - could be improved with proper tracking
-            if (event.time >= m_CurrentTime - dt && event.time < m_CurrentTime) {
+            bool shouldFire = false;
+            if (looped) {
+                // Wrapped around: check [prevTime, duration) and [0, currentTime)
+                shouldFire = (event.time >= m_PreviousTime && event.time < duration) ||
+                             (event.time >= 0.0f && event.time < m_CurrentTime);
+            } else {
+                shouldFire = (event.time >= m_PreviousTime && event.time < m_CurrentTime);
+            }
+            if (shouldFire) {
                 m_OnEvent(event.name);
             }
         }
@@ -491,6 +504,90 @@ void SkeletalAnimator::CalculateSkinningMatrices() {
         // Standard GPU skinning: worldTransform * inverseBindMatrix
         // Transforms vertices from bind-pose bone space to current world space.
         m_CurrentPose.skinningMatrices[i] = m_CurrentPose.worldTransforms[i] * m_Skeleton->bones[i].inverseBindMatrix;
+    }
+}
+
+void SkeletalAnimator::UpdateBlendTree(const BlendTree& blendTree, f32 paramValue, f32 deltaTime) {
+    if (!m_Skeleton) return;
+
+    f32 dt = deltaTime * m_Speed;
+    usize boneCount = m_Skeleton->bones.size();
+
+    // Evaluate which two animations to blend
+    std::string animNameA, animNameB;
+    f32 blendFactor = 0.0f;
+    blendTree.Evaluate(paramValue, animNameA, animNameB, blendFactor);
+
+    // Look up animations
+    const SkeletalAnimation* animA = nullptr;
+    const SkeletalAnimation* animB = nullptr;
+    if (!animNameA.empty()) {
+        auto itA = m_Animations.find(animNameA);
+        if (itA != m_Animations.end()) animA = &itA->second;
+    }
+    if (!animNameB.empty()) {
+        auto itB = m_Animations.find(animNameB);
+        if (itB != m_Animations.end()) animB = &itB->second;
+    }
+
+    if (!animA) return;  // No valid animation
+
+    // Advance time (use the primary animation's duration for the timeline)
+    m_CurrentTime += dt;
+    f32 durationA = animA->duration;
+    if (durationA > 0.0f) {
+        while (m_CurrentTime >= durationA) m_CurrentTime -= durationA;
+        while (m_CurrentTime < 0.0f) m_CurrentTime += durationA;
+    } else {
+        m_CurrentTime = 0.0f;
+    }
+    m_NormalizedTime = (durationA > 0.0f) ? m_CurrentTime / durationA : 0.0f;
+
+    // Ensure scratch poses are sized
+    m_BlendTreePoseA.Resize(boneCount);
+
+    // Sample animation A
+    SampleAnimation(*animA, m_CurrentTime, m_BlendTreePoseA);
+
+    if (animB && blendFactor > 0.0f) {
+        // Sample animation B at corresponding normalized time
+        f32 durationB = animB->duration;
+        f32 timeB = (durationB > 0.0f) ? m_NormalizedTime * durationB : 0.0f;
+
+        m_BlendTreePoseB.Resize(boneCount);
+        SampleAnimation(*animB, timeB, m_BlendTreePoseB);
+
+        // Blend between A and B
+        m_CurrentPose.Resize(boneCount);
+        BlendPoses(m_BlendTreePoseA, m_BlendTreePoseB, blendFactor, m_CurrentPose);
+    } else {
+        m_CurrentPose = m_BlendTreePoseA;
+    }
+
+    // Recalculate transforms
+    CalculateWorldTransforms();
+    CalculateSkinningMatrices();
+
+    // Mark as playing for inspector display
+    m_IsPlaying = true;
+
+    // Fire events from primary animation
+    if (m_OnEvent && !animA->events.empty()) {
+        f32 prevTime = m_CurrentTime - dt;
+        bool looped = (prevTime < 0.0f);
+        if (looped) prevTime += durationA;
+        for (const auto& event : animA->events) {
+            bool shouldFire = false;
+            if (looped) {
+                shouldFire = (event.time >= prevTime && event.time < durationA) ||
+                             (event.time >= 0.0f && event.time < m_CurrentTime);
+            } else {
+                shouldFire = (event.time >= prevTime && event.time < m_CurrentTime);
+            }
+            if (shouldFire) {
+                m_OnEvent(event.name);
+            }
+        }
     }
 }
 

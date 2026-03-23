@@ -223,6 +223,64 @@ struct SkeletonPose {
     }
 };
 
+// ============================================================================
+// 1D Blend Tree
+// ============================================================================
+
+// A single node in a 1D blend tree: maps a threshold to an animation
+struct BlendNode {
+    std::string animationName;   // Name of the animation clip
+    f32 threshold = 0.0f;        // Parameter value at which this animation is at full weight
+};
+
+// 1D blend tree: interpolates between animations based on a float parameter
+struct BlendTree {
+    std::string parameterName;           // The float parameter that drives blending
+    std::vector<BlendNode> nodes;        // Sorted by threshold; at least 2 for blending
+    bool enabled = false;                // Whether this blend tree is active
+
+    // Evaluate: given a parameter value, returns pairs of (animName, weight)
+    // At most two animations are active at once (the two bracketing the value)
+    void Evaluate(f32 paramValue, std::string& outAnimA, std::string& outAnimB, f32& outBlendFactor) const {
+        if (nodes.empty()) { outAnimA.clear(); outAnimB.clear(); outBlendFactor = 0.0f; return; }
+        if (nodes.size() == 1) { outAnimA = nodes[0].animationName; outAnimB.clear(); outBlendFactor = 0.0f; return; }
+
+        // Clamp to range
+        if (paramValue <= nodes.front().threshold) {
+            outAnimA = nodes.front().animationName;
+            outAnimB.clear();
+            outBlendFactor = 0.0f;
+            return;
+        }
+        if (paramValue >= nodes.back().threshold) {
+            outAnimA = nodes.back().animationName;
+            outAnimB.clear();
+            outBlendFactor = 0.0f;
+            return;
+        }
+
+        // Find the two bracketing nodes
+        for (usize i = 0; i + 1 < nodes.size(); ++i) {
+            if (paramValue >= nodes[i].threshold && paramValue <= nodes[i + 1].threshold) {
+                outAnimA = nodes[i].animationName;
+                outAnimB = nodes[i + 1].animationName;
+                f32 range = nodes[i + 1].threshold - nodes[i].threshold;
+                outBlendFactor = (range > 1e-7f) ? (paramValue - nodes[i].threshold) / range : 0.0f;
+                return;
+            }
+        }
+
+        // Fallback (shouldn't reach here)
+        outAnimA = nodes.back().animationName;
+        outAnimB.clear();
+        outBlendFactor = 0.0f;
+    }
+};
+
+// ============================================================================
+// Skeletal Animator
+// ============================================================================
+
 // Skeletal animator - plays skeletal animations
 class ENJIN_API SkeletalAnimator {
 public:
@@ -236,10 +294,12 @@ public:
           m_CurrentAnimName(other.m_CurrentAnimName), m_CurrentAnim(nullptr),
           m_NextAnimName(other.m_NextAnimName), m_NextAnim(nullptr),
           m_CurrentPose(other.m_CurrentPose), m_BlendPose(other.m_BlendPose),
-          m_CurrentTime(other.m_CurrentTime), m_NormalizedTime(other.m_NormalizedTime),
+          m_CurrentTime(other.m_CurrentTime), m_PreviousTime(other.m_PreviousTime),
+          m_NormalizedTime(other.m_NormalizedTime),
           m_Speed(other.m_Speed), m_IsPlaying(other.m_IsPlaying), m_IsPaused(other.m_IsPaused),
           m_BlendTime(other.m_BlendTime), m_BlendProgress(other.m_BlendProgress),
-          m_PingPongForward(other.m_PingPongForward) {
+          m_PingPongForward(other.m_PingPongForward),
+          m_BlendTreePoseA(other.m_BlendTreePoseA), m_BlendTreePoseB(other.m_BlendTreePoseB) {
         // Re-resolve pointers into our own map
         if (!m_CurrentAnimName.empty()) {
             auto it = m_Animations.find(m_CurrentAnimName);
@@ -260,6 +320,7 @@ public:
         m_CurrentPose = other.m_CurrentPose;
         m_BlendPose = other.m_BlendPose;
         m_CurrentTime = other.m_CurrentTime;
+        m_PreviousTime = other.m_PreviousTime;
         m_NormalizedTime = other.m_NormalizedTime;
         m_Speed = other.m_Speed;
         m_IsPlaying = other.m_IsPlaying;
@@ -267,6 +328,8 @@ public:
         m_BlendTime = other.m_BlendTime;
         m_BlendProgress = other.m_BlendProgress;
         m_PingPongForward = other.m_PingPongForward;
+        m_BlendTreePoseA = other.m_BlendTreePoseA;
+        m_BlendTreePoseB = other.m_BlendTreePoseB;
         m_CurrentAnim = nullptr;
         m_NextAnim = nullptr;
         if (!m_CurrentAnimName.empty()) {
@@ -320,10 +383,15 @@ public:
     using EventCallback = std::function<void(const std::string&)>;
     void SetEventCallback(EventCallback callback) { m_OnEvent = callback; }
 
-    // Accessors for serialization
+    // Accessors for serialization and editor
     const std::unordered_map<std::string, SkeletalAnimation>& GetAnimations() const { return m_Animations; }
+    std::unordered_map<std::string, SkeletalAnimation>& GetAnimationsMut() { return m_Animations; }
     const std::string& GetCurrentAnimationName() const { return m_CurrentAnimName; }
     std::shared_ptr<Skeleton> GetSharedSkeleton() const { return m_Skeleton; }
+
+    // Blend tree support
+    void UpdateBlendTree(const BlendTree& blendTree, f32 paramValue, f32 deltaTime);
+    f32 GetCurrentTime() const { return m_CurrentTime; }
 
     // Bone manipulation (for IK, procedural animation)
     void SetBoneLocalRotation(const std::string& boneName, const Math::Quaternion& rotation);
@@ -351,6 +419,7 @@ private:
     SkeletonPose m_BlendPose;
 
     f32 m_CurrentTime = 0.0f;
+    f32 m_PreviousTime = 0.0f;  // For robust event firing across loops
     f32 m_NormalizedTime = 0.0f;
     f32 m_Speed = 1.0f;
     bool m_IsPlaying = false;
@@ -362,6 +431,10 @@ private:
 
     // PingPong direction (true = forward, false = reverse)
     bool m_PingPongForward = true;
+
+    // Blend tree scratch poses (avoid per-frame allocation)
+    SkeletonPose m_BlendTreePoseA;
+    SkeletonPose m_BlendTreePoseB;
 
     EventCallback m_OnEvent;
 };

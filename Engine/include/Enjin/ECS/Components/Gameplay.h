@@ -1939,6 +1939,7 @@ struct RagdollComponent {
         // Per-bone physics properties
         f32 mass = 1.0f;
         f32 colliderRadius = 0.1f;     // Capsule/sphere radius for bone collision
+        Math::Vector3 colliderSize = Math::Vector3(0.1f, 0.2f, 0.1f); // Capsule dims (radius, halfHeight, 0)
 
         // Joint limits for this bone connection
         f32 coneAngleLimit = 45.0f;    // Max angle from parent bone direction
@@ -1957,10 +1958,21 @@ struct RagdollComponent {
     f32 blendWeight = 1.0f;
     f32 blendSpeed = 5.0f;            // How fast to transition between modes
 
+    // Transition timing
+    f32 blendTime = 0.3f;             // Duration of animation-to-ragdoll blend (seconds)
+    f32 blendProgress = 0.0f;         // Runtime: current blend progress (0 = start, 1 = done)
+
+    // Auto-activation on death
+    bool autoActivateOnDeath = true;  // Activate ragdoll when HealthComponent reaches 0
+
     // Global ragdoll properties
     f32 gravityScale = 1.0f;
     f32 linearDamping = 0.1f;
     f32 angularDamping = 0.3f;
+
+    // Runtime state (not serialized)
+    bool bodiesCreated = false;        // Whether physics bodies have been spawned for bones
+    bool wasAnimating = false;         // Was the animator playing before ragdoll activated
 };
 
 // ============================================================================
@@ -2110,6 +2122,39 @@ struct GameOverComponent {
 
     // Victory condition: trigger zone reached (set entity ID, 0 = disabled)
     Entity victoryTriggerEntity = 0;   // INVALID_ENTITY
+};
+
+// ============================================================================
+// ANIMATION RECORDING
+// ============================================================================
+
+// Records bone transforms over time to create new SkeletalAnimations from gameplay
+// or manual posing. Captured keyframes are built into a playable animation when stopped.
+struct AnimationRecorderComponent {
+    bool recording = false;             // Whether recording is active
+    f32 recordInterval = 1.0f / 30.0f;  // Sample rate (seconds between keyframes)
+    std::string recordedAnimName = "Recorded"; // Name for the generated animation
+
+    // Runtime state (not serialized — transient recording data)
+    f32 timeSinceLastSample = 0.0f;
+    f32 totalRecordedTime = 0.0f;
+
+    // Per-bone captured keyframes: boneName -> list of (time, position, rotation, scale)
+    struct RecordedKeyframe {
+        f32 time = 0.0f;
+        Math::Vector3 position;
+        Math::Quaternion rotation;
+        Math::Vector3 scale = Math::Vector3(1, 1, 1);
+    };
+    struct RecordedBoneTrack {
+        std::string boneName;
+        i32 boneIndex = -1;
+        std::vector<RecordedKeyframe> keyframes;
+    };
+    std::vector<RecordedBoneTrack> tracks;
+
+    // Number of recordings completed (for unique naming)
+    i32 recordCount = 0;
 };
 
 } // namespace ECS

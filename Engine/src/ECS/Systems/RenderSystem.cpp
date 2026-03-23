@@ -30,6 +30,7 @@
 #include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
 #include "Enjin/ECS/Components/IKComponents.h"
+#include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/Animation/IKSolver.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
@@ -1011,6 +1012,41 @@ void RenderSystem::Update(f32 deltaTime) {
                     Animation::FABRIK::Solve(m_IKChainCache, nearestTarget, 5);
                 }
             }
+        }
+    }
+
+    // Update bone attachment transforms: snap attached entities to their target bone
+    for (Entity entity : m_World->GetEntitiesWithComponent<BoneAttachmentComponent>()) {
+        auto* ba = m_World->GetComponent<BoneAttachmentComponent>(entity);
+        if (!ba || ba->targetEntity == INVALID_ENTITY || ba->targetBoneName.empty()) continue;
+        if (!m_World->IsValid(ba->targetEntity)) continue;
+
+        auto* animComp = m_World->GetComponent<AnimatorComponent>(ba->targetEntity);
+        if (!animComp) continue;
+
+        // Get bone world transform (in skeleton/entity-local space)
+        Math::Matrix4 boneLocal = animComp->animator.GetBoneWorldTransform(ba->targetBoneName);
+
+        // Multiply by the target entity's world matrix to get the bone in world space
+        Math::Matrix4 targetWorld = ComputeWorldMatrix(m_World, ba->targetEntity);
+        Math::Matrix4 boneWorld = targetWorld * boneLocal;
+
+        // Extract bone world position
+        Math::Vector3 bonePos(boneWorld.m[12], boneWorld.m[13], boneWorld.m[14]);
+
+        // Extract bone world rotation from the 3x3 portion of the matrix
+        Math::Quaternion boneRot = Math::Quaternion::FromMatrix(boneWorld);
+
+        // Apply offsets
+        Math::Vector3 finalPos = bonePos + boneRot.Rotate(ba->positionOffset);
+        Math::Quaternion finalRot = boneRot * ba->rotationOffset;
+
+        // Write to this entity's transform
+        auto* transform = m_World->GetComponent<TransformComponent>(entity);
+        if (transform) {
+            transform->position = finalPos;
+            transform->rotation = finalRot;
+            transform->worldMatrixDirty = true;
         }
     }
 

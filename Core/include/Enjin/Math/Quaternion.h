@@ -181,6 +181,63 @@ struct ENJIN_API Quaternion {
         );
     }
 
+    // Convert quaternion to euler angles in degrees (XYZ order)
+    Vector3 ToEulerDegrees() const {
+        Vector3 rad = ToEuler();
+        return Vector3(Degrees(rad.x), Degrees(rad.y), Degrees(rad.z));
+    }
+
+    // Create quaternion from euler angles in degrees (XYZ order)
+    static Quaternion FromEulerDegrees(const Vector3& degrees) {
+        return FromEuler(Vector3(Radians(degrees.x), Radians(degrees.y), Radians(degrees.z)));
+    }
+
+    // Extract rotation quaternion from a 4x4 matrix (ignores translation and scale)
+    static Quaternion FromMatrix(const Matrix4& mat) {
+        // Normalize the 3x3 columns to strip scale
+        Vector3 col0(mat.m[0], mat.m[1], mat.m[2]);
+        Vector3 col1(mat.m[4], mat.m[5], mat.m[6]);
+        Vector3 col2(mat.m[8], mat.m[9], mat.m[10]);
+        f32 lenCol0 = col0.Length();
+        f32 lenCol1 = col1.Length();
+        f32 lenCol2 = col2.Length();
+        if (lenCol0 < EPSILON) lenCol0 = 1.0f;
+        if (lenCol1 < EPSILON) lenCol1 = 1.0f;
+        if (lenCol2 < EPSILON) lenCol2 = 1.0f;
+        f32 m00 = col0.x / lenCol0, m01 = col1.x / lenCol1, m02 = col2.x / lenCol2;
+        f32 m10 = col0.y / lenCol0, m11 = col1.y / lenCol1, m12 = col2.y / lenCol2;
+        f32 m20 = col0.z / lenCol0, m21 = col1.z / lenCol1, m22 = col2.z / lenCol2;
+
+        f32 trace = m00 + m11 + m22;
+        Quaternion q;
+        if (trace > 0.0f) {
+            f32 s = Sqrt(trace + 1.0f) * 2.0f;
+            q.w = 0.25f * s;
+            q.x = (m12 - m21) / s;
+            q.y = (m20 - m02) / s;
+            q.z = (m01 - m10) / s;
+        } else if (m00 > m11 && m00 > m22) {
+            f32 s = Sqrt(1.0f + m00 - m11 - m22) * 2.0f;
+            q.w = (m12 - m21) / s;
+            q.x = 0.25f * s;
+            q.y = (m01 + m10) / s;
+            q.z = (m02 + m20) / s;
+        } else if (m11 > m22) {
+            f32 s = Sqrt(1.0f + m11 - m00 - m22) * 2.0f;
+            q.w = (m20 - m02) / s;
+            q.x = (m01 + m10) / s;
+            q.y = 0.25f * s;
+            q.z = (m12 + m21) / s;
+        } else {
+            f32 s = Sqrt(1.0f + m22 - m00 - m11) * 2.0f;
+            q.w = (m01 - m10) / s;
+            q.x = (m02 + m20) / s;
+            q.y = (m12 + m21) / s;
+            q.z = 0.25f * s;
+        }
+        return q.Normalized();
+    }
+
     // Alias for ToMatrix to match expected API
     constexpr Matrix4 ToMatrix4() const { return ToMatrix(); }
 

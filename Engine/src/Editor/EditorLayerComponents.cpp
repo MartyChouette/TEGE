@@ -43,6 +43,7 @@
 #include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/IKComponents.h"
+#include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/ECS/Components/Flower.h"
 #ifndef _WIN32
 #include <unistd.h>
@@ -52,6 +53,7 @@
 #include "Enjin/ECS/Components/Tween.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/Animation/RagdollSystem.h"
 #include "Enjin/Renderer/MeshSimplifier.h"
 #include "Enjin/Renderer/Skybox.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
@@ -7529,8 +7531,17 @@ void EditorLayer::DrawRagdollComponent(ECS::Entity entity) {
         if (!r) return;
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled##Ragdoll", &r->enabled);
-        InspectorUndo::SliderFloat(m_UndoRedo, "Blend Weight", &r->blendWeight, 0.0f, 1.0f);
-        InspectorUndo::DragFloat(m_UndoRedo, "Blend Speed", &r->blendSpeed, 0.1f, 0.0f, 50.0f);
+        InspectorUndo::Checkbox(m_UndoRedo, "Auto Activate On Death", &r->autoActivateOnDeath);
+        ImGui::SetItemTooltip("Automatically activate ragdoll when HealthComponent reaches 0");
+
+        if (ImGui::TreeNode("Transition")) {
+            InspectorUndo::SliderFloat(m_UndoRedo, "Blend Weight", &r->blendWeight, 0.0f, 1.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Blend Speed", &r->blendSpeed, 0.1f, 0.0f, 50.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Blend Time (s)", &r->blendTime, 0.01f, 0.0f, 5.0f);
+            ImGui::SetItemTooltip("Duration of animation-to-ragdoll transition");
+            ImGui::Text("Blend Progress: %.2f", r->blendProgress);
+            ImGui::TreePop();
+        }
 
         InspectorUndo::DragFloat(m_UndoRedo, "Gravity Scale##Ragdoll", &r->gravityScale, 0.1f, -10.0f, 10.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Linear Damping##Ragdoll", &r->linearDamping, 0.01f, 0.0f, 10.0f);
@@ -7544,11 +7555,33 @@ void EditorLayer::DrawRagdollComponent(ECS::Entity entity) {
             ImGui::TreePop();
         }
 
+        // Generate from Skeleton button
+        bool hasSkeleton = m_World->HasComponent<ECS::SkeletonComponent>(entity);
+        if (!hasSkeleton) {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::Button("Generate from Skeleton")) {
+            Animation::RagdollSystem::GenerateFromSkeleton(m_World, entity);
+        }
+        if (!hasSkeleton) {
+            ImGui::EndDisabled();
+            ImGui::SetItemTooltip("Add a SkeletonComponent first");
+        } else {
+            ImGui::SetItemTooltip("Auto-generate bone joints from the entity's skeleton");
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Clear All Joints")) {
+            r->boneJoints.clear();
+        }
+
+        ImGui::Text("Bone Joints: %u", static_cast<u32>(r->boneJoints.size()));
+
         if (ImGui::TreeNode("Bone Joints")) {
             for (usize i = 0; i < r->boneJoints.size(); ++i) {
                 ImGui::PushID(static_cast<int>(i));
                 auto& bj = r->boneJoints[i];
-                if (ImGui::TreeNode("BoneJoint", "%s (idx %d)", bj.boneName.empty() ? "(unnamed)" : bj.boneName.c_str(), bj.boneIndex)) {
+                if (ImGui::TreeNode("BoneJoint", "%s (idx %d, %.1f kg)", bj.boneName.empty() ? "(unnamed)" : bj.boneName.c_str(), bj.boneIndex, bj.mass)) {
                     char nameBuf[128];
                     strncpy(nameBuf, bj.boneName.c_str(), sizeof(nameBuf) - 1);
                     nameBuf[sizeof(nameBuf) - 1] = '\0';
@@ -7570,6 +7603,8 @@ void EditorLayer::DrawRagdollComponent(ECS::Entity entity) {
 
                     ImGui::DragFloat("Mass##BJ", &bj.mass, 0.1f, 0.001f, 1000.0f);
                     ImGui::DragFloat("Collider Radius##BJ", &bj.colliderRadius, 0.01f, 0.001f, 10.0f);
+                    ImGui::DragFloat3("Collider Size##BJ", &bj.colliderSize.x, 0.01f, 0.001f, 10.0f);
+                    ImGui::SetItemTooltip("Capsule: (radius, halfHeight, 0)");
                     ImGui::DragFloat("Cone Angle Limit##BJ", &bj.coneAngleLimit, 1.0f, 0.0f, 180.0f);
                     ImGui::DragFloat("Twist Limit##BJ", &bj.twistLimit, 1.0f, 0.0f, 180.0f);
 
@@ -7589,6 +7624,80 @@ void EditorLayer::DrawRagdollComponent(ECS::Entity entity) {
             }
             ImGui::TreePop();
         }
+    }
+}
+
+// ============================================================================
+// Animation Recorder Component
+// ============================================================================
+
+void EditorLayer::DrawAnimationRecorderComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Animation Recorder", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("AnimRecorderCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::AnimationRecorderComponent>(entity, "animationRecorder", "Animation Recorder");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* rec = m_World->GetComponent<ECS::AnimationRecorderComponent>(entity);
+        if (!rec) return;
+
+        // Animation name input
+        char nameBuf[128];
+        strncpy(nameBuf, rec->recordedAnimName.c_str(), sizeof(nameBuf) - 1);
+        nameBuf[sizeof(nameBuf) - 1] = '\0';
+        if (ImGui::InputText("Animation Name", nameBuf, sizeof(nameBuf))) {
+            rec->recordedAnimName = nameBuf;
+        }
+
+        // Sample rate
+        f32 fps = (rec->recordInterval > 0.0f) ? (1.0f / rec->recordInterval) : 30.0f;
+        if (ImGui::DragFloat("Sample Rate (FPS)", &fps, 1.0f, 1.0f, 120.0f, "%.0f")) {
+            rec->recordInterval = (fps > 0.0f) ? (1.0f / fps) : (1.0f / 30.0f);
+        }
+        ImGui::SetItemTooltip("Keyframes captured per second");
+
+        // Record / Stop buttons
+        ImGui::Separator();
+        if (!rec->recording) {
+            bool hasAnimator = m_World->HasComponent<ECS::AnimatorComponent>(entity);
+            bool hasSkeleton = m_World->HasComponent<ECS::SkeletonComponent>(entity);
+            bool canRecord = hasAnimator && hasSkeleton;
+
+            if (!canRecord) ImGui::BeginDisabled();
+            if (ImGui::Button("Record")) {
+                Animation::AnimationRecorderSystem::StartRecording(m_World, entity);
+            }
+            if (!canRecord) {
+                ImGui::EndDisabled();
+                ImGui::SetItemTooltip("Requires both AnimatorComponent and SkeletonComponent");
+            }
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+            if (ImGui::Button("Stop Recording")) {
+                Animation::AnimationRecorderSystem::StopRecording(m_World, entity);
+            }
+            ImGui::PopStyleColor();
+        }
+
+        // Status display
+        if (rec->recording) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "RECORDING");
+            ImGui::Text("Time: %.2f s", rec->totalRecordedTime);
+            usize totalKeyframes = 0;
+            for (const auto& track : rec->tracks) {
+                totalKeyframes += track.keyframes.size();
+            }
+            ImGui::Text("Tracks: %u | Keyframes: %u",
+                         static_cast<u32>(rec->tracks.size()),
+                         static_cast<u32>(totalKeyframes));
+        }
+
+        ImGui::Text("Recordings completed: %d", rec->recordCount);
     }
 }
 
@@ -9120,6 +9229,84 @@ void EditorLayer::DrawArtStyleComponent(ECS::Entity entity) {
             ImGui::TextDisabled("Choose a style above to override per-entity.");
             break;
         }
+    }
+}
+
+// ============================================================================
+// BONE ATTACHMENT
+// ============================================================================
+
+void EditorLayer::DrawBoneAttachmentComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Bone Attachment", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("BoneAttachmentCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::BoneAttachmentComponent>(entity, "boneAttachment", "Bone Attachment");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (!open) return;
+
+    auto* ba = m_World->GetComponent<ECS::BoneAttachmentComponent>(entity);
+    if (!ba) return;
+
+    // Target entity picker
+    u64 targetId = static_cast<u64>(ba->targetEntity);
+    if (ImGui::InputScalar("Target Entity##BA", ImGuiDataType_U64, &targetId)) {
+        ba->targetEntity = static_cast<ECS::Entity>(targetId);
+    }
+    // Show target entity name if valid
+    if (ba->targetEntity != ECS::INVALID_ENTITY && m_World->IsValid(ba->targetEntity)) {
+        auto* targetName = m_World->GetComponent<ECS::NameComponent>(ba->targetEntity);
+        if (targetName) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("(%s)", targetName->name.c_str());
+        }
+    }
+
+    // Bone name dropdown: populate from target entity's skeleton
+    const Animation::Skeleton* skeleton = nullptr;
+    if (ba->targetEntity != ECS::INVALID_ENTITY && m_World->IsValid(ba->targetEntity)) {
+        auto* animComp = m_World->GetComponent<ECS::AnimatorComponent>(ba->targetEntity);
+        if (animComp) {
+            skeleton = animComp->animator.GetSkeleton();
+        }
+    }
+
+    if (skeleton && !skeleton->bones.empty()) {
+        // Combo box listing all bone names
+        if (ImGui::BeginCombo("Bone##BA", ba->targetBoneName.empty() ? "(none)" : ba->targetBoneName.c_str())) {
+            for (usize i = 0; i < skeleton->bones.size(); ++i) {
+                const auto& boneName = skeleton->bones[i].name;
+                bool selected = (ba->targetBoneName == boneName);
+                if (ImGui::Selectable(boneName.c_str(), selected)) {
+                    ba->targetBoneName = boneName;
+                }
+                if (selected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+    } else {
+        // Fallback text input if no skeleton available
+        static char boneNameBuf[256];
+        strncpy(boneNameBuf, ba->targetBoneName.c_str(), sizeof(boneNameBuf) - 1);
+        boneNameBuf[sizeof(boneNameBuf) - 1] = '\0';
+        if (ImGui::InputText("Bone##BA", boneNameBuf, sizeof(boneNameBuf))) {
+            ba->targetBoneName = boneNameBuf;
+        }
+        if (!skeleton) {
+            ImGui::TextDisabled("(target has no skeleton)");
+        }
+    }
+
+    // Position offset
+    ImGui::DragFloat3("Position Offset##BA", &ba->positionOffset.x, 0.01f);
+
+    // Rotation offset (as Euler angles for readability)
+    Math::Vector3 euler = ba->rotationOffset.ToEulerDegrees();
+    if (ImGui::DragFloat3("Rotation Offset##BA", &euler.x, 0.5f)) {
+        ba->rotationOffset = Math::Quaternion::FromEulerDegrees(euler);
     }
 }
 

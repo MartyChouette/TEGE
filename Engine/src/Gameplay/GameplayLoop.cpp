@@ -3,6 +3,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
+#include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Physics/IPhysicsBackend2D.h"
@@ -279,6 +280,23 @@ void UpdateHealthSystems(ECS::World* world, f32 deltaTime,
 
         // Death handling -- destroy non-player entities, respawn players
         if (hp->isDead) {
+            // Ragdoll activation on death: if entity has a RagdollComponent with
+            // autoActivateOnDeath, activate it instead of immediately destroying.
+            auto* ragdoll = world->GetComponent<ECS::RagdollComponent>(entity);
+            if (ragdoll && ragdoll->autoActivateOnDeath && !ragdoll->enabled) {
+                ragdoll->enabled = true;
+                ragdoll->blendProgress = 0.0f;
+                ragdoll->blendWeight = 0.0f;
+                ragdoll->settleTimer = 0.0f;
+
+                // Stop animator
+                auto* animComp = world->GetComponent<ECS::AnimatorComponent>(entity);
+                if (animComp) {
+                    ragdoll->wasAnimating = animComp->animator.IsPlaying();
+                    animComp->animator.Stop();
+                }
+            }
+
             // Check if any player controller is present
             bool isPlayer = world->GetComponent<ECS::Platformer2DController>(entity) ||
                             world->GetComponent<ECS::TopDown2DController>(entity) ||
@@ -317,8 +335,10 @@ void UpdateHealthSystems(ECS::World* world, f32 deltaTime,
                     }
                 }
             } else {
-                // Non-player death: destroy entity
-                deferredDestroys.push_back(entity);
+                // Non-player death: destroy entity (unless ragdoll is active)
+                if (!ragdoll || !ragdoll->enabled) {
+                    deferredDestroys.push_back(entity);
+                }
             }
         }
     }

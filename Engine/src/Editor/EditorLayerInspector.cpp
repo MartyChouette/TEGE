@@ -43,6 +43,7 @@
 #include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/IKComponents.h"
+#include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/ECS/Components/Flower.h"
 #ifndef _WIN32
 #include <unistd.h>
@@ -726,6 +727,16 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::InteractionIKComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::InteractionIKComponent>(e); },
             "interactionIK", DimensionTag::Only3D},
+        {"Bone Attachment", "3D / Animation", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::BoneAttachmentComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BoneAttachmentComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::BoneAttachmentComponent>(e); },
+            "boneAttachment", DimensionTag::Only3D},
+        {"Animation Recorder", "3D / Animation", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AnimationRecorderComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AnimationRecorderComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::AnimationRecorderComponent>(e); },
+            "animationRecorder", DimensionTag::Only3D},
         {"Flower Stem", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::FlowerStemComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FlowerStemComponent>(e); },
@@ -1533,8 +1544,40 @@ void EditorLayer::DrawInspectorPanel() {
                         ImGui::TextDisabled("(blending)");
                     }
 
-                    // Scrubable timeline slider — drag to seek through the animation
+                    // Scrubable timeline slider with event markers
                     f32 normalizedTime = animator.GetNormalizedTime();
+
+                    // Draw event markers on the timeline as small triangles/ticks
+                    if (!currentName.empty()) {
+                        auto itCurAnim = animations.find(currentName);
+                        if (itCurAnim != animations.end() && !itCurAnim->second.events.empty()) {
+                            ImVec2 sliderPos = ImGui::GetCursorScreenPos();
+                            f32 sliderWidth = ImGui::GetContentRegionAvail().x;
+                            ImDrawList* drawList = ImGui::GetWindowDrawList();
+                            f32 duration = itCurAnim->second.duration;
+                            if (duration > 0.0f) {
+                                for (const auto& evt : itCurAnim->second.events) {
+                                    f32 normEvtTime = evt.time / duration;
+                                    f32 markerX = sliderPos.x + normEvtTime * sliderWidth;
+                                    // Small triangle marker at the top of the slider area
+                                    f32 triSize = 4.0f;
+                                    ImVec2 p1(markerX, sliderPos.y);
+                                    ImVec2 p2(markerX - triSize, sliderPos.y - triSize - 1.0f);
+                                    ImVec2 p3(markerX + triSize, sliderPos.y - triSize - 1.0f);
+                                    drawList->AddTriangleFilled(p1, p2, p3, IM_COL32(255, 200, 50, 255));
+                                    // Tooltip on hover
+                                    if (ImGui::IsMouseHoveringRect(
+                                            ImVec2(markerX - triSize - 1, sliderPos.y - triSize - 2),
+                                            ImVec2(markerX + triSize + 1, sliderPos.y + 1))) {
+                                        ImGui::BeginTooltip();
+                                        ImGui::Text("Event: %s (%.3fs)", evt.name.c_str(), evt.time);
+                                        ImGui::EndTooltip();
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if (ImGui::SliderFloat("##Timeline", &normalizedTime, 0.0f, 1.0f, "%.2f")) {
                         animator.SetNormalizedTime(normalizedTime);
                     }
@@ -1570,22 +1613,85 @@ void EditorLayer::DrawInspectorPanel() {
                         }
                     }
 
-                    // Available animations list
+                    // Available animations list with events sub-tree
                     if (!animations.empty() && ImGui::TreeNode("Animations")) {
-                        for (const auto& [name, anim] : animations) {
+                        auto& animsMut = animator.GetAnimationsMut();
+                        for (auto& [name, anim] : animsMut) {
                             bool isCurrent = (name == currentName);
                             if (isCurrent) {
                                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.9f, 0.3f, 1.0f));
                             }
-                            ImGui::Text("%s (%.2fs, %zu tracks)", name.c_str(),
-                                        anim.duration, anim.tracks.size());
+
+                            // Use a tree node for each animation so events can nest under it
+                            char durBuf[32];
+                            snprintf(durBuf, sizeof(durBuf), "%.2fs", anim.duration);
+                            std::string animNodeLabel = name + " (" + durBuf + ", " +
+                                std::to_string(anim.tracks.size()) + " tracks)##AnimNode_" + name;
+                            bool animNodeOpen = ImGui::TreeNode(animNodeLabel.c_str());
                             if (isCurrent) {
                                 ImGui::PopStyleColor();
                             }
+
+                            // Play button on same line
                             ImGui::SameLine();
                             std::string playLabel = "Play##" + name;
                             if (ImGui::SmallButton(playLabel.c_str())) {
                                 animator.Play(name, 0.2f);
+                            }
+
+                            if (animNodeOpen) {
+                                // Events sub-tree
+                                std::string eventsLabel = "Events (" + std::to_string(anim.events.size()) + ")##Events_" + name;
+                                if (ImGui::TreeNode(eventsLabel.c_str())) {
+                                    i32 removeIdx = -1;
+                                    for (usize ei = 0; ei < anim.events.size(); ++ei) {
+                                        auto& evt = anim.events[ei];
+                                        ImGui::PushID(static_cast<int>(ei));
+
+                                        // Time slider (0 to duration)
+                                        f32 evtTime = evt.time;
+                                        ImGui::SetNextItemWidth(100.0f);
+                                        if (ImGui::DragFloat("##EvtTime", &evtTime, 0.001f, 0.0f, anim.duration, "%.3fs")) {
+                                            evt.time = evtTime;
+                                        }
+                                        ImGui::SameLine();
+
+                                        // Name text input
+                                        char nameBuf[128];
+                                        strncpy(nameBuf, evt.name.c_str(), sizeof(nameBuf) - 1);
+                                        nameBuf[sizeof(nameBuf) - 1] = '\0';
+                                        ImGui::SetNextItemWidth(120.0f);
+                                        if (ImGui::InputText("##EvtName", nameBuf, sizeof(nameBuf))) {
+                                            evt.name = nameBuf;
+                                        }
+                                        ImGui::SameLine();
+
+                                        // Remove button
+                                        if (ImGui::SmallButton("X##EvtRemove")) {
+                                            removeIdx = static_cast<i32>(ei);
+                                        }
+
+                                        ImGui::PopID();
+                                    }
+
+                                    // Remove event if requested (deferred to avoid iterator invalidation)
+                                    if (removeIdx >= 0 && removeIdx < static_cast<i32>(anim.events.size())) {
+                                        anim.events.erase(anim.events.begin() + removeIdx);
+                                    }
+
+                                    // Add Event button
+                                    std::string addEvtLabel = "Add Event##AddEvt_" + name;
+                                    if (ImGui::Button(addEvtLabel.c_str())) {
+                                        Animation::SkeletalAnimation::AnimEvent newEvt;
+                                        newEvt.time = anim.duration * 0.5f;
+                                        newEvt.name = "event_" + std::to_string(anim.events.size());
+                                        anim.events.push_back(newEvt);
+                                    }
+
+                                    ImGui::TreePop();
+                                }
+
+                                ImGui::TreePop();
                             }
                         }
                         ImGui::TreePop();
@@ -1603,8 +1709,150 @@ void EditorLayer::DrawInspectorPanel() {
                         ImGui::Text("Transitions: %zu", stateMachine.GetTransitions().size());
                         ImGui::TreePop();
                     }
+
+                    // ================================================================
+                    // Blend Tree inspector
+                    // ================================================================
+                    if (ImGui::TreeNode("Blend Tree")) {
+                        auto& bt = animComp->blendTree;
+
+                        ImGui::Checkbox("Enabled##BlendTree", &bt.enabled);
+
+                        // Parameter name
+                        char paramBuf[128];
+                        strncpy(paramBuf, bt.parameterName.c_str(), sizeof(paramBuf) - 1);
+                        paramBuf[sizeof(paramBuf) - 1] = '\0';
+                        if (ImGui::InputText("Parameter##BT", paramBuf, sizeof(paramBuf))) {
+                            bt.parameterName = paramBuf;
+                        }
+
+                        // Current parameter value (editable for testing)
+                        if (!bt.parameterName.empty()) {
+                            f32 paramVal = animComp->GetBlendParameter(bt.parameterName);
+                            if (ImGui::DragFloat("Value##BTParam", &paramVal, 0.01f, -100.0f, 100.0f, "%.2f")) {
+                                animComp->SetBlendParameter(bt.parameterName, paramVal);
+                            }
+                        }
+
+                        ImGui::Separator();
+                        ImGui::Text("Nodes (%zu):", bt.nodes.size());
+
+                        // Build list of animation names for combo selection
+                        std::vector<std::string> btAnimNames;
+                        btAnimNames.push_back("(none)");
+                        for (const auto& [aname, aval] : animations) {
+                            (void)aval;
+                            btAnimNames.push_back(aname);
+                        }
+
+                        i32 btRemoveIdx = -1;
+                        for (usize ni = 0; ni < bt.nodes.size(); ++ni) {
+                            auto& node = bt.nodes[ni];
+                            ImGui::PushID(static_cast<int>(ni));
+
+                            // Threshold
+                            ImGui::SetNextItemWidth(80.0f);
+                            ImGui::DragFloat("##BTThreshold", &node.threshold, 0.01f, -100.0f, 100.0f, "%.2f");
+                            ImGui::SameLine();
+
+                            // Animation combo
+                            ImGui::SetNextItemWidth(140.0f);
+                            i32 btCurrentIdx = 0;
+                            for (usize ai = 1; ai < btAnimNames.size(); ++ai) {
+                                if (btAnimNames[ai] == node.animationName) {
+                                    btCurrentIdx = static_cast<i32>(ai);
+                                    break;
+                                }
+                            }
+                            std::string btComboLabel = "##BTAnimCombo";
+                            if (ImGui::BeginCombo(btComboLabel.c_str(), btAnimNames[btCurrentIdx].c_str())) {
+                                for (usize ai = 0; ai < btAnimNames.size(); ++ai) {
+                                    bool btSelected = (static_cast<i32>(ai) == btCurrentIdx);
+                                    if (ImGui::Selectable(btAnimNames[ai].c_str(), btSelected)) {
+                                        node.animationName = (ai == 0) ? "" : btAnimNames[ai];
+                                    }
+                                    if (btSelected) ImGui::SetItemDefaultFocus();
+                                }
+                                ImGui::EndCombo();
+                            }
+                            ImGui::SameLine();
+
+                            // Remove node button
+                            if (ImGui::SmallButton("X##BTRemove")) {
+                                btRemoveIdx = static_cast<i32>(ni);
+                            }
+
+                            ImGui::PopID();
+                        }
+
+                        if (btRemoveIdx >= 0 && btRemoveIdx < static_cast<i32>(bt.nodes.size())) {
+                            bt.nodes.erase(bt.nodes.begin() + btRemoveIdx);
+                        }
+
+                        // Add Node button
+                        if (ImGui::Button("Add Node##BTAdd")) {
+                            Animation::BlendNode newNode;
+                            newNode.threshold = bt.nodes.empty() ? 0.0f : bt.nodes.back().threshold + 1.0f;
+                            newNode.animationName = "";
+                            bt.nodes.push_back(newNode);
+                        }
+                        ImGui::SameLine();
+
+                        // Sort nodes by threshold
+                        if (ImGui::Button("Sort##BTSort")) {
+                            std::sort(bt.nodes.begin(), bt.nodes.end(),
+                                [](const Animation::BlendNode& a, const Animation::BlendNode& b) {
+                                    return a.threshold < b.threshold;
+                                });
+                        }
+
+                        // Preview: show which animations are blending and with what weights
+                        if (bt.enabled && !bt.parameterName.empty() && bt.nodes.size() >= 2) {
+                            ImGui::Separator();
+                            f32 previewVal = animComp->GetBlendParameter(bt.parameterName);
+                            std::string previewAnimA, previewAnimB;
+                            f32 previewBlend = 0.0f;
+                            bt.Evaluate(previewVal, previewAnimA, previewAnimB, previewBlend);
+                            if (!previewAnimA.empty()) {
+                                if (previewAnimB.empty()) {
+                                    ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "Output: %s (100%%)", previewAnimA.c_str());
+                                } else {
+                                    ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f),
+                                        "Blend: %s (%.0f%%) + %s (%.0f%%)",
+                                        previewAnimA.c_str(), (1.0f - previewBlend) * 100.0f,
+                                        previewAnimB.c_str(), previewBlend * 100.0f);
+                                }
+                            }
+                        }
+
+                        ImGui::TreePop();
+                    }
+
+                    // Skeleton bone list
+                    const auto* skeleton = animator.GetSkeleton();
+                    if (skeleton && !skeleton->bones.empty() && ImGui::TreeNode("Bones")) {
+                        ImGui::Text("%zu bones", skeleton->bones.size());
+                        for (usize i = 0; i < skeleton->bones.size(); ++i) {
+                            const auto& bone = skeleton->bones[i];
+                            ImGui::BulletText("%s (parent: %s)", bone.name.c_str(),
+                                bone.parentIndex >= 0 ? skeleton->bones[bone.parentIndex].name.c_str() : "root");
+                        }
+                        ImGui::TreePop();
+                    }
+
+                    // Debug visualization toggle
+                    ImGui::Separator();
+                    ImGui::Checkbox("Show Bones##Animator", &animComp->showBones);
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Draw wireframe skeleton lines in the viewport");
+                    }
                 }
             }
+        }
+
+        // Bone Attachment component
+        if (m_World->HasComponent<ECS::BoneAttachmentComponent>(m_PrimarySelected)) {
+            DrawBoneAttachmentComponent(m_PrimarySelected);
         }
 
         // Flower components
@@ -1732,6 +1980,9 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::RagdollComponent>(m_PrimarySelected)) {
             DrawRagdollComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::AnimationRecorderComponent>(m_PrimarySelected)) {
+            DrawAnimationRecorderComponent(m_PrimarySelected);
         }
 
         DrawSmartSuggestions(m_PrimarySelected);

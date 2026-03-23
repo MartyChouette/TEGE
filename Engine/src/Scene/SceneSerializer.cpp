@@ -24,6 +24,7 @@
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/IKComponents.h"
+#include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/MeshRenderer.h"
 #include "Enjin/ECS/Components/DynamicDifficulty.h"
@@ -5101,6 +5102,8 @@ json SerializeRagdollComponent(const ECS::RagdollComponent& r) {
     o["settleTime"] = RF(r.settleTime);
     o["blendWeight"] = RF(r.blendWeight);
     o["blendSpeed"] = RF(r.blendSpeed);
+    o["blendTime"] = RF(r.blendTime);
+    o["autoActivateOnDeath"] = r.autoActivateOnDeath;
     o["gravityScale"] = RF(r.gravityScale);
     o["linearDamping"] = RF(r.linearDamping);
     o["angularDamping"] = RF(r.angularDamping);
@@ -5113,6 +5116,7 @@ json SerializeRagdollComponent(const ECS::RagdollComponent& r) {
         bjJson["jointEntity"] = static_cast<u64>(bj.jointEntity);
         bjJson["mass"] = RF(bj.mass);
         bjJson["colliderRadius"] = RF(bj.colliderRadius);
+        bjJson["colliderSize"] = SerializeVector3(bj.colliderSize);
         bjJson["coneAngleLimit"] = RF(bj.coneAngleLimit);
         bjJson["twistLimit"] = RF(bj.twistLimit);
         joints.push_back(bjJson);
@@ -5129,6 +5133,8 @@ ECS::RagdollComponent DeserializeRagdollComponent(const json& j) {
     if (j.contains("settleTime")) r.settleTime = j["settleTime"].get<f32>();
     if (j.contains("blendWeight")) r.blendWeight = j["blendWeight"].get<f32>();
     if (j.contains("blendSpeed")) r.blendSpeed = j["blendSpeed"].get<f32>();
+    if (j.contains("blendTime")) r.blendTime = j["blendTime"].get<f32>();
+    if (j.contains("autoActivateOnDeath")) r.autoActivateOnDeath = JB(j["autoActivateOnDeath"]);
     if (j.contains("gravityScale")) r.gravityScale = j["gravityScale"].get<f32>();
     if (j.contains("linearDamping")) r.linearDamping = j["linearDamping"].get<f32>();
     if (j.contains("angularDamping")) r.angularDamping = j["angularDamping"].get<f32>();
@@ -5141,12 +5147,34 @@ ECS::RagdollComponent DeserializeRagdollComponent(const json& j) {
             if (bjJson.contains("jointEntity")) bj.jointEntity = static_cast<ECS::Entity>(bjJson["jointEntity"].get<u64>());
             if (bjJson.contains("mass")) bj.mass = bjJson["mass"].get<f32>();
             if (bjJson.contains("colliderRadius")) bj.colliderRadius = bjJson["colliderRadius"].get<f32>();
+            if (bjJson.contains("colliderSize") && bjJson["colliderSize"].is_array()) bj.colliderSize = DeserializeVector3(bjJson["colliderSize"]);
             if (bjJson.contains("coneAngleLimit")) bj.coneAngleLimit = bjJson["coneAngleLimit"].get<f32>();
             if (bjJson.contains("twistLimit")) bj.twistLimit = bjJson["twistLimit"].get<f32>();
             r.boneJoints.push_back(bj);
         }
     }
     return r;
+}
+
+// ============================================================================
+// Animation Recorder
+// ============================================================================
+
+json SerializeAnimationRecorderComponent(const ECS::AnimationRecorderComponent& rec) {
+    json o;
+    o["recordedAnimName"] = rec.recordedAnimName;
+    o["recordInterval"] = RF(rec.recordInterval);
+    o["recordCount"] = rec.recordCount;
+    // recording state and tracks are transient — not serialized
+    return o;
+}
+
+ECS::AnimationRecorderComponent DeserializeAnimationRecorderComponent(const json& j) {
+    ECS::AnimationRecorderComponent rec;
+    if (j.contains("recordedAnimName")) rec.recordedAnimName = j["recordedAnimName"].get<std::string>();
+    if (j.contains("recordInterval")) rec.recordInterval = j["recordInterval"].get<f32>();
+    if (j.contains("recordCount")) rec.recordCount = j["recordCount"].get<i32>();
+    return rec;
 }
 
 json SerializeScriptPropertyValue(const ECS::ScriptPropertyValue& val, ECS::ScriptPropertyType type) {
@@ -5752,6 +5780,28 @@ json SerializeAnimatorComponent(const ECS::AnimatorComponent& animComp) {
 
     j["stateMachine"] = smJson;
 
+    // Serialize blend tree
+    const auto& bt = animComp.blendTree;
+    json btJson;
+    btJson["enabled"] = bt.enabled;
+    btJson["parameterName"] = bt.parameterName;
+    json btNodesArr = json::array();
+    for (const auto& node : bt.nodes) {
+        json nj;
+        nj["animationName"] = node.animationName;
+        nj["threshold"] = RF(node.threshold);
+        btNodesArr.push_back(nj);
+    }
+    btJson["nodes"] = btNodesArr;
+    j["blendTree"] = btJson;
+
+    // Serialize blend parameters
+    json blendParamsObj = json::object();
+    for (const auto& [k, v] : animComp.blendParameters) {
+        blendParamsObj[k] = RF(v);
+    }
+    j["blendParameters"] = blendParamsObj;
+
     return j;
 }
 
@@ -5893,6 +5943,28 @@ ECS::AnimatorComponent DeserializeAnimatorComponent(const json& j, std::shared_p
         if (smJson.contains("intParams") && smJson["intParams"].is_object()) {
             for (auto& [k, v] : smJson["intParams"].items())
                 animComp.stateMachine.SetInt(k, v.get<i32>());
+        }
+    }
+
+    // Deserialize blend tree
+    if (j.contains("blendTree") && j["blendTree"].is_object()) {
+        const auto& btJson = j["blendTree"];
+        if (btJson.contains("enabled")) animComp.blendTree.enabled = JB(btJson["enabled"]);
+        if (btJson.contains("parameterName")) animComp.blendTree.parameterName = btJson["parameterName"].get<std::string>();
+        if (btJson.contains("nodes") && btJson["nodes"].is_array()) {
+            for (const auto& nj : btJson["nodes"]) {
+                Animation::BlendNode node;
+                if (nj.contains("animationName")) node.animationName = nj["animationName"].get<std::string>();
+                if (nj.contains("threshold")) node.threshold = nj["threshold"].get<f32>();
+                animComp.blendTree.nodes.push_back(node);
+            }
+        }
+    }
+
+    // Deserialize blend parameters
+    if (j.contains("blendParameters") && j["blendParameters"].is_object()) {
+        for (auto& [k, v] : j["blendParameters"].items()) {
+            animComp.blendParameters[k] = v.get<f32>();
         }
     }
 
@@ -6216,6 +6288,15 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 ikJson["interactionTag"] = ik->interactionTag;
                 entityJson["interactionIK"] = ikJson;
             }
+            if (m_World->HasComponent<ECS::BoneAttachmentComponent>(entity)) {
+                auto* ba = m_World->GetComponent<ECS::BoneAttachmentComponent>(entity);
+                json baJson;
+                baJson["targetEntity"] = static_cast<u64>(ba->targetEntity);
+                baJson["targetBoneName"] = ba->targetBoneName;
+                baJson["positionOffset"] = { ba->positionOffset.x, ba->positionOffset.y, ba->positionOffset.z };
+                baJson["rotationOffset"] = { ba->rotationOffset.x, ba->rotationOffset.y, ba->rotationOffset.z, ba->rotationOffset.w };
+                entityJson["boneAttachment"] = baJson;
+            }
 
             // Audio Components
             if (m_World->HasComponent<ECS::AudioSourceComponent>(entity)) {
@@ -6441,6 +6522,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             }
             if (m_World->HasComponent<ECS::RagdollComponent>(entity)) {
                 entityJson["ragdoll"] = SerializeRagdollComponent(*m_World->GetComponent<ECS::RagdollComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::AnimationRecorderComponent>(entity)) {
+                entityJson["animationRecorder"] = SerializeAnimationRecorderComponent(*m_World->GetComponent<ECS::AnimationRecorderComponent>(entity));
             }
 
             // Flower Components
@@ -6915,6 +6999,20 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
                 if (ikJson.contains("interactionTag")) ik.interactionTag = ikJson["interactionTag"].get<std::string>();
             }
+            if (entityJson.contains("boneAttachment")) {
+                auto& ba = m_World->AddComponent<ECS::BoneAttachmentComponent>(entity);
+                auto& baJson = entityJson["boneAttachment"];
+                if (baJson.contains("targetEntity")) ba.targetEntity = static_cast<ECS::Entity>(baJson["targetEntity"].get<u64>());
+                if (baJson.contains("targetBoneName")) ba.targetBoneName = baJson["targetBoneName"].get<std::string>();
+                if (baJson.contains("positionOffset") && baJson["positionOffset"].is_array() && baJson["positionOffset"].size() >= 3) {
+                    auto& a = baJson["positionOffset"];
+                    ba.positionOffset = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
+                }
+                if (baJson.contains("rotationOffset") && baJson["rotationOffset"].is_array() && baJson["rotationOffset"].size() >= 4) {
+                    auto& a = baJson["rotationOffset"];
+                    ba.rotationOffset = Math::Quaternion(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>(), a[3].get<f32>());
+                }
+            }
 
             // Audio Components
             if (entityJson.contains("audioSource")) {
@@ -7130,6 +7228,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             }
             if (entityJson.contains("ragdoll")) {
                 m_World->AddComponent<ECS::RagdollComponent>(entity, DeserializeRagdollComponent(entityJson["ragdoll"]));
+            }
+            if (entityJson.contains("animationRecorder")) {
+                m_World->AddComponent<ECS::AnimationRecorderComponent>(entity, DeserializeAnimationRecorderComponent(entityJson["animationRecorder"]));
             }
 
             // Flower Components
@@ -7486,6 +7587,15 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
                 ikJson["interactionTag"] = ik->interactionTag;
                 entityJson["interactionIK"] = ikJson;
             }
+            if (m_World->HasComponent<ECS::BoneAttachmentComponent>(entity)) {
+                auto* ba = m_World->GetComponent<ECS::BoneAttachmentComponent>(entity);
+                json baJson;
+                baJson["targetEntity"] = static_cast<u64>(ba->targetEntity);
+                baJson["targetBoneName"] = ba->targetBoneName;
+                baJson["positionOffset"] = { ba->positionOffset.x, ba->positionOffset.y, ba->positionOffset.z };
+                baJson["rotationOffset"] = { ba->rotationOffset.x, ba->rotationOffset.y, ba->rotationOffset.z, ba->rotationOffset.w };
+                entityJson["boneAttachment"] = baJson;
+            }
 
             // Audio Components
             if (m_World->HasComponent<ECS::AudioSourceComponent>(entity)) {
@@ -7711,6 +7821,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::RagdollComponent>(entity)) {
                 entityJson["ragdoll"] = SerializeRagdollComponent(*m_World->GetComponent<ECS::RagdollComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::AnimationRecorderComponent>(entity)) {
+                entityJson["animationRecorder"] = SerializeAnimationRecorderComponent(*m_World->GetComponent<ECS::AnimationRecorderComponent>(entity));
             }
 
             // Flower Components
@@ -8111,6 +8224,20 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
                 if (ikJson.contains("interactionTag")) ik.interactionTag = ikJson["interactionTag"].get<std::string>();
             }
+            if (entityJson.contains("boneAttachment")) {
+                auto& ba = m_World->AddComponent<ECS::BoneAttachmentComponent>(entity);
+                auto& baJson = entityJson["boneAttachment"];
+                if (baJson.contains("targetEntity")) ba.targetEntity = static_cast<ECS::Entity>(baJson["targetEntity"].get<u64>());
+                if (baJson.contains("targetBoneName")) ba.targetBoneName = baJson["targetBoneName"].get<std::string>();
+                if (baJson.contains("positionOffset") && baJson["positionOffset"].is_array() && baJson["positionOffset"].size() >= 3) {
+                    auto& a = baJson["positionOffset"];
+                    ba.positionOffset = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
+                }
+                if (baJson.contains("rotationOffset") && baJson["rotationOffset"].is_array() && baJson["rotationOffset"].size() >= 4) {
+                    auto& a = baJson["rotationOffset"];
+                    ba.rotationOffset = Math::Quaternion(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>(), a[3].get<f32>());
+                }
+            }
 
             // Audio Components
             if (entityJson.contains("audioSource")) {
@@ -8326,6 +8453,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             }
             if (entityJson.contains("ragdoll")) {
                 m_World->AddComponent<ECS::RagdollComponent>(entity, DeserializeRagdollComponent(entityJson["ragdoll"]));
+            }
+            if (entityJson.contains("animationRecorder")) {
+                m_World->AddComponent<ECS::AnimationRecorderComponent>(entity, DeserializeAnimationRecorderComponent(entityJson["animationRecorder"]));
             }
 
             // Flower Components
@@ -8571,6 +8701,15 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             ikJson["interactionTag"] = ik->interactionTag;
             entityJson["interactionIK"] = ikJson;
         }
+        if (world->HasComponent<ECS::BoneAttachmentComponent>(entity)) {
+            auto* ba = world->GetComponent<ECS::BoneAttachmentComponent>(entity);
+            json baJson;
+            baJson["targetEntity"] = static_cast<u64>(ba->targetEntity);
+            baJson["targetBoneName"] = ba->targetBoneName;
+            baJson["positionOffset"] = { ba->positionOffset.x, ba->positionOffset.y, ba->positionOffset.z };
+            baJson["rotationOffset"] = { ba->rotationOffset.x, ba->rotationOffset.y, ba->rotationOffset.z, ba->rotationOffset.w };
+            entityJson["boneAttachment"] = baJson;
+        }
         // Audio
         if (world->HasComponent<ECS::AudioSourceComponent>(entity))
             entityJson["audioSource"] = SerializeAudioSourceComponent(*world->GetComponent<ECS::AudioSourceComponent>(entity));
@@ -8707,6 +8846,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["sliderJoint"] = SerializeSliderJointComponent(*world->GetComponent<ECS::SliderJointComponent>(entity));
         if (world->HasComponent<ECS::RagdollComponent>(entity))
             entityJson["ragdoll"] = SerializeRagdollComponent(*world->GetComponent<ECS::RagdollComponent>(entity));
+        if (world->HasComponent<ECS::AnimationRecorderComponent>(entity))
+            entityJson["animationRecorder"] = SerializeAnimationRecorderComponent(*world->GetComponent<ECS::AnimationRecorderComponent>(entity));
         // Flower
         if (world->HasComponent<ECS::JellyMeshComponent>(entity))
             entityJson["jellyMesh"] = SerializeJellyMeshComponent(*world->GetComponent<ECS::JellyMeshComponent>(entity));
@@ -8919,6 +9060,18 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
             if (ikJson.contains("interactionTag")) ik.interactionTag = ikJson["interactionTag"].get<std::string>();
         }
+        if (entityJson.contains("boneAttachment")) {
+            auto& ba = world->AddComponent<ECS::BoneAttachmentComponent>(entity);
+            auto& baJson = entityJson["boneAttachment"];
+            if (baJson.contains("targetEntity")) ba.targetEntity = static_cast<ECS::Entity>(baJson["targetEntity"].get<u64>());
+            if (baJson.contains("targetBoneName")) ba.targetBoneName = baJson["targetBoneName"].get<std::string>();
+            if (baJson.contains("positionOffset") && baJson["positionOffset"].is_array() && baJson["positionOffset"].size() >= 3) {
+                auto& a = baJson["positionOffset"]; ba.positionOffset = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
+            }
+            if (baJson.contains("rotationOffset") && baJson["rotationOffset"].is_array() && baJson["rotationOffset"].size() >= 4) {
+                auto& a = baJson["rotationOffset"]; ba.rotationOffset = Math::Quaternion(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>(), a[3].get<f32>());
+            }
+        }
         // Audio
         if (entityJson.contains("audioSource"))
             world->AddComponent<ECS::AudioSourceComponent>(entity, DeserializeAudioSourceComponent(entityJson["audioSource"]));
@@ -9049,6 +9202,8 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             world->AddComponent<ECS::SliderJointComponent>(entity, DeserializeSliderJointComponent(entityJson["sliderJoint"]));
         if (entityJson.contains("ragdoll"))
             world->AddComponent<ECS::RagdollComponent>(entity, DeserializeRagdollComponent(entityJson["ragdoll"]));
+        if (entityJson.contains("animationRecorder"))
+            world->AddComponent<ECS::AnimationRecorderComponent>(entity, DeserializeAnimationRecorderComponent(entityJson["animationRecorder"]));
         // Flower
         if (entityJson.contains("jellyMesh"))
             world->AddComponent<ECS::JellyMeshComponent>(entity, DeserializeJellyMeshComponent(entityJson["jellyMesh"]));
@@ -9098,6 +9253,13 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeSkeletonComponent(*world->GetComponent<ECS::SkeletonComponent>(entity));
         else if (key == "animator" && world->HasComponent<ECS::AnimatorComponent>(entity))
             j = SerializeAnimatorComponent(*world->GetComponent<ECS::AnimatorComponent>(entity));
+        else if (key == "boneAttachment" && world->HasComponent<ECS::BoneAttachmentComponent>(entity)) {
+            auto* ba = world->GetComponent<ECS::BoneAttachmentComponent>(entity);
+            j["targetEntity"] = static_cast<u64>(ba->targetEntity);
+            j["targetBoneName"] = ba->targetBoneName;
+            j["positionOffset"] = { ba->positionOffset.x, ba->positionOffset.y, ba->positionOffset.z };
+            j["rotationOffset"] = { ba->rotationOffset.x, ba->rotationOffset.y, ba->rotationOffset.z, ba->rotationOffset.w };
+        }
         else if (key == "light" && world->HasComponent<ECS::LightComponent>(entity))
             j = SerializeLightComponent(*world->GetComponent<ECS::LightComponent>(entity));
         else if (key == "notes" && world->HasComponent<ECS::NotesComponent>(entity))
@@ -9298,6 +9460,8 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeSliderJointComponent(*world->GetComponent<ECS::SliderJointComponent>(entity));
         else if (key == "ragdoll" && world->HasComponent<ECS::RagdollComponent>(entity))
             j = SerializeRagdollComponent(*world->GetComponent<ECS::RagdollComponent>(entity));
+        else if (key == "animationRecorder" && world->HasComponent<ECS::AnimationRecorderComponent>(entity))
+            j = SerializeAnimationRecorderComponent(*world->GetComponent<ECS::AnimationRecorderComponent>(entity));
         else if (key == "jellyMesh" && world->HasComponent<ECS::JellyMeshComponent>(entity))
             j = SerializeJellyMeshComponent(*world->GetComponent<ECS::JellyMeshComponent>(entity));
         else if (key == "tether" && world->HasComponent<ECS::TetherComponent>(entity))
@@ -9343,6 +9507,18 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
             if (world->HasComponent<ECS::SkeletonComponent>(entity))
                 skel = world->GetComponent<ECS::SkeletonComponent>(entity)->skeleton;
             world->AddComponent<ECS::AnimatorComponent>(entity, DeserializeAnimatorComponent(j, skel));
+            return true;
+        }
+        if (key == "boneAttachment") {
+            auto& ba = world->AddComponent<ECS::BoneAttachmentComponent>(entity);
+            if (j.contains("targetEntity")) ba.targetEntity = static_cast<ECS::Entity>(j["targetEntity"].get<u64>());
+            if (j.contains("targetBoneName")) ba.targetBoneName = j["targetBoneName"].get<std::string>();
+            if (j.contains("positionOffset") && j["positionOffset"].is_array() && j["positionOffset"].size() >= 3) {
+                auto& a = j["positionOffset"]; ba.positionOffset = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
+            }
+            if (j.contains("rotationOffset") && j["rotationOffset"].is_array() && j["rotationOffset"].size() >= 4) {
+                auto& a = j["rotationOffset"]; ba.rotationOffset = Math::Quaternion(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>(), a[3].get<f32>());
+            }
             return true;
         }
         if (key == "light") { world->AddComponent<ECS::LightComponent>(entity, DeserializeLightComponent(j)); return true; }
@@ -9449,6 +9625,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "fixedJoint") { world->AddComponent<ECS::FixedJointComponent>(entity, DeserializeFixedJointComponent(j)); return true; }
         if (key == "sliderJoint") { world->AddComponent<ECS::SliderJointComponent>(entity, DeserializeSliderJointComponent(j)); return true; }
         if (key == "ragdoll") { world->AddComponent<ECS::RagdollComponent>(entity, DeserializeRagdollComponent(j)); return true; }
+        if (key == "animationRecorder") { world->AddComponent<ECS::AnimationRecorderComponent>(entity, DeserializeAnimationRecorderComponent(j)); return true; }
         if (key == "jellyMesh") { world->AddComponent<ECS::JellyMeshComponent>(entity, DeserializeJellyMeshComponent(j)); return true; }
         if (key == "tether") { world->AddComponent<ECS::TetherComponent>(entity, DeserializeTetherComponent(j)); return true; }
         if (key == "grabbable") { world->AddComponent<ECS::GrabbableComponent>(entity, DeserializeGrabbableComponent(j)); return true; }

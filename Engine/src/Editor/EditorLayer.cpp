@@ -38,6 +38,7 @@
 #include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/IKComponents.h"
+#include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/ECS/Components/Flower.h"
 #ifndef _WIN32
 #include <unistd.h>
@@ -2921,6 +2922,62 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     }
                 }
             }
+            // --- Bone visualization: wireframe skeleton for selected entities ---
+            if (m_PrimarySelected != ECS::INVALID_ENTITY &&
+                m_World->HasComponent<ECS::AnimatorComponent>(m_PrimarySelected)) {
+                auto* animComp = m_World->GetComponent<ECS::AnimatorComponent>(m_PrimarySelected);
+                if (animComp && animComp->showBones) {
+                    const auto* skeleton = animComp->animator.GetSkeleton();
+                    const auto& pose = animComp->animator.GetCurrentPose();
+                    if (skeleton && !skeleton->bones.empty() &&
+                        pose.worldTransforms.size() == skeleton->bones.size()) {
+                        // Get entity world matrix for transforming bone-local positions
+                        Math::Matrix4 entityWorld = ECS::ComputeWorldMatrix(m_World, m_PrimarySelected);
+
+                        // Check for IK target bones (yellow highlight)
+                        std::string lookAtBone, interactionBone;
+                        auto* lookAtIK = m_World->GetComponent<ECS::LookAtIKComponent>(m_PrimarySelected);
+                        if (lookAtIK) lookAtBone = lookAtIK->headBoneName;
+                        auto* interactionIK = m_World->GetComponent<ECS::InteractionIKComponent>(m_PrimarySelected);
+                        if (interactionIK) interactionBone = interactionIK->handBoneName;
+
+                        for (usize i = 0; i < skeleton->bones.size(); ++i) {
+                            const auto& bone = skeleton->bones[i];
+                            // Get this bone's world position (bone-space -> entity-space -> world-space)
+                            Math::Matrix4 boneWorld = entityWorld * pose.worldTransforms[i];
+                            Math::Vector3 bonePos(boneWorld.m[12], boneWorld.m[13], boneWorld.m[14]);
+
+                            // Determine color: yellow for IK targets, white for normal
+                            bool isIKTarget = (!lookAtBone.empty() && bone.name == lookAtBone) ||
+                                              (!interactionBone.empty() && bone.name == interactionBone);
+                            ImU32 boneColor = isIKTarget ? IM_COL32(255, 220, 50, 220)
+                                                         : IM_COL32(255, 255, 255, 200);
+
+                            // Draw line from parent to this bone
+                            if (bone.parentIndex >= 0 && bone.parentIndex < static_cast<i32>(skeleton->bones.size())) {
+                                Math::Matrix4 parentWorld = entityWorld * pose.worldTransforms[bone.parentIndex];
+                                Math::Vector3 parentPos(parentWorld.m[12], parentWorld.m[13], parentWorld.m[14]);
+                                drawLine3D(bgDrawList, parentPos, bonePos, boneColor, 1.5f);
+                            }
+
+                            // Draw a small cross at each joint
+                            ImVec2 jointScreen;
+                            if (worldToScreen(bonePos, jointScreen)) {
+                                f32 sz = isIKTarget ? 4.0f : 2.5f;
+                                bgDrawList->AddLine(
+                                    ImVec2(jointScreen.x - sz, jointScreen.y),
+                                    ImVec2(jointScreen.x + sz, jointScreen.y),
+                                    boneColor, 1.0f);
+                                bgDrawList->AddLine(
+                                    ImVec2(jointScreen.x, jointScreen.y - sz),
+                                    ImVec2(jointScreen.x, jointScreen.y + sz),
+                                    boneColor, 1.0f);
+                            }
+                        }
+                    }
+                }
+            }
+
             bgDrawList->PopClipRect();
         }
     }

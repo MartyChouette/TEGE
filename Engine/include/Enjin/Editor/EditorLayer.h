@@ -436,6 +436,7 @@ private:
     void DrawSaveDataComponent(ECS::Entity entity);
     void DrawSaveLoadMenuComponent(ECS::Entity entity);
     void DrawSkeletonComponent(ECS::Entity entity);
+    void DrawBoneAttachmentComponent(ECS::Entity entity);
     void DrawStreamingVolumeComponent(ECS::Entity entity);
     void DrawStreamingPortalComponent(ECS::Entity entity);
 
@@ -476,6 +477,7 @@ private:
     void DrawFixedJointComponent(ECS::Entity entity);
     void DrawSliderJointComponent(ECS::Entity entity);
     void DrawRagdollComponent(ECS::Entity entity);
+    void DrawAnimationRecorderComponent(ECS::Entity entity);
 
     // Puzzle components
     void DrawLockComponent(ECS::Entity entity);
