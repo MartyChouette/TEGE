@@ -25,7 +25,9 @@
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/MeshRenderer.h"
 #include "Enjin/ECS/Components/DynamicDifficulty.h"
+#include "Enjin/ECS/Components/ArtStyle.h"
 #include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Components/LOD.h"
 #include "Enjin/ECS/Components/Script.h"
@@ -2126,6 +2128,44 @@ ECS::MeshColliderComponent DeserializeMeshColliderComponent(const json& j) {
         col.indices = j["indices"].get<std::vector<u32>>();
     }
     return col;
+}
+
+// ============================================================================
+// Mesh Renderer
+// ============================================================================
+
+json SerializeMeshRendererComponent(const ECS::MeshRendererComponent& mr) {
+    json j;
+    j["enabled"] = mr.enabled;
+    j["frustumCull"] = mr.frustumCull;
+    j["occlusionCull"] = mr.occlusionCull;
+    j["maxDrawDistance"] = RF(mr.maxDrawDistance);
+    j["renderQueue"] = mr.renderQueue;
+    j["renderLayerMask"] = mr.renderLayerMask;
+    j["lodBias"] = RF(mr.lodBias);
+    j["shadowMode"] = static_cast<u8>(mr.shadowMode);
+    j["contributeMotionVectors"] = mr.contributeMotionVectors;
+    j["allowInstancing"] = mr.allowInstancing;
+    j["wireframe"] = mr.wireframe;
+    if (!mr.customShaderName.empty()) j["customShaderName"] = mr.customShaderName;
+    return j;
+}
+
+ECS::MeshRendererComponent DeserializeMeshRendererComponent(const json& j) {
+    ECS::MeshRendererComponent mr;
+    if (j.contains("enabled")) mr.enabled = JB(j["enabled"]);
+    if (j.contains("frustumCull")) mr.frustumCull = JB(j["frustumCull"]);
+    if (j.contains("occlusionCull")) mr.occlusionCull = JB(j["occlusionCull"]);
+    if (j.contains("maxDrawDistance")) mr.maxDrawDistance = j["maxDrawDistance"].get<f32>();
+    if (j.contains("renderQueue")) mr.renderQueue = j["renderQueue"].get<i32>();
+    if (j.contains("renderLayerMask")) mr.renderLayerMask = j["renderLayerMask"].get<u32>();
+    if (j.contains("lodBias")) mr.lodBias = j["lodBias"].get<f32>();
+    if (j.contains("shadowMode")) mr.shadowMode = static_cast<ECS::MeshRendererComponent::ShadowMode>(j["shadowMode"].get<u8>());
+    if (j.contains("contributeMotionVectors")) mr.contributeMotionVectors = JB(j["contributeMotionVectors"]);
+    if (j.contains("allowInstancing")) mr.allowInstancing = JB(j["allowInstancing"]);
+    if (j.contains("wireframe")) mr.wireframe = JB(j["wireframe"]);
+    if (j.contains("customShaderName")) mr.customShaderName = j["customShaderName"].get<std::string>();
+    return mr;
 }
 
 // ============================================================================
@@ -4280,6 +4320,152 @@ ECS::DynamicDifficultyComponent DeserializeDynamicDifficultyComponent(const json
     return dd;
 }
 
+json SerializeArtStyleComponent(const ECS::ArtStyleComponent& as) {
+    json j;
+    j["style"] = static_cast<u32>(as.style);
+    j["propagateToChildren"] = as.propagateToChildren;
+
+    // Pre-PBR
+    j["prePBR_halfLambert"] = as.prePBR_halfLambert;
+    j["prePBR_flatShading"] = as.prePBR_flatShading;
+    j["prePBR_gouraudOnly"] = as.prePBR_gouraudOnly;
+    j["prePBR_specularStrength"] = RF(as.prePBR_specularStrength);
+
+    // Hand-Painted
+    j["handPainted_lightWrapAmount"] = RF(as.handPainted_lightWrapAmount);
+    j["handPainted_lightRampMode"] = as.handPainted_lightRampMode;
+    j["handPainted_saturationBoost"] = RF(as.handPainted_saturationBoost);
+
+    // Cel/Toon
+    j["cel_diffuseBands"] = RF(as.cel_diffuseBands);
+    j["cel_specularCutoff"] = RF(as.cel_specularCutoff);
+    j["cel_outlineWidth"] = RF(as.cel_outlineWidth);
+    j["cel_outlineColor"] = SerializeVector3(as.cel_outlineColor);
+    j["cel_rimStrength"] = RF(as.cel_rimStrength);
+    j["cel_shadowMode"] = as.cel_shadowMode;
+    j["cel_lightRampMode"] = as.cel_lightRampMode;
+
+    // NPR
+    j["npr_celOutline"] = as.npr_celOutline;
+    j["npr_outlineThickness"] = RF(as.npr_outlineThickness);
+    j["npr_curvatureWeight"] = RF(as.npr_curvatureWeight);
+    j["npr_stipplePatternMask"] = as.npr_stipplePatternMask;
+    j["npr_stippleDensity"] = RF(as.npr_stippleDensity);
+    j["npr_stippleStrength"] = RF(as.npr_stippleStrength);
+    j["npr_diffuseBands"] = as.npr_diffuseBands;
+
+    // Retro
+    j["retro_vertexSnapping"] = as.retro_vertexSnapping;
+    j["retro_snapResolution"] = as.retro_snapResolution;
+    j["retro_affineTexturing"] = as.retro_affineTexturing;
+    j["retro_uvQuantize"] = as.retro_uvQuantize;
+    j["retro_flatShading"] = as.retro_flatShading;
+    j["retro_texturePageSize"] = RF(as.retro_texturePageSize);
+    j["retro_posterizeLevels"] = RF(as.retro_posterizeLevels);
+
+    // Pixel Art
+    j["pixel_paletteColors"] = as.pixel_paletteColors;
+    j["pixel_paletteMode"] = as.pixel_paletteMode;
+    j["pixel_pointFiltering"] = as.pixel_pointFiltering;
+    j["pixel_normalQuantizeSteps"] = as.pixel_normalQuantizeSteps;
+
+    // Material Expression
+    j["matExpr_surfaceNoiseScale"] = RF(as.matExpr_surfaceNoiseScale);
+    j["matExpr_surfaceNoiseStrength"] = RF(as.matExpr_surfaceNoiseStrength);
+    j["matExpr_sssIntensity"] = RF(as.matExpr_sssIntensity);
+    j["matExpr_sssRadius"] = RF(as.matExpr_sssRadius);
+    j["matExpr_sssColor"] = SerializeVector3(as.matExpr_sssColor);
+
+    // Analog
+    j["analog_filmGrain"] = as.analog_filmGrain;
+    j["analog_filmGrainIntensity"] = RF(as.analog_filmGrainIntensity);
+    j["analog_chromaticAberration"] = as.analog_chromaticAberration;
+    j["analog_chromaticIntensity"] = RF(as.analog_chromaticIntensity);
+    j["analog_vhsEnabled"] = as.analog_vhsEnabled;
+    j["analog_vhsTrackingIntensity"] = RF(as.analog_vhsTrackingIntensity);
+    j["analog_crtEnabled"] = as.analog_crtEnabled;
+    j["analog_scanlineIntensity"] = RF(as.analog_scanlineIntensity);
+    j["analog_filmGateWeave"] = as.analog_filmGateWeave;
+    j["analog_gateWeaveIntensity"] = RF(as.analog_gateWeaveIntensity);
+    j["analog_lightLeaks"] = as.analog_lightLeaks;
+    j["analog_lightLeakIntensity"] = RF(as.analog_lightLeakIntensity);
+
+    return j;
+}
+
+ECS::ArtStyleComponent DeserializeArtStyleComponent(const json& j) {
+    ECS::ArtStyleComponent as;
+    if (j.contains("style")) as.style = static_cast<ECS::ArtStyleType>(std::min(j["style"].get<u32>(), static_cast<u32>(ECS::ArtStyleType::Count) - 1));
+    if (j.contains("propagateToChildren")) as.propagateToChildren = JB(j["propagateToChildren"]);
+
+    // Pre-PBR
+    if (j.contains("prePBR_halfLambert")) as.prePBR_halfLambert = JB(j["prePBR_halfLambert"]);
+    if (j.contains("prePBR_flatShading")) as.prePBR_flatShading = JB(j["prePBR_flatShading"]);
+    if (j.contains("prePBR_gouraudOnly")) as.prePBR_gouraudOnly = JB(j["prePBR_gouraudOnly"]);
+    if (j.contains("prePBR_specularStrength")) as.prePBR_specularStrength = j["prePBR_specularStrength"].get<f32>();
+
+    // Hand-Painted
+    if (j.contains("handPainted_lightWrapAmount")) as.handPainted_lightWrapAmount = j["handPainted_lightWrapAmount"].get<f32>();
+    if (j.contains("handPainted_lightRampMode")) as.handPainted_lightRampMode = j["handPainted_lightRampMode"].get<u8>();
+    if (j.contains("handPainted_saturationBoost")) as.handPainted_saturationBoost = j["handPainted_saturationBoost"].get<f32>();
+
+    // Cel/Toon
+    if (j.contains("cel_diffuseBands")) as.cel_diffuseBands = j["cel_diffuseBands"].get<f32>();
+    if (j.contains("cel_specularCutoff")) as.cel_specularCutoff = j["cel_specularCutoff"].get<f32>();
+    if (j.contains("cel_outlineWidth")) as.cel_outlineWidth = j["cel_outlineWidth"].get<f32>();
+    if (j.contains("cel_outlineColor")) as.cel_outlineColor = DeserializeVector3(j["cel_outlineColor"]);
+    if (j.contains("cel_rimStrength")) as.cel_rimStrength = j["cel_rimStrength"].get<f32>();
+    if (j.contains("cel_shadowMode")) as.cel_shadowMode = j["cel_shadowMode"].get<u8>();
+    if (j.contains("cel_lightRampMode")) as.cel_lightRampMode = j["cel_lightRampMode"].get<u8>();
+
+    // NPR
+    if (j.contains("npr_celOutline")) as.npr_celOutline = JB(j["npr_celOutline"]);
+    if (j.contains("npr_outlineThickness")) as.npr_outlineThickness = j["npr_outlineThickness"].get<f32>();
+    if (j.contains("npr_curvatureWeight")) as.npr_curvatureWeight = j["npr_curvatureWeight"].get<f32>();
+    if (j.contains("npr_stipplePatternMask")) as.npr_stipplePatternMask = j["npr_stipplePatternMask"].get<u32>();
+    if (j.contains("npr_stippleDensity")) as.npr_stippleDensity = j["npr_stippleDensity"].get<f32>();
+    if (j.contains("npr_stippleStrength")) as.npr_stippleStrength = j["npr_stippleStrength"].get<f32>();
+    if (j.contains("npr_diffuseBands")) as.npr_diffuseBands = j["npr_diffuseBands"].get<u8>();
+
+    // Retro
+    if (j.contains("retro_vertexSnapping")) as.retro_vertexSnapping = JB(j["retro_vertexSnapping"]);
+    if (j.contains("retro_snapResolution")) as.retro_snapResolution = j["retro_snapResolution"].get<u8>();
+    if (j.contains("retro_affineTexturing")) as.retro_affineTexturing = JB(j["retro_affineTexturing"]);
+    if (j.contains("retro_uvQuantize")) as.retro_uvQuantize = JB(j["retro_uvQuantize"]);
+    if (j.contains("retro_flatShading")) as.retro_flatShading = JB(j["retro_flatShading"]);
+    if (j.contains("retro_texturePageSize")) as.retro_texturePageSize = j["retro_texturePageSize"].get<f32>();
+    if (j.contains("retro_posterizeLevels")) as.retro_posterizeLevels = j["retro_posterizeLevels"].get<f32>();
+
+    // Pixel Art
+    if (j.contains("pixel_paletteColors")) as.pixel_paletteColors = j["pixel_paletteColors"].get<u32>();
+    if (j.contains("pixel_paletteMode")) as.pixel_paletteMode = j["pixel_paletteMode"].get<u32>();
+    if (j.contains("pixel_pointFiltering")) as.pixel_pointFiltering = JB(j["pixel_pointFiltering"]);
+    if (j.contains("pixel_normalQuantizeSteps")) as.pixel_normalQuantizeSteps = j["pixel_normalQuantizeSteps"].get<u32>();
+
+    // Material Expression
+    if (j.contains("matExpr_surfaceNoiseScale")) as.matExpr_surfaceNoiseScale = j["matExpr_surfaceNoiseScale"].get<f32>();
+    if (j.contains("matExpr_surfaceNoiseStrength")) as.matExpr_surfaceNoiseStrength = j["matExpr_surfaceNoiseStrength"].get<f32>();
+    if (j.contains("matExpr_sssIntensity")) as.matExpr_sssIntensity = j["matExpr_sssIntensity"].get<f32>();
+    if (j.contains("matExpr_sssRadius")) as.matExpr_sssRadius = j["matExpr_sssRadius"].get<f32>();
+    if (j.contains("matExpr_sssColor")) as.matExpr_sssColor = DeserializeVector3(j["matExpr_sssColor"]);
+
+    // Analog
+    if (j.contains("analog_filmGrain")) as.analog_filmGrain = JB(j["analog_filmGrain"]);
+    if (j.contains("analog_filmGrainIntensity")) as.analog_filmGrainIntensity = j["analog_filmGrainIntensity"].get<f32>();
+    if (j.contains("analog_chromaticAberration")) as.analog_chromaticAberration = JB(j["analog_chromaticAberration"]);
+    if (j.contains("analog_chromaticIntensity")) as.analog_chromaticIntensity = j["analog_chromaticIntensity"].get<f32>();
+    if (j.contains("analog_vhsEnabled")) as.analog_vhsEnabled = JB(j["analog_vhsEnabled"]);
+    if (j.contains("analog_vhsTrackingIntensity")) as.analog_vhsTrackingIntensity = j["analog_vhsTrackingIntensity"].get<f32>();
+    if (j.contains("analog_crtEnabled")) as.analog_crtEnabled = JB(j["analog_crtEnabled"]);
+    if (j.contains("analog_scanlineIntensity")) as.analog_scanlineIntensity = j["analog_scanlineIntensity"].get<f32>();
+    if (j.contains("analog_filmGateWeave")) as.analog_filmGateWeave = JB(j["analog_filmGateWeave"]);
+    if (j.contains("analog_gateWeaveIntensity")) as.analog_gateWeaveIntensity = j["analog_gateWeaveIntensity"].get<f32>();
+    if (j.contains("analog_lightLeaks")) as.analog_lightLeaks = JB(j["analog_lightLeaks"]);
+    if (j.contains("analog_lightLeakIntensity")) as.analog_lightLeakIntensity = j["analog_lightLeakIntensity"].get<f32>();
+
+    return as;
+}
+
 json SerializeQuestStateComponent(const ECS::QuestStateComponent& q) {
     json j;
     j["questId"] = q.questId;
@@ -6069,6 +6255,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::MeshColliderComponent>(entity)) {
                 entityJson["meshCollider"] = SerializeMeshColliderComponent(*m_World->GetComponent<ECS::MeshColliderComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::MeshRendererComponent>(entity)) {
+                entityJson["meshRenderer"] = SerializeMeshRendererComponent(*m_World->GetComponent<ECS::MeshRendererComponent>(entity));
+            }
 
             // Health & Damage
             if (m_World->HasComponent<ECS::HealthComponent>(entity)) {
@@ -6217,6 +6406,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             }
             if (m_World->HasComponent<ECS::DynamicDifficultyComponent>(entity)) {
                 entityJson["dynamicDifficulty"] = SerializeDynamicDifficultyComponent(*m_World->GetComponent<ECS::DynamicDifficultyComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::ArtStyleComponent>(entity)) {
+                entityJson["artStyle"] = SerializeArtStyleComponent(*m_World->GetComponent<ECS::ArtStyleComponent>(entity));
             }
             if (m_World->HasComponent<ECS::HUDWidgetComponent>(entity)) {
                 entityJson["hudWidget"] = SerializeHUDWidgetComponent(*m_World->GetComponent<ECS::HUDWidgetComponent>(entity));
@@ -6762,6 +6954,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("meshCollider")) {
                 m_World->AddComponent<ECS::MeshColliderComponent>(entity, DeserializeMeshColliderComponent(entityJson["meshCollider"]));
             }
+            if (entityJson.contains("meshRenderer")) {
+                m_World->AddComponent<ECS::MeshRendererComponent>(entity, DeserializeMeshRendererComponent(entityJson["meshRenderer"]));
+            }
 
             // Health & Damage
             if (entityJson.contains("health")) {
@@ -6900,6 +7095,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             }
             if (entityJson.contains("dynamicDifficulty")) {
                 m_World->AddComponent<ECS::DynamicDifficultyComponent>(entity, DeserializeDynamicDifficultyComponent(entityJson["dynamicDifficulty"]));
+            }
+            if (entityJson.contains("artStyle")) {
+                m_World->AddComponent<ECS::ArtStyleComponent>(entity, DeserializeArtStyleComponent(entityJson["artStyle"]));
             }
             if (entityJson.contains("hudWidget")) {
                 m_World->AddComponent<ECS::HUDWidgetComponent>(entity, DeserializeHUDWidgetComponent(entityJson["hudWidget"]));
@@ -7327,6 +7525,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             if (m_World->HasComponent<ECS::MeshColliderComponent>(entity)) {
                 entityJson["meshCollider"] = SerializeMeshColliderComponent(*m_World->GetComponent<ECS::MeshColliderComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::MeshRendererComponent>(entity)) {
+                entityJson["meshRenderer"] = SerializeMeshRendererComponent(*m_World->GetComponent<ECS::MeshRendererComponent>(entity));
+            }
 
             // Health & Damage
             if (m_World->HasComponent<ECS::HealthComponent>(entity)) {
@@ -7475,6 +7676,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::DynamicDifficultyComponent>(entity)) {
                 entityJson["dynamicDifficulty"] = SerializeDynamicDifficultyComponent(*m_World->GetComponent<ECS::DynamicDifficultyComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::ArtStyleComponent>(entity)) {
+                entityJson["artStyle"] = SerializeArtStyleComponent(*m_World->GetComponent<ECS::ArtStyleComponent>(entity));
             }
             if (m_World->HasComponent<ECS::HUDWidgetComponent>(entity)) {
                 entityJson["hudWidget"] = SerializeHUDWidgetComponent(*m_World->GetComponent<ECS::HUDWidgetComponent>(entity));
@@ -7946,6 +8150,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("meshCollider")) {
                 m_World->AddComponent<ECS::MeshColliderComponent>(entity, DeserializeMeshColliderComponent(entityJson["meshCollider"]));
             }
+            if (entityJson.contains("meshRenderer")) {
+                m_World->AddComponent<ECS::MeshRendererComponent>(entity, DeserializeMeshRendererComponent(entityJson["meshRenderer"]));
+            }
 
             // Health & Damage
             if (entityJson.contains("health")) {
@@ -8084,6 +8291,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             }
             if (entityJson.contains("dynamicDifficulty")) {
                 m_World->AddComponent<ECS::DynamicDifficultyComponent>(entity, DeserializeDynamicDifficultyComponent(entityJson["dynamicDifficulty"]));
+            }
+            if (entityJson.contains("artStyle")) {
+                m_World->AddComponent<ECS::ArtStyleComponent>(entity, DeserializeArtStyleComponent(entityJson["artStyle"]));
             }
             if (entityJson.contains("hudWidget")) {
                 m_World->AddComponent<ECS::HUDWidgetComponent>(entity, DeserializeHUDWidgetComponent(entityJson["hudWidget"]));
@@ -8385,6 +8595,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["capsuleCollider"] = SerializeCapsuleColliderComponent(*world->GetComponent<ECS::CapsuleColliderComponent>(entity));
         if (world->HasComponent<ECS::MeshColliderComponent>(entity))
             entityJson["meshCollider"] = SerializeMeshColliderComponent(*world->GetComponent<ECS::MeshColliderComponent>(entity));
+        if (world->HasComponent<ECS::MeshRendererComponent>(entity))
+            entityJson["meshRenderer"] = SerializeMeshRendererComponent(*world->GetComponent<ECS::MeshRendererComponent>(entity));
         // Gameplay
         if (world->HasComponent<ECS::HealthComponent>(entity))
             entityJson["health"] = SerializeHealthComponent(*world->GetComponent<ECS::HealthComponent>(entity));
@@ -8472,6 +8684,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["questState"] = SerializeQuestStateComponent(*world->GetComponent<ECS::QuestStateComponent>(entity));
         if (world->HasComponent<ECS::DynamicDifficultyComponent>(entity))
             entityJson["dynamicDifficulty"] = SerializeDynamicDifficultyComponent(*world->GetComponent<ECS::DynamicDifficultyComponent>(entity));
+        if (world->HasComponent<ECS::ArtStyleComponent>(entity))
+            entityJson["artStyle"] = SerializeArtStyleComponent(*world->GetComponent<ECS::ArtStyleComponent>(entity));
         if (world->HasComponent<ECS::HUDWidgetComponent>(entity))
             entityJson["hudWidget"] = SerializeHUDWidgetComponent(*world->GetComponent<ECS::HUDWidgetComponent>(entity));
         if (world->HasComponent<GUI::UICanvasComponent>(entity))
@@ -8729,6 +8943,8 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             world->AddComponent<ECS::CapsuleColliderComponent>(entity, DeserializeCapsuleColliderComponent(entityJson["capsuleCollider"]));
         if (entityJson.contains("meshCollider"))
             world->AddComponent<ECS::MeshColliderComponent>(entity, DeserializeMeshColliderComponent(entityJson["meshCollider"]));
+        if (entityJson.contains("meshRenderer"))
+            world->AddComponent<ECS::MeshRendererComponent>(entity, DeserializeMeshRendererComponent(entityJson["meshRenderer"]));
         // Gameplay
         if (entityJson.contains("health"))
             world->AddComponent<ECS::HealthComponent>(entity, DeserializeHealthComponent(entityJson["health"]));
@@ -8810,6 +9026,8 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             world->AddComponent<ECS::QuestStateComponent>(entity, DeserializeQuestStateComponent(entityJson["questState"]));
         if (entityJson.contains("dynamicDifficulty"))
             world->AddComponent<ECS::DynamicDifficultyComponent>(entity, DeserializeDynamicDifficultyComponent(entityJson["dynamicDifficulty"]));
+        if (entityJson.contains("artStyle"))
+            world->AddComponent<ECS::ArtStyleComponent>(entity, DeserializeArtStyleComponent(entityJson["artStyle"]));
         if (entityJson.contains("hudWidget"))
             world->AddComponent<ECS::HUDWidgetComponent>(entity, DeserializeHUDWidgetComponent(entityJson["hudWidget"]));
         if (entityJson.contains("uiCanvas"))
@@ -8976,6 +9194,8 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeCapsuleColliderComponent(*world->GetComponent<ECS::CapsuleColliderComponent>(entity));
         else if (key == "meshCollider" && world->HasComponent<ECS::MeshColliderComponent>(entity))
             j = SerializeMeshColliderComponent(*world->GetComponent<ECS::MeshColliderComponent>(entity));
+        else if (key == "meshRenderer" && world->HasComponent<ECS::MeshRendererComponent>(entity))
+            j = SerializeMeshRendererComponent(*world->GetComponent<ECS::MeshRendererComponent>(entity));
         else if (key == "health" && world->HasComponent<ECS::HealthComponent>(entity))
             j = SerializeHealthComponent(*world->GetComponent<ECS::HealthComponent>(entity));
         else if (key == "damage" && world->HasComponent<ECS::DamageComponent>(entity))
@@ -9056,6 +9276,8 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeQuestStateComponent(*world->GetComponent<ECS::QuestStateComponent>(entity));
         else if (key == "dynamicDifficulty" && world->HasComponent<ECS::DynamicDifficultyComponent>(entity))
             j = SerializeDynamicDifficultyComponent(*world->GetComponent<ECS::DynamicDifficultyComponent>(entity));
+        else if (key == "artStyle" && world->HasComponent<ECS::ArtStyleComponent>(entity))
+            j = SerializeArtStyleComponent(*world->GetComponent<ECS::ArtStyleComponent>(entity));
         else if (key == "hudWidget" && world->HasComponent<ECS::HUDWidgetComponent>(entity))
             j = SerializeHUDWidgetComponent(*world->GetComponent<ECS::HUDWidgetComponent>(entity));
         else if (key == "uiCanvas" && world->HasComponent<GUI::UICanvasComponent>(entity))
@@ -9175,6 +9397,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "sphereCollider") { world->AddComponent<ECS::SphereColliderComponent>(entity, DeserializeSphereColliderComponent(j)); return true; }
         if (key == "capsuleCollider") { world->AddComponent<ECS::CapsuleColliderComponent>(entity, DeserializeCapsuleColliderComponent(j)); return true; }
         if (key == "meshCollider") { world->AddComponent<ECS::MeshColliderComponent>(entity, DeserializeMeshColliderComponent(j)); return true; }
+        if (key == "meshRenderer") { world->AddComponent<ECS::MeshRendererComponent>(entity, DeserializeMeshRendererComponent(j)); return true; }
         if (key == "health") { world->AddComponent<ECS::HealthComponent>(entity, DeserializeHealthComponent(j)); return true; }
         if (key == "damage") { world->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(j)); return true; }
         if (key == "gameOver") { world->AddComponent<ECS::GameOverComponent>(entity, DeserializeGameOverComponent(j)); return true; }
@@ -9215,6 +9438,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "poolable") { world->AddComponent<ECS::PoolableComponent>(entity, DeserializePoolableComponent(j)); return true; }
         if (key == "questState") { world->AddComponent<ECS::QuestStateComponent>(entity, DeserializeQuestStateComponent(j)); return true; }
         if (key == "dynamicDifficulty") { world->AddComponent<ECS::DynamicDifficultyComponent>(entity, DeserializeDynamicDifficultyComponent(j)); return true; }
+        if (key == "artStyle") { world->AddComponent<ECS::ArtStyleComponent>(entity, DeserializeArtStyleComponent(j)); return true; }
         if (key == "hudWidget") { world->AddComponent<ECS::HUDWidgetComponent>(entity, DeserializeHUDWidgetComponent(j)); return true; }
         if (key == "uiCanvas") { world->AddComponent<GUI::UICanvasComponent>(entity, DeserializeUICanvasComponent(j)); return true; }
         if (key == "cinematicCamera") { world->AddComponent<ECS::CinematicCameraComponent>(entity, DeserializeCinematicCameraComponent(j)); return true; }

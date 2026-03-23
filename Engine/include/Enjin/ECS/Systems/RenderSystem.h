@@ -103,6 +103,7 @@ namespace Enjin { namespace Renderer {
     class ReflectionProbeSystem;
     class SDFScene;
     class ClusteredLightingSystem;
+    struct ClusterLight;
     class VisibilityBufferRenderer;
     class VariableRateShading;
 }}
@@ -963,6 +964,7 @@ private:
 
 #ifdef ENJIN_CLUSTERED_LIGHTING
     std::unique_ptr<Renderer::ClusteredLightingSystem> m_ClusteredLighting;
+    std::vector<Renderer::ClusterLight> m_ClusterLightsCache;  // Reused per frame to avoid heap allocation
 #endif
 
 #ifdef ENJIN_VISIBILITY_BUFFER

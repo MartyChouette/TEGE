@@ -8,6 +8,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Material.h"
+#include "Enjin/ECS/Components/MeshRenderer.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Camera.h"
@@ -37,6 +38,7 @@
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/ReflectionProbe.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
+#include "Enjin/ECS/Components/ArtStyle.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/Text.h"
@@ -178,6 +180,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MaterialComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::MaterialComponent>(e); },
             "material"},
+        {"Mesh Renderer", "Rendering", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::MeshRendererComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MeshRendererComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::MeshRendererComponent>(e); },
+            "meshRenderer"},
         {"Light", "Rendering", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::LightComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LightComponent>(e); },
@@ -559,6 +566,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PostProcessVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::PostProcessVolumeComponent>(e); },
             "postProcessVolume"},
+        {"Art Style", "Rendering", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ArtStyleComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ArtStyleComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ArtStyleComponent>(e); },
+            "artStyle"},
         {"Reflection Probe", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ReflectionProbeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ReflectionProbeComponent>(e); },
@@ -977,6 +989,43 @@ void EditorLayer::DrawInspectorPanel() {
             DrawMaterialComponent(m_PrimarySelected);
         }
 
+        // Mesh Renderer component
+        if (m_World->HasComponent<ECS::MeshRendererComponent>(m_PrimarySelected)) {
+            bool mrOpen = ImGui::CollapsingHeader("[R] Mesh Renderer", ImGuiTreeNodeFlags_DefaultOpen);
+            if (ImGui::BeginPopupContextItem("MeshRendererCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::MeshRendererComponent>(m_PrimarySelected, "meshRenderer", "Mesh Renderer");
+                }
+                ImGui::EndPopup();
+            }
+            if (mrOpen) {
+                auto* mr = m_World->GetComponent<ECS::MeshRendererComponent>(m_PrimarySelected);
+                if (mr) {
+                    ImGui::Checkbox("Enabled##MR", &mr->enabled);
+                    ImGui::Checkbox("Frustum Cull##MR", &mr->frustumCull);
+                    ImGui::Checkbox("Occlusion Cull##MR", &mr->occlusionCull);
+                    ImGui::DragFloat("Max Draw Distance##MR", &mr->maxDrawDistance, 1.0f, 0.0f, 10000.0f, "%.0f");
+                    if (mr->maxDrawDistance < 0.0f) mr->maxDrawDistance = 0.0f;
+                    ImGui::DragInt("Render Queue##MR", &mr->renderQueue, 1.0f, -5000, 5000);
+                    ImGui::DragFloat("LOD Bias##MR", &mr->lodBias, 0.1f, -2.0f, 2.0f, "%.1f");
+
+                    const char* shadowModes[] = { "From Material", "Off", "On", "Two-Sided" };
+                    int sm = static_cast<int>(mr->shadowMode);
+                    if (ImGui::Combo("Shadow Mode##MR", &sm, shadowModes, 4)) {
+                        mr->shadowMode = static_cast<ECS::MeshRendererComponent::ShadowMode>(sm);
+                    }
+
+                    ImGui::Checkbox("Motion Vectors##MR", &mr->contributeMotionVectors);
+                    ImGui::Checkbox("Allow Instancing##MR", &mr->allowInstancing);
+                    ImGui::Checkbox("Wireframe##MR", &mr->wireframe);
+
+                    if (!mr->customShaderName.empty()) {
+                        ImGui::TextDisabled("Shader: %s", mr->customShaderName.c_str());
+                    }
+                }
+            }
+        }
+
         // Light component
         if (m_World->HasComponent<ECS::LightComponent>(m_PrimarySelected)) {
             DrawLightComponent(m_PrimarySelected);
@@ -1050,6 +1099,11 @@ void EditorLayer::DrawInspectorPanel() {
         // Post-Process Volume component
         if (m_World->HasComponent<ECS::PostProcessVolumeComponent>(m_PrimarySelected)) {
             DrawPostProcessVolumeComponent(m_PrimarySelected);
+        }
+
+        // Art Style component
+        if (m_World->HasComponent<ECS::ArtStyleComponent>(m_PrimarySelected)) {
+            DrawArtStyleComponent(m_PrimarySelected);
         }
 
         // Reflection Probe component

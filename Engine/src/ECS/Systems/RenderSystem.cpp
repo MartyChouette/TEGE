@@ -28,6 +28,7 @@
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Elemental.h"
+#include "Enjin/ECS/Components/ArtStyle.h"
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/Animation/IKSolver.h"
 #include "Enjin/Logging/Log.h"
@@ -1112,12 +1113,13 @@ void RenderSystem::Update(f32 deltaTime) {
     if (m_ClusteredLighting && m_SceneComposition.mode != SceneRenderMode::Scene2D && m_Camera) {
         VkCommandBuffer cmdBuf = m_Renderer->GetCurrentCommandBuffer();
         if (cmdBuf != VK_NULL_HANDLE) {
-            // Build ClusterLight array from cached light entities
+            // Build ClusterLight array from cached light entities (reuse pre-allocated vector)
             std::vector<Renderer::ClusterLight> clusterLights;
-            clusterLights.reserve(m_CachedLightEntities.size());
+            
+            auto* lightStorageCL = m_World->GetComponentStorage<LightComponent>();
             for (Entity e : m_CachedLightEntities) {
-                auto* light = m_World->GetComponent<LightComponent>(e);
-                auto* xform = m_World->GetComponent<TransformComponent>(e);
+                auto* light = lightStorageCL ? lightStorageCL->Get(e) : nullptr;
+                auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(e) : nullptr;
                 if (!light || light->type == LightType::Directional) continue;
 
                 Renderer::ClusterLight cl{};
@@ -1647,10 +1649,13 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
         ? m_World->GetEntitiesWithComponent<MeshComponent>()
         : m_SortedRenderList;
 
+    // Cache storage pointers for the RenderToTarget entity loop
+    auto* spriteStorageRT = m_World->GetComponentStorage<Sprite2DComponent>();
+
     for (Entity entity : renderList) {
         {
-            // Skip invisible entities or entities without transform
-            auto* xformRT = m_World->GetComponent<TransformComponent>(entity);
+            // Skip invisible entities or entities without transform (cached storage)
+            auto* xformRT = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
             if (!xformRT || !xformRT->visible) continue;
 
             // Skip GPU-culled entities (frustum culling — disabled in editor mode)
@@ -1665,7 +1670,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             }
 
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
-            if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+            if (spriteStorageRT && spriteStorageRT->Has(entity)) continue;
 
             EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
                 ? &m_EntityRenderData[static_cast<usize>(entity)] : SetupEntityBuffers(entity);
@@ -1684,19 +1689,11 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // For skinned meshes: use identity model matrix because skinning matrices
             // already transform vertices from bone-local → world space. Applying the
             // entity's parent hierarchy on top would double-transform the mesh.
-            TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
             Renderer::PushConstants pushConstants{};
-            AnimatorComponent* preCheckAnim = m_World->GetComponent<AnimatorComponent>(entity);
-            if (preCheckAnim && preCheckAnim->animator.GetSkeleton()) {
-                // Use the entity's world matrix (includes parent scale for unit conversion,
-                // e.g. 0.01 for cm→m). The entity's own transform is identity for skinned
-                // meshes, so this only applies the parent hierarchy scale.
-                pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
-            } else {
-                pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
-            }
+            AnimatorComponent* preCheckAnim = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
+            pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
 
-            MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
+            MaterialComponent* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
             Renderer::Texture* boundTexture = nullptr;
             Renderer::Texture* texHeight = nullptr;
             Renderer::Texture* texNormal = nullptr;
@@ -1862,9 +1859,55 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 pushConstants.flags = (pushConstants.flags & ~(0x1F << 24)) | (static_cast<i32>((m_GlobalVertexSnapResolution / 8) & 0x1F) << 24);
             }
 
+            // Per-entity art style override (ArtStyleComponent)
+            ArtStyleComponent* artStyle = m_World->GetComponent<ArtStyleComponent>(entity);
+            if (artStyle && artStyle->style != ArtStyleType::Inherit) {
+                switch (artStyle->style) {
+                case ArtStyleType::PrePBR:
+                    if (artStyle->prePBR_flatShading) pushConstants.flags |= (1 << 20);
+                    if (artStyle->prePBR_gouraudOnly) pushConstants.flags |= (1 << 13);
+                    break;
+                case ArtStyleType::HandPainted:
+                    // Hand-painted uses light ramp (handled at scene level),
+                    // per-entity just force-enables half-Lambert via gouraud mode
+                    break;
+                case ArtStyleType::CelToon:
+                    // Per-entity cel: rim strength via push constants (outline handled in outline pass)
+                    pushConstants.surfaceParam3 = artStyle->cel_rimStrength;
+                    break;
+                case ArtStyleType::Retro:
+                    if (artStyle->retro_flatShading) pushConstants.flags |= (1 << 20);
+                    if (artStyle->retro_affineTexturing) pushConstants.flags |= (1 << 21);
+                    if (artStyle->retro_vertexSnapping) pushConstants.flags |= (1 << 22);
+                    if (artStyle->retro_uvQuantize) pushConstants.flags |= (1 << 12);
+                    if (artStyle->retro_vertexSnapping && artStyle->retro_snapResolution > 0) {
+                        pushConstants.flags = (pushConstants.flags & ~(0x1F << 24))
+                            | (static_cast<i32>((artStyle->retro_snapResolution / 8) & 0x1F) << 24);
+                    }
+                    break;
+                case ArtStyleType::MaterialExpression:
+                    // Override surface noise from art style component (SSS handled in SSBO build)
+                    if (material && artStyle->matExpr_surfaceNoiseScale > 0.0f &&
+                        pushConstants.surfaceParam1 < 100.0f) {
+                        pushConstants.surfaceParam1 = 400.0f + artStyle->matExpr_surfaceNoiseScale;
+                        pushConstants.surfaceParam2 = artStyle->matExpr_surfaceNoiseStrength;
+                    }
+                    break;
+                case ArtStyleType::NPR:
+                case ArtStyleType::PixelArt:
+                case ArtStyleType::Analog:
+                    // These styles are primarily post-process driven (outlines, palettes,
+                    // film effects). The per-entity component stores parameters but the
+                    // actual rendering happens in the post-process pass, which queries
+                    // ArtStyleComponent on the camera entity or scene default.
+                    break;
+                default:
+                    break;
+                }
+            }
+
             // Set wind sway flag for vegetation entities
-            VegetationComponent* vegComp = m_World->GetComponent<VegetationComponent>(entity);
-            if (vegComp) {
+            if (m_World->HasComponent<VegetationComponent>(entity)) {
                 pushConstants.flags |= (1 << 4); // FLAG_WIND_SWAY
             }
 
@@ -1904,8 +1947,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 }
             }
 
-            // Rasterize text texture if entity has a TextComponent
-            TextComponent* textComp = m_World->GetComponent<TextComponent>(entity);
+            // Rasterize text texture if entity has a TextComponent (cached storage)
+            TextComponent* textComp = m_CachedTextStorage ? m_CachedTextStorage->Get(entity) : nullptr;
             if (textComp && textComp->dirty && !textComp->fontPath.empty() && !textComp->text.empty()) {
                 auto pixels = m_TextRasterizer.Rasterize(*textComp);
                 if (!pixels.empty()) {
@@ -1938,7 +1981,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // scene (Mixamo FBX puts mesh and skeleton on different entities).
             // If this entity has bone weights, find the first AnimatorComponent
             // in the world to use its skinning matrices.
-            AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+            AnimatorComponent* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
             if (!animComp && renderData.indexCount > 0) {
                 // This entity has bone weights but no animator — find one globally
                 for (auto animEntity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
@@ -2131,15 +2174,17 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
         // Render all entities using sorted render list (skip sprites — drawn in sorted pass)
+        // Cache sprite storage pointer outside the loop to avoid per-entity type-ID hash
+        auto* spriteStorageSS = m_World->GetComponentStorage<Sprite2DComponent>();
         for (Entity entity : m_SortedRenderList) {
-            // Skip invisible entities or entities without transform
+            // Skip invisible entities or entities without transform (cached storage)
             {
-                auto* xformSS = m_World->GetComponent<TransformComponent>(entity);
+                auto* xformSS = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                 if (!xformSS || !xformSS->visible) continue;
             }
 
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
-            if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+            if (spriteStorageSS && spriteStorageSS->Has(entity)) continue;
 
             EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
                 ? &m_EntityRenderData[static_cast<usize>(entity)] : SetupEntityBuffers(entity);
@@ -2155,17 +2200,16 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                     &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &dynOffset);
             }
 
-            // Build push constants — skinned meshes use identity model matrix
-            TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
+            // Build push constants — skinned meshes use identity model matrix (cached storage)
             Renderer::PushConstants pushConstants{};
             {
-                AnimatorComponent* ac = m_World->GetComponent<AnimatorComponent>(entity);
+                AnimatorComponent* ac = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
                 pushConstants.model = (ac && ac->animator.GetSkeleton())
                     ? Math::Matrix4::Identity()
                     : ECS::ComputeWorldMatrix(m_World, entity);
             }
 
-            MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
+            MaterialComponent* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
             Renderer::Texture* boundTexture = nullptr;
             Renderer::Texture* texHeight = nullptr;
             Renderer::Texture* texNormal = nullptr;
@@ -2329,8 +2373,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 pushConstants.flags = (pushConstants.flags & ~(0x1F << 24)) | (static_cast<i32>((m_GlobalVertexSnapResolution / 8) & 0x1F) << 24);
             }
 
-            VegetationComponent* vegComp = m_World->GetComponent<VegetationComponent>(entity);
-            if (vegComp) {
+            if (m_World->HasComponent<VegetationComponent>(entity)) {
                 pushConstants.flags |= (1 << 4);
             }
 
@@ -2367,8 +2410,8 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 }
             }
 
-            // Text rendering
-            TextComponent* textComp = m_World->GetComponent<TextComponent>(entity);
+            // Text rendering (cached storage)
+            TextComponent* textComp = m_CachedTextStorage ? m_CachedTextStorage->Get(entity) : nullptr;
             if (textComp && textComp->dirty && !textComp->fontPath.empty() && !textComp->text.empty()) {
                 auto pixels = m_TextRasterizer.Rasterize(*textComp);
                 if (!pixels.empty()) {
@@ -2388,8 +2431,8 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
             // Batched texture descriptor update (1 vkUpdateDescriptorSets call instead of 6)
             UpdateEntityTextureDescriptors(boundTexture, texHeight, texNormal, texMR, texEmissive, texMatcap);
 
-            // Upload bone matrices for skinned meshes (bind pose or animation)
-            AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+            // Upload bone matrices for skinned meshes (bind pose or animation, cached storage)
+            AnimatorComponent* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
             if (animComp && renderData.boneBuffer) {
                 const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
                 if (!skinningMatrices.empty()) {
@@ -2648,13 +2691,17 @@ void RenderSystem::BuildCullableObjectList() {
 
     u32 cullIndex = 0;
 
-    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-        auto* xform = m_World->GetComponent<TransformComponent>(entity);
-        if (!xform || !xform->visible) continue;
-        if (m_World->GetComponent<Sprite2DComponent>(entity)) continue;
-        if (m_World->GetComponent<TilemapComponent>(entity)) continue;
+    // Cache storage pointers to avoid per-entity type-ID hash lookups
+    auto* spriteStorageBCO = m_World->GetComponentStorage<Sprite2DComponent>();
+    auto* tilemapStorageBCO = m_World->GetComponentStorage<TilemapComponent>();
 
-        auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+        auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
+        if (!xform || !xform->visible) continue;
+        if (spriteStorageBCO && spriteStorageBCO->Has(entity)) continue;
+        if (tilemapStorageBCO && tilemapStorageBCO->Has(entity)) continue;
+
+        auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
         if (!mesh || !mesh->IsValid()) continue;
 
         // Compute AABB from mesh vertices (cached on MeshComponent to avoid per-frame recomputation)
@@ -2706,7 +2753,7 @@ void RenderSystem::BuildCullableObjectList() {
         // and must remain on the per-entity draw path. The indirectEligible flag on the
         // CullableObject controls whether the GPU cull shader emits an indirect draw command.
         if (hasPoolAlloc) {
-            auto* material = m_World->GetComponent<MaterialComponent>(entity);
+            auto* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
             bool hasTextures = false;
             if (material) {
                 hasTextures = material->cachedBaseColorTexture != nullptr
@@ -2818,14 +2865,18 @@ void RenderSystem::UploadObjectData() {
     // Build ObjectData array matching cullable objects 1:1
     m_ObjectDataCPU.resize(m_CullableObjects.size());
 
+    // Cache storage pointers to avoid per-entity type-ID hash lookups
+    auto* spriteStorageUOD = m_World->GetComponentStorage<Sprite2DComponent>();
+    auto* tilemapStorageUOD = m_World->GetComponentStorage<TilemapComponent>();
+
     u32 idx = 0;
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-        auto* xform = m_World->GetComponent<TransformComponent>(entity);
+        auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
         if (!xform || !xform->visible) continue;
-        if (m_World->GetComponent<Sprite2DComponent>(entity)) continue;
-        if (m_World->GetComponent<TilemapComponent>(entity)) continue;
+        if (spriteStorageUOD && spriteStorageUOD->Has(entity)) continue;
+        if (tilemapStorageUOD && tilemapStorageUOD->Has(entity)) continue;
 
-        auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+        auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
         if (!mesh || !mesh->IsValid()) continue;
 
         if (idx >= m_ObjectDataCPU.size()) break;
@@ -2833,7 +2884,7 @@ void RenderSystem::UploadObjectData() {
         ObjectDataGPU& obj = m_ObjectDataCPU[idx];
         obj.model = ECS::ComputeWorldMatrix(m_World, entity);
 
-        auto* material = m_World->GetComponent<MaterialComponent>(entity);
+        auto* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
         if (material) {
             obj.baseColor = material->baseColor;
             obj.metallic = material->metallic;
@@ -2900,25 +2951,11 @@ void RenderSystem::UploadObjectData() {
             xform->teleportedThisFrame = false;  // Consume the flag (once per frame)
         }
 
+        // Store current model matrix for next frame's previous-model lookup (eliminates second pass)
+        m_PrevModelMatrices[entityId] = obj.model;
+
         obj._pad[0] = obj._pad[1] = 0.0f;
         idx++;
-    }
-
-    // After building the upload array, store current-frame model matrices
-    // for next frame's previous-model lookup.
-    {
-        u32 storeIdx = 0;
-        for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-            auto* xform = m_World->GetComponent<TransformComponent>(entity);
-            if (!xform || !xform->visible) continue;
-            if (m_World->GetComponent<Sprite2DComponent>(entity)) continue;
-            if (m_World->GetComponent<TilemapComponent>(entity)) continue;
-            auto* mesh = m_World->GetComponent<MeshComponent>(entity);
-            if (!mesh || !mesh->IsValid()) continue;
-            if (storeIdx >= idx) break;
-            m_PrevModelMatrices[static_cast<u64>(entity)] = m_ObjectDataCPU[storeIdx].model;
-            storeIdx++;
-        }
     }
 
     // Upload to GPU via GPUCulling's ObjectData buffer
@@ -4505,6 +4542,22 @@ void RenderSystem::BuildMaterialSSBO() {
             materialGPU = MaterialGPU::FromComponent(defaultMat);
         }
 
+        // Apply per-entity ArtStyleComponent overrides to MaterialGPU
+        ArtStyleComponent* artStyle = m_World->GetComponent<ArtStyleComponent>(entity);
+        if (artStyle && artStyle->style != ArtStyleType::Inherit) {
+            if (artStyle->style == ArtStyleType::MaterialExpression) {
+                if (artStyle->matExpr_sssIntensity > 0.0f) {
+                    materialGPU.sssIntensity = artStyle->matExpr_sssIntensity;
+                    materialGPU.sssRadius = artStyle->matExpr_sssRadius;
+                    materialGPU.sssColor = artStyle->matExpr_sssColor;
+                }
+            }
+            if (artStyle->style == ArtStyleType::CelToon && material) {
+                // Force outline via MaterialGPU (outlineWidth/color are render-time only,
+                // handled in the outline pass, not in the SSBO)
+            }
+        }
+
         // Write to aligned offset in staging buffer
         usize offset = static_cast<usize>(m_MaterialSSBOStride) * index;
         std::memcpy(m_MaterialSSBOData.data() + offset, &materialGPU, sizeof(MaterialGPU));
@@ -5369,15 +5422,18 @@ void RenderSystem::RenderOutlinePass() {
             m_OutlinePipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &zeroOff);
     }
 
+    // Cache storage pointers for the outline pass hot loop
+    auto* spriteStorageOP = m_World->GetComponentStorage<Sprite2DComponent>();
+
     for (Entity entity : m_SortedRenderList) {
-        auto* transform = m_World->GetComponent<TransformComponent>(entity);
+        auto* transform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
         if (!transform || !transform->visible) continue;
 
-        auto* material = m_World->GetComponent<MaterialComponent>(entity);
+        auto* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
         // Skip entities excluded from cel shading (they don't get outlines)
         if (material && material->excludeFromCelShading) continue;
         // Skip 2D sprites
-        if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+        if (spriteStorageOP && spriteStorageOP->Has(entity)) continue;
         // Skip transparent objects
         if (material && material->alphaMode == MaterialComponent::AlphaMode::Blend) continue;
 
@@ -5386,9 +5442,19 @@ void RenderSystem::RenderOutlinePass() {
         if (!pRD || !pRD->valid) continue;
         EntityRenderData& renderData = *pRD;
 
-        // Use per-material outline settings if set, otherwise global
-        f32 outlineWidth = (material && material->outlineWidth > 0.0f) ? material->outlineWidth : m_GeometryOutlineWidth;
-        Math::Vector3 outlineColor = (material && material->outlineWidth > 0.0f) ? material->outlineColor : m_GeometryOutlineColor;
+        // Use per-material outline settings if set, then art style, then global
+        f32 outlineWidth = m_GeometryOutlineWidth;
+        Math::Vector3 outlineColor = m_GeometryOutlineColor;
+        if (material && material->outlineWidth > 0.0f) {
+            outlineWidth = material->outlineWidth;
+            outlineColor = material->outlineColor;
+        }
+        // Per-entity ArtStyleComponent cel/toon outline override
+        auto* artStyleOutline = m_World->GetComponent<ArtStyleComponent>(entity);
+        if (artStyleOutline && artStyleOutline->style == ArtStyleType::CelToon && artStyleOutline->cel_outlineWidth > 0.0f) {
+            outlineWidth = artStyleOutline->cel_outlineWidth;
+            outlineColor = artStyleOutline->cel_outlineColor;
+        }
 
         // Build push constants — repurpose baseColor for outlineColor, metallic for outlineWidth
         Renderer::PushConstants pc{};
@@ -5397,7 +5463,7 @@ void RenderSystem::RenderOutlinePass() {
         pc.flags = 0;
 
         // Propagate skinned flag so outline follows skeleton (playing or bind pose)
-        auto* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+        auto* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
         if (animComp && renderData.boneBuffer) {
             pc.flags |= (1 << 3); // FLAG_SKINNED
             pc.model = Math::Matrix4::Identity(); // Skinned: identity, bone matrices handle positioning
@@ -5456,13 +5522,16 @@ void RenderSystem::RenderOutlinePassForTarget() {
         ? m_World->GetEntitiesWithComponent<MeshComponent>()
         : m_SortedRenderList;
 
+    // Cache storage pointers for the offscreen outline pass hot loop
+    auto* spriteStorageOPT = m_World->GetComponentStorage<Sprite2DComponent>();
+
     for (Entity entity : renderList) {
-        auto* transform = m_World->GetComponent<TransformComponent>(entity);
+        auto* transform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
         if (!transform || !transform->visible) continue;
 
-        auto* material = m_World->GetComponent<MaterialComponent>(entity);
+        auto* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
         if (material && material->excludeFromCelShading) continue;
-        if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+        if (spriteStorageOPT && spriteStorageOPT->Has(entity)) continue;
         if (material && material->alphaMode == MaterialComponent::AlphaMode::Blend) continue;
 
         EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
@@ -5470,15 +5539,24 @@ void RenderSystem::RenderOutlinePassForTarget() {
         if (!pRD || !pRD->valid) continue;
         EntityRenderData& renderData = *pRD;
 
-        f32 outlineWidth = (material && material->outlineWidth > 0.0f) ? material->outlineWidth : m_GeometryOutlineWidth;
-        Math::Vector3 outlineColor = (material && material->outlineWidth > 0.0f) ? material->outlineColor : m_GeometryOutlineColor;
+        f32 outlineWidth = m_GeometryOutlineWidth;
+        Math::Vector3 outlineColor = m_GeometryOutlineColor;
+        if (material && material->outlineWidth > 0.0f) {
+            outlineWidth = material->outlineWidth;
+            outlineColor = material->outlineColor;
+        }
+        auto* artStyleOPT = m_World->GetComponent<ArtStyleComponent>(entity);
+        if (artStyleOPT && artStyleOPT->style == ArtStyleType::CelToon && artStyleOPT->cel_outlineWidth > 0.0f) {
+            outlineWidth = artStyleOPT->cel_outlineWidth;
+            outlineColor = artStyleOPT->cel_outlineColor;
+        }
 
         Renderer::PushConstants pc{};
         pc.baseColor = outlineColor;
         pc.metallic = outlineWidth;
         pc.flags = 0;
 
-        auto* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+        auto* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
         if (animComp && renderData.boneBuffer) {
             pc.flags |= (1 << 3);
             pc.model = Math::Matrix4::Identity(); // Skinned: identity, bone matrices handle positioning
@@ -7342,10 +7420,10 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         poolIdxBase = m_GeometryPool->GetIndexBuffer()->GetDeviceAddress();
     }
 
-    // Add all mesh entities to the TLAS
+    // Add all mesh entities to the TLAS (use cached storage pointers)
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-        auto* transform = m_World->GetComponent<TransformComponent>(entity);
-        auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+        auto* transform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
+        auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
         if (!transform || !mesh || !transform->visible) continue;
         if (mesh->vertices.empty() || mesh->indices.empty()) continue;
 
@@ -7489,10 +7567,11 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
     f32 lightIntensity = 1.0f;
     f32 lightShadowDistance = 100.0f;
     Math::Vector3 lightColor(1.0f, 1.0f, 1.0f);
+    auto* lightStorageRT = m_World->GetComponentStorage<LightComponent>();
     for (Entity entity : m_CachedLightEntities) {
-        auto* light = m_World->GetComponent<LightComponent>(entity);
+        auto* light = lightStorageRT ? lightStorageRT->Get(entity) : nullptr;
         if (light && light->type == LightType::Directional) {
-            auto* lightTransform = m_World->GetComponent<TransformComponent>(entity);
+            auto* lightTransform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
             if (lightTransform) {
                 Math::Vector3 forward(0.0f, 0.0f, -1.0f);
                 lightDir = lightTransform->rotation.Rotate(forward);
@@ -8122,8 +8201,8 @@ void RenderSystem::UploadRTMaterials() {
     u32 maxEntityId = 0;
     u32 entityCount = 0;
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-        auto* transform = m_World->GetComponent<TransformComponent>(entity);
-        auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+        auto* transform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
+        auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
         if (!transform || !mesh || !transform->visible) continue;
         if (mesh->vertices.empty() || mesh->indices.empty()) continue;
         if (static_cast<usize>(entity) >= m_EntityRenderData.size()) continue;
@@ -8168,15 +8247,15 @@ void RenderSystem::UploadRTMaterials() {
                  ? static_cast<RTSimplifiedMaterialGPU*>(m_RTSimplifiedMaterialMapped)
                  : nullptr;
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-        auto* transform = m_World->GetComponent<TransformComponent>(entity);
-        auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+        auto* transform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
+        auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
         if (!transform || !mesh || !transform->visible) continue;
         if (mesh->vertices.empty() || mesh->indices.empty()) continue;
         if (static_cast<usize>(entity) >= m_EntityRenderData.size()) continue;
         if (!m_EntityRenderData[static_cast<usize>(entity)].valid) continue;
 
         u32 eid = static_cast<u32>(entity);
-        auto* mat = m_World->GetComponent<MaterialComponent>(entity);
+        auto* mat = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
         if (mat) {
             dst[eid] = MaterialGPU::FromComponent(*mat);
         } else {
