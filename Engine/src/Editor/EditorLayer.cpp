@@ -750,6 +750,40 @@ void EditorLayer::Update(f32 deltaTime) {
                 animComp->Update(deltaTime);
             }
         }
+
+        // Update bone attachments: move attached entities to follow their target bone.
+        // Runs after animation update so bones are in their current-frame positions.
+        for (auto entity : m_World->GetEntitiesWithComponent<ECS::BoneAttachmentComponent>()) {
+            auto* ba = m_World->GetComponent<ECS::BoneAttachmentComponent>(entity);
+            if (!ba || ba->targetEntity == ECS::INVALID_ENTITY || ba->targetBoneName.empty()) continue;
+
+            auto* targetAnim = m_World->GetComponent<ECS::AnimatorComponent>(ba->targetEntity);
+            if (!targetAnim) continue;
+
+            const auto* skeleton = targetAnim->animator.GetSkeleton();
+            if (!skeleton) continue;
+
+            i32 boneIdx = skeleton->FindBoneIndex(ba->targetBoneName);
+            if (boneIdx < 0) continue;
+
+            // Get bone world transform (bone-local → entity-world)
+            Math::Matrix4 entityWorld = ECS::ComputeWorldMatrix(m_World, ba->targetEntity);
+            Math::Matrix4 boneWorld = entityWorld * targetAnim->animator.GetCurrentPose().worldTransforms[boneIdx];
+
+            // Extract position and apply offset
+            Math::Vector3 bonePos(boneWorld.m[12], boneWorld.m[13], boneWorld.m[14]);
+            Math::Vector3 finalPos = bonePos + ba->positionOffset;
+
+            // Update this entity's transform
+            auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+            if (transform) {
+                transform->position = finalPos;
+                // Apply rotation offset (bone rotation * offset)
+                // Extract bone rotation from the 3x3 portion of boneWorld
+                // For now, just apply the offset rotation directly
+                transform->rotation = ba->rotationOffset;
+            }
+        }
     }
 
     // Camera controller handles its own input - disable during text input or gizmo use.
