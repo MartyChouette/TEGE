@@ -714,6 +714,19 @@ void EditorLayer::Update(f32 deltaTime) {
         m_RenderSystem->SetWindSystem(&m_WindSystem);
     }
 
+    // Update skeletal animators (advance bone animation each frame).
+    // RenderSystem::Update() is not called by the editor because it handles
+    // terrain/sprite/tilemap regeneration that the editor manages separately.
+    // Skeletal animation must be ticked here so imported FBX models animate.
+    if (m_World) {
+        for (auto entity : m_World->GetEntitiesWithComponent<ECS::AnimatorComponent>()) {
+            auto* animComp = m_World->GetComponent<ECS::AnimatorComponent>(entity);
+            if (animComp) {
+                animComp->Update(deltaTime);
+            }
+        }
+    }
+
     // Camera controller handles its own input - disable during text input or gizmo use.
     // During active play (not paused), require RMB held so WASD doesn't conflict with game controllers.
     // When paused, allow free camera navigation in scene view.

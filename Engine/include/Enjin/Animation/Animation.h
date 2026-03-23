@@ -228,6 +228,61 @@ class ENJIN_API SkeletalAnimator {
 public:
     SkeletalAnimator() = default;
 
+    // Copy constructor: re-resolve raw animation pointers into this object's map.
+    // Without this, copied animators hold dangling pointers to the source's
+    // m_Animations entries (crash on play mode stop/start).
+    SkeletalAnimator(const SkeletalAnimator& other)
+        : m_Skeleton(other.m_Skeleton), m_Animations(other.m_Animations),
+          m_CurrentAnimName(other.m_CurrentAnimName), m_CurrentAnim(nullptr),
+          m_NextAnimName(other.m_NextAnimName), m_NextAnim(nullptr),
+          m_CurrentPose(other.m_CurrentPose), m_BlendPose(other.m_BlendPose),
+          m_CurrentTime(other.m_CurrentTime), m_NormalizedTime(other.m_NormalizedTime),
+          m_Speed(other.m_Speed), m_IsPlaying(other.m_IsPlaying), m_IsPaused(other.m_IsPaused),
+          m_BlendTime(other.m_BlendTime), m_BlendProgress(other.m_BlendProgress),
+          m_PingPongForward(other.m_PingPongForward) {
+        // Re-resolve pointers into our own map
+        if (!m_CurrentAnimName.empty()) {
+            auto it = m_Animations.find(m_CurrentAnimName);
+            if (it != m_Animations.end()) m_CurrentAnim = &it->second;
+        }
+        if (!m_NextAnimName.empty()) {
+            auto it = m_Animations.find(m_NextAnimName);
+            if (it != m_Animations.end()) m_NextAnim = &it->second;
+        }
+    }
+
+    SkeletalAnimator& operator=(const SkeletalAnimator& other) {
+        if (this == &other) return *this;
+        m_Skeleton = other.m_Skeleton;
+        m_Animations = other.m_Animations;
+        m_CurrentAnimName = other.m_CurrentAnimName;
+        m_NextAnimName = other.m_NextAnimName;
+        m_CurrentPose = other.m_CurrentPose;
+        m_BlendPose = other.m_BlendPose;
+        m_CurrentTime = other.m_CurrentTime;
+        m_NormalizedTime = other.m_NormalizedTime;
+        m_Speed = other.m_Speed;
+        m_IsPlaying = other.m_IsPlaying;
+        m_IsPaused = other.m_IsPaused;
+        m_BlendTime = other.m_BlendTime;
+        m_BlendProgress = other.m_BlendProgress;
+        m_PingPongForward = other.m_PingPongForward;
+        m_CurrentAnim = nullptr;
+        m_NextAnim = nullptr;
+        if (!m_CurrentAnimName.empty()) {
+            auto it = m_Animations.find(m_CurrentAnimName);
+            if (it != m_Animations.end()) m_CurrentAnim = &it->second;
+        }
+        if (!m_NextAnimName.empty()) {
+            auto it = m_Animations.find(m_NextAnimName);
+            if (it != m_Animations.end()) m_NextAnim = &it->second;
+        }
+        return *this;
+    }
+
+    SkeletalAnimator(SkeletalAnimator&&) = default;
+    SkeletalAnimator& operator=(SkeletalAnimator&&) = default;
+
     // Setup
     void SetSkeleton(std::shared_ptr<Skeleton> skeleton);
     const Skeleton* GetSkeleton() const { return m_Skeleton.get(); }

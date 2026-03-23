@@ -1,5 +1,6 @@
 #include "Enjin/Animation/Animation.h"
 #include "Enjin/Math/Math.h"
+#include "Enjin/Logging/Log.h"
 #include <algorithm>
 
 namespace Enjin {
@@ -220,20 +221,18 @@ void SkeletalAnimator::SetSkeleton(std::shared_ptr<Skeleton> skeleton) {
         m_BlendPose.Resize(skeleton->bones.size());
 
         // Initialize to bind pose.
-        // For the initial bind pose, set skinning matrices to identity — this
-        // guarantees the mesh renders exactly as stored (T-pose). Computing
-        // worldTransform * inverseBindMatrix from decomposed bind positions
-        // can produce non-identity due to floating point or convention mismatches
-        // between the node transforms and the offset matrix from Assimp.
         for (usize i = 0; i < skeleton->bones.size(); ++i) {
             m_CurrentPose.localPositions[i] = skeleton->bones[i].bindPosition;
             m_CurrentPose.localRotations[i] = skeleton->bones[i].bindRotation;
             m_CurrentPose.localScales[i] = skeleton->bones[i].bindScale;
-            m_CurrentPose.skinningMatrices[i] = Math::Matrix4::Identity();
         }
-        // Don't call CalculateWorldTransforms or CalculateSkinningMatrices here.
-        // Identity skinning matrices are set above — any computation would overwrite
-        // them with incorrect values due to convention mismatches.
+
+        // Compute proper bind-pose skinning matrices: worldTransform * inverseBindMatrix.
+        // Bones must be topologically sorted (parent index < child index) for
+        // CalculateWorldTransforms to work correctly. The importer guarantees
+        // this ordering after the topological sort step.
+        CalculateWorldTransforms();
+        CalculateSkinningMatrices();
     }
 }
 

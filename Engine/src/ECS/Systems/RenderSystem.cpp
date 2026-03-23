@@ -217,11 +217,14 @@ void RenderSystem::Initialize() {
         ENJIN_LOG_FATAL(Renderer, "Failed to create default white texture — rendering will be broken");
     }
 
-    // Create default bone buffer (single identity matrix for static meshes)
+    // Create default bone buffer with 256 identity matrices — covers any bone index
+    // a non-skinned mesh might reference without out-of-bounds SSBO reads.
+    static constexpr usize DEFAULT_BONE_COUNT = 256;
     m_DefaultBoneBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
-    if (m_DefaultBoneBuffer->Create(sizeof(Math::Matrix4), Renderer::BufferUsage::Storage, true)) {
-        Math::Matrix4 identity = Math::Matrix4::Identity();
-        m_DefaultBoneBuffer->UploadData(&identity, sizeof(Math::Matrix4));
+    if (m_DefaultBoneBuffer->Create(DEFAULT_BONE_COUNT * sizeof(Math::Matrix4), Renderer::BufferUsage::Storage, true)) {
+        std::vector<Math::Matrix4> identities(DEFAULT_BONE_COUNT);
+        for (auto& mat : identities) mat = Math::Matrix4::Identity();
+        m_DefaultBoneBuffer->UploadData(identities.data(), identities.size() * sizeof(Math::Matrix4));
     } else {
         ENJIN_LOG_WARN(Renderer, "Failed to create default bone buffer");
         m_DefaultBoneBuffer.reset();
@@ -1686,8 +1689,6 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             AnimatorComponent* preCheckAnim = m_World->GetComponent<AnimatorComponent>(entity);
             if (preCheckAnim && preCheckAnim->animator.GetSkeleton()) {
                 pushConstants.model = Math::Matrix4::Identity();
-                static bool logged1 = false;
-                if (!logged1) { ENJIN_LOG_INFO(Renderer, "SKINNED PATH1: entity %llu has AnimatorComponent, boneBuffer=%p", (unsigned long long)entity, (void*)renderData.boneBuffer.get()); logged1 = true; }
             } else {
                 pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
             }
@@ -1966,14 +1967,6 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             if (animComp && renderData.boneBuffer) {
                 const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
                 if (!skinningMatrices.empty()) {
-                    // Log first matrix to verify it's identity
-                    static bool loggedMatrix = false;
-                    if (!loggedMatrix) {
-                        const auto& m = skinningMatrices[0];
-                        ENJIN_LOG_INFO(Renderer, "SKIN MATRIX[0]: [%.2f %.2f %.2f %.2f] [%.2f %.2f %.2f %.2f] ...",
-                            m.m[0], m.m[4], m.m[8], m.m[12], m.m[1], m.m[5], m.m[9], m.m[13]);
-                        loggedMatrix = true;
-                    }
                     renderData.boneBuffer->UploadData(skinningMatrices.data(),
                         skinningMatrices.size() * sizeof(Math::Matrix4));
                     UpdateBoneDescriptor(renderData.boneBuffer.get());
@@ -5396,7 +5389,6 @@ void RenderSystem::RenderOutlinePass() {
 
         // Build push constants — repurpose baseColor for outlineColor, metallic for outlineWidth
         Renderer::PushConstants pc{};
-        pc.model = ECS::ComputeWorldMatrix(m_World, entity);
         pc.baseColor = outlineColor;
         pc.metallic = outlineWidth;
         pc.flags = 0;
@@ -5405,9 +5397,18 @@ void RenderSystem::RenderOutlinePass() {
         auto* animComp = m_World->GetComponent<AnimatorComponent>(entity);
         if (animComp && renderData.boneBuffer) {
             pc.flags |= (1 << 3); // FLAG_SKINNED
+            pc.model = Math::Matrix4::Identity(); // Skinned: identity, bone matrices handle positioning
+            const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
+            if (!skinningMatrices.empty()) {
+                renderData.boneBuffer->UploadData(skinningMatrices.data(),
+                    skinningMatrices.size() * sizeof(Math::Matrix4));
+            }
             UpdateBoneDescriptor(renderData.boneBuffer.get());
-        } else if (m_DefaultBoneBuffer) {
-            UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+        } else {
+            pc.model = ECS::ComputeWorldMatrix(m_World, entity);
+            if (m_DefaultBoneBuffer) {
+                UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+            }
         }
 
         vkCmdPushConstants(commandBuffer, m_OutlinePipeline->GetLayout(),
@@ -5470,7 +5471,6 @@ void RenderSystem::RenderOutlinePassForTarget() {
         Math::Vector3 outlineColor = (material && material->outlineWidth > 0.0f) ? material->outlineColor : m_GeometryOutlineColor;
 
         Renderer::PushConstants pc{};
-        pc.model = ECS::ComputeWorldMatrix(m_World, entity);
         pc.baseColor = outlineColor;
         pc.metallic = outlineWidth;
         pc.flags = 0;
@@ -5478,9 +5478,18 @@ void RenderSystem::RenderOutlinePassForTarget() {
         auto* animComp = m_World->GetComponent<AnimatorComponent>(entity);
         if (animComp && renderData.boneBuffer) {
             pc.flags |= (1 << 3);
+            pc.model = Math::Matrix4::Identity(); // Skinned: identity, bone matrices handle positioning
+            const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
+            if (!skinningMatrices.empty()) {
+                renderData.boneBuffer->UploadData(skinningMatrices.data(),
+                    skinningMatrices.size() * sizeof(Math::Matrix4));
+            }
             UpdateBoneDescriptor(renderData.boneBuffer.get());
-        } else if (m_DefaultBoneBuffer) {
-            UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+        } else {
+            pc.model = ECS::ComputeWorldMatrix(m_World, entity);
+            if (m_DefaultBoneBuffer) {
+                UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+            }
         }
 
         vkCmdPushConstants(commandBuffer, outlinePL->GetLayout(),
@@ -5754,7 +5763,31 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
     // The shadow vertex shader reads this from push constants (first 64 bytes),
     // avoiding the HOST_COHERENT UBO race condition.
     Renderer::PushConstants pushConstants{};
-    pushConstants.model = m_CurrentCascadeVP * ECS::ComputeWorldMatrix(m_World, entity);
+
+    // Skinned mesh handling: upload bone matrices and use identity model matrix
+    // so shadow geometry matches the main pass's skinned positions.
+    AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+    if (!animComp) {
+        // Mesh entity may not have animator — search globally (same as main pass)
+        for (auto animEntity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
+            auto* ac = m_World->GetComponent<AnimatorComponent>(animEntity);
+            if (ac && ac->animator.GetSkeleton()) { animComp = ac; break; }
+        }
+    }
+    if (animComp && renderData.boneBuffer) {
+        const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
+        if (!skinningMatrices.empty()) {
+            renderData.boneBuffer->UploadData(skinningMatrices.data(),
+                skinningMatrices.size() * sizeof(Math::Matrix4));
+            UpdateBoneDescriptor(renderData.boneBuffer.get());
+            pushConstants.flags |= (1 << 3); // FLAG_SKINNED
+            pushConstants.model = m_CurrentCascadeVP; // identity model for skinned
+        } else {
+            pushConstants.model = m_CurrentCascadeVP * ECS::ComputeWorldMatrix(m_World, entity);
+        }
+    } else {
+        pushConstants.model = m_CurrentCascadeVP * ECS::ComputeWorldMatrix(m_World, entity);
+    }
 
     vkCmdPushConstants(commandBuffer, m_ShadowPipeline->GetLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::PushConstants), &pushConstants);

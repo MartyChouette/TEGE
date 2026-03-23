@@ -680,11 +680,48 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
                 bone.bindRotation = boneNode.rotation;
                 bone.bindScale = boneNode.scale;
 
-                // Apply axis conversion to bind pose
+                // Apply axis conversion to bind pose AND inverse bind matrix.
+                // The inverse bind matrix must be converted to the same coordinate
+                // system as the bind pose, otherwise skinning matrices will mix
+                // coordinate systems (e.g., Z-up IBMs with Y-up world transforms).
                 if (zToY || lToR || effectiveOptions.flipX || effectiveOptions.flipY || effectiveOptions.flipZ) {
                     bone.bindPosition = ConvertPosition(bone.bindPosition, zToY, lToR,
                         effectiveOptions.flipX, effectiveOptions.flipY, effectiveOptions.flipZ);
                     bone.bindRotation = ConvertRotation(bone.bindRotation, zToY, lToR);
+
+                    // Convert inverse bind matrix: IBM_new = C * IBM * C^(-1)
+                    // where C is the axis conversion matrix.
+                    // For orthogonal C, C^(-1) = C^T.
+                    Math::Matrix4 C = Math::Matrix4::Identity();
+                    Math::Matrix4 Cinv = Math::Matrix4::Identity();
+                    if (zToY) {
+                        // Z-up -> Y-up: (x,y,z) -> (x,z,-y)
+                        // Row 0: x' = x  → [1, 0, 0, 0]
+                        // Row 1: y' = z  → [0, 0, 1, 0]
+                        // Row 2: z' = -y → [0,-1, 0, 0]
+                        // C^-1 reverses: (x,y,z) -> (x,-z,y)
+                        C = Math::Matrix4(
+                            1, 0, 0, 0,
+                            0, 0, 1, 0,
+                            0,-1, 0, 0,
+                            0, 0, 0, 1);
+                        Cinv = Math::Matrix4(
+                            1, 0, 0, 0,
+                            0, 0,-1, 0,
+                            0, 1, 0, 0,
+                            0, 0, 0, 1);
+                    }
+                    if (lToR) {
+                        // Left->Right: negate X
+                        Math::Matrix4 Clr = Math::Matrix4(
+                           -1, 0, 0, 0,
+                            0, 1, 0, 0,
+                            0, 0, 1, 0,
+                            0, 0, 0, 1);
+                        C = Clr * C;
+                        Cinv = Cinv * Clr; // Clr is self-inverse
+                    }
+                    bone.inverseBindMatrix = C * bone.inverseBindMatrix * Cinv;
                 }
 
                 // Find parent bone: walk up the node's parentIndex chain
@@ -698,6 +735,84 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
                     }
                     parentNodeIdx = scene.nodes[parentNodeIdx].parentIndex;
                 }
+            }
+        }
+
+        // Topological sort: ensure parent bones always have lower indices than
+        // their children. CalculateWorldTransforms iterates bones by index and
+        // reads worldTransforms[parentIndex] — if a parent hasn't been processed
+        // yet, the child reads uninitialized data (garbage transforms).
+        // Also build a remapping table so vertex bone indices stay valid.
+        {
+            std::vector<i32> sortedOrder;
+            sortedOrder.reserve(skeleton->bones.size());
+            std::vector<bool> placed(skeleton->bones.size(), false);
+
+            // Iteratively place bones whose parents are already placed (or root)
+            bool progress = true;
+            while (progress && sortedOrder.size() < skeleton->bones.size()) {
+                progress = false;
+                for (usize i = 0; i < skeleton->bones.size(); ++i) {
+                    if (placed[i]) continue;
+                    i32 parent = skeleton->bones[i].parentIndex;
+                    if (parent < 0 || placed[parent]) {
+                        sortedOrder.push_back(static_cast<i32>(i));
+                        placed[i] = true;
+                        progress = true;
+                    }
+                }
+            }
+            // If any bones remain (cycles), append them
+            for (usize i = 0; i < skeleton->bones.size(); ++i) {
+                if (!placed[i]) sortedOrder.push_back(static_cast<i32>(i));
+            }
+
+            // Check if reordering is actually needed
+            bool needsReorder = false;
+            for (usize i = 0; i < sortedOrder.size(); ++i) {
+                if (sortedOrder[i] != static_cast<i32>(i)) { needsReorder = true; break; }
+            }
+
+            if (needsReorder) {
+                // Build old->new index mapping
+                std::vector<i32> oldToNew(skeleton->bones.size());
+                for (usize i = 0; i < sortedOrder.size(); ++i) {
+                    oldToNew[sortedOrder[i]] = static_cast<i32>(i);
+                }
+
+                // Reorder bones
+                std::vector<Animation::Bone> reordered(skeleton->bones.size());
+                for (usize i = 0; i < sortedOrder.size(); ++i) {
+                    reordered[i] = skeleton->bones[sortedOrder[i]];
+                    // Remap parent index
+                    if (reordered[i].parentIndex >= 0) {
+                        reordered[i].parentIndex = oldToNew[reordered[i].parentIndex];
+                    }
+                }
+                skeleton->bones = std::move(reordered);
+
+                // Update boneNameToBoneIdx for animation track lookup
+                boneNameToBoneIdx.clear();
+                for (i32 b = 0; b < static_cast<i32>(skeleton->bones.size()); ++b) {
+                    boneNameToBoneIdx[skeleton->bones[b].name] = b;
+                }
+
+                // Remap vertex bone indices in ALL meshes
+                for (auto& mesh : scene.meshes) {
+                    for (auto& prim : mesh.primitives) {
+                        for (auto& vert : prim.vertices) {
+                            f32* weights = &vert.boneWeights.x;
+                            for (int s = 0; s < 4; ++s) {
+                                if (weights[s] > 0.0f && vert.boneIndices[s] < oldToNew.size()) {
+                                    vert.boneIndices[s] = static_cast<u32>(oldToNew[vert.boneIndices[s]]);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                ENJIN_LOG_INFO(Asset, "Reordered %zu bones for parent-before-child traversal",
+                    skeleton->bones.size());
             }
         }
 
