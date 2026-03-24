@@ -3452,8 +3452,8 @@ void RenderSystem::CreateShadowPipeline() {
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.depthBiasEnable = true;
-    config.depthBiasConstant = 2.0f;
-    config.depthBiasSlope = 2.0f;
+    config.depthBiasConstant = 0.75f;  // Reduced from 2.0 to tighten contact shadows
+    config.depthBiasSlope = 1.0f;      // Slope bias for angled surfaces
     config.hasColorAttachment = false;  // Depth-only pass
 
     m_ShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
