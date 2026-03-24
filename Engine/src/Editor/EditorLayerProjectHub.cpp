@@ -4262,7 +4262,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ECS::Entity coin = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(coin, "Coin");
             auto& ct = m_World->AddComponent<ECS::TransformComponent>(coin);
-            ct.position = Math::Vector3(-6.0f, 2.0f, -3.0f);
+            ct.position = Math::Vector3(3.0f, 1.0f, -2.0f);  // Near obstacles, at reachable height
             ct.scale = Math::Vector3(0.4f, 0.4f, 0.4f);
             auto& cmat = m_World->AddComponent<ECS::MaterialComponent>(coin);
             cmat.baseColor = Math::Vector3(1.0f, 0.85f, 0.0f);
@@ -4283,8 +4283,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             bob.property = ECS::TweenProperty::Position;
             bob.easing = ECS::EasingType::EaseInOutSine;
             bob.mode = ECS::TweenMode::PingPong;
-            bob.startValue = Math::Vector3(-6.0f, 2.0f, -3.0f);
-            bob.endValue = Math::Vector3(-6.0f, 2.5f, -3.0f);
+            bob.startValue = Math::Vector3(3.0f, 1.0f, -2.0f);
+            bob.endValue = Math::Vector3(3.0f, 1.5f, -2.0f);
             bob.duration = 1.5f;
             tw.tweens.push_back(bob);
         }

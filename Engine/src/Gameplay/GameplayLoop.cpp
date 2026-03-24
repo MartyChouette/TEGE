@@ -275,14 +275,11 @@ void CheckPickupOverlaps3D(ECS::World* world,
             auto* pickupT = world->GetComponent<ECS::TransformComponent>(pickup);
             if (!pickupT) continue;
 
-            // Pickup radius from SphereCollider, BoxCollider, or default
-            f32 pickupR = 0.5f;
-            auto* sphere = world->GetComponent<ECS::SphereColliderComponent>(pickup);
-            if (sphere) pickupR = sphere->radius;
-            auto* box = world->GetComponent<ECS::BoxColliderComponent>(pickup);
-            if (box) pickupR = Math::Max(box->size.x, Math::Max(box->size.y, box->size.z)) * 0.5f;
+            // Use the PickupComponent's pickupRange (default 1.0) for detection distance.
+            // This is more intuitive than relying on collider radius.
+            f32 pickupR = pk->pickupRange;
 
-            // 3D distance check (sphere-sphere approximation)
+            // 3D distance check
             Math::Vector3 diff = playerT->position - pickupT->position;
             f32 dist = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
             if (dist < pr + pickupR) {
