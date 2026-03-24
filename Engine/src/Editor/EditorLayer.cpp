@@ -240,8 +240,18 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     m_EditorSettings.Load();
     m_ImGuiLayer->ApplyTheme(m_EditorSettings.theme, &m_EditorSettings.accentColors);
     m_ImGuiLayer->SetGlobalScale(m_EditorSettings.uiScale);
+    // Apply dyslexia-friendly spacing to ImGui (increased item/frame padding for readability)
+    if (m_EditorSettings.dyslexiaFontEnabled) {
+        ImGuiStyle& style = ImGui::GetStyle();
+        style.ItemSpacing.y = std::max(style.ItemSpacing.y, 6.0f);
+        style.FramePadding.y = std::max(style.FramePadding.y, 5.0f);
+    }
     Input::SetRawMouseInput(m_EditorSettings.rawMouseInput);
     Input::SetMouseSmoothing(m_EditorSettings.mouseSmoothing);
+    // Apply motor accessibility settings to ImGui
+    ImGui::GetIO().MouseDragThreshold = m_EditorSettings.dragThreshold;
+    ImGui::GetIO().KeyRepeatDelay = m_EditorSettings.holdRepeatDelay;
+    ImGui::GetIO().KeyRepeatRate = m_EditorSettings.holdRepeatRate;
     m_SurfaceSnap = m_EditorSettings.surfaceSnap;
     m_SurfaceAlignNormal = m_EditorSettings.surfaceAlignNormal;
     if (!m_EditorSettings.windowIconPath.empty() && m_Window) {
@@ -465,11 +475,21 @@ void EditorLayer::InitializePlayMode() {
         if (ctrlSys) {
             ctrlSys->SetInputActionMap(&m_InputMap);
             ctrlSys->SetReducedMotion(m_EditorSettings.reducedMotion);
+            ctrlSys->SetDisableScreenShake(m_EditorSettings.disableScreenShake);
+            ctrlSys->SetDisableFOVEffects(m_EditorSettings.disableFOVEffects);
         }
 
         // Wire reduced motion to UISystem
         if (m_PlayMode.GetUISystem()) {
             m_PlayMode.GetUISystem()->SetReducedMotion(m_EditorSettings.reducedMotion);
+        }
+
+        // Apply input preset from settings
+        switch (m_EditorSettings.inputPreset) {
+        case 1: m_InputMap.ApplyLeftHandOnly(); break;
+        case 2: m_InputMap.ApplyRightHandOnly(); break;
+        case 3: m_InputMap.ApplyGamepadOnly(); break;
+        default: break; // Default bindings already loaded
         }
 
         // Apply sprint/crouch toggle modes from settings
@@ -2263,9 +2283,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         // Dock core panels into their nodes
         ImGui::DockBuilderDockWindow("Hierarchy", dockLeft);
         ImGui::DockBuilderDockWindow("Inspector", dockRight);
-        ImGui::DockBuilderDockWindow("Settings", dockRight);  // Tabbed with Inspector
+        ImGui::DockBuilderDockWindow("Settings", dockRight);       // Tabbed with Inspector
         ImGui::DockBuilderDockWindow("Console", dockBottom);
-        ImGui::DockBuilderDockWindow("Asset Browser", dockBottomRight);
+        ImGui::DockBuilderDockWindow("Asset Browser", dockBottom); // Tabbed with Console
         ImGui::DockBuilderDockWindow("Scene List", dockLeftBottom);
 
         // Dock Scene and Game View into the center (tabbed)
@@ -3248,7 +3268,34 @@ void EditorLayer::SetPanelVisibility(EditorPanel panel, bool visible) {
 }
 
 bool EditorLayer::IsPanelVisible(EditorPanel panel) const {
-    return HasPanel(m_VisiblePanels, panel);
+    if (!HasPanel(m_VisiblePanels, panel)) return false;
+
+    // In simplified editor mode, hide advanced panels
+    if (m_EditorSettings.simplifiedEditor) {
+        switch (panel) {
+        case EditorPanel::Profiler:
+        case EditorPanel::Rendering:
+        case EditorPanel::PostProcessing:
+        case EditorPanel::RetroEffects:
+        case EditorPanel::ParticleEditor:
+        case EditorPanel::AnimGraph:
+        case EditorPanel::VisualScript:
+        case EditorPanel::BehaviorTree:
+        case EditorPanel::QuestFlow:
+        case EditorPanel::DataAssets:
+        case EditorPanel::PluginBrowser:
+        case EditorPanel::ProceduralGen:
+        case EditorPanel::NetworkPanel:
+        case EditorPanel::Collaboration:
+        case EditorPanel::GitIntegration:
+        case EditorPanel::SaveDebug:
+            return false;
+        default:
+            break;
+        }
+    }
+
+    return true;
 }
 
 bool EditorLayer::WantsKeyboardInput() const {
