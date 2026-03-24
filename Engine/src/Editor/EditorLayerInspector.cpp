@@ -732,6 +732,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::InteractionIKComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::InteractionIKComponent>(e); },
             "interactionIK", DimensionTag::Only3D},
+        {"Two-Bone IK", "3D / Animation", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TwoBoneIKComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TwoBoneIKComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TwoBoneIKComponent>(e); },
+            "twoBoneIK", DimensionTag::Only3D},
         {"Bone Attachment", "3D / Animation", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::BoneAttachmentComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BoneAttachmentComponent>(e); },
@@ -1312,6 +1317,54 @@ void EditorLayer::DrawInspectorPanel() {
                 ikTag[sizeof(ikTag) - 1] = '\0';
                 if (ImGui::InputText("Interaction Tag", ikTag, sizeof(ikTag))) {
                     ik->interactionTag = ikTag;
+                }
+            }
+        }
+
+        if (m_World->HasComponent<ECS::TwoBoneIKComponent>(m_PrimarySelected)) {
+            if (ImGui::CollapsingHeader("Two-Bone IK")) {
+                auto* ik = m_World->GetComponent<ECS::TwoBoneIKComponent>(m_PrimarySelected);
+
+                // Bone name inputs
+                char rootBone[128];
+                strncpy(rootBone, ik->rootBoneName.c_str(), sizeof(rootBone) - 1);
+                rootBone[sizeof(rootBone) - 1] = '\0';
+                if (ImGui::InputText("Root Bone##TwoBoneIK", rootBone, sizeof(rootBone))) {
+                    ik->rootBoneName = rootBone;
+                }
+
+                char midBone[128];
+                strncpy(midBone, ik->midBoneName.c_str(), sizeof(midBone) - 1);
+                midBone[sizeof(midBone) - 1] = '\0';
+                if (ImGui::InputText("Mid Bone##TwoBoneIK", midBone, sizeof(midBone))) {
+                    ik->midBoneName = midBone;
+                }
+
+                char endBone[128];
+                strncpy(endBone, ik->endBoneName.c_str(), sizeof(endBone) - 1);
+                endBone[sizeof(endBone) - 1] = '\0';
+                if (ImGui::InputText("End Bone##TwoBoneIK", endBone, sizeof(endBone))) {
+                    ik->endBoneName = endBone;
+                }
+
+                // Target entity picker
+                ImGui::Checkbox("Use Entity Target##TwoBoneIK", &ik->useEntityTarget);
+                if (ik->useEntityTarget) {
+                    i32 entityId = static_cast<i32>(ik->targetEntity);
+                    if (ImGui::InputInt("Target Entity##TwoBoneIK", &entityId)) {
+                        ik->targetEntity = static_cast<ECS::Entity>(entityId);
+                    }
+                } else {
+                    ImGui::DragFloat3("Target Pos##TwoBoneIK", &ik->targetPosition.x, 0.1f);
+                }
+
+                // Weight slider
+                ImGui::SliderFloat("Weight##TwoBoneIK", &ik->weight, 0.0f, 1.0f);
+
+                // Pole vector
+                ImGui::DragFloat3("Pole Vector##TwoBoneIK", &ik->poleVector.x, 0.1f);
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Direction hint for elbow/knee bend");
                 }
             }
         }
@@ -1919,6 +1972,107 @@ void EditorLayer::DrawInspectorPanel() {
                         ImGui::ColorEdit3("Before Tint##Onion3D", &onionSkin.beforeTint.x);
                         ImGui::ColorEdit3("After Tint##Onion3D", &onionSkin.afterTint.x);
                         ImGui::Unindent(8.0f);
+                    }
+
+                    // ================================================================
+                    // Animation Retargeting
+                    // ================================================================
+                    ImGui::Separator();
+                    if (!animations.empty() && ImGui::TreeNode("Retargeting")) {
+                        // Persistent retarget state (static per-inspector, fine for single selection)
+                        static Animation::AnimationRetargetMap s_RetargetMap;
+                        static bool s_RetargetAutoMap = true;
+                        static f32 s_RetargetHeightScale = 1.0f;
+                        static std::string s_RetargetSourceAnim;
+                        static std::vector<std::pair<std::string, std::string>> s_RetargetPreview;
+
+                        ImGui::Checkbox("Auto-Map By Name", &s_RetargetAutoMap);
+                        s_RetargetMap.autoMapByName = s_RetargetAutoMap;
+                        ImGui::DragFloat("Height Scale##Retarget", &s_RetargetHeightScale, 0.01f, 0.01f, 10.0f, "%.2f");
+                        s_RetargetMap.heightScale = s_RetargetHeightScale;
+
+                        // Source animation selector
+                        if (ImGui::BeginCombo("Source Animation##Retarget",
+                                s_RetargetSourceAnim.empty() ? "(select)" : s_RetargetSourceAnim.c_str())) {
+                            for (const auto& [animName, animData] : animations) {
+                                (void)animData;
+                                if (ImGui::Selectable(animName.c_str(), animName == s_RetargetSourceAnim)) {
+                                    s_RetargetSourceAnim = animName;
+                                }
+                            }
+                            ImGui::EndCombo();
+                        }
+
+                        // Build preview button
+                        const auto* skel = animator.GetSkeleton();
+                        if (skel && !s_RetargetSourceAnim.empty()) {
+                            if (ImGui::Button("Preview Mapping##Retarget")) {
+                                Animation::AnimationRetargetMap autoMap = Animation::BuildAutoRetargetMap(*skel, *skel);
+                                // Merge explicit overrides
+                                for (const auto& [src, tgt] : s_RetargetMap.boneMapping) {
+                                    autoMap.boneMapping[src] = tgt;
+                                }
+                                s_RetargetPreview.clear();
+                                for (const auto& bone : skel->bones) {
+                                    auto it = autoMap.boneMapping.find(bone.name);
+                                    std::string target = (it != autoMap.boneMapping.end()) ? it->second : "(unmapped)";
+                                    s_RetargetPreview.push_back({bone.name, target});
+                                }
+                            }
+                        }
+
+                        // Show mapping preview
+                        if (!s_RetargetPreview.empty()) {
+                            ImGui::Text("Bone Mapping Preview:");
+                            ImGui::Indent(8.0f);
+                            for (const auto& [src, tgt] : s_RetargetPreview) {
+                                if (tgt == "(unmapped)") {
+                                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "%s -> %s", src.c_str(), tgt.c_str());
+                                } else {
+                                    ImGui::Text("%s -> %s", src.c_str(), tgt.c_str());
+                                }
+                            }
+                            ImGui::Unindent(8.0f);
+                        }
+
+                        // Manual mapping overrides
+                        if (skel && ImGui::TreeNode("Manual Overrides##Retarget")) {
+                            static char s_OverrideSrc[128] = "";
+                            static char s_OverrideTgt[128] = "";
+                            ImGui::SetNextItemWidth(120.0f);
+                            ImGui::InputText("Source##RetargetOvr", s_OverrideSrc, sizeof(s_OverrideSrc));
+                            ImGui::SameLine();
+                            ImGui::SetNextItemWidth(120.0f);
+                            ImGui::InputText("Target##RetargetOvr", s_OverrideTgt, sizeof(s_OverrideTgt));
+                            ImGui::SameLine();
+                            if (ImGui::SmallButton("Add##RetargetOvr")) {
+                                if (s_OverrideSrc[0] && s_OverrideTgt[0]) {
+                                    s_RetargetMap.boneMapping[s_OverrideSrc] = s_OverrideTgt;
+                                }
+                            }
+                            // Show current overrides
+                            for (const auto& [src, tgt] : s_RetargetMap.boneMapping) {
+                                ImGui::BulletText("%s -> %s", src.c_str(), tgt.c_str());
+                            }
+                            ImGui::TreePop();
+                        }
+
+                        // Retarget button
+                        if (skel && !s_RetargetSourceAnim.empty()) {
+                            if (ImGui::Button("Retarget Animation##Retarget")) {
+                                auto itSrc = animations.find(s_RetargetSourceAnim);
+                                if (itSrc != animations.end()) {
+                                    Animation::SkeletalAnimation retargeted = Animation::RetargetAnimation(
+                                        itSrc->second, *skel, *skel, s_RetargetMap
+                                    );
+                                    animComp->animator.AddAnimation(retargeted);
+                                    ENJIN_LOG_INFO(Animation, "Retargeted animation '%s' -> '%s'",
+                                        s_RetargetSourceAnim.c_str(), retargeted.name.c_str());
+                                }
+                            }
+                        }
+
+                        ImGui::TreePop();
                     }
                 }
             }

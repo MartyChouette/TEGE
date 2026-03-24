@@ -946,5 +946,182 @@ Math::Vector3 LerpScale(const Math::Vector3& a, const Math::Vector3& b, f32 t) {
 
 } // namespace AnimationUtils
 
+// ============================================================================
+// Animation Retargeting Implementation
+// ============================================================================
+
+// Strip common prefixes from bone names for fuzzy matching
+static std::string StripBonePrefix(const std::string& name) {
+    // Common prefixes from Mixamo, Blender, Maya, etc.
+    static const char* prefixes[] = {
+        "mixamorig:", "mixamorig_", "Bip01_", "Bip01 ",
+        "Bone_", "bone_", "DEF-", "def-",
+        "SK_", "sk_", "J_", "j_",
+        nullptr
+    };
+    for (int i = 0; prefixes[i]; ++i) {
+        std::string prefix(prefixes[i]);
+        if (name.size() > prefix.size() && name.substr(0, prefix.size()) == prefix) {
+            return name.substr(prefix.size());
+        }
+    }
+    return name;
+}
+
+// Try to match a source bone name to a target bone name using common aliases
+static bool MatchBoneAlias(const std::string& a, const std::string& b) {
+    // Normalize: lowercase, replace underscores/spaces with nothing
+    auto normalize = [](const std::string& s) -> std::string {
+        std::string out;
+        out.reserve(s.size());
+        for (char c : s) {
+            if (c == '_' || c == ' ' || c == '-') continue;
+            out += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        return out;
+    };
+
+    std::string na = normalize(a);
+    std::string nb = normalize(b);
+    if (na == nb) return true;
+
+    // Common alias pairs (both directions)
+    static const std::pair<const char*, const char*> aliases[] = {
+        {"spine1", "spine"},
+        {"spine2", "spine1"},
+        {"spine3", "spine2"},
+        {"leftarm", "leftshoulder"},
+        {"rightarm", "rightshoulder"},
+        {"leftforearm", "leftlowerarm"},
+        {"rightforearm", "rightlowerarm"},
+        {"leftuparm", "leftupperarm"},
+        {"rightuparm", "rightupperarm"},
+        {"leftleg", "lefthip"},
+        {"rightleg", "righthip"},
+        {"leftforeleg", "leftlowerleg"},
+        {"rightforeleg", "rightlowerleg"},
+        {"leftupleg", "leftupperleg"},
+        {"rightupleg", "rightupperleg"},
+        {"head", "head"},
+        {"hips", "pelvis"},
+        {"hips", "root"},
+    };
+
+    for (const auto& [aliasA, aliasB] : aliases) {
+        if ((na == aliasA && nb == aliasB) || (na == aliasB && nb == aliasA)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+AnimationRetargetMap BuildAutoRetargetMap(
+    const Skeleton& sourceSkeleton,
+    const Skeleton& targetSkeleton
+) {
+    AnimationRetargetMap map;
+    map.autoMapByName = true;
+    map.heightScale = 1.0f;
+
+    // Build a lookup of target bone names (original and prefix-stripped)
+    std::unordered_map<std::string, std::string> targetByName;       // name -> name
+    std::unordered_map<std::string, std::string> targetByStripped;   // stripped -> original
+    for (const auto& bone : targetSkeleton.bones) {
+        targetByName[bone.name] = bone.name;
+        std::string stripped = StripBonePrefix(bone.name);
+        targetByStripped[stripped] = bone.name;
+    }
+
+    for (const auto& srcBone : sourceSkeleton.bones) {
+        // Pass 1: exact name match
+        auto it = targetByName.find(srcBone.name);
+        if (it != targetByName.end()) {
+            map.boneMapping[srcBone.name] = it->second;
+            continue;
+        }
+
+        // Pass 2: prefix-stripped match
+        std::string srcStripped = StripBonePrefix(srcBone.name);
+        auto it2 = targetByStripped.find(srcStripped);
+        if (it2 != targetByStripped.end()) {
+            map.boneMapping[srcBone.name] = it2->second;
+            continue;
+        }
+
+        // Pass 3: alias matching
+        for (const auto& tgtBone : targetSkeleton.bones) {
+            if (MatchBoneAlias(srcStripped, StripBonePrefix(tgtBone.name))) {
+                map.boneMapping[srcBone.name] = tgtBone.name;
+                break;
+            }
+        }
+    }
+
+    return map;
+}
+
+SkeletalAnimation RetargetAnimation(
+    const SkeletalAnimation& sourceAnim,
+    const Skeleton& sourceSkeleton,
+    const Skeleton& targetSkeleton,
+    const AnimationRetargetMap& retargetMap
+) {
+    // Build the effective bone mapping: source name -> target name
+    std::unordered_map<std::string, std::string> effectiveMap = retargetMap.boneMapping;
+
+    // If auto-mapping enabled, fill in any gaps from auto-matched names
+    if (retargetMap.autoMapByName) {
+        AnimationRetargetMap autoMap = BuildAutoRetargetMap(sourceSkeleton, targetSkeleton);
+        for (const auto& [srcName, tgtName] : autoMap.boneMapping) {
+            if (effectiveMap.find(srcName) == effectiveMap.end()) {
+                effectiveMap[srcName] = tgtName;
+            }
+        }
+    }
+
+    // Create the retargeted animation
+    SkeletalAnimation result;
+    result.name = sourceAnim.name + "_retargeted";
+    result.duration = sourceAnim.duration;
+    result.ticksPerSecond = sourceAnim.ticksPerSecond;
+    result.playMode = sourceAnim.playMode;
+    result.events = sourceAnim.events;
+
+    for (const auto& srcTrack : sourceAnim.tracks) {
+        auto it = effectiveMap.find(srcTrack.boneName);
+        if (it == effectiveMap.end()) {
+            continue;  // No mapping for this bone, skip track
+        }
+
+        const std::string& targetBoneName = it->second;
+        i32 targetBoneIdx = targetSkeleton.FindBoneIndex(targetBoneName);
+        if (targetBoneIdx < 0) {
+            continue;  // Target bone not found in skeleton
+        }
+
+        BoneTrack newTrack;
+        newTrack.boneName = targetBoneName;
+        newTrack.boneIndex = targetBoneIdx;
+
+        // Copy rotation and scale keyframes directly (retargeting preserves rotations)
+        newTrack.rotationTimes = srcTrack.rotationTimes;
+        newTrack.rotations = srcTrack.rotations;
+        newTrack.scaleTimes = srcTrack.scaleTimes;
+        newTrack.scales = srcTrack.scales;
+
+        // Scale position keyframes by heightScale
+        newTrack.positionTimes = srcTrack.positionTimes;
+        newTrack.positions.resize(srcTrack.positions.size());
+        for (usize i = 0; i < srcTrack.positions.size(); ++i) {
+            newTrack.positions[i] = srcTrack.positions[i] * retargetMap.heightScale;
+        }
+
+        result.tracks.push_back(std::move(newTrack));
+    }
+
+    return result;
+}
+
 } // namespace Animation
 } // namespace Enjin

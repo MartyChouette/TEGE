@@ -43,5 +43,21 @@ struct InteractionIKComponent {
     Math::Vector3 currentHandTarget = Math::Vector3(0.0f);
 };
 
+// Two-Bone IK component - analytic IK for arms and legs (law of cosines)
+struct TwoBoneIKComponent {
+    std::string rootBoneName;   // e.g., LeftUpperArm or LeftUpperLeg
+    std::string midBoneName;    // e.g., LeftForeArm or LeftLowerLeg
+    std::string endBoneName;    // e.g., LeftHand or LeftFoot
+
+    // Target: world-space position or entity to track
+    Math::Vector3 targetPosition = Math::Vector3(0.0f);
+    Entity targetEntity = INVALID_ENTITY;
+    bool useEntityTarget = false;
+
+    // IK parameters
+    f32 weight = 1.0f;                                       // 0 = animation only, 1 = full IK
+    Math::Vector3 poleVector = Math::Vector3(0.0f, 0.0f, 1.0f); // Elbow/knee direction hint
+};
+
 } // namespace ECS
 } // namespace Enjin

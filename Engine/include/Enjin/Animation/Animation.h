@@ -560,6 +560,39 @@ private:
 };
 
 // ============================================================================
+// Animation Retargeting
+// ============================================================================
+
+// Maps bone names from a source skeleton to a target skeleton
+struct AnimationRetargetMap {
+    // Explicit bone mapping: source bone name -> target bone name
+    std::unordered_map<std::string, std::string> boneMapping;
+
+    // When true, auto-match bones by name (exact match, then prefix-stripped)
+    bool autoMapByName = true;
+
+    // Scale position keyframes by this ratio (source height / target height)
+    f32 heightScale = 1.0f;
+};
+
+// Retarget a SkeletalAnimation from one skeleton to another using a mapping.
+// Returns a new animation with remapped bone names/indices and scaled positions.
+ENJIN_API SkeletalAnimation RetargetAnimation(
+    const SkeletalAnimation& sourceAnim,
+    const Skeleton& sourceSkeleton,
+    const Skeleton& targetSkeleton,
+    const AnimationRetargetMap& retargetMap
+);
+
+// Build an automatic bone mapping between two skeletons.
+// Tries exact name match first, then strips common prefixes (e.g. "mixamorig:"),
+// then tries common aliases (Spine1 -> Spine, LeftArm -> Left_Arm, etc.).
+ENJIN_API AnimationRetargetMap BuildAutoRetargetMap(
+    const Skeleton& sourceSkeleton,
+    const Skeleton& targetSkeleton
+);
+
+// ============================================================================
 // Animation Utilities
 // ============================================================================
 

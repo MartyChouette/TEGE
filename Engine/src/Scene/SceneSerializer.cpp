@@ -6349,6 +6349,19 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 ikJson["interactionTag"] = ik->interactionTag;
                 entityJson["interactionIK"] = ikJson;
             }
+            if (m_World->HasComponent<ECS::TwoBoneIKComponent>(entity)) {
+                auto* ik = m_World->GetComponent<ECS::TwoBoneIKComponent>(entity);
+                json ikJson;
+                ikJson["rootBone"] = ik->rootBoneName;
+                ikJson["midBone"] = ik->midBoneName;
+                ikJson["endBone"] = ik->endBoneName;
+                ikJson["targetPos"] = { ik->targetPosition.x, ik->targetPosition.y, ik->targetPosition.z };
+                ikJson["targetEntity"] = static_cast<u64>(ik->targetEntity);
+                ikJson["useEntityTarget"] = ik->useEntityTarget;
+                ikJson["weight"] = ik->weight;
+                ikJson["poleVector"] = { ik->poleVector.x, ik->poleVector.y, ik->poleVector.z };
+                entityJson["twoBoneIK"] = ikJson;
+            }
             if (m_World->HasComponent<ECS::BoneAttachmentComponent>(entity)) {
                 auto* ba = m_World->GetComponent<ECS::BoneAttachmentComponent>(entity);
                 json baJson;
@@ -7065,6 +7078,24 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
                 if (ikJson.contains("interactionTag")) ik.interactionTag = ikJson["interactionTag"].get<std::string>();
             }
+            if (entityJson.contains("twoBoneIK")) {
+                auto& ik = m_World->AddComponent<ECS::TwoBoneIKComponent>(entity);
+                auto& ikJson = entityJson["twoBoneIK"];
+                if (ikJson.contains("rootBone")) ik.rootBoneName = ikJson["rootBone"].get<std::string>();
+                if (ikJson.contains("midBone")) ik.midBoneName = ikJson["midBone"].get<std::string>();
+                if (ikJson.contains("endBone")) ik.endBoneName = ikJson["endBone"].get<std::string>();
+                if (ikJson.contains("targetPos") && ikJson["targetPos"].is_array() && ikJson["targetPos"].size() >= 3) {
+                    auto& a = ikJson["targetPos"];
+                    ik.targetPosition = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
+                }
+                if (ikJson.contains("targetEntity")) ik.targetEntity = static_cast<ECS::Entity>(ikJson["targetEntity"].get<u64>());
+                if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = JB(ikJson["useEntityTarget"]);
+                if (ikJson.contains("weight")) ik.weight = ikJson["weight"].get<f32>();
+                if (ikJson.contains("poleVector") && ikJson["poleVector"].is_array() && ikJson["poleVector"].size() >= 3) {
+                    auto& a = ikJson["poleVector"];
+                    ik.poleVector = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
+                }
+            }
             if (entityJson.contains("boneAttachment")) {
                 auto& ba = m_World->AddComponent<ECS::BoneAttachmentComponent>(entity);
                 auto& baJson = entityJson["boneAttachment"];
@@ -7341,6 +7372,13 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             }
             if (m_World->HasComponent<ECS::LookAtIKComponent>(entity)) {
                 auto* ik = m_World->GetComponent<ECS::LookAtIKComponent>(entity);
+                if (ik->useEntityTarget && ik->targetEntity != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(ik->targetEntity));
+                    ik->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+            }
+            if (m_World->HasComponent<ECS::TwoBoneIKComponent>(entity)) {
+                auto* ik = m_World->GetComponent<ECS::TwoBoneIKComponent>(entity);
                 if (ik->useEntityTarget && ik->targetEntity != ECS::INVALID_ENTITY) {
                     auto it = oldToNew.find(static_cast<u64>(ik->targetEntity));
                     ik->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
@@ -7657,6 +7695,19 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
                 ikJson["smoothSpeed"] = ik->smoothSpeed;
                 ikJson["interactionTag"] = ik->interactionTag;
                 entityJson["interactionIK"] = ikJson;
+            }
+            if (m_World->HasComponent<ECS::TwoBoneIKComponent>(entity)) {
+                auto* ik = m_World->GetComponent<ECS::TwoBoneIKComponent>(entity);
+                json ikJson;
+                ikJson["rootBone"] = ik->rootBoneName;
+                ikJson["midBone"] = ik->midBoneName;
+                ikJson["endBone"] = ik->endBoneName;
+                ikJson["targetPos"] = { ik->targetPosition.x, ik->targetPosition.y, ik->targetPosition.z };
+                ikJson["targetEntity"] = static_cast<u64>(ik->targetEntity);
+                ikJson["useEntityTarget"] = ik->useEntityTarget;
+                ikJson["weight"] = ik->weight;
+                ikJson["poleVector"] = { ik->poleVector.x, ik->poleVector.y, ik->poleVector.z };
+                entityJson["twoBoneIK"] = ikJson;
             }
             if (m_World->HasComponent<ECS::BoneAttachmentComponent>(entity)) {
                 auto* ba = m_World->GetComponent<ECS::BoneAttachmentComponent>(entity);
@@ -8300,6 +8351,24 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
                 if (ikJson.contains("interactionTag")) ik.interactionTag = ikJson["interactionTag"].get<std::string>();
             }
+            if (entityJson.contains("twoBoneIK")) {
+                auto& ik = m_World->AddComponent<ECS::TwoBoneIKComponent>(entity);
+                auto& ikJson = entityJson["twoBoneIK"];
+                if (ikJson.contains("rootBone")) ik.rootBoneName = ikJson["rootBone"].get<std::string>();
+                if (ikJson.contains("midBone")) ik.midBoneName = ikJson["midBone"].get<std::string>();
+                if (ikJson.contains("endBone")) ik.endBoneName = ikJson["endBone"].get<std::string>();
+                if (ikJson.contains("targetPos") && ikJson["targetPos"].is_array() && ikJson["targetPos"].size() >= 3) {
+                    auto& a = ikJson["targetPos"];
+                    ik.targetPosition = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
+                }
+                if (ikJson.contains("targetEntity")) ik.targetEntity = static_cast<ECS::Entity>(ikJson["targetEntity"].get<u64>());
+                if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = JB(ikJson["useEntityTarget"]);
+                if (ikJson.contains("weight")) ik.weight = ikJson["weight"].get<f32>();
+                if (ikJson.contains("poleVector") && ikJson["poleVector"].is_array() && ikJson["poleVector"].size() >= 3) {
+                    auto& a = ikJson["poleVector"];
+                    ik.poleVector = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
+                }
+            }
             if (entityJson.contains("boneAttachment")) {
                 auto& ba = m_World->AddComponent<ECS::BoneAttachmentComponent>(entity);
                 auto& baJson = entityJson["boneAttachment"];
@@ -8581,6 +8650,13 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                     ik->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
                 }
             }
+            if (m_World->HasComponent<ECS::TwoBoneIKComponent>(entity)) {
+                auto* ik = m_World->GetComponent<ECS::TwoBoneIKComponent>(entity);
+                if (ik->useEntityTarget && ik->targetEntity != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(ik->targetEntity));
+                    ik->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+            }
             if (m_World->HasComponent<ECS::TetherComponent>(entity)) {
                 auto* tc = m_World->GetComponent<ECS::TetherComponent>(entity);
                 if (tc->stemEntity != ECS::INVALID_ENTITY) {
@@ -8778,6 +8854,19 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             ikJson["smoothSpeed"] = ik->smoothSpeed;
             ikJson["interactionTag"] = ik->interactionTag;
             entityJson["interactionIK"] = ikJson;
+        }
+        if (world->HasComponent<ECS::TwoBoneIKComponent>(entity)) {
+            auto* ik = world->GetComponent<ECS::TwoBoneIKComponent>(entity);
+            json ikJson;
+            ikJson["rootBone"] = ik->rootBoneName;
+            ikJson["midBone"] = ik->midBoneName;
+            ikJson["endBone"] = ik->endBoneName;
+            ikJson["targetPos"] = { ik->targetPosition.x, ik->targetPosition.y, ik->targetPosition.z };
+            ikJson["targetEntity"] = static_cast<u64>(ik->targetEntity);
+            ikJson["useEntityTarget"] = ik->useEntityTarget;
+            ikJson["weight"] = ik->weight;
+            ikJson["poleVector"] = { ik->poleVector.x, ik->poleVector.y, ik->poleVector.z };
+            entityJson["twoBoneIK"] = ikJson;
         }
         if (world->HasComponent<ECS::BoneAttachmentComponent>(entity)) {
             auto* ba = world->GetComponent<ECS::BoneAttachmentComponent>(entity);
@@ -9141,6 +9230,24 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             if (ikJson.contains("ikWeight")) ik.ikWeight = ikJson["ikWeight"].get<f32>();
             if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
             if (ikJson.contains("interactionTag")) ik.interactionTag = ikJson["interactionTag"].get<std::string>();
+        }
+        if (entityJson.contains("twoBoneIK")) {
+            auto& ikJson = entityJson["twoBoneIK"];
+            auto& ik = world->AddComponent<ECS::TwoBoneIKComponent>(entity);
+            if (ikJson.contains("rootBone")) ik.rootBoneName = ikJson["rootBone"].get<std::string>();
+            if (ikJson.contains("midBone")) ik.midBoneName = ikJson["midBone"].get<std::string>();
+            if (ikJson.contains("endBone")) ik.endBoneName = ikJson["endBone"].get<std::string>();
+            if (ikJson.contains("targetPos") && ikJson["targetPos"].is_array() && ikJson["targetPos"].size() >= 3) {
+                auto& a = ikJson["targetPos"];
+                ik.targetPosition = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
+            }
+            if (ikJson.contains("targetEntity")) ik.targetEntity = static_cast<ECS::Entity>(ikJson["targetEntity"].get<u64>());
+            if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = ikJson["useEntityTarget"].get<bool>();
+            if (ikJson.contains("weight")) ik.weight = ikJson["weight"].get<f32>();
+            if (ikJson.contains("poleVector") && ikJson["poleVector"].is_array() && ikJson["poleVector"].size() >= 3) {
+                auto& a = ikJson["poleVector"];
+                ik.poleVector = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
+            }
         }
         if (entityJson.contains("boneAttachment")) {
             auto& ba = world->AddComponent<ECS::BoneAttachmentComponent>(entity);
