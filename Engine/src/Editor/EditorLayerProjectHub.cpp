@@ -178,8 +178,9 @@ static void DrawCenteredClippedText(ImDrawList* dl, const char* text, f32 cardX,
 
 // Open a folder in the platform file explorer
 static void OpenInExplorer(const std::string& folderPath) {
+    if (folderPath.empty() || !std::filesystem::exists(folderPath)) return;
 #ifdef _WIN32
-    ShellExecuteA(nullptr, "explore", folderPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    ShellExecuteA(nullptr, "open", folderPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 #elif defined(__APPLE__)
     std::string cmd = "open \"" + folderPath + "\"";
     std::system(cmd.c_str());
@@ -338,7 +339,7 @@ void EditorLayer::DrawProjectHub() {
                 if (!newPath.empty()) {
                     m_EditorSettings.AddRecentProject(newPath);
                     m_EditorSettings.Save();
-                    ENJIN_LOG_INFO(Build, "Duplicated project to: {}", newPath);
+                    ENJIN_LOG_INFO(Build, "Duplicated project to: %s", newPath.c_str());
                 }
             }
 
