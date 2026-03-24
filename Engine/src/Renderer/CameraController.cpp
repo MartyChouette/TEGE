@@ -65,7 +65,7 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
 
         Math::Vector2 mouseDelta = Input::GetMouseDelta();
         m_Yaw += mouseDelta.x * m_LookSensitivity;
-        m_Pitch += mouseDelta.y * m_LookSensitivity;
+        m_Pitch -= mouseDelta.y * m_LookSensitivity;  // Inverted: drag up → look up
         m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
         ApplyRotation();
     } else if (m_MouseCapturedByUs) {
@@ -78,7 +78,7 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
         Math::Vector2 rightStick = Input::GetGamepadRightStick();
         if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
             m_Yaw += rightStick.x * m_LookSensitivity * 80.0f * deltaTime;
-            m_Pitch -= rightStick.y * m_LookSensitivity * 80.0f * deltaTime;
+            m_Pitch += rightStick.y * m_LookSensitivity * 80.0f * deltaTime;
             m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
             ApplyRotation();
         }
@@ -96,10 +96,12 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
 
     Math::Vector3 movement(0.0f, 0.0f, 0.0f);
 
-    // Compute forward/right directly from yaw so movement always matches look direction
+    // Compute forward/right from yaw — must match ApplyRotation's forward vector
+    // ApplyRotation: forward = (sin(yaw), sin(pitch), -cos(yaw))
+    // Movement uses the horizontal plane (pitch=0) projection
     f32 yawRad = Math::Radians(m_Yaw);
-    Math::Vector3 forward(-Math::Sin(yawRad), 0.0f, -Math::Cos(yawRad));
-    Math::Vector3 right(Math::Cos(yawRad), 0.0f, -Math::Sin(yawRad));
+    Math::Vector3 forward(Math::Sin(yawRad), 0.0f, -Math::Cos(yawRad));
+    Math::Vector3 right(Math::Cos(yawRad), 0.0f, Math::Sin(yawRad));
 
     Math::Vector3 worldUp(0.0f, 1.0f, 0.0f);
 
@@ -178,7 +180,7 @@ void CameraController::UpdateOrbitMode(f32 deltaTime) {
 
         Math::Vector2 mouseDelta = Input::GetMouseDelta();
         m_Yaw += mouseDelta.x * m_LookSensitivity;
-        m_Pitch += mouseDelta.y * m_LookSensitivity;
+        m_Pitch -= mouseDelta.y * m_LookSensitivity;  // Inverted: drag up → look up
         m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
     } else if (m_MouseCapturedByUs) {
         Input::SetMouseCaptured(false);
