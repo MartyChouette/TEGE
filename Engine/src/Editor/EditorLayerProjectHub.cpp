@@ -1087,20 +1087,118 @@ namespace {
 } // anonymous namespace
 
 // Draw a procedural mini-preview for template cards (first 4 templates get custom art)
+// Pick a symbol character for template cards based on template ID
+static const char* GetTemplateSymbol(const char* templateId) {
+    if (!templateId) return "?";
+    std::string id(templateId);
+    // 3D templates
+    if (id == "blank")         return "[ ]";
+    if (id == "thirdperson")   return "III";
+    if (id == "firstperson")   return "FPS";
+    if (id == "puzzle")        return "#";
+    if (id == "survival")      return "***";
+    if (id == "rpg_village")   return "NPC";
+    if (id == "horror")        return "!?";
+    if (id == "racing")        return ">>";
+    if (id == "ps1rpg")        return "RPG";
+    if (id == "arena")         return "VS";
+    if (id == "physics")       return "~G~";
+    if (id == "narrative")     return "...";
+    if (id == "savesystem")    return "[S]";
+    if (id == "visualscript")  return "<>";
+    if (id == "uicanvas")      return "UI";
+    if (id == "accessibility") return "A11";
+    if (id == "planetgravity") return "@";
+    if (id == "dungeon")       return "DNG";
+    if (id == "isometric")     return "ISO";
+    if (id == "visualnovel")   return "VN";
+    if (id == "gamemanager")   return "GM";
+    if (id == "citybuilder")   return "CTY";
+    if (id == "fpsarena")      return "FPS";
+    if (id == "teamsports")    return "VS";
+    if (id == "towerdefense")  return "TD";
+    if (id == "fixedcam")      return "CAM";
+    if (id == "soulslike")     return "DIE";
+    if (id == "flower")        return "*";
+    if (id == "shadowtest")    return "SHD";
+    if (id == "ray_tracing_showcase") return "RT";
+    if (id == "procedural_world")     return "GEN";
+    if (id == "ps1_horror")    return "PS1";
+    // 2D templates
+    if (id == "platformer")    return "2D>";
+    if (id == "topdown2d")     return "TD2";
+    if (id == "pointclick")    return "PTR";
+    if (id == "bullethell")    return "!!";
+    if (id == "idleclicker")   return "$$$";
+    if (id == "runner")        return ">>>";
+    if (id == "metroidvania")  return "MV";
+    if (id == "vampsurvivor")  return "XP";
+    if (id == "roguelike")     return "RNG";
+    if (id == "hello_sprite")  return "SPR";
+    if (id == "neon_runner")   return "NEO";
+    if (id == "cozy_farm")     return "COZ";
+    // Flash
+    if (id == "flash_td")      return "FTD";
+    if (id == "flash_dress")   return "DRS";
+    if (id == "flash_escape")  return "ESC";
+    if (id == "flash_rhythm")  return "BPM";
+    // Multiplayer
+    if (id == "couchcoop")     return "2P";
+    if (id == "justtwo")       return "CO-OP";
+    if (id == "networking_lobby") return "LAN";
+    if (id == "custom")        return "USR";
+    return "?";
+}
+
 static void DrawTemplateThumbnail(ImDrawList* dl, const char* templateId, ImVec2 tMin, ImVec2 tMax,
                                    const ImVec4& accent, bool hovered) {
-    // Simple solid color fill using the template's accent color
     u8 r = static_cast<u8>(accent.x * 255);
     u8 g = static_cast<u8>(accent.y * 255);
     u8 b = static_cast<u8>(accent.z * 255);
-    u8 a = hovered ? 220 : 180;
-    dl->AddRectFilled(tMin, tMax, IM_COL32(r, g, b, a), 4.0f);
 
-    // Subtle bottom edge fade-out
+    // Gradient fill: lighter at top, darker at bottom for depth
+    u8 aTop    = hovered ? 240 : 200;
+    u8 aBottom = hovered ? 180 : 140;
+    // Top color (slightly brighter)
+    u8 rTop = static_cast<u8>((std::min)(255, static_cast<int>(r) + 30));
+    u8 gTop = static_cast<u8>((std::min)(255, static_cast<int>(g) + 30));
+    u8 bTop = static_cast<u8>((std::min)(255, static_cast<int>(b) + 30));
+    // Bottom color (darker)
+    u8 rBot = static_cast<u8>(static_cast<int>(r) * 7 / 10);
+    u8 gBot = static_cast<u8>(static_cast<int>(g) * 7 / 10);
+    u8 bBot = static_cast<u8>(static_cast<int>(b) * 7 / 10);
+
+    dl->AddRectFilledMultiColor(tMin, tMax,
+        IM_COL32(rTop, gTop, bTop, aTop), IM_COL32(rTop, gTop, bTop, aTop),
+        IM_COL32(rBot, gBot, bBot, aBottom), IM_COL32(rBot, gBot, bBot, aBottom));
+
+    // Dark bottom shadow edge for depth
+    f32 shadowH = 16.0f;
     dl->AddRectFilledMultiColor(
-        ImVec2(tMin.x, tMax.y - 8), tMax,
+        ImVec2(tMin.x, tMax.y - shadowH), tMax,
         IM_COL32(0, 0, 0, 0), IM_COL32(0, 0, 0, 0),
-        IM_COL32(20, 22, 30, 200), IM_COL32(20, 22, 30, 200));
+        IM_COL32(10, 12, 20, 180), IM_COL32(10, 12, 20, 180));
+
+    // Subtle top highlight edge
+    dl->AddRectFilledMultiColor(
+        tMin, ImVec2(tMax.x, tMin.y + 6.0f),
+        IM_COL32(255, 255, 255, 30), IM_COL32(255, 255, 255, 30),
+        IM_COL32(255, 255, 255, 0), IM_COL32(255, 255, 255, 0));
+
+    // Center symbol/icon text
+    const char* symbol = GetTemplateSymbol(templateId);
+    ImFont* font = ImGui::GetFont();
+    f32 symbolFontSize = 38.0f;
+    ImVec2 symSize = font->CalcTextSizeA(symbolFontSize, FLT_MAX, 0.0f, symbol);
+    f32 cx = tMin.x + (tMax.x - tMin.x - symSize.x) * 0.5f;
+    f32 cy = tMin.y + (tMax.y - tMin.y - symSize.y) * 0.5f;
+
+    // Shadow behind symbol
+    dl->AddText(font, symbolFontSize, ImVec2(cx + 2.0f, cy + 2.0f),
+        IM_COL32(0, 0, 0, hovered ? 120 : 80), symbol);
+    // Symbol itself (white, slightly transparent)
+    dl->AddText(font, symbolFontSize, ImVec2(cx, cy),
+        IM_COL32(255, 255, 255, hovered ? 220 : 160), symbol);
 }
 
 // --------------------------------------------------
@@ -1373,36 +1471,50 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
                        io.MousePos.y >= cardPos.y && io.MousePos.y <= cardEnd.y);
         bool selected = (m_SelectedTemplate == i);
 
-        // Locked (non-Stable) cards get muted styling
+        // Card background with gradient and hover/selection glow
+        ImVec4 accent = s_BuiltinTemplates[i].accentColor;
         if (isStable) {
-            ImU32 bgCol = selected ? IM_COL32(35, 45, 70, 255) :
-                          (hovered ? IM_COL32(40, 45, 60, 255) : IM_COL32(25, 28, 35, 255));
-            gridDl->AddRectFilled(cardPos, cardEnd, bgCol, 8.0f);
+            // Card body: subtle vertical gradient (slightly lighter top to darker bottom)
+            ImU32 bgTop = selected ? IM_COL32(40, 50, 78, 255) :
+                          (hovered ? IM_COL32(45, 50, 68, 255) : IM_COL32(30, 33, 42, 255));
+            ImU32 bgBot = selected ? IM_COL32(28, 35, 55, 255) :
+                          (hovered ? IM_COL32(32, 36, 48, 255) : IM_COL32(20, 22, 28, 255));
+            gridDl->AddRectFilledMultiColor(cardPos, cardEnd, bgTop, bgTop, bgBot, bgBot);
+            // Re-round the corners (AddRectFilledMultiColor doesn't support rounding)
+            // Draw rounded rect on top to clip corners
+            gridDl->AddRectFilled(cardPos, cardEnd, IM_COL32(0, 0, 0, 0), 8.0f);
+
+            // Hover glow: accent-tinted border glow effect
+            if (hovered) {
+                u8 gr = static_cast<u8>(accent.x * 255);
+                u8 gg = static_cast<u8>(accent.y * 255);
+                u8 gb = static_cast<u8>(accent.z * 255);
+                gridDl->AddRect(ImVec2(cardPos.x - 1, cardPos.y - 1),
+                    ImVec2(cardEnd.x + 1, cardEnd.y + 1),
+                    IM_COL32(gr, gg, gb, 60), 10.0f, 0, 3.0f);
+            }
         } else {
             gridDl->AddRectFilled(cardPos, cardEnd, IM_COL32(20, 22, 28, 255), 8.0f);
         }
 
-        ImVec4 accent = s_BuiltinTemplates[i].accentColor;
         if (isStable) {
             ImU32 accentCol = IM_COL32(
                 (int)(accent.x * 255), (int)(accent.y * 255),
                 (int)(accent.z * 255), (hovered || selected) ? 255 : 180);
-            // Procedural thumbnail (top 200px)
+            // Procedural thumbnail (top 200px) with gradient + symbol
             ImVec2 thumbMin(cardPos.x + 1, cardPos.y + 1);
             ImVec2 thumbMax(cardEnd.x - 1, cardPos.y + 200.0f);
             DrawTemplateThumbnail(gridDl, s_BuiltinTemplates[i].id, thumbMin, thumbMax, accent, hovered);
-            // Thin accent bar above thumbnail
+            // Accent bar along top
             gridDl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 3.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
 
-            ImU32 borderCol = selected ? IM_COL32(140, 160, 220, 255) :
-                             (hovered  ? accentCol : IM_COL32(60, 65, 80, 150));
+            ImU32 borderCol = selected ? IM_COL32(140, 165, 230, 255) :
+                             (hovered  ? accentCol : IM_COL32(55, 60, 75, 130));
             gridDl->AddRect(cardPos, cardEnd, borderCol, 8.0f, 0, selected ? 2.5f : (hovered ? 2.0f : 1.0f));
         } else {
-            // Desaturated accent stripe for locked cards
             ImU32 mutedAccent = IM_COL32(
                 (int)(accent.x * 80), (int)(accent.y * 80),
                 (int)(accent.z * 80), 100);
-            // Procedural thumbnail (top 200px, dimmed for locked)
             ImVec2 thumbMin(cardPos.x + 1, cardPos.y + 1);
             ImVec2 thumbMax(cardEnd.x - 1, cardPos.y + 200.0f);
             DrawTemplateThumbnail(gridDl, s_BuiltinTemplates[i].id, thumbMin, thumbMax, accent, false);
@@ -1422,26 +1534,48 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
         DrawCenteredClippedText(gridDl, s_BuiltinTemplates[i].name, cardPos.x, cardW,
             cardPos.y + 210.0f, nameCol, 12.0f, font, 20.0f);
 
-        // Maturity tier badge (top-left corner)
+        // Maturity tier badge (top-left corner) — polished pill shape
         {
             const char* tierLabel = Editor::TemplateMarketplace::GetMaturityName(s_BuiltinTemplates[i].maturity);
-            ImU32 tierCol;
+            ImU32 tierCol, tierBorderCol;
             switch (s_BuiltinTemplates[i].maturity) {
-                case Editor::MaturityTier::Stable:       tierCol = IM_COL32(80, 140, 220, 200); break;
-                case Editor::MaturityTier::Beta:         tierCol = IM_COL32(80, 180, 80, 200); break;
-                case Editor::MaturityTier::Preview:      tierCol = IM_COL32(210, 170, 50, 200); break;
-                case Editor::MaturityTier::Experimental: tierCol = IM_COL32(210, 70, 70, 200); break;
-                default: tierCol = IM_COL32(120, 120, 120, 200); break;
+                case Editor::MaturityTier::Stable:
+                    tierCol = IM_COL32(60, 120, 200, 220);
+                    tierBorderCol = IM_COL32(100, 160, 240, 180);
+                    break;
+                case Editor::MaturityTier::Beta:
+                    tierCol = IM_COL32(60, 160, 60, 220);
+                    tierBorderCol = IM_COL32(100, 200, 100, 180);
+                    break;
+                case Editor::MaturityTier::Preview:
+                    tierCol = IM_COL32(190, 150, 40, 220);
+                    tierBorderCol = IM_COL32(230, 190, 70, 180);
+                    break;
+                case Editor::MaturityTier::Experimental:
+                    tierCol = IM_COL32(190, 55, 55, 220);
+                    tierBorderCol = IM_COL32(230, 90, 90, 180);
+                    break;
+                default:
+                    tierCol = IM_COL32(100, 100, 100, 220);
+                    tierBorderCol = IM_COL32(140, 140, 140, 180);
+                    break;
             }
-            // Dim badge alpha for locked cards
             if (!isStable) {
                 tierCol = (tierCol & 0x00FFFFFF) | (100 << 24);
+                tierBorderCol = (tierBorderCol & 0x00FFFFFF) | (60 << 24);
             }
             ImVec2 tierSize = ImGui::CalcTextSize(tierLabel);
-            ImVec2 tierPos(cardPos.x + 6.0f, cardPos.y + 8.0f);
-            gridDl->AddRectFilled(ImVec2(tierPos.x - 3.0f, tierPos.y - 1.0f),
-                ImVec2(tierPos.x + tierSize.x + 3.0f, tierPos.y + tierSize.y + 1.0f), tierCol, 3.0f);
-            gridDl->AddText(tierPos, isStable ? IM_COL32(255, 255, 255, 240) : IM_COL32(180, 180, 180, 140), tierLabel);
+            f32 pillPadX = 10.0f;
+            f32 pillPadY = 4.0f;
+            f32 pillH = tierSize.y + pillPadY * 2.0f;
+            f32 pillW = tierSize.x + pillPadX * 2.0f;
+            ImVec2 pillMin(cardPos.x + 8.0f, cardPos.y + 10.0f);
+            ImVec2 pillMax(pillMin.x + pillW, pillMin.y + pillH);
+            f32 pillRound = pillH * 0.5f;  // full round = pill shape
+            gridDl->AddRectFilled(pillMin, pillMax, tierCol, pillRound);
+            gridDl->AddRect(pillMin, pillMax, tierBorderCol, pillRound, 0, 1.0f);
+            ImVec2 tierPos(pillMin.x + pillPadX, pillMin.y + pillPadY);
+            gridDl->AddText(tierPos, isStable ? IM_COL32(255, 255, 255, 245) : IM_COL32(180, 180, 180, 140), tierLabel);
         }
 
         const char* desc = s_BuiltinTemplates[i].description;
@@ -1490,12 +1624,23 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
                        io.MousePos.y >= cardPos.y && io.MousePos.y <= cardEnd.y);
         bool selected = (m_SelectedTemplate == -(ci + 1));
 
-        ImU32 bgCol = selected ? IM_COL32(35, 50, 60, 255) :
-                      (hovered ? IM_COL32(40, 45, 60, 255) : IM_COL32(25, 28, 35, 255));
-        gridDl->AddRectFilled(cardPos, cardEnd, bgCol, 8.0f);
+        // Card body gradient
+        ImU32 bgTop = selected ? IM_COL32(35, 55, 65, 255) :
+                      (hovered ? IM_COL32(42, 48, 65, 255) : IM_COL32(30, 33, 42, 255));
+        ImU32 bgBot = selected ? IM_COL32(25, 38, 48, 255) :
+                      (hovered ? IM_COL32(30, 34, 48, 255) : IM_COL32(20, 22, 28, 255));
+        gridDl->AddRectFilledMultiColor(cardPos, cardEnd, bgTop, bgTop, bgBot, bgBot);
+        gridDl->AddRectFilled(cardPos, cardEnd, IM_COL32(0, 0, 0, 0), 8.0f);
+
+        // Hover glow
+        if (hovered) {
+            gridDl->AddRect(ImVec2(cardPos.x - 1, cardPos.y - 1),
+                ImVec2(cardEnd.x + 1, cardEnd.y + 1),
+                IM_COL32(0, 200, 180, 60), 10.0f, 0, 3.0f);
+        }
 
         ImU32 accentCol = (hovered || selected) ? IM_COL32(0, 200, 180, 255) : IM_COL32(0, 200, 180, 150);
-        // Default thumbnail for custom templates
+        // Custom template thumbnail with gradient + symbol
         ImVec2 cThumbMin(cardPos.x + 1, cardPos.y + 1);
         ImVec2 cThumbMax(cardEnd.x - 1, cardPos.y + 200.0f);
         ImVec4 cAccent(0.4f, 0.6f, 0.8f, 1.0f);
@@ -1503,7 +1648,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
         gridDl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 3.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
 
         ImU32 borderCol = selected ? IM_COL32(0, 220, 200, 255) :
-                         (hovered  ? accentCol : IM_COL32(60, 65, 80, 150));
+                         (hovered  ? accentCol : IM_COL32(55, 60, 75, 130));
         gridDl->AddRect(cardPos, cardEnd, borderCol, 8.0f, 0, selected ? 2.5f : (hovered ? 2.0f : 1.0f));
 
         if (selected) {
