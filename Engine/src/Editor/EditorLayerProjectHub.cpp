@@ -4080,13 +4080,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pk.type = ECS::PickupComponent::PickupType::Coin;
             pk.customId = "Coin";
             pk.value = 10.0f;
-            // Sphere collider for overlap detection
+            // Sphere collider defines pickup radius for AABB overlap detection.
+            // No RigidbodyComponent — pickups should NOT be solid physics bodies.
+            // The GameplayLoop::CheckPickupOverlaps3D handles collection via distance check.
             auto& scol = m_World->AddComponent<ECS::SphereColliderComponent>(coin);
             scol.radius = 0.5f;
-            // Static body for AABB overlap detection with player
-            auto& crb = m_World->AddComponent<ECS::RigidbodyComponent>(coin);
-            crb.bodyType = ECS::RigidbodyComponent::BodyType::Static;
-            crb.useGravity = false;
             auto& tw = m_World->AddComponent<ECS::TweenComponent>(coin);
             ECS::TweenEntry bob;
             bob.property = ECS::TweenProperty::Position;
