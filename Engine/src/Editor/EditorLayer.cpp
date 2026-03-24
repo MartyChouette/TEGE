@@ -2425,6 +2425,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(620 * s, 500 * s), ImGuiCond_FirstUseEver);
         DrawSaveDebugPanel();
     }
+    // UV Preview panel (bool-toggled, not in EditorPanel bitfield)
+    DrawUVPreviewPanel();
+
     if (m_ShowDebugOverlay) {
         DrawDebugOverlay();
     }
@@ -2497,12 +2500,100 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     if (m_ForceLayout) m_ForceLayout = false;
 
     // Submit onion skin ghosts to RenderSystem for editor viewport rendering
-    if (m_RenderSystem && m_FlashTimelineEditor.GetTimeline()) {
-        auto ghosts = m_FlashTimelineEditor.ComputeOnionSkinGhosts();
-        if (!ghosts.empty()) {
-            m_RenderSystem->SetOnionSkinGhosts(ghosts);
-        } else {
-            m_RenderSystem->ClearOnionSkinGhosts();
+    {
+        std::vector<Editor::OnionSkinGhost> allGhosts;
+
+        // 2D Flash timeline onion skin ghosts
+        if (m_RenderSystem && m_FlashTimelineEditor.GetTimeline()) {
+            auto flashGhosts = m_FlashTimelineEditor.ComputeOnionSkinGhosts();
+            allGhosts.insert(allGhosts.end(),
+                std::make_move_iterator(flashGhosts.begin()),
+                std::make_move_iterator(flashGhosts.end()));
+        }
+
+        // 3D Skeletal animation onion skin ghosts
+        if (m_RenderSystem && m_World && m_PrimarySelected != ECS::INVALID_ENTITY) {
+            auto* animComp = m_World->GetComponent<ECS::AnimatorComponent>(m_PrimarySelected);
+            if (animComp && animComp->onionSkin.enabled && animComp->animator.IsPlaying()) {
+                auto& animator = animComp->animator;
+                const auto& onion = animComp->onionSkin;
+                const auto& currentAnimName = animator.GetCurrentAnimationName();
+                const auto& animations = animator.GetAnimations();
+                auto animIt = animations.find(currentAnimName);
+
+                if (animIt != animations.end() && animIt->second.duration > 0.0f) {
+                    f32 duration = animIt->second.duration;
+                    f32 currentTime = animator.GetCurrentTime();
+                    f32 frameStep = 1.0f / animIt->second.ticksPerSecond;
+
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
+                    Math::Vector3 entityPos = transform ? transform->position : Math::Vector3(0, 0, 0);
+                    Math::Vector3 entityRot = transform ? transform->rotation.ToEuler() : Math::Vector3(0, 0, 0);
+                    Math::Vector3 entityScale = transform ? transform->scale : Math::Vector3(1, 1, 1);
+
+                    // Ghost frames before current time
+                    for (i32 i = 1; i <= onion.framesBefore; ++i) {
+                        f32 ghostTime = currentTime - static_cast<f32>(i) * frameStep;
+                        if (ghostTime < 0.0f) {
+                            if (animIt->second.playMode == Animation::PlayMode::Loop) {
+                                ghostTime = std::fmod(ghostTime + duration * 100.0f, duration);
+                            } else {
+                                continue;
+                            }
+                        }
+
+                        auto skinningMatrices = animator.SampleSkinningMatricesAtTime(ghostTime);
+                        if (skinningMatrices.empty()) continue;
+
+                        f32 falloff = std::pow(onion.opacityFalloff, static_cast<f32>(i - 1));
+                        Editor::OnionSkinGhost ghost;
+                        ghost.entity = m_PrimarySelected;
+                        ghost.position = entityPos;
+                        ghost.rotation = entityRot;
+                        ghost.scale = entityScale;
+                        ghost.alpha = 1.0f;
+                        ghost.tint = onion.beforeTint;
+                        ghost.ghostOpacity = onion.opacity * falloff;
+                        ghost.skinningMatrices = std::move(skinningMatrices);
+                        allGhosts.push_back(std::move(ghost));
+                    }
+
+                    // Ghost frames after current time
+                    for (i32 i = 1; i <= onion.framesAfter; ++i) {
+                        f32 ghostTime = currentTime + static_cast<f32>(i) * frameStep;
+                        if (ghostTime > duration) {
+                            if (animIt->second.playMode == Animation::PlayMode::Loop) {
+                                ghostTime = std::fmod(ghostTime, duration);
+                            } else {
+                                continue;
+                            }
+                        }
+
+                        auto skinningMatrices = animator.SampleSkinningMatricesAtTime(ghostTime);
+                        if (skinningMatrices.empty()) continue;
+
+                        f32 falloff = std::pow(onion.opacityFalloff, static_cast<f32>(i - 1));
+                        Editor::OnionSkinGhost ghost;
+                        ghost.entity = m_PrimarySelected;
+                        ghost.position = entityPos;
+                        ghost.rotation = entityRot;
+                        ghost.scale = entityScale;
+                        ghost.alpha = 1.0f;
+                        ghost.tint = onion.afterTint;
+                        ghost.ghostOpacity = onion.opacity * falloff;
+                        ghost.skinningMatrices = std::move(skinningMatrices);
+                        allGhosts.push_back(std::move(ghost));
+                    }
+                }
+            }
+        }
+
+        if (m_RenderSystem) {
+            if (!allGhosts.empty()) {
+                m_RenderSystem->SetOnionSkinGhosts(allGhosts);
+            } else {
+                m_RenderSystem->ClearOnionSkinGhosts();
+            }
         }
     }
 
@@ -3167,6 +3258,10 @@ bool EditorLayer::WantsMouseInput() const {
 void EditorLayer::SelectEntity(ECS::Entity entity, bool addToSelection) {
     if (entity == ECS::INVALID_ENTITY) return;
     if (!addToSelection) {
+        // Restore bone weight colors on the previously selected entity if needed
+        if (m_BoneWeightEntity != ECS::INVALID_ENTITY && m_BoneWeightEntity != entity) {
+            RestoreBoneWeightColors(m_BoneWeightEntity);
+        }
         m_SelectedEntities.clear();
     }
     m_SelectedEntities.insert(entity);
@@ -3190,6 +3285,10 @@ void EditorLayer::DeselectEntity(ECS::Entity entity) {
 }
 
 void EditorLayer::ClearSelection() {
+    // Restore bone weight colors if active
+    if (m_BoneWeightEntity != ECS::INVALID_ENTITY) {
+        RestoreBoneWeightColors(m_BoneWeightEntity);
+    }
     m_SelectedEntities.clear();
     m_PrimarySelected = ECS::INVALID_ENTITY;
 }

@@ -228,6 +228,32 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     return j;
 }
 
+json SerializeMaterialSlotsComponent(const ECS::MaterialSlotsComponent& slots) {
+    json j;
+    json slotsArray = json::array();
+    for (const auto& slot : slots.slots) {
+        slotsArray.push_back(SerializeMaterialComponent(slot));
+    }
+    j["slots"] = slotsArray;
+    return j;
+}
+
+// Forward declaration (defined later, needed by DeserializeMaterialSlotsComponent)
+ECS::MaterialComponent DeserializeMaterialComponent(const json& j);
+
+ECS::MaterialSlotsComponent DeserializeMaterialSlotsComponent(const json& j) {
+    ECS::MaterialSlotsComponent comp;
+    if (j.contains("slots") && j["slots"].is_array()) {
+        static constexpr usize kMaxSlots = 64;  // Reasonable cap
+        usize count = std::min(j["slots"].size(), kMaxSlots);
+        comp.slots.reserve(count);
+        for (usize i = 0; i < count; ++i) {
+            comp.slots.push_back(DeserializeMaterialComponent(j["slots"][i]));
+        }
+    }
+    return comp;
+}
+
 json SerializeMeshComponent(const ECS::MeshComponent& mesh, bool includeVertexData) {
     json j;
     j["vertexCount"] = static_cast<u32>(mesh.vertices.size());
@@ -257,6 +283,20 @@ json SerializeMeshComponent(const ECS::MeshComponent& mesh, bool includeVertexDa
         }
         j["vertices"] = vertices;
         j["indices"] = mesh.indices;
+    }
+
+    // Serialize sub-meshes (multi-material support)
+    if (!mesh.subMeshes.empty()) {
+        json subMeshes = json::array();
+        for (const auto& sm : mesh.subMeshes) {
+            json smJson;
+            smJson["indexOffset"] = sm.indexOffset;
+            smJson["indexCount"] = sm.indexCount;
+            smJson["materialSlot"] = sm.materialSlot;
+            if (!sm.name.empty()) smJson["name"] = sm.name;
+            subMeshes.push_back(smJson);
+        }
+        j["subMeshes"] = subMeshes;
     }
 
     return j;
@@ -457,6 +497,22 @@ ECS::MeshComponent DeserializeMeshComponent(const json& j) {
         static constexpr usize kMaxIndices = 10'000'000;
         if (j["indices"].size() <= kMaxIndices) {
             mesh.indices = j["indices"].get<std::vector<u32>>();
+        }
+    }
+
+    // Deserialize sub-meshes (multi-material support)
+    if (j.contains("subMeshes") && j["subMeshes"].is_array()) {
+        static constexpr usize kMaxSubMeshes = 256;
+        usize count = std::min(j["subMeshes"].size(), kMaxSubMeshes);
+        mesh.subMeshes.reserve(count);
+        for (usize i = 0; i < count; ++i) {
+            const auto& smJson = j["subMeshes"][i];
+            ECS::MeshComponent::SubMesh sm;
+            sm.indexOffset = smJson.value("indexOffset", 0u);
+            sm.indexCount = smJson.value("indexCount", 0u);
+            sm.materialSlot = smJson.value("materialSlot", 0);
+            if (smJson.contains("name")) sm.name = smJson["name"].get<std::string>();
+            mesh.subMeshes.push_back(sm);
         }
     }
 
@@ -6074,6 +6130,11 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 entityJson["material"] = SerializeMaterialComponent(*material);
             }
 
+            if (m_World->HasComponent<ECS::MaterialSlotsComponent>(entity)) {
+                const auto* matSlots = m_World->GetComponent<ECS::MaterialSlotsComponent>(entity);
+                entityJson["materialSlots"] = SerializeMaterialSlotsComponent(*matSlots);
+            }
+
             if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
                 const auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
                 entityJson["mesh"] = SerializeMeshComponent(*mesh, options.includeVertexData);
@@ -6773,6 +6834,11 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 m_World->AddComponent<ECS::MaterialComponent>(entity, material);
             }
 
+            if (entityJson.contains("materialSlots")) {
+                auto matSlots = DeserializeMaterialSlotsComponent(entityJson["materialSlots"]);
+                m_World->AddComponent<ECS::MaterialSlotsComponent>(entity, std::move(matSlots));
+            }
+
             if (entityJson.contains("mesh")) {
                 auto mesh = DeserializeMeshComponent(entityJson["mesh"]);
                 if (mesh.IsValid()) {
@@ -7371,6 +7437,11 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             if (m_World->HasComponent<ECS::MaterialComponent>(entity)) {
                 const auto* material = m_World->GetComponent<ECS::MaterialComponent>(entity);
                 entityJson["material"] = SerializeMaterialComponent(*material);
+            }
+
+            if (m_World->HasComponent<ECS::MaterialSlotsComponent>(entity)) {
+                const auto* matSlots = m_World->GetComponent<ECS::MaterialSlotsComponent>(entity);
+                entityJson["materialSlots"] = SerializeMaterialSlotsComponent(*matSlots);
             }
 
             if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
@@ -7998,6 +8069,11 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 m_World->AddComponent<ECS::MaterialComponent>(entity, material);
             }
 
+            if (entityJson.contains("materialSlots")) {
+                auto matSlots = DeserializeMaterialSlotsComponent(entityJson["materialSlots"]);
+                m_World->AddComponent<ECS::MaterialSlotsComponent>(entity, std::move(matSlots));
+            }
+
             if (entityJson.contains("mesh")) {
                 auto mesh = DeserializeMeshComponent(entityJson["mesh"]);
                 if (mesh.IsValid()) {
@@ -8573,6 +8649,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["transform"] = SerializeTransformComponent(*world->GetComponent<ECS::TransformComponent>(entity));
         if (world->HasComponent<ECS::MaterialComponent>(entity))
             entityJson["material"] = SerializeMaterialComponent(*world->GetComponent<ECS::MaterialComponent>(entity));
+        if (world->HasComponent<ECS::MaterialSlotsComponent>(entity))
+            entityJson["materialSlots"] = SerializeMaterialSlotsComponent(*world->GetComponent<ECS::MaterialSlotsComponent>(entity));
         if (world->HasComponent<ECS::MeshComponent>(entity))
             entityJson["mesh"] = SerializeMeshComponent(*world->GetComponent<ECS::MeshComponent>(entity), true);
         if (world->HasComponent<ECS::SkeletonComponent>(entity))
@@ -8891,6 +8969,10 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         }
         if (entityJson.contains("material")) {
             world->AddComponent<ECS::MaterialComponent>(entity, DeserializeMaterialComponent(entityJson["material"]));
+        }
+        if (entityJson.contains("materialSlots")) {
+            world->AddComponent<ECS::MaterialSlotsComponent>(entity,
+                DeserializeMaterialSlotsComponent(entityJson["materialSlots"]));
         }
         if (entityJson.contains("mesh")) {
             world->AddComponent<ECS::MeshComponent>(entity, DeserializeMeshComponent(entityJson["mesh"]));
@@ -9247,6 +9329,8 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeTransformComponent(*world->GetComponent<ECS::TransformComponent>(entity));
         else if (key == "material" && world->HasComponent<ECS::MaterialComponent>(entity))
             j = SerializeMaterialComponent(*world->GetComponent<ECS::MaterialComponent>(entity));
+        else if (key == "materialSlots" && world->HasComponent<ECS::MaterialSlotsComponent>(entity))
+            j = SerializeMaterialSlotsComponent(*world->GetComponent<ECS::MaterialSlotsComponent>(entity));
         else if (key == "mesh" && world->HasComponent<ECS::MeshComponent>(entity))
             j = SerializeMeshComponent(*world->GetComponent<ECS::MeshComponent>(entity), true);
         else if (key == "skeleton" && world->HasComponent<ECS::SkeletonComponent>(entity))
@@ -9500,6 +9584,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "name") { world->AddComponent<ECS::NameComponent>(entity, DeserializeNameComponent(j)); return true; }
         if (key == "transform") { world->AddComponent<ECS::TransformComponent>(entity, DeserializeTransformComponent(j)); return true; }
         if (key == "material") { world->AddComponent<ECS::MaterialComponent>(entity, DeserializeMaterialComponent(j)); return true; }
+        if (key == "materialSlots") { world->AddComponent<ECS::MaterialSlotsComponent>(entity, DeserializeMaterialSlotsComponent(j)); return true; }
         if (key == "mesh") { world->AddComponent<ECS::MeshComponent>(entity, DeserializeMeshComponent(j)); return true; }
         if (key == "skeleton") { world->AddComponent<ECS::SkeletonComponent>(entity, DeserializeSkeletonComponent(j)); return true; }
         if (key == "animator") {

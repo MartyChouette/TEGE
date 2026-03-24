@@ -7951,5 +7951,265 @@ void EditorLayer::DrawDropConsole(f32 deltaTime) {
     ImGui::PopStyleVar(2);
 }
 
+// ============================================================================
+// Bone Weight Visualization
+// ============================================================================
+
+void EditorLayer::ApplyBoneWeightColors(ECS::Entity entity, i32 boneIndex) {
+    if (!m_World || boneIndex < 0) return;
+
+    auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
+    if (!mesh || mesh->vertices.empty()) return;
+
+    // Save original colors if this is a new entity or we haven't saved yet
+    if (m_BoneWeightEntity != entity || m_BoneWeightOriginalColors.empty()) {
+        m_BoneWeightOriginalColors.resize(mesh->vertices.size());
+        for (usize i = 0; i < mesh->vertices.size(); ++i) {
+            m_BoneWeightOriginalColors[i] = mesh->vertices[i].color;
+        }
+        m_BoneWeightEntity = entity;
+    }
+
+    // Apply heat map colors based on the selected bone's weight
+    u32 targetBone = static_cast<u32>(boneIndex);
+    for (usize i = 0; i < mesh->vertices.size(); ++i) {
+        auto& vert = mesh->vertices[i];
+
+        // Find the weight for this bone on this vertex
+        f32 weight = 0.0f;
+        for (int j = 0; j < 4; ++j) {
+            if (vert.boneIndices[j] == targetBone) {
+                // boneWeights is a Vector4, access by component index
+                switch (j) {
+                    case 0: weight = vert.boneWeights.x; break;
+                    case 1: weight = vert.boneWeights.y; break;
+                    case 2: weight = vert.boneWeights.z; break;
+                    case 3: weight = vert.boneWeights.w; break;
+                }
+                break;
+            }
+        }
+
+        // Heat map: blue (0) -> green (0.5) -> red (1.0)
+        f32 r = 0.0f, g = 0.0f, b = 0.0f;
+        if (weight < 0.5f) {
+            // Blue to Green
+            f32 t = weight * 2.0f;
+            b = 1.0f - t;
+            g = t;
+        } else {
+            // Green to Red
+            f32 t = (weight - 0.5f) * 2.0f;
+            g = 1.0f - t;
+            r = t;
+        }
+        vert.color = Math::Vector4(r, g, b, 1.0f);
+    }
+
+    // Mark the mesh AABB dirty so the renderer re-uploads vertex data
+    mesh->aabbDirty = true;
+}
+
+void EditorLayer::RestoreBoneWeightColors(ECS::Entity entity) {
+    if (!m_World || m_BoneWeightEntity != entity || m_BoneWeightOriginalColors.empty()) return;
+
+    auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
+    if (!mesh) return;
+
+    // Restore original vertex colors
+    usize count = (std::min)(m_BoneWeightOriginalColors.size(), mesh->vertices.size());
+    for (usize i = 0; i < count; ++i) {
+        mesh->vertices[i].color = m_BoneWeightOriginalColors[i];
+    }
+
+    mesh->aabbDirty = true;
+    m_BoneWeightOriginalColors.clear();
+    m_BoneWeightEntity = ECS::INVALID_ENTITY;
+}
+
+// ============================================================================
+// UV Preview Panel
+// ============================================================================
+
+void EditorLayer::DrawUVPreviewPanel() {
+    if (!m_ShowUVPreview) return;
+
+    ImGui::SetNextWindowSize(ImVec2(400, 420), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("UV Preview", &m_ShowUVPreview)) {
+        ImGui::End();
+        return;
+    }
+
+    if (!m_World || m_PrimarySelected == ECS::INVALID_ENTITY) {
+        ImGui::TextDisabled("Select an entity with a MeshComponent to preview UVs.");
+        ImGui::End();
+        return;
+    }
+
+    auto* mesh = m_World->GetComponent<ECS::MeshComponent>(m_PrimarySelected);
+    if (!mesh || mesh->vertices.empty() || mesh->indices.empty()) {
+        ImGui::TextDisabled("Selected entity has no mesh data.");
+        ImGui::End();
+        return;
+    }
+
+    const auto& verts = mesh->vertices;
+    const auto& indices = mesh->indices;
+
+    // Compute UV statistics
+    f32 uvMinU = 1e9f, uvMinV = 1e9f;
+    f32 uvMaxU = -1e9f, uvMaxV = -1e9f;
+    for (const auto& v : verts) {
+        if (v.uv.x < uvMinU) uvMinU = v.uv.x;
+        if (v.uv.y < uvMinV) uvMinV = v.uv.y;
+        if (v.uv.x > uvMaxU) uvMaxU = v.uv.x;
+        if (v.uv.y > uvMaxV) uvMaxV = v.uv.y;
+    }
+
+    // UV statistics header
+    if (ImGui::CollapsingHeader("UV Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Text("Vertices: %zu  Triangles: %zu", verts.size(), indices.size() / 3);
+        ImGui::Text("UV Range: (%.3f, %.3f) to (%.3f, %.3f)", uvMinU, uvMinV, uvMaxU, uvMaxV);
+
+        // Coverage: approximate area of UV triangles / total 0-1 space
+        f64 totalArea = 0.0;
+        for (usize i = 0; i + 2 < indices.size(); i += 3) {
+            const Math::Vector2& uv0 = verts[indices[i]].uv;
+            const Math::Vector2& uv1 = verts[indices[i + 1]].uv;
+            const Math::Vector2& uv2 = verts[indices[i + 2]].uv;
+            // Signed area of triangle in UV space (cross product / 2)
+            f64 area = 0.5 * std::abs(
+                static_cast<f64>(uv1.x - uv0.x) * static_cast<f64>(uv2.y - uv0.y) -
+                static_cast<f64>(uv2.x - uv0.x) * static_cast<f64>(uv1.y - uv0.y));
+            totalArea += area;
+        }
+        f32 coverage = static_cast<f32>(totalArea * 100.0);
+        ImGui::Text("UV Coverage: %.1f%%", coverage);
+    }
+
+    ImGui::Separator();
+
+    // Get available space for UV drawing
+    ImVec2 avail = ImGui::GetContentRegionAvail();
+    f32 drawSize = (avail.x < avail.y) ? avail.x : avail.y;
+    if (drawSize < 50.0f) drawSize = 50.0f;
+
+    ImVec2 canvasPos = ImGui::GetCursorScreenPos();
+    ImVec2 canvasSize(drawSize, drawSize);
+
+    // Reserve space
+    ImGui::InvisibleButton("##UVCanvas", canvasSize);
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+    // Background (dark)
+    drawList->AddRectFilled(canvasPos,
+        ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y),
+        IM_COL32(30, 30, 30, 255));
+
+    // Optional: show base color texture as background
+    // (Requires ImGui texture descriptor which we may not have for this entity)
+    // Check if material has a texture loaded in the ImGui cache
+    auto* material = m_World->GetComponent<ECS::MaterialComponent>(m_PrimarySelected);
+    if (material && !material->baseColorTexturePath.empty()) {
+        VkDescriptorSet texDS = GetImGuiTexture(material->baseColorTexturePath);
+        if (texDS) {
+            drawList->AddImage(
+                static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texDS)),
+                canvasPos,
+                ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y),
+                ImVec2(0, 0), ImVec2(1, 1),
+                IM_COL32(255, 255, 255, 80));  // Low opacity background
+        }
+    }
+
+    // Draw border (UV 0-1 space)
+    drawList->AddRect(canvasPos,
+        ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y),
+        IM_COL32(80, 80, 80, 255));
+
+    // Helper: map UV to screen position
+    auto uvToScreen = [&](f32 u, f32 v) -> ImVec2 {
+        return ImVec2(
+            canvasPos.x + u * canvasSize.x,
+            canvasPos.y + v * canvasSize.y
+        );
+    };
+
+    // Draw UV wireframe (all triangles)
+    ImU32 wireColor = IM_COL32(200, 200, 200, 100);
+    ImU32 wireColorSelected = IM_COL32(255, 220, 50, 200);
+
+    for (usize i = 0; i + 2 < indices.size(); i += 3) {
+        const Math::Vector2& uv0 = verts[indices[i]].uv;
+        const Math::Vector2& uv1 = verts[indices[i + 1]].uv;
+        const Math::Vector2& uv2 = verts[indices[i + 2]].uv;
+
+        ImVec2 p0 = uvToScreen(uv0.x, uv0.y);
+        ImVec2 p1 = uvToScreen(uv1.x, uv1.y);
+        ImVec2 p2 = uvToScreen(uv2.x, uv2.y);
+
+        // Check if mouse is hovering this triangle for highlighting
+        ImVec2 mousePos = ImGui::GetMousePos();
+        bool hovered = false;
+
+        // Barycentric test for point-in-triangle
+        {
+            f32 d00 = (p1.x - p0.x) * (p1.x - p0.x) + (p1.y - p0.y) * (p1.y - p0.y);
+            f32 d01 = (p1.x - p0.x) * (p2.x - p0.x) + (p1.y - p0.y) * (p2.y - p0.y);
+            f32 d11 = (p2.x - p0.x) * (p2.x - p0.x) + (p2.y - p0.y) * (p2.y - p0.y);
+            f32 d20 = (mousePos.x - p0.x) * (p1.x - p0.x) + (mousePos.y - p0.y) * (p1.y - p0.y);
+            f32 d21 = (mousePos.x - p0.x) * (p2.x - p0.x) + (mousePos.y - p0.y) * (p2.y - p0.y);
+            f32 denom = d00 * d11 - d01 * d01;
+            if (std::abs(denom) > 1e-10f) {
+                f32 bv = (d11 * d20 - d01 * d21) / denom;
+                f32 bw = (d00 * d21 - d01 * d20) / denom;
+                f32 bu = 1.0f - bv - bw;
+                if (bu >= 0.0f && bv >= 0.0f && bw >= 0.0f) {
+                    hovered = true;
+                }
+            }
+        }
+
+        ImU32 color = hovered ? wireColorSelected : wireColor;
+        f32 thickness = hovered ? 2.0f : 1.0f;
+
+        drawList->AddLine(p0, p1, color, thickness);
+        drawList->AddLine(p1, p2, color, thickness);
+        drawList->AddLine(p2, p0, color, thickness);
+
+        // Show triangle index tooltip on hover
+        if (hovered) {
+            ImGui::BeginTooltip();
+            ImGui::Text("Triangle %zu", i / 3);
+            ImGui::Text("UV0: (%.3f, %.3f)", uv0.x, uv0.y);
+            ImGui::Text("UV1: (%.3f, %.3f)", uv1.x, uv1.y);
+            ImGui::Text("UV2: (%.3f, %.3f)", uv2.x, uv2.y);
+            ImGui::EndTooltip();
+        }
+    }
+
+    // Draw UV space grid lines (0.25 intervals)
+    ImU32 gridColor = IM_COL32(60, 60, 60, 120);
+    for (int g = 1; g < 4; ++g) {
+        f32 t = g * 0.25f;
+        drawList->AddLine(
+            ImVec2(canvasPos.x + t * canvasSize.x, canvasPos.y),
+            ImVec2(canvasPos.x + t * canvasSize.x, canvasPos.y + canvasSize.y),
+            gridColor);
+        drawList->AddLine(
+            ImVec2(canvasPos.x, canvasPos.y + t * canvasSize.y),
+            ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + t * canvasSize.y),
+            gridColor);
+    }
+
+    // Draw axis labels
+    drawList->AddText(ImVec2(canvasPos.x + 2, canvasPos.y + canvasSize.y + 2), IM_COL32(150, 150, 150, 200), "0,1");
+    drawList->AddText(ImVec2(canvasPos.x + canvasSize.x - 20, canvasPos.y + canvasSize.y + 2), IM_COL32(150, 150, 150, 200), "1,1");
+    drawList->AddText(ImVec2(canvasPos.x + 2, canvasPos.y - 14), IM_COL32(150, 150, 150, 200), "0,0");
+
+    ImGui::End();
+}
+
 } // namespace Editor
 } // namespace Enjin

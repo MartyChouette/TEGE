@@ -181,6 +181,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MaterialComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::MaterialComponent>(e); },
             "material"},
+        {"Material Slots", "Rendering", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::MaterialSlotsComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MaterialSlotsComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::MaterialSlotsComponent>(e); },
+            "materialSlots"},
         {"Mesh Renderer", "Rendering", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::MeshRendererComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MeshRendererComponent>(e); },
@@ -998,6 +1003,11 @@ void EditorLayer::DrawInspectorPanel() {
         // Material component
         if (m_World->HasComponent<ECS::MaterialComponent>(m_PrimarySelected)) {
             DrawMaterialComponent(m_PrimarySelected);
+        }
+
+        // Material Slots component (multi-material)
+        if (m_World->HasComponent<ECS::MaterialSlotsComponent>(m_PrimarySelected)) {
+            DrawMaterialSlotsComponent(m_PrimarySelected);
         }
 
         // Mesh Renderer component
@@ -1845,6 +1855,70 @@ void EditorLayer::DrawInspectorPanel() {
                     ImGui::Checkbox("Show Bones##Animator", &animComp->showBones);
                     if (ImGui::IsItemHovered()) {
                         ImGui::SetTooltip("Draw wireframe skeleton lines in the viewport");
+                    }
+
+                    // Bone weight visualization (heat map)
+                    {
+                        bool prevShowWeights = animComp->showWeights;
+                        ImGui::Checkbox("Show Weights##Animator", &animComp->showWeights);
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Overlay bone weight heat map on mesh (blue=0, green=0.5, red=1.0)");
+                        }
+
+                        if (animComp->showWeights) {
+                            // Bone selector dropdown
+                            const auto* skel = animator.GetSkeleton();
+                            if (skel && !skel->bones.empty()) {
+                                // Build preview label
+                                const char* previewLabel = "(select bone)";
+                                if (animComp->weightPreviewBoneIndex >= 0 &&
+                                    animComp->weightPreviewBoneIndex < static_cast<i32>(skel->bones.size())) {
+                                    previewLabel = skel->bones[animComp->weightPreviewBoneIndex].name.c_str();
+                                }
+
+                                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+                                if (ImGui::BeginCombo("##BoneWeightSelect", previewLabel)) {
+                                    for (usize bi = 0; bi < skel->bones.size(); ++bi) {
+                                        bool isSelected = (static_cast<i32>(bi) == animComp->weightPreviewBoneIndex);
+                                        if (ImGui::Selectable(skel->bones[bi].name.c_str(), isSelected)) {
+                                            animComp->weightPreviewBoneIndex = static_cast<i32>(bi);
+                                            // Apply bone weight colors to mesh
+                                            ApplyBoneWeightColors(m_PrimarySelected, animComp->weightPreviewBoneIndex);
+                                        }
+                                        if (isSelected) ImGui::SetItemDefaultFocus();
+                                    }
+                                    ImGui::EndCombo();
+                                }
+
+                                // Apply weight colors when toggled on (first frame or bone changed)
+                                if (!prevShowWeights && animComp->weightPreviewBoneIndex >= 0) {
+                                    ApplyBoneWeightColors(m_PrimarySelected, animComp->weightPreviewBoneIndex);
+                                }
+                            } else {
+                                ImGui::TextDisabled("No skeleton available");
+                            }
+                        } else if (prevShowWeights) {
+                            // Toggled off: restore original vertex colors
+                            RestoreBoneWeightColors(m_PrimarySelected);
+                        }
+                    }
+
+                    // 3D Skeletal Onion Skinning
+                    ImGui::Separator();
+                    auto& onionSkin = animComp->onionSkin;
+                    ImGui::Checkbox("Onion Skin##Animator3D", &onionSkin.enabled);
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Show semi-transparent ghost copies at nearby animation frames");
+                    }
+                    if (onionSkin.enabled) {
+                        ImGui::Indent(8.0f);
+                        ImGui::SliderInt("Before##OnionBefore", &onionSkin.framesBefore, 0, 10);
+                        ImGui::SliderInt("After##OnionAfter", &onionSkin.framesAfter, 0, 10);
+                        ImGui::SliderFloat("Opacity##Onion3D", &onionSkin.opacity, 0.05f, 1.0f, "%.2f");
+                        ImGui::SliderFloat("Falloff##Onion3D", &onionSkin.opacityFalloff, 0.1f, 1.0f, "%.2f");
+                        ImGui::ColorEdit3("Before Tint##Onion3D", &onionSkin.beforeTint.x);
+                        ImGui::ColorEdit3("After Tint##Onion3D", &onionSkin.afterTint.x);
+                        ImGui::Unindent(8.0f);
                     }
                 }
             }

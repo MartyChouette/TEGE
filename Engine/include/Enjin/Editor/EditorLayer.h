@@ -359,6 +359,7 @@ private:
     void DrawMeshComponent(ECS::Entity entity);
     void DrawLODComponent(ECS::Entity entity);
     void DrawMaterialComponent(ECS::Entity entity);
+    void DrawMaterialSlotsComponent(ECS::Entity entity);
     void DrawLightComponent(ECS::Entity entity);
     void DrawCameraComponent(ECS::Entity entity);
     void DrawNotesComponent(ECS::Entity entity);
@@ -1371,6 +1372,16 @@ private:
     std::string m_PreviousCrashReport;
     void CheckForCrashReport();
     void DrawCrashReportDialog();
+
+    // UV Preview panel
+    bool m_ShowUVPreview = false;
+    void DrawUVPreviewPanel();
+
+    // Bone weight visualization: cached original vertex colors for restoration
+    ECS::Entity m_BoneWeightEntity = ECS::INVALID_ENTITY;
+    std::vector<Math::Vector4> m_BoneWeightOriginalColors;
+    void ApplyBoneWeightColors(ECS::Entity entity, i32 boneIndex);
+    void RestoreBoneWeightColors(ECS::Entity entity);
 
     // Unsaved changes tracking (dirty flag system)
     bool m_SceneDirty = false;

@@ -577,6 +577,7 @@ void EditorLayer::DrawMenuBar() {
                 SetPanelVisibility(EditorPanel::SceneList, sceneList);
             }
             ImGui::Separator();
+            ImGui::MenuItem("UV Preview", nullptr, &m_ShowUVPreview);
             ImGui::MenuItem("Show Colliders", nullptr, &m_ShowColliderWireframes);
             ImGui::MenuItem("Gamepad Editor", nullptr, &m_GamepadEditorEnabled);
             ImGui::SetItemTooltip("RB=Tools, LB=File, Start=Play, Y=Create (radial menus)");

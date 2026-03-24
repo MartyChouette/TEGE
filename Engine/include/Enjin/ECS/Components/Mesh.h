@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/Component.h"
 #include "Enjin/Math/Vector.h"
+#include <string>
 #include <vector>
 
 namespace Enjin {
@@ -24,6 +25,17 @@ struct ENJIN_API MeshComponent : public IComponent {
     std::vector<Vertex> vertices;
     std::vector<u32> indices;
 
+    // Sub-mesh support for multi-material rendering.
+    // When populated, each SubMesh defines a range within the shared vertex/index
+    // buffers that should be drawn with a specific material slot.
+    struct SubMesh {
+        u32 indexOffset = 0;   // Offset into the indices array
+        u32 indexCount = 0;    // Number of indices for this sub-mesh
+        i32 materialSlot = 0;  // Index into MaterialSlotsComponent::slots
+        std::string name;      // Optional name (e.g., "Head", "Body")
+    };
+    std::vector<SubMesh> subMeshes;
+
     // Cached local-space AABB (computed lazily from vertices, avoids per-frame recomputation)
     Math::Vector3 cachedAABBMin = Math::Vector3(1.0f, 1.0f, 1.0f);   // min > max signals dirty
     Math::Vector3 cachedAABBMax = Math::Vector3(-1.0f, -1.0f, -1.0f);
@@ -31,6 +43,10 @@ struct ENJIN_API MeshComponent : public IComponent {
 
     bool IsValid() const {
         return !vertices.empty() && !indices.empty();
+    }
+
+    bool HasSubMeshes() const {
+        return subMeshes.size() > 1;
     }
 };
 
