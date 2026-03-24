@@ -125,25 +125,26 @@ void ControllerSystem::Update(f32 deltaTime) {
 
     for (Entity entity : m_World->GetEntitiesWithComponent<ThirdPersonController>()) {
         auto* controller = m_World->GetComponent<ThirdPersonController>(entity);
-        if (!controller->isEnabled) continue;
+        if (!controller || !controller->isEnabled) continue;
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
         if (!transform) continue;
         auto* possess = m_World->GetComponent<PossessableComponent>(entity);
         if (possess && !possess->isPossessed) continue;
 
-        // Lazy-create Jolt CharacterVirtual on first use
+        // Lazy-create Jolt CharacterVirtual on first use (requires physics backend)
         if (m_Physics && !m_Physics->HasCharacterController(entity)) {
             f32 radius = 0.3f, totalHalfH = 0.8f;
             if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
                 radius = cap->radius;
-                // CapsuleColliderComponent height = cylinder height (between hemisphere centers)
-                // Total visual height = height + 2*radius, so totalHalfH = height/2 + radius
                 totalHalfH = cap->height * 0.5f + cap->radius;
             }
             m_Physics->CreateCharacterController(entity, radius, totalHalfH, transform->position);
         }
 
-        UpdateThirdPerson(entity, *controller, *transform, deltaTime);
+        // Only update movement if physics is available (skip in editor without play mode)
+        if (m_Physics) {
+            UpdateThirdPerson(entity, *controller, *transform, deltaTime);
+        }
     }
 
     for (Entity entity : m_World->GetEntitiesWithComponent<FirstPersonController>()) {
