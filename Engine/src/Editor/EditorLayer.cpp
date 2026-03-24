@@ -2263,6 +2263,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         // Dock core panels into their nodes
         ImGui::DockBuilderDockWindow("Hierarchy", dockLeft);
         ImGui::DockBuilderDockWindow("Inspector", dockRight);
+        ImGui::DockBuilderDockWindow("Settings", dockRight);  // Tabbed with Inspector
         ImGui::DockBuilderDockWindow("Console", dockBottom);
         ImGui::DockBuilderDockWindow("Asset Browser", dockBottomRight);
         ImGui::DockBuilderDockWindow("Scene List", dockLeftBottom);
