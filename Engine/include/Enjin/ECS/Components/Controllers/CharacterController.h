@@ -171,6 +171,12 @@ struct ThirdPersonController : public CharacterControllerBase {
     f32 cameraSensitivity = 0.15f;
     f32 cameraLerpSpeed = 20.0f;   // Smooth camera follow
 
+    // Camera framing — horizontal offset for character placement in frame
+    // -1 = character on left, 0 = center, 1 = character on right
+    enum class FrameSide : u8 { Left, Center, Right };
+    FrameSide frameSide = FrameSide::Right;  // Over-the-shoulder default
+    f32 frameHorizontalBias = 1.5f;         // How far to offset (world units)
+
     // Camera collision
     bool enableCameraCollision = true;
     f32 cameraCollisionRadius = 0.3f;
@@ -218,6 +224,7 @@ struct FirstPersonController : public CharacterControllerBase {
 
     // Sprinting
     f32 sprintFOVIncrease = 10.0f;  // FOV increase when sprinting
+    f32 sprintFOVCurrent = 0.0f;    // Current interpolated FOV offset (runtime state, not serialized)
 
     // Dungeon crawler mode (SMT-style)
     bool dungeonCrawlerMode = false; // Snap turns + facing-relative movement

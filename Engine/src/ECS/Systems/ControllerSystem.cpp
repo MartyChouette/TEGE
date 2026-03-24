@@ -379,8 +379,8 @@ void ControllerSystem::Update(f32 deltaTime) {
             camTransform->position.y = std::clamp(camTransform->position.y, minY, maxY);
         }
 
-        // 8. Apply screen shake
-        if (cam2d->shakeDuration > 0.0f) {
+        // 8. Apply screen shake (skip if accessibility setting disables it)
+        if (cam2d->shakeDuration > 0.0f && !m_DisableScreenShake) {
             cam2d->shakeTimer += deltaTime;
             cam2d->shakeDuration -= deltaTime;
             f32 decay = std::max(0.0f, cam2d->shakeDuration / (cam2d->shakeDuration + deltaTime));
@@ -388,6 +388,9 @@ void ControllerSystem::Update(f32 deltaTime) {
             f32 shakeY = std::cos(cam2d->shakeTimer * cam2d->shakeFrequency * 4.17f) * cam2d->shakeIntensity * decay;
             camTransform->position.x += shakeX;
             camTransform->position.y += shakeY;
+        } else if (cam2d->shakeDuration > 0.0f && m_DisableScreenShake) {
+            // Still decrement timer so shake expires, but don't apply offset
+            cam2d->shakeDuration -= deltaTime;
         }
 
         // 9. Smooth zoom interpolation and apply to CameraComponent
@@ -1041,7 +1044,8 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Right)) {
             Math::Vector2 mouseDelta = Input::GetMouseDelta();
             ctrl.cameraYaw += mouseDelta.x * ctrl.cameraSensitivity;
-            ctrl.cameraPitch -= mouseDelta.y * ctrl.cameraSensitivity;
+            f32 pitchSign = m_InvertMouseY ? 1.0f : -1.0f;
+            ctrl.cameraPitch += mouseDelta.y * ctrl.cameraSensitivity * pitchSign;
             ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
         }
 
@@ -1050,7 +1054,8 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
             Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
             if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
                 ctrl.cameraYaw += rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
-                ctrl.cameraPitch -= rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                f32 gpPitchSign = m_InvertMouseY ? 1.0f : -1.0f;
+                ctrl.cameraPitch += rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt * gpPitchSign;
                 ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
             }
         }
@@ -1213,8 +1218,15 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         cameraOffset.y = Math::Sin(pitchRad) * ctrl.cameraDistance + ctrl.cameraHeight;
         cameraOffset.z = Math::Cos(pitchRad) * Math::Cos(yawRad2) * ctrl.cameraDistance;
 
-        Math::Vector3 cameraPos = transform.position + cameraOffset;
-        Math::Vector3 lookTarget = transform.position + Math::Vector3(0, ctrl.cameraHeight * 0.5f, 0);
+        // Apply horizontal framing bias (over-the-shoulder offset)
+        f32 hBias = 0.0f;
+        if (ctrl.frameSide == ThirdPersonController::FrameSide::Right) hBias = ctrl.frameHorizontalBias;
+        else if (ctrl.frameSide == ThirdPersonController::FrameSide::Left) hBias = -ctrl.frameHorizontalBias;
+        // Compute camera right vector from yaw to offset horizontally
+        Math::Vector3 camRight(Math::Cos(yawRad2), 0.0f, -Math::Sin(yawRad2));
+
+        Math::Vector3 cameraPos = transform.position + cameraOffset + camRight * hBias;
+        Math::Vector3 lookTarget = transform.position + Math::Vector3(0, ctrl.cameraHeight * 0.5f, 0) + camRight * hBias * 0.3f;
 
         UpdateGameCameraTransform(cameraPos, lookTarget, Math::Vector3(0, 1, 0));
     }
@@ -1233,7 +1245,9 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
             if (!lockYaw) {
                 ctrl.yaw -= mouseDelta.x * ctrl.mouseSensitivity;
             }
-            if (ctrl.invertY) {
+            // XOR per-controller invertY with global accessibility invertMouseY
+            bool effectiveInvertY = ctrl.invertY != m_InvertMouseY;
+            if (effectiveInvertY) {
                 ctrl.pitch -= mouseDelta.y * ctrl.mouseSensitivity;
             } else {
                 ctrl.pitch += mouseDelta.y * ctrl.mouseSensitivity;
@@ -1248,7 +1262,9 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
                 if (!lockYaw) {
                     ctrl.yaw -= rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
                 }
-                if (ctrl.invertY) {
+                // XOR per-controller invertY with global accessibility invertMouseY
+                bool effectiveInvertYGP = ctrl.invertY != m_InvertMouseY;
+                if (effectiveInvertYGP) {
                     ctrl.pitch -= rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
                 } else {
                     ctrl.pitch += rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
@@ -1501,6 +1517,33 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
         lookDir.z = Math::Cos(pitchRad) * -Math::Cos(yawRad2);
 
         UpdateGameCameraTransform(eyePos, eyePos + lookDir, Math::Vector3(0, 1, 0));
+
+        // Sprint FOV effect (disabled by accessibility disableFOVEffects or reducedMotion)
+        if (ctrl.sprintFOVIncrease > 0.0f && !m_DisableFOVEffects && !m_ReducedMotion && m_World) {
+            f32 prevFOV = ctrl.sprintFOVCurrent;
+            if (ctrl.isSprinting) {
+                ctrl.sprintFOVCurrent = Math::Min(ctrl.sprintFOVCurrent + dt * ctrl.sprintFOVIncrease * 4.0f, ctrl.sprintFOVIncrease);
+            } else {
+                ctrl.sprintFOVCurrent = Math::Max(ctrl.sprintFOVCurrent - dt * ctrl.sprintFOVIncrease * 4.0f, 0.0f);
+            }
+            // Apply delta to game camera FOV
+            f32 fovDelta = ctrl.sprintFOVCurrent - prevFOV;
+            if (fovDelta != 0.0f && m_GameCameraEntity != INVALID_ENTITY && m_World->IsValid(m_GameCameraEntity)) {
+                auto* camComp = m_World->GetComponent<CameraComponent>(m_GameCameraEntity);
+                if (camComp) {
+                    camComp->fieldOfView += fovDelta;
+                }
+            }
+        } else if (ctrl.sprintFOVCurrent > 0.0f) {
+            // Remove any remaining FOV offset when feature is disabled
+            if (m_GameCameraEntity != INVALID_ENTITY && m_World && m_World->IsValid(m_GameCameraEntity)) {
+                auto* camComp = m_World->GetComponent<CameraComponent>(m_GameCameraEntity);
+                if (camComp) {
+                    camComp->fieldOfView -= ctrl.sprintFOVCurrent;
+                }
+            }
+            ctrl.sprintFOVCurrent = 0.0f;
+        }
     }
 
     // Update entity rotation to match yaw (body rotation)
@@ -1716,7 +1759,8 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
         if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Right)) {
             Math::Vector2 mouseDelta = Input::GetMouseDelta();
             ctrl.cameraYaw += mouseDelta.x * ctrl.cameraSensitivity;
-            ctrl.cameraPitch -= mouseDelta.y * ctrl.cameraSensitivity;
+            f32 saPitchSign = m_InvertMouseY ? 1.0f : -1.0f;
+            ctrl.cameraPitch += mouseDelta.y * ctrl.cameraSensitivity * saPitchSign;
             ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
         }
 
@@ -1724,7 +1768,8 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
             Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
             if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
                 ctrl.cameraYaw += rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
-                ctrl.cameraPitch -= rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                f32 saGpPitchSign = m_InvertMouseY ? 1.0f : -1.0f;
+                ctrl.cameraPitch += rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt * saGpPitchSign;
                 ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
             }
         }
