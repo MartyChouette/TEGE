@@ -617,9 +617,17 @@ void EditorLayer::DrawAssetBrowserPanel() {
                     ImGui::EndTooltip();
                 }
 
-                // Drag source for future drag-to-viewport
+                // Drag source for drag-to-viewport / drag-to-inspector
                 if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
                     ImGui::SetDragDropPayload("ASSET_PATH", entry.fullPath.c_str(), entry.fullPath.size() + 1);
+                    // Show preview tooltip during drag for image files
+                    if (IsImage(entry.extension)) {
+                        VkDescriptorSet dragTexId = GetImGuiTexture(entry.fullPath);
+                        if (dragTexId != VK_NULL_HANDLE) {
+                            ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(dragTexId)),
+                                         ImVec2(64.0f, 64.0f));
+                        }
+                    }
                     ImGui::Text("%s", entry.name.c_str());
                     ImGui::EndDragDropSource();
                 }
@@ -734,6 +742,14 @@ void EditorLayer::DrawAssetBrowserPanel() {
                 // Drag source
                 if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
                     ImGui::SetDragDropPayload("ASSET_PATH", entry.fullPath.c_str(), entry.fullPath.size() + 1);
+                    // Show preview tooltip during drag for image files
+                    if (IsImage(entry.extension)) {
+                        VkDescriptorSet dragTexId = GetImGuiTexture(entry.fullPath);
+                        if (dragTexId != VK_NULL_HANDLE) {
+                            ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(dragTexId)),
+                                         ImVec2(64.0f, 64.0f));
+                        }
+                    }
                     ImGui::Text("%s", entry.name.c_str());
                     ImGui::EndDragDropSource();
                 }

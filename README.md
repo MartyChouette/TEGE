@@ -4,7 +4,7 @@
 
 <br><br>
 
-**An aesthetics-first game engine**
+**An aesthetics-first game engine built from scratch in C++20 and Vulkan.**
 
 <br>
 
@@ -21,7 +21,7 @@
 
 </div>
 
-<br>
+---
 
 ## Screenshots
 
@@ -29,15 +29,15 @@
 <tr>
 <td width="33%" align="center">
 <img src="Engine/previews/thirdperson/frame_0.png" alt="3D Third Person" width="100%">
-<br><sub><b>3D Third Person</b> — PBR renderer, cascaded shadows, terrain</sub>
+<br><sub><b>3D Third Person</b> -- PBR renderer, cascaded shadows, terrain</sub>
 </td>
 <td width="33%" align="center">
 <img src="Engine/previews/platformer/frame_0.png" alt="2D Platformer" width="100%">
-<br><sub><b>2D Platformer</b> — Sprite rendering, Box2D physics, particles</sub>
+<br><sub><b>2D Platformer</b> -- Sprite rendering, Box2D physics, particles</sub>
 </td>
 <td width="33%" align="center">
 <img src="Engine/previews/topdown2d/frame_0.png" alt="Top-Down Dungeon" width="100%">
-<br><sub><b>Top-Down Dungeon</b> — Tile-based levels, AI, lighting</sub>
+<br><sub><b>Top-Down Dungeon</b> -- Tile-based levels, AI, lighting</sub>
 </td>
 </tr>
 </table>
@@ -48,21 +48,25 @@
 
 ## Why TEGE?
 
+TEGE is a complete game engine -- editor, renderer, physics, scripting, audio, build pipeline -- written from scratch. It ships with everything you need to make and publish a game, from 2D platformers to 3D open worlds.
+
 | | |
 |:---|:---|
 | **Complete Editor** | Hierarchy, inspector, viewport, play mode, undo/redo, command palette, project hub, 44 starter templates |
-| **70+ ECS Components** | Transform, mesh, material, lights, cameras, physics, AI, UI, audio, scripting — all with inspector UI |
-| **Vulkan PBR Renderer** | Cascaded shadows, reflection probes, ReSTIR, temporal RT reuse, radiance cache, FSR 2/DLSS/XeSS upscaling, SMAA, async compute |
-| **8 Art Styles** | Realistic PBR, Blinn-Phong, Hand-Painted, Cel/Toon, Low-Poly Retro, Pixel Art, NPR Sketch, Analog — one-click presets |
+| **70+ ECS Components** | Transform, mesh, material, lights, cameras, physics, AI, UI, audio, scripting -- all with inspector UI |
+| **Vulkan PBR Renderer** | Cascaded shadows, reflection probes, ray tracing (shadows/reflections/AO/GI/caustics), path tracer, TAA/FXAA/SMAA, FSR 2 upscaling |
+| **8 Art Styles** | Realistic PBR, Blinn-Phong, Hand-Painted, Cel/Toon, Low-Poly Retro, Pixel Art, NPR Sketch, Analog -- one-click presets |
 | **Dual Scripting** | 721 AngelScript bindings with hot-reload + visual scripting with 146+ nodes and breakpoint debugging |
 | **Dual Physics** | Jolt 5.2.0 (3D) + Box2D 3.0.0 (2D), 5 character controller types, joints, ragdolls, sensors |
 | **Ship Everywhere** | Standalone builds, HTML5/WebAssembly, Newgrounds, Windows installer, Linux AppImage |
-| **Gameplay Out of the Box** | Save/load, quests, HUD, dialogue trees, destructibles, LAN multiplayer, localization, dynamic difficulty |
-| **Accessibility Suite** | Colorblind correction (8 modes), screen reader, switch access, dyslexia mode, WCAG AAA themes |
+| **Gameplay Systems** | Save/load, quests, HUD, dialogue trees, destructibles, LAN multiplayer, localization, dynamic difficulty |
+| **Accessibility** | Colorblind correction (8 modes), screen reader, switch access, dyslexia mode, WCAG AAA themes |
 
 ---
 
 ## Quick Start
+
+### Build from Source
 
 ```bash
 # Clone
@@ -78,11 +82,19 @@ cmake --build . --config Release
 ./bin/EnjinEditor               # Linux
 ```
 
-> **Prerequisites:** CMake 3.20+, C++20 compiler, Vulkan SDK, GLFW3. See [BUILD.md](docs/BUILD.md) for full details.
->
-> **First time?** See the [User Manual](docs/USER_MANUAL.md) for a walkthrough of the editor and how to get started.
+**Prerequisites:** CMake 3.20+, a C++20 compiler, Vulkan SDK, GLFW3. See [BUILD.md](docs/BUILD.md) for detailed platform instructions.
 
-### SimpleApp — Quick 3D/2D Rendering
+**First time?** The [User Manual](docs/USER_MANUAL.md) walks through the editor and how to get started.
+
+### Windows Installer
+
+A pre-built Windows installer is available -- no build tools required:
+
+1. Download **[TEGESetup-0.9.0.exe](https://www.marty64.net/enjin/TEGE-0.9.0.zip)** from the website
+2. Run the installer -- it sets up the editor, player, and file associations (`.enjin`, `.enjscene`)
+3. Launch TEGE from the Start Menu or desktop shortcut
+
+### SimpleApp -- Minimal Rendering
 
 For users who want Vulkan rendering without the full editor:
 
@@ -100,148 +112,108 @@ class MyApp : public Enjin::SimpleApp {
 ENJIN_SIMPLE_MAIN(MyApp)
 ```
 
-Build with `-DENJIN_BUILD_EXAMPLES=ON`. See `Examples/Simple3D/` and `Examples/Simple2D/` for full examples.
-
-### Windows Installer
-
-A pre-built Windows installer is available — no build tools required:
-
-1. Download **[TEGESetup-0.9.0.exe](https://www.marty64.net/enjin/TEGE-0.9.0.zip)** from the website
-2. Run the installer — it sets up the editor, player, and file associations (`.enjin`, `.enjscene`)
-3. Launch TEGE from the Start Menu or desktop shortcut
+Build with `-DENJIN_BUILD_EXAMPLES=ON`. See `Examples/Simple3D/` and `Examples/Simple2D/`.
 
 ---
 
-## Feature Breakdown
+## Features
 
 <details>
-<summary><b>Rendering</b> — Vulkan 1.3, PBR, ray tracing, retro effects</summary>
+<summary><b>Rendering</b></summary>
 <br>
 
-- **PBR Material System** — Base color, metallic, roughness, emissive, normal mapping, parallax occlusion (4 modes), transmission/IOR/thickness, subsurface scattering, matcap textures, procedural surface noise, material presets (Glass, Water, Skin, Leaf)
-- **Shadow Mapping** — 4-cascade CSM, cubemap point shadows, spot shadows, 16-sample Poisson PCF, 6 dither patterns (Bayer, Blue Noise, Halftone, Crosshatch, Overlook)
-- **Anti-Aliasing** — TAA (Halton jitter, neighborhood clamping, velocity reprojection), FXAA, SMAA (edge-walking), per-scene selectable
-- **Motion Vectors** — Per-pixel velocity buffer (RG16F) for TAA and temporal denoising
-- **Post-Processing** — Bloom, vignette, color grading, film grain, tone mapping, full-screen stipple/dither, depth of field (bokeh), tilt-shift, post-process volumes with spatial blending
-- **Ray Tracing Pipeline** — RT shadows, reflections, AO, GI, translucency, caustics, path tracing with 3 denoisers (SVGF, Intel OIDN, NVIDIA OptiX), ReSTIR light sampling (temporal + spatial reuse), temporal RT result reuse, screen-space radiance cache
-- **Upscaling** — FSR 2 (built-in Lanczos + CAS), DLSS 3.5 (stub), XeSS (stub) — 4 quality modes, IUpscaler interface for backend swap
-- **Reflection Probes** — Box-projected cubemap reflections, editor baking, proximity blending, priority override
-- **Retro Effects** — PSX flat shading, affine texturing, vertex snapping, texture page warping, polygon sort jitter, stipple transparency, CRT scanlines (11 models), VHS with tape dropout, film gate weave, light leaks, 6 named palettes (PICO-8, Game Boy, NES, CGA, C64), normal quantization, inverted-hull geometry outlines, NPR curvature-driven outline thickness
-- **Environment** — Procedural gradient sky / cubemap skybox, weather system (rain, snow, fog, storms), water plane with Gerstner waves, instanced vegetation with wind
-- **Optimizations** — GPU: two-phase HiZ occlusion culling, clustered forward lighting (16x9x24), batched material SSBO, multi-draw indirect (texture-grouped), async compute overlap. CPU: SIMD math (SSE/SSE4.1), binary search keyframes, integer sprite sort, cached ECS storage pointers, world matrix caching, delta sprite sorting, ECS View template, 64-bit material sort keys, per-frame linear allocator, descriptor set caching
-- **Advanced** — Variable Rate Shading, Virtual Texturing, Visibility Buffer, OIT, SH Light Probes, SDF scene, voxel cone tracing, non-Euclidean portals, world curvature
-- **Camera** — 9 presets (Isometric, TopDown, SideScroller, FPS, TPS, Cinematic, SecurityCam, BirdsEye)
+- **PBR Materials** -- Base color, metallic, roughness, emissive, normal mapping, parallax occlusion (4 modes), transmission/IOR/thickness, subsurface scattering, matcap, procedural surface noise, material presets
+- **Shadow Mapping** -- 4-cascade CSM, cubemap point shadows, spot shadows, 16-sample Poisson PCF, 6 dither patterns
+- **Anti-Aliasing** -- TAA (Halton jitter, velocity reprojection), FXAA, SMAA
+- **Post-Processing** -- Bloom, vignette, color grading, film grain, tone mapping, depth of field, tilt-shift, post-process volumes with spatial blending
+- **Ray Tracing** -- RT shadows, reflections, AO, GI, translucency, caustics, path tracing. 3 denoisers (SVGF, Intel OIDN, NVIDIA OptiX). ReSTIR light sampling with temporal and spatial reuse. Surfel-based radiance caching
+- **Upscaling** -- FSR 2 (built-in), DLSS/XeSS stubs. 4 quality modes
+- **Retro Effects** -- PSX vertex snapping, affine textures, flat/Gouraud shading, CRT scanlines (11 models), VHS, film gate weave, light leaks, 6 named palettes (PICO-8, Game Boy, NES, CGA, C64)
+- **Environment** -- Procedural sky, cubemap skybox, weather (rain, snow, fog, storms), water with Gerstner waves, instanced vegetation with wind
+- **Optimizations** -- GPU two-phase HiZ occlusion culling, clustered forward lighting, batched material SSBO, multi-draw indirect, async compute, SIMD math, per-frame linear allocator, descriptor set caching
 
 </details>
 
 <details>
-<summary><b>Editor</b> — Full-featured ImGui editor with visual authoring tools</summary>
+<summary><b>Editor</b></summary>
 <br>
 
-- **Core Editor** — Hierarchy, inspector, viewport, play/pause/stop, undo/redo, cut/copy/paste, multi-select (Ctrl+click, Shift+range, marquee), entity icons by type
-- **Gizmos & Viewport** — Translate/rotate/scale via ImGuizmo, click-to-select ray casting, terrain sculpting (5 brush modes), stats overlay, wireframe toggle
-- **Visual Authoring** — Shader Graph (54 node types), Audio Event Graph, Particle Graph, Dialogue Tree Editor (7 node types, Yarn/Twine import), Animation Graph (state machines, blend trees), Vector Drawing Editor (SVG export)
-- **Visual Scripting** — Blueprint-style editor with 146+ nodes, breakpoint debugging (F9/F5/F10), execution profiler with color-coded timeline
-- **Project Tools** — Project Hub with template browser, 44 starter templates (7 categories), Template Creator, Template Marketplace (15 curated templates)
-- **Smart Features** — Smart Suggestions (12 context-aware rules), Quick Setup Patterns (7 one-click setups), Command Palette (Ctrl+P, 25+ commands), keyboard shortcuts help (Ctrl+Shift+/)
-- **Settings** — Unified 3-tab window (System/Project/Scene), accent color presets, theme preview, networking config editor
-- **Collaboration** — Real-time multi-user editing with OT protocol, peer cursors, conflict resolution, entity locking
-- **Build & Export** — Build dialog, HTML5/WebAssembly export, Newgrounds export with medal/scoreboard integration
-- **Feedback** — Built-in bug reports with auto-captured diagnostics, notification toasts, empty-state patterns with CTAs
+- **Core** -- Hierarchy, inspector, viewport, play/pause/stop, undo/redo, cut/copy/paste, multi-select (Ctrl+click, Shift+range, marquee), entity icons
+- **Gizmos** -- Translate/rotate/scale via ImGuizmo, click-to-select, terrain sculpting (5 brush modes), stats overlay, wireframe toggle
+- **Visual Authoring** -- Shader Graph (54 nodes), Audio Event Graph, Particle Graph, Dialogue Tree Editor, Animation Graph, Vector Drawing Editor
+- **Visual Scripting** -- Blueprint-style editor, 146+ nodes, breakpoint debugging (F9/F5/F10), execution profiler
+- **Project Tools** -- Project Hub with 44 starter templates (7 categories), Template Creator, Template Marketplace
+- **Smart Features** -- Context-aware suggestions, Quick Setup Patterns, Command Palette (Ctrl+P), keyboard shortcuts help
+- **Debug** -- Game Debug Panel (F1), Debug Workstation (F2), Quake-style drop-down console (backtick, 60+ commands)
+- **Collaboration** -- Real-time multi-user editing with OT protocol, peer cursors, conflict resolution
+- **Build & Export** -- Build dialog, HTML5/WebAssembly export, Newgrounds export with medal/scoreboard integration
+- **Drag & Drop** -- Drag textures from Asset Browser onto viewport entities or inspector fields, drag models to import, drag prefabs to instantiate
 
 </details>
 
 <details>
-<summary><b>ECS & Gameplay</b> — 70+ components, physics, AI, saves, quests</summary>
+<summary><b>ECS & Gameplay</b></summary>
 <br>
 
-#### Entity-Component System
-- **70+ Component Types** — Full inspector UI for all components
-- **Character Controllers** — Platformer 2D, Top-Down 2D/3D, Third Person, First Person, Surface Aligned (spherical gravity)
-- **Physics** — Jolt 5.2.0 (3D) + Box2D 3.0.0 (2D) via `IPhysicsBackend` abstraction. Collision detection, ground detection, sensor bodies, debug wireframes, 6 joint types, ragdolls
-- **Environment** — Gravity zones, temperature zones, camera trigger volumes, destructible environments (4 fracture patterns)
-- **AI** — Behavior Trees (20 node types, blackboard, visual editor), navmesh pathfinding (A*)
-- **UI Runtime** — Anchor-based layout, 8 widget types, 6 theme presets (incl. high contrast), font scaling, accessible labels
-- **LOD & Streaming** — Distance-based mesh swapping with hysteresis, chunk-based level streaming with async loading
-
-#### Gameplay Systems
-- **Save/Load** — 10-slot system with quick save/load
-- **Quest System** — Start/complete/fail quests with objective tracking
-- **HUD** — Health bars, resource bars, labels, crosshair
-- **Dialogue** — Auto-built dialogue display with speaker, portrait, choices
-- **Combat** — Damage resistance/weakness multipliers, stamina/resource system with regen
-- **Cinematic Camera** — Waypoint sequences with easing curves for cutscenes
-- **Object Pooling** — Entity recycling with configurable pool sizes
-- **Localization** — String tables, CSV/JSON I/O, parameterized strings, LOC() macro
+- **70+ Component Types** with full inspector UI
+- **Character Controllers** -- Platformer 2D, Top-Down 2D/3D, Third Person, First Person, Surface Aligned
+- **Physics** -- Jolt 5.2.0 (3D) + Box2D 3.0.0 (2D), collision detection, ground detection, sensor bodies, debug wireframes, 6 joint types, ragdolls
+- **AI** -- Behavior Trees (20 node types, blackboard, visual editor), navmesh pathfinding (A*)
+- **UI Runtime** -- Anchor-based layout, 8 widget types, 6 theme presets, font scaling, accessible labels
+- **Save/Load** -- 10-slot system with quick save/load
+- **Quest System** -- Start/complete/fail quests with objective tracking
+- **Dialogue** -- Auto-built dialogue display with speaker, portrait, choices; Yarn/Twine import
+- **Combat** -- Damage resistance/weakness multipliers, stamina/resource system
+- **Localization** -- String tables, CSV/JSON I/O, parameterized strings, LOC() macro
+- **Dynamic Difficulty** -- Auto-adjusts AI aggression, damage, resources based on player performance
 
 </details>
 
 <details>
-<summary><b>Animation & Audio</b> — Skeletal, sprite, timeline, spatial audio</summary>
+<summary><b>Animation & Audio</b></summary>
 <br>
 
-#### Animation
-- **Skeletal Animation** — glTF + Assimp (FBX/DAE/3DS/20+ formats), GPU skinning, animation state machines with blending
-- **2D Sprite Animation** — Frame-based flipbook animation
-- **Inverse Kinematics** — LookAt IK, FABRIK chain solving, interaction IK
-- **Timeline Editor** — Flash-style keyframe animation with layers, 4 interpolation modes (Constant/Linear/Bezier/CatmullRom), curve editor, onion skinning, auto-key
-
-#### Audio
-- **Cross-Platform** — miniaudio backend (WAV, MP3, FLAC, Vorbis)
-- **3D Spatialization** — Positional audio with distance attenuation
-- **Channels** — SFX/Music/UI/Voice with independent volume control
-- **Scene Integration** — AudioSource and AudioListener components saved/loaded with scenes
+- **Skeletal Animation** -- glTF + Assimp import (FBX/DAE/20+ formats), GPU skinning, animation state machines with blending
+- **2D Sprite Animation** -- Frame-based flipbook animation
+- **Inverse Kinematics** -- LookAt IK, FABRIK chain solving, interaction IK
+- **Timeline Editor** -- Flash-style keyframe animation with layers, 4 interpolation modes, curve editor, onion skinning
+- **Audio** -- miniaudio backend (WAV, MP3, FLAC, Vorbis), 3D spatialization, SFX/Music/UI/Voice channels, scene integration
 
 </details>
 
 <details>
-<summary><b>Scripting</b> — AngelScript, visual scripting, plugins, Flash shim</summary>
+<summary><b>Scripting & Plugins</b></summary>
 <br>
 
-- **AngelScript** — TegeBehavior base class, ~721 API bindings, hot-reload, coroutines (YieldSeconds, YieldFrames), string-named event system
-- **Visual Scripting** — 146+ node types, breakpoint debugging, execution profiler, latent nodes (Delay, WaitForAnimation, WaitForAudio)
-- **Plugin System** — IPlugin interface, DLL/SO hot-reload with state save/restore, manifest JSON, editor panel
-- **Flash Compatibility** — ~40 Flash API shim bindings, AS2/AS3 transpiler, SWF binary import to ECS entities
-- **DataAssets** — Schema definitions with typed instances, JSON I/O, script bindings
+- **AngelScript** -- TegeBehavior base class, ~721 API bindings, hot-reload, coroutines, event system
+- **Visual Scripting** -- 146+ node types, breakpoint debugging, execution profiler, latent nodes
+- **Plugin System** -- IPlugin interface, DLL/SO hot-reload with state save/restore
+- **Flash Compatibility** -- ~40 Flash API shim bindings, AS2/AS3 transpiler, SWF binary import
+- **DataAssets** -- Schema definitions with typed instances, JSON I/O, script bindings
 
 </details>
 
 <details>
-<summary><b>Procedural Generation</b> — Reaction-diffusion, physarum, CA, SDF, 4D</summary>
+<summary><b>Accessibility</b></summary>
 <br>
 
-- **Reaction-Diffusion** — Gray-Scott Turing patterns, 9 presets, bake-to-texture and heightmap export
-- **Cellular Automata** — 7 CA rules, 3 mesh modes (Voxels, Marching Cubes, Point Cloud)
-- **Physarum Simulation** — Agent-based slime mold networks, 5 presets, food sources, trail diffusion
-- **Fourier Meshes** — DFT contour decomposition, progressive reconstruction, 3D extrusion
-- **4D Polytopes** — 5 polytopes (Tesseract through 120-Cell), 6 rotation planes, stereographic projection
-- **Advanced** — Inverse/differentiable rendering, non-Euclidean portals, metaballs, voxel cone tracing, SDF rendering, framebuffer feedback (8 presets), screen-space distortion (7 types), IK-driven mesh deformation, interactive water, mesh audio reactivity
+- **Vision** -- Colorblind correction (8 GPU modes), high contrast themes (WCAG AAA), font scaling, colorblind-safe palettes
+- **Motor** -- Remappable input, one-handed presets, dwell-click, sticky drag, switch access
+- **Cognitive** -- Dyslexia mode (OpenDyslexic font, spacing adjustments), reduced motion, content warnings
+- **Communication** -- Screen reader, subtitles (configurable size/background/speaker), audio-visual indicators
+- **Quick Presets** -- Low Vision, Motor Impaired, Photosensitive, Reset All
 
 </details>
 
 <details>
-<summary><b>Accessibility</b> — 20+ features for inclusive game development</summary>
+<summary><b>Build & Distribution</b></summary>
 <br>
 
-- **Vision** — Colorblind correction (8 GPU modes), high contrast themes (WCAG AAA 7:1+), font scaling (0.5-3.0x), colorblind-safe palettes with patterns
-- **Motor** — Remappable input with hold/toggle, one-handed presets, dwell-click, sticky drag, adjustable thresholds, switch access (auto-scan)
-- **Cognitive** — Dyslexia mode (OpenDyslexic font, letter/word/line spacing), reduced motion, content warnings per scene
-- **Communication** — Screen reader (priority-queued announcer), subtitles (configurable size/background/speaker/direction), audio-visual indicators
-- **Alternative Input** — Switch access, eye tracking, sip-and-puff, head tracking support
-- **Quick Presets** — Low Vision, Motor Impaired, Photosensitive, Reset All
-
-</details>
-
-<details>
-<summary><b>Build & Distribution</b> — Pack, export, ship to desktop and web</summary>
-<br>
-
-- **Asset Pipeline** — `.enjpak` archive with compression, CRC32 integrity, build dialog in editor
-- **Desktop** — Windows EXE + Inno Setup installer, Linux AppImage, standalone player
-- **Web** — HTML5/WebAssembly via Emscripten, WebGPU renderer, Newgrounds integration (medals, scoreboards, cloud saves)
-- **Asset Libraries** — 42 bundled fonts (8 categories), 16 CC0 3D model packs, 15 CC0 2D sprite/tileset packs
-- **Import** — Presets for 10 DCC tools (Blender, Maya, 3ds Max, Houdini, etc.), texture compression (BCn/ASTC), auto-thumbnails
-- **Adaptive Quality** — FPS-based auto-adjustment of render scale, shadow quality, and particle count
+- **Asset Pipeline** -- `.enjpak` archive with compression and CRC32 integrity
+- **Desktop** -- Windows EXE + Inno Setup installer, Linux AppImage, standalone player
+- **Web** -- HTML5/WebAssembly via Emscripten, WebGPU renderer, Newgrounds integration
+- **Asset Libraries** -- 42 bundled fonts, 16 CC0 3D model packs, 15 CC0 2D sprite/tileset packs
+- **Import** -- Presets for 10 DCC tools, texture compression (BCn/ASTC), auto-thumbnails
 
 </details>
 
@@ -251,15 +223,17 @@ A pre-built Windows installer is available — no build tools required:
 
 ```
 TEGE/
-├── Core/           Foundation layer — memory, math, logging, platform abstraction
-├── Engine/         Engine layer — renderer, ECS, audio, effects, editor, build, scripting
-│   └── shaders/    GLSL shaders (compiled to SPIR-V) + WGSL for WebGPU
-├── Editor/         Editor application (ImGui-based)
+├── Core/           Foundation -- memory allocators, math, logging, platform abstraction
+├── Engine/         Engine -- renderer, ECS, physics, audio, editor, scripting, build
+│   └── shaders/    GLSL shaders (compiled to SPIR-V)
+├── Editor/         Editor application (ImGui)
 ├── Player/         Standalone game player (no editor UI)
-├── Tests/          1100+ unit and integration tests
+├── Tests/          1100+ unit and integration tests (18 categories)
 ├── third_party/    GLFW, ImGui, ImGuizmo
 └── build/          Build output
 ```
+
+The engine is split into two layers: **Core** (zero engine dependencies -- math, memory, logging, platform) and **Engine** (everything else). The Editor and Player are thin applications that compose Engine systems. All rendering goes through Vulkan 1.3 with a WebGPU path for web exports.
 
 ## Technology
 
@@ -283,8 +257,8 @@ All dependencies use permissive open-source licenses.
 |:-------|:--------|:------------|
 | `ENJIN_BUILD_EDITOR` | ON | Editor application |
 | `ENJIN_BUILD_PLAYER` | ON | Standalone game player |
-| `ENJIN_BUILD_TESTS` | OFF | 1100+ unit tests (output: `bin/Tests/`) |
-| `ENJIN_BUILD_EXAMPLES` | OFF | SimpleApp 2D/3D examples (output: `bin/Examples/`) |
+| `ENJIN_BUILD_TESTS` | OFF | Unit tests (output: `bin/Tests/`) |
+| `ENJIN_BUILD_EXAMPLES` | OFF | SimpleApp examples (output: `bin/Examples/`) |
 | `ENJIN_PHYSICS_JOLT` | ON | Jolt 5.2.0 (3D physics) |
 | `ENJIN_PHYSICS_BOX2D` | ON | Box2D 3.0.0 (2D physics) |
 | `ENJIN_CLUSTERED_LIGHTING` | ON | Clustered forward lighting |
@@ -300,26 +274,26 @@ All dependencies use permissive open-source licenses.
 |:---|:---|
 | [Architecture](docs/ARCHITECTURE.md) | System design and diagrams |
 | [Build Guide](docs/BUILD.md) | Prerequisites and platform instructions |
-| [User Manual](docs/USER_MANUAL.md) | Components and editor guide |
+| [User Manual](docs/USER_MANUAL.md) | Editor walkthrough and component reference |
 | [Scripting API](docs/SCRIPTING_API.md) | Complete AngelScript reference (721 bindings) |
 | [Roadmap](docs/ROADMAP.md) | Planned work and progress |
 
 ---
 
+## Contributing
+
+TEGE is not accepting outside contributions at this time. If you find a bug or have a feature request, please [open an issue](https://github.com/MartyChouette/TEGE/issues).
+
 ## About
 
 I use AI heavily in implementation. I design, direct, and debug everything as rigorously as I know how. I am a single human trying to build accessible software far beyond my station.
 
-I cannot guarantee the safety or security of this software at this stage — I am one person. This software is provided as-is, without warranty of any kind. I am not liable for any damages arising from its use. By downloading and using TEGE, you accept that I am doing my best and you are placing your trust in me. I will do everything in my power to make this safe, secure software, and I hope that commitment becomes a guarantee when we reach a stable release.
+I cannot guarantee the safety or security of this software at this stage -- I am one person. This software is provided as-is, without warranty of any kind. I am not liable for any damages arising from its use. By downloading and using TEGE, you accept that I am doing my best and you are placing your trust in me. I will do everything in my power to make this safe, secure software, and I hope that commitment becomes a guarantee when we reach a stable release.
 
 Thank you.
 
 ## License
 
-Licensed under the **Business Source License 1.1** (BSL 1.1). See [LICENSE](LICENSE) for details.
+Licensed under the **Business Source License 1.1** (BSL 1.1). See [LICENSE](LICENSE) for full terms.
 
 **You are free to use TEGE to create and sell games.** The only restriction is that you cannot fork the engine source and sell it as a competing engine product. The source code becomes **Apache 2.0** four years after each release.
-
-## Contributing
-
-TEGE is not accepting outside contributions at this time. If you find a bug or have a feature request, feel free to [open an issue](https://github.com/MartyChouette/TEGE/issues).

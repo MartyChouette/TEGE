@@ -193,6 +193,82 @@ void EditorLayer::DrawViewportPanel() {
             m_EditorViewportImageMaxY = imgMax.y;
             m_EditorViewportHovered = ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(imgMin, imgMax);
             m_EditorViewportFocused = ImGui::IsWindowFocused();
+
+            // Drop target: accept asset drags onto scene viewport
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
+                    std::string dropPath(static_cast<const char*>(payload->Data));
+                    std::filesystem::path fp(dropPath);
+                    std::string ext = fp.extension().string();
+                    std::transform(ext.begin(), ext.end(), ext.begin(),
+                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+                    if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" ||
+                        ext == ".tga" || ext == ".bmp" || ext == ".svg") {
+                        // Pick the entity under the drop location and assign as base color texture
+                        Math::Vector2 mousePos = Input::GetMousePosition();
+                        f32 vpW = imgMax.x - imgMin.x;
+                        f32 vpH = imgMax.y - imgMin.y;
+                        ECS::Entity target = ECS::INVALID_ENTITY;
+                        if (vpW > 0 && vpH > 0 && m_World && m_Camera) {
+                            target = ScenePicker::PickEntity(
+                                m_World, m_Camera,
+                                mousePos.x - imgMin.x,
+                                mousePos.y - imgMin.y,
+                                vpW, vpH);
+                        }
+
+                        if (target != ECS::INVALID_ENTITY && m_World) {
+                            // Assign to material (3D) or sprite (2D)
+                            auto* mat = m_World->GetComponent<ECS::MaterialComponent>(target);
+                            if (mat) {
+                                mat->baseColorTexturePath = dropPath;
+                                mat->baseColorTexture = -1;
+                                mat->InvalidateTextureCache();
+                                if (m_RenderSystem) m_RenderSystem->ClearFailedTexture(dropPath);
+                                SelectEntity(target);
+                                ShowNotification("Assigned texture to " +
+                                    (m_World->HasComponent<ECS::NameComponent>(target)
+                                        ? m_World->GetComponent<ECS::NameComponent>(target)->name
+                                        : std::string("entity")),
+                                    NotificationType::Info);
+                            } else {
+                                auto* spr = m_World->GetComponent<ECS::Sprite2DComponent>(target);
+                                if (spr) {
+                                    spr->texturePath = dropPath;
+                                    SelectEntity(target);
+                                    ShowNotification("Assigned texture to sprite",
+                                        NotificationType::Info);
+                                }
+                            }
+                        } else if (m_PrimarySelected != ECS::INVALID_ENTITY && m_World) {
+                            // No entity under cursor — assign to currently selected entity
+                            auto* mat = m_World->GetComponent<ECS::MaterialComponent>(m_PrimarySelected);
+                            if (mat) {
+                                mat->baseColorTexturePath = dropPath;
+                                mat->baseColorTexture = -1;
+                                mat->InvalidateTextureCache();
+                                if (m_RenderSystem) m_RenderSystem->ClearFailedTexture(dropPath);
+                            } else {
+                                auto* spr = m_World->GetComponent<ECS::Sprite2DComponent>(m_PrimarySelected);
+                                if (spr) spr->texturePath = dropPath;
+                            }
+                        }
+                    } else if (ext == ".gltf" || ext == ".glb" || ext == ".fbx" ||
+                               ext == ".obj" || ext == ".dae" || ext == ".3ds") {
+                        ImportModel(dropPath);
+                    } else if (ext == ".enjprefab") {
+                        auto prefab = Assets::PrefabManager::Get().LoadPrefab(dropPath);
+                        if (prefab) {
+                            ECS::Entity root = Assets::PrefabManager::Get().Instantiate(m_World, *prefab);
+                            if (root != ECS::INVALID_ENTITY) SelectEntity(root);
+                        }
+                    } else if (ext == ".enjin" || ext == ".json") {
+                        OpenScene(dropPath);
+                    }
+                }
+                ImGui::EndDragDropTarget();
+            }
         }
     } else {
         // Fallback: dark rect when RT is not available

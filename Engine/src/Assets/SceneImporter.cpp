@@ -474,12 +474,17 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                 }
             }
 
-            // Auto-generate LODs for imported meshes with enough geometry
+            // Auto-generate LODs for imported meshes with enough geometry.
+            // IMPORTANT: AddComponent can reallocate component storage, invalidating
+            // any raw pointers from GetComponent. Re-fetch after AddComponent.
             if (options.generateLODs) {
-                auto* importedMesh = world->GetComponent<ECS::MeshComponent>(entity);
-                if (importedMesh && importedMesh->vertices.size() > 64) {
+                auto* meshCheck = world->GetComponent<ECS::MeshComponent>(entity);
+                if (meshCheck && meshCheck->vertices.size() > 64) {
                     auto& lod = world->AddComponent<ECS::LODComponent>(entity);
-                    Renderer::MeshSimplifier::GenerateLODs(*importedMesh, lod);
+                    auto* meshForLOD = world->GetComponent<ECS::MeshComponent>(entity);
+                    if (meshForLOD) {
+                        Renderer::MeshSimplifier::GenerateLODs(*meshForLOD, lod);
+                    }
                 }
             }
         }
@@ -1366,12 +1371,17 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                 }
             }
 
-            // Auto-generate LODs for imported meshes with enough geometry
+            // Auto-generate LODs for imported meshes with enough geometry.
+            // IMPORTANT: AddComponent can reallocate component storage, invalidating
+            // any raw pointers from GetComponent. Re-fetch after AddComponent.
             if (options.generateLODs) {
-                auto* importedMesh = world->GetComponent<ECS::MeshComponent>(entity);
-                if (importedMesh && importedMesh->vertices.size() > 64) {
+                auto* meshCheck = world->GetComponent<ECS::MeshComponent>(entity);
+                if (meshCheck && meshCheck->vertices.size() > 64) {
                     auto& lod = world->AddComponent<ECS::LODComponent>(entity);
-                    Renderer::MeshSimplifier::GenerateLODs(*importedMesh, lod);
+                    auto* meshForLOD = world->GetComponent<ECS::MeshComponent>(entity);
+                    if (meshForLOD) {
+                        Renderer::MeshSimplifier::GenerateLODs(*meshForLOD, lod);
+                    }
                 }
             }
         }
