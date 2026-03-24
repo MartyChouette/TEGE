@@ -563,7 +563,10 @@ private:
 
     std::unique_ptr<GUI::ImGuiLayer> m_ImGuiLayer;
 
-    EditorPanel m_VisiblePanels = EditorPanel::All;
+    // Default visible panels: core editing panels without debug/dev panels.
+    // Console, Profiler, SaveDebug, NetworkPanel etc. are opt-in via View menu.
+    EditorPanel m_VisiblePanels = EditorPanel::Hierarchy | EditorPanel::Inspector |
+        EditorPanel::Viewport | EditorPanel::AssetBrowser | EditorPanel::GameView;
 
     // Multi-select state
     std::unordered_set<ECS::Entity> m_SelectedEntities;

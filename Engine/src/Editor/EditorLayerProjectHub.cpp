@@ -880,7 +880,7 @@ void EditorLayer::DrawHubWizardSetup(ImDrawList* dl, const ImVec2& area, f32 con
     ImFont* font = ImGui::GetFont();
 
     f32 contentW = area.x - sidebarW;
-    f32 formW = (std::min)(600.0f, contentW - 80.0f);
+    f32 formW = (std::min)(800.0f, contentW - 60.0f);
     f32 formX = sidebarW + (contentW - formW) * 0.5f;
 
     // Step indicator
