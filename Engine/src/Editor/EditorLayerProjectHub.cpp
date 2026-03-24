@@ -4005,6 +4005,10 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
     } else if (templateId == "thirdperson") {
         createGround();
         ECS::Entity player = createPlayer3D("Player");
+        // Player needs HealthComponent for pickup/damage interactions
+        auto& health = m_World->AddComponent<ECS::HealthComponent>(player);
+        health.maxHealth = 100.0f;
+        health.currentHealth = 100.0f;
         auto& ctrl = m_World->AddComponent<ECS::ThirdPersonController>(player);
         ctrl.moveSpeed = 5.0f;
         ctrl.cameraDistance = 5.0f;
@@ -4059,7 +4063,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             rcol.size = Math::Vector3(3.0f, 0.3f, 4.0f);
         }
 
-        // Collectible coin with bob
+        // Collectible coin with bob — needs a sphere collider + sensor rigidbody
+        // so the CharacterVirtual can detect overlap via CheckHazardOverlaps.
         {
             ECS::Entity coin = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(coin, "Coin");
@@ -4075,6 +4080,13 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pk.type = ECS::PickupComponent::PickupType::Coin;
             pk.customId = "Coin";
             pk.value = 10.0f;
+            // Sphere collider for overlap detection
+            auto& scol = m_World->AddComponent<ECS::SphereColliderComponent>(coin);
+            scol.radius = 0.5f;
+            // Static body for AABB overlap detection with player
+            auto& crb = m_World->AddComponent<ECS::RigidbodyComponent>(coin);
+            crb.bodyType = ECS::RigidbodyComponent::BodyType::Static;
+            crb.useGravity = false;
             auto& tw = m_World->AddComponent<ECS::TweenComponent>(coin);
             ECS::TweenEntry bob;
             bob.property = ECS::TweenProperty::Position;
