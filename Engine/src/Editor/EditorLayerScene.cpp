@@ -120,6 +120,102 @@
 namespace Enjin {
 namespace Editor {
 
+// ---------------------------------------------------------------------------
+// Project-first workflow: auto-detect or auto-create a project
+// ---------------------------------------------------------------------------
+
+void EditorLayer::AutoDetectProjectForScene(const std::string& scenePath) {
+    // Already have a loaded project — nothing to do
+    if (!m_SceneManager.GetProjectPath().empty()) return;
+    if (scenePath.empty()) return;
+
+    namespace fs = std::filesystem;
+    fs::path sceneFile(scenePath);
+    if (!fs::exists(sceneFile)) return;
+
+    // Walk up from scene directory looking for a .enjinproject file
+    fs::path dir = sceneFile.parent_path();
+    for (int depth = 0; depth < 3 && !dir.empty(); ++depth) {
+        std::error_code ec;
+        for (auto& entry : fs::directory_iterator(dir, ec)) {
+            if (entry.path().extension() == ".enjinproject" && entry.is_regular_file()) {
+                if (m_SceneManager.LoadProject(entry.path().string())) {
+                    MigrateEditorSettingsToProject();
+                    ENJIN_LOG_INFO(Editor, "Auto-detected project: %s",
+                                   m_SceneManager.GetProjectName().c_str());
+                    m_EditorSettings.AddRecentProject(entry.path().string());
+                    m_EditorSettings.lastProjectDir = dir.parent_path().string();
+                    m_EditorSettings.Save();
+                    ShowNotification("Loaded project '" + m_SceneManager.GetProjectName() + "'",
+                                    NotificationType::Info);
+                    return;
+                }
+            }
+        }
+        fs::path parent = dir.parent_path();
+        if (parent == dir) break;  // filesystem root
+        dir = parent;
+    }
+
+    // No project found — auto-create one from the scene
+    EnsureProjectForScene(scenePath);
+}
+
+void EditorLayer::EnsureProjectForScene(const std::string& scenePath) {
+    // Already have a loaded project — nothing to do
+    if (!m_SceneManager.GetProjectPath().empty()) return;
+    if (scenePath.empty()) return;
+
+    namespace fs = std::filesystem;
+    fs::path sceneFile(scenePath);
+    fs::path sceneDir = sceneFile.parent_path();
+
+    // Derive project name from the scene filename (e.g. "Level1.enjin" -> "Level1")
+    std::string projName = sceneFile.stem().string();
+    if (projName.empty()) projName = "MyGame";
+
+    // Determine the project root: if scene is inside a "scenes" folder, go up one
+    // level.  Otherwise use the scene's directory directly.
+    fs::path projRoot = sceneDir;
+    if (sceneDir.filename() == "scenes") {
+        projRoot = sceneDir.parent_path();
+    }
+
+    // Create directory structure
+    std::error_code ec;
+    fs::create_directories(projRoot / "scenes", ec);
+    fs::create_directories(projRoot / "assets", ec);
+    fs::create_directories(projRoot / "scripts", ec);
+
+    // If scene file is not already inside projRoot/scenes, compute a relative path
+    std::string relPath;
+    auto relResult = fs::relative(sceneFile, projRoot, ec);
+    if (!ec && !relResult.empty()) {
+        relPath = relResult.generic_string();
+    } else {
+        relPath = "scenes/" + sceneFile.filename().string();
+    }
+
+    // Initialize project
+    m_SceneManager.NewProject(projName);
+    m_SceneManager.AddScene(sceneFile.stem().string(), relPath);
+    m_SceneManager.SetStartScene(0);
+    m_SceneManager.SetProjectMode(Scene::ProjectMode::Mixed);
+
+    // Save manifest
+    fs::path manifestPath = projRoot / (projName + ".enjinproject");
+    if (m_SceneManager.SaveProject(manifestPath.string())) {
+        m_EditorSettings.AddRecentProject(manifestPath.string());
+        m_EditorSettings.lastProjectDir = projRoot.parent_path().string();
+        m_EditorSettings.Save();
+        ShowNotification("Created project '" + projName + "'", NotificationType::Success);
+        ENJIN_LOG_INFO(Editor, "Auto-created project '%s' at %s",
+                       projName.c_str(), projRoot.string().c_str());
+    }
+}
+
+// ---------------------------------------------------------------------------
+
 void EditorLayer::SaveScene(const std::string& path) {
     if (!m_World) {
         ENJIN_LOG_ERROR(Editor, "Cannot save scene: no world loaded");
@@ -149,6 +245,9 @@ void EditorLayer::SaveScene(const std::string& path) {
     if (result.success) {
         m_CurrentScenePath = path;
         ClearDirty();
+
+        // Auto-create a project if none is loaded (project-first workflow)
+        EnsureProjectForScene(path);
 
         // Delete any auto-save file after a successful save
         std::string autoSavePath = path + ".autosave";
@@ -219,6 +318,9 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
         m_UndoRedo.Clear();
         ClearDirty();
         UpdateWindowTitle();
+
+        // Auto-detect or auto-create a project (project-first workflow)
+        AutoDetectProjectForScene(path);
 
         // Initialize scene lock manager for this scene
         m_SceneLockManager.SetScenePath(path);

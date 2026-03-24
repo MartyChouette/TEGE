@@ -304,6 +304,7 @@ private:
     void DrawSettingsSection_FrameRate();
     void DrawSettingsSection_Audio();
     void DrawSettingsSection_CollisionGroups();
+    void DrawSettingsSection_BuildScenes();
     void DrawSettingsSection_BuildConfig();
     void DrawSettingsSection_Networking();
     // Scene tab sections
@@ -537,6 +538,10 @@ private:
     void SaveScene(const std::string& path);
     void OpenScene(const std::string& path);
     void OpenSceneImmediate(const std::string& path);
+
+    // Project-first workflow helpers
+    void EnsureProjectForScene(const std::string& scenePath);
+    void AutoDetectProjectForScene(const std::string& scenePath);
 
     // Entity operations
     void DuplicateEntity(ECS::Entity entity);
@@ -1058,7 +1063,14 @@ private:
     bool m_BuildFinished = false;
     float m_BuildProgress = 0.0f;
     std::string m_BuildProgressPhase;
-    bool m_BuildQuickCreateReset = true;  // Reset quick-create form when build dialog reopens
+
+    // New Project dialog state (standalone, not project hub)
+    bool m_ShowNewProjectDialog = false;
+    char m_NewProjDlgName[128] = "MyGame";
+    char m_NewProjDlgLocation[512] = "";
+    char m_NewProjDlgScene[128] = "Main";
+    i32 m_NewProjDlgTemplate = 0;  // 0=Empty 3D, 1=Empty 2D, 2=Empty Mixed
+    void DrawNewProjectDialog();
 
     // ImGui texture descriptor cache for sprite/tilemap previews
     std::unordered_map<std::string, VkDescriptorSet> m_ImGuiTextureCache;

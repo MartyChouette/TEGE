@@ -1860,6 +1860,7 @@ void EditorLayer::DrawSettingsWindow() {
             DrawSettingsSection_FrameRate();
             DrawSettingsSection_Audio();
             DrawSettingsSection_CollisionGroups();
+            DrawSettingsSection_BuildScenes();
             DrawSettingsSection_BuildConfig();
             DrawSettingsSection_Networking();
             ImGui::PopID();
@@ -1933,6 +1934,138 @@ void EditorLayer::DrawSettingsWindow() {
 
     ImGui::PopItemWidth();
     ImGui::End();
+}
+
+void EditorLayer::DrawSettingsSection_BuildScenes() {
+    if (!ImGui::CollapsingHeader("Build Scenes")) return;
+
+    bool hasProject = !m_SceneManager.GetProjectPath().empty();
+    if (!hasProject) {
+        ImGui::TextDisabled("No project loaded.");
+        return;
+    }
+
+    auto& scenes = m_SceneManager.GetScenes();
+    namespace fs = std::filesystem;
+    fs::path projRoot = fs::path(m_SceneManager.GetProjectPath()).parent_path();
+
+    // --- Scan for .enjin files in the project's scenes/ folder ---
+    fs::path scenesDir = projRoot / "scenes";
+    std::error_code ec;
+    if (fs::exists(scenesDir, ec) && fs::is_directory(scenesDir, ec)) {
+        // Check for scene files that are not yet in the project manifest
+        for (auto& entry : fs::directory_iterator(scenesDir, ec)) {
+            if (!entry.is_regular_file()) continue;
+            if (entry.path().extension() != ".enjin") continue;
+
+            std::string relPath = fs::relative(entry.path(), projRoot, ec).generic_string();
+            if (ec) continue;
+
+            // Already in the scene list?
+            bool found = false;
+            for (const auto& s : scenes) {
+                // Normalize comparison: both as generic (forward-slash) paths
+                std::string existing = fs::path(s.path).generic_string();
+                if (existing == relPath) { found = true; break; }
+            }
+            if (!found) {
+                // Auto-add newly discovered scenes (unchecked by default: buildIndex = -1)
+                Scene::SceneEntry newEntry;
+                newEntry.name = entry.path().stem().string();
+                newEntry.path = relPath;
+                newEntry.buildIndex = -1;
+                newEntry.isStartScene = false;
+                m_SceneManager.AddScene(newEntry);
+            }
+        }
+    }
+
+    ImGui::TextDisabled("Check scenes to include in build. First checked scene = start scene.");
+    ImGui::TextDisabled("Use arrows to reorder.");
+    ImGui::Spacing();
+
+    bool changed = false;
+    i32 moveFrom = -1, moveTo = -1;
+
+    for (usize i = 0; i < scenes.size(); ++i) {
+        ImGui::PushID(static_cast<int>(i));
+
+        // Included checkbox
+        bool included = (scenes[i].buildIndex >= 0);
+        if (ImGui::Checkbox("##inc", &included)) {
+            scenes[i].buildIndex = included ? static_cast<i32>(i) : -1;
+            changed = true;
+        }
+        ImGui::SameLine();
+
+        // Start scene indicator
+        if (scenes[i].isStartScene) {
+            ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "[Start]");
+            ImGui::SameLine();
+        }
+
+        // Scene name and path
+        ImGui::Text("%s", scenes[i].name.c_str());
+        ImGui::SameLine();
+        ImGui::TextDisabled("(%s)", scenes[i].path.c_str());
+
+        // Reorder buttons
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 60);
+        if (i > 0) {
+            if (ImGui::SmallButton("Up")) {
+                moveFrom = static_cast<i32>(i);
+                moveTo = static_cast<i32>(i - 1);
+            }
+        } else {
+            ImGui::Dummy(ImVec2(24, 0));
+        }
+        ImGui::SameLine();
+        if (i < scenes.size() - 1) {
+            if (ImGui::SmallButton("Dn")) {
+                moveFrom = static_cast<i32>(i);
+                moveTo = static_cast<i32>(i + 1);
+            }
+        } else {
+            ImGui::Dummy(ImVec2(24, 0));
+        }
+
+        // Remove button
+        ImGui::SameLine();
+        if (ImGui::SmallButton("X")) {
+            m_SceneManager.RemoveScene(i);
+            changed = true;
+            ImGui::PopID();
+            break;  // list invalidated
+        }
+
+        ImGui::PopID();
+    }
+
+    // Apply move
+    if (moveFrom >= 0 && moveTo >= 0) {
+        m_SceneManager.MoveScene(static_cast<usize>(moveFrom), static_cast<usize>(moveTo));
+        changed = true;
+    }
+
+    // "Set as start scene" — first included scene is the start scene
+    if (changed) {
+        bool startSet = false;
+        for (usize i = 0; i < scenes.size(); ++i) {
+            if (scenes[i].buildIndex >= 0 && !startSet) {
+                scenes[i].isStartScene = true;
+                scenes[i].buildIndex = 0;
+                startSet = true;
+            } else {
+                scenes[i].isStartScene = false;
+                if (scenes[i].buildIndex >= 0) {
+                    scenes[i].buildIndex = static_cast<i32>(i);
+                }
+            }
+        }
+        m_SceneManager.SaveProject();
+    }
+
+    ImGui::Spacing();
 }
 
 void EditorLayer::DrawSettingsSection_BuildConfig() {

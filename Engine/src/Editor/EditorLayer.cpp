@@ -3137,6 +3137,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawBuildDialog();
     }
 
+    // New Project dialog
+    if (m_ShowNewProjectDialog) {
+        DrawNewProjectDialog();
+    }
+
     // Weather is now rendered per-camera in Game View panel only
     // (see DrawGameViewPanel for weather rendering)
 

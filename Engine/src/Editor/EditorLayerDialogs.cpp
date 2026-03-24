@@ -907,6 +907,9 @@ void EditorLayer::ImportModel(const std::string& path) {
         return;
     }
 
+    // Auto-create a project if none is loaded (project-first workflow)
+    EnsureProjectForScene(path);
+
     // Pre-fill from .enjinasset if re-importing
     if (Assets::AssetMetadata::Exists(path)) {
         Assets::AssetMetadata meta;
@@ -1310,127 +1313,8 @@ void EditorLayer::DrawBuildDialog() {
     bool hasProject = !m_SceneManager.GetProjectPath().empty();
 
     if (!hasProject) {
-        // --- Inline quick-create project form ---
-        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "No project loaded.");
-        ImGui::TextWrapped("To build a game, you need a project. Fill in the fields below and click 'Create Project & Continue'. "
-                          "This will save your current scene into a project folder and prepare it for building.");
-        ImGui::Spacing();
-        ImGui::SeparatorText("Quick Create Project");
-
-        // Static buffers for the quick-create form (reset via m_BuildQuickCreateReset)
-        static char qcProjName[256] = {};
-        static char qcLocation[512] = {};
-
-        if (m_BuildQuickCreateReset) {
-            m_BuildQuickCreateReset = false;
-            // Auto-fill project name from current scene filename
-            if (!m_CurrentScenePath.empty()) {
-                std::string stem = std::filesystem::path(m_CurrentScenePath).stem().string();
-                std::strncpy(qcProjName, stem.c_str(), sizeof(qcProjName) - 1);
-                qcProjName[sizeof(qcProjName) - 1] = '\0';
-            } else {
-                std::strncpy(qcProjName, "MyGame", sizeof(qcProjName));
-            }
-            // Default location: lastProjectDir > scene parent dir > ~/Documents/EnjinProjects
-            std::string defaultLoc;
-            if (!m_EditorSettings.lastProjectDir.empty() &&
-                std::filesystem::exists(m_EditorSettings.lastProjectDir)) {
-                defaultLoc = m_EditorSettings.lastProjectDir;
-            } else if (!m_CurrentScenePath.empty()) {
-                defaultLoc = std::filesystem::path(m_CurrentScenePath).parent_path().string();
-            } else {
-#ifdef _WIN32
-                const char* userProfile = std::getenv("USERPROFILE");
-                defaultLoc = userProfile ? (std::string(userProfile) + "\\Documents\\EnjinProjects") : ".";
-#else
-                const char* home = std::getenv("HOME");
-                defaultLoc = home ? (std::string(home) + "/Documents/EnjinProjects") : ".";
-#endif
-            }
-            std::strncpy(qcLocation, defaultLoc.c_str(), sizeof(qcLocation) - 1);
-            qcLocation[sizeof(qcLocation) - 1] = '\0';
-        }
-
-        ImGui::InputText("Project Name", qcProjName, sizeof(qcProjName));
-        ImGui::InputText("Location", qcLocation, sizeof(qcLocation));
-        ImGui::SameLine();
-        if (ImGui::Button("Browse##QCLocation")) {
-            std::string folder = FileDialog::OpenFolder("Select Project Location", qcLocation);
-            if (!folder.empty()) {
-                std::strncpy(qcLocation, folder.c_str(), sizeof(qcLocation) - 1);
-                qcLocation[sizeof(qcLocation) - 1] = '\0';
-            }
-        }
-
-        bool canCreate = (std::strlen(qcProjName) > 0 && std::strlen(qcLocation) > 0);
-        if (!canCreate) ImGui::BeginDisabled();
-        if (ImGui::Button("Create Project & Continue")) {
-            namespace fs = std::filesystem;
-            std::string projName(qcProjName);
-            std::string location(qcLocation);
-            fs::path projRoot = fs::path(location) / projName;
-
-            ENJIN_LOG_INFO(Editor, "Creating project '%s' at '%s' (root: %s)",
-                projName.c_str(), location.c_str(), projRoot.string().c_str());
-
-            // Create directory structure
-            std::error_code ec;
-            fs::create_directories(projRoot / "scenes", ec);
-            if (ec) {
-                ENJIN_LOG_ERROR(Editor, "Failed to create scenes dir: %s", ec.message().c_str());
-            }
-            if (!ec) {
-                fs::create_directories(projRoot / "scripts", ec);
-                fs::create_directories(projRoot / "assets", ec);
-            }
-
-            if (!ec) {
-                // Determine scene name
-                std::string sceneName = !m_CurrentScenePath.empty()
-                    ? fs::path(m_CurrentScenePath).stem().string()
-                    : "Main";
-
-                // Initialize project via SceneManager
-                m_SceneManager.NewProject(projName);
-                std::string relativeScenePath = "scenes/" + sceneName + ".enjin";
-                m_SceneManager.AddScene(sceneName, relativeScenePath);
-                m_SceneManager.SetStartScene(0);
-                m_SceneManager.SetProjectMode(Scene::ProjectMode::Mixed);
-
-                // Save manifest
-                fs::path manifestPath = projRoot / (projName + ".enjinproject");
-                if (m_SceneManager.SaveProject(manifestPath.string())) {
-                    // Save current scene into the project
-                    fs::path sceneFilePath = projRoot / relativeScenePath;
-                    SaveScene(sceneFilePath.string());
-                    m_CurrentScenePath = sceneFilePath.string();
-
-                    // Track project and persist settings
-                    m_EditorSettings.AddRecentProject(manifestPath.string());
-                    m_EditorSettings.lastProjectDir = location;
-                    m_EditorSettings.Save();
-
-                    // Default build output dir
-                    if (m_BuildConfig.outputDir.empty()) {
-                        m_BuildConfig.outputDir = (projRoot / "Build").string();
-                    }
-                    if (m_BuildConfig.windowTitle.empty()) {
-                        m_BuildConfig.windowTitle = projName;
-                    }
-
-                    ShowNotification("Project created: " + projName, NotificationType::Success);
-                    ENJIN_LOG_INFO(Editor, "Quick-created project '%s' at %s", projName.c_str(), projRoot.string().c_str());
-                } else {
-                    ShowNotification("Failed to save project manifest", NotificationType::Error);
-                    ENJIN_LOG_ERROR(Editor, "Failed to save project manifest for quick-create");
-                }
-            } else {
-                ShowNotification("Failed to create project directories", NotificationType::Error);
-                ENJIN_LOG_ERROR(Editor, "Failed to create project directory: %s", ec.message().c_str());
-            }
-        }
-        if (!canCreate) ImGui::EndDisabled();
-
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f),
+            "No project loaded. Save your scene first (Ctrl+S) to auto-create a project.");
         ImGui::End();
         return;
     }
@@ -1598,6 +1482,110 @@ void EditorLayer::DrawBuildDialog() {
         }
         ImGui::EndChild();
     }
+
+    ImGui::End();
+}
+
+// ---------------------------------------------------------------------------
+// New Project Dialog (standalone, not the Project Hub wizard)
+// ---------------------------------------------------------------------------
+
+void EditorLayer::DrawNewProjectDialog() {
+    f32 s = m_EditorSettings.uiScale;
+    ImGui::SetNextWindowSize(ImVec2(480 * s, 280 * s), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("New Project", &m_ShowNewProjectDialog)) {
+        ImGui::End();
+        return;
+    }
+
+    ImGui::InputText("Project Name", m_NewProjDlgName, sizeof(m_NewProjDlgName));
+
+    ImGui::InputText("Location", m_NewProjDlgLocation, sizeof(m_NewProjDlgLocation));
+    ImGui::SameLine();
+    if (ImGui::Button("Browse##NewProjLoc")) {
+        std::string folder = FileDialog::OpenFolder("Select Project Location",
+                                                     m_NewProjDlgLocation);
+        if (!folder.empty()) {
+            std::strncpy(m_NewProjDlgLocation, folder.c_str(),
+                         sizeof(m_NewProjDlgLocation) - 1);
+            m_NewProjDlgLocation[sizeof(m_NewProjDlgLocation) - 1] = '\0';
+        }
+    }
+
+    ImGui::InputText("Scene Name", m_NewProjDlgScene, sizeof(m_NewProjDlgScene));
+
+    const char* templateNames[] = { "Empty 3D", "Empty 2D", "Empty Mixed" };
+    ImGui::Combo("Template", &m_NewProjDlgTemplate, templateNames, 3);
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    bool canCreate = (std::strlen(m_NewProjDlgName) > 0 &&
+                      std::strlen(m_NewProjDlgLocation) > 0 &&
+                      std::strlen(m_NewProjDlgScene) > 0);
+    if (!canCreate) ImGui::BeginDisabled();
+    if (ImGui::Button("Create Project", ImVec2(140 * s, 30 * s))) {
+        namespace fs = std::filesystem;
+        std::string projName(m_NewProjDlgName);
+        std::string location(m_NewProjDlgLocation);
+        std::string sceneName(m_NewProjDlgScene);
+        fs::path projRoot = fs::path(location) / projName;
+
+        // Create directory structure
+        std::error_code ec;
+        fs::create_directories(projRoot / "scenes", ec);
+        fs::create_directories(projRoot / "assets", ec);
+        fs::create_directories(projRoot / "scripts", ec);
+
+        if (!ec) {
+            // Determine project mode from template
+            Scene::ProjectMode mode = Scene::ProjectMode::Mode3D;
+            if (m_NewProjDlgTemplate == 1) mode = Scene::ProjectMode::Mode2D;
+            else if (m_NewProjDlgTemplate == 2) mode = Scene::ProjectMode::Mixed;
+
+            // Initialize project via SceneManager
+            m_SceneManager.NewProject(projName);
+            std::string relativeScenePath = "scenes/" + sceneName + ".enjin";
+            m_SceneManager.AddScene(sceneName, relativeScenePath);
+            m_SceneManager.SetStartScene(0);
+            m_SceneManager.SetProjectMode(mode);
+
+            // Save manifest
+            fs::path manifestPath = projRoot / (projName + ".enjinproject");
+            if (m_SceneManager.SaveProject(manifestPath.string())) {
+                // Clear current world and save empty scene
+                if (m_World) {
+                    m_World->Clear();
+                    if (m_RenderSystem) m_RenderSystem->OnSceneClear();
+                    ClearSelection();
+                }
+                fs::path sceneFilePath = projRoot / relativeScenePath;
+                SaveScene(sceneFilePath.string());
+                m_CurrentScenePath = sceneFilePath.string();
+                ClearDirty();
+                UpdateWindowTitle();
+
+                // Track project and persist settings
+                m_EditorSettings.AddRecentProject(manifestPath.string());
+                m_EditorSettings.lastProjectDir = location;
+                m_EditorSettings.Save();
+
+                ShowNotification("Created project '" + projName + "'",
+                                NotificationType::Success);
+                ENJIN_LOG_INFO(Editor, "Created project '%s' at %s",
+                               projName.c_str(), projRoot.string().c_str());
+                m_ShowNewProjectDialog = false;
+            } else {
+                ShowNotification("Failed to save project manifest",
+                                NotificationType::Error);
+            }
+        } else {
+            ShowNotification("Failed to create project directories",
+                            NotificationType::Error);
+        }
+    }
+    if (!canCreate) ImGui::EndDisabled();
 
     ImGui::End();
 }

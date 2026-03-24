@@ -205,18 +205,27 @@ void EditorLayer::DrawMenuBar() {
 
             // Project operations
             if (ImGui::MenuItem("New Project...")) {
-                if (m_World) {
-                    m_World->Clear();
-                    if (m_RenderSystem) m_RenderSystem->OnSceneClear();
-                    ClearSelection();
-                    m_CurrentScenePath.clear();
+                m_ShowNewProjectDialog = true;
+                // Pre-fill default location
+                std::string defaultLoc;
+                if (!m_EditorSettings.lastProjectDir.empty() &&
+                    std::filesystem::exists(m_EditorSettings.lastProjectDir)) {
+                    defaultLoc = m_EditorSettings.lastProjectDir;
+                } else {
+#ifdef _WIN32
+                    const char* userProfile = std::getenv("USERPROFILE");
+                    defaultLoc = userProfile ? (std::string(userProfile) + "\\Documents\\EnjinProjects") : ".";
+#else
+                    const char* home = std::getenv("HOME");
+                    defaultLoc = home ? (std::string(home) + "/Documents/EnjinProjects") : ".";
+#endif
                 }
-                m_HubPage = HubPage::WizardSetup;
-                m_SelectedTemplate = -1;
-                m_TemplateFilter = TMPL_ALL;
-                m_TemplateSearchBuffer[0] = '\0';
-                m_ShowProjectHub = true;
-                ENJIN_LOG_INFO(Editor, "Opened new project wizard");
+                std::strncpy(m_NewProjDlgLocation, defaultLoc.c_str(), sizeof(m_NewProjDlgLocation) - 1);
+                m_NewProjDlgLocation[sizeof(m_NewProjDlgLocation) - 1] = '\0';
+                std::strncpy(m_NewProjDlgName, "MyGame", sizeof(m_NewProjDlgName));
+                std::strncpy(m_NewProjDlgScene, "Main", sizeof(m_NewProjDlgScene));
+                m_NewProjDlgTemplate = 0;
+                ENJIN_LOG_INFO(Editor, "Opened new project dialog");
             }
             if (ImGui::MenuItem("Open Project...")) {
                 std::vector<FileFilter> filters = {
@@ -305,7 +314,6 @@ void EditorLayer::DrawMenuBar() {
                 m_BuildInProgress = false;
                 m_BuildProgress = 0.0f;
                 m_BuildResult = Build::BuildResult{};
-                m_BuildQuickCreateReset = true;
                 // Default output dir next to project
                 if (m_BuildConfig.outputDir.empty() && !m_SceneManager.GetProjectPath().empty()) {
                     auto projDir = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path();
