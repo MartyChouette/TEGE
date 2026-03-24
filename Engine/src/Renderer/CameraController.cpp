@@ -16,21 +16,18 @@ CameraController::CameraController(Camera* camera)
 void CameraController::SyncFromCamera() {
     if (!m_Camera) return;
 
-    // Extract yaw and pitch from the camera's forward vector
+    // Extract yaw and pitch from the camera's forward vector.
+    // Convention: yaw=0 looks along -Z, pitch=0 is horizontal,
+    // positive pitch looks up, negative looks down.
     Math::Vector3 forward = m_Camera->GetForward();
 
-    // Pitch is the vertical angle
-    // forward.y = sin(pitch) when cos(pitch) ≈ 1
     m_Pitch = Math::Degrees(Math::Asin(Math::Clamp(forward.y, -1.0f, 1.0f)));
-
-    // Yaw is the horizontal angle
-    // At yaw=0: forward.x = 0, forward.z = -1
-    // forward.x = sin(yaw) * cos(pitch)
-    // forward.z = -cos(yaw) * cos(pitch)
-    // So yaw = atan2(forward.x, -forward.z)
     m_Yaw = Math::Degrees(Math::Atan2(forward.x, -forward.z));
 
-    // Clamp pitch
+    // Normalize yaw to [-180, 180] to avoid accumulation drift
+    while (m_Yaw > 180.0f) m_Yaw -= 360.0f;
+    while (m_Yaw < -180.0f) m_Yaw += 360.0f;
+
     m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
 }
 
@@ -206,20 +203,26 @@ void CameraController::UpdateOrbitMode(f32 deltaTime) {
         m_OrbitDistance = Math::Clamp(m_OrbitDistance, m_MinOrbitDistance, m_MaxOrbitDistance);
     }
 
-    // Calculate camera position from orbit parameters
+    // Calculate camera position from orbit parameters.
+    // Convention: yaw=0 looks along -Z, so the camera offset is along +Z.
+    // The camera sits BEHIND the target relative to its forward direction.
     f32 yawRad = Math::Radians(m_Yaw);
     f32 pitchRad = Math::Radians(m_Pitch);
 
+    // Spherical to cartesian: camera is at (target + offset), looking at target.
+    // Forward = (sin(yaw)*cos(pitch), sin(pitch), -cos(yaw)*cos(pitch))
+    // Camera offset = -forward * distance
     Math::Vector3 offset;
-    offset.x = Math::Cos(pitchRad) * Math::Cos(yawRad) * m_OrbitDistance;
-    offset.y = Math::Sin(pitchRad) * m_OrbitDistance;
-    offset.z = Math::Cos(pitchRad) * Math::Sin(yawRad) * m_OrbitDistance;
+    offset.x = -Math::Sin(yawRad) * Math::Cos(pitchRad) * m_OrbitDistance;
+    offset.y = -Math::Sin(pitchRad) * m_OrbitDistance;
+    offset.z = Math::Cos(yawRad) * Math::Cos(pitchRad) * m_OrbitDistance;
 
     Math::Vector3 cameraPos = m_OrbitTarget + offset;
     m_Camera->SetPosition(cameraPos);
 
-    // Look at target
-    m_Camera->SetLookAt(cameraPos, m_OrbitTarget, Math::Vector3(0.0f, 1.0f, 0.0f));
+    // Look at target — use world up unless nearly vertical
+    Math::Vector3 up(0.0f, 1.0f, 0.0f);
+    m_Camera->SetLookAt(cameraPos, m_OrbitTarget, up);
 }
 
 void CameraController::UpdateFirstPersonMode(f32 deltaTime) {
@@ -235,17 +238,19 @@ void CameraController::UpdateFirstPersonMode(f32 deltaTime) {
 }
 
 void CameraController::ApplyRotation() {
-    // Convert euler angles to quaternion
+    // Build forward vector from yaw/pitch, then use LookAt to set camera rotation.
+    // This avoids quaternion multiplication order issues and gimbal artifacts.
     f32 yawRad = Math::Radians(m_Yaw);
     f32 pitchRad = Math::Radians(m_Pitch);
 
-    // Create rotation quaternion from yaw and pitch
-    Math::Quaternion yawQuat(Math::Vector3(0.0f, 1.0f, 0.0f), yawRad);
-    Math::Quaternion pitchQuat(Math::Vector3(1.0f, 0.0f, 0.0f), pitchRad);
+    Math::Vector3 forward;
+    forward.x = Math::Sin(yawRad) * Math::Cos(pitchRad);
+    forward.y = Math::Sin(pitchRad);
+    forward.z = -Math::Cos(yawRad) * Math::Cos(pitchRad);
 
-    // Yaw first, then pitch
-    Math::Quaternion rotation = yawQuat * pitchQuat;
-    m_Camera->SetRotation(rotation);
+    Math::Vector3 pos = m_Camera->GetPosition();
+    Math::Vector3 target = pos + forward;
+    m_Camera->SetLookAt(pos, target, Math::Vector3(0.0f, 1.0f, 0.0f));
 }
 
 void CameraController::SetViewPreset(ViewPreset preset) {
@@ -262,45 +267,51 @@ void CameraController::SetViewPreset(ViewPreset preset) {
             m_Camera->SetPerspective(45.0f, 16.0f / 9.0f, 0.1f, 1000.0f);
             return;
 
+        // Presets use the orbit convention: camera is at (target - forward * distance).
+        // yaw=0 forward is -Z, so camera is at +Z. Presets set yaw/pitch and let
+        // the orbit update compute the position.
         case ViewPreset::Top:
-            m_Yaw = -90.0f;
-            m_Pitch = -89.0f;  // Looking straight down
-            m_Camera->SetPosition(target + Math::Vector3(0.0f, distance, 0.0f));
+            m_Yaw = 0.0f;
+            m_Pitch = 89.0f;   // Looking straight down (camera above, pitch up = looking down at target)
             break;
 
         case ViewPreset::Bottom:
-            m_Yaw = -90.0f;
-            m_Pitch = 89.0f;   // Looking straight up
-            m_Camera->SetPosition(target + Math::Vector3(0.0f, -distance, 0.0f));
+            m_Yaw = 0.0f;
+            m_Pitch = -89.0f;  // Looking straight up
             break;
 
         case ViewPreset::Front:
-            m_Yaw = -90.0f;
+            m_Yaw = 0.0f;      // Forward is -Z, camera at +Z looking at target
             m_Pitch = 0.0f;
-            m_Camera->SetPosition(target + Math::Vector3(0.0f, 0.0f, distance));
             break;
 
         case ViewPreset::Back:
-            m_Yaw = 90.0f;
+            m_Yaw = 180.0f;    // Camera at -Z looking at target
             m_Pitch = 0.0f;
-            m_Camera->SetPosition(target + Math::Vector3(0.0f, 0.0f, -distance));
             break;
 
         case ViewPreset::Right:
-            m_Yaw = 0.0f;
+            m_Yaw = -90.0f;    // Camera at +X looking at target
             m_Pitch = 0.0f;
-            m_Camera->SetPosition(target + Math::Vector3(distance, 0.0f, 0.0f));
             break;
 
         case ViewPreset::Left:
-            m_Yaw = 180.0f;
+            m_Yaw = 90.0f;     // Camera at -X looking at target
             m_Pitch = 0.0f;
-            m_Camera->SetPosition(target + Math::Vector3(-distance, 0.0f, 0.0f));
             break;
     }
 
-    // Apply rotation for preset views
-    ApplyRotation();
+    // Use the orbit math to compute camera position from yaw/pitch/distance
+    {
+        f32 yawRad = Math::Radians(m_Yaw);
+        f32 pitchRad = Math::Radians(m_Pitch);
+        Math::Vector3 offset;
+        offset.x = -Math::Sin(yawRad) * Math::Cos(pitchRad) * distance;
+        offset.y = -Math::Sin(pitchRad) * distance;
+        offset.z = Math::Cos(yawRad) * Math::Cos(pitchRad) * distance;
+        m_Camera->SetPosition(target + offset);
+        m_Camera->SetLookAt(target + offset, target, Math::Vector3(0.0f, 1.0f, 0.0f));
+    }
 
     // Set orthographic for preset views (except perspective)
     if (preset != ViewPreset::Perspective) {
