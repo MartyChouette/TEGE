@@ -927,9 +927,14 @@ bool VulkanRenderer::SetMSAASamples(VkSampleCountFlagBits samples) {
 
     m_ImagesInFlight.assign(m_Swapchain->GetImageCount(), VK_NULL_HANDLE);
 
+    // Reset frame state so the next BeginFrame starts clean
+    m_CurrentFrame = 0;
+    m_IsFrameStarted = false;
+    m_IsMainRenderPassActive = false;
+
     // Notify external systems (post-processing, RenderSystem pipelines, etc.)
     for (auto& callback : m_ResizeCallbacks) {
-        callback(extent.width, extent.height);
+        if (callback) callback(extent.width, extent.height);
     }
 
     ENJIN_LOG_INFO(Renderer, "MSAA %s (%dx samples)",

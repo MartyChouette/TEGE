@@ -1017,6 +1017,101 @@ void RenderSystem::Update(f32 deltaTime) {
                 }
             }
         }
+
+        // Two-Bone IK: analytic solve for arm/leg chains
+        auto* twoBoneIK = m_World->GetComponent<TwoBoneIKComponent>(entity);
+        if (twoBoneIK && twoBoneIK->weight > 0.0f) {
+            const auto* skeleton = animComp->animator.GetSkeleton();
+            if (skeleton) {
+                i32 rootIdx = skeleton->FindBoneIndex(twoBoneIK->rootBoneName);
+                i32 midIdx = skeleton->FindBoneIndex(twoBoneIK->midBoneName);
+                i32 endIdx = skeleton->FindBoneIndex(twoBoneIK->endBoneName);
+
+                if (rootIdx >= 0 && midIdx >= 0 && endIdx >= 0) {
+                    const auto& pose = animComp->animator.GetCurrentPose();
+
+                    // Get entity world transform to convert bone-local to world space
+                    auto* entityTransform2 = m_World->GetComponent<TransformComponent>(entity);
+                    Math::Matrix4 entityWorld = entityTransform2 ? ComputeWorldMatrix(m_World, entity) : Math::Matrix4::Identity();
+
+                    // Extract bone world positions (pose.worldTransforms are in entity-local space)
+                    Math::Matrix4 rootWorld = entityWorld * pose.worldTransforms[rootIdx];
+                    Math::Matrix4 midWorld = entityWorld * pose.worldTransforms[midIdx];
+                    Math::Matrix4 endWorld = entityWorld * pose.worldTransforms[endIdx];
+
+                    Math::Vector3 rootPos(rootWorld.m[12], rootWorld.m[13], rootWorld.m[14]);
+                    Math::Vector3 midPos(midWorld.m[12], midWorld.m[13], midWorld.m[14]);
+                    Math::Vector3 endPos(endWorld.m[12], endWorld.m[13], endWorld.m[14]);
+
+                    // Resolve target position
+                    Math::Vector3 ikTarget = twoBoneIK->targetPosition;
+                    if (twoBoneIK->useEntityTarget && twoBoneIK->targetEntity != INVALID_ENTITY) {
+                        auto* targetTransform = m_World->GetComponent<TransformComponent>(twoBoneIK->targetEntity);
+                        if (targetTransform) {
+                            ikTarget = targetTransform->position;
+                        }
+                    }
+
+                    // Solve two-bone IK
+                    Math::Vector3 solvedMid, solvedEnd;
+                    Animation::TwoBoneIK::Solve(
+                        rootPos, midPos, endPos, ikTarget,
+                        twoBoneIK->poleVector, twoBoneIK->weight,
+                        solvedMid, solvedEnd
+                    );
+
+                    // Apply IK result by computing rotation deltas for root and mid bones
+                    auto& poseMut = const_cast<Animation::SkeletonPose&>(pose);
+
+                    // Root bone rotation delta: rotate the upper limb toward solved mid position
+                    {
+                        Math::Vector3 origDir = midPos - rootPos;
+                        Math::Vector3 newDir = solvedMid - rootPos;
+                        f32 origLen = origDir.Length();
+                        f32 newLen = newDir.Length();
+                        if (origLen > 0.0001f && newLen > 0.0001f) {
+                            origDir = origDir * (1.0f / origLen);
+                            newDir = newDir * (1.0f / newLen);
+                            Math::Vector3 axis = origDir.Cross(newDir);
+                            f32 axisMag = axis.Length();
+                            f32 dotP = std::clamp(origDir.Dot(newDir), -1.0f, 1.0f);
+                            if (axisMag > 0.0001f) {
+                                axis = axis * (1.0f / axisMag);
+                                Math::Quaternion rotDelta(axis, std::acos(dotP));
+                                poseMut.localRotations[rootIdx] = rotDelta * poseMut.localRotations[rootIdx];
+                            }
+                        }
+                    }
+
+                    // Mid bone rotation delta: rotate the lower limb toward solved end position
+                    {
+                        Math::Vector3 origDir = endPos - midPos;
+                        Math::Vector3 newDir = solvedEnd - solvedMid;
+                        f32 origLen = origDir.Length();
+                        f32 newLen = newDir.Length();
+                        if (origLen > 0.0001f && newLen > 0.0001f) {
+                            origDir = origDir * (1.0f / origLen);
+                            newDir = newDir * (1.0f / newLen);
+                            Math::Vector3 axis = origDir.Cross(newDir);
+                            f32 axisMag = axis.Length();
+                            f32 dotP = std::clamp(origDir.Dot(newDir), -1.0f, 1.0f);
+                            if (axisMag > 0.0001f) {
+                                axis = axis * (1.0f / axisMag);
+                                Math::Quaternion rotDelta(axis, std::acos(dotP));
+                                poseMut.localRotations[midIdx] = rotDelta * poseMut.localRotations[midIdx];
+                            }
+                        }
+                    }
+
+                    // Write updated rotations back and mark dirty
+                    animComp->animator.SetBoneLocalRotation(
+                        twoBoneIK->rootBoneName, poseMut.localRotations[rootIdx]);
+                    animComp->animator.SetBoneLocalRotation(
+                        twoBoneIK->midBoneName, poseMut.localRotations[midIdx]);
+                    animComp->matricesDirty = true;
+                }
+            }
+        }
     }
 
     // Update bone attachment transforms: snap attached entities to their target bone
@@ -2068,8 +2163,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // and the mesh has sub-meshes, draw each sub-mesh with its own material.
             MeshComponent* meshForSubMesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
             MaterialSlotsComponent* matSlots = m_CachedMaterialSlotsStorage ? m_CachedMaterialSlotsStorage->Get(entity) : nullptr;
-            // TODO: re-enable after crash fix
-            bool useSubMeshes = false; // meshForSubMesh && meshForSubMesh->HasSubMeshes() && matSlots && !matSlots->slots.empty();
+            bool useSubMeshes = meshForSubMesh && meshForSubMesh->HasSubMeshes() && matSlots && !matSlots->slots.empty();
 
             bool poolPath = renderData.poolAlloc.valid && m_GeometryPool;
             if (useSubMeshes) {
@@ -2088,7 +2182,17 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             }
 
             if (useSubMeshes) {
+                // Total index count for bounds validation
+                u32 totalIndexCount = poolPath ? renderData.poolAlloc.indexCount : renderData.indexCount;
+
                 for (const auto& subMesh : meshForSubMesh->subMeshes) {
+                    // Validate sub-mesh bounds: skip if index range exceeds buffer
+                    if (subMesh.indexCount == 0) continue;
+                    if (subMesh.indexOffset + subMesh.indexCount > totalIndexCount) continue;
+
+                    // Validate material slot index
+                    if (subMesh.materialSlot < 0 || subMesh.materialSlot >= static_cast<i32>(matSlots->slots.size())) continue;
+
                     MaterialComponent* slotMat = matSlots->GetSlot(subMesh.materialSlot);
                     if (!slotMat) continue;
 
@@ -4870,6 +4974,12 @@ void RenderSystem::SetAAMode(u32 mode) {
 
         // Render pass changed — all pipelines must be recreated
         RecreatePipelines(true);  // GPU already idle from SetMSAASamples
+
+        // Invalidate all entity render data so buffers are re-created
+        // with the new pipeline on next render.
+        for (auto& rd : m_EntityRenderData) {
+            if (rd.valid) rd.Invalidate();
+        }
     }
 }
 
