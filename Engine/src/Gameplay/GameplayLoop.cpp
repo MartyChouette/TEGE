@@ -252,6 +252,51 @@ void CheckHazardOverlaps(ECS::World* world, f32 deltaTime,
     }
 }
 
+// 3D pickup AABB overlap — CharacterVirtual doesn't fire collision events
+// with static bodies, so we check manually each frame.
+void CheckPickupOverlaps3D(ECS::World* world,
+                            std::vector<ECS::Entity>& deferredDestroys) {
+    if (!world) return;
+
+    // Collect all player entities (any 3D controller type)
+    auto checkPlayer = [&](ECS::Entity player) {
+        auto* playerT = world->GetComponent<ECS::TransformComponent>(player);
+        if (!playerT) return;
+
+        // Player AABB half-extents (capsule approximation)
+        f32 pr = 0.5f, ph = 1.0f;
+        auto* cap = world->GetComponent<ECS::CapsuleColliderComponent>(player);
+        if (cap) { pr = cap->radius; ph = cap->height * 0.5f + cap->radius; }
+
+        for (auto pickup : world->GetEntitiesWithComponent<ECS::PickupComponent>()) {
+            auto* pk = world->GetComponent<ECS::PickupComponent>(pickup);
+            if (!pk || pk->isCollected) continue;
+
+            auto* pickupT = world->GetComponent<ECS::TransformComponent>(pickup);
+            if (!pickupT) continue;
+
+            // Pickup radius from SphereCollider, BoxCollider, or default
+            f32 pickupR = 0.5f;
+            auto* sphere = world->GetComponent<ECS::SphereColliderComponent>(pickup);
+            if (sphere) pickupR = sphere->radius;
+            auto* box = world->GetComponent<ECS::BoxColliderComponent>(pickup);
+            if (box) pickupR = Math::Max(box->size.x, Math::Max(box->size.y, box->size.z)) * 0.5f;
+
+            // 3D distance check (sphere-sphere approximation)
+            Math::Vector3 diff = playerT->position - pickupT->position;
+            f32 dist = std::sqrt(diff.x * diff.x + diff.y * diff.y + diff.z * diff.z);
+            if (dist < pr + pickupR) {
+                // Overlap — process pickup
+                ProcessPickup(world, pickup, player, deferredDestroys);
+            }
+        }
+    };
+
+    for (auto e : world->GetEntitiesWithComponent<ECS::ThirdPersonController>()) checkPlayer(e);
+    for (auto e : world->GetEntitiesWithComponent<ECS::FirstPersonController>()) checkPlayer(e);
+    for (auto e : world->GetEntitiesWithComponent<ECS::TopDown3DController>()) checkPlayer(e);
+}
+
 void UpdateHealthSystems(ECS::World* world, f32 deltaTime,
                          std::vector<ECS::Entity>& deferredDestroys) {
     if (!world) return;

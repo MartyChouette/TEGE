@@ -679,6 +679,9 @@ void PlayMode::Update(f32 deltaTime) {
         // Hazard overlap check (spikes, lava — bypasses Box2D sensor system)
         Gameplay::GameplayLoop::CheckHazardOverlaps(m_World, deltaTime, m_DeferredDestroys);
 
+        // 3D pickup overlap (CharacterVirtual doesn't fire collision events with static bodies)
+        Gameplay::GameplayLoop::CheckPickupOverlaps3D(m_World, m_DeferredDestroys);
+
         // Health system (regen, invulnerability timers, death)
         Gameplay::GameplayLoop::UpdateHealthSystems(m_World, deltaTime, m_DeferredDestroys);
 

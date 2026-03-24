@@ -36,6 +36,11 @@ namespace GameplayLoop {
     ENJIN_API void CheckHazardOverlaps(ECS::World* world, f32 deltaTime,
                                         std::vector<ECS::Entity>& deferredDestroys);
 
+    // 3D pickup AABB overlap check. CharacterVirtual doesn't fire collision
+    // events with static bodies, so we manually check each frame.
+    ENJIN_API void CheckPickupOverlaps3D(ECS::World* world,
+                                          std::vector<ECS::Entity>& deferredDestroys);
+
     // Update health regeneration, shield regeneration, invulnerability timers,
     // death handling (player respawn vs NPC destroy), and pickup respawn timers.
     ENJIN_API void UpdateHealthSystems(ECS::World* world, f32 deltaTime,
