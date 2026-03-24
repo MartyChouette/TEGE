@@ -283,12 +283,18 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
     if (node.meshIndex >= 0 && node.meshIndex < static_cast<i32>(scene.meshes.size())) {
         const GLTFMesh& gltfMesh = scene.meshes[node.meshIndex];
 
-        // For simplicity, combine all primitives into one mesh component
-        // A more advanced implementation would create sub-entities for each primitive
+        // Combine all primitives into one mesh component, tracking sub-mesh
+        // boundaries for multi-material support.
         ECS::MeshComponent meshComp;
 
         u32 vertexOffset = 0;
+        std::unordered_map<i32, i32> uniqueMaterials;  // glTF materialIndex -> slot index
+        struct GltfSubMesh { u32 indexOffset; u32 indexCount; i32 gltfMaterialIndex; };
+        std::vector<GltfSubMesh> gltfSubMeshes;
+
         for (const auto& primitive : gltfMesh.primitives) {
+            u32 subMeshIndexOffset = static_cast<u32>(meshComp.indices.size());
+
             // Add vertices
             for (const auto& gltfVert : primitive.vertices) {
                 ECS::MeshComponent::Vertex vertex;
@@ -317,6 +323,15 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                 meshComp.indices.push_back(index + vertexOffset);
             }
 
+            u32 subMeshIndexCount = static_cast<u32>(meshComp.indices.size()) - subMeshIndexOffset;
+
+            // Track sub-mesh for this primitive
+            i32 primMatIdx = primitive.materialIndex >= 0 ? primitive.materialIndex : 0;
+            gltfSubMeshes.push_back({ subMeshIndexOffset, subMeshIndexCount, primMatIdx });
+            if (uniqueMaterials.find(primMatIdx) == uniqueMaterials.end()) {
+                uniqueMaterials[primMatIdx] = static_cast<i32>(uniqueMaterials.size());
+            }
+
             vertexOffset += static_cast<u32>(primitive.vertices.size());
         }
 
@@ -343,6 +358,20 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                 maxBounds.x, maxBounds.y, maxBounds.z,
                 maxBounds.x - minBounds.x, maxBounds.y - minBounds.y, maxBounds.z - minBounds.z);
 
+            // Build sub-meshes if multiple materials were found
+            bool isMultiMaterial = uniqueMaterials.size() > 1;
+            if (isMultiMaterial) {
+                for (const auto& gsm : gltfSubMeshes) {
+                    ECS::MeshComponent::SubMesh sm;
+                    sm.indexOffset = gsm.indexOffset;
+                    sm.indexCount = gsm.indexCount;
+                    sm.materialSlot = uniqueMaterials[gsm.gltfMaterialIndex];
+                    meshComp.subMeshes.push_back(sm);
+                }
+                ENJIN_LOG_INFO(Asset, "  Multi-material mesh: %zu sub-meshes, %zu material slots",
+                    meshComp.subMeshes.size(), uniqueMaterials.size());
+            }
+
             world->AddComponent<ECS::MeshComponent>(entity, std::move(meshComp));
 
             // Add box collider from mesh AABB
@@ -352,77 +381,96 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                 collider.size = maxBounds - minBounds;
             }
 
-            // Extract material from the first primitive that has one
-            if (options.importMaterials) {
-                i32 matIdx = -1;
-                for (const auto& primitive : gltfMesh.primitives) {
-                    if (primitive.materialIndex >= 0) {
-                        matIdx = primitive.materialIndex;
-                        break;
+            // Resolve texture paths from glTF image URIs with fallback directories
+            auto resolveGltfTex = [&](i32 texIdx) -> std::string {
+                if (texIdx < 0 || texIdx >= static_cast<i32>(scene.images.size())) return "";
+                const std::string& uri = scene.images[texIdx].uri;
+                if (uri.empty()) return "";
+                namespace fs = std::filesystem;
+                fs::path resolved = fs::path(scene.basePath) / uri;
+                if (fs::exists(resolved)) {
+                    stats.texturePathsResolved.push_back(resolved.string());
+                    return resolved.string();
+                }
+                resolved = fs::path(scene.basePath) / "textures" / fs::path(uri).filename();
+                if (fs::exists(resolved)) {
+                    stats.texturePathsResolved.push_back(resolved.string());
+                    return resolved.string();
+                }
+                resolved = fs::path(scene.basePath) / "Textures" / fs::path(uri).filename();
+                if (fs::exists(resolved)) {
+                    stats.texturePathsResolved.push_back(resolved.string());
+                    return resolved.string();
+                }
+                if (!options.textureSearchPaths.empty()) {
+                    std::string found = TryTextureSearchPaths(
+                        fs::path(uri).filename().string(), options.textureSearchPaths);
+                    if (!found.empty()) {
+                        stats.texturePathsResolved.push_back(found);
+                        return found;
                     }
                 }
-                if (matIdx >= 0 && matIdx < static_cast<i32>(scene.materials.size())) {
-                    const GLTFMaterial& gmat = scene.materials[matIdx];
-                    auto& mat = world->AddComponent<ECS::MaterialComponent>(entity);
-                    mat.baseColor = Math::Vector3(gmat.baseColorFactor.x,
-                                                  gmat.baseColorFactor.y,
-                                                  gmat.baseColorFactor.z);
-                    mat.opacity = gmat.baseColorFactor.w;
-                    mat.metallic = gmat.metallicFactor;
-                    mat.roughness = gmat.roughnessFactor;
-                    mat.emissiveColor = gmat.emissiveFactor;
-                    mat.emissiveStrength = (gmat.emissiveFactor.x + gmat.emissiveFactor.y + gmat.emissiveFactor.z > 0.01f) ? 1.0f : 0.0f;
-                    mat.doubleSided = gmat.doubleSided;
-                    mat.alphaCutoff = gmat.alphaCutoff;
-                    if (gmat.alphaMode == GLTFMaterial::AlphaMode::Mask) {
-                        mat.alphaMode = ECS::MaterialComponent::AlphaMode::Mask;
-                    } else if (gmat.alphaMode == GLTFMaterial::AlphaMode::Blend) {
-                        mat.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
+                stats.texturePathsMissing.push_back(uri);
+                return uri;
+            };
+
+            // Helper: build MaterialComponent from glTF material
+            auto buildGltfMat = [&](const GLTFMaterial& gmat) -> ECS::MaterialComponent {
+                ECS::MaterialComponent mat;
+                mat.baseColor = Math::Vector3(gmat.baseColorFactor.x, gmat.baseColorFactor.y, gmat.baseColorFactor.z);
+                mat.opacity = gmat.baseColorFactor.w;
+                mat.metallic = gmat.metallicFactor;
+                mat.roughness = gmat.roughnessFactor;
+                mat.emissiveColor = gmat.emissiveFactor;
+                mat.emissiveStrength = (gmat.emissiveFactor.x + gmat.emissiveFactor.y + gmat.emissiveFactor.z > 0.01f) ? 1.0f : 0.0f;
+                mat.doubleSided = gmat.doubleSided;
+                mat.alphaCutoff = gmat.alphaCutoff;
+                if (gmat.alphaMode == GLTFMaterial::AlphaMode::Mask) {
+                    mat.alphaMode = ECS::MaterialComponent::AlphaMode::Mask;
+                } else if (gmat.alphaMode == GLTFMaterial::AlphaMode::Blend) {
+                    mat.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
+                }
+                mat.baseColorTexturePath = resolveGltfTex(gmat.baseColorTextureIndex);
+                if (!mat.baseColorTexturePath.empty()) {
+                    mat.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+                }
+                mat.normalTexturePath = resolveGltfTex(gmat.normalTextureIndex);
+                mat.metallicRoughnessTexturePath = resolveGltfTex(gmat.metallicRoughnessTextureIndex);
+                mat.emissiveTexturePath = resolveGltfTex(gmat.emissiveTextureIndex);
+                return mat;
+            };
+
+            if (options.importMaterials) {
+                if (isMultiMaterial) {
+                    // Multi-material: create MaterialSlotsComponent
+                    ECS::MaterialSlotsComponent slotsComp;
+                    slotsComp.slots.resize(uniqueMaterials.size());
+                    i32 firstMatIdx = -1;
+
+                    for (const auto& [gltfIdx, slotIdx] : uniqueMaterials) {
+                        if (gltfIdx >= 0 && gltfIdx < static_cast<i32>(scene.materials.size())) {
+                            slotsComp.slots[slotIdx] = buildGltfMat(scene.materials[gltfIdx]);
+                            if (firstMatIdx < 0) firstMatIdx = gltfIdx;
+                        }
                     }
 
-                    // Resolve texture paths from glTF image URIs with fallback directories
-                    auto resolveGltfTex = [&](i32 texIdx) -> std::string {
-                        if (texIdx < 0 || texIdx >= static_cast<i32>(scene.images.size())) return "";
-                        const std::string& uri = scene.images[texIdx].uri;
-                        if (uri.empty()) return "";
-                        namespace fs = std::filesystem;
-                        // Try direct path relative to model base
-                        fs::path resolved = fs::path(scene.basePath) / uri;
-                        if (fs::exists(resolved)) {
-                            stats.texturePathsResolved.push_back(resolved.string());
-                            return resolved.string();
-                        }
-                        // Try textures/ subdirectory
-                        resolved = fs::path(scene.basePath) / "textures" / fs::path(uri).filename();
-                        if (fs::exists(resolved)) {
-                            stats.texturePathsResolved.push_back(resolved.string());
-                            return resolved.string();
-                        }
-                        // Try Textures/ subdirectory (capital T)
-                        resolved = fs::path(scene.basePath) / "Textures" / fs::path(uri).filename();
-                        if (fs::exists(resolved)) {
-                            stats.texturePathsResolved.push_back(resolved.string());
-                            return resolved.string();
-                        }
-                        // Try user-specified texture search paths
-                        if (!options.textureSearchPaths.empty()) {
-                            std::string found = TryTextureSearchPaths(
-                                fs::path(uri).filename().string(), options.textureSearchPaths);
-                            if (!found.empty()) {
-                                stats.texturePathsResolved.push_back(found);
-                                return found;
-                            }
-                        }
-                        stats.texturePathsMissing.push_back(uri);
-                        return uri;
-                    };
-                    mat.baseColorTexturePath = resolveGltfTex(gmat.baseColorTextureIndex);
-                    if (!mat.baseColorTexturePath.empty()) {
-                        mat.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+                    world->AddComponent<ECS::MaterialSlotsComponent>(entity, std::move(slotsComp));
+
+                    // Add primary MaterialComponent from first material for backward compat
+                    if (firstMatIdx >= 0 && firstMatIdx < static_cast<i32>(scene.materials.size())) {
+                        world->AddComponent<ECS::MaterialComponent>(entity,
+                            buildGltfMat(scene.materials[firstMatIdx]));
                     }
-                    mat.normalTexturePath = resolveGltfTex(gmat.normalTextureIndex);
-                    mat.metallicRoughnessTexturePath = resolveGltfTex(gmat.metallicRoughnessTextureIndex);
-                    mat.emissiveTexturePath = resolveGltfTex(gmat.emissiveTextureIndex);
+                } else {
+                    // Single material (original path)
+                    i32 matIdx = -1;
+                    for (const auto& primitive : gltfMesh.primitives) {
+                        if (primitive.materialIndex >= 0) { matIdx = primitive.materialIndex; break; }
+                    }
+                    if (matIdx >= 0 && matIdx < static_cast<i32>(scene.materials.size())) {
+                        world->AddComponent<ECS::MaterialComponent>(entity,
+                            buildGltfMat(scene.materials[matIdx]));
+                    }
                 }
             }
 
@@ -1037,42 +1085,10 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         return ECS::INVALID_ENTITY;
     }
 
-    // For skinned models: merge ALL mesh nodes into one "Body" entity.
-    // Mixamo and other DCC tools split characters into many mesh parts (hands,
-    // face, clothing, eyes) which clutters the hierarchy. After the first skinned
-    // mesh entity is created, all subsequent mesh nodes append their geometry
-    // to it instead of creating separate entities.
-    if (skelCtx.skeleton && hasMeshes && skelCtx.bodyEntity != 0) {
-        auto* bodyMesh = world->GetComponent<ECS::MeshComponent>(skelCtx.bodyEntity);
-        if (bodyMesh) {
-            const auto& meshIndices = node.meshIndices.empty()
-                ? (node.meshIndex >= 0 ? std::vector<i32>{node.meshIndex} : std::vector<i32>{})
-                : node.meshIndices;
-            for (i32 mi : meshIndices) {
-                if (mi < 0 || mi >= static_cast<i32>(scene.meshes.size())) continue;
-                for (const auto& prim : scene.meshes[mi].primitives) {
-                    u32 voff = static_cast<u32>(bodyMesh->vertices.size());
-                    for (const auto& av : prim.vertices) {
-                        ECS::MeshComponent::Vertex v;
-                        v.position = av.position;
-                        v.normal = av.normal;
-                        v.uv = av.texCoord;
-                        v.boneWeights = av.boneWeights;
-                        for (int s = 0; s < 4; ++s) v.boneIndices[s] = av.boneIndices[s];
-                        bodyMesh->vertices.push_back(v);
-                    }
-                    for (u32 idx : prim.indices) {
-                        bodyMesh->indices.push_back(idx + voff);
-                    }
-                }
-            }
-            // Recurse children but don't create entity for this node
-            for (i32 childIdx : node.children) {
-                CreateEntityFromAssimpNode(scene, childIdx, world, options, outEntities, stats, skelCtx);
-            }
-            return ECS::INVALID_ENTITY;
-        }
-    }
+    // For skinned models: each mesh part becomes its own entity (Body, Eyes,
+    // Clothing, etc.) with its own material. This lets users select, hide, and
+    // re-material individual parts. Bone-only nodes are already filtered above.
+    // All mesh entities share the same skeleton and animator.
 
     // Create entity
     ECS::Entity entity = world->CreateEntity();
@@ -1130,17 +1146,32 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         ECS::MeshComponent meshComp;
 
         u32 vertexOffset = 0;
-        i32 materialIndex = -1;
+        i32 materialIndex = -1;  // First material (backward compat for single-material)
+
+        // Track per-primitive sub-mesh data for multi-material support.
+        // Each primitive gets its own SubMesh entry; we'll deduplicate material
+        // slots and remap after the merge loop.
+        struct PrimSubMesh {
+            u32 indexOffset;
+            u32 indexCount;
+            i32 assimpMaterialIndex;
+            std::string meshName;
+        };
+        std::vector<PrimSubMesh> primSubMeshes;
+        std::unordered_map<i32, i32> uniqueMaterials;  // assimpMaterialIndex -> slot index
 
         for (i32 meshIdx : meshIndices) {
             if (meshIdx < 0 || meshIdx >= static_cast<i32>(scene.meshes.size())) continue;
             const AssimpMesh& assimpMesh = scene.meshes[meshIdx];
 
             for (const auto& primitive : assimpMesh.primitives) {
-                // Track material index
+                // Track first material index (backward compat)
                 if (materialIndex < 0 && primitive.materialIndex >= 0) {
                     materialIndex = primitive.materialIndex;
                 }
+
+                // Record sub-mesh boundary before adding indices
+                u32 subMeshIndexOffset = static_cast<u32>(meshComp.indices.size());
 
                 // Add vertices
                 for (const auto& assimpVert : primitive.vertices) {
@@ -1174,6 +1205,17 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                     meshComp.indices.push_back(index + vertexOffset);
                 }
 
+                u32 subMeshIndexCount = static_cast<u32>(meshComp.indices.size()) - subMeshIndexOffset;
+
+                // Record this primitive's sub-mesh info
+                i32 primMatIdx = primitive.materialIndex >= 0 ? primitive.materialIndex : 0;
+                primSubMeshes.push_back({ subMeshIndexOffset, subMeshIndexCount, primMatIdx, assimpMesh.name });
+
+                // Track unique material indices
+                if (uniqueMaterials.find(primMatIdx) == uniqueMaterials.end()) {
+                    uniqueMaterials[primMatIdx] = static_cast<i32>(uniqueMaterials.size());
+                }
+
                 vertexOffset += static_cast<u32>(primitive.vertices.size());
             }
         }
@@ -1201,6 +1243,21 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                 maxBounds.x, maxBounds.y, maxBounds.z,
                 maxBounds.x - minBounds.x, maxBounds.y - minBounds.y, maxBounds.z - minBounds.z);
 
+            // Build sub-meshes if multiple materials were found
+            bool isMultiMaterial = uniqueMaterials.size() > 1;
+            if (isMultiMaterial) {
+                for (const auto& psm : primSubMeshes) {
+                    ECS::MeshComponent::SubMesh sm;
+                    sm.indexOffset = psm.indexOffset;
+                    sm.indexCount = psm.indexCount;
+                    sm.materialSlot = uniqueMaterials[psm.assimpMaterialIndex];
+                    sm.name = psm.meshName;
+                    meshComp.subMeshes.push_back(sm);
+                }
+                ENJIN_LOG_INFO(Asset, "  Multi-material mesh: %zu sub-meshes, %zu material slots",
+                    meshComp.subMeshes.size(), uniqueMaterials.size());
+            }
+
             world->AddComponent<ECS::MeshComponent>(entity, std::move(meshComp));
 
             // Add box collider from mesh AABB
@@ -1210,11 +1267,54 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                 collider.size = maxBounds - minBounds;
             }
 
-            // Add material component if available and options allow
-            if (options.importMaterials && materialIndex >= 0 &&
-                materialIndex < static_cast<i32>(scene.materials.size())) {
-                const AssimpMaterial& assimpMat = scene.materials[materialIndex];
+            // Resolve texture paths relative to model directory with fallback directories
+            auto resolveTexPath = [&](const std::string& texPath) -> std::string {
+                if (texPath.empty()) return "";
+                namespace fs = std::filesystem;
+                fs::path p(texPath);
+                if (p.is_absolute() && fs::exists(p)) {
+                    stats.texturePathsResolved.push_back(p.string());
+                    return p.string();
+                }
+                // Try relative to model's base directory
+                fs::path resolved = fs::path(scene.basePath) / p;
+                if (fs::exists(resolved)) {
+                    stats.texturePathsResolved.push_back(resolved.string());
+                    return resolved.string();
+                }
+                // Try just the filename in the base directory
+                resolved = fs::path(scene.basePath) / p.filename();
+                if (fs::exists(resolved)) {
+                    stats.texturePathsResolved.push_back(resolved.string());
+                    return resolved.string();
+                }
+                // Try textures/ subdirectory
+                resolved = fs::path(scene.basePath) / "textures" / p.filename();
+                if (fs::exists(resolved)) {
+                    stats.texturePathsResolved.push_back(resolved.string());
+                    return resolved.string();
+                }
+                // Try Textures/ subdirectory (capital T)
+                resolved = fs::path(scene.basePath) / "Textures" / p.filename();
+                if (fs::exists(resolved)) {
+                    stats.texturePathsResolved.push_back(resolved.string());
+                    return resolved.string();
+                }
+                // Try user-specified texture search paths
+                if (!options.textureSearchPaths.empty()) {
+                    std::string found = TryTextureSearchPaths(
+                        p.filename().string(), options.textureSearchPaths);
+                    if (!found.empty()) {
+                        stats.texturePathsResolved.push_back(found);
+                        return found;
+                    }
+                }
+                stats.texturePathsMissing.push_back(texPath);
+                return texPath; // Return as-is, RenderSystem will attempt to load
+            };
 
+            // Helper: create MaterialComponent from AssimpMaterial
+            auto buildMatComp = [&](const AssimpMaterial& assimpMat) -> ECS::MaterialComponent {
                 ECS::MaterialComponent matComp;
                 matComp.baseColor = Math::Vector3(
                     assimpMat.baseColorFactor.x,
@@ -1226,64 +1326,44 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                 matComp.roughness = assimpMat.roughnessFactor;
                 matComp.emissiveColor = assimpMat.emissiveFactor;
                 matComp.doubleSided = assimpMat.doubleSided;
-
-                // Resolve texture paths relative to model directory with fallback directories
-                auto resolveTexPath = [&](const std::string& texPath) -> std::string {
-                    if (texPath.empty()) return "";
-                    namespace fs = std::filesystem;
-                    fs::path p(texPath);
-                    if (p.is_absolute() && fs::exists(p)) {
-                        stats.texturePathsResolved.push_back(p.string());
-                        return p.string();
-                    }
-                    // Try relative to model's base directory
-                    fs::path resolved = fs::path(scene.basePath) / p;
-                    if (fs::exists(resolved)) {
-                        stats.texturePathsResolved.push_back(resolved.string());
-                        return resolved.string();
-                    }
-                    // Try just the filename in the base directory
-                    resolved = fs::path(scene.basePath) / p.filename();
-                    if (fs::exists(resolved)) {
-                        stats.texturePathsResolved.push_back(resolved.string());
-                        return resolved.string();
-                    }
-                    // Try textures/ subdirectory
-                    resolved = fs::path(scene.basePath) / "textures" / p.filename();
-                    if (fs::exists(resolved)) {
-                        stats.texturePathsResolved.push_back(resolved.string());
-                        return resolved.string();
-                    }
-                    // Try Textures/ subdirectory (capital T)
-                    resolved = fs::path(scene.basePath) / "Textures" / p.filename();
-                    if (fs::exists(resolved)) {
-                        stats.texturePathsResolved.push_back(resolved.string());
-                        return resolved.string();
-                    }
-                    // Try user-specified texture search paths
-                    if (!options.textureSearchPaths.empty()) {
-                        std::string found = TryTextureSearchPaths(
-                            p.filename().string(), options.textureSearchPaths);
-                        if (!found.empty()) {
-                            stats.texturePathsResolved.push_back(found);
-                            return found;
-                        }
-                    }
-                    stats.texturePathsMissing.push_back(texPath);
-                    return texPath; // Return as-is, RenderSystem will attempt to load
-                };
-
                 matComp.baseColorTexturePath = resolveTexPath(assimpMat.baseColorTexture);
-                // When a diffuse texture exists, use white base color so the texture
-                // provides all color (FBX diffuse color would otherwise tint/darken it)
                 if (!matComp.baseColorTexturePath.empty()) {
                     matComp.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
                 }
                 matComp.normalTexturePath = resolveTexPath(assimpMat.normalTexture);
                 matComp.metallicRoughnessTexturePath = resolveTexPath(assimpMat.metallicRoughnessTexture);
                 matComp.emissiveTexturePath = resolveTexPath(assimpMat.emissiveTexture);
+                return matComp;
+            };
 
-                world->AddComponent<ECS::MaterialComponent>(entity, matComp);
+            if (options.importMaterials) {
+                if (isMultiMaterial) {
+                    // Multi-material: create MaterialSlotsComponent with one slot per unique material.
+                    // Also add a MaterialComponent (first slot) for backward compatibility with
+                    // systems that only check MaterialComponent (shadow pass, outline pass, etc.).
+                    ECS::MaterialSlotsComponent slotsComp;
+                    slotsComp.slots.resize(uniqueMaterials.size());
+
+                    for (const auto& [assimpIdx, slotIdx] : uniqueMaterials) {
+                        if (assimpIdx >= 0 && assimpIdx < static_cast<i32>(scene.materials.size())) {
+                            slotsComp.slots[slotIdx] = buildMatComp(scene.materials[assimpIdx]);
+                        }
+                    }
+
+                    world->AddComponent<ECS::MaterialSlotsComponent>(entity, std::move(slotsComp));
+
+                    // Add primary MaterialComponent from first material for backward compat
+                    if (materialIndex >= 0 && materialIndex < static_cast<i32>(scene.materials.size())) {
+                        world->AddComponent<ECS::MaterialComponent>(entity,
+                            buildMatComp(scene.materials[materialIndex]));
+                    }
+                } else {
+                    // Single material (original path)
+                    if (materialIndex >= 0 && materialIndex < static_cast<i32>(scene.materials.size())) {
+                        world->AddComponent<ECS::MaterialComponent>(entity,
+                            buildMatComp(scene.materials[materialIndex]));
+                    }
+                }
             }
 
             // Auto-generate LODs for imported meshes with enough geometry
@@ -1304,12 +1384,9 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
     // model share the same skeleton and bone matrices.
     if (options.importAnimations && skelCtx.skeleton && nodeHasSkinning) {
         if (!skelCtx.attached) skelCtx.attached = true;
-        // Track the first skinned entity so subsequent skinned meshes merge into it
+        // Track first skinned entity (used for bone buffer fallback in render system)
         if (skelCtx.bodyEntity == 0) {
             skelCtx.bodyEntity = entity;
-            // Rename to "Body" for a cleaner hierarchy
-            auto* nc = world->GetComponent<ECS::NameComponent>(entity);
-            if (nc) nc->name = "Body";
         }
 
         // Add skeleton component
