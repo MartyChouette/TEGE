@@ -11,7 +11,8 @@ if(WIN32)
     set(EDITOR_RC "${CMAKE_CURRENT_SOURCE_DIR}/resources.rc")
 endif()
 
-add_executable(EnjinEditor ${EDITOR_SOURCES} ${EDITOR_RC})
+# WIN32 flag = /SUBSYSTEM:WINDOWS (no black console window on launch)
+add_executable(EnjinEditor WIN32 ${EDITOR_SOURCES} ${EDITOR_RC})
 
 target_include_directories(EnjinEditor PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include

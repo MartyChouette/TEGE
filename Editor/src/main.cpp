@@ -318,3 +318,12 @@ int main(int argc, char* argv[]) {
 
     return result;
 }
+
+// Windows GUI subsystem entry point — forwards to main().
+// This prevents the black console window from appearing on launch.
+// Linux/Mac don't need this — they don't spawn consoles for GUI apps.
+#if defined(_WIN32)
+int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
+    return main(0, nullptr);
+}
+#endif
