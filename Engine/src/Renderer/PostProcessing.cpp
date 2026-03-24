@@ -7663,25 +7663,11 @@ bool PostProcessing::CreateTAAComputePipeline() {
         return false;
     }
 
-    // --- Load compute shader from SPIR-V file ---
+    // --- Load TAA compute shader from embedded SPIR-V ---
     VulkanShader taaShader(m_Context);
-    const char* shaderPaths[] = {
-        "shaders/taa_resolve.comp.spv",
-        "Engine/shaders/taa_resolve.comp.spv",
-        "../Engine/shaders/taa_resolve.comp.spv",
-        "../../Engine/shaders/taa_resolve.comp.spv"
-    };
-    bool shaderLoaded = false;
-    for (const char* path : shaderPaths) {
-        if (taaShader.LoadFromFile(path) && taaShader.GetModule() != VK_NULL_HANDLE) {
-            shaderLoaded = true;
-            break;
-        }
-    }
-
-    if (!shaderLoaded) {
-        ENJIN_LOG_WARN(Renderer, "TAA: taa_resolve.comp.spv not found — compile with: "
-                       "glslangValidator -V Engine/shaders/taa_resolve.comp -o Engine/shaders/taa_resolve.comp.spv");
+    if (!taaShader.LoadFromSPIRV(ShaderData::TAAResolveComputeShaderData,
+                                ShaderData::TAAResolveComputeShaderDataSize)) {
+        ENJIN_LOG_ERROR(Renderer, "TAA: Failed to load embedded taa_resolve.comp shader");
         return false;
     }
 
