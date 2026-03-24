@@ -148,7 +148,25 @@ void EditorLayer::DrawViewportPanel() {
         SetPanelVisibility(EditorPanel::Viewport, false);
     }
 
-    // Aspect ratio dropdown (top-right of panel)
+    // Scene view mode buttons (Blender-style viewport shading)
+    {
+        auto modeBtn = [&](const char* label, const char* tooltip, SceneViewMode mode) {
+            bool active = (m_SceneViewMode == mode);
+            if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+            if (ImGui::SmallButton(label)) m_SceneViewMode = mode;
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
+            if (active) ImGui::PopStyleColor();
+            ImGui::SameLine();
+        };
+        modeBtn("Wire",   "Wireframe only",                        SceneViewMode::Wireframe);
+        modeBtn("Solid",  "Flat shading, no lighting",             SceneViewMode::Solid);
+        modeBtn("Lit",    "Lighting, no shadows (default)",        SceneViewMode::Lit);
+        modeBtn("Shaded", "Lighting + shadows",                    SceneViewMode::LitShadows);
+        modeBtn("Full",   "Full: shadows + post-processing",       SceneViewMode::Full);
+        ImGui::SameLine(0, 20);
+    }
+
+    // Aspect ratio dropdown
     {
         int current = static_cast<int>(m_SceneViewAspect);
         ImGui::SetNextItemWidth(70.0f);

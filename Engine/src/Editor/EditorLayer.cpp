@@ -1329,8 +1329,19 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     if (m_EditorViewportRT && m_EditorViewportRT->IsValid() &&
         m_EditorViewportWidth > 0 && m_EditorViewportHeight > 0) {
 
-        // Shadow pass for editor camera (must run before RT render pass)
-        if (m_Camera && m_RenderSystem) {
+        // Apply scene view mode to render system before rendering
+        if (m_RenderSystem) {
+            bool wantShadows = (m_SceneViewMode == SceneViewMode::LitShadows || m_SceneViewMode == SceneViewMode::Full);
+            bool wantWireframe = (m_SceneViewMode == SceneViewMode::Wireframe);
+            bool wantLighting = (m_SceneViewMode != SceneViewMode::Wireframe && m_SceneViewMode != SceneViewMode::Solid);
+            m_RenderSystem->SetEditorWireframe(wantWireframe);
+            m_RenderSystem->SetEditorUnlit(m_SceneViewMode == SceneViewMode::Solid);
+            m_RenderSystem->SetShadowsEnabled(wantShadows);
+        }
+
+        // Shadow pass for editor camera (only in shadow modes)
+        if (m_Camera && m_RenderSystem &&
+            (m_SceneViewMode == SceneViewMode::LitShadows || m_SceneViewMode == SceneViewMode::Full)) {
             m_RenderSystem->RenderShadowPassForCamera(m_Camera);
         }
 

@@ -263,6 +263,12 @@ public:
     bool IsShadowsEnabled() const { return m_ShadowsEnabled; }
     void SetShadowsEnabled(bool enabled) { m_ShadowsEnabled = enabled; }
 
+    // Editor viewport display modes
+    void SetEditorWireframe(bool enabled) { m_EditorWireframe = enabled; }
+    void SetEditorUnlit(bool enabled) { m_EditorUnlit = enabled; }
+    bool GetEditorWireframe() const { return m_EditorWireframe; }
+    bool GetEditorUnlit() const { return m_EditorUnlit; }
+
     // Shadow quality settings
     f32 GetShadowDistance() const { return m_ShadowDistance; }
     void SetShadowDistance(f32 d);
@@ -621,6 +627,8 @@ private:
     std::unique_ptr<Renderer::VulkanPipeline> m_ShadowPipeline;
     Math::Matrix4 m_CurrentCascadeVP;  // Set per-cascade in RenderShadowPass, read by RenderEntityShadow
     bool m_ShadowsEnabled = true;
+    bool m_EditorWireframe = false;
+    bool m_EditorUnlit = false;
     f32 m_ShadowDistance = 100.0f;
     u32 m_PendingShadowResolution = 0; // 0 = no change pending
     bool m_CascadeProgressiveUpdate = false;

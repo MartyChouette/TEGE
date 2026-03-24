@@ -874,6 +874,16 @@ private:
     AspectRatio m_SceneViewAspect = AspectRatio::R16_9;
     AspectRatio m_GameViewAspect = AspectRatio::R16_9;
 
+    // Scene view display mode (like Blender's viewport shading)
+    enum class SceneViewMode : u8 {
+        Wireframe = 0,  // Wireframe only
+        Solid,          // Flat shading, no lighting
+        Lit,            // Lighting, no shadows (default)
+        LitShadows,     // Lighting + shadows
+        Full            // Everything: shadows + post-processing
+    };
+    SceneViewMode m_SceneViewMode = SceneViewMode::Lit;
+
     // Compute letterboxed image size from available space and aspect ratio
     static ImVec2 ComputeAspectConstrainedSize(f32 availW, f32 availH, f32 aspect);
 
