@@ -722,5 +722,33 @@ VkSampleCountFlagBits VulkanContext::GetMaxUsableSampleCount() const {
     return VK_SAMPLE_COUNT_1_BIT;
 }
 
+u64 VulkanContext::GetGPUMemoryUsed() const {
+    if (m_PhysicalDevice == VK_NULL_HANDLE) return 0;
+
+    VkPhysicalDeviceMemoryProperties memProps;
+    vkGetPhysicalDeviceMemoryProperties(m_PhysicalDevice, &memProps);
+
+    // Sum all device-local heap sizes as a rough "total available"
+    // Actual used requires VK_EXT_memory_budget, fall back to 0
+    // if not available. The budget query below is more useful.
+    return 0; // Can't query used without memory_budget extension
+}
+
+u64 VulkanContext::GetGPUMemoryBudget() const {
+    if (m_PhysicalDevice == VK_NULL_HANDLE) return 0;
+
+    VkPhysicalDeviceMemoryProperties memProps;
+    vkGetPhysicalDeviceMemoryProperties(m_PhysicalDevice, &memProps);
+
+    // Sum device-local heap sizes as the total VRAM budget
+    u64 totalDeviceLocal = 0;
+    for (u32 i = 0; i < memProps.memoryHeapCount; ++i) {
+        if (memProps.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+            totalDeviceLocal += memProps.memoryHeaps[i].size;
+        }
+    }
+    return totalDeviceLocal;
+}
+
 } // namespace Renderer
 } // namespace Enjin

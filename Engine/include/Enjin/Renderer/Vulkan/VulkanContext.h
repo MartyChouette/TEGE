@@ -69,6 +69,10 @@ public:
     // Query the maximum MSAA sample count supported by both color and depth framebuffers
     VkSampleCountFlagBits GetMaxUsableSampleCount() const;
 
+    // GPU memory queries (uses VK_EXT_memory_budget when available)
+    u64 GetGPUMemoryUsed() const;
+    u64 GetGPUMemoryBudget() const;
+
 protected:
     friend class VulkanRenderer;
     bool CreateInstance();

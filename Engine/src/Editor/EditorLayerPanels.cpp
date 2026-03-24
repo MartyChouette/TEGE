@@ -7388,10 +7388,23 @@ void EditorLayer::DrawDebugOverlay() {
             }
         }
 
-        // Memory
+        // Memory with budget
         f32 processMB = static_cast<f32>(m_PerfMetrics.processMemoryBytes) / (1024.0f * 1024.0f);
         ImGui::SameLine(0, 16);
-        ImGui::Text("Mem: %.0f MB", processMB);
+        ImGui::Text("RAM: %.0f MB", processMB);
+
+        // GPU VRAM budget
+        if (m_RenderSystem && m_RenderSystem->GetRenderer()) {
+            auto* ctx = m_RenderSystem->GetRenderer()->GetContext();
+            if (ctx) {
+                u64 gpuBudget = ctx->GetGPUMemoryBudget();
+                if (gpuBudget > 0) {
+                    f32 budgetMB = static_cast<f32>(gpuBudget) / (1024.0f * 1024.0f);
+                    ImGui::SameLine(0, 16);
+                    ImGui::Text("VRAM: %.0f MB", budgetMB);
+                }
+            }
+        }
 
         // Selected entity
         if (m_World && m_PrimarySelected != ECS::INVALID_ENTITY && m_World->IsValid(m_PrimarySelected)) {
