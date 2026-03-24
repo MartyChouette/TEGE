@@ -588,7 +588,7 @@ private:
 
     // Panel state
     bool m_ShowDemoWindow = false;
-    bool m_ShowStatsOverlay = true;
+    bool m_ShowStatsOverlay = false;
     bool m_ShowAboutDialog = false;
     bool m_ShowDebugWorkstation = false;  // F2 — Editor/Engine debug (legacy, superseded by m_ShowDebugOverlay)
     bool m_ShowGameDebug = false;          // F1 — Game debug (legacy, superseded by m_ShowDebugOverlay)

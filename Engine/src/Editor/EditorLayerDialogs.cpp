@@ -2135,11 +2135,12 @@ void EditorLayer::PushConsoleMessage(LogLevel level, LogCategory category, const
 void EditorLayer::CheckForCrashReport() {
     if (Debug::HasPreviousCrashReport()) {
         m_PreviousCrashReport = Debug::ReadPreviousCrashReport();
+        // Log quietly instead of popping up a dialog on startup.
+        // Report is still available via Help > Last Crash Report.
         if (!m_PreviousCrashReport.empty()) {
-            m_ShowCrashDialog = true;
-        } else {
-            Debug::ClearPreviousCrashReport();
+            ENJIN_LOG_WARN(Editor, "Previous session crashed. View report via Help > Last Crash Report.");
         }
+        Debug::ClearPreviousCrashReport();
     }
 }
 
