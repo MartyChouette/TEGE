@@ -302,6 +302,7 @@ private:
     void DrawSettingsSection_Camera();
     void DrawSettingsSection_EditorPerformance();
     void DrawSettingsSection_ExternalIDE();
+    void DrawSettingsSection_BugReporting();
     void DrawSettingsSection_Accessibility();
     void DrawSettingsSection_Fonts();
     // Project tab sections
@@ -358,6 +359,9 @@ private:
     void DrawDebugWorkstation();   // F2 — Editor/Engine debug (legacy)
     void DrawGameDebugPanel();     // F1 — Game debug (legacy)
     void DrawDebugOverlay();       // F1 — Transparent HUD overlay
+    void DrawDebugModeIndicator(); // Status bar indicator for F1/F2 debug groups
+    void ToggleGameDebug();        // F1 — Toggle game debug panels
+    void ToggleEngineDebug();      // F2 — Toggle engine debug panels
     void DrawSplashScreen();
     void DrawBuildDialog();
 
@@ -590,12 +594,14 @@ private:
     bool m_ShowDemoWindow = false;
     bool m_ShowStatsOverlay = false;
     bool m_ShowAboutDialog = false;
-    bool m_ShowDebugWorkstation = false;  // F2 — Editor/Engine debug (legacy, superseded by m_ShowDebugOverlay)
-    bool m_ShowGameDebug = false;          // F1 — Game debug (legacy, superseded by m_ShowDebugOverlay)
-    // TODO: Remove m_ShowDebugWorkstation + m_ShowGameDebug and their draw functions
-    // once m_ShowDebugOverlay fully replaces both. Keep for now to avoid breaking F1/F2 keybinds.
-    bool m_ShowDebugOverlay = false;       // F1 — Transparent HUD overlay
-    u8 m_DebugOverlayDetail = 0;           // 0=compact, 1=detailed
+    bool m_ShowDebugWorkstation = false;  // Legacy — kept for backward compat
+    bool m_ShowGameDebug = false;          // Legacy — kept for backward compat
+    bool m_ShowDebugOverlay = false;       // Debug HUD overlay (shown by F1)
+    u8 m_DebugOverlayDetail = 0;           // 0=compact, 1=detailed (shown by F2)
+
+    // F1/F2 debug group toggles
+    bool m_GameDebugActive = false;        // F1 — Game debug group (Console + overlay)
+    bool m_EngineDebugActive = false;      // F2 — Engine debug group (Profiler + Rendering + etc.)
 
     // User Manual panel state
     struct ManualSection {
@@ -792,6 +798,13 @@ private:
     // Custom templates
     std::vector<std::string> m_CustomTemplateNames;
     std::vector<std::string> m_CustomTemplatePaths;
+
+    // Project context menu / delete confirmation state
+    std::string m_HubContextProjectPath;       // Full path of project being acted on
+    bool m_HubOpenContextMenu = false;         // Whether to open context menu this frame
+    bool m_HubShowDeleteConfirm = false;       // Whether to show delete confirmation popup
+    std::string m_HubDeleteProjectPath;        // Path of project pending deletion
+    std::string m_HubDeleteProjectName;        // Display name for confirmation dialog
 
     // Project Hub methods
     void DrawProjectHub();
@@ -1276,6 +1289,20 @@ private:
     void DrawGitHubIssuesTab();
     void DrawGitHubSettingsTab();
     void QuickBugReport();  // F5 instant bug report with diagnostics
+
+    // Discord Bug Report Dialog (Help > Report Bug or Ctrl+Shift+B)
+    bool m_ShowDiscordBugDialog = false;
+    char m_DiscordBugTitleBuf[256] = {};
+    char m_DiscordBugDescBuf[4096] = {};
+    bool m_DiscordBugIncludeScreenshot = true;
+    bool m_DiscordBugIncludeLog = true;
+    enum class DiscordSendState : u8 { Idle, Sending, Sent, Failed };
+    DiscordSendState m_DiscordSendState = DiscordSendState::Idle;
+    std::string m_DiscordSendError;
+    std::vector<u8> m_DiscordScreenshotPng;   // Captured PNG bytes
+    void DrawDiscordBugReportDialog();
+    void SendDiscordBugReport();
+    void CaptureViewportScreenshot();          // Grabs editor viewport pixels -> m_DiscordScreenshotPng
     void DrawSaveDebugPanel();
     void DrawPlayModeDiffDialog();
     void DrawBugReportList();

@@ -176,6 +176,59 @@ static void DrawCenteredClippedText(ImDrawList* dl, const char* text, f32 cardX,
     }
 }
 
+// Open a folder in the platform file explorer
+static void OpenInExplorer(const std::string& folderPath) {
+#ifdef _WIN32
+    ShellExecuteA(nullptr, "explore", folderPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#elif defined(__APPLE__)
+    std::string cmd = "open \"" + folderPath + "\"";
+    std::system(cmd.c_str());
+#else
+    std::string cmd = "xdg-open \"" + folderPath + "\"";
+    std::system(cmd.c_str());
+#endif
+}
+
+// Duplicate an entire project folder: copies to ProjectName_Copy, renames the .enjinproject file inside
+static std::string DuplicateProject(const std::string& projectFilePath) {
+    namespace fs = std::filesystem;
+    fs::path srcFile(projectFilePath);
+    fs::path srcDir = srcFile.parent_path();
+    fs::path parentDir = srcDir.parent_path();
+    std::string baseName = srcDir.filename().string();
+
+    // Find a unique destination name (ProjectName_Copy, ProjectName_Copy_2, etc.)
+    std::string destName = baseName + "_Copy";
+    fs::path destDir = parentDir / destName;
+    int suffix = 2;
+    while (fs::exists(destDir)) {
+        destName = baseName + "_Copy_" + std::to_string(suffix++);
+        destDir = parentDir / destName;
+    }
+
+    // Copy the entire folder
+    std::error_code ec;
+    fs::copy(srcDir, destDir, fs::copy_options::recursive, ec);
+    if (ec) {
+        ENJIN_LOG_ERROR(Build, "Failed to duplicate project: {}", ec.message());
+        return "";
+    }
+
+    // Rename the .enjinproject file inside the copy to match the new folder name
+    fs::path oldProjFile = destDir / srcFile.filename();
+    fs::path newProjFile = destDir / (destName + ".enjinproject");
+    if (fs::exists(oldProjFile) && oldProjFile != newProjFile) {
+        fs::rename(oldProjFile, newProjFile, ec);
+        if (ec) {
+            ENJIN_LOG_WARN(Build, "Duplicated project folder but could not rename project file: {}", ec.message());
+            // Return the old file path as fallback
+            return oldProjFile.string();
+        }
+    }
+
+    return newProjFile.string();
+}
+
 void EditorLayer::DrawProjectHub() {
     ImGuiIO& io = ImGui::GetIO();
 
@@ -247,6 +300,119 @@ void EditorLayer::DrawProjectHub() {
                 case HubPage::WizardTemplate: DrawHubWizardTemplate(drawList, area, contentY, sidebarW); break;
                 case HubPage::Demos:          DrawHubDemosTab(drawList, area, contentY, sidebarW);       break;
             }
+        }
+
+        // ===== Project context menu (shared popup for sidebar and landing page) =====
+        if (m_HubOpenContextMenu) {
+            ImGui::OpenPopup("##HubProjectContextMenu");
+            m_HubOpenContextMenu = false;
+        }
+        if (ImGui::BeginPopup("##HubProjectContextMenu")) {
+            std::filesystem::path ctxPath(m_HubContextProjectPath);
+            std::string ctxName = ctxPath.stem().string();
+            bool ctxExists = std::filesystem::exists(m_HubContextProjectPath);
+
+            // Header: project name (non-interactive)
+            ImGui::TextDisabled("%s", ctxName.c_str());
+            ImGui::Separator();
+
+            // Open
+            if (ImGui::MenuItem(">>  Open", nullptr, false, ctxExists)) {
+                if (m_SceneManager.LoadProject(m_HubContextProjectPath)) {
+                    MigrateEditorSettingsToProject();
+                    m_EditorSettings.AddRecentProject(m_HubContextProjectPath);
+                    m_EditorSettings.lastProjectDir = ctxPath.parent_path().parent_path().string();
+                    m_EditorSettings.Save();
+                    auto& scenes = m_SceneManager.GetScenes();
+                    if (!scenes.empty()) {
+                        auto projDir = ctxPath.parent_path();
+                        OpenScene((projDir / scenes[0].path).string());
+                    }
+                    m_ShowProjectHub = false;
+                }
+            }
+
+            // Duplicate
+            if (ImGui::MenuItem("++  Duplicate", nullptr, false, ctxExists)) {
+                std::string newPath = DuplicateProject(m_HubContextProjectPath);
+                if (!newPath.empty()) {
+                    m_EditorSettings.AddRecentProject(newPath);
+                    m_EditorSettings.Save();
+                    ENJIN_LOG_INFO(Build, "Duplicated project to: {}", newPath);
+                }
+            }
+
+            ImGui::Separator();
+
+            // Open in Explorer
+            if (ImGui::MenuItem("[]  Open in Explorer", nullptr, false, ctxExists)) {
+                OpenInExplorer(ctxPath.parent_path().string());
+            }
+
+            // Copy Path
+            if (ImGui::MenuItem("=   Copy Path")) {
+                ImGui::SetClipboardText(m_HubContextProjectPath.c_str());
+            }
+
+            ImGui::Separator();
+
+            // Remove from List
+            if (ImGui::MenuItem("x   Remove from List")) {
+                m_EditorSettings.RemoveRecentProject(m_HubContextProjectPath);
+                m_EditorSettings.Save();
+            }
+
+            // Delete
+            if (ImGui::MenuItem("X   Delete Project...", nullptr, false, ctxExists)) {
+                m_HubShowDeleteConfirm = true;
+                m_HubDeleteProjectPath = m_HubContextProjectPath;
+                m_HubDeleteProjectName = ctxName;
+            }
+
+            ImGui::EndPopup();
+        }
+
+        // ===== Delete confirmation modal =====
+        if (m_HubShowDeleteConfirm) {
+            ImGui::OpenPopup("Delete Project?");
+            m_HubShowDeleteConfirm = false;
+        }
+        if (ImGui::BeginPopupModal("Delete Project?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Delete project '%s'?", m_HubDeleteProjectName.c_str());
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "This will permanently delete the project folder.");
+            ImGui::Text("This cannot be undone.");
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                m_HubDeleteProjectPath.clear();
+                m_HubDeleteProjectName.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.15f, 0.15f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.2f, 0.2f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.95f, 0.25f, 0.25f, 1.0f));
+            if (ImGui::Button("Delete", ImVec2(120, 0))) {
+                std::filesystem::path delPath(m_HubDeleteProjectPath);
+                std::filesystem::path delDir = delPath.parent_path();
+                std::error_code ec;
+                std::filesystem::remove_all(delDir, ec);
+                if (ec) {
+                    ENJIN_LOG_ERROR(Build, "Failed to delete project '{}': {}", m_HubDeleteProjectName, ec.message());
+                } else {
+                    ENJIN_LOG_INFO(Build, "Deleted project: {}", m_HubDeleteProjectName);
+                }
+                m_EditorSettings.RemoveRecentProject(m_HubDeleteProjectPath);
+                m_EditorSettings.Save();
+                m_HubDeleteProjectPath.clear();
+                m_HubDeleteProjectName.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleColor(3);
+
+            ImGui::EndPopup();
         }
     }
     ImGui::End();
@@ -393,6 +559,17 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
                     }
                 }
                 m_ShowProjectHub = false;
+            }
+
+            // Right-click context menu
+            if (hovered && ImGui::IsMouseClicked(1)) {
+                m_HubContextProjectPath = m_EditorSettings.recentProjects[i];
+                m_HubOpenContextMenu = true;
+            }
+
+            // Tooltip: full path on hover
+            if (hovered) {
+                ImGui::SetTooltip("%s", m_EditorSettings.recentProjects[i].c_str());
             }
 
             curY += rowH + rowPad;
@@ -679,9 +856,9 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
 
                 // Hit test
                 ImVec2 cMin(cx, cy), cMax(cx + cardW, cy + cardH);
-                bool hovered = !missing &&
-                    (io.MousePos.x >= cMin.x && io.MousePos.x <= cMax.x &&
-                     io.MousePos.y >= cMin.y && io.MousePos.y <= cMax.y);
+                bool anyHovered = (io.MousePos.x >= cMin.x && io.MousePos.x <= cMax.x &&
+                                   io.MousePos.y >= cMin.y && io.MousePos.y <= cMax.y);
+                bool hovered = anyHovered && !missing;
 
                 // Card background
                 ImU32 cardBg = hovered ? IM_COL32(32, 38, 55, 255) : IM_COL32(22, 25, 35, 255);
@@ -804,6 +981,17 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
                         }
                         m_ShowProjectHub = false;
                     }
+                }
+
+                // Right-click context menu (works on both ready and missing cards)
+                if (anyHovered && ImGui::IsMouseClicked(1)) {
+                    m_HubContextProjectPath = proj->fullPath;
+                    m_HubOpenContextMenu = true;
+                }
+
+                // Tooltip: full path on hover
+                if (anyHovered) {
+                    ImGui::SetTooltip("%s", proj->fullPath.c_str());
                 }
             }
 

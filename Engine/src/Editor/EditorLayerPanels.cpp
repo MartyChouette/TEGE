@@ -5134,10 +5134,10 @@ void EditorLayer::RegisterPaletteCommands() {
     // Feedback / Bug Reporting
     m_CommandPalette.RegisterCommand({
         "Report Bug", "Help", "Ctrl+Shift+B",
-        "Open the bug report form",
+        "Open the Discord bug report dialog",
         [this]() {
-            SetPanelVisibility(EditorPanel::FeedbackPanel, true);
-            m_FeedbackTab = FeedbackTab::NewBug;
+            m_ShowDiscordBugDialog = true;
+            m_DiscordSendState = DiscordSendState::Idle;
         }
     });
     m_CommandPalette.RegisterCommand({
@@ -7390,9 +7390,9 @@ void EditorLayer::DrawDebugOverlay() {
             ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "PAUSED");
     }
 
-    // F2 hint
-    ImGui::SameLine(ImGui::GetContentRegionMax().x - 130);
-    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 0.7f), "F1 close | F2 detail");
+    // F1/F2 hint
+    ImGui::SameLine(ImGui::GetContentRegionMax().x - 195);
+    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 0.7f), "F1 Game Debug | F2 Engine Debug");
 
     // --- Detailed line (F2 to toggle) ---
     if (m_DebugOverlayDetail >= 1) {
@@ -7452,6 +7452,124 @@ void EditorLayer::DrawDebugOverlay() {
     }
 
     ImGui::End();
+}
+
+// ---------------------------------------------------------------------------
+// F1 — Toggle Game Debug group
+// Console panel + debug overlay (FPS, draw calls, entities)
+// ---------------------------------------------------------------------------
+void EditorLayer::ToggleGameDebug() {
+    m_GameDebugActive = !m_GameDebugActive;
+
+    // Toggle Console panel
+    SetPanelVisibility(EditorPanel::Console, m_GameDebugActive);
+
+    // Toggle the compact debug overlay
+    m_ShowDebugOverlay = m_GameDebugActive;
+
+    // If turning off game debug, reset detail level so F2 starts clean
+    if (!m_GameDebugActive) {
+        m_DebugOverlayDetail = 0;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// F2 — Toggle Engine Debug group
+// Profiler, Rendering, PostProcessing, RetroEffects, SaveDebug panels +
+// detailed overlay + collider wireframes
+// ---------------------------------------------------------------------------
+void EditorLayer::ToggleEngineDebug() {
+    m_EngineDebugActive = !m_EngineDebugActive;
+
+    // Toggle engine/editor debug panels
+    SetPanelVisibility(EditorPanel::Profiler, m_EngineDebugActive);
+    SetPanelVisibility(EditorPanel::Rendering, m_EngineDebugActive);
+    SetPanelVisibility(EditorPanel::PostProcessing, m_EngineDebugActive);
+    SetPanelVisibility(EditorPanel::RetroEffects, m_EngineDebugActive);
+    SetPanelVisibility(EditorPanel::SaveDebug, m_EngineDebugActive);
+
+    // Show detailed overlay line when engine debug is active
+    m_DebugOverlayDetail = m_EngineDebugActive ? 1 : 0;
+
+    // Also ensure the overlay HUD itself is visible when engine debug is on
+    if (m_EngineDebugActive) {
+        m_ShowDebugOverlay = true;
+        m_GameDebugActive = true;  // Keep game debug state in sync
+    }
+
+    // Toggle collider wireframe visualization
+    m_ShowColliderWireframes = m_EngineDebugActive;
+}
+
+// ---------------------------------------------------------------------------
+// Debug Mode Status Indicator — bottom-right pill showing active debug groups
+// ---------------------------------------------------------------------------
+void EditorLayer::DrawDebugModeIndicator() {
+    if (!m_GameDebugActive && !m_EngineDebugActive) return;
+
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    f32 padding = 10.0f;
+
+    // Calculate indicator width based on content
+    const char* f1Label = "F1: Game Debug";
+    const char* f2Label = "F2: Engine Debug";
+    f32 f1Width = m_GameDebugActive ? ImGui::CalcTextSize(f1Label).x : 0.0f;
+    f32 f2Width = m_EngineDebugActive ? ImGui::CalcTextSize(f2Label).x : 0.0f;
+    f32 dotWidth = 8.0f;   // colored dot
+    f32 spacing = 12.0f;   // between dot and text
+    f32 groupSpacing = 20.0f; // between F1 and F2 groups
+    f32 hPad = 12.0f;      // horizontal padding inside pill
+
+    f32 totalWidth = hPad * 2;
+    if (m_GameDebugActive) totalWidth += dotWidth + spacing + f1Width;
+    if (m_GameDebugActive && m_EngineDebugActive) totalWidth += groupSpacing;
+    if (m_EngineDebugActive) totalWidth += dotWidth + spacing + f2Width;
+
+    f32 indicatorH = 26.0f;
+    ImVec2 indicatorPos(
+        vp->WorkPos.x + vp->WorkSize.x - totalWidth - padding,
+        vp->WorkPos.y + vp->WorkSize.y - indicatorH - padding);
+
+    ImGui::SetNextWindowPos(indicatorPos);
+    ImGui::SetNextWindowSize(ImVec2(totalWidth, indicatorH));
+    ImGui::SetNextWindowBgAlpha(0.75f);
+
+    ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
+        ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoInputs;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 8.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(hPad, 4.0f));
+
+    if (ImGui::Begin("##DebugModeIndicator", nullptr, flags)) {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 cursor = ImGui::GetCursorScreenPos();
+        f32 textY = cursor.y + 1.0f;
+
+        if (m_GameDebugActive) {
+            // Green dot + "F1: Game Debug"
+            ImVec2 dotCenter(cursor.x + dotWidth * 0.5f, textY + ImGui::GetTextLineHeight() * 0.5f);
+            dl->AddCircleFilled(dotCenter, dotWidth * 0.5f, IM_COL32(80, 220, 120, 255));
+            ImGui::SetCursorScreenPos(ImVec2(cursor.x + dotWidth + spacing, textY));
+            ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.6f, 1.0f), "%s", f1Label);
+            ImGui::SameLine(0, groupSpacing);
+            cursor = ImGui::GetCursorScreenPos();
+            textY = cursor.y;
+        }
+
+        if (m_EngineDebugActive) {
+            // Orange dot + "F2: Engine Debug"
+            ImVec2 dotCenter(cursor.x + dotWidth * 0.5f, textY + ImGui::GetTextLineHeight() * 0.5f);
+            dl->AddCircleFilled(dotCenter, dotWidth * 0.5f, IM_COL32(255, 180, 60, 255));
+            ImGui::SetCursorScreenPos(ImVec2(cursor.x + dotWidth + spacing, textY));
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", f2Label);
+        }
+    }
+    ImGui::End();
+    ImGui::PopStyleVar(2);
 }
 
 // ---------------------------------------------------------------------------

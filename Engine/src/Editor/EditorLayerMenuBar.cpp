@@ -585,6 +585,15 @@ void EditorLayer::DrawMenuBar() {
                 SetPanelVisibility(EditorPanel::SceneList, sceneList);
             }
             ImGui::Separator();
+            if (ImGui::MenuItem("Game Debug", "F1", m_GameDebugActive)) {
+                ToggleGameDebug();
+            }
+            ImGui::SetItemTooltip("Toggle Console panel + FPS/stats debug overlay");
+            if (ImGui::MenuItem("Engine Debug", "F2", m_EngineDebugActive)) {
+                ToggleEngineDebug();
+            }
+            ImGui::SetItemTooltip("Toggle Profiler, Rendering, PostProcessing, SaveDebug panels + colliders");
+            ImGui::Separator();
             ImGui::MenuItem("UV Preview", nullptr, &m_ShowUVPreview);
             ImGui::MenuItem("Show Colliders", nullptr, &m_ShowColliderWireframes);
             ImGui::MenuItem("Gamepad Editor", nullptr, &m_GamepadEditorEnabled);
@@ -1065,8 +1074,8 @@ void EditorLayer::DrawMenuBar() {
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Report Bug...", "Ctrl+Shift+B")) {
-                SetPanelVisibility(EditorPanel::FeedbackPanel, true);
-                m_FeedbackTab = FeedbackTab::NewBug;
+                m_ShowDiscordBugDialog = true;
+                m_DiscordSendState = DiscordSendState::Idle;
             }
             if (ImGui::MenuItem("Send Feedback...")) {
                 SetPanelVisibility(EditorPanel::FeedbackPanel, true);

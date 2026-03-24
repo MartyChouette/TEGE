@@ -924,6 +924,13 @@ void EditorLayer::Update(f32 deltaTime) {
             m_ShowShortcutsHelp = !m_ShowShortcutsHelp;
             m_ShortcutSearchBuf[0] = '\0';
         }
+
+        // Discord bug report (Ctrl+Shift+B)
+        if (Input::IsKeyDown(KeyCode::LeftControl) && Input::IsKeyDown(KeyCode::LeftShift) &&
+            Input::IsKeyPressed(KeyCode::B)) {
+            m_ShowDiscordBugDialog = true;
+            m_DiscordSendState = DiscordSendState::Idle;
+        }
     }
 
     // Quake-style drop-down console (backtick/tilde toggle)
@@ -950,16 +957,12 @@ void EditorLayer::Update(f32 deltaTime) {
 
     // Focus mode toggle (F11) and exit (Escape)
     // F11 toggles between editor view and fullscreen game view while playing
-    // F1 = Debug HUD overlay, F2 = cycle detail level
+    // F1 = Game Debug group, F2 = Engine Debug group
     if (Input::IsKeyPressed(KeyCode::F1)) {
-        m_ShowDebugOverlay = !m_ShowDebugOverlay;
+        ToggleGameDebug();
     }
     if (Input::IsKeyPressed(KeyCode::F2)) {
-        if (m_ShowDebugOverlay) {
-            m_DebugOverlayDetail = (m_DebugOverlayDetail + 1) % 2;
-        } else {
-            m_ShowDebugOverlay = true;  // F2 also opens if closed
-        }
+        ToggleEngineDebug();
     }
 
     // F5 = Quick Bug Report (instant capture and submit to GitHub)
@@ -3169,6 +3172,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawBuildDialog();
     }
 
+    // Discord Bug Report dialog
+    if (m_ShowDiscordBugDialog) {
+        DrawDiscordBugReportDialog();
+    }
+
     // New Project dialog
     if (m_ShowNewProjectDialog) {
         DrawNewProjectDialog();
@@ -3262,6 +3270,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
 
     // Draw notification toasts (always on top)
     DrawNotifications(m_LastDeltaTime);
+
+    // F1/F2 debug mode status indicator
+    DrawDebugModeIndicator();
 
     // End profiler frame measurement
     Debug::Profiler::Instance().EndFrame();

@@ -164,6 +164,7 @@ struct EditorSettings {
     static constexpr int MAX_RECENT_PROJECTS = 8;
 
     void AddRecentProject(const std::string& path);
+    void RemoveRecentProject(const std::string& path);
 
     // Recently-used components (most recent first, max 5)
     std::vector<std::string> recentComponents;
@@ -188,6 +189,9 @@ struct EditorSettings {
     // Auto-save
     bool autoSaveEnabled = true;
     f32 autoSaveIntervalMinutes = 5.0f;
+
+    // Discord bug report webhook
+    std::string discordWebhookUrl;  // Empty = disabled; set in Settings > System
 
     // Save/Load
     bool Save(const std::string& path = "") const;

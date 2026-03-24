@@ -239,6 +239,12 @@ void EditorSettings::AddRecentProject(const std::string& path) {
     }
 }
 
+void EditorSettings::RemoveRecentProject(const std::string& path) {
+    recentProjects.erase(
+        std::remove(recentProjects.begin(), recentProjects.end(), path),
+        recentProjects.end());
+}
+
 void EditorSettings::AddRecentComponent(const std::string& name) {
     recentComponents.erase(
         std::remove(recentComponents.begin(), recentComponents.end(), name),
@@ -420,6 +426,11 @@ bool EditorSettings::Save(const std::string& path) const {
         // Auto-save
         j["autoSaveEnabled"] = autoSaveEnabled;
         j["autoSaveIntervalMinutes"] = autoSaveIntervalMinutes;
+
+        // Discord bug report webhook
+        if (!discordWebhookUrl.empty()) {
+            j["discordWebhookUrl"] = discordWebhookUrl;
+        }
 
         std::ofstream file(savePath);
         if (!file.is_open()) {
@@ -607,6 +618,9 @@ bool EditorSettings::Load(const std::string& path) {
         // Auto-save
         if (j.contains("autoSaveEnabled")) autoSaveEnabled = j["autoSaveEnabled"].get<bool>();
         if (j.contains("autoSaveIntervalMinutes")) autoSaveIntervalMinutes = std::clamp(j["autoSaveIntervalMinutes"].get<f32>(), 1.0f, 60.0f);
+
+        // Discord bug report webhook
+        if (j.contains("discordWebhookUrl")) discordWebhookUrl = j["discordWebhookUrl"].get<std::string>();
 
         ENJIN_LOG_INFO(Editor, "Loaded editor settings from %s", loadPath.c_str());
         return true;
