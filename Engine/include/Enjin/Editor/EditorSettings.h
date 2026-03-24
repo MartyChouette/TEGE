@@ -109,7 +109,7 @@ struct EditorSettings {
     bool autoFocusMode = false;  // Auto-enter focus mode when pressing Play
 
     // Performance / Frame Rate
-    FrameRateLimit editorFrameRateLimit = FrameRateLimit::FPS60;
+    FrameRateLimit editorFrameRateLimit = FrameRateLimit::FPS120;
     bool editorVSync = false;
     bool reduceFrameRateWhenUnfocused = true;
     u32 unfocusedFrameRate = 15;
