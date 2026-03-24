@@ -546,7 +546,8 @@ private:
 #if !ENJIN_RENDERER_WEBGPU
     void RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer);
     void RenderEntityGhost(Entity entity, const Math::Matrix4& modelMatrix,
-                           const Math::Vector3& tint, f32 opacity);
+                           const Math::Vector3& tint, f32 opacity,
+                           const std::vector<Math::Matrix4>* skinningMatrices = nullptr);
     void RenderOnionSkinGhosts();
     void CreateShadowPipeline();
     // Recreate all pipelines. If gpuAlreadyIdle is true, skips vkDeviceWaitIdle (caller guarantees GPU is idle).
@@ -568,6 +569,7 @@ private:
     ComponentStorage<TransformComponent>* m_CachedTransformStorage = nullptr;
     ComponentStorage<MeshComponent>* m_CachedMeshStorage = nullptr;
     ComponentStorage<MaterialComponent>* m_CachedMaterialStorage = nullptr;
+    ComponentStorage<MaterialSlotsComponent>* m_CachedMaterialSlotsStorage = nullptr;
     ComponentStorage<AnimatorComponent>* m_CachedAnimatorStorage = nullptr;
     ComponentStorage<TextComponent>* m_CachedTextStorage = nullptr;
 
@@ -1089,6 +1091,10 @@ private:
 
     // Onion skin ghosts (set by editor, rendered in main pass only)
     std::vector<Editor::OnionSkinGhost> m_OnionSkinGhosts;
+
+    // Reusable bone buffer for skeletal onion skin ghost rendering
+    std::unique_ptr<Renderer::VulkanBuffer> m_GhostBoneBuffer;
+    usize m_GhostBoneBufferCapacity = 0;  // Current capacity in bytes
 
     void CreateRTDummyResources();
     void DestroyRTDummyResources();

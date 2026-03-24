@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Math/Vector.h"
+#include "Enjin/Math/Matrix.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Tween.h"
@@ -55,6 +56,10 @@ struct OnionSkinGhost {
     f32 alpha;
     Math::Vector3 tint;
     f32 ghostOpacity;
+
+    // 3D skeletal onion skin: pre-computed skinning matrices for this ghost frame.
+    // Empty for non-skinned (2D sprite) ghosts.
+    std::vector<Math::Matrix4> skinningMatrices;
 };
 
 // --- Keyframe data ---

@@ -401,6 +401,10 @@ public:
     Math::Matrix4 GetBoneWorldTransform(const std::string& boneName) const;
     Math::Matrix4 GetBoneWorldTransform(i32 boneIndex) const;
 
+    // Sample the current animation at an arbitrary time and return skinning matrices.
+    // Used for onion skinning in the editor. Returns empty vector if no animation/skeleton.
+    std::vector<Math::Matrix4> SampleSkinningMatricesAtTime(f32 time) const;
+
 private:
     void SampleAnimation(const SkeletalAnimation& anim, f32 time, SkeletonPose& outPose);
     void BlendPoses(const SkeletonPose& a, const SkeletonPose& b, f32 t, SkeletonPose& out);

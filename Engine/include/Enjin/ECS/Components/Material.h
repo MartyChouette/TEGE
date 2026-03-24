@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
 #include <string>
+#include <vector>
 
 namespace Enjin {
 
@@ -314,6 +315,24 @@ struct alignas(16) MaterialGPU {
 
     // Dithered gradient: encoded in surfaceParam1 (values > 1.0 = dither gradient mode)
     // surfaceParam1 = 100.0 + bands + pattern * 0.1
+};
+
+// Multi-material component for entities with sub-meshes.
+// Each slot corresponds to a SubMesh::materialSlot index in MeshComponent.
+// When present, the render system draws each sub-mesh with its corresponding
+// material slot instead of using the single MaterialComponent.
+struct MaterialSlotsComponent {
+    std::vector<MaterialComponent> slots;
+
+    // Get a material slot by index (returns nullptr if out of range)
+    MaterialComponent* GetSlot(i32 index) {
+        if (index < 0 || index >= static_cast<i32>(slots.size())) return nullptr;
+        return &slots[index];
+    }
+    const MaterialComponent* GetSlot(i32 index) const {
+        if (index < 0 || index >= static_cast<i32>(slots.size())) return nullptr;
+        return &slots[index];
+    }
 };
 
 } // namespace ECS

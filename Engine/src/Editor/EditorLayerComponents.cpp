@@ -251,6 +251,90 @@ void EditorLayer::DrawMeshComponent(ECS::Entity entity) {
 
         ImGui::Text("Vertices: %zu", mesh->vertices.size());
         ImGui::Text("Indices: %zu", mesh->indices.size());
+
+        // Mesh Info read-only panel
+        if (mesh->IsValid() && ImGui::TreeNode("Mesh Info")) {
+            usize vertexCount = mesh->vertices.size();
+            usize indexCount = mesh->indices.size();
+            usize triangleCount = indexCount / 3;
+
+            ImGui::Text("Vertex Count: %zu", vertexCount);
+            ImGui::Text("Triangle Count: %zu", triangleCount);
+            ImGui::Text("Index Count: %zu", indexCount);
+
+            // Compute bounding box from vertices (use cached AABB if valid)
+            Math::Vector3 bboxMin, bboxMax;
+            if (mesh->aabbDirty) {
+                bboxMin = Math::Vector3( 1e30f,  1e30f,  1e30f);
+                bboxMax = Math::Vector3(-1e30f, -1e30f, -1e30f);
+                for (const auto& v : mesh->vertices) {
+                    if (v.position.x < bboxMin.x) bboxMin.x = v.position.x;
+                    if (v.position.y < bboxMin.y) bboxMin.y = v.position.y;
+                    if (v.position.z < bboxMin.z) bboxMin.z = v.position.z;
+                    if (v.position.x > bboxMax.x) bboxMax.x = v.position.x;
+                    if (v.position.y > bboxMax.y) bboxMax.y = v.position.y;
+                    if (v.position.z > bboxMax.z) bboxMax.z = v.position.z;
+                }
+                mesh->cachedAABBMin = bboxMin;
+                mesh->cachedAABBMax = bboxMax;
+                mesh->aabbDirty = false;
+            } else {
+                bboxMin = mesh->cachedAABBMin;
+                bboxMax = mesh->cachedAABBMax;
+            }
+            Math::Vector3 dims = bboxMax - bboxMin;
+            ImGui::Text("Bounds: %.2f x %.2f x %.2f", dims.x, dims.y, dims.z);
+            ImGui::Text("  Min: (%.3f, %.3f, %.3f)", bboxMin.x, bboxMin.y, bboxMin.z);
+            ImGui::Text("  Max: (%.3f, %.3f, %.3f)", bboxMax.x, bboxMax.y, bboxMax.z);
+
+            // Check for bone weights
+            bool hasBones = false;
+            u32 maxBoneIndex = 0;
+            for (const auto& v : mesh->vertices) {
+                f32 totalWeight = v.boneWeights.x + v.boneWeights.y + v.boneWeights.z + v.boneWeights.w;
+                if (totalWeight > 0.001f) {
+                    hasBones = true;
+                    for (int bi = 0; bi < 4; ++bi) {
+                        if (v.boneIndices[bi] > maxBoneIndex) {
+                            maxBoneIndex = v.boneIndices[bi];
+                        }
+                    }
+                }
+            }
+            if (hasBones) {
+                ImGui::Text("Bone Weights: Yes (%u bones referenced)", maxBoneIndex + 1);
+            } else {
+                ImGui::TextDisabled("Bone Weights: No");
+            }
+
+            // UV channels — check if any vertex has non-zero UVs
+            bool hasUV = false;
+            for (const auto& v : mesh->vertices) {
+                if (v.uv.x != 0.0f || v.uv.y != 0.0f) {
+                    hasUV = true;
+                    break;
+                }
+            }
+            ImGui::Text("UV Channel: %s", hasUV ? "Yes" : "No");
+
+            // Memory estimate
+            usize vertexMemory = vertexCount * sizeof(ECS::MeshComponent::Vertex);
+            usize indexMemory = indexCount * sizeof(u32);
+            usize totalMemory = vertexMemory + indexMemory;
+            if (totalMemory >= 1024 * 1024) {
+                ImGui::Text("Memory: %.2f MB (verts: %.2f MB, idx: %.2f MB)",
+                    static_cast<f32>(totalMemory) / (1024.0f * 1024.0f),
+                    static_cast<f32>(vertexMemory) / (1024.0f * 1024.0f),
+                    static_cast<f32>(indexMemory) / (1024.0f * 1024.0f));
+            } else {
+                ImGui::Text("Memory: %.1f KB (verts: %.1f KB, idx: %.1f KB)",
+                    static_cast<f32>(totalMemory) / 1024.0f,
+                    static_cast<f32>(vertexMemory) / 1024.0f,
+                    static_cast<f32>(indexMemory) / 1024.0f);
+            }
+
+            ImGui::TreePop();
+        }
     }
 }
 
@@ -698,6 +782,162 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Use vertex lighting only (no per-pixel), faceted PS1/N64 look");
 
             ImGui::TreePop();
+        }
+    }
+}
+
+void EditorLayer::DrawMaterialSlotsComponent(ECS::Entity entity) {
+    bool slotsOpen = ImGui::CollapsingHeader("[M+] Material Slots", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("MaterialSlotsCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::MaterialSlotsComponent>(entity, "materialSlots", "Material Slots");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (slotsOpen) {
+        ECS::MaterialSlotsComponent* matSlots = m_World->GetComponent<ECS::MaterialSlotsComponent>(entity);
+        if (!matSlots || matSlots->slots.empty()) {
+            ImGui::TextDisabled("No material slots");
+            return;
+        }
+
+        // Also get mesh to show sub-mesh names
+        ECS::MeshComponent* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
+
+        ImGui::Text("%zu material slot(s)", matSlots->slots.size());
+        ImGui::Separator();
+
+        for (usize i = 0; i < matSlots->slots.size(); ++i) {
+            ECS::MaterialComponent& slot = matSlots->slots[i];
+
+            // Build header label: "Slot N (SubMeshName)" if we can find a sub-mesh with this slot
+            std::string headerLabel = "Slot " + std::to_string(i);
+            if (mesh) {
+                for (const auto& sm : mesh->subMeshes) {
+                    if (sm.materialSlot == static_cast<i32>(i) && !sm.name.empty()) {
+                        headerLabel += " (" + sm.name + ")";
+                        break;
+                    }
+                }
+            }
+            headerLabel += "###matSlot" + std::to_string(i);
+
+            if (ImGui::TreeNode(headerLabel.c_str())) {
+                // Base color
+                f32 baseColor[3] = { slot.baseColor.x, slot.baseColor.y, slot.baseColor.z };
+                std::string bcLabel = "Base Color##slot" + std::to_string(i);
+                if (ImGui::ColorEdit3(bcLabel.c_str(), baseColor)) {
+                    slot.baseColor = Math::Vector3(baseColor[0], baseColor[1], baseColor[2]);
+                }
+
+                // Opacity
+                std::string opLabel = "Opacity##slot" + std::to_string(i);
+                ImGui::DragFloat(opLabel.c_str(), &slot.opacity, 0.01f, 0.0f, 1.0f);
+
+                // PBR
+                std::string metLabel = "Metallic##slot" + std::to_string(i);
+                ImGui::DragFloat(metLabel.c_str(), &slot.metallic, 0.01f, 0.0f, 1.0f);
+                std::string roughLabel = "Roughness##slot" + std::to_string(i);
+                ImGui::DragFloat(roughLabel.c_str(), &slot.roughness, 0.01f, 0.0f, 1.0f);
+
+                // Emission
+                f32 emissive[3] = { slot.emissiveColor.x, slot.emissiveColor.y, slot.emissiveColor.z };
+                std::string emLabel = "Emissive##slot" + std::to_string(i);
+                if (ImGui::ColorEdit3(emLabel.c_str(), emissive)) {
+                    slot.emissiveColor = Math::Vector3(emissive[0], emissive[1], emissive[2]);
+                }
+                std::string esLabel = "Emissive Strength##slot" + std::to_string(i);
+                ImGui::DragFloat(esLabel.c_str(), &slot.emissiveStrength, 0.1f, 0.0f, 100.0f);
+
+                // Rendering flags
+                std::string dsLabel = "Double Sided##slot" + std::to_string(i);
+                ImGui::Checkbox(dsLabel.c_str(), &slot.doubleSided);
+                std::string csLabel = "Cast Shadows##slot" + std::to_string(i);
+                ImGui::Checkbox(csLabel.c_str(), &slot.castShadows);
+                std::string rsLabel = "Receive Shadows##slot" + std::to_string(i);
+                ImGui::Checkbox(rsLabel.c_str(), &slot.receiveShadows);
+
+                // Alpha mode
+                const char* alphaModes[] = { "Opaque", "Mask", "Blend" };
+                int currentMode = static_cast<int>(slot.alphaMode);
+                std::string amLabel = "Alpha Mode##slot" + std::to_string(i);
+                if (ImGui::Combo(amLabel.c_str(), &currentMode, alphaModes, 3)) {
+                    slot.alphaMode = static_cast<ECS::MaterialComponent::AlphaMode>(currentMode);
+                }
+
+                // Texture paths
+                std::string texLabel = "Textures##slot" + std::to_string(i);
+                if (ImGui::TreeNode(texLabel.c_str())) {
+                    // Helper: accept image drag-drop on last widget
+                    auto textureDrop = [&](std::string& pathField, i32& cacheField) {
+                        if (ImGui::BeginDragDropTarget()) {
+                            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
+                                std::string p(static_cast<const char*>(payload->Data));
+                                std::string e = std::filesystem::path(p).extension().string();
+                                std::transform(e.begin(), e.end(), e.begin(),
+                                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                                if (e == ".png" || e == ".jpg" || e == ".jpeg" || e == ".tga" || e == ".bmp" || e == ".svg") {
+                                    pathField = p;
+                                    cacheField = -1;
+                                    slot.InvalidateTextureCache();
+                                    if (m_RenderSystem) m_RenderSystem->ClearFailedTexture(p);
+                                }
+                            }
+                            ImGui::EndDragDropTarget();
+                        }
+                    };
+
+                    char basePath[256];
+                    strncpy(basePath, slot.baseColorTexturePath.c_str(), sizeof(basePath) - 1);
+                    basePath[sizeof(basePath) - 1] = '\0';
+                    std::string bcTexLabel = "Base Color##slotTex" + std::to_string(i);
+                    if (ImGui::InputText(bcTexLabel.c_str(), basePath, sizeof(basePath))) {
+                        slot.baseColorTexturePath = basePath;
+                        if (slot.baseColorTexturePath.empty()) slot.baseColorTexture = -1;
+                        slot.InvalidateTextureCache();
+                    }
+                    textureDrop(slot.baseColorTexturePath, slot.baseColorTexture);
+
+                    char normalPath[256];
+                    strncpy(normalPath, slot.normalTexturePath.c_str(), sizeof(normalPath) - 1);
+                    normalPath[sizeof(normalPath) - 1] = '\0';
+                    std::string nmTexLabel = "Normal Map##slotTex" + std::to_string(i);
+                    if (ImGui::InputText(nmTexLabel.c_str(), normalPath, sizeof(normalPath))) {
+                        slot.normalTexturePath = normalPath;
+                        if (slot.normalTexturePath.empty()) slot.normalTexture = -1;
+                        slot.InvalidateTextureCache();
+                    }
+                    textureDrop(slot.normalTexturePath, slot.normalTexture);
+
+                    char mrPath[256];
+                    strncpy(mrPath, slot.metallicRoughnessTexturePath.c_str(), sizeof(mrPath) - 1);
+                    mrPath[sizeof(mrPath) - 1] = '\0';
+                    std::string mrTexLabel = "Metallic/Roughness##slotTex" + std::to_string(i);
+                    if (ImGui::InputText(mrTexLabel.c_str(), mrPath, sizeof(mrPath))) {
+                        slot.metallicRoughnessTexturePath = mrPath;
+                        if (slot.metallicRoughnessTexturePath.empty()) slot.metallicRoughnessTexture = -1;
+                        slot.InvalidateTextureCache();
+                    }
+                    textureDrop(slot.metallicRoughnessTexturePath, slot.metallicRoughnessTexture);
+
+                    char emissivePath[256];
+                    strncpy(emissivePath, slot.emissiveTexturePath.c_str(), sizeof(emissivePath) - 1);
+                    emissivePath[sizeof(emissivePath) - 1] = '\0';
+                    std::string emTexLabel = "Emissive Map##slotTex" + std::to_string(i);
+                    if (ImGui::InputText(emTexLabel.c_str(), emissivePath, sizeof(emissivePath))) {
+                        slot.emissiveTexturePath = emissivePath;
+                        if (slot.emissiveTexturePath.empty()) slot.emissiveTexture = -1;
+                        slot.InvalidateTextureCache();
+                    }
+                    textureDrop(slot.emissiveTexturePath, slot.emissiveTexture);
+
+                    ImGui::TreePop();
+                }
+
+                ImGui::TreePop();
+            }
         }
     }
 }

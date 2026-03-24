@@ -98,6 +98,7 @@ void RenderSystem::RefreshStorageCache() {
         m_CachedTransformStorage = nullptr;
         m_CachedMeshStorage = nullptr;
         m_CachedMaterialStorage = nullptr;
+        m_CachedMaterialSlotsStorage = nullptr;
         m_CachedAnimatorStorage = nullptr;
         m_CachedTextStorage = nullptr;
         return;
@@ -105,6 +106,7 @@ void RenderSystem::RefreshStorageCache() {
     m_CachedTransformStorage = m_World->GetComponentStorage<TransformComponent>();
     m_CachedMeshStorage = m_World->GetComponentStorage<MeshComponent>();
     m_CachedMaterialStorage = m_World->GetComponentStorage<MaterialComponent>();
+    m_CachedMaterialSlotsStorage = m_World->GetComponentStorage<MaterialSlotsComponent>();
     m_CachedAnimatorStorage = m_World->GetComponentStorage<AnimatorComponent>();
     m_CachedTextStorage = m_World->GetComponentStorage<TextComponent>();
 }
@@ -619,9 +621,11 @@ void RenderSystem::Shutdown() {
     m_TextTextureCache.clear();
     m_TextRasterizer.ClearFontCache();
 
-    // Clean up textures and bone buffer
+    // Clean up textures and bone buffers
     m_DefaultWhiteTexture.reset();
     m_DefaultBoneBuffer.reset();
+    m_GhostBoneBuffer.reset();
+    m_GhostBoneBufferCapacity = 0;
 
     // Clean up pipeline
     m_OffscreenPipeline.reset();
@@ -2060,24 +2064,162 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 }
             }
 
-            vkCmdPushConstants(commandBuffer, targetPipeline->GetLayout(),
-                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                sizeof(Renderer::PushConstants), &pushConstants);
+            // Multi-material sub-mesh rendering: if entity has MaterialSlotsComponent
+            // and the mesh has sub-meshes, draw each sub-mesh with its own material.
+            MeshComponent* meshForSubMesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
+            MaterialSlotsComponent* matSlots = m_CachedMaterialSlotsStorage ? m_CachedMaterialSlotsStorage->Get(entity) : nullptr;
+            bool useSubMeshes = meshForSubMesh && meshForSubMesh->HasSubMeshes() && matSlots && !matSlots->slots.empty();
 
-            if (renderData.poolAlloc.valid && m_GeometryPool) {
-                if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
-                vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
-                                 renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
-            } else if (renderData.vertexBuffer && renderData.indexBuffer) {
-                VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
-                VkDeviceSize offsets[] = { 0 };
-                vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-                vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
-                vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
-                m_GeometryPoolBound = false;
+            bool poolPath = renderData.poolAlloc.valid && m_GeometryPool;
+            if (useSubMeshes) {
+                // Bind vertex/index buffers once for all sub-meshes
+                if (poolPath) {
+                    if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
+                } else if (renderData.vertexBuffer && renderData.indexBuffer) {
+                    VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
+                    VkDeviceSize vbOffsets[] = { 0 };
+                    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, vbOffsets);
+                    vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+                    m_GeometryPoolBound = false;
+                } else {
+                    useSubMeshes = false;  // No valid buffers, fall through to single-material path
+                }
             }
-            m_DrawCallCount++;
-            m_TriangleCount += renderData.indexCount / 3;
+
+            if (useSubMeshes) {
+                for (const auto& subMesh : meshForSubMesh->subMeshes) {
+                    MaterialComponent* slotMat = matSlots->GetSlot(subMesh.materialSlot);
+                    if (!slotMat) continue;
+
+                    // Build push constants for this sub-mesh's material
+                    Renderer::PushConstants subPC = pushConstants;  // Copy shared state (model, flags base)
+                    subPC.baseColor = slotMat->baseColor;
+                    subPC.metallic = slotMat->metallic;
+                    subPC.emissiveColor = slotMat->emissiveColor;
+                    subPC.roughness = slotMat->roughness;
+                    subPC.emissiveStrength = slotMat->emissiveStrength;
+                    subPC.opacity = slotMat->opacity;
+                    subPC.alphaCutoff = slotMat->alphaCutoff;
+                    subPC.parallaxScale = slotMat->parallaxScale;
+
+                    // Rebuild flags from this slot's material
+                    subPC.flags = pushConstants.flags & ((1 << 3) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7) | (1 << 11)); // Preserve skinned, wind, water flags
+                    if (slotMat->doubleSided) subPC.flags |= 1;
+                    if (slotMat->castShadows) subPC.flags |= 2;
+                    if (slotMat->receiveShadows) subPC.flags |= 4;
+                    subPC.flags |= (static_cast<i32>(slotMat->alphaMode) << 8);
+                    if (slotMat->flatShading) subPC.flags |= (1 << 20);
+                    if (slotMat->affineTexturing) subPC.flags |= (1 << 21);
+                    if (slotMat->vertexSnapping) subPC.flags |= (1 << 22);
+                    if (slotMat->stippleTransparency) subPC.flags |= (1 << 23);
+                    if (slotMat->uvQuantize) subPC.flags |= (1 << 12);
+                    if (slotMat->gouraudOnly) subPC.flags |= (1 << 13);
+                    subPC.flags |= (static_cast<i32>(slotMat->shadowDitherMode & 0x3) << 14);
+                    subPC.flags |= (static_cast<i32>((slotMat->vertexSnapResolution / 8) & 0x1F) << 24);
+                    subPC.flags |= (static_cast<i32>(slotMat->shadowDitherPattern & 0x7) << 29);
+
+                    // Resolve textures for this slot's material
+                    Renderer::Texture* subBoundTex = nullptr;
+                    Renderer::Texture* subTexHeight = nullptr;
+                    Renderer::Texture* subTexNormal = nullptr;
+                    Renderer::Texture* subTexMR = nullptr;
+                    Renderer::Texture* subTexEmissive = nullptr;
+                    Renderer::Texture* subTexMatcap = nullptr;
+                    if (slotMat->textureCacheDirty) {
+                        if (!slotMat->baseColorTexturePath.empty()) {
+                            auto tex = GetOrLoadTexture(slotMat->baseColorTexturePath);
+                            if (tex && tex->IsValid()) { slotMat->cachedBaseColorTexture = tex.get(); slotMat->baseColorTexture = 1; }
+                        }
+                        if (!slotMat->heightTexturePath.empty()) {
+                            auto tex = GetOrLoadTexture(slotMat->heightTexturePath);
+                            if (tex && tex->IsValid()) { slotMat->cachedHeightTexture = tex.get(); slotMat->heightTexture = 1; }
+                        }
+                        if (!slotMat->normalTexturePath.empty()) {
+                            auto tex = GetOrLoadTexture(slotMat->normalTexturePath);
+                            if (tex && tex->IsValid()) { slotMat->cachedNormalTexture = tex.get(); slotMat->normalTexture = 1; }
+                        }
+                        if (!slotMat->metallicRoughnessTexturePath.empty()) {
+                            auto tex = GetOrLoadTexture(slotMat->metallicRoughnessTexturePath);
+                            if (tex && tex->IsValid()) { slotMat->cachedMetallicRoughnessTexture = tex.get(); slotMat->metallicRoughnessTexture = 1; }
+                        }
+                        if (!slotMat->specularTexturePath.empty()) {
+                            auto tex = GetOrLoadTexture(slotMat->specularTexturePath);
+                            if (tex && tex->IsValid()) { slotMat->cachedMetallicRoughnessTexture = tex.get(); slotMat->metallicRoughnessTexture = 1; }
+                        }
+                        if (!slotMat->emissiveTexturePath.empty()) {
+                            auto tex = GetOrLoadTexture(slotMat->emissiveTexturePath);
+                            if (tex && tex->IsValid()) { slotMat->cachedEmissiveTexture = tex.get(); slotMat->emissiveTexture = 1; }
+                        }
+                        if (!slotMat->matcapTexturePath.empty()) {
+                            auto tex = GetOrLoadTexture(slotMat->matcapTexturePath);
+                            if (tex && tex->IsValid()) { slotMat->cachedMatcapTexture = tex.get(); slotMat->matcapTexture = 1; }
+                        }
+                        slotMat->textureCacheDirty = false;
+                        slotMat->cachedTextureKey = { slotMat->cachedBaseColorTexture,
+                            slotMat->cachedHeightTexture, slotMat->cachedNormalTexture,
+                            slotMat->cachedMetallicRoughnessTexture, slotMat->cachedEmissiveTexture,
+                            slotMat->cachedMatcapTexture };
+                    }
+                    subBoundTex = slotMat->cachedBaseColorTexture;
+                    subTexHeight = slotMat->cachedHeightTexture;
+                    subTexNormal = slotMat->cachedNormalTexture;
+                    subTexMR = slotMat->cachedMetallicRoughnessTexture;
+                    subTexEmissive = slotMat->cachedEmissiveTexture;
+                    subTexMatcap = slotMat->cachedMatcapTexture;
+
+                    // Set texture flags in push constants
+                    if (subBoundTex) subPC.flags |= (1 << 16);
+                    if (slotMat->normalTexture >= 0) subPC.flags |= (1 << 17);
+                    if (slotMat->metallicRoughnessTexture >= 0) subPC.flags |= (1 << 18);
+                    if (slotMat->emissiveTexture >= 0) subPC.flags |= (1 << 19);
+                    if (slotMat->heightTexture >= 0) subPC.flags |= (1 << 10);
+
+                    // Global retro overrides
+                    if (m_GlobalFlatShading) subPC.flags |= (1 << 20);
+                    if (m_GlobalAffineTexturing) subPC.flags |= (1 << 21);
+                    if (m_GlobalVertexSnapping) subPC.flags |= (1 << 22);
+                    if (m_GlobalStippleTransparency) subPC.flags |= (1 << 23);
+                    if (m_GlobalUVQuantize) subPC.flags |= (1 << 12);
+                    if (m_GlobalGouraudOnly) subPC.flags |= (1 << 13);
+
+                    UpdateEntityTextureDescriptors(subBoundTex, subTexHeight, subTexNormal, subTexMR, subTexEmissive, subTexMatcap);
+
+                    vkCmdPushConstants(commandBuffer, targetPipeline->GetLayout(),
+                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                        sizeof(Renderer::PushConstants), &subPC);
+
+                    // Draw this sub-mesh range
+                    if (poolPath) {
+                        vkCmdDrawIndexed(commandBuffer, subMesh.indexCount, 1,
+                                         renderData.poolAlloc.indexOffset + subMesh.indexOffset,
+                                         renderData.poolAlloc.vertexOffset, 0);
+                    } else {
+                        vkCmdDrawIndexed(commandBuffer, subMesh.indexCount, 1, subMesh.indexOffset, 0, 0);
+                    }
+                    m_DrawCallCount++;
+                    m_TriangleCount += subMesh.indexCount / 3;
+                }
+            } else {
+                // Single-material path (original behavior)
+                vkCmdPushConstants(commandBuffer, targetPipeline->GetLayout(),
+                    VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                    sizeof(Renderer::PushConstants), &pushConstants);
+
+                if (renderData.poolAlloc.valid && m_GeometryPool) {
+                    if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
+                    vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
+                                     renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
+                } else if (renderData.vertexBuffer && renderData.indexBuffer) {
+                    VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
+                    VkDeviceSize offsets[] = { 0 };
+                    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+                    vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+                    vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+                    m_GeometryPoolBound = false;
+                }
+                m_DrawCallCount++;
+                m_TriangleCount += renderData.indexCount / 3;
+            }
         }
     }
 
@@ -5369,7 +5511,8 @@ void RenderSystem::RenderEntity(Entity entity) {
 }
 
 void RenderSystem::RenderEntityGhost(Entity entity, const Math::Matrix4& modelMatrix,
-                                      const Math::Vector3& tint, f32 opacity) {
+                                      const Math::Vector3& tint, f32 opacity,
+                                      const std::vector<Math::Matrix4>* skinningMatrices) {
     if (!m_Pipeline || !m_Renderer) return;
 
     MeshComponent* mesh = m_World->GetComponent<MeshComponent>(entity);
@@ -5402,9 +5545,35 @@ void RenderSystem::RenderEntityGhost(Entity entity, const Math::Matrix4& modelMa
         UpdateEntityTextureDescriptors(m_DefaultWhiteTexture.get(), nullptr, nullptr, nullptr, nullptr);
     }
 
-    // Bind default bone buffer
-    if (m_DefaultBoneBuffer) {
-        UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+    // Upload skeletal skinning matrices for 3D onion skin ghosts
+    bool hasSkinning = skinningMatrices && !skinningMatrices->empty();
+    if (hasSkinning) {
+        usize requiredSize = skinningMatrices->size() * sizeof(Math::Matrix4);
+
+        // Lazily create or grow the reusable ghost bone buffer
+        if (!m_GhostBoneBuffer || m_GhostBoneBufferCapacity < requiredSize) {
+            m_GhostBoneBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+            if (m_GhostBoneBuffer->Create(requiredSize, Renderer::BufferUsage::Storage, true)) {
+                m_GhostBoneBufferCapacity = requiredSize;
+            } else {
+                m_GhostBoneBuffer.reset();
+                m_GhostBoneBufferCapacity = 0;
+                hasSkinning = false;
+            }
+        }
+
+        if (hasSkinning && m_GhostBoneBuffer) {
+            m_GhostBoneBuffer->UploadData(skinningMatrices->data(), requiredSize);
+            UpdateBoneDescriptor(m_GhostBoneBuffer.get());
+            pushConstants.flags |= (1 << 3); // FLAG_SKINNED
+        }
+    }
+
+    if (!hasSkinning) {
+        // Bind default bone buffer for non-skinned ghosts
+        if (m_DefaultBoneBuffer) {
+            UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+        }
     }
 
     vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
@@ -5439,7 +5608,9 @@ void RenderSystem::RenderOnionSkinGhosts() {
         ghostTransform.scale = ghost.scale;
         Math::Matrix4 modelMatrix = ghostTransform.ToMatrix();
 
-        RenderEntityGhost(ghost.entity, modelMatrix, ghost.tint, ghost.ghostOpacity * ghost.alpha);
+        // Pass skinning matrices for 3D skeletal onion skin ghosts (empty = non-skinned)
+        const std::vector<Math::Matrix4>* bones = ghost.skinningMatrices.empty() ? nullptr : &ghost.skinningMatrices;
+        RenderEntityGhost(ghost.entity, modelMatrix, ghost.tint, ghost.ghostOpacity * ghost.alpha, bones);
     }
 }
 

@@ -507,6 +507,60 @@ void SkeletalAnimator::CalculateSkinningMatrices() {
     }
 }
 
+std::vector<Math::Matrix4> SkeletalAnimator::SampleSkinningMatricesAtTime(f32 time) const {
+    if (!m_Skeleton || !m_CurrentAnim) return {};
+
+    usize boneCount = m_Skeleton->bones.size();
+    if (boneCount == 0) return {};
+
+    // Sample animation into a temporary pose
+    SkeletonPose tempPose;
+    tempPose.Resize(boneCount);
+
+    // Initialize to bind pose
+    for (usize i = 0; i < boneCount; ++i) {
+        tempPose.localPositions[i] = m_Skeleton->bones[i].bindPosition;
+        tempPose.localRotations[i] = m_Skeleton->bones[i].bindRotation;
+        tempPose.localScales[i] = m_Skeleton->bones[i].bindScale;
+    }
+
+    // Apply animation tracks at the requested time
+    for (const auto& track : m_CurrentAnim->tracks) {
+        if (track.boneIndex < 0 || track.boneIndex >= static_cast<i32>(boneCount)) continue;
+        if (!track.positions.empty()) {
+            tempPose.localPositions[track.boneIndex] = track.SamplePosition(time);
+        }
+        if (!track.rotations.empty()) {
+            tempPose.localRotations[track.boneIndex] = track.SampleRotation(time);
+        }
+        if (!track.scales.empty()) {
+            tempPose.localScales[track.boneIndex] = track.SampleScale(time);
+        }
+    }
+
+    // Calculate world transforms
+    for (usize i = 0; i < boneCount; ++i) {
+        const Bone& bone = m_Skeleton->bones[i];
+        Math::Matrix4 local = Math::Matrix4::Translation(tempPose.localPositions[i]);
+        local = local * tempPose.localRotations[i].ToMatrix4();
+        local = local * Math::Matrix4::Scale(tempPose.localScales[i]);
+
+        if (bone.parentIndex >= 0) {
+            tempPose.worldTransforms[i] = tempPose.worldTransforms[bone.parentIndex] * local;
+        } else {
+            tempPose.worldTransforms[i] = local;
+        }
+    }
+
+    // Calculate skinning matrices
+    std::vector<Math::Matrix4> result(boneCount);
+    for (usize i = 0; i < boneCount; ++i) {
+        result[i] = tempPose.worldTransforms[i] * m_Skeleton->bones[i].inverseBindMatrix;
+    }
+
+    return result;
+}
+
 void SkeletalAnimator::UpdateBlendTree(const BlendTree& blendTree, f32 paramValue, f32 deltaTime) {
     if (!m_Skeleton) return;
 
