@@ -68,7 +68,7 @@ struct ENJIN_API CameraComponent {
     // Clear settings
     bool clearDepth = true;
     bool clearColor = true;
-    Math::Vector3 backgroundColor = Math::Vector3(0.1f, 0.1f, 0.15f);
+    Math::Vector3 backgroundColor = Math::Vector3(0.68f, 0.75f, 0.72f); // Soft teal/sage
 
     // Viewport (normalized 0-1)
     f32 viewportX = 0.0f;
