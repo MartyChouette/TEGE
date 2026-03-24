@@ -2,6 +2,7 @@
 #include "Enjin/Networking/HTTPClient.h"
 #include "Enjin/Logging/Log.h"
 #include <sstream>
+#include <chrono>
 
 #if ENJIN_PLATFORM_WEB
 #include <emscripten/fetch.h>
@@ -245,6 +246,39 @@ HTTPResponse HTTPClient::PostForm(const std::string& url,
     return DoRequest("POST", url, body, h);
 }
 
+HTTPResponse HTTPClient::PostMultipart(
+    const std::string& url,
+    const std::unordered_map<std::string, std::string>& fields,
+    const std::vector<MultipartFile>& files,
+    const std::unordered_map<std::string, std::string>& headers)
+{
+    // Build multipart/form-data body manually
+    std::string boundary = "----EnjinBoundary" + std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+
+    std::string body;
+    // Text fields
+    for (auto& [key, value] : fields) {
+        body += "--" + boundary + "\r\n";
+        body += "Content-Disposition: form-data; name=\"" + key + "\"\r\n\r\n";
+        body += value + "\r\n";
+    }
+    // File fields
+    for (auto& f : files) {
+        body += "--" + boundary + "\r\n";
+        body += "Content-Disposition: form-data; name=\"" + f.fieldName +
+                "\"; filename=\"" + f.fileName + "\"\r\n";
+        body += "Content-Type: " + f.contentType + "\r\n\r\n";
+        body.append(reinterpret_cast<const char*>(f.data.data()), f.data.size());
+        body += "\r\n";
+    }
+    body += "--" + boundary + "--\r\n";
+
+    auto h = headers;
+    h["Content-Type"] = "multipart/form-data; boundary=" + boundary;
+    return DoRequest("POST", url, body, h);
+}
+
 #elif defined(ENJIN_HAS_CURL)
 
 // ============================================================================
@@ -364,6 +398,37 @@ HTTPResponse HTTPClient::PostForm(const std::string& url,
     return DoRequestCurl("POST", url, body, h);
 }
 
+HTTPResponse HTTPClient::PostMultipart(
+    const std::string& url,
+    const std::unordered_map<std::string, std::string>& fields,
+    const std::vector<MultipartFile>& files,
+    const std::unordered_map<std::string, std::string>& headers)
+{
+    // Build multipart/form-data body manually
+    std::string boundary = "----EnjinBoundary" + std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+
+    std::string body;
+    for (auto& [key, value] : fields) {
+        body += "--" + boundary + "\r\n";
+        body += "Content-Disposition: form-data; name=\"" + key + "\"\r\n\r\n";
+        body += value + "\r\n";
+    }
+    for (auto& f : files) {
+        body += "--" + boundary + "\r\n";
+        body += "Content-Disposition: form-data; name=\"" + f.fieldName +
+                "\"; filename=\"" + f.fileName + "\"\r\n";
+        body += "Content-Type: " + f.contentType + "\r\n\r\n";
+        body.append(reinterpret_cast<const char*>(f.data.data()), f.data.size());
+        body += "\r\n";
+    }
+    body += "--" + boundary + "--\r\n";
+
+    auto h = headers;
+    h["Content-Type"] = "multipart/form-data; boundary=" + boundary;
+    return DoRequestCurl("POST", url, body, h);
+}
+
 #else
 
 // ============================================================================
@@ -387,6 +452,15 @@ HTTPResponse HTTPClient::PostForm(const std::string& url,
                                    const std::unordered_map<std::string, std::string>& params,
                                    const std::unordered_map<std::string, std::string>& headers) {
     (void)url; (void)params; (void)headers;
+    return { false, 0, "", {}, "HTTP not available on this platform" };
+}
+
+HTTPResponse HTTPClient::PostMultipart(
+    const std::string& url,
+    const std::unordered_map<std::string, std::string>& fields,
+    const std::vector<MultipartFile>& files,
+    const std::unordered_map<std::string, std::string>& headers) {
+    (void)url; (void)fields; (void)files; (void)headers;
     return { false, 0, "", {}, "HTTP not available on this platform" };
 }
 

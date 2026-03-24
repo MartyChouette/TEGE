@@ -91,6 +91,8 @@
 #include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/Math/Math.h"
 #include <stb_image.h>
+#include <stb_image_write.h>
+#include "Enjin/Networking/HTTPClient.h"
 #include <imgui.h>
 #include <ImGuizmo.h>
 #include <backends/imgui_impl_vulkan.h>
@@ -2392,6 +2394,319 @@ void EditorLayer::DrawAutoSaveRecoveryDialog() {
         m_ShowAutoSaveRecoveryDialog = false;
         m_AutoSaveRecoveryPath.clear();
     }
+}
+
+// ============================================================================
+// DISCORD BUG REPORT DIALOG
+// ============================================================================
+
+void EditorLayer::CaptureViewportScreenshot() {
+    m_DiscordScreenshotPng.clear();
+
+    // Prefer editor viewport render target; fall back to game view
+    Renderer::RenderTarget* rt = nullptr;
+    if (m_EditorViewportRT && m_EditorViewportRT->IsValid()) {
+        rt = m_EditorViewportRT.get();
+    } else if (m_GameViewRenderTarget && m_GameViewRenderTarget->IsValid()) {
+        rt = m_GameViewRenderTarget.get();
+    }
+    if (!rt) {
+        ENJIN_LOG_WARN(Editor, "DiscordBugReport: No render target available for screenshot");
+        return;
+    }
+
+    auto pixels = rt->CaptureToPixels();
+    if (pixels.empty()) {
+        ENJIN_LOG_WARN(Editor, "DiscordBugReport: CaptureToPixels returned empty");
+        return;
+    }
+
+    // Encode to PNG in memory using stb_image_write
+    auto pngWriteFunc = [](void* context, void* data, int size) {
+        auto* vec = static_cast<std::vector<u8>*>(context);
+        auto* bytes = static_cast<u8*>(data);
+        vec->insert(vec->end(), bytes, bytes + size);
+    };
+
+    stbi_write_png_to_func(pngWriteFunc, &m_DiscordScreenshotPng,
+                           static_cast<int>(rt->GetWidth()),
+                           static_cast<int>(rt->GetHeight()),
+                           4, pixels.data(),
+                           static_cast<int>(rt->GetWidth() * 4));
+
+    if (m_DiscordScreenshotPng.empty()) {
+        ENJIN_LOG_WARN(Editor, "DiscordBugReport: PNG encoding failed");
+    } else {
+        ENJIN_LOG_INFO(Editor, "DiscordBugReport: Captured screenshot %ux%u (%zu bytes PNG)",
+                       rt->GetWidth(), rt->GetHeight(), m_DiscordScreenshotPng.size());
+    }
+}
+
+void EditorLayer::SendDiscordBugReport() {
+    m_DiscordSendState = DiscordSendState::Sending;
+    m_DiscordSendError.clear();
+
+    // Ensure feedback system is loaded
+    if (!m_FeedbackLoaded) {
+        m_FeedbackManager.LoadAll();
+        m_FeedbackLoaded = true;
+    }
+
+    // Create a bug report record
+    u64 id = m_FeedbackManager.CreateBugReport();
+    auto* report = m_FeedbackManager.GetBugReport(id);
+    if (!report) {
+        m_DiscordSendState = DiscordSendState::Failed;
+        m_DiscordSendError = "Failed to create report record";
+        return;
+    }
+
+    report->title = m_DiscordBugTitleBuf;
+    report->type = ReportType::Bug;
+    report->severity = ReportSeverity::Medium;
+    report->description = m_DiscordBugDescBuf;
+    report->diagnostics = CaptureDiagnostics(false);
+    if (!m_DiscordBugIncludeLog) {
+        report->diagnostics.consoleLogTail.clear();
+    }
+
+    // Try to fill GPU name from Vulkan physical device properties
+    if (m_Renderer && m_Renderer->GetContext()) {
+        VkPhysicalDeviceProperties props;
+        vkGetPhysicalDeviceProperties(m_Renderer->GetContext()->GetPhysicalDevice(), &props);
+        report->diagnostics.gpuName = props.deviceName;
+    }
+
+    const std::string& webhookUrl = m_EditorSettings.discordWebhookUrl;
+
+    // If no webhook URL configured, save as local file instead
+    if (webhookUrl.empty()) {
+        // Save locally as fallback
+        std::string dir = FeedbackManager::GetDefaultDirectory();
+        std::filesystem::create_directories(dir);
+
+        std::string baseName = "bug_report_" + std::to_string(id);
+        std::string txtPath = dir + "/" + baseName + ".txt";
+
+        std::ofstream txtFile(txtPath);
+        if (txtFile.is_open()) {
+            txtFile << "Bug Report #" << id << "\n";
+            txtFile << "Title: " << report->title << "\n";
+            txtFile << "Description: " << report->description << "\n\n";
+            txtFile << "GPU: " << report->diagnostics.gpuName << "\n";
+            txtFile << "Platform: " << report->diagnostics.platform << "\n";
+            txtFile << "Engine: " << report->diagnostics.engineVersion << "\n";
+            char fpsLine[128];
+            snprintf(fpsLine, sizeof(fpsLine), "FPS: %.1f | Frame: %.2fms",
+                     report->diagnostics.fps, report->diagnostics.frameTimeMs);
+            txtFile << fpsLine << "\n";
+            txtFile << "Entities: " << report->diagnostics.entityCount << "\n";
+            if (!report->diagnostics.scenePath.empty())
+                txtFile << "Scene: " << report->diagnostics.scenePath << "\n";
+
+            if (!report->diagnostics.consoleLogTail.empty()) {
+                txtFile << "\nConsole Log:\n";
+                for (auto& line : report->diagnostics.consoleLogTail)
+                    txtFile << line << "\n";
+            }
+            txtFile.close();
+        }
+
+        // Save screenshot PNG locally
+        if (m_DiscordBugIncludeScreenshot && !m_DiscordScreenshotPng.empty()) {
+            std::string pngPath = dir + "/" + baseName + ".png";
+            std::ofstream pngFile(pngPath, std::ios::binary);
+            if (pngFile.is_open()) {
+                pngFile.write(reinterpret_cast<const char*>(m_DiscordScreenshotPng.data()),
+                              static_cast<std::streamsize>(m_DiscordScreenshotPng.size()));
+                pngFile.close();
+            }
+        }
+
+        m_FeedbackManager.SaveAll();
+        m_DiscordSendState = DiscordSendState::Sent;
+        m_ConsoleLog.push_back({
+            "[Bug Report] Report #" + std::to_string(id) + " saved locally to " + dir +
+            " (no Discord webhook configured)"});
+        return;
+    }
+
+    // Submit to Discord
+    std::vector<u8> screenshotData;
+    if (m_DiscordBugIncludeScreenshot && !m_DiscordScreenshotPng.empty()) {
+        screenshotData = m_DiscordScreenshotPng;
+    }
+
+    bool ok = m_FeedbackManager.SubmitBugReportToDiscord(id, webhookUrl, screenshotData);
+    if (ok) {
+        m_DiscordSendState = DiscordSendState::Sent;
+        m_ConsoleLog.push_back({
+            "[Bug Report] Report #" + std::to_string(id) + " sent to Discord"});
+    } else {
+        m_DiscordSendState = DiscordSendState::Failed;
+        m_DiscordSendError = "Discord webhook request failed";
+        m_ConsoleLog.push_back({
+            "[Bug Report] Failed to send report #" + std::to_string(id) + " to Discord"});
+    }
+
+    m_FeedbackManager.SaveAll();
+}
+
+void EditorLayer::DrawDiscordBugReportDialog() {
+    if (!m_ShowDiscordBugDialog) return;
+
+    f32 s = m_EditorSettings.uiScale;
+    ImGui::SetNextWindowSize(ImVec2(520 * s, 480 * s), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing,
+                            ImVec2(0.5f, 0.5f));
+
+    bool open = true;
+    if (!ImGui::Begin("Report Bug", &open, ImGuiWindowFlags_NoCollapse)) {
+        ImGui::End();
+        if (!open) {
+            m_ShowDiscordBugDialog = false;
+            m_DiscordSendState = DiscordSendState::Idle;
+        }
+        return;
+    }
+    if (!open) {
+        m_ShowDiscordBugDialog = false;
+        m_DiscordSendState = DiscordSendState::Idle;
+        ImGui::End();
+        return;
+    }
+
+    bool sending = (m_DiscordSendState == DiscordSendState::Sending);
+
+    // Disable all inputs while sending
+    if (sending) ImGui::BeginDisabled();
+
+    // Title (required)
+    ImGui::Text("Title *");
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputText("##DiscordBugTitle", m_DiscordBugTitleBuf, sizeof(m_DiscordBugTitleBuf));
+
+    ImGui::Spacing();
+
+    // Description (optional, multiline)
+    ImGui::Text("Description:");
+    ImGui::InputTextMultiline("##DiscordBugDesc", m_DiscordBugDescBuf, sizeof(m_DiscordBugDescBuf),
+                               ImVec2(-1, 120 * s));
+
+    ImGui::Spacing();
+
+    // Checkboxes
+    ImGui::Checkbox("Include Screenshot", &m_DiscordBugIncludeScreenshot);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Captures the current editor viewport as a PNG image");
+    }
+    ImGui::SameLine();
+    ImGui::Checkbox("Include Log", &m_DiscordBugIncludeLog);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Includes the last 50 console log lines");
+    }
+
+    // System info preview (auto-included)
+    ImGui::Spacing();
+    if (ImGui::TreeNode("System Info (auto-included)")) {
+        f32 fps = m_FrameTimeAvg > 0.0f ? 1000.0f / m_FrameTimeAvg : 0.0f;
+        u32 entityCount = m_World ? static_cast<u32>(m_World->GetEntityCount()) : 0;
+
+        // GPU name
+        if (m_Renderer && m_Renderer->GetContext()) {
+            VkPhysicalDeviceProperties props;
+            vkGetPhysicalDeviceProperties(m_Renderer->GetContext()->GetPhysicalDevice(), &props);
+            ImGui::Text("GPU: %s", props.deviceName);
+
+            VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+            ImGui::Text("Resolution: %ux%u", extent.width, extent.height);
+        }
+
+        ImGui::Text("FPS: %.1f | Frame: %.2fms", fps, m_FrameTimeAvg);
+        ImGui::Text("Draw Calls: %u | Triangles: %u",
+                     m_PerfMetrics.drawCallCount, m_PerfMetrics.triangleCount);
+        ImGui::Text("Entities: %u", entityCount);
+        ImGui::Text("RAM: %.1f MB",
+                     m_PerfMetrics.processMemoryBytes / (1024.0f * 1024.0f));
+        if (!m_CurrentScenePath.empty())
+            ImGui::Text("Scene: %s", m_CurrentScenePath.c_str());
+
+        ImGui::TreePop();
+    }
+
+    // Webhook destination info
+    ImGui::Spacing();
+    if (m_EditorSettings.discordWebhookUrl.empty()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
+            "No Discord webhook configured. Report will be saved locally.");
+        ImGui::TextDisabled("Configure in Settings > System > Bug Reporting");
+    } else {
+        ImGui::TextColored(ImVec4(0.4f, 0.8f, 0.4f, 1.0f),
+            "Will send to Discord webhook");
+    }
+
+    if (sending) ImGui::EndDisabled();
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Status messages
+    if (m_DiscordSendState == DiscordSendState::Sending) {
+        ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.3f, 1.0f), "Sending...");
+    } else if (m_DiscordSendState == DiscordSendState::Sent) {
+        ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "Sent!");
+    } else if (m_DiscordSendState == DiscordSendState::Failed) {
+        ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.3f, 1.0f),
+            "Failed: %s", m_DiscordSendError.c_str());
+    }
+
+    // Buttons
+    bool titleEmpty = (m_DiscordBugTitleBuf[0] == '\0');
+    bool canSend = !titleEmpty && m_DiscordSendState != DiscordSendState::Sending;
+
+    if (!canSend) {
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+        ImGui::Button("Send");
+        ImGui::PopStyleVar();
+        if (titleEmpty && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("Title is required");
+        }
+    } else {
+        if (ImGui::Button("Send")) {
+            m_DiscordSendState = DiscordSendState::Sending;
+            // Capture screenshot if requested
+            if (m_DiscordBugIncludeScreenshot) {
+                CaptureViewportScreenshot();
+            } else {
+                m_DiscordScreenshotPng.clear();
+            }
+            SendDiscordBugReport();
+        }
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) {
+        m_ShowDiscordBugDialog = false;
+        m_DiscordSendState = DiscordSendState::Idle;
+        m_DiscordBugTitleBuf[0] = '\0';
+        m_DiscordBugDescBuf[0] = '\0';
+        m_DiscordScreenshotPng.clear();
+    }
+
+    // After successful send, auto-close after a brief moment
+    if (m_DiscordSendState == DiscordSendState::Sent) {
+        ImGui::SameLine();
+        if (ImGui::Button("Close")) {
+            m_ShowDiscordBugDialog = false;
+            m_DiscordSendState = DiscordSendState::Idle;
+            m_DiscordBugTitleBuf[0] = '\0';
+            m_DiscordBugDescBuf[0] = '\0';
+            m_DiscordScreenshotPng.clear();
+        }
+    }
+
+    ImGui::End();
 }
 
 } // namespace Editor

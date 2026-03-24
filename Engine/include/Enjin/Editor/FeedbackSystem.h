@@ -252,6 +252,13 @@ public:
     const std::vector<GitHubIssue>& GetGitHubIssues() const { return m_GitHubIssues; }
     bool IsGitHubConfigured() const { return !m_GitHubConfig.token.empty() && m_GitHubConfig.enabled; }
 
+    // Discord webhook integration
+    // Sends a bug report to a Discord channel via webhook URL.
+    // screenshotPng: optional PNG file bytes to attach as screenshot.
+    // Returns true if Discord accepted the message (HTTP 200/204).
+    bool SubmitBugReportToDiscord(u64 id, const std::string& webhookUrl,
+                                  const std::vector<u8>& screenshotPng = {});
+
     // Filter / Search
     std::vector<BugReport*> FilterBugReports(i32 statusFilter, i32 severityFilter);
     std::vector<BugReport*> SearchBugReports(const std::string& query);

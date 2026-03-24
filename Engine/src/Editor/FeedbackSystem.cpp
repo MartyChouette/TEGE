@@ -766,5 +766,113 @@ bool FeedbackManager::FetchGitHubIssues(bool includeClosedRecent) {
     return true;
 }
 
+// ── Discord webhook submission ──────────────────────────────────────
+
+bool FeedbackManager::SubmitBugReportToDiscord(u64 id, const std::string& webhookUrl,
+                                                const std::vector<u8>& screenshotPng) {
+    if (webhookUrl.empty()) {
+        ENJIN_LOG_ERROR(Editor, "FeedbackManager: Discord webhook URL is empty");
+        return false;
+    }
+
+    BugReport* report = GetBugReport(id);
+    if (!report) {
+        ENJIN_LOG_ERROR(Editor, "FeedbackManager: bug report #%llu not found", id);
+        return false;
+    }
+
+    // Build the Discord message content
+    std::string content = "**Bug Report**\n";
+    content += "**Title:** " + report->title + "\n";
+    content += "**Type:** " + std::string(ReportTypeLabel(report->type)) + "\n";
+    content += "**Severity:** " + std::string(ReportSeverityLabel(report->severity)) + "\n";
+
+    if (!report->description.empty()) {
+        content += "**Description:** " + report->description + "\n";
+    }
+    if (!report->stepsToReproduce.empty()) {
+        content += "**Steps to Reproduce:**\n" + report->stepsToReproduce + "\n";
+    }
+    if (!report->expectedBehavior.empty()) {
+        content += "**Expected:** " + report->expectedBehavior + "\n";
+    }
+    if (!report->actualBehavior.empty()) {
+        content += "**Actual:** " + report->actualBehavior + "\n";
+    }
+
+    // System info
+    auto& diag = report->diagnostics;
+    content += "\n**System Info:**\n";
+    if (!diag.gpuName.empty()) content += "GPU: " + diag.gpuName + "\n";
+    content += "Platform: " + diag.platform + "\n";
+    content += "Engine: " + diag.engineVersion + "\n";
+    char fpsLine[128];
+    snprintf(fpsLine, sizeof(fpsLine), "FPS: %.1f | Frame: %.2fms | Draw Calls: %u | Tris: %u",
+             diag.fps, diag.frameTimeMs, diag.drawCalls, diag.triangleCount);
+    content += std::string(fpsLine) + "\n";
+    char memLine[128];
+    snprintf(memLine, sizeof(memLine), "RAM: %.1f MB | VRAM: %.1f MB",
+             diag.ramProcess / (1024.0f * 1024.0f),
+             diag.vramAllocated / (1024.0f * 1024.0f));
+    content += std::string(memLine) + "\n";
+    content += "Entities: " + std::to_string(diag.entityCount) + "\n";
+    if (!diag.scenePath.empty()) content += "Scene: " + diag.scenePath + "\n";
+
+    // Console log tail
+    if (!diag.consoleLogTail.empty()) {
+        content += "\n**Console Log (last " + std::to_string(diag.consoleLogTail.size()) + " lines):**\n```\n";
+        for (auto& line : diag.consoleLogTail) {
+            content += line + "\n";
+        }
+        content += "```\n";
+    }
+
+    // Discord has a 2000 character limit for content; truncate if needed
+    if (content.size() > 1950) {
+        content = content.substr(0, 1947) + "...";
+    }
+
+    content += "\n*Reported at " + report->diagnostics.timestamp + "*";
+
+    // If we have a screenshot, use multipart upload; otherwise just JSON POST
+    Networking::HTTPResponse response;
+
+    if (!screenshotPng.empty()) {
+        // Discord multipart: payload_json field + file attachment
+        json payload;
+        payload["content"] = content;
+
+        std::unordered_map<std::string, std::string> fields;
+        fields["payload_json"] = payload.dump();
+
+        std::vector<Networking::HTTPClient::MultipartFile> files;
+        Networking::HTTPClient::MultipartFile screenshot;
+        screenshot.fieldName = "files[0]";
+        screenshot.fileName = "screenshot.png";
+        screenshot.contentType = "image/png";
+        screenshot.data = screenshotPng;
+        files.push_back(std::move(screenshot));
+
+        response = Networking::HTTPClient::PostMultipart(webhookUrl, fields, files);
+    } else {
+        // Simple JSON POST
+        json payload;
+        payload["content"] = content;
+        response = Networking::HTTPClient::Post(webhookUrl, payload.dump(),
+            {{"Content-Type", "application/json"}});
+    }
+
+    if (response.success || (response.statusCode >= 200 && response.statusCode < 300)) {
+        report->status = ReportStatus::Submitted;
+        report->updatedAt = CurrentTimestamp();
+        ENJIN_LOG_INFO(Editor, "FeedbackManager: bug report #%llu sent to Discord", id);
+        return true;
+    }
+
+    ENJIN_LOG_ERROR(Editor, "FeedbackManager: Discord webhook failed (HTTP %d): %s",
+                    response.statusCode, response.error.c_str());
+    return false;
+}
+
 } // namespace Editor
 } // namespace Enjin

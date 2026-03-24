@@ -741,6 +741,46 @@ void EditorLayer::DrawSettingsSection_ExternalIDE() {
     }
 }
 
+void EditorLayer::DrawSettingsSection_BugReporting() {
+    if (ImGui::CollapsingHeader("Bug Reporting")) {
+        bool changed = false;
+
+        ImGui::TextDisabled("Configure Discord webhook for the Report Bug dialog (Help > Report Bug).");
+        ImGui::Spacing();
+
+        // Webhook URL input
+        char webhookBuf[512];
+        strncpy(webhookBuf, m_EditorSettings.discordWebhookUrl.c_str(), sizeof(webhookBuf) - 1);
+        webhookBuf[sizeof(webhookBuf) - 1] = '\0';
+        ImGui::Text("Discord Webhook URL:");
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::InputText("##DiscordWebhookUrl", webhookBuf, sizeof(webhookBuf))) {
+            m_EditorSettings.discordWebhookUrl = webhookBuf;
+            changed = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(
+                "Discord webhook URL for bug reports.\n"
+                "Create one in Discord: Server Settings > Integrations > Webhooks.\n"
+                "Leave empty to save reports locally instead of sending.");
+        }
+
+        // Status indicator
+        if (m_EditorSettings.discordWebhookUrl.empty()) {
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Not configured (reports saved locally)");
+        } else if (m_EditorSettings.discordWebhookUrl.find("https://discord.com/api/webhooks/") == 0 ||
+                   m_EditorSettings.discordWebhookUrl.find("https://discordapp.com/api/webhooks/") == 0) {
+            ImGui::TextColored(ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "Webhook configured");
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "URL does not look like a Discord webhook");
+        }
+
+        if (changed) {
+            m_EditorSettings.Save();
+        }
+    }
+}
+
 void EditorLayer::DrawSettingsSection_Accessibility() {
     if (ImGui::CollapsingHeader("Accessibility")) {
         bool settingsChanged = false;
@@ -1871,6 +1911,7 @@ void EditorLayer::DrawSettingsWindow() {
             DrawSettingsSection_Camera();
             DrawSettingsSection_EditorPerformance();
             DrawSettingsSection_ExternalIDE();
+            DrawSettingsSection_BugReporting();
             DrawSettingsSection_Accessibility();
             DrawSettingsSection_Fonts();
             ImGui::PopID();

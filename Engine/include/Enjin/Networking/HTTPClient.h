@@ -4,6 +4,7 @@
 #include "Enjin/Platform/Types.h"
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace Enjin {
 namespace Networking {
@@ -33,6 +34,22 @@ public:
     static HTTPResponse PostForm(const std::string& url,
                                  const std::unordered_map<std::string, std::string>& params,
                                  const std::unordered_map<std::string, std::string>& headers = {});
+
+    // Multipart form-data file for PostMultipart
+    struct MultipartFile {
+        std::string fieldName;   // e.g. "file"
+        std::string fileName;    // e.g. "screenshot.png"
+        std::string contentType; // e.g. "image/png"
+        std::vector<u8> data;    // Raw file bytes
+    };
+
+    // POST request with multipart/form-data (text fields + file attachments)
+    // Used for Discord webhook file uploads and similar APIs.
+    static HTTPResponse PostMultipart(
+        const std::string& url,
+        const std::unordered_map<std::string, std::string>& fields,
+        const std::vector<MultipartFile>& files,
+        const std::unordered_map<std::string, std::string>& headers = {});
 
     // URL parsing helper
     struct ParsedURL {
