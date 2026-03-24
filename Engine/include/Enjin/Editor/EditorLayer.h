@@ -871,8 +871,8 @@ private:
     static constexpr f32 AspectRatioValues[] = {
         0.0f, 16.0f/9.0f, 16.0f/10.0f, 21.0f/9.0f, 4.0f/3.0f, 3.0f/2.0f, 9.0f/16.0f, 9.0f/20.0f
     };
-    AspectRatio m_SceneViewAspect = AspectRatio::Free;
-    AspectRatio m_GameViewAspect = AspectRatio::Free;
+    AspectRatio m_SceneViewAspect = AspectRatio::R16_9;
+    AspectRatio m_GameViewAspect = AspectRatio::R16_9;
 
     // Compute letterboxed image size from available space and aspect ratio
     static ImVec2 ComputeAspectConstrainedSize(f32 availW, f32 availH, f32 aspect);
