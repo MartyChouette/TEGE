@@ -205,7 +205,14 @@ public:
 
     // Set the camera for the viewport
     void SetCamera(Renderer::Camera* camera) { m_Camera = camera; m_ParallaxSystem.SetCamera(camera); InitializePlayMode(); }
-    void SetCameraController(Renderer::CameraController* controller) { m_CameraController = controller; InitializePlayMode(); }
+    void SetCameraController(Renderer::CameraController* controller) {
+        m_CameraController = controller;
+        // Apply persisted mouse sensitivity to the camera controller
+        if (m_CameraController && m_EditorSettings.mouseSensitivity != 1.0f) {
+            m_CameraController->SetLookSensitivity(m_EditorSettings.mouseSensitivity * 0.1f);
+        }
+        InitializePlayMode();
+    }
 
     // Returns true when splash screen or project hub covers the entire screen,
     // so the caller can skip 3D scene rendering and camera input.
@@ -628,6 +635,9 @@ private:
     bool m_ConsoleShowWarn = true;
     bool m_ConsoleShowError = true;
     int  m_ConsoleFeedTab = 0;  // 0=All, 1=Editor, 2=Runtime
+
+    // Console multi-selection (Shift+Click to toggle, Ctrl+C to copy selected)
+    std::unordered_set<int> m_ConsoleSelectedIndices;
 
     // Helper methods
     void ImportModel(const std::string& path);

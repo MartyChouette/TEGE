@@ -39,6 +39,18 @@ public:
     void SetReducedMotion(bool enabled) { m_ReducedMotion = enabled; }
     bool GetReducedMotion() const { return m_ReducedMotion; }
 
+    // Disable screen shake (camera shake effects only; head bob controlled by reducedMotion)
+    void SetDisableScreenShake(bool disabled) { m_DisableScreenShake = disabled; }
+    bool GetDisableScreenShake() const { return m_DisableScreenShake; }
+
+    // Disable FOV effects (sprint FOV increase, etc.)
+    void SetDisableFOVEffects(bool disabled) { m_DisableFOVEffects = disabled; }
+    bool GetDisableFOVEffects() const { return m_DisableFOVEffects; }
+
+    // Invert mouse Y axis (accessibility override, XORs with per-controller invertY)
+    void SetInvertMouseY(bool invert) { m_InvertMouseY = invert; }
+    bool GetInvertMouseY() const { return m_InvertMouseY; }
+
     // Enable/disable all controller updates (e.g., when in editor mode vs play mode)
     void SetEnabled(bool enabled) { m_Enabled = enabled; }
     bool IsEnabled() const { return m_Enabled; }
@@ -84,6 +96,9 @@ private:
     Entity m_GameCameraEntity = INVALID_ENTITY;
     bool m_Enabled = false;  // Disabled by default (editor mode)
     bool m_ReducedMotion = false;
+    bool m_DisableScreenShake = false;
+    bool m_DisableFOVEffects = false;
+    bool m_InvertMouseY = false;
 };
 
 } // namespace ECS

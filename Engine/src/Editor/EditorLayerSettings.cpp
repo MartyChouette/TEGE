@@ -833,7 +833,19 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
             }
 
             ImGui::Separator();
-            if (ImGui::Checkbox("Dyslexia-Friendly Mode", &m_EditorSettings.dyslexiaFontEnabled)) settingsChanged = true;
+            if (ImGui::Checkbox("Dyslexia-Friendly Mode", &m_EditorSettings.dyslexiaFontEnabled)) {
+                settingsChanged = true;
+                // Apply dyslexia-friendly spacing immediately
+                ImGuiStyle& style = ImGui::GetStyle();
+                if (m_EditorSettings.dyslexiaFontEnabled) {
+                    style.ItemSpacing.y = std::max(style.ItemSpacing.y, 6.0f);
+                    style.FramePadding.y = std::max(style.FramePadding.y, 5.0f);
+                } else {
+                    // Re-apply theme to reset spacing to defaults
+                    m_ImGuiLayer->ApplyTheme(m_EditorSettings.theme, &m_EditorSettings.accentColors);
+                    m_ImGuiLayer->SetGlobalScale(m_EditorSettings.uiScale);
+                }
+            }
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Increases letter, word, and line spacing for improved readability");
             }
@@ -1013,6 +1025,10 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
 
             if (ImGui::SliderFloat("Mouse Sensitivity", &m_EditorSettings.mouseSensitivity, 0.1f, 3.0f)) {
                 settingsChanged = true;
+                // Apply to editor camera controller
+                if (m_CameraController) {
+                    m_CameraController->SetLookSensitivity(m_EditorSettings.mouseSensitivity * 0.1f);
+                }
             }
 
             if (ImGui::Checkbox("Raw Mouse Input", &m_EditorSettings.rawMouseInput)) {
@@ -1033,6 +1049,13 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
             if (ImGui::Combo("Preset", &preset, presetNames, 4)) {
                 m_EditorSettings.inputPreset = static_cast<u32>(preset);
                 settingsChanged = true;
+                // Apply the input preset to the action map
+                switch (m_EditorSettings.inputPreset) {
+                case 1: m_InputMap.ApplyLeftHandOnly(); break;
+                case 2: m_InputMap.ApplyRightHandOnly(); break;
+                case 3: m_InputMap.ApplyGamepadOnly(); break;
+                default: m_InputMap.ResetToDefaults(); break;
+                }
             }
 
             ImGui::TreePop();
@@ -1049,6 +1072,7 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
 
             if (ImGui::SliderFloat("Drag Threshold", &m_EditorSettings.dragThreshold, 1.0f, 30.0f, "%.0f px")) {
                 settingsChanged = true;
+                ImGui::GetIO().MouseDragThreshold = m_EditorSettings.dragThreshold;
             }
 
             ImGui::Separator();
@@ -1075,9 +1099,11 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
             ImGui::Separator();
             if (ImGui::SliderFloat("Hold Repeat Delay", &m_EditorSettings.holdRepeatDelay, 0.1f, 1.5f, "%.2f s")) {
                 settingsChanged = true;
+                ImGui::GetIO().KeyRepeatDelay = m_EditorSettings.holdRepeatDelay;
             }
             if (ImGui::SliderFloat("Hold Repeat Rate", &m_EditorSettings.holdRepeatRate, 0.01f, 0.2f, "%.3f s")) {
                 settingsChanged = true;
+                ImGui::GetIO().KeyRepeatRate = m_EditorSettings.holdRepeatRate;
             }
 
             ImGui::TreePop();
@@ -1168,6 +1194,8 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
                 auto& ppSettings = m_PostProcessing->GetSettings();
                 ppSettings.colorblindMode = m_EditorSettings.colorblindMode;
                 ppSettings.colorblindStrength = m_EditorSettings.colorblindStrength;
+                ppSettings.brightness = m_EditorSettings.screenBrightness;
+                ppSettings.contrast = m_EditorSettings.screenContrast;
             }
 
             // Apply raw mouse input and smoothing settings

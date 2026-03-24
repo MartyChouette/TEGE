@@ -1137,6 +1137,9 @@ private:
 
         // Apply reduced motion setting to controller system and UI
         m_ControllerSystem.SetReducedMotion(m_AccessibilitySettings.reducedMotion);
+        m_ControllerSystem.SetDisableScreenShake(m_AccessibilitySettings.disableScreenShake);
+        m_ControllerSystem.SetDisableFOVEffects(m_AccessibilitySettings.disableFOVEffects);
+        m_ControllerSystem.SetInvertMouseY(m_AccessibilitySettings.invertMouseY);
         m_UISystem.SetReducedMotion(m_AccessibilitySettings.reducedMotion);
 
         // Apply font scale to UISystem

@@ -335,6 +335,7 @@ bool EditorSettings::Save(const std::string& path) const {
         j["subtitleBgOpacity"] = subtitleBgOpacity;
         j["subtitleSpeakerNames"] = subtitleSpeakerNames;
         j["simplifiedEditor"] = simplifiedEditor;
+        j["dyslexiaFontEnabled"] = dyslexiaFontEnabled;
 
         // Play Mode
         j["autoFocusMode"] = autoFocusMode;
@@ -497,6 +498,7 @@ bool EditorSettings::Load(const std::string& path) {
         if (j.contains("subtitleBgOpacity")) subtitleBgOpacity = j["subtitleBgOpacity"].get<f32>();
         if (j.contains("subtitleSpeakerNames")) subtitleSpeakerNames = j["subtitleSpeakerNames"].get<bool>();
         if (j.contains("simplifiedEditor")) simplifiedEditor = j["simplifiedEditor"].get<bool>();
+        if (j.contains("dyslexiaFontEnabled")) dyslexiaFontEnabled = j["dyslexiaFontEnabled"].get<bool>();
 
         // Play Mode
         if (j.contains("autoFocusMode")) autoFocusMode = j["autoFocusMode"].get<bool>();
