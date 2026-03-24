@@ -13,6 +13,7 @@
 #include "Enjin/Debug/Profiler.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Accessibility/AlternativeInput.h"
+#include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Accessibility/AudioVisualIndicator.h"
 #include "Enjin/Accessibility/ContentWarning.h"
 #include "Enjin/Accessibility/SubtitleSystem.h"
@@ -540,6 +541,13 @@ void PlayMode::Update(f32 deltaTime) {
             ENJIN_PROFILE_SCOPE("ECS");
             m_ControllerSystem.Update(deltaTime);
             m_FlowerSystem.Update(deltaTime);
+        }
+
+        // Apply accessibility visual settings (colorblind filters, brightness,
+        // contrast) to post-processing every frame. This was missing — colorblind
+        // modes were defined but never pushed to the shader.
+        if (m_AccessibilitySettings && m_PostProcessing) {
+            m_AccessibilitySettings->ApplyToPostProcessing(m_PostProcessing->GetSettings());
         }
 
         // Re-sync controller-driven positions to Box2D and fire sensor events.
