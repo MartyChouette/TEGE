@@ -64,8 +64,8 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
         }
 
         Math::Vector2 mouseDelta = Input::GetMouseDelta();
-        m_Yaw -= mouseDelta.x * m_LookSensitivity;
-        m_Pitch -= mouseDelta.y * m_LookSensitivity;
+        m_Yaw += mouseDelta.x * m_LookSensitivity;
+        m_Pitch += mouseDelta.y * m_LookSensitivity;
         m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
         ApplyRotation();
     } else if (m_MouseCapturedByUs) {
@@ -77,8 +77,8 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
     if (Input::IsGamepadConnected()) {
         Math::Vector2 rightStick = Input::GetGamepadRightStick();
         if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
-            m_Yaw -= rightStick.x * m_LookSensitivity * 80.0f * deltaTime;
-            m_Pitch += rightStick.y * m_LookSensitivity * 80.0f * deltaTime;
+            m_Yaw += rightStick.x * m_LookSensitivity * 80.0f * deltaTime;
+            m_Pitch -= rightStick.y * m_LookSensitivity * 80.0f * deltaTime;
             m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
             ApplyRotation();
         }
@@ -177,8 +177,8 @@ void CameraController::UpdateOrbitMode(f32 deltaTime) {
         }
 
         Math::Vector2 mouseDelta = Input::GetMouseDelta();
-        m_Yaw -= mouseDelta.x * m_LookSensitivity;
-        m_Pitch -= mouseDelta.y * m_LookSensitivity;
+        m_Yaw += mouseDelta.x * m_LookSensitivity;
+        m_Pitch += mouseDelta.y * m_LookSensitivity;
         m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
     } else if (m_MouseCapturedByUs) {
         Input::SetMouseCaptured(false);
