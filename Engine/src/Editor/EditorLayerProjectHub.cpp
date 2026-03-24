@@ -547,15 +547,19 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
                 ImVec2(rEnd.x - statusSize.x - 10.0f, rPos.y + 24.0f),
                 statusCol, statusText);
 
-            // Click to open
+            // Click to open — capture path before any operation that might modify the vector
             if (hovered && canOpen && ImGui::IsMouseClicked(0)) {
-                if (m_SceneManager.LoadProject(m_EditorSettings.recentProjects[i])) {
+                std::string projectPath = m_EditorSettings.recentProjects[i];
+                std::filesystem::path projFile(projectPath);
+                if (m_SceneManager.LoadProject(projectPath)) {
                     MigrateEditorSettingsToProject();
-                    m_EditorSettings.lastProjectDir = std::filesystem::path(m_EditorSettings.recentProjects[i]).parent_path().parent_path().string();
+                    m_EditorSettings.AddRecentProject(projectPath);
+                    if (projFile.has_parent_path())
+                        m_EditorSettings.lastProjectDir = projFile.parent_path().string();
                     m_EditorSettings.Save();
                     auto& scenes = m_SceneManager.GetScenes();
                     if (!scenes.empty()) {
-                        auto projDir = std::filesystem::path(m_EditorSettings.recentProjects[i]).parent_path();
+                        auto projDir = projFile.parent_path();
                         OpenScene((projDir / scenes[0].path).string());
                     }
                 }
