@@ -1116,6 +1116,12 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 // MSAA modes (4/5/6) require render pass recreation via RenderSystem
                 if (m_RenderSystem) {
                     m_RenderSystem->SetAAMode(newMode);
+                    // ImGui's pipeline must match the new render pass MSAA sample count
+                    if (m_ImGuiLayer && m_RenderSystem->GetRenderer()) {
+                        m_ImGuiLayer->UpdateRenderPass(
+                            m_RenderSystem->GetRenderer()->GetRenderPass(),
+                            m_RenderSystem->GetRenderer()->GetMSAASamples());
+                    }
                 }
             }
 
@@ -2216,6 +2222,12 @@ void EditorLayer::DrawSettingsSection_DisplayOptions() {
                 // Update post-process settings with actual HDR mode
                 if (m_PostProcessing) {
                     m_PostProcessing->GetSettings().hdrOutputMode = m_RenderSystem->GetHDROutputMode();
+                }
+                // ImGui's pipeline must match the new render pass format
+                if (m_ImGuiLayer && m_RenderSystem->GetRenderer()) {
+                    m_ImGuiLayer->UpdateRenderPass(
+                        m_RenderSystem->GetRenderer()->GetRenderPass(),
+                        m_RenderSystem->GetRenderer()->GetMSAASamples());
                 }
             }
             if (!hdrAvailable && !hdrEnabled) {

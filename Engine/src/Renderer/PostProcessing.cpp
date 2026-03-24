@@ -5902,38 +5902,47 @@ void PostProcessing::UpdateSourceImage(VkImageView imageView, VkSampler sampler)
     imageInfo.imageView = imageView;
     imageInfo.sampler = sampler;
 
-    // Update binding 0 (scene source texture), and also set bindings 2 (LUT) and
-    // 3 (depth) to the same valid image as placeholders. The shader checks enable
-    // flags before sampling these, but Vulkan requires valid descriptors at all bindings.
+    // Update binding 0 (scene source texture) and binding 3 (depth placeholder).
+    // If a LUT is loaded, DON'T overwrite binding 2 — LoadLUT() already wrote the
+    // real LUT image view there. Only write a placeholder to binding 2 when no LUT
+    // is loaded (Vulkan requires valid descriptors at all bindings).
     VkDescriptorImageInfo lutPlaceholderInfo = imageInfo;
     if (m_LUTSampler != VK_NULL_HANDLE) {
         lutPlaceholderInfo.sampler = m_LUTSampler;
     }
 
+    // If a real LUT is loaded, preserve binding 2 — only update bindings 0 and 3.
+    // If no LUT is loaded, also write a placeholder to binding 2.
+    u32 writeCount = 0;
     VkWriteDescriptorSet writes[3]{};
 
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = m_DescriptorSet;
-    writes[0].dstBinding = 0;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[0].descriptorCount = 1;
-    writes[0].pImageInfo = &imageInfo;
+    writes[writeCount].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[writeCount].dstSet = m_DescriptorSet;
+    writes[writeCount].dstBinding = 0;
+    writes[writeCount].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[writeCount].descriptorCount = 1;
+    writes[writeCount].pImageInfo = &imageInfo;
+    writeCount++;
 
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = m_DescriptorSet;
-    writes[1].dstBinding = 2;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[1].descriptorCount = 1;
-    writes[1].pImageInfo = m_LUTLoaded ? &lutPlaceholderInfo : &imageInfo;
+    if (!m_LUTLoaded) {
+        writes[writeCount].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[writeCount].dstSet = m_DescriptorSet;
+        writes[writeCount].dstBinding = 2;
+        writes[writeCount].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[writeCount].descriptorCount = 1;
+        writes[writeCount].pImageInfo = &lutPlaceholderInfo;
+        writeCount++;
+    }
 
-    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[2].dstSet = m_DescriptorSet;
-    writes[2].dstBinding = 3;
-    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[2].descriptorCount = 1;
-    writes[2].pImageInfo = &imageInfo;
+    writes[writeCount].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[writeCount].dstSet = m_DescriptorSet;
+    writes[writeCount].dstBinding = 3;
+    writes[writeCount].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[writeCount].descriptorCount = 1;
+    writes[writeCount].pImageInfo = &imageInfo;
+    writeCount++;
 
-    vkUpdateDescriptorSets(m_Context->GetDevice(), 3, writes, 0, nullptr);
+    vkUpdateDescriptorSets(m_Context->GetDevice(), writeCount, writes, 0, nullptr);
     m_DepthSourceReady = false;  // Depth placeholder, not real depth
 }
 

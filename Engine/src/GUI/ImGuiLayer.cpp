@@ -304,6 +304,18 @@ void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
     // Atlas builds automatically on first ImGui_ImplVulkan_NewFrame() call
 }
 
+void ImGuiLayer::UpdateRenderPass(VkRenderPass renderPass, VkSampleCountFlagBits msaaSamples) {
+    if (!m_Initialized || !m_Renderer) return;
+
+    ImGui_ImplVulkan_PipelineInfo pipelineInfo = {};
+    pipelineInfo.RenderPass = renderPass;
+    pipelineInfo.Subpass = 0;
+    pipelineInfo.MSAASamples = msaaSamples;
+    ImGui_ImplVulkan_CreateMainPipeline(&pipelineInfo);
+
+    ENJIN_LOG_INFO(Editor, "ImGui pipeline recreated for MSAA %dx", static_cast<int>(msaaSamples));
+}
+
 static ImVec4 ToImVec4(const Editor::AccentColor& c) {
     return ImVec4(c.r, c.g, c.b, c.a);
 }

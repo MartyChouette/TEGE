@@ -193,6 +193,10 @@ public:
     // Set global UI scale (wraps ImGui font global scale)
     void SetGlobalScale(f32 scale);
 
+    // Recreate ImGui's main pipeline when the render pass changes (e.g., MSAA toggle).
+    // Call after the renderer's render pass has been recreated.
+    void UpdateRenderPass(VkRenderPass renderPass, VkSampleCountFlagBits msaaSamples);
+
 private:
     bool CreateDescriptorPool();
     void DestroyDescriptorPool();

@@ -170,8 +170,23 @@ void EditorLayer::DrawConsolePanel() {
                cat == LogCategory::Core;
     };
 
+    // Ctrl+C: copy all selected entries to clipboard
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) &&
+        ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C) &&
+        !m_ConsoleSelectedIndices.empty()) {
+        std::string combined;
+        for (int i = 0; i < static_cast<int>(m_ConsoleLog.size()); ++i) {
+            if (m_ConsoleSelectedIndices.count(i)) {
+                if (!combined.empty()) combined += '\n';
+                combined += m_ConsoleLog[i].message;
+            }
+        }
+        ImGui::SetClipboardText(combined.c_str());
+    }
+
     bool anyVisible = false;
-    for (const auto& entry : m_ConsoleLog) {
+    for (int idx = 0; idx < static_cast<int>(m_ConsoleLog.size()); ++idx) {
+        const auto& entry = m_ConsoleLog[idx];
         // Level filter
         if (entry.level <= LogLevel::Info  && !m_ConsoleShowInfo)  continue;
         if (entry.level == LogLevel::Warn  && !m_ConsoleShowWarn)  continue;
@@ -191,13 +206,21 @@ void EditorLayer::DrawConsolePanel() {
             color = ImVec4(0.85f, 0.85f, 0.85f, 1.0f);  // Light gray
         }
 
+        bool isSelected = m_ConsoleSelectedIndices.count(idx) > 0;
         ImGui::PushStyleColor(ImGuiCol_Text, color);
-        ImGui::PushID(static_cast<int>(&entry - m_ConsoleLog.data()));
-        if (ImGui::Selectable(entry.message.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick)) {
-            ImGui::SetClipboardText(entry.message.c_str());
-        }
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Click to copy");
+        ImGui::PushID(idx);
+        if (ImGui::Selectable(entry.message.c_str(), isSelected)) {
+            if (ImGui::GetIO().KeyShift) {
+                // Shift+Click: toggle selection
+                if (isSelected)
+                    m_ConsoleSelectedIndices.erase(idx);
+                else
+                    m_ConsoleSelectedIndices.insert(idx);
+            } else {
+                // Plain click: select only this entry
+                m_ConsoleSelectedIndices.clear();
+                m_ConsoleSelectedIndices.insert(idx);
+            }
         }
         ImGui::PopID();
         ImGui::PopStyleColor();
@@ -227,6 +250,7 @@ void EditorLayer::DrawConsolePanel() {
     ImGui::SameLine();
     if (ImGui::Button("Clear")) {
         m_ConsoleLog.clear();
+        m_ConsoleSelectedIndices.clear();
     }
 
     ImGui::End();
