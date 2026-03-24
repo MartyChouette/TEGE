@@ -1311,7 +1311,9 @@ void EditorLayer::DrawBuildDialog() {
 
     if (!hasProject) {
         // --- Inline quick-create project form ---
-        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "No project loaded — create one to build.");
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "No project loaded.");
+        ImGui::TextWrapped("To build a game, you need a project. Fill in the fields below and click 'Create Project & Continue'. "
+                          "This will save your current scene into a project folder and prepare it for building.");
         ImGui::Spacing();
         ImGui::SeparatorText("Quick Create Project");
 
@@ -1368,9 +1370,15 @@ void EditorLayer::DrawBuildDialog() {
             std::string location(qcLocation);
             fs::path projRoot = fs::path(location) / projName;
 
+            ENJIN_LOG_INFO(Editor, "Creating project '%s' at '%s' (root: %s)",
+                projName.c_str(), location.c_str(), projRoot.string().c_str());
+
             // Create directory structure
             std::error_code ec;
             fs::create_directories(projRoot / "scenes", ec);
+            if (ec) {
+                ENJIN_LOG_ERROR(Editor, "Failed to create scenes dir: %s", ec.message().c_str());
+            }
             if (!ec) {
                 fs::create_directories(projRoot / "scripts", ec);
                 fs::create_directories(projRoot / "assets", ec);

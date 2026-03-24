@@ -2068,7 +2068,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // and the mesh has sub-meshes, draw each sub-mesh with its own material.
             MeshComponent* meshForSubMesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
             MaterialSlotsComponent* matSlots = m_CachedMaterialSlotsStorage ? m_CachedMaterialSlotsStorage->Get(entity) : nullptr;
-            bool useSubMeshes = meshForSubMesh && meshForSubMesh->HasSubMeshes() && matSlots && !matSlots->slots.empty();
+            // TODO: re-enable after crash fix
+            bool useSubMeshes = false; // meshForSubMesh && meshForSubMesh->HasSubMeshes() && matSlots && !matSlots->slots.empty();
 
             bool poolPath = renderData.poolAlloc.valid && m_GeometryPool;
             if (useSubMeshes) {
