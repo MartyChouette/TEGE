@@ -3448,12 +3448,12 @@ void RenderSystem::CreateShadowPipeline() {
     config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     config.depthTest = true;
     config.depthWrite = true;
-    config.cullMode = VK_CULL_MODE_FRONT_BIT;  // Front-face culling: render back faces into shadow map to eliminate self-shadowing acne on curved geometry (capsules, spheres)
+    config.cullMode = VK_CULL_MODE_NONE;  // Render all faces — front-only culling causes shadow holes under convex objects (capsule bottom)
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.depthBiasEnable = true;
-    config.depthBiasConstant = 0.75f;  // Reduced from 2.0 to tighten contact shadows
-    config.depthBiasSlope = 1.0f;      // Slope bias for angled surfaces
+    config.depthBiasConstant = 1.25f;  // Balanced: tight contact shadows without acne rings
+    config.depthBiasSlope = 1.75f;     // Slope-scaled bias for angled surfaces
     config.hasColorAttachment = false;  // Depth-only pass
 
     m_ShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
@@ -6215,12 +6215,12 @@ void RenderSystem::CreatePointShadowPipeline() {
     config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     config.depthTest = true;
     config.depthWrite = true;
-    config.cullMode = VK_CULL_MODE_FRONT_BIT;  // Render back faces to eliminate self-shadowing on curved geometry
+    config.cullMode = VK_CULL_MODE_NONE;  // All faces for correct contact shadows
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.depthBiasEnable = true;
-    config.depthBiasConstant = 1.5f;
-    config.depthBiasSlope = 1.5f;
+    config.depthBiasConstant = 1.25f;
+    config.depthBiasSlope = 1.75f;
     config.hasColorAttachment = false;
 
     m_PointShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
