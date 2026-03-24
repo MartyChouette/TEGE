@@ -188,6 +188,9 @@ enum class GizmoSpace {
 // Editor layer - manages ImGui editor UI
 class ENJIN_API EditorLayer {
 public:
+    // Set by main() before Run() — if non-empty, opens this project directly (skips hub)
+    static inline std::string s_LaunchProjectPath;
+
     EditorLayer();
     ~EditorLayer();
 

@@ -300,8 +300,15 @@ Enjin::Application* CreateApplication() {
 
 // Entry point - Engine owns this
 int main(int argc, char* argv[]) {
-    (void)argc;
-    (void)argv;
+    // If launched with a .enjinproject file path (e.g., double-click in Explorer),
+    // store it so the editor opens directly into that project.
+    if (argc > 1 && argv[1]) {
+        std::string arg = argv[1];
+        if (arg.find(".enjinproject") != std::string::npos ||
+            arg.find(".enjin") != std::string::npos) {
+            Enjin::Editor::EditorLayer::s_LaunchProjectPath = arg;
+        }
+    }
 
     Enjin::Application* app = CreateApplication();
     int result = app->Run();
@@ -323,7 +330,8 @@ int main(int argc, char* argv[]) {
 // This prevents the black console window from appearing on launch.
 // Linux/Mac don't need this — they don't spawn consoles for GUI apps.
 #if defined(_WIN32)
-int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
-    return main(0, nullptr);
+int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR lpCmdLine, int) {
+    // Forward command line to main so file associations work
+    return main(__argc, __argv);
 }
 #endif

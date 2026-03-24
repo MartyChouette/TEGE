@@ -401,6 +401,36 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     // Check for crash report from previous session
     CheckForCrashReport();
 
+    // If launched with a project file (double-click .enjinproject), open it
+    // directly and skip the Project Hub.
+    if (!s_LaunchProjectPath.empty()) {
+        namespace fs = std::filesystem;
+        std::string launchPath = s_LaunchProjectPath;
+        s_LaunchProjectPath.clear();
+
+        if (fs::exists(launchPath)) {
+            if (launchPath.find(".enjinproject") != std::string::npos) {
+                if (m_SceneManager.LoadProject(launchPath)) {
+                    m_EditorSettings.AddRecentProject(launchPath);
+                    m_EditorSettings.lastProjectDir = fs::path(launchPath).parent_path().string();
+                    m_EditorSettings.Save();
+                    auto& scenes = m_SceneManager.GetScenes();
+                    if (!scenes.empty()) {
+                        auto projDir = fs::path(launchPath).parent_path();
+                        OpenScene((projDir / scenes[0].path).string());
+                    }
+                    m_ShowProjectHub = false;
+                    m_ShowSplash = false;
+                    ENJIN_LOG_INFO(Editor, "Opened project from launch: %s", launchPath.c_str());
+                }
+            } else if (launchPath.find(".enjin") != std::string::npos) {
+                OpenScene(launchPath);
+                m_ShowProjectHub = false;
+                m_ShowSplash = false;
+            }
+        }
+    }
+
     ENJIN_LOG_INFO(Editor, "EditorLayer initialized");
     return true;
 }
