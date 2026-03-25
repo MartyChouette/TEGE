@@ -187,14 +187,19 @@ void EditorLayer::EnsureProjectForScene(const std::string& scenePath) {
     fs::create_directories(projRoot / "assets", ec);
     fs::create_directories(projRoot / "scripts", ec);
 
-    // If scene file is not already inside projRoot/scenes, compute a relative path
-    std::string relPath;
-    auto relResult = fs::relative(sceneFile, projRoot, ec);
-    if (!ec && !relResult.empty()) {
-        relPath = relResult.generic_string();
-    } else {
-        relPath = "scenes/" + sceneFile.filename().string();
+    // Ensure scene file lives in projRoot/scenes/ (not the root).
+    // If it's in the root, move it into scenes/ so the manifest path matches.
+    fs::path scenesDir = projRoot / "scenes";
+    fs::path expectedScenePath = scenesDir / sceneFile.filename();
+    if (sceneFile.parent_path() != scenesDir && fs::exists(sceneFile)) {
+        std::error_code moveEc;
+        fs::rename(sceneFile, expectedScenePath, moveEc);
+        if (!moveEc) {
+            // Update the current scene path to the new location
+            m_CurrentScenePath = expectedScenePath.string();
+        }
     }
+    std::string relPath = "scenes/" + sceneFile.filename().string();
 
     // Initialize project
     m_SceneManager.NewProject(projName);
