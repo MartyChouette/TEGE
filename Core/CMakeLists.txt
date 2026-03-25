@@ -22,6 +22,10 @@ target_include_directories(EnjinCore PUBLIC
 
 target_compile_features(EnjinCore PUBLIC cxx_std_20)
 
+if(MSVC)
+    target_compile_options(EnjinCore PRIVATE /utf-8)
+endif()
+
 # Find GLFW for windowing
 # Try multiple methods to find GLFW
 set(GLFW_FOUND FALSE)

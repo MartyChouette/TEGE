@@ -5,6 +5,7 @@
 #include "Enjin/Accessibility/ContentWarning.h"
 #include "Enjin/Renderer/Skybox.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
+#include <nlohmann/json_fwd.hpp>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,9 @@ struct SerializationOptions {
 // Scene Serializer - Saves and loads scenes to/from JSON files
 class ENJIN_API SceneSerializer {
 public:
+    // Scene format version — increment when component serialization formats change
+    static constexpr u32 SCENE_FORMAT_VERSION = 1;
+
     SceneSerializer(ECS::World* world);
     ~SceneSerializer() = default;
 
@@ -90,6 +94,9 @@ public:
     const Renderer::SceneRenderSettings& GetRenderSettings() const { return m_RenderSettings; }
 
 private:
+    // Apply incremental migrations from fromVersion up to SCENE_FORMAT_VERSION
+    static void MigrateScene(nlohmann::json& root, u32 fromVersion);
+
     ECS::World* m_World = nullptr;
     Accessibility::SceneContentFlags m_ContentFlags;
     Renderer::SkyboxConfig m_SkyboxConfig;

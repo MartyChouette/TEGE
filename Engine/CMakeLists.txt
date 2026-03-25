@@ -88,8 +88,9 @@ elseif(UNIX)
 endif()
 
 # EditorLayer.cpp exceeds the default MSVC section limit due to heavy template use
+# /utf-8 ensures source files with UTF-8 encoded characters compile correctly
 if(MSVC)
-    target_compile_options(EnjinEngine PRIVATE /bigobj)
+    target_compile_options(EnjinEngine PRIVATE /bigobj /utf-8)
 endif()
 
 # --- Renderer backend selection (Vulkan vs WebGPU) ---
