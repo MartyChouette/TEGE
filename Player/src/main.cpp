@@ -708,11 +708,8 @@ public:
             }
         }
 
-        // Minimal render system refresh — full Update() crashes NVIDIA driver.
-        // Only refresh component caches so entities are visible.
-        if (m_RenderSystem && !m_ShowingSplash) {
-            m_RenderSystem->RefreshStorageCache();
-        }
+        // RenderSystem::Update (called via World::Update above) handles:
+        // RefreshStorageCache, UpdateFrameUniforms, BeginMainRenderPass, entity drawing
         // Tick skeletal animators manually
         if (m_World) {
             for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::AnimatorComponent>()) {
@@ -981,6 +978,8 @@ public:
             }
         }
 
+        // World::Update triggers all registered systems including RenderSystem.
+        // RenderSystem::Update starts the main render pass and draws entities.
         if (m_World) {
             m_World->Update(0.0f);
         }
