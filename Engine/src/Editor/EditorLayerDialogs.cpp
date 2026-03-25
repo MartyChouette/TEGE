@@ -1314,11 +1314,14 @@ void EditorLayer::DrawBuildDialog() {
 
     bool hasProject = !m_SceneManager.GetProjectPath().empty();
 
-    // Auto-create project from saved scene if possible
-    if (!hasProject && !m_CurrentScenePath.empty()) {
+    // Auto-create project from saved scene if possible (try once, not every frame)
+    static bool triedAutoCreate = false;
+    if (!hasProject && !m_CurrentScenePath.empty() && !triedAutoCreate) {
+        triedAutoCreate = true;
         EnsureProjectForScene(m_CurrentScenePath);
         hasProject = !m_SceneManager.GetProjectPath().empty();
     }
+    if (hasProject) triedAutoCreate = false; // Reset for next time dialog opens
 
     if (!hasProject) {
         ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f),

@@ -171,7 +171,8 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
     }
 }
 
-bool SceneManager::SaveProject(const std::string& manifestPath) const {
+bool SceneManager::SaveProject(const std::string& manifestPath) {
+    m_ManifestPath = manifestPath;  // Remember the path so GetProjectPath() works
     try {
         nlohmann::json root;
         root["projectName"] = m_ProjectName;
@@ -274,7 +275,8 @@ bool SceneManager::SaveProject() const {
         ENJIN_LOG_ERROR(Asset, "No project path set, use SaveProject(path)");
         return false;
     }
-    return SaveProject(m_ManifestPath);
+    // Use const_cast since path is already set — we just re-save to the same path
+    return const_cast<SceneManager*>(this)->SaveProject(m_ManifestPath);
 }
 
 // --- Scene List Management ---

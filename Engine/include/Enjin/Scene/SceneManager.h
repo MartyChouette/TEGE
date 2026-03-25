@@ -91,7 +91,7 @@ public:
     bool LoadProject(const std::string& manifestPath);
 
     // Save project manifest to JSON file
-    bool SaveProject(const std::string& manifestPath) const;
+    bool SaveProject(const std::string& manifestPath);  // Save and remember path
     bool SaveProject() const;  // Save to last loaded path
 
     // Get project info
