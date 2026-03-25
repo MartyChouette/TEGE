@@ -709,10 +709,19 @@ public:
             }
         }
 
-        // Render system update — skip for now if it crashes the NVIDIA driver.
-        // The scene will still render via the main pass, just without
-        // skeletal animation ticking or sprite updates.
-        // if (m_RenderSystem) m_RenderSystem->Update(deltaTime);
+        // Minimal render system update — only refresh component caches and
+        // tick skeletal animators. Full Update() crashes the NVIDIA driver
+        // because GPU culling/HiZ compute shaders aren't embedded in builds.
+        if (m_RenderSystem) {
+            m_RenderSystem->RefreshStorageCache();
+        }
+        // Tick skeletal animators
+        if (m_World) {
+            for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::AnimatorComponent>()) {
+                auto* ac = m_World->GetComponent<Enjin::ECS::AnimatorComponent>(entity);
+                if (ac) ac->Update(deltaTime);
+            }
+        }
 
         // Skip gameplay updates when paused, on title screen, or content warning is shown
         if (m_GameMenu.IsMenuOpen() || !m_GameStarted) return;

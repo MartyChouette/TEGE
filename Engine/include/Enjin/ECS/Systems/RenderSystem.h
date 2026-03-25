@@ -571,7 +571,9 @@ private:
     // Update() to avoid repeated type-ID hash map lookups in hot render loops.
     // Each GetComponent<T>(entity) does hash(typeId)->storage then hash(entity)->index;
     // caching the storage pointer eliminates the first lookup for every entity.
+public:
     void RefreshStorageCache();
+private:
     ComponentStorage<TransformComponent>* m_CachedTransformStorage = nullptr;
     ComponentStorage<MeshComponent>* m_CachedMeshStorage = nullptr;
     ComponentStorage<MaterialComponent>* m_CachedMaterialStorage = nullptr;
