@@ -212,6 +212,10 @@ public:
         // Setup render system
         m_RenderSystem = m_World->RegisterSystem<Enjin::ECS::RenderSystem>(m_World.get(), m_Renderer.get());
         m_RenderSystem->SetCamera(m_Camera.get());
+        // Disable ray tracing in built games — RT compute shaders are not
+        // embedded in the Player and invalid SPIR-V crashes the NVIDIA driver.
+        // RT can be re-enabled once all RT shaders are properly embedded.
+        m_RenderSystem->SetRayTracingEnabled(false);
         m_RenderSystem->Initialize();
 
         // Initialize ImGui layer for pause menu and dialogue overlays
