@@ -231,6 +231,16 @@ static std::string DuplicateProject(const std::string& projectFilePath) {
 }
 
 void EditorLayer::DrawProjectHub() {
+    try {
+    DrawProjectHubInner();
+    } catch (const std::exception& e) {
+        ENJIN_LOG_ERROR(Editor, "Project Hub exception: %s", e.what());
+    } catch (...) {
+        ENJIN_LOG_ERROR(Editor, "Project Hub unknown exception");
+    }
+}
+
+void EditorLayer::DrawProjectHubInner() {
     ImGuiIO& io = ImGui::GetIO();
 
     // Process deferred project deletion (set by Delete button in previous frame).

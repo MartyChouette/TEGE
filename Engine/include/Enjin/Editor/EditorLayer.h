@@ -814,6 +814,7 @@ private:
 
     // Project Hub methods
     void DrawProjectHub();
+    void DrawProjectHubInner();
     void DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW);
     void DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW);
     void DrawHubWizardSetup(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW);
