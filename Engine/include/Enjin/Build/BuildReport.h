@@ -13,6 +13,13 @@ enum class BuildTargetPlatform : u8 {
     Web         // WebAssembly + WebGPU
 };
 
+// How assets are packaged in the build output
+enum class PackagingMode : u8 {
+    Packed,      // .enjpak with XOR obfuscation (default, most secure)
+    PackedOpen,  // .enjpak without obfuscation (moddable, assets readable)
+    LooseFiles   // No pak file, raw files copied to output directory
+};
+
 enum class MessageSeverity : u8 {
     Info,
     Warning,
@@ -34,6 +41,7 @@ struct BuildConfig {
     u32 windowHeight = 720;
     bool fullscreen = false;
     BuildTargetPlatform target = BuildTargetPlatform::Desktop;
+    PackagingMode packagingMode = PackagingMode::Packed;
 };
 
 struct BuildResult {

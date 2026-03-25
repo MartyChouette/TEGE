@@ -1378,11 +1378,29 @@ void EditorLayer::DrawBuildDialog() {
 
     ImGui::Checkbox("Fullscreen", &m_BuildConfig.fullscreen);
 
-    // Build key (optional)
-    static char buildKey[256] = {};
-    ImGui::InputText("Pack Key (optional)", buildKey, sizeof(buildKey),
-                     ImGuiInputTextFlags_Password);
-    m_BuildConfig.buildKey = buildKey;
+    // Packaging mode
+    ImGui::Spacing();
+    const char* packagingLabels[] = { "Packed", "Packed (Moddable)", "Loose Files" };
+    int packMode = static_cast<int>(m_BuildConfig.packagingMode);
+    if (ImGui::Combo("Packaging", &packMode, packagingLabels, 3)) {
+        m_BuildConfig.packagingMode = static_cast<Build::PackagingMode>(packMode);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(
+            "Packed: Assets bundled into .enjpak with XOR obfuscation (most secure)\n"
+            "Packed (Moddable): Assets bundled into .enjpak without obfuscation (modders can read/replace)\n"
+            "Loose Files: Assets copied as-is to the output directory (easiest to mod, largest output)");
+    }
+
+    // Build key (only shown for Packed mode — not needed for PackedOpen or LooseFiles)
+    if (m_BuildConfig.packagingMode == Build::PackagingMode::Packed) {
+        static char buildKey[256] = {};
+        ImGui::InputText("Pack Key (optional)", buildKey, sizeof(buildKey),
+                         ImGuiInputTextFlags_Password);
+        m_BuildConfig.buildKey = buildKey;
+    } else {
+        m_BuildConfig.buildKey = "";
+    }
 
     ImGui::Spacing();
 

@@ -57,12 +57,25 @@ BuildResult BuildPipeline::Execute(const BuildConfig& config) {
         return m_Result;
     }
 
-    // Phase 3: Pack assets
+    // Phase 3: Pack or copy assets based on packaging mode
     ReportProgress("Packing assets", 0.3f);
-    if (!PackAssets(config.outputDir, config.buildKey)) {
-        m_Result.success = false;
-        AddMessage(MessageSeverity::Error, "Build failed: packing failed");
-        return m_Result;
+    if (config.packagingMode == PackagingMode::LooseFiles) {
+        if (!CopyLooseFiles(config.outputDir)) {
+            m_Result.success = false;
+            AddMessage(MessageSeverity::Error, "Build failed: file copy failed");
+            return m_Result;
+        }
+    } else {
+        // Packed or PackedOpen — PackedOpen forces empty key
+        std::string effectiveKey = config.buildKey;
+        if (config.packagingMode == PackagingMode::PackedOpen) {
+            effectiveKey = "";
+        }
+        if (!PackAssets(config.outputDir, effectiveKey)) {
+            m_Result.success = false;
+            AddMessage(MessageSeverity::Error, "Build failed: packing failed");
+            return m_Result;
+        }
     }
 
     // Phase 4: Copy player (desktop) or invoke Emscripten build (web)
@@ -94,19 +107,36 @@ BuildResult BuildPipeline::Execute(const BuildConfig& config) {
 
     // Phase 5: Verify
     ReportProgress("Verifying build", 0.9f);
-    std::string pakPath = (fs::path(config.outputDir) / "game.enjpak").string();
-    if (!VerifyBuild(pakPath, config.buildKey)) {
-        m_Result.success = false;
-        AddMessage(MessageSeverity::Error, "Build failed: verification failed");
-        return m_Result;
+    if (config.packagingMode == PackagingMode::LooseFiles) {
+        if (!VerifyLooseBuild(config.outputDir)) {
+            m_Result.success = false;
+            AddMessage(MessageSeverity::Error, "Build failed: verification failed");
+            return m_Result;
+        }
+    } else {
+        std::string pakPath = (fs::path(config.outputDir) / "game.enjpak").string();
+        std::string effectiveKey = config.buildKey;
+        if (config.packagingMode == PackagingMode::PackedOpen) {
+            effectiveKey = "";
+        }
+        if (!VerifyBuild(pakPath, effectiveKey)) {
+            m_Result.success = false;
+            AddMessage(MessageSeverity::Error, "Build failed: verification failed");
+            return m_Result;
+        }
     }
 
     ReportProgress("Complete", 1.0f);
     m_Result.success = true;
     m_Result.outputPath = config.outputDir;
-    AddMessage(MessageSeverity::Info, "Build succeeded: " + std::to_string(m_Result.filesPacked) +
-               " files packed (" + std::to_string(m_Result.totalSizeBytes) + " -> " +
-               std::to_string(m_Result.packedSizeBytes) + " bytes)");
+    if (config.packagingMode == PackagingMode::LooseFiles) {
+        AddMessage(MessageSeverity::Info, "Build succeeded: " + std::to_string(m_Result.filesPacked) +
+                   " files copied (" + std::to_string(m_Result.totalSizeBytes) + " bytes)");
+    } else {
+        AddMessage(MessageSeverity::Info, "Build succeeded: " + std::to_string(m_Result.filesPacked) +
+                   " files packed (" + std::to_string(m_Result.totalSizeBytes) + " -> " +
+                   std::to_string(m_Result.packedSizeBytes) + " bytes)");
+    }
 
     return m_Result;
 }
@@ -617,6 +647,167 @@ bool BuildPipeline::VerifyBuild(const std::string& pakPath, const std::string& k
     AddMessage(MessageSeverity::Info, "Build verification passed (" +
                std::to_string(reader.GetFileCount()) + " files verified)");
     reader.Close();
+    return true;
+}
+
+bool BuildPipeline::CopyLooseFiles(const std::string& outputDir) {
+    // Create output directory
+    try {
+        fs::create_directories(outputDir);
+    } catch (const std::exception& e) {
+        AddMessage(MessageSeverity::Error, std::string("Cannot create output dir: ") + e.what());
+        return false;
+    }
+
+    u32 filesCopied = 0;
+    u64 totalBytes = 0;
+
+    // Helper: copy a file to outputDir preserving its relative path from project root
+    auto copyFileRelative = [&](const std::string& absPath, const std::string& virtualPath) -> bool {
+        fs::path destPath = fs::path(outputDir) / virtualPath;
+        try {
+            fs::create_directories(destPath.parent_path());
+            fs::copy_file(absPath, destPath, fs::copy_options::overwrite_existing);
+            totalBytes += fs::file_size(destPath);
+            filesCopied++;
+            return true;
+        } catch (const std::exception& e) {
+            AddMessage(MessageSeverity::Warning, "Failed to copy: " + virtualPath + " (" + e.what() + ")");
+            return false;
+        }
+    };
+
+    // Copy project manifest
+    if (!copyFileRelative(m_Config.projectPath, "project.enjinproject")) {
+        AddMessage(MessageSeverity::Error, "Failed to copy project manifest");
+        return false;
+    }
+
+    // Copy all scenes
+    float sceneProgress = 0.0f;
+    float sceneStep = m_Scenes.empty() ? 0.0f : 0.3f / static_cast<float>(m_Scenes.size());
+    for (auto& scene : m_Scenes) {
+        ReportProgress("Copying scene: " + scene.name, 0.3f + sceneProgress);
+        sceneProgress += sceneStep;
+        if (!copyFileRelative(scene.absolutePath, scene.relativePath)) {
+            AddMessage(MessageSeverity::Error, "Failed to copy scene: " + scene.relativePath);
+            return false;
+        }
+    }
+
+    // Helper: copy a set of asset files, computing relative paths from project dir
+    auto copyAssetSet = [&](const std::set<std::string>& paths, const char* label) {
+        for (const auto& path : paths) {
+            auto relPath = fs::relative(fs::path(path), fs::path(m_ProjectDir));
+            std::string virtualPath = relPath.generic_string();
+            if (!copyFileRelative(path, virtualPath)) {
+                AddMessage(MessageSeverity::Warning, std::string("Failed to copy ") + label + ": " + path);
+            }
+        }
+    };
+
+    ReportProgress("Copying textures", 0.6f);
+    copyAssetSet(m_TexturePaths, "texture");
+
+    ReportProgress("Copying scripts", 0.65f);
+    copyAssetSet(m_ScriptPaths, "script");
+
+    ReportProgress("Copying audio", 0.7f);
+    copyAssetSet(m_AudioPaths, "audio");
+
+    copyAssetSet(m_DialoguePaths, "dialogue");
+    copyAssetSet(m_PrefabPaths, "prefab");
+    copyAssetSet(m_DataAssetPaths, "data asset");
+    copyAssetSet(m_ModelPaths, "model");
+
+    // Copy window icon if present
+    std::string iconPath = (fs::path(m_ProjectDir) / "icon.png").string();
+    if (fs::exists(iconPath)) {
+        copyFileRelative(iconPath, "icon.png");
+    }
+
+    // Write game.manifest JSON (replaces the in-pak _build/manifest.json)
+    if (!WriteLooseManifest(m_Config, outputDir)) {
+        AddMessage(MessageSeverity::Error, "Failed to write game manifest");
+        return false;
+    }
+
+    m_Result.filesPacked = filesCopied;
+    m_Result.totalSizeBytes = totalBytes;
+    m_Result.packedSizeBytes = totalBytes; // No compression for loose files
+
+    AddMessage(MessageSeverity::Info, "Copied " + std::to_string(filesCopied) + " files to " + outputDir);
+    return true;
+}
+
+bool BuildPipeline::WriteLooseManifest(const BuildConfig& config, const std::string& outputDir) {
+    nlohmann::json manifest;
+    manifest["windowTitle"] = config.windowTitle.empty() ? m_ProjectName : config.windowTitle;
+    manifest["windowWidth"] = config.windowWidth;
+    manifest["windowHeight"] = config.windowHeight;
+    manifest["fullscreen"] = config.fullscreen;
+    manifest["projectName"] = m_ProjectName;
+
+    // Find start scene
+    for (const auto& scene : m_Scenes) {
+        if (scene.isStartScene) {
+            manifest["startScene"] = scene.relativePath;
+            break;
+        }
+    }
+
+    // Frame settings
+    nlohmann::json frameSettings;
+    frameSettings["targetFrameRate"] = m_TargetFrameRate;
+    frameSettings["vSync"] = m_VSync;
+    frameSettings["backgroundBehavior"] = m_BackgroundBehavior;
+    manifest["frameSettings"] = frameSettings;
+
+    // Physics backend and project mode
+    manifest["physicsBackend"] = m_PhysicsBackendType;
+    manifest["projectMode"] = m_ProjectMode;
+
+    std::string manifestPath = (fs::path(outputDir) / "game.manifest").string();
+    try {
+        std::ofstream file(manifestPath);
+        if (!file.is_open()) {
+            AddMessage(MessageSeverity::Error, "Cannot create game.manifest at: " + manifestPath);
+            return false;
+        }
+        file << manifest.dump(2);
+        file.close();
+        return true;
+    } catch (const std::exception& e) {
+        AddMessage(MessageSeverity::Error, std::string("Error writing game.manifest: ") + e.what());
+        return false;
+    }
+}
+
+bool BuildPipeline::VerifyLooseBuild(const std::string& outputDir) {
+    // Verify game.manifest exists
+    std::string manifestPath = (fs::path(outputDir) / "game.manifest").string();
+    if (!fs::exists(manifestPath)) {
+        AddMessage(MessageSeverity::Error, "game.manifest missing from output directory");
+        return false;
+    }
+
+    // Verify project file
+    std::string projPath = (fs::path(outputDir) / "project.enjinproject").string();
+    if (!fs::exists(projPath)) {
+        AddMessage(MessageSeverity::Error, "Project file missing from output directory");
+        return false;
+    }
+
+    // Verify all scenes
+    for (const auto& scene : m_Scenes) {
+        std::string scenePath = (fs::path(outputDir) / scene.relativePath).string();
+        if (!fs::exists(scenePath)) {
+            AddMessage(MessageSeverity::Error, "Scene missing from output: " + scene.relativePath);
+            return false;
+        }
+    }
+
+    AddMessage(MessageSeverity::Info, "Loose build verification passed");
     return true;
 }
 

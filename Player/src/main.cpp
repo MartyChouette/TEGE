@@ -102,50 +102,57 @@ public:
     void Initialize() override {
         ENJIN_LOG_INFO(Player, "Enjin Player starting...");
 
-        // Open .enjpak from the same directory as the executable
+        // Try to open assets: first check for .enjpak, then fall back to loose files
         std::string exeDir = Enjin::Platform::GetExecutableDirectory();
         std::string pakPath = (fs::path(exeDir) / "game.enjpak").string();
+        std::string looseManifestPath = (fs::path(exeDir) / "game.manifest").string();
 
-        if (!m_AssetReader.Open(pakPath, PACK_KEY)) {
-            ENJIN_LOG_FATAL(Player, "Failed to open game.enjpak from: %s", pakPath.c_str());
-            return;
-        }
-
-        // Read build manifest
-        auto manifestData = m_AssetReader.ReadFile("_build/manifest.json");
-        if (manifestData.empty()) {
-            ENJIN_LOG_FATAL(Player, "Build manifest missing from pack");
-            return;
-        }
-
-        try {
-            std::string manifestStr(manifestData.begin(), manifestData.end());
-            auto manifest = nlohmann::json::parse(manifestStr);
-
-            m_WindowTitle = manifest.value("windowTitle", "Enjin Game");
-            m_WindowWidth = manifest.value("windowWidth", 1280u);
-            m_WindowHeight = manifest.value("windowHeight", 720u);
-            m_Fullscreen = manifest.value("fullscreen", false);
-            m_StartScene = manifest.value("startScene", "");
-
-            // Read frame rate settings
-            if (manifest.contains("frameSettings")) {
-                auto& fs = manifest["frameSettings"];
-                m_TargetFPS = fs.value("targetFrameRate", 60u);
-                m_VSync = fs.value("vSync", true);
-                m_BackgroundBehavior = fs.value("backgroundBehavior", 1u);
+        if (fs::exists(pakPath)) {
+            // Packed mode — open .enjpak (try with default key, then empty key for PackedOpen)
+            if (!m_AssetReader.Open(pakPath, PACK_KEY)) {
+                // Retry with empty key (PackedOpen mode)
+                if (!m_AssetReader.Open(pakPath, "")) {
+                    ENJIN_LOG_FATAL(Player, "Failed to open game.enjpak from: %s", pakPath.c_str());
+                    return;
+                }
             }
 
-            // Read physics backend and project mode
-            m_PhysicsBackendType = manifest.value("physicsBackend", 0u);
-            m_ProjectMode = manifest.value("projectMode", 1u);
+            // Read build manifest from pack
+            auto manifestData = m_AssetReader.ReadFile("_build/manifest.json");
+            if (manifestData.empty()) {
+                ENJIN_LOG_FATAL(Player, "Build manifest missing from pack");
+                return;
+            }
 
-            ENJIN_LOG_INFO(Player, "Game: %s (%ux%u, %s FPS, VSync: %s)",
-                m_WindowTitle.c_str(), m_WindowWidth, m_WindowHeight,
-                m_TargetFPS == 0 ? "Uncapped" : std::to_string(m_TargetFPS).c_str(),
-                m_VSync ? "ON" : "OFF");
-        } catch (const std::exception& e) {
-            ENJIN_LOG_ERROR(Player, "Error parsing build manifest: %s", e.what());
+            try {
+                std::string manifestStr(manifestData.begin(), manifestData.end());
+                auto manifest = nlohmann::json::parse(manifestStr);
+                ParseManifestJson(manifest);
+            } catch (const std::exception& e) {
+                ENJIN_LOG_ERROR(Player, "Error parsing build manifest: %s", e.what());
+                return;
+            }
+        } else if (fs::exists(looseManifestPath)) {
+            // Loose files mode — read game.manifest from disk
+            m_LooseFilesMode = true;
+            m_LooseFilesDir = exeDir;
+            ENJIN_LOG_INFO(Player, "No .enjpak found, using loose files from: %s", exeDir.c_str());
+
+            try {
+                std::ifstream manifestFile(looseManifestPath);
+                if (!manifestFile.is_open()) {
+                    ENJIN_LOG_FATAL(Player, "Failed to open game.manifest from: %s", looseManifestPath.c_str());
+                    return;
+                }
+                auto manifest = nlohmann::json::parse(manifestFile);
+                manifestFile.close();
+                ParseManifestJson(manifest);
+            } catch (const std::exception& e) {
+                ENJIN_LOG_ERROR(Player, "Error parsing game.manifest: %s", e.what());
+                return;
+            }
+        } else {
+            ENJIN_LOG_FATAL(Player, "No game.enjpak or game.manifest found in: %s", exeDir.c_str());
             return;
         }
 
@@ -302,14 +309,32 @@ public:
         m_DestructibleSystem.Initialize(m_World.get());
         m_StreamingManager.SetWorld(m_World.get());
         m_SceneManager.SetWorld(m_World.get());
-        m_SceneManager.SetAssetReader(&m_AssetReader);
+        if (!m_LooseFilesMode) {
+            m_SceneManager.SetAssetReader(&m_AssetReader);
+        }
 
-        // Populate scene list from packed project manifest
+        // Populate scene list from project manifest
         {
-            auto projData = m_AssetReader.ReadFile("project.enjinproject");
-            if (!projData.empty()) {
+            std::string projStr;
+            if (m_LooseFilesMode) {
+                // Read project manifest from disk
+                std::string projPath = (fs::path(m_LooseFilesDir) / "project.enjinproject").string();
+                std::ifstream projFile(projPath);
+                if (projFile.is_open()) {
+                    projStr = std::string((std::istreambuf_iterator<char>(projFile)),
+                                           std::istreambuf_iterator<char>());
+                    projFile.close();
+                }
+            } else {
+                // Read from .enjpak
+                auto projData = m_AssetReader.ReadFile("project.enjinproject");
+                if (!projData.empty()) {
+                    projStr = std::string(projData.begin(), projData.end());
+                }
+            }
+
+            if (!projStr.empty()) {
                 try {
-                    std::string projStr(projData.begin(), projData.end());
                     auto projJson = nlohmann::json::parse(projStr);
                     if (projJson.contains("scenes") && projJson["scenes"].is_array()) {
                         for (const auto& sj : projJson["scenes"]) {
@@ -335,20 +360,52 @@ public:
                     ENJIN_LOG_ERROR(Player, "Failed to parse project manifest: %s", e.what());
                 }
             } else {
-                ENJIN_LOG_WARN(Player, "No project.enjinproject found in pack — SceneManager scene list empty");
+                ENJIN_LOG_WARN(Player, "No project.enjinproject found — SceneManager scene list empty");
             }
         }
 
-        // Load data assets (.enjschema and .enjdata) from pack
+        // Load data assets (.enjschema and .enjdata)
         {
             auto& registry = Enjin::Assets::DataAssetRegistry::Get();
             Enjin::u32 schemaCount = 0, assetCount = 0;
-            for (const auto& file : m_AssetReader.ListFiles()) {
+
+            // Collect file list — from pack or from filesystem
+            std::vector<std::string> fileList;
+            if (m_LooseFilesMode) {
+                try {
+                    for (auto& entry : fs::recursive_directory_iterator(m_LooseFilesDir,
+                             fs::directory_options::skip_permission_denied)) {
+                        if (!entry.is_regular_file()) continue;
+                        auto rel = fs::relative(entry.path(), fs::path(m_LooseFilesDir));
+                        fileList.push_back(rel.generic_string());
+                    }
+                } catch (const std::exception& e) {
+                    ENJIN_LOG_WARN(Player, "Error scanning loose files: %s", e.what());
+                }
+            } else {
+                fileList = m_AssetReader.ListFiles();
+            }
+
+            // Helper: read a file from pack or disk
+            auto readFileContent = [&](const std::string& virtualPath) -> std::string {
+                if (m_LooseFilesMode) {
+                    std::string fullPath = (fs::path(m_LooseFilesDir) / virtualPath).string();
+                    std::ifstream f(fullPath);
+                    if (!f.is_open()) return "";
+                    return std::string((std::istreambuf_iterator<char>(f)),
+                                        std::istreambuf_iterator<char>());
+                } else {
+                    auto data = m_AssetReader.ReadFile(virtualPath);
+                    if (data.empty()) return "";
+                    return std::string(data.begin(), data.end());
+                }
+            };
+
+            for (const auto& file : fileList) {
                 if (file.size() > 11 && file.substr(file.size() - 11) == ".enjschema") {
-                    auto data = m_AssetReader.ReadFile(file);
-                    if (!data.empty()) {
+                    std::string str = readFileContent(file);
+                    if (!str.empty()) {
                         try {
-                            std::string str(data.begin(), data.end());
                             auto j = nlohmann::json::parse(str);
                             Enjin::Assets::DataAssetSchema schema;
                             schema.name = j.value("name", "");
@@ -371,12 +428,11 @@ public:
                     }
                 }
             }
-            for (const auto& file : m_AssetReader.ListFiles()) {
+            for (const auto& file : fileList) {
                 if (file.size() > 9 && file.substr(file.size() - 9) == ".enjdata") {
-                    auto data = m_AssetReader.ReadFile(file);
-                    if (!data.empty()) {
+                    std::string str = readFileContent(file);
+                    if (!str.empty()) {
                         try {
-                            std::string str(data.begin(), data.end());
                             auto j = nlohmann::json::parse(str);
                             Enjin::Assets::DataAsset asset;
                             asset.name = j.value("name", "");
@@ -407,7 +463,7 @@ public:
                 }
             }
             if (schemaCount > 0 || assetCount > 0) {
-                ENJIN_LOG_INFO(Player, "Loaded %u schemas and %u data assets from pack", schemaCount, assetCount);
+                ENJIN_LOG_INFO(Player, "Loaded %u schemas and %u data assets", schemaCount, assetCount);
             }
         }
 
@@ -1274,14 +1330,54 @@ private:
         ENJIN_LOG_INFO(Player, "Splash screen ended, game loaded");
     }
 
-    bool LoadSceneFromPack(const std::string& scenePath) {
-        auto sceneData = m_AssetReader.ReadFile(scenePath);
-        if (sceneData.empty()) {
-            ENJIN_LOG_ERROR(Player, "Failed to read scene from pack: %s", scenePath.c_str());
-            return false;
+    void ParseManifestJson(const nlohmann::json& manifest) {
+        m_WindowTitle = manifest.value("windowTitle", "Enjin Game");
+        m_WindowWidth = manifest.value("windowWidth", 1280u);
+        m_WindowHeight = manifest.value("windowHeight", 720u);
+        m_Fullscreen = manifest.value("fullscreen", false);
+        m_StartScene = manifest.value("startScene", "");
+
+        // Read frame rate settings
+        if (manifest.contains("frameSettings")) {
+            const auto& fs = manifest["frameSettings"];
+            m_TargetFPS = fs.value("targetFrameRate", 60u);
+            m_VSync = fs.value("vSync", true);
+            m_BackgroundBehavior = fs.value("backgroundBehavior", 1u);
         }
 
-        std::string sceneStr(sceneData.begin(), sceneData.end());
+        // Read physics backend and project mode
+        m_PhysicsBackendType = manifest.value("physicsBackend", 0u);
+        m_ProjectMode = manifest.value("projectMode", 1u);
+
+        ENJIN_LOG_INFO(Player, "Game: %s (%ux%u, %s FPS, VSync: %s)",
+            m_WindowTitle.c_str(), m_WindowWidth, m_WindowHeight,
+            m_TargetFPS == 0 ? "Uncapped" : std::to_string(m_TargetFPS).c_str(),
+            m_VSync ? "ON" : "OFF");
+    }
+
+    bool LoadSceneFromPack(const std::string& scenePath) {
+        std::string sceneStr;
+
+        if (m_LooseFilesMode) {
+            // Read scene file directly from disk
+            std::string fullPath = (fs::path(m_LooseFilesDir) / scenePath).string();
+            std::ifstream file(fullPath);
+            if (!file.is_open()) {
+                ENJIN_LOG_ERROR(Player, "Failed to read scene from disk: %s", fullPath.c_str());
+                return false;
+            }
+            sceneStr = std::string((std::istreambuf_iterator<char>(file)),
+                                    std::istreambuf_iterator<char>());
+            file.close();
+        } else {
+            // Read scene from .enjpak
+            auto sceneData = m_AssetReader.ReadFile(scenePath);
+            if (sceneData.empty()) {
+                ENJIN_LOG_ERROR(Player, "Failed to read scene from pack: %s", scenePath.c_str());
+                return false;
+            }
+            sceneStr = std::string(sceneData.begin(), sceneData.end());
+        }
         Enjin::Scene::SceneSerializer serializer(m_World.get());
         auto result = serializer.LoadFromString(sceneStr, true);
 
@@ -1488,6 +1584,10 @@ private:
 
     // Default pack key — matches the build pipeline default
     static constexpr const char* PACK_KEY = "enjin_default_pack_key_2025";
+
+    // Loose files mode — when true, assets are loaded from disk instead of .enjpak
+    bool m_LooseFilesMode = false;
+    std::string m_LooseFilesDir;
 
     bool m_Initialized = false;
     bool m_GameStarted = false;

@@ -29,12 +29,18 @@ private:
     bool ValidateAssets();
     // Phase 3: Pack everything into .enjpak
     bool PackAssets(const std::string& outputDir, const std::string& key);
+    // Phase 3 (alt): Copy loose files to output directory (no packing)
+    bool CopyLooseFiles(const std::string& outputDir);
     // Phase 4: Copy player executable to output
     bool CopyPlayer(const std::string& outputDir);
     // Phase 5: Write build manifest (window title, resolution) into pack
     bool WriteBuildManifest(const BuildConfig& config, AssetPacker& packer);
+    // Phase 5 (alt): Write game.manifest JSON for loose files mode
+    bool WriteLooseManifest(const BuildConfig& config, const std::string& outputDir);
     // Phase 6: Verify — read back .enjpak, check CRC32s
     bool VerifyBuild(const std::string& pakPath, const std::string& key);
+    // Phase 6 (alt): Verify loose files exist in output
+    bool VerifyLooseBuild(const std::string& outputDir);
 
     // Scan project directory for script, audio, dialogue, prefab, and data asset files
     void ScanProjectDirectory();
