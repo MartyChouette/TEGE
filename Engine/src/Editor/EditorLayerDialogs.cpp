@@ -1314,9 +1314,22 @@ void EditorLayer::DrawBuildDialog() {
 
     bool hasProject = !m_SceneManager.GetProjectPath().empty();
 
+    // Auto-create project from saved scene if possible
+    if (!hasProject && !m_CurrentScenePath.empty()) {
+        EnsureProjectForScene(m_CurrentScenePath);
+        hasProject = !m_SceneManager.GetProjectPath().empty();
+    }
+
     if (!hasProject) {
         ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f),
-            "No project loaded. Save your scene first (Ctrl+S) to auto-create a project.");
+            "Save your scene first (Ctrl+S), then Build will be available.");
+        if (ImGui::Button("Save Scene Now")) {
+            std::vector<FileFilter> filters = {{ "Enjin Scene", "*.enjin" }, { "All Files", "*.*" }};
+            std::string path = FileDialog::SaveFile("Save Scene", filters, "", "scene.enjin");
+            if (!path.empty()) {
+                SaveScene(path);
+            }
+        }
         ImGui::End();
         return;
     }
