@@ -706,6 +706,16 @@ public:
             }
         }
 
+        // Render system update ALWAYS runs (even on title screen) so the scene
+        // is visible behind menus and component caches stay fresh.
+        if (m_RenderSystem) {
+            try {
+                m_RenderSystem->Update(deltaTime);
+            } catch (...) {
+                ENJIN_LOG_ERROR(Player, "RenderSystem::Update exception");
+            }
+        }
+
         // Skip gameplay updates when paused, on title screen, or content warning is shown
         if (m_GameMenu.IsMenuOpen() || !m_GameStarted) return;
         if (m_ContentWarnings.IsVisible()) return;
@@ -717,11 +727,6 @@ public:
         // Dispatch 3D collision events to visual scripts and gameplay systems
         Enjin::Gameplay::GameplayLoop::DispatchCollisionEvents3D(
             m_World.get(), m_Physics.get(), &m_VisualScriptSystem, deltaTime, m_DeferredDestroys);
-
-        // --- Render system update (skeletal animation, sprites, terrain, lighting cache) ---
-        if (m_RenderSystem) {
-            m_RenderSystem->Update(deltaTime);
-        }
 
         // --- Controllers & vegetation ---
         m_ControllerSystem.Update(deltaTime);
