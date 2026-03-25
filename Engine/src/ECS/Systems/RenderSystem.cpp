@@ -7304,6 +7304,10 @@ bool RenderSystem::IsRayTracingSupported() const {
 }
 
 void RenderSystem::InitializeRayTracing() {
+    if (!m_RTEnabled) {
+        ENJIN_LOG_INFO(Renderer, "Ray tracing disabled by configuration");
+        return;
+    }
     if (!IsRayTracingSupported()) {
         ENJIN_LOG_INFO(Renderer, "Ray tracing not supported on this device, RT features disabled");
         return;
