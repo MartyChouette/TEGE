@@ -1422,6 +1422,8 @@ void EditorLayer::DrawBuildDialog() {
             SaveScene(m_CurrentScenePath);
             ENJIN_LOG_INFO(Editor, "Auto-saved scene before build: %s", m_CurrentScenePath.c_str());
         }
+        ENJIN_LOG_INFO(Editor, "Build: projectPath='%s' scenePath='%s'",
+            m_SceneManager.GetProjectPath().c_str(), m_CurrentScenePath.c_str());
         m_BuildConfig.projectPath = m_SceneManager.GetProjectPath();
         m_BuildInProgress = true;
         m_BuildFinished = false;

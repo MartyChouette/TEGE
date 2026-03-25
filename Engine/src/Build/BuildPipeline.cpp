@@ -240,6 +240,7 @@ bool BuildPipeline::ValidateAssets() {
     bool allValid = true;
 
     for (auto& scene : m_Scenes) {
+        AddMessage(MessageSeverity::Info, "Checking scene: '" + scene.absolutePath + "' (relative: '" + scene.relativePath + "', projectDir: '" + m_ProjectDir + "')");
         if (!fs::exists(scene.absolutePath)) {
             AddMessage(MessageSeverity::Error, "Scene file not found: " + scene.relativePath, scene.absolutePath);
             allValid = false;
