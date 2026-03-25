@@ -1,6 +1,6 @@
 # AngelScript API Reference
 
-Complete reference for all functions callable from AngelScript via `TegeBehavior` scripts. ~280 functions across all categories.
+Complete reference for all functions callable from AngelScript via `TegeBehavior` scripts. ~900+ functions across all categories.
 
 ---
 
@@ -80,7 +80,7 @@ Channel constants: `AUDIO_CHANNEL_SFX=0`, `AUDIO_CHANNEL_MUSIC=1`, `AUDIO_CHANNE
 - **Light**: `Light_SetColor/SetIntensity(uint64, ...)`
 - **Camera**: `Camera_SetFOV/GetFOV(uint64, float)`
 - **AudioSource**: `AudioSource_Play/Stop/SetClip/SetVolume(uint64, ...)`
-- **Animator**: `Animator_Play(uint64, string)`, `Animator_SetSpeed(uint64, float)`
+- **Animator**: `Animator_Play(uint64, string)`, `Animator_SetSpeed(uint64, float)`, `Animator_Stop(uint64)`, `Animator_Pause(uint64)`, `Animator_Resume(uint64)`, `Animator_IsPlaying(uint64)`, `Animator_GetCurrentAnimation(uint64)`, `Animator_GetSpeed(uint64)`
 - **Controller**: `Controller_SetMoveSpeed/GetVelocity(uint64, ...)` — works with all 5 controller types
 - **Camera2D**: `Camera2D_Shake(uint64, float intensity, float duration)`, `Camera2D_GetZoom/SetZoom(uint64, float)`, `Camera2D_AddTarget/RemoveTarget(uint64 camera, uint64 target)`, `Camera2D_ClearTargets(uint64)`, `Camera2D_SetDeadZone(uint64, float w, float h)`, `Camera2D_SetLookAhead(uint64, float distance, float smoothing)`, `Camera2D_SetFollowTarget/GetFollowTarget(uint64, uint64)`
 - **Existence checks**: `HasComponent_Health/Light/Camera/Material/AudioSource/Rigidbody/BoxCollider/Animator(uint64)`

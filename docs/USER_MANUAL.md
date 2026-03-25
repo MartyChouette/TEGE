@@ -113,8 +113,20 @@ cmake ..
 When you launch the editor for the first time:
 
 1. A splash screen appears briefly.
-2. The **Template Selector** dialog opens, letting you choose a starting template (see [Templates](#4-templates)).
-3. After selecting a template, the editor opens with the scene pre-populated.
+2. The **Project Hub** opens, showing recent projects and offering options to create a new project, open an existing one, or start from a template.
+3. After selecting or creating a project, the editor opens with the scene pre-populated.
+
+Projects are auto-created on disk in `~/EnjinProjects/` (or a configured location). Each project gets its own directory with a `.enjinproject` manifest, an `assets/` folder, and a default scene.
+
+### Project Management
+
+The Project Hub (shown at startup and via **File > Project Hub**) supports full project lifecycle management:
+
+- **Create Project** -- Enter a name and select a template. The project directory, manifest, and default scene are created automatically.
+- **Open Project** -- Browse for a `.enjinproject` file or select from the recent projects list.
+- **Delete Project** -- Right-click a project in the hub to delete it (with confirmation). Deletion is deferred to prevent crashes.
+- **Duplicate Project** -- Copy an existing project to a new directory with a new name.
+- **File Association** -- Double-clicking a `.enjinproject` file in the OS file explorer opens the editor directly to that project. The installer registers the `.enjinproject` file extension.
 
 ### Window Icon
 
@@ -137,10 +149,10 @@ The Enjin editor is a panel-based workspace. All panels can be toggled from the 
 | **Console** | Log output for engine messages, warnings, and errors. |
 | **Asset Browser** | Browse and manage project files with grid/list view, thumbnails, search, and drag-and-drop. |
 | **Settings** | Unified settings window with 3 tabs: **System** (camera, performance, IDE, accessibility, fonts), **Project** (project mode, window icon, physics, frame rate, audio, collision groups, build config), **Scene** (skybox, shadows, lighting, cel shading, display, ray tracing, light probes, post processing, retro effects, environment). Opened via View > Settings. |
-| **Game View** | Rendered game camera output with Play/Pause/Stop controls. |
+| **Game View** | Rendered game camera output with Play/Pause/Stop controls. Default 16:9 aspect ratio. |
 | **Scene List** | Multi-scene project management. Add, reorder, load scenes, and set the start scene. |
 | **Stats Overlay** | Real-time performance metrics: FPS, frame time, draw calls, and triangle count. |
-| **Visual Script** | Blueprint-style visual scripting editor with 76+ node types and debugger. |
+| **Visual Script** | Blueprint-style visual scripting editor with 262 node types and debugger. |
 | **Behavior Tree** | AI behavior tree editor with 20 node types, blackboard editor, and play-mode visualization. |
 | **Quest Flow** | Visual quest designer with objectives, branches, conditions, and rewards. |
 | **Pixel Editor** | Pixel art creation tool with layers, 8 drawing tools, undo/redo, and retro presets. |
@@ -199,6 +211,18 @@ Panels display helpful empty-state messages when there is nothing to show:
 | `` ` `` (backtick) | Toggle drop-down console |
 | `F11` | Toggle focus mode (fullscreen game view) |
 
+### Viewport Shading Modes
+
+The Scene View includes Blender-style shading mode buttons in the toolbar, controlling how the viewport renders:
+
+| Mode | Description |
+|------|-------------|
+| **Wireframe** | Wireframe only, no filled surfaces. |
+| **Solid** | Flat shading with no lighting. |
+| **Lit** | Lighting applied, no shadows (default). |
+| **Lit + Shadows** | Full lighting with shadow maps. |
+| **Full** | Everything: shadows, post-processing, and all effects. |
+
 ### Multi-Select
 
 Enjin supports selecting multiple entities at once for batch operations:
@@ -243,18 +267,29 @@ Select an entity in the hierarchy or viewport, then use the **Add Component** bu
 To import an external 3D model:
 
 1. Go to **File > Import Model** (or press `Ctrl+I`).
-2. Select a `.gltf` or `.glb` file from the file dialog.
+2. Select a `.gltf`, `.glb`, or `.fbx` file from the file dialog.
 3. The importer creates ECS entities for all meshes, materials, and hierarchy nodes.
 4. Box colliders are auto-generated from mesh bounding boxes.
 5. If the model contains skeletal animation data (skins, joints, animations), the importer sets up `SkeletonComponent` and `AnimatorComponent` automatically.
 
 Import options include a configurable scale factor.
 
+#### FBX / Mixamo Import Workflow
+
+FBX files (including Mixamo characters and animations) are imported via the Assimp loader:
+
+1. **Import the character** -- `File > Import Model`, select the `.fbx` file. The importer auto-scales the model (Mixamo models typically need a 0.01 scale factor, applied automatically).
+2. **Multi-material support** -- If the FBX contains multiple materials, each sub-mesh is assigned a material slot. The entity gets both a `MaterialComponent` (primary) and a `MaterialSlotsComponent` with per-sub-mesh materials.
+3. **Embedded textures** -- Textures embedded in the FBX binary are extracted to the project's `assets/textures/` directory and automatically wired to the correct material slots.
+4. **Mesh hierarchy merging** -- The importer merges the FBX node hierarchy into a single entity with combined vertex/index buffers rather than creating separate entities per mesh node.
+5. **Skeletal animation** -- Bones, weights, and animation clips are imported. The `AnimatorComponent` is set up with all animation clips ready to play.
+6. **Drag-and-drop textures** -- After import, you can drag texture files from the Asset Browser onto material slots in the Inspector to reassign textures.
+
 ---
 
 ## 4. Templates
 
-Enjin provides 23 built-in startup templates organized into 5 categories. When you create a new project or scene, the template selector offers these options. All templates start with a minimal 5-panel layout (Hierarchy, Inspector, Viewport, Console, Asset Browser) for a clean first impression:
+Enjin provides 51 built-in startup templates organized into multiple categories. When you create a new project or scene, the template selector offers these options. All templates start with a minimal 5-panel layout (Hierarchy, Inspector, Viewport, Console, Asset Browser) for a clean first impression:
 
 **Foundations**
 
@@ -346,6 +381,8 @@ Gives the entity a human-readable display name shown in the hierarchy.
 Stores the vertex and index data used by the renderer to draw geometry. Vertices contain position, normal, UV, color, tangent, bone weights, and bone indices.
 
 Typically populated by importing a 3D model or by using a built-in primitive (Cube, Sphere, etc.).
+
+**Sub-mesh support:** When a model has multiple materials, `MeshComponent` stores a `subMeshes` array. Each `SubMesh` defines a range within the shared vertex/index buffers (`indexOffset`, `indexCount`) and a `materialSlot` index that maps to a slot in `MaterialSlotsComponent`. The render system draws each sub-mesh with its corresponding material.
 
 #### MaterialComponent
 
@@ -1638,11 +1675,153 @@ Defines a volume that procedurally places GPU-instanced shrubs. Each shrub is a 
 
 #### SkeletonComponent
 
-Stores the bone hierarchy for skinned meshes. Populated automatically when importing glTF models with skeletal data.
+Stores the bone hierarchy for skinned meshes. Populated automatically when importing glTF or FBX models with skeletal data.
 
 #### AnimatorComponent
 
-Drives skeletal animation playback with a state machine. Supports animation blending and transitions.
+Drives skeletal animation playback with a state machine. Supports animation blending, transitions, blend trees, animation events, and onion skinning.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `showBones` | bool | false | Draw wireframe skeleton lines in the viewport when selected. |
+| `selectedBoneIndex` | i32 | -1 | Index of the bone selected in the viewport (-1 = none). |
+| `showWeights` | bool | false | Visualize bone weights as a heat map overlay. |
+| `blendTree` | BlendTree | (disabled) | 1D blend tree for parameter-driven animation blending. |
+
+**Blend Trees:** A blend tree interpolates between multiple animation clips based on a float parameter (e.g., "Speed"). Add blend nodes with threshold values -- the system blends the two animations bracketing the current parameter value. Enable via `blendTree.enabled = true` and set `blendTree.parameterName`. Set runtime parameter values with `SetBlendParameter("Speed", 0.5f)`.
+
+**Animation Events:** Each `SkeletalAnimation` can have timed events (`AnimEvent` with `time` and `name`). Events fire during playback at the specified time, allowing you to trigger sounds, particles, or script callbacks synchronized to specific animation frames.
+
+**Animation Retargeting:** Transfer animations between different skeletons using `RetargetAnimation()`. The system auto-maps bones by name (including stripping Mixamo prefixes like `mixamorig:`), with optional explicit bone mapping via `AnimationRetargetMap`. Height scaling is applied to position keyframes.
+
+**Onion Skinning:** The `SkeletalOnionSkinSettings` on `AnimatorComponent` renders transparent ghost meshes at previous/future animation frames in the viewport, with configurable frame count, opacity falloff, and tint colors (blue for past, red for future).
+
+#### BoneAttachmentComponent
+
+Attaches an entity's transform to a specific bone on a skeletal mesh. The entity tracks the bone's world position and rotation each frame. Useful for parenting weapons, hats, or particle emitters to animated characters.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `targetEntity` | Entity | INVALID | The entity that has the AnimatorComponent/SkeletonComponent. |
+| `targetBoneName` | string | "" | Name of the bone to attach to. |
+| `positionOffset` | Vector3 | (0, 0, 0) | Local-space position offset from the bone. |
+| `rotationOffset` | Quaternion | Identity | Local-space rotation offset from the bone. |
+
+#### TwoBoneIKComponent
+
+Analytic two-bone IK (law of cosines) for arms and legs. Solves the joint angle so the end effector reaches a target position.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `rootBoneName` | string | "" | Root bone (e.g., LeftUpperArm). |
+| `midBoneName` | string | "" | Mid bone (e.g., LeftForeArm). |
+| `endBoneName` | string | "" | End bone (e.g., LeftHand). |
+| `targetPosition` | Vector3 | (0, 0, 0) | World-space IK target. |
+| `targetEntity` | Entity | INVALID | Entity to track (alternative to targetPosition). |
+| `weight` | f32 | 1.0 | Blend between animation (0) and full IK (1). |
+| `poleVector` | Vector3 | (0, 0, 1) | Elbow/knee direction hint. |
+
+#### RagdollComponent
+
+Maps physics joints to skeleton bones for ragdoll simulation. Each `BoneJoint` entry defines a bone, joint type, mass, collider dimensions, and angular limits.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | bool | false | Whether ragdoll simulation is active. |
+| `autoActivateOnDeath` | bool | true | Activate ragdoll when HealthComponent reaches 0. |
+| `blendWeight` | f32 | 1.0 | Blend between animation (0) and ragdoll (1). |
+| `blendTime` | f32 | 0.3 | Animation-to-ragdoll transition duration (seconds). |
+| `gravityScale` | f32 | 1.0 | Gravity multiplier for ragdoll bodies. |
+
+#### AnimationRecorderComponent
+
+Records bone transforms over time to create new animations from gameplay or manual posing.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `recording` | bool | false | Whether recording is active. |
+| `recordInterval` | f32 | 1/30 | Seconds between keyframe samples. |
+| `recordedAnimName` | string | "Recorded" | Name for the generated animation. |
+
+**Bone Visualization and Selection:** When `showBones` is enabled on the AnimatorComponent, the viewport draws wireframe lines connecting each bone. Clicking a bone line in the viewport selects that bone (sets `selectedBoneIndex`), and the Inspector shows per-bone details. Bone weight visualization (`showWeights`) renders a heat map overlay showing each vertex's weight for the selected bone.
+
+### 5.24 Rendering Control
+
+#### MeshRendererComponent
+
+Per-entity rendering control beyond MeshComponent + MaterialComponent. Controls visibility, draw order, LOD bias, shadow behavior, render layers, and instancing.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | bool | true | Master on/off for rendering. |
+| `frustumCull` | bool | true | Participate in frustum culling. |
+| `occlusionCull` | bool | true | Participate in HiZ occlusion culling. |
+| `maxDrawDistance` | f32 | 0.0 | Fade-out distance (0 = infinite). |
+| `renderQueue` | i32 | 0 | Sort priority (-1000 = skybox, 0 = default, 1000 = overlay). |
+| `renderLayerMask` | u32 | 1 | Bitmask controlling which cameras render this entity. |
+| `lodBias` | f32 | 0.0 | LOD level bias (-1 = higher detail, +1 = lower). |
+| `shadowMode` | enum | FromMaterial | Off, On, TwoSided, or FromMaterial. |
+| `allowInstancing` | bool | true | Allow batching into instanced draw calls. |
+| `wireframe` | bool | false | Force wireframe rendering. |
+
+#### MaterialSlotsComponent
+
+Holds multiple materials for entities with sub-meshes. Each slot corresponds to a `SubMesh::materialSlot` index in MeshComponent. When present, the render system draws each sub-mesh with its own material instead of the single MaterialComponent.
+
+#### MeshColliderComponent
+
+Generates a collision shape from the entity's mesh vertices, rather than using a primitive box/sphere/capsule.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `convex` | bool | true | true = convex hull, false = triangle mesh (static bodies only). |
+| `autoGenerate` | bool | true | Auto-generate from MeshComponent vertices on first use. |
+| `isTrigger` | bool | false | Use as trigger volume instead of solid collider. |
+| `friction` | f32 | 0.5 | Surface friction. |
+| `bounciness` | f32 | 0.0 | Restitution. |
+
+### 5.25 Art Style
+
+#### ArtStyleComponent
+
+Per-entity art style override. When attached, overrides the scene-level art style preset for that entity only. When absent, the entity uses the scene default.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `style` | ArtStyleType | Inherit | Inherit, PrePBR, HandPainted, CelToon, NPR, Retro, PixelArt, MaterialExpression, or Analog. |
+| `propagateToChildren` | bool | false | Apply this style to child entities. |
+
+Each style has its own parameter block (see the 9 styles listed under [Art Style Presets](#art-style-presets) in the Effects section). For example, CelToon exposes `cel_diffuseBands`, `cel_outlineWidth`, `cel_outlineColor`; Retro exposes `retro_vertexSnapping`, `retro_snapResolution`, `retro_affineTexturing`.
+
+### 5.26 Gameplay
+
+#### GameOverComponent
+
+Defines game over / victory behavior. Attach to a singleton "GameManager" entity. The gameplay loop checks for player death and enemy elimination.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `victoryMessage` | string | "You Win!" | Text shown on victory. |
+| `defeatMessage` | string | "Game Over" | Text shown on defeat. |
+| `delay` | f32 | 1.0 | Seconds before showing the game over screen. |
+| `allowRestart` | bool | true | Show a "Restart" button. |
+| `returnToMenu` | bool | true | Show a "Main Menu" button. |
+| `victoryOnAllEnemiesDefeated` | bool | true | Win when all entities with DamageComponent + HealthComponent are dead. |
+| `victoryTriggerEntity` | Entity | INVALID | Win when this trigger zone is reached. |
+
+### 5.27 Parallax Backgrounds
+
+#### ParallaxMachineComponent
+
+Multi-layer parallax background system for 2D scenes. Each layer scrolls at a speed inversely proportional to its distance from the camera.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `layers` | vector | empty | List of `ParallaxLayer` entries (texture, distance, speed, scale, tint, alpha, repeat). |
+| `globalSpeed` | f32 | 1.0 | Speed multiplier applied to all layers. |
+| `autoScrollSpeed` | Vector2 | (0, 0) | Constant scroll velocity independent of camera (for title screens). |
+
+Each `ParallaxLayer` has: `texturePath`, `distance` (higher = farther/slower), `speedMultiplier`, `offset`, `scale`, `tint`, `alpha`, `repeatX`/`repeatY`, `sortOrder`.
 
 ---
 
@@ -1844,7 +2023,7 @@ Five raster-tier screen-space effects run in the post-process shader using only 
 
 ### Art Style Presets
 
-The editor includes 7 one-click presets accessible from **Settings > Scene > Art Style Preset**:
+The engine supports 9 distinct visual art styles. The editor includes 7 one-click presets accessible from **Settings > Scene > Art Style Preset**, and per-entity overrides via `ArtStyleComponent`:
 
 | Preset | Description |
 |--------|-------------|
@@ -1855,6 +2034,8 @@ The editor includes 7 one-click presets accessible from **Settings > Scene > Art
 | **Low-Poly Retro** | Flat shading, affine texturing, vertex snapping (160px grid), 16-level posterization. |
 | **Pixel Art** | 320x240 downscale, point filtering, 16-color palette, Bayer dithering. |
 | **NPR Sketch** | 2-band cel, thick Sobel outlines with curvature variation, crosshatch stipple. |
+
+The underlying `ArtStyleType` enum covers all 9 styles: Inherit (scene default), PrePBR, HandPainted, CelToon, NPR, Retro, PixelArt, MaterialExpression, and Analog. Per-entity overrides are possible by attaching an `ArtStyleComponent` (see [section 5.25](#525-art-style)).
 
 Presets set all relevant rendering parameters at once. After applying a preset, individual settings can still be tweaked.
 
@@ -3043,12 +3224,24 @@ Shaders are written in GLSL and stored in `Engine/shaders/`. They must be compil
 |---------|-------|---------|
 | 0 | Vertex | View/Projection UBO |
 | 1 | Vertex + Fragment | Lighting UBO (multi-light arrays) |
-| 2 | Fragment | Material UBO |
+| 2 | Fragment | Material SSBO (dynamic offset, batched per-frame) |
 | 3 | Fragment | Base color texture sampler |
-| 4 | Fragment | Shadow map sampler |
+| 4 | Fragment | Shadow map array (cascaded) |
 | 5 | Fragment | Height map (parallax mapping) |
 | 6 | Fragment | Normal map |
 | 7 | Vertex | Bone matrix SSBO (skeletal animation) |
+| 8 | Fragment | Metallic-roughness texture |
+| 9 | Fragment | Emissive texture |
+| 10 | Fragment | Point shadow cubemap array |
+| 11 | Fragment | Spot shadow map array |
+| 12 | Fragment | Shadow data SSBO |
+| 13 | Vertex + Fragment | Object data SSBO (indirect draws) |
+| 14 | Fragment | Cluster grid SSBO (clustered lighting) |
+| 15 | Fragment | Cluster light index SSBO (clustered lighting) |
+| 16 | Fragment | Virtual texture indirection |
+| 17 | Fragment | Virtual texture physical atlas |
+| 18 | Fragment | Matcap texture |
+| 19 | Fragment | Baked reflection probe cubemap |
 
 ### Push Constants (128 bytes, per-object)
 
@@ -3058,18 +3251,24 @@ Shaders are written in GLSL and stored in `Engine/shaders/`. They must be compil
 | `baseColor` + `metallic` | 16 bytes | Base color (RGB) and metallic factor. |
 | `emissiveColor` + `roughness` | 16 bytes | Emissive color (RGB) and roughness. |
 | `emissiveStrength`, `opacity`, `alphaCutoff`, `flags` | 16 bytes | Material parameters and bit-packed flags. |
-| `parallaxScale` + padding | 16 bytes | Parallax depth. |
+| `parallaxScale`, `surfaceParam1`, `surfaceParam2`, `surfaceParam3` | 16 bytes | Parallax depth and surface parameters (water shore/foam or artistic reflectivity/fresnel/rim). |
 
 **Flags bit layout:**
 
 - Bits 0-2: Render flags (double-sided, cast shadows, receive shadows).
 - Bit 3: Skinned mesh.
+- Bit 4: Wind sway.
+- Bits 5-7: Water surface flags (surface, rain ripples, shore).
 - Bits 8-9: Alpha mode.
 - Bit 10: Has height texture.
-- Bits 12-13: UV quantize, Gouraud only.
+- Bit 11: Water ocean.
+- Bit 12: UV quantize.
+- Bit 13: Gouraud only.
+- Bits 14-15: Shadow dither mode.
 - Bits 16-19: Texture flags (base color, normal, metallic-roughness, emissive).
 - Bits 20-23: Retro flags (flat shading, affine texturing, vertex snapping, stipple transparency).
-- Bits 24-31: Vertex snap resolution.
+- Bits 24-28: Vertex snap resolution (/8).
+- Bits 29-31: Shadow dither pattern.
 
 ---
 
@@ -3387,6 +3586,14 @@ The Bug Reports tab provides:
 - **Stats row** — Shows open count / total count
 - Click any report to view full details with Edit, Delete, Export, and Submit buttons
 
+### Discord Webhook Integration
+
+Bug reports can be submitted directly to a Discord channel via webhook:
+
+1. Configure a Discord webhook URL in **Settings > Project > Bug Reporting**.
+2. When submitting a report, choose **Send to Discord**.
+3. The system captures a screenshot of the current viewport, attaches the last 50 log lines, and posts a formatted embed to the Discord channel with all diagnostic information.
+
 ### Persistence
 
 Reports are automatically saved to `%APPDATA%/enjin/feedback/feedback_data.json` (Windows) or `~/.config/enjin/feedback/` (Linux). Auto-save triggers on editor shutdown. Reports can be exported individually as JSON files.
@@ -3505,7 +3712,7 @@ The `rateLimit` block controls per-sender packet and bandwidth throttling with a
 
 ## 33. Debug Panels
 
-Enjin provides two dedicated debug panels for runtime inspection, toggled with function keys. These panels are independent of the standard editor Console panel and designed for quick game and engine diagnostics.
+Enjin provides two dedicated debug panels for runtime inspection, toggled with function keys. These panels are independent of the standard editor Console panel and designed for quick game and engine diagnostics. Pressing F1 opens the Game Debug panel and closes F2 (and vice versa) -- only one debug panel is shown at a time.
 
 ### Game Debug Panel (F1)
 

@@ -84,7 +84,7 @@ enjin/
 │   │   ├── GUI/            # ImGui integration, Localization, DialogueTree, UICanvas, UISystem
 │   │   ├── Gameplay/       # TieredSaveSystem, SaveBackend, SaveLoadMenu, HUDSystem, QuestSystem, FootstepSystem, ObjectPool, CinematicSystem, DialogueAsset
 │   │   ├── Networking/     # LANMultiplayer, NetworkPanel, NewgroundsSaveBackend, SteamSaveBackend
-│   │   ├── Physics/        # IPhysicsBackend, JoltBackend, Box2DBackend, SimplePhysics, PhysicsWorld, ConstraintSolver
+│   │   ├── Physics/        # IPhysicsBackend, JoltBackend, Box2DBackend, PhysicsBackendFactory
 │   │   ├── Platform/       # FileDialog
 │   │   ├── Plugin/         # PluginSystem, HotReload
 │   │   ├── Procedural/     # LevelGenerator
@@ -140,7 +140,8 @@ enjin/
 - Material transmission (glass/water), IOR, thickness, subsurface scattering (intensity/radius/color)
 - Procedural surface noise (surfaceNoiseScale/surfaceNoiseStrength per material)
 - Shadow mapping with PCF filtering (directional CSM, point cubemap, spot 2D array)
-- Skeletal animation with GPU skinning (bone SSBO)
+- Skeletal animation with GPU skinning (bone SSBO), skinned mesh shadow pass
+- Multi-material sub-mesh rendering (MaterialSlotsComponent + MeshComponent::SubMesh)
 - Instanced grass rendering
 - Retro rendering effects (per-material)
 - Wireframe rendering mode
@@ -186,7 +187,7 @@ enjin/
 - OptiX denoiser CUDA interop wired (timeline semaphore sync, shared Vulkan/CUDA buffers)
 - Material SSBO in RT hit shaders (binding 9) for full PBR material access during ray traversal
 - RTCompositor enable flags: bits 0-5 (shadows/reflections/AO/GI/translucency/caustics)
-- RT descriptor set (16 bindings: 0-13 base, 4=motion vectors, 9=material SSBO, 14=translucency, 15=caustics; separate from main pipeline set 0)
+- RT descriptor set (27 bindings: 0-13 base, 14=translucency, 15=caustics, 16=NEE lights, 17=SDF, 18=simplified materials, 19-20=ReSTIR reservoirs, 21-23=screen-space radiance cache, 24-26=surfel radiance cache; separate from main pipeline set 0)
 - Graceful fallback: placeholder SPIR-V stubs detected and skipped, raster path unaffected
 - Only active for Scene3D render mode (2D/2.5D scenes skip RT entirely)
 - Editor panel with per-effect toggles, config sliders, BLAS/instance stats
@@ -254,21 +255,23 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 **Components**:
 - `World` - Main ECS container managing entities and components
 - `Entity` - ID-based entities (u64)
-- 70+ component types across categories:
-  - Core (Transform, Mesh, Material, Light, Camera, Name, Notes, Text)
+- 80+ component types across categories:
+  - Core (Transform, Mesh, Material, MaterialSlots, Light, Camera, Name, Notes, Text)
+  - Rendering (MeshRenderer, ArtStyle)
   - Controllers (Platformer2D, TopDown2D, TopDown3D, ThirdPerson, FirstPerson, Vehicle, Possessable)
   - Terrain (TerrainComponent, Terrain2DComponent)
-  - Physics (Rigidbody, BoxCollider, SphereCollider, CapsuleCollider, TriggerZone)
+  - Physics (Rigidbody, BoxCollider, SphereCollider, CapsuleCollider, MeshCollider, TriggerZone)
   - Joints (DistanceJoint, HingeJoint, BallSocketJoint, SpringJoint, FixedJoint, SliderJoint, Ragdoll)
   - Environment (WeatherZone, WaterVolume, GrassVolume, Vegetation, Temperature, Gravity, CameraTrigger)
   - Combat (Health, Damage, DamageResistance, Resource)
-  - Gameplay (QuestState, HUDWidget, CinematicCamera, Footstep, Poolable, SaveData [with PersistenceTier + tags], SaveLoadMenu, Interactable, Pickup, Inventory, Timer, Audio, Tag, SpawnPoint, Script, LOD, DialogueBoxComponent, PerFrameColliderComponent, PolygonCollider2DComponent)
+  - Gameplay (QuestState, HUDWidget, CinematicCamera, Footstep, Poolable, SaveData [with PersistenceTier + tags], SaveLoadMenu, Interactable, Pickup, Inventory, Timer, Audio, Tag, SpawnPoint, Script, LOD, DialogueBoxComponent, PerFrameColliderComponent, PolygonCollider2DComponent, GameOver, ParallaxMachine)
   - AI (AIController, FollowTarget, LookAtTarget, Waypoint, BehaviorTreeComponent)
   - Visual (Billboard, ParticleEmitter, Sprite2D, AnimatedSprite2D, Tilemap, Camera2DBounds)
+  - Animation (Skeleton, Animator, BoneAttachment, TwoBoneIK, LookAtIK, InteractionIK, AnimationRecorder, Ragdoll)
   - Streaming (StreamingVolume, StreamingPortal)
   - Timeline (TimelineComponent)
   - Networking (NetworkIdentity, NetworkTransform)
-  - Other (StateMachine, Dialogue, Skeleton, Animator)
+  - Other (StateMachine, Dialogue)
 
 ### Editor System
 
@@ -288,10 +291,12 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 - Entity selection via ray casting (click-to-select)
 - Entity clipboard (Cut/Copy/Paste via JSON serialization)
 - Scene management with project manifests and scene transitions
-- Startup template selector with 44 built-in templates + custom templates + template marketplace
+- Startup template selector with 51 built-in templates + custom templates + template marketplace
 - Terrain sculpting brushes (raise, lower, flatten, smooth, paint) with viewport ray-heightmap intersection
 - 2D terrain control point drag-to-edit in viewport
-- Bug reporting and feedback system with auto-captured diagnostics
+- Bug reporting and feedback system with auto-captured diagnostics and Discord webhook integration (screenshot + log capture)
+- Project-first workflow: Project Hub with create/delete/duplicate, auto-create on disk, `.enjinproject` file association
+- Viewport shading modes (Wireframe, Solid, Lit, Lit+Shadows, Full)
 - Command palette (Ctrl+P) with fuzzy search and 25+ commands
 
 ### Scene System
@@ -307,6 +312,22 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 - Scene transitions (Instant, Fade Black, Fade White, Cross Fade)
 - Additive scene loading
 - Save/load to string (for clipboard operations)
+
+### Animation System
+
+**Components**:
+- `SkeletalAnimator` - Animation playback with state machine, blend trees, and timeline
+- `AnimationStateMachine` - State-based animation transitions with parameters and triggers
+- `BlendTree` - 1D parameter-driven animation blending (evaluates two bracketing clips)
+- `AnimationRetargetMap` - Bone name mapping between skeletons (auto-map by name, Mixamo prefix stripping)
+- `TwoBoneIKComponent` - Analytic arm/leg IK (law of cosines solver)
+- `LookAtIKComponent` - Head/neck look-at IK with max rotation and smoothing
+- `InteractionIKComponent` - Hand IK toward nearby interactables
+- `BoneAttachmentComponent` - Parent entity transforms to skeleton bones with local offsets
+- `RagdollComponent` - Per-bone physics joints with death auto-activation and animation blending
+- `AnimationRecorderComponent` - Captures bone transforms over time to create new animation clips
+
+**Pipeline**: FBX/glTF import (Assimp) -> Skeleton + animation clips -> AnimatorComponent state machine -> blend tree evaluation -> IK solvers (two-bone, look-at) -> bone attachment updates -> ragdoll (on death). The editor calls the skeletal animator update directly (not via RenderSystem::Update) to decouple animation timing from rendering.
 
 ### Effects System
 
@@ -333,7 +354,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 - Body creation: Box/Sphere/Capsule shapes from collider components, center offset via `RotatedTranslatedShape`, capsule X/Z rotation
 - RigidbodyComponent mapping: mass, drag/angular drag → damping, gravity scale, freeze axes → `AllowedDOFs`, CCD → `LinearCast`
 - Thread-safe contact events: `JoltContactListener` buffers contacts from Jolt worker threads behind a mutex; main thread drains during `Update()`
-- Bilateral collision filtering: performed in `OnContactValidate` using per-body `categoryBits`/`collisionMask` (32-bit, same rule as SimplePhysics)
+- Bilateral collision filtering: performed in `OnContactValidate` using per-body `categoryBits`/`collisionMask` (32-bit bilateral rule)
 - 6 joint types: Distance, Hinge, BallSocket (Point+Cone), Spring, Fixed, Slider — created via `BodyLockWrite` for body access
 - Gravity zones: per-body `SetGravityFactor(0)` + `AddForce(customGravity * mass)` for non-standard gravity
 - Raycasting: single/multi-hit via `NarrowPhaseQuery`, layer mask filtering via custom `BodyFilter`
@@ -341,35 +362,6 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 - Broad phase: 2 layers (NonMoving/Moving), fine-grained filtering in contact listener
 - Entity ID stored in Jolt `mUserData` for O(1) reverse lookup
 - Update loop: SyncECSToJolt → SyncJointsToJolt → ApplyGravityZones → PhysicsSystem::Update → SyncJoltToECS → ProcessContactEvents
-
-**SimplePhysics** (current default 3D backend — collision queries and character movement):
-- Collision detection (sphere-sphere, AABB-AABB, sphere-AABB)
-- **Spatial hash grid** broad-phase for collision events — O(N) typical vs O(N²) brute-force. FNV-1a cell hashing, 4m default cell size
-- **Per-frame collider cache** — all entities with Box/Sphere/Capsule colliders queried once per `Update()`, reused by ground check, raycasts, MoveAndSlide, overlap queries, and collision event detection
-- Raycasting (single hit and multi-hit) against cached collider list
-- Move-and-slide for character controllers
-- Ground detection (raycast downward)
-- Configurable gravity (zone query hoisted outside rigidbody loop)
-
-**PhysicsWorld** (impulse-based rigid body dynamics):
-- RigidBody objects with mass, velocity, restitution, friction
-- Sphere and Box collision shapes
-- Impulse-based collision response with friction
-- Positional correction with Baumgarte stabilization
-- ECS integration bridge (SyncFromECS / SyncToECS)
-
-**ConstraintSolver** (joint system):
-- Sequential impulse solver with configurable iterations (default 8)
-- Warm starting for improved convergence
-- Baumgarte stabilization for position drift correction
-- 6 joint types:
-  - `DistanceJoint` - Fixed distance between entities with stiffness
-  - `HingeJoint` - Rotation around one axis with angle limits and motor
-  - `BallSocketJoint` - Free rotation with cone and twist limits
-  - `SpringJoint` - Hooke's law spring with damping
-  - `FixedJoint` - Rigid connection (breakable under force)
-  - `SliderJoint` - Translation along one axis with limits and motor
-- All joints support breakable mode with force threshold and stress tracking
 
 **RagdollComponent**:
 - Per-bone joint definitions mapped to skeleton
@@ -387,14 +379,6 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 - Full `IPhysicsBackend2D` implementation
 - Sensor bodies (`Body2DComponent::isSensor = true`): Box2D syncs positions from ECS (not to ECS), enabling collision callbacks for controller/AI/tween-driven entities without Box2D overwriting their positions
 - Bilateral collision filtering (same `categoryBits`/`collisionMask` bitmask as 3D)
-
-**PhysicsWorld2D** (legacy 2D backend — impulse-based dynamics):
-- Circle, Box, Polygon collision shapes
-- SAT (Separating Axis Theorem) collision detection
-- 5 joint types (Distance, Revolute, Prismatic, Weld, Wheel)
-- Continuous Collision Detection (CCD)
-- Physics materials (friction, restitution, density)
-- 2D raycasts
 
 ### Feedback System
 
@@ -470,7 +454,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 - `CoroutineScheduler` - Manages script coroutines (yield seconds, frames, end-of-frame)
 - `ScriptEventBus` - Script-to-script event dispatch system
 
-**Script Bindings** (~686 bindings across 15+ categories):
+**Script Bindings** (~900+ bindings across 15+ categories):
 - **Scene**: Entity transform access (Get/Set Position/Rotation/Scale/Name), scene loading
 - **Physics**: Raycast, sphere/box overlap, force/impulse/velocity, gravity scale
 - **Audio**: Play/stop/volume/pitch per entity, positional audio, master volume, channel mixing

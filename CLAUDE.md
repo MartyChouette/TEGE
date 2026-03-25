@@ -43,10 +43,10 @@ enjin/
 ├── Engine/                  # Engine layer
 │   ├── include/Enjin/
 │   │   ├── AI/             # AIBehaviors, Navmesh, A* Pathfinding
-│   │   ├── Animation/      # Sprite + skeletal animation, Timeline/Sequencer
-│   │   ├── Assets/         # GLTFLoader, SceneImporter, Prefab
+│   │   ├── Animation/      # Sprite + skeletal animation, BlendTree, Retargeting, Timeline/Sequencer
+│   │   ├── Assets/         # GLTFLoader, AssimpLoader (FBX/DAE), SceneImporter, Prefab
 │   │   ├── Audio/          # SimpleAudio (miniaudio), SteamAudioProcessor (HRTF)
-│   │   ├── ECS/            # Entity-Component-System (70+ component types)
+│   │   ├── ECS/            # Entity-Component-System (80+ component types)
 │   │   │   ├── Components/ # Transform, Mesh, Material, Light, Camera, etc.
 │   │   │   └── Systems/    # RenderSystem, ControllerSystem
 │   │   ├── Editor/         # EditorLayer, PlayMode, Settings, Tools
@@ -55,7 +55,7 @@ enjin/
 │   │   ├── Build/          # BuildPipeline, AssetPacker, AssetReader
 │   │   ├── Gameplay/       # SaveSystem, QuestSystem, HUD, Cinematics
 │   │   ├── Networking/     # LAN Multiplayer, HTTPClient, NewgroundsAPI
-│   │   ├── Physics/        # IPhysicsBackend (Jolt/Box2D/Simple)
+│   │   ├── Physics/        # IPhysicsBackend (Jolt/Box2D)
 │   │   ├── Renderer/       # Vulkan renderer + RayTracing pipeline
 │   │   ├── Scene/          # SceneSerializer, SceneManager, LevelStreaming
 │   │   ├── Scripting/      # AngelScript engine, ScriptBindings
@@ -82,7 +82,7 @@ enjin/
 
 - **`ECS::World`** - Entity/component manager. Thread-safe structural ops. `DestroyEntity()` is deferred (flushed at `Update()` start). `IsValid()` returns false for pending-destruction entities.
 - **`ECS::Entity`** - u64 ID
-- **Key Components:** `TransformComponent` (position, rotation, scale, visible, cached world matrix with dirty flag), `MeshComponent`, `MaterialComponent` (PBR + textures + transmission/IOR/thickness/sssIntensity/sssRadius/sssColor + outlineWidth/outlineColor + matcapTexturePath + surfaceNoiseScale/surfaceNoiseStrength; MaterialGPU = 80 bytes), `LightComponent` (no direction field — extract from TransformComponent rotation), `NameComponent`, `CameraComponent`, `NotesComponent` (field: `.notes` not `.text`), `AnimatorComponent`, colliders (`Box/Sphere/Capsule` with `categoryBits`/`collisionMask` bitmask filtering), `PostProcessVolumeComponent`
+- **Key Components:** `TransformComponent` (position, rotation, scale, visible, cached world matrix with dirty flag), `MeshComponent` (vertices, indices, `subMeshes` array for multi-material), `MaterialComponent` (PBR + textures + transmission/IOR/thickness/sssIntensity/sssRadius/sssColor + outlineWidth/outlineColor + matcapTexturePath + surfaceNoiseScale/surfaceNoiseStrength; MaterialGPU = 80 bytes), `MaterialSlotsComponent` (vector of MaterialComponent for per-sub-mesh materials), `MeshRendererComponent` (per-entity render control: culling, LOD bias, shadow mode, render layers, instancing), `LightComponent` (no direction field — extract from TransformComponent rotation), `NameComponent`, `CameraComponent`, `NotesComponent` (field: `.notes` not `.text`), `AnimatorComponent` (has `blendTree` for 1D parameter-driven blending, `showBones`, `selectedBoneIndex`, `onionSkin`), colliders (`Box/Sphere/Capsule/MeshCollider` with `categoryBits`/`collisionMask` bitmask filtering), `PostProcessVolumeComponent`, `ArtStyleComponent` (per-entity art style override, 9 styles), `BoneAttachmentComponent`, `TwoBoneIKComponent`, `RagdollComponent`, `AnimationRecorderComponent`, `GameOverComponent`, `ParallaxMachineComponent`
 
 ### Collision Filtering
 
@@ -105,7 +105,7 @@ Bilateral bitmask: `(A.categoryBits & B.collisionMask) && (B.categoryBits & A.co
 ### Renderer
 
 - **Descriptor Bindings:** 0=ViewProj UBO, 1=Lighting UBO, 2=Material SSBO (dynamic offset, batched per-frame), 3=Base color tex, 4=Shadow map array, 5=Height map, 6=Normal map, 7=Bone SSBO, 8=Metallic-roughness tex, 9=Emissive tex, 10=Point shadow cubemaps, 11=Spot shadow maps, 12=Shadow data SSBO, 13=Object data SSBO, 14=Cluster grid SSBO (clustered lighting), 15=Cluster light index SSBO (clustered lighting), 16=VT indirection tex, 17=VT physical atlas, 18=Matcap tex, 19=Baked reflection probe cubemap
-- **Push Constants (128 bytes):** model matrix (64B), baseColor+metallic, emissiveColor+roughness, emissiveStrength, opacity, alphaCutoff, flags (bitfield), parallaxScale
+- **Push Constants (128 bytes):** model matrix (64B), baseColor+metallic, emissiveColor+roughness, emissiveStrength, opacity, alphaCutoff, flags (bitfield), parallaxScale, surfaceParam1 (water: shoreWidth / artistic: reflectivity), surfaceParam2 (water: foamIntensity / artistic: fresnelPower), surfaceParam3 (water: foamScale / artistic: rimLightStrength)
 - **Flags layout:** bits 0-2 render, 3 skinned, 4 wind, 5-7 water, 8-9 alpha mode, 10 height tex, 11 ocean, 12 UV quantize, 13 gouraud, 14-15 shadow dither, 16-19 texture flags, 20-23 retro flags, 24-28 snap resolution (/8), 29-31 shadow dither pattern
 - **Scene classification:** `Scene2D` (sprites only, shadows skipped), `Scene2_5D` (sprites+lights), `Scene3D` (full pipeline)
 - **Render pass formats:** Swapchain uses `VK_FORMAT_B8G8R8A8_SRGB` with MRT (color + velocity + depth), offscreen `RenderTarget`s use `VK_FORMAT_B8G8R8A8_UNORM` with single color + depth (no MRT velocity — removed to fix NVIDIA teal). Main pipeline created for SRGB — `m_OffscreenPipeline` (+ line/outline variants) created for UNORM in `RecreateEffectPipelinesForRenderPass()` with `colorAttachmentCount=1`. Offscreen render targets use `VK_SAMPLE_COUNT_1_BIT` (no MSAA).
@@ -113,11 +113,22 @@ Bilateral bitmask: `(A.categoryBits & B.collisionMask) && (B.categoryBits & A.co
 - **Ray tracing:** Full RT pipeline (shadows/reflections/AO/GI/translucency/caustics/path tracing, SVGF+OIDN+OptiX denoisers). RT descriptor set: 27 bindings (0-13 base, 14=translucency, 15=caustics, 16=NEE lights, 17=SDF, 18=simplified materials, 19-20=ReSTIR reservoirs, 21-23=screen-space radiance cache, 24-26=surfel radiance cache). RTCompositor enable flags: bits 0-5 (shadows/reflections/AO/GI/translucency/caustics). ReSTIR: 3-pass compute pipeline (initial candidate selection, temporal reuse via motion vectors, spatial reuse with Jacobian correction), per-pixel reservoir buffer (binding 19), previous frame reservoir (binding 20, ping-pong), rt_shadow.rgen consumes reservoirs to cast shadow rays toward importance-selected lights. Config persisted in SceneRenderSettings. Surfel cache: world-space surfel-based irradiance caching (64K budget, 1/8 update per frame, bindings 24-26). Auto-activates on RT-capable hardware. CMake: `ENJIN_RAYTRACING_OIDN`, `ENJIN_RAYTRACING_OPTIX`.
 - **Performance optimizations:** Clustered forward lighting (16x9x24 grid, bindings 14-15), Variable Rate Shading (`VK_KHR_fragment_shading_rate`), Virtual Texturing (page-based streaming, bindings 16-17), Visibility Buffer (deferred material resolve). GPU two-phase HiZ occlusion culling, async compute overlap, per-frame linear allocator, 64-bit material sort keys, LOD hysteresis. CMake: `ENJIN_CLUSTERED_LIGHTING` (ON), `ENJIN_VRS` (OFF), `ENJIN_VIRTUAL_TEXTURING` (OFF), `ENJIN_VISIBILITY_BUFFER` (OFF).
 
+### Animation
+
+- **BlendTree** on `AnimatorComponent`: 1D parameter-driven blending. Set `blendTree.enabled = true`, nodes with thresholds, `SetBlendParameter()` at runtime.
+- **Animation events:** `SkeletalAnimation::events` (vector of `AnimEvent` with `time` + `name`).
+- **Retargeting:** `RetargetAnimation()` + `BuildAutoRetargetMap()` — auto-maps bone names, strips Mixamo `mixamorig:` prefix.
+- **Shadow shader has skinning:** The shadow pass now handles skinned meshes (bone SSBO sampling in shadow vertex shader).
+- **Editor calls skeletal animator update directly** (not via `RenderSystem::Update`) to decouple animation timing from rendering.
+
 ### Editor
 
 - **Settings:** Unified 3-tab window (System/Project/Scene). `OpenSettings(tab)` for programmatic tab selection. Bit 5 = canonical visibility.
 - **PlayMode:** Play/Pause/Stop. Scene changes persist on Stop. `PlayModeDiff` shows what changed.
 - **Shortcuts:** `1/2/3` gizmo modes, `WASD` fly cam, `Delete` delete, `Ctrl+D` duplicate, `F` focus, `Ctrl+P` command palette
+- **F1/F2 debug panels:** F1 = Game Debug (game state), F2 = Debug Workstation (engine internals). Pressing one closes the other — only one debug panel shown at a time.
+- **Viewport shading modes:** `SceneViewMode` enum — Wireframe, Solid, Lit (default), LitShadows, Full. Blender-style toolbar buttons in Scene View.
+- **Project-first workflow:** Editor launches to Project Hub. Auto-creates project directory on disk. Create/delete/duplicate projects. `.enjinproject` file association opens editor directly.
 
 ## Shader Workflow
 

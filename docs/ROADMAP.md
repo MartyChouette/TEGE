@@ -2,9 +2,9 @@
 
 This document captures detailed technical plans, performance findings, and strategic initiatives identified through codebase audits. It complements CLAUDE.md's feature roadmap with implementation-specific details.
 
-## Status Summary (2026-03-16)
+## Status Summary (2026-03-24)
 
-**150+ features complete.** Beta 0.8.5 hardening sprint complete — all audit issues resolved, 255+ new tests, security hardened. See `docs/AUDIT_HARDENING_SPRINT.md` for full sprint summary. BSL 1.1 license in place. Inno Setup installer functional with icon, license page, and file associations. Path tracer polish (Phase 3) complete with NEE, MIS, Russian Roulette, and firefly clamping. Debug panels (F1/F2) and drop-down console added. Art Style Rendering System planned as P0 (8 visual aesthetics: pre-PBR, hand-painted, cel/toon, NPR, retro 3D, pixel art, material-expression, analog/degraded).
+**170+ features complete.** Beta 0.8.5 hardening sprint complete — all audit issues resolved, 255+ new tests, security hardened. See `docs/AUDIT_HARDENING_SPRINT.md` for full sprint summary. BSL 1.1 license in place. Inno Setup installer functional with icon, license page, and file associations. Path tracer polish (Phase 3) complete with NEE, MIS, Russian Roulette, and firefly clamping. Debug panels (F1/F2) and drop-down console added. Art Style Rendering System complete (9 visual styles with per-entity ArtStyleComponent). FBX/Mixamo import pipeline with auto-scale, multi-material sub-meshes, and embedded texture extraction. Full skeletal animation pipeline: blend trees, animation events, retargeting, two-bone IK, ragdoll, animation recorder, onion skinning, bone visualization and selection. Project-first workflow with hub, create/delete/duplicate projects, and file association. Discord webhook bug reporting. Viewport shading modes (Wire/Solid/Lit/Shadows/Full).
 
 ### Still Remaining
 
@@ -12,8 +12,8 @@ This document captures detailed technical plans, performance findings, and strat
 |----------|------|----------|
 | ~~**Renderer**~~ | ~~Path Tracer Polish (NEE, MIS, Russian Roulette, firefly clamping)~~ | ~~P1~~ DONE |
 | ~~**Art Styles**~~ | ~~Shared Infrastructure — light ramp, normal-based outlines, specular map slot~~ | ~~P0~~ DONE |
-| ~~**Art Styles**~~ | ~~Pre-PBR Realism — half-Lambert wrap, specular map slot~~ | ~~P0~~ ~85% |
-| ~~**Art Styles**~~ | ~~Hand-Painted Stylization — light ramp (4 modes), wrap lighting, per-material ramp override~~ | ~~P0~~ ~90% |
+| ~~**Art Styles**~~ | ~~Pre-PBR Realism — half-Lambert wrap, specular map slot~~ | ~~P0~~ DONE |
+| ~~**Art Styles**~~ | ~~Hand-Painted Stylization — light ramp (4 modes), wrap lighting, per-material ramp override~~ | ~~P0~~ DONE |
 | ~~**Art Styles**~~ | ~~Enhanced Cel/Toon — inverted-hull geometry outlines~~ | ~~P0~~ DONE |
 | ~~**Art Styles**~~ | ~~NPR Illustrative — pen/ink curvature-driven outline variation~~ | ~~P0~~ DONE |
 | ~~**Art Styles**~~ | ~~Pixel Art Polish — PICO-8, Game Boy, NES, CGA, C64 palettes, normal quantization~~ | ~~P0~~ DONE |
@@ -22,13 +22,13 @@ This document captures detailed technical plans, performance findings, and strat
 | ~~**Art Styles**~~ | ~~Art Style Presets — editor dropdown (7 presets)~~ | ~~P0~~ DONE |
 | **Renderer** | Reflection Probes — box projection done (component, system, shader, editor UI, serialization), baked cubemaps + SSR fallback pending | P1 |
 | ~~**Gameplay**~~ | ~~Dynamic Difficulty — read player stats (health, deaths, time, accuracy) + difficulty setting to auto-adjust AI aggression, damage, resources, hints~~ | ~~P1~~ DONE |
-| **Renderer** | ReSTIR — Reservoir-based light sampling (DI + temporal + spatial reuse complete, rt_shadow ReSTIR consumption done, settings serialization done) | P1 |
+| **Renderer** | ReSTIR — Reservoir-based light sampling (DI + temporal + spatial reuse complete, rt_shadow ReSTIR consumption done, settings serialization done, integrated into main pipeline) | P1 IN PROGRESS |
 | **Renderer** | Temporal RT Reuse — reprojection + history blend for shadow/AO/reflect/GI done, confidence map done, denoiser-aware feedback pending | P2 |
-| **Renderer** | Radiance Caching — world-space irradiance cache, screen-space cache | P2 |
-| **Renderer** | DLSS / FSR / XeSS Upscaling (IUpscaler interface, FSR built-in ✅ with EASU+RCAS+temporal, DLSS/XeSS pending) | P2 |
+| **Renderer** | Radiance Caching — screen-space tiled cache (32x32) done, surfel radiance cache done, world-space irradiance cache done | P2 IN PROGRESS |
+| **Renderer** | DLSS / FSR / XeSS Upscaling (IUpscaler interface, FSR built-in ✅ with EASU+RCAS+temporal, DLSS implemented (requires Streamline SDK), XeSS implemented (requires XeSS SDK)) | P2 IN PROGRESS |
 | **Renderer** | Additional AA (SMAA ✅, MSAA runtime toggle, comparison mode) | P3 |
 | **Renderer** | GPU-Driven Work Scheduling (indirect draw ✅, multi-draw ✅, async compute overlap ✅) | P3 |
-| **Performance** | CPU Scalability Sprint — binary search keyframes, integer sprite sort, cache storage pointers, world matrix caching, bindless render path, batched material SSBO | P0 |
+| ~~**Performance**~~ | ~~CPU Scalability Sprint — binary search keyframes, integer sprite sort, cache storage pointers, world matrix caching, bindless render path, batched material SSBO~~ | ~~P0~~ DONE |
 | **Release** | Splash screen (optional "Made with Enjin") | P2 |
 | **Platforms** | macOS (MoltenVK) | P2 |
 | **Platforms** | Xbox Series X/S (GDK/D3D12) | P2 |
@@ -74,25 +74,50 @@ This document captures detailed technical plans, performance findings, and strat
 | **Assets** | Assimp skeletal animation import (FBX/DAE/all formats) |
 | **QA** | Beta 0.8 hardening: ECS, Renderer, Serialization, Asset Pack, Physics, Audio, Build Pipeline, Scripting & Networking |
 | **Bug Fix** | RT pipeline crash on pool-allocated entity BLAS builds |
+| **Art Styles** | Art Style Rendering System complete — 9 visual styles (PrePBR, HandPainted, CelToon, NPR, Retro, PixelArt, MaterialExpression, Analog + Inherit), per-entity `ArtStyleComponent`, 7 one-click presets |
+| **Renderer** | Multi-material sub-mesh rendering — `MaterialSlotsComponent`, `MeshComponent::SubMesh`, per-sub-mesh draw calls |
+| **Renderer** | MeshRendererComponent — per-entity render control (culling, LOD bias, shadow mode, render layers, instancing) |
+| **Renderer** | ReSTIR integration into main pipeline, upscaling pipeline wired |
+| **Renderer** | Skinned mesh shadow shader — shadow pass now handles skinned meshes correctly |
+| **Assets** | FBX/Mixamo import — auto-scale, multi-material, embedded texture extraction, mesh hierarchy merging, bone ordering fix |
+| **Animation** | Blend trees — 1D parameter-driven animation blending on AnimatorComponent |
+| **Animation** | Animation events — timed events on SkeletalAnimation for sound/particle/script sync |
+| **Animation** | Animation retargeting — bone name auto-mapping (Mixamo prefix stripping), height scaling |
+| **Animation** | Two-bone IK — analytic arm/leg IK (TwoBoneIKComponent), LookAtIK, InteractionIK |
+| **Animation** | Ragdoll — RagdollComponent with per-bone joints, death auto-activation, animation blend |
+| **Animation** | Animation recorder — AnimationRecorderComponent captures bone transforms to create new clips |
+| **Animation** | 3D skeletal onion skinning — ghost meshes at past/future frames with tint and opacity falloff |
+| **Animation** | Bone visualization and viewport selection — wireframe skeleton, click-to-select bones, weight heat map |
+| **Animation** | BoneAttachmentComponent — parent entities to skeleton bones with local offsets |
+| **Editor** | Project-first workflow — Project Hub, create/delete/duplicate projects, auto-create on disk |
+| **Editor** | File association — `.enjinproject` opens directly in editor |
+| **Editor** | Viewport shading modes — Wire/Solid/Lit/Shadows/Full (Blender-style toolbar buttons) |
+| **Editor** | Bug report Discord webhook — screenshot + log capture posted to Discord channel |
+| **Editor** | F1/F2 debug panel grouping — only one debug panel shown at a time |
+| **Editor** | Default 16:9 aspect ratio for Scene View and Game View |
+| **Gameplay** | GameOverComponent — victory/defeat conditions, delay, restart/menu buttons |
+| **Gameplay** | MeshColliderComponent — convex hull or triangle mesh collision from mesh vertices |
+| **Gameplay** | ParallaxMachineComponent — multi-layer parallax backgrounds for 2D scenes |
 
 ---
 
-## Art Style Rendering System (P0 — 2026-03-16)
+## Art Style Rendering System (P0 — COMPLETE 2026-03-22)
 
-**Goal:** Support 8 distinct visual aesthetics beyond the default PBR pipeline, enabling developers to create games with any art direction without fighting the renderer.
+**Goal:** Support 9 distinct visual aesthetics beyond the default PBR pipeline, enabling developers to create games with any art direction without fighting the renderer. Now complete with per-entity `ArtStyleComponent` overrides.
 
 ### Current Coverage
 
-| Style | Existing Support | Key Gaps |
-|-------|-----------------|----------|
-| Low-poly retro 3D | 100% — vertex snap, affine textures, flat/Gouraud, UV quantize, stipple, resolution downscale, texture page warping, polygon sort jitter | None |
-| Analog/degraded | 100% — VHS (tracking, wobble, bleed, noise, tape dropout), CRT (10 real presets, phosphor subpixels), film grain, chromatic aberration, film gate weave, light leaks | None |
-| Pixel/3D hybrid | 100% — resolution downscale, color quantization, Bayer dither, palette lock (PICO-8, Game Boy, NES, CGA, C64 presets), normal quantization | None |
-| Cel/toon | 100% — diffuse bands (2-8), specular cutoff, Sobel depth+normal outlines, colored shadows, rim lighting, per-material ramp override, inverted-hull geometry outlines (per-material width/color) | None |
-| NPR illustrative | ~60% — 8 stipple patterns, configurable density/color modes, curvature-driven outline thickness variation (pen/ink) | Tonal Art Map hatching, watercolor effects, paper texture |
-| Pre-PBR realism | ~30% — Blinn-Phong shading model exists | Specular map slot, half-Lambert wrap, scene specular strength |
-| Hand-painted | ~10% — dither gradient flag, LUT grading | Light ramp textures, wrap lighting, per-material ramp override |
-| Material-expression | 100% — SSS wired in forward shader (wrap lighting + offset samples), matcap texture slot (binding 18, per-material), procedural surface noise (3-octave world-space hash) | None |
+| Style | Status | Key Features |
+|-------|--------|--------------|
+| Low-poly retro 3D | 100% | Vertex snap, affine textures, flat/Gouraud, UV quantize, stipple, resolution downscale, texture page warping, polygon sort jitter |
+| Analog/degraded | 100% | VHS (tracking, wobble, bleed, noise, tape dropout), CRT (10 real presets, phosphor subpixels), film grain, chromatic aberration, film gate weave, light leaks |
+| Pixel/3D hybrid | 100% | Resolution downscale, color quantization, Bayer dither, palette lock (PICO-8, Game Boy, NES, CGA, C64 presets), normal quantization |
+| Cel/toon | 100% | Diffuse bands (2-8), specular cutoff, Sobel depth+normal outlines, colored shadows, rim lighting, per-material ramp override, inverted-hull geometry outlines (per-material width/color) |
+| NPR illustrative | 100% | 8 stipple patterns, configurable density/color modes, curvature-driven outline thickness variation (pen/ink) |
+| Pre-PBR realism | 100% | Blinn-Phong shading, specular map slot, half-Lambert wrap, scene specular strength |
+| Hand-painted | 100% | Light ramp textures (4 modes), wrap lighting, per-material ramp override, saturation boost |
+| Material-expression | 100% | SSS wired in forward shader (wrap lighting + offset samples), matcap texture slot (binding 18, per-material), procedural surface noise (3-octave world-space hash) |
+| Inherit (scene default) | 100% | Per-entity override via ArtStyleComponent, propagation to children |
 
 ### Phase 0: Shared Infrastructure
 
@@ -816,7 +841,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | 3D asset library (CC0) | High | High | P2 | ✅ Complete (16 CC0 3D model packs — Kenney/Quaternius, AssetLibrary.h/cpp, editor browser) |
 | 2D asset library (CC0) | High | Medium | P2 | ✅ Complete (15 CC0 2D sprite/tileset/UI packs, 14 categories, editor browser) |
 | **— Editor & Project —** | | | | |
-| Template rebuild & demo scenes | Medium | Medium | P2 | ✅ Complete (38→22→44 templates, all polished +50%) |
+| Template rebuild & demo scenes | Medium | Medium | P2 | ✅ Complete (38→22→44→51 templates, all polished +50%) |
 | Project Hub redesign (landing + wizard) | Medium | High | P2 | ✅ Complete |
 | Template creator tool | Medium | Medium | P3 | ✅ Complete (TemplateCreator.h/cpp, save/load/scan/delete, View > Tools > Template Creator, templates/ directory) |
 | Template marketplace | Medium | Medium | P3 | ✅ Complete (TemplateMarketplace.h/cpp, 15 curated templates, search/filter/sort, install/uninstall, View > Tools) |
@@ -869,7 +894,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 ### Completed
 
 - ~~**Extended Model Format Support**~~ ✅ — PLY (ASCII/binary point cloud/mesh) and VOX (MagicaVoxel voxel with greedy face merging) import via custom loaders, routed through SceneImporter
-- ~~**Template Rebuild & Demo Scenes**~~ ✅ — Redesigned from 38 to 22 focused templates, then restored 20 removed templates for 44 total across 7 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Flash, Advanced, Multiplayer, Debug/Test), each showcasing real engine features. All 44 templates polished with ~50% more content: additional entities, components, atmosphere, HUD elements, and gameplay setups
+- ~~**Template Rebuild & Demo Scenes**~~ ✅ — Redesigned from 38 to 22 focused templates, then expanded to 51 total across 7 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Flash, Advanced, Multiplayer, Debug/Test), each showcasing real engine features. All templates polished with additional entities, components, atmosphere, HUD elements, and gameplay setups
 - ~~**Planet Gravity Template**~~ ✅ — Super Mario Galaxy-style spherical gravity third-person platformer (GravityZoneComponent Point mode, SurfaceAlignedController, orbit camera, 4 surface platforms, 6 coins)
 - ~~**Editor Accent Color & Theming**~~ ✅ — ~~Replace blue accent with TEGE brand sage green~~ (done), ~~customizable accent colors in editor settings~~ (done), ~~accent color harmony presets~~ (done — 6 presets: Default Blue, Warm Orange, Forest Green, Royal Purple, Crimson Red, Teal, auto-derive 11 colors), ~~theme preview pane~~ (done — 250x160 live preview), ~~notification toasts~~ (done — 4 types, slide-in/fade-out), ~~keyboard shortcuts help~~ (done — Ctrl+Shift+/, searchable, categorized), rounded corners, softer panel borders, distinct visual identity
 - ~~**Curved Grid Snapping**~~ ✅ — Snap entity placement to curved/spherical grid surfaces with orientation alignment. Surface Snap mode projects entities onto terrain heightmaps and sphere gravity zones, with normal alignment (yaw-preserving) and settings persistence. `Quaternion::FromToRotation()` utility added
