@@ -718,6 +718,11 @@ public:
         Enjin::Gameplay::GameplayLoop::DispatchCollisionEvents3D(
             m_World.get(), m_Physics.get(), &m_VisualScriptSystem, deltaTime, m_DeferredDestroys);
 
+        // --- Render system update (skeletal animation, sprites, terrain, lighting cache) ---
+        if (m_RenderSystem) {
+            m_RenderSystem->Update(deltaTime);
+        }
+
         // --- Controllers & vegetation ---
         m_ControllerSystem.Update(deltaTime);
         // Update flower system viewport (full screen in player)
@@ -863,6 +868,10 @@ public:
 
         // Save system (auto-save timer)
         m_TieredSaveSystem.Update(deltaTime, m_World.get(), m_StartScene);
+
+        // Hazard/pickup overlap checks (for CharacterVirtual which doesn't fire collision events)
+        Enjin::Gameplay::GameplayLoop::CheckHazardOverlaps(m_World.get(), deltaTime, m_DeferredDestroys);
+        Enjin::Gameplay::GameplayLoop::CheckPickupOverlaps3D(m_World.get(), m_DeferredDestroys);
 
         // Health system (regen, invulnerability, death) and deferred entity destruction
         Enjin::Gameplay::GameplayLoop::UpdateHealthSystems(m_World.get(), deltaTime, m_DeferredDestroys);
