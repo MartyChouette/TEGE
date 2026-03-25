@@ -475,9 +475,10 @@ public:
 
         ENJIN_LOG_INFO(Player, "Gameplay systems initialized");
 
-        // Skip splash screen — load game immediately
-        m_ShowingSplash = false;
-        EndSplashScreen();
+        // Skip splash screen — set timer to 0 so EndSplashScreen fires
+        // on the first render frame (after BeginFrame succeeds).
+        m_ShowingSplash = true;
+        m_SplashTimer = 0.0f;
 
         // Register crash context providers
         s_CrashWorld = m_World.get();
