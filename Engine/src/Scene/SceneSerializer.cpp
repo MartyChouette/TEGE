@@ -74,7 +74,7 @@ static f32 RF(f32 val) {
     return std::round(val * mult) / mult;
 }
 
-// Tolerant bool deserialization — handles numbers (from RF() bug) and booleans
+// Tolerant bool deserialization -- handles numbers (from RF() bug) and booleans
 static bool JB(const json& val) {
     if (val.is_boolean()) return val.get<bool>();
     if (val.is_number()) return val.get<double>() != 0.0;
@@ -531,7 +531,7 @@ ECS::LightComponent DeserializeLightComponent(const json& j) {
     light.innerConeAngle = j.value("innerConeAngle", 12.5f);
     light.outerConeAngle = j.value("outerConeAngle", 17.5f);
     light.castShadows = j.contains("castShadows") ? JB(j["castShadows"]) : false;
-    // Note: old scenes may contain "shadowMapResolution" â€” silently ignored
+    // Note: old scenes may contain "shadowMapResolution" â€" silently ignored
     return light;
 }
 
@@ -5221,7 +5221,7 @@ json SerializeAnimationRecorderComponent(const ECS::AnimationRecorderComponent& 
     o["recordedAnimName"] = rec.recordedAnimName;
     o["recordInterval"] = RF(rec.recordInterval);
     o["recordCount"] = rec.recordCount;
-    // recording state and tracks are transient — not serialized
+    // recording state and tracks are transient -- not serialized
     return o;
 }
 
@@ -6040,6 +6040,29 @@ SceneSerializer::SceneSerializer(ECS::World* world)
     : m_World(world) {
 }
 
+void SceneSerializer::MigrateScene(json& root, u32 fromVersion) {
+    // Apply incremental migrations from fromVersion up to SCENE_FORMAT_VERSION.
+    // Each case falls through to apply all subsequent migrations in order.
+    //
+    // Example for future migrations:
+    //   if (fromVersion < 2) {
+    //       // Migration from version 1 -> 2: e.g. rename a component field
+    //       for (auto& entity : root["entities"]) {
+    //           if (entity.contains("oldField")) {
+    //               entity["newField"] = entity["oldField"];
+    //               entity.erase("oldField");
+    //           }
+    //       }
+    //   }
+
+    // Version 0 -> 1: No structural changes needed (first versioned format)
+    (void)root;
+    (void)fromVersion;
+
+    // Stamp the migrated version so re-saves use the current format
+    root["formatVersion"] = SCENE_FORMAT_VERSION;
+}
+
 SerializationResult SceneSerializer::Save(const std::string& filepath, const SerializationOptions& options) {
     if (!m_World) {
         SerializationResult result;
@@ -6095,6 +6118,7 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
 
     try {
         json sceneJson;
+        sceneJson["formatVersion"] = SCENE_FORMAT_VERSION;
         sceneJson["version"] = "1.0";
         sceneJson["entityCount"] = static_cast<u32>(entities.size());
 
@@ -6766,6 +6790,18 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
         json sceneJson;
         file >> sceneJson;
         file.close();
+
+        // Read format version and apply migrations
+        u32 formatVersion = sceneJson.value("formatVersion", u32(0));
+        if (formatVersion == 0) {
+            ENJIN_LOG_WARN(Asset, "Loading legacy scene file (no format version): %s", filepath.c_str());
+        } else if (formatVersion > SCENE_FORMAT_VERSION) {
+            ENJIN_LOG_ERROR(Asset, "Scene file version %u is newer than engine version %u: %s",
+                            formatVersion, SCENE_FORMAT_VERSION, filepath.c_str());
+        }
+        if (formatVersion < SCENE_FORMAT_VERSION) {
+            MigrateScene(sceneJson, formatVersion);
+        }
 
         // Deserialize skybox configuration (file-based load)
         if (sceneJson.contains("skybox")) {
@@ -7441,6 +7477,7 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
 
     try {
         json sceneJson;
+        sceneJson["formatVersion"] = SCENE_FORMAT_VERSION;
         sceneJson["version"] = "1.0";
         const auto& entities = m_World->GetAllEntities();
         sceneJson["entityCount"] = static_cast<u32>(entities.size());
@@ -8030,21 +8067,31 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
         return result;
     }
 
-    // Parse JSON FIRST â€” only clear the world after we know the JSON is valid
+    // Parse JSON FIRST â€" only clear the world after we know the JSON is valid
     json sceneJson;
     try {
         sceneJson = json::parse(jsonString);
     } catch (const std::exception& e) {
         result.error = std::string("JSON parse error: ") + e.what();
-        return result;  // Return without clearing â€” scene is untouched
+        return result;  // Return without clearing -- scene is untouched
     }
 
     if (!sceneJson.contains("entities") || !sceneJson["entities"].is_array()) {
         result.error = "Invalid scene format: missing entities array";
-        return result;  // Return without clearing â€” scene is untouched
+        return result;  // Return without clearing -- scene is untouched
     }
 
-    // JSON is structurally valid â€” safe to clear the world now
+    {
+        u32 fv = sceneJson.value("formatVersion", u32(0));
+        if (fv == 0)
+            ENJIN_LOG_WARN(Asset, "Loading legacy scene (no formatVersion)");
+        else if (fv > SCENE_FORMAT_VERSION)
+            ENJIN_LOG_ERROR(Asset, "Scene formatVersion %u > engine %u", fv, SCENE_FORMAT_VERSION);
+        if (fv < SCENE_FORMAT_VERSION)
+            MigrateScene(sceneJson, fv);
+    }
+
+    // Structurally valid, safe to clear world now
     if (clearExisting) {
         m_World->Clear();
     }
@@ -9188,7 +9235,7 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         // Script
         if (entityJson.contains("scriptComponent"))
             world->AddComponent<ECS::ScriptComponent>(entity, DeserializeScriptComponent(entityJson["scriptComponent"]));
-        // Hierarchy (parent reference â€” stored as entity ID, may need remapping by caller)
+        // Hierarchy (parent reference â€" stored as entity ID, may need remapping by caller)
         if (entityJson.contains("parent")) {
             auto& pc = world->AddComponent<ECS::ParentComponent>(entity);
             pc.parent = static_cast<ECS::Entity>(entityJson["parent"].get<u64>());
@@ -9429,7 +9476,7 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
 
     try {
         json j;
-        // Dispatch by component key â€” must match the keys used in scene JSON
+        // Dispatch by component key â€" must match the keys used in scene JSON
         if (key == "name" && world->HasComponent<ECS::NameComponent>(entity))
             j = SerializeNameComponent(*world->GetComponent<ECS::NameComponent>(entity));
         else if (key == "transform" && world->HasComponent<ECS::TransformComponent>(entity))
@@ -9687,7 +9734,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
     try {
         json j = json::parse(jsonStr);
 
-        // Dispatch by component key â€” must match the keys used in scene JSON
+        // Dispatch by component key â€" must match the keys used in scene JSON
         if (key == "name") { world->AddComponent<ECS::NameComponent>(entity, DeserializeNameComponent(j)); return true; }
         if (key == "transform") { world->AddComponent<ECS::TransformComponent>(entity, DeserializeTransformComponent(j)); return true; }
         if (key == "material") { world->AddComponent<ECS::MaterialComponent>(entity, DeserializeMaterialComponent(j)); return true; }

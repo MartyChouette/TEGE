@@ -508,6 +508,8 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
             if (curY + rowH > listBottomY) break;
 
             int i = indices[pi];
+            // Bounds check — vector may have been modified by deferred operations
+            if (i < 0 || i >= static_cast<int>(m_EditorSettings.recentProjects.size())) continue;
             ImVec2 rPos(rowX, curY);
             ImVec2 rEnd(rPos.x + rowW, rPos.y + rowH);
 
