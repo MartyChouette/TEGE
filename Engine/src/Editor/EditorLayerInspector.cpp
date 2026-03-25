@@ -1907,7 +1907,62 @@ void EditorLayer::DrawInspectorPanel() {
                     ImGui::Separator();
                     ImGui::Checkbox("Show Bones##Animator", &animComp->showBones);
                     if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("Draw wireframe skeleton lines in the viewport");
+                        ImGui::SetTooltip("Draw wireframe skeleton lines in the viewport. Click bones to select.");
+                    }
+
+                    // When showBones is off, clear bone selection
+                    if (!animComp->showBones) {
+                        animComp->selectedBoneIndex = -1;
+                    }
+
+                    // Selected bone info panel
+                    if (animComp->showBones && animComp->selectedBoneIndex >= 0) {
+                        const auto* selSkel = animator.GetSkeleton();
+                        if (selSkel && animComp->selectedBoneIndex < static_cast<i32>(selSkel->bones.size())) {
+                            const auto& selBone = selSkel->bones[animComp->selectedBoneIndex];
+                            const auto& selPose = animator.GetCurrentPose();
+
+                            ImGui::Indent(8.0f);
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 1.0f, 0.35f, 1.0f));
+                            ImGui::Text("Selected Bone: %s [%d]", selBone.name.c_str(), animComp->selectedBoneIndex);
+                            ImGui::PopStyleColor();
+
+                            // Parent name
+                            if (selBone.parentIndex >= 0 && selBone.parentIndex < static_cast<i32>(selSkel->bones.size())) {
+                                ImGui::Text("Parent: %s [%d]", selSkel->bones[selBone.parentIndex].name.c_str(), selBone.parentIndex);
+                            } else {
+                                ImGui::Text("Parent: (root)");
+                            }
+
+                            // Local pose data (from current animation pose)
+                            if (animComp->selectedBoneIndex < static_cast<i32>(selPose.localPositions.size())) {
+                                const auto& lp = selPose.localPositions[animComp->selectedBoneIndex];
+                                ImGui::Text("Local Pos: %.3f, %.3f, %.3f", lp.x, lp.y, lp.z);
+                            }
+                            if (animComp->selectedBoneIndex < static_cast<i32>(selPose.localRotations.size())) {
+                                const auto& lr = selPose.localRotations[animComp->selectedBoneIndex];
+                                ImGui::Text("Local Rot: %.3f, %.3f, %.3f, %.3f", lr.x, lr.y, lr.z, lr.w);
+                            }
+                            if (animComp->selectedBoneIndex < static_cast<i32>(selPose.localScales.size())) {
+                                const auto& ls = selPose.localScales[animComp->selectedBoneIndex];
+                                ImGui::Text("Local Scale: %.3f, %.3f, %.3f", ls.x, ls.y, ls.z);
+                            }
+
+                            // World transform matrix diagonal (scale + shear indicator)
+                            if (animComp->selectedBoneIndex < static_cast<i32>(selPose.worldTransforms.size())) {
+                                const auto& wt = selPose.worldTransforms[animComp->selectedBoneIndex];
+                                ImGui::Text("World Diag: %.3f, %.3f, %.3f, %.3f", wt.m[0], wt.m[5], wt.m[10], wt.m[15]);
+                            }
+
+                            // Deselect button
+                            if (ImGui::Button("Deselect##BoneDeselect")) {
+                                animComp->selectedBoneIndex = -1;
+                            }
+                            ImGui::SameLine();
+                            ImGui::TextDisabled("(or press Escape)");
+
+                            ImGui::Unindent(8.0f);
+                        }
                     }
 
                     // Bone weight visualization (heat map)

@@ -928,6 +928,27 @@ void EditorLayer::Update(f32 deltaTime) {
             FocusOnSelection();
         }
 
+        // Bone selection keyboard navigation (Up/Down cycle, Escape deselect)
+        if (m_PrimarySelected != ECS::INVALID_ENTITY &&
+            m_World->HasComponent<ECS::AnimatorComponent>(m_PrimarySelected)) {
+            auto* animComp = m_World->GetComponent<ECS::AnimatorComponent>(m_PrimarySelected);
+            if (animComp && animComp->showBones && animComp->selectedBoneIndex >= 0) {
+                const auto* skeleton = animComp->animator.GetSkeleton();
+                if (skeleton && !skeleton->bones.empty()) {
+                    i32 boneCount = static_cast<i32>(skeleton->bones.size());
+                    if (Input::IsKeyPressed(KeyCode::Up)) {
+                        animComp->selectedBoneIndex = (animComp->selectedBoneIndex - 1 + boneCount) % boneCount;
+                    }
+                    if (Input::IsKeyPressed(KeyCode::Down)) {
+                        animComp->selectedBoneIndex = (animComp->selectedBoneIndex + 1) % boneCount;
+                    }
+                }
+                if (Input::IsKeyPressed(KeyCode::Escape)) {
+                    animComp->selectedBoneIndex = -1;
+                }
+            }
+        }
+
         // Keyboard gizmo nudge (arrow keys when entity selected)
         if (m_EditorSettings.keyboardNavEnabled) {
             HandleKeyboardGizmoNudge();
@@ -3131,37 +3152,53 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         auto* interactionIK = m_World->GetComponent<ECS::InteractionIKComponent>(m_PrimarySelected);
                         if (interactionIK) interactionBone = interactionIK->handBoneName;
 
+                        i32 selBone = animComp->selectedBoneIndex;
+
                         for (usize i = 0; i < skeleton->bones.size(); ++i) {
                             const auto& bone = skeleton->bones[i];
                             // Get this bone's world position (bone-space -> entity-space -> world-space)
                             Math::Matrix4 boneWorld = entityWorld * pose.worldTransforms[i];
                             Math::Vector3 bonePos(boneWorld.m[12], boneWorld.m[13], boneWorld.m[14]);
 
-                            // Determine color: yellow for IK targets, white for normal
+                            // Determine color: green for selected, yellow for IK targets, white for normal
+                            bool isSelected = (static_cast<i32>(i) == selBone);
                             bool isIKTarget = (!lookAtBone.empty() && bone.name == lookAtBone) ||
                                               (!interactionBone.empty() && bone.name == interactionBone);
-                            ImU32 boneColor = isIKTarget ? IM_COL32(255, 220, 50, 220)
+                            ImU32 boneColor = isSelected ? IM_COL32(50, 255, 80, 255)
+                                            : isIKTarget ? IM_COL32(255, 220, 50, 220)
                                                          : IM_COL32(255, 255, 255, 200);
+                            f32 lineThickness = isSelected ? 2.5f : 1.5f;
 
                             // Draw line from parent to this bone
                             if (bone.parentIndex >= 0 && bone.parentIndex < static_cast<i32>(skeleton->bones.size())) {
                                 Math::Matrix4 parentWorld = entityWorld * pose.worldTransforms[bone.parentIndex];
                                 Math::Vector3 parentPos(parentWorld.m[12], parentWorld.m[13], parentWorld.m[14]);
-                                drawLine3D(bgDrawList, parentPos, bonePos, boneColor, 1.5f);
+                                drawLine3D(bgDrawList, parentPos, bonePos, boneColor, lineThickness);
                             }
 
-                            // Draw a small cross at each joint
+                            // Draw joint marker
                             ImVec2 jointScreen;
                             if (worldToScreen(bonePos, jointScreen)) {
-                                f32 sz = isIKTarget ? 4.0f : 2.5f;
-                                bgDrawList->AddLine(
-                                    ImVec2(jointScreen.x - sz, jointScreen.y),
-                                    ImVec2(jointScreen.x + sz, jointScreen.y),
-                                    boneColor, 1.0f);
-                                bgDrawList->AddLine(
-                                    ImVec2(jointScreen.x, jointScreen.y - sz),
-                                    ImVec2(jointScreen.x, jointScreen.y + sz),
-                                    boneColor, 1.0f);
+                                if (isSelected) {
+                                    // Selected bone: larger filled circle + name label
+                                    bgDrawList->AddCircleFilled(jointScreen, 5.0f, IM_COL32(50, 255, 80, 255));
+                                    bgDrawList->AddCircle(jointScreen, 5.0f, IM_COL32(255, 255, 255, 200), 0, 1.0f);
+                                    // Draw bone name next to the joint
+                                    bgDrawList->AddText(
+                                        ImVec2(jointScreen.x + 8.0f, jointScreen.y - 6.0f),
+                                        IM_COL32(50, 255, 80, 255), bone.name.c_str());
+                                } else {
+                                    // Normal bone: small cross at each joint
+                                    f32 sz = isIKTarget ? 4.0f : 2.5f;
+                                    bgDrawList->AddLine(
+                                        ImVec2(jointScreen.x - sz, jointScreen.y),
+                                        ImVec2(jointScreen.x + sz, jointScreen.y),
+                                        boneColor, 1.0f);
+                                    bgDrawList->AddLine(
+                                        ImVec2(jointScreen.x, jointScreen.y - sz),
+                                        ImVec2(jointScreen.x, jointScreen.y + sz),
+                                        boneColor, 1.0f);
+                                }
                             }
                         }
                     }

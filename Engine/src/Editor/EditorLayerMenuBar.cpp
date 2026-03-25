@@ -286,7 +286,13 @@ void EditorLayer::DrawMenuBar() {
                     std::filesystem::path(m_SceneManager.GetProjectPath()).filename().string();
                 std::string path = FileDialog::SaveFile("Save Project As", filters, "", defaultName);
                 if (!path.empty()) {
-                    if (!m_SceneManager.SaveProject(path)) {
+                    if (m_SceneManager.SaveProject(path)) {
+                        // Switch to the new project — you are now IN this project
+                        m_EditorSettings.AddRecentProject(path);
+                        m_EditorSettings.lastProjectDir = std::filesystem::path(path).parent_path().string();
+                        m_EditorSettings.Save();
+                        ShowNotification("Project saved as: " + std::filesystem::path(path).stem().string(), NotificationType::Success);
+                    } else {
                         ShowNotification("Failed to save project", NotificationType::Error);
                     }
                 }

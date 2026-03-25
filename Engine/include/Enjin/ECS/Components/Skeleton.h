@@ -35,6 +35,9 @@ struct ENJIN_API AnimatorComponent : public IComponent {
     // Editor debug: draw wireframe skeleton lines when selected
     bool showBones = false;
 
+    // Editor: index of the selected bone in the viewport (-1 = none)
+    i32 selectedBoneIndex = -1;
+
     // Editor debug: bone weight visualization (heat map overlay)
     bool showWeights = false;
     i32 weightPreviewBoneIndex = -1;  // -1 = no bone selected for preview

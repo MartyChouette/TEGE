@@ -358,6 +358,55 @@ void EditorLayer::HandleViewportPicking() {
         }
 
         // It was a click — fall through to pick logic
+
+        // --- Bone picking: if a skeletal entity is selected with showBones, check bone joints first ---
+        if (m_PrimarySelected != ECS::INVALID_ENTITY &&
+            m_World->HasComponent<ECS::AnimatorComponent>(m_PrimarySelected)) {
+            auto* animComp = m_World->GetComponent<ECS::AnimatorComponent>(m_PrimarySelected);
+            if (animComp && animComp->showBones) {
+                const auto* skeleton = animComp->animator.GetSkeleton();
+                const auto& pose = animComp->animator.GetCurrentPose();
+                if (skeleton && !skeleton->bones.empty() &&
+                    pose.worldTransforms.size() == skeleton->bones.size()) {
+                    Math::Matrix4 entityWorld = ECS::ComputeWorldMatrix(m_World, m_PrimarySelected);
+                    Math::Matrix4 viewMat = m_Camera->GetViewMatrix();
+                    Math::Matrix4 projMat = m_Camera->GetProjectionMatrix();
+                    Math::Matrix4 viewProj = projMat * viewMat;
+
+                    f32 bestDist = 10.0f; // 10 pixel threshold
+                    i32 bestBone = -1;
+
+                    for (usize i = 0; i < skeleton->bones.size(); ++i) {
+                        Math::Matrix4 boneWorld = entityWorld * pose.worldTransforms[i];
+                        Math::Vector3 bonePos(boneWorld.m[12], boneWorld.m[13], boneWorld.m[14]);
+
+                        // Project to screen
+                        Math::Vector4 clipPos = viewProj * Math::Vector4(bonePos.x, bonePos.y, bonePos.z, 1.0f);
+                        if (clipPos.w <= 0.001f) continue;
+                        f32 ndcX = clipPos.x / clipPos.w;
+                        f32 ndcY = clipPos.y / clipPos.w;
+                        f32 ndcZ = clipPos.z / clipPos.w;
+                        if (ndcZ < 0.0f || ndcZ > 1.0f) continue;
+                        f32 screenX = (ndcX + 1.0f) * 0.5f * vpW + m_EditorViewportImageMinX;
+                        f32 screenY = (ndcY + 1.0f) * 0.5f * vpH + m_EditorViewportImageMinY;
+
+                        f32 dx2 = screenX - mousePos.x;
+                        f32 dy2 = screenY - mousePos.y;
+                        f32 dist = std::sqrt(dx2 * dx2 + dy2 * dy2);
+                        if (dist < bestDist) {
+                            bestDist = dist;
+                            bestBone = static_cast<i32>(i);
+                        }
+                    }
+
+                    if (bestBone >= 0) {
+                        animComp->selectedBoneIndex = bestBone;
+                        return; // Bone picked — don't fall through to entity picking
+                    }
+                }
+            }
+        }
+
         // Double-click detection
         static f64 lastClickTime = 0.0;
         static ECS::Entity lastClickedEntity = ECS::INVALID_ENTITY;
