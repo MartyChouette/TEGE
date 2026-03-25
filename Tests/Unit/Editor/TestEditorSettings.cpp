@@ -70,7 +70,7 @@ ENJIN_TEST(Defaults, KeyboardNav) {
 
 ENJIN_TEST(Defaults, FrameRate) {
     EditorSettings settings;
-    ENJIN_EXPECT_EQ((int)settings.editorFrameRateLimit, (int)FrameRateLimit::FPS60);
+    ENJIN_EXPECT_EQ((int)settings.editorFrameRateLimit, (int)FrameRateLimit::FPS120);
     ENJIN_EXPECT_FALSE(settings.editorVSync);
     ENJIN_EXPECT_TRUE(settings.reduceFrameRateWhenUnfocused);
     ENJIN_EXPECT_EQ(settings.unfocusedFrameRate, 15u);
@@ -238,9 +238,10 @@ ENJIN_TEST(AccentColors, DefaultForThemeReturnsSomething) {
 
 ENJIN_TEST(EnumRanges, EditorThemeValues) {
     ENJIN_EXPECT_EQ((int)EditorTheme::Dark, 0);
-    ENJIN_EXPECT_EQ((int)EditorTheme::Light, 1);
-    ENJIN_EXPECT_EQ((int)EditorTheme::HighContrastDark, 2);
-    ENJIN_EXPECT_EQ((int)EditorTheme::HighContrastLight, 3);
+    ENJIN_EXPECT_EQ((int)EditorTheme::Glass, 1);
+    ENJIN_EXPECT_EQ((int)EditorTheme::Light, 2);
+    ENJIN_EXPECT_EQ((int)EditorTheme::HighContrastDark, 3);
+    ENJIN_EXPECT_EQ((int)EditorTheme::HighContrastLight, 4);
 }
 
 ENJIN_TEST(EnumRanges, FrameRateLimitValues) {
