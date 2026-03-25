@@ -646,36 +646,32 @@ public:
     void Update(Enjin::f32 deltaTime) override {
         if (!m_Initialized) return;
 
-        // Splash screen phase
+        // Splash screen phase — if timer is 0 (skipped), go straight to game
         if (m_ShowingSplash) {
-            m_SplashTimer -= deltaTime;
-
-            // Fade in during first second
-            if (m_SplashTimer > m_SplashDuration - 1.0f) {
-                m_SplashAlpha = 1.0f - (m_SplashTimer - (m_SplashDuration - 1.0f));
-            }
-            // Fade out during last 0.5 seconds
-            else if (m_SplashTimer < 0.5f) {
-                m_SplashAlpha = m_SplashTimer / 0.5f;
-            } else {
-                m_SplashAlpha = 1.0f;
-            }
-
-            // Update splash text opacity
-            UpdateSplashAlpha();
-
-            // Skip on any key/click
-            if (m_SplashTimer < m_SplashDuration - 0.3f) {
-                if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape) ||
-                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::Space) ||
-                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::Enter) ||
-                    Enjin::Input::IsMouseButtonPressed(Enjin::MouseButton::Left)) {
-                    m_SplashTimer = 0.0f;
-                }
-            }
-
             if (m_SplashTimer <= 0.0f) {
+                // Immediate load — no splash animation
+                m_ShowingSplash = false;
                 EndSplashScreen();
+            } else {
+                m_SplashTimer -= deltaTime;
+                // Fade in/out
+                if (m_SplashTimer > m_SplashDuration - 1.0f)
+                    m_SplashAlpha = 1.0f - (m_SplashTimer - (m_SplashDuration - 1.0f));
+                else if (m_SplashTimer < 0.5f)
+                    m_SplashAlpha = m_SplashTimer / 0.5f;
+                else
+                    m_SplashAlpha = 1.0f;
+                UpdateSplashAlpha();
+                // Skip on input
+                if (m_SplashTimer < m_SplashDuration - 0.3f) {
+                    if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape) ||
+                        Enjin::Input::IsKeyPressed(Enjin::KeyCode::Space) ||
+                        Enjin::Input::IsKeyPressed(Enjin::KeyCode::Enter) ||
+                        Enjin::Input::IsMouseButtonPressed(Enjin::MouseButton::Left)) {
+                        m_SplashTimer = 0.0f;
+                    }
+                }
+                if (m_SplashTimer <= 0.0f) EndSplashScreen();
             }
             return;
         }
