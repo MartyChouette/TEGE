@@ -981,6 +981,18 @@ public:
             m_World->Update(0.0f);
         }
 
+        // Render the 3D scene into the swapchain.
+        // 1. Shadow pass (before main render pass)
+        // 2. Begin main render pass (required before any drawing)
+        // 3. RenderSystem draws entities during the main pass
+        if (m_RenderSystem && m_Camera && m_Renderer) {
+            if (m_RenderSystem->IsShadowsEnabled()) {
+                m_RenderSystem->RenderShadowPassForCamera(m_Camera.get());
+            }
+            // Start the swapchain render pass — without this, EndFrame crashes
+            m_Renderer->BeginMainRenderPass();
+        }
+
         // Render ImGui overlays (pause menu, dialogue)
         VkCommandBuffer cmd = m_Renderer->GetCurrentCommandBuffer();
         if (m_ImGuiLayer && cmd != VK_NULL_HANDLE) {
