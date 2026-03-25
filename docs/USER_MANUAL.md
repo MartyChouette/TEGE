@@ -1893,7 +1893,7 @@ When play mode is active:
 The following systems are updated each frame during play mode:
 
 - **ControllerSystem** -- processes all character controllers (movement, jumping, camera orbit).
-- **SimplePhysics** -- rigidbody simulation, collision detection, gravity.
+- **Physics** (Jolt 3D / Box2D 2D) -- rigidbody simulation, collision detection, gravity.
 - **ScriptSystem** -- AngelScript lifecycle callbacks (OnUpdate, OnFixedUpdate, OnLateUpdate).
 - **CoroutineScheduler** -- resumes suspended script coroutines.
 - **FootstepSystem** -- surface-aware footstep audio.
@@ -3338,7 +3338,7 @@ Enjin uses fixed-width type aliases throughout the codebase and exposed APIs:
 | `Enjin::Accessibility` | Colorblind filter, subtitle system, content warnings, runtime settings. |
 | `Enjin::InputSystem` | Remappable input action map (note: uses `InputSystem::` to avoid collision with `Enjin::Input`). |
 | `Enjin::Build` | Build pipeline, asset packer, asset reader, build report. |
-| `Enjin::Physics` | SimplePhysics, PhysicsWorld, ConstraintSolver, joints. |
+| `Enjin::Physics` | IPhysicsBackend, JoltBackend, Box2DBackend, PhysicsBackendFactory, joints. |
 | `Enjin::Scripting` | AngelScript engine, script system, coroutines, script event bus. |
 | `Enjin::Gameplay` | HUD, quest, quest flow, footstep, cinematic, and object pool systems. |
 | `Enjin::Debug` | Profiler, scope timers, frame data. |

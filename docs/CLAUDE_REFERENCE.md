@@ -11,7 +11,7 @@ For quick reference, see `CLAUDE.md`. For architecture overview, see `ARCHITECTU
   - `TransformComponent` - position, rotation (Euler), scale, `visible` bool, cached world matrix with dirty flag
   - `MeshComponent` - vertices (position, normal, UV, color, tangent, boneWeights, boneIndices), indices
   - `MaterialComponent` - PBR properties, textures (base color, normal, height, matcap at binding 18), retro flags, dithered gradient (`ditherGradient`, `ditherGradientBands` 2-8, `ditherGradientPattern` 6 patterns), cel outline (`outlineWidth`/`outlineColor`), procedural surface noise (`surfaceNoiseScale`/`surfaceNoiseStrength`)
-  - `LightComponent` - Light data (direction, color, intensity)
+  - `LightComponent` - Light data (type, color, intensity, range, attenuation, cone angles, castShadows — no direction field, extract from TransformComponent rotation)
   - `NameComponent` - Entity name string
   - `CameraComponent` - In-game cameras with projection
   - `NotesComponent` - Text annotations (field: `.notes`, not `.text`)
@@ -30,7 +30,7 @@ Bitmask system: `categoryBits` (which groups it belongs to) and `collisionMask` 
 
 ### Physics Backend Abstraction
 
-`IPhysicsBackend` (3D) and `IPhysicsBackend2D` (2D) are abstract interfaces for physics implementations. Shared data types live in `PhysicsTypes.h` (AABB, Ray, RaycastHit, CollisionResult, CollisionEvent, ColliderInfo) and `PhysicsTypes2D.h` (Shape2DType, Body2DComponent, Joint2DComponent, Contact2D, RayHit2D) — always available regardless of which backends are compiled. `JoltBackend` wraps Jolt Physics v5.2.0 with full ECS↔Jolt synchronization, thread-safe contact events, bilateral collision filtering, 6 joint types, gravity zones, and CCD support. `Box2DBackend` wraps Box2D v3.0.0 (C API with handle-based IDs) for production-grade 2D physics — multi-threaded sub-stepping, robust constraint solving, 5 joint types (Revolute/Prismatic/Distance/Rope/Weld), contact+sensor event polling, raycasting, overlap queries, CCD, and bilateral collision filtering. `SimplePhysicsBackend` and `SimplePhysicsBackend2D` wrap the legacy engines (guarded by `ENJIN_PHYSICS_SIMPLE`). `PhysicsBackendFactory` creates backends via `CreatePhysicsBackend(type, mode)` / `CreatePhysicsBackend2D(type, mode)` with `IsJoltAvailable()` / `IsBox2DAvailable()` / `IsSimpleAvailable()` helpers and `ResolveBackendName()`. `PhysicsBackendType` enum: `Auto`, `Jolt`, `Box2D`, `Simple`. When `ENJIN_PHYSICS_JOLT=ON` (default), Auto selects Jolt for 3D/Mixed modes. When `ENJIN_PHYSICS_BOX2D=ON` (default), Auto selects Box2D for 2D/Mixed modes. PlayMode and Player own physics via `unique_ptr<IPhysicsBackend>`. All consumers accept `IPhysicsBackend*`. `ControllerSystem` accepts both `IPhysicsBackend*` (3D) and `IPhysicsBackend2D*` (2D) — Platformer2D uses 2D raycasts for ground detection when available, with 3D fallback. CMake options: `ENJIN_PHYSICS_JOLT` (ON), `ENJIN_PHYSICS_BOX2D` (ON), `ENJIN_PHYSICS_SIMPLE` (ON, can be disabled to retire legacy code).
+`IPhysicsBackend` (3D) and `IPhysicsBackend2D` (2D) are abstract interfaces for physics implementations. Shared data types live in `PhysicsTypes.h` (AABB, Ray, RaycastHit, CollisionResult, CollisionEvent, ColliderInfo) and `PhysicsTypes2D.h` (Shape2DType, Body2DComponent, Joint2DComponent, Contact2D, RayHit2D) — always available regardless of which backends are compiled. `JoltBackend` wraps Jolt Physics v5.2.0 with full ECS↔Jolt synchronization, thread-safe contact events, bilateral collision filtering, 6 joint types, gravity zones, and CCD support. `Box2DBackend` wraps Box2D v3.0.0 (C API with handle-based IDs) for production-grade 2D physics — multi-threaded sub-stepping, robust constraint solving, 5 joint types (Revolute/Prismatic/Distance/Rope/Weld), contact+sensor event polling, raycasting, overlap queries, CCD, and bilateral collision filtering. `PhysicsBackendFactory` creates backends via `CreatePhysicsBackend(type, mode)` / `CreatePhysicsBackend2D(type, mode)` with `IsJoltAvailable()` / `IsBox2DAvailable()` helpers and `ResolveBackendName()`. `PhysicsBackendType` enum: `Auto`, `Jolt`, `Box2D`. When `ENJIN_PHYSICS_JOLT=ON` (default), Auto selects Jolt for 3D/Mixed modes. When `ENJIN_PHYSICS_BOX2D=ON` (default), Auto selects Box2D for 2D/Mixed modes. PlayMode and Player own physics via `unique_ptr<IPhysicsBackend>`. All consumers accept `IPhysicsBackend*`. `ControllerSystem` accepts both `IPhysicsBackend*` (3D) and `IPhysicsBackend2D*` (2D) — Platformer2D uses 2D raycasts for ground detection when available, with 3D fallback. CMake options: `ENJIN_PHYSICS_JOLT` (ON), `ENJIN_PHYSICS_BOX2D` (ON).
 
 ### Project Mode (2D/3D)
 
@@ -57,9 +57,9 @@ Full Vulkan RT pipeline with hybrid raster+RT rendering. All 25 RT shaders compi
 - **`OptiXDenoiser`** - NVIDIA OptiX denoiser with CUDA↔Vulkan interop (timeline semaphores, external memory). CMake option `ENJIN_RAYTRACING_OPTIX` (OFF by default)
 - **`RTCompositor`** - Fullscreen compute shader composites RT layers into scene HDR
 - **Material SSBO** - Per-instance material data (PBR properties, texture flags) uploaded to binding 9 for RT hit shaders, enabling full material evaluation in closest-hit programs
-- **Integration** - `RenderSystem::InitializeRayTracing()` creates RT descriptor set (14 bindings). Only for Scene3D mode
+- **Integration** - `RenderSystem::InitializeRayTracing()` creates RT descriptor set (27 bindings). Only for Scene3D mode
 
-**RT Descriptor Set (Set 1)**:
+**RT Descriptor Set (Set 1)** (27 bindings):
 ```
 Binding 0:  ACCELERATION_STRUCTURE (TLAS)
 Binding 1:  STORAGE_IMAGE (Scene HDR)
@@ -75,6 +75,14 @@ Binding 10: STORAGE_BUFFER (Vertex data)
 Binding 11: STORAGE_BUFFER (Index data)
 Binding 12: STORAGE_BUFFER (Per-instance transforms)
 Binding 13: UNIFORM_BUFFER (Light data)
+Binding 14: STORAGE_IMAGE (RT Translucency output)
+Binding 15: STORAGE_IMAGE (RT Caustics output)
+Binding 16: STORAGE_BUFFER (NEE lights)
+Binding 17: STORAGE_BUFFER (SDF data)
+Binding 18: STORAGE_BUFFER (Simplified materials)
+Binding 19-20: STORAGE_BUFFER (ReSTIR reservoirs, ping-pong)
+Binding 21-23: STORAGE_BUFFER (Screen-space radiance cache)
+Binding 24-26: STORAGE_BUFFER (Surfel radiance cache)
 ```
 
 **25 GLSL Shaders** (`Engine/shaders/`): `rt_common.glsl`, `rt_shadow/reflect/ao/gi/pathtrace .rgen/.rmiss/.rchit`, `rt_translucency/caustics .rgen/.rmiss/.rchit`, `svgf_temporal/variance/atrous.comp`, `rt_composite.comp`, `taa.comp`
@@ -184,15 +192,15 @@ Per-entity texture (bindings 3/5/6/8/9/18) and bone buffer (binding 7) descripto
 ## Scripting Details
 
 - **AngelScript** via `TegeBehavior` base class with hot-reload
-- ~721 bound functions across math, entity, scene, input, physics (2D+3D), audio, components, sprites, coroutines, events, tweening, noise, rendering, post-processing, PP volumes, screen-space effects, input actions, dialogue, save/load, weather, particles, quests, cinematics, object pool, destructibles, UI canvas, localization, prefabs, networking, AI/BT, accessibility, procedural gen, camera presets, Newgrounds, audio event graph, plugins, MIDI input, Flash API shim
+- ~900+ bound functions across math, entity, scene, input, physics (2D+3D), audio, components, sprites, coroutines, events, tweening, noise, rendering, post-processing, PP volumes, screen-space effects, input actions, dialogue, save/load, weather, particles, quests, cinematics, object pool, destructibles, UI canvas, localization, prefabs, networking, AI/BT, accessibility, procedural gen, camera presets, Newgrounds, audio event graph, plugins, MIDI input, Flash API shim
 - See `docs/SCRIPTING_API.md` for the complete API reference
-- **Visual scripting** (Blueprint-style) with 146+ built-in nodes, debugger with breakpoints/step-through
+- **Visual scripting** (Blueprint-style) with 262 built-in nodes, debugger with breakpoints/step-through
 
 ## Current Feature Status
 
 150+ completed features. See `docs/USER_MANUAL.md` for component details, `docs/ROADMAP.md` for planned work.
 
-**Summary:** Vulkan rendering (PBR, CSM shadows, post-processing, RT pipeline with path tracer NEE/MIS/Russian Roulette/firefly clamping, motion vectors, TAA, light probes, OIT), 70+ ECS components, ImGui editor (multi-select, undo/redo, 44 templates, marketplace, F1 Game Debug panel, F2 Debug Workstation, Quake-style drop-down console with 60+ commands), 2D sprites/tilemaps/atlas, 3D model import (glTF/FBX/OBJ/DAE/PLY/VOX), Jolt 3D + Box2D 2D physics, miniaudio + Steam Audio HRTF, AngelScript (~721 bindings) + visual scripting (146+ nodes), tiered save system, LAN multiplayer (HMAC-SHA256), weather/water/particles/procedural gen, asset pack pipeline + standalone player, Linux/Steam Deck support, comprehensive accessibility (11 themes, colorblind modes, switch access, screen reader).
+**Summary:** Vulkan rendering (PBR, CSM shadows, post-processing, RT pipeline with path tracer NEE/MIS/Russian Roulette/firefly clamping, motion vectors, TAA, light probes, OIT), 70+ ECS components, ImGui editor (multi-select, undo/redo, 51 templates, marketplace, F1 Game Debug panel, F2 Debug Workstation, Quake-style drop-down console with 60+ commands), 2D sprites/tilemaps/atlas, 3D model import (glTF/FBX/OBJ/DAE/PLY/VOX), Jolt 3D + Box2D 2D physics, miniaudio + Steam Audio HRTF, AngelScript (~900+ bindings) + visual scripting (262 nodes), tiered save system, LAN multiplayer (HMAC-SHA256), weather/water/particles/procedural gen, asset pack pipeline + standalone player, Linux/Steam Deck support, comprehensive accessibility (11 themes, colorblind modes, switch access, screen reader).
 
 ## Known Performance Issues (All Resolved)
 
@@ -232,7 +240,7 @@ Documented in `.enjin-boundaries.json`. Summary:
 |------|------|----------|
 | **security-critical** | HIGH | Networking, script engine, asset packer/reader, scene serializer, plugin loader. Validate everything. |
 | **trust-boundary** | HIGH | ScriptBindings, SceneSerializer, AssetReader, NetworkSerializer. Validation MUST happen here. |
-| **user-api** | MEDIUM | ECS components, ScriptBindings (721+ functions), VS NodeRegistry, InputAction. Additions safe, removals break scripts. |
+| **user-api** | MEDIUM | ECS components, ScriptBindings (900+ functions), VS NodeRegistry, InputAction. Additions safe, removals break scripts. |
 | **editor-internal** | LOW-MED | EditorLayer, panels, PlayMode. Still validate file paths and JSON. |
 | **renderer-internals** | LOW | Vulkan, RayTracing, PostProcessing. Always check VkResult. |
 | **gameplay-runtime** | LOW-MED | Physics, audio, AI, save/load. Cap iterations, guard divide-by-zero. |

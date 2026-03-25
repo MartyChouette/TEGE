@@ -222,6 +222,9 @@ cmake .. \
 | **Ray Tracing Denoisers** | | |
 | `ENJIN_RAYTRACING_OIDN` | OFF | Intel Open Image Denoise backend (requires OIDN install) |
 | `ENJIN_RAYTRACING_OPTIX` | OFF | NVIDIA OptiX AI Denoiser (requires OptiX SDK + CUDA) |
+| **Upscaling** | | |
+| `ENJIN_UPSCALING_DLSS` | OFF | NVIDIA DLSS temporal upscaling (requires Streamline SDK) |
+| `ENJIN_UPSCALING_XESS` | OFF | Intel XeSS temporal upscaling (requires XeSS SDK) |
 | **Audio** | | |
 | `ENJIN_AUDIO_STEAM_AUDIO` | OFF | Steam Audio HRTF binaural rendering (requires SDK in `third_party/steamaudio/`) |
 | **Integrations** | | |
