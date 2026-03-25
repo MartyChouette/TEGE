@@ -249,6 +249,14 @@ void EditorLayer::DrawProjectHub() {
         } catch (...) {}
     }
 
+    // Process deferred project open (set by click in previous frame)
+    if (!m_HubPendingOpenPath.empty()) {
+        std::string pathToOpen = m_HubPendingOpenPath;
+        m_HubPendingOpenPath.clear();
+        OpenProjectFromPath(pathToOpen);
+        if (!m_ShowProjectHub) return; // Successfully opened, hub is now hidden
+    }
+
     // Initialize default project path on first use (prefer persisted lastProjectDir)
     if (m_NewProjectPath[0] == '\0') {
         std::string defaultDir;
@@ -483,9 +491,10 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
 
     // Lambda to draw a group of project rows with a section header
     f32 curY = listStartY;
+    bool projectOpened = false; // Flag to stop drawing after a project is opened
     auto drawProjectGroup = [&](const char* groupLabel, ImU32 labelCol,
                                 const std::vector<int>& indices, bool canOpen) {
-        if (indices.empty()) return;
+        if (indices.empty() || projectOpened) return;
         if (curY >= listBottomY) return;
 
         // Section header
@@ -545,21 +554,21 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
                 ImVec2(rEnd.x - statusSize.x - 10.0f, rPos.y + 24.0f),
                 statusCol, statusText);
 
-            // Click to open — capture path before any operation that might modify the vector
-            if (hovered && canOpen && ImGui::IsMouseClicked(0)) {
-                std::string projectPath = m_EditorSettings.recentProjects[i];
-                OpenProjectFromPath(projectPath);
-                break; // Stop iterating — the vector may have changed
+            // Click to open — defer to next frame to avoid vector invalidation
+            if (hovered && canOpen && ImGui::IsMouseClicked(0) && !projectOpened) {
+                m_HubPendingOpenPath = m_EditorSettings.recentProjects[i];
+                projectOpened = true;
+                return; // Exit the lambda
             }
 
             // Right-click context menu
-            if (hovered && ImGui::IsMouseClicked(1)) {
+            if (hovered && ImGui::IsMouseClicked(1) && i < static_cast<int>(m_EditorSettings.recentProjects.size())) {
                 m_HubContextProjectPath = m_EditorSettings.recentProjects[i];
                 m_HubOpenContextMenu = true;
             }
 
             // Tooltip: full path on hover
-            if (hovered) {
+            if (hovered && i < static_cast<int>(m_EditorSettings.recentProjects.size())) {
                 ImGui::SetTooltip("%s", m_EditorSettings.recentProjects[i].c_str());
             }
 
