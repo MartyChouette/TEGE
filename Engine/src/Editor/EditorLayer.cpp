@@ -1383,12 +1383,15 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     if (m_EditorViewportRT && m_EditorViewportRT->IsValid() &&
         m_EditorViewportWidth > 0 && m_EditorViewportHeight > 0) {
 
-        // Apply scene view mode to render system before rendering
+        // Apply scene view mode — save previous state so game view is unaffected.
+        bool prevShadows = false, prevWireframe = false, prevUnlit = false;
         if (m_RenderSystem) {
+            prevShadows = m_RenderSystem->IsShadowsEnabled();
+            prevWireframe = m_RenderSystem->GetEditorWireframe();
+            prevUnlit = m_RenderSystem->GetEditorUnlit();
+
             bool wantShadows = (m_SceneViewMode == SceneViewMode::LitShadows || m_SceneViewMode == SceneViewMode::Full);
-            bool wantWireframe = (m_SceneViewMode == SceneViewMode::Wireframe);
-            bool wantLighting = (m_SceneViewMode != SceneViewMode::Wireframe && m_SceneViewMode != SceneViewMode::Solid);
-            m_RenderSystem->SetEditorWireframe(wantWireframe);
+            m_RenderSystem->SetEditorWireframe(m_SceneViewMode == SceneViewMode::Wireframe);
             m_RenderSystem->SetEditorUnlit(m_SceneViewMode == SceneViewMode::Solid);
             m_RenderSystem->SetShadowsEnabled(wantShadows);
         }
@@ -1439,6 +1442,13 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             }
         }
         m_EditorViewportRT->End(commandBuffer);
+
+        // Restore render state so game view renders with full quality
+        if (m_RenderSystem) {
+            m_RenderSystem->SetShadowsEnabled(prevShadows);
+            m_RenderSystem->SetEditorWireframe(prevWireframe);
+            m_RenderSystem->SetEditorUnlit(prevUnlit);
+        }
     }
 
     // Skip main pass rendering (editor viewport is now offscreen)
