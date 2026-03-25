@@ -338,18 +338,28 @@ void EditorLayer::OpenScene(const std::string& path) {
 void EditorLayer::OpenSceneImmediate(const std::string& path) {
     if (!m_World) {
         ENJIN_LOG_ERROR(Editor, "Cannot open scene: no world loaded");
-        m_ConsoleLog.push_back("[Error] Cannot open scene: no world loaded");
         return;
     }
-
     if (path.empty()) {
         ENJIN_LOG_ERROR(Editor, "Cannot open scene: path is empty");
-        m_ConsoleLog.push_back("[Error] Cannot open scene: path is empty");
         return;
     }
 
+    ENJIN_LOG_INFO(Editor, "Opening scene: %s", path.c_str());
+
     Scene::SceneSerializer serializer(m_World);
-    auto result = serializer.Load(path, true); // Clear existing entities
+    Scene::DeserializationResult result;
+    try {
+        result = serializer.Load(path, true); // Clear existing entities
+    } catch (const std::exception& e) {
+        ENJIN_LOG_ERROR(Editor, "Exception loading scene '%s': %s", path.c_str(), e.what());
+        ShowNotification("Failed to load scene", NotificationType::Error);
+        return;
+    } catch (...) {
+        ENJIN_LOG_ERROR(Editor, "Unknown exception loading scene '%s'", path.c_str());
+        ShowNotification("Failed to load scene", NotificationType::Error);
+        return;
+    }
 
     // Apply loaded skybox config
     if (result.success && m_RenderSystem) {
