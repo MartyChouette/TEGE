@@ -212,9 +212,8 @@ public:
         // Setup render system
         m_RenderSystem = m_World->RegisterSystem<Enjin::ECS::RenderSystem>(m_World.get(), m_Renderer.get());
         m_RenderSystem->SetCamera(m_Camera.get());
-        // Disable ray tracing in built games — RT compute shaders are not
-        // embedded in the Player and invalid SPIR-V crashes the NVIDIA driver.
-        // RT can be re-enabled once all RT shaders are properly embedded.
+        // Disable ray tracing in built games — RT compute shaders use
+        // placeholder SPIR-V that crashes the NVIDIA driver.
         m_RenderSystem->SetRayTracingEnabled(false);
         m_RenderSystem->Initialize();
 
@@ -710,15 +709,10 @@ public:
             }
         }
 
-        // Render system update ALWAYS runs (even on title screen) so the scene
-        // is visible behind menus and component caches stay fresh.
-        if (m_RenderSystem) {
-            try {
-                m_RenderSystem->Update(deltaTime);
-            } catch (...) {
-                ENJIN_LOG_ERROR(Player, "RenderSystem::Update exception");
-            }
-        }
+        // Render system update — skip for now if it crashes the NVIDIA driver.
+        // The scene will still render via the main pass, just without
+        // skeletal animation ticking or sprite updates.
+        // if (m_RenderSystem) m_RenderSystem->Update(deltaTime);
 
         // Skip gameplay updates when paused, on title screen, or content warning is shown
         if (m_GameMenu.IsMenuOpen() || !m_GameStarted) return;
