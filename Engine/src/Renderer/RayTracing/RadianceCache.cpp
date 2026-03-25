@@ -71,14 +71,21 @@ bool RadianceCache::Initialize(u32 width, u32 height, VkDescriptorSetLayout rtDe
             return false;
         }
 
+        // Validate SPIR-V data before passing to driver (invalid SPIR-V crashes NVIDIA)
+        if (sizeof(RADIANCE_CACHE_UPDATE_COMP_SPV) < 20 || RADIANCE_CACHE_UPDATE_COMP_SPV[0] != 0x07230203) {
+            ENJIN_LOG_WARN(Renderer, "RadianceCache: Invalid SPIR-V data, skipping initialization");
+            return false;
+        }
+
         VkShaderModuleCreateInfo shaderInfo{};
         shaderInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         shaderInfo.codeSize = sizeof(RADIANCE_CACHE_UPDATE_COMP_SPV);
         shaderInfo.pCode = RADIANCE_CACHE_UPDATE_COMP_SPV;
 
         VkShaderModule shaderModule = VK_NULL_HANDLE;
-        if (vkCreateShaderModule(device, &shaderInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-            ENJIN_LOG_ERROR(Renderer, "RadianceCache: Failed to create update shader module");
+        VkResult smResult = vkCreateShaderModule(device, &shaderInfo, nullptr, &shaderModule);
+        if (smResult != VK_SUCCESS || shaderModule == VK_NULL_HANDLE) {
+            ENJIN_LOG_ERROR(Renderer, "RadianceCache: Failed to create update shader module (VkResult=%d)", (int)smResult);
             return false;
         }
 
