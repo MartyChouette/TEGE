@@ -396,20 +396,36 @@ void EditorLayer::DrawProjectHub() {
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.2f, 0.2f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.95f, 0.25f, 0.25f, 1.0f));
             if (ImGui::Button("Delete", ImVec2(120, 0))) {
-                std::filesystem::path delPath(m_HubDeleteProjectPath);
-                std::filesystem::path delDir = delPath.parent_path();
-                std::error_code ec;
-                std::filesystem::remove_all(delDir, ec);
-                if (ec) {
-                    ENJIN_LOG_ERROR(Build, "Failed to delete project '%s': %s", m_HubDeleteProjectName.c_str(), ec.message().c_str());
-                } else {
-                    ENJIN_LOG_INFO(Build, "Deleted project: %s", m_HubDeleteProjectName.c_str());
-                }
-                m_EditorSettings.RemoveRecentProject(m_HubDeleteProjectPath);
-                m_EditorSettings.Save();
+                // Capture values and defer the actual deletion to after the UI loop
+                // to avoid modifying the recent projects list while iterating it.
+                std::string pathToDelete = m_HubDeleteProjectPath;
+                std::string nameToDelete = m_HubDeleteProjectName;
                 m_HubDeleteProjectPath.clear();
                 m_HubDeleteProjectName.clear();
                 ImGui::CloseCurrentPopup();
+
+                // Remove from recent list first (safe — not iterating it here)
+                m_EditorSettings.RemoveRecentProject(pathToDelete);
+                m_EditorSettings.Save();
+
+                // Try to delete the folder
+                if (!pathToDelete.empty()) {
+                    try {
+                        std::filesystem::path delPath(pathToDelete);
+                        std::filesystem::path delDir = delPath.parent_path();
+                        if (!delDir.empty() && std::filesystem::exists(delDir)) {
+                            std::error_code ec;
+                            std::filesystem::remove_all(delDir, ec);
+                            if (ec) {
+                                ENJIN_LOG_ERROR(Build, "Failed to delete '%s': %s", nameToDelete.c_str(), ec.message().c_str());
+                            } else {
+                                ENJIN_LOG_INFO(Build, "Deleted project: %s", nameToDelete.c_str());
+                            }
+                        }
+                    } catch (...) {
+                        ENJIN_LOG_ERROR(Build, "Exception while deleting project '%s'", nameToDelete.c_str());
+                    }
+                }
             }
             ImGui::PopStyleColor(3);
 
