@@ -708,11 +708,17 @@ public:
             }
         }
 
-        // Render system update — only after splash screen ends and game scene is loaded.
-        // During splash, only text entities exist (rendered by ImGui, not the 3D pipeline).
-        // Calling Update during splash crashes the driver on uninitialized descriptors.
+        // Minimal render system refresh — full Update() crashes NVIDIA driver.
+        // Only refresh component caches so entities are visible.
         if (m_RenderSystem && !m_ShowingSplash) {
-            m_RenderSystem->Update(deltaTime);
+            m_RenderSystem->RefreshStorageCache();
+        }
+        // Tick skeletal animators manually
+        if (m_World) {
+            for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::AnimatorComponent>()) {
+                auto* ac = m_World->GetComponent<Enjin::ECS::AnimatorComponent>(entity);
+                if (ac) ac->Update(deltaTime);
+            }
         }
 
         // Skip gameplay updates when paused, on title screen, or content warning is shown
