@@ -808,6 +808,7 @@ private:
     bool m_HubShowDeleteConfirm = false;       // Whether to show delete confirmation popup
     std::string m_HubDeleteProjectPath;        // Path of project pending deletion
     std::string m_HubDeleteProjectName;        // Display name for confirmation dialog
+    std::string m_HubPendingDeletePath;        // Deferred: delete this path at start of next frame
 
     // Project Hub methods
     void DrawProjectHub();
