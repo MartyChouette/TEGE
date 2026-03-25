@@ -211,7 +211,7 @@ static std::string DuplicateProject(const std::string& projectFilePath) {
     std::error_code ec;
     fs::copy(srcDir, destDir, fs::copy_options::recursive, ec);
     if (ec) {
-        ENJIN_LOG_ERROR(Build, "Failed to duplicate project: {}", ec.message());
+        ENJIN_LOG_ERROR(Build, "Failed to duplicate project: %s", ec.message().c_str());
         return "";
     }
 
@@ -221,7 +221,7 @@ static std::string DuplicateProject(const std::string& projectFilePath) {
     if (fs::exists(oldProjFile) && oldProjFile != newProjFile) {
         fs::rename(oldProjFile, newProjFile, ec);
         if (ec) {
-            ENJIN_LOG_WARN(Build, "Duplicated project folder but could not rename project file: {}", ec.message());
+            ENJIN_LOG_WARN(Build, "Duplicated project folder but could not rename project file: %s", ec.message().c_str());
             // Return the old file path as fallback
             return oldProjFile.string();
         }
@@ -401,9 +401,9 @@ void EditorLayer::DrawProjectHub() {
                 std::error_code ec;
                 std::filesystem::remove_all(delDir, ec);
                 if (ec) {
-                    ENJIN_LOG_ERROR(Build, "Failed to delete project '{}': {}", m_HubDeleteProjectName, ec.message());
+                    ENJIN_LOG_ERROR(Build, "Failed to delete project '%s': %s", m_HubDeleteProjectName.c_str(), ec.message().c_str());
                 } else {
-                    ENJIN_LOG_INFO(Build, "Deleted project: {}", m_HubDeleteProjectName);
+                    ENJIN_LOG_INFO(Build, "Deleted project: %s", m_HubDeleteProjectName.c_str());
                 }
                 m_EditorSettings.RemoveRecentProject(m_HubDeleteProjectPath);
                 m_EditorSettings.Save();
@@ -2879,10 +2879,13 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 ai.moveSpeed = 2.0f;
                 ai.is2D = true;
                 m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
-                // Sensor body — AI controls movement, sensor enables damage callbacks
+                // Kinematic sensor body — AI controls movement, sensor enables damage callbacks.
+                // Kinematic (not dynamic) ensures SyncECSToBox2D uses SetLinearVelocity
+                // instead of SetTransform, which reliably triggers sensor events.
                 auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
                 col.shapeType = Physics::Shape2DType::Box;
                 col.box.halfExtents = Math::Vector2(0.5f, 0.3f);
+                col.isKinematic = true;
                 col.isSensor = true;
                 col.gravityScale = 0.0f;
             }
@@ -2905,10 +2908,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 auto& pick = m_World->AddComponent<ECS::PickupComponent>(e);
                 pick.type = ECS::PickupComponent::PickupType::Coin;
                 pick.value = 1.0f;
-                // Sensor body for pickup detection
+                // Kinematic sensor body for pickup detection
                 auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
                 col.shapeType = Physics::Shape2DType::Box;
                 col.box.halfExtents = Math::Vector2(0.25f, 0.25f);
+                col.isKinematic = true;
                 col.isSensor = true;
                 col.gravityScale = 0.0f;
                 auto& tw = m_World->AddComponent<ECS::TweenComponent>(e);
@@ -3058,10 +3062,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 ai.detectionRange = 8.0f;
                 ai.is2D = true;
                 m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
-                // Sensor body — AI controls movement, sensor enables damage callbacks
+                // Kinematic sensor body — AI controls movement, sensor enables damage callbacks
                 auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
                 col.shapeType = Physics::Shape2DType::Box;
                 col.box.halfExtents = Math::Vector2(0.4f, 0.25f);
+                col.isKinematic = true;
                 col.isSensor = true;
                 col.gravityScale = 0.0f;
             }
@@ -3106,10 +3111,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pick.value = 25.0f;
             pick.magnetToPlayer = true;
             pick.magnetRange = 3.0f;
-            // Sensor body for pickup detection
+            // Kinematic sensor body for pickup detection
             auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
             col.shapeType = Physics::Shape2DType::Box;
             col.box.halfExtents = Math::Vector2(0.4f, 0.4f);
+            col.isKinematic = true;
             col.isSensor = true;
             col.gravityScale = 0.0f;
             auto& tw = m_World->AddComponent<ECS::TweenComponent>(e);
@@ -3140,10 +3146,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& pick = m_World->AddComponent<ECS::PickupComponent>(e);
             pick.type = ECS::PickupComponent::PickupType::Key;
             pick.value = 1.0f;
-            // Sensor body for pickup detection
+            // Kinematic sensor body for pickup detection
             auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
             col.shapeType = Physics::Shape2DType::Box;
             col.box.halfExtents = Math::Vector2(0.3f, 0.3f);
+            col.isKinematic = true;
             col.isSensor = true;
             col.gravityScale = 0.0f;
             auto& tw = m_World->AddComponent<ECS::TweenComponent>(e);
@@ -3322,10 +3329,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ai.detectionRange = 10.0f;
             ai.is2D = true;
             m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
-            // Sensor body — AI controls movement, sensor enables damage callbacks
+            // Kinematic sensor body — AI controls movement, sensor enables damage callbacks
             auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
             col.shapeType = Physics::Shape2DType::Box;
             col.box.halfExtents = Math::Vector2(0.45f, 0.3f);
+            col.isKinematic = true;
             col.isSensor = true;
             col.gravityScale = 0.0f;
         }
@@ -3368,10 +3376,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 auto& pick = m_World->AddComponent<ECS::PickupComponent>(e);
                 pick.type = ECS::PickupComponent::PickupType::Coin;
                 pick.value = 1.0f;
-                // Sensor body for pickup detection
+                // Kinematic sensor body for pickup detection
                 auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
                 col.shapeType = Physics::Shape2DType::Box;
                 col.box.halfExtents = Math::Vector2(0.25f, 0.25f);
+                col.isKinematic = true;
                 col.isSensor = true;
                 col.gravityScale = 0.0f;
                 auto& tw = m_World->AddComponent<ECS::TweenComponent>(e);
@@ -3434,10 +3443,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ai.detectionRange = 12.0f;
             ai.is2D = true;
             m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
-            // Sensor body — AI controls movement, sensor enables damage callbacks
+            // Kinematic sensor body — AI controls movement, sensor enables damage callbacks
             auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
             col.shapeType = Physics::Shape2DType::Box;
             col.box.halfExtents = Math::Vector2(0.8f, 0.9f);
+            col.isKinematic = true;
             col.isSensor = true;
             col.gravityScale = 0.0f;
             auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(e);
@@ -3459,10 +3469,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pick.type = ECS::PickupComponent::PickupType::Powerup;
             pick.customId = "speed_boost";
             pick.value = 1.0f;
-            // Sensor body for pickup detection
+            // Kinematic sensor body for pickup detection
             auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
             col.shapeType = Physics::Shape2DType::Box;
             col.box.halfExtents = Math::Vector2(0.3f, 0.3f);
+            col.isKinematic = true;
             col.isSensor = true;
             col.gravityScale = 0.0f;
         }
@@ -3526,10 +3537,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 auto& pick = m_World->AddComponent<ECS::PickupComponent>(e);
                 pick.type = ECS::PickupComponent::PickupType::Coin;
                 pick.value = 1.0f;
-                // Sensor body for pickup detection
+                // Kinematic sensor body for pickup detection
                 auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
                 col.shapeType = Physics::Shape2DType::Box;
                 col.box.halfExtents = Math::Vector2(0.25f, 0.25f);
+                col.isKinematic = true;
                 col.isSensor = true;
                 col.gravityScale = 0.0f;
                 auto& tw = m_World->AddComponent<ECS::TweenComponent>(e);
@@ -3769,7 +3781,9 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& inv = m_World->AddComponent<ECS::InventoryComponent>(player);
             inv.maxSlots = 10;
             m_World->AddComponent<ECS::TagComponent>(player).tags.push_back("player");
-            addCapsuleCollider2D(player, 0.4f, 1.0f, false);
+            // NOTE: createPlayer2D already adds a kinematic Body2DComponent — don't
+            // call addCapsuleCollider2D here as it would replace the kinematic body
+            // with a dynamic one, losing isKinematic/fixedRotation/gravityScale.
         }
 
         // --- Camera ---
@@ -3813,6 +3827,13 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 ai.detectionRange = 8.0f;
                 ai.patrolPoints = scoutPatrols[i];
                 m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
+                // Sensor body — AI controls movement, sensor enables damage callbacks
+                auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+                col.shapeType = Physics::Shape2DType::Box;
+                col.box.halfExtents = Math::Vector2(0.5f, 0.5f);
+                col.isKinematic = true;
+                col.isSensor = true;
+                col.gravityScale = 0.0f;
             }
 
             // Brute (east wing — short patrol, knockback, chase range 6)
@@ -3836,6 +3857,13 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 ai.detectionRange = 6.0f;
                 ai.patrolPoints = {{20, 2, 0}, {24, 2, 0}};
                 m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
+                // Sensor body — AI controls movement, sensor enables damage callbacks
+                auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+                col.shapeType = Physics::Shape2DType::Box;
+                col.box.halfExtents = Math::Vector2(0.6f, 0.6f);
+                col.isKinematic = true;
+                col.isSensor = true;
+                col.gravityScale = 0.0f;
             }
 
             // Archer (east wing — ranged patrol, chase 12, flees when close)
@@ -3859,6 +3887,13 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 ai.fleeDistance = 5.0f;
                 ai.patrolPoints = {{24, -3, 0}, {20, -3, 0}};
                 m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
+                // Sensor body — AI controls movement, sensor enables damage callbacks
+                auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+                col.shapeType = Physics::Shape2DType::Box;
+                col.box.halfExtents = Math::Vector2(0.4f, 0.45f);
+                col.isKinematic = true;
+                col.isSensor = true;
+                col.gravityScale = 0.0f;
             }
 
             // Boss Guardian (north alcove — idle until triggered, chase 15)
@@ -3884,6 +3919,13 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 ai.is2D = true;
                 ai.detectionRange = 15.0f;
                 m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
+                // Sensor body — AI controls movement, sensor enables damage callbacks
+                auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+                col.shapeType = Physics::Shape2DType::Box;
+                col.box.halfExtents = Math::Vector2(0.6f, 0.6f);
+                col.isKinematic = true;
+                col.isSensor = true;
+                col.gravityScale = 0.0f;
                 auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(e);
                 ECS::ApplyParticlePreset(pe, "Sparks");
                 pe.emissionRate = 5.0f;
@@ -3910,6 +3952,13 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 pick.value = 25.0f;
                 pick.magnetToPlayer = true;
                 pick.magnetRange = 3.0f;
+                // Sensor body for pickup detection
+                auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+                col.shapeType = Physics::Shape2DType::Box;
+                col.box.halfExtents = Math::Vector2(0.4f, 0.4f);
+                col.isKinematic = true;
+                col.isSensor = true;
+                col.gravityScale = 0.0f;
                 auto& tw = m_World->AddComponent<ECS::TweenComponent>(e);
                 tw.autoPlay = true;
                 ECS::TweenEntry bob;
@@ -3939,6 +3988,13 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 auto& pick = m_World->AddComponent<ECS::PickupComponent>(e);
                 pick.type = ECS::PickupComponent::PickupType::Coin;
                 pick.value = 1.0f;
+                // Sensor body for pickup detection
+                auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+                col.shapeType = Physics::Shape2DType::Box;
+                col.box.halfExtents = Math::Vector2(0.25f, 0.25f);
+                col.isKinematic = true;
+                col.isSensor = true;
+                col.gravityScale = 0.0f;
                 auto& tw = m_World->AddComponent<ECS::TweenComponent>(e);
                 tw.autoPlay = true;
                 ECS::TweenEntry bob;
@@ -3967,6 +4023,13 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 auto& pick = m_World->AddComponent<ECS::PickupComponent>(e);
                 pick.type = ECS::PickupComponent::PickupType::Key;
                 pick.value = 1.0f;
+                // Sensor body for pickup detection
+                auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+                col.shapeType = Physics::Shape2DType::Box;
+                col.box.halfExtents = Math::Vector2(0.3f, 0.3f);
+                col.isKinematic = true;
+                col.isSensor = true;
+                col.gravityScale = 0.0f;
                 auto& tw = m_World->AddComponent<ECS::TweenComponent>(e);
                 tw.autoPlay = true;
                 ECS::TweenEntry bob;
@@ -3995,6 +4058,13 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 pick.type = ECS::PickupComponent::PickupType::Powerup;
                 pick.customId = "speed_boost";
                 pick.value = 1.0f;
+                // Sensor body for pickup detection
+                auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+                col.shapeType = Physics::Shape2DType::Box;
+                col.box.halfExtents = Math::Vector2(0.3f, 0.3f);
+                col.isKinematic = true;
+                col.isSensor = true;
+                col.gravityScale = 0.0f;
             }
         }
 
@@ -4279,6 +4349,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& scol = m_World->AddComponent<ECS::SphereColliderComponent>(coin);
             scol.radius = 0.5f;
             auto& tw = m_World->AddComponent<ECS::TweenComponent>(coin);
+            tw.autoPlay = true;
             ECS::TweenEntry bob;
             bob.property = ECS::TweenProperty::Position;
             bob.easing = ECS::EasingType::EaseInOutSine;
@@ -4317,6 +4388,10 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         auto& ctrl = m_World->AddComponent<ECS::FirstPersonController>(player);
         ctrl.moveSpeed = 5.0f;
         ctrl.mouseSensitivity = 0.15f;
+        // Health so the player can interact with damage-dealing entities
+        auto& health = m_World->AddComponent<ECS::HealthComponent>(player);
+        health.maxHealth = 100.0f;
+        health.currentHealth = 100.0f;
         SetupCameraForController(player, "FirstPerson");
 
         // L-shaped corridor walls
@@ -4587,6 +4662,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             hmat.emissiveColor = Math::Vector3(0.8f, 0.1f, 0.0f);
             hmat.emissiveStrength = 0.5f;
             m_World->AddComponent<ECS::MeshComponent>(hazard, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& dmg = m_World->AddComponent<ECS::DamageComponent>(hazard);
+            dmg.damage = 10.0f;
+            dmg.destroyOnHit = false;
+            dmg.damageOnce = false;
+            dmg.damageInterval = 1.0f;  // Damage every second while standing in zone
             auto& trigger = m_World->AddComponent<ECS::TriggerZoneComponent>(hazard);
             trigger.shape = ECS::TriggerZoneComponent::Shape::Box;
             trigger.boxSize = Math::Vector3(3.0f, 1.0f, 3.0f);
@@ -4967,6 +5047,10 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& vmat = m_World->AddComponent<ECS::MaterialComponent>(vehicle);
             vmat.baseColor = Math::Vector3(0.9f, 0.2f, 0.1f);
             m_World->AddComponent<ECS::MeshComponent>(vehicle, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& vcol = m_World->AddComponent<ECS::BoxColliderComponent>(vehicle);
+            vcol.size = Math::Vector3(1.0f, 0.5f, 2.0f);  // Car-shaped collider
+            auto& vrb = m_World->AddComponent<ECS::RigidbodyComponent>(vehicle);
+            vrb.bodyType = ECS::RigidbodyComponent::BodyType::Kinematic;
             auto& vc = m_World->AddComponent<ECS::VehicleController>(vehicle);
             vc.maxSpeed = 30.0f;
             vc.acceleration = 15.0f;
@@ -5332,6 +5416,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pk.customId = "Health Pack";
             pk.value = 25.0f;
             auto& tw = m_World->AddComponent<ECS::TweenComponent>(healthPU);
+            tw.autoPlay = true;
             ECS::TweenEntry bob;
             bob.property = ECS::TweenProperty::Position;
             bob.easing = ECS::EasingType::EaseInOutSine;
@@ -8391,6 +8476,10 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pm.baseColor = Math::Vector3(0.15f, 0.3f, 0.85f);
             auto& tag = m_World->AddComponent<ECS::TagComponent>(p);
             tag.tags.push_back("team_a");
+            // Capsule collider so players can interact with ball and each other
+            auto& pcol = m_World->AddComponent<ECS::CapsuleColliderComponent>(p);
+            pcol.radius = 0.3f;
+            pcol.height = 0.9f;
             if (i == 3) {
                 // Player-controlled forward
                 auto& ctrl = m_World->AddComponent<ECS::TopDown3DController>(p);
@@ -8421,6 +8510,10 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pm.baseColor = Math::Vector3(0.85f, 0.15f, 0.15f);
             auto& tag = m_World->AddComponent<ECS::TagComponent>(p);
             tag.tags.push_back("team_b");
+            // Capsule collider so players can interact with ball and each other
+            auto& pcol = m_World->AddComponent<ECS::CapsuleColliderComponent>(p);
+            pcol.radius = 0.3f;
+            pcol.height = 0.9f;
             auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(p);
             ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
             ai.moveSpeed = 5.0f;
