@@ -1398,6 +1398,12 @@ void EditorLayer::DrawBuildDialog() {
     bool canBuild = !m_BuildInProgress && !m_BuildConfig.outputDir.empty();
     if (!canBuild) ImGui::BeginDisabled();
     if (ImGui::Button("Build", ImVec2(120, 30))) {
+        // Auto-save current scene before building so the .enjin file
+        // on disk contains all current entities and mesh data
+        if (!m_CurrentScenePath.empty()) {
+            SaveScene(m_CurrentScenePath);
+            ENJIN_LOG_INFO(Editor, "Auto-saved scene before build: %s", m_CurrentScenePath.c_str());
+        }
         m_BuildConfig.projectPath = m_SceneManager.GetProjectPath();
         m_BuildInProgress = true;
         m_BuildFinished = false;
