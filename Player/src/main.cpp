@@ -475,8 +475,9 @@ public:
 
         ENJIN_LOG_INFO(Player, "Gameplay systems initialized");
 
-        // Show splash screen before loading game
-        SetupSplashScreen();
+        // Skip splash screen — load game immediately
+        m_ShowingSplash = false;
+        EndSplashScreen();
 
         // Register crash context providers
         s_CrashWorld = m_World.get();
@@ -710,10 +711,10 @@ public:
             }
         }
 
-        // Full render system update — needed for entities to render.
-        // Player mode flag tells Update to skip GPU compute shaders
-        // (culling, HiZ, clustered lighting) that aren't embedded in builds.
-        if (m_RenderSystem) {
+        // Render system update — only after splash screen ends and game scene is loaded.
+        // During splash, only text entities exist (rendered by ImGui, not the 3D pipeline).
+        // Calling Update during splash crashes the driver on uninitialized descriptors.
+        if (m_RenderSystem && !m_ShowingSplash) {
             m_RenderSystem->Update(deltaTime);
         }
 
