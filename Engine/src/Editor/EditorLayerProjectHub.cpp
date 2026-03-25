@@ -335,18 +335,7 @@ void EditorLayer::DrawProjectHub() {
 
             // Open
             if (ImGui::MenuItem(">>  Open", nullptr, false, ctxExists)) {
-                if (m_SceneManager.LoadProject(m_HubContextProjectPath)) {
-                    MigrateEditorSettingsToProject();
-                    m_EditorSettings.AddRecentProject(m_HubContextProjectPath);
-                    m_EditorSettings.lastProjectDir = ctxPath.parent_path().parent_path().string();
-                    m_EditorSettings.Save();
-                    auto& scenes = m_SceneManager.GetScenes();
-                    if (!scenes.empty()) {
-                        auto projDir = ctxPath.parent_path();
-                        OpenScene((projDir / scenes[0].path).string());
-                    }
-                    m_ShowProjectHub = false;
-                }
+                OpenProjectFromPath(m_HubContextProjectPath);
             }
 
             // Duplicate
@@ -559,20 +548,8 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
             // Click to open — capture path before any operation that might modify the vector
             if (hovered && canOpen && ImGui::IsMouseClicked(0)) {
                 std::string projectPath = m_EditorSettings.recentProjects[i];
-                std::filesystem::path projFile(projectPath);
-                if (m_SceneManager.LoadProject(projectPath)) {
-                    MigrateEditorSettingsToProject();
-                    m_EditorSettings.AddRecentProject(projectPath);
-                    if (projFile.has_parent_path())
-                        m_EditorSettings.lastProjectDir = projFile.parent_path().string();
-                    m_EditorSettings.Save();
-                    auto& scenes = m_SceneManager.GetScenes();
-                    if (!scenes.empty()) {
-                        auto projDir = projFile.parent_path();
-                        OpenScene((projDir / scenes[0].path).string());
-                    }
-                }
-                m_ShowProjectHub = false;
+                OpenProjectFromPath(projectPath);
+                break; // Stop iterating — the vector may have changed
             }
 
             // Right-click context menu

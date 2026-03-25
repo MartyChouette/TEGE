@@ -555,6 +555,7 @@ private:
 
     // Project-first workflow helpers
     void EnsureProjectForScene(const std::string& scenePath);
+    void OpenProjectFromPath(const std::string& projectPath);
     void AutoDetectProjectForScene(const std::string& scenePath);
 
     // Entity operations
