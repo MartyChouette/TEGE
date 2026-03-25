@@ -215,6 +215,7 @@ public:
         // Disable ray tracing in built games — RT compute shaders use
         // placeholder SPIR-V that crashes the NVIDIA driver.
         m_RenderSystem->SetRayTracingEnabled(false);
+        m_RenderSystem->SetPlayerMode(true);  // Skip GPU compute shaders not embedded in builds
         m_RenderSystem->Initialize();
 
         // Initialize ImGui layer for pause menu and dialogue overlays
@@ -709,18 +710,11 @@ public:
             }
         }
 
-        // Minimal render system update — only refresh component caches and
-        // tick skeletal animators. Full Update() crashes the NVIDIA driver
-        // because GPU culling/HiZ compute shaders aren't embedded in builds.
+        // Full render system update — needed for entities to render.
+        // Player mode flag tells Update to skip GPU compute shaders
+        // (culling, HiZ, clustered lighting) that aren't embedded in builds.
         if (m_RenderSystem) {
-            m_RenderSystem->RefreshStorageCache();
-        }
-        // Tick skeletal animators
-        if (m_World) {
-            for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::AnimatorComponent>()) {
-                auto* ac = m_World->GetComponent<Enjin::ECS::AnimatorComponent>(entity);
-                if (ac) ac->Update(deltaTime);
-            }
+            m_RenderSystem->Update(deltaTime);
         }
 
         // Skip gameplay updates when paused, on title screen, or content warning is shown

@@ -751,8 +751,8 @@ void RenderSystem::Update(f32 deltaTime) {
     // Reset per-frame stats
     ResetFrameCounters();
 
-    // Begin async compute scheduler frame (reset per-frame state)
-    if (m_AsyncComputeScheduler) {
+    // Begin async compute scheduler frame (skip in player mode — uses compute shaders)
+    if (m_AsyncComputeScheduler && !m_PlayerMode) {
         m_AsyncComputeScheduler->BeginFrame(m_Renderer->GetCurrentFrameIndex());
     }
 
@@ -1245,7 +1245,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Clustered forward lighting: build light list and assign to spatial clusters before main render pass
 #ifdef ENJIN_CLUSTERED_LIGHTING
-    if (m_ClusteredLighting && m_SceneComposition.mode != SceneRenderMode::Scene2D && m_Camera) {
+    if (m_ClusteredLighting && !m_PlayerMode && m_SceneComposition.mode != SceneRenderMode::Scene2D && m_Camera) {
         VkCommandBuffer cmdBuf = m_Renderer->GetCurrentCommandBuffer();
         if (cmdBuf != VK_NULL_HANDLE) {
             // Build ClusterLight array from cached light entities (reuse pre-allocated vector)

@@ -472,6 +472,10 @@ public:
     bool IsRayTracingSupported() const;
     bool IsRayTracingEnabled() const { return m_RTEnabled; }
     void SetRayTracingEnabled(bool enabled) { m_RTEnabled = enabled; }
+    // Player mode: skip GPU compute shaders (culling, HiZ, clustered lighting)
+    // that use disk-loaded SPIR-V not available in built games.
+    void SetPlayerMode(bool enabled) { m_PlayerMode = enabled; }
+    bool IsPlayerMode() const { return m_PlayerMode; }
     u32 GetRTMode() const { return m_RTMode; }
     void SetRTMode(u32 mode) { m_RTMode = mode; }
 
@@ -631,6 +635,7 @@ private:
     bool m_ShadowsEnabled = true;
     bool m_EditorWireframe = false;
     bool m_EditorUnlit = false;
+    bool m_PlayerMode = false;
     f32 m_ShadowDistance = 100.0f;
     u32 m_PendingShadowResolution = 0; // 0 = no change pending
     bool m_CascadeProgressiveUpdate = false;
