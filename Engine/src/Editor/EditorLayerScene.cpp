@@ -217,42 +217,58 @@ void EditorLayer::EnsureProjectForScene(const std::string& scenePath) {
 // ---------------------------------------------------------------------------
 
 void EditorLayer::OpenProjectFromPath(const std::string& projectPath) {
-    namespace fs = std::filesystem;
+    try {
+        namespace fs = std::filesystem;
 
-    if (projectPath.empty() || !fs::exists(projectPath)) {
-        ShowNotification("Project file not found", NotificationType::Error);
-        ENJIN_LOG_ERROR(Editor, "Cannot open project: file not found '%s'", projectPath.c_str());
-        return;
-    }
-
-    if (!m_SceneManager.LoadProject(projectPath)) {
-        ShowNotification("Failed to load project", NotificationType::Error);
-        ENJIN_LOG_ERROR(Editor, "Failed to load project '%s'", projectPath.c_str());
-        return;
-    }
-
-    MigrateEditorSettingsToProject();
-    m_EditorSettings.AddRecentProject(projectPath);
-    fs::path projFile(projectPath);
-    if (projFile.has_parent_path())
-        m_EditorSettings.lastProjectDir = projFile.parent_path().string();
-    m_EditorSettings.Save();
-
-    // Open the first scene in the project
-    auto& scenes = m_SceneManager.GetScenes();
-    if (!scenes.empty()) {
-        fs::path projDir = projFile.parent_path();
-        fs::path scenePath = projDir / scenes[0].path;
-        if (fs::exists(scenePath)) {
-            OpenScene(scenePath.string());
-        } else {
-            ENJIN_LOG_WARN(Editor, "Project scene not found: %s", scenePath.string().c_str());
-            ShowNotification("Scene file not found: " + scenes[0].path, NotificationType::Warning);
+        if (projectPath.empty()) {
+            ShowNotification("Empty project path", NotificationType::Error);
+            return;
         }
-    }
+        if (!fs::exists(projectPath)) {
+            ShowNotification("Project file not found", NotificationType::Error);
+            ENJIN_LOG_ERROR(Editor, "Cannot open project: '%s' does not exist", projectPath.c_str());
+            m_EditorSettings.RemoveRecentProject(projectPath);
+            m_EditorSettings.Save();
+            return;
+        }
 
-    m_ShowProjectHub = false;
-    ENJIN_LOG_INFO(Editor, "Opened project: %s", projectPath.c_str());
+        ENJIN_LOG_INFO(Editor, "Loading project: %s", projectPath.c_str());
+
+        if (!m_SceneManager.LoadProject(projectPath)) {
+            ShowNotification("Failed to load project", NotificationType::Error);
+            ENJIN_LOG_ERROR(Editor, "LoadProject failed for '%s'", projectPath.c_str());
+            return;
+        }
+
+        MigrateEditorSettingsToProject();
+        m_EditorSettings.AddRecentProject(projectPath);
+        fs::path projFile(projectPath);
+        if (projFile.has_parent_path())
+            m_EditorSettings.lastProjectDir = projFile.parent_path().string();
+        m_EditorSettings.Save();
+
+        // Open the first scene in the project
+        auto scenes = m_SceneManager.GetScenes(); // Copy to avoid reference invalidation
+        if (!scenes.empty()) {
+            fs::path projDir = projFile.parent_path();
+            fs::path scenePath = projDir / scenes[0].path;
+            if (fs::exists(scenePath)) {
+                OpenScene(scenePath.string());
+            } else {
+                ENJIN_LOG_WARN(Editor, "Scene not found: %s", scenePath.string().c_str());
+                ShowNotification("Scene not found: " + scenes[0].path, NotificationType::Warning);
+            }
+        }
+
+        m_ShowProjectHub = false;
+        ENJIN_LOG_INFO(Editor, "Opened project: %s", projectPath.c_str());
+    } catch (const std::exception& e) {
+        ENJIN_LOG_ERROR(Editor, "Exception opening project: %s", e.what());
+        ShowNotification("Error opening project", NotificationType::Error);
+    } catch (...) {
+        ENJIN_LOG_ERROR(Editor, "Unknown exception opening project");
+        ShowNotification("Error opening project", NotificationType::Error);
+    }
 }
 
 // ---------------------------------------------------------------------------
