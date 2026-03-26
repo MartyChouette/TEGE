@@ -751,8 +751,8 @@ void RenderSystem::Update(f32 deltaTime) {
     // Reset per-frame stats
     ResetFrameCounters();
 
-    // Begin async compute scheduler frame (skip in player mode — uses compute shaders)
-    if (m_AsyncComputeScheduler && !m_PlayerMode) {
+    // Begin async compute scheduler frame (reset per-frame state)
+    if (m_AsyncComputeScheduler) {
         m_AsyncComputeScheduler->BeginFrame(m_Renderer->GetCurrentFrameIndex());
     }
 

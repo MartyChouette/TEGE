@@ -1148,11 +1148,15 @@ private:
         Enjin::Scripting::SetBindingsSceneManager(&m_SceneManager);
         // Initialize post-processing (settings object for script bindings)
         auto ppExtent = m_Renderer->GetSwapchainExtent();
-        // Skip post-processing for now — TAA compute dispatch crashes NVIDIA driver
-        // when the scene hasn't rendered its first frame yet (null image views).
-        // TODO: Initialize PP after first successful render frame.
-        // m_PostProcessing = std::make_unique<Enjin::Renderer::PostProcessing>();
-        m_PostProcessing = nullptr;
+        m_PostProcessing = std::make_unique<Enjin::Renderer::PostProcessing>();
+        if (m_Renderer && m_Renderer->GetContext()) {
+            if (!m_PostProcessing->Initialize(m_Renderer->GetContext(),
+                    m_Renderer->GetRenderPass(),
+                    ppExtent.width, ppExtent.height, m_Renderer.get())) {
+                ENJIN_LOG_WARN(Player, "PostProcessing init failed");
+                m_PostProcessing.reset();
+            }
+        }
         Enjin::Scripting::SetBindingsPostProcessing(m_PostProcessing.get());
         Enjin::Scripting::SetBindingsPhysics2D(m_Physics2D.get());
         Enjin::Scripting::SetBindingsNetworking(&m_NetworkSystem);
