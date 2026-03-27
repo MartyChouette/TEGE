@@ -1680,6 +1680,7 @@ void EditorLayer::DrawInspectorPanel() {
                     if (!animations.empty() && ImGui::TreeNode("Animations")) {
                         auto& animsMut = animator.GetAnimationsMut();
                         for (auto& [name, anim] : animsMut) {
+                            ImGui::PushID(name.c_str());
                             bool isCurrent = (name == currentName);
                             if (isCurrent) {
                                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.9f, 0.3f, 1.0f));
@@ -1756,6 +1757,7 @@ void EditorLayer::DrawInspectorPanel() {
 
                                 ImGui::TreePop();
                             }
+                            ImGui::PopID();
                         }
                         ImGui::TreePop();
                     } else if (animations.empty()) {

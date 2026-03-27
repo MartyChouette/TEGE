@@ -810,6 +810,7 @@ void EditorLayer::DrawMaterialSlotsComponent(ECS::Entity entity) {
         ImGui::Separator();
 
         for (usize i = 0; i < matSlots->slots.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
             ECS::MaterialComponent& slot = matSlots->slots[i];
 
             // Build header label: "Slot N (SubMeshName)" if we can find a sub-mesh with this slot
@@ -938,6 +939,7 @@ void EditorLayer::DrawMaterialSlotsComponent(ECS::Entity entity) {
 
                 ImGui::TreePop();
             }
+            ImGui::PopID();
         }
     }
 }
