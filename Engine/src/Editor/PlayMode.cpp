@@ -678,6 +678,8 @@ void PlayMode::Update(f32 deltaTime) {
 
         // Hazard overlap check (spikes, lava — bypasses Box2D sensor system)
         Gameplay::GameplayLoop::CheckHazardOverlaps(m_World, deltaTime, m_DeferredDestroys);
+        // Enemy contact damage (Box2D kinematic-kinematic sensor events unreliable)
+        Gameplay::GameplayLoop::CheckEnemyOverlaps2D(m_World, deltaTime, m_DeferredDestroys);
 
         // Pickup overlap (manual AABB — Box2D sensor events unreliable for kinematic-kinematic,
         // Jolt CharacterVirtual doesn't fire collision events with static bodies)

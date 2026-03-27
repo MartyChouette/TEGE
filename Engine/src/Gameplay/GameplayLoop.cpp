@@ -252,6 +252,101 @@ void CheckHazardOverlaps(ECS::World* world, f32 deltaTime,
     }
 }
 
+// 2D enemy contact damage — Box2D kinematic-kinematic sensor events unreliable.
+// Checks player vs entities that have BOTH DamageComponent AND HealthComponent (enemies).
+// Includes Mario-style stomp: player above enemy + falling = kill enemy, bounce player.
+void CheckEnemyOverlaps2D(ECS::World* world, f32 deltaTime,
+                           std::vector<ECS::Entity>& deferredDestroys) {
+    (void)deltaTime;
+    if (!world) return;
+
+    for (auto player : world->GetEntitiesWithComponent<ECS::Platformer2DController>()) {
+        auto* playerT = world->GetComponent<ECS::TransformComponent>(player);
+        auto* playerHp = world->GetComponent<ECS::HealthComponent>(player);
+        auto* playerCtrl = world->GetComponent<ECS::Platformer2DController>(player);
+        if (!playerT || !playerHp || playerHp->isDead) continue;
+
+        f32 pr = playerCtrl ? playerCtrl->collisionRadius : 0.4f;
+        f32 ph = playerCtrl ? playerCtrl->collisionHeight * 0.5f : 0.8f;
+
+        for (auto enemy : world->GetEntitiesWithComponent<ECS::DamageComponent>()) {
+            if (enemy == player) continue;
+            auto* enemyDmg = world->GetComponent<ECS::DamageComponent>(enemy);
+            auto* enemyHp = world->GetComponent<ECS::HealthComponent>(enemy);
+            if (!enemyDmg || !enemyHp) continue;  // Must have BOTH (enemies, not hazards)
+            if (enemyHp->isDead) continue;
+
+            auto* enemyT = world->GetComponent<ECS::TransformComponent>(enemy);
+            if (!enemyT) continue;
+
+            // Enemy half-extents from Body2DComponent or fallback
+            f32 ex = 0.4f, ey = 0.4f;
+            auto* enemyBody = world->GetComponent<Physics::Body2DComponent>(enemy);
+            if (enemyBody) { ex = enemyBody->box.halfExtents.x; ey = enemyBody->box.halfExtents.y; }
+
+            // AABB overlap (XY plane)
+            f32 dx = Math::Abs(playerT->position.x - enemyT->position.x);
+            f32 dy = Math::Abs(playerT->position.y - enemyT->position.y);
+            if (dx >= pr + ex || dy >= ph + ey) continue;
+
+            // Overlap detected — stomp check
+            if (playerCtrl && playerCtrl->velocity.y < -1.0f &&
+                playerT->position.y > enemyT->position.y + 0.3f) {
+                // Stomp! Kill enemy, bounce player
+                enemyHp->currentHealth = 0.0f;
+                enemyHp->isDead = true;
+                deferredDestroys.push_back(enemy);
+                playerCtrl->velocity.y = playerCtrl->jumpForce * 0.6f;
+                playerCtrl->isGrounded = false;
+                ENJIN_LOG_INFO(Game, "STOMP: entity %llu stomped entity %llu",
+                    (unsigned long long)player, (unsigned long long)enemy);
+                continue;
+            }
+
+            // Not a stomp — apply damage to player
+            if (playerHp->isInvulnerable || playerHp->invulnerabilityTimer > 0.0f) continue;
+            if (enemyDmg->damageOnce) {
+                bool already = false;
+                for (auto e : enemyDmg->damagedEntities) {
+                    if (e == player) { already = true; break; }
+                }
+                if (already) continue;
+                enemyDmg->damagedEntities.push_back(player);
+            }
+
+            f32 remaining = enemyDmg->damage;
+            if (playerHp->currentShield > 0.0f) {
+                f32 absorbed = Math::Min(remaining, playerHp->currentShield);
+                playerHp->currentShield -= absorbed;
+                remaining -= absorbed;
+            }
+            playerHp->currentHealth -= remaining;
+            playerHp->timeSinceLastDamage = 0.0f;
+
+            if (playerHp->invulnerabilityTime > 0.0f) {
+                playerHp->invulnerabilityTimer = playerHp->invulnerabilityTime;
+            }
+
+            // Knockback
+            if (enemyDmg->knockbackForce > 0.0f && playerCtrl) {
+                f32 dir = (playerT->position.x > enemyT->position.x) ? 1.0f : -1.0f;
+                playerCtrl->velocity.x = dir * enemyDmg->knockbackForce;
+                playerCtrl->velocity.y = enemyDmg->knockbackForce * 0.5f;
+                playerCtrl->isGrounded = false;
+            }
+
+            if (playerHp->currentHealth <= 0.0f) {
+                playerHp->currentHealth = 0.0f;
+                playerHp->isDead = true;
+            }
+
+            ENJIN_LOG_INFO(Game, "ENEMY DAMAGE: entity %llu dealt %.1f to player %llu (hp: %.1f/%.1f)",
+                (unsigned long long)enemy, enemyDmg->damage,
+                (unsigned long long)player, playerHp->currentHealth, playerHp->maxHealth);
+        }
+    }
+}
+
 // 3D pickup AABB overlap — CharacterVirtual doesn't fire collision events
 // with static bodies, so we check manually each frame.
 void CheckPickupOverlaps3D(ECS::World* world,

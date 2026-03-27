@@ -46,6 +46,13 @@ namespace GameplayLoop {
     ENJIN_API void CheckPickupOverlaps2D(ECS::World* world,
                                           std::vector<ECS::Entity>& deferredDestroys);
 
+    // 2D enemy contact damage overlap. Enemies have both DamageComponent AND
+    // HealthComponent (unlike hazards which only have DamageComponent). Box2D
+    // sensor events are unreliable for kinematic-kinematic, so check manually.
+    // Includes Mario-style stomp detection.
+    ENJIN_API void CheckEnemyOverlaps2D(ECS::World* world, f32 deltaTime,
+                                         std::vector<ECS::Entity>& deferredDestroys);
+
     // Update health regeneration, shield regeneration, invulnerability timers,
     // death handling (player respawn vs NPC destroy), and pickup respawn timers.
     ENJIN_API void UpdateHealthSystems(ECS::World* world, f32 deltaTime,
