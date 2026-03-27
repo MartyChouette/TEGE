@@ -882,14 +882,14 @@ bool FeedbackManager::SubmitQuitSurveyToDiscord(const QuitSurvey& survey, const 
         return false;
     }
 
-    // Helper: convert a 1-5 rating to star display
-    auto RatingStars = [](u8 rating) -> std::string {
+    // Helper: convert a 1-5 rating to visual bar
+    auto RatingBar = [](u8 rating) -> std::string {
         if (rating == 0) return "N/A";
-        std::string stars;
+        std::string bar;
         for (u8 i = 1; i <= 5; ++i) {
-            stars += (i <= rating) ? "\\u2b50" : "\\u2606";
+            bar += (i <= rating) ? "\xe2\xac\xa4" : "\xe2\xac\x9c";  // UTF-8: black/white square
         }
-        return stars + " (" + std::to_string(rating) + "/5)";
+        return bar + "  **" + std::to_string(rating) + "/5**";
     };
 
     // Truncate text fields to Discord embed field limit (1024 chars)
@@ -906,11 +906,11 @@ bool FeedbackManager::SubmitQuitSurveyToDiscord(const QuitSurvey& survey, const 
     json fields = json::array();
 
     // Rating fields
-    fields.push_back({{"name", "Overall Satisfaction"}, {"value", RatingStars(survey.ratingOverall)}, {"inline", true}});
-    fields.push_back({{"name", "Stability"}, {"value", RatingStars(survey.ratingStability)}, {"inline", true}});
-    fields.push_back({{"name", "Performance"}, {"value", RatingStars(survey.ratingPerformance)}, {"inline", true}});
-    fields.push_back({{"name", "Ease of Use"}, {"value", RatingStars(survey.ratingEaseOfUse)}, {"inline", true}});
-    fields.push_back({{"name", "Feature Completeness"}, {"value", RatingStars(survey.ratingFeatureCompleteness)}, {"inline", true}});
+    fields.push_back({{"name", "Overall Satisfaction"}, {"value", RatingBar(survey.ratingOverall)}, {"inline", true}});
+    fields.push_back({{"name", "Stability"}, {"value", RatingBar(survey.ratingStability)}, {"inline", true}});
+    fields.push_back({{"name", "Performance"}, {"value", RatingBar(survey.ratingPerformance)}, {"inline", true}});
+    fields.push_back({{"name", "Ease of Use"}, {"value", RatingBar(survey.ratingEaseOfUse)}, {"inline", true}});
+    fields.push_back({{"name", "Feature Completeness"}, {"value", RatingBar(survey.ratingFeatureCompleteness)}, {"inline", true}});
 
     // Text answer fields (only include non-empty answers)
     if (!survey.whatDidYouLike.empty()) {

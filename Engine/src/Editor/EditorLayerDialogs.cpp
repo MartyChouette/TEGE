@@ -2793,8 +2793,9 @@ void EditorLayer::DrawQuitFeedbackDialog() {
         auto RatingRow = [](const char* label, u8& value) {
             ImGui::Text("%s", label);
             ImGui::SameLine(220);
+            ImGui::PushID(label);
             for (u8 i = 1; i <= 5; i++) {
-                ImGui::PushID(label + static_cast<int>(i) * 100);
+                ImGui::PushID(static_cast<int>(i));
                 bool selected = (value == i);
                 if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.6f, 1.0f, 1.0f));
                 char num[4];
@@ -2804,6 +2805,7 @@ void EditorLayer::DrawQuitFeedbackDialog() {
                 ImGui::PopID();
                 if (i < 5) ImGui::SameLine();
             }
+            ImGui::PopID();
         };
 
         ImGui::Text("Rate your experience (1-5):");
