@@ -294,6 +294,42 @@ void CheckPickupOverlaps3D(ECS::World* world,
     for (auto e : world->GetEntitiesWithComponent<ECS::TopDown3DController>()) checkPlayer(e);
 }
 
+void CheckPickupOverlaps2D(ECS::World* world,
+                            std::vector<ECS::Entity>& deferredDestroys) {
+    if (!world) return;
+
+    // Check 2D controllers (Platformer2D, TopDown2D) against pickups using XY AABB overlap
+    auto checkPlayer = [&](ECS::Entity player) {
+        auto* playerT = world->GetComponent<ECS::TransformComponent>(player);
+        if (!playerT) return;
+
+        // Player half-extents from Body2DComponent or fallback
+        f32 px = 0.4f, py = 0.8f;
+        auto* body = world->GetComponent<Physics::Body2DComponent>(player);
+        if (body) { px = body->box.halfExtents.x; py = body->box.halfExtents.y; }
+
+        for (auto pickup : world->GetEntitiesWithComponent<ECS::PickupComponent>()) {
+            auto* pk = world->GetComponent<ECS::PickupComponent>(pickup);
+            if (!pk || pk->isCollected) continue;
+
+            auto* pickupT = world->GetComponent<ECS::TransformComponent>(pickup);
+            if (!pickupT) continue;
+
+            f32 pickupR = pk->pickupRange;
+
+            // 2D AABB overlap (XY plane)
+            f32 dx = Math::Abs(playerT->position.x - pickupT->position.x);
+            f32 dy = Math::Abs(playerT->position.y - pickupT->position.y);
+            if (dx < px + pickupR && dy < py + pickupR) {
+                ProcessPickup(world, pickup, player, deferredDestroys);
+            }
+        }
+    };
+
+    for (auto e : world->GetEntitiesWithComponent<ECS::Platformer2DController>()) checkPlayer(e);
+    for (auto e : world->GetEntitiesWithComponent<ECS::TopDown2DController>()) checkPlayer(e);
+}
+
 void UpdateHealthSystems(ECS::World* world, f32 deltaTime,
                          std::vector<ECS::Entity>& deferredDestroys) {
     if (!world) return;

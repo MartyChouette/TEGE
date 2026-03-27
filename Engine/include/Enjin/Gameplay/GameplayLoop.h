@@ -41,6 +41,11 @@ namespace GameplayLoop {
     ENJIN_API void CheckPickupOverlaps3D(ECS::World* world,
                                           std::vector<ECS::Entity>& deferredDestroys);
 
+    // 2D pickup AABB overlap check. Box2D v3 kinematic-kinematic sensor events
+    // are unreliable, so we manually check each frame for 2D controllers.
+    ENJIN_API void CheckPickupOverlaps2D(ECS::World* world,
+                                          std::vector<ECS::Entity>& deferredDestroys);
+
     // Update health regeneration, shield regeneration, invulnerability timers,
     // death handling (player respawn vs NPC destroy), and pickup respawn timers.
     ENJIN_API void UpdateHealthSystems(ECS::World* world, f32 deltaTime,
