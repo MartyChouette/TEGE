@@ -7334,7 +7334,7 @@ void EditorLayer::DrawDebugOverlay() {
 
     ImGui::SetNextWindowPos(overlayPos);
     ImGui::SetNextWindowSize(ImVec2(overlaySize.x, 0));
-    ImGui::SetNextWindowBgAlpha(0.55f); // Semi-transparent
+    ImGui::SetNextWindowBgAlpha(0.82f); // Strong opaque background for readability
 
     ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
@@ -7343,7 +7343,10 @@ void EditorLayer::DrawDebugOverlay() {
         ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav |
         ImGuiWindowFlags_NoDocking;
 
+    // Larger font for accessibility — scale up 1.4x
+    ImGui::SetWindowFontScale(1.4f);
     if (!ImGui::Begin("##DebugOverlay", &m_ShowDebugOverlay, flags)) {
+        ImGui::SetWindowFontScale(1.0f);
         ImGui::End();
         return;
     }
@@ -7359,7 +7362,7 @@ void EditorLayer::DrawDebugOverlay() {
 
     // --- Compact line: FPS | Frame Time | Draw Calls | Triangles | Entities | Play Mode ---
     ImGui::TextColored(fpsColor, "%.0f FPS", fps);
-    ImGui::SameLine(0, 16);
+    ImGui::SameLine(0, 20);
     ImGui::TextColored(ImVec4(0.7f, 0.8f, 0.9f, 1.0f), "%.2f ms", frameMs);
 
     if (m_RenderSystem) {
@@ -7451,6 +7454,7 @@ void EditorLayer::DrawDebugOverlay() {
                          0, nullptr, 0.0f, graphMax, ImVec2(ImGui::GetContentRegionAvail().x, 36));
     }
 
+    ImGui::SetWindowFontScale(1.0f);
     ImGui::End();
 }
 
