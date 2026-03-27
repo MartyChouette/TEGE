@@ -1125,18 +1125,21 @@ void main() {
         vec3 lightVec = lightPos - fragWorldPos;
         float distance = length(lightVec);
 
-        // Skip if beyond range
-        if (distance > lighting.pointLights[i].range) continue;
+        // Skip if well beyond range
+        float ptRange = lighting.pointLights[i].range;
+        if (distance > ptRange * 1.1) continue;
 
         vec3 lightDir = normalize(lightVec);
         vec3 lightColor = lighting.pointLights[i].color;
         float intensity = lighting.pointLights[i].intensity;
 
-        // Attenuation
+        // Attenuation with smooth range falloff
         float atten = calcAttenuation(distance,
             lighting.pointLights[i].constantAtten,
             lighting.pointLights[i].linearAtten,
             lighting.pointLights[i].quadraticAtten);
+        // Smooth falloff at range boundary (avoids hard cutoff edge)
+        atten *= 1.0 - smoothstep(ptRange * 0.75, ptRange, distance);
 
         // Point light shadow (indices 0..N-1 have shadow maps)
         float shadow = 1.0;
@@ -1156,8 +1159,9 @@ void main() {
         vec3 lightVec = lightPos - fragWorldPos;
         float distance = length(lightVec);
 
-        // Skip if beyond range
-        if (distance > lighting.spotLights[i].range) continue;
+        // Skip if well beyond range
+        float spRange = lighting.spotLights[i].range;
+        if (distance > spRange * 1.1) continue;
 
         vec3 lightDir = normalize(lightVec);
         vec3 spotDir = normalize(lighting.spotLights[i].direction);
@@ -1173,11 +1177,12 @@ void main() {
             vec3 lightColor = lighting.spotLights[i].color;
             float intensity = lighting.spotLights[i].intensity;
 
-            // Distance attenuation
+            // Distance attenuation with smooth range falloff
             float atten = calcAttenuation(distance,
                 lighting.spotLights[i].constantAtten,
                 lighting.spotLights[i].linearAtten,
                 lighting.spotLights[i].quadraticAtten);
+            atten *= 1.0 - smoothstep(spRange * 0.75, spRange, distance);
 
             // Spot light shadow (indices 0..N-1 have shadow maps)
             float shadow = 1.0;
