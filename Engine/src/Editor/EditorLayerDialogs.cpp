@@ -1,5 +1,13 @@
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Editor/InspectorUndo.h"
+
+// Webhook URLs — compiled in, not user-configurable. File is .gitignored.
+#if __has_include("Enjin/Editor/WebhookConfig.h")
+#include "Enjin/Editor/WebhookConfig.h"
+#else
+#define ENJIN_DISCORD_BUG_WEBHOOK ""
+#define ENJIN_DISCORD_FEEDBACK_WEBHOOK ""
+#endif
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
 #include "Enjin/Debug/CrashHandler.h"
@@ -2526,7 +2534,7 @@ void EditorLayer::SendDiscordBugReport() {
         report->diagnostics.gpuName = props.deviceName;
     }
 
-    const std::string& webhookUrl = m_EditorSettings.discordWebhookUrl;
+    const std::string webhookUrl = ENJIN_DISCORD_BUG_WEBHOOK;
 
     // If no webhook URL configured, save as local file instead
     if (webhookUrl.empty()) {
@@ -2691,13 +2699,15 @@ void EditorLayer::DrawDiscordBugReportDialog() {
 
     // Webhook destination info
     ImGui::Spacing();
-    if (m_EditorSettings.discordWebhookUrl.empty()) {
-        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
-            "No Discord webhook configured. Report will be saved locally.");
-        ImGui::TextDisabled("Configure in Settings > System > Bug Reporting");
-    } else {
-        ImGui::TextColored(ImVec4(0.4f, 0.8f, 0.4f, 1.0f),
-            "Will send to Discord webhook");
+    {
+        constexpr const char* bugHook = ENJIN_DISCORD_BUG_WEBHOOK;
+        if (bugHook[0] == '\0') {
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
+                "No Discord webhook compiled in. Report will be saved locally.");
+        } else {
+            ImGui::TextColored(ImVec4(0.4f, 0.8f, 0.4f, 1.0f),
+                "Will send to Discord");
+        }
     }
 
     if (sending) ImGui::EndDisabled();
@@ -2845,12 +2855,13 @@ void EditorLayer::DrawQuitFeedbackDialog() {
             m_QuitSurvey.engineVersion = ENJIN_VERSION_STRING;
 
             // Fire-and-forget: submit to Discord (never blocks quit)
-            auto& settings = GetEditorSettings();
-            const std::string& webhookUrl = settings.discordFeedbackWebhookUrl.empty()
-                ? settings.discordWebhookUrl
-                : settings.discordFeedbackWebhookUrl;
-            if (!webhookUrl.empty()) {
-                m_FeedbackManager.SubmitQuitSurveyToDiscord(m_QuitSurvey, webhookUrl);
+            {
+                constexpr const char* feedbackHook = ENJIN_DISCORD_FEEDBACK_WEBHOOK;
+                const std::string webhookUrl = (feedbackHook[0] != '\0')
+                    ? feedbackHook : ENJIN_DISCORD_BUG_WEBHOOK;
+                if (!webhookUrl.empty()) {
+                    m_FeedbackManager.SubmitQuitSurveyToDiscord(m_QuitSurvey, webhookUrl);
+                }
             }
 
             likeBuf[0] = frustrateBuf[0] = featureBuf[0] = '\0';
