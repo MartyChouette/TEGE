@@ -731,6 +731,12 @@ void RenderSystem::Update(f32 deltaTime) {
         return;
     }
 
+    // Apply deferred MSAA change (requested mid-frame by editor settings UI).
+    // Must happen before any rendering — it recreates swapchain, render pass, pipelines.
+    if (m_PendingMSAAChange) {
+        ApplyPendingMSAAChange();
+    }
+
     // Process any pending changes not yet flushed (fallback if FlushPendingChanges
     // wasn't called earlier this frame, e.g. in standalone Player without editor)
     FlushPendingChanges();
@@ -1164,7 +1170,10 @@ void RenderSystem::Update(f32 deltaTime) {
     // Build list of cullable objects for GPU frustum culling
     // Only done when we have 3D meshes and GPU culling is enabled.
     // In editor mode, skip culling entirely so all entities are visible for editing.
-    if (m_GPUCullingEnabled && !m_IsEditorMode && m_SceneComposition.mesh3DCount > 0) {
+    // In player mode, skip because GPU compute shaders (cull.comp.spv) are not
+    // available in built games — indirect draw buffers would be empty, causing
+    // entities to be marked as "drawn" but never actually rendered.
+    if (m_GPUCullingEnabled && !m_IsEditorMode && !m_PlayerMode && m_SceneComposition.mesh3DCount > 0) {
         BuildCullableObjectList();
     }
 
@@ -4953,33 +4962,38 @@ void RenderSystem::SetAAMode(u32 mode) {
     u32 oldMode = m_AAMode;
     m_AAMode = mode;
 
-    // MSAA modes (4=2x, 5=4x, 6=8x) require render pass + framebuffer + pipeline recreation
+    // MSAA modes (4=2x, 5=4x, 6=8x) require render pass + framebuffer + pipeline recreation.
+    // This is unsafe mid-frame (crashes NVIDIA driver). Defer to the start of the next
+    // RenderSystem::Update() via m_PendingMSAAChange flag.
     bool oldIsMSAA = oldMode >= 4 && oldMode <= 6;
     bool newIsMSAA = mode >= 4 && mode <= 6;
 
     if (newIsMSAA || oldIsMSAA) {
-        if (!m_Renderer) return;
+        m_PendingMSAAChange = true;
+    }
+}
 
-        VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
-        if (mode == 4) samples = VK_SAMPLE_COUNT_2_BIT;
-        else if (mode == 5) samples = VK_SAMPLE_COUNT_4_BIT;
-        else if (mode == 6) samples = VK_SAMPLE_COUNT_8_BIT;
+void RenderSystem::ApplyPendingMSAAChange() {
+    m_PendingMSAAChange = false;
+    if (!m_Renderer) return;
 
-        if (!m_Renderer->SetMSAASamples(samples)) {
-            // Hardware doesn't support the requested count — revert
-            ENJIN_LOG_WARN(Renderer, "MSAA %dx not supported, reverting to previous AA mode", static_cast<int>(samples));
-            m_AAMode = oldMode;
-            return;
-        }
+    VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
+    if (m_AAMode == 4) samples = VK_SAMPLE_COUNT_2_BIT;
+    else if (m_AAMode == 5) samples = VK_SAMPLE_COUNT_4_BIT;
+    else if (m_AAMode == 6) samples = VK_SAMPLE_COUNT_8_BIT;
 
-        // Render pass changed — all pipelines must be recreated
-        RecreatePipelines(true);  // GPU already idle from SetMSAASamples
+    if (!m_Renderer->SetMSAASamples(samples)) {
+        ENJIN_LOG_WARN(Renderer, "MSAA %dx not supported, reverting to no MSAA", static_cast<int>(samples));
+        m_AAMode = 0;  // Fall back to no AA
+        m_Renderer->SetMSAASamples(VK_SAMPLE_COUNT_1_BIT);
+    }
 
-        // Invalidate all entity render data so buffers are re-created
-        // with the new pipeline on next render.
-        for (auto& rd : m_EntityRenderData) {
-            if (rd.valid) rd.Invalidate();
-        }
+    // Render pass changed — all pipelines must be recreated
+    RecreatePipelines(true);  // GPU already idle from SetMSAASamples
+
+    // Invalidate all entity render data so buffers are re-created
+    for (auto& rd : m_EntityRenderData) {
+        if (rd.valid) rd.Invalidate();
     }
 }
 

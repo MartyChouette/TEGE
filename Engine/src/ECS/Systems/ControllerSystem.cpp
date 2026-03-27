@@ -1108,13 +1108,36 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         }
     }
 
-    // Transform input to be relative to camera direction
+    // Transform input to be relative to camera view direction.
+    // When over-the-shoulder framing is active, the screen center points slightly
+    // off from the raw camera yaw. Derive forward from the actual camera-to-lookTarget
+    // vector so pressing W moves exactly where the player is looking on screen.
     f32 yawRad = Math::Radians(ctrl.cameraYaw);
     f32 cosYaw = Math::Cos(yawRad);
     f32 sinYaw = Math::Sin(yawRad);
 
     Math::Vector3 forward(-sinYaw, 0.0f, -cosYaw);
     Math::Vector3 right(cosYaw, 0.0f, -sinYaw);
+
+    // Adjust for over-the-shoulder horizontal bias
+    f32 hBias = 0.0f;
+    if (ctrl.frameSide == ThirdPersonController::FrameSide::Right) hBias = ctrl.frameHorizontalBias;
+    else if (ctrl.frameSide == ThirdPersonController::FrameSide::Left) hBias = -ctrl.frameHorizontalBias;
+    if (hBias != 0.0f) {
+        f32 pitchRad = Math::Radians(ctrl.cameraPitch);
+        Math::Vector3 camRight(cosYaw, 0.0f, -sinYaw);
+        Math::Vector3 cameraOffset;
+        cameraOffset.x = Math::Cos(pitchRad) * sinYaw * ctrl.cameraDistance;
+        cameraOffset.z = Math::Cos(pitchRad) * cosYaw * ctrl.cameraDistance;
+        Math::Vector3 camPos = cameraOffset + camRight * hBias;
+        Math::Vector3 lookOff = camRight * hBias * 0.3f;
+        Math::Vector3 viewDir = lookOff - camPos;  // lookTarget(0,0,0) + lookOff - (player(0,0,0) + camPos)
+        f32 viewLen = Math::Sqrt(viewDir.x * viewDir.x + viewDir.z * viewDir.z);
+        if (viewLen > 1e-4f) {
+            forward = Math::Vector3(viewDir.x / viewLen, 0.0f, viewDir.z / viewLen);
+            right = Math::Vector3(-forward.z, 0.0f, forward.x);
+        }
+    }
 
     Math::Vector3 moveDir = forward * input.y + right * input.x;
     f32 moveMag = moveDir.Length();

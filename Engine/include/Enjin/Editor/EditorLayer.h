@@ -595,6 +595,7 @@ private:
     EntitySelectedCallback m_OnEntitySelected;
 
     // Panel state
+    bool m_MSAAImGuiUpdatePending = false;  // Deferred ImGui pipeline update after MSAA change
     bool m_ShowDemoWindow = false;
     bool m_ShowStatsOverlay = false;
     bool m_ShowAboutDialog = false;

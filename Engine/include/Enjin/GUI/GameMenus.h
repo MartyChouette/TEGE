@@ -62,6 +62,10 @@ public:
     GraphicsSettings& GetGraphicsSettings();
     AudioSettings& GetAudioSettings();
 
+    // Called when the user leaves the Options screen (Back button)
+    using SettingsCallback = std::function<void(const GraphicsSettings&, const AudioSettings&)>;
+    void SetSettingsCallback(SettingsCallback cb) { m_SettingsCallback = std::move(cb); }
+
     void ShowScreen(MenuScreen screen);
     void HideAll();
     MenuScreen GetCurrentScreen() const;
@@ -84,6 +88,7 @@ private:
     InputSystem::InputActionMap* m_InputMap = nullptr;
     Editor::EditorSettings* m_EditorSettings = nullptr;
     MenuCallback m_Callback;
+    SettingsCallback m_SettingsCallback;
     std::string m_GameTitle = "My Game";
     i32 m_RebindingAction = -1;
     MenuScreen m_ReturnScreen = MenuScreen::PauseMenu;

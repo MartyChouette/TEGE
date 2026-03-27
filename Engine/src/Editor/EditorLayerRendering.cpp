@@ -1113,15 +1113,12 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 settings.aaMode = newMode;
                 // Sync legacy fxaaEnabled flag
                 settings.fxaaEnabled = (newMode == 1) ? 1 : 0;
-                // MSAA modes (4/5/6) require render pass recreation via RenderSystem
+                // MSAA modes (4/5/6) require render pass recreation via RenderSystem.
+                // SetAAMode defers the actual MSAA change to the start of the next
+                // frame (swapchain recreation is unsafe mid-render-pass).
                 if (m_RenderSystem) {
                     m_RenderSystem->SetAAMode(newMode);
-                    // ImGui's pipeline must match the new render pass MSAA sample count
-                    if (m_ImGuiLayer && m_RenderSystem->GetRenderer()) {
-                        m_ImGuiLayer->UpdateRenderPass(
-                            m_RenderSystem->GetRenderer()->GetRenderPass(),
-                            m_RenderSystem->GetRenderer()->GetMSAASamples());
-                    }
+                    m_MSAAImGuiUpdatePending = true;
                 }
             }
 

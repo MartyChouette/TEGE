@@ -78,9 +78,9 @@ void GameMenuSystem::Render(f32 screenW, f32 screenH) {
 // ---------------------------------------------------------------------------
 
 void GameMenuSystem::RenderMainMenu(f32 w, f32 h) {
-    // Full-screen dark background
+    // Semi-transparent dim overlay so the game scene shows through
     ImDrawList* draw = ImGui::GetForegroundDrawList();
-    draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), IM_COL32(12, 12, 18, 240));
+    draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), IM_COL32(12, 12, 18, 140));
 
     const f32 buttonW = 280.0f;
     const f32 panelH = 340.0f;
@@ -172,7 +172,7 @@ void GameMenuSystem::RenderPauseMenu(f32 w, f32 h) {
 
 void GameMenuSystem::RenderOptions(f32 w, f32 h) {
     ImDrawList* draw = ImGui::GetForegroundDrawList();
-    draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), IM_COL32(10, 10, 14, 230));
+    draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), IM_COL32(10, 10, 14, 140));
 
     const f32 panelW = 560.0f;
     const f32 panelH = 480.0f;
@@ -205,6 +205,8 @@ void GameMenuSystem::RenderOptions(f32 w, f32 h) {
 
     ImGui::Dummy(ImVec2(0, 10));
     if (ImGui::Button("Back", ImVec2(100, 32))) {
+        // Notify the host application to apply changed settings
+        if (m_SettingsCallback) m_SettingsCallback(m_Graphics, m_Audio);
         ShowScreen(m_ReturnScreen);
     }
 
@@ -500,7 +502,7 @@ void GameMenuSystem::RenderControls(f32 w, f32 h) {
 
 void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
     ImDrawList* draw = ImGui::GetForegroundDrawList();
-    draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), IM_COL32(10, 10, 14, 230));
+    draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), IM_COL32(10, 10, 14, 140));
 
     const f32 panelW = 520.0f;
     const f32 panelH = 460.0f;

@@ -2237,6 +2237,18 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         return;
     }
 
+    // Apply deferred ImGui pipeline update after MSAA change.
+    // The MSAA change itself was applied at the start of RenderSystem::Update()
+    // (which runs before this). Now update ImGui to match the new render pass.
+    if (m_MSAAImGuiUpdatePending) {
+        m_MSAAImGuiUpdatePending = false;
+        if (m_RenderSystem && m_RenderSystem->GetRenderer()) {
+            m_ImGuiLayer->UpdateRenderPass(
+                m_RenderSystem->GetRenderer()->GetRenderPass(),
+                m_RenderSystem->GetRenderer()->GetMSAASamples());
+        }
+    }
+
     m_ImGuiLayer->BeginFrame();
 
     // Initialize ImGuizmo for this frame

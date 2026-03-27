@@ -234,8 +234,10 @@ public:
             if (action == "new_game" || action == "continue") {
                 m_GameMenu.HideAll();
                 m_GameStarted = true;
+                Enjin::Input::SetMouseCaptured(true);
             } else if (action == "resume") {
                 m_GameMenu.HideAll();
+                Enjin::Input::SetMouseCaptured(true);
             } else if (action == "options") {
                 m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::Options);
             } else if (action == "how_to_play") {
@@ -243,15 +245,56 @@ public:
             } else if (action == "quit_to_menu") {
                 m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
                 m_GameStarted = false;
+                Enjin::Input::SetMouseCaptured(false);
             } else if (action == "quit") {
                 if (GetWindow()) GetWindow()->Close();
             } else if (action == "game_over_restart") {
                 m_GameMenu.HideAll();
+                Enjin::Input::SetMouseCaptured(true);
                 if (!m_StartScene.empty()) LoadSceneFromPack(m_StartScene);
             } else if (action == "game_over_menu") {
                 m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
                 m_GameStarted = false;
+                Enjin::Input::SetMouseCaptured(false);
             }
+        });
+
+        // Apply graphics/audio settings when user exits Options menu.
+        // Some changes (VSync, fullscreen) must be deferred — they recreate the
+        // swapchain/window, which is unsafe mid-frame. Store pending changes and
+        // apply them at the start of the next Update().
+        m_GameMenu.SetSettingsCallback([this](const Enjin::GUI::GraphicsSettings& gfx,
+                                              const Enjin::GUI::AudioSettings& audio) {
+            // --- Audio (safe to apply immediately) ---
+            Enjin::Audio::AudioManager::Get().SetMasterVolume(audio.masterMute ? 0.0f : audio.masterVolume);
+            m_SimpleAudio.SetMusicVolume(audio.musicMute ? 0.0f : audio.musicVolume);
+            m_SimpleAudio.SetSFXVolume(audio.sfxMute ? 0.0f : audio.sfxVolume);
+
+            if (!m_Renderer || !m_RenderSystem) return;
+
+            // --- VSync (deferred — recreates swapchain) ---
+            m_Renderer->RequestVSyncChange(gfx.vsync);
+
+            // --- Fullscreen (deferred to next Update) ---
+            m_PendingFullscreen = gfx.fullscreen;
+            m_FullscreenChangeRequested = true;
+
+            // --- Shadows (safe — just flags) ---
+            m_RenderSystem->SetShadowsEnabled(gfx.shadows);
+            if (gfx.shadows) {
+                static const Enjin::u32 shadowRes[] = { 512, 1024, 2048, 4096 };
+                Enjin::u32 idx = gfx.shadowQuality < 4 ? gfx.shadowQuality : 2;
+                m_RenderSystem->SetShadowResolution(shadowRes[idx]);
+            }
+
+            // --- Post-processing (safe — just flags) ---
+            if (m_PostProcessing) {
+                m_PostProcessing->GetSettings().bloomEnabled = gfx.bloom;
+                m_PostProcessing->GetSettings().fxaaEnabled = gfx.fxaa;
+            }
+
+            ENJIN_LOG_INFO(Player, "Settings applied: vsync=%d fullscreen=%d shadows=%d bloom=%d fxaa=%d",
+                (int)gfx.vsync, (int)gfx.fullscreen, (int)gfx.shadows, (int)gfx.bloom, (int)gfx.fxaa);
         });
 
         // Initialize audio system
@@ -646,6 +689,14 @@ public:
     void Update(Enjin::f32 deltaTime) override {
         if (!m_Initialized) return;
 
+        // Apply deferred fullscreen change (unsafe mid-frame, safe here between frames)
+        if (m_FullscreenChangeRequested) {
+            m_FullscreenChangeRequested = false;
+            if (GetWindow() && GetWindow()->IsFullscreen() != m_PendingFullscreen) {
+                GetWindow()->SetFullscreen(m_PendingFullscreen);
+            }
+        }
+
         // Splash screen phase — if timer is 0 (skipped), go straight to game
         if (m_ShowingSplash) {
             if (m_SplashTimer <= 0.0f) {
@@ -702,9 +753,11 @@ public:
             } else if (m_GameMenu.IsMenuOpen()) {
                 // Pause menu — resume gameplay
                 m_GameMenu.HideAll();
+                Enjin::Input::SetMouseCaptured(true);
             } else {
                 // In gameplay — pause
                 m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::PauseMenu);
+                Enjin::Input::SetMouseCaptured(false);
             }
         }
 
@@ -920,8 +973,9 @@ public:
             return;
         }
 
-        // Update camera aspect ratio — read FOV/near/far from the active game
-        // CameraComponent so the built game matches the editor Game View.
+        // Sync the render camera from the active game CameraComponent entity.
+        // This updates FOV, near/far, aspect ratio, AND position/rotation so
+        // the built game renders from the same viewpoint as the editor Game View.
         auto extent = m_Renderer->GetSwapchainExtent();
         if (extent.width > 0 && extent.height > 0 && m_Camera) {
             Enjin::f32 aspect = static_cast<Enjin::f32>(extent.width) / static_cast<Enjin::f32>(extent.height);
@@ -936,6 +990,15 @@ public:
                         fov = cc->fieldOfView;
                         nearP = cc->nearPlane;
                         farP = cc->farPlane;
+                    }
+                    // Sync camera position/rotation from the entity's TransformComponent
+                    auto* camTransform = m_World->GetComponent<Enjin::ECS::TransformComponent>(activeCam);
+                    if (camTransform) {
+                        m_Camera->SetPosition(camTransform->position);
+                        Enjin::Math::Vector3 forward = camTransform->rotation.GetForward();
+                        Enjin::Math::Vector3 up = camTransform->rotation.GetUp();
+                        m_Camera->SetLookAt(camTransform->position,
+                                            camTransform->position + forward, up);
                     }
                 }
             }
@@ -984,10 +1047,10 @@ public:
             m_World->Update(0.0f);
         }
 
-        // Shadow pass (before main render pass which is started elsewhere)
-        if (m_RenderSystem && m_Camera && m_RenderSystem->IsShadowsEnabled()) {
-            m_RenderSystem->RenderShadowPassForCamera(m_Camera.get());
-        }
+        // Shadow pass runs inside RenderSystem::Update() (called by World::Update above).
+        // Do NOT call RenderShadowPassForCamera here — the main render pass is already
+        // active at this point, and starting a shadow render pass inside it crashes the
+        // NVIDIA driver (nested vkCmdBeginRenderPass).
 
         // Render ImGui overlays (pause menu, dialogue)
         VkCommandBuffer cmd = m_Renderer->GetCurrentCommandBuffer();
@@ -1417,6 +1480,8 @@ private:
         // Apply scene render settings (shadows, ambient, cel shading, post-processing, etc.)
         if (m_RenderSystem) {
             auto renderSettings = serializer.GetRenderSettings();
+            // Force RT off — Player doesn't embed RT compute shaders (crashes NVIDIA driver)
+            renderSettings.rtEnabled = false;
             renderSettings.ApplyToRuntime(m_RenderSystem,
                 m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
         }
@@ -1614,6 +1679,8 @@ private:
 
     bool m_Initialized = false;
     bool m_GameStarted = false;
+    bool m_FullscreenChangeRequested = false;
+    bool m_PendingFullscreen = false;
     std::vector<Enjin::ECS::Entity> m_DeferredDestroys;
 
     // Splash screen

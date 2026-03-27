@@ -448,6 +448,7 @@ public:
     // Anti-aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA, 4=MSAA 2x, 5=MSAA 4x, 6=MSAA 8x
     u32 GetAAMode() const { return m_AAMode; }
     void SetAAMode(u32 mode);
+    void ApplyPendingMSAAChange(); // Deferred MSAA application (safe between frames)
 
     // Maximum MSAA sample count supported by the GPU (queried at init)
     u32 GetMaxMSAASamples() const;
@@ -636,6 +637,7 @@ private:
     bool m_EditorWireframe = false;
     bool m_EditorUnlit = false;
     bool m_PlayerMode = false;
+    bool m_PendingMSAAChange = false;
     f32 m_ShadowDistance = 100.0f;
     u32 m_PendingShadowResolution = 0; // 0 = no change pending
     bool m_CascadeProgressiveUpdate = false;
