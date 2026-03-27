@@ -874,5 +874,80 @@ bool FeedbackManager::SubmitBugReportToDiscord(u64 id, const std::string& webhoo
     return false;
 }
 
+// ── Quit survey Discord submission ──────────────────────────────────
+
+bool FeedbackManager::SubmitQuitSurveyToDiscord(const QuitSurvey& survey, const std::string& webhookUrl) {
+    if (webhookUrl.empty()) {
+        ENJIN_LOG_WARN(Editor, "FeedbackManager: quit survey skipped — no webhook URL configured");
+        return false;
+    }
+
+    // Helper: convert a 1-5 rating to star display
+    auto RatingStars = [](u8 rating) -> std::string {
+        if (rating == 0) return "N/A";
+        std::string stars;
+        for (u8 i = 1; i <= 5; ++i) {
+            stars += (i <= rating) ? "\\u2b50" : "\\u2606";
+        }
+        return stars + " (" + std::to_string(rating) + "/5)";
+    };
+
+    // Truncate text fields to Discord embed field limit (1024 chars)
+    auto Truncate = [](const std::string& s, usize maxLen = 1024) -> std::string {
+        if (s.size() <= maxLen) return s;
+        return s.substr(0, maxLen - 3) + "...";
+    };
+
+    // Build a Discord embed
+    json embed;
+    embed["title"] = "TEGE Quit Survey";
+    embed["color"] = 0x3498DB; // Blue
+
+    json fields = json::array();
+
+    // Rating fields
+    fields.push_back({{"name", "Overall Satisfaction"}, {"value", RatingStars(survey.ratingOverall)}, {"inline", true}});
+    fields.push_back({{"name", "Stability"}, {"value", RatingStars(survey.ratingStability)}, {"inline", true}});
+    fields.push_back({{"name", "Performance"}, {"value", RatingStars(survey.ratingPerformance)}, {"inline", true}});
+    fields.push_back({{"name", "Ease of Use"}, {"value", RatingStars(survey.ratingEaseOfUse)}, {"inline", true}});
+    fields.push_back({{"name", "Feature Completeness"}, {"value", RatingStars(survey.ratingFeatureCompleteness)}, {"inline", true}});
+
+    // Text answer fields (only include non-empty answers)
+    if (!survey.whatDidYouLike.empty()) {
+        fields.push_back({{"name", "What did you like?"}, {"value", Truncate(survey.whatDidYouLike)}, {"inline", false}});
+    }
+    if (!survey.whatFrustratedYou.empty()) {
+        fields.push_back({{"name", "What frustrated you?"}, {"value", Truncate(survey.whatFrustratedYou)}, {"inline", false}});
+    }
+    if (!survey.mostWantedFeature.empty()) {
+        fields.push_back({{"name", "Most wanted feature"}, {"value", Truncate(survey.mostWantedFeature)}, {"inline", false}});
+    }
+
+    embed["fields"] = fields;
+
+    // Footer with engine version and session duration
+    char footerText[256];
+    snprintf(footerText, sizeof(footerText), "Engine %s | Session: %.1f min",
+             survey.engineVersion.c_str(), survey.sessionDurationMinutes);
+    embed["footer"] = {{"text", std::string(footerText)}};
+    embed["timestamp"] = survey.timestamp;
+
+    // Build the payload
+    json payload;
+    payload["embeds"] = json::array({embed});
+
+    auto response = Networking::HTTPClient::Post(webhookUrl, payload.dump(),
+        {{"Content-Type", "application/json"}});
+
+    if (response.success || (response.statusCode >= 200 && response.statusCode < 300)) {
+        ENJIN_LOG_INFO(Editor, "FeedbackManager: quit survey sent to Discord");
+        return true;
+    }
+
+    ENJIN_LOG_ERROR(Editor, "FeedbackManager: quit survey Discord webhook failed (HTTP %d): %s",
+                    response.statusCode, response.error.c_str());
+    return false;
+}
+
 } // namespace Editor
 } // namespace Enjin

@@ -38,6 +38,7 @@
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Editor/PerformanceStats.h"
+#include "Enjin/Editor/TelemetrySystem.h"
 #include "Enjin/Editor/TerrainBrush.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Editor/UndoRedo.h"
@@ -79,6 +80,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <chrono>
 #include <vulkan/vulkan.h>
 
 namespace Enjin {
@@ -1250,6 +1252,9 @@ private:
     VectorDrawingEditor m_VectorDrawingEditor;
     void DrawVectorDrawingPanel();
 
+    // Telemetry
+    TelemetrySystem m_Telemetry;
+
     // Feedback / Bug Reporting System
     FeedbackManager m_FeedbackManager;
     bool m_FeedbackLoaded = false;
@@ -1304,6 +1309,7 @@ private:
     char m_DiscordBugDescBuf[4096] = {};
     bool m_DiscordBugIncludeScreenshot = true;
     bool m_DiscordBugIncludeLog = true;
+    i32 m_DiscordBugSeverity = 2;  // 0=Crash, 1=Major, 2=Minor, 3=Cosmetic
     enum class DiscordSendState : u8 { Idle, Sending, Sent, Failed };
     DiscordSendState m_DiscordSendState = DiscordSendState::Idle;
     std::string m_DiscordSendError;
@@ -1466,6 +1472,13 @@ private:
     void AutoSave();
     void DrawUnsavedChangesDialog();
     void DrawAutoSaveRecoveryDialog();
+
+    // Quit feedback survey dialog
+    bool m_ShowQuitFeedbackDialog = false;
+    QuitSurvey m_QuitSurvey;
+    std::chrono::steady_clock::time_point m_SessionStartTime;
+    void DrawQuitFeedbackDialog();
+    void FinalizeQuit();
 };
 
 } // namespace Editor

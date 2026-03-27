@@ -1439,6 +1439,7 @@ void EditorLayer::DrawBuildDialog() {
         m_BuildResult = pipeline.Execute(m_BuildConfig);
         m_BuildInProgress = false;
         m_BuildFinished = true;
+        m_Telemetry.TrackBuildRun();
         if (m_BuildResult.success) {
             ShowNotification("Build complete!", NotificationType::Success);
         } else {
@@ -2286,7 +2287,7 @@ void EditorLayer::DrawUnsavedChangesDialog() {
 
             switch (action) {
                 case UnsavedAction::Quit:
-                    if (m_Window) m_Window->Close();
+                    m_ShowQuitFeedbackDialog = true;
                     break;
                 case UnsavedAction::NewScene:
                     if (m_World) {
@@ -2327,7 +2328,7 @@ void EditorLayer::DrawUnsavedChangesDialog() {
 
             switch (action) {
                 case UnsavedAction::Quit:
-                    if (m_Window) m_Window->Close();
+                    m_ShowQuitFeedbackDialog = true;
                     break;
                 case UnsavedAction::NewScene:
                     if (m_World) {
@@ -2487,6 +2488,7 @@ void EditorLayer::CaptureViewportScreenshot() {
 void EditorLayer::SendDiscordBugReport() {
     m_DiscordSendState = DiscordSendState::Sending;
     m_DiscordSendError.clear();
+    m_Telemetry.TrackBugReport();
 
     // Ensure feedback system is loaded
     if (!m_FeedbackLoaded) {
@@ -2505,7 +2507,12 @@ void EditorLayer::SendDiscordBugReport() {
 
     report->title = m_DiscordBugTitleBuf;
     report->type = ReportType::Bug;
-    report->severity = ReportSeverity::Medium;
+    // Map dropdown index to severity enum
+    static const ReportSeverity severityMap[] = {
+        ReportSeverity::Critical, ReportSeverity::High,
+        ReportSeverity::Medium, ReportSeverity::Low
+    };
+    report->severity = severityMap[std::clamp(m_DiscordBugSeverity, 0, 3)];
     report->description = m_DiscordBugDescBuf;
     report->diagnostics = CaptureDiagnostics(false);
     if (!m_DiscordBugIncludeLog) {
@@ -2635,6 +2642,12 @@ void EditorLayer::DrawDiscordBugReportDialog() {
     ImGui::InputTextMultiline("##DiscordBugDesc", m_DiscordBugDescBuf, sizeof(m_DiscordBugDescBuf),
                                ImVec2(-1, 120 * s));
 
+    // Severity
+    ImGui::Spacing();
+    static const char* severities[] = { "Crash", "Major", "Minor", "Cosmetic" };
+    ImGui::SetNextItemWidth(160 * s);
+    ImGui::Combo("Severity", &m_DiscordBugSeverity, severities, 4);
+
     ImGui::Spacing();
 
     // Checkboxes
@@ -2749,6 +2762,131 @@ void EditorLayer::DrawDiscordBugReportDialog() {
     }
 
     ImGui::End();
+}
+
+// ── Quit Feedback Survey Dialog ──────────────────────────────────────
+
+void EditorLayer::DrawQuitFeedbackDialog() {
+    ImGui::OpenPopup("##QuitFeedback");
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(520, 560));
+
+    if (ImGui::BeginPopupModal("##QuitFeedback", nullptr,
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar)) {
+
+        ImGui::TextColored(ImVec4(1, 1, 1, 1), "Before you go...");
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0, 4));
+
+        // Helper for 1-5 rating row
+        auto RatingRow = [](const char* label, u8& value) {
+            ImGui::Text("%s", label);
+            ImGui::SameLine(220);
+            for (u8 i = 1; i <= 5; i++) {
+                ImGui::PushID(label + static_cast<int>(i) * 100);
+                bool selected = (value == i);
+                if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.6f, 1.0f, 1.0f));
+                char num[4];
+                snprintf(num, sizeof(num), "%d", i);
+                if (ImGui::SmallButton(num)) value = i;
+                if (selected) ImGui::PopStyleColor();
+                ImGui::PopID();
+                if (i < 5) ImGui::SameLine();
+            }
+        };
+
+        ImGui::Text("Rate your experience (1-5):");
+        ImGui::Dummy(ImVec2(0, 2));
+        RatingRow("Overall Satisfaction", m_QuitSurvey.ratingOverall);
+        RatingRow("Stability", m_QuitSurvey.ratingStability);
+        RatingRow("Performance", m_QuitSurvey.ratingPerformance);
+        RatingRow("Ease of Use", m_QuitSurvey.ratingEaseOfUse);
+        RatingRow("Feature Completeness", m_QuitSurvey.ratingFeatureCompleteness);
+
+        ImGui::Dummy(ImVec2(0, 8));
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0, 4));
+
+        // Text fields — static buffers required by ImGui
+        static char likeBuf[512] = {};
+        static char frustrateBuf[512] = {};
+        static char featureBuf[512] = {};
+
+        ImGui::Text("What did you like?");
+        ImGui::InputTextMultiline("##like", likeBuf, sizeof(likeBuf), ImVec2(-1, 40));
+
+        ImGui::Text("What frustrated you?");
+        ImGui::InputTextMultiline("##frustrate", frustrateBuf, sizeof(frustrateBuf), ImVec2(-1, 40));
+
+        ImGui::Text("What feature do you want most?");
+        ImGui::InputTextMultiline("##feature", featureBuf, sizeof(featureBuf), ImVec2(-1, 40));
+
+        ImGui::Dummy(ImVec2(0, 8));
+
+        // Buttons
+        float buttonWidth = 140.0f;
+        float spacing = 20.0f;
+        float totalWidth = buttonWidth * 3 + spacing * 2;
+        ImGui::SetCursorPosX((520 - totalWidth) * 0.5f);
+
+        if (ImGui::Button("Submit & Quit", ImVec2(buttonWidth, 32))) {
+            m_QuitSurvey.whatDidYouLike = likeBuf;
+            m_QuitSurvey.whatFrustratedYou = frustrateBuf;
+            m_QuitSurvey.mostWantedFeature = featureBuf;
+
+            // Compute session duration
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - m_SessionStartTime);
+            m_QuitSurvey.sessionDurationMinutes = static_cast<f32>(elapsed.count()) / 60.0f;
+
+            // Set timestamp and engine version
+            m_QuitSurvey.timestamp = FeedbackManager::CurrentTimestamp();
+            m_QuitSurvey.engineVersion = ENJIN_VERSION_STRING;
+
+            // Fire-and-forget: submit to Discord (never blocks quit)
+            auto& settings = GetEditorSettings();
+            const std::string& webhookUrl = settings.discordFeedbackWebhookUrl.empty()
+                ? settings.discordWebhookUrl
+                : settings.discordFeedbackWebhookUrl;
+            if (!webhookUrl.empty()) {
+                m_FeedbackManager.SubmitQuitSurveyToDiscord(m_QuitSurvey, webhookUrl);
+            }
+
+            likeBuf[0] = frustrateBuf[0] = featureBuf[0] = '\0';
+            ImGui::CloseCurrentPopup();
+            FinalizeQuit();
+        }
+        ImGui::SameLine(0, spacing);
+        if (ImGui::Button("Skip & Quit", ImVec2(buttonWidth, 32))) {
+            likeBuf[0] = frustrateBuf[0] = featureBuf[0] = '\0';
+            ImGui::CloseCurrentPopup();
+            FinalizeQuit();
+        }
+        ImGui::SameLine(0, spacing);
+        if (ImGui::Button("Cancel", ImVec2(buttonWidth, 32))) {
+            likeBuf[0] = frustrateBuf[0] = featureBuf[0] = '\0';
+            m_ShowQuitFeedbackDialog = false;
+            m_QuitSurvey = {};
+            ImGui::CloseCurrentPopup();
+        }
+
+        // ESC = cancel (return to editor)
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            likeBuf[0] = frustrateBuf[0] = featureBuf[0] = '\0';
+            m_ShowQuitFeedbackDialog = false;
+            m_QuitSurvey = {};
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
+void EditorLayer::FinalizeQuit() {
+    m_ShowQuitFeedbackDialog = false;
+    m_QuitSurvey = {};
+    if (m_Window) m_Window->Close();
 }
 
 } // namespace Editor

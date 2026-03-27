@@ -415,6 +415,7 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
         ss << "[Info] Loaded scene from " << path << " (" << entityCount << " entities)";
         m_ConsoleLog.push_back(ss.str());
         ENJIN_LOG_INFO(Editor, "Loaded scene from %s (%zu entities)", path.c_str(), entityCount);
+        m_Telemetry.TrackSceneLoaded();
 
         // Track in recent projects
         m_EditorSettings.AddRecentProject(path);

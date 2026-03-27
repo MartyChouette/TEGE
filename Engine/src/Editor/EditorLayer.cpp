@@ -305,7 +305,7 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
         });
     }
 
-    // Intercept window close to prompt for unsaved changes
+    // Intercept window close to prompt for unsaved changes or show quit feedback
     if (m_Window) {
         m_Window->SetCloseCallback([this]() -> bool {
             if (m_SceneDirty) {
@@ -313,7 +313,9 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
                 m_ShowUnsavedChangesDialog = true;
                 return false; // Cancel close — dialog will handle it
             }
-            return true; // Allow close
+            // Scene is clean — show quit feedback survey
+            m_ShowQuitFeedbackDialog = true;
+            return false; // Block close — FinalizeQuit() will call Close()
         });
     }
 
@@ -431,6 +433,13 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
         }
     }
 
+    // Start telemetry session
+    m_Telemetry.Load();
+    m_Telemetry.BeginSession();
+
+    // Record session start time for quit survey duration
+    m_SessionStartTime = std::chrono::steady_clock::now();
+
     ENJIN_LOG_INFO(Editor, "EditorLayer initialized");
     return true;
 }
@@ -467,6 +476,7 @@ void EditorLayer::StartPlayMode() {
     s_VisualScriptWater = &m_Water3D;
     m_CachedPlayerEntity = ECS::INVALID_ENTITY; // Invalidate cache for new play session
     m_PlayMode.Play();
+    m_Telemetry.TrackPlayModeEnter();
 }
 
 void EditorLayer::InitializePlayMode() {
@@ -533,6 +543,9 @@ void EditorLayer::InitializePlayMode() {
 }
 
 void EditorLayer::Shutdown() {
+    // End telemetry session (saves aggregate data to disk)
+    m_Telemetry.EndSession();
+
     // Persist current layout state before shutdown
     m_EditorSettings.visiblePanels = static_cast<u32>(m_VisiblePanels);
     m_EditorSettings.leftPanelWidth = m_Layout.leftWidth;
@@ -2602,6 +2615,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // Auto-save recovery dialog
     if (m_ShowAutoSaveRecoveryDialog) {
         DrawAutoSaveRecoveryDialog();
+    }
+
+    // Quit feedback survey dialog
+    if (m_ShowQuitFeedbackDialog) {
+        DrawQuitFeedbackDialog();
     }
 
     // Clear the force flag after one frame

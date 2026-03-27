@@ -214,6 +214,22 @@ struct GitHubConfig {
     bool enabled = true;
 };
 
+// ── Quit survey (shown on editor exit) ───────────────────────────────
+
+struct QuitSurvey {
+    u8 ratingOverall = 0;           // 1-5, 0 = unanswered
+    u8 ratingStability = 0;
+    u8 ratingPerformance = 0;
+    u8 ratingEaseOfUse = 0;
+    u8 ratingFeatureCompleteness = 0;
+    std::string whatDidYouLike;
+    std::string whatFrustratedYou;
+    std::string mostWantedFeature;
+    std::string timestamp;
+    std::string engineVersion;
+    f32 sessionDurationMinutes = 0.0f;
+};
+
 // ── Feedback manager ─────────────────────────────────────────────────
 
 class ENJIN_API FeedbackManager {
@@ -258,6 +274,9 @@ public:
     // Returns true if Discord accepted the message (HTTP 200/204).
     bool SubmitBugReportToDiscord(u64 id, const std::string& webhookUrl,
                                   const std::vector<u8>& screenshotPng = {});
+
+    // Submit a quit survey to Discord via webhook (fire-and-forget, never blocks quit).
+    bool SubmitQuitSurveyToDiscord(const QuitSurvey& survey, const std::string& webhookUrl);
 
     // Filter / Search
     std::vector<BugReport*> FilterBugReports(i32 statusFilter, i32 severityFilter);

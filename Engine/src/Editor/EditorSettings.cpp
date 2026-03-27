@@ -432,6 +432,11 @@ bool EditorSettings::Save(const std::string& path) const {
             j["discordWebhookUrl"] = discordWebhookUrl;
         }
 
+        // Discord feedback/survey webhook
+        if (!discordFeedbackWebhookUrl.empty()) {
+            j["discordFeedbackWebhookUrl"] = discordFeedbackWebhookUrl;
+        }
+
         std::ofstream file(savePath);
         if (!file.is_open()) {
             ENJIN_LOG_ERROR(Editor, "Failed to open settings file for writing: %s", savePath.c_str());
@@ -621,6 +626,9 @@ bool EditorSettings::Load(const std::string& path) {
 
         // Discord bug report webhook
         if (j.contains("discordWebhookUrl")) discordWebhookUrl = j["discordWebhookUrl"].get<std::string>();
+
+        // Discord feedback/survey webhook
+        if (j.contains("discordFeedbackWebhookUrl")) discordFeedbackWebhookUrl = j["discordFeedbackWebhookUrl"].get<std::string>();
 
         ENJIN_LOG_INFO(Editor, "Loaded editor settings from %s", loadPath.c_str());
         return true;

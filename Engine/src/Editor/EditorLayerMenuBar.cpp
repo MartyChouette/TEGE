@@ -344,8 +344,8 @@ void EditorLayer::DrawMenuBar() {
                 if (m_SceneDirty) {
                     m_UnsavedChangesAction = UnsavedAction::Quit;
                     m_ShowUnsavedChangesDialog = true;
-                } else if (m_Window) {
-                    m_Window->Close();
+                } else {
+                    m_ShowQuitFeedbackDialog = true;
                 }
             }
             ImGui::EndMenu();

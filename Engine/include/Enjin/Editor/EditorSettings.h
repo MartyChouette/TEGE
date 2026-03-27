@@ -193,6 +193,9 @@ struct EditorSettings {
     // Discord bug report webhook
     std::string discordWebhookUrl;  // Empty = disabled; set in Settings > System
 
+    // Discord feedback/survey webhook (falls back to discordWebhookUrl if empty)
+    std::string discordFeedbackWebhookUrl;
+
     // Save/Load
     bool Save(const std::string& path = "") const;
     bool Load(const std::string& path = "");
