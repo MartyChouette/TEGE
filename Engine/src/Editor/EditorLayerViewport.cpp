@@ -148,7 +148,7 @@ void EditorLayer::DrawViewportPanel() {
         SetPanelVisibility(EditorPanel::Viewport, false);
     }
 
-    // Scene view mode buttons — only modes that are fully implemented
+    // Scene view mode buttons (Blender-style viewport shading)
     {
         auto modeBtn = [&](const char* label, const char* tooltip, SceneViewMode mode) {
             bool active = (m_SceneViewMode == mode);
@@ -158,8 +158,11 @@ void EditorLayer::DrawViewportPanel() {
             if (active) ImGui::PopStyleColor();
             ImGui::SameLine();
         };
-        modeBtn("Lit",    "Lighting, no shadows",        SceneViewMode::Lit);
-        modeBtn("Shaded", "Lighting + shadows",          SceneViewMode::LitShadows);
+        modeBtn("Wire",   "Wireframe",                    SceneViewMode::Wireframe);
+        modeBtn("Solid",  "Flat shading, no lighting",    SceneViewMode::Solid);
+        modeBtn("Lit",    "Lighting, no shadows",         SceneViewMode::Lit);
+        modeBtn("Shaded", "Lighting + shadows",           SceneViewMode::LitShadows);
+        modeBtn("Full",   "Shadows + post-processing",    SceneViewMode::Full);
         ImGui::SameLine(0, 20);
     }
 

@@ -266,9 +266,10 @@ public:
         m_GameMenu.SetSettingsCallback([this](const Enjin::GUI::GraphicsSettings& gfx,
                                               const Enjin::GUI::AudioSettings& audio) {
             // --- Audio (safe to apply immediately) ---
-            Enjin::Audio::AudioManager::Get().SetMasterVolume(audio.masterMute ? 0.0f : audio.masterVolume);
-            m_SimpleAudio.SetMusicVolume(audio.musicMute ? 0.0f : audio.musicVolume);
-            m_SimpleAudio.SetSFXVolume(audio.sfxMute ? 0.0f : audio.sfxVolume);
+            m_SimpleAudio.SetMasterVolume(audio.masterMute ? 0.0f : audio.masterVolume);
+            m_SimpleAudio.SetChannelVolume(Enjin::Audio::AudioChannel::Music, audio.musicMute ? 0.0f : audio.musicVolume);
+            m_SimpleAudio.SetChannelVolume(Enjin::Audio::AudioChannel::SFX, audio.sfxMute ? 0.0f : audio.sfxVolume);
+            m_SimpleAudio.SetChannelVolume(Enjin::Audio::AudioChannel::Voice, audio.voiceMute ? 0.0f : audio.voiceVolume);
 
             if (!m_Renderer || !m_RenderSystem) return;
 
@@ -689,12 +690,10 @@ public:
     void Update(Enjin::f32 deltaTime) override {
         if (!m_Initialized) return;
 
-        // Apply deferred fullscreen change (unsafe mid-frame, safe here between frames)
+        // Fullscreen toggle is a creation-time window parameter — not supported at runtime.
+        // The preference is stored in m_PendingFullscreen for future save/load support.
         if (m_FullscreenChangeRequested) {
             m_FullscreenChangeRequested = false;
-            if (GetWindow() && GetWindow()->IsFullscreen() != m_PendingFullscreen) {
-                GetWindow()->SetFullscreen(m_PendingFullscreen);
-            }
         }
 
         // Splash screen phase — if timer is 0 (skipped), go straight to game

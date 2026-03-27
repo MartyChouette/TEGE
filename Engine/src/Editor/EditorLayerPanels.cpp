@@ -7461,6 +7461,18 @@ void EditorLayer::DrawDebugOverlay() {
 void EditorLayer::ToggleGameDebug() {
     m_GameDebugActive = !m_GameDebugActive;
 
+    // Close Engine Debug when opening Game Debug (only one debug group at a time)
+    if (m_GameDebugActive && m_EngineDebugActive) {
+        m_EngineDebugActive = false;
+        SetPanelVisibility(EditorPanel::Profiler, false);
+        SetPanelVisibility(EditorPanel::Rendering, false);
+        SetPanelVisibility(EditorPanel::PostProcessing, false);
+        SetPanelVisibility(EditorPanel::RetroEffects, false);
+        SetPanelVisibility(EditorPanel::SaveDebug, false);
+        m_ShowColliderWireframes = false;
+        m_DebugOverlayDetail = 0;
+    }
+
     // Toggle Console panel
     SetPanelVisibility(EditorPanel::Console, m_GameDebugActive);
 
@@ -7481,6 +7493,12 @@ void EditorLayer::ToggleGameDebug() {
 void EditorLayer::ToggleEngineDebug() {
     m_EngineDebugActive = !m_EngineDebugActive;
 
+    // Close Game Debug when opening Engine Debug (only one debug group at a time)
+    if (m_EngineDebugActive && m_GameDebugActive) {
+        m_GameDebugActive = false;
+        SetPanelVisibility(EditorPanel::Console, false);
+    }
+
     // Toggle engine/editor debug panels
     SetPanelVisibility(EditorPanel::Profiler, m_EngineDebugActive);
     SetPanelVisibility(EditorPanel::Rendering, m_EngineDebugActive);
@@ -7492,10 +7510,7 @@ void EditorLayer::ToggleEngineDebug() {
     m_DebugOverlayDetail = m_EngineDebugActive ? 1 : 0;
 
     // Also ensure the overlay HUD itself is visible when engine debug is on
-    if (m_EngineDebugActive) {
-        m_ShowDebugOverlay = true;
-        m_GameDebugActive = true;  // Keep game debug state in sync
-    }
+    m_ShowDebugOverlay = m_EngineDebugActive;
 
     // Toggle collider wireframe visualization
     m_ShowColliderWireframes = m_EngineDebugActive;
