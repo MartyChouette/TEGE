@@ -358,7 +358,7 @@ float calcShadowCSM(float viewDepth, vec3 worldPos, vec3 normal, vec3 lightDir) 
     // Blend with next cascade near boundaries to eliminate seam lines
     if (cascadeIdx < 3) {
         float splitDist = lighting.cascadeSplits[cascadeIdx];
-        float blendRange = splitDist * 0.1;  // 10% blend zone
+        float blendRange = splitDist * 0.25;  // 25% blend zone (wider = less flicker at cascade boundaries)
         if (viewDepth > splitDist - blendRange) {
             float nextShadow = sampleShadowCascade(cascadeIdx + 1, worldPos, texelSize);
             float blend = smoothstep(splitDist - blendRange, splitDist, viewDepth);
@@ -367,7 +367,7 @@ float calcShadowCSM(float viewDepth, vec3 worldPos, vec3 normal, vec3 lightDir) 
     }
 
     // Distance fade: smoothly fade shadows near max distance
-    float fadeStart = lighting.shadowMaxDistance * 0.8;
+    float fadeStart = lighting.shadowMaxDistance * 0.7;
     float fadeFactor = 1.0 - smoothstep(fadeStart, lighting.shadowMaxDistance, viewDepth);
     shadow = mix(1.0, shadow, fadeFactor);
 
@@ -545,7 +545,7 @@ vec3 calcBlinnPhong(vec3 lightDir, vec3 lightColor, float lightIntensity, vec3 n
     float NdotL = max(rawNdotL * (1.0 - wrapAmount) + wrapAmount, 0.0);
     vec3 halfwayDir = normalize(lightDir + viewDir);
     float NdotH = max(dot(normal, halfwayDir), 0.0);
-    float NdotV = max(dot(normal, viewDir), 0.001);
+    float NdotV = max(dot(normal, viewDir), 0.01);
 
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
     uint flags = lighting.shadingFlags;
@@ -567,7 +567,7 @@ vec3 calcBlinnPhong(vec3 lightDir, vec3 lightColor, float lightIntensity, vec3 n
         }
 
         // Cook-Torrance denominator
-        spec /= max(4.0 * NdotV * NdotL, 0.001);
+        spec /= max(4.0 * NdotV * NdotL, 0.01);
     } else {
         spec = pow(NdotH, shininess);
     }
@@ -590,7 +590,7 @@ vec3 calcBlinnPhong(vec3 lightDir, vec3 lightColor, float lightIntensity, vec3 n
 // Respects shading flags (GGX, Fresnel, energy conservation, geometry term)
 vec3 calcBlinnPhongCel(vec3 lightDir, vec3 lightColor, float lightIntensity, vec3 normal, vec3 viewDir, vec3 albedo, float metallic, float shininess) {
     float NdotL = max(dot(normal, lightDir), 0.0);
-    float NdotV = max(dot(normal, viewDir), 0.001);
+    float NdotV = max(dot(normal, viewDir), 0.01);
     vec3 halfwayDir = normalize(lightDir + viewDir);
     float NdotH = max(dot(normal, halfwayDir), 0.0);
 
@@ -632,7 +632,7 @@ vec3 calcBlinnPhongCel(vec3 lightDir, vec3 lightColor, float lightIntensity, vec
         if ((flags & SHADING_GEOMETRY_TERM) != 0u) {
             spec *= geometrySmith(NdotV, NdotL, roughness);
         }
-        spec /= max(4.0 * NdotV * NdotL, 0.001);
+        spec /= max(4.0 * NdotV * NdotL, 0.01);
     } else {
         spec = pow(NdotH, shininess);
     }
