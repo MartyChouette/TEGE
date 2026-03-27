@@ -7327,12 +7327,13 @@ void EditorLayer::DrawDebugWorkstation() {
 // Debug HUD Overlay (F1) — transparent always-on-top performance strip
 // ---------------------------------------------------------------------------
 void EditorLayer::DrawDebugOverlay() {
-    // Position at the top of the main viewport, full width
+    // Position at bottom-left of the main viewport
     ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImVec2 overlayPos(vp->WorkPos.x, vp->WorkPos.y);
     ImVec2 overlaySize(vp->WorkSize.x, 0); // auto height
 
-    ImGui::SetNextWindowPos(overlayPos);
+    // Anchor to bottom-left using pivot (0,1) so it grows upward
+    ImVec2 overlayPos(vp->WorkPos.x, vp->WorkPos.y + vp->WorkSize.y);
+    ImGui::SetNextWindowPos(overlayPos, ImGuiCond_Always, ImVec2(0.0f, 1.0f));
     ImGui::SetNextWindowSize(ImVec2(overlaySize.x, 0));
     ImGui::SetNextWindowBgAlpha(0.82f); // Strong opaque background for readability
 
