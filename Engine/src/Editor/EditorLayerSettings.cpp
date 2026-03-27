@@ -775,6 +775,33 @@ void EditorLayer::DrawSettingsSection_BugReporting() {
             ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "URL does not look like a Discord webhook");
         }
 
+        ImGui::Spacing();
+
+        // Feedback webhook URL (separate channel for quit surveys)
+        char feedbackBuf[512];
+        strncpy(feedbackBuf, m_EditorSettings.discordFeedbackWebhookUrl.c_str(), sizeof(feedbackBuf) - 1);
+        feedbackBuf[sizeof(feedbackBuf) - 1] = '\0';
+        ImGui::Text("Feedback Webhook URL:");
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::InputText("##FeedbackWebhookUrl", feedbackBuf, sizeof(feedbackBuf))) {
+            m_EditorSettings.discordFeedbackWebhookUrl = feedbackBuf;
+            changed = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(
+                "Discord webhook URL for quit feedback surveys.\n"
+                "Use a separate channel from bug reports.\n"
+                "Leave empty to use the bug report webhook, or skip feedback.");
+        }
+        if (!m_EditorSettings.discordFeedbackWebhookUrl.empty()) {
+            if (m_EditorSettings.discordFeedbackWebhookUrl.find("https://discord.com/api/webhooks/") == 0 ||
+                m_EditorSettings.discordFeedbackWebhookUrl.find("https://discordapp.com/api/webhooks/") == 0) {
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "Feedback webhook configured");
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "URL does not look like a Discord webhook");
+            }
+        }
+
         if (changed) {
             m_EditorSettings.Save();
         }
