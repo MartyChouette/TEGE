@@ -785,20 +785,23 @@ void EditorLayer::DrawMenuBar() {
             }
             ImGui::Separator();
             if (ImGui::BeginMenu("Light")) {
-                if (ImGui::MenuItem("Directional Light")) {
+                if (ImGui::MenuItem("Directional Light (Sun)")) {
                     if (m_World) {
                         ECS::Entity entity = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Sun");
                         auto& transform = m_World->AddComponent<ECS::TransformComponent>(entity);
                         transform.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-45.0f));
                         auto& light = m_World->AddComponent<ECS::LightComponent>(entity);
                         light.type = ECS::LightType::Directional;
                         light.intensity = 1.0f;
+                        light.castShadows = true;
                         SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Point Light")) {
                     if (m_World) {
                         ECS::Entity entity = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Point Light");
                         auto& transform = m_World->AddComponent<ECS::TransformComponent>(entity);
                         transform.position = Math::Vector3(0, 2, 0);
                         auto& light = m_World->AddComponent<ECS::LightComponent>(entity);
@@ -809,6 +812,7 @@ void EditorLayer::DrawMenuBar() {
                 if (ImGui::MenuItem("Spot Light")) {
                     if (m_World) {
                         ECS::Entity entity = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Spot Light");
                         auto& transform = m_World->AddComponent<ECS::TransformComponent>(entity);
                         transform.position = Math::Vector3(0, 3, 0);
                         auto& light = m_World->AddComponent<ECS::LightComponent>(entity);
