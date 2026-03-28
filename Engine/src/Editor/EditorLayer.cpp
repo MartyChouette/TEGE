@@ -1459,7 +1459,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             prevUnlit = m_RenderSystem->GetEditorUnlit();
 
             bool wantShadows = (m_SceneViewMode == SceneViewMode::LitShadows || m_SceneViewMode == SceneViewMode::Full);
-            m_RenderSystem->SetEditorWireframe(m_SceneViewMode == SceneViewMode::Wireframe);
+            m_RenderSystem->SetWireframeEnabled(m_SceneViewMode == SceneViewMode::Wireframe);
             m_RenderSystem->SetEditorUnlit(m_SceneViewMode == SceneViewMode::Solid);
             m_RenderSystem->SetShadowsEnabled(wantShadows);
         }

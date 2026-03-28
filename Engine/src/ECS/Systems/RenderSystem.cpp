@@ -4491,6 +4491,20 @@ void RenderSystem::UpdateFrameUniforms() {
         return;
     }
 
+    // Editor "Solid" view mode: render with flat ambient only, no lights
+    if (m_EditorUnlit) {
+        lighting.ambientColor = Math::Vector3(0.8f, 0.8f, 0.8f);
+        lighting.ambientIntensity = 1.0f;
+        lighting.directionalLightCount = 0;
+        lighting.pointLightCount = 0;
+        lighting.spotLightCount = 0;
+        lighting.shadowEnabled = 0;
+        lighting.fogParams = Math::Vector4(0, 0, 0, 0); // No fog in solid view
+        (*m_ActiveLightingBuffers)[GetActiveBufferIndex(currentFrame)]->UploadData(&lighting, sizeof(lighting));
+        m_CachedLightingData = lighting;
+        return;
+    }
+
     bool hasAnyLight = false;
 
     auto* lightStorageFU = m_World->GetComponentStorage<LightComponent>();

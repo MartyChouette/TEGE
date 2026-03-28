@@ -87,7 +87,21 @@ void Application::InitializeEngine() {
     windowDesc.width = 1600;
     windowDesc.height = 900;
     windowDesc.title = "TEGE v" ENJIN_VERSION_STRING;
-    windowDesc.iconPath = "icon.png";
+    // Try multiple icon paths — the .exe icon (from .rc) handles taskbar,
+    // but GLFW window icon needs a PNG at runtime
+    static const char* iconPaths[] = {
+        "icon.png",
+        "enjin_icon.png",
+        "../installer/TEGE_ICON_64.png",
+        "../../installer/TEGE_ICON_64.png",
+        "../../../installer/TEGE_ICON_64.png",
+        nullptr
+    };
+    windowDesc.iconPath = nullptr;
+    for (int i = 0; iconPaths[i]; ++i) {
+        FILE* f = fopen(iconPaths[i], "rb");
+        if (f) { fclose(f); windowDesc.iconPath = iconPaths[i]; break; }
+    }
     windowDesc.fullscreen = false;
     // Parentheses prevent potential macro substitution as well.
     m_Window = (CreateWindow)(windowDesc);
