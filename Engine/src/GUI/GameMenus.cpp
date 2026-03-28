@@ -79,7 +79,7 @@ void GameMenuSystem::Render(f32 screenW, f32 screenH) {
 
 void GameMenuSystem::RenderMainMenu(f32 w, f32 h) {
     // Semi-transparent dim overlay so the game scene shows through
-    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    ImDrawList* draw = ImGui::GetBackgroundDrawList();
     draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), IM_COL32(12, 12, 18, 140));
 
     const f32 buttonW = 280.0f;
@@ -130,6 +130,10 @@ void GameMenuSystem::RenderMainMenu(f32 w, f32 h) {
 // ---------------------------------------------------------------------------
 
 void GameMenuSystem::RenderPauseMenu(f32 w, f32 h) {
+    // Dim overlay behind pause menu (background draw list = behind HUD)
+    ImDrawList* draw = ImGui::GetBackgroundDrawList();
+    draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), IM_COL32(10, 10, 14, 120));
+
     const f32 buttonW = 260.0f;
     const f32 panelH = 260.0f;
 
@@ -171,7 +175,7 @@ void GameMenuSystem::RenderPauseMenu(f32 w, f32 h) {
 // ---------------------------------------------------------------------------
 
 void GameMenuSystem::RenderOptions(f32 w, f32 h) {
-    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    ImDrawList* draw = ImGui::GetBackgroundDrawList();
     draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), IM_COL32(10, 10, 14, 140));
 
     const f32 panelW = 560.0f;
@@ -501,7 +505,7 @@ void GameMenuSystem::RenderControls(f32 w, f32 h) {
 // ---------------------------------------------------------------------------
 
 void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
-    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    ImDrawList* draw = ImGui::GetBackgroundDrawList();
     draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), IM_COL32(10, 10, 14, 140));
 
     const f32 panelW = 520.0f;
@@ -616,7 +620,7 @@ void GameMenuSystem::ShowGameOver(bool won, const std::string& message,
 
 void GameMenuSystem::RenderGameOver(f32 w, f32 h) {
     // Full-screen dark overlay (heavier than pause for finality)
-    ImDrawList* draw = ImGui::GetForegroundDrawList();
+    ImDrawList* draw = ImGui::GetBackgroundDrawList();
     ImU32 overlayColor = m_GameOverWon ? IM_COL32(5, 15, 5, 220)
                                        : IM_COL32(18, 5, 5, 220);
     draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), overlayColor);
