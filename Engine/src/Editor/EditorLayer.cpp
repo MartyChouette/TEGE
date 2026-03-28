@@ -501,6 +501,7 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
 
 void EditorLayer::SetRenderSystem(ECS::RenderSystem* renderSystem) {
     m_RenderSystem = renderSystem;
+    m_ParallaxSystem.SetRenderSystem(renderSystem);
 
     // Wire fluid simulation into render system
     if (m_RenderSystem) {
