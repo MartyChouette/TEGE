@@ -1745,6 +1745,49 @@ Records bone transforms over time to create new animations from gameplay or manu
 
 **Bone Visualization and Selection:** When `showBones` is enabled on the AnimatorComponent, the viewport draws wireframe lines connecting each bone. Clicking a bone line in the viewport selects that bone (sets `selectedBoneIndex`), and the Inspector shows per-bone details. Bone weight visualization (`showWeights`) renders a heat map overlay showing each vertex's weight for the selected bone.
 
+#### RecordRewindComponent (Braid-style)
+
+Per-entity time rewind. Attach to the player to let them rewind their own position, velocity, and health while the world keeps moving forward.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `maxDuration` | f32 | 5.0 | Seconds of rewind buffer. |
+| `recordInterval` | f32 | 1/20 | Seconds between snapshots. |
+| `rewindSpeed` | f32 | 2.0 | Playback speed during rewind. |
+| `cooldown` | f32 | 3.0 | Seconds before rewind can be used again. |
+| `rewindKey` | i32 | 82 (R) | KeyCode to hold for rewind. |
+| `rewindTint` | Vector3 | (0.4, 0.6, 1.0) | Blue screen tint during rewind. |
+
+Hold the rewind key to scrub backward. Release to resume. Revives dead players on rewind.
+
+#### SceneRewindComponent (Sands of Time-style)
+
+Whole-scene time rewind. Attach to a game manager entity to rewind ALL entities simultaneously.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `maxDuration` | f32 | 10.0 | Seconds of rewind buffer. |
+| `rewindSpeed` | f32 | 1.5 | Playback speed during rewind. |
+| `cooldown` | f32 | 5.0 | Seconds before rewind can be used again. |
+| `charges` | i32 | 0 | Max uses per level (0 = unlimited). |
+| `rewindKey` | i32 | 84 (T) | KeyCode to hold for rewind. |
+| `rewindTint` | Vector3 | (0.8, 0.6, 0.2) | Gold screen tint during rewind. |
+
+Records every entity's transform, velocity, and health. Scene rewind takes priority over entity rewind.
+
+#### FaceCardComponent
+
+Sprite/portrait swap per expression for dialogue and visual novel games. Maps expression names to texture paths.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `expressions` | map<string, string> | (empty) | Expression name → texture path. |
+| `currentExpression` | string | "" | Active expression key. |
+| `transitionDuration` | f32 | 0.0 | Crossfade time in seconds (0 = instant). |
+| `flipX` | bool | false | Mirror the portrait horizontally. |
+
+Set `currentExpression` from scripts or dialogue nodes to swap the character's portrait.
+
 ### 5.24 Rendering Control
 
 #### MeshRendererComponent
@@ -2307,6 +2350,17 @@ When you press Build, the pipeline executes these phases:
 6. **Verify Build** -- Reads back the `.enjpak` archive and verifies all CRC32 checksums for data integrity.
 
 A progress callback displays the current phase and completion percentage in the editor.
+
+### Built Game Features
+
+The standalone Player executable includes:
+
+- **Title Screen** → New Game / Continue / Options / How to Play / Quit
+- **Pause Menu** (ESC) → Resume / Restart / Options / How to Play / Quit to Menu
+- **Options Menu** → Fullscreen, VSync, FOV (40-120), Shadows, Shadow Quality, Bloom, FXAA, Audio volumes
+- **Tilde Console** (~) → Quake-style drop-up console with commands: `god`, `kill`, `heal`, `speed`, `tp`, `restart`, `fps`, `stats`, `quit`
+- **Mouse capture** → Auto-captures on gameplay start, releases on pause/menu
+- **Restart** → Full physics reset + scene reload from pack
 
 ### .enjpak Archive Format
 
