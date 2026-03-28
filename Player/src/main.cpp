@@ -242,6 +242,10 @@ public:
                 m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::Options);
             } else if (action == "how_to_play") {
                 m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::HowToPlay);
+            } else if (action == "restart") {
+                m_GameMenu.HideAll();
+                Enjin::Input::SetMouseCaptured(true);
+                if (!m_StartScene.empty()) LoadSceneFromPack(m_StartScene);
             } else if (action == "quit_to_menu") {
                 m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
                 m_GameStarted = false;

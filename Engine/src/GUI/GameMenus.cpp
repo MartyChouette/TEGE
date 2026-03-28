@@ -163,6 +163,7 @@ void GameMenuSystem::RenderPauseMenu(f32 w, f32 h) {
     };
 
     CenterButton("Resume",        "resume");
+    CenterButton("Restart",       "restart");
     CenterButton("Options",       "options");
     CenterButton("How to Play",   "how_to_play");
     CenterButton("Quit to Menu",  "quit_to_menu");

@@ -281,6 +281,11 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
             m_GameMenu.ShowScreen(GUI::MenuScreen::Options);
         } else if (action == "how_to_play") {
             m_GameMenu.ShowScreen(GUI::MenuScreen::HowToPlay);
+        } else if (action == "restart") {
+            // Restart: stop play mode and immediately start again (reloads scene)
+            m_GameMenu.HideAll();
+            m_PendingPlayStop = true;
+            m_PendingPlayRestart = true;
         } else if (action == "quit_to_menu") {
             m_GameMenu.HideAll();
             m_PendingPlayStop = true;
@@ -296,6 +301,41 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
             m_GameMenu.HideAll();
             m_PendingPlayStop = true;
         }
+    });
+
+    // Apply graphics/audio settings when user exits Options menu in play mode
+    m_GameMenu.SetSettingsCallback([this](const GUI::GraphicsSettings& gfx,
+                                          const GUI::AudioSettings& audio) {
+        // Audio (via PlayMode's SimpleAudio instance)
+        auto* sa = m_PlayMode.GetSimpleAudio();
+        if (sa) {
+            sa->SetMasterVolume(audio.masterMute ? 0.0f : audio.masterVolume);
+            sa->SetChannelVolume(Audio::AudioChannel::Music, audio.musicMute ? 0.0f : audio.musicVolume);
+            sa->SetChannelVolume(Audio::AudioChannel::SFX, audio.sfxMute ? 0.0f : audio.sfxVolume);
+            sa->SetChannelVolume(Audio::AudioChannel::Voice, audio.voiceMute ? 0.0f : audio.voiceVolume);
+        }
+
+        if (!m_RenderSystem) return;
+
+        // VSync (deferred)
+        if (m_Renderer) m_Renderer->RequestVSyncChange(gfx.vsync);
+
+        // Shadows
+        m_RenderSystem->SetShadowsEnabled(gfx.shadows);
+        if (gfx.shadows) {
+            static const u32 shadowRes[] = { 512, 1024, 2048, 4096 };
+            u32 idx = gfx.shadowQuality < 4 ? gfx.shadowQuality : 2;
+            m_RenderSystem->SetShadowResolution(shadowRes[idx]);
+        }
+
+        // Post-processing
+        if (m_PostProcessing) {
+            m_PostProcessing->GetSettings().bloomEnabled = gfx.bloom;
+            m_PostProcessing->GetSettings().fxaaEnabled = gfx.fxaa;
+        }
+
+        ENJIN_LOG_INFO(Editor, "Play mode settings applied: vsync=%d shadows=%d bloom=%d fxaa=%d",
+            (int)gfx.vsync, (int)gfx.shadows, (int)gfx.bloom, (int)gfx.fxaa);
     });
 
     // Register file drop callback for drag-and-drop import
