@@ -53,10 +53,12 @@ void CameraController::Update(f32 deltaTime) {
 }
 
 void CameraController::UpdateFlyMode(f32 deltaTime) {
-    // Hold right mouse button to look around
-    bool rightMouseDown = Input::IsMouseButtonDown(MouseButton::Right);
+    // Right mouse button OR middle mouse button to look around.
+    // Mouse is captured while held — cursor hidden, free look active.
+    bool wantLook = Input::IsMouseButtonDown(MouseButton::Right) ||
+                    Input::IsMouseButtonDown(MouseButton::Middle);
 
-    if (rightMouseDown) {
+    if (wantLook) {
         if (!m_MouseCapturedByUs) {
             Input::SetMouseCaptured(true);
             m_MouseCapturedByUs = true;

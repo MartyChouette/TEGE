@@ -2252,6 +2252,8 @@ void EditorLayer::DrawCrashReportDialog() {
 }
 
 void EditorLayer::DrawUnsavedChangesDialog() {
+    if (!m_ShowUnsavedChangesDialog) return;
+
     ImGui::OpenPopup("Unsaved Changes");
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
