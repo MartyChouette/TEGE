@@ -32,6 +32,7 @@ struct GraphicsSettings {
     bool vsync = true;
     u32 qualityPreset = 2;
     f32 renderScale = 1.0f;
+    f32 fieldOfView = 60.0f;
     bool bloom = true;
     bool fxaa = true;
     bool shadows = true;

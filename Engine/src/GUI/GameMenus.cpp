@@ -262,6 +262,9 @@ void GameMenuSystem::RenderGraphics(f32 w, f32 h) {
     ImGui::Checkbox("Fullscreen", &m_Graphics.fullscreen);
     ImGui::Checkbox("VSync", &m_Graphics.vsync);
 
+    // Field of View
+    ImGui::SliderFloat("Field of View", &m_Graphics.fieldOfView, 40.0f, 120.0f, "%.0f");
+
     // Quality preset
     static const char* qualityLabels[] = { "Low", "Medium", "High", "Ultra" };
     i32 quality = static_cast<i32>(m_Graphics.qualityPreset);

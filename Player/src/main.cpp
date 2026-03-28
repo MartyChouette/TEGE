@@ -329,8 +329,11 @@ public:
                 m_PostProcessing->GetSettings().fxaaEnabled = gfx.fxaa;
             }
 
-            ENJIN_LOG_INFO(Player, "Settings applied: vsync=%d fullscreen=%d shadows=%d bloom=%d fxaa=%d",
-                (int)gfx.vsync, (int)gfx.fullscreen, (int)gfx.shadows, (int)gfx.bloom, (int)gfx.fxaa);
+            // --- FOV (applied to the active camera next frame) ---
+            m_PendingFOV = gfx.fieldOfView;
+
+            ENJIN_LOG_INFO(Player, "Settings applied: vsync=%d fullscreen=%d fov=%.0f shadows=%d bloom=%d fxaa=%d",
+                (int)gfx.vsync, (int)gfx.fullscreen, gfx.fieldOfView, (int)gfx.shadows, (int)gfx.bloom, (int)gfx.fxaa);
         });
 
         // Initialize audio system
@@ -725,9 +728,10 @@ public:
     void Update(Enjin::f32 deltaTime) override {
         if (!m_Initialized) return;
 
-        // Fullscreen toggle is a creation-time window parameter — not supported at runtime.
+        // Apply deferred fullscreen change (safe between frames)
         if (m_FullscreenChangeRequested) {
             m_FullscreenChangeRequested = false;
+            if (GetWindow()) GetWindow()->SetFullscreen(m_PendingFullscreen);
         }
 
         // Tilde console toggle (Quake-style)
@@ -1035,6 +1039,8 @@ public:
                         nearP = cc->nearPlane;
                         farP = cc->farPlane;
                     }
+                    // Override FOV from settings if user changed it
+                    if (m_PendingFOV > 0.0f) fov = m_PendingFOV;
                     // Sync camera position/rotation from the entity's TransformComponent
                     auto* camTransform = m_World->GetComponent<Enjin::ECS::TransformComponent>(activeCam);
                     if (camTransform) {
@@ -1955,6 +1961,7 @@ private:
     bool m_GameStarted = false;
     bool m_FullscreenChangeRequested = false;
     bool m_PendingFullscreen = false;
+    Enjin::f32 m_PendingFOV = 0.0f;  // 0 = use camera component's FOV
     std::vector<Enjin::ECS::Entity> m_DeferredDestroys;
 
     // Tilde console

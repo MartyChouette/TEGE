@@ -334,8 +334,23 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
             m_PostProcessing->GetSettings().fxaaEnabled = gfx.fxaa;
         }
 
-        ENJIN_LOG_INFO(Editor, "Play mode settings applied: vsync=%d shadows=%d bloom=%d fxaa=%d",
-            (int)gfx.vsync, (int)gfx.shadows, (int)gfx.bloom, (int)gfx.fxaa);
+        // FOV — update the active game camera component
+        if (m_World && gfx.fieldOfView >= 40.0f && gfx.fieldOfView <= 120.0f) {
+            auto cam = ECS::CameraManager::GetActiveCamera(m_World);
+            if (cam != ECS::INVALID_ENTITY) {
+                auto* cc = m_World->GetComponent<ECS::CameraComponent>(cam);
+                if (cc) cc->fieldOfView = gfx.fieldOfView;
+            }
+        }
+
+        // Fullscreen
+        if (m_Window) {
+            bool isFS = m_Window->IsFullscreen();
+            if (gfx.fullscreen != isFS) m_Window->SetFullscreen(gfx.fullscreen);
+        }
+
+        ENJIN_LOG_INFO(Editor, "Play mode settings applied: vsync=%d fullscreen=%d fov=%.0f shadows=%d bloom=%d fxaa=%d",
+            (int)gfx.vsync, (int)gfx.fullscreen, gfx.fieldOfView, (int)gfx.shadows, (int)gfx.bloom, (int)gfx.fxaa);
     });
 
     // Register file drop callback for drag-and-drop import

@@ -53,6 +53,10 @@ public:
     // Set window icon at runtime (PNG path)
     virtual void SetIcon(const char* iconPath) = 0;
 
+    // Fullscreen toggle at runtime
+    virtual void SetFullscreen(bool fullscreen) = 0;
+    virtual bool IsFullscreen() const = 0;
+
     // Block until an event occurs (for use when minimized to avoid busy-spin)
     virtual void WaitEvents() = 0;
 };

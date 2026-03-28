@@ -159,6 +159,33 @@ public:
         }
     }
 
+    void SetFullscreen(bool fullscreen) override {
+        if (!m_Window) return;
+        bool isFS = (glfwGetWindowMonitor(m_Window) != nullptr);
+        if (fullscreen == isFS) return;
+
+        if (fullscreen) {
+            // Save windowed position/size for restoring later
+            glfwGetWindowPos(m_Window, &m_WindowedX, &m_WindowedY);
+            glfwGetWindowSize(m_Window, &m_WindowedW, &m_WindowedH);
+
+            GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+            const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+            glfwSetWindowMonitor(m_Window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+            ENJIN_LOG_INFO(Core, "Switched to fullscreen: %dx%d @ %dHz", mode->width, mode->height, mode->refreshRate);
+        } else {
+            // Restore windowed position/size
+            int w = m_WindowedW > 0 ? m_WindowedW : static_cast<int>(m_Desc.width);
+            int h = m_WindowedH > 0 ? m_WindowedH : static_cast<int>(m_Desc.height);
+            glfwSetWindowMonitor(m_Window, nullptr, m_WindowedX, m_WindowedY, w, h, 0);
+            ENJIN_LOG_INFO(Core, "Switched to windowed: %dx%d", w, h);
+        }
+    }
+
+    bool IsFullscreen() const override {
+        return m_Window && (glfwGetWindowMonitor(m_Window) != nullptr);
+    }
+
     void SetIcon(const char* iconPath) override {
         if (!m_Window || !iconPath) return;
         int w = 0, h = 0, ch = 0;
@@ -220,6 +247,7 @@ private:
 
     GLFWwindow* m_Window = nullptr;
     WindowDesc m_Desc;
+    int m_WindowedX = 100, m_WindowedY = 100, m_WindowedW = 0, m_WindowedH = 0;
     EventCallback m_EventCallback;
     ResizeCallback m_ResizeCallback;
     FocusCallback m_FocusCallback;
