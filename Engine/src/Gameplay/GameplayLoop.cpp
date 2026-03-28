@@ -172,15 +172,21 @@ void CheckHazardOverlaps(ECS::World* world, f32 deltaTime,
     if (!world) return;
 
     // Find all player entities (entities with a controller + health)
-    for (auto player : world->GetEntitiesWithComponent<ECS::Platformer2DController>()) {
+    // Check both Platformer2D and TopDown2D controllers against hazards
+    auto processHazardsForPlayer = [&](ECS::Entity player) {
         auto* playerT = world->GetComponent<ECS::TransformComponent>(player);
         auto* playerHp = world->GetComponent<ECS::HealthComponent>(player);
-        if (!playerT || !playerHp || playerHp->isDead) continue;
-        if (playerHp->isInvulnerable || playerHp->invulnerabilityTimer > 0.0f) continue;
+        if (!playerT || !playerHp || playerHp->isDead) return;
+        if (playerHp->isInvulnerable || playerHp->invulnerabilityTimer > 0.0f) return;
 
         auto* playerCtrl = world->GetComponent<ECS::Platformer2DController>(player);
         f32 pr = playerCtrl ? playerCtrl->collisionRadius : 0.4f;
         f32 ph = playerCtrl ? playerCtrl->collisionHeight * 0.5f : 0.8f;
+        // TopDown2D uses Body2DComponent extents
+        if (!playerCtrl) {
+            auto* body = world->GetComponent<Physics::Body2DComponent>(player);
+            if (body) { pr = body->box.halfExtents.x; ph = body->box.halfExtents.y; }
+        }
 
         // Check against all entities with DamageComponent but no HealthComponent (hazards)
         for (auto hazard : world->GetEntitiesWithComponent<ECS::DamageComponent>()) {
@@ -249,7 +255,9 @@ void CheckHazardOverlaps(ECS::World* world, f32 deltaTime,
                 }
             }
         }
-    }
+    };
+    for (auto e : world->GetEntitiesWithComponent<ECS::Platformer2DController>()) processHazardsForPlayer(e);
+    for (auto e : world->GetEntitiesWithComponent<ECS::TopDown2DController>()) processHazardsForPlayer(e);
 }
 
 // 2D enemy contact damage — Box2D kinematic-kinematic sensor events unreliable.
@@ -260,14 +268,19 @@ void CheckEnemyOverlaps2D(ECS::World* world, f32 deltaTime,
     (void)deltaTime;
     if (!world) return;
 
-    for (auto player : world->GetEntitiesWithComponent<ECS::Platformer2DController>()) {
+    // Check both Platformer2D and TopDown2D controllers against enemies
+    auto processEnemiesForPlayer = [&](ECS::Entity player) {
         auto* playerT = world->GetComponent<ECS::TransformComponent>(player);
         auto* playerHp = world->GetComponent<ECS::HealthComponent>(player);
         auto* playerCtrl = world->GetComponent<ECS::Platformer2DController>(player);
-        if (!playerT || !playerHp || playerHp->isDead) continue;
+        if (!playerT || !playerHp || playerHp->isDead) return;
 
         f32 pr = playerCtrl ? playerCtrl->collisionRadius : 0.4f;
         f32 ph = playerCtrl ? playerCtrl->collisionHeight * 0.5f : 0.8f;
+        if (!playerCtrl) {
+            auto* body = world->GetComponent<Physics::Body2DComponent>(player);
+            if (body) { pr = body->box.halfExtents.x; ph = body->box.halfExtents.y; }
+        }
 
         for (auto enemy : world->GetEntitiesWithComponent<ECS::DamageComponent>()) {
             if (enemy == player) continue;
@@ -338,7 +351,9 @@ void CheckEnemyOverlaps2D(ECS::World* world, f32 deltaTime,
                 (unsigned long long)enemy, enemyDmg->damage,
                 (unsigned long long)player, playerHp->currentHealth, playerHp->maxHealth);
         }
-    }
+    };
+    for (auto e : world->GetEntitiesWithComponent<ECS::Platformer2DController>()) processEnemiesForPlayer(e);
+    for (auto e : world->GetEntitiesWithComponent<ECS::TopDown2DController>()) processEnemiesForPlayer(e);
 }
 
 // 3D pickup AABB overlap — CharacterVirtual doesn't fire collision events
