@@ -325,6 +325,10 @@ void PlayMode::Play() {
     }
 
     m_State = PlayState::Playing;
+
+    // Start recording snapshots for rewind
+    StartRecording();
+
     ENJIN_LOG_INFO(Editor, "Entered Play Mode");
 }
 
@@ -500,6 +504,12 @@ void PlayMode::Stop() {
     // Release mouse
     Input::SetMouseCaptured(false);
 
+    // Stop recording and free rewind snapshots
+    StopRecording();
+    ExitRewind();
+    m_Snapshots.clear();
+    m_Snapshots.shrink_to_fit();  // Release memory
+
     // Restore the scene to its pre-play state
     RestoreEditorState();
 
@@ -517,6 +527,9 @@ void PlayMode::Update(f32 deltaTime) {
 
     // Update controller system when playing
     if (m_State == PlayState::Playing) {
+        // Skip all gameplay updates while scrubbing the rewind timeline
+        if (m_Rewinding) return;
+
         auto frameStart = std::chrono::high_resolution_clock::now();
 
         // Update input action map (polls input state for remappable actions)
@@ -609,6 +622,25 @@ void PlayMode::Update(f32 deltaTime) {
             }
         }
         m_EntityEventBus.ProcessDeferred();
+
+        // Record state snapshot at regular intervals
+        if (m_Recording) {
+            m_RecordTimer += deltaTime;
+            m_MaxRecordTime += deltaTime;
+            if (m_RecordTimer >= m_RecordInterval) {
+                m_RecordTimer -= m_RecordInterval;
+                Scene::SceneSerializer serializer(m_World);
+                StateSnapshot snap;
+                snap.timestamp = m_MaxRecordTime;
+                snap.sceneJson = serializer.SaveToString();
+                m_Snapshots.push_back(std::move(snap));
+
+                // Cap at ~600 snapshots (40 seconds at 15fps) to avoid unbounded memory
+                if (m_Snapshots.size() > 600) {
+                    m_Snapshots.erase(m_Snapshots.begin());
+                }
+            }
+        }
 
         // Fluid simulation + terrain coupling + curl noise
         if (m_FluidSimulation) m_FluidSimulation->Update(deltaTime, m_World);
@@ -757,6 +789,45 @@ void PlayMode::RestoreEditorState() {
     if (m_CameraController) {
         m_CameraController->SyncFromCamera();
     }
+}
+
+// --- Record & Rewind ---
+
+void PlayMode::StartRecording() {
+    m_Recording = true;
+    m_Snapshots.clear();
+    m_RecordTimer = 0.0f;
+    m_MaxRecordTime = 0.0f;
+    ENJIN_LOG_INFO(Editor, "PlayMode: Recording started (%.0f snapshots/sec)", 1.0f / m_RecordInterval);
+}
+
+void PlayMode::StopRecording() {
+    m_Recording = false;
+    ENJIN_LOG_INFO(Editor, "PlayMode: Recording stopped (%zu snapshots, %.1f sec)",
+        m_Snapshots.size(), m_MaxRecordTime);
+}
+
+void PlayMode::EnterRewind() {
+    if (m_Snapshots.empty()) return;
+    m_Rewinding = true;
+    m_RewindFrame = static_cast<i32>(m_Snapshots.size()) - 1;
+    Pause();  // Pause gameplay while rewinding
+    ENJIN_LOG_INFO(Editor, "PlayMode: Entered rewind mode (%zu frames)", m_Snapshots.size());
+}
+
+void PlayMode::ExitRewind() {
+    m_Rewinding = false;
+    m_RewindFrame = -1;
+    ENJIN_LOG_INFO(Editor, "PlayMode: Exited rewind mode");
+}
+
+void PlayMode::SeekToFrame(i32 frameIndex) {
+    if (frameIndex < 0 || frameIndex >= static_cast<i32>(m_Snapshots.size())) return;
+    m_RewindFrame = frameIndex;
+
+    // Load the snapshot into the world
+    Scene::SceneSerializer serializer(m_World);
+    serializer.LoadFromString(m_Snapshots[frameIndex].sceneJson, true);
 }
 
 // Gameplay processing methods (ProcessContactDamage, ProcessPickup,

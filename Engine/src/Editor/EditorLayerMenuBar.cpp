@@ -1164,13 +1164,60 @@ void EditorLayer::DrawMenuBar() {
             ImGui::PopStyleColor();
         }
 
+        // Record & Rewind controls
+        if (!m_PlayMode.IsStopped()) {
+            // Recording indicator
+            if (m_PlayMode.IsRecording() && !m_PlayMode.IsRewinding()) {
+                ImGui::SameLine(0.0f, 8.0f);
+                ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "REC");
+            }
+
+            // Rewind / Exit Rewind button
+            if (m_PlayMode.GetSnapshotCount() > 0) {
+                ImGui::SameLine(0.0f, 4.0f);
+                if (m_PlayMode.IsRewinding()) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.3f, 0.6f, 1.0f));
+                    if (ImGui::Button("Exit Rewind")) {
+                        m_PlayMode.ExitRewind();
+                        m_PlayMode.Resume();
+                    }
+                    ImGui::PopStyleColor();
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.5f, 1.0f));
+                    if (ImGui::Button("Rewind")) {
+                        m_PlayMode.EnterRewind();
+                    }
+                    ImGui::PopStyleColor();
+                }
+            }
+
+            // Timeline scrubber (only in rewind mode)
+            if (m_PlayMode.IsRewinding() && m_PlayMode.GetSnapshotCount() > 1) {
+                i32 frame = m_PlayMode.GetRewindFrame();
+                i32 maxFrame = m_PlayMode.GetSnapshotCount() - 1;
+                ImGui::SameLine(0.0f, 4.0f);
+                ImGui::SetNextItemWidth(200.0f);
+                if (ImGui::SliderInt("##RewindTimeline", &frame, 0, maxFrame)) {
+                    m_PlayMode.SeekToFrame(frame);
+                }
+                ImGui::SameLine(0.0f, 4.0f);
+                f32 displayTime = (maxFrame > 0)
+                    ? m_PlayMode.GetMaxRecordTime() * (static_cast<f32>(frame) / static_cast<f32>(maxFrame))
+                    : 0.0f;
+                ImGui::Text("%.1fs", displayTime);
+            }
+        }
+
         // Show play state indicator
-        if (m_PlayMode.IsPlaying()) {
+        if (m_PlayMode.IsPlaying() && !m_PlayMode.IsRewinding()) {
             ImGui::SameLine(0.0f, 8.0f);
             ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "[PLAYING]");
-        } else if (m_PlayMode.IsPaused()) {
+        } else if (m_PlayMode.IsPaused() && !m_PlayMode.IsRewinding()) {
             ImGui::SameLine(0.0f, 8.0f);
             ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "[PAUSED]");
+        } else if (m_PlayMode.IsRewinding()) {
+            ImGui::SameLine(0.0f, 8.0f);
+            ImGui::TextColored(ImVec4(0.7f, 0.5f, 1.0f, 1.0f), "[REWINDING]");
         }
 
         // Show collab status indicator

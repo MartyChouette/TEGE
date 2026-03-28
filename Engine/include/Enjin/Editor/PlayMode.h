@@ -149,6 +149,18 @@ public:
     void DismissDiff() { m_ShowDiffDialog = false; }
     const std::string& GetPlayedSceneJson() const { return m_PlayedSceneJson; }
 
+    // Record & Rewind
+    void StartRecording();
+    void StopRecording();
+    bool IsRecording() const { return m_Recording; }
+    bool IsRewinding() const { return m_Rewinding; }
+    void EnterRewind();
+    void ExitRewind();
+    void SeekToFrame(i32 frameIndex);
+    i32 GetSnapshotCount() const { return static_cast<i32>(m_Snapshots.size()); }
+    i32 GetRewindFrame() const { return m_RewindFrame; }
+    f32 GetMaxRecordTime() const { return m_MaxRecordTime; }
+
 private:
     void SaveEditorState();
     void RestoreEditorState();
@@ -274,6 +286,20 @@ private:
     PlayModeDiff m_PlayModeDiff;
     bool m_ShowDiffDialog = false;
     std::string m_PlayedSceneJson;  // Scene JSON captured at stop, before restore
+
+    // Record & Rewind
+    struct StateSnapshot {
+        f32 timestamp = 0.0f;
+        std::string sceneJson;
+    };
+    std::vector<StateSnapshot> m_Snapshots;
+    f32 m_RecordTimer = 0.0f;
+    f32 m_RecordInterval = 1.0f / 15.0f;  // 15 snapshots per second
+    f32 m_PlaybackTime = 0.0f;
+    f32 m_MaxRecordTime = 0.0f;
+    bool m_Recording = false;
+    bool m_Rewinding = false;
+    i32 m_RewindFrame = -1;
 };
 
 } // namespace Editor
