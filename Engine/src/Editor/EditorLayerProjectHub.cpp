@@ -457,6 +457,18 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
     ImVec2 sbMax(sidebarW, area.y);
     dl->AddRectFilled(sbMin, sbMax, IM_COL32(16, 18, 24, 255));
 
+    // Invisible window over sidebar to block click-through to template grid behind
+    ImGui::SetNextWindowPos(sbMin);
+    ImGui::SetNextWindowSize(ImVec2(sidebarW, area.y - contentY));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
+    ImGui::Begin("##SidebarBlocker", nullptr,
+        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBringToFrontOnFocus);
+    ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+
     // Vertical divider on right edge
     dl->AddLine(ImVec2(sidebarW, contentY), ImVec2(sidebarW, area.y),
         IM_COL32(60, 65, 80, 150), 1.0f);
