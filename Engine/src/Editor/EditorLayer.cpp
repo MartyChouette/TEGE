@@ -343,10 +343,16 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
             }
         }
 
-        // Fullscreen
+        // Fullscreen — save pre-play state so we can restore on Stop
         if (m_Window) {
             bool isFS = m_Window->IsFullscreen();
-            if (gfx.fullscreen != isFS) m_Window->SetFullscreen(gfx.fullscreen);
+            if (gfx.fullscreen != isFS) {
+                if (!m_PlayMode.IsStopped() && !m_PrePlayFullscreenSaved) {
+                    m_PrePlayFullscreen = isFS;
+                    m_PrePlayFullscreenSaved = true;
+                }
+                m_Window->SetFullscreen(gfx.fullscreen);
+            }
         }
 
         ENJIN_LOG_INFO(Editor, "Play mode settings applied: vsync=%d fullscreen=%d fov=%.0f shadows=%d bloom=%d fxaa=%d",
@@ -708,6 +714,11 @@ void EditorLayer::Update(f32 deltaTime) {
             ClearSelection(); // Entities have new IDs after scene restore
             m_PrePlayRenderSettings.ApplyToRuntime(
                 m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            // Restore pre-play fullscreen state (play mode options may have changed it)
+            if (m_PrePlayFullscreenSaved && m_Window) {
+                m_Window->SetFullscreen(m_PrePlayFullscreen);
+                m_PrePlayFullscreenSaved = false;
+            }
             if (m_FocusMode) {
                 m_FocusMode = false;
                 Input::SetMouseCaptured(false);
