@@ -598,6 +598,7 @@ private:
 
     // Panel state
     bool m_MSAAImGuiUpdatePending = false;  // Deferred ImGui pipeline update after MSAA change
+    bool m_PendingWireframe = false;       // Deferred wireframe toggle (pipeline recreation unsafe mid-render)
     bool m_ShowDemoWindow = false;
     bool m_ShowStatsOverlay = false;
     bool m_ShowAboutDialog = false;

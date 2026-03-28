@@ -96,15 +96,11 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
 
     Math::Vector3 movement(0.0f, 0.0f, 0.0f);
 
-    // Use the camera's actual forward/right vectors for movement so WASD
-    // always matches where the camera is looking, even after orbit/preset changes.
-    // Project forward onto the horizontal plane for FPS-style movement.
-    Math::Vector3 camForward = m_Camera->GetForward();
-    Math::Vector3 forward(camForward.x, 0.0f, camForward.z);
-    f32 fLen = forward.Length();
-    if (fLen > 0.001f) forward = forward * (1.0f / fLen);
-    else forward = Math::Vector3(0.0f, 0.0f, -1.0f);
-    Math::Vector3 right = forward.Cross(Math::Vector3(0.0f, 1.0f, 0.0f)).Normalized();
+    // Use the camera's actual forward/right vectors for movement.
+    // W/S move in the full look direction (including pitch) for true 3D fly.
+    // A/D strafe perpendicular. Q/E move on world Y axis.
+    Math::Vector3 forward = m_Camera->GetForward();
+    Math::Vector3 right = m_Camera->GetRight();
 
     Math::Vector3 worldUp(0.0f, 1.0f, 0.0f);
 

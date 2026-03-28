@@ -653,6 +653,11 @@ void EditorLayer::Update(f32 deltaTime) {
     // Begin profiler frame measurement
     Debug::Profiler::Instance().BeginFrame();
 
+    // Apply deferred wireframe toggle (pipeline recreation unsafe mid-render)
+    if (m_RenderSystem && m_RenderSystem->IsWireframeEnabled() != m_PendingWireframe) {
+        m_RenderSystem->SetWireframeEnabled(m_PendingWireframe);
+    }
+
     // Handle deferred template application (requested during Render-phase ImGui).
     // World::Clear() must not run during Render to avoid invalidating GPU resources
     // still referenced by in-flight Vulkan command buffers.
@@ -1460,7 +1465,9 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             prevUnlit = m_RenderSystem->GetEditorUnlit();
 
             bool wantShadows = (m_SceneViewMode == SceneViewMode::LitShadows || m_SceneViewMode == SceneViewMode::Full);
-            m_RenderSystem->SetWireframeEnabled(m_SceneViewMode == SceneViewMode::Wireframe);
+            // Wireframe toggle is deferred — SetWireframeEnabled triggers pipeline
+            // recreation which is unsafe mid-render. Set a flag and apply in Update.
+            m_PendingWireframe = (m_SceneViewMode == SceneViewMode::Wireframe);
             m_RenderSystem->SetEditorUnlit(m_SceneViewMode == SceneViewMode::Solid);
             m_RenderSystem->SetShadowsEnabled(wantShadows);
         }
