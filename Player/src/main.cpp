@@ -917,7 +917,16 @@ public:
         m_ParticleSystem.Update(deltaTime, m_World.get());
 
         // Post-processing time update + volume evaluation
-        if (m_PostProcessing) {
+        // Check if the active camera has post-processing enabled
+        bool ppEnabled = true;
+        if (m_World) {
+            auto activeCam = Enjin::ECS::CameraManager::GetActiveCamera(m_World.get());
+            if (activeCam != Enjin::ECS::INVALID_ENTITY) {
+                auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(activeCam);
+                if (cc) ppEnabled = cc->enablePostProcessing;
+            }
+        }
+        if (m_PostProcessing && ppEnabled) {
             m_PostProcessing->Update(deltaTime);
             if (m_Camera)
                 m_PostProcessing->SetCameraPlanes(m_Camera->GetNearPlane(), m_Camera->GetFarPlane());

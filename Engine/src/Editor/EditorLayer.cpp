@@ -1956,8 +1956,16 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // Always render to scene RT then copy to game view RT.
     // Never render directly to game view RT's MRT render pass (causes teal on NVIDIA).
     bool usePostProcessing = m_SceneRenderTarget && m_SceneRenderTarget->IsValid();
+    bool cameraPPEnabled = true;
+    if (m_World) {
+        auto activeCam = ECS::CameraManager::GetActiveCamera(m_World);
+        if (activeCam != ECS::INVALID_ENTITY) {
+            auto* cc = m_World->GetComponent<ECS::CameraComponent>(activeCam);
+            if (cc) cameraPPEnabled = cc->enablePostProcessing;
+        }
+    }
     bool usePPShader = usePostProcessing && m_PostProcessing &&
-                       m_PostProcessing->IsInitialized();
+                       m_PostProcessing->IsInitialized() && cameraPPEnabled;
 
     // Choose render target: scene RT when post-processing is active, game view RT otherwise
     Renderer::RenderTarget* sceneTarget = usePostProcessing
@@ -2076,7 +2084,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         bool upscalerActive = m_RenderSystem && m_RenderSystem->IsUpscalerActive();
 
         // TAA resolve pass (runs at render resolution — same as scene target)
-        if (m_PostProcessing->IsTAAEnabled() && m_Renderer && !upscalerActive) {
+        if (cameraPPEnabled && m_PostProcessing->IsTAAEnabled() && m_Renderer && !upscalerActive) {
             auto* swapchain = m_Renderer->GetSwapchain();
             if (swapchain) {
                 m_PostProcessing->SetVelocityImageView(swapchain->GetVelocityImageView());
@@ -2096,7 +2104,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         // Temporal upscaler dispatch (FSR 2 / DLSS / XeSS)
         // Runs after TAA (if active) or directly on the jittered scene color.
         // The upscaler takes the low-res color and upscales to display resolution.
-        if (upscalerActive && m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
+        if (cameraPPEnabled && upscalerActive && m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
             auto* upscaler = m_RenderSystem->GetUpscaler();
             if (upscaler) {
                 // Determine input: use TAA output if TAA ran, else scene color directly

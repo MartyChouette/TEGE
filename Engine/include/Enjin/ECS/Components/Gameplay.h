@@ -2258,5 +2258,29 @@ struct SceneRewindComponent {
     f32 rewindPlayhead = 0.0f;
 };
 
+// ============================================================================
+// FACE CARDS / SPRITE SWAP PER EXPRESSION
+// ============================================================================
+
+// FaceCardComponent — sprite swap per expression for dialogue/visual novel.
+// Attach to a character entity with a Sprite2DComponent or MeshComponent.
+// When the expression changes, the system swaps the texture/sprite to match.
+//
+// Usage:
+//   auto& fc = world->AddComponent<FaceCardComponent>(character);
+//   fc.expressions["happy"] = "portraits/hero_happy.png";
+//   fc.expressions["sad"] = "portraits/hero_sad.png";
+//   fc.expressions["angry"] = "portraits/hero_angry.png";
+//   fc.currentExpression = "happy";
+struct FaceCardComponent {
+    std::unordered_map<std::string, std::string> expressions;  // name -> texture path
+    std::string currentExpression;      // Active expression key
+    std::string previousExpression;     // Last expression (for change detection)
+    f32 transitionDuration = 0.0f;      // Crossfade time (0 = instant swap)
+    f32 transitionTimer = 0.0f;         // Runtime: current crossfade progress
+    bool flipX = false;                 // Mirror the portrait horizontally
+    bool enabled = true;
+};
+
 } // namespace ECS
 } // namespace Enjin
