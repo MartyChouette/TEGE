@@ -98,11 +98,13 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
 
     Math::Vector3 movement(0.0f, 0.0f, 0.0f);
 
-    // Use the camera's actual forward/right vectors for movement.
+    // Derive forward/right from the view matrix (not m_Rotation which may be stale).
     // W/S move in the full look direction (including pitch) for true 3D fly.
     // A/D strafe perpendicular. Q/E move on world Y axis.
-    Math::Vector3 forward = m_Camera->GetForward();
-    Math::Vector3 right = m_Camera->GetRight();
+    Math::Matrix4 viewMat = m_Camera->GetViewMatrix();
+    // View matrix rows are: right (row 0), up (row 1), -forward (row 2)
+    Math::Vector3 right(viewMat.m[0], viewMat.m[4], viewMat.m[8]);
+    Math::Vector3 forward(-viewMat.m[2], -viewMat.m[6], -viewMat.m[10]);
 
     Math::Vector3 worldUp(0.0f, 1.0f, 0.0f);
 
