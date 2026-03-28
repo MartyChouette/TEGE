@@ -813,6 +813,7 @@ private:
     std::string m_HubDeleteProjectPath;        // Path of project pending deletion
     std::string m_HubDeleteProjectName;        // Display name for confirmation dialog
     std::string m_HubPendingDeletePath;        // Deferred: delete this path at start of next frame
+    std::string m_HubPendingRemovePath;       // Deferred: remove from recent list at start of next frame
     std::string m_HubPendingOpenPath;          // Deferred: open this project at start of next frame
 
     // Project Hub methods

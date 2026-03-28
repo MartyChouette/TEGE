@@ -243,6 +243,14 @@ void EditorLayer::DrawProjectHub() {
 void EditorLayer::DrawProjectHubInner() {
     ImGuiIO& io = ImGui::GetIO();
 
+    // Process deferred project removal from list (set by "Remove from List" in previous frame).
+    // Must run BEFORE any UI code that iterates recentProjects.
+    if (!m_HubPendingRemovePath.empty()) {
+        m_EditorSettings.RemoveRecentProject(m_HubPendingRemovePath);
+        m_EditorSettings.Save();
+        m_HubPendingRemovePath.clear();
+    }
+
     // Process deferred project deletion (set by Delete button in previous frame).
     // Must run BEFORE any UI code that iterates recentProjects.
     if (!m_HubPendingDeletePath.empty()) {
@@ -380,10 +388,9 @@ void EditorLayer::DrawProjectHubInner() {
 
             ImGui::Separator();
 
-            // Remove from List
+            // Remove from List (deferred — can't modify vector while iterating)
             if (ImGui::MenuItem("x   Remove from List")) {
-                m_EditorSettings.RemoveRecentProject(m_HubContextProjectPath);
-                m_EditorSettings.Save();
+                m_HubPendingRemovePath = m_HubContextProjectPath;
             }
 
             // Delete
