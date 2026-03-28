@@ -2,9 +2,9 @@
 
 This document captures detailed technical plans, performance findings, and strategic initiatives identified through codebase audits. It complements CLAUDE.md's feature roadmap with implementation-specific details.
 
-## Status Summary (2026-03-24)
+## Status Summary (2026-03-28)
 
-**170+ features complete.** Beta 0.8.5 hardening sprint complete — all audit issues resolved, 255+ new tests, security hardened. See `docs/AUDIT_HARDENING_SPRINT.md` for full sprint summary. BSL 1.1 license in place. Inno Setup installer functional with icon, license page, and file associations. Path tracer polish (Phase 3) complete with NEE, MIS, Russian Roulette, and firefly clamping. Debug panels (F1/F2) and drop-down console added. Art Style Rendering System complete (9 visual styles with per-entity ArtStyleComponent). FBX/Mixamo import pipeline with auto-scale, multi-material sub-meshes, and embedded texture extraction. Full skeletal animation pipeline: blend trees, animation events, retargeting, two-bone IK, ragdoll, animation recorder, onion skinning, bone visualization and selection. Project-first workflow with hub, create/delete/duplicate projects, and file association. Discord webhook bug reporting. Viewport shading modes (Wire/Solid/Lit/Shadows/Full).
+**190+ features complete.** Player build pipeline fully functional — Editor Build Game produces working standalone executables with all entities, lighting, physics, and gameplay. PBR rendering fixes (horizon flicker, light range falloff). Runtime fullscreen toggle, FOV slider, all Options menu settings wired. Quake-style tilde console in both Editor and Player. Telemetry system with Discord webhook integration. Quit feedback survey. 2D collision reliability fixes (pickup + enemy overlap via manual AABB, bypassing Box2D v3 kinematic sensor issues). Scene view modes all functional (Wire/Solid/Lit/Shaded/Full). Parallax machine texture rendering. Deferred MSAA toggle (editor crash fix). F1/F2 mutual exclusion. ImGui ID collision audit (engine-wide). 80/80 tests passing.
 
 ### Still Remaining
 
@@ -41,6 +41,25 @@ This document captures detailed technical plans, performance findings, and strat
 
 | Category | Item |
 |----------|------|
+| **Build** | Player build pipeline — 5 crash/render fixes (nested shadow pass, camera sync, GPU indirect draw, RT re-enable, clustered lighting), all entities render correctly in built games |
+| **Build** | Options menu fully functional — fullscreen, VSync, FOV, shadows, bloom, FXAA, audio volumes, all deferred-safe |
+| **Build** | Restart button in pause menu with full physics state reset (recreates Jolt/Box2D backends) |
+| **Editor** | Tilde console (Quake-style) — slides up from bottom, 10+ commands (god, kill, heal, speed, tp, restart, fps, stats), command history |
+| **Editor** | Deferred MSAA toggle — prevents NVIDIA driver crash from mid-frame swapchain recreation |
+| **Editor** | F1/F2 mutual exclusion — pressing one closes the other, debug overlay at bottom-left with 1.4x font |
+| **Editor** | Scene view Wire mode — uses real VK_POLYGON_MODE_LINE pipeline; Solid mode disables all lighting |
+| **Editor** | Fix recent project remove/delete crash — deferred vector modification to prevent iterator invalidation |
+| **Renderer** | PBR horizon flicker fix — NdotV guard 0.001→0.01, shadow cascade blend 10%→25%, fade start 80%→70% |
+| **Renderer** | Smooth point/spot light range falloff — smoothstep 75%-100% replaces hard binary cutoff |
+| **Renderer** | Parallax machine texture rendering — layers load textures via RenderSystem, fallback to colored rectangles |
+| **Gameplay** | 2D pickup overlap — manual AABB check for Platformer2D/TopDown2D controllers (Box2D sensor workaround) |
+| **Gameplay** | 2D enemy contact damage — manual AABB overlap with Mario-style stomp detection + invulnerability window |
+| **Gameplay** | Enemy repeat damage fix — invulnerability timer replaces damageOnce for enemies, player gets 1s i-frames |
+| **DevTools** | TelemetrySystem — per-session metrics (scenes, builds, play mode, bug reports), aggregate persistence, Discord upload |
+| **DevTools** | Quit feedback survey — 5 ratings + 3 text questions → Discord webhook on editor exit |
+| **DevTools** | Bug report severity dropdown (Crash/Major/Minor/Cosmetic), hardcoded webhook URLs (gitignored) |
+| **DevTools** | GitHub infrastructure — issue templates (bug/feature), PR template, CONTRIBUTING.md |
+| **QA** | ImGui ID collision audit — fixed material slots loop + animation names loop, 80+ other loops verified safe |
 | **Renderer** | Path Tracer Polish — NEE (uniform light selection, shadow rays), MIS (power heuristic), Russian Roulette (configurable min bounce/probability), firefly clamping (per-bounce + final), Cook-Torrance BRDF with GGX importance sampling, simplified material fallback for deep bounces |
 | **Editor** | Game Debug Panel (F1) — 5-tab game-focused debug window (Scene/Physics/Scripts/Audio/Gameplay) with entity lists, physics body details, script status indicators, audio source state |
 | **Editor** | Debug Workstation (F2) — 5-tab engine-focused debug window (Performance/Renderer/ECS/Scene/System) with FPS/frame time graphs, percentile stats, render pipeline state, GPU/Vulkan info |
