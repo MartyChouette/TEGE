@@ -2282,5 +2282,87 @@ struct FaceCardComponent {
     bool enabled = true;
 };
 
+// ============================================================================
+// SAVE SYSTEM COMPONENT
+// ============================================================================
+
+// SaveSystemComponent — unified save/load configuration for a game.
+// Attach to a game manager entity. Configures auto-save, manual save,
+// in-world save points, meta-progression, and cloud sync — all in one place.
+//
+// The underlying TieredSaveSystem handles the actual persistence.
+// This component exposes the configuration to the editor inspector,
+// serialization, and scripting.
+//
+// Usage:
+//   auto& save = world->AddComponent<SaveSystemComponent>(gameManager);
+//   save.maxManualSlots = 10;
+//   save.autoSave.enabled = true;
+//   save.autoSave.intervalSeconds = 120.0f;
+//   save.allowInWorldSavePoints = true;
+//
+struct SaveSystemComponent {
+    // --- Manual Save Slots ---
+    u32 maxManualSlots = 17;              // Number of player-accessible save slots
+    bool allowManualSave = true;          // Can the player save manually?
+    bool allowManualLoad = true;          // Can the player load manually?
+    bool allowDeleteSlot = true;          // Can the player delete saves?
+    bool showSaveMenuOnPause = true;      // Show save/load UI in pause menu
+
+    // --- Auto-Save ---
+    bool autoSaveEnabled = false;         // Enable automatic saving
+    bool autoSaveOnSceneTransition = true; // Save when changing scenes
+    bool autoSaveOnCheckpoint = true;     // Save when hitting a checkpoint entity
+    bool autoSaveOnInterval = false;      // Save on a timer
+    f32 autoSaveIntervalSeconds = 300.0f; // Timer interval (default 5 minutes)
+    u32 autoSaveSlotCount = 3;            // Rotating auto-save slots
+
+    // --- In-World Save Points ---
+    bool allowInWorldSavePoints = true;   // Enable save point entities in the world
+    f32 savePointRadius = 2.0f;           // Interaction radius for save point entities
+    bool savePointRequiresInput = true;   // Player must press a key (vs auto-save on enter)
+    i32 savePointKey = 69;                // KeyCode for save point interaction (default: E = 69)
+    bool savePointShowPrompt = true;      // Show "Press E to save" prompt near save points
+
+    // --- Meta-Progression ---
+    bool enableMetaProgression = true;    // Persistent data across save slots (unlocks, achievements)
+    bool autoSaveMeta = true;             // Auto-save meta on changes
+
+    // --- Cloud Sync ---
+    bool enableCloudSync = false;         // Sync saves to cloud backend
+    bool syncOnSave = true;              // Upload after each save
+    bool syncOnLoad = true;              // Download before each load
+
+    // --- Visual Feedback ---
+    bool showSaveIndicator = true;        // Show "Saving..." icon during save
+    f32 saveIndicatorDuration = 2.0f;     // How long the save indicator shows
+    bool showAutoSaveWarning = true;      // "Don't turn off" message during auto-save
+
+    // --- State (runtime, not serialized) ---
+    f32 autoSaveTimer = 0.0f;
+    f32 saveIndicatorTimer = 0.0f;
+    bool isSaving = false;
+    u32 autoSaveRotation = 0;            // Current auto-save slot rotation index
+};
+
+// SavePointComponent — attach to an in-world entity (glowing crystal, save
+// station, campfire) to create a save trigger. When the player enters the
+// radius, they can save the game.
+//
+// Usage:
+//   auto& sp = world->AddComponent<SavePointComponent>(crystal);
+//   sp.slotTarget = -1;  // -1 = next available slot
+//   sp.saveOnEnter = false;  // Require key press
+//
+struct SavePointComponent {
+    i32 slotTarget = -1;               // Save to specific slot (-1 = next available)
+    bool saveOnEnter = false;          // Auto-save when player enters radius (vs key press)
+    bool oneTimeUse = false;           // Disable after first use
+    bool used = false;                 // Runtime: has this save point been used?
+    bool playerInRange = false;        // Runtime: is a player within range?
+    f32 radius = 2.0f;                 // Override radius (0 = use SaveSystemComponent default)
+    std::string saveMessage = "Game Saved"; // Message shown after saving
+};
+
 } // namespace ECS
 } // namespace Enjin
