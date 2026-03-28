@@ -44,6 +44,14 @@ void Camera::SetLookAt(const Math::Vector3& eye, const Math::Vector3& center, co
     m_ViewMatrix.m[13] = -(actualUp.x * eye.x + actualUp.y * eye.y + actualUp.z * eye.z);
     m_ViewMatrix.m[14] = (forward.x * eye.x + forward.y * eye.y + forward.z * eye.z);
 
+    // Keep m_Rotation in sync so SetPosition doesn't rebuild from stale rotation.
+    // Build rotation quaternion from the basis vectors (camera convention: -Z forward).
+    Math::Matrix4 rotMat = Math::Matrix4::Identity();
+    rotMat.m[0] = right.x;      rotMat.m[4] = right.y;      rotMat.m[8]  = right.z;
+    rotMat.m[1] = actualUp.x;   rotMat.m[5] = actualUp.y;   rotMat.m[9]  = actualUp.z;
+    rotMat.m[2] = -forward.x;   rotMat.m[6] = -forward.y;   rotMat.m[10] = -forward.z;
+    m_Rotation = Math::Quaternion::FromMatrix(rotMat);
+
     m_ViewDirty = false; // Already computed
 }
 
