@@ -1917,6 +1917,33 @@ void EditorLayer::DrawInspectorPanel() {
                         animComp->selectedBoneIndex = -1;
                     }
 
+                    // Bone search: filter + click to select
+                    if (animComp->showBones) {
+                        const auto* searchSkel = animator.GetSkeleton();
+                        if (searchSkel && !searchSkel->bones.empty()) {
+                            static char boneSearchBuf[128] = {};
+                            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.7f);
+                            ImGui::InputTextWithHint("##BoneSearch", "Search bones...", boneSearchBuf, sizeof(boneSearchBuf));
+                            if (boneSearchBuf[0] != '\0') {
+                                std::string filter(boneSearchBuf);
+                                for (auto& c : filter) c = static_cast<char>(std::tolower(c));
+                                i32 matchCount = 0;
+                                for (usize bi = 0; bi < searchSkel->bones.size() && matchCount < 8; ++bi) {
+                                    std::string boneLower = searchSkel->bones[bi].name;
+                                    for (auto& c : boneLower) c = static_cast<char>(std::tolower(c));
+                                    if (boneLower.find(filter) != std::string::npos) {
+                                        bool isSel = (animComp->selectedBoneIndex == static_cast<i32>(bi));
+                                        if (ImGui::Selectable(searchSkel->bones[bi].name.c_str(), isSel)) {
+                                            animComp->selectedBoneIndex = static_cast<i32>(bi);
+                                        }
+                                        matchCount++;
+                                    }
+                                }
+                                if (matchCount == 0) ImGui::TextDisabled("No matching bones");
+                            }
+                        }
+                    }
+
                     // Selected bone info panel
                     if (animComp->showBones && animComp->selectedBoneIndex >= 0) {
                         const auto* selSkel = animator.GetSkeleton();

@@ -613,6 +613,40 @@ void EditorLayer::DrawGizmos() {
             }
         }
 
+        // --- Bone Gizmo: manipulate selected bone in viewport ---
+        if (m_PrimarySelected != ECS::INVALID_ENTITY &&
+            m_World->HasComponent<ECS::AnimatorComponent>(m_PrimarySelected)) {
+            auto* animComp = m_World->GetComponent<ECS::AnimatorComponent>(m_PrimarySelected);
+            if (animComp && animComp->showBones && animComp->selectedBoneIndex >= 0) {
+                const auto* skeleton = animComp->animator.GetSkeleton();
+                const auto& pose = animComp->animator.GetCurrentPose();
+                i32 bi = animComp->selectedBoneIndex;
+                if (skeleton && bi < static_cast<i32>(skeleton->bones.size()) &&
+                    pose.worldTransforms.size() == skeleton->bones.size()) {
+                    Math::Matrix4 entityWorld = ECS::ComputeWorldMatrix(m_World, m_PrimarySelected);
+                    Math::Matrix4 boneWorldMat = entityWorld * pose.worldTransforms[bi];
+
+                    // Only allow rotation for bones (translate/scale don't make sense for skeletal joints)
+                    Math::Matrix4 prevBoneMat = boneWorldMat;
+                    if (ImGuizmo::Manipulate(viewMat.m, projMat.m, ImGuizmo::ROTATE,
+                            ImGuizmo::LOCAL, boneWorldMat.m, nullptr, nullptr)) {
+                        // Compute rotation delta in world space, convert to bone-local
+                        Math::Matrix4 entityInv = entityWorld.Inverse();
+                        Math::Matrix4 newLocal = entityInv * boneWorldMat;
+                        Math::Matrix4 oldLocal = entityInv * prevBoneMat;
+                        // Extract rotation from the local matrices
+                        Math::Quaternion newRot = Math::Quaternion::FromMatrix(newLocal);
+                        Math::Quaternion oldRot = Math::Quaternion::FromMatrix(oldLocal);
+                        Math::Quaternion delta = newRot * oldRot.Conjugate();
+                        // Apply delta rotation to the bone
+                        const std::string& boneName = skeleton->bones[bi].name;
+                        animComp->animator.SetBoneLocalRotation(boneName,
+                            delta * Math::Quaternion::FromMatrix(pose.worldTransforms[bi]));
+                    }
+                }
+            }
+        }
+
         // Surface snap: project moved entities onto terrain/sphere surfaces
         if (m_SurfaceSnap && m_GizmoOperation == GizmoOperation::Translate) {
             auto terrainEntities = m_World->GetEntitiesWithComponent<ECS::TerrainComponent>();
