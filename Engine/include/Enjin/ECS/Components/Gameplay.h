@@ -2186,6 +2186,7 @@ struct RecordRewindComponent {
     f32 recordInterval = 1.0f / 20.0f; // 20 frames per second
     f32 rewindSpeed = 2.0f;          // Playback speed multiplier when rewinding
     f32 cooldown = 3.0f;             // Seconds before rewind can be used again after release
+    i32 rewindKey = 82;              // KeyCode to hold for rewind (default: R = 82)
     bool enabled = true;
 
     // Visual feedback
@@ -2241,6 +2242,7 @@ struct SceneRewindComponent {
     f32 rewindSpeed = 1.5f;           // Playback speed when rewinding
     f32 cooldown = 5.0f;              // Seconds before rewind can be used again
     i32 charges = 0;                  // Max uses per level (0 = unlimited)
+    i32 rewindKey = 84;               // KeyCode to hold for rewind (default: T = 84)
     bool enabled = true;
 
     // Visual feedback

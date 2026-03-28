@@ -50,7 +50,7 @@ void RecordRewindSystem::UpdateEntityRewind(f32 deltaTime) {
         if (rr->cooldownTimer > 0.0f) rr->cooldownTimer -= deltaTime;
 
         // Check rewind input
-        bool rewindHeld = Input::IsKeyDown(KeyCode::R) && rr->cooldownTimer <= 0.0f;
+        bool rewindHeld = Input::IsKeyDown(static_cast<KeyCode>(rr->rewindKey)) && rr->cooldownTimer <= 0.0f;
 
         if (rewindHeld && !rr->frames.empty()) {
             if (!rr->rewinding) {
@@ -146,7 +146,7 @@ void RecordRewindSystem::UpdateSceneRewind(f32 deltaTime) {
         // Check rewind input (T key by default)
         bool canRewind = sr->cooldownTimer <= 0.0f &&
             (sr->charges == 0 || sr->chargesUsed < sr->charges);
-        bool rewindHeld = Input::IsKeyDown(KeyCode::T) && canRewind;
+        bool rewindHeld = Input::IsKeyDown(static_cast<KeyCode>(sr->rewindKey)) && canRewind;
 
         if (rewindHeld && !sr->frames.empty()) {
             // --- REWINDING ---
