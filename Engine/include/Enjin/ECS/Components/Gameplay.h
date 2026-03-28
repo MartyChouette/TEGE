@@ -2200,5 +2200,61 @@ struct RecordRewindComponent {
     f32 rewindPlayhead = 0.0f;       // Current position in rewind buffer (seconds from end)
 };
 
+// ============================================================================
+// SceneRewindComponent — Prince of Persia: Sands of Time-style scene rewind.
+// Attach to a game manager entity to enable whole-scene time rewind.
+// Records ALL entity transforms + velocities + health at regular intervals.
+// When activated, the entire world scrubs backward simultaneously.
+//
+// Unlike RecordRewindComponent (per-entity, Braid-style), this rewinds
+// everything: enemies, projectiles, pickups, physics objects, particles.
+//
+// Usage:
+//   auto& sr = world->AddComponent<SceneRewindComponent>(gameManager);
+//   sr.maxDuration = 10.0f;      // 10 seconds of rewind buffer
+//   sr.rewindKey = KeyCode::T;   // Hold T to rewind
+//   sr.rewindSpeed = 1.5f;       // 1.5x speed rewind
+//   sr.charges = 3;              // Limited uses (0 = unlimited)
+// ============================================================================
+struct SceneRewindComponent {
+    // Per-entity snapshot within a frame
+    struct EntityFrame {
+        Entity entity = INVALID_ENTITY;
+        Math::Vector3 position;
+        Math::Quaternion rotation;
+        Math::Vector3 scale;
+        Math::Vector3 velocity;
+        f32 health = 0.0f;
+        bool visible = true;
+        bool isDead = false;
+    };
+
+    // Full scene snapshot
+    struct SceneFrame {
+        f32 timestamp = 0.0f;
+        std::vector<EntityFrame> entities;
+    };
+
+    // Configuration
+    f32 maxDuration = 10.0f;          // Max seconds of rewind buffer
+    f32 recordInterval = 1.0f / 15.0f; // 15 snapshots per second
+    f32 rewindSpeed = 1.5f;           // Playback speed when rewinding
+    f32 cooldown = 5.0f;              // Seconds before rewind can be used again
+    i32 charges = 0;                  // Max uses per level (0 = unlimited)
+    bool enabled = true;
+
+    // Visual feedback
+    f32 rewindVignetteStrength = 0.5f;
+    Math::Vector3 rewindTint = Math::Vector3(0.8f, 0.6f, 0.2f); // Gold tint (Sands of Time)
+
+    // State (runtime)
+    std::vector<SceneFrame> frames;
+    f32 recordTimer = 0.0f;
+    f32 cooldownTimer = 0.0f;
+    i32 chargesUsed = 0;
+    bool rewinding = false;
+    f32 rewindPlayhead = 0.0f;
+};
+
 } // namespace ECS
 } // namespace Enjin
