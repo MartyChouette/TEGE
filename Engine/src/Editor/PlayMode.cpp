@@ -104,6 +104,9 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
         // Initialize AI system
         m_AISystem.SetWorld(world);
 
+        // Initialize record & rewind system
+        m_RecordRewindSystem.SetWorld(world);
+
         // Initialize network system
         m_NetworkSystem.SetWorld(world);
 
@@ -565,6 +568,9 @@ void PlayMode::Update(f32 deltaTime) {
             Scripting::FlushDeferredEntityDestroys();
         }
         auto t3 = std::chrono::high_resolution_clock::now();
+
+        // Record & Rewind (Braid / Sands of Time mechanic)
+        m_RecordRewindSystem.Update(deltaTime);
 
         // Gameplay systems
         m_TweenSystem.Update(m_World, deltaTime);

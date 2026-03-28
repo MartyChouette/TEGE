@@ -2157,5 +2157,48 @@ struct AnimationRecorderComponent {
     i32 recordCount = 0;
 };
 
+// ============================================================================
+// RecordRewindComponent — Braid / Prince of Persia-style time rewind mechanic.
+// Attach to the player entity to enable rewinding gameplay. Records transform,
+// velocity, and health state at regular intervals. When the player activates
+// rewind (key hold), the world scrubs backward through recorded frames.
+//
+// Usage:
+//   auto& rr = world->AddComponent<RecordRewindComponent>(player);
+//   rr.maxDuration = 5.0f;        // 5 seconds of rewind buffer
+//   rr.rewindKey = KeyCode::R;    // Hold R to rewind
+//   rr.rewindSpeed = 2.0f;        // 2x speed rewind
+//   rr.cooldown = 3.0f;           // 3 second cooldown after rewind
+// ============================================================================
+struct RecordRewindComponent {
+    // Recorded frame data
+    struct Frame {
+        Math::Vector3 position;
+        Math::Quaternion rotation;
+        Math::Vector3 scale;
+        Math::Vector3 velocity;
+        f32 health = 0.0f;
+        f32 timestamp = 0.0f;
+    };
+
+    // Configuration
+    f32 maxDuration = 5.0f;          // Max seconds of rewind buffer
+    f32 recordInterval = 1.0f / 20.0f; // 20 frames per second
+    f32 rewindSpeed = 2.0f;          // Playback speed multiplier when rewinding
+    f32 cooldown = 3.0f;             // Seconds before rewind can be used again after release
+    bool enabled = true;
+
+    // Visual feedback
+    f32 rewindVignetteStrength = 0.3f;  // Screen edge darkening during rewind
+    Math::Vector3 rewindTint = Math::Vector3(0.4f, 0.6f, 1.0f); // Blue tint during rewind
+
+    // State (runtime)
+    std::vector<Frame> frames;
+    f32 recordTimer = 0.0f;
+    f32 cooldownTimer = 0.0f;
+    bool rewinding = false;
+    f32 rewindPlayhead = 0.0f;       // Current position in rewind buffer (seconds from end)
+};
+
 } // namespace ECS
 } // namespace Enjin

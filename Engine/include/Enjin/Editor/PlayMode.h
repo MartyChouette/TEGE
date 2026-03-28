@@ -13,6 +13,7 @@
 #include "Enjin/ECS/Systems/BehaviorTreeSystem.h"
 #include "Enjin/ECS/Systems/AISystem.h"
 #include "Enjin/Networking/NetworkSystem.h"
+#include "Enjin/Gameplay/RecordRewindSystem.h"
 #include "Enjin/Editor/AudioEventGraph.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Physics/IPhysicsBackend2D.h"
@@ -187,6 +188,9 @@ private:
 
     // Tween system
     ECS::TweenSystem m_TweenSystem;
+
+    // Record & Rewind (Braid / Sands of Time mechanic)
+    Gameplay::RecordRewindSystem m_RecordRewindSystem;
 
     // State machine system
     ECS::StateMachineSystem m_StateMachineSystem;

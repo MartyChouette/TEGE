@@ -59,6 +59,7 @@
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
 #include "Enjin/ECS/Systems/BehaviorTreeSystem.h"
 #include "Enjin/ECS/Systems/AISystem.h"
+#include "Enjin/Gameplay/RecordRewindSystem.h"
 #include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/Gameplay/HUDSystem.h"
 #include "Enjin/Gameplay/QuestSystem.h"
@@ -384,6 +385,7 @@ public:
         m_VisualScriptSystem.SetWorld(m_World.get());
         m_BehaviorTreeSystem.SetWorld(m_World.get());
         m_AISystem.SetWorld(m_World.get());
+        m_RecordRewindSystem.SetWorld(m_World.get());
 
         // Initialize save system with local backend
         m_TieredSaveSystem.LoadMeta();
@@ -857,6 +859,9 @@ public:
         m_VisualScriptSystem.Update(deltaTime);
         m_BehaviorTreeSystem.Update(deltaTime);
         m_AISystem.Update(deltaTime);
+
+        // Record & Rewind (Braid / Sands of Time mechanic)
+        m_RecordRewindSystem.Update(deltaTime);
 
         // Dialogue
         UpdateDialogue(deltaTime);
@@ -2035,6 +2040,7 @@ private:
     Enjin::ECS::VisualScriptSystem m_VisualScriptSystem;
     Enjin::ECS::BehaviorTreeSystem m_BehaviorTreeSystem;
     Enjin::ECS::AISystem m_AISystem;
+    Enjin::Gameplay::RecordRewindSystem m_RecordRewindSystem;
     Enjin::ECS::EntityEventBus m_EntityEventBus;
     Enjin::ECS::DialogueSystem m_DialogueSystem;
     Enjin::ECS::Entity m_ActiveDialogueEntity = 0;
