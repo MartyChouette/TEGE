@@ -245,6 +245,22 @@ public:
             } else if (action == "restart") {
                 m_GameMenu.HideAll();
                 Enjin::Input::SetMouseCaptured(true);
+                // Recreate physics backends so stale bodies/controllers don't persist
+                {
+                    auto backendType = static_cast<Enjin::Physics::PhysicsBackendType>(
+                        m_PhysicsBackendType <= 3 ? m_PhysicsBackendType : 0);
+                    auto projectMode = static_cast<Enjin::Scene::ProjectMode>(
+                        m_ProjectMode <= 2 ? m_ProjectMode : 1);
+                    m_Physics = Enjin::Physics::CreatePhysicsBackend(backendType, projectMode);
+                    if (m_Physics) m_Physics->SetWorld(m_World.get());
+                    m_Physics2D = Enjin::Physics::CreatePhysicsBackend2D(backendType, projectMode);
+                    if (m_Physics2D) m_Physics2D->Initialize(m_World.get());
+                    m_ControllerSystem.SetPhysics(m_Physics.get());
+                    m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
+                    // Re-wire 2D collision callbacks
+                    Enjin::Gameplay::GameplayLoop::Wire2DCollisionCallbacks(
+                        m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys);
+                }
                 if (!m_StartScene.empty()) LoadSceneFromPack(m_StartScene);
             } else if (action == "quit_to_menu") {
                 m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
@@ -255,6 +271,21 @@ public:
             } else if (action == "game_over_restart") {
                 m_GameMenu.HideAll();
                 Enjin::Input::SetMouseCaptured(true);
+                // Recreate physics for clean restart
+                {
+                    auto backendType = static_cast<Enjin::Physics::PhysicsBackendType>(
+                        m_PhysicsBackendType <= 3 ? m_PhysicsBackendType : 0);
+                    auto projectMode = static_cast<Enjin::Scene::ProjectMode>(
+                        m_ProjectMode <= 2 ? m_ProjectMode : 1);
+                    m_Physics = Enjin::Physics::CreatePhysicsBackend(backendType, projectMode);
+                    if (m_Physics) m_Physics->SetWorld(m_World.get());
+                    m_Physics2D = Enjin::Physics::CreatePhysicsBackend2D(backendType, projectMode);
+                    if (m_Physics2D) m_Physics2D->Initialize(m_World.get());
+                    m_ControllerSystem.SetPhysics(m_Physics.get());
+                    m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
+                    Enjin::Gameplay::GameplayLoop::Wire2DCollisionCallbacks(
+                        m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys);
+                }
                 if (!m_StartScene.empty()) LoadSceneFromPack(m_StartScene);
             } else if (action == "game_over_menu") {
                 m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
