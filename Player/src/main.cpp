@@ -726,9 +726,17 @@ public:
         if (!m_Initialized) return;
 
         // Fullscreen toggle is a creation-time window parameter — not supported at runtime.
-        // The preference is stored in m_PendingFullscreen for future save/load support.
         if (m_FullscreenChangeRequested) {
             m_FullscreenChangeRequested = false;
+        }
+
+        // Tilde console toggle (Quake-style)
+        if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::GraveAccent)) {
+            m_ShowConsole = !m_ShowConsole;
+            if (m_ShowConsole) {
+                m_ConsoleInput[0] = '\0';
+                m_ConsoleHistoryPos = -1;
+            }
         }
 
         // Splash screen phase — if timer is 0 (skipped), go straight to game
@@ -1132,10 +1140,240 @@ public:
                 }
             }
 
+            // Tilde console (Quake-style, slides up from bottom)
+            DrawConsole(cmd);
+
             m_ImGuiLayer->EndFrame(cmd);
         }
 
         m_Renderer->EndFrame();
+    }
+
+    void DrawConsole(VkCommandBuffer) {
+        // Animate slide
+        Enjin::f32 dt = ImGui::GetIO().DeltaTime;
+        Enjin::f32 target = m_ShowConsole ? 1.0f : 0.0f;
+        constexpr Enjin::f32 speed = 8.0f;
+        if (m_ConsoleAnim < target) m_ConsoleAnim = std::min(m_ConsoleAnim + speed * dt, target);
+        else if (m_ConsoleAnim > target) m_ConsoleAnim = std::max(m_ConsoleAnim - speed * dt, target);
+        if (m_ConsoleAnim <= 0.001f) return;
+
+        ImGuiIO& io = ImGui::GetIO();
+        Enjin::f32 consoleH = io.DisplaySize.y * 0.4f;
+        Enjin::f32 visibleH = consoleH * m_ConsoleAnim;
+
+        ImGui::SetNextWindowPos(ImVec2(0, io.DisplaySize.y - visibleH));
+        ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, consoleH));
+
+        ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
+            ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 8));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.05f, 0.07f, 0.92f));
+
+        if (ImGui::Begin("##PlayerConsole", nullptr, flags)) {
+            ImGui::SetWindowFontScale(1.2f);
+            ImGui::TextColored(ImVec4(0.6f, 0.8f, 0.6f, 1.0f), "CONSOLE");
+            ImGui::SameLine(io.DisplaySize.x - 200);
+            ImGui::TextColored(ImVec4(0.4f, 0.45f, 0.5f, 1.0f), "Press ~ to close");
+            ImGui::Separator();
+
+            Enjin::f32 inputH = ImGui::GetFrameHeightWithSpacing() + 4;
+            ImGui::BeginChild("##ConsoleLog", ImVec2(0, -inputH), false);
+            for (const auto& line : m_ConsoleLog) {
+                ImVec4 color(0.75f, 0.75f, 0.75f, 1.0f);
+                if (line.find("[Error]") != std::string::npos) color = ImVec4(1.0f, 0.35f, 0.35f, 1.0f);
+                else if (line.find("[Warn]") != std::string::npos) color = ImVec4(1.0f, 0.85f, 0.3f, 1.0f);
+                else if (!line.empty() && line[0] == '>') color = ImVec4(0.5f, 0.8f, 0.5f, 1.0f);
+                ImGui::PushStyleColor(ImGuiCol_Text, color);
+                ImGui::TextUnformatted(line.c_str());
+                ImGui::PopStyleColor();
+            }
+            if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4.0f)
+                ImGui::SetScrollHereY(1.0f);
+            ImGui::EndChild();
+
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), ">");
+            ImGui::SameLine();
+
+            if (m_ShowConsole && m_ConsoleAnim > 0.5f) ImGui::SetKeyboardFocusHere();
+
+            ImGui::PushItemWidth(-1);
+            auto histCallback = [](ImGuiInputTextCallbackData* data) -> int {
+                auto* self = static_cast<GamePlayer*>(data->UserData);
+                if (data->EventFlag == ImGuiInputTextFlags_CallbackHistory) {
+                    if (data->EventKey == ImGuiKey_UpArrow && !self->m_ConsoleHistory.empty()) {
+                        if (self->m_ConsoleHistoryPos < (int)self->m_ConsoleHistory.size() - 1)
+                            self->m_ConsoleHistoryPos++;
+                        int idx = (int)self->m_ConsoleHistory.size() - 1 - self->m_ConsoleHistoryPos;
+                        data->DeleteChars(0, data->BufTextLen);
+                        data->InsertChars(0, self->m_ConsoleHistory[idx].c_str());
+                    } else if (data->EventKey == ImGuiKey_DownArrow) {
+                        if (self->m_ConsoleHistoryPos > 0) self->m_ConsoleHistoryPos--;
+                        else { self->m_ConsoleHistoryPos = -1; data->DeleteChars(0, data->BufTextLen); }
+                        if (self->m_ConsoleHistoryPos >= 0) {
+                            int idx = (int)self->m_ConsoleHistory.size() - 1 - self->m_ConsoleHistoryPos;
+                            data->DeleteChars(0, data->BufTextLen);
+                            data->InsertChars(0, self->m_ConsoleHistory[idx].c_str());
+                        }
+                    }
+                } else if (data->EventFlag == ImGuiInputTextFlags_CallbackCharFilter) {
+                    if (data->EventChar == '`' || data->EventChar == '~') return 1; // eat tilde
+                }
+                return 0;
+            };
+
+            if (ImGui::InputText("##ConsoleIn", m_ConsoleInput, sizeof(m_ConsoleInput),
+                    ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackHistory |
+                    ImGuiInputTextFlags_CallbackCharFilter, histCallback, this)) {
+                std::string cmd = m_ConsoleInput;
+                if (!cmd.empty()) {
+                    m_ConsoleLog.push_back("> " + cmd);
+                    m_ConsoleHistory.push_back(cmd);
+                    m_ConsoleHistoryPos = -1;
+                    ExecutePlayerCommand(cmd);
+                }
+                m_ConsoleInput[0] = '\0';
+                ImGui::SetKeyboardFocusHere(-1);
+            }
+            ImGui::PopItemWidth();
+            ImGui::SetWindowFontScale(1.0f);
+        }
+        ImGui::End();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(2);
+    }
+
+    void ExecutePlayerCommand(const std::string& command) {
+        std::istringstream iss(command);
+        std::string cmd;
+        iss >> cmd;
+        for (auto& c : cmd) c = static_cast<char>(std::tolower(c));
+
+        if (cmd == "help") {
+            m_ConsoleLog.push_back("=== TEGE Player Console ===");
+            m_ConsoleLog.push_back("  help          Show commands");
+            m_ConsoleLog.push_back("  clear         Clear console");
+            m_ConsoleLog.push_back("  god           Toggle invulnerability");
+            m_ConsoleLog.push_back("  noclip        Toggle no-clip fly mode");
+            m_ConsoleLog.push_back("  kill          Kill player");
+            m_ConsoleLog.push_back("  heal [amt]    Heal player (default: full)");
+            m_ConsoleLog.push_back("  speed <mult>  Set speed multiplier");
+            m_ConsoleLog.push_back("  timescale <f> Set time scale (0.1-10)");
+            m_ConsoleLog.push_back("  tp <x> <y> <z> Teleport player");
+            m_ConsoleLog.push_back("  restart       Restart level");
+            m_ConsoleLog.push_back("  fps           Show FPS");
+            m_ConsoleLog.push_back("  stats         Show scene stats");
+            m_ConsoleLog.push_back("  quit          Quit game");
+        } else if (cmd == "clear") {
+            m_ConsoleLog.clear();
+        } else if (cmd == "god") {
+            if (m_World) {
+                bool toggled = false;
+                auto toggle = [&](auto entities) {
+                    for (auto e : entities) {
+                        auto* hp = m_World->GetComponent<Enjin::ECS::HealthComponent>(e);
+                        if (hp) { hp->isInvulnerable = !hp->isInvulnerable; toggled = true;
+                            m_ConsoleLog.push_back(hp->isInvulnerable ? "God mode ON" : "God mode OFF"); break; }
+                    }
+                };
+                toggle(m_World->GetEntitiesWithComponent<Enjin::ECS::Platformer2DController>());
+                if (!toggled) toggle(m_World->GetEntitiesWithComponent<Enjin::ECS::TopDown2DController>());
+                if (!toggled) toggle(m_World->GetEntitiesWithComponent<Enjin::ECS::ThirdPersonController>());
+                if (!toggled) toggle(m_World->GetEntitiesWithComponent<Enjin::ECS::FirstPersonController>());
+                if (!toggled) m_ConsoleLog.push_back("[Error] No player entity found");
+            }
+        } else if (cmd == "kill") {
+            if (m_World) {
+                auto killPlayer = [&](auto entities) {
+                    for (auto e : entities) {
+                        auto* hp = m_World->GetComponent<Enjin::ECS::HealthComponent>(e);
+                        if (hp) { hp->currentHealth = 0; hp->isDead = true; m_ConsoleLog.push_back("Player killed"); return true; }
+                    }
+                    return false;
+                };
+                if (!killPlayer(m_World->GetEntitiesWithComponent<Enjin::ECS::Platformer2DController>()))
+                if (!killPlayer(m_World->GetEntitiesWithComponent<Enjin::ECS::ThirdPersonController>()))
+                    m_ConsoleLog.push_back("[Error] No player entity found");
+            }
+        } else if (cmd == "heal") {
+            Enjin::f32 amt = 9999.0f;
+            iss >> amt;
+            if (m_World) {
+                auto healPlayer = [&](auto entities) {
+                    for (auto e : entities) {
+                        auto* hp = m_World->GetComponent<Enjin::ECS::HealthComponent>(e);
+                        if (hp) { hp->currentHealth = std::min(hp->currentHealth + amt, hp->maxHealth);
+                            m_ConsoleLog.push_back("Healed to " + std::to_string((int)hp->currentHealth)); return true; }
+                    }
+                    return false;
+                };
+                if (!healPlayer(m_World->GetEntitiesWithComponent<Enjin::ECS::Platformer2DController>()))
+                if (!healPlayer(m_World->GetEntitiesWithComponent<Enjin::ECS::ThirdPersonController>()))
+                    m_ConsoleLog.push_back("[Error] No player entity found");
+            }
+        } else if (cmd == "speed") {
+            Enjin::f32 mult = 1.0f;
+            if (iss >> mult) {
+                // Apply to all controller types
+                if (m_World) {
+                    for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::Platformer2DController>()) {
+                        auto* c = m_World->GetComponent<Enjin::ECS::Platformer2DController>(e);
+                        if (c) c->moveSpeed *= mult;
+                    }
+                    for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::ThirdPersonController>()) {
+                        auto* c = m_World->GetComponent<Enjin::ECS::ThirdPersonController>(e);
+                        if (c) c->moveSpeed *= mult;
+                    }
+                    m_ConsoleLog.push_back("Speed x" + std::to_string(mult));
+                }
+            } else { m_ConsoleLog.push_back("[Error] Usage: speed <multiplier>"); }
+        } else if (cmd == "tp") {
+            Enjin::f32 x, y, z = 0;
+            if (iss >> x >> y) {
+                iss >> z; // optional Z
+                if (m_World) {
+                    auto tpPlayer = [&](auto entities) {
+                        for (auto e : entities) {
+                            auto* t = m_World->GetComponent<Enjin::ECS::TransformComponent>(e);
+                            if (t) { t->position = Enjin::Math::Vector3(x, y, z);
+                                m_ConsoleLog.push_back("Teleported to " + std::to_string(x) + " " + std::to_string(y) + " " + std::to_string(z)); return true; }
+                        }
+                        return false;
+                    };
+                    if (!tpPlayer(m_World->GetEntitiesWithComponent<Enjin::ECS::Platformer2DController>()))
+                    if (!tpPlayer(m_World->GetEntitiesWithComponent<Enjin::ECS::ThirdPersonController>()))
+                        m_ConsoleLog.push_back("[Error] No player entity found");
+                }
+            } else { m_ConsoleLog.push_back("[Error] Usage: tp <x> <y> [z]"); }
+        } else if (cmd == "restart") {
+            if (!m_StartScene.empty()) {
+                auto backendType = static_cast<Enjin::Physics::PhysicsBackendType>(m_PhysicsBackendType <= 3 ? m_PhysicsBackendType : 0);
+                auto projectMode = static_cast<Enjin::Scene::ProjectMode>(m_ProjectMode <= 2 ? m_ProjectMode : 1);
+                m_Physics = Enjin::Physics::CreatePhysicsBackend(backendType, projectMode);
+                if (m_Physics) m_Physics->SetWorld(m_World.get());
+                m_Physics2D = Enjin::Physics::CreatePhysicsBackend2D(backendType, projectMode);
+                if (m_Physics2D) m_Physics2D->Initialize(m_World.get());
+                m_ControllerSystem.SetPhysics(m_Physics.get());
+                m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
+                Enjin::Gameplay::GameplayLoop::Wire2DCollisionCallbacks(m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys);
+                LoadSceneFromPack(m_StartScene);
+                m_ConsoleLog.push_back("Level restarted");
+            }
+        } else if (cmd == "fps") {
+            Enjin::f32 fps = ImGui::GetIO().Framerate;
+            m_ConsoleLog.push_back("FPS: " + std::to_string((int)fps) + " (" + std::to_string(1000.0f / fps).substr(0, 5) + " ms)");
+        } else if (cmd == "stats") {
+            if (m_World) m_ConsoleLog.push_back("Entities: " + std::to_string(m_World->GetEntityCount()));
+            if (m_RenderSystem) m_ConsoleLog.push_back("Draw calls: " + std::to_string(m_RenderSystem->GetDrawCallCount()));
+        } else if (cmd == "quit") {
+            if (GetWindow()) GetWindow()->Close();
+        } else {
+            m_ConsoleLog.push_back("[Error] Unknown command: " + cmd);
+        }
     }
 
 private:
@@ -1718,6 +1956,14 @@ private:
     bool m_FullscreenChangeRequested = false;
     bool m_PendingFullscreen = false;
     std::vector<Enjin::ECS::Entity> m_DeferredDestroys;
+
+    // Tilde console
+    bool m_ShowConsole = false;
+    Enjin::f32 m_ConsoleAnim = 0.0f;
+    char m_ConsoleInput[512] = {};
+    std::vector<std::string> m_ConsoleLog;
+    std::vector<std::string> m_ConsoleHistory;
+    int m_ConsoleHistoryPos = -1;
 
     // Splash screen
     bool m_ShowingSplash = false;

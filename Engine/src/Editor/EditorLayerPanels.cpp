@@ -8030,8 +8030,8 @@ void EditorLayer::DrawDropConsole(f32 deltaTime) {
     f32 consoleH = io.DisplaySize.y * 0.4f;
     f32 visibleH = consoleH * m_DropConsoleAnim;
 
-    // Position: slides down from the top edge
-    ImGui::SetNextWindowPos(ImVec2(0, visibleH - consoleH));
+    // Position: slides up from the bottom edge
+    ImGui::SetNextWindowPos(ImVec2(0, io.DisplaySize.y - visibleH));
     ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x, consoleH));
 
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
