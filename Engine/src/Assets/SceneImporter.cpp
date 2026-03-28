@@ -1186,7 +1186,9 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                     // Apply axis conversion to vertex positions, normals, tangents.
                     // Positions use ConvertPosition (includes flip overrides),
                     // normals/tangents use ConvertNormal (direction-only, no scale).
-                    if (zToY || lToR) {
+                    // Check flip flags independently — user may set them even when
+                    // source app is Auto (no zToY/lToR auto-detection).
+                    if (zToY || lToR || options.flipX || options.flipY || options.flipZ) {
                         vertex.position = ConvertPosition(vertex.position, zToY, lToR, options.flipX, options.flipY, options.flipZ);
                         vertex.normal = ConvertNormal(vertex.normal, zToY, lToR);
                         Math::Vector3 tang3(assimpVert.tangent.x, assimpVert.tangent.y, assimpVert.tangent.z);
@@ -1205,9 +1207,24 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                     meshComp.vertices.push_back(vertex);
                 }
 
-                // Add indices (offset by current vertex count)
-                for (u32 index : primitive.indices) {
-                    meshComp.indices.push_back(index + vertexOffset);
+                // Add indices (offset by current vertex count).
+                // When handedness conversion flips one axis, triangle winding
+                // must be reversed to prevent inside-out rendering.
+                bool reverseWinding = lToR;  // Left-to-right flips X → reverses winding
+                if (options.flipX != options.flipY != options.flipZ) {
+                    reverseWinding = !reverseWinding; // Odd number of flips also reverses
+                }
+                if (reverseWinding) {
+                    // Swap second and third vertex of each triangle
+                    for (usize idx = 0; idx + 2 < primitive.indices.size(); idx += 3) {
+                        meshComp.indices.push_back(primitive.indices[idx + 0] + vertexOffset);
+                        meshComp.indices.push_back(primitive.indices[idx + 2] + vertexOffset);
+                        meshComp.indices.push_back(primitive.indices[idx + 1] + vertexOffset);
+                    }
+                } else {
+                    for (u32 index : primitive.indices) {
+                        meshComp.indices.push_back(index + vertexOffset);
+                    }
                 }
 
                 u32 subMeshIndexCount = static_cast<u32>(meshComp.indices.size()) - subMeshIndexOffset;
