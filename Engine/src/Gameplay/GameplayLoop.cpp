@@ -304,15 +304,9 @@ void CheckEnemyOverlaps2D(ECS::World* world, f32 deltaTime,
             }
 
             // Not a stomp — apply damage to player
+            // Invulnerability window prevents rapid-fire hits (damageOnce not used
+            // for enemies — they should hurt repeatedly until killed or avoided)
             if (playerHp->isInvulnerable || playerHp->invulnerabilityTimer > 0.0f) continue;
-            if (enemyDmg->damageOnce) {
-                bool already = false;
-                for (auto e : enemyDmg->damagedEntities) {
-                    if (e == player) { already = true; break; }
-                }
-                if (already) continue;
-                enemyDmg->damagedEntities.push_back(player);
-            }
 
             f32 remaining = enemyDmg->damage;
             if (playerHp->currentShield > 0.0f) {

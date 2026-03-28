@@ -2768,6 +2768,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             hp.currentHealth = 100.0f;
             hp.regenRate = 1.0f;
             hp.regenDelay = 3.0f;
+            hp.invulnerabilityTime = 1.0f;  // 1 second of invulnerability after hit
             hp.invulnerabilityTime = 0.5f;
             auto& inv = m_World->AddComponent<ECS::InventoryComponent>(player);
             inv.maxSlots = 10;
@@ -2879,6 +2880,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 hp.maxHealth = 20.0f; hp.currentHealth = 20.0f;
                 auto& dmg = m_World->AddComponent<ECS::DamageComponent>(e);
                 dmg.damage = 10.0f;
+                dmg.damageOnce = false;  // Enemies hurt repeatedly (player has invulnerability window)
                 dmg.knockbackForce = 6.0f;  // Push player back on side contact
                 auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(e);
                 ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
@@ -3062,6 +3064,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 hp.maxHealth = 15.0f; hp.currentHealth = 15.0f;
                 auto& dmg = m_World->AddComponent<ECS::DamageComponent>(e);
                 dmg.damage = 8.0f;
+                dmg.damageOnce = false;
                 auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(e);
                 ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
                 ai.patrolPoints = batPatrols[i];
@@ -3783,6 +3786,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             hp.maxHealth = 100.0f;
             hp.currentHealth = 100.0f;
             hp.regenRate = 2.0f;
+            hp.invulnerabilityTime = 1.0f;
             hp.regenDelay = 3.0f;
             hp.invulnerabilityTime = 0.3f;
             auto& inv = m_World->AddComponent<ECS::InventoryComponent>(player);
