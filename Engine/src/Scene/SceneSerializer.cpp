@@ -357,6 +357,7 @@ json SerializeCameraComponent(const ECS::CameraComponent& camera) {
     j["viewportWidth"] = RF(camera.viewportWidth);
     j["viewportHeight"] = RF(camera.viewportHeight);
     j["cullingMask"] = camera.cullingMask;
+    if (!camera.enablePostProcessing) j["enablePostProcessing"] = false;
     return j;
 }
 
@@ -578,6 +579,7 @@ ECS::CameraComponent DeserializeCameraComponent(const json& j) {
     camera.viewportWidth = j.value("viewportWidth", 1.0f);
     camera.viewportHeight = j.value("viewportHeight", 1.0f);
     camera.cullingMask = j.value("cullingMask", 0xFFFFFFFFu);
+    if (j.contains("enablePostProcessing")) camera.enablePostProcessing = j["enablePostProcessing"].get<bool>();
     return camera;
 }
 

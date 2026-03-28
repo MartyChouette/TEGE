@@ -78,6 +78,7 @@ struct ENJIN_API CameraComponent {
 
     // Rendering options
     u32 cullingMask = 0xFFFFFFFF;  // Layers to render
+    bool enablePostProcessing = true; // Apply bloom, FXAA, tone mapping, etc.
 
     // Helper to get aspect ratio from viewport
     f32 GetAspectRatio(u32 screenWidth, u32 screenHeight) const {

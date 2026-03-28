@@ -1075,6 +1075,12 @@ void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
 
         ImGui::Separator();
 
+        // Rendering
+        InspectorUndo::Checkbox(m_UndoRedo, "Post-Processing", &camera->enablePostProcessing);
+        ImGui::SetItemTooltip("Enable bloom, FXAA, tone mapping, color grading on this camera");
+
+        ImGui::Separator();
+
         // Virtual camera settings
         ImGui::Text("Virtual Camera");
         InspectorUndo::Checkbox(m_UndoRedo, "Active", &camera->isActive);
