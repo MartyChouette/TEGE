@@ -2782,7 +2782,7 @@ void EditorLayer::DrawQuitFeedbackDialog() {
     ImGui::OpenPopup("##QuitFeedback");
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(520, 560));
+    ImGui::SetNextWindowSize(ImVec2(580, 600));
 
     if (ImGui::BeginPopupModal("##QuitFeedback", nullptr,
         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar)) {
@@ -2794,7 +2794,7 @@ void EditorLayer::DrawQuitFeedbackDialog() {
         // Helper for 1-5 rating row
         auto RatingRow = [](const char* label, u8& value) {
             ImGui::Text("%s", label);
-            ImGui::SameLine(220);
+            ImGui::SameLine(260);
             ImGui::PushID(label);
             for (u8 i = 1; i <= 5; i++) {
                 ImGui::PushID(static_cast<int>(i));
@@ -2839,10 +2839,10 @@ void EditorLayer::DrawQuitFeedbackDialog() {
         ImGui::Dummy(ImVec2(0, 8));
 
         // Buttons
-        float buttonWidth = 140.0f;
-        float spacing = 20.0f;
+        float buttonWidth = 150.0f;
+        float spacing = 16.0f;
         float totalWidth = buttonWidth * 3 + spacing * 2;
-        ImGui::SetCursorPosX((520 - totalWidth) * 0.5f);
+        ImGui::SetCursorPosX((580 - totalWidth) * 0.5f);
 
         if (ImGui::Button("Submit & Quit", ImVec2(buttonWidth, 32))) {
             m_QuitSurvey.whatDidYouLike = likeBuf;
@@ -2901,7 +2901,9 @@ void EditorLayer::DrawQuitFeedbackDialog() {
 void EditorLayer::FinalizeQuit() {
     m_ShowQuitFeedbackDialog = false;
     m_QuitSurvey = {};
-    if (m_Window) m_Window->Close();
+    // Defer close to next frame — calling Close() during ImGui rendering
+    // destroys resources mid-frame and crashes on some drivers.
+    m_PendingQuit = true;
 }
 
 } // namespace Editor

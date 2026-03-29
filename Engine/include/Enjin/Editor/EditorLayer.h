@@ -599,6 +599,7 @@ private:
     // Panel state
     bool m_MSAAImGuiUpdatePending = false;  // Deferred ImGui pipeline update after MSAA change
     bool m_PendingWireframe = false;       // Deferred wireframe toggle (pipeline recreation unsafe mid-render)
+    bool m_PendingQuit = false;            // Deferred quit (Close() unsafe mid-ImGui-render)
     bool m_PrePlayFullscreen = false;      // Window fullscreen state before play mode changed it
     bool m_PrePlayFullscreenSaved = false;  // Whether we captured pre-play fullscreen state
     bool m_ShowDemoWindow = false;

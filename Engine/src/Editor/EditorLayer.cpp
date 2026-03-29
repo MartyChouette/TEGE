@@ -656,6 +656,13 @@ void EditorLayer::Shutdown() {
 }
 
 void EditorLayer::Update(f32 deltaTime) {
+    // Deferred quit (Close() called during ImGui rendering crashes some drivers)
+    if (m_PendingQuit) {
+        m_PendingQuit = false;
+        if (m_Window) m_Window->Close();
+        return;
+    }
+
     // Begin profiler frame measurement
     Debug::Profiler::Instance().BeginFrame();
 
