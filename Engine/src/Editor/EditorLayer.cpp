@@ -820,12 +820,10 @@ void EditorLayer::Update(f32 deltaTime) {
         if (m_Renderer && m_Renderer->GetContext()) {
             Editor::PerformanceStats::QueryGPUMemory(m_Renderer->GetContext(), m_PerfMetrics);
         }
-        if (m_RenderSystem) {
-            m_PerfMetrics.drawCallCount = m_RenderSystem->GetDrawCallCount();
-            m_PerfMetrics.triangleCount = m_RenderSystem->GetTriangleCount();
-            m_PerfMetrics.descriptorCacheHits = m_RenderSystem->GetDescriptorCacheHits();
-            m_PerfMetrics.descriptorCacheWrites = m_RenderSystem->GetDescriptorCacheWrites();
-        }
+        // Draw call/triangle stats are read at the end of Render() (after
+        // RenderSystem::Update increments them). Reading here in Update() would
+        // get zeros because ResetFrameCounters runs at the start of each render.
+        // The m_PerfMetrics.drawCallCount/triangleCount are updated in Render().
     }
 
     // Feed counters to profiler
@@ -2702,6 +2700,14 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // Quit feedback survey dialog
     if (m_ShowQuitFeedbackDialog) {
         DrawQuitFeedbackDialog();
+    }
+
+    // Read render stats AFTER the render pass (counters are reset at start, incremented during draw)
+    if (m_RenderSystem) {
+        m_PerfMetrics.drawCallCount = m_RenderSystem->GetDrawCallCount();
+        m_PerfMetrics.triangleCount = m_RenderSystem->GetTriangleCount();
+        m_PerfMetrics.descriptorCacheHits = m_RenderSystem->GetDescriptorCacheHits();
+        m_PerfMetrics.descriptorCacheWrites = m_RenderSystem->GetDescriptorCacheWrites();
     }
 
     // Clear the force flag after one frame

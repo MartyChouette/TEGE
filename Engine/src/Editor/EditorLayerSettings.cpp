@@ -1931,7 +1931,7 @@ void EditorLayer::DrawSettingsWindow() {
             // --- Lighting & Shadows ---
             // Realistic lighting, outdoor scenes, architectural visualization, cinematic mood
             ImGui::SeparatorText("Lighting & Shadows");
-            ImGui::TextDisabled("Realistic lighting, outdoor scenes, cinematic mood");
+            ImGui::PushTextWrapPos(); ImGui::TextDisabled("Realistic lighting, outdoor scenes, cinematic mood"); ImGui::PopTextWrapPos();
             DrawSettingsSection_Skybox();
             DrawSettingsSection_AmbientLighting();
             DrawSettingsSection_ShadingModel();
@@ -1941,27 +1941,27 @@ void EditorLayer::DrawSettingsWindow() {
             // --- Ray Tracing ---
             // Photorealistic reflections, soft shadows, global illumination (RTX / RDNA2+ GPU)
             ImGui::SeparatorText("Ray Tracing & Path Tracing");
-            ImGui::TextDisabled("Photorealistic reflections, global illumination, path tracing (RTX/RDNA2+)");
+            ImGui::PushTextWrapPos(); ImGui::TextDisabled("Photorealistic reflections, global illumination, path tracing (RTX/RDNA2+)"); ImGui::PopTextWrapPos();
             DrawSettingsSection_RayTracing();
 
             // --- Post-Processing & Cinematic ---
             // Film looks, color grading, bloom, depth effects — works on all hardware
             ImGui::SeparatorText("Post-Processing & Cinematic");
-            ImGui::TextDisabled("Film looks, color grading, bloom, depth effects — all hardware");
+            ImGui::PushTextWrapPos(); ImGui::TextDisabled("Film looks, color grading, bloom, depth effects — all hardware"); ImGui::PopTextWrapPos();
             DrawSettingsSection_PostProcessing();
             DrawSettingsSection_CelShading();
 
             // --- Stylized & Retro ---
             // PS1/PS2/N64/Dreamcast aesthetics, pixel art, lo-fi, CRT nostalgia
             ImGui::SeparatorText("Stylized & Retro");
-            ImGui::TextDisabled("PS1/PS2/N64/Dreamcast aesthetics, lo-fi visuals, CRT nostalgia");
+            ImGui::PushTextWrapPos(); ImGui::TextDisabled("PS1/PS2/N64/Dreamcast aesthetics, lo-fi visuals, CRT nostalgia"); ImGui::PopTextWrapPos();
             DrawSettingsSection_RetroEffects();
             DrawSettingsSection_DreamcastEffects();
 
             // --- Display & Environment ---
             // World settings, weather, time of day, rendering modes
             ImGui::SeparatorText("Display & Environment");
-            ImGui::TextDisabled("World settings, weather, time of day, rendering modes");
+            ImGui::PushTextWrapPos(); ImGui::TextDisabled("World settings, weather, time of day, rendering modes"); ImGui::PopTextWrapPos();
             DrawSettingsSection_DisplayOptions();
             DrawSettingsSection_Environment();
             ImGui::PopID();
