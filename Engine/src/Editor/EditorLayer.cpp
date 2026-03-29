@@ -666,10 +666,14 @@ void EditorLayer::Update(f32 deltaTime) {
     // Begin profiler frame measurement
     Debug::Profiler::Instance().BeginFrame();
 
-    // Apply deferred wireframe toggle (pipeline recreation unsafe mid-render)
+    // Wireframe mode: only applies to the scene view (editor viewport).
+    // The global pipeline is toggled for scene view render, then restored
+    // for game view. Pipeline recreation is deferred to avoid mid-render crashes.
     if (m_RenderSystem && m_RenderSystem->IsWireframeEnabled() != m_PendingWireframe) {
         m_RenderSystem->SetWireframeEnabled(m_PendingWireframe);
     }
+    // After scene view renders (in RenderOffscreen), wireframe is turned off
+    // so the game view always renders in fill mode. See restore block at line ~1540.
 
     // Handle deferred template application (requested during Render-phase ImGui).
     // World::Clear() must not run during Render to avoid invalidating GPU resources
@@ -1535,7 +1539,9 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         }
         m_EditorViewportRT->End(commandBuffer);
 
-        // Restore render state so game view renders with full quality
+        // Restore render state so game view renders with full quality.
+        // Wireframe is handled by the offscreen pipeline (scene view only) —
+        // the main pipeline always uses fill mode, so no wireframe restore needed.
         if (m_RenderSystem) {
             m_RenderSystem->SetShadowsEnabled(prevShadows);
             m_RenderSystem->SetEditorWireframe(prevWireframe);

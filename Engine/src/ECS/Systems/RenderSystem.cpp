@@ -3445,7 +3445,9 @@ void RenderSystem::CreatePipeline() {
     config.depthWrite = true;
     config.cullMode = m_BackfaceCulling ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    config.polygonMode = m_WireframeMode ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
+    // Main pipeline always uses fill mode — wireframe only affects the offscreen
+    // pipeline (scene view). Game view and Player always render filled.
+    config.polygonMode = VK_POLYGON_MODE_FILL;
     config.msaaSamples = m_Renderer->GetMSAASamples();
     config.colorAttachmentCount = 2; // Swapchain MRT: color + velocity (main pass only; offscreen uses 1)
 
