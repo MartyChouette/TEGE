@@ -5,6 +5,7 @@
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/Logging/Log.h"
 #include <cmath>
 #include <algorithm>
 
@@ -39,12 +40,57 @@ void DestructibleSystem::Update(f32 deltaTime) {
         dc->respawnTimer -= deltaTime;
         if (dc->respawnTimer <= 0.0f) {
             dc->isDestroyed = false;
-            dc->health = 1.0f;
+            dc->health = (dc->maxHealth > 0.0f) ? dc->maxHealth : 1.0f;
             dc->respawnTimer = 0.0f;
+            dc->damageOverlayIntensity = 0.0f;
+
+            // Restore original base color on respawn
+            if (dc->originalBaseColorCached && dc->showDamageOverlay) {
+                auto* mat = m_World->GetComponent<ECS::MaterialComponent>(entity);
+                if (mat) {
+                    mat->baseColor = dc->originalBaseColor;
+                }
+            }
+
             // Make visible again
             auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
             if (transform) {
                 transform->visible = true;
+            }
+
+            // Fire respawned callback
+            if (dc->onRespawned) dc->onRespawned(entity);
+        }
+    }
+
+    // Update damage overlay visuals (darken material based on health ratio)
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::DestructibleComponent>()) {
+        auto* dc = m_World->GetComponent<ECS::DestructibleComponent>(entity);
+        if (!dc || dc->isDestroyed) continue;
+
+        // Auto-capture maxHealth on the first frame we see this entity
+        if (dc->maxHealth <= 0.0f) {
+            dc->maxHealth = dc->health;
+        }
+
+        // Cache the original base color before we start modifying it
+        if (dc->showDamageOverlay && !dc->originalBaseColorCached) {
+            auto* mat = m_World->GetComponent<ECS::MaterialComponent>(entity);
+            if (mat) {
+                dc->originalBaseColor = mat->baseColor;
+                dc->originalBaseColorCached = true;
+            }
+        }
+
+        // Compute and apply damage overlay intensity
+        if (dc->showDamageOverlay && dc->maxHealth > 0.0f) {
+            dc->damageOverlayIntensity = 1.0f - (dc->health / dc->maxHealth);
+
+            auto* mat = m_World->GetComponent<ECS::MaterialComponent>(entity);
+            if (mat && dc->originalBaseColorCached) {
+                f32 t = dc->damageOverlayIntensity;
+                // Lerp base color toward damage tint (half-strength to keep it subtle)
+                mat->baseColor = Math::Lerp(dc->originalBaseColor, dc->damageTint, t * 0.5f);
             }
         }
     }
@@ -101,11 +147,16 @@ void DestructibleSystem::ApplyDamage(ECS::Entity entity, f32 damage,
 
     // One-hit destroy mode
     if (dc->destroyOnHit) {
+        if (dc->onDamaged) dc->onDamaged(entity);
         Destroy(entity, impactPoint, impactDir, 5.0f);
         return;
     }
 
     dc->health -= damage;
+
+    // Fire damage callback
+    if (dc->onDamaged) dc->onDamaged(entity);
+
     if (dc->health <= 0.0f) {
         dc->health = 0.0f;
         Destroy(entity, impactPoint, impactDir, damage * 2.0f);
@@ -158,6 +209,9 @@ void DestructibleSystem::ProcessDestructionQueue() {
         if (dc->canRespawn) {
             dc->respawnTimer = dc->respawnTime;
         }
+
+        // Fire destroyed callback
+        if (dc->onDestroyed) dc->onDestroyed(event.entity);
 
         // Hide the original entity
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(event.entity);

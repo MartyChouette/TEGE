@@ -357,6 +357,10 @@ public:
     SceneRenderMode GetSceneRenderMode() const { return m_SceneComposition.mode; }
     const SceneComposition& GetSceneComposition() const { return m_SceneComposition; }
 
+    // Mark the material SSBO as dirty so it will be fully rebuilt next frame.
+    // Call when material properties change outside of entity add/remove (e.g., inspector edits, scripts).
+    void MarkMaterialsDirty() { m_MaterialSSBODirty = true; }
+
     // Draw call / triangle counters (reset each frame in Update)
     u32 GetDrawCallCount() const { return m_DrawCallCount; }
     u32 GetTriangleCount() const { return m_TriangleCount; }
@@ -892,6 +896,7 @@ private:
     u32 m_MaterialSSBOStride = 0;                        // Bytes per material entry (aligned to device minimum)
     u32 m_MaterialSSBOCapacity = 0;                      // Max materials the GPU buffer can hold
     bool m_MaterialSSBOBuilt = false;                    // Set after BuildMaterialSSBO(), reset at frame start
+    bool m_MaterialSSBODirty = true;                     // True when materials need full rebuild (entity add/remove, property edits)
     bool m_SceneClearPending = false;                    // Deferred scene-clear flag (flushed at frame boundary)
     u32 m_SceneClearCooldown = 0;                        // Skip game view for N frames after scene clear
 

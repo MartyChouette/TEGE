@@ -1579,6 +1579,22 @@ struct DestructibleComponent {
 
     // Visual
     f32 shakeOnHit = 0.1f;        // Screen/entity shake amount
+
+    // Event callbacks (set by gameplay code, called on destruction)
+    std::function<void(Entity)> onDamaged;      // Called each time damage is applied
+    std::function<void(Entity)> onDestroyed;    // Called when health reaches 0
+    std::function<void(Entity)> onRespawned;    // Called when entity respawns
+
+    // Visual damage feedback
+    bool showDamageOverlay = true;              // Enable crack/damage visual
+    f32 damageOverlayIntensity = 0.0f;          // Runtime: 0=pristine, 1=about to break (computed from health ratio)
+    std::string crackTexturePath;               // Optional crack normal map overlay
+    Math::Vector3 damageTint = Math::Vector3(0.3f, 0.25f, 0.2f); // Darkening tint at low health
+
+    // Damage overlay internal state
+    f32 maxHealth = 0.0f;                       // Initial health (auto-captured on first frame, 0 = not yet set)
+    Math::Vector3 originalBaseColor;            // Cached for damage overlay restoration
+    bool originalBaseColorCached = false;       // Whether we've captured the original color
 };
 
 // Moving Platform — entity moves between waypoints

@@ -476,6 +476,7 @@ void RenderSystem::FlushSceneClear() {
     m_CachedAnimatorStorage = nullptr;
     m_CachedTextStorage = nullptr;
     m_MaterialSSBOBuilt = false;
+    m_MaterialSSBODirty = true;
     m_LightListDirty = true;
     m_SceneComposition.dirty = true;
     m_SceneClearCooldown = 2;  // Skip game view for 2 frames (double-buffered)
@@ -2785,6 +2786,9 @@ void RenderSystem::OnEntityAdded(Entity entity) {
     // Invalidate scene composition cache (new entity may change 2D/3D classification)
     m_SceneComposition.dirty = true;
 
+    // Invalidate material SSBO (new entity needs to be included in the buffer)
+    m_MaterialSSBODirty = true;
+
     // Invalidate shadow caster cache (new entity may be a shadow caster)
     m_ShadowCastersDirty = true;
 
@@ -2844,6 +2848,9 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
 
     // Invalidate scene composition cache (removed entity may change 2D/3D classification)
     m_SceneComposition.dirty = true;
+
+    // Invalidate material SSBO (removed entity changes the buffer layout)
+    m_MaterialSSBODirty = true;
 
     // Invalidate shadow caster cache (removed entity may have been a shadow caster)
     m_ShadowCastersDirty = true;
@@ -4770,8 +4777,6 @@ void RenderSystem::BuildMaterialSSBO() {
     m_MaterialSSBOBuilt = true;
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
-    m_EntityMaterialIndex.clear();
-    m_MaterialSSBOCount = 0;
 
     // Collect all renderable entities and build material data
     const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
@@ -4783,8 +4788,22 @@ void RenderSystem::BuildMaterialSSBO() {
         MaterialGPU gpu = MaterialGPU::FromComponent(defaultMat);
         m_MaterialBuffers[currentFrame]->UploadData(&gpu, sizeof(gpu), 0);
         m_MaterialSSBOCount = 1;
+        m_MaterialSSBODirty = false;
         return;
     }
+
+    // Fast path: if materials aren't dirty and entity count hasn't changed,
+    // skip the per-entity iteration and just re-upload the cached staging buffer
+    // to this frame's GPU buffer (needed because each frame-in-flight has its own buffer).
+    if (!m_MaterialSSBODirty && m_MaterialSSBOCount > 0 && entityCount == m_MaterialSSBOCount) {
+        usize uploadSize = static_cast<usize>(m_MaterialSSBOStride) * m_MaterialSSBOCount;
+        m_MaterialBuffers[currentFrame]->UploadData(m_MaterialSSBOData.data(), uploadSize, 0);
+        return;
+    }
+
+    // Full rebuild path: entity count changed or materials are dirty
+    m_EntityMaterialIndex.clear();
+    m_MaterialSSBOCount = 0;
 
     // Grow GPU buffer if needed (recreate with larger capacity)
     if (entityCount > m_MaterialSSBOCapacity) {
@@ -4877,6 +4896,8 @@ void RenderSystem::BuildMaterialSSBO() {
     // Single batched upload to GPU
     usize uploadSize = static_cast<usize>(m_MaterialSSBOStride) * m_MaterialSSBOCount;
     m_MaterialBuffers[currentFrame]->UploadData(m_MaterialSSBOData.data(), uploadSize, 0);
+
+    m_MaterialSSBODirty = false;
 }
 
 u32 RenderSystem::GetMaterialIndex(Entity entity) const {
