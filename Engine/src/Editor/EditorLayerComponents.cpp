@@ -45,6 +45,7 @@
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/ECS/Components/Flower.h"
+#include "Enjin/Editor/SpriteSheetImporter.h"
 #ifndef _WIN32
 #include <unistd.h>
 #endif
@@ -3566,6 +3567,53 @@ void EditorLayer::DrawAnimatedSprite2DComponent(ECS::Entity entity) {
                     sprite->srcWidth = m_AutoSliceWidth;
                     sprite->srcHeight = m_AutoSliceHeight;
                     sprite->spriteDirty = true;
+                }
+            }
+
+            // --- Auto-detect sprite regions by transparency ---
+            if (sprite && !sprite->texturePath.empty()) {
+                ImGui::Separator();
+                ImGui::Text("Auto-Detect Regions");
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Automatically detect sprite regions by transparency");
+
+                static u8 autoDetectThreshold = 10;
+                ImGui::SliderScalar("Alpha Threshold", ImGuiDataType_U8, &autoDetectThreshold,
+                    nullptr, nullptr, "%u");
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Minimum alpha value to consider a pixel non-transparent (0-255)");
+
+                static f32 autoDetectFPS = 12.0f;
+                ImGui::DragFloat("Frame Rate##AutoDetect", &autoDetectFPS, 0.5f, 1.0f, 60.0f, "%.1f fps");
+
+                if (ImGui::Button("Detect Regions##AutoDetect")) {
+                    Editor::SpriteSheetImporter importer;
+                    if (importer.LoadImage(sprite->texturePath)) {
+                        auto result = importer.SliceAutoDetect(autoDetectThreshold);
+                        if (!result.slices.empty()) {
+                            anim->frames.clear();
+                            f32 frameDuration = (autoDetectFPS > 0.0f) ? (1.0f / autoDetectFPS) : 0.1f;
+                            for (const auto& slice : result.slices) {
+                                ECS::AnimatedSprite2DComponent::Frame f;
+                                f.srcX = slice.x;
+                                f.srcY = slice.y;
+                                f.duration = frameDuration;
+                                anim->frames.push_back(f);
+                            }
+                            // Use first slice dimensions for sprite source size
+                            sprite->srcWidth = result.slices[0].width;
+                            sprite->srcHeight = result.slices[0].height;
+                            sprite->spriteDirty = true;
+                            anim->currentFrame = 0;
+                            anim->frameTimer = 0.0f;
+                            ENJIN_LOG_INFO(Editor, "Auto-detected %zu sprite regions (threshold=%u)",
+                                result.slices.size(), autoDetectThreshold);
+                        } else {
+                            ENJIN_LOG_WARN(Editor, "No sprite regions detected (threshold=%u)", autoDetectThreshold);
+                        }
+                    } else {
+                        ENJIN_LOG_WARN(Editor, "Failed to load image for auto-detect: %s", sprite->texturePath.c_str());
+                    }
                 }
             }
         }

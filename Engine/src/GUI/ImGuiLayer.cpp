@@ -51,11 +51,11 @@ bool ImGuiLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer,
 
     // Rounding
     style.WindowRounding = 6.0f;
-    style.FrameRounding = 3.0f;
+    style.FrameRounding = 5.0f;
     style.PopupRounding = 4.0f;
     style.ScrollbarRounding = 6.0f;
-    style.GrabRounding = 3.0f;
-    style.TabRounding = 4.0f;
+    style.GrabRounding = 5.0f;
+    style.TabRounding = 6.0f;
 
     // Padding and spacing
     style.WindowPadding = ImVec2(12.0f, 12.0f);

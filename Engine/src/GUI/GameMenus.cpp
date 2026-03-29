@@ -80,7 +80,11 @@ void GameMenuSystem::Render(f32 screenW, f32 screenH) {
 void GameMenuSystem::RenderMainMenu(f32 w, f32 h) {
     // Semi-transparent dim overlay so the game scene shows through
     ImDrawList* draw = ImGui::GetBackgroundDrawList();
-    draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), IM_COL32(12, 12, 18, 140));
+    draw->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(w, h),
+        IM_COL32(8, 10, 18, 100),   // top-left (lighter)
+        IM_COL32(8, 10, 18, 100),   // top-right
+        IM_COL32(12, 12, 20, 180),  // bottom-right (darker)
+        IM_COL32(12, 12, 20, 180)); // bottom-left
 
     const f32 buttonW = 280.0f;
     const f32 panelH = 340.0f;
@@ -132,7 +136,11 @@ void GameMenuSystem::RenderMainMenu(f32 w, f32 h) {
 void GameMenuSystem::RenderPauseMenu(f32 w, f32 h) {
     // Dim overlay behind pause menu (background draw list = behind HUD)
     ImDrawList* draw = ImGui::GetBackgroundDrawList();
-    draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), IM_COL32(10, 10, 14, 120));
+    draw->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(w, h),
+        IM_COL32(8, 10, 18, 100),   // top-left (lighter)
+        IM_COL32(8, 10, 18, 100),   // top-right
+        IM_COL32(12, 12, 20, 180),  // bottom-right (darker)
+        IM_COL32(12, 12, 20, 180)); // bottom-left
 
     const f32 buttonW = 260.0f;
     const f32 panelH = 260.0f;
@@ -177,13 +185,21 @@ void GameMenuSystem::RenderPauseMenu(f32 w, f32 h) {
 
 void GameMenuSystem::RenderOptions(f32 w, f32 h) {
     ImDrawList* draw = ImGui::GetBackgroundDrawList();
-    draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), IM_COL32(10, 10, 14, 140));
+    draw->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(w, h),
+        IM_COL32(8, 10, 18, 100),   // top-left (lighter)
+        IM_COL32(8, 10, 18, 100),   // top-right
+        IM_COL32(12, 12, 20, 180),  // bottom-right (darker)
+        IM_COL32(12, 12, 20, 180)); // bottom-left
 
     const f32 panelW = 560.0f;
     const f32 panelH = 480.0f;
 
     ImGui::SetNextWindowPos(ImVec2((w - panelW) * 0.5f, (h - panelH) * 0.5f));
     ImGui::SetNextWindowSize(ImVec2(panelW, panelH));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.10f, 0.11f, 0.14f, 0.95f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.5f, 0.6f, 0.5f));
     ImGui::Begin("##Options", nullptr,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
@@ -216,6 +232,8 @@ void GameMenuSystem::RenderOptions(f32 w, f32 h) {
     }
 
     ImGui::End();
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(2);
 }
 
 // ---------------------------------------------------------------------------
@@ -510,13 +528,21 @@ void GameMenuSystem::RenderControls(f32 w, f32 h) {
 
 void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
     ImDrawList* draw = ImGui::GetBackgroundDrawList();
-    draw->AddRectFilled(ImVec2(0, 0), ImVec2(w, h), IM_COL32(10, 10, 14, 140));
+    draw->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(w, h),
+        IM_COL32(8, 10, 18, 100),   // top-left (lighter)
+        IM_COL32(8, 10, 18, 100),   // top-right
+        IM_COL32(12, 12, 20, 180),  // bottom-right (darker)
+        IM_COL32(12, 12, 20, 180)); // bottom-left
 
     const f32 panelW = 520.0f;
     const f32 panelH = 460.0f;
 
     ImGui::SetNextWindowPos(ImVec2((w - panelW) * 0.5f, (h - panelH) * 0.5f));
     ImGui::SetNextWindowSize(ImVec2(panelW, panelH));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.10f, 0.11f, 0.14f, 0.95f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.5f, 0.6f, 0.5f));
     ImGui::Begin("##HowToPlay", nullptr,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
@@ -579,6 +605,8 @@ void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
     }
 
     ImGui::End();
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(2);
 }
 
 // ---------------------------------------------------------------------------
@@ -586,16 +614,16 @@ void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
 // ---------------------------------------------------------------------------
 
 bool GameMenuSystem::RenderMenuButton(const char* label, f32 width, bool selected) {
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12.0f, 10.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 8.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(16.0f, 12.0f));
 
     if (selected) {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.45f, 0.65f, 0.9f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.40f, 0.50f, 0.70f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.38f, 0.55f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.30f, 0.40f, 0.60f, 1.0f));
     } else {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.20f, 0.28f, 0.85f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.28f, 0.32f, 0.45f, 0.95f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.38f, 0.55f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.22f, 0.26f, 0.38f, 1.0f));
     }
 

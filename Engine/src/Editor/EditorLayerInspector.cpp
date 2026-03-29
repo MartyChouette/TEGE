@@ -2069,6 +2069,45 @@ void EditorLayer::DrawInspectorPanel() {
                         static f32 s_RetargetHeightScale = 1.0f;
                         static std::string s_RetargetSourceAnim;
                         static std::vector<std::pair<std::string, std::string>> s_RetargetPreview;
+                        static ECS::Entity s_RetargetTarget = ECS::INVALID_ENTITY;
+
+                        ImGui::TextDisabled("Transfer animations between different skeletons");
+
+                        // Target entity selector — list entities with AnimatorComponent + skeleton
+                        {
+                            const char* targetLabel = "(self)";
+                            if (s_RetargetTarget != ECS::INVALID_ENTITY && m_World->IsValid(s_RetargetTarget)) {
+                                auto* targetName = m_World->GetComponent<ECS::NameComponent>(s_RetargetTarget);
+                                if (targetName) targetLabel = targetName->name.c_str();
+                            }
+                            if (ImGui::BeginCombo("Target Entity##Retarget", targetLabel)) {
+                                // "(self)" option — retarget onto own skeleton
+                                if (ImGui::Selectable("(self)", s_RetargetTarget == ECS::INVALID_ENTITY)) {
+                                    s_RetargetTarget = ECS::INVALID_ENTITY;
+                                    s_RetargetPreview.clear();
+                                }
+                                // List other entities with AnimatorComponent
+                                const auto& animEntities = m_World->GetEntitiesWithComponent<ECS::AnimatorComponent>();
+                                for (auto e : animEntities) {
+                                    if (e == m_PrimarySelected) continue;
+                                    auto* otherAnim = m_World->GetComponent<ECS::AnimatorComponent>(e);
+                                    if (!otherAnim) continue;
+                                    const auto* otherSkel = otherAnim->animator.GetSkeleton();
+                                    if (!otherSkel || otherSkel->bones.empty()) continue;
+
+                                    auto* eName = m_World->GetComponent<ECS::NameComponent>(e);
+                                    std::string label = eName ? eName->name : ("Entity " + std::to_string(e));
+                                    label += " (" + std::to_string(otherSkel->bones.size()) + " bones)";
+                                    if (ImGui::Selectable(label.c_str(), s_RetargetTarget == e)) {
+                                        s_RetargetTarget = e;
+                                        s_RetargetPreview.clear();
+                                    }
+                                }
+                                ImGui::EndCombo();
+                            }
+                            if (ImGui::IsItemHovered())
+                                ImGui::SetTooltip("Select the entity whose skeleton to retarget onto");
+                        }
 
                         ImGui::Checkbox("Auto-Map By Name", &s_RetargetAutoMap);
                         s_RetargetMap.autoMapByName = s_RetargetAutoMap;
@@ -2087,17 +2126,27 @@ void EditorLayer::DrawInspectorPanel() {
                             ImGui::EndCombo();
                         }
 
+                        // Resolve target skeleton
+                        const auto* srcSkel = animator.GetSkeleton();
+                        const Animation::Skeleton* tgtSkel = srcSkel; // default: retarget onto self
+                        if (s_RetargetTarget != ECS::INVALID_ENTITY && m_World->IsValid(s_RetargetTarget)) {
+                            auto* targetAnimComp = m_World->GetComponent<ECS::AnimatorComponent>(s_RetargetTarget);
+                            if (targetAnimComp) {
+                                const auto* resolved = targetAnimComp->animator.GetSkeleton();
+                                if (resolved && !resolved->bones.empty()) tgtSkel = resolved;
+                            }
+                        }
+
                         // Build preview button
-                        const auto* skel = animator.GetSkeleton();
-                        if (skel && !s_RetargetSourceAnim.empty()) {
+                        if (srcSkel && tgtSkel && !s_RetargetSourceAnim.empty()) {
                             if (ImGui::Button("Preview Mapping##Retarget")) {
-                                Animation::AnimationRetargetMap autoMap = Animation::BuildAutoRetargetMap(*skel, *skel);
+                                Animation::AnimationRetargetMap autoMap = Animation::BuildAutoRetargetMap(*srcSkel, *tgtSkel);
                                 // Merge explicit overrides
                                 for (const auto& [src, tgt] : s_RetargetMap.boneMapping) {
                                     autoMap.boneMapping[src] = tgt;
                                 }
                                 s_RetargetPreview.clear();
-                                for (const auto& bone : skel->bones) {
+                                for (const auto& bone : srcSkel->bones) {
                                     auto it = autoMap.boneMapping.find(bone.name);
                                     std::string target = (it != autoMap.boneMapping.end()) ? it->second : "(unmapped)";
                                     s_RetargetPreview.push_back({bone.name, target});
@@ -2120,7 +2169,7 @@ void EditorLayer::DrawInspectorPanel() {
                         }
 
                         // Manual mapping overrides
-                        if (skel && ImGui::TreeNode("Manual Overrides##Retarget")) {
+                        if (srcSkel && ImGui::TreeNode("Manual Overrides##Retarget")) {
                             static char s_OverrideSrc[128] = "";
                             static char s_OverrideTgt[128] = "";
                             ImGui::SetNextItemWidth(120.0f);
@@ -2141,19 +2190,49 @@ void EditorLayer::DrawInspectorPanel() {
                             ImGui::TreePop();
                         }
 
-                        // Retarget button
-                        if (skel && !s_RetargetSourceAnim.empty()) {
+                        // Retarget buttons
+                        if (srcSkel && tgtSkel && !s_RetargetSourceAnim.empty()) {
                             if (ImGui::Button("Retarget Animation##Retarget")) {
                                 auto itSrc = animations.find(s_RetargetSourceAnim);
                                 if (itSrc != animations.end()) {
                                     Animation::SkeletalAnimation retargeted = Animation::RetargetAnimation(
-                                        itSrc->second, *skel, *skel, s_RetargetMap
+                                        itSrc->second, *srcSkel, *tgtSkel, s_RetargetMap
                                     );
-                                    animComp->animator.AddAnimation(retargeted);
-                                    ENJIN_LOG_INFO(Animation, "Retargeted animation '%s' -> '%s'",
-                                        s_RetargetSourceAnim.c_str(), retargeted.name.c_str());
+                                    // Add to target entity's animator if targeting another entity
+                                    if (s_RetargetTarget != ECS::INVALID_ENTITY && m_World->IsValid(s_RetargetTarget)) {
+                                        auto* targetAnimComp = m_World->GetComponent<ECS::AnimatorComponent>(s_RetargetTarget);
+                                        if (targetAnimComp) {
+                                            targetAnimComp->animator.AddAnimation(retargeted);
+                                            ENJIN_LOG_INFO(Animation, "Retargeted '%s' -> '%s' onto target entity",
+                                                s_RetargetSourceAnim.c_str(), retargeted.name.c_str());
+                                        }
+                                    } else {
+                                        animComp->animator.AddAnimation(retargeted);
+                                        ENJIN_LOG_INFO(Animation, "Retargeted animation '%s' -> '%s'",
+                                            s_RetargetSourceAnim.c_str(), retargeted.name.c_str());
+                                    }
                                 }
                             }
+
+                            ImGui::SameLine();
+                            if (ImGui::Button("Retarget All##Retarget")) {
+                                u32 count = 0;
+                                for (const auto& [animName, animData] : animations) {
+                                    Animation::SkeletalAnimation retargeted = Animation::RetargetAnimation(
+                                        animData, *srcSkel, *tgtSkel, s_RetargetMap
+                                    );
+                                    if (s_RetargetTarget != ECS::INVALID_ENTITY && m_World->IsValid(s_RetargetTarget)) {
+                                        auto* targetAnimComp = m_World->GetComponent<ECS::AnimatorComponent>(s_RetargetTarget);
+                                        if (targetAnimComp) targetAnimComp->animator.AddAnimation(retargeted);
+                                    } else {
+                                        animComp->animator.AddAnimation(retargeted);
+                                    }
+                                    ++count;
+                                }
+                                ENJIN_LOG_INFO(Animation, "Retargeted %u animations", count);
+                            }
+                            if (ImGui::IsItemHovered())
+                                ImGui::SetTooltip("Retarget all animations from this entity to the target");
                         }
 
                         ImGui::TreePop();
