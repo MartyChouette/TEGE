@@ -1862,6 +1862,7 @@ void EditorLayer::MigrateEditorSettingsToProject() {
 
 void EditorLayer::DrawSettingsWindow() {
     bool open = IsPanelVisible(EditorPanel::EditorSettings);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(340, 200), ImVec2(FLT_MAX, FLT_MAX));
     if (!ImGui::Begin("Settings", &open)) {
         ImGui::End();
         if (!open) SetPanelVisibility(EditorPanel::EditorSettings, false);
