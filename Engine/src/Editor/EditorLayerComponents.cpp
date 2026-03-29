@@ -784,6 +784,9 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
 
             ImGui::TreePop();
         }
+
+        // Mark material SSBO dirty so the GPU buffer is rebuilt with any changes
+        if (m_RenderSystem) m_RenderSystem->MarkMaterialsDirty();
     }
 }
 
@@ -942,6 +945,9 @@ void EditorLayer::DrawMaterialSlotsComponent(ECS::Entity entity) {
             }
             ImGui::PopID();
         }
+
+        // Mark material SSBO dirty so the GPU buffer is rebuilt with any changes
+        if (m_RenderSystem) m_RenderSystem->MarkMaterialsDirty();
     }
 }
 
