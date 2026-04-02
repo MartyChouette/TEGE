@@ -261,7 +261,14 @@ public:
 
     // Runtime rendering settings
     bool IsShadowsEnabled() const { return m_ShadowsEnabled; }
-    void SetShadowsEnabled(bool enabled) { m_ShadowsEnabled = enabled; }
+    void SetShadowsEnabled(bool enabled) {
+        if (m_ShadowsEnabled != enabled) {
+            m_ShadowsEnabled = enabled;
+            m_ShadowDescriptorsDirty = true;
+        }
+    }
+    // Call after shadow state changes to update offscreen descriptor bindings
+    void RefreshDescriptorsIfDirty();
 
     // Editor viewport display modes
     void SetEditorWireframe(bool enabled) { m_EditorWireframe = enabled; }
@@ -644,6 +651,7 @@ private:
     std::unique_ptr<Renderer::VulkanPipeline> m_ShadowPipeline;
     Math::Matrix4 m_CurrentCascadeVP;  // Set per-cascade in RenderShadowPass, read by RenderEntityShadow
     bool m_ShadowsEnabled = true;
+    bool m_ShadowDescriptorsDirty = false;
     bool m_EditorWireframe = false;
     bool m_EditorUnlit = false;
     bool m_PlayerMode = false;

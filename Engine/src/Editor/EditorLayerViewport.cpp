@@ -158,18 +158,18 @@ void EditorLayer::DrawViewportPanel() {
             if (active) ImGui::PopStyleColor();
             ImGui::SameLine();
         };
-        modeBtn("Wire",   "Wireframe",                    SceneViewMode::Wireframe);
-        modeBtn("Solid",  "Flat shading, no lighting",    SceneViewMode::Solid);
-        modeBtn("Lit",    "Lighting, no shadows",         SceneViewMode::Lit);
-        modeBtn("Shaded", "Lighting + shadows",           SceneViewMode::LitShadows);
-        modeBtn("Full",   "Shadows + post-processing",    SceneViewMode::Full);
+        modeBtn("Wire",   "Wireframe only",                                    SceneViewMode::Wireframe);
+        modeBtn("Solid",  "Flat shading, no lighting",                          SceneViewMode::Solid);
+        modeBtn("Lit",    "Lighting, no shadows",                               SceneViewMode::Lit);
+        modeBtn("Shaded", "Lighting + shadows (matches game view)",             SceneViewMode::LitShadows);
+        modeBtn("Full",   "Shadows + outlines (post-processing in Game View)",  SceneViewMode::Full);
         ImGui::SameLine(0, 20);
     }
 
     // Aspect ratio dropdown
     {
         int current = static_cast<int>(m_SceneViewAspect);
-        ImGui::SetNextItemWidth(70.0f);
+        ImGui::SetNextItemWidth(90.0f);
         if (ImGui::Combo("##SceneAspect", &current, AspectRatioLabels, static_cast<int>(AspectRatio::Count))) {
             m_SceneViewAspect = static_cast<AspectRatio>(current);
         }

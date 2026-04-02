@@ -4332,7 +4332,21 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             }
         }
 
-        // Point light
+        // Directional light (sun)
+        {
+            ECS::Entity sun = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(sun, "Directional Light");
+            auto& st = m_World->AddComponent<ECS::TransformComponent>(sun);
+            st.position = Math::Vector3(0.0f, 10.0f, 0.0f);
+            st.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-45.0f));
+            auto& slc = m_World->AddComponent<ECS::LightComponent>(sun);
+            slc.type = ECS::LightType::Directional;
+            slc.color = Math::Vector3(1.0f, 0.98f, 0.95f);
+            slc.intensity = 1.2f;
+            slc.castShadows = true;
+        }
+
+        // Point light (fill)
         {
             ECS::Entity pl = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(pl, "Point Light");

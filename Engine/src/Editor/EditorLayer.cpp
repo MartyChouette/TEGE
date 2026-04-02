@@ -1490,7 +1490,11 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             // recreation which is unsafe mid-render. Set a flag and apply in Update.
             m_PendingWireframe = (m_SceneViewMode == SceneViewMode::Wireframe);
             m_RenderSystem->SetEditorUnlit(m_SceneViewMode == SceneViewMode::Solid);
+
             m_RenderSystem->SetShadowsEnabled(wantShadows);
+            // Rebuild offscreen descriptors when shadow state changes so the shadow map
+            // texture binding is updated (otherwise it stays as the dummy placeholder)
+            m_RenderSystem->RefreshDescriptorsIfDirty();
         }
 
         // Shadow pass for editor camera (only in shadow modes)

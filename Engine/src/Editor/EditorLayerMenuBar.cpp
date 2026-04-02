@@ -629,83 +629,46 @@ void EditorLayer::DrawMenuBar() {
                     }
                 }
             }
+            // Helper: create a primitive with transform + mesh + default material + name
+            auto createPrimitive = [&](const char* name, ECS::MeshComponent mesh) {
+                ECS::Entity entity = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(entity, name);
+                m_World->AddComponent<ECS::TransformComponent>(entity);
+                m_World->AddComponent<ECS::MeshComponent>(entity, std::move(mesh));
+                m_World->AddComponent<ECS::MaterialComponent>(entity);
+                SelectEntity(entity);
+            };
+
             if (ImGui::BeginMenu("3D Object")) {
                 if (ImGui::MenuItem("Cube")) {
-                    if (m_World) {
-                        ECS::Entity entity = m_World->CreateEntity();
-                        m_World->AddComponent<ECS::TransformComponent>(entity);
-                        m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateCube(1.0f));
-                        SelectEntity(entity);
-                    }
+                    if (m_World) createPrimitive("Cube", Renderer::MeshFactory::CreateCube(1.0f));
                 }
                 if (ImGui::MenuItem("Sphere")) {
-                    if (m_World) {
-                        ECS::Entity entity = m_World->CreateEntity();
-                        m_World->AddComponent<ECS::TransformComponent>(entity);
-                        m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateSphere(0.5f));
-                        SelectEntity(entity);
-                    }
+                    if (m_World) createPrimitive("Sphere", Renderer::MeshFactory::CreateSphere(0.5f));
                 }
                 if (ImGui::MenuItem("Plane")) {
-                    if (m_World) {
-                        ECS::Entity entity = m_World->CreateEntity();
-                        m_World->AddComponent<ECS::TransformComponent>(entity);
-                        m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreatePlane(10.0f, 10.0f));
-                        SelectEntity(entity);
-                    }
+                    if (m_World) createPrimitive("Plane", Renderer::MeshFactory::CreatePlane(10.0f, 10.0f));
                 }
                 if (ImGui::MenuItem("Cylinder")) {
-                    if (m_World) {
-                        ECS::Entity entity = m_World->CreateEntity();
-                        m_World->AddComponent<ECS::TransformComponent>(entity);
-                        m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateCylinder(0.5f, 1.0f));
-                        SelectEntity(entity);
-                    }
+                    if (m_World) createPrimitive("Cylinder", Renderer::MeshFactory::CreateCylinder(0.5f, 1.0f));
                 }
                 if (ImGui::MenuItem("Cone")) {
-                    if (m_World) {
-                        ECS::Entity entity = m_World->CreateEntity();
-                        m_World->AddComponent<ECS::TransformComponent>(entity);
-                        m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateCone(0.5f, 1.0f));
-                        SelectEntity(entity);
-                    }
+                    if (m_World) createPrimitive("Cone", Renderer::MeshFactory::CreateCone(0.5f, 1.0f));
                 }
                 if (ImGui::MenuItem("Capsule")) {
-                    if (m_World) {
-                        ECS::Entity entity = m_World->CreateEntity();
-                        m_World->AddComponent<ECS::TransformComponent>(entity);
-                        m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateCapsule(0.3f, 1.0f));
-                        SelectEntity(entity);
-                    }
+                    if (m_World) createPrimitive("Capsule", Renderer::MeshFactory::CreateCapsule(0.3f, 1.0f));
                 }
                 if (ImGui::MenuItem("Pyramid")) {
-                    if (m_World) {
-                        ECS::Entity entity = m_World->CreateEntity();
-                        m_World->AddComponent<ECS::TransformComponent>(entity);
-                        m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreatePyramid(1.0f, 1.0f));
-                        SelectEntity(entity);
-                    }
+                    if (m_World) createPrimitive("Pyramid", Renderer::MeshFactory::CreatePyramid(1.0f, 1.0f));
                 }
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("2D Object")) {
                 if (ImGui::MenuItem("Triangle")) {
-                    if (m_World) {
-                        ECS::Entity entity = m_World->CreateEntity();
-                        m_World->AddComponent<ECS::TransformComponent>(entity);
-                        m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateTriangle(1.0f));
-                        m_World->AddComponent<ECS::NameComponent>(entity, "Triangle");
-                        SelectEntity(entity);
-                    }
+                    if (m_World) createPrimitive("Triangle", Renderer::MeshFactory::CreateTriangle(1.0f));
                 }
                 if (ImGui::MenuItem("Quad")) {
-                    if (m_World) {
-                        ECS::Entity entity = m_World->CreateEntity();
-                        m_World->AddComponent<ECS::TransformComponent>(entity);
-                        m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
-                        m_World->AddComponent<ECS::NameComponent>(entity, "Quad");
-                        SelectEntity(entity);
-                    }
+                    if (m_World) createPrimitive("Quad", Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
                 }
                 if (ImGui::MenuItem("Sprite")) {
                     if (m_World) {
@@ -722,22 +685,16 @@ void EditorLayer::DrawMenuBar() {
                 if (ImGui::MenuItem("Circle")) {
                     if (m_World) {
                         ECS::Entity entity = m_World->CreateEntity();
-                        auto& transform = m_World->AddComponent<ECS::TransformComponent>(entity);
-                        transform.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-90.0f));  // Flat on XZ by default
-                        // Use a highly tessellated plane to approximate a circle (flat disc)
-                        m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateSphere(0.5f, 32, 1));
                         m_World->AddComponent<ECS::NameComponent>(entity, "Circle");
+                        auto& transform = m_World->AddComponent<ECS::TransformComponent>(entity);
+                        transform.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-90.0f));
+                        m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateSphere(0.5f, 32, 1));
+                        m_World->AddComponent<ECS::MaterialComponent>(entity);
                         SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Capsule 2D")) {
-                    if (m_World) {
-                        ECS::Entity entity = m_World->CreateEntity();
-                        m_World->AddComponent<ECS::TransformComponent>(entity);
-                        m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateCapsule2D(0.8f, 1.6f));
-                        m_World->AddComponent<ECS::NameComponent>(entity, "Capsule 2D");
-                        SelectEntity(entity);
-                    }
+                    if (m_World) createPrimitive("Capsule 2D", Renderer::MeshFactory::CreateCapsule2D(0.8f, 1.6f));
                 }
                 if (ImGui::MenuItem("Ground Strip")) {
                     if (m_World) {

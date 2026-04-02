@@ -3824,6 +3824,14 @@ void RenderSystem::CreateUniformBuffers() {
     }
 }
 
+void RenderSystem::RefreshDescriptorsIfDirty() {
+    if (!m_ShadowDescriptorsDirty) return;
+    m_ShadowDescriptorsDirty = false;
+    // Rebuild descriptor sets so shadow map bindings reflect the current shadow state
+    CreateDescriptorSets();
+    ENJIN_LOG_INFO(Renderer, "Descriptor sets refreshed (shadow state changed)");
+}
+
 void RenderSystem::CreateDescriptorSets() {
     constexpr u32 framesInFlight = 2;
     const u32 offscreenSets = framesInFlight * MAX_SPLITSCREEN_VIEWPORTS;
