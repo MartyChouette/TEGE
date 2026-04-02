@@ -2,6 +2,10 @@
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Accessibility/SubtitleSystem.h"
+#include "Enjin/Gameplay/QuestSystem.h"
+#include "Enjin/Gameplay/CinematicSystem.h"
+#include "Enjin/Gameplay/TieredSaveSystem.h"
+#include "Enjin/ECS/Components/Name.h"
 #include <algorithm>
 
 namespace Enjin {
@@ -62,6 +66,89 @@ void DialogueSystem::StartDialogue(World* world, Entity entity) {
             m_EventCallback(entity, eventName);
         }
         BroadcastEvent(entity, eventName);
+    });
+
+    // Wire action callback for quest/cinematic/flag nodes
+    player.SetActionCallback([this, world](const GUI::DialogueNode& node) {
+        switch (node.type) {
+            case GUI::DialogueNodeType::QuestAction:
+                if (m_QuestSystem && world) {
+                    switch (node.questAction) {
+                        case GUI::DialogueNode::QuestActionType::StartQuest:
+                            m_QuestSystem->StartQuest(world, node.questId);
+                            ENJIN_LOG_INFO(Script, "Dialogue: StartQuest '%s'", node.questId.c_str());
+                            break;
+                        case GUI::DialogueNode::QuestActionType::CompleteObjective:
+                            m_QuestSystem->CompleteObjective(world, node.questId, node.questObjectiveIndex);
+                            ENJIN_LOG_INFO(Script, "Dialogue: CompleteObjective '%s' [%d]", node.questId.c_str(), node.questObjectiveIndex);
+                            break;
+                        case GUI::DialogueNode::QuestActionType::FailQuest:
+                            m_QuestSystem->FailQuest(world, node.questId);
+                            ENJIN_LOG_INFO(Script, "Dialogue: FailQuest '%s'", node.questId.c_str());
+                            break;
+                    }
+                }
+                break;
+            case GUI::DialogueNodeType::PlayCinematic:
+                if (world) {
+                    // Find cinematic entity by name
+                    Entity cineEntity = INVALID_ENTITY;
+                    for (auto e : world->GetEntitiesWithComponent<NameComponent>()) {
+                        auto* nc = world->GetComponent<NameComponent>(e);
+                        if (nc && nc->name == node.cinematicEntityName) {
+                            cineEntity = e;
+                            break;
+                        }
+                    }
+                    if (cineEntity != INVALID_ENTITY) {
+                        if (m_CinematicSystem) m_CinematicSystem->Play(world, cineEntity);
+                        ENJIN_LOG_INFO(Script, "Dialogue: PlayCinematic '%s'", node.cinematicEntityName.c_str());
+                    } else {
+                        ENJIN_LOG_WARN(Script, "Dialogue: PlayCinematic entity '%s' not found", node.cinematicEntityName.c_str());
+                    }
+                }
+                break;
+            case GUI::DialogueNodeType::SetGameFlag:
+                if (m_TieredSaveSystem) {
+                    m_TieredSaveSystem->SetMetaString(node.gameFlagKey, node.gameFlagValue);
+                    ENJIN_LOG_INFO(Script, "Dialogue: SetGameFlag '%s' = '%s'", node.gameFlagKey.c_str(), node.gameFlagValue.c_str());
+                }
+                break;
+            default: break;
+        }
+    });
+
+    // Wire condition resolver for quest status and game flags
+    player.SetConditionResolver([this, world](const GUI::DialogueCondition& cond) -> bool {
+        switch (cond.source) {
+            case GUI::DialogueCondition::Source::QuestStatus: {
+                if (!m_QuestSystem || !world) return false;
+                std::string actual = "notstarted";
+                if (m_QuestSystem->IsQuestComplete(world, cond.variable)) actual = "complete";
+                else if (m_QuestSystem->IsQuestActive(world, cond.variable)) actual = "active";
+                switch (cond.op) {
+                    case GUI::DialogueCondition::Op::Equals:    return actual == cond.value;
+                    case GUI::DialogueCondition::Op::NotEquals: return actual != cond.value;
+                    default: return actual == cond.value;
+                }
+            }
+            case GUI::DialogueCondition::Source::GameFlag: {
+                if (!m_TieredSaveSystem) return false;
+                std::string flagVal = m_TieredSaveSystem->GetMetaString(cond.variable, "");
+                switch (cond.op) {
+                    case GUI::DialogueCondition::Op::Equals:    return flagVal == cond.value;
+                    case GUI::DialogueCondition::Op::NotEquals: return flagVal != cond.value;
+                    case GUI::DialogueCondition::Op::GreaterThan:
+                    case GUI::DialogueCondition::Op::LessThan:
+                        try {
+                            f64 a = std::stod(flagVal), b = std::stod(cond.value);
+                            return cond.op == GUI::DialogueCondition::Op::GreaterThan ? a > b : a < b;
+                        } catch (...) { return false; }
+                }
+                return false;
+            }
+            default: return false;
+        }
     });
 
     player.Start(dlg->dialogueTree);

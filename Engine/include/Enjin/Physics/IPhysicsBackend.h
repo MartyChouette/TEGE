@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
+#include "Enjin/Math/Quaternion.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/Physics/PhysicsTypes.h"  // AABB, Ray, RaycastHit, CollisionResult, CollisionEvent, ColliderInfo
 #include <vector>
@@ -71,6 +72,12 @@ public:
 
     // Constraint solver
     virtual ConstraintSolver* GetConstraintSolver() = 0;
+
+    // Force-set body state (for rewind system — restores position/rotation/velocity)
+    virtual void ForceSetBodyState(ECS::Entity entity, const Math::Vector3& position,
+                                    const Math::Quaternion& rotation,
+                                    const Math::Vector3& linearVel,
+                                    const Math::Vector3& angularVel) {}
 
     // Backend identification
     virtual const char* GetName() const = 0;

@@ -1632,6 +1632,28 @@ bool JoltBackend::CheckSphereCollision(const Math::Vector3& centerA, f32 radiusA
     return true;
 }
 
+// ============================================================================
+// Force-set body state (for rewind system)
+// ============================================================================
+
+void JoltBackend::ForceSetBodyState(ECS::Entity entity, const Math::Vector3& position,
+                                     const Math::Quaternion& rotation,
+                                     const Math::Vector3& linearVel,
+                                     const Math::Vector3& angularVel) {
+    auto it = m_EntityToBody.find(entity);
+    if (it == m_EntityToBody.end()) return;
+
+    JPH::BodyInterface& bi = m_PhysicsSystem->GetBodyInterface();
+    JPH::BodyID bodyID = it->second;
+    if (!bi.IsAdded(bodyID)) return;
+
+    JPH::RVec3 jPos(position.x, position.y, position.z);
+    JPH::Quat jRot(rotation.x, rotation.y, rotation.z, rotation.w);
+    bi.SetPositionAndRotation(bodyID, jPos, jRot, JPH::EActivation::Activate);
+    bi.SetLinearVelocity(bodyID, JPH::Vec3(linearVel.x, linearVel.y, linearVel.z));
+    bi.SetAngularVelocity(bodyID, JPH::Vec3(angularVel.x, angularVel.y, angularVel.z));
+}
+
 } // namespace Physics
 } // namespace Enjin
 

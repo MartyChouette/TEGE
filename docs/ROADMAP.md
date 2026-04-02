@@ -2,9 +2,9 @@
 
 This document captures detailed technical plans, performance findings, and strategic initiatives identified through codebase audits. It complements CLAUDE.md's feature roadmap with implementation-specific details.
 
-## Status Summary (2026-03-28)
+## Status Summary (2026-03-31)
 
-**190+ features complete.** Player build pipeline fully functional — Editor Build Game produces working standalone executables with all entities, lighting, physics, and gameplay. PBR rendering fixes (horizon flicker, light range falloff). Runtime fullscreen toggle, FOV slider, all Options menu settings wired. Quake-style tilde console in both Editor and Player. Telemetry system with Discord webhook integration. Quit feedback survey. 2D collision reliability fixes (pickup + enemy overlap via manual AABB, bypassing Box2D v3 kinematic sensor issues). Scene view modes all functional (Wire/Solid/Lit/Shaded/Full). Parallax machine texture rendering. Deferred MSAA toggle (editor crash fix). F1/F2 mutual exclusion. ImGui ID collision audit (engine-wide). 80/80 tests passing.
+**210+ features complete.** Full record & rewind system (per-entity Braid-style + scene-wide Sands of Time-style) with delta compression, ring buffers, physics sync, editor timeline scrubber, and 11 AngelScript bindings. Dialogue-to-gameplay integration — 3 new dialogue node types (QuestAction, PlayCinematic, SetGameFlag) let designers wire narrative → quest → cinematic without visual script glue. Condition nodes can check quest status and game flags. In-editor dialogue preview. Per-entity wireframe overlay. Accessible bone rig editing — auto-detected body regions (face, hands, spine, etc.), hierarchical bone tree, pose library for saving expressions/gestures, 15px pick threshold for dense clusters. Import robustness — mesh validation (NaN fix, degenerate triangle detection, bone weight normalization, scale sanity), vertex colors from FBX/glTF, glTF matrix decomposition, import result dialog with undo, structured validation report. Animation editor UX — visual timeline ruler with click-to-seek events, 1D blend tree axis visualization, onion skin opacity preview strip, tooltips on all controls. 82/82 tests passing.
 
 ### Still Remaining
 
@@ -41,6 +41,21 @@ This document captures detailed technical plans, performance findings, and strat
 
 | Category | Item |
 |----------|------|
+| **Gameplay** | Record & Rewind system — StateRingBuffer (O(1) eviction), delta-compressed scene snapshots, 6 channel types (transform/velocity/health/animation/physics/material), per-entity + scene-wide modes, physics state sync (Jolt/Box2D ForceSetBodyState), programmatic seek API, editor timeline scrubber, 11 AngelScript bindings |
+| **Narrative** | Dialogue→Gameplay integration — 3 new node types (QuestAction, PlayCinematic, SetGameFlag), DialogueCondition::Source enum (Variable/QuestStatus/GameFlag), ActionCallback + ConditionResolver on DialoguePlayer, wired in PlayMode + Player, quest-gated dialogue choices |
+| **Narrative** | Dialogue editor UX — in-editor preview panel (walk through tree without play mode), auto-connect (new nodes link to selected), categorized right-click menu, node body previews for all types, validation warnings (red border on broken links/empty fields) |
+| **Editor** | Per-entity wireframe overlay — VK_POLYGON_MODE_LINE pipeline, per-entity color/opacity, MeshRendererComponent::wireframe toggle, inspector UI, serialization |
+| **Editor** | Bone selection improvements — diamond joint markers, bone name tooltips on hover, parent chain highlighting (cyan path to root, dimmed non-chain), 15px pick threshold for dense clusters |
+| **Editor** | Accessible bone region picker — auto-detect 12 body regions from bone names, large 2-column button grid, filtered bone list per region, keyboard navigable |
+| **Editor** | Pose library component — save/recall named bone poses (expressions, gestures), auto-categorize by region, large accessible buttons, blend weight control |
+| **Editor** | Animation editor UX — visual timeline ruler (second ticks, click-to-seek event markers, red playhead), 1D blend tree axis (crossfade regions, node labels, parameter indicator), onion skin opacity preview strip, bone hierarchy tree (expandable parent-child), tooltips on all controls |
+| **Editor** | Import result dialog — modal popup with stats, color-coded warnings, missing textures, Undo Import button |
+| **Import** | Mesh validation — auto-fix NaN/Inf vertices, detect degenerate triangles, normalize bone weights, scale sanity warnings (>1000 or <0.001 units) |
+| **Import** | Vertex colors from FBX/glTF — reads aiMesh::mColors[0] and COLOR_0 attribute into Vertex.color |
+| **Import** | glTF matrix decomposition — nodes with has_matrix now decomposed to T/R/S (previously silently skipped) |
+| **Import** | Import validation report — structured log summary after every import (stats, resolved/missing textures, warnings, skipped features) |
+| **Editor** | Gizmo modal fix — ImGuizmo hidden when any ImGui popup/modal is open (prevents bleeding through dialogs) |
+| **QA** | New tests — TestRewindSystem (27 tests: ring buffer, channels, snapshots), TestBlendTree (11 tests: evaluate, edge cases), TestDialogueTree expanded (+14 tests: new nodes, condition sources, serialization). 80→82 tests |
 | **Build** | Player build pipeline — 5 crash/render fixes (nested shadow pass, camera sync, GPU indirect draw, RT re-enable, clustered lighting), all entities render correctly in built games |
 | **Build** | Options menu fully functional — fullscreen, VSync, FOV, shadows, bloom, FXAA, audio volumes, all deferred-safe |
 | **Build** | Restart button in pause menu with full physics state reset (recreates Jolt/Box2D backends) |

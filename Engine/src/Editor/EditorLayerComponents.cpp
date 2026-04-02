@@ -1455,8 +1455,11 @@ void EditorLayer::DrawWater3DComponent(ECS::Entity entity) {
         auto oldT = w->settings.tileSize;
 
         InspectorUndo::DragFloat(m_UndoRedo, "Width", &w->settings.width, 1.0f, 1.0f, 1000.0f);
+        if (w->settings.width < 0.01f) w->settings.width = 0.01f;
         InspectorUndo::DragFloat(m_UndoRedo, "Depth", &w->settings.depth, 1.0f, 1.0f, 1000.0f);
+        if (w->settings.depth < 0.01f) w->settings.depth = 0.01f;
         InspectorUndo::DragFloat(m_UndoRedo, "Tile Size", &w->settings.tileSize, 0.1f, 0.5f, 20.0f);
+        if (w->settings.tileSize < 0.01f) w->settings.tileSize = 0.01f;
 
         const char* styleNames[] = {"Flat", "Animated", "VertexWave", "Reflective", "Refractive"};
         int style = static_cast<int>(w->settings.style);
@@ -2835,6 +2838,133 @@ void EditorLayer::DrawHealthComponent(ECS::Entity entity) {
 
         ImGui::Separator();
         ImGui::Text("Status: %s", health->isDead ? "DEAD" : "Alive");
+    }
+}
+
+void EditorLayer::DrawRecordRewindComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("[RW] Record Rewind", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("RecordRewindCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::RecordRewindComponent>(entity, "recordRewind", "Record Rewind");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* rr = m_World->GetComponent<ECS::RecordRewindComponent>(entity);
+        if (!rr) return;
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Max Duration (s)", &rr->maxDuration, 0.5f, 1.0f, 60.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Record Interval", &rr->recordInterval, 0.001f, 0.01f, 0.5f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Rewind Speed", &rr->rewindSpeed, 0.1f, 0.1f, 10.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Cooldown (s)", &rr->cooldown, 0.1f, 0.0f, 30.0f);
+
+        int key = rr->rewindKey;
+        if (ImGui::InputInt("Rewind Key", &key)) rr->rewindKey = key;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &rr->enabled);
+
+        if (ImGui::TreeNode("Channels")) {
+            bool chTransform = (rr->channels & 0x01) != 0;
+            bool chVelocity  = (rr->channels & 0x02) != 0;
+            bool chHealth    = (rr->channels & 0x04) != 0;
+            bool chAnimation = (rr->channels & 0x08) != 0;
+            bool chPhysics   = (rr->channels & 0x10) != 0;
+            bool chMaterial  = (rr->channels & 0x20) != 0;
+            if (ImGui::Checkbox("Transform", &chTransform)) rr->channels = (rr->channels & ~0x01u) | (chTransform ? 0x01u : 0);
+            if (ImGui::Checkbox("Velocity",  &chVelocity))  rr->channels = (rr->channels & ~0x02u) | (chVelocity  ? 0x02u : 0);
+            if (ImGui::Checkbox("Health",    &chHealth))    rr->channels = (rr->channels & ~0x04u) | (chHealth    ? 0x04u : 0);
+            if (ImGui::Checkbox("Animation", &chAnimation)) rr->channels = (rr->channels & ~0x08u) | (chAnimation ? 0x08u : 0);
+            if (ImGui::Checkbox("Physics",   &chPhysics))   rr->channels = (rr->channels & ~0x10u) | (chPhysics   ? 0x10u : 0);
+            if (ImGui::Checkbox("Material",  &chMaterial))  rr->channels = (rr->channels & ~0x20u) | (chMaterial  ? 0x20u : 0);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Visual Feedback")) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Vignette Strength", &rr->rewindVignetteStrength, 0.05f, 0.0f, 1.0f);
+            f32 tint[3] = { rr->rewindTint.x, rr->rewindTint.y, rr->rewindTint.z };
+            if (ImGui::ColorEdit3("Rewind Tint", tint)) {
+                rr->rewindTint = Math::Vector3(tint[0], tint[1], tint[2]);
+            }
+            ImGui::TreePop();
+        }
+
+        // Runtime stats
+        ImGui::Separator();
+        ImGui::Text("Frames: %u / %u", rr->history.Count(), rr->history.Capacity());
+        ImGui::Text("Recorded: %.1f s", rr->currentRecordedTime);
+        ImGui::Text("Status: %s", rr->rewinding ? "REWINDING" : (rr->cooldownTimer > 0.0f ? "COOLDOWN" : "Recording"));
+    }
+}
+
+void EditorLayer::DrawSceneRewindComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("[SW] Scene Rewind", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("SceneRewindCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::SceneRewindComponent>(entity, "sceneRewind", "Scene Rewind");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* sr = m_World->GetComponent<ECS::SceneRewindComponent>(entity);
+        if (!sr) return;
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Max Duration (s)", &sr->maxDuration, 0.5f, 1.0f, 120.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Record Interval", &sr->recordInterval, 0.001f, 0.01f, 0.5f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Rewind Speed", &sr->rewindSpeed, 0.1f, 0.1f, 10.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Cooldown (s)", &sr->cooldown, 0.1f, 0.0f, 30.0f);
+
+        int charges = sr->charges;
+        if (ImGui::InputInt("Charges (0=unlimited)", &charges)) sr->charges = charges;
+
+        int key = sr->rewindKey;
+        if (ImGui::InputInt("Rewind Key", &key)) sr->rewindKey = key;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &sr->enabled);
+        InspectorUndo::Checkbox(m_UndoRedo, "Delta Compression", &sr->deltaCompression);
+
+        int kfInterval = static_cast<int>(sr->keyframeInterval);
+        if (ImGui::InputInt("Keyframe Interval", &kfInterval)) {
+            sr->keyframeInterval = static_cast<u32>(Math::Max(1, kfInterval));
+        }
+
+        if (ImGui::TreeNode("Channels")) {
+            bool chTransform = (sr->channels & 0x01) != 0;
+            bool chVelocity  = (sr->channels & 0x02) != 0;
+            bool chHealth    = (sr->channels & 0x04) != 0;
+            bool chAnimation = (sr->channels & 0x08) != 0;
+            bool chPhysics   = (sr->channels & 0x10) != 0;
+            bool chMaterial  = (sr->channels & 0x20) != 0;
+            if (ImGui::Checkbox("Transform", &chTransform)) sr->channels = (sr->channels & ~0x01u) | (chTransform ? 0x01u : 0);
+            if (ImGui::Checkbox("Velocity",  &chVelocity))  sr->channels = (sr->channels & ~0x02u) | (chVelocity  ? 0x02u : 0);
+            if (ImGui::Checkbox("Health",    &chHealth))    sr->channels = (sr->channels & ~0x04u) | (chHealth    ? 0x04u : 0);
+            if (ImGui::Checkbox("Animation", &chAnimation)) sr->channels = (sr->channels & ~0x08u) | (chAnimation ? 0x08u : 0);
+            if (ImGui::Checkbox("Physics",   &chPhysics))   sr->channels = (sr->channels & ~0x10u) | (chPhysics   ? 0x10u : 0);
+            if (ImGui::Checkbox("Material",  &chMaterial))  sr->channels = (sr->channels & ~0x20u) | (chMaterial  ? 0x20u : 0);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Visual Feedback")) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Vignette Strength", &sr->rewindVignetteStrength, 0.05f, 0.0f, 1.0f);
+            f32 tint[3] = { sr->rewindTint.x, sr->rewindTint.y, sr->rewindTint.z };
+            if (ImGui::ColorEdit3("Rewind Tint", tint)) {
+                sr->rewindTint = Math::Vector3(tint[0], tint[1], tint[2]);
+            }
+            ImGui::TreePop();
+        }
+
+        // Runtime stats
+        ImGui::Separator();
+        ImGui::Text("Frames: %u / %u", sr->history.Count(), sr->history.Capacity());
+        ImGui::Text("Recorded: %.1f s", sr->currentRecordedTime);
+        ImGui::Text("Charges: %d / %d", sr->chargesUsed, sr->charges);
+        ImGui::Text("Status: %s", sr->rewinding ? "REWINDING" : (sr->cooldownTimer > 0.0f ? "COOLDOWN" : "Recording"));
+        if (sr->deltaCompression) {
+            ImGui::Text("Keyframe in: %u frames", sr->keyframeInterval - sr->framesSinceKeyframe);
+        }
     }
 }
 

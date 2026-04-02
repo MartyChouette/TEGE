@@ -11,7 +11,7 @@ namespace Audio { class SimpleAudio; }
 namespace Accessibility { class SubtitleSystem; class AccessibilityAnnouncer; struct RuntimeAccessibilitySettings; }
 namespace Scene { class SceneManager; class StreamingManager; }
 namespace Renderer { class PostProcessing; }
-namespace Gameplay { class TieredSaveSystem; class QuestSystem; class CinematicSystem; class ObjectPool; }
+namespace Gameplay { class TieredSaveSystem; class QuestSystem; class CinematicSystem; class ObjectPool; class RecordRewindSystem; }
 namespace Effects { class WeatherSystem; class DestructibleSystem; class ElementalSystem; }
 namespace Procedural { class LevelGenerator; }
 namespace Plugin { class PluginSystem; }
@@ -57,6 +57,7 @@ void RegisterSpriteBindings(asIScriptEngine* engine);
 void RegisterHUDBindings(asIScriptEngine* engine);
 void RegisterTextBindings(asIScriptEngine* engine);
 void RegisterElementalBindings(asIScriptEngine* engine);
+void RegisterRewindBindings(asIScriptEngine* engine);
 
 // Set subsystem pointers for script bindings
 void SetBindingsWorld(ECS::World* world);
@@ -75,6 +76,7 @@ void SetBindingsQuestSystem(Gameplay::QuestSystem* quest);
 void SetBindingsCinematicSystem(Gameplay::CinematicSystem* cinematic);
 void SetBindingsObjectPool(Gameplay::ObjectPool* pool);
 void SetBindingsDestructible(Effects::DestructibleSystem* destructible);
+void SetBindingsRewindSystem(Gameplay::RecordRewindSystem* system);
 void SetBindingsElemental(Effects::ElementalSystem* system);
 void SetBindingsStreaming(Scene::StreamingManager* mgr);
 void SetBindingsFlower(ECS::World* world);

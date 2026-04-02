@@ -52,6 +52,10 @@ public:
 
     const char* GetName() const override { return "Box2D"; }
 
+    // Rewind state restoration
+    void ForceSetBodyState(ECS::Entity entity, const Math::Vector3& position,
+                            const Math::Vector3& velocity) override;
+
     // Resolve entity from a Box2D shape (public for use by C raycast/overlap callbacks)
     ECS::Entity ResolveEntity(b2ShapeId shapeId) const;
 

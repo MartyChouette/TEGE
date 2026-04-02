@@ -1159,6 +1159,7 @@ void RegisterAllBindings(asIScriptEngine* engine) {
     RegisterHUDBindings(engine);
     RegisterTextBindings(engine);
     RegisterElementalBindings(engine);
+    RegisterRewindBindings(engine);
 
     ENJIN_LOG_INFO(Script, "AngelScript bindings registered successfully");
 }

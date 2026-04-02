@@ -373,7 +373,7 @@ void EditorLayer::HandleViewportPicking() {
                     Math::Matrix4 projMat = m_Camera->GetProjectionMatrix();
                     Math::Matrix4 viewProj = projMat * viewMat;
 
-                    f32 bestDist = 10.0f; // 10 pixel threshold
+                    f32 bestDist = 15.0f; // 15 pixel threshold (increased for dense face/hand clusters)
                     i32 bestBone = -1;
 
                     for (usize i = 0; i < skeleton->bones.size(); ++i) {
@@ -465,6 +465,11 @@ void EditorLayer::DrawMarqueeRect() {
 
 void EditorLayer::DrawGizmos() {
     if (m_SelectedEntities.empty() || !m_World || !m_Camera) {
+        return;
+    }
+
+    // Don't draw gizmos when modal dialogs are open (they render on the foreground draw list)
+    if (ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) {
         return;
     }
 

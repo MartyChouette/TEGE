@@ -947,9 +947,77 @@ void EditorLayer::DrawGameViewPanel() {
         }
     }
 
+    // Rewind timeline scrubber (visible during play mode when scene has a rewind component)
+    if (isPlayActive) {
+        DrawRewindTimeline();
+    }
+
     ImGui::End();
 }
 
+
+// ============================================================================
+// Rewind Timeline Scrubber (inside Game View during play mode)
+// ============================================================================
+
+void EditorLayer::DrawRewindTimeline() {
+    if (!m_World) return;
+
+    // Find the SceneRewindComponent (if any)
+    ECS::SceneRewindComponent* sr = nullptr;
+    for (auto entity : m_World->GetEntitiesWithComponent<ECS::SceneRewindComponent>()) {
+        sr = m_World->GetComponent<ECS::SceneRewindComponent>(entity);
+        if (sr) break;
+    }
+    if (!sr || sr->history.Empty()) return;
+
+    auto* rewindSystem = m_PlayMode.GetRecordRewindSystem();
+    if (!rewindSystem) return;
+
+    // Draw a horizontal timeline bar at the bottom of the current window
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    f32 duration = sr->currentRecordedTime;
+    f32 currentTime = sr->rewinding ? (duration - sr->rewindPlayhead) : duration;
+    u32 frameCount = sr->history.Count();
+
+    // Status label
+    if (sr->rewinding) {
+        ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "REWINDING");
+    } else if (sr->cooldownTimer > 0.0f) {
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "COOLDOWN %.1fs", sr->cooldownTimer);
+    } else {
+        ImGui::TextColored(ImVec4(0.3f, 0.8f, 0.3f, 1.0f), "RECORDING");
+    }
+    ImGui::SameLine();
+    ImGui::Text("| %.1f / %.1f s | %u frames", currentTime, duration, frameCount);
+    if (sr->charges > 0) {
+        ImGui::SameLine();
+        ImGui::Text("| Charges: %d/%d", sr->charges - sr->chargesUsed, sr->charges);
+    }
+
+    // Timeline progress bar
+    f32 progress = (duration > 0.0f) ? Math::Clamp(currentTime / duration, 0.0f, 1.0f) : 0.0f;
+    ImVec4 barColor = sr->rewinding
+        ? ImVec4(sr->rewindTint.x, sr->rewindTint.y, sr->rewindTint.z, 1.0f)
+        : ImVec4(0.2f, 0.6f, 0.2f, 1.0f);
+    ImGui::PushStyleColor(ImGuiCol_PlotHistogram, barColor);
+    char overlay[64];
+    snprintf(overlay, sizeof(overlay), "%.2f s", currentTime);
+    ImGui::ProgressBar(progress, ImVec2(-1, 0), overlay);
+    ImGui::PopStyleColor();
+
+    // Memory usage
+    if (rewindSystem->GetMemoryUsageBytes() > 0) {
+        f32 memKB = static_cast<f32>(rewindSystem->GetMemoryUsageBytes()) / 1024.0f;
+        if (memKB > 1024.0f) {
+            ImGui::Text("Memory: %.1f MB", memKB / 1024.0f);
+        } else {
+            ImGui::Text("Memory: %.0f KB", memKB);
+        }
+    }
+}
 
 // ============================================================================
 // Section drawer methods for Rendering, Post Processing, and Retro Effects

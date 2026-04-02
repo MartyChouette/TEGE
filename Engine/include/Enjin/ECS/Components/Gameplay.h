@@ -5,10 +5,13 @@
 #include "Enjin/Math/Quaternion.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/GUI/DialogueTree.h"
+#include "Enjin/Gameplay/StateRingBuffer.h"
+#include "Enjin/Gameplay/RewindChannel.h"
 #include <string>
 #include <vector>
 #include <functional>
 #include <unordered_map>
+#include <cctype>
 
 namespace Enjin {
 namespace ECS {
@@ -2187,34 +2190,26 @@ struct AnimationRecorderComponent {
 //   rr.cooldown = 3.0f;           // 3 second cooldown after rewind
 // ============================================================================
 struct RecordRewindComponent {
-    // Recorded frame data
-    struct Frame {
-        Math::Vector3 position;
-        Math::Quaternion rotation;
-        Math::Vector3 scale;
-        Math::Vector3 velocity;
-        f32 health = 0.0f;
-        f32 timestamp = 0.0f;
-    };
-
     // Configuration
     f32 maxDuration = 5.0f;          // Max seconds of rewind buffer
     f32 recordInterval = 1.0f / 20.0f; // 20 frames per second
     f32 rewindSpeed = 2.0f;          // Playback speed multiplier when rewinding
     f32 cooldown = 3.0f;             // Seconds before rewind can be used again after release
     i32 rewindKey = 82;              // KeyCode to hold for rewind (default: R = 82)
+    u32 channels = static_cast<u32>(Gameplay::RewindChannelFlags::Default);
     bool enabled = true;
 
     // Visual feedback
     f32 rewindVignetteStrength = 0.3f;  // Screen edge darkening during rewind
     Math::Vector3 rewindTint = Math::Vector3(0.4f, 0.6f, 1.0f); // Blue tint during rewind
 
-    // State (runtime)
-    std::vector<Frame> frames;
+    // State (runtime) — ring buffer replaces std::vector for O(1) eviction
+    Gameplay::StateRingBuffer<Gameplay::EntitySnapshot> history;
     f32 recordTimer = 0.0f;
     f32 cooldownTimer = 0.0f;
     bool rewinding = false;
     f32 rewindPlayhead = 0.0f;       // Current position in rewind buffer (seconds from end)
+    f32 currentRecordedTime = 0.0f;  // Total elapsed recording time
 };
 
 // ============================================================================
@@ -2234,24 +2229,6 @@ struct RecordRewindComponent {
 //   sr.charges = 3;              // Limited uses (0 = unlimited)
 // ============================================================================
 struct SceneRewindComponent {
-    // Per-entity snapshot within a frame
-    struct EntityFrame {
-        Entity entity = INVALID_ENTITY;
-        Math::Vector3 position;
-        Math::Quaternion rotation;
-        Math::Vector3 scale;
-        Math::Vector3 velocity;
-        f32 health = 0.0f;
-        bool visible = true;
-        bool isDead = false;
-    };
-
-    // Full scene snapshot
-    struct SceneFrame {
-        f32 timestamp = 0.0f;
-        std::vector<EntityFrame> entities;
-    };
-
     // Configuration
     f32 maxDuration = 10.0f;          // Max seconds of rewind buffer
     f32 recordInterval = 1.0f / 15.0f; // 15 snapshots per second
@@ -2259,19 +2236,27 @@ struct SceneRewindComponent {
     f32 cooldown = 5.0f;              // Seconds before rewind can be used again
     i32 charges = 0;                  // Max uses per level (0 = unlimited)
     i32 rewindKey = 84;               // KeyCode to hold for rewind (default: T = 84)
+    u32 channels = static_cast<u32>(Gameplay::RewindChannelFlags::Default);
+    u32 keyframeInterval = 30;        // Store full keyframe every N delta frames
     bool enabled = true;
+    bool deltaCompression = true;     // Enable delta-only frames between keyframes
 
     // Visual feedback
     f32 rewindVignetteStrength = 0.5f;
     Math::Vector3 rewindTint = Math::Vector3(0.8f, 0.6f, 0.2f); // Gold tint (Sands of Time)
 
-    // State (runtime)
-    std::vector<SceneFrame> frames;
+    // State (runtime) — ring buffer with delta compression
+    Gameplay::StateRingBuffer<Gameplay::DeltaFrame> history;
     f32 recordTimer = 0.0f;
     f32 cooldownTimer = 0.0f;
     i32 chargesUsed = 0;
     bool rewinding = false;
     f32 rewindPlayhead = 0.0f;
+    f32 currentRecordedTime = 0.0f;
+    u32 framesSinceKeyframe = 0;
+
+    // Previous-frame cache for delta detection
+    std::unordered_map<Entity, Gameplay::EntitySnapshot> prevFrameCache;
 };
 
 // ============================================================================
@@ -2379,6 +2364,159 @@ struct SavePointComponent {
     f32 radius = 2.0f;                 // Override radius (0 = use SaveSystemComponent default)
     std::string saveMessage = "Game Saved"; // Message shown after saving
 };
+
+// ============================================================================
+// POSE LIBRARY — Save and recall named bone poses for face rigs, hand gestures, etc.
+// ============================================================================
+//
+// Attach to any entity with an AnimatorComponent + Skeleton.
+// Stores named poses (e.g., "smile", "fist", "point") as per-bone local rotation
+// overrides. Designed for accessible face/hand rig editing — large buttons, grouped
+// by body region, keyboard navigable.
+//
+// Usage:
+//   auto& pl = world->AddComponent<PoseLibraryComponent>(character);
+//   pl.AddPose("smile", {{"jaw", q1}, {"lip_upper", q2}, {"lip_lower", q3}});
+//   pl.ApplyPose("smile", animator);  // Applies rotations to skeleton
+//
+struct PoseLibraryComponent {
+    // A single bone override within a pose
+    struct BoneOverride {
+        std::string boneName;
+        Math::Quaternion rotation;    // Local rotation
+        f32 weight = 1.0f;           // Blend weight (0-1) for partial application
+    };
+
+    // A named pose (e.g., "smile", "fist", "relax")
+    struct NamedPose {
+        std::string name;
+        std::string category;         // "Face", "Left Hand", "Right Hand", "Body"
+        std::vector<BoneOverride> overrides;
+    };
+
+    std::vector<NamedPose> poses;
+
+    // Runtime state
+    std::string activePose;           // Currently applied pose name (empty = none)
+    f32 blendWeight = 1.0f;          // Master blend weight for pose application
+    f32 blendSpeed = 5.0f;           // Interpolation speed (units/sec)
+
+    // Helper: find pose by name
+    NamedPose* FindPose(const std::string& name) {
+        for (auto& p : poses) { if (p.name == name) return &p; }
+        return nullptr;
+    }
+    const NamedPose* FindPose(const std::string& name) const {
+        for (const auto& p : poses) { if (p.name == name) return &p; }
+        return nullptr;
+    }
+};
+
+// ============================================================================
+// BONE REGION — Auto-detected body region for accessible bone navigation
+// ============================================================================
+
+enum class BoneRegion : u8 {
+    Unknown,
+    Head,       // head, neck, skull
+    Face,       // jaw, eye, lip, brow, cheek, nose, tongue, eyelid
+    Spine,      // spine, chest, hips, pelvis
+    LeftArm,    // left shoulder, upper arm, forearm
+    RightArm,   // right shoulder, upper arm, forearm
+    LeftHand,   // left hand, thumb, index, middle, ring, pinky
+    RightHand,  // right hand, thumb, index, middle, ring, pinky
+    LeftLeg,    // left thigh, calf, shin
+    RightLeg,   // right thigh, calf, shin
+    LeftFoot,   // left foot, toe
+    RightFoot,  // right foot, toe
+    Tail,       // tail
+    Other
+};
+
+// Auto-detect bone region from bone name (case-insensitive substring matching)
+inline BoneRegion ClassifyBoneRegion(const std::string& boneName) {
+    std::string lower = boneName;
+    for (auto& c : lower) c = static_cast<char>(std::tolower(c));
+
+    // Face (check before head — face bones are also in the head)
+    if (lower.find("jaw") != std::string::npos || lower.find("eye") != std::string::npos ||
+        lower.find("lip") != std::string::npos || lower.find("brow") != std::string::npos ||
+        lower.find("cheek") != std::string::npos || lower.find("nose") != std::string::npos ||
+        lower.find("tongue") != std::string::npos || lower.find("eyelid") != std::string::npos ||
+        lower.find("mouth") != std::string::npos)
+        return BoneRegion::Face;
+
+    // Head
+    if (lower.find("head") != std::string::npos || lower.find("neck") != std::string::npos ||
+        lower.find("skull") != std::string::npos)
+        return BoneRegion::Head;
+
+    // Hands (check before arms — hand bones contain "left"/"right" too)
+    bool isLeft = lower.find("left") != std::string::npos || lower.find("_l") != std::string::npos ||
+                  lower.find(".l") != std::string::npos || lower.find("_l_") != std::string::npos;
+    bool isRight = lower.find("right") != std::string::npos || lower.find("_r") != std::string::npos ||
+                   lower.find(".r") != std::string::npos || lower.find("_r_") != std::string::npos;
+
+    if (lower.find("thumb") != std::string::npos || lower.find("index") != std::string::npos ||
+        lower.find("middle") != std::string::npos || lower.find("ring") != std::string::npos ||
+        lower.find("pinky") != std::string::npos || lower.find("finger") != std::string::npos) {
+        return isRight ? BoneRegion::RightHand : BoneRegion::LeftHand;
+    }
+    if (lower.find("hand") != std::string::npos) {
+        return isRight ? BoneRegion::RightHand : BoneRegion::LeftHand;
+    }
+
+    // Feet
+    if (lower.find("foot") != std::string::npos || lower.find("toe") != std::string::npos ||
+        lower.find("ball") != std::string::npos) {
+        return isRight ? BoneRegion::RightFoot : BoneRegion::LeftFoot;
+    }
+
+    // Legs
+    if (lower.find("thigh") != std::string::npos || lower.find("calf") != std::string::npos ||
+        lower.find("shin") != std::string::npos || lower.find("knee") != std::string::npos ||
+        lower.find("upleg") != std::string::npos || lower.find("leg") != std::string::npos) {
+        return isRight ? BoneRegion::RightLeg : BoneRegion::LeftLeg;
+    }
+
+    // Arms
+    if (lower.find("shoulder") != std::string::npos || lower.find("arm") != std::string::npos ||
+        lower.find("elbow") != std::string::npos || lower.find("forearm") != std::string::npos ||
+        lower.find("clavicle") != std::string::npos) {
+        return isRight ? BoneRegion::RightArm : BoneRegion::LeftArm;
+    }
+
+    // Spine
+    if (lower.find("spine") != std::string::npos || lower.find("chest") != std::string::npos ||
+        lower.find("hip") != std::string::npos || lower.find("pelvis") != std::string::npos ||
+        lower.find("torso") != std::string::npos)
+        return BoneRegion::Spine;
+
+    // Tail
+    if (lower.find("tail") != std::string::npos)
+        return BoneRegion::Tail;
+
+    return BoneRegion::Other;
+}
+
+inline const char* BoneRegionName(BoneRegion region) {
+    switch (region) {
+        case BoneRegion::Head:      return "Head";
+        case BoneRegion::Face:      return "Face";
+        case BoneRegion::Spine:     return "Spine";
+        case BoneRegion::LeftArm:   return "Left Arm";
+        case BoneRegion::RightArm:  return "Right Arm";
+        case BoneRegion::LeftHand:  return "Left Hand";
+        case BoneRegion::RightHand: return "Right Hand";
+        case BoneRegion::LeftLeg:   return "Left Leg";
+        case BoneRegion::RightLeg:  return "Right Leg";
+        case BoneRegion::LeftFoot:  return "Left Foot";
+        case BoneRegion::RightFoot: return "Right Foot";
+        case BoneRegion::Tail:      return "Tail";
+        case BoneRegion::Other:     return "Other";
+        default:                    return "Unknown";
+    }
+}
 
 } // namespace ECS
 } // namespace Enjin

@@ -424,3 +424,19 @@ Raster-tier screen-space effects running in the post-process fragment shader. Al
 - `Net_CallRPC(const string& name, const string& data, int targetId)` — Send an RPC to a specific player.
 - `Net_CallRPCAll(const string& name, const string& data)` — Broadcast an RPC to all players.
 - `Net_RegisterRPCHandler(const string& name)` — Register an RPC handler. When received, fires `"__rpc_" + name` event via ScriptEventBus with data as payload.
+
+### Record & Rewind
+
+Per-entity (Braid-style) and scene-wide (Sands of Time-style) time rewind.
+
+- `Rewind_StartEntity(uint64)` — Start rewinding a specific entity (requires RecordRewindComponent).
+- `Rewind_StopEntity(uint64)` — Stop rewinding and enter cooldown.
+- `Rewind_IsEntityRewinding(uint64)` — Check if an entity is currently rewinding.
+- `Rewind_SetEntityChannels(uint64, uint)` — Set which data channels to record (bitmask: 1=Transform, 2=Velocity, 4=Health, 8=Animation, 16=Physics, 32=Material).
+- `Rewind_StartScene()` — Start scene-wide rewind (requires SceneRewindComponent on a manager entity).
+- `Rewind_StopScene()` — Stop scene-wide rewind.
+- `Rewind_IsSceneRewinding()` — Check if scene rewind is active.
+- `Rewind_SeekScene(float)` — Seek to a specific time offset from the latest recorded frame.
+- `Rewind_GetRecordedDuration()` — Get total seconds of recorded scene history.
+- `Rewind_GetCurrentTime()` — Get current playback position during rewind.
+- `Rewind_IsAnyRewinding()` — Check if any entity or scene rewind is active.

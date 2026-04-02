@@ -19,11 +19,22 @@ namespace Enjin::GUI {
         SetVariable,
         Event,
         Root,
-        End
+        End,
+        QuestAction,      // Start/complete/fail a quest directly from dialogue
+        PlayCinematic,     // Trigger a cinematic camera entity
+        SetGameFlag        // Set a persistent game-wide flag
     };
 
     struct DialogueCondition {
-        std::string variable;
+        // Source determines what the condition checks against
+        enum class Source : u8 {
+            Variable,      // Dialogue variable (existing behavior)
+            QuestStatus,   // Quest state: variable=questId, value="active"/"complete"/"failed"/"notstarted"
+            GameFlag       // Persistent game flag from save system
+        };
+        Source source = Source::Variable;
+
+        std::string variable;  // Variable name, quest ID, or flag key (depending on source)
 
         enum class Op : u8 {
             Equals,
@@ -64,6 +75,19 @@ namespace Enjin::GUI {
 
         std::string eventName;
 
+        // QuestAction node data
+        enum class QuestActionType : u8 { StartQuest, CompleteObjective, FailQuest };
+        QuestActionType questAction = QuestActionType::StartQuest;
+        std::string questId;
+        i32 questObjectiveIndex = 0;
+
+        // PlayCinematic node data
+        std::string cinematicEntityName;
+
+        // SetGameFlag node data
+        std::string gameFlagKey;
+        std::string gameFlagValue;
+
         Math::Vector2 editorPosition = Math::Vector2(0, 0);
     };
 
@@ -98,6 +122,14 @@ namespace Enjin::GUI {
         using EventCallback = std::function<void(const std::string&)>;
         void SetEventCallback(EventCallback cb);
 
+        // Action callback: fired for QuestAction, PlayCinematic, SetGameFlag nodes
+        using ActionCallback = std::function<void(const DialogueNode&)>;
+        void SetActionCallback(ActionCallback cb);
+
+        // Condition resolver: called for non-Variable condition sources (QuestStatus, GameFlag)
+        using ConditionResolver = std::function<bool(const DialogueCondition&)>;
+        void SetConditionResolver(ConditionResolver resolver);
+
     private:
         DialogueTreeData m_Tree;
         u32 m_CurrentNodeId = 0;
@@ -105,6 +137,8 @@ namespace Enjin::GUI {
         bool m_WaitingForInput = false;
         std::unordered_map<std::string, std::string> m_Variables;
         EventCallback m_EventCallback;
+        ActionCallback m_ActionCallback;
+        ConditionResolver m_ConditionResolver;
 
         void ProcessNode(u32 depth = 0);
         bool EvaluateCondition(const DialogueCondition& cond) const;
@@ -128,6 +162,11 @@ namespace Enjin::GUI {
         void DrawNode(DialogueNode& node);
         void DrawConnections();
         void DrawInspector();
+
+        // In-editor dialogue preview (walk through tree without play mode)
+        DialoguePlayer m_PreviewPlayer;
+        bool m_PreviewActive = false;
+        void DrawPreviewPanel();
     };
 
 } // namespace Enjin::GUI

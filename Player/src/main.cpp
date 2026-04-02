@@ -386,6 +386,8 @@ public:
         m_BehaviorTreeSystem.SetWorld(m_World.get());
         m_AISystem.SetWorld(m_World.get());
         m_RecordRewindSystem.SetWorld(m_World.get());
+        m_RecordRewindSystem.SetPhysics(m_Physics.get());
+        m_RecordRewindSystem.SetPhysics2D(m_Physics2D.get());
 
         // Initialize save system with local backend
         m_TieredSaveSystem.LoadMeta();
@@ -681,6 +683,7 @@ public:
         Enjin::Scripting::SetBindingsAudio(nullptr);
         Enjin::Scripting::SetBindingsWeather(nullptr);
         Enjin::Scripting::SetBindingsDestructible(nullptr);
+        Enjin::Scripting::SetBindingsRewindSystem(nullptr);
         Enjin::Scripting::SetBindingsProcedural(nullptr);
         Enjin::Scripting::SetBindingsStreaming(nullptr);
         Enjin::Scripting::SetBindingsSceneManager(nullptr);
@@ -1501,6 +1504,7 @@ private:
         Enjin::Scripting::SetBindingsAudio(&m_SimpleAudio);
         Enjin::Scripting::SetBindingsWeather(&m_WeatherSystem);
         Enjin::Scripting::SetBindingsDestructible(&m_DestructibleSystem);
+        Enjin::Scripting::SetBindingsRewindSystem(&m_RecordRewindSystem);
         Enjin::Scripting::SetBindingsStreaming(&m_StreamingManager);
         Enjin::Scripting::SetBindingsSceneManager(&m_SceneManager);
         // Initialize post-processing (settings object for script bindings)
@@ -1550,9 +1554,12 @@ private:
             s_VisualScriptObjectPool = &m_ObjectPool;
         }
 
-        // Wire dialogue system event bus and subtitle system
+        // Wire dialogue system event bus, subtitle system, and narrative systems
         m_DialogueSystem.SetEventBus(&m_EntityEventBus);
         m_DialogueSystem.SetSubtitleSystem(&m_SubtitleSystem);
+        m_DialogueSystem.SetQuestSystem(&m_QuestSystem);
+        m_DialogueSystem.SetCinematicSystem(&m_CinematicSystem);
+        m_DialogueSystem.SetTieredSaveSystem(&m_TieredSaveSystem);
 
         // Load accessibility settings from accessibility.json next to executable
         LoadAccessibilitySettings();

@@ -13,7 +13,7 @@
 [![Vulkan 1.3](https://img.shields.io/badge/Vulkan-1.3-AC162C.svg?logo=vulkan&logoColor=white)](https://www.vulkan.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey.svg)]()
 [![CMake](https://img.shields.io/badge/Build-CMake-064F8C.svg?logo=cmake&logoColor=white)](https://cmake.org/)
-[![Tests](https://img.shields.io/badge/Tests-1100%2B_passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-1800%2B_passing-brightgreen.svg)]()
 
 <br>
 
@@ -52,14 +52,14 @@ TEGE is a complete game engine -- editor, renderer, physics, scripting, audio, b
 
 | | |
 |:---|:---|
-| **Complete Editor** | Hierarchy, inspector, viewport, play mode, undo/redo, command palette, project hub, 44 starter templates |
-| **70+ ECS Components** | Transform, mesh, material, lights, cameras, physics, AI, UI, audio, scripting -- all with inspector UI |
+| **Complete Editor** | Hierarchy, inspector, viewport, play mode, undo/redo, command palette, project hub, 44 starter templates, drag-and-drop import with validation |
+| **80+ ECS Components** | Transform, mesh, material, lights, cameras, physics, AI, UI, audio, scripting, rewind, pose library -- all with inspector UI |
 | **Vulkan PBR Renderer** | Cascaded shadows, reflection probes, ray tracing (shadows/reflections/AO/GI/caustics), path tracer, TAA/FXAA/SMAA, FSR 2 upscaling |
 | **8 Art Styles** | Realistic PBR, Blinn-Phong, Hand-Painted, Cel/Toon, Low-Poly Retro, Pixel Art, NPR Sketch, Analog -- one-click presets |
 | **Dual Scripting** | 721 AngelScript bindings with hot-reload + visual scripting with 146+ nodes and breakpoint debugging |
 | **Dual Physics** | Jolt 5.2.0 (3D) + Box2D 3.0.0 (2D), 5 character controller types, joints, ragdolls, sensors |
 | **Ship Everywhere** | Standalone builds, HTML5/WebAssembly, Newgrounds, Windows installer, Linux AppImage |
-| **Gameplay Systems** | Save/load, quests, HUD, dialogue trees, destructibles, LAN multiplayer, localization, dynamic difficulty |
+| **Gameplay Systems** | Save/load, quests, dialogue trees (quest/cinematic/flag integration), record & rewind, destructibles, LAN multiplayer, localization, dynamic difficulty, pose library |
 | **Accessibility** | Colorblind correction (8 modes), screen reader, switch access, dyslexia mode, WCAG AAA themes |
 
 ---

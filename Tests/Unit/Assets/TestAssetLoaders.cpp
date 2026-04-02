@@ -246,4 +246,264 @@ ENJIN_TEST(Metadata, GetMetadataPath) {
     ENJIN_EXPECT_TRUE(path.find(".enjinasset") != std::string::npos);
 }
 
+// ===========================================================================
+// Vertex Color Support
+// ===========================================================================
+
+ENJIN_TEST(Assimp, VertexColorField) {
+    AssimpVertex v;
+    ENJIN_EXPECT_FALSE(v.hasColor);
+    ENJIN_EXPECT_FLOAT_EQ(v.color.x, 1.0f);  // Default white
+    ENJIN_EXPECT_FLOAT_EQ(v.color.w, 1.0f);
+    v.color = Math::Vector4(1.0f, 0.0f, 0.0f, 1.0f);
+    v.hasColor = true;
+    ENJIN_EXPECT_TRUE(v.hasColor);
+    ENJIN_EXPECT_FLOAT_EQ(v.color.x, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(v.color.y, 0.0f);
+}
+
+ENJIN_TEST(GLTF, VertexColorField) {
+    GLTFVertex v;
+    ENJIN_EXPECT_FALSE(v.hasColor);
+    ENJIN_EXPECT_FLOAT_EQ(v.color.x, 1.0f);  // Default white
+    v.color = Math::Vector4(0.0f, 1.0f, 0.0f, 0.5f);
+    v.hasColor = true;
+    ENJIN_EXPECT_TRUE(v.hasColor);
+    ENJIN_EXPECT_FLOAT_EQ(v.color.y, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(v.color.w, 0.5f);
+}
+
+// ===========================================================================
+// Source App Presets — Axis Conversion
+// ===========================================================================
+
+ENJIN_TEST(Importer, BlenderPresetZUp) {
+    auto preset = GetSourceAppPreset(SourceApp::Blender);
+    ENJIN_EXPECT_TRUE(preset.zUpToYUp);
+    ENJIN_EXPECT_FALSE(preset.leftToRight);
+    ENJIN_EXPECT_FLOAT_EQ(preset.scale, 1.0f);
+}
+
+ENJIN_TEST(Importer, MayaPresetCentimeters) {
+    auto preset = GetSourceAppPreset(SourceApp::Maya);
+    ENJIN_EXPECT_FALSE(preset.zUpToYUp);
+    ENJIN_EXPECT_FLOAT_EQ(preset.scale, 0.01f);
+}
+
+ENJIN_TEST(Importer, UnrealPresetLeftHand) {
+    auto preset = GetSourceAppPreset(SourceApp::Unreal);
+    ENJIN_EXPECT_TRUE(preset.leftToRight);
+    ENJIN_EXPECT_FLOAT_EQ(preset.scale, 0.01f);
+}
+
+ENJIN_TEST(Importer, UnityPresetLeftHand) {
+    auto preset = GetSourceAppPreset(SourceApp::Unity);
+    ENJIN_EXPECT_TRUE(preset.leftToRight);
+    ENJIN_EXPECT_FLOAT_EQ(preset.scale, 1.0f);
+}
+
+ENJIN_TEST(Importer, MaxPresetZUp) {
+    auto preset = GetSourceAppPreset(SourceApp::Max3ds);
+    ENJIN_EXPECT_TRUE(preset.zUpToYUp);
+}
+
+ENJIN_TEST(Importer, SketchUpInches) {
+    auto preset = GetSourceAppPreset(SourceApp::SketchUp);
+    ENJIN_EXPECT_TRUE(preset.zUpToYUp);
+    ENJIN_EXPECT_TRUE(preset.scale > 0.02f && preset.scale < 0.03f); // 0.0254
+}
+
+ENJIN_TEST(Importer, AllPresetsHaveNames) {
+    SourceApp apps[] = {
+        SourceApp::Auto, SourceApp::Blender, SourceApp::Maya, SourceApp::Max3ds,
+        SourceApp::Houdini, SourceApp::Cinema4D, SourceApp::ZBrush,
+        SourceApp::SubstancePainter, SourceApp::Unreal, SourceApp::Unity,
+        SourceApp::SketchUp, SourceApp::Custom
+    };
+    for (auto app : apps) {
+        auto preset = GetSourceAppPreset(app);
+        ENJIN_EXPECT_NOT_NULL(preset.name);
+    }
+}
+
+// ===========================================================================
+// Import Pipeline — Null World Safety
+// ===========================================================================
+
+ENJIN_TEST(Importer, NullWorldReturnsFailure) {
+    ImportResult r = SceneImporter::Import("test.gltf", nullptr);
+    ENJIN_EXPECT_FALSE(r.success);
+}
+
+ENJIN_TEST(Importer, NullWorldGLTFReturnsFailure) {
+    ImportResult r = SceneImporter::ImportGLTF("test.gltf", nullptr);
+    ENJIN_EXPECT_FALSE(r.success);
+}
+
+ENJIN_TEST(Importer, NullWorldAssimpReturnsFailure) {
+    ImportResult r = SceneImporter::ImportAssimp("test.fbx", nullptr);
+    ENJIN_EXPECT_FALSE(r.success);
+}
+
+// ===========================================================================
+// Import Pipeline — Nonexistent File Handling
+// ===========================================================================
+
+ENJIN_TEST(Importer, NonexistentGLTFReturnsFailure) {
+    ECS::World world;
+    ImportResult r = SceneImporter::ImportGLTF("does_not_exist.gltf", &world);
+    ENJIN_EXPECT_FALSE(r.success);
+    ENJIN_EXPECT_EQ(r.entities.size(), (size_t)0);
+}
+
+ENJIN_TEST(Importer, NonexistentFBXReturnsFailure) {
+    ECS::World world;
+    ImportResult r = SceneImporter::ImportAssimp("does_not_exist.fbx", &world);
+    ENJIN_EXPECT_FALSE(r.success);
+    ENJIN_EXPECT_EQ(r.entities.size(), (size_t)0);
+}
+
+ENJIN_TEST(Importer, AutoDetectNonexistentReturnsFailure) {
+    ECS::World world;
+    ImportResult r = SceneImporter::Import("does_not_exist.obj", &world);
+    ENJIN_EXPECT_FALSE(r.success);
+}
+
+// ===========================================================================
+// Import Options — Flip Override Combinations
+// ===========================================================================
+
+ENJIN_TEST(Importer, FlipOptionsDefault) {
+    ImportOptions opts;
+    ENJIN_EXPECT_FALSE(opts.flipX);
+    ENJIN_EXPECT_FALSE(opts.flipY);
+    ENJIN_EXPECT_FALSE(opts.flipZ);
+    ENJIN_EXPECT_TRUE(opts.convertAxes);
+}
+
+ENJIN_TEST(Importer, FlipOptionsIndependent) {
+    ImportOptions opts;
+    opts.flipX = true;
+    opts.flipZ = true;
+    ENJIN_EXPECT_TRUE(opts.flipX);
+    ENJIN_EXPECT_FALSE(opts.flipY);
+    ENJIN_EXPECT_TRUE(opts.flipZ);
+}
+
+// ===========================================================================
+// Import Result — Warning Storage
+// ===========================================================================
+
+ENJIN_TEST(Importer, ResultWarningsEmpty) {
+    ImportResult r;
+    ENJIN_EXPECT_EQ(r.warnings.size(), (size_t)0);
+    r.warnings.push_back("test warning");
+    ENJIN_EXPECT_EQ(r.warnings.size(), (size_t)1);
+}
+
+ENJIN_TEST(Importer, ResultTextureTracking) {
+    ImportResult r;
+    r.texturePathsResolved.push_back("diffuse.png");
+    r.texturePathsMissing.push_back("normal.png");
+    ENJIN_EXPECT_EQ(r.texturePathsResolved.size(), (size_t)1);
+    ENJIN_EXPECT_EQ(r.texturePathsMissing.size(), (size_t)1);
+}
+
+// ===========================================================================
+// GLTFScene — Structure Defaults
+// ===========================================================================
+
+ENJIN_TEST(GLTF, SceneDefaults) {
+    GLTFScene scene;
+    ENJIN_EXPECT_EQ(scene.meshes.size(), (size_t)0);
+    ENJIN_EXPECT_EQ(scene.materials.size(), (size_t)0);
+    ENJIN_EXPECT_EQ(scene.nodes.size(), (size_t)0);
+    ENJIN_EXPECT_EQ(scene.skins.size(), (size_t)0);
+    ENJIN_EXPECT_EQ(scene.animations.size(), (size_t)0);
+    ENJIN_EXPECT_TRUE(scene.generator.empty());
+}
+
+// ===========================================================================
+// AssimpScene — Structure Defaults
+// ===========================================================================
+
+ENJIN_TEST(Assimp, SceneDefaults) {
+    AssimpScene scene;
+    ENJIN_EXPECT_EQ(scene.meshes.size(), (size_t)0);
+    ENJIN_EXPECT_EQ(scene.materials.size(), (size_t)0);
+    ENJIN_EXPECT_EQ(scene.nodes.size(), (size_t)0);
+    ENJIN_EXPECT_FALSE(scene.hasSkinning);
+    ENJIN_EXPECT_FLOAT_EQ(scene.unitScaleFactor, 1.0f);
+    ENJIN_EXPECT_TRUE(scene.creator.empty());
+}
+
+ENJIN_TEST(Assimp, BoneDefaults) {
+    AssimpBone bone;
+    ENJIN_EXPECT_TRUE(bone.name.empty());
+}
+
+ENJIN_TEST(Assimp, AnimChannelDefaults) {
+    AssimpAnimChannel ch;
+    ENJIN_EXPECT_TRUE(ch.nodeName.empty());
+    ENJIN_EXPECT_EQ(ch.positionTimes.size(), (size_t)0);
+    ENJIN_EXPECT_EQ(ch.rotationTimes.size(), (size_t)0);
+    ENJIN_EXPECT_EQ(ch.scaleTimes.size(), (size_t)0);
+}
+
+ENJIN_TEST(Assimp, AnimDefaults) {
+    AssimpAnimation anim;
+    ENJIN_EXPECT_TRUE(anim.name.empty());
+    ENJIN_EXPECT_FLOAT_EQ(anim.duration, 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(anim.ticksPerSecond, 25.0f);
+}
+
+// ===========================================================================
+// GLTFVertex — Bone Weight Defaults
+// ===========================================================================
+
+ENJIN_TEST(GLTF, VertexBoneDefaults) {
+    GLTFVertex v;
+    ENJIN_EXPECT_EQ(v.boneIndices[0], 0u);
+    ENJIN_EXPECT_EQ(v.boneIndices[1], 0u);
+    ENJIN_EXPECT_EQ(v.boneIndices[2], 0u);
+    ENJIN_EXPECT_EQ(v.boneIndices[3], 0u);
+}
+
+ENJIN_TEST(Assimp, VertexBoneDefaults) {
+    AssimpVertex v;
+    ENJIN_EXPECT_FLOAT_EQ(v.boneWeights.x, 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(v.boneWeights.y, 0.0f);
+    ENJIN_EXPECT_EQ(v.boneIndices[0], 0u);
+}
+
+// ===========================================================================
+// GLTF Animation Channel
+// ===========================================================================
+
+ENJIN_TEST(GLTF, AnimChannelDefaults) {
+    GLTFAnimationChannel ch;
+    ENJIN_EXPECT_EQ(ch.targetNode, -1);
+    ENJIN_EXPECT_EQ((int)ch.path, (int)GLTFAnimationChannel::Path::Translation);
+    ENJIN_EXPECT_EQ(ch.times.size(), (size_t)0);
+    ENJIN_EXPECT_EQ(ch.values.size(), (size_t)0);
+}
+
+// ===========================================================================
+// Multi-Material — SubMesh Primitives
+// ===========================================================================
+
+ENJIN_TEST(GLTF, PrimitiveDefaults) {
+    GLTFPrimitive prim;
+    ENJIN_EXPECT_EQ(prim.materialIndex, -1);
+    ENJIN_EXPECT_EQ(prim.vertices.size(), (size_t)0);
+    ENJIN_EXPECT_EQ(prim.indices.size(), (size_t)0);
+}
+
+ENJIN_TEST(Assimp, PrimitiveDefaults) {
+    AssimpPrimitive prim;
+    ENJIN_EXPECT_EQ(prim.materialIndex, -1);
+    ENJIN_EXPECT_EQ(prim.vertices.size(), (size_t)0);
+    ENJIN_EXPECT_EQ(prim.indices.size(), (size_t)0);
+}
+
 ENJIN_TEST_MAIN()

@@ -29,6 +29,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
+#include "Enjin/ECS/Components/MeshRenderer.h"
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/Animation/IKSolver.h"
@@ -177,6 +178,7 @@ void RenderSystem::Initialize() {
         m_OutlineFragmentShader.reset();
     }
     CreateOutlinePipeline();
+    CreateWireframeOverlayPipeline();
 
     // Create cascaded shadow map
     m_ShadowMap = std::make_unique<Renderer::ShadowMap>(m_Renderer->GetContext());
@@ -1447,6 +1449,9 @@ void RenderSystem::Update(f32 deltaTime) {
             // Geometry outline pass (after 3D geometry)
             RenderOutlinePass();
 
+            // Per-entity wireframe overlay (after outlines, before sprites)
+            RenderWireframeOverlayPass();
+
             // Sorted 2D sprite rendering pass (after 3D geometry)
             RenderSprites();
 
@@ -1674,6 +1679,9 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Geometry outline pass (inverted-hull backface extrusion, after main geometry)
     RenderOutlinePass();
+
+    // Per-entity wireframe overlay
+    RenderWireframeOverlayPass();
 
     // Render onion skin ghosts (editor viewport only, before sprites)
     RenderOnionSkinGhosts();
@@ -3530,6 +3538,118 @@ void RenderSystem::CreateOutlinePipeline() {
     }
 }
 
+// ============================================================================
+// Per-entity wireframe overlay pipeline + pass
+// Renders entities with MeshRendererComponent::wireframe=true as LINE overlay
+// on top of solid geometry. Uses the main vertex shader (for skinning support)
+// and the outline fragment shader (flat color output).
+// ============================================================================
+
+void RenderSystem::CreateWireframeOverlayPipeline() {
+    if (!m_Pipeline || !m_VertexShader || !m_OutlineFragmentShader) return;
+
+    Renderer::PipelineConfig config;
+    config.renderPass = m_Renderer->GetRenderPass();
+    config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    config.depthTest = true;
+    config.depthWrite = false;   // Don't write depth — overlay on top of existing geometry
+    config.cullMode = VK_CULL_MODE_NONE;  // Show all edges
+    config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    config.polygonMode = VK_POLYGON_MODE_LINE;
+    config.msaaSamples = m_Renderer->GetMSAASamples();
+    config.colorAttachmentCount = 2; // Match main render pass MRT
+
+    m_WireframeOverlayPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (!m_WireframeOverlayPipeline->CreateWithLayout(config, m_VertexShader.get(), m_OutlineFragmentShader.get(),
+            m_Pipeline->GetDescriptorSetLayout())) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create wireframe overlay pipeline");
+        m_WireframeOverlayPipeline.reset();
+    }
+}
+
+void RenderSystem::RenderWireframeOverlayPass() {
+    if (!m_WireframeOverlayPipeline || !m_Renderer || !m_World) return;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+
+    // Check if any entity has wireframe enabled — skip pass if none
+    auto* meshRendererStorage = m_World->GetComponentStorage<MeshRendererComponent>();
+    if (!meshRendererStorage) return;
+
+    bool anyWireframe = false;
+    for (Entity entity : m_SortedRenderList) {
+        auto* mr = meshRendererStorage->Get(entity);
+        if (mr && mr->wireframe) { anyWireframe = true; break; }
+    }
+    if (!anyWireframe) return;
+
+    m_WireframeOverlayPipeline->Bind(commandBuffer);
+    {
+        u32 zeroOff = 0;
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_WireframeOverlayPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &zeroOff);
+    }
+
+    for (Entity entity : m_SortedRenderList) {
+        auto* mr = meshRendererStorage->Get(entity);
+        if (!mr || !mr->wireframe) continue;
+
+        auto* transform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
+        if (!transform || !transform->visible) continue;
+
+        EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
+            ? &m_EntityRenderData[static_cast<usize>(entity)] : nullptr;
+        if (!pRD || !pRD->valid) continue;
+        EntityRenderData& renderData = *pRD;
+
+        // Build push constants — use wireframe color/opacity from component
+        Renderer::PushConstants pc{};
+        pc.baseColor = mr->wireframeColor;
+        pc.opacity = mr->wireframeOpacity;
+        pc.flags = 0;
+
+        // Handle skinned meshes
+        auto* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
+        if (animComp && renderData.boneBuffer) {
+            pc.flags |= (1 << 3); // FLAG_SKINNED
+            pc.model = Math::Matrix4::Identity();
+            const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
+            if (!skinningMatrices.empty()) {
+                renderData.boneBuffer->UploadData(skinningMatrices.data(),
+                    skinningMatrices.size() * sizeof(Math::Matrix4));
+            }
+            UpdateBoneDescriptor(renderData.boneBuffer.get());
+        } else {
+            pc.model = ECS::ComputeWorldMatrix(m_World, entity);
+            if (m_DefaultBoneBuffer) {
+                UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+            }
+        }
+
+        vkCmdPushConstants(commandBuffer, m_WireframeOverlayPipeline->GetLayout(),
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+
+        // Draw
+        if (renderData.poolAlloc.valid && m_GeometryPool) {
+            if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
+            vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
+                             renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
+        } else if (renderData.vertexBuffer && renderData.indexCount > 0) {
+            VkBuffer buffers[] = {renderData.vertexBuffer->GetBuffer()};
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
+            if (renderData.indexBuffer) {
+                vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+            }
+            vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+            m_GeometryPoolBound = false;
+        }
+    }
+}
+
 void RenderSystem::RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 vertexCount,
                                     u32 firstVertex, const Math::Vector3& color, f32 opacity) {
     if (!m_LinePipeline || !m_Renderer || !vertexBuffer || vertexCount == 0) return;
@@ -5049,9 +5169,11 @@ void RenderSystem::RecreatePipelines(bool gpuAlreadyIdle) {
     }
 
     // Destroy all pipelines that share the descriptor set layout
+    m_OffscreenWireframeOverlayPipeline.reset();
     m_OffscreenOutlinePipeline.reset();
     m_OffscreenLinePipeline.reset();
     m_OffscreenPipeline.reset();
+    m_WireframeOverlayPipeline.reset();
     m_OutlinePipeline.reset();
     m_LinePipeline.reset();
     m_ShadowPipeline.reset();
@@ -5072,6 +5194,7 @@ void RenderSystem::RecreatePipelines(bool gpuAlreadyIdle) {
         CreateDescriptorSets();
         CreateLinePipeline();
         CreateOutlinePipeline();
+        CreateWireframeOverlayPipeline();
         CreateShadowPipeline();
         CreatePointShadowPipeline();
         CreateSpotShadowPipeline();

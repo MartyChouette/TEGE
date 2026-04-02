@@ -57,11 +57,16 @@ void Water3D::GenerateMesh(std::vector<Math::Vector3>& positions,
     uvs.clear();
     indices.clear();
 
-    f32 halfWidth = m_Settings.width * 0.5f;
-    f32 halfDepth = m_Settings.depth * 0.5f;
+    // Guard against zero/negative dimensions (prevents division by zero)
+    f32 safeWidth = Math::Max(m_Settings.width, 0.01f);
+    f32 safeDepth = Math::Max(m_Settings.depth, 0.01f);
+    f32 safeTile  = Math::Max(m_Settings.tileSize, 0.01f);
 
-    u32 xSegments = static_cast<u32>(m_Settings.width / m_Settings.tileSize);
-    u32 zSegments = static_cast<u32>(m_Settings.depth / m_Settings.tileSize);
+    f32 halfWidth = safeWidth * 0.5f;
+    f32 halfDepth = safeDepth * 0.5f;
+
+    u32 xSegments = static_cast<u32>(safeWidth / safeTile);
+    u32 zSegments = static_cast<u32>(safeDepth / safeTile);
 
     xSegments = Math::Max(xSegments, 1u);
     zSegments = Math::Max(zSegments, 1u);
@@ -69,8 +74,8 @@ void Water3D::GenerateMesh(std::vector<Math::Vector3>& positions,
     // Generate vertices
     for (u32 z = 0; z <= zSegments; ++z) {
         for (u32 x = 0; x <= xSegments; ++x) {
-            f32 xPos = m_Settings.position.x - halfWidth + (static_cast<f32>(x) / xSegments) * m_Settings.width;
-            f32 zPos = m_Settings.position.z - halfDepth + (static_cast<f32>(z) / zSegments) * m_Settings.depth;
+            f32 xPos = m_Settings.position.x - halfWidth + (static_cast<f32>(x) / xSegments) * safeWidth;
+            f32 zPos = m_Settings.position.z - halfDepth + (static_cast<f32>(z) / zSegments) * safeDepth;
             f32 yPos = m_Settings.position.y;
 
             // Add wave displacement if using vertex waves
@@ -140,8 +145,10 @@ void Water3D::BuildEntityMesh(ECS::World* world, ECS::Entity entity) const {
         v.uv = uvCoords[i];
 
         // Edge distance for shore foam (same pattern as WaterVolumeComponent mesh)
-        f32 relX = (positions[i].x - (m_Settings.position.x - halfWidth)) / m_Settings.width;
-        f32 relZ = (positions[i].z - (m_Settings.position.z - halfDepth)) / m_Settings.depth;
+        f32 safeW = Math::Max(m_Settings.width, 0.01f);
+        f32 safeD = Math::Max(m_Settings.depth, 0.01f);
+        f32 relX = (positions[i].x - (m_Settings.position.x - halfWidth)) / safeW;
+        f32 relZ = (positions[i].z - (m_Settings.position.z - halfDepth)) / safeD;
         f32 distL = relX, distR = 1.0f - relX;
         f32 distT = relZ, distB = 1.0f - relZ;
         f32 minEdgeDist = Math::Min(Math::Min(distL, distR), Math::Min(distT, distB));

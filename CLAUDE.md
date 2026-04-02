@@ -120,6 +120,13 @@ Bilateral bitmask: `(A.categoryBits & B.collisionMask) && (B.categoryBits & A.co
 - **Retargeting:** `RetargetAnimation()` + `BuildAutoRetargetMap()` — auto-maps bone names, strips Mixamo `mixamorig:` prefix.
 - **Shadow shader has skinning:** The shadow pass now handles skinned meshes (bone SSBO sampling in shadow vertex shader).
 - **Editor calls skeletal animator update directly** (not via `RenderSystem::Update`) to decouple animation timing from rendering.
+- **PoseLibraryComponent:** Save/recall named bone poses (expressions, gestures). Each pose stores per-bone rotations with blend weight. Inspector has large accessible buttons grouped by category.
+- **BoneRegion auto-detection:** `ClassifyBoneRegion()` detects 12 body regions from bone names (Face, Head, LeftHand, RightHand, LeftArm, RightArm, Spine, LeftLeg, RightLeg, LeftFoot, RightFoot, Tail). Rig Regions panel shows filterable bone list per region.
+
+### Gameplay
+
+- **RecordRewindSystem:** Per-entity (Braid-style, `RecordRewindComponent`) and scene-wide (Sands of Time-style, `SceneRewindComponent`) time rewind. `StateRingBuffer<T>` for O(1) push/eviction. Delta-compressed `DeltaFrame` snapshots with configurable keyframe interval. 6 channel flags (Transform/Velocity/Health/Animation/Physics/Material). Physics state sync via `ForceSetBodyState()` on Jolt/Box2D. Programmatic API: `StartEntityRewind()`, `StopEntityRewind()`, `SeekSceneToTime()`, etc. 11 AngelScript bindings (`Rewind_*`).
+- **DialogueTree narrative integration:** 3 new node types — `QuestAction` (start/complete/fail quest), `PlayCinematic` (trigger cinematic entity), `SetGameFlag` (persistent key-value flag via TieredSaveSystem). `DialogueCondition::Source` enum — `Variable`/`QuestStatus`/`GameFlag`. `DialoguePlayer` has `ActionCallback` + `ConditionResolver` for decoupled cross-system dispatch. Wired in PlayMode and Player.
 
 ### Editor
 
@@ -129,6 +136,11 @@ Bilateral bitmask: `(A.categoryBits & B.collisionMask) && (B.categoryBits & A.co
 - **F1/F2 debug panels:** F1 = Game Debug (game state), F2 = Debug Workstation (engine internals). Pressing one closes the other — only one debug panel shown at a time.
 - **Viewport shading modes:** `SceneViewMode` enum — Wireframe, Solid, Lit (default), LitShadows, Full. Blender-style toolbar buttons in Scene View.
 - **Project-first workflow:** Editor launches to Project Hub. Auto-creates project directory on disk. Create/delete/duplicate projects. `.enjinproject` file association opens editor directly.
+- **Per-entity wireframe overlay:** `MeshRendererComponent::wireframe` toggle, per-entity color/opacity, `VK_POLYGON_MODE_LINE` pipeline, draws on top of solid geometry.
+- **Dialogue tree editor:** 10 node types with body previews, validation red borders, auto-connect, categorized context menu, in-editor dialogue preview panel.
+- **Import result dialog:** Modal popup after import with stats, color-coded warnings, missing textures list, Undo Import button. Mesh validation auto-runs (NaN fix, degenerate triangles, bone weight normalization, scale sanity).
+- **Bone selection:** Diamond joint markers, hover tooltips, parent chain highlighting (cyan), 15px pick threshold for dense face/hand clusters, keyboard navigation (Up/Down/Escape).
+- **Animation inspector:** Visual timeline ruler with second ticks and click-to-seek event markers, 1D blend tree axis visualization, onion skin opacity preview strip, expandable bone hierarchy tree.
 
 ## Shader Workflow
 

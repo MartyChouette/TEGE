@@ -106,6 +106,8 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
 
         // Initialize record & rewind system
         m_RecordRewindSystem.SetWorld(world);
+        m_RecordRewindSystem.SetPhysics(m_Physics.get());
+        m_RecordRewindSystem.SetPhysics2D(m_Physics2D.get());
 
         // Initialize network system
         m_NetworkSystem.SetWorld(world);
@@ -155,6 +157,10 @@ void PlayMode::Play() {
         }
     }
 
+    // Keep rewind system in sync with lazily-created physics backends
+    m_RecordRewindSystem.SetPhysics(m_Physics.get());
+    m_RecordRewindSystem.SetPhysics2D(m_Physics2D.get());
+
     // Find the active game camera entity so controllers drive it instead of the editor camera
     ECS::Entity gameCam = ECS::CameraManager::GetActiveCamera(m_World);
     m_ControllerSystem.SetGameCameraEntity(gameCam);
@@ -193,6 +199,7 @@ void PlayMode::Play() {
     Scripting::SetBindingsStreaming(&m_StreamingManager);
     Scripting::SetBindingsAudio(&m_SimpleAudio);
     Scripting::SetBindingsDestructible(&m_DestructibleSystem);
+    Scripting::SetBindingsRewindSystem(&m_RecordRewindSystem);
     Scripting::SetBindingsFlower(m_World);
     Scripting::SetBindingsProcedural(nullptr);
     Scripting::SetBindingsWeather(m_WeatherSystem);
@@ -274,6 +281,9 @@ void PlayMode::Play() {
     // Wire EntityEventBus and SubtitleSystem to DialogueSystem
     m_DialogueSystem.SetEventBus(&m_EntityEventBus);
     m_DialogueSystem.SetSubtitleSystem(m_SubtitleSystem);
+    m_DialogueSystem.SetQuestSystem(&m_QuestSystem);
+    m_DialogueSystem.SetCinematicSystem(&m_CinematicSystem);
+    m_DialogueSystem.SetTieredSaveSystem(&m_TieredSaveSystem);
     ENJIN_LOG_INFO(Editor, "PlayMode: DialogueSystem integrations wired");
     m_ScriptSystem.InitializeAllScripts();
     ENJIN_LOG_INFO(Editor, "PlayMode: Scripts initialized");
@@ -462,6 +472,7 @@ void PlayMode::Stop() {
     Scripting::SetBindingsStreaming(nullptr);
     Scripting::SetBindingsAudio(nullptr);
     Scripting::SetBindingsDestructible(nullptr);
+    Scripting::SetBindingsRewindSystem(nullptr);
     Scripting::SetBindingsFlower(nullptr);
     Scripting::SetBindingsProcedural(nullptr);
     Scripting::SetBindingsPluginSystem(nullptr);

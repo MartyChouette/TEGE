@@ -996,6 +996,29 @@ void Box2DBackend::DestroyJointForEntity(ECS::Entity entity) {
     m_EntityToJoint.erase(it);
 }
 
+// ============================================================================
+// Force-set body state (for rewind system)
+// ============================================================================
+
+void Box2DBackend::ForceSetBodyState(ECS::Entity entity, const Math::Vector3& position,
+                                      const Math::Vector3& velocity) {
+    auto it = m_EntityToBody.find(entity);
+    if (it == m_EntityToBody.end()) return;
+
+    b2BodyId bodyId = it->second;
+    if (!b2Body_IsValid(bodyId)) return;
+
+    // Use SetLinearVelocity for kinematic bodies (per CLAUDE.md convention)
+    b2Body_SetLinearVelocity(bodyId, b2Vec2{velocity.x, velocity.y});
+
+    // For dynamic bodies, teleport via SetTransform is acceptable since we're restoring
+    // complete state. For kinematics, the next sync pass will pick up the ECS position.
+    b2BodyType bodyType = b2Body_GetType(bodyId);
+    if (bodyType == b2_dynamicBody) {
+        b2Body_SetTransform(bodyId, b2Vec2{position.x, position.y}, b2MakeRot(0.0f));
+    }
+}
+
 } // namespace Physics
 } // namespace Enjin
 

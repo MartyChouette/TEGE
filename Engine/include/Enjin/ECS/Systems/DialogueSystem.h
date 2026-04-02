@@ -11,6 +11,11 @@
 namespace Enjin::Accessibility {
     class SubtitleSystem;
 }
+namespace Enjin::Gameplay {
+    class QuestSystem;
+    class CinematicSystem;
+    class TieredSaveSystem;
+}
 
 namespace Enjin {
 namespace ECS {
@@ -57,6 +62,11 @@ public:
     // SubtitleSystem integration (routes text to accessibility subtitles)
     void SetSubtitleSystem(Accessibility::SubtitleSystem* subs) { m_SubtitleSystem = subs; }
 
+    // Narrative integration — quest, cinematic, and game flag systems
+    void SetQuestSystem(Gameplay::QuestSystem* qs) { m_QuestSystem = qs; }
+    void SetCinematicSystem(Gameplay::CinematicSystem* cs) { m_CinematicSystem = cs; }
+    void SetTieredSaveSystem(Gameplay::TieredSaveSystem* tss) { m_TieredSaveSystem = tss; }
+
 private:
     bool m_Enabled = true;
     std::unordered_map<Entity, GUI::DialoguePlayer> m_Players;
@@ -64,6 +74,9 @@ private:
     EventCallback m_EventCallback;
     EntityEventBus* m_EventBus = nullptr;
     Accessibility::SubtitleSystem* m_SubtitleSystem = nullptr;
+    Gameplay::QuestSystem* m_QuestSystem = nullptr;
+    Gameplay::CinematicSystem* m_CinematicSystem = nullptr;
+    Gameplay::TieredSaveSystem* m_TieredSaveSystem = nullptr;
 
     void SyncNodeToComponent(DialogueComponent& dlg, GUI::DialoguePlayer& player);
     void ProcessLegacy(World* world, Entity entity, DialogueComponent& dlg, f32 deltaTime);

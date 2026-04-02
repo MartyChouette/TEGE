@@ -54,6 +54,10 @@ public:
     // CCD
     virtual void SetCCDEnabled(bool enabled) = 0;
 
+    // Force-set body state (for rewind system — restores position/velocity)
+    virtual void ForceSetBodyState(ECS::Entity entity, const Math::Vector3& position,
+                                    const Math::Vector3& velocity) {}
+
     // Backend identification
     virtual const char* GetName() const = 0;
 };

@@ -140,6 +140,7 @@ enjin_add_test(TestCinematic          Unit/Gameplay/TestCinematic.cpp)
 enjin_add_test(TestElementalSystem    Unit/Gameplay/TestElementalSystem.cpp)
 enjin_add_test(TestInputAction        Unit/Gameplay/TestInputAction.cpp)
 enjin_add_test(TestInputActionMap     Unit/Gameplay/TestInputActionMap.cpp)
+enjin_add_test(TestRewindSystem       Unit/Gameplay/TestRewindSystem.cpp)
 
 # --- Networking ---
 enjin_add_test(TestNetworking         Unit/Networking/TestNetworking.cpp)
@@ -159,6 +160,7 @@ enjin_add_test(TestTimeline           Unit/Animation/TestTimeline.cpp)
 enjin_add_test(TestIKSolver           Unit/Animation/TestIKSolver.cpp)
 enjin_add_test(TestSpriteAnimation    Unit/Animation/TestSpriteAnimation.cpp)
 enjin_add_test(TestTimelineComponent  Unit/Animation/TestTimelineComponent.cpp)
+enjin_add_test(TestBlendTree          Unit/Animation/TestBlendTree.cpp)
 
 # --- Procedural ---
 enjin_add_test(TestProceduralGen      Unit/Procedural/TestProceduralGen.cpp)

@@ -3949,3 +3949,101 @@ Supported component types for `addcomp`/`removecomp`: `mesh`, `material`, `light
 | `ambient_intensity <v>` | Set ambient intensity |
 | `curvature <value>` | Set world curvature strength |
 
+---
+
+## 35. Record & Rewind
+
+Two rewind modes for time-manipulation gameplay mechanics:
+
+### Per-Entity Rewind (Braid-style)
+
+Add a **Record Rewind** component to any entity. While the rewind key is held (default: R), the entity scrubs backward through recorded frames with interpolation.
+
+- **Max Duration** — seconds of history to keep (default 5s)
+- **Record Interval** — snapshot frequency (default 20 FPS)
+- **Rewind Speed** — playback speed multiplier (default 2x)
+- **Cooldown** — seconds before rewind can be used again
+- **Channels** — select what to record: Transform, Velocity, Health, Animation, Physics, Material
+
+### Scene Rewind (Sands of Time-style)
+
+Add a **Scene Rewind** component to a game manager entity. Records ALL entity transforms in the scene. Hold the rewind key (default: T) to scrub the entire world backward.
+
+- **Delta Compression** — only stores changed entities between keyframes (every 30 frames)
+- **Charges** — limit rewind uses per level (0 = unlimited)
+- **Keyframe Interval** — full snapshots every N delta frames
+
+### Editor Timeline
+
+During play mode, a timeline scrubber appears at the bottom of the Game View showing recording status, frame count, memory usage, and playback position.
+
+---
+
+## 36. Narrative Integration
+
+Dialogue trees can directly drive quest progression, cinematics, and persistent game flags without visual script wiring.
+
+### New Dialogue Node Types
+
+| Node | Color | Purpose |
+|------|-------|---------|
+| **Quest Action** | Orange | Start quest, complete objective, or fail quest |
+| **Play Cinematic** | Blue | Trigger a cinematic camera entity by name |
+| **Set Game Flag** | Purple | Set a persistent key-value flag (survives save/load) |
+
+### Condition Sources
+
+Condition nodes and per-choice conditions can check:
+- **Dialogue Variable** — existing behavior (per-conversation)
+- **Quest Status** — check if a quest is active/complete/failed/notstarted
+- **Game Flag** — check persistent flags set by SetGameFlag nodes
+
+### Dialogue Preview
+
+Click "Start Preview" in the dialogue tree inspector to walk through the entire tree without entering play mode. The graph highlights the current node as you advance.
+
+---
+
+## 37. Pose Library & Bone Regions
+
+### Pose Library
+
+Add a **Pose Library** component to any entity with a skeleton. Save and recall named bone poses for facial expressions, hand gestures, or body stances.
+
+- Click "Save Current" to capture all bone rotations as a named pose
+- Poses auto-categorize by body region (Face, Left Hand, etc.)
+- Click a pose button to preview it
+- Blend weight slider controls how strongly the pose is applied
+
+### Bone Regions
+
+The Rig Regions panel auto-detects body regions from bone names (Face, Head, Left/Right Hand, Left/Right Arm, Spine, Left/Right Leg, Left/Right Foot). Click a region button to filter the bone list to just that area — essential for navigating dense face and hand rigs.
+
+---
+
+## 38. Import Safety
+
+### Import Result Dialog
+
+After every model import, a dialog shows:
+- Success/failure status with entity and mesh counts
+- Resolved vs missing textures
+- Color-coded warnings (gray = notes, yellow = auto-fixes, orange = issues)
+- **Undo Import** button to remove all entities from the import in one click
+
+### Mesh Validation
+
+Runs automatically on every import:
+- **NaN/Inf vertices** — auto-fixed (clamped to zero)
+- **Degenerate triangles** — detected and reported
+- **Bone weight normalization** — auto-fixed when weights don't sum to 1.0
+- **Scale sanity** — warns if model is extremely large (>1000 units) or tiny (<0.001 units)
+
+### Vertex Colors
+
+Vertex colors from FBX (`aiMesh::mColors`) and glTF (`COLOR_0` attribute) are now imported into mesh vertex data.
+
+### Per-Entity Wireframe
+
+Add a **Mesh Renderer** component, enable the Wireframe checkbox, and pick a color. The wireframe renders as an overlay on top of solid geometry — useful for debugging mesh topology.
+

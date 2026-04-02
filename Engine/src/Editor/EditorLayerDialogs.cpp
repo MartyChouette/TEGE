@@ -1297,18 +1297,14 @@ void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOpt
         meta.PopulateFromResult(result, path, options);
         meta.Save(path);
 
-        // Track for re-import
+        // Track for re-import and undo
         m_LastImportedModelPath = path;
-
-        ShowNotification("Imported: " + std::filesystem::path(path).filename().string() +
-            " (" + std::to_string(result.meshCount) + " meshes)", NotificationType::Success);
-    } else {
-        std::stringstream ss;
-        ss << "[Error] Failed to import: " << result.errorMessage;
-        m_ConsoleLog.push_back(ss.str());
-        ENJIN_LOG_ERROR(Editor, "Failed to import %s: %s", path.c_str(), result.errorMessage.c_str());
-        ShowNotification("Import failed: " + std::filesystem::path(path).filename().string(), NotificationType::Error);
+        m_LastImportEntities = result.entities;
     }
+
+    // Store result and show dialog (for both success and failure)
+    m_LastImportResult = result;
+    m_ShowImportResultDialog = true;
 }
 
 
@@ -2782,7 +2778,7 @@ void EditorLayer::DrawQuitFeedbackDialog() {
     ImGui::OpenPopup("##QuitFeedback");
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(580, 600));
+    ImGui::SetNextWindowSize(ImVec2(640, 600));
 
     if (ImGui::BeginPopupModal("##QuitFeedback", nullptr,
         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar)) {
@@ -2839,10 +2835,10 @@ void EditorLayer::DrawQuitFeedbackDialog() {
         ImGui::Dummy(ImVec2(0, 8));
 
         // Buttons
-        float buttonWidth = 150.0f;
+        float buttonWidth = 170.0f;
         float spacing = 16.0f;
         float totalWidth = buttonWidth * 3 + spacing * 2;
-        ImGui::SetCursorPosX((580 - totalWidth) * 0.5f);
+        ImGui::SetCursorPosX((640 - totalWidth) * 0.5f);
 
         if (ImGui::Button("Submit & Quit", ImVec2(buttonWidth, 32))) {
             m_QuitSurvey.whatDidYouLike = likeBuf;
@@ -2904,6 +2900,138 @@ void EditorLayer::FinalizeQuit() {
     // Defer close to next frame — calling Close() during ImGui rendering
     // destroys resources mid-frame and crashes on some drivers.
     m_PendingQuit = true;
+}
+
+// ============================================================================
+// Import Result Dialog — shows after every import with stats, warnings, undo
+// ============================================================================
+
+void EditorLayer::DrawImportResultDialog() {
+    ImGui::OpenPopup("Import Result");
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(600, 0), ImGuiCond_Appearing);
+
+    if (ImGui::BeginPopupModal("Import Result", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        const auto& r = m_LastImportResult;
+
+        // Header — success or failure
+        if (r.success) {
+            ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "Import Successful");
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Import Failed");
+            if (!r.errorMessage.empty()) {
+                ImGui::TextWrapped("%s", r.errorMessage.c_str());
+            }
+        }
+
+        ImGui::Separator();
+
+        if (r.success) {
+            // Stats table
+            ImGui::Text("Entities: %zu", r.entities.size());
+            ImGui::Text("Meshes: %u    Materials: %u    Animations: %u", r.meshCount, r.materialCount, r.animationCount);
+            ImGui::Text("Vertices: %u    Indices: %u", r.totalVertexCount, r.totalIndexCount);
+
+            // Textures
+            if (!r.texturePathsResolved.empty() || !r.texturePathsMissing.empty()) {
+                ImGui::Separator();
+                ImGui::Text("Textures: %zu resolved", r.texturePathsResolved.size());
+                if (!r.texturePathsMissing.empty()) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%zu missing:", r.texturePathsMissing.size());
+                    ImGui::Indent(8.0f);
+                    for (const auto& tp : r.texturePathsMissing) {
+                        // Show just the filename for long paths (e.g. Mixamo server paths)
+                        std::string display = tp;
+                        auto lastSlash = display.find_last_of("/\\");
+                        if (lastSlash != std::string::npos && display.size() > 60) {
+                            display = display.substr(lastSlash + 1);
+                        }
+                        ImGui::BulletText("%s", display.c_str());
+                        if (display != tp && ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("%s", tp.c_str());
+                        }
+                    }
+                    ImGui::Unindent(8.0f);
+                }
+            }
+
+            // Warnings
+            if (!r.warnings.empty()) {
+                ImGui::Separator();
+                if (ImGui::TreeNodeEx("Warnings", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    for (const auto& w : r.warnings) {
+                        // Color-code: "Fixed"/"Normalized" = yellow, "Note:" = gray, others = orange
+                        ImVec4 color(1.0f, 0.7f, 0.3f, 1.0f); // orange default
+                        if (w.find("Note:") == 0) color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+                        else if (w.find("Fixed") != std::string::npos || w.find("Normalized") != std::string::npos)
+                            color = ImVec4(1.0f, 1.0f, 0.4f, 1.0f);
+                        ImGui::TextColored(color, "%s", w.c_str());
+                    }
+                    ImGui::TreePop();
+                }
+            }
+        }
+
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // Action buttons
+        f32 btnW = 120.0f;
+        if (ImGui::Button("OK", ImVec2(btnW, 0))) {
+            m_ShowImportResultDialog = false;
+            ImGui::CloseCurrentPopup();
+        }
+
+        if (r.success && !m_LastImportEntities.empty()) {
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.3f, 0.3f, 1.0f));
+            if (ImGui::Button("Undo Import", ImVec2(btnW, 0))) {
+                UndoLastImport();
+                m_ShowImportResultDialog = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::PopStyleColor(2);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Remove all %zu entities created by this import", m_LastImportEntities.size());
+            }
+        }
+
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape) || ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+            m_ShowImportResultDialog = false;
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    } else {
+        m_ShowImportResultDialog = false;
+    }
+}
+
+// ============================================================================
+// Import Undo — destroy all entities from the last import
+// ============================================================================
+
+void EditorLayer::UndoLastImport() {
+    if (m_LastImportEntities.empty() || !m_World) return;
+
+    u32 destroyed = 0;
+    for (ECS::Entity entity : m_LastImportEntities) {
+        if (m_World->IsValid(entity)) {
+            m_World->DestroyEntity(entity);
+            destroyed++;
+        }
+    }
+
+    ENJIN_LOG_INFO(Editor, "Undo import: destroyed %u entities", destroyed);
+    ShowNotification("Undid import (" + std::to_string(destroyed) + " entities removed)", NotificationType::Info);
+
+    m_LastImportEntities.clear();
+
+    // Deselect if any selected entity was part of the import
+    m_SelectedEntities.clear();
+    m_PrimarySelected = ECS::INVALID_ENTITY;
 }
 
 } // namespace Editor

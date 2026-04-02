@@ -68,8 +68,10 @@ struct MeshRendererComponent {
     // settings are batched into instanced draw calls when this is true.
     bool allowInstancing = true;
 
-    // Wireframe override (debug/editor)
+    // Per-entity wireframe overlay (debug/editor)
     bool wireframe = false;
+    Math::Vector3 wireframeColor = Math::Vector3(0.0f, 1.0f, 0.0f); // Green
+    f32 wireframeOpacity = 1.0f;
 };
 
 } // namespace ECS

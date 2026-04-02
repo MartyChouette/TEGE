@@ -115,6 +115,8 @@ public:
     Networking::NetworkSystem* GetNetworkSystem() { return &m_NetworkSystem; }
     Scene::StreamingManager* GetStreamingManager() { return &m_StreamingManager; }
 
+    Gameplay::RecordRewindSystem* GetRecordRewindSystem() { return &m_RecordRewindSystem; }
+
     Audio::SimpleAudio* GetSimpleAudio() { return &m_SimpleAudio; }
     Effects::DestructibleSystem* GetDestructibleSystem() { return &m_DestructibleSystem; }
     Effects::InteractiveWaterSystem* GetInteractiveWaterSystem() { return &m_InteractiveWaterSystem; }

@@ -5,6 +5,7 @@
 #include "Enjin/Debug/CrashHandler.h"
 #include <GLFW/glfw3.h>
 #include <chrono>
+#include <unordered_set>
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Mesh.h"
@@ -2695,6 +2696,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawDeleteConfirmModal();
     }
 
+    // Import result dialog (shows after model import)
+    if (m_ShowImportResultDialog) {
+        DrawImportResultDialog();
+    }
+
     // Crash report dialog (previous session)
     if (m_ShowCrashDialog) {
         DrawCrashReportDialog();
@@ -3295,20 +3301,41 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
 
                         i32 selBone = animComp->selectedBoneIndex;
 
+                        // Build parent chain set for the selected bone (highlight path to root)
+                        std::unordered_set<i32> parentChain;
+                        if (selBone >= 0) {
+                            i32 walk = selBone;
+                            while (walk >= 0) {
+                                parentChain.insert(walk);
+                                walk = skeleton->bones[walk].parentIndex;
+                            }
+                        }
+
+                        // Hover detection: find bone nearest to mouse for tooltip
+                        ImVec2 cursorPos = ImGui::GetMousePos();
+                        f32 hoverBestDist = 12.0f;
+                        i32 hoveredBone = -1;
+
                         for (usize i = 0; i < skeleton->bones.size(); ++i) {
                             const auto& bone = skeleton->bones[i];
-                            // Get this bone's world position (bone-space -> entity-space -> world-space)
                             Math::Matrix4 boneWorld = entityWorld * pose.worldTransforms[i];
                             Math::Vector3 bonePos(boneWorld.m[12], boneWorld.m[13], boneWorld.m[14]);
 
-                            // Determine color: green for selected, yellow for IK targets, white for normal
+                            // Determine color and style
                             bool isSelected = (static_cast<i32>(i) == selBone);
                             bool isIKTarget = (!lookAtBone.empty() && bone.name == lookAtBone) ||
                                               (!interactionBone.empty() && bone.name == interactionBone);
-                            ImU32 boneColor = isSelected ? IM_COL32(50, 255, 80, 255)
-                                            : isIKTarget ? IM_COL32(255, 220, 50, 220)
-                                                         : IM_COL32(255, 255, 255, 200);
-                            f32 lineThickness = isSelected ? 2.5f : 1.5f;
+                            bool inChain = parentChain.count(static_cast<i32>(i)) > 0;
+
+                            // Color: selected=green, chain=cyan, IK=yellow, normal=white (dimmed if selection active but not in chain)
+                            ImU32 boneColor;
+                            if (isSelected) boneColor = IM_COL32(50, 255, 80, 255);
+                            else if (isIKTarget) boneColor = IM_COL32(255, 220, 50, 220);
+                            else if (inChain) boneColor = IM_COL32(100, 220, 255, 230);
+                            else if (selBone >= 0) boneColor = IM_COL32(180, 180, 180, 100); // Dimmed when a bone is selected
+                            else boneColor = IM_COL32(255, 255, 255, 200);
+
+                            f32 lineThickness = isSelected ? 2.5f : (inChain ? 2.0f : 1.5f);
 
                             // Draw line from parent to this bone
                             if (bone.parentIndex >= 0 && bone.parentIndex < static_cast<i32>(skeleton->bones.size())) {
@@ -3320,27 +3347,47 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                             // Draw joint marker
                             ImVec2 jointScreen;
                             if (worldToScreen(bonePos, jointScreen)) {
+                                // Hover detection for tooltip
+                                f32 dx = jointScreen.x - cursorPos.x;
+                                f32 dy = jointScreen.y - cursorPos.y;
+                                f32 dist = std::sqrt(dx * dx + dy * dy);
+                                if (dist < hoverBestDist) {
+                                    hoverBestDist = dist;
+                                    hoveredBone = static_cast<i32>(i);
+                                }
+
                                 if (isSelected) {
-                                    // Selected bone: larger filled circle + name label
-                                    bgDrawList->AddCircleFilled(jointScreen, 5.0f, IM_COL32(50, 255, 80, 255));
-                                    bgDrawList->AddCircle(jointScreen, 5.0f, IM_COL32(255, 255, 255, 200), 0, 1.0f);
-                                    // Draw bone name next to the joint
+                                    // Selected bone: filled circle + outline + name label
+                                    bgDrawList->AddCircleFilled(jointScreen, 6.0f, IM_COL32(50, 255, 80, 255));
+                                    bgDrawList->AddCircle(jointScreen, 6.0f, IM_COL32(255, 255, 255, 220), 0, 1.5f);
                                     bgDrawList->AddText(
-                                        ImVec2(jointScreen.x + 8.0f, jointScreen.y - 6.0f),
+                                        ImVec2(jointScreen.x + 10.0f, jointScreen.y - 6.0f),
                                         IM_COL32(50, 255, 80, 255), bone.name.c_str());
                                 } else {
-                                    // Normal bone: small cross at each joint
-                                    f32 sz = isIKTarget ? 4.0f : 2.5f;
-                                    bgDrawList->AddLine(
-                                        ImVec2(jointScreen.x - sz, jointScreen.y),
-                                        ImVec2(jointScreen.x + sz, jointScreen.y),
-                                        boneColor, 1.0f);
-                                    bgDrawList->AddLine(
+                                    // Unselected: diamond shape (easier to see and click than tiny crosses)
+                                    f32 sz = isIKTarget ? 4.5f : 3.5f;
+                                    if (inChain) sz = 4.0f;
+                                    bgDrawList->AddQuadFilled(
                                         ImVec2(jointScreen.x, jointScreen.y - sz),
+                                        ImVec2(jointScreen.x + sz, jointScreen.y),
                                         ImVec2(jointScreen.x, jointScreen.y + sz),
-                                        boneColor, 1.0f);
+                                        ImVec2(jointScreen.x - sz, jointScreen.y),
+                                        boneColor);
                                 }
                             }
+                        }
+
+                        // Draw tooltip for hovered bone (when not selected)
+                        if (hoveredBone >= 0 && hoveredBone != selBone) {
+                            const auto& hBone = skeleton->bones[hoveredBone];
+                            ImVec2 tooltipPos(cursorPos.x + 14.0f, cursorPos.y - 8.0f);
+                            // Background pill
+                            ImVec2 textSize = ImGui::CalcTextSize(hBone.name.c_str());
+                            bgDrawList->AddRectFilled(
+                                ImVec2(tooltipPos.x - 4, tooltipPos.y - 2),
+                                ImVec2(tooltipPos.x + textSize.x + 4, tooltipPos.y + textSize.y + 2),
+                                IM_COL32(0, 0, 0, 180), 3.0f);
+                            bgDrawList->AddText(tooltipPos, IM_COL32(255, 255, 255, 230), hBone.name.c_str());
                         }
                     }
                 }

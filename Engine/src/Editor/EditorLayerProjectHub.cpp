@@ -1132,13 +1132,13 @@ void EditorLayer::DrawHubWizardSetup(ImDrawList* dl, const ImVec2& area, f32 con
     ImGui::SetCursorPosX(formX);
     ImGui::TextColored(ImVec4(0.55f, 0.58f, 0.68f, 1.0f), "Location");
     ImGui::SetCursorPosX(formX);
-    ImGui::PushItemWidth(formW - 190.0f);
+    ImGui::PushItemWidth(formW - 120.0f);
     ImGui::InputText("##ProjPath", m_NewProjectPath, sizeof(m_NewProjectPath));
     ImGui::PopItemWidth();
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.2f, 0.26f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.28f, 0.35f, 1.0f));
-    if (ImGui::Button("Browse...", ImVec2(70, 0))) {
+    if (ImGui::Button("Browse...", ImVec2(100, 0))) {
         std::string folder = FileDialog::OpenFolder("Select Project Location", m_NewProjectPath);
         if (!folder.empty()) {
             std::strncpy(m_NewProjectPath, folder.c_str(), sizeof(m_NewProjectPath) - 1);

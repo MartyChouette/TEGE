@@ -2206,6 +2206,10 @@ json SerializeMeshRendererComponent(const ECS::MeshRendererComponent& mr) {
     j["contributeMotionVectors"] = mr.contributeMotionVectors;
     j["allowInstancing"] = mr.allowInstancing;
     j["wireframe"] = mr.wireframe;
+    if (mr.wireframe) {
+        j["wireframeColor"] = { RF(mr.wireframeColor.x), RF(mr.wireframeColor.y), RF(mr.wireframeColor.z) };
+        j["wireframeOpacity"] = RF(mr.wireframeOpacity);
+    }
     if (!mr.customShaderName.empty()) j["customShaderName"] = mr.customShaderName;
     return j;
 }
@@ -2223,6 +2227,10 @@ ECS::MeshRendererComponent DeserializeMeshRendererComponent(const json& j) {
     if (j.contains("contributeMotionVectors")) mr.contributeMotionVectors = JB(j["contributeMotionVectors"]);
     if (j.contains("allowInstancing")) mr.allowInstancing = JB(j["allowInstancing"]);
     if (j.contains("wireframe")) mr.wireframe = JB(j["wireframe"]);
+    if (j.contains("wireframeColor") && j["wireframeColor"].is_array() && j["wireframeColor"].size() == 3) {
+        mr.wireframeColor = Math::Vector3(j["wireframeColor"][0].get<f32>(), j["wireframeColor"][1].get<f32>(), j["wireframeColor"][2].get<f32>());
+    }
+    if (j.contains("wireframeOpacity")) mr.wireframeOpacity = j["wireframeOpacity"].get<f32>();
     if (j.contains("customShaderName")) mr.customShaderName = j["customShaderName"].get<std::string>();
     return mr;
 }
@@ -2269,6 +2277,76 @@ ECS::HealthComponent DeserializeHealthComponent(const json& j) {
     if (j.contains("invulnerabilityTimer")) h.invulnerabilityTimer = j["invulnerabilityTimer"].get<f32>();
     if (j.contains("timeSinceLastDamage")) h.timeSinceLastDamage = j["timeSinceLastDamage"].get<f32>();
     return h;
+}
+
+// ============================================================================
+// Record & Rewind (configuration only — runtime state is transient)
+// ============================================================================
+
+json SerializeRecordRewindComponent(const ECS::RecordRewindComponent& rr) {
+    json j;
+    j["maxDuration"] = RF(rr.maxDuration);
+    j["recordInterval"] = RF(rr.recordInterval);
+    j["rewindSpeed"] = RF(rr.rewindSpeed);
+    j["cooldown"] = RF(rr.cooldown);
+    j["rewindKey"] = rr.rewindKey;
+    j["channels"] = rr.channels;
+    j["enabled"] = rr.enabled;
+    j["vignetteStrength"] = RF(rr.rewindVignetteStrength);
+    j["rewindTint"] = { RF(rr.rewindTint.x), RF(rr.rewindTint.y), RF(rr.rewindTint.z) };
+    return j;
+}
+
+ECS::RecordRewindComponent DeserializeRecordRewindComponent(const json& j) {
+    ECS::RecordRewindComponent rr;
+    if (j.contains("maxDuration")) rr.maxDuration = j["maxDuration"].get<f32>();
+    if (j.contains("recordInterval")) rr.recordInterval = j["recordInterval"].get<f32>();
+    if (j.contains("rewindSpeed")) rr.rewindSpeed = j["rewindSpeed"].get<f32>();
+    if (j.contains("cooldown")) rr.cooldown = j["cooldown"].get<f32>();
+    if (j.contains("rewindKey")) rr.rewindKey = j["rewindKey"].get<i32>();
+    if (j.contains("channels")) rr.channels = j["channels"].get<u32>();
+    if (j.contains("enabled")) rr.enabled = JB(j["enabled"]);
+    if (j.contains("vignetteStrength")) rr.rewindVignetteStrength = j["vignetteStrength"].get<f32>();
+    if (j.contains("rewindTint") && j["rewindTint"].is_array() && j["rewindTint"].size() == 3) {
+        rr.rewindTint = Math::Vector3(j["rewindTint"][0].get<f32>(), j["rewindTint"][1].get<f32>(), j["rewindTint"][2].get<f32>());
+    }
+    return rr;
+}
+
+json SerializeSceneRewindComponent(const ECS::SceneRewindComponent& sr) {
+    json j;
+    j["maxDuration"] = RF(sr.maxDuration);
+    j["recordInterval"] = RF(sr.recordInterval);
+    j["rewindSpeed"] = RF(sr.rewindSpeed);
+    j["cooldown"] = RF(sr.cooldown);
+    j["charges"] = sr.charges;
+    j["rewindKey"] = sr.rewindKey;
+    j["channels"] = sr.channels;
+    j["keyframeInterval"] = sr.keyframeInterval;
+    j["enabled"] = sr.enabled;
+    j["deltaCompression"] = sr.deltaCompression;
+    j["vignetteStrength"] = RF(sr.rewindVignetteStrength);
+    j["rewindTint"] = { RF(sr.rewindTint.x), RF(sr.rewindTint.y), RF(sr.rewindTint.z) };
+    return j;
+}
+
+ECS::SceneRewindComponent DeserializeSceneRewindComponent(const json& j) {
+    ECS::SceneRewindComponent sr;
+    if (j.contains("maxDuration")) sr.maxDuration = j["maxDuration"].get<f32>();
+    if (j.contains("recordInterval")) sr.recordInterval = j["recordInterval"].get<f32>();
+    if (j.contains("rewindSpeed")) sr.rewindSpeed = j["rewindSpeed"].get<f32>();
+    if (j.contains("cooldown")) sr.cooldown = j["cooldown"].get<f32>();
+    if (j.contains("charges")) sr.charges = j["charges"].get<i32>();
+    if (j.contains("rewindKey")) sr.rewindKey = j["rewindKey"].get<i32>();
+    if (j.contains("channels")) sr.channels = j["channels"].get<u32>();
+    if (j.contains("keyframeInterval")) sr.keyframeInterval = j["keyframeInterval"].get<u32>();
+    if (j.contains("enabled")) sr.enabled = JB(j["enabled"]);
+    if (j.contains("deltaCompression")) sr.deltaCompression = JB(j["deltaCompression"]);
+    if (j.contains("vignetteStrength")) sr.rewindVignetteStrength = j["vignetteStrength"].get<f32>();
+    if (j.contains("rewindTint") && j["rewindTint"].is_array() && j["rewindTint"].size() == 3) {
+        sr.rewindTint = Math::Vector3(j["rewindTint"][0].get<f32>(), j["rewindTint"][1].get<f32>(), j["rewindTint"][2].get<f32>());
+    }
+    return sr;
 }
 
 json SerializeDamageComponent(const ECS::DamageComponent& d) {
@@ -6440,9 +6518,15 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 entityJson["meshRenderer"] = SerializeMeshRendererComponent(*m_World->GetComponent<ECS::MeshRendererComponent>(entity));
             }
 
-            // Health & Damage
+            // Health & Damage & Rewind
             if (m_World->HasComponent<ECS::HealthComponent>(entity)) {
                 entityJson["health"] = SerializeHealthComponent(*m_World->GetComponent<ECS::HealthComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::RecordRewindComponent>(entity)) {
+                entityJson["recordRewind"] = SerializeRecordRewindComponent(*m_World->GetComponent<ECS::RecordRewindComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::SceneRewindComponent>(entity)) {
+                entityJson["sceneRewind"] = SerializeSceneRewindComponent(*m_World->GetComponent<ECS::SceneRewindComponent>(entity));
             }
             if (m_World->HasComponent<ECS::DamageComponent>(entity)) {
                 entityJson["damage"] = SerializeDamageComponent(*m_World->GetComponent<ECS::DamageComponent>(entity));
@@ -7191,9 +7275,15 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 m_World->AddComponent<ECS::MeshRendererComponent>(entity, DeserializeMeshRendererComponent(entityJson["meshRenderer"]));
             }
 
-            // Health & Damage
+            // Health & Damage & Rewind
             if (entityJson.contains("health")) {
                 m_World->AddComponent<ECS::HealthComponent>(entity, DeserializeHealthComponent(entityJson["health"]));
+            }
+            if (entityJson.contains("recordRewind")) {
+                m_World->AddComponent<ECS::RecordRewindComponent>(entity, DeserializeRecordRewindComponent(entityJson["recordRewind"]));
+            }
+            if (entityJson.contains("sceneRewind")) {
+                m_World->AddComponent<ECS::SceneRewindComponent>(entity, DeserializeSceneRewindComponent(entityJson["sceneRewind"]));
             }
             if (entityJson.contains("damage")) {
                 m_World->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(entityJson["damage"]));
@@ -7800,9 +7890,15 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
                 entityJson["meshRenderer"] = SerializeMeshRendererComponent(*m_World->GetComponent<ECS::MeshRendererComponent>(entity));
             }
 
-            // Health & Damage
+            // Health & Damage & Rewind
             if (m_World->HasComponent<ECS::HealthComponent>(entity)) {
                 entityJson["health"] = SerializeHealthComponent(*m_World->GetComponent<ECS::HealthComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::RecordRewindComponent>(entity)) {
+                entityJson["recordRewind"] = SerializeRecordRewindComponent(*m_World->GetComponent<ECS::RecordRewindComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::SceneRewindComponent>(entity)) {
+                entityJson["sceneRewind"] = SerializeSceneRewindComponent(*m_World->GetComponent<ECS::SceneRewindComponent>(entity));
             }
             if (m_World->HasComponent<ECS::DamageComponent>(entity)) {
                 entityJson["damage"] = SerializeDamageComponent(*m_World->GetComponent<ECS::DamageComponent>(entity));
@@ -8475,9 +8571,15 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 m_World->AddComponent<ECS::MeshRendererComponent>(entity, DeserializeMeshRendererComponent(entityJson["meshRenderer"]));
             }
 
-            // Health & Damage
+            // Health & Damage & Rewind
             if (entityJson.contains("health")) {
                 m_World->AddComponent<ECS::HealthComponent>(entity, DeserializeHealthComponent(entityJson["health"]));
+            }
+            if (entityJson.contains("recordRewind")) {
+                m_World->AddComponent<ECS::RecordRewindComponent>(entity, DeserializeRecordRewindComponent(entityJson["recordRewind"]));
+            }
+            if (entityJson.contains("sceneRewind")) {
+                m_World->AddComponent<ECS::SceneRewindComponent>(entity, DeserializeSceneRewindComponent(entityJson["sceneRewind"]));
             }
             if (entityJson.contains("damage")) {
                 m_World->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(entityJson["damage"]));
@@ -8955,6 +9057,10 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
         // Gameplay
         if (world->HasComponent<ECS::HealthComponent>(entity))
             entityJson["health"] = SerializeHealthComponent(*world->GetComponent<ECS::HealthComponent>(entity));
+        if (world->HasComponent<ECS::RecordRewindComponent>(entity))
+            entityJson["recordRewind"] = SerializeRecordRewindComponent(*world->GetComponent<ECS::RecordRewindComponent>(entity));
+        if (world->HasComponent<ECS::SceneRewindComponent>(entity))
+            entityJson["sceneRewind"] = SerializeSceneRewindComponent(*world->GetComponent<ECS::SceneRewindComponent>(entity));
         if (world->HasComponent<ECS::DamageComponent>(entity))
             entityJson["damage"] = SerializeDamageComponent(*world->GetComponent<ECS::DamageComponent>(entity));
         if (world->HasComponent<ECS::GameOverComponent>(entity))
@@ -9339,6 +9445,10 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         // Gameplay
         if (entityJson.contains("health"))
             world->AddComponent<ECS::HealthComponent>(entity, DeserializeHealthComponent(entityJson["health"]));
+        if (entityJson.contains("recordRewind"))
+            world->AddComponent<ECS::RecordRewindComponent>(entity, DeserializeRecordRewindComponent(entityJson["recordRewind"]));
+        if (entityJson.contains("sceneRewind"))
+            world->AddComponent<ECS::SceneRewindComponent>(entity, DeserializeSceneRewindComponent(entityJson["sceneRewind"]));
         if (entityJson.contains("damage"))
             world->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(entityJson["damage"]));
         if (entityJson.contains("gameOver"))
@@ -9600,6 +9710,10 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeMeshRendererComponent(*world->GetComponent<ECS::MeshRendererComponent>(entity));
         else if (key == "health" && world->HasComponent<ECS::HealthComponent>(entity))
             j = SerializeHealthComponent(*world->GetComponent<ECS::HealthComponent>(entity));
+        else if (key == "recordRewind" && world->HasComponent<ECS::RecordRewindComponent>(entity))
+            j = SerializeRecordRewindComponent(*world->GetComponent<ECS::RecordRewindComponent>(entity));
+        else if (key == "sceneRewind" && world->HasComponent<ECS::SceneRewindComponent>(entity))
+            j = SerializeSceneRewindComponent(*world->GetComponent<ECS::SceneRewindComponent>(entity));
         else if (key == "damage" && world->HasComponent<ECS::DamageComponent>(entity))
             j = SerializeDamageComponent(*world->GetComponent<ECS::DamageComponent>(entity));
         else if (key == "gameOver" && world->HasComponent<ECS::GameOverComponent>(entity))
@@ -9816,6 +9930,8 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "meshCollider") { world->AddComponent<ECS::MeshColliderComponent>(entity, DeserializeMeshColliderComponent(j)); return true; }
         if (key == "meshRenderer") { world->AddComponent<ECS::MeshRendererComponent>(entity, DeserializeMeshRendererComponent(j)); return true; }
         if (key == "health") { world->AddComponent<ECS::HealthComponent>(entity, DeserializeHealthComponent(j)); return true; }
+        if (key == "recordRewind") { world->AddComponent<ECS::RecordRewindComponent>(entity, DeserializeRecordRewindComponent(j)); return true; }
+        if (key == "sceneRewind") { world->AddComponent<ECS::SceneRewindComponent>(entity, DeserializeSceneRewindComponent(j)); return true; }
         if (key == "damage") { world->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(j)); return true; }
         if (key == "gameOver") { world->AddComponent<ECS::GameOverComponent>(entity, DeserializeGameOverComponent(j)); return true; }
         if (key == "damageResistance") { world->AddComponent<ECS::DamageResistanceComponent>(entity, DeserializeDamageResistanceComponent(j)); return true; }

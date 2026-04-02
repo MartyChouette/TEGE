@@ -37,25 +37,31 @@ namespace Enjin::GUI {
 
     static const char* NodeTypeToString(DialogueNodeType type) {
         switch (type) {
-            case DialogueNodeType::Text:        return "Text";
-            case DialogueNodeType::Choice:      return "Choice";
-            case DialogueNodeType::Condition:   return "Condition";
-            case DialogueNodeType::SetVariable: return "SetVariable";
-            case DialogueNodeType::Event:       return "Event";
-            case DialogueNodeType::Root:        return "Root";
-            case DialogueNodeType::End:         return "End";
-            default:                            return "Unknown";
+            case DialogueNodeType::Text:          return "Text";
+            case DialogueNodeType::Choice:        return "Choice";
+            case DialogueNodeType::Condition:     return "Condition";
+            case DialogueNodeType::SetVariable:   return "SetVariable";
+            case DialogueNodeType::Event:         return "Event";
+            case DialogueNodeType::Root:          return "Root";
+            case DialogueNodeType::End:           return "End";
+            case DialogueNodeType::QuestAction:   return "QuestAction";
+            case DialogueNodeType::PlayCinematic: return "PlayCinematic";
+            case DialogueNodeType::SetGameFlag:   return "SetGameFlag";
+            default:                              return "Unknown";
         }
     }
 
     static DialogueNodeType StringToNodeType(const std::string& s) {
-        if (s == "Text")        return DialogueNodeType::Text;
-        if (s == "Choice")      return DialogueNodeType::Choice;
-        if (s == "Condition")   return DialogueNodeType::Condition;
-        if (s == "SetVariable") return DialogueNodeType::SetVariable;
-        if (s == "Event")       return DialogueNodeType::Event;
-        if (s == "Root")        return DialogueNodeType::Root;
-        if (s == "End")         return DialogueNodeType::End;
+        if (s == "Text")          return DialogueNodeType::Text;
+        if (s == "Choice")        return DialogueNodeType::Choice;
+        if (s == "Condition")     return DialogueNodeType::Condition;
+        if (s == "SetVariable")   return DialogueNodeType::SetVariable;
+        if (s == "Event")         return DialogueNodeType::Event;
+        if (s == "Root")          return DialogueNodeType::Root;
+        if (s == "End")           return DialogueNodeType::End;
+        if (s == "QuestAction")   return DialogueNodeType::QuestAction;
+        if (s == "PlayCinematic") return DialogueNodeType::PlayCinematic;
+        if (s == "SetGameFlag")   return DialogueNodeType::SetGameFlag;
         return DialogueNodeType::Text;
     }
 
@@ -77,15 +83,20 @@ namespace Enjin::GUI {
     }
 
     static nlohmann::json ConditionToJson(const DialogueCondition& cond) {
-        return {
+        nlohmann::json j = {
             {"variable", cond.variable},
             {"op", ConditionOpToString(cond.op)},
             {"value", cond.value}
         };
+        if (cond.source != DialogueCondition::Source::Variable) {
+            j["source"] = static_cast<u8>(cond.source);
+        }
+        return j;
     }
 
     static DialogueCondition ConditionFromJson(const nlohmann::json& j) {
         DialogueCondition cond;
+        if (j.contains("source"))   cond.source = static_cast<DialogueCondition::Source>(j["source"].get<u8>());
         if (j.contains("variable")) cond.variable = j["variable"].get<std::string>();
         if (j.contains("op"))       cond.op = StringToConditionOp(j["op"].get<std::string>());
         if (j.contains("value"))    cond.value = j["value"].get<std::string>();
@@ -114,6 +125,15 @@ namespace Enjin::GUI {
             jn["variableName"] = node.variableName;
             jn["variableValue"] = node.variableValue;
             jn["eventName"] = node.eventName;
+            // QuestAction fields
+            jn["questAction"] = static_cast<u8>(node.questAction);
+            jn["questId"] = node.questId;
+            jn["questObjectiveIndex"] = node.questObjectiveIndex;
+            // PlayCinematic fields
+            jn["cinematicEntityName"] = node.cinematicEntityName;
+            // SetGameFlag fields
+            jn["gameFlagKey"] = node.gameFlagKey;
+            jn["gameFlagValue"] = node.gameFlagValue;
             jn["editorPosition"] = {node.editorPosition.x, node.editorPosition.y};
             jn["condition"] = ConditionToJson(node.condition);
 
@@ -154,6 +174,15 @@ namespace Enjin::GUI {
                 if (jn.contains("variableName"))  node.variableName = jn["variableName"].get<std::string>();
                 if (jn.contains("variableValue")) node.variableValue = jn["variableValue"].get<std::string>();
                 if (jn.contains("eventName"))     node.eventName = jn["eventName"].get<std::string>();
+                // QuestAction fields
+                if (jn.contains("questAction"))         node.questAction = static_cast<DialogueNode::QuestActionType>(jn["questAction"].get<u8>());
+                if (jn.contains("questId"))             node.questId = jn["questId"].get<std::string>();
+                if (jn.contains("questObjectiveIndex")) node.questObjectiveIndex = jn["questObjectiveIndex"].get<i32>();
+                // PlayCinematic fields
+                if (jn.contains("cinematicEntityName")) node.cinematicEntityName = jn["cinematicEntityName"].get<std::string>();
+                // SetGameFlag fields
+                if (jn.contains("gameFlagKey"))   node.gameFlagKey = jn["gameFlagKey"].get<std::string>();
+                if (jn.contains("gameFlagValue")) node.gameFlagValue = jn["gameFlagValue"].get<std::string>();
 
                 if (jn.contains("speakerColor") && jn["speakerColor"].is_array() && jn["speakerColor"].size() >= 3) {
                     node.speakerColor.x = jn["speakerColor"][0].get<f32>();
@@ -269,6 +298,14 @@ namespace Enjin::GUI {
         m_EventCallback = std::move(cb);
     }
 
+    void DialoguePlayer::SetActionCallback(ActionCallback cb) {
+        m_ActionCallback = std::move(cb);
+    }
+
+    void DialoguePlayer::SetConditionResolver(ConditionResolver resolver) {
+        m_ConditionResolver = std::move(resolver);
+    }
+
     void DialoguePlayer::ProcessNode(u32 depth) {
         if (!m_Active) return;
 
@@ -333,10 +370,36 @@ namespace Enjin::GUI {
                 m_WaitingForInput = false;
                 break;
             }
+
+            case DialogueNodeType::QuestAction: {
+                if (m_ActionCallback) m_ActionCallback(*node);
+                m_CurrentNodeId = node->nextNodeId;
+                ProcessNode(depth + 1);
+                break;
+            }
+
+            case DialogueNodeType::PlayCinematic: {
+                if (m_ActionCallback) m_ActionCallback(*node);
+                m_CurrentNodeId = node->nextNodeId;
+                ProcessNode(depth + 1);
+                break;
+            }
+
+            case DialogueNodeType::SetGameFlag: {
+                if (m_ActionCallback) m_ActionCallback(*node);
+                m_CurrentNodeId = node->nextNodeId;
+                ProcessNode(depth + 1);
+                break;
+            }
         }
     }
 
     bool DialoguePlayer::EvaluateCondition(const DialogueCondition& cond) const {
+        // External sources (quest status, game flags) are resolved by the wiring layer
+        if (cond.source != DialogueCondition::Source::Variable) {
+            if (m_ConditionResolver) return m_ConditionResolver(cond);
+            return false;
+        }
         if (cond.variable.empty()) return false;
         std::string varValue = GetVariable(cond.variable);
 
@@ -387,14 +450,17 @@ namespace Enjin::GUI {
 
     static ImU32 GetNodeColor(DialogueNodeType type) {
         switch (type) {
-            case DialogueNodeType::Text:        return IM_COL32(70, 130, 180, 255);
-            case DialogueNodeType::Choice:      return IM_COL32(60, 179, 113, 255);
-            case DialogueNodeType::Condition:   return IM_COL32(218, 165, 32, 255);
-            case DialogueNodeType::SetVariable: return IM_COL32(147, 112, 219, 255);
-            case DialogueNodeType::Event:       return IM_COL32(205, 92, 92, 255);
-            case DialogueNodeType::Root:        return IM_COL32(100, 200, 100, 255);
-            case DialogueNodeType::End:         return IM_COL32(169, 169, 169, 255);
-            default:                            return IM_COL32(128, 128, 128, 255);
+            case DialogueNodeType::Text:          return IM_COL32(70, 130, 180, 255);
+            case DialogueNodeType::Choice:        return IM_COL32(60, 179, 113, 255);
+            case DialogueNodeType::Condition:     return IM_COL32(218, 165, 32, 255);
+            case DialogueNodeType::SetVariable:   return IM_COL32(147, 112, 219, 255);
+            case DialogueNodeType::Event:         return IM_COL32(205, 92, 92, 255);
+            case DialogueNodeType::Root:          return IM_COL32(100, 200, 100, 255);
+            case DialogueNodeType::End:           return IM_COL32(169, 169, 169, 255);
+            case DialogueNodeType::QuestAction:   return IM_COL32(255, 165, 0, 255);   // Orange
+            case DialogueNodeType::PlayCinematic: return IM_COL32(30, 144, 255, 255);   // Dodger blue
+            case DialogueNodeType::SetGameFlag:   return IM_COL32(186, 85, 211, 255);   // Medium orchid
+            default:                              return IM_COL32(128, 128, 128, 255);
         }
     }
 
@@ -415,6 +481,15 @@ namespace Enjin::GUI {
                 break;
             case DialogueNodeType::Event:
                 height += NODE_LINE_HEIGHT;
+                break;
+            case DialogueNodeType::QuestAction:
+                height += NODE_LINE_HEIGHT * 2.0f;
+                break;
+            case DialogueNodeType::PlayCinematic:
+                height += NODE_LINE_HEIGHT;
+                break;
+            case DialogueNodeType::SetGameFlag:
+                height += NODE_LINE_HEIGHT * 2.0f;
                 break;
             case DialogueNodeType::Root:
             case DialogueNodeType::End:
@@ -446,6 +521,12 @@ namespace Enjin::GUI {
         if (ImGui::Button("Add Event"))       { u32 id = m_Tree->AddNode(DialogueNodeType::Event); auto* n = m_Tree->GetNode(id); if (n) n->editorPosition = Math::Vector2(-m_ScrollOffset.x + 200.0f, -m_ScrollOffset.y + 200.0f); }
         ImGui::SameLine();
         if (ImGui::Button("Add End"))         { u32 id = m_Tree->AddNode(DialogueNodeType::End); auto* n = m_Tree->GetNode(id); if (n) n->editorPosition = Math::Vector2(-m_ScrollOffset.x + 200.0f, -m_ScrollOffset.y + 200.0f); }
+        ImGui::SameLine();
+        if (ImGui::Button("Add Quest"))      { u32 id = m_Tree->AddNode(DialogueNodeType::QuestAction); auto* n = m_Tree->GetNode(id); if (n) n->editorPosition = Math::Vector2(-m_ScrollOffset.x + 200.0f, -m_ScrollOffset.y + 200.0f); }
+        ImGui::SameLine();
+        if (ImGui::Button("Add Cinematic"))  { u32 id = m_Tree->AddNode(DialogueNodeType::PlayCinematic); auto* n = m_Tree->GetNode(id); if (n) n->editorPosition = Math::Vector2(-m_ScrollOffset.x + 200.0f, -m_ScrollOffset.y + 200.0f); }
+        ImGui::SameLine();
+        if (ImGui::Button("Add Flag"))       { u32 id = m_Tree->AddNode(DialogueNodeType::SetGameFlag); auto* n = m_Tree->GetNode(id); if (n) n->editorPosition = Math::Vector2(-m_ScrollOffset.x + 200.0f, -m_ScrollOffset.y + 200.0f); }
 
         ImGui::Separator();
 
@@ -522,44 +603,45 @@ namespace Enjin::GUI {
             f32 spawnX = (mousePos.x - canvasPos.x - m_ScrollOffset.x) / m_Zoom;
             f32 spawnY = (mousePos.y - canvasPos.y - m_ScrollOffset.y) / m_Zoom;
 
-            if (ImGui::MenuItem("Add Text Node")) {
-                u32 id = m_Tree->AddNode(DialogueNodeType::Text);
+            // Helper: add node and auto-connect from selected node's nextNodeId
+            auto addAndConnect = [&](DialogueNodeType type) -> u32 {
+                u32 id = m_Tree->AddNode(type);
                 auto* n = m_Tree->GetNode(id);
                 if (n) n->editorPosition = Math::Vector2(spawnX, spawnY);
-            }
-            if (ImGui::MenuItem("Add Choice Node")) {
-                u32 id = m_Tree->AddNode(DialogueNodeType::Choice);
-                auto* n = m_Tree->GetNode(id);
-                if (n) n->editorPosition = Math::Vector2(spawnX, spawnY);
-            }
-            if (ImGui::MenuItem("Add Condition Node")) {
-                u32 id = m_Tree->AddNode(DialogueNodeType::Condition);
-                auto* n = m_Tree->GetNode(id);
-                if (n) n->editorPosition = Math::Vector2(spawnX, spawnY);
-            }
-            if (ImGui::MenuItem("Add SetVariable Node")) {
-                u32 id = m_Tree->AddNode(DialogueNodeType::SetVariable);
-                auto* n = m_Tree->GetNode(id);
-                if (n) n->editorPosition = Math::Vector2(spawnX, spawnY);
-            }
-            if (ImGui::MenuItem("Add Event Node")) {
-                u32 id = m_Tree->AddNode(DialogueNodeType::Event);
-                auto* n = m_Tree->GetNode(id);
-                if (n) n->editorPosition = Math::Vector2(spawnX, spawnY);
-            }
-            if (ImGui::MenuItem("Add Root Node")) {
-                u32 id = m_Tree->AddNode(DialogueNodeType::Root);
-                auto* n = m_Tree->GetNode(id);
-                if (n) n->editorPosition = Math::Vector2(spawnX, spawnY);
-                if (m_Tree->rootNodeId == 0) m_Tree->rootNodeId = id;
-            }
-            if (ImGui::MenuItem("Add End Node")) {
-                u32 id = m_Tree->AddNode(DialogueNodeType::End);
-                auto* n = m_Tree->GetNode(id);
-                if (n) n->editorPosition = Math::Vector2(spawnX, spawnY);
-            }
+                if (type == DialogueNodeType::Root && m_Tree->rootNodeId == 0) m_Tree->rootNodeId = id;
+                // Auto-connect: if a node is selected that has a nextNodeId output, link it
+                if (m_SelectedNodeId != 0) {
+                    auto* sel = m_Tree->GetNode(m_SelectedNodeId);
+                    if (sel && sel->type != DialogueNodeType::Choice &&
+                        sel->type != DialogueNodeType::Condition &&
+                        sel->type != DialogueNodeType::End &&
+                        sel->nextNodeId == 0) {
+                        sel->nextNodeId = id;
+                    }
+                }
+                m_SelectedNodeId = id;
+                return id;
+            };
+
+            // Dialogue
+            if (ImGui::MenuItem("Text"))           addAndConnect(DialogueNodeType::Text);
+            if (ImGui::MenuItem("Choice"))         addAndConnect(DialogueNodeType::Choice);
             ImGui::Separator();
-            if (m_SelectedNodeId != 0 && ImGui::MenuItem("Delete Selected Node")) {
+            // Logic
+            if (ImGui::MenuItem("Condition"))      addAndConnect(DialogueNodeType::Condition);
+            if (ImGui::MenuItem("Set Variable"))   addAndConnect(DialogueNodeType::SetVariable);
+            if (ImGui::MenuItem("Event"))          addAndConnect(DialogueNodeType::Event);
+            ImGui::Separator();
+            // Narrative
+            if (ImGui::MenuItem("Quest Action"))   addAndConnect(DialogueNodeType::QuestAction);
+            if (ImGui::MenuItem("Play Cinematic")) addAndConnect(DialogueNodeType::PlayCinematic);
+            if (ImGui::MenuItem("Set Game Flag"))  addAndConnect(DialogueNodeType::SetGameFlag);
+            ImGui::Separator();
+            // Structural
+            if (ImGui::MenuItem("Root"))           addAndConnect(DialogueNodeType::Root);
+            if (ImGui::MenuItem("End"))            addAndConnect(DialogueNodeType::End);
+            ImGui::Separator();
+            if (m_SelectedNodeId != 0 && ImGui::MenuItem("Delete Selected")) {
                 m_Tree->RemoveNode(m_SelectedNodeId);
                 m_SelectedNodeId = 0;
             }
@@ -635,9 +717,23 @@ namespace Enjin::GUI {
         // Node header
         drawList->AddRectFilled(nodeMin, headerMax, nodeColor, 4.0f * m_Zoom, ImDrawFlags_RoundCornersTop);
 
-        // Selection border
+        // Validation: check for broken links or empty required fields
+        bool hasWarning = false;
+        if (node.type == DialogueNodeType::Text && node.nextNodeId == 0) hasWarning = true;
+        if (node.type == DialogueNodeType::SetVariable && node.variableName.empty()) hasWarning = true;
+        if (node.type == DialogueNodeType::Event && node.eventName.empty()) hasWarning = true;
+        if (node.type == DialogueNodeType::Condition && node.condition.variable.empty()) hasWarning = true;
+        if (node.type == DialogueNodeType::Condition && node.trueNodeId == 0 && node.falseNodeId == 0) hasWarning = true;
+        if (node.type == DialogueNodeType::QuestAction && node.questId.empty()) hasWarning = true;
+        if (node.type == DialogueNodeType::PlayCinematic && node.cinematicEntityName.empty()) hasWarning = true;
+        if (node.type == DialogueNodeType::SetGameFlag && node.gameFlagKey.empty()) hasWarning = true;
+        if (node.type == DialogueNodeType::Root && node.nextNodeId == 0) hasWarning = true;
+
+        // Selection border (yellow) or warning border (red) or normal border
         if (isSelected) {
             drawList->AddRect(nodeMin, nodeMax, IM_COL32(255, 255, 100, 255), 4.0f * m_Zoom, 0, 2.0f * m_Zoom);
+        } else if (hasWarning) {
+            drawList->AddRect(nodeMin, nodeMax, IM_COL32(255, 60, 60, 200), 4.0f * m_Zoom, 0, 2.0f * m_Zoom);
         } else {
             drawList->AddRect(nodeMin, nodeMax, IM_COL32(80, 80, 80, 255), 4.0f * m_Zoom);
         }
@@ -674,8 +770,13 @@ namespace Enjin::GUI {
                 break;
             }
             case DialogueNodeType::Condition: {
+                // Show source prefix for non-variable conditions
+                const char* srcPrefix = "";
+                if (node.condition.source == DialogueCondition::Source::QuestStatus) srcPrefix = "[Quest] ";
+                else if (node.condition.source == DialogueCondition::Source::GameFlag) srcPrefix = "[Flag] ";
                 char condBuf[128];
-                snprintf(condBuf, sizeof(condBuf), "if %s %s %s", node.condition.variable.c_str(),
+                snprintf(condBuf, sizeof(condBuf), "%sif %s %s %s", srcPrefix,
+                    node.condition.variable.c_str(),
                     ConditionOpToString(node.condition.op), node.condition.value.c_str());
                 drawList->AddText(ImVec2(x + 4.0f * m_Zoom, textY), IM_COL32(220, 200, 100, 255), condBuf);
                 textY += NODE_LINE_HEIGHT * m_Zoom;
@@ -692,6 +793,36 @@ namespace Enjin::GUI {
             }
             case DialogueNodeType::Event: {
                 drawList->AddText(ImVec2(x + 4.0f * m_Zoom, textY), IM_COL32(220, 140, 140, 255), node.eventName.c_str());
+                break;
+            }
+            case DialogueNodeType::QuestAction: {
+                const char* actionLabel[] = {"Start", "Complete", "Fail"};
+                char questBuf[128];
+                snprintf(questBuf, sizeof(questBuf), "%s: %s",
+                    actionLabel[static_cast<u8>(node.questAction)],
+                    node.questId.empty() ? "(no quest)" : node.questId.c_str());
+                drawList->AddText(ImVec2(x + 4.0f * m_Zoom, textY), IM_COL32(255, 200, 100, 255), questBuf);
+                if (node.questAction == DialogueNode::QuestActionType::CompleteObjective) {
+                    textY += NODE_LINE_HEIGHT * m_Zoom;
+                    char objBuf[64];
+                    snprintf(objBuf, sizeof(objBuf), "Objective #%d", node.questObjectiveIndex);
+                    drawList->AddText(ImVec2(x + 4.0f * m_Zoom, textY), IM_COL32(200, 180, 100, 200), objBuf);
+                }
+                break;
+            }
+            case DialogueNodeType::PlayCinematic: {
+                const char* label = node.cinematicEntityName.empty() ? "(no entity)" : node.cinematicEntityName.c_str();
+                drawList->AddText(ImVec2(x + 4.0f * m_Zoom, textY), IM_COL32(100, 180, 255, 255), label);
+                break;
+            }
+            case DialogueNodeType::SetGameFlag: {
+                char flagBuf[128];
+                snprintf(flagBuf, sizeof(flagBuf), "%s =",
+                    node.gameFlagKey.empty() ? "(key)" : node.gameFlagKey.c_str());
+                drawList->AddText(ImVec2(x + 4.0f * m_Zoom, textY), IM_COL32(200, 140, 230, 255), flagBuf);
+                textY += NODE_LINE_HEIGHT * m_Zoom;
+                drawList->AddText(ImVec2(x + 4.0f * m_Zoom, textY), IM_COL32(200, 140, 230, 200),
+                    node.gameFlagValue.empty() ? "(value)" : node.gameFlagValue.c_str());
                 break;
             }
             default:
@@ -888,6 +1019,12 @@ namespace Enjin::GUI {
 
                     ImGui::Checkbox("Has Condition", &node->choices[i].hasCondition);
                     if (node->choices[i].hasCondition) {
+                        const char* srcNames[] = {"Variable", "Quest", "Flag"};
+                        i32 cSrc = static_cast<i32>(node->choices[i].showCondition.source);
+                        if (ImGui::Combo("Cond Source", &cSrc, srcNames, 3)) {
+                            node->choices[i].showCondition.source = static_cast<DialogueCondition::Source>(cSrc);
+                        }
+
                         char condVarBuf[256] = {};
                         strncpy(condVarBuf, node->choices[i].showCondition.variable.c_str(), sizeof(condVarBuf) - 1);
                         if (ImGui::InputText("Cond Var", condVarBuf, sizeof(condVarBuf))) {
@@ -926,9 +1063,25 @@ namespace Enjin::GUI {
             }
 
             case DialogueNodeType::Condition: {
+                const char* sourceNames[] = {"Dialogue Variable", "Quest Status", "Game Flag"};
+                i32 srcIdx = static_cast<i32>(node->condition.source);
+                if (ImGui::Combo("Source", &srcIdx, sourceNames, 3)) {
+                    node->condition.source = static_cast<DialogueCondition::Source>(srcIdx);
+                }
+
+                // Contextual label for the variable field
+                const char* varLabel = "Variable";
+                const char* valHint = "";
+                if (node->condition.source == DialogueCondition::Source::QuestStatus) {
+                    varLabel = "Quest ID";
+                    valHint = "active / complete / failed / notstarted";
+                } else if (node->condition.source == DialogueCondition::Source::GameFlag) {
+                    varLabel = "Flag Key";
+                }
+
                 char condVarBuf[256] = {};
                 strncpy(condVarBuf, node->condition.variable.c_str(), sizeof(condVarBuf) - 1);
-                if (ImGui::InputText("Variable", condVarBuf, sizeof(condVarBuf))) {
+                if (ImGui::InputText(varLabel, condVarBuf, sizeof(condVarBuf))) {
                     node->condition.variable = condVarBuf;
                 }
 
@@ -943,6 +1096,7 @@ namespace Enjin::GUI {
                 if (ImGui::InputText("Value", condValBuf, sizeof(condValBuf))) {
                     node->condition.value = condValBuf;
                 }
+                if (valHint[0]) ImGui::TextDisabled("%s", valHint);
 
                 i32 trueId = static_cast<i32>(node->trueNodeId);
                 if (ImGui::InputInt("True Node", &trueId)) {
@@ -1002,6 +1156,66 @@ namespace Enjin::GUI {
                 ImGui::TextWrapped("This node ends the dialogue.");
                 break;
             }
+
+            case DialogueNodeType::QuestAction: {
+                const char* actionNames[] = {"Start Quest", "Complete Objective", "Fail Quest"};
+                i32 actionIdx = static_cast<i32>(node->questAction);
+                if (ImGui::Combo("Action", &actionIdx, actionNames, 3)) {
+                    node->questAction = static_cast<DialogueNode::QuestActionType>(actionIdx);
+                }
+
+                char questBuf[256] = {};
+                strncpy(questBuf, node->questId.c_str(), sizeof(questBuf) - 1);
+                if (ImGui::InputText("Quest ID", questBuf, sizeof(questBuf))) {
+                    node->questId = questBuf;
+                }
+
+                if (node->questAction == DialogueNode::QuestActionType::CompleteObjective) {
+                    ImGui::InputInt("Objective Index", &node->questObjectiveIndex);
+                }
+
+                i32 nextId = static_cast<i32>(node->nextNodeId);
+                if (ImGui::InputInt("Next Node", &nextId)) {
+                    node->nextNodeId = static_cast<u32>(std::max(0, nextId));
+                }
+                break;
+            }
+
+            case DialogueNodeType::PlayCinematic: {
+                char entityBuf[256] = {};
+                strncpy(entityBuf, node->cinematicEntityName.c_str(), sizeof(entityBuf) - 1);
+                if (ImGui::InputText("Entity Name", entityBuf, sizeof(entityBuf))) {
+                    node->cinematicEntityName = entityBuf;
+                }
+                ImGui::TextWrapped("Plays the CinematicCamera on the named entity.");
+
+                i32 nextId = static_cast<i32>(node->nextNodeId);
+                if (ImGui::InputInt("Next Node", &nextId)) {
+                    node->nextNodeId = static_cast<u32>(std::max(0, nextId));
+                }
+                break;
+            }
+
+            case DialogueNodeType::SetGameFlag: {
+                char keyBuf[256] = {};
+                strncpy(keyBuf, node->gameFlagKey.c_str(), sizeof(keyBuf) - 1);
+                if (ImGui::InputText("Flag Key", keyBuf, sizeof(keyBuf))) {
+                    node->gameFlagKey = keyBuf;
+                }
+
+                char valBuf[256] = {};
+                strncpy(valBuf, node->gameFlagValue.c_str(), sizeof(valBuf) - 1);
+                if (ImGui::InputText("Flag Value", valBuf, sizeof(valBuf))) {
+                    node->gameFlagValue = valBuf;
+                }
+                ImGui::TextWrapped("Persists across saves. Use Condition nodes with Source=GameFlag to read.");
+
+                i32 nextId = static_cast<i32>(node->nextNodeId);
+                if (ImGui::InputInt("Next Node", &nextId)) {
+                    node->nextNodeId = static_cast<u32>(std::max(0, nextId));
+                }
+                break;
+            }
         }
 
         ImGui::Separator();
@@ -1009,6 +1223,73 @@ namespace Enjin::GUI {
         if (ImGui::Button("Delete Node")) {
             m_Tree->RemoveNode(m_SelectedNodeId);
             m_SelectedNodeId = 0;
+        }
+
+        ImGui::Spacing();
+        ImGui::Spacing();
+        DrawPreviewPanel();
+    }
+
+    void DialogueTreeEditor::DrawPreviewPanel() {
+        if (!m_Tree) return;
+
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 1.0f), "Preview");
+        ImGui::Separator();
+
+        if (!m_PreviewActive) {
+            if (ImGui::Button("Start Preview", ImVec2(-1, 0))) {
+                if (m_Tree->rootNodeId != 0) {
+                    m_PreviewPlayer.Start(*m_Tree);
+                    m_PreviewActive = true;
+                }
+            }
+            ImGui::TextWrapped("Walk through the dialogue tree without entering play mode. Quest/cinematic/flag actions are simulated only.");
+        } else {
+            // Show current node info
+            const DialogueNode* node = m_PreviewPlayer.GetCurrentNode();
+            if (!m_PreviewPlayer.IsActive()) {
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Dialogue ended.");
+                if (ImGui::Button("Restart", ImVec2(-1, 0))) {
+                    m_PreviewPlayer.Start(*m_Tree);
+                }
+                if (ImGui::Button("Close Preview", ImVec2(-1, 0))) {
+                    m_PreviewActive = false;
+                }
+            } else if (node) {
+                // Highlight current node in the graph
+                m_SelectedNodeId = node->id;
+
+                if (node->type == DialogueNodeType::Text) {
+                    if (!node->speakerName.empty()) {
+                        ImGui::TextColored(ImVec4(node->speakerColor.x, node->speakerColor.y, node->speakerColor.z, 1.0f),
+                            "%s:", node->speakerName.c_str());
+                    }
+                    ImGui::TextWrapped("%s", node->text.c_str());
+                    ImGui::Spacing();
+                    if (ImGui::Button("Continue >>", ImVec2(-1, 0))) {
+                        m_PreviewPlayer.Advance();
+                    }
+                } else if (node->type == DialogueNodeType::Choice) {
+                    if (!node->text.empty()) {
+                        ImGui::TextWrapped("%s", node->text.c_str());
+                        ImGui::Spacing();
+                    }
+                    auto choices = m_PreviewPlayer.GetAvailableChoices();
+                    for (u32 i = 0; i < choices.size(); ++i) {
+                        char label[256];
+                        snprintf(label, sizeof(label), "> %s", choices[i].text.c_str());
+                        if (ImGui::Button(label, ImVec2(-1, 0))) {
+                            m_PreviewPlayer.SelectChoice(i);
+                        }
+                    }
+                }
+
+                ImGui::Spacing();
+                if (ImGui::Button("Stop Preview", ImVec2(-1, 0))) {
+                    m_PreviewActive = false;
+                }
+            }
         }
     }
 

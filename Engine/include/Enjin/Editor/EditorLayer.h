@@ -407,6 +407,9 @@ private:
 
     // Gameplay components
     void DrawHealthComponent(ECS::Entity entity);
+    void DrawRecordRewindComponent(ECS::Entity entity);
+    void DrawSceneRewindComponent(ECS::Entity entity);
+    void DrawRewindTimeline();
     void DrawRigidbodyComponent(ECS::Entity entity);
     void DrawBoxColliderComponent(ECS::Entity entity);
     void DrawSphereColliderComponent(ECS::Entity entity);
@@ -1083,6 +1086,14 @@ private:
     std::string m_ImportDialogPath;
     Assets::ImportOptions m_ImportDialogOptions;
     std::string m_LastImportedModelPath;
+
+    // Import result dialog + undo support
+    bool m_ShowImportResultDialog = false;
+    Assets::ImportResult m_LastImportResult;
+    std::vector<ECS::Entity> m_LastImportEntities;  // For undo-import
+    void DrawImportResultDialog();
+    void UndoLastImport();
+
     std::string m_ImportDialogFilename;   // Cached on dialog open
     std::string m_ImportDialogExtension;  // Cached on dialog open
     u64 m_ImportDialogFileSize = 0;       // Cached on dialog open

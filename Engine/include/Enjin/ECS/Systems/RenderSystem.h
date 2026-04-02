@@ -630,6 +630,12 @@ private:
     void CreateOutlinePipeline();
     void RenderOutlinePass();
     void RenderOutlinePassForTarget();  // Offscreen render target variant
+
+    // Per-entity wireframe overlay (VK_POLYGON_MODE_LINE over solid geometry)
+    std::unique_ptr<Renderer::VulkanPipeline> m_WireframeOverlayPipeline;
+    std::unique_ptr<Renderer::VulkanPipeline> m_OffscreenWireframeOverlayPipeline;
+    void CreateWireframeOverlayPipeline();
+    void RenderWireframeOverlayPass();
 #endif
 
 #if !ENJIN_RENDERER_WEBGPU

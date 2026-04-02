@@ -248,6 +248,13 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
                 );
             }
 
+            // Vertex colors (first color set)
+            if (aiMeshData->HasVertexColors(0)) {
+                const auto& c = aiMeshData->mColors[0][v];
+                vertex.color = Math::Vector4(c.r, c.g, c.b, c.a);
+                vertex.hasColor = true;
+            }
+
             primitive.vertices.push_back(vertex);
         }
 

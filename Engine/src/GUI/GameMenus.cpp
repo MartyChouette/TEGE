@@ -143,7 +143,7 @@ void GameMenuSystem::RenderPauseMenu(f32 w, f32 h) {
         IM_COL32(12, 12, 20, 180)); // bottom-left
 
     const f32 buttonW = 260.0f;
-    const f32 panelH = 260.0f;
+    const f32 panelH = 380.0f;  // Tall enough for 5 buttons + title + spacing
 
     ImGui::SetNextWindowPos(ImVec2((w - buttonW - 60.0f) * 0.5f, (h - panelH) * 0.5f));
     ImGui::SetNextWindowSize(ImVec2(buttonW + 60.0f, panelH));
@@ -191,8 +191,8 @@ void GameMenuSystem::RenderOptions(f32 w, f32 h) {
         IM_COL32(12, 12, 20, 180),  // bottom-right (darker)
         IM_COL32(12, 12, 20, 180)); // bottom-left
 
-    const f32 panelW = 560.0f;
-    const f32 panelH = 480.0f;
+    const f32 panelW = 640.0f;
+    const f32 panelH = 520.0f;
 
     ImGui::SetNextWindowPos(ImVec2((w - panelW) * 0.5f, (h - panelH) * 0.5f));
     ImGui::SetNextWindowSize(ImVec2(panelW, panelH));
@@ -245,6 +245,7 @@ void GameMenuSystem::RenderGraphics(f32 w, f32 h) {
     (void)h;
 
     ImGui::Dummy(ImVec2(0, 4));
+    ImGui::PushItemWidth(300.0f);  // Fixed widget width — labels get remaining space
 
     // Resolution
     struct Resolution { u32 w; u32 h; const char* label; };
@@ -343,6 +344,8 @@ void GameMenuSystem::RenderGraphics(f32 w, f32 h) {
             m_Graphics.shadowQuality = static_cast<u32>(sq);
         }
     }
+
+    ImGui::PopItemWidth();
 }
 
 // ---------------------------------------------------------------------------

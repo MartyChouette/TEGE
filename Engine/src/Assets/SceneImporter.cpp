@@ -24,6 +24,111 @@
 namespace Enjin {
 namespace Assets {
 
+// ============================================================================
+// Mesh Validation — detect and auto-fix common import problems
+// ============================================================================
+
+static void ValidateImportedMeshes(ECS::World* world, const ImportResult& result,
+                                     std::vector<std::string>& warnings) {
+    u32 nanVertices = 0;
+    u32 degenerateTriangles = 0;
+    u32 badBoneWeights = 0;
+    u32 fixedBoneWeights = 0;
+    f32 maxExtent = 0.0f;
+
+    for (ECS::Entity entity : result.entities) {
+        auto* mesh = world->GetComponent<ECS::MeshComponent>(entity);
+        if (!mesh) continue;
+
+        // Check vertices for NaN/Inf and fix
+        for (auto& vert : mesh->vertices) {
+            bool bad = false;
+            if (std::isnan(vert.position.x) || std::isinf(vert.position.x) ||
+                std::isnan(vert.position.y) || std::isinf(vert.position.y) ||
+                std::isnan(vert.position.z) || std::isinf(vert.position.z)) {
+                vert.position = Math::Vector3(0.0f);
+                bad = true;
+            }
+            if (std::isnan(vert.normal.x) || std::isinf(vert.normal.x) ||
+                std::isnan(vert.normal.y) || std::isinf(vert.normal.y) ||
+                std::isnan(vert.normal.z) || std::isinf(vert.normal.z)) {
+                vert.normal = Math::Vector3(0.0f, 1.0f, 0.0f);
+                bad = true;
+            }
+            if (bad) nanVertices++;
+
+            // Track max extent for scale sanity check
+            f32 absX = std::fabs(vert.position.x);
+            f32 absY = std::fabs(vert.position.y);
+            f32 absZ = std::fabs(vert.position.z);
+            if (absX > maxExtent) maxExtent = absX;
+            if (absY > maxExtent) maxExtent = absY;
+            if (absZ > maxExtent) maxExtent = absZ;
+
+            // Bone weight validation — check sum and normalize if needed
+            f32 wSum = vert.boneWeights.x + vert.boneWeights.y + vert.boneWeights.z + vert.boneWeights.w;
+            if (wSum > 0.001f && std::fabs(wSum - 1.0f) > 0.01f) {
+                badBoneWeights++;
+                // Auto-fix: normalize
+                f32 inv = 1.0f / wSum;
+                vert.boneWeights.x *= inv;
+                vert.boneWeights.y *= inv;
+                vert.boneWeights.z *= inv;
+                vert.boneWeights.w *= inv;
+                fixedBoneWeights++;
+            }
+        }
+
+        // Check for degenerate triangles (zero-area)
+        for (usize i = 0; i + 2 < mesh->indices.size(); i += 3) {
+            u32 i0 = mesh->indices[i], i1 = mesh->indices[i + 1], i2 = mesh->indices[i + 2];
+            if (i0 >= mesh->vertices.size() || i1 >= mesh->vertices.size() || i2 >= mesh->vertices.size()) continue;
+            const auto& v0 = mesh->vertices[i0].position;
+            const auto& v1 = mesh->vertices[i1].position;
+            const auto& v2 = mesh->vertices[i2].position;
+            Math::Vector3 edge1 = v1 - v0;
+            Math::Vector3 edge2 = v2 - v0;
+            Math::Vector3 cross = Math::Vector3(
+                edge1.y * edge2.z - edge1.z * edge2.y,
+                edge1.z * edge2.x - edge1.x * edge2.z,
+                edge1.x * edge2.y - edge1.y * edge2.x);
+            f32 area2 = cross.x * cross.x + cross.y * cross.y + cross.z * cross.z;
+            if (area2 < 1e-12f) degenerateTriangles++;
+        }
+    }
+
+    // Report findings
+    if (nanVertices > 0) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "Fixed %u vertices with NaN/Inf values (clamped to zero)", nanVertices);
+        warnings.push_back(buf);
+        ENJIN_LOG_WARN(Asset, "Mesh validation: %s", buf);
+    }
+    if (degenerateTriangles > 0) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "Found %u degenerate triangles (zero area)", degenerateTriangles);
+        warnings.push_back(buf);
+        ENJIN_LOG_WARN(Asset, "Mesh validation: %s", buf);
+    }
+    if (fixedBoneWeights > 0) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "Normalized %u vertices with bone weights not summing to 1.0", fixedBoneWeights);
+        warnings.push_back(buf);
+        ENJIN_LOG_WARN(Asset, "Mesh validation: %s", buf);
+    }
+    if (maxExtent > 1000.0f) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "Model is very large (%.0f units). Consider scaling down.", maxExtent);
+        warnings.push_back(buf);
+        ENJIN_LOG_WARN(Asset, "Mesh validation: %s", buf);
+    } else if (maxExtent > 0.0f && maxExtent < 0.001f) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "Model is very small (%.6f units). Consider scaling up.", maxExtent);
+        warnings.push_back(buf);
+        ENJIN_LOG_WARN(Asset, "Mesh validation: %s", buf);
+    }
+}
+
 // --- Source App Presets ---
 
 SourceAppPreset GetSourceAppPreset(SourceApp app) {
@@ -235,9 +340,65 @@ ImportResult SceneImporter::ImportGLTF(const std::string& filepath, ECS::World* 
         }
     }
 
+    // --- Mesh Validation (auto-fix NaN, normalize weights, detect degenerate triangles) ---
+    ValidateImportedMeshes(world, result, stats.warnings);
+
+    // --- Import Validation Report ---
+    // Detect skipped features and log a summary so users know what was lost.
+    {
+        bool hasVertexColors = false;
+        bool hasMultipleUVSets = false;
+        bool hasMorphTargets = false;
+        u32 totalMorphTargets = 0;
+
+        // Scan glTF data for features we don't fully support
+        for (const auto& mesh : scene.meshes) {
+            for (const auto& prim : mesh.primitives) {
+                for (const auto& v : prim.vertices) {
+                    if (v.hasColor) { hasVertexColors = true; break; }
+                }
+            }
+        }
+
+        // Check raw cgltf data for morph targets and extra UV sets (via warning count)
+        // We can't access cgltf directly here, so detect by checking if any mesh
+        // name suggests morph targets, or just note as unsupported.
+        // For now, add a general note about unsupported features.
+
+        if (!stats.texturePathsMissing.empty()) {
+            ENJIN_LOG_WARN(Asset, "Import: %zu texture(s) could not be resolved", stats.texturePathsMissing.size());
+            for (const auto& tp : stats.texturePathsMissing) {
+                ENJIN_LOG_WARN(Asset, "  Missing texture: %s", tp.c_str());
+            }
+        }
+
+        if (hasVertexColors) {
+            stats.warnings.push_back("Vertex colors imported (COLOR_0)");
+        }
+
+        // Features not supported — add warnings so users know
+        stats.warnings.push_back("Note: Morph targets / blend shapes are not imported (not yet supported)");
+        stats.warnings.push_back("Note: Only UV set 0 is imported (additional UV sets are dropped)");
+        stats.warnings.push_back("Note: glTF extensions (transmission, clearcoat, sheen) are not imported");
+
+        // Log summary
+        ENJIN_LOG_INFO(Asset, "--- Import Report: %s ---", filepath.c_str());
+        ENJIN_LOG_INFO(Asset, "  Meshes: %u, Materials: %u, Vertices: %u, Indices: %u",
+            stats.meshCount, stats.materialCount, stats.totalVertexCount, stats.totalIndexCount);
+        ENJIN_LOG_INFO(Asset, "  Entities created: %zu", result.entities.size());
+        ENJIN_LOG_INFO(Asset, "  Textures resolved: %zu, missing: %zu",
+            stats.texturePathsResolved.size(), stats.texturePathsMissing.size());
+        if (!stats.warnings.empty()) {
+            ENJIN_LOG_INFO(Asset, "  Warnings (%zu):", stats.warnings.size());
+            for (const auto& w : stats.warnings) {
+                ENJIN_LOG_INFO(Asset, "    - %s", w.c_str());
+            }
+        }
+        ENJIN_LOG_INFO(Asset, "--- End Import Report ---");
+    }
+
     CopyStatsToResult(result, stats);
     result.success = true;
-    ENJIN_LOG_INFO(Asset, "Imported %zu entities from %s", result.entities.size(), filepath.c_str());
     return result;
 }
 
@@ -310,6 +471,7 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                     vertex.tangent = Math::Vector4(tang3.x, tang3.y, tang3.z, vertex.tangent.w);
                 }
                 vertex.uv = gltfVert.texCoord;
+                if (gltfVert.hasColor) vertex.color = gltfVert.color;
                 vertex.boneWeights = gltfVert.boneWeights;
                 vertex.boneIndices[0] = gltfVert.boneIndices[0];
                 vertex.boneIndices[1] = gltfVert.boneIndices[1];
@@ -886,7 +1048,7 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
 
     // Auto-detect FBX unit scale from mesh bounding box.
     // Mixamo/Maya FBX uses cm (170cm character), engine grid ≈ 1 unit per meter.
-    // Scale so the tallest dimension maps to ~1.8 units (average human height).
+    // Scale so the tallest dimension maps to ~1.8 units (matches default capsule controller height).
     f32 unitScale = effectiveOptions.scale;
     Math::Vector3 boundsMin(FLT_MAX, FLT_MAX, FLT_MAX);
     Math::Vector3 boundsMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
@@ -905,9 +1067,8 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
     f32 height = boundsMax.y - boundsMin.y; // Y-up height
     if (height < 1.0f) height = boundsMax.z - boundsMin.z; // Try Z-up
     if (height > 10.0f) {
-        // Target ~0.9 units so a human is roughly 1 grid square tall.
-        // Users can scale up via the root entity's transform if needed.
-        unitScale *= 0.9f / height;
+        // Target ~1.8 units (standard capsule/character controller height).
+        unitScale *= 1.8f / height;
         ENJIN_LOG_INFO(Asset, "FBX auto-scale: height=%.1f, bounds=[%.1f,%.1f,%.1f]-[%.1f,%.1f,%.1f], scale=%.4f",
             height, boundsMin.x, boundsMin.y, boundsMin.z, boundsMax.x, boundsMax.y, boundsMax.z, unitScale);
     }
@@ -925,9 +1086,59 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
         }
     }
 
+    // --- Mesh Validation (auto-fix NaN, normalize weights, detect degenerate triangles) ---
+    ValidateImportedMeshes(world, result, stats.warnings);
+
+    // --- Import Validation Report (Assimp) ---
+    {
+        if (!stats.texturePathsMissing.empty()) {
+            ENJIN_LOG_WARN(Asset, "Import: %zu texture(s) could not be resolved", stats.texturePathsMissing.size());
+            for (const auto& tp : stats.texturePathsMissing) {
+                ENJIN_LOG_WARN(Asset, "  Missing texture: %s", tp.c_str());
+            }
+        }
+
+        bool hasVertexColors = false;
+        for (const auto& mesh : scene.meshes) {
+            for (const auto& prim : mesh.primitives) {
+                for (const auto& v : prim.vertices) {
+                    if (v.hasColor) { hasVertexColors = true; break; }
+                }
+                if (hasVertexColors) break;
+            }
+            if (hasVertexColors) break;
+        }
+        if (hasVertexColors) {
+            stats.warnings.push_back("Vertex colors imported");
+        }
+
+        if (scene.hasSkinning) {
+            stats.warnings.push_back("Skeletal mesh: " + std::to_string(scene.bones.size()) + " bones, " +
+                                      std::to_string(scene.animations.size()) + " animations");
+        }
+
+        stats.warnings.push_back("Note: Morph targets / blend shapes are not imported (not yet supported)");
+        stats.warnings.push_back("Note: Only UV set 0 is imported (additional UV sets are dropped)");
+
+        // Log summary
+        ENJIN_LOG_INFO(Asset, "--- Import Report: %s ---", filepath.c_str());
+        ENJIN_LOG_INFO(Asset, "  Source: %s | Format: Assimp", scene.creator.empty() ? "Unknown" : scene.creator.c_str());
+        ENJIN_LOG_INFO(Asset, "  Meshes: %u, Materials: %u, Vertices: %u, Indices: %u",
+            stats.meshCount, stats.materialCount, stats.totalVertexCount, stats.totalIndexCount);
+        ENJIN_LOG_INFO(Asset, "  Entities created: %zu", result.entities.size());
+        ENJIN_LOG_INFO(Asset, "  Textures resolved: %zu, missing: %zu",
+            stats.texturePathsResolved.size(), stats.texturePathsMissing.size());
+        if (!stats.warnings.empty()) {
+            ENJIN_LOG_INFO(Asset, "  Warnings (%zu):", stats.warnings.size());
+            for (const auto& w : stats.warnings) {
+                ENJIN_LOG_INFO(Asset, "    - %s", w.c_str());
+            }
+        }
+        ENJIN_LOG_INFO(Asset, "--- End Import Report ---");
+    }
+
     CopyStatsToResult(result, stats);
     result.success = true;
-    ENJIN_LOG_INFO(Asset, "Imported %zu entities from %s (via Assimp)", result.entities.size(), filepath.c_str());
     return result;
 }
 
@@ -1196,6 +1407,7 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                         vertex.tangent = Math::Vector4(tang3.x, tang3.y, tang3.z, assimpVert.tangent.w);
                     }
                     vertex.uv = assimpVert.texCoord;
+                    if (assimpVert.hasColor) vertex.color = assimpVert.color;
                     // Copy bone weights from Assimp vertex data
                     vertex.boneWeights = assimpVert.boneWeights;
                     vertex.boneIndices[0] = assimpVert.boneIndices[0];

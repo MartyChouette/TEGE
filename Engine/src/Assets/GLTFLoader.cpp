@@ -209,6 +209,17 @@ bool GLTFLoader::Load(const std::string& filepath, GLTFScene& outScene) {
                             }
                             break;
                         }
+                        case cgltf_attribute_type_color: {
+                            if (attr.index == 0) {
+                                // Read up to 4 components (RGB or RGBA)
+                                f32 rgba[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+                                cgltf_size numComp = cgltf_num_components(accessor->type);
+                                cgltf_accessor_read_float(accessor, v, rgba, numComp > 4 ? 4 : numComp);
+                                vertex.color = Math::Vector4(rgba[0], rgba[1], rgba[2], rgba[3]);
+                                vertex.hasColor = true;
+                            }
+                            break;
+                        }
                         default:
                             break;
                     }
@@ -265,9 +276,31 @@ bool GLTFLoader::Load(const std::string& filepath, GLTFScene& outScene) {
             );
         }
         if (srcNode.has_matrix) {
-            // For now, decompose matrix is complex - skip if only matrix is present
-            ENJIN_LOG_WARN(Asset, "Node '%s' uses matrix transform, which is not fully supported",
-                srcNode.name ? srcNode.name : "unnamed");
+            // Decompose the 4x4 matrix into translation, rotation, scale
+            const f32* m = srcNode.matrix;
+            // Translation from last column
+            dstNode.translation = Math::Vector3(m[12], m[13], m[14]);
+            // Scale from column vector lengths
+            Math::Vector3 col0(m[0], m[1], m[2]);
+            Math::Vector3 col1(m[4], m[5], m[6]);
+            Math::Vector3 col2(m[8], m[9], m[10]);
+            f32 sx = col0.Length();
+            f32 sy = col1.Length();
+            f32 sz = col2.Length();
+            // Detect negative determinant (reflection) — flip one axis
+            f32 det = m[0] * (m[5] * m[10] - m[6] * m[9])
+                    - m[4] * (m[1] * m[10] - m[2] * m[9])
+                    + m[8] * (m[1] * m[6] - m[2] * m[5]);
+            if (det < 0.0f) sx = -sx;
+            dstNode.scale = Math::Vector3(sx, sy, sz);
+            // Build rotation matrix by dividing out scale
+            if (sx != 0.0f && sy != 0.0f && sz != 0.0f) {
+                Math::Matrix4 rotMat = Math::Matrix4::Identity();
+                rotMat.m[0] = m[0] / sx; rotMat.m[1] = m[1] / sx; rotMat.m[2] = m[2] / sx;
+                rotMat.m[4] = m[4] / sy; rotMat.m[5] = m[5] / sy; rotMat.m[6] = m[6] / sy;
+                rotMat.m[8] = m[8] / sz; rotMat.m[9] = m[9] / sz; rotMat.m[10] = m[10] / sz;
+                dstNode.rotation = Math::Quaternion::FromMatrix(rotMat);
+            }
         }
 
         // Children

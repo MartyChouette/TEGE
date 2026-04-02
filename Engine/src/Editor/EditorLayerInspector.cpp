@@ -4,6 +4,8 @@
 #include "Enjin/Core/Version.h"
 #include <GLFW/glfw3.h>
 #include <chrono>
+#include <functional>
+#include <cmath>
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Mesh.h"
@@ -302,6 +304,21 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HealthComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::HealthComponent>(e); },
             "health"},
+        {"Pose Library", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PoseLibraryComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PoseLibraryComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::PoseLibraryComponent>(e); },
+            "poseLibrary"},
+        {"Record Rewind", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::RecordRewindComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::RecordRewindComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::RecordRewindComponent>(e); },
+            "recordRewind"},
+        {"Scene Rewind", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SceneRewindComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SceneRewindComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SceneRewindComponent>(e); },
+            "sceneRewind"},
         {"Damage", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DamageComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DamageComponent>(e); },
@@ -1044,6 +1061,13 @@ void EditorLayer::DrawInspectorPanel() {
                     ImGui::Checkbox("Motion Vectors##MR", &mr->contributeMotionVectors);
                     ImGui::Checkbox("Allow Instancing##MR", &mr->allowInstancing);
                     ImGui::Checkbox("Wireframe##MR", &mr->wireframe);
+                    if (mr->wireframe) {
+                        f32 wfColor[3] = { mr->wireframeColor.x, mr->wireframeColor.y, mr->wireframeColor.z };
+                        if (ImGui::ColorEdit3("Wire Color##MR", wfColor)) {
+                            mr->wireframeColor = Math::Vector3(wfColor[0], wfColor[1], wfColor[2]);
+                        }
+                        ImGui::DragFloat("Wire Opacity##MR", &mr->wireframeOpacity, 0.05f, 0.0f, 1.0f, "%.2f");
+                    }
 
                     if (!mr->customShaderName.empty()) {
                         ImGui::TextDisabled("Shader: %s", mr->customShaderName.c_str());
@@ -1192,6 +1216,12 @@ void EditorLayer::DrawInspectorPanel() {
         // Gameplay components
         if (m_World->HasComponent<ECS::HealthComponent>(m_PrimarySelected)) {
             DrawHealthComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::RecordRewindComponent>(m_PrimarySelected)) {
+            DrawRecordRewindComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::SceneRewindComponent>(m_PrimarySelected)) {
+            DrawSceneRewindComponent(m_PrimarySelected);
         }
         if (m_World->HasComponent<ECS::RigidbodyComponent>(m_PrimarySelected)) {
             DrawRigidbodyComponent(m_PrimarySelected);
@@ -1607,42 +1637,92 @@ void EditorLayer::DrawInspectorPanel() {
                         ImGui::TextDisabled("(blending)");
                     }
 
-                    // Scrubable timeline slider with event markers
+                    // Visual timeline with seconds, frame ticks, and event markers
                     f32 normalizedTime = animator.GetNormalizedTime();
-
-                    // Draw event markers on the timeline as small triangles/ticks
+                    f32 animDuration = 0.0f;
+                    const Animation::SkeletalAnimation* curAnimPtr = nullptr;
                     if (!currentName.empty()) {
-                        auto itCurAnim = animations.find(currentName);
-                        if (itCurAnim != animations.end() && !itCurAnim->second.events.empty()) {
-                            ImVec2 sliderPos = ImGui::GetCursorScreenPos();
-                            f32 sliderWidth = ImGui::GetContentRegionAvail().x;
-                            ImDrawList* drawList = ImGui::GetWindowDrawList();
-                            f32 duration = itCurAnim->second.duration;
-                            if (duration > 0.0f) {
-                                for (const auto& evt : itCurAnim->second.events) {
-                                    f32 normEvtTime = evt.time / duration;
-                                    f32 markerX = sliderPos.x + normEvtTime * sliderWidth;
-                                    // Small triangle marker at the top of the slider area
-                                    f32 triSize = 4.0f;
-                                    ImVec2 p1(markerX, sliderPos.y);
-                                    ImVec2 p2(markerX - triSize, sliderPos.y - triSize - 1.0f);
-                                    ImVec2 p3(markerX + triSize, sliderPos.y - triSize - 1.0f);
-                                    drawList->AddTriangleFilled(p1, p2, p3, IM_COL32(255, 200, 50, 255));
-                                    // Tooltip on hover
-                                    if (ImGui::IsMouseHoveringRect(
-                                            ImVec2(markerX - triSize - 1, sliderPos.y - triSize - 2),
-                                            ImVec2(markerX + triSize + 1, sliderPos.y + 1))) {
-                                        ImGui::BeginTooltip();
-                                        ImGui::Text("Event: %s (%.3fs)", evt.name.c_str(), evt.time);
-                                        ImGui::EndTooltip();
+                        auto itCA = animations.find(currentName);
+                        if (itCA != animations.end()) {
+                            animDuration = itCA->second.duration;
+                            curAnimPtr = &itCA->second;
+                        }
+                    }
+
+                    // Draw timeline ruler + event markers above the slider
+                    {
+                        ImVec2 sliderPos = ImGui::GetCursorScreenPos();
+                        f32 sliderWidth = ImGui::GetContentRegionAvail().x;
+                        ImDrawList* drawList = ImGui::GetWindowDrawList();
+                        f32 rulerH = 18.0f;
+
+                        // Background strip
+                        drawList->AddRectFilled(sliderPos, ImVec2(sliderPos.x + sliderWidth, sliderPos.y + rulerH),
+                            IM_COL32(30, 30, 35, 255));
+
+                        // Second tick marks
+                        if (animDuration > 0.0f) {
+                            f32 secondStep = 1.0f;
+                            if (animDuration < 2.0f) secondStep = 0.25f;
+                            else if (animDuration < 5.0f) secondStep = 0.5f;
+                            for (f32 t = 0.0f; t <= animDuration + 0.001f; t += secondStep) {
+                                f32 norm = t / animDuration;
+                                if (norm > 1.0f) norm = 1.0f;
+                                f32 tx = sliderPos.x + norm * sliderWidth;
+                                bool isMajor = (std::fmod(t, 1.0f) < 0.01f);
+                                f32 tickH = isMajor ? rulerH * 0.6f : rulerH * 0.3f;
+                                drawList->AddLine(ImVec2(tx, sliderPos.y + rulerH - tickH),
+                                    ImVec2(tx, sliderPos.y + rulerH), IM_COL32(120, 120, 120, 200));
+                                if (isMajor) {
+                                    char secBuf[16];
+                                    snprintf(secBuf, sizeof(secBuf), "%.0fs", t);
+                                    drawList->AddText(ImVec2(tx + 2, sliderPos.y), IM_COL32(160, 160, 160, 200), secBuf);
+                                }
+                            }
+                        }
+
+                        // Event markers (clickable — click to seek)
+                        if (curAnimPtr && animDuration > 0.0f) {
+                            for (const auto& evt : curAnimPtr->events) {
+                                f32 normEvtTime = evt.time / animDuration;
+                                f32 markerX = sliderPos.x + normEvtTime * sliderWidth;
+                                f32 triSize = 5.0f;
+                                ImVec2 p1(markerX, sliderPos.y + rulerH);
+                                ImVec2 p2(markerX - triSize, sliderPos.y + rulerH - triSize - 1.0f);
+                                ImVec2 p3(markerX + triSize, sliderPos.y + rulerH - triSize - 1.0f);
+                                drawList->AddTriangleFilled(p1, p2, p3, IM_COL32(255, 200, 50, 255));
+
+                                ImVec2 hitMin(markerX - triSize - 1, sliderPos.y + rulerH - triSize - 2);
+                                ImVec2 hitMax(markerX + triSize + 1, sliderPos.y + rulerH + 1);
+                                if (ImGui::IsMouseHoveringRect(hitMin, hitMax)) {
+                                    ImGui::SetTooltip("Event: %s (%.3fs) — click to seek", evt.name.c_str(), evt.time);
+                                    if (ImGui::IsMouseClicked(0)) {
+                                        animator.SetNormalizedTime(normEvtTime);
+                                        normalizedTime = normEvtTime;
                                     }
                                 }
                             }
                         }
+
+                        // Playhead indicator
+                        f32 playheadX = sliderPos.x + normalizedTime * sliderWidth;
+                        drawList->AddLine(ImVec2(playheadX, sliderPos.y), ImVec2(playheadX, sliderPos.y + rulerH),
+                            IM_COL32(255, 80, 80, 255), 2.0f);
+
+                        // Advance cursor past the ruler
+                        ImGui::Dummy(ImVec2(sliderWidth, rulerH));
                     }
 
-                    if (ImGui::SliderFloat("##Timeline", &normalizedTime, 0.0f, 1.0f, "%.2f")) {
-                        animator.SetNormalizedTime(normalizedTime);
+                    // Time display + slider
+                    if (animDuration > 0.0f) {
+                        f32 currentSec = normalizedTime * animDuration;
+                        char timeBuf[64];
+                        snprintf(timeBuf, sizeof(timeBuf), "%.2fs / %.2fs", currentSec, animDuration);
+                        if (ImGui::SliderFloat("##Timeline", &normalizedTime, 0.0f, 1.0f, timeBuf)) {
+                            animator.SetNormalizedTime(normalizedTime);
+                        }
+                    } else {
+                        ImGui::SliderFloat("##Timeline", &normalizedTime, 0.0f, 1.0f, "%.2f");
                     }
 
                     // Speed
@@ -1650,6 +1730,7 @@ void EditorLayer::DrawInspectorPanel() {
                     if (ImGui::DragFloat("Speed##Animator", &speed, 0.01f, 0.0f, 10.0f, "%.2f")) {
                         animator.SetSpeed(speed);
                     }
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Playback speed multiplier (1.0 = normal)");
 
                     // Play / Pause / Stop buttons
                     if (isPlaying && !isPaused) {
@@ -1871,21 +1952,80 @@ void EditorLayer::DrawInspectorPanel() {
                                 });
                         }
 
-                        // Preview: show which animations are blending and with what weights
-                        if (bt.enabled && !bt.parameterName.empty() && bt.nodes.size() >= 2) {
+                        // Visual 1D blend axis + text preview
+                        if (!bt.parameterName.empty() && bt.nodes.size() >= 2) {
                             ImGui::Separator();
                             f32 previewVal = animComp->GetBlendParameter(bt.parameterName);
-                            std::string previewAnimA, previewAnimB;
-                            f32 previewBlend = 0.0f;
-                            bt.Evaluate(previewVal, previewAnimA, previewAnimB, previewBlend);
-                            if (!previewAnimA.empty()) {
-                                if (previewAnimB.empty()) {
-                                    ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "Output: %s (100%%)", previewAnimA.c_str());
-                                } else {
-                                    ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f),
-                                        "Blend: %s (%.0f%%) + %s (%.0f%%)",
-                                        previewAnimA.c_str(), (1.0f - previewBlend) * 100.0f,
-                                        previewAnimB.c_str(), previewBlend * 100.0f);
+
+                            // Draw 1D axis visualization
+                            ImVec2 axisPos = ImGui::GetCursorScreenPos();
+                            f32 axisWidth = ImGui::GetContentRegionAvail().x;
+                            f32 axisH = 28.0f;
+                            ImDrawList* btDL = ImGui::GetWindowDrawList();
+
+                            // Compute axis range from node thresholds
+                            f32 axisMin = bt.nodes.front().threshold;
+                            f32 axisMax = bt.nodes.back().threshold;
+                            f32 axisRange = axisMax - axisMin;
+                            if (axisRange < 0.001f) axisRange = 1.0f;
+
+                            // Background
+                            btDL->AddRectFilled(axisPos, ImVec2(axisPos.x + axisWidth, axisPos.y + axisH),
+                                IM_COL32(25, 25, 30, 255), 3.0f);
+
+                            // Draw crossfade regions between adjacent nodes
+                            for (usize ni = 0; ni + 1 < bt.nodes.size(); ++ni) {
+                                f32 t0 = (bt.nodes[ni].threshold - axisMin) / axisRange;
+                                f32 t1 = (bt.nodes[ni + 1].threshold - axisMin) / axisRange;
+                                f32 x0 = axisPos.x + t0 * axisWidth;
+                                f32 x1 = axisPos.x + t1 * axisWidth;
+                                ImU32 regionColor = (ni % 2 == 0) ? IM_COL32(60, 80, 120, 100) : IM_COL32(80, 60, 120, 100);
+                                btDL->AddRectFilled(ImVec2(x0, axisPos.y), ImVec2(x1, axisPos.y + axisH), regionColor);
+                            }
+
+                            // Draw node markers + labels
+                            for (usize ni = 0; ni < bt.nodes.size(); ++ni) {
+                                f32 t = (bt.nodes[ni].threshold - axisMin) / axisRange;
+                                f32 nx = axisPos.x + t * axisWidth;
+                                btDL->AddLine(ImVec2(nx, axisPos.y), ImVec2(nx, axisPos.y + axisH), IM_COL32(200, 200, 200, 200), 1.5f);
+                                // Short animation name
+                                std::string shortName = bt.nodes[ni].animationName;
+                                if (shortName.size() > 10) shortName = shortName.substr(0, 9) + "~";
+                                btDL->AddText(ImVec2(nx + 2, axisPos.y + 2), IM_COL32(180, 200, 255, 220), shortName.c_str());
+                                // Threshold value at bottom
+                                char threshBuf[16];
+                                snprintf(threshBuf, sizeof(threshBuf), "%.1f", bt.nodes[ni].threshold);
+                                btDL->AddText(ImVec2(nx + 2, axisPos.y + axisH - 13), IM_COL32(160, 160, 160, 180), threshBuf);
+                            }
+
+                            // Current value indicator (red playhead)
+                            f32 valNorm = (previewVal - axisMin) / axisRange;
+                            valNorm = Math::Clamp(valNorm, 0.0f, 1.0f);
+                            f32 valX = axisPos.x + valNorm * axisWidth;
+                            btDL->AddLine(ImVec2(valX, axisPos.y - 2), ImVec2(valX, axisPos.y + axisH + 2),
+                                IM_COL32(255, 80, 80, 255), 2.0f);
+                            btDL->AddTriangleFilled(
+                                ImVec2(valX, axisPos.y - 2),
+                                ImVec2(valX - 4, axisPos.y - 7),
+                                ImVec2(valX + 4, axisPos.y - 7),
+                                IM_COL32(255, 80, 80, 255));
+
+                            ImGui::Dummy(ImVec2(axisWidth, axisH));
+
+                            // Text preview
+                            if (bt.enabled) {
+                                std::string previewAnimA, previewAnimB;
+                                f32 previewBlend = 0.0f;
+                                bt.Evaluate(previewVal, previewAnimA, previewAnimB, previewBlend);
+                                if (!previewAnimA.empty()) {
+                                    if (previewAnimB.empty()) {
+                                        ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f), "Output: %s (100%%)", previewAnimA.c_str());
+                                    } else {
+                                        ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f),
+                                            "Blend: %s (%.0f%%) + %s (%.0f%%)",
+                                            previewAnimA.c_str(), (1.0f - previewBlend) * 100.0f,
+                                            previewAnimB.c_str(), previewBlend * 100.0f);
+                                    }
                                 }
                             }
                         }
@@ -1893,15 +2033,50 @@ void EditorLayer::DrawInspectorPanel() {
                         ImGui::TreePop();
                     }
 
-                    // Skeleton bone list
+                    // Skeleton bone hierarchy tree
                     const auto* skeleton = animator.GetSkeleton();
                     if (skeleton && !skeleton->bones.empty() && ImGui::TreeNode("Bones")) {
                         ImGui::Text("%zu bones", skeleton->bones.size());
-                        for (usize i = 0; i < skeleton->bones.size(); ++i) {
-                            const auto& bone = skeleton->bones[i];
-                            ImGui::BulletText("%s (parent: %s)", bone.name.c_str(),
-                                bone.parentIndex >= 0 ? skeleton->bones[bone.parentIndex].name.c_str() : "root");
-                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Expandable bone hierarchy. Click a bone to select it in the viewport.");
+
+                        // Recursive lambda to draw bone hierarchy
+                        std::function<void(i32)> drawBoneTree = [&](i32 parentIdx) {
+                            for (usize i = 0; i < skeleton->bones.size(); ++i) {
+                                const auto& bone = skeleton->bones[i];
+                                if (bone.parentIndex != parentIdx) continue;
+
+                                // Check if this bone has children
+                                bool hasChildren = false;
+                                for (usize j = 0; j < skeleton->bones.size(); ++j) {
+                                    if (skeleton->bones[j].parentIndex == static_cast<i32>(i)) {
+                                        hasChildren = true;
+                                        break;
+                                    }
+                                }
+
+                                bool isSelected = (animComp->selectedBoneIndex == static_cast<i32>(i));
+                                ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+                                if (!hasChildren) flags |= ImGuiTreeNodeFlags_Leaf;
+                                if (isSelected) flags |= ImGuiTreeNodeFlags_Selected;
+
+                                if (isSelected) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 1.0f, 0.35f, 1.0f));
+                                bool nodeOpen = ImGui::TreeNodeEx(bone.name.c_str(), flags);
+                                if (isSelected) ImGui::PopStyleColor();
+
+                                // Click to select bone
+                                if (ImGui::IsItemClicked()) {
+                                    animComp->selectedBoneIndex = static_cast<i32>(i);
+                                    if (!animComp->showBones) animComp->showBones = true;
+                                }
+
+                                if (nodeOpen) {
+                                    if (hasChildren) drawBoneTree(static_cast<i32>(i));
+                                    ImGui::TreePop();
+                                }
+                            }
+                        };
+
+                        drawBoneTree(-1); // Start from root bones (parentIndex == -1)
                         ImGui::TreePop();
                     }
 
@@ -1941,6 +2116,165 @@ void EditorLayer::DrawInspectorPanel() {
                                 }
                                 if (matchCount == 0) ImGui::TextDisabled("No matching bones");
                             }
+                        }
+                    }
+
+                    // Accessible bone region picker — large buttons grouped by body part
+                    if (animComp->showBones && skeleton) {
+                        ImGui::Separator();
+                        ImGui::TextColored(ImVec4(0.7f, 0.85f, 1.0f, 1.0f), "Rig Regions");
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Click a body region to filter the bone list.\nDesigned for easy navigation of face, hand, and full-body rigs.");
+
+                        // Classify all bones into regions
+                        std::unordered_map<ECS::BoneRegion, std::vector<i32>> regionBones;
+                        for (usize i = 0; i < skeleton->bones.size(); ++i) {
+                            ECS::BoneRegion region = ECS::ClassifyBoneRegion(skeleton->bones[i].name);
+                            regionBones[region].push_back(static_cast<i32>(i));
+                        }
+
+                        // Draw region buttons in a grid (accessible: large, high-contrast)
+                        static ECS::BoneRegion selectedRegion = ECS::BoneRegion::Unknown;
+                        f32 btnW = ImGui::GetContentRegionAvail().x * 0.48f;
+                        f32 btnH = 28.0f;
+
+                        ECS::BoneRegion regionOrder[] = {
+                            ECS::BoneRegion::Face, ECS::BoneRegion::Head,
+                            ECS::BoneRegion::LeftHand, ECS::BoneRegion::RightHand,
+                            ECS::BoneRegion::LeftArm, ECS::BoneRegion::RightArm,
+                            ECS::BoneRegion::Spine, ECS::BoneRegion::Other,
+                            ECS::BoneRegion::LeftLeg, ECS::BoneRegion::RightLeg,
+                            ECS::BoneRegion::LeftFoot, ECS::BoneRegion::RightFoot,
+                        };
+
+                        for (i32 ri = 0; ri < 12; ri += 2) {
+                            for (i32 col = 0; col < 2; ++col) {
+                                ECS::BoneRegion region = regionOrder[ri + col];
+                                auto it = regionBones.find(region);
+                                u32 count = (it != regionBones.end()) ? static_cast<u32>(it->second.size()) : 0;
+                                if (count == 0) {
+                                    // Disabled button for empty regions
+                                    if (col > 0) ImGui::SameLine();
+                                    ImGui::BeginDisabled();
+                                    ImGui::Button(ECS::BoneRegionName(region), ImVec2(btnW, btnH));
+                                    ImGui::EndDisabled();
+                                    continue;
+                                }
+
+                                bool isActive = (selectedRegion == region);
+                                if (isActive) {
+                                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.5f, 0.8f, 1.0f));
+                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.6f, 0.9f, 1.0f));
+                                }
+
+                                char label[64];
+                                snprintf(label, sizeof(label), "%s (%u)", ECS::BoneRegionName(region), count);
+                                if (col > 0) ImGui::SameLine();
+                                if (ImGui::Button(label, ImVec2(btnW, btnH))) {
+                                    selectedRegion = isActive ? ECS::BoneRegion::Unknown : region;
+                                }
+
+                                if (isActive) ImGui::PopStyleColor(2);
+                            }
+                        }
+
+                        // Show filtered bone list for selected region
+                        if (selectedRegion != ECS::BoneRegion::Unknown) {
+                            auto it = regionBones.find(selectedRegion);
+                            if (it != regionBones.end() && !it->second.empty()) {
+                                ImGui::Indent(4.0f);
+                                for (i32 bi : it->second) {
+                                    bool isSel = (animComp->selectedBoneIndex == bi);
+                                    if (isSel) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 1.0f, 0.35f, 1.0f));
+                                    if (ImGui::Selectable(skeleton->bones[bi].name.c_str(), isSel)) {
+                                        animComp->selectedBoneIndex = bi;
+                                    }
+                                    if (isSel) ImGui::PopStyleColor();
+                                }
+                                ImGui::Unindent(4.0f);
+                            }
+                        }
+                    }
+
+                    // Pose Library — save and recall named bone poses
+                    if (skeleton && m_World->HasComponent<ECS::PoseLibraryComponent>(m_PrimarySelected)) {
+                        auto* poseLib = m_World->GetComponent<ECS::PoseLibraryComponent>(m_PrimarySelected);
+                        if (poseLib) {
+                            ImGui::Separator();
+                            ImGui::TextColored(ImVec4(0.9f, 0.75f, 0.5f, 1.0f), "Pose Library");
+                            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Save and recall bone poses for expressions and gestures.\nClick a pose to preview it. Use 'Save Current' to capture the current skeleton state.");
+
+                            ImGui::DragFloat("Blend##PoseLib", &poseLib->blendWeight, 0.05f, 0.0f, 1.0f, "%.2f");
+                            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Master blend weight for pose application (0 = no effect, 1 = full pose)");
+
+                            // Pose buttons — large, accessible, grouped by category
+                            std::string lastCategory;
+                            for (usize pi = 0; pi < poseLib->poses.size(); ++pi) {
+                                auto& pose = poseLib->poses[pi];
+
+                                // Category header
+                                if (pose.category != lastCategory) {
+                                    if (!pose.category.empty()) ImGui::TextDisabled("%s", pose.category.c_str());
+                                    lastCategory = pose.category;
+                                }
+
+                                bool isActive = (poseLib->activePose == pose.name);
+                                if (isActive) {
+                                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.4f, 0.2f, 1.0f));
+                                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.5f, 0.3f, 1.0f));
+                                }
+
+                                f32 poseBtnW = ImGui::GetContentRegionAvail().x * 0.7f;
+                                if (ImGui::Button(pose.name.c_str(), ImVec2(poseBtnW, 26.0f))) {
+                                    poseLib->activePose = isActive ? "" : pose.name;
+                                }
+                                if (ImGui::IsItemHovered() && !pose.overrides.empty()) {
+                                    ImGui::SetTooltip("%zu bone overrides", pose.overrides.size());
+                                }
+
+                                // Delete button
+                                ImGui::SameLine();
+                                ImGui::PushID(static_cast<int>(pi));
+                                if (ImGui::SmallButton("X##PoseDel")) {
+                                    if (poseLib->activePose == pose.name) poseLib->activePose.clear();
+                                    poseLib->poses.erase(poseLib->poses.begin() + pi);
+                                    ImGui::PopID();
+                                    if (isActive) ImGui::PopStyleColor(2);
+                                    break;
+                                }
+                                ImGui::PopID();
+
+                                if (isActive) ImGui::PopStyleColor(2);
+                            }
+
+                            // Save current pose button
+                            ImGui::Spacing();
+                            static char newPoseNameBuf[128] = {};
+                            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+                            ImGui::InputTextWithHint("##NewPoseName", "Pose name...", newPoseNameBuf, sizeof(newPoseNameBuf));
+                            ImGui::SameLine();
+                            if (ImGui::Button("Save Current") && newPoseNameBuf[0] != '\0') {
+                                ECS::PoseLibraryComponent::NamedPose newPose;
+                                newPose.name = newPoseNameBuf;
+                                // Auto-categorize based on selected region or bone
+                                if (animComp->selectedBoneIndex >= 0) {
+                                    ECS::BoneRegion region = ECS::ClassifyBoneRegion(
+                                        skeleton->bones[animComp->selectedBoneIndex].name);
+                                    newPose.category = ECS::BoneRegionName(region);
+                                }
+                                // Capture current bone rotations from pose
+                                const auto& pose = animator.GetCurrentPose();
+                                for (usize bi = 0; bi < skeleton->bones.size(); ++bi) {
+                                    if (bi < pose.localRotations.size()) {
+                                        ECS::PoseLibraryComponent::BoneOverride bo;
+                                        bo.boneName = skeleton->bones[bi].name;
+                                        bo.rotation = pose.localRotations[bi];
+                                        newPose.overrides.push_back(bo);
+                                    }
+                                }
+                                poseLib->poses.push_back(std::move(newPose));
+                                newPoseNameBuf[0] = '\0';
+                            }
+                            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Capture all bone rotations as a named pose");
                         }
                     }
 
@@ -1999,7 +2333,7 @@ void EditorLayer::DrawInspectorPanel() {
                         bool prevShowWeights = animComp->showWeights;
                         ImGui::Checkbox("Show Weights##Animator", &animComp->showWeights);
                         if (ImGui::IsItemHovered()) {
-                            ImGui::SetTooltip("Overlay bone weight heat map on mesh (blue=0, green=0.5, red=1.0)");
+                            ImGui::SetTooltip("Overlay bone weight heat map on mesh.\nBlue = 0 influence, Green = 0.5, Red = 1.0.\nSelect a bone below to see its influence on each vertex.");
                         }
 
                         if (animComp->showWeights) {
@@ -2050,11 +2384,60 @@ void EditorLayer::DrawInspectorPanel() {
                     if (onionSkin.enabled) {
                         ImGui::Indent(8.0f);
                         ImGui::SliderInt("Before##OnionBefore", &onionSkin.framesBefore, 0, 10);
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Number of ghost frames before current time");
                         ImGui::SliderInt("After##OnionAfter", &onionSkin.framesAfter, 0, 10);
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Number of ghost frames after current time");
                         ImGui::SliderFloat("Opacity##Onion3D", &onionSkin.opacity, 0.05f, 1.0f, "%.2f");
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Base opacity of the nearest ghost (closest frame)");
                         ImGui::SliderFloat("Falloff##Onion3D", &onionSkin.opacityFalloff, 0.1f, 1.0f, "%.2f");
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Each step multiplies opacity by this value (lower = faster fade)");
                         ImGui::ColorEdit3("Before Tint##Onion3D", &onionSkin.beforeTint.x);
                         ImGui::ColorEdit3("After Tint##Onion3D", &onionSkin.afterTint.x);
+
+                        // Visual opacity preview strip
+                        {
+                            ImVec2 stripPos = ImGui::GetCursorScreenPos();
+                            f32 stripW = ImGui::GetContentRegionAvail().x;
+                            f32 stripH = 16.0f;
+                            f32 cellW = stripW / static_cast<f32>(onionSkin.framesBefore + 1 + onionSkin.framesAfter);
+                            ImDrawList* sDL = ImGui::GetWindowDrawList();
+
+                            // Background
+                            sDL->AddRectFilled(stripPos, ImVec2(stripPos.x + stripW, stripPos.y + stripH),
+                                IM_COL32(20, 20, 20, 255), 2.0f);
+
+                            // Before ghosts (left)
+                            for (i32 i = onionSkin.framesBefore; i >= 1; --i) {
+                                f32 alpha = onionSkin.opacity;
+                                for (i32 j = 1; j < i; ++j) alpha *= onionSkin.opacityFalloff;
+                                i32 idx = onionSkin.framesBefore - i;
+                                f32 cx = stripPos.x + idx * cellW;
+                                u8 a = static_cast<u8>(Math::Clamp(alpha * 255.0f, 0.0f, 255.0f));
+                                sDL->AddRectFilled(ImVec2(cx + 1, stripPos.y + 1), ImVec2(cx + cellW - 1, stripPos.y + stripH - 1),
+                                    IM_COL32(static_cast<u8>(onionSkin.beforeTint.x * 255), static_cast<u8>(onionSkin.beforeTint.y * 255),
+                                             static_cast<u8>(onionSkin.beforeTint.z * 255), a));
+                            }
+
+                            // Current frame (center, white)
+                            f32 curX = stripPos.x + onionSkin.framesBefore * cellW;
+                            sDL->AddRectFilled(ImVec2(curX + 1, stripPos.y + 1), ImVec2(curX + cellW - 1, stripPos.y + stripH - 1),
+                                IM_COL32(255, 255, 255, 255));
+
+                            // After ghosts (right)
+                            for (i32 i = 1; i <= onionSkin.framesAfter; ++i) {
+                                f32 alpha = onionSkin.opacity;
+                                for (i32 j = 1; j < i; ++j) alpha *= onionSkin.opacityFalloff;
+                                i32 idx = onionSkin.framesBefore + i;
+                                f32 cx = stripPos.x + idx * cellW;
+                                u8 a = static_cast<u8>(Math::Clamp(alpha * 255.0f, 0.0f, 255.0f));
+                                sDL->AddRectFilled(ImVec2(cx + 1, stripPos.y + 1), ImVec2(cx + cellW - 1, stripPos.y + stripH - 1),
+                                    IM_COL32(static_cast<u8>(onionSkin.afterTint.x * 255), static_cast<u8>(onionSkin.afterTint.y * 255),
+                                             static_cast<u8>(onionSkin.afterTint.z * 255), a));
+                            }
+
+                            ImGui::Dummy(ImVec2(stripW, stripH));
+                        }
+
                         ImGui::Unindent(8.0f);
                     }
 
