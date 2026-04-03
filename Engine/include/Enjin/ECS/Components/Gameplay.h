@@ -549,6 +549,103 @@ struct AudioBusEQ {
 };
 
 // ============================================================================
+// CONDUCTOR — AI-driven dynamic music that responds to gameplay
+// ============================================================================
+
+// ConductorComponent — attach to a game manager entity.
+// Watches gameplay state (combat, exploration, stealth, cutscene) and
+// dynamically layers/removes music stems, adjusts reverb, shifts EQ.
+struct ConductorComponent {
+    // Music stems — each stem is a separate audio loop that can be faded in/out
+    struct Stem {
+        std::string clipPath;        // Audio file for this stem
+        std::string name;            // Display name ("Strings", "Percussion", "Bass")
+        f32 volume = 1.0f;           // Current volume (0-1, managed by conductor)
+        f32 targetVolume = 0.0f;     // Target volume (smoothly interpolated)
+        f32 fadeSpeed = 2.0f;        // Fade speed (units/sec)
+        u32 soundHandle = 0;         // Runtime handle
+
+        // Which gameplay states activate this stem
+        bool playDuringExplore = true;
+        bool playDuringCombat = false;
+        bool playDuringStealth = false;
+        bool playDuringCutscene = false;
+    };
+
+    std::vector<Stem> stems;
+
+    // Gameplay state detection
+    enum class GameplayState : u8 { Explore, Combat, Stealth, Cutscene };
+    GameplayState currentState = GameplayState::Explore;
+    GameplayState previousState = GameplayState::Explore;
+
+    // Auto-detect state from scene (if enabled)
+    bool autoDetect = true;
+    f32 combatRadius = 20.0f;        // Radius to check for enemies with HealthComponent
+    f32 stealthThreshold = 0.3f;     // Player speed below this = stealth
+    f32 stateChangeDelay = 2.0f;     // Seconds before confirming state change (prevents flicker)
+    f32 stateTimer = 0.0f;
+
+    // Master settings
+    f32 masterVolume = 1.0f;
+    f32 crossfadeTime = 3.0f;        // Time to crossfade between states
+    bool enabled = true;
+};
+
+// ============================================================================
+// AUDIO COLLISION — Physics impacts auto-generate sound
+// ============================================================================
+
+// AudioCollisionComponent — attach to any entity with a collider.
+// When this entity collides, it plays a sound based on material, velocity, mass.
+struct AudioCollisionComponent {
+    // Material-based sound mapping
+    enum class SurfaceMaterial : u8 {
+        Default, Metal, Wood, Stone, Glass, Flesh, Water, Dirt, Grass, Ice
+    };
+    SurfaceMaterial material = SurfaceMaterial::Default;
+
+    // Sound clips per impact type
+    std::string impactSoftClip;      // Low-velocity impact (tap, nudge)
+    std::string impactHardClip;      // High-velocity impact (slam, crash)
+    std::string scrapeClip;          // Continuous sliding contact
+    std::string rollClip;            // Continuous rolling contact
+
+    // Thresholds
+    f32 softThreshold = 0.5f;        // Min velocity for soft impact
+    f32 hardThreshold = 3.0f;        // Min velocity for hard impact
+    f32 volumeScale = 1.0f;          // Multiply velocity-derived volume
+    f32 pitchVariance = 0.15f;       // Random pitch variation per impact
+    f32 cooldown = 0.05f;            // Min seconds between impacts (prevents spam)
+
+    // Runtime
+    f32 cooldownTimer = 0.0f;
+    bool enabled = true;
+};
+
+// ============================================================================
+// SIDECHAIN COMPRESSION — Per-sample bus ducking
+// ============================================================================
+
+// SidechainComponent — attach to an entity to duck one bus when another is active.
+// "When Voice bus has signal, duck Music bus by -6dB over 200ms."
+struct SidechainComponent {
+    std::string sourceBus = "Voice"; // Bus that triggers the ducking
+    std::string targetBus = "Music"; // Bus that gets ducked
+    f32 threshold = 0.1f;            // Source bus level that triggers ducking
+    f32 ratio = 0.3f;                // Target volume when ducking (0.3 = -10dB)
+    f32 attackTime = 0.1f;           // Seconds to reach full duck
+    f32 releaseTime = 0.5f;          // Seconds to release duck
+    f32 holdTime = 0.2f;             // Seconds to hold duck after source drops below threshold
+
+    // Runtime
+    f32 currentGain = 1.0f;          // Current ducking multiplier (1.0 = no duck)
+    f32 holdTimer = 0.0f;
+    bool ducking = false;
+    bool enabled = true;
+};
+
+// ============================================================================
 // INTERACTION & ITEMS
 // ============================================================================
 

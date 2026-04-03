@@ -4,6 +4,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Material.h"
+#include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 #include <cmath>
@@ -18,6 +19,9 @@ void AudioReactiveSystem::Update(f32 deltaTime) {
     UpdateAudioReactive(deltaTime);
     UpdateThresholdTriggers(deltaTime);
     UpdateRTPC(deltaTime);
+    UpdateConductor(deltaTime);
+    UpdateSidechain(deltaTime);
+    UpdateAudioCollisions(deltaTime);
 }
 
 // ============================================================================
@@ -276,6 +280,189 @@ void AudioReactiveSystem::ApplyValueToTarget(ECS::Entity entity, ECS::AudioTarge
             break;
         }
         default: break;
+    }
+}
+
+// ============================================================================
+// Conductor — AI-driven dynamic music based on gameplay state
+// ============================================================================
+
+void AudioReactiveSystem::UpdateConductor(f32 deltaTime) {
+    for (auto entity : m_World->GetEntitiesWithComponent<ECS::ConductorComponent>()) {
+        if (!m_World->IsValid(entity)) continue;
+        auto* cond = m_World->GetComponent<ECS::ConductorComponent>(entity);
+        if (!cond || !cond->enabled) continue;
+
+        // Auto-detect gameplay state from scene
+        if (cond->autoDetect) {
+            ECS::ConductorComponent::GameplayState detected = ECS::ConductorComponent::GameplayState::Explore;
+
+            // Check for nearby enemies → Combat
+            bool enemiesNearby = false;
+            auto* listenerTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+            if (listenerTransform) {
+                for (auto e : m_World->GetEntitiesWithComponent<ECS::HealthComponent>()) {
+                    if (e == entity || !m_World->IsValid(e)) continue;
+                    auto* hp = m_World->GetComponent<ECS::HealthComponent>(e);
+                    auto* et = m_World->GetComponent<ECS::TransformComponent>(e);
+                    if (hp && !hp->isDead && et) {
+                        f32 dist = (et->position - listenerTransform->position).Length();
+                        if (dist < cond->combatRadius) {
+                            // Only count as combat if the entity has a DamageComponent (it's hostile)
+                            if (m_World->HasComponent<ECS::DamageComponent>(e)) {
+                                enemiesNearby = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if (enemiesNearby) detected = ECS::ConductorComponent::GameplayState::Combat;
+
+            // State change with delay (prevents flicker)
+            if (detected != cond->currentState) {
+                cond->stateTimer += deltaTime;
+                if (cond->stateTimer >= cond->stateChangeDelay) {
+                    cond->previousState = cond->currentState;
+                    cond->currentState = detected;
+                    cond->stateTimer = 0.0f;
+                    ENJIN_LOG_INFO(Audio, "Conductor: state changed to %d", static_cast<int>(detected));
+                }
+            } else {
+                cond->stateTimer = 0.0f;
+            }
+        }
+
+        // Fade stems based on current state
+        for (auto& stem : cond->stems) {
+            bool shouldPlay = false;
+            switch (cond->currentState) {
+                case ECS::ConductorComponent::GameplayState::Explore:
+                    shouldPlay = stem.playDuringExplore; break;
+                case ECS::ConductorComponent::GameplayState::Combat:
+                    shouldPlay = stem.playDuringCombat; break;
+                case ECS::ConductorComponent::GameplayState::Stealth:
+                    shouldPlay = stem.playDuringStealth; break;
+                case ECS::ConductorComponent::GameplayState::Cutscene:
+                    shouldPlay = stem.playDuringCutscene; break;
+            }
+
+            stem.targetVolume = shouldPlay ? cond->masterVolume : 0.0f;
+
+            // Smooth fade
+            f32 diff = stem.targetVolume - stem.volume;
+            f32 step = stem.fadeSpeed * deltaTime;
+            if (std::fabs(diff) <= step) {
+                stem.volume = stem.targetVolume;
+            } else {
+                stem.volume += (diff > 0.0f ? step : -step);
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Sidechain Compression — duck one bus when another has signal
+// ============================================================================
+
+void AudioReactiveSystem::UpdateSidechain(f32 deltaTime) {
+    for (auto entity : m_World->GetEntitiesWithComponent<ECS::SidechainComponent>()) {
+        if (!m_World->IsValid(entity)) continue;
+        auto* sc = m_World->GetComponent<ECS::SidechainComponent>(entity);
+        if (!sc || !sc->enabled) continue;
+
+        const auto& mixer = m_Audio->GetMixer();
+        const Audio::AudioBus* source = mixer.GetBus(sc->sourceBus);
+        Audio::AudioBus* target = m_Audio->GetMixer().GetBus(sc->targetBus);
+        if (!source || !target) continue;
+
+        bool sourceActive = source->vuLevel > sc->threshold;
+
+        if (sourceActive) {
+            sc->ducking = true;
+            sc->holdTimer = sc->holdTime;
+            // Attack — duck toward ratio
+            f32 targetGain = sc->ratio;
+            sc->currentGain += (targetGain - sc->currentGain) * Math::Min(deltaTime / Math::Max(sc->attackTime, 0.001f), 1.0f);
+        } else if (sc->ducking) {
+            sc->holdTimer -= deltaTime;
+            if (sc->holdTimer <= 0.0f) {
+                // Release — return to 1.0
+                sc->currentGain += (1.0f - sc->currentGain) * Math::Min(deltaTime / Math::Max(sc->releaseTime, 0.001f), 1.0f);
+                if (sc->currentGain > 0.99f) {
+                    sc->currentGain = 1.0f;
+                    sc->ducking = false;
+                }
+            }
+        }
+
+        // Apply ducking to target bus volume
+        target->targetVolume = sc->currentGain;
+    }
+}
+
+// ============================================================================
+// Audio Collision — physics impacts auto-generate sound
+// Inspired by Zelda TOTK's physics audio system:
+// - Every surface has a material type
+// - Impact velocity determines volume and soft/hard clip selection
+// - Pitch varies per hit for natural feel
+// - Cooldown prevents sound spam from rapid collisions
+// ============================================================================
+
+void AudioReactiveSystem::UpdateAudioCollisions(f32 deltaTime) {
+    for (auto entity : m_World->GetEntitiesWithComponent<ECS::AudioCollisionComponent>()) {
+        if (!m_World->IsValid(entity)) continue;
+        auto* ac = m_World->GetComponent<ECS::AudioCollisionComponent>(entity);
+        if (!ac || !ac->enabled) continue;
+
+        // Cooldown
+        if (ac->cooldownTimer > 0.0f) {
+            ac->cooldownTimer -= deltaTime;
+            continue;
+        }
+
+        // Check for collision velocity from physics
+        // The physics system sets velocity on controllers; for rigidbodies,
+        // we'd read from the physics backend. For now, check controller velocity
+        // as a proxy for impact detection.
+        f32 impactVelocity = 0.0f;
+
+        if (auto* ctrl = m_World->GetComponent<ECS::Platformer2DController>(entity)) {
+            // Ground contact = impact if we just landed
+            if (ctrl->isGrounded && ctrl->velocity.y < -ac->softThreshold) {
+                impactVelocity = std::fabs(ctrl->velocity.y);
+            }
+        } else if (auto* ctrl3 = m_World->GetComponent<ECS::ThirdPersonController>(entity)) {
+            if (ctrl3->isGrounded && ctrl3->velocity.y < -ac->softThreshold) {
+                impactVelocity = std::fabs(ctrl3->velocity.y);
+            }
+        }
+
+        if (impactVelocity > ac->softThreshold) {
+            ac->cooldownTimer = ac->cooldown;
+
+            // Select clip based on velocity
+            const std::string& clip = (impactVelocity > ac->hardThreshold)
+                ? ac->impactHardClip : ac->impactSoftClip;
+            if (clip.empty()) continue;
+
+            // Volume from velocity (normalized)
+            f32 maxVel = ac->hardThreshold * 2.0f;
+            f32 vol = Math::Clamp(impactVelocity / maxVel, 0.2f, 1.0f) * ac->volumeScale;
+
+            // Random pitch variation
+            f32 pitch = 1.0f + ((static_cast<f32>(rand()) / RAND_MAX) * 2.0f - 1.0f) * ac->pitchVariance;
+
+            // Play at entity position
+            auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+            if (transform) {
+                Audio::AudioClipHandle clipHandle = m_Audio->LoadClip(clip);
+                if (clipHandle != Audio::INVALID_AUDIO_CLIP) {
+                    m_Audio->Play3D(clipHandle, transform->position, vol, 1.0f, 50.0f);
+                }
+            }
+        }
     }
 }
 

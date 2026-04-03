@@ -545,4 +545,157 @@ void EditorLayer::DrawBeatSyncComponent(ECS::Entity entity) {
     }
 }
 
+// ============================================================================
+// Conductor, Audio Collision, Sidechain
+// ============================================================================
+
+void EditorLayer::DrawConductorComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("[C] Conductor (Dynamic Music)", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("ConductorCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::ConductorComponent>(entity, "conductor", "Conductor");
+            ImGui::EndPopup(); return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* cond = m_World->GetComponent<ECS::ConductorComponent>(entity);
+        if (!cond) return;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Enabled##Cond", &cond->enabled);
+        InspectorUndo::DragFloat(m_UndoRedo, "Master Volume##Cond", &cond->masterVolume, 0.05f, 0.0f, 2.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Crossfade Time##Cond", &cond->crossfadeTime, 0.1f, 0.1f, 10.0f);
+
+        // Auto-detect settings
+        InspectorUndo::Checkbox(m_UndoRedo, "Auto-Detect State##Cond", &cond->autoDetect);
+        if (cond->autoDetect) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Combat Radius##Cond", &cond->combatRadius, 1.0f, 1.0f, 100.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "State Change Delay##Cond", &cond->stateChangeDelay, 0.1f, 0.0f, 10.0f);
+        }
+
+        // Current state
+        const char* stateNames[] = {"Explore", "Combat", "Stealth", "Cutscene"};
+        int state = static_cast<int>(cond->currentState);
+        ImGui::Text("Current State: %s", stateNames[state]);
+
+        // Manual state override
+        if (!cond->autoDetect) {
+            if (ImGui::Combo("State##Cond", &state, stateNames, 4)) {
+                cond->currentState = static_cast<ECS::ConductorComponent::GameplayState>(state);
+            }
+        }
+
+        // Stems
+        ImGui::Separator();
+        ImGui::Text("Stems (%zu):", cond->stems.size());
+        i32 removeIdx = -1;
+        for (usize i = 0; i < cond->stems.size(); ++i) {
+            auto& stem = cond->stems[i];
+            ImGui::PushID(static_cast<int>(i));
+
+            char nameBuf[64] = {};
+            strncpy(nameBuf, stem.name.c_str(), sizeof(nameBuf) - 1);
+            ImGui::SetNextItemWidth(80.0f);
+            if (ImGui::InputText("##StemName", nameBuf, sizeof(nameBuf))) stem.name = nameBuf;
+            ImGui::SameLine();
+
+            // Volume bar
+            ImGui::ProgressBar(stem.volume, ImVec2(60, 0), "");
+            ImGui::SameLine();
+
+            // State checkboxes (compact)
+            ImGui::Checkbox("E##", &stem.playDuringExplore); ImGui::SameLine();
+            ImGui::Checkbox("C##", &stem.playDuringCombat); ImGui::SameLine();
+            ImGui::Checkbox("S##", &stem.playDuringStealth); ImGui::SameLine();
+            ImGui::Checkbox("X##", &stem.playDuringCutscene); ImGui::SameLine();
+
+            if (ImGui::SmallButton("X##Rm")) removeIdx = static_cast<i32>(i);
+
+            ImGui::PopID();
+        }
+        if (removeIdx >= 0) cond->stems.erase(cond->stems.begin() + removeIdx);
+        if (ImGui::Button("Add Stem##Cond")) {
+            ECS::ConductorComponent::Stem s;
+            s.name = "Stem " + std::to_string(cond->stems.size() + 1);
+            cond->stems.push_back(s);
+        }
+        ImGui::TextDisabled("E=Explore C=Combat S=Stealth X=Cutscene");
+    }
+}
+
+void EditorLayer::DrawAudioCollisionComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("[K] Audio Collision", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("AudioCollCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::AudioCollisionComponent>(entity, "audioCollision", "Audio Collision");
+            ImGui::EndPopup(); return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* ac = m_World->GetComponent<ECS::AudioCollisionComponent>(entity);
+        if (!ac) return;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Enabled##AC", &ac->enabled);
+
+        const char* matNames[] = {"Default","Metal","Wood","Stone","Glass","Flesh","Water","Dirt","Grass","Ice"};
+        int mat = static_cast<int>(ac->material);
+        if (ImGui::Combo("Surface Material##AC", &mat, matNames, 10)) {
+            ac->material = static_cast<ECS::AudioCollisionComponent::SurfaceMaterial>(mat);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Zelda TOTK-style: material determines impact sound character");
+
+        // Clip paths
+        char softBuf[256] = {}, hardBuf[256] = {};
+        strncpy(softBuf, ac->impactSoftClip.c_str(), sizeof(softBuf) - 1);
+        strncpy(hardBuf, ac->impactHardClip.c_str(), sizeof(hardBuf) - 1);
+        if (ImGui::InputText("Soft Impact##AC", softBuf, sizeof(softBuf))) ac->impactSoftClip = softBuf;
+        if (ImGui::InputText("Hard Impact##AC", hardBuf, sizeof(hardBuf))) ac->impactHardClip = hardBuf;
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Soft Threshold##AC", &ac->softThreshold, 0.1f, 0.0f, 10.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Hard Threshold##AC", &ac->hardThreshold, 0.1f, 0.0f, 20.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Volume Scale##AC", &ac->volumeScale, 0.1f, 0.0f, 5.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Pitch Variance##AC", &ac->pitchVariance, 0.01f, 0.0f, 0.5f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Cooldown##AC", &ac->cooldown, 0.01f, 0.01f, 1.0f);
+    }
+}
+
+void EditorLayer::DrawSidechainComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("[D] Sidechain Compression", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("SidechainCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::SidechainComponent>(entity, "sidechain", "Sidechain");
+            ImGui::EndPopup(); return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* sc = m_World->GetComponent<ECS::SidechainComponent>(entity);
+        if (!sc) return;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Enabled##SC", &sc->enabled);
+
+        char srcBuf[64] = {}, tgtBuf[64] = {};
+        strncpy(srcBuf, sc->sourceBus.c_str(), sizeof(srcBuf) - 1);
+        strncpy(tgtBuf, sc->targetBus.c_str(), sizeof(tgtBuf) - 1);
+        if (ImGui::InputText("Source Bus##SC", srcBuf, sizeof(srcBuf))) sc->sourceBus = srcBuf;
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Bus that triggers ducking (e.g. Voice)");
+        if (ImGui::InputText("Target Bus##SC", tgtBuf, sizeof(tgtBuf))) sc->targetBus = tgtBuf;
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Bus that gets ducked (e.g. Music)");
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Threshold##SC", &sc->threshold, 0.01f, 0.0f, 1.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Ratio##SC", &sc->ratio, 0.05f, 0.0f, 1.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Target volume when ducking (0.3 = -10dB reduction)");
+        InspectorUndo::DragFloat(m_UndoRedo, "Attack##SC", &sc->attackTime, 0.01f, 0.001f, 2.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Release##SC", &sc->releaseTime, 0.01f, 0.01f, 5.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Hold##SC", &sc->holdTime, 0.01f, 0.0f, 2.0f);
+
+        // Status
+        ImGui::Separator();
+        ImGui::Text("Status: %s", sc->ducking ? "DUCKING" : "Idle");
+        ImGui::ProgressBar(1.0f - sc->currentGain, ImVec2(-1, 4), "");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Duck amount: %.0f%%", (1.0f - sc->currentGain) * 100.0f);
+    }
+}
+
 } // namespace Enjin

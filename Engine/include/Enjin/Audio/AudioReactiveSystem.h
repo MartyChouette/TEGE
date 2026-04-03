@@ -22,6 +22,9 @@ private:
     void UpdateAudioReactive(f32 deltaTime);
     void UpdateThresholdTriggers(f32 deltaTime);
     void UpdateRTPC(f32 deltaTime);
+    void UpdateConductor(f32 deltaTime);
+    void UpdateSidechain(f32 deltaTime);
+    void UpdateAudioCollisions(f32 deltaTime);
 
     void ApplyValueToTarget(ECS::Entity entity, ECS::AudioTargetProperty target, f32 value);
 

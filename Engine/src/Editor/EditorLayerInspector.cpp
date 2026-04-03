@@ -359,6 +359,21 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BeatSyncComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::BeatSyncComponent>(e); },
             "beatSync"},
+        {"Conductor", "Audio", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ConductorComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ConductorComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ConductorComponent>(e); },
+            "conductor"},
+        {"Audio Collision", "Audio", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AudioCollisionComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AudioCollisionComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::AudioCollisionComponent>(e); },
+            "audioCollision"},
+        {"Sidechain", "Audio", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SidechainComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SidechainComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SidechainComponent>(e); },
+            "sidechain"},
         {"Pose Library", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PoseLibraryComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PoseLibraryComponent>(e); },
@@ -1364,6 +1379,15 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::BeatSyncComponent>(m_PrimarySelected)) {
             DrawBeatSyncComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::ConductorComponent>(m_PrimarySelected)) {
+            DrawConductorComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::AudioCollisionComponent>(m_PrimarySelected)) {
+            DrawAudioCollisionComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::SidechainComponent>(m_PrimarySelected)) {
+            DrawSidechainComponent(m_PrimarySelected);
         }
 
         // AI components
