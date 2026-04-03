@@ -109,6 +109,9 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
         m_RecordRewindSystem.SetPhysics(m_Physics.get());
         m_RecordRewindSystem.SetPhysics2D(m_Physics2D.get());
 
+        m_AudioReactiveSystem.SetWorld(world);
+        m_AudioReactiveSystem.SetAudio(&m_SimpleAudio);
+
         // Initialize network system
         m_NetworkSystem.SetWorld(world);
 
@@ -582,6 +585,9 @@ void PlayMode::Update(f32 deltaTime) {
 
         // Record & Rewind (Braid / Sands of Time mechanic)
         m_RecordRewindSystem.Update(deltaTime);
+
+        // Audio-reactive systems (beat sync, VU→visual, RTPC, threshold triggers)
+        m_AudioReactiveSystem.Update(deltaTime);
 
         // Gameplay systems
         m_TweenSystem.Update(m_World, deltaTime);

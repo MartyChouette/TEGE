@@ -14,6 +14,7 @@
 #include "Enjin/ECS/Systems/AISystem.h"
 #include "Enjin/Networking/NetworkSystem.h"
 #include "Enjin/Gameplay/RecordRewindSystem.h"
+#include "Enjin/Audio/AudioReactiveSystem.h"
 #include "Enjin/Editor/AudioEventGraph.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Physics/IPhysicsBackend2D.h"
@@ -193,6 +194,9 @@ private:
 
     // Record & Rewind (Braid / Sands of Time mechanic)
     Gameplay::RecordRewindSystem m_RecordRewindSystem;
+
+    // Audio-reactive system (beat sync, VU→visual, RTPC, threshold triggers)
+    Audio::AudioReactiveSystem m_AudioReactiveSystem;
 
     // State machine system
     ECS::StateMachineSystem m_StateMachineSystem;

@@ -28,6 +28,17 @@ struct ENJIN_API AudioBus {
     f32 vuPeak = 0.0f;           // Peak hold (decays slowly)
     u32 activeSoundCount = 0;    // Number of sounds playing through this bus
 
+    // Per-bus parametric EQ (3-band: low shelf, mid bell, high shelf)
+    struct EQBand {
+        f32 frequency = 1000.0f;
+        f32 gain = 0.0f;         // dB (-12 to +12)
+        f32 q = 1.0f;            // Q factor (bell only)
+    };
+    EQBand eqLow  = {200.0f, 0.0f, 1.0f};
+    EQBand eqMid  = {1000.0f, 0.0f, 1.0f};
+    EQBand eqHigh = {5000.0f, 0.0f, 1.0f};
+    bool eqEnabled = false;
+
     // Hierarchy
     AudioBus* parent = nullptr;
     std::vector<AudioBus*> children;
@@ -102,6 +113,7 @@ public:
 
     // Bus management
     AudioBus* GetBus(const std::string& name);
+    const AudioBus* GetBus(const std::string& name) const;
     AudioBus* CreateBus(const std::string& name, const std::string& parentName = "Master");
     AudioBus* GetMasterBus() { return &m_MasterBus; }
 

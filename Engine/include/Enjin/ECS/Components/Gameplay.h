@@ -398,6 +398,157 @@ struct AudioOcclusionComponent {
 };
 
 // ============================================================================
+// AUDIO-REACTIVE SYSTEMS — Sound drives visuals, game params drive sound
+// ============================================================================
+
+// Target property that an audio signal or RTPC can drive
+enum class AudioTargetProperty : u8 {
+    LightIntensity,       // LightComponent::intensity
+    LightColor,           // LightComponent::color (modulates RGB uniformly)
+    EmissiveStrength,     // MaterialComponent::emissiveStrength
+    Scale,                // TransformComponent::scale (uniform)
+    Opacity,              // MaterialComponent push constant opacity
+    ParticleRate,         // ParticleEmitterComponent::emissionRate
+    CameraShake,          // Adds shake offset to camera position
+    Custom                // Fires event with value for script handling
+};
+
+// AudioReactiveComponent — maps a bus VU level to an entity property.
+// "When the Explosions bus is loud, make this light bright."
+struct AudioReactiveComponent {
+    std::string busName = "SFX";     // Which bus to read VU from
+    AudioTargetProperty target = AudioTargetProperty::LightIntensity;
+
+    f32 threshold = 0.1f;            // Minimum VU level before effect starts
+    f32 multiplier = 2.0f;           // Scale factor applied to VU level
+    f32 smoothing = 10.0f;           // Interpolation speed (higher = snappier)
+    bool invert = false;             // Invert the effect (loud = dim instead of bright)
+
+    f32 baseValue = 1.0f;            // Property value when silent
+    f32 maxValue = 5.0f;             // Property value at full VU
+
+    // Runtime
+    f32 currentValue = 0.0f;         // Smoothed current output
+    bool enabled = true;
+};
+
+// AudioThresholdTriggerComponent — fires a one-shot event when bus exceeds level.
+// "When Explosions bus > 0.8, flicker lights for 0.5s."
+struct AudioThresholdTriggerComponent {
+    std::string busName = "SFX";
+    f32 threshold = 0.7f;            // VU level that triggers
+    f32 cooldown = 0.5f;             // Minimum seconds between triggers
+
+    // What to do when triggered
+    enum class Action : u8 {
+        FlickerLights,               // Rapidly oscillate light intensity
+        CameraShake,                 // Shake camera by shakeAmount
+        ParticleBurst,               // Emit burstCount particles
+        FireEvent                    // Broadcast named event via EntityEventBus
+    };
+    Action action = Action::FlickerLights;
+
+    f32 effectDuration = 0.3f;       // How long the effect lasts
+    f32 effectIntensity = 1.0f;      // Strength multiplier
+    std::string eventName;           // For Action::FireEvent
+
+    // Runtime
+    f32 cooldownTimer = 0.0f;
+    f32 effectTimer = 0.0f;
+    bool triggered = false;
+    bool enabled = true;
+};
+
+// RTPCComponent — Real-Time Parameter Control.
+// Named game parameters continuously drive audio properties.
+// "As player speed increases, engine pitch rises."
+struct RTPCComponent {
+    struct Mapping {
+        std::string parameterName;   // Game parameter (e.g., "speed", "health", "danger")
+        f32 paramMin = 0.0f;         // Parameter range minimum
+        f32 paramMax = 1.0f;         // Parameter range maximum
+
+        enum class AudioTarget : u8 {
+            Volume, Pitch, LowPassCutoff, ReverbSend
+        };
+        AudioTarget audioTarget = AudioTarget::Volume;
+
+        f32 outputMin = 0.0f;        // Audio output at paramMin
+        f32 outputMax = 1.0f;        // Audio output at paramMax
+
+        // Curve shape (0 = linear, <0 = ease in, >0 = ease out)
+        f32 curve = 0.0f;
+    };
+
+    std::vector<Mapping> mappings;
+
+    // Runtime parameter values (set by gameplay code or script)
+    std::unordered_map<std::string, f32> parameters;
+
+    void SetParameter(const std::string& name, f32 value) { parameters[name] = value; }
+    f32 GetParameter(const std::string& name) const {
+        auto it = parameters.find(name);
+        return (it != parameters.end()) ? it->second : 0.0f;
+    }
+
+    bool enabled = true;
+};
+
+// BeatClockComponent — global BPM clock for rhythm-synced effects.
+// Attach to a single manager entity. All BeatSyncComponents read from this.
+struct BeatClockComponent {
+    f32 bpm = 120.0f;                // Beats per minute
+    i32 beatsPerBar = 4;             // Time signature numerator
+    bool playing = true;
+
+    // Runtime state
+    f64 beatAccumulator = 0.0;       // Fractional beat position (0.0 to beatsPerBar)
+    u32 currentBeat = 0;             // Current beat within bar (0 to beatsPerBar-1)
+    u32 currentBar = 0;              // Current bar number
+    u32 totalBeats = 0;              // Total beats since start
+    bool beatThisFrame = false;      // True on the frame a beat occurs
+    bool downbeatThisFrame = false;  // True on beat 0 of each bar
+
+    f32 GetBeatPhase() const {       // 0.0-1.0 within current beat
+        return static_cast<f32>(beatAccumulator - static_cast<f64>(currentBeat));
+    }
+};
+
+// BeatSyncComponent — sync an entity's properties to the global beat.
+// "This light pulses on every downbeat. These particles emit on every beat."
+struct BeatSyncComponent {
+    enum class SyncMode : u8 {
+        EveryBeat,                   // Trigger on every beat
+        EveryDownbeat,               // Trigger on beat 0 of each bar
+        EveryNBeats,                 // Trigger every N beats
+        Continuous                   // Smooth sine wave synced to beat phase
+    };
+    SyncMode mode = SyncMode::EveryBeat;
+    u32 beatDivisor = 1;             // For EveryNBeats: trigger every N beats
+
+    AudioTargetProperty target = AudioTargetProperty::LightIntensity;
+    f32 baseValue = 1.0f;            // Value when not pulsing
+    f32 pulseValue = 3.0f;           // Value on beat hit
+    f32 decaySpeed = 8.0f;           // How fast pulse decays back to base (higher = snappier)
+
+    // Runtime
+    f32 currentValue = 0.0f;
+    bool enabled = true;
+};
+
+// Per-bus parametric EQ — 3-band (low shelf, mid bell, high shelf)
+struct AudioBusEQ {
+    f32 lowFreq = 200.0f;            // Low shelf frequency (Hz)
+    f32 lowGain = 0.0f;              // Low shelf gain (dB, -12 to +12)
+    f32 midFreq = 1000.0f;           // Mid bell frequency (Hz)
+    f32 midGain = 0.0f;              // Mid bell gain (dB)
+    f32 midQ = 1.0f;                 // Mid bell Q factor (0.1 to 10)
+    f32 highFreq = 5000.0f;          // High shelf frequency (Hz)
+    f32 highGain = 0.0f;             // High shelf gain (dB)
+    bool enabled = false;
+};
+
+// ============================================================================
 // INTERACTION & ITEMS
 // ============================================================================
 

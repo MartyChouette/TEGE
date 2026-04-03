@@ -334,6 +334,31 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LipSyncComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::LipSyncComponent>(e); },
             "lipSync"},
+        {"Audio Reactive", "Audio", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AudioReactiveComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AudioReactiveComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::AudioReactiveComponent>(e); },
+            "audioReactive"},
+        {"Audio Threshold Trigger", "Audio", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AudioThresholdTriggerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AudioThresholdTriggerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::AudioThresholdTriggerComponent>(e); },
+            "audioThresholdTrigger"},
+        {"RTPC", "Audio", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::RTPCComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::RTPCComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::RTPCComponent>(e); },
+            "rtpc"},
+        {"Beat Clock", "Audio", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::BeatClockComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BeatClockComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::BeatClockComponent>(e); },
+            "beatClock"},
+        {"Beat Sync", "Audio", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::BeatSyncComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BeatSyncComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::BeatSyncComponent>(e); },
+            "beatSync"},
         {"Pose Library", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PoseLibraryComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PoseLibraryComponent>(e); },
@@ -1324,6 +1349,21 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::LipSyncComponent>(m_PrimarySelected)) {
             DrawLipSyncComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::AudioReactiveComponent>(m_PrimarySelected)) {
+            DrawAudioReactiveComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::AudioThresholdTriggerComponent>(m_PrimarySelected)) {
+            DrawAudioThresholdTriggerComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::RTPCComponent>(m_PrimarySelected)) {
+            DrawRTPCComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::BeatClockComponent>(m_PrimarySelected)) {
+            DrawBeatClockComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::BeatSyncComponent>(m_PrimarySelected)) {
+            DrawBeatSyncComponent(m_PrimarySelected);
         }
 
         // AI components

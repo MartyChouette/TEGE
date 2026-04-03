@@ -340,5 +340,209 @@ void EditorLayer::DrawLipSyncComponent(ECS::Entity entity) {
     }
 }
 
+// ============================================================================
+// Audio-Reactive Components
+// ============================================================================
+
+void EditorLayer::DrawAudioReactiveComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("[~] Audio Reactive", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("AudioReactiveCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::AudioReactiveComponent>(entity, "audioReactive", "Audio Reactive");
+            ImGui::EndPopup(); return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* ar = m_World->GetComponent<ECS::AudioReactiveComponent>(entity);
+        if (!ar) return;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Enabled##AR", &ar->enabled);
+
+        char busBuf[64] = {};
+        strncpy(busBuf, ar->busName.c_str(), sizeof(busBuf) - 1);
+        if (ImGui::InputText("Bus##AR", busBuf, sizeof(busBuf))) ar->busName = busBuf;
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Which audio bus to read level from (SFX, Music, UI, Voice, or custom)");
+
+        const char* targetNames[] = {"Light Intensity","Light Color","Emissive Strength","Scale","Opacity","Particle Rate","Camera Shake","Custom Event"};
+        int target = static_cast<int>(ar->target);
+        if (ImGui::Combo("Target##AR", &target, targetNames, 8)) ar->target = static_cast<ECS::AudioTargetProperty>(target);
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Threshold##AR", &ar->threshold, 0.01f, 0.0f, 1.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Multiplier##AR", &ar->multiplier, 0.1f, 0.0f, 10.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Smoothing##AR", &ar->smoothing, 0.5f, 0.1f, 50.0f);
+        InspectorUndo::Checkbox(m_UndoRedo, "Invert##AR", &ar->invert);
+        InspectorUndo::DragFloat(m_UndoRedo, "Base Value##AR", &ar->baseValue, 0.1f, 0.0f, 100.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Max Value##AR", &ar->maxValue, 0.1f, 0.0f, 100.0f);
+
+        ImGui::Separator();
+        ImGui::ProgressBar(ar->currentValue / Math::Max(ar->maxValue, 0.01f), ImVec2(-1, 0), "Level");
+    }
+}
+
+void EditorLayer::DrawAudioThresholdTriggerComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("[!] Audio Threshold Trigger", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("ThreshTrigCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::AudioThresholdTriggerComponent>(entity, "audioThresholdTrigger", "Audio Threshold Trigger");
+            ImGui::EndPopup(); return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* trig = m_World->GetComponent<ECS::AudioThresholdTriggerComponent>(entity);
+        if (!trig) return;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Enabled##ATT", &trig->enabled);
+
+        char busBuf[64] = {};
+        strncpy(busBuf, trig->busName.c_str(), sizeof(busBuf) - 1);
+        if (ImGui::InputText("Bus##ATT", busBuf, sizeof(busBuf))) trig->busName = busBuf;
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Threshold##ATT", &trig->threshold, 0.01f, 0.0f, 1.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Cooldown##ATT", &trig->cooldown, 0.1f, 0.0f, 5.0f);
+
+        const char* actionNames[] = {"Flicker Lights","Camera Shake","Particle Burst","Fire Event"};
+        int action = static_cast<int>(trig->action);
+        if (ImGui::Combo("Action##ATT", &action, actionNames, 4)) trig->action = static_cast<ECS::AudioThresholdTriggerComponent::Action>(action);
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Duration##ATT", &trig->effectDuration, 0.05f, 0.05f, 5.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Intensity##ATT", &trig->effectIntensity, 0.1f, 0.0f, 10.0f);
+
+        ImGui::Separator();
+        ImGui::Text("Status: %s", trig->triggered ? "TRIGGERED" : (trig->cooldownTimer > 0.0f ? "COOLDOWN" : "Ready"));
+    }
+}
+
+void EditorLayer::DrawRTPCComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("[P] RTPC (Parameter Control)", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("RTPCCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::RTPCComponent>(entity, "rtpc", "RTPC");
+            ImGui::EndPopup(); return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* rtpc = m_World->GetComponent<ECS::RTPCComponent>(entity);
+        if (!rtpc) return;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Enabled##RTPC", &rtpc->enabled);
+
+        ImGui::Text("Mappings (%zu):", rtpc->mappings.size());
+        i32 removeIdx = -1;
+        for (usize i = 0; i < rtpc->mappings.size(); ++i) {
+            auto& m = rtpc->mappings[i];
+            ImGui::PushID(static_cast<int>(i));
+
+            char paramBuf[64] = {};
+            strncpy(paramBuf, m.parameterName.c_str(), sizeof(paramBuf) - 1);
+            ImGui::SetNextItemWidth(100.0f);
+            if (ImGui::InputText("##Param", paramBuf, sizeof(paramBuf))) m.parameterName = paramBuf;
+            ImGui::SameLine();
+
+            const char* targets[] = {"Volume","Pitch","LowPass","Reverb"};
+            int t = static_cast<int>(m.audioTarget);
+            ImGui::SetNextItemWidth(80.0f);
+            if (ImGui::Combo("##Target", &t, targets, 4)) m.audioTarget = static_cast<ECS::RTPCComponent::Mapping::AudioTarget>(t);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("X##Rm")) removeIdx = static_cast<i32>(i);
+
+            ImGui::DragFloatRange2("Range##R", &m.paramMin, &m.paramMax, 0.01f, -100.0f, 100.0f);
+            ImGui::DragFloatRange2("Output##O", &m.outputMin, &m.outputMax, 0.01f, -100.0f, 100.0f);
+
+            ImGui::Separator();
+            ImGui::PopID();
+        }
+        if (removeIdx >= 0) rtpc->mappings.erase(rtpc->mappings.begin() + removeIdx);
+        if (ImGui::Button("Add Mapping##RTPC")) rtpc->mappings.push_back({});
+
+        // Show current parameter values
+        if (!rtpc->parameters.empty()) {
+            ImGui::Separator();
+            ImGui::TextDisabled("Parameters:");
+            for (auto& [name, val] : rtpc->parameters) {
+                ImGui::Text("  %s = %.2f", name.c_str(), val);
+            }
+        }
+    }
+}
+
+void EditorLayer::DrawBeatClockComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("[B] Beat Clock", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("BeatClockCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::BeatClockComponent>(entity, "beatClock", "Beat Clock");
+            ImGui::EndPopup(); return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* clock = m_World->GetComponent<ECS::BeatClockComponent>(entity);
+        if (!clock) return;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Playing##BC", &clock->playing);
+        InspectorUndo::DragFloat(m_UndoRedo, "BPM##BC", &clock->bpm, 1.0f, 20.0f, 300.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Beats per minute. Tap tempo: set manually or use MIDI clock.");
+        ImGui::InputInt("Beats/Bar##BC", &clock->beatsPerBar);
+        if (clock->beatsPerBar < 1) clock->beatsPerBar = 1;
+
+        // Visual beat indicator
+        ImGui::Separator();
+        ImGui::Text("Bar %u | Beat %u/%d | Total: %u",
+            clock->currentBar + 1, clock->currentBeat + 1, clock->beatsPerBar, clock->totalBeats);
+
+        // Beat dots
+        for (i32 i = 0; i < clock->beatsPerBar && i < 16; ++i) {
+            if (i > 0) ImGui::SameLine();
+            bool active = (static_cast<i32>(clock->currentBeat) == i);
+            ImVec4 col = active ? ImVec4(1.0f, 0.8f, 0.2f, 1.0f) : ImVec4(0.3f, 0.3f, 0.3f, 1.0f);
+            ImGui::PushStyleColor(ImGuiCol_Button, col);
+            char label[8]; snprintf(label, sizeof(label), "%d", i + 1);
+            ImGui::SmallButton(label);
+            ImGui::PopStyleColor();
+        }
+
+        f32 phase = clock->GetBeatPhase();
+        ImGui::ProgressBar(phase, ImVec2(-1, 4), "");
+    }
+}
+
+void EditorLayer::DrawBeatSyncComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("[S] Beat Sync", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("BeatSyncCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::BeatSyncComponent>(entity, "beatSync", "Beat Sync");
+            ImGui::EndPopup(); return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* sync = m_World->GetComponent<ECS::BeatSyncComponent>(entity);
+        if (!sync) return;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Enabled##BS", &sync->enabled);
+
+        const char* modeNames[] = {"Every Beat","Every Downbeat","Every N Beats","Continuous (Sine)"};
+        int mode = static_cast<int>(sync->mode);
+        if (ImGui::Combo("Mode##BS", &mode, modeNames, 4)) sync->mode = static_cast<ECS::BeatSyncComponent::SyncMode>(mode);
+
+        if (sync->mode == ECS::BeatSyncComponent::SyncMode::EveryNBeats) {
+            int div = static_cast<int>(sync->beatDivisor);
+            if (ImGui::InputInt("Every N##BS", &div)) sync->beatDivisor = static_cast<u32>(Math::Max(1, div));
+        }
+
+        const char* targetNames[] = {"Light Intensity","Light Color","Emissive Strength","Scale","Opacity","Particle Rate","Camera Shake","Custom"};
+        int target = static_cast<int>(sync->target);
+        if (ImGui::Combo("Target##BS", &target, targetNames, 8)) sync->target = static_cast<ECS::AudioTargetProperty>(target);
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Base Value##BS", &sync->baseValue, 0.1f, 0.0f, 100.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Pulse Value##BS", &sync->pulseValue, 0.1f, 0.0f, 100.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Decay Speed##BS", &sync->decaySpeed, 0.5f, 0.1f, 50.0f);
+
+        ImGui::Separator();
+        ImGui::ProgressBar(sync->currentValue / Math::Max(sync->pulseValue, 0.01f), ImVec2(-1, 0), "Pulse");
+    }
+}
 
 } // namespace Enjin

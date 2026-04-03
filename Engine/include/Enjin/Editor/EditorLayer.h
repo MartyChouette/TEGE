@@ -431,6 +431,11 @@ private:
     void DrawAudioSnapshotTriggerComponent(ECS::Entity entity);
     void DrawAudioOcclusionComponent(ECS::Entity entity);
     void DrawLipSyncComponent(ECS::Entity entity);
+    void DrawAudioReactiveComponent(ECS::Entity entity);
+    void DrawAudioThresholdTriggerComponent(ECS::Entity entity);
+    void DrawRTPCComponent(ECS::Entity entity);
+    void DrawBeatClockComponent(ECS::Entity entity);
+    void DrawBeatSyncComponent(ECS::Entity entity);
     void DrawAudioMixer();
     void DrawAudioMeterStrip();  // Thin VU meter bar above viewport
 

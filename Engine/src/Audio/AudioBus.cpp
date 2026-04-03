@@ -68,6 +68,12 @@ AudioBus* AudioMixer::GetBus(const std::string& name) {
     return (it != m_Buses.end()) ? &it->second : nullptr;
 }
 
+const AudioBus* AudioMixer::GetBus(const std::string& name) const {
+    if (name == "Master") return &m_MasterBus;
+    auto it = m_Buses.find(name);
+    return (it != m_Buses.end()) ? &it->second : nullptr;
+}
+
 AudioBus* AudioMixer::CreateBus(const std::string& name, const std::string& parentName) {
     if (m_Buses.count(name)) return &m_Buses[name];
 
