@@ -6514,7 +6514,7 @@ void EditorLayer::DrawGitHubSettingsTab() {
 // ============================================================================
 
 void EditorLayer::DrawAudioMixer() {
-    ImGui::SetNextWindowSize(ImVec2(520, 460), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(700, 560), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Audio Mixer", &m_ShowAudioMixer)) {
         ImGui::End();
         return;
@@ -6527,57 +6527,174 @@ void EditorLayer::DrawAudioMixer() {
     }
 
     Audio::SimpleAudio* audio = m_PlayMode.IsPlaying() ? m_PlayMode.GetSimpleAudio() : nullptr;
-
-    // --- Master / Channel volume strip at top ---
-    {
-        f32 masterVol = audio ? audio->GetMasterVolume() : 1.0f;
-        ImGui::AlignTextToFramePadding();
-        ImGui::Text("Master");
-        ImGui::SameLine(70);
-        ImGui::SetNextItemWidth(-1);
-        if (ImGui::SliderFloat("##MasterVol", &masterVol, 0.0f, 1.0f, "%.2f")) {
-            if (audio) audio->SetMasterVolume(masterVol);
-        }
+    // Get mixer reference (always available even when not playing)
+    Audio::SimpleAudio* audioRef = m_PlayMode.GetSimpleAudio();
+    if (!audioRef) {
+        ImGui::TextDisabled("Audio system not initialized");
+        ImGui::End();
+        return;
     }
+    const auto& mixer = audioRef->GetMixer();
 
-    ImGui::Separator();
-
-    // Channel volume strips
     static const char* channelNames[] = {"SFX", "Music", "UI", "Voice"};
+    static const ImU32 channelColorsU32[] = {
+        Editor::Theme::BusSFX, Editor::Theme::BusMusic,
+        Editor::Theme::BusUI, Editor::Theme::BusVoice
+    };
     static const ImVec4 channelColors[] = {
-        Editor::Theme::BusSFXV,     // SFX
-        Editor::Theme::BusMusicV,   // Music
-        Editor::Theme::BusUIV,      // UI
-        Editor::Theme::BusVoiceV,   // Voice
+        Editor::Theme::BusSFXV, Editor::Theme::BusMusicV,
+        Editor::Theme::BusUIV, Editor::Theme::BusVoiceV
     };
 
+    // ================================================================
+    // Bus strips — horizontal mixer board layout
+    // ================================================================
+    ImGui::TextColored(Editor::Theme::HeadingV, "Bus Mixer");
+    ImGui::Separator();
+
+    f32 stripW = 130.0f;
+    f32 meterH = 120.0f;
+
+    // Master + 4 default buses side by side
+    ImGui::BeginGroup();
+    {
+        // Master strip
+        ImGui::BeginGroup();
+        ImGui::Text("Master");
+        f32 masterVol = audio ? audio->GetMasterVolume() : 1.0f;
+        ImGui::VSliderFloat("##MasterVol", ImVec2(20, meterH), &masterVol, 0.0f, 1.0f, "");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Master: %.0f%%", masterVol * 100.0f);
+        if (audio) audio->SetMasterVolume(masterVol);
+
+        // Master VU bar next to fader
+        ImGui::SameLine();
+        {
+            ImVec2 pos = ImGui::GetCursorScreenPos();
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            f32 barW = 8.0f;
+            dl->AddRectFilled(pos, ImVec2(pos.x + barW, pos.y + meterH), IM_COL32(30, 30, 30, 255));
+            f32 level = 0.0f;
+            for (const auto* bus : mixer.GetAllBuses()) level += bus->vuLevel;
+            level = Math::Clamp(level * 0.25f, 0.0f, 1.0f);
+            f32 barH = level * meterH;
+            ImU32 meterCol = (level > 0.8f) ? IM_COL32(255, 60, 60, 255) : IM_COL32(100, 255, 120, 255);
+            dl->AddRectFilled(ImVec2(pos.x, pos.y + meterH - barH), ImVec2(pos.x + barW, pos.y + meterH), meterCol);
+            ImGui::Dummy(ImVec2(barW, meterH));
+        }
+
+        ImGui::Text("%.0f%%", masterVol * 100.0f);
+        ImGui::EndGroup();
+    }
+
+    // Bus strips
     for (int ch = 0; ch < 4; ch++) {
+        ImGui::SameLine(0, 12);
+        ImGui::BeginGroup();
+
+        ImGui::TextColored(channelColors[ch], "%s", channelNames[ch]);
+
         auto channel = static_cast<Audio::AudioChannel>(ch);
         f32 chVol = audio ? audio->GetChannelVolume(channel) : 1.0f;
 
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, channelColors[ch]);
-        ImGui::AlignTextToFramePadding();
-        ImGui::Text("%-6s", channelNames[ch]);
-        ImGui::SameLine(70);
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 50);
-        char sliderId[32];
-        snprintf(sliderId, sizeof(sliderId), "##ChVol%d", ch);
-        if (ImGui::SliderFloat(sliderId, &chVol, 0.0f, 1.0f, "%.2f")) {
-            if (audio) audio->SetChannelVolume(channel, chVol);
-        }
+        // Volume fader
+        char faderId[32]; snprintf(faderId, sizeof(faderId), "##BusVol%d", ch);
+        ImGui::VSliderFloat(faderId, ImVec2(20, meterH), &chVol, 0.0f, 1.0f, "");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s: %.0f%%", channelNames[ch], chVol * 100.0f);
+        if (audio) audio->SetChannelVolume(channel, chVol);
+
+        // VU meter
         ImGui::SameLine();
-        char muteBtnId[32];
-        snprintf(muteBtnId, sizeof(muteBtnId), "M##Mute%d", ch);
-        if (ImGui::SmallButton(muteBtnId)) {
-            if (audio) audio->SetChannelVolume(channel, chVol > 0.0f ? 0.0f : 1.0f);
+        {
+            ImVec2 pos = ImGui::GetCursorScreenPos();
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            f32 barW = 8.0f;
+            dl->AddRectFilled(pos, ImVec2(pos.x + barW, pos.y + meterH), IM_COL32(30, 30, 30, 255));
+            const Audio::AudioBus* bus = mixer.GetBus(channelNames[ch]);
+            f32 level = bus ? Math::Clamp(bus->vuLevel, 0.0f, 1.0f) : 0.0f;
+            f32 peak = bus ? Math::Clamp(bus->vuPeak, 0.0f, 1.0f) : 0.0f;
+            f32 barH = level * meterH;
+            dl->AddRectFilled(ImVec2(pos.x, pos.y + meterH - barH), ImVec2(pos.x + barW, pos.y + meterH), channelColorsU32[ch]);
+            // Peak marker
+            if (peak > 0.01f) {
+                f32 peakY = pos.y + meterH - peak * meterH;
+                dl->AddLine(ImVec2(pos.x, peakY), ImVec2(pos.x + barW, peakY), IM_COL32(255, 255, 255, 200), 1.5f);
+            }
+            ImGui::Dummy(ImVec2(barW, meterH));
         }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Mute/unmute %s channel", channelNames[ch]);
-        ImGui::PopStyleColor();
+
+        // Sound count + Mute/Solo
+        u32 soundCount = 0;
+        const Audio::AudioBus* bus = mixer.GetBus(channelNames[ch]);
+        if (bus) soundCount = bus->activeSoundCount;
+        ImGui::Text("%u snd", soundCount);
+
+        // Mute button
+        bool muted = bus && bus->muted;
+        if (muted) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+        char muteId[16]; snprintf(muteId, sizeof(muteId), "M##M%d", ch);
+        if (ImGui::SmallButton(muteId)) {
+            if (audio) {
+                Audio::AudioBus* mutBus = audio->GetMixer().GetBus(channelNames[ch]);
+                if (mutBus) mutBus->muted = !mutBus->muted;
+            }
+        }
+        if (muted) ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Mute %s", channelNames[ch]);
+
+        // Solo button
+        ImGui::SameLine();
+        bool soloed = bus && bus->solo;
+        if (soloed) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.7f, 0.1f, 1.0f));
+        char soloId[16]; snprintf(soloId, sizeof(soloId), "S##S%d", ch);
+        if (ImGui::SmallButton(soloId)) {
+            if (audio) {
+                Audio::AudioBus* solBus = audio->GetMixer().GetBus(channelNames[ch]);
+                if (solBus) solBus->solo = !solBus->solo;
+            }
+        }
+        if (soloed) ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Solo %s", channelNames[ch]);
+
+        // Mini EQ curve
+        {
+            ImVec2 eqPos = ImGui::GetCursorScreenPos();
+            f32 eqW = 50.0f, eqH = 30.0f;
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            dl->AddRectFilled(eqPos, ImVec2(eqPos.x + eqW, eqPos.y + eqH), IM_COL32(20, 20, 25, 200), 2.0f);
+
+            if (bus) {
+                // Draw 3-band EQ curve approximation
+                f32 midY = eqPos.y + eqH * 0.5f;
+                ImVec2 prev(eqPos.x, midY - bus->eqLow.gain * 1.5f);
+                for (int x = 1; x <= static_cast<int>(eqW); x++) {
+                    f32 t = static_cast<f32>(x) / eqW;
+                    f32 gain = 0.0f;
+                    if (t < 0.3f) gain = bus->eqLow.gain * (1.0f - t / 0.3f);
+                    else if (t < 0.7f) gain = bus->eqMid.gain * std::exp(-((t - 0.5f) * (t - 0.5f)) / (0.02f * bus->eqMid.q));
+                    else gain = bus->eqHigh.gain * ((t - 0.7f) / 0.3f);
+                    ImVec2 cur(eqPos.x + x, midY - gain * 1.5f);
+                    dl->AddLine(prev, cur, channelColorsU32[ch], 1.5f);
+                    prev = cur;
+                }
+                // Center line
+                dl->AddLine(ImVec2(eqPos.x, midY), ImVec2(eqPos.x + eqW, midY), IM_COL32(80, 80, 80, 100));
+            }
+            ImGui::Dummy(ImVec2(eqW, eqH));
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("EQ: Low %.1fdB Mid %.1fdB High %.1fdB",
+                bus ? bus->eqLow.gain : 0.0f, bus ? bus->eqMid.gain : 0.0f, bus ? bus->eqHigh.gain : 0.0f);
+        }
+
+        ImGui::EndGroup();
     }
+    ImGui::EndGroup();
 
     ImGui::Separator();
 
-    // --- Channel filter tabs ---
+    // ================================================================
+    // Sound strips — individual playing sounds
+    // ================================================================
+
+    // Channel filter tabs
     if (ImGui::BeginTabBar("MixerTabs")) {
         struct TabDef { const char* label; i32 filter; };
         TabDef tabs[] = {{"All", -1}, {"SFX", 0}, {"Music", 1}, {"UI", 2}, {"Voice", 3}};
