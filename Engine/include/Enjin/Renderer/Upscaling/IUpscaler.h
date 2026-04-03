@@ -66,6 +66,9 @@ public:
     // Query whether this backend is available (SDK compiled in + hardware support)
     virtual bool IsAvailable() const = 0;
 
+    // Get the upscaled output image view (for post-processing input)
+    virtual VkImageView GetOutputImageView() const { return VK_NULL_HANDLE; }
+
     // Standard render scale ratios for each quality preset
     static f32 GetRenderScaleForQuality(UpscalerQuality quality) {
         switch (quality) {

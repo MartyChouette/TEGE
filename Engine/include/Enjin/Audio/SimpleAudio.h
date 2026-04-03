@@ -4,6 +4,7 @@
 #include "Enjin/Math/Vector.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/Audio/AudioBus.h"
 #include <string>
 #include <unordered_map>
 #include <functional>
@@ -190,6 +191,18 @@ private:
 
     // Accessibility callback
     SoundPlayedCallback m_OnSoundPlayed;
+
+public:
+    // Audio bus mixer (hierarchical volume routing)
+    AudioMixer& GetMixer() { return m_Mixer; }
+    const AudioMixer& GetMixer() const { return m_Mixer; }
+
+    // Music crossfader
+    MusicCrossfader& GetCrossfader() { return m_Crossfader; }
+
+private:
+    AudioMixer m_Mixer;
+    MusicCrossfader m_Crossfader;
 
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
     std::unique_ptr<SteamAudioProcessor> m_SteamAudio;

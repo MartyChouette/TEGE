@@ -454,9 +454,11 @@ void EditorLayer::DrawAssetBrowserPanel() {
     };
 
     auto FormatFileSize = [](u64 bytes) -> std::string {
-        if (bytes < 1024) return std::to_string(bytes) + " B";
-        if (bytes < 1024 * 1024) return std::to_string(bytes / 1024) + " KB";
-        return std::to_string(bytes / (1024 * 1024)) + " MB";
+        char buf[32];
+        if (bytes < 1024) snprintf(buf, sizeof(buf), "%llu B", (unsigned long long)bytes);
+        else if (bytes < 1024 * 1024) snprintf(buf, sizeof(buf), "%llu KB", (unsigned long long)(bytes / 1024));
+        else snprintf(buf, sizeof(buf), "%llu MB", (unsigned long long)(bytes / (1024 * 1024)));
+        return buf;
     };
 
     if (m_AssetGridView) {
@@ -6949,6 +6951,87 @@ void EditorLayer::DrawAudioMixer() {
 #endif // DUPLICATE
 
 // ---------------------------------------------------------------------------
+// Audio Meter Strip — thin VU bar above Scene/Game view showing per-bus levels
+// ---------------------------------------------------------------------------
+void EditorLayer::DrawAudioMeterStrip() {
+    Audio::SimpleAudio* audio = m_PlayMode.IsPlaying() ? m_PlayMode.GetSimpleAudio() : nullptr;
+    if (!audio) return;
+
+    const auto& mixer = audio->GetMixer();
+    const auto& buses = mixer.GetAllBuses();
+    if (buses.empty()) return;
+
+    // Colors per bus type
+    static const ImU32 busColors[] = {
+        IM_COL32(200, 200, 200, 255),  // Master — white
+        IM_COL32(80, 180, 100, 255),   // SFX — green
+        IM_COL32(130, 100, 220, 255),  // Music — purple
+        IM_COL32(60, 150, 220, 255),   // UI — blue
+        IM_COL32(220, 150, 60, 255),   // Voice — orange
+    };
+
+    f32 barHeight = 6.0f;
+    f32 totalHeight = barHeight * 4 + 3.0f;  // 4 buses + gaps (skip Master)
+    ImVec2 pos = ImGui::GetCursorScreenPos();
+    f32 width = ImGui::GetContentRegionAvail().x;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    // Background
+    dl->AddRectFilled(pos, ImVec2(pos.x + width, pos.y + totalHeight), IM_COL32(20, 20, 25, 200), 2.0f);
+
+    // Draw a bar per bus (skip Master, show SFX/Music/UI/Voice)
+    f32 y = pos.y;
+    for (usize i = 1; i < buses.size() && i <= 4; ++i) {
+        const auto* bus = buses[i];
+        f32 level = bus->vuLevel * bus->GetEffectiveVolume();
+        f32 peak = bus->vuPeak * bus->GetEffectiveVolume();
+        f32 barW = Math::Clamp(level, 0.0f, 1.0f) * width;
+        f32 peakX = Math::Clamp(peak, 0.0f, 1.0f) * width;
+
+        ImU32 color = (i < 5) ? busColors[i] : IM_COL32(160, 160, 160, 255);
+
+        // Level bar
+        if (barW > 0.0f) {
+            dl->AddRectFilled(ImVec2(pos.x, y), ImVec2(pos.x + barW, y + barHeight), color);
+        }
+
+        // Peak hold marker (thin line)
+        if (peakX > 1.0f) {
+            dl->AddLine(ImVec2(pos.x + peakX, y), ImVec2(pos.x + peakX, y + barHeight),
+                IM_COL32(255, 255, 255, 180), 1.5f);
+        }
+
+        // Bus name label (small, left-aligned)
+        dl->AddText(ImVec2(pos.x + 2, y - 1), IM_COL32(200, 200, 200, 140), bus->name.c_str());
+
+        // Active sound count (right-aligned, only if > 0)
+        if (bus->activeSoundCount > 0) {
+            char countBuf[16];
+            snprintf(countBuf, sizeof(countBuf), "%u", bus->activeSoundCount);
+            ImVec2 textSize = ImGui::CalcTextSize(countBuf);
+            dl->AddText(ImVec2(pos.x + width - textSize.x - 4, y - 1), color, countBuf);
+        }
+
+        y += barHeight + 1.0f;
+    }
+
+    // Tooltip on hover
+    ImVec2 mousePos = ImGui::GetMousePos();
+    if (mousePos.x >= pos.x && mousePos.x <= pos.x + width &&
+        mousePos.y >= pos.y && mousePos.y <= pos.y + totalHeight) {
+        ImGui::BeginTooltip();
+        for (usize i = 1; i < buses.size() && i <= 4; ++i) {
+            const auto* bus = buses[i];
+            ImGui::Text("%s: %.0f%% vol, %u sounds", bus->name.c_str(),
+                bus->GetEffectiveVolume() * 100.0f, bus->activeSoundCount);
+        }
+        ImGui::EndTooltip();
+    }
+
+    ImGui::Dummy(ImVec2(width, totalHeight));
+}
+
+// ---------------------------------------------------------------------------
 // Debug Workstation (F2) — editor/engine debug metrics & tools window
 // ---------------------------------------------------------------------------
 void EditorLayer::DrawDebugWorkstation() {
@@ -7313,6 +7396,74 @@ void EditorLayer::DrawDebugWorkstation() {
 #else
             ImGui::Text("Platform: Unknown");
 #endif
+
+            ImGui::EndTabItem();
+        }
+
+        // =====================================================================
+        // Tab 6 — Memory
+        // =====================================================================
+        if (ImGui::BeginTabItem("Memory")) {
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Entity Budget --");
+
+            if (m_World) {
+                u32 entityCount = 0;
+                for (auto e : m_World->GetEntitiesWithComponent<ECS::TransformComponent>()) {
+                    (void)e; entityCount++;
+                }
+                u32 meshCount = 0;
+                for (auto e : m_World->GetEntitiesWithComponent<ECS::MeshComponent>()) {
+                    (void)e; meshCount++;
+                }
+                ImGui::Text("Entities (with Transform): %u", entityCount);
+                ImGui::Text("Meshes: %u", meshCount);
+            }
+
+            // Render system memory
+            if (m_RenderSystem) {
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Render Buffers --");
+                ImGui::Text("Sorted render list: %zu entries", m_RenderSystem->GetSortedRenderListSize());
+                ImGui::Text("Entity render data: %zu slots", m_RenderSystem->GetEntityRenderDataSize());
+            }
+
+            // Audio
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Audio --");
+            Audio::SimpleAudio* audio = m_PlayMode.IsPlaying() ? m_PlayMode.GetSimpleAudio() : nullptr;
+            if (audio) {
+                u32 totalSounds = 0;
+                for (const auto* bus : audio->GetMixer().GetAllBuses()) totalSounds += bus->activeSoundCount;
+                ImGui::Text("Active sounds: %u", totalSounds);
+                ImGui::Text("Buses: %zu", audio->GetMixer().GetAllBuses().size());
+            } else {
+                ImGui::TextDisabled("Not in play mode");
+            }
+
+            // Rewind
+            if (m_World) {
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Rewind System --");
+                bool any = false;
+                for (auto entity : m_World->GetEntitiesWithComponent<ECS::RecordRewindComponent>()) {
+                    auto* rr = m_World->GetComponent<ECS::RecordRewindComponent>(entity);
+                    if (rr) { any = true;
+                        ImGui::Text("Entity: %u/%u frames, ~%.1f KB",
+                            rr->history.Count(), rr->history.Capacity(),
+                            static_cast<f32>(rr->history.MemoryUsage()) / 1024.0f);
+                    }
+                }
+                for (auto entity : m_World->GetEntitiesWithComponent<ECS::SceneRewindComponent>()) {
+                    auto* sr = m_World->GetComponent<ECS::SceneRewindComponent>(entity);
+                    if (sr) { any = true;
+                        ImGui::Text("Scene: %u/%u frames, ~%.1f KB, cache: %zu",
+                            sr->history.Count(), sr->history.Capacity(),
+                            static_cast<f32>(sr->history.MemoryUsage()) / 1024.0f,
+                            sr->prevFrameCache.size());
+                    }
+                }
+                if (!any) ImGui::TextDisabled("No rewind components");
+            }
 
             ImGui::EndTabItem();
         }

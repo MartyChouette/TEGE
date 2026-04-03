@@ -304,6 +304,36 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HealthComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::HealthComponent>(e); },
             "health"},
+        {"Reverb Zone", "Audio", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ReverbZoneComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ReverbZoneComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ReverbZoneComponent>(e); },
+            "reverbZone"},
+        {"Ambient Sound Layer", "Audio", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AmbientSoundLayerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AmbientSoundLayerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::AmbientSoundLayerComponent>(e); },
+            "ambientSoundLayer"},
+        {"Music Zone", "Audio", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::MusicZoneComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MusicZoneComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::MusicZoneComponent>(e); },
+            "musicZone"},
+        {"Audio Snapshot Trigger", "Audio", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AudioSnapshotTriggerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AudioSnapshotTriggerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::AudioSnapshotTriggerComponent>(e); },
+            "audioSnapshotTrigger"},
+        {"Audio Occlusion", "Audio", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AudioOcclusionComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AudioOcclusionComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::AudioOcclusionComponent>(e); },
+            "audioOcclusion"},
+        {"Lip Sync", "Audio", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::LipSyncComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LipSyncComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::LipSyncComponent>(e); },
+            "lipSync"},
         {"Pose Library", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PoseLibraryComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PoseLibraryComponent>(e); },
@@ -1276,6 +1306,24 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::AudioListenerComponent>(m_PrimarySelected)) {
             DrawAudioListenerComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::ReverbZoneComponent>(m_PrimarySelected)) {
+            DrawReverbZoneComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::AmbientSoundLayerComponent>(m_PrimarySelected)) {
+            DrawAmbientSoundLayerComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::MusicZoneComponent>(m_PrimarySelected)) {
+            DrawMusicZoneComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::AudioSnapshotTriggerComponent>(m_PrimarySelected)) {
+            DrawAudioSnapshotTriggerComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::AudioOcclusionComponent>(m_PrimarySelected)) {
+            DrawAudioOcclusionComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::LipSyncComponent>(m_PrimarySelected)) {
+            DrawLipSyncComponent(m_PrimarySelected);
         }
 
         // AI components

@@ -206,6 +206,7 @@ bool RecordRewindSystem::HasEntityChanged(const EntitySnapshot& current, const E
 
 void RecordRewindSystem::UpdateEntityRewind(f32 deltaTime) {
     for (auto entity : m_World->GetEntitiesWithComponent<ECS::RecordRewindComponent>()) {
+        if (!m_World->IsValid(entity)) continue;
         auto* rr = m_World->GetComponent<ECS::RecordRewindComponent>(entity);
         if (!rr || !rr->enabled) continue;
 
@@ -298,6 +299,7 @@ void RecordRewindSystem::UpdateEntityRewind(f32 deltaTime) {
 
 void RecordRewindSystem::UpdateSceneRewind(f32 deltaTime) {
     for (auto manager : m_World->GetEntitiesWithComponent<ECS::SceneRewindComponent>()) {
+        if (!m_World->IsValid(manager)) continue;
         auto* sr = m_World->GetComponent<ECS::SceneRewindComponent>(manager);
         if (!sr || !sr->enabled) continue;
 
@@ -424,13 +426,12 @@ void RecordRewindSystem::UpdateSceneRewind(f32 deltaTime) {
                     }
                 }
 
-                // Update previous-frame cache (always track full state for delta detection)
-                sr->prevFrameCache.clear();
+                // Update previous-frame cache in-place (avoids clear+rebuild rehashing).
+                // Overwrite existing entries; new entities get inserted; stale entries are harmless.
                 for (auto entity : m_World->GetEntitiesWithComponent<ECS::TransformComponent>()) {
                     if (entity == manager) continue;
-                    EntitySnapshot cacheSnap;
-                    CaptureEntitySnapshot(entity, cacheSnap, sr->channels);
-                    sr->prevFrameCache[entity] = std::move(cacheSnap);
+                    auto& cached = sr->prevFrameCache[entity]; // insert-or-access, no rehash if exists
+                    CaptureEntitySnapshot(entity, cached, sr->channels);
                 }
 
                 sr->history.Push(std::move(frame));

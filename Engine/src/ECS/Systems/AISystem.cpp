@@ -60,9 +60,11 @@ void AISystem::Update(f32 deltaTime) {
 
     // Iterate all entities with AIControllerComponent + TransformComponent
     for (Entity entity : m_World->GetEntitiesWithComponent<AIControllerComponent>()) {
+        if (!m_World->IsValid(entity)) continue;
         if (!m_World->HasComponent<TransformComponent>(entity)) continue;
 
         auto* ai = m_World->GetComponent<AIControllerComponent>(entity);
+        if (!ai) continue;
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
 
         // Get or create persistent agent state

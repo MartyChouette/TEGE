@@ -114,7 +114,7 @@ void Water3D::GenerateMesh(std::vector<Math::Vector3>& positions,
 }
 
 void Water3D::BuildEntityMesh(ECS::World* world, ECS::Entity entity) const {
-    if (!world) return;
+    if (!world || !world->IsValid(entity)) return;
 
     // Generate the mesh data from the CPU simulation
     std::vector<Math::Vector3> positions;

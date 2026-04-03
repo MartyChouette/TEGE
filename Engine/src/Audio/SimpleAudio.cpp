@@ -178,7 +178,7 @@ bool SimpleAudio::LoadWAV(const std::string& filepath, AudioClipData& clip) {
     clip.filepath = filepath;
     clip.duration = 0.0f; // Will be determined by miniaudio at play time
 
-    ENJIN_LOG_INFO(Audio, "Registered audio file: %s (%lld bytes)", filepath.c_str(), (long long)fileSize);
+    ENJIN_LOG_INFO(Audio, "Registered audio file: %s (%lld bytes)", filepath.c_str(), static_cast<long long>(fileSize));
     return true;
 }
 
@@ -623,12 +623,41 @@ void SimpleAudio::StopChannel(AudioChannel channel) {
 }
 
 f32 SimpleAudio::EffectiveVolume(f32 instanceVolume, AudioChannel channel) const {
+    // Route through bus mixer — channel enum maps to named bus
+    static const char* channelBusNames[] = {"SFX", "Music", "UI", "Voice"};
     auto idx = static_cast<usize>(channel);
-    f32 channelVol = (idx < static_cast<usize>(AudioChannel::Count)) ? m_ChannelVolumes[idx] : 1.0f;
-    return instanceVolume * channelVol * m_MasterVolume;
+    const char* busName = (idx < 4) ? channelBusNames[idx] : "SFX";
+
+    f32 busVol = m_Mixer.GetEffectiveVolume(busName);
+
+    // Also apply legacy channel volume for backward compatibility
+    f32 legacyVol = (idx < static_cast<usize>(AudioChannel::Count)) ? m_ChannelVolumes[idx] : 1.0f;
+
+    return instanceVolume * busVol * legacyVol * m_MasterVolume;
 }
 
 void SimpleAudio::Update(f32 deltaTime) {
+    // Update bus mixer (volume fades, snapshot transitions)
+    m_Mixer.Update(deltaTime);
+    m_Crossfader.Update(deltaTime);
+
+    // Compute per-bus VU levels from active sounds
+    u32 busSoundCounts[4] = {0, 0, 0, 0};
+    f32 busRmsLevels[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+    for (const auto& [handle, sound] : m_Sounds) {
+        if (!sound.isPlaying) continue;
+        auto chIdx = static_cast<usize>(sound.channel);
+        if (chIdx < 4) {
+            busSoundCounts[chIdx]++;
+            busRmsLevels[chIdx] += sound.volume * 0.5f;  // Approximate RMS from volume
+        }
+    }
+    static const char* busNames[] = {"SFX", "Music", "UI", "Voice"};
+    for (int i = 0; i < 4; ++i) {
+        f32 rms = (busSoundCounts[i] > 0) ? busRmsLevels[i] / busSoundCounts[i] : 0.0f;
+        m_Mixer.UpdateVU(busNames[i], rms, busSoundCounts[i]);
+    }
+
     std::vector<SoundHandle> toRemove;
 
     for (auto& [handle, sound] : m_Sounds) {
@@ -672,8 +701,10 @@ void SimpleAudio::UpdateAudioSources(f32 deltaTime) {
     if (!m_World) return;
 
     for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::AudioSourceComponent>()) {
+        if (!m_World->IsValid(entity)) continue;
 
         auto* audio = m_World->GetComponent<ECS::AudioSourceComponent>(entity);
+        if (!audio) continue;
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
 
         Math::Vector3 position = transform ? transform->position : Math::Vector3(0, 0, 0);

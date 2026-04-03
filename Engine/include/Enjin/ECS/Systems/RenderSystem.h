@@ -6,6 +6,14 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Mesh.h"
 
+// Forward declarations for cached component storage (avoids header includes)
+namespace Enjin::ECS {
+    struct ArtStyleComponent;
+    struct Sprite2DComponent;
+    struct WaterVolumeComponent;
+    struct Water3DComponent;
+}
+
 #if ENJIN_RENDERER_WEBGPU
 #include "Enjin/Renderer/WebGPU/WebGPURenderer.h"
 #include "Enjin/Renderer/WebGPU/WebGPUPipeline.h"
@@ -269,6 +277,10 @@ public:
     }
     // Call after shadow state changes to update offscreen descriptor bindings
     void RefreshDescriptorsIfDirty();
+
+    // Memory profiling queries
+    usize GetSortedRenderListSize() const { return m_SortedRenderList.size(); }
+    usize GetEntityRenderDataSize() const { return m_EntityRenderData.size(); }
 
     // Editor viewport display modes
     void SetEditorWireframe(bool enabled) { m_EditorWireframe = enabled; }
@@ -596,6 +608,10 @@ private:
     ComponentStorage<MaterialSlotsComponent>* m_CachedMaterialSlotsStorage = nullptr;
     ComponentStorage<AnimatorComponent>* m_CachedAnimatorStorage = nullptr;
     ComponentStorage<TextComponent>* m_CachedTextStorage = nullptr;
+    ComponentStorage<ArtStyleComponent>* m_CachedArtStyleStorage = nullptr;
+    ComponentStorage<Sprite2DComponent>* m_CachedSpriteStorage = nullptr;
+    ComponentStorage<WaterVolumeComponent>* m_CachedWaterVolumeStorage = nullptr;
+    ComponentStorage<Water3DComponent>* m_CachedWater3DStorage = nullptr;
 
     World* m_World = nullptr;
 #if ENJIN_RENDERER_WEBGPU

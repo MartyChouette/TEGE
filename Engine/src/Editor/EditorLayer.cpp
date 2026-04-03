@@ -2180,15 +2180,8 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                 upscaler->Dispatch(commandBuffer, upInput);
 
                 // Redirect post-processing to read from the upscaled output.
-                // Each backend exposes GetOutputImageView() — try all known types.
-                VkImageView upscaledOutput = VK_NULL_HANDLE;
-                if (auto* fsr2 = dynamic_cast<Renderer::FSR2Upscaler*>(upscaler)) {
-                    upscaledOutput = fsr2->GetOutputImageView();
-                } else if (auto* dlss = dynamic_cast<Renderer::DLSSUpscaler*>(upscaler)) {
-                    upscaledOutput = dlss->GetOutputImageView();
-                } else if (auto* xess = dynamic_cast<Renderer::XeSSUpscaler*>(upscaler)) {
-                    upscaledOutput = xess->GetOutputImageView();
-                }
+                // Get upscaled output via base class virtual (no dynamic_cast needed)
+                VkImageView upscaledOutput = upscaler->GetOutputImageView();
                 if (upscaledOutput != VK_NULL_HANDLE) {
                     m_PostProcessing->UpdateSourceImage(upscaledOutput, m_SceneRenderTarget->GetSampler());
                 }

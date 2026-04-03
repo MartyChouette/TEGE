@@ -175,6 +175,11 @@ void EditorLayer::DrawViewportPanel() {
         }
     }
 
+    // Audio meter strip (shows per-bus VU levels during play mode)
+    if (m_PlayMode.IsPlaying()) {
+        DrawAudioMeterStrip();
+    }
+
     // Update desired render target size from available content region
     ImVec2 availSize = ImGui::GetContentRegionAvail();
     if (availSize.x > 0 && availSize.y > 0) {

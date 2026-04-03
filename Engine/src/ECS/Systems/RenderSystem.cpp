@@ -102,6 +102,10 @@ void RenderSystem::RefreshStorageCache() {
         m_CachedMaterialSlotsStorage = nullptr;
         m_CachedAnimatorStorage = nullptr;
         m_CachedTextStorage = nullptr;
+        m_CachedArtStyleStorage = nullptr;
+        m_CachedSpriteStorage = nullptr;
+        m_CachedWaterVolumeStorage = nullptr;
+        m_CachedWater3DStorage = nullptr;
         return;
     }
     m_CachedTransformStorage = m_World->GetComponentStorage<TransformComponent>();
@@ -110,6 +114,10 @@ void RenderSystem::RefreshStorageCache() {
     m_CachedMaterialSlotsStorage = m_World->GetComponentStorage<MaterialSlotsComponent>();
     m_CachedAnimatorStorage = m_World->GetComponentStorage<AnimatorComponent>();
     m_CachedTextStorage = m_World->GetComponentStorage<TextComponent>();
+    m_CachedArtStyleStorage = m_World->GetComponentStorage<ArtStyleComponent>();
+    m_CachedSpriteStorage = m_World->GetComponentStorage<Sprite2DComponent>();
+    m_CachedWaterVolumeStorage = m_World->GetComponentStorage<WaterVolumeComponent>();
+    m_CachedWater3DStorage = m_World->GetComponentStorage<Water3DComponent>();
 }
 
 void RenderSystem::Initialize() {
@@ -956,7 +964,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Update skeletal animators (only iterate entities that have AnimatorComponent)
     for (Entity entity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
-        AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+        AnimatorComponent* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
         if (animComp) {
             animComp->Update(deltaTime);
         }
@@ -2013,7 +2021,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             }
 
             // Per-entity art style override (ArtStyleComponent)
-            ArtStyleComponent* artStyle = m_World->GetComponent<ArtStyleComponent>(entity);
+            ArtStyleComponent* artStyle = m_CachedArtStyleStorage ? m_CachedArtStyleStorage->Get(entity) : nullptr;
             if (artStyle && artStyle->style != ArtStyleType::Inherit) {
                 switch (artStyle->style) {
                 case ArtStyleType::PrePBR:
@@ -2065,7 +2073,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             }
 
             // Set water surface flag for water volume entities
-            WaterVolumeComponent* waterVol = m_World->GetComponent<WaterVolumeComponent>(entity);
+            WaterVolumeComponent* waterVol = m_CachedWaterVolumeStorage ? m_CachedWaterVolumeStorage->Get(entity) : m_World->GetComponent<WaterVolumeComponent>(entity);
             if (waterVol) {
                 pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE — always set, shader handles freeze
                 pushConstants.parallaxScale = waterVol->freezeProgress; // repurpose for water (POM skips water)
@@ -2090,8 +2098,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     pushConstants.baseColor.z * (1.0f - fp) + waterVol->iceColor.z * fp
                 );
                 pushConstants.opacity = pushConstants.opacity * (1.0f - fp) + waterVol->iceOpacity * fp;
-            } else if (m_World->HasComponent<Water3DComponent>(entity)) {
-                auto* water3d = m_World->GetComponent<Water3DComponent>(entity);
+            } else if ((m_CachedWater3DStorage ? m_CachedWater3DStorage->Has(entity) : m_World->HasComponent<Water3DComponent>(entity))) {
+                auto* water3d = m_CachedWater3DStorage ? m_CachedWater3DStorage->Get(entity) : m_World->GetComponent<Water3DComponent>(entity);
                 pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE for Water3D
                 pushConstants.parallaxScale = 0.0f; // no freeze — shader reads this as freezeProgress
                 if (water3d) {
@@ -2678,7 +2686,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 pushConstants.flags |= (1 << 4);
             }
 
-            WaterVolumeComponent* waterVol = m_World->GetComponent<WaterVolumeComponent>(entity);
+            WaterVolumeComponent* waterVol = m_CachedWaterVolumeStorage ? m_CachedWaterVolumeStorage->Get(entity) : m_World->GetComponent<WaterVolumeComponent>(entity);
             if (waterVol) {
                 pushConstants.flags |= (1 << 5);
                 pushConstants.parallaxScale = waterVol->freezeProgress;
@@ -2701,8 +2709,8 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                     pushConstants.baseColor.z * (1.0f - fp) + waterVol->iceColor.z * fp
                 );
                 pushConstants.opacity = pushConstants.opacity * (1.0f - fp) + waterVol->iceOpacity * fp;
-            } else if (m_World->HasComponent<Water3DComponent>(entity)) {
-                auto* water3d = m_World->GetComponent<Water3DComponent>(entity);
+            } else if ((m_CachedWater3DStorage ? m_CachedWater3DStorage->Has(entity) : m_World->HasComponent<Water3DComponent>(entity))) {
+                auto* water3d = m_CachedWater3DStorage ? m_CachedWater3DStorage->Get(entity) : m_World->GetComponent<Water3DComponent>(entity);
                 pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE for Water3D
                 pushConstants.parallaxScale = 0.0f; // no freeze
                 if (water3d) {
@@ -4391,7 +4399,7 @@ bool RenderSystem::IsPoolEligible(Entity entity) const {
     if (m_World->HasComponent<Terrain2DComponent>(entity)) return false;
     if (m_World->HasComponent<JellyMeshComponent>(entity)) return false;
     if (m_World->HasComponent<WaterVolumeComponent>(entity)) return false;
-    if (m_World->HasComponent<Water3DComponent>(entity)) return false;
+    if ((m_CachedWater3DStorage ? m_CachedWater3DStorage->Has(entity) : m_World->HasComponent<Water3DComponent>(entity))) return false;
     // Skinned meshes stay per-entity (bone deformation updates vertex data)
     if (m_World->HasComponent<AnimatorComponent>(entity)) return false;
     return true;
@@ -4472,7 +4480,7 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
     // Create bone SSBO if entity has a skeleton for animation.
     // The AnimatorComponent may be on this entity or on a sibling (Mixamo FBX
     // puts mesh and skeleton on different entities). Search globally if needed.
-    AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+    AnimatorComponent* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
     if (!animComp) {
         // Check if this mesh has bone weights — if so, find any AnimatorComponent
         bool hasBoneWeights = false;
@@ -4998,7 +5006,7 @@ void RenderSystem::BuildMaterialSSBO() {
         }
 
         // Apply per-entity ArtStyleComponent overrides to MaterialGPU
-        ArtStyleComponent* artStyle = m_World->GetComponent<ArtStyleComponent>(entity);
+        ArtStyleComponent* artStyle = m_CachedArtStyleStorage ? m_CachedArtStyleStorage->Get(entity) : nullptr;
         if (artStyle && artStyle->style != ArtStyleType::Inherit) {
             if (artStyle->style == ArtStyleType::MaterialExpression) {
                 if (artStyle->matExpr_sssIntensity > 0.0f) {
@@ -5703,7 +5711,7 @@ void RenderSystem::RenderEntity(Entity entity) {
     }
 
     // Set water surface flag for water volume entities
-    WaterVolumeComponent* waterVol = m_World->GetComponent<WaterVolumeComponent>(entity);
+    WaterVolumeComponent* waterVol = m_CachedWaterVolumeStorage ? m_CachedWaterVolumeStorage->Get(entity) : m_World->GetComponent<WaterVolumeComponent>(entity);
     if (waterVol) {
         pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE — always set, shader handles freeze
         pushConstants.parallaxScale = waterVol->freezeProgress; // repurpose for water (POM skips water)
@@ -5728,8 +5736,8 @@ void RenderSystem::RenderEntity(Entity entity) {
             pushConstants.baseColor.z * (1.0f - fp) + waterVol->iceColor.z * fp
         );
         pushConstants.opacity = pushConstants.opacity * (1.0f - fp) + waterVol->iceOpacity * fp;
-    } else if (m_World->HasComponent<Water3DComponent>(entity)) {
-        auto* water3d = m_World->GetComponent<Water3DComponent>(entity);
+    } else if ((m_CachedWater3DStorage ? m_CachedWater3DStorage->Has(entity) : m_World->HasComponent<Water3DComponent>(entity))) {
+        auto* water3d = m_CachedWater3DStorage ? m_CachedWater3DStorage->Get(entity) : m_World->GetComponent<Water3DComponent>(entity);
         pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE for Water3D
         pushConstants.parallaxScale = 0.0f; // no freeze
         if (water3d) {
@@ -5950,7 +5958,7 @@ void RenderSystem::RenderOutlinePass() {
             outlineColor = material->outlineColor;
         }
         // Per-entity ArtStyleComponent cel/toon outline override
-        auto* artStyleOutline = m_World->GetComponent<ArtStyleComponent>(entity);
+        auto* artStyleOutline = m_CachedArtStyleStorage ? m_CachedArtStyleStorage->Get(entity) : nullptr;
         if (artStyleOutline && artStyleOutline->style == ArtStyleType::CelToon && artStyleOutline->cel_outlineWidth > 0.0f) {
             outlineWidth = artStyleOutline->cel_outlineWidth;
             outlineColor = artStyleOutline->cel_outlineColor;
@@ -6045,7 +6053,7 @@ void RenderSystem::RenderOutlinePassForTarget() {
             outlineWidth = material->outlineWidth;
             outlineColor = material->outlineColor;
         }
-        auto* artStyleOPT = m_World->GetComponent<ArtStyleComponent>(entity);
+        auto* artStyleOPT = m_CachedArtStyleStorage ? m_CachedArtStyleStorage->Get(entity) : nullptr;
         if (artStyleOPT && artStyleOPT->style == ArtStyleType::CelToon && artStyleOPT->cel_outlineWidth > 0.0f) {
             outlineWidth = artStyleOPT->cel_outlineWidth;
             outlineColor = artStyleOPT->cel_outlineColor;
@@ -6347,7 +6355,7 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
 
     // Skinned mesh handling: upload bone matrices and use identity model matrix
     // so shadow geometry matches the main pass's skinned positions.
-    AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+    AnimatorComponent* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
     if (!animComp) {
         // Mesh entity may not have animator — search globally (same as main pass)
         for (auto animEntity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
@@ -6845,7 +6853,7 @@ void RenderSystem::UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer) {
 
 void RenderSystem::EnsureWaterMeshes() {
     for (Entity entity : m_World->GetEntitiesWithComponent<WaterVolumeComponent>()) {
-        auto* waterVol = m_World->GetComponent<WaterVolumeComponent>(entity);
+        auto* waterVol = m_CachedWaterVolumeStorage ? m_CachedWaterVolumeStorage->Get(entity) : m_World->GetComponent<WaterVolumeComponent>(entity);
         if (!waterVol) continue;
         if (waterVol->meshCreated && m_World->GetComponent<MeshComponent>(entity)) continue;
 
@@ -6951,10 +6959,14 @@ void RenderSystem::EnsureWaterMeshes() {
 }
 
 void RenderSystem::EnsureWater3DMeshes() {
+    if (!m_World) return;
     for (Entity entity : m_World->GetEntitiesWithComponent<Water3DComponent>()) {
-        auto* water3d = m_World->GetComponent<Water3DComponent>(entity);
+        if (!m_World->IsValid(entity)) continue;
+        auto* water3d = m_CachedWater3DStorage ? m_CachedWater3DStorage->Get(entity) : m_World->GetComponent<Water3DComponent>(entity);
         if (!water3d) continue;
         if (water3d->meshCreated && m_World->GetComponent<MeshComponent>(entity)) continue;
+        // Guard against zero/negative dimensions
+        if (water3d->settings.width < 0.01f || water3d->settings.depth < 0.01f) continue;
 
         // Use Water3D to build the initial mesh on this entity
         Effects::Water3D builder;

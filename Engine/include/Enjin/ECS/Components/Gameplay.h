@@ -260,12 +260,141 @@ struct AudioSourceComponent {
 
     // Priority (lower = higher priority when too many sounds)
     i32 priority = 128;
+
+    // Sound randomization — per-play variation for natural-sounding effects
+    f32 pitchMin = 1.0f;               // Random pitch range minimum
+    f32 pitchMax = 1.0f;               // Random pitch range maximum (1.0 = no variation)
+    f32 volumeMin = 1.0f;              // Random volume range minimum
+    f32 volumeMax = 1.0f;              // Random volume range maximum
+    std::vector<std::string> clipVariations;  // Alternative clips chosen randomly
+    bool noRepeat = true;              // Avoid repeating the same clip twice
+    u32 lastPlayedIndex = 0;           // Runtime: tracks last clip for no-repeat
+
+    // Sound pooling — pre-allocate voices for rapid fire SFX
+    bool usePooling = false;
+    u32 poolSize = 8;
+
+    // Accessibility: description of this sound for audio-impaired users
+    std::string audioDescription;
 };
 
 // Audio Listener - the "ears" of the scene
 struct AudioListenerComponent {
     bool isActive = true;
     f32 volumeScale = 1.0f;
+};
+
+// ============================================================================
+// ADVANCED AUDIO — Reverb zones, ambient layers, music zones, snapshots, lip sync
+// ============================================================================
+
+// Reverb zone — applies reverb effect when listener is inside the volume.
+// Follows the same shape/priority/blend pattern as PostProcessVolumeComponent.
+struct ReverbZoneComponent {
+    enum class Shape : u8 { Box, Sphere };
+    Shape shape = Shape::Box;
+    Math::Vector3 halfExtents = Math::Vector3(5.0f);
+    i32 priority = 0;
+    bool isActive = true;
+    bool isGlobal = false;           // Scene-wide default reverb
+    f32 blendRadius = 2.0f;          // Fade-in distance outside the shape
+
+    // Reverb parameters
+    f32 roomSize = 0.5f;             // 0 = tiny, 1 = huge
+    f32 damping = 0.5f;              // High-frequency absorption (0 = bright, 1 = muffled)
+    f32 wetDryMix = 0.3f;            // 0 = dry, 1 = fully wet
+    f32 decayTime = 1.5f;            // Seconds of reverb tail
+    f32 preDelay = 0.02f;            // Gap before first reflection
+
+    // Preset (overrides individual params when set)
+    enum class Preset : u8 {
+        Custom, SmallRoom, LargeRoom, Hall, Cathedral, Cave, Outdoors, Bathroom, UnderWater
+    };
+    Preset preset = Preset::Custom;
+};
+
+// Ambient sound layer — layered environmental audio with conditions.
+struct AmbientSoundLayerComponent {
+    struct Layer {
+        std::string clipPath;
+        f32 volume = 1.0f;
+        f32 pitch = 1.0f;
+        bool loop = true;
+        std::string caption;         // Accessibility: "[Birds chirping]", "[Water flowing]"
+
+        // Conditions (layer only plays when ALL conditions are met)
+        f32 minTimeOfDay = 0.0f;     // 0-24 hours (0 = always)
+        f32 maxTimeOfDay = 24.0f;
+        f32 minWeatherIntensity = 0.0f;
+        f32 maxWeatherIntensity = 1.0f;
+    };
+
+    std::vector<Layer> layers;
+
+    // Zone shape
+    Math::Vector3 halfExtents = Math::Vector3(10.0f);
+    f32 blendRadius = 5.0f;
+    bool isActive = true;
+
+    // Runtime
+    std::vector<u32> layerHandles;   // Sound handles per active layer
+};
+
+// Music zone — triggers music crossfade when listener enters.
+struct MusicZoneComponent {
+    std::string trackPath;
+    f32 fadeInTime = 2.0f;
+    f32 fadeOutTime = 2.0f;
+    i32 priority = 0;
+    Math::Vector3 halfExtents = Math::Vector3(10.0f);
+    f32 blendRadius = 3.0f;
+    bool isActive = true;
+};
+
+// Audio snapshot trigger — push/pop a snapshot when listener enters/exits.
+struct AudioSnapshotTriggerComponent {
+    std::string snapshotName;        // Name of the snapshot to push (e.g., "Dialogue", "Combat")
+    Math::Vector3 halfExtents = Math::Vector3(5.0f);
+    bool isActive = true;
+
+    // Runtime
+    bool listenerInside = false;     // Tracks enter/exit state
+};
+
+// Viseme enum — standard 15-viseme set (compatible with Oculus/Meta LipSync)
+enum class Viseme : u8 {
+    Silent = 0, PP, FF, TH, DD, KK, CH, SS, NN, RR, AA, EE, IH, OH, OU, Count
+};
+
+// Lip sync — drives mouth shapes from audio playback.
+struct LipSyncComponent {
+    // Viseme data (time → viseme mapping)
+    struct VisemeKey {
+        f32 time = 0.0f;
+        Viseme viseme = Viseme::Silent;
+        f32 weight = 1.0f;
+    };
+    std::vector<VisemeKey> visemeData;
+
+    f32 blendSpeed = 10.0f;          // Interpolation speed between visemes
+    bool autoFromAmplitude = true;   // Fallback: amplitude-based mouth open/close
+
+    // Runtime state
+    Viseme currentViseme = Viseme::Silent;
+    f32 currentWeight = 0.0f;
+    Entity linkedAudioSource = 0;    // Entity with AudioSourceComponent to track
+};
+
+// Sound occlusion — muffle audio behind walls via low-pass filter.
+struct AudioOcclusionComponent {
+    bool enabled = true;
+    f32 lowPassCutoff = 800.0f;      // Frequency cutoff when fully occluded
+    f32 volumeReduction = 0.3f;      // Additional volume reduction when occluded
+    f32 updateRate = 10.0f;          // Raycast check frequency (Hz)
+
+    // Runtime
+    f32 occlusionAmount = 0.0f;      // 0 = clear, 1 = fully occluded
+    f32 updateTimer = 0.0f;
 };
 
 // ============================================================================

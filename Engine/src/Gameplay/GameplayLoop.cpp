@@ -256,8 +256,8 @@ void CheckHazardOverlaps(ECS::World* world, f32 deltaTime,
             }
         }
     };
-    for (auto e : world->GetEntitiesWithComponent<ECS::Platformer2DController>()) processHazardsForPlayer(e);
-    for (auto e : world->GetEntitiesWithComponent<ECS::TopDown2DController>()) processHazardsForPlayer(e);
+    for (auto e : world->GetEntitiesWithComponent<ECS::Platformer2DController>()) { if (world->IsValid(e)) processHazardsForPlayer(e); }
+    for (auto e : world->GetEntitiesWithComponent<ECS::TopDown2DController>()) { if (world->IsValid(e)) processHazardsForPlayer(e); }
 }
 
 // 2D enemy contact damage — Box2D kinematic-kinematic sensor events unreliable.

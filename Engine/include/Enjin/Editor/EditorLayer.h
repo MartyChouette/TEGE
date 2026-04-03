@@ -425,7 +425,14 @@ private:
     void DrawGameOverComponent(ECS::Entity entity);
     void DrawAudioSourceComponent(ECS::Entity entity);
     void DrawAudioListenerComponent(ECS::Entity entity);
+    void DrawReverbZoneComponent(ECS::Entity entity);
+    void DrawAmbientSoundLayerComponent(ECS::Entity entity);
+    void DrawMusicZoneComponent(ECS::Entity entity);
+    void DrawAudioSnapshotTriggerComponent(ECS::Entity entity);
+    void DrawAudioOcclusionComponent(ECS::Entity entity);
+    void DrawLipSyncComponent(ECS::Entity entity);
     void DrawAudioMixer();
+    void DrawAudioMeterStrip();  // Thin VU meter bar above viewport
 
     // AI components
     void DrawAIControllerComponent(ECS::Entity entity);
