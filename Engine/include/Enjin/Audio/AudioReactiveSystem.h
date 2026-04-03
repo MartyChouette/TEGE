@@ -34,6 +34,10 @@ private:
 
     ECS::World* m_World = nullptr;
     SimpleAudio* m_Audio = nullptr;
+
+    // Cached per-frame (avoids redundant lookups across subsystems)
+    Math::Vector3 m_ListenerPos;
+    const ECS::MaterialInteractionTableComponent* m_CachedMatTable = nullptr;
 };
 
 } // namespace Audio

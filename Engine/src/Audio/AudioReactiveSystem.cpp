@@ -14,6 +14,22 @@ namespace Enjin::Audio {
 void AudioReactiveSystem::Update(f32 deltaTime) {
     if (!m_World || !m_Audio) return;
 
+    // Cache listener position once (used by occlusion, reverb, ambient, music, collisions)
+    m_ListenerPos = Math::Vector3(0.0f);
+    for (auto e : m_World->GetEntitiesWithComponent<ECS::AudioListenerComponent>()) {
+        if (!m_World->IsValid(e)) continue;
+        auto* lt = m_World->GetComponent<ECS::TransformComponent>(e);
+        if (lt) { m_ListenerPos = lt->position; break; }
+    }
+
+    // Cache material interaction table (used by collision audio)
+    m_CachedMatTable = nullptr;
+    for (auto e : m_World->GetEntitiesWithComponent<ECS::MaterialInteractionTableComponent>()) {
+        if (!m_World->IsValid(e)) continue;
+        m_CachedMatTable = m_World->GetComponent<ECS::MaterialInteractionTableComponent>(e);
+        if (m_CachedMatTable) break;
+    }
+
     UpdateBeatClock(deltaTime);
     UpdateBeatSync(deltaTime);
     UpdateAudioReactive(deltaTime);
@@ -416,21 +432,11 @@ void AudioReactiveSystem::UpdateSidechain(f32 deltaTime) {
 // ============================================================================
 
 void AudioReactiveSystem::UpdateAudioCollisions(f32 deltaTime) {
-    // Find the material interaction table (if any)
-    const ECS::MaterialInteractionTableComponent* matTable = nullptr;
-    for (auto e : m_World->GetEntitiesWithComponent<ECS::MaterialInteractionTableComponent>()) {
-        if (!m_World->IsValid(e)) continue;
-        matTable = m_World->GetComponent<ECS::MaterialInteractionTableComponent>(e);
-        if (matTable) break;
-    }
+    // Use cached material interaction table (looked up once in Update)
+    const ECS::MaterialInteractionTableComponent* matTable = m_CachedMatTable;
 
     // Get listener position for distance culling
-    Math::Vector3 listenerPos(0.0f);
-    for (auto e : m_World->GetEntitiesWithComponent<ECS::AudioListenerComponent>()) {
-        if (!m_World->IsValid(e)) continue;
-        auto* lt = m_World->GetComponent<ECS::TransformComponent>(e);
-        if (lt) { listenerPos = lt->position; break; }
-    }
+    const Math::Vector3& listenerPos = m_ListenerPos;
 
     for (auto entity : m_World->GetEntitiesWithComponent<ECS::AudioCollisionComponent>()) {
         if (!m_World->IsValid(entity)) continue;
@@ -560,12 +566,7 @@ void AudioReactiveSystem::UpdateAudioCollisions(f32 deltaTime) {
 
 void AudioReactiveSystem::UpdateOcclusion(f32 deltaTime) {
     // Get listener position
-    Math::Vector3 listenerPos(0.0f);
-    for (auto e : m_World->GetEntitiesWithComponent<ECS::AudioListenerComponent>()) {
-        if (!m_World->IsValid(e)) continue;
-        auto* lt = m_World->GetComponent<ECS::TransformComponent>(e);
-        if (lt) { listenerPos = lt->position; break; }
-    }
+    const Math::Vector3& listenerPos = m_ListenerPos;
 
     for (auto entity : m_World->GetEntitiesWithComponent<ECS::AudioOcclusionComponent>()) {
         if (!m_World->IsValid(entity)) continue;
@@ -640,12 +641,7 @@ void AudioReactiveSystem::UpdateOcclusion(f32 deltaTime) {
 
 void AudioReactiveSystem::UpdateReverbZones(f32 deltaTime) {
     // Get listener position
-    Math::Vector3 listenerPos(0.0f);
-    for (auto e : m_World->GetEntitiesWithComponent<ECS::AudioListenerComponent>()) {
-        if (!m_World->IsValid(e)) continue;
-        auto* lt = m_World->GetComponent<ECS::TransformComponent>(e);
-        if (lt) { listenerPos = lt->position; break; }
-    }
+    const Math::Vector3& listenerPos = m_ListenerPos;
 
     // Find the highest-priority reverb zone the listener is inside
     ECS::ReverbZoneComponent* activeZone = nullptr;
@@ -704,12 +700,7 @@ void AudioReactiveSystem::UpdateReverbZones(f32 deltaTime) {
 // ============================================================================
 
 void AudioReactiveSystem::UpdateAmbientLayers(f32 deltaTime) {
-    Math::Vector3 listenerPos(0.0f);
-    for (auto e : m_World->GetEntitiesWithComponent<ECS::AudioListenerComponent>()) {
-        if (!m_World->IsValid(e)) continue;
-        auto* lt = m_World->GetComponent<ECS::TransformComponent>(e);
-        if (lt) { listenerPos = lt->position; break; }
-    }
+    const Math::Vector3& listenerPos = m_ListenerPos;
 
     for (auto entity : m_World->GetEntitiesWithComponent<ECS::AmbientSoundLayerComponent>()) {
         if (!m_World->IsValid(entity)) continue;
@@ -777,12 +768,7 @@ void AudioReactiveSystem::UpdateAmbientLayers(f32 deltaTime) {
 // ============================================================================
 
 void AudioReactiveSystem::UpdateMusicZones(f32 deltaTime) {
-    Math::Vector3 listenerPos(0.0f);
-    for (auto e : m_World->GetEntitiesWithComponent<ECS::AudioListenerComponent>()) {
-        if (!m_World->IsValid(e)) continue;
-        auto* lt = m_World->GetComponent<ECS::TransformComponent>(e);
-        if (lt) { listenerPos = lt->position; break; }
-    }
+    const Math::Vector3& listenerPos = m_ListenerPos;
 
     // Find the highest-priority music zone the listener is inside
     ECS::MusicZoneComponent* activeZone = nullptr;

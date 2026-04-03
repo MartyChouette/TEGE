@@ -623,12 +623,20 @@ void SimpleAudio::StopChannel(AudioChannel channel) {
 }
 
 f32 SimpleAudio::EffectiveVolume(f32 instanceVolume, AudioChannel channel) const {
-    // Route through bus mixer — channel enum maps to named bus
-    static const char* channelBusNames[] = {"SFX", "Music", "UI", "Voice"};
-    auto idx = static_cast<usize>(channel);
-    const char* busName = (idx < 4) ? channelBusNames[idx] : "SFX";
+    // Cached bus pointers — avoid per-call string-based map lookup.
+    // These are resolved once and reused (buses are never removed at runtime).
+    static const Audio::AudioBus* cachedBuses[4] = {nullptr, nullptr, nullptr, nullptr};
+    static bool busesResolved = false;
+    if (!busesResolved) {
+        cachedBuses[0] = m_Mixer.GetBus("SFX");
+        cachedBuses[1] = m_Mixer.GetBus("Music");
+        cachedBuses[2] = m_Mixer.GetBus("UI");
+        cachedBuses[3] = m_Mixer.GetBus("Voice");
+        busesResolved = true;
+    }
 
-    f32 busVol = m_Mixer.GetEffectiveVolume(busName);
+    auto idx = static_cast<usize>(channel);
+    f32 busVol = (idx < 4 && cachedBuses[idx]) ? cachedBuses[idx]->GetEffectiveVolume() : 1.0f;
 
     // Also apply legacy channel volume for backward compatibility
     f32 legacyVol = (idx < static_cast<usize>(AudioChannel::Count)) ? m_ChannelVolumes[idx] : 1.0f;

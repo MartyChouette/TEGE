@@ -23,24 +23,16 @@ AudioMixer::AudioMixer() {
 }
 
 void AudioMixer::Update(f32 deltaTime) {
-    // Apply snapshot targets
+    // Apply snapshot targets (highest priority wins, snapshots already sorted)
     if (!m_ActiveSnapshots.empty()) {
-        // Find highest-priority active snapshot per bus
-        std::unordered_map<std::string, f32> targets;
+        // Direct bus lookup — no temporary map needed.
+        // Snapshots are sorted by priority (highest first), so first match wins.
         for (const auto& snap : m_ActiveSnapshots) {
             for (const auto& [busName, vol] : snap.busVolumes) {
-                auto it = targets.find(busName);
-                if (it == targets.end()) {
-                    targets[busName] = vol;
-                }
-                // Higher priority snapshot wins (snapshots sorted by priority)
+                AudioBus* bus = GetBus(busName);
+                if (bus) bus->targetVolume = vol;
             }
-        }
-
-        // Set target volumes
-        for (const auto& [busName, targetVol] : targets) {
-            AudioBus* bus = GetBus(busName);
-            if (bus) bus->targetVolume = targetVol;
+            break; // Highest priority snapshot applied — done
         }
     }
 
