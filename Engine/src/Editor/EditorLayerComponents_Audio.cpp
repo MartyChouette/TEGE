@@ -624,7 +624,7 @@ void EditorLayer::DrawConductorComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawAudioCollisionComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("[K] Audio Collision", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = ImGui::CollapsingHeader("[K] Audio Collision (TOTK-style)", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("AudioCollCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::AudioCollisionComponent>(entity, "audioCollision", "Audio Collision");
@@ -641,22 +641,58 @@ void EditorLayer::DrawAudioCollisionComponent(ECS::Entity entity) {
         const char* matNames[] = {"Default","Metal","Wood","Stone","Glass","Flesh","Water","Dirt","Grass","Ice"};
         int mat = static_cast<int>(ac->material);
         if (ImGui::Combo("Surface Material##AC", &mat, matNames, 10)) {
-            ac->material = static_cast<ECS::AudioCollisionComponent::SurfaceMaterial>(mat);
+            ac->material = static_cast<ECS::SurfaceMaterial>(mat);
         }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Zelda TOTK-style: material determines impact sound character");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Material determines impact sound character.\nMetal×Stone sounds different from Wood×Glass.");
+
+        // Physical properties
+        InspectorUndo::DragFloat(m_UndoRedo, "Mass##AC", &ac->mass, 0.1f, 0.1f, 100.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Heavier objects = lower pitch, louder impacts");
+        InspectorUndo::DragFloat(m_UndoRedo, "Hollowness##AC", &ac->hollowness, 0.05f, 0.0f, 1.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 = solid (thud), 1 = hollow (resonant ring)");
 
         // Clip paths
-        char softBuf[256] = {}, hardBuf[256] = {};
-        strncpy(softBuf, ac->impactSoftClip.c_str(), sizeof(softBuf) - 1);
-        strncpy(hardBuf, ac->impactHardClip.c_str(), sizeof(hardBuf) - 1);
-        if (ImGui::InputText("Soft Impact##AC", softBuf, sizeof(softBuf))) ac->impactSoftClip = softBuf;
-        if (ImGui::InputText("Hard Impact##AC", hardBuf, sizeof(hardBuf))) ac->impactHardClip = hardBuf;
+        if (ImGui::TreeNode("Impact Clips##AC")) {
+            char softBuf[256] = {}, hardBuf[256] = {};
+            strncpy(softBuf, ac->impactSoftClip.c_str(), sizeof(softBuf) - 1);
+            strncpy(hardBuf, ac->impactHardClip.c_str(), sizeof(hardBuf) - 1);
+            if (ImGui::InputText("Soft##AC", softBuf, sizeof(softBuf))) ac->impactSoftClip = softBuf;
+            if (ImGui::InputText("Hard##AC", hardBuf, sizeof(hardBuf))) ac->impactHardClip = hardBuf;
+            ImGui::TreePop();
+        }
 
-        InspectorUndo::DragFloat(m_UndoRedo, "Soft Threshold##AC", &ac->softThreshold, 0.1f, 0.0f, 10.0f);
-        InspectorUndo::DragFloat(m_UndoRedo, "Hard Threshold##AC", &ac->hardThreshold, 0.1f, 0.0f, 20.0f);
-        InspectorUndo::DragFloat(m_UndoRedo, "Volume Scale##AC", &ac->volumeScale, 0.1f, 0.0f, 5.0f);
-        InspectorUndo::DragFloat(m_UndoRedo, "Pitch Variance##AC", &ac->pitchVariance, 0.01f, 0.0f, 0.5f);
-        InspectorUndo::DragFloat(m_UndoRedo, "Cooldown##AC", &ac->cooldown, 0.01f, 0.01f, 1.0f);
+        if (ImGui::TreeNode("Continuous Contact##AC")) {
+            char scrapeBuf[256] = {}, rollBuf[256] = {};
+            strncpy(scrapeBuf, ac->scrapeClip.c_str(), sizeof(scrapeBuf) - 1);
+            strncpy(rollBuf, ac->rollClip.c_str(), sizeof(rollBuf) - 1);
+            if (ImGui::InputText("Scrape##AC", scrapeBuf, sizeof(scrapeBuf))) ac->scrapeClip = scrapeBuf;
+            if (ImGui::InputText("Roll##AC", rollBuf, sizeof(rollBuf))) ac->rollClip = rollBuf;
+            InspectorUndo::DragFloat(m_UndoRedo, "Min Scrape Vel##AC", &ac->scrapeMinVelocity, 0.05f, 0.0f, 5.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Pitch Scale##AC", &ac->scrapePitchScale, 0.05f, 0.0f, 2.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much velocity affects scrape pitch (0 = constant, 1 = linear)");
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Thresholds##AC")) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Soft##ACT", &ac->softThreshold, 0.1f, 0.0f, 10.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Hard##ACT", &ac->hardThreshold, 0.1f, 0.0f, 20.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Volume Scale##ACV", &ac->volumeScale, 0.1f, 0.0f, 5.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Pitch Var##ACP", &ac->pitchVariance, 0.01f, 0.0f, 0.5f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Cooldown##ACC", &ac->cooldown, 0.01f, 0.01f, 1.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Distance Culling##AC")) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Detail Distance##ACD", &ac->detailDistance, 1.0f, 1.0f, 200.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Beyond this: use simplified sounds (skip material interaction)");
+            InspectorUndo::DragFloat(m_UndoRedo, "Cull Distance##ACD2", &ac->cullDistance, 1.0f, 1.0f, 500.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Beyond this: skip audio entirely");
+            ImGui::TreePop();
+        }
+
+        // Runtime status
+        ImGui::Separator();
+        ImGui::Text("Contact: %s | Vel: %.1f", ac->inContact ? "SCRAPING" : "None", ac->contactVelocity);
     }
 }
 

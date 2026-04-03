@@ -596,13 +596,21 @@ struct ConductorComponent {
 // AUDIO COLLISION — Physics impacts auto-generate sound
 // ============================================================================
 
-// AudioCollisionComponent — attach to any entity with a collider.
-// When this entity collides, it plays a sound based on material, velocity, mass.
+// Surface material enum — shared between collision audio and material interaction
+enum class SurfaceMaterial : u8 {
+    Default, Metal, Wood, Stone, Glass, Flesh, Water, Dirt, Grass, Ice, Count
+};
+
+inline const char* SurfaceMaterialName(SurfaceMaterial m) {
+    static const char* names[] = {"Default","Metal","Wood","Stone","Glass","Flesh","Water","Dirt","Grass","Ice"};
+    return (static_cast<u8>(m) < 10) ? names[static_cast<u8>(m)] : "Unknown";
+}
+
+// AudioCollisionComponent — TOTK-style physics audio.
+// Every surface has a material type. Impacts auto-generate sound based on
+// material combination, velocity, mass, and hollowness. Continuous contacts
+// (scraping, rolling) play looping sounds that pitch-shift with velocity.
 struct AudioCollisionComponent {
-    // Material-based sound mapping
-    enum class SurfaceMaterial : u8 {
-        Default, Metal, Wood, Stone, Glass, Flesh, Water, Dirt, Grass, Ice
-    };
     SurfaceMaterial material = SurfaceMaterial::Default;
 
     // Sound clips per impact type
@@ -618,9 +626,52 @@ struct AudioCollisionComponent {
     f32 pitchVariance = 0.15f;       // Random pitch variation per impact
     f32 cooldown = 0.05f;            // Min seconds between impacts (prevents spam)
 
+    // TOTK-inspired extensions
+    f32 hollowness = 0.0f;           // 0 = solid, 1 = hollow (affects resonance pitch)
+    f32 mass = 1.0f;                 // Object mass (heavier = lower pitch, louder)
+
+    // Continuous contact (scrape/roll)
+    f32 scrapeMinVelocity = 0.3f;    // Min velocity for continuous scrape sound
+    f32 scrapePitchScale = 0.5f;     // How much velocity affects scrape pitch (0-1)
+
+    // Distance-based detail culling (TOTK optimization)
+    f32 detailDistance = 30.0f;      // Beyond this, use simplified sounds
+    f32 cullDistance = 80.0f;        // Beyond this, skip entirely
+
     // Runtime
     f32 cooldownTimer = 0.0f;
+    u32 scrapeSoundHandle = 0;       // Handle for active continuous scrape
+    u32 rollSoundHandle = 0;         // Handle for active continuous roll
+    f32 contactVelocity = 0.0f;      // Current contact sliding velocity
+    bool inContact = false;          // Currently in sliding/rolling contact
     bool enabled = true;
+};
+
+// MaterialInteractionTable — defines what sound plays when material A hits material B.
+// Attach to a game manager entity. Shared by all AudioCollisionComponents.
+// If no table exists, falls back to the per-entity clip paths.
+struct MaterialInteractionTableComponent {
+    // Key: materialA * SurfaceMaterial::Count + materialB (symmetric: A×B == B×A)
+    // Value: clip path for that interaction
+    struct Interaction {
+        SurfaceMaterial a = SurfaceMaterial::Default;
+        SurfaceMaterial b = SurfaceMaterial::Default;
+        std::string softClip;        // Soft impact sound
+        std::string hardClip;        // Hard impact sound
+        std::string scrapeClip;      // Continuous scrape
+        f32 pitchOffset = 0.0f;      // Pitch shift for this combination
+        f32 volumeMultiplier = 1.0f; // Volume adjustment
+    };
+
+    std::vector<Interaction> interactions;
+
+    // Find the interaction for two materials (symmetric lookup)
+    const Interaction* Find(SurfaceMaterial a, SurfaceMaterial b) const {
+        for (const auto& i : interactions) {
+            if ((i.a == a && i.b == b) || (i.a == b && i.b == a)) return &i;
+        }
+        return nullptr;
+    }
 };
 
 // ============================================================================

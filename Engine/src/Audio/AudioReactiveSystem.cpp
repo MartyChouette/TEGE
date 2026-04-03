@@ -402,66 +402,149 @@ void AudioReactiveSystem::UpdateSidechain(f32 deltaTime) {
 }
 
 // ============================================================================
-// Audio Collision — physics impacts auto-generate sound
-// Inspired by Zelda TOTK's physics audio system:
-// - Every surface has a material type
-// - Impact velocity determines volume and soft/hard clip selection
-// - Pitch varies per hit for natural feel
-// - Cooldown prevents sound spam from rapid collisions
+// Audio Collision — TOTK-style physics audio
+// - Material×material interaction lookup
+// - Velocity-driven volume + clip selection (soft/hard)
+// - Hollowness affects resonance pitch
+// - Mass affects base pitch and volume
+// - Continuous contact sounds (scrape/roll) with velocity-driven pitch
+// - Distance-based detail culling
 // ============================================================================
 
 void AudioReactiveSystem::UpdateAudioCollisions(f32 deltaTime) {
+    // Find the material interaction table (if any)
+    const ECS::MaterialInteractionTableComponent* matTable = nullptr;
+    for (auto e : m_World->GetEntitiesWithComponent<ECS::MaterialInteractionTableComponent>()) {
+        if (!m_World->IsValid(e)) continue;
+        matTable = m_World->GetComponent<ECS::MaterialInteractionTableComponent>(e);
+        if (matTable) break;
+    }
+
+    // Get listener position for distance culling
+    Math::Vector3 listenerPos(0.0f);
+    for (auto e : m_World->GetEntitiesWithComponent<ECS::AudioListenerComponent>()) {
+        if (!m_World->IsValid(e)) continue;
+        auto* lt = m_World->GetComponent<ECS::TransformComponent>(e);
+        if (lt) { listenerPos = lt->position; break; }
+    }
+
     for (auto entity : m_World->GetEntitiesWithComponent<ECS::AudioCollisionComponent>()) {
         if (!m_World->IsValid(entity)) continue;
         auto* ac = m_World->GetComponent<ECS::AudioCollisionComponent>(entity);
         if (!ac || !ac->enabled) continue;
 
-        // Cooldown
-        if (ac->cooldownTimer > 0.0f) {
-            ac->cooldownTimer -= deltaTime;
+        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+        if (!transform) continue;
+
+        // Distance culling (TOTK optimization)
+        f32 distToListener = (transform->position - listenerPos).Length();
+        if (distToListener > ac->cullDistance) {
+            // Stop any continuous sounds
+            if (ac->scrapeSoundHandle) { m_Audio->Stop(ac->scrapeSoundHandle); ac->scrapeSoundHandle = 0; }
+            if (ac->rollSoundHandle) { m_Audio->Stop(ac->rollSoundHandle); ac->rollSoundHandle = 0; }
             continue;
         }
+        bool useSimplifiedSounds = (distToListener > ac->detailDistance);
 
-        // Check for collision velocity from physics
-        // The physics system sets velocity on controllers; for rigidbodies,
-        // we'd read from the physics backend. For now, check controller velocity
-        // as a proxy for impact detection.
+        // Cooldown for impact sounds
+        if (ac->cooldownTimer > 0.0f) ac->cooldownTimer -= deltaTime;
+
+        // Detect impact velocity from controllers
         f32 impactVelocity = 0.0f;
+        f32 horizontalVelocity = 0.0f;
+        bool isGrounded = false;
 
         if (auto* ctrl = m_World->GetComponent<ECS::Platformer2DController>(entity)) {
-            // Ground contact = impact if we just landed
             if (ctrl->isGrounded && ctrl->velocity.y < -ac->softThreshold) {
                 impactVelocity = std::fabs(ctrl->velocity.y);
             }
+            horizontalVelocity = std::fabs(ctrl->velocity.x);
+            isGrounded = ctrl->isGrounded;
         } else if (auto* ctrl3 = m_World->GetComponent<ECS::ThirdPersonController>(entity)) {
             if (ctrl3->isGrounded && ctrl3->velocity.y < -ac->softThreshold) {
                 impactVelocity = std::fabs(ctrl3->velocity.y);
             }
+            horizontalVelocity = Math::Vector2(ctrl3->velocity.x, ctrl3->velocity.z).Length();
+            isGrounded = ctrl3->isGrounded;
         }
 
-        if (impactVelocity > ac->softThreshold) {
+        // --- Impact sounds ---
+        if (impactVelocity > ac->softThreshold && ac->cooldownTimer <= 0.0f) {
             ac->cooldownTimer = ac->cooldown;
 
-            // Select clip based on velocity
-            const std::string& clip = (impactVelocity > ac->hardThreshold)
-                ? ac->impactHardClip : ac->impactSoftClip;
-            if (clip.empty()) continue;
+            // Select clip: check material interaction table first, fall back to entity clips
+            std::string clip;
+            f32 pitchOffset = 0.0f;
+            f32 volumeMult = 1.0f;
 
-            // Volume from velocity (normalized)
-            f32 maxVel = ac->hardThreshold * 2.0f;
-            f32 vol = Math::Clamp(impactVelocity / maxVel, 0.2f, 1.0f) * ac->volumeScale;
-
-            // Random pitch variation
-            f32 pitch = 1.0f + ((static_cast<f32>(rand()) / RAND_MAX) * 2.0f - 1.0f) * ac->pitchVariance;
-
-            // Play at entity position
-            auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
-            if (transform) {
-                Audio::AudioClipHandle clipHandle = m_Audio->LoadClip(clip);
-                if (clipHandle != Audio::INVALID_AUDIO_CLIP) {
-                    m_Audio->Play3D(clipHandle, transform->position, vol, 1.0f, 50.0f);
+            if (matTable && !useSimplifiedSounds) {
+                // Try to find the ground/contact material (default to Stone for ground)
+                ECS::SurfaceMaterial otherMat = ECS::SurfaceMaterial::Stone;
+                const auto* interaction = matTable->Find(ac->material, otherMat);
+                if (interaction) {
+                    clip = (impactVelocity > ac->hardThreshold) ? interaction->hardClip : interaction->softClip;
+                    pitchOffset = interaction->pitchOffset;
+                    volumeMult = interaction->volumeMultiplier;
                 }
             }
+
+            // Fall back to entity's own clips
+            if (clip.empty()) {
+                clip = (impactVelocity > ac->hardThreshold) ? ac->impactHardClip : ac->impactSoftClip;
+            }
+
+            if (!clip.empty()) {
+                // Volume from velocity + mass
+                f32 maxVel = ac->hardThreshold * 2.0f;
+                f32 vol = Math::Clamp(impactVelocity / maxVel, 0.2f, 1.0f) * ac->volumeScale * volumeMult;
+                vol *= Math::Clamp(ac->mass * 0.5f, 0.3f, 2.0f); // Heavier = louder
+
+                // Pitch from mass, hollowness, random variation
+                f32 massPitch = 1.0f / Math::Clamp(ac->mass * 0.3f + 0.7f, 0.5f, 2.0f); // Heavier = lower pitch
+                f32 hollowPitch = 1.0f + ac->hollowness * 0.5f; // Hollow = higher resonance
+                f32 randomPitch = 1.0f + ((static_cast<f32>(rand()) / RAND_MAX) * 2.0f - 1.0f) * ac->pitchVariance;
+                f32 pitch = massPitch * hollowPitch * randomPitch + pitchOffset;
+
+                Audio::AudioClipHandle clipHandle = m_Audio->LoadClip(clip);
+                if (clipHandle != Audio::INVALID_AUDIO_CLIP) {
+                    Audio::SoundHandle sh = m_Audio->Play3D(clipHandle, transform->position, vol, 1.0f, ac->cullDistance);
+                    if (sh && pitch != 1.0f) m_Audio->SetPitch(sh, pitch);
+                }
+            }
+        }
+
+        // --- Continuous contact sounds (scrape/roll) ---
+        bool shouldScrape = isGrounded && horizontalVelocity > ac->scrapeMinVelocity && !ac->scrapeClip.empty();
+
+        if (shouldScrape && !useSimplifiedSounds) {
+            ac->inContact = true;
+            ac->contactVelocity = horizontalVelocity;
+
+            // Start scrape sound if not already playing
+            if (!ac->scrapeSoundHandle || !m_Audio->IsPlaying(ac->scrapeSoundHandle)) {
+                Audio::AudioClipHandle clipHandle = m_Audio->LoadClip(ac->scrapeClip);
+                if (clipHandle != Audio::INVALID_AUDIO_CLIP) {
+                    ac->scrapeSoundHandle = m_Audio->Play3D(clipHandle, transform->position,
+                        0.5f * ac->volumeScale, 1.0f, ac->cullDistance, Audio::AudioChannel::SFX);
+                }
+            }
+
+            // Update scrape pitch + volume based on velocity
+            if (ac->scrapeSoundHandle && m_Audio->IsPlaying(ac->scrapeSoundHandle)) {
+                f32 normVel = Math::Clamp(horizontalVelocity / 5.0f, 0.0f, 1.0f);
+                f32 scrapePitch = 0.8f + normVel * ac->scrapePitchScale;
+                f32 scrapeVol = Math::Clamp(normVel * 0.8f, 0.1f, 1.0f) * ac->volumeScale;
+                m_Audio->SetPitch(ac->scrapeSoundHandle, scrapePitch);
+                m_Audio->SetVolume(ac->scrapeSoundHandle, scrapeVol);
+                m_Audio->SetPosition(ac->scrapeSoundHandle, transform->position);
+            }
+        } else {
+            // Stop continuous sounds when not in contact
+            if (ac->scrapeSoundHandle && m_Audio->IsPlaying(ac->scrapeSoundHandle)) {
+                m_Audio->Stop(ac->scrapeSoundHandle);
+            }
+            ac->scrapeSoundHandle = 0;
+            ac->inContact = false;
         }
     }
 }
