@@ -3,6 +3,7 @@
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
 #include "Enjin/Debug/CrashHandler.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include <GLFW/glfw3.h>
 #include <chrono>
 #include <unordered_set>
@@ -3326,11 +3327,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
 
                             // Color: selected=green, chain=cyan, IK=yellow, normal=white (dimmed if selection active but not in chain)
                             ImU32 boneColor;
-                            if (isSelected) boneColor = IM_COL32(50, 255, 80, 255);
-                            else if (isIKTarget) boneColor = IM_COL32(255, 220, 50, 220);
-                            else if (inChain) boneColor = IM_COL32(100, 220, 255, 230);
-                            else if (selBone >= 0) boneColor = IM_COL32(180, 180, 180, 100); // Dimmed when a bone is selected
-                            else boneColor = IM_COL32(255, 255, 255, 200);
+                            if (isSelected) boneColor = Editor::Theme::BoneSelected;
+                            else if (isIKTarget) boneColor = Editor::Theme::BoneIKTarget;
+                            else if (inChain) boneColor = Editor::Theme::BoneChain;
+                            else if (selBone >= 0) boneColor = Editor::Theme::BoneDimmed;
+                            else boneColor = Editor::Theme::BoneNormal;
 
                             f32 lineThickness = isSelected ? 2.5f : (inChain ? 2.0f : 1.5f);
 

@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
@@ -6544,10 +6545,10 @@ void EditorLayer::DrawAudioMixer() {
     // Channel volume strips
     static const char* channelNames[] = {"SFX", "Music", "UI", "Voice"};
     static const ImVec4 channelColors[] = {
-        {0.3f, 0.7f, 0.4f, 1.0f},  // SFX — green
-        {0.5f, 0.4f, 0.9f, 1.0f},  // Music — purple
-        {0.2f, 0.6f, 0.9f, 1.0f},  // UI — blue
-        {0.9f, 0.6f, 0.2f, 1.0f},  // Voice — orange
+        Editor::Theme::BusSFXV,     // SFX
+        Editor::Theme::BusMusicV,   // Music
+        Editor::Theme::BusUIV,      // UI
+        Editor::Theme::BusVoiceV,   // Voice
     };
 
     for (int ch = 0; ch < 4; ch++) {
@@ -6961,13 +6962,13 @@ void EditorLayer::DrawAudioMeterStrip() {
     const auto& buses = mixer.GetAllBuses();
     if (buses.empty()) return;
 
-    // Colors per bus type
+    // Colors per bus type (from EditorTheme)
     static const ImU32 busColors[] = {
-        IM_COL32(200, 200, 200, 255),  // Master — white
-        IM_COL32(80, 180, 100, 255),   // SFX — green
-        IM_COL32(130, 100, 220, 255),  // Music — purple
-        IM_COL32(60, 150, 220, 255),   // UI — blue
-        IM_COL32(220, 150, 60, 255),   // Voice — orange
+        Editor::Theme::TextWhite,    // Master
+        Editor::Theme::BusSFX,       // SFX
+        Editor::Theme::BusMusic,     // Music
+        Editor::Theme::BusUI,        // UI
+        Editor::Theme::BusVoice,     // Voice
     };
 
     f32 barHeight = 6.0f;
