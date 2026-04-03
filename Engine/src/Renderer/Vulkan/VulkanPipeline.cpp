@@ -70,7 +70,7 @@ void VulkanPipeline::Bind(VkCommandBuffer commandBuffer) {
 }
 
 bool VulkanPipeline::CreateDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 20> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 21> bindings{};
 
     // UBO binding 0: model/view/projection matrices (vertex shader)
     bindings[0].binding = 0;
@@ -211,6 +211,13 @@ bool VulkanPipeline::CreateDescriptorSetLayout() {
     bindings[19].descriptorCount = 1;
     bindings[19].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[19].pImmutableSamplers = nullptr;
+
+    // SSBO binding 20: morph target deltas + weights (vertex shader)
+    bindings[20].binding = 20;
+    bindings[20].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[20].descriptorCount = 1;
+    bindings[20].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    bindings[20].pImmutableSamplers = nullptr;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;

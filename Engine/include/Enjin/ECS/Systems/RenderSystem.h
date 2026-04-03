@@ -779,6 +779,7 @@ private:
 #if !ENJIN_RENDERER_WEBGPU
     // Skeletal animation
     std::unique_ptr<Renderer::VulkanBuffer> m_DefaultBoneBuffer;
+    std::unique_ptr<Renderer::VulkanBuffer> m_DefaultMorphBuffer;
     void UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer);
 #endif
 

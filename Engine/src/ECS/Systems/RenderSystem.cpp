@@ -244,6 +244,19 @@ void RenderSystem::Initialize() {
         m_DefaultBoneBuffer.reset();
     }
 
+    // Default morph target buffer (header says targetCount=0, so shader skips morph loop)
+    m_DefaultMorphBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+    {
+        // Header: [vertexCount as uint bits, targetCount as uint bits] = [0, 0]
+        f32 morphHeader[2] = {0.0f, 0.0f};
+        if (m_DefaultMorphBuffer->Create(sizeof(morphHeader), Renderer::BufferUsage::Storage, true)) {
+            m_DefaultMorphBuffer->UploadData(morphHeader, sizeof(morphHeader));
+        } else {
+            ENJIN_LOG_WARN(Renderer, "Failed to create default morph buffer");
+            m_DefaultMorphBuffer.reset();
+        }
+    }
+
     // Create shadow data SSBO for point/spot light shadow matrices
     m_ShadowDataBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
     if (!m_ShadowDataBuffer->Create(sizeof(ShadowDataSSBO), Renderer::BufferUsage::Storage, true)) {
@@ -3852,7 +3865,7 @@ void RenderSystem::CreateDescriptorSets() {
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = totalSets * 12;  // bindings 3-6, 8-11, 16-19
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[2].descriptorCount = totalSets * 5;   // bindings 7, 12-15
+    poolSizes[2].descriptorCount = totalSets * 6;   // bindings 7, 12-15, 20 (morph targets)
     poolSizes[3].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
     poolSizes[3].descriptorCount = totalSets * 1;   // binding 2 (batched material SSBO)
 
@@ -4030,7 +4043,7 @@ void RenderSystem::CreateDescriptorSets() {
         // When a probe is baked, this is updated via UpdateProbeCubemapDescriptor()
         VkDescriptorImageInfo probeCubemapImageInfo = imageInfo;
 
-        std::array<VkWriteDescriptorSet, 20> descriptorWrites{};
+        std::array<VkWriteDescriptorSet, 21> descriptorWrites{};
 
         // MVP descriptor
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -4212,6 +4225,23 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[19].descriptorCount = 1;
         descriptorWrites[19].pImageInfo = &probeCubemapImageInfo;
 
+        // Binding 20: morph target SSBO (default = empty, targetCount=0)
+        VkDescriptorBufferInfo morphBufferInfo{};
+        if (m_DefaultMorphBuffer) {
+            morphBufferInfo.buffer = m_DefaultMorphBuffer->GetBuffer();
+            morphBufferInfo.offset = 0;
+            morphBufferInfo.range = m_DefaultMorphBuffer->GetSize();
+        } else {
+            morphBufferInfo = boneBufferInfo; // Fallback to bone buffer as dummy
+        }
+        descriptorWrites[20].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[20].dstSet = m_DescriptorSets[i];
+        descriptorWrites[20].dstBinding = 20;
+        descriptorWrites[20].dstArrayElement = 0;
+        descriptorWrites[20].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[20].descriptorCount = 1;
+        descriptorWrites[20].pBufferInfo = &morphBufferInfo;
+
         vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
@@ -4334,8 +4364,8 @@ void RenderSystem::CreateDescriptorSets() {
                 VkDescriptorImageInfo offMatcapInfo = offImageInfo;
                 VkDescriptorImageInfo offProbeCubemapInfo = offImageInfo;
 
-                std::array<VkWriteDescriptorSet, 20> offWrites{};
-                for (u32 w = 0; w < 20; ++w) {
+                std::array<VkWriteDescriptorSet, 21> offWrites{};
+                for (u32 w = 0; w < 21; ++w) {
                     offWrites[w].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
                     offWrites[w].dstSet = m_OffscreenDescriptorSets[idx];
                     offWrites[w].dstBinding = w;
@@ -4382,6 +4412,17 @@ void RenderSystem::CreateDescriptorSets() {
                 offWrites[18].pImageInfo = &offMatcapInfo;
                 offWrites[19].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
                 offWrites[19].pImageInfo = &offProbeCubemapInfo;
+
+                // Binding 20: morph target SSBO
+                VkDescriptorBufferInfo offMorphInfo{};
+                if (m_DefaultMorphBuffer) {
+                    offMorphInfo.buffer = m_DefaultMorphBuffer->GetBuffer();
+                    offMorphInfo.range = m_DefaultMorphBuffer->GetSize();
+                } else {
+                    offMorphInfo = offBoneInfo;
+                }
+                offWrites[20].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                offWrites[20].pBufferInfo = &offMorphInfo;
 
                 vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
                     static_cast<u32>(offWrites.size()), offWrites.data(), 0, nullptr);

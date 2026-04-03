@@ -78,6 +78,13 @@ layout(std430, binding = 7) readonly buffer BoneMatrixSSBO {
     mat4 boneMatrices[];
 };
 
+// Morph target SSBO (binding 20)
+// Layout: [vertexCount as uint bits, targetCount as uint bits, weights[targetCount], deltas[targetCount * vertexCount * 6]]
+// Deltas: [px, py, pz, nx, ny, nz] per vertex, repeated per target
+layout(std430, binding = 20) readonly buffer MorphTargetSSBO {
+    float morphData[];
+};
+
 // Per-object data SSBO for indirect draws (binding 13)
 // Indexed by gl_InstanceIndex (set to original object index via firstInstance)
 struct ObjectData {
@@ -152,6 +159,28 @@ void main() {
     vec3 skinnedPos = inPosition;
     vec3 skinnedNormal = inNormal;
     vec3 skinnedTangent = inTangent.xyz;
+
+    // Apply morph targets (blend shapes) before skeletal skinning
+    // Morph targets modify the bind-pose mesh, then skinning transforms the result
+    {
+        uint mVertCount = floatBitsToUint(morphData[0]);
+        uint mTargetCount = floatBitsToUint(morphData[1]);
+        if (mTargetCount > 0u && uint(gl_VertexIndex) < mVertCount) {
+            uint headerSize = 2u + mTargetCount;
+            for (uint t = 0u; t < mTargetCount && t < 64u; t++) {
+                float w = morphData[2u + t];
+                if (abs(w) < 0.001) continue;
+                uint base = headerSize + t * mVertCount * 6u + uint(gl_VertexIndex) * 6u;
+                skinnedPos.x += morphData[base + 0u] * w;
+                skinnedPos.y += morphData[base + 1u] * w;
+                skinnedPos.z += morphData[base + 2u] * w;
+                skinnedNormal.x += morphData[base + 3u] * w;
+                skinnedNormal.y += morphData[base + 4u] * w;
+                skinnedNormal.z += morphData[base + 5u] * w;
+            }
+            skinnedNormal = normalize(skinnedNormal);
+        }
+    }
 
     // Apply skeletal skinning if enabled and vertex has bone weights
     if ((objFlags & FLAG_SKINNED) != 0) {
