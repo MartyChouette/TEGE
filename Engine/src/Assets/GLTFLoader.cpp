@@ -235,6 +235,55 @@ bool GLTFLoader::Load(const std::string& filepath, GLTFScene& outScene) {
                     dstPrim.indices[i] = static_cast<u32>(cgltf_accessor_read_index(indexAccessor, i));
                 }
             }
+
+            // Load morph targets (blend shapes)
+            if (srcPrim.targets_count > 0) {
+                dstPrim.morphTargets.resize(srcPrim.targets_count);
+                for (cgltf_size t = 0; t < srcPrim.targets_count; ++t) {
+                    GLTFMorphTarget& dstTarget = dstPrim.morphTargets[t];
+
+                    // Name from mesh-level target_names
+                    if (srcMesh.target_names && t < srcMesh.target_names_count) {
+                        dstTarget.name = srcMesh.target_names[t];
+                    } else {
+                        char nameBuf[32];
+                        snprintf(nameBuf, sizeof(nameBuf), "target_%zu", t);
+                        dstTarget.name = nameBuf;
+                    }
+
+                    cgltf_morph_target& srcTarget = srcPrim.targets[t];
+                    for (cgltf_size a = 0; a < srcTarget.attributes_count; ++a) {
+                        cgltf_attribute& attr = srcTarget.attributes[a];
+                        cgltf_accessor* accessor = attr.data;
+                        cgltf_size count = (accessor->count <= vertexCount) ? accessor->count : vertexCount;
+
+                        if (attr.type == cgltf_attribute_type_position) {
+                            dstTarget.positionDeltas.resize(vertexCount, Math::Vector3(0.0f));
+                            for (cgltf_size v = 0; v < count; ++v) {
+                                cgltf_accessor_read_float(accessor, v, &dstTarget.positionDeltas[v].x, 3);
+                            }
+                        } else if (attr.type == cgltf_attribute_type_normal) {
+                            dstTarget.normalDeltas.resize(vertexCount, Math::Vector3(0.0f));
+                            for (cgltf_size v = 0; v < count; ++v) {
+                                cgltf_accessor_read_float(accessor, v, &dstTarget.normalDeltas[v].x, 3);
+                            }
+                        }
+                    }
+
+                    // Ensure normal deltas exist even if not authored
+                    if (dstTarget.normalDeltas.empty()) {
+                        dstTarget.normalDeltas.resize(vertexCount, Math::Vector3(0.0f));
+                    }
+                }
+
+                // Default weights
+                if (srcMesh.weights && srcMesh.weights_count > 0) {
+                    dstMesh.defaultMorphWeights.resize(srcMesh.weights_count);
+                    for (cgltf_size w = 0; w < srcMesh.weights_count; ++w) {
+                        dstMesh.defaultMorphWeights[w] = srcMesh.weights[w];
+                    }
+                }
+            }
         }
     }
 

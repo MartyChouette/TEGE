@@ -23,17 +23,26 @@ struct GLTFVertex {
     u32 boneIndices[4] = {0, 0, 0, 0};
 };
 
+// Morph target delta data (per-vertex)
+struct GLTFMorphTarget {
+    std::string name;
+    std::vector<Math::Vector3> positionDeltas;
+    std::vector<Math::Vector3> normalDeltas;
+};
+
 // Primitive/submesh data
 struct GLTFPrimitive {
     std::vector<GLTFVertex> vertices;
     std::vector<u32> indices;
     i32 materialIndex = -1;
+    std::vector<GLTFMorphTarget> morphTargets;
 };
 
 // Mesh containing one or more primitives
 struct GLTFMesh {
     std::string name;
     std::vector<GLTFPrimitive> primitives;
+    std::vector<f32> defaultMorphWeights;  // Default weights for morph targets
 };
 
 // Material data
