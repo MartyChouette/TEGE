@@ -22,6 +22,10 @@ void AudioReactiveSystem::Update(f32 deltaTime) {
     UpdateConductor(deltaTime);
     UpdateSidechain(deltaTime);
     UpdateAudioCollisions(deltaTime);
+    UpdateOcclusion(deltaTime);
+    UpdateReverbZones(deltaTime);
+    UpdateAmbientLayers(deltaTime);
+    UpdateMusicZones(deltaTime);
 }
 
 // ============================================================================
@@ -545,6 +549,274 @@ void AudioReactiveSystem::UpdateAudioCollisions(f32 deltaTime) {
             }
             ac->scrapeSoundHandle = 0;
             ac->inContact = false;
+        }
+    }
+}
+
+// ============================================================================
+// Occlusion — raycast-based muffling of sounds behind geometry
+// Adjusts volume + pitch to simulate low-pass filtering
+// ============================================================================
+
+void AudioReactiveSystem::UpdateOcclusion(f32 deltaTime) {
+    // Get listener position
+    Math::Vector3 listenerPos(0.0f);
+    for (auto e : m_World->GetEntitiesWithComponent<ECS::AudioListenerComponent>()) {
+        if (!m_World->IsValid(e)) continue;
+        auto* lt = m_World->GetComponent<ECS::TransformComponent>(e);
+        if (lt) { listenerPos = lt->position; break; }
+    }
+
+    for (auto entity : m_World->GetEntitiesWithComponent<ECS::AudioOcclusionComponent>()) {
+        if (!m_World->IsValid(entity)) continue;
+        auto* occ = m_World->GetComponent<ECS::AudioOcclusionComponent>(entity);
+        if (!occ || !occ->enabled) continue;
+
+        auto* audioSrc = m_World->GetComponent<ECS::AudioSourceComponent>(entity);
+        if (!audioSrc || audioSrc->soundHandle == 0) continue;
+
+        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+        if (!transform) continue;
+
+        // Throttle raycast checks
+        occ->updateTimer += deltaTime;
+        if (occ->updateTimer < 1.0f / occ->updateRate) continue;
+        occ->updateTimer = 0.0f;
+
+        // Simple occlusion: check if there are solid entities between listener and source
+        // For now, use distance-based heuristic + check for obstacles with colliders
+        // (Full raycast would require physics backend access — we approximate)
+        Math::Vector3 toSource = transform->position - listenerPos;
+        f32 distance = toSource.Length();
+
+        // Check for entities with colliders between listener and source (simple AABB test)
+        f32 occlusionScore = 0.0f;
+        if (distance > 1.0f) {
+            Math::Vector3 dir = toSource * (1.0f / distance);
+            Math::Vector3 midpoint = listenerPos + dir * (distance * 0.5f);
+
+            // Count entities with box colliders near the midpoint
+            for (auto obstacle : m_World->GetEntitiesWithComponent<ECS::BoxColliderComponent>()) {
+                if (obstacle == entity || !m_World->IsValid(obstacle)) continue;
+                auto* ot = m_World->GetComponent<ECS::TransformComponent>(obstacle);
+                auto* col = m_World->GetComponent<ECS::BoxColliderComponent>(obstacle);
+                if (!ot || !col) continue;
+
+                // Simple: is the obstacle between listener and source?
+                Math::Vector3 toObs = ot->position - listenerPos;
+                f32 dot = toObs.x * dir.x + toObs.y * dir.y + toObs.z * dir.z;
+                if (dot > 0.0f && dot < distance) {
+                    // Check if obstacle is close to the line
+                    Math::Vector3 projected = listenerPos + dir * dot;
+                    f32 perpDist = (ot->position - projected).Length();
+                    f32 colSize = Math::Max(col->size.x, Math::Max(col->size.y, col->size.z));
+                    if (perpDist < colSize) {
+                        occlusionScore += 0.5f;
+                    }
+                }
+            }
+        }
+
+        occ->occlusionAmount = Math::Clamp(occlusionScore, 0.0f, 1.0f);
+
+        // Apply occlusion: reduce volume and simulate low-pass by slightly lowering pitch
+        if (occ->occlusionAmount > 0.0f) {
+            f32 volReduction = 1.0f - (occ->occlusionAmount * occ->volumeReduction);
+            m_Audio->SetVolume(audioSrc->soundHandle, audioSrc->volume * volReduction);
+            // Simulate muffling: slightly lower pitch (crude but effective without per-sample LPF)
+            f32 mufflePitch = 1.0f - (occ->occlusionAmount * 0.15f);
+            m_Audio->SetPitch(audioSrc->soundHandle, audioSrc->pitch * mufflePitch);
+        } else {
+            m_Audio->SetVolume(audioSrc->soundHandle, audioSrc->volume);
+            m_Audio->SetPitch(audioSrc->soundHandle, audioSrc->pitch);
+        }
+    }
+}
+
+// ============================================================================
+// Reverb Zones — apply reverb when listener is inside a zone
+// Uses volume-based wet/dry mixing on the master bus
+// ============================================================================
+
+void AudioReactiveSystem::UpdateReverbZones(f32 deltaTime) {
+    // Get listener position
+    Math::Vector3 listenerPos(0.0f);
+    for (auto e : m_World->GetEntitiesWithComponent<ECS::AudioListenerComponent>()) {
+        if (!m_World->IsValid(e)) continue;
+        auto* lt = m_World->GetComponent<ECS::TransformComponent>(e);
+        if (lt) { listenerPos = lt->position; break; }
+    }
+
+    // Find the highest-priority reverb zone the listener is inside
+    ECS::ReverbZoneComponent* activeZone = nullptr;
+    i32 bestPriority = -999999;
+
+    for (auto entity : m_World->GetEntitiesWithComponent<ECS::ReverbZoneComponent>()) {
+        if (!m_World->IsValid(entity)) continue;
+        auto* rz = m_World->GetComponent<ECS::ReverbZoneComponent>(entity);
+        if (!rz || !rz->isActive) continue;
+
+        if (rz->isGlobal) {
+            if (rz->priority > bestPriority) {
+                bestPriority = rz->priority;
+                activeZone = rz;
+            }
+            continue;
+        }
+
+        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+        if (!transform) continue;
+
+        // Check if listener is inside the zone (box shape)
+        Math::Vector3 local = listenerPos - transform->position;
+        bool inside = std::fabs(local.x) <= rz->halfExtents.x &&
+                      std::fabs(local.y) <= rz->halfExtents.y &&
+                      std::fabs(local.z) <= rz->halfExtents.z;
+
+        if (inside && rz->priority > bestPriority) {
+            bestPriority = rz->priority;
+            activeZone = rz;
+        }
+    }
+
+    // Apply reverb parameters to the master bus EQ as an approximation
+    // (True reverb requires a delay-line DSP node — this simulates it via EQ)
+    Audio::AudioBus* masterBus = m_Audio->GetMixer().GetMasterBus();
+    if (masterBus && activeZone) {
+        // Simulate reverb via EQ: boost mids, reduce highs (damping), slight low boost
+        f32 wetDry = activeZone->wetDryMix;
+        masterBus->eqEnabled = (wetDry > 0.01f);
+        masterBus->eqLow.gain = wetDry * 2.0f * (1.0f - activeZone->damping);
+        masterBus->eqMid.gain = wetDry * 3.0f;
+        masterBus->eqMid.q = 0.5f + activeZone->roomSize * 2.0f;
+        masterBus->eqHigh.gain = -wetDry * 4.0f * activeZone->damping;
+    } else if (masterBus) {
+        // No active reverb zone — flatten EQ
+        masterBus->eqEnabled = false;
+        masterBus->eqLow.gain = 0.0f;
+        masterBus->eqMid.gain = 0.0f;
+        masterBus->eqHigh.gain = 0.0f;
+    }
+}
+
+// ============================================================================
+// Ambient Sound Layers — fade in/out looping sounds based on listener zone
+// ============================================================================
+
+void AudioReactiveSystem::UpdateAmbientLayers(f32 deltaTime) {
+    Math::Vector3 listenerPos(0.0f);
+    for (auto e : m_World->GetEntitiesWithComponent<ECS::AudioListenerComponent>()) {
+        if (!m_World->IsValid(e)) continue;
+        auto* lt = m_World->GetComponent<ECS::TransformComponent>(e);
+        if (lt) { listenerPos = lt->position; break; }
+    }
+
+    for (auto entity : m_World->GetEntitiesWithComponent<ECS::AmbientSoundLayerComponent>()) {
+        if (!m_World->IsValid(entity)) continue;
+        auto* asl = m_World->GetComponent<ECS::AmbientSoundLayerComponent>(entity);
+        if (!asl || !asl->isActive) continue;
+
+        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+        if (!transform) continue;
+
+        // Check if listener is inside the zone
+        Math::Vector3 local = listenerPos - transform->position;
+        bool inside = std::fabs(local.x) <= asl->halfExtents.x &&
+                      std::fabs(local.y) <= asl->halfExtents.y &&
+                      std::fabs(local.z) <= asl->halfExtents.z;
+
+        // Calculate blend weight based on distance from zone edge
+        f32 blendWeight = 0.0f;
+        if (inside) {
+            blendWeight = 1.0f;
+        } else if (asl->blendRadius > 0.0f) {
+            // Distance from zone surface
+            f32 dx = Math::Max(0.0f, std::fabs(local.x) - asl->halfExtents.x);
+            f32 dy = Math::Max(0.0f, std::fabs(local.y) - asl->halfExtents.y);
+            f32 dz = Math::Max(0.0f, std::fabs(local.z) - asl->halfExtents.z);
+            f32 dist = std::sqrt(dx * dx + dy * dy + dz * dz);
+            if (dist < asl->blendRadius) {
+                blendWeight = 1.0f - (dist / asl->blendRadius);
+            }
+        }
+
+        // Ensure handle vector matches layer count
+        asl->layerHandles.resize(asl->layers.size(), 0);
+
+        for (usize i = 0; i < asl->layers.size(); ++i) {
+            auto& layer = asl->layers[i];
+            f32 targetVol = blendWeight * layer.volume;
+
+            if (targetVol > 0.01f) {
+                // Start sound if not playing
+                if (!asl->layerHandles[i] || !m_Audio->IsPlaying(asl->layerHandles[i])) {
+                    if (!layer.clipPath.empty()) {
+                        Audio::AudioClipHandle clip = m_Audio->LoadClip(layer.clipPath);
+                        if (clip != Audio::INVALID_AUDIO_CLIP) {
+                            asl->layerHandles[i] = m_Audio->Play(clip, targetVol, layer.pitch, layer.loop,
+                                Audio::AudioChannel::SFX);
+                        }
+                    }
+                } else {
+                    // Update volume
+                    m_Audio->SetVolume(asl->layerHandles[i], targetVol);
+                }
+            } else {
+                // Stop sound if playing
+                if (asl->layerHandles[i] && m_Audio->IsPlaying(asl->layerHandles[i])) {
+                    m_Audio->Stop(asl->layerHandles[i]);
+                    asl->layerHandles[i] = 0;
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Music Zones — crossfade music when listener enters/exits zones
+// ============================================================================
+
+void AudioReactiveSystem::UpdateMusicZones(f32 deltaTime) {
+    Math::Vector3 listenerPos(0.0f);
+    for (auto e : m_World->GetEntitiesWithComponent<ECS::AudioListenerComponent>()) {
+        if (!m_World->IsValid(e)) continue;
+        auto* lt = m_World->GetComponent<ECS::TransformComponent>(e);
+        if (lt) { listenerPos = lt->position; break; }
+    }
+
+    // Find the highest-priority music zone the listener is inside
+    ECS::MusicZoneComponent* activeZone = nullptr;
+    i32 bestPriority = -999999;
+
+    for (auto entity : m_World->GetEntitiesWithComponent<ECS::MusicZoneComponent>()) {
+        if (!m_World->IsValid(entity)) continue;
+        auto* mz = m_World->GetComponent<ECS::MusicZoneComponent>(entity);
+        if (!mz || !mz->isActive) continue;
+
+        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+        if (!transform) continue;
+
+        Math::Vector3 local = listenerPos - transform->position;
+        bool inside = std::fabs(local.x) <= mz->halfExtents.x &&
+                      std::fabs(local.y) <= mz->halfExtents.y &&
+                      std::fabs(local.z) <= mz->halfExtents.z;
+
+        if (inside && mz->priority > bestPriority) {
+            bestPriority = mz->priority;
+            activeZone = mz;
+        }
+    }
+
+    // Crossfade to the active zone's track
+    auto& crossfader = m_Audio->GetCrossfader();
+    if (activeZone && !activeZone->trackPath.empty()) {
+        if (crossfader.GetCurrentTrack() != activeZone->trackPath) {
+            crossfader.Play(activeZone->trackPath, activeZone->fadeInTime, activeZone->fadeOutTime);
+        }
+    } else {
+        // No active music zone — fade out
+        if (crossfader.IsPlaying()) {
+            crossfader.Stop(2.0f);
         }
     }
 }

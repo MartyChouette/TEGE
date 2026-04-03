@@ -25,6 +25,10 @@ private:
     void UpdateConductor(f32 deltaTime);
     void UpdateSidechain(f32 deltaTime);
     void UpdateAudioCollisions(f32 deltaTime);
+    void UpdateOcclusion(f32 deltaTime);
+    void UpdateReverbZones(f32 deltaTime);
+    void UpdateAmbientLayers(f32 deltaTime);
+    void UpdateMusicZones(f32 deltaTime);
 
     void ApplyValueToTarget(ECS::Entity entity, ECS::AudioTargetProperty target, f32 value);
 
