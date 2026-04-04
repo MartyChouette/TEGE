@@ -1109,6 +1109,21 @@ private:
     void DrawImportResultDialog();
     void UndoLastImport();
 
+    // Import preview — scene hierarchy from the file
+    struct ImportPreviewNode {
+        std::string name;
+        i32 meshIndex = -1;       // -1 = no mesh
+        i32 parentIndex = -1;
+        bool selected = true;     // User can deselect to skip import
+        bool hasMesh = false;
+        bool hasSkin = false;
+        u32 vertexCount = 0;
+        u32 morphTargetCount = 0;
+    };
+    std::vector<ImportPreviewNode> m_ImportPreviewNodes;
+    bool m_ImportPreviewScanned = false;
+    void ScanImportPreview(const std::string& filepath);
+
     std::string m_ImportDialogFilename;   // Cached on dialog open
     std::string m_ImportDialogExtension;  // Cached on dialog open
     u64 m_ImportDialogFileSize = 0;       // Cached on dialog open

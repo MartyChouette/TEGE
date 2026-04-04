@@ -933,6 +933,9 @@ void EditorLayer::ImportModel(const std::string& path) {
     m_ImportDialogPath = path;
     m_ShowImportDialog = true;
 
+    // Pre-scan file to populate scene hierarchy preview
+    ScanImportPreview(path);
+
     // Cache file info once on dialog open (avoid per-frame filesystem calls)
     std::filesystem::path filePath(path);
     m_ImportDialogFilename = filePath.filename().string();
@@ -972,10 +975,86 @@ void EditorLayer::ImportModel(const std::string& path) {
     }
 }
 
+void EditorLayer::ScanImportPreview(const std::string& filepath) {
+    m_ImportPreviewNodes.clear();
+    m_ImportPreviewScanned = false;
+
+    std::string ext = std::filesystem::path(filepath).extension().string();
+    for (auto& c : ext) c = static_cast<char>(std::tolower(c));
+
+    if (ext == ".gltf" || ext == ".glb") {
+        Assets::GLTFScene scene;
+        if (Assets::GLTFLoader::Load(filepath, scene)) {
+            for (usize i = 0; i < scene.nodes.size(); ++i) {
+                const auto& node = scene.nodes[i];
+                ImportPreviewNode preview;
+                preview.name = node.name.empty() ? ("Node " + std::to_string(i)) : node.name;
+                preview.meshIndex = node.meshIndex;
+                preview.hasMesh = (node.meshIndex >= 0);
+                preview.hasSkin = (node.skinIndex >= 0);
+                preview.selected = true;
+
+                if (preview.hasMesh && node.meshIndex < static_cast<i32>(scene.meshes.size())) {
+                    const auto& mesh = scene.meshes[node.meshIndex];
+                    for (const auto& prim : mesh.primitives) {
+                        preview.vertexCount += static_cast<u32>(prim.vertices.size());
+                        if (!prim.morphTargets.empty()) {
+                            preview.morphTargetCount = static_cast<u32>(prim.morphTargets.size());
+                        }
+                    }
+                }
+
+                // Find parent index
+                preview.parentIndex = -1;
+                for (usize p = 0; p < scene.nodes.size(); ++p) {
+                    for (i32 child : scene.nodes[p].children) {
+                        if (child == static_cast<i32>(i)) { preview.parentIndex = static_cast<i32>(p); break; }
+                    }
+                    if (preview.parentIndex >= 0) break;
+                }
+
+                m_ImportPreviewNodes.push_back(preview);
+            }
+            m_ImportPreviewScanned = true;
+        }
+    } else {
+        Assets::AssimpScene scene;
+        if (Assets::AssimpLoader::Load(filepath, scene)) {
+            for (usize i = 0; i < scene.nodes.size(); ++i) {
+                const auto& node = scene.nodes[i];
+                ImportPreviewNode preview;
+                preview.name = node.name.empty() ? ("Node " + std::to_string(i)) : node.name;
+                preview.meshIndex = node.meshIndex;
+                preview.hasMesh = (node.meshIndex >= 0 || !node.meshIndices.empty());
+                preview.parentIndex = node.parentIndex;
+                preview.selected = true;
+
+                if (preview.hasMesh) {
+                    for (i32 mi : node.meshIndices) {
+                        if (mi >= 0 && mi < static_cast<i32>(scene.meshes.size())) {
+                            for (const auto& prim : scene.meshes[mi].primitives) {
+                                preview.vertexCount += static_cast<u32>(prim.vertices.size());
+                            }
+                        }
+                    }
+                }
+
+                m_ImportPreviewNodes.push_back(preview);
+            }
+            m_ImportPreviewScanned = true;
+            if (scene.hasSkinning) {
+                for (auto& n : m_ImportPreviewNodes) {
+                    if (n.hasMesh) n.hasSkin = true;
+                }
+            }
+        }
+    }
+}
+
 void EditorLayer::DrawImportDialog() {
     ImGui::OpenPopup("Import Settings");
 
-    ImGui::SetNextWindowSize(ImVec2(480 * m_EditorSettings.uiScale, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(540 * m_EditorSettings.uiScale, 0), ImGuiCond_Always);
     if (ImGui::BeginPopupModal("Import Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         // File info (cached values — no filesystem calls per frame)
         ImGui::Text("File: %s", m_ImportDialogFilename.c_str());
@@ -1070,6 +1149,94 @@ void EditorLayer::DrawImportDialog() {
         ImGui::Checkbox("Generate LODs", &m_ImportDialogOptions.generateLODs);
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Generate Level-of-Detail meshes (can be slow for large models)");
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // --- Scene Contents Preview ---
+        if (m_ImportPreviewScanned && !m_ImportPreviewNodes.empty()) {
+            bool previewOpen = ImGui::TreeNodeEx("Scene Contents", ImGuiTreeNodeFlags_DefaultOpen);
+            if (previewOpen) {
+                // Select/Deselect all buttons
+                if (ImGui::SmallButton("Select All")) {
+                    for (auto& n : m_ImportPreviewNodes) n.selected = true;
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Deselect All")) {
+                    for (auto& n : m_ImportPreviewNodes) n.selected = false;
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Meshes Only")) {
+                    for (auto& n : m_ImportPreviewNodes) n.selected = n.hasMesh;
+                }
+
+                // Count selected
+                u32 selectedCount = 0, totalVerts = 0;
+                for (const auto& n : m_ImportPreviewNodes) {
+                    if (n.selected) { selectedCount++; totalVerts += n.vertexCount; }
+                }
+                ImGui::TextDisabled("%u / %zu nodes selected, %u vertices",
+                    selectedCount, m_ImportPreviewNodes.size(), totalVerts);
+
+                // Hierarchy tree
+                ImGui::BeginChild("ImportPreviewTree", ImVec2(0, 150), true);
+
+                // Recursive draw function for hierarchy
+                std::function<void(i32)> drawNode = [&](i32 parentIdx) {
+                    for (usize i = 0; i < m_ImportPreviewNodes.size(); ++i) {
+                        auto& node = m_ImportPreviewNodes[i];
+                        if (node.parentIndex != parentIdx) continue;
+
+                        // Check if has children
+                        bool hasChildren = false;
+                        for (const auto& n : m_ImportPreviewNodes) {
+                            if (n.parentIndex == static_cast<i32>(i)) { hasChildren = true; break; }
+                        }
+
+                        ImGui::PushID(static_cast<int>(i));
+
+                        // Checkbox
+                        ImGui::Checkbox("##Sel", &node.selected);
+                        ImGui::SameLine();
+
+                        // Icon + name
+                        ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+                        if (!hasChildren) flags |= ImGuiTreeNodeFlags_Leaf;
+
+                        // Color based on type
+                        if (node.hasSkin) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.9f, 1.0f, 1.0f));
+                        else if (node.hasMesh) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.9f, 0.9f, 1.0f));
+                        else ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+
+                        bool open = ImGui::TreeNodeEx(node.name.c_str(), flags);
+                        ImGui::PopStyleColor();
+
+                        // Info on same line
+                        if (node.hasMesh) {
+                            ImGui::SameLine(ImGui::GetContentRegionAvail().x - 100);
+                            ImGui::TextDisabled("%u verts", node.vertexCount);
+                        }
+                        if (node.morphTargetCount > 0) {
+                            ImGui::SameLine();
+                            ImGui::TextColored(ImVec4(0.8f, 0.6f, 1.0f, 1.0f), "%u morphs", node.morphTargetCount);
+                        }
+
+                        if (open) {
+                            if (hasChildren) drawNode(static_cast<i32>(i));
+                            ImGui::TreePop();
+                        }
+
+                        ImGui::PopID();
+                    }
+                };
+
+                drawNode(-1); // Start from root nodes
+
+                ImGui::EndChild();
+                ImGui::TreePop();
+            }
         }
 
         ImGui::Spacing();
