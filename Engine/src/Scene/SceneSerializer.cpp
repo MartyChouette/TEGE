@@ -2349,6 +2349,387 @@ ECS::SceneRewindComponent DeserializeSceneRewindComponent(const json& j) {
     return sr;
 }
 
+// ============================================================================
+// Audio-Reactive Components (16 serializers)
+// ============================================================================
+
+json SerializeAudioReactiveComponent(const ECS::AudioReactiveComponent& ar) {
+    json j;
+    j["busName"] = ar.busName;
+    j["target"] = static_cast<u8>(ar.target);
+    j["threshold"] = RF(ar.threshold);
+    j["multiplier"] = RF(ar.multiplier);
+    j["smoothing"] = RF(ar.smoothing);
+    j["invert"] = ar.invert;
+    j["baseValue"] = RF(ar.baseValue);
+    j["maxValue"] = RF(ar.maxValue);
+    j["enabled"] = ar.enabled;
+    return j;
+}
+ECS::AudioReactiveComponent DeserializeAudioReactiveComponent(const json& j) {
+    ECS::AudioReactiveComponent ar;
+    if (j.contains("busName")) ar.busName = j["busName"].get<std::string>();
+    if (j.contains("target")) ar.target = static_cast<ECS::AudioTargetProperty>(j["target"].get<u8>());
+    if (j.contains("threshold")) ar.threshold = j["threshold"].get<f32>();
+    if (j.contains("multiplier")) ar.multiplier = j["multiplier"].get<f32>();
+    if (j.contains("smoothing")) ar.smoothing = j["smoothing"].get<f32>();
+    if (j.contains("invert")) ar.invert = JB(j["invert"]);
+    if (j.contains("baseValue")) ar.baseValue = j["baseValue"].get<f32>();
+    if (j.contains("maxValue")) ar.maxValue = j["maxValue"].get<f32>();
+    if (j.contains("enabled")) ar.enabled = JB(j["enabled"]);
+    return ar;
+}
+
+json SerializeAudioThresholdTriggerComponent(const ECS::AudioThresholdTriggerComponent& t) {
+    json j;
+    j["busName"] = t.busName;
+    j["threshold"] = RF(t.threshold);
+    j["cooldown"] = RF(t.cooldown);
+    j["action"] = static_cast<u8>(t.action);
+    j["effectDuration"] = RF(t.effectDuration);
+    j["effectIntensity"] = RF(t.effectIntensity);
+    j["eventName"] = t.eventName;
+    j["enabled"] = t.enabled;
+    return j;
+}
+ECS::AudioThresholdTriggerComponent DeserializeAudioThresholdTriggerComponent(const json& j) {
+    ECS::AudioThresholdTriggerComponent t;
+    if (j.contains("busName")) t.busName = j["busName"].get<std::string>();
+    if (j.contains("threshold")) t.threshold = j["threshold"].get<f32>();
+    if (j.contains("cooldown")) t.cooldown = j["cooldown"].get<f32>();
+    if (j.contains("action")) t.action = static_cast<ECS::AudioThresholdTriggerComponent::Action>(j["action"].get<u8>());
+    if (j.contains("effectDuration")) t.effectDuration = j["effectDuration"].get<f32>();
+    if (j.contains("effectIntensity")) t.effectIntensity = j["effectIntensity"].get<f32>();
+    if (j.contains("eventName")) t.eventName = j["eventName"].get<std::string>();
+    if (j.contains("enabled")) t.enabled = JB(j["enabled"]);
+    return t;
+}
+
+json SerializeRTPCComponent(const ECS::RTPCComponent& r) {
+    json j;
+    j["enabled"] = r.enabled;
+    json mappings = json::array();
+    for (const auto& m : r.mappings) {
+        json mj;
+        mj["parameterName"] = m.parameterName;
+        mj["paramMin"] = RF(m.paramMin);
+        mj["paramMax"] = RF(m.paramMax);
+        mj["audioTarget"] = static_cast<u8>(m.audioTarget);
+        mj["outputMin"] = RF(m.outputMin);
+        mj["outputMax"] = RF(m.outputMax);
+        mj["curve"] = RF(m.curve);
+        mappings.push_back(mj);
+    }
+    j["mappings"] = mappings;
+    return j;
+}
+ECS::RTPCComponent DeserializeRTPCComponent(const json& j) {
+    ECS::RTPCComponent r;
+    if (j.contains("enabled")) r.enabled = JB(j["enabled"]);
+    if (j.contains("mappings") && j["mappings"].is_array()) {
+        for (const auto& mj : j["mappings"]) {
+            ECS::RTPCComponent::Mapping m;
+            if (mj.contains("parameterName")) m.parameterName = mj["parameterName"].get<std::string>();
+            if (mj.contains("paramMin")) m.paramMin = mj["paramMin"].get<f32>();
+            if (mj.contains("paramMax")) m.paramMax = mj["paramMax"].get<f32>();
+            if (mj.contains("audioTarget")) m.audioTarget = static_cast<ECS::RTPCComponent::Mapping::AudioTarget>(mj["audioTarget"].get<u8>());
+            if (mj.contains("outputMin")) m.outputMin = mj["outputMin"].get<f32>();
+            if (mj.contains("outputMax")) m.outputMax = mj["outputMax"].get<f32>();
+            if (mj.contains("curve")) m.curve = mj["curve"].get<f32>();
+            r.mappings.push_back(m);
+        }
+    }
+    return r;
+}
+
+json SerializeBeatClockComponent(const ECS::BeatClockComponent& bc) {
+    json j;
+    j["bpm"] = RF(bc.bpm);
+    j["beatsPerBar"] = bc.beatsPerBar;
+    j["playing"] = bc.playing;
+    return j;
+}
+ECS::BeatClockComponent DeserializeBeatClockComponent(const json& j) {
+    ECS::BeatClockComponent bc;
+    if (j.contains("bpm")) bc.bpm = j["bpm"].get<f32>();
+    if (j.contains("beatsPerBar")) bc.beatsPerBar = j["beatsPerBar"].get<i32>();
+    if (j.contains("playing")) bc.playing = JB(j["playing"]);
+    return bc;
+}
+
+json SerializeBeatSyncComponent(const ECS::BeatSyncComponent& bs) {
+    json j;
+    j["mode"] = static_cast<u8>(bs.mode);
+    j["beatDivisor"] = bs.beatDivisor;
+    j["target"] = static_cast<u8>(bs.target);
+    j["baseValue"] = RF(bs.baseValue);
+    j["pulseValue"] = RF(bs.pulseValue);
+    j["decaySpeed"] = RF(bs.decaySpeed);
+    j["enabled"] = bs.enabled;
+    return j;
+}
+ECS::BeatSyncComponent DeserializeBeatSyncComponent(const json& j) {
+    ECS::BeatSyncComponent bs;
+    if (j.contains("mode")) bs.mode = static_cast<ECS::BeatSyncComponent::SyncMode>(j["mode"].get<u8>());
+    if (j.contains("beatDivisor")) bs.beatDivisor = j["beatDivisor"].get<u32>();
+    if (j.contains("target")) bs.target = static_cast<ECS::AudioTargetProperty>(j["target"].get<u8>());
+    if (j.contains("baseValue")) bs.baseValue = j["baseValue"].get<f32>();
+    if (j.contains("pulseValue")) bs.pulseValue = j["pulseValue"].get<f32>();
+    if (j.contains("decaySpeed")) bs.decaySpeed = j["decaySpeed"].get<f32>();
+    if (j.contains("enabled")) bs.enabled = JB(j["enabled"]);
+    return bs;
+}
+
+json SerializeConductorComponent(const ECS::ConductorComponent& c) {
+    json j;
+    j["enabled"] = c.enabled;
+    j["masterVolume"] = RF(c.masterVolume);
+    j["crossfadeTime"] = RF(c.crossfadeTime);
+    j["autoDetect"] = c.autoDetect;
+    j["combatRadius"] = RF(c.combatRadius);
+    j["stateChangeDelay"] = RF(c.stateChangeDelay);
+    json stems = json::array();
+    for (const auto& s : c.stems) {
+        json sj;
+        sj["clipPath"] = s.clipPath;
+        sj["name"] = s.name;
+        sj["fadeSpeed"] = RF(s.fadeSpeed);
+        sj["playDuringExplore"] = s.playDuringExplore;
+        sj["playDuringCombat"] = s.playDuringCombat;
+        sj["playDuringStealth"] = s.playDuringStealth;
+        sj["playDuringCutscene"] = s.playDuringCutscene;
+        stems.push_back(sj);
+    }
+    j["stems"] = stems;
+    return j;
+}
+ECS::ConductorComponent DeserializeConductorComponent(const json& j) {
+    ECS::ConductorComponent c;
+    if (j.contains("enabled")) c.enabled = JB(j["enabled"]);
+    if (j.contains("masterVolume")) c.masterVolume = j["masterVolume"].get<f32>();
+    if (j.contains("crossfadeTime")) c.crossfadeTime = j["crossfadeTime"].get<f32>();
+    if (j.contains("autoDetect")) c.autoDetect = JB(j["autoDetect"]);
+    if (j.contains("combatRadius")) c.combatRadius = j["combatRadius"].get<f32>();
+    if (j.contains("stateChangeDelay")) c.stateChangeDelay = j["stateChangeDelay"].get<f32>();
+    if (j.contains("stems") && j["stems"].is_array()) {
+        for (const auto& sj : j["stems"]) {
+            ECS::ConductorComponent::Stem s;
+            if (sj.contains("clipPath")) s.clipPath = sj["clipPath"].get<std::string>();
+            if (sj.contains("name")) s.name = sj["name"].get<std::string>();
+            if (sj.contains("fadeSpeed")) s.fadeSpeed = sj["fadeSpeed"].get<f32>();
+            if (sj.contains("playDuringExplore")) s.playDuringExplore = JB(sj["playDuringExplore"]);
+            if (sj.contains("playDuringCombat")) s.playDuringCombat = JB(sj["playDuringCombat"]);
+            if (sj.contains("playDuringStealth")) s.playDuringStealth = JB(sj["playDuringStealth"]);
+            if (sj.contains("playDuringCutscene")) s.playDuringCutscene = JB(sj["playDuringCutscene"]);
+            c.stems.push_back(s);
+        }
+    }
+    return c;
+}
+
+json SerializeAudioCollisionComponent(const ECS::AudioCollisionComponent& ac) {
+    json j;
+    j["material"] = static_cast<u8>(ac.material);
+    j["impactSoftClip"] = ac.impactSoftClip;
+    j["impactHardClip"] = ac.impactHardClip;
+    j["scrapeClip"] = ac.scrapeClip;
+    j["rollClip"] = ac.rollClip;
+    j["softThreshold"] = RF(ac.softThreshold);
+    j["hardThreshold"] = RF(ac.hardThreshold);
+    j["volumeScale"] = RF(ac.volumeScale);
+    j["pitchVariance"] = RF(ac.pitchVariance);
+    j["cooldown"] = RF(ac.cooldown);
+    j["hollowness"] = RF(ac.hollowness);
+    j["mass"] = RF(ac.mass);
+    j["detailDistance"] = RF(ac.detailDistance);
+    j["cullDistance"] = RF(ac.cullDistance);
+    j["enabled"] = ac.enabled;
+    return j;
+}
+ECS::AudioCollisionComponent DeserializeAudioCollisionComponent(const json& j) {
+    ECS::AudioCollisionComponent ac;
+    if (j.contains("material")) ac.material = static_cast<ECS::SurfaceMaterial>(j["material"].get<u8>());
+    if (j.contains("impactSoftClip")) ac.impactSoftClip = j["impactSoftClip"].get<std::string>();
+    if (j.contains("impactHardClip")) ac.impactHardClip = j["impactHardClip"].get<std::string>();
+    if (j.contains("scrapeClip")) ac.scrapeClip = j["scrapeClip"].get<std::string>();
+    if (j.contains("rollClip")) ac.rollClip = j["rollClip"].get<std::string>();
+    if (j.contains("softThreshold")) ac.softThreshold = j["softThreshold"].get<f32>();
+    if (j.contains("hardThreshold")) ac.hardThreshold = j["hardThreshold"].get<f32>();
+    if (j.contains("volumeScale")) ac.volumeScale = j["volumeScale"].get<f32>();
+    if (j.contains("pitchVariance")) ac.pitchVariance = j["pitchVariance"].get<f32>();
+    if (j.contains("cooldown")) ac.cooldown = j["cooldown"].get<f32>();
+    if (j.contains("hollowness")) ac.hollowness = j["hollowness"].get<f32>();
+    if (j.contains("mass")) ac.mass = j["mass"].get<f32>();
+    if (j.contains("detailDistance")) ac.detailDistance = j["detailDistance"].get<f32>();
+    if (j.contains("cullDistance")) ac.cullDistance = j["cullDistance"].get<f32>();
+    if (j.contains("enabled")) ac.enabled = JB(j["enabled"]);
+    return ac;
+}
+
+json SerializeSidechainComponent(const ECS::SidechainComponent& sc) {
+    json j;
+    j["sourceBus"] = sc.sourceBus;
+    j["targetBus"] = sc.targetBus;
+    j["threshold"] = RF(sc.threshold);
+    j["ratio"] = RF(sc.ratio);
+    j["attackTime"] = RF(sc.attackTime);
+    j["releaseTime"] = RF(sc.releaseTime);
+    j["holdTime"] = RF(sc.holdTime);
+    j["enabled"] = sc.enabled;
+    return j;
+}
+ECS::SidechainComponent DeserializeSidechainComponent(const json& j) {
+    ECS::SidechainComponent sc;
+    if (j.contains("sourceBus")) sc.sourceBus = j["sourceBus"].get<std::string>();
+    if (j.contains("targetBus")) sc.targetBus = j["targetBus"].get<std::string>();
+    if (j.contains("threshold")) sc.threshold = j["threshold"].get<f32>();
+    if (j.contains("ratio")) sc.ratio = j["ratio"].get<f32>();
+    if (j.contains("attackTime")) sc.attackTime = j["attackTime"].get<f32>();
+    if (j.contains("releaseTime")) sc.releaseTime = j["releaseTime"].get<f32>();
+    if (j.contains("holdTime")) sc.holdTime = j["holdTime"].get<f32>();
+    if (j.contains("enabled")) sc.enabled = JB(j["enabled"]);
+    return sc;
+}
+
+json SerializeReverbZoneComponent(const ECS::ReverbZoneComponent& rz) {
+    json j;
+    j["shape"] = static_cast<u8>(rz.shape);
+    j["halfExtents"] = {RF(rz.halfExtents.x), RF(rz.halfExtents.y), RF(rz.halfExtents.z)};
+    j["priority"] = rz.priority;
+    j["isActive"] = rz.isActive;
+    j["isGlobal"] = rz.isGlobal;
+    j["blendRadius"] = RF(rz.blendRadius);
+    j["roomSize"] = RF(rz.roomSize);
+    j["damping"] = RF(rz.damping);
+    j["wetDryMix"] = RF(rz.wetDryMix);
+    j["decayTime"] = RF(rz.decayTime);
+    j["preDelay"] = RF(rz.preDelay);
+    j["preset"] = static_cast<u8>(rz.preset);
+    return j;
+}
+ECS::ReverbZoneComponent DeserializeReverbZoneComponent(const json& j) {
+    ECS::ReverbZoneComponent rz;
+    if (j.contains("shape")) rz.shape = static_cast<ECS::ReverbZoneComponent::Shape>(j["shape"].get<u8>());
+    if (j.contains("halfExtents") && j["halfExtents"].is_array() && j["halfExtents"].size() == 3)
+        rz.halfExtents = Math::Vector3(j["halfExtents"][0].get<f32>(), j["halfExtents"][1].get<f32>(), j["halfExtents"][2].get<f32>());
+    if (j.contains("priority")) rz.priority = j["priority"].get<i32>();
+    if (j.contains("isActive")) rz.isActive = JB(j["isActive"]);
+    if (j.contains("isGlobal")) rz.isGlobal = JB(j["isGlobal"]);
+    if (j.contains("blendRadius")) rz.blendRadius = j["blendRadius"].get<f32>();
+    if (j.contains("roomSize")) rz.roomSize = j["roomSize"].get<f32>();
+    if (j.contains("damping")) rz.damping = j["damping"].get<f32>();
+    if (j.contains("wetDryMix")) rz.wetDryMix = j["wetDryMix"].get<f32>();
+    if (j.contains("decayTime")) rz.decayTime = j["decayTime"].get<f32>();
+    if (j.contains("preDelay")) rz.preDelay = j["preDelay"].get<f32>();
+    if (j.contains("preset")) rz.preset = static_cast<ECS::ReverbZoneComponent::Preset>(j["preset"].get<u8>());
+    return rz;
+}
+
+json SerializeMusicZoneComponent(const ECS::MusicZoneComponent& mz) {
+    json j;
+    j["trackPath"] = mz.trackPath;
+    j["fadeInTime"] = RF(mz.fadeInTime);
+    j["fadeOutTime"] = RF(mz.fadeOutTime);
+    j["priority"] = mz.priority;
+    j["halfExtents"] = {RF(mz.halfExtents.x), RF(mz.halfExtents.y), RF(mz.halfExtents.z)};
+    j["isActive"] = mz.isActive;
+    return j;
+}
+ECS::MusicZoneComponent DeserializeMusicZoneComponent(const json& j) {
+    ECS::MusicZoneComponent mz;
+    if (j.contains("trackPath")) mz.trackPath = j["trackPath"].get<std::string>();
+    if (j.contains("fadeInTime")) mz.fadeInTime = j["fadeInTime"].get<f32>();
+    if (j.contains("fadeOutTime")) mz.fadeOutTime = j["fadeOutTime"].get<f32>();
+    if (j.contains("priority")) mz.priority = j["priority"].get<i32>();
+    if (j.contains("halfExtents") && j["halfExtents"].is_array() && j["halfExtents"].size() == 3)
+        mz.halfExtents = Math::Vector3(j["halfExtents"][0].get<f32>(), j["halfExtents"][1].get<f32>(), j["halfExtents"][2].get<f32>());
+    if (j.contains("isActive")) mz.isActive = JB(j["isActive"]);
+    return mz;
+}
+
+json SerializeAudioSnapshotTriggerComponent(const ECS::AudioSnapshotTriggerComponent& st) {
+    json j;
+    j["snapshotName"] = st.snapshotName;
+    j["halfExtents"] = {RF(st.halfExtents.x), RF(st.halfExtents.y), RF(st.halfExtents.z)};
+    j["isActive"] = st.isActive;
+    return j;
+}
+ECS::AudioSnapshotTriggerComponent DeserializeAudioSnapshotTriggerComponent(const json& j) {
+    ECS::AudioSnapshotTriggerComponent st;
+    if (j.contains("snapshotName")) st.snapshotName = j["snapshotName"].get<std::string>();
+    if (j.contains("halfExtents") && j["halfExtents"].is_array() && j["halfExtents"].size() == 3)
+        st.halfExtents = Math::Vector3(j["halfExtents"][0].get<f32>(), j["halfExtents"][1].get<f32>(), j["halfExtents"][2].get<f32>());
+    if (j.contains("isActive")) st.isActive = JB(j["isActive"]);
+    return st;
+}
+
+json SerializeAudioOcclusionComponent(const ECS::AudioOcclusionComponent& oc) {
+    json j;
+    j["enabled"] = oc.enabled;
+    j["lowPassCutoff"] = RF(oc.lowPassCutoff);
+    j["volumeReduction"] = RF(oc.volumeReduction);
+    j["updateRate"] = RF(oc.updateRate);
+    return j;
+}
+ECS::AudioOcclusionComponent DeserializeAudioOcclusionComponent(const json& j) {
+    ECS::AudioOcclusionComponent oc;
+    if (j.contains("enabled")) oc.enabled = JB(j["enabled"]);
+    if (j.contains("lowPassCutoff")) oc.lowPassCutoff = j["lowPassCutoff"].get<f32>();
+    if (j.contains("volumeReduction")) oc.volumeReduction = j["volumeReduction"].get<f32>();
+    if (j.contains("updateRate")) oc.updateRate = j["updateRate"].get<f32>();
+    return oc;
+}
+
+json SerializePoseLibraryComponent(const ECS::PoseLibraryComponent& pl) {
+    json j;
+    j["blendWeight"] = RF(pl.blendWeight);
+    j["blendSpeed"] = RF(pl.blendSpeed);
+    j["activePose"] = pl.activePose;
+    json poses = json::array();
+    for (const auto& p : pl.poses) {
+        json pj;
+        pj["name"] = p.name;
+        pj["category"] = p.category;
+        json overrides = json::array();
+        for (const auto& o : p.overrides) {
+            json oj;
+            oj["boneName"] = o.boneName;
+            oj["rotation"] = {RF(o.rotation.x), RF(o.rotation.y), RF(o.rotation.z), RF(o.rotation.w)};
+            oj["weight"] = RF(o.weight);
+            overrides.push_back(oj);
+        }
+        pj["overrides"] = overrides;
+        poses.push_back(pj);
+    }
+    j["poses"] = poses;
+    return j;
+}
+ECS::PoseLibraryComponent DeserializePoseLibraryComponent(const json& j) {
+    ECS::PoseLibraryComponent pl;
+    if (j.contains("blendWeight")) pl.blendWeight = j["blendWeight"].get<f32>();
+    if (j.contains("blendSpeed")) pl.blendSpeed = j["blendSpeed"].get<f32>();
+    if (j.contains("activePose")) pl.activePose = j["activePose"].get<std::string>();
+    if (j.contains("poses") && j["poses"].is_array()) {
+        for (const auto& pj : j["poses"]) {
+            ECS::PoseLibraryComponent::NamedPose p;
+            if (pj.contains("name")) p.name = pj["name"].get<std::string>();
+            if (pj.contains("category")) p.category = pj["category"].get<std::string>();
+            if (pj.contains("overrides") && pj["overrides"].is_array()) {
+                for (const auto& oj : pj["overrides"]) {
+                    ECS::PoseLibraryComponent::BoneOverride o;
+                    if (oj.contains("boneName")) o.boneName = oj["boneName"].get<std::string>();
+                    if (oj.contains("rotation") && oj["rotation"].is_array() && oj["rotation"].size() == 4)
+                        o.rotation = Math::Quaternion(oj["rotation"][0].get<f32>(), oj["rotation"][1].get<f32>(), oj["rotation"][2].get<f32>(), oj["rotation"][3].get<f32>());
+                    if (oj.contains("weight")) o.weight = oj["weight"].get<f32>();
+                    p.overrides.push_back(o);
+                }
+            }
+            pl.poses.push_back(p);
+        }
+    }
+    return pl;
+}
+
 json SerializeDamageComponent(const ECS::DamageComponent& d) {
     json j;
     j["damage"] = RF(d.damage);
@@ -6528,6 +6909,32 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::SceneRewindComponent>(entity)) {
                 entityJson["sceneRewind"] = SerializeSceneRewindComponent(*m_World->GetComponent<ECS::SceneRewindComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::AudioReactiveComponent>(entity))
+                entityJson["audioReactive"] = SerializeAudioReactiveComponent(*m_World->GetComponent<ECS::AudioReactiveComponent>(entity));
+            if (m_World->HasComponent<ECS::AudioThresholdTriggerComponent>(entity))
+                entityJson["audioThresholdTrigger"] = SerializeAudioThresholdTriggerComponent(*m_World->GetComponent<ECS::AudioThresholdTriggerComponent>(entity));
+            if (m_World->HasComponent<ECS::RTPCComponent>(entity))
+                entityJson["rtpc"] = SerializeRTPCComponent(*m_World->GetComponent<ECS::RTPCComponent>(entity));
+            if (m_World->HasComponent<ECS::BeatClockComponent>(entity))
+                entityJson["beatClock"] = SerializeBeatClockComponent(*m_World->GetComponent<ECS::BeatClockComponent>(entity));
+            if (m_World->HasComponent<ECS::BeatSyncComponent>(entity))
+                entityJson["beatSync"] = SerializeBeatSyncComponent(*m_World->GetComponent<ECS::BeatSyncComponent>(entity));
+            if (m_World->HasComponent<ECS::ConductorComponent>(entity))
+                entityJson["conductor"] = SerializeConductorComponent(*m_World->GetComponent<ECS::ConductorComponent>(entity));
+            if (m_World->HasComponent<ECS::AudioCollisionComponent>(entity))
+                entityJson["audioCollision"] = SerializeAudioCollisionComponent(*m_World->GetComponent<ECS::AudioCollisionComponent>(entity));
+            if (m_World->HasComponent<ECS::SidechainComponent>(entity))
+                entityJson["sidechain"] = SerializeSidechainComponent(*m_World->GetComponent<ECS::SidechainComponent>(entity));
+            if (m_World->HasComponent<ECS::ReverbZoneComponent>(entity))
+                entityJson["reverbZone"] = SerializeReverbZoneComponent(*m_World->GetComponent<ECS::ReverbZoneComponent>(entity));
+            if (m_World->HasComponent<ECS::MusicZoneComponent>(entity))
+                entityJson["musicZone"] = SerializeMusicZoneComponent(*m_World->GetComponent<ECS::MusicZoneComponent>(entity));
+            if (m_World->HasComponent<ECS::AudioSnapshotTriggerComponent>(entity))
+                entityJson["audioSnapshotTrigger"] = SerializeAudioSnapshotTriggerComponent(*m_World->GetComponent<ECS::AudioSnapshotTriggerComponent>(entity));
+            if (m_World->HasComponent<ECS::AudioOcclusionComponent>(entity))
+                entityJson["audioOcclusion"] = SerializeAudioOcclusionComponent(*m_World->GetComponent<ECS::AudioOcclusionComponent>(entity));
+            if (m_World->HasComponent<ECS::PoseLibraryComponent>(entity))
+                entityJson["poseLibrary"] = SerializePoseLibraryComponent(*m_World->GetComponent<ECS::PoseLibraryComponent>(entity));
             if (m_World->HasComponent<ECS::DamageComponent>(entity)) {
                 entityJson["damage"] = SerializeDamageComponent(*m_World->GetComponent<ECS::DamageComponent>(entity));
             }
@@ -7900,6 +8307,32 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             if (m_World->HasComponent<ECS::SceneRewindComponent>(entity)) {
                 entityJson["sceneRewind"] = SerializeSceneRewindComponent(*m_World->GetComponent<ECS::SceneRewindComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::AudioReactiveComponent>(entity))
+                entityJson["audioReactive"] = SerializeAudioReactiveComponent(*m_World->GetComponent<ECS::AudioReactiveComponent>(entity));
+            if (m_World->HasComponent<ECS::AudioThresholdTriggerComponent>(entity))
+                entityJson["audioThresholdTrigger"] = SerializeAudioThresholdTriggerComponent(*m_World->GetComponent<ECS::AudioThresholdTriggerComponent>(entity));
+            if (m_World->HasComponent<ECS::RTPCComponent>(entity))
+                entityJson["rtpc"] = SerializeRTPCComponent(*m_World->GetComponent<ECS::RTPCComponent>(entity));
+            if (m_World->HasComponent<ECS::BeatClockComponent>(entity))
+                entityJson["beatClock"] = SerializeBeatClockComponent(*m_World->GetComponent<ECS::BeatClockComponent>(entity));
+            if (m_World->HasComponent<ECS::BeatSyncComponent>(entity))
+                entityJson["beatSync"] = SerializeBeatSyncComponent(*m_World->GetComponent<ECS::BeatSyncComponent>(entity));
+            if (m_World->HasComponent<ECS::ConductorComponent>(entity))
+                entityJson["conductor"] = SerializeConductorComponent(*m_World->GetComponent<ECS::ConductorComponent>(entity));
+            if (m_World->HasComponent<ECS::AudioCollisionComponent>(entity))
+                entityJson["audioCollision"] = SerializeAudioCollisionComponent(*m_World->GetComponent<ECS::AudioCollisionComponent>(entity));
+            if (m_World->HasComponent<ECS::SidechainComponent>(entity))
+                entityJson["sidechain"] = SerializeSidechainComponent(*m_World->GetComponent<ECS::SidechainComponent>(entity));
+            if (m_World->HasComponent<ECS::ReverbZoneComponent>(entity))
+                entityJson["reverbZone"] = SerializeReverbZoneComponent(*m_World->GetComponent<ECS::ReverbZoneComponent>(entity));
+            if (m_World->HasComponent<ECS::MusicZoneComponent>(entity))
+                entityJson["musicZone"] = SerializeMusicZoneComponent(*m_World->GetComponent<ECS::MusicZoneComponent>(entity));
+            if (m_World->HasComponent<ECS::AudioSnapshotTriggerComponent>(entity))
+                entityJson["audioSnapshotTrigger"] = SerializeAudioSnapshotTriggerComponent(*m_World->GetComponent<ECS::AudioSnapshotTriggerComponent>(entity));
+            if (m_World->HasComponent<ECS::AudioOcclusionComponent>(entity))
+                entityJson["audioOcclusion"] = SerializeAudioOcclusionComponent(*m_World->GetComponent<ECS::AudioOcclusionComponent>(entity));
+            if (m_World->HasComponent<ECS::PoseLibraryComponent>(entity))
+                entityJson["poseLibrary"] = SerializePoseLibraryComponent(*m_World->GetComponent<ECS::PoseLibraryComponent>(entity));
             if (m_World->HasComponent<ECS::DamageComponent>(entity)) {
                 entityJson["damage"] = SerializeDamageComponent(*m_World->GetComponent<ECS::DamageComponent>(entity));
             }
@@ -9061,6 +9494,32 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["recordRewind"] = SerializeRecordRewindComponent(*world->GetComponent<ECS::RecordRewindComponent>(entity));
         if (world->HasComponent<ECS::SceneRewindComponent>(entity))
             entityJson["sceneRewind"] = SerializeSceneRewindComponent(*world->GetComponent<ECS::SceneRewindComponent>(entity));
+        if (world->HasComponent<ECS::AudioReactiveComponent>(entity))
+            entityJson["audioReactive"] = SerializeAudioReactiveComponent(*world->GetComponent<ECS::AudioReactiveComponent>(entity));
+        if (world->HasComponent<ECS::AudioThresholdTriggerComponent>(entity))
+            entityJson["audioThresholdTrigger"] = SerializeAudioThresholdTriggerComponent(*world->GetComponent<ECS::AudioThresholdTriggerComponent>(entity));
+        if (world->HasComponent<ECS::RTPCComponent>(entity))
+            entityJson["rtpc"] = SerializeRTPCComponent(*world->GetComponent<ECS::RTPCComponent>(entity));
+        if (world->HasComponent<ECS::BeatClockComponent>(entity))
+            entityJson["beatClock"] = SerializeBeatClockComponent(*world->GetComponent<ECS::BeatClockComponent>(entity));
+        if (world->HasComponent<ECS::BeatSyncComponent>(entity))
+            entityJson["beatSync"] = SerializeBeatSyncComponent(*world->GetComponent<ECS::BeatSyncComponent>(entity));
+        if (world->HasComponent<ECS::ConductorComponent>(entity))
+            entityJson["conductor"] = SerializeConductorComponent(*world->GetComponent<ECS::ConductorComponent>(entity));
+        if (world->HasComponent<ECS::AudioCollisionComponent>(entity))
+            entityJson["audioCollision"] = SerializeAudioCollisionComponent(*world->GetComponent<ECS::AudioCollisionComponent>(entity));
+        if (world->HasComponent<ECS::SidechainComponent>(entity))
+            entityJson["sidechain"] = SerializeSidechainComponent(*world->GetComponent<ECS::SidechainComponent>(entity));
+        if (world->HasComponent<ECS::ReverbZoneComponent>(entity))
+            entityJson["reverbZone"] = SerializeReverbZoneComponent(*world->GetComponent<ECS::ReverbZoneComponent>(entity));
+        if (world->HasComponent<ECS::MusicZoneComponent>(entity))
+            entityJson["musicZone"] = SerializeMusicZoneComponent(*world->GetComponent<ECS::MusicZoneComponent>(entity));
+        if (world->HasComponent<ECS::AudioSnapshotTriggerComponent>(entity))
+            entityJson["audioSnapshotTrigger"] = SerializeAudioSnapshotTriggerComponent(*world->GetComponent<ECS::AudioSnapshotTriggerComponent>(entity));
+        if (world->HasComponent<ECS::AudioOcclusionComponent>(entity))
+            entityJson["audioOcclusion"] = SerializeAudioOcclusionComponent(*world->GetComponent<ECS::AudioOcclusionComponent>(entity));
+        if (world->HasComponent<ECS::PoseLibraryComponent>(entity))
+            entityJson["poseLibrary"] = SerializePoseLibraryComponent(*world->GetComponent<ECS::PoseLibraryComponent>(entity));
         if (world->HasComponent<ECS::DamageComponent>(entity))
             entityJson["damage"] = SerializeDamageComponent(*world->GetComponent<ECS::DamageComponent>(entity));
         if (world->HasComponent<ECS::GameOverComponent>(entity))
@@ -9932,6 +10391,19 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "health") { world->AddComponent<ECS::HealthComponent>(entity, DeserializeHealthComponent(j)); return true; }
         if (key == "recordRewind") { world->AddComponent<ECS::RecordRewindComponent>(entity, DeserializeRecordRewindComponent(j)); return true; }
         if (key == "sceneRewind") { world->AddComponent<ECS::SceneRewindComponent>(entity, DeserializeSceneRewindComponent(j)); return true; }
+        if (key == "audioReactive") { world->AddComponent<ECS::AudioReactiveComponent>(entity, DeserializeAudioReactiveComponent(j)); return true; }
+        if (key == "audioThresholdTrigger") { world->AddComponent<ECS::AudioThresholdTriggerComponent>(entity, DeserializeAudioThresholdTriggerComponent(j)); return true; }
+        if (key == "rtpc") { world->AddComponent<ECS::RTPCComponent>(entity, DeserializeRTPCComponent(j)); return true; }
+        if (key == "beatClock") { world->AddComponent<ECS::BeatClockComponent>(entity, DeserializeBeatClockComponent(j)); return true; }
+        if (key == "beatSync") { world->AddComponent<ECS::BeatSyncComponent>(entity, DeserializeBeatSyncComponent(j)); return true; }
+        if (key == "conductor") { world->AddComponent<ECS::ConductorComponent>(entity, DeserializeConductorComponent(j)); return true; }
+        if (key == "audioCollision") { world->AddComponent<ECS::AudioCollisionComponent>(entity, DeserializeAudioCollisionComponent(j)); return true; }
+        if (key == "sidechain") { world->AddComponent<ECS::SidechainComponent>(entity, DeserializeSidechainComponent(j)); return true; }
+        if (key == "reverbZone") { world->AddComponent<ECS::ReverbZoneComponent>(entity, DeserializeReverbZoneComponent(j)); return true; }
+        if (key == "musicZone") { world->AddComponent<ECS::MusicZoneComponent>(entity, DeserializeMusicZoneComponent(j)); return true; }
+        if (key == "audioSnapshotTrigger") { world->AddComponent<ECS::AudioSnapshotTriggerComponent>(entity, DeserializeAudioSnapshotTriggerComponent(j)); return true; }
+        if (key == "audioOcclusion") { world->AddComponent<ECS::AudioOcclusionComponent>(entity, DeserializeAudioOcclusionComponent(j)); return true; }
+        if (key == "poseLibrary") { world->AddComponent<ECS::PoseLibraryComponent>(entity, DeserializePoseLibraryComponent(j)); return true; }
         if (key == "damage") { world->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(j)); return true; }
         if (key == "gameOver") { world->AddComponent<ECS::GameOverComponent>(entity, DeserializeGameOverComponent(j)); return true; }
         if (key == "damageResistance") { world->AddComponent<ECS::DamageResistanceComponent>(entity, DeserializeDamageResistanceComponent(j)); return true; }
