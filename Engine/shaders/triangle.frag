@@ -354,8 +354,10 @@ float calcShadowCSM(float viewDepth, vec3 worldPos, vec3 normal, vec3 lightDir) 
 
     // Normal offset bias: push shadow lookup along surface normal to prevent acne.
     // Scale by NdotL — surfaces facing away from light need more bias.
+    // Use a world-space bias proportional to view depth (cascade-independent).
     float NdotL = max(dot(normal, lightDir), 0.0);
-    float normalBias = texelSize.x * mix(4.0, 1.0, NdotL);
+    float depthBias = max(viewDepth * 0.002, texelSize.x * 2.0);
+    float normalBias = depthBias * mix(2.0, 0.5, NdotL);
     vec3 biasedWorldPos = worldPos + normal * normalBias;
 
     // Sample primary cascade
