@@ -5,6 +5,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Mesh.h"
+#include "Enjin/ECS/Components/MorphTarget.h"
 
 // Forward declarations for cached component storage (avoids header includes)
 namespace Enjin::ECS {
@@ -173,6 +174,7 @@ struct EntityRenderData {
     std::unique_ptr<Renderer::VulkanBuffer> vertexBuffer;
     std::unique_ptr<Renderer::VulkanBuffer> indexBuffer;
     std::unique_ptr<Renderer::VulkanBuffer> boneBuffer;
+    std::unique_ptr<Renderer::VulkanBuffer> morphBuffer;
     u32 indexCount = 0;
     bool valid = false;  // true if this slot is occupied
     // Merged geometry pool allocation (valid when entity uses the shared pool)
@@ -182,6 +184,7 @@ struct EntityRenderData {
         vertexBuffer.reset();
         indexBuffer.reset();
         boneBuffer.reset();
+        morphBuffer.reset();
         indexCount = 0;
         valid = false;
         poolAlloc = {};
@@ -781,6 +784,8 @@ private:
     std::unique_ptr<Renderer::VulkanBuffer> m_DefaultBoneBuffer;
     std::unique_ptr<Renderer::VulkanBuffer> m_DefaultMorphBuffer;
     void UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer);
+    void UpdateMorphDescriptor(Renderer::VulkanBuffer* morphBuffer);
+    void UploadMorphTargetSSBO(Entity entity, ECS::MorphTargetComponent& morph, EntityRenderData& rd);
 #endif
 
     // Weather, particle, grass, shrub, tree, and sprite batch renderers
@@ -969,7 +974,8 @@ private:
     struct LastBoundState {
         MaterialComponent::TextureKey textureKey;
         Renderer::VulkanBuffer* boneBuffer = nullptr;
-        void Reset() { textureKey = {}; boneBuffer = nullptr; }
+        Renderer::VulkanBuffer* morphBuffer = nullptr;
+        void Reset() { textureKey = {}; boneBuffer = nullptr; morphBuffer = nullptr; }
     };
     LastBoundState m_LastBound;
     bool m_GeometryPoolBound = false;  // Track if geometry pool buffers are bound this pass

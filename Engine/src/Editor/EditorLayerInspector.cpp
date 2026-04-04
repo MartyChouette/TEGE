@@ -1723,6 +1723,37 @@ void EditorLayer::DrawInspectorPanel() {
                 }
             }
         }
+        // Morph targets (blend shapes)
+        if (m_World->HasComponent<ECS::MorphTargetComponent>(m_PrimarySelected)) {
+            auto* morph = m_World->GetComponent<ECS::MorphTargetComponent>(m_PrimarySelected);
+            if (morph && ImGui::CollapsingHeader("[M] Morph Targets", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::Text("%zu targets, %zu verts/target",
+                    morph->targets.size(),
+                    morph->targets.empty() ? 0 : morph->targets[0].deltas.size());
+
+                ImGui::Separator();
+                for (usize i = 0; i < morph->targets.size(); ++i) {
+                    f32 w = morph->weights[i];
+                    if (ImGui::SliderFloat(morph->targets[i].name.c_str(), &w, 0.0f, 1.0f, "%.2f")) {
+                        morph->weights[i] = w;
+                        morph->weightsDirty = true;
+                    }
+                }
+
+                if (morph->targets.size() > 1) {
+                    if (ImGui::Button("Reset All##Morph")) {
+                        for (auto& w : morph->weights) w = 0.0f;
+                        morph->weightsDirty = true;
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Max All##Morph")) {
+                        for (auto& w : morph->weights) w = 1.0f;
+                        morph->weightsDirty = true;
+                    }
+                }
+            }
+        }
+
         if (m_World->HasComponent<ECS::AnimatorComponent>(m_PrimarySelected)) {
             // Animator component inspector (inline)
             bool animOpen = ImGui::CollapsingHeader("[>] Animator", ImGuiTreeNodeFlags_DefaultOpen);

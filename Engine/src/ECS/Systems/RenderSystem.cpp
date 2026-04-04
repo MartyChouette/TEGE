@@ -2198,6 +2198,19 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 }
             }
 
+            // Morph target SSBO upload + descriptor binding
+            auto* morphComp = m_World->GetComponent<MorphTargetComponent>(entity);
+            if (morphComp && !morphComp->targets.empty()) {
+                UploadMorphTargetSSBO(entity, *morphComp, renderData);
+                if (renderData.morphBuffer) {
+                    UpdateMorphDescriptor(renderData.morphBuffer.get());
+                }
+            } else {
+                if (m_DefaultMorphBuffer) {
+                    UpdateMorphDescriptor(m_DefaultMorphBuffer.get());
+                }
+            }
+
             // Multi-material sub-mesh rendering: if entity has MaterialSlotsComponent
             // and the mesh has sub-meshes, draw each sub-mesh with its own material.
             MeshComponent* meshForSubMesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
@@ -6890,6 +6903,80 @@ void RenderSystem::UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer) {
     descriptorWrite.pBufferInfo = &bufferInfo;
 
     vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
+}
+
+void RenderSystem::UpdateMorphDescriptor(Renderer::VulkanBuffer* morphBuffer) {
+    if (!morphBuffer) return;
+    if (morphBuffer == m_LastBound.morphBuffer) return;
+    m_LastBound.morphBuffer = morphBuffer;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    VkDescriptorBufferInfo bufferInfo{};
+    bufferInfo.buffer = morphBuffer->GetBuffer();
+    bufferInfo.offset = 0;
+    bufferInfo.range = morphBuffer->GetSize();
+
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)];
+    write.dstBinding = 20;
+    write.dstArrayElement = 0;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    write.descriptorCount = 1;
+    write.pBufferInfo = &bufferInfo;
+    vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &write, 0, nullptr);
+}
+
+void RenderSystem::UploadMorphTargetSSBO(Entity entity, ECS::MorphTargetComponent& morph, EntityRenderData& rd) {
+    auto* meshComp = m_World->GetComponent<MeshComponent>(entity);
+    if (!meshComp) return;
+    u32 vertexCount = static_cast<u32>(meshComp->vertices.size());
+    u32 targetCount = static_cast<u32>(morph.targets.size());
+    if (targetCount == 0 || vertexCount == 0) return;
+
+    u32 headerSize = 2 + targetCount;
+    usize totalFloats = headerSize + static_cast<usize>(targetCount) * vertexCount * 6;
+    usize totalBytes = totalFloats * sizeof(f32);
+
+    if (!rd.morphBuffer || rd.morphBuffer->GetSize() < totalBytes) {
+        rd.morphBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+        if (!rd.morphBuffer->Create(totalBytes, Renderer::BufferUsage::Storage, true)) {
+            rd.morphBuffer.reset();
+            return;
+        }
+        morph.deltasDirty = true;
+    }
+
+    if (morph.deltasDirty) {
+        std::vector<f32> ssbo(totalFloats, 0.0f);
+        u32 vc = vertexCount, tc = targetCount;
+        std::memcpy(&ssbo[0], &vc, 4);
+        std::memcpy(&ssbo[1], &tc, 4);
+        for (u32 t = 0; t < targetCount; ++t) ssbo[2 + t] = morph.weights[t];
+        for (u32 t = 0; t < targetCount; ++t) {
+            const auto& tgt = morph.targets[t];
+            for (u32 v = 0; v < vertexCount && v < static_cast<u32>(tgt.deltas.size()); ++v) {
+                u32 idx = headerSize + t * vertexCount * 6 + v * 6;
+                ssbo[idx+0] = tgt.deltas[v].positionDelta.x;
+                ssbo[idx+1] = tgt.deltas[v].positionDelta.y;
+                ssbo[idx+2] = tgt.deltas[v].positionDelta.z;
+                ssbo[idx+3] = tgt.deltas[v].normalDelta.x;
+                ssbo[idx+4] = tgt.deltas[v].normalDelta.y;
+                ssbo[idx+5] = tgt.deltas[v].normalDelta.z;
+            }
+        }
+        rd.morphBuffer->UploadData(ssbo.data(), totalBytes);
+        morph.deltasDirty = false;
+        morph.weightsDirty = false;
+    } else if (morph.weightsDirty) {
+        std::vector<f32> hdr(headerSize);
+        u32 vc = vertexCount, tc = targetCount;
+        std::memcpy(&hdr[0], &vc, 4);
+        std::memcpy(&hdr[1], &tc, 4);
+        for (u32 t = 0; t < targetCount; ++t) hdr[2 + t] = morph.weights[t];
+        rd.morphBuffer->UploadData(hdr.data(), headerSize * sizeof(f32));
+        morph.weightsDirty = false;
+    }
 }
 
 void RenderSystem::EnsureWaterMeshes() {
