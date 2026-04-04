@@ -8615,5 +8615,42 @@ void EditorLayer::DrawBoneAttachmentComponent(ECS::Entity entity) {
 // ============================================================================
 
 
+// Explicit template instantiations for RemoveComponentWithUndo
+// (needed by split files: EditorLayerComponents_Audio.cpp, EditorLayerComponents_Physics.cpp)
+template void EditorLayer::RemoveComponentWithUndo<ECS::AudioSourceComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::AudioListenerComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::ReverbZoneComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::AmbientSoundLayerComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::MusicZoneComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::AudioSnapshotTriggerComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::AudioOcclusionComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::LipSyncComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::AudioReactiveComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::AudioThresholdTriggerComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::RTPCComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::BeatClockComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::BeatSyncComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::ConductorComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::AudioCollisionComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::SidechainComponent>(ECS::Entity, const std::string&, const std::string&);
+// Physics split
+template void EditorLayer::RemoveComponentWithUndo<ECS::RigidbodyComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::BoxColliderComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::SphereColliderComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::CapsuleColliderComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::MeshColliderComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::TriggerZoneComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::PerFrameColliderComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::PolygonCollider2DComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::RagdollComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::DistanceJointComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::HingeJointComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::BallSocketJointComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::SpringJointComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::FixedJointComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::SliderJointComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<Physics::Body2DComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<Physics::Joint2DComponent>(ECS::Entity, const std::string&, const std::string&);
+
 } // namespace Editor
 } // namespace Enjin
