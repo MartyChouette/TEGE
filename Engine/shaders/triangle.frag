@@ -352,32 +352,33 @@ float calcShadowCSM(float viewDepth, vec3 worldPos, vec3 normal, vec3 lightDir) 
 
     vec2 texelSize = 1.0 / vec2(textureSize(shadowMap, 0).xy);
 
-    // Normal offset bias: push shadow lookup along surface normal to prevent acne.
-    // Scale by NdotL — surfaces facing away from light need more bias.
-    // Use a world-space bias proportional to view depth (cascade-independent).
+    // Normal + light direction offset bias to prevent acne on all surface angles.
+    // Combines normal push (prevents self-shadow) with light-direction push (handles grazing).
     float NdotL = max(dot(normal, lightDir), 0.0);
-    float depthBias = max(viewDepth * 0.002, texelSize.x * 2.0);
-    float normalBias = depthBias * mix(2.0, 0.5, NdotL);
-    vec3 biasedWorldPos = worldPos + normal * normalBias;
+    float baseBias = texelSize.x * 3.0;
+    vec3 biasedWorldPos = worldPos + normal * baseBias * (1.0 - NdotL * 0.5)
+                                   + lightDir * baseBias * 0.5;
 
     // Sample primary cascade
     float shadow = sampleShadowCascade(cascadeIdx, biasedWorldPos, texelSize);
 
-    // Blend with next cascade near boundaries to eliminate seam lines.
-    // Very wide blend zone (50%) with smooth hermite interpolation.
+    // Blend with next cascade: ALWAYS blend when not in the last cascade.
+    // Full overlap blending — sample both cascades and interpolate smoothly
+    // across the entire second half of each cascade's range.
     if (cascadeIdx < 3) {
         float splitDist = lighting.cascadeSplits[cascadeIdx];
-        float blendRange = splitDist * 0.5;
-        if (viewDepth > splitDist - blendRange) {
-            vec3 nextBiasedPos = worldPos + normal * normalBias;
-            float nextShadow = sampleShadowCascade(cascadeIdx + 1, nextBiasedPos, texelSize);
-            float blend = smoothstep(splitDist - blendRange, splitDist, viewDepth);
+        float prevSplit = (cascadeIdx > 0) ? lighting.cascadeSplits[cascadeIdx - 1] : 0.0;
+        float cascadeRange = splitDist - prevSplit;
+        float blendStart = prevSplit + cascadeRange * 0.5; // Start blending at 50% into cascade
+        if (viewDepth > blendStart) {
+            float nextShadow = sampleShadowCascade(cascadeIdx + 1, biasedWorldPos, texelSize);
+            float blend = smoothstep(blendStart, splitDist, viewDepth);
             shadow = mix(shadow, nextShadow, blend);
         }
     }
 
-    // Distance fade: smoothly fade shadows near max distance
-    float fadeStart = lighting.shadowMaxDistance * 0.7;
+    // Distance fade: smoothly fade shadows near max distance (start at 85%)
+    float fadeStart = lighting.shadowMaxDistance * 0.85;
     float fadeFactor = 1.0 - smoothstep(fadeStart, lighting.shadowMaxDistance, viewDepth);
     shadow = mix(1.0, shadow, fadeFactor);
 
