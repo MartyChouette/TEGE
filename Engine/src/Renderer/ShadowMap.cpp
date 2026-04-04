@@ -488,13 +488,26 @@ void ShadowMap::UpdateCascades(const Math::Matrix4& cameraView, const Math::Matr
         minZ -= zPad;
         maxZ += zPad;
 
-        // Texel-size snapping to prevent shadow swimming when camera moves
-        f32 worldUnitsPerTexel = std::max(maxX - minX, maxY - minY) / static_cast<f32>(m_Config.resolution);
+        // Texel-size snapping to prevent shadow swimming when camera moves.
+        // Snap the CENTER of the AABB (not min/max independently) to preserve
+        // consistent dimensions across cascades and prevent banding artifacts.
+        f32 sizeX = maxX - minX;
+        f32 sizeY = maxY - minY;
+        f32 worldUnitsPerTexel = std::max(sizeX, sizeY) / static_cast<f32>(m_Config.resolution);
         if (worldUnitsPerTexel > 0.0f) {
-            minX = std::floor(minX / worldUnitsPerTexel) * worldUnitsPerTexel;
-            maxX = std::floor(maxX / worldUnitsPerTexel) * worldUnitsPerTexel;
-            minY = std::floor(minY / worldUnitsPerTexel) * worldUnitsPerTexel;
-            maxY = std::floor(maxY / worldUnitsPerTexel) * worldUnitsPerTexel;
+            // Round the dimensions UP to the next texel-aligned size
+            sizeX = std::ceil(sizeX / worldUnitsPerTexel) * worldUnitsPerTexel;
+            sizeY = std::ceil(sizeY / worldUnitsPerTexel) * worldUnitsPerTexel;
+            // Snap the center point to texel grid
+            f32 centerX = (minX + maxX) * 0.5f;
+            f32 centerY = (minY + maxY) * 0.5f;
+            centerX = std::floor(centerX / worldUnitsPerTexel) * worldUnitsPerTexel;
+            centerY = std::floor(centerY / worldUnitsPerTexel) * worldUnitsPerTexel;
+            // Rebuild min/max from snapped center + consistent size
+            minX = centerX - sizeX * 0.5f;
+            maxX = centerX + sizeX * 0.5f;
+            minY = centerY - sizeY * 0.5f;
+            maxY = centerY + sizeY * 0.5f;
         }
 
         // Build orthographic projection directly from light-space AABB bounds.
