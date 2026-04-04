@@ -352,21 +352,23 @@ float calcShadowCSM(float viewDepth, vec3 worldPos, vec3 normal, vec3 lightDir) 
 
     vec2 texelSize = 1.0 / vec2(textureSize(shadowMap, 0).xy);
 
-    // Normal offset bias: push shadow lookup along surface normal to prevent acne
-    // on large flat surfaces (ground planes) viewed at grazing angles.
-    float normalBias = texelSize.x * 2.0 * float(1 << cascadeIdx);
+    // Normal offset bias: push shadow lookup along surface normal to prevent acne.
+    // Use a fixed bias (not per-cascade) to avoid brightness discontinuities at
+    // cascade boundaries. The texel size already accounts for cascade resolution.
+    float normalBias = texelSize.x * 3.0;
     vec3 biasedWorldPos = worldPos + normal * normalBias;
 
     // Sample primary cascade
     float shadow = sampleShadowCascade(cascadeIdx, biasedWorldPos, texelSize);
 
-    // Blend with next cascade near boundaries to eliminate seam lines
+    // Blend with next cascade near boundaries to eliminate seam lines.
+    // Wide blend zone (40% of cascade distance) for smooth transitions.
     if (cascadeIdx < 3) {
         float splitDist = lighting.cascadeSplits[cascadeIdx];
-        float blendRange = splitDist * 0.25;  // 25% blend zone (wider = less flicker at cascade boundaries)
+        float blendRange = splitDist * 0.4;
         if (viewDepth > splitDist - blendRange) {
-            float nextBias = texelSize.x * 2.0 * float(1 << (cascadeIdx + 1));
-            vec3 nextBiasedPos = worldPos + normal * nextBias;
+            // Use same bias for next cascade to prevent brightness jump at seam
+            vec3 nextBiasedPos = worldPos + normal * normalBias;
             float nextShadow = sampleShadowCascade(cascadeIdx + 1, nextBiasedPos, texelSize);
             float blend = smoothstep(splitDist - blendRange, splitDist, viewDepth);
             shadow = mix(shadow, nextShadow, blend);
