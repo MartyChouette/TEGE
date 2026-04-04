@@ -411,6 +411,18 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
         return ECS::INVALID_ENTITY;
     }
 
+    // Skip excluded nodes (from import preview deselection)
+    for (i32 excluded : options.excludedNodeIndices) {
+        if (excluded == nodeIndex) {
+            // Still recurse into children so hierarchy isn't broken
+            const GLTFNode& skippedNode = scene.nodes[nodeIndex];
+            for (i32 childIdx : skippedNode.children) {
+                CreateEntityFromNode(scene, childIdx, world, options, outEntities, stats);
+            }
+            return ECS::INVALID_ENTITY;
+        }
+    }
+
     const GLTFNode& node = scene.nodes[nodeIndex];
 
     // Create entity
@@ -1272,6 +1284,17 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                                                        AssimpSkeletonContext& skelCtx) {
     if (nodeIndex < 0 || nodeIndex >= static_cast<i32>(scene.nodes.size())) {
         return ECS::INVALID_ENTITY;
+    }
+
+    // Skip excluded nodes (from import preview deselection)
+    for (i32 excluded : options.excludedNodeIndices) {
+        if (excluded == nodeIndex) {
+            const AssimpNode& skippedNode = scene.nodes[nodeIndex];
+            for (i32 childIdx : skippedNode.children) {
+                CreateEntityFromAssimpNode(scene, childIdx, world, options, outEntities, stats, skelCtx);
+            }
+            return ECS::INVALID_ENTITY;
+        }
     }
 
     const AssimpNode& node = scene.nodes[nodeIndex];

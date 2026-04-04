@@ -61,6 +61,9 @@ struct ImportOptions {
     bool flipZ = false;
     std::vector<std::string> textureSearchPaths;  // Additional dirs to search for textures
 
+    // Node filtering — skip specific nodes during import (by index)
+    std::vector<i32> excludedNodeIndices;  // Node indices to skip (from import preview)
+
     // Texture compression settings (applied to imported textures)
     TextureCompressionSettings textureCompression;
 };

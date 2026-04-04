@@ -1326,6 +1326,14 @@ void EditorLayer::DrawImportDialog() {
 
         // Buttons
         if (ImGui::Button("Import", ImVec2(120, 0))) {
+            // Build excluded node list from deselected preview checkboxes
+            m_ImportDialogOptions.excludedNodeIndices.clear();
+            for (usize i = 0; i < m_ImportPreviewNodes.size(); ++i) {
+                if (!m_ImportPreviewNodes[i].selected) {
+                    m_ImportDialogOptions.excludedNodeIndices.push_back(static_cast<i32>(i));
+                }
+            }
+
             // Defer import to next frame so a loading overlay can render first
             m_ImportPending = true;
             m_ImportPendingPath = m_ImportDialogPath;
