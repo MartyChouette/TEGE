@@ -1,5 +1,6 @@
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Editor/InspectorUndo.h"
+#include <thread>
 
 // Webhook URLs — compiled in, not user-configurable. File is .gitignored.
 #if __has_include("Enjin/Editor/WebhookConfig.h")
@@ -3029,13 +3030,20 @@ void EditorLayer::DrawQuitFeedbackDialog() {
             m_QuitSurvey.timestamp = FeedbackManager::CurrentTimestamp();
             m_QuitSurvey.engineVersion = ENJIN_VERSION_STRING;
 
-            // Fire-and-forget: submit to Discord (never blocks quit)
+            // Fire-and-forget: submit to Discord on a detached thread.
+            // HTTPClient::Post is synchronous with a 10s timeout — running it on
+            // the main thread would freeze the editor if Discord is unreachable.
             {
                 constexpr const char* feedbackHook = ENJIN_DISCORD_FEEDBACK_WEBHOOK;
                 const std::string webhookUrl = (feedbackHook[0] != '\0')
                     ? feedbackHook : ENJIN_DISCORD_BUG_WEBHOOK;
                 if (!webhookUrl.empty()) {
-                    m_FeedbackManager.SubmitQuitSurveyToDiscord(m_QuitSurvey, webhookUrl);
+                    // Copy data for the thread (captures by value, not reference)
+                    auto survey = m_QuitSurvey;
+                    auto* mgr = &m_FeedbackManager;
+                    std::thread([mgr, survey, webhookUrl]() {
+                        mgr->SubmitQuitSurveyToDiscord(survey, webhookUrl);
+                    }).detach();
                 }
             }
 

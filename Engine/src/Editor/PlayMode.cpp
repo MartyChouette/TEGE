@@ -402,6 +402,9 @@ void PlayMode::Stop() {
 
     m_GameOverReady = false;
 
+    // Stop all audio before destroying entities (prevents stale sound handles)
+    m_SimpleAudio.StopAll();
+
     // Destroy pooled objects before shutting down scripts (scripts may reference pooled entities)
     m_ObjectPool.DestroyAll(m_World);
 
