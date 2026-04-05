@@ -202,6 +202,28 @@ struct SkeletalAnimation {
         std::string name;
     };
     std::vector<AnimEvent> events;
+
+    // Morph target weight animation tracks
+    struct MorphWeightTrack {
+        i32 targetIndex = -1;        // Index into MorphTargetComponent::targets
+        std::string targetName;      // Name for lookup if index changes
+        std::vector<f32> times;
+        std::vector<f32> weights;
+
+        f32 SampleWeight(f32 time) const {
+            if (times.empty()) return 0.0f;
+            if (time <= times.front()) return weights.front();
+            if (time >= times.back()) return weights.back();
+            for (usize i = 0; i + 1 < times.size(); ++i) {
+                if (time >= times[i] && time <= times[i + 1]) {
+                    f32 t = (time - times[i]) / (times[i + 1] - times[i]);
+                    return weights[i] + (weights[i + 1] - weights[i]) * t;
+                }
+            }
+            return weights.back();
+        }
+    };
+    std::vector<MorphWeightTrack> morphTracks;
 };
 
 // Current pose of a skeleton (result of animation sampling)
@@ -374,6 +396,10 @@ public:
     const SkeletonPose& GetCurrentPose() const { return m_CurrentPose; }
     const std::vector<Math::Matrix4>& GetSkinningMatrices() const { return m_CurrentPose.skinningMatrices; }
 
+    // Morph target weights sampled from the current animation's morph tracks
+    const std::vector<f32>& GetMorphWeights() const { return m_MorphWeights; }
+    bool HasMorphAnimation() const;
+
     f32 GetNormalizedTime() const { return m_NormalizedTime; }
     bool IsPlaying() const { return m_IsPlaying; }
     bool IsPaused() const { return m_IsPaused; }
@@ -441,6 +467,9 @@ private:
     SkeletonPose m_BlendTreePoseB;
 
     EventCallback m_OnEvent;
+
+    // Morph target weight output (sampled each frame from current animation)
+    std::vector<f32> m_MorphWeights;
 };
 
 // ============================================================================

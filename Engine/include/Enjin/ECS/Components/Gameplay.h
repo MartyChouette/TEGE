@@ -379,10 +379,24 @@ struct LipSyncComponent {
     f32 blendSpeed = 10.0f;          // Interpolation speed between visemes
     bool autoFromAmplitude = true;   // Fallback: amplitude-based mouth open/close
 
+    // Viseme → morph target mapping
+    // Maps each viseme to one or more morph target names + weights.
+    // E.g., Viseme::AA → "jawOpen" at 0.8 + "mouthOpen" at 0.6
+    struct VisemeMorphMapping {
+        std::string morphTargetName;
+        f32 weight = 1.0f;
+    };
+    std::vector<VisemeMorphMapping> visemeMorphMap[static_cast<usize>(Viseme::Count)];
+
+    // Auto-map: try to detect standard morph target names on first use
+    bool autoMapVisemes = true;
+    bool autoMapped = false;         // Runtime: has auto-mapping been attempted?
+
     // Runtime state
     Viseme currentViseme = Viseme::Silent;
     f32 currentWeight = 0.0f;
     Entity linkedAudioSource = 0;    // Entity with AudioSourceComponent to track
+    f32 amplitudeSmoothed = 0.0f;    // Smoothed audio amplitude for auto mode
 };
 
 // Sound occlusion — muffle audio behind walls via low-pass filter.

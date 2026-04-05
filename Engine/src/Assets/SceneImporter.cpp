@@ -804,10 +804,32 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                         }
                         break;
                     }
+                    case GLTFAnimationChannel::Path::Weights: {
+                        // Morph target weight animation — one weight per target per keyframe
+                        // Determine number of targets from value count / key count
+                        usize keyCount = channel.times.size();
+                        if (keyCount == 0) break;
+                        usize targetCount = channel.values.size() / keyCount;
+                        if (targetCount == 0) break;
+
+                        // Create one MorphWeightTrack per target
+                        for (usize t = 0; t < targetCount; ++t) {
+                            Animation::SkeletalAnimation::MorphWeightTrack mwt;
+                            mwt.targetIndex = static_cast<i32>(t);
+                            mwt.targetName = "target_" + std::to_string(t);
+                            mwt.times = channel.times;
+                            mwt.weights.resize(keyCount);
+                            for (usize k = 0; k < keyCount; ++k) {
+                                mwt.weights[k] = channel.values[k * targetCount + t];
+                            }
+                            skelAnim.morphTracks.push_back(std::move(mwt));
+                        }
+                        break;
+                    }
                 }
             }
 
-            if (!skelAnim.tracks.empty()) {
+            if (!skelAnim.tracks.empty() || !skelAnim.morphTracks.empty()) {
                 animComp.animator.AddAnimation(skelAnim);
             }
         }

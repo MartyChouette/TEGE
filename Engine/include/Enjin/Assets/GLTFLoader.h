@@ -94,7 +94,7 @@ struct GLTFSkin {
 // Animation channel (single property track for a target node)
 struct GLTFAnimationChannel {
     i32 targetNode = -1;
-    enum class Path : u8 { Translation, Rotation, Scale } path = Path::Translation;
+    enum class Path : u8 { Translation, Rotation, Scale, Weights } path = Path::Translation;
     std::vector<f32> times;
     std::vector<f32> values;  // 3 floats for T/S, 4 floats for R (xyzw)
 };

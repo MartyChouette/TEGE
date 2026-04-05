@@ -233,7 +233,20 @@ void SkeletalAnimator::SetSkeleton(std::shared_ptr<Skeleton> skeleton) {
         // this ordering after the topological sort step.
         CalculateWorldTransforms();
         CalculateSkinningMatrices();
+
+        // Sample morph target weight tracks (if any)
+        if (m_CurrentAnim && !m_CurrentAnim->morphTracks.empty()) {
+            m_MorphWeights.resize(m_CurrentAnim->morphTracks.size());
+            for (usize i = 0; i < m_CurrentAnim->morphTracks.size(); ++i) {
+                m_MorphWeights[i] = m_CurrentAnim->morphTracks[i].SampleWeight(m_CurrentTime);
+            }
+        }
     }
+}
+
+bool SkeletalAnimator::HasMorphAnimation() const {
+    if (!m_CurrentAnim) return false;
+    return !m_CurrentAnim->morphTracks.empty();
 }
 
 void SkeletalAnimator::AddAnimation(const SkeletalAnimation& anim) {

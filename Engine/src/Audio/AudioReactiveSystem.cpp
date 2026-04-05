@@ -5,6 +5,8 @@
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
+#include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/ECS/Components/MorphTarget.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 #include <cmath>
@@ -42,6 +44,7 @@ void AudioReactiveSystem::Update(f32 deltaTime) {
     UpdateReverbZones(deltaTime);
     UpdateAmbientLayers(deltaTime);
     UpdateMusicZones(deltaTime);
+    UpdateLipSync(deltaTime);
 }
 
 // ============================================================================
@@ -803,6 +806,116 @@ void AudioReactiveSystem::UpdateMusicZones(f32 deltaTime) {
         // No active music zone — fade out
         if (crossfader.IsPlaying()) {
             crossfader.Stop(2.0f);
+        }
+    }
+}
+
+// ============================================================================
+// LipSync — drive morph target weights from viseme state
+// ============================================================================
+
+void AudioReactiveSystem::UpdateLipSync(f32 deltaTime) {
+    for (auto entity : m_World->GetEntitiesWithComponent<ECS::LipSyncComponent>()) {
+        if (!m_World->IsValid(entity)) continue;
+        auto* lip = m_World->GetComponent<ECS::LipSyncComponent>(entity);
+        if (!lip) continue;
+
+        auto* morph = m_World->GetComponent<ECS::MorphTargetComponent>(entity);
+        if (!morph) continue;
+
+        // Auto-map visemes to morph targets on first use
+        if (lip->autoMapVisemes && !lip->autoMapped) {
+            lip->autoMapped = true;
+            // Try standard naming conventions
+            static const struct { ECS::Viseme viseme; const char* names[4]; } autoMap[] = {
+                {ECS::Viseme::AA,     {"viseme_aa", "AA", "jawOpen", "mouthOpen"}},
+                {ECS::Viseme::EE,     {"viseme_ee", "EE", "mouthSmile", nullptr}},
+                {ECS::Viseme::IH,     {"viseme_ih", "IH", "mouthNarrow", nullptr}},
+                {ECS::Viseme::OH,     {"viseme_oh", "OH", "mouthFunnel", nullptr}},
+                {ECS::Viseme::OU,     {"viseme_ou", "OU", "mouthPucker", nullptr}},
+                {ECS::Viseme::PP,     {"viseme_pp", "PP", "mouthClose", nullptr}},
+                {ECS::Viseme::FF,     {"viseme_ff", "FF", "mouthLowerDown", nullptr}},
+                {ECS::Viseme::TH,     {"viseme_th", "TH", "tongueOut", nullptr}},
+                {ECS::Viseme::DD,     {"viseme_dd", "DD", nullptr, nullptr}},
+                {ECS::Viseme::KK,     {"viseme_kk", "KK", nullptr, nullptr}},
+                {ECS::Viseme::CH,     {"viseme_ch", "CH", nullptr, nullptr}},
+                {ECS::Viseme::SS,     {"viseme_ss", "SS", nullptr, nullptr}},
+                {ECS::Viseme::NN,     {"viseme_nn", "NN", nullptr, nullptr}},
+                {ECS::Viseme::RR,     {"viseme_rr", "RR", nullptr, nullptr}},
+            };
+            for (const auto& mapping : autoMap) {
+                for (const char* name : mapping.names) {
+                    if (!name) break;
+                    i32 idx = morph->FindTarget(name);
+                    if (idx >= 0) {
+                        ECS::LipSyncComponent::VisemeMorphMapping m;
+                        m.morphTargetName = name;
+                        m.weight = 1.0f;
+                        lip->visemeMorphMap[static_cast<usize>(mapping.viseme)].push_back(m);
+                        break; // Found a match, don't check other names
+                    }
+                }
+            }
+        }
+
+        // Apply current viseme to morph targets
+        // First, decay all lip-sync-driven morph targets toward zero
+        for (usize v = 0; v < static_cast<usize>(ECS::Viseme::Count); ++v) {
+            for (const auto& mapping : lip->visemeMorphMap[v]) {
+                i32 idx = morph->FindTarget(mapping.morphTargetName);
+                if (idx >= 0) {
+                    f32& w = morph->weights[idx];
+                    w += (0.0f - w) * Math::Min(lip->blendSpeed * deltaTime, 1.0f);
+                    morph->weightsDirty = true;
+                }
+            }
+        }
+
+        // Then set the active viseme's targets
+        usize activeViseme = static_cast<usize>(lip->currentViseme);
+        if (activeViseme < static_cast<usize>(ECS::Viseme::Count)) {
+            for (const auto& mapping : lip->visemeMorphMap[activeViseme]) {
+                i32 idx = morph->FindTarget(mapping.morphTargetName);
+                if (idx >= 0) {
+                    f32 targetW = mapping.weight * lip->currentWeight;
+                    f32& w = morph->weights[idx];
+                    w += (targetW - w) * Math::Min(lip->blendSpeed * deltaTime, 1.0f);
+                    morph->weightsDirty = true;
+                }
+            }
+        }
+
+        // Auto amplitude fallback — use audio amplitude to drive jawOpen
+        if (lip->autoFromAmplitude && lip->visemeMorphMap[static_cast<usize>(ECS::Viseme::AA)].empty()) {
+            // Find a "jawOpen" or "mouthOpen" morph target
+            i32 jawIdx = morph->FindTarget("jawOpen");
+            if (jawIdx < 0) jawIdx = morph->FindTarget("mouthOpen");
+            if (jawIdx < 0) jawIdx = morph->FindTarget("viseme_aa");
+            if (jawIdx >= 0) {
+                // Simple amplitude-driven mouth open/close
+                f32 amplitude = lip->currentWeight; // Use viseme weight as proxy
+                lip->amplitudeSmoothed += (amplitude - lip->amplitudeSmoothed) * Math::Min(lip->blendSpeed * deltaTime, 1.0f);
+                morph->weights[jawIdx] = lip->amplitudeSmoothed;
+                morph->weightsDirty = true;
+            }
+        }
+    }
+
+    // Also apply morph weights from skeletal animator (animation-driven morph targets)
+    for (auto entity : m_World->GetEntitiesWithComponent<ECS::MorphTargetComponent>()) {
+        if (!m_World->IsValid(entity)) continue;
+        auto* morph = m_World->GetComponent<ECS::MorphTargetComponent>(entity);
+        if (!morph) continue;
+
+        auto* animComp = m_World->GetComponent<ECS::AnimatorComponent>(entity);
+        if (!animComp || !animComp->animator.HasMorphAnimation()) continue;
+
+        const auto& animWeights = animComp->animator.GetMorphWeights();
+        for (usize i = 0; i < std::min(morph->weights.size(), animWeights.size()); ++i) {
+            if (morph->weights[i] != animWeights[i]) {
+                morph->weights[i] = animWeights[i];
+                morph->weightsDirty = true;
+            }
         }
     }
 }

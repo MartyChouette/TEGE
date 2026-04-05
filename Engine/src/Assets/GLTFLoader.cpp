@@ -444,6 +444,9 @@ bool GLTFLoader::Load(const std::string& filepath, GLTFScene& outScene) {
                 case cgltf_animation_path_type_scale:
                     dstChannel.path = GLTFAnimationChannel::Path::Scale;
                     break;
+                case cgltf_animation_path_type_weights:
+                    dstChannel.path = GLTFAnimationChannel::Path::Weights;
+                    break;
                 default:
                     continue;
             }
@@ -463,7 +466,13 @@ bool GLTFLoader::Load(const std::string& filepath, GLTFScene& outScene) {
 
             // Read keyframe values from output accessor
             cgltf_accessor* outputAccessor = sampler.output;
-            cgltf_size componentCount = (dstChannel.path == GLTFAnimationChannel::Path::Rotation) ? 4 : 3;
+            cgltf_size componentCount;
+            if (dstChannel.path == GLTFAnimationChannel::Path::Rotation) componentCount = 4;
+            else if (dstChannel.path == GLTFAnimationChannel::Path::Weights) {
+                // Weights channel: one float per morph target per keyframe
+                componentCount = srcChannel.target_node && srcChannel.target_node->mesh
+                    ? srcChannel.target_node->mesh->primitives[0].targets_count : 1;
+            } else componentCount = 3;
             dstChannel.values.resize(outputAccessor->count * componentCount);
             for (cgltf_size k = 0; k < outputAccessor->count; ++k) {
                 cgltf_accessor_read_float(outputAccessor, k,
