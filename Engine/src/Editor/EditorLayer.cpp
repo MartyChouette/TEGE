@@ -1101,6 +1101,77 @@ void EditorLayer::Update(f32 deltaTime) {
         m_CommandsRegistered = true;
     }
 
+    // Register scan targets for switch access / eye tracking
+    if (m_AlternativeInput.IsAnyAlternativeInputActive()) {
+        m_AlternativeInput.ClearScanTargets();
+
+        auto extent = m_Renderer->GetSwapchainExtent();
+        f32 sw = static_cast<f32>(extent.width);
+        f32 sh = static_cast<f32>(extent.height);
+
+        // Core editor actions as scan targets
+        // Play/Stop
+        m_AlternativeInput.RegisterScanTarget({"Play / Stop", "Toolbar", sw * 0.45f, 30, 80, 30, [this]() {
+            if (m_PlayMode.IsStopped()) StartPlayMode();
+            else m_PendingPlayStop = true;
+        }});
+
+        // Save
+        m_AlternativeInput.RegisterScanTarget({"Save Scene", "Toolbar", sw * 0.55f, 30, 80, 30, [this]() {
+            if (!m_CurrentScenePath.empty()) SaveScene(m_CurrentScenePath);
+        }});
+
+        // Undo
+        m_AlternativeInput.RegisterScanTarget({"Undo", "Toolbar", sw * 0.65f, 30, 60, 30, [this]() {
+            m_UndoRedo.Undo();
+            if (m_Announcer.enabled) m_Announcer.Announce("Undo", Accessibility::AnnouncePriority::Low);
+        }});
+
+        // Redo
+        m_AlternativeInput.RegisterScanTarget({"Redo", "Toolbar", sw * 0.72f, 30, 60, 30, [this]() {
+            m_UndoRedo.Redo();
+            if (m_Announcer.enabled) m_Announcer.Announce("Redo", Accessibility::AnnouncePriority::Low);
+        }});
+
+        // Delete selected
+        m_AlternativeInput.RegisterScanTarget({"Delete", "Toolbar", sw * 0.79f, 30, 60, 30, [this]() {
+            if (!m_SelectedEntities.empty()) DeleteSelectedEntities();
+        }});
+
+        // Entity selection (first 10 named entities as scan targets)
+        if (m_World) {
+            u32 entityIdx = 0;
+            for (auto e : m_World->GetEntitiesWithComponent<ECS::NameComponent>()) {
+                if (entityIdx >= 10) break;
+                auto* name = m_World->GetComponent<ECS::NameComponent>(e);
+                if (!name) continue;
+                ECS::Entity capturedEntity = e;
+                m_AlternativeInput.RegisterScanTarget({
+                    name->name, "Hierarchy",
+                    10.0f, 70.0f + entityIdx * 24.0f, 200.0f, 22.0f,
+                    [this, capturedEntity]() {
+                        SelectEntity(capturedEntity);
+                    }
+                });
+                entityIdx++;
+            }
+        }
+
+        // Gizmo modes
+        m_AlternativeInput.RegisterScanTarget({"Translate", "Gizmo", 10, sh - 90, 70, 25, [this]() {
+            m_GizmoOperation = GizmoOperation::Translate;
+            if (m_Announcer.enabled) m_Announcer.Announce("Gizmo: Translate", Accessibility::AnnouncePriority::Low);
+        }});
+        m_AlternativeInput.RegisterScanTarget({"Rotate", "Gizmo", 85, sh - 90, 60, 25, [this]() {
+            m_GizmoOperation = GizmoOperation::Rotate;
+            if (m_Announcer.enabled) m_Announcer.Announce("Gizmo: Rotate", Accessibility::AnnouncePriority::Low);
+        }});
+        m_AlternativeInput.RegisterScanTarget({"Scale", "Gizmo", 150, sh - 90, 55, 25, [this]() {
+            m_GizmoOperation = GizmoOperation::Scale;
+            if (m_Announcer.enabled) m_Announcer.Announce("Gizmo: Scale", Accessibility::AnnouncePriority::Low);
+        }});
+    }
+
     // Update alternative input devices
     m_AlternativeInput.Update(deltaTime);
 
