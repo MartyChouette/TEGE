@@ -743,6 +743,24 @@ private:
     void DrawRadialMenu(RadialMenuType type);
     void ExecuteGamepadAction(GamepadAction action);
     void HandleGamepadViewportNavigation(f32 deltaTime);
+    void UpdateGamepadInspector(f32 deltaTime);
+    void DrawGamepadInspectorOverlay();
+
+    // Gamepad inspector mode — edit properties with controller
+    bool m_GamepadInspectorMode = false;
+    i32 m_GamepadInspectorIndex = 0;       // Currently focused property
+    f32 m_GamepadInspectorRepeat = 0.0f;   // DPad repeat timer
+
+    // Editable property descriptor for gamepad navigation
+    struct GamepadProperty {
+        std::string label;
+        f32* valuePtr = nullptr;           // Direct pointer to the float value
+        f32 step = 0.1f;                   // How much left stick adjusts per second
+        f32 minVal = -FLT_MAX;
+        f32 maxVal = FLT_MAX;
+    };
+    std::vector<GamepadProperty> m_GamepadProperties;
+    void RebuildGamepadPropertyList();
 
     // Grid settings
     bool m_ShowGrid = true;

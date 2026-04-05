@@ -446,5 +446,210 @@ void EditorLayer::ExecuteGamepadAction(GamepadAction action) {
     }
 }
 
+// ============================================================================
+// Gamepad Inspector Mode — edit entity properties with a controller
+// ============================================================================
+
+void EditorLayer::RebuildGamepadPropertyList() {
+    m_GamepadProperties.clear();
+    if (!m_World || m_PrimarySelected == ECS::INVALID_ENTITY) return;
+
+    // Transform
+    auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
+    if (transform) {
+        m_GamepadProperties.push_back({"Pos X", &transform->position.x, 0.5f, -1000.0f, 1000.0f});
+        m_GamepadProperties.push_back({"Pos Y", &transform->position.y, 0.5f, -1000.0f, 1000.0f});
+        m_GamepadProperties.push_back({"Pos Z", &transform->position.z, 0.5f, -1000.0f, 1000.0f});
+        m_GamepadProperties.push_back({"Scale X", &transform->scale.x, 0.1f, 0.01f, 100.0f});
+        m_GamepadProperties.push_back({"Scale Y", &transform->scale.y, 0.1f, 0.01f, 100.0f});
+        m_GamepadProperties.push_back({"Scale Z", &transform->scale.z, 0.1f, 0.01f, 100.0f});
+    }
+
+    // Material
+    auto* material = m_World->GetComponent<ECS::MaterialComponent>(m_PrimarySelected);
+    if (material) {
+        m_GamepadProperties.push_back({"Color R", &material->baseColor.x, 0.05f, 0.0f, 1.0f});
+        m_GamepadProperties.push_back({"Color G", &material->baseColor.y, 0.05f, 0.0f, 1.0f});
+        m_GamepadProperties.push_back({"Color B", &material->baseColor.z, 0.05f, 0.0f, 1.0f});
+        m_GamepadProperties.push_back({"Metallic", &material->metallic, 0.05f, 0.0f, 1.0f});
+        m_GamepadProperties.push_back({"Roughness", &material->roughness, 0.05f, 0.0f, 1.0f});
+    }
+
+    // Light
+    auto* light = m_World->GetComponent<ECS::LightComponent>(m_PrimarySelected);
+    if (light) {
+        m_GamepadProperties.push_back({"Intensity", &light->intensity, 0.1f, 0.0f, 100.0f});
+        m_GamepadProperties.push_back({"Light R", &light->color.x, 0.05f, 0.0f, 1.0f});
+        m_GamepadProperties.push_back({"Light G", &light->color.y, 0.05f, 0.0f, 1.0f});
+        m_GamepadProperties.push_back({"Light B", &light->color.z, 0.05f, 0.0f, 1.0f});
+        m_GamepadProperties.push_back({"Range", &light->range, 1.0f, 0.1f, 500.0f});
+    }
+
+    // Audio Source
+    auto* audioSrc = m_World->GetComponent<ECS::AudioSourceComponent>(m_PrimarySelected);
+    if (audioSrc) {
+        m_GamepadProperties.push_back({"Volume", &audioSrc->volume, 0.05f, 0.0f, 1.0f});
+        m_GamepadProperties.push_back({"Pitch", &audioSrc->pitch, 0.05f, 0.1f, 3.0f});
+    }
+
+    // Morph targets
+    auto* morph = m_World->GetComponent<ECS::MorphTargetComponent>(m_PrimarySelected);
+    if (morph) {
+        for (usize i = 0; i < morph->weights.size() && i < 20; ++i) {
+            m_GamepadProperties.push_back({morph->targets[i].name, &morph->weights[i], 0.05f, 0.0f, 1.0f});
+        }
+    }
+
+    // Clamp index
+    if (m_GamepadInspectorIndex >= static_cast<i32>(m_GamepadProperties.size())) {
+        m_GamepadInspectorIndex = 0;
+    }
+}
+
+void EditorLayer::UpdateGamepadInspector(f32 deltaTime) {
+    if (!m_GamepadEditorEnabled || !Input::IsGamepadConnected(0)) return;
+    if (m_RadialMenuActive != RadialMenuType::None) return;
+
+    // DPad Right: enter inspector mode
+    if (Input::IsGamepadButtonPressed(GamepadButton::DPadRight, 0) && !m_GamepadInspectorMode) {
+        if (m_PrimarySelected != ECS::INVALID_ENTITY) {
+            m_GamepadInspectorMode = true;
+            m_GamepadInspectorIndex = 0;
+            RebuildGamepadPropertyList();
+
+            if (m_Announcer.enabled) {
+                m_Announcer.Announce("Inspector mode — DPad Up/Down to navigate, Stick to adjust, B to exit",
+                    Accessibility::AnnouncePriority::Normal);
+            }
+        }
+    }
+
+    // B: exit inspector mode
+    if (m_GamepadInspectorMode && Input::IsGamepadButtonPressed(GamepadButton::B, 0)) {
+        m_GamepadInspectorMode = false;
+        if (m_Announcer.enabled) {
+            m_Announcer.Announce("Exited inspector mode", Accessibility::AnnouncePriority::Normal);
+        }
+        return;
+    }
+
+    if (!m_GamepadInspectorMode || m_GamepadProperties.empty()) return;
+
+    // DPad Up/Down: navigate properties
+    m_GamepadInspectorRepeat -= deltaTime;
+    if (Input::IsGamepadButtonDown(GamepadButton::DPadUp, 0) && m_GamepadInspectorRepeat <= 0.0f) {
+        m_GamepadInspectorIndex--;
+        if (m_GamepadInspectorIndex < 0) m_GamepadInspectorIndex = static_cast<i32>(m_GamepadProperties.size()) - 1;
+        m_GamepadInspectorRepeat = 0.2f;
+
+        if (m_Announcer.enabled) {
+            auto& prop = m_GamepadProperties[m_GamepadInspectorIndex];
+            char buf[128];
+            snprintf(buf, sizeof(buf), "%s: %.2f", prop.label.c_str(), *prop.valuePtr);
+            m_Announcer.Announce(buf, Accessibility::AnnouncePriority::Normal);
+        }
+    }
+    if (Input::IsGamepadButtonDown(GamepadButton::DPadDown, 0) && m_GamepadInspectorRepeat <= 0.0f) {
+        m_GamepadInspectorIndex++;
+        if (m_GamepadInspectorIndex >= static_cast<i32>(m_GamepadProperties.size())) m_GamepadInspectorIndex = 0;
+        m_GamepadInspectorRepeat = 0.2f;
+
+        if (m_Announcer.enabled) {
+            auto& prop = m_GamepadProperties[m_GamepadInspectorIndex];
+            char buf[128];
+            snprintf(buf, sizeof(buf), "%s: %.2f", prop.label.c_str(), *prop.valuePtr);
+            m_Announcer.Announce(buf, Accessibility::AnnouncePriority::Normal);
+        }
+    }
+
+    // Left Stick X: adjust selected property value
+    auto leftStick = Input::GetGamepadLeftStick(0);
+    if (std::abs(leftStick.x) > 0.15f) {
+        auto& prop = m_GamepadProperties[m_GamepadInspectorIndex];
+        f32 delta = leftStick.x * prop.step * deltaTime * 5.0f;
+        *prop.valuePtr = Math::Clamp(*prop.valuePtr + delta, prop.minVal, prop.maxVal);
+
+        // Mark morph targets dirty if we're editing them
+        auto* morph = m_World->GetComponent<ECS::MorphTargetComponent>(m_PrimarySelected);
+        if (morph) morph->weightsDirty = true;
+    }
+
+    // A: reset property to default (0 for position, 1 for scale/color)
+    if (Input::IsGamepadButtonPressed(GamepadButton::A, 0)) {
+        auto& prop = m_GamepadProperties[m_GamepadInspectorIndex];
+        if (prop.label.find("Scale") != std::string::npos) *prop.valuePtr = 1.0f;
+        else if (prop.label.find("Color") != std::string::npos || prop.label.find("Light") != std::string::npos) *prop.valuePtr = 1.0f;
+        else *prop.valuePtr = 0.0f;
+    }
+
+    // Refresh if entity changed
+    if (m_PrimarySelected == ECS::INVALID_ENTITY) {
+        m_GamepadInspectorMode = false;
+    }
+}
+
+void EditorLayer::DrawGamepadInspectorOverlay() {
+    if (!m_GamepadInspectorMode || m_GamepadProperties.empty()) return;
+
+    // Draw a small overlay panel showing the property list with highlighted current item
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    auto extent = m_Renderer->GetSwapchainExtent();
+
+    f32 panelW = 280.0f;
+    f32 lineH = 22.0f;
+    f32 panelH = lineH * Math::Min(static_cast<f32>(m_GamepadProperties.size()), 12.0f) + 40.0f;
+    f32 panelX = extent.width - panelW - 20.0f;
+    f32 panelY = 80.0f;
+
+    // Background
+    dl->AddRectFilled(ImVec2(panelX, panelY), ImVec2(panelX + panelW, panelY + panelH),
+        IM_COL32(20, 22, 30, 220), 6.0f);
+    dl->AddRect(ImVec2(panelX, panelY), ImVec2(panelX + panelW, panelY + panelH),
+        IM_COL32(80, 120, 200, 200), 6.0f);
+
+    // Title
+    dl->AddText(ImVec2(panelX + 8, panelY + 4), IM_COL32(100, 180, 255, 255), "Inspector (Gamepad)");
+    dl->AddText(ImVec2(panelX + 8, panelY + 20), IM_COL32(150, 150, 150, 200), "Stick=adjust  A=reset  B=exit");
+
+    // Property list
+    f32 y = panelY + 38.0f;
+    i32 startIdx = Math::Max(0, m_GamepadInspectorIndex - 5);
+    i32 endIdx = Math::Min(static_cast<i32>(m_GamepadProperties.size()), startIdx + 12);
+
+    for (i32 i = startIdx; i < endIdx; ++i) {
+        auto& prop = m_GamepadProperties[i];
+        bool active = (i == m_GamepadInspectorIndex);
+
+        // Highlight bar
+        if (active) {
+            dl->AddRectFilled(ImVec2(panelX + 2, y - 1), ImVec2(panelX + panelW - 2, y + lineH - 1),
+                IM_COL32(60, 80, 140, 200), 3.0f);
+        }
+
+        // Label
+        ImU32 textCol = active ? IM_COL32(255, 255, 255, 255) : IM_COL32(180, 180, 190, 200);
+        dl->AddText(ImVec2(panelX + 10, y + 2), textCol, prop.label.c_str());
+
+        // Value
+        char valBuf[32];
+        snprintf(valBuf, sizeof(valBuf), "%.3f", *prop.valuePtr);
+        ImVec2 valSize = ImGui::CalcTextSize(valBuf);
+        dl->AddText(ImVec2(panelX + panelW - valSize.x - 10, y + 2), textCol, valBuf);
+
+        // Value bar
+        if (prop.maxVal > prop.minVal && prop.maxVal < 1e6f) {
+            f32 norm = (*prop.valuePtr - prop.minVal) / (prop.maxVal - prop.minVal);
+            f32 barW = 50.0f;
+            f32 barX = panelX + panelW - valSize.x - barW - 16;
+            dl->AddRectFilled(ImVec2(barX, y + 4), ImVec2(barX + barW, y + lineH - 4),
+                IM_COL32(40, 40, 50, 200));
+            dl->AddRectFilled(ImVec2(barX, y + 4), ImVec2(barX + barW * norm, y + lineH - 4),
+                active ? IM_COL32(80, 160, 255, 255) : IM_COL32(60, 100, 160, 200));
+        }
+
+        y += lineH;
+    }
+}
+
 } // namespace Editor
 } // namespace Enjin

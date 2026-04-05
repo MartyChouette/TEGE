@@ -1099,8 +1099,9 @@ void EditorLayer::Update(f32 deltaTime) {
     // Update alternative input devices
     m_AlternativeInput.Update(deltaTime);
 
-    // Update gamepad editor navigation
+    // Update gamepad editor navigation + inspector mode
     UpdateGamepadEditor(deltaTime);
+    UpdateGamepadInspector(deltaTime);
 
     // Focus mode toggle (F11) and exit (Escape)
     // F11 toggles between editor view and fullscreen game view while playing
@@ -3404,6 +3405,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     if (m_RadialMenuActive != RadialMenuType::None) {
         DrawRadialMenu(m_RadialMenuActive);
     }
+
+    // Gamepad inspector overlay
+    DrawGamepadInspectorOverlay();
 
     // Demo window (for testing)
     if (m_ShowDemoWindow) {
