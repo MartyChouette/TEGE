@@ -3013,5 +3013,110 @@ void EditorLayer::DrawSettingsSection_LightProbes() {
 
 
 
+void EditorLayer::DrawSettingsConflictWarnings() {
+    // Collect active conflicts
+    struct Conflict {
+        const char* icon;     // Warning level icon
+        const char* message;
+        const char* tooltip;
+    };
+    std::vector<Conflict> conflicts;
+
+    u32 aaMode = m_RenderSystem ? m_RenderSystem->GetAAMode() : 0;
+    u32 upscalerType = m_RenderSystem ? m_RenderSystem->GetUpscalerType() : 0;
+    bool rtEnabled = m_RenderSystem && m_RenderSystem->IsRayTracingEnabled();
+    u32 rtMode = m_RenderSystem ? m_RenderSystem->GetRTMode() : 0;
+    bool isMSAA = (aaMode >= 4 && aaMode <= 6);
+    bool isTAA = (aaMode == 2);
+
+    // MSAA + TAA — mutually exclusive
+    // (Shouldn't happen since they share a combo, but guard against programmatic setting)
+    if (isMSAA && isTAA) {
+        conflicts.push_back({"!!", "MSAA and TAA are both active",
+            "These are mutually exclusive. MSAA resolves multisampled fragments,\n"
+            "TAA blends jittered frames. Only one can be active."});
+    }
+
+    // MSAA + Upscaler — upscalers need pre-resolve input
+    if (isMSAA && upscalerType > 0) {
+        conflicts.push_back({"!!", "MSAA active with temporal upscaler",
+            "FSR 2 / DLSS / XeSS expect single-sample input with motion vectors.\n"
+            "MSAA resolved output loses the subpixel data upscalers need.\n"
+            "Use TAA or None for AA when upscaling is enabled."});
+    }
+
+    // Upscaler + TAA — redundant temporal passes
+    if (upscalerType > 0 && isTAA) {
+        conflicts.push_back({"~~", "TAA active with temporal upscaler",
+            "FSR 2 / DLSS / XeSS include their own temporal component.\n"
+            "Running TAA on top adds latency and ghosting for no benefit.\n"
+            "Set AA to None or FXAA when using an upscaler."});
+    }
+
+    // Path tracer + MSAA — path tracer bypasses raster pipeline
+    if (rtEnabled && rtMode == 1 && isMSAA) {
+        conflicts.push_back({"~~", "MSAA active with Path Tracer",
+            "Path tracing replaces the rasterization pipeline.\n"
+            "MSAA has no effect in path-trace mode and wastes VRAM."});
+    }
+
+    // Path tracer + post-process effects that assume raster
+    if (rtEnabled && rtMode == 1) {
+        if (m_PostProcessing) {
+            auto& ppSettings = m_PostProcessing->GetSettings();
+            if (ppSettings.ssaoEnabled != 0) {
+                conflicts.push_back({"~~", "SSAO active with Path Tracer",
+                    "Path tracing computes AO from ray bounces.\n"
+                    "Screen-space AO is redundant and may cause double-darkening."});
+            }
+        }
+    }
+
+    // RT shadows + raster shadows both at full strength
+    if (rtEnabled && rtMode == 0 && m_RenderSystem) {
+        // Hybrid mode with both shadow systems
+        auto* rtShadows = m_RenderSystem->GetRTShadows();
+        bool rtShadowOn = rtShadows && rtShadows->GetConfig().enabled;
+        bool rasterShadowOn = m_RenderSystem->IsShadowsEnabled();
+        if (rtShadowOn && rasterShadowOn) {
+            conflicts.push_back({"~~", "Both RT and raster shadows active",
+                "Hybrid mode composites RT shadows over raster shadows.\n"
+                "This is valid but may cause over-darkened shadows.\n"
+                "Consider disabling raster shadows for cleaner RT results."});
+        }
+    }
+
+    // Resolution downscale + CRT — CRT already implies low resolution
+    if (m_PostProcessing) {
+        auto& ppSettings = m_PostProcessing->GetSettings();
+        if (ppSettings.resDownscaleEnabled != 0 && ppSettings.crtEnabled != 0) {
+            conflicts.push_back({"~~", "Resolution downscale + CRT scanlines",
+                "CRT simulation already implies a lower-res aesthetic.\n"
+                "Combining both may produce overly muddy output.\n"
+                "Consider using one or the other for best results."});
+        }
+    }
+
+    // No conflicts? Don't show anything
+    if (conflicts.empty()) return;
+
+    // Draw conflict panel
+    ImVec4 warnColor(1.0f, 0.8f, 0.2f, 1.0f);
+    ImVec4 errorColor(1.0f, 0.4f, 0.4f, 1.0f);
+
+    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.3f, 0.2f, 0.05f, 0.8f));
+    ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.4f, 0.3f, 0.1f, 0.9f));
+    if (ImGui::CollapsingHeader("Setting Conflicts", ImGuiTreeNodeFlags_DefaultOpen)) {
+        for (const auto& c : conflicts) {
+            bool isError = (c.icon[0] == '!');
+            ImVec4 col = isError ? errorColor : warnColor;
+            ImGui::TextColored(col, "%s %s", c.icon, c.message);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", c.tooltip);
+        }
+    }
+    ImGui::PopStyleColor(2);
+    ImGui::Separator();
+}
+
 } // namespace Editor
 } // namespace Enjin

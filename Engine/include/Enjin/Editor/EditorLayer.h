@@ -334,6 +334,7 @@ private:
     void DrawSettingsSection_PostProcessing();
     void DrawSettingsSection_RetroEffects();
     void DrawSettingsSection_Environment();
+    void DrawSettingsConflictWarnings();
     void DrawParticleEditorPanel();
     void DrawAnimGraphPanel();
     void DrawDialoguePanel();
@@ -440,6 +441,7 @@ private:
     void DrawAudioFidelityComponent(ECS::Entity entity);
     void DrawConductorComponent(ECS::Entity entity);
     void DrawAudioCollisionComponent(ECS::Entity entity);
+    void DrawMaterialInteractionTableComponent(ECS::Entity entity);
     void DrawSidechainComponent(ECS::Entity entity);
     void DrawAudioMixer();
     void DrawAudioMeterStrip();  // Thin VU meter bar above viewport

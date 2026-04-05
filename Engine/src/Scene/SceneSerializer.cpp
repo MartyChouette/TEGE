@@ -2802,6 +2802,41 @@ ECS::MIDIBindingComponent DeserializeMIDIBindingComponent(const json& j) {
     return mb;
 }
 
+json SerializeMaterialInteractionTableComponent(const ECS::MaterialInteractionTableComponent& mit) {
+    json j;
+    json arr = json::array();
+    for (const auto& inter : mit.interactions) {
+        json ij;
+        ij["a"] = static_cast<u8>(inter.a);
+        ij["b"] = static_cast<u8>(inter.b);
+        ij["softClip"] = inter.softClip;
+        ij["hardClip"] = inter.hardClip;
+        ij["scrapeClip"] = inter.scrapeClip;
+        ij["pitchOffset"] = RF(inter.pitchOffset);
+        ij["volumeMultiplier"] = RF(inter.volumeMultiplier);
+        arr.push_back(ij);
+    }
+    j["interactions"] = arr;
+    return j;
+}
+ECS::MaterialInteractionTableComponent DeserializeMaterialInteractionTableComponent(const json& j) {
+    ECS::MaterialInteractionTableComponent mit;
+    if (j.contains("interactions") && j["interactions"].is_array()) {
+        for (const auto& ij : j["interactions"]) {
+            ECS::MaterialInteractionTableComponent::Interaction inter;
+            if (ij.contains("a")) inter.a = static_cast<ECS::SurfaceMaterial>(ij["a"].get<u8>());
+            if (ij.contains("b")) inter.b = static_cast<ECS::SurfaceMaterial>(ij["b"].get<u8>());
+            if (ij.contains("softClip")) inter.softClip = ij["softClip"].get<std::string>();
+            if (ij.contains("hardClip")) inter.hardClip = ij["hardClip"].get<std::string>();
+            if (ij.contains("scrapeClip")) inter.scrapeClip = ij["scrapeClip"].get<std::string>();
+            if (ij.contains("pitchOffset")) inter.pitchOffset = ij["pitchOffset"].get<f32>();
+            if (ij.contains("volumeMultiplier")) inter.volumeMultiplier = ij["volumeMultiplier"].get<f32>();
+            mit.interactions.push_back(inter);
+        }
+    }
+    return mit;
+}
+
 json SerializeDamageComponent(const ECS::DamageComponent& d) {
     json j;
     j["damage"] = RF(d.damage);
@@ -7011,6 +7046,8 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 entityJson["audioFidelity"] = SerializeAudioFidelityComponent(*m_World->GetComponent<ECS::AudioFidelityComponent>(entity));
             if (m_World->HasComponent<ECS::MIDIBindingComponent>(entity))
                 entityJson["midiBinding"] = SerializeMIDIBindingComponent(*m_World->GetComponent<ECS::MIDIBindingComponent>(entity));
+            if (m_World->HasComponent<ECS::MaterialInteractionTableComponent>(entity))
+                entityJson["materialInteractionTable"] = SerializeMaterialInteractionTableComponent(*m_World->GetComponent<ECS::MaterialInteractionTableComponent>(entity));
             if (m_World->HasComponent<ECS::DamageComponent>(entity)) {
                 entityJson["damage"] = SerializeDamageComponent(*m_World->GetComponent<ECS::DamageComponent>(entity));
             }
@@ -8413,6 +8450,8 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
                 entityJson["audioFidelity"] = SerializeAudioFidelityComponent(*m_World->GetComponent<ECS::AudioFidelityComponent>(entity));
             if (m_World->HasComponent<ECS::MIDIBindingComponent>(entity))
                 entityJson["midiBinding"] = SerializeMIDIBindingComponent(*m_World->GetComponent<ECS::MIDIBindingComponent>(entity));
+            if (m_World->HasComponent<ECS::MaterialInteractionTableComponent>(entity))
+                entityJson["materialInteractionTable"] = SerializeMaterialInteractionTableComponent(*m_World->GetComponent<ECS::MaterialInteractionTableComponent>(entity));
             if (m_World->HasComponent<ECS::DamageComponent>(entity)) {
                 entityJson["damage"] = SerializeDamageComponent(*m_World->GetComponent<ECS::DamageComponent>(entity));
             }
@@ -9604,6 +9643,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["audioFidelity"] = SerializeAudioFidelityComponent(*world->GetComponent<ECS::AudioFidelityComponent>(entity));
         if (world->HasComponent<ECS::MIDIBindingComponent>(entity))
             entityJson["midiBinding"] = SerializeMIDIBindingComponent(*world->GetComponent<ECS::MIDIBindingComponent>(entity));
+        if (world->HasComponent<ECS::MaterialInteractionTableComponent>(entity))
+            entityJson["materialInteractionTable"] = SerializeMaterialInteractionTableComponent(*world->GetComponent<ECS::MaterialInteractionTableComponent>(entity));
         if (world->HasComponent<ECS::DamageComponent>(entity))
             entityJson["damage"] = SerializeDamageComponent(*world->GetComponent<ECS::DamageComponent>(entity));
         if (world->HasComponent<ECS::GameOverComponent>(entity))
@@ -10490,6 +10531,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "poseLibrary") { world->AddComponent<ECS::PoseLibraryComponent>(entity, DeserializePoseLibraryComponent(j)); return true; }
         if (key == "audioFidelity") { world->AddComponent<ECS::AudioFidelityComponent>(entity, DeserializeAudioFidelityComponent(j)); return true; }
         if (key == "midiBinding") { world->AddComponent<ECS::MIDIBindingComponent>(entity, DeserializeMIDIBindingComponent(j)); return true; }
+        if (key == "materialInteractionTable") { world->AddComponent<ECS::MaterialInteractionTableComponent>(entity, DeserializeMaterialInteractionTableComponent(j)); return true; }
         if (key == "damage") { world->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(j)); return true; }
         if (key == "gameOver") { world->AddComponent<ECS::GameOverComponent>(entity, DeserializeGameOverComponent(j)); return true; }
         if (key == "damageResistance") { world->AddComponent<ECS::DamageResistanceComponent>(entity, DeserializeDamageResistanceComponent(j)); return true; }

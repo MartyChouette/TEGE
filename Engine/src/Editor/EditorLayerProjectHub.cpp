@@ -2791,7 +2791,6 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             hp.currentHealth = 100.0f;
             hp.regenRate = 1.0f;
             hp.regenDelay = 3.0f;
-            hp.invulnerabilityTime = 1.0f;  // 1 second of invulnerability after hit
             hp.invulnerabilityTime = 0.5f;
             auto& inv = m_World->AddComponent<ECS::InventoryComponent>(player);
             inv.maxSlots = 10;
@@ -3809,7 +3808,6 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             hp.maxHealth = 100.0f;
             hp.currentHealth = 100.0f;
             hp.regenRate = 2.0f;
-            hp.invulnerabilityTime = 1.0f;
             hp.regenDelay = 3.0f;
             hp.invulnerabilityTime = 0.3f;
             auto& inv = m_World->AddComponent<ECS::InventoryComponent>(player);
@@ -6095,8 +6093,9 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         ctrl.cameraDistance = 5.0f;
         ctrl.cameraHeight = 2.0f;
         SetupCameraForController(player, "ThirdPerson");
-        m_World->AddComponent<ECS::HealthComponent>(player).maxHealth = 100.0f;
-        m_World->GetComponent<ECS::HealthComponent>(player)->currentHealth = 100.0f;
+        auto& uiHp = m_World->AddComponent<ECS::HealthComponent>(player);
+        uiHp.maxHealth = 100.0f;
+        uiHp.currentHealth = 100.0f;
 
         // UI Canvas entity with populated HUD elements
         {

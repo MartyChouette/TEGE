@@ -1924,6 +1924,9 @@ void EditorLayer::DrawSettingsWindow() {
             }
             ImGui::Separator();
 
+            // --- Setting Conflicts ---
+            DrawSettingsConflictWarnings();
+
             // --- Art Style Preset ---
             DrawSettingsSection_ArtStylePreset();
             ImGui::Separator();

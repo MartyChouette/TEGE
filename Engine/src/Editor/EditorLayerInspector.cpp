@@ -1407,6 +1407,9 @@ void EditorLayer::DrawInspectorPanel() {
         if (m_World->HasComponent<ECS::AudioCollisionComponent>(m_PrimarySelected)) {
             DrawAudioCollisionComponent(m_PrimarySelected);
         }
+        if (m_World->HasComponent<ECS::MaterialInteractionTableComponent>(m_PrimarySelected)) {
+            DrawMaterialInteractionTableComponent(m_PrimarySelected);
+        }
         if (m_World->HasComponent<ECS::SidechainComponent>(m_PrimarySelected)) {
             DrawSidechainComponent(m_PrimarySelected);
         }

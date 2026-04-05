@@ -899,4 +899,118 @@ void EditorLayer::DrawAudioFidelityComponent(ECS::Entity entity) {
     }
 }
 
+void EditorLayer::DrawMaterialInteractionTableComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("[M] Material Interaction Table", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("MatInteractCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::MaterialInteractionTableComponent>(entity, "materialInteractionTable", "Material Interaction Table");
+            ImGui::EndPopup(); return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* mit = m_World->GetComponent<ECS::MaterialInteractionTableComponent>(entity);
+        if (!mit) return;
+
+        ImGui::TextDisabled("Defines sound for each material pair (A x B).");
+        ImGui::TextDisabled("Attach to one entity — shared by all AudioCollision components.");
+
+        static const char* matNames[] = {"Default","Metal","Wood","Stone","Glass","Flesh","Water","Dirt","Grass","Ice"};
+        constexpr int matCount = 10;
+
+        // Grid view — compact matrix showing which interactions are defined
+        if (ImGui::TreeNode("Coverage Matrix##MIT")) {
+            ImGui::TextDisabled("Green = defined, Gray = fallback to per-entity clips");
+            // Column headers
+            ImGui::Text("        ");
+            for (int c = 0; c < matCount; c++) {
+                ImGui::SameLine();
+                ImGui::Text("%-5.3s", matNames[c]);
+            }
+            // Rows (only upper triangle — symmetric)
+            for (int r = 0; r < matCount; r++) {
+                ImGui::Text("%-7s", matNames[r]);
+                for (int c = r; c < matCount; c++) {
+                    ImGui::SameLine();
+                    auto a = static_cast<ECS::SurfaceMaterial>(r);
+                    auto b = static_cast<ECS::SurfaceMaterial>(c);
+                    bool has = mit->Find(a, b) != nullptr;
+                    ImVec4 col = has ? ImVec4(0.3f, 0.9f, 0.3f, 1.0f) : ImVec4(0.4f, 0.4f, 0.4f, 1.0f);
+                    ImGui::TextColored(col, has ? "[+]" : " . ");
+                }
+            }
+            ImGui::TreePop();
+        }
+
+        ImGui::Separator();
+
+        // Individual interactions
+        int removeIdx = -1;
+        for (int i = 0; i < static_cast<int>(mit->interactions.size()); i++) {
+            auto& inter = mit->interactions[i];
+            ImGui::PushID(i);
+
+            // Header: "Metal x Stone"
+            const char* nameA = ECS::SurfaceMaterialName(inter.a);
+            const char* nameB = ECS::SurfaceMaterialName(inter.b);
+            char label[128];
+            snprintf(label, sizeof(label), "%s x %s###inter%d", nameA, nameB, i);
+
+            bool nodeOpen = ImGui::TreeNode(label);
+            // Remove button on same line
+            ImGui::SameLine(ImGui::GetContentRegionAvail().x - 20);
+            if (ImGui::SmallButton("X")) removeIdx = i;
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Remove this interaction");
+
+            if (nodeOpen) {
+                // Material selectors
+                int matA = static_cast<int>(inter.a);
+                int matB = static_cast<int>(inter.b);
+                if (ImGui::Combo("Material A", &matA, matNames, matCount))
+                    inter.a = static_cast<ECS::SurfaceMaterial>(matA);
+                if (ImGui::Combo("Material B", &matB, matNames, matCount))
+                    inter.b = static_cast<ECS::SurfaceMaterial>(matB);
+
+                // Clip paths
+                char softBuf[256] = {}, hardBuf[256] = {}, scrapeBuf[256] = {};
+                strncpy(softBuf, inter.softClip.c_str(), sizeof(softBuf) - 1);
+                strncpy(hardBuf, inter.hardClip.c_str(), sizeof(hardBuf) - 1);
+                strncpy(scrapeBuf, inter.scrapeClip.c_str(), sizeof(scrapeBuf) - 1);
+
+                if (ImGui::InputText("Soft Impact", softBuf, sizeof(softBuf))) inter.softClip = softBuf;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sound for low-velocity impacts between these materials");
+                if (ImGui::InputText("Hard Impact", hardBuf, sizeof(hardBuf))) inter.hardClip = hardBuf;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sound for high-velocity impacts (crash, slam)");
+                if (ImGui::InputText("Scrape", scrapeBuf, sizeof(scrapeBuf))) inter.scrapeClip = scrapeBuf;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Continuous sliding/scraping contact sound");
+
+                // Parameters
+                ImGui::DragFloat("Pitch Offset", &inter.pitchOffset, 0.01f, -1.0f, 1.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Shift pitch for this pair (-1 to +1 semitone range)");
+                ImGui::DragFloat("Volume Mult", &inter.volumeMultiplier, 0.05f, 0.0f, 3.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Scale volume for this material combination");
+
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
+        }
+
+        if (removeIdx >= 0 && removeIdx < static_cast<int>(mit->interactions.size())) {
+            mit->interactions.erase(mit->interactions.begin() + removeIdx);
+        }
+
+        // Add new interaction
+        ImGui::Separator();
+        if (ImGui::Button("+ Add Interaction", ImVec2(-1, 0))) {
+            ECS::MaterialInteractionTableComponent::Interaction newInt;
+            newInt.a = ECS::SurfaceMaterial::Metal;
+            newInt.b = ECS::SurfaceMaterial::Stone;
+            mit->interactions.push_back(newInt);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Add a new material pair interaction.\nDefine what sound plays when material A collides with material B.");
+
+        ImGui::TextDisabled("%d interaction(s) defined", static_cast<int>(mit->interactions.size()));
+    }
+}
+
 } // namespace Enjin
