@@ -7,6 +7,7 @@
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/MorphTarget.h"
+#include "Enjin/Input/MIDIInput.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 #include <cmath>
@@ -45,6 +46,7 @@ void AudioReactiveSystem::Update(f32 deltaTime) {
     UpdateAmbientLayers(deltaTime);
     UpdateMusicZones(deltaTime);
     UpdateLipSync(deltaTime);
+    UpdateMIDIBindings(deltaTime);
 }
 
 // ============================================================================
@@ -925,6 +927,61 @@ void AudioReactiveSystem::UpdateLipSync(f32 deltaTime) {
             if (morph->weights[i] != animWeights[i]) {
                 morph->weights[i] = animWeights[i];
                 morph->weightsDirty = true;
+            }
+        }
+    }
+}
+
+// ============================================================================
+// MIDI Bindings — map MIDI CC/notes to entity properties
+// ============================================================================
+
+void AudioReactiveSystem::UpdateMIDIBindings(f32 deltaTime) {
+    if (!m_MIDI || !m_MIDI->IsDeviceOpen()) return;
+
+    for (auto entity : m_World->GetEntitiesWithComponent<ECS::MIDIBindingComponent>()) {
+        if (!m_World->IsValid(entity)) continue;
+        auto* mb = m_World->GetComponent<ECS::MIDIBindingComponent>(entity);
+        if (!mb || !mb->enabled) continue;
+
+        for (auto& binding : mb->bindings) {
+            // Read MIDI value (0-127)
+            f32 midiNorm = 0.0f;
+            switch (binding.source) {
+                case ECS::MIDIBindingComponent::Binding::Source::CC: {
+                    u8 val = m_MIDI->GetCCValue(binding.midiCC, binding.midiChannel);
+                    midiNorm = static_cast<f32>(val) / 127.0f;
+                    break;
+                }
+                case ECS::MIDIBindingComponent::Binding::Source::NoteVelocity: {
+                    u8 vel = m_MIDI->GetNoteVelocity(binding.midiCC, binding.midiChannel);
+                    midiNorm = static_cast<f32>(vel) / 127.0f;
+                    break;
+                }
+                case ECS::MIDIBindingComponent::Binding::Source::PitchBend: {
+                    // Pitch bend is 14-bit (0-16383), center = 8192
+                    // Approximate from CC for now
+                    midiNorm = 0.5f;
+                    break;
+                }
+            }
+
+            // Map to output range
+            binding.rawValue = binding.outputMin + (binding.outputMax - binding.outputMin) * midiNorm;
+
+            // Smooth
+            binding.currentValue += (binding.rawValue - binding.currentValue) *
+                Math::Min(binding.smoothing * deltaTime, 1.0f);
+
+            // Apply to target
+            if (binding.target == ECS::AudioTargetProperty::Custom) {
+                // Custom target: try morph target name or bus volume
+                auto* morph = m_World->GetComponent<ECS::MorphTargetComponent>(entity);
+                if (morph && !binding.customTarget.empty()) {
+                    morph->SetWeight(binding.customTarget, binding.currentValue);
+                }
+            } else {
+                ApplyValueToTarget(entity, binding.target, binding.currentValue);
             }
         }
     }

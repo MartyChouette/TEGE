@@ -734,4 +734,76 @@ void EditorLayer::DrawSidechainComponent(ECS::Entity entity) {
     }
 }
 
+void EditorLayer::DrawMIDIBindingComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("[M] MIDI Binding", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("MIDIBindCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::MIDIBindingComponent>(entity, "midiBinding", "MIDI Binding");
+            ImGui::EndPopup(); return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* mb = m_World->GetComponent<ECS::MIDIBindingComponent>(entity);
+        if (!mb) return;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Enabled##MIDI", &mb->enabled);
+
+        ImGui::Text("Bindings (%zu):", mb->bindings.size());
+        ImGui::Separator();
+
+        i32 removeIdx = -1;
+        for (usize i = 0; i < mb->bindings.size(); ++i) {
+            auto& b = mb->bindings[i];
+            ImGui::PushID(static_cast<int>(i));
+
+            // Source type
+            const char* srcNames[] = {"CC (Knob/Fader)", "Note Velocity", "Pitch Bend"};
+            int src = static_cast<int>(b.source);
+            ImGui::SetNextItemWidth(120.0f);
+            if (ImGui::Combo("##Src", &src, srcNames, 3)) b.source = static_cast<ECS::MIDIBindingComponent::Binding::Source>(src);
+            ImGui::SameLine();
+
+            // CC / Note number
+            int ccNum = static_cast<int>(b.midiCC);
+            ImGui::SetNextItemWidth(50.0f);
+            if (ImGui::InputInt("##CC", &ccNum)) b.midiCC = static_cast<u8>(Math::Clamp(ccNum, 0, 127));
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("MIDI CC number (0-127) or Note number");
+            ImGui::SameLine();
+
+            if (ImGui::SmallButton("X##Rm")) removeIdx = static_cast<i32>(i);
+
+            // Target
+            const char* targetNames[] = {"Light Intensity","Light Color","Emissive","Scale","Opacity","Particles","Camera Shake","Custom"};
+            int tgt = static_cast<int>(b.target);
+            ImGui::SetNextItemWidth(120.0f);
+            if (ImGui::Combo("Target##T", &tgt, targetNames, 8)) b.target = static_cast<ECS::AudioTargetProperty>(tgt);
+
+            if (b.target == ECS::AudioTargetProperty::Custom) {
+                ImGui::SameLine();
+                char customBuf[64] = {};
+                strncpy(customBuf, b.customTarget.c_str(), sizeof(customBuf) - 1);
+                ImGui::SetNextItemWidth(100.0f);
+                if (ImGui::InputText("##Custom", customBuf, sizeof(customBuf))) b.customTarget = customBuf;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Morph target name or bus name");
+            }
+
+            // Range
+            ImGui::DragFloatRange2("Range##R", &b.outputMin, &b.outputMax, 0.01f, -100.0f, 100.0f);
+
+            // Live value indicator
+            ImGui::ProgressBar(Math::Clamp((b.currentValue - b.outputMin) / Math::Max(b.outputMax - b.outputMin, 0.001f), 0.0f, 1.0f),
+                ImVec2(-1, 4), "");
+
+            ImGui::Separator();
+            ImGui::PopID();
+        }
+
+        if (removeIdx >= 0) mb->bindings.erase(mb->bindings.begin() + removeIdx);
+        if (ImGui::Button("Add Binding##MIDI")) mb->bindings.push_back({});
+
+        ImGui::TextDisabled("Connect a MIDI controller and map knobs/faders to properties.");
+    }
+}
+
 } // namespace Enjin

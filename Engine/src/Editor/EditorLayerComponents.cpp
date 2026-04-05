@@ -8651,6 +8651,7 @@ template void EditorLayer::RemoveComponentWithUndo<ECS::FixedJointComponent>(ECS
 template void EditorLayer::RemoveComponentWithUndo<ECS::SliderJointComponent>(ECS::Entity, const std::string&, const std::string&);
 template void EditorLayer::RemoveComponentWithUndo<Physics::Body2DComponent>(ECS::Entity, const std::string&, const std::string&);
 template void EditorLayer::RemoveComponentWithUndo<Physics::Joint2DComponent>(ECS::Entity, const std::string&, const std::string&);
+template void EditorLayer::RemoveComponentWithUndo<ECS::MIDIBindingComponent>(ECS::Entity, const std::string&, const std::string&);
 
 } // namespace Editor
 } // namespace Enjin

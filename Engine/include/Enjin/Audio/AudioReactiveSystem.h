@@ -5,6 +5,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 
 namespace Enjin {
+namespace InputSystem { class MIDIInput; }
 namespace Audio { class SimpleAudio; }
 namespace Audio {
 
@@ -14,6 +15,7 @@ class ENJIN_API AudioReactiveSystem {
 public:
     void SetWorld(ECS::World* world) { m_World = world; }
     void SetAudio(SimpleAudio* audio) { m_Audio = audio; }
+    void SetMIDI(InputSystem::MIDIInput* midi) { m_MIDI = midi; }
     void Update(f32 deltaTime);
 
 private:
@@ -26,6 +28,7 @@ private:
     void UpdateSidechain(f32 deltaTime);
     void UpdateAudioCollisions(f32 deltaTime);
     void UpdateLipSync(f32 deltaTime);
+    void UpdateMIDIBindings(f32 deltaTime);
     void UpdateOcclusion(f32 deltaTime);
     void UpdateReverbZones(f32 deltaTime);
     void UpdateAmbientLayers(f32 deltaTime);
@@ -35,6 +38,7 @@ private:
 
     ECS::World* m_World = nullptr;
     SimpleAudio* m_Audio = nullptr;
+    InputSystem::MIDIInput* m_MIDI = nullptr;
 
     // Cached per-frame (avoids redundant lookups across subsystems)
     Math::Vector3 m_ListenerPos;

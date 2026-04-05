@@ -359,6 +359,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BeatSyncComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::BeatSyncComponent>(e); },
             "beatSync"},
+        {"MIDI Binding", "Audio", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::MIDIBindingComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MIDIBindingComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::MIDIBindingComponent>(e); },
+            "midiBinding"},
         {"Conductor", "Audio", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ConductorComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ConductorComponent>(e); },
@@ -1384,6 +1389,9 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::BeatSyncComponent>(m_PrimarySelected)) {
             DrawBeatSyncComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::MIDIBindingComponent>(m_PrimarySelected)) {
+            DrawMIDIBindingComponent(m_PrimarySelected);
         }
         if (m_World->HasComponent<ECS::ConductorComponent>(m_PrimarySelected)) {
             DrawConductorComponent(m_PrimarySelected);

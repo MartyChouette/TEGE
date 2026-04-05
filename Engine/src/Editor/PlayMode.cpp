@@ -111,6 +111,7 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
 
         m_AudioReactiveSystem.SetWorld(world);
         m_AudioReactiveSystem.SetAudio(&m_SimpleAudio);
+        m_AudioReactiveSystem.SetMIDI(&m_MIDIInput);
 
         // Initialize network system
         m_NetworkSystem.SetWorld(world);

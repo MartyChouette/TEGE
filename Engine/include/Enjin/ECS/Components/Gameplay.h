@@ -563,6 +563,38 @@ struct AudioBusEQ {
 };
 
 // ============================================================================
+// MIDI BINDING — Map MIDI CC/notes to entity properties
+// ============================================================================
+
+// MIDIBindingComponent — turn a MIDI controller into a live control surface.
+// Map knobs (CC) to light intensity, faders to bus volumes, pads to trigger
+// actions, keys to bone rotations or morph weights.
+struct MIDIBindingComponent {
+    struct Binding {
+        enum class Source : u8 { CC, NoteVelocity, PitchBend };
+        Source source = Source::CC;
+        u8 midiCC = 0;              // CC number (0-127) or note number
+        u8 midiChannel = 0;         // MIDI channel (0-15, 0xFF = any)
+
+        // Target property
+        AudioTargetProperty target = AudioTargetProperty::LightIntensity;
+        std::string customTarget;    // For Custom target: morph target name, bus name, etc.
+
+        // Mapping range
+        f32 outputMin = 0.0f;        // Value when MIDI = 0
+        f32 outputMax = 1.0f;        // Value when MIDI = 127
+        f32 smoothing = 10.0f;       // Interpolation speed
+
+        // Runtime
+        f32 currentValue = 0.0f;
+        f32 rawValue = 0.0f;
+    };
+
+    std::vector<Binding> bindings;
+    bool enabled = true;
+};
+
+// ============================================================================
 // CONDUCTOR — AI-driven dynamic music that responds to gameplay
 // ============================================================================
 

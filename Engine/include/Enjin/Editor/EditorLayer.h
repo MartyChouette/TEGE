@@ -436,6 +436,7 @@ private:
     void DrawRTPCComponent(ECS::Entity entity);
     void DrawBeatClockComponent(ECS::Entity entity);
     void DrawBeatSyncComponent(ECS::Entity entity);
+    void DrawMIDIBindingComponent(ECS::Entity entity);
     void DrawConductorComponent(ECS::Entity entity);
     void DrawAudioCollisionComponent(ECS::Entity entity);
     void DrawSidechainComponent(ECS::Entity entity);
