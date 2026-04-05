@@ -2360,12 +2360,32 @@ void EditorLayer::PushConsoleMessage(LogLevel level, LogCategory category, const
 void EditorLayer::CheckForCrashReport() {
     if (Debug::HasPreviousCrashReport()) {
         m_PreviousCrashReport = Debug::ReadPreviousCrashReport();
-        // Log quietly instead of popping up a dialog on startup.
-        // Report is still available via Help > Last Crash Report.
         if (!m_PreviousCrashReport.empty()) {
-            ENJIN_LOG_WARN(Editor, "Previous session crashed. View report via Help > Last Crash Report.");
+            ENJIN_LOG_WARN(Editor, "Previous session crashed — auto-submitting report and showing dialog.");
+
+            // Auto-send to Discord webhook (fire-and-forget, non-blocking)
+            {
+#if __has_include("Enjin/Editor/WebhookConfig.h")
+                constexpr const char* bugHook = ENJIN_DISCORD_BUG_WEBHOOK;
+                if (bugHook[0] != '\0') {
+                    std::string report = m_PreviousCrashReport;
+                    auto* mgr = &m_FeedbackManager;
+                    std::thread([mgr, report, bugHook]() {
+                        // Format as a Discord webhook message
+                        std::string truncated = report.substr(0, 1800); // Discord limit ~2000 chars
+                        std::string payload = "{\"content\":\"**Auto Crash Report**\\n```\\n"
+                            + truncated + "\\n```\"}";
+                        Networking::HTTPClient::Post(bugHook, payload, {{"Content-Type", "application/json"}});
+                    }).detach();
+                    ENJIN_LOG_INFO(Editor, "Crash report auto-submitted to Discord");
+                }
+#endif
+            }
+
+            // Show the dialog so the user can also review, add context, or submit to GitHub
+            m_ShowCrashDialog = true;
         }
-        Debug::ClearPreviousCrashReport();
+        // Don't clear yet — dialog will clear on dismiss
     }
 }
 
