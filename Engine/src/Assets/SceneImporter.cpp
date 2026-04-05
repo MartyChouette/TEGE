@@ -1517,7 +1517,47 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                     meshComp.subMeshes.size(), uniqueMaterials.size());
             }
 
+            u32 totalAssimpVerts = static_cast<u32>(meshComp.vertices.size());
             world->AddComponent<ECS::MeshComponent>(entity, std::move(meshComp));
+
+            // Create MorphTargetComponent if any primitive has morph targets (FBX blend shapes)
+            {
+                bool hasMorphs = false;
+                for (i32 mi : meshIndices) {
+                    if (mi < 0 || mi >= static_cast<i32>(scene.meshes.size())) continue;
+                    for (const auto& prim : scene.meshes[mi].primitives) {
+                        if (!prim.morphTargets.empty()) { hasMorphs = true; break; }
+                    }
+                    if (hasMorphs) break;
+                }
+                if (hasMorphs) {
+                    auto& morphComp = world->AddComponent<ECS::MorphTargetComponent>(entity);
+                    u32 vOff = 0;
+                    for (i32 mi : meshIndices) {
+                        if (mi < 0 || mi >= static_cast<i32>(scene.meshes.size())) continue;
+                        for (const auto& prim : scene.meshes[mi].primitives) {
+                            for (const auto& src : prim.morphTargets) {
+                                i32 existingIdx = morphComp.FindTarget(src.name);
+                                if (existingIdx < 0) {
+                                    ECS::MorphTarget tgt;
+                                    tgt.name = src.name;
+                                    tgt.deltas.resize(totalAssimpVerts, ECS::MorphTargetDelta{});
+                                    morphComp.targets.push_back(std::move(tgt));
+                                    existingIdx = static_cast<i32>(morphComp.targets.size()) - 1;
+                                }
+                                auto& dst = morphComp.targets[existingIdx];
+                                for (usize v = 0; v < src.positionDeltas.size() && (vOff + v) < dst.deltas.size(); ++v) {
+                                    dst.deltas[vOff + v].positionDelta = src.positionDeltas[v];
+                                    if (v < src.normalDeltas.size()) dst.deltas[vOff + v].normalDelta = src.normalDeltas[v];
+                                }
+                            }
+                            vOff += static_cast<u32>(prim.vertices.size());
+                        }
+                    }
+                    morphComp.weights.resize(morphComp.targets.size(), 0.0f);
+                    stats.warnings.push_back("Morph targets imported (FBX): " + std::to_string(morphComp.targets.size()) + " targets");
+                }
+            }
 
             // Add box collider from mesh AABB
             if (options.generateColliders) {

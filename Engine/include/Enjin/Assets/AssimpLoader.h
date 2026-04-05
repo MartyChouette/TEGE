@@ -23,11 +23,19 @@ struct AssimpVertex {
     u32 boneIndices[4] = {0, 0, 0, 0};
 };
 
+// Morph target delta data (per-vertex)
+struct AssimpMorphTarget {
+    std::string name;
+    std::vector<Math::Vector3> positionDeltas;
+    std::vector<Math::Vector3> normalDeltas;
+};
+
 // Primitive/submesh data
 struct AssimpPrimitive {
     std::vector<AssimpVertex> vertices;
     std::vector<u32> indices;
     i32 materialIndex = -1;
+    std::vector<AssimpMorphTarget> morphTargets;
 };
 
 // Mesh containing one or more primitives

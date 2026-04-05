@@ -326,6 +326,45 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
             }
         }
 
+        // Extract morph targets (blend shapes) from Assimp's aiAnimMeshes.
+        // Assimp stores absolute positions per target — we compute deltas vs base mesh.
+        if (aiMeshData->mNumAnimMeshes > 0) {
+            for (unsigned int mt = 0; mt < aiMeshData->mNumAnimMeshes; ++mt) {
+                const aiAnimMesh* animMesh = aiMeshData->mAnimMeshes[mt];
+                AssimpMorphTarget target;
+                target.name = animMesh->mName.C_Str();
+                if (target.name.empty()) {
+                    char nameBuf[32];
+                    snprintf(nameBuf, sizeof(nameBuf), "target_%u", mt);
+                    target.name = nameBuf;
+                }
+
+                target.positionDeltas.resize(aiMeshData->mNumVertices, Math::Vector3(0.0f));
+                target.normalDeltas.resize(aiMeshData->mNumVertices, Math::Vector3(0.0f));
+
+                for (unsigned int v = 0; v < aiMeshData->mNumVertices; ++v) {
+                    // Assimp stores absolute positions — compute delta from base
+                    if (animMesh->HasPositions()) {
+                        target.positionDeltas[v] = Math::Vector3(
+                            animMesh->mVertices[v].x - aiMeshData->mVertices[v].x,
+                            animMesh->mVertices[v].y - aiMeshData->mVertices[v].y,
+                            animMesh->mVertices[v].z - aiMeshData->mVertices[v].z
+                        );
+                    }
+                    if (animMesh->HasNormals()) {
+                        target.normalDeltas[v] = Math::Vector3(
+                            animMesh->mNormals[v].x - aiMeshData->mNormals[v].x,
+                            animMesh->mNormals[v].y - aiMeshData->mNormals[v].y,
+                            animMesh->mNormals[v].z - aiMeshData->mNormals[v].z
+                        );
+                    }
+                }
+                primitive.morphTargets.push_back(std::move(target));
+            }
+            ENJIN_LOG_INFO(Asset, "Extracted %u morph targets from mesh '%s'",
+                aiMeshData->mNumAnimMeshes, aiMeshData->mName.C_Str());
+        }
+
         // Indices
         primitive.indices.reserve(aiMeshData->mNumFaces * 3);
         for (unsigned int f = 0; f < aiMeshData->mNumFaces; ++f) {
