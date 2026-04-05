@@ -70,6 +70,12 @@ void AudioReactiveSystem::UpdateBeatClock(f32 deltaTime) {
             clock->currentBeat = clock->totalBeats % clock->beatsPerBar;
             clock->currentBar = clock->totalBeats / clock->beatsPerBar;
             clock->downbeatThisFrame = (clock->currentBeat == 0);
+
+            // Accessibility: fire visual indicator on downbeat
+            if (clock->downbeatThisFrame) {
+                auto cb = m_Audio->GetOnSoundPlayed();
+                if (cb) cb("[Beat: downbeat]");
+            }
         } else {
             clock->downbeatThisFrame = false;
         }
@@ -350,6 +356,10 @@ void AudioReactiveSystem::UpdateConductor(f32 deltaTime) {
                     cond->currentState = detected;
                     cond->stateTimer = 0.0f;
                     ENJIN_LOG_INFO(Audio, "Conductor: state changed to %d", static_cast<int>(detected));
+                    // Accessibility: visual indicator for state change
+                    static const char* stateLabels[] = {"[Music: Explore]", "[Music: Combat]", "[Music: Stealth]", "[Music: Cutscene]"};
+                    auto cb = m_Audio->GetOnSoundPlayed();
+                    if (cb) cb(stateLabels[static_cast<int>(detected)]);
                 }
             } else {
                 cond->stateTimer = 0.0f;

@@ -132,6 +132,7 @@ public:
     // Called whenever a sound is played, with the clip filepath as label
     using SoundPlayedCallback = std::function<void(const std::string& soundName)>;
     void SetOnSoundPlayed(SoundPlayedCallback cb) { m_OnSoundPlayed = std::move(cb); }
+    const SoundPlayedCallback& GetOnSoundPlayed() const { return m_OnSoundPlayed; }
 
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
     // HRTF binaural audio (requires Steam Audio SDK)

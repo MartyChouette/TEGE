@@ -58,6 +58,7 @@ void RegisterHUDBindings(asIScriptEngine* engine);
 void RegisterTextBindings(asIScriptEngine* engine);
 void RegisterElementalBindings(asIScriptEngine* engine);
 void RegisterRewindBindings(asIScriptEngine* engine);
+void RegisterAudioReactiveBindings(asIScriptEngine* engine);
 
 // Set subsystem pointers for script bindings
 void SetBindingsWorld(ECS::World* world);

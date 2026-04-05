@@ -538,9 +538,10 @@ void EditorLayer::StartPlayMode() {
     Scripting::SetBindingsWeather(&m_WeatherSystem);
     Scripting::SetBindingsSceneManager(&m_SceneManager);
     s_VisualScriptWater = &m_Water3D;
-    m_CachedPlayerEntity = ECS::INVALID_ENTITY; // Invalidate cache for new play session
+    m_CachedPlayerEntity = ECS::INVALID_ENTITY;
     m_PlayMode.Play();
     m_Telemetry.TrackPlayModeEnter();
+    if (m_Announcer.enabled) m_Announcer.Announce("Play mode started", Accessibility::AnnouncePriority::Normal);
 }
 
 void EditorLayer::InitializePlayMode() {
@@ -724,6 +725,7 @@ void EditorLayer::Update(f32 deltaTime) {
             // the world — otherwise the GPU may read destroyed entity data.
             if (m_Renderer) m_Renderer->WaitForAllFrames();
             m_PlayMode.Stop();
+            if (m_Announcer.enabled) m_Announcer.Announce("Play mode stopped", Accessibility::AnnouncePriority::Normal);
             ClearSelection(); // Entities have new IDs after scene restore
             m_PrePlayRenderSettings.ApplyToRuntime(
                 m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
@@ -981,10 +983,13 @@ void EditorLayer::Update(f32 deltaTime) {
         if (Input::IsKeyDown(KeyCode::LeftControl)) {
             if (Input::IsKeyDown(KeyCode::LeftShift) && Input::IsKeyPressed(KeyCode::Z)) {
                 m_UndoRedo.Redo();
+                if (m_Announcer.enabled) m_Announcer.Announce("Redo", Accessibility::AnnouncePriority::Low);
             } else if (Input::IsKeyPressed(KeyCode::Z)) {
                 m_UndoRedo.Undo();
+                if (m_Announcer.enabled) m_Announcer.Announce("Undo", Accessibility::AnnouncePriority::Low);
             } else if (Input::IsKeyPressed(KeyCode::Y)) {
                 m_UndoRedo.Redo();
+                if (m_Announcer.enabled) m_Announcer.Announce("Redo", Accessibility::AnnouncePriority::Low);
             }
         }
 
@@ -3621,8 +3626,12 @@ void EditorLayer::ClearSelection() {
     if (m_BoneWeightEntity != ECS::INVALID_ENTITY) {
         RestoreBoneWeightColors(m_BoneWeightEntity);
     }
+    bool hadSelection = !m_SelectedEntities.empty();
     m_SelectedEntities.clear();
     m_PrimarySelected = ECS::INVALID_ENTITY;
+    if (hadSelection && m_Announcer.enabled) {
+        m_Announcer.Announce("Selection cleared", Accessibility::AnnouncePriority::Low);
+    }
 }
 
 bool EditorLayer::IsSelected(ECS::Entity entity) const {

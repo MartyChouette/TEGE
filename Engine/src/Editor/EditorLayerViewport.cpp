@@ -153,7 +153,12 @@ void EditorLayer::DrawViewportPanel() {
         auto modeBtn = [&](const char* label, const char* tooltip, SceneViewMode mode) {
             bool active = (m_SceneViewMode == mode);
             if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-            if (ImGui::SmallButton(label)) m_SceneViewMode = mode;
+            if (ImGui::SmallButton(label)) {
+                m_SceneViewMode = mode;
+                if (m_Announcer.enabled) {
+                    m_Announcer.Announce(std::string("View: ") + label, Accessibility::AnnouncePriority::Low);
+                }
+            }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tooltip);
             if (active) ImGui::PopStyleColor();
             ImGui::SameLine();

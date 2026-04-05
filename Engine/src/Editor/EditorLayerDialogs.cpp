@@ -1481,6 +1481,18 @@ void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOpt
     // Store result and show dialog (for both success and failure)
     m_LastImportResult = result;
     m_ShowImportResultDialog = true;
+
+    // Screen reader announcement
+    if (m_Announcer.enabled) {
+        if (result.success) {
+            char buf[128];
+            snprintf(buf, sizeof(buf), "Import successful: %u meshes, %u materials, %u vertices",
+                result.meshCount, result.materialCount, result.totalVertexCount);
+            m_Announcer.Announce(buf, Accessibility::AnnouncePriority::Normal);
+        } else {
+            m_Announcer.Announce("Import failed: " + result.errorMessage, Accessibility::AnnouncePriority::High);
+        }
+    }
 }
 
 
