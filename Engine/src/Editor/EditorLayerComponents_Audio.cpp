@@ -806,4 +806,97 @@ void EditorLayer::DrawMIDIBindingComponent(ECS::Entity entity) {
     }
 }
 
+void EditorLayer::DrawAudioFidelityComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("[F] Audio Fidelity", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("AudioFidelityCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::AudioFidelityComponent>(entity, "audioFidelity", "Audio Fidelity");
+            ImGui::EndPopup(); return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* af = m_World->GetComponent<ECS::AudioFidelityComponent>(entity);
+        if (!af) return;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Enabled##AF", &af->enabled);
+
+        // Preset selector with accessible descriptions
+        const char* modeNames[] = {
+            "Modern (Full Fidelity)",
+            "Lo-Fi (Vinyl/Warm)",
+            "16-Bit Retro (SNES era)",
+            "8-Bit Retro (NES/GB)",
+            "Chip Tune (Waveform only)",
+            "FM Synth (Genesis/OPL)",
+            "PS1 Era (Compressed)",
+            "Cassette (Tape Wobble)"
+        };
+        static const char* modeDescs[] = {
+            "No processing — pristine audio quality.",
+            "Warm analog feel with vinyl crackle, soft low-pass, and gentle saturation.",
+            "22050 Hz sample rate, slight quantization — Super Nintendo / early PC era.",
+            "11025 Hz, aggressive bit crushing — NES, Game Boy, Commodore 64.",
+            "Pure waveform synthesis — square, triangle, noise channels. Mono output.",
+            "Frequency modulation synthesis — Sega Genesis, Sound Blaster OPL chips.",
+            "22050 Hz with reverb and compressed dynamics — PlayStation 1, Saturn era.",
+            "Tape hiss, pitch wobble, warm saturation, narrow stereo — VHS / mixtape aesthetic."
+        };
+
+        int mode = static_cast<int>(af->mode);
+        if (ImGui::Combo("Style##AF", &mode, modeNames, 8)) {
+            af->ApplyPreset(static_cast<ECS::AudioFidelityMode>(mode));
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", modeDescs[mode]);
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Intensity##AF", &af->intensity, 0.05f, 0.0f, 1.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Blend between modern (0) and styled (1).\nLower values give a subtle hint of the style.");
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Auto-Match Art Style##AF", &af->autoMatchArtStyle);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Automatically set audio style to match the scene's ArtStyleComponent.\nPixel Art → ChipTune, Cel/Toon → Lo-Fi, etc.");
+
+        // Detailed parameters (collapsible)
+        if (ImGui::TreeNode("Parameters##AF")) {
+            ImGui::TextDisabled("These are set by the preset but can be tweaked manually.");
+
+            InspectorUndo::DragFloat(m_UndoRedo, "Sample Rate##AF", &af->sampleRateReduction, 0.05f, 0.1f, 1.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("1.0 = native rate\n0.5 = half (22050 Hz)\n0.25 = quarter (11025 Hz)\nLower = more retro");
+
+            InspectorUndo::DragFloat(m_UndoRedo, "Bit Depth##AF", &af->bitDepthReduction, 0.05f, 0.05f, 1.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("1.0 = full depth (16/24-bit)\n0.5 = 8-bit style quantization\n0.15 = extreme chiptune crunch");
+
+            InspectorUndo::DragFloat(m_UndoRedo, "Low-Pass (Hz)##AF", &af->lowPassCutoff, 100.0f, 500.0f, 20000.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Frequency cutoff — lower values muffle the audio.\n20000 = no filter, 4000 = very muffled.");
+
+            InspectorUndo::DragFloat(m_UndoRedo, "Noise Floor##AF", &af->noiseFloor, 0.005f, 0.0f, 0.1f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Background hiss/static level.\n0 = clean, 0.04 = audible tape hiss.");
+
+            InspectorUndo::DragFloat(m_UndoRedo, "Wobble##AF", &af->wobble, 0.005f, 0.0f, 0.1f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pitch wobble amount — simulates tape/vinyl warping.\n0 = stable, 0.03 = noticeable warble.");
+
+            InspectorUndo::DragFloat(m_UndoRedo, "Wobble Speed##AF", &af->wobbleSpeed, 0.05f, 0.05f, 5.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("How fast the pitch wobbles (Hz).\nSlow = vinyl, fast = broken tape.");
+
+            InspectorUndo::DragFloat(m_UndoRedo, "Saturation##AF", &af->saturation, 0.05f, 0.0f, 1.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Warm distortion / harmonic richness.\n0 = clean, 0.5 = tube amp warmth.");
+
+            InspectorUndo::DragFloat(m_UndoRedo, "Stereo Width##AF", &af->stereoWidth, 0.05f, 0.0f, 1.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 = mono (chiptune), 1 = full stereo.\nNarrower stereo feels more retro.");
+
+            ImGui::TreePop();
+        }
+
+        // Visual style mapping preview
+        ImGui::Separator();
+        ImGui::TextDisabled("Art Style → Audio Style mapping:");
+        ImGui::TextDisabled("  Realistic PBR → Modern");
+        ImGui::TextDisabled("  Blinn-Phong → Lo-Fi");
+        ImGui::TextDisabled("  Cel/Toon → Lo-Fi");
+        ImGui::TextDisabled("  Low-Poly Retro → 16-Bit Retro");
+        ImGui::TextDisabled("  Pixel Art → ChipTune / 8-Bit");
+        ImGui::TextDisabled("  NPR Sketch → Lo-Fi");
+        ImGui::TextDisabled("  Analog/Degraded → Cassette");
+    }
+}
+
 } // namespace Enjin

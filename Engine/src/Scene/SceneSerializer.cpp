@@ -2730,6 +2730,78 @@ ECS::PoseLibraryComponent DeserializePoseLibraryComponent(const json& j) {
     return pl;
 }
 
+json SerializeAudioFidelityComponent(const ECS::AudioFidelityComponent& af) {
+    json j;
+    j["mode"] = static_cast<u8>(af.mode);
+    j["intensity"] = RF(af.intensity);
+    j["autoMatchArtStyle"] = af.autoMatchArtStyle;
+    j["sampleRateReduction"] = RF(af.sampleRateReduction);
+    j["bitDepthReduction"] = RF(af.bitDepthReduction);
+    j["lowPassCutoff"] = RF(af.lowPassCutoff);
+    j["noiseFloor"] = RF(af.noiseFloor);
+    j["wobble"] = RF(af.wobble);
+    j["wobbleSpeed"] = RF(af.wobbleSpeed);
+    j["saturation"] = RF(af.saturation);
+    j["stereoWidth"] = RF(af.stereoWidth);
+    j["enabled"] = af.enabled;
+    return j;
+}
+ECS::AudioFidelityComponent DeserializeAudioFidelityComponent(const json& j) {
+    ECS::AudioFidelityComponent af;
+    if (j.contains("mode")) af.mode = static_cast<ECS::AudioFidelityMode>(j["mode"].get<u8>());
+    if (j.contains("intensity")) af.intensity = j["intensity"].get<f32>();
+    if (j.contains("autoMatchArtStyle")) af.autoMatchArtStyle = JB(j["autoMatchArtStyle"]);
+    if (j.contains("sampleRateReduction")) af.sampleRateReduction = j["sampleRateReduction"].get<f32>();
+    if (j.contains("bitDepthReduction")) af.bitDepthReduction = j["bitDepthReduction"].get<f32>();
+    if (j.contains("lowPassCutoff")) af.lowPassCutoff = j["lowPassCutoff"].get<f32>();
+    if (j.contains("noiseFloor")) af.noiseFloor = j["noiseFloor"].get<f32>();
+    if (j.contains("wobble")) af.wobble = j["wobble"].get<f32>();
+    if (j.contains("wobbleSpeed")) af.wobbleSpeed = j["wobbleSpeed"].get<f32>();
+    if (j.contains("saturation")) af.saturation = j["saturation"].get<f32>();
+    if (j.contains("stereoWidth")) af.stereoWidth = j["stereoWidth"].get<f32>();
+    if (j.contains("enabled")) af.enabled = JB(j["enabled"]);
+    return af;
+}
+
+json SerializeMIDIBindingComponent(const ECS::MIDIBindingComponent& mb) {
+    json j;
+    j["enabled"] = mb.enabled;
+    json bindings = json::array();
+    for (const auto& b : mb.bindings) {
+        json bj;
+        bj["source"] = static_cast<u8>(b.source);
+        bj["midiCC"] = b.midiCC;
+        bj["midiChannel"] = b.midiChannel;
+        bj["target"] = static_cast<u8>(b.target);
+        bj["customTarget"] = b.customTarget;
+        bj["outputMin"] = RF(b.outputMin);
+        bj["outputMax"] = RF(b.outputMax);
+        bj["smoothing"] = RF(b.smoothing);
+        bindings.push_back(bj);
+    }
+    j["bindings"] = bindings;
+    return j;
+}
+ECS::MIDIBindingComponent DeserializeMIDIBindingComponent(const json& j) {
+    ECS::MIDIBindingComponent mb;
+    if (j.contains("enabled")) mb.enabled = JB(j["enabled"]);
+    if (j.contains("bindings") && j["bindings"].is_array()) {
+        for (const auto& bj : j["bindings"]) {
+            ECS::MIDIBindingComponent::Binding b;
+            if (bj.contains("source")) b.source = static_cast<ECS::MIDIBindingComponent::Binding::Source>(bj["source"].get<u8>());
+            if (bj.contains("midiCC")) b.midiCC = bj["midiCC"].get<u8>();
+            if (bj.contains("midiChannel")) b.midiChannel = bj["midiChannel"].get<u8>();
+            if (bj.contains("target")) b.target = static_cast<ECS::AudioTargetProperty>(bj["target"].get<u8>());
+            if (bj.contains("customTarget")) b.customTarget = bj["customTarget"].get<std::string>();
+            if (bj.contains("outputMin")) b.outputMin = bj["outputMin"].get<f32>();
+            if (bj.contains("outputMax")) b.outputMax = bj["outputMax"].get<f32>();
+            if (bj.contains("smoothing")) b.smoothing = bj["smoothing"].get<f32>();
+            mb.bindings.push_back(b);
+        }
+    }
+    return mb;
+}
+
 json SerializeDamageComponent(const ECS::DamageComponent& d) {
     json j;
     j["damage"] = RF(d.damage);
@@ -6935,6 +7007,10 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 entityJson["audioOcclusion"] = SerializeAudioOcclusionComponent(*m_World->GetComponent<ECS::AudioOcclusionComponent>(entity));
             if (m_World->HasComponent<ECS::PoseLibraryComponent>(entity))
                 entityJson["poseLibrary"] = SerializePoseLibraryComponent(*m_World->GetComponent<ECS::PoseLibraryComponent>(entity));
+            if (m_World->HasComponent<ECS::AudioFidelityComponent>(entity))
+                entityJson["audioFidelity"] = SerializeAudioFidelityComponent(*m_World->GetComponent<ECS::AudioFidelityComponent>(entity));
+            if (m_World->HasComponent<ECS::MIDIBindingComponent>(entity))
+                entityJson["midiBinding"] = SerializeMIDIBindingComponent(*m_World->GetComponent<ECS::MIDIBindingComponent>(entity));
             if (m_World->HasComponent<ECS::DamageComponent>(entity)) {
                 entityJson["damage"] = SerializeDamageComponent(*m_World->GetComponent<ECS::DamageComponent>(entity));
             }
@@ -8333,6 +8409,10 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
                 entityJson["audioOcclusion"] = SerializeAudioOcclusionComponent(*m_World->GetComponent<ECS::AudioOcclusionComponent>(entity));
             if (m_World->HasComponent<ECS::PoseLibraryComponent>(entity))
                 entityJson["poseLibrary"] = SerializePoseLibraryComponent(*m_World->GetComponent<ECS::PoseLibraryComponent>(entity));
+            if (m_World->HasComponent<ECS::AudioFidelityComponent>(entity))
+                entityJson["audioFidelity"] = SerializeAudioFidelityComponent(*m_World->GetComponent<ECS::AudioFidelityComponent>(entity));
+            if (m_World->HasComponent<ECS::MIDIBindingComponent>(entity))
+                entityJson["midiBinding"] = SerializeMIDIBindingComponent(*m_World->GetComponent<ECS::MIDIBindingComponent>(entity));
             if (m_World->HasComponent<ECS::DamageComponent>(entity)) {
                 entityJson["damage"] = SerializeDamageComponent(*m_World->GetComponent<ECS::DamageComponent>(entity));
             }
@@ -9520,6 +9600,10 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["audioOcclusion"] = SerializeAudioOcclusionComponent(*world->GetComponent<ECS::AudioOcclusionComponent>(entity));
         if (world->HasComponent<ECS::PoseLibraryComponent>(entity))
             entityJson["poseLibrary"] = SerializePoseLibraryComponent(*world->GetComponent<ECS::PoseLibraryComponent>(entity));
+        if (world->HasComponent<ECS::AudioFidelityComponent>(entity))
+            entityJson["audioFidelity"] = SerializeAudioFidelityComponent(*world->GetComponent<ECS::AudioFidelityComponent>(entity));
+        if (world->HasComponent<ECS::MIDIBindingComponent>(entity))
+            entityJson["midiBinding"] = SerializeMIDIBindingComponent(*world->GetComponent<ECS::MIDIBindingComponent>(entity));
         if (world->HasComponent<ECS::DamageComponent>(entity))
             entityJson["damage"] = SerializeDamageComponent(*world->GetComponent<ECS::DamageComponent>(entity));
         if (world->HasComponent<ECS::GameOverComponent>(entity))
@@ -10404,6 +10488,8 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "audioSnapshotTrigger") { world->AddComponent<ECS::AudioSnapshotTriggerComponent>(entity, DeserializeAudioSnapshotTriggerComponent(j)); return true; }
         if (key == "audioOcclusion") { world->AddComponent<ECS::AudioOcclusionComponent>(entity, DeserializeAudioOcclusionComponent(j)); return true; }
         if (key == "poseLibrary") { world->AddComponent<ECS::PoseLibraryComponent>(entity, DeserializePoseLibraryComponent(j)); return true; }
+        if (key == "audioFidelity") { world->AddComponent<ECS::AudioFidelityComponent>(entity, DeserializeAudioFidelityComponent(j)); return true; }
+        if (key == "midiBinding") { world->AddComponent<ECS::MIDIBindingComponent>(entity, DeserializeMIDIBindingComponent(j)); return true; }
         if (key == "damage") { world->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(j)); return true; }
         if (key == "gameOver") { world->AddComponent<ECS::GameOverComponent>(entity, DeserializeGameOverComponent(j)); return true; }
         if (key == "damageResistance") { world->AddComponent<ECS::DamageResistanceComponent>(entity, DeserializeDamageResistanceComponent(j)); return true; }

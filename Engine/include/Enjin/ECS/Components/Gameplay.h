@@ -563,6 +563,89 @@ struct AudioBusEQ {
 };
 
 // ============================================================================
+// AUDIO FIDELITY — Sound chip emulation + aesthetic style matching
+// ============================================================================
+
+// AudioFidelityMode — matches visual art styles with audio processing
+enum class AudioFidelityMode : u8 {
+    Modern,         // Full fidelity — no processing
+    LoFi,           // Vinyl crackle, slight distortion, warm low-pass
+    Retro16Bit,     // 16-bit sample rate (22050 Hz), slight quantization
+    Retro8Bit,      // 8-bit depth, 11025 Hz, aggressive quantization
+    ChipTune,       // NES/Game Boy — square/triangle/noise channels only
+    FMSynth,        // FM synthesis style (Sega Genesis / OPL)
+    PSOne,          // PS1 era — 22050 Hz, reverb, compressed dynamic range
+    Cassette        // Tape wobble, hiss, warm saturation, narrow stereo
+};
+
+// AudioFidelityComponent — attach to a game manager entity to apply
+// global audio fidelity processing. Matches the visual ArtStyleComponent.
+struct AudioFidelityComponent {
+    AudioFidelityMode mode = AudioFidelityMode::Modern;
+    f32 intensity = 1.0f;            // Blend between modern and styled (0=off, 1=full)
+    bool autoMatchArtStyle = true;   // Auto-detect from ArtStyleComponent in scene
+
+    // Per-mode parameters (adjusted by preset, editable by designer)
+    f32 sampleRateReduction = 1.0f;  // 1.0 = native, 0.5 = half rate
+    f32 bitDepthReduction = 1.0f;    // 1.0 = full, 0.5 = 8-bit style
+    f32 lowPassCutoff = 20000.0f;    // Hz (lower = more muffled)
+    f32 noiseFloor = 0.0f;           // Background noise/hiss level (0-0.1)
+    f32 wobble = 0.0f;               // Pitch wobble amount (cassette/vinyl)
+    f32 wobbleSpeed = 0.5f;          // Wobble speed in Hz
+    f32 saturation = 0.0f;           // Warm distortion (0-1)
+    f32 stereoWidth = 1.0f;          // 0 = mono, 1 = normal, <1 = narrow
+
+    bool enabled = true;
+
+    // Apply preset values for a mode
+    void ApplyPreset(AudioFidelityMode m) {
+        mode = m;
+        switch (m) {
+            case AudioFidelityMode::Modern:
+                sampleRateReduction = 1.0f; bitDepthReduction = 1.0f;
+                lowPassCutoff = 20000.0f; noiseFloor = 0.0f; wobble = 0.0f;
+                saturation = 0.0f; stereoWidth = 1.0f;
+                break;
+            case AudioFidelityMode::LoFi:
+                sampleRateReduction = 0.7f; bitDepthReduction = 0.8f;
+                lowPassCutoff = 8000.0f; noiseFloor = 0.02f; wobble = 0.01f;
+                wobbleSpeed = 0.3f; saturation = 0.3f; stereoWidth = 0.8f;
+                break;
+            case AudioFidelityMode::Retro16Bit:
+                sampleRateReduction = 0.5f; bitDepthReduction = 0.7f;
+                lowPassCutoff = 10000.0f; noiseFloor = 0.005f; wobble = 0.0f;
+                saturation = 0.1f; stereoWidth = 1.0f;
+                break;
+            case AudioFidelityMode::Retro8Bit:
+                sampleRateReduction = 0.25f; bitDepthReduction = 0.3f;
+                lowPassCutoff = 5000.0f; noiseFloor = 0.01f; wobble = 0.0f;
+                saturation = 0.2f; stereoWidth = 0.5f;
+                break;
+            case AudioFidelityMode::ChipTune:
+                sampleRateReduction = 0.2f; bitDepthReduction = 0.15f;
+                lowPassCutoff = 4000.0f; noiseFloor = 0.0f; wobble = 0.0f;
+                saturation = 0.4f; stereoWidth = 0.0f; // Mono
+                break;
+            case AudioFidelityMode::FMSynth:
+                sampleRateReduction = 0.4f; bitDepthReduction = 0.5f;
+                lowPassCutoff = 8000.0f; noiseFloor = 0.005f; wobble = 0.0f;
+                saturation = 0.5f; stereoWidth = 0.6f;
+                break;
+            case AudioFidelityMode::PSOne:
+                sampleRateReduction = 0.5f; bitDepthReduction = 0.7f;
+                lowPassCutoff = 9000.0f; noiseFloor = 0.008f; wobble = 0.005f;
+                wobbleSpeed = 0.1f; saturation = 0.15f; stereoWidth = 0.7f;
+                break;
+            case AudioFidelityMode::Cassette:
+                sampleRateReduction = 0.6f; bitDepthReduction = 0.6f;
+                lowPassCutoff = 7000.0f; noiseFloor = 0.04f; wobble = 0.03f;
+                wobbleSpeed = 0.5f; saturation = 0.4f; stereoWidth = 0.6f;
+                break;
+        }
+    }
+};
+
+// ============================================================================
 // MIDI BINDING — Map MIDI CC/notes to entity properties
 // ============================================================================
 
