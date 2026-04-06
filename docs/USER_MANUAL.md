@@ -754,6 +754,8 @@ Fires events when entities enter, exit, or stay inside the zone.
 
 ### 5.4 Audio Components
 
+Enjin's audio system is built on miniaudio and supports 3D spatialization, bus-based mixing, reactive audio, TOTK-style collision sounds, MIDI input, and sound chip emulation.
+
 #### AudioSourceComponent
 
 Plays audio clips with 3D spatialization support.
@@ -780,6 +782,87 @@ Defines the "ears" of the scene. Typically attached to the player or camera enti
 |-------|------|---------|-------------|
 | `isActive` | bool | true | Whether this listener receives audio. |
 | `volumeScale` | f32 | 1.0 | Master volume scale for this listener. |
+
+#### AudioCollisionComponent (TOTK-style)
+
+Physics-driven audio. Every surface has a material type (Default, Metal, Wood, Stone, Glass, Flesh, Water, Dirt, Grass, Ice). Impacts auto-generate sound based on material combination, velocity, mass, and hollowness. Continuous contacts (scraping, rolling) play looping sounds that pitch-shift with velocity. Distance culling skips audio beyond configurable ranges.
+
+#### MaterialInteractionTableComponent
+
+Defines what sound plays when material A hits material B. Attach to one entity in the scene — shared by all AudioCollisionComponents. If no table exists, falls back to per-entity clip paths. The inspector shows a coverage matrix grid and per-interaction editing (material selectors, soft/hard/scrape clips, pitch offset, volume multiplier).
+
+#### AudioReactiveComponent
+
+Drives visual properties (light intensity, emissive, scale, opacity, particle rate, camera shake) from audio amplitude in real time. Configurable frequency band, threshold, smoothing, and target property.
+
+#### AudioThresholdTriggerComponent
+
+Fires events when audio level crosses a threshold. Configurable threshold, cooldown, and hysteresis.
+
+#### RTPCComponent (Real-Time Parameter Control)
+
+Maps a named game parameter to audio properties. Similar to Wwise RTPC — bind game state values to bus volumes, EQ bands, or effect wet/dry mix.
+
+#### BeatClockComponent
+
+Metronome that generates beat events at a configurable BPM. Other components (BeatSyncComponent) can synchronize to these beats for rhythm-driven gameplay.
+
+#### BeatSyncComponent
+
+Synchronizes entity behavior to a BeatClockComponent. Fires callbacks on beat, half-beat, or measure boundaries.
+
+#### ConductorComponent
+
+AI-driven dynamic music. Watches gameplay state (combat, exploration, stealth, cutscene) and dynamically layers/removes music stems, adjusts reverb, shifts EQ. Each stem has per-state activation flags and independent fade speeds.
+
+#### SidechainComponent
+
+Per-bus volume ducking. When the source bus is loud (e.g., dialogue), the target bus (e.g., music) ducks. Configurable threshold, ratio, attack/release/hold times.
+
+#### ReverbZoneComponent
+
+Spatial reverb area. Shape (box/sphere), half-extents, priority, blend radius, room size, damping, wet/dry mix, decay time, pre-delay. Supports presets (Small Room, Large Hall, Cathedral, Outdoor, Bathroom, Cave).
+
+#### AmbientSoundLayerComponent
+
+Ambient soundscape layer that fades in/out based on listener position. Configurable clip, volume, half-extents, fade distance.
+
+#### MusicZoneComponent
+
+Spatial music region. When the listener enters the zone, the track fades in and the previous track fades out. Configurable priority for overlapping zones.
+
+#### AudioSnapshotTriggerComponent
+
+Activates an audio snapshot (Dialogue, Pause, Combat, Cutscene) when the listener enters the trigger volume. Snapshots adjust all bus volumes simultaneously.
+
+#### AudioOcclusionComponent
+
+Raycasts from audio sources to listener to detect occluding geometry. Applies low-pass filter and volume reduction based on occlusion. Configurable update rate for performance.
+
+#### LipSyncComponent
+
+Drives morph targets from audio amplitude. Auto-maps standard viseme names (Jaw_Open, Mouth_Wide, etc.) to MorphTargetComponent weights. Configurable amplitude threshold, smoothing, and per-viseme sensitivity.
+
+#### MIDIBindingComponent
+
+Maps MIDI controller input to entity properties. Each binding specifies a source (CC, NoteVelocity, PitchBend), MIDI channel, target property (LightIntensity, Scale, Opacity, EmissiveStrength, ParticleRate, CameraShake, Custom), output range, and smoothing speed. Requires a MIDI device connected and opened via the MIDI input system.
+
+#### AudioFidelityComponent
+
+Sound chip emulation with 8 aesthetic presets that match visual art styles:
+
+| Preset | Character |
+|--------|-----------|
+| Modern | No processing — pristine audio quality |
+| Lo-Fi | Warm analog feel with vinyl crackle, soft low-pass, gentle saturation |
+| Retro 16-Bit | 22050 Hz sample rate — SNES / early PC era |
+| Retro 8-Bit | 11025 Hz, aggressive bit crushing — NES, Game Boy, C64 |
+| ChipTune | Pure waveform synthesis, mono output — square/triangle/noise channels |
+| FM Synth | Frequency modulation — Sega Genesis, Sound Blaster OPL |
+| PS1 Era | 22050 Hz with compressed dynamics — PlayStation 1, Saturn |
+| Cassette | Tape hiss, pitch wobble, warm saturation, narrow stereo — VHS / mixtape |
+
+Auto-match art style mode maps the scene's ArtStyleComponent to the appropriate audio preset. All parameters (sample rate reduction, bit depth, low-pass cutoff, noise floor, wobble, saturation, stereo width) are individually tweakable after preset selection.
 
 ---
 

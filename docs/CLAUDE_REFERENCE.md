@@ -181,7 +181,34 @@ Per-entity texture (bindings 3/5/6/8/9/18) and bone buffer (binding 7) descripto
 - **Pack format:** `.enjpak` with magic `ENJPAK10`, per-file CRC32, XOR obfuscation (key: `enjin_default_pack_key_2025`)
 - **Player app** (`Player/src/main.cpp`) - Standalone executable, loads `game.enjpak`. Auto title screen + pause menu via `GameMenuSystem`
 
-## Steam Audio HRTF + Occlusion
+## Audio System
+
+**Backend:** miniaudio (`ma_engine`, `ma_sound`) for file I/O, mixing, and device output. Supports WAV, MP3, FLAC, OGG.
+
+**Bus Hierarchy:** `AudioMixer` manages Master→SFX/Music/UI/Voice buses with per-bus VU metering, 3-band EQ. Snapshot system (Dialogue/Pause/Combat/Cutscene) adjusts all bus volumes simultaneously. `MusicCrossfader` with 3 transition modes (linear, equal-power, S-curve).
+
+**AudioReactiveSystem** — processes 14 subsystems per frame:
+- AudioReactive (drive visual properties from amplitude)
+- ThresholdTriggers (fire events on level crossing)
+- RTPC (real-time parameter control, Wwise-style)
+- BeatClock + BeatSync (metronome + rhythm sync)
+- Conductor (AI-driven dynamic music stems)
+- AudioCollision (TOTK-style material interaction audio with distance culling)
+- Sidechain (per-bus volume ducking)
+- Occlusion (raycast-based low-pass + volume reduction)
+- ReverbZones (spatial reverb with blend radius)
+- AmbientLayers (positional ambient soundscapes)
+- MusicZones (spatial music regions with crossfade)
+- LipSync (amplitude → morph target weights)
+- MIDIBindings (CC/note/pitchbend → entity properties)
+
+**MaterialInteractionTableComponent** — defines collision sounds per material pair (10 surface types). Symmetric lookup, per-interaction soft/hard/scrape clips with pitch offset and volume multiplier. Inspector shows coverage matrix grid.
+
+**AudioFidelityComponent** — 8 sound chip emulation presets (Modern, LoFi, Retro16Bit, Retro8Bit, ChipTune, FMSynth, PSOne, Cassette). Auto-matches ArtStyleComponent when enabled. Per-parameter tweaking (sample rate, bit depth, low-pass, noise, wobble, saturation, stereo width).
+
+**MIDI Input:** `MIDIInput` class (WinMM on Windows, stubs elsewhere). Device enumeration, open/close, double-buffered event polling, persistent CC state. 12 AngelScript bindings.
+
+### Steam Audio HRTF + Occlusion
 
 `SteamAudioProcessor` provides physics-based HRTF binaural rendering + occlusion/transmission. CMake option `ENJIN_AUDIO_STEAM_AUDIO` (OFF by default). Steam Audio is a processing layer — miniaudio still handles file I/O, mixing, and device output. Audio chain: mono → `IPLDirectEffect` → `IPLBinauralEffect` → stereo. 2D sounds unaffected.
 
@@ -198,9 +225,9 @@ Per-entity texture (bindings 3/5/6/8/9/18) and bone buffer (binding 7) descripto
 
 ## Current Feature Status
 
-150+ completed features. See `docs/USER_MANUAL.md` for component details, `docs/ROADMAP.md` for planned work.
+210+ completed features. See `docs/USER_MANUAL.md` for component details, `docs/ROADMAP.md` for planned work.
 
-**Summary:** Vulkan rendering (PBR, CSM shadows, post-processing, RT pipeline with path tracer NEE/MIS/Russian Roulette/firefly clamping, motion vectors, TAA, light probes, OIT), 70+ ECS components, ImGui editor (multi-select, undo/redo, 51 templates, marketplace, F1 Game Debug panel, F2 Debug Workstation, Quake-style drop-down console with 60+ commands), 2D sprites/tilemaps/atlas, 3D model import (glTF/FBX/OBJ/DAE/PLY/VOX), Jolt 3D + Box2D 2D physics, miniaudio + Steam Audio HRTF, AngelScript (~900+ bindings) + visual scripting (262 nodes), tiered save system, LAN multiplayer (HMAC-SHA256), weather/water/particles/procedural gen, asset pack pipeline + standalone player, Linux/Steam Deck support, comprehensive accessibility (11 themes, colorblind modes, switch access, screen reader).
+**Summary:** Vulkan rendering (PBR, CSM shadows, post-processing, RT pipeline with path tracer NEE/MIS/Russian Roulette/firefly clamping, motion vectors, TAA, light probes, OIT), 80+ ECS components, ImGui editor (multi-select, undo/redo, 51 templates, marketplace, F1 Game Debug panel, F2 Debug Workstation, Quake-style drop-down console with 60+ commands, settings conflict detection), 2D sprites/tilemaps/atlas, 3D model import (glTF/FBX/OBJ/DAE/PLY/VOX) with validation/undo, Jolt 3D + Box2D 2D physics, miniaudio + Steam Audio HRTF + audio bus hierarchy + 14 audio subsystems (reactive, RTPC, beat sync, conductor, TOTK collision, sidechain, reverb zones, occlusion, lip sync, MIDI bindings, audio fidelity), morph targets/blend shapes (GPU SSBO pipeline), AngelScript (~900+ bindings) + visual scripting (262 nodes), record & rewind system, tiered save system, LAN multiplayer (HMAC-SHA256), weather/water/particles/procedural gen, asset pack pipeline + standalone player, Linux/Steam Deck support, comprehensive accessibility (11 themes, colorblind modes, switch access, screen reader, gamepad inspector).
 
 ## Known Performance Issues (All Resolved)
 

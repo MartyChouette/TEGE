@@ -94,6 +94,13 @@ This document captures detailed technical plans, performance findings, and strat
 | **Templates** | 2D platformer: fixed 12 entities (player, 8 coins, 3 pickups, 4 enemies) missing sensor bodies for collision detection |
 | **Renderer** | Fixed particle double-rendering in editor game view (wrong camera descriptor set after RenderToTarget restore) |
 | **QA** | 4-week hardening sprint: command injection fix, collab auth, VkResult checks, 255+ new tests, all audit items resolved |
+| **Audio** | Audio fidelity system — 8 sound chip emulation presets (Modern, LoFi, Retro16Bit, Retro8Bit, ChipTune, FMSynth, PSOne, Cassette) with per-parameter tweaking, auto-match art style option, full serialization |
+| **Audio** | MIDI→property binding — MIDIBindingComponent maps CC/NoteVelocity/PitchBend to entity properties (light intensity, scale, opacity, etc.), smoothed interpolation, full serialization |
+| **Audio** | Material interaction table inspector — coverage matrix grid, per-interaction editing (material pairs, soft/hard/scrape clips, pitch offset, volume multiplier), add/remove, full serialization |
+| **Audio** | Audio reactive system — AudioReactiveComponent, AudioThresholdTriggerComponent, RTPCComponent, BeatClockComponent, BeatSyncComponent, ConductorComponent (AI-driven dynamic music), AudioCollisionComponent (TOTK-style), SidechainComponent, ReverbZoneComponent, AmbientSoundLayerComponent, MusicZoneComponent, AudioSnapshotTriggerComponent, AudioOcclusionComponent, LipSyncComponent |
+| **Audio** | Audio bus hierarchy — Master→SFX/Music/UI/Voice with per-bus VU metering, 3-band EQ, snapshot system (Dialogue/Pause/Combat/Cutscene), music crossfader with 3 transition modes |
+| **Editor** | Settings conflict detection — 7 conflict types auto-detected (MSAA+TAA, MSAA+upscaler, TAA+upscaler, path tracer+MSAA, path tracer+SSAO, dual shadows, downscale+CRT), color-coded warnings with tooltips |
+| **QA** | Template scrub — fixed duplicate invulnerabilityTime in platformer/topdown2d, fixed AddComponent/GetComponent anti-pattern in uicanvas |
 | **Platforms** | WebAssembly/WebGPU export |
 | **Editor** | Settings UX restructure (System/Project/Scene tiers) |
 | **Editor** | Networking config editor UI |
