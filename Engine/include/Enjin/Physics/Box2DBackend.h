@@ -52,7 +52,8 @@ public:
 
     const char* GetName() const override { return "Box2D"; }
 
-    // Rewind state restoration
+    // Rewind state capture/restoration
+    bool GetBodyVelocity(ECS::Entity entity, Math::Vector3& outLinear) const override;
     void ForceSetBodyState(ECS::Entity entity, const Math::Vector3& position,
                             const Math::Vector3& velocity) override;
 

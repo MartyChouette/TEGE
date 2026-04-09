@@ -564,6 +564,44 @@ void EditorLayer::DrawGizmos() {
         }
     }
 
+    // --- Bone Gizmo: when a bone is selected on a skeletal entity, the gizmo
+    // manipulates the bone instead of the entity. Bones only support rotation —
+    // translating/scaling a skeletal joint would break the rig (bind pose
+    // anchors them).
+    if (m_PrimarySelected != ECS::INVALID_ENTITY &&
+        m_World->HasComponent<ECS::AnimatorComponent>(m_PrimarySelected)) {
+        auto* animComp = m_World->GetComponent<ECS::AnimatorComponent>(m_PrimarySelected);
+        if (animComp && animComp->showBones && animComp->selectedBoneIndex >= 0) {
+            const auto* skeleton = animComp->animator.GetSkeleton();
+            const auto& pose = animComp->animator.GetCurrentPose();
+            i32 bi = animComp->selectedBoneIndex;
+            if (skeleton && bi < static_cast<i32>(skeleton->bones.size()) &&
+                pose.worldTransforms.size() == skeleton->bones.size()) {
+
+                Math::Matrix4 entityWorld = ECS::ComputeWorldMatrix(m_World, m_PrimarySelected);
+                Math::Matrix4 boneWorldMat = entityWorld * pose.worldTransforms[bi];
+
+                // Parent world matrix is needed to convert the manipulated
+                // world-space bone matrix back into the bone's parent-local
+                // space (which is what SetBoneLocalRotation expects).
+                i32 parentIdx = skeleton->bones[bi].parentIndex;
+                Math::Matrix4 parentWorldMat = (parentIdx >= 0)
+                    ? entityWorld * pose.worldTransforms[parentIdx]
+                    : entityWorld;
+
+                if (ImGuizmo::Manipulate(viewMat.m, projMat.m, ImGuizmo::ROTATE,
+                        ImGuizmo::LOCAL, boneWorldMat.m, nullptr,
+                        m_UseSnap ? snapValues : nullptr)) {
+                    Math::Matrix4 newLocal = parentWorldMat.Inverse() * boneWorldMat;
+                    Math::Quaternion newLocalRot = Math::Quaternion::FromMatrix(newLocal);
+                    const std::string& boneName = skeleton->bones[bi].name;
+                    animComp->animator.SetBoneLocalRotation(boneName, newLocalRot);
+                }
+                return; // Bone gizmo replaces entity gizmo while a bone is selected
+            }
+        }
+    }
+
     // Track gizmo drag start/end for undo/redo
     bool gizmoActive = ImGuizmo::IsUsing();
     if (gizmoActive && !m_GizmoDragging) {
@@ -624,40 +662,6 @@ void EditorLayer::DrawGizmos() {
                 if (m_CollabSystem.IsActive()) {
                     Math::Vector3 euler = t->rotation.ToEuler();
                     m_CollabSystem.OnTransformChanged(e, t->position, euler, t->scale);
-                }
-            }
-        }
-
-        // --- Bone Gizmo: manipulate selected bone in viewport ---
-        if (m_PrimarySelected != ECS::INVALID_ENTITY &&
-            m_World->HasComponent<ECS::AnimatorComponent>(m_PrimarySelected)) {
-            auto* animComp = m_World->GetComponent<ECS::AnimatorComponent>(m_PrimarySelected);
-            if (animComp && animComp->showBones && animComp->selectedBoneIndex >= 0) {
-                const auto* skeleton = animComp->animator.GetSkeleton();
-                const auto& pose = animComp->animator.GetCurrentPose();
-                i32 bi = animComp->selectedBoneIndex;
-                if (skeleton && bi < static_cast<i32>(skeleton->bones.size()) &&
-                    pose.worldTransforms.size() == skeleton->bones.size()) {
-                    Math::Matrix4 entityWorld = ECS::ComputeWorldMatrix(m_World, m_PrimarySelected);
-                    Math::Matrix4 boneWorldMat = entityWorld * pose.worldTransforms[bi];
-
-                    // Only allow rotation for bones (translate/scale don't make sense for skeletal joints)
-                    Math::Matrix4 prevBoneMat = boneWorldMat;
-                    if (ImGuizmo::Manipulate(viewMat.m, projMat.m, ImGuizmo::ROTATE,
-                            ImGuizmo::LOCAL, boneWorldMat.m, nullptr, nullptr)) {
-                        // Compute rotation delta in world space, convert to bone-local
-                        Math::Matrix4 entityInv = entityWorld.Inverse();
-                        Math::Matrix4 newLocal = entityInv * boneWorldMat;
-                        Math::Matrix4 oldLocal = entityInv * prevBoneMat;
-                        // Extract rotation from the local matrices
-                        Math::Quaternion newRot = Math::Quaternion::FromMatrix(newLocal);
-                        Math::Quaternion oldRot = Math::Quaternion::FromMatrix(oldLocal);
-                        Math::Quaternion delta = newRot * oldRot.Conjugate();
-                        // Apply delta rotation to the bone
-                        const std::string& boneName = skeleton->bones[bi].name;
-                        animComp->animator.SetBoneLocalRotation(boneName,
-                            delta * Math::Quaternion::FromMatrix(pose.worldTransforms[bi]));
-                    }
                 }
             }
         }

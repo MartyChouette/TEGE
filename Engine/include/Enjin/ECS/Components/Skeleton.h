@@ -49,6 +49,64 @@ struct ENJIN_API AnimatorComponent : public IComponent {
     Animation::BlendTree blendTree;
     std::unordered_map<std::string, f32> blendParameters;  // Runtime parameter values
 
+    AnimatorComponent() = default;
+
+    // stateMachine holds a raw `SkeletalAnimator*` to its sibling `animator` member.
+    // The defaulted copy/move would propagate the source's pointer (which references
+    // the SOURCE's animator), leaving us with a dangling pointer once the source is
+    // destroyed — segfault on the next stateMachine call. The custom copy/move below
+    // re-anchor the pointer to *this*->animator after construction/assignment.
+    AnimatorComponent(const AnimatorComponent& other)
+        : animator(other.animator), stateMachine(other.stateMachine),
+          matricesDirty(other.matricesDirty), showBones(other.showBones),
+          selectedBoneIndex(other.selectedBoneIndex), showWeights(other.showWeights),
+          weightPreviewBoneIndex(other.weightPreviewBoneIndex), onionSkin(other.onionSkin),
+          blendTree(other.blendTree), blendParameters(other.blendParameters) {
+        stateMachine.SetAnimator(&animator);
+    }
+
+    AnimatorComponent(AnimatorComponent&& other) noexcept
+        : animator(std::move(other.animator)), stateMachine(std::move(other.stateMachine)),
+          matricesDirty(other.matricesDirty), showBones(other.showBones),
+          selectedBoneIndex(other.selectedBoneIndex), showWeights(other.showWeights),
+          weightPreviewBoneIndex(other.weightPreviewBoneIndex),
+          onionSkin(std::move(other.onionSkin)), blendTree(std::move(other.blendTree)),
+          blendParameters(std::move(other.blendParameters)) {
+        stateMachine.SetAnimator(&animator);
+    }
+
+    AnimatorComponent& operator=(const AnimatorComponent& other) {
+        if (this == &other) return *this;
+        animator = other.animator;
+        stateMachine = other.stateMachine;
+        matricesDirty = other.matricesDirty;
+        showBones = other.showBones;
+        selectedBoneIndex = other.selectedBoneIndex;
+        showWeights = other.showWeights;
+        weightPreviewBoneIndex = other.weightPreviewBoneIndex;
+        onionSkin = other.onionSkin;
+        blendTree = other.blendTree;
+        blendParameters = other.blendParameters;
+        stateMachine.SetAnimator(&animator);
+        return *this;
+    }
+
+    AnimatorComponent& operator=(AnimatorComponent&& other) noexcept {
+        if (this == &other) return *this;
+        animator = std::move(other.animator);
+        stateMachine = std::move(other.stateMachine);
+        matricesDirty = other.matricesDirty;
+        showBones = other.showBones;
+        selectedBoneIndex = other.selectedBoneIndex;
+        showWeights = other.showWeights;
+        weightPreviewBoneIndex = other.weightPreviewBoneIndex;
+        onionSkin = std::move(other.onionSkin);
+        blendTree = std::move(other.blendTree);
+        blendParameters = std::move(other.blendParameters);
+        stateMachine.SetAnimator(&animator);
+        return *this;
+    }
+
     void Initialize(std::shared_ptr<Animation::Skeleton> skel) {
         animator.SetSkeleton(skel);
         stateMachine.SetAnimator(&animator);

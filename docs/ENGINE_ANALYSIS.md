@@ -1,7 +1,7 @@
 # Enjin Engine -- Comprehensive Technical Analysis
 
-*Analysis Date: 2026-03-16*
-*Engine Version: Beta 0.8 (Active Development)*
+*Analysis Date: 2026-04-05*
+*Engine Version: Beta 0.9 (Active Development)*
 *Language: C++20 | Graphics API: Vulkan | Build System: CMake*
 
 ---
@@ -131,14 +131,16 @@ graph TB
         SteamAudio["SteamAudioProcessor<br/>(HRTF Binaural Rendering,<br/>Occlusion + Transmission,<br/>Geometry-Aware 3D)"]
         Audio3D["3D Spatialization"]
         AudioMixing["Multi-Channel Mixing"]
-        MIDIInput["MIDI Input<br/>(WinMM, 12 AS Bindings)"]
+        MIDIInput["MIDI Input<br/>(WinMM, Property Binding)"]
         AudioEventGraph["Audio Event Graph<br/>(Runtime Execution,<br/>.enjaudiopkg)"]
+        AudioFidelity["Audio Fidelity System<br/>(DSP, Reverb Zones,<br/>Mixer Board, VU Meters)"]
+        PhysicsAudio["Physics Audio<br/>(Material Interaction,<br/>Contact Tracking)"]
     end
 
     subgraph ScriptingLayer["Scripting"]
         AngelScript["AngelScript Engine<br/>(~844 Bindings,<br/>Hot-Reload)"]
         TegeBehavior["TegeBehavior<br/>(Base Script Class)"]
-        VisualScript["Visual Scripting<br/>(222+ Nodes, Debugger,<br/>Profiler)"]
+        VisualScript["Visual Scripting<br/>(261 Nodes, Debugger,<br/>Profiler)"]
         StateMachine["State Machines<br/>(Script Callbacks)"]
         Coroutines["Coroutines<br/>(Yield/Resume)"]
         EventBus["EventBus<br/>(Pub/Sub Events)"]
@@ -345,7 +347,7 @@ graph TB
 - **Thread safety**: ECS World uses recursive mutex for structural operations; entity destruction is deferred and flushed at frame start. O(1) entity validation via `unordered_set` (Feb 2026 ECS audit).
 - **Spatial audio pipeline**: Steam Audio HRTF binaural rendering with geometry-aware occlusion and transmission, layered on top of the miniaudio backend.
 - **Hardened codebase**: 10+ audit rounds, 205+ findings fixed across Vulkan renderer, ECS, serialization, physics, and scripting subsystems. All VkResult calls checked; null guards on all physics/audio paths.
-- **Test infrastructure**: 55 test executables (51 unit + 4 integration) organized into `Tests/Unit/` and `Tests/Integration/` with a shared `EnjinTest.h` framework.
+- **Test infrastructure**: 80+ CTest targets (~1100+ test cases) organized into `Tests/Unit/` and `Tests/Integration/` with a shared `EnjinTest.h` framework.
 
 ---
 
@@ -378,7 +380,8 @@ This matrix compares Enjin's current feature set against five established game e
 | **Physics Joints** | Full | Full | Full | Full | None | None |
 | **Audio Engine** | Full | Full | Full | Full | Full | Full |
 | **3D Spatial Audio** | Full | Full | Full | Full | None | None |
-| **MIDI Input** | Basic | Partial | None | None | None | None |
+| **Morph Targets** | Full | Full | Partial | Full | None | None |
+| **MIDI Input** | Full | Partial | None | None | None | None |
 | **Text Scripting** | Full | Full | Full | Full | Full | None |
 | **Visual Scripting** | Full | Partial | Full | Full | Partial | Full |
 | **Hot-Reload** | Full | Full | Partial | Full | N/A | N/A |
@@ -420,20 +423,20 @@ This matrix compares Enjin's current feature set against five established game e
 | **HRTF Binaural Audio** | Full | Partial | None | Full | None | None |
 | **Audio Occlusion/Transmission** | Full | Partial | None | Full | None | None |
 | **Sprite Normal Map Lighting** | Full | Full | Full | N/A | None | None |
-| **Automated Test Suite (55 CTest)** | Full | Full | Partial | Full | None | None |
+| **Automated Test Suite (80+ CTest)** | Full | Full | Partial | Full | None | None |
 
 ### Summary by Engine
 
 | Engine | Full | Partial | Basic | Stub | None |
 |--------|------|---------|-------|------|------|
-| **Enjin** | 54 | 1 | 1 | 2 | 1 |
-| **Unity** | 39 | 7 | 2 | 0 | 7 |
-| **Godot** | 32 | 10 | 1 | 0 | 12 |
-| **Unreal** | 40 | 6 | 0 | 0 | 9 |
-| **GameMaker** | 14 | 5 | 9 | 0 | 26 |
-| **Construct** | 13 | 9 | 5 | 0 | 27 |
+| **Enjin** | 56 | 0 | 1 | 2 | 1 |
+| **Unity** | 40 | 7 | 2 | 0 | 7 |
+| **Godot** | 32 | 11 | 1 | 0 | 12 |
+| **Unreal** | 41 | 6 | 0 | 0 | 9 |
+| **GameMaker** | 14 | 5 | 9 | 0 | 28 |
+| **Construct** | 13 | 9 | 5 | 0 | 29 |
 
-Enjin achieves surprisingly broad feature coverage for a single-developer engine, now including Steam Audio HRTF spatial audio, sprite normal map lighting, and a 55-executable automated test suite. Its main gaps are mobile platform support and console certification (which require licensed devkits and partnership agreements).
+Enjin achieves surprisingly broad feature coverage for a single-developer engine, now including Steam Audio HRTF spatial audio, morph targets, audio fidelity DSP pipeline, physics-driven audio, MIDI property binding, sprite normal map lighting, and 80+ automated test targets. Its main gaps are mobile platform support and console certification (which require licensed devkits and partnership agreements).
 
 ---
 
@@ -556,6 +559,14 @@ gantt
     Motion Vectors + TAA (Phase 1)              :done, rt1, 2026-03-11, 2026-03-14
     RT Material SSBO + OptiX Interop (Phase 2)  :done, rt2, 2026-03-14, 2026-03-16
 
+    section Audio & Animation (Weeks 17-19)
+    Audio Fidelity System (DSP, Reverb, Mixer)  :done, af1, 2026-03-20, 2026-03-28
+    MIDI Property Binding (Knobs/Faders/Keys)   :done, af2, 2026-03-25, 2026-03-28
+    Morph Targets (FBX/DAE, GPU, Inspector)     :done, af3, 2026-03-28, 2026-04-02
+    Physics Audio (Material Interaction Table)  :done, af4, 2026-04-01, 2026-04-05
+    Audio-Reactive Systems (VU, RTPC, Beat Sync):done, af5, 2026-03-28, 2026-04-02
+    Settings Conflict Detection                 :done, af6, 2026-04-03, 2026-04-05
+
     section Planned
     macOS (MoltenVK)                            :active, pl1, 2026-03-01, 2026-06-01
     Console Platforms                           :active, pl2, 2026-06-01, 2027-06-01
@@ -563,7 +574,7 @@ gantt
     VR/XR (OpenXR)                              :active, pl4, 2027-01-01, 2027-06-01
 ```
 
-**Note:** There is a ~4-week gap between the initial Dec 23-25, 2025 foundation commits and the resumption of active development on Jan 22, 2026. The bulk of the engine (150+ features) was built in the subsequent 4 weeks (Jan 22 - Feb 17, 2026). Week 12 (Feb 17-19) focused on hardening: 120+ audit findings fixed, SimplePhysics removed, Steam Audio integrated, and test coverage expanded from 8 to 55 executables.
+**Note:** There is a ~4-week gap between the initial Dec 23-25, 2025 foundation commits and the resumption of active development on Jan 22, 2026. The bulk of the engine (150+ features) was built in the subsequent 4 weeks (Jan 22 - Feb 17, 2026). Week 12 (Feb 17-19) focused on hardening: 120+ audit findings fixed, SimplePhysics removed, Steam Audio integrated, and test coverage expanded from 8 to 80+ targets.
 
 ---
 
@@ -579,9 +590,9 @@ flowchart TB
 
     ClassifyScene --> Is2D{Scene Type?}
 
-    Is2D -->|Scene2D<br/>"Sprites/Tilemaps Only"| Path2D["2D Fast Path"]
-    Is2D -->|Scene2_5D<br/>"Sprites + Lights"| Path25D["2.5D Path"]
-    Is2D -->|Scene3D<br/>"3D Meshes Present"| Path3D["3D Full Path"]
+    Is2D -->|Scene2D| Path2D["2D Fast Path"]
+    Is2D -->|Scene2_5D| Path25D["2.5D Path"]
+    Is2D -->|Scene3D| Path3D["3D Full Path"]
 
     subgraph Path2DBlock["2D Pipeline"]
         Path2D --> SkipShadows2D["Skip ALL Shadow Passes"]
@@ -614,7 +625,7 @@ flowchart TB
         SpotShadow --> FullUBO3D
         FullUBO3D --> BindNormalMap3D["Bind Normal Map<br/>Descriptors"]
 
-        BindNormalMap3D --> RTCheck{RT Hardware<br/>Available?}
+        BindNormalMap3D --> RTCheck{RT Available?}
         RTCheck -->|Yes| RTPipelineExec["Ray Tracing Pipeline"]
 
         subgraph RayTracingBlock["Ray Tracing (Scene3D Only)"]
@@ -652,21 +663,21 @@ flowchart TB
             OpaquePass --> CheckVisible{entity.visible?}
             CheckVisible -->|No| SkipEntity["Skip"]
             CheckVisible -->|Yes| PushConstants["Upload Push Constants<br/>(128 bytes: Model Matrix,<br/>Material Props, Flags)"]
-            PushConstants --> DescCache{"Descriptor<br/>Cache Hit?"}
+            PushConstants --> DescCache{Cache Hit?}
             DescCache -->|Yes| SkipDescWrite["Skip Descriptor Write"]
             DescCache -->|No| UpdateDesc["Update Descriptors<br/>(Bindings 3/5/6/7)"]
             SkipDescWrite --> DrawCall["vkCmdDrawIndexed"]
             UpdateDesc --> DrawCall
         end
 
-        DrawCall --> OITCheck{OIT Entities<br/>Present?}
+        DrawCall --> OITCheck{OIT Present?}
         OITCheck -->|Yes| OITPass["OIT Weighted Blended<br/>Pass + Composite"]
         OITCheck -->|No| SkipOIT["Skip OIT"]
 
         OITPass --> SpritePass
         SkipOIT --> SpritePass
 
-        SpritePass["Sprite Batch Rendering"] --> AtlasCheck{"Atlas<br/>Sprites?"}
+        SpritePass["Sprite Batch Rendering"] --> AtlasCheck{Atlas Sprites?}
         AtlasCheck -->|Yes| AtlasBatch["Single Instanced Draw<br/>(Atlas Texture)"]
         AtlasCheck -->|No| IndividualDraw["Individual Draws<br/>(Oversized/Excluded)"]
 
@@ -742,7 +753,7 @@ Enjin occupies a unique position in the game engine market by targeting several 
 
 | Audience Segment | Why Enjin Appeals | Primary Competitors |
 |---|---|---|
-| **Indie Developers** | All-in-one 2D+3D with built-in gameplay systems (save, quest, dialogue, AI) that competitors require plugins for. Hardened codebase with 55 test suites builds production confidence | Unity, Godot |
+| **Indie Developers** | All-in-one 2D+3D with built-in gameplay systems (save, quest, dialogue, AI) that competitors require plugins for. Hardened codebase with 80+ test targets builds production confidence | Unity, Godot |
 | **Flash Game Creators** | SWF import, AS2/AS3 transpiler, Newgrounds.io API, HTML5 export, Flash-style timeline editor -- no other engine offers this combination | None (Enjin is unique) |
 | **Retro Game Makers** | CRT effects, pixel editor, 9 retro resolution presets, dithered gradients, stipple patterns, sprite sheet workflow | GameMaker, Pico-8 |
 | **Students & Educators** | Built-in behavior trees, visual scripting, procedural generation, and comprehensive accessibility -- strong teaching tool | Godot, Scratch |
@@ -760,7 +771,7 @@ Enjin occupies a unique position in the game engine market by targeting several 
 - **Deeper accessibility** (switch access, eye tracking, dwell-click, WCAG AAA themes)
 - **Shader graph with GLSL codegen** (Godot has visual shaders but different approach)
 - **Steam Audio HRTF spatial audio** with occlusion/transmission (Godot has no equivalent)
-- **Hardened codebase** with 10+ audit rounds and 55 test suites (Godot community-tested only)
+- **Hardened codebase** with 10+ audit rounds and 80+ test targets (Godot community-tested only)
 
 #### vs. Unity
 - **No license fees or runtime fees** (Unity's pricing has alienated developers)
@@ -954,7 +965,7 @@ For context, Godot reached ~2,500 monthly contributors and an estimated 500K-1M 
 | **Unity/Unreal price corrections** | Medium | Enjin's unique features (retro, Flash, accessibility) are not price-dependent |
 | **Console certification barriers** | Medium | Partner with porting houses; focus on PC/web/mobile first |
 | **Community building** | High | Invest in documentation, tutorials, Discord, game jams |
-| **Performance perception** | Medium | Benchmark comparisons, demo projects, 55 test suites, published audit reports build confidence |
+| **Performance perception** | Medium | Benchmark comparisons, demo projects, 80+ test targets, published audit reports build confidence |
 | **API stability concerns** | Medium | Semver, deprecation policy, migration guides |
 
 ---
@@ -1048,7 +1059,7 @@ pie title Frame Budget Breakdown (3D, 60fps)
 | **Error Handling** | Strong | Vulkan VkResult checks at 25+ sites (all hardened Feb 2026), JSON `.contains()` validation, bounds checking, GPU loop caps, null guards on all physics/audio paths |
 | **Memory Management** | Good | Custom allocators (Stack/Pool/Linear/Frame), `reserve()` on hot-path vectors, per-frame `FrameAllocator` for transient data, leak-free Vulkan failure paths (verified in renderer audit) |
 | **API Consistency** | Good | Consistent naming conventions (Get/Set/Is), ENJIN_API export macro |
-| **Test Coverage** | Good | Custom CTest framework with 51 unit test suites + 4 integration tests = 55 executables. 40 ECS test cases. Tests organized into `Tests/Unit/` and `Tests/Integration/` (expanded from 8 in Feb 2026 audit campaign) |
+| **Test Coverage** | Good | Custom CTest framework with 80+ targets, ~1100+ test cases across 18 subdirectories. Tests organized into `Tests/Unit/` and `Tests/Integration/` (expanded from 8 in Feb 2026 audit campaign) |
 | **Documentation** | Strong | CLAUDE.md (~150 lines), 28 doc files (incl. 12 audit reports), trust zone boundary map, generated API docs, inline tooltips |
 
 ### Areas Needing Refactoring
@@ -1091,13 +1102,13 @@ pie title Frame Budget Breakdown (3D, 60fps)
 | Physics (2 backends) | ~18 | Low | Jolt + Box2D stable, SimplePhysics removed. Both hardened (null guards, input clamping) |
 | Gameplay & Networking | ~40 | Medium | Save system, quests, LAN multiplayer |
 | Accessibility & Audio | ~25 | Low | Content warnings, miniaudio + Steam Audio HRTF backend |
-| Tests | ~55 | Low | 51 unit + 4 integration test files, shared EnjinTest.h framework |
+| Tests | ~82 | Low | 80+ CTest targets across 18 subdirectories, shared EnjinTest.h framework |
 | Other (AI, Animation, Scene, Plugin, Input, Debug) | ~57 | Low | Many small self-contained modules |
 | **Total** | **~692** | **Medium overall** | Modular architecture helps; major debt reduced by audit campaign |
 
 ### Recommended Priority Actions
 
-1. ~~**Expand unit test coverage**~~ — **SIGNIFICANT PROGRESS**: Expanded from 8 to 55 test executables (51 unit + 4 integration) covering Physics2D, VisualScript, BehaviorTree, UISystem, Networking, StressFuzz, BuildPipeline, ScriptBindings, ElementalSystem, and more. Next: add coverage for Renderer subsystem
+1. ~~**Expand unit test coverage**~~ — **SIGNIFICANT PROGRESS**: Expanded from 8 to 80+ CTest targets across 18 subdirectories covering Physics2D, VisualScript, BehaviorTree, UISystem, Networking, StressFuzz, BuildPipeline, ScriptBindings, ElementalSystem, and more. Next: add coverage for Renderer subsystem
 2. **Extract EditorLayer panels** into individual classes to reduce file size and improve maintainability
 3. **Replace XOR obfuscation** with authenticated encryption for commercial releases
 4. **Restrict script #include paths** to project directory to prevent path traversal — *partially mitigated by `lexically_normal()` validation*
@@ -1252,12 +1263,14 @@ graph TB
         SteamAudioProc["SteamAudioProcessor<br/>(HRTF, Occlusion,<br/>Transmission)"]
         AudioEvents["Audio Event Graph"]
         MIDI["MIDI Input"]
+        AudioFidelity["Audio Fidelity<br/>(DSP, Reverb, Mixer)"]
+        PhysicsAudioSys["Physics Audio<br/>(Material Interaction)"]
     end
 
     subgraph TestFeatures["Test Infrastructure"]
         TestFramework["EnjinTest.h Framework"]
-        UnitTests["22 Unit Test Suites"]
-        IntegrationTests["4 Integration Tests"]
+        UnitTests["80+ CTest Targets"]
+        IntegrationTests["18 Test Subdirectories"]
     end
 
     subgraph NetworkFeatures["Networking"]
@@ -1471,6 +1484,8 @@ graph TB
     PlayerApp --> SteamAudioProc
     Bindings --> SimpleAudioSys
     SimpleAudioSys --> AudioEvents
+    SimpleAudioSys --> AudioFidelity
+    AudioFidelity --> PhysicsAudioSys
     Input --> MIDI
 
     %% Test Infrastructure
@@ -1579,4 +1594,4 @@ Feature counts, component counts, binding counts, node counts, and all technical
 
 ---
 
-*Document updated 2026-03-08. Enjin Engine is licensed under BSL 1.1.*
+*Document updated 2026-04-05. Enjin Engine is licensed under BSL 1.1.*

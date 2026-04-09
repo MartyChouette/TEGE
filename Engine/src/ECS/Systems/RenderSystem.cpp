@@ -3871,6 +3871,19 @@ void RenderSystem::CreateDescriptorSets() {
     const u32 offscreenSets = framesInFlight * MAX_SPLITSCREEN_VIEWPORTS;
     const u32 totalSets = framesInFlight + offscreenSets; // main + splitscreen offscreen
 
+    // If a descriptor pool already exists, destroy it before allocating a new one.
+    // RefreshDescriptorsIfDirty() can call this every frame (e.g. when the editor
+    // toggles shadows for its scene view), and without this cleanup the old pool
+    // is leaked AND m_OffscreenDescriptorSets is left dangling pointing into it,
+    // which causes use-after-free crashes in the offscreen render path.
+    if (m_DescriptorPool != VK_NULL_HANDLE && m_Renderer && m_Renderer->GetContext()) {
+        m_Renderer->GetContext()->WaitForGPU();
+        vkDestroyDescriptorPool(m_Renderer->GetContext()->GetDevice(), m_DescriptorPool, nullptr);
+        m_DescriptorPool = VK_NULL_HANDLE;
+        m_DescriptorSets.clear();
+        m_OffscreenDescriptorSets.clear();
+    }
+
     // Create descriptor pool (3 UBOs + 10 combined image samplers + 5 SSBOs per set)
     std::array<VkDescriptorPoolSize, 4> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;

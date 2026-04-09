@@ -48,6 +48,15 @@ std::vector<std::string> AssimpLoader::GetSupportedExtensions() {
 bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
     Assimp::Importer importer;
 
+    // Disable Assimp's FBX pivot-preserving node split. With pivots preserved
+    // (the default), each bone gets split into helper nodes named
+    // "<BoneName>_$AssimpFbx$_Translation" / "_Rotation" / "_Scaling", and the
+    // original bone-named node ends up with an identity transform. Our skeleton
+    // builder looks up bone bind positions by node name, so 48/52 bones end up
+    // at the origin and skinned characters render as a stretched/collapsed mess.
+    // Setting this to false bakes the helper transforms back into the bone nodes.
+    importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_PRESERVE_PIVOTS, false);
+
     // Configure post-processing flags.
     // IMPORTANT: Use GenNormals (not GenSmoothNormals) — GenSmoothNormals OVERWRITES
     // hand-crafted normals from DCC tools (Blender, Maya, Mixamo). GenNormals only

@@ -997,6 +997,22 @@ void Box2DBackend::DestroyJointForEntity(ECS::Entity entity) {
 }
 
 // ============================================================================
+// Body velocity query (for rewind system)
+// ============================================================================
+
+bool Box2DBackend::GetBodyVelocity(ECS::Entity entity, Math::Vector3& outLinear) const {
+    auto it = m_EntityToBody.find(entity);
+    if (it == m_EntityToBody.end()) return false;
+
+    b2BodyId bodyId = it->second;
+    if (!b2Body_IsValid(bodyId)) return false;
+
+    b2Vec2 lv = b2Body_GetLinearVelocity(bodyId);
+    outLinear = Math::Vector3(lv.x, lv.y, 0.0f);
+    return true;
+}
+
+// ============================================================================
 // Force-set body state (for rewind system)
 // ============================================================================
 

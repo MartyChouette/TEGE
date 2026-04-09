@@ -5,6 +5,7 @@
 #include "Enjin/Math/Quaternion.h"
 #include "Enjin/ECS/Entity.h"
 #include <vector>
+#include <string>
 
 namespace Enjin::Gameplay {
 
@@ -51,8 +52,8 @@ struct EntitySnapshot {
     bool isDead = false;
 
     // Animation channel
-    f32 animTime = 0.0f;
-    i32 animClipIndex = -1;
+    f32 animNormalizedTime = 0.0f;
+    std::string animClipName;
 
     // Physics channel
     Math::Vector3 linearVelocity;

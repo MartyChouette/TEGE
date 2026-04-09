@@ -371,6 +371,11 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     // Intercept window close to prompt for unsaved changes or show quit feedback
     if (m_Window) {
         m_Window->SetCloseCallback([this]() -> bool {
+            // If we're still on the project hub (no project open), close immediately
+            // without blocking for the feedback survey.
+            if (m_ShowProjectHub) {
+                return true; // Allow close
+            }
             if (m_SceneDirty) {
                 m_UnsavedChangesAction = UnsavedAction::Quit;
                 m_ShowUnsavedChangesDialog = true;
@@ -1557,9 +1562,8 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         m_EditorViewportWidth > 0 && m_EditorViewportHeight > 0) {
 
         // Apply scene view mode — save previous state so game view is unaffected.
-        bool prevShadows = false, prevWireframe = false, prevUnlit = false;
+        bool prevWireframe = false, prevUnlit = false;
         if (m_RenderSystem) {
-            prevShadows = m_RenderSystem->IsShadowsEnabled();
             prevWireframe = m_RenderSystem->GetEditorWireframe();
             prevUnlit = m_RenderSystem->GetEditorUnlit();
 
@@ -1569,10 +1573,17 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             m_PendingWireframe = (m_SceneViewMode == SceneViewMode::Wireframe);
             m_RenderSystem->SetEditorUnlit(m_SceneViewMode == SceneViewMode::Solid);
 
-            m_RenderSystem->SetShadowsEnabled(wantShadows);
-            // Rebuild offscreen descriptors when shadow state changes so the shadow map
-            // texture binding is updated (otherwise it stays as the dummy placeholder)
-            m_RenderSystem->RefreshDescriptorsIfDirty();
+            // Only flip the renderer's shadow state when the editor view mode actually
+            // changes — the previous code restored prevShadows at the end of every
+            // frame, which marked the descriptor pool dirty every frame, which
+            // recreated the entire VkDescriptorPool every frame and orphaned the
+            // offscreen render-target descriptor sets (use-after-free crash).
+            if (!m_EditorShadowsTracked || m_EditorShadowsApplied != wantShadows) {
+                m_RenderSystem->SetShadowsEnabled(wantShadows);
+                m_RenderSystem->RefreshDescriptorsIfDirty();
+                m_EditorShadowsApplied = wantShadows;
+                m_EditorShadowsTracked = true;
+            }
         }
 
         // Shadow pass for editor camera (only in shadow modes)
@@ -1625,8 +1636,8 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         // Restore render state so game view renders with full quality.
         // Wireframe is handled by the offscreen pipeline (scene view only) —
         // the main pipeline always uses fill mode, so no wireframe restore needed.
+        // Shadows are NOT restored here — see the per-mode toggle above for why.
         if (m_RenderSystem) {
-            m_RenderSystem->SetShadowsEnabled(prevShadows);
             m_RenderSystem->SetEditorWireframe(prevWireframe);
             m_RenderSystem->SetEditorUnlit(prevUnlit);
         }

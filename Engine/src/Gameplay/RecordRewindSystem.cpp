@@ -73,7 +73,7 @@ void RecordRewindSystem::CaptureEntitySnapshot(ECS::Entity entity, EntitySnapsho
     if (HasChannel(channelMask, RewindChannelFlags::Animation)) {
         auto* anim = m_World->GetComponent<ECS::AnimatorComponent>(entity);
         if (anim) {
-            out.animTime = anim->animator.GetCurrentTime();
+            out.animNormalizedTime = anim->animator.GetNormalizedTime();
         }
     }
 }

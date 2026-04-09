@@ -67,7 +67,8 @@ public:
 
     const char* GetName() const override { return "Jolt Physics"; }
 
-    // Rewind state restoration
+    // Rewind state capture/restoration
+    bool GetBodyVelocity(ECS::Entity entity, Math::Vector3& outLinear, Math::Vector3& outAngular) const override;
     void ForceSetBodyState(ECS::Entity entity, const Math::Vector3& position,
                             const Math::Quaternion& rotation,
                             const Math::Vector3& linearVel,

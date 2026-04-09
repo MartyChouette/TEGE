@@ -73,6 +73,9 @@ public:
     // Constraint solver
     virtual ConstraintSolver* GetConstraintSolver() = 0;
 
+    // Body velocity queries (for rewind system — captures current physics state)
+    virtual bool GetBodyVelocity(ECS::Entity entity, Math::Vector3& outLinear, Math::Vector3& outAngular) const { return false; }
+
     // Force-set body state (for rewind system — restores position/rotation/velocity)
     virtual void ForceSetBodyState(ECS::Entity entity, const Math::Vector3& position,
                                     const Math::Quaternion& rotation,

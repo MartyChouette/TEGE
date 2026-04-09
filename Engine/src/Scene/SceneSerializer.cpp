@@ -8839,7 +8839,7 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
 
             if (entityJson.contains("animator")) {
                 auto animComp = DeserializeAnimatorComponent(entityJson["animator"], loadedSkeleton);
-                m_World->AddComponent<ECS::AnimatorComponent>(entity, std::move(animComp));
+                m_World->AddComponent<ECS::AnimatorComponent>(entity, animComp);
             }
 
             if (entityJson.contains("light")) {

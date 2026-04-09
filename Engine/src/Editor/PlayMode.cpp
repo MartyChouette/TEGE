@@ -735,45 +735,57 @@ void PlayMode::SaveEditorState() {
         return;
     }
 
-    // Save scene to JSON string
-    Scene::SceneSerializer serializer(m_World);
-    if (m_RenderSystem) {
-        serializer.SetSkyboxConfig(m_RenderSystem->GetSkyboxConfig());
+    // Lightweight per-entity snapshot — just the gameplay-mutable state.
+    // We deliberately avoid serializing the entire scene to JSON: roundtripping
+    // mesh + skeleton + animation track data through nlohmann::json was producing
+    // 100MB+ payloads for multi-mesh skeletal characters and OOMing on restore.
+    m_SavedEntityState.clear();
+    auto entities = m_World->GetAllEntities();
+    for (auto entity : entities) {
+        EntitySnapshot snap;
+        if (auto* t = m_World->GetComponent<ECS::TransformComponent>(entity)) {
+            snap.position = t->position;
+            snap.rotation = t->rotation;
+            snap.scale = t->scale;
+            snap.visible = t->visible;
+            snap.hadTransform = true;
+        }
+        m_SavedEntityState[static_cast<u64>(entity)] = snap;
     }
-    m_SavedSceneJson = serializer.SaveToString();
 
     // Save camera state
     m_SavedCameraPos = m_Camera->GetPosition();
     m_SavedCameraRot = m_Camera->GetRotation();
     m_SavedCameraFov = m_Camera->GetFOV();
 
-    usize entityCount = m_World->GetEntityCount();
-    ENJIN_LOG_DEBUG(Editor, "Saved editor state (%zu entities, %zu bytes JSON)", entityCount, m_SavedSceneJson.size());
+    ENJIN_LOG_DEBUG(Editor, "Saved editor state (%zu entities snapshotted)", m_SavedEntityState.size());
 }
 
-// Kept for potential future "restore scene on stop" feature
 void PlayMode::RestoreEditorState() {
     if (!m_World || !m_Camera) {
         return;
     }
 
-    // Restore scene from saved JSON
-    if (!m_SavedSceneJson.empty()) {
-        Scene::SceneSerializer serializer(m_World);
-        auto result = serializer.LoadFromString(m_SavedSceneJson, true);
-        if (!result.success) {
-            ENJIN_LOG_ERROR(Editor, "Failed to restore editor state: %s", result.error.c_str());
+    // Restore each tracked entity's gameplay-mutable state in place. This
+    // intentionally does NOT destroy and recreate entities — the static asset
+    // data (mesh, skeleton, animator) is left untouched, which both avoids the
+    // multi-megabyte JSON roundtrip AND prevents the use-after-free that came
+    // from re-adding AnimatorComponent on reloaded skinned entities.
+    usize restored = 0;
+    for (const auto& [eid, snap] : m_SavedEntityState) {
+        ECS::Entity entity = static_cast<ECS::Entity>(eid);
+        if (!m_World->IsValid(entity)) continue;
+        if (snap.hadTransform) {
+            if (auto* t = m_World->GetComponent<ECS::TransformComponent>(entity)) {
+                t->position = snap.position;
+                t->rotation = snap.rotation;
+                t->scale = snap.scale;
+                t->visible = snap.visible;
+                ++restored;
+            }
         }
-
-        // Apply skybox config that was saved with the scene
-        if (m_RenderSystem) {
-            m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
-        }
-
-        usize entityCount = m_World->GetEntityCount();
-    } else {
-        ENJIN_LOG_WARN(Editor, "No saved scene JSON to restore — editor state was empty");
     }
+    ENJIN_LOG_INFO(Editor, "Restored editor state (%zu entities)", restored);
 
     // Restore camera state
     m_Camera->SetPosition(m_SavedCameraPos);

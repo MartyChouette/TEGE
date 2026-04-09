@@ -40,6 +40,7 @@
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Input/MIDIInput.h"
 #include <string>
+#include <unordered_map>
 
 namespace Enjin {
 namespace Scene { class SceneManager; }
@@ -268,8 +269,19 @@ private:
     f32 m_ProfileAccumTotal = 0.0f;
     u32 m_ProfileFrameCount = 0;
 
-    // Saved editor state (to restore when stopping)
-    std::string m_SavedSceneJson;
+    // Saved editor state (to restore when stopping).
+    // Lightweight per-entity gameplay-mutable snapshot — NOT a full scene
+    // serialization. Roundtripping the entire scene through JSON every play/stop
+    // cycle was OOMing on heavy skeletal meshes (140MB+ JSON for a multi-mesh
+    // Mixamo character). The snapshot captures only what gameplay can mutate.
+    struct EntitySnapshot {
+        Math::Vector3 position;
+        Math::Quaternion rotation;
+        Math::Vector3 scale;
+        bool visible = true;
+        bool hadTransform = false;
+    };
+    std::unordered_map<u64, EntitySnapshot> m_SavedEntityState;
     Math::Vector3 m_SavedCameraPos;
     Math::Quaternion m_SavedCameraRot;
     f32 m_SavedCameraFov = 45.0f;

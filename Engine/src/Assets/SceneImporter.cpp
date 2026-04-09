@@ -1072,6 +1072,7 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
 
         ENJIN_LOG_INFO(Asset, "Built skeleton: %zu bones, %zu animations from %s",
             scene.bones.size(), scene.animations.size(), filepath.c_str());
+
     }
 
     // Create a single root entity named after the file to keep the hierarchy clean.
@@ -1088,15 +1089,44 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
     f32 unitScale = effectiveOptions.scale;
     Math::Vector3 boundsMin(FLT_MAX, FLT_MAX, FLT_MAX);
     Math::Vector3 boundsMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
-    for (const auto& mesh : scene.meshes) {
-        for (const auto& prim : mesh.primitives) {
-            for (const auto& v : prim.vertices) {
-                boundsMin.x = Math::Min(boundsMin.x, v.position.x);
-                boundsMin.y = Math::Min(boundsMin.y, v.position.y);
-                boundsMin.z = Math::Min(boundsMin.z, v.position.z);
-                boundsMax.x = Math::Max(boundsMax.x, v.position.x);
-                boundsMax.y = Math::Max(boundsMax.y, v.position.y);
-                boundsMax.z = Math::Max(boundsMax.z, v.position.z);
+
+    // For SKINNED meshes, the entity build path bakes the mesh node's accumulated
+    // world transform into vertices, so the post-bake scale matches the bone bind
+    // data (cm). Use the BONE world bind positions for the auto-scale check —
+    // they're already in the post-bake unit and represent the actual character
+    // size, regardless of which mesh-local space the raw FBX vertices were in.
+    if (skelCtx.skeleton && !skelCtx.skeleton->bones.empty()) {
+        // Compute world bind transforms by walking parent chain (parents always
+        // come before children thanks to the topological sort step).
+        std::vector<Math::Vector3> boneWorldPos(skelCtx.skeleton->bones.size());
+        for (usize i = 0; i < skelCtx.skeleton->bones.size(); ++i) {
+            const auto& b = skelCtx.skeleton->bones[i];
+            Math::Vector3 localPos = b.bindPosition;
+            if (b.parentIndex >= 0 && b.parentIndex < static_cast<i32>(i)) {
+                // World pos = parent.world + parent.rotation * local (approximate;
+                // good enough for size detection without full matrix math)
+                boneWorldPos[i] = boneWorldPos[b.parentIndex] + localPos;
+            } else {
+                boneWorldPos[i] = localPos;
+            }
+            boundsMin.x = Math::Min(boundsMin.x, boneWorldPos[i].x);
+            boundsMin.y = Math::Min(boundsMin.y, boneWorldPos[i].y);
+            boundsMin.z = Math::Min(boundsMin.z, boneWorldPos[i].z);
+            boundsMax.x = Math::Max(boundsMax.x, boneWorldPos[i].x);
+            boundsMax.y = Math::Max(boundsMax.y, boneWorldPos[i].y);
+            boundsMax.z = Math::Max(boundsMax.z, boneWorldPos[i].z);
+        }
+    } else {
+        for (const auto& mesh : scene.meshes) {
+            for (const auto& prim : mesh.primitives) {
+                for (const auto& v : prim.vertices) {
+                    boundsMin.x = Math::Min(boundsMin.x, v.position.x);
+                    boundsMin.y = Math::Min(boundsMin.y, v.position.y);
+                    boundsMin.z = Math::Min(boundsMin.z, v.position.z);
+                    boundsMax.x = Math::Max(boundsMax.x, v.position.x);
+                    boundsMax.y = Math::Max(boundsMax.y, v.position.y);
+                    boundsMax.z = Math::Max(boundsMax.z, v.position.z);
+                }
             }
         }
     }
@@ -1408,6 +1438,34 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
     if (!meshIndices.empty()) {
         ECS::MeshComponent meshComp;
 
+        // For SKINNED meshes: compute the accumulated world transform of THIS mesh node
+        // and bake it into vertex positions. Bone bind data + IBMs come from the FBX in
+        // a single common space (typically cm), but mesh vertices are in mesh-local
+        // space — for files where the mesh node has a non-identity transform (e.g. a
+        // 100x scale because the mesh was authored in meters), the vertices end up in
+        // a different unit than the bones, and the GPU skinning produces a stretched
+        // mess. Walking happens to work because its mesh node is identity; "Female
+        // Laying Pose" / "Laying Idle" has mesh scale baked into the node transform.
+        Math::Matrix4 meshNodeWorld = Math::Matrix4::Identity();
+        bool bakeMeshNodeIntoVertices = (skelCtx.skeleton != nullptr);
+        if (bakeMeshNodeIntoVertices) {
+            // Walk parent chain from THIS node up to the root, accumulating local
+            // transforms. The result is the node's world transform in FBX space.
+            std::vector<i32> chain;
+            i32 walk = nodeIndex;
+            while (walk >= 0) {
+                chain.push_back(walk);
+                walk = scene.nodes[walk].parentIndex;
+            }
+            for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+                const auto& n = scene.nodes[*it];
+                Math::Matrix4 local = Math::Matrix4::Translation(n.translation) *
+                                      n.rotation.ToMatrix() *
+                                      Math::Matrix4::Scale(n.scale);
+                meshNodeWorld = meshNodeWorld * local;
+            }
+        }
+
         u32 vertexOffset = 0;
         i32 materialIndex = -1;  // First material (backward compat for single-material)
 
@@ -1441,6 +1499,15 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                     ECS::MeshComponent::Vertex vertex;
                     vertex.position = assimpVert.position;
                     vertex.normal = assimpVert.normal;
+                    // For skinned meshes, bake the mesh node's accumulated world
+                    // transform into the vertex position so it ends up in the SAME
+                    // coordinate space as the bone bind data (see meshNodeWorld above).
+                    if (bakeMeshNodeIntoVertices) {
+                        Math::Vector4 p4 = meshNodeWorld * Math::Vector4(vertex.position.x, vertex.position.y, vertex.position.z, 1.0f);
+                        vertex.position = Math::Vector3(p4.x, p4.y, p4.z);
+                        Math::Vector4 n4 = meshNodeWorld * Math::Vector4(vertex.normal.x, vertex.normal.y, vertex.normal.z, 0.0f);
+                        vertex.normal = Math::Vector3(n4.x, n4.y, n4.z).Normalized();
+                    }
                     // Apply axis conversion to vertex positions, normals, tangents.
                     // Positions use ConvertPosition (includes flip overrides),
                     // normals/tangents use ConvertNormal (direction-only, no scale).
@@ -1733,7 +1800,9 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
             for (const auto& channel : assimpAnim.channels) {
                 // Find which bone this channel targets
                 i32 boneIndex = skelCtx.skeleton->FindBoneIndex(channel.nodeName);
-                if (boneIndex < 0) continue;
+                if (boneIndex < 0) {
+                    continue;
+                }
 
                 // Find or create a track for this bone
                 Animation::BoneTrack* track = nullptr;
@@ -1794,6 +1863,7 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
             ENJIN_LOG_INFO(Asset, "Auto-playing animation '%s' on entity '%s'",
                 scene.animations[0].name.c_str(), name.c_str());
         }
+
     }
 
     // Recursively create child entities with parent-child hierarchy

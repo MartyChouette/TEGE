@@ -54,6 +54,9 @@ public:
     // CCD
     virtual void SetCCDEnabled(bool enabled) = 0;
 
+    // Body velocity query (for rewind system — captures current physics state)
+    virtual bool GetBodyVelocity(ECS::Entity entity, Math::Vector3& outLinear) const { return false; }
+
     // Force-set body state (for rewind system — restores position/velocity)
     virtual void ForceSetBodyState(ECS::Entity entity, const Math::Vector3& position,
                                     const Math::Vector3& velocity) {}
