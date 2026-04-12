@@ -47,42 +47,22 @@
 #include <cmath>
 #include <random>
 
-// Global pointer for visual script save system access (set by PlayMode)
-// TODO: Move this to ExecutionContext so save nodes receive the system via the
-//       execution context rather than relying on a global extern pointer.
+// Global pointers for visual script system access (set by PlayMode/EditorLayer).
+// THREAD SAFETY: These are written at play-start and read during execution, both
+// on the main thread. Do NOT access from worker threads without synchronization.
+// TODO: Move these to ExecutionContext so nodes receive systems via context
+//       rather than relying on global extern pointers.
 Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem = nullptr;
-
-// Global pointer for visual script SimpleAudio access (set by PlayMode)
 Enjin::Audio::SimpleAudio* s_VisualScriptAudio = nullptr;
-
-// Global pointer for visual script audio event graph runtime access (set by PlayMode)
 Enjin::Editor::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime = nullptr;
-
-// Global pointer for visual script plugin system access (set by EditorLayer)
 Enjin::Plugin::PluginSystem* s_VisualScriptPluginSystem = nullptr;
-
-// Global pointer for visual script weather system access (set by PlayMode)
 Enjin::Effects::WeatherSystem* s_VisualScriptWeather = nullptr;
-
-// Global pointer for visual script water system access (set by PlayMode)
 Enjin::Effects::Water3D* s_VisualScriptWater = nullptr;
-
-// Global pointer for visual script HUD system access (set by PlayMode)
 Enjin::Gameplay::HUDSystem* s_VisualScriptHUD = nullptr;
-
-// Global pointer for visual script subtitle system access (set by PlayMode)
 Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem = nullptr;
-
-// Global pointer for visual script announcer access (set by PlayMode)
 Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer = nullptr;
-
-// Global pointer for visual script post-processing access (set by PlayMode)
 Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing = nullptr;
-
-// Global pointer for visual script object pool access (set by PlayMode)
 Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool = nullptr;
-
-// Global pointer for visual script elemental system access (set by PlayMode)
 Enjin::Effects::ElementalSystem* s_VisualScriptElemental = nullptr;
 
 namespace Enjin {

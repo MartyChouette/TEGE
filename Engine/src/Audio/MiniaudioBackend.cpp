@@ -59,13 +59,16 @@ void MiniaudioBackend::Shutdown() {
     if (!m_Impl || !m_Impl->initialized) return;
 
     // Stop and free all playing channels
-    for (auto& [handle, ptr] : m_Channels) {
-        auto* sound = static_cast<ma_sound*>(ptr);
-        ma_sound_stop(sound);
-        ma_sound_uninit(sound);
-        delete sound;
+    {
+        std::lock_guard<std::mutex> lock(m_ChannelMutex);
+        for (auto& [handle, ptr] : m_Channels) {
+            auto* sound = static_cast<ma_sound*>(ptr);
+            ma_sound_stop(sound);
+            ma_sound_uninit(sound);
+            delete sound;
+        }
+        m_Channels.clear();
     }
-    m_Channels.clear();
     m_Sounds.clear();
 
     ma_engine_uninit(&m_Impl->engine);
@@ -77,6 +80,7 @@ void MiniaudioBackend::Shutdown() {
 void MiniaudioBackend::Update() {
     if (!m_Impl->initialized) return;
 
+    std::lock_guard<std::mutex> lock(m_ChannelMutex);
     // Clean up channels that have finished playing
     for (auto it = m_Channels.begin(); it != m_Channels.end();) {
         auto* sound = static_cast<ma_sound*>(it->second);
@@ -179,12 +183,16 @@ ChannelHandle MiniaudioBackend::Play(SoundHandle sound, const Math::Vector3& pos
     ma_sound_start(maSound);
 
     ChannelHandle channel = m_NextChannel++;
-    m_Channels[channel] = maSound;
+    {
+        std::lock_guard<std::mutex> lock(m_ChannelMutex);
+        m_Channels[channel] = maSound;
+    }
 
     return channel;
 }
 
 void MiniaudioBackend::Stop(ChannelHandle channel) {
+    std::lock_guard<std::mutex> lock(m_ChannelMutex);
     auto it = m_Channels.find(channel);
     if (it == m_Channels.end()) return;
 
@@ -196,6 +204,7 @@ void MiniaudioBackend::Stop(ChannelHandle channel) {
 }
 
 void MiniaudioBackend::Pause(ChannelHandle channel) {
+    std::lock_guard<std::mutex> lock(m_ChannelMutex);
     auto it = m_Channels.find(channel);
     if (it == m_Channels.end()) return;
 
@@ -204,6 +213,7 @@ void MiniaudioBackend::Pause(ChannelHandle channel) {
 }
 
 void MiniaudioBackend::Resume(ChannelHandle channel) {
+    std::lock_guard<std::mutex> lock(m_ChannelMutex);
     auto it = m_Channels.find(channel);
     if (it == m_Channels.end()) return;
 
@@ -216,6 +226,7 @@ void MiniaudioBackend::Resume(ChannelHandle channel) {
 // ============================================================================
 
 void MiniaudioBackend::SetChannelVolume(ChannelHandle channel, f32 volume) {
+    std::lock_guard<std::mutex> lock(m_ChannelMutex);
     auto it = m_Channels.find(channel);
     if (it == m_Channels.end()) return;
 
@@ -224,6 +235,7 @@ void MiniaudioBackend::SetChannelVolume(ChannelHandle channel, f32 volume) {
 }
 
 void MiniaudioBackend::SetChannelPitch(ChannelHandle channel, f32 pitch) {
+    std::lock_guard<std::mutex> lock(m_ChannelMutex);
     auto it = m_Channels.find(channel);
     if (it == m_Channels.end()) return;
 
@@ -232,6 +244,7 @@ void MiniaudioBackend::SetChannelPitch(ChannelHandle channel, f32 pitch) {
 }
 
 void MiniaudioBackend::SetChannelPosition(ChannelHandle channel, const Math::Vector3& position) {
+    std::lock_guard<std::mutex> lock(m_ChannelMutex);
     auto it = m_Channels.find(channel);
     if (it == m_Channels.end()) return;
 
@@ -240,6 +253,7 @@ void MiniaudioBackend::SetChannelPosition(ChannelHandle channel, const Math::Vec
 }
 
 void MiniaudioBackend::SetChannelLoop(ChannelHandle channel, bool loop) {
+    std::lock_guard<std::mutex> lock(m_ChannelMutex);
     auto it = m_Channels.find(channel);
     if (it == m_Channels.end()) return;
 
@@ -248,6 +262,7 @@ void MiniaudioBackend::SetChannelLoop(ChannelHandle channel, bool loop) {
 }
 
 bool MiniaudioBackend::IsChannelPlaying(ChannelHandle channel) const {
+    std::lock_guard<std::mutex> lock(m_ChannelMutex);
     auto it = m_Channels.find(channel);
     if (it == m_Channels.end()) return false;
 

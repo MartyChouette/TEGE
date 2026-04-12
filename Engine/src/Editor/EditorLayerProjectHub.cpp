@@ -182,11 +182,17 @@ static void OpenInExplorer(const std::string& folderPath) {
 #ifdef _WIN32
     ShellExecuteA(nullptr, "open", folderPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 #elif defined(__APPLE__)
-    std::string cmd = "open \"" + folderPath + "\"";
-    std::system(cmd.c_str());
+    pid_t pid = fork();
+    if (pid == 0) {
+        execlp("open", "open", folderPath.c_str(), nullptr);
+        _exit(1);
+    }
 #else
-    std::string cmd = "xdg-open \"" + folderPath + "\"";
-    std::system(cmd.c_str());
+    pid_t pid = fork();
+    if (pid == 0) {
+        execlp("xdg-open", "xdg-open", folderPath.c_str(), nullptr);
+        _exit(1);
+    }
 #endif
 }
 

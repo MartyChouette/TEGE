@@ -59,7 +59,7 @@ bool GLTFLoader::Load(const std::string& filepath, GLTFScene& outScene) {
         }
 
         // Handle embedded data
-        if (srcImage.buffer_view) {
+        if (srcImage.buffer_view && srcImage.buffer_view->buffer && srcImage.buffer_view->buffer->data) {
             const u8* bufferData = static_cast<const u8*>(srcImage.buffer_view->buffer->data);
             const u8* imageData = bufferData + srcImage.buffer_view->offset;
             dstImage.data.assign(imageData, imageData + srcImage.buffer_view->size);

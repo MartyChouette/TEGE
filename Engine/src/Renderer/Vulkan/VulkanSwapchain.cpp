@@ -389,6 +389,14 @@ void VulkanSwapchain::RecreateFramebuffers() {
             VkResult result = vkCreateFramebuffer(m_Context->GetDevice(), &createInfo, nullptr, &m_Framebuffers[i]);
             if (result != VK_SUCCESS) {
                 ENJIN_LOG_ERROR(Renderer, "Failed to create MSAA framebuffer %zu: %d", i, result);
+                // Clean up already-created framebuffers
+                for (usize j = 0; j < i; ++j) {
+                    if (m_Framebuffers[j] != VK_NULL_HANDLE) {
+                        vkDestroyFramebuffer(m_Context->GetDevice(), m_Framebuffers[j], nullptr);
+                        m_Framebuffers[j] = VK_NULL_HANDLE;
+                    }
+                }
+                return;
             }
         }
     } else {
@@ -412,6 +420,13 @@ void VulkanSwapchain::RecreateFramebuffers() {
             VkResult result = vkCreateFramebuffer(m_Context->GetDevice(), &createInfo, nullptr, &m_Framebuffers[i]);
             if (result != VK_SUCCESS) {
                 ENJIN_LOG_ERROR(Renderer, "Failed to create framebuffer %zu: %d", i, result);
+                for (usize j = 0; j < i; ++j) {
+                    if (m_Framebuffers[j] != VK_NULL_HANDLE) {
+                        vkDestroyFramebuffer(m_Context->GetDevice(), m_Framebuffers[j], nullptr);
+                        m_Framebuffers[j] = VK_NULL_HANDLE;
+                    }
+                }
+                return;
             }
         }
     }

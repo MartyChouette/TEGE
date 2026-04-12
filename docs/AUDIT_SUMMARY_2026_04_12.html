@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TEGE Engine Audit Summary — 2026-04-12</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface2: #1c2129;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --accent-glow: rgba(88, 166, 255, 0.15);
+    --green: #3fb950;
+    --green-bg: rgba(63, 185, 80, 0.1);
+    --red: #f85149;
+    --red-bg: rgba(248, 81, 73, 0.1);
+    --orange: #d29922;
+    --orange-bg: rgba(210, 153, 34, 0.1);
+    --yellow: #e3b341;
+    --yellow-bg: rgba(227, 179, 65, 0.1);
+    --purple: #bc8cff;
+    --purple-bg: rgba(188, 140, 255, 0.1);
+    --cyan: #39d2c0;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 0;
+  }
+
+  .hero {
+    background: linear-gradient(135deg, #0d1117 0%, #1a1f2e 50%, #0d1117 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 60px 40px 50px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(ellipse at 30% 50%, rgba(88, 166, 255, 0.04) 0%, transparent 60%),
+                radial-gradient(ellipse at 70% 50%, rgba(188, 140, 255, 0.03) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .hero h1 { font-size: 2.4rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 8px; position: relative; }
+  .hero h1 span { color: var(--accent); }
+  .hero .subtitle { color: var(--text-dim); font-size: 1.05rem; font-weight: 400; margin-bottom: 30px; position: relative; }
+  .hero .date { display: inline-block; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 6px 18px; font-size: 0.85rem; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; position: relative; }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 40px 32px; }
+
+  /* Editor toggle toolbar */
+  .editor-bar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-bottom: 24px;
+    font-size: 0.82rem;
+    color: var(--text-dim);
+  }
+  .editor-bar label { cursor: pointer; }
+  .editor-toggle {
+    display: inline-flex;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .editor-toggle button {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    padding: 5px 12px;
+    font-size: 0.78rem;
+    font-family: 'JetBrains Mono', monospace;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .editor-toggle button.active {
+    background: var(--accent-glow);
+    color: var(--accent);
+  }
+  .editor-toggle button:hover:not(.active) { color: var(--text); }
+
+  /* Stats cards row */
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 40px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; text-align: center; transition: border-color 0.2s, transform 0.2s; }
+  .stat-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .stat-card .number { font-size: 2.8rem; font-weight: 800; letter-spacing: -0.04em; line-height: 1; margin-bottom: 6px; }
+  .stat-card .label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); font-weight: 600; }
+  .stat-card.found .number { color: var(--accent); }
+  .stat-card.fixed .number { color: var(--green); }
+  .stat-card.false-pos .number { color: var(--purple); }
+  .stat-card.remaining .number { color: var(--orange); }
+
+  section { margin-bottom: 48px; }
+  section h2 { font-size: 1.4rem; font-weight: 700; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid var(--border); letter-spacing: -0.01em; }
+  section h2 .badge { display: inline-block; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 10px; border-radius: 10px; margin-left: 10px; vertical-align: middle; position: relative; top: -1px; }
+  .badge-green { background: var(--green-bg); color: var(--green); border: 1px solid rgba(63,185,80,0.25); }
+  .badge-red { background: var(--red-bg); color: var(--red); border: 1px solid rgba(248,81,73,0.25); }
+  .badge-orange { background: var(--orange-bg); color: var(--orange); border: 1px solid rgba(210,153,34,0.25); }
+
+  /* Severity breakdown */
+  .severity-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin-bottom: 12px; background: var(--surface2); }
+  .severity-bar .seg { height: 100%; transition: width 0.6s ease; }
+  .seg-critical { background: var(--red); }
+  .seg-high { background: var(--orange); }
+  .seg-medium { background: var(--yellow); }
+  .severity-legend { display: flex; gap: 24px; margin-bottom: 28px; flex-wrap: wrap; }
+  .severity-legend .item { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--text-dim); }
+  .severity-legend .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .severity-legend .count { font-weight: 600; color: var(--text); font-family: 'JetBrains Mono', monospace; }
+
+  /* File path links */
+  a.file-link {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--accent);
+    text-decoration: none;
+    border-bottom: 1px dashed rgba(88,166,255,0.3);
+    padding-bottom: 1px;
+    transition: all 0.15s;
+    cursor: pointer;
+  }
+  a.file-link:hover {
+    color: #79c0ff;
+    border-bottom-color: var(--accent);
+    background: var(--accent-glow);
+    border-radius: 2px;
+    padding: 1px 3px;
+    margin: -1px -3px;
+  }
+  a.file-link::before {
+    content: '\1F4C4 ';
+    font-size: 0.72rem;
+  }
+
+  /* Fix cards */
+  .fix-card { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--green); border-radius: 8px; padding: 20px 24px; margin-bottom: 12px; transition: border-color 0.2s; }
+  .fix-card:hover { border-color: var(--green); }
+  .fix-card .fix-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; gap: 12px; }
+  .fix-card .fix-title { font-weight: 600; font-size: 0.95rem; }
+  .fix-card .fix-severity { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 8px; border-radius: 4px; white-space: nowrap; flex-shrink: 0; }
+  .sev-critical { background: var(--red-bg); color: var(--red); }
+  .sev-high { background: var(--orange-bg); color: var(--orange); }
+  .sev-logic { background: var(--yellow-bg); color: var(--yellow); }
+  .fix-card .fix-file { margin-bottom: 8px; }
+  .fix-card .fix-desc { font-size: 0.88rem; color: var(--text-dim); line-height: 1.55; }
+  .fix-card .fix-desc strong { color: var(--text); font-weight: 500; }
+
+  /* False positive cards */
+  .fp-card { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--purple); border-radius: 8px; padding: 14px 20px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  .fp-card .fp-finding { font-size: 0.9rem; font-weight: 500; }
+  .fp-card .fp-guard { font-size: 0.82rem; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; text-align: right; flex-shrink: 0; }
+
+  /* Issue table */
+  .issue-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  .issue-table th { text-align: left; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .issue-table td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .issue-table tr:hover td { background: var(--surface2); }
+  .issue-table .id-col { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--accent); white-space: nowrap; }
+
+  .category-tag { display: inline-block; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding: 2px 7px; border-radius: 4px; margin-right: 6px; }
+  .cat-thread { background: rgba(57, 210, 192, 0.12); color: var(--cyan); }
+  .cat-vulkan { background: var(--red-bg); color: var(--red); }
+  .cat-memory { background: var(--orange-bg); color: var(--orange); }
+  .cat-perf { background: var(--yellow-bg); color: var(--yellow); }
+  .cat-security { background: var(--purple-bg); color: var(--purple); }
+  .cat-logic { background: rgba(88,166,255,0.12); color: var(--accent); }
+
+  /* Secure section */
+  .secure-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .secure-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; }
+  .secure-card .secure-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 4px; color: var(--green); }
+  .secure-card .secure-desc { font-size: 0.82rem; color: var(--text-dim); line-height: 1.5; }
+
+  .dimensions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 30px; }
+  .dim-pill { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 18px; font-size: 0.82rem; font-weight: 500; display: flex; align-items: center; gap: 8px; }
+
+  .footer { text-align: center; padding: 40px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 0.82rem; }
+  .footer a { color: var(--accent); text-decoration: none; }
+  .footer a:hover { text-decoration: underline; }
+
+  @media (max-width: 768px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .secure-grid { grid-template-columns: 1fr; }
+    .hero { padding: 40px 20px 35px; }
+    .hero h1 { font-size: 1.8rem; }
+    .container { padding: 24px 16px; }
+    .fp-card { flex-direction: column; align-items: flex-start; }
+    .fp-card .fp-guard { text-align: left; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1><span>TEGE</span> Engine Audit</h1>
+  <p class="subtitle">Full codebase security, safety &amp; performance review</p>
+  <span class="date">2026-04-12</span>
+</div>
+
+<div class="container">
+
+  <!-- Editor toggle -->
+  <div class="editor-bar">
+    <span>Open files in:</span>
+    <div class="editor-toggle">
+      <button class="active" onclick="setEditor('vscode')" id="btn-vscode">VS Code</button>
+      <button onclick="setEditor('explorer')" id="btn-explorer">Explorer</button>
+      <button onclick="setEditor('cursor')" id="btn-cursor">Cursor</button>
+    </div>
+  </div>
+
+  <!-- Stat cards -->
+  <div class="stats-row">
+    <div class="stat-card found"><div class="number">55</div><div class="label">Total Findings</div></div>
+    <div class="stat-card fixed"><div class="number">6</div><div class="label">Fixed</div></div>
+    <div class="stat-card false-pos"><div class="number">7</div><div class="label">False Positives</div></div>
+    <div class="stat-card remaining"><div class="number">42</div><div class="label">Remaining</div></div>
+  </div>
+
+  <!-- Audit dimensions -->
+  <section>
+    <h2>Audit Dimensions</h2>
+    <div class="dimensions">
+      <div class="dim-pill"><span>&#x1F6E1;</span> Memory Safety</div>
+      <div class="dim-pill"><span>&#x1F512;</span> Thread Safety</div>
+      <div class="dim-pill"><span>&#x1F3AE;</span> Vulkan Renderer</div>
+      <div class="dim-pill"><span>&#x1F6A8;</span> Security</div>
+      <div class="dim-pill"><span>&#x1F9E9;</span> Logic Bugs</div>
+      <div class="dim-pill"><span>&#x26A1;</span> Performance</div>
+    </div>
+  </section>
+
+  <!-- Severity breakdown -->
+  <section>
+    <h2>Severity Breakdown</h2>
+    <div class="severity-bar">
+      <div class="seg seg-critical" style="width: 27.3%"></div>
+      <div class="seg seg-high" style="width: 32.7%"></div>
+      <div class="seg seg-medium" style="width: 40%"></div>
+    </div>
+    <div class="severity-legend">
+      <div class="item"><div class="dot" style="background:var(--red)"></div> Critical <span class="count">15</span></div>
+      <div class="item"><div class="dot" style="background:var(--orange)"></div> High <span class="count">18</span></div>
+      <div class="item"><div class="dot" style="background:var(--yellow)"></div> Medium <span class="count">22</span></div>
+      <div class="item"><div class="dot" style="background:var(--purple)"></div> False Positive <span class="count">7</span></div>
+      <div class="item"><div class="dot" style="background:var(--green)"></div> Fixed <span class="count">6</span></div>
+    </div>
+  </section>
+
+  <!-- Fixes applied -->
+  <section>
+    <h2>Fixes Applied <span class="badge badge-green">5 Issues Resolved</span></h2>
+
+    <div class="fix-card">
+      <div class="fix-header">
+        <span class="fix-title">VulkanImage staging buffer never copied to GPU</span>
+        <span class="fix-severity sev-critical">Critical</span>
+      </div>
+      <div class="fix-file"><a class="file-link" data-path="Engine/src/Renderer/Vulkan/VulkanImage.cpp" data-line="220">Engine/src/Renderer/Vulkan/VulkanImage.cpp:220</a></div>
+      <div class="fix-desc">Staging buffer was allocated and filled with pixel data, then <strong>immediately freed without ever transferring to the device image</strong>. All textures loaded via CreateFromData (text, sprites, SVG, thumbnails) had undefined/garbage data. Added layout transition, <code>vkCmdCopyBufferToImage</code>, and final transition to shader-read-only.</div>
+    </div>
+
+    <div class="fix-card">
+      <div class="fix-header">
+        <span class="fix-title">ComponentRegistry type ID race condition</span>
+        <span class="fix-severity sev-critical">Critical</span>
+      </div>
+      <div class="fix-file">
+        <a class="file-link" data-path="Engine/include/Enjin/ECS/Component.h" data-line="25">Engine/include/Enjin/ECS/Component.h:25</a>
+        &middot;
+        <a class="file-link" data-path="Engine/src/ECS/Component.cpp" data-line="6">Engine/src/ECS/Component.cpp:6</a>
+      </div>
+      <div class="fix-desc"><code>s_NextComponentId++</code> was a plain integer increment. Concurrent first-registration of two component types could produce <strong>ID collisions</strong>, corrupting ECS storage. Changed to <code>std::atomic&lt;ComponentTypeId&gt;</code> with <code>fetch_add</code>.</div>
+    </div>
+
+    <div class="fix-card">
+      <div class="fix-header">
+        <span class="fix-title">MiniaudioBackend unsynchronized channel map</span>
+        <span class="fix-severity sev-critical">Critical</span>
+      </div>
+      <div class="fix-file">
+        <a class="file-link" data-path="Engine/include/Enjin/Audio/MiniaudioBackend.h" data-line="50">Engine/include/Enjin/Audio/MiniaudioBackend.h:50</a>
+        &middot;
+        <a class="file-link" data-path="Engine/src/Audio/MiniaudioBackend.cpp" data-line="77">Engine/src/Audio/MiniaudioBackend.cpp:77</a>
+      </div>
+      <div class="fix-desc"><code>m_Channels</code> map accessed from Update() (erase), Play() (insert), Stop() (erase), and all SetChannel*() methods <strong>without any synchronization</strong>. Iterator invalidation under concurrent access could crash. Added <code>std::mutex</code> with lock guards on all 10 methods.</div>
+    </div>
+
+    <div class="fix-card">
+      <div class="fix-header">
+        <span class="fix-title">Command injection via system() in OpenInExplorer</span>
+        <span class="fix-severity sev-high">High / Security</span>
+      </div>
+      <div class="fix-file"><a class="file-link" data-path="Engine/src/Editor/EditorLayerProjectHub.cpp" data-line="180">Engine/src/Editor/EditorLayerProjectHub.cpp:180</a></div>
+      <div class="fix-desc"><code>std::system("open \"" + folderPath + "\"")</code> on macOS/Linux. A project folder named <code>foo"; rm -rf /; #</code> would <strong>execute arbitrary shell commands</strong>. Replaced with <code>fork()</code>/<code>execlp()</code> which bypasses the shell entirely.</div>
+    </div>
+
+    <div class="fix-card">
+      <div class="fix-header">
+        <span class="fix-title">Cascade shadow stagger offset collision</span>
+        <span class="fix-severity sev-logic">Logic</span>
+      </div>
+      <div class="fix-file"><a class="file-link" data-path="Engine/src/ECS/Systems/RenderSystem.cpp" data-line="6275">Engine/src/ECS/Systems/RenderSystem.cpp:6275</a></div>
+      <div class="fix-desc">Cascade 2 received the same stagger offset (0) as cascades 0 and 1, causing all three to update on the same frame instead of distributing load. Changed <code>(cascade - 2)</code> to <code>(cascade - 1)</code>.</div>
+    </div>
+  </section>
+
+  <!-- False positives -->
+  <section>
+    <h2>Verified False Positives <span class="badge badge-orange">7 Already Safe</span></h2>
+    <p style="color:var(--text-dim); font-size:0.88rem; margin-bottom:16px;">These were initially flagged as CRITICAL but manual review confirmed existing guards already prevent the issue.</p>
+
+    <div class="fp-card">
+      <span class="fp-finding">SpriteContourTracer <code>size()-1</code> underflow</span>
+      <span class="fp-guard"><a class="file-link" data-path="Engine/src/Editor/SpriteContourTracer.cpp" data-line="169">line 169</a> &mdash; size &lt; 3 early return</span>
+    </div>
+    <div class="fp-card">
+      <span class="fp-finding">Spline <code>size()-1</code> underflow (4 functions)</span>
+      <span class="fp-guard"><a class="file-link" data-path="Engine/src/Math/Spline.cpp" data-line="107">Spline.cpp:107</a> &mdash; size &lt; 2 guard</span>
+    </div>
+    <div class="fp-card">
+      <span class="fp-finding">SceneImporter bone array out-of-bounds</span>
+      <span class="fp-guard"><a class="file-link" data-path="Engine/src/Assets/SceneImporter.cpp" data-line="676">line 676</a> &mdash; resize matches</span>
+    </div>
+    <div class="fp-card">
+      <span class="fp-finding">LevelGenerator shuffle <code>size()-1</code> underflow</span>
+      <span class="fp-guard"><a class="file-link" data-path="Engine/src/Procedural/LevelGenerator.cpp" data-line="442">line 442</a> &mdash; empty() early return</span>
+    </div>
+    <div class="fp-card">
+      <span class="fp-finding">SceneSerializer unbounded vertex allocation</span>
+      <span class="fp-guard"><a class="file-link" data-path="Engine/src/Scene/SceneSerializer.cpp" data-line="466">line 466</a> &mdash; 10M cap exists</span>
+    </div>
+    <div class="fp-card">
+      <span class="fp-finding">Animation <code>frames.size()-1</code> underflow</span>
+      <span class="fp-guard"><a class="file-link" data-path="Engine/src/Animation/Animation.cpp" data-line="70">line 70</a> &mdash; empty() early return</span>
+    </div>
+    <div class="fp-card">
+      <span class="fp-finding">PushConstants exceeds 128 bytes</span>
+      <span class="fp-guard"><a class="file-link" data-path="Engine/include/Enjin/Renderer/Vulkan/VulkanPipeline.h" data-line="24">VulkanPipeline.h:24</a> &mdash; 128B exactly</span>
+    </div>
+  </section>
+
+  <!-- Remaining Critical -->
+  <section>
+    <h2>Remaining Issues &mdash; Critical <span class="badge badge-red">3 Open</span></h2>
+    <table class="issue-table">
+      <thead><tr><th>ID</th><th>Issue</th><th>File</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="id-col">CR-1</td>
+          <td><span class="category-tag cat-security">Security</span>Heap buffer overflow in cgltf <code>strcpy()</code></td>
+          <td><a class="file-link" data-path="Engine/include/cgltf.h" data-line="1288">cgltf.h:1288</a></td>
+          <td style="color:var(--text-dim)">Third-party</td>
+        </tr>
+        <tr>
+          <td class="id-col">CR-2</td>
+          <td><span class="category-tag cat-memory">Memory</span>Integer overflow in terrain splatmap (32-bit)</td>
+          <td><a class="file-link" data-path="Engine/src/Scene/SceneSerializer.cpp" data-line="824">SceneSerializer.cpp:824</a></td>
+          <td style="color:var(--text-dim)">64-bit only</td>
+        </tr>
+        <tr>
+          <td class="id-col">CR-3</td>
+          <td><span class="category-tag cat-vulkan">Vulkan</span>Image stays UNDEFINED on failed transfer</td>
+          <td><a class="file-link" data-path="Engine/src/Renderer/Vulkan/VulkanImage.cpp" data-line="220">VulkanImage.cpp</a></td>
+          <td style="color:var(--text-dim)">Partial (FIX-1)</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Remaining High -->
+  <section>
+    <h2>Remaining Issues &mdash; High <span class="badge badge-red">17 Open</span></h2>
+    <table class="issue-table">
+      <thead><tr><th>ID</th><th>Issue</th><th>File</th></tr></thead>
+      <tbody>
+        <tr><td class="id-col">TH-1</td><td><span class="category-tag cat-thread">Thread</span>World::GetComponent() lock-free reads vs locked writes</td><td><a class="file-link" data-path="Engine/include/Enjin/ECS/World.h" data-line="106">World.h:106</a></td></tr>
+        <tr><td class="id-col">TH-2</td><td><span class="category-tag cat-thread">Thread</span>m_DeviceLost is non-atomic bool</td><td><a class="file-link" data-path="Engine/src/Renderer/Vulkan/VulkanRenderer.cpp" data-line="464">VulkanRenderer.cpp:464</a></td></tr>
+        <tr><td class="id-col">TH-3</td><td><span class="category-tag cat-thread">Thread</span>NameCache rebuilt without lock</td><td><a class="file-link" data-path="Engine/src/ECS/World.cpp" data-line="137">World.cpp:137</a></td></tr>
+        <tr><td class="id-col">TH-4</td><td><span class="category-tag cat-thread">Thread</span>CommandBufferPool non-atomic nextIndex++</td><td><a class="file-link" data-path="Engine/src/Renderer/Vulkan/CommandBufferPool.cpp" data-line="49">CommandBufferPool.cpp:49</a></td></tr>
+        <tr><td class="id-col">TH-5</td><td><span class="category-tag cat-thread">Thread</span>ECS View iterator invalidated by entity destruction</td><td><a class="file-link" data-path="Engine/include/Enjin/ECS/View.h" data-line="122">View.h:122</a></td></tr>
+        <tr><td class="id-col">TH-6</td><td><span class="category-tag cat-thread">Thread</span>13 unsynchronized global visual script pointers</td><td><a class="file-link" data-path="Engine/src/VisualScript/NodeRegistry.cpp" data-line="53">NodeRegistry.cpp:53</a></td></tr>
+        <tr><td class="id-col">VK-1</td><td><span class="category-tag cat-vulkan">Vulkan</span>vkEndRenderPass skipped on mismatched Begin/End</td><td><a class="file-link" data-path="Engine/src/Renderer/Vulkan/VulkanRenderer.cpp" data-line="650">VulkanRenderer.cpp:650</a></td></tr>
+        <tr><td class="id-col">VK-2</td><td><span class="category-tag cat-vulkan">Vulkan</span>MSAA framebuffer creation leaks on failure</td><td><a class="file-link" data-path="Engine/src/Renderer/Vulkan/VulkanSwapchain.cpp" data-line="389">VulkanSwapchain.cpp:389</a></td></tr>
+        <tr><td class="id-col">VK-3</td><td><span class="category-tag cat-vulkan">Vulkan</span>Swapchain resize race on minimize/restore</td><td><a class="file-link" data-path="Engine/src/Renderer/Vulkan/VulkanRenderer.cpp" data-line="696">VulkanRenderer.cpp:696</a></td></tr>
+        <tr><td class="id-col">VK-4</td><td><span class="category-tag cat-vulkan">Vulkan</span>Descriptor pool exhaustion unchecked by callers</td><td><a class="file-link" data-path="Engine/src/Renderer/Vulkan/BindlessResources.cpp" data-line="276">BindlessResources.cpp:276</a></td></tr>
+        <tr><td class="id-col">VK-5</td><td><span class="category-tag cat-vulkan">Vulkan</span>vkQueueSubmit with NULL fence in TransitionLayout</td><td><a class="file-link" data-path="Engine/src/Renderer/Vulkan/VulkanImage.cpp" data-line="352">VulkanImage.cpp:352</a></td></tr>
+        <tr><td class="id-col">MS-1</td><td><span class="category-tag cat-memory">Memory</span>Jolt shapes leaked &mdash; raw new without Release()</td><td><a class="file-link" data-path="Engine/src/Physics/JoltBackend.cpp" data-line="443">JoltBackend.cpp:443</a></td></tr>
+        <tr><td class="id-col">MS-2</td><td><span class="category-tag cat-memory">Memory</span>Cached storage pointers null during render</td><td><a class="file-link" data-path="Engine/src/ECS/Systems/RenderSystem.cpp" data-line="493">RenderSystem.cpp:493</a></td></tr>
+        <tr><td class="id-col">MS-3</td><td><span class="category-tag cat-memory">Memory</span>GLTFLoader assumes buffer data non-null</td><td><a class="file-link" data-path="Engine/src/Assets/GLTFLoader.cpp" data-line="62">GLTFLoader.cpp:62</a></td></tr>
+        <tr><td class="id-col">PF-1</td><td><span class="category-tag cat-perf">Perf</span>O(n&times;m) nested loop in audio occlusion</td><td><a class="file-link" data-path="Engine/src/Audio/AudioReactiveSystem.cpp" data-line="615">AudioReactiveSystem.cpp:615</a></td></tr>
+        <tr><td class="id-col">PF-2</td><td><span class="category-tag cat-perf">Perf</span>Hot-loop animator search per entity</td><td><a class="file-link" data-path="Engine/src/ECS/Systems/RenderSystem.cpp" data-line="2161">RenderSystem.cpp:2161</a></td></tr>
+        <tr><td class="id-col">PF-3</td><td><span class="category-tag cat-perf">Perf</span>Double AnimatorComponent iteration</td><td><a class="file-link" data-path="Engine/src/ECS/Systems/RenderSystem.cpp" data-line="979">RenderSystem.cpp:979</a></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Remaining Medium -->
+  <section>
+    <h2>Remaining Issues &mdash; Medium <span class="badge badge-orange">22 Open</span></h2>
+    <table class="issue-table">
+      <thead><tr><th style="width:90px">Category</th><th>Issue</th></tr></thead>
+      <tbody>
+        <tr><td><span class="category-tag cat-thread">Thread</span></td><td>m_MasterVolume read/written without sync &mdash; <a class="file-link" data-path="Engine/src/Audio/MiniaudioBackend.cpp" data-line="153">MiniaudioBackend.cpp:153</a></td></tr>
+        <tr><td><span class="category-tag cat-thread">Thread</span></td><td>Recursive mutex in World.h masks lock ordering &mdash; <a class="file-link" data-path="Engine/include/Enjin/ECS/World.h" data-line="317">World.h:317</a></td></tr>
+        <tr><td><span class="category-tag cat-thread">Thread</span></td><td>VirtualTextureSystem m_StreamingActive uses seq_cst &mdash; <a class="file-link" data-path="Engine/include/Enjin/Renderer/VirtualTexture/VirtualTextureSystem.h" data-line="190">VirtualTextureSystem.h:190</a></td></tr>
+        <tr><td><span class="category-tag cat-vulkan">Vulkan</span></td><td>vkResetCommandBuffer return unchecked &mdash; <a class="file-link" data-path="Engine/src/Renderer/Vulkan/VulkanRenderer.cpp" data-line="810">VulkanRenderer.cpp:810</a></td></tr>
+        <tr><td><span class="category-tag cat-vulkan">Vulkan</span></td><td>TransitionLayout temp pool + vkQueueWaitIdle per call &mdash; <a class="file-link" data-path="Engine/src/Renderer/Vulkan/VulkanImage.cpp" data-line="258">VulkanImage.cpp:258</a></td></tr>
+        <tr><td><span class="category-tag cat-vulkan">Vulkan</span></td><td>Missing depth aspect mask in TransitionLayout &mdash; <a class="file-link" data-path="Engine/src/Renderer/Vulkan/VulkanImage.cpp" data-line="303">VulkanImage.cpp:303</a></td></tr>
+        <tr><td><span class="category-tag cat-vulkan">Vulkan</span></td><td>Sampler leak in CreateDefaultSampler &mdash; <a class="file-link" data-path="Engine/src/Renderer/Vulkan/BindlessResources.cpp" data-line="111">BindlessResources.cpp:111</a></td></tr>
+        <tr><td><span class="category-tag cat-vulkan">Vulkan</span></td><td>Generic ALL_COMMANDS_BIT fallback barriers &mdash; <a class="file-link" data-path="Engine/src/Renderer/Vulkan/VulkanImage.cpp" data-line="333">VulkanImage.cpp:333</a></td></tr>
+        <tr><td><span class="category-tag cat-vulkan">Vulkan</span></td><td>Missing vkBindBufferMemory result check &mdash; <a class="file-link" data-path="Engine/src/Renderer/Vulkan/VulkanImage.cpp" data-line="179">VulkanImage.cpp:179</a></td></tr>
+        <tr><td><span class="category-tag cat-security">Security</span></td><td>TOCTOU race in project duplication &mdash; <a class="file-link" data-path="Engine/src/Editor/EditorLayerProjectHub.cpp" data-line="205">EditorLayerProjectHub.cpp:205</a></td></tr>
+        <tr><td><span class="category-tag cat-perf">Perf</span></td><td>Per-frame vector&lt;SpriteEntry&gt; alloc &mdash; <a class="file-link" data-path="Engine/src/ECS/Systems/RenderSystem.cpp" data-line="6245">RenderSystem.cpp:6245</a></td></tr>
+        <tr><td><span class="category-tag cat-perf">Perf</span></td><td>m_EntityMaterialIndex unordered_map &mdash; <a class="file-link" data-path="Engine/include/Enjin/ECS/Systems/RenderSystem.h" data-line="930">RenderSystem.h:930</a></td></tr>
+        <tr><td><span class="category-tag cat-perf">Perf</span></td><td>Material SSBO uploaded every frame &mdash; <a class="file-link" data-path="Engine/src/ECS/Systems/RenderSystem.cpp" data-line="5000">RenderSystem.cpp:5000</a></td></tr>
+        <tr><td><span class="category-tag cat-perf">Perf</span></td><td>String += x30 in report builder &mdash; <a class="file-link" data-path="Engine/src/Editor/FeedbackSystem.cpp" data-line="786">FeedbackSystem.cpp:786</a></td></tr>
+        <tr><td><span class="category-tag cat-perf">Perf</span></td><td>m_IKChainCache.resize(3) every frame &mdash; <a class="file-link" data-path="Engine/src/ECS/Systems/RenderSystem.cpp" data-line="1042">RenderSystem.cpp:1042</a></td></tr>
+        <tr><td><span class="category-tag cat-perf">Perf</span></td><td>Full entity scan on texture hot-reload &mdash; <a class="file-link" data-path="Engine/src/ECS/Systems/RenderSystem.cpp" data-line="6682">RenderSystem.cpp:6682</a></td></tr>
+        <tr><td><span class="category-tag cat-perf">Perf</span></td><td>Text texture cache hash per entity &mdash; <a class="file-link" data-path="Engine/src/ECS/Systems/RenderSystem.cpp" data-line="2138">RenderSystem.cpp:2138</a></td></tr>
+        <tr><td><span class="category-tag cat-perf">Perf</span></td><td>Mid-frame bone buffer GPU alloc &mdash; <a class="file-link" data-path="Engine/src/ECS/Systems/RenderSystem.cpp" data-line="2179">RenderSystem.cpp:2179</a></td></tr>
+        <tr><td><span class="category-tag cat-perf">Perf</span></td><td>Repeated GetOrLoadTexture hash lookups &mdash; <a class="file-link" data-path="Engine/src/ECS/Systems/RenderSystem.cpp" data-line="6631">RenderSystem.cpp:6631</a></td></tr>
+        <tr><td><span class="category-tag cat-logic">Logic</span></td><td>Float == comparisons &mdash; <a class="file-link" data-path="Engine/src/Animation/Timeline.cpp" data-line="18">Timeline.cpp:18</a>, <a class="file-link" data-path="Engine/src/Editor/AnimationGraphEditor.cpp" data-line="75">AnimationGraphEditor.cpp:75</a></td></tr>
+        <tr><td><span class="category-tag cat-logic">Logic</span></td><td>Notification visibleIdx over-count &mdash; <a class="file-link" data-path="Engine/src/Editor/EditorLayerDialogs.cpp" data-line="817">EditorLayerDialogs.cpp:817</a></td></tr>
+        <tr><td><span class="category-tag cat-perf">Perf</span></td><td>Sprite atlas full-scan invalidation &mdash; <a class="file-link" data-path="Engine/src/ECS/Systems/RenderSystem.cpp" data-line="6682">RenderSystem.cpp:6682</a></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Already secure -->
+  <section>
+    <h2>Already Secure <span class="badge badge-green">Verified</span></h2>
+    <div class="secure-grid">
+      <div class="secure-card"><div class="secure-title">Network Packets</div><div class="secure-desc">HMAC-SHA256 auth, replay protection, rate limiting, size validation</div></div>
+      <div class="secure-card"><div class="secure-title">AngelScript Sandbox</div><div class="secure-desc">Path traversal check, 16MB source limit, 1M instruction timeout</div></div>
+      <div class="secure-card"><div class="secure-title">Asset Packs</div><div class="secure-desc">Path traversal rejected, overflow guards, CRC32 integrity</div></div>
+      <div class="secure-card"><div class="secure-title">Scene Serialization</div><div class="secure-desc">Vertex/index 10M caps, SafeStr() size limits, .contains() guards</div></div>
+      <div class="secure-card"><div class="secure-title">GPU Memory Tracking</div><div class="secure-desc">std::atomic with memory_order_relaxed for counters</div></div>
+      <div class="secure-card"><div class="secure-title">Process Execution</div><div class="secure-desc">No std::system() calls. ShellExecuteA / fork+execlp only</div></div>
+    </div>
+  </section>
+
+</div>
+
+<div class="footer">
+  TEGE &mdash; The Enjin Game Engine &middot; Audit conducted 2026-04-12 &middot; <a href="AUDIT_2026_04_12.md">Full Markdown Report</a>
+</div>
+
+<script>
+// ─── Configuration ───────────────────────────────────────────────
+const BASE_PATH = 'D:/GitHub/enjin';
+let currentEditor = 'vscode';
+
+// ─── Editor URL builders ─────────────────────────────────────────
+function buildUrl(relPath, line) {
+  const full = BASE_PATH + '/' + relPath;
+  switch (currentEditor) {
+    case 'vscode':
+      return 'vscode://file/' + full + (line ? ':' + line : '');
+    case 'cursor':
+      return 'cursor://file/' + full + (line ? ':' + line : '');
+    case 'explorer': {
+      // Open the containing folder in Windows Explorer
+      const dir = full.substring(0, full.lastIndexOf('/'));
+      return 'file:///' + dir.replace(/\//g, '/');
+    }
+  }
+}
+
+// ─── Toggle buttons ──────────────────────────────────────────────
+function setEditor(editor) {
+  currentEditor = editor;
+  document.querySelectorAll('.editor-toggle button').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-' + editor).classList.add('active');
+  refreshLinks();
+}
+
+// ─── Build / refresh all links ───────────────────────────────────
+function refreshLinks() {
+  document.querySelectorAll('a.file-link').forEach(a => {
+    const path = a.dataset.path;
+    const line = a.dataset.line || '';
+    if (path) {
+      a.href = buildUrl(path, line);
+    }
+  });
+}
+
+// ─── Init on load ────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', refreshLinks);
+</script>
+
+</body>
+</html>

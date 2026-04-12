@@ -583,6 +583,9 @@ void AudioReactiveSystem::UpdateOcclusion(f32 deltaTime) {
     // Get listener position
     const Math::Vector3& listenerPos = m_ListenerPos;
 
+    // Cache collider entities once, not per audio source (was O(n*m), now O(n+m))
+    const auto& colliderEntities = m_World->GetEntitiesWithComponent<ECS::BoxColliderComponent>();
+
     for (auto entity : m_World->GetEntitiesWithComponent<ECS::AudioOcclusionComponent>()) {
         if (!m_World->IsValid(entity)) continue;
         auto* occ = m_World->GetComponent<ECS::AudioOcclusionComponent>(entity);
@@ -612,7 +615,7 @@ void AudioReactiveSystem::UpdateOcclusion(f32 deltaTime) {
             Math::Vector3 midpoint = listenerPos + dir * (distance * 0.5f);
 
             // Count entities with box colliders near the midpoint
-            for (auto obstacle : m_World->GetEntitiesWithComponent<ECS::BoxColliderComponent>()) {
+            for (auto obstacle : colliderEntities) {
                 if (obstacle == entity || !m_World->IsValid(obstacle)) continue;
                 auto* ot = m_World->GetComponent<ECS::TransformComponent>(obstacle);
                 auto* col = m_World->GetComponent<ECS::BoxColliderComponent>(obstacle);

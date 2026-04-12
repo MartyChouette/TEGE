@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/Entity.h"
+#include <atomic>
 #include <typeindex>
 #include <unordered_map>
 #include <vector>
@@ -22,14 +23,14 @@ class ENJIN_API ComponentRegistry {
 public:
     template<typename T>
     static ComponentTypeId GetTypeId() {
-        static ComponentTypeId id = s_NextComponentId++;
+        static ComponentTypeId id = s_NextComponentId.fetch_add(1, std::memory_order_relaxed);
         return id;
     }
 
-    static ComponentTypeId GetNextId() { return s_NextComponentId; }
+    static ComponentTypeId GetNextId() { return s_NextComponentId.load(std::memory_order_relaxed); }
 
 private:
-    static ComponentTypeId s_NextComponentId;
+    static std::atomic<ComponentTypeId> s_NextComponentId;
 };
 
 // Component storage - Structure of Arrays (SoA) for cache efficiency

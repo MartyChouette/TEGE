@@ -245,9 +245,9 @@ See `docs/ROADMAP.md` for full history.
 ## Security Considerations
 
 ### Input Validation
-- **Scene files (JSON):** Validate array sizes, check `.contains()` before accessing keys.
-- **glTF/GLB import:** Clamp loop bounds to allocated buffer size.
-- **Asset pack (.enjpak):** Bounds-check all sizes/offsets against file size.
+- **Scene files (JSON):** Validate array sizes, check `.contains()` before accessing keys. Vertex cap (10M), index cap (10M), entity cap, string caps via `SafeStr()`.
+- **glTF/GLB import:** Clamp loop bounds to allocated buffer size. **Known issue:** `cgltf.h:1288` has unchecked `strcpy()` in path concatenation (third-party, upstream fix pending).
+- **Asset pack (.enjpak):** Bounds-check all sizes/offsets against file size. Path traversal rejected. CRC32 integrity.
 
 ### Script Execution
 - AngelScript sandboxed from filesystem/network. 1M instruction limit.
@@ -255,6 +255,14 @@ See `docs/ROADMAP.md` for full history.
 
 ### Asset Pack Obfuscation
 - XOR obfuscation is **not cryptographically secure**. CRC32 for integrity only.
+
+### Thread Safety (updated 2026-04-12)
+- `ComponentRegistry::s_NextComponentId` is `std::atomic` — safe for concurrent component type registration.
+- `MiniaudioBackend::m_Channels` protected by `m_ChannelMutex` — safe for concurrent Play/Stop/Update.
+- **Known open issues:** `World::GetComponent()` lock-free reads, `NameCache` rebuild not locked, `m_DeviceLost` non-atomic, global visual script pointers unsynchronized. See `docs/AUDIT_2026_04_12.md` for full list.
+
+### Process Execution
+- No `std::system()` calls remain in the codebase. All external process launches use `ShellExecuteA` (Windows), `fork`/`execlp` (macOS/Linux), or `CreateProcessA`.
 
 ### General
 - Validate enum casts from deserialized integers. Sanitize file paths. Cap allocation sizes.

@@ -610,6 +610,7 @@ private:
     ComponentStorage<MaterialComponent>* m_CachedMaterialStorage = nullptr;
     ComponentStorage<MaterialSlotsComponent>* m_CachedMaterialSlotsStorage = nullptr;
     ComponentStorage<AnimatorComponent>* m_CachedAnimatorStorage = nullptr;
+    AnimatorComponent* m_CachedFallbackAnimator = nullptr; // First animator with skeleton (for orphan skinned meshes)
     ComponentStorage<TextComponent>* m_CachedTextStorage = nullptr;
     ComponentStorage<ArtStyleComponent>* m_CachedArtStyleStorage = nullptr;
     ComponentStorage<Sprite2DComponent>* m_CachedSpriteStorage = nullptr;

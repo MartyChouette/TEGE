@@ -2,6 +2,7 @@
 
 #include "Enjin/Audio/AudioSystem.h"
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 
 namespace Enjin {
@@ -48,6 +49,7 @@ private:
 
     std::unordered_map<SoundHandle, LoadedSound> m_Sounds;
     std::unordered_map<ChannelHandle, void*> m_Channels; // ma_sound* stored as void*
+    mutable std::mutex m_ChannelMutex;
     SoundHandle m_NextSound = 1;
     ChannelHandle m_NextChannel = 1;
     f32 m_MasterVolume = 1.0f;

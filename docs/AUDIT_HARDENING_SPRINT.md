@@ -72,3 +72,6 @@
 
 ## Audit Issue Status
 All 22 originally reported audit issues are now resolved or verified as already-fixed.
+
+## Follow-Up Audit (2026-04-12)
+A comprehensive 6-dimension audit was conducted in April 2026 covering memory safety, thread safety, Vulkan renderer, security, logic bugs, and performance. 55 findings total, 5 critical/high fixes applied, 7 false positives verified. See `docs/AUDIT_2026_04_12.md` for the full report.

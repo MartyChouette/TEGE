@@ -135,6 +135,7 @@ void World::RebuildNameCache() {
 }
 
 Entity World::FindEntityByName(const std::string& name) {
+    std::lock_guard<std::recursive_mutex> lock(m_Mutex);
     if (m_NameCacheDirty) {
         RebuildNameCache();
     }

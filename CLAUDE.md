@@ -176,9 +176,11 @@ Hot-reload in editor: `RenderSystem` watches `Engine/shaders/` via `FileWatcher`
 ## Security
 
 - **Trust zones** documented in `.enjin-boundaries.json` — security-critical (networking, scripts, assets), trust-boundary (serializers, bindings), user-api (components, script API), editor-internal, renderer-internals, gameplay-runtime, foundation
-- **Scene files:** Validate array sizes, check `.contains()` before access
+- **Scene files:** Validate array sizes, check `.contains()` before access. Vertex/index caps (10M), string caps via `SafeStr()`
 - **Scripts:** AngelScript sandboxed, 1M instruction limit
-- **Asset packs:** XOR obfuscation (not crypto-secure), CRC32 integrity only
+- **Asset packs:** XOR obfuscation (not crypto-secure), CRC32 integrity only. Path traversal rejected
+- **Process execution:** No `std::system()` calls — use `ShellExecuteA` (Win), `fork`/`execlp` (macOS/Linux)
+- **Thread safety:** `ComponentRegistry::s_NextComponentId` is `std::atomic`. `MiniaudioBackend::m_Channels` protected by `m_ChannelMutex`. See `docs/AUDIT_2026_04_12.md` for open thread safety issues
 - **General:** Validate enum casts, sanitize file paths, cap allocation sizes
 
 ## Further Reading
@@ -189,3 +191,4 @@ Hot-reload in editor: `RenderSystem` watches `Engine/shaders/` via `FileWatcher`
 - `docs/USER_MANUAL.md` - Component details and user guide
 - `docs/ROADMAP.md` - Planned work and progress tracking
 - `docs/BUILD.md` - Build guide with dependencies
+- `docs/AUDIT_2026_04_12.md` - Full engine audit (55 findings, 6 fixed, 42 remaining)

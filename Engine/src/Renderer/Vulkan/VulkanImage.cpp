@@ -217,18 +217,113 @@ bool VulkanImage::CreateFromData(
         return false;
     }
 
-    // Transition and copy (would need command buffer - simplified for now)
-    // For now, just create the image view
+    // Transfer staging buffer data to device-local image via a one-shot command buffer
+    {
+        VkCommandPool tempPool = VK_NULL_HANDLE;
+        VkCommandPoolCreateInfo poolCI{};
+        poolCI.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolCI.queueFamilyIndex = m_Context->GetGraphicsQueueFamily();
+        poolCI.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+        if (vkCreateCommandPool(m_Context->GetDevice(), &poolCI, nullptr, &tempPool) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create temp command pool for image upload");
+            vkFreeMemory(m_Context->GetDevice(), stagingBufferMemory, nullptr);
+            vkDestroyBuffer(m_Context->GetDevice(), stagingBuffer, nullptr);
+            return false;
+        }
+
+        VkCommandBuffer cmd = VK_NULL_HANDLE;
+        VkCommandBufferAllocateInfo cmdAI{};
+        cmdAI.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        cmdAI.commandPool = tempPool;
+        cmdAI.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        cmdAI.commandBufferCount = 1;
+        if (vkAllocateCommandBuffers(m_Context->GetDevice(), &cmdAI, &cmd) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to allocate command buffer for image upload");
+            vkDestroyCommandPool(m_Context->GetDevice(), tempPool, nullptr);
+            vkFreeMemory(m_Context->GetDevice(), stagingBufferMemory, nullptr);
+            vkDestroyBuffer(m_Context->GetDevice(), stagingBuffer, nullptr);
+            return false;
+        }
+
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(cmd, &beginInfo);
+
+        // Transition: UNDEFINED ��� TRANSFER_DST_OPTIMAL
+        VkImageMemoryBarrier toTransfer{};
+        toTransfer.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        toTransfer.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        toTransfer.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        toTransfer.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toTransfer.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toTransfer.image = m_Image;
+        toTransfer.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        toTransfer.subresourceRange.baseMipLevel = 0;
+        toTransfer.subresourceRange.levelCount = m_MipLevels;
+        toTransfer.subresourceRange.baseArrayLayer = 0;
+        toTransfer.subresourceRange.layerCount = 1;
+        toTransfer.srcAccessMask = 0;
+        toTransfer.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0, 0, nullptr, 0, nullptr, 1, &toTransfer);
+
+        // Copy staging buffer → image (mip level 0)
+        VkBufferImageCopy region{};
+        region.bufferOffset = 0;
+        region.bufferRowLength = 0;
+        region.bufferImageHeight = 0;
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = 0;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = 1;
+        region.imageOffset = {0, 0, 0};
+        region.imageExtent = {width, height, 1};
+        vkCmdCopyBufferToImage(cmd, stagingBuffer, m_Image,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+        // Transition: TRANSFER_DST_OPTIMAL → SHADER_READ_ONLY_OPTIMAL
+        VkImageMemoryBarrier toShaderRead{};
+        toShaderRead.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        toShaderRead.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        toShaderRead.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        toShaderRead.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toShaderRead.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toShaderRead.image = m_Image;
+        toShaderRead.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        toShaderRead.subresourceRange.baseMipLevel = 0;
+        toShaderRead.subresourceRange.levelCount = m_MipLevels;
+        toShaderRead.subresourceRange.baseArrayLayer = 0;
+        toShaderRead.subresourceRange.layerCount = 1;
+        toShaderRead.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        toShaderRead.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            0, 0, nullptr, 0, nullptr, 1, &toShaderRead);
+
+        vkEndCommandBuffer(cmd);
+
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &cmd;
+        vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+        vkQueueWaitIdle(m_Context->GetGraphicsQueue());
+
+        vkDestroyCommandPool(m_Context->GetDevice(), tempPool, nullptr);
+    }
+
     if (!CreateImageView()) {
         vkFreeMemory(m_Context->GetDevice(), stagingBufferMemory, nullptr);
         vkDestroyBuffer(m_Context->GetDevice(), stagingBuffer, nullptr);
         return false;
     }
-    
+
     // Cleanup staging buffer
     vkFreeMemory(m_Context->GetDevice(), stagingBufferMemory, nullptr);
     vkDestroyBuffer(m_Context->GetDevice(), stagingBuffer, nullptr);
-    
+
     ENJIN_LOG_INFO(Renderer, "Created image from data: %dx%d, format: %d", width, height, format);
     return true;
 }

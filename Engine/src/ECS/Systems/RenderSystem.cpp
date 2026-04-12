@@ -497,6 +497,7 @@ void RenderSystem::FlushSceneClear() {
     m_CachedMeshStorage = nullptr;
     m_CachedMaterialStorage = nullptr;
     m_CachedAnimatorStorage = nullptr;
+    m_CachedFallbackAnimator = nullptr;
     m_CachedTextStorage = nullptr;
     m_MaterialSSBOBuilt = false;
     m_MaterialSSBODirty = true;
@@ -975,19 +976,20 @@ void RenderSystem::Update(f32 deltaTime) {
         }
     }
 
-    // Update skeletal animators (only iterate entities that have AnimatorComponent)
+    // Update skeletal animators and apply IK constraints (single pass over AnimatorComponent entities)
+    m_CachedFallbackAnimator = nullptr;
     for (Entity entity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
         AnimatorComponent* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
-        if (animComp) {
-            animComp->Update(deltaTime);
-        }
-    }
+        if (!animComp) continue;
 
-    // Apply IK constraints after animation update (modifies bone transforms before GPU upload)
-    // Only iterate entities with AnimatorComponent (same set as above, typically very few)
-    for (Entity entity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
-        auto* animComp = m_World->GetComponent<AnimatorComponent>(entity);
-        if (!animComp || !animComp->animator.IsPlaying()) continue;
+        // Cache first animator with a skeleton for orphan skinned meshes (Mixamo FBX split imports)
+        if (!m_CachedFallbackAnimator && animComp->animator.GetSkeleton()) {
+            m_CachedFallbackAnimator = animComp;
+        }
+
+        animComp->Update(deltaTime);
+
+        if (!animComp->animator.IsPlaying()) continue;
 
         auto* lookAtIK = m_World->GetComponent<LookAtIKComponent>(entity);
         if (lookAtIK && lookAtIK->lookWeight > 0.0f) {
@@ -2157,14 +2159,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // in the world to use its skinning matrices.
             AnimatorComponent* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
             if (!animComp && renderData.indexCount > 0) {
-                // This entity has bone weights but no animator — find one globally
-                for (auto animEntity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
-                    auto* ac = m_World->GetComponent<AnimatorComponent>(animEntity);
-                    if (ac && ac->animator.GetSkeleton()) {
-                        animComp = ac;
-                        break;
-                    }
-                }
+                // This entity has bone weights but no animator — use cached fallback
+                // (computed once per frame in Update, not per-entity)
+                animComp = m_CachedFallbackAnimator;
             }
 
             // Upload skinning matrices. If this entity doesn't have its own bone
@@ -6272,7 +6269,7 @@ bool RenderSystem::ShouldUpdateCascade(u32 cascade) const {
     if (!m_CascadeProgressiveUpdate) return true;
     u32 interval = (cascade <= 1) ? 1 : m_CascadeFarUpdateInterval;
     // Stagger far cascades so they don't all update on the same frame
-    u32 offset = (cascade <= 1) ? 0 : (cascade - 2);
+    u32 offset = (cascade <= 1) ? 0 : (cascade - 1);
     return ((m_ShadowFrameCounter + offset) % interval) == 0;
 }
 

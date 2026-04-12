@@ -5,6 +5,7 @@
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Renderer/Vulkan/VulkanSwapchain.h"
 #include <vulkan/vulkan.h>
+#include <atomic>
 #include <vector>
 #include <memory>
 #include <functional>
@@ -163,7 +164,7 @@ private:
     bool m_IsFrameStarted = false;
     bool m_IsMainRenderPassActive = false;
     bool m_FramebufferResized = false;
-    bool m_DeviceLost = false;
+    std::atomic<bool> m_DeviceLost{false};
     bool m_VSyncChangeRequested = false;
     bool m_VSyncDesiredState = false;
 

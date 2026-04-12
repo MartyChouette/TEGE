@@ -1,19 +1,22 @@
 # Security & Robustness Audit Report
 
-**Date:** 2026-02-10
+**Date:** 2026-02-10 (initial), **Updated:** 2026-04-12
 **Scope:** Full codebase audit covering serialization, networking, scripting, build pipeline, renderer, physics, input, and memory management.
 
 ---
 
 ## Summary
 
-| Severity | Count | Description |
-|----------|-------|-------------|
-| CRITICAL | 6 | Data corruption, crashes, deadlocks, remote code execution vectors |
-| HIGH | 12 | Spoofing, path traversal, unbounded allocations, null dereferences |
-| MEDIUM | 12 | Input validation gaps, missing bounds checks, configuration issues |
-| LOW | 5 | Minor robustness improvements, edge cases |
-| **Total** | **35** | |
+| Severity | Count | Resolved | Remaining |
+|----------|-------|----------|-----------|
+| CRITICAL | 7 | 6 | 1 |
+| HIGH | 13 | 12 | 1 |
+| MEDIUM | 13 | 12 | 1 |
+| LOW | 5 | 5 | 0 |
+| **Total** | **38** | **35** | **3** |
+
+> C1-C6 resolved in Feb 2026 hardening sprint. C7, H13, M13 added 2026-04-12.
+> See also: `docs/AUDIT_2026_04_12.md` for the full April 2026 audit (55 findings across 6 categories).
 
 ---
 
@@ -275,10 +278,33 @@
 
 ---
 
+## Findings Added 2026-04-12
+
+### C7. Heap Buffer Overflow in cgltf Path Concatenation [OPEN]
+**File:** `Engine/include/cgltf.h:1288-1292`
+**Risk:** Remote code execution via malicious glTF file
+**Description:** `cgltf_combine_paths()` uses `strcpy()` without bounds checking. The buffer is allocated as `strlen(uri) + strlen(gltf_path) + 1` but doesn't account for the prefix bytes from the base path directory. A crafted glTF file with a long texture URI combined with a deep directory path overflows the heap buffer.
+**Status:** Open — third-party header. Requires upstream patch or local override with `snprintf`.
+
+### H13. Command Injection via system() in OpenInExplorer [RESOLVED]
+**File:** `Engine/src/Editor/EditorLayerProjectHub.cpp:180-191`
+**Risk:** Arbitrary code execution on macOS/Linux
+**Description:** `std::system("open \"" + folderPath + "\"")` passed user-controlled folder path through a shell. A project folder named `foo"; rm -rf /; #` would execute arbitrary commands.
+**Fix Applied:** Replaced with `fork()`/`execlp()` which passes the path as a direct exec argument, bypassing shell interpretation. Windows was already safe (`ShellExecuteA`).
+**Date Fixed:** 2026-04-12
+
+### M13. TOCTOU Race in Project Duplication [OPEN]
+**File:** `Engine/src/Editor/EditorLayerProjectHub.cpp:205-212`
+**Risk:** Symlink attack / arbitrary file write
+**Description:** `DuplicateProject` checks `fs::exists(destDir)` then calls `fs::copy()`. Between the check and the copy, an attacker could create `destDir` as a symlink to a system directory. Requires local access and timing.
+**Status:** Open — low priority (local-only, requires attacker on same machine).
+
+---
+
 ## Recommended Priority Order
 
-1. **Immediate (before any release):** C1-C3 (serialization crashes), C4 (device lost deadlock), H2 (path traversal), H10-H11 (renderer stability)
-2. **Before multiplayer release:** C5-C6 (networking DoS/RPC), H5-H7 (authentication/spoofing), M8 (replay protection)
-3. **Before commercial release:** H3-H4 (memory exhaustion), H8-H9 (script sandbox), H12 (encryption upgrade), M10-M11 (HTTP security)
-4. **Ongoing hardening:** All MEDIUM and LOW findings
+1. **Immediate (before any release):** C1-C3 (serialization crashes), C4 (device lost deadlock), H2 (path traversal), H10-H11 (renderer stability) — **ALL RESOLVED** (Feb 2026 hardening sprint)
+2. **Before multiplayer release:** C5-C6 (networking DoS/RPC), H5-H7 (authentication/spoofing), M8 (replay protection) — **ALL RESOLVED** (Feb 2026 hardening sprint, HMAC-SHA256 + replay window + rate limiting added)
+3. **Before commercial release:** H3-H4 (memory exhaustion), H8-H9 (script sandbox), H12 (encryption upgrade), M10-M11 (HTTP security) — **MOSTLY RESOLVED** (vertex/index/entity caps added)
+4. **Open:** C7 (cgltf buffer overflow — third-party), M13 (TOCTOU in project duplication)
 5. **Architecture:** Plan backend abstractions for renderer, physics, and audio as major milestone work

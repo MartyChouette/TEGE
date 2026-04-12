@@ -3,7 +3,7 @@
 namespace Enjin {
 namespace ECS {
 
-ComponentTypeId ComponentRegistry::s_NextComponentId = 1;
+std::atomic<ComponentTypeId> ComponentRegistry::s_NextComponentId{1};
 
 } // namespace ECS
 } // namespace Enjin
