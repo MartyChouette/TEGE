@@ -273,7 +273,7 @@ if(ENJIN_VRS)
 endif()
 
 # Virtual texturing — page-based streaming with feedback buffer (OFF by default)
-option(ENJIN_VIRTUAL_TEXTURING "Enable virtual texturing (page-based streaming)" OFF)
+option(ENJIN_VIRTUAL_TEXTURING "Enable virtual texturing (page-based streaming)" ON)
 if(ENJIN_VIRTUAL_TEXTURING)
     target_compile_definitions(EnjinEngine PUBLIC ENJIN_VIRTUAL_TEXTURING)
     message(STATUS "Virtual texturing enabled")
