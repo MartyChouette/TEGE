@@ -1601,6 +1601,15 @@ void RenderSystem::Update(f32 deltaTime) {
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
         m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &matDynOffset);
 
+    // Bind bindless texture array at set 1 (persists for entire pass)
+    if (m_BindlessManager) {
+        VkDescriptorSet bindlessSet = m_BindlessManager->GetDescriptorSet();
+        if (bindlessSet) {
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_Pipeline->GetLayout(), 1, 1, &bindlessSet, 0, nullptr);
+        }
+    }
+
     VkExtent2D extent = m_Renderer->GetSwapchainExtent();
     VkViewport viewport{};
     viewport.x = 0.0f;
@@ -6887,6 +6896,10 @@ void RenderSystem::UpdateEntityTextureDescriptors(
     Renderer::Texture* emissive,
     Renderer::Texture* matcap)
 {
+    // Skip per-entity descriptor writes when bindless is active —
+    // textures are indexed via MaterialSSBO handles instead.
+    if (m_BindlessManager) return;
+
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
     VkDescriptorSet dstSet = (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)];
     VkDevice device = m_Renderer->GetContext()->GetDevice();
