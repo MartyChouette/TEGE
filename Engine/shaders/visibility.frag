@@ -1,16 +1,13 @@
 #version 450
 
-// Visibility buffer fragment shader — writes triangle ID + instance/object ID.
-// Output: R32G32_UINT where:
-//   .r = triangle ID (gl_PrimitiveID)
-//   .g = object/instance ID (from vertex shader)
+// Visibility buffer pass — fragment shader
+// Writes triangle ID (gl_PrimitiveID) and instance ID to an R32G32_UINT target.
+// No material evaluation — shading happens in the resolve compute pass.
 
-layout(location = 0) flat in uint inObjectID;
+layout(location = 0) flat in uint inInstanceID;
 
-layout(location = 0) out uvec2 outVisibility;
+layout(location = 0) out uvec2 outVisibility; // x = triangleID, y = instanceID
 
 void main() {
-    // Pack triangle ID and object ID
-    outVisibility.r = uint(gl_PrimitiveID);
-    outVisibility.g = inObjectID;
+    outVisibility = uvec2(uint(gl_PrimitiveID), inInstanceID);
 }

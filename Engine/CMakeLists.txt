@@ -280,7 +280,7 @@ if(ENJIN_VIRTUAL_TEXTURING)
 endif()
 
 # Visibility buffer — alternative render path with deferred material evaluation (OFF by default)
-option(ENJIN_VISIBILITY_BUFFER "Enable visibility buffer render path" OFF)
+option(ENJIN_VISIBILITY_BUFFER "Enable visibility buffer render path" ON)
 if(ENJIN_VISIBILITY_BUFFER)
     target_compile_definitions(EnjinEngine PUBLIC ENJIN_VISIBILITY_BUFFER)
     message(STATUS "Visibility buffer render path enabled")

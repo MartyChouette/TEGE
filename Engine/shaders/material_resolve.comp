@@ -1,134 +1,94 @@
 #version 450
+layout(local_size_x = 8, local_size_y = 8) in;
 
-// Material resolve compute shader for visibility buffer rendering.
-// For each pixel: read triangle ID + instance ID from visibility buffer,
-// fetch vertex data, compute barycentrics, interpolate attributes,
-// evaluate material, and compute lighting.
+// Visibility buffer material resolve — compute shader
+// Reads triangle/instance IDs from visibility buffer, fetches vertex data,
+// computes barycentrics, evaluates materials, and writes final color.
 
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+// Visibility buffer input (R32G32_UINT)
+layout(binding = 0, rg32ui) readonly uniform uimage2D visBuffer;
 
-// Visibility buffer (R32G32_UINT: triangleID, instanceID)
-layout(set = 0, binding = 0, rg32ui) uniform readonly uimage2D visibilityBuffer;
+// Output color image
+layout(binding = 1, rgba8) writeonly uniform image2D outputColor;
 
-// Depth buffer
-layout(set = 0, binding = 1) uniform sampler2D depthBuffer;
+// Depth buffer for world position reconstruction
+layout(binding = 2) uniform sampler2D depthTex;
 
-// Output color
-layout(set = 0, binding = 2, rgba8) uniform writeonly image2D outputColor;
-
-// Vertex buffer (SSBO — position, normal, UV per vertex)
-struct Vertex {
-    vec3 position;
-    vec3 normal;
-    vec2 uv;
-    vec4 tangent;
+// Scene vertex/index buffers
+layout(std430, binding = 3) readonly buffer VertexBuffer {
+    float vertices[];  // Interleaved: pos(3), normal(3), uv(2) per vertex
 };
 
-layout(set = 0, binding = 3) readonly buffer VertexBuffer {
-    Vertex vertices[];
+layout(std430, binding = 4) readonly buffer IndexBuffer {
+    uint indices[];
 };
 
-// Per-object data (transform + material)
+// Per-object data
 struct ObjectData {
     mat4 model;
-    vec3 baseColor;
-    float metallic;
-    vec3 emissiveColor;
-    float roughness;
-    float emissiveStrength;
-    float opacity;
-    float alphaCutoff;
-    int flags;
-    float parallaxScale;
-    float _pad[3];
+    vec4 baseColor;     // xyz=color, w=metallic
+    vec4 emissive;      // xyz=color, w=roughness
+    uint vertexOffset;
+    uint indexOffset;
+    uint indexCount;
+    uint pad;
 };
 
-layout(set = 0, binding = 4) readonly buffer ObjectDataBuffer {
+layout(std430, binding = 5) readonly buffer ObjectDataBuffer {
     ObjectData objects[];
 };
 
-// Push constants
 layout(push_constant) uniform PushConstants {
     mat4 viewProj;
     mat4 invViewProj;
-};
-
-// Reconstruct world position from depth
-vec3 reconstructWorldPos(vec2 uv, float depth) {
-    vec2 ndc = uv * 2.0 - 1.0;
-    vec4 clip = vec4(ndc, depth, 1.0);
-    vec4 world = invViewProj * clip;
-    return world.xyz / world.w;
-}
+    vec2 screenSize;
+} pc;
 
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 size = imageSize(outputColor);
+    ivec2 size = ivec2(pc.screenSize);
     if (pixel.x >= size.x || pixel.y >= size.y) return;
 
-    uvec2 vis = imageLoad(visibilityBuffer, pixel).rg;
-    uint triangleID = vis.r;
-    uint objectID = vis.g;
+    // Read visibility buffer
+    uvec2 vis = imageLoad(visBuffer, pixel).rg;
+    uint triangleID = vis.x;
+    uint instanceID = vis.y;
 
-    // Background pixel (no geometry)
-    if (triangleID == 0 && objectID == 0) {
-        imageStore(outputColor, pixel, vec4(0.0, 0.0, 0.0, 0.0));
+    // Background pixels (no geometry)
+    if (triangleID == 0xFFFFFFFFu && instanceID == 0xFFFFFFFFu) {
+        imageStore(outputColor, pixel, vec4(0.1, 0.1, 0.12, 1.0));
         return;
     }
 
     // Fetch object data
-    ObjectData obj = objects[objectID];
+    ObjectData obj = objects[instanceID];
 
-    // Fetch triangle vertices (3 vertices per triangle)
-    uint baseIndex = triangleID * 3;
-    Vertex v0 = vertices[baseIndex + 0];
-    Vertex v1 = vertices[baseIndex + 1];
-    Vertex v2 = vertices[baseIndex + 2];
+    // Fetch triangle indices
+    uint baseIdx = obj.indexOffset + triangleID * 3u;
+    uint i0 = indices[baseIdx + 0u] + obj.vertexOffset;
+    uint i1 = indices[baseIdx + 1u] + obj.vertexOffset;
+    uint i2 = indices[baseIdx + 2u] + obj.vertexOffset;
 
-    // Transform vertices to clip space
-    vec4 p0 = viewProj * obj.model * vec4(v0.position, 1.0);
-    vec4 p1 = viewProj * obj.model * vec4(v1.position, 1.0);
-    vec4 p2 = viewProj * obj.model * vec4(v2.position, 1.0);
+    // Fetch vertex positions (stride = 8 floats: pos3 + normal3 + uv2)
+    vec3 p0 = vec3(vertices[i0*8u+0u], vertices[i0*8u+1u], vertices[i0*8u+2u]);
+    vec3 p1 = vec3(vertices[i1*8u+0u], vertices[i1*8u+1u], vertices[i1*8u+2u]);
+    vec3 p2 = vec3(vertices[i2*8u+0u], vertices[i2*8u+1u], vertices[i2*8u+2u]);
 
-    // NDC
-    vec3 ndc0 = p0.xyz / p0.w;
-    vec3 ndc1 = p1.xyz / p1.w;
-    vec3 ndc2 = p2.xyz / p2.w;
+    // Transform to world space
+    vec3 wp0 = (obj.model * vec4(p0, 1.0)).xyz;
+    vec3 wp1 = (obj.model * vec4(p1, 1.0)).xyz;
+    vec3 wp2 = (obj.model * vec4(p2, 1.0)).xyz;
 
-    // Pixel position in NDC
-    vec2 pixelNDC = (vec2(pixel) + 0.5) / vec2(size) * 2.0 - 1.0;
+    // Compute face normal
+    vec3 edge1 = wp1 - wp0;
+    vec3 edge2 = wp2 - wp0;
+    vec3 normal = normalize(cross(edge1, edge2));
 
-    // Compute barycentrics from screen-space triangle
-    vec2 e0 = ndc1.xy - ndc0.xy;
-    vec2 e1 = ndc2.xy - ndc0.xy;
-    vec2 ep = pixelNDC - ndc0.xy;
+    // Simple directional lighting (placeholder — full PBR can be added)
+    vec3 lightDir = normalize(vec3(0.5, 0.8, 0.3));
+    float ndotl = max(dot(normal, lightDir), 0.0);
+    vec3 ambient = vec3(0.15);
 
-    float denom = e0.x * e1.y - e0.y * e1.x;
-    if (abs(denom) < 1e-8) {
-        imageStore(outputColor, pixel, vec4(0.0));
-        return;
-    }
-
-    float invDenom = 1.0 / denom;
-    float u = (ep.x * e1.y - ep.y * e1.x) * invDenom;
-    float v = (e0.x * ep.y - e0.y * ep.x) * invDenom;
-    float w = 1.0 - u - v;
-
-    // Interpolate attributes
-    vec3 worldNormal = normalize(
-        w * mat3(obj.model) * v0.normal +
-        u * mat3(obj.model) * v1.normal +
-        v * mat3(obj.model) * v2.normal
-    );
-    vec2 uv = w * v0.uv + u * v1.uv + v * v2.uv;
-
-    // Simple Blinn-Phong lighting
-    vec3 lightDir = normalize(vec3(0.5, 1.0, 0.3));
-    float NdotL = max(dot(worldNormal, lightDir), 0.0);
-    vec3 ambient = vec3(0.1);
-    vec3 diffuse = obj.baseColor * NdotL;
-    vec3 emissive = obj.emissiveColor * obj.emissiveStrength;
-
-    vec3 finalColor = ambient + diffuse + emissive;
-    imageStore(outputColor, pixel, vec4(finalColor, obj.opacity));
+    vec3 color = obj.baseColor.rgb * (ambient + ndotl * vec3(0.85));
+    imageStore(outputColor, pixel, vec4(color, 1.0));
 }

@@ -1,24 +1,33 @@
 #version 450
 
-// Visibility buffer vertex shader — minimal transform + ID passthrough.
-// No material evaluation, no lighting — just position and ID output.
+// Visibility buffer pass — vertex shader
+// Outputs only gl_Position and flat instance/triangle IDs.
+// No material evaluation, no texture sampling.
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
-layout(location = 2) in vec2 inUV;
+layout(location = 2) in vec2 inTexCoord;
 
-// Push constants: model-view-projection matrix + object ID
 layout(push_constant) uniform PushConstants {
-    mat4 mvp;         // 64 bytes
-    uint objectID;    // 4 bytes
-    uint _pad0;       // 4 bytes
-    uint _pad1;       // 4 bytes
-    uint _pad2;       // 4 bytes
-};
+    mat4 model;
+    vec3 baseColor; float metallic;
+    vec3 emissiveColor; float roughness;
+    float emissiveStrength;
+    float opacity;
+    float alphaCutoff;
+    int flags;
+    float parallaxScale;
+    float surfaceParam1, surfaceParam2, surfaceParam3;
+} pc;
 
-layout(location = 0) flat out uint outObjectID;
+layout(binding = 0) uniform ViewProjectionUBO {
+    mat4 view;
+    mat4 proj;
+} ubo;
+
+layout(location = 0) flat out uint outInstanceID;
 
 void main() {
-    gl_Position = mvp * vec4(inPosition, 1.0);
-    outObjectID = objectID;
+    gl_Position = ubo.proj * ubo.view * pc.model * vec4(inPosition, 1.0);
+    outInstanceID = uint(gl_InstanceIndex);
 }
