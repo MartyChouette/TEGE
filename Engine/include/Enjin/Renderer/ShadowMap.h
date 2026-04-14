@@ -40,7 +40,8 @@ public:
                         f32 cameraNear, f32 cameraFar, const Math::Vector3& lightDir);
 
     // Begin/end per-cascade shadow pass
-    void BeginCascadePass(VkCommandBuffer commandBuffer, u32 cascadeIndex);
+    void BeginCascadePass(VkCommandBuffer commandBuffer, u32 cascadeIndex, bool useSecondary = false);
+    VkFramebuffer GetCurrentFramebuffer() const { return m_CurrentFramebuffer; }
     void EndCascadePass(VkCommandBuffer commandBuffer);
 
     // Adaptive shadow mapping
@@ -86,6 +87,7 @@ private:
     VkFramebuffer m_CascadeFramebuffers[MAX_SHADOW_CASCADES] = {};   // Per-cascade framebuffer
     VkSampler m_ShadowSampler = VK_NULL_HANDLE;
     VkRenderPass m_RenderPass = VK_NULL_HANDLE;
+    VkFramebuffer m_CurrentFramebuffer = VK_NULL_HANDLE;
 
     // Per-cascade computed data
     Math::Matrix4 m_CascadeViewProj[MAX_SHADOW_CASCADES];

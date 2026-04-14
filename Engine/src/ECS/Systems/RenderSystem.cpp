@@ -6402,10 +6402,12 @@ void RenderSystem::RenderShadowPass() {
         // the HOST_COHERENT UBO race that was causing empty shadow maps.
         m_CurrentCascadeVP = m_ShadowMap->GetCascadeViewProj(cascade);
 
-        m_ShadowMap->BeginCascadePass(commandBuffer, cascade);
+        u32 numCasters = static_cast<u32>(m_ShadowCasters.size());
+        bool parallelShadow = (numCasters >= 32 && m_CmdBufferPool && m_ThreadPool.GetThreadCount() > 0);
+        m_ShadowMap->BeginCascadePass(commandBuffer, cascade, parallelShadow);
 
-        // Bind shadow pipeline
-        m_ShadowPipeline->Bind(commandBuffer);
+        // Bind shadow pipeline (only for inline mode — parallel mode binds per-thread)
+        if (!parallelShadow) m_ShadowPipeline->Bind(commandBuffer);
 
         // Bind descriptor set (pipeline layout requires it even though shadow shader doesn't use material)
         {
@@ -6425,12 +6427,71 @@ void RenderSystem::RenderShadowPass() {
             RebuildShadowCasterCache();
         }
 
-        for (Entity entity : m_ShadowCasters) {
-            // Quick visibility check (may have changed since cache was built)
-            auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
-            if (xform && !xform->visible) continue;
+        // Parallel shadow caster rendering (if enough entities to justify overhead)
+        u32 casterCount = static_cast<u32>(m_ShadowCasters.size());
+        bool useParallelShadow = (casterCount >= 32 && m_CmdBufferPool && m_ThreadPool.GetThreadCount() > 0);
 
-            RenderEntityShadow(entity, commandBuffer);
+        if (useParallelShadow) {
+            u32 threadCount = m_ThreadPool.GetThreadCount();
+            u32 chunkSize = (casterCount + threadCount - 1) / threadCount;
+            u32 frameIdx = m_Renderer->GetCurrentFrameIndex();
+
+            std::vector<std::future<void>> futures;
+            std::vector<VkCommandBuffer> secondaryBuffers(threadCount, VK_NULL_HANDLE);
+
+            VkCommandBufferInheritanceInfo inheritInfo{};
+            inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+            inheritInfo.renderPass = m_ShadowMap->GetRenderPass();
+            inheritInfo.framebuffer = m_ShadowMap->GetCurrentFramebuffer();
+            inheritInfo.subpass = 0;
+
+            for (u32 t = 0; t < threadCount; ++t) {
+                u32 start = t * chunkSize;
+                u32 end = std::min(start + chunkSize, casterCount);
+                if (start >= end) break;
+
+                futures.push_back(m_ThreadPool.Submit([this, t, start, end, frameIdx, &inheritInfo, &secondaryBuffers]() {
+                    VkCommandBuffer secCmd = m_CmdBufferPool->Allocate(t, frameIdx);
+                    if (!secCmd) return;
+
+                    VkCommandBufferBeginInfo beginInfo{};
+                    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+                    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT |
+                                     VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+                    beginInfo.pInheritanceInfo = &inheritInfo;
+                    vkBeginCommandBuffer(secCmd, &beginInfo);
+
+                    m_ShadowPipeline->Bind(secCmd);
+                    for (u32 i = start; i < end; ++i) {
+                        Entity entity = m_ShadowCasters[i];
+                        auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
+                        if (xform && !xform->visible) continue;
+                        RenderEntityShadow(entity, secCmd);
+                    }
+
+                    vkEndCommandBuffer(secCmd);
+                    secondaryBuffers[t] = secCmd;
+                }));
+            }
+
+            // Wait for all threads
+            for (auto& f : futures) f.get();
+
+            // Collect valid secondary buffers and execute
+            std::vector<VkCommandBuffer> validBuffers;
+            for (auto buf : secondaryBuffers) {
+                if (buf != VK_NULL_HANDLE) validBuffers.push_back(buf);
+            }
+            if (!validBuffers.empty()) {
+                vkCmdExecuteCommands(commandBuffer, static_cast<u32>(validBuffers.size()), validBuffers.data());
+            }
+        } else {
+            // Single-threaded fallback (< 32 entities)
+            for (Entity entity : m_ShadowCasters) {
+                auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
+                if (xform && !xform->visible) continue;
+                RenderEntityShadow(entity, commandBuffer);
+            }
         }
 
         m_ShadowMap->EndCascadePass(commandBuffer);

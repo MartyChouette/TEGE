@@ -306,7 +306,7 @@ bool ShadowMap::CreateSampler() {
     return true;
 }
 
-void ShadowMap::BeginCascadePass(VkCommandBuffer commandBuffer, u32 cascadeIndex) {
+void ShadowMap::BeginCascadePass(VkCommandBuffer commandBuffer, u32 cascadeIndex, bool useSecondary) {
     if (cascadeIndex >= m_Config.cascadeCount) return;
 
     VkRenderPassBeginInfo renderPassInfo{};
@@ -315,13 +315,15 @@ void ShadowMap::BeginCascadePass(VkCommandBuffer commandBuffer, u32 cascadeIndex
     renderPassInfo.framebuffer = m_CascadeFramebuffers[cascadeIndex];
     renderPassInfo.renderArea.offset = { 0, 0 };
     renderPassInfo.renderArea.extent = { m_Config.resolution, m_Config.resolution };
+    m_CurrentFramebuffer = m_CascadeFramebuffers[cascadeIndex];
 
     VkClearValue clearValue{};
     clearValue.depthStencil = { 1.0f, 0 };
     renderPassInfo.clearValueCount = 1;
     renderPassInfo.pClearValues = &clearValue;
 
-    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo,
+        useSecondary ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS : VK_SUBPASS_CONTENTS_INLINE);
 
     // Set viewport and scissor
     VkViewport viewport{};
