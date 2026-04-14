@@ -81,7 +81,8 @@ if(ENJIN_PLATFORM_WEB)
          "src/Effects/SpriteBatchRenderer.cpp" "src/Effects/SpriteTextureAtlas.cpp"
          "src/GUI/ImGuiLayer.cpp" "src/GUI/ShaderGUI.cpp"
          "src/Scripting/ScriptBindings_Render.cpp"
-         "src/Editor/*.cpp" "src/SimpleApp/*.cpp")
+         "src/Editor/*.cpp" "src/SimpleApp/*.cpp"
+         "src/Water/WaterRenderer.cpp")
     list(REMOVE_ITEM ENGINE_SOURCES ${VULKAN_SOURCES})
 else()
     # Desktop build: exclude WebGPU-specific sources

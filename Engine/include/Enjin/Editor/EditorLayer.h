@@ -713,6 +713,22 @@ private:
     f32 m_FrameTimeP99 = 0.0f;
     f32 m_LastDeltaTime = 0.0f;
 
+    // Frame time histogram (8 buckets: <1ms, 1-2, 2-4, 4-8, 8-16, 16-33, 33-66, >66ms)
+    u32 m_FrameHistogram[8] = {};
+    u32 m_FrameHistogramTotal = 0;
+
+    // Spike log — ring buffer of last 10 frames that exceeded 8ms
+    struct SpikeEntry {
+        f32 frameTimeMs;
+        f32 renderMs;
+        f32 fenceMs;
+        u32 frameNumber;
+    };
+    SpikeEntry m_SpikeLog[10] = {};
+    u32 m_SpikeLogIndex = 0;
+    u32 m_SpikeLogCount = 0;
+    u32 m_FrameNumber = 0;
+
     // Physics debug visualization
     bool m_ShowColliderWireframes = false;
 

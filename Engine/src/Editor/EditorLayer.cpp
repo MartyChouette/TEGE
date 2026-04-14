@@ -819,6 +819,29 @@ void EditorLayer::Update(f32 deltaTime) {
     if (validCount == 0) { m_FrameTimeMin = 0.0f; m_FrameTimeMax = 0.0f; }
     m_FrameTimeAvg = validCount > 0 ? sum / static_cast<f32>(validCount) : 0.0f;
 
+    // Bucket frame time into histogram
+    ++m_FrameNumber;
+    ++m_FrameHistogramTotal;
+    if      (frameTimeMs < 1.0f)  ++m_FrameHistogram[0];
+    else if (frameTimeMs < 2.0f)  ++m_FrameHistogram[1];
+    else if (frameTimeMs < 4.0f)  ++m_FrameHistogram[2];
+    else if (frameTimeMs < 8.0f)  ++m_FrameHistogram[3];
+    else if (frameTimeMs < 16.0f) ++m_FrameHistogram[4];
+    else if (frameTimeMs < 33.0f) ++m_FrameHistogram[5];
+    else if (frameTimeMs < 66.0f) ++m_FrameHistogram[6];
+    else                          ++m_FrameHistogram[7];
+
+    // Log spike if frame exceeded 8ms
+    if (frameTimeMs > 8.0f) {
+        SpikeEntry& entry = m_SpikeLog[m_SpikeLogIndex];
+        entry.frameTimeMs = frameTimeMs;
+        entry.renderMs = m_CPURenderMs;
+        entry.fenceMs = m_Renderer ? m_Renderer->GetFenceWaitMs() : 0.0f;
+        entry.frameNumber = m_FrameNumber;
+        m_SpikeLogIndex = (m_SpikeLogIndex + 1) % 10;
+        if (m_SpikeLogCount < 10) ++m_SpikeLogCount;
+    }
+
     // Update performance metrics periodically (every 0.5s)
     m_PerfUpdateTimer += deltaTime;
     if (m_PerfUpdateTimer >= 0.5f) {

@@ -400,12 +400,20 @@ public:
     // Call when material properties change outside of entity add/remove (e.g., inspector edits, scripts).
     void MarkMaterialsDirty() { m_MaterialSSBODirty = true; }
 
-    // Draw call / triangle counters (reset each frame in Update)
-    u32 GetDrawCallCount() const { return m_DrawCallCount; }
-    u32 GetTriangleCount() const { return m_TriangleCount; }
-    u32 GetDescriptorCacheHits() const { return m_DescriptorCacheHits; }
-    u32 GetDescriptorCacheWrites() const { return m_DescriptorCacheWrites; }
-    void ResetFrameCounters() { m_DrawCallCount = 0; m_TriangleCount = 0; m_DescriptorCacheHits = 0; m_DescriptorCacheWrites = 0; }
+    // Draw call / triangle counters — getters return last completed frame's values
+    // so that UI reads (which happen before the next render) see valid numbers.
+    u32 GetDrawCallCount() const { return m_LastDrawCallCount; }
+    u32 GetTriangleCount() const { return m_LastTriangleCount; }
+    u32 GetDescriptorCacheHits() const { return m_LastDescriptorCacheHits; }
+    u32 GetDescriptorCacheWrites() const { return m_LastDescriptorCacheWrites; }
+    void ResetFrameCounters() {
+        m_LastDrawCallCount = m_DrawCallCount;
+        m_LastTriangleCount = m_TriangleCount;
+        m_LastDescriptorCacheHits = m_DescriptorCacheHits;
+        m_LastDescriptorCacheWrites = m_DescriptorCacheWrites;
+        m_DrawCallCount = 0; m_TriangleCount = 0;
+        m_DescriptorCacheHits = 0; m_DescriptorCacheWrites = 0;
+    }
 
     // Fog and snow parameters (set by editor, uploaded to LightingUBO)
     void SetFogParams(f32 density, f32 start, f32 end, f32 heightFalloff) {
@@ -1021,11 +1029,17 @@ private:
     u32 m_PrevEntityCount = 0;                // Detect entity count changes
     std::vector<Math::Vector3> m_IKChainCache; // Reused per frame for FABRIK IK solving
 
-    // Draw call / triangle counters
+    // Draw call / triangle counters (current frame, accumulating)
     u32 m_DrawCallCount = 0;
     u32 m_TriangleCount = 0;
     u32 m_DescriptorCacheHits = 0;
     u32 m_DescriptorCacheWrites = 0;
+
+    // Last completed frame's counters (snapshot taken in ResetFrameCounters before zeroing)
+    u32 m_LastDrawCallCount = 0;
+    u32 m_LastTriangleCount = 0;
+    u32 m_LastDescriptorCacheHits = 0;
+    u32 m_LastDescriptorCacheWrites = 0;
 
     // Cached player entity (any entity with a CharacterController) for per-frame position lookup.
     // Updated in OnEntityAdded/OnEntityRemoved to avoid linear search each frame.

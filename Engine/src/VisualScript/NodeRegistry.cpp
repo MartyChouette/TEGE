@@ -26,6 +26,7 @@
 #include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Components/Tween.h"
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Math/Noise.h"
 #include "Enjin/Scene/LevelStreaming.h"
@@ -61,7 +62,9 @@ Enjin::Effects::Water3D* s_VisualScriptWater = nullptr;
 Enjin::Gameplay::HUDSystem* s_VisualScriptHUD = nullptr;
 Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem = nullptr;
 Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer = nullptr;
+#if !ENJIN_RENDERER_WEBGPU
 Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing = nullptr;
+#endif
 Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool = nullptr;
 Enjin::Effects::ElementalSystem* s_VisualScriptElemental = nullptr;
 
@@ -6810,6 +6813,7 @@ void NodeRegistry::RegisterBuiltinNodes() {
     // Screen-Space Effects
     // ========================================================================
 
+#if !ENJIN_RENDERER_WEBGPU
     {
         NodeDefinition def;
         def.typeId = NodeTypes::SSEffectSetSSAO;
@@ -6914,6 +6918,7 @@ void NodeRegistry::RegisterBuiltinNodes() {
         };
         RegisterNode(def);
     }
+#endif // !ENJIN_RENDERER_WEBGPU
 
     {
         NodeDefinition def;

@@ -151,6 +151,72 @@ public:
         return SmallestEntities().size();
     }
 
+    // ── ForEach with prefetching ────────────────────────────────────────
+    // Calls fn(Entity) for each matching entity, with software prefetch hints
+    // that pre-load the next entity's component data into L1 cache while the
+    // current entity is being processed. This hides memory latency when
+    // component data is scattered across cache lines.
+    //
+    // PrefetchDistance controls how many entities ahead to prefetch (2-4 is
+    // typically optimal for modern CPUs with ~200 cycle L2 miss latency).
+    //
+    // Usage:
+    //   view.ForEach([&](Entity e) {
+    //       auto* t = view.Get<TransformComponent>(e);
+    //       auto* m = view.Get<MeshComponent>(e);
+    //       // ... process ...
+    //   });
+    template<typename Fn>
+    void ForEach(Fn&& fn, usize prefetchDistance = 4) const {
+        if (AnyStorageNull()) return;
+
+        const auto& entities = SmallestEntities();
+        const usize count = entities.size();
+
+        // Build a list of matching entities first (avoids branch mispredictions
+        // from interleaving filter checks with heavy processing in fn).
+        // For small counts, just iterate directly.
+        if (count <= 16) {
+            for (usize i = 0; i < count; ++i) {
+                Entity e = entities[i];
+                if (PassesAllFilters(e)) {
+                    fn(e);
+                }
+            }
+            return;
+        }
+
+        // For larger counts, prefetch ahead while processing
+        for (usize i = 0; i < count; ++i) {
+            Entity e = entities[i];
+            if (!PassesAllFilters(e)) continue;
+
+            // Prefetch component data for an entity several steps ahead
+            if (i + prefetchDistance < count) {
+                Entity ahead = entities[i + prefetchDistance];
+                PrefetchAll(ahead, std::index_sequence_for<Components...>{});
+            }
+
+            fn(e);
+        }
+    }
+
+    // ── ForEachDirect ───────────────────────────────────────────────────
+    // Optimized iteration for single-component views. Calls fn(Entity, T&)
+    // with direct dense-array access (no hash lookup at all). Only valid
+    // when the View has exactly one component type.
+    template<typename Fn>
+    void ForEachDirect(Fn&& fn) const {
+        static_assert(N == 1, "ForEachDirect only works with single-component Views");
+        auto* storage = std::get<0>(m_Storages);
+        if (!storage) return;
+        const auto& entities = storage->GetEntities();
+        const usize count = entities.size();
+        for (usize i = 0; i < count; ++i) {
+            fn(entities[i], storage->GetByIndex(i));
+        }
+    }
+
 private:
     // ── Helpers ──────────────────────────────────────────────────────────
     // The tuple stores one ComponentStorage<T>* per requested type.

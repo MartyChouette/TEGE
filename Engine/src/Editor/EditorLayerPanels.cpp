@@ -7276,6 +7276,84 @@ void EditorLayer::DrawDebugWorkstation() {
                 ImGui::TextDisabled("(Fence > 1ms = GPU can't keep up with CPU)");
             }
 
+            // ----- Frame Time Histogram -----
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Frame Time Histogram --");
+            {
+                static const char* bucketLabels[8] = {
+                    "< 1 ms", "1-2 ms", "2-4 ms", "4-8 ms",
+                    "8-16 ms", "16-33 ms", "33-66 ms", "> 66 ms"
+                };
+                // Green for <8ms (buckets 0-3), yellow for 8-16ms (bucket 4), red for >16ms (buckets 5-7)
+                static const ImVec4 bucketColors[8] = {
+                    ImVec4(0.2f, 0.8f, 0.2f, 1.0f), ImVec4(0.2f, 0.8f, 0.2f, 1.0f),
+                    ImVec4(0.2f, 0.8f, 0.2f, 1.0f), ImVec4(0.2f, 0.8f, 0.2f, 1.0f),
+                    ImVec4(1.0f, 0.9f, 0.2f, 1.0f),
+                    ImVec4(1.0f, 0.3f, 0.3f, 1.0f), ImVec4(1.0f, 0.3f, 0.3f, 1.0f), ImVec4(1.0f, 0.3f, 0.3f, 1.0f)
+                };
+                f32 maxFraction = 0.0f;
+                for (u32 i = 0; i < 8; ++i) {
+                    f32 frac = m_FrameHistogramTotal > 0
+                        ? static_cast<f32>(m_FrameHistogram[i]) / static_cast<f32>(m_FrameHistogramTotal)
+                        : 0.0f;
+                    if (frac > maxFraction) maxFraction = frac;
+                }
+                for (u32 i = 0; i < 8; ++i) {
+                    f32 frac = m_FrameHistogramTotal > 0
+                        ? static_cast<f32>(m_FrameHistogram[i]) / static_cast<f32>(m_FrameHistogramTotal)
+                        : 0.0f;
+                    ImGui::PushStyleColor(ImGuiCol_PlotHistogram, bucketColors[i]);
+                    char overlay[64];
+                    snprintf(overlay, sizeof(overlay), "%u (%.1f%%)", m_FrameHistogram[i], frac * 100.0f);
+                    ImGui::Text("%-8s", bucketLabels[i]);
+                    ImGui::SameLine(90);
+                    ImGui::ProgressBar(maxFraction > 0.0f ? frac / maxFraction : 0.0f,
+                                       ImVec2(ImGui::GetContentRegionAvail().x - 10, 14), overlay);
+                    ImGui::PopStyleColor();
+                }
+                if (ImGui::SmallButton("Reset Histogram")) {
+                    for (u32 i = 0; i < 8; ++i) m_FrameHistogram[i] = 0;
+                    m_FrameHistogramTotal = 0;
+                }
+            }
+
+            // ----- Spike Log -----
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.2f, 1.0f), "-- Spike Log (>8ms) --");
+            if (m_SpikeLogCount == 0) {
+                ImGui::TextDisabled("No spikes recorded");
+            } else {
+                ImGui::BeginChild("SpikeLog", ImVec2(0, 140), true);
+                ImGui::Columns(4, "SpikeColumns");
+                ImGui::SetColumnWidth(0, 70);
+                ImGui::SetColumnWidth(1, 90);
+                ImGui::SetColumnWidth(2, 90);
+                ImGui::SetColumnWidth(3, 90);
+                ImGui::Text("Frame"); ImGui::NextColumn();
+                ImGui::Text("Total"); ImGui::NextColumn();
+                ImGui::Text("Render"); ImGui::NextColumn();
+                ImGui::Text("Fence"); ImGui::NextColumn();
+                ImGui::Separator();
+                // Iterate from newest to oldest
+                for (u32 n = 0; n < m_SpikeLogCount; ++n) {
+                    u32 idx = (m_SpikeLogIndex + 10 - 1 - n) % 10;
+                    const SpikeEntry& s = m_SpikeLog[idx];
+                    ImVec4 col = s.frameTimeMs > 33.0f ? ImVec4(1.0f, 0.2f, 0.2f, 1.0f)
+                               : s.frameTimeMs > 16.0f ? ImVec4(1.0f, 0.6f, 0.2f, 1.0f)
+                                                        : ImVec4(1.0f, 0.9f, 0.3f, 1.0f);
+                    ImGui::TextColored(col, "#%u", s.frameNumber); ImGui::NextColumn();
+                    ImGui::TextColored(col, "%.2f ms", s.frameTimeMs); ImGui::NextColumn();
+                    ImGui::Text("%.2f ms", s.renderMs); ImGui::NextColumn();
+                    ImGui::Text("%.2f ms", s.fenceMs); ImGui::NextColumn();
+                }
+                ImGui::Columns(1);
+                ImGui::EndChild();
+                if (ImGui::SmallButton("Clear Spikes")) {
+                    m_SpikeLogCount = 0;
+                    m_SpikeLogIndex = 0;
+                }
+            }
+
             ImGui::EndTabItem();
         }
 
