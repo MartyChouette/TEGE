@@ -26,7 +26,8 @@ public:
                 (void)eventType;
                 auto* self = static_cast<WebWindow*>(userData);
                 // Update cached size
-                int w = 0, h = 0;
+                int w = 0;
+                int h = 0;
                 emscripten_get_canvas_element_size("#game-canvas", &w, &h);
                 self->m_Width = static_cast<u32>(w);
                 self->m_Height = static_cast<u32>(h);
@@ -98,6 +99,18 @@ public:
 
     void SetIcon(const char* iconPath) override { (void)iconPath; } // Not applicable for web
     void WaitEvents() override {} // No blocking wait in browser
+
+    void SetFullscreen(bool fullscreen) override {
+        if (fullscreen) {
+            EM_ASM(document.getElementById('game-canvas').requestFullscreen());
+        } else {
+            EM_ASM(if (document.fullscreenElement) document.exitFullscreen());
+        }
+    }
+
+    bool IsFullscreen() const override {
+        return EM_ASM_INT(return document.fullscreenElement ? 1 : 0) != 0;
+    }
 
 private:
     WindowDesc m_Desc;

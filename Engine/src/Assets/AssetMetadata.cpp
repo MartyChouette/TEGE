@@ -30,9 +30,15 @@ void AssetMetadata::PopulateFromResult(const ImportResult& result, const std::st
         if (std::filesystem::exists(p)) {
             fileSize = std::filesystem::file_size(p);
             auto ftime = std::filesystem::last_write_time(p);
+#if defined(__cpp_lib_chrono) && __cpp_lib_chrono >= 201907L
             auto sctp = std::chrono::time_point_cast<std::chrono::seconds>(
                 std::chrono::clock_cast<std::chrono::system_clock>(ftime));
             lastModified = std::to_string(sctp.time_since_epoch().count());
+#else
+            // Fallback for compilers without clock_cast (Emscripten libc++)
+            auto dur = ftime.time_since_epoch();
+            lastModified = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(dur).count());
+#endif
         }
     } catch (...) {
         // Silently ignore filesystem errors for metadata

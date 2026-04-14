@@ -9,8 +9,11 @@
 #include "Enjin/Logging/Log.h"
 #include <emscripten.h>
 #include <emscripten/html5.h>
-#include <emscripten/html5_webgpu.h>
+#include <webgpu/webgpu.h>
 #include <cstring>
+
+// Helper: create a WGPUStringView from a C string literal
+static WGPUStringView wgpuStr(const char* s) { return {s, WGPU_STRLEN}; }
 
 namespace Enjin {
 namespace Renderer {
@@ -27,27 +30,64 @@ bool WebGPURenderer::Initialize(Window* window) {
     if (m_Initialized) return true;
     m_Window = window;
 
-    // Obtain the WebGPU device from Emscripten (pre-created by the browser)
-    m_Device = emscripten_webgpu_get_device();
+    // Create WebGPU instance
+    WGPUInstanceDescriptor instanceDesc = {};
+    m_Instance = wgpuCreateInstance(&instanceDesc);
+    if (!m_Instance) {
+        ENJIN_LOG_ERROR(Core, "WebGPURenderer: Failed to create WebGPU instance");
+        return false;
+    }
+
+    // Request adapter (synchronous in Emscripten)
+    WGPURequestAdapterOptions adapterOpts = {};
+    adapterOpts.powerPreference = WGPUPowerPreference_HighPerformance;
+
+    struct AdapterData { WGPUAdapter adapter = nullptr; } adapterData;
+    WGPURequestAdapterCallbackInfo adapterCB = {};
+    adapterCB.mode = WGPUCallbackMode_AllowSpontaneous;
+    adapterCB.callback = [](WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringView message, void* ud1, void* ud2) {
+        (void)ud2;
+        auto* data = static_cast<AdapterData*>(ud1);
+        if (status == WGPURequestAdapterStatus_Success) data->adapter = adapter;
+    };
+    adapterCB.userdata1 = &adapterData;
+    wgpuInstanceRequestAdapter(m_Instance, &adapterOpts, adapterCB);
+    // Emscripten processes callbacks synchronously for wgpu
+    if (!adapterData.adapter) {
+        ENJIN_LOG_ERROR(Core, "WebGPURenderer: No suitable adapter found");
+        return false;
+    }
+
+    // Request device
+    WGPUDeviceDescriptor deviceDesc = {};
+    deviceDesc.label = wgpuStr("EnjinDevice");
+
+    struct DeviceData { WGPUDevice device = nullptr; } deviceData;
+    WGPURequestDeviceCallbackInfo deviceCB = {};
+    deviceCB.mode = WGPUCallbackMode_AllowSpontaneous;
+    deviceCB.callback = [](WGPURequestDeviceStatus status, WGPUDevice device, WGPUStringView message, void* ud1, void* ud2) {
+        (void)ud2;
+        auto* data = static_cast<DeviceData*>(ud1);
+        if (status == WGPURequestDeviceStatus_Success) data->device = device;
+    };
+    deviceCB.userdata1 = &deviceData;
+    wgpuAdapterRequestDevice(adapterData.adapter, &deviceDesc, deviceCB);
+
+    m_Device = deviceData.device;
     if (!m_Device) {
         ENJIN_LOG_ERROR(Core, "WebGPURenderer: Failed to get WebGPU device");
+        wgpuAdapterRelease(adapterData.adapter);
         return false;
     }
 
     m_Queue = wgpuDeviceGetQueue(m_Device);
-
-    // Set error callback
-    wgpuDeviceSetUncapturedErrorCallback(m_Device,
-        [](WGPUErrorType type, const char* message, void* userdata) {
-            (void)userdata;
-            ENJIN_LOG_ERROR(Core, "WebGPU error (type %d): %s", static_cast<int>(type), message);
-        }, nullptr);
+    wgpuAdapterRelease(adapterData.adapter);
 
     // Get canvas size
     m_SwapChainWidth = window ? window->GetWidth() : 800;
     m_SwapChainHeight = window ? window->GetHeight() : 600;
 
-    // Create swap chain (surface)
+    // Create surface and configure
     CreateSwapChain();
     CreateDepthTexture();
 
@@ -68,9 +108,10 @@ void WebGPURenderer::Shutdown() {
 
     if (m_DepthTextureView) { wgpuTextureViewRelease(m_DepthTextureView); m_DepthTextureView = nullptr; }
     if (m_DepthTexture) { wgpuTextureRelease(m_DepthTexture); m_DepthTexture = nullptr; }
-    if (m_SwapChain) { wgpuSwapChainRelease(m_SwapChain); m_SwapChain = nullptr; }
+    if (m_Surface) { wgpuSurfaceRelease(m_Surface); m_Surface = nullptr; }
     if (m_Queue) { wgpuQueueRelease(m_Queue); m_Queue = nullptr; }
     if (m_Device) { wgpuDeviceRelease(m_Device); m_Device = nullptr; }
+    if (m_Instance) { wgpuInstanceRelease(m_Instance); m_Instance = nullptr; }
 
     m_Initialized = false;
     ENJIN_LOG_INFO(Core, "WebGPURenderer shut down");
@@ -81,18 +122,26 @@ void WebGPURenderer::Shutdown() {
 // ============================================================================
 
 bool WebGPURenderer::BeginFrame() {
-    if (!m_Initialized) return false;
+    if (!m_Initialized || !m_Surface) return false;
 
-    // Acquire swap chain texture
-    m_CurrentSwapChainView = wgpuSwapChainGetCurrentTextureView(m_SwapChain);
-    if (!m_CurrentSwapChainView) {
-        ENJIN_LOG_WARN(Core, "WebGPU: Failed to acquire swap chain texture view");
+    // Get current surface texture
+    WGPUSurfaceTexture surfTex = {};
+    wgpuSurfaceGetCurrentTexture(m_Surface, &surfTex);
+    if (surfTex.status != WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal &&
+        surfTex.status != WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal) {
+        ENJIN_LOG_WARN(Core, "WebGPU: Failed to get surface texture");
         return false;
     }
 
+    WGPUTextureViewDescriptor viewDesc = {};
+    m_CurrentSwapChainView = wgpuTextureCreateView(surfTex.texture, &viewDesc);
+    wgpuTextureRelease(surfTex.texture);
+
+    if (!m_CurrentSwapChainView) return false;
+
     // Create command encoder
     WGPUCommandEncoderDescriptor encoderDesc = {};
-    encoderDesc.label = "FrameEncoder";
+    encoderDesc.label = wgpuStr("FrameEncoder");
     m_CommandEncoder = wgpuDeviceCreateCommandEncoder(m_Device, &encoderDesc);
 
     // Begin render pass
@@ -114,7 +163,7 @@ bool WebGPURenderer::BeginFrame() {
     renderPassDesc.colorAttachmentCount = 1;
     renderPassDesc.colorAttachments = &colorAttachment;
     renderPassDesc.depthStencilAttachment = &depthAttachment;
-    renderPassDesc.label = "MainPass";
+    renderPassDesc.label = wgpuStr("MainPass");
 
     m_RenderPassEncoder = wgpuCommandEncoderBeginRenderPass(m_CommandEncoder, &renderPassDesc);
     return true;
@@ -123,17 +172,15 @@ bool WebGPURenderer::BeginFrame() {
 void WebGPURenderer::EndFrame() {
     if (!m_Initialized) return;
 
-    // End render pass
     if (m_RenderPassEncoder) {
         wgpuRenderPassEncoderEnd(m_RenderPassEncoder);
         wgpuRenderPassEncoderRelease(m_RenderPassEncoder);
         m_RenderPassEncoder = nullptr;
     }
 
-    // Finish command buffer and submit
     if (m_CommandEncoder) {
         WGPUCommandBufferDescriptor cmdDesc = {};
-        cmdDesc.label = "FrameCommands";
+        cmdDesc.label = wgpuStr("FrameCommands");
         WGPUCommandBuffer cmdBuffer = wgpuCommandEncoderFinish(m_CommandEncoder, &cmdDesc);
         wgpuQueueSubmit(m_Queue, 1, &cmdBuffer);
         wgpuCommandBufferRelease(cmdBuffer);
@@ -141,35 +188,41 @@ void WebGPURenderer::EndFrame() {
         m_CommandEncoder = nullptr;
     }
 
-    // Release swap chain view
     if (m_CurrentSwapChainView) {
         wgpuTextureViewRelease(m_CurrentSwapChainView);
         m_CurrentSwapChainView = nullptr;
     }
 
+    // Present
+    wgpuSurfacePresent(m_Surface);
+
     m_FrameIndex = (m_FrameIndex + 1) % FRAMES_IN_FLIGHT;
 }
 
 // ============================================================================
-// Swap chain & depth
+// Surface & depth
 // ============================================================================
 
 void WebGPURenderer::CreateSwapChain() {
-    WGPUSurfaceDescriptorFromCanvasHTMLSelector canvasDesc = {};
-    canvasDesc.chain.sType = WGPUSType_SurfaceDescriptorFromCanvasHTMLSelector;
-    canvasDesc.selector = "#game-canvas";
+    // Create surface from canvas
+    WGPUEmscriptenSurfaceSourceCanvasHTMLSelector canvasDesc = {};
+    canvasDesc.chain.sType = WGPUSType_EmscriptenSurfaceSourceCanvasHTMLSelector;
+    canvasDesc.selector = wgpuStr("#game-canvas");
 
     WGPUSurfaceDescriptor surfDesc = {};
     surfDesc.nextInChain = &canvasDesc.chain;
-    m_Surface = wgpuInstanceCreateSurface(nullptr, &surfDesc);
+    m_Surface = wgpuInstanceCreateSurface(m_Instance, &surfDesc);
 
-    WGPUSwapChainDescriptor swapDesc = {};
-    swapDesc.usage = WGPUTextureUsage_RenderAttachment;
-    swapDesc.format = GetPreferredSwapChainFormat();
-    swapDesc.width = m_SwapChainWidth;
-    swapDesc.height = m_SwapChainHeight;
-    swapDesc.presentMode = WGPUPresentMode_Fifo;
-    m_SwapChain = wgpuDeviceCreateSwapChain(m_Device, m_Surface, &swapDesc);
+    // Configure surface (replaces swap chain in new Dawn API)
+    WGPUSurfaceConfiguration config = {};
+    config.device = m_Device;
+    config.format = GetPreferredSwapChainFormat();
+    config.usage = WGPUTextureUsage_RenderAttachment;
+    config.width = m_SwapChainWidth;
+    config.height = m_SwapChainHeight;
+    config.presentMode = WGPUPresentMode_Fifo;
+    config.alphaMode = WGPUCompositeAlphaMode_Auto;
+    wgpuSurfaceConfigure(m_Surface, &config);
 }
 
 void WebGPURenderer::CreateDepthTexture() {
@@ -198,7 +251,11 @@ void WebGPURenderer::Resize(u32 width, u32 height) {
     m_SwapChainWidth = width;
     m_SwapChainHeight = height;
 
-    if (m_SwapChain) { wgpuSwapChainRelease(m_SwapChain); m_SwapChain = nullptr; }
+    if (m_Surface) {
+        wgpuSurfaceUnconfigure(m_Surface);
+        wgpuSurfaceRelease(m_Surface);
+        m_Surface = nullptr;
+    }
     CreateSwapChain();
     CreateDepthTexture();
 }
@@ -207,7 +264,7 @@ void WebGPURenderer::Resize(u32 width, u32 height) {
 // Buffer management
 // ============================================================================
 
-WebGPUBufferHandle WebGPURenderer::CreateBuffer(u64 size, WGPUBufferUsageFlags usage, const void* data) {
+WebGPUBufferHandle WebGPURenderer::CreateBuffer(u64 size, WGPUBufferUsage usage, const void* data) {
     WebGPUBufferHandle handle;
     handle.size = size;
     handle.usage = usage;
@@ -247,7 +304,7 @@ void WebGPURenderer::DestroyBuffer(WebGPUBufferHandle& buffer) {
 // ============================================================================
 
 WebGPUTextureHandle WebGPURenderer::CreateTexture(u32 width, u32 height, WGPUTextureFormat format,
-                                                    WGPUTextureUsageFlags usage, const void* pixelData) {
+                                                    WGPUTextureUsage usage, const void* pixelData) {
     WebGPUTextureHandle handle;
     handle.width = width;
     handle.height = height;
@@ -290,14 +347,14 @@ void WebGPURenderer::UploadTexture(const WebGPUTextureHandle& texture, const voi
                                      u32 width, u32 height) {
     if (!texture.texture || !data) return;
 
-    WGPUImageCopyTexture dst = {};
+    WGPUTexelCopyTextureInfo dst = {};
     dst.texture = texture.texture;
     dst.mipLevel = 0;
     dst.origin = { 0, 0, 0 };
     dst.aspect = WGPUTextureAspect_All;
 
-    u32 bytesPerPixel = 4; // Assume RGBA8
-    WGPUTextureDataLayout layout = {};
+    u32 bytesPerPixel = 4;
+    WGPUTexelCopyBufferLayout layout = {};
     layout.offset = 0;
     layout.bytesPerRow = width * bytesPerPixel;
     layout.rowsPerImage = height;
@@ -346,60 +403,51 @@ WGPUBindGroup WebGPURenderer::CreateBindGroup(WGPUBindGroupLayout layout,
 // ============================================================================
 
 void WebGPURenderer::SetPipeline(WGPURenderPipeline pipeline) {
-    if (m_RenderPassEncoder && pipeline) {
+    if (m_RenderPassEncoder && pipeline)
         wgpuRenderPassEncoderSetPipeline(m_RenderPassEncoder, pipeline);
-    }
 }
 
 void WebGPURenderer::SetBindGroup(u32 groupIndex, WGPUBindGroup group) {
-    if (m_RenderPassEncoder && group) {
+    if (m_RenderPassEncoder && group)
         wgpuRenderPassEncoderSetBindGroup(m_RenderPassEncoder, groupIndex, group, 0, nullptr);
-    }
 }
 
 void WebGPURenderer::SetVertexBuffer(u32 slot, WGPUBuffer buffer, u64 offset, u64 size) {
-    if (m_RenderPassEncoder && buffer) {
+    if (m_RenderPassEncoder && buffer)
         wgpuRenderPassEncoderSetVertexBuffer(m_RenderPassEncoder, slot, buffer, offset,
                                               size == 0 ? WGPU_WHOLE_SIZE : size);
-    }
 }
 
 void WebGPURenderer::SetIndexBuffer(WGPUBuffer buffer, WGPUIndexFormat format, u64 offset, u64 size) {
-    if (m_RenderPassEncoder && buffer) {
+    if (m_RenderPassEncoder && buffer)
         wgpuRenderPassEncoderSetIndexBuffer(m_RenderPassEncoder, buffer, format, offset,
                                              size == 0 ? WGPU_WHOLE_SIZE : size);
-    }
 }
 
 void WebGPURenderer::Draw(u32 vertexCount, u32 instanceCount, u32 firstVertex, u32 firstInstance) {
-    if (m_RenderPassEncoder) {
+    if (m_RenderPassEncoder)
         wgpuRenderPassEncoderDraw(m_RenderPassEncoder, vertexCount, instanceCount, firstVertex, firstInstance);
-    }
 }
 
 void WebGPURenderer::DrawIndexed(u32 indexCount, u32 instanceCount, u32 firstIndex,
                                    i32 baseVertex, u32 firstInstance) {
-    if (m_RenderPassEncoder) {
+    if (m_RenderPassEncoder)
         wgpuRenderPassEncoderDrawIndexed(m_RenderPassEncoder, indexCount, instanceCount,
                                           firstIndex, baseVertex, firstInstance);
-    }
 }
 
 void WebGPURenderer::SetViewport(f32 x, f32 y, f32 width, f32 height, f32 minDepth, f32 maxDepth) {
-    if (m_RenderPassEncoder) {
+    if (m_RenderPassEncoder)
         wgpuRenderPassEncoderSetViewport(m_RenderPassEncoder, x, y, width, height, minDepth, maxDepth);
-    }
 }
 
 void WebGPURenderer::SetScissor(u32 x, u32 y, u32 width, u32 height) {
-    if (m_RenderPassEncoder) {
+    if (m_RenderPassEncoder)
         wgpuRenderPassEncoderSetScissorRect(m_RenderPassEncoder, x, y, width, height);
-    }
 }
 
 void WebGPURenderer::WaitForAllFrames() {
-    // WebGPU doesn't have an explicit fence-wait like Vulkan.
-    // Work is submitted asynchronously; the browser ensures ordering.
+    // WebGPU doesn't have explicit fence-wait — browser ensures ordering.
 }
 
 } // namespace Renderer

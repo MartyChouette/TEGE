@@ -55,6 +55,8 @@
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
 #include "Enjin/Renderer/RayTracing/RTTemporalReuse.h"
 #include "Enjin/Renderer/RayTracing/ReSTIR.h"
+#include "Enjin/Renderer/RayTracing/LightBVH.h"
+#include "Enjin/Renderer/RayTracing/AdaptiveRayBudget.h"
 #include "Enjin/Renderer/RayTracing/RadianceCache.h"
 #include "Enjin/Renderer/RayTracing/SurfelRadianceCache.h"
 #include "Enjin/Renderer/RayTracing/RTShaderData.h"
@@ -814,9 +816,10 @@ void RenderSystem::Update(f32 deltaTime) {
         m_CmdBufferPool->ResetFrame(m_Renderer->GetCurrentFrameIndex());
     }
 
-    // Poll texture and shader file watchers every 30 frames (~0.5s at 60fps)
-    if (++m_WatcherPollCounter >= 30) {
-        m_WatcherPollCounter = 0;
+    // Poll texture and shader file watchers every 5 seconds (time-based, not frame-count).
+    m_WatcherPollTimer += deltaTime;
+    if (m_WatcherPollTimer >= 5.0f) {
+        m_WatcherPollTimer = 0.0f;
         m_TextureWatcher.Poll();
         if (m_ShaderHotReloadEnabled && !m_ShaderDir.empty()) {
             m_ShaderWatcher.Poll();
@@ -1561,6 +1564,14 @@ void RenderSystem::Update(f32 deltaTime) {
             });
     }
 
+    // GPU timestamp: main geometry begin
+    {
+        VkQueryPool tsPool = m_Renderer->GetTimestampPool(m_Renderer->GetCurrentFrameIndex());
+        if (tsPool != VK_NULL_HANDLE) {
+            vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, tsPool, Renderer::GPU_TS_MAIN_BEGIN);
+        }
+    }
+
     // Render skybox first (behind all geometry)
     RenderSkybox(commandBuffer);
 
@@ -1722,6 +1733,14 @@ void RenderSystem::Update(f32 deltaTime) {
     // Render weather particles in main pass if set (editor viewport)
     if (m_MainPassWeather) {
         RenderWeatherParticles(*m_MainPassWeather, m_MainPassWeatherIsRain, 0, 0);
+    }
+
+    // GPU timestamp: main geometry end
+    {
+        VkQueryPool tsPool = m_Renderer->GetTimestampPool(m_Renderer->GetCurrentFrameIndex());
+        if (tsPool != VK_NULL_HANDLE) {
+            vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, tsPool, Renderer::GPU_TS_MAIN_END);
+        }
     }
 }
 
@@ -6279,6 +6298,14 @@ void RenderSystem::RenderShadowPass() {
     VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
+    // GPU timestamp: shadow pass begin
+    {
+        VkQueryPool tsPool = m_Renderer->GetTimestampPool(m_Renderer->GetCurrentFrameIndex());
+        if (tsPool != VK_NULL_HANDLE) {
+            vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, tsPool, Renderer::GPU_TS_SHADOW_BEGIN);
+        }
+    }
+
     // Progressive cascade updates: increment frame counter and detect camera teleport
     m_ShadowFrameCounter++;
     bool forceFullUpdate = false;
@@ -6361,6 +6388,14 @@ void RenderSystem::RenderShadowPass() {
         }
 
         m_ShadowMap->EndCascadePass(commandBuffer);
+    }
+
+    // GPU timestamp: shadow pass end
+    {
+        VkQueryPool tsPool = m_Renderer->GetTimestampPool(m_Renderer->GetCurrentFrameIndex());
+        if (tsPool != VK_NULL_HANDLE) {
+            vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, tsPool, Renderer::GPU_TS_SHADOW_END);
+        }
     }
 }
 
@@ -8183,6 +8218,14 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
     if (!m_RTEnabled || !m_ASManager || !m_ASManager->HasValidTLAS()) return;
     if (!m_RTDescriptorsWritten) return;
 
+    // GPU timestamp: RT effects begin
+    {
+        VkQueryPool tsPool = m_Renderer->GetTimestampPool(m_Renderer->GetCurrentFrameIndex());
+        if (tsPool != VK_NULL_HANDLE) {
+            vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, tsPool, Renderer::GPU_TS_RT_BEGIN);
+        }
+    }
+
     // Compute inverse view-projection and camera position
     Math::Matrix4 view = m_Camera->GetViewMatrix();
     Math::Matrix4 proj = m_Camera->GetProjectionMatrix();
@@ -8364,6 +8407,14 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
     if (m_RTCaustics && m_RTCaustics->GetConfig().enabled) {
         m_RTCaustics->Dispatch(cmd, m_RTDescriptorSet, invViewProj, lightDir,
                                 m_RTFrameCount);
+    }
+
+    // GPU timestamp: RT effects end
+    {
+        VkQueryPool tsPool = m_Renderer->GetTimestampPool(m_Renderer->GetCurrentFrameIndex());
+        if (tsPool != VK_NULL_HANDLE) {
+            vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, tsPool, Renderer::GPU_TS_RT_END);
+        }
     }
 }
 

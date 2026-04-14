@@ -76,9 +76,8 @@ struct WGPURenderPassEncoderDeleter {
     void operator()(WGPURenderPassEncoder e) const { if (e) wgpuRenderPassEncoderRelease(e); }
 };
 
-struct WGPUSwapChainDeleter {
-    void operator()(WGPUSwapChain s) const { if (s) wgpuSwapChainRelease(s); }
-};
+// WGPUSwapChain removed in Dawn WebGPU — surface configuration is used instead.
+// struct WGPUSwapChainDeleter { ... };
 
 // Unique-ownership handles — drop-in replacements for raw WebGPU handles
 // with automatic release on scope exit.
@@ -94,7 +93,7 @@ using WGPUShaderModulePtr   = std::unique_ptr<std::remove_pointer_t<WGPUShaderMo
 using WGPUBindGroupPtr      = std::unique_ptr<std::remove_pointer_t<WGPUBindGroup>, WGPUBindGroupDeleter>;
 using WGPUBindGroupLayoutPtr = std::unique_ptr<std::remove_pointer_t<WGPUBindGroupLayout>, WGPUBindGroupLayoutDeleter>;
 using WGPUPipelineLayoutPtr = std::unique_ptr<std::remove_pointer_t<WGPUPipelineLayout>, WGPUPipelineLayoutDeleter>;
-using WGPUSwapChainPtr      = std::unique_ptr<std::remove_pointer_t<WGPUSwapChain>, WGPUSwapChainDeleter>;
+// WGPUSwapChainPtr removed — Dawn uses surface configuration instead
 
 // ============================================================================
 // Descriptor helpers

@@ -22,6 +22,7 @@ set(ASSIMP_BUILD_FBX_IMPORTER ON CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_OBJ_IMPORTER ON CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_GLTF_IMPORTER ON CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_COLLADA_IMPORTER ON CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_ZLIB ON CACHE BOOL "" FORCE)
 if(MSVC)
     set(USE_STATIC_CRT ON CACHE BOOL "" FORCE)
 endif()
@@ -32,6 +33,11 @@ FetchContent_Declare(
     GIT_SHALLOW TRUE
 )
 FetchContent_MakeAvailable(assimp)
+
+# Suppress Clang warnings in third-party assimp code (memcpy on non-trivial types)
+if(TARGET assimp AND NOT MSVC)
+    target_compile_options(assimp PRIVATE -Wno-nontrivial-memcall -Wno-error=nontrivial-memcall)
+endif()
 
 # Fetch miniaudio (header-only, public domain audio library)
 FetchContent_Declare(
@@ -48,6 +54,40 @@ file(GLOB_RECURSE ENGINE_SOURCES
     "include/**/*.h"
     "include/**/*.hpp"
 )
+
+# Exclude the wrong renderer backend's source files
+if(ENJIN_PLATFORM_WEB)
+    # Web build: exclude Vulkan-specific sources
+    file(GLOB_RECURSE VULKAN_SOURCES "src/Renderer/Vulkan/*.cpp" "src/Renderer/RayTracing/*.cpp"
+         "src/Renderer/ShadowMap.cpp" "src/Renderer/PointLightShadowMap.cpp"
+         "src/Renderer/SpotLightShadowMap.cpp" "src/Renderer/PostProcessing.cpp"
+         "src/Renderer/Skybox.cpp" "src/Renderer/GPUDriven/*.cpp"
+         "src/Renderer/AsyncComputeScheduler.cpp" "src/Renderer/Upscaling/*.cpp"
+         "src/Renderer/OITManager.cpp" "src/Renderer/SHLightProbe.cpp"
+         "src/Renderer/ReflectionProbeSystem.cpp" "src/Renderer/SDFScene.cpp"
+         "src/Renderer/VariableRateShading.cpp" "src/Renderer/VisibilityBuffer/*.cpp"
+         "src/Renderer/VirtualTexture/*.cpp" "src/Renderer/VirtualTextureSystem.cpp"
+         "src/Renderer/ClusteredLighting*.cpp"
+         "src/Renderer/Texture.cpp" "src/Renderer/RenderTarget.cpp"
+         "src/Renderer/SVGLoader.cpp" "src/Renderer/Materials/*.cpp"
+         "src/Renderer/FrameGraph/*.cpp" "src/Renderer/RenderGraph/*.cpp"
+         "src/Renderer/RenderPipeline/*.cpp" "src/Renderer/Techniques/*.cpp"
+         "src/Renderer/VRS/*.cpp" "src/Renderer/HaltonSequence.cpp"
+         "src/Renderer/RenderPass.cpp" "src/Renderer/Scripting/*.cpp" "src/Renderer/ShaderManager.cpp"
+         "src/ECS/Systems/RenderSystem.cpp"
+         "src/Effects/WeatherRenderer.cpp" "src/Effects/ParticleRenderer.cpp"
+         "src/Effects/FluidRenderer.cpp" "src/Effects/GrassRenderer.cpp"
+         "src/Effects/ShrubRenderer.cpp" "src/Effects/TreeRenderer.cpp"
+         "src/Effects/SpriteBatchRenderer.cpp" "src/Effects/SpriteTextureAtlas.cpp"
+         "src/GUI/ImGuiLayer.cpp" "src/GUI/ShaderGUI.cpp"
+         "src/Scripting/ScriptBindings_Render.cpp"
+         "src/Editor/*.cpp" "src/SimpleApp/*.cpp")
+    list(REMOVE_ITEM ENGINE_SOURCES ${VULKAN_SOURCES})
+else()
+    # Desktop build: exclude WebGPU-specific sources
+    file(GLOB_RECURSE WEBGPU_SOURCES "src/Renderer/WebGPU/*.cpp")
+    list(REMOVE_ITEM ENGINE_SOURCES ${WEBGPU_SOURCES})
+endif()
 
 add_library(EnjinEngine STATIC ${ENGINE_SOURCES})
 

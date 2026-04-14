@@ -7240,6 +7240,42 @@ void EditorLayer::DrawDebugWorkstation() {
                 ImGui::Text("GPU VRAM: %.1f / %.0f MB", gpuAllocMB, gpuTotalMB);
             }
 
+            // GPU per-pass timing from timestamp queries
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- GPU Pass Times --");
+            if (m_Renderer) {
+                const f32* gpu = m_Renderer->GetGPUPassTimes();
+                ImGui::Text("Shadow:       %.2f ms", gpu[0]);
+                ImGui::Text("Main Geo:     %.2f ms", gpu[1]);
+                ImGui::Text("Ray Tracing:  %.2f ms", gpu[2]);
+                ImGui::Text("Post-Process: %.2f ms", gpu[3]);
+                f32 total = gpu[0] + gpu[1] + gpu[2] + gpu[3];
+                ImVec4 gpuColor = total < 8.0f ? ImVec4(0.2f, 1.0f, 0.2f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+                ImGui::TextColored(gpuColor, "GPU Total:    %.2f ms", total);
+            }
+
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- CPU Frame Breakdown --");
+            ImGui::Text("Update:       %.2f ms", m_CPUUpdateMs);
+            ImGui::Text("Shadow:       %.2f ms", m_CPUShadowMs);
+            ImGui::Text("Render:       %.2f ms", m_CPURenderMs);
+            ImGui::Text("ImGui:        %.2f ms", m_CPUImGuiMs);
+            ImGui::Text("Present:      %.2f ms", m_CPUPresentMs);
+            f32 cpuTotal = m_CPUUpdateMs + m_CPUShadowMs + m_CPURenderMs + m_CPUImGuiMs + m_CPUPresentMs;
+            ImVec4 cpuColor = cpuTotal < 8.0f ? ImVec4(0.2f, 1.0f, 0.2f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+            ImGui::TextColored(cpuColor, "CPU Total:    %.2f ms", cpuTotal);
+
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "-- Pipeline Stalls --");
+            if (m_Renderer) {
+                f32 fenceMs = m_Renderer->GetFenceWaitMs();
+                f32 acquireMs = m_Renderer->GetAcquireMs();
+                ImVec4 fenceColor = fenceMs < 1.0f ? ImVec4(0.2f, 1.0f, 0.2f, 1.0f) : ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+                ImGui::TextColored(fenceColor, "Fence Wait:   %.2f ms", fenceMs);
+                ImGui::Text("Acquire Image:%.2f ms", acquireMs);
+                ImGui::TextDisabled("(Fence > 1ms = GPU can't keep up with CPU)");
+            }
+
             ImGui::EndTabItem();
         }
 
@@ -7747,8 +7783,9 @@ void EditorLayer::ToggleGameDebug() {
         m_DebugOverlayDetail = 0;
     }
 
-    // Toggle Console panel
+    // Toggle Console panel + Game Debug panel
     SetPanelVisibility(EditorPanel::Console, m_GameDebugActive);
+    m_ShowGameDebug = m_GameDebugActive;
 
     // Toggle the compact debug overlay
     m_ShowDebugOverlay = m_GameDebugActive;

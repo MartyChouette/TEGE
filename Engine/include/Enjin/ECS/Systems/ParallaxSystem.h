@@ -5,7 +5,9 @@
 #include "Enjin/Renderer/Camera.h"
 #include <unordered_map>
 #include <string>
+#if !ENJIN_RENDERER_WEBGPU
 #include <vulkan/vulkan.h>
+#endif
 
 namespace Enjin {
 namespace ECS { class RenderSystem; }
@@ -34,12 +36,16 @@ public:
     void ClearTextureCache();
 
 private:
+#if !ENJIN_RENDERER_WEBGPU
     VkDescriptorSet GetLayerTexture(const std::string& path);
+#endif
 
     World* m_World = nullptr;
     const Renderer::Camera* m_Camera = nullptr;
     RenderSystem* m_RenderSystem = nullptr;
+#if !ENJIN_RENDERER_WEBGPU
     std::unordered_map<std::string, VkDescriptorSet> m_TextureCache;
+#endif
 };
 
 } // namespace Enjin::ECS

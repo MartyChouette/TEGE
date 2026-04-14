@@ -38,7 +38,7 @@ WGPURenderPipeline WebGPUPipeline::CreateRenderPipeline(const WebGPURenderPipeli
 
     WGPUVertexState vertexState = {};
     vertexState.module = desc.vertexShader;
-    vertexState.entryPoint = desc.vertexEntryPoint;
+    vertexState.entryPoint = {desc.vertexEntryPoint, WGPU_STRLEN};
     vertexState.bufferCount = static_cast<u32>(wgpuBufferLayouts.size());
     vertexState.buffers = wgpuBufferLayouts.data();
 
@@ -58,7 +58,7 @@ WGPURenderPipeline WebGPUPipeline::CreateRenderPipeline(const WebGPURenderPipeli
 
     WGPUFragmentState fragmentState = {};
     fragmentState.module = desc.fragmentShader;
-    fragmentState.entryPoint = desc.fragmentEntryPoint;
+    fragmentState.entryPoint = {desc.fragmentEntryPoint, WGPU_STRLEN};
     fragmentState.targetCount = 1;
     fragmentState.targets = &colorTarget;
 
@@ -72,7 +72,7 @@ WGPURenderPipeline WebGPUPipeline::CreateRenderPipeline(const WebGPURenderPipeli
     // --- Depth/stencil state ---
     WGPUDepthStencilState depthStencil = {};
     depthStencil.format = GetDepthStencilFormat();
-    depthStencil.depthWriteEnabled = desc.depthWrite;
+    depthStencil.depthWriteEnabled = desc.depthWrite ? WGPUOptionalBool_True : WGPUOptionalBool_False;
     depthStencil.depthCompare = desc.depthCompare;
     depthStencil.stencilFront.compare = WGPUCompareFunction_Always;
     depthStencil.stencilBack.compare = WGPUCompareFunction_Always;
@@ -81,11 +81,11 @@ WGPURenderPipeline WebGPUPipeline::CreateRenderPipeline(const WebGPURenderPipeli
     WGPUMultisampleState multisample = {};
     multisample.count = 1;
     multisample.mask = ~0u;
-    multisample.alphaToCoverageEnabled = false;
+    multisample.alphaToCoverageEnabled = WGPUOptionalBool_False;
 
     // --- Pipeline descriptor ---
     WGPURenderPipelineDescriptor pipelineDesc = {};
-    pipelineDesc.label = desc.label;
+    pipelineDesc.label = {desc.label, WGPU_STRLEN};
     pipelineDesc.layout = desc.layout;
     pipelineDesc.vertex = vertexState;
     pipelineDesc.fragment = &fragmentState;

@@ -1,9 +1,13 @@
 #pragma once
+// WHOLE_FILE_WEBGPU_GUARD
+#if !ENJIN_RENDERER_WEBGPU
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Math/Vector.h"
+#if !ENJIN_RENDERER_WEBGPU
 #include <vulkan/vulkan.h>
+#endif
 
 namespace Enjin {
 namespace Renderer {
@@ -69,8 +73,9 @@ public:
 
     // Dispatch all enabled ReSTIR passes: initial → temporal → spatial
     // Must be called after NEE light SSBO is uploaded and before RTShadows/RTGI dispatch.
+    // bvhNodeCount: pass >0 when LightBVH is built (enables importance-proportional traversal)
     void Dispatch(VkCommandBuffer cmd, VkDescriptorSet rtDescSet, u32 frameCount,
-                  u32 totalLightCount);
+                  u32 totalLightCount, u32 bvhNodeCount = 0);
 
     // Current frame's reservoir buffer for binding into RT descriptor set (binding 19)
     VkBuffer GetReservoirBuffer() const { return m_ReservoirBuffers[m_CurrentBuffer]; }
@@ -90,7 +95,7 @@ private:
     bool CreateSpatialPipeline(VkDescriptorSetLayout rtDescLayout);
 
     void DispatchInitial(VkCommandBuffer cmd, VkDescriptorSet rtDescSet, u32 frameCount,
-                         u32 totalLightCount);
+                         u32 totalLightCount, u32 bvhNodeCount);
     void DispatchTemporal(VkCommandBuffer cmd, VkDescriptorSet rtDescSet, u32 frameCount,
                           u32 totalLightCount);
     void DispatchSpatial(VkCommandBuffer cmd, VkDescriptorSet rtDescSet, u32 frameCount,
@@ -125,3 +130,4 @@ private:
 
 } // namespace Renderer
 } // namespace Enjin
+#endif // !ENJIN_RENDERER_WEBGPU

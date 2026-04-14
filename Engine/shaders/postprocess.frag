@@ -230,6 +230,12 @@ layout(binding = 1) uniform PostProcessSettings {
     float fogShaftsMaxDistance;
     float _fogShaftsPad0;
     float _fogShaftsPad1;
+
+    // AA Comparison Mode
+    uint aaComparisonEnabled;     // 0=disabled, 1=enabled
+    uint aaComparisonModeLeft;    // AA mode for left side (0=None, 1=FXAA, 3=SMAA)
+    uint aaComparisonModeRight;   // AA mode for right side
+    float aaComparisonDivider;    // Divider position (0=left edge, 1=right edge)
 } settings;
 
 // LUT texture (binding 2)
@@ -1693,6 +1699,18 @@ vec3 applyTiltShift(vec3 color, vec2 uv) {
     return result / totalWeight;
 }
 
+// Apply AA by mode index (used by comparison mode)
+// 0=None, 1=FXAA, 3=SMAA — TAA (2) is a compute pass and not handled here
+vec3 applyAAByMode(vec2 uv, uint mode) {
+    if (mode == 3 && settings.chromaticAberrationEnabled == 0) {
+        return applySMAA(uv);
+    } else if (mode == 1 && settings.chromaticAberrationEnabled == 0) {
+        return applyFXAA(uv);
+    } else {
+        return applyChromaticAberration(uv);
+    }
+}
+
 void main() {
     // Passthrough: sample scene texture and output directly
     outColor = vec4(texture(sceneTexture, fragUV).rgb, 1.0);
@@ -1719,6 +1737,19 @@ void main() {
     vec3 color;
     if (settings.vhsEnabled != 0) {
         color = applyVHS(uv);
+    } else if (settings.aaComparisonEnabled != 0) {
+        // AA Comparison Mode: split-screen with different AA methods on each side
+        float dividerX = settings.aaComparisonDivider;
+        if (uv.x < dividerX) {
+            color = applyAAByMode(uv, settings.aaComparisonModeLeft);
+        } else {
+            color = applyAAByMode(uv, settings.aaComparisonModeRight);
+        }
+        // Draw a thin white divider line (2 pixels wide)
+        float pixelWidth = 1.0 / float(settings.screenWidth);
+        if (abs(uv.x - dividerX) < pixelWidth) {
+            color = vec3(1.0);
+        }
     } else if (settings.aaMode == 3 && settings.chromaticAberrationEnabled == 0) {
         // SMAA-lite: enhanced morphological edge-aware anti-aliasing
         color = applySMAA(uv);

@@ -18,6 +18,9 @@ extern char** environ;
 namespace Enjin {
 namespace Build {
 
+// Forward declaration (defined below Emscripten Build section)
+static int RunProcess(const std::string& cmdLine);
+
 // ============================================================================
 // Export
 // ============================================================================
@@ -98,6 +101,46 @@ HTML5ExportResult HTML5Exporter::Export(const HTML5ExportConfig& config,
 
     ENJIN_LOG_INFO(Build, "HTML5 export complete: %zu files to %s",
                    result.files.size(), config.outputDir.c_str());
+
+    // Package as .zip for itch.io / Newgrounds upload
+    if (config.zipOutput) {
+        // Sanitize title for filename (replace non-alphanumeric with underscore)
+        std::string safeFilename = config.title;
+        for (auto& c : safeFilename) {
+            if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_')
+                c = '_';
+        }
+        if (safeFilename.empty()) safeFilename = "game";
+
+        // Place .zip next to the output directory (not inside it)
+        std::filesystem::path outDir(config.outputDir);
+        std::string zipPath = (outDir.parent_path() / (safeFilename + "_web.zip")).string();
+
+        // Remove old zip if it exists
+        std::filesystem::remove(zipPath);
+
+#ifdef _WIN32
+        // Use PowerShell Compress-Archive (always available on Windows 10/11)
+        std::string psCmd = "powershell -NoProfile -Command \"Compress-Archive -Path '"
+            + config.outputDir + "\\*' -DestinationPath '" + zipPath + "' -Force\"";
+        int zipResult = RunProcess(psCmd);
+#else
+        // Use system zip command on Linux/Mac
+        std::string zipCmd = "cd \"" + config.outputDir + "\" && zip -r \"" + zipPath + "\" .";
+        int zipResult = RunProcess(zipCmd);
+#endif
+
+        if (zipResult == 0 && std::filesystem::exists(zipPath)) {
+            auto zipSize = std::filesystem::file_size(zipPath);
+            result.zipPath = zipPath;
+            ENJIN_LOG_INFO(Build, "HTML5 zip created: %s (%.1f KB)",
+                           zipPath.c_str(), static_cast<f32>(zipSize) / 1024.0f);
+        } else {
+            ENJIN_LOG_WARN(Build, "Failed to create zip (exit code %d) — files still available in %s",
+                           zipResult, config.outputDir.c_str());
+        }
+    }
+
     return result;
 }
 

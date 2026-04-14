@@ -1,0 +1,42 @@
+#version 460
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// Adaptive ray budget — variance estimation pass.
+// Compares current RT shadow output to previous frame, computes temporal variance.
+
+layout(binding = 0, set = 0) uniform sampler2D currentShadow;
+layout(binding = 1, set = 0) uniform sampler2D prevShadow;
+layout(binding = 2, set = 0, r16f) writeonly uniform image2D varianceMap;
+
+layout(push_constant) uniform PushConstants {
+    vec2 screenSize;
+    uint frameCount;
+    float pad;
+} pc;
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = ivec2(pc.screenSize);
+    if (pixel.x >= size.x || pixel.y >= size.y) return;
+
+    vec2 uv = (vec2(pixel) + 0.5) / pc.screenSize;
+
+    // Center-weighted 3x3 spatial filter for stable variance estimation
+    float variance = 0.0;
+    float totalWeight = 0.0;
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            ivec2 neighbor = pixel + ivec2(dx, dy);
+            if (neighbor.x >= 0 && neighbor.x < size.x && neighbor.y >= 0 && neighbor.y < size.y) {
+                vec2 nuv = (vec2(neighbor) + 0.5) / pc.screenSize;
+                float nc = texture(currentShadow, nuv).r;
+                float np = texture(prevShadow, nuv).r;
+                float weight = (dx == 0 && dy == 0) ? 2.0 : 1.0;
+                variance += abs(nc - np) * weight;
+                totalWeight += weight;
+            }
+        }
+    }
+    variance /= max(totalWeight, 1.0);
+    imageStore(varianceMap, pixel, vec4(variance, 0.0, 0.0, 0.0));
+}

@@ -2,7 +2,13 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
+
+// PostProcessing uses Vulkan types throughout — on WebGPU builds, only the
+// PostProcessSettings struct is needed (for SceneRenderSettings serialization).
+// The full class is compiled only on Vulkan.
+#if !ENJIN_RENDERER_WEBGPU
 #include <vulkan/vulkan.h>
+#endif
 #include <vector>
 #include <memory>
 #include <string>
@@ -281,6 +287,12 @@ struct alignas(16) PostProcessSettings {
     alignas(4) f32 _fogShaftsPad0 = 0.0f;
     alignas(4) f32 _fogShaftsPad1 = 0.0f;
 
+    // AA Comparison Mode (split-screen side-by-side AA comparison)
+    alignas(4) u32 aaComparisonEnabled = 0;    // 0=disabled, 1=enabled
+    alignas(4) u32 aaComparisonModeLeft = 0;   // AA mode for left side (0=None, 1=FXAA, 2=TAA, 3=SMAA)
+    alignas(4) u32 aaComparisonModeRight = 1;  // AA mode for right side
+    alignas(4) f32 aaComparisonDivider = 0.5f; // Divider position (0=left edge, 1=right edge)
+
     // TAA config (CPU-side only — used by the TAA compute pass, not the post-process UBO)
     f32 taaSharpness   = 0.1f;     // Sharpening strength applied after TAA resolve (0 = off)
     f32 taaJitterScale = 1.0f;     // Jitter magnitude multiplier (1.0 = standard Halton)
@@ -324,6 +336,7 @@ struct alignas(16) PostProcessSettings {
         if (contactShadowsEnabled) return true;
         if (causticsEnabled) return true;
         if (fogShaftsEnabled) return true;
+        if (aaComparisonEnabled) return true;
         if (colorblindMode != 0) return true;
         // Non-identity color grading
         if (brightness != 0.0f || contrast != 1.0f || saturation != 1.0f) return true;
@@ -341,7 +354,8 @@ struct alignas(16) PostProcessSettings {
     }
 };
 
-// Post-processing manager
+#if !ENJIN_RENDERER_WEBGPU
+// Post-processing manager (Vulkan backend only — WebGPU has its own)
 class ENJIN_API PostProcessing {
 public:
     PostProcessing();
@@ -559,6 +573,7 @@ private:
 
     bool m_TAAReady = false;
 };
+#endif // !ENJIN_RENDERER_WEBGPU
 
 } // namespace Renderer
 } // namespace Enjin

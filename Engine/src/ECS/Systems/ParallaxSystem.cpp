@@ -7,7 +7,9 @@
 #include "Enjin/Math/Math.h"
 #include <algorithm>
 #include <imgui.h>
+#if !ENJIN_RENDERER_WEBGPU
 #include <backends/imgui_impl_vulkan.h>
+#endif
 
 namespace Enjin::ECS {
 
@@ -24,6 +26,7 @@ void ParallaxSystem::Update(f32 deltaTime) {
     }
 }
 
+#if !ENJIN_RENDERER_WEBGPU
 VkDescriptorSet ParallaxSystem::GetLayerTexture(const std::string& path) {
     if (path.empty() || !m_RenderSystem) return VK_NULL_HANDLE;
 
@@ -49,6 +52,7 @@ void ParallaxSystem::ClearTextureCache() {
     }
     m_TextureCache.clear();
 }
+#endif // !ENJIN_RENDERER_WEBGPU
 
 void ParallaxSystem::Render(f32 viewportWidth, f32 viewportHeight) {
     if (!m_World || !m_Camera) return;
@@ -101,7 +105,13 @@ void ParallaxSystem::Render(f32 viewportWidth, f32 viewportHeight) {
                 static_cast<u8>(layer.alpha * 255));
 
             // Try to load texture for this layer
+#if !ENJIN_RENDERER_WEBGPU
             VkDescriptorSet texDS = GetLayerTexture(layer.texturePath);
+            bool hasTexture = (texDS != VK_NULL_HANDLE);
+#else
+            bool hasTexture = false;
+            ImTextureID texDS = 0;
+#endif
 
             // Tiling: repeat the layer if repeatX is enabled
             if (layer.repeatX) {
@@ -109,7 +119,7 @@ void ParallaxSystem::Render(f32 viewportWidth, f32 viewportHeight) {
                 for (f32 tx = startX; tx < viewportWidth + screenW; tx += screenW) {
                     ImVec2 p0(tx, screenY);
                     ImVec2 p1(tx + screenW, screenY + screenH);
-                    if (texDS != VK_NULL_HANDLE) {
+                    if (hasTexture) {
                         drawList->AddImage((ImTextureID)texDS, p0, p1,
                             ImVec2(0, 0), ImVec2(1, 1), color);
                     } else {
@@ -119,7 +129,7 @@ void ParallaxSystem::Render(f32 viewportWidth, f32 viewportHeight) {
             } else {
                 ImVec2 p0(screenX, screenY);
                 ImVec2 p1(screenX + screenW, screenY + screenH);
-                if (texDS != VK_NULL_HANDLE) {
+                if (hasTexture) {
                     drawList->AddImage((ImTextureID)texDS, p0, p1,
                         ImVec2(0, 0), ImVec2(1, 1), color);
                 } else {

@@ -1,5 +1,6 @@
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Logging/Log.h"
+#include <chrono>
 #include "Enjin/Core/Assert.h"
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -420,11 +421,29 @@ bool VulkanRenderer::CreateSyncObjects() {
         }
     }
 
+    // Create GPU timestamp query pools (one per frame in flight)
+    if (m_Context->GetTimestampPeriod() > 0.0f) {
+        VkQueryPoolCreateInfo qpInfo{};
+        qpInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+        qpInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+        qpInfo.queryCount = GPU_TS_COUNT;
+        for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+            if (vkCreateQueryPool(m_Context->GetDevice(), &qpInfo, nullptr, &m_TimestampPools[i]) != VK_SUCCESS) {
+                ENJIN_LOG_WARN(Renderer, "Failed to create timestamp query pool %u — GPU timing disabled", i);
+                m_TimestampPools[i] = VK_NULL_HANDLE;
+            }
+        }
+    }
+
     return true;
 }
 
 void VulkanRenderer::DestroySyncObjects() {
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        if (m_TimestampPools[i] != VK_NULL_HANDLE) {
+            vkDestroyQueryPool(m_Context->GetDevice(), m_TimestampPools[i], nullptr);
+            m_TimestampPools[i] = VK_NULL_HANDLE;
+        }
         if (m_ImageAvailableSemaphores[i] != VK_NULL_HANDLE) {
             vkDestroySemaphore(m_Context->GetDevice(), m_ImageAvailableSemaphores[i], nullptr);
         }
@@ -438,7 +457,10 @@ void VulkanRenderer::DestroySyncObjects() {
 }
 
 bool VulkanRenderer::AcquireNextImage() {
+    auto t0 = std::chrono::high_resolution_clock::now();
     vkWaitForFences(m_Context->GetDevice(), 1, &m_InFlightFences[m_CurrentFrame], VK_TRUE, UINT64_MAX);
+    auto t1 = std::chrono::high_resolution_clock::now();
+    m_FenceWaitMs = m_FenceWaitMs * 0.9f + std::chrono::duration<f32, std::milli>(t1 - t0).count() * 0.1f;
 
     // Proactive resize: callback set the flag before this frame
     if (m_FramebufferResized) {
@@ -455,6 +477,8 @@ bool VulkanRenderer::AcquireNextImage() {
         VK_NULL_HANDLE,
         &m_CurrentImageIndex
     );
+    auto t2 = std::chrono::high_resolution_clock::now();
+    m_AcquireMs = m_AcquireMs * 0.9f + std::chrono::duration<f32, std::milli>(t2 - t1).count() * 0.1f;
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         OnWindowResize(m_Window->GetWidth(), m_Window->GetHeight());
@@ -593,6 +617,11 @@ bool VulkanRenderer::BeginFrame() {
         return false;
     }
 
+    // Reset timestamp query pool for this frame (must happen after command buffer begin)
+    if (m_TimestampPools[m_CurrentFrame] != VK_NULL_HANDLE) {
+        vkCmdResetQueryPool(m_CommandBuffers[m_CurrentFrame], m_TimestampPools[m_CurrentFrame], 0, GPU_TS_COUNT);
+    }
+
     m_IsFrameStarted = true;
     m_IsMainRenderPassActive = false;
 
@@ -669,6 +698,26 @@ void VulkanRenderer::EndFrame() {
 
     SubmitCommandBuffer();
     m_IsFrameStarted = false;
+
+    // Read previous frame's GPU timestamp results (fence already waited in AcquireNextImage)
+    {
+        u32 prevFrame = (m_CurrentFrame + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT;
+        if (m_TimestampPools[prevFrame] != VK_NULL_HANDLE) {
+            VkResult tsResult = vkGetQueryPoolResults(
+                m_Context->GetDevice(), m_TimestampPools[prevFrame], 0, GPU_TS_COUNT,
+                sizeof(m_TimestampResults), m_TimestampResults, sizeof(u64),
+                VK_QUERY_RESULT_64_BIT);
+            if (tsResult == VK_SUCCESS) {
+                f32 period = m_Context->GetTimestampPeriod();
+                for (u32 i = 0; i < 4; ++i) {
+                    u64 begin = m_TimestampResults[i * 2];
+                    u64 end = m_TimestampResults[i * 2 + 1];
+                    m_GPUPassTimes[i] = (end > begin) ? static_cast<f32>(end - begin) * period / 1e6f : 0.0f;
+                }
+            }
+            // VK_NOT_READY is expected for the first few frames — silently ignore
+        }
+    }
 
     // Process deferred VSync change (safe: frame fully submitted+presented)
     if (m_VSyncChangeRequested) {

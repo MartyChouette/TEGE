@@ -3,36 +3,29 @@ layout(local_size_x = 8, local_size_y = 8) in;
 
 // ReSTIR DI — Initial Candidate Generation (Importance-Weighted Light Selection)
 //
-// For each pixel, samples N candidate lights from the NEE light SSBO, selects one
-// proportional to its estimated contribution, and writes the result into a reservoir.
-// This is the foundation for full ReSTIR temporal/spatial reuse (future phases).
+// Two modes:
+//   1. BVH traversal (when bvhNodeCount > 0): O(log N) importance-proportional traversal
+//      of a light hierarchy tree. At each internal node, pick left/right child proportional
+//      to estimated subtree contribution (power * distance proxy). Source PDF = product of
+//      path probabilities, giving proper importance weights for unbiased ReSTIR.
 //
-// Algorithm:
-//   1. Reconstruct world position from depth buffer
-//   2. For each of N candidate lights:
-//      a. Compute estimated contribution: emission * geometric_term (no shadow ray)
-//      b. Compute source PDF: 1/totalLights (uniform random selection)
-//      c. Compute weight: targetPDF / sourcePDF
-//      d. Stream into reservoir: with probability weight/weightSum, replace selected light
-//   3. Write reservoir to output buffer
+//   2. Uniform random (fallback): O(1) random selection, weight = targetPdf * totalLights
+//
+// For each pixel, samples N candidates (via whichever method), selects one
+// proportional to its estimated contribution, and writes to reservoir buffer.
 
 // --- Descriptor bindings (shared with RT descriptor set) ---
 
-// Binding 2: Depth buffer (for world position reconstruction)
 layout(binding = 2, set = 0) uniform sampler2D depthTex;
-
-// Binding 3: World normals (for geometric contribution estimate)
 layout(binding = 3, set = 0) uniform sampler2D normalTex;
 
-// Binding 13: RT light UBO (contains invViewProj, screenSize, frameCount)
 layout(binding = 13, set = 0) uniform LightData {
-    vec4 lightDir;      // xyz=direction, w=intensity
-    vec4 lightColor;    // xyz=color, w=shadowDistance
+    vec4 lightDir;
+    vec4 lightColor;
     mat4 invViewProj;
     vec2 screenSize;
     uint frameCount;
     float shadowRadius;
-    // Path tracer config (not used here)
     float fireflyClamp;
     int enableNEE;
     int enableMIS;
@@ -43,16 +36,16 @@ layout(binding = 13, set = 0) uniform LightData {
     uint spotLightCount;
 } uLight;
 
-// Binding 16: NEE light SSBO (scene lights — same format as path tracer)
+// Binding 16: NEE light SSBO
 struct RTLight {
-    vec3 position;     // World position (point/spot) or unused (directional)
-    float range;       // Attenuation range, 0 = infinite (directional)
-    vec3 direction;    // Light direction
-    float intensity;   // Light intensity multiplier
-    vec3 color;        // RGB light color
-    int type;          // 0=directional, 1=point, 2=spot
-    float innerCutoff; // cos(innerConeAngle) for spot lights
-    float outerCutoff; // cos(outerConeAngle) for spot lights
+    vec3 position;
+    float range;
+    vec3 direction;
+    float intensity;
+    vec3 color;
+    int type;
+    float innerCutoff;
+    float outerCutoff;
     float _pad0;
     float _pad1;
 };
@@ -63,26 +56,43 @@ layout(binding = 16, set = 0) readonly buffer NEELightBuffer {
 
 // Binding 19: Reservoir output buffer
 struct Reservoir {
-    uint selectedLight;  // Index into lights[]
-    float weightSum;     // Running weight sum (W)
-    float sampleWeight;  // Final unbiased weight for the selected sample
-    uint sampleCount;    // M — number of candidates seen
+    uint selectedLight;
+    float weightSum;
+    float sampleWeight;
+    uint sampleCount;
 };
 
 layout(binding = 19, set = 0) buffer ReservoirBuffer {
     Reservoir reservoirs[];
 };
 
-// Push constants for per-dispatch parameters
+// Binding 27: Light BVH node buffer (optional — empty when BVH disabled)
+struct LightBVHNode {
+    float boundsMinX, boundsMinY, boundsMinZ;
+    float totalPower;
+    float boundsMaxX, boundsMaxY, boundsMaxZ;
+    int leftChild;       // -1 for leaf
+    int rightChild;      // -1 for leaf
+    int lightIndex;      // Index into lights[] (leaf only, -1 for internal)
+    int lightCount;
+    float _pad;
+};
+
+layout(binding = 27, set = 0) readonly buffer LightBVHBuffer {
+    LightBVHNode bvhNodes[];
+};
+
+// Push constants
 layout(push_constant) uniform PushConstants {
-    uint totalLightCount;     // Total number of lights in NEE SSBO
-    uint initialCandidates;   // N — number of candidates to sample per pixel
-    float distanceBias;       // Small bias for distance falloff
-    uint frameCount;          // Current frame (for RNG seed)
+    uint totalLightCount;
+    uint initialCandidates;
+    float distanceBias;
+    uint frameCount;
+    uint bvhNodeCount;       // 0 = use uniform random, >0 = use BVH traversal
 } pc;
 
 // ============================================================================
-// RNG (PCG — same as rt_common.glsl)
+// RNG (PCG)
 // ============================================================================
 
 uint pcg_hash(uint v) {
@@ -104,42 +114,30 @@ uint init_rng(uvec2 pixel, uint frame) {
 // Importance estimation (no shadow ray — geometric term only)
 // ============================================================================
 
-// Estimate the contribution of a light to a surface point, without tracing a shadow ray.
-// This is the "target PDF" (p_hat) in ReSTIR terminology.
-// Returns luminance-weighted estimated contribution (scalar).
 float estimateLightContribution(RTLight light, vec3 worldPos, vec3 worldNormal) {
     vec3 toLight;
     float attenuation = 1.0;
     float geometricTerm;
 
     if (light.type == 0) {
-        // Directional light — contribution is independent of distance
         toLight = -light.direction;
         geometricTerm = max(dot(worldNormal, toLight), 0.0);
-        // No distance falloff for directional
     } else if (light.type == 1) {
-        // Point light
         vec3 diff = light.position - worldPos;
         float dist2 = dot(diff, diff);
         float dist = sqrt(dist2);
         toLight = diff / max(dist, 1e-6);
         geometricTerm = max(dot(worldNormal, toLight), 0.0);
-
-        // Inverse-square falloff with range cutoff
         attenuation = 1.0 / max(dist2, pc.distanceBias * pc.distanceBias);
         if (light.range > 0.0 && dist > light.range) attenuation = 0.0;
     } else {
-        // Spot light
         vec3 diff = light.position - worldPos;
         float dist2 = dot(diff, diff);
         float dist = sqrt(dist2);
         toLight = diff / max(dist, 1e-6);
         geometricTerm = max(dot(worldNormal, toLight), 0.0);
-
         attenuation = 1.0 / max(dist2, pc.distanceBias * pc.distanceBias);
         if (light.range > 0.0 && dist > light.range) attenuation = 0.0;
-
-        // Spot cone falloff
         float cosAngle = dot(-toLight, light.direction);
         if (cosAngle <= light.outerCutoff) {
             attenuation = 0.0;
@@ -150,18 +148,77 @@ float estimateLightContribution(RTLight light, vec3 worldPos, vec3 worldNormal) 
         }
     }
 
-    // Luminance of light color * intensity * attenuation * geometric term
     vec3 emission = light.color * light.intensity;
     float luminance = dot(emission, vec3(0.2126, 0.7152, 0.0722));
     return luminance * attenuation * geometricTerm;
 }
 
 // ============================================================================
+// BVH traversal — importance-proportional light selection
+// ============================================================================
+
+// Estimate the importance of a BVH subtree to a shading point.
+// Uses the subtree's total power divided by the squared distance to the nearest
+// point on the node's AABB (proxy for average geometric contribution).
+float estimateNodeImportance(LightBVHNode node, vec3 worldPos) {
+    // Closest point on AABB to worldPos
+    vec3 closest = clamp(worldPos,
+        vec3(node.boundsMinX, node.boundsMinY, node.boundsMinZ),
+        vec3(node.boundsMaxX, node.boundsMaxY, node.boundsMaxZ));
+    vec3 diff = worldPos - closest;
+    float dist2 = dot(diff, diff) + pc.distanceBias * pc.distanceBias;
+    return node.totalPower / dist2;
+}
+
+// Traverse BVH to select one light with importance-proportional probability.
+// Returns: lightIndex, sets sourcePdf to the product of path probabilities.
+uint traverseBVH(vec3 worldPos, vec3 worldNormal, inout uint rng, out float sourcePdf) {
+    sourcePdf = 1.0;
+    int nodeIdx = 0;
+
+    // Traverse from root to leaf
+    for (int depth = 0; depth < 32; ++depth) {  // Max depth guard
+        LightBVHNode node = bvhNodes[nodeIdx];
+
+        // Leaf node — return this light
+        if (node.leftChild < 0) {
+            return uint(node.lightIndex);
+        }
+
+        // Internal node — estimate importance of each child
+        float leftImp = estimateNodeImportance(bvhNodes[node.leftChild], worldPos);
+        float rightImp = estimateNodeImportance(bvhNodes[node.rightChild], worldPos);
+        float totalImp = leftImp + rightImp;
+
+        if (totalImp < 1e-10) {
+            // Both children have negligible importance — pick randomly
+            if (rand_float(rng) < 0.5) {
+                sourcePdf *= 0.5;
+                nodeIdx = node.leftChild;
+            } else {
+                sourcePdf *= 0.5;
+                nodeIdx = node.rightChild;
+            }
+        } else {
+            float leftProb = leftImp / totalImp;
+            if (rand_float(rng) < leftProb) {
+                sourcePdf *= leftProb;
+                nodeIdx = node.leftChild;
+            } else {
+                sourcePdf *= (1.0 - leftProb);
+                nodeIdx = node.rightChild;
+            }
+        }
+    }
+
+    // Shouldn't reach here — fallback to first light
+    return 0u;
+}
+
+// ============================================================================
 // Reservoir streaming update
 // ============================================================================
 
-// Stream a candidate into the reservoir using weighted reservoir sampling (WRS).
-// With probability (weight / weightSum), replace the selected sample.
 void updateReservoir(inout Reservoir r, uint lightIndex, float weight, inout uint rng) {
     r.weightSum += weight;
     r.sampleCount += 1u;
@@ -181,7 +238,6 @@ void main() {
 
     uint reservoirIdx = uint(pixel.y) * uint(size.x) + uint(pixel.x);
 
-    // Early out: no lights
     if (pc.totalLightCount == 0u) {
         reservoirs[reservoirIdx] = Reservoir(0u, 0.0, 0.0, 0u);
         return;
@@ -191,7 +247,6 @@ void main() {
     vec2 uv = (vec2(pixel) + 0.5) / uLight.screenSize;
     float depth = texture(depthTex, uv).r;
 
-    // Sky pixels — no surface to light
     if (depth >= 1.0) {
         reservoirs[reservoirIdx] = Reservoir(0u, 0.0, 0.0, 0u);
         return;
@@ -200,42 +255,41 @@ void main() {
     vec4 clipPos = vec4(uv * 2.0 - 1.0, depth, 1.0);
     vec4 worldPos4 = uLight.invViewProj * clipPos;
     vec3 worldPos = worldPos4.xyz / worldPos4.w;
-
     vec3 worldNormal = normalize(texture(normalTex, uv).xyz * 2.0 - 1.0);
 
-    // Initialize reservoir
     Reservoir r;
     r.selectedLight = 0u;
     r.weightSum = 0.0;
     r.sampleWeight = 0.0;
     r.sampleCount = 0u;
 
-    // Source PDF: uniform random selection over all lights
-    float sourcePdf = 1.0 / float(pc.totalLightCount);
-
-    // Initialize RNG
     uint rng = init_rng(uvec2(pixel), pc.frameCount);
-
-    // Sample N candidates
     uint N = min(pc.initialCandidates, pc.totalLightCount);
+
+    bool useBVH = (pc.bvhNodeCount > 0u);
+
     for (uint i = 0u; i < N; ++i) {
-        // Select a random light uniformly
-        uint lightIdx = uint(rand_float(rng) * float(pc.totalLightCount));
-        lightIdx = min(lightIdx, pc.totalLightCount - 1u);
+        uint lightIdx;
+        float sourcePdf;
 
-        // Estimate target PDF (p_hat) — importance without visibility
+        if (useBVH) {
+            // BVH traversal: importance-proportional selection
+            lightIdx = traverseBVH(worldPos, worldNormal, rng, sourcePdf);
+            lightIdx = min(lightIdx, pc.totalLightCount - 1u);
+        } else {
+            // Uniform random fallback
+            lightIdx = uint(rand_float(rng) * float(pc.totalLightCount));
+            lightIdx = min(lightIdx, pc.totalLightCount - 1u);
+            sourcePdf = 1.0 / float(pc.totalLightCount);
+        }
+
         float targetPdf = estimateLightContribution(lights[lightIdx], worldPos, worldNormal);
-
-        // Weight for WRS: targetPdf / sourcePdf
-        // Since sourcePdf = 1/totalLights, weight = targetPdf * totalLights
         float weight = targetPdf / max(sourcePdf, 1e-10);
 
         updateReservoir(r, lightIdx, weight, rng);
     }
 
-    // Compute the unbiased sample weight for the selected light:
-    //   W = (1/p_hat(selectedLight)) * (weightSum / M)
-    // This ensures E[W * p_hat(selectedLight)] = true contribution
+    // Compute unbiased sample weight
     float selectedTargetPdf = estimateLightContribution(
         lights[r.selectedLight], worldPos, worldNormal);
 

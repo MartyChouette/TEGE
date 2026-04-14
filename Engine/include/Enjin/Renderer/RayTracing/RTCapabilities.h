@@ -1,8 +1,12 @@
 #pragma once
+// WHOLE_FILE_WEBGPU_GUARD
+#if !ENJIN_RENDERER_WEBGPU
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
+#if !ENJIN_RENDERER_WEBGPU
 #include <vulkan/vulkan.h>
+#endif
 #include <vector>
 
 namespace Enjin {
@@ -37,3 +41,4 @@ struct ENJIN_API RTCapabilities {
 
 } // namespace Renderer
 } // namespace Enjin
+#endif // !ENJIN_RENDERER_WEBGPU

@@ -8,24 +8,22 @@
 namespace Enjin {
 namespace Renderer {
 
+struct NormalMapOptions {
+    f32 strength = 1.0f;   // Normal map intensity multiplier
+    bool flipY = false;    // Flip green channel (DirectX vs OpenGL convention)
+};
+
 // Generates normal maps from height/grayscale images using Sobel operator
 class ENJIN_API NormalMapGenerator {
 public:
-    struct Options {
-        f32 strength = 1.0f;   // Normal map intensity multiplier
-        bool flipY = false;    // Flip green channel (DirectX vs OpenGL convention)
-    };
+    using Options = NormalMapOptions;
 
-    // Generate RGBA normal map from grayscale height pixels (single channel or RGBA)
-    // Input: heightPixels in RGBA format (uses red channel as height)
-    // Returns: RGBA normal map (flat = 128,128,255)
     static std::vector<u8> Generate(const u8* heightPixels, u32 w, u32 h,
-                                    const Options& opts = Options{});
+                                    const NormalMapOptions& opts = {});
 
-    // Load a height image, generate normal map, save as PNG
     static bool GenerateAndSave(const std::string& heightPath,
                                 const std::string& normalPath,
-                                const Options& opts = Options{});
+                                const NormalMapOptions& opts = {});
 };
 
 } // namespace Renderer

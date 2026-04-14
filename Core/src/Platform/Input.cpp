@@ -345,11 +345,13 @@ bool Input::IsGamepadConnected(i32 gamepadIndex) {
 
 const char* Input::GetGamepadName(i32 gamepadIndex) {
     if (gamepadIndex < 0 || gamepadIndex >= MAX_GAMEPADS) return "None";
+#if !ENJIN_PLATFORM_WEB
     i32 joyId = GLFW_JOYSTICK_1 + gamepadIndex;
     if (glfwJoystickIsGamepad(joyId)) {
         const char* name = glfwGetGamepadName(joyId);
         return name ? name : "Unknown Gamepad";
     }
+#endif
     return "None";
 }
 

@@ -2,17 +2,19 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
+#if !ENJIN_RENDERER_WEBGPU
 #include <vulkan/vulkan.h>
+#endif
 #include <vector>
 
 namespace Enjin {
 namespace Renderer {
 
+#if !ENJIN_RENDERER_WEBGPU
 class VulkanContext;
 class VulkanRenderer;
 
-// Offscreen render target for rendering scenes to a texture
-// Used by Game View panel to display game camera output in ImGui
+// Offscreen render target for rendering scenes to a texture (Vulkan only)
 class ENJIN_API RenderTarget {
 public:
     RenderTarget();
@@ -98,6 +100,7 @@ private:
     // ImGui descriptor set for displaying the texture
     VkDescriptorSet m_ImGuiDescriptor = VK_NULL_HANDLE;
 };
+#endif // !ENJIN_RENDERER_WEBGPU
 
 } // namespace Renderer
 } // namespace Enjin

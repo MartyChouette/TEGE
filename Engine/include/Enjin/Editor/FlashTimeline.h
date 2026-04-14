@@ -1,4 +1,6 @@
 #pragma once
+// WHOLE_FILE_WEBGPU_GUARD
+#if !ENJIN_RENDERER_WEBGPU
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
@@ -230,3 +232,4 @@ private:
 
 } // namespace Editor
 } // namespace Enjin
+#endif // !ENJIN_RENDERER_WEBGPU

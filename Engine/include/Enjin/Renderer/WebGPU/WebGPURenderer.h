@@ -24,7 +24,7 @@ class WebGPUPipeline;
 struct WebGPUBufferHandle {
     WGPUBuffer buffer = nullptr;
     u64 size = 0;
-    WGPUBufferUsageFlags usage = 0;
+    WGPUBufferUsage usage = 0;
 };
 
 // WebGPU texture handle returned by CreateTexture.
@@ -61,13 +61,13 @@ public:
     u32 GetSwapChainHeight() const { return m_SwapChainHeight; }
 
     // --- Buffer management ---
-    WebGPUBufferHandle CreateBuffer(u64 size, WGPUBufferUsageFlags usage, const void* data = nullptr);
+    WebGPUBufferHandle CreateBuffer(u64 size, WGPUBufferUsage usage, const void* data = nullptr);
     void UpdateBuffer(const WebGPUBufferHandle& buffer, const void* data, u64 size, u64 offset = 0);
     void DestroyBuffer(WebGPUBufferHandle& buffer);
 
     // --- Texture management ---
     WebGPUTextureHandle CreateTexture(u32 width, u32 height, WGPUTextureFormat format,
-                                      WGPUTextureUsageFlags usage, const void* pixelData = nullptr);
+                                      WGPUTextureUsage usage, const void* pixelData = nullptr);
     void UploadTexture(const WebGPUTextureHandle& texture, const void* data, u32 width, u32 height);
     void DestroyTexture(WebGPUTextureHandle& texture);
 
@@ -114,7 +114,7 @@ private:
     // Core WebGPU objects
     WGPUDevice m_Device = nullptr;
     WGPUQueue m_Queue = nullptr;
-    WGPUSwapChain m_SwapChain = nullptr;
+    WGPUInstance m_Instance = nullptr;
     WGPUSurface m_Surface = nullptr;
 
     // Per-frame state

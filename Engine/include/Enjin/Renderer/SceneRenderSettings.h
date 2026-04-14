@@ -85,6 +85,12 @@ struct SceneRenderSettings {
     // Anti-Aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA, 4=MSAA 2x, 5=MSAA 4x, 6=MSAA 8x
     u32 aaMode = 1;  // Default: FXAA
 
+    // AA Comparison Mode (split-screen side-by-side AA comparison)
+    bool aaComparisonEnabled = false;
+    u32 aaComparisonModeLeft = 0;     // AA mode for left side (0=None, 1=FXAA, 2=TAA, 3=SMAA)
+    u32 aaComparisonModeRight = 1;    // AA mode for right side
+    f32 aaComparisonDivider = 0.5f;   // Divider position (0=left edge, 1=right edge)
+
     // FXAA
     bool fxaaEnabled = true;
     f32 fxaaSpanMax = 8.0f;
@@ -328,6 +334,29 @@ struct SceneRenderSettings {
     f32 restirSpatialRadius = 30.0f;     // Screen-space neighbor search radius (pixels)
     f32 restirSpatialDepthThreshold = 0.1f;    // Relative depth threshold for neighbor similarity
     f32 restirSpatialNormalThreshold = 0.9f;   // Normal dot product for neighbor similarity
+
+    // RT Temporal Reuse
+    bool rtTemporalReuseEnabled = false;
+    f32 rtTemporalReuseHistoryLength = 0.9f;
+    f32 rtTemporalReuseDisocclusionThreshold = 0.1f;
+    f32 rtTemporalReuseNormalThreshold = 0.9f;
+    bool rtTemporalReuseShadows = true;
+    bool rtTemporalReuseReflections = true;
+    bool rtTemporalReuseAO = true;
+    bool rtTemporalReuseGI = true;
+
+    // Surfel Radiance Cache
+    bool surfelCacheEnabled = false;
+    u32 surfelCacheMaxSurfels = 65536;
+    f32 surfelCacheRadius = 0.5f;
+    f32 surfelCacheUpdateFraction = 0.125f;
+    f32 surfelCacheMaxAge = 32.0f;
+    bool surfelCacheExcludeDirectional = true;
+    f32 surfelCacheCameraRadius = 50.0f;
+    f32 surfelCacheBlendWeight = 0.5f;
+    f32 surfelCacheNormalThreshold = 0.7f;
+    u32 surfelCachePlacementInterval = 4;
+    u32 surfelCacheRaysPerSurfel = 2;
 
     // Composite strengths
     f32 rtShadowStrength = 1.0f;

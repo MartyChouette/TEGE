@@ -1,4 +1,6 @@
 #pragma once
+// WHOLE_FILE_WEBGPU_GUARD
+#if !ENJIN_RENDERER_WEBGPU
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Renderer/VirtualTexture/VirtualTextureSystem.h"
@@ -27,3 +29,4 @@ private:
 
 } // namespace Renderer
 } // namespace Enjin
+#endif // !ENJIN_RENDERER_WEBGPU

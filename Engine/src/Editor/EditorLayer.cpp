@@ -664,6 +664,7 @@ void EditorLayer::Shutdown() {
 }
 
 void EditorLayer::Update(f32 deltaTime) {
+
     // Deferred quit (Close() called during ImGui rendering crashes some drivers)
     if (m_PendingQuit) {
         m_PendingQuit = false;
@@ -1453,6 +1454,9 @@ void EditorLayer::Update(f32 deltaTime) {
         m_RenderSystem->SetTexturePageSize(0.0f);
         m_RenderSystem->SetDepthSortJitter(0.0f);
     }
+
+    // CPU frame profiler: total Update time (derived from delta)
+    m_CPUUpdateMs = m_CPUUpdateMs * 0.9f + (deltaTime * 1000.0f) * 0.1f;
 }
 
 void EditorLayer::PrepareRenderTargets() {
@@ -2199,6 +2203,14 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             }
         }
 
+        // GPU timestamp: post-process begin
+        if (m_Renderer) {
+            VkQueryPool tsPool = m_Renderer->GetTimestampPool(m_Renderer->GetCurrentFrameIndex());
+            if (tsPool != VK_NULL_HANDLE) {
+                vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, tsPool, Renderer::GPU_TS_POSTPROCESS_BEGIN);
+            }
+        }
+
         // Temporal resolve: TAA and/or temporal upscaler.
         // When an upscaler is active, TAA runs at the lower render resolution first,
         // then the upscaler (Lanczos + CAS) upsamples to display resolution.
@@ -2395,6 +2407,14 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             m_PostProcessing->UpdateSourceImage(
                 m_SceneRenderTarget->GetColorImageView(),
                 m_SceneRenderTarget->GetSampler());
+        }
+
+        // GPU timestamp: post-process end
+        if (m_Renderer) {
+            VkQueryPool tsPool = m_Renderer->GetTimestampPool(m_Renderer->GetCurrentFrameIndex());
+            if (tsPool != VK_NULL_HANDLE) {
+                vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, tsPool, Renderer::GPU_TS_POSTPROCESS_END);
+            }
         }
     }
 

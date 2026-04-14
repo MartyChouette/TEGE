@@ -1,4 +1,6 @@
 #pragma once
+// WHOLE_FILE_WEBGPU_GUARD
+#if !ENJIN_RENDERER_WEBGPU
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
@@ -9,7 +11,9 @@
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
 #include "Enjin/Renderer/Vulkan/VulkanShader.h"
 #include "Enjin/Renderer/Camera.h"
+#if !ENJIN_RENDERER_WEBGPU
 #include <vulkan/vulkan.h>
+#endif
 #include <vector>
 #include <memory>
 
@@ -87,3 +91,4 @@ private:
 
 } // namespace Effects
 } // namespace Enjin
+#endif // !ENJIN_RENDERER_WEBGPU

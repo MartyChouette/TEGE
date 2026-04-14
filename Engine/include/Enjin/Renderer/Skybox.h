@@ -3,17 +3,13 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Math/Matrix.h"
-#include <vulkan/vulkan.h>
 #include <string>
 #include <array>
-#include <vector>
-#include <memory>
 
 namespace Enjin {
 namespace Renderer {
 
-class VulkanContext;
-
+// SkyboxConfig/SkyboxType are platform-agnostic (used by SceneSerializer on all platforms)
 enum class SkyboxType : u32 {
     None = 0,
     Cubemap,
@@ -23,22 +19,29 @@ enum class SkyboxType : u32 {
 
 struct SkyboxConfig {
     SkyboxType type = SkyboxType::None;
-
-    // Cubemap face paths (Right, Left, Top, Bottom, Front, Back)
     std::array<std::string, 6> cubemapPaths;
-
-    // Procedural sky parameters
     Math::Vector3 topColor = Math::Vector3(0.1f, 0.2f, 0.6f);
     Math::Vector3 bottomColor = Math::Vector3(0.8f, 0.6f, 0.3f);
     Math::Vector3 horizonColor = Math::Vector3(0.5f, 0.7f, 0.9f);
     Math::Vector3 sunDirection = Math::Vector3(0.5f, 0.8f, 0.3f);
-
-    // Solid color
     Math::Vector3 solidColor = Math::Vector3(0.2f, 0.3f, 0.4f);
-
-    // Rotation angle (degrees around Y axis)
     f32 rotation = 0.0f;
 };
+
+} // namespace Renderer
+} // namespace Enjin
+
+// Vulkan Skybox class — not available on web
+#if !ENJIN_RENDERER_WEBGPU
+
+#include <vulkan/vulkan.h>
+#include <vector>
+#include <memory>
+
+namespace Enjin {
+namespace Renderer {
+
+class VulkanContext;
 
 class ENJIN_API Skybox {
 public:
@@ -79,3 +82,4 @@ private:
 
 } // namespace Renderer
 } // namespace Enjin
+#endif // !ENJIN_RENDERER_WEBGPU

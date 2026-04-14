@@ -21,8 +21,19 @@ namespace Enjin {
 namespace Renderer {
 
 /**
+ * @brief GPU timestamp query indices for per-pass timing
+ */
+enum GPUTimestampQuery : u32 {
+    GPU_TS_SHADOW_BEGIN = 0, GPU_TS_SHADOW_END = 1,
+    GPU_TS_MAIN_BEGIN = 2, GPU_TS_MAIN_END = 3,
+    GPU_TS_RT_BEGIN = 4, GPU_TS_RT_END = 5,
+    GPU_TS_POSTPROCESS_BEGIN = 6, GPU_TS_POSTPROCESS_END = 7,
+    GPU_TS_COUNT = 8
+};
+
+/**
  * @brief Vulkan renderer - main rendering interface
- * 
+ *
  * Manages the Vulkan rendering state, swapchain, and command buffers.
  */
 class ENJIN_API VulkanRenderer {
@@ -133,6 +144,10 @@ public:
     }
     void ClearShadingRateImage() { m_ShadingRateImageView = VK_NULL_HANDLE; }
 
+    // GPU timestamp queries — per-pass GPU timing in milliseconds
+    VkQueryPool GetTimestampPool(u32 frameIdx) const { return m_TimestampPools[frameIdx % MAX_FRAMES_IN_FLIGHT]; }
+    const f32* GetGPUPassTimes() const { return m_GPUPassTimes; }
+
 private:
     bool CreateSurface();
     bool CreateRenderPass();
@@ -161,6 +176,12 @@ private:
     u32 m_CurrentImageIndex = 0;
     static constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
 
+    f32 m_FenceWaitMs = 0.0f;       // Time spent waiting for GPU fence (spike indicator)
+    f32 m_AcquireMs = 0.0f;         // Time spent acquiring swapchain image
+public:
+    f32 GetFenceWaitMs() const { return m_FenceWaitMs; }
+    f32 GetAcquireMs() const { return m_AcquireMs; }
+private:
     bool m_IsFrameStarted = false;
     bool m_IsMainRenderPassActive = false;
     bool m_FramebufferResized = false;
@@ -195,6 +216,11 @@ private:
 
     bool CreateComputeResources();
     void DestroyComputeResources();
+
+    // GPU timestamp query pools (one per frame in flight) and results
+    VkQueryPool m_TimestampPools[2] = {};
+    u64 m_TimestampResults[GPU_TS_COUNT] = {};
+    f32 m_GPUPassTimes[4] = {};  // shadow, main, RT, postprocess (ms)
 };
 
 } // namespace Renderer

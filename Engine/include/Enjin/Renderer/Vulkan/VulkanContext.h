@@ -58,6 +58,10 @@ public:
     const RTCapabilities& GetRTCapabilities() const { return m_RTCapabilities; }
     bool IsRayTracingSupported() const { return m_RTCapabilities.supported; }
 
+    // GPU timestamp query support
+    f32 GetTimestampPeriod() const { return m_TimestampPeriod; }
+    u32 GetTimestampValidBits() const { return m_TimestampValidBits; }
+
     // Variable Rate Shading support (VK_KHR_fragment_shading_rate)
     bool IsVRSSupported() const { return m_VRSSupported; }
 
@@ -104,6 +108,10 @@ protected:
 
     // Ray tracing capabilities (populated during SelectPhysicalDevice)
     RTCapabilities m_RTCapabilities;
+
+    // GPU timestamp query support (populated during SelectPhysicalDevice)
+    f32 m_TimestampPeriod = 0.0f;
+    u32 m_TimestampValidBits = 0;
 
     // Variable Rate Shading support (populated during SelectPhysicalDevice)
     bool m_VRSSupported = false;

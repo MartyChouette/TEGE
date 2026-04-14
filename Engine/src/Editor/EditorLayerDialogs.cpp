@@ -2068,8 +2068,10 @@ void EditorLayer::DrawHTML5ExportDialog() {
     ImGui::Checkbox("Show Preloader", &m_HTML5Config.showPreloader);
     ImGui::SameLine();
     ImGui::Checkbox("Fullscreen Button", &m_HTML5Config.showFullscreenButton);
-    ImGui::SameLine();
     ImGui::Checkbox("Generate Embed Code", &m_HTML5Config.generateEmbedCode);
+    ImGui::SameLine();
+    ImGui::Checkbox("Create .zip", &m_HTML5Config.zipOutput);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Package output as .zip for upload to itch.io, Newgrounds, etc.");
 
     // Splash image
     ImGui::Text("Splash Image: %s", m_HTML5Config.splashImagePath.empty() ? "(none)" : m_HTML5Config.splashImagePath.c_str());
@@ -2108,13 +2110,36 @@ void EditorLayer::DrawHTML5ExportDialog() {
 
     // Export button
     ImGui::Separator();
+    static std::string lastZipPath;
+    static std::string lastExportError;
     if (ImGui::Button("Export", ImVec2(120, 30))) {
+        lastZipPath.clear();
+        lastExportError.clear();
         auto result = Build::HTML5Exporter::Export(m_HTML5Config, m_BuildConfig);
         if (result.success) {
             ENJIN_LOG_INFO(Editor, "HTML5 export complete: %zu files", result.files.size());
             lastEmbedCode = result.embedCode;
+            lastZipPath = result.zipPath;
         } else {
             ENJIN_LOG_ERROR(Editor, "HTML5 export failed: %s", result.error.c_str());
+            lastExportError = result.error;
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Open Output Folder") && !m_HTML5Config.outputDir.empty()) {
+#ifdef _WIN32
+        ShellExecuteA(nullptr, "explore", m_HTML5Config.outputDir.c_str(), nullptr, nullptr, SW_SHOWDEFAULT);
+#endif
+    }
+
+    // Export result feedback
+    if (!lastExportError.empty()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Export failed: %s", lastExportError.c_str());
+    }
+    if (!lastZipPath.empty()) {
+        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Zip: %s", lastZipPath.c_str());
+        if (ImGui::Button("Copy Zip Path")) {
+            ImGui::SetClipboardText(lastZipPath.c_str());
         }
     }
 
@@ -2402,9 +2427,12 @@ void EditorLayer::CheckForCrashReport() {
 }
 
 void EditorLayer::DrawCrashReportDialog() {
+    // Modal popup — blocks interaction with windows behind it
+    ImGui::OpenPopup("Crash Report — Previous Session");
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(620 * m_EditorSettings.uiScale, 480 * m_EditorSettings.uiScale), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Crash Report — Previous Session", &m_ShowCrashDialog)) {
-        ImGui::End();
+    if (!ImGui::BeginPopupModal("Crash Report — Previous Session", &m_ShowCrashDialog)) {
         return;
     }
 
@@ -2450,9 +2478,10 @@ void EditorLayer::DrawCrashReportDialog() {
         Debug::ClearPreviousCrashReport();
         m_ShowCrashDialog = false;
         m_PreviousCrashReport.clear();
+        ImGui::CloseCurrentPopup();
     }
 
-    ImGui::End();
+    ImGui::EndPopup();
 }
 
 void EditorLayer::DrawUnsavedChangesDialog() {
@@ -2986,7 +3015,7 @@ void EditorLayer::DrawQuitFeedbackDialog() {
     ImGui::OpenPopup("##QuitFeedback");
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(640, 600));
+    ImGui::SetNextWindowSize(ImVec2(690, 600));
 
     if (ImGui::BeginPopupModal("##QuitFeedback", nullptr,
         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar)) {

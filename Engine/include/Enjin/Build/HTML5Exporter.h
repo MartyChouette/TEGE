@@ -18,6 +18,7 @@ struct HTML5ExportConfig {
     bool showPreloader = true;
     bool showFullscreenButton = true;
     bool generateEmbedCode = true;
+    bool zipOutput = true;              // Package output as .zip for itch.io / Newgrounds upload
     std::string customCSS;
     std::string faviconPath;
     std::string splashImagePath;
@@ -28,6 +29,7 @@ struct HTML5ExportConfig {
 struct HTML5ExportResult {
     bool success = false;
     std::string outputPath;
+    std::string zipPath;        // Path to .zip file (empty if zip not requested)
     std::string embedCode;
     std::vector<std::string> files;
     std::string error;

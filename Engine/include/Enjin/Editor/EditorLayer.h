@@ -914,6 +914,13 @@ private:
     f32 m_RenderProfileAccum = 0.0f;
     u32 m_RenderProfileFrames = 0;
 
+    // CPU frame profiler (editor mode) — exponential moving averages
+    f32 m_CPUUpdateMs = 0.0f;
+    f32 m_CPUShadowMs = 0.0f;
+    f32 m_CPURenderMs = 0.0f;
+    f32 m_CPUImGuiMs = 0.0f;
+    f32 m_CPUPresentMs = 0.0f;
+
     // Editor viewport render target (offscreen rendering for scene editing camera)
     std::unique_ptr<Renderer::RenderTarget> m_EditorViewportRT;
     u32 m_EditorViewportWidth = 800;

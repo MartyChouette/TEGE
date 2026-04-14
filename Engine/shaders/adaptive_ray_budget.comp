@@ -1,0 +1,52 @@
+#version 460
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// Adaptive ray budget — allocation pass.
+// Maps per-pixel variance to ray count. Boosts at edges and stale cache regions.
+
+layout(binding = 0, set = 0) uniform sampler2D varianceMap;
+layout(binding = 1, set = 0) uniform sampler2D depthTex;
+layout(binding = 2, set = 0) uniform sampler2D normalTex;
+layout(binding = 3, set = 0, r8ui) writeonly uniform uimage2D budgetMap;
+
+layout(push_constant) uniform PushConstants {
+    vec2 screenSize;
+    uint minRays;
+    uint maxRays;
+    float varianceThreshold;
+    float varianceScale;
+    uint edgeBoost;
+    uint disocclusionBoost;
+} pc;
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = ivec2(pc.screenSize);
+    if (pixel.x >= size.x || pixel.y >= size.y) return;
+
+    vec2 uv = (vec2(pixel) + 0.5) / pc.screenSize;
+    float variance = texture(varianceMap, uv).r;
+
+    float t = clamp((variance - pc.varianceThreshold) * pc.varianceScale, 0.0, 1.0);
+    float rayCount = mix(float(pc.minRays), float(pc.maxRays), t);
+
+    // Edge detection boost
+    if (pc.edgeBoost != 0u) {
+        float centerDepth = texture(depthTex, uv).r;
+        vec3 centerNormal = texture(normalTex, uv).xyz * 2.0 - 1.0;
+        float edgeWeight = 0.0;
+        vec2 texelSize = 1.0 / pc.screenSize;
+        vec2 offsets[4] = vec2[4](vec2(1,0), vec2(-1,0), vec2(0,1), vec2(0,-1));
+        for (int i = 0; i < 4; ++i) {
+            float nd = texture(depthTex, uv + offsets[i] * texelSize).r;
+            vec3 nn = texture(normalTex, uv + offsets[i] * texelSize).xyz * 2.0 - 1.0;
+            float depthDiff = abs(centerDepth - nd) / max(centerDepth, 0.001);
+            float normalDiff = 1.0 - max(dot(centerNormal, nn), 0.0);
+            edgeWeight = max(edgeWeight, max(depthDiff * 10.0, normalDiff));
+        }
+        rayCount = mix(rayCount, float(pc.maxRays), clamp(edgeWeight, 0.0, 1.0));
+    }
+
+    uint budget = clamp(uint(rayCount + 0.5), pc.minRays, pc.maxRays);
+    imageStore(budgetMap, pixel, uvec4(budget, 0u, 0u, 0u));
+}

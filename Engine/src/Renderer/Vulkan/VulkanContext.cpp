@@ -242,6 +242,15 @@ bool VulkanContext::SelectPhysicalDevice() {
     vkGetPhysicalDeviceProperties(bestDevice, &properties);
     ENJIN_LOG_INFO(Renderer, "Selected physical device: %s", properties.deviceName);
 
+    // Cache timestamp query support from device limits
+    m_TimestampPeriod = properties.limits.timestampPeriod;
+    m_TimestampValidBits = properties.limits.timestampComputeAndGraphics ? 64 : 0;
+    if (m_TimestampPeriod > 0.0f) {
+        ENJIN_LOG_INFO(Renderer, "GPU timestamp period: %.2f ns (valid bits: %u)", m_TimestampPeriod, m_TimestampValidBits);
+    } else {
+        ENJIN_LOG_WARN(Renderer, "GPU does not support timestamp queries (period=0)");
+    }
+
     // Cache memory properties (avoids repeated vkGetPhysicalDeviceMemoryProperties calls)
     vkGetPhysicalDeviceMemoryProperties(bestDevice, &m_MemoryProperties);
 

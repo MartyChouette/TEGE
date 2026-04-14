@@ -1,6 +1,7 @@
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Renderer/PostProcessing.h"
+#if !ENJIN_RENDERER_WEBGPU
 #include "Enjin/Renderer/RayTracing/RTShadows.h"
 #include "Enjin/Renderer/RayTracing/RTReflections.h"
 #include "Enjin/Renderer/RayTracing/RTAmbientOcclusion.h"
@@ -8,10 +9,13 @@
 #include "Enjin/Renderer/RayTracing/RadianceCache.h"
 #include "Enjin/Renderer/RayTracing/PathTracer.h"
 #include "Enjin/Renderer/RayTracing/ReSTIR.h"
+#include "Enjin/Renderer/RayTracing/RTTemporalReuse.h"
+#include "Enjin/Renderer/RayTracing/SurfelRadianceCache.h"
 #include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
 #include "Enjin/Renderer/RayTracing/OIDNDenoiser.h"
-#include <algorithm>
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
+#endif
+#include <algorithm>
 #include <nlohmann/json.hpp>
 #include <cmath>
 
@@ -35,6 +39,7 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
     SceneRenderSettings s;
 
     if (rs) {
+#if !ENJIN_RENDERER_WEBGPU
         s.shadowsEnabled       = rs->IsShadowsEnabled();
         s.shadowResolution     = rs->GetShadowResolution();
         s.shadowDistance       = rs->GetShadowDistance();
@@ -42,8 +47,9 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.shadowSoftness       = rs->GetShadowSoftness();
         s.cascadeProgressiveUpdate  = rs->IsCascadeProgressiveUpdate();
         s.cascadeFarUpdateInterval  = rs->GetCascadeFarUpdateInterval();
-        s.backfaceCulling      = rs->IsBackfaceCullingEnabled();
         s.wireframe            = rs->IsWireframeEnabled();
+#endif
+        s.backfaceCulling      = rs->IsBackfaceCullingEnabled();
         s.ambientIntensity     = rs->GetAmbientIntensity();
         s.ambientColor         = rs->GetAmbientColor();
         s.fogDensity           = rs->GetFogDensity();
@@ -89,6 +95,7 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.geometryOutlineColor = rs->GetGeometryOutlineColor();
 
         // Ray Tracing
+#if !ENJIN_RENDERER_WEBGPU
         s.rtEnabled = rs->IsRayTracingEnabled();
         s.rtMode = rs->GetRTMode();
         if (auto* rtShadows = rs->GetRTShadows()) {
@@ -155,12 +162,36 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
             s.restirSpatialDepthThreshold = restir->GetConfig().spatialDepthThreshold;
             s.restirSpatialNormalThreshold = restir->GetConfig().spatialNormalThreshold;
         }
+        if (auto* tr = rs->GetRTTemporalReuse()) {
+            s.rtTemporalReuseEnabled = tr->GetConfig().enabled;
+            s.rtTemporalReuseHistoryLength = tr->GetConfig().historyLength;
+            s.rtTemporalReuseDisocclusionThreshold = tr->GetConfig().disocclusionThreshold;
+            s.rtTemporalReuseNormalThreshold = tr->GetConfig().normalThreshold;
+            s.rtTemporalReuseShadows = tr->GetConfig().reuseShadows;
+            s.rtTemporalReuseReflections = tr->GetConfig().reuseReflections;
+            s.rtTemporalReuseAO = tr->GetConfig().reuseAO;
+            s.rtTemporalReuseGI = tr->GetConfig().reuseGI;
+        }
+        if (auto* sc = rs->GetSurfelRadianceCache()) {
+            s.surfelCacheEnabled = sc->GetConfig().enabled;
+            s.surfelCacheMaxSurfels = sc->GetConfig().maxSurfels;
+            s.surfelCacheRadius = sc->GetConfig().surfelRadius;
+            s.surfelCacheUpdateFraction = sc->GetConfig().updateFraction;
+            s.surfelCacheMaxAge = sc->GetConfig().maxAge;
+            s.surfelCacheExcludeDirectional = sc->GetConfig().excludeDirectional;
+            s.surfelCacheCameraRadius = sc->GetConfig().cameraRadius;
+            s.surfelCacheBlendWeight = sc->GetConfig().blendWeight;
+            s.surfelCacheNormalThreshold = sc->GetConfig().normalThreshold;
+            s.surfelCachePlacementInterval = sc->GetConfig().placementInterval;
+            s.surfelCacheRaysPerSurfel = sc->GetConfig().raysPerSurfel;
+        }
         if (auto* compositor = rs->GetRTCompositor()) {
             s.rtShadowStrength = compositor->GetConfig().shadowStrength;
             s.rtReflectionStrength = compositor->GetConfig().reflectionStrength;
             s.rtAOStrength = compositor->GetConfig().aoStrength;
             s.rtGIStrength = compositor->GetConfig().giStrength;
         }
+#endif // !ENJIN_RENDERER_WEBGPU
     }
 
     if (pp) {
@@ -200,6 +231,10 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
 
         // Anti-Aliasing
         s.aaMode                       = pp->aaMode;
+        s.aaComparisonEnabled          = pp->aaComparisonEnabled != 0;
+        s.aaComparisonModeLeft         = pp->aaComparisonModeLeft;
+        s.aaComparisonModeRight        = pp->aaComparisonModeRight;
+        s.aaComparisonDivider          = pp->aaComparisonDivider;
         s.fxaaEnabled                  = pp->fxaaEnabled != 0;
         s.fxaaSpanMax                  = pp->fxaaSpanMax;
         s.fxaaReduceMin                = pp->fxaaReduceMin;
@@ -342,6 +377,7 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
 // ---------------------------------------------------------------------------
 void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSettings* pp) const {
     if (rs) {
+#if !ENJIN_RENDERER_WEBGPU
         rs->SetShadowsEnabled(shadowsEnabled);
         rs->SetShadowResolution(shadowResolution);
         rs->SetShadowDistance(shadowDistance);
@@ -349,8 +385,9 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetShadowSoftness(shadowSoftness);
         rs->SetCascadeProgressiveUpdate(cascadeProgressiveUpdate);
         rs->SetCascadeFarUpdateInterval(cascadeFarUpdateInterval);
-        rs->SetBackfaceCullingEnabled(backfaceCulling);
         rs->SetWireframeEnabled(wireframe);
+#endif
+        rs->SetBackfaceCullingEnabled(backfaceCulling);
         rs->SetAmbientIntensity(ambientIntensity);
         rs->SetAmbientColor(ambientColor);
         rs->SetFogParams(fogDensity, fogStart, fogEnd, fogHeightFalloff);
@@ -374,9 +411,11 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetHalfLambert(halfLambert);
 
         // Temporal Upscaling
+#if !ENJIN_RENDERER_WEBGPU
         rs->SetUpscalerSharpness(upscalerSharpness);
         rs->SetUpscalerQuality(upscalerQuality);
         rs->SetUpscalerType(upscalerType);  // Must be last — triggers init with quality/sharpness
+#endif
 
         // Shading Model
         rs->SetShadingModel(shadingModel);
@@ -398,6 +437,7 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetGeometryOutlineColor(geometryOutlineColor);
 
         // Ray Tracing
+#if !ENJIN_RENDERER_WEBGPU
         rs->SetRayTracingEnabled(rtEnabled);
         rs->SetRTMode(rtMode);
         if (auto* rtShadows = rs->GetRTShadows()) {
@@ -463,12 +503,36 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
             restir->GetConfig().spatialDepthThreshold = restirSpatialDepthThreshold;
             restir->GetConfig().spatialNormalThreshold = restirSpatialNormalThreshold;
         }
+        if (auto* tr = rs->GetRTTemporalReuse()) {
+            tr->GetConfig().enabled = rtTemporalReuseEnabled;
+            tr->GetConfig().historyLength = rtTemporalReuseHistoryLength;
+            tr->GetConfig().disocclusionThreshold = rtTemporalReuseDisocclusionThreshold;
+            tr->GetConfig().normalThreshold = rtTemporalReuseNormalThreshold;
+            tr->GetConfig().reuseShadows = rtTemporalReuseShadows;
+            tr->GetConfig().reuseReflections = rtTemporalReuseReflections;
+            tr->GetConfig().reuseAO = rtTemporalReuseAO;
+            tr->GetConfig().reuseGI = rtTemporalReuseGI;
+        }
+        if (auto* sc = rs->GetSurfelRadianceCache()) {
+            sc->GetConfig().enabled = surfelCacheEnabled;
+            sc->GetConfig().maxSurfels = surfelCacheMaxSurfels;
+            sc->GetConfig().surfelRadius = surfelCacheRadius;
+            sc->GetConfig().updateFraction = surfelCacheUpdateFraction;
+            sc->GetConfig().maxAge = surfelCacheMaxAge;
+            sc->GetConfig().excludeDirectional = surfelCacheExcludeDirectional;
+            sc->GetConfig().cameraRadius = surfelCacheCameraRadius;
+            sc->GetConfig().blendWeight = surfelCacheBlendWeight;
+            sc->GetConfig().normalThreshold = surfelCacheNormalThreshold;
+            sc->GetConfig().placementInterval = surfelCachePlacementInterval;
+            sc->GetConfig().raysPerSurfel = surfelCacheRaysPerSurfel;
+        }
         if (auto* compositor = rs->GetRTCompositor()) {
             compositor->GetConfig().shadowStrength = rtShadowStrength;
             compositor->GetConfig().reflectionStrength = rtReflectionStrength;
             compositor->GetConfig().aoStrength = rtAOStrength;
             compositor->GetConfig().giStrength = rtGIStrength;
         }
+#endif // !ENJIN_RENDERER_WEBGPU
     }
 
     if (pp) {
@@ -515,6 +579,10 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
 
         // Anti-Aliasing
         pp->aaMode                       = aaMode;
+        pp->aaComparisonEnabled          = aaComparisonEnabled ? 1 : 0;
+        pp->aaComparisonModeLeft         = aaComparisonModeLeft;
+        pp->aaComparisonModeRight        = aaComparisonModeRight;
+        pp->aaComparisonDivider          = aaComparisonDivider;
         pp->fxaaEnabled                  = (aaMode == 1) ? 1 : 0;
         pp->fxaaSpanMax                  = fxaaSpanMax;
         pp->fxaaReduceMin                = fxaaReduceMin;
@@ -959,6 +1027,10 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
 
     // Anti-Aliasing
     j["aaMode"]            = s.aaMode;
+    j["aaComparisonEnabled"]    = s.aaComparisonEnabled;
+    j["aaComparisonModeLeft"]   = s.aaComparisonModeLeft;
+    j["aaComparisonModeRight"]  = s.aaComparisonModeRight;
+    j["aaComparisonDivider"]    = RF(s.aaComparisonDivider);
     j["fxaaEnabled"]       = s.fxaaEnabled;
     j["fxaaSpanMax"]       = RF(s.fxaaSpanMax);
     j["fxaaReduceMin"]     = RF(s.fxaaReduceMin);
@@ -1170,6 +1242,29 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["restirSpatialRadius"]           = RF(s.restirSpatialRadius);
     j["restirSpatialDepthThreshold"]   = RF(s.restirSpatialDepthThreshold);
     j["restirSpatialNormalThreshold"]  = RF(s.restirSpatialNormalThreshold);
+    // RT Temporal Reuse
+    j["rtTemporalReuseEnabled"]                = s.rtTemporalReuseEnabled;
+    j["rtTemporalReuseHistoryLength"]          = RF(s.rtTemporalReuseHistoryLength);
+    j["rtTemporalReuseDisocclusionThreshold"]  = RF(s.rtTemporalReuseDisocclusionThreshold);
+    j["rtTemporalReuseNormalThreshold"]        = RF(s.rtTemporalReuseNormalThreshold);
+    j["rtTemporalReuseShadows"]                = s.rtTemporalReuseShadows;
+    j["rtTemporalReuseReflections"]            = s.rtTemporalReuseReflections;
+    j["rtTemporalReuseAO"]                     = s.rtTemporalReuseAO;
+    j["rtTemporalReuseGI"]                     = s.rtTemporalReuseGI;
+
+    // Surfel Radiance Cache
+    j["surfelCacheEnabled"]              = s.surfelCacheEnabled;
+    j["surfelCacheMaxSurfels"]           = s.surfelCacheMaxSurfels;
+    j["surfelCacheRadius"]               = RF(s.surfelCacheRadius);
+    j["surfelCacheUpdateFraction"]       = RF(s.surfelCacheUpdateFraction);
+    j["surfelCacheMaxAge"]               = RF(s.surfelCacheMaxAge);
+    j["surfelCacheExcludeDirectional"]   = s.surfelCacheExcludeDirectional;
+    j["surfelCacheCameraRadius"]         = RF(s.surfelCacheCameraRadius);
+    j["surfelCacheBlendWeight"]          = RF(s.surfelCacheBlendWeight);
+    j["surfelCacheNormalThreshold"]      = RF(s.surfelCacheNormalThreshold);
+    j["surfelCachePlacementInterval"]    = s.surfelCachePlacementInterval;
+    j["surfelCacheRaysPerSurfel"]        = s.surfelCacheRaysPerSurfel;
+
     j["rtShadowStrength"]              = RF(s.rtShadowStrength);
     j["rtReflectionStrength"]          = RF(s.rtReflectionStrength);
     j["rtAOStrength"]                  = RF(s.rtAOStrength);
@@ -1240,7 +1335,11 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("filmGrainIntensity"))  s.filmGrainIntensity  = j["filmGrainIntensity"].get<f32>();
 
     // Anti-Aliasing
-    if (j.contains("aaMode"))            s.aaMode            = j["aaMode"].get<u32>();
+    if (j.contains("aaMode"))                 s.aaMode                 = j["aaMode"].get<u32>();
+    if (j.contains("aaComparisonEnabled"))    s.aaComparisonEnabled    = JB(j["aaComparisonEnabled"]);
+    if (j.contains("aaComparisonModeLeft"))   s.aaComparisonModeLeft   = j["aaComparisonModeLeft"].get<u32>();
+    if (j.contains("aaComparisonModeRight"))  s.aaComparisonModeRight  = j["aaComparisonModeRight"].get<u32>();
+    if (j.contains("aaComparisonDivider"))    s.aaComparisonDivider    = j["aaComparisonDivider"].get<f32>();
     if (j.contains("fxaaEnabled"))       s.fxaaEnabled       = JB(j["fxaaEnabled"]);
     if (j.contains("fxaaSpanMax"))       s.fxaaSpanMax       = j["fxaaSpanMax"].get<f32>();
     if (j.contains("fxaaReduceMin"))     s.fxaaReduceMin     = j["fxaaReduceMin"].get<f32>();
@@ -1453,6 +1552,30 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("restirSpatialRadius"))            s.restirSpatialRadius            = j["restirSpatialRadius"].get<f32>();
     if (j.contains("restirSpatialDepthThreshold"))    s.restirSpatialDepthThreshold    = j["restirSpatialDepthThreshold"].get<f32>();
     if (j.contains("restirSpatialNormalThreshold"))   s.restirSpatialNormalThreshold   = j["restirSpatialNormalThreshold"].get<f32>();
+
+    // RT Temporal Reuse
+    if (j.contains("rtTemporalReuseEnabled"))               s.rtTemporalReuseEnabled               = JB(j["rtTemporalReuseEnabled"]);
+    if (j.contains("rtTemporalReuseHistoryLength"))         s.rtTemporalReuseHistoryLength         = j["rtTemporalReuseHistoryLength"].get<f32>();
+    if (j.contains("rtTemporalReuseDisocclusionThreshold")) s.rtTemporalReuseDisocclusionThreshold = j["rtTemporalReuseDisocclusionThreshold"].get<f32>();
+    if (j.contains("rtTemporalReuseNormalThreshold"))       s.rtTemporalReuseNormalThreshold       = j["rtTemporalReuseNormalThreshold"].get<f32>();
+    if (j.contains("rtTemporalReuseShadows"))               s.rtTemporalReuseShadows               = JB(j["rtTemporalReuseShadows"]);
+    if (j.contains("rtTemporalReuseReflections"))           s.rtTemporalReuseReflections           = JB(j["rtTemporalReuseReflections"]);
+    if (j.contains("rtTemporalReuseAO"))                    s.rtTemporalReuseAO                    = JB(j["rtTemporalReuseAO"]);
+    if (j.contains("rtTemporalReuseGI"))                    s.rtTemporalReuseGI                    = JB(j["rtTemporalReuseGI"]);
+
+    // Surfel Radiance Cache
+    if (j.contains("surfelCacheEnabled"))              s.surfelCacheEnabled              = JB(j["surfelCacheEnabled"]);
+    if (j.contains("surfelCacheMaxSurfels"))           s.surfelCacheMaxSurfels           = j["surfelCacheMaxSurfels"].get<u32>();
+    if (j.contains("surfelCacheRadius"))               s.surfelCacheRadius               = j["surfelCacheRadius"].get<f32>();
+    if (j.contains("surfelCacheUpdateFraction"))       s.surfelCacheUpdateFraction       = j["surfelCacheUpdateFraction"].get<f32>();
+    if (j.contains("surfelCacheMaxAge"))               s.surfelCacheMaxAge               = j["surfelCacheMaxAge"].get<f32>();
+    if (j.contains("surfelCacheExcludeDirectional"))   s.surfelCacheExcludeDirectional   = JB(j["surfelCacheExcludeDirectional"]);
+    if (j.contains("surfelCacheCameraRadius"))         s.surfelCacheCameraRadius         = j["surfelCacheCameraRadius"].get<f32>();
+    if (j.contains("surfelCacheBlendWeight"))          s.surfelCacheBlendWeight          = j["surfelCacheBlendWeight"].get<f32>();
+    if (j.contains("surfelCacheNormalThreshold"))      s.surfelCacheNormalThreshold      = j["surfelCacheNormalThreshold"].get<f32>();
+    if (j.contains("surfelCachePlacementInterval"))    s.surfelCachePlacementInterval    = j["surfelCachePlacementInterval"].get<u32>();
+    if (j.contains("surfelCacheRaysPerSurfel"))        s.surfelCacheRaysPerSurfel        = j["surfelCacheRaysPerSurfel"].get<u32>();
+
     if (j.contains("rtShadowStrength"))               s.rtShadowStrength               = j["rtShadowStrength"].get<f32>();
     if (j.contains("rtReflectionStrength"))            s.rtReflectionStrength            = j["rtReflectionStrength"].get<f32>();
     if (j.contains("rtAOStrength"))                   s.rtAOStrength                   = j["rtAOStrength"].get<f32>();

@@ -14,6 +14,7 @@ struct ReSTIRInitialPushConstants {
     u32 initialCandidates;
     f32 distanceBias;
     u32 frameCount;
+    u32 bvhNodeCount;       // 0 = uniform random, >0 = BVH traversal
 };
 
 // Push constants for the ReSTIR temporal reuse compute shader
@@ -224,7 +225,7 @@ void ReSTIR::Resize(u32 width, u32 height) {
 }
 
 void ReSTIR::Dispatch(VkCommandBuffer cmd, VkDescriptorSet rtDescSet, u32 frameCount,
-                       u32 totalLightCount) {
+                       u32 totalLightCount, u32 bvhNodeCount) {
     if (!m_Initialized || !m_Config.enabled || totalLightCount == 0) return;
 
     // Swap ping-pong buffers -- previous frame's output becomes this frame's prev input
@@ -264,7 +265,7 @@ void ReSTIR::Dispatch(VkCommandBuffer cmd, VkDescriptorSet rtDescSet, u32 frameC
     }
 
     // Pass 1: Initial candidate generation (writes to current buffer at binding 19)
-    DispatchInitial(cmd, rtDescSet, frameCount, totalLightCount);
+    DispatchInitial(cmd, rtDescSet, frameCount, totalLightCount, bvhNodeCount);
 
     // Pass 2: Temporal reuse (reads prev buffer at binding 20, modifies current at binding 19)
     if (m_Config.temporalReuse && m_TemporalPipeline) {
@@ -293,7 +294,7 @@ void ReSTIR::Dispatch(VkCommandBuffer cmd, VkDescriptorSet rtDescSet, u32 frameC
 }
 
 void ReSTIR::DispatchInitial(VkCommandBuffer cmd, VkDescriptorSet rtDescSet, u32 frameCount,
-                              u32 totalLightCount) {
+                              u32 totalLightCount, u32 bvhNodeCount) {
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_InitialPipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                              m_InitialPipelineLayout, 0, 1, &rtDescSet, 0, nullptr);
@@ -303,6 +304,7 @@ void ReSTIR::DispatchInitial(VkCommandBuffer cmd, VkDescriptorSet rtDescSet, u32
     pc.initialCandidates = m_Config.initialCandidates;
     pc.distanceBias = m_Config.distanceBias;
     pc.frameCount = frameCount;
+    pc.bvhNodeCount = bvhNodeCount;
 
     vkCmdPushConstants(cmd, m_InitialPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
                         0, sizeof(pc), &pc);

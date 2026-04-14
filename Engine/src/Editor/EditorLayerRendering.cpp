@@ -60,6 +60,8 @@
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
 #include "Enjin/Renderer/RayTracing/RTTemporalReuse.h"
 #include "Enjin/Renderer/RayTracing/ReSTIR.h"
+#include "Enjin/Renderer/RayTracing/LightBVH.h"
+#include "Enjin/Renderer/RayTracing/AdaptiveRayBudget.h"
 #include "Enjin/Renderer/RayTracing/RadianceCache.h"
 #include "Enjin/Renderer/RayTracing/SurfelRadianceCache.h"
 #include "Enjin/Renderer/RayTracing/AccelerationStructureManager.h"
@@ -1225,6 +1227,41 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 }
                 ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
                     "MSAA and TAA are mutually exclusive");
+            }
+
+            // AA Comparison Mode (split-screen)
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            bool aaCompare = settings.aaComparisonEnabled != 0;
+            if (ImGui::Checkbox("AA Comparison Mode", &aaCompare)) {
+                settings.aaComparisonEnabled = aaCompare ? 1 : 0;
+            }
+            if (settings.aaComparisonEnabled != 0) {
+                ImGui::TextDisabled("Split-screen comparison of two AA methods");
+
+                const char* aaCompModes[] = { "None", "FXAA", "TAA (external)", "SMAA" };
+                int leftMode = static_cast<int>(settings.aaComparisonModeLeft);
+                int rightMode = static_cast<int>(settings.aaComparisonModeRight);
+
+                if (ImGui::Combo("Left Method", &leftMode, aaCompModes, IM_ARRAYSIZE(aaCompModes))) {
+                    settings.aaComparisonModeLeft = static_cast<u32>(leftMode);
+                }
+                if (ImGui::Combo("Right Method", &rightMode, aaCompModes, IM_ARRAYSIZE(aaCompModes))) {
+                    settings.aaComparisonModeRight = static_cast<u32>(rightMode);
+                }
+
+                ImGui::SliderFloat("Divider Position", &settings.aaComparisonDivider, 0.0f, 1.0f, "%.2f");
+
+                // Show labels for each side
+                const char* leftName = (leftMode >= 0 && leftMode < IM_ARRAYSIZE(aaCompModes)) ? aaCompModes[leftMode] : "?";
+                const char* rightName = (rightMode >= 0 && rightMode < IM_ARRAYSIZE(aaCompModes)) ? aaCompModes[rightMode] : "?";
+                ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "Left: %s  |  Right: %s", leftName, rightName);
+
+                if (leftMode == 2 || rightMode == 2) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
+                        "TAA is a compute pass; comparison shows TAA-resolved input");
+                }
             }
         }
 
@@ -2700,6 +2737,78 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
                                         ImGui::DragFloat("Normal Threshold##ReSTIRSpatial", &cfg.spatialNormalThreshold, 0.01f, 0.5f, 1.0f, "%.2f");
                                         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Minimum normal dot product for neighbor similarity");
                                     }
+                                }
+                                ImGui::TreePop();
+                            }
+                        }
+
+                        // Light BVH (importance-weighted light hierarchy for ReSTIR)
+                        if (auto* lightBVH = m_RenderSystem->GetLightBVH()) {
+                            auto& cfg = lightBVH->GetConfig();
+                            if (ImGui::TreeNode("Light BVH")) {
+                                ImGui::Checkbox("Enabled##LightBVH", &cfg.enabled);
+                                if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                    "Build a BVH over scene lights for O(log N) importance-proportional\n"
+                                    "light selection in ReSTIR. Much better convergence than uniform random\n"
+                                    "when many lights are present (>16). Scales to 32K+ lights.");
+                                if (cfg.enabled) {
+                                    int minLights = static_cast<int>(cfg.minLightsForBVH);
+                                    if (ImGui::SliderInt("Min Lights##LightBVH", &minLights, 2, 64)) {
+                                        cfg.minLightsForBVH = static_cast<u32>(minLights);
+                                    }
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Minimum number of lights to trigger BVH construction.\n"
+                                        "Below this threshold, uniform random selection is used.");
+                                    if (lightBVH->IsValid()) {
+                                        ImGui::Text("BVH Nodes: %u", lightBVH->GetNodeCount());
+                                    } else {
+                                        ImGui::TextDisabled("BVH not built (too few lights or disabled)");
+                                    }
+                                }
+                                ImGui::TreePop();
+                            }
+                        }
+
+                        // Adaptive Ray Budget (variance-driven per-pixel ray allocation)
+                        if (auto* rayBudget = m_RenderSystem->GetAdaptiveRayBudget()) {
+                            auto& cfg = rayBudget->GetConfig();
+                            if (ImGui::TreeNode("Adaptive Ray Budget")) {
+                                ImGui::Checkbox("Enabled##AdaptiveRayBudget", &cfg.enabled);
+                                if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                    "Allocate per-pixel ray counts based on temporal variance.\n"
+                                    "High-variance pixels (noise, edges, disocclusions) get more rays.\n"
+                                    "Converged regions get fewer rays, saving GPU budget.");
+                                if (cfg.enabled) {
+                                    int minRays = static_cast<int>(cfg.minRaysPerPixel);
+                                    int maxRays = static_cast<int>(cfg.maxRaysPerPixel);
+                                    if (ImGui::SliderInt("Min Rays##RayBudget", &minRays, 1, 4)) {
+                                        cfg.minRaysPerPixel = static_cast<u32>(minRays);
+                                    }
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Minimum rays per pixel even for converged regions.\n"
+                                        "1 is sufficient for temporally stable areas.");
+                                    if (ImGui::SliderInt("Max Rays##RayBudget", &maxRays, 1, 8)) {
+                                        cfg.maxRaysPerPixel = static_cast<u32>(maxRays);
+                                    }
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Maximum rays per pixel for high-variance areas.\n"
+                                        "Higher = better quality at noisy pixels, more GPU cost.");
+                                    ImGui::SliderFloat("Variance Threshold##RayBudget", &cfg.varianceThreshold, 0.01f, 0.5f, "%.3f");
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Variance below this threshold maps to minimum rays.\n"
+                                        "Lower = more aggressive ray allocation.");
+                                    ImGui::SliderFloat("Variance Scale##RayBudget", &cfg.varianceScale, 0.1f, 5.0f, "%.2f");
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Multiplier for variance-to-ray-count mapping.\n"
+                                        "Higher = faster ramp to max rays.");
+                                    ImGui::Checkbox("Edge Boost##RayBudget", &cfg.edgeBoost);
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Boost ray count at geometric edges (depth/normal discontinuities).\n"
+                                        "Reduces aliasing at silhouettes.");
+                                    ImGui::Checkbox("Disocclusion Boost##RayBudget", &cfg.disocclusionBoost);
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                                        "Boost ray count for disoccluded regions (tiles marked stale\n"
+                                        "by the radiance cache). Helps newly-revealed surfaces converge faster.");
                                 }
                                 ImGui::TreePop();
                             }

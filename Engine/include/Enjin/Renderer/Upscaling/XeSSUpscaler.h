@@ -1,9 +1,13 @@
 #pragma once
+// WHOLE_FILE_WEBGPU_GUARD
+#if !ENJIN_RENDERER_WEBGPU
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Renderer/Upscaling/IUpscaler.h"
+#if !ENJIN_RENDERER_WEBGPU
 #include <vulkan/vulkan.h>
+#endif
 
 #ifdef ENJIN_HAS_XESS_SDK
 #include <xess/xess.h>
@@ -145,3 +149,4 @@ private:
 
 } // namespace Renderer
 } // namespace Enjin
+#endif // !ENJIN_RENDERER_WEBGPU

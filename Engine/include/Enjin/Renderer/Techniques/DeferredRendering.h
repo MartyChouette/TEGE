@@ -1,8 +1,12 @@
 #pragma once
+// WHOLE_FILE_WEBGPU_GUARD
+#if !ENJIN_RENDERER_WEBGPU
 
 #include "Enjin/Renderer/Techniques/RenderingTechnique.h"
 #include "Enjin/Renderer/Vulkan/VulkanImage.h"
+#if !ENJIN_RENDERER_WEBGPU
 #include <vulkan/vulkan.h>
+#endif
 #include <vector>
 #include <memory>
 
@@ -69,3 +73,4 @@ private:
 
 } // namespace Renderer
 } // namespace Enjin
+#endif // !ENJIN_RENDERER_WEBGPU

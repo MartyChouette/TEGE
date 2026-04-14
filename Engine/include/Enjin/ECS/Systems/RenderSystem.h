@@ -28,8 +28,10 @@ namespace Enjin::ECS {
 #endif
 
 #include "Enjin/Renderer/Camera.h"
+#if !ENJIN_RENDERER_WEBGPU
 #include "Enjin/Renderer/RenderTarget.h"
 #include "Enjin/Renderer/Texture.h"
+#endif
 #include "Enjin/Renderer/TextRasterizer.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/Material.h"
@@ -104,8 +106,10 @@ namespace Enjin { namespace Renderer {
     class RTCompositor;
     class RTTemporalReuse;
     class ReSTIR;
+    class LightBVH;
     class RadianceCache;
     class SurfelRadianceCache;
+    class AdaptiveRayBudget;
     class IUpscaler;
     class OITManager;
     class SHLightingSystem;
@@ -245,6 +249,8 @@ public:
     bool IsEditorMode() const { return m_IsEditorMode; }
     bool IsGameViewReady() { if (m_SceneClearCooldown > 0) { --m_SceneClearCooldown; return false; } return true; }
     bool IsSceneClearActive() const { return m_SceneClearCooldown > 0; }
+
+#if !ENJIN_RENDERER_WEBGPU
     Renderer::VulkanRenderer* GetRenderer() const { return m_Renderer; }
 
     // Render all entities to an offscreen render target using a custom camera
@@ -255,9 +261,11 @@ public:
     // Each ViewportCamera defines a normalized rect within the target.
     // The render pass must already be started by the caller.
     void RenderSplitscreen(Renderer::RenderTarget* target, const std::vector<ViewportCamera>& viewports);
+#endif
 
     static constexpr u32 MAX_SPLITSCREEN_VIEWPORTS = 4;
 
+#if !ENJIN_RENDERER_WEBGPU
     // Set splitscreen viewports for the main render pass (used by Player).
     // When non-empty, Update() renders each viewport instead of a single full-screen camera.
     // Call with empty vector to disable splitscreen.
@@ -269,7 +277,9 @@ public:
     // Run the shadow pass for an offscreen camera (call BEFORE the render target's Begin()).
     // The shadow pass uses its own framebuffer, so it must not be inside another render pass.
     void RenderShadowPassForCamera(Renderer::Camera* camera);
+#endif
 
+#if !ENJIN_RENDERER_WEBGPU
     // Runtime rendering settings
     bool IsShadowsEnabled() const { return m_ShadowsEnabled; }
     void SetShadowsEnabled(bool enabled) {
@@ -280,11 +290,17 @@ public:
     }
     // Call after shadow state changes to update offscreen descriptor bindings
     void RefreshDescriptorsIfDirty();
+#endif
 
     // Memory profiling queries
     usize GetSortedRenderListSize() const { return m_SortedRenderList.size(); }
+#if !ENJIN_RENDERER_WEBGPU
     usize GetEntityRenderDataSize() const { return m_EntityRenderData.size(); }
+#else
+    usize GetEntityRenderDataSize() const { return 0; }
+#endif
 
+#if !ENJIN_RENDERER_WEBGPU
     // Editor viewport display modes
     void SetEditorWireframe(bool enabled) { m_EditorWireframe = enabled; }
     void SetEditorUnlit(bool enabled) { m_EditorUnlit = enabled; }
@@ -306,6 +322,7 @@ public:
     void SetCascadeProgressiveUpdate(bool enabled) { m_CascadeProgressiveUpdate = enabled; }
     u32 GetCascadeFarUpdateInterval() const { return m_CascadeFarUpdateInterval; }
     void SetCascadeFarUpdateInterval(u32 interval) { m_CascadeFarUpdateInterval = std::clamp(interval, 2u, 8u); }
+#endif
 
     bool IsBackfaceCullingEnabled() const { return m_BackfaceCulling; }
     void SetBackfaceCullingEnabled(bool enabled);
@@ -486,8 +503,12 @@ public:
     void SetUpscalerQuality(u32 quality);
     f32 GetUpscalerSharpness() const { return m_UpscalerSharpness; }
     void SetUpscalerSharpness(f32 s) { m_UpscalerSharpness = s; }
+#if !ENJIN_RENDERER_WEBGPU
     bool IsUpscalerActive() const { return m_UpscalerType > 0 && m_Upscaler != nullptr; }
     Renderer::IUpscaler* GetUpscaler() const { return m_Upscaler.get(); }
+#else
+    bool IsUpscalerActive() const { return false; }
+#endif
 
 #if !ENJIN_RENDERER_WEBGPU
     // Skybox
@@ -521,8 +542,10 @@ public:
     Renderer::RTCompositor* GetRTCompositor() { return m_RTCompositor.get(); }
     Renderer::RTTemporalReuse* GetRTTemporalReuse() { return m_RTTemporalReuse.get(); }
     Renderer::ReSTIR* GetReSTIR() { return m_ReSTIR.get(); }
+    Renderer::LightBVH* GetLightBVH() { return m_LightBVH.get(); }
     Renderer::RadianceCache* GetRadianceCache() { return m_RadianceCache.get(); }
     Renderer::SurfelRadianceCache* GetSurfelRadianceCache() { return m_SurfelRadianceCache.get(); }
+    Renderer::AdaptiveRayBudget* GetAdaptiveRayBudget() { return m_AdaptiveRayBudget.get(); }
 #endif
 
 #if !ENJIN_RENDERER_WEBGPU
@@ -557,11 +580,13 @@ public:
     const std::vector<Editor::OnionSkinGhost>& GetOnionSkinGhosts() const { return m_OnionSkinGhosts; }
 #endif
 
+#if !ENJIN_RENDERER_WEBGPU
     // Load or retrieve a cached texture (public wrapper for editor/tool use)
     std::shared_ptr<Renderer::Texture> LoadTexture(const std::string& path) { return GetOrLoadTexture(path); }
 
     // Clear a path from the failed texture cache so it will be retried on next load
     void ClearFailedTexture(const std::string& path) { m_FailedTextures.erase(path); }
+#endif
 
 #if !ENJIN_RENDERER_WEBGPU
     // Access descriptor sets for sub-renderers
@@ -769,6 +794,7 @@ private:
     f32 m_LightRampMode = 0.0f;       // 0=off, 1=smooth step, 2=warm, 3=cool, 4=anime
     f32 m_CelShadowMode = 0.0f;       // 0=off, 1=purple, 2=blue, 3=warm, 4=neutral cool
 
+#if !ENJIN_RENDERER_WEBGPU
     // Textures — integer-keyed for O(1) lookup after initial load
     std::unique_ptr<Renderer::Texture> m_DefaultWhiteTexture;
     std::unordered_map<std::string, u32> m_TexturePathToId;          // path → ID (only hit on first load)
@@ -776,9 +802,10 @@ private:
     std::vector<std::string> m_TextureIdToPath;                       // reverse: ID → path (for hot-reload)
     std::unordered_set<std::string> m_FailedTextures; // Paths that failed to load (avoid per-frame retry)
 
-    // Text rendering
-    Renderer::TextRasterizer m_TextRasterizer;
+    // Text rendering (TextRasterizer is platform-agnostic, but texture cache needs Vulkan Texture)
     std::unordered_map<Entity, std::shared_ptr<Renderer::Texture>> m_TextTextureCache;
+#endif
+    Renderer::TextRasterizer m_TextRasterizer;
 
 #if !ENJIN_RENDERER_WEBGPU
     // Skeletal animation
@@ -805,15 +832,18 @@ private:
     SceneComposition m_SceneComposition;
     u32 m_DiagnosticFrameCounter = 0;
 
+#if !ENJIN_RENDERER_WEBGPU
     // Progressive cascade shadow updates — far cascades update less frequently
     u32 m_ShadowFrameCounter = 0;
     Math::Vector3 m_PrevShadowCameraPos{0, 0, 0};
+    u32 m_CascadeUpdateCooldown = 0;    // Frames until next forced cascade recalc during rotation-only
     bool ShouldUpdateCascade(u32 cascade) const;
 
     // Shadow caster cache — rebuilt when dirty, avoids per-cascade entity iteration
     std::vector<Entity> m_ShadowCasters;
     bool m_ShadowCastersDirty = true;
     void RebuildShadowCasterCache();
+#endif
 
     // Cached light entity list — rebuilt only when dirty (entity add/remove or light count change)
     std::vector<Entity> m_CachedLightEntities;
@@ -890,8 +920,10 @@ private:
     void EnsureWater3DMeshes();
 #endif
 
+#if !ENJIN_RENDERER_WEBGPU
     // Helper to load or get cached texture
     std::shared_ptr<Renderer::Texture> GetOrLoadTexture(const std::string& path);
+#endif
 
 #if !ENJIN_RENDERER_WEBGPU
     void UpdateTextureDescriptor(Renderer::Texture* texture);
@@ -933,9 +965,6 @@ private:
     u32 m_MaterialSSBOStride = 0;                        // Bytes per material entry (aligned to device minimum)
     u32 m_MaterialSSBOCapacity = 0;                      // Max materials the GPU buffer can hold
     bool m_MaterialSSBOBuilt = false;                    // Set after BuildMaterialSSBO(), reset at frame start
-    bool m_MaterialSSBODirty = true;                     // True when materials need full rebuild (entity add/remove, property edits)
-    bool m_SceneClearPending = false;                    // Deferred scene-clear flag (flushed at frame boundary)
-    u32 m_SceneClearCooldown = 0;                        // Skip game view for N frames after scene clear
 
     // Offscreen (game view) uniform buffers + descriptor sets
     // Separate from main pass so CPU writes don't overwrite each other
@@ -966,6 +995,11 @@ private:
     std::vector<ViewportCamera> m_MainPassViewports;
 #endif
 
+    // Material and scene-clear state (platform-agnostic, used by unguarded public methods)
+    bool m_MaterialSSBODirty = true;                     // True when materials need full rebuild (entity add/remove, property edits)
+    bool m_SceneClearPending = false;                    // Deferred scene-clear flag (flushed at frame boundary)
+    u32 m_SceneClearCooldown = 0;                        // Skip game view for N frames after scene clear
+
 #if !ENJIN_RENDERER_WEBGPU
     // Per-entity render data — dense vector indexed by entity ID for cache-friendly O(1) lookup
     std::vector<EntityRenderData> m_EntityRenderData;
@@ -982,6 +1016,9 @@ private:
     bool m_GeometryPoolBound = false;  // Track if geometry pool buffers are bound this pass
 #endif
     std::vector<Entity> m_SortedRenderList;  // Reused per frame to avoid allocation
+    bool m_RenderListDirty = true;            // Set when entities/materials/visibility change; cleared after sort
+    Math::Vector3 m_PrevCameraPos{0, 0, 0};   // Track camera movement for sort key recalculation
+    u32 m_PrevEntityCount = 0;                // Detect entity count changes
     std::vector<Math::Vector3> m_IKChainCache; // Reused per frame for FABRIK IK solving
 
     // Draw call / triangle counters
@@ -996,7 +1033,7 @@ private:
 
     // Asset hot-reload watcher (polls texture files for changes)
     Assets::FileWatcher m_TextureWatcher;
-    u32 m_WatcherPollCounter = 0;
+    f32 m_WatcherPollTimer = 0.0f;
 
 #if !ENJIN_RENDERER_WEBGPU
     // Shader hot-reload (editor-only)
@@ -1024,6 +1061,7 @@ private:
     // Reset at frame start, replaces std::vector clear/push for render lists.
     std::unique_ptr<FrameAllocator> m_FrameAllocator;
 
+#if !ENJIN_RENDERER_WEBGPU
 #ifdef ENJIN_CLUSTERED_LIGHTING
     std::unique_ptr<Renderer::ClusteredLightingSystem> m_ClusteredLighting;
     std::vector<Renderer::ClusterLight> m_ClusterLightsCache;  // Reused per frame to avoid heap allocation
@@ -1036,6 +1074,7 @@ private:
 #ifdef ENJIN_VRS
     std::unique_ptr<Renderer::VariableRateShading> m_VRS;
 #endif
+#endif // !ENJIN_RENDERER_WEBGPU
 
     bool m_Initialized = false;
 
@@ -1043,7 +1082,9 @@ private:
     u32 m_UpscalerType = 0;        // 0=None, 1=FSR2, 2=DLSS, 3=XeSS
     u32 m_UpscalerQuality = 2;     // 0=Performance, 1=Balanced, 2=Quality, 3=UltraQuality
     f32 m_UpscalerSharpness = 0.0f;
+#if !ENJIN_RENDERER_WEBGPU
     std::unique_ptr<Renderer::IUpscaler> m_Upscaler;
+#endif
 
     // --- TAA (Temporal Anti-Aliasing) state ---
     // Anti-aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA, 4=MSAA 2x, 5=MSAA 4x, 6=MSAA 8x
@@ -1085,8 +1126,10 @@ private:
     std::unique_ptr<Renderer::RTCompositor> m_RTCompositor;
     std::unique_ptr<Renderer::RTTemporalReuse> m_RTTemporalReuse;
     std::unique_ptr<Renderer::ReSTIR> m_ReSTIR;
+    std::unique_ptr<Renderer::LightBVH> m_LightBVH;
     std::unique_ptr<Renderer::RadianceCache> m_RadianceCache;
     std::unique_ptr<Renderer::SurfelRadianceCache> m_SurfelRadianceCache;
+    std::unique_ptr<Renderer::AdaptiveRayBudget> m_AdaptiveRayBudget;
     u32 m_DenoiserType = 0;  // 0=SVGF, 1=OIDN, 2=OptiX
 
     // RT descriptor set layout and pool
@@ -1126,7 +1169,7 @@ private:
     VkBuffer m_RTNEELightBuffer[RT_FRAMES_IN_FLIGHT] = {};
     VkDeviceMemory m_RTNEELightMemory[RT_FRAMES_IN_FLIGHT] = {};
     void* m_RTNEELightMapped[RT_FRAMES_IN_FLIGHT] = {};
-    static constexpr u32 RT_NEE_LIGHT_BUFFER_SIZE = 8192;  // Enough for all scene lights
+    static constexpr u32 RT_NEE_LIGHT_BUFFER_SIZE = 2097152;  // 2 MB — supports up to 32K lights (64 bytes each)
 
     // SDF scene SSBO (binding 17) — SDF objects for reflection fallback sphere tracing
     VkBuffer m_RTSDFBuffer = VK_NULL_HANDLE;
