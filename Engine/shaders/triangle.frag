@@ -888,7 +888,9 @@ void main() {
         mat3 TBN = mat3(T, B, N);
 
         // Normal map is stored as [0,1], remap to [-1,1]
-        vec3 sampledNormal = texture(normalMap, uv).rgb * 2.0 - 1.0;
+        vec3 sampledNormal = ((materialData.matNormalTexIdx != 0xFFFFFFFFu)
+            ? texture(bindlessTextures[nonuniformEXT(materialData.matNormalTexIdx)], uv)
+            : texture(normalMap, uv)).rgb * 2.0 - 1.0;
         normal = normalize(TBN * sampledNormal);
     } else {
         normal = normalize(fragNormal);
@@ -974,19 +976,23 @@ void main() {
     float metallic = mat_metallic;
     float roughness = mat_roughness;
 
-    // Sample base color texture if available
+    // Sample base color texture if available (bindless or fallback)
     if ((mat_flags & FLAG_HAS_BASE_COLOR_TEX) != 0) {
 #ifdef VIRTUAL_TEXTURING
         vec4 texColor = sampleVirtualTexture(uv);
 #else
-        vec4 texColor = texture(baseColorTexture, uv);
+        vec4 texColor = (materialData.matBaseColorTexIdx != 0xFFFFFFFFu)
+            ? texture(bindlessTextures[nonuniformEXT(materialData.matBaseColorTexIdx)], uv)
+            : texture(baseColorTexture, uv);
 #endif
         albedo *= texColor.rgb;
     }
 
-    // Sample metallic-roughness texture if available (glTF convention: G=roughness, B=metallic)
+    // Sample metallic-roughness texture if available (bindless or fallback)
     if ((mat_flags & FLAG_HAS_METALLIC_TEX) != 0) {
-        vec4 mrSample = texture(metallicRoughnessMap, uv);
+        vec4 mrSample = (materialData.matMetallicRoughnessTexIdx != 0xFFFFFFFFu)
+            ? texture(bindlessTextures[nonuniformEXT(materialData.matMetallicRoughnessTexIdx)], uv)
+            : texture(metallicRoughnessMap, uv);
         roughness *= mrSample.g;
         metallic *= mrSample.b;
     }
@@ -994,7 +1000,9 @@ void main() {
     // Sample emissive texture if available
     vec3 emissiveTexColor = vec3(1.0);
     if ((mat_flags & FLAG_HAS_EMISSIVE_TEX) != 0) {
-        emissiveTexColor = texture(emissiveMap, uv).rgb;
+        emissiveTexColor = ((materialData.matEmissiveTexIdx != 0xFFFFFFFFu)
+            ? texture(bindlessTextures[nonuniformEXT(materialData.matEmissiveTexIdx)], uv)
+            : texture(emissiveMap, uv)).rgb;
     }
 
     // Multiply with vertex color (baked shadows / per-vertex lighting)
