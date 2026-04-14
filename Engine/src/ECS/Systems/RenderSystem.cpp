@@ -57,6 +57,7 @@
 #include "Enjin/Renderer/RayTracing/ReSTIR.h"
 #include "Enjin/Renderer/RayTracing/LightBVH.h"
 #include "Enjin/Renderer/RayTracing/AdaptiveRayBudget.h"
+#include "Enjin/Renderer/Vulkan/BindlessResources.h"
 #include "Enjin/Renderer/RayTracing/RadianceCache.h"
 #include "Enjin/Renderer/RayTracing/SurfelRadianceCache.h"
 #include "Enjin/Renderer/RayTracing/RTShaderData.h"
@@ -469,8 +470,22 @@ void RenderSystem::Initialize() {
     }
 #endif
 
+    // Initialize bindless resource manager for texture indexing
+    m_BindlessManager = std::make_unique<Renderer::BindlessResourceManager>(m_Renderer->GetContext());
+    if (!m_BindlessManager->Initialize()) {
+        ENJIN_LOG_WARN(Renderer, "Bindless resource manager initialization failed — per-entity descriptors will be used");
+        m_BindlessManager.reset();
+    } else {
+        // Register default white texture so empty material slots have a valid fallback
+        if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+            m_DefaultBindlessHandle = m_BindlessManager->RegisterTexture(
+                m_DefaultWhiteTexture->GetImageView(), m_DefaultWhiteTexture->GetSampler());
+        }
+    }
+
     m_Initialized = true;
-    ENJIN_LOG_INFO(Renderer, "RenderSystem initialized");
+    ENJIN_LOG_INFO(Renderer, "RenderSystem initialized (bindless: %s)",
+                   m_BindlessManager ? "enabled" : "disabled");
 }
 
 void RenderSystem::OnSceneClear() {

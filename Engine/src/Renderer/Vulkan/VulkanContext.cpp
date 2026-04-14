@@ -444,16 +444,30 @@ bool VulkanContext::CreateLogicalDevice() {
     dgcNVFeatures.deviceGeneratedCommands = VK_TRUE;
 #endif
 
+    // Descriptor indexing features (required for bindless rendering)
+    VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures{};
+    descriptorIndexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+    descriptorIndexingFeatures.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+    descriptorIndexingFeatures.descriptorBindingPartiallyBound = VK_TRUE;
+    descriptorIndexingFeatures.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+    descriptorIndexingFeatures.descriptorBindingVariableDescriptorCount = VK_TRUE;
+    descriptorIndexingFeatures.runtimeDescriptorArray = VK_TRUE;
+
     VkPhysicalDeviceFeatures2 deviceFeatures2{};
     deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     deviceFeatures2.features = deviceFeatures;
 
     // Determine whether we need the pNext feature chain
-    bool needsFeatureChain = m_RTCapabilities.supported || m_DGCExtSupported || m_DGCNVSupported;
+    // Always true now — bindless descriptors require descriptor indexing features
+    bool needsFeatureChain = true;
 
     if (needsFeatureChain) {
         // Build the pNext chain dynamically
         void** chainTail = &deviceFeatures2.pNext;
+
+        // Descriptor indexing (bindless) — always chain
+        *chainTail = &descriptorIndexingFeatures;
+        chainTail = &descriptorIndexingFeatures.pNext;
 
         // BDA is required by RT and by DGC (EXT variant uses device addresses)
         if (m_RTCapabilities.supported || m_DGCExtSupported) {

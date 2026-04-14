@@ -110,6 +110,7 @@ namespace Enjin { namespace Renderer {
     class RadianceCache;
     class SurfelRadianceCache;
     class AdaptiveRayBudget;
+    class BindlessResourceManager;
     class IUpscaler;
     class OITManager;
     class SHLightingSystem;
@@ -1144,6 +1145,9 @@ private:
     std::unique_ptr<Renderer::RadianceCache> m_RadianceCache;
     std::unique_ptr<Renderer::SurfelRadianceCache> m_SurfelRadianceCache;
     std::unique_ptr<Renderer::AdaptiveRayBudget> m_AdaptiveRayBudget;
+    std::unique_ptr<Renderer::BindlessResourceManager> m_BindlessManager;
+    std::unordered_map<void*, u32> m_TextureBindlessHandles;  // Texture* -> bindless handle
+    u32 m_DefaultBindlessHandle = UINT32_MAX;
     u32 m_DenoiserType = 0;  // 0=SVGF, 1=OIDN, 2=OptiX
 
     // RT descriptor set layout and pool

@@ -1,4 +1,5 @@
 #version 450
+#extension GL_EXT_nonuniform_qualifier : enable
 
 // Lit Mesh Fragment Shader with Multi-light, Cascaded Shadow, and Retro Effect Support
 
@@ -112,7 +113,7 @@ layout(push_constant) uniform PushConstants {
 } material;
 
 // Material SSBO (binding 2) — batched material data with per-entity dynamic offset
-// Layout matches C++ MaterialGPU (std430, 80 bytes per entry)
+// Layout matches C++ MaterialGPU (std430, 112 bytes per entry)
 layout(std430, binding = 2) readonly buffer MaterialSSBO {
     vec3  matBaseColor;
     float matMetallic;
@@ -128,6 +129,14 @@ layout(std430, binding = 2) readonly buffer MaterialSSBO {
     float matSSSIntensity;
     vec3  matSSSColor;
     float matSSSRadius;
+    // Bindless texture indices (index into textures[] array in set 1)
+    uint  matBaseColorTexIdx;
+    uint  matHeightTexIdx;
+    uint  matNormalTexIdx;
+    uint  matMetallicRoughnessTexIdx;
+    uint  matEmissiveTexIdx;
+    uint  matMatcapTexIdx;
+    uint  _bindlessPad[2];
 } materialData;
 
 // Material flag bits
@@ -262,6 +271,10 @@ layout(binding = 18) uniform sampler2D matcapMap;
 // When a reflection probe has been baked, this contains the captured environment.
 // reflectionProbeBoxMax.w signals whether to sample from this (1.0) or use gradient fallback (0.0).
 layout(binding = 19) uniform samplerCube probeCubemap;
+
+// Bindless texture array (set 1, binding 0) — all scene textures indexed by MaterialGPU handles
+// Requires VK_EXT_descriptor_indexing / Vulkan 1.2+ descriptor indexing features
+layout(set = 1, binding = 0) uniform sampler2D bindlessTextures[];
 
 // 16-sample Poisson disk for soft shadow PCF
 const vec2 poissonDisk[16] = vec2[16](

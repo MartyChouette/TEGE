@@ -244,6 +244,15 @@ struct alignas(16) MaterialGPU {
     alignas(16) Math::Vector3 sssColor;
     alignas(4) f32 sssRadius;
 
+    // Bindless texture indices (set 1 binding 0 array index, UINT32_MAX = no texture)
+    alignas(4) u32 baseColorTexIdx = UINT32_MAX;
+    alignas(4) u32 heightTexIdx = UINT32_MAX;
+    alignas(4) u32 normalTexIdx = UINT32_MAX;
+    alignas(4) u32 metallicRoughnessTexIdx = UINT32_MAX;
+    alignas(4) u32 emissiveTexIdx = UINT32_MAX;
+    alignas(4) u32 matcapTexIdx = UINT32_MAX;
+    alignas(4) u32 _bindlessPad[2] = {0, 0};
+
     static MaterialGPU FromComponent(const MaterialComponent& mat) {
         MaterialGPU gpu;
         gpu.baseColor = mat.baseColor;
