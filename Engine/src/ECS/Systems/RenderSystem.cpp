@@ -1665,8 +1665,22 @@ void RenderSystem::Update(f32 deltaTime) {
         auto* lodStorage = m_World->GetComponentStorage<LODComponent>();
         auto* xformStorageLoop = m_World->GetComponentStorage<TransformComponent>();
         auto* meshStorageLoop = m_World->GetComponentStorage<MeshComponent>();
+        auto* matStorageLoop = m_World->GetComponentStorage<MaterialComponent>();
 
-        for (Entity entity : m_SortedRenderList) {
+        usize renderCount = m_SortedRenderList.size();
+        constexpr usize PREFETCH_AHEAD = 4;
+
+        for (usize ri = 0; ri < renderCount; ++ri) {
+            // Prefetch components for entities 4 ahead — loads into L1 cache
+            // before they're needed, hiding memory latency
+            if (ri + PREFETCH_AHEAD < renderCount) {
+                Entity ahead = m_SortedRenderList[ri + PREFETCH_AHEAD];
+                if (xformStorageLoop) xformStorageLoop->Prefetch(ahead);
+                if (meshStorageLoop) meshStorageLoop->Prefetch(ahead);
+                if (matStorageLoop) matStorageLoop->Prefetch(ahead);
+            }
+
+            Entity entity = m_SortedRenderList[ri];
             // LOD selection with hysteresis (if camera is available)
             if (doLOD) {
                 auto* lod = lodStorage ? lodStorage->Get(entity) : nullptr;
@@ -6486,8 +6500,12 @@ void RenderSystem::RenderShadowPass() {
                 vkCmdExecuteCommands(commandBuffer, static_cast<u32>(validBuffers.size()), validBuffers.data());
             }
         } else {
-            // Single-threaded fallback (< 32 entities)
-            for (Entity entity : m_ShadowCasters) {
+            // Single-threaded fallback (< 32 entities) with prefetching
+            for (usize si = 0; si < m_ShadowCasters.size(); ++si) {
+                if (si + 4 < m_ShadowCasters.size() && m_CachedTransformStorage) {
+                    m_CachedTransformStorage->Prefetch(m_ShadowCasters[si + 4]);
+                }
+                Entity entity = m_ShadowCasters[si];
                 auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                 if (xform && !xform->visible) continue;
                 RenderEntityShadow(entity, commandBuffer);
