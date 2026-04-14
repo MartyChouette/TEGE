@@ -1521,6 +1521,9 @@ void RenderSystem::Update(f32 deltaTime) {
     UpdateFrameUniforms();
     BuildMaterialSSBO();
 
+    // Update bindless descriptor set if any textures were registered/changed
+    if (m_BindlessManager) m_BindlessManager->UpdateDescriptorSet();
+
     // Build the sorted render list every frame (needed by RenderToTarget() offscreen path too)
     {
         m_SortedRenderList.clear();
@@ -3525,6 +3528,7 @@ void RenderSystem::CreatePipeline() {
     config.colorAttachmentCount = 2; // Swapchain MRT: color + velocity (main pass only; offscreen uses 1)
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (m_BindlessManager) m_Pipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
     if (!m_Pipeline->Create(config, m_VertexShader.get(), m_FragmentShader.get())) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create graphics pipeline");
         m_Pipeline.reset();
@@ -3548,6 +3552,7 @@ void RenderSystem::CreateShadowPipeline() {
     config.hasColorAttachment = false;  // Depth-only pass
 
     m_ShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (m_BindlessManager) m_ShadowPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
     // Shadow shader uses push constants for MVP (avoids HOST_COHERENT UBO race).
     // Share descriptor set layout with main pipeline for compatibility.
     if (!m_ShadowPipeline->CreateWithLayout(config, m_ShadowVertexShader.get(), nullptr,
@@ -3574,6 +3579,7 @@ void RenderSystem::CreateLinePipeline() {
     config.colorAttachmentCount = 2; // MRT: must match render pass
 
     m_LinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (m_BindlessManager) m_LinePipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
     if (!m_LinePipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(),
             m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create line pipeline");
@@ -3596,6 +3602,7 @@ void RenderSystem::CreateOutlinePipeline() {
     config.colorAttachmentCount = 2; // Swapchain MRT: color + velocity (main pass only; offscreen uses 1) (must match render pass)
 
     m_OutlinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (m_BindlessManager) m_OutlinePipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
     if (!m_OutlinePipeline->CreateWithLayout(config, m_OutlineVertexShader.get(), m_OutlineFragmentShader.get(),
             m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create outline pipeline");
@@ -3625,6 +3632,7 @@ void RenderSystem::CreateWireframeOverlayPipeline() {
     config.colorAttachmentCount = 2; // Match main render pass MRT
 
     m_WireframeOverlayPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (m_BindlessManager) m_WireframeOverlayPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
     if (!m_WireframeOverlayPipeline->CreateWithLayout(config, m_VertexShader.get(), m_OutlineFragmentShader.get(),
             m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create wireframe overlay pipeline");
@@ -5088,6 +5096,13 @@ void RenderSystem::BuildMaterialSSBO() {
         m_MaterialSSBOData.resize(totalBytes, 0);
     }
 
+    // Helper: look up bindless texture handle for a cached texture pointer
+    auto lookupBindless = [this](Renderer::Texture* tex) -> u32 {
+        if (!tex || !m_BindlessManager) return m_DefaultBindlessHandle;
+        auto it = m_TextureBindlessHandles.find(tex);
+        return (it != m_TextureBindlessHandles.end()) ? it->second : m_DefaultBindlessHandle;
+    };
+
     // Fill material data for each entity
     u32 index = 0;
     for (Entity entity : meshEntities) {
@@ -5095,6 +5110,13 @@ void RenderSystem::BuildMaterialSSBO() {
         MaterialComponent* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
         if (material) {
             materialGPU = MaterialGPU::FromComponent(*material);
+            // Populate bindless texture indices from cached texture pointers
+            materialGPU.baseColorTexIdx         = lookupBindless(material->cachedBaseColorTexture);
+            materialGPU.heightTexIdx            = lookupBindless(material->cachedHeightTexture);
+            materialGPU.normalTexIdx            = lookupBindless(material->cachedNormalTexture);
+            materialGPU.metallicRoughnessTexIdx = lookupBindless(material->cachedMetallicRoughnessTexture);
+            materialGPU.emissiveTexIdx          = lookupBindless(material->cachedEmissiveTexture);
+            materialGPU.matcapTexIdx            = lookupBindless(material->cachedMatcapTexture);
         } else {
             MaterialComponent defaultMat;
             defaultMat.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
@@ -6528,6 +6550,7 @@ void RenderSystem::CreatePointShadowPipeline() {
     config.hasColorAttachment = false;
 
     m_PointShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (m_BindlessManager) m_PointShadowPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
     if (!m_PointShadowPipeline->CreateWithLayout(config, m_ShadowVertexShader.get(), nullptr,
             m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create point shadow pipeline");
@@ -6552,6 +6575,7 @@ void RenderSystem::CreateSpotShadowPipeline() {
     config.hasColorAttachment = false;
 
     m_SpotShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (m_BindlessManager) m_SpotShadowPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
     if (!m_SpotShadowPipeline->CreateWithLayout(config, m_ShadowVertexShader.get(), nullptr,
             m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create spot shadow pipeline");
@@ -6716,6 +6740,15 @@ std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::str
     m_TexturePathToId[path] = texId;
     m_TextureById.push_back(texture);
     m_TextureIdToPath.push_back(path);
+
+    // Register in bindless descriptor set for indexed texture access
+    if (m_BindlessManager && texture->IsValid()) {
+        auto handle = m_BindlessManager->RegisterTexture(
+            texture->GetImageView(), texture->GetSampler());
+        if (handle != UINT32_MAX) {
+            m_TextureBindlessHandles[texture.get()] = handle;
+        }
+    }
 
     m_TextureWatcher.Watch(path, [this](const std::string& changedPath) {
         ENJIN_LOG_INFO(Renderer, "Texture changed, reloading: %s", changedPath.c_str());
@@ -7304,6 +7337,7 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         config.colorAttachmentCount = 1; // Single color output (no MRT velocity — avoids NVIDIA teal)
 
         m_OffscreenPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (m_BindlessManager) m_OffscreenPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
         if (!m_OffscreenPipeline->Create(config, m_VertexShader.get(), m_FragmentShader.get())) {
             ENJIN_LOG_ERROR(Renderer, "Failed to create offscreen pipeline");
             m_OffscreenPipeline.reset();
@@ -7325,6 +7359,7 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         config.colorAttachmentCount = 1;
 
         m_OffscreenLinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (m_BindlessManager) m_OffscreenLinePipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
         if (!m_OffscreenLinePipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(), layout)) {
             ENJIN_LOG_WARN(Renderer, "Failed to create offscreen line pipeline");
             m_OffscreenLinePipeline.reset();
@@ -7345,6 +7380,7 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         config.colorAttachmentCount = 1;
 
         m_OffscreenOutlinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (m_BindlessManager) m_OffscreenOutlinePipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
         if (!m_OffscreenOutlinePipeline->CreateWithLayout(config, m_OutlineVertexShader.get(), m_OutlineFragmentShader.get(), layout)) {
             ENJIN_LOG_WARN(Renderer, "Failed to create offscreen outline pipeline");
             m_OffscreenOutlinePipeline.reset();

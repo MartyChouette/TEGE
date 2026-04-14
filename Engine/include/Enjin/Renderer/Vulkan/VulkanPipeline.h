@@ -98,6 +98,7 @@ public:
     VkPipeline GetPipeline() const { return m_Pipeline; }
     VkPipelineLayout GetLayout() const { return m_PipelineLayout; }
     VkDescriptorSetLayout GetDescriptorSetLayout() const { return m_DescriptorSetLayout; }
+    void SetBindlessLayout(VkDescriptorSetLayout layout) { m_BindlessSetLayout = layout; }
 
 private:
     bool CreateDescriptorSetLayout();
@@ -108,6 +109,7 @@ private:
     VkPipeline m_Pipeline = VK_NULL_HANDLE;
     VkPipelineLayout m_PipelineLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_DescriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_BindlessSetLayout = VK_NULL_HANDLE;  // Set 1: bindless textures (optional)
     bool m_OwnsDescriptorSetLayout = true;  // False when using external layout
 };
 

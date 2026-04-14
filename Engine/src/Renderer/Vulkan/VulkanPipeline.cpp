@@ -242,10 +242,14 @@ bool VulkanPipeline::CreatePipelineLayout() {
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(PushConstants);
 
+    // Support bindless textures via set 1 (optional — if layout provided)
+    VkDescriptorSetLayout setLayouts[2] = { m_DescriptorSetLayout, m_BindlessSetLayout };
+    u32 setCount = (m_BindlessSetLayout != VK_NULL_HANDLE) ? 2 : 1;
+
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &m_DescriptorSetLayout;
+    pipelineLayoutInfo.setLayoutCount = setCount;
+    pipelineLayoutInfo.pSetLayouts = setLayouts;
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
