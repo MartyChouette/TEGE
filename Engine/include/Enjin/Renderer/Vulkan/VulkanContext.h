@@ -120,6 +120,12 @@ protected:
     bool m_DGCExtSupported = false;  // VK_EXT_device_generated_commands
     bool m_DGCNVSupported = false;   // VK_NV_device_generated_commands (fallback)
 
+    // Mesh shader support (populated during SelectPhysicalDevice)
+    bool m_MeshShaderSupported = false;
+public:
+    bool IsMeshShaderSupported() const { return m_MeshShaderSupported; }
+private:
+
 #ifdef ENJIN_BUILD_DEBUG
     VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;
     bool CreateDebugMessenger();

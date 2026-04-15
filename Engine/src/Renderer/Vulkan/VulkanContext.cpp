@@ -275,6 +275,13 @@ bool VulkanContext::SelectPhysicalDevice() {
             if (strcmp(ext.extensionName, "VK_NV_device_generated_commands") == 0) {
                 m_DGCNVSupported = true;
             }
+            if (strcmp(ext.extensionName, "VK_EXT_mesh_shader") == 0) {
+                m_MeshShaderSupported = true;
+            }
+        }
+
+        if (m_MeshShaderSupported) {
+            ENJIN_LOG_INFO(Renderer, "VK_EXT_mesh_shader supported — mesh/task shaders available");
         }
 
 #ifdef ENJIN_VRS
@@ -401,6 +408,12 @@ bool VulkanContext::CreateLogicalDevice() {
     } else if (m_DGCNVSupported) {
         deviceExtensions.push_back("VK_NV_device_generated_commands");
         ENJIN_LOG_INFO(Renderer, "Enabling VK_NV_device_generated_commands extension");
+    }
+
+    // Add mesh shader extension if supported
+    if (m_MeshShaderSupported) {
+        deviceExtensions.push_back("VK_EXT_mesh_shader");
+        ENJIN_LOG_INFO(Renderer, "Enabling VK_EXT_mesh_shader extension");
     }
 
     // Add VRS extension if supported
