@@ -68,17 +68,17 @@ public:
 
         // In web builds, game.enjpak is preloaded into the virtual filesystem
         std::string pakPath = "game.enjpak";
+        bool hasPack = m_AssetReader.Open(pakPath, PACK_KEY);
 
-        if (!m_AssetReader.Open(pakPath, PACK_KEY)) {
-            ENJIN_LOG_FATAL(Player, "Failed to open game.enjpak");
-            return;
+        if (!hasPack) {
+            ENJIN_LOG_WARN(Player, "No game.enjpak found — creating demo scene");
         }
 
-        // Read build manifest
-        auto manifestData = m_AssetReader.ReadFile("_build/manifest.json");
+        // Read build manifest (or use defaults)
+        std::vector<Enjin::u8> manifestData;
+        if (hasPack) manifestData = m_AssetReader.ReadFile("_build/manifest.json");
         if (manifestData.empty()) {
-            ENJIN_LOG_FATAL(Player, "Build manifest missing from pack");
-            return;
+            ENJIN_LOG_INFO(Player, "Using default settings (no manifest)");
         }
 
         try {
@@ -213,18 +213,22 @@ public:
         Enjin::Scripting::SetBindingsNetworking(&m_NetworkSystem);
         Enjin::Scripting::SetBindingsInputActionMap(&m_InputMap);
 
-        // Load the start scene
-        if (!m_StartScene.empty()) {
-            std::string scenePath = m_StartScene;
-            auto sceneData = m_AssetReader.ReadFile(scenePath);
+        // Load the start scene (or create demo)
+        bool sceneLoaded = false;
+        if (hasPack && !m_StartScene.empty()) {
+            auto sceneData = m_AssetReader.ReadFile(m_StartScene);
             if (!sceneData.empty()) {
                 std::string sceneStr(sceneData.begin(), sceneData.end());
                 Enjin::Scene::SceneSerializer serializer(m_World.get());
                 serializer.LoadFromString(sceneStr);
+                sceneLoaded = true;
                 ENJIN_LOG_INFO(Player, "Loaded start scene: %s", m_StartScene.c_str());
-            } else {
-                ENJIN_LOG_ERROR(Player, "Failed to load start scene: %s", m_StartScene.c_str());
             }
+        }
+
+        if (!sceneLoaded) {
+            // Create a procedural demo scene
+            CreateDemoScene();
         }
 
         // Setup WebGPU rendering pipeline
@@ -321,6 +325,43 @@ public:
         }
 
         m_ParticleSystem.Update(deltaTime, m_World.get());
+    }
+
+    void CreateDemoScene() {
+        if (!m_World) return;
+        ENJIN_LOG_INFO(Player, "Creating procedural demo scene...");
+
+        // Ground plane
+        auto ground = m_World->CreateEntity();
+        auto& gxf = m_World->AddComponent<Enjin::ECS::TransformComponent>(ground);
+        gxf.position = {0, 0, 0};
+        gxf.scale = {20, 0.1f, 20};
+        auto& gmesh = m_World->AddComponent<Enjin::ECS::MeshComponent>(ground);
+        // Simple box mesh
+        gmesh.vertices = {
+            {{-0.5f,-0.5f,-0.5f}, {0,1,0}, {0,0}}, {{0.5f,-0.5f,-0.5f}, {0,1,0}, {1,0}},
+            {{0.5f,-0.5f,0.5f}, {0,1,0}, {1,1}}, {{-0.5f,-0.5f,0.5f}, {0,1,0}, {0,1}},
+            {{-0.5f,0.5f,-0.5f}, {0,1,0}, {0,0}}, {{0.5f,0.5f,-0.5f}, {0,1,0}, {1,0}},
+            {{0.5f,0.5f,0.5f}, {0,1,0}, {1,1}}, {{-0.5f,0.5f,0.5f}, {0,1,0}, {0,1}},
+        };
+        gmesh.indices = {4,5,6, 4,6,7, 0,2,1, 0,3,2, 0,1,5, 0,5,4, 2,3,7, 2,7,6, 1,2,6, 1,6,5, 0,4,7, 0,7,3};
+        auto& gmat = m_World->AddComponent<Enjin::ECS::MaterialComponent>(ground);
+        gmat.baseColor = {0.3f, 0.6f, 0.2f};
+
+        // Some cubes
+        for (int i = 0; i < 5; ++i) {
+            auto cube = m_World->CreateEntity();
+            auto& cxf = m_World->AddComponent<Enjin::ECS::TransformComponent>(cube);
+            cxf.position = {static_cast<Enjin::f32>(i * 3 - 6), 1.0f, -3.0f};
+            cxf.scale = {1, 1, 1};
+            auto& cmesh = m_World->AddComponent<Enjin::ECS::MeshComponent>(cube);
+            cmesh.vertices = gmesh.vertices; // Reuse box
+            cmesh.indices = gmesh.indices;
+            auto& cmat = m_World->AddComponent<Enjin::ECS::MaterialComponent>(cube);
+            cmat.baseColor = {0.2f + i * 0.15f, 0.3f, 0.8f - i * 0.1f};
+        }
+
+        ENJIN_LOG_INFO(Player, "Demo scene created (ground + 5 cubes)");
     }
 
     void SetupWebRenderPipeline() {
