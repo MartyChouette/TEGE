@@ -1458,6 +1458,12 @@ void RenderSystem::Update(f32 deltaTime) {
                 vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                     m_Pipeline->GetLayout(), 0, 1,
                     &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &zeroOff);
+                // Bind bindless texture set 1 for offscreen/splitscreen viewport
+                if (m_BindlessManager) {
+                    VkDescriptorSet bs = m_BindlessManager->GetDescriptorSet();
+                    if (bs) vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        m_Pipeline->GetLayout(), 1, 1, &bs, 0, nullptr);
+                }
             }
             vkCmdSetViewport(commandBuffer, 0, 1, &vkViewport);
             vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
@@ -1876,6 +1882,12 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
         u32 zeroOff = 0;
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
             targetPipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &zeroOff);
+        // Bind bindless set 1 for offscreen render target
+        if (m_BindlessManager) {
+            VkDescriptorSet bs = m_BindlessManager->GetDescriptorSet();
+            if (bs) vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                targetPipeline->GetLayout(), 1, 1, &bs, 0, nullptr);
+        }
     }
 
     // Use the sorted render list (sorted by cachedTextureKey) to maximize descriptor cache hits.
