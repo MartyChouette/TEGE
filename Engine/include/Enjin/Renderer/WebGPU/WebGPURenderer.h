@@ -6,6 +6,8 @@
 
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Renderer/WebGPU/WebGPUTypes.h"
+#include "Enjin/Renderer/WebGPU/WebGPUShaderCompiler.h"
+#include "Enjin/Renderer/WebGPU/WebGPUPipeline.h"
 #include "Enjin/Renderer/RenderBackend.h"
 #include <memory>
 #include <vector>

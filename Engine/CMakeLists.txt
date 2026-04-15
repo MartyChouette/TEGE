@@ -80,7 +80,7 @@ if(ENJIN_PLATFORM_WEB)
          "src/Effects/ShrubRenderer.cpp" "src/Effects/TreeRenderer.cpp"
          "src/Effects/SpriteBatchRenderer.cpp" "src/Effects/SpriteTextureAtlas.cpp"
          "src/GUI/ImGuiLayer.cpp" "src/GUI/ShaderGUI.cpp"
-         "src/Scripting/ScriptBindings_Render.cpp"
+         "src/Scripting/ScriptBindings_Render.cpp" "src/Scripting/ScriptBindings_AudioGraph.cpp"
          "src/Editor/*.cpp" "src/SimpleApp/*.cpp"
          "src/Water/WaterRenderer.cpp")
     list(REMOVE_ITEM ENGINE_SOURCES ${VULKAN_SOURCES})

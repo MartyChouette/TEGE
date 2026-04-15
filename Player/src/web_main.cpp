@@ -10,7 +10,9 @@
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Platform/Window.h"
 #include "Enjin/ECS/World.h"
+#if !ENJIN_RENDERER_WEBGPU
 #include "Enjin/ECS/Systems/RenderSystem.h"
+#endif
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Name.h"
@@ -114,9 +116,9 @@ public:
         m_World = std::make_unique<Enjin::ECS::World>();
 
         // Setup render system
-        m_RenderSystem = m_World->RegisterSystem<Enjin::ECS::RenderSystem>(m_World.get(), m_Renderer.get());
-        m_RenderSystem->SetCamera(m_Camera.get());
-        m_RenderSystem->Initialize();
+// [WEBGPU-STUB]         m_RenderSystem = m_World->RegisterSystem<Enjin::ECS::RenderSystem>(m_World.get(), m_Renderer.get());
+// [WEBGPU-STUB]         m_RenderSystem->SetCamera(m_Camera.get());
+// [WEBGPU-STUB]         m_RenderSystem->Initialize();
 
         // Initialize audio (miniaudio supports Web Audio natively)
         Enjin::Audio::AudioManager::Get().Initialize();
@@ -194,7 +196,7 @@ public:
 
         // Wire up script bindings
         Enjin::Scripting::SetBindingsWorld(m_World.get());
-        Enjin::Scripting::SetBindingsRenderSystem(m_RenderSystem);
+        // Enjin::Scripting::SetBindingsRenderSystem(m_RenderSystem); // Excluded on web
         Enjin::Scripting::SetBindingsPhysics(m_Physics.get());
         Enjin::Scripting::SetBindingsSaveSystem(&m_TieredSaveSystem);
         Enjin::Scripting::SetBindingsCoroutineScheduler(&m_CoroutineScheduler);
@@ -216,7 +218,7 @@ public:
             if (!sceneData.empty()) {
                 std::string sceneStr(sceneData.begin(), sceneData.end());
                 Enjin::Scene::SceneSerializer serializer(m_World.get());
-                serializer.DeserializeFromString(sceneStr);
+                serializer.LoadFromString(sceneStr);
                 ENJIN_LOG_INFO(Player, "Loaded start scene: %s", m_StartScene.c_str());
             } else {
                 ENJIN_LOG_ERROR(Player, "Failed to load start scene: %s", m_StartScene.c_str());
@@ -234,7 +236,7 @@ public:
 
         // Clear script bindings
         Enjin::Scripting::SetBindingsWorld(nullptr);
-        Enjin::Scripting::SetBindingsRenderSystem(nullptr);
+        // Enjin::Scripting::SetBindingsRenderSystem(nullptr); // Excluded on web
         Enjin::Scripting::SetBindingsPhysics(nullptr);
         Enjin::Scripting::SetBindingsSaveSystem(nullptr);
         Enjin::Scripting::SetBindingsCoroutineScheduler(nullptr);
@@ -258,9 +260,9 @@ public:
         m_TieredSaveSystem.SaveMeta();
         Enjin::Audio::AudioManager::Get().Shutdown();
 
-        if (m_RenderSystem) {
-            m_RenderSystem->Shutdown();
-            m_RenderSystem = nullptr;
+        if (false) { // RenderSystem excluded on web
+            // m_RenderSystem->Shutdown(); // Excluded on web
+            // m_RenderSystem = nullptr; // Excluded on web
         }
         m_World.reset();
         m_CameraController.reset();
@@ -319,8 +321,12 @@ public:
     void Render() override {
         if (!m_Initialized || !m_Renderer) return;
 
-        if (m_RenderSystem && m_Camera) {
-            m_RenderSystem->Render(m_Camera.get());
+        // WebGPU rendering is handled by the WebGPURenderer directly
+        if (m_Renderer) {
+            if (m_Renderer->BeginFrame()) {
+                // TODO: Wire WebGPU render system for scene rendering
+                m_Renderer->EndFrame();
+            }
         }
     }
 
@@ -332,7 +338,7 @@ private:
     std::unique_ptr<Enjin::Renderer::Camera> m_Camera;
     std::unique_ptr<Enjin::Renderer::CameraController> m_CameraController;
     std::unique_ptr<Enjin::ECS::World> m_World;
-    Enjin::ECS::RenderSystem* m_RenderSystem = nullptr;
+    // Enjin::ECS::RenderSystem* // m_RenderSystem = nullptr; // Excluded on web // Excluded on web
 
     // Assets
     Enjin::Build::AssetReader m_AssetReader;
@@ -363,7 +369,7 @@ private:
     Enjin::Audio::SimpleAudio m_SimpleAudio;
     Enjin::Effects::WeatherSystem m_WeatherSystem;
     Enjin::Effects::WindSystem m_WindSystem;
-    Enjin::Effects::WorldTime m_WorldTime;
+    Enjin::Effects::WorldTimeSystem m_WorldTime;
     Enjin::Effects::ParticleSystem m_ParticleSystem;
 
     // Scene & networking
@@ -380,14 +386,16 @@ private:
 };
 
 int main(int argc, char* argv[]) {
+    (void)argc; (void)argv;
     WebGamePlayer player;
-
-    Enjin::WindowDesc desc;
-    desc.title = "Enjin Game";
-    desc.width = 1280;
-    desc.height = 720;
-
-    return player.Run(desc);
+    player.Initialize();
+    // Emscripten main loop — browser calls this every frame
+    emscripten_set_main_loop_arg([](void* userData) {
+        auto* p = static_cast<WebGamePlayer*>(userData);
+        p->Update(1.0f / 60.0f); // Fixed timestep for web
+        p->Render();
+    }, &player, 0, true);
+    return 0;
 }
 
 #endif // ENJIN_PLATFORM_WEB
