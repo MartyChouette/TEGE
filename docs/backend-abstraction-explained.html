@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TEGE — Renderer Backend Abstraction Explained</title>
+<style>
+:root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #c9d1d9; --accent: #58a6ff; --green: #3fb950; --orange: #d29922; --red: #f85149; --purple: #bc8cff; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; padding: 40px 20px; }
+.container { max-width: 900px; margin: 0 auto; }
+h1 { color: #fff; font-size: 2em; margin-bottom: 8px; }
+h2 { color: var(--accent); font-size: 1.4em; margin: 40px 0 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+h3 { color: #fff; font-size: 1.1em; margin: 24px 0 8px; }
+p { margin-bottom: 12px; }
+.subtitle { color: #8b949e; font-size: 1.1em; margin-bottom: 32px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin: 16px 0; }
+.card-red { border-left: 3px solid var(--red); }
+.card-green { border-left: 3px solid var(--green); }
+.card-orange { border-left: 3px solid var(--orange); }
+.card-blue { border-left: 3px solid var(--accent); }
+code { background: #1f2937; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; color: var(--accent); }
+pre { background: #1f2937; padding: 16px; border-radius: 8px; overflow-x: auto; margin: 12px 0; font-size: 0.85em; line-height: 1.5; }
+pre code { background: none; padding: 0; }
+.label { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.75em; font-weight: 600; margin-right: 6px; }
+.label-vk { background: #f8514922; color: var(--red); }
+.label-wgpu { background: #58a6ff22; color: var(--accent); }
+.label-mtl { background: #bc8cff22; color: var(--purple); }
+.label-abstract { background: #3fb95022; color: var(--green); }
+table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+th { color: #fff; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px; }
+.diagram { text-align: center; margin: 24px 0; }
+.diagram svg { max-width: 100%; }
+.flow { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; margin: 20px 0; }
+.flow-box { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px 20px; text-align: center; min-width: 120px; }
+.flow-box.vk { border-color: var(--red); }
+.flow-box.wgpu { border-color: var(--accent); }
+.flow-box.mtl { border-color: var(--purple); }
+.flow-box.abstract { border-color: var(--green); background: #3fb95011; }
+.flow-arrow { color: #8b949e; font-size: 1.5em; }
+.comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
+@media (max-width: 600px) { .comparison { grid-template-columns: 1fr; } }
+.tag { font-weight: 600; }
+.tag-before { color: var(--red); }
+.tag-after { color: var(--green); }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Renderer Backend Abstraction</h1>
+<p class="subtitle">Why TEGE is decoupling from Vulkan — and what that means for every platform</p>
+
+<h2>The Problem</h2>
+
+<div class="card card-red">
+<h3>Before: Direct Vulkan Coupling</h3>
+<p>Every line of rendering code in <code>RenderSystem.cpp</code> (9,854 lines) directly calls Vulkan functions. The renderer <em>is</em> Vulkan.</p>
+<pre><code>// This is what RenderSystem looks like today — raw Vulkan everywhere
+vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
+vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+    pipeline->GetLayout(), 0, 1, &descriptorSet, 1, &dynamicOffset);
+vkCmdPushConstants(commandBuffer, layout, VK_SHADER_STAGE_ALL, 0, 128, &pushData);
+vkCmdDrawIndexed(commandBuffer, indexCount, 1, 0, 0, 0);</code></pre>
+<p>This means <strong>RenderSystem only works on Vulkan</strong>. It's completely excluded from WebGPU builds. The web player had to rewrite rendering from scratch — and that rewrite has ~20% of the features.</p>
+</div>
+
+<h2>The Solution</h2>
+
+<div class="card card-green">
+<h3>After: Backend Abstraction</h3>
+<p>RenderSystem talks to an <strong>abstract interface</strong>. The interface has implementations for Vulkan, WebGPU, and (future) Metal. Same game logic, same rendering code, different GPU APIs underneath.</p>
+<pre><code>// This is what RenderSystem will look like — backend-agnostic
+encoder->SetVertexBuffer(0, vertexBufferHandle, 0);
+encoder->SetIndexBuffer(indexBufferHandle, GPUIndexFormat::Uint32, 0);
+encoder->SetBindGroup(0, viewBindGroup, 1, &dynamicOffset);
+encoder->SetInlineConstants(0, 128, &pushData);
+encoder->DrawIndexed(indexCount, 1, 0, 0, 0);</code></pre>
+<p>The <em>exact same code</em> runs on Windows (Vulkan), browser (WebGPU), and Mac (Metal). No per-platform rewrites.</p>
+</div>
+
+<h2>How It Works</h2>
+
+<div class="flow">
+    <div class="flow-box abstract"><strong>RenderSystem</strong><br><small>Game rendering logic</small></div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-box abstract"><strong>IRenderBackend</strong><br><small>Abstract interface</small></div>
+    <div class="flow-arrow">&rarr;</div>
+    <div style="display:flex; flex-direction:column; gap:8px;">
+        <div class="flow-box vk"><span class="label label-vk">Vulkan</span> Windows / Linux</div>
+        <div class="flow-box wgpu"><span class="label label-wgpu">WebGPU</span> Browser (WASM)</div>
+        <div class="flow-box mtl"><span class="label label-mtl">Metal</span> macOS / iOS</div>
+    </div>
+</div>
+
+<p>The <span class="label label-abstract">IRenderBackend</span> interface is decomposed into focused sub-interfaces:</p>
+
+<table>
+<tr><th>Sub-Interface</th><th>What It Does</th><th>Vulkan Maps To</th><th>WebGPU Maps To</th></tr>
+<tr><td><code>IGPUBufferManager</code></td><td>Create, destroy, upload GPU buffers</td><td>VulkanBuffer</td><td>WGPUBuffer</td></tr>
+<tr><td><code>IGPUTextureManager</code></td><td>Create, destroy, upload textures</td><td>Texture (VulkanImage + Sampler)</td><td>WGPUTexture + WGPUSampler</td></tr>
+<tr><td><code>IGPUPipelineManager</code></td><td>Create render pipelines</td><td>VulkanPipeline</td><td>WGPURenderPipeline</td></tr>
+<tr><td><code>IGPUShaderManager</code></td><td>Load shaders</td><td>VulkanShader (SPIR-V)</td><td>WGPUShaderModule (WGSL)</td></tr>
+<tr><td><code>IGPUBindGroupManager</code></td><td>Create descriptor sets / bind groups</td><td>VkDescriptorSet + Pool</td><td>WGPUBindGroup</td></tr>
+<tr><td><code>IRenderEncoder</code></td><td>Record draw commands</td><td>vkCmd* on VkCommandBuffer</td><td>wgpuRenderPassEncoder*</td></tr>
+</table>
+
+<h2>Concrete Example: Creating a Buffer</h2>
+
+<div class="comparison">
+<div class="card card-red">
+<h3><span class="tag tag-before">BEFORE</span> — Vulkan only</h3>
+<pre><code>// Must know you're on Vulkan
+auto* ctx = m_Renderer->GetContext();
+auto buffer = std::make_unique&lt;VulkanBuffer&gt;(ctx);
+buffer->Create(size, BufferUsage::Vertex, false);
+buffer->UploadData(vertices, vertexCount * sizeof(Vertex));</code></pre>
+</div>
+<div class="card card-green">
+<h3><span class="tag tag-after">AFTER</span> — Any backend</h3>
+<pre><code>// Works on Vulkan, WebGPU, Metal — identical code
+GPUBufferDesc desc;
+desc.size = vertexCount * sizeof(Vertex);
+desc.usage = GPUBufferUsage::Vertex;
+auto handle = m_Renderer->GetBufferManager()
+    ->CreateBufferWithData(desc, vertices);</code></pre>
+</div>
+</div>
+
+<p>The <code>GPUBufferHandle</code> is a typed opaque ID. Vulkan resolves it to a <code>VkBuffer</code>. WebGPU resolves it to a <code>WGPUBuffer</code>. Metal will resolve it to an <code>id&lt;MTLBuffer&gt;</code>. RenderSystem never knows or cares.</p>
+
+<h2>The Push Constants Problem</h2>
+
+<div class="card card-orange">
+<p>Vulkan has <strong>push constants</strong> — 128 bytes of per-draw data uploaded with zero overhead. WebGPU and Metal don't have this feature.</p>
+<p>The abstraction solves this with <code>SetInlineConstants()</code>:</p>
+<ul style="margin-left: 20px; margin-top: 8px;">
+<li><span class="label label-vk">Vulkan</span> maps to <code>vkCmdPushConstants</code> — native, zero cost</li>
+<li><span class="label label-wgpu">WebGPU</span> maps to a reserved uniform buffer upload — small cost, but correct</li>
+<li><span class="label label-mtl">Metal</span> maps to <code>setBytes</code> — native, near-zero cost</li>
+</ul>
+<p style="margin-top: 8px;">RenderSystem calls <code>encoder->SetInlineConstants(0, 128, &data)</code> everywhere. Each backend does the right thing.</p>
+</div>
+
+<h2>Feature Gating</h2>
+
+<p>Not every backend supports every feature. <code>GPUCapabilities</code> tells RenderSystem what's available:</p>
+
+<table>
+<tr><th>Feature</th><th><span class="label label-vk">Vulkan</span></th><th><span class="label label-wgpu">WebGPU</span></th><th><span class="label label-mtl">Metal</span></th></tr>
+<tr><td>Push constants</td><td style="color:var(--green)">Yes</td><td style="color:var(--red)">No (UBO fallback)</td><td style="color:var(--red)">No (setBytes fallback)</td></tr>
+<tr><td>Compute shaders</td><td style="color:var(--green)">Yes</td><td style="color:var(--green)">Yes</td><td style="color:var(--green)">Yes</td></tr>
+<tr><td>Ray tracing</td><td style="color:var(--green)">Yes (VK_KHR_ray_tracing)</td><td style="color:var(--red)">No</td><td style="color:var(--green)">Yes (MPS)</td></tr>
+<tr><td>Multi-draw indirect</td><td style="color:var(--green)">Yes</td><td style="color:var(--red)">No</td><td style="color:var(--green)">Yes</td></tr>
+<tr><td>Async compute queue</td><td style="color:var(--green)">Yes</td><td style="color:var(--red)">No</td><td style="color:var(--green)">Yes</td></tr>
+<tr><td>Mesh shaders</td><td style="color:var(--green)">Yes (ext)</td><td style="color:var(--red)">No</td><td style="color:var(--green)">Yes (Metal 3)</td></tr>
+<tr><td>Bindless resources</td><td style="color:var(--green)">Yes</td><td style="color:var(--red)">No</td><td style="color:var(--green)">Yes (argument buffers)</td></tr>
+</table>
+
+<pre><code>// RenderSystem checks capabilities before using advanced features
+auto caps = m_Renderer->GetGPUCapabilities();
+
+if (caps.CanDoGPUCulling()) {
+    PerformGPUCulling();    // Vulkan + Metal: compute shader culling
+} else {
+    PerformCPUCulling();    // WebGPU: CPU-side frustum test
+}
+
+if (caps.hasRayTracing) {
+    DispatchRTShadows();    // Vulkan + Metal only
+}</code></pre>
+
+<h2>What This Unlocks</h2>
+
+<div class="card card-blue">
+<table>
+<tr><th>Platform</th><th>Backend</th><th>Status</th></tr>
+<tr><td>Windows</td><td><span class="label label-vk">Vulkan</span></td><td style="color:var(--green)">Working — full features</td></tr>
+<tr><td>Linux</td><td><span class="label label-vk">Vulkan</span></td><td style="color:var(--green)">Working — same codebase</td></tr>
+<tr><td>Browser (WASM)</td><td><span class="label label-wgpu">WebGPU</span></td><td style="color:var(--orange)">In progress — abstraction underway</td></tr>
+<tr><td>macOS</td><td><span class="label label-mtl">Metal</span></td><td style="color:#8b949e">Future — stubs in place</td></tr>
+<tr><td>macOS (alt)</td><td><span class="label label-vk">MoltenVK</span></td><td style="color:var(--green)">Works today via Vulkan</td></tr>
+<tr><td>Android</td><td><span class="label label-vk">Vulkan</span></td><td style="color:#8b949e">Future — same Vulkan backend</td></tr>
+<tr><td>iOS</td><td><span class="label label-mtl">Metal</span></td><td style="color:#8b949e">Future — same Metal backend</td></tr>
+</table>
+</div>
+
+<h2>Progress</h2>
+
+<table>
+<tr><th>Phase</th><th>What</th><th>Status</th></tr>
+<tr><td>0</td><td>Foundation types (GPUTypes.h, GPUCapabilities.h)</td><td style="color:var(--green)">Done</td></tr>
+<tr><td>1</td><td>IRenderBackend expansion</td><td style="color:var(--green)">Done</td></tr>
+<tr><td>2</td><td>Buffer + Texture managers</td><td style="color:var(--green)">Done</td></tr>
+<tr><td>3</td><td>Pipeline + Shader managers</td><td style="color:var(--orange)">Next</td></tr>
+<tr><td>4</td><td>Bind group manager</td><td></td></tr>
+<tr><td>5</td><td>Render command encoder</td><td></td></tr>
+<tr><td>6</td><td>Migrate RenderSystem</td><td></td></tr>
+<tr><td>7</td><td>Shadow mapping for WebGPU</td><td></td></tr>
+<tr><td>8</td><td>Skeletal animation + post-processing</td><td></td></tr>
+<tr><td>9</td><td>Retire WebRenderPipeline</td><td></td></tr>
+</table>
+
+<p style="text-align:center; margin-top: 40px; color: #8b949e; font-size: 0.85em;">
+TEGE — The Enjin Game Engine &bull; <a href="https://www.marty64.net/enjin/" style="color:var(--accent)">marty64.net/enjin</a>
+</p>
+
+</div>
+</body>
+</html>
