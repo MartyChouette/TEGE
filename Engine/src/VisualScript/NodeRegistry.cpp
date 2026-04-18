@@ -31,7 +31,7 @@
 #include "Enjin/Math/Noise.h"
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Procedural/ProceduralAlgorithms.h"
-#include "Enjin/Editor/AudioEventGraph.h"
+#include "Enjin/Audio/AudioEventGraph.h"
 #include "Enjin/Plugin/PluginSystem.h"
 #include "Enjin/Accessibility/SubtitleSystem.h"
 #include "Enjin/Accessibility/Announcer.h"
@@ -55,7 +55,7 @@
 //       rather than relying on global extern pointers.
 Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem = nullptr;
 Enjin::Audio::SimpleAudio* s_VisualScriptAudio = nullptr;
-Enjin::Editor::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime = nullptr;
+Enjin::Audio::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime = nullptr;
 Enjin::Plugin::PluginSystem* s_VisualScriptPluginSystem = nullptr;
 Enjin::Effects::WeatherSystem* s_VisualScriptWeather = nullptr;
 Enjin::Effects::Water3D* s_VisualScriptWater = nullptr;

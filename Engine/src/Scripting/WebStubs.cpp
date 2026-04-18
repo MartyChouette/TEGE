@@ -32,8 +32,8 @@ namespace VisualScript {
 } // namespace Enjin
 
 // AudioEventGraphRuntime method stubs
-#include "Enjin/Editor/AudioEventGraph.h"
-namespace Enjin { namespace Editor {
+#include "Enjin/Audio/AudioEventGraph.h"
+namespace Enjin { namespace Audio {
     void AudioEventGraphRuntime::TriggerEvent(const std::string&) {}
     void AudioEventGraphRuntime::SetParameter(const std::string&, float) {}
     float AudioEventGraphRuntime::GetParameter(const std::string&) const { return 0.0f; }

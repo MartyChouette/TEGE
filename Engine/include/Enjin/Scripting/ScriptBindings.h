@@ -15,7 +15,7 @@ namespace Gameplay { class TieredSaveSystem; class QuestSystem; class CinematicS
 namespace Effects { class WeatherSystem; class DestructibleSystem; class ElementalSystem; }
 namespace Procedural { class LevelGenerator; }
 namespace Plugin { class PluginSystem; }
-namespace Editor { class AudioEventGraphRuntime; }
+namespace Audio { class AudioEventGraphRuntime; }
 namespace InputSystem { class MIDIInput; class InputActionMap; }
 namespace Scripting {
 
@@ -109,7 +109,7 @@ void RegisterAudioGraphBindings(asIScriptEngine* engine);
 void SetBindingsPluginSystem(Plugin::PluginSystem* system);
 
 // Audio event graph runtime setter
-void SetBindingsAudioGraphRuntime(Editor::AudioEventGraphRuntime* runtime);
+void SetBindingsAudioGraphRuntime(Audio::AudioEventGraphRuntime* runtime);
 
 // Registration for MIDI input bindings (defined in ScriptBindings_MIDI.cpp)
 void RegisterMIDIBindings(asIScriptEngine* engine);

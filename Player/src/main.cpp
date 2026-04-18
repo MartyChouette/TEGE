@@ -80,7 +80,7 @@
 #include "Enjin/Accessibility/ColorblindPalette.h"
 #include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
-#include "Enjin/Editor/AudioEventGraph.h"
+#include "Enjin/Audio/AudioEventGraph.h"
 #include "Enjin/Assets/DataAsset.h"
 #include "Enjin/Gameplay/GameplayLoop.h"
 #include <nlohmann/json.hpp>
@@ -615,7 +615,7 @@ public:
             extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
             extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
             extern Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing;
-            extern Enjin::Editor::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime;
+            extern Enjin::Audio::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime;
             extern Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool;
             s_VisualScriptSaveSystem = nullptr;
             s_VisualScriptWeather = nullptr;
@@ -1540,7 +1540,7 @@ private:
             extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
             extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
             extern Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing;
-            extern Enjin::Editor::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime;
+            extern Enjin::Audio::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime;
             extern Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool;
             s_VisualScriptSaveSystem = &m_TieredSaveSystem;
             s_VisualScriptWeather = &m_WeatherSystem;
@@ -2095,7 +2095,7 @@ private:
     //   retro flags and shader uniforms, integrate CRT/VHS as post-process passes.
 
     // Audio event graph runtime
-    Enjin::Editor::AudioEventGraphRuntime m_AudioGraphRuntime;
+    Enjin::Audio::AudioEventGraphRuntime m_AudioGraphRuntime;
 
     // MIDI input
     Enjin::InputSystem::MIDIInput m_MIDIInput;

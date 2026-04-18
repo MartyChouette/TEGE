@@ -1,5 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
-#include "Enjin/Editor/AudioEventGraph.h"
+#include "Enjin/Audio/AudioEventGraph.h"
 #include "Enjin/Logging/Log.h"
 #include <angelscript.h>
 #include <cassert>
@@ -9,12 +9,12 @@ using namespace Enjin;
 #define AS_CHECK(expr) \
     do { int _r = (expr); if (_r < 0) { ENJIN_LOG_ERROR(Script, "AS registration failed (code %d) at %s:%d", _r, __FILE__, __LINE__); } } while(0)
 
-static Editor::AudioEventGraphRuntime* s_AudioGraphRuntime = nullptr;
+static Audio::AudioEventGraphRuntime* s_AudioGraphRuntime = nullptr;
 
 namespace Enjin {
 namespace Scripting {
 
-void SetBindingsAudioGraphRuntime(Editor::AudioEventGraphRuntime* runtime) {
+void SetBindingsAudioGraphRuntime(Audio::AudioEventGraphRuntime* runtime) {
     s_AudioGraphRuntime = runtime;
 }
 
