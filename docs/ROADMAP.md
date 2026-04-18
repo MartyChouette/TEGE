@@ -1827,6 +1827,25 @@ Target audience: Flash game creators and fans of the Flash/Newgrounds era lookin
 - ~~**Emscripten integration**~~ ✅ — Canvas window, browser keyboard/mouse/wheel input, miniaudio Web Audio, `emscripten_set_main_loop_arg` adaptation, web player entry point
 - **Size optimization** — Tree-shaking unused systems, texture compression (Basis Universal), audio compression (Opus), code splitting for progressive loading
 
+### Renderer Backend Abstraction (IN PROGRESS — started 2026-04-18)
+
+**Goal**: RenderSystem drives Vulkan, WebGPU, and Metal through `IRenderBackend` so games are playable on all platforms through one codebase.
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 0 | Foundation types (`GPUTypes.h`, `GPUCapabilities.h`) | ✅ Done |
+| 1 | `IRenderBackend` expansion (capabilities, frame state, manager accessors) | ✅ Done |
+| 2 | Buffer + Texture managers (`IGPUBufferManager`, `IGPUTextureManager`) | Pending |
+| 3 | Pipeline + Shader managers | Pending |
+| 4 | Bind group manager (unified descriptors) | Pending |
+| 5 | Render command encoder (`IRenderEncoder`) | Pending |
+| 6 | Migrate `RenderSystem` core path to abstract interface | Pending |
+| 7 | Shadow mapping for WebGPU | Pending |
+| 8 | Skeletal animation + post-processing for WebGPU | Pending |
+| 9 | Retire `WebRenderPipeline`, web player uses `RenderSystem` | Pending |
+
+**Platform matrix**: Windows/Linux (Vulkan), Web (WebGPU), macOS (Metal future), Android (Vulkan future), iOS (Metal future)
+
 ---
 
 ## Project Hub Redesign & Template Creator (Partially Complete)

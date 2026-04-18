@@ -88,8 +88,9 @@ enjin/
 │   │   ├── Platform/       # FileDialog
 │   │   ├── Plugin/         # PluginSystem, HotReload
 │   │   ├── Procedural/     # LevelGenerator
-│   │   ├── Renderer/       # Vulkan renderer, RenderBackend, ClusteredLighting
+│   │   ├── Renderer/       # Multi-backend renderer, IRenderBackend, GPUTypes, GPUCapabilities
 │   │   │   ├── Vulkan/     # VulkanContext, Pipeline, Buffer, etc.
+│   │   │   ├── WebGPU/     # WebGPURenderer, WebRenderPipeline (Emscripten/Dawn)
 │   │   │   ├── RayTracing/ # RT pipeline, acceleration structures, denoiser
 │   │   │   ├── GPUDriven/  # GPU culling, HiZ occlusion culling
 │   │   │   ├── VRS/        # Variable Rate Shading
@@ -118,12 +119,23 @@ enjin/
 
 ### Rendering System
 
-**Components**:
+**Multi-Backend Architecture** (in progress):
+- `IRenderBackend` - Abstract backend interface with sub-interfaces for buffers, textures, pipelines, shaders, bind groups, and render encoders
+- `GPUTypes.h` - Typed opaque resource handles (`GPUBufferHandle`, `GPUTextureHandle`, etc.) and backend-agnostic enums
+- `GPUCapabilities.h` - Feature detection (push constants, compute, RT, indirect draws) with presets for Vulkan, WebGPU, and Metal
+
+**Vulkan Backend** (desktop — Windows, Linux):
 - `VulkanRenderer` - Main renderer, swapchain management
 - `VulkanContext` - Vulkan instance, device, queues
 - `VulkanPipeline` - Graphics pipeline with descriptor sets
 - `VulkanBuffer` - GPU buffers (vertex, index, uniform, storage)
-- `RenderSystem` - ECS system that renders entities with Mesh+Transform
+
+**WebGPU Backend** (browser — WebAssembly):
+- `WebGPURenderer` - WebGPU device/surface lifecycle, frame encoding
+- `WebRenderPipeline` - PBR rendering with Cook-Torrance BRDF, multi-light, texture loading
+
+**Shared**:
+- `RenderSystem` - ECS system that renders entities with Mesh+Transform (migrating to `IRenderBackend`)
 - `PostProcessing` - Bloom, vignette, color grading, FXAA, film grain, DoF, tilt-shift, stipple/dither, SSAO, god rays, contact shadows, caustics, fog shafts
 - Outline pipeline (cel shading) - Inverted-hull geometry outlines (`outline.vert`/`outline.frag`), per-material width/color, NPR curvature-driven thickness (`celOutlineCurvatureWeight`)
 - `RenderTarget` - Offscreen rendering for Game View

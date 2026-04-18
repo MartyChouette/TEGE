@@ -6,7 +6,7 @@
 
 ## Overview
 
-Enjin is an open-source (BSL 1.1) game engine built from scratch using C++20 and the Vulkan graphics API. It features a complete editor with ImGui, an Entity-Component-System architecture, and modern rendering capabilities.
+Enjin is an open-source (BSL 1.1) game engine built from scratch using C++20. It features a complete editor with ImGui, an Entity-Component-System architecture, and modern rendering with multi-backend support (Vulkan, WebGPU, Metal planned).
 
 ## Build Commands
 
@@ -17,6 +17,13 @@ cd build && cmake .. && cmake --build . --config Release
 # Build on Linux/Mac
 cd build && cmake .. && make -j$(nproc)
 
+# Build for Web (WebAssembly + WebGPU)
+# Requires Emscripten SDK at D:/emsdk
+export EMSDK=/d/emsdk && export EMSDK_PYTHON="$EMSDK/python/3.13.3_64bit/python.exe"
+"$EMSDK_PYTHON" "$EMSDK/upstream/emscripten/emcmake.py" cmake -B build-web -S . -DENJIN_PLATFORM_WEB=ON
+"$EMSDK_PYTHON" "$EMSDK/upstream/emscripten/emmake.py" cmake --build build-web
+# Output: build-web/bin/EnjinPlayer.{js,wasm}
+
 # Reconfigure CMake (needed after adding new source files)
 cd build && cmake ..
 
@@ -26,6 +33,9 @@ glslangValidator -V Engine/shaders/triangle.vert -o Engine/shaders/triangle.vert
 # Run the editor
 ./build/bin/Release/EnjinEditor.exe  # Windows
 ./build/bin/EnjinEditor              # Linux/Mac
+
+# Serve web demo
+cd web-demo && python serve.py  # http://localhost:9090
 ```
 
 ## Project Architecture
@@ -104,7 +114,11 @@ Bilateral bitmask: `(A.categoryBits & B.collisionMask) && (B.categoryBits & A.co
 
 ### Renderer
 
-- **Descriptor Bindings:** 0=ViewProj UBO, 1=Lighting UBO, 2=Material SSBO (dynamic offset, batched per-frame), 3=Base color tex, 4=Shadow map array, 5=Height map, 6=Normal map, 7=Bone SSBO, 8=Metallic-roughness tex, 9=Emissive tex, 10=Point shadow cubemaps, 11=Spot shadow maps, 12=Shadow data SSBO, 13=Object data SSBO, 14=Cluster grid SSBO (clustered lighting), 15=Cluster light index SSBO (clustered lighting), 16=VT indirection tex, 17=VT physical atlas, 18=Matcap tex, 19=Baked reflection probe cubemap
+- **Multi-backend architecture**: `IRenderBackend` interface with sub-interfaces (`IGPUBufferManager`, `IGPUTextureManager`, `IGPUPipelineManager`, `IGPUShaderManager`, `IGPUBindGroupManager`, `IRenderEncoder`). Typed opaque handles (`GPUBufferHandle`, `GPUTextureHandle`, etc.) in `GPUTypes.h`. Feature detection in `GPUCapabilities.h` (Vulkan/WebGPU/Metal presets). RenderSystem is being migrated from direct Vulkan calls to the abstract interface.
+- **Backends**: Vulkan (Windows/Linux, full features), WebGPU (browser via Emscripten/Dawn, in progress), Metal (macOS/iOS, stubs in place)
+- **WebGPU shaders**: WGSL in `Engine/shaders/wgsl/` — pbr.wgsl (Cook-Torrance), shadow.wgsl, postprocess.wgsl (ACES), triangle.wgsl, web_pbr.wgsl (simplified)
+- **Web player**: `Player/src/web_main.cpp` uses `WebRenderPipeline` (temporary until RenderSystem migration completes). Responsive canvas via ResizeObserver, real delta time, extern C callbacks for JS interop.
+- **Descriptor Bindings (Vulkan):** 0=ViewProj UBO, 1=Lighting UBO, 2=Material SSBO (dynamic offset, batched per-frame), 3=Base color tex, 4=Shadow map array, 5=Height map, 6=Normal map, 7=Bone SSBO, 8=Metallic-roughness tex, 9=Emissive tex, 10=Point shadow cubemaps, 11=Spot shadow maps, 12=Shadow data SSBO, 13=Object data SSBO, 14=Cluster grid SSBO (clustered lighting), 15=Cluster light index SSBO (clustered lighting), 16=VT indirection tex, 17=VT physical atlas, 18=Matcap tex, 19=Baked reflection probe cubemap
 - **Push Constants (128 bytes):** model matrix (64B), baseColor+metallic, emissiveColor+roughness, emissiveStrength, opacity, alphaCutoff, flags (bitfield), parallaxScale, surfaceParam1 (water: shoreWidth / artistic: reflectivity), surfaceParam2 (water: foamIntensity / artistic: fresnelPower), surfaceParam3 (water: foamScale / artistic: rimLightStrength)
 - **Flags layout:** bits 0-2 render, 3 skinned, 4 wind, 5-7 water, 8-9 alpha mode, 10 height tex, 11 ocean, 12 UV quantize, 13 gouraud, 14-15 shadow dither, 16-19 texture flags, 20-23 retro flags, 24-28 snap resolution (/8), 29-31 shadow dither pattern
 - **Scene classification:** `Scene2D` (sprites only, shadows skipped), `Scene2_5D` (sprites+lights), `Scene3D` (full pipeline)
