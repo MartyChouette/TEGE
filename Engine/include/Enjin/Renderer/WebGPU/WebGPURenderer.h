@@ -101,8 +101,9 @@ public:
     // Depth texture for shadow passes
     WGPUTextureView GetDepthTextureView() const { return m_DepthTextureView; }
 
-    // Shader compiler access
+    // Subsystem access
     WebGPUShaderCompiler* GetShaderCompiler() { return m_ShaderCompiler.get(); }
+    WebGPUPipeline* GetPipelineFactory() { return m_PipelineFactory.get(); }
 
     // Wait for all GPU work to complete
     void WaitForAllFrames();

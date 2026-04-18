@@ -1570,6 +1570,20 @@ void EditorLayer::DrawBuildDialog() {
 
     ImGui::Checkbox("Fullscreen", &m_BuildConfig.fullscreen);
 
+    // Target platform
+    ImGui::Spacing();
+    const char* platformLabels[] = { "Desktop", "Web (HTML5)" };
+    int platform = static_cast<int>(m_BuildConfig.target);
+    if (ImGui::Combo("Platform", &platform, platformLabels, 2)) {
+        m_BuildConfig.target = static_cast<Build::BuildTargetPlatform>(platform);
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(
+            "Desktop: Native executable (Windows/Linux/macOS)\n"
+            "Web (HTML5): WebAssembly + WebGPU — runs in Chrome/Edge browser.\n"
+            "Requires Emscripten SDK (emsdk) to be installed.");
+    }
+
     // Packaging mode
     ImGui::Spacing();
     const char* packagingLabels[] = { "Packed", "Packed (Moddable)", "Loose Files" };

@@ -1,4 +1,5 @@
 #include "Enjin/Core/Application.h"
+#include "Enjin/Core/EntryPoint.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
@@ -42,7 +43,7 @@ public:
         m_Renderer.reset();
     }
 
-    void Update(f32 deltaTime) override {
+    void Update(Enjin::f32 deltaTime) override {
         // Store delta time so rendering can update the world after the frame begins
         m_LastDeltaTime = deltaTime;
     }
@@ -70,7 +71,7 @@ private:
     std::unique_ptr<Enjin::Renderer::VulkanRenderer> m_Renderer;
     std::unique_ptr<Enjin::ECS::World> m_World;
     Enjin::ECS::RenderSystem* m_RenderSystem = nullptr;
-    f32 m_LastDeltaTime = 0.0f;
+    Enjin::f32 m_LastDeltaTime = 0.0f;
 };
 
 Enjin::Application* CreateApplication() {

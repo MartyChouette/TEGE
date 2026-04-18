@@ -329,16 +329,7 @@ void EditorLayer::DrawMenuBar() {
                     m_BuildConfig.windowTitle = m_SceneManager.GetProjectName();
                 }
             }
-            if (ImGui::MenuItem("Export HTML5...")) {
-                m_ShowHTML5ExportDialog = true;
-                if (m_HTML5Config.title.empty() || m_HTML5Config.title == "My Game") {
-                    m_HTML5Config.title = m_SceneManager.GetProjectName();
-                }
-                if (m_HTML5Config.outputDir.empty() && !m_SceneManager.GetProjectPath().empty()) {
-                    auto projDir = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path();
-                    m_HTML5Config.outputDir = (projDir / "HTML5Build").string();
-                }
-            }
+            // HTML5 export is now integrated into Build Game (Platform → Web).
             ImGui::Separator();
             if (ImGui::MenuItem("Exit", "Alt+F4")) {
                 if (m_SceneDirty) {

@@ -57,21 +57,51 @@
 #include <emscripten.h>
 #include <string>
 #include <memory>
+#include <unordered_map>
+#include <fstream>
 
 static constexpr const char* PACK_KEY = "enjin_default_pack_key";
 
-// Web game player — no editor, no ImGui, WebGPU renderer
-class WebGamePlayer : public Enjin::Application {
+// Web game player — standalone (no Application base class, no GLFW)
+class WebGamePlayer {
 public:
-    void Initialize() override {
+    void Initialize() {
+        EM_ASM(console.log("=== TEGE Initialize() called ==="));
         ENJIN_LOG_INFO(Player, "Enjin Web Player starting...");
 
-        // In web builds, game.enjpak is preloaded into the virtual filesystem
-        std::string pakPath = "game.enjpak";
-        bool hasPack = m_AssetReader.Open(pakPath, PACK_KEY);
+        // Fetch game.enjpak from the server into the WASM virtual filesystem.
+        // emscripten_wget_data is used because emscripten_wget aborts on 404.
+        bool hasPack = false;
+        {
+            void* buf = nullptr;
+            int len = 0;
+            int err = 0;
+            emscripten_wget_data("game.enjpak", &buf, &len, &err);
+            if (!err && buf && len > 0) {
+                FILE* f = fopen("game.enjpak", "wb");
+                if (f) { fwrite(buf, 1, len, f); fclose(f); }
+                free(buf);
+                EM_ASM(console.log("=== game.enjpak downloaded, size:", $0, "==="), len);
+                // Try empty key first (Build Game default), then the built-in key
+                hasPack = m_AssetReader.Open("game.enjpak", "");
+                if (!hasPack) hasPack = m_AssetReader.Open("game.enjpak", PACK_KEY);
+                EM_ASM(console.log("=== enjpak open:", $0, "==="), hasPack ? 1 : 0);
+            } else {
+                ENJIN_LOG_WARN(Player, "No game.enjpak available on server");
+            }
+        }
 
+        // If no enjpak, try fetching a loose scene file
         if (!hasPack) {
-            ENJIN_LOG_WARN(Player, "No game.enjpak found — creating demo scene");
+            void* buf = nullptr;
+            int len = 0;
+            int err = 0;
+            emscripten_wget_data("scene.enjin", &buf, &len, &err);
+            if (!err && buf && len > 0) {
+                FILE* f = fopen("scene.enjin", "wb");
+                if (f) { fwrite(buf, 1, len, f); fclose(f); }
+                free(buf);
+            }
         }
 
         // Read build manifest (or use defaults)
@@ -81,40 +111,65 @@ public:
             ENJIN_LOG_INFO(Player, "Using default settings (no manifest)");
         }
 
-        try {
-            std::string manifestStr(manifestData.begin(), manifestData.end());
-            auto manifest = nlohmann::json::parse(manifestStr);
-
-            m_WindowTitle = manifest.value("windowTitle", "Enjin Game");
-            m_WindowWidth = manifest.value("windowWidth", 1280u);
-            m_WindowHeight = manifest.value("windowHeight", 720u);
-            m_StartScene = manifest.value("startScene", "");
-            m_PhysicsBackendType = manifest.value("physicsBackend", 0u);
-            m_ProjectMode = manifest.value("projectMode", 1u);
-
-            ENJIN_LOG_INFO(Player, "Game: %s (%ux%u)",
-                m_WindowTitle.c_str(), m_WindowWidth, m_WindowHeight);
-        } catch (const std::exception& e) {
-            ENJIN_LOG_ERROR(Player, "Error parsing build manifest: %s", e.what());
-            return;
+        if (!manifestData.empty()) {
+            try {
+                std::string manifestStr(manifestData.begin(), manifestData.end());
+                auto manifest = nlohmann::json::parse(manifestStr);
+                m_WindowTitle = manifest.value("windowTitle", "Enjin Game");
+                m_WindowWidth = manifest.value("windowWidth", 1280u);
+                m_WindowHeight = manifest.value("windowHeight", 720u);
+                m_StartScene = manifest.value("startScene", "");
+                m_PhysicsBackendType = manifest.value("physicsBackend", 0u);
+                m_ProjectMode = manifest.value("projectMode", 1u);
+            } catch (...) {
+                ENJIN_LOG_WARN(Player, "Manifest parse failed — using defaults");
+            }
         }
+        // Defaults for demo mode
+        if (m_WindowTitle.empty()) m_WindowTitle = "TEGE Web Demo";
+        if (m_WindowWidth == 0) m_WindowWidth = 1280;
+        if (m_WindowHeight == 0) m_WindowHeight = 720;
+        ENJIN_LOG_INFO(Player, "Game: %s (%ux%u)", m_WindowTitle.c_str(), m_WindowWidth, m_WindowHeight);
 
         // Initialize WebGPU renderer
+        EM_ASM(console.log("=== Creating WebGPU renderer ==="));
         m_Renderer = std::make_unique<Enjin::Renderer::WebGPURenderer>();
-        if (!m_Renderer->Initialize(GetWindow())) {
-            ENJIN_LOG_FATAL(Player, "Failed to initialize WebGPU renderer");
+        if (!m_Renderer->Initialize(nullptr)) {
+            EM_ASM(console.error("=== WebGPU init FAILED ==="));
             m_Renderer.reset();
             return;
         }
+        EM_ASM(console.log("=== WebGPU renderer OK ==="));
 
         // Setup camera
+        EM_ASM(console.log("=== Setting up camera ==="));
         m_Camera = std::make_unique<Enjin::Renderer::Camera>();
         m_Camera->SetPerspective(45.0f, 16.0f / 9.0f, 0.1f, 1000.0f);
-        m_Camera->SetPosition(Enjin::Math::Vector3(0.0f, 2.5f, 7.0f));
+        m_Camera->SetLookAt(
+            Enjin::Math::Vector3(0.0f, 4.0f, 10.0f),  // eye: up and back
+            Enjin::Math::Vector3(0.0f, 1.0f, -3.0f),   // look at the cubes
+            Enjin::Math::Vector3(0.0f, 1.0f, 0.0f));  // up
+
+        // Initialize input system (web doesn't need a Window — uses canvas selectors directly)
+        Enjin::Input::Initialize(nullptr);
+
+        // Wire up canvas focus + suppress browser context menu so RMB-look works.
+        // This runs from the player itself so any HTML host (web-demo, editor's
+        // HTML5 build, custom embed) works without extra setup, as long as the
+        // canvas has id="game-canvas".
+        EM_ASM({
+            var c = document.getElementById('game-canvas');
+            if (!c) { console.warn('TEGE: no #game-canvas element found'); return; }
+            if (!c.hasAttribute('tabindex')) c.setAttribute('tabindex', '0');
+            c.addEventListener('click', function(){ c.focus(); });
+            c.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+            c.focus();
+        });
 
         m_CameraController = std::make_unique<Enjin::Renderer::CameraController>(m_Camera.get());
 
         // Create ECS world
+        EM_ASM(console.log("=== Creating ECS world ==="));
         m_World = std::make_unique<Enjin::ECS::World>();
 
         // Setup render system
@@ -123,9 +178,11 @@ public:
 // [WEBGPU-STUB]         m_RenderSystem->Initialize();
 
         // Initialize audio (miniaudio supports Web Audio natively)
+        EM_ASM(console.log("=== Initializing audio ==="));
         Enjin::Audio::AudioManager::Get().Initialize();
 
         // Initialize scripting engine
+        EM_ASM(console.log("=== Initializing scripting ==="));
         if (m_ScriptEngine.Initialize()) {
             Enjin::Scripting::RegisterAllBindings(m_ScriptEngine.GetASEngine());
             m_ScriptEngine.SetWorld(m_World.get());
@@ -144,6 +201,7 @@ public:
         }
 
         // Initialize physics
+        EM_ASM(console.log("=== Initializing physics ==="));
         auto backendType = static_cast<Enjin::Physics::PhysicsBackendType>(
             m_PhysicsBackendType <= 3 ? m_PhysicsBackendType : 0);
         auto projectMode = static_cast<Enjin::Scene::ProjectMode>(
@@ -154,6 +212,7 @@ public:
         if (m_Physics2D) m_Physics2D->Initialize(m_World.get());
 
         // Initialize gameplay systems
+        EM_ASM(console.log("=== Initializing gameplay systems ==="));
         m_ControllerSystem.SetWorld(m_World.get());
         m_ControllerSystem.SetCamera(m_Camera.get());
         m_ControllerSystem.SetPhysics(m_Physics.get());
@@ -197,6 +256,7 @@ public:
         }
 
         // Wire up script bindings
+        EM_ASM(console.log("=== Wiring script bindings ==="));
         Enjin::Scripting::SetBindingsWorld(m_World.get());
         // Enjin::Scripting::SetBindingsRenderSystem(m_RenderSystem); // Excluded on web
         Enjin::Scripting::SetBindingsPhysics(m_Physics.get());
@@ -214,31 +274,79 @@ public:
         Enjin::Scripting::SetBindingsInputActionMap(&m_InputMap);
 
         // Load the start scene (or create demo)
+        EM_ASM(console.log("=== Loading scene ==="));
         bool sceneLoaded = false;
-        if (hasPack && !m_StartScene.empty()) {
-            auto sceneData = m_AssetReader.ReadFile(m_StartScene);
-            if (!sceneData.empty()) {
-                std::string sceneStr(sceneData.begin(), sceneData.end());
-                Enjin::Scene::SceneSerializer serializer(m_World.get());
-                serializer.LoadFromString(sceneStr);
-                sceneLoaded = true;
-                ENJIN_LOG_INFO(Player, "Loaded start scene: %s", m_StartScene.c_str());
+
+        // Option 1: Load from enjpak (full build pipeline)
+        if (hasPack) {
+            // If no start scene specified in manifest, find the first .enjin in the pack
+            if (m_StartScene.empty()) {
+                for (const auto& f : m_AssetReader.ListFiles()) {
+                    if (f.size() > 6 && f.substr(f.size() - 6) == ".enjin") {
+                        m_StartScene = f;
+                        ENJIN_LOG_INFO(Player, "Auto-detected start scene: %s", f.c_str());
+                        break;
+                    }
+                }
+            }
+            if (!m_StartScene.empty()) {
+                auto sceneData = m_AssetReader.ReadFile(m_StartScene);
+                if (!sceneData.empty()) {
+                    std::string sceneStr(sceneData.begin(), sceneData.end());
+                    Enjin::Scene::SceneSerializer serializer(m_World.get());
+                    serializer.LoadFromString(sceneStr);
+                    sceneLoaded = true;
+                    ENJIN_LOG_INFO(Player, "Loaded start scene: %s", m_StartScene.c_str());
+                }
             }
         }
 
+        // Option 2: Load loose scene.enjin fetched via HTTP
         if (!sceneLoaded) {
-            // Create a procedural demo scene
+            std::ifstream sceneFile("scene.enjin", std::ios::binary);
+            if (sceneFile.good()) {
+                std::string sceneStr((std::istreambuf_iterator<char>(sceneFile)),
+                                     std::istreambuf_iterator<char>());
+                if (!sceneStr.empty()) {
+                    Enjin::Scene::SceneSerializer serializer(m_World.get());
+                    serializer.LoadFromString(sceneStr);
+                    sceneLoaded = true;
+                    ENJIN_LOG_INFO(Player, "Loaded loose scene: scene.enjin");
+                }
+            }
+        }
+
+        // Option 3: Procedural demo fallback
+        if (!sceneLoaded) {
             CreateDemoScene();
         }
 
+        // Log what loaded
+        if (m_World) {
+            auto meshEntities = m_World->GetEntitiesWithComponent<Enjin::ECS::MeshComponent>();
+            EM_ASM(console.log("=== Entities with meshes:", $0, "==="), static_cast<int>(meshEntities.size()));
+            for (auto e : meshEntities) {
+                auto* name = m_World->GetComponent<Enjin::ECS::NameComponent>(e);
+                auto* mesh = m_World->GetComponent<Enjin::ECS::MeshComponent>(e);
+                auto* xform = m_World->GetComponent<Enjin::ECS::TransformComponent>(e);
+                if (name && mesh && xform) {
+                    EM_ASM(console.log("  ", UTF8ToString($0), "verts:", $1, "pos:", $2, $3, $4),
+                        name->name.c_str(), static_cast<int>(mesh->vertices.size()),
+                        xform->position.x, xform->position.y, xform->position.z);
+                }
+            }
+        }
+
         // Setup WebGPU rendering pipeline
+        EM_ASM(console.log("=== Setting up render pipeline ==="));
         SetupWebRenderPipeline();
+        EM_ASM(console.log("=== Pipeline ready:", $0), m_RenderPipelineReady ? 1 : 0);
 
         m_Initialized = true;
         ENJIN_LOG_INFO(Player, "Web Player initialized");
     }
 
-    void Shutdown() override {
+    void Shutdown() {
         ENJIN_LOG_INFO(Player, "Web Player shutting down...");
 
         m_ObjectPool.DestroyAll(m_World.get());
@@ -280,7 +388,7 @@ public:
         m_AssetReader.Close();
     }
 
-    void Update(Enjin::f32 deltaTime) override {
+    void Update(Enjin::f32 deltaTime) {
         if (!m_Initialized) return;
 
         // Update audio
@@ -288,7 +396,8 @@ public:
         m_SimpleAudio.Update(deltaTime);
         m_SimpleAudio.UpdateAudioSources(deltaTime);
 
-        // Update input
+        // Update input — must be called before any consumer of Input::* queries
+        Enjin::Input::Update();
         m_InputMap.Update(deltaTime);
 
         // --- Physics ---
@@ -329,39 +438,66 @@ public:
 
     void CreateDemoScene() {
         if (!m_World) return;
-        ENJIN_LOG_INFO(Player, "Creating procedural demo scene...");
+        EM_ASM(console.log("=== CreateDemoScene: start ==="));
 
-        // Ground plane
-        auto ground = m_World->CreateEntity();
-        auto& gxf = m_World->AddComponent<Enjin::ECS::TransformComponent>(ground);
-        gxf.position = {0, 0, 0};
-        gxf.scale = {20, 0.1f, 20};
-        auto& gmesh = m_World->AddComponent<Enjin::ECS::MeshComponent>(ground);
-        // Simple box mesh
-        gmesh.vertices = {
-            {{-0.5f,-0.5f,-0.5f}, {0,1,0}, {0,0}}, {{0.5f,-0.5f,-0.5f}, {0,1,0}, {1,0}},
-            {{0.5f,-0.5f,0.5f}, {0,1,0}, {1,1}}, {{-0.5f,-0.5f,0.5f}, {0,1,0}, {0,1}},
-            {{-0.5f,0.5f,-0.5f}, {0,1,0}, {0,0}}, {{0.5f,0.5f,-0.5f}, {0,1,0}, {1,0}},
-            {{0.5f,0.5f,0.5f}, {0,1,0}, {1,1}}, {{-0.5f,0.5f,0.5f}, {0,1,0}, {0,1}},
-        };
-        gmesh.indices = {4,5,6, 4,6,7, 0,2,1, 0,3,2, 0,1,5, 0,5,4, 2,3,7, 2,7,6, 1,2,6, 1,6,5, 0,4,7, 0,7,3};
-        auto& gmat = m_World->AddComponent<Enjin::ECS::MaterialComponent>(ground);
-        gmat.baseColor = {0.3f, 0.6f, 0.2f};
+        try {
+            // Helper to build a box mesh with per-face normals (24 verts, 36 indices)
+            auto makeBox = [](Enjin::ECS::MeshComponent& mesh) {
+                mesh.vertices.clear();
+                mesh.indices.clear();
+                mesh.vertices.reserve(24);
 
-        // Some cubes
-        for (int i = 0; i < 5; ++i) {
-            auto cube = m_World->CreateEntity();
-            auto& cxf = m_World->AddComponent<Enjin::ECS::TransformComponent>(cube);
-            cxf.position = {static_cast<Enjin::f32>(i * 3 - 6), 1.0f, -3.0f};
-            cxf.scale = {1, 1, 1};
-            auto& cmesh = m_World->AddComponent<Enjin::ECS::MeshComponent>(cube);
-            cmesh.vertices = gmesh.vertices; // Reuse box
-            cmesh.indices = gmesh.indices;
-            auto& cmat = m_World->AddComponent<Enjin::ECS::MaterialComponent>(cube);
-            cmat.baseColor = {0.2f + i * 0.15f, 0.3f, 0.8f - i * 0.1f};
+                auto addFace = [&](Enjin::Math::Vector3 n,
+                                   Enjin::Math::Vector3 a, Enjin::Math::Vector3 b,
+                                   Enjin::Math::Vector3 c, Enjin::Math::Vector3 d) {
+                    Enjin::u32 base = static_cast<Enjin::u32>(mesh.vertices.size());
+                    Enjin::ECS::Vertex v{};
+                    v.normal = n;
+                    v.position = a; v.uv = {0,0}; mesh.vertices.push_back(v);
+                    v.position = b; v.uv = {1,0}; mesh.vertices.push_back(v);
+                    v.position = c; v.uv = {1,1}; mesh.vertices.push_back(v);
+                    v.position = d; v.uv = {0,1}; mesh.vertices.push_back(v);
+                    mesh.indices.push_back(base+0); mesh.indices.push_back(base+1); mesh.indices.push_back(base+2);
+                    mesh.indices.push_back(base+0); mesh.indices.push_back(base+2); mesh.indices.push_back(base+3);
+                };
+
+                using V = Enjin::Math::Vector3;
+                // +Y (top)    -Y (bottom)    +X (right)    -X (left)    +Z (front)   -Z (back)
+                addFace(V( 0, 1, 0), V(-0.5f, 0.5f,-0.5f), V( 0.5f, 0.5f,-0.5f), V( 0.5f, 0.5f, 0.5f), V(-0.5f, 0.5f, 0.5f));
+                addFace(V( 0,-1, 0), V(-0.5f,-0.5f, 0.5f), V( 0.5f,-0.5f, 0.5f), V( 0.5f,-0.5f,-0.5f), V(-0.5f,-0.5f,-0.5f));
+                addFace(V( 1, 0, 0), V( 0.5f,-0.5f,-0.5f), V( 0.5f, 0.5f,-0.5f), V( 0.5f, 0.5f, 0.5f), V( 0.5f,-0.5f, 0.5f));
+                addFace(V(-1, 0, 0), V(-0.5f,-0.5f, 0.5f), V(-0.5f, 0.5f, 0.5f), V(-0.5f, 0.5f,-0.5f), V(-0.5f,-0.5f,-0.5f));
+                addFace(V( 0, 0, 1), V( 0.5f,-0.5f, 0.5f), V( 0.5f, 0.5f, 0.5f), V(-0.5f, 0.5f, 0.5f), V(-0.5f,-0.5f, 0.5f));
+                addFace(V( 0, 0,-1), V(-0.5f,-0.5f,-0.5f), V(-0.5f, 0.5f,-0.5f), V( 0.5f, 0.5f,-0.5f), V( 0.5f,-0.5f,-0.5f));
+            };
+
+            // Ground plane
+            EM_ASM(console.log("=== CreateDemoScene: ground ==="));
+            auto ground = m_World->CreateEntity();
+            auto& gxf = m_World->AddComponent<Enjin::ECS::TransformComponent>(ground);
+            gxf.position = Enjin::Math::Vector3(0, 0, 0);
+            gxf.scale = Enjin::Math::Vector3(20, 0.1f, 20);
+            auto& gmesh = m_World->AddComponent<Enjin::ECS::MeshComponent>(ground);
+            makeBox(gmesh);
+            auto& gmat = m_World->AddComponent<Enjin::ECS::MaterialComponent>(ground);
+            gmat.baseColor = Enjin::Math::Vector3(0.3f, 0.6f, 0.2f);
+
+            // Some cubes
+            for (int i = 0; i < 5; ++i) {
+                EM_ASM(console.log("=== CreateDemoScene: cube", $0, "==="), i);
+                auto cube = m_World->CreateEntity();
+                auto& cxf = m_World->AddComponent<Enjin::ECS::TransformComponent>(cube);
+                cxf.position = Enjin::Math::Vector3(static_cast<Enjin::f32>(i * 3 - 6), 1.0f, -3.0f);
+                cxf.scale = Enjin::Math::Vector3(1, 1, 1);
+                auto& cmesh = m_World->AddComponent<Enjin::ECS::MeshComponent>(cube);
+                makeBox(cmesh);
+                auto& cmat = m_World->AddComponent<Enjin::ECS::MaterialComponent>(cube);
+                cmat.baseColor = Enjin::Math::Vector3(0.2f + i * 0.15f, 0.3f, 0.8f - i * 0.1f);
+            }
+            EM_ASM(console.log("=== CreateDemoScene: done ==="));
+        } catch (const std::exception& e) {
+            EM_ASM(console.error("=== CreateDemoScene FAILED:", UTF8ToString($0)), e.what());
         }
-
-        ENJIN_LOG_INFO(Player, "Demo scene created (ground + 5 cubes)");
     }
 
     void SetupWebRenderPipeline() {
@@ -370,6 +506,15 @@ public:
         // Create uniform buffers
         m_ViewUniformBuffer = m_Renderer->CreateBuffer(256, WGPUBufferUsage_Uniform, nullptr);
         m_ObjectUniformBuffer = m_Renderer->CreateBuffer(256, WGPUBufferUsage_Uniform, nullptr);
+
+        // Configure vertex layout matching Vertex struct (only first 3 attrs used by shader)
+        Enjin::Renderer::WebGPUVertexBufferLayout vertexLayout;
+        vertexLayout.stride = sizeof(Enjin::ECS::Vertex);
+        vertexLayout.attributes = {
+            {Enjin::Renderer::WebGPUVertexFormat::Float32x3, offsetof(Enjin::ECS::Vertex, position), 0},  // position
+            {Enjin::Renderer::WebGPUVertexFormat::Float32x3, offsetof(Enjin::ECS::Vertex, normal),   1},  // normal
+            {Enjin::Renderer::WebGPUVertexFormat::Float32x2, offsetof(Enjin::ECS::Vertex, uv),       2},  // uv
+        };
 
         // Compile WGSL shader
         auto* compiler = m_Renderer->GetShaderCompiler();
@@ -442,8 +587,14 @@ struct VertexOutput {
             return;
         }
 
-        // Create pipeline using the renderer's factory
-        m_WebPipeline = m_Renderer->CreatePipeline(shaderModule, shaderModule, nullptr);
+        // Create pipeline with vertex layout
+        Enjin::Renderer::WebGPURenderPipelineDesc pipelineDesc;
+        pipelineDesc.vertexShader = shaderModule;
+        pipelineDesc.fragmentShader = shaderModule;
+        pipelineDesc.vertexBuffers = { vertexLayout };
+        pipelineDesc.colorFormat = Enjin::Renderer::GetPreferredSwapChainFormat();
+        pipelineDesc.cullMode = WGPUCullMode_None;  // Demo: skip culling so winding doesn't matter
+        m_WebPipeline = m_Renderer->GetPipelineFactory()->CreateRenderPipeline(pipelineDesc);
         if (!m_WebPipeline) {
             ENJIN_LOG_ERROR(Player, "Failed to create web render pipeline");
             return;
@@ -477,7 +628,7 @@ struct VertexOutput {
         ENJIN_LOG_INFO(Player, "WebGPU render pipeline created");
     }
 
-    void Render() override {
+    void Render() {
         if (!m_Initialized || !m_Renderer) return;
 
         if (m_Renderer->BeginFrame()) {
@@ -498,9 +649,7 @@ struct VertexOutput {
                     if (mesh->vertices.empty() || mesh->indices.empty()) continue;
 
                     // Get or create GPU buffers for this entity
-                    auto eid = static_cast<Enjin::usize>(entity);
-                    if (eid >= m_EntityGPUData.size()) m_EntityGPUData.resize(eid + 1);
-                    auto& gpuData = m_EntityGPUData[eid];
+                    auto& gpuData = m_EntityGPUData[entity];
 
                     // Upload mesh data if not yet uploaded
                     if (!gpuData.uploaded) {
@@ -538,14 +687,57 @@ struct VertexOutput {
             Enjin::Math::Vector3 lightColor; float ambientIntensity;
             Enjin::Math::Vector3 ambientColor; float _pad2;
         } ubo;
+
+        // Use game camera entity if found (sync on first frame).
+        // Fall back to a reasonable default looking at the scene origin.
+        if (!m_CameraSynced && m_World) {
+            bool found = false;
+            for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::CameraComponent>()) {
+                auto* xform = m_World->GetComponent<Enjin::ECS::TransformComponent>(entity);
+                if (xform) {
+                    // Point camera at scene origin from the game camera's position
+                    Enjin::Math::Vector3 target(0.0f, 0.0f, 0.0f);
+                    m_Camera->SetLookAt(xform->position, target,
+                        Enjin::Math::Vector3(0.0f, 1.0f, 0.0f));
+                    found = true;
+                    EM_ASM(console.log("=== Game camera at:", $0, $1, $2, "==="),
+                        xform->position.x, xform->position.y, xform->position.z);
+                    break;
+                }
+            }
+            if (!found) {
+                m_Camera->SetLookAt(
+                    Enjin::Math::Vector3(0.0f, 8.0f, 15.0f),
+                    Enjin::Math::Vector3(0.0f, 0.0f, 0.0f),
+                    Enjin::Math::Vector3(0.0f, 1.0f, 0.0f));
+            }
+            if (m_CameraController) m_CameraController->SyncFromCamera();
+            m_CameraSynced = true;
+        }
+
         ubo.view = m_Camera->GetViewMatrix();
         ubo.proj = m_Camera->GetProjectionMatrix();
         ubo.cameraPos = m_Camera->GetPosition();
+
+        // Read first directional light from ECS, fall back to defaults
         ubo.lightDir = Enjin::Math::Vector3(0.5f, 0.8f, 0.3f).Normalized();
         ubo.lightIntensity = 1.2f;
         ubo.lightColor = Enjin::Math::Vector3(1.0f, 0.95f, 0.9f);
-        ubo.ambientIntensity = 0.15f;
-        ubo.ambientColor = Enjin::Math::Vector3(0.1f, 0.1f, 0.15f);
+        if (m_World) {
+            for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::LightComponent>()) {
+                auto* light = m_World->GetComponent<Enjin::ECS::LightComponent>(entity);
+                auto* xform = m_World->GetComponent<Enjin::ECS::TransformComponent>(entity);
+                if (light && light->type == Enjin::ECS::LightType::Directional && xform) {
+                    ubo.lightDir = (xform->rotation.GetForward() * -1.0f).Normalized();
+                    ubo.lightIntensity = light->intensity;
+                    ubo.lightColor = light->color;
+                    break;
+                }
+            }
+        }
+
+        ubo.ambientIntensity = 0.5f;  // High ambient for web (no GI/shadows/env maps)
+        ubo.ambientColor = Enjin::Math::Vector3(0.3f, 0.3f, 0.35f);
         m_Renderer->UpdateBuffer(m_ViewUniformBuffer, &ubo, sizeof(ubo), 0);
     }
 
@@ -558,7 +750,7 @@ struct VertexOutput {
             Enjin::Math::Vector3 emissive; float roughness;
             float opacity; Enjin::Math::Vector3 _pad;
         } ubo;
-        ubo.model = xform ? Enjin::Math::Matrix4::Identity() : Enjin::Math::Matrix4::Identity();
+        ubo.model = xform ? xform->ToMatrix() : Enjin::Math::Matrix4::Identity();
         ubo.baseColor = mat ? mat->baseColor : Enjin::Math::Vector3(0.8f, 0.8f, 0.8f);
         ubo.metallic = mat ? mat->metallic : 0.0f;
         ubo.emissive = mat ? mat->emissiveColor * mat->emissiveStrength : Enjin::Math::Vector3(0.0f);
@@ -570,6 +762,7 @@ struct VertexOutput {
 private:
     bool m_Initialized = false;
     bool m_RenderPipelineReady = false;
+    bool m_CameraSynced = false;
 
     // Per-entity GPU data
     struct EntityGPUData {
@@ -579,7 +772,7 @@ private:
         Enjin::u32 indexCount = 0;
         bool uploaded = false;
     };
-    std::vector<EntityGPUData> m_EntityGPUData;
+    std::unordered_map<Enjin::ECS::Entity, EntityGPUData> m_EntityGPUData;
 
     // WebGPU rendering resources
     WGPURenderPipeline m_WebPipeline = nullptr;

@@ -80,20 +80,57 @@ namespace {
 #endif
 
 #if ENJIN_PLATFORM_WEB
+    // Pointer-lock mouse delta accumulator (movementX/Y is relative)
+    Math::Vector2 s_WebMouseMovementAccum = {};
+
+    // Map DOM keyCode → our (GLFW-aligned) KeyCode for special keys.
+    // Printable ASCII (A-Z, 0-9, Space) match natively, so they're not in the table.
+    i32 MapDomKeyCode(i32 dom) {
+        switch (dom) {
+            case 8:   return 259; // Backspace
+            case 9:   return 258; // Tab
+            case 13:  return 257; // Enter
+            case 16:  return 340; // Shift  -> LeftShift
+            case 17:  return 341; // Ctrl   -> LeftControl
+            case 18:  return 342; // Alt    -> LeftAlt
+            case 27:  return 256; // Escape
+            case 33:  return 266; // PageUp
+            case 34:  return 267; // PageDown
+            case 35:  return 269; // End
+            case 36:  return 268; // Home
+            case 37:  return 263; // Left
+            case 38:  return 265; // Up
+            case 39:  return 262; // Right
+            case 40:  return 264; // Down
+            case 45:  return 260; // Insert
+            case 46:  return 261; // Delete
+            case 112: return 290; // F1
+            case 113: return 291; // F2
+            case 114: return 292; case 115: return 293; case 116: return 294;
+            case 117: return 295; case 118: return 296; case 119: return 297;
+            case 120: return 298; case 121: return 299; case 122: return 300;
+            case 123: return 301;
+            default:  return dom; // Letters/digits already match
+        }
+    }
+
     // --- Emscripten event callbacks ---
     EM_BOOL WebKeyCallback(int eventType, const EmscriptenKeyboardEvent* e, void* userData) {
         (void)userData;
-        // Map DOM key codes to our key array (DOM codes overlap with GLFW for ASCII range)
-        i32 keyCode = static_cast<i32>(e->keyCode);
+        i32 keyCode = MapDomKeyCode(static_cast<i32>(e->keyCode));
         if (keyCode >= 0 && keyCode < MAX_KEYS) {
             s_KeysDown[keyCode] = (eventType == EMSCRIPTEN_EVENT_KEYDOWN);
         }
+        // Prevent browser from scrolling on space/arrows when game has focus
         return EM_TRUE;
     }
 
     EM_BOOL WebMouseMoveCallback(int eventType, const EmscriptenMouseEvent* e, void* userData) {
         (void)eventType; (void)userData;
         s_MousePosition = Math::Vector2(static_cast<f32>(e->targetX), static_cast<f32>(e->targetY));
+        // Accumulate relative movement for pointer-locked look
+        s_WebMouseMovementAccum.x += static_cast<f32>(e->movementX);
+        s_WebMouseMovementAccum.y += static_cast<f32>(e->movementY);
         return EM_TRUE;
     }
 
@@ -116,10 +153,14 @@ namespace {
 }
 
 void Input::Initialize(Window* window) {
+#if !ENJIN_PLATFORM_WEB
     if (!window) {
         ENJIN_LOG_ERROR(Core, "Input::Initialize called with null window");
         return;
     }
+#else
+    (void)window;  // Web uses canvas selectors directly, no Window object needed
+#endif
 
     // Clear state
     std::memset(s_KeysDown, 0, sizeof(s_KeysDown));
@@ -136,6 +177,8 @@ void Input::Initialize(Window* window) {
     emscripten_set_mousedown_callback(target, nullptr, false, WebMouseButtonCallback);
     emscripten_set_mouseup_callback(target, nullptr, false, WebMouseButtonCallback);
     emscripten_set_wheel_callback(target, nullptr, false, WebWheelCallback);
+    // Enable Gamepad API (must be called before polling gamepad state)
+    emscripten_sample_gamepad_data();
     s_FirstMouseMove = true;
 #else
     s_Window = static_cast<GLFWwindow*>(window->GetNativeHandle());
@@ -165,7 +208,7 @@ void Input::Update() {
 
 #if ENJIN_PLATFORM_WEB
     // On web, key/mouse state is updated via Emscripten callbacks (WebKeyCallback, etc.)
-    // We just need to compute mouse delta and consume scroll accumulator.
+    // For pointer-locked mode, prefer accumulated movementX/Y over position deltas.
 #else
     if (!s_Window) return;
 
@@ -190,8 +233,17 @@ void Input::Update() {
         s_MouseDelta = Math::Vector2(0.0f, 0.0f);
         s_SmoothedDelta = Math::Vector2(0.0f, 0.0f);
         s_FirstMouseMove = false;
+#if ENJIN_PLATFORM_WEB
+        s_WebMouseMovementAccum = Math::Vector2(0.0f, 0.0f);
+#endif
     } else {
+#if ENJIN_PLATFORM_WEB
+        // Use accumulated relative movement (works for both pointer-locked and free cursor)
+        s_MouseDelta = s_WebMouseMovementAccum;
+        s_WebMouseMovementAccum = Math::Vector2(0.0f, 0.0f);
+#else
         s_MouseDelta = s_MousePosition - s_MousePositionPrev;
+#endif
     }
     s_MousePositionPrev = s_MousePosition;
 
@@ -232,8 +284,58 @@ void Input::Update() {
             std::memset(s_GamepadAxes[gp], 0, sizeof(s_GamepadAxes[gp]));
         }
 #else
-        // Gamepad API: Emscripten supports HTML5 Gamepad API but not yet wired up
-        s_GamepadConnected[gp] = false;
+        // HTML5 Gamepad API via Emscripten
+        // Note: emscripten_sample_gamepad_data() must be called once per frame before queries
+        if (gp == 0) {
+            emscripten_sample_gamepad_data();
+        }
+
+        EmscriptenGamepadEvent gpEvent;
+        if (emscripten_get_gamepad_status(gp, &gpEvent) == EMSCRIPTEN_RESULT_SUCCESS && gpEvent.connected) {
+            s_GamepadConnected[gp] = true;
+
+            // Map standard gamepad layout (Chrome/Firefox follow W3C standard mapping)
+            // W3C buttons: 0=A 1=B 2=X 3=Y 4=LB 5=RB 6=LT 7=RT 8=Back 9=Start
+            //              10=LStick 11=RStick 12=DUp 13=DDown 14=DLeft 15=DRight 16=Guide
+            // Our enum:    0=A 1=B 2=X 3=Y 4=LB 5=RB 6=Back 7=Start 8=Guide
+            //              9=LStick 10=RStick 11=DUp 12=DRight 13=DDown 14=DLeft
+            // W3C standard mapping (17 entries, index 16 = Guide button)
+            static const i32 webToOurButton[17] = {
+                0, 1, 2, 3,         // A B X Y
+                4, 5,               // LB RB
+                -1, -1,             // LT RT (handled as axes below)
+                6, 7,               // Back Start
+                9, 10,              // LStick RStick
+                11, 13, 14, 12,     // DUp DDown DLeft DRight (our DRight=12, DDown=13, DLeft=14)
+                8                   // Guide
+            };
+            for (i32 wb = 0; wb < gpEvent.numButtons && wb < 17; ++wb) {
+                i32 ourB = webToOurButton[wb];
+                if (ourB >= 0 && ourB < MAX_GAMEPAD_BUTTONS) {
+                    s_GamepadButtons[gp][ourB] = gpEvent.digitalButton[wb] != 0;
+                    if (s_GamepadButtons[gp][ourB]) s_GamepadActiveThisFrame[gp] = true;
+                }
+            }
+
+            // Axes: W3C 0=LX 1=LY 2=RX 3=RY (no triggers as axes — those are buttons 6,7)
+            // Our enum: 0=LX 1=LY 2=RX 3=RY 4=LT 5=RT
+            for (i32 a = 0; a < gpEvent.numAxes && a < 4; ++a) {
+                s_GamepadAxes[gp][a] = static_cast<f32>(gpEvent.axis[a]);
+                if (std::abs(s_GamepadAxes[gp][a]) > s_GamepadDeadZone) s_GamepadActiveThisFrame[gp] = true;
+            }
+            // Triggers: W3C reports as buttons 6 (LT) and 7 (RT) with analog values 0..1.
+            // Our convention: -1 released, +1 pressed. Remap.
+            if (gpEvent.numButtons > 6) {
+                s_GamepadAxes[gp][4] = static_cast<f32>(gpEvent.analogButton[6]) * 2.0f - 1.0f;
+            }
+            if (gpEvent.numButtons > 7) {
+                s_GamepadAxes[gp][5] = static_cast<f32>(gpEvent.analogButton[7]) * 2.0f - 1.0f;
+            }
+        } else {
+            s_GamepadConnected[gp] = false;
+            std::memset(s_GamepadButtons[gp], 0, sizeof(s_GamepadButtons[gp]));
+            std::memset(s_GamepadAxes[gp], 0, sizeof(s_GamepadAxes[gp]));
+        }
 #endif
     }
 }

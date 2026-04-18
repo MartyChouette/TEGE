@@ -167,6 +167,20 @@ void RenderSystem::Initialize() {
         ENJIN_LOG_WARN(Renderer, "Failed to load shadow vertex shader");
     }
 
+    // Initialize bindless resource manager BEFORE pipeline creation — pipelines
+    // need the bindless descriptor set layout for set 1 in their pipeline layout.
+    m_BindlessManager = std::make_unique<Renderer::BindlessResourceManager>(m_Renderer->GetContext());
+    if (!m_BindlessManager->Initialize()) {
+        ENJIN_LOG_WARN(Renderer, "Bindless resource manager initialization failed — per-entity descriptors will be used");
+        m_BindlessManager.reset();
+    } else {
+        // Register default white texture so empty material slots have a valid fallback
+        if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+            m_DefaultBindlessHandle = m_BindlessManager->RegisterTexture(
+                m_DefaultWhiteTexture->GetImageView(), m_DefaultWhiteTexture->GetSampler());
+        }
+    }
+
     // Create pipeline
     CreatePipeline();
 
@@ -469,19 +483,6 @@ void RenderSystem::Initialize() {
         }
     }
 #endif
-
-    // Initialize bindless resource manager for texture indexing
-    m_BindlessManager = std::make_unique<Renderer::BindlessResourceManager>(m_Renderer->GetContext());
-    if (!m_BindlessManager->Initialize()) {
-        ENJIN_LOG_WARN(Renderer, "Bindless resource manager initialization failed — per-entity descriptors will be used");
-        m_BindlessManager.reset();
-    } else {
-        // Register default white texture so empty material slots have a valid fallback
-        if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-            m_DefaultBindlessHandle = m_BindlessManager->RegisterTexture(
-                m_DefaultWhiteTexture->GetImageView(), m_DefaultWhiteTexture->GetSampler());
-        }
-    }
 
     m_Initialized = true;
     ENJIN_LOG_INFO(Renderer, "RenderSystem initialized (bindless: %s)",

@@ -42,38 +42,59 @@ bool WebGPURenderer::Initialize(Window* window) {
     WGPURequestAdapterOptions adapterOpts = {};
     adapterOpts.powerPreference = WGPUPowerPreference_HighPerformance;
 
-    struct AdapterData { WGPUAdapter adapter = nullptr; } adapterData;
+    struct AdapterData { WGPUAdapter adapter = nullptr; bool done = false; bool failed = false; } adapterData;
     WGPURequestAdapterCallbackInfo adapterCB = {};
     adapterCB.mode = WGPUCallbackMode_AllowSpontaneous;
     adapterCB.callback = [](WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringView message, void* ud1, void* ud2) {
         (void)ud2;
         auto* data = static_cast<AdapterData*>(ud1);
-        if (status == WGPURequestAdapterStatus_Success) data->adapter = adapter;
+        if (status == WGPURequestAdapterStatus_Success) {
+            data->adapter = adapter;
+        } else {
+            data->failed = true;
+        }
+        data->done = true;
     };
     adapterCB.userdata1 = &adapterData;
     wgpuInstanceRequestAdapter(m_Instance, &adapterOpts, adapterCB);
-    // Emscripten processes callbacks synchronously for wgpu
-    if (!adapterData.adapter) {
-        ENJIN_LOG_ERROR(Core, "WebGPURenderer: No suitable adapter found");
+    // Yield to browser, then flush Dawn's callback queue
+    while (!adapterData.done) {
+        emscripten_sleep(10);
+        wgpuInstanceProcessEvents(m_Instance);
+    }
+    if (adapterData.failed || !adapterData.adapter) {
+        ENJIN_LOG_ERROR(Core, "WebGPURenderer: Failed to get WebGPU adapter — browser may not support WebGPU");
         return false;
     }
+    ENJIN_LOG_INFO(Core, "WebGPU adapter acquired");
 
     // Request device
     WGPUDeviceDescriptor deviceDesc = {};
     deviceDesc.label = wgpuStr("EnjinDevice");
 
-    struct DeviceData { WGPUDevice device = nullptr; } deviceData;
+    struct DeviceData { WGPUDevice device = nullptr; bool done = false; bool failed = false; } deviceData;
     WGPURequestDeviceCallbackInfo deviceCB = {};
     deviceCB.mode = WGPUCallbackMode_AllowSpontaneous;
     deviceCB.callback = [](WGPURequestDeviceStatus status, WGPUDevice device, WGPUStringView message, void* ud1, void* ud2) {
         (void)ud2;
         auto* data = static_cast<DeviceData*>(ud1);
-        if (status == WGPURequestDeviceStatus_Success) data->device = device;
+        if (status == WGPURequestDeviceStatus_Success) {
+            data->device = device;
+        } else {
+            data->failed = true;
+        }
+        data->done = true;
     };
     deviceCB.userdata1 = &deviceData;
     wgpuAdapterRequestDevice(adapterData.adapter, &deviceDesc, deviceCB);
+    // Yield to browser, then flush Dawn's callback queue
+    while (!deviceData.done) {
+        emscripten_sleep(10);
+        wgpuInstanceProcessEvents(m_Instance);
+    }
 
     m_Device = deviceData.device;
+    ENJIN_LOG_INFO(Core, "WebGPU device acquired");
     if (!m_Device) {
         ENJIN_LOG_ERROR(Core, "WebGPURenderer: Failed to get WebGPU device");
         wgpuAdapterRelease(adapterData.adapter);
@@ -133,8 +154,8 @@ bool WebGPURenderer::BeginFrame() {
         return false;
     }
 
-    WGPUTextureViewDescriptor viewDesc = {};
-    m_CurrentSwapChainView = wgpuTextureCreateView(surfTex.texture, &viewDesc);
+    // Pass nullptr for default view descriptor — Dawn will use texture's own format/dimensions
+    m_CurrentSwapChainView = wgpuTextureCreateView(surfTex.texture, nullptr);
     wgpuTextureRelease(surfTex.texture);
 
     if (!m_CurrentSwapChainView) return false;
@@ -147,9 +168,10 @@ bool WebGPURenderer::BeginFrame() {
     // Begin render pass
     WGPURenderPassColorAttachment colorAttachment = {};
     colorAttachment.view = m_CurrentSwapChainView;
+    colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;  // Required for 2D textures in Dawn
     colorAttachment.loadOp = WGPULoadOp_Clear;
     colorAttachment.storeOp = WGPUStoreOp_Store;
-    colorAttachment.clearValue = {0.1, 0.1, 0.12, 1.0};
+    colorAttachment.clearValue = {0.4, 0.5, 0.65, 1.0};  // Light blue-grey sky
 
     WGPURenderPassDepthStencilAttachment depthAttachment = {};
     depthAttachment.view = m_DepthTextureView;
@@ -193,8 +215,11 @@ void WebGPURenderer::EndFrame() {
         m_CurrentSwapChainView = nullptr;
     }
 
-    // Present
+    // Present — emdawnwebgpu auto-presents when requestAnimationFrame returns,
+    // so wgpuSurfacePresent is not needed (and unsupported) on web.
+#if !ENJIN_PLATFORM_WEB
     wgpuSurfacePresent(m_Surface);
+#endif
 
     m_FrameIndex = (m_FrameIndex + 1) % FRAMES_IN_FLIGHT;
 }

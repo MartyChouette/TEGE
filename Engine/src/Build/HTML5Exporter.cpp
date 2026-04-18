@@ -74,6 +74,25 @@ HTML5ExportResult HTML5Exporter::Export(const HTML5ExportConfig& config,
         }
     }
 
+    // Write serve.py — Chrome (and most browsers) refuse to load WebAssembly
+    // and ES modules from file:// URLs, so a one-shot local server avoids the
+    // "Unsafe attempt to load URL" error users hit when double-clicking index.html.
+    {
+        std::string servePath = config.outputDir + "/serve.py";
+        std::ofstream f(servePath);
+        if (f.is_open()) {
+            f << "import http.server, socketserver\n"
+              << "class H(http.server.SimpleHTTPRequestHandler):\n"
+              << "    extensions_map = {**http.server.SimpleHTTPRequestHandler.extensions_map,\n"
+              << "                      '.wasm': 'application/wasm', '.js': 'application/javascript'}\n"
+              << "PORT = 9090\n"
+              << "print(f'Serving at http://localhost:{PORT}')\n"
+              << "with socketserver.TCPServer(('', PORT), H) as httpd:\n"
+              << "    httpd.serve_forever()\n";
+            result.files.push_back("serve.py");
+        }
+    }
+
     // Generate embed code
     if (config.generateEmbedCode) {
         result.embedCode = GenerateEmbedSnippet(config);
@@ -183,50 +202,108 @@ static int RunProcess(const std::string& cmdLine) {
 
 bool HTML5Exporter::InvokeEmscriptenBuild(const std::string& outputDir,
                                             const std::string& enjpakPath) {
-    // Build command: invoke emcc via cmake to compile the web player target
-    // This requires the Emscripten SDK (emsdk) to be activated in the user's shell.
+    // Strategy: copy pre-built WASM from the repo's build-web/ directory.
+    // The WASM binary is the same for all projects — only the enjpak changes.
+    // This avoids requiring emcmake/emmake/Python in the editor's PATH.
     //
-    // The build flow is:
-    //   1. emcmake cmake -B <build-web> -DENJIN_PLATFORM_WEB=ON
-    //   2. emmake cmake --build <build-web> --target EnjinPlayer
-    //   3. Copy output files (game.js, game.wasm) to outputDir
-    //   4. Preload the .enjpak via --preload-file
+    // If no pre-built WASM exists, fall back to invoking emcmake/emmake
+    // (requires Emscripten SDK activated in the user's environment).
 
-    std::string buildDir = outputDir + "/build-web";
-    std::filesystem::create_directories(buildDir);
+    namespace fs = std::filesystem;
 
-    // Step 1: Configure — S-C1: Use CreateProcess/posix_spawn instead of std::system
-    std::string configCmd = "emcmake cmake -B \"" + buildDir + "\" -DENJIN_PLATFORM_WEB=ON";
-    ENJIN_LOG_INFO(Build, "Web build: configuring... (%s)", configCmd.c_str());
-    int configResult = RunProcess(configCmd);
-    if (configResult != 0) {
-        ENJIN_LOG_ERROR(Build, "Web build: CMake configure failed (exit code %d). Is emsdk activated?", configResult);
-        return false;
+    // Find the engine source root by walking up from the output directory
+    // looking for the repo structure (CMakeLists.txt + Engine/ + build-web/).
+    // Also try common locations relative to known paths.
+    fs::path repoRoot;
+    std::vector<fs::path> candidates;
+
+    // Try walking up from the output dir (works if output is inside the repo)
+    for (auto dir = fs::path(outputDir); dir.has_parent_path() && dir != dir.parent_path(); dir = dir.parent_path()) {
+        if (fs::exists(dir / "build-web" / "bin" / "EnjinPlayer.js")) {
+            repoRoot = dir;
+            break;
+        }
     }
 
-    // Step 2: Build
-    std::string buildCmd = "emmake cmake --build \"" + buildDir + "\" --target EnjinPlayer";
-    ENJIN_LOG_INFO(Build, "Web build: compiling... (%s)", buildCmd.c_str());
-    int buildResult = RunProcess(buildCmd);
-    if (buildResult != 0) {
-        ENJIN_LOG_ERROR(Build, "Web build: compilation failed (exit code %d)", buildResult);
-        return false;
+    // Try common locations if not found
+    if (repoRoot.empty()) {
+        candidates = {
+            fs::path("D:/GitHub/enjin"),
+            fs::path("C:/GitHub/enjin"),
+        };
+        // Also try relative to the editor exe (build/ is typically inside the repo)
+#ifdef _WIN32
+        char exeBuf[MAX_PATH] = {};
+        GetModuleFileNameA(nullptr, exeBuf, MAX_PATH);
+        fs::path exeDir = fs::path(exeBuf).parent_path();
+        // exe is at <repo>/build/bin/Release/ — go up 3 levels
+        candidates.push_back(exeDir / ".." / ".." / "..");
+#endif
+        for (const auto& c : candidates) {
+            auto canon = fs::weakly_canonical(c);
+            if (fs::exists(canon / "build-web" / "bin" / "EnjinPlayer.js")) {
+                repoRoot = canon;
+                break;
+            }
+        }
     }
 
-    // Step 3: Copy WASM output to export directory
-    std::string wasmSrc = buildDir + "/bin/EnjinPlayer.wasm";
-    std::string jsSrc = buildDir + "/bin/EnjinPlayer.js";
-    try {
-        if (std::filesystem::exists(wasmSrc)) {
-            std::filesystem::copy_file(wasmSrc, outputDir + "/game.wasm",
-                                        std::filesystem::copy_options::overwrite_existing);
+    // Try pre-built WASM from build-web/
+    bool copied = false;
+    if (!repoRoot.empty()) {
+        fs::path jsSrc = repoRoot / "build-web" / "bin" / "EnjinPlayer.js";
+        fs::path wasmSrc = repoRoot / "build-web" / "bin" / "EnjinPlayer.wasm";
+        if (fs::exists(jsSrc) && fs::exists(wasmSrc)) {
+            try {
+                fs::copy_file(jsSrc, fs::path(outputDir) / "EnjinPlayer.js",
+                              fs::copy_options::overwrite_existing);
+                fs::copy_file(wasmSrc, fs::path(outputDir) / "EnjinPlayer.wasm",
+                              fs::copy_options::overwrite_existing);
+                copied = true;
+                ENJIN_LOG_INFO(Build, "Web build: copied pre-built WASM from %s", jsSrc.parent_path().string().c_str());
+            } catch (const std::exception& e) {
+                ENJIN_LOG_WARN(Build, "Web build: failed to copy pre-built WASM: %s", e.what());
+            }
         }
-        if (std::filesystem::exists(jsSrc)) {
-            std::filesystem::copy_file(jsSrc, outputDir + "/game.js",
-                                        std::filesystem::copy_options::overwrite_existing);
+    }
+
+    // Fallback: try invoking emcmake/emmake directly
+    if (!copied) {
+        std::string buildDir = outputDir + "/build-web";
+        fs::create_directories(buildDir);
+
+        std::string configCmd = "emcmake cmake -B \"" + buildDir + "\" -DENJIN_PLATFORM_WEB=ON";
+        ENJIN_LOG_INFO(Build, "Web build: configuring... (%s)", configCmd.c_str());
+        int configResult = RunProcess(configCmd);
+        if (configResult != 0) {
+            ENJIN_LOG_ERROR(Build, "Web build: CMake configure failed (exit code %d). Is emsdk activated?", configResult);
+            return false;
         }
-    } catch (const std::exception& e) {
-        ENJIN_LOG_ERROR(Build, "Web build: failed to copy output files: %s", e.what());
+
+        std::string buildCmd = "emmake cmake --build \"" + buildDir + "\" --target EnjinPlayer";
+        ENJIN_LOG_INFO(Build, "Web build: compiling... (%s)", buildCmd.c_str());
+        int buildResult = RunProcess(buildCmd);
+        if (buildResult != 0) {
+            ENJIN_LOG_ERROR(Build, "Web build: compilation failed (exit code %d)", buildResult);
+            return false;
+        }
+
+        fs::path jsSrc = fs::path(buildDir) / "bin" / "EnjinPlayer.js";
+        fs::path wasmSrc = fs::path(buildDir) / "bin" / "EnjinPlayer.wasm";
+        try {
+            if (fs::exists(jsSrc))
+                fs::copy_file(jsSrc, fs::path(outputDir) / "EnjinPlayer.js", fs::copy_options::overwrite_existing);
+            if (fs::exists(wasmSrc))
+                fs::copy_file(wasmSrc, fs::path(outputDir) / "EnjinPlayer.wasm", fs::copy_options::overwrite_existing);
+            copied = true;
+        } catch (const std::exception& e) {
+            ENJIN_LOG_ERROR(Build, "Web build: failed to copy output files: %s", e.what());
+            return false;
+        }
+    }
+
+    if (!copied) {
+        ENJIN_LOG_ERROR(Build, "Web build: no pre-built WASM found and emcmake unavailable");
         return false;
     }
 
@@ -381,7 +458,7 @@ std::string HTML5Exporter::GenerateHTML(const HTML5ExportConfig& config,
     }
 
     html << "  </script>\n"
-         << "  <script src=\"game.js\"></script>\n"
+         << "  <script src=\"EnjinPlayer.js\"></script>\n"
          << "</body>\n"
          << "</html>\n";
 
