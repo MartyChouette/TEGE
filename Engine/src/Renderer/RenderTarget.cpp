@@ -3,7 +3,6 @@
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Logging/Log.h"
 
-#include <backends/imgui_impl_vulkan.h>
 #include <array>
 
 namespace Enjin {
@@ -33,7 +32,7 @@ bool RenderTarget::Create(VulkanRenderer* renderer, u32 width, u32 height) {
     if (!CreatePPFramebuffer()) return false;
     if (!CreateSampler()) return false;
 
-    RegisterImGuiTexture();
+    RegisterTexture();
 
     ENJIN_LOG_INFO(Renderer, "RenderTarget created (%ux%u)", width, height);
     return true;
@@ -45,7 +44,7 @@ void RenderTarget::Destroy() {
     } else if (m_Context) {
         vkDeviceWaitIdle(m_Context->GetDevice());
     }
-    UnregisterImGuiTexture();
+    UnregisterTexture();
     DestroyResources();
     m_Renderer = nullptr;
     m_Context = nullptr;
@@ -59,7 +58,7 @@ bool RenderTarget::Resize(u32 width, u32 height) {
 
     m_Renderer->WaitForAllFrames();
 
-    UnregisterImGuiTexture();
+    UnregisterTexture();
     DestroyResources();
 
     m_Width = width;
@@ -72,7 +71,7 @@ bool RenderTarget::Resize(u32 width, u32 height) {
     if (!CreatePPFramebuffer()) return false;
     if (!CreateSampler()) return false;
 
-    RegisterImGuiTexture();
+    RegisterTexture();
 
     ENJIN_LOG_INFO(Renderer, "RenderTarget resized to %ux%u", width, height);
     return true;
@@ -537,17 +536,23 @@ bool RenderTarget::CreateSampler() {
     return true;
 }
 
-void RenderTarget::RegisterImGuiTexture() {
-    if (m_Sampler == VK_NULL_HANDLE || m_ColorImageView == VK_NULL_HANDLE) return;
+void RenderTarget::SetTextureCallbacks(TextureRegisterFn onRegister, TextureUnregisterFn onUnregister) {
+    m_OnTextureRegister = std::move(onRegister);
+    m_OnTextureUnregister = std::move(onUnregister);
+}
 
-    m_ImGuiDescriptor = ImGui_ImplVulkan_AddTexture(
+void RenderTarget::RegisterTexture() {
+    if (m_Sampler == VK_NULL_HANDLE || m_ColorImageView == VK_NULL_HANDLE) return;
+    if (!m_OnTextureRegister) return;  // Headless — no UI texture binding
+
+    m_UIDescriptor = m_OnTextureRegister(
         m_Sampler, m_ColorImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }
 
-void RenderTarget::UnregisterImGuiTexture() {
-    if (m_ImGuiDescriptor != VK_NULL_HANDLE) {
-        ImGui_ImplVulkan_RemoveTexture(m_ImGuiDescriptor);
-        m_ImGuiDescriptor = VK_NULL_HANDLE;
+void RenderTarget::UnregisterTexture() {
+    if (m_UIDescriptor != VK_NULL_HANDLE && m_OnTextureUnregister) {
+        m_OnTextureUnregister(m_UIDescriptor);
+        m_UIDescriptor = VK_NULL_HANDLE;
     }
 }
 

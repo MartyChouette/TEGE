@@ -201,13 +201,24 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     // Render targets for Game View (offscreen rendering)
     // Scene RT: raw scene output (input to post-processing)
     // Game View RT: final post-processed output (displayed in ImGui)
+    // ImGui texture callbacks — editor-only, enables RenderTarget to display in ImGui panels.
+    // RenderTarget itself has no ImGui dependency; these callbacks bridge the gap.
+    auto imguiRegister = [](VkSampler s, VkImageView v, VkImageLayout l) -> VkDescriptorSet {
+        return ImGui_ImplVulkan_AddTexture(s, v, l);
+    };
+    auto imguiUnregister = [](VkDescriptorSet ds) {
+        ImGui_ImplVulkan_RemoveTexture(ds);
+    };
+
     m_SceneRenderTarget = std::make_unique<Renderer::RenderTarget>();
+    m_SceneRenderTarget->SetTextureCallbacks(imguiRegister, imguiUnregister);
     if (!m_SceneRenderTarget->Create(renderer, m_GameViewWidth, m_GameViewHeight)) {
         ENJIN_LOG_WARN(Editor, "Failed to create Scene render target");
         m_SceneRenderTarget.reset();
     }
 
     m_GameViewRenderTarget = std::make_unique<Renderer::RenderTarget>();
+    m_GameViewRenderTarget->SetTextureCallbacks(imguiRegister, imguiUnregister);
     if (!m_GameViewRenderTarget->Create(renderer, m_GameViewWidth, m_GameViewHeight)) {
         ENJIN_LOG_WARN(Editor, "Failed to create Game View render target");
         m_GameViewRenderTarget.reset();
@@ -215,6 +226,7 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
 
     // Editor viewport render target (offscreen rendering for scene editing camera)
     m_EditorViewportRT = std::make_unique<Renderer::RenderTarget>();
+    m_EditorViewportRT->SetTextureCallbacks(imguiRegister, imguiUnregister);
     if (!m_EditorViewportRT->Create(renderer, m_EditorViewportWidth, m_EditorViewportHeight)) {
         ENJIN_LOG_WARN(Editor, "Failed to create editor viewport render target");
         m_EditorViewportRT.reset();

@@ -5,6 +5,7 @@
 #if !ENJIN_RENDERER_WEBGPU
 #include <vulkan/vulkan.h>
 #endif
+#include <functional>
 #include <vector>
 
 namespace Enjin {
@@ -20,8 +21,13 @@ public:
     RenderTarget();
     ~RenderTarget();
 
+    // Texture registration callbacks — set by the editor for ImGui integration.
+    // If not set, RenderTarget works headless (no UI texture binding).
+    using TextureRegisterFn = std::function<VkDescriptorSet(VkSampler, VkImageView, VkImageLayout)>;
+    using TextureUnregisterFn = std::function<void(VkDescriptorSet)>;
+    void SetTextureCallbacks(TextureRegisterFn onRegister, TextureUnregisterFn onUnregister);
+
     // Create the render target with given dimensions
-    // renderer is needed for ImGui texture registration
     bool Create(VulkanRenderer* renderer, u32 width, u32 height);
 
     // Destroy all Vulkan resources
@@ -53,7 +59,7 @@ public:
     VkImageView GetDepthImageView() const { return m_DepthImageView; }
     VkImage GetDepthImage() const { return m_DepthImage; }
     VkSampler GetSampler() const { return m_Sampler; }
-    VkDescriptorSet GetImGuiTextureID() const { return m_ImGuiDescriptor; }
+    VkDescriptorSet GetImGuiTextureID() const { return m_UIDescriptor; }
     VkImage GetColorImage() const { return m_ColorImage; }
     u32 GetWidth() const { return m_Width; }
     u32 GetHeight() const { return m_Height; }
@@ -66,8 +72,8 @@ private:
     bool CreatePPRenderPass();
     bool CreatePPFramebuffer();
     bool CreateSampler();
-    void RegisterImGuiTexture();
-    void UnregisterImGuiTexture();
+    void RegisterTexture();
+    void UnregisterTexture();
     void DestroyResources();
 
     VulkanRenderer* m_Renderer = nullptr;
@@ -97,8 +103,10 @@ private:
     // Sampler for reading the color output
     VkSampler m_Sampler = VK_NULL_HANDLE;
 
-    // ImGui descriptor set for displaying the texture
-    VkDescriptorSet m_ImGuiDescriptor = VK_NULL_HANDLE;
+    // UI texture descriptor (set via callback — headless if no callback registered)
+    VkDescriptorSet m_UIDescriptor = VK_NULL_HANDLE;
+    TextureRegisterFn m_OnTextureRegister;
+    TextureUnregisterFn m_OnTextureUnregister;
 };
 #endif // !ENJIN_RENDERER_WEBGPU
 

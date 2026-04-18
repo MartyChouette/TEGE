@@ -76,7 +76,7 @@ namespace Enjin { namespace Effects {
 
 #if !ENJIN_RENDERER_WEBGPU
 #include "Enjin/Renderer/RayTracing/RTCapabilities.h"
-#include "Enjin/Editor/FlashTimeline.h"
+#include "Enjin/Editor/FlashTimeline.h"  // Editor::OnionSkinGhost used in m_OnionSkinGhosts
 #include <vulkan/vulkan.h>
 #endif
 
