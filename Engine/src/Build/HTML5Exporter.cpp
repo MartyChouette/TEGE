@@ -384,8 +384,7 @@ std::string HTML5Exporter::GenerateHTML(const HTML5ExportConfig& config,
     html << "</head>\n"
          << "<body>\n"
          << "  <div id=\"game-container\">\n"
-         << "    <canvas id=\"game-canvas\" width=\"" << safeWidth
-         << "\" height=\"" << safeHeight << "\" tabindex=\"0\"></canvas>\n";
+         << "    <canvas id=\"game-canvas\" tabindex=\"0\"></canvas>\n";
 
     // Preloader overlay
     if (config.showPreloader) {
@@ -431,6 +430,7 @@ std::string HTML5Exporter::GenerateHTML(const HTML5ExportConfig& config,
          << "        return c;\n"
          << "      })(),\n"
          << "      onRuntimeInitialized: function() {\n"
+         << "        _runtimeReady = true;\n"
          << "        console.log('" << safeTitle << " - Engine initialized');\n";
     if (config.showPreloader) {
         html << "        if (typeof hidePreloader === 'function') hidePreloader();\n";
@@ -445,7 +445,22 @@ std::string HTML5Exporter::GenerateHTML(const HTML5ExportConfig& config,
              << "        }\n";
     }
     html << "      }\n"
-         << "    };\n";
+         << "    };\n\n";
+
+    // Responsive canvas via ResizeObserver
+    html << "    var _runtimeReady = false;\n"
+         << "    var _ro = new ResizeObserver(function(entries) {\n"
+         << "      var r = entries[0].contentRect;\n"
+         << "      var dpr = window.devicePixelRatio || 1;\n"
+         << "      var w = Math.floor(r.width);\n"
+         << "      var h = Math.floor(r.height);\n"
+         << "      if (w <= 0 || h <= 0) return;\n"
+         << "      var c = document.getElementById('game-canvas');\n"
+         << "      c.width = Math.floor(w * dpr);\n"
+         << "      c.height = Math.floor(h * dpr);\n"
+         << "      if (_runtimeReady) Module._onCanvasResize(w, h, dpr);\n"
+         << "    });\n"
+         << "    _ro.observe(document.getElementById('game-container'));\n\n";
 
     // Fullscreen handler
     if (config.showFullscreenButton) {
@@ -529,8 +544,8 @@ std::string HTML5Exporter::GeneratePreloaderJS(const HTML5ExportConfig& config) 
 // ============================================================================
 
 std::string HTML5Exporter::GenerateStyleCSS(const HTML5ExportConfig& config) {
-    u32 safeWidth = std::clamp(config.width, 1u, 7680u);
-    u32 safeHeight = std::clamp(config.height, 1u, 4320u);
+    (void)config.width;   // Canvas fills container; pixel size set by ResizeObserver
+    (void)config.height;
     std::ostringstream css;
 
     css << "/* Enjin Engine - HTML5 Export Styles */\n"
@@ -551,21 +566,12 @@ std::string HTML5Exporter::GenerateStyleCSS(const HTML5ExportConfig& config) {
         << "  position: relative;\n"
         << "}\n\n"
         << "#game-canvas {\n"
-        << "  max-width: 100%;\n"
-        << "  max-height: 100%;\n"
-        << "  width: " << safeWidth << "px;\n"
-        << "  height: " << safeHeight << "px;\n"
+        << "  width: 100%;\n"
+        << "  height: 100%;\n"
+        << "  display: block;\n"
         << "  image-rendering: pixelated;\n"
         << "  image-rendering: crisp-edges;\n"
         << "  outline: none;\n"
-        << "}\n\n"
-        << "/* Responsive scaling */\n"
-        << "@media (max-width: " << safeWidth << "px), (max-height: " << safeHeight << "px) {\n"
-        << "  #game-canvas {\n"
-        << "    width: 100vw;\n"
-        << "    height: " << (f32)safeHeight / (f32)safeWidth * 100.0f << "vw;\n"
-        << "    max-height: 100vh;\n"
-        << "  }\n"
         << "}\n\n";
 
     // Preloader styles

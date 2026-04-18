@@ -104,9 +104,21 @@ bool WebGPURenderer::Initialize(Window* window) {
     m_Queue = wgpuDeviceGetQueue(m_Device);
     wgpuAdapterRelease(adapterData.adapter);
 
-    // Get canvas size
-    m_SwapChainWidth = window ? window->GetWidth() : 800;
-    m_SwapChainHeight = window ? window->GetHeight() : 600;
+    // Get canvas size — read from the actual canvas element if no window provided
+    if (window) {
+        m_SwapChainWidth = window->GetWidth();
+        m_SwapChainHeight = window->GetHeight();
+    } else {
+        // Read actual canvas pixel dimensions from JS
+        m_SwapChainWidth = static_cast<u32>(EM_ASM_INT({
+            var c = document.getElementById('game-canvas');
+            return c ? (c.width || 1280) : 1280;
+        }));
+        m_SwapChainHeight = static_cast<u32>(EM_ASM_INT({
+            var c = document.getElementById('game-canvas');
+            return c ? (c.height || 720) : 720;
+        }));
+    }
 
     // Create surface and configure
     CreateSwapChain();

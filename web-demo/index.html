@@ -1,27 +1,37 @@
 <!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>TEGE - Web Demo</title>
 <style>
-* { margin:0; padding:0; }
-body { background:#111; display:flex; justify-content:center; align-items:center; height:100vh; flex-direction:column; }
-canvas { max-width:100vw; max-height:100vh; outline:none; }
-#loading { position:absolute; color:#fff; font-family:sans-serif; font-size:18px; }
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#111; display:flex; justify-content:center; align-items:center; height:100vh; flex-direction:column; overflow:hidden; }
+#game-container { width:100%; height:100vh; position:relative; }
+#game-canvas { width:100%; height:100%; display:block; outline:none; }
+#loading { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); color:#fff; font-family:sans-serif; font-size:18px; z-index:10; }
 #error { color:#f44; font-family:sans-serif; font-size:16px; padding:20px; text-align:center; display:none; }
 #error a { color:#8af; }
 #hint {
   position:fixed; bottom:12px; left:12px;
   color:#aaa; font-family:monospace; font-size:13px;
   background:rgba(0,0,0,0.55); padding:8px 12px; border-radius:6px;
-  pointer-events:none; user-select:none;
+  pointer-events:none; user-select:none; z-index:5;
 }
 #hint b { color:#fff; }
+#perf-hud {
+  position:fixed; top:8px; left:8px; color:#0f0; font:12px monospace;
+  background:rgba(0,0,0,0.7); padding:6px 10px; z-index:999;
+  pointer-events:none; display:none;
+}
 </style>
 </head><body>
-<div id="loading">Loading TEGE...</div>
-<div id="error"></div>
-<canvas id="game-canvas" width="1280" height="720" tabindex="0"></canvas>
+<div id="game-container">
+  <div id="loading">Loading TEGE...</div>
+  <div id="error"></div>
+  <canvas id="game-canvas" tabindex="0"></canvas>
+</div>
 <div id="hint"><b>WASD</b> move &nbsp;·&nbsp; <b>Hold RMB</b> look &nbsp;·&nbsp; <b>Shift</b> sprint &nbsp;·&nbsp; <b>Gamepad</b> supported</div>
+<div id="perf-hud"></div>
 <script>
 // Check WebGPU support before loading WASM
 if (!navigator.gpu) {
@@ -33,10 +43,28 @@ if (!navigator.gpu) {
     '<p>Try <a href="https://www.google.com/chrome/">Chrome</a> or <a href="https://www.microsoft.com/edge">Edge</a> (v113+).</p>' +
     '<p>Firefox: enable <code>dom.webgpu.enabled</code> in <code>about:config</code>.</p>';
 } else {
-  // The player handles canvas focus + contextmenu suppression internally.
+  var canvas = document.getElementById('game-canvas');
+
+  // Responsive canvas via ResizeObserver — drives pixel dimensions from CSS layout
+  var _runtimeReady = false;
+  var resizeObserver = new ResizeObserver(function(entries) {
+    var r = entries[0].contentRect;
+    var dpr = window.devicePixelRatio || 1;
+    var w = Math.floor(r.width);
+    var h = Math.floor(r.height);
+    if (w <= 0 || h <= 0) return;
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    if (_runtimeReady) {
+      Module._onCanvasResize(w, h, dpr);
+    }
+  });
+  resizeObserver.observe(document.getElementById('game-container'));
+
   var Module = {
-    canvas: document.getElementById('game-canvas'),
+    canvas: canvas,
     onRuntimeInitialized: function() {
+      _runtimeReady = true;
       document.getElementById('loading').style.display = 'none';
       console.log('TEGE Web Player initialized');
     },
@@ -44,6 +72,19 @@ if (!navigator.gpu) {
       if (text) document.getElementById('loading').textContent = text;
     }
   };
+
+  // Opt-in performance HUD: add ?perf to URL
+  if (location.search.includes('perf')) {
+    var hud = document.getElementById('perf-hud');
+    hud.style.display = 'block';
+    setInterval(function() {
+      if (Module._getDrawCallCount) {
+        hud.textContent = 'DC: ' + Module._getDrawCallCount() +
+                          ' | Ent: ' + Module._getEntityCount();
+      }
+    }, 250);
+  }
+
   var s = document.createElement('script');
   s.src = 'EnjinPlayer.js';
   document.body.appendChild(s);

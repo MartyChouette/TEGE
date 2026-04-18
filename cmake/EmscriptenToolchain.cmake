@@ -44,7 +44,7 @@ set(ENJIN_EM_LINK_FLAGS
     -sALLOW_MEMORY_GROWTH=1
     -sMAXIMUM_MEMORY=536870912
     -sSTACK_SIZE=1048576
-    -sEXPORTED_FUNCTIONS=['_main']
+    -sEXPORTED_FUNCTIONS=['_main','_onCanvasResize','_getDrawCallCount','_getEntityCount']
     -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','HEAPF32']
     -sENVIRONMENT=web
     -sASSERTIONS=1

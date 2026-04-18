@@ -1,6 +1,8 @@
 #pragma once
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
+#include "Enjin/Renderer/GPUTypes.h"
+#include "Enjin/Renderer/GPUCapabilities.h"
 #include "Enjin/Math/Vector.h"
 #include <string>
 #include <vector>
@@ -8,6 +10,14 @@
 
 namespace Enjin {
 namespace Renderer {
+
+// Forward declarations for sub-interfaces (defined in their own headers)
+class IGPUBufferManager;
+class IGPUTextureManager;
+class IGPUPipelineManager;
+class IGPUShaderManager;
+class IGPUBindGroupManager;
+class IRenderEncoder;
 
 // Build target platforms
 enum class BuildTarget : u8 {
@@ -18,7 +28,8 @@ enum class BuildTarget : u8 {
     iOS,
     WebGL,           // Legacy alias — use Web instead
     Web = WebGL,     // WebAssembly + WebGPU
-    NintendoSwitch   // Nintendo Switch (NVN graphics API)
+    NintendoSwitch,  // Nintendo Switch (NVN graphics API)
+    Metal            // macOS / iOS via Metal backend
 };
 
 // Texture compression format
@@ -45,11 +56,18 @@ struct PlatformCapabilities {
     TextureCompression preferredCompression = TextureCompression::None;
 };
 
-// Abstract render backend — Vulkan implements this, future backends (Metal, GLES) can too
+// ============================================================================
+// IRenderBackend — Abstract GPU backend interface
+//
+// Implementations: VulkanRenderer, WebGPURenderer, (future) MetalRenderer
+// RenderSystem operates exclusively through this interface so it compiles
+// and runs identically on all backends.
+// ============================================================================
 class ENJIN_API IRenderBackend {
 public:
     virtual ~IRenderBackend() = default;
 
+    // --- Lifecycle ---
     virtual bool Initialize(u32 width, u32 height) = 0;
     virtual void Shutdown() = 0;
     virtual void BeginFrame() = 0;
@@ -57,8 +75,33 @@ public:
     virtual void Present() = 0;
     virtual void Resize(u32 width, u32 height) = 0;
 
+    // --- Identity & capabilities ---
     virtual const char* GetBackendName() const = 0;
     virtual PlatformCapabilities GetCapabilities() const = 0;
+    virtual GPUCapabilities GetGPUCapabilities() const = 0;
+
+    // --- Frame state ---
+    virtual u32 GetCurrentFrameIndex() const = 0;
+    virtual u32 GetFramesInFlight() const = 0;
+    virtual u32 GetSwapchainWidth() const = 0;
+    virtual u32 GetSwapchainHeight() const = 0;
+    virtual void WaitForAllFrames() = 0;
+
+    // --- Resource managers ---
+    // Backends create and own these; RenderSystem accesses them per-frame.
+    // Returns nullptr if the manager is not yet initialized.
+    virtual IGPUBufferManager*    GetBufferManager()    { return nullptr; }
+    virtual IGPUTextureManager*   GetTextureManager()   { return nullptr; }
+    virtual IGPUPipelineManager*  GetPipelineManager()  { return nullptr; }
+    virtual IGPUShaderManager*    GetShaderManager()    { return nullptr; }
+    virtual IGPUBindGroupManager* GetBindGroupManager() { return nullptr; }
+
+    // --- Render pass management ---
+    // BeginRenderPass returns an encoder for recording draw commands.
+    // EndRenderPass finalizes the pass. The encoder is invalid after this.
+    // For the swapchain main pass, pass a default GPURenderPassDesc (width/height=0).
+    virtual IRenderEncoder* BeginRenderPass(const GPURenderPassDesc& desc) { return nullptr; }
+    virtual void EndRenderPass(IRenderEncoder* encoder) {}
 };
 
 // Platform abstraction for input
@@ -102,6 +145,7 @@ inline const char* BuildTargetToString(BuildTarget target) {
         case BuildTarget::iOS:     return "iOS";
         case BuildTarget::WebGL:   return "WebGL";
         case BuildTarget::NintendoSwitch: return "Nintendo Switch";
+        case BuildTarget::Metal: return "Metal";
     }
     return "Unknown";
 }
@@ -119,6 +163,8 @@ inline TextureCompression GetPreferredCompression(BuildTarget target) {
             return TextureCompression::ASTC;
         case BuildTarget::NintendoSwitch:
             return TextureCompression::ASTC;  // Tegra X1 supports ASTC
+        case BuildTarget::Metal:
+            return TextureCompression::ASTC;  // Apple GPU supports ASTC natively
     }
     return TextureCompression::None;
 }
