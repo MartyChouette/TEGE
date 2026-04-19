@@ -23,6 +23,7 @@
 #include "Enjin/Renderer/CameraController.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Scene/SceneManager.h"
+#include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -42,6 +43,7 @@
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
 #include "Enjin/ECS/Systems/BehaviorTreeSystem.h"
 #include "Enjin/ECS/EntityEventBus.h"
+#include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Gameplay/HUDSystem.h"
 #include "Enjin/Gameplay/QuestSystem.h"
 #include "Enjin/Gameplay/ObjectPool.h"
@@ -150,7 +152,10 @@ public:
             var c = document.getElementById('game-canvas');
             if (!c) { console.warn('TEGE: no #game-canvas element found'); return; }
             if (!c.hasAttribute('tabindex')) c.setAttribute('tabindex', '0');
-            c.addEventListener('click', function(){ c.focus(); });
+            c.addEventListener('click', function(){
+                c.focus();
+                c.requestPointerLock();
+            });
             c.addEventListener('contextmenu', function(e){ e.preventDefault(); });
             c.focus();
         });
@@ -192,6 +197,7 @@ public:
         m_ControllerSystem.SetPhysics(m_Physics.get());
         m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
         m_ControllerSystem.SetInputActionMap(&m_InputMap);
+        m_ControllerSystem.SetEnabled(true);
         m_TweenSystem.SetScriptEngine(&m_ScriptEngine);
         m_VisualScriptSystem.SetWorld(m_World.get());
         m_BehaviorTreeSystem.SetWorld(m_World.get());
@@ -262,6 +268,7 @@ public:
                     std::string sceneStr(sceneData.begin(), sceneData.end());
                     Enjin::Scene::SceneSerializer serializer(m_World.get());
                     serializer.LoadFromString(sceneStr);
+                    m_SceneRenderSettings = serializer.GetRenderSettings();
                     sceneLoaded = true;
                     ENJIN_LOG_INFO(Player, "Loaded scene: %s", m_StartScene.c_str());
                 }
@@ -277,6 +284,7 @@ public:
                 if (!sceneStr.empty()) {
                     Enjin::Scene::SceneSerializer serializer(m_World.get());
                     serializer.LoadFromString(sceneStr);
+                    m_SceneRenderSettings = serializer.GetRenderSettings();
                     sceneLoaded = true;
                     ENJIN_LOG_INFO(Player, "Loaded loose scene: scene.enjin");
                 }
@@ -294,10 +302,48 @@ public:
             ENJIN_LOG_INFO(Player, "Loaded %d mesh entities", static_cast<int>(meshEntities.size()));
         }
 
+        // --- Post-scene-load system initialization ---
+        // VisualScript full init (desktop: main.cpp:1696-1704)
+        m_VisualScriptSystem.SetPhysics(m_Physics.get());
+        m_VisualScriptSystem.SetPhysics2D(m_Physics2D.get());
+        m_VisualScriptSystem.SetScriptEngine(&m_ScriptEngine);
+        m_VisualScriptSystem.Initialize();
+        m_BehaviorTreeSystem.Initialize();
+
+        // Start auto-play tweens (desktop: main.cpp:1706)
+        m_TweenSystem.PlayAll(m_World.get());
+
+        // Enable and initialize scripts (desktop: main.cpp:1709-1712)
+        m_ScriptSystem.SetEnabled(true);
+        m_ScriptSystem.InitializeAllScripts();
+
+        // Set game camera entity for controller system (desktop: main.cpp:1668-1674)
+        {
+            auto cameras = Enjin::ECS::CameraManager::GetAllActiveCameras(m_World.get());
+            if (!cameras.empty()) {
+                m_ControllerSystem.SetGameCameraEntity(cameras[0]);
+            }
+        }
+
+        // Capture mouse for look-around if any player controller exists
+        {
+            bool hasController =
+                !m_World->GetEntitiesWithComponent<Enjin::ECS::FirstPersonController>().empty()
+                || !m_World->GetEntitiesWithComponent<Enjin::ECS::ThirdPersonController>().empty();
+            if (hasController) {
+                Enjin::Input::SetMouseCaptured(true);
+            }
+        }
+
         // --- RenderSystem (same system as desktop, uses abstract IRenderBackend) ---
         m_RenderSystem = m_World->RegisterSystem<Enjin::ECS::RenderSystem>(m_World.get(), m_Renderer.get());
         m_RenderSystem->SetCamera(m_Camera.get());
+        m_RenderSystem->SetAssetReader(&m_AssetReader);
         m_RenderSystem->Initialize();
+
+        // Apply scene render settings (ambient, shadows, etc.)
+        m_SceneRenderSettings.rtEnabled = false;
+        m_SceneRenderSettings.ApplyToRuntime(m_RenderSystem, nullptr);
 
         m_Initialized = true;
         ENJIN_LOG_INFO(Player, "Web Player initialized");
@@ -350,6 +396,12 @@ public:
         Enjin::Input::Update();
         m_InputMap.Update(deltaTime);
 
+        // Tick skeletal animators (desktop: main.cpp:818-823)
+        for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::AnimatorComponent>()) {
+            auto* anim = m_World->GetComponent<Enjin::ECS::AnimatorComponent>(entity);
+            if (anim) anim->Update(deltaTime);
+        }
+
         // Flush deferred entity destroys from previous frame
         m_World->Update(deltaTime);
 
@@ -365,7 +417,15 @@ public:
                 || !m_World->GetEntitiesWithComponent<
                 Enjin::ECS::ThirdPersonController>().empty()
                 || !m_World->GetEntitiesWithComponent<
-                Enjin::ECS::Platformer2DController>().empty();
+                Enjin::ECS::Platformer2DController>().empty()
+                || !m_World->GetEntitiesWithComponent<
+                Enjin::ECS::TopDown2DController>().empty()
+                || !m_World->GetEntitiesWithComponent<
+                Enjin::ECS::TopDown3DController>().empty()
+                || !m_World->GetEntitiesWithComponent<
+                Enjin::ECS::VehicleController>().empty()
+                || !m_World->GetEntitiesWithComponent<
+                Enjin::ECS::SurfaceAlignedController>().empty();
             if (!hasPlayerController) {
                 m_CameraController->Update(deltaTime);
             }
@@ -390,16 +450,6 @@ public:
         }
 
         m_ParticleSystem.Update(deltaTime, m_World.get());
-
-        // Debug: check what controllers and cameras exist
-        static int s_dbg = 0;
-        if (s_dbg++ < 3) {
-            auto fps = m_World->GetEntitiesWithComponent<Enjin::ECS::FirstPersonController>().size();
-            auto tp = m_World->GetEntitiesWithComponent<Enjin::ECS::ThirdPersonController>().size();
-            auto p2d = m_World->GetEntitiesWithComponent<Enjin::ECS::Platformer2DController>().size();
-            auto cams = m_World->GetEntitiesWithComponent<Enjin::ECS::CameraComponent>().size();
-            printf("[WebPlayer] Controllers: FPS=%zu, TP=%zu, 2D=%zu, Cameras=%zu\n", fps, tp, p2d, cams);
-        }
 
         // Sync Camera to the first CameraComponent entity (character controller drives the entity,
         // camera follows it). This mirrors what the desktop Player does.
@@ -561,6 +611,7 @@ private:
     // Scene & networking
     Enjin::Scene::SceneManager m_SceneManager;
     Enjin::Networking::NetworkSystem m_NetworkSystem;
+    Enjin::Renderer::SceneRenderSettings m_SceneRenderSettings;
 
     // Build manifest
     std::string m_WindowTitle;

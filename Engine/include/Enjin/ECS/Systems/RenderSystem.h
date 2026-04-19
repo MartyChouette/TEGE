@@ -14,6 +14,7 @@ namespace Enjin::ECS {
     struct WaterVolumeComponent;
     struct Water3DComponent;
 }
+namespace Enjin::Build { class AssetReader; }
 
 // Cross-platform abstract backend interface
 #include "Enjin/Renderer/RenderBackend.h"
@@ -186,6 +187,8 @@ struct EntityRenderData {
     Renderer::GPUBufferHandle indexBuffer;
     Renderer::GPUBufferHandle boneBuffer;
     Renderer::GPUBufferHandle morphBuffer;
+    Renderer::GPUBindGroupHandle texBindGroup;  // per-entity texture bind group (group 2)
+    bool texBindGroupValid = false;             // true if textures loaded for this entity
 #endif
     u32 indexCount = 0;
     bool valid = false;  // true if this slot is occupied
@@ -204,6 +207,8 @@ struct EntityRenderData {
         indexBuffer = {};
         boneBuffer = {};
         morphBuffer = {};
+        texBindGroup = {};
+        texBindGroupValid = false;
 #endif
         indexCount = 0;
         valid = false;
@@ -237,6 +242,9 @@ public:
 
     void SetCamera(Renderer::Camera* camera) { m_Camera = camera; }
     Renderer::Camera* GetCamera() const { return m_Camera; }
+
+    // Asset reader for loading textures from .enjpak on web
+    void SetAssetReader(Build::AssetReader* reader) { m_AssetReader = reader; }
 
 #if !ENJIN_RENDERER_WEBGPU
     Renderer::VulkanSwapchain* GetSwapchain() const;
@@ -669,6 +677,7 @@ private:
     Renderer::VulkanRenderer* m_VulkanRenderer = nullptr;  // Cached cast for Vulkan-specific API calls
 #endif
     Renderer::Camera* m_Camera = nullptr;
+    Build::AssetReader* m_AssetReader = nullptr;
     Entity m_DefaultEntity = INVALID_ENTITY;
 
     // --- Cross-platform rendering resources (abstract handles) ---
@@ -699,6 +708,11 @@ private:
     Renderer::GPUTextureHandle m_WebDefaultWhiteTex;
     Renderer::GPUTextureHandle m_WebDefaultNormalTex;
     Renderer::GPUTextureHandle m_WebDefaultBlackTex;
+
+    // Texture cache: path → loaded GPU texture handle
+    std::unordered_map<std::string, Renderer::GPUTextureHandle> m_WebTextureCache;
+    std::unordered_set<std::string> m_WebFailedTextures;  // don't retry failed loads
+    Renderer::GPUTextureHandle WebGetOrLoadTexture(const std::string& path);
 
     // Default bone buffer (single identity matrix for non-skinned meshes)
     Renderer::GPUBufferHandle m_WebDefaultBoneBuffer;

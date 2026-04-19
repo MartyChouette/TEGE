@@ -66,7 +66,6 @@ if (!navigator.gpu) {
     onRuntimeInitialized: function() {
       _runtimeReady = true;
       document.getElementById('loading').style.display = 'none';
-      console.log('TEGE Web Player initialized');
     },
     setStatus: function(text) {
       if (text) document.getElementById('loading').textContent = text;

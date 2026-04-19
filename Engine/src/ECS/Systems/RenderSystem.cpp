@@ -33,8 +33,11 @@
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/Build/AssetReader.h"
 #include "Enjin/Math/Math.h"
 #include <cstring>
+#include <emscripten.h>
 
 namespace Enjin {
 namespace ECS {
@@ -50,15 +53,20 @@ struct WebViewProjectionUBO {
 struct alignas(16) WebLightVec4 { f32 x, y, z, w; };
 
 struct WebLightingUBO {
-    WebLightVec4 lightDir[8];              // 128
-    WebLightVec4 lightColor[8];            // 128
-    WebLightVec4 lightParams[8];           // 128
+    WebLightVec4 lightDir[8];              // 128  (0-3: dir directions, 4-7: point positions)
+    WebLightVec4 lightColor[8];            // 128  (matching color.rgb + intensity.w)
+    WebLightVec4 lightParams[8];           // 128  (point: range, linear, quadratic, constant)
     WebLightVec4 ambientColor;             // 16
     WebLightVec4 fogColor;                 // 16
     WebLightVec4 fogParams;                // 16
     WebLightVec4 shadowParams;             // 16
-    WebLightVec4 lightCount;               // 16
-};                                         // Total: 464 bytes
+    WebLightVec4 lightCount;               // 16   (x=dir, y=point, z=spot)
+    // Spot lights (separate arrays since they need both position and direction)
+    WebLightVec4 spotPos[4];               // 64   position.xyz, range.w
+    WebLightVec4 spotDir[4];               // 64   direction.xyz
+    WebLightVec4 spotColor[4];             // 64   color.rgb, intensity.w
+    WebLightVec4 spotParams[4];            // 64   innerCutoff.x, outerCutoff.y
+};                                         // Total: 720 bytes
 
 struct WebObjectDataUBO {
     alignas(16) Math::Matrix4 model;       // 64
@@ -89,18 +97,15 @@ void RenderSystem::Initialize() {
     if (m_Initialized) return;
     m_FrameAllocator = std::make_unique<FrameAllocator>(8 * 1024 * 1024);
 
-    printf("[RenderSystem] Initialize starting...\n");
-
     auto* shaderMgr = m_Renderer->GetShaderManager();
     auto* pipeMgr = m_Renderer->GetPipelineManager();
     auto* bufMgr = m_Renderer->GetBufferManager();
     auto* texMgr = m_Renderer->GetTextureManager();
     auto* bindMgr = m_Renderer->GetBindGroupManager();
     if (!shaderMgr || !pipeMgr || !bufMgr || !texMgr || !bindMgr) {
-        printf("[RenderSystem] ERROR: Backend managers not available\n");
+        ENJIN_LOG_ERROR(Renderer, "RenderSystem: Backend managers not available");
         return;
     }
-    printf("[RenderSystem] Managers OK\n");
 
     // Load PBR shader (single WGSL source, both vertex and fragment)
     m_MainVertexShader = shaderMgr->LoadShader(
@@ -108,7 +113,6 @@ void RenderSystem::Initialize() {
         std::strlen(Renderer::WebShaderData::PBR_WGSL),
         Renderer::GPUShaderStage::Vertex, "PBR_VS");
     m_MainFragmentShader = m_MainVertexShader;  // Same module for both stages in WGSL
-    printf("[RenderSystem] Shader loaded: %s\n", m_MainVertexShader.IsValid() ? "OK" : "FAILED");
 
     // Create bind group layouts
     using BType = Renderer::GPUBindingType;
@@ -122,10 +126,11 @@ void RenderSystem::Initialize() {
     };
     m_WebFrameLayout = bindMgr->CreateBindGroupLayout(frameLayoutDesc);
 
-    // Group 1: ObjectData
+    // Group 1: ObjectData + BoneMatrices
     Renderer::GPUBindGroupLayoutDesc objectLayoutDesc;
     objectLayoutDesc.entries = {
         {0, BType::UniformBuffer, SStage::Vertex | SStage::Fragment, sizeof(WebObjectDataUBO)},
+        {1, BType::StorageBufferReadOnly, SStage::Vertex, 0},  // bone matrices SSBO
     };
     m_WebObjectLayout = bindMgr->CreateBindGroupLayout(objectLayoutDesc);
 
@@ -165,17 +170,18 @@ void RenderSystem::Initialize() {
     Renderer::GPUVertexBufferLayoutDesc vertLayout;
     vertLayout.stride = sizeof(MeshComponent::Vertex);
     vertLayout.attributes = {
-        {Renderer::GPUVertexFormat::Float32x3, 0, 0},                                       // position
+        {Renderer::GPUVertexFormat::Float32x3, 0, 0},                                                            // position
         {Renderer::GPUVertexFormat::Float32x3, static_cast<u32>(offsetof(MeshComponent::Vertex, normal)), 1},    // normal
         {Renderer::GPUVertexFormat::Float32x2, static_cast<u32>(offsetof(MeshComponent::Vertex, uv)), 2},       // uv
         {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, tangent)), 3},   // tangent
+        {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights)), 4}, // boneWeights
+        {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices)), 5}, // boneIndices
     };
     pipeDesc.vertexBuffers = {vertLayout};
 
     m_MainPipeline = pipeMgr->CreateRenderPipeline(pipeDesc);
-    printf("[RenderSystem] Pipeline created: %s\n", m_MainPipeline.IsValid() ? "OK" : "FAILED");
     if (!m_MainPipeline.IsValid()) {
-        printf("[RenderSystem] ERROR: Pipeline creation failed, aborting init\n");
+        ENJIN_LOG_ERROR(Renderer, "RenderSystem: Pipeline creation failed");
         return;
     }
 
@@ -313,11 +319,12 @@ void RenderSystem::Initialize() {
         return;
     }
 
-    // Create object bind group (group 1)
+    // Create object bind group (group 1: ObjectData UBO + bone SSBO)
     Renderer::GPUBindGroupDesc objBGDesc;
     objBGDesc.layout = m_WebObjectLayout;
     objBGDesc.entries = {
         {0, m_WebObjectBuffer, 0, sizeof(WebObjectDataUBO), {}, {}},
+        {1, m_WebDefaultBoneBuffer, 0, 0, {}, {}},
     };
     m_WebObjectBindGroup = bindMgr->CreateBindGroup(objBGDesc);
 
@@ -335,7 +342,7 @@ void RenderSystem::Initialize() {
     m_WebDefaultTexBindGroup = bindMgr->CreateBindGroup(defTexBGDesc);
 
     m_Initialized = true;
-    printf("[RenderSystem] INITIALIZED SUCCESSFULLY\n");
+    ENJIN_LOG_INFO(Renderer, "WebGPU RenderSystem initialized");
 }
 
 void RenderSystem::Shutdown() {
@@ -378,8 +385,13 @@ void RenderSystem::Shutdown() {
         if (m_WebDefaultBoneBuffer.IsValid()) bufMgr->DestroyBuffer(m_WebDefaultBoneBuffer);
     }
 
-    // Destroy textures
+    // Destroy cached textures
     if (texMgr) {
+        for (auto& [path, handle] : m_WebTextureCache) {
+            if (handle.IsValid()) texMgr->DestroyTexture(handle);
+        }
+        m_WebTextureCache.clear();
+        m_WebFailedTextures.clear();
         if (m_WebDefaultWhiteTex.IsValid()) texMgr->DestroyTexture(m_WebDefaultWhiteTex);
         if (m_WebDefaultNormalTex.IsValid()) texMgr->DestroyTexture(m_WebDefaultNormalTex);
         if (m_WebDefaultBlackTex.IsValid()) texMgr->DestroyTexture(m_WebDefaultBlackTex);
@@ -408,21 +420,67 @@ void RenderSystem::Shutdown() {
 }
 
 // ============================================================================
+// Texture loading (WebGPU)
+// ============================================================================
+
+Renderer::GPUTextureHandle RenderSystem::WebGetOrLoadTexture(const std::string& path) {
+    if (path.empty()) return {};
+
+    // Check cache
+    auto it = m_WebTextureCache.find(path);
+    if (it != m_WebTextureCache.end()) return it->second;
+
+    // Don't retry failed loads
+    if (m_WebFailedTextures.count(path)) return {};
+
+    auto* texMgr = m_Renderer->GetTextureManager();
+    if (!texMgr) return {};
+
+    Renderer::GPUTextureHandle handle;
+
+    // Try loading from asset pack first
+    if (m_AssetReader && m_AssetReader->IsOpen() && m_AssetReader->HasFile(path)) {
+        std::vector<u8> data = m_AssetReader->ReadFile(path);
+        if (!data.empty()) {
+            handle = texMgr->LoadFromMemory(data.data(), static_cast<u64>(data.size()), path.c_str());
+        }
+    }
+
+    // Fallback: try loading from virtual filesystem (Emscripten MEMFS)
+    if (!handle.IsValid()) {
+        FILE* f = fopen(path.c_str(), "rb");
+        if (f) {
+            fseek(f, 0, SEEK_END);
+            long sz = ftell(f);
+            fseek(f, 0, SEEK_SET);
+            if (sz > 0) {
+                std::vector<u8> buf(static_cast<usize>(sz));
+                fread(buf.data(), 1, static_cast<usize>(sz), f);
+                handle = texMgr->LoadFromMemory(buf.data(), static_cast<u64>(sz), path.c_str());
+            }
+            fclose(f);
+        }
+    }
+
+    if (handle.IsValid()) {
+        m_WebTextureCache[path] = handle;
+    } else {
+        m_WebFailedTextures.insert(path);
+    }
+    return handle;
+}
+
+// ============================================================================
 // Frame rendering
 // ============================================================================
 
-static int s_UpdateCount = 0;
 void RenderSystem::Update(f32 deltaTime) {
     if (!m_Renderer || !m_Initialized || !m_MainPipeline.IsValid()) {
-        if (s_UpdateCount++ < 3) printf("[RenderSystem] Update early exit: renderer=%p init=%d pipeline=%d\n",
-            m_Renderer, m_Initialized, m_MainPipeline.IsValid());
         return;
     }
     if (!m_Camera) {
-        if (s_UpdateCount++ < 3) printf("[RenderSystem] Update: no camera\n");
         return;
     }
-    if (s_UpdateCount++ < 3) printf("[RenderSystem] Update: rendering frame\n");
 
     m_WebTime += deltaTime;
     auto* bufMgr = m_Renderer->GetBufferManager();
@@ -447,7 +505,7 @@ void RenderSystem::Update(f32 deltaTime) {
         WebLightingUBO lit{};
         std::memset(&lit, 0, sizeof(lit));
 
-        u32 dirCount = 0, pointCount = 0;
+        u32 dirCount = 0, pointCount = 0, spotCount = 0;
         if (m_CachedTransformStorage) {
             for (Entity lightEntity : m_CachedLightEntities) {
                 auto* lc = m_World->GetComponent<LightComponent>(lightEntity);
@@ -464,25 +522,61 @@ void RenderSystem::Update(f32 deltaTime) {
                     Math::Vector3 pos = xf->position;
                     lit.lightDir[idx] = {pos.x, pos.y, pos.z, 1.0f};
                     lit.lightColor[idx] = {lc->color.x, lc->color.y, lc->color.z, lc->intensity};
-                    lit.lightParams[idx] = {lc->range, 0, 0, 0};
+                    lit.lightParams[idx] = {lc->range, lc->linearAttenuation, lc->quadraticAttenuation, lc->constantAttenuation};
                     pointCount++;
+                } else if (lc->type == LightType::Spot && spotCount < 4) {
+                    Math::Vector3 pos = xf->position;
+                    Math::Vector3 fwd = xf->rotation.GetForward();
+                    lit.spotPos[spotCount] = {pos.x, pos.y, pos.z, lc->range};
+                    lit.spotDir[spotCount] = {fwd.x, fwd.y, fwd.z, 0.0f};
+                    lit.spotColor[spotCount] = {lc->color.x, lc->color.y, lc->color.z, lc->intensity};
+                    f32 innerCos = std::cos(lc->innerConeAngle * 3.14159265f / 180.0f);
+                    f32 outerCos = std::cos(lc->outerConeAngle * 3.14159265f / 180.0f);
+                    lit.spotParams[spotCount] = {innerCos, outerCos, lc->linearAttenuation, lc->quadraticAttenuation};
+                    spotCount++;
                 }
             }
         }
 
-        // Fallback: if no lights, use a default directional
-        if (dirCount == 0 && pointCount == 0) {
+        // Fallback: if no lights at all, use a default directional
+        if (dirCount == 0 && pointCount == 0 && spotCount == 0) {
             lit.lightDir[0] = {0.5f, -0.8f, 0.3f, 0.0f};
             lit.lightColor[0] = {1.0f, 0.95f, 0.9f, 1.5f};
             dirCount = 1;
         }
 
         lit.ambientColor = {m_AmbientColor.x, m_AmbientColor.y, m_AmbientColor.z, m_AmbientIntensity};
-        lit.lightCount = {static_cast<f32>(dirCount), static_cast<f32>(pointCount), 0.0f, 0.0f};
-        if (s_UpdateCount < 3) {
-            printf("[RenderSystem] Lights: %u dir, %u point, %zu total entities, ambient=%.2f\n",
-                dirCount, pointCount, m_CachedLightEntities.size(), m_AmbientIntensity);
+        lit.lightCount = {static_cast<f32>(dirCount), static_cast<f32>(pointCount), static_cast<f32>(spotCount), 0.0f};
+
+        // WebGPU: boost ambient color + intensity to compensate for no indirect lighting/GI
+        lit.ambientColor = {
+            std::max(lit.ambientColor.x, 0.3f),
+            std::max(lit.ambientColor.y, 0.3f),
+            std::max(lit.ambientColor.z, 0.35f),
+            std::max(lit.ambientColor.w, 0.5f)
+        };
+
+        static int s_LightLog = 0;
+        if (s_LightLog++ < 3) {
+            EM_ASM({
+                console.log('[LIGHTS] dir=' + $0 + ' point=' + $1 + ' spot=' + $2 +
+                    ' ambient=(' + $3.toFixed(2) + ',' + $4.toFixed(2) + ',' + $5.toFixed(2) + ')*' + $6.toFixed(2) +
+                    ' entities=' + $7);
+            }, dirCount, pointCount, spotCount,
+               lit.ambientColor.x, lit.ambientColor.y, lit.ambientColor.z, lit.ambientColor.w,
+               static_cast<int>(m_CachedLightEntities.size()));
+            for (u32 p = 0; p < pointCount; p++) {
+                u32 idx = 4 + p;
+                EM_ASM({
+                    console.log('[LIGHTS] Point[' + $0 + '] pos=(' + $1.toFixed(1) + ',' + $2.toFixed(1) + ',' + $3.toFixed(1) +
+                        ') color=(' + $4.toFixed(2) + ',' + $5.toFixed(2) + ',' + $6.toFixed(2) +
+                        ') intensity=' + $7.toFixed(2) + ' range=' + $8.toFixed(1));
+                }, p, lit.lightDir[idx].x, lit.lightDir[idx].y, lit.lightDir[idx].z,
+                   lit.lightColor[idx].x, lit.lightColor[idx].y, lit.lightColor[idx].z,
+                   lit.lightColor[idx].w, lit.lightParams[idx].x);
+            }
         }
+
         bufMgr->UploadData(m_WebLightingBuffer, &lit, sizeof(lit));
     }
 
@@ -540,13 +634,60 @@ void RenderSystem::Update(f32 deltaTime) {
 
             if (!rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
 
+            auto* mat = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
+
+            // Build per-entity texture bind group (cached, rebuilt on dirty)
+            if (!rd.texBindGroupValid && mat) {
+                auto baseColorTex = WebGetOrLoadTexture(mat->baseColorTexturePath);
+                auto normalTex = WebGetOrLoadTexture(mat->normalTexturePath);
+                auto mrTex = WebGetOrLoadTexture(mat->metallicRoughnessTexturePath);
+
+                // Only create custom bind group if at least one texture loaded
+                if (baseColorTex.IsValid() || normalTex.IsValid() || mrTex.IsValid()) {
+                    auto bc = baseColorTex.IsValid() ? baseColorTex : m_WebDefaultWhiteTex;
+                    auto nm = normalTex.IsValid() ? normalTex : m_WebDefaultNormalTex;
+                    auto mr = mrTex.IsValid() ? mrTex : m_WebDefaultBlackTex;
+
+                    Renderer::GPUBindGroupDesc texBGDesc;
+                    texBGDesc.layout = m_WebTextureLayout;
+                    texBGDesc.entries = {
+                        {0, {}, 0, 0, bc, {}},
+                        {1, {}, 0, 0, {}, bc},
+                        {2, {}, 0, 0, nm, {}},
+                        {3, {}, 0, 0, {}, nm},
+                        {4, {}, 0, 0, mr, {}},
+                        {5, {}, 0, 0, {}, mr},
+                    };
+                    auto* bm = m_Renderer->GetBindGroupManager();
+                    if (bm) rd.texBindGroup = bm->CreateBindGroup(texBGDesc);
+                }
+                rd.texBindGroupValid = true;
+            }
+
             // Build per-entity ObjectData at aligned offset
             u32 offset = static_cast<u32>(objDataBuf.size());
             objDataBuf.resize(offset + OBJ_ALIGN, 0);
 
+            // Upload bone matrices for skinned meshes
+            auto* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+            if (animComp && animComp->animator.GetSkeleton()) {
+                auto& skinMats = animComp->animator.GetSkinningMatrices();
+                if (!skinMats.empty()) {
+                    usize boneDataSize = skinMats.size() * sizeof(Math::Matrix4);
+                    if (!rd.boneBuffer.IsValid()) {
+                        Renderer::GPUBufferDesc boneDesc;
+                        boneDesc.size = boneDataSize;
+                        boneDesc.usage = Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst;
+                        boneDesc.hostVisible = true;
+                        rd.boneBuffer = bufMgr->CreateBufferWithData(boneDesc, skinMats.data());
+                    } else {
+                        bufMgr->UploadData(rd.boneBuffer, skinMats.data(), boneDataSize);
+                    }
+                }
+            }
+
             WebObjectDataUBO obj{};
             obj.model = xf->ToMatrix();
-            auto* mat = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
             obj.baseColor = mat ? mat->baseColor : Math::Vector3(0.8f, 0.8f, 0.8f);
             obj.metallic = mat ? mat->metallic : 0.0f;
             obj.roughness = mat ? mat->roughness : 0.5f;
@@ -554,6 +695,7 @@ void RenderSystem::Update(f32 deltaTime) {
             obj.emissiveStrength = mat ? mat->emissiveStrength : 0.0f;
             obj.opacity = mat ? mat->opacity : 1.0f;
             obj.alphaCutoff = mat ? mat->alphaCutoff : 0.0f;
+            if (animComp && rd.boneBuffer.IsValid()) obj.flags |= (1 << 3);  // FLAG_SKINNED
             std::memcpy(objDataBuf.data() + offset, &obj, sizeof(obj));
 
             drawCmds.push_back({entity, offset});
@@ -574,14 +716,18 @@ void RenderSystem::Update(f32 deltaTime) {
             auto perEntityBuf = bufMgr->CreateBufferWithData(perEntityDesc,
                 objDataBuf.data() + cmd.offset);
 
-            // Create per-entity bind group
+            // Create per-entity bind group (ObjectData UBO + bone SSBO)
+            auto boneBuf = rd.boneBuffer.IsValid() ? rd.boneBuffer : m_WebDefaultBoneBuffer;
             Renderer::GPUBindGroupDesc bgd;
             bgd.layout = m_WebObjectLayout;
-            bgd.entries = {{0, perEntityBuf, 0, sizeof(WebObjectDataUBO), {}, {}}};
+            bgd.entries = {
+                {0, perEntityBuf, 0, sizeof(WebObjectDataUBO), {}, {}},
+                {1, boneBuf, 0, 0, {}, {}},  // 0 = whole buffer
+            };
             auto perEntityBG = bindMgr->CreateBindGroup(bgd);
 
             encoder->SetBindGroup(1, perEntityBG);
-            encoder->SetBindGroup(2, m_WebDefaultTexBindGroup);
+            encoder->SetBindGroup(2, rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup);
             encoder->SetVertexBuffer(0, rd.vertexBuffer);
             encoder->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32);
             encoder->DrawIndexed(rd.indexCount);
@@ -610,12 +756,14 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
     u64 eid = static_cast<u64>(entity);
     if (eid < m_EntityRenderData.size() && m_EntityRenderData[eid].valid) {
         auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr;
+        auto* bindMgr = m_Renderer ? m_Renderer->GetBindGroupManager() : nullptr;
+        auto& rd = m_EntityRenderData[eid];
         if (bufMgr) {
-            auto& rd = m_EntityRenderData[eid];
             if (rd.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.vertexBuffer);
             if (rd.indexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.indexBuffer);
         }
-        m_EntityRenderData[eid].Invalidate();
+        if (bindMgr && rd.texBindGroup.IsValid()) bindMgr->DestroyBindGroup(rd.texBindGroup);
+        rd.Invalidate();
     }
 }
 
