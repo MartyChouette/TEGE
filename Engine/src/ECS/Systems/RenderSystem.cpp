@@ -112,10 +112,11 @@ void RenderSystem::Initialize() {
     };
     m_WebFrameLayout = bindMgr->CreateBindGroupLayout(frameLayoutDesc);
 
-    // Group 1: ObjectData
+    // Group 1: ObjectData + Bone matrices
     Renderer::GPUBindGroupLayoutDesc objectLayoutDesc;
     objectLayoutDesc.entries = {
         {0, BType::UniformBuffer, SStage::Vertex | SStage::Fragment, sizeof(WebObjectDataUBO)},
+        {1, BType::StorageBufferReadOnly, SStage::Vertex, 64},  // bone matrices (at least 1 mat4)
     };
     m_WebObjectLayout = bindMgr->CreateBindGroupLayout(objectLayoutDesc);
 
@@ -152,7 +153,6 @@ void RenderSystem::Initialize() {
     pipeDesc.label = "PBR_Pipeline";
 
     // Vertex layout: position(vec3), normal(vec3), uv(vec2), color(vec4), tangent(vec4), boneWeights(vec4), boneIndices(u32x4)
-    // Shader only uses locations 0-3: position, normal, uv, tangent
     Renderer::GPUVertexBufferLayoutDesc vertLayout;
     vertLayout.stride = sizeof(MeshComponent::Vertex);
     vertLayout.attributes = {
@@ -160,6 +160,8 @@ void RenderSystem::Initialize() {
         {Renderer::GPUVertexFormat::Float32x3, static_cast<u32>(offsetof(MeshComponent::Vertex, normal)), 1},    // normal
         {Renderer::GPUVertexFormat::Float32x2, static_cast<u32>(offsetof(MeshComponent::Vertex, uv)), 2},       // uv
         {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, tangent)), 3},   // tangent
+        {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights)), 4}, // boneWeights
+        {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices)), 5}, // boneIndices
     };
     pipeDesc.vertexBuffers = {vertLayout};
 
@@ -186,6 +188,17 @@ void RenderSystem::Initialize() {
     bufDesc.label = "ObjectDataUBO";
     m_WebObjectBuffer = bufMgr->CreateBuffer(bufDesc);
 
+    // Create default bone buffer (single identity matrix)
+    {
+        Math::Matrix4 identity;  // default constructor = identity
+        Renderer::GPUBufferDesc boneDesc;
+        boneDesc.size = sizeof(Math::Matrix4);
+        boneDesc.usage = Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst;
+        boneDesc.hostVisible = true;
+        boneDesc.label = "DefaultBoneSSBO";
+        m_WebDefaultBoneBuffer = bufMgr->CreateBufferWithData(boneDesc, &identity);
+    }
+
     // Create default textures
     m_WebDefaultWhiteTex = texMgr->CreateSolidColor(255, 255, 255, 255);
     m_WebDefaultNormalTex = texMgr->CreateSolidColor(128, 128, 255, 255);  // flat +Z normal
@@ -200,11 +213,12 @@ void RenderSystem::Initialize() {
     };
     m_WebFrameBindGroup = bindMgr->CreateBindGroup(frameBGDesc);
 
-    // Create object bind group (group 1)
+    // Create object bind group (group 1) with default bone buffer
     Renderer::GPUBindGroupDesc objBGDesc;
     objBGDesc.layout = m_WebObjectLayout;
     objBGDesc.entries = {
         {0, m_WebObjectBuffer, 0, sizeof(WebObjectDataUBO), {}, {}},
+        {1, m_WebDefaultBoneBuffer, 0, sizeof(Math::Matrix4), {}, {}},
     };
     m_WebObjectBindGroup = bindMgr->CreateBindGroup(objBGDesc);
 
@@ -262,6 +276,7 @@ void RenderSystem::Shutdown() {
         if (m_WebViewProjBuffer.IsValid()) bufMgr->DestroyBuffer(m_WebViewProjBuffer);
         if (m_WebLightingBuffer.IsValid()) bufMgr->DestroyBuffer(m_WebLightingBuffer);
         if (m_WebObjectBuffer.IsValid()) bufMgr->DestroyBuffer(m_WebObjectBuffer);
+        if (m_WebDefaultBoneBuffer.IsValid()) bufMgr->DestroyBuffer(m_WebDefaultBoneBuffer);
     }
 
     // Destroy textures

@@ -5,6 +5,7 @@
 #include "Enjin/Renderer/WebGPU/WebGPUTextureManager.h"
 #include "Enjin/Logging/Log.h"
 
+#define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 namespace Enjin::Renderer {

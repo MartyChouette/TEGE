@@ -18,7 +18,7 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/Renderer/WebGPU/WebGPURenderer.h"
-#include "Enjin/Renderer/WebGPU/WebRenderPipeline.h"
+#include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/CameraController.h"
 #include "Enjin/Scene/SceneSerializer.h"
@@ -293,14 +293,10 @@ public:
             ENJIN_LOG_INFO(Player, "Loaded %d mesh entities", static_cast<int>(meshEntities.size()));
         }
 
-        // --- Render pipeline (PBR + multi-light + textures) ---
-        m_RenderPipeline = std::make_unique<Enjin::Renderer::WebRenderPipeline>(m_Renderer.get());
-        m_RenderPipeline->SetAssetReader(&m_AssetReader);
-        if (!m_RenderPipeline->Initialize()) {
-            ENJIN_LOG_ERROR(Player, "WebRenderPipeline initialization failed");
-            m_RenderPipeline.reset();
-            return;
-        }
+        // --- RenderSystem (same system as desktop, uses abstract IRenderBackend) ---
+        m_RenderSystem = m_World->RegisterSystem<Enjin::ECS::RenderSystem>(m_World.get(), m_Renderer.get());
+        m_RenderSystem->SetCamera(m_Camera.get());
+        m_RenderSystem->Initialize();
 
         m_Initialized = true;
         ENJIN_LOG_INFO(Player, "Web Player initialized");
@@ -335,7 +331,7 @@ public:
         m_TieredSaveSystem.SaveMeta();
         Enjin::Audio::AudioManager::Get().Shutdown();
 
-        m_RenderPipeline.reset();
+        // RenderSystem is owned by World — just destroy the world
         m_World.reset();
         m_CameraController.reset();
         m_Camera.reset();
@@ -384,12 +380,16 @@ public:
     }
 
     void Render() {
-        if (!m_Initialized || !m_RenderPipeline) return;
-        m_RenderPipeline->BeginFrame(m_Camera.get(), m_World.get());
-        m_RenderPipeline->Render();
-        m_RenderPipeline->EndFrame();
+        if (!m_Initialized || !m_RenderSystem) return;
 
-        // Sync CameraController after the pipeline's first camera override
+        m_RenderSystem->FlushPendingChanges();
+
+        // BeginFrame + render pass + EndFrame via RenderSystem::Update
+        m_Renderer->BeginFrameWebGPU();
+        m_RenderSystem->Update(0.0f);  // deltaTime handled separately in Update()
+        m_Renderer->EndFrame();
+
+        // Sync CameraController after the first camera entity override
         if (!m_CameraControllerSynced && m_CameraController) {
             m_CameraController->SyncFromCamera();
             m_CameraControllerSynced = true;
@@ -402,14 +402,13 @@ public:
         Enjin::u32 pixelH = static_cast<Enjin::u32>(h * dpr);
         if (m_Renderer) m_Renderer->Resize(pixelW, pixelH);
         if (m_Camera) m_Camera->SetPerspective(45.0f, static_cast<float>(w) / static_cast<float>(h), 0.1f, 1000.0f);
-        if (m_RenderPipeline) m_RenderPipeline->OnResize(pixelW, pixelH, dpr);
     }
 
     Enjin::u32 GetDrawCalls() const {
-        return m_RenderPipeline ? m_RenderPipeline->GetStats().drawCalls : 0;
+        return m_RenderSystem ? m_RenderSystem->GetDrawCallCount() : 0;
     }
     Enjin::u32 GetEntityCount() const {
-        return m_RenderPipeline ? m_RenderPipeline->GetStats().entityCount : 0;
+        return m_RenderSystem ? m_RenderSystem->GetEntityRenderDataSize() : 0;
     }
 
 private:
@@ -472,9 +471,9 @@ private:
     bool m_Initialized = false;
     bool m_CameraControllerSynced = false;
 
-    // Renderer + pipeline
+    // Renderer + render system
     std::unique_ptr<Enjin::Renderer::WebGPURenderer> m_Renderer;
-    std::unique_ptr<Enjin::Renderer::WebRenderPipeline> m_RenderPipeline;
+    Enjin::ECS::RenderSystem* m_RenderSystem = nullptr;  // Owned by World
     std::unique_ptr<Enjin::Renderer::Camera> m_Camera;
     std::unique_ptr<Enjin::Renderer::CameraController> m_CameraController;
     std::unique_ptr<Enjin::ECS::World> m_World;

@@ -700,6 +700,9 @@ private:
     Renderer::GPUTextureHandle m_WebDefaultNormalTex;
     Renderer::GPUTextureHandle m_WebDefaultBlackTex;
 
+    // Default bone buffer (single identity matrix for non-skinned meshes)
+    Renderer::GPUBufferHandle m_WebDefaultBoneBuffer;
+
     f32 m_WebTime = 0.0f;  // Accumulated time for shader animations
 #else
     // Vulkan-specific rendering resources (advanced pipelines)

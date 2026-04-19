@@ -39,6 +39,8 @@ WGPUVertexFormat WebGPUPipelineManager::TranslateVertexFormat(GPUVertexFormat fm
         case GPUVertexFormat::Sint16x2:   return WGPUVertexFormat_Sint16x2;
         case GPUVertexFormat::Uint16x4:   return WGPUVertexFormat_Uint16x4;
         case GPUVertexFormat::Sint16x4:   return WGPUVertexFormat_Sint16x4;
+        case GPUVertexFormat::Uint32x2:   return WGPUVertexFormat_Uint32x2;
+        case GPUVertexFormat::Uint32x4:   return WGPUVertexFormat_Uint32x4;
     }
     return WGPUVertexFormat_Float32x3;
 }

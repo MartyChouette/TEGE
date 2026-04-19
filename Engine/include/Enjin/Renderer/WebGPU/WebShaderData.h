@@ -42,6 +42,7 @@ struct ObjectData {
     parallaxScale: f32,
 };
 @group(1) @binding(0) var<uniform> object: ObjectData;
+@group(1) @binding(1) var<storage, read> boneMatrices: array<mat4x4<f32>>;
 
 @group(2) @binding(0) var baseColorTex: texture_2d<f32>;
 @group(2) @binding(1) var baseColorSmp: sampler;
@@ -55,6 +56,8 @@ struct VertexInput {
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
     @location(3) tangent: vec4<f32>,
+    @location(4) boneWeights: vec4<f32>,
+    @location(5) boneIndices: vec4<u32>,
 };
 
 struct VertexOutput {
@@ -69,14 +72,35 @@ struct VertexOutput {
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
-    let world_pos = object.model * vec4<f32>(in.position, 1.0);
+
+    // Skinning: flags bit 3 = skinned mesh
+    var localPos = vec4<f32>(in.position, 1.0);
+    var localNormal = in.normal;
+    var localTangent = in.tangent.xyz;
+    let isSkinned = (object.flags & 8) != 0;
+    if (isSkinned) {
+        let w = in.boneWeights;
+        let totalWeight = w.x + w.y + w.z + w.w;
+        if (totalWeight > 0.0) {
+            let b0 = boneMatrices[in.boneIndices.x];
+            let b1 = boneMatrices[in.boneIndices.y];
+            let b2 = boneMatrices[in.boneIndices.z];
+            let b3 = boneMatrices[in.boneIndices.w];
+            let skinMat = b0 * w.x + b1 * w.y + b2 * w.z + b3 * w.w;
+            localPos = skinMat * localPos;
+            localNormal = (skinMat * vec4<f32>(localNormal, 0.0)).xyz;
+            localTangent = (skinMat * vec4<f32>(localTangent, 0.0)).xyz;
+        }
+    }
+
+    let world_pos = object.model * localPos;
     out.clip_position = viewProj.proj * viewProj.view * world_pos;
     out.world_pos = world_pos.xyz;
     let normal_mat = mat3x3<f32>(
         object.model[0].xyz, object.model[1].xyz, object.model[2].xyz
     );
-    out.world_normal = normalize(normal_mat * in.normal);
-    out.world_tangent = normalize(normal_mat * in.tangent.xyz);
+    out.world_normal = normalize(normal_mat * localNormal);
+    out.world_tangent = normalize(normal_mat * localTangent);
     out.world_bitangent = cross(out.world_normal, out.world_tangent) * in.tangent.w;
     out.uv = in.uv;
     return out;
