@@ -350,13 +350,25 @@ public:
         Enjin::Input::Update();
         m_InputMap.Update(deltaTime);
 
+        // Flush deferred entity destroys from previous frame
+        m_World->Update(deltaTime);
+
         if (m_Physics) m_Physics->Update(deltaTime);
         if (m_Physics2D) m_Physics2D->Update(deltaTime);
 
         m_ControllerSystem.Update(deltaTime);
 
+        // Only use fly camera if no character controller exists in the scene
         if (m_CameraController && m_CameraController->IsEnabled()) {
-            m_CameraController->Update(deltaTime);
+            bool hasPlayerController = !m_World->GetEntitiesWithComponent<
+                Enjin::ECS::FirstPersonController>().empty()
+                || !m_World->GetEntitiesWithComponent<
+                Enjin::ECS::ThirdPersonController>().empty()
+                || !m_World->GetEntitiesWithComponent<
+                Enjin::ECS::Platformer2DController>().empty();
+            if (!hasPlayerController) {
+                m_CameraController->Update(deltaTime);
+            }
         }
 
         m_ScriptSystem.Update(deltaTime);
@@ -378,6 +390,38 @@ public:
         }
 
         m_ParticleSystem.Update(deltaTime, m_World.get());
+
+        // Debug: check what controllers and cameras exist
+        static int s_dbg = 0;
+        if (s_dbg++ < 3) {
+            auto fps = m_World->GetEntitiesWithComponent<Enjin::ECS::FirstPersonController>().size();
+            auto tp = m_World->GetEntitiesWithComponent<Enjin::ECS::ThirdPersonController>().size();
+            auto p2d = m_World->GetEntitiesWithComponent<Enjin::ECS::Platformer2DController>().size();
+            auto cams = m_World->GetEntitiesWithComponent<Enjin::ECS::CameraComponent>().size();
+            printf("[WebPlayer] Controllers: FPS=%zu, TP=%zu, 2D=%zu, Cameras=%zu\n", fps, tp, p2d, cams);
+        }
+
+        // Sync Camera to the first CameraComponent entity (character controller drives the entity,
+        // camera follows it). This mirrors what the desktop Player does.
+        {
+            const auto& camEntities = m_World->GetEntitiesWithComponent<Enjin::ECS::CameraComponent>();
+            if (!camEntities.empty() && m_Camera) {
+                auto camEntity = camEntities[0];
+                auto* xf = m_World->GetComponent<Enjin::ECS::TransformComponent>(camEntity);
+                auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(camEntity);
+                if (xf && cc) {
+                    Enjin::Math::Vector3 pos = xf->position;
+                    Enjin::Math::Vector3 fwd = xf->rotation.GetForward();
+                    Enjin::Math::Vector3 up = xf->rotation.GetUp();
+                    m_Camera->SetLookAt(pos, pos + fwd, up);
+                    if (cc->fieldOfView > 0.0f) {
+                        Enjin::f32 aspect = static_cast<Enjin::f32>(m_Renderer->GetSwapChainWidth()) /
+                                     static_cast<Enjin::f32>(std::max(m_Renderer->GetSwapChainHeight(), 1u));
+                        m_Camera->SetPerspective(cc->fieldOfView, aspect, cc->nearPlane, cc->farPlane);
+                    }
+                }
+            }
+        }
     }
 
     void Render() {

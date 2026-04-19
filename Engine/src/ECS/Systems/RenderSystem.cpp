@@ -479,6 +479,10 @@ void RenderSystem::Update(f32 deltaTime) {
 
         lit.ambientColor = {m_AmbientColor.x, m_AmbientColor.y, m_AmbientColor.z, m_AmbientIntensity};
         lit.lightCount = {static_cast<f32>(dirCount), static_cast<f32>(pointCount), 0.0f, 0.0f};
+        if (s_UpdateCount < 3) {
+            printf("[RenderSystem] Lights: %u dir, %u point, %zu total entities, ambient=%.2f\n",
+                dirCount, pointCount, m_CachedLightEntities.size(), m_AmbientIntensity);
+        }
         bufMgr->UploadData(m_WebLightingBuffer, &lit, sizeof(lit));
     }
 
