@@ -49,6 +49,13 @@ GPUPipelineHandle VulkanPipelineManager::CreateRenderPipeline(const GPURenderPip
     }
 
     config.frontFace = (desc.frontFace == GPUFrontFace::CCW) ? VK_FRONT_FACE_COUNTER_CLOCKWISE : VK_FRONT_FACE_CLOCKWISE;
+
+    switch (desc.polygonMode) {
+        case GPUPolygonMode::Fill:  config.polygonMode = VK_POLYGON_MODE_FILL; break;
+        case GPUPolygonMode::Line:  config.polygonMode = VK_POLYGON_MODE_LINE; break;
+        case GPUPolygonMode::Point: config.polygonMode = VK_POLYGON_MODE_POINT; break;
+    }
+
     config.depthTest = desc.depthTest;
     config.depthWrite = desc.depthWrite;
     config.depthBiasEnable = desc.depthBiasEnable;

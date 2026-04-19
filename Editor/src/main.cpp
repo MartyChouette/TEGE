@@ -225,7 +225,7 @@ public:
             return;
         }
 
-        if (!m_Renderer->BeginFrame()) {
+        if (!m_Renderer->BeginFrameVulkan()) {
             m_FrameFailCount++;
             if (m_Renderer->IsDeviceLost()) {
                 ENJIN_LOG_FATAL(Editor, "GPU device lost — shutting down. Please restart the application.");

@@ -168,7 +168,7 @@ void SimpleApp::Update(f32 deltaTime) {
 
 void SimpleApp::Render() {
     if (!m_Renderer) return;
-    if (!m_Renderer->BeginFrame()) return;
+    if (!m_Renderer->BeginFrameVulkan()) return;
 
     if (m_RenderSystem) {
         m_RenderSystem->FlushPendingChanges();

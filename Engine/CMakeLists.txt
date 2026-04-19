@@ -74,7 +74,6 @@ if(ENJIN_PLATFORM_WEB)
          "src/Renderer/RenderPipeline/*.cpp" "src/Renderer/Techniques/*.cpp"
          "src/Renderer/VRS/*.cpp" "src/Renderer/HaltonSequence.cpp"
          "src/Renderer/RenderPass.cpp" "src/Renderer/Scripting/*.cpp" "src/Renderer/ShaderManager.cpp"
-         "src/ECS/Systems/RenderSystem.cpp"
          "src/Effects/WeatherRenderer.cpp" "src/Effects/ParticleRenderer.cpp"
          "src/Effects/FluidRenderer.cpp" "src/Effects/GrassRenderer.cpp"
          "src/Effects/ShrubRenderer.cpp" "src/Effects/TreeRenderer.cpp"
@@ -89,6 +88,12 @@ else()
     file(GLOB_RECURSE WEBGPU_SOURCES "src/Renderer/WebGPU/*.cpp")
     list(REMOVE_ITEM ENGINE_SOURCES ${WEBGPU_SOURCES})
 endif()
+
+# Phase 4-5 files may not be found by GLOB_RECURSE due to CMake caching — add explicitly
+list(APPEND ENGINE_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Renderer/Vulkan/VulkanBindGroupManager.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/Renderer/Vulkan/VulkanRenderEncoder.cpp"
+)
 
 add_library(EnjinEngine STATIC ${ENGINE_SOURCES})
 

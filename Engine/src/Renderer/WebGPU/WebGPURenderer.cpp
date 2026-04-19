@@ -5,6 +5,12 @@
 #include "Enjin/Renderer/WebGPU/WebGPURenderer.h"
 #include "Enjin/Renderer/WebGPU/WebGPUShaderCompiler.h"
 #include "Enjin/Renderer/WebGPU/WebGPUPipeline.h"
+#include "Enjin/Renderer/WebGPU/WebGPUBufferManager.h"
+#include "Enjin/Renderer/WebGPU/WebGPUTextureManager.h"
+#include "Enjin/Renderer/WebGPU/WebGPUShaderManager.h"
+#include "Enjin/Renderer/WebGPU/WebGPUPipelineManager.h"
+#include "Enjin/Renderer/WebGPU/WebGPUBindGroupManager.h"
+#include "Enjin/Renderer/WebGPU/WebGPURenderEncoder.h"
 #include "Enjin/Platform/Window.h"
 #include "Enjin/Logging/Log.h"
 #include <emscripten.h>
@@ -17,6 +23,8 @@ static WGPUStringView wgpuStr(const char* s) { return {s, WGPU_STRLEN}; }
 
 namespace Enjin {
 namespace Renderer {
+
+WebGPURenderer::WebGPURenderer() = default;
 
 WebGPURenderer::~WebGPURenderer() {
     Shutdown();
@@ -128,6 +136,13 @@ bool WebGPURenderer::Initialize(Window* window) {
     m_ShaderCompiler = std::make_unique<WebGPUShaderCompiler>(m_Device);
     m_PipelineFactory = std::make_unique<WebGPUPipeline>(m_Device);
 
+    // Create abstract sub-managers for IRenderBackend interface
+    m_BufferMgr = std::make_unique<WebGPUBufferManager>(this);
+    m_TextureMgr = std::make_unique<WebGPUTextureManager>(this);
+    m_ShaderMgr = std::make_unique<WebGPUShaderManager>(this);
+    m_PipelineMgr = std::make_unique<WebGPUPipelineManager>(this, m_ShaderMgr.get());
+    m_BindGroupMgr = std::make_unique<WebGPUBindGroupManager>(this, m_BufferMgr.get(), m_TextureMgr.get());
+
     m_Initialized = true;
     ENJIN_LOG_INFO(Core, "WebGPURenderer initialized (%ux%u)", m_SwapChainWidth, m_SwapChainHeight);
     return true;
@@ -135,6 +150,14 @@ bool WebGPURenderer::Initialize(Window* window) {
 
 void WebGPURenderer::Shutdown() {
     if (!m_Initialized) return;
+
+    // Destroy abstract sub-managers
+    m_ActiveEncoder.reset();
+    m_BindGroupMgr.reset();
+    m_PipelineMgr.reset();
+    m_ShaderMgr.reset();
+    m_TextureMgr.reset();
+    m_BufferMgr.reset();
 
     m_ShaderCompiler.reset();
     m_PipelineFactory.reset();
@@ -154,7 +177,7 @@ void WebGPURenderer::Shutdown() {
 // Frame
 // ============================================================================
 
-bool WebGPURenderer::BeginFrame() {
+bool WebGPURenderer::BeginFrameWebGPU() {
     if (!m_Initialized || !m_Surface) return false;
 
     // Get current surface texture
@@ -485,6 +508,59 @@ void WebGPURenderer::SetScissor(u32 x, u32 y, u32 width, u32 height) {
 
 void WebGPURenderer::WaitForAllFrames() {
     // WebGPU doesn't have explicit fence-wait — browser ensures ordering.
+}
+
+// ============================================================================
+// IRenderBackend overrides
+// ============================================================================
+
+bool WebGPURenderer::Initialize(u32 /*width*/, u32 /*height*/) {
+    ENJIN_LOG_ERROR(Core, "WebGPURenderer::Initialize(u32,u32) not supported — use Initialize(Window*)");
+    return false;
+}
+
+void WebGPURenderer::BeginFrame() {
+    BeginFrameWebGPU();
+}
+
+void WebGPURenderer::Present() {
+    // WebGPU presents in EndFrame — no-op here
+}
+
+PlatformCapabilities WebGPURenderer::GetCapabilities() const {
+    PlatformCapabilities caps;
+    caps.hasWebGPU = true;
+    caps.maxTextureSize = 8192;
+    caps.preferredCompression = TextureCompression::ASTC;
+    return caps;
+}
+
+GPUCapabilities WebGPURenderer::GetGPUCapabilities() const {
+    return MakeWebGPUCapabilities();
+}
+
+IGPUBufferManager* WebGPURenderer::GetBufferManager() { return m_BufferMgr.get(); }
+IGPUTextureManager* WebGPURenderer::GetTextureManager() { return m_TextureMgr.get(); }
+IGPUPipelineManager* WebGPURenderer::GetPipelineManager() { return m_PipelineMgr.get(); }
+IGPUShaderManager* WebGPURenderer::GetShaderManager() { return m_ShaderMgr.get(); }
+IGPUBindGroupManager* WebGPURenderer::GetBindGroupManager() { return m_BindGroupMgr.get(); }
+
+IRenderEncoder* WebGPURenderer::BeginRenderPass(const GPURenderPassDesc& desc) {
+    // Default desc (width=0) = main swapchain render pass (already active from BeginFrameWebGPU)
+    if (desc.width == 0 && desc.height == 0) {
+        if (!m_RenderPassEncoder) return nullptr;
+        m_ActiveEncoder = std::make_unique<WebGPURenderEncoder>(
+            this, m_RenderPassEncoder,
+            m_PipelineMgr.get(), m_BufferMgr.get(), m_BindGroupMgr.get());
+        return m_ActiveEncoder.get();
+    }
+    return nullptr;
+}
+
+void WebGPURenderer::EndRenderPass(IRenderEncoder* encoder) {
+    if (m_ActiveEncoder.get() == encoder) {
+        m_ActiveEncoder.reset();
+    }
 }
 
 } // namespace Renderer

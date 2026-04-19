@@ -1,5 +1,78 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
-// Includes moved from RenderSystem.h (forward-declared there, needed here for full definitions)
+#include "Enjin/Logging/Log.h"
+
+// Effect renderer headers needed for unique_ptr destructor (incomplete type fix)
+#include "Enjin/Effects/WeatherRenderer.h"
+#include "Enjin/Effects/ParticleRenderer.h"
+#include "Enjin/Effects/FluidRenderer.h"
+#include "Enjin/Effects/SpriteBatchRenderer.h"
+#include "Enjin/Effects/SpriteTextureAtlas.h"
+#include "Enjin/Effects/GrassRenderer.h"
+#include "Enjin/Effects/ShrubRenderer.h"
+#include "Enjin/Effects/TreeRenderer.h"
+
+// ============================================================================
+// WebGPU stub — minimal RenderSystem that compiles but defers to Phase 7-9
+// for full WebGPU rendering through the abstract interface.
+// ============================================================================
+#if ENJIN_RENDERER_WEBGPU
+
+namespace Enjin {
+namespace ECS {
+
+RenderSystem::RenderSystem(World* world, Renderer::IRenderBackend* renderer)
+    : m_World(world), m_Renderer(renderer) {
+    m_Camera = nullptr;
+}
+
+RenderSystem::~RenderSystem() { Shutdown(); }
+
+void RenderSystem::Initialize() {
+    if (m_Initialized) return;
+    m_FrameAllocator = std::make_unique<FrameAllocator>(8 * 1024 * 1024);
+    m_Initialized = true;
+    ENJIN_LOG_INFO(Renderer, "RenderSystem initialized (WebGPU stub)");
+}
+
+void RenderSystem::Shutdown() {
+    m_Initialized = false;
+}
+
+void RenderSystem::OnSceneClear() { m_SceneClearPending = true; }
+void RenderSystem::FlushSceneClear() { m_SceneClearPending = false; }
+void RenderSystem::FlushPendingChanges() {}
+void RenderSystem::Update(f32 /*deltaTime*/) {}
+void RenderSystem::OnEntityAdded(Entity /*entity*/) {}
+void RenderSystem::OnEntityRemoved(Entity /*entity*/) {}
+void RenderSystem::RefreshStorageCache() {}
+void RenderSystem::RenderEntity(Entity /*entity*/) {}
+void RenderSystem::RenderSprites() {}
+void RenderSystem::ClassifySceneComposition() {}
+void RenderSystem::CreateDefaultMesh() {}
+void RenderSystem::CreatePipeline() {}
+
+// Stubs for public methods used by editor/player
+void RenderSystem::SetBackfaceCullingEnabled(bool enabled) { m_BackfaceCulling = enabled; }
+void RenderSystem::SetWireframeEnabled(bool enabled) { m_WireframeMode = enabled; }
+void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* /*sim*/) {}
+void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& /*w*/, bool /*r*/, u32, u32) {}
+void RenderSystem::RenderParticles(u32, u32) {}
+void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem&, u32, u32) {}
+void RenderSystem::RenderFluid(u32, u32) {}
+void RenderSystem::RenderGrass(u32, u32) {}
+void RenderSystem::RenderShrubs(u32, u32) {}
+void RenderSystem::RenderTrees(u32, u32) {}
+u32 RenderSystem::GetMaxMSAASamples() const { return 1; }
+void RenderSystem::SetAAMode(u32 mode) { m_AAMode = mode; }
+void RenderSystem::SetUpscalerType(u32 type) { m_UpscalerType = type; }
+void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality; }
+
+} // namespace ECS
+} // namespace Enjin
+
+#else // !ENJIN_RENDERER_WEBGPU — Full Vulkan implementation below
+
+// Includes for Vulkan implementation (forward-declared in header, needed here for full definitions)
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/WeatherRenderer.h"
 #include "Enjin/Effects/ParticleRenderer.h"
@@ -33,7 +106,6 @@
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/Animation/IKSolver.h"
-#include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
@@ -88,14 +160,35 @@
 namespace Enjin {
 namespace ECS {
 
-RenderSystem::RenderSystem(World* world, Renderer::VulkanRenderer* renderer)
+RenderSystem::RenderSystem(World* world, Renderer::IRenderBackend* renderer)
     : m_World(world), m_Renderer(renderer) {
+#if !ENJIN_RENDERER_WEBGPU
+    m_VulkanRenderer = static_cast<Renderer::VulkanRenderer*>(renderer);
+#endif
     m_Camera = nullptr;
 }
 
 RenderSystem::~RenderSystem() {
     Shutdown();
 }
+
+#if !ENJIN_RENDERER_WEBGPU
+Renderer::VulkanRenderer* RenderSystem::GetVulkanRenderer() const {
+    return m_VulkanRenderer;
+}
+
+Renderer::VulkanSwapchain* RenderSystem::GetSwapchain() const {
+    return m_VulkanRenderer ? m_VulkanRenderer->GetSwapchain() : nullptr;
+}
+
+bool RenderSystem::IsHDREnabled() const {
+    return m_VulkanRenderer ? m_VulkanRenderer->IsHDREnabled() : false;
+}
+
+u32 RenderSystem::GetHDROutputMode() const {
+    return m_VulkanRenderer ? m_VulkanRenderer->GetHDROutputMode() : 0;
+}
+#endif
 
 void RenderSystem::RefreshStorageCache() {
     if (!m_World) {
@@ -143,7 +236,7 @@ void RenderSystem::Initialize() {
     }
 
     // Create shaders
-    m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_VulkanRenderer->GetContext());
     if (!m_VertexShader->LoadFromSPIRV(
         reinterpret_cast<const u8*>(Renderer::ShaderData::TriangleVertexShaderData),
         Renderer::ShaderData::TriangleVertexShaderDataSize)) {
@@ -151,7 +244,7 @@ void RenderSystem::Initialize() {
         return;
     }
 
-    m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_VulkanRenderer->GetContext());
     if (!m_FragmentShader->LoadFromSPIRV(
         reinterpret_cast<const u8*>(Renderer::ShaderData::TriangleFragmentShaderData),
         Renderer::ShaderData::TriangleFragmentShaderDataSize)) {
@@ -160,7 +253,7 @@ void RenderSystem::Initialize() {
     }
 
     // Create shadow vertex shader (push-constant-based, avoids HOST_COHERENT UBO race)
-    m_ShadowVertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    m_ShadowVertexShader = std::make_unique<Renderer::VulkanShader>(m_VulkanRenderer->GetContext());
     if (!m_ShadowVertexShader->LoadFromSPIRV(
         reinterpret_cast<const u8*>(Renderer::ShaderData::ShadowVertexShaderData),
         Renderer::ShaderData::ShadowVertexShaderDataSize)) {
@@ -169,7 +262,7 @@ void RenderSystem::Initialize() {
 
     // Initialize bindless resource manager BEFORE pipeline creation — pipelines
     // need the bindless descriptor set layout for set 1 in their pipeline layout.
-    m_BindlessManager = std::make_unique<Renderer::BindlessResourceManager>(m_Renderer->GetContext());
+    m_BindlessManager = std::make_unique<Renderer::BindlessResourceManager>(m_VulkanRenderer->GetContext());
     if (!m_BindlessManager->Initialize()) {
         ENJIN_LOG_WARN(Renderer, "Bindless resource manager initialization failed — per-entity descriptors will be used");
         m_BindlessManager.reset();
@@ -188,14 +281,14 @@ void RenderSystem::Initialize() {
     CreateLinePipeline();
 
     // Create outline shaders and pipeline (inverted-hull geometry outlines)
-    m_OutlineVertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    m_OutlineVertexShader = std::make_unique<Renderer::VulkanShader>(m_VulkanRenderer->GetContext());
     if (!m_OutlineVertexShader->LoadFromSPIRV(
         reinterpret_cast<const u8*>(Renderer::ShaderData::OutlineVertexShaderData),
         Renderer::ShaderData::OutlineVertexShaderDataSize)) {
         ENJIN_LOG_WARN(Renderer, "Failed to load outline vertex shader");
         m_OutlineVertexShader.reset();
     }
-    m_OutlineFragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    m_OutlineFragmentShader = std::make_unique<Renderer::VulkanShader>(m_VulkanRenderer->GetContext());
     if (!m_OutlineFragmentShader->LoadFromSPIRV(
         reinterpret_cast<const u8*>(Renderer::ShaderData::OutlineFragmentShaderData),
         Renderer::ShaderData::OutlineFragmentShaderDataSize)) {
@@ -206,7 +299,7 @@ void RenderSystem::Initialize() {
     CreateWireframeOverlayPipeline();
 
     // Create cascaded shadow map
-    m_ShadowMap = std::make_unique<Renderer::ShadowMap>(m_Renderer->GetContext());
+    m_ShadowMap = std::make_unique<Renderer::ShadowMap>(m_VulkanRenderer->GetContext());
     Renderer::ShadowMapConfig shadowConfig;
     shadowConfig.resolution = 2048;
     shadowConfig.cascadeCount = 4;
@@ -224,7 +317,7 @@ void RenderSystem::Initialize() {
     }
 
     // Create point light shadow map (cubemap array for up to 4 point lights)
-    m_PointShadowMap = std::make_unique<Renderer::PointLightShadowMap>(m_Renderer->GetContext());
+    m_PointShadowMap = std::make_unique<Renderer::PointLightShadowMap>(m_VulkanRenderer->GetContext());
     if (!m_PointShadowMap->Initialize(1024)) {
         ENJIN_LOG_WARN(Renderer, "Failed to initialize point light shadow map");
         m_PointShadowMap.reset();
@@ -233,7 +326,7 @@ void RenderSystem::Initialize() {
     }
 
     // Create spot light shadow map (2D array for up to 4 spot lights)
-    m_SpotShadowMap = std::make_unique<Renderer::SpotLightShadowMap>(m_Renderer->GetContext());
+    m_SpotShadowMap = std::make_unique<Renderer::SpotLightShadowMap>(m_VulkanRenderer->GetContext());
     if (!m_SpotShadowMap->Initialize(1024)) {
         ENJIN_LOG_WARN(Renderer, "Failed to initialize spot light shadow map");
         m_SpotShadowMap.reset();
@@ -243,7 +336,7 @@ void RenderSystem::Initialize() {
 
     // Create default white texture (used when no texture is bound).
     // This MUST succeed — without it, every texture fallback path leads to a null deref.
-    m_DefaultWhiteTexture = std::make_unique<Renderer::Texture>(m_Renderer->GetContext());
+    m_DefaultWhiteTexture = std::make_unique<Renderer::Texture>(m_VulkanRenderer->GetContext());
     if (!m_DefaultWhiteTexture->CreateSolidColor(255, 255, 255, 255)) {
         ENJIN_LOG_FATAL(Renderer, "Failed to create default white texture — rendering will be broken");
     }
@@ -251,7 +344,7 @@ void RenderSystem::Initialize() {
     // Create default bone buffer with 256 identity matrices — covers any bone index
     // a non-skinned mesh might reference without out-of-bounds SSBO reads.
     static constexpr usize DEFAULT_BONE_COUNT = 256;
-    m_DefaultBoneBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+    m_DefaultBoneBuffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
     if (m_DefaultBoneBuffer->Create(DEFAULT_BONE_COUNT * sizeof(Math::Matrix4), Renderer::BufferUsage::Storage, true)) {
         std::vector<Math::Matrix4> identities(DEFAULT_BONE_COUNT);
         for (auto& mat : identities) mat = Math::Matrix4::Identity();
@@ -262,7 +355,7 @@ void RenderSystem::Initialize() {
     }
 
     // Default morph target buffer (header says targetCount=0, so shader skips morph loop)
-    m_DefaultMorphBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+    m_DefaultMorphBuffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
     {
         // Header: [vertexCount as uint bits, targetCount as uint bits] = [0, 0]
         f32 morphHeader[2] = {0.0f, 0.0f};
@@ -275,7 +368,7 @@ void RenderSystem::Initialize() {
     }
 
     // Create shadow data SSBO for point/spot light shadow matrices
-    m_ShadowDataBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+    m_ShadowDataBuffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
     if (!m_ShadowDataBuffer->Create(sizeof(ShadowDataSSBO), Renderer::BufferUsage::Storage, true)) {
         ENJIN_LOG_WARN(Renderer, "Failed to create shadow data SSBO");
         m_ShadowDataBuffer.reset();
@@ -295,56 +388,56 @@ void RenderSystem::Initialize() {
 
     // Initialize weather particle renderer
     m_WeatherRenderer = std::make_unique<Effects::WeatherRenderer>();
-    if (!m_WeatherRenderer->Initialize(m_Renderer, m_Pipeline->GetDescriptorSetLayout())) {
+    if (!m_WeatherRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_WARN(Renderer, "WeatherRenderer initialization failed, 3D particles disabled");
         m_WeatherRenderer.reset();
     }
 
     // Initialize particle emitter renderer
     m_ParticleRenderer = std::make_unique<Effects::ParticleRenderer>();
-    if (!m_ParticleRenderer->Initialize(m_Renderer, m_Pipeline->GetDescriptorSetLayout())) {
+    if (!m_ParticleRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_WARN(Renderer, "ParticleRenderer initialization failed, emitter particles disabled");
         m_ParticleRenderer.reset();
     }
 
     // Initialize fluid renderer
     m_FluidRenderer = std::make_unique<Effects::FluidRenderer>();
-    if (!m_FluidRenderer->Initialize(m_Renderer, m_Pipeline->GetDescriptorSetLayout())) {
+    if (!m_FluidRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_WARN(Renderer, "FluidRenderer initialization failed, fluid rendering disabled");
         m_FluidRenderer.reset();
     }
 
     // Initialize grass renderer
     m_GrassRenderer = std::make_unique<Effects::GrassRenderer>();
-    if (!m_GrassRenderer->Initialize(m_Renderer, m_Pipeline->GetDescriptorSetLayout())) {
+    if (!m_GrassRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_WARN(Renderer, "GrassRenderer initialization failed, grass disabled");
         m_GrassRenderer.reset();
     }
 
     // Initialize shrub renderer
     m_ShrubRenderer = std::make_unique<Effects::ShrubRenderer>();
-    if (!m_ShrubRenderer->Initialize(m_Renderer, m_Pipeline->GetDescriptorSetLayout())) {
+    if (!m_ShrubRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_WARN(Renderer, "ShrubRenderer initialization failed, shrubs disabled");
         m_ShrubRenderer.reset();
     }
 
     // Initialize tree renderer
     m_TreeRenderer = std::make_unique<Effects::TreeRenderer>();
-    if (!m_TreeRenderer->Initialize(m_Renderer, m_Pipeline->GetDescriptorSetLayout())) {
+    if (!m_TreeRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_WARN(Renderer, "TreeRenderer initialization failed, trees disabled");
         m_TreeRenderer.reset();
     }
 
     // Initialize sprite batch renderer
     m_SpriteBatchRenderer = std::make_unique<Effects::SpriteBatchRenderer>();
-    if (!m_SpriteBatchRenderer->Initialize(m_Renderer, m_Pipeline->GetDescriptorSetLayout())) {
+    if (!m_SpriteBatchRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_WARN(Renderer, "SpriteBatchRenderer initialization failed, sprite batching disabled");
         m_SpriteBatchRenderer.reset();
     }
 
     // Initialize sprite texture atlas (auto-packs small sprites into one GPU texture)
     m_SpriteAtlas = std::make_unique<Effects::SpriteTextureAtlas>();
-    if (m_SpriteAtlas->Initialize(m_Renderer->GetContext())) {
+    if (m_SpriteAtlas->Initialize(m_VulkanRenderer->GetContext())) {
         if (m_SpriteBatchRenderer) m_SpriteBatchRenderer->SetAtlas(m_SpriteAtlas.get());
     } else {
         ENJIN_LOG_WARN(Renderer, "SpriteTextureAtlas initialization failed, atlas packing disabled");
@@ -352,7 +445,7 @@ void RenderSystem::Initialize() {
     }
 
     // Initialize skybox
-    m_Skybox.Initialize(m_Renderer->GetContext());
+    m_Skybox.Initialize(m_VulkanRenderer->GetContext());
     CreateSkyboxCubeVBO();
     CreateSkyboxPipeline();
 
@@ -363,7 +456,7 @@ void RenderSystem::Initialize() {
     }
 
     // Initialize merged geometry buffer (single VB+IB for all static 3D meshes)
-    m_GeometryPool = std::make_unique<Renderer::MergedGeometryBuffer>(m_Renderer->GetContext());
+    m_GeometryPool = std::make_unique<Renderer::MergedGeometryBuffer>(m_VulkanRenderer->GetContext());
     if (!m_GeometryPool->Initialize()) {
         ENJIN_LOG_WARN(Renderer, "MergedGeometryBuffer initialization failed, using per-entity buffers");
         m_GeometryPool.reset();
@@ -371,7 +464,7 @@ void RenderSystem::Initialize() {
 
     // Initialize GPU frustum culling system (no readback stall — visibility read from previous frame)
     if (m_GPUCullingEnabled) {
-        m_GPUCulling = std::make_unique<Renderer::GPUCullingSystem>(m_Renderer->GetContext());
+        m_GPUCulling = std::make_unique<Renderer::GPUCullingSystem>(m_VulkanRenderer->GetContext());
         if (!m_GPUCulling->Initialize()) {
             ENJIN_LOG_WARN(Renderer, "GPUCullingSystem initialization failed, using CPU culling");
             m_GPUCulling.reset();
@@ -384,7 +477,7 @@ void RenderSystem::Initialize() {
     // Initialize texture-grouped indirect draw batcher
     if (m_GPUCullingEnabled && m_GPUCulling) {
         m_IndirectDrawBatcher = std::make_unique<Renderer::IndirectDrawBatcher>();
-        if (!m_IndirectDrawBatcher->Initialize(m_Renderer->GetContext(), m_GPUCulling->GetMaxObjects())) {
+        if (!m_IndirectDrawBatcher->Initialize(m_VulkanRenderer->GetContext(), m_GPUCulling->GetMaxObjects())) {
             ENJIN_LOG_WARN(Renderer, "IndirectDrawBatcher init failed, textured entities use per-entity draws");
             m_IndirectDrawBatcher.reset();
         } else {
@@ -393,9 +486,9 @@ void RenderSystem::Initialize() {
     }
 
     // Initialize Device Generated Commands (DGC) — GPU generates entire command stream
-    if (m_GPUCullingEnabled && m_GPUCulling && m_Renderer->GetContext()->IsDGCSupported()) {
+    if (m_GPUCullingEnabled && m_GPUCulling && m_VulkanRenderer->GetContext()->IsDGCSupported()) {
         m_DGC = std::make_unique<Renderer::DeviceGeneratedCommands>();
-        if (!m_DGC->Initialize(m_Renderer->GetContext(), m_GPUCulling->GetMaxObjects())) {
+        if (!m_DGC->Initialize(m_VulkanRenderer->GetContext(), m_GPUCulling->GetMaxObjects())) {
             ENJIN_LOG_INFO(Renderer, "DGC not available on this device, using multi-draw indirect");
             m_DGC.reset();
         } else {
@@ -411,7 +504,7 @@ void RenderSystem::Initialize() {
     // Initialize async compute scheduler for RT/denoise overlap
     {
         m_AsyncComputeScheduler = std::make_unique<Renderer::AsyncComputeScheduler>();
-        if (m_AsyncComputeScheduler->Initialize(m_Renderer->GetContext(), 2)) {
+        if (m_AsyncComputeScheduler->Initialize(m_VulkanRenderer->GetContext(), 2)) {
             ENJIN_LOG_INFO(Renderer, "Async compute scheduler enabled (RT/denoise overlap)");
         } else {
             // Not an error — many GPUs share graphics/compute queue
@@ -423,7 +516,7 @@ void RenderSystem::Initialize() {
     m_ThreadPool.Initialize();
     u32 framesInFlight = 2; // Matches VulkanRenderer::MAX_FRAMES_IN_FLIGHT
     m_CmdBufferPool = std::make_unique<Renderer::CommandBufferPool>();
-    if (!m_CmdBufferPool->Initialize(m_Renderer->GetContext(),
+    if (!m_CmdBufferPool->Initialize(m_VulkanRenderer->GetContext(),
                                      m_ThreadPool.GetThreadCount(), framesInFlight)) {
         ENJIN_LOG_WARN(Renderer, "CommandBufferPool init failed, shadow passes will be single-threaded");
         m_CmdBufferPool.reset();
@@ -434,15 +527,15 @@ void RenderSystem::Initialize() {
 
     // Initialize OIT, SH light probes, and SDF scene
     m_OITManager = std::make_unique<Renderer::OITManager>();
-    auto extent = m_Renderer->GetSwapchainExtent();
-    if (!m_OITManager->Initialize(m_Renderer->GetContext(), extent.width, extent.height, m_Renderer->GetRenderPass())) {
+    auto extent = m_VulkanRenderer->GetSwapchainExtent();
+    if (!m_OITManager->Initialize(m_VulkanRenderer->GetContext(), extent.width, extent.height, m_VulkanRenderer->GetRenderPass())) {
         ENJIN_LOG_WARN(Renderer, "OITManager init failed, OIT disabled");
         m_OITManager.reset();
     }
 
     m_SHLighting = std::make_unique<Renderer::SHLightingSystem>();
     m_ReflectionProbes = std::make_unique<Renderer::ReflectionProbeSystem>();
-    m_ReflectionProbes->Initialize(m_Renderer->GetContext());
+    m_ReflectionProbes->Initialize(m_VulkanRenderer->GetContext());
     m_SDFScene = std::make_unique<Renderer::SDFScene>();
 
     // Per-frame linear allocator: 8 MB supports ~100K entities x 128B each
@@ -451,8 +544,8 @@ void RenderSystem::Initialize() {
     // Initialize clustered forward lighting system
 #ifdef ENJIN_CLUSTERED_LIGHTING
     {
-        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
-        m_ClusteredLighting = std::make_unique<Renderer::ClusteredLightingSystem>(m_Renderer->GetContext());
+        VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
+        m_ClusteredLighting = std::make_unique<Renderer::ClusteredLightingSystem>(m_VulkanRenderer->GetContext());
         if (!m_ClusteredLighting->Initialize(extent.width, extent.height)) {
             ENJIN_LOG_WARN(Renderer, "Clustered lighting init failed — falling back to brute-force");
             m_ClusteredLighting.reset();
@@ -463,9 +556,9 @@ void RenderSystem::Initialize() {
     // Initialize visibility buffer renderer
 #ifdef ENJIN_VISIBILITY_BUFFER
     {
-        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
-        m_VisibilityBuffer = std::make_unique<Renderer::VisibilityBufferRenderer>(m_Renderer->GetContext());
-        if (!m_VisibilityBuffer->Initialize(extent.width, extent.height, m_Renderer->GetRenderPass())) {
+        VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
+        m_VisibilityBuffer = std::make_unique<Renderer::VisibilityBufferRenderer>(m_VulkanRenderer->GetContext());
+        if (!m_VisibilityBuffer->Initialize(extent.width, extent.height, m_VulkanRenderer->GetRenderPass())) {
             ENJIN_LOG_WARN(Renderer, "Visibility buffer init failed — using standard forward path");
             m_VisibilityBuffer.reset();
         }
@@ -474,9 +567,9 @@ void RenderSystem::Initialize() {
 
     // Initialize variable rate shading
 #ifdef ENJIN_VRS
-    if (m_Renderer->GetContext()->IsVRSSupported()) {
-        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
-        m_VRS = std::make_unique<Renderer::VariableRateShading>(m_Renderer->GetContext());
+    if (m_VulkanRenderer->GetContext()->IsVRSSupported()) {
+        VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
+        m_VRS = std::make_unique<Renderer::VariableRateShading>(m_VulkanRenderer->GetContext());
         if (!m_VRS->Initialize(extent.width, extent.height)) {
             ENJIN_LOG_WARN(Renderer, "VRS init failed — shading rate control disabled");
             m_VRS.reset();
@@ -497,8 +590,8 @@ void RenderSystem::OnSceneClear() {
 
 void RenderSystem::FlushSceneClear() {
     // Wait for in-flight GPU work before invalidating any resources
-    if (m_Renderer && m_Renderer->GetContext()) {
-        m_Renderer->GetContext()->WaitForGPU();
+    if (m_Renderer && m_VulkanRenderer->GetContext()) {
+        m_VulkanRenderer->GetContext()->WaitForGPU();
     }
 
     m_EntityRenderData.clear();
@@ -536,13 +629,13 @@ void RenderSystem::Shutdown() {
     }
 
     // Wait for GPU to finish (fence-based when renderer is active)
-    if (m_Renderer && m_Renderer->GetContext()) {
-        m_Renderer->GetContext()->WaitForGPU();
+    if (m_Renderer && m_VulkanRenderer->GetContext()) {
+        m_VulkanRenderer->GetContext()->WaitForGPU();
     }
 
     // Clean up descriptor pool
-    if (m_DescriptorPool != VK_NULL_HANDLE && m_Renderer->GetContext()) {
-        vkDestroyDescriptorPool(m_Renderer->GetContext()->GetDevice(), m_DescriptorPool, nullptr);
+    if (m_DescriptorPool != VK_NULL_HANDLE && m_VulkanRenderer->GetContext()) {
+        vkDestroyDescriptorPool(m_VulkanRenderer->GetContext()->GetDevice(), m_DescriptorPool, nullptr);
         m_DescriptorPool = VK_NULL_HANDLE;
     }
 
@@ -617,8 +710,8 @@ void RenderSystem::Shutdown() {
     // Clean up skybox resources
     m_SkyboxVertexBuffer.reset();
     m_SkyboxUniformBuffers.clear();
-    if (m_Renderer->GetContext()) {
-        VkDevice device = m_Renderer->GetContext()->GetDevice();
+    if (m_VulkanRenderer->GetContext()) {
+        VkDevice device = m_VulkanRenderer->GetContext()->GetDevice();
         if (m_SkyboxPipelineHandle != VK_NULL_HANDLE) {
             vkDestroyPipeline(device, m_SkyboxPipelineHandle, nullptr);
             m_SkyboxPipelineHandle = VK_NULL_HANDLE;
@@ -683,7 +776,7 @@ void RenderSystem::ProcessPendingRecreation() {
     if (m_PendingRecreation == PendingRecreationType::None) return;
 
     // Wait for all in-flight frames to finish (2 fences, fast)
-    m_Renderer->WaitForAllFrames();
+    m_VulkanRenderer->WaitForAllFrames();
 
     switch (m_PendingRecreation) {
         case PendingRecreationType::PipelineOnly:
@@ -696,7 +789,7 @@ void RenderSystem::ProcessPendingRecreation() {
             ENJIN_LOG_INFO(Renderer, "Shader hot-reload: main shaders reloaded successfully");
             break;
         case PendingRecreationType::SkyboxShader: {
-            VkDevice device = m_Renderer->GetContext()->GetDevice();
+            VkDevice device = m_VulkanRenderer->GetContext()->GetDevice();
             if (m_SkyboxPipelineHandle != VK_NULL_HANDLE) {
                 vkDestroyPipeline(device, m_SkyboxPipelineHandle, nullptr);
                 m_SkyboxPipelineHandle = VK_NULL_HANDLE;
@@ -754,7 +847,7 @@ void RenderSystem::FlushPendingChanges() {
     if (m_PendingSkyboxConfig) {
         m_PendingSkyboxConfig = false;
         if (m_Skybox.IsValid()) {
-            m_Renderer->WaitForAllFrames();
+            m_VulkanRenderer->WaitForAllFrames();
         }
         m_Skybox.SetConfig(m_PendingSkybox);
     }
@@ -762,7 +855,7 @@ void RenderSystem::FlushPendingChanges() {
     // Process pending reflection probe bakes — renders 6 faces per probe.
     // Safe to do here because no frame is in progress yet.
     if (m_ReflectionProbes && m_ReflectionProbes->HasPendingBake()) {
-        m_Renderer->WaitForAllFrames();
+        m_VulkanRenderer->WaitForAllFrames();
         m_ReflectionProbes->ProcessPendingBakes(m_World, this);
         // Update descriptor binding 19 with the newly baked cubemap
         UpdateProbeCubemapDescriptor();
@@ -802,7 +895,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Begin async compute scheduler frame (reset per-frame state)
     if (m_AsyncComputeScheduler) {
-        m_AsyncComputeScheduler->BeginFrame(m_Renderer->GetCurrentFrameIndex());
+        m_AsyncComputeScheduler->BeginFrame(m_VulkanRenderer->GetCurrentFrameIndex());
     }
 
     // Reset material SSBO flag — will be rebuilt on first use this frame
@@ -829,7 +922,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Reset per-thread command buffer pools for this frame
     if (m_CmdBufferPool) {
-        m_CmdBufferPool->ResetFrame(m_Renderer->GetCurrentFrameIndex());
+        m_CmdBufferPool->ResetFrame(m_VulkanRenderer->GetCurrentFrameIndex());
     }
 
     // Poll texture and shader file watchers every 5 seconds (time-based, not frame-count).
@@ -1208,7 +1301,7 @@ void RenderSystem::Update(f32 deltaTime) {
     // start the main render pass so ImGui has a valid pass to draw into.
     if (m_SkipMainPassRendering) {
         m_SkipMainPassRendering = false;  // Consume for this frame (RenderOffscreen sets it each frame)
-        m_Renderer->BeginMainRenderPass();
+        m_VulkanRenderer->BeginMainRenderPass();
         return;
     }
 
@@ -1257,11 +1350,11 @@ void RenderSystem::Update(f32 deltaTime) {
     // Skipped in editor mode — the editor scene view shows all entities.
     if (m_GPUCullingEnabled && !m_IsEditorMode && !m_CullableObjects.empty()) {
         UploadObjectData();
-        if (m_Renderer->HasAsyncCompute() && m_Renderer->BeginComputeCommandBuffer()) {
+        if (m_VulkanRenderer->HasAsyncCompute() && m_VulkanRenderer->BeginComputeCommandBuffer()) {
             // Record culling on async compute queue
             PerformGPUCullingAsync();
-            m_Renderer->EndComputeCommandBuffer();
-            m_Renderer->SubmitCompute();
+            m_VulkanRenderer->EndComputeCommandBuffer();
+            m_VulkanRenderer->SubmitCompute();
         } else {
             // Fall back to graphics queue
             PerformGPUCulling();
@@ -1274,11 +1367,11 @@ void RenderSystem::Update(f32 deltaTime) {
     // TLAS rebuild stays on graphics (needs vertex/index buffer access).
     // Compositing is deferred until after main pass when compute results are ready.
     if (m_RTEnabled && m_ASManager && m_SceneComposition.mode == SceneRenderMode::Scene3D) {
-        VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+        VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
         if (commandBuffer != VK_NULL_HANDLE) {
             RebuildTLAS(commandBuffer);
 
-            u32 frameIdx = m_Renderer->GetCurrentFrameIndex();
+            u32 frameIdx = m_VulkanRenderer->GetCurrentFrameIndex();
             bool asyncRT = m_AsyncComputeScheduler &&
                            m_AsyncComputeScheduler->ShouldUseAsync(Renderer::AsyncComputeWorkType::RTDispatch);
 
@@ -1300,7 +1393,7 @@ void RenderSystem::Update(f32 deltaTime) {
     // Clustered forward lighting: build light list and assign to spatial clusters before main render pass
 #ifdef ENJIN_CLUSTERED_LIGHTING
     if (m_ClusteredLighting && !m_PlayerMode && m_SceneComposition.mode != SceneRenderMode::Scene2D && m_Camera) {
-        VkCommandBuffer cmdBuf = m_Renderer->GetCurrentCommandBuffer();
+        VkCommandBuffer cmdBuf = m_VulkanRenderer->GetCurrentCommandBuffer();
         if (cmdBuf != VK_NULL_HANDLE) {
             // Build ClusterLight array from cached light entities (reuse pre-allocated vector)
             std::vector<Renderer::ClusterLight> clusterLights;
@@ -1360,15 +1453,15 @@ void RenderSystem::Update(f32 deltaTime) {
     }
 
     // Begin the main render pass (after any pre-passes like shadows)
-    m_Renderer->BeginMainRenderPass();
+    m_VulkanRenderer->BeginMainRenderPass();
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
     // Splitscreen main pass: render each viewport separately
     if (!m_MainPassViewports.empty()) {
-        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
-        u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+        VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
+        u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
         Renderer::Camera* prevCamera = m_Camera;
 
         // Switch to offscreen buffers for per-viewport uniform isolation
@@ -1591,7 +1684,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // GPU timestamp: main geometry begin
     {
-        VkQueryPool tsPool = m_Renderer->GetTimestampPool(m_Renderer->GetCurrentFrameIndex());
+        VkQueryPool tsPool = m_VulkanRenderer->GetTimestampPool(m_VulkanRenderer->GetCurrentFrameIndex());
         if (tsPool != VK_NULL_HANDLE) {
             vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, tsPool, Renderer::GPU_TS_MAIN_BEGIN);
         }
@@ -1600,7 +1693,7 @@ void RenderSystem::Update(f32 deltaTime) {
     // Render skybox first (behind all geometry)
     RenderSkybox(commandBuffer);
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     // Bind pipeline, descriptor set, viewport, and scissor once for all entities
     m_Pipeline->Bind(commandBuffer);
@@ -1617,7 +1710,7 @@ void RenderSystem::Update(f32 deltaTime) {
         }
     }
 
-    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+    VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
@@ -1785,7 +1878,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // GPU timestamp: main geometry end
     {
-        VkQueryPool tsPool = m_Renderer->GetTimestampPool(m_Renderer->GetCurrentFrameIndex());
+        VkQueryPool tsPool = m_VulkanRenderer->GetTimestampPool(m_VulkanRenderer->GetCurrentFrameIndex());
         if (tsPool != VK_NULL_HANDLE) {
             vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, tsPool, Renderer::GPU_TS_MAIN_END);
         }
@@ -1813,7 +1906,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     m_OffscreenMode = true;
     m_CurrentViewportIndex = viewportIndex;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) {
         m_Camera = prevCamera;
         m_ActiveDescriptorSets = &m_DescriptorSets;
@@ -1826,7 +1919,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     // The render target's Begin/End are handled by the caller (EditorLayer::RenderOffscreen)
     // We just need to bind our pipeline and draw within the active render pass
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     u32 activeIdx = GetActiveBufferIndex(currentFrame);
     // Clamp shadow distance to match game camera far plane (keeps cascade splits consistent)
     f32 prevShadowDist = m_ShadowDistance;
@@ -2201,7 +2294,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             if (textComp && textComp->dirty && !textComp->fontPath.empty() && !textComp->text.empty()) {
                 auto pixels = m_TextRasterizer.Rasterize(*textComp);
                 if (!pixels.empty()) {
-                    auto textTex = std::make_shared<Renderer::Texture>(m_Renderer->GetContext());
+                    auto textTex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
                     if (textTex->CreateFromData(pixels.data(), textComp->textureWidth, textComp->textureHeight, 4)) {
                         m_TextTextureCache[entity] = textTex;
                     }
@@ -2246,7 +2339,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 usize boneCount = animComp->animator.GetSkeleton()
                     ? animComp->animator.GetSkeleton()->bones.size() : 0;
                 if (boneCount > 0) {
-                    renderData.boneBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+                    renderData.boneBuffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
                     if (!renderData.boneBuffer->Create(boneCount * sizeof(Math::Matrix4),
                                                         Renderer::BufferUsage::Storage, true)) {
                         renderData.boneBuffer.reset();
@@ -2493,7 +2586,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
     m_ActiveLightingBuffers = &m_OffscreenLightingBuffers;
     m_OffscreenMode = true;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) {
         m_Camera = prevCamera;
         m_ActiveDescriptorSets = &m_DescriptorSets;
@@ -2503,7 +2596,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         return;
     }
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     u32 targetW = target->GetWidth();
     u32 targetH = target->GetHeight();
 
@@ -2820,7 +2913,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
             if (textComp && textComp->dirty && !textComp->fontPath.empty() && !textComp->text.empty()) {
                 auto pixels = m_TextRasterizer.Rasterize(*textComp);
                 if (!pixels.empty()) {
-                    auto textTex = std::make_shared<Renderer::Texture>(m_Renderer->GetContext());
+                    auto textTex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
                     if (textTex->CreateFromData(pixels.data(), textComp->textureWidth, textComp->textureHeight, 4)) {
                         m_TextTextureCache[entity] = textTex;
                     }
@@ -3216,7 +3309,7 @@ void RenderSystem::PerformGPUCulling() {
     if (!m_GPUCulling || !m_GPUCullingEnabled || !m_Camera) return;
     if (m_CullableObjects.empty()) return;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
     // Submit objects for culling
@@ -3255,7 +3348,7 @@ void RenderSystem::PerformGPUCullingAsync() {
     if (!m_GPUCulling || !m_GPUCullingEnabled || !m_Camera) return;
     if (m_CullableObjects.empty()) return;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentComputeCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentComputeCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
     m_GPUCulling->SubmitObjects(m_CullableObjects);
@@ -3515,7 +3608,7 @@ void RenderSystem::DispatchRTEffectsAsync(u32 frameIndex) {
         frameIndex, Renderer::AsyncComputeWorkType::RTDispatch);
     if (computeCmd == VK_NULL_HANDLE) {
         // Fallback: run on graphics queue
-        VkCommandBuffer graphicsCmd = m_Renderer->GetCurrentCommandBuffer();
+        VkCommandBuffer graphicsCmd = m_VulkanRenderer->GetCurrentCommandBuffer();
         if (graphicsCmd != VK_NULL_HANDLE) {
             DispatchRTEffects(graphicsCmd);
             TemporalReuseRTOutputs(graphicsCmd);
@@ -3537,7 +3630,7 @@ void RenderSystem::DispatchRTEffectsAsync(u32 frameIndex) {
     // queue submit waits for compute completion before present.
     VkSemaphore computeSem = m_AsyncComputeScheduler->GetComputeFinishedSemaphore(frameIndex);
     if (computeSem != VK_NULL_HANDLE) {
-        m_Renderer->AddExternalWaitSemaphore(computeSem,
+        m_VulkanRenderer->AddExternalWaitSemaphore(computeSem,
             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
     }
 }
@@ -3551,7 +3644,7 @@ void RenderSystem::DenoiseRTOutputsAsync(u32 frameIndex) {
 
 void RenderSystem::CreatePipeline() {
     Renderer::PipelineConfig config;
-    config.renderPass = m_Renderer->GetRenderPass();
+    config.renderPass = m_VulkanRenderer->GetRenderPass();
     config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     config.depthTest = true;
     config.depthWrite = true;
@@ -3560,10 +3653,10 @@ void RenderSystem::CreatePipeline() {
     // Main pipeline always uses fill mode — wireframe only affects the offscreen
     // pipeline (scene view). Game view and Player always render filled.
     config.polygonMode = VK_POLYGON_MODE_FILL;
-    config.msaaSamples = m_Renderer->GetMSAASamples();
+    config.msaaSamples = m_VulkanRenderer->GetMSAASamples();
     config.colorAttachmentCount = 2; // Swapchain MRT: color + velocity (main pass only; offscreen uses 1)
 
-    m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
     if (m_BindlessManager) m_Pipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
     if (!m_Pipeline->Create(config, m_VertexShader.get(), m_FragmentShader.get())) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create graphics pipeline");
@@ -3587,7 +3680,7 @@ void RenderSystem::CreateShadowPipeline() {
     config.depthBiasSlope = 1.75f;     // Slope-scaled bias for angled surfaces
     config.hasColorAttachment = false;  // Depth-only pass
 
-    m_ShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    m_ShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
     if (m_BindlessManager) m_ShadowPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
     // Shadow shader uses push constants for MVP (avoids HOST_COHERENT UBO race).
     // Share descriptor set layout with main pipeline for compatibility.
@@ -3603,7 +3696,7 @@ void RenderSystem::CreateLinePipeline() {
     if (!m_Pipeline) return;
 
     Renderer::PipelineConfig config;
-    config.renderPass = m_Renderer->GetRenderPass();
+    config.renderPass = m_VulkanRenderer->GetRenderPass();
     config.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
     config.depthTest = true;
     config.depthWrite = false;
@@ -3611,10 +3704,10 @@ void RenderSystem::CreateLinePipeline() {
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.alphaBlend = true;
-    config.msaaSamples = m_Renderer->GetMSAASamples();
+    config.msaaSamples = m_VulkanRenderer->GetMSAASamples();
     config.colorAttachmentCount = 2; // MRT: must match render pass
 
-    m_LinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    m_LinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
     if (m_BindlessManager) m_LinePipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
     if (!m_LinePipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(),
             m_Pipeline->GetDescriptorSetLayout())) {
@@ -3627,17 +3720,17 @@ void RenderSystem::CreateOutlinePipeline() {
     if (!m_Pipeline || !m_OutlineVertexShader || !m_OutlineFragmentShader) return;
 
     Renderer::PipelineConfig config;
-    config.renderPass = m_Renderer->GetRenderPass();
+    config.renderPass = m_VulkanRenderer->GetRenderPass();
     config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     config.depthTest = true;
     config.depthWrite = true;
     config.cullMode = VK_CULL_MODE_FRONT_BIT;  // Front-face culling: renders backfaces only (inverted hull)
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
-    config.msaaSamples = m_Renderer->GetMSAASamples();
+    config.msaaSamples = m_VulkanRenderer->GetMSAASamples();
     config.colorAttachmentCount = 2; // Swapchain MRT: color + velocity (main pass only; offscreen uses 1) (must match render pass)
 
-    m_OutlinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    m_OutlinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
     if (m_BindlessManager) m_OutlinePipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
     if (!m_OutlinePipeline->CreateWithLayout(config, m_OutlineVertexShader.get(), m_OutlineFragmentShader.get(),
             m_Pipeline->GetDescriptorSetLayout())) {
@@ -3657,17 +3750,17 @@ void RenderSystem::CreateWireframeOverlayPipeline() {
     if (!m_Pipeline || !m_VertexShader || !m_OutlineFragmentShader) return;
 
     Renderer::PipelineConfig config;
-    config.renderPass = m_Renderer->GetRenderPass();
+    config.renderPass = m_VulkanRenderer->GetRenderPass();
     config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     config.depthTest = true;
     config.depthWrite = false;   // Don't write depth — overlay on top of existing geometry
     config.cullMode = VK_CULL_MODE_NONE;  // Show all edges
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_LINE;
-    config.msaaSamples = m_Renderer->GetMSAASamples();
+    config.msaaSamples = m_VulkanRenderer->GetMSAASamples();
     config.colorAttachmentCount = 2; // Match main render pass MRT
 
-    m_WireframeOverlayPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    m_WireframeOverlayPipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
     if (m_BindlessManager) m_WireframeOverlayPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
     if (!m_WireframeOverlayPipeline->CreateWithLayout(config, m_VertexShader.get(), m_OutlineFragmentShader.get(),
             m_Pipeline->GetDescriptorSetLayout())) {
@@ -3679,10 +3772,10 @@ void RenderSystem::CreateWireframeOverlayPipeline() {
 void RenderSystem::RenderWireframeOverlayPass() {
     if (!m_WireframeOverlayPipeline || !m_Renderer || !m_World) return;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     // Check if any entity has wireframe enabled — skip pass if none
     auto* meshRendererStorage = m_World->GetComponentStorage<MeshRendererComponent>();
@@ -3763,10 +3856,10 @@ void RenderSystem::RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 ver
                                     u32 firstVertex, const Math::Vector3& color, f32 opacity) {
     if (!m_LinePipeline || !m_Renderer || !vertexBuffer || vertexCount == 0) return;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     m_LinePipeline->Bind(commandBuffer);
 
@@ -3776,7 +3869,7 @@ void RenderSystem::RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 ver
             m_LinePipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &zeroOff);
     }
 
-    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+    VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;
@@ -3818,10 +3911,10 @@ void RenderSystem::RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 ver
                                     u32 targetWidth, u32 targetHeight) {
     if (!m_LinePipeline || !m_Renderer || !vertexBuffer || vertexCount == 0) return;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     // Use offscreen line pipeline (matches offscreen UNORM render pass)
     auto* linePL = m_OffscreenLinePipeline ? m_OffscreenLinePipeline.get() : m_LinePipeline.get();
@@ -3882,14 +3975,14 @@ void RenderSystem::CreateUniformBuffers() {
 
     for (u32 i = 0; i < framesInFlight; ++i) {
         // View/Projection uniform buffer (model matrix uses push constants now)
-        m_UniformBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+        m_UniformBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
         if (!m_UniformBuffers[i]->Create(sizeof(Renderer::UniformBufferObject), Renderer::BufferUsage::Uniform, true)) {
             ENJIN_LOG_ERROR(Renderer, "Failed to create uniform buffer %u", i);
             return;
         }
 
         // Lighting uniform buffer (multi-light support)
-        m_LightingBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+        m_LightingBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
         if (!m_LightingBuffers[i]->Create(sizeof(LightingUBO), Renderer::BufferUsage::Uniform, true)) {
             ENJIN_LOG_ERROR(Renderer, "Failed to create lighting buffer %u", i);
             return;
@@ -3899,7 +3992,7 @@ void RenderSystem::CreateUniformBuffers() {
         {
             if (m_MaterialSSBOStride == 0) {
                 VkPhysicalDeviceProperties devProps;
-                vkGetPhysicalDeviceProperties(m_Renderer->GetContext()->GetPhysicalDevice(), &devProps);
+                vkGetPhysicalDeviceProperties(m_VulkanRenderer->GetContext()->GetPhysicalDevice(), &devProps);
                 u32 minAlign = static_cast<u32>(devProps.limits.minStorageBufferOffsetAlignment);
                 if (minAlign == 0) minAlign = 16;
                 // Round sizeof(MaterialGPU) up to the required alignment
@@ -3907,7 +4000,7 @@ void RenderSystem::CreateUniformBuffers() {
                 m_MaterialSSBOCapacity = 256;  // Initial capacity (grows as needed)
             }
             usize bufferSize = static_cast<usize>(m_MaterialSSBOStride) * m_MaterialSSBOCapacity;
-            m_MaterialBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+            m_MaterialBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
             if (!m_MaterialBuffers[i]->Create(bufferSize, Renderer::BufferUsage::Storage, true)) {
                 ENJIN_LOG_ERROR(Renderer, "Failed to create material SSBO %u", i);
                 return;
@@ -3918,13 +4011,13 @@ void RenderSystem::CreateUniformBuffers() {
         for (u32 v = 0; v < MAX_SPLITSCREEN_VIEWPORTS; ++v) {
             u32 idx = GetOffscreenBufferIndex(i, v);
 
-            m_OffscreenUniformBuffers[idx] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+            m_OffscreenUniformBuffers[idx] = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
             if (!m_OffscreenUniformBuffers[idx]->Create(sizeof(Renderer::UniformBufferObject), Renderer::BufferUsage::Uniform, true)) {
                 ENJIN_LOG_ERROR(Renderer, "Failed to create offscreen uniform buffer %u (viewport %u)", i, v);
                 return;
             }
 
-            m_OffscreenLightingBuffers[idx] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+            m_OffscreenLightingBuffers[idx] = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
             if (!m_OffscreenLightingBuffers[idx]->Create(sizeof(LightingUBO), Renderer::BufferUsage::Uniform, true)) {
                 ENJIN_LOG_ERROR(Renderer, "Failed to create offscreen lighting buffer %u (viewport %u)", i, v);
                 return;
@@ -3951,9 +4044,9 @@ void RenderSystem::CreateDescriptorSets() {
     // toggles shadows for its scene view), and without this cleanup the old pool
     // is leaked AND m_OffscreenDescriptorSets is left dangling pointing into it,
     // which causes use-after-free crashes in the offscreen render path.
-    if (m_DescriptorPool != VK_NULL_HANDLE && m_Renderer && m_Renderer->GetContext()) {
-        m_Renderer->GetContext()->WaitForGPU();
-        vkDestroyDescriptorPool(m_Renderer->GetContext()->GetDevice(), m_DescriptorPool, nullptr);
+    if (m_DescriptorPool != VK_NULL_HANDLE && m_Renderer && m_VulkanRenderer->GetContext()) {
+        m_VulkanRenderer->GetContext()->WaitForGPU();
+        vkDestroyDescriptorPool(m_VulkanRenderer->GetContext()->GetDevice(), m_DescriptorPool, nullptr);
         m_DescriptorPool = VK_NULL_HANDLE;
         m_DescriptorSets.clear();
         m_OffscreenDescriptorSets.clear();
@@ -3977,7 +4070,7 @@ void RenderSystem::CreateDescriptorSets() {
     poolInfo.maxSets = totalSets;
 
     VkResult result = vkCreateDescriptorPool(
-        m_Renderer->GetContext()->GetDevice(), &poolInfo, nullptr, &m_DescriptorPool);
+        m_VulkanRenderer->GetContext()->GetDevice(), &poolInfo, nullptr, &m_DescriptorPool);
     if (result != VK_SUCCESS) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create descriptor pool: %d", result);
         return;
@@ -3994,7 +4087,7 @@ void RenderSystem::CreateDescriptorSets() {
     allocInfo.pSetLayouts = layouts.data();
 
     result = vkAllocateDescriptorSets(
-        m_Renderer->GetContext()->GetDevice(), &allocInfo, m_DescriptorSets.data());
+        m_VulkanRenderer->GetContext()->GetDevice(), &allocInfo, m_DescriptorSets.data());
     if (result != VK_SUCCESS) {
         ENJIN_LOG_ERROR(Renderer, "Failed to allocate descriptor sets: %d", result);
         return;
@@ -4343,7 +4436,7 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[20].descriptorCount = 1;
         descriptorWrites[20].pBufferInfo = &morphBufferInfo;
 
-        vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
+        vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(),
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 
@@ -4359,7 +4452,7 @@ void RenderSystem::CreateDescriptorSets() {
         offAllocInfo.pSetLayouts = offscreenLayouts.data();
 
         result = vkAllocateDescriptorSets(
-            m_Renderer->GetContext()->GetDevice(), &offAllocInfo, m_OffscreenDescriptorSets.data());
+            m_VulkanRenderer->GetContext()->GetDevice(), &offAllocInfo, m_OffscreenDescriptorSets.data());
         if (result != VK_SUCCESS) {
             ENJIN_LOG_ERROR(Renderer, "Failed to allocate offscreen descriptor sets: %d", result);
             return;
@@ -4525,7 +4618,7 @@ void RenderSystem::CreateDescriptorSets() {
                 offWrites[20].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
                 offWrites[20].pBufferInfo = &offMorphInfo;
 
-                vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
+                vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(),
                     static_cast<u32>(offWrites.size()), offWrites.data(), 0, nullptr);
             }
         }
@@ -4589,7 +4682,7 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
     }
 
     usize vertexBufferSize = mesh->vertices.size() * sizeof(MeshComponent::Vertex);
-    renderData.vertexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+    renderData.vertexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
     if (!renderData.vertexBuffer->Create(vertexBufferSize, vertexUsage, true)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create vertex buffer for entity %llu", entity);
         renderData.Invalidate();
@@ -4604,7 +4697,7 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
 
     // Create index buffer
     usize indexBufferSize = mesh->indices.size() * sizeof(u32);
-    renderData.indexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+    renderData.indexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
     if (!renderData.indexBuffer->Create(indexBufferSize, indexUsage, true)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create index buffer for entity %llu", entity);
         renderData.Invalidate();
@@ -4645,7 +4738,7 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
         usize boneCount = animComp->animator.GetSkeleton()->bones.size();
         if (boneCount > 0) {
             usize boneBufferSize = boneCount * sizeof(Math::Matrix4);
-            renderData.boneBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+            renderData.boneBuffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
             if (!renderData.boneBuffer->Create(boneBufferSize, Renderer::BufferUsage::Storage, true)) {
                 ENJIN_LOG_ERROR(Renderer, "Failed to create bone buffer for entity %llu", entity);
                 renderData.boneBuffer.reset();
@@ -4669,7 +4762,7 @@ void RenderSystem::UpdateProbeCubemapDescriptor() {
     VkDescriptorImageInfo cubemapInfo = m_ReflectionProbes->GetActiveBakedCubemapDescriptor();
     if (cubemapInfo.imageView == VK_NULL_HANDLE) return;
 
-    VkDevice device = m_Renderer->GetContext()->GetDevice();
+    VkDevice device = m_VulkanRenderer->GetContext()->GetDevice();
 
     // Update binding 19 in all active descriptor sets (main + offscreen)
     // Main pass descriptor sets
@@ -4707,7 +4800,7 @@ void RenderSystem::UpdateFrameUniforms() {
         return;
     }
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     // Update View/Projection UBO (shared across all objects)
     Renderer::UniformBufferObject ubo{};
@@ -4719,7 +4812,7 @@ void RenderSystem::UpdateFrameUniforms() {
     // matrix so each frame samples a slightly different sub-pixel position. Both TAA
     // and temporal upscalers (FSR 2, DLSS, XeSS) require jittered input.
     if (m_AAMode == 2 || m_UpscalerType > 0) { // TAA or temporal upscaler
-        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+        VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
         // When an upscaler is active, compute jitter relative to the lower render resolution
         // so that sub-pixel offsets are correctly sized for the internal rendering target.
         u32 jitterW = extent.width;
@@ -5056,7 +5149,7 @@ void RenderSystem::BuildMaterialSSBO() {
     if (m_MaterialSSBOBuilt) return;
     m_MaterialSSBOBuilt = true;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     // Collect all renderable entities and build material data
     const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
@@ -5091,8 +5184,8 @@ void RenderSystem::BuildMaterialSSBO() {
         if (newCapacity < 256) newCapacity = 256;
         usize bufferSize = static_cast<usize>(m_MaterialSSBOStride) * newCapacity;
 
-        m_Renderer->GetContext()->WaitForGPU();
-        m_MaterialBuffers[currentFrame] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+        m_VulkanRenderer->GetContext()->WaitForGPU();
+        m_MaterialBuffers[currentFrame] = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
         if (!m_MaterialBuffers[currentFrame]->Create(bufferSize, Renderer::BufferUsage::Storage, true)) {
             ENJIN_LOG_ERROR(Renderer, "Failed to grow material SSBO to %u entries", newCapacity);
             return;
@@ -5113,7 +5206,7 @@ void RenderSystem::BuildMaterialSSBO() {
         write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
         write.descriptorCount = 1;
         write.pBufferInfo = &bufInfo;
-        vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &write, 0, nullptr);
+        vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &write, 0, nullptr);
 
         // Also update offscreen descriptor sets that share this material buffer
         for (u32 v = 0; v < MAX_SPLITSCREEN_VIEWPORTS; ++v) {
@@ -5121,7 +5214,7 @@ void RenderSystem::BuildMaterialSSBO() {
             if (offIdx < m_OffscreenDescriptorSets.size()) {
                 VkWriteDescriptorSet offWrite = write;
                 offWrite.dstSet = m_OffscreenDescriptorSets[offIdx];
-                vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &offWrite, 0, nullptr);
+                vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &offWrite, 0, nullptr);
             }
         }
     }
@@ -5205,7 +5298,7 @@ void RenderSystem::UpdateMaterialBuffer(Entity entity) {
     // write directly to index 0 as a fallback.
     if (m_MaterialSSBOBuilt) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     MaterialGPU materialGPU;
     MaterialComponent* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
     if (material) {
@@ -5276,12 +5369,12 @@ void RenderSystem::SetShadowResolution(u32 r) {
 
 void RenderSystem::SetHDREnabled(bool enabled) {
     if (!m_Renderer) return;
-    if (m_Renderer->IsHDREnabled() == enabled) return;
+    if (m_VulkanRenderer->IsHDREnabled() == enabled) return;
 
     // VulkanRenderer::SetHDREnabled handles: swapchain recreate, render pass recreate,
     // framebuffer recreate, and notifies resize callbacks. After that, our pipelines
     // (which reference the render pass) must be recreated too.
-    m_Renderer->SetHDREnabled(enabled);
+    m_VulkanRenderer->SetHDREnabled(enabled);
     RecreatePipelines(true);  // GPU already idle from VulkanRenderer::SetHDREnabled
 }
 
@@ -5311,10 +5404,10 @@ void RenderSystem::ApplyPendingMSAAChange() {
     else if (m_AAMode == 5) samples = VK_SAMPLE_COUNT_4_BIT;
     else if (m_AAMode == 6) samples = VK_SAMPLE_COUNT_8_BIT;
 
-    if (!m_Renderer->SetMSAASamples(samples)) {
+    if (!m_VulkanRenderer->SetMSAASamples(samples)) {
         ENJIN_LOG_WARN(Renderer, "MSAA %dx not supported, reverting to no MSAA", static_cast<int>(samples));
         m_AAMode = 0;  // Fall back to no AA
-        m_Renderer->SetMSAASamples(VK_SAMPLE_COUNT_1_BIT);
+        m_VulkanRenderer->SetMSAASamples(VK_SAMPLE_COUNT_1_BIT);
     }
 
     // Render pass changed — all pipelines must be recreated
@@ -5327,8 +5420,8 @@ void RenderSystem::ApplyPendingMSAAChange() {
 }
 
 u32 RenderSystem::GetMaxMSAASamples() const {
-    if (!m_Renderer || !m_Renderer->GetContext()) return 1;
-    return static_cast<u32>(m_Renderer->GetContext()->GetMaxUsableSampleCount());
+    if (!m_Renderer || !m_VulkanRenderer->GetContext()) return 1;
+    return static_cast<u32>(m_VulkanRenderer->GetContext()->GetMaxUsableSampleCount());
 }
 
 void RenderSystem::RecreatePipelines(bool gpuAlreadyIdle) {
@@ -5337,7 +5430,7 @@ void RenderSystem::RecreatePipelines(bool gpuAlreadyIdle) {
     // Wait for GPU to finish all in-flight work before destroying pipelines
     // Skip if caller guarantees GPU is already idle (e.g., deferred recreation already waited)
     if (!gpuAlreadyIdle && m_Renderer) {
-        m_Renderer->WaitForAllFrames();
+        m_VulkanRenderer->WaitForAllFrames();
     }
 
     // Destroy all pipelines that share the descriptor set layout
@@ -5352,8 +5445,8 @@ void RenderSystem::RecreatePipelines(bool gpuAlreadyIdle) {
     m_Pipeline.reset();
 
     // Destroy old descriptor pool (implicitly frees all descriptor sets allocated from it)
-    if (m_DescriptorPool != VK_NULL_HANDLE && m_Renderer && m_Renderer->GetContext()) {
-        vkDestroyDescriptorPool(m_Renderer->GetContext()->GetDevice(), m_DescriptorPool, nullptr);
+    if (m_DescriptorPool != VK_NULL_HANDLE && m_Renderer && m_VulkanRenderer->GetContext()) {
+        vkDestroyDescriptorPool(m_VulkanRenderer->GetContext()->GetDevice(), m_DescriptorPool, nullptr);
         m_DescriptorPool = VK_NULL_HANDLE;
         m_DescriptorSets.clear();
     }
@@ -5516,13 +5609,13 @@ void RenderSystem::ReloadMainShaders(const std::string& changedFile) {
     }
 
     // Compile to temporary shaders — if either fails, keep existing
-    auto tempVert = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    auto tempVert = std::make_unique<Renderer::VulkanShader>(m_VulkanRenderer->GetContext());
     if (!tempVert->CompileFromGLSL(vertSource, VK_SHADER_STAGE_VERTEX_BIT)) {
         ENJIN_LOG_ERROR(Renderer, "Shader hot-reload: triangle.vert compilation failed, keeping old shader");
         return;
     }
 
-    auto tempFrag = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    auto tempFrag = std::make_unique<Renderer::VulkanShader>(m_VulkanRenderer->GetContext());
     if (!tempFrag->CompileFromGLSL(fragSource, VK_SHADER_STAGE_FRAGMENT_BIT)) {
         ENJIN_LOG_ERROR(Renderer, "Shader hot-reload: triangle.frag compilation failed, keeping old shader");
         return;
@@ -5548,13 +5641,13 @@ void RenderSystem::ReloadSkyboxShaders() {
         return;
     }
 
-    auto tempVert = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    auto tempVert = std::make_unique<Renderer::VulkanShader>(m_VulkanRenderer->GetContext());
     if (!tempVert->CompileFromGLSL(vertSource, VK_SHADER_STAGE_VERTEX_BIT)) {
         ENJIN_LOG_ERROR(Renderer, "Shader hot-reload: skybox.vert compilation failed");
         return;
     }
 
-    auto tempFrag = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    auto tempFrag = std::make_unique<Renderer::VulkanShader>(m_VulkanRenderer->GetContext());
     if (!tempFrag->CompileFromGLSL(fragSource, VK_SHADER_STAGE_FRAGMENT_BIT)) {
         ENJIN_LOG_ERROR(Renderer, "Shader hot-reload: skybox.frag compilation failed");
         return;
@@ -5577,7 +5670,7 @@ void RenderSystem::ReloadShadowShaders() {
     }
 
     // Shadow pipeline uses the main vertex shader — compile and test
-    auto tempVert = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    auto tempVert = std::make_unique<Renderer::VulkanShader>(m_VulkanRenderer->GetContext());
     if (!tempVert->CompileFromGLSL(vertSource, VK_SHADER_STAGE_VERTEX_BIT)) {
         ENJIN_LOG_ERROR(Renderer, "Shader hot-reload: shadow.vert compilation failed");
         return;
@@ -5646,7 +5739,7 @@ void RenderSystem::RenderEntity(Entity entity) {
     EntityRenderData& renderData = *pRD;
 
     // Get command buffer
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) {
         return;
     }
@@ -5655,12 +5748,12 @@ void RenderSystem::RenderEntity(Entity entity) {
     if (m_MaterialSSBOBuilt) {
         u32 matIdx = GetMaterialIndex(entity);
         u32 dynOffset = matIdx * m_MaterialSSBOStride;
-        u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+        u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
             m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &dynOffset);
     } else {
         UpdateMaterialBuffer(entity);
-        u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+        u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
         u32 zeroOffset = 0;
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
             m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &zeroOffset);
@@ -5907,7 +6000,7 @@ void RenderSystem::RenderEntity(Entity entity) {
     if (textComp && textComp->dirty && !textComp->fontPath.empty() && !textComp->text.empty()) {
         auto pixels = m_TextRasterizer.Rasterize(*textComp);
         if (!pixels.empty()) {
-            auto textTex = std::make_shared<Renderer::Texture>(m_Renderer->GetContext());
+            auto textTex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
             if (textTex->CreateFromData(pixels.data(), textComp->textureWidth, textComp->textureHeight, 4)) {
                 m_TextTextureCache[entity] = textTex;
             }
@@ -5980,7 +6073,7 @@ void RenderSystem::RenderEntityGhost(Entity entity, const Math::Matrix4& modelMa
     if (!pRD) return;
     EntityRenderData& renderData = *pRD;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
     // Build ghost push constants — override baseColor with tint, set opacity for transparency
@@ -6009,7 +6102,7 @@ void RenderSystem::RenderEntityGhost(Entity entity, const Math::Matrix4& modelMa
 
         // Lazily create or grow the reusable ghost bone buffer
         if (!m_GhostBoneBuffer || m_GhostBoneBufferCapacity < requiredSize) {
-            m_GhostBoneBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+            m_GhostBoneBuffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
             if (m_GhostBoneBuffer->Create(requiredSize, Renderer::BufferUsage::Storage, true)) {
                 m_GhostBoneBufferCapacity = requiredSize;
             } else {
@@ -6074,10 +6167,10 @@ void RenderSystem::RenderOnionSkinGhosts() {
 void RenderSystem::RenderOutlinePass() {
     if (!m_OutlinePipeline || !m_GeometryOutlinesEnabled || !m_Renderer || !m_World) return;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     m_OutlinePipeline->Bind(commandBuffer);
     {
@@ -6168,10 +6261,10 @@ void RenderSystem::RenderOutlinePass() {
 void RenderSystem::RenderOutlinePassForTarget() {
     if (!m_OutlinePipeline || !m_GeometryOutlinesEnabled || !m_Renderer || !m_World) return;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     // Use offscreen outline pipeline (matches offscreen UNORM render pass)
     auto* outlinePL = m_OffscreenOutlinePipeline ? m_OffscreenOutlinePipeline.get() : m_OutlinePipeline.get();
@@ -6260,10 +6353,10 @@ void RenderSystem::RenderOutlinePassForTarget() {
 void RenderSystem::RenderSprites() {
     if (!m_Pipeline || !m_Renderer || !m_World) return;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     // Render tilemaps first (layer -1000, behind sprites) via the per-entity path
     // Tilemaps are complex meshes that don't benefit from instance batching — render directly
@@ -6368,12 +6461,12 @@ bool RenderSystem::ShouldUpdateCascade(u32 cascade) const {
 void RenderSystem::RenderShadowPass() {
     if (!m_ShadowMap || !m_ShadowPipeline) return;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
     // GPU timestamp: shadow pass begin
     {
-        VkQueryPool tsPool = m_Renderer->GetTimestampPool(m_Renderer->GetCurrentFrameIndex());
+        VkQueryPool tsPool = m_VulkanRenderer->GetTimestampPool(m_VulkanRenderer->GetCurrentFrameIndex());
         if (tsPool != VK_NULL_HANDLE) {
             vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, tsPool, Renderer::GPU_TS_SHADOW_BEGIN);
         }
@@ -6417,7 +6510,7 @@ void RenderSystem::RenderShadowPass() {
             lightDir);
     }
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     // Render each cascade
     for (u32 cascade = 0; cascade < m_ShadowMap->GetCascadeCount(); ++cascade) {
@@ -6461,7 +6554,7 @@ void RenderSystem::RenderShadowPass() {
         if (useParallelShadow) {
             u32 threadCount = m_ThreadPool.GetThreadCount();
             u32 chunkSize = (casterCount + threadCount - 1) / threadCount;
-            u32 frameIdx = m_Renderer->GetCurrentFrameIndex();
+            u32 frameIdx = m_VulkanRenderer->GetCurrentFrameIndex();
 
             std::vector<std::future<void>> futures;
             std::vector<VkCommandBuffer> secondaryBuffers(threadCount, VK_NULL_HANDLE);
@@ -6530,7 +6623,7 @@ void RenderSystem::RenderShadowPass() {
 
     // GPU timestamp: shadow pass end
     {
-        VkQueryPool tsPool = m_Renderer->GetTimestampPool(m_Renderer->GetCurrentFrameIndex());
+        VkQueryPool tsPool = m_VulkanRenderer->GetTimestampPool(m_VulkanRenderer->GetCurrentFrameIndex());
         if (tsPool != VK_NULL_HANDLE) {
             vkCmdWriteTimestamp(commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, tsPool, Renderer::GPU_TS_SHADOW_END);
         }
@@ -6650,7 +6743,7 @@ void RenderSystem::CreatePointShadowPipeline() {
     config.depthBiasSlope = 1.75f;
     config.hasColorAttachment = false;
 
-    m_PointShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    m_PointShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
     if (m_BindlessManager) m_PointShadowPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
     if (!m_PointShadowPipeline->CreateWithLayout(config, m_ShadowVertexShader.get(), nullptr,
             m_Pipeline->GetDescriptorSetLayout())) {
@@ -6675,7 +6768,7 @@ void RenderSystem::CreateSpotShadowPipeline() {
     config.depthBiasSlope = 1.5f;
     config.hasColorAttachment = false;
 
-    m_SpotShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    m_SpotShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
     if (m_BindlessManager) m_SpotShadowPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
     if (!m_SpotShadowPipeline->CreateWithLayout(config, m_ShadowVertexShader.get(), nullptr,
             m_Pipeline->GetDescriptorSetLayout())) {
@@ -6729,10 +6822,10 @@ void RenderSystem::SelectShadowLights() {
 }
 
 void RenderSystem::RenderPointShadowPass() {
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     if (m_ShadowCastersDirty) {
         RebuildShadowCasterCache();
@@ -6766,10 +6859,10 @@ void RenderSystem::RenderPointShadowPass() {
 }
 
 void RenderSystem::RenderSpotShadowPass() {
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     if (m_ShadowCastersDirty) {
         RebuildShadowCasterCache();
@@ -6819,9 +6912,9 @@ std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::str
     // Load new texture (SVG or raster)
     std::shared_ptr<Renderer::Texture> texture;
     if (Renderer::SVGLoader::IsSVGFile(path)) {
-        texture = Renderer::SVGLoader::LoadAsTexture(m_Renderer->GetContext(), path);
+        texture = Renderer::SVGLoader::LoadAsTexture(m_VulkanRenderer->GetContext(), path);
     } else {
-        texture = std::make_shared<Renderer::Texture>(m_Renderer->GetContext());
+        texture = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
         if (!texture->LoadFromFile(path)) {
             texture = nullptr;
         }
@@ -6855,7 +6948,7 @@ std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::str
         ENJIN_LOG_INFO(Renderer, "Texture changed, reloading: %s", changedPath.c_str());
         auto pathIt = m_TexturePathToId.find(changedPath);
         if (pathIt != m_TexturePathToId.end()) {
-            auto newTex = std::make_shared<Renderer::Texture>(m_Renderer->GetContext());
+            auto newTex = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
             if (newTex->LoadFromFile(changedPath)) {
                 m_TextureById[pathIt->second] = newTex;
                 // Invalidate cached raw pointers on all materials referencing this texture
@@ -6885,7 +6978,7 @@ void RenderSystem::UpdateTextureDescriptor(Renderer::Texture* texture) {
         return;
     }
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     // Update binding 3 (base color texture) with the new texture
     VkDescriptorImageInfo imageInfo = texture->GetDescriptorInfo();
@@ -6899,7 +6992,7 @@ void RenderSystem::UpdateTextureDescriptor(Renderer::Texture* texture) {
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pImageInfo = &imageInfo;
 
-    vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
 }
 
 void RenderSystem::UpdateHeightTextureDescriptor(Renderer::Texture* texture) {
@@ -6907,7 +7000,7 @@ void RenderSystem::UpdateHeightTextureDescriptor(Renderer::Texture* texture) {
         return;
     }
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     VkDescriptorImageInfo imageInfo = texture->GetDescriptorInfo();
 
@@ -6920,7 +7013,7 @@ void RenderSystem::UpdateHeightTextureDescriptor(Renderer::Texture* texture) {
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pImageInfo = &imageInfo;
 
-    vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
 }
 
 void RenderSystem::UpdateNormalMapDescriptor(Renderer::Texture* texture) {
@@ -6928,7 +7021,7 @@ void RenderSystem::UpdateNormalMapDescriptor(Renderer::Texture* texture) {
         return;
     }
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     VkDescriptorImageInfo imageInfo = texture->GetDescriptorInfo();
 
@@ -6941,13 +7034,13 @@ void RenderSystem::UpdateNormalMapDescriptor(Renderer::Texture* texture) {
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pImageInfo = &imageInfo;
 
-    vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
 }
 
 void RenderSystem::UpdateMetallicRoughnessDescriptor(Renderer::Texture* texture) {
     if (!texture || !texture->IsValid()) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     VkDescriptorImageInfo imageInfo = texture->GetDescriptorInfo();
 
     VkWriteDescriptorSet descriptorWrite{};
@@ -6959,13 +7052,13 @@ void RenderSystem::UpdateMetallicRoughnessDescriptor(Renderer::Texture* texture)
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pImageInfo = &imageInfo;
 
-    vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
 }
 
 void RenderSystem::UpdateEmissiveDescriptor(Renderer::Texture* texture) {
     if (!texture || !texture->IsValid()) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     VkDescriptorImageInfo imageInfo = texture->GetDescriptorInfo();
 
     VkWriteDescriptorSet descriptorWrite{};
@@ -6977,7 +7070,7 @@ void RenderSystem::UpdateEmissiveDescriptor(Renderer::Texture* texture) {
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pImageInfo = &imageInfo;
 
-    vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
 }
 
 void RenderSystem::UpdateEntityTextureDescriptors(
@@ -6992,9 +7085,9 @@ void RenderSystem::UpdateEntityTextureDescriptors(
     // textures are indexed via MaterialSSBO handles instead.
     if (m_BindlessManager) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     VkDescriptorSet dstSet = (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)];
-    VkDevice device = m_Renderer->GetContext()->GetDevice();
+    VkDevice device = m_VulkanRenderer->GetContext()->GetDevice();
 
     // Use default white texture for any nullptr slots
     Renderer::Texture* defaultTex = m_DefaultWhiteTexture.get();
@@ -7084,7 +7177,7 @@ void RenderSystem::UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer) {
     if (boneBuffer == m_LastBound.boneBuffer) return;
     m_LastBound.boneBuffer = boneBuffer;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     VkDescriptorBufferInfo bufferInfo{};
     bufferInfo.buffer = boneBuffer->GetBuffer();
@@ -7100,7 +7193,7 @@ void RenderSystem::UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer) {
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pBufferInfo = &bufferInfo;
 
-    vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
+    vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
 }
 
 void RenderSystem::UpdateMorphDescriptor(Renderer::VulkanBuffer* morphBuffer) {
@@ -7108,7 +7201,7 @@ void RenderSystem::UpdateMorphDescriptor(Renderer::VulkanBuffer* morphBuffer) {
     if (morphBuffer == m_LastBound.morphBuffer) return;
     m_LastBound.morphBuffer = morphBuffer;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     VkDescriptorBufferInfo bufferInfo{};
     bufferInfo.buffer = morphBuffer->GetBuffer();
     bufferInfo.offset = 0;
@@ -7122,7 +7215,7 @@ void RenderSystem::UpdateMorphDescriptor(Renderer::VulkanBuffer* morphBuffer) {
     write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     write.descriptorCount = 1;
     write.pBufferInfo = &bufferInfo;
-    vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &write, 0, nullptr);
+    vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &write, 0, nullptr);
 }
 
 void RenderSystem::UploadMorphTargetSSBO(Entity entity, ECS::MorphTargetComponent& morph, EntityRenderData& rd) {
@@ -7137,7 +7230,7 @@ void RenderSystem::UploadMorphTargetSSBO(Entity entity, ECS::MorphTargetComponen
     usize totalBytes = totalFloats * sizeof(f32);
 
     if (!rd.morphBuffer || rd.morphBuffer->GetSize() < totalBytes) {
-        rd.morphBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+        rd.morphBuffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
         if (!rd.morphBuffer->Create(totalBytes, Renderer::BufferUsage::Storage, true)) {
             rd.morphBuffer.reset();
             return;
@@ -7311,10 +7404,10 @@ void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& weather,
                                            u32 viewportWidth, u32 viewportHeight) {
     if (!m_WeatherRenderer || !m_Renderer || !m_Initialized || !m_ActiveDescriptorSets) return;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     m_WeatherRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
                               GetActiveBufferIndex(currentFrame), weather, isRain,
                               viewportWidth, viewportHeight);
@@ -7323,10 +7416,10 @@ void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& weather,
 void RenderSystem::RenderParticles(u32 viewportWidth, u32 viewportHeight) {
     if (!m_ParticleRenderer || !m_Renderer || !m_Initialized || !m_World || !m_ActiveDescriptorSets) return;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     m_ParticleRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
                                GetActiveBufferIndex(currentFrame), m_World,
                                viewportWidth, viewportHeight);
@@ -7337,10 +7430,10 @@ void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem& elem
     if (!m_ParticleRenderer || !m_Renderer || !m_Initialized || !m_ActiveDescriptorSets) return;
     if (elementalSystem.GetActiveCount() == 0) return;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     m_ParticleRenderer->RenderElementalParticles(commandBuffer, *m_ActiveDescriptorSets,
                                                   GetActiveBufferIndex(currentFrame), elementalSystem,
                                                   viewportWidth, viewportHeight);
@@ -7349,10 +7442,10 @@ void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem& elem
 void RenderSystem::RenderFluid(u32 viewportWidth, u32 viewportHeight) {
     if (!m_FluidRenderer || !m_Renderer || !m_Initialized || !m_World || !m_ActiveDescriptorSets) return;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     m_FluidRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
                              GetActiveBufferIndex(currentFrame), m_World,
                              viewportWidth, viewportHeight);
@@ -7367,10 +7460,10 @@ void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* sim) {
 void RenderSystem::RenderGrass(u32 viewportWidth, u32 viewportHeight) {
     if (!m_GrassRenderer || !m_Renderer || !m_Initialized || !m_World || !m_ActiveDescriptorSets) return;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     m_GrassRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
                             GetActiveBufferIndex(currentFrame), m_World,
                             viewportWidth, viewportHeight);
@@ -7379,10 +7472,10 @@ void RenderSystem::RenderGrass(u32 viewportWidth, u32 viewportHeight) {
 void RenderSystem::RenderShrubs(u32 viewportWidth, u32 viewportHeight) {
     if (!m_ShrubRenderer || !m_Renderer || !m_Initialized || !m_World || !m_ActiveDescriptorSets) return;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     m_ShrubRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
                             GetActiveBufferIndex(currentFrame), m_World,
                             viewportWidth, viewportHeight);
@@ -7391,10 +7484,10 @@ void RenderSystem::RenderShrubs(u32 viewportWidth, u32 viewportHeight) {
 void RenderSystem::RenderTrees(u32 viewportWidth, u32 viewportHeight) {
     if (!m_TreeRenderer || !m_Renderer || !m_Initialized || !m_World || !m_ActiveDescriptorSets) return;
 
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     m_TreeRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
                            GetActiveBufferIndex(currentFrame), m_World,
                            viewportWidth, viewportHeight);
@@ -7441,7 +7534,7 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         config.msaaSamples = VK_SAMPLE_COUNT_1_BIT;  // Offscreen RT is always 1 sample
         config.colorAttachmentCount = 1; // Single color output (no MRT velocity — avoids NVIDIA teal)
 
-        m_OffscreenPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+        m_OffscreenPipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
     if (m_BindlessManager) m_OffscreenPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
         if (!m_OffscreenPipeline->Create(config, m_VertexShader.get(), m_FragmentShader.get())) {
             ENJIN_LOG_ERROR(Renderer, "Failed to create offscreen pipeline");
@@ -7463,7 +7556,7 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         config.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
         config.colorAttachmentCount = 1;
 
-        m_OffscreenLinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+        m_OffscreenLinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
     if (m_BindlessManager) m_OffscreenLinePipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
         if (!m_OffscreenLinePipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(), layout)) {
             ENJIN_LOG_WARN(Renderer, "Failed to create offscreen line pipeline");
@@ -7484,7 +7577,7 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         config.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
         config.colorAttachmentCount = 1;
 
-        m_OffscreenOutlinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+        m_OffscreenOutlinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
     if (m_BindlessManager) m_OffscreenOutlinePipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
         if (!m_OffscreenOutlinePipeline->CreateWithLayout(config, m_OutlineVertexShader.get(), m_OutlineFragmentShader.get(), layout)) {
             ENJIN_LOG_WARN(Renderer, "Failed to create offscreen outline pipeline");
@@ -7523,7 +7616,7 @@ void RenderSystem::CreateSkyboxCubeVBO() {
          1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f,-1.0f,
     };
 
-    m_SkyboxVertexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+    m_SkyboxVertexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
     if (!m_SkyboxVertexBuffer->Create(sizeof(cubeVertices), Renderer::BufferUsage::Vertex, true)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create skybox VBO");
         m_SkyboxVertexBuffer.reset();
@@ -7535,12 +7628,12 @@ void RenderSystem::CreateSkyboxCubeVBO() {
 void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
     ENJIN_LOG_INFO(Renderer, "CreateSkyboxPipeline called");
 
-    if (!m_Renderer || !m_Renderer->GetContext()) {
+    if (!m_Renderer || !m_VulkanRenderer->GetContext()) {
         ENJIN_LOG_ERROR(Renderer, "CreateSkyboxPipeline: No renderer or context!");
         return;
     }
 
-    auto* context = m_Renderer->GetContext();
+    auto* context = m_VulkanRenderer->GetContext();
     VkDevice device = context->GetDevice();
 
     // Load skybox shaders
@@ -7635,7 +7728,7 @@ void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
 
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.rasterizationSamples = m_Renderer->GetMSAASamples();
+    multisampling.rasterizationSamples = m_VulkanRenderer->GetMSAASamples();
 
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -7686,7 +7779,7 @@ void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = m_SkyboxPipelineLayoutHandle;
-    pipelineInfo.renderPass = (renderPass != VK_NULL_HANDLE) ? renderPass : m_Renderer->GetRenderPass();
+    pipelineInfo.renderPass = (renderPass != VK_NULL_HANDLE) ? renderPass : m_VulkanRenderer->GetRenderPass();
     pipelineInfo.subpass = 0;
 
     if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_SkyboxPipelineHandle) != VK_SUCCESS) {
@@ -7731,7 +7824,7 @@ void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
     // Create UBOs for skybox viewProj matrix
     m_SkyboxUniformBuffers.resize(framesInFlight);
     for (u32 i = 0; i < framesInFlight; ++i) {
-        m_SkyboxUniformBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+        m_SkyboxUniformBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
         m_SkyboxUniformBuffers[i]->Create(sizeof(Math::Matrix4), Renderer::BufferUsage::Uniform, true);
     }
 
@@ -7745,7 +7838,7 @@ void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
         return;
     }
 
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
     // Build view-projection matrix with translation removed (keep skybox centered on camera)
     Math::Matrix4 view = m_Camera->GetViewMatrix();
@@ -7781,14 +7874,14 @@ void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
     writes[1].descriptorCount = 1;
     writes[1].pImageInfo = &cubemapInfo;
 
-    vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
+    vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
 
     // Set viewport and scissor — use overrides if provided (offscreen / splitscreen),
     // otherwise fall back to swapchain extent (main pass single-camera)
     if (viewportOverride) {
         vkCmdSetViewport(commandBuffer, 0, 1, viewportOverride);
     } else {
-        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+        VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
         VkViewport viewport{};
         viewport.width = static_cast<f32>(extent.width);
         viewport.height = static_cast<f32>(extent.height);
@@ -7799,7 +7892,7 @@ void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
     if (scissorOverride) {
         vkCmdSetScissor(commandBuffer, 0, 1, scissorOverride);
     } else {
-        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+        VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
         VkRect2D scissor{};
         scissor.extent = extent;
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
@@ -7822,8 +7915,8 @@ void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
 // ---------------------------------------------------------------------------
 
 bool RenderSystem::IsRayTracingSupported() const {
-    if (!m_Renderer || !m_Renderer->GetContext()) return false;
-    return m_Renderer->GetContext()->IsRayTracingSupported();
+    if (!m_Renderer || !m_VulkanRenderer->GetContext()) return false;
+    return m_VulkanRenderer->GetContext()->IsRayTracingSupported();
 }
 
 void RenderSystem::InitializeRayTracing() {
@@ -7836,7 +7929,7 @@ void RenderSystem::InitializeRayTracing() {
         return;
     }
 
-    auto* ctx = m_Renderer->GetContext();
+    auto* ctx = m_VulkanRenderer->GetContext();
     ENJIN_LOG_INFO(Renderer, "Initializing ray tracing subsystems...");
 
     // Create RT descriptor set layout (27 bindings: 0-16 existing + 17 SDF + 18 simplified materials + 19-20 ReSTIR + 21-23 radiance cache + 24-26 surfel cache)
@@ -8056,7 +8149,7 @@ void RenderSystem::InitializeRayTracing() {
     }
 
     // Get render dimensions
-    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+    VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
     u32 width = extent.width;
     u32 height = extent.height;
 
@@ -8204,7 +8297,7 @@ void RenderSystem::InitializeRayTracing() {
     }
 
     // Register velocity buffer with denoisers for temporal accumulation
-    auto* swapchain = m_Renderer->GetSwapchain();
+    auto* swapchain = m_VulkanRenderer->GetSwapchain();
     if (swapchain && swapchain->GetVelocityImageView() != VK_NULL_HANDLE) {
         VkImageView velView = swapchain->GetVelocityImageView();
         VkImage velImage = swapchain->GetVelocityImage();
@@ -8238,8 +8331,8 @@ void RenderSystem::ShutdownRayTracing() {
 
     DestroyRTDummyResources();
 
-    if (m_Renderer && m_Renderer->GetContext()) {
-        VkDevice device = m_Renderer->GetContext()->GetDevice();
+    if (m_Renderer && m_VulkanRenderer->GetContext()) {
+        VkDevice device = m_VulkanRenderer->GetContext()->GetDevice();
         if (m_RTDescriptorPool != VK_NULL_HANDLE) {
             vkDestroyDescriptorPool(device, m_RTDescriptorPool, nullptr);
             m_RTDescriptorPool = VK_NULL_HANDLE;
@@ -8364,7 +8457,7 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         matWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         matWrites[1].pBufferInfo = &simplifiedMatBufInfo;
 
-        vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
+        vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(),
                                static_cast<u32>(matWrites.size()), matWrites.data(), 0, nullptr);
     }
 
@@ -8376,7 +8469,7 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
 
     // GPU timestamp: RT effects begin
     {
-        VkQueryPool tsPool = m_Renderer->GetTimestampPool(m_Renderer->GetCurrentFrameIndex());
+        VkQueryPool tsPool = m_VulkanRenderer->GetTimestampPool(m_VulkanRenderer->GetCurrentFrameIndex());
         if (tsPool != VK_NULL_HANDLE) {
             vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, tsPool, Renderer::GPU_TS_RT_BEGIN);
         }
@@ -8436,7 +8529,7 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
         }
     }
 
-    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+    VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
     m_RTFrameCount++;
 
     // Update RT light UBO with current frame data
@@ -8472,7 +8565,7 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
 
     // Update TLAS descriptor (handle may change on rebuild)
     {
-        auto* ctx = m_Renderer->GetContext();
+        auto* ctx = m_VulkanRenderer->GetContext();
         VkAccelerationStructureKHR tlas = m_ASManager->GetTLAS();
         VkWriteDescriptorSetAccelerationStructureKHR asInfo{};
         asInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
@@ -8567,7 +8660,7 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
 
     // GPU timestamp: RT effects end
     {
-        VkQueryPool tsPool = m_Renderer->GetTimestampPool(m_Renderer->GetCurrentFrameIndex());
+        VkQueryPool tsPool = m_VulkanRenderer->GetTimestampPool(m_VulkanRenderer->GetCurrentFrameIndex());
         if (tsPool != VK_NULL_HANDLE) {
             vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, tsPool, Renderer::GPU_TS_RT_END);
         }
@@ -8579,7 +8672,7 @@ void RenderSystem::TemporalReuseRTOutputs(VkCommandBuffer cmd) {
     if (!m_RTTemporalReuse->GetConfig().enabled) return;
 
     // Obtain depth, normal, and motion views (same logic as DenoiseRTOutputs)
-    auto* swapchain = m_Renderer->GetSwapchain();
+    auto* swapchain = m_VulkanRenderer->GetSwapchain();
     VkImageView depthView = (swapchain && swapchain->GetDepthImageView() != VK_NULL_HANDLE)
         ? swapchain->GetDepthImageView() : m_RTDummyImageView;
     VkImageView normalView = m_RTDummyImageView;
@@ -8621,7 +8714,7 @@ void RenderSystem::DenoiseRTOutputs(VkCommandBuffer cmd) {
 
     // Use real depth and velocity from swapchain when available; normals still use dummy
     // (no G-buffer MRT normal output yet — will be wired when deferred normals are added)
-    auto* swapchain = m_Renderer->GetSwapchain();
+    auto* swapchain = m_VulkanRenderer->GetSwapchain();
     VkImageView depthView = (swapchain && swapchain->GetDepthImageView() != VK_NULL_HANDLE)
         ? swapchain->GetDepthImageView() : m_RTDummyImageView;
     VkImageView normalView = m_RTDummyImageView;
@@ -8669,7 +8762,7 @@ void RenderSystem::DenoiseRTOutputs(VkCommandBuffer cmd) {
 void RenderSystem::CompositeRTResults(VkCommandBuffer cmd) {
     if (!m_RTEnabled || !m_RTCompositor || m_RTMode == 1) return;
 
-    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+    VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
 
     // Build enable flags: bit 0=shadow, 1=reflect, 2=ao, 3=gi, 4=translucency, 5=caustics
     u32 enableFlags = 0;
@@ -8686,7 +8779,7 @@ void RenderSystem::CompositeRTResults(VkCommandBuffer cmd) {
 }
 
 void RenderSystem::CreateRTDummyResources() {
-    auto* ctx = m_Renderer->GetContext();
+    auto* ctx = m_VulkanRenderer->GetContext();
     VkDevice device = ctx->GetDevice();
 
     // Create 1x1 dummy image for placeholder descriptor bindings
@@ -8866,7 +8959,7 @@ void RenderSystem::CreateRTDummyResources() {
 void RenderSystem::EnsureRTMaterialBuffer(u32 requiredCapacity) {
     if (requiredCapacity <= m_RTMaterialBufferCapacity && m_RTMaterialBuffer != VK_NULL_HANDLE) return;
 
-    auto* ctx = m_Renderer->GetContext();
+    auto* ctx = m_VulkanRenderer->GetContext();
     VkDevice device = ctx->GetDevice();
 
     // Destroy old buffer if exists
@@ -8938,7 +9031,7 @@ void RenderSystem::EnsureRTMaterialBuffer(u32 requiredCapacity) {
 void RenderSystem::EnsureRTSimplifiedMaterialBuffer(u32 requiredCapacity) {
     if (requiredCapacity <= m_RTSimplifiedMaterialBufferCapacity && m_RTSimplifiedMaterialBuffer != VK_NULL_HANDLE) return;
 
-    auto* ctx = m_Renderer->GetContext();
+    auto* ctx = m_VulkanRenderer->GetContext();
     VkDevice device = ctx->GetDevice();
 
     // Destroy old buffer if exists
@@ -9009,8 +9102,8 @@ void RenderSystem::EnsureRTSimplifiedMaterialBuffer(u32 requiredCapacity) {
 }
 
 void RenderSystem::DestroyRTDummyResources() {
-    if (!m_Renderer || !m_Renderer->GetContext()) return;
-    VkDevice device = m_Renderer->GetContext()->GetDevice();
+    if (!m_Renderer || !m_VulkanRenderer->GetContext()) return;
+    VkDevice device = m_VulkanRenderer->GetContext()->GetDevice();
 
     for (u32 i = 0; i < RT_FRAMES_IN_FLIGHT; ++i) {
         if (m_RTLightUBOMapped[i]) {
@@ -9083,7 +9176,7 @@ void RenderSystem::UploadRTMaterials() {
     bool simplifiedBufferGrew = (requiredCapacity > m_RTSimplifiedMaterialBufferCapacity);
     if (bufferGrew || simplifiedBufferGrew) {
         // GPU must be idle before reallocating a buffer that may be in-flight
-        vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+        vkDeviceWaitIdle(m_VulkanRenderer->GetContext()->GetDevice());
         if (bufferGrew) EnsureRTMaterialBuffer(requiredCapacity);
         if (simplifiedBufferGrew) EnsureRTSimplifiedMaterialBuffer(requiredCapacity);
 
@@ -9169,9 +9262,9 @@ void RenderSystem::UploadRTMaterials() {
 }
 
 void RenderSystem::WriteRTDescriptors() {
-    auto* ctx = m_Renderer->GetContext();
+    auto* ctx = m_VulkanRenderer->GetContext();
     VkDevice device = ctx->GetDevice();
-    u32 frameIdx = m_Renderer->GetCurrentFrameIndex();
+    u32 frameIdx = m_VulkanRenderer->GetCurrentFrameIndex();
 
     // Binding 0: TLAS (acceleration structure)
     VkAccelerationStructureKHR tlas = m_ASManager->GetTLAS();
@@ -9194,7 +9287,7 @@ void RenderSystem::WriteRTDescriptors() {
         si.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
     }
     // Wire real depth buffer from swapchain
-    auto* swapchain = m_Renderer->GetSwapchain();
+    auto* swapchain = m_VulkanRenderer->GetSwapchain();
     if (swapchain && swapchain->GetDepthImageView() != VK_NULL_HANDLE) {
         samplerInfos[0].imageView = swapchain->GetDepthImageView();
         samplerInfos[0].imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
@@ -9562,10 +9655,10 @@ void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math
                                      i32 rrMinBounce, f32 rrMinProb,
                                      u32 dirLightCount, u32 ptLightCount, u32 sptLightCount,
                                      u32 maxBounces, u32 accumulatedSamples) {
-    u32 frameIdx = m_Renderer->GetCurrentFrameIndex();
+    u32 frameIdx = m_VulkanRenderer->GetCurrentFrameIndex();
     if (!m_RTLightUBOMapped[frameIdx]) return;
 
-    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+    VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
 
     // RT light UBO layout (std140, matches shader LightData uniform block):
     // vec4 lightDir            (offset 0)
@@ -9670,7 +9763,7 @@ void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math
     write.descriptorCount = 1;
     write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     write.pBufferInfo = &uboInfo;
-    vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &write, 0, nullptr);
+    vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &write, 0, nullptr);
 
     // Upload NEE light data to SSBO (binding 16) for path tracer direct light sampling
     if (m_RTNEELightMapped[frameIdx] && (dirLightCount > 0 || ptLightCount > 0 || sptLightCount > 0)) {
@@ -9765,7 +9858,7 @@ void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math
         neeWrite.descriptorCount = 1;
         neeWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         neeWrite.pBufferInfo = &neeBufInfo;
-        vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &neeWrite, 0, nullptr);
+        vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &neeWrite, 0, nullptr);
     }
 }
 
@@ -9790,7 +9883,7 @@ void RenderSystem::SetUpscalerType(u32 type) {
     }
 
     // Create the requested backend
-    auto* ctx = m_Renderer->GetContext();
+    auto* ctx = m_VulkanRenderer->GetContext();
     switch (type) {
         case 1: // FSR 2
             m_Upscaler = std::make_unique<Renderer::FSR2Upscaler>(ctx);
@@ -9814,7 +9907,7 @@ void RenderSystem::SetUpscalerType(u32 type) {
     }
 
     // Initialize with current display resolution
-    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+    VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
     u32 renderW, renderH;
     Renderer::IUpscaler::GetRenderResolution(
         extent.width, extent.height,
@@ -9838,7 +9931,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) {
     m_UpscalerQuality = quality;
 
     if (m_Upscaler && m_UpscalerType > 0) {
-        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+        VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
         u32 renderW, renderH;
         Renderer::IUpscaler::GetRenderResolution(
             extent.width, extent.height,
@@ -9852,3 +9945,5 @@ void RenderSystem::SetUpscalerQuality(u32 quality) {
 
 } // namespace ECS
 } // namespace Enjin
+
+#endif // !ENJIN_RENDERER_WEBGPU

@@ -2328,8 +2328,8 @@ void EditorLayer::DrawSettingsSection_DisplayOptions() {
                 // ImGui's pipeline must match the new render pass format
                 if (m_ImGuiLayer && m_RenderSystem->GetRenderer()) {
                     m_ImGuiLayer->UpdateRenderPass(
-                        m_RenderSystem->GetRenderer()->GetRenderPass(),
-                        m_RenderSystem->GetRenderer()->GetMSAASamples());
+                        m_RenderSystem->GetVulkanRenderer()->GetRenderPass(),
+                        m_RenderSystem->GetVulkanRenderer()->GetMSAASamples());
                 }
             }
             if (!hdrAvailable && !hdrEnabled) {

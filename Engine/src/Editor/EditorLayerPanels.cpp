@@ -7806,7 +7806,7 @@ void EditorLayer::DrawDebugOverlay() {
 
         // GPU VRAM budget
         if (m_RenderSystem && m_RenderSystem->GetRenderer()) {
-            auto* ctx = m_RenderSystem->GetRenderer()->GetContext();
+            auto* ctx = m_RenderSystem->GetVulkanRenderer()->GetContext();
             if (ctx) {
                 u64 gpuBudget = ctx->GetGPUMemoryBudget();
                 if (gpuBudget > 0) {

@@ -1,4 +1,10 @@
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
+#include "Enjin/Renderer/Vulkan/VulkanBufferManager.h"
+#include "Enjin/Renderer/Vulkan/VulkanTextureManager.h"
+#include "Enjin/Renderer/Vulkan/VulkanShaderManager.h"
+#include "Enjin/Renderer/Vulkan/VulkanPipelineManager.h"
+#include "Enjin/Renderer/Vulkan/VulkanBindGroupManager.h"
+#include "Enjin/Renderer/Vulkan/VulkanRenderEncoder.h"
 #include "Enjin/Logging/Log.h"
 #include <chrono>
 #include "Enjin/Core/Assert.h"
@@ -116,6 +122,15 @@ bool VulkanRenderer::Initialize(Window* window) {
     // Register fence-based wait so subsystems use WaitForGPU() instead of vkDeviceWaitIdle
     m_Context->SetFenceWaitFunction([this]() { WaitForAllFrames(); });
 
+    // Create abstract sub-managers for IRenderBackend interface
+    m_BufferMgr = std::make_unique<VulkanBufferManager>(m_Context.get());
+    m_TextureMgr = std::make_unique<VulkanTextureManager>(m_Context.get());
+    m_ShaderMgr = std::make_unique<VulkanShaderManager>(m_Context.get());
+    m_PipelineMgr = std::make_unique<VulkanPipelineManager>(m_Context.get(), m_ShaderMgr.get());
+    m_PipelineMgr->SetRenderPass(m_RenderPass);
+    m_PipelineMgr->SetMSAASamples(m_MSAASamples);
+    m_BindGroupMgr = std::make_unique<VulkanBindGroupManager>(m_Context.get(), m_BufferMgr.get(), m_TextureMgr.get());
+
     ENJIN_LOG_INFO(Renderer, "Vulkan renderer initialized successfully");
     return true;
 }
@@ -128,6 +143,14 @@ void VulkanRenderer::Shutdown() {
     if (m_Context && m_Context->GetDevice() != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(m_Context->GetDevice());
     }
+
+    // Destroy abstract sub-managers before Vulkan resources
+    m_ActiveEncoder.reset();
+    m_BindGroupMgr.reset();
+    m_PipelineMgr.reset();
+    m_ShaderMgr.reset();
+    m_TextureMgr.reset();
+    m_BufferMgr.reset();
 
     DestroyComputeResources();
     DestroySyncObjects();
@@ -590,7 +613,7 @@ void VulkanRenderer::SubmitCommandBuffer() {
     m_CurrentFrame = (m_CurrentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-bool VulkanRenderer::BeginFrame() {
+bool VulkanRenderer::BeginFrameVulkan() {
     // Skip rendering if device is lost
     if (m_DeviceLost) return false;
 
@@ -1076,6 +1099,79 @@ bool VulkanRenderer::IsHDREnabled() const {
 
 u32 VulkanRenderer::GetHDROutputMode() const {
     return m_Swapchain ? m_Swapchain->GetHDROutputMode() : 0;
+}
+
+// ============================================================================
+// IRenderBackend overrides
+// ============================================================================
+
+bool VulkanRenderer::Initialize(u32 /*width*/, u32 /*height*/) {
+    // Use Initialize(Window*) for Vulkan. This override exists only to satisfy the interface.
+    ENJIN_LOG_ERROR(Renderer, "VulkanRenderer::Initialize(u32,u32) is not supported — use Initialize(Window*)");
+    return false;
+}
+
+void VulkanRenderer::BeginFrame() {
+    BeginFrameVulkan();
+}
+
+void VulkanRenderer::Present() {
+    // Vulkan presents inside EndFrame/SubmitCommandBuffer — no-op here
+}
+
+void VulkanRenderer::Resize(u32 width, u32 height) {
+    OnWindowResize(width, height);
+}
+
+PlatformCapabilities VulkanRenderer::GetCapabilities() const {
+    PlatformCapabilities caps;
+    caps.hasVulkan = true;
+    caps.maxTextureSize = 16384;
+    caps.preferredCompression = TextureCompression::BC7;
+    return caps;
+}
+
+GPUCapabilities VulkanRenderer::GetGPUCapabilities() const {
+    return MakeVulkanCapabilities();
+}
+
+u32 VulkanRenderer::GetSwapchainWidth() const {
+    auto ext = GetSwapchainExtent();
+    return ext.width;
+}
+
+u32 VulkanRenderer::GetSwapchainHeight() const {
+    auto ext = GetSwapchainExtent();
+    return ext.height;
+}
+
+IGPUBufferManager* VulkanRenderer::GetBufferManager() { return m_BufferMgr.get(); }
+IGPUTextureManager* VulkanRenderer::GetTextureManager() { return m_TextureMgr.get(); }
+IGPUPipelineManager* VulkanRenderer::GetPipelineManager() { return m_PipelineMgr.get(); }
+IGPUShaderManager* VulkanRenderer::GetShaderManager() { return m_ShaderMgr.get(); }
+IGPUBindGroupManager* VulkanRenderer::GetBindGroupManager() { return m_BindGroupMgr.get(); }
+
+IRenderEncoder* VulkanRenderer::BeginRenderPass(const GPURenderPassDesc& desc) {
+    // Default desc (width=0) = main swapchain render pass
+    if (desc.width == 0 && desc.height == 0) {
+        if (!m_IsMainRenderPassActive) {
+            BeginMainRenderPass();
+        }
+        m_ActiveEncoder = std::make_unique<VulkanRenderEncoder>(
+            GetCurrentCommandBuffer(), VK_NULL_HANDLE,
+            m_PipelineMgr.get(), m_BufferMgr.get(), m_BindGroupMgr.get());
+        return m_ActiveEncoder.get();
+    }
+    // Custom render passes not yet supported through abstract interface
+    return nullptr;
+}
+
+void VulkanRenderer::EndRenderPass(IRenderEncoder* encoder) {
+    // The Vulkan main render pass is ended in EndFrame, not here.
+    // Just release the encoder.
+    if (m_ActiveEncoder.get() == encoder) {
+        m_ActiveEncoder.reset();
+    }
 }
 
 } // namespace Renderer

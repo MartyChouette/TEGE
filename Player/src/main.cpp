@@ -1030,7 +1030,7 @@ public:
     void Render() override {
         if (!m_Initialized || !m_Renderer) return;
 
-        if (!m_Renderer->BeginFrame()) {
+        if (!m_Renderer->BeginFrameVulkan()) {
             if (m_Renderer->IsDeviceLost()) {
                 ENJIN_LOG_FATAL(Player, "GPU device lost — shutting down.");
                 RequestShutdown();

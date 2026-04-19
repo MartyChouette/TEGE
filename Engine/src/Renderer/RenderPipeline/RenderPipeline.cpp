@@ -60,7 +60,7 @@ void RenderPipeline::BeginFrame() {
     DispatchEvent(event);
 
     if (!event.cancelled && m_Renderer) {
-        m_FrameActive = m_Renderer->BeginFrame();
+        m_FrameActive = m_Renderer->BeginFrameVulkan();
     }
 
     event.type = RenderEventType::PostFrame;

@@ -21,6 +21,12 @@ namespace Renderer {
 
 class WebGPUShaderCompiler;
 class WebGPUPipeline;
+class WebGPUBufferManager;
+class WebGPUTextureManager;
+class WebGPUShaderManager;
+class WebGPUPipelineManager;
+class WebGPUBindGroupManager;
+class WebGPURenderEncoder;
 
 // WebGPU buffer handle returned by CreateBuffer — wraps GPU buffer with metadata.
 struct WebGPUBufferHandle {
@@ -44,21 +50,18 @@ struct WebGPUTextureHandle {
 //
 // Public interface matches VulkanRenderer's usage patterns in RenderSystem
 // so the system can switch between them with compile-time #if guards.
-class ENJIN_API WebGPURenderer {
+class ENJIN_API WebGPURenderer : public IRenderBackend {
 public:
-    WebGPURenderer() = default;
+    WebGPURenderer();
     ~WebGPURenderer();
 
-    // --- Lifecycle ---
+    // --- Lifecycle (Window-based, primary entry point) ---
     bool Initialize(Window* window);
-    void Shutdown();
 
-    // --- Frame ---
-    bool BeginFrame();
-    void EndFrame();
+    // Begin a new frame — returns false if failed (swapchain lost, etc.)
+    bool BeginFrameWebGPU();
 
     // --- Swap chain ---
-    void Resize(u32 width, u32 height);
     u32 GetSwapChainWidth() const { return m_SwapChainWidth; }
     u32 GetSwapChainHeight() const { return m_SwapChainHeight; }
 
@@ -96,7 +99,6 @@ public:
     WGPUDevice GetDevice() const { return m_Device; }
     WGPUQueue GetQueue() const { return m_Queue; }
     u32 GetCurrentFrame() const { return m_FrameIndex; }
-    u32 GetFramesInFlight() const { return FRAMES_IN_FLIGHT; }
 
     // Depth texture for shadow passes
     WGPUTextureView GetDepthTextureView() const { return m_DepthTextureView; }
@@ -105,8 +107,28 @@ public:
     WebGPUShaderCompiler* GetShaderCompiler() { return m_ShaderCompiler.get(); }
     WebGPUPipeline* GetPipelineFactory() { return m_PipelineFactory.get(); }
 
-    // Wait for all GPU work to complete
-    void WaitForAllFrames();
+    // --- IRenderBackend overrides ---
+    bool Initialize(u32 width, u32 height) override;
+    void Shutdown() override;
+    void BeginFrame() override;
+    void EndFrame() override;
+    void Present() override;
+    void Resize(u32 width, u32 height) override;
+    const char* GetBackendName() const override { return "WebGPU"; }
+    PlatformCapabilities GetCapabilities() const override;
+    GPUCapabilities GetGPUCapabilities() const override;
+    u32 GetCurrentFrameIndex() const override { return m_FrameIndex; }
+    u32 GetFramesInFlight() const override { return FRAMES_IN_FLIGHT; }
+    u32 GetSwapchainWidth() const override { return m_SwapChainWidth; }
+    u32 GetSwapchainHeight() const override { return m_SwapChainHeight; }
+    void WaitForAllFrames() override;
+    IGPUBufferManager* GetBufferManager() override;
+    IGPUTextureManager* GetTextureManager() override;
+    IGPUPipelineManager* GetPipelineManager() override;
+    IGPUShaderManager* GetShaderManager() override;
+    IGPUBindGroupManager* GetBindGroupManager() override;
+    IRenderEncoder* BeginRenderPass(const GPURenderPassDesc& desc) override;
+    void EndRenderPass(IRenderEncoder* encoder) override;
 
 private:
     void CreateSwapChain();
@@ -140,6 +162,14 @@ private:
 
     Window* m_Window = nullptr;
     bool m_Initialized = false;
+
+    // --- IRenderBackend sub-managers (owned, created in Initialize) ---
+    std::unique_ptr<WebGPUBufferManager> m_BufferMgr;
+    std::unique_ptr<WebGPUTextureManager> m_TextureMgr;
+    std::unique_ptr<WebGPUShaderManager> m_ShaderMgr;
+    std::unique_ptr<WebGPUPipelineManager> m_PipelineMgr;
+    std::unique_ptr<WebGPUBindGroupManager> m_BindGroupMgr;
+    std::unique_ptr<WebGPURenderEncoder> m_ActiveEncoder;
 };
 
 } // namespace Renderer

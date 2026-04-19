@@ -15,12 +15,13 @@ namespace Enjin::ECS {
     struct Water3DComponent;
 }
 
-#if ENJIN_RENDERER_WEBGPU
-#include "Enjin/Renderer/WebGPU/WebGPURenderer.h"
-#include "Enjin/Renderer/WebGPU/WebGPUPipeline.h"
-#include "Enjin/Renderer/WebGPU/WebGPUShaderCompiler.h"
-#include "Enjin/Renderer/WebGPU/WebGPUTypes.h"
-#else
+// Cross-platform abstract backend interface
+#include "Enjin/Renderer/RenderBackend.h"
+#include "Enjin/Renderer/RenderStructs.h"
+#include "Enjin/Renderer/GPUTypes.h"
+#include "Enjin/Renderer/GPURenderEncoder.h"
+
+#if !ENJIN_RENDERER_WEBGPU
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
@@ -173,38 +174,49 @@ struct ObjectDataGPU {
 };
 static_assert(sizeof(ObjectDataGPU) == 192, "ObjectDataGPU must be 192 bytes for std430");
 
-#if !ENJIN_RENDERER_WEBGPU
 // Per-entity rendering data (stored in dense vector indexed by entity ID)
 struct EntityRenderData {
+#if !ENJIN_RENDERER_WEBGPU
     std::unique_ptr<Renderer::VulkanBuffer> vertexBuffer;
     std::unique_ptr<Renderer::VulkanBuffer> indexBuffer;
     std::unique_ptr<Renderer::VulkanBuffer> boneBuffer;
     std::unique_ptr<Renderer::VulkanBuffer> morphBuffer;
+#else
+    Renderer::GPUBufferHandle vertexBuffer;
+    Renderer::GPUBufferHandle indexBuffer;
+    Renderer::GPUBufferHandle boneBuffer;
+    Renderer::GPUBufferHandle morphBuffer;
+#endif
     u32 indexCount = 0;
     bool valid = false;  // true if this slot is occupied
-    // Merged geometry pool allocation (valid when entity uses the shared pool)
+#if !ENJIN_RENDERER_WEBGPU
     Renderer::MeshAllocation poolAlloc;
+#endif
 
     void Invalidate() {
+#if !ENJIN_RENDERER_WEBGPU
         vertexBuffer.reset();
         indexBuffer.reset();
         boneBuffer.reset();
         morphBuffer.reset();
+#else
+        vertexBuffer = {};
+        indexBuffer = {};
+        boneBuffer = {};
+        morphBuffer = {};
+#endif
         indexCount = 0;
         valid = false;
+#if !ENJIN_RENDERER_WEBGPU
         poolAlloc = {};
+#endif
     }
 };
-#endif
 
 // Render system - renders entities with Transform and Mesh components
 class ENJIN_API RenderSystem : public ISystem {
 public:
-#if ENJIN_RENDERER_WEBGPU
-    RenderSystem(World* world, Renderer::WebGPURenderer* renderer);
-#else
-    RenderSystem(World* world, Renderer::VulkanRenderer* renderer);
-#endif
+    RenderSystem(World* world, Renderer::IRenderBackend* renderer);
     ~RenderSystem();
 
     void Initialize();
@@ -227,12 +239,12 @@ public:
     Renderer::Camera* GetCamera() const { return m_Camera; }
 
 #if !ENJIN_RENDERER_WEBGPU
-    Renderer::VulkanSwapchain* GetSwapchain() const { return m_Renderer ? m_Renderer->GetSwapchain() : nullptr; }
+    Renderer::VulkanSwapchain* GetSwapchain() const;
 
     // HDR output — delegates to VulkanRenderer which handles swapchain + render pass + pipeline recreation
     void SetHDREnabled(bool enabled);
-    bool IsHDREnabled() const { return m_Renderer ? m_Renderer->IsHDREnabled() : false; }
-    u32 GetHDROutputMode() const { return m_Renderer ? m_Renderer->GetHDROutputMode() : 0; }
+    bool IsHDREnabled() const;
+    u32 GetHDROutputMode() const;
 #endif
 
     // Editor mode: when true, GPU frustum culling is disabled so all entities
@@ -251,8 +263,10 @@ public:
     bool IsGameViewReady() { if (m_SceneClearCooldown > 0) { --m_SceneClearCooldown; return false; } return true; }
     bool IsSceneClearActive() const { return m_SceneClearCooldown > 0; }
 
+    Renderer::IRenderBackend* GetRenderer() const { return m_Renderer; }
+
 #if !ENJIN_RENDERER_WEBGPU
-    Renderer::VulkanRenderer* GetRenderer() const { return m_Renderer; }
+    Renderer::VulkanRenderer* GetVulkanRenderer() const;
 
     // Render all entities to an offscreen render target using a custom camera
     // Must be called outside of the main render pass (before BeginMainRenderPass)
@@ -295,11 +309,7 @@ public:
 
     // Memory profiling queries
     usize GetSortedRenderListSize() const { return m_SortedRenderList.size(); }
-#if !ENJIN_RENDERER_WEBGPU
     usize GetEntityRenderDataSize() const { return m_EntityRenderData.size(); }
-#else
-    usize GetEntityRenderDataSize() const { return 0; }
-#endif
 
 #if !ENJIN_RENDERER_WEBGPU
     // Editor viewport display modes
@@ -368,12 +378,14 @@ public:
 
     // Set fluid simulation (for FluidRenderer to read grid data)
     void SetFluidSimulation(Effects::FluidSimulation* sim);
+#if !ENJIN_RENDERER_WEBGPU
     Effects::FluidRenderer* GetFluidRenderer() const { return m_FluidRenderer.get(); }
 
     // Weather, grass, and tree renderers (initialized after main pipeline)
     Effects::WeatherRenderer* GetWeatherRenderer() { return m_WeatherRenderer.get(); }
     Effects::GrassRenderer* GetGrassRenderer() { return m_GrassRenderer.get(); }
     Effects::TreeRenderer* GetTreeRenderer() { return m_TreeRenderer.get(); }
+#endif
 
     // Render weather particles, game particles, grass, shrubs, and trees
     // (call after scene geometry in main render pass)
@@ -574,7 +586,7 @@ public:
     Renderer::ReflectionProbeSystem* GetReflectionProbes() { return m_ReflectionProbes.get(); }
 
     // Access the Vulkan renderer (needed by subsystems like reflection probe baking)
-    Renderer::VulkanRenderer* GetVulkanRenderer() const { return m_Renderer; }
+    // Implemented via static_cast from IRenderBackend* — safe because only called in Vulkan builds.
 
     // Update the reflection probe cubemap descriptor binding for all descriptor sets.
     // Called after a probe is baked to bind the cubemap to the shader.
@@ -652,28 +664,25 @@ private:
     ComponentStorage<Water3DComponent>* m_CachedWater3DStorage = nullptr;
 
     World* m_World = nullptr;
-#if ENJIN_RENDERER_WEBGPU
-    Renderer::WebGPURenderer* m_Renderer = nullptr;
-#else
-    Renderer::VulkanRenderer* m_Renderer = nullptr;
+    Renderer::IRenderBackend* m_Renderer = nullptr;
+#if !ENJIN_RENDERER_WEBGPU
+    Renderer::VulkanRenderer* m_VulkanRenderer = nullptr;  // Cached cast for Vulkan-specific API calls
 #endif
     Renderer::Camera* m_Camera = nullptr;
     Entity m_DefaultEntity = INVALID_ENTITY;
 
-#if ENJIN_RENDERER_WEBGPU
-    // WebGPU rendering resources
-    WGPURenderPipeline m_WGPUPipeline = nullptr;
-    WGPUShaderModule m_WGPUVertexShader = nullptr;
-    WGPUShaderModule m_WGPUFragmentShader = nullptr;
-    WGPUBindGroupLayout m_WGPUBindGroupLayout0 = nullptr;
-    WGPUBindGroupLayout m_WGPUBindGroupLayout1 = nullptr;
-    WGPUBindGroupLayout m_WGPUBindGroupLayout2 = nullptr;
-    WGPUPipelineLayout m_WGPUPipelineLayout = nullptr;
-#else
-    // Rendering resources
-    std::unique_ptr<Renderer::VulkanPipeline> m_Pipeline;
-    std::unique_ptr<Renderer::VulkanPipeline> m_OffscreenPipeline;  // m_Pipeline rebuilt for offscreen render pass (UNORM)
-    VkRenderPass m_OffscreenRenderPass = VK_NULL_HANDLE;  // Cached for pipeline recreation (not owned)
+    // --- Cross-platform rendering resources (abstract handles) ---
+    Renderer::GPUPipelineHandle m_MainPipeline;
+    Renderer::GPUShaderHandle m_MainVertexShader;
+    Renderer::GPUShaderHandle m_MainFragmentShader;
+    Renderer::GPUBindGroupLayoutHandle m_MainBindGroupLayout;
+    Renderer::IRenderEncoder* m_ActiveEncoder = nullptr;  // Valid between BeginRenderPass/EndRenderPass
+
+#if !ENJIN_RENDERER_WEBGPU
+    // Vulkan-specific rendering resources (advanced pipelines)
+    std::unique_ptr<Renderer::VulkanPipeline> m_Pipeline;               // Vulkan main pipeline (kept for compatibility)
+    std::unique_ptr<Renderer::VulkanPipeline> m_OffscreenPipeline;
+    VkRenderPass m_OffscreenRenderPass = VK_NULL_HANDLE;
     std::unique_ptr<Renderer::VulkanShader> m_VertexShader;
     std::unique_ptr<Renderer::VulkanShader> m_FragmentShader;
     std::unique_ptr<Renderer::VulkanShader> m_ShadowVertexShader;
@@ -826,9 +835,8 @@ private:
 #endif
 
     // Weather, particle, grass, shrub, tree, and sprite batch renderers
+#if !ENJIN_RENDERER_WEBGPU
     std::unique_ptr<Effects::WeatherRenderer> m_WeatherRenderer;
-    Effects::WeatherSystem* m_MainPassWeather = nullptr;  // Weather for main pass (editor viewport)
-    bool m_MainPassWeatherIsRain = false;
     std::unique_ptr<Effects::ParticleRenderer> m_ParticleRenderer;
     std::unique_ptr<Effects::FluidRenderer> m_FluidRenderer;
     std::unique_ptr<Effects::GrassRenderer> m_GrassRenderer;
@@ -836,6 +844,9 @@ private:
     std::unique_ptr<Effects::TreeRenderer> m_TreeRenderer;
     std::unique_ptr<Effects::SpriteBatchRenderer> m_SpriteBatchRenderer;
     std::unique_ptr<Effects::SpriteTextureAtlas> m_SpriteAtlas;
+#endif
+    Effects::WeatherSystem* m_MainPassWeather = nullptr;  // Weather for main pass (editor viewport)
+    bool m_MainPassWeatherIsRain = false;
 
     // Scene composition cache (auto-detected per frame, drives rendering decisions)
     SceneComposition m_SceneComposition;
@@ -1009,10 +1020,10 @@ private:
     bool m_SceneClearPending = false;                    // Deferred scene-clear flag (flushed at frame boundary)
     u32 m_SceneClearCooldown = 0;                        // Skip game view for N frames after scene clear
 
-#if !ENJIN_RENDERER_WEBGPU
     // Per-entity render data — dense vector indexed by entity ID for cache-friendly O(1) lookup
     std::vector<EntityRenderData> m_EntityRenderData;
 
+#if !ENJIN_RENDERER_WEBGPU
     // Descriptor set caching — tracks what was last written to the shared descriptor set.
     // When the next entity's textures/bones match, vkUpdateDescriptorSets is skipped.
     struct LastBoundState {

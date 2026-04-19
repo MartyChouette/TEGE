@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Window.h"
+#include "Enjin/Renderer/RenderBackend.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Renderer/Vulkan/VulkanSwapchain.h"
 #include <vulkan/vulkan.h>
@@ -20,6 +21,14 @@
 namespace Enjin {
 namespace Renderer {
 
+// Forward declarations for abstract manager implementations
+class VulkanBufferManager;
+class VulkanTextureManager;
+class VulkanPipelineManager;
+class VulkanShaderManager;
+class VulkanBindGroupManager;
+class VulkanRenderEncoder;
+
 /**
  * @brief GPU timestamp query indices for per-pass timing
  */
@@ -36,42 +45,21 @@ enum GPUTimestampQuery : u32 {
  *
  * Manages the Vulkan rendering state, swapchain, and command buffers.
  */
-class ENJIN_API VulkanRenderer {
+class ENJIN_API VulkanRenderer : public IRenderBackend {
 public:
     VulkanRenderer();
     ~VulkanRenderer();
 
-    /**
-     * @brief Initialize the renderer
-     * @param window Pointer to the window to render to
-     * @return true if initialization succeeded, false otherwise
-     */
+    // Initialize with a window (primary entry point for applications)
     bool Initialize(Window* window);
 
-    /**
-     * @brief Shutdown the renderer
-     */
-    void Shutdown();
+    // Begin a new frame — acquires swapchain image and begins command buffer recording.
+    // Does NOT start the main render pass — call BeginMainRenderPass() for that.
+    // Returns false if the frame could not be started (e.g. swapchain lost).
+    bool BeginFrameVulkan();
 
-    /**
-     * @brief Begin a new frame
-     * Acquire next image and begin command buffer recording.
-     * Does NOT start the main render pass - call BeginMainRenderPass() for that.
-     * @return true if a new frame was started, false otherwise
-     */
-    bool BeginFrame();
-
-    /**
-     * @brief Begin the main render pass
-     * Call this after BeginFrame() and any pre-render passes (shadow, etc.)
-     */
+    // Begin the main render pass (call after BeginFrameVulkan and pre-render passes)
     void BeginMainRenderPass();
-
-    /**
-     * @brief End the current frame
-     * End command buffer recording and submit to queue
-     */
-    void EndFrame();
 
     bool IsMainRenderPassActive() const { return m_IsMainRenderPassActive; }
 
@@ -80,13 +68,8 @@ public:
     VulkanContext* GetContext() const { return m_Context.get(); }
     VulkanSwapchain* GetSwapchain() const { return m_Swapchain.get(); }
     VkExtent2D GetSwapchainExtent() const { return m_Swapchain ? m_Swapchain->GetExtent() : VkExtent2D{0, 0}; }
-    u32 GetCurrentFrameIndex() const { return m_CurrentFrame; }
 
     void OnWindowResize(u32 width, u32 height);
-
-    // Wait for all in-flight frames to complete (fence-based, graphics queue only).
-    // Preferred over vkDeviceWaitIdle() for mid-frame synchronization.
-    void WaitForAllFrames();
 
     bool IsDeviceLost() const { return m_DeviceLost; }
 
@@ -147,6 +130,29 @@ public:
     // GPU timestamp queries — per-pass GPU timing in milliseconds
     VkQueryPool GetTimestampPool(u32 frameIdx) const { return m_TimestampPools[frameIdx % MAX_FRAMES_IN_FLIGHT]; }
     const f32* GetGPUPassTimes() const { return m_GPUPassTimes; }
+
+    // --- IRenderBackend overrides ---
+    bool Initialize(u32 width, u32 height) override;
+    void Shutdown() override;
+    void BeginFrame() override;
+    void EndFrame() override;
+    void Present() override;
+    void Resize(u32 width, u32 height) override;
+    const char* GetBackendName() const override { return "Vulkan"; }
+    PlatformCapabilities GetCapabilities() const override;
+    GPUCapabilities GetGPUCapabilities() const override;
+    u32 GetCurrentFrameIndex() const override { return m_CurrentFrame; }
+    u32 GetFramesInFlight() const override { return MAX_FRAMES_IN_FLIGHT; }
+    u32 GetSwapchainWidth() const override;
+    u32 GetSwapchainHeight() const override;
+    void WaitForAllFrames() override;
+    IGPUBufferManager* GetBufferManager() override;
+    IGPUTextureManager* GetTextureManager() override;
+    IGPUPipelineManager* GetPipelineManager() override;
+    IGPUShaderManager* GetShaderManager() override;
+    IGPUBindGroupManager* GetBindGroupManager() override;
+    IRenderEncoder* BeginRenderPass(const GPURenderPassDesc& desc) override;
+    void EndRenderPass(IRenderEncoder* encoder) override;
 
 private:
     bool CreateSurface();
@@ -221,6 +227,14 @@ private:
     VkQueryPool m_TimestampPools[2] = {};
     u64 m_TimestampResults[GPU_TS_COUNT] = {};
     f32 m_GPUPassTimes[4] = {};  // shadow, main, RT, postprocess (ms)
+
+    // --- IRenderBackend sub-managers (owned, created in Initialize) ---
+    std::unique_ptr<VulkanBufferManager> m_BufferMgr;
+    std::unique_ptr<VulkanTextureManager> m_TextureMgr;
+    std::unique_ptr<VulkanShaderManager> m_ShaderMgr;
+    std::unique_ptr<VulkanPipelineManager> m_PipelineMgr;
+    std::unique_ptr<VulkanBindGroupManager> m_BindGroupMgr;
+    std::unique_ptr<VulkanRenderEncoder> m_ActiveEncoder;
 };
 
 } // namespace Renderer

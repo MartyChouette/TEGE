@@ -81,6 +81,12 @@ enum class GPUFrontFace : u8 {
     CW,
 };
 
+enum class GPUPolygonMode : u8 {
+    Fill,
+    Line,
+    Point,
+};
+
 enum class GPUCompareFunction : u8 {
     Never,
     Less,
@@ -219,6 +225,7 @@ struct GPURenderPipelineDesc {
     GPUPrimitiveTopology topology = GPUPrimitiveTopology::TriangleList;
     GPUCullMode cullMode = GPUCullMode::Back;
     GPUFrontFace frontFace = GPUFrontFace::CCW;
+    GPUPolygonMode polygonMode = GPUPolygonMode::Fill;
     bool depthTest = true;
     bool depthWrite = true;
     GPUCompareFunction depthCompare = GPUCompareFunction::Less;

@@ -1504,7 +1504,7 @@ void EditorLayer::PrepareRenderTargets() {
     // Previous frames' command buffers may still reference the old render target
     // resources. WaitForGPU ensures those are fully processed before we destroy them.
     if (m_RenderSystem && m_RenderSystem->IsSceneClearActive()) {
-        auto* renderer = m_RenderSystem->GetRenderer();
+        auto* renderer = m_RenderSystem->GetVulkanRenderer();
         if (renderer && renderer->GetContext()) {
             renderer->GetContext()->WaitForGPU();
         }
@@ -2492,8 +2492,8 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         m_MSAAImGuiUpdatePending = false;
         if (m_RenderSystem && m_RenderSystem->GetRenderer()) {
             m_ImGuiLayer->UpdateRenderPass(
-                m_RenderSystem->GetRenderer()->GetRenderPass(),
-                m_RenderSystem->GetRenderer()->GetMSAASamples());
+                m_RenderSystem->GetVulkanRenderer()->GetRenderPass(),
+                m_RenderSystem->GetVulkanRenderer()->GetMSAASamples());
         }
     }
 

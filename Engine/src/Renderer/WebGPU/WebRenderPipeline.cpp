@@ -538,7 +538,7 @@ void WebRenderPipeline::BeginFrame(const Camera* camera, ECS::World* world) {
 
 void WebRenderPipeline::Render() {
     if (!m_Initialized || !m_Pipeline || !m_FrameWorld) return;
-    if (!m_Renderer->BeginFrame()) return;
+    if (!m_Renderer->BeginFrameWebGPU()) return;
 
     m_Renderer->SetPipeline(m_Pipeline);
     m_Renderer->SetBindGroup(0, m_ViewLightBindGroup);

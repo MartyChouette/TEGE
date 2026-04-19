@@ -227,7 +227,7 @@ bool ReflectionProbeSystem::BakeProbeInternal(ECS::World* world, ECS::RenderSyst
         m_Context->WaitForGPU();
 
         // Begin a frame, render the scene to the target, end the frame
-        if (!vulkanRenderer->BeginFrame()) {
+        if (!vulkanRenderer->BeginFrameVulkan()) {
             ENJIN_LOG_WARN(Renderer, "Probe bake face %d: BeginFrame failed", face);
             facePixels[face].resize(expectedFaceBytes, 128);
             allFacesOk = false;

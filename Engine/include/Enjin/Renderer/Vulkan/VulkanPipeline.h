@@ -5,6 +5,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Renderer/Vulkan/VulkanShader.h"
+#include "Enjin/Renderer/RenderStructs.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Math/Matrix.h"
 #if !ENJIN_RENDERER_WEBGPU
@@ -16,34 +17,7 @@
 namespace Enjin {
 namespace Renderer {
 
-// Uniform buffer object for view/projection matrices (shared across all objects)
-struct UniformBufferObject {
-    alignas(16) Math::Matrix4 view;
-    alignas(16) Math::Matrix4 proj;
-    alignas(16) Math::Matrix4 prevViewProj;  // Previous frame view*proj for velocity
-    alignas(16) Math::Vector4 jitterOffset;  // xy = current jitter (NDC), zw = previous jitter
-};
-
-// Push constants for per-object data (model matrix + material)
-struct PushConstants {
-    alignas(16) Math::Matrix4 model;
-    // Material data (must match fragment shader)
-    alignas(16) Math::Vector3 baseColor;
-    f32 metallic;
-    alignas(16) Math::Vector3 emissiveColor;
-    f32 roughness;
-    f32 emissiveStrength;
-    f32 opacity;
-    f32 alphaCutoff;
-    i32 flags;
-    f32 parallaxScale;
-    f32 surfaceParam1 = 0.0f;  // water: shoreWidth | artistic: reflectivity
-    f32 surfaceParam2 = 0.0f;  // water: foamIntensity | artistic: fresnelPower
-    f32 surfaceParam3 = 0.0f;  // water: foamScale | artistic: rimLightStrength
-};
-
-// Note: LightingUBO is defined in Enjin/ECS/Components/Light.h
-// Use ECS::LightingUBO for multi-light support
+// UniformBufferObject and PushConstants are defined in RenderStructs.h (cross-platform)
 
 // Graphics pipeline configuration
 struct PipelineConfig {
