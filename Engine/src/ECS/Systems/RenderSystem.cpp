@@ -12,13 +12,65 @@
 #include "Enjin/Effects/TreeRenderer.h"
 
 // ============================================================================
-// WebGPU stub — minimal RenderSystem that compiles but defers to Phase 7-9
-// for full WebGPU rendering through the abstract interface.
+// WebGPU RenderSystem — renders entities through abstract backend interface.
+// Uses PBR WGSL shaders with 3-group bind layout (frame, object, textures).
 // ============================================================================
 #if ENJIN_RENDERER_WEBGPU
 
+#include "Enjin/Renderer/WebGPU/WebShaderData.h"
+#include "Enjin/Renderer/GPUBuffer.h"
+#include "Enjin/Renderer/GPUTexture.h"
+#include "Enjin/Renderer/GPUPipeline.h"
+#include "Enjin/Renderer/GPUShader.h"
+#include "Enjin/Renderer/GPUBindGroup.h"
+#include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/Components/Material.h"
+#include "Enjin/ECS/Components/Light.h"
+#include "Enjin/ECS/Components/Name.h"
+#include "Enjin/Math/Math.h"
+#include <cstring>
+
 namespace Enjin {
 namespace ECS {
+
+// UBO structs matching pbr.wgsl expectations (std140 layout)
+struct WebViewProjectionUBO {
+    alignas(16) Math::Matrix4 view;       // 64
+    alignas(16) Math::Matrix4 proj;       // 64
+    alignas(16) Math::Vector3 viewPos;    // 12
+    f32 time;                              // 4
+};                                         // Total: 144 bytes
+
+struct alignas(16) WebLightVec4 { f32 x, y, z, w; };
+
+struct WebLightingUBO {
+    WebLightVec4 lightDir[8];              // 128
+    WebLightVec4 lightColor[8];            // 128
+    WebLightVec4 lightParams[8];           // 128
+    WebLightVec4 ambientColor;             // 16
+    WebLightVec4 fogColor;                 // 16
+    WebLightVec4 fogParams;                // 16
+    WebLightVec4 shadowParams;             // 16
+    WebLightVec4 lightCount;               // 16
+};                                         // Total: 464 bytes
+
+struct WebObjectDataUBO {
+    alignas(16) Math::Matrix4 model;       // 64
+    alignas(16) Math::Vector3 baseColor;   // 12
+    f32 metallic;                           // 4
+    alignas(16) Math::Vector3 emissiveColor;// 12
+    f32 roughness;                          // 4
+    f32 emissiveStrength;                   // 4
+    f32 opacity;                            // 4
+    f32 alphaCutoff;                        // 4
+    i32 flags;                              // 4
+    f32 parallaxScale;                      // 4
+    f32 _pad[3];                            // 12
+};                                          // Total: 128 bytes
+
+// ============================================================================
+// Lifecycle
+// ============================================================================
 
 RenderSystem::RenderSystem(World* world, Renderer::IRenderBackend* renderer)
     : m_World(world), m_Renderer(renderer) {
@@ -30,28 +82,411 @@ RenderSystem::~RenderSystem() { Shutdown(); }
 void RenderSystem::Initialize() {
     if (m_Initialized) return;
     m_FrameAllocator = std::make_unique<FrameAllocator>(8 * 1024 * 1024);
+
+    auto* shaderMgr = m_Renderer->GetShaderManager();
+    auto* pipeMgr = m_Renderer->GetPipelineManager();
+    auto* bufMgr = m_Renderer->GetBufferManager();
+    auto* texMgr = m_Renderer->GetTextureManager();
+    auto* bindMgr = m_Renderer->GetBindGroupManager();
+    if (!shaderMgr || !pipeMgr || !bufMgr || !texMgr || !bindMgr) {
+        ENJIN_LOG_ERROR(Renderer, "RenderSystem: Backend managers not available");
+        return;
+    }
+
+    // Load PBR shader (single WGSL source, both vertex and fragment)
+    m_MainVertexShader = shaderMgr->LoadShader(
+        Renderer::WebShaderData::PBR_WGSL,
+        std::strlen(Renderer::WebShaderData::PBR_WGSL),
+        Renderer::GPUShaderStage::Vertex, "PBR_VS");
+    m_MainFragmentShader = m_MainVertexShader;  // Same module for both stages in WGSL
+
+    // Create bind group layouts
+    using BType = Renderer::GPUBindingType;
+    using SStage = Renderer::GPUShaderStage;
+
+    // Group 0: ViewProjection + Lighting
+    Renderer::GPUBindGroupLayoutDesc frameLayoutDesc;
+    frameLayoutDesc.entries = {
+        {0, BType::UniformBuffer, SStage::Vertex | SStage::Fragment, sizeof(WebViewProjectionUBO)},
+        {1, BType::UniformBuffer, SStage::Fragment, sizeof(WebLightingUBO)},
+    };
+    m_WebFrameLayout = bindMgr->CreateBindGroupLayout(frameLayoutDesc);
+
+    // Group 1: ObjectData
+    Renderer::GPUBindGroupLayoutDesc objectLayoutDesc;
+    objectLayoutDesc.entries = {
+        {0, BType::UniformBuffer, SStage::Vertex | SStage::Fragment, sizeof(WebObjectDataUBO)},
+    };
+    m_WebObjectLayout = bindMgr->CreateBindGroupLayout(objectLayoutDesc);
+
+    // Group 2: Textures (3 texture + 3 sampler)
+    Renderer::GPUBindGroupLayoutDesc texLayoutDesc;
+    texLayoutDesc.entries = {
+        {0, BType::SampledTexture, SStage::Fragment, 0},
+        {1, BType::Sampler, SStage::Fragment, 0},
+        {2, BType::SampledTexture, SStage::Fragment, 0},
+        {3, BType::Sampler, SStage::Fragment, 0},
+        {4, BType::SampledTexture, SStage::Fragment, 0},
+        {5, BType::Sampler, SStage::Fragment, 0},
+    };
+    m_WebTextureLayout = bindMgr->CreateBindGroupLayout(texLayoutDesc);
+
+    // Create pipeline
+    Renderer::GPURenderPipelineDesc pipeDesc;
+    pipeDesc.vertexShader = m_MainVertexShader;
+    pipeDesc.fragmentShader = m_MainFragmentShader;
+    pipeDesc.bindGroupLayouts = {m_WebFrameLayout, m_WebObjectLayout, m_WebTextureLayout};
+    pipeDesc.topology = Renderer::GPUPrimitiveTopology::TriangleList;
+    pipeDesc.cullMode = Renderer::GPUCullMode::None;
+    pipeDesc.frontFace = Renderer::GPUFrontFace::CCW;
+    pipeDesc.depthTest = true;
+    pipeDesc.depthWrite = true;
+    pipeDesc.depthCompare = Renderer::GPUCompareFunction::Less;
+    pipeDesc.alphaBlend = true;
+    pipeDesc.blendState.srcColor = Renderer::GPUBlendFactor::SrcAlpha;
+    pipeDesc.blendState.dstColor = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
+    pipeDesc.blendState.srcAlpha = Renderer::GPUBlendFactor::One;
+    pipeDesc.blendState.dstAlpha = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
+    pipeDesc.colorFormat = Renderer::GPUTextureFormat::BGRA8Unorm;
+    pipeDesc.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
+    pipeDesc.label = "PBR_Pipeline";
+
+    // Vertex layout: position(vec3), normal(vec3), uv(vec2), color(vec4), tangent(vec4), boneWeights(vec4), boneIndices(u32x4)
+    // Shader only uses locations 0-3: position, normal, uv, tangent
+    Renderer::GPUVertexBufferLayoutDesc vertLayout;
+    vertLayout.stride = sizeof(MeshComponent::Vertex);
+    vertLayout.attributes = {
+        {Renderer::GPUVertexFormat::Float32x3, 0, 0},                                       // position
+        {Renderer::GPUVertexFormat::Float32x3, static_cast<u32>(offsetof(MeshComponent::Vertex, normal)), 1},    // normal
+        {Renderer::GPUVertexFormat::Float32x2, static_cast<u32>(offsetof(MeshComponent::Vertex, uv)), 2},       // uv
+        {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, tangent)), 3},   // tangent
+    };
+    pipeDesc.vertexBuffers = {vertLayout};
+
+    m_MainPipeline = pipeMgr->CreateRenderPipeline(pipeDesc);
+    if (!m_MainPipeline.IsValid()) {
+        ENJIN_LOG_ERROR(Renderer, "RenderSystem: Failed to create PBR pipeline");
+        return;
+    }
+
+    // Create uniform buffers
+    Renderer::GPUBufferDesc bufDesc;
+    bufDesc.usage = Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst;
+    bufDesc.hostVisible = true;
+
+    bufDesc.size = sizeof(WebViewProjectionUBO);
+    bufDesc.label = "ViewProjUBO";
+    m_WebViewProjBuffer = bufMgr->CreateBuffer(bufDesc);
+
+    bufDesc.size = sizeof(WebLightingUBO);
+    bufDesc.label = "LightingUBO";
+    m_WebLightingBuffer = bufMgr->CreateBuffer(bufDesc);
+
+    bufDesc.size = sizeof(WebObjectDataUBO);
+    bufDesc.label = "ObjectDataUBO";
+    m_WebObjectBuffer = bufMgr->CreateBuffer(bufDesc);
+
+    // Create default textures
+    m_WebDefaultWhiteTex = texMgr->CreateSolidColor(255, 255, 255, 255);
+    m_WebDefaultNormalTex = texMgr->CreateSolidColor(128, 128, 255, 255);  // flat +Z normal
+    m_WebDefaultBlackTex = texMgr->CreateSolidColor(0, 255, 0, 255);      // metallic=0, roughness=1
+
+    // Create frame bind group (group 0)
+    Renderer::GPUBindGroupDesc frameBGDesc;
+    frameBGDesc.layout = m_WebFrameLayout;
+    frameBGDesc.entries = {
+        {0, m_WebViewProjBuffer, 0, sizeof(WebViewProjectionUBO), {}, {}},
+        {1, m_WebLightingBuffer, 0, sizeof(WebLightingUBO), {}, {}},
+    };
+    m_WebFrameBindGroup = bindMgr->CreateBindGroup(frameBGDesc);
+
+    // Create object bind group (group 1)
+    Renderer::GPUBindGroupDesc objBGDesc;
+    objBGDesc.layout = m_WebObjectLayout;
+    objBGDesc.entries = {
+        {0, m_WebObjectBuffer, 0, sizeof(WebObjectDataUBO), {}, {}},
+    };
+    m_WebObjectBindGroup = bindMgr->CreateBindGroup(objBGDesc);
+
+    // Create default texture bind group (group 2)
+    Renderer::GPUBindGroupDesc defTexBGDesc;
+    defTexBGDesc.layout = m_WebTextureLayout;
+    defTexBGDesc.entries = {
+        {0, {}, 0, 0, m_WebDefaultWhiteTex, {}},
+        {1, {}, 0, 0, {}, m_WebDefaultWhiteTex},   // sampler from white tex
+        {2, {}, 0, 0, m_WebDefaultNormalTex, {}},
+        {3, {}, 0, 0, {}, m_WebDefaultNormalTex},
+        {4, {}, 0, 0, m_WebDefaultBlackTex, {}},
+        {5, {}, 0, 0, {}, m_WebDefaultBlackTex},
+    };
+    m_WebDefaultTexBindGroup = bindMgr->CreateBindGroup(defTexBGDesc);
+
     m_Initialized = true;
-    ENJIN_LOG_INFO(Renderer, "RenderSystem initialized (WebGPU stub)");
+    ENJIN_LOG_INFO(Renderer, "RenderSystem initialized (WebGPU, PBR pipeline)");
 }
 
 void RenderSystem::Shutdown() {
+    if (!m_Initialized) return;
+
+    if (m_Renderer) m_Renderer->WaitForAllFrames();
+
+    auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr;
+    auto* texMgr = m_Renderer ? m_Renderer->GetTextureManager() : nullptr;
+    auto* pipeMgr = m_Renderer ? m_Renderer->GetPipelineManager() : nullptr;
+    auto* bindMgr = m_Renderer ? m_Renderer->GetBindGroupManager() : nullptr;
+    auto* shaderMgr = m_Renderer ? m_Renderer->GetShaderManager() : nullptr;
+
+    // Destroy entity GPU data
+    if (bufMgr) {
+        for (auto& rd : m_EntityRenderData) {
+            if (rd.valid) {
+                if (rd.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.vertexBuffer);
+                if (rd.indexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.indexBuffer);
+                rd.Invalidate();
+            }
+        }
+    }
+
+    // Destroy bind groups
+    if (bindMgr) {
+        if (m_WebFrameBindGroup.IsValid()) bindMgr->DestroyBindGroup(m_WebFrameBindGroup);
+        if (m_WebObjectBindGroup.IsValid()) bindMgr->DestroyBindGroup(m_WebObjectBindGroup);
+        if (m_WebDefaultTexBindGroup.IsValid()) bindMgr->DestroyBindGroup(m_WebDefaultTexBindGroup);
+        if (m_WebFrameLayout.IsValid()) bindMgr->DestroyBindGroupLayout(m_WebFrameLayout);
+        if (m_WebObjectLayout.IsValid()) bindMgr->DestroyBindGroupLayout(m_WebObjectLayout);
+        if (m_WebTextureLayout.IsValid()) bindMgr->DestroyBindGroupLayout(m_WebTextureLayout);
+    }
+
+    // Destroy buffers
+    if (bufMgr) {
+        if (m_WebViewProjBuffer.IsValid()) bufMgr->DestroyBuffer(m_WebViewProjBuffer);
+        if (m_WebLightingBuffer.IsValid()) bufMgr->DestroyBuffer(m_WebLightingBuffer);
+        if (m_WebObjectBuffer.IsValid()) bufMgr->DestroyBuffer(m_WebObjectBuffer);
+    }
+
+    // Destroy textures
+    if (texMgr) {
+        if (m_WebDefaultWhiteTex.IsValid()) texMgr->DestroyTexture(m_WebDefaultWhiteTex);
+        if (m_WebDefaultNormalTex.IsValid()) texMgr->DestroyTexture(m_WebDefaultNormalTex);
+        if (m_WebDefaultBlackTex.IsValid()) texMgr->DestroyTexture(m_WebDefaultBlackTex);
+    }
+
+    // Destroy pipeline and shaders
+    if (pipeMgr && m_MainPipeline.IsValid()) pipeMgr->DestroyPipeline(m_MainPipeline);
+    if (shaderMgr && m_MainVertexShader.IsValid()) shaderMgr->DestroyShader(m_MainVertexShader);
+
     m_Initialized = false;
 }
 
+// ============================================================================
+// Frame rendering
+// ============================================================================
+
+void RenderSystem::Update(f32 deltaTime) {
+    if (!m_Renderer || !m_Initialized || !m_MainPipeline.IsValid()) return;
+    if (!m_Camera) return;
+
+    m_WebTime += deltaTime;
+    auto* bufMgr = m_Renderer->GetBufferManager();
+    if (!bufMgr) return;
+
+    RefreshStorageCache();
+    ResetFrameCounters();
+
+    // Upload ViewProjection UBO
+    {
+        WebViewProjectionUBO vp{};
+        vp.view = m_Camera->GetViewMatrix();
+        vp.proj = m_Camera->GetProjectionMatrix();
+        vp.viewPos = m_Camera->GetPosition();
+        vp.time = m_WebTime;
+        bufMgr->UploadData(m_WebViewProjBuffer, &vp, sizeof(vp));
+    }
+
+    // Upload Lighting UBO
+    {
+        WebLightingUBO lit{};
+        std::memset(&lit, 0, sizeof(lit));
+
+        u32 dirCount = 0, pointCount = 0;
+        if (m_CachedTransformStorage) {
+            for (Entity lightEntity : m_CachedLightEntities) {
+                auto* lc = m_World->GetComponent<LightComponent>(lightEntity);
+                auto* xf = m_CachedTransformStorage->Get(lightEntity);
+                if (!lc || !xf) continue;
+
+                if (lc->type == LightType::Directional && dirCount < 4) {
+                    Math::Vector3 fwd = xf->rotation.GetForward();
+                    lit.lightDir[dirCount] = {fwd.x, fwd.y, fwd.z, 0.0f};
+                    lit.lightColor[dirCount] = {lc->color.x, lc->color.y, lc->color.z, lc->intensity};
+                    dirCount++;
+                } else if (lc->type == LightType::Point && pointCount < 4) {
+                    u32 idx = 4 + pointCount;
+                    Math::Vector3 pos = xf->position;
+                    lit.lightDir[idx] = {pos.x, pos.y, pos.z, 1.0f};
+                    lit.lightColor[idx] = {lc->color.x, lc->color.y, lc->color.z, lc->intensity};
+                    lit.lightParams[idx] = {lc->range, 0, 0, 0};
+                    pointCount++;
+                }
+            }
+        }
+
+        // Fallback: if no lights, use a default directional
+        if (dirCount == 0 && pointCount == 0) {
+            lit.lightDir[0] = {0.5f, -0.8f, 0.3f, 0.0f};
+            lit.lightColor[0] = {1.0f, 0.95f, 0.9f, 1.5f};
+            dirCount = 1;
+        }
+
+        lit.ambientColor = {m_AmbientColor.x, m_AmbientColor.y, m_AmbientColor.z, m_AmbientIntensity};
+        lit.lightCount = {static_cast<f32>(dirCount), static_cast<f32>(pointCount), 0.0f, 0.0f};
+        bufMgr->UploadData(m_WebLightingBuffer, &lit, sizeof(lit));
+    }
+
+    // Begin render pass
+    Renderer::GPURenderPassDesc passDesc;  // default = swapchain
+    auto* encoder = m_Renderer->BeginRenderPass(passDesc);
+    if (!encoder) return;
+
+    f32 w = static_cast<f32>(m_Renderer->GetSwapchainWidth());
+    f32 h = static_cast<f32>(m_Renderer->GetSwapchainHeight());
+    encoder->BindPipeline(m_MainPipeline);
+    encoder->SetViewport(0, 0, w, h);
+    encoder->SetScissor(0, 0, static_cast<u32>(w), static_cast<u32>(h));
+    encoder->SetBindGroup(0, m_WebFrameBindGroup);
+
+    // Render each entity with a mesh
+    {
+        const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
+        for (Entity entity : meshEntities) {
+            auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
+            auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
+            if (!mesh || !xf || !xf->visible) continue;
+            if (mesh->vertices.empty() || mesh->indices.empty()) continue;
+
+            // Ensure GPU buffers
+            u64 eid = static_cast<u64>(entity);
+            if (eid >= m_EntityRenderData.size()) m_EntityRenderData.resize(eid + 1);
+            auto& rd = m_EntityRenderData[eid];
+
+            if (!rd.valid) {
+                Renderer::GPUBufferDesc vbDesc;
+                vbDesc.size = mesh->vertices.size() * sizeof(MeshComponent::Vertex);
+                vbDesc.usage = Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst;
+                vbDesc.hostVisible = true;
+                rd.vertexBuffer = bufMgr->CreateBufferWithData(vbDesc, mesh->vertices.data());
+
+                Renderer::GPUBufferDesc ibDesc;
+                ibDesc.size = mesh->indices.size() * sizeof(u32);
+                ibDesc.usage = Renderer::GPUBufferUsage::Index | Renderer::GPUBufferUsage::CopyDst;
+                ibDesc.hostVisible = true;
+                rd.indexBuffer = bufMgr->CreateBufferWithData(ibDesc, mesh->indices.data());
+
+                rd.indexCount = static_cast<u32>(mesh->indices.size());
+                rd.valid = true;
+            }
+
+            if (!rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) return;
+
+            // Upload per-entity ObjectData
+            WebObjectDataUBO obj{};
+            obj.model = xf->ToMatrix();
+
+            auto* mat = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
+            obj.baseColor = mat ? mat->baseColor : Math::Vector3(0.8f, 0.8f, 0.8f);
+            obj.metallic = mat ? mat->metallic : 0.0f;
+            obj.roughness = mat ? mat->roughness : 0.5f;
+            obj.emissiveColor = mat ? mat->emissiveColor : Math::Vector3(0, 0, 0);
+            obj.emissiveStrength = mat ? mat->emissiveStrength : 0.0f;
+            obj.opacity = mat ? mat->opacity : 1.0f;
+            obj.alphaCutoff = mat ? mat->alphaCutoff : 0.0f;
+            obj.flags = 0;
+            obj.parallaxScale = 0.0f;
+
+            bufMgr->UploadData(m_WebObjectBuffer, &obj, sizeof(obj));
+
+            encoder->SetBindGroup(1, m_WebObjectBindGroup);
+            encoder->SetBindGroup(2, m_WebDefaultTexBindGroup);
+            encoder->SetVertexBuffer(0, rd.vertexBuffer);
+            encoder->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32);
+            encoder->DrawIndexed(rd.indexCount);
+
+            m_DrawCallCount++;
+            m_TriangleCount += rd.indexCount / 3;
+        }
+    }
+
+    m_Renderer->EndRenderPass(encoder);
+}
+
+void RenderSystem::OnEntityAdded(Entity entity) {
+    m_LightListDirty = true;
+    m_RenderListDirty = true;
+}
+
+void RenderSystem::OnEntityRemoved(Entity entity) {
+    m_LightListDirty = true;
+    m_RenderListDirty = true;
+
+    u64 eid = static_cast<u64>(entity);
+    if (eid < m_EntityRenderData.size() && m_EntityRenderData[eid].valid) {
+        auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr;
+        if (bufMgr) {
+            auto& rd = m_EntityRenderData[eid];
+            if (rd.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.vertexBuffer);
+            if (rd.indexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.indexBuffer);
+        }
+        m_EntityRenderData[eid].Invalidate();
+    }
+}
+
 void RenderSystem::OnSceneClear() { m_SceneClearPending = true; }
-void RenderSystem::FlushSceneClear() { m_SceneClearPending = false; }
-void RenderSystem::FlushPendingChanges() {}
-void RenderSystem::Update(f32 /*deltaTime*/) {}
-void RenderSystem::OnEntityAdded(Entity /*entity*/) {}
-void RenderSystem::OnEntityRemoved(Entity /*entity*/) {}
-void RenderSystem::RefreshStorageCache() {}
+
+void RenderSystem::FlushSceneClear() {
+    if (!m_SceneClearPending) return;
+    m_SceneClearPending = false;
+
+    auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr;
+    if (bufMgr) {
+        for (auto& rd : m_EntityRenderData) {
+            if (rd.valid) {
+                if (rd.vertexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.vertexBuffer);
+                if (rd.indexBuffer.IsValid()) bufMgr->DestroyBuffer(rd.indexBuffer);
+                rd.Invalidate();
+            }
+        }
+    }
+    m_EntityRenderData.clear();
+    m_CachedLightEntities.clear();
+    m_LightListDirty = true;
+}
+
+void RenderSystem::FlushPendingChanges() {
+    if (m_SceneClearPending) FlushSceneClear();
+}
+
+void RenderSystem::RefreshStorageCache() {
+    if (!m_World) return;
+    m_CachedTransformStorage = m_World->GetComponentStorage<TransformComponent>();
+    m_CachedMeshStorage = m_World->GetComponentStorage<MeshComponent>();
+    m_CachedMaterialStorage = m_World->GetComponentStorage<MaterialComponent>();
+
+    // Rebuild light entity list if dirty
+    if (m_LightListDirty) {
+        m_CachedLightEntities.clear();
+        const auto& lightEntities = m_World->GetEntitiesWithComponent<LightComponent>();
+        m_CachedLightEntities.assign(lightEntities.begin(), lightEntities.end());
+        m_LightListDirty = false;
+    }
+}
+
 void RenderSystem::RenderEntity(Entity /*entity*/) {}
 void RenderSystem::RenderSprites() {}
 void RenderSystem::ClassifySceneComposition() {}
 void RenderSystem::CreateDefaultMesh() {}
 void RenderSystem::CreatePipeline() {}
 
-// Stubs for public methods used by editor/player
+// Stubs for methods not yet needed on WebGPU
 void RenderSystem::SetBackfaceCullingEnabled(bool enabled) { m_BackfaceCulling = enabled; }
 void RenderSystem::SetWireframeEnabled(bool enabled) { m_WireframeMode = enabled; }
 void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* /*sim*/) {}

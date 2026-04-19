@@ -678,7 +678,30 @@ private:
     Renderer::GPUBindGroupLayoutHandle m_MainBindGroupLayout;
     Renderer::IRenderEncoder* m_ActiveEncoder = nullptr;  // Valid between BeginRenderPass/EndRenderPass
 
-#if !ENJIN_RENDERER_WEBGPU
+#if ENJIN_RENDERER_WEBGPU
+    // WebGPU-specific rendering resources
+    // Bind group layouts (3 groups for PBR: frame, object, textures)
+    Renderer::GPUBindGroupLayoutHandle m_WebFrameLayout;     // group 0: ViewProj + Lighting
+    Renderer::GPUBindGroupLayoutHandle m_WebObjectLayout;    // group 1: ObjectData
+    Renderer::GPUBindGroupLayoutHandle m_WebTextureLayout;   // group 2: 3 tex + 3 sampler
+
+    // Uniform buffers
+    Renderer::GPUBufferHandle m_WebViewProjBuffer;           // 144 bytes
+    Renderer::GPUBufferHandle m_WebLightingBuffer;           // 464 bytes
+    Renderer::GPUBufferHandle m_WebObjectBuffer;             // 128 bytes
+
+    // Bind groups
+    Renderer::GPUBindGroupHandle m_WebFrameBindGroup;        // group 0
+    Renderer::GPUBindGroupHandle m_WebObjectBindGroup;       // group 1
+    Renderer::GPUBindGroupHandle m_WebDefaultTexBindGroup;   // group 2 (default textures)
+
+    // Default textures
+    Renderer::GPUTextureHandle m_WebDefaultWhiteTex;
+    Renderer::GPUTextureHandle m_WebDefaultNormalTex;
+    Renderer::GPUTextureHandle m_WebDefaultBlackTex;
+
+    f32 m_WebTime = 0.0f;  // Accumulated time for shader animations
+#else
     // Vulkan-specific rendering resources (advanced pipelines)
     std::unique_ptr<Renderer::VulkanPipeline> m_Pipeline;               // Vulkan main pipeline (kept for compatibility)
     std::unique_ptr<Renderer::VulkanPipeline> m_OffscreenPipeline;
