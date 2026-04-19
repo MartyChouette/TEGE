@@ -13,6 +13,10 @@ struct ViewProjection {
     proj: mat4x4<f32>,
     viewPos: vec3<f32>,
     time: f32,
+    lightVP: mat4x4<f32>,
+    shadowEnabled: f32,
+    shadowBias: f32,
+    _pad: vec2<f32>,
 };
 
 struct LightingUBO {
@@ -28,6 +32,8 @@ struct LightingUBO {
 
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;
 @group(0) @binding(1) var<uniform> lighting: LightingUBO;
+@group(0) @binding(2) var shadowMap: texture_depth_2d;
+@group(0) @binding(3) var shadowSampler: sampler_comparison;
 
 struct ObjectData {
     model: mat4x4<f32>,
@@ -67,6 +73,7 @@ struct VertexOutput {
     @location(2) uv: vec2<f32>,
     @location(3) world_tangent: vec3<f32>,
     @location(4) world_bitangent: vec3<f32>,
+    @location(5) shadow_coord: vec3<f32>,
 };
 
 @vertex
@@ -103,6 +110,14 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.world_tangent = normalize(normal_mat * localTangent);
     out.world_bitangent = cross(out.world_normal, out.world_tangent) * in.tangent.w;
     out.uv = in.uv;
+
+    // Shadow coordinate: transform world position to light clip space → [0,1] UV + depth
+    let lightClip = viewProj.lightVP * world_pos;
+    out.shadow_coord = vec3<f32>(
+        lightClip.x * 0.5 + 0.5,
+        1.0 - (lightClip.y * 0.5 + 0.5),  // Flip Y for texture coordinates
+        lightClip.z
+    );
     return out;
 }
 
@@ -166,6 +181,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let NdotL = max(dot(N, L), 0.0);
         Lo = Lo + (kD * albedo / 3.14159265 + specular) * radiance * NdotL;
     }
+
+    // Shadow
+    var shadow = 1.0;
+    if (viewProj.shadowEnabled > 0.5) {
+        let sc = in.shadow_coord;
+        if (sc.x >= 0.0 && sc.x <= 1.0 && sc.y >= 0.0 && sc.y <= 1.0 && sc.z >= 0.0 && sc.z <= 1.0) {
+            shadow = textureSampleCompare(shadowMap, shadowSampler, vec2<f32>(sc.x, sc.y), sc.z - viewProj.shadowBias);
+        }
+    }
+    Lo = Lo * shadow;
 
     let ambient = lighting.ambientColor.rgb * lighting.ambientColor.w * albedo;
     let emissive = object.emissiveColor * object.emissiveStrength;

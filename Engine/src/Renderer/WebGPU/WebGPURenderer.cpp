@@ -195,18 +195,23 @@ bool WebGPURenderer::BeginFrameWebGPU() {
 
     if (!m_CurrentSwapChainView) return false;
 
-    // Create command encoder
+    // Create command encoder (render passes started via BeginRenderPass)
     WGPUCommandEncoderDescriptor encoderDesc = {};
     encoderDesc.label = wgpuStr("FrameEncoder");
     m_CommandEncoder = wgpuDeviceCreateCommandEncoder(m_Device, &encoderDesc);
+    return true;
+}
 
-    // Begin render pass
+void WebGPURenderer::BeginMainRenderPass() {
+    if (!m_CommandEncoder || !m_CurrentSwapChainView) return;
+    if (m_RenderPassEncoder) return;  // Already active
+
     WGPURenderPassColorAttachment colorAttachment = {};
     colorAttachment.view = m_CurrentSwapChainView;
-    colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;  // Required for 2D textures in Dawn
+    colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
     colorAttachment.loadOp = WGPULoadOp_Clear;
     colorAttachment.storeOp = WGPUStoreOp_Store;
-    colorAttachment.clearValue = {0.4, 0.5, 0.65, 1.0};  // Light blue-grey sky
+    colorAttachment.clearValue = {0.4, 0.5, 0.65, 1.0};
 
     WGPURenderPassDepthStencilAttachment depthAttachment = {};
     depthAttachment.view = m_DepthTextureView;
@@ -223,7 +228,26 @@ bool WebGPURenderer::BeginFrameWebGPU() {
     renderPassDesc.label = wgpuStr("MainPass");
 
     m_RenderPassEncoder = wgpuCommandEncoderBeginRenderPass(m_CommandEncoder, &renderPassDesc);
-    return true;
+}
+
+WGPURenderPassEncoder WebGPURenderer::BeginDepthOnlyPass(WGPUTextureView depthView, u32 width, u32 height) {
+    if (!m_CommandEncoder || !depthView) return nullptr;
+
+    WGPURenderPassDepthStencilAttachment depthAttachment = {};
+    depthAttachment.view = depthView;
+    depthAttachment.depthLoadOp = WGPULoadOp_Clear;
+    depthAttachment.depthStoreOp = WGPUStoreOp_Store;
+    depthAttachment.depthClearValue = 1.0f;
+    depthAttachment.stencilLoadOp = WGPULoadOp_Clear;
+    depthAttachment.stencilStoreOp = WGPUStoreOp_Store;
+
+    WGPURenderPassDescriptor passDesc = {};
+    passDesc.colorAttachmentCount = 0;
+    passDesc.colorAttachments = nullptr;
+    passDesc.depthStencilAttachment = &depthAttachment;
+    passDesc.label = wgpuStr("ShadowPass");
+
+    return wgpuCommandEncoderBeginRenderPass(m_CommandEncoder, &passDesc);
 }
 
 void WebGPURenderer::EndFrame() {
@@ -546,8 +570,9 @@ IGPUShaderManager* WebGPURenderer::GetShaderManager() { return m_ShaderMgr.get()
 IGPUBindGroupManager* WebGPURenderer::GetBindGroupManager() { return m_BindGroupMgr.get(); }
 
 IRenderEncoder* WebGPURenderer::BeginRenderPass(const GPURenderPassDesc& desc) {
-    // Default desc (width=0) = main swapchain render pass (already active from BeginFrameWebGPU)
+    // Default desc (width=0) = main swapchain render pass
     if (desc.width == 0 && desc.height == 0) {
+        if (!m_RenderPassEncoder) BeginMainRenderPass();
         if (!m_RenderPassEncoder) return nullptr;
         m_ActiveEncoder = std::make_unique<WebGPURenderEncoder>(
             this, m_RenderPassEncoder,

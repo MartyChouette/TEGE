@@ -58,8 +58,14 @@ public:
     // --- Lifecycle (Window-based, primary entry point) ---
     bool Initialize(Window* window);
 
-    // Begin a new frame — returns false if failed (swapchain lost, etc.)
+    // Begin a new frame — acquires swapchain + creates command encoder. No render pass yet.
     bool BeginFrameWebGPU();
+
+    // Begin the main swapchain render pass (call after BeginFrameWebGPU and any pre-passes)
+    void BeginMainRenderPass();
+
+    // Begin a depth-only render pass for shadow mapping. Returns raw encoder (caller ends it).
+    WGPURenderPassEncoder BeginDepthOnlyPass(WGPUTextureView depthView, u32 width, u32 height);
 
     // --- Swap chain ---
     u32 GetSwapChainWidth() const { return m_SwapChainWidth; }

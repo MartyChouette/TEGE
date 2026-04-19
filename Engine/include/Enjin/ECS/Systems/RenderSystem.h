@@ -703,6 +703,18 @@ private:
     // Default bone buffer (single identity matrix for non-skinned meshes)
     Renderer::GPUBufferHandle m_WebDefaultBoneBuffer;
 
+    // Shadow mapping (1-cascade directional)
+    static constexpr u32 WEB_SHADOW_MAP_SIZE = 1024;
+    Renderer::GPUPipelineHandle m_WebShadowPipeline;
+    Renderer::GPUShaderHandle m_WebShadowShader;
+    Renderer::GPUTextureHandle m_WebShadowMapTex;
+    Renderer::GPUBindGroupLayoutHandle m_WebShadowFrameLayout;
+    Renderer::GPUBindGroupLayoutHandle m_WebShadowObjectLayout;
+    Renderer::GPUBufferHandle m_WebShadowVPBuffer;       // light VP UBO
+    Renderer::GPUBufferHandle m_WebShadowObjectBuffer;   // per-entity model UBO
+    Renderer::GPUBindGroupHandle m_WebShadowFrameBG;
+    Renderer::GPUBindGroupHandle m_WebShadowObjectBG;
+
     f32 m_WebTime = 0.0f;  // Accumulated time for shader animations
 #else
     // Vulkan-specific rendering resources (advanced pipelines)
