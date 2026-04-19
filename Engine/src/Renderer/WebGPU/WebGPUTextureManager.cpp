@@ -24,10 +24,44 @@ void WebGPUTextureManager::Shutdown() {
     m_Pool.Clear();
 }
 
+// Translate GPUTextureFormat to WGPUTextureFormat
+static WGPUTextureFormat TranslateFormat(GPUTextureFormat fmt) {
+    switch (fmt) {
+        case GPUTextureFormat::RGBA8Unorm:          return WGPUTextureFormat_RGBA8Unorm;
+        case GPUTextureFormat::RGBA8Srgb:           return WGPUTextureFormat_RGBA8UnormSrgb;
+        case GPUTextureFormat::BGRA8Unorm:          return WGPUTextureFormat_BGRA8Unorm;
+        case GPUTextureFormat::BGRA8Srgb:           return WGPUTextureFormat_BGRA8UnormSrgb;
+        case GPUTextureFormat::RGBA16Float:         return WGPUTextureFormat_RGBA16Float;
+        case GPUTextureFormat::RGBA32Float:         return WGPUTextureFormat_RGBA32Float;
+        case GPUTextureFormat::R8Unorm:             return WGPUTextureFormat_R8Unorm;
+        case GPUTextureFormat::RG8Unorm:            return WGPUTextureFormat_RG8Unorm;
+        case GPUTextureFormat::Depth24PlusStencil8: return WGPUTextureFormat_Depth24PlusStencil8;
+        case GPUTextureFormat::Depth32Float:        return WGPUTextureFormat_Depth32Float;
+        case GPUTextureFormat::Depth16Unorm:        return WGPUTextureFormat_Depth16Unorm;
+    }
+    return WGPUTextureFormat_RGBA8Unorm;
+}
+
+// Translate GPUTextureUsage to WGPUTextureUsage
+static WGPUTextureUsage TranslateUsage(GPUTextureUsage usage) {
+    WGPUTextureUsage result = 0;
+    if (static_cast<u32>(usage) & static_cast<u32>(GPUTextureUsage::Sampled))          result |= WGPUTextureUsage_TextureBinding;
+    if (static_cast<u32>(usage) & static_cast<u32>(GPUTextureUsage::Storage))          result |= WGPUTextureUsage_StorageBinding;
+    if (static_cast<u32>(usage) & static_cast<u32>(GPUTextureUsage::RenderAttachment)) result |= WGPUTextureUsage_RenderAttachment;
+    if (static_cast<u32>(usage) & static_cast<u32>(GPUTextureUsage::CopySrc))          result |= WGPUTextureUsage_CopySrc;
+    if (static_cast<u32>(usage) & static_cast<u32>(GPUTextureUsage::CopyDst))          result |= WGPUTextureUsage_CopyDst;
+    return result ? result : WGPUTextureUsage_TextureBinding;
+}
+
 GPUTextureHandle WebGPUTextureManager::CreateTexture(const GPUTextureDesc& desc) {
-    auto native = m_Renderer->CreateTexture(desc.width, desc.height,
-        WGPUTextureFormat_RGBA8Unorm, WGPUTextureUsage_TextureBinding, nullptr);
-    if (!native.texture) return {};
+    WGPUTextureFormat wgpuFmt = TranslateFormat(desc.format);
+    WGPUTextureUsage wgpuUsage = TranslateUsage(desc.usage);
+    auto native = m_Renderer->CreateTexture(desc.width, desc.height, wgpuFmt, wgpuUsage, nullptr);
+    if (!native.texture) {
+        ENJIN_LOG_ERROR(Core, "WebGPUTextureManager: CreateTexture failed (%ux%u, fmt=%d)",
+                        desc.width, desc.height, static_cast<int>(desc.format));
+        return {};
+    }
 
     auto handle = m_Pool.Allocate();
     auto* slot = m_Pool.Get(handle);
@@ -38,9 +72,13 @@ GPUTextureHandle WebGPUTextureManager::CreateTexture(const GPUTextureDesc& desc)
 }
 
 GPUTextureHandle WebGPUTextureManager::CreateTextureWithData(const GPUTextureDesc& desc, const void* pixelData) {
-    auto native = m_Renderer->CreateTexture(desc.width, desc.height,
-        WGPUTextureFormat_RGBA8Unorm, WGPUTextureUsage_TextureBinding, pixelData);
-    if (!native.texture) return {};
+    WGPUTextureFormat wgpuFmt = TranslateFormat(desc.format);
+    WGPUTextureUsage wgpuUsage = TranslateUsage(desc.usage);
+    auto native = m_Renderer->CreateTexture(desc.width, desc.height, wgpuFmt, wgpuUsage, pixelData);
+    if (!native.texture) {
+        ENJIN_LOG_ERROR(Core, "WebGPUTextureManager: CreateTextureWithData failed (%ux%u)", desc.width, desc.height);
+        return {};
+    }
 
     auto handle = m_Pool.Allocate();
     auto* slot = m_Pool.Get(handle);

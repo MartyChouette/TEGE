@@ -4,6 +4,7 @@
 
 #include "Enjin/Renderer/WebGPU/WebGPUPipelineManager.h"
 #include "Enjin/Renderer/WebGPU/WebGPUShaderManager.h"
+#include "Enjin/Renderer/WebGPU/WebGPUBindGroupManager.h"
 #include "Enjin/Renderer/WebGPU/WebGPURenderer.h"
 #include "Enjin/Logging/Log.h"
 
@@ -11,8 +12,9 @@ namespace Enjin::Renderer {
 
 static WGPUStringView wgpuStr(const char* s) { return {s, WGPU_STRLEN}; }
 
-WebGPUPipelineManager::WebGPUPipelineManager(WebGPURenderer* renderer, WebGPUShaderManager* shaderMgr)
-    : m_Renderer(renderer), m_ShaderMgr(shaderMgr) {}
+WebGPUPipelineManager::WebGPUPipelineManager(WebGPURenderer* renderer, WebGPUShaderManager* shaderMgr,
+                                               WebGPUBindGroupManager* bindGroupMgr)
+    : m_Renderer(renderer), m_ShaderMgr(shaderMgr), m_BindGroupMgr(bindGroupMgr) {}
 
 WebGPUPipelineManager::~WebGPUPipelineManager() {
     Shutdown();
@@ -186,7 +188,24 @@ GPUPipelineHandle WebGPUPipelineManager::CreateRenderPipeline(const GPURenderPip
         depthStencil.depthBiasSlopeScale = desc.depthBiasSlope;
     }
 
+    // Create explicit pipeline layout from bind group layouts
+    WGPUPipelineLayout pipelineLayout = nullptr;
+    if (m_BindGroupMgr && !desc.bindGroupLayouts.empty()) {
+        std::vector<WGPUBindGroupLayout> nativeLayouts;
+        for (const auto& layoutHandle : desc.bindGroupLayouts) {
+            WGPUBindGroupLayout native = m_BindGroupMgr->GetNativeLayout(layoutHandle);
+            if (native) nativeLayouts.push_back(native);
+        }
+        if (nativeLayouts.size() == desc.bindGroupLayouts.size()) {
+            WGPUPipelineLayoutDescriptor layoutDesc = {};
+            layoutDesc.bindGroupLayoutCount = static_cast<u32>(nativeLayouts.size());
+            layoutDesc.bindGroupLayouts = nativeLayouts.data();
+            pipelineLayout = wgpuDeviceCreatePipelineLayout(m_Renderer->GetDevice(), &layoutDesc);
+        }
+    }
+
     WGPURenderPipelineDescriptor pipelineDesc = {};
+    pipelineDesc.layout = pipelineLayout;  // nullptr = auto layout (fallback)
     pipelineDesc.vertex.module = vsModule;
     pipelineDesc.vertex.entryPoint = wgpuStr("vs_main");
     pipelineDesc.vertex.bufferCount = static_cast<u32>(vbLayouts.size());
@@ -200,6 +219,7 @@ GPUPipelineHandle WebGPUPipelineManager::CreateRenderPipeline(const GPURenderPip
     pipelineDesc.multisample.mask = 0xFFFFFFFF;
 
     WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(m_Renderer->GetDevice(), &pipelineDesc);
+    if (pipelineLayout) wgpuPipelineLayoutRelease(pipelineLayout);
     if (!pipeline) {
         ENJIN_LOG_ERROR(Core, "WebGPUPipelineManager: Pipeline creation failed%s%s",
                         desc.label ? ": " : "", desc.label ? desc.label : "");

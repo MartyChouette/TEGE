@@ -140,8 +140,8 @@ bool WebGPURenderer::Initialize(Window* window) {
     m_BufferMgr = std::make_unique<WebGPUBufferManager>(this);
     m_TextureMgr = std::make_unique<WebGPUTextureManager>(this);
     m_ShaderMgr = std::make_unique<WebGPUShaderManager>(this);
-    m_PipelineMgr = std::make_unique<WebGPUPipelineManager>(this, m_ShaderMgr.get());
     m_BindGroupMgr = std::make_unique<WebGPUBindGroupManager>(this, m_BufferMgr.get(), m_TextureMgr.get());
+    m_PipelineMgr = std::make_unique<WebGPUPipelineManager>(this, m_ShaderMgr.get(), m_BindGroupMgr.get());
 
     m_Initialized = true;
     ENJIN_LOG_INFO(Core, "WebGPURenderer initialized (%ux%u)", m_SwapChainWidth, m_SwapChainHeight);

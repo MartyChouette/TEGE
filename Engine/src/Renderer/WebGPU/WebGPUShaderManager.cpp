@@ -27,16 +27,18 @@ void WebGPUShaderManager::Shutdown() {
 
 GPUShaderHandle WebGPUShaderManager::LoadShader(const void* data, u64 size, GPUShaderStage stage,
                                                   const char* label) {
+    printf("[ShaderMgr] LoadShader: renderer=%p, label=%s, size=%llu\n", m_Renderer, label ? label : "null", (unsigned long long)size);
     auto* compiler = m_Renderer->GetShaderCompiler();
-    if (!compiler) return {};
+    printf("[ShaderMgr] compiler=%p\n", compiler);
+    if (!compiler) { printf("[ShaderMgr] ERROR: no compiler!\n"); return {}; }
 
     // Data is WGSL source text — ensure null-terminated
     std::string source(static_cast<const char*>(data), static_cast<size_t>(size));
+    printf("[ShaderMgr] Compiling %zu chars of WGSL...\n", source.size());
     WGPUShaderModule module = compiler->CompileWGSL(source.c_str(), label ? label : "shader");
+    printf("[ShaderMgr] Result: module=%p\n", module);
     if (!module) {
-        ENJIN_LOG_ERROR(Core, "WebGPUShaderManager: WGSL compilation failed%s%s: %s",
-                        label ? ": " : "", label ? label : "",
-                        compiler->GetLastError().c_str());
+        printf("[ShaderMgr] ERROR: WGSL compilation failed: %s\n", compiler->GetLastError().c_str());
         return {};
     }
 

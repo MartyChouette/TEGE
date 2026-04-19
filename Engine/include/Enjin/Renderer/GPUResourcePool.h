@@ -14,7 +14,7 @@ class GPUResourcePool {
 public:
     struct Slot {
         T resource{};
-        u32 generation = 0;
+        u32 generation = 1;  // Start at 1 so PackHandle(0,1) != 0 (handle 0 = invalid sentinel)
         bool alive = false;
     };
 

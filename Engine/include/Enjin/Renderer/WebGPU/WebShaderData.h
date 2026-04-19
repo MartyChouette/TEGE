@@ -13,10 +13,6 @@ struct ViewProjection {
     proj: mat4x4<f32>,
     viewPos: vec3<f32>,
     time: f32,
-    lightVP: mat4x4<f32>,
-    shadowEnabled: f32,
-    shadowBias: f32,
-    _pad: vec2<f32>,
 };
 
 struct LightingUBO {
@@ -32,8 +28,6 @@ struct LightingUBO {
 
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;
 @group(0) @binding(1) var<uniform> lighting: LightingUBO;
-@group(0) @binding(2) var shadowMap: texture_depth_2d;
-@group(0) @binding(3) var shadowSampler: sampler_comparison;
 
 struct ObjectData {
     model: mat4x4<f32>,
@@ -48,7 +42,6 @@ struct ObjectData {
     parallaxScale: f32,
 };
 @group(1) @binding(0) var<uniform> object: ObjectData;
-@group(1) @binding(1) var<storage, read> boneMatrices: array<mat4x4<f32>>;
 
 @group(2) @binding(0) var baseColorTex: texture_2d<f32>;
 @group(2) @binding(1) var baseColorSmp: sampler;
@@ -62,8 +55,6 @@ struct VertexInput {
     @location(1) normal: vec3<f32>,
     @location(2) uv: vec2<f32>,
     @location(3) tangent: vec4<f32>,
-    @location(4) boneWeights: vec4<f32>,
-    @location(5) boneIndices: vec4<u32>,
 };
 
 struct VertexOutput {
@@ -73,51 +64,22 @@ struct VertexOutput {
     @location(2) uv: vec2<f32>,
     @location(3) world_tangent: vec3<f32>,
     @location(4) world_bitangent: vec3<f32>,
-    @location(5) shadow_coord: vec3<f32>,
 };
 
 @vertex
 fn vs_main(in: VertexInput) -> VertexOutput {
     var out: VertexOutput;
 
-    // Skinning: flags bit 3 = skinned mesh
-    var localPos = vec4<f32>(in.position, 1.0);
-    var localNormal = in.normal;
-    var localTangent = in.tangent.xyz;
-    let isSkinned = (object.flags & 8) != 0;
-    if (isSkinned) {
-        let w = in.boneWeights;
-        let totalWeight = w.x + w.y + w.z + w.w;
-        if (totalWeight > 0.0) {
-            let b0 = boneMatrices[in.boneIndices.x];
-            let b1 = boneMatrices[in.boneIndices.y];
-            let b2 = boneMatrices[in.boneIndices.z];
-            let b3 = boneMatrices[in.boneIndices.w];
-            let skinMat = b0 * w.x + b1 * w.y + b2 * w.z + b3 * w.w;
-            localPos = skinMat * localPos;
-            localNormal = (skinMat * vec4<f32>(localNormal, 0.0)).xyz;
-            localTangent = (skinMat * vec4<f32>(localTangent, 0.0)).xyz;
-        }
-    }
-
-    let world_pos = object.model * localPos;
+    let world_pos = object.model * vec4<f32>(in.position, 1.0);
     out.clip_position = viewProj.proj * viewProj.view * world_pos;
     out.world_pos = world_pos.xyz;
     let normal_mat = mat3x3<f32>(
         object.model[0].xyz, object.model[1].xyz, object.model[2].xyz
     );
-    out.world_normal = normalize(normal_mat * localNormal);
-    out.world_tangent = normalize(normal_mat * localTangent);
+    out.world_normal = normalize(normal_mat * in.normal);
+    out.world_tangent = normalize(normal_mat * in.tangent.xyz);
     out.world_bitangent = cross(out.world_normal, out.world_tangent) * in.tangent.w;
     out.uv = in.uv;
-
-    // Shadow coordinate: transform world position to light clip space → [0,1] UV + depth
-    let lightClip = viewProj.lightVP * world_pos;
-    out.shadow_coord = vec3<f32>(
-        lightClip.x * 0.5 + 0.5,
-        1.0 - (lightClip.y * 0.5 + 0.5),  // Flip Y for texture coordinates
-        lightClip.z
-    );
     return out;
 }
 
@@ -181,16 +143,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let NdotL = max(dot(N, L), 0.0);
         Lo = Lo + (kD * albedo / 3.14159265 + specular) * radiance * NdotL;
     }
-
-    // Shadow
-    var shadow = 1.0;
-    if (viewProj.shadowEnabled > 0.5) {
-        let sc = in.shadow_coord;
-        if (sc.x >= 0.0 && sc.x <= 1.0 && sc.y >= 0.0 && sc.y <= 1.0 && sc.z >= 0.0 && sc.z <= 1.0) {
-            shadow = textureSampleCompare(shadowMap, shadowSampler, vec2<f32>(sc.x, sc.y), sc.z - viewProj.shadowBias);
-        }
-    }
-    Lo = Lo * shadow;
 
     let ambient = lighting.ambientColor.rgb * lighting.ambientColor.w * albedo;
     let emissive = object.emissiveColor * object.emissiveStrength;

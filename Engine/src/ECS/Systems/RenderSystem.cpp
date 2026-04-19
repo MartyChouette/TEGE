@@ -45,11 +45,7 @@ struct WebViewProjectionUBO {
     alignas(16) Math::Matrix4 proj;       // 64
     alignas(16) Math::Vector3 viewPos;    // 12
     f32 time;                              // 4
-    alignas(16) Math::Matrix4 lightVP;    // 64  — light view-projection for shadow mapping
-    f32 shadowEnabled;                     // 4
-    f32 shadowBias;                        // 4
-    f32 _pad[2];                           // 8
-};                                         // Total: 224 bytes
+};                                         // Total: 144 bytes
 
 struct alignas(16) WebLightVec4 { f32 x, y, z, w; };
 
@@ -93,15 +89,18 @@ void RenderSystem::Initialize() {
     if (m_Initialized) return;
     m_FrameAllocator = std::make_unique<FrameAllocator>(8 * 1024 * 1024);
 
+    printf("[RenderSystem] Initialize starting...\n");
+
     auto* shaderMgr = m_Renderer->GetShaderManager();
     auto* pipeMgr = m_Renderer->GetPipelineManager();
     auto* bufMgr = m_Renderer->GetBufferManager();
     auto* texMgr = m_Renderer->GetTextureManager();
     auto* bindMgr = m_Renderer->GetBindGroupManager();
     if (!shaderMgr || !pipeMgr || !bufMgr || !texMgr || !bindMgr) {
-        ENJIN_LOG_ERROR(Renderer, "RenderSystem: Backend managers not available");
+        printf("[RenderSystem] ERROR: Backend managers not available\n");
         return;
     }
+    printf("[RenderSystem] Managers OK\n");
 
     // Load PBR shader (single WGSL source, both vertex and fragment)
     m_MainVertexShader = shaderMgr->LoadShader(
@@ -109,26 +108,24 @@ void RenderSystem::Initialize() {
         std::strlen(Renderer::WebShaderData::PBR_WGSL),
         Renderer::GPUShaderStage::Vertex, "PBR_VS");
     m_MainFragmentShader = m_MainVertexShader;  // Same module for both stages in WGSL
+    printf("[RenderSystem] Shader loaded: %s\n", m_MainVertexShader.IsValid() ? "OK" : "FAILED");
 
     // Create bind group layouts
     using BType = Renderer::GPUBindingType;
     using SStage = Renderer::GPUShaderStage;
 
-    // Group 0: ViewProjection + Lighting + Shadow map
+    // Group 0: ViewProjection + Lighting
     Renderer::GPUBindGroupLayoutDesc frameLayoutDesc;
     frameLayoutDesc.entries = {
         {0, BType::UniformBuffer, SStage::Vertex | SStage::Fragment, sizeof(WebViewProjectionUBO)},
         {1, BType::UniformBuffer, SStage::Fragment, sizeof(WebLightingUBO)},
-        {2, BType::DepthTexture, SStage::Fragment, 0},
-        {3, BType::ComparisonSampler, SStage::Fragment, 0},
     };
     m_WebFrameLayout = bindMgr->CreateBindGroupLayout(frameLayoutDesc);
 
-    // Group 1: ObjectData + Bone matrices
+    // Group 1: ObjectData
     Renderer::GPUBindGroupLayoutDesc objectLayoutDesc;
     objectLayoutDesc.entries = {
         {0, BType::UniformBuffer, SStage::Vertex | SStage::Fragment, sizeof(WebObjectDataUBO)},
-        {1, BType::StorageBufferReadOnly, SStage::Vertex, 64},  // bone matrices (at least 1 mat4)
     };
     m_WebObjectLayout = bindMgr->CreateBindGroupLayout(objectLayoutDesc);
 
@@ -172,14 +169,13 @@ void RenderSystem::Initialize() {
         {Renderer::GPUVertexFormat::Float32x3, static_cast<u32>(offsetof(MeshComponent::Vertex, normal)), 1},    // normal
         {Renderer::GPUVertexFormat::Float32x2, static_cast<u32>(offsetof(MeshComponent::Vertex, uv)), 2},       // uv
         {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, tangent)), 3},   // tangent
-        {Renderer::GPUVertexFormat::Float32x4, static_cast<u32>(offsetof(MeshComponent::Vertex, boneWeights)), 4}, // boneWeights
-        {Renderer::GPUVertexFormat::Uint32x4,  static_cast<u32>(offsetof(MeshComponent::Vertex, boneIndices)), 5}, // boneIndices
     };
     pipeDesc.vertexBuffers = {vertLayout};
 
     m_MainPipeline = pipeMgr->CreateRenderPipeline(pipeDesc);
+    printf("[RenderSystem] Pipeline created: %s\n", m_MainPipeline.IsValid() ? "OK" : "FAILED");
     if (!m_MainPipeline.IsValid()) {
-        ENJIN_LOG_ERROR(Renderer, "RenderSystem: Failed to create PBR pipeline");
+        printf("[RenderSystem] ERROR: Pipeline creation failed, aborting init\n");
         return;
     }
 
@@ -211,7 +207,9 @@ void RenderSystem::Initialize() {
         m_WebDefaultBoneBuffer = bufMgr->CreateBufferWithData(boneDesc, &identity);
     }
 
-    // Create shadow map depth texture
+    ENJIN_LOG_INFO(Renderer, "RenderSystem: Main pipeline created, setting up shadow mapping...");
+
+    // Create shadow map depth texture (non-fatal — rendering works without shadows)
     {
         Renderer::GPUTextureDesc smDesc;
         smDesc.width = WEB_SHADOW_MAP_SIZE;
@@ -220,10 +218,13 @@ void RenderSystem::Initialize() {
         smDesc.usage = Renderer::GPUTextureUsage::RenderAttachment | Renderer::GPUTextureUsage::Sampled;
         smDesc.label = "ShadowMap";
         m_WebShadowMapTex = texMgr->CreateTexture(smDesc);
+        if (!m_WebShadowMapTex.IsValid()) {
+            ENJIN_LOG_WARN(Renderer, "RenderSystem: Shadow map texture creation failed — shadows disabled");
+        }
     }
 
     // Create shadow pipeline (depth-only, uses shadow.wgsl)
-    {
+    if (m_WebShadowMapTex.IsValid()) {
         m_WebShadowShader = shaderMgr->LoadShader(
             Renderer::WebShaderData::SHADOW_WGSL,
             std::strlen(Renderer::WebShaderData::SHADOW_WGSL),
@@ -299,23 +300,24 @@ void RenderSystem::Initialize() {
     m_WebDefaultNormalTex = texMgr->CreateSolidColor(128, 128, 255, 255);  // flat +Z normal
     m_WebDefaultBlackTex = texMgr->CreateSolidColor(0, 255, 0, 255);      // metallic=0, roughness=1
 
-    // Create frame bind group (group 0) with shadow map
+    // Create frame bind group (group 0)
     Renderer::GPUBindGroupDesc frameBGDesc;
     frameBGDesc.layout = m_WebFrameLayout;
     frameBGDesc.entries = {
         {0, m_WebViewProjBuffer, 0, sizeof(WebViewProjectionUBO), {}, {}},
         {1, m_WebLightingBuffer, 0, sizeof(WebLightingUBO), {}, {}},
-        {2, {}, 0, 0, m_WebShadowMapTex, {}},        // shadow depth texture
-        {3, {}, 0, 0, {}, m_WebShadowMapTex},         // comparison sampler from shadow tex
     };
     m_WebFrameBindGroup = bindMgr->CreateBindGroup(frameBGDesc);
+    if (!m_WebFrameBindGroup.IsValid()) {
+        ENJIN_LOG_ERROR(Renderer, "RenderSystem: Failed to create frame bind group");
+        return;
+    }
 
-    // Create object bind group (group 1) with default bone buffer
+    // Create object bind group (group 1)
     Renderer::GPUBindGroupDesc objBGDesc;
     objBGDesc.layout = m_WebObjectLayout;
     objBGDesc.entries = {
         {0, m_WebObjectBuffer, 0, sizeof(WebObjectDataUBO), {}, {}},
-        {1, m_WebDefaultBoneBuffer, 0, sizeof(Math::Matrix4), {}, {}},
     };
     m_WebObjectBindGroup = bindMgr->CreateBindGroup(objBGDesc);
 
@@ -333,7 +335,7 @@ void RenderSystem::Initialize() {
     m_WebDefaultTexBindGroup = bindMgr->CreateBindGroup(defTexBGDesc);
 
     m_Initialized = true;
-    ENJIN_LOG_INFO(Renderer, "RenderSystem initialized (WebGPU, PBR pipeline)");
+    printf("[RenderSystem] INITIALIZED SUCCESSFULLY\n");
 }
 
 void RenderSystem::Shutdown() {
@@ -409,9 +411,18 @@ void RenderSystem::Shutdown() {
 // Frame rendering
 // ============================================================================
 
+static int s_UpdateCount = 0;
 void RenderSystem::Update(f32 deltaTime) {
-    if (!m_Renderer || !m_Initialized || !m_MainPipeline.IsValid()) return;
-    if (!m_Camera) return;
+    if (!m_Renderer || !m_Initialized || !m_MainPipeline.IsValid()) {
+        if (s_UpdateCount++ < 3) printf("[RenderSystem] Update early exit: renderer=%p init=%d pipeline=%d\n",
+            m_Renderer, m_Initialized, m_MainPipeline.IsValid());
+        return;
+    }
+    if (!m_Camera) {
+        if (s_UpdateCount++ < 3) printf("[RenderSystem] Update: no camera\n");
+        return;
+    }
+    if (s_UpdateCount++ < 3) printf("[RenderSystem] Update: rendering frame\n");
 
     m_WebTime += deltaTime;
     auto* bufMgr = m_Renderer->GetBufferManager();
@@ -420,9 +431,16 @@ void RenderSystem::Update(f32 deltaTime) {
     RefreshStorageCache();
     ResetFrameCounters();
 
-    // Collect first directional light for shadow mapping
-    Math::Vector3 shadowLightDir(0.5f, -0.8f, 0.3f);
-    bool hasShadowLight = false;
+    // Upload ViewProjection UBO
+    {
+        WebViewProjectionUBO vp{};
+        vp.view = m_Camera->GetViewMatrix();
+        vp.proj = m_Camera->GetProjectionMatrix();
+        vp.proj.m[5] = -vp.proj.m[5];  // Flip Y: Vulkan (Y-down) → WebGPU (Y-up)
+        vp.viewPos = m_Camera->GetPosition();
+        vp.time = m_WebTime;
+        bufMgr->UploadData(m_WebViewProjBuffer, &vp, sizeof(vp));
+    }
 
     // Upload Lighting UBO
     {
@@ -440,7 +458,6 @@ void RenderSystem::Update(f32 deltaTime) {
                     Math::Vector3 fwd = xf->rotation.GetForward();
                     lit.lightDir[dirCount] = {fwd.x, fwd.y, fwd.z, 0.0f};
                     lit.lightColor[dirCount] = {lc->color.x, lc->color.y, lc->color.z, lc->intensity};
-                    if (dirCount == 0) { shadowLightDir = fwd; hasShadowLight = true; }
                     dirCount++;
                 } else if (lc->type == LightType::Point && pointCount < 4) {
                     u32 idx = 4 + pointCount;
@@ -453,104 +470,16 @@ void RenderSystem::Update(f32 deltaTime) {
             }
         }
 
+        // Fallback: if no lights, use a default directional
         if (dirCount == 0 && pointCount == 0) {
-            lit.lightDir[0] = {shadowLightDir.x, shadowLightDir.y, shadowLightDir.z, 0.0f};
+            lit.lightDir[0] = {0.5f, -0.8f, 0.3f, 0.0f};
             lit.lightColor[0] = {1.0f, 0.95f, 0.9f, 1.5f};
             dirCount = 1;
-            hasShadowLight = true;
         }
 
         lit.ambientColor = {m_AmbientColor.x, m_AmbientColor.y, m_AmbientColor.z, m_AmbientIntensity};
         lit.lightCount = {static_cast<f32>(dirCount), static_cast<f32>(pointCount), 0.0f, 0.0f};
         bufMgr->UploadData(m_WebLightingBuffer, &lit, sizeof(lit));
-    }
-
-    // Compute light VP for shadow mapping (orthographic from directional light)
-    Math::Matrix4 lightVP;
-    if (hasShadowLight && m_WebShadowPipeline.IsValid()) {
-        Math::Vector3 lightPos = m_Camera->GetPosition() - shadowLightDir * 50.0f;
-        Math::Vector3 up = (std::abs(shadowLightDir.y) > 0.99f)
-            ? Math::Vector3(1, 0, 0) : Math::Vector3(0, 1, 0);
-        Math::Matrix4 lightView = Math::Matrix4::LookAt(lightPos, lightPos + shadowLightDir, up);
-        Math::Matrix4 lightProj = Math::Matrix4::Orthographic(-30.0f, 30.0f, -30.0f, 30.0f, 0.1f, 100.0f);
-        lightVP = lightProj * lightView;
-    }
-
-    // Shadow pass — render depth from light's perspective
-    if (hasShadowLight && m_WebShadowPipeline.IsValid()) {
-        auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
-        auto* texMgr = m_Renderer->GetTextureManager();
-        // Get native shadow map texture view for the depth-only pass
-        auto* nativeShadowTex = static_cast<Renderer::WebGPUTextureManager*>(texMgr)->GetNativeTexture(m_WebShadowMapTex);
-        if (nativeShadowTex && nativeShadowTex->view) {
-            auto shadowEncoder = webRenderer->BeginDepthOnlyPass(
-                nativeShadowTex->view, WEB_SHADOW_MAP_SIZE, WEB_SHADOW_MAP_SIZE);
-            if (shadowEncoder) {
-                // Upload shadow VP
-                WebViewProjectionUBO shadowVP{};
-                shadowVP.view = lightVP;  // We pass the combined lightVP as "view", proj = identity
-                shadowVP.proj = Math::Matrix4();  // Identity — lightVP already combined
-                // Actually, the shader does proj * view * worldPos, so split:
-                shadowVP.view = Math::Matrix4::LookAt(
-                    m_Camera->GetPosition() - shadowLightDir * 50.0f,
-                    m_Camera->GetPosition() - shadowLightDir * 50.0f + shadowLightDir,
-                    (std::abs(shadowLightDir.y) > 0.99f) ? Math::Vector3(1,0,0) : Math::Vector3(0,1,0));
-                shadowVP.proj = Math::Matrix4::Orthographic(-30.0f, 30.0f, -30.0f, 30.0f, 0.1f, 100.0f);
-                bufMgr->UploadData(m_WebShadowVPBuffer, &shadowVP, sizeof(shadowVP));
-
-                // Create a temporary encoder wrapper for abstract API
-                auto shadowEncoderWrapper = std::make_unique<Renderer::WebGPURenderEncoder>(
-                    webRenderer, shadowEncoder,
-                    static_cast<Renderer::WebGPUPipelineManager*>(m_Renderer->GetPipelineManager()),
-                    static_cast<Renderer::WebGPUBufferManager*>(bufMgr),
-                    static_cast<Renderer::WebGPUBindGroupManager*>(m_Renderer->GetBindGroupManager()));
-
-                shadowEncoderWrapper->BindPipeline(m_WebShadowPipeline);
-                shadowEncoderWrapper->SetViewport(0, 0, static_cast<f32>(WEB_SHADOW_MAP_SIZE),
-                                                  static_cast<f32>(WEB_SHADOW_MAP_SIZE), 0.0f, 1.0f);
-                shadowEncoderWrapper->SetScissor(0, 0, WEB_SHADOW_MAP_SIZE, WEB_SHADOW_MAP_SIZE);
-                shadowEncoderWrapper->SetBindGroup(0, m_WebShadowFrameBG, 0, nullptr);
-
-                // Render each mesh entity to shadow map
-                const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
-                for (Entity entity : meshEntities) {
-                    auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
-                    auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
-                    if (!mesh || !xf || !xf->visible) continue;
-                    if (mesh->vertices.empty() || mesh->indices.empty()) continue;
-
-                    u64 eid = static_cast<u64>(entity);
-                    if (eid >= m_EntityRenderData.size()) continue;
-                    auto& rd = m_EntityRenderData[eid];
-                    if (!rd.valid || !rd.vertexBuffer.IsValid()) continue;
-
-                    WebObjectDataUBO obj{};
-                    obj.model = xf->ToMatrix();
-                    bufMgr->UploadData(m_WebShadowObjectBuffer, &obj, sizeof(obj));
-
-                    shadowEncoderWrapper->SetBindGroup(1, m_WebShadowObjectBG, 0, nullptr);
-                    shadowEncoderWrapper->SetVertexBuffer(0, rd.vertexBuffer, 0);
-                    shadowEncoderWrapper->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32, 0);
-                    shadowEncoderWrapper->DrawIndexed(rd.indexCount, 1, 0, 0, 0);
-                }
-
-                wgpuRenderPassEncoderEnd(shadowEncoder);
-                wgpuRenderPassEncoderRelease(shadowEncoder);
-            }
-        }
-    }
-
-    // Upload ViewProjection UBO (includes light VP for shadow sampling)
-    {
-        WebViewProjectionUBO vp{};
-        vp.view = m_Camera->GetViewMatrix();
-        vp.proj = m_Camera->GetProjectionMatrix();
-        vp.viewPos = m_Camera->GetPosition();
-        vp.time = m_WebTime;
-        vp.lightVP = lightVP;
-        vp.shadowEnabled = (hasShadowLight && m_WebShadowPipeline.IsValid()) ? 1.0f : 0.0f;
-        vp.shadowBias = 0.005f;
-        bufMgr->UploadData(m_WebViewProjBuffer, &vp, sizeof(vp));
     }
 
     // Begin main render pass
@@ -566,8 +495,17 @@ void RenderSystem::Update(f32 deltaTime) {
     encoder->SetBindGroup(0, m_WebFrameBindGroup);
 
     // Render each entity with a mesh
+    // WebGPU batching: all ObjectData is written to a large buffer BEFORE the render pass
+    // draws, using 256-byte aligned offsets. Each entity gets a dynamic offset into the shared buffer.
     {
         const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
+
+        // Phase 1: Collect visible entities, ensure GPU buffers, build ObjectData array
+        constexpr u32 OBJ_ALIGN = 256;  // WebGPU minUniformBufferOffsetAlignment
+        struct DrawCmd { Entity entity; u32 offset; };
+        std::vector<DrawCmd> drawCmds;
+        std::vector<u8> objDataBuf;
+
         for (Entity entity : meshEntities) {
             auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
             auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
@@ -596,12 +534,14 @@ void RenderSystem::Update(f32 deltaTime) {
                 rd.valid = true;
             }
 
-            if (!rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) return;
+            if (!rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
 
-            // Upload per-entity ObjectData
+            // Build per-entity ObjectData at aligned offset
+            u32 offset = static_cast<u32>(objDataBuf.size());
+            objDataBuf.resize(offset + OBJ_ALIGN, 0);
+
             WebObjectDataUBO obj{};
             obj.model = xf->ToMatrix();
-
             auto* mat = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
             obj.baseColor = mat ? mat->baseColor : Math::Vector3(0.8f, 0.8f, 0.8f);
             obj.metallic = mat ? mat->metallic : 0.0f;
@@ -610,12 +550,33 @@ void RenderSystem::Update(f32 deltaTime) {
             obj.emissiveStrength = mat ? mat->emissiveStrength : 0.0f;
             obj.opacity = mat ? mat->opacity : 1.0f;
             obj.alphaCutoff = mat ? mat->alphaCutoff : 0.0f;
-            obj.flags = 0;
-            obj.parallaxScale = 0.0f;
+            std::memcpy(objDataBuf.data() + offset, &obj, sizeof(obj));
 
-            bufMgr->UploadData(m_WebObjectBuffer, &obj, sizeof(obj));
+            drawCmds.push_back({entity, offset});
+        }
 
-            encoder->SetBindGroup(1, m_WebObjectBindGroup);
+        // Phase 2: Create per-entity UBO + bind group, then draw
+        auto* bindMgr = m_Renderer->GetBindGroupManager();
+        for (usize i = 0; i < drawCmds.size(); i++) {
+            const auto& cmd = drawCmds[i];
+            u64 eid = static_cast<u64>(cmd.entity);
+            auto& rd = m_EntityRenderData[eid];
+
+            // Create a per-entity UBO with this entity's data
+            Renderer::GPUBufferDesc perEntityDesc;
+            perEntityDesc.size = sizeof(WebObjectDataUBO);
+            perEntityDesc.usage = Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst;
+            perEntityDesc.hostVisible = true;
+            auto perEntityBuf = bufMgr->CreateBufferWithData(perEntityDesc,
+                objDataBuf.data() + cmd.offset);
+
+            // Create per-entity bind group
+            Renderer::GPUBindGroupDesc bgd;
+            bgd.layout = m_WebObjectLayout;
+            bgd.entries = {{0, perEntityBuf, 0, sizeof(WebObjectDataUBO), {}, {}}};
+            auto perEntityBG = bindMgr->CreateBindGroup(bgd);
+
+            encoder->SetBindGroup(1, perEntityBG);
             encoder->SetBindGroup(2, m_WebDefaultTexBindGroup);
             encoder->SetVertexBuffer(0, rd.vertexBuffer);
             encoder->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32);
@@ -623,6 +584,10 @@ void RenderSystem::Update(f32 deltaTime) {
 
             m_DrawCallCount++;
             m_TriangleCount += rd.indexCount / 3;
+
+            // Cleanup (will be released after GPU finishes, Dawn handles this)
+            bindMgr->DestroyBindGroup(perEntityBG);
+            bufMgr->DestroyBuffer(perEntityBuf);
         }
     }
 

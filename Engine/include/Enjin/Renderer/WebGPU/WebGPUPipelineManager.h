@@ -12,6 +12,7 @@ namespace Enjin::Renderer {
 
 class WebGPURenderer;
 class WebGPUShaderManager;
+class WebGPUBindGroupManager;
 
 struct WebGPUPipelineSlot {
     WGPURenderPipeline pipeline = nullptr;
@@ -19,7 +20,8 @@ struct WebGPUPipelineSlot {
 
 class ENJIN_API WebGPUPipelineManager : public IGPUPipelineManager {
 public:
-    WebGPUPipelineManager(WebGPURenderer* renderer, WebGPUShaderManager* shaderMgr);
+    WebGPUPipelineManager(WebGPURenderer* renderer, WebGPUShaderManager* shaderMgr,
+                          WebGPUBindGroupManager* bindGroupMgr = nullptr);
     ~WebGPUPipelineManager() override;
 
     GPUPipelineHandle CreateRenderPipeline(const GPURenderPipelineDesc& desc) override;
@@ -43,6 +45,7 @@ private:
 
     WebGPURenderer* m_Renderer = nullptr;
     WebGPUShaderManager* m_ShaderMgr = nullptr;
+    WebGPUBindGroupManager* m_BindGroupMgr = nullptr;
     GPUResourcePool<WebGPUPipelineSlot> m_Pool;
 };
 

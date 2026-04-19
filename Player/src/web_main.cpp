@@ -156,6 +156,7 @@ public:
         });
 
         m_CameraController = std::make_unique<Enjin::Renderer::CameraController>(m_Camera.get());
+        m_CameraController->SyncFromCamera();  // Sync yaw/pitch to match initial SetLookAt
 
         // --- ECS World ---
         m_World = std::make_unique<Enjin::ECS::World>();
@@ -385,8 +386,11 @@ public:
         m_RenderSystem->FlushPendingChanges();
 
         // BeginFrame + render pass + EndFrame via RenderSystem::Update
-        m_Renderer->BeginFrameWebGPU();
+        if (!m_Renderer->BeginFrameWebGPU()) return;
+        m_RenderSystem->FlushPendingChanges();
         m_RenderSystem->Update(0.0f);  // deltaTime handled separately in Update()
+        // Ensure main render pass was started (even if Update had nothing to render)
+        m_Renderer->BeginMainRenderPass();
         m_Renderer->EndFrame();
 
         // Sync CameraController after the first camera entity override
