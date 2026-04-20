@@ -294,6 +294,12 @@ void JoltBackend::Update(f32 deltaTime) {
     // 1. Sync ECS state to Jolt bodies
     SyncECSToJolt();
 
+    static int s_PhysLog = 0;
+    if (s_PhysLog++ < 5) {
+        printf("[PHYSICS] bodies=%zu entities_with_colliders=%zu\n",
+            m_EntityToBody.size(), m_CurrentEntitiesCache.size());
+    }
+
     // 2. Sync joint components to Jolt constraints
     SyncJointsToJolt();
 

@@ -135,6 +135,8 @@ void ControllerSystem::Update(f32 deltaTime) {
         if (possess && !possess->isPossessed) continue;
 
         // Lazy-create Jolt CharacterVirtual on first use (requires physics backend)
+        // Skip on web — Jolt collider queries don't work on Emscripten, use fallback path
+#if !ENJIN_PLATFORM_WEB
         if (m_Physics && !m_Physics->HasCharacterController(entity)) {
             f32 radius = 0.3f, totalHalfH = 0.8f;
             if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
@@ -143,11 +145,9 @@ void ControllerSystem::Update(f32 deltaTime) {
             }
             m_Physics->CreateCharacterController(entity, radius, totalHalfH, transform->position);
         }
+#endif
 
-        // Only update movement if physics is available (skip in editor without play mode)
-        if (m_Physics) {
-            UpdateThirdPerson(entity, *controller, *transform, deltaTime);
-        }
+        UpdateThirdPerson(entity, *controller, *transform, deltaTime);
     }
 
     for (Entity entity : m_World->GetEntitiesWithComponent<FirstPersonController>()) {
@@ -159,6 +159,7 @@ void ControllerSystem::Update(f32 deltaTime) {
         auto* possess = m_World->GetComponent<PossessableComponent>(entity);
         if (possess && !possess->isPossessed) continue;
 
+#if !ENJIN_PLATFORM_WEB
         // Lazy-create Jolt CharacterVirtual on first use
         if (m_Physics && !m_Physics->HasCharacterController(entity)) {
             f32 radius = 0.3f, totalHalfH = 0.8f;
@@ -168,6 +169,7 @@ void ControllerSystem::Update(f32 deltaTime) {
             }
             m_Physics->CreateCharacterController(entity, radius, totalHalfH, transform->position);
         }
+#endif
 
         UpdateFirstPerson(entity, *controller, *transform, deltaTime);
     }
@@ -1196,6 +1198,12 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         auto state = m_Physics->UpdateCharacterController(entity, ctrl.velocity, dt);
         transform.position = state.position;
 
+        static int s_GroundLog = 0;
+        if (s_GroundLog++ < 10) {
+            printf("[JUMP] ground=%d pos=(%.1f,%.1f,%.1f) vel.y=%.2f\n",
+                static_cast<int>(state.groundState), state.position.x, state.position.y, state.position.z, ctrl.velocity.y);
+        }
+
         // Update ground state from physics
         if (state.groundState == Physics::IPhysicsBackend::CharacterGroundState::OnGround ||
             state.groundState == Physics::IPhysicsBackend::CharacterGroundState::OnSteepGround) {
@@ -1214,13 +1222,22 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         transform.position = transform.position + ctrl.velocity * dt;
 
         f32 groundY = 0.0f;
-        if (CheckGround(transform.position, groundY, entity) && transform.position.y <= groundY && ctrl.velocity.y <= 0.0f) {
+        bool onGround = CheckGround(transform.position, groundY, entity);
+
+        static int s_FallbackLog = 0;
+        if (s_FallbackLog++ < 15) {
+            printf("[FALLBACK] pos=(%.1f,%.1f,%.1f) vel.y=%.2f grounded=%d groundY=%.1f checkGround=%d\n",
+                transform.position.x, transform.position.y, transform.position.z,
+                ctrl.velocity.y, ctrl.isGrounded, groundY, onGround);
+        }
+
+        if (onGround && transform.position.y <= groundY + 0.05f && ctrl.velocity.y <= 0.0f) {
             transform.position.y = groundY;
             ctrl.velocity.y = 0.0f;
             ctrl.isGrounded = true;
             ctrl.isJumping = false;
             ctrl.isFalling = false;
-        } else if (ctrl.velocity.y < 0.0f) {
+        } else if (ctrl.velocity.y < 0.0f || (onGround && transform.position.y > groundY + 0.1f)) {
             ctrl.isGrounded = false;
         }
     }
