@@ -296,8 +296,8 @@ void JoltBackend::Update(f32 deltaTime) {
 
     static int s_PhysLog = 0;
     if (s_PhysLog++ < 5) {
-        printf("[PHYSICS] bodies=%zu entities_with_colliders=%zu\n",
-            m_EntityToBody.size(), m_CurrentEntitiesCache.size());
+        printf("[PHYSICS] bodies=%d entities_with_colliders=%d\n",
+            static_cast<int>(m_EntityToBody.size()), static_cast<int>(m_CurrentEntitiesCache.size()));
     }
 
     // 2. Sync joint components to Jolt constraints
@@ -330,10 +330,19 @@ void JoltBackend::SyncECSToJolt() {
         }
     };
 
-    addEntities(m_World->GetEntitiesWithComponent<ECS::BoxColliderComponent>());
-    addEntities(m_World->GetEntitiesWithComponent<ECS::SphereColliderComponent>());
-    addEntities(m_World->GetEntitiesWithComponent<ECS::CapsuleColliderComponent>());
-    addEntities(m_World->GetEntitiesWithComponent<ECS::MeshColliderComponent>());
+    if (m_UseExternalColliders && !m_ExternalColliderEntities.empty()) {
+        // WASM workaround: use collider entities provided by caller
+        for (ECS::Entity e : m_ExternalColliderEntities) {
+            m_CurrentEntitiesCache.insert(e);
+        }
+        static int s_ExtLog = 0;
+        if (s_ExtLog++ < 3) printf("[PHYSICS-EXT] external=%zu cached=%zu\n", m_ExternalColliderEntities.size(), m_CurrentEntitiesCache.size());
+    } else {
+        addEntities(m_World->GetEntitiesWithComponent<ECS::BoxColliderComponent>());
+        addEntities(m_World->GetEntitiesWithComponent<ECS::SphereColliderComponent>());
+        addEntities(m_World->GetEntitiesWithComponent<ECS::CapsuleColliderComponent>());
+        addEntities(m_World->GetEntitiesWithComponent<ECS::MeshColliderComponent>());
+    }
 
     auto& bodyInterface = m_PhysicsSystem->GetBodyInterface();
 

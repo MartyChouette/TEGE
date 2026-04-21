@@ -296,10 +296,16 @@ public:
             CreateDemoScene();
         }
 
-        // Log loaded entities
+        // Force initial physics sync while colliders still exist
+        // (GetEntitiesWithComponent<ColliderComponent> returns 0 after World::Update on WASM)
+        if (m_Physics) m_Physics->Update(0.001f);
+        if (m_Physics2D) m_Physics2D->Update(0.001f);
+
+        // Log loaded entities + collider diagnostic
         if (m_World) {
-            auto meshEntities = m_World->GetEntitiesWithComponent<Enjin::ECS::MeshComponent>();
-            ENJIN_LOG_INFO(Player, "Loaded %d mesh entities", static_cast<int>(meshEntities.size()));
+            auto boxCol = m_World->GetEntitiesWithComponent<Enjin::ECS::BoxColliderComponent>();
+            auto capsuleCol = m_World->GetEntitiesWithComponent<Enjin::ECS::CapsuleColliderComponent>();
+            printf("[SCENE] box_colliders=%zu capsule_colliders=%zu\n", boxCol.size(), capsuleCol.size());
         }
 
         // --- Post-scene-load system initialization ---
@@ -405,7 +411,17 @@ public:
         // Flush deferred entity destroys from previous frame
         m_World->Update(deltaTime);
 
-        if (m_Physics) m_Physics->Update(deltaTime);
+        // WASM workaround: pass collider entities from this TU to physics backend
+        // (GetEntitiesWithComponent returns 0 in JoltBackend.cpp due to WASM template static bug)
+        if (m_Physics) {
+            std::vector<Enjin::ECS::Entity> colliderEntities;
+            for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::BoxColliderComponent>()) colliderEntities.push_back(e);
+            for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::SphereColliderComponent>()) colliderEntities.push_back(e);
+            for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::CapsuleColliderComponent>()) colliderEntities.push_back(e);
+            for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::MeshColliderComponent>()) colliderEntities.push_back(e);
+            m_Physics->SetColliderEntities(colliderEntities);
+            m_Physics->Update(deltaTime);
+        }
         if (m_Physics2D) m_Physics2D->Update(deltaTime);
 
         m_ControllerSystem.Update(deltaTime);

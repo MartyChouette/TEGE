@@ -25,6 +25,14 @@ public:
     // Simulation
     virtual void Update(f32 deltaTime) = 0;
 
+    // Provide collider entities from caller (workaround for WASM template static issue
+    // where GetEntitiesWithComponent returns different results across translation units)
+    virtual void SetColliderEntities(const std::vector<ECS::Entity>& entities) { m_ExternalColliderEntities = entities; m_UseExternalColliders = true; }
+protected:
+    std::vector<ECS::Entity> m_ExternalColliderEntities;
+    bool m_UseExternalColliders = false;
+public:
+
     // Gravity
     virtual void SetGravity(const Math::Vector3& gravity) = 0;
     virtual Math::Vector3 GetGravity() const = 0;

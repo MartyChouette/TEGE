@@ -28,17 +28,18 @@ struct ENJIN_API IComponent {
 };
 
 // Component registry - manages component type IDs
+// Uses typeid hash for cross-translation-unit consistency (fixes WASM template static duplication)
 class ENJIN_API ComponentRegistry {
 public:
     template<typename T>
     static ComponentTypeId GetTypeId() {
-        static ComponentTypeId id = s_NextComponentId.fetch_add(1, std::memory_order_relaxed);
-        return id;
+        return GetOrAssignTypeId(typeid(T).hash_code());
     }
 
     static ComponentTypeId GetNextId() { return s_NextComponentId.load(std::memory_order_relaxed); }
 
 private:
+    static ComponentTypeId GetOrAssignTypeId(std::size_t typeHash);
     static std::atomic<ComponentTypeId> s_NextComponentId;
 };
 

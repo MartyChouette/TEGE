@@ -136,7 +136,6 @@ void ControllerSystem::Update(f32 deltaTime) {
 
         // Lazy-create Jolt CharacterVirtual on first use (requires physics backend)
         // Skip on web — Jolt collider queries don't work on Emscripten, use fallback path
-#if !ENJIN_PLATFORM_WEB
         if (m_Physics && !m_Physics->HasCharacterController(entity)) {
             f32 radius = 0.3f, totalHalfH = 0.8f;
             if (auto* cap = m_World->GetComponent<CapsuleColliderComponent>(entity)) {
@@ -145,7 +144,6 @@ void ControllerSystem::Update(f32 deltaTime) {
             }
             m_Physics->CreateCharacterController(entity, radius, totalHalfH, transform->position);
         }
-#endif
 
         UpdateThirdPerson(entity, *controller, *transform, deltaTime);
     }
@@ -1181,7 +1179,15 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
     }
 
     // Jumping
-    if (IsJumpPressed() && ctrl.isGrounded) {
+    // WASM workaround: IsKeyPressed (edge detection) doesn't work on Emscripten because
+    // key callbacks fire before Input::Update copies state. Use IsKeyDown + manual flag instead.
+    bool jumpInput = IsJumpPressed();
+#if ENJIN_PLATFORM_WEB
+    bool spaceDown = Input::IsKeyDown(static_cast<KeyCode>(32));
+    if (spaceDown && !ctrl.jumpKeyWasDown) jumpInput = true;
+    ctrl.jumpKeyWasDown = spaceDown;
+#endif
+    if (jumpInput && ctrl.isGrounded) {
         ctrl.velocity.y = ctrl.jumpForce;
         ctrl.isJumping = true;
         ctrl.isGrounded = false;
@@ -1205,15 +1211,28 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         }
 
         // Update ground state from physics
-        if (state.groundState == Physics::IPhysicsBackend::CharacterGroundState::OnGround ||
-            state.groundState == Physics::IPhysicsBackend::CharacterGroundState::OnSteepGround) {
-            if (ctrl.velocity.y <= 0.0f) {
-                ctrl.isGrounded = true;
-                ctrl.isJumping = false;
-                ctrl.isFalling = false;
-                ctrl.velocity.y = 0.0f;
+        bool physicsGrounded = (state.groundState == Physics::IPhysicsBackend::CharacterGroundState::OnGround ||
+                                state.groundState == Physics::IPhysicsBackend::CharacterGroundState::OnSteepGround);
+        // WASM workaround: CharacterVirtual reports InAir for valid surfaces.
+        // Detect ground by checking if Y position is stable (not changing).
+        f32 posDeltaY = state.position.y - ctrl.prevPositionY;
+        if (!physicsGrounded) {
+            bool yStable = std::abs(posDeltaY) < 0.01f;
+            bool falling = posDeltaY < -0.01f;
+            if (yStable && !ctrl.isJumping) {
+                physicsGrounded = true;  // standing on something
+            } else if (falling) {
+                physicsGrounded = false;  // actually falling (walked off ledge or post-jump)
             }
-        } else {
+        }
+        ctrl.prevPositionY = state.position.y;
+
+        if (physicsGrounded && ctrl.velocity.y <= 0.0f) {
+            ctrl.isGrounded = true;
+            ctrl.isJumping = false;
+            ctrl.isFalling = false;
+            ctrl.velocity.y = 0.0f;
+        } else if (!physicsGrounded) {
             ctrl.isGrounded = false;
             ctrl.isFalling = ctrl.velocity.y < 0.0f;
         }
