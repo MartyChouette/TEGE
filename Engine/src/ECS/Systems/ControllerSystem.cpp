@@ -1214,18 +1214,14 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         bool physicsGrounded = (state.groundState == Physics::IPhysicsBackend::CharacterGroundState::OnGround ||
                                 state.groundState == Physics::IPhysicsBackend::CharacterGroundState::OnSteepGround);
         // WASM workaround: CharacterVirtual reports InAir for valid surfaces.
-        // Detect ground by checking if Y position is stable (not changing).
-        f32 posDeltaY = state.position.y - ctrl.prevPositionY;
-        if (!physicsGrounded) {
-            bool yStable = std::abs(posDeltaY) < 0.01f;
-            bool falling = posDeltaY < -0.01f;
-            if (yStable && !ctrl.isJumping) {
-                physicsGrounded = true;  // standing on something
-            } else if (falling) {
-                physicsGrounded = false;  // actually falling (walked off ledge or post-jump)
+        // Use raycast to detect actual ground below the character.
+        if (!physicsGrounded && !ctrl.isJumping) {
+            f32 groundY = 0.0f;
+            if (CheckGround(state.position, groundY, entity)) {
+                f32 distToGround = state.position.y - groundY;
+                if (distToGround < 0.2f) physicsGrounded = true;  // close to ground = on ground
             }
         }
-        ctrl.prevPositionY = state.position.y;
 
         if (physicsGrounded && ctrl.velocity.y <= 0.0f) {
             ctrl.isGrounded = true;

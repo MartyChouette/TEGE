@@ -274,11 +274,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     var color = ambient + Lo + emissive;
 
-    // ACES filmic tone mapping (matches desktop renderer)
-    let a = color * (color * 2.51 + vec3<f32>(0.03));
-    let b = color * (color * 2.43 + vec3<f32>(0.59)) + vec3<f32>(0.14);
-    color = clamp(a / b, vec3<f32>(0.0), vec3<f32>(1.0));
-    // Gamma correction
+    // Gamma correction only (no tonemapping — desktop applies tonemapping in post-processing)
+    color = clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));
     color = pow(color, vec3<f32>(1.0 / 2.2));
 
     return vec4<f32>(color, alpha);

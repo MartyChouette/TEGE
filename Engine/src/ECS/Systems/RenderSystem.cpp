@@ -464,8 +464,12 @@ Renderer::GPUTextureHandle RenderSystem::WebGetOrLoadTexture(const std::string& 
 
     if (handle.IsValid()) {
         m_WebTextureCache[path] = handle;
+        static int s_TexLog = 0;
+        if (s_TexLog++ < 5) printf("[TEXTURE] loaded: %s\n", path.c_str());
     } else {
         m_WebFailedTextures.insert(path);
+        static int s_TexFail = 0;
+        if (s_TexFail++ < 5) printf("[TEXTURE] FAILED: %s\n", path.c_str());
     }
     return handle;
 }
@@ -635,6 +639,13 @@ void RenderSystem::Update(f32 deltaTime) {
             if (!rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
 
             auto* mat = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
+            // Fallback: try direct query if cached storage failed (WASM template issue)
+            if (!mat) mat = m_World->GetComponent<MaterialComponent>(entity);
+            static int s_MatLog = 0;
+            if (s_MatLog++ < 3) printf("[MAT] entity=%llu mat=%s color=(%.2f,%.2f,%.2f) tex=%s\n",
+                static_cast<unsigned long long>(entity), mat ? "YES" : "NULL",
+                mat ? mat->baseColor.x : 0, mat ? mat->baseColor.y : 0, mat ? mat->baseColor.z : 0,
+                mat && !mat->baseColorTexturePath.empty() ? mat->baseColorTexturePath.c_str() : "none");
 
             // Build per-entity texture bind group (cached, rebuilt on dirty)
             if (!rd.texBindGroupValid && mat) {
