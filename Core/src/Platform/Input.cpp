@@ -128,9 +128,12 @@ namespace {
     EM_BOOL WebMouseMoveCallback(int eventType, const EmscriptenMouseEvent* e, void* userData) {
         (void)eventType; (void)userData;
         s_MousePosition = Math::Vector2(static_cast<f32>(e->targetX), static_cast<f32>(e->targetY));
-        // Accumulate relative movement for pointer-locked look
-        s_WebMouseMovementAccum.x += static_cast<f32>(e->movementX);
-        s_WebMouseMovementAccum.y += static_cast<f32>(e->movementY);
+        // Accumulate relative movement for pointer-locked look (clamp to prevent spikes)
+        f32 dx = static_cast<f32>(e->movementX);
+        f32 dy = static_cast<f32>(e->movementY);
+        constexpr f32 MAX_DELTA = 150.0f;
+        if (dx > -MAX_DELTA && dx < MAX_DELTA) s_WebMouseMovementAccum.x += dx;
+        if (dy > -MAX_DELTA && dy < MAX_DELTA) s_WebMouseMovementAccum.y += dy;
         return EM_TRUE;
     }
 
