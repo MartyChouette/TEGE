@@ -151,6 +151,7 @@ enum class GPUBindingType : u8 {
     Sampler,
     ComparisonSampler,
     DepthTexture,
+    DepthTextureCube,
 };
 
 enum class GPUIndexFormat : u8 {

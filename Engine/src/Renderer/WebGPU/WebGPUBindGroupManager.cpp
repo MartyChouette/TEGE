@@ -71,6 +71,10 @@ GPUBindGroupLayoutHandle WebGPUBindGroupManager::CreateBindGroupLayout(const GPU
                 e.texture.sampleType = WGPUTextureSampleType_Depth;
                 e.texture.viewDimension = WGPUTextureViewDimension_2D;
                 break;
+            case GPUBindingType::DepthTextureCube:
+                e.texture.sampleType = WGPUTextureSampleType_Depth;
+                e.texture.viewDimension = WGPUTextureViewDimension_Cube;
+                break;
             case GPUBindingType::StorageTexture:
                 e.storageTexture.access = WGPUStorageTextureAccess_WriteOnly;
                 e.storageTexture.format = WGPUTextureFormat_RGBA8Unorm;

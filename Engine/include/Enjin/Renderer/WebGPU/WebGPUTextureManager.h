@@ -35,6 +35,9 @@ public:
     // Access native WebGPU texture handles
     const WebGPUTextureHandle* GetNativeTexture(GPUTextureHandle handle) const;
 
+    // Register a pre-created native texture (e.g. cubemaps created directly via WebGPURenderer)
+    GPUTextureHandle RegisterNativeTexture(const WebGPUTextureHandle& native);
+
     void Shutdown();
 
 private:

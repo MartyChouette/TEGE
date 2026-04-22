@@ -69,6 +69,21 @@ struct ShadowViewProjection {
 @group(3) @binding(1) var shadowMap: texture_depth_2d;
 @group(3) @binding(2) var shadowSampler: sampler_comparison;
 
+// Spot light shadows (max 2)
+struct SpotShadowVPs {
+    viewProj: array<mat4x4<f32>, 4>,   // [0]=light0.view, [1]=light0.proj, [2]=light1.view, [3]=light1.proj
+};
+@group(3) @binding(3) var<uniform> spotShadowVPs: SpotShadowVPs;
+@group(3) @binding(4) var spotShadowMap0: texture_depth_2d;
+@group(3) @binding(5) var spotShadowMap1: texture_depth_2d;
+
+// Point light shadows (max 1, cubemap)
+struct PointShadowVPs {
+    viewProj: array<mat4x4<f32>, 12>,  // 6 faces x (view + proj)
+};
+@group(3) @binding(6) var<uniform> pointShadowVPs: PointShadowVPs;
+@group(3) @binding(7) var pointShadowCube: texture_depth_cube;
+
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
@@ -162,6 +177,35 @@ fn sampleShadow(worldPos: vec3<f32>) -> f32 {
     return mix(1.0, shadow, inBounds);
 }
 
+// Spot light shadow lookup (perspective projection, 4-tap PCF)
+fn sampleSpotShadowMap(worldPos: vec3<f32>, spotView: mat4x4<f32>, spotProj: mat4x4<f32>, shadowTex: texture_depth_2d) -> f32 {
+    let lightClip = spotProj * spotView * vec4<f32>(worldPos, 1.0);
+    let ndc = lightClip.xyz / lightClip.w;
+    let shadowUV = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
+    let depth = ndc.z;
+    let bias = 0.003;
+    let texelSize = 1.0 / 512.0;
+    var shadow = 0.0;
+    shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>(-texelSize, -texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>( texelSize, -texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>(-texelSize,  texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>( texelSize,  texelSize), depth - bias);
+    shadow = shadow * 0.25;
+    let inBounds = step(0.0, shadowUV.x) * step(shadowUV.x, 1.0) * step(0.0, shadowUV.y) * step(shadowUV.y, 1.0)
+                 * step(0.0, depth) * step(depth, 1.0);
+    return mix(1.0, shadow, inBounds);
+}
+
+// Point light shadow lookup (cubemap, comparison against linear depth)
+fn samplePointShadow(worldPos: vec3<f32>, lightPos: vec3<f32>, range: f32) -> f32 {
+    let fragToLight = worldPos - lightPos;
+    let dist = length(fragToLight);
+    let dir = fragToLight / dist;
+    let refDepth = dist / range;  // normalize to [0,1] range
+    let bias = 0.005;
+    return textureSampleCompare(pointShadowCube, shadowSampler, dir, refDepth - bias);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let baseColorSample = textureSample(baseColorTex, baseColorSmp, in.uv);
@@ -192,8 +236,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let F0 = mix(F0_dielectric, albedo, metallic);
     var Lo = vec3<f32>(0.0);
 
+    // Pre-sample ALL shadow maps outside loops (WGSL uniform control flow requirement)
     let shadowFactor = sampleShadow(in.world_pos);
     let shadowStrength = lighting.shadowParams.x;
+    let spotShadow0 = sampleSpotShadowMap(in.world_pos,
+        spotShadowVPs.viewProj[0], spotShadowVPs.viewProj[1], spotShadowMap0);
+    let spotShadow1 = sampleSpotShadowMap(in.world_pos,
+        spotShadowVPs.viewProj[2], spotShadowVPs.viewProj[3], spotShadowMap1);
+    let pointLight0Pos = lighting.lightDir[4].xyz;
+    let pointLight0Range = max(lighting.lightParams[4].x, 0.001);
+    let ptShadow0 = samplePointShadow(in.world_pos, pointLight0Pos, pointLight0Range);
 
     let dirCount = i32(lighting.lightCount.x);
     for (var i = 0; i < dirCount; i = i + 1) {
@@ -242,7 +294,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let specular = numerator / denominator;
         let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
         let NdotL = max(dot(N, L), 0.0);
-        Lo = Lo + (kD * albedo + specular) * radiance * NdotL;
+
+        var ptShadow = 1.0;
+        if (i == 0) { ptShadow = ptShadow0; }
+        Lo = Lo + (kD * albedo + specular) * radiance * NdotL * ptShadow;
     }
 
     let spotCount = i32(lighting.lightCount.z);
@@ -277,15 +332,19 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let specular = numerator / denominator;
         let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
         let NdotL = max(dot(N, L), 0.0);
-        Lo = Lo + (kD * albedo + specular) * radiance * NdotL;
+
+        var spotShadow = 1.0;
+        if (i == 0) { spotShadow = spotShadow0; }
+        else if (i == 1) { spotShadow = spotShadow1; }
+        Lo = Lo + (kD * albedo + specular) * radiance * NdotL * spotShadow;
     }
 
     let ambient = lighting.ambientColor.rgb * lighting.ambientColor.w * albedo;
     let emissive = object.emissiveColor * object.emissiveStrength;
     var color = ambient + Lo + emissive;
-    color = color * 2.0;
 
-    color = clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));
+    // Reinhard tonemapping (approximates desktop post-process exposure)
+    color = color / (color + vec3<f32>(1.0));
     color = pow(color, vec3<f32>(1.0 / 2.2));
     return vec4<f32>(color, alpha);
 }

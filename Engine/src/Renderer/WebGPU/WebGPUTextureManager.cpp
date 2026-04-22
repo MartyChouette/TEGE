@@ -149,6 +149,15 @@ const WebGPUTextureHandle* WebGPUTextureManager::GetNativeTexture(GPUTextureHand
     return slot ? &slot->nativeHandle : nullptr;
 }
 
+GPUTextureHandle WebGPUTextureManager::RegisterNativeTexture(const WebGPUTextureHandle& native) {
+    auto handle = m_Pool.Allocate();
+    auto* slot = m_Pool.Get(handle);
+    slot->nativeHandle = native;
+    slot->width = native.width;
+    slot->height = native.height;
+    return GPUTextureHandle{handle};
+}
+
 } // namespace Enjin::Renderer
 
 #endif // ENJIN_PLATFORM_WEB

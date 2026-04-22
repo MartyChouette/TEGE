@@ -729,6 +729,23 @@ private:
     Renderer::GPUBindGroupHandle m_WebShadowFrameBG;
     Renderer::GPUBindGroupHandle m_WebShadowObjectBG;
 
+    // Shadow sampling in main PBR pass (bind group 3)
+    Renderer::GPUBindGroupLayoutHandle m_WebShadowSampleLayout;
+    Renderer::GPUBindGroupHandle m_WebShadowSampleBG;
+
+    // Spot light shadows (max 2)
+    static constexpr u32 WEB_SPOT_SHADOW_SIZE = 512;
+    static constexpr u32 WEB_MAX_SPOT_SHADOWS = 2;
+    Renderer::GPUTextureHandle m_WebSpotShadowTex[WEB_MAX_SPOT_SHADOWS];
+    Renderer::GPUBufferHandle m_WebSpotShadowVPBuffer;   // 2 lights worth of VP pairs
+
+    // Point light shadows (max 1, cubemap)
+    static constexpr u32 WEB_POINT_SHADOW_SIZE = 256;
+    static constexpr u32 WEB_MAX_POINT_SHADOWS = 1;
+    Renderer::GPUTextureHandle m_WebPointShadowCubemap;  // managed by WebGPURenderer
+    void* m_WebPointShadowFaceViews[6] = {};              // WGPUTextureView per face (cast at use)
+    Renderer::GPUBufferHandle m_WebPointShadowVPBuffer;   // 6 face VPs
+
     f32 m_WebTime = 0.0f;  // Accumulated time for shader animations
 #else
     // Vulkan-specific rendering resources (advanced pipelines)

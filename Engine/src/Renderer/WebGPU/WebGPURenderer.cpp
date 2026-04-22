@@ -442,6 +442,54 @@ WebGPUTextureHandle WebGPURenderer::CreateTexture(u32 width, u32 height, WGPUTex
     return handle;
 }
 
+WebGPUTextureHandle WebGPURenderer::CreateCubemapTexture(u32 size, WGPUTextureFormat format, WGPUTextureUsage usage) {
+    WebGPUTextureHandle handle;
+    handle.width = size;
+    handle.height = size;
+    handle.format = format;
+
+    WGPUTextureDescriptor texDesc = {};
+    texDesc.usage = usage;
+    texDesc.dimension = WGPUTextureDimension_2D;
+    texDesc.size = { size, size, 6 };  // 6 array layers = cubemap
+    texDesc.format = format;
+    texDesc.mipLevelCount = 1;
+    texDesc.sampleCount = 1;
+    handle.texture = wgpuDeviceCreateTexture(m_Device, &texDesc);
+
+    // Cubemap view (all 6 faces)
+    WGPUTextureViewDescriptor viewDesc = {};
+    viewDesc.format = format;
+    viewDesc.dimension = WGPUTextureViewDimension_Cube;
+    viewDesc.mipLevelCount = 1;
+    viewDesc.arrayLayerCount = 6;
+    handle.view = wgpuTextureCreateView(handle.texture, &viewDesc);
+
+    // Comparison sampler for shadow mapping
+    WGPUSamplerDescriptor samplerDesc = {};
+    samplerDesc.addressModeU = WGPUAddressMode_ClampToEdge;
+    samplerDesc.addressModeV = WGPUAddressMode_ClampToEdge;
+    samplerDesc.addressModeW = WGPUAddressMode_ClampToEdge;
+    samplerDesc.magFilter = WGPUFilterMode_Linear;
+    samplerDesc.minFilter = WGPUFilterMode_Linear;
+    samplerDesc.compare = WGPUCompareFunction_LessEqual;
+    samplerDesc.maxAnisotropy = 1;
+    handle.sampler = wgpuDeviceCreateSampler(m_Device, &samplerDesc);
+
+    return handle;
+}
+
+WGPUTextureView WebGPURenderer::CreateCubeFaceView(WGPUTexture texture, WGPUTextureFormat format, u32 faceIndex) {
+    WGPUTextureViewDescriptor viewDesc = {};
+    viewDesc.format = format;
+    viewDesc.dimension = WGPUTextureViewDimension_2D;
+    viewDesc.baseMipLevel = 0;
+    viewDesc.mipLevelCount = 1;
+    viewDesc.baseArrayLayer = faceIndex;
+    viewDesc.arrayLayerCount = 1;
+    return wgpuTextureCreateView(texture, &viewDesc);
+}
+
 void WebGPURenderer::UploadTexture(const WebGPUTextureHandle& texture, const void* data,
                                      u32 width, u32 height) {
     if (!texture.texture || !data) return;

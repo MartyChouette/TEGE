@@ -79,6 +79,8 @@ public:
     // --- Texture management ---
     WebGPUTextureHandle CreateTexture(u32 width, u32 height, WGPUTextureFormat format,
                                       WGPUTextureUsage usage, const void* pixelData = nullptr);
+    WebGPUTextureHandle CreateCubemapTexture(u32 size, WGPUTextureFormat format, WGPUTextureUsage usage);
+    WGPUTextureView CreateCubeFaceView(WGPUTexture texture, WGPUTextureFormat format, u32 faceIndex);
     void UploadTexture(const WebGPUTextureHandle& texture, const void* data, u32 width, u32 height);
     void DestroyTexture(WebGPUTextureHandle& texture);
 

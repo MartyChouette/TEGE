@@ -82,6 +82,16 @@ struct WebObjectDataUBO {
     f32 _pad[3];                            // 12
 };                                          // Total: 128 bytes
 
+// Spot shadow VP UBO: 2 lights x (view + proj) = 4 matrices
+struct WebSpotShadowVPUBO {
+    alignas(16) Math::Matrix4 viewProj[4];    // [0]=light0.view, [1]=light0.proj, [2]=light1.view, [3]=light1.proj
+};                                             // Total: 256 bytes
+
+// Point shadow VP UBO: 6 faces x (view + proj) = 12 matrices
+struct WebPointShadowVPUBO {
+    alignas(16) Math::Matrix4 viewProj[12];   // [0]=face0.view, [1]=face0.proj, ... [10]=face5.view, [11]=face5.proj
+};                                             // Total: 768 bytes
+
 // ============================================================================
 // Lifecycle
 // ============================================================================
@@ -146,12 +156,17 @@ void RenderSystem::Initialize() {
     };
     m_WebTextureLayout = bindMgr->CreateBindGroupLayout(texLayoutDesc);
 
-    // Group 3: Shadow sampling (depth texture + comparison sampler + light VP)
+    // Group 3: Shadow sampling (directional + spot + point shadow maps)
     Renderer::GPUBindGroupLayoutDesc shadowSampleLayoutDesc;
     shadowSampleLayoutDesc.entries = {
-        {0, BType::UniformBuffer, SStage::Vertex | SStage::Fragment, sizeof(WebViewProjectionUBO)},
-        {1, BType::DepthTexture, SStage::Fragment, 0},
-        {2, BType::ComparisonSampler, SStage::Fragment, 0},
+        {0, BType::UniformBuffer, SStage::Vertex | SStage::Fragment, sizeof(WebViewProjectionUBO)},  // dir shadow VP
+        {1, BType::DepthTexture, SStage::Fragment, 0},              // dir shadow map
+        {2, BType::ComparisonSampler, SStage::Fragment, 0},         // shared comparison sampler
+        {3, BType::UniformBuffer, SStage::Fragment, sizeof(WebSpotShadowVPUBO)},   // spot shadow VPs
+        {4, BType::DepthTexture, SStage::Fragment, 0},              // spot shadow map 0
+        {5, BType::DepthTexture, SStage::Fragment, 0},              // spot shadow map 1
+        {6, BType::UniformBuffer, SStage::Fragment, sizeof(WebPointShadowVPUBO)},  // point shadow VPs (6 faces)
+        {7, BType::DepthTextureCube, SStage::Fragment, 0},          // point shadow cubemap
     };
     m_WebShadowSampleLayout = bindMgr->CreateBindGroupLayout(shadowSampleLayoutDesc);
 
@@ -310,6 +325,54 @@ void RenderSystem::Initialize() {
         m_WebShadowObjectBG = bindMgr->CreateBindGroup(sobg);
     }
 
+    // Create spot shadow map textures (2 individual 2D depth textures)
+    for (u32 i = 0; i < WEB_MAX_SPOT_SHADOWS; i++) {
+        Renderer::GPUTextureDesc spotSmDesc;
+        spotSmDesc.width = WEB_SPOT_SHADOW_SIZE;
+        spotSmDesc.height = WEB_SPOT_SHADOW_SIZE;
+        spotSmDesc.format = Renderer::GPUTextureFormat::Depth32Float;
+        spotSmDesc.usage = Renderer::GPUTextureUsage::RenderAttachment | Renderer::GPUTextureUsage::Sampled;
+        m_WebSpotShadowTex[i] = texMgr->CreateTexture(spotSmDesc);
+    }
+
+    // Create spot shadow VP UBO
+    {
+        Renderer::GPUBufferDesc spotVPDesc;
+        spotVPDesc.size = sizeof(WebSpotShadowVPUBO);
+        spotVPDesc.usage = Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst;
+        spotVPDesc.hostVisible = true;
+        spotVPDesc.label = "SpotShadowVP_UBO";
+        m_WebSpotShadowVPBuffer = bufMgr->CreateBuffer(spotVPDesc);
+    }
+
+    // Create point shadow cubemap + per-face views
+    {
+        auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
+        auto nativeCubemap = webRenderer->CreateCubemapTexture(
+            WEB_POINT_SHADOW_SIZE, WGPUTextureFormat_Depth32Float,
+            WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding);
+
+        // Store cubemap as a managed texture handle (for bind group usage)
+        auto* webTexMgr = static_cast<Renderer::WebGPUTextureManager*>(texMgr);
+        m_WebPointShadowCubemap = webTexMgr->RegisterNativeTexture(nativeCubemap);
+
+        // Create per-face 2D views for rendering
+        for (u32 f = 0; f < 6; f++) {
+            m_WebPointShadowFaceViews[f] = webRenderer->CreateCubeFaceView(
+                nativeCubemap.texture, WGPUTextureFormat_Depth32Float, f);
+        }
+    }
+
+    // Create point shadow VP UBO
+    {
+        Renderer::GPUBufferDesc ptVPDesc;
+        ptVPDesc.size = sizeof(WebPointShadowVPUBO);
+        ptVPDesc.usage = Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst;
+        ptVPDesc.hostVisible = true;
+        ptVPDesc.label = "PointShadowVP_UBO";
+        m_WebPointShadowVPBuffer = bufMgr->CreateBuffer(ptVPDesc);
+    }
+
     // Create default textures
     m_WebDefaultWhiteTex = texMgr->CreateSolidColor(255, 255, 255, 255);
     m_WebDefaultNormalTex = texMgr->CreateSolidColor(128, 128, 255, 255);  // flat +Z normal
@@ -350,18 +413,23 @@ void RenderSystem::Initialize() {
     };
     m_WebDefaultTexBindGroup = bindMgr->CreateBindGroup(defTexBGDesc);
 
-    // Create shadow sample bind group (group 3: light VP + shadow depth texture + comparison sampler)
+    // Create shadow sample bind group (group 3: all shadow maps)
     if (m_WebShadowMapTex.IsValid() && m_WebShadowVPBuffer.IsValid()) {
         Renderer::GPUBindGroupDesc shadowSampleBGDesc;
         shadowSampleBGDesc.layout = m_WebShadowSampleLayout;
         shadowSampleBGDesc.entries = {
-            {0, m_WebShadowVPBuffer, 0, sizeof(WebViewProjectionUBO), {}, {}},
-            {1, {}, 0, 0, m_WebShadowMapTex, {}},    // depth texture
-            {2, {}, 0, 0, {}, m_WebShadowMapTex},     // comparison sampler (from depth tex)
+            {0, m_WebShadowVPBuffer, 0, sizeof(WebViewProjectionUBO), {}, {}},     // dir shadow VP
+            {1, {}, 0, 0, m_WebShadowMapTex, {}},                                  // dir shadow depth
+            {2, {}, 0, 0, {}, m_WebShadowMapTex},                                  // comparison sampler
+            {3, m_WebSpotShadowVPBuffer, 0, sizeof(WebSpotShadowVPUBO), {}, {}},   // spot shadow VPs
+            {4, {}, 0, 0, m_WebSpotShadowTex[0], {}},                              // spot shadow 0
+            {5, {}, 0, 0, m_WebSpotShadowTex[1], {}},                              // spot shadow 1
+            {6, m_WebPointShadowVPBuffer, 0, sizeof(WebPointShadowVPUBO), {}, {}}, // point shadow VPs
+            {7, {}, 0, 0, m_WebPointShadowCubemap, {}},                            // point shadow cubemap
         };
         m_WebShadowSampleBG = bindMgr->CreateBindGroup(shadowSampleBGDesc);
         if (m_WebShadowSampleBG.IsValid()) {
-            ENJIN_LOG_INFO(Renderer, "RenderSystem: Shadow sample bind group created (group 3)");
+            ENJIN_LOG_INFO(Renderer, "RenderSystem: Shadow sample bind group created (group 3, dir+spot+point)");
         }
     }
 
@@ -807,6 +875,194 @@ void RenderSystem::Update(f32 deltaTime) {
             }
         }
     }
+
+    // ========================================================================
+    // Spot light shadow passes (max 2 spot lights)
+    // ========================================================================
+    u32 activeSpotShadows = 0;
+    if (m_WebShadowPipeline.IsValid() && m_Camera) {
+        auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
+        auto* webTexMgr = static_cast<Renderer::WebGPUTextureManager*>(m_Renderer->GetTextureManager());
+        auto* pipeMgr2 = static_cast<Renderer::WebGPUPipelineManager*>(m_Renderer->GetPipelineManager());
+        auto* webBufMgr2 = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
+        auto* webBindMgr2 = static_cast<Renderer::WebGPUBindGroupManager*>(m_Renderer->GetBindGroupManager());
+
+        WebSpotShadowVPUBO spotVPs{};
+
+        if (m_CachedTransformStorage) {
+            for (Entity lightEntity : m_CachedLightEntities) {
+                if (activeSpotShadows >= WEB_MAX_SPOT_SHADOWS) break;
+                auto* lc = m_World->GetComponent<LightComponent>(lightEntity);
+                auto* xf = m_CachedTransformStorage->Get(lightEntity);
+                if (!lc || !xf || lc->type != LightType::Spot || !lc->castShadows) continue;
+
+                Math::Vector3 pos = xf->position;
+                Math::Vector3 dir = xf->rotation.GetForward();
+                f32 fov = lc->outerConeAngle * 2.0f * 3.14159265f / 180.0f;
+                fov = std::max(fov, 0.1f);
+                f32 range = lc->range > 0.0f ? lc->range : 50.0f;
+
+                // Perspective projection for spot light
+                Math::Matrix4 spotView = Math::Matrix4::LookAt(pos, pos + dir, Math::Vector3(0, 1, 0));
+                f32 aspect = 1.0f;
+                f32 nearZ = 0.1f;
+                Math::Matrix4 spotProj = Math::Matrix4::Perspective(fov, aspect, nearZ, range);
+
+                u32 idx = activeSpotShadows;
+                spotVPs.viewProj[idx * 2] = spotView;
+                spotVPs.viewProj[idx * 2 + 1] = spotProj;
+
+                // Render shadow pass for this spot light
+                const auto* spotTexNative = webTexMgr->GetNativeTexture(m_WebSpotShadowTex[idx]);
+                if (spotTexNative && spotTexNative->view) {
+                    // Upload this light's VP to the shadow frame UBO (reuse directional shadow UBO temporarily)
+                    WebViewProjectionUBO spotShadowVP{};
+                    spotShadowVP.view = spotView;
+                    spotShadowVP.proj = spotProj;
+                    spotShadowVP.viewPos = pos;
+                    bufMgr->UploadData(m_WebShadowVPBuffer, &spotShadowVP, sizeof(spotShadowVP));
+
+                    WGPURenderPassEncoder spotPass = webRenderer->BeginDepthOnlyPass(
+                        spotTexNative->view, WEB_SPOT_SHADOW_SIZE, WEB_SPOT_SHADOW_SIZE);
+                    if (spotPass) {
+                        WGPURenderPipeline nativePipe = pipeMgr2->GetNativePipeline(m_WebShadowPipeline);
+                        WGPUBindGroup nativeFrameBG = webBindMgr2->GetNativeGroup(m_WebShadowFrameBG);
+                        wgpuRenderPassEncoderSetPipeline(spotPass, nativePipe);
+                        wgpuRenderPassEncoderSetViewport(spotPass, 0, 0,
+                            static_cast<f32>(WEB_SPOT_SHADOW_SIZE), static_cast<f32>(WEB_SPOT_SHADOW_SIZE), 0.0f, 1.0f);
+                        wgpuRenderPassEncoderSetBindGroup(spotPass, 0, nativeFrameBG, 0, nullptr);
+
+                        const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
+                        for (Entity entity : meshEntities) {
+                            auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
+                            auto* exf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
+                            if (!mesh || !exf || !exf->visible || mesh->vertices.empty()) continue;
+                            u64 eid = static_cast<u64>(entity);
+                            if (eid >= m_EntityRenderData.size()) continue;
+                            auto& rd = m_EntityRenderData[eid];
+                            if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
+
+                            WebObjectDataUBO shadowObj{};
+                            shadowObj.model = exf->ToMatrix();
+                            auto perBuf = bufMgr->CreateBufferWithData(
+                                {sizeof(WebObjectDataUBO), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true},
+                                &shadowObj);
+                            Renderer::GPUBindGroupDesc bgd;
+                            bgd.layout = m_WebShadowObjectLayout;
+                            bgd.entries = {{0, perBuf, 0, sizeof(WebObjectDataUBO), {}, {}}};
+                            auto perBG = webBindMgr2->CreateBindGroup(bgd);
+
+                            wgpuRenderPassEncoderSetBindGroup(spotPass, 1, webBindMgr2->GetNativeGroup(perBG), 0, nullptr);
+                            wgpuRenderPassEncoderSetVertexBuffer(spotPass, 0, webBufMgr2->GetNativeBuffer(rd.vertexBuffer), 0, WGPU_WHOLE_SIZE);
+                            wgpuRenderPassEncoderSetIndexBuffer(spotPass, webBufMgr2->GetNativeBuffer(rd.indexBuffer), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+                            wgpuRenderPassEncoderDrawIndexed(spotPass, rd.indexCount, 1, 0, 0, 0);
+                            webBindMgr2->DestroyBindGroup(perBG);
+                            bufMgr->DestroyBuffer(perBuf);
+                        }
+                        wgpuRenderPassEncoderEnd(spotPass);
+                        wgpuRenderPassEncoderRelease(spotPass);
+                    }
+                }
+                activeSpotShadows++;
+            }
+        }
+        bufMgr->UploadData(m_WebSpotShadowVPBuffer, &spotVPs, sizeof(spotVPs));
+    }
+
+    // ========================================================================
+    // Point light shadow passes (max 1 point light, 6 cube faces)
+    // ========================================================================
+    u32 activePointShadows = 0;
+    if (m_WebShadowPipeline.IsValid() && m_Camera && m_WebPointShadowFaceViews[0]) {
+        auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
+        auto* pipeMgr3 = static_cast<Renderer::WebGPUPipelineManager*>(m_Renderer->GetPipelineManager());
+        auto* webBufMgr3 = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
+        auto* webBindMgr3 = static_cast<Renderer::WebGPUBindGroupManager*>(m_Renderer->GetBindGroupManager());
+
+        WebPointShadowVPUBO pointVPs{};
+
+        if (m_CachedTransformStorage) {
+            for (Entity lightEntity : m_CachedLightEntities) {
+                if (activePointShadows >= WEB_MAX_POINT_SHADOWS) break;
+                auto* lc = m_World->GetComponent<LightComponent>(lightEntity);
+                auto* xf = m_CachedTransformStorage->Get(lightEntity);
+                if (!lc || !xf || lc->type != LightType::Point || !lc->castShadows) continue;
+
+                Math::Vector3 pos = xf->position;
+                f32 range = lc->range > 0.0f ? lc->range : 50.0f;
+                f32 nearZ = 0.1f;
+                Math::Matrix4 faceProj = Math::Matrix4::Perspective(3.14159265f * 0.5f, 1.0f, nearZ, range);
+
+                // 6 cube face directions: +X, -X, +Y, -Y, +Z, -Z
+                struct FaceDir { Math::Vector3 target; Math::Vector3 up; };
+                FaceDir faces[6] = {
+                    {{pos.x+1, pos.y, pos.z}, {0,-1,0}},  // +X
+                    {{pos.x-1, pos.y, pos.z}, {0,-1,0}},  // -X
+                    {{pos.x, pos.y+1, pos.z}, {0,0,1}},   // +Y
+                    {{pos.x, pos.y-1, pos.z}, {0,0,-1}},  // -Y
+                    {{pos.x, pos.y, pos.z+1}, {0,-1,0}},  // +Z
+                    {{pos.x, pos.y, pos.z-1}, {0,-1,0}},  // -Z
+                };
+
+                for (u32 face = 0; face < 6; face++) {
+                    Math::Matrix4 faceView = Math::Matrix4::LookAt(pos, faces[face].target, faces[face].up);
+                    pointVPs.viewProj[face * 2] = faceView;
+                    pointVPs.viewProj[face * 2 + 1] = faceProj;
+
+                    // Upload face VP to shadow frame UBO
+                    WebViewProjectionUBO faceShadowVP{};
+                    faceShadowVP.view = faceView;
+                    faceShadowVP.proj = faceProj;
+                    faceShadowVP.viewPos = pos;
+                    bufMgr->UploadData(m_WebShadowVPBuffer, &faceShadowVP, sizeof(faceShadowVP));
+
+                    WGPURenderPassEncoder facePass = webRenderer->BeginDepthOnlyPass(
+                        static_cast<WGPUTextureView>(m_WebPointShadowFaceViews[face]), WEB_POINT_SHADOW_SIZE, WEB_POINT_SHADOW_SIZE);
+                    if (facePass) {
+                        wgpuRenderPassEncoderSetPipeline(facePass, pipeMgr3->GetNativePipeline(m_WebShadowPipeline));
+                        wgpuRenderPassEncoderSetViewport(facePass, 0, 0,
+                            static_cast<f32>(WEB_POINT_SHADOW_SIZE), static_cast<f32>(WEB_POINT_SHADOW_SIZE), 0.0f, 1.0f);
+                        wgpuRenderPassEncoderSetBindGroup(facePass, 0, webBindMgr3->GetNativeGroup(m_WebShadowFrameBG), 0, nullptr);
+
+                        const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
+                        for (Entity entity : meshEntities) {
+                            auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
+                            auto* exf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
+                            if (!mesh || !exf || !exf->visible || mesh->vertices.empty()) continue;
+                            u64 eid = static_cast<u64>(entity);
+                            if (eid >= m_EntityRenderData.size()) continue;
+                            auto& rd = m_EntityRenderData[eid];
+                            if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
+
+                            WebObjectDataUBO shadowObj{};
+                            shadowObj.model = exf->ToMatrix();
+                            auto perBuf = bufMgr->CreateBufferWithData(
+                                {sizeof(WebObjectDataUBO), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true},
+                                &shadowObj);
+                            Renderer::GPUBindGroupDesc bgd;
+                            bgd.layout = m_WebShadowObjectLayout;
+                            bgd.entries = {{0, perBuf, 0, sizeof(WebObjectDataUBO), {}, {}}};
+                            auto perBG = webBindMgr3->CreateBindGroup(bgd);
+
+                            wgpuRenderPassEncoderSetBindGroup(facePass, 1, webBindMgr3->GetNativeGroup(perBG), 0, nullptr);
+                            wgpuRenderPassEncoderSetVertexBuffer(facePass, 0, webBufMgr3->GetNativeBuffer(rd.vertexBuffer), 0, WGPU_WHOLE_SIZE);
+                            wgpuRenderPassEncoderSetIndexBuffer(facePass, webBufMgr3->GetNativeBuffer(rd.indexBuffer), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+                            wgpuRenderPassEncoderDrawIndexed(facePass, rd.indexCount, 1, 0, 0, 0);
+                            webBindMgr3->DestroyBindGroup(perBG);
+                            bufMgr->DestroyBuffer(perBuf);
+                        }
+                        wgpuRenderPassEncoderEnd(facePass);
+                        wgpuRenderPassEncoderRelease(facePass);
+                    }
+                }
+                activePointShadows++;
+            }
+        }
+        bufMgr->UploadData(m_WebPointShadowVPBuffer, &pointVPs, sizeof(pointVPs));
+    }
+
+    // Re-upload directional shadow VP (spot/point passes may have overwritten m_WebShadowVPBuffer)
+    // This is handled by the directional pass writing first and the bind group referencing the buffer
 
     // Begin main render pass
     Renderer::GPURenderPassDesc passDesc;  // default = swapchain
