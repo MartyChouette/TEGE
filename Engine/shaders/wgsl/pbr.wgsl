@@ -57,6 +57,17 @@ struct BoneSSBO {
 @group(2) @binding(4) var mrTex: texture_2d<f32>;  // metallic-roughness
 @group(2) @binding(5) var mrSmp: sampler;
 
+// Bind group 3: Shadow mapping
+struct ShadowViewProjection {
+    view: mat4x4<f32>,
+    proj: mat4x4<f32>,
+    lightPos: vec3<f32>,
+    _pad: f32,
+};
+@group(3) @binding(0) var<uniform> shadowVP: ShadowViewProjection;
+@group(3) @binding(1) var shadowMap: texture_depth_2d;
+@group(3) @binding(2) var shadowSampler: sampler_comparison;
+
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
@@ -140,6 +151,31 @@ fn fresnelSchlick(cosTheta: f32, F0: vec3<f32>) -> vec3<f32> {
     return F0 + (1.0 - F0) * pow(saturate(1.0 - cosTheta), 5.0);
 }
 
+// Shadow map lookup with 4-tap PCF
+fn sampleShadow(worldPos: vec3<f32>) -> f32 {
+    let lightClip = shadowVP.proj * shadowVP.view * vec4<f32>(worldPos, 1.0);
+    let ndc = lightClip.xyz / lightClip.w;
+
+    // NDC to shadow UV: x maps normally, y is flipped (WebGPU Y-up NDC → V=0 at top)
+    let shadowUV = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
+
+    let depth = ndc.z;
+    let bias = 0.002;
+
+    // 4-tap PCF for soft shadow edges
+    let texelSize = 1.0 / 1024.0;
+    var shadow = 0.0;
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(-texelSize, -texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>( texelSize, -texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(-texelSize,  texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>( texelSize,  texelSize), depth - bias);
+    shadow = shadow * 0.25;
+
+    // Out-of-bounds: no shadow outside the shadow map (applied after sampling for uniform control flow)
+    let inBounds = step(0.0, shadowUV.x) * step(shadowUV.x, 1.0) * step(0.0, shadowUV.y) * step(shadowUV.y, 1.0);
+    return mix(1.0, shadow, inBounds);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     // Sample textures
@@ -156,14 +192,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let metallic = mr.b * object.metallic;
     let roughness = mr.g * object.roughness;
 
-    // Normal mapping
+    // Normal mapping — always sample (WGSL uniform control flow), skip TBN if tangents are zero
     let tangentNormal = textureSample(normalTex, normalSmp, in.uv).rgb * 2.0 - 1.0;
-    let TBN = mat3x3<f32>(
-        normalize(in.world_tangent),
-        normalize(in.world_bitangent),
-        normalize(in.world_normal)
-    );
-    let N = normalize(TBN * tangentNormal);
+    let tangentLen = dot(in.world_tangent, in.world_tangent);
+    var N = normalize(in.world_normal);
+    if (tangentLen > 0.001) {
+        let T = normalize(in.world_tangent);
+        let B = normalize(in.world_bitangent);
+        let TBN = mat3x3<f32>(T, B, N);
+        N = normalize(TBN * tangentNormal);
+    }
     let V = normalize(viewProj.viewPos - in.world_pos);
 
     // PBR lighting
@@ -171,6 +209,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let F0 = mix(F0_dielectric, albedo, metallic);
 
     var Lo = vec3<f32>(0.0);
+
+    // Shadow lookup (applied to first directional light)
+    let shadowFactor = sampleShadow(in.world_pos);
+    let shadowStrength = lighting.shadowParams.x;
 
     // Directional lights (slots 0-3)
     let dirCount = i32(lighting.lightCount.x);
@@ -189,7 +231,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
         let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
         let NdotL = max(dot(N, L), 0.0);
-        Lo = Lo + (kD * albedo / 3.14159265 + specular) * radiance * NdotL;
+
+        // Apply shadow to first directional light
+        var shadow = 1.0;
+        if (i == 0) {
+            shadow = mix(1.0, shadowFactor, shadowStrength);
+        }
+        Lo = Lo + (kD * albedo + specular) * radiance * NdotL * shadow;
     }
 
     // Point lights (slots 4-7)
@@ -223,7 +271,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
         let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
         let NdotL = max(dot(N, L), 0.0);
-        Lo = Lo + (kD * albedo / 3.14159265 + specular) * radiance * NdotL;
+        Lo = Lo + (kD * albedo + specular) * radiance * NdotL;
     }
 
     // Spot lights
@@ -263,7 +311,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
         let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
         let NdotL = max(dot(N, L), 0.0);
-        Lo = Lo + (kD * albedo / 3.14159265 + specular) * radiance * NdotL;
+        Lo = Lo + (kD * albedo + specular) * radiance * NdotL;
     }
 
     // Ambient
@@ -273,6 +321,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let emissive = object.emissiveColor * object.emissiveStrength;
 
     var color = ambient + Lo + emissive;
+
+    // DEBUG: multiply by 2 to match desktop brightness (desktop has post-processing exposure)
+    color = color * 2.0;
 
     // Gamma correction only (no tonemapping — desktop applies tonemapping in post-processing)
     color = clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));

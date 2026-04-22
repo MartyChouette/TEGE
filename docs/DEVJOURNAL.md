@@ -2,6 +2,36 @@
 
 ---
 
+## 2026-04-22 — WebGPU Shadow Pipeline & PBR Lighting Fix
+
+**Branch:** `main`
+
+### Problem
+WebGPU web player rendered all geometry with flat colors — no lighting response, no shadows visible. Console showed `shadow_pipe=0` and WebGPU validation errors.
+
+### Root Causes Found (3 bugs)
+
+**1. Shadow pipeline creation rejected depth-only pipelines:**
+`WebGPUPipelineManager::CreateRenderPipeline()` required both vertex AND fragment shader modules. Shadow pipelines are depth-only (no fragment shader), so `fragmentShader={}` (invalid handle) caused the null check to fail, returning an empty pipeline handle. Fix: allow null fragment shader when `hasColorAttachment=false`.
+
+**2. Stencil ops on a stencil-less depth format:**
+`BeginDepthOnlyPass()` set `stencilLoadOp=Clear` and `stencilStoreOp=Store` on a `Depth32Float` texture (no stencil aspect). Chrome's WebGPU validation rejected the entire command buffer. Fix: set both to `WGPULoadOp_Undefined`/`WGPUStoreOp_Undefined`.
+
+**3. Zero tangent vectors produced NaN in TBN matrix, killing PBR lighting:**
+Procedural meshes had no tangent data (all zeros). The PBR shader's `normalize(vec3(0,0,0))` produced NaN, which propagated through the TBN matrix into all lighting dot products, making `Lo = NaN` → clamped to 0. Diagnostic confirmed: `dirCount` (red) and raw `NdotL` (green) were valid, but `length(Lo)` (blue) was zero. Fix: detect zero tangents via `dot(tangent,tangent) > 0.001` and fall back to interpolated world normal. WGSL constraint: `textureSample` must be called outside the branch (uniform control flow requirement).
+
+### Files Changed
+- `Engine/src/Renderer/WebGPU/WebGPUPipelineManager.cpp` — Allow depth-only pipelines
+- `Engine/src/Renderer/WebGPU/WebGPURenderer.cpp` — Fix stencil ops for Depth32Float
+- `Engine/include/Enjin/Renderer/WebGPU/WebShaderData.h` — TBN fallback + uniform control flow
+- `Engine/shaders/wgsl/pbr.wgsl` — Same TBN fallback (on-disk copy)
+
+### Notable Moments
+- The diagnostic shader trick (red=dirCount, green=NdotL, blue=Lo) instantly revealed that lighting data was reaching the GPU correctly but the PBR math was producing zero — pointed straight at the TBN matrix.
+- First attempt at the tangent fix put `textureSample` inside an `if` block, which WGSL rejected ("must only be called from uniform control flow"). Moved the sample outside the branch, keeping only the TBN transform conditional.
+
+---
+
 ## 2026-02-26 (Session 38)
 
 ### Particle Rendering Fix & 2D Gameplay Collision Overhaul

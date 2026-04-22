@@ -4,6 +4,17 @@ Chronological log of major development sessions, decisions, and milestones.
 
 ---
 
+## 2026-04-22 — WebGPU Shadow Pipeline & PBR Lighting Fix
+
+**Branch:** `main`
+
+Fixed 3 bugs preventing WebGPU lighting and shadows from rendering:
+1. **Depth-only pipeline rejection** — `WebGPUPipelineManager::CreateRenderPipeline()` required a fragment shader; shadow pipelines have none. Now allows null fragment shader when `hasColorAttachment=false`.
+2. **Stencil ops on Depth32Float** — `BeginDepthOnlyPass()` set stencil Clear/Store on a format with no stencil aspect, invalidating the command buffer. Changed to `Undefined`.
+3. **NaN TBN matrix from zero tangents** — Procedural meshes had no tangent data. `normalize(vec3(0))` → NaN poisoned all PBR dot products. Shader now detects zero tangents and falls back to interpolated world normal. WGSL constraint: `textureSample` must stay outside non-uniform branches.
+
+---
+
 ## 2026-02-19 — MaturityTier Badges, Test Hardening, Steam Audio Phase 2
 
 **Branch:** `beta/0.8`

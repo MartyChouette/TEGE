@@ -146,11 +146,20 @@ void RenderSystem::Initialize() {
     };
     m_WebTextureLayout = bindMgr->CreateBindGroupLayout(texLayoutDesc);
 
+    // Group 3: Shadow sampling (depth texture + comparison sampler + light VP)
+    Renderer::GPUBindGroupLayoutDesc shadowSampleLayoutDesc;
+    shadowSampleLayoutDesc.entries = {
+        {0, BType::UniformBuffer, SStage::Vertex | SStage::Fragment, sizeof(WebViewProjectionUBO)},
+        {1, BType::DepthTexture, SStage::Fragment, 0},
+        {2, BType::ComparisonSampler, SStage::Fragment, 0},
+    };
+    m_WebShadowSampleLayout = bindMgr->CreateBindGroupLayout(shadowSampleLayoutDesc);
+
     // Create pipeline
     Renderer::GPURenderPipelineDesc pipeDesc;
     pipeDesc.vertexShader = m_MainVertexShader;
     pipeDesc.fragmentShader = m_MainFragmentShader;
-    pipeDesc.bindGroupLayouts = {m_WebFrameLayout, m_WebObjectLayout, m_WebTextureLayout};
+    pipeDesc.bindGroupLayouts = {m_WebFrameLayout, m_WebObjectLayout, m_WebTextureLayout, m_WebShadowSampleLayout};
     pipeDesc.topology = Renderer::GPUPrimitiveTopology::TriangleList;
     pipeDesc.cullMode = Renderer::GPUCullMode::None;
     pipeDesc.frontFace = Renderer::GPUFrontFace::CCW;
@@ -341,6 +350,21 @@ void RenderSystem::Initialize() {
     };
     m_WebDefaultTexBindGroup = bindMgr->CreateBindGroup(defTexBGDesc);
 
+    // Create shadow sample bind group (group 3: light VP + shadow depth texture + comparison sampler)
+    if (m_WebShadowMapTex.IsValid() && m_WebShadowVPBuffer.IsValid()) {
+        Renderer::GPUBindGroupDesc shadowSampleBGDesc;
+        shadowSampleBGDesc.layout = m_WebShadowSampleLayout;
+        shadowSampleBGDesc.entries = {
+            {0, m_WebShadowVPBuffer, 0, sizeof(WebViewProjectionUBO), {}, {}},
+            {1, {}, 0, 0, m_WebShadowMapTex, {}},    // depth texture
+            {2, {}, 0, 0, {}, m_WebShadowMapTex},     // comparison sampler (from depth tex)
+        };
+        m_WebShadowSampleBG = bindMgr->CreateBindGroup(shadowSampleBGDesc);
+        if (m_WebShadowSampleBG.IsValid()) {
+            ENJIN_LOG_INFO(Renderer, "RenderSystem: Shadow sample bind group created (group 3)");
+        }
+    }
+
     m_Initialized = true;
     ENJIN_LOG_INFO(Renderer, "WebGPU RenderSystem initialized");
 }
@@ -399,6 +423,8 @@ void RenderSystem::Shutdown() {
 
     // Destroy shadow resources
     if (bindMgr) {
+        if (m_WebShadowSampleBG.IsValid()) bindMgr->DestroyBindGroup(m_WebShadowSampleBG);
+        if (m_WebShadowSampleLayout.IsValid()) bindMgr->DestroyBindGroupLayout(m_WebShadowSampleLayout);
         if (m_WebShadowFrameBG.IsValid()) bindMgr->DestroyBindGroup(m_WebShadowFrameBG);
         if (m_WebShadowObjectBG.IsValid()) bindMgr->DestroyBindGroup(m_WebShadowObjectBG);
         if (m_WebShadowFrameLayout.IsValid()) bindMgr->DestroyBindGroupLayout(m_WebShadowFrameLayout);
@@ -489,6 +515,16 @@ void RenderSystem::Update(f32 deltaTime) {
     m_WebTime += deltaTime;
     auto* bufMgr = m_Renderer->GetBufferManager();
     if (!bufMgr) return;
+
+    static int s_BuildCheck = 0;
+    if (s_BuildCheck++ < 3) {
+        EM_ASM({
+            console.log('[BUILD_V2] shadow_pipe=' + $0 + ' shadow_tex=' + $1 + ' shadow_bg3=' + $2 + ' camera=' + $3);
+        }, m_WebShadowPipeline.IsValid() ? 1 : 0,
+           m_WebShadowMapTex.IsValid() ? 1 : 0,
+           m_WebShadowSampleBG.IsValid() ? 1 : 0,
+           m_Camera ? 1 : 0);
+    }
 
     RefreshStorageCache();
     ResetFrameCounters();
@@ -581,7 +617,195 @@ void RenderSystem::Update(f32 deltaTime) {
             }
         }
 
+        // Store first directional light direction for shadow pass
+        if (dirCount > 0) {
+            lit.shadowParams = {0.7f, 0.001f, 80.0f, 0.0f};  // strength, bias, distance, unused
+        }
+
         bufMgr->UploadData(m_WebLightingBuffer, &lit, sizeof(lit));
+    }
+
+    // ========================================================================
+    // Shadow depth pass (single cascade, directional light)
+    // ========================================================================
+    if (m_WebShadowPipeline.IsValid() && m_WebShadowMapTex.IsValid() && m_Camera) {
+        // Find shadow-casting directional light
+        Math::Vector3 shadowLightDir(0.5f, -0.8f, 0.3f);
+        bool hasShadowLight = false;
+        if (m_CachedTransformStorage) {
+            for (Entity lightEntity : m_CachedLightEntities) {
+                auto* lc = m_World->GetComponent<LightComponent>(lightEntity);
+                auto* xf = m_CachedTransformStorage->Get(lightEntity);
+                if (!lc || !xf) continue;
+                if (lc->type == LightType::Directional && lc->castShadows) {
+                    shadowLightDir = xf->rotation.GetForward();
+                    hasShadowLight = true;
+                    break;
+                }
+            }
+        }
+
+        // Compute light view-projection (single cascade covering shadow distance)
+        f32 cameraNear = 0.1f;
+        f32 shadowDistance = 80.0f;
+        Math::Matrix4 camView = m_Camera->GetViewMatrix();
+        Math::Matrix4 camProj = m_Camera->GetProjectionMatrix();
+        Math::Matrix4 invViewProj = (camProj * camView).Inverse();
+
+        // Unproject frustum corners at near/far planes
+        Math::Vector3 nearCorners[4], farCorners[4];
+        {
+            int idx = 0;
+            for (int y = 0; y < 2; ++y) {
+                for (int x = 0; x < 2; ++x) {
+                    Math::Vector4 nearNdc(x * 2.0f - 1.0f, y * 2.0f - 1.0f, 0.0f, 1.0f);
+                    Math::Vector4 farNdc(x * 2.0f - 1.0f, y * 2.0f - 1.0f, 1.0f, 1.0f);
+                    Math::Vector4 nw = invViewProj * nearNdc;
+                    Math::Vector4 fw = invViewProj * farNdc;
+                    nearCorners[idx] = Math::Vector3(nw.x / nw.w, nw.y / nw.w, nw.z / nw.w);
+                    farCorners[idx]  = Math::Vector3(fw.x / fw.w, fw.y / fw.w, fw.z / fw.w);
+                    idx++;
+                }
+            }
+        }
+
+        // Compute world-space frustum corners clamped to shadow distance
+        f32 cameraFar = m_Camera->GetFarPlane();
+        f32 farT = std::min(shadowDistance, cameraFar) / cameraFar;
+        Math::Vector3 corners[8];
+        for (int i = 0; i < 4; ++i) {
+            Math::Vector3 ray = farCorners[i] - nearCorners[i];
+            corners[i]     = nearCorners[i];           // near plane
+            corners[i + 4] = nearCorners[i] + ray * farT;  // shadow distance
+        }
+
+        // Compute frustum center
+        Math::Vector3 center(0.0f);
+        for (int i = 0; i < 8; ++i) center = center + corners[i];
+        center = center * (1.0f / 8.0f);
+
+        // Build light view matrix
+        Math::Vector3 lightDirN = shadowLightDir.Normalized();
+        Math::Vector3 lightUp(0.0f, 1.0f, 0.0f);
+        if (std::abs(lightDirN.Dot(lightUp)) > 0.99f)
+            lightUp = Math::Vector3(0.0f, 0.0f, 1.0f);
+        Math::Matrix4 lightView = Math::Matrix4::LookAt(center - lightDirN * 50.0f, center, lightUp);
+
+        // Light-space AABB
+        f32 minX = 1e9f, maxX = -1e9f;
+        f32 minY = 1e9f, maxY = -1e9f;
+        f32 minZ = 1e9f, maxZ = -1e9f;
+        for (int i = 0; i < 8; ++i) {
+            Math::Vector4 ls = lightView * Math::Vector4(corners[i].x, corners[i].y, corners[i].z, 1.0f);
+            minX = std::min(minX, ls.x); maxX = std::max(maxX, ls.x);
+            minY = std::min(minY, ls.y); maxY = std::max(maxY, ls.y);
+            minZ = std::min(minZ, ls.z); maxZ = std::max(maxZ, ls.z);
+        }
+        minZ -= 50.0f; maxZ += 50.0f;
+
+        // Texel-size snapping (prevents shadow swimming)
+        f32 sizeX = maxX - minX, sizeY = maxY - minY;
+        f32 worldUnitsPerTexel = std::max(sizeX, sizeY) / static_cast<f32>(WEB_SHADOW_MAP_SIZE);
+        if (worldUnitsPerTexel > 0.0f) {
+            sizeX = std::ceil(sizeX / worldUnitsPerTexel) * worldUnitsPerTexel;
+            sizeY = std::ceil(sizeY / worldUnitsPerTexel) * worldUnitsPerTexel;
+            f32 cx = std::floor((minX + maxX) * 0.5f / worldUnitsPerTexel) * worldUnitsPerTexel;
+            f32 cy = std::floor((minY + maxY) * 0.5f / worldUnitsPerTexel) * worldUnitsPerTexel;
+            minX = cx - sizeX * 0.5f; maxX = cx + sizeX * 0.5f;
+            minY = cy - sizeY * 0.5f; maxY = cy + sizeY * 0.5f;
+        }
+
+        // Orthographic projection (depth [0,1])
+        Math::Matrix4 lightProj = Math::Matrix4::Identity();
+        lightProj.m[0]  =  2.0f / (maxX - minX);
+        lightProj.m[5]  =  2.0f / (maxY - minY);
+        lightProj.m[10] = -1.0f / (maxZ - minZ);
+        lightProj.m[12] = -(maxX + minX) / (maxX - minX);
+        lightProj.m[13] = -(maxY + minY) / (maxY - minY);
+        lightProj.m[14] =  maxZ / (maxZ - minZ);
+
+        // Upload light VP to shadow UBO (used by both shadow pass and PBR pass group 3)
+        WebViewProjectionUBO shadowVP{};
+        shadowVP.view = lightView;
+        shadowVP.proj = lightProj;
+        shadowVP.viewPos = center - lightDirN * 50.0f;
+        shadowVP.time = 0.0f;
+        bufMgr->UploadData(m_WebShadowVPBuffer, &shadowVP, sizeof(shadowVP));
+
+        // Execute shadow depth pass via raw WebGPU encoder
+        auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
+        auto* texMgr = static_cast<Renderer::WebGPUTextureManager*>(m_Renderer->GetTextureManager());
+        auto* pipeMgr = static_cast<Renderer::WebGPUPipelineManager*>(m_Renderer->GetPipelineManager());
+        auto* webBufMgr = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
+        auto* webBindMgr = static_cast<Renderer::WebGPUBindGroupManager*>(m_Renderer->GetBindGroupManager());
+
+        const auto* shadowNative = texMgr->GetNativeTexture(m_WebShadowMapTex);
+        if (shadowNative && shadowNative->view) {
+            WGPURenderPassEncoder shadowPass = webRenderer->BeginDepthOnlyPass(
+                shadowNative->view, WEB_SHADOW_MAP_SIZE, WEB_SHADOW_MAP_SIZE);
+
+            if (shadowPass) {
+                WGPURenderPipeline nativeShadowPipeline = pipeMgr->GetNativePipeline(m_WebShadowPipeline);
+                WGPUBindGroup nativeShadowFrameBG = webBindMgr->GetNativeGroup(m_WebShadowFrameBG);
+
+                wgpuRenderPassEncoderSetPipeline(shadowPass, nativeShadowPipeline);
+                wgpuRenderPassEncoderSetViewport(shadowPass, 0, 0,
+                    static_cast<f32>(WEB_SHADOW_MAP_SIZE), static_cast<f32>(WEB_SHADOW_MAP_SIZE), 0.0f, 1.0f);
+                wgpuRenderPassEncoderSetBindGroup(shadowPass, 0, nativeShadowFrameBG, 0, nullptr);
+
+                // Draw each mesh entity into shadow map (per-entity buffer + bind group)
+                const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
+                u32 shadowDrawCount = 0;
+                for (Entity entity : meshEntities) {
+                    auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
+                    auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
+                    if (!mesh || !xf || !xf->visible) continue;
+                    if (mesh->vertices.empty() || mesh->indices.empty()) continue;
+
+                    u64 eid = static_cast<u64>(entity);
+                    if (eid >= m_EntityRenderData.size()) continue;
+                    auto& rd = m_EntityRenderData[eid];
+                    if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
+
+                    // Create per-entity buffer with model matrix (can't reuse one buffer —
+                    // wgpuQueueWriteBuffer runs before the command buffer, so last write wins)
+                    WebObjectDataUBO shadowObj{};
+                    shadowObj.model = xf->ToMatrix();
+
+                    Renderer::GPUBufferDesc perEntDesc;
+                    perEntDesc.size = sizeof(WebObjectDataUBO);
+                    perEntDesc.usage = Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst;
+                    perEntDesc.hostVisible = true;
+                    auto perEntBuf = bufMgr->CreateBufferWithData(perEntDesc, &shadowObj);
+
+                    Renderer::GPUBindGroupDesc perEntBGD;
+                    perEntBGD.layout = m_WebShadowObjectLayout;
+                    perEntBGD.entries = {{0, perEntBuf, 0, sizeof(WebObjectDataUBO), {}, {}}};
+                    auto perEntBG = webBindMgr->CreateBindGroup(perEntBGD);
+
+                    WGPUBindGroup nativeBG = webBindMgr->GetNativeGroup(perEntBG);
+                    wgpuRenderPassEncoderSetBindGroup(shadowPass, 1, nativeBG, 0, nullptr);
+
+                    WGPUBuffer vb = webBufMgr->GetNativeBuffer(rd.vertexBuffer);
+                    WGPUBuffer ib = webBufMgr->GetNativeBuffer(rd.indexBuffer);
+                    wgpuRenderPassEncoderSetVertexBuffer(shadowPass, 0, vb, 0, WGPU_WHOLE_SIZE);
+                    wgpuRenderPassEncoderSetIndexBuffer(shadowPass, ib, WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+                    wgpuRenderPassEncoderDrawIndexed(shadowPass, rd.indexCount, 1, 0, 0, 0);
+
+                    webBindMgr->DestroyBindGroup(perEntBG);
+                    bufMgr->DestroyBuffer(perEntBuf);
+                    shadowDrawCount++;
+                }
+
+                static int s_ShadowLog = 0;
+                if (s_ShadowLog++ < 5) {
+                    EM_ASM({ console.log('[SHADOW] drew ' + $0 + ' entities into shadow map'); }, shadowDrawCount);
+                }
+
+                wgpuRenderPassEncoderEnd(shadowPass);
+                wgpuRenderPassEncoderRelease(shadowPass);
+            }
+        }
     }
 
     // Begin main render pass
@@ -595,6 +819,8 @@ void RenderSystem::Update(f32 deltaTime) {
     encoder->SetViewport(0, 0, w, h);
     encoder->SetScissor(0, 0, static_cast<u32>(w), static_cast<u32>(h));
     encoder->SetBindGroup(0, m_WebFrameBindGroup);
+    if (m_WebShadowSampleBG.IsValid())
+        encoder->SetBindGroup(3, m_WebShadowSampleBG);
 
     // Render each entity with a mesh
     // WebGPU batching: all ObjectData is written to a large buffer BEFORE the render pass

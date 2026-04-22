@@ -59,6 +59,16 @@ struct BoneSSBO {
 @group(2) @binding(4) var mrTex: texture_2d<f32>;
 @group(2) @binding(5) var mrSmp: sampler;
 
+struct ShadowViewProjection {
+    view: mat4x4<f32>,
+    proj: mat4x4<f32>,
+    lightPos: vec3<f32>,
+    _pad: f32,
+};
+@group(3) @binding(0) var<uniform> shadowVP: ShadowViewProjection;
+@group(3) @binding(1) var shadowMap: texture_depth_2d;
+@group(3) @binding(2) var shadowSampler: sampler_comparison;
+
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
@@ -135,6 +145,23 @@ fn fresnelSchlick(cosTheta: f32, F0: vec3<f32>) -> vec3<f32> {
     return F0 + (1.0 - F0) * pow(saturate(1.0 - cosTheta), 5.0);
 }
 
+fn sampleShadow(worldPos: vec3<f32>) -> f32 {
+    let lightClip = shadowVP.proj * shadowVP.view * vec4<f32>(worldPos, 1.0);
+    let ndc = lightClip.xyz / lightClip.w;
+    let shadowUV = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
+    let depth = ndc.z;
+    let bias = 0.002;
+    let texelSize = 1.0 / 1024.0;
+    var shadow = 0.0;
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(-texelSize, -texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>( texelSize, -texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(-texelSize,  texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>( texelSize,  texelSize), depth - bias);
+    shadow = shadow * 0.25;
+    let inBounds = step(0.0, shadowUV.x) * step(shadowUV.x, 1.0) * step(0.0, shadowUV.y) * step(shadowUV.y, 1.0);
+    return mix(1.0, shadow, inBounds);
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let baseColorSample = textureSample(baseColorTex, baseColorSmp, in.uv);
@@ -149,20 +176,25 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let metallic = mr.b * object.metallic;
     let roughness = mr.g * object.roughness;
 
+    // Normal mapping — always sample (WGSL uniform control flow), skip TBN if tangents are zero
     let tangentNormal = textureSample(normalTex, normalSmp, in.uv).rgb * 2.0 - 1.0;
-    let TBN = mat3x3<f32>(
-        normalize(in.world_tangent),
-        normalize(in.world_bitangent),
-        normalize(in.world_normal)
-    );
-    let N = normalize(TBN * tangentNormal);
+    let tangentLen = dot(in.world_tangent, in.world_tangent);
+    var N = normalize(in.world_normal);
+    if (tangentLen > 0.001) {
+        let T = normalize(in.world_tangent);
+        let B = normalize(in.world_bitangent);
+        let TBN = mat3x3<f32>(T, B, N);
+        N = normalize(TBN * tangentNormal);
+    }
     let V = normalize(viewProj.viewPos - in.world_pos);
 
     let F0_dielectric = vec3<f32>(0.04);
     let F0 = mix(F0_dielectric, albedo, metallic);
     var Lo = vec3<f32>(0.0);
 
-    // Directional lights (slots 0-3)
+    let shadowFactor = sampleShadow(in.world_pos);
+    let shadowStrength = lighting.shadowParams.x;
+
     let dirCount = i32(lighting.lightCount.x);
     for (var i = 0; i < dirCount; i = i + 1) {
         let L = normalize(-lighting.lightDir[i].xyz);
@@ -176,10 +208,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let specular = numerator / denominator;
         let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
         let NdotL = max(dot(N, L), 0.0);
-        Lo = Lo + (kD * albedo / 3.14159265 + specular) * radiance * NdotL;
+        var shadow = 1.0;
+        if (i == 0) {
+            shadow = mix(1.0, shadowFactor, shadowStrength);
+        }
+        Lo = Lo + (kD * albedo + specular) * radiance * NdotL * shadow;
     }
 
-    // Point lights (slots 4-7)
     let pointCount = i32(lighting.lightCount.y);
     for (var i = 0; i < pointCount; i = i + 1) {
         let idx = i + 4;
@@ -207,10 +242,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let specular = numerator / denominator;
         let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
         let NdotL = max(dot(N, L), 0.0);
-        Lo = Lo + (kD * albedo / 3.14159265 + specular) * radiance * NdotL;
+        Lo = Lo + (kD * albedo + specular) * radiance * NdotL;
     }
 
-    // Spot lights
     let spotCount = i32(lighting.lightCount.z);
     for (var i = 0; i < spotCount; i = i + 1) {
         let lightPos = lighting.spotPos[i].xyz;
@@ -243,12 +277,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let specular = numerator / denominator;
         let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
         let NdotL = max(dot(N, L), 0.0);
-        Lo = Lo + (kD * albedo / 3.14159265 + specular) * radiance * NdotL;
+        Lo = Lo + (kD * albedo + specular) * radiance * NdotL;
     }
 
     let ambient = lighting.ambientColor.rgb * lighting.ambientColor.w * albedo;
     let emissive = object.emissiveColor * object.emissiveStrength;
     var color = ambient + Lo + emissive;
+    color = color * 2.0;
+
     color = clamp(color, vec3<f32>(0.0), vec3<f32>(1.0));
     color = pow(color, vec3<f32>(1.0 / 2.2));
     return vec4<f32>(color, alpha);

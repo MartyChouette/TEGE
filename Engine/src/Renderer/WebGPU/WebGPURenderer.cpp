@@ -238,8 +238,8 @@ WGPURenderPassEncoder WebGPURenderer::BeginDepthOnlyPass(WGPUTextureView depthVi
     depthAttachment.depthLoadOp = WGPULoadOp_Clear;
     depthAttachment.depthStoreOp = WGPUStoreOp_Store;
     depthAttachment.depthClearValue = 1.0f;
-    depthAttachment.stencilLoadOp = WGPULoadOp_Clear;
-    depthAttachment.stencilStoreOp = WGPUStoreOp_Store;
+    depthAttachment.stencilLoadOp = WGPULoadOp_Undefined;
+    depthAttachment.stencilStoreOp = WGPUStoreOp_Undefined;
 
     WGPURenderPassDescriptor passDesc = {};
     passDesc.colorAttachmentCount = 0;
@@ -410,14 +410,29 @@ WebGPUTextureHandle WebGPURenderer::CreateTexture(u32 width, u32 height, WGPUTex
     viewDesc.arrayLayerCount = 1;
     handle.view = wgpuTextureCreateView(handle.texture, &viewDesc);
 
+    bool isDepth = (format == WGPUTextureFormat_Depth32Float ||
+                    format == WGPUTextureFormat_Depth24Plus ||
+                    format == WGPUTextureFormat_Depth16Unorm);
+
     WGPUSamplerDescriptor samplerDesc = {};
-    samplerDesc.addressModeU = WGPUAddressMode_Repeat;
-    samplerDesc.addressModeV = WGPUAddressMode_Repeat;
-    samplerDesc.addressModeW = WGPUAddressMode_Repeat;
-    samplerDesc.magFilter = WGPUFilterMode_Linear;
-    samplerDesc.minFilter = WGPUFilterMode_Linear;
-    samplerDesc.mipmapFilter = WGPUMipmapFilterMode_Linear;
-    samplerDesc.maxAnisotropy = 1;
+    if (isDepth) {
+        // Depth textures get a comparison sampler (for shadow mapping)
+        samplerDesc.addressModeU = WGPUAddressMode_ClampToEdge;
+        samplerDesc.addressModeV = WGPUAddressMode_ClampToEdge;
+        samplerDesc.addressModeW = WGPUAddressMode_ClampToEdge;
+        samplerDesc.magFilter = WGPUFilterMode_Linear;
+        samplerDesc.minFilter = WGPUFilterMode_Linear;
+        samplerDesc.compare = WGPUCompareFunction_LessEqual;
+        samplerDesc.maxAnisotropy = 1;
+    } else {
+        samplerDesc.addressModeU = WGPUAddressMode_Repeat;
+        samplerDesc.addressModeV = WGPUAddressMode_Repeat;
+        samplerDesc.addressModeW = WGPUAddressMode_Repeat;
+        samplerDesc.magFilter = WGPUFilterMode_Linear;
+        samplerDesc.minFilter = WGPUFilterMode_Linear;
+        samplerDesc.mipmapFilter = WGPUMipmapFilterMode_Linear;
+        samplerDesc.maxAnisotropy = 1;
+    }
     handle.sampler = wgpuDeviceCreateSampler(m_Device, &samplerDesc);
 
     if (pixelData) {

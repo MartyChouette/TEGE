@@ -131,9 +131,13 @@ WGPUBlendOperation WebGPUPipelineManager::TranslateBlendOp(GPUBlendOp op) {
 
 GPUPipelineHandle WebGPUPipelineManager::CreateRenderPipeline(const GPURenderPipelineDesc& desc) {
     WGPUShaderModule vsModule = m_ShaderMgr->GetNativeShader(desc.vertexShader);
-    WGPUShaderModule fsModule = m_ShaderMgr->GetNativeShader(desc.fragmentShader);
-    if (!vsModule || !fsModule) {
-        ENJIN_LOG_ERROR(Core, "WebGPUPipelineManager: Invalid shader handles");
+    WGPUShaderModule fsModule = desc.fragmentShader.IsValid() ? m_ShaderMgr->GetNativeShader(desc.fragmentShader) : nullptr;
+    if (!vsModule) {
+        ENJIN_LOG_ERROR(Core, "WebGPUPipelineManager: Invalid vertex shader handle");
+        return {};
+    }
+    if (!fsModule && desc.hasColorAttachment) {
+        ENJIN_LOG_ERROR(Core, "WebGPUPipelineManager: Fragment shader required for color attachment");
         return {};
     }
 
@@ -210,7 +214,7 @@ GPUPipelineHandle WebGPUPipelineManager::CreateRenderPipeline(const GPURenderPip
     pipelineDesc.vertex.entryPoint = wgpuStr("vs_main");
     pipelineDesc.vertex.bufferCount = static_cast<u32>(vbLayouts.size());
     pipelineDesc.vertex.buffers = vbLayouts.empty() ? nullptr : vbLayouts.data();
-    pipelineDesc.fragment = &fragmentState;
+    pipelineDesc.fragment = fsModule ? &fragmentState : nullptr;
     pipelineDesc.depthStencil = desc.depthTest ? &depthStencil : nullptr;
     pipelineDesc.primitive.topology = TranslateTopology(desc.topology);
     pipelineDesc.primitive.frontFace = TranslateFrontFace(desc.frontFace);
