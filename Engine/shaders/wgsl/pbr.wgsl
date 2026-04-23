@@ -180,8 +180,14 @@ fn sampleShadow(worldPos: vec3<f32>) -> f32 {
     shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(-texelSize,  texelSize), depth - bias);
     shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>( texelSize,  texelSize), depth - bias);
     shadow = shadow * 0.25;
-    let inBounds = step(0.0, shadowUV.x) * step(shadowUV.x, 1.0) * step(0.0, shadowUV.y) * step(shadowUV.y, 1.0);
-    return mix(1.0, shadow, inBounds);
+
+    // Smooth fade at shadow map edges (avoids hard frustum boundary)
+    let fadeEdge = 0.15;
+    let fadeX = smoothstep(0.0, fadeEdge, shadowUV.x) * (1.0 - smoothstep(1.0 - fadeEdge, 1.0, shadowUV.x));
+    let fadeY = smoothstep(0.0, fadeEdge, shadowUV.y) * (1.0 - smoothstep(1.0 - fadeEdge, 1.0, shadowUV.y));
+    let fade = fadeX * fadeY;
+    let fadeZ = smoothstep(0.0, 0.01, depth) * (1.0 - smoothstep(0.99, 1.0, depth));
+    return mix(1.0, shadow, fade * fadeZ);
 }
 
 // Spot light shadow lookup (perspective projection, 4-tap PCF)
@@ -207,12 +213,16 @@ fn sampleSpotShadowMap(worldPos: vec3<f32>, spotView: mat4x4<f32>, spotProj: mat
 fn samplePointShadow(worldPos: vec3<f32>, lightPos: vec3<f32>, range: f32) -> f32 {
     let fragToLight = worldPos - lightPos;
     let dist = length(fragToLight);
-    let dir = fragToLight / dist;
+    let safeDist = max(dist, 0.1);
+    let dir = normalize(fragToLight);
     // Match WebGPU perspective depth: far*(dist-near) / (dist*(far-near))
     let nearZ = 0.1;
-    let refDepth = range * (dist - nearZ) / (dist * (range - nearZ));
-    let bias = 0.002;
-    return textureSampleCompare(pointShadowCube, shadowSampler, dir, refDepth - bias);
+    let refDepth = clamp(range * (safeDist - nearZ) / (safeDist * (range - nearZ)), 0.0, 1.0);
+    let bias = 0.003;
+    let shadow = textureSampleCompare(pointShadowCube, shadowSampler, dir, refDepth - bias);
+    // Fade near range boundary, return 1.0 (no shadow) beyond range
+    let rangeFade = 1.0 - smoothstep(range * 0.85, range, dist);
+    return mix(1.0, shadow, rangeFade);
 }
 
 @fragment
@@ -316,7 +326,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let linAtt = lighting.lightParams[idx].y;
         let quadAtt = lighting.lightParams[idx].z;
         let constAtt = lighting.lightParams[idx].w;
-        let attenuation = 1.0 / (constAtt + linAtt * dist + quadAtt * dist * dist);
+        let distAtt = 1.0 / (constAtt + linAtt * dist + quadAtt * dist * dist);
+        // Smooth range falloff (avoids hard circle edge)
+        let rangeFade = 1.0 - smoothstep(range * 0.75, range, dist);
+        let attenuation = distAtt * rangeFade;
 
         let radiance = lighting.lightColor[idx].rgb * lighting.lightColor[idx].w * attenuation;
 

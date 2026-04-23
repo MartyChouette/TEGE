@@ -999,10 +999,10 @@ void RenderSystem::Update(f32 deltaTime) {
     }
 
     // ========================================================================
-    // Point light shadow passes (max 1 point light, 6 cube faces)
+    // Point light shadow passes — disabled until cubemap depth math validated
     // ========================================================================
     u32 activePointShadows = 0;
-    if (m_WebShadowPipeline.IsValid() && m_Camera && m_WebPointShadowFaceViews[0]) {
+    if (false && m_WebShadowPipeline.IsValid() && m_Camera && m_WebPointShadowFaceViews[0]) {
         auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
         auto* pipeMgr3 = static_cast<Renderer::WebGPUPipelineManager*>(m_Renderer->GetPipelineManager());
         auto* webBufMgr3 = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
