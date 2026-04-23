@@ -249,16 +249,29 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     var Lo = vec3<f32>(0.0);
 
-    // Pre-sample ALL shadow maps outside loops (WGSL uniform control flow requirement)
-    let shadowFactor = sampleShadow(in.world_pos);
+    // Shadow parameters: x=strength, y=spotShadowCount, z=pointShadowCount
     let shadowStrength = lighting.shadowParams.x;
-    let spotShadow0 = sampleSpotShadowMap(in.world_pos,
-        spotShadowVPs.viewProj[0], spotShadowVPs.viewProj[1], spotShadowMap0);
-    let spotShadow1 = sampleSpotShadowMap(in.world_pos,
-        spotShadowVPs.viewProj[2], spotShadowVPs.viewProj[3], spotShadowMap1);
-    let pointLight0Pos = lighting.lightDir[4].xyz;
-    let pointLight0Range = max(lighting.lightParams[4].x, 0.001);
-    let ptShadow0 = samplePointShadow(in.world_pos, pointLight0Pos, pointLight0Range);
+    let spotShadowCasterCount = i32(lighting.shadowParams.y);
+    let pointShadowCasterCount = i32(lighting.shadowParams.z);
+
+    // Pre-sample shadow maps outside loops (WGSL uniform control flow requirement)
+    let shadowFactor = sampleShadow(in.world_pos);
+    var spotShadow0 = 1.0;
+    var spotShadow1 = 1.0;
+    var ptShadow0 = 1.0;
+    if (spotShadowCasterCount > 0) {
+        spotShadow0 = sampleSpotShadowMap(in.world_pos,
+            spotShadowVPs.viewProj[0], spotShadowVPs.viewProj[1], spotShadowMap0);
+    }
+    if (spotShadowCasterCount > 1) {
+        spotShadow1 = sampleSpotShadowMap(in.world_pos,
+            spotShadowVPs.viewProj[2], spotShadowVPs.viewProj[3], spotShadowMap1);
+    }
+    if (pointShadowCasterCount > 0) {
+        let pointLight0Pos = lighting.lightDir[4].xyz;
+        let pointLight0Range = max(lighting.lightParams[4].x, 0.001);
+        ptShadow0 = samplePointShadow(in.world_pos, pointLight0Pos, pointLight0Range);
+    }
 
     // Directional lights (slots 0-3)
     let dirCount = i32(lighting.lightCount.x);

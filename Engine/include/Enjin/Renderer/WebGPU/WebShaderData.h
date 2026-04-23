@@ -238,16 +238,30 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let F0 = mix(F0_dielectric, albedo, metallic);
     var Lo = vec3<f32>(0.0);
 
+    // Shadow parameters: x=strength, y=spotShadowCount, z=pointShadowCount
+    let shadowStrength = lighting.shadowParams.x;
+    let spotShadowCasterCount = i32(lighting.shadowParams.y);
+    let pointShadowCasterCount = i32(lighting.shadowParams.z);
+
     // Pre-sample ALL shadow maps outside loops (WGSL uniform control flow requirement)
     let shadowFactor = sampleShadow(in.world_pos);
-    let shadowStrength = lighting.shadowParams.x;
-    let spotShadow0 = sampleSpotShadowMap(in.world_pos,
-        spotShadowVPs.viewProj[0], spotShadowVPs.viewProj[1], spotShadowMap0);
-    let spotShadow1 = sampleSpotShadowMap(in.world_pos,
-        spotShadowVPs.viewProj[2], spotShadowVPs.viewProj[3], spotShadowMap1);
-    let pointLight0Pos = lighting.lightDir[4].xyz;
-    let pointLight0Range = max(lighting.lightParams[4].x, 0.001);
-    let ptShadow0 = samplePointShadow(in.world_pos, pointLight0Pos, pointLight0Range);
+    // Only sample spot/point shadows if there are active shadow casters (otherwise textures contain garbage)
+    var spotShadow0 = 1.0;
+    var spotShadow1 = 1.0;
+    var ptShadow0 = 1.0;
+    if (spotShadowCasterCount > 0) {
+        spotShadow0 = sampleSpotShadowMap(in.world_pos,
+            spotShadowVPs.viewProj[0], spotShadowVPs.viewProj[1], spotShadowMap0);
+    }
+    if (spotShadowCasterCount > 1) {
+        spotShadow1 = sampleSpotShadowMap(in.world_pos,
+            spotShadowVPs.viewProj[2], spotShadowVPs.viewProj[3], spotShadowMap1);
+    }
+    if (pointShadowCasterCount > 0) {
+        let pointLight0Pos = lighting.lightDir[4].xyz;
+        let pointLight0Range = max(lighting.lightParams[4].x, 0.001);
+        ptShadow0 = samplePointShadow(in.world_pos, pointLight0Pos, pointLight0Range);
+    }
 
     let dirCount = i32(lighting.lightCount.x);
     for (var i = 0; i < dirCount; i = i + 1) {

@@ -699,8 +699,18 @@ void RenderSystem::Update(f32 deltaTime) {
         }
 
         // Store first directional light direction for shadow pass
+        // Count shadow-casting spot/point lights for shader
+        u32 spotShadowCount = 0, pointShadowCount = 0;
+        if (m_CachedTransformStorage) {
+            for (Entity le : m_CachedLightEntities) {
+                auto* lcc = m_World->GetComponent<LightComponent>(le);
+                if (!lcc || !lcc->castShadows) continue;
+                if (lcc->type == LightType::Spot && spotShadowCount < WEB_MAX_SPOT_SHADOWS) spotShadowCount++;
+                if (lcc->type == LightType::Point && pointShadowCount < WEB_MAX_POINT_SHADOWS) pointShadowCount++;
+            }
+        }
         if (dirCount > 0) {
-            lit.shadowParams = {0.7f, 0.001f, 80.0f, 0.0f};  // strength, bias, distance, unused
+            lit.shadowParams = {0.7f, static_cast<f32>(spotShadowCount), static_cast<f32>(pointShadowCount), 0.0f};
         }
 
         bufMgr->UploadData(m_WebLightingBuffer, &lit, sizeof(lit));
