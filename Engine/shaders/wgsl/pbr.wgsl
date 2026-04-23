@@ -208,8 +208,10 @@ fn samplePointShadow(worldPos: vec3<f32>, lightPos: vec3<f32>, range: f32) -> f3
     let fragToLight = worldPos - lightPos;
     let dist = length(fragToLight);
     let dir = fragToLight / dist;
-    let refDepth = dist / range;  // normalize to [0,1] range
-    let bias = 0.005;
+    // Match WebGPU perspective depth: far*(dist-near) / (dist*(far-near))
+    let nearZ = 0.1;
+    let refDepth = range * (dist - nearZ) / (dist * (range - nearZ));
+    let bias = 0.002;
     return textureSampleCompare(pointShadowCube, shadowSampler, dir, refDepth - bias);
 }
 
@@ -247,9 +249,16 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     var Lo = vec3<f32>(0.0);
 
-    // Shadow lookup (applied to first directional light)
+    // Pre-sample ALL shadow maps outside loops (WGSL uniform control flow requirement)
     let shadowFactor = sampleShadow(in.world_pos);
     let shadowStrength = lighting.shadowParams.x;
+    let spotShadow0 = sampleSpotShadowMap(in.world_pos,
+        spotShadowVPs.viewProj[0], spotShadowVPs.viewProj[1], spotShadowMap0);
+    let spotShadow1 = sampleSpotShadowMap(in.world_pos,
+        spotShadowVPs.viewProj[2], spotShadowVPs.viewProj[3], spotShadowMap1);
+    let pointLight0Pos = lighting.lightDir[4].xyz;
+    let pointLight0Range = max(lighting.lightParams[4].x, 0.001);
+    let ptShadow0 = samplePointShadow(in.world_pos, pointLight0Pos, pointLight0Range);
 
     // Directional lights (slots 0-3)
     let dirCount = i32(lighting.lightCount.x);
@@ -309,11 +318,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
         let NdotL = max(dot(N, L), 0.0);
 
-        // Point shadow (first point light only)
         var ptShadow = 1.0;
-        if (i == 0) {
-            ptShadow = samplePointShadow(in.world_pos, lightPos, range);
-        }
+        if (i == 0) { ptShadow = ptShadow0; }
         Lo = Lo + (kD * albedo + specular) * radiance * NdotL * ptShadow;
     }
 
@@ -355,15 +361,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
         let NdotL = max(dot(N, L), 0.0);
 
-        // Spot shadow (first 2 spot lights)
         var spotShadow = 1.0;
-        if (i == 0) {
-            spotShadow = sampleSpotShadowMap(in.world_pos,
-                spotShadowVPs.viewProj[0], spotShadowVPs.viewProj[1], spotShadowMap0);
-        } else if (i == 1) {
-            spotShadow = sampleSpotShadowMap(in.world_pos,
-                spotShadowVPs.viewProj[2], spotShadowVPs.viewProj[3], spotShadowMap1);
-        }
+        if (i == 0) { spotShadow = spotShadow0; }
+        else if (i == 1) { spotShadow = spotShadow1; }
         Lo = Lo + (kD * albedo + specular) * radiance * NdotL * spotShadow;
     }
 

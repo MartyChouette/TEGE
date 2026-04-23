@@ -196,13 +196,15 @@ fn sampleSpotShadowMap(worldPos: vec3<f32>, spotView: mat4x4<f32>, spotProj: mat
     return mix(1.0, shadow, inBounds);
 }
 
-// Point light shadow lookup (cubemap, comparison against linear depth)
+// Point light shadow lookup (cubemap, perspective depth comparison)
 fn samplePointShadow(worldPos: vec3<f32>, lightPos: vec3<f32>, range: f32) -> f32 {
     let fragToLight = worldPos - lightPos;
     let dist = length(fragToLight);
     let dir = fragToLight / dist;
-    let refDepth = dist / range;  // normalize to [0,1] range
-    let bias = 0.005;
+    // Match WebGPU perspective depth: far*(dist-near) / (dist*(far-near))
+    let nearZ = 0.1;
+    let refDepth = range * (dist - nearZ) / (dist * (range - nearZ));
+    let bias = 0.002;
     return textureSampleCompare(pointShadowCube, shadowSampler, dir, refDepth - bias);
 }
 

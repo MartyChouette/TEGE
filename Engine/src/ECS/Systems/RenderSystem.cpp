@@ -92,6 +92,19 @@ struct WebPointShadowVPUBO {
     alignas(16) Math::Matrix4 viewProj[12];   // [0]=face0.view, [1]=face0.proj, ... [10]=face5.view, [11]=face5.proj
 };                                             // Total: 768 bytes
 
+// WebGPU perspective projection: depth [0,1], Y-up (no Vulkan Y-flip)
+static Math::Matrix4 WebGPUPerspective(f32 fov, f32 aspect, f32 nearPlane, f32 farPlane) {
+    f32 tanHalfFov = std::tan(fov * 0.5f);
+    Math::Matrix4 r;
+    std::memset(&r, 0, sizeof(r));
+    r.m[0]  = 1.0f / (aspect * tanHalfFov);
+    r.m[5]  = 1.0f / tanHalfFov;           // positive (WebGPU Y-up, not Vulkan Y-down)
+    r.m[10] = farPlane / (nearPlane - farPlane);     // maps to [0,1] depth
+    r.m[11] = -1.0f;
+    r.m[14] = (nearPlane * farPlane) / (nearPlane - farPlane);
+    return r;
+}
+
 // ============================================================================
 // Lifecycle
 // ============================================================================
@@ -902,11 +915,10 @@ void RenderSystem::Update(f32 deltaTime) {
                 fov = std::max(fov, 0.1f);
                 f32 range = lc->range > 0.0f ? lc->range : 50.0f;
 
-                // Perspective projection for spot light
+                // Perspective projection for spot light (WebGPU depth [0,1], Y-up)
                 Math::Matrix4 spotView = Math::Matrix4::LookAt(pos, pos + dir, Math::Vector3(0, 1, 0));
-                f32 aspect = 1.0f;
                 f32 nearZ = 0.1f;
-                Math::Matrix4 spotProj = Math::Matrix4::Perspective(fov, aspect, nearZ, range);
+                Math::Matrix4 spotProj = WebGPUPerspective(fov, 1.0f, nearZ, range);
 
                 u32 idx = activeSpotShadows;
                 spotVPs.viewProj[idx * 2] = spotView;
@@ -915,22 +927,27 @@ void RenderSystem::Update(f32 deltaTime) {
                 // Render shadow pass for this spot light
                 const auto* spotTexNative = webTexMgr->GetNativeTexture(m_WebSpotShadowTex[idx]);
                 if (spotTexNative && spotTexNative->view) {
-                    // Upload this light's VP to the shadow frame UBO (reuse directional shadow UBO temporarily)
+                    // Create per-pass VP buffer (can't reuse — wgpuQueueWriteBuffer last-write-wins)
                     WebViewProjectionUBO spotShadowVP{};
                     spotShadowVP.view = spotView;
                     spotShadowVP.proj = spotProj;
                     spotShadowVP.viewPos = pos;
-                    bufMgr->UploadData(m_WebShadowVPBuffer, &spotShadowVP, sizeof(spotShadowVP));
+                    auto spotVPBuf = bufMgr->CreateBufferWithData(
+                        {sizeof(WebViewProjectionUBO), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true},
+                        &spotShadowVP);
+                    Renderer::GPUBindGroupDesc spotFrameBGD;
+                    spotFrameBGD.layout = m_WebShadowFrameLayout;
+                    spotFrameBGD.entries = {{0, spotVPBuf, 0, sizeof(WebViewProjectionUBO), {}, {}}};
+                    auto spotFrameBG = webBindMgr2->CreateBindGroup(spotFrameBGD);
 
                     WGPURenderPassEncoder spotPass = webRenderer->BeginDepthOnlyPass(
                         spotTexNative->view, WEB_SPOT_SHADOW_SIZE, WEB_SPOT_SHADOW_SIZE);
                     if (spotPass) {
                         WGPURenderPipeline nativePipe = pipeMgr2->GetNativePipeline(m_WebShadowPipeline);
-                        WGPUBindGroup nativeFrameBG = webBindMgr2->GetNativeGroup(m_WebShadowFrameBG);
                         wgpuRenderPassEncoderSetPipeline(spotPass, nativePipe);
                         wgpuRenderPassEncoderSetViewport(spotPass, 0, 0,
                             static_cast<f32>(WEB_SPOT_SHADOW_SIZE), static_cast<f32>(WEB_SPOT_SHADOW_SIZE), 0.0f, 1.0f);
-                        wgpuRenderPassEncoderSetBindGroup(spotPass, 0, nativeFrameBG, 0, nullptr);
+                        wgpuRenderPassEncoderSetBindGroup(spotPass, 0, webBindMgr2->GetNativeGroup(spotFrameBG), 0, nullptr);
 
                         const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
                         for (Entity entity : meshEntities) {
@@ -962,6 +979,8 @@ void RenderSystem::Update(f32 deltaTime) {
                         wgpuRenderPassEncoderEnd(spotPass);
                         wgpuRenderPassEncoderRelease(spotPass);
                     }
+                    webBindMgr2->DestroyBindGroup(spotFrameBG);
+                    bufMgr->DestroyBuffer(spotVPBuf);
                 }
                 activeSpotShadows++;
             }
@@ -991,7 +1010,7 @@ void RenderSystem::Update(f32 deltaTime) {
                 Math::Vector3 pos = xf->position;
                 f32 range = lc->range > 0.0f ? lc->range : 50.0f;
                 f32 nearZ = 0.1f;
-                Math::Matrix4 faceProj = Math::Matrix4::Perspective(3.14159265f * 0.5f, 1.0f, nearZ, range);
+                Math::Matrix4 faceProj = WebGPUPerspective(3.14159265f * 0.5f, 1.0f, nearZ, range);
 
                 // 6 cube face directions: +X, -X, +Y, -Y, +Z, -Z
                 struct FaceDir { Math::Vector3 target; Math::Vector3 up; };
@@ -1009,12 +1028,18 @@ void RenderSystem::Update(f32 deltaTime) {
                     pointVPs.viewProj[face * 2] = faceView;
                     pointVPs.viewProj[face * 2 + 1] = faceProj;
 
-                    // Upload face VP to shadow frame UBO
+                    // Create per-face VP buffer (can't reuse — wgpuQueueWriteBuffer last-write-wins)
                     WebViewProjectionUBO faceShadowVP{};
                     faceShadowVP.view = faceView;
                     faceShadowVP.proj = faceProj;
                     faceShadowVP.viewPos = pos;
-                    bufMgr->UploadData(m_WebShadowVPBuffer, &faceShadowVP, sizeof(faceShadowVP));
+                    auto faceVPBuf = bufMgr->CreateBufferWithData(
+                        {sizeof(WebViewProjectionUBO), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true},
+                        &faceShadowVP);
+                    Renderer::GPUBindGroupDesc faceFrameBGD;
+                    faceFrameBGD.layout = m_WebShadowFrameLayout;
+                    faceFrameBGD.entries = {{0, faceVPBuf, 0, sizeof(WebViewProjectionUBO), {}, {}}};
+                    auto faceFrameBG = webBindMgr3->CreateBindGroup(faceFrameBGD);
 
                     WGPURenderPassEncoder facePass = webRenderer->BeginDepthOnlyPass(
                         static_cast<WGPUTextureView>(m_WebPointShadowFaceViews[face]), WEB_POINT_SHADOW_SIZE, WEB_POINT_SHADOW_SIZE);
@@ -1022,7 +1047,7 @@ void RenderSystem::Update(f32 deltaTime) {
                         wgpuRenderPassEncoderSetPipeline(facePass, pipeMgr3->GetNativePipeline(m_WebShadowPipeline));
                         wgpuRenderPassEncoderSetViewport(facePass, 0, 0,
                             static_cast<f32>(WEB_POINT_SHADOW_SIZE), static_cast<f32>(WEB_POINT_SHADOW_SIZE), 0.0f, 1.0f);
-                        wgpuRenderPassEncoderSetBindGroup(facePass, 0, webBindMgr3->GetNativeGroup(m_WebShadowFrameBG), 0, nullptr);
+                        wgpuRenderPassEncoderSetBindGroup(facePass, 0, webBindMgr3->GetNativeGroup(faceFrameBG), 0, nullptr);
 
                         const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
                         for (Entity entity : meshEntities) {
@@ -1054,6 +1079,8 @@ void RenderSystem::Update(f32 deltaTime) {
                         wgpuRenderPassEncoderEnd(facePass);
                         wgpuRenderPassEncoderRelease(facePass);
                     }
+                    webBindMgr3->DestroyBindGroup(faceFrameBG);
+                    bufMgr->DestroyBuffer(faceVPBuf);
                 }
                 activePointShadows++;
             }
