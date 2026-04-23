@@ -740,7 +740,7 @@ private:
     Renderer::GPUBufferHandle m_WebSpotShadowVPBuffer;   // 2 lights worth of VP pairs
 
     // Point light shadows (max 1, cubemap)
-    static constexpr u32 WEB_POINT_SHADOW_SIZE = 256;
+    static constexpr u32 WEB_POINT_SHADOW_SIZE = 512;
     static constexpr u32 WEB_MAX_POINT_SHADOWS = 1;
     Renderer::GPUTextureHandle m_WebPointShadowCubemap;  // managed by WebGPURenderer
     void* m_WebPointShadowFaceViews[6] = {};              // WGPUTextureView per face (cast at use)

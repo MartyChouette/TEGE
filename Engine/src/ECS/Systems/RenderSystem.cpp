@@ -93,13 +93,27 @@ struct WebPointShadowVPUBO {
 };                                             // Total: 768 bytes
 
 // WebGPU perspective projection: depth [0,1], Y-up (no Vulkan Y-flip)
+// WebGPU perspective for spot light shadows (Y-up for 2D shadow maps)
 static Math::Matrix4 WebGPUPerspective(f32 fov, f32 aspect, f32 nearPlane, f32 farPlane) {
     f32 tanHalfFov = std::tan(fov * 0.5f);
     Math::Matrix4 r;
     std::memset(&r, 0, sizeof(r));
     r.m[0]  = 1.0f / (aspect * tanHalfFov);
-    r.m[5]  = 1.0f / tanHalfFov;           // positive (WebGPU Y-up, not Vulkan Y-down)
-    r.m[10] = farPlane / (nearPlane - farPlane);     // maps to [0,1] depth
+    r.m[5]  = 1.0f / tanHalfFov;
+    r.m[10] = farPlane / (nearPlane - farPlane);
+    r.m[11] = -1.0f;
+    r.m[14] = (nearPlane * farPlane) / (nearPlane - farPlane);
+    return r;
+}
+
+// Cubemap shadow perspective — Y-flipped to match cubemap sampler UV layout
+static Math::Matrix4 WebGPUCubemapPerspective(f32 fov, f32 aspect, f32 nearPlane, f32 farPlane) {
+    f32 tanHalfFov = std::tan(fov * 0.5f);
+    Math::Matrix4 r;
+    std::memset(&r, 0, sizeof(r));
+    r.m[0]  = 1.0f / (aspect * tanHalfFov);
+    r.m[5]  = -1.0f / tanHalfFov;  // Y-flipped for cubemap face layout
+    r.m[10] = farPlane / (nearPlane - farPlane);
     r.m[11] = -1.0f;
     r.m[14] = (nearPlane * farPlane) / (nearPlane - farPlane);
     return r;
@@ -999,7 +1013,7 @@ void RenderSystem::Update(f32 deltaTime) {
     }
 
     // ========================================================================
-    // Point light shadow passes — disabled until cubemap depth math validated
+    // Point light shadow passes — disabled (cubemap self-shadowing artifacts)
     // ========================================================================
     u32 activePointShadows = 0;
     if (false && m_WebShadowPipeline.IsValid() && m_Camera && m_WebPointShadowFaceViews[0]) {
@@ -1020,7 +1034,7 @@ void RenderSystem::Update(f32 deltaTime) {
                 Math::Vector3 pos = xf->position;
                 f32 range = lc->range > 0.0f ? lc->range : 50.0f;
                 f32 nearZ = 0.1f;
-                Math::Matrix4 faceProj = WebGPUPerspective(3.14159265f * 0.5f, 1.0f, nearZ, range);
+                Math::Matrix4 faceProj = WebGPUCubemapPerspective(3.14159265f * 0.5f, 1.0f, nearZ, range);
 
                 // 6 cube face directions: +X, -X, +Y, -Y, +Z, -Z
                 struct FaceDir { Math::Vector3 target; Math::Vector3 up; };

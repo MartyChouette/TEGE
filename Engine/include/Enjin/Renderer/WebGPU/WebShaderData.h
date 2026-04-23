@@ -203,19 +203,22 @@ fn sampleSpotShadowMap(worldPos: vec3<f32>, spotView: mat4x4<f32>, spotProj: mat
 }
 
 // Point light shadow lookup (cubemap, perspective depth comparison)
-fn samplePointShadow(worldPos: vec3<f32>, lightPos: vec3<f32>, range: f32) -> f32 {
-    let fragToLight = worldPos - lightPos;
+fn samplePointShadow(worldPos: vec3<f32>, surfNormal: vec3<f32>, lightPos: vec3<f32>, range: f32) -> f32 {
+    // Normal-offset bias: push sample point along surface normal to prevent self-shadowing
+    // without causing Peter Panning (shadow stays at object base)
+    let biasedPos = worldPos + surfNormal * 0.5;
+    let fragToLight = biasedPos - lightPos;
     let dist = length(fragToLight);
-    let safeDist = max(dist, 0.1);
+    let safeDist = max(dist, 0.2);
     let dir = normalize(fragToLight);
-    // Match WebGPU perspective depth: far*(dist-near) / (dist*(far-near))
     let nearZ = 0.1;
-    let refDepth = clamp(range * (safeDist - nearZ) / (safeDist * (range - nearZ)), 0.0, 1.0);
-    let bias = 0.003;
-    let shadow = textureSampleCompare(pointShadowCube, shadowSampler, dir, refDepth - bias);
-    // Fade near range boundary, return 1.0 (no shadow) beyond range
-    let rangeFade = 1.0 - smoothstep(range * 0.85, range, dist);
-    return mix(1.0, shadow, rangeFade);
+    let refDepth = clamp(range * (safeDist - nearZ) / (safeDist * (range - nearZ)), 0.0, 0.99);
+    let shadow = textureSampleCompare(pointShadowCube, shadowSampler, dir, refDepth);
+    // Soften: cap at 50% darkening
+    let softShadow = mix(1.0, shadow, 0.5);
+    // Fade at range boundary
+    let rangeFade = smoothstep(0.0, 0.2, 1.0 - length(worldPos - lightPos) / range);
+    return mix(1.0, softShadow, rangeFade);
 }
 
 @fragment
@@ -267,7 +270,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         spotShadow1 = sampleSpotShadowMap(in.world_pos,
             spotShadowVPs.viewProj[2], spotShadowVPs.viewProj[3], spotShadowMap1);
     }
-    // TODO: point shadow cubemap disabled until depth math is validated
+    // Point shadow cubemap disabled — WebGPU cubemap depth comparison
+    // produces self-shadowing artifacts. Directional shadows only for now.
     _ = pointShadowCasterCount;
 
     let dirCount = i32(lighting.lightCount.x);
