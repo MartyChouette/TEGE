@@ -1958,7 +1958,8 @@ void RenderSystem::Update(f32 deltaTime) {
             drawCmds.push_back({entity, offset});
         }
 
-        // Sort draw commands: opaque front-to-back (early-Z), transparent back-to-front
+        // Sort draw commands: opaque grouped by mesh+texture (for instancing), then front-to-back
+        // Transparent sorted back-to-front (no batching)
         if (m_Camera) {
             Math::Vector3 camPos = m_Camera->GetPosition();
             std::sort(drawCmds.begin(), drawCmds.end(),
@@ -1969,88 +1970,164 @@ void RenderSystem::Update(f32 deltaTime) {
                     bool transB = matB && matB->opacity < 1.0f;
                     // Opaque before transparent
                     if (transA != transB) return !transA;
+                    // For opaque: group by mesh identity (VB+IB) for instancing batches
+                    if (!transA) {
+                        u64 eidA = static_cast<u64>(a.entity), eidB = static_cast<u64>(b.entity);
+                        if (eidA < m_EntityRenderData.size() && eidB < m_EntityRenderData.size()) {
+                            auto& rdA = m_EntityRenderData[eidA];
+                            auto& rdB = m_EntityRenderData[eidB];
+                            u64 keyA = rdA.vertexBuffer.id ^ (rdA.indexBuffer.id << 16);
+                            u64 keyB = rdB.vertexBuffer.id ^ (rdB.indexBuffer.id << 16);
+                            if (keyA != keyB) return keyA < keyB;
+                        }
+                    }
                     auto* xfA = m_CachedTransformStorage ? m_CachedTransformStorage->Get(a.entity) : nullptr;
                     auto* xfB = m_CachedTransformStorage ? m_CachedTransformStorage->Get(b.entity) : nullptr;
                     if (!xfA || !xfB) return false;
                     f32 distA = (xfA->position - camPos).LengthSquared();
                     f32 distB = (xfB->position - camPos).LengthSquared();
-                    // Opaque: front-to-back (smaller dist first), Transparent: back-to-front (larger dist first)
                     return transA ? distA > distB : distA < distB;
                 });
         }
 
-        // Phase 2: Create per-entity UBO + bind group, then draw
+        // Phase 2: Batch entities by mesh+texture, draw instanced where possible
         auto* bindMgr = m_Renderer->GetBindGroupManager();
-        for (usize i = 0; i < drawCmds.size(); i++) {
+
+        // Build batch key for each draw command: entities with same VB+IB+textures can be instanced
+        struct BatchKey {
+            u32 vbId, ibId, texBGId;
+            bool operator==(const BatchKey& o) const { return vbId == o.vbId && ibId == o.ibId && texBGId == o.texBGId; }
+        };
+
+        auto getBatchKey = [&](const DrawCmd& cmd) -> BatchKey {
+            u64 eid = static_cast<u64>(cmd.entity);
+            auto& rd = m_EntityRenderData[eid];
+            auto texBG = rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup;
+            return {static_cast<u32>(rd.vertexBuffer.id),
+                    static_cast<u32>(rd.indexBuffer.id),
+                    static_cast<u32>(texBG.id)};
+        };
+
+        auto canBatch = [&](const DrawCmd& cmd) -> bool {
+            u64 eid = static_cast<u64>(cmd.entity);
+            auto& rd = m_EntityRenderData[eid];
+            if (rd.boneBuffer.IsValid()) return false;  // Skinned — unique bone data
+            auto* matSlots = m_CachedMaterialSlotsStorage ? m_CachedMaterialSlotsStorage->Get(cmd.entity) : nullptr;
+            auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(cmd.entity) : nullptr;
+            if (matSlots && mesh && mesh->HasSubMeshes()) return false;  // Multi-material — unique draw per submesh
+            return true;
+        };
+
+        usize i = 0;
+        while (i < drawCmds.size()) {
             const auto& cmd = drawCmds[i];
             u64 eid = static_cast<u64>(cmd.entity);
             auto& rd = m_EntityRenderData[eid];
 
-            // Create a per-entity SSBO with this entity's data (storage buffer for instancing support)
-            Renderer::GPUBufferDesc perEntityDesc;
-            perEntityDesc.size = sizeof(WebObjectDataUBO);
-            perEntityDesc.usage = Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst;
-            perEntityDesc.hostVisible = true;
-            auto perEntityBuf = bufMgr->CreateBufferWithData(perEntityDesc,
-                objDataBuf.data() + cmd.offset);
+            // Check if this entity can start a batch
+            if (canBatch(cmd)) {
+                BatchKey key = getBatchKey(cmd);
 
-            // Create per-entity bind group (ObjectData UBO + bone SSBO)
-            auto boneBuf = rd.boneBuffer.IsValid() ? rd.boneBuffer : m_WebDefaultBoneBuffer;
-            Renderer::GPUBindGroupDesc bgd;
-            bgd.layout = m_WebObjectLayout;
-            bgd.entries = {
-                {0, perEntityBuf, 0, sizeof(WebObjectDataUBO), {}, {}},
-                {1, boneBuf, 0, 0, {}, {}},  // 0 = whole buffer
-            };
-            auto perEntityBG = bindMgr->CreateBindGroup(bgd);
-
-            encoder->SetBindGroup(1, perEntityBG);
-            encoder->SetVertexBuffer(0, rd.vertexBuffer);
-            encoder->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32);
-
-            // Multi-material: draw per-submesh with different textures
-            auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(cmd.entity) : nullptr;
-            auto* matSlots = m_CachedMaterialSlotsStorage ? m_CachedMaterialSlotsStorage->Get(cmd.entity) : nullptr;
-            if (matSlots && mesh && mesh->HasSubMeshes()) {
-                for (const auto& subMesh : mesh->subMeshes) {
-                    if (subMesh.indexCount == 0) continue;
-                    // Build per-submesh texture bind group from slot material
-                    auto* slotMat = (subMesh.materialSlot >= 0 && subMesh.materialSlot < static_cast<i32>(matSlots->slots.size()))
-                        ? &matSlots->slots[subMesh.materialSlot] : nullptr;
-                    Renderer::GPUBindGroupHandle subTexBG;
-                    if (slotMat) {
-                        auto bc = WebGetOrLoadTexture(slotMat->baseColorTexturePath);
-                        auto nm = WebGetOrLoadTexture(slotMat->normalTexturePath);
-                        auto mr = WebGetOrLoadTexture(slotMat->metallicRoughnessTexturePath);
-                        Renderer::GPUBindGroupDesc texBGD;
-                        texBGD.layout = m_WebTextureLayout;
-                        texBGD.entries = {
-                            {0, {}, 0, 0, bc.IsValid() ? bc : m_WebDefaultWhiteTex, {}},
-                            {1, {}, 0, 0, {}, bc.IsValid() ? bc : m_WebDefaultWhiteTex},
-                            {2, {}, 0, 0, nm.IsValid() ? nm : m_WebDefaultNormalTex, {}},
-                            {3, {}, 0, 0, {}, nm.IsValid() ? nm : m_WebDefaultNormalTex},
-                            {4, {}, 0, 0, mr.IsValid() ? mr : m_WebDefaultBlackTex, {}},
-                            {5, {}, 0, 0, {}, mr.IsValid() ? mr : m_WebDefaultBlackTex},
-                        };
-                        subTexBG = bindMgr->CreateBindGroup(texBGD);
-                    }
-                    encoder->SetBindGroup(2, subTexBG.IsValid() ? subTexBG : m_WebDefaultTexBindGroup);
-                    encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset);
-                    m_DrawCallCount++;
-                    m_TriangleCount += subMesh.indexCount / 3;
-                    if (subTexBG.IsValid()) bindMgr->DestroyBindGroup(subTexBG);
+                // Find batch end: consecutive commands with same key that are batchable
+                usize batchEnd = i + 1;
+                while (batchEnd < drawCmds.size() && canBatch(drawCmds[batchEnd]) && getBatchKey(drawCmds[batchEnd]) == key) {
+                    batchEnd++;
                 }
-            } else {
-                // Single-material path
-                encoder->SetBindGroup(2, rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup);
-                encoder->DrawIndexed(rd.indexCount);
-                m_DrawCallCount++;
-                m_TriangleCount += rd.indexCount / 3;
-            }
+                u32 instanceCount = static_cast<u32>(batchEnd - i);
 
-            // Cleanup (will be released after GPU finishes, Dawn handles this)
-            bindMgr->DestroyBindGroup(perEntityBG);
-            bufMgr->DestroyBuffer(perEntityBuf);
+                // Pack ObjectData for all instances into one contiguous SSBO
+                std::vector<u8> batchData(instanceCount * sizeof(WebObjectDataUBO));
+                for (usize j = 0; j < instanceCount; j++) {
+                    std::memcpy(batchData.data() + j * sizeof(WebObjectDataUBO),
+                        objDataBuf.data() + drawCmds[i + j].offset, sizeof(WebObjectDataUBO));
+                }
+
+                auto batchBuf = bufMgr->CreateBufferWithData(
+                    {batchData.size(), Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst, true},
+                    batchData.data());
+
+                Renderer::GPUBindGroupDesc bgd;
+                bgd.layout = m_WebObjectLayout;
+                bgd.entries = {
+                    {0, batchBuf, 0, batchData.size(), {}, {}},
+                    {1, m_WebDefaultBoneBuffer, 0, 0, {}, {}},
+                };
+                auto batchBG = bindMgr->CreateBindGroup(bgd);
+
+                encoder->SetBindGroup(1, batchBG);
+                auto texBG = rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup;
+                encoder->SetBindGroup(2, texBG);
+                encoder->SetVertexBuffer(0, rd.vertexBuffer);
+                encoder->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32);
+                encoder->DrawIndexed(rd.indexCount, instanceCount);
+
+                m_DrawCallCount++;
+                m_TriangleCount += (rd.indexCount / 3) * instanceCount;
+
+                bindMgr->DestroyBindGroup(batchBG);
+                bufMgr->DestroyBuffer(batchBuf);
+                i = batchEnd;
+            } else {
+                // Non-batchable: skinned or multi-material — draw individually
+                auto perEntityBuf = bufMgr->CreateBufferWithData(
+                    {sizeof(WebObjectDataUBO), Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst, true},
+                    objDataBuf.data() + cmd.offset);
+
+                auto boneBuf = rd.boneBuffer.IsValid() ? rd.boneBuffer : m_WebDefaultBoneBuffer;
+                Renderer::GPUBindGroupDesc bgd;
+                bgd.layout = m_WebObjectLayout;
+                bgd.entries = {
+                    {0, perEntityBuf, 0, sizeof(WebObjectDataUBO), {}, {}},
+                    {1, boneBuf, 0, 0, {}, {}},
+                };
+                auto perEntityBG = bindMgr->CreateBindGroup(bgd);
+
+                encoder->SetBindGroup(1, perEntityBG);
+                encoder->SetVertexBuffer(0, rd.vertexBuffer);
+                encoder->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32);
+
+                // Multi-material path
+                auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(cmd.entity) : nullptr;
+                auto* matSlots = m_CachedMaterialSlotsStorage ? m_CachedMaterialSlotsStorage->Get(cmd.entity) : nullptr;
+                if (matSlots && mesh && mesh->HasSubMeshes()) {
+                    for (const auto& subMesh : mesh->subMeshes) {
+                        if (subMesh.indexCount == 0) continue;
+                        auto* slotMat = (subMesh.materialSlot >= 0 && subMesh.materialSlot < static_cast<i32>(matSlots->slots.size()))
+                            ? &matSlots->slots[subMesh.materialSlot] : nullptr;
+                        Renderer::GPUBindGroupHandle subTexBG;
+                        if (slotMat) {
+                            auto bc = WebGetOrLoadTexture(slotMat->baseColorTexturePath);
+                            auto nm = WebGetOrLoadTexture(slotMat->normalTexturePath);
+                            auto mr = WebGetOrLoadTexture(slotMat->metallicRoughnessTexturePath);
+                            Renderer::GPUBindGroupDesc texBGD;
+                            texBGD.layout = m_WebTextureLayout;
+                            texBGD.entries = {
+                                {0, {}, 0, 0, bc.IsValid() ? bc : m_WebDefaultWhiteTex, {}},
+                                {1, {}, 0, 0, {}, bc.IsValid() ? bc : m_WebDefaultWhiteTex},
+                                {2, {}, 0, 0, nm.IsValid() ? nm : m_WebDefaultNormalTex, {}},
+                                {3, {}, 0, 0, {}, nm.IsValid() ? nm : m_WebDefaultNormalTex},
+                                {4, {}, 0, 0, mr.IsValid() ? mr : m_WebDefaultBlackTex, {}},
+                                {5, {}, 0, 0, {}, mr.IsValid() ? mr : m_WebDefaultBlackTex},
+                            };
+                            subTexBG = bindMgr->CreateBindGroup(texBGD);
+                        }
+                        encoder->SetBindGroup(2, subTexBG.IsValid() ? subTexBG : m_WebDefaultTexBindGroup);
+                        encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset);
+                        m_DrawCallCount++;
+                        m_TriangleCount += subMesh.indexCount / 3;
+                        if (subTexBG.IsValid()) bindMgr->DestroyBindGroup(subTexBG);
+                    }
+                } else {
+                    encoder->SetBindGroup(2, rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup);
+                    encoder->DrawIndexed(rd.indexCount);
+                    m_DrawCallCount++;
+                    m_TriangleCount += rd.indexCount / 3;
+                }
+
+                bindMgr->DestroyBindGroup(perEntityBG);
+                bufMgr->DestroyBuffer(perEntityBuf);
+                i++;
+            }
         }
     }
 
