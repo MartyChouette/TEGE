@@ -171,7 +171,7 @@ void RenderSystem::Initialize() {
     // Group 1: ObjectData + BoneMatrices
     Renderer::GPUBindGroupLayoutDesc objectLayoutDesc;
     objectLayoutDesc.entries = {
-        {0, BType::UniformBuffer, SStage::Vertex | SStage::Fragment, sizeof(WebObjectDataUBO)},
+        {0, BType::StorageBufferReadOnly, SStage::Vertex | SStage::Fragment, 0},  // ObjectData SSBO (instanced)
         {1, BType::StorageBufferReadOnly, SStage::Vertex, 0},  // bone matrices SSBO
     };
     m_WebObjectLayout = bindMgr->CreateBindGroupLayout(objectLayoutDesc);
@@ -255,9 +255,14 @@ void RenderSystem::Initialize() {
     bufDesc.label = "LightingUBO";
     m_WebLightingBuffer = bufMgr->CreateBuffer(bufDesc);
 
-    bufDesc.size = sizeof(WebObjectDataUBO);
-    bufDesc.label = "ObjectDataUBO";
-    m_WebObjectBuffer = bufMgr->CreateBuffer(bufDesc);
+    {
+        Renderer::GPUBufferDesc objBufDesc;
+        objBufDesc.size = sizeof(WebObjectDataUBO);
+        objBufDesc.usage = Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst;
+        objBufDesc.hostVisible = true;
+        objBufDesc.label = "ObjectDataSSBO";
+        m_WebObjectBuffer = bufMgr->CreateBuffer(objBufDesc);
+    }
 
     // Create default bone buffer (single identity matrix)
     {
@@ -1981,10 +1986,10 @@ void RenderSystem::Update(f32 deltaTime) {
             u64 eid = static_cast<u64>(cmd.entity);
             auto& rd = m_EntityRenderData[eid];
 
-            // Create a per-entity UBO with this entity's data
+            // Create a per-entity SSBO with this entity's data (storage buffer for instancing support)
             Renderer::GPUBufferDesc perEntityDesc;
             perEntityDesc.size = sizeof(WebObjectDataUBO);
-            perEntityDesc.usage = Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst;
+            perEntityDesc.usage = Renderer::GPUBufferUsage::Storage | Renderer::GPUBufferUsage::CopyDst;
             perEntityDesc.hostVisible = true;
             auto perEntityBuf = bufMgr->CreateBufferWithData(perEntityDesc,
                 objDataBuf.data() + cmd.offset);

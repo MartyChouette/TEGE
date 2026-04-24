@@ -45,7 +45,10 @@ struct ObjectData {
     flags: i32,
     parallaxScale: f32,
 };
-@group(1) @binding(0) var<uniform> object: ObjectData;
+struct ObjectDataArray {
+    data: array<ObjectData>,
+};
+@group(1) @binding(0) var<storage, read> objects: ObjectDataArray;
 
 struct BoneSSBO {
     matrices: array<mat4x4<f32>>,
@@ -100,10 +103,12 @@ struct VertexOutput {
     @location(2) uv: vec2<f32>,
     @location(3) world_tangent: vec3<f32>,
     @location(4) world_bitangent: vec3<f32>,
+    @location(5) @interpolate(flat) instanceIdx: u32,
 };
 
 @vertex
-fn vs_main(in: VertexInput) -> VertexOutput {
+fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> VertexOutput {
+    let object = objects.data[instanceIdx];
     var out: VertexOutput;
 
     var skinnedPos = in.position;
@@ -132,6 +137,7 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     out.world_tangent = normalize(normal_mat * skinnedTangent);
     out.world_bitangent = cross(out.world_normal, out.world_tangent) * in.tangent.w;
     out.uv = in.uv;
+    out.instanceIdx = instanceIdx;
     return out;
 }
 
@@ -233,6 +239,8 @@ fn samplePointShadow(worldPos: vec3<f32>, lightPos: vec3<f32>, range: f32) -> f3
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let object = objects.data[in.instanceIdx];
+
     let baseColorSample = textureSample(baseColorTex, baseColorSmp, in.uv);
     let albedo = baseColorSample.rgb * object.baseColor;
     let alpha = baseColorSample.a * object.opacity;
