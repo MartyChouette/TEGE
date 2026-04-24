@@ -718,7 +718,7 @@ private:
     Renderer::GPUBufferHandle m_WebDefaultBoneBuffer;
 
     // Shadow mapping (1-cascade directional)
-    static constexpr u32 WEB_SHADOW_MAP_SIZE = 1024;
+    static constexpr u32 WEB_SHADOW_MAP_SIZE = 2048;
     Renderer::GPUPipelineHandle m_WebShadowPipeline;
     Renderer::GPUShaderHandle m_WebShadowShader;
     Renderer::GPUTextureHandle m_WebShadowMapTex;
@@ -745,6 +745,74 @@ private:
     Renderer::GPUTextureHandle m_WebPointShadowCubemap;  // managed by WebGPURenderer
     void* m_WebPointShadowFaceViews[6] = {};              // WGPUTextureView per face (cast at use)
     Renderer::GPUBufferHandle m_WebPointShadowVPBuffer;   // 6 face VPs
+
+    // Post-processing (offscreen scene → ACES tonemap → swapchain)
+    Renderer::GPUShaderHandle m_WebPostProcessShader;
+    Renderer::GPUPipelineHandle m_WebPostProcessPipeline;
+    Renderer::GPUBindGroupLayoutHandle m_WebPostProcessLayout;
+    Renderer::GPUBindGroupHandle m_WebPostProcessBG;
+    Renderer::GPUTextureHandle m_WebSceneColorTex;           // offscreen RGBA16Float (resolve target)
+    void* m_WebSceneColorView = nullptr;                      // WGPUTextureView (for resolve / post-process read)
+    void* m_WebSceneDepthView = nullptr;                      // WGPUTextureView (offscreen depth, 4x MSAA)
+    void* m_WebSceneDepthTex = nullptr;                       // WGPUTexture (offscreen depth)
+
+    // MSAA 4x intermediate textures
+    void* m_WebMSAAColorView = nullptr;                       // WGPUTextureView (4x MSAA render target)
+    void* m_WebMSAAColorTex = nullptr;                        // WGPUTexture (4x MSAA)
+
+    // Bloom (Dual Kawase downsample/upsample chain)
+    static constexpr u32 WEB_BLOOM_LEVELS = 4;
+    Renderer::GPUShaderHandle m_WebBloomThresholdShader;
+    Renderer::GPUShaderHandle m_WebBloomDownShader;
+    Renderer::GPUShaderHandle m_WebBloomUpShader;
+    Renderer::GPUShaderHandle m_WebBloomCompositeShader;
+    Renderer::GPUPipelineHandle m_WebBloomThresholdPipeline;
+    Renderer::GPUPipelineHandle m_WebBloomDownPipeline;
+    Renderer::GPUPipelineHandle m_WebBloomUpPipeline;
+    Renderer::GPUPipelineHandle m_WebBloomCompositePipeline;
+    Renderer::GPUBindGroupLayoutHandle m_WebBloomSingleTexLayout;  // 1 texture + 1 sampler
+    Renderer::GPUBindGroupLayoutHandle m_WebBloomCompositeLayout;  // 2 textures + 2 samplers
+    // Per-level bloom textures (half-res chain)
+    Renderer::GPUTextureHandle m_WebBloomTex[WEB_BLOOM_LEVELS];
+    void* m_WebBloomView[WEB_BLOOM_LEVELS] = {};                   // WGPUTextureView
+    Renderer::GPUBindGroupHandle m_WebBloomDownBG[WEB_BLOOM_LEVELS]; // downsample bind groups
+    Renderer::GPUBindGroupHandle m_WebBloomUpBG[WEB_BLOOM_LEVELS];   // upsample bind groups
+    Renderer::GPUBindGroupHandle m_WebBloomThresholdBG;              // scene → bloom[0]
+    Renderer::GPUBindGroupHandle m_WebBloomCompositeBG;              // scene + bloom → scene
+    // Scratch texture for composite output (same size as scene)
+    Renderer::GPUTextureHandle m_WebBloomScratchTex;
+    void* m_WebBloomScratchView = nullptr;
+
+    // Particle rendering (instanced billboard quads)
+    Renderer::GPUShaderHandle m_WebParticleShader;
+    Renderer::GPUPipelineHandle m_WebParticlePipeline;
+    Renderer::GPUBufferHandle m_WebParticleQuadVB;
+    Renderer::GPUBufferHandle m_WebParticleQuadIB;
+    static constexpr u32 WEB_MAX_PARTICLES = 8192;
+
+    // Grass rendering (instanced blades)
+    Renderer::GPUShaderHandle m_WebGrassShader;
+    Renderer::GPUPipelineHandle m_WebGrassPipeline;
+    Renderer::GPUBufferHandle m_WebGrassBladeVB;
+    Renderer::GPUBufferHandle m_WebGrassBladeIB;
+    Renderer::GPUBindGroupLayoutHandle m_WebVolumeParamsLayout;
+    u32 m_WebGrassBladeIndexCount = 0;
+
+    // Tree rendering (instanced trunk+canopy)
+    Renderer::GPUShaderHandle m_WebTreeShader;
+    Renderer::GPUPipelineHandle m_WebTreePipeline;
+    Renderer::GPUBufferHandle m_WebTreeMeshVB;
+    Renderer::GPUBufferHandle m_WebTreeMeshIB;
+    u32 m_WebTreeIndexCount = 0;
+
+    // Sprite rendering (instanced textured billboards)
+    Renderer::GPUShaderHandle m_WebSpriteShader;
+    Renderer::GPUPipelineHandle m_WebSpritePipeline;
+    Renderer::GPUBindGroupLayoutHandle m_WebSpriteTexLayout;
+
+    // Procedural sky
+    Renderer::GPUShaderHandle m_WebSkyShader;
+    Renderer::GPUPipelineHandle m_WebSkyPipeline;
 
     f32 m_WebTime = 0.0f;  // Accumulated time for shader animations
 #else

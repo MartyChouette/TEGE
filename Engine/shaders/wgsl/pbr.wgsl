@@ -166,20 +166,26 @@ fn fresnelSchlick(cosTheta: f32, F0: vec3<f32>) -> vec3<f32> {
     return F0 + (1.0 - F0) * pow(saturate(1.0 - cosTheta), 5.0);
 }
 
-// Directional shadow map lookup with 4-tap PCF
+// Directional shadow map lookup with 3x3 PCF (9 taps)
 fn sampleShadow(worldPos: vec3<f32>) -> f32 {
     let lightClip = shadowVP.proj * shadowVP.view * vec4<f32>(worldPos, 1.0);
     let ndc = lightClip.xyz / lightClip.w;
     let shadowUV = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
     let depth = ndc.z;
     let bias = 0.002;
-    let texelSize = 1.0 / 1024.0;
+    let texelSize = 1.0 / 2048.0;
     var shadow = 0.0;
+    // 3x3 PCF kernel
     shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(-texelSize, -texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(       0.0, -texelSize), depth - bias);
     shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>( texelSize, -texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(-texelSize,        0.0), depth - bias);
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV,                                     depth - bias);
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>( texelSize,        0.0), depth - bias);
     shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(-texelSize,  texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(       0.0,  texelSize), depth - bias);
     shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>( texelSize,  texelSize), depth - bias);
-    shadow = shadow * 0.25;
+    shadow = shadow / 9.0;
 
     // Smooth fade at shadow map edges (avoids hard frustum boundary)
     let fadeEdge = 0.15;
@@ -190,7 +196,7 @@ fn sampleShadow(worldPos: vec3<f32>) -> f32 {
     return mix(1.0, shadow, fade * fadeZ);
 }
 
-// Spot light shadow lookup (perspective projection, 4-tap PCF)
+// Spot light shadow lookup (perspective projection, 3x3 PCF)
 fn sampleSpotShadowMap(worldPos: vec3<f32>, spotView: mat4x4<f32>, spotProj: mat4x4<f32>, shadowTex: texture_depth_2d) -> f32 {
     let lightClip = spotProj * spotView * vec4<f32>(worldPos, 1.0);
     let ndc = lightClip.xyz / lightClip.w;
@@ -199,11 +205,17 @@ fn sampleSpotShadowMap(worldPos: vec3<f32>, spotView: mat4x4<f32>, spotProj: mat
     let bias = 0.003;
     let texelSize = 1.0 / 512.0;
     var shadow = 0.0;
+    // 3x3 PCF kernel
     shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>(-texelSize, -texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>(       0.0, -texelSize), depth - bias);
     shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>( texelSize, -texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>(-texelSize,        0.0), depth - bias);
+    shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV,                                     depth - bias);
+    shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>( texelSize,        0.0), depth - bias);
     shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>(-texelSize,  texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>(       0.0,  texelSize), depth - bias);
     shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>( texelSize,  texelSize), depth - bias);
-    shadow = shadow * 0.25;
+    shadow = shadow / 9.0;
     let inBounds = step(0.0, shadowUV.x) * step(shadowUV.x, 1.0) * step(0.0, shadowUV.y) * step(shadowUV.y, 1.0)
                  * step(0.0, depth) * step(depth, 1.0);
     return mix(1.0, shadow, inBounds);
@@ -218,7 +230,7 @@ fn samplePointShadow(worldPos: vec3<f32>, lightPos: vec3<f32>, range: f32) -> f3
     // Match WebGPU perspective depth: far*(dist-near) / (dist*(far-near))
     let nearZ = 0.1;
     let refDepth = clamp(range * (safeDist - nearZ) / (safeDist * (range - nearZ)), 0.0, 1.0);
-    let bias = 0.003;
+    let bias = 0.008;
     let shadow = textureSampleCompare(pointShadowCube, shadowSampler, dir, refDepth - bias);
     // Fade near range boundary, return 1.0 (no shadow) beyond range
     let rangeFade = 1.0 - smoothstep(range * 0.85, range, dist);
@@ -401,9 +413,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     var color = ambient + Lo + emissive;
 
-    // Reinhard tonemapping (approximates desktop post-process exposure)
-    color = color / (color + vec3<f32>(1.0));
-    color = pow(color, vec3<f32>(1.0 / 2.2));
+    // Height-based distance fog (matches Vulkan)
+    let fogDensity = lighting.fogParams.x;
+    if (fogDensity > 0.0) {
+        let fogStart = lighting.fogParams.y;
+        let fogEnd = lighting.fogParams.z;
+        let fogHeightFalloff = lighting.fogParams.w;
+        let dist = length(viewProj.viewPos - in.world_pos);
+        var fogFactor = clamp((dist - fogStart) / (fogEnd - fogStart), 0.0, 1.0);
+        fogFactor = fogFactor * fogDensity;
+        let heightFog = exp(-max(in.world_pos.y, 0.0) * fogHeightFalloff);
+        fogFactor = fogFactor * heightFog;
+        color = mix(color, lighting.fogColor.rgb, fogFactor);
+    }
 
+    // Output linear HDR — post-process pass handles ACES tonemap + gamma
     return vec4<f32>(color, alpha);
 }

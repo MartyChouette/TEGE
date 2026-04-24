@@ -160,19 +160,26 @@ fn fresnelSchlick(cosTheta: f32, F0: vec3<f32>) -> vec3<f32> {
     return F0 + (1.0 - F0) * pow(saturate(1.0 - cosTheta), 5.0);
 }
 
+// Directional shadow map lookup with 3x3 PCF (9 taps)
 fn sampleShadow(worldPos: vec3<f32>) -> f32 {
     let lightClip = shadowVP.proj * shadowVP.view * vec4<f32>(worldPos, 1.0);
     let ndc = lightClip.xyz / lightClip.w;
     let shadowUV = vec2<f32>(ndc.x * 0.5 + 0.5, ndc.y * -0.5 + 0.5);
     let depth = ndc.z;
-    let bias = 0.003;
-    let texelSize = 1.0 / 1024.0;
+    let bias = 0.002;
+    let texelSize = 1.0 / 2048.0;
     var shadow = 0.0;
+    // 3x3 PCF kernel
     shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(-texelSize, -texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(       0.0, -texelSize), depth - bias);
     shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>( texelSize, -texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(-texelSize,        0.0), depth - bias);
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV,                                     depth - bias);
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>( texelSize,        0.0), depth - bias);
     shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(-texelSize,  texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>(       0.0,  texelSize), depth - bias);
     shadow += textureSampleCompare(shadowMap, shadowSampler, shadowUV + vec2<f32>( texelSize,  texelSize), depth - bias);
-    shadow = shadow * 0.25;
+    shadow = shadow / 9.0;
 
     // Smooth fade at shadow map edges (avoids hard frustum boundary)
     let fadeEdge = 0.15;
@@ -183,7 +190,7 @@ fn sampleShadow(worldPos: vec3<f32>) -> f32 {
     return mix(1.0, shadow, fade * fadeZ);
 }
 
-// Spot light shadow lookup (perspective projection, 4-tap PCF)
+// Spot light shadow lookup (perspective projection, 3x3 PCF)
 fn sampleSpotShadowMap(worldPos: vec3<f32>, spotView: mat4x4<f32>, spotProj: mat4x4<f32>, shadowTex: texture_depth_2d) -> f32 {
     let lightClip = spotProj * spotView * vec4<f32>(worldPos, 1.0);
     let ndc = lightClip.xyz / lightClip.w;
@@ -192,33 +199,36 @@ fn sampleSpotShadowMap(worldPos: vec3<f32>, spotView: mat4x4<f32>, spotProj: mat
     let bias = 0.003;
     let texelSize = 1.0 / 512.0;
     var shadow = 0.0;
+    // 3x3 PCF kernel
     shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>(-texelSize, -texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>(       0.0, -texelSize), depth - bias);
     shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>( texelSize, -texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>(-texelSize,        0.0), depth - bias);
+    shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV,                                     depth - bias);
+    shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>( texelSize,        0.0), depth - bias);
     shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>(-texelSize,  texelSize), depth - bias);
+    shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>(       0.0,  texelSize), depth - bias);
     shadow += textureSampleCompare(shadowTex, shadowSampler, shadowUV + vec2<f32>( texelSize,  texelSize), depth - bias);
-    shadow = shadow * 0.25;
+    shadow = shadow / 9.0;
     let inBounds = step(0.0, shadowUV.x) * step(shadowUV.x, 1.0) * step(0.0, shadowUV.y) * step(shadowUV.y, 1.0)
                  * step(0.0, depth) * step(depth, 1.0);
     return mix(1.0, shadow, inBounds);
 }
 
-// Point light shadow lookup (cubemap, perspective depth comparison)
-fn samplePointShadow(worldPos: vec3<f32>, surfNormal: vec3<f32>, lightPos: vec3<f32>, range: f32) -> f32 {
-    // Normal-offset bias: push sample point along surface normal to prevent self-shadowing
-    // without causing Peter Panning (shadow stays at object base)
-    let biasedPos = worldPos + surfNormal * 0.5;
-    let fragToLight = biasedPos - lightPos;
+// Point light shadow lookup (cubemap, comparison against linear depth)
+fn samplePointShadow(worldPos: vec3<f32>, lightPos: vec3<f32>, range: f32) -> f32 {
+    let fragToLight = worldPos - lightPos;
     let dist = length(fragToLight);
-    let safeDist = max(dist, 0.2);
+    let safeDist = max(dist, 0.1);
     let dir = normalize(fragToLight);
+    // Match WebGPU perspective depth: far*(dist-near) / (dist*(far-near))
     let nearZ = 0.1;
-    let refDepth = clamp(range * (safeDist - nearZ) / (safeDist * (range - nearZ)), 0.0, 0.99);
-    let shadow = textureSampleCompare(pointShadowCube, shadowSampler, dir, refDepth);
-    // Soften: cap at 50% darkening
-    let softShadow = mix(1.0, shadow, 0.5);
-    // Fade at range boundary
-    let rangeFade = smoothstep(0.0, 0.2, 1.0 - length(worldPos - lightPos) / range);
-    return mix(1.0, softShadow, rangeFade);
+    let refDepth = clamp(range * (safeDist - nearZ) / (safeDist * (range - nearZ)), 0.0, 1.0);
+    let bias = 0.008;
+    let shadow = textureSampleCompare(pointShadowCube, shadowSampler, dir, refDepth - bias);
+    // Fade near range boundary, return 1.0 (no shadow) beyond range
+    let rangeFade = 1.0 - smoothstep(range * 0.85, range, dist);
+    return mix(1.0, shadow, rangeFade);
 }
 
 @fragment
@@ -270,9 +280,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         spotShadow1 = sampleSpotShadowMap(in.world_pos,
             spotShadowVPs.viewProj[2], spotShadowVPs.viewProj[3], spotShadowMap1);
     }
-    // Point shadow cubemap disabled — WebGPU cubemap depth comparison
-    // produces self-shadowing artifacts. Directional shadows only for now.
-    _ = pointShadowCasterCount;
+    if (pointShadowCasterCount > 0) {
+        let pointLight0Pos = lighting.lightDir[4].xyz;
+        let pointLight0Range = max(lighting.lightParams[4].x, 0.001);
+        ptShadow0 = samplePointShadow(in.world_pos, pointLight0Pos, pointLight0Range);
+    }
 
     let dirCount = i32(lighting.lightCount.x);
     for (var i = 0; i < dirCount; i = i + 1) {
@@ -373,9 +385,21 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let emissive = object.emissiveColor * object.emissiveStrength;
     var color = ambient + Lo + emissive;
 
-    // Reinhard tonemapping (approximates desktop post-process exposure)
-    color = color / (color + vec3<f32>(1.0));
-    color = pow(color, vec3<f32>(1.0 / 2.2));
+    // Height-based distance fog (matches Vulkan)
+    let fogDensity = lighting.fogParams.x;
+    if (fogDensity > 0.0) {
+        let fogStart = lighting.fogParams.y;
+        let fogEnd = lighting.fogParams.z;
+        let fogHeightFalloff = lighting.fogParams.w;
+        let dist = length(viewProj.viewPos - in.world_pos);
+        var fogFactor = clamp((dist - fogStart) / (fogEnd - fogStart), 0.0, 1.0);
+        fogFactor = fogFactor * fogDensity;
+        let heightFog = exp(-max(in.world_pos.y, 0.0) * fogHeightFalloff);
+        fogFactor = fogFactor * heightFog;
+        color = mix(color, lighting.fogColor.rgb, fogFactor);
+    }
+
+    // Output linear HDR — post-process pass handles ACES tonemap + gamma
     return vec4<f32>(color, alpha);
 }
 )";
@@ -418,6 +442,559 @@ fn vs_main(in: VertexInput) -> VertexOutput {
     let world_pos = object.model * vec4<f32>(in.position, 1.0);
     out.clip_position = lightVP.proj * lightVP.view * world_pos;
     return out;
+}
+)";
+
+// Embedded post-process shader (ACES tonemap + FXAA)
+static const char* POSTPROCESS_WGSL = R"(
+@group(0) @binding(0) var sceneTexture: texture_2d<f32>;
+@group(0) @binding(1) var sceneSampler: sampler;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+    var out: VertexOutput;
+    let x = f32(i32(vertexIndex & 1u) * 4 - 1);
+    let y = f32(i32(vertexIndex >> 1u) * 4 - 1);
+    out.position = vec4<f32>(x, y, 0.0, 1.0);
+    out.uv = vec2<f32>((x + 1.0) * 0.5, (1.0 - y) * 0.5);
+    return out;
+}
+
+fn aces_tonemap(color: vec3<f32>) -> vec3<f32> {
+    let a = 2.51;
+    let b = 0.03;
+    let c = 2.43;
+    let d = 0.59;
+    let e = 0.14;
+    return saturate((color * (a * color + b)) / (color * (c * color + d) + e));
+}
+
+fn luminance(c: vec3<f32>) -> f32 {
+    return dot(c, vec3<f32>(0.299, 0.587, 0.114));
+}
+
+// Simplified FXAA — samples the tonemapped scene and smooths high-contrast edges
+fn fxaa(uv: vec2<f32>, texelSize: vec2<f32>) -> vec3<f32> {
+    // Sample center and 4 neighbors (after tonemap+gamma for perceptual edge detection)
+    let rgbM = textureSample(sceneTexture, sceneSampler, uv).rgb;
+    let rgbN = textureSample(sceneTexture, sceneSampler, uv + vec2<f32>(0.0, -texelSize.y)).rgb;
+    let rgbS = textureSample(sceneTexture, sceneSampler, uv + vec2<f32>(0.0,  texelSize.y)).rgb;
+    let rgbE = textureSample(sceneTexture, sceneSampler, uv + vec2<f32>( texelSize.x, 0.0)).rgb;
+    let rgbW = textureSample(sceneTexture, sceneSampler, uv + vec2<f32>(-texelSize.x, 0.0)).rgb;
+
+    // Apply tonemap+gamma to get perceptual luminance
+    let lumM = luminance(pow(aces_tonemap(rgbM), vec3<f32>(1.0 / 2.2)));
+    let lumN = luminance(pow(aces_tonemap(rgbN), vec3<f32>(1.0 / 2.2)));
+    let lumS = luminance(pow(aces_tonemap(rgbS), vec3<f32>(1.0 / 2.2)));
+    let lumE = luminance(pow(aces_tonemap(rgbE), vec3<f32>(1.0 / 2.2)));
+    let lumW = luminance(pow(aces_tonemap(rgbW), vec3<f32>(1.0 / 2.2)));
+
+    let lumMin = min(lumM, min(min(lumN, lumS), min(lumE, lumW)));
+    let lumMax = max(lumM, max(max(lumN, lumS), max(lumE, lumW)));
+    let lumRange = lumMax - lumMin;
+
+    // Skip FXAA for low-contrast regions
+    if (lumRange < max(0.0312, lumMax * 0.125)) {
+        return rgbM;
+    }
+
+    // Determine edge direction
+    let edgeH = abs(lumN + lumS - 2.0 * lumM);
+    let edgeV = abs(lumE + lumW - 2.0 * lumM);
+    let isHorizontal = edgeH > edgeV;
+
+    // Blend along edge (1 texel step in the perpendicular direction)
+    var blendDir = vec2<f32>(0.0);
+    if (isHorizontal) {
+        let gradS = lumS - lumM;
+        let gradN = lumN - lumM;
+        if (abs(gradN) > abs(gradS)) { blendDir = vec2<f32>(0.0, -texelSize.y); }
+        else { blendDir = vec2<f32>(0.0, texelSize.y); }
+    } else {
+        let gradE = lumE - lumM;
+        let gradW = lumW - lumM;
+        if (abs(gradW) > abs(gradE)) { blendDir = vec2<f32>(-texelSize.x, 0.0); }
+        else { blendDir = vec2<f32>(texelSize.x, 0.0); }
+    }
+
+    // Blend with neighbor
+    let rgbNeighbor = textureSample(sceneTexture, sceneSampler, uv + blendDir).rgb;
+    let blendFactor = clamp(lumRange / lumMax, 0.0, 0.75) * 0.5;
+    return mix(rgbM, rgbNeighbor, blendFactor);
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let texDim = vec2<f32>(textureDimensions(sceneTexture));
+    let texelSize = vec2<f32>(1.0 / texDim.x, 1.0 / texDim.y);
+
+    // FXAA on HDR scene, then tonemap+gamma
+    var color = fxaa(in.uv, texelSize);
+    color = aces_tonemap(color);
+    color = pow(color, vec3<f32>(1.0 / 2.2));
+    return vec4<f32>(color, 1.0);
+}
+)";
+
+// Bloom downsample shader — extracts bright pixels and progressively blurs
+static const char* BLOOM_DOWN_WGSL = R"(
+@group(0) @binding(0) var srcTexture: texture_2d<f32>;
+@group(0) @binding(1) var srcSampler: sampler;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+    var out: VertexOutput;
+    let x = f32(i32(vertexIndex & 1u) * 4 - 1);
+    let y = f32(i32(vertexIndex >> 1u) * 4 - 1);
+    out.position = vec4<f32>(x, y, 0.0, 1.0);
+    out.uv = vec2<f32>((x + 1.0) * 0.5, (1.0 - y) * 0.5);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let texDim = vec2<f32>(textureDimensions(srcTexture));
+    let texelSize = 1.0 / texDim;
+    // Dual Kawase downsample: 5-tap filter (center + 4 diagonals at half-texel offset)
+    var color = textureSample(srcTexture, srcSampler, in.uv) * 4.0;
+    color += textureSample(srcTexture, srcSampler, in.uv + vec2<f32>(-texelSize.x, -texelSize.y));
+    color += textureSample(srcTexture, srcSampler, in.uv + vec2<f32>( texelSize.x, -texelSize.y));
+    color += textureSample(srcTexture, srcSampler, in.uv + vec2<f32>(-texelSize.x,  texelSize.y));
+    color += textureSample(srcTexture, srcSampler, in.uv + vec2<f32>( texelSize.x,  texelSize.y));
+    return color / 8.0;
+}
+)";
+
+// Bloom brightness extraction — first downsample pass with threshold
+static const char* BLOOM_THRESHOLD_WGSL = R"(
+@group(0) @binding(0) var srcTexture: texture_2d<f32>;
+@group(0) @binding(1) var srcSampler: sampler;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+    var out: VertexOutput;
+    let x = f32(i32(vertexIndex & 1u) * 4 - 1);
+    let y = f32(i32(vertexIndex >> 1u) * 4 - 1);
+    out.position = vec4<f32>(x, y, 0.0, 1.0);
+    out.uv = vec2<f32>((x + 1.0) * 0.5, (1.0 - y) * 0.5);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let color = textureSample(srcTexture, srcSampler, in.uv);
+    let brightness = dot(color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    // Soft threshold with knee
+    let threshold = 0.8;
+    let knee = 0.2;
+    let soft = clamp(brightness - threshold + knee, 0.0, 2.0 * knee);
+    let contrib = soft * soft / (4.0 * knee + 0.0001);
+    let factor = max(brightness - threshold, contrib) / max(brightness, 0.0001);
+    return vec4<f32>(color.rgb * factor, 1.0);
+}
+)";
+
+// Bloom upsample shader — Dual Kawase upsample with additive blend
+static const char* BLOOM_UP_WGSL = R"(
+@group(0) @binding(0) var srcTexture: texture_2d<f32>;
+@group(0) @binding(1) var srcSampler: sampler;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+    var out: VertexOutput;
+    let x = f32(i32(vertexIndex & 1u) * 4 - 1);
+    let y = f32(i32(vertexIndex >> 1u) * 4 - 1);
+    out.position = vec4<f32>(x, y, 0.0, 1.0);
+    out.uv = vec2<f32>((x + 1.0) * 0.5, (1.0 - y) * 0.5);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let texDim = vec2<f32>(textureDimensions(srcTexture));
+    let t = 1.0 / texDim;
+    // Dual Kawase upsample: 8-tap filter (4 cardinal + 4 diagonal at half texel)
+    var color = vec4<f32>(0.0);
+    color += textureSample(srcTexture, srcSampler, in.uv + vec2<f32>(-t.x,      0.0)) * 2.0;
+    color += textureSample(srcTexture, srcSampler, in.uv + vec2<f32>( t.x,      0.0)) * 2.0;
+    color += textureSample(srcTexture, srcSampler, in.uv + vec2<f32>(    0.0, -t.y)) * 2.0;
+    color += textureSample(srcTexture, srcSampler, in.uv + vec2<f32>(    0.0,  t.y)) * 2.0;
+    color += textureSample(srcTexture, srcSampler, in.uv + vec2<f32>(-t.x, -t.y));
+    color += textureSample(srcTexture, srcSampler, in.uv + vec2<f32>( t.x, -t.y));
+    color += textureSample(srcTexture, srcSampler, in.uv + vec2<f32>(-t.x,  t.y));
+    color += textureSample(srcTexture, srcSampler, in.uv + vec2<f32>( t.x,  t.y));
+    return color / 12.0;
+}
+)";
+
+// Bloom composite — additively blend bloom result onto scene
+static const char* BLOOM_COMPOSITE_WGSL = R"(
+@group(0) @binding(0) var sceneTexture: texture_2d<f32>;
+@group(0) @binding(1) var sceneSampler: sampler;
+@group(0) @binding(2) var bloomTexture: texture_2d<f32>;
+@group(0) @binding(3) var bloomSampler: sampler;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+    var out: VertexOutput;
+    let x = f32(i32(vertexIndex & 1u) * 4 - 1);
+    let y = f32(i32(vertexIndex >> 1u) * 4 - 1);
+    out.position = vec4<f32>(x, y, 0.0, 1.0);
+    out.uv = vec2<f32>((x + 1.0) * 0.5, (1.0 - y) * 0.5);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let scene = textureSample(sceneTexture, sceneSampler, in.uv).rgb;
+    let bloom = textureSample(bloomTexture, bloomSampler, in.uv).rgb;
+    let bloomIntensity = 0.3;
+    return vec4<f32>(scene + bloom * bloomIntensity, 1.0);
+}
+)";
+
+// Particle billboard shader — instanced quads facing camera
+static const char* PARTICLE_WGSL = R"(
+struct ViewProjection {
+    view: mat4x4<f32>,
+    proj: mat4x4<f32>,
+    viewPos: vec3<f32>,
+    time: f32,
+};
+@group(0) @binding(0) var<uniform> viewProj: ViewProjection;
+
+struct VertexInput {
+    @location(0) position: vec2<f32>,  // Quad vertex (-0.5 to 0.5)
+    @location(1) uv: vec2<f32>,
+};
+struct InstanceInput {
+    @location(2) worldPos: vec3<f32>,
+    @location(3) size: f32,
+    @location(4) alpha: f32,
+    @location(5) colorR: f32,
+    @location(6) colorG: f32,
+    @location(7) colorB: f32,
+};
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) color: vec3<f32>,
+    @location(2) alpha: f32,
+};
+
+@vertex
+fn vs_main(vert: VertexInput, inst: InstanceInput) -> VertexOutput {
+    // Extract camera right/up from view matrix (transposed rotation)
+    let right = vec3<f32>(viewProj.view[0][0], viewProj.view[1][0], viewProj.view[2][0]);
+    let up = vec3<f32>(viewProj.view[0][1], viewProj.view[1][1], viewProj.view[2][1]);
+    let worldPosition = inst.worldPos + right * vert.position.x * inst.size + up * vert.position.y * inst.size;
+
+    var out: VertexOutput;
+    out.position = viewProj.proj * viewProj.view * vec4<f32>(worldPosition, 1.0);
+    out.uv = vert.uv;
+    out.color = vec3<f32>(inst.colorR, inst.colorG, inst.colorB);
+    // Soft circular falloff
+    out.alpha = inst.alpha;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // Soft circular particle (distance from center)
+    let d = length(in.uv - vec2<f32>(0.5));
+    let circle = 1.0 - smoothstep(0.3, 0.5, d);
+    return vec4<f32>(in.color, in.alpha * circle);
+}
+)";
+
+// Grass blade shader — instanced procedural placement
+static const char* GRASS_WGSL = R"(
+struct ViewProjection {
+    view: mat4x4<f32>,
+    proj: mat4x4<f32>,
+    viewPos: vec3<f32>,
+    time: f32,
+};
+@group(0) @binding(0) var<uniform> viewProj: ViewProjection;
+
+struct VolumeParams {
+    volumePos: vec3<f32>,
+    bladeHeight: f32,
+    halfExtents: vec3<f32>,
+    bladeWidth: f32,
+    baseColor: vec3<f32>,
+    windStrength: f32,
+    tipColor: vec3<f32>,
+    _pad: f32,
+};
+@group(1) @binding(0) var<uniform> volume: VolumeParams;
+
+struct VertexInput {
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) uv: vec2<f32>,
+};
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) color: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+};
+
+fn hash(n: f32) -> f32 {
+    return fract(sin(n) * 43758.5453);
+}
+
+@vertex
+fn vs_main(vert: VertexInput, @builtin(instance_index) instanceIdx: u32) -> VertexOutput {
+    let seed = f32(instanceIdx);
+    // Pseudo-random position within volume
+    let rx = hash(seed * 1.0) * 2.0 - 1.0;
+    let rz = hash(seed * 2.0) * 2.0 - 1.0;
+    let posX = volume.volumePos.x + rx * volume.halfExtents.x;
+    let posZ = volume.volumePos.z + rz * volume.halfExtents.z;
+    let posY = volume.volumePos.y;
+
+    // Random rotation around Y
+    let angle = hash(seed * 3.0) * 6.2832;
+    let ca = cos(angle);
+    let sa = sin(angle);
+
+    // Scale blade and apply rotation
+    var localPos = vert.position;
+    localPos.x = localPos.x * volume.bladeWidth;
+    localPos.y = localPos.y * volume.bladeHeight * (0.7 + hash(seed * 4.0) * 0.6);
+    let rotatedX = localPos.x * ca - localPos.z * sa;
+    let rotatedZ = localPos.x * sa + localPos.z * ca;
+
+    let worldPos = vec3<f32>(posX + rotatedX, posY + localPos.y, posZ + rotatedZ);
+
+    var out: VertexOutput;
+    out.position = viewProj.proj * viewProj.view * vec4<f32>(worldPos, 1.0);
+    out.color = mix(volume.baseColor, volume.tipColor, vert.uv.y);
+    out.normal = vec3<f32>(0.0, 1.0, 0.0);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // Simple directional lighting
+    let lightDir = normalize(vec3<f32>(0.5, -0.8, 0.3));
+    let NdotL = max(dot(in.normal, -lightDir), 0.0) * 0.6 + 0.4;
+    return vec4<f32>(in.color * NdotL, 1.0);
+}
+)";
+
+// Tree shader — instanced trunk+canopy crossing quads
+static const char* TREE_WGSL = R"(
+struct ViewProjection {
+    view: mat4x4<f32>,
+    proj: mat4x4<f32>,
+    viewPos: vec3<f32>,
+    time: f32,
+};
+@group(0) @binding(0) var<uniform> viewProj: ViewProjection;
+
+struct VolumeParams {
+    volumePos: vec3<f32>,
+    trunkHeight: f32,
+    halfExtents: vec3<f32>,
+    trunkWidth: f32,
+    trunkColor: vec3<f32>,
+    canopyRadius: f32,
+    canopyColor: vec3<f32>,
+    canopyOffset: f32,
+};
+@group(1) @binding(0) var<uniform> volume: VolumeParams;
+
+struct VertexInput {
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) uv: vec2<f32>,
+};
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) color: vec3<f32>,
+};
+
+fn hash(n: f32) -> f32 {
+    return fract(sin(n) * 43758.5453);
+}
+
+@vertex
+fn vs_main(vert: VertexInput, @builtin(instance_index) instanceIdx: u32) -> VertexOutput {
+    let seed = f32(instanceIdx);
+    let rx = hash(seed * 1.0) * 2.0 - 1.0;
+    let rz = hash(seed * 2.0) * 2.0 - 1.0;
+    let posX = volume.volumePos.x + rx * volume.halfExtents.x;
+    let posZ = volume.volumePos.z + rz * volume.halfExtents.z;
+    let posY = volume.volumePos.y;
+
+    let heightScale = 0.7 + hash(seed * 3.0) * 0.6;
+    var localPos = vert.position;
+    // Scale: trunk width for X/Z, full height scale for Y
+    localPos.x = localPos.x * volume.trunkWidth;
+    localPos.z = localPos.z * volume.trunkWidth;
+    localPos.y = localPos.y * heightScale;
+
+    let worldPos = vec3<f32>(posX + localPos.x, posY + localPos.y, posZ + localPos.z);
+
+    var out: VertexOutput;
+    out.position = viewProj.proj * viewProj.view * vec4<f32>(worldPos, 1.0);
+    // UV.y > 0.5 = canopy, else trunk
+    out.color = select(volume.trunkColor, volume.canopyColor, vert.uv.y > 0.5);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    return vec4<f32>(in.color, 1.0);
+}
+)";
+
+// Sprite shader — unlit textured billboard with tint
+static const char* SPRITE_WGSL = R"(
+struct ViewProjection {
+    view: mat4x4<f32>,
+    proj: mat4x4<f32>,
+    viewPos: vec3<f32>,
+    time: f32,
+};
+@group(0) @binding(0) var<uniform> viewProj: ViewProjection;
+@group(1) @binding(0) var spriteTex: texture_2d<f32>;
+@group(1) @binding(1) var spriteSmp: sampler;
+
+struct VertexInput {
+    @location(0) position: vec2<f32>,
+    @location(1) uv: vec2<f32>,
+};
+struct InstanceInput {
+    @location(2) worldPos: vec3<f32>,
+    @location(3) sizeX: f32,
+    @location(4) sizeY: f32,
+    @location(5) rotation: f32,
+    @location(6) tintR: f32,
+    @location(7) tintG: f32,
+    @location(8) tintB: f32,
+    @location(9) tintA: f32,
+    @location(10) uvLeft: f32,
+    @location(11) uvTop: f32,
+    @location(12) uvRight: f32,
+    @location(13) uvBottom: f32,
+};
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) tint: vec4<f32>,
+};
+
+@vertex
+fn vs_main(vert: VertexInput, inst: InstanceInput) -> VertexOutput {
+    let ca = cos(inst.rotation);
+    let sa = sin(inst.rotation);
+    let rx = vert.position.x * ca - vert.position.y * sa;
+    let ry = vert.position.x * sa + vert.position.y * ca;
+
+    // Billboard in world space (camera-facing)
+    let right = vec3<f32>(viewProj.view[0][0], viewProj.view[1][0], viewProj.view[2][0]);
+    let up = vec3<f32>(viewProj.view[0][1], viewProj.view[1][1], viewProj.view[2][1]);
+    let worldPos = inst.worldPos + right * rx * inst.sizeX + up * ry * inst.sizeY;
+
+    var out: VertexOutput;
+    out.position = viewProj.proj * viewProj.view * vec4<f32>(worldPos, 1.0);
+    // Remap UV to atlas rect
+    out.uv = vec2<f32>(
+        mix(inst.uvLeft, inst.uvRight, vert.uv.x),
+        mix(inst.uvTop, inst.uvBottom, vert.uv.y)
+    );
+    out.tint = vec4<f32>(inst.tintR, inst.tintG, inst.tintB, inst.tintA);
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    let texColor = textureSample(spriteTex, spriteSmp, in.uv);
+    return texColor * in.tint;
+}
+)";
+
+// Embedded procedural sky shader (gradient sky, no cubemap needed)
+static const char* SKY_WGSL = R"(
+struct ViewProjection {
+    view: mat4x4<f32>,
+    proj: mat4x4<f32>,
+    viewPos: vec3<f32>,
+    time: f32,
+};
+@group(0) @binding(0) var<uniform> viewProj: ViewProjection;
+
+struct VertexOutput {
+    @builtin(position) position: vec4<f32>,
+    @location(0) clipPos: vec4<f32>,
+};
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
+    var out: VertexOutput;
+    let x = f32(i32(vertexIndex & 1u) * 4 - 1);
+    let y = f32(i32(vertexIndex >> 1u) * 4 - 1);
+    out.position = vec4<f32>(x, y, 1.0, 1.0);
+    out.clipPos = out.position;
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    // Reconstruct view direction from clip position via inverse view-projection
+    let invProj = viewProj.proj;
+    let invView = viewProj.view;
+    // Approximate: unproject clip position and normalize
+    let ndc = in.clipPos.xy / in.clipPos.w;
+    // Build view ray from NDC (simplified inverse projection)
+    let viewDir = normalize(vec3<f32>(ndc.x / invProj[0][0], ndc.y / invProj[1][1], -1.0));
+    // Transform to world space using transposed view rotation (inverse of rotation-only view matrix)
+    let worldDir = normalize(vec3<f32>(
+        invView[0][0] * viewDir.x + invView[1][0] * viewDir.y + invView[2][0] * viewDir.z,
+        invView[0][1] * viewDir.x + invView[1][1] * viewDir.y + invView[2][1] * viewDir.z,
+        invView[0][2] * viewDir.x + invView[1][2] * viewDir.y + invView[2][2] * viewDir.z
+    ));
+
+    // Atmospheric gradient: horizon to zenith
+    let t = clamp(worldDir.y * 0.5 + 0.5, 0.0, 1.0);
+    let horizon = vec3<f32>(0.6, 0.7, 0.85);    // light blue-gray at horizon
+    let zenith = vec3<f32>(0.25, 0.4, 0.75);     // deeper blue at top
+    let ground = vec3<f32>(0.4, 0.45, 0.4);      // muted green-gray below
+    var sky = mix(horizon, zenith, pow(t, 0.8));
+    // Below horizon
+    if (worldDir.y < 0.0) {
+        let gt = clamp(-worldDir.y * 2.0, 0.0, 1.0);
+        sky = mix(horizon, ground, gt);
+    }
+    return vec4<f32>(sky, 1.0);
 }
 )";
 

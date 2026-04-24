@@ -111,6 +111,10 @@ public:
     // Depth texture for shadow passes
     WGPUTextureView GetDepthTextureView() const { return m_DepthTextureView; }
 
+    // Raw access for custom render passes (post-process, offscreen)
+    WGPUCommandEncoder GetCommandEncoder() const { return m_CommandEncoder; }
+    WGPUTextureView GetSwapChainView() const { return m_CurrentSwapChainView; }
+
     // Subsystem access
     WebGPUShaderCompiler* GetShaderCompiler() { return m_ShaderCompiler.get(); }
     WebGPUPipeline* GetPipelineFactory() { return m_PipelineFactory.get(); }

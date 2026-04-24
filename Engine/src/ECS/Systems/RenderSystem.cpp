@@ -32,10 +32,15 @@
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Light.h"
+#include "Enjin/ECS/Components/LOD.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/GrassVolume.h"
+#include "Enjin/ECS/Components/TreeVolume.h"
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Math/Math.h"
+#include <algorithm>
 #include <cstring>
 #include <emscripten.h>
 
@@ -106,13 +111,13 @@ static Math::Matrix4 WebGPUPerspective(f32 fov, f32 aspect, f32 nearPlane, f32 f
     return r;
 }
 
-// Cubemap shadow perspective — Y-flipped to match cubemap sampler UV layout
+// Cubemap shadow perspective — NO Y-flip (cubemap sampler expects standard orientation)
 static Math::Matrix4 WebGPUCubemapPerspective(f32 fov, f32 aspect, f32 nearPlane, f32 farPlane) {
     f32 tanHalfFov = std::tan(fov * 0.5f);
     Math::Matrix4 r;
     std::memset(&r, 0, sizeof(r));
     r.m[0]  = 1.0f / (aspect * tanHalfFov);
-    r.m[5]  = -1.0f / tanHalfFov;  // Y-flipped for cubemap face layout
+    r.m[5]  = 1.0f / tanHalfFov;  // No Y-flip — matches Vulkan cubemap convention
     r.m[10] = farPlane / (nearPlane - farPlane);
     r.m[11] = -1.0f;
     r.m[14] = (nearPlane * farPlane) / (nearPlane - farPlane);
@@ -213,8 +218,9 @@ void RenderSystem::Initialize() {
     pipeDesc.blendState.dstColor = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
     pipeDesc.blendState.srcAlpha = Renderer::GPUBlendFactor::One;
     pipeDesc.blendState.dstAlpha = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
-    pipeDesc.colorFormat = Renderer::GPUTextureFormat::BGRA8Unorm;
+    pipeDesc.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;  // Render to HDR offscreen target
     pipeDesc.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
+    pipeDesc.sampleCount = 4;  // MSAA 4x
     pipeDesc.label = "PBR_Pipeline";
 
     // Vertex layout: position(vec3), normal(vec3), uv(vec2), color(vec4), tangent(vec4), boneWeights(vec4), boneIndices(u32x4)
@@ -460,6 +466,628 @@ void RenderSystem::Initialize() {
         }
     }
 
+    // Post-processing: offscreen scene texture + ACES tonemap pass
+    {
+        auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
+        u32 sceneW = m_Renderer->GetSwapchainWidth();
+        u32 sceneH = m_Renderer->GetSwapchainHeight();
+
+        // Offscreen scene color texture (RGBA16Float for HDR)
+        WGPUTextureDescriptor sceneTexDesc = {};
+        sceneTexDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+        sceneTexDesc.dimension = WGPUTextureDimension_2D;
+        sceneTexDesc.size = {sceneW, sceneH, 1};
+        sceneTexDesc.format = WGPUTextureFormat_RGBA16Float;
+        sceneTexDesc.mipLevelCount = 1;
+        sceneTexDesc.sampleCount = 1;
+        WGPUTexture sceneTex = wgpuDeviceCreateTexture(webRenderer->GetDevice(), &sceneTexDesc);
+        WGPUTextureViewDescriptor sceneViewDesc = {};
+        sceneViewDesc.format = WGPUTextureFormat_RGBA16Float;
+        sceneViewDesc.dimension = WGPUTextureViewDimension_2D;
+        sceneViewDesc.mipLevelCount = 1;
+        sceneViewDesc.arrayLayerCount = 1;
+        m_WebSceneColorView = wgpuTextureCreateView(sceneTex, &sceneViewDesc);
+        // Register with texture manager for bind group creation
+        Renderer::WebGPUTextureHandle nativeSceneTex;
+        nativeSceneTex.texture = sceneTex;
+        nativeSceneTex.view = static_cast<WGPUTextureView>(m_WebSceneColorView);
+        nativeSceneTex.width = sceneW;
+        nativeSceneTex.height = sceneH;
+        nativeSceneTex.format = WGPUTextureFormat_RGBA16Float;
+        // Create a linear sampler for the scene texture
+        WGPUSamplerDescriptor smpDesc = {};
+        smpDesc.addressModeU = WGPUAddressMode_ClampToEdge;
+        smpDesc.addressModeV = WGPUAddressMode_ClampToEdge;
+        smpDesc.addressModeW = WGPUAddressMode_ClampToEdge;
+        smpDesc.magFilter = WGPUFilterMode_Linear;
+        smpDesc.minFilter = WGPUFilterMode_Linear;
+        smpDesc.mipmapFilter = WGPUMipmapFilterMode_Nearest;
+        smpDesc.maxAnisotropy = 1;
+        nativeSceneTex.sampler = wgpuDeviceCreateSampler(webRenderer->GetDevice(), &smpDesc);
+        auto* webTexMgr = static_cast<Renderer::WebGPUTextureManager*>(texMgr);
+        m_WebSceneColorTex = webTexMgr->RegisterNativeTexture(nativeSceneTex);
+
+        // MSAA 4x color texture (render target, resolved to sceneColorTex)
+        WGPUTextureDescriptor msaaColorDesc = {};
+        msaaColorDesc.usage = WGPUTextureUsage_RenderAttachment;
+        msaaColorDesc.dimension = WGPUTextureDimension_2D;
+        msaaColorDesc.size = {sceneW, sceneH, 1};
+        msaaColorDesc.format = WGPUTextureFormat_RGBA16Float;
+        msaaColorDesc.mipLevelCount = 1;
+        msaaColorDesc.sampleCount = 4;
+        WGPUTexture msaaTex = wgpuDeviceCreateTexture(webRenderer->GetDevice(), &msaaColorDesc);
+        WGPUTextureViewDescriptor msaaViewDesc = {};
+        msaaViewDesc.format = WGPUTextureFormat_RGBA16Float;
+        msaaViewDesc.dimension = WGPUTextureViewDimension_2D;
+        msaaViewDesc.mipLevelCount = 1;
+        msaaViewDesc.arrayLayerCount = 1;
+        m_WebMSAAColorTex = msaaTex;
+        m_WebMSAAColorView = wgpuTextureCreateView(msaaTex, &msaaViewDesc);
+
+        // Offscreen depth texture (4x MSAA, matches pipeline sample count)
+        WGPUTextureDescriptor depthDesc = {};
+        depthDesc.usage = WGPUTextureUsage_RenderAttachment;
+        depthDesc.dimension = WGPUTextureDimension_2D;
+        depthDesc.size = {sceneW, sceneH, 1};
+        depthDesc.format = Renderer::GetDepthStencilFormat();
+        depthDesc.mipLevelCount = 1;
+        depthDesc.sampleCount = 4;
+        WGPUTexture depthTex = wgpuDeviceCreateTexture(webRenderer->GetDevice(), &depthDesc);
+        WGPUTextureViewDescriptor depthViewDesc = {};
+        depthViewDesc.format = Renderer::GetDepthStencilFormat();
+        depthViewDesc.dimension = WGPUTextureViewDimension_2D;
+        depthViewDesc.mipLevelCount = 1;
+        depthViewDesc.arrayLayerCount = 1;
+        m_WebSceneDepthTex = depthTex;
+        m_WebSceneDepthView = wgpuTextureCreateView(depthTex, &depthViewDesc);
+
+        // Compile post-process shader
+        m_WebPostProcessShader = shaderMgr->LoadShader(
+            Renderer::WebShaderData::POSTPROCESS_WGSL,
+            std::strlen(Renderer::WebShaderData::POSTPROCESS_WGSL),
+            Renderer::GPUShaderStage::Vertex, "PostProcess");
+
+        // Post-process bind group layout (group 0: texture + sampler)
+        Renderer::GPUBindGroupLayoutDesc ppLayoutDesc;
+        ppLayoutDesc.entries = {
+            {0, BType::SampledTexture, SStage::Fragment, 0},
+            {1, BType::Sampler, SStage::Fragment, 0},
+        };
+        m_WebPostProcessLayout = bindMgr->CreateBindGroupLayout(ppLayoutDesc);
+
+        // Post-process pipeline (fullscreen triangle, no depth, writes to swapchain format)
+        Renderer::GPURenderPipelineDesc ppPipeDesc;
+        ppPipeDesc.vertexShader = m_WebPostProcessShader;
+        ppPipeDesc.fragmentShader = m_WebPostProcessShader;
+        ppPipeDesc.bindGroupLayouts = {m_WebPostProcessLayout};
+        ppPipeDesc.topology = Renderer::GPUPrimitiveTopology::TriangleList;
+        ppPipeDesc.cullMode = Renderer::GPUCullMode::None;
+        ppPipeDesc.frontFace = Renderer::GPUFrontFace::CCW;
+        ppPipeDesc.depthTest = false;
+        ppPipeDesc.depthWrite = false;
+        ppPipeDesc.hasColorAttachment = true;
+        ppPipeDesc.colorFormat = Renderer::GPUTextureFormat::BGRA8Unorm;
+        ppPipeDesc.alphaBlend = false;
+        ppPipeDesc.label = "PostProcessPipeline";
+        // No vertex attributes — fullscreen triangle from vertex_index
+        m_WebPostProcessPipeline = pipeMgr->CreateRenderPipeline(ppPipeDesc);
+
+        // Post-process bind group (texture + sampler from scene color)
+        Renderer::GPUBindGroupDesc ppBGDesc;
+        ppBGDesc.layout = m_WebPostProcessLayout;
+        ppBGDesc.entries = {
+            {0, {}, 0, 0, m_WebSceneColorTex, {}},  // texture
+            {1, {}, 0, 0, {}, m_WebSceneColorTex},   // sampler
+        };
+        m_WebPostProcessBG = bindMgr->CreateBindGroup(ppBGDesc);
+
+        if (m_WebPostProcessPipeline.IsValid() && m_WebPostProcessBG.IsValid()) {
+            ENJIN_LOG_INFO(Renderer, "RenderSystem: Post-processing initialized (ACES tonemap)");
+        }
+
+        // Procedural sky shader + pipeline (renders after scene, same offscreen target)
+        m_WebSkyShader = shaderMgr->LoadShader(
+            Renderer::WebShaderData::SKY_WGSL,
+            std::strlen(Renderer::WebShaderData::SKY_WGSL),
+            Renderer::GPUShaderStage::Vertex, "Sky");
+
+        Renderer::GPURenderPipelineDesc skyPipeDesc;
+        skyPipeDesc.vertexShader = m_WebSkyShader;
+        skyPipeDesc.fragmentShader = m_WebSkyShader;
+        skyPipeDesc.bindGroupLayouts = {m_WebFrameLayout};  // Reuse frame layout (ViewProj at group 0)
+        skyPipeDesc.topology = Renderer::GPUPrimitiveTopology::TriangleList;
+        skyPipeDesc.cullMode = Renderer::GPUCullMode::None;
+        skyPipeDesc.frontFace = Renderer::GPUFrontFace::CCW;
+        skyPipeDesc.depthTest = true;
+        skyPipeDesc.depthWrite = false;     // Don't overwrite scene depth
+        skyPipeDesc.depthCompare = Renderer::GPUCompareFunction::LessEqual;  // z=1.0 passes at max depth
+        skyPipeDesc.hasColorAttachment = true;
+        skyPipeDesc.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
+        skyPipeDesc.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
+        skyPipeDesc.sampleCount = 4;  // Must match scene MSAA
+        skyPipeDesc.alphaBlend = false;
+        skyPipeDesc.label = "SkyPipeline";
+        m_WebSkyPipeline = pipeMgr->CreateRenderPipeline(skyPipeDesc);
+        if (m_WebSkyPipeline.IsValid()) {
+            ENJIN_LOG_INFO(Renderer, "RenderSystem: Procedural sky pipeline initialized");
+        }
+
+        // Bloom: compile shaders, create pipelines, allocate mip chain textures
+        m_WebBloomThresholdShader = shaderMgr->LoadShader(
+            Renderer::WebShaderData::BLOOM_THRESHOLD_WGSL,
+            std::strlen(Renderer::WebShaderData::BLOOM_THRESHOLD_WGSL),
+            Renderer::GPUShaderStage::Vertex, "BloomThreshold");
+        m_WebBloomDownShader = shaderMgr->LoadShader(
+            Renderer::WebShaderData::BLOOM_DOWN_WGSL,
+            std::strlen(Renderer::WebShaderData::BLOOM_DOWN_WGSL),
+            Renderer::GPUShaderStage::Vertex, "BloomDown");
+        m_WebBloomUpShader = shaderMgr->LoadShader(
+            Renderer::WebShaderData::BLOOM_UP_WGSL,
+            std::strlen(Renderer::WebShaderData::BLOOM_UP_WGSL),
+            Renderer::GPUShaderStage::Vertex, "BloomUp");
+        m_WebBloomCompositeShader = shaderMgr->LoadShader(
+            Renderer::WebShaderData::BLOOM_COMPOSITE_WGSL,
+            std::strlen(Renderer::WebShaderData::BLOOM_COMPOSITE_WGSL),
+            Renderer::GPUShaderStage::Vertex, "BloomComposite");
+
+        // Single-texture layout (threshold, downsample, upsample all use 1 tex + 1 sampler)
+        Renderer::GPUBindGroupLayoutDesc bloomTexLD;
+        bloomTexLD.entries = {
+            {0, BType::SampledTexture, SStage::Fragment, 0},
+            {1, BType::Sampler, SStage::Fragment, 0},
+        };
+        m_WebBloomSingleTexLayout = bindMgr->CreateBindGroupLayout(bloomTexLD);
+
+        // Composite layout (scene + bloom, 2 textures + 2 samplers)
+        Renderer::GPUBindGroupLayoutDesc bloomCompLD;
+        bloomCompLD.entries = {
+            {0, BType::SampledTexture, SStage::Fragment, 0},
+            {1, BType::Sampler, SStage::Fragment, 0},
+            {2, BType::SampledTexture, SStage::Fragment, 0},
+            {3, BType::Sampler, SStage::Fragment, 0},
+        };
+        m_WebBloomCompositeLayout = bindMgr->CreateBindGroupLayout(bloomCompLD);
+
+        // Bloom pipelines (all fullscreen triangle, no depth, RGBA16Float)
+        auto makeBloomPipe = [&](Renderer::GPUShaderHandle shader, Renderer::GPUBindGroupLayoutHandle layout, const char* label) {
+            Renderer::GPURenderPipelineDesc pd;
+            pd.vertexShader = shader;
+            pd.fragmentShader = shader;
+            pd.bindGroupLayouts = {layout};
+            pd.topology = Renderer::GPUPrimitiveTopology::TriangleList;
+            pd.cullMode = Renderer::GPUCullMode::None;
+            pd.frontFace = Renderer::GPUFrontFace::CCW;
+            pd.depthTest = false;
+            pd.depthWrite = false;
+            pd.hasColorAttachment = true;
+            pd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
+            pd.alphaBlend = false;
+            pd.label = label;
+            return pipeMgr->CreateRenderPipeline(pd);
+        };
+        m_WebBloomThresholdPipeline = makeBloomPipe(m_WebBloomThresholdShader, m_WebBloomSingleTexLayout, "BloomThreshold");
+        m_WebBloomDownPipeline = makeBloomPipe(m_WebBloomDownShader, m_WebBloomSingleTexLayout, "BloomDown");
+        m_WebBloomCompositePipeline = makeBloomPipe(m_WebBloomCompositeShader, m_WebBloomCompositeLayout, "BloomComposite");
+        // Upsample pipeline with additive blending (adds upsampled result to existing bloom level)
+        {
+            Renderer::GPURenderPipelineDesc pd;
+            pd.vertexShader = m_WebBloomUpShader;
+            pd.fragmentShader = m_WebBloomUpShader;
+            pd.bindGroupLayouts = {m_WebBloomSingleTexLayout};
+            pd.topology = Renderer::GPUPrimitiveTopology::TriangleList;
+            pd.cullMode = Renderer::GPUCullMode::None;
+            pd.frontFace = Renderer::GPUFrontFace::CCW;
+            pd.depthTest = false;
+            pd.depthWrite = false;
+            pd.hasColorAttachment = true;
+            pd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
+            pd.alphaBlend = true;
+            pd.blendState.srcColor = Renderer::GPUBlendFactor::One;
+            pd.blendState.dstColor = Renderer::GPUBlendFactor::One;  // Additive
+            pd.blendState.srcAlpha = Renderer::GPUBlendFactor::One;
+            pd.blendState.dstAlpha = Renderer::GPUBlendFactor::One;
+            pd.label = "BloomUp";
+            m_WebBloomUpPipeline = pipeMgr->CreateRenderPipeline(pd);
+        }
+
+        // Create bloom mip chain textures (half-res each level)
+        auto* webTexMgrB = static_cast<Renderer::WebGPUTextureManager*>(texMgr);
+        u32 bw = sceneW / 2, bh = sceneH / 2;
+        for (u32 i = 0; i < WEB_BLOOM_LEVELS; i++) {
+            bw = std::max(bw, 1u);
+            bh = std::max(bh, 1u);
+            WGPUTextureDescriptor btd = {};
+            btd.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+            btd.dimension = WGPUTextureDimension_2D;
+            btd.size = {bw, bh, 1};
+            btd.format = WGPUTextureFormat_RGBA16Float;
+            btd.mipLevelCount = 1;
+            btd.sampleCount = 1;
+            WGPUTexture bt = wgpuDeviceCreateTexture(webRenderer->GetDevice(), &btd);
+            WGPUTextureViewDescriptor bvd = {};
+            bvd.format = WGPUTextureFormat_RGBA16Float;
+            bvd.dimension = WGPUTextureViewDimension_2D;
+            bvd.mipLevelCount = 1;
+            bvd.arrayLayerCount = 1;
+            m_WebBloomView[i] = wgpuTextureCreateView(bt, &bvd);
+            Renderer::WebGPUTextureHandle nbt;
+            nbt.texture = bt;
+            nbt.view = static_cast<WGPUTextureView>(m_WebBloomView[i]);
+            nbt.width = bw;
+            nbt.height = bh;
+            nbt.format = WGPUTextureFormat_RGBA16Float;
+            nbt.sampler = nativeSceneTex.sampler;  // Reuse linear sampler
+            m_WebBloomTex[i] = webTexMgrB->RegisterNativeTexture(nbt);
+            bw /= 2;
+            bh /= 2;
+        }
+
+        // Scratch texture for composite output (same size as scene)
+        {
+            WGPUTextureDescriptor std2 = {};
+            std2.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+            std2.dimension = WGPUTextureDimension_2D;
+            std2.size = {sceneW, sceneH, 1};
+            std2.format = WGPUTextureFormat_RGBA16Float;
+            std2.mipLevelCount = 1;
+            std2.sampleCount = 1;
+            WGPUTexture st = wgpuDeviceCreateTexture(webRenderer->GetDevice(), &std2);
+            WGPUTextureViewDescriptor svd = {};
+            svd.format = WGPUTextureFormat_RGBA16Float;
+            svd.dimension = WGPUTextureViewDimension_2D;
+            svd.mipLevelCount = 1;
+            svd.arrayLayerCount = 1;
+            m_WebBloomScratchView = wgpuTextureCreateView(st, &svd);
+            Renderer::WebGPUTextureHandle nst;
+            nst.texture = st;
+            nst.view = static_cast<WGPUTextureView>(m_WebBloomScratchView);
+            nst.width = sceneW;
+            nst.height = sceneH;
+            nst.format = WGPUTextureFormat_RGBA16Float;
+            nst.sampler = nativeSceneTex.sampler;
+            m_WebBloomScratchTex = webTexMgrB->RegisterNativeTexture(nst);
+        }
+
+        // Bind groups: threshold (scene → bloom[0])
+        {
+            Renderer::GPUBindGroupDesc bg;
+            bg.layout = m_WebBloomSingleTexLayout;
+            bg.entries = {{0, {}, 0, 0, m_WebSceneColorTex, {}}, {1, {}, 0, 0, {}, m_WebSceneColorTex}};
+            m_WebBloomThresholdBG = bindMgr->CreateBindGroup(bg);
+        }
+        // Bind groups: downsample (bloom[i] → bloom[i+1])
+        for (u32 i = 0; i < WEB_BLOOM_LEVELS; i++) {
+            Renderer::GPUBindGroupDesc bg;
+            bg.layout = m_WebBloomSingleTexLayout;
+            Renderer::GPUTextureHandle src = (i == 0) ? m_WebBloomTex[0] : m_WebBloomTex[i];
+            bg.entries = {{0, {}, 0, 0, src, {}}, {1, {}, 0, 0, {}, src}};
+            m_WebBloomDownBG[i] = bindMgr->CreateBindGroup(bg);
+        }
+        // Bind groups: upsample (bloom[i+1] → read, blend into bloom[i])
+        for (u32 i = 0; i < WEB_BLOOM_LEVELS; i++) {
+            Renderer::GPUBindGroupDesc bg;
+            bg.layout = m_WebBloomSingleTexLayout;
+            bg.entries = {{0, {}, 0, 0, m_WebBloomTex[i], {}}, {1, {}, 0, 0, {}, m_WebBloomTex[i]}};
+            m_WebBloomUpBG[i] = bindMgr->CreateBindGroup(bg);
+        }
+        // Bind group: composite (scene + bloom[0])
+        {
+            Renderer::GPUBindGroupDesc bg;
+            bg.layout = m_WebBloomCompositeLayout;
+            bg.entries = {
+                {0, {}, 0, 0, m_WebSceneColorTex, {}}, {1, {}, 0, 0, {}, m_WebSceneColorTex},
+                {2, {}, 0, 0, m_WebBloomTex[0], {}}, {3, {}, 0, 0, {}, m_WebBloomTex[0]},
+            };
+            m_WebBloomCompositeBG = bindMgr->CreateBindGroup(bg);
+        }
+
+        if (m_WebBloomThresholdPipeline.IsValid()) {
+            ENJIN_LOG_INFO(Renderer, "RenderSystem: Bloom initialized (Dual Kawase, %u levels)", WEB_BLOOM_LEVELS);
+            // Update post-process BG to read from scratch (composited scene+bloom)
+            bindMgr->DestroyBindGroup(m_WebPostProcessBG);
+            Renderer::GPUBindGroupDesc ppBG2;
+            ppBG2.layout = m_WebPostProcessLayout;
+            ppBG2.entries = {
+                {0, {}, 0, 0, m_WebBloomScratchTex, {}},
+                {1, {}, 0, 0, {}, m_WebBloomScratchTex},
+            };
+            m_WebPostProcessBG = bindMgr->CreateBindGroup(ppBG2);
+        }
+    }
+
+    // ========================================================================
+    // Particle pipeline + shared quad mesh
+    // ========================================================================
+    {
+        m_WebParticleShader = shaderMgr->LoadShader(
+            Renderer::WebShaderData::PARTICLE_WGSL,
+            std::strlen(Renderer::WebShaderData::PARTICLE_WGSL),
+            Renderer::GPUShaderStage::Vertex, "Particle");
+
+        Renderer::GPURenderPipelineDesc pd;
+        pd.vertexShader = m_WebParticleShader;
+        pd.fragmentShader = m_WebParticleShader;
+        pd.bindGroupLayouts = {m_WebFrameLayout};
+        pd.topology = Renderer::GPUPrimitiveTopology::TriangleList;
+        pd.cullMode = Renderer::GPUCullMode::None;
+        pd.frontFace = Renderer::GPUFrontFace::CCW;
+        pd.depthTest = true;
+        pd.depthWrite = false;  // Particles don't occlude
+        pd.depthCompare = Renderer::GPUCompareFunction::Less;
+        pd.alphaBlend = true;
+        pd.blendState.srcColor = Renderer::GPUBlendFactor::SrcAlpha;
+        pd.blendState.dstColor = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
+        pd.blendState.srcAlpha = Renderer::GPUBlendFactor::One;
+        pd.blendState.dstAlpha = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
+        pd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
+        pd.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
+        pd.sampleCount = 4;
+        pd.label = "ParticlePipeline";
+        // Vertex layout: slot 0 = quad (per-vertex), slot 1 = instance data (per-instance)
+        Renderer::GPUVertexBufferLayoutDesc quadLayout;
+        quadLayout.stride = 4 * sizeof(f32);  // pos(vec2) + uv(vec2)
+        quadLayout.perInstance = false;
+        quadLayout.attributes = {
+            {Renderer::GPUVertexFormat::Float32x2, 0, 0},                   // position
+            {Renderer::GPUVertexFormat::Float32x2, 2 * sizeof(f32), 1},     // uv
+        };
+        Renderer::GPUVertexBufferLayoutDesc instanceLayout;
+        instanceLayout.stride = 8 * sizeof(f32);  // pos(3) + size(1) + alpha(1) + rgb(3)
+        instanceLayout.perInstance = true;
+        instanceLayout.attributes = {
+            {Renderer::GPUVertexFormat::Float32x3, 0, 2},                   // worldPos
+            {Renderer::GPUVertexFormat::Float32, 3 * sizeof(f32), 3},       // size
+            {Renderer::GPUVertexFormat::Float32, 4 * sizeof(f32), 4},       // alpha
+            {Renderer::GPUVertexFormat::Float32, 5 * sizeof(f32), 5},       // colorR
+            {Renderer::GPUVertexFormat::Float32, 6 * sizeof(f32), 6},       // colorG
+            {Renderer::GPUVertexFormat::Float32, 7 * sizeof(f32), 7},       // colorB
+        };
+        pd.vertexBuffers = {quadLayout, instanceLayout};
+        m_WebParticlePipeline = pipeMgr->CreateRenderPipeline(pd);
+
+        // Shared billboard quad (4 vertices, 6 indices)
+        f32 quadVerts[] = {
+            -0.5f, -0.5f,  0.0f, 0.0f,  // bottom-left
+             0.5f, -0.5f,  1.0f, 0.0f,  // bottom-right
+             0.5f,  0.5f,  1.0f, 1.0f,  // top-right
+            -0.5f,  0.5f,  0.0f, 1.0f,  // top-left
+        };
+        u32 quadIndices[] = {0, 1, 2, 0, 2, 3};
+        Renderer::GPUBufferDesc qvb;
+        qvb.size = sizeof(quadVerts);
+        qvb.usage = Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst;
+        qvb.hostVisible = true;
+        m_WebParticleQuadVB = bufMgr->CreateBufferWithData(qvb, quadVerts);
+        Renderer::GPUBufferDesc qib;
+        qib.size = sizeof(quadIndices);
+        qib.usage = Renderer::GPUBufferUsage::Index | Renderer::GPUBufferUsage::CopyDst;
+        qib.hostVisible = true;
+        m_WebParticleQuadIB = bufMgr->CreateBufferWithData(qib, quadIndices);
+
+        if (m_WebParticlePipeline.IsValid())
+            ENJIN_LOG_INFO(Renderer, "RenderSystem: Particle pipeline initialized");
+    }
+
+    // ========================================================================
+    // Grass + Tree volume params bind group layout (shared)
+    // ========================================================================
+    {
+        Renderer::GPUBindGroupLayoutDesc volLD;
+        volLD.entries = {
+            {0, BType::UniformBuffer, SStage::Vertex, 64},  // VolumeParams UBO
+        };
+        m_WebVolumeParamsLayout = bindMgr->CreateBindGroupLayout(volLD);
+    }
+
+    // ========================================================================
+    // Grass pipeline + blade mesh
+    // ========================================================================
+    {
+        m_WebGrassShader = shaderMgr->LoadShader(
+            Renderer::WebShaderData::GRASS_WGSL,
+            std::strlen(Renderer::WebShaderData::GRASS_WGSL),
+            Renderer::GPUShaderStage::Vertex, "Grass");
+
+        Renderer::GPURenderPipelineDesc pd;
+        pd.vertexShader = m_WebGrassShader;
+        pd.fragmentShader = m_WebGrassShader;
+        pd.bindGroupLayouts = {m_WebFrameLayout, m_WebVolumeParamsLayout};
+        pd.topology = Renderer::GPUPrimitiveTopology::TriangleList;
+        pd.cullMode = Renderer::GPUCullMode::None;
+        pd.frontFace = Renderer::GPUFrontFace::CCW;
+        pd.depthTest = true;
+        pd.depthWrite = true;
+        pd.depthCompare = Renderer::GPUCompareFunction::Less;
+        pd.alphaBlend = false;
+        pd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
+        pd.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
+        pd.sampleCount = 4;
+        pd.label = "GrassPipeline";
+        // Blade vertex: pos(vec3) + normal(vec3) + uv(vec2) = 8 floats
+        Renderer::GPUVertexBufferLayoutDesc bladeLayout;
+        bladeLayout.stride = 8 * sizeof(f32);
+        bladeLayout.attributes = {
+            {Renderer::GPUVertexFormat::Float32x3, 0, 0},
+            {Renderer::GPUVertexFormat::Float32x3, 3 * sizeof(f32), 1},
+            {Renderer::GPUVertexFormat::Float32x2, 6 * sizeof(f32), 2},
+        };
+        pd.vertexBuffers = {bladeLayout};
+        m_WebGrassPipeline = pipeMgr->CreateRenderPipeline(pd);
+
+        // 7-vertex blade mesh (tapered triangle strip)
+        struct BladeVert { f32 px, py, pz, nx, ny, nz, u, v; };
+        BladeVert bladeVerts[] = {
+            {-0.5f, 0.0f, 0.0f,  0,0,1,  0.0f, 0.0f},  // v0 base-left
+            { 0.5f, 0.0f, 0.0f,  0,0,1,  1.0f, 0.0f},  // v1 base-right
+            {-0.4f, 0.33f, 0.0f, 0,0,1,  0.1f, 0.33f}, // v2 mid-lower-left
+            { 0.4f, 0.33f, 0.0f, 0,0,1,  0.9f, 0.33f}, // v3 mid-lower-right
+            {-0.2f, 0.66f, 0.0f, 0,0,1,  0.3f, 0.66f}, // v4 mid-upper-left
+            { 0.2f, 0.66f, 0.0f, 0,0,1,  0.7f, 0.66f}, // v5 mid-upper-right
+            { 0.0f, 1.0f, 0.0f,  0,0,1,  0.5f, 1.0f},  // v6 tip
+        };
+        u32 bladeIndices[] = {0,1,3, 0,3,2, 2,3,5, 2,5,4, 4,5,6};
+        m_WebGrassBladeIndexCount = 15;
+        Renderer::GPUBufferDesc bvb;
+        bvb.size = sizeof(bladeVerts);
+        bvb.usage = Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst;
+        bvb.hostVisible = true;
+        m_WebGrassBladeVB = bufMgr->CreateBufferWithData(bvb, bladeVerts);
+        Renderer::GPUBufferDesc bib;
+        bib.size = sizeof(bladeIndices);
+        bib.usage = Renderer::GPUBufferUsage::Index | Renderer::GPUBufferUsage::CopyDst;
+        bib.hostVisible = true;
+        m_WebGrassBladeIB = bufMgr->CreateBufferWithData(bib, bladeIndices);
+
+        if (m_WebGrassPipeline.IsValid())
+            ENJIN_LOG_INFO(Renderer, "RenderSystem: Grass pipeline initialized");
+    }
+
+    // ========================================================================
+    // Tree pipeline + mesh (trunk quads + canopy billboards)
+    // ========================================================================
+    {
+        m_WebTreeShader = shaderMgr->LoadShader(
+            Renderer::WebShaderData::TREE_WGSL,
+            std::strlen(Renderer::WebShaderData::TREE_WGSL),
+            Renderer::GPUShaderStage::Vertex, "Tree");
+
+        Renderer::GPURenderPipelineDesc pd;
+        pd.vertexShader = m_WebTreeShader;
+        pd.fragmentShader = m_WebTreeShader;
+        pd.bindGroupLayouts = {m_WebFrameLayout, m_WebVolumeParamsLayout};
+        pd.topology = Renderer::GPUPrimitiveTopology::TriangleList;
+        pd.cullMode = Renderer::GPUCullMode::None;
+        pd.frontFace = Renderer::GPUFrontFace::CCW;
+        pd.depthTest = true;
+        pd.depthWrite = true;
+        pd.depthCompare = Renderer::GPUCompareFunction::Less;
+        pd.alphaBlend = false;
+        pd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
+        pd.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
+        pd.sampleCount = 4;
+        pd.label = "TreePipeline";
+        // Same vertex format as grass (pos+normal+uv)
+        Renderer::GPUVertexBufferLayoutDesc treeLayout;
+        treeLayout.stride = 8 * sizeof(f32);
+        treeLayout.attributes = {
+            {Renderer::GPUVertexFormat::Float32x3, 0, 0},
+            {Renderer::GPUVertexFormat::Float32x3, 3 * sizeof(f32), 1},
+            {Renderer::GPUVertexFormat::Float32x2, 6 * sizeof(f32), 2},
+        };
+        pd.vertexBuffers = {treeLayout};
+        m_WebTreePipeline = pipeMgr->CreateRenderPipeline(pd);
+
+        // Tree mesh: trunk (2 crossing quads) + canopy (3 crossing billboards)
+        struct TreeVert { f32 px, py, pz, nx, ny, nz, u, v; };
+        std::vector<TreeVert> treeVerts;
+        std::vector<u32> treeIndices;
+
+        auto addQuad = [&](Math::Vector3 bl, Math::Vector3 br, Math::Vector3 tr, Math::Vector3 tl,
+                           f32 uvYBase, f32 uvYTop) {
+            u32 base = static_cast<u32>(treeVerts.size());
+            treeVerts.push_back({bl.x, bl.y, bl.z, 0,0,1, 0, uvYBase});
+            treeVerts.push_back({br.x, br.y, br.z, 0,0,1, 1, uvYBase});
+            treeVerts.push_back({tr.x, tr.y, tr.z, 0,0,1, 1, uvYTop});
+            treeVerts.push_back({tl.x, tl.y, tl.z, 0,0,1, 0, uvYTop});
+            treeIndices.insert(treeIndices.end(), {base, base+1, base+2, base, base+2, base+3});
+        };
+
+        // Trunk: 2 crossing quads along X and Z axes (uv.y < 0.5 = trunk)
+        f32 tw = 0.5f, th = 1.0f;
+        addQuad({-tw,0,0}, {tw,0,0}, {tw,th,0}, {-tw,th,0}, 0.0f, 0.4f);  // X-aligned
+        addQuad({0,0,-tw}, {0,0,tw}, {0,th,tw}, {0,th,-tw}, 0.0f, 0.4f);  // Z-aligned
+        // Canopy: 3 crossing billboard quads at 0°, 60°, 120° (uv.y > 0.5 = canopy)
+        f32 cr = 1.5f, co = 1.2f;  // canopy radius/offset
+        for (int q = 0; q < 3; q++) {
+            f32 angle = static_cast<f32>(q) * 3.14159f / 3.0f;
+            f32 cx = std::cos(angle) * cr, cz = std::sin(angle) * cr;
+            addQuad({-cx, co, -cz}, {cx, co, cz}, {cx, co + cr*2, cz}, {-cx, co + cr*2, -cz}, 0.6f, 1.0f);
+        }
+        m_WebTreeIndexCount = static_cast<u32>(treeIndices.size());
+        Renderer::GPUBufferDesc tvb;
+        tvb.size = treeVerts.size() * sizeof(TreeVert);
+        tvb.usage = Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst;
+        tvb.hostVisible = true;
+        m_WebTreeMeshVB = bufMgr->CreateBufferWithData(tvb, treeVerts.data());
+        Renderer::GPUBufferDesc tib;
+        tib.size = treeIndices.size() * sizeof(u32);
+        tib.usage = Renderer::GPUBufferUsage::Index | Renderer::GPUBufferUsage::CopyDst;
+        tib.hostVisible = true;
+        m_WebTreeMeshIB = bufMgr->CreateBufferWithData(tib, treeIndices.data());
+
+        if (m_WebTreePipeline.IsValid())
+            ENJIN_LOG_INFO(Renderer, "RenderSystem: Tree pipeline initialized (%u verts, %u indices)",
+                static_cast<u32>(treeVerts.size()), m_WebTreeIndexCount);
+    }
+
+    // ========================================================================
+    // Sprite pipeline
+    // ========================================================================
+    {
+        m_WebSpriteShader = shaderMgr->LoadShader(
+            Renderer::WebShaderData::SPRITE_WGSL,
+            std::strlen(Renderer::WebShaderData::SPRITE_WGSL),
+            Renderer::GPUShaderStage::Vertex, "Sprite");
+
+        // Sprite texture bind group layout (group 1: texture + sampler)
+        Renderer::GPUBindGroupLayoutDesc sprTexLD;
+        sprTexLD.entries = {
+            {0, BType::SampledTexture, SStage::Fragment, 0},
+            {1, BType::Sampler, SStage::Fragment, 0},
+        };
+        m_WebSpriteTexLayout = bindMgr->CreateBindGroupLayout(sprTexLD);
+
+        Renderer::GPURenderPipelineDesc pd;
+        pd.vertexShader = m_WebSpriteShader;
+        pd.fragmentShader = m_WebSpriteShader;
+        pd.bindGroupLayouts = {m_WebFrameLayout, m_WebSpriteTexLayout};
+        pd.topology = Renderer::GPUPrimitiveTopology::TriangleList;
+        pd.cullMode = Renderer::GPUCullMode::None;
+        pd.frontFace = Renderer::GPUFrontFace::CCW;
+        pd.depthTest = true;
+        pd.depthWrite = false;
+        pd.depthCompare = Renderer::GPUCompareFunction::Less;
+        pd.alphaBlend = true;
+        pd.blendState.srcColor = Renderer::GPUBlendFactor::SrcAlpha;
+        pd.blendState.dstColor = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
+        pd.blendState.srcAlpha = Renderer::GPUBlendFactor::One;
+        pd.blendState.dstAlpha = Renderer::GPUBlendFactor::OneMinusSrcAlpha;
+        pd.colorFormat = Renderer::GPUTextureFormat::RGBA16Float;
+        pd.depthFormat = Renderer::GPUTextureFormat::Depth24PlusStencil8;
+        pd.sampleCount = 4;
+        pd.label = "SpritePipeline";
+        // Vertex layout: slot 0 = quad, slot 1 = sprite instance
+        Renderer::GPUVertexBufferLayoutDesc sprQuadLayout;
+        sprQuadLayout.stride = 4 * sizeof(f32);  // pos(vec2) + uv(vec2)
+        sprQuadLayout.perInstance = false;
+        sprQuadLayout.attributes = {
+            {Renderer::GPUVertexFormat::Float32x2, 0, 0},
+            {Renderer::GPUVertexFormat::Float32x2, 2 * sizeof(f32), 1},
+        };
+        Renderer::GPUVertexBufferLayoutDesc sprInstLayout;
+        sprInstLayout.stride = 14 * sizeof(f32);  // worldPos(3)+sizeX+sizeY+rot+tintRGBA+uvRect(4)
+        sprInstLayout.perInstance = true;
+        sprInstLayout.attributes = {
+            {Renderer::GPUVertexFormat::Float32x3, 0, 2},                    // worldPos
+            {Renderer::GPUVertexFormat::Float32, 3 * sizeof(f32), 3},        // sizeX
+            {Renderer::GPUVertexFormat::Float32, 4 * sizeof(f32), 4},        // sizeY
+            {Renderer::GPUVertexFormat::Float32, 5 * sizeof(f32), 5},        // rotation
+            {Renderer::GPUVertexFormat::Float32, 6 * sizeof(f32), 6},        // tintR
+            {Renderer::GPUVertexFormat::Float32, 7 * sizeof(f32), 7},        // tintG
+            {Renderer::GPUVertexFormat::Float32, 8 * sizeof(f32), 8},        // tintB
+            {Renderer::GPUVertexFormat::Float32, 9 * sizeof(f32), 9},        // tintA
+            {Renderer::GPUVertexFormat::Float32, 10 * sizeof(f32), 10},      // uvLeft
+            {Renderer::GPUVertexFormat::Float32, 11 * sizeof(f32), 11},      // uvTop
+            {Renderer::GPUVertexFormat::Float32, 12 * sizeof(f32), 12},      // uvRight
+            {Renderer::GPUVertexFormat::Float32, 13 * sizeof(f32), 13},      // uvBottom
+        };
+        pd.vertexBuffers = {sprQuadLayout, sprInstLayout};
+        m_WebSpritePipeline = pipeMgr->CreateRenderPipeline(pd);
+
+        if (m_WebSpritePipeline.IsValid())
+            ENJIN_LOG_INFO(Renderer, "RenderSystem: Sprite pipeline initialized");
+    }
+
     m_Initialized = true;
     ENJIN_LOG_INFO(Renderer, "WebGPU RenderSystem initialized");
 }
@@ -676,19 +1304,21 @@ void RenderSystem::Update(f32 deltaTime) {
         // Fallback: if no lights at all, use a default directional
         if (dirCount == 0 && pointCount == 0 && spotCount == 0) {
             lit.lightDir[0] = {0.5f, -0.8f, 0.3f, 0.0f};
-            lit.lightColor[0] = {1.0f, 0.95f, 0.9f, 1.5f};
+            lit.lightColor[0] = {1.0f, 0.95f, 0.9f, 1.2f};
             dirCount = 1;
         }
 
         lit.ambientColor = {m_AmbientColor.x, m_AmbientColor.y, m_AmbientColor.z, m_AmbientIntensity};
+        lit.fogColor = {m_FogColor.x, m_FogColor.y, m_FogColor.z, 0.0f};
+        lit.fogParams = {m_FogDensity, m_FogStart, m_FogEnd, m_FogHeightFalloff};
         lit.lightCount = {static_cast<f32>(dirCount), static_cast<f32>(pointCount), static_cast<f32>(spotCount), 0.0f};
 
-        // WebGPU: boost ambient color + intensity to compensate for no indirect lighting/GI
+        // WebGPU: slight ambient floor so scenes are never pitch-black
         lit.ambientColor = {
-            std::max(lit.ambientColor.x, 0.3f),
-            std::max(lit.ambientColor.y, 0.3f),
-            std::max(lit.ambientColor.z, 0.35f),
-            std::max(lit.ambientColor.w, 0.5f)
+            std::max(lit.ambientColor.x, 0.05f),
+            std::max(lit.ambientColor.y, 0.05f),
+            std::max(lit.ambientColor.z, 0.06f),
+            std::max(lit.ambientColor.w, 0.2f)
         };
 
         static int s_LightLog = 0;
@@ -724,7 +1354,7 @@ void RenderSystem::Update(f32 deltaTime) {
             }
         }
         if (dirCount > 0) {
-            lit.shadowParams = {0.7f, static_cast<f32>(spotShadowCount), static_cast<f32>(pointShadowCount), 0.0f};
+            lit.shadowParams = {1.0f, static_cast<f32>(spotShadowCount), static_cast<f32>(pointShadowCount), 0.0f};
         }
 
         bufMgr->UploadData(m_WebLightingBuffer, &lit, sizeof(lit));
@@ -1013,10 +1643,10 @@ void RenderSystem::Update(f32 deltaTime) {
     }
 
     // ========================================================================
-    // Point light shadow passes — disabled (cubemap self-shadowing artifacts)
+    // Point light shadow passes
     // ========================================================================
     u32 activePointShadows = 0;
-    if (false && m_WebShadowPipeline.IsValid() && m_Camera && m_WebPointShadowFaceViews[0]) {
+    if (m_WebShadowPipeline.IsValid() && m_Camera && m_WebPointShadowFaceViews[0]) {
         auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
         auto* pipeMgr3 = static_cast<Renderer::WebGPUPipelineManager*>(m_Renderer->GetPipelineManager());
         auto* webBufMgr3 = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
@@ -1115,13 +1745,56 @@ void RenderSystem::Update(f32 deltaTime) {
     // Re-upload directional shadow VP (spot/point passes may have overwritten m_WebShadowVPBuffer)
     // This is handled by the directional pass writing first and the bind group referencing the buffer
 
-    // Begin main render pass
-    Renderer::GPURenderPassDesc passDesc;  // default = swapchain
-    auto* encoder = m_Renderer->BeginRenderPass(passDesc);
-    if (!encoder) return;
+    // Begin main render pass (offscreen if post-processing enabled, else swapchain)
+    auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
+    auto* webPipeMgr = static_cast<Renderer::WebGPUPipelineManager*>(m_Renderer->GetPipelineManager());
+    auto* webBindMgr = static_cast<Renderer::WebGPUBindGroupManager*>(m_Renderer->GetBindGroupManager());
+    bool usePostProcess = m_WebPostProcessPipeline.IsValid() && m_WebSceneColorView && m_WebSceneDepthView && m_WebMSAAColorView;
+    WGPURenderPassEncoder scenePassEncoder = nullptr;
+    Renderer::IRenderEncoder* encoder = nullptr;
 
     f32 w = static_cast<f32>(m_Renderer->GetSwapchainWidth());
     f32 h = static_cast<f32>(m_Renderer->GetSwapchainHeight());
+
+    if (usePostProcess) {
+        // Render scene to MSAA texture, resolve to HDR offscreen
+        WGPURenderPassColorAttachment colorAtt = {};
+        colorAtt.view = static_cast<WGPUTextureView>(m_WebMSAAColorView);  // 4x MSAA render target
+        colorAtt.resolveTarget = static_cast<WGPUTextureView>(m_WebSceneColorView);  // 1x resolve target
+        colorAtt.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+        colorAtt.loadOp = WGPULoadOp_Clear;
+        colorAtt.storeOp = WGPUStoreOp_Store;
+        colorAtt.clearValue = {0.4, 0.5, 0.65, 1.0};  // sky color
+
+        WGPURenderPassDepthStencilAttachment depthAtt = {};
+        depthAtt.view = static_cast<WGPUTextureView>(m_WebSceneDepthView);
+        depthAtt.depthLoadOp = WGPULoadOp_Clear;
+        depthAtt.depthStoreOp = WGPUStoreOp_Store;
+        depthAtt.depthClearValue = 1.0f;
+        depthAtt.stencilLoadOp = WGPULoadOp_Clear;
+        depthAtt.stencilStoreOp = WGPUStoreOp_Store;
+
+        WGPURenderPassDescriptor passDesc = {};
+        passDesc.colorAttachmentCount = 1;
+        passDesc.colorAttachments = &colorAtt;
+        passDesc.depthStencilAttachment = &depthAtt;
+        scenePassEncoder = wgpuCommandEncoderBeginRenderPass(webRenderer->GetCommandEncoder(), &passDesc);
+        if (!scenePassEncoder) { usePostProcess = false; }
+    }
+
+    std::unique_ptr<Renderer::WebGPURenderEncoder> sceneEncoder;
+    if (!usePostProcess) {
+        // Fallback: render directly to swapchain
+        Renderer::GPURenderPassDesc defaultDesc;
+        encoder = m_Renderer->BeginRenderPass(defaultDesc);
+        if (!encoder) return;
+    } else {
+        // Wrap offscreen pass encoder in abstract encoder so draw calls work identically
+        auto* webBufMgr = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
+        sceneEncoder = std::make_unique<Renderer::WebGPURenderEncoder>(
+            webRenderer, scenePassEncoder, webPipeMgr, webBufMgr, webBindMgr);
+        encoder = sceneEncoder.get();
+    }
     encoder->BindPipeline(m_MainPipeline);
     encoder->SetViewport(0, 0, w, h);
     encoder->SetScissor(0, 0, static_cast<u32>(w), static_cast<u32>(h));
@@ -1134,6 +1807,41 @@ void RenderSystem::Update(f32 deltaTime) {
     // draws, using 256-byte aligned offsets. Each entity gets a dynamic offset into the shared buffer.
     {
         const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
+
+        // LOD: distance-based mesh swap with hysteresis
+        if (m_Camera) {
+            Math::Vector3 camPos = m_Camera->GetPosition();
+            auto* lodStorage = m_World->GetComponentStorage<LODComponent>();
+            if (lodStorage) {
+                for (Entity entity : meshEntities) {
+                    auto* lod = lodStorage->Get(entity);
+                    if (!lod || !lod->enabled || lod->levelCount <= 1) continue;
+                    auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
+                    if (!xf) continue;
+
+                    f32 dist = (xf->position - camPos).Length();
+                    i32 newLOD = 0;
+                    for (i32 l = 0; l < lod->levelCount - 1; l++) {
+                        f32 threshold = lod->levels[l].maxDistance;
+                        if (threshold <= 0.0f) threshold = lod->baseDistance * std::pow(lod->distanceMultiplier, static_cast<f32>(l));
+                        f32 hysteresis = threshold * lod->hysteresisRatio;
+                        f32 upgradeDist = threshold - hysteresis;
+                        f32 downgradeDist = threshold + hysteresis;
+                        if (l >= lod->activeLOD && dist > downgradeDist) newLOD = l + 1;
+                        else if (l < lod->activeLOD && dist < upgradeDist) newLOD = l;
+                    }
+                    if (newLOD != lod->activeLOD && newLOD < lod->levelCount) {
+                        auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
+                        if (mesh && !lod->levels[newLOD].mesh.vertices.empty()) {
+                            *mesh = lod->levels[newLOD].mesh;
+                            u64 eid = static_cast<u64>(entity);
+                            if (eid < m_EntityRenderData.size()) m_EntityRenderData[eid].Invalidate();
+                            lod->activeLOD = newLOD;
+                        }
+                    }
+                }
+            }
+        }
 
         // Phase 1: Collect visible entities, ensure GPU buffers, build ObjectData array
         constexpr u32 OBJ_ALIGN = 256;  // WebGPU minUniformBufferOffsetAlignment
@@ -1245,6 +1953,27 @@ void RenderSystem::Update(f32 deltaTime) {
             drawCmds.push_back({entity, offset});
         }
 
+        // Sort draw commands: opaque front-to-back (early-Z), transparent back-to-front
+        if (m_Camera) {
+            Math::Vector3 camPos = m_Camera->GetPosition();
+            std::sort(drawCmds.begin(), drawCmds.end(),
+                [this, &camPos](const DrawCmd& a, const DrawCmd& b) {
+                    auto* matA = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(a.entity) : nullptr;
+                    auto* matB = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(b.entity) : nullptr;
+                    bool transA = matA && matA->opacity < 1.0f;
+                    bool transB = matB && matB->opacity < 1.0f;
+                    // Opaque before transparent
+                    if (transA != transB) return !transA;
+                    auto* xfA = m_CachedTransformStorage ? m_CachedTransformStorage->Get(a.entity) : nullptr;
+                    auto* xfB = m_CachedTransformStorage ? m_CachedTransformStorage->Get(b.entity) : nullptr;
+                    if (!xfA || !xfB) return false;
+                    f32 distA = (xfA->position - camPos).LengthSquared();
+                    f32 distB = (xfB->position - camPos).LengthSquared();
+                    // Opaque: front-to-back (smaller dist first), Transparent: back-to-front (larger dist first)
+                    return transA ? distA > distB : distA < distB;
+                });
+        }
+
         // Phase 2: Create per-entity UBO + bind group, then draw
         auto* bindMgr = m_Renderer->GetBindGroupManager();
         for (usize i = 0; i < drawCmds.size(); i++) {
@@ -1271,13 +2000,48 @@ void RenderSystem::Update(f32 deltaTime) {
             auto perEntityBG = bindMgr->CreateBindGroup(bgd);
 
             encoder->SetBindGroup(1, perEntityBG);
-            encoder->SetBindGroup(2, rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup);
             encoder->SetVertexBuffer(0, rd.vertexBuffer);
             encoder->SetIndexBuffer(rd.indexBuffer, Renderer::GPUIndexFormat::Uint32);
-            encoder->DrawIndexed(rd.indexCount);
 
-            m_DrawCallCount++;
-            m_TriangleCount += rd.indexCount / 3;
+            // Multi-material: draw per-submesh with different textures
+            auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(cmd.entity) : nullptr;
+            auto* matSlots = m_CachedMaterialSlotsStorage ? m_CachedMaterialSlotsStorage->Get(cmd.entity) : nullptr;
+            if (matSlots && mesh && mesh->HasSubMeshes()) {
+                for (const auto& subMesh : mesh->subMeshes) {
+                    if (subMesh.indexCount == 0) continue;
+                    // Build per-submesh texture bind group from slot material
+                    auto* slotMat = (subMesh.materialSlot >= 0 && subMesh.materialSlot < static_cast<i32>(matSlots->slots.size()))
+                        ? &matSlots->slots[subMesh.materialSlot] : nullptr;
+                    Renderer::GPUBindGroupHandle subTexBG;
+                    if (slotMat) {
+                        auto bc = WebGetOrLoadTexture(slotMat->baseColorTexturePath);
+                        auto nm = WebGetOrLoadTexture(slotMat->normalTexturePath);
+                        auto mr = WebGetOrLoadTexture(slotMat->metallicRoughnessTexturePath);
+                        Renderer::GPUBindGroupDesc texBGD;
+                        texBGD.layout = m_WebTextureLayout;
+                        texBGD.entries = {
+                            {0, {}, 0, 0, bc.IsValid() ? bc : m_WebDefaultWhiteTex, {}},
+                            {1, {}, 0, 0, {}, bc.IsValid() ? bc : m_WebDefaultWhiteTex},
+                            {2, {}, 0, 0, nm.IsValid() ? nm : m_WebDefaultNormalTex, {}},
+                            {3, {}, 0, 0, {}, nm.IsValid() ? nm : m_WebDefaultNormalTex},
+                            {4, {}, 0, 0, mr.IsValid() ? mr : m_WebDefaultBlackTex, {}},
+                            {5, {}, 0, 0, {}, mr.IsValid() ? mr : m_WebDefaultBlackTex},
+                        };
+                        subTexBG = bindMgr->CreateBindGroup(texBGD);
+                    }
+                    encoder->SetBindGroup(2, subTexBG.IsValid() ? subTexBG : m_WebDefaultTexBindGroup);
+                    encoder->DrawIndexed(subMesh.indexCount, 1, subMesh.indexOffset);
+                    m_DrawCallCount++;
+                    m_TriangleCount += subMesh.indexCount / 3;
+                    if (subTexBG.IsValid()) bindMgr->DestroyBindGroup(subTexBG);
+                }
+            } else {
+                // Single-material path
+                encoder->SetBindGroup(2, rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup);
+                encoder->DrawIndexed(rd.indexCount);
+                m_DrawCallCount++;
+                m_TriangleCount += rd.indexCount / 3;
+            }
 
             // Cleanup (will be released after GPU finishes, Dawn handles this)
             bindMgr->DestroyBindGroup(perEntityBG);
@@ -1285,7 +2049,293 @@ void RenderSystem::Update(f32 deltaTime) {
         }
     }
 
-    m_Renderer->EndRenderPass(encoder);
+    // ========================================================================
+    // Grass volumes (instanced blades, opaque)
+    // ========================================================================
+    if (usePostProcess && m_WebGrassPipeline.IsValid() && scenePassEncoder) {
+        auto* webBufMgrG = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
+        const auto& grassEntities = m_World->GetEntitiesWithComponent<GrassVolumeComponent>();
+        for (Entity ge : grassEntities) {
+            auto* gv = m_World->GetComponent<GrassVolumeComponent>(ge);
+            auto* gxf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(ge) : nullptr;
+            if (!gv || !gxf || gv->density == 0) continue;
+
+            // Volume params UBO: pos(3)+bladeHeight(1) + halfExtents(3)+bladeWidth(1) + baseColor(3)+wind(1) + tipColor(3)+pad(1) = 64 bytes
+            struct GrassParams { f32 data[16]; };
+            GrassParams gp = {};
+            gp.data[0] = gxf->position.x; gp.data[1] = gxf->position.y; gp.data[2] = gxf->position.z;
+            gp.data[3] = gv->bladeHeight;
+            gp.data[4] = gv->halfExtents.x; gp.data[5] = gv->halfExtents.y; gp.data[6] = gv->halfExtents.z;
+            gp.data[7] = gv->bladeWidth;
+            gp.data[8] = gv->baseColor.x; gp.data[9] = gv->baseColor.y; gp.data[10] = gv->baseColor.z;
+            gp.data[11] = gv->windSwayStrength;
+            gp.data[12] = gv->tipColor.x; gp.data[13] = gv->tipColor.y; gp.data[14] = gv->tipColor.z;
+
+            auto gpBuf = bufMgr->CreateBufferWithData(
+                {sizeof(GrassParams), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true}, &gp);
+            Renderer::GPUBindGroupDesc bgd;
+            bgd.layout = m_WebVolumeParamsLayout;
+            bgd.entries = {{0, gpBuf, 0, sizeof(GrassParams), {}, {}}};
+            auto gpBG = webBindMgr->CreateBindGroup(bgd);
+
+            wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebGrassPipeline));
+            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
+            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 1, webBindMgr->GetNativeGroup(gpBG), 0, nullptr);
+            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 0, webBufMgrG->GetNativeBuffer(m_WebGrassBladeVB), 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrG->GetNativeBuffer(m_WebGrassBladeIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, m_WebGrassBladeIndexCount, gv->density, 0, 0, 0);
+
+            webBindMgr->DestroyBindGroup(gpBG);
+            bufMgr->DestroyBuffer(gpBuf);
+        }
+    }
+
+    // ========================================================================
+    // Tree volumes (instanced trunk+canopy, opaque)
+    // ========================================================================
+    if (usePostProcess && m_WebTreePipeline.IsValid() && scenePassEncoder) {
+        auto* webBufMgrT = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
+        const auto& treeEntities = m_World->GetEntitiesWithComponent<TreeVolumeComponent>();
+        for (Entity te : treeEntities) {
+            auto* tv = m_World->GetComponent<TreeVolumeComponent>(te);
+            auto* txf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(te) : nullptr;
+            if (!tv || !txf || tv->density == 0) continue;
+
+            struct TreeParams { f32 data[16]; };
+            TreeParams tp = {};
+            tp.data[0] = txf->position.x; tp.data[1] = txf->position.y; tp.data[2] = txf->position.z;
+            tp.data[3] = tv->trunkHeight;
+            tp.data[4] = tv->halfExtents.x; tp.data[5] = tv->halfExtents.y; tp.data[6] = tv->halfExtents.z;
+            tp.data[7] = tv->trunkWidth;
+            tp.data[8] = tv->trunkColor.x; tp.data[9] = tv->trunkColor.y; tp.data[10] = tv->trunkColor.z;
+            tp.data[11] = tv->canopyRadius;
+            tp.data[12] = tv->canopyBaseColor.x; tp.data[13] = tv->canopyBaseColor.y; tp.data[14] = tv->canopyBaseColor.z;
+            tp.data[15] = tv->canopyOffset;
+
+            auto tpBuf = bufMgr->CreateBufferWithData(
+                {sizeof(TreeParams), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true}, &tp);
+            Renderer::GPUBindGroupDesc bgd;
+            bgd.layout = m_WebVolumeParamsLayout;
+            bgd.entries = {{0, tpBuf, 0, sizeof(TreeParams), {}, {}}};
+            auto tpBG = webBindMgr->CreateBindGroup(bgd);
+
+            wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebTreePipeline));
+            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
+            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 1, webBindMgr->GetNativeGroup(tpBG), 0, nullptr);
+            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 0, webBufMgrT->GetNativeBuffer(m_WebTreeMeshVB), 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrT->GetNativeBuffer(m_WebTreeMeshIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, m_WebTreeIndexCount, tv->density, 0, 0, 0);
+
+            webBindMgr->DestroyBindGroup(tpBG);
+            bufMgr->DestroyBuffer(tpBuf);
+        }
+    }
+
+    // ========================================================================
+    // Particles (instanced billboard quads, alpha-blended)
+    // ========================================================================
+    if (usePostProcess && m_WebParticlePipeline.IsValid() && scenePassEncoder) {
+        auto* webBufMgrP = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
+        const auto& particleEntities = m_World->GetEntitiesWithComponent<ParticleEmitterComponent>();
+
+        // Collect all active particles into instance buffer
+        struct ParticleInst { f32 px, py, pz, size, alpha, r, g, b; };
+        std::vector<ParticleInst> instances;
+        instances.reserve(1024);
+
+        for (Entity pe : particleEntities) {
+            auto* emitter = m_World->GetComponent<ParticleEmitterComponent>(pe);
+            if (!emitter || emitter->pool.particles.empty()) continue;
+            for (const auto& p : emitter->pool.particles) {
+                if (p.lifetime <= 0.0f) continue;
+                f32 lifeRatio = p.lifetime / std::max(p.maxLifetime, 0.001f);
+                instances.push_back({p.position.x, p.position.y, p.position.z,
+                    p.size, p.alpha * lifeRatio, p.color.x, p.color.y, p.color.z});
+                if (instances.size() >= WEB_MAX_PARTICLES) break;
+            }
+            if (instances.size() >= WEB_MAX_PARTICLES) break;
+        }
+
+        if (!instances.empty()) {
+            auto instBuf = bufMgr->CreateBufferWithData(
+                {instances.size() * sizeof(ParticleInst), Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst, true},
+                instances.data());
+
+            wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebParticlePipeline));
+            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
+            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 0, webBufMgrP->GetNativeBuffer(m_WebParticleQuadVB), 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 1, webBufMgrP->GetNativeBuffer(instBuf), 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrP->GetNativeBuffer(m_WebParticleQuadIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, 6, static_cast<u32>(instances.size()), 0, 0, 0);
+
+            bufMgr->DestroyBuffer(instBuf);
+        }
+    }
+
+    // ========================================================================
+    // Sprites (instanced textured billboards, alpha-blended)
+    // ========================================================================
+    if (usePostProcess && m_WebSpritePipeline.IsValid() && scenePassEncoder) {
+        auto* webBufMgrS = static_cast<Renderer::WebGPUBufferManager*>(bufMgr);
+        const auto& spriteEntities = m_World->GetEntitiesWithComponent<Sprite2DComponent>();
+
+        struct SpriteInst { f32 px, py, pz, sizeX, sizeY, rotation, tintR, tintG, tintB, tintA, uvL, uvT, uvR, uvB; };
+        std::vector<SpriteInst> spriteInsts;
+        spriteInsts.reserve(spriteEntities.size());
+
+        for (Entity se : spriteEntities) {
+            auto* spr = m_World->GetComponent<Sprite2DComponent>(se);
+            auto* sxf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(se) : nullptr;
+            if (!spr || !sxf || !sxf->visible) continue;
+            f32 srcL = spr->srcX, srcT = spr->srcY;
+            f32 srcR = spr->srcWidth > 0 ? spr->srcX + spr->srcWidth : 1.0f;
+            f32 srcB = spr->srcHeight > 0 ? spr->srcY + spr->srcHeight : 1.0f;
+            spriteInsts.push_back({
+                sxf->position.x, sxf->position.y, sxf->position.z,
+                spr->size.x * sxf->scale.x, spr->size.y * sxf->scale.y,
+                0.0f,  // rotation from transform Z euler (simplified)
+                spr->tint.x, spr->tint.y, spr->tint.z, spr->alpha,
+                srcL, srcT, srcR, srcB
+            });
+        }
+
+        if (!spriteInsts.empty()) {
+            auto instBuf = bufMgr->CreateBufferWithData(
+                {spriteInsts.size() * sizeof(SpriteInst), Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst, true},
+                spriteInsts.data());
+
+            // Use default white texture for now (per-sprite texturing would need batching)
+            Renderer::GPUBindGroupDesc sprTexBGD;
+            sprTexBGD.layout = m_WebSpriteTexLayout;
+            sprTexBGD.entries = {
+                {0, {}, 0, 0, m_WebDefaultWhiteTex, {}},
+                {1, {}, 0, 0, {}, m_WebDefaultWhiteTex},
+            };
+            auto sprTexBG = webBindMgr->CreateBindGroup(sprTexBGD);
+
+            wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebSpritePipeline));
+            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
+            wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 1, webBindMgr->GetNativeGroup(sprTexBG), 0, nullptr);
+            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 0, webBufMgrS->GetNativeBuffer(m_WebParticleQuadVB), 0, WGPU_WHOLE_SIZE);  // Reuse quad
+            wgpuRenderPassEncoderSetVertexBuffer(scenePassEncoder, 1, webBufMgrS->GetNativeBuffer(instBuf), 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderSetIndexBuffer(scenePassEncoder, webBufMgrS->GetNativeBuffer(m_WebParticleQuadIB), WGPUIndexFormat_Uint32, 0, WGPU_WHOLE_SIZE);
+            wgpuRenderPassEncoderDrawIndexed(scenePassEncoder, 6, static_cast<u32>(spriteInsts.size()), 0, 0, 0);
+
+            webBindMgr->DestroyBindGroup(sprTexBG);
+            bufMgr->DestroyBuffer(instBuf);
+        }
+    }
+
+    // Draw procedural sky (after scene, before ending pass)
+    if (usePostProcess && m_WebSkyPipeline.IsValid() && scenePassEncoder) {
+        wgpuRenderPassEncoderSetPipeline(scenePassEncoder, webPipeMgr->GetNativePipeline(m_WebSkyPipeline));
+        wgpuRenderPassEncoderSetBindGroup(scenePassEncoder, 0, webBindMgr->GetNativeGroup(m_WebFrameBindGroup), 0, nullptr);
+        wgpuRenderPassEncoderDraw(scenePassEncoder, 3, 1, 0, 0);  // Fullscreen triangle at z=1
+    }
+
+    // End scene render pass
+    if (usePostProcess) {
+        // End offscreen scene pass
+        sceneEncoder.reset();  // Release encoder wrapper
+        wgpuRenderPassEncoderEnd(scenePassEncoder);
+        wgpuRenderPassEncoderRelease(scenePassEncoder);
+
+        // Bloom chain (between scene and final tonemap)
+        if (m_WebBloomThresholdPipeline.IsValid()) {
+            auto bloomPass = [&](WGPUTextureView target, u32 tw, u32 th, WGPURenderPipeline pipe, WGPUBindGroup bg) {
+                WGPURenderPassColorAttachment att = {};
+                att.view = target;
+                att.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+                att.loadOp = WGPULoadOp_Clear;
+                att.storeOp = WGPUStoreOp_Store;
+                att.clearValue = {0, 0, 0, 1};
+                WGPURenderPassDescriptor pd = {};
+                pd.colorAttachmentCount = 1;
+                pd.colorAttachments = &att;
+                WGPURenderPassEncoder rp = wgpuCommandEncoderBeginRenderPass(webRenderer->GetCommandEncoder(), &pd);
+                if (rp) {
+                    wgpuRenderPassEncoderSetPipeline(rp, pipe);
+                    wgpuRenderPassEncoderSetViewport(rp, 0, 0, static_cast<f32>(tw), static_cast<f32>(th), 0.0f, 1.0f);
+                    wgpuRenderPassEncoderSetBindGroup(rp, 0, bg, 0, nullptr);
+                    wgpuRenderPassEncoderDraw(rp, 3, 1, 0, 0);
+                    wgpuRenderPassEncoderEnd(rp);
+                    wgpuRenderPassEncoderRelease(rp);
+                }
+            };
+
+            auto* webTexMgrR = static_cast<Renderer::WebGPUTextureManager*>(m_Renderer->GetTextureManager());
+            // Step 1: Threshold extract → bloom[0]
+            {
+                auto* bt = webTexMgrR->GetNativeTexture(m_WebBloomTex[0]);
+                bloomPass(static_cast<WGPUTextureView>(m_WebBloomView[0]), bt->width, bt->height,
+                    webPipeMgr->GetNativePipeline(m_WebBloomThresholdPipeline),
+                    webBindMgr->GetNativeGroup(m_WebBloomThresholdBG));
+            }
+            // Step 2: Downsample chain bloom[i] → bloom[i+1]
+            for (u32 i = 1; i < WEB_BLOOM_LEVELS; i++) {
+                auto* bt = webTexMgrR->GetNativeTexture(m_WebBloomTex[i]);
+                bloomPass(static_cast<WGPUTextureView>(m_WebBloomView[i]), bt->width, bt->height,
+                    webPipeMgr->GetNativePipeline(m_WebBloomDownPipeline),
+                    webBindMgr->GetNativeGroup(m_WebBloomDownBG[i - 1]));
+            }
+            // Step 3: Upsample chain bloom[i+1] → bloom[i] (additive blend via shader)
+            for (i32 i = static_cast<i32>(WEB_BLOOM_LEVELS) - 2; i >= 0; i--) {
+                auto* bt = webTexMgrR->GetNativeTexture(m_WebBloomTex[i]);
+                // Upsample from bloom[i+1], writing to bloom[i] (loadOp=Load to keep existing + add)
+                WGPURenderPassColorAttachment att = {};
+                att.view = static_cast<WGPUTextureView>(m_WebBloomView[i]);
+                att.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+                att.loadOp = WGPULoadOp_Load;  // Keep downsample result, add upsample on top
+                att.storeOp = WGPUStoreOp_Store;
+                WGPURenderPassDescriptor pd = {};
+                pd.colorAttachmentCount = 1;
+                pd.colorAttachments = &att;
+                WGPURenderPassEncoder rp = wgpuCommandEncoderBeginRenderPass(webRenderer->GetCommandEncoder(), &pd);
+                if (rp) {
+                    wgpuRenderPassEncoderSetPipeline(rp, webPipeMgr->GetNativePipeline(m_WebBloomUpPipeline));
+                    wgpuRenderPassEncoderSetViewport(rp, 0, 0, static_cast<f32>(bt->width), static_cast<f32>(bt->height), 0.0f, 1.0f);
+                    wgpuRenderPassEncoderSetBindGroup(rp, 0, webBindMgr->GetNativeGroup(m_WebBloomUpBG[i + 1]), 0, nullptr);
+                    wgpuRenderPassEncoderDraw(rp, 3, 1, 0, 0);
+                    wgpuRenderPassEncoderEnd(rp);
+                    wgpuRenderPassEncoderRelease(rp);
+                }
+            }
+            // Step 4: Composite scene + bloom[0] → scratch texture
+            {
+                bloomPass(static_cast<WGPUTextureView>(m_WebBloomScratchView),
+                    static_cast<u32>(w), static_cast<u32>(h),
+                    webPipeMgr->GetNativePipeline(m_WebBloomCompositePipeline),
+                    webBindMgr->GetNativeGroup(m_WebBloomCompositeBG));
+            }
+            // The post-process will read from the scratch texture (scene + bloom composited)
+            // We use m_WebPostProcessBG which was set up to read scratch at init time.
+        }
+
+        // Post-process pass: fullscreen triangle ACES tonemap to swapchain
+        WGPURenderPassColorAttachment ppColorAtt = {};
+        ppColorAtt.view = webRenderer->GetSwapChainView();
+        ppColorAtt.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+        ppColorAtt.loadOp = WGPULoadOp_Clear;
+        ppColorAtt.storeOp = WGPUStoreOp_Store;
+        ppColorAtt.clearValue = {0.0, 0.0, 0.0, 1.0};
+
+        WGPURenderPassDescriptor ppPassDesc = {};
+        ppPassDesc.colorAttachmentCount = 1;
+        ppPassDesc.colorAttachments = &ppColorAtt;
+        ppPassDesc.depthStencilAttachment = nullptr;  // No depth for fullscreen triangle
+        WGPURenderPassEncoder ppPass = wgpuCommandEncoderBeginRenderPass(
+            webRenderer->GetCommandEncoder(), &ppPassDesc);
+        if (ppPass) {
+            wgpuRenderPassEncoderSetPipeline(ppPass, webPipeMgr->GetNativePipeline(m_WebPostProcessPipeline));
+            wgpuRenderPassEncoderSetViewport(ppPass, 0, 0, w, h, 0.0f, 1.0f);
+            wgpuRenderPassEncoderSetBindGroup(ppPass, 0, webBindMgr->GetNativeGroup(m_WebPostProcessBG), 0, nullptr);
+            wgpuRenderPassEncoderDraw(ppPass, 3, 1, 0, 0);  // Fullscreen triangle
+            wgpuRenderPassEncoderEnd(ppPass);
+            wgpuRenderPassEncoderRelease(ppPass);
+        }
+    } else {
+        m_Renderer->EndRenderPass(encoder);
+    }
 }
 
 void RenderSystem::OnEntityAdded(Entity entity) {
@@ -1341,6 +2391,7 @@ void RenderSystem::RefreshStorageCache() {
     m_CachedTransformStorage = m_World->GetComponentStorage<TransformComponent>();
     m_CachedMeshStorage = m_World->GetComponentStorage<MeshComponent>();
     m_CachedMaterialStorage = m_World->GetComponentStorage<MaterialComponent>();
+    m_CachedMaterialSlotsStorage = m_World->GetComponentStorage<MaterialSlotsComponent>();
 
     // Rebuild light entity list if dirty
     if (m_LightListDirty) {
@@ -1368,7 +2419,7 @@ void RenderSystem::RenderFluid(u32, u32) {}
 void RenderSystem::RenderGrass(u32, u32) {}
 void RenderSystem::RenderShrubs(u32, u32) {}
 void RenderSystem::RenderTrees(u32, u32) {}
-u32 RenderSystem::GetMaxMSAASamples() const { return 1; }
+u32 RenderSystem::GetMaxMSAASamples() const { return 4; }
 void RenderSystem::SetAAMode(u32 mode) { m_AAMode = mode; }
 void RenderSystem::SetUpscalerType(u32 type) { m_UpscalerType = type; }
 void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality; }

@@ -52,7 +52,7 @@ struct SceneRenderSettings {
     bool hdrOutput = false;        // Enable HDR swapchain output
 
     // Tone mapping
-    u32 toneMappingMode = 0;
+    u32 toneMappingMode = 3;  // Default to ACES (0=None, 1=Reinhard, 2=ReinhardExt, 3=ACES)
     f32 exposure = 1.0f;
     f32 gamma = 1.0f;
     f32 whitePoint = 4.0f;

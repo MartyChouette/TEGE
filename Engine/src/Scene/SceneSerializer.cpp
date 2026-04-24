@@ -1147,6 +1147,8 @@ Renderer::PostProcessSettings DeserializePPSettings(const json& j) {
 
     // R4 fix: Clamp enum fields to valid ranges
     s.toneMappingMode = std::min(GU("toneMappingMode"), 5u); // 0-5 (None..AgX)
+    // Migration: scenes saved with None (0) → ACES (3). None was an unintentional default.
+    if (s.toneMappingMode == 0) s.toneMappingMode = 3;
     s.exposure = GF("exposure", 1.0f);
     s.gamma = GF("gamma", 1.0f);
     s.whitePoint = GF("whitePoint", 4.0f);

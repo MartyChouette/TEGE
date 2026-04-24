@@ -1584,6 +1584,36 @@ void EditorLayer::DrawBuildDialog() {
             "Requires Emscripten SDK (emsdk) to be installed.");
     }
 
+    // Web platform limitations panel
+    if (m_BuildConfig.target == Build::BuildTargetPlatform::Web) {
+        ImGui::Spacing();
+        ImVec4 warnColor(1.0f, 0.85f, 0.3f, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Text, warnColor);
+        if (ImGui::TreeNodeEx("WebGPU Limitations", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::PopStyleColor();
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
+
+            ImGui::BulletText("Shadows: 1 directional cascade (vs 4 on desktop)");
+            ImGui::BulletText("Lights: max 4 dir + 4 point + 4 spot (vs 64+32 desktop)");
+            ImGui::BulletText("Ray tracing: Not available");
+            ImGui::BulletText("DLSS / XeSS: Not available (FXAA + MSAA 4x only)");
+            ImGui::BulletText("Particles / Terrain / Water: Not yet implemented");
+            ImGui::BulletText("UI Canvas rendering: Not yet implemented");
+            ImGui::BulletText("Multi-material (per-submesh): Not yet supported");
+            ImGui::BulletText("LOD / Instancing: Not yet supported");
+
+            ImGui::Spacing();
+            ImGui::TextWrapped("Supported: PBR lighting, shadows (dir+spot+point), "
+                "skeletal animation, physics (Jolt+Box2D), audio, scripting, "
+                "ACES tonemapping, bloom, MSAA 4x, FXAA, fog, procedural sky.");
+
+            ImGui::PopStyleColor();
+            ImGui::TreePop();
+        } else {
+            ImGui::PopStyleColor();
+        }
+    }
+
     // Packaging mode
     ImGui::Spacing();
     const char* packagingLabels[] = { "Packed", "Packed (Moddable)", "Loose Files" };
@@ -2086,6 +2116,18 @@ void EditorLayer::DrawHTML5ExportDialog() {
     ImGui::SameLine();
     ImGui::Checkbox("Create .zip", &m_HTML5Config.zipOutput);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Package output as .zip for upload to itch.io, Newgrounds, etc.");
+
+    // Favicon
+    ImGui::Text("Favicon: %s", m_HTML5Config.faviconPath.empty() ? "(none)" : m_HTML5Config.faviconPath.c_str());
+    ImGui::SameLine();
+    if (ImGui::Button("Browse##Favicon")) {
+        std::vector<FileFilter> filters = {
+            { "Icons", "*.ico;*.png;*.svg" },
+            { "All Files", "*.*" }
+        };
+        std::string path = FileDialog::OpenFile("Select Favicon", filters);
+        if (!path.empty()) m_HTML5Config.faviconPath = path;
+    }
 
     // Splash image
     ImGui::Text("Splash Image: %s", m_HTML5Config.splashImagePath.empty() ? "(none)" : m_HTML5Config.splashImagePath.c_str());
