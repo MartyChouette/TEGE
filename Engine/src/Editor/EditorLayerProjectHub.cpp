@@ -4361,6 +4361,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             plc.intensity = 2.0f;
             plc.range = 15.0f;
             plc.color = Math::Vector3(1.0f, 0.9f, 0.8f);
+            plc.castShadows = true;
         }
 
         // Ramp
