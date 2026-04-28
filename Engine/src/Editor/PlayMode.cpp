@@ -758,6 +758,14 @@ void PlayMode::SaveEditorState() {
     m_SavedCameraRot = m_Camera->GetRotation();
     m_SavedCameraFov = m_Camera->GetFOV();
 
+    // Capture full scene JSON for restoring destroyed entities on Stop.
+    // The lightweight snapshot above handles transforms, but can't recreate
+    // entities that were destroyed during play (e.g. collected coins).
+    {
+        Scene::SceneSerializer serializer(m_World);
+        m_PrePlaySceneJson = serializer.SaveToString();
+    }
+
     ENJIN_LOG_DEBUG(Editor, "Saved editor state (%zu entities snapshotted)", m_SavedEntityState.size());
 }
 
@@ -771,21 +779,41 @@ void PlayMode::RestoreEditorState() {
     // data (mesh, skeleton, animator) is left untouched, which both avoids the
     // multi-megabyte JSON roundtrip AND prevents the use-after-free that came
     // from re-adding AnimatorComponent on reloaded skinned entities.
-    usize restored = 0;
+    // Check if any entities were destroyed during play
+    bool anyDestroyed = false;
     for (const auto& [eid, snap] : m_SavedEntityState) {
-        ECS::Entity entity = static_cast<ECS::Entity>(eid);
-        if (!m_World->IsValid(entity)) continue;
-        if (snap.hadTransform) {
-            if (auto* t = m_World->GetComponent<ECS::TransformComponent>(entity)) {
-                t->position = snap.position;
-                t->rotation = snap.rotation;
-                t->scale = snap.scale;
-                t->visible = snap.visible;
-                ++restored;
-            }
+        if (!m_World->IsValid(static_cast<ECS::Entity>(eid))) {
+            anyDestroyed = true;
+            break;
         }
     }
-    ENJIN_LOG_INFO(Editor, "Restored editor state (%zu entities)", restored);
+
+    if (anyDestroyed && !m_PrePlaySceneJson.empty()) {
+        // Full restore: reload the pre-play scene to recover destroyed entities.
+        // Clear and reload from saved JSON.
+        m_World->Clear();
+        Scene::SceneSerializer serializer(m_World);
+        serializer.LoadFromString(m_PrePlaySceneJson);
+        ENJIN_LOG_INFO(Editor, "Restored editor state (full reload — entities were destroyed during play)");
+    } else {
+        // Lightweight restore: just reset transforms (no entities destroyed)
+        usize restored = 0;
+        for (const auto& [eid, snap] : m_SavedEntityState) {
+            ECS::Entity entity = static_cast<ECS::Entity>(eid);
+            if (!m_World->IsValid(entity)) continue;
+            if (snap.hadTransform) {
+                if (auto* t = m_World->GetComponent<ECS::TransformComponent>(entity)) {
+                    t->position = snap.position;
+                    t->rotation = snap.rotation;
+                    t->scale = snap.scale;
+                    t->visible = snap.visible;
+                    ++restored;
+                }
+            }
+        }
+        ENJIN_LOG_INFO(Editor, "Restored editor state (%zu entities, lightweight)", restored);
+    }
+    m_PrePlaySceneJson.clear();  // Free memory
 
     // Restore camera state
     m_Camera->SetPosition(m_SavedCameraPos);

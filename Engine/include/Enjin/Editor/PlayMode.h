@@ -282,6 +282,7 @@ private:
         bool hadTransform = false;
     };
     std::unordered_map<u64, EntitySnapshot> m_SavedEntityState;
+    std::string m_PrePlaySceneJson;  // Full scene JSON for restoring destroyed entities
     Math::Vector3 m_SavedCameraPos;
     Math::Quaternion m_SavedCameraRot;
     f32 m_SavedCameraFov = 45.0f;

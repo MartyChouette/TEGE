@@ -1358,8 +1358,14 @@ void RenderSystem::Update(f32 deltaTime) {
                 if (lcc->type == LightType::Point && pointShadowCount < WEB_MAX_POINT_SHADOWS) pointShadowCount++;
             }
         }
-        if (dirCount > 0) {
-            lit.shadowParams = {1.0f, static_cast<f32>(spotShadowCount), static_cast<f32>(pointShadowCount), 0.0f};
+        lit.shadowParams = {1.0f, static_cast<f32>(spotShadowCount), static_cast<f32>(pointShadowCount), 0.0f};
+
+        static int s_ShadowLog = 0;
+        if (s_ShadowLog++ < 5) {
+            EM_ASM({
+                console.log('[SHADOW] dirCount=' + $0 + ' spotShadow=' + $1 + ' pointShadow=' + $2 +
+                    ' strength=' + $3.toFixed(2));
+            }, dirCount, spotShadowCount, pointShadowCount, lit.shadowParams.x);
         }
 
         bufMgr->UploadData(m_WebLightingBuffer, &lit, sizeof(lit));
@@ -1651,6 +1657,13 @@ void RenderSystem::Update(f32 deltaTime) {
     // Point light shadow passes
     // ========================================================================
     u32 activePointShadows = 0;
+    static int s_PtLog = 0;
+    if (s_PtLog < 3) {
+        EM_ASM({
+            console.log('[PT_SHADOW] pipeline=' + $0 + ' camera=' + $1 + ' faceViews=' + $2);
+        }, m_WebShadowPipeline.IsValid() ? 1 : 0, m_Camera ? 1 : 0, m_WebPointShadowFaceViews[0] ? 1 : 0);
+        s_PtLog++;
+    }
     if (m_WebShadowPipeline.IsValid() && m_Camera && m_WebPointShadowFaceViews[0]) {
         auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
         auto* pipeMgr3 = static_cast<Renderer::WebGPUPipelineManager*>(m_Renderer->GetPipelineManager());
