@@ -1,4 +1,5 @@
 #include "Enjin/Memory/Memory.h"
+#include "Enjin/Logging/Log.h"
 #include <cstring>
 #include <cassert>
 #include <cstdlib>
@@ -34,11 +35,13 @@ void Deallocate(void* ptr) {
     }
 }
 
-void* Reallocate(void* ptr, usize newSize, usize alignment) {
+void* Reallocate(void* ptr, usize oldSize, usize newSize, usize alignment) {
     void* newPtr = Allocate(newSize, alignment);
+    if (!newPtr) return nullptr;
     if (ptr) {
-        // Note: This is a simplified realloc - proper implementation would track size
-        MemoryCopy(newPtr, ptr, newSize);
+        // CF-C1 fix: copy only the smaller of old/new size to prevent buffer overread
+        usize copySize = oldSize < newSize ? oldSize : newSize;
+        MemoryCopy(newPtr, ptr, copySize);
         Deallocate(ptr);
     }
     return newPtr;
@@ -158,7 +161,22 @@ void* PoolAllocator::Allocate(usize size, usize alignment) {
 
 void PoolAllocator::Deallocate(void* ptr) {
     if (!ptr) return;
-    
+
+    // CF-C2 fix: validate pointer belongs to this pool's memory range
+    u8* bytePtr = static_cast<u8*>(ptr);
+    u8* poolEnd = m_Memory + m_ObjectSize * m_ObjectCount;
+    if (bytePtr < m_Memory || bytePtr >= poolEnd) {
+        ENJIN_LOG_ERROR(Core, "PoolAllocator::Deallocate: pointer %p outside pool range [%p, %p)",
+                        ptr, static_cast<void*>(m_Memory), static_cast<void*>(poolEnd));
+        return;
+    }
+    usize offset = static_cast<usize>(bytePtr - m_Memory);
+    if (offset % m_ObjectSize != 0) {
+        ENJIN_LOG_ERROR(Core, "PoolAllocator::Deallocate: pointer %p misaligned (objectSize=%zu)",
+                        ptr, m_ObjectSize);
+        return;
+    }
+
     FreeBlock* block = static_cast<FreeBlock*>(ptr);
     block->next = m_FreeList;
     m_FreeList = block;
@@ -224,11 +242,15 @@ void LinearAllocator::Reset() {
 
 // Global new/delete operators
 void* operator new(std::size_t size) {
-    return Enjin::Allocate(size);
+    void* ptr = Enjin::Allocate(size);
+    if (!ptr) throw std::bad_alloc();
+    return ptr;
 }
 
 void* operator new[](std::size_t size) {
-    return Enjin::Allocate(size);
+    void* ptr = Enjin::Allocate(size);
+    if (!ptr) throw std::bad_alloc();
+    return ptr;
 }
 
 void operator delete(void* ptr) noexcept {

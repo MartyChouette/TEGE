@@ -1109,13 +1109,19 @@ void JoltBackend::DestroyJointForEntity(ECS::Entity entity) {
     auto it = m_EntityToConstraint.find(entity);
     if (it == m_EntityToConstraint.end()) return;
 
-    m_PhysicsSystem->RemoveConstraint(it->second);
+    // PH-C3 fix: validate constraint pointer before removal to prevent
+    // dangling dereference if constraint was already removed externally.
+    if (it->second != nullptr) {
+        m_PhysicsSystem->RemoveConstraint(it->second);
+    }
     m_EntityToConstraint.erase(it);
 
     // PH-H8 fix: also remove any secondary cone constraint for ball-socket joints
     auto coneIt = m_EntityToConeConstraint.find(entity);
     if (coneIt != m_EntityToConeConstraint.end()) {
-        m_PhysicsSystem->RemoveConstraint(coneIt->second);
+        if (coneIt->second != nullptr) {
+            m_PhysicsSystem->RemoveConstraint(coneIt->second);
+        }
         m_EntityToConeConstraint.erase(coneIt);
     }
 }

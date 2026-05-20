@@ -171,6 +171,11 @@ struct ENJIN_API Matrix4 {
     }
 
     static Matrix4 Perspective(f32 fov, f32 aspect, f32 nearPlane, f32 farPlane) {
+        // CF-C3 fix: guard against division by zero from degenerate parameters
+        if (fov <= 0.0f || fov >= PI) return Identity();
+        if (aspect <= 0.0f) return Identity();
+        if (nearPlane <= 0.0f || farPlane <= nearPlane) return Identity();
+
         f32 tanHalfFov = Tan(fov * 0.5f);
         f32 range = farPlane - nearPlane;
 
@@ -186,6 +191,9 @@ struct ENJIN_API Matrix4 {
     }
 
     static constexpr Matrix4 Orthographic(f32 left, f32 right, f32 bottom, f32 top, f32 nearPlane, f32 farPlane) {
+        // CF-C3 fix: guard against division by zero from degenerate parameters
+        if (right <= left || top <= bottom || farPlane <= nearPlane) return Identity();
+
         Matrix4 result = Identity();
         result.m[0] = 2.0f / (right - left);
         result.m[5] = -2.0f / (top - bottom);  // Negated for Vulkan (clip Y points down)

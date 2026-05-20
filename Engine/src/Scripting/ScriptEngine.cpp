@@ -14,6 +14,7 @@
 #include <scripthandle/scripthandle.h>
 
 #include <algorithm>
+#include <atomic>
 #include <fstream>
 #include <sstream>
 #include <cassert>
@@ -415,11 +416,12 @@ void ScriptEngine::ReleaseInstance(asIScriptObject* obj)
 
 // Execution timeout callback — aborts scripts that exceed the instruction limit.
 // The instruction counter is stored in the context's user data pointer.
+// ED-C3 fix: use std::atomic to prevent race condition when multiple contexts run concurrently.
 void ScriptEngine::LineCallback(asIScriptContext* ctx, void* param)
 {
-    u32* counter = reinterpret_cast<u32*>(param);
-    (*counter)++;
-    if (*counter > MAX_INSTRUCTIONS) {
+    std::atomic<u32>* counter = reinterpret_cast<std::atomic<u32>*>(param);
+    u32 count = counter->fetch_add(1, std::memory_order_relaxed) + 1;
+    if (count > MAX_INSTRUCTIONS) {
         ENJIN_LOG_ERROR(Script, "Script exceeded instruction limit (%u) — aborting", MAX_INSTRUCTIONS);
         ctx->Abort();
     }
@@ -444,8 +446,8 @@ asIScriptContext* ScriptEngine::AcquireContext()
         }
     }
 
-    // Allocate per-context instruction counter and install timeout callback
-    u32* counter = new u32(0);
+    // ED-C3 fix: allocate atomic instruction counter for thread-safe timeout enforcement
+    auto* counter = new std::atomic<u32>(0);
     ctx->SetUserData(counter, 0);
     int cbResult = ctx->SetLineCallback(asFUNCTION(ScriptEngine::LineCallback), counter, asCALL_CDECL);
     if (cbResult < 0) {
@@ -465,8 +467,8 @@ void ScriptEngine::ReturnContext(asIScriptContext* ctx)
         return;
     }
 
-    // Free the per-context instruction counter
-    u32* counter = reinterpret_cast<u32*>(ctx->GetUserData(0));
+    // Free the per-context instruction counter (atomic)
+    auto* counter = reinterpret_cast<std::atomic<u32>*>(ctx->GetUserData(0));
     delete counter;
     ctx->SetUserData(nullptr, 0);
     ctx->ClearLineCallback();

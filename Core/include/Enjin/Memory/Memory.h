@@ -17,7 +17,7 @@ constexpr usize CACHE_LINE_SIZE = 64;
 // Memory allocation functions
 ENJIN_API void* Allocate(usize size, usize alignment = DEFAULT_ALIGNMENT);
 ENJIN_API void  Deallocate(void* ptr);
-ENJIN_API void* Reallocate(void* ptr, usize newSize, usize alignment = DEFAULT_ALIGNMENT);
+ENJIN_API void* Reallocate(void* ptr, usize oldSize, usize newSize, usize alignment = DEFAULT_ALIGNMENT);
 
 // Memory utilities
 ENJIN_API usize GetAlignmentOffset(void* ptr, usize alignment);

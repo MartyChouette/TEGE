@@ -337,7 +337,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let toLight = lightPos - in.world_pos;
         let dist = length(toLight);
         let range = lighting.lightParams[idx].x;
-        if (dist > range) { continue; }
+        // WG-C1 fix: use step() instead of continue to maintain uniform control flow.
+        // inRange is 1.0 when dist <= range, 0.0 otherwise — zeroes out contribution.
+        let inRange = step(dist, range);
 
         let L = normalize(toLight);
         let H = normalize(V + L);
@@ -349,7 +351,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let distAtt = 1.0 / (constAtt + linAtt * dist + quadAtt * dist * dist);
         // Smooth range falloff (avoids hard circle edge)
         let rangeFade = 1.0 - smoothstep(range * 0.75, range, dist);
-        let attenuation = distAtt * rangeFade;
+        let attenuation = distAtt * rangeFade * inRange;
 
         let radiance = lighting.lightColor[idx].rgb * lighting.lightColor[idx].w * attenuation;
 
@@ -376,7 +378,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let range = lighting.spotPos[i].w;
         let toLight = lightPos - in.world_pos;
         let dist = length(toLight);
-        if (dist > range) { continue; }
+        // WG-C1 fix: use step() instead of continue to maintain uniform control flow
+        let spotInRange = step(dist, range);
 
         let L = normalize(toLight);
         let H = normalize(V + L);
@@ -392,7 +395,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         // Distance attenuation
         let linAtt = lighting.spotParams[i].z;
         let quadAtt = lighting.spotParams[i].w;
-        let attenuation = spotFactor / (1.0 + linAtt * dist + quadAtt * dist * dist);
+        let attenuation = spotFactor / (1.0 + linAtt * dist + quadAtt * dist * dist) * spotInRange;
 
         let radiance = lighting.spotColor[i].rgb * lighting.spotColor[i].w * attenuation;
 

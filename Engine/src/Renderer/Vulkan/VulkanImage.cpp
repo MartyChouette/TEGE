@@ -176,8 +176,14 @@ bool VulkanImage::CreateFromData(
         return false;
     }
     
-    vkBindBufferMemory(m_Context->GetDevice(), stagingBuffer, stagingBufferMemory, 0);
-    
+    // VK-C1 fix: check vkBindBufferMemory result to prevent use of unbound buffer
+    if (vkBindBufferMemory(m_Context->GetDevice(), stagingBuffer, stagingBufferMemory, 0) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to bind staging buffer memory");
+        vkFreeMemory(m_Context->GetDevice(), stagingBufferMemory, nullptr);
+        vkDestroyBuffer(m_Context->GetDevice(), stagingBuffer, nullptr);
+        return false;
+    }
+
     void* mapped = nullptr;
     if (vkMapMemory(m_Context->GetDevice(), stagingBufferMemory, 0, imageSize, 0, &mapped) != VK_SUCCESS || !mapped) {
         ENJIN_LOG_ERROR(Renderer, "Failed to map staging buffer memory");
@@ -308,7 +314,14 @@ bool VulkanImage::CreateFromData(
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &cmd;
-        vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+        // VK-C3 fix: check vkQueueSubmit result to prevent use of failed transfer
+        if (vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to submit image upload command buffer");
+            vkDestroyCommandPool(m_Context->GetDevice(), tempPool, nullptr);
+            vkFreeMemory(m_Context->GetDevice(), stagingBufferMemory, nullptr);
+            vkDestroyBuffer(m_Context->GetDevice(), stagingBuffer, nullptr);
+            return false;
+        }
         vkQueueWaitIdle(m_Context->GetGraphicsQueue());
 
         vkDestroyCommandPool(m_Context->GetDevice(), tempPool, nullptr);
