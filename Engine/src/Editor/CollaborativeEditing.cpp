@@ -129,6 +129,7 @@ bool CollaborativeEditingSystem::HostSession(u16 port, const std::string& userNa
 
     m_UserName = userName;
     m_LocalPeerId = 0; // Host is always peer 0
+    m_CRDTDoc.SetLocalSiteId(0);
     m_State = CollabSessionState::Hosting;
     m_LamportClock = 0;
     m_LocalSequence = 0;
@@ -329,6 +330,9 @@ EditOperation CollaborativeEditingSystem::MakeOperation(EditOpType type, ECS::En
     op.authorName = m_UserName;
     op.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::system_clock::now().time_since_epoch()).count() / 1000.0;
+    // CRDT: record local op stamps the vector clock and updates CRDT state
+    m_CRDTDoc.RecordLocalOp(op);
+    op.lamportClock = op.vclock.MaxComponent();  // Backward compat
     return op;
 }
 
@@ -369,7 +373,7 @@ void CollaborativeEditingSystem::FlushPendingTransforms() {
 // ============================================================================
 
 void CollaborativeEditingSystem::ProcessRemoteOperation(const EditOperation& op) {
-    // Update Lamport clock
+    // Update Lamport clock (legacy)
     m_LamportClock = std::max(m_LamportClock, op.lamportClock) + 1;
 
     // Log the operation
@@ -378,42 +382,16 @@ void CollaborativeEditingSystem::ProcessRemoteOperation(const EditOperation& op)
         m_OperationLog.pop_front();
     }
 
-    // Check for conflicts with recent local edits
-    auto localIt = m_RecentLocalEdits.find(op.entityId);
-    if (localIt != m_RecentLocalEdits.end()) {
-        if (DetectConflict(localIt->second, op)) {
-            // Conflict detected
-            if (m_ConflictStrategy == ConflictStrategy::LastWriterWins) {
-                // Higher lamport clock wins
-                if (op.lamportClock > localIt->second.lamportClock) {
-                    // Remote wins — apply it
-                    if (m_OnRemoteEdit) m_OnRemoteEdit(op);
-                }
-                // Otherwise local wins — ignore remote
-            } else if (m_ConflictStrategy == ConflictStrategy::HostAuthority) {
-                // If we're host, local wins. If we're client, remote wins.
-                if (!IsHost()) {
-                    if (m_OnRemoteEdit) m_OnRemoteEdit(op);
-                }
-            } else if (m_ConflictStrategy == ConflictStrategy::Merge) {
-                // For transforms, merge by averaging. For others, last-writer-wins.
-                EditOperation resolved = ResolveConflictInternal(localIt->second, op);
-                if (m_OnRemoteEdit) m_OnRemoteEdit(resolved);
-            } else {
-                // Show conflict to user
-                ConflictInfo conflict;
-                conflict.localOp = localIt->second;
-                conflict.remoteOp = op;
-                m_UnresolvedConflicts.push_back(conflict);
-            }
-            return;
-        }
-    }
+    // CRDT merge — the document decides if the remote op changes local state.
+    // No manual conflict resolution needed; LWW registers auto-converge.
+    bool shouldApply = m_CRDTDoc.ApplyRemoteOp(op);
 
-    // No conflict — apply directly
-    if (m_OnRemoteEdit) {
+    if (shouldApply && m_OnRemoteEdit) {
         m_OnRemoteEdit(op);
     }
+
+    // Legacy: still track recent local edits for the conflict info log (informational only)
+    // but don't block operations based on it anymore.
 }
 
 bool CollaborativeEditingSystem::DetectConflict(const EditOperation& local, const EditOperation& remote) {
@@ -710,6 +688,7 @@ void CollaborativeEditingSystem::HandleSyncResponse(u8 /*senderId*/, const u8* d
     // Apply buffered operations that arrived during sync
     m_State = CollabSessionState::Connected;
     m_LocalPeerId = m_Network->GetLocalPlayerId();
+    m_CRDTDoc.SetLocalSiteId(m_LocalPeerId);
 
     for (const auto& op : m_PendingRemoteOps) {
         ProcessRemoteOperation(op);

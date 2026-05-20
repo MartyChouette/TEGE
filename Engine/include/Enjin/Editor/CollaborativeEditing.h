@@ -5,6 +5,8 @@
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Math/Quaternion.h"
+#include "Enjin/Editor/VectorClock.h"
+#include "Enjin/Editor/CRDTState.h"
 #include <string>
 #include <vector>
 #include <deque>
@@ -55,10 +57,15 @@ struct EditOperation {
 
     // Metadata
     u64 sequenceId = 0;             // Globally ordered operation ID
-    u64 lamportClock = 0;           // Lamport logical clock (causality ordering)
-    u8 authorId = 0;                // PlayerId who authored this operation
+    u64 lamportClock = 0;           // Legacy Lamport clock (kept for backward compat)
+    u8 authorId = 0;                // PlayerId / siteId who authored this operation
     std::string authorName;          // Human-readable author name
     f64 timestamp = 0.0;            // Unix timestamp
+
+    // CRDT vector clock — replaces lamportClock for causality ordering.
+    // Both are serialized; lamportClock is set from vclock.MaxComponent() for
+    // backward compat with older peers.
+    VectorClock vclock;
 };
 
 // ============================================================================
@@ -260,9 +267,12 @@ private:
     std::string m_UserName;
     u8 m_LocalPeerId = 0;
 
-    // Lamport clock
-    u64 m_LamportClock = 0;
+    // Causality tracking
+    u64 m_LamportClock = 0;        // Legacy, kept for backward compat
     u64 m_LocalSequence = 0;
+
+    // CRDT document — source of truth for conflict-free merging
+    CRDTDocument m_CRDTDoc;
 
     // Peers
     std::vector<CollabPeer> m_Peers;
