@@ -9,9 +9,11 @@
 #include "Enjin/Editor/CRDTState.h"
 #include "Enjin/Editor/CollabPermissions.h"
 #include "Enjin/Editor/CollabOfflineLog.h"
+#include "Enjin/Editor/ICollabAuthority.h"
 #include <string>
 #include <vector>
 #include <deque>
+#include <memory>
 #include <unordered_map>
 #include <unordered_set>
 #include <functional>
@@ -285,6 +287,13 @@ public:
     void AttemptReconnect();     // Try to reconnect to last peer, trigger merge if needed
     bool IsOffline() const { return m_State == CollabSessionState::Offline; }
     bool IsMerging() const { return m_State == CollabSessionState::Merging; }
+private:
+
+    // Authority model — P2P (default) or Server (future)
+    std::unique_ptr<ICollabAuthority> m_Authority;
+public:
+    void SetAuthority(std::unique_ptr<ICollabAuthority> authority) { m_Authority = std::move(authority); }
+    ICollabAuthority* GetAuthority() const { return m_Authority.get(); }
 private:
 
     // Offline log — persists ops to disk when disconnected
