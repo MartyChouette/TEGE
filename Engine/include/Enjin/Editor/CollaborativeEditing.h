@@ -8,6 +8,7 @@
 #include "Enjin/Editor/VectorClock.h"
 #include "Enjin/Editor/CRDTState.h"
 #include "Enjin/Editor/CollabPermissions.h"
+#include "Enjin/Editor/CollabOfflineLog.h"
 #include <string>
 #include <vector>
 #include <deque>
@@ -78,7 +79,9 @@ enum class CollabSessionState : u8 {
     Hosting,
     Joining,
     Connected,
-    Syncing          // Full state sync in progress
+    Syncing,         // Full state sync in progress
+    Offline,         // Disconnected but still editing — ops logged to disk
+    Merging          // Reconnected, merge dialog in progress
 };
 
 // S-C2: Permission levels for collaborative editing peers
@@ -276,7 +279,16 @@ private:
 public:
     CollabPermissionManager& GetPermissions() { return m_Permissions; }
     const CollabPermissionManager& GetPermissions() const { return m_Permissions; }
+
+    // Offline editing
+    void GoOffline();            // Transition to Offline state, start logging to disk
+    void AttemptReconnect();     // Try to reconnect to last peer, trigger merge if needed
+    bool IsOffline() const { return m_State == CollabSessionState::Offline; }
+    bool IsMerging() const { return m_State == CollabSessionState::Merging; }
 private:
+
+    // Offline log — persists ops to disk when disconnected
+    CollabOfflineLog m_OfflineLog;
 
     // Peers
     std::vector<CollabPeer> m_Peers;

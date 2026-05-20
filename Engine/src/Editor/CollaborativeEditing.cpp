@@ -191,6 +191,31 @@ void CollaborativeEditingSystem::LeaveSession() {
     ENJIN_LOG_INFO(Editor, "Left collaborative session");
 }
 
+void CollaborativeEditingSystem::GoOffline() {
+    if (m_State == CollabSessionState::Disconnected ||
+        m_State == CollabSessionState::Offline) return;
+
+    m_State = CollabSessionState::Offline;
+    m_OfflineLog.SetSiteId(m_LocalPeerId);
+
+    // Flush any pending transforms before going offline
+    FlushPendingTransforms();
+
+    ENJIN_LOG_INFO(Editor, "Collab: Going offline — operations will be logged to disk");
+}
+
+void CollaborativeEditingSystem::AttemptReconnect() {
+    if (m_State != CollabSessionState::Offline) return;
+
+    // For now, reconnect is manual — the user re-hosts or re-joins.
+    // When they do, the offline log is used to compute catch-up ops.
+    // The merge UI is triggered by the caller (CollaborativeEditingUI)
+    // when it detects that the offline log has entries.
+    m_State = CollabSessionState::Merging;
+    ENJIN_LOG_INFO(Editor, "Collab: Attempting reconnect — %zu offline ops to reconcile",
+        m_OfflineLog.Count());
+}
+
 // ============================================================================
 // LOCAL EDIT RECORDING
 // ============================================================================
@@ -351,6 +376,12 @@ void CollaborativeEditingSystem::BroadcastOperation(const EditOperation& op) {
 
     // Track for conflict detection
     m_RecentLocalEdits[op.entityId] = op;
+
+    if (m_State == CollabSessionState::Offline) {
+        // Offline: persist to disk instead of sending over network
+        m_OfflineLog.AppendOperation(op);
+        return;
+    }
 
     // Broadcast to all peers via RPC
     if (m_Network && m_Network->IsConnected()) {
