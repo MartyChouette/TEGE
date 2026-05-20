@@ -7,6 +7,7 @@
 #include "Enjin/Math/Quaternion.h"
 #include "Enjin/Editor/VectorClock.h"
 #include "Enjin/Editor/CRDTState.h"
+#include "Enjin/Editor/CollabPermissions.h"
 #include <string>
 #include <vector>
 #include <deque>
@@ -81,11 +82,7 @@ enum class CollabSessionState : u8 {
 };
 
 // S-C2: Permission levels for collaborative editing peers
-enum class CollabPermission : u8 {
-    Viewer = 0,     // Can observe but not modify
-    Editor = 1,     // Can modify entities/components
-    Owner = 2       // Full control (can delete entities, kick peers)
-};
+// CollabPermission enum defined in CollabPermissions.h (included at top of file)
 
 struct CollabPeer {
     u8 peerId = 0;
@@ -273,6 +270,13 @@ private:
 
     // CRDT document — source of truth for conflict-free merging
     CRDTDocument m_CRDTDoc;
+
+    // Permission enforcement
+    CollabPermissionManager m_Permissions;
+public:
+    CollabPermissionManager& GetPermissions() { return m_Permissions; }
+    const CollabPermissionManager& GetPermissions() const { return m_Permissions; }
+private:
 
     // Peers
     std::vector<CollabPeer> m_Peers;

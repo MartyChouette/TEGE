@@ -130,6 +130,8 @@ bool CollaborativeEditingSystem::HostSession(u16 port, const std::string& userNa
     m_UserName = userName;
     m_LocalPeerId = 0; // Host is always peer 0
     m_CRDTDoc.SetLocalSiteId(0);
+    m_Permissions.Clear();
+    m_Permissions.SetPeerPermission(0, CollabPermission::Owner);
     m_State = CollabSessionState::Hosting;
     m_LamportClock = 0;
     m_LocalSequence = 0;
@@ -598,19 +600,19 @@ EditOperation CollaborativeEditingSystem::DeserializeOperation(const u8* data, u
 void CollaborativeEditingSystem::HandleEditOp(u8 senderId, const u8* data, u32 size) {
     EditOperation op = DeserializeOperation(data, size);
 
-    // S-C2: Check permission level before allowing destructive operations
+    // Permission enforcement via CollabPermissionManager
     if (IsHost()) {
-        CollabPermission perm = CollabPermission::Viewer;
-        for (const auto& peer : m_Peers) {
-            if (peer.peerId == senderId) { perm = peer.permission; break; }
-        }
-        if (perm == CollabPermission::Viewer) {
-            ENJIN_LOG_WARN(Editor, "Collab: Viewer peer %u attempted edit op, rejecting", senderId);
+        if (!m_Permissions.CanEditEntity(senderId, op.entityId)) {
+            ENJIN_LOG_WARN(Editor, "Collab: Peer %u lacks permission to edit entity %llu, rejecting",
+                senderId, (unsigned long long)op.entityId);
             return;
         }
-        // Only Owner can delete entities
-        if (op.type == EditOpType::DeleteEntity && perm != CollabPermission::Owner) {
-            ENJIN_LOG_WARN(Editor, "Collab: Non-owner peer %u attempted entity delete, rejecting", senderId);
+        if (op.type == EditOpType::DeleteEntity && !m_Permissions.CanDeleteEntity(senderId)) {
+            ENJIN_LOG_WARN(Editor, "Collab: Peer %u lacks permission to delete entities, rejecting", senderId);
+            return;
+        }
+        if (op.type == EditOpType::CreateEntity && !m_Permissions.CanCreateEntity(senderId)) {
+            ENJIN_LOG_WARN(Editor, "Collab: Peer %u lacks permission to create entities, rejecting", senderId);
             return;
         }
     }
@@ -689,6 +691,8 @@ void CollaborativeEditingSystem::HandleSyncResponse(u8 /*senderId*/, const u8* d
     m_State = CollabSessionState::Connected;
     m_LocalPeerId = m_Network->GetLocalPlayerId();
     m_CRDTDoc.SetLocalSiteId(m_LocalPeerId);
+    // Default permission for joining peers — host can promote/demote later
+    m_Permissions.SetPeerPermission(m_LocalPeerId, CollabPermission::Editor);
 
     for (const auto& op : m_PendingRemoteOps) {
         ProcessRemoteOperation(op);

@@ -929,17 +929,23 @@ bool CollaborativeEditingUI::CanEditEntity(ECS::Entity entity) const {
     // If no collab system or not active, allow all edits
     if (!m_Collab || !m_Collab->IsActive()) return true;
 
-    // Check lock manager first — entity locked by another user on disk
-    if (m_LockMgr && m_LockMgr->IsEntityLockedByOther(entity)) {
+    // Permission check — Viewers cannot edit anything
+    const auto& perms = m_Collab->GetPermissions();
+    u8 localPeer = m_Collab->GetPeers().empty() ? 0 : m_Collab->GetPeers()[0].peerId;
+    // Find our own peer ID
+    for (const auto& p : m_Collab->GetPeers()) {
+        if (p.name == "local" || p.peerId == 0) { // Host is always 0
+            localPeer = p.peerId;
+            break;
+        }
+    }
+    if (!perms.CanEditEntity(localPeer, static_cast<u64>(entity))) {
         return false;
     }
 
-    // Check if another peer is currently editing this entity (soft lock)
-    if (m_Collab->IsEntityBeingEditedByOther(entity)) {
-        // In "Ask" conflict strategy mode, we still allow editing
-        // (the conflict will be detected). For other strategies,
-        // we show a warning but still allow it.
-        return true;
+    // Check lock manager — entity locked by another user on disk
+    if (m_LockMgr && m_LockMgr->IsEntityLockedByOther(entity)) {
+        return false;
     }
 
     return true;
