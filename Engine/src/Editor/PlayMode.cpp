@@ -1,4 +1,5 @@
 #include "Enjin/Editor/PlayMode.h"
+#include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Effects/ParticleSystem.h"
@@ -750,6 +751,10 @@ void PlayMode::SaveEditorState() {
             snap.visible = t->visible;
             snap.hadTransform = true;
         }
+        if (auto* nc = m_World->GetComponent<ECS::NameComponent>(entity)) {
+            snap.name = nc->name;
+            snap.hadName = true;
+        }
         m_SavedEntityState[static_cast<u64>(entity)] = snap;
     }
 
@@ -779,12 +784,26 @@ void PlayMode::RestoreEditorState() {
     // data (mesh, skeleton, animator) is left untouched, which both avoids the
     // multi-megabyte JSON roundtrip AND prevents the use-after-free that came
     // from re-adding AnimatorComponent on reloaded skinned entities.
-    // Check if any entities were destroyed during play
+    // Detect whether any pre-play entities were destroyed during play.
+    // We can't just check IsValid(oldId) — the entity manager recycles IDs,
+    // so a new entity created during play may reuse a destroyed entity's slot,
+    // making IsValid() return true even though the original is gone.
+    // Instead, verify each saved entity still has its original name.
     bool anyDestroyed = false;
     for (const auto& [eid, snap] : m_SavedEntityState) {
-        if (!m_World->IsValid(static_cast<ECS::Entity>(eid))) {
+        ECS::Entity entity = static_cast<ECS::Entity>(eid);
+        if (!m_World->IsValid(entity)) {
             anyDestroyed = true;
             break;
+        }
+        // ID recycling check: if the entity is valid but its name changed,
+        // the original was destroyed and a new entity reused this ID.
+        if (snap.hadName) {
+            auto* nc = m_World->GetComponent<ECS::NameComponent>(entity);
+            if (!nc || nc->name != snap.name) {
+                anyDestroyed = true;
+                break;
+            }
         }
     }
 

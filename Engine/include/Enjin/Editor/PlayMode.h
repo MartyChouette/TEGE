@@ -280,6 +280,8 @@ private:
         Math::Vector3 scale;
         bool visible = true;
         bool hadTransform = false;
+        std::string name;       // For detecting entity ID recycling
+        bool hadName = false;
     };
     std::unordered_map<u64, EntitySnapshot> m_SavedEntityState;
     std::string m_PrePlaySceneJson;  // Full scene JSON for restoring destroyed entities
