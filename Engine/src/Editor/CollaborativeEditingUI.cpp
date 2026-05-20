@@ -1,4 +1,5 @@
 #include "Enjin/Editor/CollaborativeEditingUI.h"
+#include "Enjin/Editor/CollabUndoCommands.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Name.h"
@@ -64,10 +65,12 @@ const char* CollaborativeEditingUI::EditOpTypeName(EditOpType type) {
 
 void CollaborativeEditingUI::Initialize(CollaborativeEditingSystem* collab,
                                          ECS::World* world,
-                                         SceneLockManager* lockMgr) {
+                                         SceneLockManager* lockMgr,
+                                         UndoRedoManager* undoRedo) {
     m_Collab = collab;
     m_World = world;
     m_LockMgr = lockMgr;
+    m_UndoRedo = undoRedo;
 
     ENJIN_LOG_INFO(Editor, "CollaborativeEditingUI initialized");
 }
@@ -478,6 +481,7 @@ void CollaborativeEditingUI::HandleRemoteOperation(const EditOperation& op) {
         return;
     }
 
+    // Apply to ECS world
     switch (op.type) {
         case EditOpType::CreateEntity:    ApplyCreateEntity(op);    break;
         case EditOpType::DeleteEntity:    ApplyDeleteEntity(op);    break;
@@ -488,6 +492,15 @@ void CollaborativeEditingUI::HandleRemoteOperation(const EditOperation& op) {
         case EditOpType::SetParent:       ApplySetParent(op);       break;
         case EditOpType::LockEntity:      ApplyLockEntity(op);      break;
         case EditOpType::UnlockEntity:    ApplyUnlockEntity(op);    break;
+    }
+
+    // Push onto undo stack so the local user can undo remote edits.
+    // Skip lock/unlock ops — those aren't undoable actions.
+    if (m_UndoRedo && op.type != EditOpType::LockEntity && op.type != EditOpType::UnlockEntity) {
+        std::string desc = std::string("Remote: ") + op.authorName + " " +
+            EditOpTypeName(op.type);
+        auto cmd = std::make_unique<RemoteEditCommand>(m_Collab, op, desc);
+        m_UndoRedo->Execute(std::move(cmd));
     }
 }
 

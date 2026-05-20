@@ -7,6 +7,7 @@
 #include "Enjin/Math/Matrix.h"
 #include "Enjin/Editor/CollaborativeEditing.h"
 #include "Enjin/Editor/SceneLock.h"
+#include "Enjin/Editor/UndoRedo.h"
 #include <string>
 #include <vector>
 
@@ -45,7 +46,7 @@ public:
     // Initialize with required subsystem pointers. Must be called before any
     // other method. The SceneSerializer is used for full-scene sync on join.
     void Initialize(CollaborativeEditingSystem* collab, ECS::World* world,
-                    SceneLockManager* lockMgr);
+                    SceneLockManager* lockMgr, UndoRedoManager* undoRedo = nullptr);
 
     // Draw the collaboration panel (host/join, peer list, conflict queue).
     // Called from EditorLayer::OnImGuiRender when the Collaboration panel bit
@@ -110,6 +111,7 @@ private:
     CollaborativeEditingSystem* m_Collab = nullptr;
     ECS::World* m_World = nullptr;
     SceneLockManager* m_LockMgr = nullptr;
+    UndoRedoManager* m_UndoRedo = nullptr;
 
     // Conflict dialog state
     PendingConflictDialog m_ConflictDialog;
