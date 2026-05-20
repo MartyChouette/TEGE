@@ -1,6 +1,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Networking/NetworkSystem.h"
 #include "Enjin/Networking/NetworkSecurity.h"
+#include "Enjin/Networking/TransportFactory.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Name.h"
@@ -9,11 +10,9 @@
 #include <cmath>
 #include <algorithm>
 
-// NOTE: On web (ENJIN_PLATFORM_WEB), the NetworkTransport UDP backend is unavailable.
-// Emscripten does not support raw UDP sockets. A future WebSocket transport layer
-// will replace the UDP transport for web builds. For now, HostGame/JoinGame will
-// log warnings and return false on web, while the rest of the lobby/RPC logic
-// compiles unchanged (it doesn't directly call socket APIs).
+// Transport is created lazily on first HostGame/JoinGame via EnsureTransport().
+// By default it creates a UDPTransport. Call SetTransport() before connecting
+// to inject a WebSocket or custom transport instead.
 
 namespace Enjin {
 namespace Networking {
@@ -30,12 +29,16 @@ bool NetworkSystem::HostGame(u16 port, const std::string& playerName) {
 
     LoadConfig();
 
-#if ENJIN_PLATFORM_WEB
-    ENJIN_LOG_WARN(Network, "NetworkSystem: Raw UDP not available on web — use WebSocket transport");
-    return false;
-#endif
+    // Create default transport if none was injected via SetTransport()
+    if (!m_Transport) {
+        m_Transport = CreateTransport(TransportType::Auto);
+        if (!m_Transport) {
+            ENJIN_LOG_ERROR(Network, "NetworkSystem: No transport available for this platform");
+            return false;
+        }
+    }
 
-    if (!m_Transport.Bind(port)) {
+    if (!m_Transport->Bind(port)) {
         ENJIN_LOG_ERROR(Network, "NetworkSystem: Failed to bind as host on port %u", port);
         return false;
     }
@@ -76,8 +79,16 @@ bool NetworkSystem::JoinGame(const std::string& ip, u16 port, const std::string&
 
     LoadConfig();
 
+    if (!m_Transport) {
+        m_Transport = CreateTransport(TransportType::Auto);
+        if (!m_Transport) {
+            ENJIN_LOG_ERROR(Network, "NetworkSystem: No transport available for this platform");
+            return false;
+        }
+    }
+
     // Bind to any available port
-    if (!m_Transport.Bind(0)) {
+    if (!m_Transport->Bind(0)) {
         ENJIN_LOG_ERROR(Network, "NetworkSystem: Failed to bind client socket");
         return false;
     }
@@ -122,7 +133,7 @@ void NetworkSystem::Disconnect() {
         }
     }
 
-    m_Transport.Close();
+    if (m_Transport) m_Transport->Close();
     m_Role = NetworkRole::None;
     m_LocalPlayerId = INVALID_PLAYER;
     m_Connections.clear();
@@ -607,7 +618,7 @@ void NetworkSystem::ProcessIncomingPackets() {
     NetworkAddress sender;
 
     for (u32 i = 0; i < 256; i++) {  // Process up to 256 packets per frame
-        i32 received = m_Transport.ReceiveFrom(sender, buffer, MAX_PACKET_SIZE);
+        i32 received = m_Transport ? m_Transport->ReceiveFrom(sender, buffer, MAX_PACKET_SIZE) : -1;
         if (received <= 0) break;
 
         m_BytesReceivedThisSecond += static_cast<u32>(received);
@@ -1279,7 +1290,7 @@ void NetworkSystem::SendPacket(const NetworkAddress& addr, MessageType type, con
         AuthenticateOutgoing(m_SendBuffer, conn);
     }
 
-    m_Transport.SendTo(addr, m_SendBuffer.data(), static_cast<u32>(m_SendBuffer.size()));
+    if (m_Transport) m_Transport->SendTo(addr, m_SendBuffer.data(), static_cast<u32>(m_SendBuffer.size()));
     m_BytesSentThisSecond += static_cast<u32>(m_SendBuffer.size());
 }
 

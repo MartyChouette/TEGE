@@ -1,12 +1,13 @@
 #pragma once
 
 #include "Enjin/Networking/NetworkTypes.h"
-#include "Enjin/Networking/NetworkTransport.h"
+#include "Enjin/Networking/INetworkTransport.h"
 #include "Enjin/Networking/NetworkSerializer.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
 #include <unordered_map>
 #include <vector>
+#include <memory>
 
 namespace Enjin {
 namespace Networking {
@@ -169,7 +170,11 @@ private:
     PlayerId m_LocalPlayerId = INVALID_PLAYER;
     std::string m_LocalPlayerName;
     NetworkConfig m_Config;
-    NetworkTransport m_Transport;
+    std::unique_ptr<INetworkTransport> m_Transport;
+
+    // Inject a custom transport (e.g. WebSocket). If not set, UDP is used by default.
+    public: void SetTransport(std::unique_ptr<INetworkTransport> transport) { m_Transport = std::move(transport); }
+    private:
 
     f32 m_Time = 0.0f;  // Monotonic time accumulator
     u32 m_Tick = 0;      // Sync tick counter
