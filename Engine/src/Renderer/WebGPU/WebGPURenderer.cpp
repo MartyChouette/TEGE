@@ -178,6 +178,10 @@ void WebGPURenderer::Shutdown() {
 // ============================================================================
 
 bool WebGPURenderer::BeginFrameWebGPU() {
+    // Clear encoder from any previous frame — callers must not use a stale encoder
+    // if this function returns false.
+    m_CommandEncoder = nullptr;
+
     if (!m_Initialized || !m_Surface) return false;
 
     // Get current surface texture

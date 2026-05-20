@@ -552,11 +552,22 @@ void RenderSystem::Initialize() {
             std::strlen(Renderer::WebShaderData::POSTPROCESS_WGSL),
             Renderer::GPUShaderStage::Vertex, "PostProcess");
 
-        // Post-process bind group layout (group 0: texture + sampler)
+        // Create accessibility uniform buffer for post-process
+        {
+            Renderer::GPUBufferDesc ppParamsBufDesc;
+            ppParamsBufDesc.size = sizeof(WebPPAccessibilityParams);
+            ppParamsBufDesc.usage = Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst;
+            ppParamsBufDesc.hostVisible = true;
+            ppParamsBufDesc.label = "PostProcessParams";
+            m_WebPPAccessibilityBuffer = bufMgr->CreateBufferWithData(ppParamsBufDesc, &m_WebPPAccessibility);
+        }
+
+        // Post-process bind group layout (group 0: texture + sampler + params UBO)
         Renderer::GPUBindGroupLayoutDesc ppLayoutDesc;
         ppLayoutDesc.entries = {
             {0, BType::SampledTexture, SStage::Fragment, 0},
             {1, BType::Sampler, SStage::Fragment, 0},
+            {2, BType::UniformBuffer, SStage::Fragment, sizeof(WebPPAccessibilityParams)},
         };
         m_WebPostProcessLayout = bindMgr->CreateBindGroupLayout(ppLayoutDesc);
 
@@ -577,12 +588,13 @@ void RenderSystem::Initialize() {
         // No vertex attributes — fullscreen triangle from vertex_index
         m_WebPostProcessPipeline = pipeMgr->CreateRenderPipeline(ppPipeDesc);
 
-        // Post-process bind group (texture + sampler from scene color)
+        // Post-process bind group (texture + sampler + params UBO from scene color)
         Renderer::GPUBindGroupDesc ppBGDesc;
         ppBGDesc.layout = m_WebPostProcessLayout;
         ppBGDesc.entries = {
             {0, {}, 0, 0, m_WebSceneColorTex, {}},  // texture
             {1, {}, 0, 0, {}, m_WebSceneColorTex},   // sampler
+            {2, m_WebPPAccessibilityBuffer, 0, sizeof(WebPPAccessibilityParams), {}, {}},  // params UBO
         };
         m_WebPostProcessBG = bindMgr->CreateBindGroup(ppBGDesc);
 
@@ -795,6 +807,7 @@ void RenderSystem::Initialize() {
             ppBG2.entries = {
                 {0, {}, 0, 0, m_WebBloomScratchTex, {}},
                 {1, {}, 0, 0, {}, m_WebBloomScratchTex},
+                {2, m_WebPPAccessibilityBuffer, 0, sizeof(WebPPAccessibilityParams), {}, {}},
             };
             m_WebPostProcessBG = bindMgr->CreateBindGroup(ppBG2);
         }
@@ -1796,7 +1809,9 @@ void RenderSystem::Update(f32 deltaTime) {
         passDesc.colorAttachmentCount = 1;
         passDesc.colorAttachments = &colorAtt;
         passDesc.depthStencilAttachment = &depthAtt;
-        scenePassEncoder = wgpuCommandEncoderBeginRenderPass(webRenderer->GetCommandEncoder(), &passDesc);
+        if (webRenderer->GetCommandEncoder()) {
+            scenePassEncoder = wgpuCommandEncoderBeginRenderPass(webRenderer->GetCommandEncoder(), &passDesc);
+        }
         if (!scenePassEncoder) { usePostProcess = false; }
     }
 
@@ -2347,7 +2362,8 @@ void RenderSystem::Update(f32 deltaTime) {
                 WGPURenderPassDescriptor pd = {};
                 pd.colorAttachmentCount = 1;
                 pd.colorAttachments = &att;
-                WGPURenderPassEncoder rp = wgpuCommandEncoderBeginRenderPass(webRenderer->GetCommandEncoder(), &pd);
+                WGPURenderPassEncoder rp = webRenderer->GetCommandEncoder()
+                    ? wgpuCommandEncoderBeginRenderPass(webRenderer->GetCommandEncoder(), &pd) : nullptr;
                 if (rp) {
                     wgpuRenderPassEncoderSetPipeline(rp, pipe);
                     wgpuRenderPassEncoderSetViewport(rp, 0, 0, static_cast<f32>(tw), static_cast<f32>(th), 0.0f, 1.0f);
@@ -2385,7 +2401,8 @@ void RenderSystem::Update(f32 deltaTime) {
                 WGPURenderPassDescriptor pd = {};
                 pd.colorAttachmentCount = 1;
                 pd.colorAttachments = &att;
-                WGPURenderPassEncoder rp = wgpuCommandEncoderBeginRenderPass(webRenderer->GetCommandEncoder(), &pd);
+                WGPURenderPassEncoder rp = webRenderer->GetCommandEncoder()
+                    ? wgpuCommandEncoderBeginRenderPass(webRenderer->GetCommandEncoder(), &pd) : nullptr;
                 if (rp) {
                     wgpuRenderPassEncoderSetPipeline(rp, webPipeMgr->GetNativePipeline(m_WebBloomUpPipeline));
                     wgpuRenderPassEncoderSetViewport(rp, 0, 0, static_cast<f32>(bt->width), static_cast<f32>(bt->height), 0.0f, 1.0f);
@@ -2406,6 +2423,11 @@ void RenderSystem::Update(f32 deltaTime) {
             // We use m_WebPostProcessBG which was set up to read scratch at init time.
         }
 
+        // Upload accessibility params to post-process UBO
+        if (m_WebPPAccessibilityBuffer.IsValid() && bufMgr) {
+            bufMgr->UploadData(m_WebPPAccessibilityBuffer, &m_WebPPAccessibility, sizeof(WebPPAccessibilityParams));
+        }
+
         // Post-process pass: fullscreen triangle ACES tonemap to swapchain
         WGPURenderPassColorAttachment ppColorAtt = {};
         ppColorAtt.view = webRenderer->GetSwapChainView();
@@ -2418,8 +2440,8 @@ void RenderSystem::Update(f32 deltaTime) {
         ppPassDesc.colorAttachmentCount = 1;
         ppPassDesc.colorAttachments = &ppColorAtt;
         ppPassDesc.depthStencilAttachment = nullptr;  // No depth for fullscreen triangle
-        WGPURenderPassEncoder ppPass = wgpuCommandEncoderBeginRenderPass(
-            webRenderer->GetCommandEncoder(), &ppPassDesc);
+        WGPURenderPassEncoder ppPass = webRenderer->GetCommandEncoder()
+            ? wgpuCommandEncoderBeginRenderPass(webRenderer->GetCommandEncoder(), &ppPassDesc) : nullptr;
         if (ppPass) {
             wgpuRenderPassEncoderSetPipeline(ppPass, webPipeMgr->GetNativePipeline(m_WebPostProcessPipeline));
             wgpuRenderPassEncoderSetViewport(ppPass, 0, 0, w, h, 0.0f, 1.0f);
