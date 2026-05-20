@@ -1253,66 +1253,66 @@ namespace {
         // -- Foundations (Stable) --
         { "blank",        "Blank",              "Empty scene\nStart from scratch",                       ImVec4(0.5f, 0.5f, 0.5f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Stable },
         { "platformer",   "2D Platformer",      "4-zone adventure\nMeadow + cave + tower + sky boss",    ImVec4(0.3f, 0.8f, 0.3f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
-        { "topdown2d",    "2D Top-Down Action", "Dungeon action\nMulti-room + enemies + HUD + particles",  ImVec4(0.3f, 0.6f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
+        // { "topdown2d",    "2D Top-Down Action", "Dungeon action\nMulti-room + enemies + HUD + particles",  ImVec4(0.3f, 0.6f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
         { "thirdperson",  "3D Third Person",    "Over-the-shoulder\nShadows + obstacles + point light",  ImVec4(0.8f, 0.3f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
         { "firstperson",  "3D First Person",    "Eye-level FPS\nCorridor walls + warm lighting",         ImVec4(0.7f, 0.3f, 0.8f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
         // -- Genre Showcases --
-        { "puzzle",       "Sokoban Puzzle",     "Pushable blocks\nGoal plates + switches + grid snap",   ImVec4(0.4f, 0.8f, 0.9f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
-        { "survival",     "Survival",           "Survive the cold\nTemperature + weather + stamina",     ImVec4(0.7f, 0.5f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
-        { "rpg_village",  "RPG Village",        "Talk to NPCs\nDialogue + pickups + lantern",            ImVec4(0.3f, 0.6f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
-        { "horror",       "Horror",             "Dark atmosphere\nFlashlight + fog + proximity door",    ImVec4(0.3f, 0.1f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
-        { "racing",       "Vehicle Racing",     "Split-screen race\nVehicle + checkpoints + cinematic",  ImVec4(0.9f, 0.25f, 0.1f, 1.0f), kTMPL_MULTI, Editor::MaturityTier::Beta },
-        { "ps1rpg",       "PS1 RPG",            "Retro 3D RPG\nPixelation + dither + save point",       ImVec4(0.2f, 0.2f, 0.8f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
-        { "arena",        "Arena Fighter",      "2-player brawl\nSplitscreen + health + stamina",       ImVec4(1.0f, 0.5f, 0.0f, 1.0f), kTMPL_MULTI, Editor::MaturityTier::Beta },
+        // { "puzzle",       "Sokoban Puzzle",     "Pushable blocks\nGoal plates + switches + grid snap",   ImVec4(0.4f, 0.8f, 0.9f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
+        // { "survival",     "Survival",           "Survive the cold\nTemperature + weather + stamina",     ImVec4(0.7f, 0.5f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        // { "rpg_village",  "RPG Village",        "Talk to NPCs\nDialogue + pickups + lantern",            ImVec4(0.3f, 0.6f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        // { "horror",       "Horror",             "Dark atmosphere\nFlashlight + fog + proximity door",    ImVec4(0.3f, 0.1f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        // { "racing",       "Vehicle Racing",     "Split-screen race\nVehicle + checkpoints + cinematic",  ImVec4(0.9f, 0.25f, 0.1f, 1.0f), kTMPL_MULTI, Editor::MaturityTier::Beta },
+        // { "ps1rpg",       "PS1 RPG",            "Retro 3D RPG\nPixelation + dither + save point",       ImVec4(0.2f, 0.2f, 0.8f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        // { "arena",        "Arena Fighter",      "2-player brawl\nSplitscreen + health + stamina",       ImVec4(1.0f, 0.5f, 0.0f, 1.0f), kTMPL_MULTI, Editor::MaturityTier::Beta },
         // -- Systems Deep-Dives --
-        { "physics",      "Physics Playground", "Rigidbody sandbox\nGravity zones + conveyors + ramps",  ImVec4(0.3f, 0.75f, 0.7f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
+        // { "physics",      "Physics Playground", "Rigidbody sandbox\nGravity zones + conveyors + ramps",  ImVec4(0.3f, 0.75f, 0.7f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
         { "narrative",    "Dialogue & Narrative","NPC conversations\nQuests + dialogue box + branching",  ImVec4(0.7f, 0.6f, 0.85f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
-        { "savesystem",   "Save System Demo",   "3-tier persistence\nCheckpoints + meta + save menu",   ImVec4(0.4f, 0.55f, 0.75f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
-        { "visualscript", "Visual Scripting",   "Node-based logic\nSwitch triggers + particle events",  ImVec4(0.85f, 0.7f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Preview },
-        { "uicanvas",     "UI Canvas Demo",     "In-game UI\nButtons + health bar + HUD overlay",       ImVec4(0.8f, 0.3f, 0.7f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
-        { "accessibility","Accessibility Menu","Settings menu\nSubtitles + colorblind + focus nav",    ImVec4(0.3f, 0.75f, 0.9f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Beta },
+        // { "savesystem",   "Save System Demo",   "3-tier persistence\nCheckpoints + meta + save menu",   ImVec4(0.4f, 0.55f, 0.75f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        // { "visualscript", "Visual Scripting",   "Node-based logic\nSwitch triggers + particle events",  ImVec4(0.85f, 0.7f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Preview },
+        // { "uicanvas",     "UI Canvas Demo",     "In-game UI\nButtons + health bar + HUD overlay",       ImVec4(0.8f, 0.3f, 0.7f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        // { "accessibility","Accessibility Menu","Settings menu\nSubtitles + colorblind + focus nav",    ImVec4(0.3f, 0.75f, 0.9f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Beta },
         // -- Retro & Flash --
         { "pointclick",   "Point & Click",      "Adventure game\nClick hotspots + inventory + dialogue", ImVec4(1.0f, 0.55f, 0.2f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
-        { "bullethell",   "Bullet Hell",        "Danmaku shmup\nObject pool + particles + health",      ImVec4(0.95f, 0.2f, 0.5f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
+        // { "bullethell",   "Bullet Hell",        "Danmaku shmup\nObject pool + particles + health",      ImVec4(0.95f, 0.2f, 0.5f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
         { "idleclicker",  "Idle/Clicker",       "Incremental game\nUI canvas + meta saves + tweens",    ImVec4(0.4f, 0.8f, 0.4f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
         // -- Advanced --
         { "planetgravity","Planet Gravity",     "Spherical gravity\nWalk on a planet surface",           ImVec4(0.3f, 0.6f, 0.95f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
-        { "dungeon",      "Dungeon Crawler",    "Grid-based FPS\nSnap turns + enemies + dark corridors", ImVec4(0.15f, 0.5f, 0.15f, 1.0f), kTMPL_3D, Editor::MaturityTier::Preview },
+        // { "dungeon",      "Dungeon Crawler",    "Grid-based FPS\nSnap turns + enemies + dark corridors", ImVec4(0.15f, 0.5f, 0.15f, 1.0f), kTMPL_3D, Editor::MaturityTier::Preview },
         // -- Restored: Genre Showcases --
         { "isometric",   "3D Isometric",    "45-degree CRPG\nPerspective + player",               ImVec4(0.9f, 0.6f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
-        { "visualnovel", "Visual Novel",     "Story-driven\nDialogue + sprites",                   ImVec4(0.9f, 0.7f, 0.9f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Beta },
-        { "gamemanager", "Game Manager",    "Singleton pattern\nScore + state machine",            ImVec4(0.6f, 0.6f, 0.8f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Beta },
-        { "citybuilder", "City Builder",   "Isometric city sim\n3D or faux-iso mode",             ImVec4(0.2f, 0.7f, 0.7f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
-        { "fpsarena",    "FPS Arena",      "First-person shooter\nWeapons + respawn + ammo",       ImVec4(0.9f, 0.2f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        // { "visualnovel", "Visual Novel",     "Story-driven\nDialogue + sprites",                   ImVec4(0.9f, 0.7f, 0.9f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Beta },
+        // { "gamemanager", "Game Manager",    "Singleton pattern\nScore + state machine",            ImVec4(0.6f, 0.6f, 0.8f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Beta },
+        // { "citybuilder", "City Builder",   "Isometric city sim\n3D or faux-iso mode",             ImVec4(0.2f, 0.7f, 0.7f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        // { "fpsarena",    "FPS Arena",      "First-person shooter\nWeapons + respawn + ammo",       ImVec4(0.9f, 0.2f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
         { "teamsports",  "Team Sports",    "3D soccer/basketball\n2 teams + ball + goals",         ImVec4(0.2f, 0.8f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
-        { "towerdefense","Tower Defense",  "Isometric TD\nPaths + turrets + waves",                ImVec4(0.8f, 0.6f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
-        { "runner",      "Endless Runner", "Auto-scroll\nLanes + obstacles + score",               ImVec4(0.9f, 0.6f, 0.1f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
+        // { "towerdefense","Tower Defense",  "Isometric TD\nPaths + turrets + waves",                ImVec4(0.8f, 0.6f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        // { "runner",      "Endless Runner", "Auto-scroll\nLanes + obstacles + score",               ImVec4(0.9f, 0.6f, 0.1f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
         { "flower",      "Flower Garden", "Procedural flower\nPluckable petals + score",             ImVec4(0.9f, 0.4f, 0.6f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
-        { "fixedcam",    "Fixed Camera",  "Fixed-angle 3rd person\nClassic RE / God of War",           ImVec4(0.6f, 0.25f, 0.5f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
-        { "metroidvania","2D Metroidvania","Interconnected map\nAbilities + locked doors",             ImVec4(0.4f, 0.2f, 0.7f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
-        { "soulslike",   "3D Souls-like", "Challenging melee\nBonfires + stamina + fog gates",        ImVec4(0.5f, 0.15f, 0.1f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
-        { "vampsurvivor","Survivor-like", "Top-down auto-attack\nWaves + XP + level-up",              ImVec4(0.1f, 0.7f, 0.5f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
-        { "roguelike",   "2D Rogue-like", "Grid-based dungeon\nRandom rooms + permadeath",            ImVec4(0.6f, 0.5f, 0.1f, 1.0f), kTMPL_2D, Editor::MaturityTier::Preview },
+        // { "fixedcam",    "Fixed Camera",  "Fixed-angle 3rd person\nClassic RE / God of War",           ImVec4(0.6f, 0.25f, 0.5f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        // { "metroidvania","2D Metroidvania","Interconnected map\nAbilities + locked doors",             ImVec4(0.4f, 0.2f, 0.7f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
+        // { "soulslike",   "3D Souls-like", "Challenging melee\nBonfires + stamina + fog gates",        ImVec4(0.5f, 0.15f, 0.1f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        // { "vampsurvivor","Survivor-like", "Top-down auto-attack\nWaves + XP + level-up",              ImVec4(0.1f, 0.7f, 0.5f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
+        // { "roguelike",   "2D Rogue-like", "Grid-based dungeon\nRandom rooms + permadeath",            ImVec4(0.6f, 0.5f, 0.1f, 1.0f), kTMPL_2D, Editor::MaturityTier::Preview },
         // -- Restored: Multiplayer --
-        { "couchcoop",   "2P Couch Co-op","Splitscreen co-op\n2 players + shared world",              ImVec4(0.8f, 0.4f, 0.2f, 1.0f), kTMPL_MULTI, Editor::MaturityTier::Beta },
-        { "justtwo",     "Just the Two of Us","Co-op puzzles + physics\nIt Takes Two inspired",       ImVec4(0.85f, 0.45f, 0.65f, 1.0f), kTMPL_MULTI, Editor::MaturityTier::Beta },
+        // { "couchcoop",   "2P Couch Co-op","Splitscreen co-op\n2 players + shared world",              ImVec4(0.8f, 0.4f, 0.2f, 1.0f), kTMPL_MULTI, Editor::MaturityTier::Beta },
+        // { "justtwo",     "Just the Two of Us","Co-op puzzles + physics\nIt Takes Two inspired",       ImVec4(0.85f, 0.45f, 0.65f, 1.0f), kTMPL_MULTI, Editor::MaturityTier::Beta },
         // -- Restored: Debug/Test --
-        { "shadowtest",  "Shadow Test",   "Shadow debug scene\nGround + objects + light",             ImVec4(0.9f, 0.9f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
+        // { "shadowtest",  "Shadow Test",   "Shadow debug scene\nGround + objects + light",             ImVec4(0.9f, 0.9f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
         // -- Restored: Retro & Flash --
-        { "flash_td",    "Flash TD",      "Classic Flash TD\nPath + towers + waves",                 ImVec4(0.8f, 0.6f, 0.2f, 1.0f), kTMPL_2D, Editor::MaturityTier::Experimental },
-        { "flash_dress", "Dress Up",      "Character dress-up\nDrag items + layers + save",          ImVec4(0.9f, 0.6f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Experimental },
-        { "flash_escape","Escape Room",   "Room escape puzzle\nInventory + clues + combinations",    ImVec4(0.5f, 0.3f, 0.2f, 1.0f), kTMPL_2D, Editor::MaturityTier::Experimental },
-        { "flash_rhythm","Rhythm Game",   "Music game\nNotes + timing + combo",                      ImVec4(0.3f, 0.4f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Experimental },
+        // { "flash_td",    "Flash TD",      "Classic Flash TD\nPath + towers + waves",                 ImVec4(0.8f, 0.6f, 0.2f, 1.0f), kTMPL_2D, Editor::MaturityTier::Experimental },
+        // { "flash_dress", "Dress Up",      "Character dress-up\nDrag items + layers + save",          ImVec4(0.9f, 0.6f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Experimental },
+        // { "flash_escape","Escape Room",   "Room escape puzzle\nInventory + clues + combinations",    ImVec4(0.5f, 0.3f, 0.2f, 1.0f), kTMPL_2D, Editor::MaturityTier::Experimental },
+        // { "flash_rhythm","Rhythm Game",   "Music game\nNotes + timing + combo",                      ImVec4(0.3f, 0.4f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Experimental },
         // -- Marketplace-only (mirrored for unified master list) --
-        { "hello_sprite",        "Hello Sprite",         "Animated sprite\nBasic movement + atlas",                  ImVec4(0.4f, 0.8f, 0.4f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
-        { "neon_runner",         "Neon Runner",          "Synthwave runner\nProcedural obstacles + score",           ImVec4(0.9f, 0.2f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
-        { "cozy_farm",           "Cozy Farm",            "Farming sim\nCrops + day-night + dialogue",               ImVec4(0.4f, 0.7f, 0.3f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
-        { "networking_lobby",    "Multiplayer Lobby",    "LAN multiplayer\nLobby + entity sync + RPC",              ImVec4(0.1f, 0.6f, 0.7f, 1.0f), kTMPL_3D, Editor::MaturityTier::Preview },
-        { "ps1_horror",          "PS1 Horror",           "PS1-era horror\nVertex jitter + CRT + fixed cam",         ImVec4(0.1f, 0.15f, 0.1f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
-        { "ray_tracing_showcase","Ray Tracing Showcase", "RT reflections\nSoft shadows + AO + SVGF",               ImVec4(1.0f, 0.85f, 0.4f, 1.0f), kTMPL_3D, Editor::MaturityTier::Experimental },
-        { "procedural_world",   "Procedural World",     "Fractal terrain\nErosion + L-system + WFC",               ImVec4(0.3f, 0.8f, 0.5f, 1.0f), kTMPL_3D, Editor::MaturityTier::Preview },
+        // { "hello_sprite",        "Hello Sprite",         "Animated sprite\nBasic movement + atlas",                  ImVec4(0.4f, 0.8f, 0.4f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
+        // { "neon_runner",         "Neon Runner",          "Synthwave runner\nProcedural obstacles + score",           ImVec4(0.9f, 0.2f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
+        // { "cozy_farm",           "Cozy Farm",            "Farming sim\nCrops + day-night + dialogue",               ImVec4(0.4f, 0.7f, 0.3f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
+        // { "networking_lobby",    "Multiplayer Lobby",    "LAN multiplayer\nLobby + entity sync + RPC",              ImVec4(0.1f, 0.6f, 0.7f, 1.0f), kTMPL_3D, Editor::MaturityTier::Preview },
+        // { "ps1_horror",          "PS1 Horror",           "PS1-era horror\nVertex jitter + CRT + fixed cam",         ImVec4(0.1f, 0.15f, 0.1f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        // { "ray_tracing_showcase","Ray Tracing Showcase", "RT reflections\nSoft shadows + AO + SVGF",               ImVec4(1.0f, 0.85f, 0.4f, 1.0f), kTMPL_3D, Editor::MaturityTier::Experimental },
+        // { "procedural_world",   "Procedural World",     "Fractal terrain\nErosion + L-system + WFC",               ImVec4(0.3f, 0.8f, 0.5f, 1.0f), kTMPL_3D, Editor::MaturityTier::Preview },
     };
-    constexpr int s_BuiltinCount = 51;
+    constexpr int s_BuiltinCount = 11;
 } // anonymous namespace
 
 // Draw a procedural mini-preview for template cards (first 4 templates get custom art)
@@ -2368,7 +2368,7 @@ bool EditorLayer::CreateProjectOnDisk(const std::string& projectDir, const std::
     m_SceneManager.SetStartScene(0);
 
     // Auto-set project mode from template category
-    if (templateId == "platformer" || templateId == "topdown2d" || templateId == "runner" ||
+    if (templateId == "platformer" || templateId == "platformer_demo" || templateId == "topdown2d" || templateId == "runner" ||
         templateId == "metroidvania" || templateId == "vampsurvivor" || templateId == "roguelike" ||
         templateId == "hello_sprite" || templateId == "neon_runner" || templateId == "cozy_farm") {
         m_SceneManager.SetProjectMode(Scene::ProjectMode::Mode2D);
@@ -2422,7 +2422,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
     m_Layout.panels = corePanels;
 
     // 2D templates
-    if (templateId == "platformer" || templateId == "topdown2d") {
+    if (templateId == "platformer" || templateId == "platformer_demo" || templateId == "topdown2d") {
         m_Layout.leftWidth = 0.15f;
         m_Layout.rightWidth = 0.20f;
         m_Layout.bottomHeight = 0.18f;
@@ -2598,7 +2598,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
     m_ForceLayout = true;
 
     // Configure editor camera for 2D templates (orthographic, looking at XY plane)
-    if (templateId == "platformer" || templateId == "topdown2d" || templateId == "runner" ||
+    if (templateId == "platformer" || templateId == "platformer_demo" || templateId == "topdown2d" || templateId == "runner" ||
         templateId == "metroidvania" || templateId == "vampsurvivor" || templateId == "roguelike" ||
         templateId == "pointclick" || templateId == "bullethell" || templateId == "idleclicker" ||
         templateId.substr(0, 6) == "flash_") {
@@ -2777,8 +2777,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
 
     if (templateId == "platformer") {
         // ═══════════════════════════════════════════════════
-        // 2D Platformer — 4-Zone Side-Scrolling Adventure
-        // Meadow → Cave → Tower → Sky
+        // 2D Platformer — Starter Template
+        // Minimal: player, ground, platforms, 1 coin, 1 enemy
         // ═══════════════════════════════════════════════════
 
         // --- Player ---
@@ -2787,19 +2787,13 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& ctrl = m_World->AddComponent<ECS::Platformer2DController>(player);
             ctrl.moveSpeed = 5.0f;
             ctrl.jumpForce = 10.0f;
-            ctrl.enableWallJump = true;
-            ctrl.coyoteTime = 0.15f;
             ctrl.maxJumps = 2;
-            ctrl.collisionRadius = 0.4f;   // Match visual capsule (0.8 radius mesh)
-            ctrl.collisionHeight = 1.6f;   // Match visual capsule height
+            ctrl.coyoteTime = 0.15f;
+            ctrl.collisionRadius = 0.4f;
+            ctrl.collisionHeight = 1.6f;
             auto& hp = m_World->AddComponent<ECS::HealthComponent>(player);
             hp.maxHealth = 100.0f;
             hp.currentHealth = 100.0f;
-            hp.regenRate = 1.0f;
-            hp.regenDelay = 3.0f;
-            hp.invulnerabilityTime = 0.5f;
-            auto& inv = m_World->AddComponent<ECS::InventoryComponent>(player);
-            inv.maxSlots = 10;
             m_World->AddComponent<ECS::TagComponent>(player).tags.push_back("player");
         }
 
@@ -2816,7 +2810,183 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             }
         }
 
-        // ═══════════════════════════════════════════════════
+        // --- Ground ---
+        {
+            ECS::Entity ground = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(ground, "Ground");
+            auto& gt = m_World->AddComponent<ECS::TransformComponent>(ground);
+            gt.position = Math::Vector3(0.0f, -1.0f, 0.0f);
+            gt.scale = Math::Vector3(30.0f, 1.0f, 1.0f);
+            auto& gmat = m_World->AddComponent<ECS::MaterialComponent>(ground);
+            gmat.baseColor = Math::Vector3(0.35f, 0.55f, 0.3f);
+            m_World->AddComponent<ECS::MeshComponent>(ground, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            addBoxCollider2D(ground, 15.0f, 0.5f);
+        }
+
+        // --- Platforms ---
+        {
+            const Math::Vector3 platPos[] = {{-4.0f, 1.5f, 0.0f}, {1.0f, 3.5f, 0.0f}, {6.0f, 5.5f, 0.0f}};
+            const Math::Vector2 platSize[] = {{2.5f, 0.15f}, {3.0f, 0.15f}, {2.0f, 0.15f}};
+            for (int i = 0; i < 3; ++i) {
+                ECS::Entity plat = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(plat, "Platform " + std::to_string(i + 1));
+                auto& pt = m_World->AddComponent<ECS::TransformComponent>(plat);
+                pt.position = platPos[i];
+                pt.scale = Math::Vector3(platSize[i].x * 2.0f, platSize[i].y * 2.0f, 1.0f);
+                auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(plat);
+                pmat.baseColor = Math::Vector3(0.45f, 0.35f, 0.25f);
+                m_World->AddComponent<ECS::MeshComponent>(plat, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+                addBoxCollider2D(plat, platSize[i].x, platSize[i].y);
+            }
+        }
+
+        // --- Coin ---
+        {
+            ECS::Entity coin = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(coin, "Coin");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(coin);
+            ct.position = Math::Vector3(1.0f, 4.5f, 0.0f);
+            ct.scale = Math::Vector3(0.5f, 0.5f, 1.0f);
+            auto& cmat = m_World->AddComponent<ECS::MaterialComponent>(coin);
+            cmat.baseColor = Math::Vector3(1.0f, 0.85f, 0.2f);
+            cmat.emissiveColor = Math::Vector3(1.0f, 0.85f, 0.2f);
+            cmat.emissiveStrength = 0.3f;
+            m_World->AddComponent<ECS::MeshComponent>(coin, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& pick = m_World->AddComponent<ECS::PickupComponent>(coin);
+            pick.type = ECS::PickupComponent::PickupType::Coin;
+            pick.value = 1.0f;
+            auto& col = m_World->AddComponent<Physics::Body2DComponent>(coin);
+            col.shapeType = Physics::Shape2DType::Box;
+            col.box.halfExtents = Math::Vector2(0.25f, 0.25f);
+            col.isKinematic = true;
+            col.isSensor = true;
+            col.gravityScale = 0.0f;
+            auto& tw = m_World->AddComponent<ECS::TweenComponent>(coin);
+            tw.autoPlay = true;
+            ECS::TweenEntry bob;
+            bob.property = ECS::TweenProperty::Position;
+            bob.easing = ECS::EasingType::EaseInOutSine;
+            bob.mode = ECS::TweenMode::PingPong;
+            bob.startValue = Math::Vector3(1.0f, 4.5f, 0.0f);
+            bob.endValue = Math::Vector3(1.0f, 4.9f, 0.0f);
+            bob.duration = 1.0f;
+            bob.useCurrentAsStart = false;
+            tw.tweens.push_back(bob);
+        }
+
+        // --- Enemy (patrol) ---
+        {
+            ECS::Entity enemy = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(enemy, "Enemy");
+            auto& et = m_World->AddComponent<ECS::TransformComponent>(enemy);
+            et.position = Math::Vector3(5.0f, 0.2f, 0.0f);
+            et.scale = Math::Vector3(0.8f, 0.8f, 1.0f);
+            auto& emat = m_World->AddComponent<ECS::MaterialComponent>(enemy);
+            emat.baseColor = Math::Vector3(0.8f, 0.2f, 0.2f);
+            m_World->AddComponent<ECS::MeshComponent>(enemy, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& dmg = m_World->AddComponent<ECS::DamageComponent>(enemy);
+            dmg.damage = 10.0f;
+            dmg.damageOnce = true;
+            auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(enemy);
+            ai.patrolPoints = {Math::Vector3(3.0f, 0.2f, 0.0f), Math::Vector3(8.0f, 0.2f, 0.0f)};
+            ai.moveSpeed = 2.0f;
+            ai.is2D = true;
+            m_World->AddComponent<ECS::TagComponent>(enemy).tags.push_back("enemy");
+            auto& col = m_World->AddComponent<Physics::Body2DComponent>(enemy);
+            col.shapeType = Physics::Shape2DType::Box;
+            col.box.halfExtents = Math::Vector2(0.4f, 0.4f);
+            col.isKinematic = true;
+            col.isSensor = true;
+            col.gravityScale = 0.0f;
+        }
+
+        // --- Directional Light ---
+        {
+            ECS::Entity sun = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(sun, "Sun");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(sun);
+            lt.position = Math::Vector3(0.0f, 10.0f, 5.0f);
+            lt.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-45.0f));
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(sun);
+            lc.type = ECS::LightType::Directional;
+            lc.intensity = 1.0f;
+            lc.castShadows = false;
+        }
+
+        // --- Guide ---
+        {
+            ECS::Entity guide = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(guide, "-- Guide --");
+            m_World->AddComponent<ECS::TransformComponent>(guide);
+            m_World->AddComponent<ECS::NotesComponent>(guide).notes =
+                "2D PLATFORMER STARTER\n"
+                "======================\n\n"
+                "Entities:\n"
+                "  Player - Capsule with Platformer2DController (WASD + Space)\n"
+                "  Ground - Static platform spanning the scene\n"
+                "  Platforms - 3 stepping stones at increasing heights\n"
+                "  Coin - PickupComponent + TweenComponent bob animation\n"
+                "  Enemy - AIControllerComponent with patrol + DamageComponent\n\n"
+                "Key systems:\n"
+                "  - Platformer2DController handles jump, double-jump, coyote time\n"
+                "  - Box2D physics for ground/platform collision\n"
+                "  - PickupComponent collected via AABB overlap\n"
+                "  - AIControllerComponent patrols between 2 points\n"
+                "  - Camera2DBoundsComponent follows player with smoothing\n\n"
+                "Try:\n"
+                "  - Add more platforms to extend the level\n"
+                "  - Duplicate coins and place them on platforms\n"
+                "  - Add a moving platform with TweenComponent\n"
+                "  - Enable wall jumping: Platformer2DController.enableWallJump";
+        }
+
+        // --- Render settings ---
+        m_RenderSystem->SetShadowsEnabled(false);
+        m_RenderSystem->SetAmbientIntensity(0.15f);
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+        }
+
+    // ═══════════════════════════════════════════════════
+    // PLATFORMER DEMO — Full 4-Zone Adventure (was the old starter)
+    // Preserved behind "platformer_demo" templateId for the Demos tab.
+    // ═══════════════════════════════════════════════════
+    } else if (templateId == "platformer_demo") {
+        ECS::Entity player = createPlayer2D("Player");
+        {
+            auto& ctrl = m_World->AddComponent<ECS::Platformer2DController>(player);
+            ctrl.moveSpeed = 5.0f;
+            ctrl.jumpForce = 10.0f;
+            ctrl.enableWallJump = true;
+            ctrl.coyoteTime = 0.15f;
+            ctrl.maxJumps = 2;
+            ctrl.collisionRadius = 0.4f;
+            ctrl.collisionHeight = 1.6f;
+            auto& hp = m_World->AddComponent<ECS::HealthComponent>(player);
+            hp.maxHealth = 100.0f;
+            hp.currentHealth = 100.0f;
+            hp.regenRate = 1.0f;
+            hp.regenDelay = 3.0f;
+            hp.invulnerabilityTime = 0.5f;
+            auto& inv = m_World->AddComponent<ECS::InventoryComponent>(player);
+            inv.maxSlots = 10;
+            m_World->AddComponent<ECS::TagComponent>(player).tags.push_back("player");
+        }
+
+        // Camera
+        {
+            SetupCameraForController(player, "Platformer2D");
+            ECS::Entity cam = ECS::CameraManager::GetActiveCamera(m_World);
+            if (cam != ECS::INVALID_ENTITY) {
+                auto& follow = m_World->AddComponent<ECS::Camera2DBoundsComponent>(cam);
+                follow.followTarget = player;
+                follow.followSmoothing = 5.0f;
+                follow.lookAheadDistance = 2.0f;
+                follow.deadZoneSize = Math::Vector2(1.0f, 0.5f);
+            }
+        }
+
         // Zone 1 — Meadow (x: -10 to 10)
         // ═══════════════════════════════════════════════════
 
@@ -4433,6 +4603,31 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pp.bloomIntensity = 0.3f;
         }
 
+        // Guide entity
+        {
+            ECS::Entity guide = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(guide, "-- Guide --");
+            m_World->AddComponent<ECS::TransformComponent>(guide);
+            m_World->AddComponent<ECS::NotesComponent>(guide).notes =
+                "3D THIRD PERSON STARTER\n"
+                "========================\n\n"
+                "Entities:\n"
+                "  Player - Capsule with ThirdPersonController (WASD + mouse)\n"
+                "  Obstacles - Static cubes with BoxColliderComponent\n"
+                "  Ramp - Rotated cube showing angled surfaces\n"
+                "  Coin - PickupComponent + TweenComponent for bob\n"
+                "  Sun / Point Light - Two-light setup for depth\n\n"
+                "Key systems:\n"
+                "  - ThirdPersonController handles camera orbit + movement\n"
+                "  - Jolt physics provides ground detection + collision\n"
+                "  - PickupComponent collected via distance check (no rigidbody needed)\n"
+                "  - TweenComponent animates position with PingPong mode\n\n"
+                "Try:\n"
+                "  - Add more coins by duplicating the Coin entity\n"
+                "  - Change player speed via ThirdPersonController.moveSpeed\n"
+                "  - Add enemies with AIControllerComponent + DamageComponent";
+        }
+
     } else if (templateId == "firstperson") {
         createGround();
         ECS::Entity player = createPlayer3D("Player");
@@ -4542,6 +4737,32 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pp.fxaaEnabled = 1;
             pp.vignetteEnabled = 1;
             pp.vignetteIntensity = 0.2f;
+        }
+
+        // Guide entity
+        {
+            ECS::Entity guide = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(guide, "-- Guide --");
+            m_World->AddComponent<ECS::TransformComponent>(guide);
+            m_World->AddComponent<ECS::NotesComponent>(guide).notes =
+                "3D FIRST PERSON STARTER\n"
+                "========================\n\n"
+                "Entities:\n"
+                "  Player - Capsule with FirstPersonController (WASD + mouse look)\n"
+                "  Walls - Static cubes forming an L-shaped corridor\n"
+                "  Door - SwitchComponent (interact to toggle open/close)\n"
+                "  Corridor Light - Warm point light for atmosphere\n"
+                "  Flashlight - Spot light with FollowTargetComponent on player\n\n"
+                "Key systems:\n"
+                "  - FirstPersonController handles mouselook + WASD movement\n"
+                "  - SwitchComponent enables interact prompts (press E)\n"
+                "  - FollowTargetComponent makes the flashlight track the player\n"
+                "  - Vignette post-processing adds atmosphere\n\n"
+                "Try:\n"
+                "  - Add AudioSourceComponent for ambient sounds\n"
+                "  - Add more rooms and doors\n"
+                "  - Add PickupComponent items (keys, notes)\n"
+                "  - Increase vignette for horror atmosphere";
         }
 
     } else if (templateId == "puzzle") {
@@ -5814,6 +6035,33 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pp.fxaaEnabled = 1;
             pp.vignetteEnabled = 1;
             pp.vignetteIntensity = 0.15f;
+        }
+
+        // Guide entity
+        {
+            ECS::Entity guide = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(guide, "-- Guide --");
+            m_World->AddComponent<ECS::TransformComponent>(guide);
+            m_World->AddComponent<ECS::NotesComponent>(guide).notes =
+                "NARRATIVE & DIALOGUE STARTER\n"
+                "=============================\n\n"
+                "Entities:\n"
+                "  Player - ThirdPersonController for exploration\n"
+                "  NPCs (Quest Giver / Merchant / Storyteller) - DialogueComponent\n"
+                "  Quest State - QuestFlowComponent for tracking progress\n"
+                "  Dialogue Box - DialogueBoxComponent (UI at screen bottom)\n"
+                "  Old Book / Chest - InteractableComponent with examine text\n"
+                "  Fireflies - ParticleEmitterComponent for atmosphere\n\n"
+                "Key systems:\n"
+                "  - DialogueComponent stores multi-line NPC dialogue\n"
+                "  - InteractableComponent shows 'Talk' / 'Read' prompts\n"
+                "  - QuestFlowComponent tracks quest state transitions\n"
+                "  - DialogueBoxComponent renders text at screen bottom\n\n"
+                "Try:\n"
+                "  - Add DialogueTree branching (choices for the player)\n"
+                "  - Add more NPCs with different quest objectives\n"
+                "  - Use CinematicCameraComponent for quest intro cutscenes\n"
+                "  - Add WorldTimeSystem for day/night NPC schedules";
         }
 
     } else if (templateId == "savesystem") {
@@ -7527,6 +7775,31 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pp.fxaaEnabled = 1;
         }
 
+        // Guide entity
+        {
+            ECS::Entity guide = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(guide, "-- Guide --");
+            m_World->AddComponent<ECS::TransformComponent>(guide);
+            m_World->AddComponent<ECS::NotesComponent>(guide).notes =
+                "3D ISOMETRIC STARTER\n"
+                "=====================\n\n"
+                "Entities:\n"
+                "  Player - TopDown3DController at 45-degree camera angle\n"
+                "  Buildings - Static cubes representing houses/shops\n"
+                "  Villager / Merchant - NPCs with DialogueComponent\n"
+                "  Treasure Chest - PickupComponent collectible\n"
+                "  Lantern - Point light for warm ambient glow\n\n"
+                "Key systems:\n"
+                "  - TopDown3DController with cameraAngle=45 gives isometric view\n"
+                "  - DialogueComponent + InteractableComponent for NPC interaction\n"
+                "  - PickupComponent for collectibles\n"
+                "  - Adjust cameraDistance to zoom in/out\n\n"
+                "Try:\n"
+                "  - Add more buildings to form streets\n"
+                "  - Add AIControllerComponent for NPC patrol routes\n"
+                "  - Add InventoryComponent + shop system\n"
+                "  - Add WorldTimeSystem for day/night cycle";
+        }
 
     } else if (templateId == "visualnovel") {
         // Camera: orthographic, 16:9, looking at -Z
@@ -8457,29 +8730,34 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
     }
 
     else if (templateId == "teamsports") {
+        // ═══════════════════════════════════════════════════
+        // Team Sports — Starter (2v2)
+        // Minimal: field, goals, ball, 1 player + 1 AI per team
+        // ═══════════════════════════════════════════════════
+
         // Field
         {
             ECS::Entity field = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(field, "Playing Field");
             auto& ft = m_World->AddComponent<ECS::TransformComponent>(field);
-            ft.scale = Math::Vector3(40.0f, 0.1f, 25.0f);
+            ft.scale = Math::Vector3(30.0f, 0.1f, 18.0f);
             ft.position = Math::Vector3(0.0f, -0.05f, 0.0f);
             auto& fm = m_World->AddComponent<ECS::MaterialComponent>(field);
             fm.baseColor = Math::Vector3(0.2f, 0.55f, 0.15f);
             fm.roughness = 0.95f;
             m_World->AddComponent<ECS::MeshComponent>(field, Renderer::MeshFactory::CreateCube(1.0f));
             auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(field);
-            col.size = Math::Vector3(40.0f, 0.1f, 25.0f);
+            col.size = Math::Vector3(30.0f, 0.1f, 18.0f);
         }
         createLight();
 
-        // Goals (two trigger zones)
+        // Goals
         for (int side = 0; side < 2; ++side) {
             ECS::Entity goal = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(goal, side == 0 ? "Goal Left" : "Goal Right");
             auto& gt = m_World->AddComponent<ECS::TransformComponent>(goal);
-            gt.position = Math::Vector3(side == 0 ? -20.0f : 20.0f, 1.5f, 0.0f);
-            gt.scale = Math::Vector3(0.3f, 3.0f, 6.0f);
+            gt.position = Math::Vector3(side == 0 ? -15.0f : 15.0f, 1.5f, 0.0f);
+            gt.scale = Math::Vector3(0.3f, 3.0f, 5.0f);
             m_World->AddComponent<ECS::MeshComponent>(goal, Renderer::MeshFactory::CreateCube(1.0f));
             auto& gm = m_World->AddComponent<ECS::MaterialComponent>(goal);
             gm.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
@@ -8487,7 +8765,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             gm.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
             auto& trigger = m_World->AddComponent<ECS::TriggerZoneComponent>(goal);
             trigger.shape = ECS::TriggerZoneComponent::Shape::Box;
-            trigger.boxSize = Math::Vector3(0.3f, 3.0f, 6.0f);
+            trigger.boxSize = Math::Vector3(0.3f, 3.0f, 5.0f);
             auto& tag = m_World->AddComponent<ECS::TagComponent>(goal);
             tag.tags.push_back(side == 0 ? "goal_team_b" : "goal_team_a");
         }
@@ -8508,69 +8786,57 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             rb.drag = 0.3f;
             auto& sc = m_World->AddComponent<ECS::SphereColliderComponent>(ball);
             sc.radius = 0.2f;
-            auto& tag = m_World->AddComponent<ECS::TagComponent>(ball);
-            tag.tags.push_back("ball");
+            m_World->AddComponent<ECS::TagComponent>(ball).tags.push_back("ball");
         }
 
-        // Team A (blue) - 3 players + 1 goalie
-        Math::Vector3 teamAPositions[] = {
-            Math::Vector3(-15.0f, 0.5f, 0.0f),  // Goalie
-            Math::Vector3(-8.0f, 0.5f, -4.0f),
-            Math::Vector3(-8.0f, 0.5f, 4.0f),
-            Math::Vector3(-3.0f, 0.5f, 0.0f),   // Forward
-        };
-        for (int i = 0; i < 4; ++i) {
-            ECS::Entity p = m_World->CreateEntity();
-            char name[32]; snprintf(name, sizeof(name), "Team A - %s", i == 0 ? "Goalie" : (i == 3 ? "Forward" : "Defender"));
-            m_World->AddComponent<ECS::NameComponent>(p, name);
-            auto& pt = m_World->AddComponent<ECS::TransformComponent>(p);
-            pt.position = teamAPositions[i];
-            m_World->AddComponent<ECS::MeshComponent>(p, Renderer::MeshFactory::CreateCapsule(0.3f, 0.9f));
-            auto& pm = m_World->AddComponent<ECS::MaterialComponent>(p);
-            pm.baseColor = Math::Vector3(0.15f, 0.3f, 0.85f);
-            auto& tag = m_World->AddComponent<ECS::TagComponent>(p);
-            tag.tags.push_back("team_a");
-            // Capsule collider so players can interact with ball and each other
-            auto& pcol = m_World->AddComponent<ECS::CapsuleColliderComponent>(p);
-            pcol.radius = 0.3f;
-            pcol.height = 0.9f;
-            if (i == 3) {
-                // Player-controlled forward
-                auto& ctrl = m_World->AddComponent<ECS::TopDown3DController>(p);
-                ctrl.moveSpeed = 7.0f;
-                SetupCameraForController(p, "TopDown3D");
-            } else {
+        // Team A (blue): 1 player + 1 AI
+        {
+            // Player-controlled
+            ECS::Entity p1 = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(p1, "Team A - Player");
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(p1);
+            pt.position = Math::Vector3(-5.0f, 0.5f, 0.0f);
+            m_World->AddComponent<ECS::MeshComponent>(p1, Renderer::MeshFactory::CreateCapsule(0.3f, 0.9f));
+            m_World->AddComponent<ECS::MaterialComponent>(p1).baseColor = Math::Vector3(0.15f, 0.3f, 0.85f);
+            m_World->AddComponent<ECS::TagComponent>(p1).tags.push_back("team_a");
+            auto& pcol = m_World->AddComponent<ECS::CapsuleColliderComponent>(p1);
+            pcol.radius = 0.3f; pcol.height = 0.9f;
+            auto& ctrl = m_World->AddComponent<ECS::TopDown3DController>(p1);
+            ctrl.moveSpeed = 7.0f;
+            SetupCameraForController(p1, "TopDown3D");
+
+            // AI teammate
+            ECS::Entity a1 = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(a1, "Team A - AI");
+            auto& at = m_World->AddComponent<ECS::TransformComponent>(a1);
+            at.position = Math::Vector3(-10.0f, 0.5f, 0.0f);
+            m_World->AddComponent<ECS::MeshComponent>(a1, Renderer::MeshFactory::CreateCapsule(0.3f, 0.9f));
+            m_World->AddComponent<ECS::MaterialComponent>(a1).baseColor = Math::Vector3(0.15f, 0.3f, 0.85f);
+            m_World->AddComponent<ECS::TagComponent>(a1).tags.push_back("team_a");
+            auto& acol = m_World->AddComponent<ECS::CapsuleColliderComponent>(a1);
+            acol.radius = 0.3f; acol.height = 0.9f;
+            auto& aai = m_World->AddComponent<ECS::AIControllerComponent>(a1);
+            aai.currentState = ECS::AIControllerComponent::AIState::Patrol;
+            aai.moveSpeed = 5.0f;
+        }
+
+        // Team B (red): 2 AI
+        {
+            Math::Vector3 bPos[] = {Math::Vector3(5.0f, 0.5f, -2.0f), Math::Vector3(10.0f, 0.5f, 2.0f)};
+            const char* bNames[] = {"Team B - Forward", "Team B - Goalie"};
+            for (int i = 0; i < 2; ++i) {
+                ECS::Entity p = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(p, bNames[i]);
+                m_World->AddComponent<ECS::TransformComponent>(p).position = bPos[i];
+                m_World->AddComponent<ECS::MeshComponent>(p, Renderer::MeshFactory::CreateCapsule(0.3f, 0.9f));
+                m_World->AddComponent<ECS::MaterialComponent>(p).baseColor = Math::Vector3(0.85f, 0.15f, 0.15f);
+                m_World->AddComponent<ECS::TagComponent>(p).tags.push_back("team_b");
+                auto& pcol = m_World->AddComponent<ECS::CapsuleColliderComponent>(p);
+                pcol.radius = 0.3f; pcol.height = 0.9f;
                 auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(p);
                 ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
                 ai.moveSpeed = 5.0f;
             }
-        }
-
-        // Team B (red) - 4 AI players
-        Math::Vector3 teamBPositions[] = {
-            Math::Vector3(15.0f, 0.5f, 0.0f),
-            Math::Vector3(8.0f, 0.5f, -4.0f),
-            Math::Vector3(8.0f, 0.5f, 4.0f),
-            Math::Vector3(3.0f, 0.5f, 0.0f),
-        };
-        for (int i = 0; i < 4; ++i) {
-            ECS::Entity p = m_World->CreateEntity();
-            char name[32]; snprintf(name, sizeof(name), "Team B - %s", i == 0 ? "Goalie" : (i == 3 ? "Forward" : "Defender"));
-            m_World->AddComponent<ECS::NameComponent>(p, name);
-            auto& pt = m_World->AddComponent<ECS::TransformComponent>(p);
-            pt.position = teamBPositions[i];
-            m_World->AddComponent<ECS::MeshComponent>(p, Renderer::MeshFactory::CreateCapsule(0.3f, 0.9f));
-            auto& pm = m_World->AddComponent<ECS::MaterialComponent>(p);
-            pm.baseColor = Math::Vector3(0.85f, 0.15f, 0.15f);
-            auto& tag = m_World->AddComponent<ECS::TagComponent>(p);
-            tag.tags.push_back("team_b");
-            // Capsule collider so players can interact with ball and each other
-            auto& pcol = m_World->AddComponent<ECS::CapsuleColliderComponent>(p);
-            pcol.radius = 0.3f;
-            pcol.height = 0.9f;
-            auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(p);
-            ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
-            ai.moveSpeed = 5.0f;
         }
 
         // Scoreboard
@@ -8578,75 +8844,30 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ECS::Entity score = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(score, "Scoreboard");
             auto& st = m_World->AddComponent<ECS::TransformComponent>(score);
-            st.position = Math::Vector3(0.0f, 6.0f, -13.0f);
+            st.position = Math::Vector3(0.0f, 6.0f, -10.0f);
             auto& text = m_World->AddComponent<ECS::TextComponent>(score);
-            text.text = "Team A  0 - 0  Team B";
+            text.text = "Blue  0 - 0  Red";
             text.fontSize = 48.0f;
             text.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
         }
 
-        // Timer
-        {
-            ECS::Entity timer = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(timer, "Match Timer");
-            auto& tt = m_World->AddComponent<ECS::TransformComponent>(timer);
-            tt.position = Math::Vector3(0.0f, 5.0f, -13.0f);
-            auto& text = m_World->AddComponent<ECS::TextComponent>(timer);
-            text.text = "5:00";
-            text.fontSize = 36.0f;
-            text.textColor = Math::Vector3(1.0f, 0.9f, 0.3f);
-            auto& tc = m_World->AddComponent<ECS::TimerComponent>(timer);
-            tc.duration = 300.0f;
-        }
-
-        // Center Circle (ground marking)
-        {
-            ECS::Entity circle = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(circle, "Center Circle");
-            auto& cct = m_World->AddComponent<ECS::TransformComponent>(circle);
-            cct.position = Math::Vector3(0.0f, 0.01f, 0.0f);
-            cct.scale = Math::Vector3(6.0f, 0.01f, 6.0f);
-            m_World->AddComponent<ECS::MeshComponent>(circle, Renderer::MeshFactory::CreateCube(1.0f));
-            auto& ccm = m_World->AddComponent<ECS::MaterialComponent>(circle);
-            ccm.baseColor = Math::Vector3(0.9f, 0.9f, 0.9f);
-            ccm.opacity = 0.3f;
-            ccm.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
-        }
-
-        // Center line (midfield marking)
-        {
-            ECS::Entity midline = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(midline, "Center Line");
-            auto& mlt = m_World->AddComponent<ECS::TransformComponent>(midline);
-            mlt.position = Math::Vector3(0.0f, 0.01f, 0.0f);
-            mlt.scale = Math::Vector3(0.15f, 0.01f, 25.0f);
-            m_World->AddComponent<ECS::MeshComponent>(midline, Renderer::MeshFactory::CreateCube(1.0f));
-            auto& mlm = m_World->AddComponent<ECS::MaterialComponent>(midline);
-            mlm.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
-            mlm.opacity = 0.5f;
-            mlm.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
-        }
-
-        // Field boundary walls
-        Math::Vector3 boundaryPos[] = {
-            Math::Vector3(0.0f, 1.0f, -12.5f), Math::Vector3(0.0f, 1.0f, 12.5f),
-        };
+        // Boundary walls
         for (int i = 0; i < 2; ++i) {
             ECS::Entity wall = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(wall, i == 0 ? "Wall North" : "Wall South");
             auto& wt = m_World->AddComponent<ECS::TransformComponent>(wall);
-            wt.position = boundaryPos[i];
-            wt.scale = Math::Vector3(40.0f, 2.0f, 0.2f);
+            wt.position = Math::Vector3(0.0f, 1.0f, i == 0 ? -9.0f : 9.0f);
+            wt.scale = Math::Vector3(30.0f, 2.0f, 0.2f);
             m_World->AddComponent<ECS::MeshComponent>(wall, Renderer::MeshFactory::CreateCube(1.0f));
             auto& wm = m_World->AddComponent<ECS::MaterialComponent>(wall);
             wm.baseColor = Math::Vector3(0.3f, 0.3f, 0.3f);
             wm.opacity = 0.2f;
             wm.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
             auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(wall);
-            col.size = Math::Vector3(40.0f, 2.0f, 0.2f);
+            col.size = Math::Vector3(30.0f, 2.0f, 0.2f);
         }
 
-        // Skybox: Midday
+        // Skybox
         {
             Renderer::SkyboxConfig skyConfig;
             skyConfig.type = Renderer::SkyboxType::Procedural;
@@ -8664,12 +8885,31 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pp.fxaaEnabled = 1;
         }
 
+        // Guide
         {
-            auto& groups = m_SceneManager.GetCollisionGroupNames();
-            groups[1] = "TeamA";
-            groups[2] = "TeamB";
-            groups[3] = "Ball";
-            groups[4] = "Goals";
+            ECS::Entity guide = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(guide, "-- Guide --");
+            m_World->AddComponent<ECS::TransformComponent>(guide);
+            m_World->AddComponent<ECS::NotesComponent>(guide).notes =
+                "TEAM SPORTS STARTER (2v2)\n"
+                "=========================\n\n"
+                "Entities:\n"
+                "  Team A - Player (blue, TopDown3DController)\n"
+                "  Team A - AI (blue, AIControllerComponent patrol)\n"
+                "  Team B - Forward / Goalie (red, both AI)\n"
+                "  Ball - RigidbodyComponent with drag for realistic rolling\n"
+                "  Goals - TriggerZoneComponent for scoring detection\n"
+                "  Walls - Boundary colliders to keep ball in play\n\n"
+                "Key systems:\n"
+                "  - TopDown3DController for player movement (WASD)\n"
+                "  - Jolt physics drives ball rolling + player collision\n"
+                "  - TriggerZoneComponent detects ball entering goals\n"
+                "  - AIControllerComponent patrols AI players\n\n"
+                "Try:\n"
+                "  - Add more players per team (duplicate + reposition)\n"
+                "  - Add TimerComponent for match countdown\n"
+                "  - Add collision group names for team filtering\n"
+                "  - Add a center circle marking (transparent material)";
         }
     }
 
