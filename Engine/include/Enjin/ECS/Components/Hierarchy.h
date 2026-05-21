@@ -19,8 +19,10 @@ struct ChildrenComponent {
 };
 
 // Helper functions for parent-child relationships
+// ECS-C4 fix: lock the world for the entire multi-step hierarchy modification
 inline void SetParent(World* world, Entity child, Entity parent) {
     if (!world || child == INVALID_ENTITY || child == parent) return;
+    world->Lock();
 
     // Validate parent exists (prevent stale entity references)
     if (parent != INVALID_ENTITY && !world->IsValid(parent)) return;
@@ -57,6 +59,7 @@ inline void SetParent(World* world, Entity child, Entity parent) {
         if (world->HasComponent<ParentComponent>(child)) {
             world->RemoveComponent<ParentComponent>(child);
         }
+        world->Unlock();
         return;
     }
 
@@ -78,6 +81,7 @@ inline void SetParent(World* world, Entity child, Entity parent) {
     if (std::find(children.begin(), children.end(), child) == children.end()) {
         children.push_back(child);
     }
+    world->Unlock();
 }
 
 inline void RemoveParent(World* world, Entity child) {

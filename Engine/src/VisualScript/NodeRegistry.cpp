@@ -5401,7 +5401,8 @@ void NodeRegistry::RegisterBuiltinNodes() {
                     ? std::get<std::string>(inputs[2]) : "";
                 f32 duration = (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3]))
                     ? std::get<f32>(inputs[3]) : 3.0f;
-                if (!text.empty()) {
+                // ED-C1 fix: null-check before dereference
+                if (!text.empty() && s_VisualScriptSubtitleSystem) {
                     s_VisualScriptSubtitleSystem->ShowSubtitle(text, speaker,
                         Math::Vector3(1.0f, 1.0f, 1.0f), duration);
                 }

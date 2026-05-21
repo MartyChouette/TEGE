@@ -158,7 +158,15 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
         // Textures — extract embedded textures (paths starting with '*') to disk
         // so the render system can load them as normal image files.
         auto resolveEmbedded = [&](const std::string& rawPath) -> std::string {
-            if (rawPath.empty() || rawPath[0] != '*') return rawPath;
+            if (rawPath.empty() || rawPath[0] != '*') {
+                // SEC-H2 fix: validate non-embedded paths against directory traversal
+                auto normalized = std::filesystem::path(rawPath).lexically_normal().string();
+                if (normalized.find("..") != std::string::npos) {
+                    ENJIN_LOG_WARN(Asset, "Rejecting asset path with traversal: %s", rawPath.c_str());
+                    return "";
+                }
+                return rawPath;
+            }
             const aiTexture* embTex = scene->GetEmbeddedTexture(rawPath.c_str());
             if (!embTex) return rawPath;
 
@@ -178,8 +186,15 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
                         ofs.write(reinterpret_cast<const char*>(embTex->pcData), embTex->mWidth);
                     } else {
                         // Raw RGBA: mWidth * mHeight * 4 bytes
-                        ofs.write(reinterpret_cast<const char*>(embTex->pcData),
-                                  embTex->mWidth * embTex->mHeight * 4);
+                        // SEC-H1 fix: cast to u64 before multiply to prevent integer overflow
+                        u64 rawSize = static_cast<u64>(embTex->mWidth) * static_cast<u64>(embTex->mHeight) * 4;
+                        static constexpr u64 MAX_EMBEDDED_TEX_SIZE = 256ULL * 1024 * 1024; // 256 MB
+                        if (rawSize > MAX_EMBEDDED_TEX_SIZE) {
+                            ENJIN_LOG_WARN(Asset, "Embedded texture too large (%llu bytes), skipping", rawSize);
+                        } else {
+                            ofs.write(reinterpret_cast<const char*>(embTex->pcData),
+                                      static_cast<std::streamsize>(rawSize));
+                        }
                     }
                     ENJIN_LOG_INFO(Asset, "Extracted embedded texture '%s' -> %s",
                         rawPath.c_str(), outPath.string().c_str());

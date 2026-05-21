@@ -393,20 +393,18 @@ void SkeletalAnimator::Update(f32 deltaTime) {
             }
             break;
         case PlayMode::PingPong:
-            if (m_PingPongForward) {
-                if (m_CurrentTime >= duration) {
-                    m_CurrentTime = 2.0f * duration - m_CurrentTime;
-                    m_PingPongForward = false;
-                }
-            } else {
-                // Playing backward: time was decremented by speed*dt
-                // We advanced forward by dt, but in reverse we need to go backward
-                // Undo the forward advance and subtract instead
+            // AUD-H4 fix: correct PingPong timing — use direction-based accumulation
+            // instead of double-subtracting dt which caused 2x reverse speed.
+            if (!m_PingPongForward) {
+                // Undo the forward advance done before the switch, apply reverse
                 m_CurrentTime -= 2.0f * dt;
-                if (m_CurrentTime <= 0.0f) {
-                    m_CurrentTime = -m_CurrentTime;
-                    m_PingPongForward = true;
-                }
+            }
+            if (m_CurrentTime >= duration) {
+                m_CurrentTime = 2.0f * duration - m_CurrentTime;
+                m_PingPongForward = false;
+            } else if (m_CurrentTime <= 0.0f) {
+                m_CurrentTime = -m_CurrentTime;
+                m_PingPongForward = true;
             }
             m_CurrentTime = Math::Clamp(m_CurrentTime, 0.0f, duration);
             break;

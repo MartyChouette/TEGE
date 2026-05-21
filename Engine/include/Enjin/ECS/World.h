@@ -27,11 +27,10 @@ namespace ECS {
  * It acts as the container for all entities, components, and systems.
  * It provides methods to create/destroy entities and access components.
  *
- * Thread safety: Structural modifications (Create/Destroy/Add/Remove/Clear)
- * are guarded by a recursive mutex. Read operations (Get/Has/GetEntities)
- * are lock-free for performance. DestroyEntity is deferred — entities are
- * queued and actually destroyed at the start of Update() to prevent
- * iterator invalidation during system iteration.
+ * Thread safety: All component storage access (Create/Destroy/Add/Remove/Clear
+ * and Get/Has) is guarded by a recursive mutex. DestroyEntity is deferred —
+ * entities are queued and actually destroyed at the start of Update() to
+ * prevent iterator invalidation during system iteration.
  */
 class ENJIN_API World {
 public:
@@ -104,6 +103,8 @@ public:
 
     template<typename T>
     T* GetComponent(Entity entity) {
+        // ECS-C1 fix: lock to prevent race with concurrent AddComponent/RemoveComponent
+        std::lock_guard<std::recursive_mutex> lock(m_Mutex);
         auto* storage = GetStorageMut<T>();
         if (!storage) return nullptr;
         return storage->Get(entity);
@@ -111,6 +112,8 @@ public:
 
     template<typename T>
     const T* GetComponent(Entity entity) const {
+        // ECS-C1 fix: lock to prevent race with concurrent AddComponent/RemoveComponent
+        std::lock_guard<std::recursive_mutex> lock(m_Mutex);
         auto storage = GetStorage<T>();
         if (!storage) {
             return nullptr;
@@ -120,6 +123,8 @@ public:
 
     template<typename T>
     bool HasComponent(Entity entity) const {
+        // ECS-C1 fix: lock to prevent race with concurrent AddComponent/RemoveComponent
+        std::lock_guard<std::recursive_mutex> lock(m_Mutex);
         auto storage = GetStorage<T>();
         if (!storage) {
             return false;

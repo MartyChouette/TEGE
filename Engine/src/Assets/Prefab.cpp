@@ -633,6 +633,8 @@ std::shared_ptr<Prefab> PrefabManager::LoadPrefab(const std::string& filepath) {
         return prefab;
     }
 
+    // SEC-C2 fix: wrap deserialization in try-catch to prevent crashes from malformed prefab data
+    try {
     for (const auto& entityJson : j["entities"]) {
         PrefabEntityData entityData;
         entityData.name = entityJson.value("name", "Entity");
@@ -646,22 +648,22 @@ std::shared_ptr<Prefab> PrefabManager::LoadPrefab(const std::string& filepath) {
 
             if (compJson.contains("strings")) {
                 for (auto& [key, val] : compJson["strings"].items()) {
-                    compData.stringProperties[key] = val.get<std::string>();
+                    if (val.is_string()) compData.stringProperties[key] = val.get<std::string>();
                 }
             }
             if (compJson.contains("floats")) {
                 for (auto& [key, val] : compJson["floats"].items()) {
-                    compData.floatProperties[key] = val.get<f32>();
+                    if (val.is_number()) compData.floatProperties[key] = val.get<f32>();
                 }
             }
             if (compJson.contains("ints")) {
                 for (auto& [key, val] : compJson["ints"].items()) {
-                    compData.intProperties[key] = val.get<i32>();
+                    if (val.is_number_integer()) compData.intProperties[key] = val.get<i32>();
                 }
             }
             if (compJson.contains("bools")) {
                 for (auto& [key, val] : compJson["bools"].items()) {
-                    compData.boolProperties[key] = val.get<bool>();
+                    if (val.is_boolean()) compData.boolProperties[key] = val.get<bool>();
                 }
             }
             if (compJson.contains("vec3s")) {
@@ -687,6 +689,9 @@ std::shared_ptr<Prefab> PrefabManager::LoadPrefab(const std::string& filepath) {
         }
 
         prefab->AddEntity(entityData);
+    }
+    } catch (const std::exception& e) {
+        ENJIN_LOG_ERROR(Assets, "Error deserializing prefab '%s': %s", filepath.c_str(), e.what());
     }
 
     RegisterPrefab(prefab);

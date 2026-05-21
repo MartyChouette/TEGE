@@ -129,7 +129,7 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
 }
 
 void PlayMode::Play() {
-    if (m_State == PlayState::Playing) {
+    if (m_State.load(std::memory_order_relaxed) == PlayState::Playing) {
         return;
     }
 
@@ -342,7 +342,7 @@ void PlayMode::Play() {
         m_RenderSystem->SetSkipMainPassShadows(true);
     }
 
-    m_State = PlayState::Playing;
+    m_State.store(PlayState::Playing, std::memory_order_relaxed);
     ENJIN_LOG_INFO(Editor, "Entered Play Mode");
 }
 
@@ -368,7 +368,7 @@ void PlayMode::Pause() {
     // NetworkSystem intentionally keeps running during pause (lobby/connection maintenance).
     Input::SetMouseCaptured(false);
 
-    m_State = PlayState::Paused;
+    m_State.store(PlayState::Paused, std::memory_order_relaxed);
     ENJIN_LOG_INFO(Editor, "Play Mode Paused");
 }
 
@@ -393,12 +393,12 @@ void PlayMode::Resume() {
     m_StateMachineSystem.SetEnabled(true);
     // Do NOT capture mouse here — only focus mode (F11) captures the mouse.
 
-    m_State = PlayState::Playing;
+    m_State.store(PlayState::Playing, std::memory_order_relaxed);
     ENJIN_LOG_INFO(Editor, "Play Mode Resumed");
 }
 
 void PlayMode::Stop() {
-    if (m_State == PlayState::Stopped) {
+    if (m_State.load(std::memory_order_relaxed) == PlayState::Stopped) {
         return;
     }
 
@@ -530,7 +530,7 @@ void PlayMode::Stop() {
         m_RenderSystem->SetSkipMainPassShadows(false);
     }
 
-    m_State = PlayState::Stopped;
+    m_State.store(PlayState::Stopped, std::memory_order_relaxed);
     ENJIN_LOG_INFO(Editor, "Exited Play Mode");
 }
 
@@ -538,7 +538,7 @@ void PlayMode::Update(f32 deltaTime) {
     // Escape is now handled by EditorLayer (which manages focus mode exit vs stop).
 
     // Update controller system when playing
-    if (m_State == PlayState::Playing) {
+    if (m_State.load(std::memory_order_relaxed) == PlayState::Playing) {
         auto frameStart = std::chrono::high_resolution_clock::now();
 
         // Update input action map (polls input state for remappable actions)

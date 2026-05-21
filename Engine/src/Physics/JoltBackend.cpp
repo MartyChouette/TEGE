@@ -1107,16 +1107,16 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
 
 void JoltBackend::DestroyJointForEntity(ECS::Entity entity) {
     auto it = m_EntityToConstraint.find(entity);
-    if (it == m_EntityToConstraint.end()) return;
-
-    // PH-C3 fix: validate constraint pointer before removal to prevent
-    // dangling dereference if constraint was already removed externally.
-    if (it->second != nullptr) {
-        m_PhysicsSystem->RemoveConstraint(it->second);
+    if (it != m_EntityToConstraint.end()) {
+        // PH-C3 fix: validate constraint pointer before removal
+        if (it->second != nullptr) {
+            m_PhysicsSystem->RemoveConstraint(it->second);
+        }
+        m_EntityToConstraint.erase(it);
     }
-    m_EntityToConstraint.erase(it);
 
-    // PH-H8 fix: also remove any secondary cone constraint for ball-socket joints
+    // PH-C1 fix: always clean up cone constraint regardless of main constraint state.
+    // Previously this was only reached if the main constraint existed (early return above).
     auto coneIt = m_EntityToConeConstraint.find(entity);
     if (coneIt != m_EntityToConeConstraint.end()) {
         if (coneIt->second != nullptr) {
@@ -1146,6 +1146,13 @@ void JoltBackend::ProcessContactEvents() {
 
         ECS::Entity entityA = itA->second;
         ECS::Entity entityB = itB->second;
+
+        // PH-C2 fix: verify body IDs still match to prevent wrong-entity attribution
+        // when Jolt reuses a body index for a newly created body.
+        auto bodyCheckA = m_EntityToBody.find(entityA);
+        auto bodyCheckB = m_EntityToBody.find(entityB);
+        if (bodyCheckA == m_EntityToBody.end() || bodyCheckA->second != evt.bodyA) continue;
+        if (bodyCheckB == m_EntityToBody.end() || bodyCheckB->second != evt.bodyB) continue;
 
         if (evt.type == JoltContactEvent::Type::Added || evt.type == JoltContactEvent::Type::Persisted) {
             u64 pairKey = MakeCollisionPairKey(entityA, entityB);

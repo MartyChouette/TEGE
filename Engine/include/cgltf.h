@@ -1274,7 +1274,8 @@ cgltf_result cgltf_parse_file(const cgltf_options* options, const char* path, cg
 	return cgltf_result_success;
 }
 
-static void cgltf_combine_paths(char* path, const char* base, const char* uri)
+/* SEC-C1 fix: added path_size param, replaced strcpy with snprintf to prevent heap overflow */
+static void cgltf_combine_paths(char* path, size_t path_size, const char* base, const char* uri)
 {
 	const char* s0 = strrchr(base, '/');
 	const char* s1 = strrchr(base, '\\');
@@ -1283,13 +1284,14 @@ static void cgltf_combine_paths(char* path, const char* base, const char* uri)
 	if (slash)
 	{
 		size_t prefix = slash - base + 1;
+		if (prefix >= path_size) { path[0] = '\0'; return; }
 
 		strncpy(path, base, prefix);
-		strcpy(path + prefix, uri);
+		snprintf(path + prefix, path_size - prefix, "%s", uri);
 	}
 	else
 	{
-		strcpy(path, uri);
+		snprintf(path, path_size, "%s", uri);
 	}
 }
 
@@ -1305,7 +1307,7 @@ static cgltf_result cgltf_load_buffer_file(const cgltf_options* options, cgltf_s
 		return cgltf_result_out_of_memory;
 	}
 
-	cgltf_combine_paths(path, gltf_path, uri);
+	cgltf_combine_paths(path, strlen(uri) + strlen(gltf_path) + 1, gltf_path, uri);
 
 	// after combining, the tail of the resulting path is a uri; decode_uri converts it into path
 	cgltf_decode_uri(path + strlen(path) - strlen(uri));

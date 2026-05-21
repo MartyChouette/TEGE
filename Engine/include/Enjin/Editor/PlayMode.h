@@ -39,6 +39,7 @@
 #include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Input/MIDIInput.h"
+#include <atomic>
 #include <string>
 #include <unordered_map>
 
@@ -78,10 +79,10 @@ public:
     void Update(f32 deltaTime);
 
     // State queries
-    PlayState GetState() const { return m_State; }
-    bool IsPlaying() const { return m_State == PlayState::Playing; }
-    bool IsPaused() const { return m_State == PlayState::Paused; }
-    bool IsStopped() const { return m_State == PlayState::Stopped; }
+    PlayState GetState() const { return m_State.load(std::memory_order_relaxed); }
+    bool IsPlaying() const { return m_State.load(std::memory_order_relaxed) == PlayState::Playing; }
+    bool IsPaused() const { return m_State.load(std::memory_order_relaxed) == PlayState::Paused; }
+    bool IsStopped() const { return m_State.load(std::memory_order_relaxed) == PlayState::Stopped; }
 
     // Get controller system for external configuration
     ECS::ControllerSystem* GetControllerSystem() { return &m_ControllerSystem; }
@@ -162,7 +163,7 @@ private:
     Renderer::Camera* m_Camera = nullptr;
     Renderer::CameraController* m_CameraController = nullptr;
 
-    PlayState m_State = PlayState::Stopped;
+    std::atomic<PlayState> m_State = PlayState::Stopped; // ED-C2 fix: atomic for thread-safe state queries
 
     // Controller system for runtime
     ECS::ControllerSystem m_ControllerSystem;
