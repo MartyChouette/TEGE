@@ -1,0 +1,190 @@
+#version 450
+
+// DDGI Probe Update — ray march against voxel SDF to update irradiance probes.
+// Each invocation processes one ray for one probe.
+// Probes store irradiance in octahedral encoding (2D texture atlas).
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// Probe irradiance atlas (RGBA16F — RGB irradiance, A = ray hit distance)
+layout(set = 0, binding = 0, rgba16f) uniform image2D probeIrradianceAtlas;
+
+// Probe depth atlas (RG16F — R = mean distance, G = mean distance^2 for variance)
+layout(set = 0, binding = 1, rg16f) uniform image2D probeDepthAtlas;
+
+// Voxel grid (R16F SDF — 0 = surface, negative = inside, positive = outside)
+layout(set = 0, binding = 2) uniform sampler3D voxelSDF;
+
+// Direct lighting info for hit points (from clustered lighting or LightingUBO)
+layout(set = 0, binding = 3) uniform DDGIParams {
+    vec3 gridOrigin;        // World-space origin of probe grid
+    float gridSpacing;      // Distance between probes
+    ivec3 probeCount;       // Number of probes per axis (e.g., 8x4x8)
+    uint raysPerProbe;      // Rays per probe per frame (e.g., 64)
+    vec3 voxelGridOrigin;   // World-space origin of voxel volume
+    float voxelSize;        // Voxel size in world units
+    ivec3 voxelResolution;  // Voxel grid dimensions
+    uint frameNumber;       // For temporal amortization (update subset each frame)
+    vec3 sunDirection;      // Primary directional light
+    float sunIntensity;
+    vec3 sunColor;
+    float maxTraceDistance;  // Max ray march distance
+    uint probeAtlasWidth;   // Irradiance atlas width in texels
+    uint octResolution;     // Octahedral map resolution per probe (e.g., 8x8)
+    uint amortizationRate;  // Update 1/N probes per frame (e.g., 8)
+    float hysteresis;       // Temporal blending factor (0.97 = slow update, 0.5 = fast)
+};
+
+// --- Octahedral encoding ---
+
+// Map direction to octahedral UV [0,1]^2
+vec2 octEncode(vec3 n) {
+    n /= (abs(n.x) + abs(n.y) + abs(n.z));
+    if (n.z < 0.0) {
+        n.xy = (1.0 - abs(n.yx)) * vec2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0);
+    }
+    return n.xy * 0.5 + 0.5;
+}
+
+// --- Pseudo-random ray direction ---
+
+// Low-discrepancy sequence for ray directions (Fibonacci sphere)
+vec3 fibonacciSphereDirection(uint rayIndex, uint totalRays) {
+    float goldenRatio = (1.0 + sqrt(5.0)) / 2.0;
+    float theta = 2.0 * 3.14159265 * float(rayIndex) / goldenRatio;
+    float phi = acos(1.0 - 2.0 * (float(rayIndex) + 0.5) / float(totalRays));
+    return vec3(sin(phi) * cos(theta), cos(phi), sin(phi) * sin(theta));
+}
+
+// Rotate direction based on frame number for temporal jitter
+vec3 rotateDirection(vec3 dir, uint frame) {
+    float angle = float(frame) * 0.618033988 * 6.28318; // Golden ratio rotation
+    float c = cos(angle), s = sin(angle);
+    return vec3(dir.x * c - dir.z * s, dir.y, dir.x * s + dir.z * c);
+}
+
+// --- Voxel SDF ray march ---
+
+struct RayHit {
+    bool hit;
+    vec3 position;
+    vec3 normal;
+    float distance;
+};
+
+RayHit marchVoxelSDF(vec3 origin, vec3 direction, float maxDist) {
+    RayHit result;
+    result.hit = false;
+    result.distance = maxDist;
+
+    float t = 0.0;
+    vec3 invSize = 1.0 / vec3(voxelResolution) / voxelSize;
+
+    for (int step = 0; step < 128; ++step) {
+        vec3 pos = origin + direction * t;
+
+        // Convert to voxel UV [0,1]^3
+        vec3 uvw = (pos - voxelGridOrigin) / (vec3(voxelResolution) * voxelSize);
+
+        // Out of bounds check
+        if (any(lessThan(uvw, vec3(0.0))) || any(greaterThan(uvw, vec3(1.0)))) {
+            break;
+        }
+
+        float sdfValue = texture(voxelSDF, uvw).r;
+
+        if (sdfValue <= voxelSize * 0.5) {
+            // Hit surface
+            result.hit = true;
+            result.position = pos;
+            result.distance = t;
+
+            // Estimate normal from SDF gradient (central differences)
+            float eps = voxelSize;
+            vec3 grad;
+            grad.x = texture(voxelSDF, uvw + vec3(eps, 0, 0) * invSize).r
+                   - texture(voxelSDF, uvw - vec3(eps, 0, 0) * invSize).r;
+            grad.y = texture(voxelSDF, uvw + vec3(0, eps, 0) * invSize).r
+                   - texture(voxelSDF, uvw - vec3(0, eps, 0) * invSize).r;
+            grad.z = texture(voxelSDF, uvw + vec3(0, 0, eps) * invSize).r
+                   - texture(voxelSDF, uvw - vec3(0, 0, eps) * invSize).r;
+            result.normal = normalize(grad);
+            if (length(grad) < 0.001) result.normal = -direction;
+            break;
+        }
+
+        // Step by SDF distance (sphere tracing)
+        t += max(sdfValue, voxelSize * 0.5);
+        if (t >= maxDist) break;
+    }
+
+    return result;
+}
+
+// --- Direct lighting at hit point ---
+
+vec3 evaluateDirectLight(vec3 position, vec3 normal) {
+    // Simple directional light contribution
+    float NdotL = max(dot(normal, -sunDirection), 0.0);
+    return sunColor * sunIntensity * NdotL;
+}
+
+void main() {
+    uint globalIdx = gl_GlobalInvocationID.x;
+
+    // Total work items = probeCount.x * probeCount.y * probeCount.z * raysPerProbe
+    uint totalProbes = uint(probeCount.x) * uint(probeCount.y) * uint(probeCount.z);
+    uint probeIndex = globalIdx / raysPerProbe;
+    uint rayIndex = globalIdx % raysPerProbe;
+
+    if (probeIndex >= totalProbes) return;
+
+    // Temporal amortization: only update 1/N probes per frame
+    if ((probeIndex % amortizationRate) != (frameNumber % amortizationRate)) return;
+
+    // Probe position in world space
+    uint px = probeIndex % uint(probeCount.x);
+    uint py = (probeIndex / uint(probeCount.x)) % uint(probeCount.y);
+    uint pz = probeIndex / (uint(probeCount.x) * uint(probeCount.y));
+    vec3 probePos = gridOrigin + vec3(float(px), float(py), float(pz)) * gridSpacing;
+
+    // Generate ray direction (Fibonacci sphere + temporal jitter)
+    vec3 rayDir = fibonacciSphereDirection(rayIndex, raysPerProbe);
+    rayDir = rotateDirection(rayDir, frameNumber);
+
+    // March against voxel SDF
+    RayHit hit = marchVoxelSDF(probePos, rayDir, maxTraceDistance);
+
+    // Compute radiance at hit point
+    vec3 radiance = vec3(0.0);
+    float hitDist = maxTraceDistance;
+    if (hit.hit) {
+        radiance = evaluateDirectLight(hit.position, hit.normal);
+        hitDist = hit.distance;
+    } else {
+        // Sky contribution (simple ambient)
+        radiance = sunColor * sunIntensity * 0.1;
+    }
+
+    // Write to probe atlas using octahedral encoding
+    vec2 octUV = octEncode(rayDir);
+    ivec2 texelInProbe = ivec2(octUV * float(octResolution));
+    texelInProbe = clamp(texelInProbe, ivec2(0), ivec2(octResolution - 1));
+
+    // Probe location in atlas
+    uint probesPerRow = probeAtlasWidth / octResolution;
+    uint atlasProbeX = probeIndex % probesPerRow;
+    uint atlasProbeY = probeIndex / probesPerRow;
+    ivec2 atlasTexel = ivec2(atlasProbeX * octResolution, atlasProbeY * octResolution) + texelInProbe;
+
+    // Temporal blending with previous frame's value
+    vec4 prevIrradiance = imageLoad(probeIrradianceAtlas, atlasTexel);
+    vec4 newIrradiance = vec4(mix(prevIrradiance.rgb, radiance, 1.0 - hysteresis), hitDist);
+    imageStore(probeIrradianceAtlas, atlasTexel, newIrradiance);
+
+    // Update depth atlas (for visibility weighting during sampling)
+    vec2 prevDepth = imageLoad(probeDepthAtlas, atlasTexel).rg;
+    float newMeanDist = mix(prevDepth.r, hitDist, 1.0 - hysteresis);
+    float newMeanDist2 = mix(prevDepth.g, hitDist * hitDist, 1.0 - hysteresis);
+    imageStore(probeDepthAtlas, atlasTexel, vec4(newMeanDist, newMeanDist2, 0.0, 0.0));
+}

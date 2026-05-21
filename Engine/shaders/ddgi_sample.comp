@@ -1,0 +1,171 @@
+#version 450
+
+// DDGI Probe Sampling — reads from probe atlas, outputs per-pixel irradiance.
+// Called as a compute pass before the main PBR lighting pass.
+// Writes to a screen-space irradiance texture that the PBR shader samples.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// Output: screen-space irradiance (RGBA16F)
+layout(set = 0, binding = 0, rgba16f) writeonly uniform image2D irradianceOutput;
+
+// Input: G-buffer
+layout(set = 0, binding = 1) uniform sampler2D gbufferDepth;
+layout(set = 0, binding = 2) uniform sampler2D gbufferNormal;  // World-space normals (RGB)
+
+// Probe irradiance atlas
+layout(set = 0, binding = 3) uniform sampler2D probeIrradianceAtlas;
+
+// Probe depth atlas (for visibility weighting)
+layout(set = 0, binding = 4) uniform sampler2D probeDepthAtlas;
+
+layout(set = 0, binding = 5) uniform DDGISampleParams {
+    mat4 inverseViewProj;
+    vec3 gridOrigin;
+    float gridSpacing;
+    ivec3 probeCount;
+    uint octResolution;
+    uint probeAtlasWidth;
+    uint probeAtlasHeight;
+    float normalBias;       // Small offset along normal to avoid self-shadowing
+    float viewBias;         // Small offset toward camera
+    vec2 screenSize;
+};
+
+// --- Octahedral encoding (must match probe update shader) ---
+
+vec2 octEncode(vec3 n) {
+    n /= (abs(n.x) + abs(n.y) + abs(n.z));
+    if (n.z < 0.0) {
+        n.xy = (1.0 - abs(n.yx)) * vec2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0);
+    }
+    return n.xy * 0.5 + 0.5;
+}
+
+// --- Trilinear probe interpolation ---
+
+// Sample irradiance from a single probe
+vec3 sampleProbeIrradiance(uint probeIndex, vec3 direction) {
+    vec2 octUV = octEncode(direction);
+
+    // Probe location in atlas
+    uint probesPerRow = probeAtlasWidth / octResolution;
+    uint atlasX = probeIndex % probesPerRow;
+    uint atlasY = probeIndex / probesPerRow;
+
+    // Convert to normalized UV in atlas
+    vec2 probeOriginUV = vec2(float(atlasX * octResolution) + 0.5,
+                               float(atlasY * octResolution) + 0.5);
+    vec2 texelUV = probeOriginUV + octUV * float(octResolution - 1);
+    vec2 atlasUV = texelUV / vec2(float(probeAtlasWidth), float(probeAtlasHeight));
+
+    return texture(probeIrradianceAtlas, atlasUV).rgb;
+}
+
+// Sample depth from a single probe (for visibility test)
+vec2 sampleProbeDepth(uint probeIndex, vec3 direction) {
+    vec2 octUV = octEncode(direction);
+    uint probesPerRow = probeAtlasWidth / octResolution;
+    uint atlasX = probeIndex % probesPerRow;
+    uint atlasY = probeIndex / probesPerRow;
+    vec2 probeOriginUV = vec2(float(atlasX * octResolution) + 0.5,
+                               float(atlasY * octResolution) + 0.5);
+    vec2 texelUV = probeOriginUV + octUV * float(octResolution - 1);
+    vec2 atlasUV = texelUV / vec2(float(probeAtlasWidth), float(probeAtlasHeight));
+    return texture(probeDepthAtlas, atlasUV).rg;
+}
+
+void main() {
+    ivec2 pixelCoord = ivec2(gl_GlobalInvocationID.xy);
+    if (pixelCoord.x >= int(screenSize.x) || pixelCoord.y >= int(screenSize.y)) return;
+
+    vec2 uv = (vec2(pixelCoord) + 0.5) / screenSize;
+
+    // Read G-buffer
+    float depth = texture(gbufferDepth, uv).r;
+    if (depth >= 1.0) {
+        // Sky pixel — no irradiance
+        imageStore(irradianceOutput, pixelCoord, vec4(0.0));
+        return;
+    }
+
+    vec3 normal = texture(gbufferNormal, uv).rgb * 2.0 - 1.0;
+    normal = normalize(normal);
+
+    // Reconstruct world position from depth
+    vec4 clipPos = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    clipPos.y = -clipPos.y; // Vulkan Y-flip
+    vec4 worldPos4 = inverseViewProj * clipPos;
+    vec3 worldPos = worldPos4.xyz / worldPos4.w;
+
+    // Bias position to avoid self-illumination
+    worldPos += normal * normalBias;
+
+    // Find surrounding probe grid cell
+    vec3 relPos = (worldPos - gridOrigin) / gridSpacing;
+    ivec3 baseProbe = ivec3(floor(relPos));
+    vec3 alpha = relPos - vec3(baseProbe); // Interpolation weights
+
+    // Clamp to valid probe range
+    baseProbe = max(baseProbe, ivec3(0));
+    baseProbe = min(baseProbe, probeCount - 2);
+    alpha = clamp(alpha, vec3(0.0), vec3(1.0));
+
+    // Trilinear interpolation over 8 surrounding probes
+    vec3 irradiance = vec3(0.0);
+    float totalWeight = 0.0;
+
+    for (int dz = 0; dz <= 1; ++dz) {
+        for (int dy = 0; dy <= 1; ++dy) {
+            for (int dx = 0; dx <= 1; ++dx) {
+                ivec3 probeCoord = baseProbe + ivec3(dx, dy, dz);
+
+                // Skip out-of-bounds probes
+                if (any(greaterThanEqual(probeCoord, probeCount))) continue;
+
+                uint probeIndex = uint(probeCoord.x) +
+                                  uint(probeCoord.y) * uint(probeCount.x) +
+                                  uint(probeCoord.z) * uint(probeCount.x) * uint(probeCount.y);
+
+                vec3 probePos = gridOrigin + vec3(probeCoord) * gridSpacing;
+                vec3 toSurface = worldPos - probePos;
+                float distToProbe = length(toSurface);
+
+                // Direction from probe to surface point
+                vec3 dirToSurface = normalize(toSurface);
+
+                // Trilinear weight
+                vec3 w = mix(vec3(1.0) - alpha, alpha, vec3(dx, dy, dz));
+                float trilinearWeight = w.x * w.y * w.z;
+
+                // Normal weight: penalize probes behind the surface
+                float normalWeight = max(0.0001, dot(dirToSurface, normal));
+
+                // Visibility weight (Chebyshev): use probe depth to estimate occlusion
+                vec2 depthData = sampleProbeDepth(probeIndex, dirToSurface);
+                float meanDist = depthData.r;
+                float meanDist2 = depthData.g;
+                float variance = max(0.0, meanDist2 - meanDist * meanDist);
+                float chebyshev = 1.0;
+                if (distToProbe > meanDist) {
+                    float diff = distToProbe - meanDist;
+                    chebyshev = variance / (variance + diff * diff);
+                    chebyshev = max(chebyshev * chebyshev * chebyshev, 0.0); // Sharpen
+                }
+
+                float weight = trilinearWeight * normalWeight * chebyshev;
+                if (weight <= 0.0001) continue;
+
+                vec3 probeIrrad = sampleProbeIrradiance(probeIndex, normal);
+                irradiance += probeIrrad * weight;
+                totalWeight += weight;
+            }
+        }
+    }
+
+    if (totalWeight > 0.0001) {
+        irradiance /= totalWeight;
+    }
+
+    imageStore(irradianceOutput, pixelCoord, vec4(irradiance, 1.0));
+}
