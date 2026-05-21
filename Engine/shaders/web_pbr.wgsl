@@ -1,6 +1,16 @@
 // Basic PBR shader for WebGPU (WGSL)
 // Handles: position, normal, basic directional lighting, base color
 
+// Override constants — WebGPU equivalent of Vulkan specialization constants.
+override SPEC_HAS_BASE_COLOR_TEX: u32 = 1u;
+override SPEC_HAS_NORMAL_TEX: u32 = 1u;
+override SPEC_HAS_METALLIC_TEX: u32 = 1u;
+override SPEC_HAS_EMISSIVE_TEX: u32 = 1u;
+override SPEC_HAS_HEIGHT_TEX: u32 = 1u;
+override SPEC_DOUBLE_SIDED: u32 = 1u;
+override SPEC_FLAT_SHADING: u32 = 0u;
+override SPEC_ALPHA_MODE: u32 = 0u;
+
 struct ViewUniforms {
     view: mat4x4<f32>,
     proj: mat4x4<f32>,

@@ -51,6 +51,11 @@ struct WebGPURenderPipelineDesc {
     WGPUTextureFormat colorFormat = WGPUTextureFormat_BGRA8Unorm;
     bool blendEnabled = false;
 
+    // Override constants (specialization constants for WebGPU).
+    // Passed as WGPUConstantEntry array to fragment shader at pipeline creation.
+    // Key = numeric constant ID (matching 'override' declarations in WGSL).
+    std::vector<WGPUConstantEntry> fragmentOverrides;
+
     const char* label = nullptr;
 };
 

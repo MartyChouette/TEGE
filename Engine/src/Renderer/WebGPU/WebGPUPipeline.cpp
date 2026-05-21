@@ -61,6 +61,9 @@ WGPURenderPipeline WebGPUPipeline::CreateRenderPipeline(const WebGPURenderPipeli
     fragmentState.entryPoint = {desc.fragmentEntryPoint, WGPU_STRLEN};
     fragmentState.targetCount = 1;
     fragmentState.targets = &colorTarget;
+    // Pass override constants (specialization) to fragment shader if any
+    fragmentState.constantCount = static_cast<u32>(desc.fragmentOverrides.size());
+    fragmentState.constants = desc.fragmentOverrides.empty() ? nullptr : desc.fragmentOverrides.data();
 
     // --- Primitive state ---
     WGPUPrimitiveState primitiveState = {};

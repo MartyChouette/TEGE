@@ -6,6 +6,7 @@
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Renderer/Vulkan/VulkanShader.h"
 #include "Enjin/Renderer/RenderStructs.h"
+#include "Enjin/Renderer/PipelineVariantCache.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Math/Matrix.h"
 #if !ENJIN_RENDERER_WEBGPU
@@ -68,11 +69,20 @@ public:
     void Destroy();
 
     void Bind(VkCommandBuffer commandBuffer);
-    
+
+    // Bind a specific pipeline variant (from PipelineVariantCache) instead of the default
+    void BindVariant(VkCommandBuffer commandBuffer, VkPipeline variant);
+
     VkPipeline GetPipeline() const { return m_Pipeline; }
     VkPipelineLayout GetLayout() const { return m_PipelineLayout; }
     VkDescriptorSetLayout GetDescriptorSetLayout() const { return m_DescriptorSetLayout; }
     void SetBindlessLayout(VkDescriptorSetLayout layout) { m_BindlessSetLayout = layout; }
+
+    // Pipeline variant support — get or create a variant for the given material spec key.
+    // Uses the default pipeline's create info as a template.
+    VkPipeline GetVariant(const MaterialSpecKey& key);
+    PipelineVariantCache& GetVariantCache() { return m_VariantCache; }
+    VkRenderPass GetRenderPass() const { return m_RenderPass; }
 
 private:
     bool CreateDescriptorSetLayout();
@@ -85,6 +95,14 @@ private:
     VkDescriptorSetLayout m_DescriptorSetLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_BindlessSetLayout = VK_NULL_HANDLE;  // Set 1: bindless textures (optional)
     bool m_OwnsDescriptorSetLayout = true;  // False when using external layout
+    VkRenderPass m_RenderPass = VK_NULL_HANDLE; // Cached for variant creation
+
+    // Specialization variant cache
+    PipelineVariantCache m_VariantCache;
+    // Cached template create info for variant pipeline creation
+    VkGraphicsPipelineCreateInfo m_TemplateCICache{};
+    std::vector<VkPipelineShaderStageCreateInfo> m_CachedStages;
+    bool m_HasTemplateCI = false;
 };
 
 } // namespace Renderer

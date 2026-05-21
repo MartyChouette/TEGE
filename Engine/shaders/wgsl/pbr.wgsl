@@ -1,6 +1,18 @@
 // Enjin Engine — PBR shader (WebGPU / WGSL)
 // Cook-Torrance BRDF with directional, point, and spot light shadows.
 
+// Override constants — WebGPU equivalent of Vulkan specialization constants.
+// Set per-pipeline-variant at creation time via WGPUConstantEntry.
+// Default = all features enabled (backward-compatible with default pipeline).
+override SPEC_HAS_BASE_COLOR_TEX: u32 = 1u;
+override SPEC_HAS_NORMAL_TEX: u32 = 1u;
+override SPEC_HAS_METALLIC_TEX: u32 = 1u;
+override SPEC_HAS_EMISSIVE_TEX: u32 = 1u;
+override SPEC_HAS_HEIGHT_TEX: u32 = 1u;
+override SPEC_DOUBLE_SIDED: u32 = 1u;
+override SPEC_FLAT_SHADING: u32 = 0u;
+override SPEC_ALPHA_MODE: u32 = 0u;  // 0=Opaque, 1=Mask, 2=Blend
+
 // Bind group 0: Per-frame
 struct ViewProjection {
     view: mat4x4<f32>,

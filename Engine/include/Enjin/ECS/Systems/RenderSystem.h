@@ -501,6 +501,22 @@ public:
     f32 GetPosterizeLevels() const { return m_PosterizeLevels; }
     void SetPosterizeLevels(f32 v) { m_PosterizeLevels = v; }
 
+    // Accessibility: update WebGPU post-process params (colorblind, brightness, contrast)
+    // No-op on Vulkan builds (post-processing handled by PostProcessing class)
+    struct WebPPAccessibilityParams {
+        u32 colorblindMode = 0;
+        f32 colorblindStrength = 1.0f;
+        f32 brightness = 0.0f;
+        f32 contrast = 1.0f;
+    };
+    WebPPAccessibilityParams m_WebPPAccessibility;
+    void SetWebAccessibility(u32 colorblindMode, f32 strength, f32 brightness, f32 contrast) {
+        m_WebPPAccessibility.colorblindMode = colorblindMode;
+        m_WebPPAccessibility.colorblindStrength = strength;
+        m_WebPPAccessibility.brightness = brightness;
+        m_WebPPAccessibility.contrast = contrast;
+    }
+
     // Cel shading (lighting quantization)
     bool IsCelShadingEnabled() const { return m_CelShadingEnabled; }
     void SetCelShadingEnabled(bool enabled) { m_CelShadingEnabled = enabled; }
@@ -746,6 +762,9 @@ private:
     void* m_WebPointShadowFaceViews[6] = {};              // WGPUTextureView per face (cast at use)
     Renderer::GPUBufferHandle m_WebPointShadowVPBuffer;   // 6 face VPs
 
+    // WebGPU post-process accessibility uniform buffer (uploads from m_WebPPAccessibility)
+    Renderer::GPUBufferHandle m_WebPPAccessibilityBuffer;
+
     // Post-processing (offscreen scene → ACES tonemap → swapchain)
     Renderer::GPUShaderHandle m_WebPostProcessShader;
     Renderer::GPUPipelineHandle m_WebPostProcessPipeline;
@@ -819,6 +838,7 @@ private:
     // Vulkan-specific rendering resources (advanced pipelines)
     std::unique_ptr<Renderer::VulkanPipeline> m_Pipeline;               // Vulkan main pipeline (kept for compatibility)
     std::unique_ptr<Renderer::VulkanPipeline> m_OffscreenPipeline;
+    Renderer::MaterialSpecKey m_BoundSpecKey{0xFFFFFFFF}; // Currently bound variant key (invalid = force rebind)
     VkRenderPass m_OffscreenRenderPass = VK_NULL_HANDLE;
     std::unique_ptr<Renderer::VulkanShader> m_VertexShader;
     std::unique_ptr<Renderer::VulkanShader> m_FragmentShader;

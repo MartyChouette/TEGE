@@ -139,7 +139,19 @@ layout(std430, binding = 2) readonly buffer MaterialSSBO {
     uint  _bindlessPad[2];
 } materialData;
 
-// Material flag bits
+// Specialization constants — static material properties baked into pipeline variants.
+// Defaults = all features enabled (backward-compatible with default pipeline).
+// When a specialized variant sets a constant to 0, the compiler eliminates the dead branch.
+layout(constant_id = 0) const uint SPEC_HAS_BASE_COLOR_TEX = 1;
+layout(constant_id = 1) const uint SPEC_HAS_NORMAL_TEX = 1;
+layout(constant_id = 2) const uint SPEC_HAS_METALLIC_TEX = 1;
+layout(constant_id = 3) const uint SPEC_HAS_EMISSIVE_TEX = 1;
+layout(constant_id = 4) const uint SPEC_HAS_HEIGHT_TEX = 1;
+layout(constant_id = 5) const uint SPEC_DOUBLE_SIDED = 1;
+layout(constant_id = 6) const uint SPEC_FLAT_SHADING = 0;
+layout(constant_id = 7) const uint SPEC_ALPHA_MODE = 0;  // 0=Opaque, 1=Mask, 2=Blend
+
+// Material flag bits (dynamic flags — still checked at runtime via push constants/SSBO)
 #define FLAG_DOUBLE_SIDED       (1 << 0)
 #define FLAG_CAST_SHADOWS       (1 << 1)
 #define FLAG_RECEIVE_SHADOWS    (1 << 2)
@@ -855,7 +867,7 @@ void main() {
 
     // Parallax Occlusion Mapping: offset UV using height map before any texture sampling
     // Skip for water surfaces — POM is expensive and adds little visual value on water
-    if ((mat_flags & FLAG_HAS_HEIGHT_TEX) != 0 && mat_parallaxScale > 0.0
+    if (SPEC_HAS_HEIGHT_TEX != 0 && (mat_flags & FLAG_HAS_HEIGHT_TEX) != 0 && mat_parallaxScale > 0.0
         && (mat_flags & FLAG_WATER_SURFACE) == 0) {
         // Build TBN matrix from interpolated normal and tangent
         vec3 N = normalize(fragNormal);
@@ -875,11 +887,11 @@ void main() {
 
     // Choose normal: flat shading, normal map, or interpolated vertex normal
     vec3 normal;
-    if ((mat_flags & FLAG_FLAT_SHADING) != 0) {
+    if (SPEC_FLAT_SHADING != 0 && (mat_flags & FLAG_FLAT_SHADING) != 0) {
         vec3 dFdxPos = dFdx(fragWorldPos);
         vec3 dFdyPos = dFdy(fragWorldPos);
         normal = normalize(cross(dFdxPos, dFdyPos));
-    } else if ((mat_flags & FLAG_HAS_NORMAL_TEX) != 0) {
+    } else if (SPEC_HAS_NORMAL_TEX != 0 && (mat_flags & FLAG_HAS_NORMAL_TEX) != 0) {
         // Sample normal map and transform from tangent space to world space
         vec3 N = normalize(fragNormal);
         vec3 T = normalize(fragTangent.xyz);
@@ -977,7 +989,7 @@ void main() {
     float roughness = mat_roughness;
 
     // Sample base color texture if available (bindless or fallback)
-    if ((mat_flags & FLAG_HAS_BASE_COLOR_TEX) != 0) {
+    if (SPEC_HAS_BASE_COLOR_TEX != 0 && (mat_flags & FLAG_HAS_BASE_COLOR_TEX) != 0) {
 #ifdef VIRTUAL_TEXTURING
         vec4 texColor = sampleVirtualTexture(uv);
 #else
@@ -989,7 +1001,7 @@ void main() {
     }
 
     // Sample metallic-roughness texture if available (bindless or fallback)
-    if ((mat_flags & FLAG_HAS_METALLIC_TEX) != 0) {
+    if (SPEC_HAS_METALLIC_TEX != 0 && (mat_flags & FLAG_HAS_METALLIC_TEX) != 0) {
         vec4 mrSample = (materialData.matMetallicRoughnessTexIdx != 0xFFFFFFFFu)
             ? texture(bindlessTextures[nonuniformEXT(materialData.matMetallicRoughnessTexIdx)], uv)
             : texture(metallicRoughnessMap, uv);
@@ -999,7 +1011,7 @@ void main() {
 
     // Sample emissive texture if available
     vec3 emissiveTexColor = vec3(1.0);
-    if ((mat_flags & FLAG_HAS_EMISSIVE_TEX) != 0) {
+    if (SPEC_HAS_EMISSIVE_TEX != 0 && (mat_flags & FLAG_HAS_EMISSIVE_TEX) != 0) {
         emissiveTexColor = ((materialData.matEmissiveTexIdx != 0xFFFFFFFFu)
             ? texture(bindlessTextures[nonuniformEXT(materialData.matEmissiveTexIdx)], uv)
             : texture(emissiveMap, uv)).rgb;

@@ -47,7 +47,24 @@ bool VulkanPipeline::CreateWithLayout(
     return CreatePipeline(config, vertexShader, fragmentShader);
 }
 
+void VulkanPipeline::BindVariant(VkCommandBuffer commandBuffer, VkPipeline variant) {
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, variant);
+}
+
+VkPipeline VulkanPipeline::GetVariant(const MaterialSpecKey& key) {
+    if (!m_HasTemplateCI || !m_Context) return m_Pipeline; // Fallback to default
+    return m_VariantCache.GetOrCreate(
+        m_Context->GetDevice(), m_PipelineLayout, m_RenderPass,
+        m_TemplateCICache, key);
+}
+
 void VulkanPipeline::Destroy() {
+    // Destroy cached pipeline variants before the default pipeline
+    if (m_Context) {
+        m_VariantCache.Destroy(m_Context->GetDevice());
+    }
+    m_HasTemplateCI = false;
+
     if (m_Pipeline != VK_NULL_HANDLE) {
         vkDestroyPipeline(m_Context->GetDevice(), m_Pipeline, nullptr);
         m_Pipeline = VK_NULL_HANDLE;
@@ -469,6 +486,13 @@ bool VulkanPipeline::CreatePipeline(
         ENJIN_LOG_ERROR(Renderer, "Failed to create graphics pipeline: %d", result);
         return false;
     }
+
+    // Cache template create info for variant pipeline creation
+    m_RenderPass = config.renderPass;
+    m_CachedStages.assign(shaderStages.begin(), shaderStages.end());
+    m_TemplateCICache = pipelineInfo;
+    m_TemplateCICache.pStages = m_CachedStages.data();
+    m_HasTemplateCI = true;
 
     ENJIN_LOG_INFO(Renderer, "Graphics pipeline created successfully");
     return true;
