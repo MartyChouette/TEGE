@@ -284,6 +284,10 @@ layout(binding = 18) uniform sampler2D matcapMap;
 // reflectionProbeBoxMax.w signals whether to sample from this (1.0) or use gradient fallback (0.0).
 layout(binding = 19) uniform samplerCube probeCubemap;
 
+// DDGI screen-space irradiance (from DDGIProbeSystem compute pass)
+// Contains pre-computed per-pixel irradiance from software-traced probes.
+layout(binding = 20) uniform sampler2D ddgiIrradiance;
+
 // Bindless texture array (set 1, binding 0) — all scene textures indexed by MaterialGPU handles
 // Requires VK_EXT_descriptor_indexing / Vulkan 1.2+ descriptor indexing features
 layout(set = 1, binding = 0) uniform sampler2D bindlessTextures[];
@@ -1056,6 +1060,18 @@ void main() {
     // Blend SH light probe irradiance when available
     if (lighting.shProbeIrradiance.w > 0.0) {
         result += lighting.shProbeIrradiance.xyz * albedo;
+    }
+
+    // DDGI probe irradiance — software-traced global illumination.
+    // The ddgiIrradiance texture is filled by DDGIProbeSystem compute pass each frame.
+    // Sample at screen UV; alpha > 0 means DDGI data is available.
+    {
+        vec2 screenUV = gl_FragCoord.xy / vec2(textureSize(ddgiIrradiance, 0));
+        vec4 ddgiSample = texture(ddgiIrradiance, screenUV);
+        if (ddgiSample.a > 0.0) {
+            // DDGI replaces ambient when active; blend based on alpha
+            result += ddgiSample.rgb * albedo * ddgiSample.a;
+        }
     }
 
     // Process directional lights

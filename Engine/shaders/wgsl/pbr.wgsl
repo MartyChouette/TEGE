@@ -71,6 +71,9 @@ struct BoneSSBO {
 @group(2) @binding(3) var normalSmp: sampler;
 @group(2) @binding(4) var mrTex: texture_2d<f32>;  // metallic-roughness
 @group(2) @binding(5) var mrSmp: sampler;
+// DDGI screen-space irradiance (from DDGIProbeSystem compute pass)
+@group(2) @binding(6) var ddgiIrradiance: texture_2d<f32>;
+@group(2) @binding(7) var ddgiSampler: sampler;
 
 // Bind group 3: Shadow mapping (directional + spot + point)
 struct ShadowViewProjection {
@@ -429,7 +432,15 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Ambient
-    let ambient = lighting.ambientColor.rgb * lighting.ambientColor.w * albedo;
+    var ambient = lighting.ambientColor.rgb * lighting.ambientColor.w * albedo;
+
+    // DDGI probe irradiance — software-traced global illumination
+    let ddgiDims = textureDimensions(ddgiIrradiance);
+    let screenUV = in.clip_position.xy / vec2<f32>(f32(ddgiDims.x), f32(ddgiDims.y));
+    let ddgiSample = textureSample(ddgiIrradiance, ddgiSampler, screenUV);
+    if (ddgiSample.a > 0.0) {
+        ambient = ambient + ddgiSample.rgb * albedo * ddgiSample.a;
+    }
 
     // Emissive
     let emissive = object.emissiveColor * object.emissiveStrength;
