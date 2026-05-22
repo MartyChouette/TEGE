@@ -2999,6 +2999,11 @@ void RenderSystem::Initialize() {
     // Initialize ray tracing subsystems (if hardware supports it)
     InitializeRayTracing();
 
+    // Now that RT dummy textures exist, write bindings 21-23 that were skipped earlier
+    if (m_RTDummyImageView && m_RTDummySampler && !m_DescriptorSets.empty()) {
+        CreateDescriptorSets(); // Re-creates with all 24 bindings now that dummies are available
+    }
+
     // Initialize OIT, SH light probes, and SDF scene
     m_OITManager = std::make_unique<Renderer::OITManager>();
     auto extent = m_VulkanRenderer->GetSwapchainExtent();
@@ -6532,16 +6537,20 @@ void RenderSystem::CreateDescriptorSets() {
         m_OffscreenDescriptorSets.clear();
     }
 
-    // Create descriptor pool (3 UBOs + 10 combined image samplers + 5 SSBOs per set)
+    // Create descriptor pool — must account for ALL bindings in the layout (24 total)
+    // UBOs: bindings 0, 1 = 2
+    // Combined image samplers: bindings 3,4,5,6,8,9,10,11,16,17,18,19,21,22,23 = 15
+    // SSBOs: bindings 7,12,13,14,15,20 = 6
+    // SSBO dynamic: binding 2 = 1
     std::array<VkDescriptorPoolSize, 4> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = totalSets * 2;   // bindings 0-1 (material moved to SSBO)
+    poolSizes[0].descriptorCount = totalSets * 2;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = totalSets * 12;  // bindings 3-6, 8-11, 16-19
+    poolSizes[1].descriptorCount = totalSets * 15;  // 12 original + 3 new (21,22,23)
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[2].descriptorCount = totalSets * 6;   // bindings 7, 12-15, 20 (morph targets)
+    poolSizes[2].descriptorCount = totalSets * 6;
     poolSizes[3].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
-    poolSizes[3].descriptorCount = totalSets * 1;   // binding 2 (batched material SSBO)
+    poolSizes[3].descriptorCount = totalSets * 1;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -6916,46 +6925,52 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[20].descriptorCount = 1;
         descriptorWrites[20].pBufferInfo = &morphBufferInfo;
 
-        // Dummy image info for DDGI/froxel bindings (systems not yet active)
+        // Bindings 21-23: DDGI/froxel dummy textures (only written if RT dummy resources exist)
+        // RT dummy resources are created in InitializeRayTracing() which runs after CreateDescriptorSets().
+        // On first call, these are null — we write only 21 descriptors. Later calls (e.g., resize)
+        // have the dummy resources available and write all 24.
+        u32 writeCount = 21;
         VkDescriptorImageInfo dummyImageInfo2D{};
-        dummyImageInfo2D.imageView = m_RTDummyImageView;
-        dummyImageInfo2D.sampler = m_RTDummySampler;
-        dummyImageInfo2D.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-        // Binding 21: reserved (dummy)
-        descriptorWrites[21].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[21].dstSet = m_DescriptorSets[i];
-        descriptorWrites[21].dstBinding = 21;
-        descriptorWrites[21].dstArrayElement = 0;
-        descriptorWrites[21].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[21].descriptorCount = 1;
-        descriptorWrites[21].pImageInfo = &dummyImageInfo2D;
-
-        // Binding 22: DDGI irradiance (dummy until DDGIProbeSystem is active)
-        descriptorWrites[22].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[22].dstSet = m_DescriptorSets[i];
-        descriptorWrites[22].dstBinding = 22;
-        descriptorWrites[22].dstArrayElement = 0;
-        descriptorWrites[22].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[22].descriptorCount = 1;
-        descriptorWrites[22].pImageInfo = &dummyImageInfo2D;
-
-        // Binding 23: froxel fog volume — must be a 3D image (sampler3D in shader)
         VkDescriptorImageInfo dummyImageInfo3D{};
-        dummyImageInfo3D.imageView = m_RTDummy3DImageView ? m_RTDummy3DImageView : m_RTDummyImageView;
-        dummyImageInfo3D.sampler = m_RTDummySampler;
-        dummyImageInfo3D.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        descriptorWrites[23].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[23].dstSet = m_DescriptorSets[i];
-        descriptorWrites[23].dstBinding = 23;
-        descriptorWrites[23].dstArrayElement = 0;
-        descriptorWrites[23].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[23].descriptorCount = 1;
-        descriptorWrites[23].pImageInfo = &dummyImageInfo3D;
+        if (m_RTDummyImageView && m_RTDummySampler) {
+            dummyImageInfo2D.imageView = m_RTDummyImageView;
+            dummyImageInfo2D.sampler = m_RTDummySampler;
+            dummyImageInfo2D.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+            dummyImageInfo3D.imageView = m_RTDummy3DImageView ? m_RTDummy3DImageView : m_RTDummyImageView;
+            dummyImageInfo3D.sampler = m_RTDummySampler;
+            dummyImageInfo3D.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+            descriptorWrites[21].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites[21].dstSet = m_DescriptorSets[i];
+            descriptorWrites[21].dstBinding = 21;
+            descriptorWrites[21].dstArrayElement = 0;
+            descriptorWrites[21].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            descriptorWrites[21].descriptorCount = 1;
+            descriptorWrites[21].pImageInfo = &dummyImageInfo2D;
+
+            descriptorWrites[22].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites[22].dstSet = m_DescriptorSets[i];
+            descriptorWrites[22].dstBinding = 22;
+            descriptorWrites[22].dstArrayElement = 0;
+            descriptorWrites[22].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            descriptorWrites[22].descriptorCount = 1;
+            descriptorWrites[22].pImageInfo = &dummyImageInfo2D;
+
+            descriptorWrites[23].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrites[23].dstSet = m_DescriptorSets[i];
+            descriptorWrites[23].dstBinding = 23;
+            descriptorWrites[23].dstArrayElement = 0;
+            descriptorWrites[23].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            descriptorWrites[23].descriptorCount = 1;
+            descriptorWrites[23].pImageInfo = &dummyImageInfo3D;
+
+            writeCount = 24;
+        }
 
         vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(),
-            static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+            writeCount, descriptorWrites.data(), 0, nullptr);
     }
 
     // Allocate offscreen descriptor sets (one per viewport per frame for splitscreen)
