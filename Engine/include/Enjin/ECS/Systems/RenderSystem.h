@@ -55,6 +55,7 @@ namespace Enjin { namespace Effects {
     class FluidRenderer;
     class FluidSimulation;
     class ElementalSystem;
+    class GPUParticleSystem;
     class SpriteBatchRenderer;
     class SpriteTextureAtlas;
     class GrassRenderer;
@@ -119,6 +120,8 @@ namespace Enjin { namespace Renderer {
     class ReflectionProbeSystem;
     class SDFScene;
     class ClusteredLightingSystem;
+    class DDGIProbeSystem;
+    class VolumetricFogSystem;
     struct ClusterLight;
     class VisibilityBufferRenderer;
     class VariableRateShading;
@@ -1247,6 +1250,11 @@ private:
 #if !ENJIN_RENDERER_WEBGPU
 #ifdef ENJIN_CLUSTERED_LIGHTING
     std::unique_ptr<Renderer::ClusteredLightingSystem> m_ClusteredLighting;
+
+    // Phase 2/5/6 systems wired into render loop
+    std::unique_ptr<Renderer::DDGIProbeSystem> m_DDGISystem;
+    std::unique_ptr<Renderer::VolumetricFogSystem> m_VolumetricFog;
+    std::unique_ptr<Effects::GPUParticleSystem> m_GPUParticleSystem;
     std::vector<Renderer::ClusterLight> m_ClusterLightsCache;  // Reused per frame to avoid heap allocation
 #endif
 

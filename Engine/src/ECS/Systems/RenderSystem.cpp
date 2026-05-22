@@ -2613,6 +2613,9 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include "Enjin/Renderer/OITManager.h"
 #ifdef ENJIN_CLUSTERED_LIGHTING
 #include "Enjin/Renderer/ClusteredLighting.h"
+#include "Enjin/Renderer/DDGIProbeSystem.h"
+#include "Enjin/Renderer/VolumetricFog.h"
+#include "Enjin/Effects/GPUParticleSystem.h"
 #endif
 #ifdef ENJIN_VISIBILITY_BUFFER
 #include "Enjin/Renderer/VisibilityBuffer/VisibilityBuffer.h"
@@ -3031,6 +3034,41 @@ void RenderSystem::Initialize() {
         }
     }
 #endif
+
+    // Initialize DDGI probe system (software-traced GI — no hardware RT required)
+    {
+        m_DDGISystem = std::make_unique<Renderer::DDGIProbeSystem>(m_VulkanRenderer->GetContext());
+        Renderer::DDGIConfig ddgiConfig;
+        // Start disabled — enable via editor UI or code when ready
+        ddgiConfig.enabled = false;
+        if (!m_DDGISystem->Initialize(ddgiConfig)) {
+            ENJIN_LOG_WARN(Renderer, "DDGI init failed — software GI disabled");
+            m_DDGISystem.reset();
+        }
+    }
+
+    // Initialize volumetric fog system (froxel-based participating media)
+    {
+        m_VolumetricFog = std::make_unique<Renderer::VolumetricFogSystem>(m_VulkanRenderer->GetContext());
+        Renderer::VolumetricFogConfig fogConfig;
+        fogConfig.enabled = false; // Start disabled
+        if (m_ClusteredLighting) m_VolumetricFog->SetClusteredLighting(m_ClusteredLighting.get());
+        if (!m_VolumetricFog->Initialize(fogConfig)) {
+            ENJIN_LOG_WARN(Renderer, "VolumetricFog init failed — volumetric effects disabled");
+            m_VolumetricFog.reset();
+        }
+    }
+
+    // Initialize GPU particle system (compute-based simulation)
+    {
+        m_GPUParticleSystem = std::make_unique<Effects::GPUParticleSystem>(m_VulkanRenderer->GetContext());
+        Effects::GPUEmitterConfig particleConfig;
+        // Don't auto-initialize — created on demand when GPU emitters are added
+        if (!m_GPUParticleSystem->Initialize(particleConfig)) {
+            ENJIN_LOG_WARN(Renderer, "GPUParticleSystem init failed — GPU particles disabled");
+            m_GPUParticleSystem.reset();
+        }
+    }
 
     // Initialize visibility buffer renderer
 #ifdef ENJIN_VISIBILITY_BUFFER
@@ -3906,6 +3944,59 @@ void RenderSystem::Update(f32 deltaTime) {
         }
     }
 #endif
+
+    // --- Phase 2/5/6 compute dispatches (after clustered lighting, before main geometry) ---
+    VkCommandBuffer computeCmd = m_VulkanRenderer->GetCurrentCommandBuffer();
+    if (computeCmd != VK_NULL_HANDLE && m_Camera) {
+        u32 frameNumber = m_VulkanRenderer->GetCurrentFrameIndex();
+        auto swapExtent = m_VulkanRenderer->GetSwapchainExtent();
+
+        // Find sun direction for GI and fog
+        Math::Vector3 sunDir(0.5f, 0.8f, 0.3f);
+        Math::Vector3 sunColor(1.0f, 0.95f, 0.9f);
+        f32 sunIntensity = 1.0f;
+        if (m_CachedLightEntities.size() > 0) {
+            auto* lightStor = m_World->GetComponentStorage<LightComponent>();
+            for (Entity le : m_CachedLightEntities) {
+                auto* light = lightStor ? lightStor->Get(le) : nullptr;
+                if (light && light->type == LightType::Directional) {
+                    auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(le) : nullptr;
+                    if (xf) sunDir = xf->rotation.Rotate(Math::Vector3(0, 0, -1)).Normalized();
+                    sunColor = light->color;
+                    sunIntensity = light->intensity;
+                    break;
+                }
+            }
+        }
+
+        // DDGI: voxelize scene + update probes + sample irradiance
+        if (m_DDGISystem && m_DDGISystem->IsEnabled()) {
+            Math::Matrix4 invVP = (m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix()).Inverse();
+            m_DDGISystem->Update(computeCmd, m_World, frameNumber,
+                                 sunDir, sunColor, sunIntensity,
+                                 invVP, swapExtent.width, swapExtent.height);
+        }
+
+        // Volumetric fog: froxel scattering pass
+        if (m_VolumetricFog && m_VolumetricFog->IsEnabled()) {
+            Math::Matrix4 invVP = (m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix()).Inverse();
+            Math::Matrix4 prevVP = m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix(); // TODO: use actual prev frame VP
+            static f32 s_FogTime = 0.0f; s_FogTime += deltaTime;
+            m_VolumetricFog->Update(computeCmd, s_FogTime,
+                                     invVP, prevVP, m_Camera->GetViewMatrix(),
+                                     m_Camera->GetPosition(),
+                                     m_Camera->GetNearPlane(), m_Camera->GetFarPlane(),
+                                     swapExtent.width, swapExtent.height,
+                                     sunDir, sunColor, sunIntensity);
+            m_VolumetricFog->SwapVolumes(); // Double-buffer for temporal reprojection
+        }
+
+        // GPU particles: simulate all alive particles
+        if (m_GPUParticleSystem) {
+            Math::Vector3 wind(0.0f); // TODO: read from WindSystem
+            m_GPUParticleSystem->Simulate(computeCmd, deltaTime, frameNumber, wind);
+        }
+    }
 
     // Periodic diagnostic warnings (every 300 frames)
     if (++m_DiagnosticFrameCounter >= 300) {
