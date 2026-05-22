@@ -4788,29 +4788,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // Batched texture descriptor update (1 vkUpdateDescriptorSets call instead of 6)
             UpdateEntityTextureDescriptors(boundTexture, texHeight, texNormal, texMR, texEmissive, texMatcap);
 
-            // Select specialized pipeline variant based on static material flags.
-            // This lets the GPU driver eliminate dead texture sampling branches at compile time.
-            // Only switches pipeline when the spec key changes from the previous entity.
-            {
-                Renderer::MaterialSpecKey specKey;
-                specKey.bits = 0;
-                if (pushConstants.flags & (1 << 16)) specKey.bits |= Renderer::MaterialSpecKey::BASE_COLOR_TEX;
-                if (pushConstants.flags & (1 << 17)) specKey.bits |= Renderer::MaterialSpecKey::NORMAL_TEX;
-                if (pushConstants.flags & (1 << 18)) specKey.bits |= Renderer::MaterialSpecKey::METALLIC_TEX;
-                if (pushConstants.flags & (1 << 19)) specKey.bits |= Renderer::MaterialSpecKey::EMISSIVE_TEX;
-                if (pushConstants.flags & (1 << 10)) specKey.bits |= Renderer::MaterialSpecKey::HEIGHT_TEX;
-                if (pushConstants.flags & (1 <<  0)) specKey.bits |= Renderer::MaterialSpecKey::DOUBLE_SIDED;
-                if (pushConstants.flags & (1 << 20)) specKey.bits |= Renderer::MaterialSpecKey::FLAT_SHADING;
-                specKey.SetAlphaMode(static_cast<u32>((pushConstants.flags >> 8) & 0x3));
-
-                if (specKey != m_BoundSpecKey) {
-                    VkPipeline variant = targetPipeline->GetVariant(specKey);
-                    if (variant != VK_NULL_HANDLE) {
-                        targetPipeline->BindVariant(commandBuffer, variant);
-                        m_BoundSpecKey = specKey;
-                    }
-                }
-            }
+            // Pipeline variant selection disabled pending proper CI caching.
+            // Specialization constants remain in shader with default values (all features enabled).
+            // TODO: Re-enable once VkGraphicsPipelineCreateInfo sub-structs are cached as members.
 
             // Upload bone matrices for skinned meshes.
             // Set FLAG_SKINNED whenever the entity has valid skinning matrices —

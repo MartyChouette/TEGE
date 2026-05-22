@@ -52,10 +52,14 @@ void VulkanPipeline::BindVariant(VkCommandBuffer commandBuffer, VkPipeline varia
 }
 
 VkPipeline VulkanPipeline::GetVariant(const MaterialSpecKey& key) {
-    if (!m_HasTemplateCI || !m_Context) return m_Pipeline; // Fallback to default
-    return m_VariantCache.GetOrCreate(
-        m_Context->GetDevice(), m_PipelineLayout, m_RenderPass,
-        m_TemplateCICache, key);
+    // TODO: Properly cache all sub-structs of VkGraphicsPipelineCreateInfo
+    // (vertex input, rasterization, blend, dynamic state, etc.) as member variables
+    // so the template CI doesn't reference dangling stack pointers.
+    // For now, return the default pipeline — specialization constants are still
+    // in the shader with default values (all features enabled), so the GPU driver
+    // can still optimize. Variant creation will be enabled once the CI is fully cached.
+    (void)key;
+    return m_Pipeline;
 }
 
 void VulkanPipeline::Destroy() {
@@ -487,12 +491,10 @@ bool VulkanPipeline::CreatePipeline(
         return false;
     }
 
-    // Cache template create info for variant pipeline creation
     m_RenderPass = config.renderPass;
-    m_CachedStages.assign(shaderStages.begin(), shaderStages.end());
-    m_TemplateCICache = pipelineInfo;
-    m_TemplateCICache.pStages = m_CachedStages.data();
-    m_HasTemplateCI = true;
+    // Note: template CI caching disabled — sub-struct pointers are stack-local
+    // and would dangle. GetVariant() returns the default pipeline until proper
+    // member-variable caching of all pipeline state is implemented.
 
     ENJIN_LOG_INFO(Renderer, "Graphics pipeline created successfully");
     return true;
