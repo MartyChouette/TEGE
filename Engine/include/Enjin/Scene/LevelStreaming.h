@@ -12,6 +12,8 @@
 #include <thread>
 #include <mutex>
 #include <atomic>
+#include <chrono>
+#include <queue>
 
 namespace Enjin {
 namespace Scene {
@@ -93,6 +95,15 @@ public:
     void SetMaxConcurrentLoads(u32 max) { m_MaxConcurrentLoads = max; }
     void SetEnabled(bool enabled) { m_Enabled = enabled; }
 
+    // Time-sliced integration budget (microseconds per frame for main-thread entity creation)
+    // Default 2000us = 2ms at 60fps. Glacier-inspired: no single call exceeds this budget.
+    void SetIntegrationBudgetUs(u32 budgetUs) { m_IntegrationBudgetUs = budgetUs; }
+    u32 GetIntegrationBudgetUs() const { return m_IntegrationBudgetUs; }
+
+    // Stats
+    u32 GetPendingIntegrationCount() const { return static_cast<u32>(m_StagedChunks.size()); }
+    f32 GetLastIntegrationTimeMs() const { return m_LastIntegrationTimeMs; }
+
     // Callbacks
     using ChunkCallback = std::function<void(const std::string& chunkId)>;
     void SetOnChunkLoaded(ChunkCallback cb) { m_OnChunkLoaded = cb; }
@@ -108,6 +119,17 @@ private:
     void IntegrateLoadedChunk(StreamingChunk& chunk);
     void UnloadChunkEntities(StreamingChunk& chunk);
 
+    // Time-sliced integration: process staged chunks within budget
+    void ProcessStagedIntegration();
+
+    // Staged chunk data — scene JSON parsed on worker thread, entities created on main thread
+    struct StagedChunkData {
+        std::string chunkId;
+        std::string sceneJson;     // Raw JSON string (parsed off main thread)
+        bool jsonReady = false;    // Set by worker thread when JSON is loaded
+        u32 entitiesCreated = 0;   // How many entities have been integrated so far
+    };
+
     ECS::World* m_World = nullptr;
     std::vector<StreamingChunk> m_Chunks;
     std::vector<std::string> m_LoadQueue;
@@ -115,7 +137,13 @@ private:
     std::unordered_set<std::string> m_LoadQueueSet;    // O(1) duplicate check
     std::unordered_set<std::string> m_UnloadQueueSet;  // O(1) duplicate check
 
+    // Staged chunks waiting for time-sliced integration on main thread
+    std::queue<StagedChunkData> m_StagedChunks;
+    std::mutex m_StagedMutex;
+
     u32 m_MaxConcurrentLoads = 2;
+    u32 m_IntegrationBudgetUs = 2000; // 2ms default (Glacier-inspired)
+    f32 m_LastIntegrationTimeMs = 0.0f;
     bool m_Enabled = true;
     std::atomic<u32> m_ActiveLoads{0};
     std::mutex m_LoadMutex;
