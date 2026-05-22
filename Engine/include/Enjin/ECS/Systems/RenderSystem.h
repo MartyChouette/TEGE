@@ -1327,6 +1327,10 @@ private:
     VkImage m_RTDummyImage = VK_NULL_HANDLE;
     VkDeviceMemory m_RTDummyImageMemory = VK_NULL_HANDLE;
     VkImageView m_RTDummyImageView = VK_NULL_HANDLE;
+    // 3D dummy image for sampler3D bindings (froxel volume, etc.)
+    VkImage m_RTDummy3DImage = VK_NULL_HANDLE;
+    VkDeviceMemory m_RTDummy3DImageMemory = VK_NULL_HANDLE;
+    VkImageView m_RTDummy3DImageView = VK_NULL_HANDLE;
     VkSampler m_RTDummySampler = VK_NULL_HANDLE;
     VkBuffer m_RTDummyBuffer = VK_NULL_HANDLE;
     VkDeviceMemory m_RTDummyBufferMemory = VK_NULL_HANDLE;

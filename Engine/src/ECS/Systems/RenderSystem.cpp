@@ -6940,14 +6940,19 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[22].descriptorCount = 1;
         descriptorWrites[22].pImageInfo = &dummyImageInfo2D;
 
-        // Binding 23: froxel fog volume (dummy until VolumetricFogSystem is active)
+        // Binding 23: froxel fog volume — must be a 3D image (sampler3D in shader)
+        VkDescriptorImageInfo dummyImageInfo3D{};
+        dummyImageInfo3D.imageView = m_RTDummy3DImageView ? m_RTDummy3DImageView : m_RTDummyImageView;
+        dummyImageInfo3D.sampler = m_RTDummySampler;
+        dummyImageInfo3D.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
         descriptorWrites[23].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[23].dstSet = m_DescriptorSets[i];
         descriptorWrites[23].dstBinding = 23;
         descriptorWrites[23].dstArrayElement = 0;
         descriptorWrites[23].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrites[23].descriptorCount = 1;
-        descriptorWrites[23].pImageInfo = &dummyImageInfo2D;
+        descriptorWrites[23].pImageInfo = &dummyImageInfo3D;
 
         vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(),
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
@@ -11339,6 +11344,41 @@ void RenderSystem::CreateRTDummyResources() {
         if (vkCreateImageView(device, &viewInfo, nullptr, &m_RTDummyImageView) != VK_SUCCESS) {
             ENJIN_LOG_ERROR(Renderer, "Failed to create RT dummy image view");
             return;
+        }
+    }
+
+    // Create 1x1x1 3D dummy image for sampler3D bindings (froxel volume)
+    {
+        VkImageCreateInfo img3DInfo{};
+        img3DInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        img3DInfo.imageType = VK_IMAGE_TYPE_3D;
+        img3DInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        img3DInfo.extent = { 1, 1, 1 };
+        img3DInfo.mipLevels = 1;
+        img3DInfo.arrayLayers = 1;
+        img3DInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        img3DInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        img3DInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+        img3DInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        img3DInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        if (vkCreateImage(device, &img3DInfo, nullptr, &m_RTDummy3DImage) == VK_SUCCESS) {
+            VkMemoryRequirements memReqs3D;
+            vkGetImageMemoryRequirements(device, m_RTDummy3DImage, &memReqs3D);
+            VkMemoryAllocateInfo alloc3D{};
+            alloc3D.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            alloc3D.allocationSize = memReqs3D.size;
+            alloc3D.memoryTypeIndex = ctx->FindMemoryType(memReqs3D.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            if (vkAllocateMemory(device, &alloc3D, nullptr, &m_RTDummy3DImageMemory) == VK_SUCCESS) {
+                vkBindImageMemory(device, m_RTDummy3DImage, m_RTDummy3DImageMemory, 0);
+                VkImageViewCreateInfo view3DInfo{};
+                view3DInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+                view3DInfo.image = m_RTDummy3DImage;
+                view3DInfo.viewType = VK_IMAGE_VIEW_TYPE_3D;
+                view3DInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+                view3DInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+                vkCreateImageView(device, &view3DInfo, nullptr, &m_RTDummy3DImageView);
+            }
         }
     }
 
