@@ -1215,11 +1215,12 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
                                 state.groundState == Physics::IPhysicsBackend::CharacterGroundState::OnSteepGround);
         // WASM workaround: CharacterVirtual reports InAir for valid surfaces.
         // Use raycast to detect actual ground below the character.
-        if (!physicsGrounded && !ctrl.isJumping) {
+        // Only check if not already falling fast (prevents re-grounding mid-fall).
+        if (!physicsGrounded && !ctrl.isJumping && ctrl.velocity.y > -2.0f) {
             f32 groundY = 0.0f;
             if (CheckGround(state.position, groundY, entity)) {
                 f32 distToGround = state.position.y - groundY;
-                if (distToGround < 0.2f) physicsGrounded = true;  // close to ground = on ground
+                if (distToGround < 0.15f) physicsGrounded = true;
             }
         }
 
@@ -1536,11 +1537,28 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
         ctrl.isFalling = ctrl.velocity.y < 0;
     }
 
-    // Apply velocity
-    transform.position = transform.position + ctrl.velocity * dt;
+    // Apply velocity via Jolt CharacterVirtual (handles wall + ground collisions)
+    // Falls back to direct position update when physics is unavailable.
+    if (m_Physics && m_Physics->HasCharacterController(entity)) {
+        auto state = m_Physics->UpdateCharacterController(entity, ctrl.velocity, dt);
+        transform.position = state.position;
 
-    // Ground check via physics raycast with Y=0 fallback
-    {
+        // Update ground state from physics
+        if (state.groundState == Physics::IPhysicsBackend::CharacterGroundState::OnGround) {
+            if (ctrl.velocity.y <= 0.0f) {
+                ctrl.velocity.y = 0.0f;
+            }
+            ctrl.isGrounded = true;
+            ctrl.isJumping = false;
+            ctrl.isFalling = false;
+        } else {
+            ctrl.isGrounded = false;
+        }
+    } else {
+        // Fallback: direct position update (no wall collision)
+        transform.position = transform.position + ctrl.velocity * dt;
+
+        // Ground check via physics raycast with Y=0 fallback
         f32 groundY = 0.0f;
         if (CheckGround(transform.position, groundY, entity) && transform.position.y <= groundY && ctrl.velocity.y <= 0.0f) {
             transform.position.y = groundY;
