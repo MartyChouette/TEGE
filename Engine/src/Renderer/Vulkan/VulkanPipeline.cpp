@@ -91,7 +91,7 @@ void VulkanPipeline::Bind(VkCommandBuffer commandBuffer) {
 }
 
 bool VulkanPipeline::CreateDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 21> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 24> bindings{};
 
     // UBO binding 0: model/view/projection matrices (vertex shader)
     bindings[0].binding = 0;
@@ -239,6 +239,27 @@ bool VulkanPipeline::CreateDescriptorSetLayout() {
     bindings[20].descriptorCount = 1;
     bindings[20].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     bindings[20].pImmutableSamplers = nullptr;
+
+    // Binding 21: reserved (gap for future use)
+    bindings[21].binding = 21;
+    bindings[21].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[21].descriptorCount = 1;
+    bindings[21].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[21].pImmutableSamplers = nullptr;
+
+    // Binding 22: DDGI screen-space irradiance (fragment shader)
+    bindings[22].binding = 22;
+    bindings[22].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[22].descriptorCount = 1;
+    bindings[22].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[22].pImmutableSamplers = nullptr;
+
+    // Binding 23: volumetric fog froxel volume (fragment shader)
+    bindings[23].binding = 23;
+    bindings[23].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[23].descriptorCount = 1;
+    bindings[23].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[23].pImmutableSamplers = nullptr;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;

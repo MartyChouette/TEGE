@@ -6717,7 +6717,7 @@ void RenderSystem::CreateDescriptorSets() {
         // When a probe is baked, this is updated via UpdateProbeCubemapDescriptor()
         VkDescriptorImageInfo probeCubemapImageInfo = imageInfo;
 
-        std::array<VkWriteDescriptorSet, 21> descriptorWrites{};
+        std::array<VkWriteDescriptorSet, 24> descriptorWrites{};
 
         // MVP descriptor
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -6915,6 +6915,39 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[20].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         descriptorWrites[20].descriptorCount = 1;
         descriptorWrites[20].pBufferInfo = &morphBufferInfo;
+
+        // Dummy image info for DDGI/froxel bindings (systems not yet active)
+        VkDescriptorImageInfo dummyImageInfo2D{};
+        dummyImageInfo2D.imageView = m_RTDummyImageView;
+        dummyImageInfo2D.sampler = m_RTDummySampler;
+        dummyImageInfo2D.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        // Binding 21: reserved (dummy)
+        descriptorWrites[21].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[21].dstSet = m_DescriptorSets[i];
+        descriptorWrites[21].dstBinding = 21;
+        descriptorWrites[21].dstArrayElement = 0;
+        descriptorWrites[21].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[21].descriptorCount = 1;
+        descriptorWrites[21].pImageInfo = &dummyImageInfo2D;
+
+        // Binding 22: DDGI irradiance (dummy until DDGIProbeSystem is active)
+        descriptorWrites[22].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[22].dstSet = m_DescriptorSets[i];
+        descriptorWrites[22].dstBinding = 22;
+        descriptorWrites[22].dstArrayElement = 0;
+        descriptorWrites[22].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[22].descriptorCount = 1;
+        descriptorWrites[22].pImageInfo = &dummyImageInfo2D;
+
+        // Binding 23: froxel fog volume (dummy until VolumetricFogSystem is active)
+        descriptorWrites[23].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[23].dstSet = m_DescriptorSets[i];
+        descriptorWrites[23].dstBinding = 23;
+        descriptorWrites[23].dstArrayElement = 0;
+        descriptorWrites[23].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[23].descriptorCount = 1;
+        descriptorWrites[23].pImageInfo = &dummyImageInfo2D;
 
         vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(),
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);

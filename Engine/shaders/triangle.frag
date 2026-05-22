@@ -286,11 +286,12 @@ layout(binding = 19) uniform samplerCube probeCubemap;
 
 // DDGI screen-space irradiance (from DDGIProbeSystem compute pass)
 // Contains pre-computed per-pixel irradiance from software-traced probes.
-layout(binding = 20) uniform sampler2D ddgiIrradiance;
+// Binding 22: avoids conflict with binding 20 (morph target SSBO)
+layout(binding = 22) uniform sampler2D ddgiIrradiance;
 
 // Volumetric fog froxel volume (from VolumetricFogSystem compute pass)
 // 3D RGBA16F — RGB = in-scattered light, A = transmittance per froxel.
-layout(binding = 21) uniform sampler3D froxelVolume;
+layout(binding = 23) uniform sampler3D froxelVolume;
 
 // Bindless texture array (set 1, binding 0) — all scene textures indexed by MaterialGPU handles
 // Requires VK_EXT_descriptor_indexing / Vulkan 1.2+ descriptor indexing features
