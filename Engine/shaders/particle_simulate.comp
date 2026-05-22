@@ -1,0 +1,117 @@
+#version 450
+
+// GPU Particle Simulation — update position, velocity, lifetime on GPU.
+// Each invocation updates one particle. Dead particles are compacted by
+// the indirect draw buffer (alive particles write their index to an append buffer).
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Particle state (read-write SSBO)
+struct Particle {
+    vec3 position;
+    float lifetime;      // Remaining lifetime (seconds). <= 0 = dead.
+    vec3 velocity;
+    float age;           // Total age (seconds since spawn)
+    vec4 color;          // Current RGBA (interpolated over lifetime)
+    float size;          // Current billboard size
+    float rotation;      // Billboard rotation angle
+    float _pad0;
+    float _pad1;
+};
+
+layout(std430, set = 0, binding = 0) buffer ParticleBuffer {
+    Particle particles[];
+};
+
+// Alive particle index list for indirect draw (append buffer)
+layout(std430, set = 0, binding = 1) buffer AliveIndexBuffer {
+    uint aliveCount;    // Atomic counter (reset to 0 before dispatch)
+    uint aliveIndices[];
+};
+
+// Emitter parameters
+layout(set = 0, binding = 2) uniform EmitterParams {
+    vec3 emitterPosition;
+    float deltaTime;
+    vec3 emitterDirection;
+    float emitterSpread;    // Cone half-angle (radians)
+    vec3 gravity;
+    float damping;          // Velocity damping per second (0 = none, 1 = full stop)
+    vec3 windForce;         // Global wind force (from WindSystem)
+    uint maxParticles;
+    vec4 startColor;
+    vec4 endColor;
+    float startSize;
+    float endSize;
+    float maxLifetime;
+    float spawnRate;        // Particles per second
+    float turbulenceStrength;
+    float turbulenceFrequency;
+    uint frameNumber;
+    float _pad;
+};
+
+// Simple hash for pseudo-random per-particle noise
+float hash(uint n) {
+    n = (n << 13u) ^ n;
+    n = n * (n * n * 15731u + 789221u) + 1376312589u;
+    return float(n & 0x7FFFFFFFu) / float(0x7FFFFFFF);
+}
+
+vec3 turbulence(vec3 pos, float freq, float strength, uint seed) {
+    // Cheap curl-noise approximation using hash
+    float h = 0.01;
+    vec3 p = pos * freq;
+    float nx = hash(seed + uint(p.x * 73.0 + p.y * 157.0 + p.z * 113.0));
+    float ny = hash(seed + uint(p.x * 97.0 + p.y * 131.0 + p.z * 89.0));
+    float nz = hash(seed + uint(p.x * 61.0 + p.y * 173.0 + p.z * 149.0));
+    return (vec3(nx, ny, nz) * 2.0 - 1.0) * strength;
+}
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx >= maxParticles) return;
+
+    Particle p = particles[idx];
+
+    // Skip dead particles
+    if (p.lifetime <= 0.0) return;
+
+    // Update lifetime
+    p.lifetime -= deltaTime;
+    p.age += deltaTime;
+
+    if (p.lifetime <= 0.0) {
+        // Particle died this frame — don't add to alive list
+        particles[idx] = p;
+        return;
+    }
+
+    // Physics update
+    vec3 acceleration = gravity;
+    acceleration += windForce;
+
+    // Turbulence
+    if (turbulenceStrength > 0.0) {
+        acceleration += turbulence(p.position, turbulenceFrequency, turbulenceStrength, idx + frameNumber);
+    }
+
+    // Velocity verlet integration
+    p.velocity += acceleration * deltaTime;
+    p.velocity *= (1.0 - damping * deltaTime); // Damping
+    p.position += p.velocity * deltaTime;
+
+    // Interpolate color and size over lifetime
+    float t = clamp(p.age / maxLifetime, 0.0, 1.0);
+    p.color = mix(startColor, endColor, t);
+    p.size = mix(startSize, endSize, t);
+
+    // Write back
+    particles[idx] = p;
+
+    // Append to alive list for indirect draw
+    uint aliveIdx = atomicAdd(aliveCount, 1u);
+    if (aliveIdx < maxParticles) {
+        aliveIndices[aliveIdx] = idx;
+    }
+}
