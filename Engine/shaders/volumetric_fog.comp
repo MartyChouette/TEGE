@@ -1,0 +1,249 @@
+#version 450
+
+// Volumetric Fog — compute in-scattered light per froxel.
+// Each froxel accumulates light from clustered lights + DDGI probes + shadow atlas.
+// Output: 3D RGBA16F texture (RGB = in-scattered light, A = transmittance).
+// Temporal reprojection reduces noise by blending with previous frame's volume.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// Output froxel volume (RGBA16F — scattering.rgb, transmittance.a)
+layout(set = 0, binding = 0, rgba16f) uniform image3D froxelVolume;
+
+// Previous frame's froxel volume for temporal reprojection
+layout(set = 0, binding = 1) uniform sampler3D prevFroxelVolume;
+
+// Clustered light data (same as main lighting pass)
+struct ClusterLight {
+    vec3 position;
+    float range;
+    vec3 color;
+    float intensity;
+    vec3 direction;
+    float outerConeAngle;
+};
+
+layout(std430, set = 0, binding = 2) readonly buffer LightBuffer {
+    ClusterLight lights[];
+};
+
+// Light grid from clustered lighting (reuse same grid for froxels)
+struct ClusterLightGrid {
+    uint offset;
+    uint count;
+};
+
+layout(std430, set = 0, binding = 3) readonly buffer LightGridBuffer {
+    ClusterLightGrid lightGrid[];
+};
+
+layout(std430, set = 0, binding = 4) readonly buffer LightIndexBuffer {
+    uint lightIndices[];
+};
+
+// Shadow atlas for shadow testing
+layout(set = 0, binding = 5) uniform sampler2DShadow shadowAtlas;
+
+// DDGI irradiance for indirect fog illumination
+layout(set = 0, binding = 6) uniform sampler2D ddgiIrradiance;
+
+// Depth buffer for scene intersection
+layout(set = 0, binding = 7) uniform sampler2D sceneDepth;
+
+// Parameters
+layout(set = 0, binding = 8) uniform FogParams {
+    mat4 inverseViewProj;
+    mat4 prevViewProj;        // Previous frame VP for temporal reprojection
+    mat4 viewMatrix;
+    vec3 cameraPos;
+    float nearPlane;
+    float farPlane;
+    float time;
+    uint screenWidth;
+    uint screenHeight;
+
+    // Fog properties
+    vec3 fogAlbedo;           // Scattering albedo (fog color)
+    float fogDensity;         // Base density
+    float fogHeightFalloff;   // Exponential height falloff
+    float fogBaseHeight;      // Height at which density is maximum
+    float fogAnisotropy;      // Henyey-Greenstein phase function asymmetry (-1..1)
+    float temporalBlend;      // 0.0 = no history, 0.95 = heavy temporal reuse
+
+    // Noise for density variation
+    float noiseScale;         // World-space noise frequency
+    float noiseStrength;      // 0 = uniform density, 1 = full noise modulation
+    float windSpeedX;         // Fog drift speed
+    float windSpeedZ;
+
+    // Grid dimensions (match clustered lighting)
+    uint froxelCountX;        // 16
+    uint froxelCountY;        // 9
+    uint froxelCountZ;        // 24 (exponential depth distribution)
+
+    // Sun for single-scatter approximation
+    vec3 sunDirection;
+    float sunIntensity;
+    vec3 sunColor;
+    float _pad;
+};
+
+// --- Depth slice helpers ---
+
+// Exponential depth distribution (matches clustered lighting)
+float sliceToViewDepth(uint slice) {
+    float t = float(slice) / float(froxelCountZ);
+    return nearPlane * pow(farPlane / nearPlane, t);
+}
+
+// View depth to froxel Z coordinate [0, froxelCountZ]
+float viewDepthToSlice(float depth) {
+    return float(froxelCountZ) * log(depth / nearPlane) / log(farPlane / nearPlane);
+}
+
+// --- Henyey-Greenstein phase function ---
+
+float phaseHG(float cosTheta, float g) {
+    float g2 = g * g;
+    return (1.0 - g2) / (4.0 * 3.14159265 * pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5));
+}
+
+// --- Simple 3D noise (hash-based, cheap) ---
+
+float hash31(vec3 p) {
+    p = fract(p * vec3(443.8975, 397.2973, 491.1871));
+    p += dot(p, p.yzx + 19.19);
+    return fract((p.x + p.y) * p.z);
+}
+
+float valueNoise3D(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f); // Smoothstep
+    return mix(
+        mix(mix(hash31(i + vec3(0,0,0)), hash31(i + vec3(1,0,0)), f.x),
+            mix(hash31(i + vec3(0,1,0)), hash31(i + vec3(1,1,0)), f.x), f.y),
+        mix(mix(hash31(i + vec3(0,0,1)), hash31(i + vec3(1,0,1)), f.x),
+            mix(hash31(i + vec3(0,1,1)), hash31(i + vec3(1,1,1)), f.x), f.y),
+        f.z);
+}
+
+void main() {
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= froxelCountX || y >= froxelCountY) return;
+
+    // Froxel center in NDC
+    vec2 ndcXY = (vec2(float(x) + 0.5, float(y) + 0.5) /
+                  vec2(float(froxelCountX), float(froxelCountY))) * 2.0 - 1.0;
+    ndcXY.y = -ndcXY.y; // Vulkan Y-flip
+
+    // March through depth slices (front to back)
+    vec3 accumulatedScattering = vec3(0.0);
+    float accumulatedTransmittance = 1.0;
+
+    for (uint z = 0; z < froxelCountZ; ++z) {
+        float depthFront = sliceToViewDepth(z);
+        float depthBack = sliceToViewDepth(z + 1);
+        float depthMid = (depthFront + depthBack) * 0.5;
+        float sliceThickness = depthBack - depthFront;
+
+        // World position of this froxel center
+        vec4 clipPos = vec4(ndcXY, depthMid / farPlane, 1.0);
+        vec4 worldPos4 = inverseViewProj * clipPos;
+        vec3 worldPos = worldPos4.xyz / worldPos4.w;
+
+        // --- Density ---
+        float heightDensity = fogDensity * exp(-fogHeightFalloff * max(worldPos.y - fogBaseHeight, 0.0));
+
+        // Animated noise modulation
+        vec3 noisePos = worldPos * noiseScale + vec3(windSpeedX * time, 0.0, windSpeedZ * time);
+        float noise = valueNoise3D(noisePos);
+        float density = heightDensity * mix(1.0, noise, noiseStrength);
+        density = max(density, 0.0);
+
+        if (density < 0.0001) {
+            imageStore(froxelVolume, ivec3(x, y, z), vec4(0.0, 0.0, 0.0, 1.0));
+            continue;
+        }
+
+        // --- In-scattering from lights ---
+        vec3 inScatter = vec3(0.0);
+
+        // View direction for phase function
+        vec3 viewDir = normalize(cameraPos - worldPos);
+
+        // Sun contribution (single scatter with phase function)
+        float sunCosTheta = dot(viewDir, -sunDirection);
+        float sunPhase = phaseHG(sunCosTheta, fogAnisotropy);
+        inScatter += sunColor * sunIntensity * sunPhase;
+
+        // Clustered lights contribution
+        // Map froxel to cluster index (same grid)
+        uint clusterIdx = x + y * froxelCountX + z * froxelCountX * froxelCountY;
+        if (clusterIdx < froxelCountX * froxelCountY * froxelCountZ) {
+            ClusterLightGrid grid = lightGrid[clusterIdx];
+            for (uint li = 0; li < grid.count && li < 32; ++li) {
+                uint lightIdx = lightIndices[grid.offset + li];
+                ClusterLight light = lights[lightIdx];
+
+                vec3 toLight = light.position - worldPos;
+                float dist = length(toLight);
+                if (dist > light.range) continue;
+
+                vec3 lightDir = toLight / dist;
+                float attenuation = 1.0 / (1.0 + 0.09 * dist + 0.032 * dist * dist);
+                float rangeFade = 1.0 - smoothstep(light.range * 0.75, light.range, dist);
+                attenuation *= rangeFade;
+
+                // Spot light cone (if outerConeAngle > 0)
+                if (light.outerConeAngle > 0.0) {
+                    float theta = dot(lightDir, normalize(-light.direction));
+                    float spotFade = clamp((theta - cos(light.outerConeAngle)) /
+                                           max(cos(light.outerConeAngle * 0.8) - cos(light.outerConeAngle), 0.001),
+                                           0.0, 1.0);
+                    attenuation *= spotFade;
+                }
+
+                // Phase function
+                float cosTheta = dot(viewDir, lightDir);
+                float phase = phaseHG(cosTheta, fogAnisotropy);
+
+                inScatter += light.color * light.intensity * attenuation * phase;
+            }
+        }
+
+        // Apply fog albedo
+        inScatter *= fogAlbedo;
+
+        // --- Beer-Lambert extinction ---
+        float extinction = density * sliceThickness;
+        float sliceTransmittance = exp(-extinction);
+        float integrationFactor = (1.0 - sliceTransmittance) / max(extinction, 0.0001);
+
+        // Accumulate (front-to-back compositing)
+        accumulatedScattering += accumulatedTransmittance * inScatter * integrationFactor;
+        accumulatedTransmittance *= sliceTransmittance;
+
+        // Write per-slice data for the PBR shader to sample
+        vec4 froxelData = vec4(inScatter * integrationFactor, sliceTransmittance);
+
+        // Temporal reprojection: blend with previous frame
+        if (temporalBlend > 0.0) {
+            // Reproject this froxel's world position to previous frame's froxel UV
+            vec4 prevClip = prevViewProj * vec4(worldPos, 1.0);
+            vec3 prevNDC = prevClip.xyz / prevClip.w;
+            prevNDC.y = -prevNDC.y; // Vulkan Y-flip
+            vec3 prevUVW = vec3(prevNDC.xy * 0.5 + 0.5,
+                                float(z) / float(froxelCountZ));
+
+            if (all(greaterThanEqual(prevUVW, vec3(0.0))) && all(lessThanEqual(prevUVW, vec3(1.0)))) {
+                vec4 prevData = texture(prevFroxelVolume, prevUVW);
+                froxelData = mix(froxelData, prevData, temporalBlend);
+            }
+        }
+
+        imageStore(froxelVolume, ivec3(x, y, z), froxelData);
+    }
+}

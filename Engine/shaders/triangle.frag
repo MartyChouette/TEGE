@@ -288,6 +288,10 @@ layout(binding = 19) uniform samplerCube probeCubemap;
 // Contains pre-computed per-pixel irradiance from software-traced probes.
 layout(binding = 20) uniform sampler2D ddgiIrradiance;
 
+// Volumetric fog froxel volume (from VolumetricFogSystem compute pass)
+// 3D RGBA16F — RGB = in-scattered light, A = transmittance per froxel.
+layout(binding = 21) uniform sampler3D froxelVolume;
+
 // Bindless texture array (set 1, binding 0) — all scene textures indexed by MaterialGPU handles
 // Requires VK_EXT_descriptor_indexing / Vulkan 1.2+ descriptor indexing features
 layout(set = 1, binding = 0) uniform sampler2D bindlessTextures[];
@@ -1623,22 +1627,46 @@ void main() {
     }
 
     // Height-based distance fog (volumetric feel: thicker near ground, thins at height)
-    float fogDensity = lighting.fogParams.x;
-    if (fogDensity > 0.0) {
-        float fogStart = lighting.fogParams.y;
-        float fogEnd = lighting.fogParams.z;
-        float fogHeightFalloff = lighting.fogParams.w;
+    // Volumetric fog: sample froxel volume for physically-based fog with per-light scattering.
+    // Falls back to simple distance fog when volumetric is unavailable.
+    {
+        ivec3 froxelSize = textureSize(froxelVolume, 0);
+        bool hasVolumetricFog = (froxelSize.x > 1 && froxelSize.y > 1 && froxelSize.z > 1);
 
-        float dist = length(lighting.cameraPos - fragWorldPos);
-        float fogFactor = clamp((dist - fogStart) / (fogEnd - fogStart), 0.0, 1.0);
-        fogFactor *= fogDensity;
+        if (hasVolumetricFog) {
+            // Map fragment to froxel UV: XY from screen position, Z from view depth
+            vec2 screenUV = gl_FragCoord.xy / vec2(textureSize(ddgiIrradiance, 0));
+            // Exponential depth mapping (must match froxel compute shader)
+            float nearP = 0.1; // Should match camera near plane
+            float farP = lighting.fogParams.z; // Reuse fog end as far plane
+            if (farP <= nearP) farP = 1000.0;
+            float depthT = log(fragViewDepth / nearP) / log(farP / nearP);
+            depthT = clamp(depthT, 0.0, 1.0);
+            vec3 froxelUVW = vec3(screenUV, depthT);
 
-        // Height falloff: fog thins as Y increases above ground
-        float heightFog = exp(-max(fragWorldPos.y, 0.0) * fogHeightFalloff);
-        fogFactor *= heightFog;
+            vec4 fogSample = texture(froxelVolume, froxelUVW);
+            // RGB = in-scattered light accumulated along view ray
+            // A = transmittance (1.0 = clear, 0.0 = fully opaque fog)
+            result = result * fogSample.a + fogSample.rgb;
+        } else {
+            // Fallback: simple distance fog (existing behavior)
+            float fogDensity = lighting.fogParams.x;
+            if (fogDensity > 0.0) {
+                float fogStart = lighting.fogParams.y;
+                float fogEnd = lighting.fogParams.z;
+                float fogHeightFalloff = lighting.fogParams.w;
 
-        vec3 fogColor = lighting.fogColorSnow.xyz;
-        result = mix(result, fogColor, fogFactor);
+                float dist = length(lighting.cameraPos - fragWorldPos);
+                float fogFactor = clamp((dist - fogStart) / (fogEnd - fogStart), 0.0, 1.0);
+                fogFactor *= fogDensity;
+
+                float heightFog = exp(-max(fragWorldPos.y, 0.0) * fogHeightFalloff);
+                fogFactor *= heightFog;
+
+                vec3 fogColor = lighting.fogColorSnow.xyz;
+                result = mix(result, fogColor, fogFactor);
+            }
+        }
     }
 
     // Alpha handling
