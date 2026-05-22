@@ -85,7 +85,7 @@ public:
     bool RecoverFromCrash();
 
 private:
-    void SendMessage(EditorMessageType type, const std::string& payload = "");
+    void SendBridgeMessage(EditorMessageType type, const std::string& payload = "");
     void HandleIncomingMessages();
 
     // Process management (out-of-process mode)

@@ -6,6 +6,7 @@
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Math/Matrix.h"
+#include "Enjin/Renderer/ComputePipelineHelper.h"
 #include <vulkan/vulkan.h>
 #include <memory>
 
@@ -125,22 +126,11 @@ private:
     u32 m_IrradianceWidth = 0;
     u32 m_IrradianceHeight = 0;
 
-    // Compute pipelines
-    VkPipeline m_VoxelizePipeline = VK_NULL_HANDLE;
-    VkPipeline m_ProbeUpdatePipeline = VK_NULL_HANDLE;
-    VkPipeline m_ProbeSamplePipeline = VK_NULL_HANDLE;
-    VkPipelineLayout m_VoxelizeLayout = VK_NULL_HANDLE;
-    VkPipelineLayout m_ProbeUpdateLayout = VK_NULL_HANDLE;
-    VkPipelineLayout m_ProbeSampleLayout = VK_NULL_HANDLE;
-
-    // Descriptor sets and layouts
-    VkDescriptorSetLayout m_VoxelizeDescLayout = VK_NULL_HANDLE;
-    VkDescriptorSetLayout m_ProbeUpdateDescLayout = VK_NULL_HANDLE;
-    VkDescriptorSetLayout m_ProbeSampleDescLayout = VK_NULL_HANDLE;
-    VkDescriptorPool m_DescPool = VK_NULL_HANDLE;
-    VkDescriptorSet m_VoxelizeDescSet = VK_NULL_HANDLE;
-    VkDescriptorSet m_ProbeUpdateDescSet = VK_NULL_HANDLE;
-    VkDescriptorSet m_ProbeSampleDescSet = VK_NULL_HANDLE;
+    // Compute pipelines (via helper — creates layout + pipeline + descriptors)
+    ComputePipelineSetup m_VoxelizeSetup;
+    ComputePipelineSetup m_ProbeUpdateSetup;
+    ComputePipelineSetup m_ProbeSampleSetup;
+    bool m_PipelinesCreated = false;
 
     // Uniform buffers
     std::unique_ptr<VulkanBuffer> m_VoxelParamsUBO;

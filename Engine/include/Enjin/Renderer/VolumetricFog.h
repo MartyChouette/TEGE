@@ -6,6 +6,7 @@
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Math/Matrix.h"
+#include "Enjin/Renderer/ComputePipelineHelper.h"
 #include <vulkan/vulkan.h>
 #include <memory>
 
@@ -107,12 +108,9 @@ private:
     VkImageView m_FroxelViews[VOLUME_COUNT] = {};
     VkSampler m_FroxelSampler = VK_NULL_HANDLE;
 
-    // Compute pipeline
-    VkPipeline m_ComputePipeline = VK_NULL_HANDLE;
-    VkPipelineLayout m_PipelineLayout = VK_NULL_HANDLE;
-    VkDescriptorSetLayout m_DescLayout = VK_NULL_HANDLE;
-    VkDescriptorPool m_DescPool = VK_NULL_HANDLE;
-    VkDescriptorSet m_DescSets[VOLUME_COUNT] = {};
+    // Compute pipeline (via helper)
+    ComputePipelineSetup m_FogSetup;
+    bool m_PipelineCreated = false;
 
     // Uniform buffer
     std::unique_ptr<VulkanBuffer> m_ParamsUBO;

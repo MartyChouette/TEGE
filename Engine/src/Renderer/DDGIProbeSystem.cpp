@@ -1,4 +1,5 @@
 #include "Enjin/Renderer/DDGIProbeSystem.h"
+#include "Enjin/Renderer/ComputePipelineHelper.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
 #include "Enjin/Logging/Log.h"
@@ -84,21 +85,51 @@ void DDGIProbeSystem::Update(VkCommandBuffer cmd, ECS::World* world, u32 frameNu
         m_NeedsRevoxelize = false;
     }
 
-    // Step 2: Update probe subset
-    // TODO: Dispatch ddgi_probe_update.comp with per-frame UBO update
-    // Requires: m_ProbeUpdatePipeline, m_ProbeUpdateDescSet, m_DDGIParamsUBO
+    // Lazy pipeline creation (deferred so resources are ready)
+    if (!m_PipelinesCreated) {
+        CreateComputePipelines();
+        m_PipelinesCreated = true;
+    }
+
+    // Step 2: Update probe subset via SDF ray march
+    if (m_ProbeUpdateSetup.IsValid()) {
+        // Update UBO with current frame params
+        // TODO: Upload DDGIParams struct to m_DDGIParamsUBO
+
+        u32 totalProbes = GetTotalProbes();
+        u32 totalWork = totalProbes * m_Config.raysPerProbe;
+        u32 workgroups = (totalWork + 63) / 64;
+        m_ProbeUpdateSetup.Dispatch(cmd, workgroups);
+        m_ProbeUpdateSetup.Barrier(cmd);
+    }
 
     // Step 3: Sample probes into screen-space irradiance
-    // TODO: Dispatch ddgi_sample.comp
-    // Requires: m_ProbeSamplePipeline, m_ProbeSampleDescSet, m_SampleParamsUBO
+    if (m_ProbeSampleSetup.IsValid() && m_IrradianceView) {
+        u32 groupsX = (screenWidth + 7) / 8;
+        u32 groupsY = (screenHeight + 7) / 8;
+        m_ProbeSampleSetup.Dispatch(cmd, groupsX, groupsY);
+        m_ProbeSampleSetup.Barrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+    }
 }
 
 void DDGIProbeSystem::Voxelize(VkCommandBuffer cmd, ECS::World* world) {
-    // TODO: Dispatch gpu_voxelize.comp
-    // Requires: m_VoxelizePipeline, m_VoxelizeDescSet, m_VoxelParamsUBO,
-    //           MergedGeometryBuffer vertex/index SSBOs, instance buffer
-    (void)cmd;
-    (void)world;
+    (void)world; // Used when wiring instance buffer from MergedGeometryBuffer
+
+    if (!m_VoxelizeSetup.IsValid()) return;
+
+    // Clear voxel grid to max distance (empty = far away)
+    // TODO: vkCmdClearColorImage or fill compute pass
+
+    // Dispatch voxelization compute shader
+    // Each invocation processes one triangle; total = scene triangle count
+    // For now, use a conservative estimate
+    u32 estimatedTriangles = 100000; // TODO: read from MergedGeometryBuffer stats
+    u32 workgroups = (estimatedTriangles + 63) / 64;
+    m_VoxelizeSetup.Dispatch(cmd, workgroups);
+    m_VoxelizeSetup.Barrier(cmd);
+
+    ENJIN_LOG_INFO(Renderer, "DDGI: voxelized scene (%u workgroups dispatched)", workgroups);
 }
 
 // --- Resource creation ---
@@ -271,6 +302,63 @@ bool DDGIProbeSystem::CreateScreenIrradiance(u32 width, u32 height) {
     return true;
 }
 
+bool DDGIProbeSystem::CreateComputePipelines() {
+    VkDevice device = m_Context->GetDevice();
+    using BT = BindType;
+
+    // gpu_voxelize.comp: binding 0=storageImage(voxelGrid), 1=SSBO(vertices),
+    //   2=SSBO(indices), 3=SSBO(instances), 4=UBO(params)
+    m_VoxelizeSetup.Create(m_Context, {
+        {0, BT::StorageImage}, {1, BT::StorageBuffer}, {2, BT::StorageBuffer},
+        {3, BT::StorageBuffer}, {4, BT::UniformBuffer}
+    }, "gpu_voxelize.comp");
+
+    if (m_VoxelizeSetup.IsValid() && m_VoxelView) {
+        m_VoxelizeSetup.WriteStorageImage(device, 0, m_VoxelView);
+    }
+
+    // ddgi_probe_update.comp: binding 0=storageImage(irradiance), 1=storageImage(depth),
+    //   2=combinedImageSampler(voxelSDF), 3=UBO(params)
+    m_ProbeUpdateSetup.Create(m_Context, {
+        {0, BT::StorageImage}, {1, BT::StorageImage},
+        {2, BT::CombinedImageSampler}, {3, BT::UniformBuffer}
+    }, "ddgi_probe_update.comp");
+
+    if (m_ProbeUpdateSetup.IsValid()) {
+        if (m_ProbeIrradianceView)
+            m_ProbeUpdateSetup.WriteStorageImage(device, 0, m_ProbeIrradianceView);
+        if (m_ProbeDepthView)
+            m_ProbeUpdateSetup.WriteStorageImage(device, 1, m_ProbeDepthView);
+        if (m_VoxelView && m_VoxelSampler)
+            m_ProbeUpdateSetup.WriteImage(device, 2, m_VoxelView, m_VoxelSampler,
+                                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    }
+
+    // ddgi_sample.comp: binding 0=storageImage(output), 1=combinedImageSampler(depth),
+    //   2=combinedImageSampler(normal), 3=combinedImageSampler(probeIrradiance),
+    //   4=combinedImageSampler(probeDepth), 5=UBO(params)
+    m_ProbeSampleSetup.Create(m_Context, {
+        {0, BT::StorageImage}, {1, BT::CombinedImageSampler},
+        {2, BT::CombinedImageSampler}, {3, BT::CombinedImageSampler},
+        {4, BT::CombinedImageSampler}, {5, BT::UniformBuffer}
+    }, "ddgi_sample.comp");
+
+    if (m_ProbeSampleSetup.IsValid() && m_IrradianceView) {
+        m_ProbeSampleSetup.WriteStorageImage(device, 0, m_IrradianceView);
+        // G-buffer bindings (1, 2) written externally when available
+        if (m_ProbeIrradianceView && m_IrradianceSampler) {
+            m_ProbeSampleSetup.WriteImage(device, 3, m_ProbeIrradianceView, m_IrradianceSampler,
+                                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        }
+        if (m_ProbeDepthView && m_IrradianceSampler) {
+            m_ProbeSampleSetup.WriteImage(device, 4, m_ProbeDepthView, m_IrradianceSampler,
+                                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        }
+    }
+
+    return true;
+}
+
 bool DDGIProbeSystem::CreateSampler() {
     VkSamplerCreateInfo samplerCI{};
     samplerCI.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -298,19 +386,11 @@ bool DDGIProbeSystem::CreateSampler() {
 void DDGIProbeSystem::DestroyResources() {
     VkDevice device = m_Context->GetDevice();
 
-    // Pipelines
-    if (m_VoxelizePipeline) { vkDestroyPipeline(device, m_VoxelizePipeline, nullptr); m_VoxelizePipeline = VK_NULL_HANDLE; }
-    if (m_ProbeUpdatePipeline) { vkDestroyPipeline(device, m_ProbeUpdatePipeline, nullptr); m_ProbeUpdatePipeline = VK_NULL_HANDLE; }
-    if (m_ProbeSamplePipeline) { vkDestroyPipeline(device, m_ProbeSamplePipeline, nullptr); m_ProbeSamplePipeline = VK_NULL_HANDLE; }
-    if (m_VoxelizeLayout) { vkDestroyPipelineLayout(device, m_VoxelizeLayout, nullptr); m_VoxelizeLayout = VK_NULL_HANDLE; }
-    if (m_ProbeUpdateLayout) { vkDestroyPipelineLayout(device, m_ProbeUpdateLayout, nullptr); m_ProbeUpdateLayout = VK_NULL_HANDLE; }
-    if (m_ProbeSampleLayout) { vkDestroyPipelineLayout(device, m_ProbeSampleLayout, nullptr); m_ProbeSampleLayout = VK_NULL_HANDLE; }
-
-    // Descriptor sets/layouts/pool
-    if (m_VoxelizeDescLayout) { vkDestroyDescriptorSetLayout(device, m_VoxelizeDescLayout, nullptr); m_VoxelizeDescLayout = VK_NULL_HANDLE; }
-    if (m_ProbeUpdateDescLayout) { vkDestroyDescriptorSetLayout(device, m_ProbeUpdateDescLayout, nullptr); m_ProbeUpdateDescLayout = VK_NULL_HANDLE; }
-    if (m_ProbeSampleDescLayout) { vkDestroyDescriptorSetLayout(device, m_ProbeSampleDescLayout, nullptr); m_ProbeSampleDescLayout = VK_NULL_HANDLE; }
-    if (m_DescPool) { vkDestroyDescriptorPool(device, m_DescPool, nullptr); m_DescPool = VK_NULL_HANDLE; }
+    // Compute pipelines
+    m_VoxelizeSetup.Destroy(device);
+    m_ProbeUpdateSetup.Destroy(device);
+    m_ProbeSampleSetup.Destroy(device);
+    m_PipelinesCreated = false;
 
     // Images
     auto destroyImage = [device](VkImage& img, VkDeviceMemory& mem, VkImageView& view) {

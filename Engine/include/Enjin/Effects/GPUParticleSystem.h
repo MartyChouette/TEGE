@@ -5,6 +5,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Math/Vector.h"
+#include "Enjin/Renderer/ComputePipelineHelper.h"
 #include <vulkan/vulkan.h>
 #include <memory>
 
@@ -101,12 +102,9 @@ private:
     // Emitter params UBO
     std::unique_ptr<Renderer::VulkanBuffer> m_EmitterParamsUBO;
 
-    // Compute pipeline
-    VkPipeline m_SimulatePipeline = VK_NULL_HANDLE;
-    VkPipelineLayout m_PipelineLayout = VK_NULL_HANDLE;
-    VkDescriptorSetLayout m_DescLayout = VK_NULL_HANDLE;
-    VkDescriptorPool m_DescPool = VK_NULL_HANDLE;
-    VkDescriptorSet m_DescSet = VK_NULL_HANDLE;
+    // Compute pipeline (via helper)
+    Renderer::ComputePipelineSetup m_SimulateSetup;
+    bool m_PipelineCreated = false;
 
     // Spawn tracking
     u32 m_NextSpawnIndex = 0;

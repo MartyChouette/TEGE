@@ -1,4 +1,5 @@
 #include "Enjin/Renderer/VolumetricFog.h"
+#include "Enjin/Renderer/ComputePipelineHelper.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
 #include "Enjin/Renderer/ClusteredLighting.h"
@@ -58,11 +59,48 @@ void VolumetricFogSystem::Update(VkCommandBuffer cmd, f32 time,
                                   const Math::Vector3& sunColor, f32 sunIntensity) {
     if (!m_Config.enabled || !m_Initialized) return;
 
-    // TODO: Upload UBO params, bind compute pipeline, dispatch
-    // Dispatch dimensions: ceil(froxelCountX/8) x ceil(froxelCountY/8) x 1
-    // Each invocation marches all Z slices for one XY froxel
+    // Lazy pipeline creation
+    if (!m_PipelineCreated) {
+        using BT = BindType;
+        // volumetric_fog.comp bindings:
+        // 0=storageImage(froxelVolume), 1=combinedImageSampler(prevFroxelVolume),
+        // 2=SSBO(lights), 3=SSBO(lightGrid), 4=SSBO(lightIndices),
+        // 5=combinedImageSampler(shadowAtlas), 6=combinedImageSampler(ddgiIrradiance),
+        // 7=combinedImageSampler(sceneDepth), 8=UBO(params)
+        m_FogSetup.Create(m_Context, {
+            {0, BT::StorageImage}, {1, BT::CombinedImageSampler},
+            {2, BT::StorageBuffer}, {3, BT::StorageBuffer}, {4, BT::StorageBuffer},
+            {5, BT::CombinedImageSampler}, {6, BT::CombinedImageSampler},
+            {7, BT::CombinedImageSampler}, {8, BT::UniformBuffer}
+        }, "volumetric_fog.comp");
 
-    (void)cmd; (void)time; (void)inverseViewProj; (void)prevViewProj;
+        VkDevice device = m_Context->GetDevice();
+        if (m_FogSetup.IsValid()) {
+            // Write current froxel volume as storage image output
+            m_FogSetup.WriteStorageImage(device, 0, m_FroxelViews[m_CurrentVolume]);
+            // Write previous froxel volume for temporal reprojection
+            u32 prevVolume = 1 - m_CurrentVolume;
+            if (m_FroxelViews[prevVolume] && m_FroxelSampler) {
+                m_FogSetup.WriteImage(device, 1, m_FroxelViews[prevVolume], m_FroxelSampler,
+                                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            }
+            // Clustered lighting buffers written externally via SetClusteredLighting()
+        }
+        m_PipelineCreated = true;
+    }
+
+    if (!m_FogSetup.IsValid()) return;
+
+    // TODO: Upload fog params UBO with current frame data
+
+    // Dispatch: each invocation handles one XY froxel, marches all Z slices
+    u32 groupsX = (m_Config.froxelCountX + 7) / 8;
+    u32 groupsY = (m_Config.froxelCountY + 7) / 8;
+    m_FogSetup.Dispatch(cmd, groupsX, groupsY);
+    m_FogSetup.Barrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+    (void)time; (void)inverseViewProj; (void)prevViewProj;
     (void)viewMatrix; (void)cameraPos; (void)nearPlane; (void)farPlane;
     (void)screenWidth; (void)screenHeight;
     (void)sunDirection; (void)sunColor; (void)sunIntensity;
@@ -147,10 +185,8 @@ bool VolumetricFogSystem::CreateSampler() {
 void VolumetricFogSystem::DestroyResources() {
     VkDevice device = m_Context->GetDevice();
 
-    if (m_ComputePipeline) { vkDestroyPipeline(device, m_ComputePipeline, nullptr); m_ComputePipeline = VK_NULL_HANDLE; }
-    if (m_PipelineLayout) { vkDestroyPipelineLayout(device, m_PipelineLayout, nullptr); m_PipelineLayout = VK_NULL_HANDLE; }
-    if (m_DescLayout) { vkDestroyDescriptorSetLayout(device, m_DescLayout, nullptr); m_DescLayout = VK_NULL_HANDLE; }
-    if (m_DescPool) { vkDestroyDescriptorPool(device, m_DescPool, nullptr); m_DescPool = VK_NULL_HANDLE; }
+    m_FogSetup.Destroy(device);
+    m_PipelineCreated = false;
 
     for (u32 i = 0; i < VOLUME_COUNT; ++i) {
         if (m_FroxelViews[i]) { vkDestroyImageView(device, m_FroxelViews[i], nullptr); m_FroxelViews[i] = VK_NULL_HANDLE; }

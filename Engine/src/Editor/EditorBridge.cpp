@@ -5,6 +5,16 @@
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Logging/Log.h"
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#else
+#include <unistd.h>
+#include <signal.h>
+#endif
+
 namespace Enjin {
 namespace Editor {
 
@@ -62,7 +72,7 @@ void EditorBridge::Update(f32 deltaTime) {
         m_HeartbeatTimer += deltaTime;
         if (m_HeartbeatTimer >= HEARTBEAT_INTERVAL) {
             m_HeartbeatTimer = 0.0f;
-            SendMessage(EditorMessageType::Ping);
+            SendBridgeMessage(EditorMessageType::Ping);
         }
 
         // Check for runtime death
@@ -84,7 +94,7 @@ void EditorBridge::Update(f32 deltaTime) {
 
 void EditorBridge::CreateEntity(const std::string& name) {
     if (m_OutOfProcess) {
-        SendMessage(EditorMessageType::EntityCreate, name);
+        SendBridgeMessage(EditorMessageType::EntityCreate, name);
     } else if (m_World) {
         ECS::Entity e = m_World->CreateEntity();
         if (!name.empty()) {
@@ -95,7 +105,7 @@ void EditorBridge::CreateEntity(const std::string& name) {
 
 void EditorBridge::DestroyEntity(ECS::Entity entity) {
     if (m_OutOfProcess) {
-        SendMessage(EditorMessageType::EntityDestroy, std::to_string(entity));
+        SendBridgeMessage(EditorMessageType::EntityDestroy, std::to_string(entity));
     } else if (m_World) {
         m_World->DestroyEntity(entity);
     }
@@ -109,37 +119,37 @@ void EditorBridge::ModifyComponent(ECS::Entity entity, const std::string& compon
             ",\"component\":\"" + componentType +
             "\",\"key\":\"" + propertyKey +
             "\",\"value\":" + valueJson + "}";
-        SendMessage(EditorMessageType::ComponentModify, payload);
+        SendBridgeMessage(EditorMessageType::ComponentModify, payload);
     }
     // In-process mode: caller modifies components directly
 }
 
-void EditorBridge::Play() { SendMessage(EditorMessageType::PlayModePlay); }
-void EditorBridge::Pause() { SendMessage(EditorMessageType::PlayModePause); }
-void EditorBridge::Stop() { SendMessage(EditorMessageType::PlayModeStop); }
-void EditorBridge::StepFrame() { SendMessage(EditorMessageType::PlayModeStep); }
+void EditorBridge::Play() { SendBridgeMessage(EditorMessageType::PlayModePlay); }
+void EditorBridge::Pause() { SendBridgeMessage(EditorMessageType::PlayModePause); }
+void EditorBridge::Stop() { SendBridgeMessage(EditorMessageType::PlayModeStop); }
+void EditorBridge::StepFrame() { SendBridgeMessage(EditorMessageType::PlayModeStep); }
 
 void EditorBridge::SyncCamera(const Math::Vector3& position, const Math::Quaternion& rotation, f32 fov) {
     if (!m_OutOfProcess) return;
     std::string payload = "{\"pos\":[" + std::to_string(position.x) + "," +
         std::to_string(position.y) + "," + std::to_string(position.z) + "],\"fov\":" +
         std::to_string(fov) + "}";
-    SendMessage(EditorMessageType::ViewportCameraSync, payload);
+    SendBridgeMessage(EditorMessageType::ViewportCameraSync, payload);
 }
 
 void EditorBridge::ResizeViewport(u32 width, u32 height) {
     if (!m_OutOfProcess) return;
-    SendMessage(EditorMessageType::ViewportResize,
+    SendBridgeMessage(EditorMessageType::ViewportResize,
                 "{\"w\":" + std::to_string(width) + ",\"h\":" + std::to_string(height) + "}");
 }
 
 void EditorBridge::ReloadAsset(const std::string& assetPath) {
-    SendMessage(EditorMessageType::AssetReload, assetPath);
+    SendBridgeMessage(EditorMessageType::AssetReload, assetPath);
 }
 
 void EditorBridge::LoadScene(const std::string& scenePath) {
     if (m_OutOfProcess) {
-        SendMessage(EditorMessageType::SceneLoad, scenePath);
+        SendBridgeMessage(EditorMessageType::SceneLoad, scenePath);
     } else if (m_SceneManager) {
         m_SceneManager->LoadScene(scenePath);
     }
@@ -183,7 +193,7 @@ bool EditorBridge::RecoverFromCrash() {
 
     // Resend scene state from shadow copy
     if (!m_SceneStateShadow.empty()) {
-        SendMessage(EditorMessageType::SceneLoad, m_SceneStateShadow);
+        SendBridgeMessage(EditorMessageType::SceneLoad, m_SceneStateShadow);
         ENJIN_LOG_INFO(Editor, "Resent scene state (%zu bytes) to restarted runtime",
                        m_SceneStateShadow.size());
     }
@@ -193,7 +203,7 @@ bool EditorBridge::RecoverFromCrash() {
 
 // --- Private ---
 
-void EditorBridge::SendMessage(EditorMessageType type, const std::string& payload) {
+void EditorBridge::SendBridgeMessage(EditorMessageType type, const std::string& payload) {
     if (m_OutOfProcess && m_Transport) {
         auto msg = EditorMessage::MakeString(type, payload, m_NextSequenceId++);
         m_Transport->Send(msg);
@@ -201,24 +211,54 @@ void EditorBridge::SendMessage(EditorMessageType type, const std::string& payloa
 }
 
 bool EditorBridge::SpawnRuntimeProcess(const std::string& executablePath) {
-    // TODO: Platform-specific process creation
-    // Windows: CreateProcessA
-    // Linux/macOS: fork + execlp
     ENJIN_LOG_INFO(Editor, "Spawning runtime process: %s", executablePath.c_str());
-    (void)executablePath;
-    return false; // Not yet implemented
+
+#ifdef _WIN32
+    STARTUPINFOA si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+
+    std::string cmdLine = executablePath + " --editor-bridge";
+    if (!CreateProcessA(nullptr, cmdLine.data(), nullptr, nullptr, FALSE,
+                         0, nullptr, nullptr, &si, &pi)) {
+        ENJIN_LOG_ERROR(Editor, "Failed to spawn runtime process (error %lu)", GetLastError());
+        return false;
+    }
+
+    CloseHandle(pi.hThread);
+    m_ProcessHandle = pi.hProcess;
+    ENJIN_LOG_INFO(Editor, "Runtime process spawned (PID %lu)", pi.dwProcessId);
+    return true;
+#else
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Child process
+        execlp(executablePath.c_str(), executablePath.c_str(), "--editor-bridge", nullptr);
+        _exit(1); // exec failed
+    } else if (pid > 0) {
+        m_ProcessPid = pid;
+        ENJIN_LOG_INFO(Editor, "Runtime process spawned (PID %d)", pid);
+        return true;
+    } else {
+        ENJIN_LOG_ERROR(Editor, "Failed to fork runtime process");
+        return false;
+    }
+#endif
 }
 
 void EditorBridge::KillRuntimeProcess() {
 #ifdef _WIN32
     if (m_ProcessHandle) {
-        // TODO: TerminateProcess
+        TerminateProcess(static_cast<HANDLE>(m_ProcessHandle), 1);
+        CloseHandle(static_cast<HANDLE>(m_ProcessHandle));
         m_ProcessHandle = nullptr;
+        ENJIN_LOG_INFO(Editor, "Runtime process terminated");
     }
 #else
     if (m_ProcessPid > 0) {
-        // TODO: kill(m_ProcessPid, SIGTERM)
+        kill(m_ProcessPid, SIGTERM);
         m_ProcessPid = -1;
+        ENJIN_LOG_INFO(Editor, "Runtime process terminated");
     }
 #endif
 }
