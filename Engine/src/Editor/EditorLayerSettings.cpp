@@ -61,6 +61,9 @@
 #include "Enjin/Renderer/SHLightProbe.h"
 #include "Enjin/Renderer/SDFScene.h"
 #include "Enjin/Renderer/OITManager.h"
+#include "Enjin/Renderer/DDGIProbeSystem.h"
+#include "Enjin/Renderer/VolumetricFog.h"
+#include "Enjin/Effects/GPUParticleSystem.h"
 #include "Enjin/Effects/TreeRenderer.h"
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Assets/SceneImporter.h"
@@ -821,6 +824,10 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
             if (ImGui::Checkbox("Reduced Motion", &m_EditorSettings.reducedMotion)) settingsChanged = true;
             if (ImGui::Checkbox("Disable Screen Shake", &m_EditorSettings.disableScreenShake)) settingsChanged = true;
             if (ImGui::Checkbox("Disable FOV Effects", &m_EditorSettings.disableFOVEffects)) settingsChanged = true;
+            if (ImGui::Checkbox("Disable Flashing Lights", &m_EditorSettings.disableFlashingLights)) settingsChanged = true;
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Disables film grain, CRT scanlines, and VHS effects that can trigger photosensitive reactions");
+            }
             ImGui::TreePop();
         }
 
@@ -839,6 +846,14 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
             if (ImGui::Checkbox("Simplified Editor", &m_EditorSettings.simplifiedEditor)) settingsChanged = true;
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Hides advanced panels and collapses complex inspector sections");
+            }
+
+            ImGui::Separator();
+            if (ImGui::SliderFloat("Game Font Scale", &m_EditorSettings.gameFontScale, 0.5f, 3.0f, "%.1fx")) {
+                settingsChanged = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Scales in-game UI text size during Play mode and in built games");
             }
 
             ImGui::Separator();
@@ -1177,13 +1192,7 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
             m_EditorSettings.reducedMotion = true;
             m_EditorSettings.disableScreenShake = true;
             m_EditorSettings.disableFOVEffects = true;
-            // Disable film grain, CRT, VHS if post-processing is active
-            if (m_PostProcessing) {
-                auto& ppSettings = m_PostProcessing->GetSettings();
-                ppSettings.filmGrainEnabled = 0;
-                ppSettings.crtEnabled = 0;
-                ppSettings.vhsEnabled = 0;
-            }
+            m_EditorSettings.disableFlashingLights = true;
             settingsChanged = true;
         }
         ImGui::SameLine();
@@ -1198,14 +1207,33 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
         if (settingsChanged) {
             m_EditorSettings.Save();
 
-            // Apply colorblind + brightness/contrast to post-processing
+            // Apply ALL visual accessibility settings to post-processing
             if (m_PostProcessing) {
                 auto& ppSettings = m_PostProcessing->GetSettings();
                 ppSettings.colorblindMode = m_EditorSettings.colorblindMode;
                 ppSettings.colorblindStrength = m_EditorSettings.colorblindStrength;
                 ppSettings.brightness = m_EditorSettings.screenBrightness;
                 ppSettings.contrast = m_EditorSettings.screenContrast;
+                if (m_EditorSettings.disableFlashingLights) {
+                    ppSettings.filmGrainEnabled = 0;
+                    ppSettings.crtEnabled = 0;
+                    ppSettings.vhsEnabled = 0;
+                }
             }
+
+            // Re-wire motion settings to PlayMode controller system if active
+            auto* ctrlSys = m_PlayMode.GetControllerSystem();
+            if (ctrlSys) {
+                ctrlSys->SetReducedMotion(m_EditorSettings.reducedMotion);
+                ctrlSys->SetDisableScreenShake(m_EditorSettings.disableScreenShake);
+                ctrlSys->SetDisableFOVEffects(m_EditorSettings.disableFOVEffects);
+            }
+            if (m_PlayMode.GetUISystem()) {
+                m_PlayMode.GetUISystem()->SetReducedMotion(m_EditorSettings.reducedMotion);
+            }
+
+            // Keep runtime accessibility settings in sync for PlayMode/scripting
+            SyncRuntimeAccessibility();
 
             // Apply raw mouse input and smoothing settings
             Input::SetRawMouseInput(m_EditorSettings.rawMouseInput);
@@ -1946,6 +1974,80 @@ void EditorLayer::DrawSettingsWindow() {
             ImGui::SeparatorText("Ray Tracing & Path Tracing");
             ImGui::PushTextWrapPos(); ImGui::TextDisabled("Photorealistic reflections, global illumination, path tracing (RTX/RDNA2+)"); ImGui::PopTextWrapPos();
             DrawSettingsSection_RayTracing();
+
+            // --- Advanced Rendering (Glacier-inspired) ---
+            // Software GI, volumetric fog, GPU particles — scales to all platforms
+            ImGui::SeparatorText("Advanced Rendering");
+            ImGui::PushTextWrapPos(); ImGui::TextDisabled("Software GI, volumetric fog, GPU particles — scales to all platforms"); ImGui::PopTextWrapPos();
+
+            // DDGI (Software-Traced Global Illumination)
+            if (m_RenderSystem && m_RenderSystem->m_DDGISystem) {
+                auto& ddgi = *m_RenderSystem->m_DDGISystem;
+                auto& cfg = const_cast<Renderer::DDGIConfig&>(ddgi.GetConfig());
+                bool ddgiEnabled = ddgi.IsEnabled();
+                if (ImGui::Checkbox("Software DDGI (Global Illumination)", &ddgiEnabled)) {
+                    ddgi.SetEnabled(ddgiEnabled);
+                }
+                if (ddgiEnabled && ImGui::TreeNode("DDGI Settings")) {
+                    ImGui::SliderInt("Probe Grid X", &cfg.probeCountX, 2, 32);
+                    ImGui::SliderInt("Probe Grid Y", &cfg.probeCountY, 2, 16);
+                    ImGui::SliderInt("Probe Grid Z", &cfg.probeCountZ, 2, 32);
+                    ImGui::SliderFloat("Grid Spacing", &cfg.gridSpacing, 0.5f, 16.0f);
+                    ImGui::SliderInt("Rays Per Probe", reinterpret_cast<i32*>(&cfg.raysPerProbe), 16, 256);
+                    ImGui::SliderFloat("Max Trace Distance", &cfg.maxTraceDistance, 5.0f, 100.0f);
+                    ImGui::SliderFloat("Hysteresis", &cfg.hysteresis, 0.8f, 0.99f, "%.3f");
+                    int voxRes = cfg.voxelResolution;
+                    if (ImGui::Combo("Voxel Resolution", &voxRes, "32\00064\000128\000256\0")) {
+                        static const i32 resolutions[] = { 32, 64, 128, 256 };
+                        cfg.voxelResolution = resolutions[voxRes];
+                    }
+                    ImGui::Text("Total probes: %u | Updated/frame: %u",
+                                ddgi.GetTotalProbes(), ddgi.GetProbesUpdatedThisFrame());
+                    ImGui::TreePop();
+                }
+            }
+
+            // Volumetric Fog
+            if (m_RenderSystem && m_RenderSystem->m_VolumetricFog) {
+                auto& fog = *m_RenderSystem->m_VolumetricFog;
+                auto& cfg = fog.GetConfig();
+                bool fogEnabled = fog.IsEnabled();
+                if (ImGui::Checkbox("Volumetric Fog", &fogEnabled)) {
+                    fog.SetEnabled(fogEnabled);
+                }
+                if (fogEnabled && ImGui::TreeNode("Volumetric Fog Settings")) {
+                    ImGui::ColorEdit3("Fog Color", &cfg.fogAlbedo.x);
+                    ImGui::SliderFloat("Density", &cfg.fogDensity, 0.0f, 0.5f, "%.4f");
+                    ImGui::SliderFloat("Height Falloff", &cfg.fogHeightFalloff, 0.0f, 1.0f);
+                    ImGui::SliderFloat("Base Height", &cfg.fogBaseHeight, -50.0f, 50.0f);
+                    ImGui::SliderFloat("Anisotropy (G)", &cfg.fogAnisotropy, -0.9f, 0.9f);
+                    ImGui::SliderFloat("Temporal Blend", &cfg.temporalBlend, 0.0f, 0.98f, "%.3f");
+                    ImGui::SliderFloat("Noise Scale", &cfg.noiseScale, 0.0f, 1.0f);
+                    ImGui::SliderFloat("Noise Strength", &cfg.noiseStrength, 0.0f, 1.0f);
+                    ImGui::SliderFloat("Wind X", &cfg.windSpeedX, -5.0f, 5.0f);
+                    ImGui::SliderFloat("Wind Z", &cfg.windSpeedZ, -5.0f, 5.0f);
+                    ImGui::TreePop();
+                }
+            }
+
+            // GPU Particles
+            if (m_RenderSystem && m_RenderSystem->m_GPUParticleSystem) {
+                auto& gpu = *m_RenderSystem->m_GPUParticleSystem;
+                auto& cfg = gpu.GetConfig();
+                if (ImGui::TreeNode("GPU Particle System")) {
+                    ImGui::Text("Max particles: %u | Alive: %u", gpu.GetMaxParticles(), gpu.GetAliveCount());
+                    ImGui::SliderFloat("Spawn Rate", &cfg.spawnRate, 0.0f, 10000.0f);
+                    ImGui::SliderFloat("Max Lifetime", &cfg.maxLifetime, 0.1f, 30.0f);
+                    ImGui::DragFloat3("Gravity", &cfg.gravity.x, 0.1f);
+                    ImGui::SliderFloat("Damping", &cfg.damping, 0.0f, 1.0f);
+                    ImGui::SliderFloat("Turbulence", &cfg.turbulenceStrength, 0.0f, 10.0f);
+                    ImGui::ColorEdit4("Start Color", &cfg.startColor.x);
+                    ImGui::ColorEdit4("End Color", &cfg.endColor.x);
+                    ImGui::SliderFloat("Start Size", &cfg.startSize, 0.01f, 2.0f);
+                    ImGui::SliderFloat("End Size", &cfg.endSize, 0.01f, 5.0f);
+                    ImGui::TreePop();
+                }
+            }
 
             // --- Post-Processing & Cinematic ---
             // Film looks, color grading, bloom, depth effects — works on all hardware
