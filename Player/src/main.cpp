@@ -337,9 +337,6 @@ public:
                 (int)gfx.vsync, (int)gfx.fullscreen, gfx.fieldOfView, (int)gfx.shadows, (int)gfx.bloom, (int)gfx.fxaa);
         });
 
-        // Initialize audio system
-        Enjin::Audio::AudioManager::Get().Initialize();
-
         // Initialize scripting engine
         if (m_ScriptEngine.Initialize()) {
             Enjin::Scripting::RegisterAllBindings(m_ScriptEngine.GetASEngine());
@@ -706,8 +703,6 @@ public:
         // Save meta-progression before exit
         m_TieredSaveSystem.SaveMeta();
 
-        Enjin::Audio::AudioManager::Get().Shutdown();
-
         // Clean up ImGui texture descriptors before ImGui shutdown
         for (auto& [path, ds] : m_ImGuiTextureCache) {
             if (ds != VK_NULL_HANDLE) ImGui_ImplVulkan_RemoveTexture(ds);
@@ -779,7 +774,6 @@ public:
         }
 
         // Update audio
-        Enjin::Audio::AudioManager::Get().Update();
         m_SimpleAudio.Update(deltaTime);
         m_SimpleAudio.UpdateAudioSources(deltaTime);
         m_AudioGraphRuntime.Update(deltaTime);
@@ -1524,6 +1518,7 @@ private:
         Enjin::Scripting::SetBindingsSubtitles(&m_SubtitleSystem);
         Enjin::Scripting::SetBindingsAnnouncer(&m_Announcer);
         Enjin::Scripting::SetBindingsAccessibilitySettings(&m_AccessibilitySettings);
+        Enjin::Scripting::SetBindingsAccessibilitySaveCallback([this]() { SaveAccessibilitySettings(); });
         Enjin::Scripting::SetBindingsPluginSystem(nullptr);  // No PluginSystem in player — null-safe
         Enjin::Scripting::SetBindingsAudioGraphRuntime(&m_AudioGraphRuntime);
         m_MIDIInput.Initialize();
@@ -1624,6 +1619,15 @@ private:
         // Apply colorblind mode and visual settings to post-processing
         if (m_PostProcessing) {
             m_AccessibilitySettings.ApplyToPostProcessing(m_PostProcessing->GetSettings());
+        }
+
+        // Also push accessibility params to RenderSystem for WebGPU post-process
+        if (m_RenderSystem) {
+            m_RenderSystem->SetWebAccessibility(
+                static_cast<Enjin::u32>(m_AccessibilitySettings.colorblindMode),
+                m_AccessibilitySettings.colorblindStrength,
+                m_AccessibilitySettings.screenBrightness,
+                m_AccessibilitySettings.screenContrast);
         }
 
         // Wire UISystem texture resolver (loads textures via RenderSystem, registers with ImGui)
@@ -1968,6 +1972,51 @@ private:
                 m_AccessibilitySettings.audioIndicatorsEnabled ? "ON" : "OFF");
         } catch (const std::exception& e) {
             ENJIN_LOG_WARN(Player, "Failed to parse accessibility.json: %s", e.what());
+        }
+    }
+
+    void SaveAccessibilitySettings() {
+        std::string exeDir = Enjin::Platform::GetExecutableDirectory();
+        std::string settingsPath = (fs::path(exeDir) / "accessibility.json").string();
+
+        try {
+            nlohmann::json j;
+            j["colorblindMode"] = static_cast<Enjin::u32>(m_AccessibilitySettings.colorblindMode);
+            j["colorblindStrength"] = m_AccessibilitySettings.colorblindStrength;
+            j["screenBrightness"] = m_AccessibilitySettings.screenBrightness;
+            j["screenContrast"] = m_AccessibilitySettings.screenContrast;
+            j["reducedMotion"] = m_AccessibilitySettings.reducedMotion;
+            j["disableScreenShake"] = m_AccessibilitySettings.disableScreenShake;
+            j["disableFOVEffects"] = m_AccessibilitySettings.disableFOVEffects;
+            j["disableFlashingLights"] = m_AccessibilitySettings.disableFlashingLights;
+            j["subtitlesEnabled"] = m_AccessibilitySettings.subtitlesEnabled;
+            j["closedCaptionsEnabled"] = m_AccessibilitySettings.closedCaptionsEnabled;
+            j["subtitleFontSize"] = m_AccessibilitySettings.subtitleFontSize;
+            j["subtitleBgOpacity"] = m_AccessibilitySettings.subtitleBgOpacity;
+            j["subtitleSpeakerNames"] = m_AccessibilitySettings.subtitleSpeakerNames;
+            j["subtitleDirectionIndicators"] = m_AccessibilitySettings.subtitleDirectionIndicators;
+            j["fontScale"] = m_AccessibilitySettings.fontScale;
+            j["dyslexiaFriendly"] = m_AccessibilitySettings.dyslexiaFriendly;
+            j["letterSpacing"] = m_AccessibilitySettings.letterSpacing;
+            j["wordSpacing"] = m_AccessibilitySettings.wordSpacing;
+            j["lineSpacing"] = m_AccessibilitySettings.lineSpacing;
+            j["fontFamily"] = static_cast<Enjin::u32>(m_AccessibilitySettings.fontFamily);
+            j["dwellClickEnabled"] = m_AccessibilitySettings.dwellClickEnabled;
+            j["dwellClickTime"] = m_AccessibilitySettings.dwellClickTime;
+            j["stickyDragEnabled"] = m_AccessibilitySettings.stickyDragEnabled;
+            j["switchAccessEnabled"] = m_AccessibilitySettings.switchAccessEnabled;
+            j["switchScanSpeed"] = m_AccessibilitySettings.switchScanSpeed;
+            j["audioIndicatorsEnabled"] = m_AccessibilitySettings.audioIndicatorsEnabled;
+            j["sprintMode"] = m_AccessibilitySettings.sprintMode;
+            j["crouchMode"] = m_AccessibilitySettings.crouchMode;
+            j["mouseSensitivity"] = m_AccessibilitySettings.mouseSensitivity;
+            j["invertMouseY"] = m_AccessibilitySettings.invertMouseY;
+
+            std::ofstream file(settingsPath);
+            file << j.dump(2);
+            ENJIN_LOG_INFO(Player, "Saved accessibility settings to %s", settingsPath.c_str());
+        } catch (const std::exception& e) {
+            ENJIN_LOG_WARN(Player, "Failed to save accessibility.json: %s", e.what());
         }
     }
 

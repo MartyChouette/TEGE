@@ -4,7 +4,6 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/AI/BehaviorTree.h"
-#include "Enjin/AI/AIBehaviors.h"
 #include "Enjin/AI/Navmesh.h"
 #include "Enjin/Logging/Log.h"
 #include <angelscript.h>

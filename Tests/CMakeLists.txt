@@ -111,7 +111,6 @@ enjin_add_test(TestScriptBindings     Unit/Scripting/TestScriptBindings.cpp)
 enjin_add_test(TestVisualScript       Unit/Scripting/TestVisualScript.cpp)
 
 # --- AI ---
-enjin_add_test(TestAIBehaviors        Unit/AI/TestAIBehaviors.cpp)
 enjin_add_test(TestBehaviorTree       Unit/AI/TestBehaviorTree.cpp)
 enjin_add_test(TestNavmesh            Unit/AI/TestNavmesh.cpp)
 

@@ -266,6 +266,21 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     ImGui::GetIO().MouseDragThreshold = m_EditorSettings.dragThreshold;
     ImGui::GetIO().KeyRepeatDelay = m_EditorSettings.holdRepeatDelay;
     ImGui::GetIO().KeyRepeatRate = m_EditorSettings.holdRepeatRate;
+    // Apply accessibility visual settings (colorblind, brightness, contrast, flashing) on startup
+    if (m_PostProcessing) {
+        auto& ppSettings = m_PostProcessing->GetSettings();
+        ppSettings.colorblindMode = m_EditorSettings.colorblindMode;
+        ppSettings.colorblindStrength = m_EditorSettings.colorblindStrength;
+        ppSettings.brightness = m_EditorSettings.screenBrightness;
+        ppSettings.contrast = m_EditorSettings.screenContrast;
+        if (m_EditorSettings.disableFlashingLights) {
+            ppSettings.filmGrainEnabled = 0;
+            ppSettings.crtEnabled = 0;
+            ppSettings.vhsEnabled = 0;
+        }
+    }
+    // Sync runtime accessibility settings from editor settings
+    SyncRuntimeAccessibility();
     m_SurfaceSnap = m_EditorSettings.surfaceSnap;
     m_SurfaceAlignNormal = m_EditorSettings.surfaceAlignNormal;
     if (!m_EditorSettings.windowIconPath.empty() && m_Window) {
@@ -575,6 +590,8 @@ void EditorLayer::InitializePlayMode() {
         m_PlayMode.SetFluidTerrainCoupling(&m_FluidTerrainCoupling);
         m_PlayMode.SetCurlNoiseSystem(m_CurlNoiseSystem.get());
         m_PlayMode.SetEditorSettings(&m_EditorSettings);
+        SyncRuntimeAccessibility();
+        m_PlayMode.SetAccessibilitySettings(&m_RuntimeAccessibility);
 
         // Wire accessibility systems
         m_PlayMode.SetSubtitleSystem(&m_SubtitleSystem);
@@ -1342,11 +1359,6 @@ void EditorLayer::Update(f32 deltaTime) {
                 break;
             }
         }
-    }
-
-    // Update audio during play mode
-    if (!m_PlayMode.IsStopped()) {
-        Audio::AudioManager::Get().Update();
     }
 
     // Safety net: release mouse capture if play mode stopped
@@ -3847,6 +3859,34 @@ void EditorLayer::UpdateWindowTitle() {
     }
     if (m_SceneDirty) title += " *";
     m_Window->SetTitle(title.c_str());
+}
+
+void EditorLayer::SyncRuntimeAccessibility() {
+    auto& a = m_RuntimeAccessibility;
+    auto& s = m_EditorSettings;
+    a.colorblindMode = static_cast<Accessibility::ColorblindMode>(s.colorblindMode);
+    a.colorblindStrength = s.colorblindStrength;
+    a.screenBrightness = s.screenBrightness;
+    a.screenContrast = s.screenContrast;
+    a.reducedMotion = s.reducedMotion;
+    a.disableScreenShake = s.disableScreenShake;
+    a.disableFOVEffects = s.disableFOVEffects;
+    a.disableFlashingLights = s.disableFlashingLights;
+    a.subtitlesEnabled = s.subtitlesEnabled;
+    a.closedCaptionsEnabled = s.closedCaptionsEnabled;
+    a.subtitleFontSize = s.subtitleFontSize;
+    a.subtitleBgOpacity = s.subtitleBgOpacity;
+    a.subtitleSpeakerNames = s.subtitleSpeakerNames;
+    a.fontScale = s.gameFontScale;
+    a.dyslexiaFriendly = s.dyslexiaFontEnabled;
+    a.dwellClickEnabled = s.dwellClickEnabled;
+    a.dwellClickTime = s.dwellClickDelay;
+    a.stickyDragEnabled = s.stickyDragEnabled;
+    a.switchAccessEnabled = false; // Switch access configured separately
+    a.mouseSensitivity = s.mouseSensitivity;
+    a.invertMouseY = false;
+    a.sprintMode = s.sprintMode;
+    a.crouchMode = s.crouchMode;
 }
 
 } // namespace Editor

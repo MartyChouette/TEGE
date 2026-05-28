@@ -548,6 +548,30 @@ static void BoxCollider_SetCollisionMask(u64 id, u32 val) {
     if (bc) bc->collisionMask = val;
 }
 
+static f32 BoxCollider_GetFriction(u64 id) {
+    if (!s_BindingsWorld) return 0.5f;
+    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    return bc ? bc->friction : 0.5f;
+}
+
+static void BoxCollider_SetFriction(u64 id, f32 val) {
+    if (!s_BindingsWorld) return;
+    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    if (bc) bc->friction = val;
+}
+
+static f32 BoxCollider_GetBounciness(u64 id) {
+    if (!s_BindingsWorld) return 0.0f;
+    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    return bc ? bc->bounciness : 0.0f;
+}
+
+static void BoxCollider_SetBounciness(u64 id, f32 val) {
+    if (!s_BindingsWorld) return;
+    auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(static_cast<Entity>(id));
+    if (bc) bc->bounciness = val;
+}
+
 // ============================================================================
 // SphereCollider component get/set
 // ============================================================================
@@ -617,6 +641,30 @@ static void SphereCollider_SetCollisionMask(u64 id, u32 val) {
     if (sc) sc->collisionMask = val;
 }
 
+static f32 SphereCollider_GetFriction(u64 id) {
+    if (!s_BindingsWorld) return 0.5f;
+    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    return sc ? sc->friction : 0.5f;
+}
+
+static void SphereCollider_SetFriction(u64 id, f32 val) {
+    if (!s_BindingsWorld) return;
+    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    if (sc) sc->friction = val;
+}
+
+static f32 SphereCollider_GetBounciness(u64 id) {
+    if (!s_BindingsWorld) return 0.0f;
+    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    return sc ? sc->bounciness : 0.0f;
+}
+
+static void SphereCollider_SetBounciness(u64 id, f32 val) {
+    if (!s_BindingsWorld) return;
+    auto* sc = s_BindingsWorld->GetComponent<SphereColliderComponent>(static_cast<Entity>(id));
+    if (sc) sc->bounciness = val;
+}
+
 // ============================================================================
 // CapsuleCollider component get/set
 // ============================================================================
@@ -672,6 +720,63 @@ static void CapsuleCollider_SetTrigger(u64 id, bool val) {
     if (!s_BindingsWorld) return;
     auto* cc = s_BindingsWorld->GetComponent<CapsuleColliderComponent>(static_cast<Entity>(id));
     if (cc) cc->isTrigger = val;
+}
+
+static f32 CapsuleCollider_GetFriction(u64 id) {
+    if (!s_BindingsWorld) return 0.5f;
+    auto* cc = s_BindingsWorld->GetComponent<CapsuleColliderComponent>(static_cast<Entity>(id));
+    return cc ? cc->friction : 0.5f;
+}
+
+static void CapsuleCollider_SetFriction(u64 id, f32 val) {
+    if (!s_BindingsWorld) return;
+    auto* cc = s_BindingsWorld->GetComponent<CapsuleColliderComponent>(static_cast<Entity>(id));
+    if (cc) cc->friction = val;
+}
+
+static f32 CapsuleCollider_GetBounciness(u64 id) {
+    if (!s_BindingsWorld) return 0.0f;
+    auto* cc = s_BindingsWorld->GetComponent<CapsuleColliderComponent>(static_cast<Entity>(id));
+    return cc ? cc->bounciness : 0.0f;
+}
+
+static void CapsuleCollider_SetBounciness(u64 id, f32 val) {
+    if (!s_BindingsWorld) return;
+    auto* cc = s_BindingsWorld->GetComponent<CapsuleColliderComponent>(static_cast<Entity>(id));
+    if (cc) cc->bounciness = val;
+}
+
+// ============================================================================
+// Tilemap component get/set
+// ============================================================================
+
+static bool HasComponent_Tilemap(u64 id) {
+    if (!s_BindingsWorld) return false;
+    return s_BindingsWorld->HasComponent<TilemapComponent>(static_cast<Entity>(id));
+}
+
+static i32 Tilemap_GetTile(u64 id, i32 x, i32 y) {
+    if (!s_BindingsWorld || x < 0 || y < 0) return -1;
+    auto* tm = s_BindingsWorld->GetComponent<TilemapComponent>(static_cast<Entity>(id));
+    return tm ? tm->GetTile(static_cast<u32>(x), static_cast<u32>(y)) : -1;
+}
+
+static void Tilemap_SetTile(u64 id, i32 x, i32 y, i32 tileIndex) {
+    if (!s_BindingsWorld || x < 0 || y < 0) return;
+    auto* tm = s_BindingsWorld->GetComponent<TilemapComponent>(static_cast<Entity>(id));
+    if (tm) tm->SetTile(static_cast<u32>(x), static_cast<u32>(y), tileIndex);
+}
+
+static i32 Tilemap_GetWidth(u64 id) {
+    if (!s_BindingsWorld) return 0;
+    auto* tm = s_BindingsWorld->GetComponent<TilemapComponent>(static_cast<Entity>(id));
+    return tm ? static_cast<i32>(tm->width) : 0;
+}
+
+static i32 Tilemap_GetHeight(u64 id) {
+    if (!s_BindingsWorld) return 0;
+    auto* tm = s_BindingsWorld->GetComponent<TilemapComponent>(static_cast<Entity>(id));
+    return tm ? static_cast<i32>(tm->height) : 0;
 }
 
 // ============================================================================
@@ -1764,6 +1869,10 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetCategoryBits(uint64, uint)", asFUNCTION(BoxCollider_SetCategoryBits), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("uint BoxCollider_GetCollisionMask(uint64)", asFUNCTION(BoxCollider_GetCollisionMask), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetCollisionMask(uint64, uint)", asFUNCTION(BoxCollider_SetCollisionMask), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float BoxCollider_GetFriction(uint64)", asFUNCTION(BoxCollider_GetFriction), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetFriction(uint64, float)", asFUNCTION(BoxCollider_SetFriction), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float BoxCollider_GetBounciness(uint64)", asFUNCTION(BoxCollider_GetBounciness), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetBounciness(uint64, float)", asFUNCTION(BoxCollider_SetBounciness), asCALL_CDECL));
 
     // SphereCollider
     AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_SphereCollider(uint64)", asFUNCTION(HasComponent_SphereCollider), asCALL_CDECL));
@@ -1777,6 +1886,10 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetCategoryBits(uint64, uint)", asFUNCTION(SphereCollider_SetCategoryBits), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("uint SphereCollider_GetCollisionMask(uint64)", asFUNCTION(SphereCollider_GetCollisionMask), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetCollisionMask(uint64, uint)", asFUNCTION(SphereCollider_SetCollisionMask), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float SphereCollider_GetFriction(uint64)", asFUNCTION(SphereCollider_GetFriction), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetFriction(uint64, float)", asFUNCTION(SphereCollider_SetFriction), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float SphereCollider_GetBounciness(uint64)", asFUNCTION(SphereCollider_GetBounciness), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetBounciness(uint64, float)", asFUNCTION(SphereCollider_SetBounciness), asCALL_CDECL));
 
     // CapsuleCollider
     AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_CapsuleCollider(uint64)", asFUNCTION(HasComponent_CapsuleCollider), asCALL_CDECL));
@@ -1788,6 +1901,10 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("void CapsuleCollider_SetCenter(uint64, float, float, float)", asFUNCTION(CapsuleCollider_SetCenter), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool CapsuleCollider_IsTrigger(uint64)", asFUNCTION(CapsuleCollider_IsTrigger), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void CapsuleCollider_SetTrigger(uint64, bool)", asFUNCTION(CapsuleCollider_SetTrigger), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float CapsuleCollider_GetFriction(uint64)", asFUNCTION(CapsuleCollider_GetFriction), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void CapsuleCollider_SetFriction(uint64, float)", asFUNCTION(CapsuleCollider_SetFriction), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float CapsuleCollider_GetBounciness(uint64)", asFUNCTION(CapsuleCollider_GetBounciness), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void CapsuleCollider_SetBounciness(uint64, float)", asFUNCTION(CapsuleCollider_SetBounciness), asCALL_CDECL));
 
     // TriggerZone
     AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_TriggerZone(uint64)", asFUNCTION(HasComponent_TriggerZone), asCALL_CDECL));
@@ -1957,6 +2074,13 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("void Tag_Add(uint64, const string &in)", asFUNCTION(Tag_Add), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Tag_Remove(uint64, const string &in)", asFUNCTION(Tag_Remove), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Tag_Has(uint64, const string &in)", asFUNCTION(Tag_Has), asCALL_CDECL));
+
+    // Tilemap
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Tilemap(uint64)", asFUNCTION(HasComponent_Tilemap), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Tilemap_GetTile(uint64, int, int)", asFUNCTION(Tilemap_GetTile), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Tilemap_SetTile(uint64, int, int, int)", asFUNCTION(Tilemap_SetTile), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Tilemap_GetWidth(uint64)", asFUNCTION(Tilemap_GetWidth), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Tilemap_GetHeight(uint64)", asFUNCTION(Tilemap_GetHeight), asCALL_CDECL));
 }
 
 } // namespace Scripting

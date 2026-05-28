@@ -84,9 +84,6 @@ public:
             m_EditorLayer->SetRenderSystem(m_RenderSystem);
         }
 
-        // Initialize audio system
-        Enjin::Audio::AudioManager::Get().Initialize();
-
         // Set up frame rate limiting callback
         // This callback is called each frame to determine the target FPS
         SetTargetFPSCallback([this]() -> Enjin::f32 {
@@ -180,8 +177,6 @@ public:
         s_CrashWorld = nullptr;
         s_CrashEditor = nullptr;
         Enjin::Debug::SetCrashContext({});
-
-        Enjin::Audio::AudioManager::Get().Shutdown();
 
         if (m_EditorLayer) {
             m_EditorLayer->Shutdown();

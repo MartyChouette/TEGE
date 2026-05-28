@@ -7,6 +7,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Scene/SceneManager.h"
 #include <angelscript.h>
 #include <string>
@@ -110,6 +111,49 @@ static void Entity_SetVisible(u64 id, bool visible) {
     if (!s_BindingsWorld || !s_BindingsWorld->IsValid(static_cast<Entity>(id))) return;
     auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
     if (t) t->visible = visible;
+}
+
+// ============================================================================
+// Entity hierarchy (parent-child)
+// ============================================================================
+
+static void Entity_SetParent(u64 childId, u64 parentId) {
+    if (!s_BindingsWorld) return;
+    Entity child = static_cast<Entity>(childId);
+    Entity parent = static_cast<Entity>(parentId);
+    if (!s_BindingsWorld->IsValid(child)) return;
+    if (parent != INVALID_ENTITY && !s_BindingsWorld->IsValid(parent)) return;
+    ECS::SetParent(s_BindingsWorld, child, parent);
+}
+
+static void Entity_RemoveParent(u64 childId) {
+    if (!s_BindingsWorld) return;
+    Entity child = static_cast<Entity>(childId);
+    if (!s_BindingsWorld->IsValid(child)) return;
+    ECS::RemoveParent(s_BindingsWorld, child);
+}
+
+static u64 Entity_GetParent(u64 childId) {
+    if (!s_BindingsWorld) return INVALID_ENTITY;
+    Entity child = static_cast<Entity>(childId);
+    if (!s_BindingsWorld->IsValid(child)) return INVALID_ENTITY;
+    return static_cast<u64>(ECS::GetParent(s_BindingsWorld, child));
+}
+
+static int Entity_GetChildCount(u64 parentId) {
+    if (!s_BindingsWorld) return 0;
+    Entity parent = static_cast<Entity>(parentId);
+    if (!s_BindingsWorld->IsValid(parent)) return 0;
+    return static_cast<int>(ECS::GetChildren(s_BindingsWorld, parent).size());
+}
+
+static u64 Entity_GetChild(u64 parentId, int index) {
+    if (!s_BindingsWorld) return INVALID_ENTITY;
+    Entity parent = static_cast<Entity>(parentId);
+    if (!s_BindingsWorld->IsValid(parent)) return INVALID_ENTITY;
+    const auto& children = ECS::GetChildren(s_BindingsWorld, parent);
+    if (index < 0 || index >= static_cast<int>(children.size())) return INVALID_ENTITY;
+    return static_cast<u64>(children[index]);
 }
 
 // ============================================================================
@@ -342,6 +386,23 @@ void RegisterSceneBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Entity_SetVisible(uint64, bool)",
         asFUNCTION(Entity_SetVisible), asCALL_CDECL));
+
+    // Entity hierarchy (parent-child)
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Entity_SetParent(uint64, uint64)",
+        asFUNCTION(Entity_SetParent), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Entity_RemoveParent(uint64)",
+        asFUNCTION(Entity_RemoveParent), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "uint64 Entity_GetParent(uint64)",
+        asFUNCTION(Entity_GetParent), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int Entity_GetChildCount(uint64)",
+        asFUNCTION(Entity_GetChildCount), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "uint64 Entity_GetChild(uint64, int)",
+        asFUNCTION(Entity_GetChild), asCALL_CDECL));
 
     // Entity lookup
     AS_CHECK(engine->RegisterGlobalFunction(

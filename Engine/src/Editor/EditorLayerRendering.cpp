@@ -1267,11 +1267,32 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
 
         // Temporal Upscaling
         if (ImGui::CollapsingHeader("Upscaling")) {
-            const char* upscalerTypes[] = { "None", "FSR 2 (Built-in)", "DLSS", "XeSS" };
-            int upType = static_cast<int>(settings.upscalerType);
-            if (ImGui::Combo("Upscaler", &upType, upscalerTypes, IM_ARRAYSIZE(upscalerTypes))) {
-                settings.upscalerType = static_cast<u32>(upType);
-                // Immediately sync to RenderSystem so upscaler resources are created/destroyed
+            // Build upscaler list based on which SDKs are available
+            struct UpscalerEntry { const char* name; u32 type; };
+            UpscalerEntry availableUpscalers[] = {
+                { "None", 0 },
+                { "FSR 2 (Built-in)", 1 },
+#ifdef ENJIN_UPSCALING_DLSS
+                { "DLSS", 2 },
+#endif
+#ifdef ENJIN_UPSCALING_XESS
+                { "XeSS", 3 },
+#endif
+            };
+            constexpr int upscalerCount = IM_ARRAYSIZE(availableUpscalers);
+
+            // Find current selection index in the filtered list
+            int currentIdx = 0;
+            for (int i = 0; i < upscalerCount; i++) {
+                if (availableUpscalers[i].type == settings.upscalerType) { currentIdx = i; break; }
+            }
+
+            // Build name array for combo
+            const char* upscalerNames[4];
+            for (int i = 0; i < upscalerCount; i++) upscalerNames[i] = availableUpscalers[i].name;
+
+            if (ImGui::Combo("Upscaler", &currentIdx, upscalerNames, upscalerCount)) {
+                settings.upscalerType = availableUpscalers[currentIdx].type;
                 if (m_RenderSystem) {
                     m_RenderSystem->SetUpscalerType(settings.upscalerType);
                 }
@@ -1298,12 +1319,13 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                 ImGui::TextDisabled("Backend availability:");
                 ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  FSR 2: Built-in (Lanczos + CAS)");
 
-                // DLSS availability — green for SDK, yellow for built-in
+#ifdef ENJIN_UPSCALING_DLSS
+                // DLSS availability
                 {
                     bool dlssActive = m_RenderSystem && m_RenderSystem->GetUpscaler() &&
                                       m_RenderSystem->GetUpscalerType() == 2;
 #ifdef ENJIN_HAS_DLSS_SDK
-                    ImVec4 dlssColor(0.4f, 1.0f, 0.4f, 1.0f);  // green = SDK linked
+                    ImVec4 dlssColor(0.4f, 1.0f, 0.4f, 1.0f);
                     if (dlssActive) {
                         ImGui::TextColored(dlssColor, "  DLSS: %s (SDK)",
                                            m_RenderSystem->GetUpscaler()->GetName());
@@ -1311,7 +1333,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                         ImGui::TextColored(dlssColor, "  DLSS: SDK linked (NVIDIA GPUs)");
                     }
 #else
-                    ImVec4 dlssColor(1.0f, 0.9f, 0.5f, 1.0f);  // yellow = built-in fallback
+                    ImVec4 dlssColor(1.0f, 0.9f, 0.5f, 1.0f);
                     if (dlssActive) {
                         ImGui::TextColored(dlssColor, "  DLSS: %s (Built-in)",
                                            m_RenderSystem->GetUpscaler()->GetName());
@@ -1320,13 +1342,15 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                     }
 #endif
                 }
+#endif
 
-                // XeSS availability — green for SDK, yellow for built-in
+#ifdef ENJIN_UPSCALING_XESS
+                // XeSS availability
                 {
                     bool xessActive = m_RenderSystem && m_RenderSystem->GetUpscaler() &&
                                       m_RenderSystem->GetUpscalerType() == 3;
 #ifdef ENJIN_HAS_XESS_SDK
-                    ImVec4 xessColor(0.4f, 1.0f, 0.4f, 1.0f);  // green = SDK linked
+                    ImVec4 xessColor(0.4f, 1.0f, 0.4f, 1.0f);
                     if (xessActive) {
                         ImGui::TextColored(xessColor, "  XeSS: %s (SDK)",
                                            m_RenderSystem->GetUpscaler()->GetName());
@@ -1334,7 +1358,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                         ImGui::TextColored(xessColor, "  XeSS: SDK linked (all GPUs via DP4a)");
                     }
 #else
-                    ImVec4 xessColor(1.0f, 0.9f, 0.5f, 1.0f);  // yellow = built-in fallback
+                    ImVec4 xessColor(1.0f, 0.9f, 0.5f, 1.0f);
                     if (xessActive) {
                         ImGui::TextColored(xessColor, "  XeSS: %s (Built-in)",
                                            m_RenderSystem->GetUpscaler()->GetName());
@@ -1343,6 +1367,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
                     }
 #endif
                 }
+#endif
 
                 // Pipeline description based on active backend
                 ImGui::Spacing();

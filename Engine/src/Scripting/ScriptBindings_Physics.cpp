@@ -4,6 +4,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
 #include <angelscript.h>
@@ -239,6 +240,87 @@ static void Physics_SetGravityScale(u64 entityId, f32 scale) {
 }
 
 // ============================================================================
+// Physics joints
+// ============================================================================
+
+static u64 Physics_CreateDistanceJoint(u64 entityAId, u64 entityBId, f32 restDistance) {
+    if (!s_BindingsWorld) return INVALID_ENTITY;
+    Entity entityA = static_cast<Entity>(entityAId);
+    Entity entityB = static_cast<Entity>(entityBId);
+    if (!s_BindingsWorld->IsValid(entityA) || !s_BindingsWorld->IsValid(entityB)) return INVALID_ENTITY;
+
+    Entity joint = s_BindingsWorld->CreateEntity();
+    s_BindingsWorld->AddComponent<NameComponent>(joint, NameComponent{"DistanceJoint"});
+    s_BindingsWorld->AddComponent<DistanceJointComponent>(joint);
+    auto* jc = s_BindingsWorld->GetComponent<DistanceJointComponent>(joint);
+    jc->entityA = entityA;
+    jc->entityB = entityB;
+    jc->restDistance = restDistance;
+    return static_cast<u64>(joint);
+}
+
+static u64 Physics_CreateHingeJoint(u64 entityAId, u64 entityBId, f32 axisX, f32 axisY, f32 axisZ) {
+    if (!s_BindingsWorld) return INVALID_ENTITY;
+    Entity entityA = static_cast<Entity>(entityAId);
+    Entity entityB = static_cast<Entity>(entityBId);
+    if (!s_BindingsWorld->IsValid(entityA) || !s_BindingsWorld->IsValid(entityB)) return INVALID_ENTITY;
+
+    Entity joint = s_BindingsWorld->CreateEntity();
+    s_BindingsWorld->AddComponent<NameComponent>(joint, NameComponent{"HingeJoint"});
+    s_BindingsWorld->AddComponent<HingeJointComponent>(joint);
+    auto* jc = s_BindingsWorld->GetComponent<HingeJointComponent>(joint);
+    jc->entityA = entityA;
+    jc->entityB = entityB;
+    jc->axis = Vector3(axisX, axisY, axisZ);
+    return static_cast<u64>(joint);
+}
+
+static void Physics_DestroyJoint(u64 jointId) {
+    if (!s_BindingsWorld) return;
+    Entity joint = static_cast<Entity>(jointId);
+    if (!s_BindingsWorld->IsValid(joint)) return;
+    s_BindingsWorld->DestroyEntity(joint);
+}
+
+static void DistanceJoint_SetRestDistance(u64 jointId, f32 distance) {
+    if (!s_BindingsWorld) return;
+    auto* jc = s_BindingsWorld->GetComponent<DistanceJointComponent>(static_cast<Entity>(jointId));
+    if (jc) jc->restDistance = distance;
+}
+
+static f32 DistanceJoint_GetCurrentStress(u64 jointId) {
+    if (!s_BindingsWorld) return 0.0f;
+    auto* jc = s_BindingsWorld->GetComponent<DistanceJointComponent>(static_cast<Entity>(jointId));
+    return jc ? jc->currentStress : 0.0f;
+}
+
+static void HingeJoint_SetLimits(u64 jointId, f32 lower, f32 upper) {
+    if (!s_BindingsWorld) return;
+    auto* jc = s_BindingsWorld->GetComponent<HingeJointComponent>(static_cast<Entity>(jointId));
+    if (jc) {
+        jc->useLimits = true;
+        jc->lowerLimit = lower;
+        jc->upperLimit = upper;
+    }
+}
+
+static void HingeJoint_SetMotor(u64 jointId, f32 speed, f32 maxForce) {
+    if (!s_BindingsWorld) return;
+    auto* jc = s_BindingsWorld->GetComponent<HingeJointComponent>(static_cast<Entity>(jointId));
+    if (jc) {
+        jc->useMotor = true;
+        jc->motorSpeed = speed;
+        jc->motorMaxForce = maxForce;
+    }
+}
+
+static f32 HingeJoint_GetCurrentAngle(u64 jointId) {
+    if (!s_BindingsWorld) return 0.0f;
+    auto* jc = s_BindingsWorld->GetComponent<HingeJointComponent>(static_cast<Entity>(jointId));
+    return jc ? jc->currentAngle : 0.0f;
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -318,6 +400,36 @@ void RegisterPhysicsBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Physics_SetGravityScale(uint64, float)",
         asFUNCTION(Physics_SetGravityScale), asCALL_CDECL));
+
+    // ---- Physics joints ----
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "uint64 Physics_CreateDistanceJoint(uint64, uint64, float)",
+        asFUNCTION(Physics_CreateDistanceJoint), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "uint64 Physics_CreateHingeJoint(uint64, uint64, float, float, float)",
+        asFUNCTION(Physics_CreateHingeJoint), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Physics_DestroyJoint(uint64)",
+        asFUNCTION(Physics_DestroyJoint), asCALL_CDECL));
+
+    // Distance joint accessors
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void DistanceJoint_SetRestDistance(uint64, float)",
+        asFUNCTION(DistanceJoint_SetRestDistance), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float DistanceJoint_GetCurrentStress(uint64)",
+        asFUNCTION(DistanceJoint_GetCurrentStress), asCALL_CDECL));
+
+    // Hinge joint accessors
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void HingeJoint_SetLimits(uint64, float, float)",
+        asFUNCTION(HingeJoint_SetLimits), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void HingeJoint_SetMotor(uint64, float, float)",
+        asFUNCTION(HingeJoint_SetMotor), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float HingeJoint_GetCurrentAngle(uint64)",
+        asFUNCTION(HingeJoint_GetCurrentAngle), asCALL_CDECL));
 }
 
 } // namespace Scripting

@@ -4,7 +4,6 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
-#include "Enjin/AI/AIBehaviors.h"
 #include "Enjin/AI/Navmesh.h"
 #include <unordered_map>
 #include <memory>

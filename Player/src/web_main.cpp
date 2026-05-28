@@ -166,9 +166,6 @@ public:
         // --- ECS World ---
         m_World = std::make_unique<Enjin::ECS::World>();
 
-        // --- Audio ---
-        Enjin::Audio::AudioManager::Get().Initialize();
-
         // --- Scripting ---
         if (m_ScriptEngine.Initialize()) {
             Enjin::Scripting::RegisterAllBindings(m_ScriptEngine.GetASEngine());
@@ -382,7 +379,6 @@ public:
         m_ScriptEngine.Shutdown();
 
         m_TieredSaveSystem.SaveMeta();
-        Enjin::Audio::AudioManager::Get().Shutdown();
 
         // RenderSystem is owned by World — just destroy the world
         m_World.reset();
@@ -395,7 +391,6 @@ public:
     void Update(Enjin::f32 deltaTime) {
         if (!m_Initialized) return;
 
-        Enjin::Audio::AudioManager::Get().Update();
         m_SimpleAudio.Update(deltaTime);
         m_SimpleAudio.UpdateAudioSources(deltaTime);
 
@@ -523,6 +518,9 @@ public:
     }
     Enjin::u32 GetEntityCount() const {
         return m_RenderSystem ? m_RenderSystem->GetEntityRenderDataSize() : 0;
+    }
+    void SetColorblindMode(Enjin::u32 mode, float strength, float brightness, float contrast) {
+        if (m_RenderSystem) m_RenderSystem->SetWebAccessibility(mode, strength, brightness, contrast);
     }
 
 private:
@@ -653,6 +651,12 @@ EMSCRIPTEN_KEEPALIVE int getDrawCallCount() {
 
 EMSCRIPTEN_KEEPALIVE int getEntityCount() {
     return g_Player ? static_cast<int>(g_Player->GetEntityCount()) : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE void setColorblindMode(int mode, float strength) {
+    if (g_Player) {
+        g_Player->SetColorblindMode(static_cast<Enjin::u32>(mode), strength, 0.0f, 1.0f);
+    }
 }
 
 } // extern "C"

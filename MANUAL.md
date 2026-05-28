@@ -749,147 +749,42 @@ Math::Vector2 normal = path2d.EvaluateNormal(0.5f);  // Perpendicular
 
 ## AI System
 
-Pre-built enemy AI behaviors with state machine architecture.
+ECS-based enemy AI with state machine, navmesh pathfinding, and behavior trees.
 
-### AI States
+### AIControllerComponent
 
-| State | Description |
+Add an `AIControllerComponent` to any entity in the editor (Physics > AI Controller) to give it AI behavior. Configure in the inspector:
+
+| Field | Description |
 |-------|-------------|
-| Idle | Standing still, scanning for targets |
-| Patrol | Following a waypoint path or spline |
-| Chase | Pursuing a visible target |
-| Attack | Close enough to attack |
-| Flee | Running away from danger |
-| Investigate | Checking last known target position |
-| Return | Going back to patrol/spawn point |
+| `state` | Current AI state: Idle, Patrol, Chase, Attack, Flee, Dead |
+| `detectionRange` | How far the AI can see targets |
+| `attackRange` | Distance at which the AI will attack |
+| `moveSpeed` | Movement speed |
+| `patrolPoints` | Vector of patrol waypoint positions |
+| `useNavmesh` | Enable navmesh-based pathfinding |
+| `repathInterval` | How often to recalculate path (seconds) |
+| `is2D` | Use 2D movement for side-scrollers / top-down |
 
-### Basic Setup
+### AngelScript Bindings
 
-```cpp
-#include "Enjin/AI/AIBehaviors.h"
+```angelscript
+// Set/get AI state
+AI_SetState(entityId, 2);          // 0=Idle, 1=Patrol, 2=Chase, 3=Attack, 4=Flee, 5=Dead
+int state = AI_GetState(entityId);
 
-// Create an AI agent
-AI::AIAgent enemy;
-enemy.Initialize(entityId);
-enemy.SetSpawnPosition(Math::Vector3(0, 0, 0));
+// Set target
+AI_SetTarget(entityId, playerEntityId);
 
-// Set up patrol waypoints
-std::vector<Math::Vector3> waypoints = {
-    {0, 0, 0}, {10, 0, 0}, {10, 0, 10}, {0, 0, 10}
-};
-AI::AIPresets::SetupBasicEnemy(enemy, waypoints);
-
-// In update loop:
-enemy.Update(deltaTime);
-Math::Vector3 pos = enemy.GetPosition();
-Math::Vector3 facing = enemy.GetForward();
+// Configure detection
+AI_SetDetectionRange(entityId, 20.0f);
+AI_SetAttackRange(entityId, 2.5f);
+AI_SetMoveSpeed(entityId, 5.0f);
 ```
 
-### Perception Settings
+### Behavior Trees
 
-Configure how the AI "sees" and "hears":
-
-```cpp
-AI::AIPerceptionSettings perception;
-perception.sightRange = 15.0f;      // How far can see
-perception.sightAngle = 120.0f;     // Field of view (degrees)
-perception.peripheralRange = 5.0f;  // Close range, any angle
-perception.hearingRange = 10.0f;    // Noise detection range
-perception.memoryDuration = 5.0f;   // How long to remember target
-
-enemy.SetPerceptionSettings(perception);
-```
-
-### Movement Settings
-
-```cpp
-AI::AIMovementSettings movement;
-movement.walkSpeed = 2.0f;
-movement.runSpeed = 5.0f;
-movement.turnSpeed = 180.0f;        // Degrees per second
-movement.attackRange = 2.0f;
-movement.chaseGiveUpDistance = 25.0f;
-movement.patrolWaitTime = 2.0f;
-
-enemy.SetMovementSettings(movement);
-```
-
-### Preset Configurations
-
-Quick setups for common enemy types:
-
-```cpp
-// Basic patrol enemy
-AI::AIPresets::SetupBasicEnemy(enemy, waypoints);
-
-// Aggressive charger
-AI::AIPresets::SetupAggressive(enemy);
-
-// Runs away when player approaches
-AI::AIPresets::SetupCoward(enemy, 8.0f);  // Flee distance
-
-// Ranged enemy (stays at distance)
-AI::AIPresets::SetupRanged(enemy, 10.0f);  // Preferred distance
-
-// Stationary guard
-AI::AIPresets::SetupGuard(enemy, 5.0f);  // Alert range
-
-// Turret (rotates but doesn't move)
-AI::AIPresets::SetupTurret(enemy, 20.0f);  // Attack range
-```
-
-### Callbacks
-
-React to AI events in your game code:
-
-```cpp
-// When state changes
-enemy.SetOnStateChange([](AI::AIState oldState, AI::AIState newState) {
-    // Play animation, sound, etc.
-});
-
-// When attack is triggered
-enemy.SetOnAttack([]() {
-    // Deal damage, spawn projectile, etc.
-});
-
-// When taking damage
-enemy.SetOnDamage([](f32 damage) {
-    // Update health, play hit effect, etc.
-});
-```
-
-### Custom Behaviors
-
-Create custom AI states:
-
-```cpp
-class MyCustomBehavior : public AI::AIBehavior {
-public:
-    void Enter(AI::AIAgent* agent) override {
-        // Called when entering this state
-    }
-
-    void Update(AI::AIAgent* agent, f32 deltaTime) override {
-        // Called every frame while in this state
-        if (someCondition) {
-            agent->TransitionTo(AI::AIState::Idle);
-        }
-    }
-
-    void Exit(AI::AIAgent* agent) override {
-        // Called when leaving this state
-    }
-
-    AI::AIState GetState() const override {
-        return AI::AIState::Custom;
-    }
-};
-
-// Register custom behavior
-enemy.SetBehavior(AI::AIState::Custom,
-                  std::make_unique<MyCustomBehavior>());
-```
+For complex AI, use `BehaviorTreeComponent` with the visual behavior tree editor (Window > Behavior Tree Editor). Supports 20 node types including Sequence, Selector, Parallel, decorators, and gameplay actions (MoveTo, PlayAnimation, Wait).
 
 ---
 

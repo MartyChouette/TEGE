@@ -25,14 +25,14 @@ inline void SetParent(World* world, Entity child, Entity parent) {
     world->Lock();
 
     // Validate parent exists (prevent stale entity references)
-    if (parent != INVALID_ENTITY && !world->IsValid(parent)) return;
+    if (parent != INVALID_ENTITY && !world->IsValid(parent)) { world->Unlock(); return; }
 
     // Prevent circular parent chains: walk up from parent to see if child is an ancestor
     if (parent != INVALID_ENTITY) {
         Entity check = parent;
         u32 depth = 0;
         while (check != INVALID_ENTITY && depth < 1000) {
-            if (check == child) return;  // Would create cycle
+            if (check == child) { world->Unlock(); return; }  // Would create cycle
             auto* pc = world->GetComponent<ParentComponent>(check);
             if (!pc) break;
             check = pc->parent;
