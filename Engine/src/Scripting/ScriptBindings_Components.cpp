@@ -181,10 +181,65 @@ static void Light_SetColor(u64 id, const Vector3& color) {
     if (lc) lc->color = color;
 }
 
+static Vector3 Light_GetColor(u64 id) {
+    if (!s_BindingsWorld) return Vector3(1, 1, 1);
+    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    return lc ? lc->color : Vector3(1, 1, 1);
+}
+
 static void Light_SetIntensity(u64 id, f32 val) {
     if (!s_BindingsWorld) return;
     auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
     if (lc) lc->intensity = val;
+}
+
+static f32 Light_GetIntensity(u64 id) {
+    if (!s_BindingsWorld) return 1.0f;
+    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    return lc ? lc->intensity : 1.0f;
+}
+
+static void Light_SetRange(u64 id, f32 val) {
+    if (!s_BindingsWorld) return;
+    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    if (lc) lc->range = val;
+}
+
+static f32 Light_GetRange(u64 id) {
+    if (!s_BindingsWorld) return 10.0f;
+    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    return lc ? lc->range : 10.0f;
+}
+
+static void Light_SetType(u64 id, i32 type) {
+    if (!s_BindingsWorld) return;
+    if (type < 0 || type > 2) return;
+    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    if (lc) lc->type = static_cast<LightType>(type);
+}
+
+static i32 Light_GetType(u64 id) {
+    if (!s_BindingsWorld) return 1;
+    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    return lc ? static_cast<i32>(lc->type) : 1;
+}
+
+static void Light_SetCastShadows(u64 id, bool val) {
+    if (!s_BindingsWorld) return;
+    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    if (lc) lc->castShadows = val;
+}
+
+static bool Light_GetCastShadows(u64 id) {
+    if (!s_BindingsWorld) return true;
+    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    return lc ? lc->castShadows : true;
+}
+
+static void Light_SetSpotAngles(u64 id, f32 inner, f32 outer) {
+    if (!s_BindingsWorld) return;
+    auto* lc = s_BindingsWorld->GetComponent<LightComponent>(static_cast<Entity>(id));
+    if (lc) { lc->innerConeAngle = inner; lc->outerConeAngle = outer; }
 }
 
 // ============================================================================
@@ -217,6 +272,37 @@ static void Camera_ApplyPreset(u64 id, int presetIndex) {
 static std::string Camera_GetPresetName(int presetIndex) {
     if (presetIndex < 0 || presetIndex >= static_cast<int>(CameraPreset::Count)) return "Unknown";
     return CameraPresetName(static_cast<CameraPreset>(presetIndex));
+}
+
+static void Camera_SetOrthoSize(u64 id, f32 size) {
+    if (!s_BindingsWorld) return;
+    auto* cc = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id));
+    if (cc) cc->orthoSize = size;
+}
+
+static f32 Camera_GetOrthoSize(u64 id) {
+    if (!s_BindingsWorld) return 10.0f;
+    auto* cc = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id));
+    return cc ? cc->orthoSize : 10.0f;
+}
+
+static void Camera_SetNearFar(u64 id, f32 nearPlane, f32 farPlane) {
+    if (!s_BindingsWorld) return;
+    auto* cc = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id));
+    if (cc) { cc->nearPlane = nearPlane; cc->farPlane = farPlane; }
+}
+
+static void Camera_SetProjectionType(u64 id, i32 type) {
+    if (!s_BindingsWorld) return;
+    if (type < 0 || type > 1) return;
+    auto* cc = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id));
+    if (cc) cc->projectionType = static_cast<ProjectionType>(type);
+}
+
+static i32 Camera_GetProjectionType(u64 id) {
+    if (!s_BindingsWorld) return 0;
+    auto* cc = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id));
+    return cc ? static_cast<i32>(cc->projectionType) : 0;
 }
 
 // ============================================================================
@@ -1789,13 +1875,27 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
 
     // Light
     AS_CHECK(engine->RegisterGlobalFunction("void Light_SetColor(uint64, const Vector3 &in)", asFUNCTION(Light_SetColor), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Light_GetColor(uint64)", asFUNCTION(Light_GetColor), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Light_SetIntensity(uint64, float)", asFUNCTION(Light_SetIntensity), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Light_GetIntensity(uint64)", asFUNCTION(Light_GetIntensity), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Light_SetRange(uint64, float)", asFUNCTION(Light_SetRange), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Light_GetRange(uint64)", asFUNCTION(Light_GetRange), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Light_SetType(uint64, int)", asFUNCTION(Light_SetType), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Light_GetType(uint64)", asFUNCTION(Light_GetType), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Light_SetCastShadows(uint64, bool)", asFUNCTION(Light_SetCastShadows), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Light_GetCastShadows(uint64)", asFUNCTION(Light_GetCastShadows), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Light_SetSpotAngles(uint64, float, float)", asFUNCTION(Light_SetSpotAngles), asCALL_CDECL));
 
     // Camera
     AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetFOV(uint64, float)", asFUNCTION(Camera_SetFOV), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Camera_GetFOV(uint64)", asFUNCTION(Camera_GetFOV), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Camera_ApplyPreset(uint64, int)", asFUNCTION(Camera_ApplyPreset), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("string Camera_GetPresetName(int)", asFUNCTION(Camera_GetPresetName), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetOrthoSize(uint64, float)", asFUNCTION(Camera_SetOrthoSize), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Camera_GetOrthoSize(uint64)", asFUNCTION(Camera_GetOrthoSize), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetNearFar(uint64, float, float)", asFUNCTION(Camera_SetNearFar), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetProjectionType(uint64, int)", asFUNCTION(Camera_SetProjectionType), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Camera_GetProjectionType(uint64)", asFUNCTION(Camera_GetProjectionType), asCALL_CDECL));
 
     // AudioSource
     AS_CHECK(engine->RegisterGlobalFunction("void AudioSource_Play(uint64)", asFUNCTION(AudioSource_Play), asCALL_CDECL));

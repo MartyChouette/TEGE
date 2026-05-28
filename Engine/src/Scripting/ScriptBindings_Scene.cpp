@@ -341,6 +341,19 @@ static std::string Scene_GetCurrentScene() {
     return s_BindingsSceneManager->GetCurrentSceneName();
 }
 
+static void Scene_Restart() {
+    if (!s_BindingsSceneManager) {
+        ENJIN_LOG_WARN(Script, "Scene_Restart: no scene manager set");
+        return;
+    }
+    std::string current = s_BindingsSceneManager->GetCurrentSceneName();
+    if (current.empty()) {
+        ENJIN_LOG_WARN(Script, "Scene_Restart: no current scene");
+        return;
+    }
+    s_BindingsSceneManager->LoadScene(current);
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
@@ -469,6 +482,10 @@ void RegisterSceneBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "string Scene_GetCurrentScene()",
         asFUNCTION(Scene_GetCurrentScene), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Scene_Restart()",
+        asFUNCTION(Scene_Restart), asCALL_CDECL));
 }
 
 } // namespace Scripting
