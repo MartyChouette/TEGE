@@ -42,7 +42,7 @@
 </tr>
 </table>
 
-> Full editor with hierarchy, inspector, viewport, console, and asset browser. 44 starter templates across 7 categories.
+> Full editor with hierarchy, inspector, viewport, console, and asset browser. 48 starter templates across 7 categories.
 
 ---
 
@@ -52,7 +52,7 @@ TEGE is a complete game engine -- editor, renderer, physics, scripting, audio, b
 
 | | |
 |:---|:---|
-| **Complete Editor** | Hierarchy, inspector, viewport, play mode, undo/redo, command palette, project hub, 44 starter templates, drag-and-drop import with validation |
+| **Complete Editor** | Hierarchy, inspector, viewport, play mode, undo/redo, command palette, project hub, 48 starter templates, drag-and-drop import with validation |
 | **80+ ECS Components** | Transform, mesh, material, lights, cameras, physics, AI, UI, audio, scripting, rewind, pose library -- all with inspector UI |
 | **Vulkan PBR Renderer** | Cascaded shadows, reflection probes, path tracer, TAA/FXAA/SMAA, FSR 2 upscaling |
 | **8 Art Styles** | Realistic PBR, Blinn-Phong, Hand-Painted, Cel/Toon, Low-Poly Retro, Pixel Art, NPR Sketch, Analog -- one-click presets |
@@ -142,7 +142,7 @@ Build with `-DENJIN_BUILD_EXAMPLES=ON`. See `Examples/Simple3D/` and `Examples/S
 - **Gizmos** -- Translate/rotate/scale via ImGuizmo, click-to-select, terrain sculpting (5 brush modes), stats overlay, wireframe toggle
 - **Visual Authoring** -- Shader Graph (54 nodes), Audio Event Graph, Particle Graph, Dialogue Tree Editor, Animation Graph, Vector Drawing Editor
 - **Visual Scripting** -- Blueprint-style editor, 146+ nodes, breakpoint debugging (F9/F5/F10), execution profiler
-- **Project Tools** -- Project Hub with 44 starter templates (7 categories), Template Creator, Template Marketplace
+- **Project Tools** -- Project Hub with 48 starter templates (7 categories), Template Creator, Template Marketplace
 - **Smart Features** -- Context-aware suggestions, Quick Setup Patterns, Command Palette (Ctrl+P), keyboard shortcuts help
 - **Debug** -- Game Debug Panel (F1), Debug Workstation (F2), Quake-style drop-down console (backtick, 60+ commands)
 - **Collaboration** -- Real-time multi-user editing with OT protocol, peer cursors, conflict resolution
