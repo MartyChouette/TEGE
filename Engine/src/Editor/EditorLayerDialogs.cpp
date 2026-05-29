@@ -2115,7 +2115,7 @@ void EditorLayer::DrawHTML5ExportDialog() {
     ImGui::Checkbox("Generate Embed Code", &m_HTML5Config.generateEmbedCode);
     ImGui::SameLine();
     ImGui::Checkbox("Create .zip", &m_HTML5Config.zipOutput);
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Package output as .zip for upload to itch.io, Newgrounds, etc.");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Package output as .zip for upload to itch.io or web hosting");
 
     // Favicon
     ImGui::Text("Favicon: %s", m_HTML5Config.faviconPath.empty() ? "(none)" : m_HTML5Config.faviconPath.c_str());

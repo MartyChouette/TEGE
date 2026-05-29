@@ -473,10 +473,6 @@ void EditorLayer::DrawMenuBar() {
                     if (ImGui::MenuItem("Particle Editor", nullptr, &particleEditor)) {
                         SetPanelVisibility(EditorPanel::ParticleEditor, particleEditor);
                     }
-                    bool flashPanel = IsPanelVisible(EditorPanel::FlashTimeline);
-                    if (ImGui::MenuItem("Flash Timeline", nullptr, &flashPanel)) {
-                        SetPanelVisibility(EditorPanel::FlashTimeline, flashPanel);
-                    }
                     ImGui::EndMenu();
                 }
                 // --- Rendering & Shaders ---

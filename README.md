@@ -58,7 +58,7 @@ TEGE is a complete game engine -- editor, renderer, physics, scripting, audio, b
 | **8 Art Styles** | Realistic PBR, Blinn-Phong, Hand-Painted, Cel/Toon, Low-Poly Retro, Pixel Art, NPR Sketch, Analog -- one-click presets |
 | **Dual Scripting** | 960+ AngelScript bindings with hot-reload + visual scripting with 146+ nodes and breakpoint debugging |
 | **Dual Physics** | Jolt 5.2.0 (3D) + Box2D 3.0.0 (2D), 5 character controller types, joints, ragdolls, sensors |
-| **Ship Everywhere** | Standalone builds, HTML5/WebAssembly, Newgrounds, Windows installer, Linux AppImage |
+| **Ship Everywhere** | Standalone builds, HTML5/WebAssembly, Windows installer, Linux AppImage |
 | **Gameplay Systems** | Save/load, quests, dialogue trees (quest/cinematic/flag integration), record & rewind, destructibles, LAN multiplayer, localization, dynamic difficulty, pose library |
 | **Accessibility** | Colorblind correction (8 modes), screen reader, switch access, dyslexia mode, WCAG AAA themes |
 
@@ -146,7 +146,7 @@ Build with `-DENJIN_BUILD_EXAMPLES=ON`. See `Examples/Simple3D/` and `Examples/S
 - **Smart Features** -- Context-aware suggestions, Quick Setup Patterns, Command Palette (Ctrl+P), keyboard shortcuts help
 - **Debug** -- Game Debug Panel (F1), Debug Workstation (F2), Quake-style drop-down console (backtick, 60+ commands)
 - **Collaboration** -- Real-time multi-user editing with OT protocol, peer cursors, conflict resolution
-- **Build & Export** -- Build dialog, HTML5/WebAssembly export, Newgrounds export with medal/scoreboard integration
+- **Build & Export** -- Build dialog, HTML5/WebAssembly export, standalone player builds
 - **Drag & Drop** -- Drag textures from Asset Browser onto viewport entities or inspector fields, drag models to import, drag prefabs to instantiate
 
 </details>
@@ -176,7 +176,7 @@ Build with `-DENJIN_BUILD_EXAMPLES=ON`. See `Examples/Simple3D/` and `Examples/S
 - **Skeletal Animation** -- glTF + Assimp import (FBX/DAE/20+ formats), GPU skinning, animation state machines with blending
 - **2D Sprite Animation** -- Frame-based flipbook animation
 - **Inverse Kinematics** -- LookAt IK, FABRIK chain solving, interaction IK
-- **Timeline Editor** -- Flash-style keyframe animation with layers, 4 interpolation modes, curve editor, onion skinning
+- **Timeline Editor** -- Keyframe animation with layers, 4 interpolation modes, curve editor, onion skinning
 - **Audio** -- miniaudio backend (WAV, MP3, FLAC, Vorbis), 3D spatialization, SFX/Music/UI/Voice channels, scene integration
 
 </details>
@@ -188,7 +188,6 @@ Build with `-DENJIN_BUILD_EXAMPLES=ON`. See `Examples/Simple3D/` and `Examples/S
 - **AngelScript** -- TegeBehavior base class, ~960 API bindings, hot-reload, coroutines, event system
 - **Visual Scripting** -- 146+ node types, breakpoint debugging, execution profiler, latent nodes
 - **Plugin System** -- IPlugin interface, DLL/SO hot-reload with state save/restore
-- **Flash Compatibility** -- ~40 Flash API shim bindings, AS2/AS3 transpiler, SWF binary import
 - **DataAssets** -- Schema definitions with typed instances, JSON I/O, script bindings
 
 </details>
@@ -211,7 +210,7 @@ Build with `-DENJIN_BUILD_EXAMPLES=ON`. See `Examples/Simple3D/` and `Examples/S
 
 - **Asset Pipeline** -- `.enjpak` archive with compression and CRC32 integrity
 - **Desktop** -- Windows EXE + Inno Setup installer, Linux AppImage, standalone player
-- **Web** -- HTML5/WebAssembly via Emscripten, WebGPU renderer, Newgrounds integration
+- **Web** -- HTML5/WebAssembly via Emscripten, WebGPU renderer
 - **Asset Libraries** -- 42 bundled fonts, 16 CC0 3D model packs, 15 CC0 2D sprite/tileset packs
 - **Import** -- Presets for 10 DCC tools, texture compression (BCn/ASTC), auto-thumbnails
 

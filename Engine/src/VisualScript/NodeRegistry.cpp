@@ -5459,12 +5459,14 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            // TODO: Colorblind mode requires PostProcessSettings access which is
-            //       context-dependent (Editor vs Player). Wire when a global
-            //       s_VisualScriptPostProcessing pointer is available.
             i32 mode = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1]))
                 ? std::get<i32>(inputs[1]) : 0;
-            (void)mode;
+#if !ENJIN_RENDERER_WEBGPU
+            if (s_VisualScriptPostProcessing) {
+                auto& settings = s_VisualScriptPostProcessing->GetSettings();
+                settings.colorblindMode = static_cast<u32>(std::clamp(mode, 0, 7));
+            }
+#endif
             ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);

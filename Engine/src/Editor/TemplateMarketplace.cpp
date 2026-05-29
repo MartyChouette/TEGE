@@ -122,12 +122,7 @@ void TemplateMarketplace::BuildCatalog() {
         0.5f, 0.7f, 0.9f, 620, 4.3f, 20, 24600,
         {"ui", "canvas", "widgets", "theming", "accessibility"});
 
-    // --- Retro & Flash ---
-    add("flash_tower_defense", "Flash Tower Defense", "Classic browser-game-era tower defense with SWF-style vector art, waves, and upgrade paths.",
-        "Retro", "Enjin Team", "1.0.0", "CC0", "2D", TemplateQuality::Official, MaturityTier::Beta,
-        0.9f, 0.7f, 0.1f, 780, 4.5f, 33, 38400,
-        {"flash", "tower defense", "retro", "strategy"});
-
+    // --- Retro ---
     add("ps1_horror", "PS1 Horror", "Low-poly horror with PS1-era vertex jitter, affine textures, CRT filter, and fixed camera angles.",
         "Retro", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Beta,
         0.1f, 0.15f, 0.1f, 920, 4.7f, 38, 55100,
@@ -286,7 +281,7 @@ void TemplateMarketplace::BuildCatalog() {
         0.3f, 0.75f, 0.9f, 340, 4.5f, 14, 20200,
         {"accessibility", "a11y", "settings", "colorblind"});
 
-    // --- Retro & Flash (wizard-only) ---
+    // --- Retro (wizard-only) ---
     add("pointclick", "Point & Click", "Classic adventure game with click hotspots, inventory, and dialogue. Retro point-and-click style.",
         "Retro", "Enjin Team", "1.0.0", "CC0", "2D", TemplateQuality::Official, MaturityTier::Beta,
         1.0f, 0.55f, 0.2f, 420, 4.3f, 17, 32200,
@@ -313,21 +308,6 @@ void TemplateMarketplace::BuildCatalog() {
         0.9f, 0.9f, 0.3f, 180, 4.0f, 8, 12400,
         {"shadow", "debug", "rendering", "test"});
 
-    // --- Retro & Flash Experimental (wizard-only) ---
-    add("flash_dress", "Dress Up", "Character dress-up game with drag-and-drop items, layers, and save outfits. Flash-era nostalgia.",
-        "Retro", "Enjin Team", "1.0.0", "CC0", "2D", TemplateQuality::Official, MaturityTier::Experimental,
-        0.9f, 0.6f, 0.9f, 150, 3.9f, 7, 26400,
-        {"flash", "dress-up", "drag-drop", "casual"});
-
-    add("flash_escape", "Escape Room", "Room escape puzzle with inventory, clues, and combinations. Classic Flash escape game.",
-        "Retro", "Enjin Team", "1.0.0", "CC0", "2D", TemplateQuality::Official, MaturityTier::Experimental,
-        0.5f, 0.3f, 0.2f, 170, 4.1f, 8, 28200,
-        {"flash", "escape-room", "puzzle", "inventory"});
-
-    add("flash_rhythm", "Rhythm Game", "Music game with falling notes, timing windows, and combo system. Flash-era rhythm action.",
-        "Retro", "Enjin Team", "1.0.0", "CC0", "2D", TemplateQuality::Official, MaturityTier::Experimental,
-        0.3f, 0.4f, 0.9f, 200, 4.2f, 9, 30600,
-        {"flash", "rhythm", "music", "timing"});
 }
 
 void TemplateMarketplace::ScanInstalled() {

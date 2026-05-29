@@ -386,7 +386,7 @@ void EditorLayer::DrawAssetBrowserPanel() {
 
     if (m_AssetGridView) {
         // Thumbnail size slider
-        ImGui::SetNextItemWidth(100);
+        ImGui::SetNextItemWidth(100 * ImGui::GetIO().FontGlobalScale);
         ImGui::SliderFloat("##ThumbSize", &m_AssetThumbnailSize, 48.0f, 160.0f, "%.0f px");
     }
 
@@ -699,6 +699,7 @@ void EditorLayer::DrawAssetBrowserPanel() {
                     if (truncated.size() > 2) truncated = truncated.substr(0, truncated.size() - 2) + "..";
                 }
                 ImGui::TextUnformatted(truncated.c_str());
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", entry.name.c_str());
             } else {
                 ImGui::TextUnformatted(entry.name.c_str());
             }
@@ -3702,7 +3703,7 @@ void EditorLayer::DrawDataAssetPanel() {
 
     // Split: left = schema/asset lists, right = editor
     ImGui::Columns(2, "DataAssetColumns", true);
-    ImGui::SetColumnWidth(0, 260.0f);
+    ImGui::SetColumnWidth(0, 260.0f * ImGui::GetIO().FontGlobalScale);
 
     // --- LEFT PANE: Schema list ---
     ImGui::Text("Schemas");
@@ -4638,7 +4639,7 @@ void EditorLayer::DrawNetworkPanel() {
     if (role == Networking::NetworkRole::None) {
         ImGui::Text("Player Name:");
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(150);
+        ImGui::SetNextItemWidth(150 * ImGui::GetIO().FontGlobalScale);
         ImGui::InputText("##NetName", m_NetworkPlayerName, sizeof(m_NetworkPlayerName));
 
         ImGui::Separator();
@@ -4646,7 +4647,7 @@ void EditorLayer::DrawNetworkPanel() {
         // Host
         ImGui::Text("Port:");
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(80);
+        ImGui::SetNextItemWidth(80 * ImGui::GetIO().FontGlobalScale);
         ImGui::InputInt("##NetPort", &m_NetworkPort, 0, 0);
         ImGui::SameLine();
         if (ImGui::Button("Host Game")) {
@@ -4658,7 +4659,7 @@ void EditorLayer::DrawNetworkPanel() {
         // Join
         ImGui::Text("Server IP:");
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(150);
+        ImGui::SetNextItemWidth(150 * ImGui::GetIO().FontGlobalScale);
         ImGui::InputText("##NetIP", m_NetworkIP, sizeof(m_NetworkIP));
         ImGui::SameLine();
         if (ImGui::Button("Join Game")) {
@@ -4753,7 +4754,7 @@ void EditorLayer::DrawCollaborationPanel() {
     if (state == CollabSessionState::Disconnected) {
         ImGui::Text("User Name:");
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(150);
+        ImGui::SetNextItemWidth(150 * ImGui::GetIO().FontGlobalScale);
         ImGui::InputText("##CollabName", m_CollabUserName, sizeof(m_CollabUserName));
 
         ImGui::Separator();
@@ -4761,7 +4762,7 @@ void EditorLayer::DrawCollaborationPanel() {
         // Host session
         ImGui::Text("Port:");
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(80);
+        ImGui::SetNextItemWidth(80 * ImGui::GetIO().FontGlobalScale);
         ImGui::InputInt("##CollabPort", &m_CollabPort, 0, 0);
         ImGui::SameLine();
         if (ImGui::Button("Host Session")) {
@@ -4777,7 +4778,7 @@ void EditorLayer::DrawCollaborationPanel() {
         // Join session
         ImGui::Text("Host IP:");
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(150);
+        ImGui::SetNextItemWidth(150 * ImGui::GetIO().FontGlobalScale);
         ImGui::InputText("##CollabIP", m_CollabHostIP, sizeof(m_CollabHostIP));
         ImGui::SameLine();
         if (ImGui::Button("Join Session")) {
@@ -5411,99 +5412,6 @@ void EditorLayer::DrawFlashTimelinePanel() {
             ImGui::EndTabItem();
         }
 
-        // --- Newgrounds Tab ---
-        if (ImGui::BeginTabItem("Newgrounds")) {
-            ImGui::Text("Newgrounds.io Integration");
-            ImGui::Separator();
-
-            // App credentials
-            ImGui::Text("App ID:");
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(200);
-            ImGui::InputText("##NGAppId", m_NGAppId, sizeof(m_NGAppId));
-
-            ImGui::Text("Encryption Key:");
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(200);
-            ImGui::InputText("##NGKey", m_NGEncryptionKey, sizeof(m_NGEncryptionKey),
-                              ImGuiInputTextFlags_Password);
-
-            // Connect button
-            if (m_NewgroundsAPI.IsConnected()) {
-                ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1), "Connected as: %s",
-                                   m_NewgroundsAPI.GetSession().userName.c_str());
-                ImGui::SameLine();
-                if (ImGui::Button("Refresh")) {
-                    m_NewgroundsAPI.CheckSession();
-                }
-            } else {
-                if (ImGui::Button("Connect")) {
-                    if (strlen(m_NGAppId) > 0 && strlen(m_NGEncryptionKey) > 0) {
-                        m_NewgroundsAPI.Initialize(m_NGAppId, m_NGEncryptionKey);
-                        m_NewgroundsAPI.StartSession();
-                    }
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Check Session")) {
-                    m_NewgroundsAPI.CheckSession();
-                }
-
-                std::string passport = m_NewgroundsAPI.GetPassportUrl();
-                if (!passport.empty()) {
-                    ImGui::TextWrapped("Passport URL: %s", passport.c_str());
-                    ImGui::SameLine();
-                    if (ImGui::Button("Copy URL")) {
-                        ImGui::SetClipboardText(passport.c_str());
-                    }
-                }
-            }
-
-            ImGui::Separator();
-
-            // Medals section
-            if (ImGui::TreeNode("Medals")) {
-                if (ImGui::Button("Refresh Medals")) {
-                    // Medals are fetched on demand
-                }
-                static std::vector<Networking::NGMedal> cachedMedals;
-                if (ImGui::IsItemClicked()) {
-                    cachedMedals = m_NewgroundsAPI.GetMedals();
-                }
-                for (auto& medal : cachedMedals) {
-                    ImGui::BulletText("%s (%d pts) %s",
-                                      medal.name.c_str(), medal.value,
-                                      medal.unlocked ? "[Unlocked]" : "");
-                }
-                ImGui::TreePop();
-            }
-
-            // Scoreboards section
-            if (ImGui::TreeNode("Scoreboards")) {
-                static std::vector<Networking::NGScoreBoard> cachedBoards;
-                if (ImGui::Button("Refresh Boards")) {
-                    cachedBoards = m_NewgroundsAPI.GetScoreBoards();
-                }
-                for (auto& board : cachedBoards) {
-                    ImGui::BulletText("[%d] %s", board.id, board.name.c_str());
-                }
-
-                static i32 testBoardId = 0;
-                static i32 testScore = 100;
-                ImGui::SetNextItemWidth(80);
-                ImGui::InputInt("Board ID", &testBoardId);
-                ImGui::SameLine();
-                ImGui::SetNextItemWidth(80);
-                ImGui::InputInt("Score", &testScore);
-                ImGui::SameLine();
-                if (ImGui::Button("Post Test Score")) {
-                    m_NewgroundsAPI.PostScore(testBoardId, testScore);
-                }
-                ImGui::TreePop();
-            }
-
-            ImGui::EndTabItem();
-        }
-
         ImGui::EndTabBar();
     }
 
@@ -5529,7 +5437,7 @@ void EditorLayer::DrawVectorDrawingPanel() {
     if (m_VectorDrawingEditor.HasDocument()) {
         ImGui::Separator();
         static char symbolName[128] = "MySymbol";
-        ImGui::SetNextItemWidth(150);
+        ImGui::SetNextItemWidth(150 * ImGui::GetIO().FontGlobalScale);
         ImGui::InputText("Symbol Name", symbolName, sizeof(symbolName));
         ImGui::SameLine();
         if (ImGui::Button("Save as Flash Symbol")) {
@@ -5769,14 +5677,14 @@ void EditorLayer::DrawBugReportList() {
     }
 
     // Search and filter row
-    ImGui::SetNextItemWidth(200);
+    ImGui::SetNextItemWidth(200 * ImGui::GetIO().FontGlobalScale);
     ImGui::InputTextWithHint("##BugSearch", "Search...", m_FeedbackSearchBuf, sizeof(m_FeedbackSearchBuf));
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(100);
+    ImGui::SetNextItemWidth(100 * ImGui::GetIO().FontGlobalScale);
     const char* severityOpts[] = { "All", "Low", "Medium", "High", "Critical" };
     ImGui::Combo("Severity##BugFilter", &m_BugSeverityFilter, severityOpts, 5);
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(110);
+    ImGui::SetNextItemWidth(110 * ImGui::GetIO().FontGlobalScale);
     const char* statusOpts[] = { "All", "Draft", "Submitted", "Acknowledged", "Resolved", "Closed" };
     ImGui::Combo("Status##BugFilter", &m_BugStatusFilter, statusOpts, 6);
 
@@ -5954,7 +5862,7 @@ void EditorLayer::DrawBugReportDetail(BugReport& report) {
 
     // Endpoint config
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(200);
+    ImGui::SetNextItemWidth(200 * ImGui::GetIO().FontGlobalScale);
     ImGui::InputTextWithHint("##Endpoint", "Submit endpoint URL", m_FeedbackEndpointBuf, sizeof(m_FeedbackEndpointBuf));
 
     ImGui::EndChild();
@@ -5968,13 +5876,13 @@ void EditorLayer::DrawNewBugReportForm() {
     // Type and severity on same row
     ImGui::Text("Type:");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(120);
+    ImGui::SetNextItemWidth(120 * ImGui::GetIO().FontGlobalScale);
     const char* typeOpts[] = { "Bug", "Crash", "Performance", "Visual", "Audio", "Other" };
     ImGui::Combo("##BugType", &m_BugTypeSel, typeOpts, 6);
     ImGui::SameLine();
     ImGui::Text("Severity:");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(100);
+    ImGui::SetNextItemWidth(100 * ImGui::GetIO().FontGlobalScale);
     const char* sevOpts[] = { "Low", "Medium", "High", "Critical" };
     // Color the severity label
     ImVec4 sevColors[] = {
@@ -6087,7 +5995,7 @@ void EditorLayer::DrawFeedbackList() {
     }
 
     // Search
-    ImGui::SetNextItemWidth(250);
+    ImGui::SetNextItemWidth(250 * ImGui::GetIO().FontGlobalScale);
     ImGui::InputTextWithHint("##FbSearch", "Search feedback...", m_FeedbackSearchBuf, sizeof(m_FeedbackSearchBuf));
 
     usize total = m_FeedbackManager.GetTotalFeedback();
@@ -6184,7 +6092,7 @@ void EditorLayer::DrawFeedbackDetail(FeedbackEntry& entry) {
     }
     ImGui::PopStyleColor();
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(200);
+    ImGui::SetNextItemWidth(200 * ImGui::GetIO().FontGlobalScale);
     ImGui::InputTextWithHint("##FbEndpoint", "Submit endpoint URL", m_FeedbackEndpointBuf, sizeof(m_FeedbackEndpointBuf));
 
     ImGui::EndChild();
@@ -6198,19 +6106,19 @@ void EditorLayer::DrawNewFeedbackForm() {
     // Type and priority
     ImGui::Text("Type:");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(140);
+    ImGui::SetNextItemWidth(140 * ImGui::GetIO().FontGlobalScale);
     const char* typeOpts[] = { "General", "Feature Request", "Usability", "Documentation", "Praise" };
     ImGui::Combo("##FbType", &m_FeedbackTypeSel, typeOpts, 5);
     ImGui::SameLine();
     ImGui::Text("Priority:");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(100);
+    ImGui::SetNextItemWidth(100 * ImGui::GetIO().FontGlobalScale);
     const char* prioOpts[] = { "Low", "Medium", "High" };
     ImGui::Combo("##FbPriority", &m_FeedbackPrioritySel, prioOpts, 3);
 
     ImGui::Text("Category:");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(200);
+    ImGui::SetNextItemWidth(200 * ImGui::GetIO().FontGlobalScale);
     ImGui::InputTextWithHint("##FbCategory", "e.g. Editor, Rendering...", m_FeedbackCategoryBuf, sizeof(m_FeedbackCategoryBuf));
 
     // Satisfaction rating (clickable stars)
@@ -6340,7 +6248,7 @@ void EditorLayer::DrawGitHubIssuesTab() {
         m_FeedbackManager.FetchGitHubIssues(true);
     }
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(200);
+    ImGui::SetNextItemWidth(200 * ImGui::GetIO().FontGlobalScale);
     ImGui::InputTextWithHint("##GHSearch", "Search issues...", m_GitHubIssueSearchBuf, sizeof(m_GitHubIssueSearchBuf));
     ImGui::SameLine();
 
@@ -6758,7 +6666,7 @@ void EditorLayer::DrawAudioMixer() {
             ImGui::Indent(30);
 
             // Volume slider
-            ImGui::SetNextItemWidth(150);
+            ImGui::SetNextItemWidth(150 * ImGui::GetIO().FontGlobalScale);
             char volId[32];
             snprintf(volId, sizeof(volId), "##Vol%llu", (unsigned long long)entity);
             if (ImGui::SliderFloat(volId, &asc->volume, 0.0f, 1.0f, "Vol %.2f")) {
@@ -6770,7 +6678,7 @@ void EditorLayer::DrawAudioMixer() {
             ImGui::SameLine();
 
             // Pitch slider
-            ImGui::SetNextItemWidth(100);
+            ImGui::SetNextItemWidth(100 * ImGui::GetIO().FontGlobalScale);
             char pitchId[32];
             snprintf(pitchId, sizeof(pitchId), "##Pitch%llu", (unsigned long long)entity);
             if (ImGui::SliderFloat(pitchId, &asc->pitch, 0.1f, 3.0f, "x%.1f")) {
@@ -7325,10 +7233,11 @@ void EditorLayer::DrawDebugWorkstation() {
             } else {
                 ImGui::BeginChild("SpikeLog", ImVec2(0, 140), true);
                 ImGui::Columns(4, "SpikeColumns");
-                ImGui::SetColumnWidth(0, 70);
-                ImGui::SetColumnWidth(1, 90);
-                ImGui::SetColumnWidth(2, 90);
-                ImGui::SetColumnWidth(3, 90);
+                f32 colScale = ImGui::GetIO().FontGlobalScale;
+                ImGui::SetColumnWidth(0, 70 * colScale);
+                ImGui::SetColumnWidth(1, 90 * colScale);
+                ImGui::SetColumnWidth(2, 90 * colScale);
+                ImGui::SetColumnWidth(3, 90 * colScale);
                 ImGui::Text("Frame"); ImGui::NextColumn();
                 ImGui::Text("Total"); ImGui::NextColumn();
                 ImGui::Text("Render"); ImGui::NextColumn();
