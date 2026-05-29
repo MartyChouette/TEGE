@@ -321,6 +321,45 @@ static f32 HingeJoint_GetCurrentAngle(u64 jointId) {
 }
 
 // ============================================================================
+// Overlap queries returning entity lists (buffered)
+// ============================================================================
+
+static std::vector<Entity> s_OverlapResults;
+
+static int Physics_OverlapSphereEntities(const Vector3& center, f32 radius) {
+    s_OverlapResults.clear();
+    if (!s_BindingsPhysics) return 0;
+    s_OverlapResults = s_BindingsPhysics->GetCollidersInRadius(center, radius);
+    return static_cast<int>(s_OverlapResults.size());
+}
+
+static int Physics_OverlapSphereEntitiesMask(const Vector3& center, f32 radius, u32 layerMask) {
+    s_OverlapResults.clear();
+    if (!s_BindingsPhysics) return 0;
+    s_OverlapResults = s_BindingsPhysics->GetCollidersInRadius(center, radius, layerMask);
+    return static_cast<int>(s_OverlapResults.size());
+}
+
+static int Physics_OverlapBoxEntities(const Vector3& center, const Vector3& halfExtents) {
+    s_OverlapResults.clear();
+    if (!s_BindingsPhysics) return 0;
+    s_OverlapResults = s_BindingsPhysics->OverlapBox(center, halfExtents);
+    return static_cast<int>(s_OverlapResults.size());
+}
+
+static int Physics_OverlapBoxEntitiesMask(const Vector3& center, const Vector3& halfExtents, u32 layerMask) {
+    s_OverlapResults.clear();
+    if (!s_BindingsPhysics) return 0;
+    s_OverlapResults = s_BindingsPhysics->OverlapBox(center, halfExtents, layerMask);
+    return static_cast<int>(s_OverlapResults.size());
+}
+
+static u64 Physics_GetOverlapResult(int index) {
+    if (index < 0 || index >= static_cast<int>(s_OverlapResults.size())) return INVALID_ENTITY;
+    return static_cast<u64>(s_OverlapResults[index]);
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -430,6 +469,23 @@ void RegisterPhysicsBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "float HingeJoint_GetCurrentAngle(uint64)",
         asFUNCTION(HingeJoint_GetCurrentAngle), asCALL_CDECL));
+
+    // ---- Overlap queries returning entities ----
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int Physics_OverlapSphereEntities(const Vector3 &in, float)",
+        asFUNCTION(Physics_OverlapSphereEntities), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int Physics_OverlapSphereEntitiesMask(const Vector3 &in, float, uint)",
+        asFUNCTION(Physics_OverlapSphereEntitiesMask), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int Physics_OverlapBoxEntities(const Vector3 &in, const Vector3 &in)",
+        asFUNCTION(Physics_OverlapBoxEntities), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int Physics_OverlapBoxEntitiesMask(const Vector3 &in, const Vector3 &in, uint)",
+        asFUNCTION(Physics_OverlapBoxEntitiesMask), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "uint64 Physics_GetOverlapResult(int)",
+        asFUNCTION(Physics_GetOverlapResult), asCALL_CDECL));
 }
 
 } // namespace Scripting

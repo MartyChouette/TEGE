@@ -152,6 +152,45 @@ static void Physics2D_SetGravityScale(u64 entityId, f32 scale) {
 }
 
 // ============================================================================
+// Overlap queries returning entity lists (buffered)
+// ============================================================================
+
+static std::vector<Entity> s_Overlap2DResults;
+
+static int Physics2D_OverlapCircleEntities(const Vector2& center, f32 radius) {
+    s_Overlap2DResults.clear();
+    if (!s_BindingsPhysics2D) return 0;
+    s_BindingsPhysics2D->OverlapCircle(center, radius, s_Overlap2DResults);
+    return static_cast<int>(s_Overlap2DResults.size());
+}
+
+static int Physics2D_OverlapCircleEntitiesMask(const Vector2& center, f32 radius, u32 layerMask) {
+    s_Overlap2DResults.clear();
+    if (!s_BindingsPhysics2D) return 0;
+    s_BindingsPhysics2D->OverlapCircle(center, radius, s_Overlap2DResults, layerMask);
+    return static_cast<int>(s_Overlap2DResults.size());
+}
+
+static int Physics2D_OverlapBoxEntities(const Vector2& center, const Vector2& halfExtents) {
+    s_Overlap2DResults.clear();
+    if (!s_BindingsPhysics2D) return 0;
+    s_BindingsPhysics2D->OverlapBox(center, halfExtents, s_Overlap2DResults);
+    return static_cast<int>(s_Overlap2DResults.size());
+}
+
+static int Physics2D_OverlapBoxEntitiesMask(const Vector2& center, const Vector2& halfExtents, u32 layerMask) {
+    s_Overlap2DResults.clear();
+    if (!s_BindingsPhysics2D) return 0;
+    s_BindingsPhysics2D->OverlapBox(center, halfExtents, s_Overlap2DResults, layerMask);
+    return static_cast<int>(s_Overlap2DResults.size());
+}
+
+static u64 Physics2D_GetOverlapResult(int index) {
+    if (index < 0 || index >= static_cast<int>(s_Overlap2DResults.size())) return INVALID_ENTITY;
+    return static_cast<u64>(s_Overlap2DResults[index]);
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -211,6 +250,23 @@ void RegisterPhysics2DBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Physics2D_SetGravityScale(uint64, float)",
         asFUNCTION(Physics2D_SetGravityScale), asCALL_CDECL));
+
+    // ---- Overlap queries returning entities ----
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int Physics2D_OverlapCircleEntities(const Vector2 &in, float)",
+        asFUNCTION(Physics2D_OverlapCircleEntities), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int Physics2D_OverlapCircleEntitiesMask(const Vector2 &in, float, uint)",
+        asFUNCTION(Physics2D_OverlapCircleEntitiesMask), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int Physics2D_OverlapBoxEntities(const Vector2 &in, const Vector2 &in)",
+        asFUNCTION(Physics2D_OverlapBoxEntities), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int Physics2D_OverlapBoxEntitiesMask(const Vector2 &in, const Vector2 &in, uint)",
+        asFUNCTION(Physics2D_OverlapBoxEntitiesMask), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "uint64 Physics2D_GetOverlapResult(int)",
+        asFUNCTION(Physics2D_GetOverlapResult), asCALL_CDECL));
 }
 
 } // namespace Scripting

@@ -237,6 +237,36 @@ static bool Navmesh_HasNavmesh() {
 }
 
 // ============================================================================
+// Pathfinding
+// ============================================================================
+
+static AI::PathResult s_LastPathResult;
+
+static int Navmesh_FindPath(f32 sx, f32 sy, f32 sz, f32 ex, f32 ey, f32 ez) {
+    s_LastPathResult = AI::PathResult{};
+    if (!s_BindingsPathfinder) return 0;
+    s_LastPathResult = s_BindingsPathfinder->FindPath(
+        Math::Vector3(sx, sy, sz), Math::Vector3(ex, ey, ez));
+    return s_LastPathResult.success ? static_cast<int>(s_LastPathResult.waypoints.size()) : 0;
+}
+
+static bool Navmesh_PathExists(f32 sx, f32 sy, f32 sz, f32 ex, f32 ey, f32 ez) {
+    if (!s_BindingsPathfinder) return false;
+    return s_BindingsPathfinder->PathExists(
+        Math::Vector3(sx, sy, sz), Math::Vector3(ex, ey, ez));
+}
+
+static Math::Vector3 Navmesh_GetPathWaypoint(int index) {
+    if (index < 0 || index >= static_cast<int>(s_LastPathResult.waypoints.size()))
+        return Math::Vector3(0, 0, 0);
+    return s_LastPathResult.waypoints[index];
+}
+
+static f32 Navmesh_GetPathCost() {
+    return s_LastPathResult.totalCost;
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -318,6 +348,20 @@ void RegisterAIBindings(asIScriptEngine* engine) {
         asFUNCTION(Navmesh_IsPointOnNavmesh), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Navmesh_HasNavmesh()",
         asFUNCTION(Navmesh_HasNavmesh), asCALL_CDECL));
+
+    // Pathfinding
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int Navmesh_FindPath(float, float, float, float, float, float)",
+        asFUNCTION(Navmesh_FindPath), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool Navmesh_PathExists(float, float, float, float, float, float)",
+        asFUNCTION(Navmesh_PathExists), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "Vector3 Navmesh_GetPathWaypoint(int)",
+        asFUNCTION(Navmesh_GetPathWaypoint), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float Navmesh_GetPathCost()",
+        asFUNCTION(Navmesh_GetPathCost), asCALL_CDECL));
 }
 
 } // namespace Scripting

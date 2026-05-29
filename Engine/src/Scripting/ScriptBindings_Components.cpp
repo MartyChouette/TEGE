@@ -274,6 +274,12 @@ static std::string Camera_GetPresetName(int presetIndex) {
     return CameraPresetName(static_cast<CameraPreset>(presetIndex));
 }
 
+static void Animator_CrossFade(u64 id, const std::string& animName, f32 fadeTime) {
+    if (!s_BindingsWorld) return;
+    auto* ac = s_BindingsWorld->GetComponent<AnimatorComponent>(static_cast<Entity>(id));
+    if (ac) ac->animator.CrossFade(animName, fadeTime);
+}
+
 static void Camera_SetOrthoSize(u64 id, f32 size) {
     if (!s_BindingsWorld) return;
     auto* cc = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id));
@@ -1912,6 +1918,7 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("bool Animator_IsPlaying(uint64)", asFUNCTION(Animator_IsPlaying), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("string Animator_GetCurrentAnimation(uint64)", asFUNCTION(Animator_GetCurrentAnimation), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Animator_GetSpeed(uint64)", asFUNCTION(Animator_GetSpeed), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Animator_CrossFade(uint64, const string &in, float)", asFUNCTION(Animator_CrossFade), asCALL_CDECL));
 
     // CharacterController
     AS_CHECK(engine->RegisterGlobalFunction("void Controller_SetMoveSpeed(uint64, float)", asFUNCTION(Controller_SetMoveSpeed), asCALL_CDECL));

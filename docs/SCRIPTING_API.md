@@ -1,6 +1,6 @@
 # AngelScript API Reference
 
-Complete reference for all functions callable from AngelScript via `TegeBehavior` scripts. ~900+ functions across all categories.
+Complete reference for all functions callable from AngelScript via `TegeBehavior` scripts. ~960+ functions across all categories.
 
 ---
 
@@ -22,6 +22,7 @@ Complete reference for all functions callable from AngelScript via `TegeBehavior
 - `Entity_GetScale/SetScale(uint64, Vector3)`
 - `Entity_GetName(uint64)`
 - `Entity_SetVisible/Entity_IsVisible(uint64, bool)` — visibility toggle
+- **Hierarchy**: `Entity_SetParent(uint64 child, uint64 parent)`, `Entity_RemoveParent(uint64)`, `Entity_GetParent(uint64)` — returns parent entity ID, `Entity_GetChildCount(uint64)`, `Entity_GetChild(uint64, int index)` — returns child entity ID
 - **EntityHandle** class: `IsValid()`, `GetID()`, `GetPosition/SetPosition()`, `GetRotation/SetRotation()`, `GetScale/SetScale()`, `GetName()`, `HasTag(string)`
 - **TransformProxy**: `position`, `rotation`, `scale`, `forward`, `right`, `up` (read-only)
 
@@ -32,7 +33,7 @@ Complete reference for all functions callable from AngelScript via `TegeBehavior
 - `Scene_IsValid(uint64)`, `Scene_GetEntityCount()`
 - `Scene_GetEntityName/SetEntityName(uint64, string)`
 - `Scene_AddTag/RemoveTag/HasTag(uint64, string)`
-- `Scene_LoadScene(string)`, `Scene_GetCurrentScene()`
+- `Scene_LoadScene(string)`, `Scene_GetCurrentScene()`, `Scene_Restart()` — reload current scene
 
 ## Time
 
@@ -64,6 +65,9 @@ Complete reference for all functions callable from AngelScript via `TegeBehavior
 - `Physics_CheckSphere(center, radius)`, `Physics_CheckBox(center, halfExtents)`
 - Masked overloads (filter by collision group): `Physics_Raycast(origin, dir, maxDist, layerMask)`, `Physics_RaycastHit(origin, dir, maxDist, layerMask, &hit)`, `Physics_CheckSphere(center, radius, layerMask)`, `Physics_CheckBox(center, halfExtents, layerMask)`
 - `Physics_AddForce/AddImpulse(uint64, Vector3)`, `Physics_SetVelocity/GetVelocity(uint64)`, `Physics_SetGravityScale(uint64, float)`
+- **Overlap (entity list)**: `Physics_OverlapSphereEntities(Vector3, float)`, `Physics_OverlapBoxEntities(Vector3, Vector3)` — return count of overlapping entities. Masked variants: append `Mask` suffix + `uint layerMask`. Retrieve results: `Physics_GetOverlapResult(int index)` — returns entity ID.
+- **Joints**: `Physics_CreateDistanceJoint(uint64 entityA, uint64 entityB, float restDistance)` — returns joint entity, `Physics_CreateHingeJoint(uint64 entityA, uint64 entityB, float axisX, axisY, axisZ)` — returns joint entity, `Physics_DestroyJoint(uint64)`. Accessors: `DistanceJoint_SetRestDistance(uint64, float)`, `DistanceJoint_GetCurrentStress(uint64)`, `HingeJoint_SetLimits(uint64, float lower, float upper)`, `HingeJoint_SetMotor(uint64, float speed, float maxForce)`, `HingeJoint_GetCurrentAngle(uint64)`
+- **Collider physics**: `BoxCollider_GetFriction/SetFriction(uint64, float)`, `BoxCollider_GetBounciness/SetBounciness(uint64, float)` — same for `SphereCollider_` and `CapsuleCollider_` prefixes
 
 ## Audio
 
@@ -77,13 +81,14 @@ Channel constants: `AUDIO_CHANNEL_SFX=0`, `AUDIO_CHANNEL_MUSIC=1`, `AUDIO_CHANNE
 
 - **Health**: `Health_Get/GetMax/SetCurrent(uint64)`, `Health_Damage(uint64, float)`
 - **Material**: `Material_SetBaseColor/GetBaseColor(uint64, Vector3)`, `Material_SetMetallic/SetRoughness(uint64, float)`, `Material_SetTransmission/GetTransmission(uint64, float)`, `Material_SetIOR/GetIOR(uint64, float)`, `Material_SetThickness/GetThickness(uint64, float)`, `Material_SetSSSIntensity/GetSSSIntensity(uint64, float)`, `Material_SetSSSRadius/GetSSSRadius(uint64, float)`, `Material_SetSSSColor/GetSSSColor(uint64, Vector3)`, `Material_SetOutlineWidth/GetOutlineWidth(uint64, float)`, `Material_SetOutlineColor/GetOutlineColor(uint64, Vector3)`, `Material_SetSurfaceNoiseScale/GetSurfaceNoiseScale(uint64, float)`, `Material_SetSurfaceNoiseStrength/GetSurfaceNoiseStrength(uint64, float)`
-- **Light**: `Light_SetColor/SetIntensity(uint64, ...)`
-- **Camera**: `Camera_SetFOV/GetFOV(uint64, float)`
+- **Light**: `Light_SetColor/GetColor(uint64, Vector3)`, `Light_SetIntensity/GetIntensity(uint64, float)`, `Light_SetRange/GetRange(uint64, float)`, `Light_SetType/GetType(uint64, int)` — 0=Directional, 1=Point, 2=Spot, `Light_SetCastShadows/GetCastShadows(uint64, bool)`, `Light_SetSpotAngles(uint64, float inner, float outer)` — cone angles in degrees
+- **Camera**: `Camera_SetFOV/GetFOV(uint64, float)`, `Camera_SetOrthoSize/GetOrthoSize(uint64, float)` — orthographic half-height (2D zoom), `Camera_SetProjectionType/GetProjectionType(uint64, int)` — 0=Perspective, 1=Orthographic, `Camera_SetNearFar(uint64, float near, float far)`
 - **AudioSource**: `AudioSource_Play/Stop/SetClip/SetVolume(uint64, ...)`
-- **Animator**: `Animator_Play(uint64, string)`, `Animator_SetSpeed(uint64, float)`, `Animator_Stop(uint64)`, `Animator_Pause(uint64)`, `Animator_Resume(uint64)`, `Animator_IsPlaying(uint64)`, `Animator_GetCurrentAnimation(uint64)`, `Animator_GetSpeed(uint64)`
+- **Animator**: `Animator_Play(uint64, string)`, `Animator_CrossFade(uint64, string, float fadeTime)` — smooth blend to new animation, `Animator_SetSpeed(uint64, float)`, `Animator_Stop(uint64)`, `Animator_Pause(uint64)`, `Animator_Resume(uint64)`, `Animator_IsPlaying(uint64)`, `Animator_GetCurrentAnimation(uint64)`, `Animator_GetSpeed(uint64)`
 - **Controller**: `Controller_SetMoveSpeed/GetVelocity(uint64, ...)` — works with all 5 controller types
 - **Camera2D**: `Camera2D_Shake(uint64, float intensity, float duration)`, `Camera2D_GetZoom/SetZoom(uint64, float)`, `Camera2D_AddTarget/RemoveTarget(uint64 camera, uint64 target)`, `Camera2D_ClearTargets(uint64)`, `Camera2D_SetDeadZone(uint64, float w, float h)`, `Camera2D_SetLookAhead(uint64, float distance, float smoothing)`, `Camera2D_SetFollowTarget/GetFollowTarget(uint64, uint64)`
-- **Existence checks**: `HasComponent_Health/Light/Camera/Material/AudioSource/Rigidbody/BoxCollider/Animator(uint64)`
+- **Tilemap**: `HasComponent_Tilemap(uint64)`, `Tilemap_GetTile(uint64, int x, int y)`, `Tilemap_SetTile(uint64, int x, int y, int tileIndex)`, `Tilemap_GetWidth/GetHeight(uint64)`
+- **Existence checks**: `HasComponent_Health/Light/Camera/Material/AudioSource/Rigidbody/BoxCollider/Animator/Tilemap(uint64)`
 - **ReflectionProbe**: `ReflectionProbe_SetIntensity/GetIntensity(uint64, float)`, `ReflectionProbe_SetBoxMin/SetBoxMax(uint64, Vector3)`, `ReflectionProbe_Bake(uint64)`
 - **DynamicDifficulty**: `Difficulty_GetScore(uint64)`, `Difficulty_GetMultiplier(uint64, string)` — "enemyDamage"/"enemyHealth"/"aiAggression"/"resourceDrops", `Difficulty_SetBaseDifficulty/GetBaseDifficulty(uint64, uint)`, `Difficulty_RecordDeath(uint64)`, `Difficulty_RecordShot(uint64)`, `Difficulty_RecordHit(uint64)`, `Difficulty_RecordCheckpointHealth(uint64, float)`
 - **State Machine**: `SM_AddState(uint64, string)`, `SM_AddTransition(uint64, from, to)`, `SM_SetState/GetCurrentState/GetPreviousState(uint64)`, `SM_GetStateTime(uint64)`, `SM_SendTrigger(uint64, string)`, `SM_SetBool/GetBool(uint64, string, bool)`, `SM_SetFloat/GetFloat(uint64, string, float)`, `SM_SetInt/GetInt(uint64, string, int)`, `SM_HasState(uint64, string)`, `SM_SetOnEnter/SetOnUpdate/SetOnExit(uint64, stateName, funcName)`, `SM_GetOnEnter/GetOnUpdate/GetOnExit(uint64, stateName)`
@@ -309,6 +314,7 @@ Permanent key-value storage that survives across runs and save slot deletion.
 - `Physics2D_SetGravity(float gx, gy)` — Set global 2D gravity.
 - `Physics2D_GetGravity()` — Get current 2D gravity as Vector2.
 - `Physics2D_SetGravityScale(uint64, float scale)` — Per-body gravity multiplier.
+- **Overlap (entity list)**: `Physics2D_OverlapCircleEntities(Vector2, float)`, `Physics2D_OverlapBoxEntities(Vector2, Vector2)` — return count of overlapping entities. Masked variants: append `Mask` suffix + `uint layerMask`. Retrieve results: `Physics2D_GetOverlapResult(int index)` — returns entity ID.
 
 ## Screen-Space Effects
 
@@ -440,3 +446,67 @@ Per-entity (Braid-style) and scene-wide (Sands of Time-style) time rewind.
 - `Rewind_GetRecordedDuration()` — Get total seconds of recorded scene history.
 - `Rewind_GetCurrentTime()` — Get current playback position during rewind.
 - `Rewind_IsAnyRewinding()` — Check if any entity or scene rewind is active.
+
+## AI & Pathfinding
+
+- **AI Controller**: `AI_SetState/GetState(uint64, int)` — 0=Idle, 1=Patrol, 2=Chase, 3=Attack, 4=Flee, 5=Dead
+- `AI_SetTarget/GetTarget(uint64, uint64)`, `AI_SetTargetPosition(uint64, Vector3)`
+- `AI_SetDetectionRange/GetDetectionRange(uint64, float)`, `AI_SetAttackRange(uint64, float)`
+- `AI_SetMoveSpeed/GetMoveSpeed(uint64, float)`, `AI_SetChaseSpeed/FleeSpeed(uint64, float)`
+- `AI_SetFieldOfView(uint64, float)`, `AI_SetUseNavmesh(uint64, bool)`
+- **Navmesh**: `Navmesh_HasNavmesh()`, `Navmesh_IsPointOnNavmesh(float x, y, z)`
+- **Pathfinding**: `Navmesh_FindPath(float sx, sy, sz, float ex, ey, ez)` — returns waypoint count (0 = no path), `Navmesh_PathExists(float sx, sy, sz, float ex, ey, ez)` — fast check, `Navmesh_GetPathWaypoint(int index)` — returns Vector3, `Navmesh_GetPathCost()` — total path cost
+- **Behavior Tree**: `BT_Enable/Disable(uint64)`, `BT_SetBlackboardFloat/Int/Bool/String(uint64, string, value)`, `BT_GetBlackboardFloat/Int/Bool/String(uint64, string)`, `BT_ClearBlackboard(uint64)`
+
+### Accessibility
+
+**Colorblind Mode** (enum `ColorblindMode`: `CB_OFF`=0, `CB_PROTANOPIA`=1, `CB_DEUTERANOPIA`=2, `CB_TRITANOPIA`=3, `CB_PROTANOMALY`=4, `CB_DEUTERANOMALY`=5, `CB_TRITANOMALY`=6, `CB_ACHROMATOPSIA`=7)
+
+- `Colorblind_SetMode(int)` — Set colorblind correction mode (0-7). Applied to post-processing shader.
+- `Colorblind_GetMode()` — Get current colorblind mode.
+- `Colorblind_SetStrength(float)` — Set correction strength (0.0-1.0).
+- `Colorblind_GetStrength()` — Get correction strength.
+
+**Visual Settings**
+
+- `Accessibility_SetBrightness(float)` — Set additive brightness (-0.5 to 0.5).
+- `Accessibility_GetBrightness()` — Get current brightness offset.
+- `Accessibility_SetContrast(float)` — Set multiplicative contrast (0.5 to 2.0).
+- `Accessibility_GetContrast()` — Get current contrast.
+
+**Motion / Photosensitivity**
+
+- `Accessibility_SetReducedMotion(bool)` — Enable/disable reduced motion.
+- `Accessibility_GetReducedMotion()` — Check if reduced motion is on.
+- `Accessibility_SetScreenShake(bool)` — Enable/disable screen shake.
+- `Accessibility_GetScreenShake()` — Check if screen shake is enabled.
+- `Accessibility_SetFlashingLights(bool)` — Enable/disable flashing lights (film grain, CRT, VHS).
+- `Accessibility_GetFlashingLights()` — Check if flashing effects are enabled.
+
+**Font / Cognitive**
+
+- `Accessibility_SetFontScale(float)` — Set UI font scale (0.5-3.0).
+- `Accessibility_GetFontScale()` — Get current font scale.
+
+**Subtitles / Captions**
+
+- `Subtitle_Show(string text, string speaker = "", float duration = 3.0)` — Show a subtitle.
+- `Subtitle_ShowWithColor(string text, string speaker, float r, float g, float b, float duration = 3.0)` — Show subtitle with speaker color.
+- `Subtitle_ShowCaption(string text, float duration = 2.5)` — Show a closed caption.
+- `Subtitle_Clear()` — Clear all subtitles.
+- `Subtitle_SetEnabled(bool)` — Enable/disable subtitles.
+- `Subtitle_IsEnabled()` — Check if subtitles are enabled.
+- `Subtitle_SetFontSize(float)` — Set subtitle font size (16-48).
+- `Subtitle_GetFontSize()` — Get subtitle font size.
+
+**Screen Reader / Announcer**
+
+- `Announcer_Announce(string text)` — Queue an accessibility announcement.
+- `Announcer_AnnounceHighPriority(string text)` — Queue a high-priority announcement.
+- `Announcer_Clear()` — Clear all announcements.
+- `Announcer_SetEnabled(bool)` — Enable/disable the announcer.
+- `Announcer_IsEnabled()` — Check if announcer is enabled.
+
+**Settings Persistence**
+
+- `Accessibility_SaveSettings()` — Save all accessibility settings to `accessibility.json`.

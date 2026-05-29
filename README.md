@@ -54,9 +54,9 @@ TEGE is a complete game engine -- editor, renderer, physics, scripting, audio, b
 |:---|:---|
 | **Complete Editor** | Hierarchy, inspector, viewport, play mode, undo/redo, command palette, project hub, 44 starter templates, drag-and-drop import with validation |
 | **80+ ECS Components** | Transform, mesh, material, lights, cameras, physics, AI, UI, audio, scripting, rewind, pose library -- all with inspector UI |
-| **Vulkan PBR Renderer** | Cascaded shadows, reflection probes, ray tracing (shadows/reflections/AO/GI/caustics), path tracer, TAA/FXAA/SMAA, FSR 2 upscaling |
+| **Vulkan PBR Renderer** | Cascaded shadows, reflection probes, path tracer, TAA/FXAA/SMAA, FSR 2 upscaling |
 | **8 Art Styles** | Realistic PBR, Blinn-Phong, Hand-Painted, Cel/Toon, Low-Poly Retro, Pixel Art, NPR Sketch, Analog -- one-click presets |
-| **Dual Scripting** | 721 AngelScript bindings with hot-reload + visual scripting with 146+ nodes and breakpoint debugging |
+| **Dual Scripting** | 960+ AngelScript bindings with hot-reload + visual scripting with 146+ nodes and breakpoint debugging |
 | **Dual Physics** | Jolt 5.2.0 (3D) + Box2D 3.0.0 (2D), 5 character controller types, joints, ragdolls, sensors |
 | **Ship Everywhere** | Standalone builds, HTML5/WebAssembly, Newgrounds, Windows installer, Linux AppImage |
 | **Gameplay Systems** | Save/load, quests, dialogue trees (quest/cinematic/flag integration), record & rewind, destructibles, LAN multiplayer, localization, dynamic difficulty, pose library |
@@ -126,8 +126,8 @@ Build with `-DENJIN_BUILD_EXAMPLES=ON`. See `Examples/Simple3D/` and `Examples/S
 - **Shadow Mapping** -- 4-cascade CSM, cubemap point shadows, spot shadows, 16-sample Poisson PCF, 6 dither patterns
 - **Anti-Aliasing** -- TAA (Halton jitter, velocity reprojection), FXAA, SMAA
 - **Post-Processing** -- Bloom, vignette, color grading, film grain, tone mapping, depth of field, tilt-shift, post-process volumes with spatial blending
-- **Ray Tracing** -- RT shadows, reflections, AO, GI, translucency, caustics, path tracing. 3 denoisers (SVGF, Intel OIDN, NVIDIA OptiX). ReSTIR light sampling with temporal and spatial reuse. Surfel-based radiance caching
-- **Upscaling** -- FSR 2 (built-in), DLSS/XeSS stubs. 4 quality modes
+- **Ray Tracing** -- Path tracer with NEE, MIS, Russian Roulette, Cook-Torrance BRDF. 3 denoisers (SVGF, Intel OIDN, NVIDIA OptiX). ReSTIR light sampling with temporal and spatial reuse. Hybrid RT effects (shadows, reflections, AO, GI) have shader source and C++ infrastructure but require manual SPIR-V compilation
+- **Upscaling** -- FSR 2 (built-in Lanczos + CAS). 4 quality modes. DLSS/XeSS available when vendor SDKs are linked
 - **Retro Effects** -- PSX vertex snapping, affine textures, flat/Gouraud shading, CRT scanlines (11 models), VHS, film gate weave, light leaks, 6 named palettes (PICO-8, Game Boy, NES, CGA, C64)
 - **Environment** -- Procedural sky, cubemap skybox, weather (rain, snow, fog, storms), water with Gerstner waves, instanced vegetation with wind
 - **Optimizations** -- GPU two-phase HiZ occlusion culling, clustered forward lighting, batched material SSBO, multi-draw indirect, async compute, SIMD math, per-frame linear allocator, descriptor set caching
@@ -185,7 +185,7 @@ Build with `-DENJIN_BUILD_EXAMPLES=ON`. See `Examples/Simple3D/` and `Examples/S
 <summary><b>Scripting & Plugins</b></summary>
 <br>
 
-- **AngelScript** -- TegeBehavior base class, ~721 API bindings, hot-reload, coroutines, event system
+- **AngelScript** -- TegeBehavior base class, ~960 API bindings, hot-reload, coroutines, event system
 - **Visual Scripting** -- 146+ node types, breakpoint debugging, execution profiler, latent nodes
 - **Plugin System** -- IPlugin interface, DLL/SO hot-reload with state save/restore
 - **Flash Compatibility** -- ~40 Flash API shim bindings, AS2/AS3 transpiler, SWF binary import
@@ -275,7 +275,7 @@ All dependencies use permissive open-source licenses.
 | [Architecture](docs/ARCHITECTURE.md) | System design and diagrams |
 | [Build Guide](docs/BUILD.md) | Prerequisites and platform instructions |
 | [User Manual](docs/USER_MANUAL.md) | Editor walkthrough and component reference |
-| [Scripting API](docs/SCRIPTING_API.md) | Complete AngelScript reference (721 bindings) |
+| [Scripting API](docs/SCRIPTING_API.md) | Complete AngelScript reference (960+ bindings) |
 | [Roadmap](docs/ROADMAP.md) | Planned work and progress |
 
 ---
