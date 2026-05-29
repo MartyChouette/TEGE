@@ -1433,104 +1433,153 @@ void EditorLayer::DrawInspectorPanel() {
 
         // IK Components
         if (m_World->HasComponent<ECS::LookAtIKComponent>(m_PrimarySelected)) {
-            if (ImGui::CollapsingHeader("Look-At IK")) {
+            bool ikOpen = ImGui::CollapsingHeader("[IK] Look-At IK", ImGuiTreeNodeFlags_DefaultOpen);
+            if (ImGui::BeginPopupContextItem("LookAtIKCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::LookAtIKComponent>(m_PrimarySelected, "lookAtIK", "Look-At IK");
+                    ImGui::EndPopup();
+                } else { ImGui::EndPopup(); }
+            } else if (ikOpen) {
                 auto* ik = m_World->GetComponent<ECS::LookAtIKComponent>(m_PrimarySelected);
-                char headBone[128];
-                strncpy(headBone, ik->headBoneName.c_str(), sizeof(headBone) - 1);
-                headBone[sizeof(headBone) - 1] = '\0';
-                if (ImGui::InputText("Head Bone", headBone, sizeof(headBone))) {
-                    ik->headBoneName = headBone;
+                if (ik) {
+                    ImGui::SeparatorText("Bones");
+                    char headBone[128];
+                    strncpy(headBone, ik->headBoneName.c_str(), sizeof(headBone) - 1);
+                    headBone[sizeof(headBone) - 1] = '\0';
+                    if (ImGui::InputText("Head Bone##LookAtIK", headBone, sizeof(headBone))) {
+                        ik->headBoneName = headBone;
+                    }
+                    ImGui::SetItemTooltip("Name of the head bone in the skeleton");
+                    char neckBone[128];
+                    strncpy(neckBone, ik->neckBoneName.c_str(), sizeof(neckBone) - 1);
+                    neckBone[sizeof(neckBone) - 1] = '\0';
+                    if (ImGui::InputText("Neck Bone##LookAtIK", neckBone, sizeof(neckBone))) {
+                        ik->neckBoneName = neckBone;
+                    }
+                    ImGui::SetItemTooltip("Name of the neck bone (rotates with head)");
+
+                    ImGui::SeparatorText("Settings");
+                    ImGui::SliderFloat("Max Rotation##LookAtIK", &ik->maxRotation, 0.0f, 90.0f);
+                    ImGui::SetItemTooltip("Maximum rotation angle in degrees");
+                    ImGui::SliderFloat("Smooth Speed##LookAtIK", &ik->smoothSpeed, 0.1f, 20.0f);
+                    ImGui::SetItemTooltip("How quickly the head tracks the target");
+                    ImGui::SliderFloat("Look Weight##LookAtIK", &ik->lookWeight, 0.0f, 1.0f);
+                    ImGui::SetItemTooltip("Blend weight (0 = no IK, 1 = full IK)");
+
+                    ImGui::Spacing();
+                    ImGui::DragFloat3("Target Position##LookAtIK", &ik->targetWorldPos.x, 0.1f);
+                    ImGui::SetItemTooltip("World-space position the head looks toward");
                 }
-                char neckBone[128];
-                strncpy(neckBone, ik->neckBoneName.c_str(), sizeof(neckBone) - 1);
-                neckBone[sizeof(neckBone) - 1] = '\0';
-                if (ImGui::InputText("Neck Bone", neckBone, sizeof(neckBone))) {
-                    ik->neckBoneName = neckBone;
-                }
-                ImGui::SliderFloat("Max Rotation", &ik->maxRotation, 0.0f, 90.0f);
-                ImGui::SliderFloat("Smooth Speed##LookAtIK", &ik->smoothSpeed, 0.1f, 20.0f);
-                ImGui::SliderFloat("Look Weight", &ik->lookWeight, 0.0f, 1.0f);
-                ImGui::DragFloat3("Target Pos", &ik->targetWorldPos.x, 0.1f);
             }
         }
 
         if (m_World->HasComponent<ECS::InteractionIKComponent>(m_PrimarySelected)) {
-            if (ImGui::CollapsingHeader("Interaction IK")) {
+            bool ikOpen = ImGui::CollapsingHeader("[IK] Interaction IK", ImGuiTreeNodeFlags_DefaultOpen);
+            if (ImGui::BeginPopupContextItem("InteractionIKCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::InteractionIKComponent>(m_PrimarySelected, "interactionIK", "Interaction IK");
+                    ImGui::EndPopup();
+                } else { ImGui::EndPopup(); }
+            } else if (ikOpen) {
                 auto* ik = m_World->GetComponent<ECS::InteractionIKComponent>(m_PrimarySelected);
-                char handBone[128];
-                strncpy(handBone, ik->handBoneName.c_str(), sizeof(handBone) - 1);
-                handBone[sizeof(handBone) - 1] = '\0';
-                if (ImGui::InputText("Hand Bone", handBone, sizeof(handBone))) {
-                    ik->handBoneName = handBone;
-                }
-                char elbowBone[128];
-                strncpy(elbowBone, ik->elbowBoneName.c_str(), sizeof(elbowBone) - 1);
-                elbowBone[sizeof(elbowBone) - 1] = '\0';
-                if (ImGui::InputText("Elbow Bone", elbowBone, sizeof(elbowBone))) {
-                    ik->elbowBoneName = elbowBone;
-                }
-                char shoulderBone[128];
-                strncpy(shoulderBone, ik->shoulderBoneName.c_str(), sizeof(shoulderBone) - 1);
-                shoulderBone[sizeof(shoulderBone) - 1] = '\0';
-                if (ImGui::InputText("Shoulder Bone", shoulderBone, sizeof(shoulderBone))) {
-                    ik->shoulderBoneName = shoulderBone;
-                }
-                ImGui::SliderFloat("Radius", &ik->interactionRadius, 0.1f, 10.0f);
-                ImGui::SliderFloat("IK Weight", &ik->ikWeight, 0.0f, 1.0f);
-                ImGui::SliderFloat("Smooth Speed##InteractionIK", &ik->smoothSpeed, 0.1f, 20.0f);
-                char ikTag[128];
-                strncpy(ikTag, ik->interactionTag.c_str(), sizeof(ikTag) - 1);
-                ikTag[sizeof(ikTag) - 1] = '\0';
-                if (ImGui::InputText("Interaction Tag", ikTag, sizeof(ikTag))) {
-                    ik->interactionTag = ikTag;
+                if (ik) {
+                    ImGui::SeparatorText("Bones");
+                    char handBone[128];
+                    strncpy(handBone, ik->handBoneName.c_str(), sizeof(handBone) - 1);
+                    handBone[sizeof(handBone) - 1] = '\0';
+                    if (ImGui::InputText("Hand Bone##InteractionIK", handBone, sizeof(handBone))) {
+                        ik->handBoneName = handBone;
+                    }
+                    ImGui::SetItemTooltip("Name of the hand/end-effector bone");
+                    char elbowBone[128];
+                    strncpy(elbowBone, ik->elbowBoneName.c_str(), sizeof(elbowBone) - 1);
+                    elbowBone[sizeof(elbowBone) - 1] = '\0';
+                    if (ImGui::InputText("Elbow Bone##InteractionIK", elbowBone, sizeof(elbowBone))) {
+                        ik->elbowBoneName = elbowBone;
+                    }
+                    ImGui::SetItemTooltip("Name of the elbow/mid bone");
+                    char shoulderBone[128];
+                    strncpy(shoulderBone, ik->shoulderBoneName.c_str(), sizeof(shoulderBone) - 1);
+                    shoulderBone[sizeof(shoulderBone) - 1] = '\0';
+                    if (ImGui::InputText("Shoulder Bone##InteractionIK", shoulderBone, sizeof(shoulderBone))) {
+                        ik->shoulderBoneName = shoulderBone;
+                    }
+                    ImGui::SetItemTooltip("Name of the shoulder/root bone");
+
+                    ImGui::SeparatorText("Settings");
+                    ImGui::SliderFloat("Interaction Radius##InteractionIK", &ik->interactionRadius, 0.1f, 10.0f);
+                    ImGui::SetItemTooltip("Maximum reach distance for interaction targets");
+                    ImGui::SliderFloat("IK Weight##InteractionIK", &ik->ikWeight, 0.0f, 1.0f);
+                    ImGui::SetItemTooltip("Blend weight (0 = no IK, 1 = full IK)");
+                    ImGui::SliderFloat("Smooth Speed##InteractionIK", &ik->smoothSpeed, 0.1f, 20.0f);
+                    ImGui::SetItemTooltip("How quickly the hand reaches toward the target");
+
+                    ImGui::Spacing();
+                    char ikTag[128];
+                    strncpy(ikTag, ik->interactionTag.c_str(), sizeof(ikTag) - 1);
+                    ikTag[sizeof(ikTag) - 1] = '\0';
+                    if (ImGui::InputText("Interaction Tag##InteractionIK", ikTag, sizeof(ikTag))) {
+                        ik->interactionTag = ikTag;
+                    }
+                    ImGui::SetItemTooltip("Tag to match on interactable entities");
                 }
             }
         }
 
         if (m_World->HasComponent<ECS::TwoBoneIKComponent>(m_PrimarySelected)) {
-            if (ImGui::CollapsingHeader("Two-Bone IK")) {
+            bool ikOpen = ImGui::CollapsingHeader("[IK] Two-Bone IK", ImGuiTreeNodeFlags_DefaultOpen);
+            if (ImGui::BeginPopupContextItem("TwoBoneIKCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::TwoBoneIKComponent>(m_PrimarySelected, "twoBoneIK", "Two-Bone IK");
+                    ImGui::EndPopup();
+                } else { ImGui::EndPopup(); }
+            } else if (ikOpen) {
                 auto* ik = m_World->GetComponent<ECS::TwoBoneIKComponent>(m_PrimarySelected);
-
-                // Bone name inputs
-                char rootBone[128];
-                strncpy(rootBone, ik->rootBoneName.c_str(), sizeof(rootBone) - 1);
-                rootBone[sizeof(rootBone) - 1] = '\0';
-                if (ImGui::InputText("Root Bone##TwoBoneIK", rootBone, sizeof(rootBone))) {
-                    ik->rootBoneName = rootBone;
-                }
-
-                char midBone[128];
-                strncpy(midBone, ik->midBoneName.c_str(), sizeof(midBone) - 1);
-                midBone[sizeof(midBone) - 1] = '\0';
-                if (ImGui::InputText("Mid Bone##TwoBoneIK", midBone, sizeof(midBone))) {
-                    ik->midBoneName = midBone;
-                }
-
-                char endBone[128];
-                strncpy(endBone, ik->endBoneName.c_str(), sizeof(endBone) - 1);
-                endBone[sizeof(endBone) - 1] = '\0';
-                if (ImGui::InputText("End Bone##TwoBoneIK", endBone, sizeof(endBone))) {
-                    ik->endBoneName = endBone;
-                }
-
-                // Target entity picker
-                ImGui::Checkbox("Use Entity Target##TwoBoneIK", &ik->useEntityTarget);
-                if (ik->useEntityTarget) {
-                    i32 entityId = static_cast<i32>(ik->targetEntity);
-                    if (ImGui::InputInt("Target Entity##TwoBoneIK", &entityId)) {
-                        ik->targetEntity = static_cast<ECS::Entity>(entityId);
+                if (ik) {
+                    ImGui::SeparatorText("Bone Chain");
+                    char rootBone[128];
+                    strncpy(rootBone, ik->rootBoneName.c_str(), sizeof(rootBone) - 1);
+                    rootBone[sizeof(rootBone) - 1] = '\0';
+                    if (ImGui::InputText("Root Bone##TwoBoneIK", rootBone, sizeof(rootBone))) {
+                        ik->rootBoneName = rootBone;
                     }
-                } else {
-                    ImGui::DragFloat3("Target Pos##TwoBoneIK", &ik->targetPosition.x, 0.1f);
-                }
+                    ImGui::SetItemTooltip("Upper bone (e.g. shoulder or thigh)");
 
-                // Weight slider
-                ImGui::SliderFloat("Weight##TwoBoneIK", &ik->weight, 0.0f, 1.0f);
+                    char midBone[128];
+                    strncpy(midBone, ik->midBoneName.c_str(), sizeof(midBone) - 1);
+                    midBone[sizeof(midBone) - 1] = '\0';
+                    if (ImGui::InputText("Mid Bone##TwoBoneIK", midBone, sizeof(midBone))) {
+                        ik->midBoneName = midBone;
+                    }
+                    ImGui::SetItemTooltip("Middle joint (e.g. elbow or knee)");
 
-                // Pole vector
-                ImGui::DragFloat3("Pole Vector##TwoBoneIK", &ik->poleVector.x, 0.1f);
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("Direction hint for elbow/knee bend");
+                    char endBone[128];
+                    strncpy(endBone, ik->endBoneName.c_str(), sizeof(endBone) - 1);
+                    endBone[sizeof(endBone) - 1] = '\0';
+                    if (ImGui::InputText("End Bone##TwoBoneIK", endBone, sizeof(endBone))) {
+                        ik->endBoneName = endBone;
+                    }
+                    ImGui::SetItemTooltip("End effector (e.g. hand or foot)");
+
+                    ImGui::SeparatorText("Target");
+                    ImGui::Checkbox("Use Entity Target##TwoBoneIK", &ik->useEntityTarget);
+                    ImGui::SetItemTooltip("Track an entity instead of a fixed position");
+                    if (ik->useEntityTarget) {
+                        i32 entityId = static_cast<i32>(ik->targetEntity);
+                        if (ImGui::InputInt("Target Entity##TwoBoneIK", &entityId)) {
+                            ik->targetEntity = static_cast<ECS::Entity>(entityId);
+                        }
+                        ImGui::SetItemTooltip("Entity ID to track");
+                    } else {
+                        ImGui::DragFloat3("Target Position##TwoBoneIK", &ik->targetPosition.x, 0.1f);
+                        ImGui::SetItemTooltip("World-space position the end effector reaches toward");
+                    }
+
+                    ImGui::SeparatorText("Settings");
+                    ImGui::SliderFloat("Weight##TwoBoneIK", &ik->weight, 0.0f, 1.0f);
+                    ImGui::SetItemTooltip("Blend weight (0 = no IK, 1 = full IK)");
+                    ImGui::DragFloat3("Pole Vector##TwoBoneIK", &ik->poleVector.x, 0.1f);
+                    ImGui::SetItemTooltip("Direction hint for elbow/knee bend");
                 }
             }
         }
@@ -1746,9 +1795,7 @@ void EditorLayer::DrawInspectorPanel() {
         if (m_World->HasComponent<ECS::MorphTargetComponent>(m_PrimarySelected)) {
             auto* morph = m_World->GetComponent<ECS::MorphTargetComponent>(m_PrimarySelected);
             if (morph && ImGui::CollapsingHeader("[M] Morph Targets", ImGuiTreeNodeFlags_DefaultOpen)) {
-                ImGui::Text("%zu targets, %zu verts/target",
-                    morph->targets.size(),
-                    morph->targets.empty() ? 0 : morph->targets[0].deltas.size());
+                ImGui::TextDisabled("%zu blend shapes", morph->targets.size());
 
                 ImGui::Separator();
                 for (usize i = 0; i < morph->targets.size(); ++i) {
