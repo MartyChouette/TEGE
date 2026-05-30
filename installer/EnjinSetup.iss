@@ -118,4 +118,10 @@ Type: filesandordirs; Name: "{app}\cache"
 [Registry]
 ; Associate .enjin project files with the editor
 Root: HKCU; Subkey: "Software\Classes\.enjin"; ValueType: string; ValueData: "EnjinProject"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\EnjinProject"; ValueType: string; ValueData: "TEGE Project"; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Classes\EnjinProject\shell\open\command"; ValueType: string; ValueData: """{app}\bin\{#AppExeName}"" ""%1"""; Flags: uninsdeletevalue
+
+; Associate .enjscene scene files with the editor
+Root: HKCU; Subkey: "Software\Classes\.enjscene"; ValueType: string; ValueData: "EnjinScene"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\EnjinScene"; ValueType: string; ValueData: "TEGE Scene"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Classes\EnjinScene\shell\open\command"; ValueType: string; ValueData: """{app}\bin\{#AppExeName}"" ""%1"""; Flags: uninsdeletevalue
