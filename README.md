@@ -17,7 +17,7 @@
 
 <br>
 
-[Website](https://www.marty64.net/enjin/) · [Download](https://www.marty64.net/enjin/TEGE-0.9.5.zip) · [Documentation](docs/) · [Build Guide](docs/BUILD.md) · [Scripting API](docs/SCRIPTING_API.md)
+[Website](https://www.marty64.net/enjin/) · [Download](https://www.marty64.net/enjin/TEGE-0.9.6.zip) · [Documentation](docs/) · [Build Guide](docs/BUILD.md) · [Scripting API](docs/SCRIPTING_API.md)
 
 </div>
 
@@ -90,7 +90,7 @@ cmake --build . --config Release
 
 A pre-built Windows installer is available -- no build tools required:
 
-1. Download **[TEGE-0.9.5.zip](https://www.marty64.net/enjin/TEGE-0.9.5.zip)** from the website
+1. Download **[TEGE-0.9.6.zip](https://www.marty64.net/enjin/TEGE-0.9.6.zip)** from the website
 2. Run the installer -- it sets up the editor, player, and file associations (`.enjin`, `.enjscene`)
 3. Launch TEGE from the Start Menu or desktop shortcut
 

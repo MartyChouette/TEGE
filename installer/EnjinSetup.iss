@@ -14,7 +14,7 @@
 ; ============================================================
 
 #define AppName      "TEGE"
-#define AppVersion   "0.9.5"
+#define AppVersion   "0.9.6"
 #define AppPublisher "Marty Scott"
 #define AppURL       "https://www.marty64.net/enjin"
 #define AppExeName   "EnjinEditor.exe"
