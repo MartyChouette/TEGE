@@ -7407,6 +7407,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(prop);
                 pmat.baseColor = propCol[i];
                 m_World->AddComponent<ECS::MeshComponent>(prop, Renderer::MeshFactory::CreateCube(1.0f));
+                auto& bc = m_World->AddComponent<ECS::BoxColliderComponent>(prop);
+                bc.size = Math::Vector3(0.5f, 0.5f, 0.5f);
             }
         }
 

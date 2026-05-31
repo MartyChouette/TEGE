@@ -1825,12 +1825,19 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
     }
 
     // Build target surface rotation: align Y axis to localUp
-    // Use Quaternion::FromToRotation to rotate from world up to localUp
     Math::Quaternion targetRot = Math::Quaternion::FromToRotation(
         Math::Vector3(0.0f, 1.0f, 0.0f), ctrl.localUp);
-    // Slerp toward target rotation
-    f32 slerpT = 1.0f - std::exp(-ctrl.alignSpeed * dt);
-    ctrl.surfaceRotation = Math::Quaternion::Slerp(ctrl.surfaceRotation, targetRot, slerpT);
+
+    // On first frame (surfaceRotation is identity/default), snap immediately
+    f32 dotCheck = ctrl.surfaceRotation.x * ctrl.surfaceRotation.x +
+                   ctrl.surfaceRotation.y * ctrl.surfaceRotation.y +
+                   ctrl.surfaceRotation.z * ctrl.surfaceRotation.z;
+    if (dotCheck < 0.0001f && ctrl.surfaceRotation.w > 0.999f) {
+        ctrl.surfaceRotation = targetRot; // snap on first frame
+    } else {
+        f32 slerpT = 1.0f - std::exp(-ctrl.alignSpeed * dt);
+        ctrl.surfaceRotation = Math::Quaternion::Slerp(ctrl.surfaceRotation, targetRot, slerpT);
+    }
     ctrl.surfaceRotation = ctrl.surfaceRotation.Normalized();
 
     // Camera input: mouse/gamepad -> cameraYaw/cameraPitch (same as ThirdPerson)
@@ -1882,38 +1889,18 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
         speed *= ctrl.sprintMultiplier;
     }
 
-    // Apply horizontal movement (tangent to surface)
-    Math::Vector3 targetVel = moveDir * speed;
-    if (moveMag > 0.01f) {
-        ctrl.velocity.x = Math::MoveTowards(ctrl.velocity.x, targetVel.x, ctrl.acceleration * dt);
-        ctrl.velocity.y = Math::MoveTowards(ctrl.velocity.y, targetVel.y, ctrl.acceleration * dt);
-        ctrl.velocity.z = Math::MoveTowards(ctrl.velocity.z, targetVel.z, ctrl.acceleration * dt);
-    } else {
-        ctrl.velocity.x = Math::MoveTowards(ctrl.velocity.x, 0.0f, ctrl.deceleration * dt);
-        ctrl.velocity.y = Math::MoveTowards(ctrl.velocity.y, 0.0f, ctrl.deceleration * dt);
-        ctrl.velocity.z = Math::MoveTowards(ctrl.velocity.z, 0.0f, ctrl.deceleration * dt);
+    // Find the CLOSEST gravity zone by distance to its surface (allows planet transfer)
+    Math::Vector3 planetCenter(0, 0, 0);
+    f32 planetRadius = 5.0f;
+    f32 capsuleOffset = 0.8f;
+    bool hasZone = false;
+    f32 closestSurfaceDist = 1e9f;
+
+    auto* capsuleCol = m_World ? m_World->GetComponent<CapsuleColliderComponent>(entity) : nullptr;
+    if (capsuleCol) {
+        capsuleOffset = capsuleCol->height * 0.5f + capsuleCol->radius;
     }
 
-    // Jump along localUp
-    if (IsJumpPressed() && ctrl.isGrounded) {
-        ctrl.velocity = ctrl.velocity + ctrl.localUp * ctrl.jumpForce;
-        ctrl.isJumping = true;
-        ctrl.isGrounded = false;
-    }
-
-    // Apply gravity
-    if (!ctrl.isGrounded) {
-        ctrl.velocity = ctrl.velocity + gravity * dt;
-        ctrl.isFalling = (ctrl.velocity.x * ctrl.localUp.x +
-                          ctrl.velocity.y * ctrl.localUp.y +
-                          ctrl.velocity.z * ctrl.localUp.z) < 0.0f;
-    }
-
-    // Apply velocity to position
-    transform.position = transform.position + ctrl.velocity * dt;
-
-    // Ground check: find nearest gravity zone center and check distance to planet surface
-    ctrl.isGrounded = false;
     if (m_World) {
         for (Entity zone : m_World->GetEntitiesWithComponent<GravityZoneComponent>()) {
             auto* gz = m_World->GetComponent<GravityZoneComponent>(zone);
@@ -1922,46 +1909,98 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
             if (!zt) continue;
             if (!gz->ContainsPoint(zt->position, transform.position)) continue;
 
-            // Approximate planet radius as the zone's X half-extent minus some margin
-            // The player stands on the surface when distance ~ halfExtents.x (sphere shape)
-            f32 planetRadius = gz->halfExtents.x * 0.4f; // inner solid surface
-            Math::Vector3 toCenter = zt->position - transform.position;
-            f32 dist = toCenter.Length();
-            f32 surfaceDist = dist - planetRadius;
+            f32 zoneRadius = gz->halfExtents.x * 0.1f;
+            auto* sphereCol = m_World->GetComponent<SphereColliderComponent>(zone);
+            if (sphereCol) zoneRadius = sphereCol->radius;
 
-            if (surfaceDist <= ctrl.groundCheckDistance) {
-                // Snap to surface
-                f32 upVel = ctrl.velocity.x * ctrl.localUp.x +
-                            ctrl.velocity.y * ctrl.localUp.y +
-                            ctrl.velocity.z * ctrl.localUp.z;
-                if (upVel <= 0.0f) {
-                    // Remove velocity component along localUp (stop falling)
-                    ctrl.velocity = ctrl.velocity - ctrl.localUp * upVel;
-                    // Snap position to surface
-                    if (dist > 0.001f) {
-                        Math::Vector3 dir = toCenter * (1.0f / dist);
-                        transform.position = zt->position - dir * planetRadius;
-                    }
-                    ctrl.isGrounded = true;
-                    ctrl.isJumping = false;
-                    ctrl.isFalling = false;
-                }
+            Math::Vector3 toCenter = zt->position - transform.position;
+            f32 distToSurface = toCenter.Length() - zoneRadius;
+            if (distToSurface < closestSurfaceDist) {
+                closestSurfaceDist = distToSurface;
+                planetCenter = zt->position;
+                planetRadius = zoneRadius;
+                hasZone = true;
             }
-            break; // Use first matching zone
         }
     }
 
-    // Orient entity to surface (feet on ground)
-    // Compose: surfaceRotation * yaw rotation for character facing
-    if (moveMag > 0.1f) {
-        f32 moveAngle = Math::Atan2(
-            moveDir.x * surfaceRight.x + moveDir.y * surfaceRight.y + moveDir.z * surfaceRight.z,
-            moveDir.x * surfaceForward.x + moveDir.y * surfaceForward.y + moveDir.z * surfaceForward.z);
-        Math::Quaternion faceRot(ctrl.localUp, -moveAngle);
-        transform.rotation = (ctrl.surfaceRotation * faceRot).Normalized();
+    f32 standRadius = planetRadius + capsuleOffset;
+
+    if (ctrl.isGrounded && hasZone) {
+        // GROUNDED: slide along sphere surface at fixed radius
+        if (moveMag > 0.01f) {
+            f32 arcSpeed = speed * dt / standRadius;
+            Math::Vector3 pos = transform.position - planetCenter;
+            Math::Vector3 posN = pos.Normalized();
+            Math::Vector3 rotAxis = posN.Cross(moveDir);
+            f32 axisLen = rotAxis.Length();
+            if (axisLen > 0.001f) {
+                rotAxis = rotAxis * (1.0f / axisLen);
+                Math::Quaternion arcRot(rotAxis, arcSpeed);
+                pos = arcRot.Rotate(pos);
+                transform.position = planetCenter + pos.Normalized() * standRadius;
+            }
+        }
+
+        // Re-derive localUp from new position
+        Math::Vector3 fromCenter = transform.position - planetCenter;
+        f32 fromDist = fromCenter.Length();
+        if (fromDist > 0.001f) {
+            ctrl.localUp = fromCenter * (1.0f / fromDist);
+        }
+
+        // Jump
+        if (IsJumpPressed()) {
+            ctrl.velocity = ctrl.localUp * ctrl.jumpForce;
+            ctrl.isJumping = true;
+            ctrl.isGrounded = false;
+        } else {
+            ctrl.velocity = Math::Vector3(0, 0, 0);
+        }
     } else {
-        transform.rotation = ctrl.surfaceRotation;
+        // AIRBORNE: apply gravity from closest zone, free movement
+        ctrl.velocity = ctrl.velocity + gravity * dt;
+        transform.position = transform.position + ctrl.velocity * dt;
+
+        // Re-derive localUp from gravity
+        if (gravLen > 0.001f) {
+            ctrl.localUp = gravity * (-1.0f / gravLen);
+        }
+
+        // Check if we've reached ANY planet surface (allows transfer between bodies)
+        if (m_World) {
+            for (Entity zone : m_World->GetEntitiesWithComponent<GravityZoneComponent>()) {
+                auto* gz = m_World->GetComponent<GravityZoneComponent>(zone);
+                if (!gz || !gz->isActive || gz->mode != GravityZoneMode::Point) continue;
+                auto* zt = m_World->GetComponent<TransformComponent>(zone);
+                if (!zt) continue;
+
+                f32 zoneRadius = gz->halfExtents.x * 0.1f;
+                auto* sphereCol = m_World->GetComponent<SphereColliderComponent>(zone);
+                if (sphereCol) zoneRadius = sphereCol->radius;
+
+                f32 zoneStandRadius = zoneRadius + capsuleOffset;
+                Math::Vector3 toCenter = zt->position - transform.position;
+                f32 dist = toCenter.Length();
+                if (dist <= zoneStandRadius) {
+                    // Land on this planet
+                    Math::Vector3 outward = (transform.position - zt->position).Normalized();
+                    transform.position = zt->position + outward * zoneStandRadius;
+                    ctrl.localUp = outward;
+                    ctrl.velocity = Math::Vector3(0, 0, 0);
+                    ctrl.isGrounded = true;
+                    ctrl.isJumping = false;
+                    ctrl.isFalling = false;
+                    break;
+                }
+            }
+        }
+
+        if (!ctrl.isGrounded) ctrl.isFalling = true;
     }
+
+    // Orient entity: snap rotation to surface on first frame, slerp after
+    transform.rotation = ctrl.surfaceRotation;
 
     // Camera: orbit around player, using localUp as the up vector
     {
