@@ -1,5 +1,5 @@
-$staging = "D:\GitHub\enjin\installer\output\TEGE-0.9.5"
-$zip = "D:\GitHub\enjin\installer\output\TEGE-0.9.5.zip"
+$staging = "D:\GitHub\enjin\installer\output\TEGE-0.9.6"
+$zip = "D:\GitHub\enjin\installer\output\TEGE-0.9.6.zip"
 
 if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
 if (Test-Path $zip) { Remove-Item $zip -Force }
