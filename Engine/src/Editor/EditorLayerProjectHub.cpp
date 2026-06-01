@@ -7365,9 +7365,9 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (pt) pt->position = Math::Vector3(0.0f, 6.5f, 0.0f);
             auto& saCtrl = m_World->AddComponent<ECS::SurfaceAlignedController>(player);
             saCtrl.moveSpeed = 6.0f;
-            saCtrl.jumpForce = 12.0f;
-            saCtrl.cameraDistance = 10.0f;
-            saCtrl.cameraHeight = 4.0f;
+            saCtrl.jumpForce = 20.0f;
+            saCtrl.cameraDistance = 12.0f;
+            saCtrl.cameraHeight = 5.0f;
         }
 
         // Camera
@@ -7417,7 +7417,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ECS::Entity moon = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(moon, "Small Moon");
             auto& mt = m_World->AddComponent<ECS::TransformComponent>(moon);
-            mt.position = Math::Vector3(15.0f, 8.0f, 0.0f);
+            mt.position = Math::Vector3(0.0f, 12.0f, 0.0f);
             mt.scale = Math::Vector3(2.0f, 2.0f, 2.0f);
             auto& mmat = m_World->AddComponent<ECS::MaterialComponent>(moon);
             mmat.baseColor = Math::Vector3(0.6f, 0.55f, 0.5f);
@@ -7426,8 +7426,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& gz = m_World->AddComponent<ECS::GravityZoneComponent>(moon);
             gz.mode = ECS::GravityZoneMode::Point;
             gz.shape = ECS::GravityZoneShape::Sphere;
-            gz.halfExtents = Math::Vector3(20.0f, 20.0f, 20.0f);
-            gz.gravityStrength = 8.0f;
+            gz.halfExtents = Math::Vector3(30.0f, 30.0f, 30.0f);
+            gz.gravityStrength = 10.0f;
             auto& sc = m_World->AddComponent<ECS::SphereColliderComponent>(moon);
             sc.radius = 2.0f;
         }

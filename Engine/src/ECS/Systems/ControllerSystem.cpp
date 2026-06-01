@@ -1802,18 +1802,22 @@ void ControllerSystem::UpdateVehicle(Entity entity, VehicleController& ctrl, Tra
 void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedController& ctrl, TransformComponent& transform, f32 dt) {
     (void)entity;
 
-    // Find the highest-priority overlapping GravityZoneComponent (Point mode)
+    // Find the closest overlapping Point-mode gravity zone by distance to surface.
+    // This allows natural gravity transfer between planets when airborne.
     Math::Vector3 gravity(0.0f, -9.81f, 0.0f);
     if (m_World) {
-        i32 bestPriority = -1;
+        f32 bestDist = 1e9f;
         for (Entity zone : m_World->GetEntitiesWithComponent<GravityZoneComponent>()) {
             auto* gz = m_World->GetComponent<GravityZoneComponent>(zone);
             if (!gz || !gz->isActive || gz->mode != GravityZoneMode::Point) continue;
             auto* zt = m_World->GetComponent<TransformComponent>(zone);
             if (!zt) continue;
-            if (gz->ContainsPoint(zt->position, transform.position) && gz->priority > bestPriority) {
+            if (!gz->ContainsPoint(zt->position, transform.position)) continue;
+
+            f32 dist = (zt->position - transform.position).Length();
+            if (dist < bestDist) {
                 gravity = gz->GetGravityAt(zt->position, transform.position);
-                bestPriority = gz->priority;
+                bestDist = dist;
             }
         }
     }
