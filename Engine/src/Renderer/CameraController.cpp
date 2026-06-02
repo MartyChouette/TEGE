@@ -63,13 +63,16 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
             Input::SetMouseCaptured(true);
             m_MouseCapturedByUs = true;
             SyncFromCamera();
+            // Consume the first-frame mouse delta so the camera doesn't whip
+            // to wherever the mouse was moving before the button was pressed
+            Input::GetMouseDelta();
+        } else {
+            Math::Vector2 mouseDelta = Input::GetMouseDelta();
+            m_Yaw += mouseDelta.x * m_LookSensitivity;
+            m_Pitch -= mouseDelta.y * m_LookSensitivity;  // Inverted: drag up → look up
+            m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
+            ApplyRotation();
         }
-
-        Math::Vector2 mouseDelta = Input::GetMouseDelta();
-        m_Yaw += mouseDelta.x * m_LookSensitivity;
-        m_Pitch -= mouseDelta.y * m_LookSensitivity;  // Inverted: drag up → look up
-        m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
-        ApplyRotation();
     } else if (m_MouseCapturedByUs) {
         Input::SetMouseCaptured(false);
         m_MouseCapturedByUs = false;
@@ -179,12 +182,13 @@ void CameraController::UpdateOrbitMode(f32 deltaTime) {
             Input::SetMouseCaptured(true);
             m_MouseCapturedByUs = true;
             SyncFromCamera();
+            Input::GetMouseDelta(); // consume first-frame delta
+        } else {
+            Math::Vector2 mouseDelta = Input::GetMouseDelta();
+            m_Yaw += mouseDelta.x * m_LookSensitivity;
+            m_Pitch -= mouseDelta.y * m_LookSensitivity;  // Inverted: drag up → look up
+            m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
         }
-
-        Math::Vector2 mouseDelta = Input::GetMouseDelta();
-        m_Yaw += mouseDelta.x * m_LookSensitivity;
-        m_Pitch -= mouseDelta.y * m_LookSensitivity;  // Inverted: drag up → look up
-        m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
     } else if (m_MouseCapturedByUs) {
         Input::SetMouseCaptured(false);
         m_MouseCapturedByUs = false;

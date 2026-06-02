@@ -7381,11 +7381,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             cc.fieldOfView = 60.0f;
             cc.isActive = true;
             cc.priority = 10;
-            auto& follow = m_World->AddComponent<ECS::FollowTargetComponent>(cam);
-            follow.target = player;
-            follow.offset = Math::Vector3(0.0f, 8.0f, -8.0f);
-            auto& lookAt = m_World->AddComponent<ECS::LookAtTargetComponent>(cam);
-            lookAt.target = player;
+            // No FollowTarget or LookAtTarget -- the SurfaceAlignedController
+            // manages the camera directly via UpdateGameCameraTransform()
             m_SelectedGameCamera = cam;
         }
 

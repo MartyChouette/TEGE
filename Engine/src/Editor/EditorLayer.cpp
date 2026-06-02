@@ -3378,6 +3378,133 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         }
                     }
                 }
+
+                // Gravity Zone wireframes (blue-violet)
+                for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::GravityZoneComponent>()) {
+                    auto* gz = m_World->GetComponent<ECS::GravityZoneComponent>(e);
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(e);
+                    if (!gz || !gz->isActive || !transform) continue;
+                    bool sel = IsSelected(e);
+                    ImU32 color = sel ? IM_COL32(100, 80, 255, 200) : IM_COL32(100, 80, 255, 60);
+                    f32 thick = sel ? 2.0f : 1.0f;
+                    if (gz->shape == ECS::GravityZoneShape::Sphere) {
+                        Math::Vector3 c = transform->position;
+                        f32 r = gz->halfExtents.x;
+                        drawWireCircle(bgDrawList, c, r, {1,0,0}, {0,1,0}, color, thick);
+                        drawWireCircle(bgDrawList, c, r, {1,0,0}, {0,0,1}, color, thick);
+                        drawWireCircle(bgDrawList, c, r, {0,1,0}, {0,0,1}, color, thick);
+                    } else {
+                        drawWireBox(bgDrawList, transform->position, gz->halfExtents, color, thick);
+                    }
+                }
+
+                // Light range/cone wireframes (yellow/orange)
+                for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::LightComponent>()) {
+                    auto* lc = m_World->GetComponent<ECS::LightComponent>(e);
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(e);
+                    if (!lc || !transform) continue;
+                    bool sel = IsSelected(e);
+                    if (lc->type == ECS::LightType::Point) {
+                        ImU32 color = sel ? IM_COL32(255, 220, 50, 180) : IM_COL32(255, 220, 50, 40);
+                        f32 thick = sel ? 1.5f : 0.8f;
+                        Math::Vector3 c = transform->position;
+                        drawWireCircle(bgDrawList, c, lc->range, {1,0,0}, {0,1,0}, color, thick);
+                        drawWireCircle(bgDrawList, c, lc->range, {1,0,0}, {0,0,1}, color, thick);
+                        drawWireCircle(bgDrawList, c, lc->range, {0,1,0}, {0,0,1}, color, thick);
+                    } else if (lc->type == ECS::LightType::Spot && sel) {
+                        ImU32 color = IM_COL32(255, 180, 50, 180);
+                        Math::Vector3 c = transform->position;
+                        // Spot direction from rotation
+                        Math::Vector3 dir(
+                            2.0f * (transform->rotation.x * transform->rotation.z + transform->rotation.w * transform->rotation.y),
+                            2.0f * (transform->rotation.y * transform->rotation.z - transform->rotation.w * transform->rotation.x),
+                            1.0f - 2.0f * (transform->rotation.x * transform->rotation.x + transform->rotation.y * transform->rotation.y)
+                        );
+                        f32 outerRad = lc->range * std::tan(Math::Radians(lc->outerConeAngle));
+                        Math::Vector3 tip = c + dir * lc->range;
+                        // Draw 4 lines from source to cone edge
+                        Math::Vector3 up(0, 1, 0);
+                        if (std::abs(dir.y) > 0.99f) up = Math::Vector3(1, 0, 0);
+                        Math::Vector3 right = dir.Cross(up).Normalized() * outerRad;
+                        Math::Vector3 upPerp = dir.Cross(right).Normalized() * outerRad;
+                        ImVec2 sp0, sp1;
+                        auto tryLine = [&](Math::Vector3 offset) {
+                            if (worldToScreen(c, sp0) && worldToScreen(tip + offset, sp1))
+                                bgDrawList->AddLine(sp0, sp1, color, 1.5f);
+                        };
+                        tryLine(right); tryLine(right * -1.0f); tryLine(upPerp); tryLine(upPerp * -1.0f);
+                        drawWireCircle(bgDrawList, tip, outerRad, right.Normalized(), upPerp.Normalized(), color, 1.5f);
+                    }
+                }
+
+                // Audio source range wireframes (cyan)
+                for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::AudioSourceComponent>()) {
+                    auto* src = m_World->GetComponent<ECS::AudioSourceComponent>(e);
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(e);
+                    if (!src || !src->is3D || !transform) continue;
+                    bool sel = IsSelected(e);
+                    if (!sel) continue; // Only show for selected audio sources
+                    Math::Vector3 c = transform->position;
+                    ImU32 innerColor = IM_COL32(50, 200, 255, 140);
+                    ImU32 outerColor = IM_COL32(50, 200, 255, 80);
+                    drawWireCircle(bgDrawList, c, src->minDistance, {1,0,0}, {0,0,1}, innerColor, 1.5f);
+                    drawWireCircle(bgDrawList, c, src->maxDistance, {1,0,0}, {0,0,1}, outerColor, 1.0f);
+                }
+
+                // Trigger zone wireframes (lime green)
+                for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::TriggerZoneComponent>()) {
+                    auto* tz = m_World->GetComponent<ECS::TriggerZoneComponent>(e);
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(e);
+                    if (!tz || !transform) continue;
+                    bool sel = IsSelected(e);
+                    ImU32 color = sel ? IM_COL32(100, 255, 100, 180) : IM_COL32(100, 255, 100, 50);
+                    f32 thick = sel ? 2.0f : 1.0f;
+                    if (tz->shape == ECS::TriggerZoneComponent::Shape::Sphere) {
+                        drawWireCircle(bgDrawList, transform->position, tz->sphereRadius, {1,0,0}, {0,0,1}, color, thick);
+                    } else {
+                        drawWireBox(bgDrawList, transform->position, tz->boxSize * 0.5f, color, thick);
+                    }
+                }
+
+                // Spawn point markers (magenta cross)
+                for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::SpawnPointComponent>()) {
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(e);
+                    if (!transform) continue;
+                    bool sel = IsSelected(e);
+                    ImU32 color = sel ? IM_COL32(255, 50, 200, 220) : IM_COL32(255, 50, 200, 80);
+                    f32 sz = 0.5f;
+                    Math::Vector3 c = transform->position;
+                    ImVec2 s0, s1;
+                    if (worldToScreen(c + Math::Vector3(sz,0,0), s0) && worldToScreen(c - Math::Vector3(sz,0,0), s1))
+                        bgDrawList->AddLine(s0, s1, color, 2.0f);
+                    if (worldToScreen(c + Math::Vector3(0,sz,0), s0) && worldToScreen(c - Math::Vector3(0,sz,0), s1))
+                        bgDrawList->AddLine(s0, s1, color, 2.0f);
+                    if (worldToScreen(c + Math::Vector3(0,0,sz), s0) && worldToScreen(c - Math::Vector3(0,0,sz), s1))
+                        bgDrawList->AddLine(s0, s1, color, 2.0f);
+                }
+
+                // Waypoint markers (cyan dots + connecting lines)
+                for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::WaypointComponent>()) {
+                    auto* wp = m_World->GetComponent<ECS::WaypointComponent>(e);
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(e);
+                    if (!wp || !transform) continue;
+                    bool sel = IsSelected(e);
+                    ImU32 color = sel ? IM_COL32(50, 255, 220, 220) : IM_COL32(50, 255, 220, 100);
+                    ImVec2 sp;
+                    if (worldToScreen(transform->position, sp)) {
+                        bgDrawList->AddCircleFilled(sp, sel ? 5.0f : 3.0f, color);
+                    }
+                    // Draw line to next waypoint if set
+                    if (wp->nextWaypoint != 0 && m_World->IsValid(wp->nextWaypoint)) {
+                        auto* nextTransform = m_World->GetComponent<ECS::TransformComponent>(wp->nextWaypoint);
+                        if (nextTransform) {
+                            ImVec2 sp2;
+                            if (worldToScreen(transform->position, sp) && worldToScreen(nextTransform->position, sp2)) {
+                                bgDrawList->AddLine(sp, sp2, IM_COL32(50, 255, 220, 120), 1.5f);
+                            }
+                        }
+                    }
+                }
             }
 
             // --- SH Light Probe visualization ---
