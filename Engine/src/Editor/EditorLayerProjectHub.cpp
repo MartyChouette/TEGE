@@ -6368,7 +6368,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 hp->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
                 hp->anchor.anchorMax = Math::Vector2(0.0f, 0.0f);
                 hp->anchor.offsetLeft = 20.0f; hp->anchor.offsetTop = 20.0f;
-                hp->anchor.offsetRight = -320.0f; hp->anchor.offsetBottom = -60.0f;
+                hp->anchor.offsetRight = 320.0f; hp->anchor.offsetBottom = 60.0f;
                 hp->style.bgColor = Math::Vector3(0.1f, 0.1f, 0.12f);
                 hp->style.bgAlpha = 0.7f;
                 hp->focusable = false;
@@ -6386,8 +6386,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* sc = canvas.GetElement(scoreId)) {
                 sc->anchor.anchorMin = Math::Vector2(1.0f, 0.0f);
                 sc->anchor.anchorMax = Math::Vector2(1.0f, 0.0f);
-                sc->anchor.offsetLeft = 200.0f; sc->anchor.offsetTop = 20.0f;
-                sc->anchor.offsetRight = -20.0f; sc->anchor.offsetBottom = -60.0f;
+                sc->anchor.offsetLeft = -200.0f; sc->anchor.offsetTop = 20.0f;
+                sc->anchor.offsetRight = -20.0f; sc->anchor.offsetBottom = 60.0f;
                 sc->data.text = "Score: 0";
                 sc->data.textAlignH = 2; // right
                 sc->style.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
@@ -6398,7 +6398,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* ammo = canvas.GetElement(ammoId)) {
                 ammo->anchor.anchorMin = Math::Vector2(1.0f, 1.0f);
                 ammo->anchor.anchorMax = Math::Vector2(1.0f, 1.0f);
-                ammo->anchor.offsetLeft = 200.0f; ammo->anchor.offsetTop = 60.0f;
+                ammo->anchor.offsetLeft = -200.0f; ammo->anchor.offsetTop = -60.0f;
                 ammo->anchor.offsetRight = -20.0f; ammo->anchor.offsetBottom = -20.0f;
                 ammo->data.text = "Ammo: 30";
                 ammo->data.textAlignH = 2;
@@ -6410,8 +6410,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* pause = canvas.GetElement(pauseId)) {
                 pause->anchor.anchorMin = Math::Vector2(1.0f, 0.0f);
                 pause->anchor.anchorMax = Math::Vector2(1.0f, 0.0f);
-                pause->anchor.offsetLeft = 80.0f; pause->anchor.offsetTop = 20.0f;
-                pause->anchor.offsetRight = -20.0f; pause->anchor.offsetBottom = -60.0f;
+                pause->anchor.offsetLeft = -80.0f; pause->anchor.offsetTop = 20.0f;
+                pause->anchor.offsetRight = -20.0f; pause->anchor.offsetBottom = 60.0f;
                 pause->data.text = "||";
                 pause->tabOrder = 1;
             }
@@ -6582,7 +6582,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 title->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
                 title->anchor.anchorMax = Math::Vector2(1.0f, 0.0f);
                 title->anchor.offsetLeft = 0; title->anchor.offsetRight = 0;
-                title->anchor.offsetTop = 20.0f; title->anchor.offsetBottom = -60.0f;
+                title->anchor.offsetTop = 20.0f; title->anchor.offsetBottom = 60.0f;
                 title->data.text = "Accessibility Settings";
                 title->data.textAlignH = 1; // center
                 title->style.fontSize = 28.0f;
@@ -6595,7 +6595,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* lbl = canvas.GetElement(subLabelId)) {
                 lbl->anchor.anchorMin = Math::Vector2(0.05f, 0.0f);
                 lbl->anchor.anchorMax = Math::Vector2(0.5f, 0.0f);
-                lbl->anchor.offsetTop = 90.0f; lbl->anchor.offsetBottom = -120.0f;
+                lbl->anchor.offsetTop = 90.0f; lbl->anchor.offsetBottom = 120.0f;
                 lbl->data.text = "Subtitles";
                 lbl->data.textAlignH = 0; // left
                 lbl->style.textColor = Math::Vector3(0.8f, 0.82f, 0.88f);
@@ -6605,7 +6605,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* tog = canvas.GetElement(subToggleId)) {
                 tog->anchor.anchorMin = Math::Vector2(0.7f, 0.0f);
                 tog->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
-                tog->anchor.offsetTop = 90.0f; tog->anchor.offsetBottom = -120.0f;
+                tog->anchor.offsetTop = 90.0f; tog->anchor.offsetBottom = 120.0f;
                 tog->data.checked = true;
                 tog->tabOrder = 1;
                 tog->onValueChangedEvent = "accessibility_subtitles";
@@ -6616,7 +6616,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* lbl = canvas.GetElement(sizeLabelId)) {
                 lbl->anchor.anchorMin = Math::Vector2(0.05f, 0.0f);
                 lbl->anchor.anchorMax = Math::Vector2(0.5f, 0.0f);
-                lbl->anchor.offsetTop = 140.0f; lbl->anchor.offsetBottom = -170.0f;
+                lbl->anchor.offsetTop = 140.0f; lbl->anchor.offsetBottom = 170.0f;
                 lbl->data.text = "Subtitle Size";
                 lbl->data.textAlignH = 0;
                 lbl->style.textColor = Math::Vector3(0.8f, 0.82f, 0.88f);
@@ -6626,7 +6626,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* sl = canvas.GetElement(sizeSliderId)) {
                 sl->anchor.anchorMin = Math::Vector2(0.5f, 0.0f);
                 sl->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
-                sl->anchor.offsetTop = 140.0f; sl->anchor.offsetBottom = -170.0f;
+                sl->anchor.offsetTop = 140.0f; sl->anchor.offsetBottom = 170.0f;
                 sl->data.sliderMin = 0.5f;
                 sl->data.sliderMax = 2.0f;
                 sl->data.sliderValue = 1.0f;
@@ -6639,7 +6639,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* lbl = canvas.GetElement(cbLabelId)) {
                 lbl->anchor.anchorMin = Math::Vector2(0.05f, 0.0f);
                 lbl->anchor.anchorMax = Math::Vector2(0.5f, 0.0f);
-                lbl->anchor.offsetTop = 200.0f; lbl->anchor.offsetBottom = -230.0f;
+                lbl->anchor.offsetTop = 200.0f; lbl->anchor.offsetBottom = 230.0f;
                 lbl->data.text = "Colorblind Filter";
                 lbl->data.textAlignH = 0;
                 lbl->style.textColor = Math::Vector3(0.8f, 0.82f, 0.88f);
@@ -6649,7 +6649,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* tog = canvas.GetElement(cbToggleId)) {
                 tog->anchor.anchorMin = Math::Vector2(0.7f, 0.0f);
                 tog->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
-                tog->anchor.offsetTop = 200.0f; tog->anchor.offsetBottom = -230.0f;
+                tog->anchor.offsetTop = 200.0f; tog->anchor.offsetBottom = 230.0f;
                 tog->data.checked = false;
                 tog->tabOrder = 3;
                 tog->onValueChangedEvent = "accessibility_colorblind";
@@ -6660,7 +6660,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* lbl = canvas.GetElement(motionLabelId)) {
                 lbl->anchor.anchorMin = Math::Vector2(0.05f, 0.0f);
                 lbl->anchor.anchorMax = Math::Vector2(0.5f, 0.0f);
-                lbl->anchor.offsetTop = 260.0f; lbl->anchor.offsetBottom = -290.0f;
+                lbl->anchor.offsetTop = 260.0f; lbl->anchor.offsetBottom = 290.0f;
                 lbl->data.text = "Reduced Motion";
                 lbl->data.textAlignH = 0;
                 lbl->style.textColor = Math::Vector3(0.8f, 0.82f, 0.88f);
@@ -6670,7 +6670,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* tog = canvas.GetElement(motionToggleId)) {
                 tog->anchor.anchorMin = Math::Vector2(0.7f, 0.0f);
                 tog->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
-                tog->anchor.offsetTop = 260.0f; tog->anchor.offsetBottom = -290.0f;
+                tog->anchor.offsetTop = 260.0f; tog->anchor.offsetBottom = 290.0f;
                 tog->data.checked = false;
                 tog->tabOrder = 4;
                 tog->onValueChangedEvent = "accessibility_reduced_motion";
@@ -6681,7 +6681,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* lbl = canvas.GetElement(sensLabelId)) {
                 lbl->anchor.anchorMin = Math::Vector2(0.05f, 0.0f);
                 lbl->anchor.anchorMax = Math::Vector2(0.5f, 0.0f);
-                lbl->anchor.offsetTop = 320.0f; lbl->anchor.offsetBottom = -350.0f;
+                lbl->anchor.offsetTop = 320.0f; lbl->anchor.offsetBottom = 350.0f;
                 lbl->data.text = "Input Sensitivity";
                 lbl->data.textAlignH = 0;
                 lbl->style.textColor = Math::Vector3(0.8f, 0.82f, 0.88f);
@@ -6691,7 +6691,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* sl = canvas.GetElement(sensSliderId)) {
                 sl->anchor.anchorMin = Math::Vector2(0.5f, 0.0f);
                 sl->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
-                sl->anchor.offsetTop = 320.0f; sl->anchor.offsetBottom = -350.0f;
+                sl->anchor.offsetTop = 320.0f; sl->anchor.offsetBottom = 350.0f;
                 sl->data.sliderMin = 0.1f;
                 sl->data.sliderMax = 3.0f;
                 sl->data.sliderValue = 1.0f;
@@ -6704,7 +6704,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* lbl = canvas.GetElement(fontLabelId)) {
                 lbl->anchor.anchorMin = Math::Vector2(0.05f, 0.0f);
                 lbl->anchor.anchorMax = Math::Vector2(0.5f, 0.0f);
-                lbl->anchor.offsetTop = 380.0f; lbl->anchor.offsetBottom = -410.0f;
+                lbl->anchor.offsetTop = 380.0f; lbl->anchor.offsetBottom = 410.0f;
                 lbl->data.text = "Font Scale";
                 lbl->data.textAlignH = 0;
                 lbl->style.textColor = Math::Vector3(0.8f, 0.82f, 0.88f);
@@ -6714,7 +6714,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* sl = canvas.GetElement(fontSliderId)) {
                 sl->anchor.anchorMin = Math::Vector2(0.5f, 0.0f);
                 sl->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
-                sl->anchor.offsetTop = 380.0f; sl->anchor.offsetBottom = -410.0f;
+                sl->anchor.offsetTop = 380.0f; sl->anchor.offsetBottom = 410.0f;
                 sl->data.sliderMin = 0.75f;
                 sl->data.sliderMax = 2.5f;
                 sl->data.sliderValue = 1.0f;
@@ -6727,7 +6727,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* btn = canvas.GetElement(applyBtnId)) {
                 btn->anchor.anchorMin = Math::Vector2(0.3f, 0.0f);
                 btn->anchor.anchorMax = Math::Vector2(0.7f, 0.0f);
-                btn->anchor.offsetTop = 440.0f; btn->anchor.offsetBottom = -485.0f;
+                btn->anchor.offsetTop = 440.0f; btn->anchor.offsetBottom = 485.0f;
                 btn->data.text = "Apply Settings";
                 btn->tabOrder = 7;
                 btn->onClickEvent = "accessibility_apply";
@@ -6947,8 +6947,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* panel = canvas.GetElement(invPanelId)) {
                 panel->anchor.anchorMin = Math::Vector2(0.0f, 1.0f);
                 panel->anchor.anchorMax = Math::Vector2(0.0f, 1.0f);
-                panel->anchor.offsetLeft = 20.0f; panel->anchor.offsetTop = 80.0f;
-                panel->anchor.offsetRight = -420.0f; panel->anchor.offsetBottom = -20.0f;
+                panel->anchor.offsetLeft = 20.0f; panel->anchor.offsetTop = -80.0f;
+                panel->anchor.offsetRight = 420.0f; panel->anchor.offsetBottom = -20.0f;
                 panel->style.bgColor = Math::Vector3(0.1f, 0.1f, 0.12f);
                 panel->style.bgAlpha = 0.8f;
                 panel->focusable = false;
@@ -7203,8 +7203,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* curr = canvas.GetElement(currId)) {
                 curr->anchor.anchorMin = Math::Vector2(0.5f, 0.0f);
                 curr->anchor.anchorMax = Math::Vector2(0.5f, 0.0f);
-                curr->anchor.offsetLeft = 100.0f; curr->anchor.offsetTop = 30.0f;
-                curr->anchor.offsetRight = -100.0f; curr->anchor.offsetBottom = -80.0f;
+                curr->anchor.offsetLeft = -100.0f; curr->anchor.offsetTop = 30.0f;
+                curr->anchor.offsetRight = 100.0f; curr->anchor.offsetBottom = 80.0f;
                 curr->data.text = "Gold: 0";
                 curr->data.textAlignH = 1;
                 curr->style.textColor = Math::Vector3(1.0f, 0.85f, 0.0f);
@@ -7216,8 +7216,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* cp = canvas.GetElement(cpId)) {
                 cp->anchor.anchorMin = Math::Vector2(0.5f, 0.0f);
                 cp->anchor.anchorMax = Math::Vector2(0.5f, 0.0f);
-                cp->anchor.offsetLeft = 100.0f; cp->anchor.offsetTop = 80.0f;
-                cp->anchor.offsetRight = -100.0f; cp->anchor.offsetBottom = -120.0f;
+                cp->anchor.offsetLeft = -100.0f; cp->anchor.offsetTop = 80.0f;
+                cp->anchor.offsetRight = 100.0f; cp->anchor.offsetBottom = 120.0f;
                 cp->data.text = "Click Power: 1";
                 cp->data.textAlignH = 1;
                 cp->style.textColor = Math::Vector3(0.8f, 0.8f, 0.9f);
@@ -7228,8 +7228,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* upg = canvas.GetElement(upgId)) {
                 upg->anchor.anchorMin = Math::Vector2(0.5f, 1.0f);
                 upg->anchor.anchorMax = Math::Vector2(0.5f, 1.0f);
-                upg->anchor.offsetLeft = 120.0f; upg->anchor.offsetTop = 120.0f;
-                upg->anchor.offsetRight = -120.0f; upg->anchor.offsetBottom = -70.0f;
+                upg->anchor.offsetLeft = -120.0f; upg->anchor.offsetTop = -120.0f;
+                upg->anchor.offsetRight = 120.0f; upg->anchor.offsetBottom = -70.0f;
                 upg->data.text = "Upgrade (Cost: 10)";
                 upg->tabOrder = 1;
             }
@@ -7238,8 +7238,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             if (auto* act = canvas.GetElement(actId)) {
                 act->anchor.anchorMin = Math::Vector2(0.5f, 1.0f);
                 act->anchor.anchorMax = Math::Vector2(0.5f, 1.0f);
-                act->anchor.offsetLeft = 120.0f; act->anchor.offsetTop = 60.0f;
-                act->anchor.offsetRight = -120.0f; act->anchor.offsetBottom = -20.0f;
+                act->anchor.offsetLeft = -120.0f; act->anchor.offsetTop = -60.0f;
+                act->anchor.offsetRight = 120.0f; act->anchor.offsetBottom = -20.0f;
                 act->data.text = "Auto-Click";
                 act->tabOrder = 2;
             }

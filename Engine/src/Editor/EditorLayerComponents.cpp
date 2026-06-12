@@ -1977,7 +1977,7 @@ void EditorLayer::DrawCameraTriggerComponent(ECS::Entity entity) {
             }
         }
 
-        ImGui::SetNextItemWidth(200);
+        ImGui::SetNextItemWidth(200 * ImGui::GetIO().FontGlobalScale);
         if (ImGui::BeginCombo("Target Camera", currentName.c_str())) {
             // None option
             if (ImGui::Selectable("(None)", trigger->targetCamera == ECS::INVALID_ENTITY)) {
@@ -7041,7 +7041,7 @@ void EditorLayer::DrawCameraFrustum(ECS::Entity cameraEntity) {
         return true;
     };
 
-    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+    ImDrawList* drawList = GetViewportOverlayDrawList();
 
     // Calculate camera orientation
     Math::Vector3 camPos = transform->position;

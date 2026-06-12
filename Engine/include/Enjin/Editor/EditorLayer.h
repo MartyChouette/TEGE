@@ -23,6 +23,7 @@
 #include "Enjin/Editor/ProceduralGraph.h"
 #include "Enjin/Editor/CommandPalette.h"
 #include "Enjin/Accessibility/AlternativeInput.h"
+#include "Enjin/Accessibility/AccessibilitySettings.h"
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Effects/Water.h"
 #include "Enjin/Effects/Wind.h"
@@ -310,6 +311,8 @@ private:
     void DrawSettingsSection_BugReporting();
     void DrawSettingsSection_Accessibility();
     void DrawSettingsSection_Fonts();
+    // Sync editor settings to RuntimeAccessibilitySettings for PlayMode/scripting
+    void SyncRuntimeAccessibility();
     // Project tab sections
     void DrawSettingsSection_ProjectMode();
     void DrawSettingsSection_WindowIcon();
@@ -689,6 +692,7 @@ private:
     void DrawGrid();
     void FocusOnEntity(ECS::Entity entity);  // Center camera on entity
     void DrawMarqueeRect();                   // Draw rubber-band selection rectangle
+    ImDrawList* GetViewportOverlayDrawList(); // Scene window draw list so overlays layer under dialogs
     void DrawMultiSelectInspector();          // Inspector view when multiple entities selected
 
     // Gizmo state
@@ -712,6 +716,11 @@ private:
     f32 m_FrameTimeP95 = 0.0f;
     f32 m_FrameTimeP99 = 0.0f;
     f32 m_LastDeltaTime = 0.0f;
+
+    // Accumulated effects time (drives fire-light flicker) and the per-frame fire
+    // light buffer reused to keep the injection allocation-free.
+    f32 m_EffectsTime = 0.0f;
+    std::vector<Effects::FireLight> m_FireLights;
 
     // Frame time histogram (8 buckets: <1ms, 1-2, 2-4, 4-8, 8-16, 16-33, 33-66, >66ms)
     u32 m_FrameHistogram[8] = {};
@@ -1112,6 +1121,9 @@ private:
 
     // Accessibility settings (persistent)
     EditorSettings m_EditorSettings;
+
+    // Runtime accessibility settings (synced from EditorSettings, passed to PlayMode)
+    Accessibility::RuntimeAccessibilitySettings m_RuntimeAccessibility;
 
     // Input action map for remappable input
     InputSystem::InputActionMap m_InputMap;

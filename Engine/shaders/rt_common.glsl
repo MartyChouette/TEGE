@@ -496,82 +496,9 @@ float sdfOpSmoothIntersect(float a, float b, float k) {
     return max(a, b) + h * h * k * 0.25;
 }
 
-// Evaluate entire SDF scene, also output the closest object's color
-float sdfEvaluateScene(vec3 p, SDFObjectGPU objects[], int objectCount, out vec3 hitColor) {
-    if (objectCount <= 0) return 1e10;
-
-    float result = 1e10;
-    hitColor = vec3(1.0);
-    bool first = true;
-
-    for (int i = 0; i < objectCount; ++i) {
-        vec3 localP = p - objects[i].position;
-        float dist = sdfPrimitive(localP, objects[i].type, objects[i].scale);
-
-        if (first) {
-            result = dist;
-            hitColor = objects[i].color;
-            first = false;
-            continue;
-        }
-
-        int op = int(objects[i].blendMode + 0.5);
-        float prev = result;
-
-        if (op == 0) result = sdfOpUnion(result, dist);
-        else if (op == 1) result = sdfOpSubtract(result, dist);
-        else if (op == 2) result = sdfOpIntersect(result, dist);
-        else if (op == 3) result = sdfOpSmoothUnion(result, dist, objects[i].blendSmoothness);
-        else if (op == 4) result = sdfOpSmoothSubtract(result, dist, objects[i].blendSmoothness);
-        else if (op == 5) result = sdfOpSmoothIntersect(result, dist, objects[i].blendSmoothness);
-        else result = sdfOpUnion(result, dist);
-
-        // Track color of the closest primitive
-        if (result != prev && result == dist) {
-            hitColor = objects[i].color;
-        }
-    }
-
-    return result;
-}
-
-// Sphere trace (ray march) through SDF scene
-// Returns distance to hit (negative = no hit), and sets hitColor to the SDF object color
-float sdfSphereTrace(vec3 rayOrigin, vec3 rayDir, float maxDist, SDFObjectGPU objects[],
-                     int objectCount, out vec3 hitColor) {
-    float t = 0.0;
-    const int MAX_STEPS = 64;
-    const float EPSILON = 0.001;
-
-    for (int step = 0; step < MAX_STEPS; ++step) {
-        vec3 p = rayOrigin + rayDir * t;
-        vec3 col;
-        float d = sdfEvaluateScene(p, objects, objectCount, col);
-
-        if (d < EPSILON) {
-            hitColor = col;
-            return t;
-        }
-
-        t += d;
-        if (t > maxDist) break;
-    }
-
-    hitColor = vec3(0.0);
-    return -1.0;
-}
-
-// Compute SDF normal via central differences
-vec3 sdfNormal(vec3 p, SDFObjectGPU objects[], int objectCount) {
-    const float h = 0.001;
-    vec3 dummy;
-    float dx = sdfEvaluateScene(p + vec3(h, 0, 0), objects, objectCount, dummy)
-             - sdfEvaluateScene(p - vec3(h, 0, 0), objects, objectCount, dummy);
-    float dy = sdfEvaluateScene(p + vec3(0, h, 0), objects, objectCount, dummy)
-             - sdfEvaluateScene(p - vec3(0, h, 0), objects, objectCount, dummy);
-    float dz = sdfEvaluateScene(p + vec3(0, 0, h), objects, objectCount, dummy)
-             - sdfEvaluateScene(p - vec3(0, 0, h), objects, objectCount, dummy);
-    return normalize(vec3(dx, dy, dz));
-}
+// NOTE: GLSL cannot pass unsized arrays as function parameters, so there is no
+// shared sdfEvaluateScene/sdfSphereTrace helper here. Each rgen shader that
+// supports the SDF fallback inlines the scene loop over its own SDF SSBO
+// (see rt_reflect.rgen), built from sdfPrimitive and the sdfOp* functions above.
 
 #endif // RT_COMMON_GLSL

@@ -3936,6 +3936,18 @@ void RenderSystem::Update(f32 deltaTime) {
                 }
                 clusterLights.push_back(cl);
             }
+            // Append transient point lights (fire, muzzle flashes, spells) so the
+            // froxel volume scatters them through fog/smoke, matching the surface pass.
+            for (const auto& tpl : m_TransientPointLights) {
+                Renderer::ClusterLight cl{};
+                cl.position = tpl.position;
+                cl.range = tpl.range;
+                cl.color = tpl.color;
+                cl.intensity = tpl.intensity;
+                cl.direction = Math::Vector3(0.0f);
+                cl.outerConeAngle = 0.0f;
+                clusterLights.push_back(cl);
+            }
             if (!clusterLights.empty()) {
                 Math::Matrix4 viewMatrix = m_Camera->GetViewMatrix();
                 m_ClusteredLighting->AssignLights(cmdBuf, clusterLights.data(),
@@ -7574,6 +7586,23 @@ void RenderSystem::UpdateFrameUniforms() {
         }
     }
 
+    // Inject transient point lights (fire, muzzle flashes, spells) supplied by
+    // gameplay systems this frame. Same UBO path as LightComponent point lights,
+    // so they light surfaces here and participating media via clustered lighting.
+    for (const auto& tpl : m_TransientPointLights) {
+        if (lighting.pointLightCount >= MAX_POINT_LIGHTS) break;
+        auto& pointLight = lighting.pointLights[lighting.pointLightCount];
+        pointLight.position = tpl.position;
+        pointLight.range = tpl.range;
+        pointLight.color = tpl.color;
+        pointLight.intensity = tpl.intensity;
+        pointLight.constantAttenuation = 1.0f;
+        pointLight.linearAttenuation = 0.09f;
+        pointLight.quadraticAttenuation = 0.032f;
+        lighting.pointLightCount++;
+        hasAnyLight = true;
+    }
+
     if (!hasAnyLight) {
         lighting.directionalLights[0].direction = Math::Vector3(-0.5f, -0.8f, -0.3f).Normalized();
         lighting.directionalLights[0].color = Math::Vector3(1.0f, 0.95f, 0.9f);
@@ -10750,19 +10779,12 @@ void RenderSystem::InitializeRayTracing() {
     m_ASManager = std::make_unique<Renderer::AccelerationStructureManager>(ctx);
     m_ASManager->Initialize();
 
-    // Check if RT shaders have been compiled from GLSL to SPIR-V.
-    // The embedded SPIR-V in RTShaderData.h contains placeholder stubs that are
-    // not valid for actual pipeline creation. Skip subsystem initialization until
-    // real compiled shaders are provided. The ASManager and descriptor layout are
-    // still available for when shaders are compiled.
-    //
-    // To compile real shaders:
+    // Safety net: skip subsystem initialization if RTShaderData.h somehow holds
+    // placeholder stubs instead of real compiled SPIR-V. To regenerate the
+    // embedded shaders from Engine/shaders/ sources:
     //   cd Engine/shaders
-    //   glslangValidator --target-env vulkan1.2 -S rgen rt_shadow.rgen -o rt_shadow.rgen.spv
-    //   (etc. for all RT/compute shaders)
-    //   Then convert to C arrays and update RTShaderData.h
-    //
-    // Detect stubs: check if the first shader has the stub word count (9 words = 36 bytes)
+    //   glslc --target-env=vulkan1.2 -I. rt_shadow.rgen -o rt_shadow.rgen.spv
+    //   (etc. for all RT/compute shaders, then: python _gen_rt.py)
     {
         bool usingStubs = (sizeof(Renderer::RT_SHADOW_RGEN_SPV) <= 40 * sizeof(u32));
         if (usingStubs) {

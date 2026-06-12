@@ -460,6 +460,15 @@ void EditorLayer::HandleViewportPicking() {
     }
 }
 
+ImDrawList* EditorLayer::GetViewportOverlayDrawList() {
+    // Viewport overlays (gizmos, marquee, frustums) draw into the Scene window's
+    // own draw list so dialogs and popups — separate windows drawn later — layer
+    // above them. The foreground draw list paints over every window, which made
+    // gizmos bleed through dialogs. Fallback covers frames before "Scene" exists.
+    ImGuiWindow* sceneWindow = ImGui::FindWindowByName("Scene");
+    return sceneWindow ? sceneWindow->DrawList : ImGui::GetForegroundDrawList();
+}
+
 void EditorLayer::DrawMarqueeRect() {
     if (!m_MarqueeDragging) return;
 
@@ -468,7 +477,7 @@ void EditorLayer::DrawMarqueeRect() {
     f32 dragDist = std::sqrt(dx * dx + dy * dy);
     if (dragDist <= 5.0f) return;
 
-    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImDrawList* dl = GetViewportOverlayDrawList();
     dl->AddRect(m_MarqueeStart, m_MarqueeEnd, IM_COL32(100, 150, 255, 200));
     dl->AddRectFilled(m_MarqueeStart, m_MarqueeEnd, IM_COL32(100, 150, 255, 40));
 }
@@ -478,7 +487,8 @@ void EditorLayer::DrawGizmos() {
         return;
     }
 
-    // Don't draw gizmos when modal dialogs are open (they render on the foreground draw list)
+    // Don't draw gizmos when popups/modals are open — ImGuizmo reads raw mouse
+    // position and would otherwise respond to drags meant for the popup
     if (ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) {
         return;
     }
@@ -521,10 +531,10 @@ void EditorLayer::DrawGizmos() {
         }
     }
 
-    // Set ImGuizmo to use the foreground draw list (renders on top of all panels)
-    // but tell it the Scene window is the interaction target
+    // Draw into the Scene window's draw list (layers under dialogs/popups)
+    // and tell ImGuizmo the Scene window is the interaction target
     ImGuizmo::SetOrthographic(m_CameraController && m_CameraController->IsOrthographic());
-    ImGuizmo::SetDrawlist(ImGui::GetForegroundDrawList());
+    ImGuizmo::SetDrawlist(GetViewportOverlayDrawList());
     ImGuizmo::SetRect(m_EditorViewportImageMinX, m_EditorViewportImageMinY, vpW, vpH);
     ImGuiWindow* sceneWindow = ImGui::FindWindowByName("Scene");
     if (sceneWindow) {

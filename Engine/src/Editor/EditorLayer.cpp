@@ -194,6 +194,7 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
 
     // Initialize elemental system (connects to wind + weather for particle interactions)
     m_ElementalSystem.Initialize(&m_WindSystem, &m_WeatherSystem, &m_SeasonalWeather);
+    m_FireLights.reserve(Effects::ElementalSystem::MAX_FIRE_LIGHTS);
 
     // Wind system is always running (affects weather, vegetation, grass)
     // Will be connected to RenderSystem when SetRenderSystem is called
@@ -2108,6 +2109,19 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             }
         }
         m_ElementalSystem.Update(m_World, m_LastDeltaTime, cameraTransform->position);
+
+        // Feed fire emitters into the renderer as transient point lights. One
+        // source lights both surfaces (PBR point lights) and participating media
+        // (clustered lighting -> volumetric fog froxels), so fire glows on walls
+        // and through nearby smoke/fog in lockstep.
+        if (m_RenderSystem) {
+            m_EffectsTime += m_LastDeltaTime;
+            m_ElementalSystem.BuildFireLights(m_EffectsTime, m_FireLights);
+            m_RenderSystem->ClearTransientPointLights();
+            for (const auto& fl : m_FireLights) {
+                m_RenderSystem->AddTransientPointLight(fl.position, fl.range, fl.color, fl.intensity);
+            }
+        }
     }
 
     // Update fluid simulation
@@ -3003,7 +3017,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // Clip all viewport overlays (gizmos, marquee, frustums) to the editor viewport panel
     // Only draw when the viewport panel is actually visible
     if (HasPanel(m_VisiblePanels, EditorPanel::Viewport)) {
-        ImDrawList* fgOverlay = ImGui::GetForegroundDrawList();
+        ImDrawList* fgOverlay = GetViewportOverlayDrawList();
         fgOverlay->PushClipRect(
             ImVec2(m_EditorViewportImageMinX, m_EditorViewportImageMinY),
             ImVec2(m_EditorViewportImageMaxX, m_EditorViewportImageMaxY), true);
@@ -3086,7 +3100,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                 drawLine3D(dl, corners[3], corners[7], color, thickness);
             };
 
-            ImDrawList* bgDrawList = ImGui::GetForegroundDrawList();
+            ImDrawList* bgDrawList = GetViewportOverlayDrawList();
             bgDrawList->PushClipRect(
                 ImVec2(m_EditorViewportImageMinX, m_EditorViewportImageMinY),
                 ImVec2(m_EditorViewportImageMaxX, m_EditorViewportImageMaxY), true);
