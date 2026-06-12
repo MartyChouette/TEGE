@@ -6,6 +6,7 @@
 #include <angelscript.h>
 #include <cassert>
 #include <string>
+#include <functional>
 
 using namespace Enjin;
 
@@ -15,6 +16,7 @@ using namespace Enjin;
 static Accessibility::SubtitleSystem* s_BindingsSubtitles = nullptr;
 static Accessibility::AccessibilityAnnouncer* s_BindingsAnnouncer = nullptr;
 static Accessibility::RuntimeAccessibilitySettings* s_BindingsAccessibility = nullptr;
+static std::function<void()> s_SaveAccessibilityCallback;
 
 namespace Enjin {
 namespace Scripting {
@@ -29,6 +31,10 @@ void SetBindingsAnnouncer(Accessibility::AccessibilityAnnouncer* announcer) {
 
 void SetBindingsAccessibilitySettings(Accessibility::RuntimeAccessibilitySettings* settings) {
     s_BindingsAccessibility = settings;
+}
+
+void SetBindingsAccessibilitySaveCallback(std::function<void()> callback) {
+    s_SaveAccessibilityCallback = std::move(callback);
 }
 
 } // namespace Scripting
@@ -145,6 +151,42 @@ static bool Accessibility_GetScreenShake() {
     return s_BindingsAccessibility ? !s_BindingsAccessibility->disableScreenShake : true;
 }
 
+static void Accessibility_SaveSettings() {
+    if (s_SaveAccessibilityCallback) s_SaveAccessibilityCallback();
+}
+
+static void Accessibility_SetFlashingLights(bool enabled) {
+    if (s_BindingsAccessibility) s_BindingsAccessibility->disableFlashingLights = !enabled;
+}
+
+static bool Accessibility_GetFlashingLights() {
+    return s_BindingsAccessibility ? !s_BindingsAccessibility->disableFlashingLights : true;
+}
+
+static void Accessibility_SetFontScale(float scale) {
+    if (s_BindingsAccessibility) s_BindingsAccessibility->fontScale = scale;
+}
+
+static float Accessibility_GetFontScale() {
+    return s_BindingsAccessibility ? s_BindingsAccessibility->fontScale : 1.0f;
+}
+
+static void Accessibility_SetBrightness(float v) {
+    if (s_BindingsAccessibility) s_BindingsAccessibility->screenBrightness = v;
+}
+
+static float Accessibility_GetBrightness() {
+    return s_BindingsAccessibility ? s_BindingsAccessibility->screenBrightness : 0.0f;
+}
+
+static void Accessibility_SetContrast(float v) {
+    if (s_BindingsAccessibility) s_BindingsAccessibility->screenContrast = v;
+}
+
+static float Accessibility_GetContrast() {
+    return s_BindingsAccessibility ? s_BindingsAccessibility->screenContrast : 1.0f;
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
@@ -213,6 +255,24 @@ void RegisterAccessibilityBindings(asIScriptEngine* engine) {
         asFUNCTION(Accessibility_SetScreenShake), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Accessibility_GetScreenShake()",
         asFUNCTION(Accessibility_GetScreenShake), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetFlashingLights(bool)",
+        asFUNCTION(Accessibility_SetFlashingLights), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Accessibility_GetFlashingLights()",
+        asFUNCTION(Accessibility_GetFlashingLights), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetFontScale(float)",
+        asFUNCTION(Accessibility_SetFontScale), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Accessibility_GetFontScale()",
+        asFUNCTION(Accessibility_GetFontScale), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetBrightness(float)",
+        asFUNCTION(Accessibility_SetBrightness), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Accessibility_GetBrightness()",
+        asFUNCTION(Accessibility_GetBrightness), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetContrast(float)",
+        asFUNCTION(Accessibility_SetContrast), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Accessibility_GetContrast()",
+        asFUNCTION(Accessibility_GetContrast), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SaveSettings()",
+        asFUNCTION(Accessibility_SaveSettings), asCALL_CDECL));
 }
 
 } // namespace Scripting

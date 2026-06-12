@@ -389,6 +389,35 @@ public:
 
     // Set fluid simulation (for FluidRenderer to read grid data)
     void SetFluidSimulation(Effects::FluidSimulation* sim);
+
+    // --- Transient point lights ---
+    // Extra point lights injected each frame by gameplay systems (fire, muzzle
+    // flashes, spells). The producer clears and re-adds them every frame. These
+    // feed both the surface PBR pass and clustered lighting, so they light
+    // surfaces AND participating media (volumetric fog) exactly like a
+    // LightComponent point light. The engine renderer stays decoupled from
+    // gameplay: producers push generic lights, the renderer never names them.
+    //
+    // Example (per frame, gameplay side):
+    //   renderer.ClearTransientPointLights();
+    //   elemental.BuildFireLights(time, fireLights);
+    //   for (const auto& fl : fireLights)
+    //       renderer.AddTransientPointLight(fl.position, fl.range, fl.color, fl.intensity);
+    struct TransientPointLight {
+        Math::Vector3 position;
+        f32 range = 0.0f;
+        Math::Vector3 color;
+        f32 intensity = 0.0f;
+    };
+    static constexpr u32 MAX_TRANSIENT_POINT_LIGHTS = 32;
+
+    void ClearTransientPointLights() { m_TransientPointLights.clear(); }
+    void AddTransientPointLight(const Math::Vector3& position, f32 range,
+                                const Math::Vector3& color, f32 intensity) {
+        if (m_TransientPointLights.size() >= MAX_TRANSIENT_POINT_LIGHTS) return;
+        m_TransientPointLights.push_back({position, range, color, intensity});
+    }
+
 #if !ENJIN_RENDERER_WEBGPU
     Effects::FluidRenderer* GetFluidRenderer() const { return m_FluidRenderer.get(); }
 
@@ -696,6 +725,9 @@ private:
     Renderer::VulkanRenderer* m_VulkanRenderer = nullptr;  // Cached cast for Vulkan-specific API calls
 #endif
     Renderer::Camera* m_Camera = nullptr;
+
+    // Transient point lights pushed by gameplay each frame (see AddTransientPointLight).
+    std::vector<TransientPointLight> m_TransientPointLights;
     Build::AssetReader* m_AssetReader = nullptr;
     Entity m_DefaultEntity = INVALID_ENTITY;
 

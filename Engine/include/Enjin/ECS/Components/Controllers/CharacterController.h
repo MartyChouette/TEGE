@@ -190,8 +190,9 @@ struct ThirdPersonController : public CharacterControllerBase {
     bool isJumping = false;
     bool isFalling = false;
     bool isSprinting = false;
-    f32 prevPositionY = 0.0f;  // for WASM ground detection fallback
+    f32 prevPositionY = 0.0f;   // for WASM ground detection fallback
     bool jumpKeyWasDown = false;  // for WASM edge detection
+    i32 fallFrameCount = 0;       // frames of continuous Y decrease
 };
 
 // 3D First Person Controller (camera is the player's eyes)

@@ -117,6 +117,23 @@ Per-entity texture (bindings 3/5/6/8/9/18) and bone buffer (binding 7) descripto
 - **Multi-draw indirect:** Non-textured pool entities via single `vkCmdDrawIndexedIndirectCount`; textured pool entities grouped by texture hash via `IndirectDrawBatcher`
 - **Async compute:** `AsyncComputeScheduler` overlaps RT dispatch with rasterization on dedicated compute queue, timeline semaphores
 
+## Vulkan Raster Pipeline Layout
+
+**Descriptor Bindings (Set 0):** 0=ViewProj UBO, 1=Lighting UBO, 2=Material SSBO (dynamic offset, batched per-frame), 3=Base color tex, 4=Shadow map array, 5=Height map, 6=Normal map, 7=Bone SSBO, 8=Metallic-roughness tex, 9=Emissive tex, 10=Point shadow cubemaps, 11=Spot shadow maps, 12=Shadow data SSBO, 13=Object data SSBO, 14=Cluster grid SSBO (clustered lighting), 15=Cluster light index SSBO (clustered lighting), 16=VT indirection tex, 17=VT physical atlas, 18=Matcap tex, 19=Baked reflection probe cubemap
+
+**Push Constants (128 bytes):** model matrix (64B), baseColor+metallic, emissiveColor+roughness, emissiveStrength, opacity, alphaCutoff, flags (bitfield), parallaxScale, surfaceParam1 (water: shoreWidth / artistic: reflectivity), surfaceParam2 (water: foamIntensity / artistic: fresnelPower), surfaceParam3 (water: foamScale / artistic: rimLightStrength)
+
+**Flags bitfield:** bits 0-2 render, 3 skinned, 4 wind, 5-7 water, 8-9 alpha mode, 10 height tex, 11 ocean, 12 UV quantize, 13 gouraud, 14-15 shadow dither, 16-19 texture flags, 20-23 retro flags, 24-28 snap resolution (/8), 29-31 shadow dither pattern
+
+**CMake feature options:** `ENJIN_CLUSTERED_LIGHTING` (ON), `ENJIN_VRS` (OFF), `ENJIN_VIRTUAL_TEXTURING` (OFF), `ENJIN_VISIBILITY_BUFFER` (OFF)
+
+## WebGPU Backend
+
+- **WGSL shaders** in `Engine/shaders/wgsl/`: pbr.wgsl (Cook-Torrance), shadow.wgsl, postprocess.wgsl (ACES), triangle.wgsl, web_pbr.wgsl (simplified). Embedded copies in `WebShaderData.h`
+- **Shadow mapping**: 1-cascade directional shadow via `BeginDepthOnlyPass()` (depth-only render pass, `Depth32Float`). `WebGPUPipelineManager::CreateRenderPipeline` allows null fragment shader when `hasColorAttachment=false`. PBR shader samples shadow map via `sampler_comparison` with 4-tap PCF
+- **Instanced draw batching**: Identical meshes batched into single instanced draw calls. `ObjectData` uploaded as storage buffer array for per-instance transforms/materials
+- **Web player**: `Player/src/web_main.cpp` uses RenderSystem directly through IRenderBackend. Responsive canvas via ResizeObserver, real delta time, extern C callbacks for JS interop
+
 ## Renderer Advanced Features
 
 - **Reflection probes:** `ReflectionProbeSystem` finds nearest probe per frame, box-projected cubemap reflections in `triangle.frag`. Cubemap baking renders 6 faces via `RenderToTarget`, stores as `VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT` image at binding 19
@@ -144,6 +161,21 @@ Per-entity texture (bindings 3/5/6/8/9/18) and bone buffer (binding 7) descripto
 - **PrepareRenderTargets:** `PrepareRenderTargets()` runs before command buffer recording. Resizes editor viewport and game view render targets with 8-pixel threshold to avoid thrashing. Handles focus mode (full display resolution), scene render target, post-processing pipeline updates, and effect pipeline recreation. Prevents crashes with Vulkan hooks (OBS, RenderDoc) that hold resource references during command buffer recording. Fixes 4:3 aspect ratio crash.
 - **Entity icons:** `GetEntityIcon()` — `[C]` Camera, `[L]` Light, `[M]` Mesh, `[S]` Sprite, `[T]` Tilemap, `[P]` Particle, `[A]` Audio, `[R]` Rigidbody, `[D]` Dialogue, `[V]` Visual Script, `[U]` UI Canvas, `[AI]` AI, `[BT]` Behavior Tree
 - **Empty states:** `DrawEmptyState()` helper renders centered icon, heading, body text, and optional CTA button
+
+## Animation
+
+- **BlendTree** on `AnimatorComponent`: 1D parameter-driven blending. Set `blendTree.enabled = true`, nodes with thresholds, `SetBlendParameter()` at runtime
+- **Animation events:** `SkeletalAnimation::events` (vector of `AnimEvent` with `time` + `name`)
+- **Retargeting:** `RetargetAnimation()` + `BuildAutoRetargetMap()` — auto-maps bone names, strips Mixamo `mixamorig:` prefix
+- **Shadow shader has skinning:** Bone SSBO sampling in shadow vertex shader for skinned mesh shadow correctness
+- **Editor calls skeletal animator update directly** (not via `RenderSystem::Update`) to decouple animation timing from rendering
+- **PoseLibraryComponent:** Save/recall named bone poses (expressions, gestures). Per-bone rotations with blend weight. Inspector has large buttons grouped by category
+- **BoneRegion auto-detection:** `ClassifyBoneRegion()` detects 12 body regions from bone names (Face, Head, LeftHand, RightHand, LeftArm, RightArm, Spine, LeftLeg, RightLeg, LeftFoot, RightFoot, Tail). Rig Regions panel shows filterable bone list per region
+
+## Gameplay Systems
+
+- **RecordRewindSystem:** Per-entity (Braid-style, `RecordRewindComponent`) and scene-wide (Sands of Time-style, `SceneRewindComponent`) time rewind. `StateRingBuffer<T>` for O(1) push/eviction. Delta-compressed `DeltaFrame` snapshots with configurable keyframe interval. 6 channel flags (Transform/Velocity/Health/Animation/Physics/Material). Physics state sync via `ForceSetBodyState()` on Jolt/Box2D. API: `StartEntityRewind()`, `StopEntityRewind()`, `SeekSceneToTime()`. 11 AngelScript bindings (`Rewind_*`)
+- **DialogueTree narrative integration:** 3 node types — `QuestAction` (start/complete/fail quest), `PlayCinematic` (trigger cinematic entity), `SetGameFlag` (persistent key-value flag via TieredSaveSystem). `DialogueCondition::Source` enum — `Variable`/`QuestStatus`/`GameFlag`. `DialoguePlayer` has `ActionCallback` + `ConditionResolver` for decoupled cross-system dispatch. Wired in PlayMode and Player
 
 ## UI System
 

@@ -917,9 +917,42 @@ void UISystem::RenderLabel(const UIElement& element, const UITheme& theme) {
     f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody) * m_FontScale;
     ImVec4 textColor = ResolveColor(element.style.textColor, theme.textPrimary, 1.0f);
 
-    DrawCenteredText(dl, element.computedRect, element.data.text.c_str(),
-        ImGui::ColorConvertFloat4ToU32(textColor),
-        element.data.textAlignH, element.data.textAlignV, fontSize);
+    // Fast path: no per-char colors, use single-call rendering
+    if (element.data.charColors.empty()) {
+        DrawCenteredText(dl, element.computedRect, element.data.text.c_str(),
+            ImGui::ColorConvertFloat4ToU32(textColor),
+            element.data.textAlignH, element.data.textAlignV, fontSize);
+        return;
+    }
+
+    // Per-character color path (used by games needing inline color variation)
+    ImFont* font = ImGui::GetFont();
+    const std::string& text = element.data.text;
+    if (text.empty()) return;
+
+    ImVec2 totalSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, text.c_str());
+
+    f32 x = element.computedRect.x;
+    f32 y = element.computedRect.y;
+    switch (element.data.textAlignH) {
+        case 0: x = element.computedRect.x + 4.0f; break;
+        case 1: x = element.computedRect.x + (element.computedRect.w - totalSize.x) * 0.5f; break;
+        case 2: x = element.computedRect.x + element.computedRect.w - totalSize.x - 4.0f; break;
+    }
+    switch (element.data.textAlignV) {
+        case 0: y = element.computedRect.y + 2.0f; break;
+        case 1: y = element.computedRect.y + (element.computedRect.h - totalSize.y) * 0.5f; break;
+        case 2: y = element.computedRect.y + element.computedRect.h - totalSize.y - 2.0f; break;
+    }
+
+    ImU32 defaultColor = ImGui::ColorConvertFloat4ToU32(textColor);
+    for (usize i = 0; i < text.size(); ++i) {
+        char ch[2] = { text[i], '\0' };
+        ImU32 color = (i < element.data.charColors.size()) ? element.data.charColors[i] : defaultColor;
+        dl->AddText(font, fontSize, ImVec2(x, y), color, ch);
+        ImVec2 charSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, ch);
+        x += charSize.x;
+    }
 }
 
 void UISystem::RenderImage(const UIElement& element, const UITheme& theme) {

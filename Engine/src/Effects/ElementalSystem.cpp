@@ -265,6 +265,99 @@ f32 ElementalSystem::GetMoistureAt(const Math::Vector3& pos, f32 radius) const {
 u32 ElementalSystem::GetFireCount() const { return CountElementParticles(0); }
 u32 ElementalSystem::GetWaterCount() const { return CountElementParticles(1); }
 
+void ElementalSystem::BuildFireLights(f32 time, std::vector<FireLight>& out) {
+    out.clear();
+
+    // Fire-light clustering uses a finer grid than the simulation spatial hash so
+    // a single bonfire reads as one light rather than a smear of point sources.
+    constexpr f32 FIRE_CELL_SIZE = 1.5f;
+    constexpr f32 INV_FIRE_CELL = 1.0f / FIRE_CELL_SIZE;
+    constexpr f32 FIRE_THRESHOLD = 0.05f;   // ignore near-zero fire signatures
+    constexpr f32 INTENSITY_SCALE = 0.35f;  // accumulated mass -> light intensity
+    constexpr f32 MAX_INTENSITY   = 6.0f;
+
+    m_FireBucketCount = 0;
+
+    // --- 1. Bucket fire particles into coarse XZ cells (weighted centroid + mass) ---
+    for (u32 i = 0; i < m_Pool.activeCount; ++i) {
+        f32 fire = m_Pool.elements[i].x; // fire channel
+        if (fire < FIRE_THRESHOLD) continue;
+        f32 weight = fire * m_Pool.intensities[i];
+        if (weight <= 0.0f) continue;
+
+        i32 cx = static_cast<i32>(std::floor(m_Pool.positions[i].x * INV_FIRE_CELL));
+        i32 cz = static_cast<i32>(std::floor(m_Pool.positions[i].z * INV_FIRE_CELL));
+
+        // Linear probe over active buckets (bounded by MAX_FIRE_BUCKETS).
+        FireBucket* bucket = nullptr;
+        for (u32 b = 0; b < m_FireBucketCount; ++b) {
+            if (m_FireBuckets[b].cx == cx && m_FireBuckets[b].cz == cz) {
+                bucket = &m_FireBuckets[b];
+                break;
+            }
+        }
+        if (!bucket) {
+            if (m_FireBucketCount >= MAX_FIRE_BUCKETS) continue; // graceful: drop overflow cells
+            bucket = &m_FireBuckets[m_FireBucketCount++];
+            bucket->cx = cx;
+            bucket->cz = cz;
+            bucket->weightedPos = Math::Vector3(0.0f);
+            bucket->mass = 0.0f;
+            bucket->maxY = -1.0e30f;
+        }
+        bucket->weightedPos = bucket->weightedPos + m_Pool.positions[i] * weight;
+        bucket->mass += weight;
+        if (m_Pool.positions[i].y > bucket->maxY) bucket->maxY = m_Pool.positions[i].y;
+    }
+
+    if (m_FireBucketCount == 0) return;
+
+    // --- 2. Emit the top MAX_FIRE_LIGHTS buckets by mass (partial selection) ---
+    u32 emitCount = m_FireBucketCount < MAX_FIRE_LIGHTS ? m_FireBucketCount : MAX_FIRE_LIGHTS;
+    bool used[MAX_FIRE_BUCKETS] = {};
+    for (u32 k = 0; k < emitCount; ++k) {
+        i32 best = -1;
+        f32 bestMass = -1.0f;
+        for (u32 b = 0; b < m_FireBucketCount; ++b) {
+            if (used[b]) continue;
+            if (m_FireBuckets[b].mass > bestMass) { bestMass = m_FireBuckets[b].mass; best = static_cast<i32>(b); }
+        }
+        if (best < 0) break;
+        used[best] = true;
+        const FireBucket& fb = m_FireBuckets[best];
+
+        // --- 3. Build the representative light ---
+        Math::Vector3 centroid = fb.weightedPos / fb.mass;
+        // Lift toward the top of the flame so the glow reads above the fuel base.
+        centroid.y = (centroid.y + fb.maxY) * 0.5f;
+
+        f32 intensity = fb.mass * INTENSITY_SCALE;
+        if (intensity > MAX_INTENSITY) intensity = MAX_INTENSITY;
+        f32 t = intensity / MAX_INTENSITY; // 0..1 hotness
+
+        // Blackbody-ish ramp: deep red -> orange -> yellow-white.
+        Math::Vector3 cool(1.0f, 0.25f, 0.05f);
+        Math::Vector3 warm(1.0f, 0.55f, 0.15f);
+        Math::Vector3 hot (1.0f, 0.85f, 0.55f);
+        Math::Vector3 color = t < 0.5f
+            ? cool + (warm - cool) * (t * 2.0f)
+            : warm + (hot - warm) * ((t - 0.5f) * 2.0f);
+
+        // Per-cluster flicker, decorrelated by a cell hash so fires do not pulse together.
+        f32 cellPhase = static_cast<f32>((fb.cx * 73856093) ^ (fb.cz * 19349663)) * 1.0e-4f;
+        f32 flicker = 0.85f + 0.15f * std::sin(time * 11.0f + cellPhase)
+                            + 0.07f * std::sin(time * 23.0f + cellPhase * 2.3f);
+        intensity *= flicker;
+
+        FireLight fl;
+        fl.position = centroid;
+        fl.range = 3.0f + 5.0f * t; // larger fires reach further
+        fl.color = color;
+        fl.intensity = intensity;
+        out.push_back(fl);
+    }
+}
+
 u32 ElementalSystem::CountElementParticles(u32 channel) const {
     u32 count = 0;
     for (u32 i = 0; i < m_Pool.activeCount; ++i) {

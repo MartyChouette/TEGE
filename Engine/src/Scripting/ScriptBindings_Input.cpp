@@ -2,6 +2,7 @@
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Logging/Log.h"
+#include <imgui.h>
 #include <angelscript.h>
 #include <cassert>
 
@@ -10,6 +11,44 @@ using namespace Enjin::Math;
 
 #define AS_CHECK(expr) \
     do { int _r = (expr); if (_r < 0) { ENJIN_LOG_ERROR(Script, "AS registration failed (code %d) at %s:%d", _r, __FILE__, __LINE__); } } while(0)
+
+// ============================================================================
+// Text input (character-level, OS-processed with shift/layout/dead-key awareness)
+// ============================================================================
+
+// Returns all characters typed this frame as a UTF-8 string.
+// Reads ImGui's character queue which is populated by GLFW's char callback.
+// Supports full Latin range (accented characters, international keyboards).
+static std::string Input_GetTextInput() {
+    std::string result;
+    ImGuiIO& io = ImGui::GetIO();
+    for (int i = 0; i < io.InputQueueCharacters.Size; ++i) {
+        ImWchar ch = io.InputQueueCharacters[i];
+        if (ch < 32) continue; // skip control characters
+        // Encode as UTF-8
+        if (ch < 0x80) {
+            result += static_cast<char>(ch);
+        } else if (ch < 0x800) {
+            result += static_cast<char>(0xC0 | (ch >> 6));
+            result += static_cast<char>(0x80 | (ch & 0x3F));
+        } else {
+            result += static_cast<char>(0xE0 | (ch >> 12));
+            result += static_cast<char>(0x80 | ((ch >> 6) & 0x3F));
+            result += static_cast<char>(0x80 | (ch & 0x3F));
+        }
+    }
+    return result;
+}
+
+// Returns the number of characters typed this frame.
+static int Input_GetTextInputCount() {
+    ImGuiIO& io = ImGui::GetIO();
+    int count = 0;
+    for (int i = 0; i < io.InputQueueCharacters.Size; ++i) {
+        if (io.InputQueueCharacters[i] >= 32) ++count;
+    }
+    return count;
+}
 
 // ============================================================================
 // Input wrapper functions
@@ -217,6 +256,12 @@ void RegisterInputBindings(asIScriptEngine* engine) {
         asFUNCTION(Input_GetKeyDown), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Input_GetKeyUp(int)",
         asFUNCTION(Input_GetKeyUp), asCALL_CDECL));
+
+    // ---- Text input (character-level) ----
+    AS_CHECK(engine->RegisterGlobalFunction("string Input_GetTextInput()",
+        asFUNCTION(Input_GetTextInput), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Input_GetTextInputCount()",
+        asFUNCTION(Input_GetTextInputCount), asCALL_CDECL));
 
     // ---- Mouse functions ----
     AS_CHECK(engine->RegisterGlobalFunction("bool Input_GetMouseButton(int)",

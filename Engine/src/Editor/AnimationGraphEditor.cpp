@@ -805,7 +805,7 @@ void AnimationGraphEditor::DrawInspectorAnimatorMode(NodeId selectedNode, LinkId
         ImGui::InputText("##NewParam", m_NewParamName, sizeof(m_NewParamName));
         ImGui::SameLine();
         const char* paramTypes[] = { "Bool", "Float", "Int" };
-        ImGui::SetNextItemWidth(60);
+        ImGui::SetNextItemWidth(60 * ImGui::GetIO().FontGlobalScale);
         ImGui::Combo("##ParamType", &m_NewParamType, paramTypes, 3);
         ImGui::SameLine();
         if (ImGui::Button("Add") && std::strlen(m_NewParamName) > 0) {
@@ -1068,7 +1068,7 @@ void AnimationGraphEditor::DrawInspectorSMMode(NodeId selectedNode, LinkId selec
         ImGui::InputText("##NewParam", m_NewParamName, sizeof(m_NewParamName));
         ImGui::SameLine();
         const char* paramTypes[] = { "Bool", "Float", "Int" };
-        ImGui::SetNextItemWidth(60);
+        ImGui::SetNextItemWidth(60 * ImGui::GetIO().FontGlobalScale);
         ImGui::Combo("##ParamType", &m_NewParamType, paramTypes, 3);
         ImGui::SameLine();
         if (ImGui::Button("Add") && std::strlen(m_NewParamName) > 0) {

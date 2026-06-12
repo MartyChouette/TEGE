@@ -47,6 +47,12 @@ Complete reference for all functions callable from AngelScript via `TegeBehavior
 
 `Input_GetKey(int)`, `Input_GetKeyDown(int)`, `Input_GetKeyUp(int)` — Key enum: A-Z, Num0-9, F1-F12, Space, Escape, Enter, Tab, Backspace, arrows, Shift, Control, Alt, etc.
 
+## Input — Text
+
+`Input_GetTextInput()` → string — Characters typed this frame as a UTF-8 string. OS-processed (shift-aware, keyboard-layout-aware, dead-key/compose-aware). Supports full Latin range including accented characters. Returns empty string if nothing was typed.
+
+`Input_GetTextInputCount()` → int — Number of characters typed this frame. Useful for checking whether any text input occurred without allocating a string.
+
 ## Input — Mouse
 
 `Input_GetMouseButton/Down/Up(int)` — MouseBtn: Left, Right, Middle
@@ -264,7 +270,10 @@ Permanent key-value storage that survives across runs and save slot deletion.
 - `UI_SetImagePath(uint64, int, const string&)` — Change an image element's texture.
 - `UI_SetImageAlpha(uint64, int, float)` — Image transparency (0-1).
 - `UI_SetBgColor(uint64, int, float r, g, b, float a)` — Element background color.
-- `UI_SetTextColor(uint64, int, float r, g, b)` — Text color.
+- `UI_SetTextColor(uint64, int, float r, g, b)` — Text color (uniform, all characters).
+- `UI_SetCharColor(uint64, int elementId, int charIndex, float r, g, b)` — Set color for a single character by index. Enables per-character coloring on Label/Button elements. Characters beyond the charColors array use the element's textColor.
+- `UI_SetCharColorRange(uint64, int elementId, int startIdx, int endIdx, float r, g, b)` — Set color for a range of characters (inclusive).
+- `UI_ClearCharColors(uint64, int elementId)` — Remove all per-character colors, revert to uniform textColor.
 - `UI_IsHovered(uint64, int)`, `UI_IsPressed(uint64, int)` — Interaction state queries.
 - `UI_SetFocus(uint64, int elementId)` — Set keyboard/gamepad focus to a specific element.
 - `UI_ClearFocus(uint64)` — Remove focus from all elements on a canvas.

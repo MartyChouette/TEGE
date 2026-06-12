@@ -90,6 +90,12 @@ struct UIWidgetData {
     u8 textAlignH = 1; // 0=left, 1=center, 2=right
     u8 textAlignV = 1; // 0=top, 1=center, 2=bottom
 
+    // Per-character colors for Label/Button text (runtime only, not serialized).
+    // Each entry is an ImU32 packed color (IM_COL32 format) for the character at
+    // that index. When empty, the element's textColor applies uniformly.
+    // Indices beyond the vector size fall back to the element textColor.
+    std::vector<u32> charColors;
+
     // Image
     std::string imagePath;
     Math::Vector3 imageTint = Math::Vector3(1, 1, 1);

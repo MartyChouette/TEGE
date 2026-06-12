@@ -34,6 +34,8 @@
 #include "Enjin/Effects/FluidSimulation.h"
 #include "Enjin/Effects/FluidTerrainCoupling.h"
 #include "Enjin/Effects/CurlNoiseSystem.h"
+#include "Enjin/Effects/ElementalSystem.h"
+#include "Enjin/Audio/AudioReactiveSystem.h"
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Effects/SeasonalWeather.h"
 #include "Enjin/Effects/Water.h"
@@ -393,6 +395,11 @@ public:
         m_SimpleAudio.Initialize();
         m_SimpleAudio.SetWorld(m_World.get());
         m_WeatherSystem.Initialize();
+        m_ElementalSystem.Initialize(&m_WindSystem, &m_WeatherSystem, &m_SeasonalWeather);
+        m_FireLights.reserve(Enjin::Effects::ElementalSystem::MAX_FIRE_LIGHTS);
+        m_AudioReactiveSystem.SetWorld(m_World.get());
+        m_AudioReactiveSystem.SetAudio(&m_SimpleAudio);
+        m_AudioReactiveSystem.SetMIDI(&m_MIDIInput);
         m_DestructibleSystem.Initialize(m_World.get());
         m_StreamingManager.SetWorld(m_World.get());
         m_SceneManager.SetWorld(m_World.get());
@@ -912,6 +919,22 @@ public:
 
         // Particle emitter simulation
         m_ParticleSystem.Update(deltaTime, m_World.get());
+
+        // Audio-reactive system (beat sync, FFT-driven parameters) — editor parity.
+        m_AudioReactiveSystem.Update(deltaTime);
+
+        // Elemental system (fire/water/earth/air) + fire-light injection. Mirrors
+        // EditorLayer: fire emitters become transient point lights that light
+        // surfaces here and participating media via clustered lighting.
+        if (m_Camera && m_RenderSystem) {
+            m_ElementalSystem.Update(m_World.get(), deltaTime, m_Camera->GetPosition());
+            m_EffectsTime += deltaTime;
+            m_ElementalSystem.BuildFireLights(m_EffectsTime, m_FireLights);
+            m_RenderSystem->ClearTransientPointLights();
+            for (const auto& fl : m_FireLights) {
+                m_RenderSystem->AddTransientPointLight(fl.position, fl.range, fl.color, fl.intensity);
+            }
+        }
 
         // Post-processing time update + volume evaluation
         // Check if the active camera has post-processing enabled
@@ -2135,6 +2158,16 @@ private:
     Enjin::Effects::WindSystem m_WindSystem;
     Enjin::Effects::WorldTimeSystem m_WorldTime;
     Enjin::Effects::SeasonalWeatherSystem m_SeasonalWeather;
+
+    // Elemental system (fire/water/earth/air) + fire-light injection buffers.
+    // Parity with the editor (EditorLayer) so shipped games run the same sim and
+    // fire emitters light the scene as transient point lights.
+    Enjin::Effects::ElementalSystem m_ElementalSystem;
+    Enjin::f32 m_EffectsTime = 0.0f;
+    std::vector<Enjin::Effects::FireLight> m_FireLights;
+
+    // Audio-reactive system (beat sync / FFT-driven parameters) — editor parity.
+    Enjin::Audio::AudioReactiveSystem m_AudioReactiveSystem;
 
     Enjin::Effects::Water3D m_Water3D;
 

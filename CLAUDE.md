@@ -8,6 +8,48 @@
 
 Enjin is an open-source (BSL 1.1) game engine built from scratch using C++20. It features a complete editor with ImGui, an Entity-Component-System architecture, and modern rendering with multi-backend support (Vulkan, WebGPU, Metal planned).
 
+## Traps & Rules
+
+These are hard-won lessons. Violating any of these will cause bugs.
+
+### Naming & API
+- **`InputSystem` namespace**, not `Input` — `Enjin::Input` is an existing class
+- **`NotesComponent` field is `.notes`**, not `.text`
+- **`LightComponent` has no direction field** — extract direction from `TransformComponent` rotation
+- **Log categories:** `Network` (not `Networking`), `Script` (not `Scripting`), `Build`, `Player`
+- **Math headers:** `Enjin/Math/Vector.h` (not `Vector3.h`). `Matrix4` uses flat `f32 m[16]`
+- **`SceneSerializer`** requires `World*` in constructor
+
+### ECS
+- **`DestroyEntity()` is deferred** — flushed at `World::Update()` start. `IsValid()` returns false for pending-destruction entities
+- **`MeshComponent.subMeshes`** array for multi-material meshes. `MaterialSlotsComponent` holds per-sub-mesh materials
+
+### Physics
+- **STRICT 2D/3D separation:** Box2D for 2D scenes only, Jolt for 3D only. Never mix. 2D controllers use `CheckGround2D`/`CheckWall2D`, 3D use `CheckGround`/`CharacterVirtual`
+- **Collider sizes are WORLD SPACE:** Jolt/Box2D do NOT multiply by transform scale. `BoxColliderComponent.size = (50, 0.1, 50)` means 50 world units regardless of entity scale
+- **Capsule height convention:** `height` = cylinder only (between hemispheres). Total = `height + 2*radius`. For `CharacterVirtual`: `totalHalfH = height/2 + radius`
+- **Box2D kinematic bodies:** Use `b2Body_SetLinearVelocity` (not `SetTransform`) — teleporting doesn't trigger sensor events
+- **Box2D sensor events:** `enableSensorEvents` must be `true` even on static shapes. Formula: `enableSensorEvents = isSensor || !isStatic`
+- **2D raycasts skip sensors:** `Box2DBackend::Raycast` filters out sensor bodies by design
+- **Hazard sensors** must be `isKinematic = true` (not `isStatic`). Box2D v3 doesn't fire events between static sensors and kinematic visitors. Use `gravityScale = 0`
+- **`CheckHazardOverlaps`** is a manual AABB check each frame — workaround for Box2D v3 kinematic-kinematic sensor limitation
+- **3D character controllers:** Use `JPH::CharacterVirtual` (not manual raycasts). Self-excluded from own raycasts via `EnjinBodyFilter.ignoreBodyID`
+
+### Renderer
+- **Descriptor set binding 2** is `STORAGE_BUFFER_DYNAMIC` — ALL `vkCmdBindDescriptorSets` calls MUST pass `dynamicOffsetCount=1` with a `u32` offset for the material SSBO
+- **WGSL rule:** `textureSample` must be called from uniform control flow — never inside `if` branches that depend on per-vertex/per-fragment data
+- **Render pass formats:** Swapchain = `B8G8R8A8_SRGB` with MRT. Offscreen `RenderTarget`s = `B8G8R8A8_UNORM`, single color + depth, `colorAttachmentCount=1`, `SAMPLE_COUNT_1_BIT` (no MSAA)
+- **WebGPU depth-only pass:** `Depth32Float`, no stencil — stencil ops MUST be `Undefined`. Shadow pipeline has no fragment shader
+- **WebGPU tangent fallback:** PBR shader checks `dot(tangent,tangent) > 0.001` — without this, `normalize(vec3(0))` produces NaN and kills all lighting
+- **`MaterialGPU` = 80 bytes** — struct alignment matters for SSBO offsets
+
+### Shaders (CRITICAL)
+- After ANY change to `LightingUBO`, `UniformBufferObject`, `MaterialGPU`, or other UBO/SSBO structs: **recompile ALL affected shaders AND regenerate `ShaderData.h`**. Stale SPIR-V = GPU reading wrong offsets (dark scenes, wrong colors, crashes)
+- Shader edit workflow: edit GLSL → `glslangValidator -V` → `python _gen_all.py` → rebuild. No shortcuts
+
+### Windows C++ Gotchas
+- `near` and `far` are reserved macros (`windef.h`) — don't use as variable names
+
 ## Build Commands
 
 ```bash
@@ -27,9 +69,6 @@ export EMSDK=/d/emsdk && export EMSDK_PYTHON="$EMSDK/python/3.13.3_64bit/python.
 # Reconfigure CMake (needed after adding new source files)
 cd build && cmake ..
 
-# Compile shaders (GLSL to SPIR-V)
-glslangValidator -V Engine/shaders/triangle.vert -o Engine/shaders/triangle.vert.spv
-
 # Run the editor
 ./build/bin/Release/EnjinEditor.exe  # Windows
 ./build/bin/EnjinEditor              # Linux/Mac
@@ -37,6 +76,42 @@ glslangValidator -V Engine/shaders/triangle.vert -o Engine/shaders/triangle.vert
 # Serve web demo
 cd web-demo && python serve.py  # http://localhost:9090
 ```
+
+## Testing
+
+- **Framework:** Custom — `ENJIN_TEST(Suite, Name)`, `ENJIN_EXPECT_*`, `ENJIN_ASSERT_*`
+- **No `ENJIN_ASSERT_GT`** — use `ENJIN_ASSERT_TRUE(x > y)` instead
+- **Run all:** `cd build && ctest --output-on-failure`
+- **Run one suite:** `cd build && ctest -R TestPhysics --output-on-failure`
+- **~80 CTest targets, ~1100+ test cases** across 18 subdirectories
+- **4 tests require environment:** TestAudio, TestAudioTypes, TestAssetPack, TestAssetLoaders (may show "Not Run")
+
+## Code Conventions
+
+- **Types:** `u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, usize`
+- **Namespaces:** `Enjin::Core`, `Enjin::Math`, `Enjin::Renderer`, `Enjin::ECS`, `Enjin::Editor`, `Enjin::Effects`, `Enjin::Accessibility`, `Enjin::InputSystem`, `Enjin::Build`, `Enjin::Gameplay`
+- **Logging:** `ENJIN_LOG_INFO/WARN/ERROR/FATAL(Category, format, ...)`
+- **API export:** `ENJIN_API` macro for DLL export
+
+## Common Tasks
+
+### Adding a new ECS Component
+1. Create header in `Engine/include/Enjin/ECS/Components/`
+2. Include in relevant systems
+3. Optionally add inspector UI in `EditorLayer::DrawInspectorPanel()`
+
+### Adding a new shader uniform
+1. Update C++ UBO struct (`Light.h` for LightingUBO, `VulkanPipeline.h` for ViewProjectionUBO)
+2. Update the matching GLSL struct in the shader
+3. Compile: `glslangValidator -V Engine/shaders/triangle.frag -o Engine/shaders/triangle.frag.spv` (and all affected shaders)
+4. Regenerate: `python _gen_all.py`
+5. Update the system that uploads the uniform
+6. Rebuild engine
+
+### Building a game for export
+1. Configure `BuildConfig` with project path, output directory, window settings
+2. Run `BuildPipeline::Execute(config)` — packs into `.enjpak`
+3. Player loads `game.enjpak` from its own directory at startup
 
 ## Project Architecture
 
@@ -53,24 +128,24 @@ enjin/
 ├── Engine/                  # Engine layer
 │   ├── include/Enjin/
 │   │   ├── AI/             # AIBehaviors, Navmesh, A* Pathfinding
-│   │   ├── Animation/      # Sprite + skeletal animation, BlendTree, Retargeting, Timeline/Sequencer
-│   │   ├── Assets/         # GLTFLoader, AssimpLoader (FBX/DAE), SceneImporter, Prefab
-│   │   ├── Audio/          # SimpleAudio (miniaudio), SteamAudioProcessor (HRTF)
+│   │   ├── Animation/      # Sprite + skeletal animation, BlendTree, Retargeting
+│   │   ├── Assets/         # GLTFLoader, AssimpLoader, SceneImporter, Prefab
+│   │   ├── Audio/          # SimpleAudio (miniaudio), SteamAudioProcessor
 │   │   ├── ECS/            # Entity-Component-System (80+ component types)
 │   │   │   ├── Components/ # Transform, Mesh, Material, Light, Camera, etc.
 │   │   │   └── Systems/    # RenderSystem, ControllerSystem
 │   │   ├── Editor/         # EditorLayer, PlayMode, Settings, Tools
-│   │   ├── Effects/        # Weather, Water, RetroEffects, Particles, WorldTime
+│   │   ├── Effects/        # Weather, Water, RetroEffects, Particles
 │   │   ├── GUI/            # UICanvas, UISystem, DialogueTree
 │   │   ├── Build/          # BuildPipeline, AssetPacker, AssetReader
 │   │   ├── Gameplay/       # SaveSystem, QuestSystem, HUD, Cinematics
 │   │   ├── Networking/     # LAN Multiplayer, HTTPClient, NewgroundsAPI
 │   │   ├── Physics/        # IPhysicsBackend (Jolt/Box2D)
-│   │   ├── Renderer/       # Vulkan renderer + RayTracing pipeline
+│   │   ├── Renderer/       # Multi-backend renderer (Vulkan/WebGPU/Metal)
 │   │   ├── Scene/          # SceneSerializer, SceneManager, LevelStreaming
 │   │   ├── Scripting/      # AngelScript engine, ScriptBindings
 │   │   └── VisualScript/   # Blueprint-style visual scripting
-│   ├── shaders/            # GLSL shaders
+│   ├── shaders/            # GLSL + WGSL shaders
 │   └── src/
 ├── Editor/                  # Editor application (main.cpp entry point)
 ├── Player/                  # Standalone game player (no editor/ImGui)
@@ -78,133 +153,40 @@ enjin/
 └── build/                  # Build output (bin/, lib/)
 ```
 
-## Code Conventions
-
-- **Types:** `u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, usize`
-- **Namespaces:** `Enjin::Core`, `Enjin::Math`, `Enjin::Renderer`, `Enjin::ECS`, `Enjin::Editor`, `Enjin::Effects`, `Enjin::Accessibility`, `Enjin::InputSystem`, `Enjin::Build`, `Enjin::Gameplay`
-- **Logging:** `ENJIN_LOG_INFO/WARN/ERROR/FATAL(Category, format, ...)` — categories: Build, Player, Network, Script, etc.
-- **API export:** `ENJIN_API` macro for DLL export
-- **Important:** `InputSystem` namespace (not `Input`) to avoid collision with the existing `Enjin::Input` class.
-
-## Key Classes
-
-### ECS
-
-- **`ECS::World`** - Entity/component manager. Thread-safe structural ops. `DestroyEntity()` is deferred (flushed at `Update()` start). `IsValid()` returns false for pending-destruction entities.
-- **`ECS::Entity`** - u64 ID
-- **Key Components:** `TransformComponent` (position, rotation, scale, visible, cached world matrix with dirty flag), `MeshComponent` (vertices, indices, `subMeshes` array for multi-material), `MaterialComponent` (PBR + textures + transmission/IOR/thickness/sssIntensity/sssRadius/sssColor + outlineWidth/outlineColor + matcapTexturePath + surfaceNoiseScale/surfaceNoiseStrength; MaterialGPU = 80 bytes), `MaterialSlotsComponent` (vector of MaterialComponent for per-sub-mesh materials), `MeshRendererComponent` (per-entity render control: culling, LOD bias, shadow mode, render layers, instancing), `LightComponent` (no direction field — extract from TransformComponent rotation), `NameComponent`, `CameraComponent`, `NotesComponent` (field: `.notes` not `.text`), `AnimatorComponent` (has `blendTree` for 1D parameter-driven blending, `showBones`, `selectedBoneIndex`, `onionSkin`), colliders (`Box/Sphere/Capsule/MeshCollider` with `categoryBits`/`collisionMask` bitmask filtering), `PostProcessVolumeComponent`, `ArtStyleComponent` (per-entity art style override, 9 styles), `BoneAttachmentComponent`, `TwoBoneIKComponent`, `RagdollComponent`, `AnimationRecorderComponent`, `GameOverComponent`, `ParallaxMachineComponent`
-
-### Collision Filtering
-
-Bilateral bitmask: `(A.categoryBits & B.collisionMask) && (B.categoryBits & A.collisionMask)`. Defaults: `categoryBits = 1`, `collisionMask = 0xFFFFFFFF`. Up to 32 named groups in `SceneManager::m_CollisionGroupNames`.
-
-### Physics
-
-`IPhysicsBackend`/`IPhysicsBackend2D` interfaces. Backends: Jolt v5.2.0 (3D), Box2D v3.0.0 (2D). `PhysicsBackendFactory` creates via type enum (`Auto`/`Jolt`/`Box2D`). CMake: `ENJIN_PHYSICS_JOLT` (ON), `ENJIN_PHYSICS_BOX2D` (ON). **Sensor bodies** (`Body2DComponent::isSensor = true`): Box2D syncs positions from ECS (not to ECS), enabling collision callbacks for controller/AI/tween-driven entities without Box2D overwriting their positions.
-- **STRICT SEPARATION:** Box2D for 2D scenes only, Jolt for 3D scenes only. Never mix. 2D controllers must use `CheckGround2D`/`CheckWall2D` (Box2D), 3D controllers must use `CheckGround`/`CharacterVirtual` (Jolt). No fallback from one to the other.
-- **3D Character Controllers:** Use `JPH::CharacterVirtual` (not manual raycasts). Created lazily on first controller update. Handles capsule collision, wall sliding, stair stepping, ground detection. Self-excluded from own ground raycasts via `EnjinBodyFilter.ignoreBodyID`.
-- **Collider sizes are WORLD SPACE:** Jolt does NOT multiply by transform scale. `BoxColliderComponent.size = (50, 0.1, 50)` means 50 world units, regardless of entity scale. Same for sphere radius and capsule dimensions.
-- **Capsule height convention:** `CapsuleColliderComponent.height` = cylinder section height (between hemisphere centers). Total visual height = `height + 2*radius`. When creating `CharacterVirtual`, pass `totalHalfH = height/2 + radius`.
-- **Box2D kinematic bodies:** Use `b2Body_SetLinearVelocity` (not `b2Body_SetTransform`) to move kinematic bodies. Teleporting via SetTransform doesn't trigger sensor overlap events in Box2D v3.
-- **Box2D sensor events:** `enableSensorEvents` must be `true` on sensor shapes (even static ones). Formula: `enableSensorEvents = isSensor || !isStatic`.
-- **2D raycasts skip sensors:** `Box2DBackend::Raycast` uses a callback that filters out sensor bodies. Sensors should only interact via sensor begin/end events, never block wall/ground raycasts.
-- **2D collider halfExtents** are in WORLD SPACE (same as 3D). `Body2DComponent.box.halfExtents = (1.0, 0.5)` means the box is 2 units wide × 1 unit tall, regardless of entity transform scale. For capsule approximations: `halfExtents = (meshRadius, meshHalfHeight)`.
-- **Hazard sensors** (spikes, lava) must be `isKinematic = true` (not `isStatic`). Box2D v3 doesn't reliably fire sensor events between static sensors and kinematic visitors. Use `gravityScale = 0` to prevent falling.
-- **CheckHazardOverlaps** runs every frame as AABB overlap for hazards (DamageComponent + no HealthComponent). This is a workaround for Box2D v3's kinematic-kinematic sensor limitation.
+## Key Subsystem Notes
 
 ### Renderer
-
-- **Multi-backend architecture**: `IRenderBackend` interface with sub-interfaces (`IGPUBufferManager`, `IGPUTextureManager`, `IGPUPipelineManager`, `IGPUShaderManager`, `IGPUBindGroupManager`, `IRenderEncoder`). Typed opaque handles (`GPUBufferHandle`, `GPUTextureHandle`, etc.) in `GPUTypes.h`. Feature detection in `GPUCapabilities.h` (Vulkan/WebGPU/Metal presets). RenderSystem is being migrated from direct Vulkan calls to the abstract interface.
-- **Backends**: Vulkan (Windows/Linux, full features), WebGPU (browser via Emscripten/Dawn, in progress), Metal (macOS/iOS, stubs in place)
-- **WebGPU shaders**: WGSL in `Engine/shaders/wgsl/` — pbr.wgsl (Cook-Torrance), shadow.wgsl, postprocess.wgsl (ACES), triangle.wgsl, web_pbr.wgsl (simplified). Embedded copies in `WebShaderData.h`. **WGSL rule:** `textureSample` must be called from uniform control flow — never inside `if` branches that depend on per-vertex/per-fragment data.
-- **WebGPU shadow mapping**: 1-cascade directional shadow via `BeginDepthOnlyPass()` (depth-only render pass, `Depth32Float`, no stencil — stencil ops MUST be `Undefined`). Shadow pipeline is depth-only (no fragment shader — `WebGPUPipelineManager::CreateRenderPipeline` allows null fragment shader when `hasColorAttachment=false`). PBR shader samples shadow map via `sampler_comparison` with 4-tap PCF.
-- **WebGPU tangent handling**: PBR shader detects zero tangent vectors (`dot(tangent,tangent) > 0.001`) and falls back to interpolated world normal. Procedural meshes without tangent data would otherwise produce NaN via `normalize(vec3(0))` in the TBN matrix, killing all lighting.
-- **Web player**: `Player/src/web_main.cpp` uses RenderSystem directly through IRenderBackend. Responsive canvas via ResizeObserver, real delta time, extern C callbacks for JS interop.
-- **Descriptor Bindings (Vulkan):** 0=ViewProj UBO, 1=Lighting UBO, 2=Material SSBO (dynamic offset, batched per-frame), 3=Base color tex, 4=Shadow map array, 5=Height map, 6=Normal map, 7=Bone SSBO, 8=Metallic-roughness tex, 9=Emissive tex, 10=Point shadow cubemaps, 11=Spot shadow maps, 12=Shadow data SSBO, 13=Object data SSBO, 14=Cluster grid SSBO (clustered lighting), 15=Cluster light index SSBO (clustered lighting), 16=VT indirection tex, 17=VT physical atlas, 18=Matcap tex, 19=Baked reflection probe cubemap
-- **Push Constants (128 bytes):** model matrix (64B), baseColor+metallic, emissiveColor+roughness, emissiveStrength, opacity, alphaCutoff, flags (bitfield), parallaxScale, surfaceParam1 (water: shoreWidth / artistic: reflectivity), surfaceParam2 (water: foamIntensity / artistic: fresnelPower), surfaceParam3 (water: foamScale / artistic: rimLightStrength)
-- **Flags layout:** bits 0-2 render, 3 skinned, 4 wind, 5-7 water, 8-9 alpha mode, 10 height tex, 11 ocean, 12 UV quantize, 13 gouraud, 14-15 shadow dither, 16-19 texture flags, 20-23 retro flags, 24-28 snap resolution (/8), 29-31 shadow dither pattern
+- **Multi-backend:** `IRenderBackend` with sub-interfaces (`IGPUBufferManager`, `IGPUTextureManager`, `IGPUPipelineManager`, etc.). Typed opaque handles in `GPUTypes.h`. Feature detection in `GPUCapabilities.h`
+- **Backends:** Vulkan (Windows/Linux, full features), WebGPU (browser via Emscripten, PBR + shadows working), Metal (stubs)
 - **Scene classification:** `Scene2D` (sprites only, shadows skipped), `Scene2_5D` (sprites+lights), `Scene3D` (full pipeline)
-- **Render pass formats:** Swapchain uses `VK_FORMAT_B8G8R8A8_SRGB` with MRT (color + velocity + depth), offscreen `RenderTarget`s use `VK_FORMAT_B8G8R8A8_UNORM` with single color + depth (no MRT velocity — removed to fix NVIDIA teal). Main pipeline created for SRGB — `m_OffscreenPipeline` (+ line/outline variants) created for UNORM in `RecreateEffectPipelinesForRenderPass()` with `colorAttachmentCount=1`. Offscreen render targets use `VK_SAMPLE_COUNT_1_BIT` (no MSAA).
-- **Descriptor set binding 2** is `VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC` — ALL `vkCmdBindDescriptorSets` calls MUST pass `dynamicOffsetCount=1` with a `u32` offset for the material SSBO.
-- **Ray tracing:** Full RT pipeline (shadows/reflections/AO/GI/translucency/caustics/path tracing, SVGF+OIDN+OptiX denoisers). RT descriptor set: 27 bindings (0-13 base, 14=translucency, 15=caustics, 16=NEE lights, 17=SDF, 18=simplified materials, 19-20=ReSTIR reservoirs, 21-23=screen-space radiance cache, 24-26=surfel radiance cache). RTCompositor enable flags: bits 0-5 (shadows/reflections/AO/GI/translucency/caustics). ReSTIR: 3-pass compute pipeline (initial candidate selection, temporal reuse via motion vectors, spatial reuse with Jacobian correction), per-pixel reservoir buffer (binding 19), previous frame reservoir (binding 20, ping-pong), rt_shadow.rgen consumes reservoirs to cast shadow rays toward importance-selected lights. Config persisted in SceneRenderSettings. Surfel cache: world-space surfel-based irradiance caching (64K budget, 1/8 update per frame, bindings 24-26). Auto-activates on RT-capable hardware. CMake: `ENJIN_RAYTRACING_OIDN`, `ENJIN_RAYTRACING_OPTIX`.
-- **Performance optimizations:** Clustered forward lighting (16x9x24 grid, bindings 14-15), Variable Rate Shading (`VK_KHR_fragment_shading_rate`), Virtual Texturing (page-based streaming, bindings 16-17), Visibility Buffer (deferred material resolve). GPU two-phase HiZ occlusion culling, async compute overlap, per-frame linear allocator, 64-bit material sort keys, LOD hysteresis. CMake: `ENJIN_CLUSTERED_LIGHTING` (ON), `ENJIN_VRS` (OFF), `ENJIN_VIRTUAL_TEXTURING` (OFF), `ENJIN_VISIBILITY_BUFFER` (OFF).
+- **Ray tracing:** Full RT pipeline (shadows/reflections/AO/GI/path tracing, denoisers). Auto-activates on capable hardware
 
-### Animation
-
-- **BlendTree** on `AnimatorComponent`: 1D parameter-driven blending. Set `blendTree.enabled = true`, nodes with thresholds, `SetBlendParameter()` at runtime.
-- **Animation events:** `SkeletalAnimation::events` (vector of `AnimEvent` with `time` + `name`).
-- **Retargeting:** `RetargetAnimation()` + `BuildAutoRetargetMap()` — auto-maps bone names, strips Mixamo `mixamorig:` prefix.
-- **Shadow shader has skinning:** The shadow pass now handles skinned meshes (bone SSBO sampling in shadow vertex shader).
-- **Editor calls skeletal animator update directly** (not via `RenderSystem::Update`) to decouple animation timing from rendering.
-- **PoseLibraryComponent:** Save/recall named bone poses (expressions, gestures). Each pose stores per-bone rotations with blend weight. Inspector has large accessible buttons grouped by category.
-- **BoneRegion auto-detection:** `ClassifyBoneRegion()` detects 12 body regions from bone names (Face, Head, LeftHand, RightHand, LeftArm, RightArm, Spine, LeftLeg, RightLeg, LeftFoot, RightFoot, Tail). Rig Regions panel shows filterable bone list per region.
-
-### Gameplay
-
-- **RecordRewindSystem:** Per-entity (Braid-style, `RecordRewindComponent`) and scene-wide (Sands of Time-style, `SceneRewindComponent`) time rewind. `StateRingBuffer<T>` for O(1) push/eviction. Delta-compressed `DeltaFrame` snapshots with configurable keyframe interval. 6 channel flags (Transform/Velocity/Health/Animation/Physics/Material). Physics state sync via `ForceSetBodyState()` on Jolt/Box2D. Programmatic API: `StartEntityRewind()`, `StopEntityRewind()`, `SeekSceneToTime()`, etc. 11 AngelScript bindings (`Rewind_*`).
-- **DialogueTree narrative integration:** 3 new node types — `QuestAction` (start/complete/fail quest), `PlayCinematic` (trigger cinematic entity), `SetGameFlag` (persistent key-value flag via TieredSaveSystem). `DialogueCondition::Source` enum — `Variable`/`QuestStatus`/`GameFlag`. `DialoguePlayer` has `ActionCallback` + `ConditionResolver` for decoupled cross-system dispatch. Wired in PlayMode and Player.
+### Physics
+- `IPhysicsBackend`/`IPhysicsBackend2D` interfaces. Jolt v5.2.0 (3D), Box2D v3.0.0 (2D)
+- `PhysicsBackendFactory` creates via `PhysicsBackendType` enum (`Auto`/`Jolt`/`Box2D`)
+- CMake: `ENJIN_PHYSICS_JOLT` (ON), `ENJIN_PHYSICS_BOX2D` (ON)
+- Collision filtering: bilateral bitmask `(A.categoryBits & B.collisionMask) && (B.categoryBits & A.collisionMask)`. Defaults: `categoryBits = 1`, `collisionMask = 0xFFFFFFFF`
 
 ### Editor
-
-- **Settings:** Unified 3-tab window (System/Project/Scene). `OpenSettings(tab)` for programmatic tab selection. Bit 5 = canonical visibility.
-- **PlayMode:** Play/Pause/Stop. Scene changes persist on Stop. `PlayModeDiff` shows what changed.
-- **Shortcuts:** `1/2/3` gizmo modes, `WASD` fly cam, `Delete` delete, `Ctrl+D` duplicate, `F` focus, `Ctrl+P` command palette
-- **F1/F2 debug panels:** F1 = Game Debug (game state), F2 = Debug Workstation (engine internals). Pressing one closes the other — only one debug panel shown at a time.
-- **Viewport shading modes:** `SceneViewMode` enum — Wireframe, Solid, Lit (default), LitShadows, Full. Blender-style toolbar buttons in Scene View.
-- **Project-first workflow:** Editor launches to Project Hub. Auto-creates project directory on disk. Create/delete/duplicate projects. `.enjinproject` file association opens editor directly.
-- **Per-entity wireframe overlay:** `MeshRendererComponent::wireframe` toggle, per-entity color/opacity, `VK_POLYGON_MODE_LINE` pipeline, draws on top of solid geometry.
-- **Dialogue tree editor:** 10 node types with body previews, validation red borders, auto-connect, categorized context menu, in-editor dialogue preview panel.
-- **Import result dialog:** Modal popup after import with stats, color-coded warnings, missing textures list, Undo Import button. Mesh validation auto-runs (NaN fix, degenerate triangles, bone weight normalization, scale sanity).
-- **Bone selection:** Diamond joint markers, hover tooltips, parent chain highlighting (cyan), 15px pick threshold for dense face/hand clusters, keyboard navigation (Up/Down/Escape).
-- **Animation inspector:** Visual timeline ruler with second ticks and click-to-seek event markers, 1D blend tree axis visualization, onion skin opacity preview strip, expandable bone hierarchy tree.
-
-## Shader Workflow
-
-1. Edit GLSL in `Engine/shaders/`
-2. Compile: `glslangValidator -V shader.frag -o shader.frag.spv`
-3. **CRITICAL:** Run `python _gen_all.py` to regenerate `ShaderData.h` from all `.spv` files
-4. Rebuild engine
-
-**WARNING:** After ANY change to `LightingUBO`, `UniformBufferObject`, `MaterialGPU`, or other UBO/SSBO structs, you MUST recompile shaders AND regenerate `ShaderData.h`. Stale embedded SPIR-V causes the GPU to read struct fields at wrong offsets (dark scenes, wrong colors, crashes).
-
-Hot-reload in editor: `RenderSystem` watches `Engine/shaders/` via `FileWatcher`, auto-recompiles on change.
-
-## Common Tasks
-
-### Adding a new ECS Component
-1. Create header in `Engine/include/Enjin/ECS/Components/`
-2. Include in relevant systems
-3. Optionally add inspector UI in `EditorLayer::DrawInspectorPanel()`
-
-### Adding a new shader uniform
-1. Update UBO struct (`Light.h` for LightingUBO, `VulkanPipeline.h` for ViewProjectionUBO)
-   - **MUST** also update the matching GLSL struct in the shader
-   - **MUST** recompile shaders: `glslangValidator -V Engine/shaders/triangle.frag -o Engine/shaders/triangle.frag.spv` (and all affected shaders)
-   - **MUST** regenerate ShaderData.h: `python _gen_all.py`
-2. Update GLSL shader → recompile → update `ShaderData.h`
-3. Update the system that uploads the uniform
-
-### Building a game for export
-1. Configure `BuildConfig` with project path, output directory, window settings
-2. Run `BuildPipeline::Execute(config)` — packs into `.enjpak`
-3. Player loads `game.enjpak` from its own directory at startup
+- Settings: 3-tab window (System/Project/Scene). `OpenSettings(tab)` for programmatic tab selection
+- PlayMode: Play/Pause/Stop. Scene changes persist on Stop. `PlayModeDiff` shows what changed
+- Shortcuts: `1/2/3` gizmo modes, `WASD` fly cam, `Delete` delete, `Ctrl+D` duplicate, `F` focus, `Ctrl+P` command palette, `F1` Game Debug, `F2` Debug Workstation, `` ` `` console
 
 ## Security
 
-- **Trust zones** documented in `.enjin-boundaries.json` — security-critical (networking, scripts, assets), trust-boundary (serializers, bindings), user-api (components, script API), editor-internal, renderer-internals, gameplay-runtime, foundation
-- **Scene files:** Validate array sizes, check `.contains()` before access. Vertex/index caps (10M), string caps via `SafeStr()`
-- **Scripts:** AngelScript sandboxed, 1M instruction limit
-- **Asset packs:** XOR obfuscation (not crypto-secure), CRC32 integrity only. Path traversal rejected
-- **Process execution:** No `std::system()` calls — use `ShellExecuteA` (Win), `fork`/`execlp` (macOS/Linux)
-- **Thread safety:** `ComponentRegistry::s_NextComponentId` is `std::atomic`. `MiniaudioBackend::m_Channels` protected by `m_ChannelMutex`. See `docs/AUDIT_2026_04_12.md` for open thread safety issues
-- **General:** Validate enum casts, sanitize file paths, cap allocation sizes
+- **Scene files:** Validate array sizes, `.contains()` before access. Vertex/index caps (10M), strings via `SafeStr()`
+- **Scripts:** AngelScript sandboxed, 1M instruction limit. `#include` paths not yet restricted
+- **Asset packs:** XOR obfuscation (not crypto-secure), CRC32 integrity. Path traversal rejected
+- **Process execution:** No `std::system()` — use `ShellExecuteA` (Win), `fork`/`execlp` (Linux/macOS)
+- **Thread safety:** See `docs/AUDIT_2026_04_12.md` for open issues
+- **Trust zones:** Documented in `.enjin-boundaries.json`
 
 ## Further Reading
 
+- `docs/CLAUDE_REFERENCE.md` - Detailed subsystem docs (component catalog, binding tables, RT pipeline, physics, audio, scripting, editor details, perf history)
 - `docs/ARCHITECTURE.md` - System architecture and diagrams
-- `docs/CLAUDE_REFERENCE.md` - Detailed subsystem documentation (RT pipeline, physics backends, Steam Audio, editor features, scripting bindings, feature list, perf history)
 - `docs/SCRIPTING_API.md` - Complete AngelScript API reference
 - `docs/USER_MANUAL.md` - Component details and user guide
 - `docs/ROADMAP.md` - Planned work and progress tracking
 - `docs/BUILD.md` - Build guide with dependencies
-- `docs/AUDIT_2026_04_12.md` - Full engine audit (55 findings, 6 fixed, 42 remaining)
+- `docs/AUDIT_2026_04_12.md` - Full engine audit (55 findings)

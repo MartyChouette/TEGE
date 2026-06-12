@@ -46,6 +46,19 @@ enum ElementalParticleFlags : u8 {
     EPF_DECAYING   = 1 << 2
 };
 
+// A representative point light approximating a cluster of fire particles.
+// Produced by ElementalSystem::BuildFireLights() for the renderer to inject
+// into its transient-light set, which lights both surfaces (PBR point lights)
+// and participating media (clustered lighting -> volumetric fog froxels) from
+// one source. Decoupled from any renderer type on purpose: the engine renderer
+// consumes a generic light list and never depends on this gameplay system.
+struct FireLight {
+    Math::Vector3 position;
+    f32 range = 0.0f;
+    Math::Vector3 color;
+    f32 intensity = 0.0f;
+};
+
 class ENJIN_API ElementalSystem {
 public:
     ElementalSystem() = default;
@@ -79,8 +92,41 @@ public:
     // Access pool for rendering
     const ElementalPool& GetPool() const { return m_Pool; }
 
+    // Maximum number of representative fire lights produced per frame.
+    static constexpr u32 MAX_FIRE_LIGHTS = 8;
+
+    // Cluster active fire particles into a small set of flickering point lights.
+    // Fills `out` (cleared first) with at most MAX_FIRE_LIGHTS entries, one per
+    // dominant fire cell. `time` drives per-cluster flicker (decorrelated so
+    // separate fires do not pulse in unison).
+    //
+    // Single-thread only; call once per frame after Update(). Performs no heap
+    // allocations beyond growing `out` once to its capacity — reserve `out` to
+    // MAX_FIRE_LIGHTS at the call site to keep the hot path allocation-free.
+    //
+    // Example:
+    //   std::vector<Effects::FireLight> fireLights;
+    //   fireLights.reserve(Effects::ElementalSystem::MAX_FIRE_LIGHTS);
+    //   elemental.BuildFireLights(worldTime, fireLights);
+    //   for (const auto& fl : fireLights)
+    //       renderer.AddTransientPointLight(fl.position, fl.range, fl.color, fl.intensity);
+    void BuildFireLights(f32 time, std::vector<FireLight>& out);
+
 private:
     ElementalPool m_Pool;
+
+    // Pre-allocated scratch buckets for BuildFireLights — reused each frame so
+    // the clustering pass performs no per-frame heap allocation.
+    static constexpr u32 MAX_FIRE_BUCKETS = 64;
+    struct FireBucket {
+        i32 cx, cz;                 // coarse XZ cell coordinates
+        Math::Vector3 weightedPos;  // sum of position * fire weight
+        f32 mass;                   // sum of fire weight
+        f32 maxY;                   // top of the flame column in this cell
+    };
+    FireBucket m_FireBuckets[MAX_FIRE_BUCKETS];
+    u32 m_FireBucketCount = 0;
+
     WindSystem* m_Wind = nullptr;
     WeatherSystem* m_Weather = nullptr;
     SeasonalWeatherSystem* m_Seasonal = nullptr;

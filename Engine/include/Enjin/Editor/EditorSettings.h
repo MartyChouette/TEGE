@@ -95,6 +95,7 @@ struct EditorSettings {
     bool reducedMotion = false;
     bool disableScreenShake = false;
     bool disableFOVEffects = false;
+    bool disableFlashingLights = false;
 
     // Accessibility: Subtitles / Cognitive
     bool subtitlesEnabled = false;
@@ -104,6 +105,7 @@ struct EditorSettings {
     bool subtitleSpeakerNames = true;
     bool simplifiedEditor = false;
     bool dyslexiaFontEnabled = false;  // Increase letter/word/line spacing for readability
+    f32 gameFontScale = 1.0f;          // Font scale for in-game UI (0.5-3.0)
 
     // Play Mode
     bool autoFocusMode = false;  // Auto-enter focus mode when pressing Play

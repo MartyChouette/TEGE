@@ -1,8 +1,16 @@
 // Enjin Engine — Full-screen post-processing (WebGPU / WGSL)
-// ACES tonemapping + simplified FXAA anti-aliasing.
+// ACES tonemapping + simplified FXAA + colorblind correction + brightness/contrast.
 
 @group(0) @binding(0) var sceneTexture: texture_2d<f32>;
 @group(0) @binding(1) var sceneSampler: sampler;
+
+struct PostProcessParams {
+    colorblindMode: u32,
+    colorblindStrength: f32,
+    brightness: f32,
+    contrast: f32,
+};
+@group(0) @binding(2) var<uniform> params: PostProcessParams;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -35,6 +43,8 @@ fn luminance(c: vec3<f32>) -> f32 {
 }
 
 // Simplified FXAA — smooths high-contrast edges
+// All textureSample calls must be in uniform control flow (WGSL rule),
+// so we sample all 6 taps unconditionally and use select() instead of early return.
 fn fxaa(uv: vec2<f32>, texelSize: vec2<f32>) -> vec3<f32> {
     let rgbM = textureSample(sceneTexture, sceneSampler, uv).rgb;
     let rgbN = textureSample(sceneTexture, sceneSampler, uv + vec2<f32>(0.0, -texelSize.y)).rgb;
@@ -52,30 +62,87 @@ fn fxaa(uv: vec2<f32>, texelSize: vec2<f32>) -> vec3<f32> {
     let lumMax = max(lumM, max(max(lumN, lumS), max(lumE, lumW)));
     let lumRange = lumMax - lumMin;
 
-    if (lumRange < max(0.0312, lumMax * 0.125)) {
-        return rgbM;
-    }
-
+    // Determine edge direction and sample neighbor — all in uniform flow
     let edgeH = abs(lumN + lumS - 2.0 * lumM);
     let edgeV = abs(lumE + lumW - 2.0 * lumM);
     let isHorizontal = edgeH > edgeV;
 
-    var blendDir = vec2<f32>(0.0);
-    if (isHorizontal) {
-        let gradS = lumS - lumM;
-        let gradN = lumN - lumM;
-        if (abs(gradN) > abs(gradS)) { blendDir = vec2<f32>(0.0, -texelSize.y); }
-        else { blendDir = vec2<f32>(0.0, texelSize.y); }
-    } else {
-        let gradE = lumE - lumM;
-        let gradW = lumW - lumM;
-        if (abs(gradW) > abs(gradE)) { blendDir = vec2<f32>(-texelSize.x, 0.0); }
-        else { blendDir = vec2<f32>(texelSize.x, 0.0); }
-    }
+    let gradNS = select(lumS - lumM, lumN - lumM, abs(lumN - lumM) > abs(lumS - lumM));
+    let gradEW = select(lumW - lumM, lumE - lumM, abs(lumE - lumM) > abs(lumW - lumM));
+
+    let hDir = select(vec2<f32>(0.0, texelSize.y), vec2<f32>(0.0, -texelSize.y), abs(lumN - lumM) > abs(lumS - lumM));
+    let vDir = select(vec2<f32>(texelSize.x, 0.0), vec2<f32>(-texelSize.x, 0.0), abs(lumW - lumM) > abs(lumE - lumM));
+    let blendDir = select(vDir, hDir, isHorizontal);
 
     let rgbNeighbor = textureSample(sceneTexture, sceneSampler, uv + blendDir).rgb;
-    let blendFactor = clamp(lumRange / lumMax, 0.0, 0.75) * 0.5;
+
+    // Only blend if contrast is high enough; otherwise return center pixel
+    let needsAA = lumRange >= max(0.0312, lumMax * 0.125);
+    let blendFactor = select(0.0, clamp(lumRange / lumMax, 0.0, 0.75) * 0.5, needsAA);
     return mix(rgbM, rgbNeighbor, blendFactor);
+}
+
+// Daltonization — colorblind correction (Brettel/Machado approach)
+// Simulates what a colorblind person sees, then redistributes lost
+// information into channels they CAN perceive.
+fn applyColorblindCorrection(color: vec3<f32>) -> vec3<f32> {
+    let mode = params.colorblindMode;
+    if (mode == 0u) { return color; }
+
+    // Achromatopsia (complete color blindness) — convert to grayscale
+    if (mode == 7u) {
+        let gray = dot(color, vec3<f32>(0.299, 0.587, 0.114));
+        return mix(color, vec3<f32>(gray), params.colorblindStrength);
+    }
+
+    // Simulation matrices for full deficiency (Brettel/Machado)
+    var simR: vec3<f32>;
+    var simG: vec3<f32>;
+    var simB: vec3<f32>;
+
+    // Determine effective strength: anomalous trichromacy uses 0.6x
+    var strength = params.colorblindStrength;
+    var baseMode = mode;
+    if (mode >= 4u && mode <= 6u) {
+        strength *= 0.6;
+        baseMode = mode - 3u; // Map anomalous to corresponding full deficiency
+    }
+
+    // Protanopia / Protanomaly (red-blind)
+    if (baseMode == 1u) {
+        simR = vec3<f32>(0.152286, 0.114503, -0.003882);
+        simG = vec3<f32>(1.052583, 0.786281, -0.048116);
+        simB = vec3<f32>(-0.204868, 0.099216, 1.051998);
+    }
+    // Deuteranopia / Deuteranomaly (green-blind)
+    else if (baseMode == 2u) {
+        simR = vec3<f32>(0.367322, 0.280085, -0.011820);
+        simG = vec3<f32>(0.860646, 0.672501, 0.042940);
+        simB = vec3<f32>(-0.227968, 0.047413, 0.968881);
+    }
+    // Tritanopia / Tritanomaly (blue-blind)
+    else {
+        simR = vec3<f32>(1.255528, -0.078411, 0.004733);
+        simG = vec3<f32>(-0.076749, 0.930809, 0.691367);
+        simB = vec3<f32>(-0.178779, 0.147602, 0.303900);
+    }
+
+    // Simulate colorblind perception
+    let simulated = vec3<f32>(
+        dot(color, simR),
+        dot(color, simG),
+        dot(color, simB)
+    );
+
+    // Error: what information is lost
+    let error = color - simulated;
+
+    // Redistribute error into visible channels (green and blue get red error, etc.)
+    var corrected = color;
+    corrected.g = corrected.g + error.r * 0.7 + error.g * 0.0;
+    corrected.b = corrected.b + error.r * 0.7 + error.b * 0.0;
+
+    return mix(color, saturate(corrected), strength);
 }
 
 @fragment
@@ -85,6 +152,13 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     var color = fxaa(in.uv, texelSize);
     color = aces_tonemap(color);
+
+    // Apply brightness (additive) and contrast (multiplicative)
+    color = (color - 0.5) * params.contrast + 0.5 + params.brightness;
+
+    // Colorblind correction (Daltonization)
+    color = applyColorblindCorrection(color);
+
     color = pow(color, vec3<f32>(1.0 / 2.2));
-    return vec4<f32>(color, 1.0);
+    return vec4<f32>(saturate(color), 1.0);
 }

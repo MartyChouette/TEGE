@@ -333,6 +333,7 @@ bool EditorSettings::Save(const std::string& path) const {
         j["reducedMotion"] = reducedMotion;
         j["disableScreenShake"] = disableScreenShake;
         j["disableFOVEffects"] = disableFOVEffects;
+        j["disableFlashingLights"] = disableFlashingLights;
 
         // Subtitles / Cognitive
         j["subtitlesEnabled"] = subtitlesEnabled;
@@ -342,6 +343,7 @@ bool EditorSettings::Save(const std::string& path) const {
         j["subtitleSpeakerNames"] = subtitleSpeakerNames;
         j["simplifiedEditor"] = simplifiedEditor;
         j["dyslexiaFontEnabled"] = dyslexiaFontEnabled;
+        j["gameFontScale"] = gameFontScale;
 
         // Play Mode
         j["autoFocusMode"] = autoFocusMode;
@@ -506,6 +508,7 @@ bool EditorSettings::Load(const std::string& path) {
         if (j.contains("reducedMotion")) reducedMotion = j["reducedMotion"].get<bool>();
         if (j.contains("disableScreenShake")) disableScreenShake = j["disableScreenShake"].get<bool>();
         if (j.contains("disableFOVEffects")) disableFOVEffects = j["disableFOVEffects"].get<bool>();
+        if (j.contains("disableFlashingLights")) disableFlashingLights = j["disableFlashingLights"].get<bool>();
 
         // Subtitles / Cognitive
         if (j.contains("subtitlesEnabled")) subtitlesEnabled = j["subtitlesEnabled"].get<bool>();
@@ -515,6 +518,7 @@ bool EditorSettings::Load(const std::string& path) {
         if (j.contains("subtitleSpeakerNames")) subtitleSpeakerNames = j["subtitleSpeakerNames"].get<bool>();
         if (j.contains("simplifiedEditor")) simplifiedEditor = j["simplifiedEditor"].get<bool>();
         if (j.contains("dyslexiaFontEnabled")) dyslexiaFontEnabled = j["dyslexiaFontEnabled"].get<bool>();
+        if (j.contains("gameFontScale")) gameFontScale = std::clamp(j["gameFontScale"].get<f32>(), 0.5f, 3.0f);
 
         // Play Mode
         if (j.contains("autoFocusMode")) autoFocusMode = j["autoFocusMode"].get<bool>();

@@ -1,5 +1,6 @@
 #pragma once
 #include "Enjin/Platform/Platform.h"
+#include <functional>
 
 class asIScriptEngine;
 
@@ -89,6 +90,7 @@ void SetBindingsProcedural(Procedural::LevelGenerator* generator);
 void SetBindingsSubtitles(Accessibility::SubtitleSystem* subtitles);
 void SetBindingsAnnouncer(Accessibility::AccessibilityAnnouncer* announcer);
 void SetBindingsAccessibilitySettings(Accessibility::RuntimeAccessibilitySettings* settings);
+void SetBindingsAccessibilitySaveCallback(std::function<void()> callback);
 
 // Registration for accessibility bindings (defined in ScriptBindings_Accessibility.cpp)
 void RegisterAccessibilityBindings(asIScriptEngine* engine);

@@ -5,6 +5,7 @@
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/GUI/UIElement.h"
 #include "Enjin/GUI/Localization.h"
+#include <imgui.h>
 #include <angelscript.h>
 #include <cassert>
 
@@ -164,6 +165,45 @@ static void UI_SetTextColor(u64 entity, int elementId, float r, float g, float b
     if (el) el->style.textColor = Math::Vector3(r, g, b);
 }
 
+// -- Per-character text colors --
+
+static void UI_SetCharColor(u64 entity, int elementId, int charIndex, float r, float g, float b) {
+    auto* canvas = GetCanvas(entity);
+    if (!canvas) return;
+    auto* el = canvas->GetElement(static_cast<u32>(elementId));
+    if (!el || charIndex < 0) return;
+    usize idx = static_cast<usize>(charIndex);
+    if (el->data.charColors.size() <= idx)
+        el->data.charColors.resize(idx + 1, IM_COL32(255, 255, 255, 255));
+    el->data.charColors[idx] = IM_COL32(
+        static_cast<u8>(r * 255.0f),
+        static_cast<u8>(g * 255.0f),
+        static_cast<u8>(b * 255.0f), 255);
+}
+
+static void UI_SetCharColorRange(u64 entity, int elementId, int startIdx, int endIdx, float r, float g, float b) {
+    auto* canvas = GetCanvas(entity);
+    if (!canvas) return;
+    auto* el = canvas->GetElement(static_cast<u32>(elementId));
+    if (!el || startIdx < 0 || endIdx < startIdx) return;
+    usize end = static_cast<usize>(endIdx);
+    if (el->data.charColors.size() <= end)
+        el->data.charColors.resize(end + 1, IM_COL32(255, 255, 255, 255));
+    ImU32 color = IM_COL32(
+        static_cast<u8>(r * 255.0f),
+        static_cast<u8>(g * 255.0f),
+        static_cast<u8>(b * 255.0f), 255);
+    for (usize i = static_cast<usize>(startIdx); i <= end; ++i)
+        el->data.charColors[i] = color;
+}
+
+static void UI_ClearCharColors(u64 entity, int elementId) {
+    auto* canvas = GetCanvas(entity);
+    if (!canvas) return;
+    auto* el = canvas->GetElement(static_cast<u32>(elementId));
+    if (el) el->data.charColors.clear();
+}
+
 // -- Interaction queries --
 
 static bool UI_IsHovered(u64 entity, int elementId) {
@@ -301,6 +341,14 @@ void RegisterUIBindings(asIScriptEngine* engine) {
         asFUNCTION(UI_SetBgColor), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetTextColor(uint64, int, float, float, float)",
         asFUNCTION(UI_SetTextColor), asCALL_CDECL));
+
+    // -- Per-character text colors --
+    AS_CHECK(engine->RegisterGlobalFunction("void UI_SetCharColor(uint64, int, int, float, float, float)",
+        asFUNCTION(UI_SetCharColor), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void UI_SetCharColorRange(uint64, int, int, int, float, float, float)",
+        asFUNCTION(UI_SetCharColorRange), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void UI_ClearCharColors(uint64, int)",
+        asFUNCTION(UI_ClearCharColors), asCALL_CDECL));
 
     // -- Interaction --
     AS_CHECK(engine->RegisterGlobalFunction("bool UI_IsHovered(uint64, int)",

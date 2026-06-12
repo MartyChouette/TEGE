@@ -458,6 +458,14 @@ static const char* POSTPROCESS_WGSL = R"(
 @group(0) @binding(0) var sceneTexture: texture_2d<f32>;
 @group(0) @binding(1) var sceneSampler: sampler;
 
+struct PostProcessParams {
+    colorblindMode: u32,
+    colorblindStrength: f32,
+    brightness: f32,
+    contrast: f32,
+};
+@group(0) @binding(2) var<uniform> params: PostProcessParams;
+
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
@@ -486,16 +494,13 @@ fn luminance(c: vec3<f32>) -> f32 {
     return dot(c, vec3<f32>(0.299, 0.587, 0.114));
 }
 
-// Simplified FXAA — samples the tonemapped scene and smooths high-contrast edges
 fn fxaa(uv: vec2<f32>, texelSize: vec2<f32>) -> vec3<f32> {
-    // Sample center and 4 neighbors (after tonemap+gamma for perceptual edge detection)
     let rgbM = textureSample(sceneTexture, sceneSampler, uv).rgb;
     let rgbN = textureSample(sceneTexture, sceneSampler, uv + vec2<f32>(0.0, -texelSize.y)).rgb;
     let rgbS = textureSample(sceneTexture, sceneSampler, uv + vec2<f32>(0.0,  texelSize.y)).rgb;
     let rgbE = textureSample(sceneTexture, sceneSampler, uv + vec2<f32>( texelSize.x, 0.0)).rgb;
     let rgbW = textureSample(sceneTexture, sceneSampler, uv + vec2<f32>(-texelSize.x, 0.0)).rgb;
 
-    // Apply tonemap+gamma to get perceptual luminance
     let lumM = luminance(pow(aces_tonemap(rgbM), vec3<f32>(1.0 / 2.2)));
     let lumN = luminance(pow(aces_tonemap(rgbN), vec3<f32>(1.0 / 2.2)));
     let lumS = luminance(pow(aces_tonemap(rgbS), vec3<f32>(1.0 / 2.2)));
@@ -506,34 +511,62 @@ fn fxaa(uv: vec2<f32>, texelSize: vec2<f32>) -> vec3<f32> {
     let lumMax = max(lumM, max(max(lumN, lumS), max(lumE, lumW)));
     let lumRange = lumMax - lumMin;
 
-    // Skip FXAA for low-contrast regions
-    if (lumRange < max(0.0312, lumMax * 0.125)) {
-        return rgbM;
-    }
-
-    // Determine edge direction
     let edgeH = abs(lumN + lumS - 2.0 * lumM);
     let edgeV = abs(lumE + lumW - 2.0 * lumM);
     let isHorizontal = edgeH > edgeV;
 
-    // Blend along edge (1 texel step in the perpendicular direction)
-    var blendDir = vec2<f32>(0.0);
-    if (isHorizontal) {
-        let gradS = lumS - lumM;
-        let gradN = lumN - lumM;
-        if (abs(gradN) > abs(gradS)) { blendDir = vec2<f32>(0.0, -texelSize.y); }
-        else { blendDir = vec2<f32>(0.0, texelSize.y); }
-    } else {
-        let gradE = lumE - lumM;
-        let gradW = lumW - lumM;
-        if (abs(gradW) > abs(gradE)) { blendDir = vec2<f32>(-texelSize.x, 0.0); }
-        else { blendDir = vec2<f32>(texelSize.x, 0.0); }
+    let hDir = select(vec2<f32>(0.0, texelSize.y), vec2<f32>(0.0, -texelSize.y), abs(lumN - lumM) > abs(lumS - lumM));
+    let vDir = select(vec2<f32>(texelSize.x, 0.0), vec2<f32>(-texelSize.x, 0.0), abs(lumW - lumM) > abs(lumE - lumM));
+    let blendDir = select(vDir, hDir, isHorizontal);
+
+    let rgbNeighbor = textureSample(sceneTexture, sceneSampler, uv + blendDir).rgb;
+    let needsAA = lumRange >= max(0.0312, lumMax * 0.125);
+    let blendFactor = select(0.0, clamp(lumRange / lumMax, 0.0, 0.75) * 0.5, needsAA);
+    return mix(rgbM, rgbNeighbor, blendFactor);
+}
+
+// Daltonization — colorblind correction (Brettel/Machado approach)
+fn applyColorblindCorrection(color: vec3<f32>) -> vec3<f32> {
+    let mode = params.colorblindMode;
+    if (mode == 0u) { return color; }
+
+    if (mode == 7u) {
+        let gray = dot(color, vec3<f32>(0.299, 0.587, 0.114));
+        return mix(color, vec3<f32>(gray), params.colorblindStrength);
     }
 
-    // Blend with neighbor
-    let rgbNeighbor = textureSample(sceneTexture, sceneSampler, uv + blendDir).rgb;
-    let blendFactor = clamp(lumRange / lumMax, 0.0, 0.75) * 0.5;
-    return mix(rgbM, rgbNeighbor, blendFactor);
+    var simR: vec3<f32>;
+    var simG: vec3<f32>;
+    var simB: vec3<f32>;
+
+    var strength = params.colorblindStrength;
+    var baseMode = mode;
+    if (mode >= 4u && mode <= 6u) {
+        strength *= 0.6;
+        baseMode = mode - 3u;
+    }
+
+    if (baseMode == 1u) {
+        simR = vec3<f32>(0.152286, 0.114503, -0.003882);
+        simG = vec3<f32>(1.052583, 0.786281, -0.048116);
+        simB = vec3<f32>(-0.204868, 0.099216, 1.051998);
+    } else if (baseMode == 2u) {
+        simR = vec3<f32>(0.367322, 0.280085, -0.011820);
+        simG = vec3<f32>(0.860646, 0.672501, 0.042940);
+        simB = vec3<f32>(-0.227968, 0.047413, 0.968881);
+    } else {
+        simR = vec3<f32>(1.255528, -0.078411, 0.004733);
+        simG = vec3<f32>(-0.076749, 0.930809, 0.691367);
+        simB = vec3<f32>(-0.178779, 0.147602, 0.303900);
+    }
+
+    let simulated = vec3<f32>(dot(color, simR), dot(color, simG), dot(color, simB));
+    let error = color - simulated;
+    var corrected = color;
+    corrected.g = corrected.g + error.r * 0.7;
+    corrected.b = corrected.b + error.r * 0.7;
+
+    return mix(color, saturate(corrected), strength);
 }
 
 @fragment
@@ -541,11 +574,12 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let texDim = vec2<f32>(textureDimensions(sceneTexture));
     let texelSize = vec2<f32>(1.0 / texDim.x, 1.0 / texDim.y);
 
-    // FXAA on HDR scene, then tonemap+gamma
     var color = fxaa(in.uv, texelSize);
     color = aces_tonemap(color);
+    color = (color - 0.5) * params.contrast + 0.5 + params.brightness;
+    color = applyColorblindCorrection(color);
     color = pow(color, vec3<f32>(1.0 / 2.2));
-    return vec4<f32>(color, 1.0);
+    return vec4<f32>(saturate(color), 1.0);
 }
 )";
 
