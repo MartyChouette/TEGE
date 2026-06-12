@@ -938,10 +938,10 @@ void ControllerSystem::UpdateTopDown3D(Entity entity, TopDown3DController& ctrl,
     // Grid movement takes full control of position (XZ plane)
     if (ctrl.gridMovement) {
         Math::Vector2 input = GetMovementInput(ctrl);
+        input.y = -input.y;  // camera looks down -Z, so up input = -Z (away from camera)
         if (UpdateGridMovement(ctrl, transform, input, dt)) {
             // Camera follow in grid mode
             if (ctrl.lockCameraToPlayer && m_Camera) {
-                f32 camAngleRad = Math::Radians(ctrl.cameraAngle);
                 Math::Vector3 camOffset(0.0f, ctrl.cameraHeight, ctrl.cameraDistance);
                 Math::Vector3 camPos = transform.position + camOffset;
                 m_Camera->SetPosition(camPos);
@@ -979,15 +979,6 @@ void ControllerSystem::UpdateTopDown3D(Entity entity, TopDown3DController& ctrl,
 
     Math::Vector2 input = GetMovementInput(ctrl);
 
-    // Transform input based on camera angle (so "up" is always away from camera)
-    f32 cameraYaw = Math::Radians(ctrl.cameraAngle);
-    f32 cosYaw = Math::Cos(cameraYaw);
-    f32 sinYaw = Math::Sin(cameraYaw);
-
-    Math::Vector2 rotatedInput;
-    rotatedInput.x = input.x * cosYaw - input.y * sinYaw;
-    rotatedInput.y = input.x * sinYaw + input.y * cosYaw;
-
     // Calculate target velocity
     f32 speed = ctrl.moveSpeed;
     if (IsSprintHeld()) {
@@ -997,7 +988,12 @@ void ControllerSystem::UpdateTopDown3D(Entity entity, TopDown3DController& ctrl,
         speed = ctrl.dashSpeed;
     }
 
-    Math::Vector3 targetVelocity(rotatedInput.x * speed, 0.0f, rotatedInput.y * speed);
+    // The follow camera sits behind the player at +Z looking toward -Z with no
+    // yaw, so camera-relative movement is a direct mapping: up input = -Z (away
+    // from camera), right input = +X. cameraAngle is the camera's pitch from
+    // horizontal, NOT a yaw — it must not rotate movement input (doing so was
+    // the isometric template's "controls don't match camera" bug).
+    Math::Vector3 targetVelocity(input.x * speed, 0.0f, -input.y * speed);
 
     // Apply acceleration/deceleration
     f32 accel = ctrl.isDashing ? 1000.0f : ctrl.acceleration;
