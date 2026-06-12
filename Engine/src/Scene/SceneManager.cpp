@@ -88,6 +88,12 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
             }
         }
 
+        // Repair hand-edited or legacy manifests (duplicate start flags, etc.)
+        u32 fixes = NormalizeSceneList();
+        if (fixes > 0) {
+            ENJIN_LOG_WARN(Asset, "Project scene list normalized (%u corrections) — will persist on next save", fixes);
+        }
+
         // Load collision group names
         m_CollisionGroupNames.clear();
         m_CollisionGroupNames.resize(32);
@@ -174,6 +180,10 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
 
 bool SceneManager::SaveProject(const std::string& manifestPath) {
     m_ManifestPath = manifestPath;  // Remember the path so GetProjectPath() works
+
+    // Never persist an inconsistent scene list
+    NormalizeSceneList();
+
     try {
         nlohmann::json root;
         root["projectName"] = m_ProjectName;
@@ -290,7 +300,8 @@ void SceneManager::AddScene(const std::string& name, const std::string& path) {
     SceneEntry entry;
     entry.name = name;
     entry.path = path;
-    entry.buildIndex = static_cast<i32>(m_Scenes.size());
+    // list size would collide after a remove-then-add; pick a genuinely free index
+    entry.buildIndex = NextFreeBuildIndex();
     m_Scenes.push_back(entry);
 }
 
@@ -322,9 +333,11 @@ i32 SceneManager::GetSceneIndex(const std::string& name) const {
 void SceneManager::SetStartScene(usize index) {
     for (usize i = 0; i < m_Scenes.size(); ++i) {
         m_Scenes[i].isStartScene = (i == index);
-        if (i == index) {
-            m_Scenes[i].buildIndex = 0;
-        }
+    }
+    // isStartScene is the authority; don't steal build index 0 from another
+    // scene. The start scene does have to be in the build, though.
+    if (index < m_Scenes.size() && m_Scenes[index].buildIndex < 0) {
+        m_Scenes[index].buildIndex = NextFreeBuildIndex();
     }
 }
 
@@ -332,18 +345,110 @@ void SceneManager::MoveScene(usize fromIdx, usize toIdx) {
     if (fromIdx >= m_Scenes.size() || toIdx >= m_Scenes.size()) return;
     if (fromIdx == toIdx) return;
 
+    // Pure list reorder: build order is governed by buildIndex, and
+    // AutoAssignBuildIndices maps list order onto indices when asked
     SceneEntry entry = m_Scenes[fromIdx];
     m_Scenes.erase(m_Scenes.begin() + fromIdx);
     m_Scenes.insert(m_Scenes.begin() + toIdx, entry);
 }
 
 void SceneManager::AutoAssignBuildIndices() {
+    bool anyStart = false;
     for (usize i = 0; i < m_Scenes.size(); ++i) {
         m_Scenes[i].buildIndex = static_cast<i32>(i);
+        anyStart = anyStart || m_Scenes[i].isStartScene;
     }
-    if (!m_Scenes.empty()) {
+    // Only elect a start scene when none exists — unconditionally flagging
+    // scene 0 used to create a second start flag
+    if (!m_Scenes.empty() && !anyStart) {
         m_Scenes[0].isStartScene = true;
+        ENJIN_LOG_INFO(Asset, "No start scene marked; '%s' elected during auto-assign", m_Scenes[0].name.c_str());
     }
+}
+
+i32 SceneManager::NextFreeBuildIndex() const {
+    i32 candidate = 0;
+    for (;;) {
+        bool taken = false;
+        for (const auto& scene : m_Scenes) {
+            if (scene.buildIndex == candidate) {
+                taken = true;
+                break;
+            }
+        }
+        if (!taken) {
+            return candidate;
+        }
+        ++candidate;
+    }
+}
+
+u32 SceneManager::NormalizeSceneList() {
+    u32 corrections = 0;
+
+    // Pass 1: exactly one start flag — first in list wins (deterministic)
+    bool seenStart = false;
+    for (auto& scene : m_Scenes) {
+        if (scene.isStartScene) {
+            if (seenStart) {
+                scene.isStartScene = false;
+                ++corrections;
+                ENJIN_LOG_WARN(Asset, "Duplicate start scene flag cleared on '%s'", scene.name.c_str());
+            } else {
+                seenStart = true;
+            }
+        }
+    }
+
+    // Pass 2: repair buildIndex collisions — first holder keeps the index,
+    // later duplicates move to the smallest unused one (-1 entries are fine)
+    for (usize i = 0; i < m_Scenes.size(); ++i) {
+        if (m_Scenes[i].buildIndex < 0) continue;
+        bool duplicate = false;
+        for (usize j = 0; j < i; ++j) {
+            if (m_Scenes[j].buildIndex == m_Scenes[i].buildIndex) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (duplicate) {
+            i32 reassigned = NextFreeBuildIndex();
+            ENJIN_LOG_WARN(Asset, "Build index collision: scene '%s' reassigned from %d to %d",
+                m_Scenes[i].name.c_str(), m_Scenes[i].buildIndex, reassigned);
+            m_Scenes[i].buildIndex = reassigned;
+            ++corrections;
+        }
+    }
+
+    // Pass 3: elect a start scene if none — smallest buildIndex >= 0 wins
+    // (ties by list order); if nothing is in the build, the first entry
+    if (!m_Scenes.empty() && !seenStart) {
+        SceneEntry* pick = nullptr;
+        for (auto& scene : m_Scenes) {
+            if (scene.buildIndex < 0) continue;
+            if (!pick || scene.buildIndex < pick->buildIndex) {
+                pick = &scene;
+            }
+        }
+        if (!pick) {
+            pick = &m_Scenes.front();
+        }
+        pick->isStartScene = true;
+        ++corrections;
+        ENJIN_LOG_WARN(Asset, "No start scene marked; '%s' elected", pick->name.c_str());
+    }
+
+    // Pass 4: the start scene must be in the build
+    for (auto& scene : m_Scenes) {
+        if (scene.isStartScene && scene.buildIndex < 0) {
+            scene.buildIndex = NextFreeBuildIndex();
+            ++corrections;
+            ENJIN_LOG_WARN(Asset, "Start scene '%s' was not in build; assigned index %d",
+                scene.name.c_str(), scene.buildIndex);
+        }
+    }
+
+    return corrections;
 }
 
 // --- Runtime Scene Loading ---
@@ -416,7 +521,9 @@ bool SceneManager::LoadStartScene() {
             return LoadScene(scene.name);
         }
     }
-    // Fallback to build index 0
+    // Normally unreachable: NormalizeSceneList guarantees a start scene on
+    // load/save. Only hand-built scene lists land here.
+    ENJIN_LOG_WARN(Asset, "No scene marked as start scene; falling back to build index 0");
     return LoadSceneByIndex(0);
 }
 

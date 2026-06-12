@@ -17,8 +17,8 @@ namespace Scene {
 struct SceneEntry {
     std::string name;       // Display name (e.g., "Main Menu", "Level 1")
     std::string path;       // File path relative to project root (e.g., "scenes/level1.enjin")
-    i32 buildIndex = -1;    // Build index (-1 = not in build). 0 = start scene.
-    bool isStartScene = false;
+    i32 buildIndex = -1;    // Build/load order only (-1 = not in build)
+    bool isStartScene = false;  // The single authority for which scene starts the game
 };
 
 // Scene transition type
@@ -116,7 +116,8 @@ public:
     const SceneEntry* GetSceneByName(const std::string& name) const;
     i32 GetSceneIndex(const std::string& name) const;
 
-    // Set which scene is the start scene (build index 0)
+    // Mark the scene at 'index' as the start scene (clears the flag everywhere
+    // else). If that scene was excluded from the build, it gets a free build index.
     void SetStartScene(usize index);
 
     // Reorder scenes (move scene at fromIdx to toIdx)
@@ -124,6 +125,12 @@ public:
 
     // Assign build indices based on list order (0, 1, 2...)
     void AutoAssignBuildIndices();
+
+    // Repair scene-list invariants: exactly one start scene (when the list is
+    // non-empty), no duplicate build indices, start scene included in the build.
+    // Runs automatically on LoadProject/SaveProject; each correction logs a
+    // warning. Returns the number of corrections (0 = list was consistent).
+    u32 NormalizeSceneList();
 
     // --- Runtime Scene Loading ---
 
@@ -133,7 +140,7 @@ public:
     // Load a scene by build index
     bool LoadSceneByIndex(i32 buildIndex);
 
-    // Load the start scene (build index 0)
+    // Load the scene marked isStartScene (falls back to build index 0)
     bool LoadStartScene();
 
     // Load a scene additively (keeps existing entities)
@@ -205,6 +212,9 @@ public:
     void SetOnSceneUnloaded(SceneUnloadedCallback cb) { m_OnSceneUnloaded = cb; }
 
 private:
+    // Smallest non-negative build index not used by any scene
+    i32 NextFreeBuildIndex() const;
+
     ECS::World* m_World = nullptr;
     Build::AssetReader* m_AssetReader = nullptr;  // Optional: read scenes from .enjpak
 

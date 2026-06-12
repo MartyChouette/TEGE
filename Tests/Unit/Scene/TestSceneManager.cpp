@@ -189,4 +189,153 @@ ENJIN_TEST(TransitionEnums, Types) {
     ENJIN_EXPECT_EQ((int)TransitionType::CrossFade, 3);
 }
 
+// ===========================================================================
+// Scene List Normalization (isStartScene is the single source of truth)
+// ===========================================================================
+
+static SceneEntry MakeEntry(const char* name, i32 buildIndex, bool isStart) {
+    SceneEntry e;
+    e.name = name;
+    e.path = std::string(name) + ".enjin";
+    e.buildIndex = buildIndex;
+    e.isStartScene = isStart;
+    return e;
+}
+
+ENJIN_TEST(SceneNormalize, DuplicateStartFlags_KeepsFirstOnly) {
+    SceneManager sm;
+    sm.GetScenes().push_back(MakeEntry("A", 0, true));
+    sm.GetScenes().push_back(MakeEntry("B", 1, true));
+
+    u32 corrections = sm.NormalizeSceneList();
+
+    ENJIN_EXPECT_EQ(corrections, 1u);
+    ENJIN_EXPECT_TRUE(sm.GetScene(0)->isStartScene);
+    ENJIN_EXPECT_FALSE(sm.GetScene(1)->isStartScene);
+}
+
+ENJIN_TEST(SceneNormalize, NoStartScene_ElectsSmallestBuildIndex) {
+    SceneManager sm;
+    sm.GetScenes().push_back(MakeEntry("A", 2, false));
+    sm.GetScenes().push_back(MakeEntry("B", 0, false));
+    sm.GetScenes().push_back(MakeEntry("C", 1, false));
+
+    u32 corrections = sm.NormalizeSceneList();
+
+    ENJIN_EXPECT_EQ(corrections, 1u);
+    ENJIN_EXPECT_FALSE(sm.GetScene(0)->isStartScene);
+    ENJIN_EXPECT_TRUE(sm.GetScene(1)->isStartScene);
+    ENJIN_EXPECT_FALSE(sm.GetScene(2)->isStartScene);
+}
+
+ENJIN_TEST(SceneNormalize, NoStartSceneNoneInBuild_ElectsFirst) {
+    SceneManager sm;
+    sm.GetScenes().push_back(MakeEntry("A", -1, false));
+    sm.GetScenes().push_back(MakeEntry("B", -1, false));
+
+    sm.NormalizeSceneList();
+
+    // First entry elected, and pulled into the build (pass 4)
+    ENJIN_EXPECT_TRUE(sm.GetScene(0)->isStartScene);
+    ENJIN_EXPECT_TRUE(sm.GetScene(0)->buildIndex >= 0);
+    ENJIN_EXPECT_FALSE(sm.GetScene(1)->isStartScene);
+    ENJIN_EXPECT_EQ(sm.GetScene(1)->buildIndex, -1);
+}
+
+ENJIN_TEST(SceneNormalize, BuildIndexCollision_ReassignsToSmallestUnused) {
+    SceneManager sm;
+    sm.GetScenes().push_back(MakeEntry("A", 0, true));
+    sm.GetScenes().push_back(MakeEntry("B", 0, false));
+    sm.GetScenes().push_back(MakeEntry("C", 1, false));
+
+    u32 corrections = sm.NormalizeSceneList();
+
+    ENJIN_EXPECT_EQ(corrections, 1u);
+    ENJIN_EXPECT_EQ(sm.GetScene(0)->buildIndex, 0);
+    ENJIN_EXPECT_EQ(sm.GetScene(1)->buildIndex, 2);  // 0 and 1 taken
+    ENJIN_EXPECT_EQ(sm.GetScene(2)->buildIndex, 1);
+}
+
+ENJIN_TEST(SceneNormalize, StartSceneNotInBuild_GetsFreeIndex) {
+    SceneManager sm;
+    sm.GetScenes().push_back(MakeEntry("A", 0, false));
+    sm.GetScenes().push_back(MakeEntry("B", -1, true));
+
+    u32 corrections = sm.NormalizeSceneList();
+
+    ENJIN_EXPECT_EQ(corrections, 1u);
+    ENJIN_EXPECT_TRUE(sm.GetScene(1)->isStartScene);
+    ENJIN_EXPECT_EQ(sm.GetScene(1)->buildIndex, 1);
+}
+
+ENJIN_TEST(SceneNormalize, Idempotent_SecondRunReturnsZero) {
+    SceneManager sm;
+    sm.GetScenes().push_back(MakeEntry("A", 0, true));
+    sm.GetScenes().push_back(MakeEntry("B", 0, true));
+    sm.GetScenes().push_back(MakeEntry("C", -1, false));
+
+    sm.NormalizeSceneList();
+    u32 secondRun = sm.NormalizeSceneList();
+
+    ENJIN_EXPECT_EQ(secondRun, 0u);
+}
+
+ENJIN_TEST(SceneNormalize, EmptyList_NoCorrections) {
+    SceneManager sm;
+    ENJIN_EXPECT_EQ(sm.NormalizeSceneList(), 0u);
+}
+
+ENJIN_TEST(SceneManagement, AddSceneAfterRemove_NoBuildIndexCollision) {
+    SceneManager sm;
+    sm.AddScene("A", "a.enjin");  // buildIndex 0
+    sm.AddScene("B", "b.enjin");  // buildIndex 1
+    sm.RemoveScene(0);            // B keeps index 1
+
+    sm.AddScene("C", "c.enjin");  // must not collide with B's index 1
+
+    ENJIN_EXPECT_EQ(sm.GetScene(0)->buildIndex, 1);
+    ENJIN_EXPECT_EQ(sm.GetScene(1)->buildIndex, 0);
+}
+
+ENJIN_TEST(SceneManagement, SetStartScene_ExclusiveFlagAndKeepsIndices) {
+    SceneManager sm;
+    sm.GetScenes().push_back(MakeEntry("A", 0, true));
+    sm.GetScenes().push_back(MakeEntry("B", 1, false));
+
+    sm.SetStartScene(1);
+
+    // Flag moves; A keeps build index 0 (no longer stolen by the start scene)
+    ENJIN_EXPECT_FALSE(sm.GetScene(0)->isStartScene);
+    ENJIN_EXPECT_TRUE(sm.GetScene(1)->isStartScene);
+    ENJIN_EXPECT_EQ(sm.GetScene(0)->buildIndex, 0);
+    ENJIN_EXPECT_EQ(sm.GetScene(1)->buildIndex, 1);
+}
+
+ENJIN_TEST(SceneManagement, SetStartScene_NotInBuildGetsFreeIndex) {
+    SceneManager sm;
+    sm.GetScenes().push_back(MakeEntry("A", 0, true));
+    sm.GetScenes().push_back(MakeEntry("B", -1, false));
+
+    sm.SetStartScene(1);
+
+    ENJIN_EXPECT_TRUE(sm.GetScene(1)->isStartScene);
+    ENJIN_EXPECT_EQ(sm.GetScene(1)->buildIndex, 1);
+}
+
+ENJIN_TEST(SceneManagement, AutoAssign_PreservesExistingStartFlag) {
+    SceneManager sm;
+    sm.GetScenes().push_back(MakeEntry("A", 5, false));
+    sm.GetScenes().push_back(MakeEntry("B", 7, false));
+    sm.GetScenes().push_back(MakeEntry("C", 3, true));
+
+    sm.AutoAssignBuildIndices();
+
+    // Indices follow list order; C stays the one and only start scene
+    ENJIN_EXPECT_EQ(sm.GetScene(0)->buildIndex, 0);
+    ENJIN_EXPECT_EQ(sm.GetScene(1)->buildIndex, 1);
+    ENJIN_EXPECT_EQ(sm.GetScene(2)->buildIndex, 2);
+    ENJIN_EXPECT_FALSE(sm.GetScene(0)->isStartScene);
+    ENJIN_EXPECT_TRUE(sm.GetScene(2)->isStartScene);
+}
+
 ENJIN_TEST_MAIN()

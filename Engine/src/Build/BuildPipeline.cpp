@@ -206,8 +206,23 @@ bool BuildPipeline::ScanProject(const std::string& projectPath) {
         }
 
         if (!hasStartScene) {
-            AddMessage(MessageSeverity::Warning, "No start scene designated. First scene will be used as start.");
-            m_Scenes[0].isStartScene = true;
+            // In-memory only — the .enjinproject is never rewritten here. Matches
+            // SceneManager::NormalizeSceneList's election (lowest build index wins),
+            // so this branch only fires for hand-edited manifests.
+            SceneInfo* pick = nullptr;
+            for (auto& scene : m_Scenes) {
+                if (scene.buildIndex < 0) continue;
+                if (!pick || scene.buildIndex < pick->buildIndex) {
+                    pick = &scene;
+                }
+            }
+            if (!pick) {
+                pick = &m_Scenes[0];
+            }
+            pick->isStartScene = true;
+            AddMessage(MessageSeverity::Warning,
+                       "No start scene designated in project manifest. Using '" + pick->name +
+                       "' (lowest build index). Set one in the Scenes panel.");
         }
 
         // Read frame settings from project
@@ -604,6 +619,25 @@ bool BuildPipeline::WriteBuildManifest(const BuildConfig& config, AssetPacker& p
                         jsonStr.size())) {
         return false;
     }
+
+    // Pack a default accessibility.json so the player can load and save settings
+    nlohmann::json accessDefaults;
+    accessDefaults["colorblindMode"] = 0;
+    accessDefaults["colorblindStrength"] = 1.0f;
+    accessDefaults["screenBrightness"] = 0.0f;
+    accessDefaults["screenContrast"] = 1.0f;
+    accessDefaults["reducedMotion"] = false;
+    accessDefaults["disableScreenShake"] = false;
+    accessDefaults["disableFOVEffects"] = false;
+    accessDefaults["disableFlashingLights"] = false;
+    accessDefaults["subtitlesEnabled"] = false;
+    accessDefaults["closedCaptionsEnabled"] = false;
+    accessDefaults["subtitleFontSize"] = 24.0f;
+    accessDefaults["subtitleBgOpacity"] = 0.7f;
+    accessDefaults["fontScale"] = 1.0f;
+    accessDefaults["dyslexiaFriendly"] = false;
+    std::string accessStr = accessDefaults.dump(2);
+    packer.AddData("accessibility.json", accessStr.data(), accessStr.size());
 
     return true;
 }
