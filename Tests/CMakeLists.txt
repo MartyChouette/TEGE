@@ -104,6 +104,7 @@ enjin_add_test(TestSaveSystem         Unit/Scene/TestSaveSystem.cpp)
 enjin_add_test(TestSerializerComponents Unit/Scene/TestSceneSerializerComponents.cpp)
 enjin_add_test(TestPrefab             Unit/Scene/TestPrefab.cpp)
 enjin_add_test(TestSceneManager       Unit/Scene/TestSceneManager.cpp)
+enjin_add_test(TestSceneAssetValidator Unit/Scene/TestSceneAssetValidator.cpp)
 enjin_add_test(TestLevelStreaming      Unit/Scene/TestLevelStreaming.cpp)
 
 # --- Scripting ---

@@ -17,6 +17,9 @@ struct SerializationResult {
     bool success = false;
     std::string error;
     std::string filepath;
+    // Non-fatal issues (e.g. missing asset references). The serializer itself
+    // never fills this — callers that run validation (editor save) populate it.
+    std::vector<std::string> warnings;
 };
 
 // Scene deserialization result

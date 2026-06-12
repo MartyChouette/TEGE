@@ -2,6 +2,7 @@
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
+#include "Enjin/Scene/SceneAssetValidator.h"
 #include <GLFW/glfw3.h>
 #include <chrono>
 #include "Enjin/Logging/Log.h"
@@ -321,7 +322,29 @@ void EditorLayer::SaveScene(const std::string& path) {
         ss << "[Info] Saved scene to " << path << " (" << entityCount << " entities)";
         m_ConsoleLog.push_back(ss.str());
         ENJIN_LOG_INFO(Editor, "Saved scene to %s (%zu entities)", path.c_str(), entityCount);
-        ShowNotification("Scene saved: " + std::filesystem::path(path).filename().string(), NotificationType::Success);
+
+        // Warn about asset references that don't resolve on disk. Resolution
+        // order mirrors the build pipeline: project root, then scene directory
+        // (covers standalone scenes saved without a project).
+        std::vector<std::string> searchRoots;
+        if (!m_SceneManager.GetProjectPath().empty()) {
+            searchRoots.push_back(std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string());
+        }
+        searchRoots.push_back(std::filesystem::path(path).parent_path().string());
+        result.warnings = Scene::FindMissingAssetPaths(m_World, searchRoots);
+
+        std::string filename = std::filesystem::path(path).filename().string();
+        if (!result.warnings.empty()) {
+            for (const auto& warning : result.warnings) {
+                m_ConsoleLog.push_back("[Warning] " + warning);
+                ENJIN_LOG_WARN(Editor, "%s", warning.c_str());
+            }
+            ShowNotification("Scene saved: " + filename + " (" +
+                std::to_string(result.warnings.size()) + " missing asset reference(s), see Console)",
+                NotificationType::Warning);
+        } else {
+            ShowNotification("Scene saved: " + filename, NotificationType::Success);
+        }
 
         // Track in recent projects
         m_EditorSettings.AddRecentProject(path);
@@ -331,6 +354,7 @@ void EditorLayer::SaveScene(const std::string& path) {
         ss << "[Error] Failed to save scene: " << result.error;
         m_ConsoleLog.push_back(ss.str());
         ENJIN_LOG_ERROR(Editor, "Failed to save scene to %s: %s", path.c_str(), result.error.c_str());
+        ShowNotification("Failed to save scene: " + result.error, NotificationType::Error);
     }
 }
 
