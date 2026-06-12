@@ -19,10 +19,18 @@ These are hard-won lessons. Violating any of these will cause bugs.
 - **Log categories:** `Network` (not `Networking`), `Script` (not `Scripting`), `Build`, `Player`
 - **Math headers:** `Enjin/Math/Vector.h` (not `Vector3.h`). `Matrix4` uses flat `f32 m[16]`
 - **`SceneSerializer`** requires `World*` in constructor
+- **File extensions:** `.enjinproject` = project manifest (JSON), `.enjin` = scene (JSON). There is no `.enjscene`
+- **Path validation:** use `Platform::IsSafeRelativePath` / `IsSafeFileName` / `ResolveWithinRoot` from `Enjin/Platform/Paths.h` — never hand-roll `find("..")` checks
 
 ### ECS
 - **`DestroyEntity()` is deferred** — flushed at `World::Update()` start. `IsValid()` returns false for pending-destruction entities
+- **Entity IDs are generational:** destroying recycles the slot index but bumps the generation, so a recreated entity never equals the old handle. Compare slots with `EntityIndex(e)`
 - **`MeshComponent.subMeshes`** array for multi-material meshes. `MaterialSlotsComponent` holds per-sub-mesh materials
+
+### UI / Scenes
+- **UICanvas anchors are Unity-style:** `edge = anchor*parent + offset`. A centered 200-wide element needs `offsetLeft=-100, offsetRight=+100` — writing `+100/-100` produces negative width and falls into a legacy center-on-anchor fallback that puts top-anchored elements off-screen
+- **`isStartScene` is the only start-scene authority** — `SceneEntry.buildIndex` is ordering/inclusion only (`-1` = not in build). `SceneManager::NormalizeSceneList()` repairs invariants on project load/save
+- **TopDown3D camera:** `cameraAngle` is pitch from horizontal, NOT yaw — never rotate movement input by it. The follow camera sits at +Z looking -Z, so up input = -Z
 
 ### Physics
 - **STRICT 2D/3D separation:** Box2D for 2D scenes only, Jolt for 3D only. Never mix. 2D controllers use `CheckGround2D`/`CheckWall2D`, 3D use `CheckGround`/`CharacterVirtual`
@@ -46,6 +54,8 @@ These are hard-won lessons. Violating any of these will cause bugs.
 ### Shaders (CRITICAL)
 - After ANY change to `LightingUBO`, `UniformBufferObject`, `MaterialGPU`, or other UBO/SSBO structs: **recompile ALL affected shaders AND regenerate `ShaderData.h`**. Stale SPIR-V = GPU reading wrong offsets (dark scenes, wrong colors, crashes)
 - Shader edit workflow: edit GLSL → `glslangValidator -V` → `python _gen_all.py` → rebuild. No shortcuts
+- **RT shaders:** compile with `glslc --target-env=vulkan1.2 -I.` (they `#include rt_common.glsl`; glslangValidator rejects the include) → `python _gen_rt.py` regenerates `RTShaderData.h`
+- **GLSL cannot pass unsized arrays as function parameters** — helpers that loop over an SSBO array must be inlined in each shader that declares the SSBO (see rt_reflect.rgen SDF loop)
 
 ### Windows C++ Gotchas
 - `near` and `far` are reserved macros (`windef.h`) — don't use as variable names
@@ -81,6 +91,7 @@ cd web-demo && python serve.py  # http://localhost:9090
 
 - **Framework:** Custom — `ENJIN_TEST(Suite, Name)`, `ENJIN_EXPECT_*`, `ENJIN_ASSERT_*`
 - **No `ENJIN_ASSERT_GT`** — use `ENJIN_ASSERT_TRUE(x > y)` instead
+- **Tests are gated behind `ENJIN_BUILD_TESTS` (default OFF).** If `ctest` runs but counts look stale, the cache lost the flag and you're running frozen binaries: `cmake -DENJIN_BUILD_TESTS=ON ..`
 - **Run all:** `cd build && ctest --output-on-failure`
 - **Run one suite:** `cd build && ctest -R TestPhysics --output-on-failure`
 - **~80 CTest targets, ~1100+ test cases** across 18 subdirectories
