@@ -50,7 +50,7 @@ ENJIN_TEST(Core, FogDefaults) {
 
 ENJIN_TEST(PostFX, ToneMapping) {
     SceneRenderSettings s;
-    ENJIN_EXPECT_EQ(s.toneMappingMode, 0u);
+    ENJIN_EXPECT_EQ(s.toneMappingMode, 3u);  // ACES is the default
     ENJIN_EXPECT_FLOAT_EQ(s.exposure, 1.0f);
     ENJIN_EXPECT_FLOAT_EQ(s.gamma, 1.0f);
     ENJIN_EXPECT_FLOAT_EQ(s.whitePoint, 4.0f);

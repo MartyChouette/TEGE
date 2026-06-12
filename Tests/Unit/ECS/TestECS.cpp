@@ -111,8 +111,11 @@ ENJIN_TEST(EntityLifecycle, EntityRecycling) {
     Entity e1 = world.CreateEntity();
     world.DestroyEntityImmediate(e1);
     Entity e2 = world.CreateEntity();
-    // Recycled ID should be reused
-    ENJIN_EXPECT_EQ(e1, e2);
+    // The slot index is recycled, but the generation bumps on destroy so the
+    // stale handle (e1) can never alias the new entity
+    ENJIN_EXPECT_EQ(EntityIndex(e1), EntityIndex(e2));
+    ENJIN_EXPECT_TRUE(e1 != e2);
+    ENJIN_EXPECT_FALSE(world.IsValid(e1));
     ENJIN_EXPECT_TRUE(world.IsValid(e2));
 }
 

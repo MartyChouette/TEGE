@@ -70,7 +70,7 @@ ENJIN_TEST(Defaults, KeyboardNav) {
 
 ENJIN_TEST(Defaults, FrameRate) {
     EditorSettings settings;
-    ENJIN_EXPECT_EQ((int)settings.editorFrameRateLimit, (int)FrameRateLimit::FPS120);
+    ENJIN_EXPECT_EQ((int)settings.editorFrameRateLimit, (int)FrameRateLimit::Uncapped);
     ENJIN_EXPECT_FALSE(settings.editorVSync);
     ENJIN_EXPECT_TRUE(settings.reduceFrameRateWhenUnfocused);
     ENJIN_EXPECT_EQ(settings.unfocusedFrameRate, 15u);

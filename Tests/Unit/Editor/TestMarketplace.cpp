@@ -18,10 +18,11 @@ ENJIN_TEST(CatalogIntegrity, CatalogIsNotEmpty) {
     ENJIN_EXPECT_GT(mp.GetCatalog().size(), (size_t)0);
 }
 
-ENJIN_TEST(CatalogIntegrity, Exactly52Entries) {
+ENJIN_TEST(CatalogIntegrity, Exactly48Entries) {
+    // 48 since the four Flash templates were removed in 0.9.6
     TemplateMarketplace mp;
     mp.Initialize("");
-    ENJIN_EXPECT_EQ(mp.GetCatalog().size(), (size_t)52);
+    ENJIN_EXPECT_EQ(mp.GetCatalog().size(), (size_t)48);
 }
 
 ENJIN_TEST(CatalogIntegrity, AllIDsAreUnique) {
