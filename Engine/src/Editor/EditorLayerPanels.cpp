@@ -3,6 +3,7 @@
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
+#include "Enjin/Platform/Paths.h"
 #include <GLFW/glfw3.h>
 #include <chrono>
 #include "Enjin/Logging/Log.h"
@@ -921,9 +922,9 @@ void EditorLayer::DrawSceneListPanel() {
             if (!projectRoot.empty()) {
                 std::filesystem::path absScene = std::filesystem::absolute(scenePath);
                 std::filesystem::path absRoot = std::filesystem::absolute(projectRoot);
-                auto rel = std::filesystem::relative(absScene, absRoot);
-                if (!rel.empty() && rel.string().find("..") == std::string::npos) {
-                    relativePath = rel.string();
+                std::string rel = Platform::MakeRelativeToRoot(absRoot.string(), absScene.string());
+                if (!rel.empty()) {
+                    relativePath = rel;
                 }
             }
             m_SceneManager.AddScene(sceneName, relativePath);
@@ -944,9 +945,9 @@ void EditorLayer::DrawSceneListPanel() {
             if (!projectRoot.empty()) {
                 std::filesystem::path absScene = std::filesystem::absolute(path);
                 std::filesystem::path absRoot = std::filesystem::absolute(projectRoot);
-                auto rel = std::filesystem::relative(absScene, absRoot);
-                if (!rel.empty() && rel.string().find("..") == std::string::npos) {
-                    relativePath = rel.string();
+                std::string rel = Platform::MakeRelativeToRoot(absRoot.string(), absScene.string());
+                if (!rel.empty()) {
+                    relativePath = rel;
                 }
             }
             m_SceneManager.AddScene(name, relativePath);

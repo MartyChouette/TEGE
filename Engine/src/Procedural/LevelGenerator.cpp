@@ -5,6 +5,7 @@
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Platform/Paths.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <chrono>
@@ -746,12 +747,7 @@ void LevelGenerator::InstantiateInWorld(ECS::World* world) {
         // Load scene or mesh from prefab paths
         // Validate paths to prevent directory traversal
         auto validatePath = [](const std::string& path) -> bool {
-            if (path.empty()) return true;
-            auto norm = std::filesystem::path(path).lexically_normal().string();
-            if (norm.find("..") != std::string::npos) return false;
-            if (path.size() >= 2 && path[1] == ':') return false;
-            if (path[0] == '/' || path[0] == '\\') return false;
-            return true;
+            return path.empty() || Platform::IsSafeRelativePath(path);
         };
 
         if (!room.prefab->scenePath.empty() && validatePath(room.prefab->scenePath)) {

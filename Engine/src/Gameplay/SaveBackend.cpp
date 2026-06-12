@@ -1,6 +1,7 @@
 #include "Enjin/Gameplay/SaveBackend.h"
 #include "Enjin/Gameplay/SaveSystem.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Platform/Paths.h"
 
 #include <fstream>
 #include <filesystem>
@@ -27,8 +28,7 @@ LocalSaveBackend::LocalSaveBackend(const std::string& baseDirectory) {
 
 std::string LocalSaveBackend::GetFilePath(const std::string& key) const {
     // Sanitize key: reject path traversal components
-    if (key.find("..") != std::string::npos || key.find('/') != std::string::npos ||
-        key.find('\\') != std::string::npos) {
+    if (!Platform::IsSafeFileName(key)) {
         ENJIN_LOG_WARN(Editor, "LocalSaveBackend: Rejected key with path separators or '..': '%s'", key.c_str());
         return m_BaseDirectory + "invalid_key";
     }

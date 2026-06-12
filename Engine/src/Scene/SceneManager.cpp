@@ -2,6 +2,7 @@
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Platform/Paths.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <filesystem>
@@ -531,19 +532,13 @@ std::string SceneManager::ResolvePath(const std::string& relativePath) const {
         return "";
     }
 
-    std::filesystem::path full = std::filesystem::path(m_ProjectRoot) / relativePath;
     // SN-C5: Validate resolved path stays within project root
-    auto resolved = full.lexically_normal();
-    auto root = std::filesystem::path(m_ProjectRoot).lexically_normal();
-    auto resolvedStr = resolved.string();
-    auto rootStr = root.string();
-    // Ensure resolved path is either the root itself or starts with root + separator
-    if (resolvedStr != rootStr &&
-        resolvedStr.find(rootStr + std::string(1, std::filesystem::path::preferred_separator)) != 0) {
+    std::string resolved = Platform::ResolveWithinRoot(m_ProjectRoot, relativePath);
+    if (resolved.empty()) {
         ENJIN_LOG_ERROR(Asset, "ResolvePath: path traversal rejected: %s", relativePath.c_str());
         return "";
     }
-    return resolvedStr;
+    return resolved;
 }
 
 } // namespace Scene

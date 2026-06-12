@@ -1,6 +1,7 @@
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Build/AssetPacker.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Platform/Paths.h"
 #include <algorithm>
 #include <cstring>
 #include <fstream>
@@ -144,7 +145,7 @@ bool AssetReader::Open(const std::string& pakPath, const std::string& key) {
         pos += pathLen;
 
         // Reject path traversal and absolute paths
-        if (vpath.find("..") != std::string::npos || (!vpath.empty() && (vpath[0] == '/' || vpath[0] == '\\'))) {
+        if (!Platform::IsSafeRelativePath(vpath)) {
             ENJIN_LOG_WARN(Build, "Rejecting virtual path with traversal/absolute: %s", vpath.c_str());
             // Still need to read the entry fields to advance pos
             Entry skip;

@@ -1,6 +1,7 @@
 #include "Enjin/Plugin/PluginRepository.h"
 #include "Enjin/Plugin/PluginSystem.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Platform/Paths.h"
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <fstream>
@@ -194,7 +195,7 @@ std::vector<std::string> PluginRepository::GetCategories() const {
 
 bool PluginRepository::Install(const std::string& name, const std::string& targetDir) {
     // S3: Validate name doesn't contain path traversal characters
-    if (name.find("..") != std::string::npos || name.find('/') != std::string::npos || name.find('\\') != std::string::npos) {
+    if (!Platform::IsSafeFileName(name)) {
         ENJIN_LOG_ERROR(Script, "Invalid plugin name: %s", name.c_str());
         return false;
     }
@@ -235,7 +236,7 @@ bool PluginRepository::Install(const std::string& name, const std::string& targe
 
 bool PluginRepository::Uninstall(const std::string& name, const std::string& pluginsDir) {
     // S3: Validate name doesn't contain path traversal characters
-    if (name.find("..") != std::string::npos || name.find('/') != std::string::npos || name.find('\\') != std::string::npos) {
+    if (!Platform::IsSafeFileName(name)) {
         ENJIN_LOG_ERROR(Script, "Invalid plugin name: %s", name.c_str());
         return false;
     }

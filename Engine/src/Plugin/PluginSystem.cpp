@@ -1,5 +1,6 @@
 #include "Enjin/Plugin/PluginSystem.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Platform/Paths.h"
 #include <nlohmann/json.hpp>
 #include <imgui.h>
 #include <filesystem>
@@ -51,19 +52,17 @@ void PluginSystem::ScanPluginDirectory(const std::string& directory) {
                     pluginEntry.manifest = manifest;
 
                     // Resolve library path relative to the plugin.json directory
+                    // S2: resolved path must stay within the plugin directory
                     fs::path manifestDir = entry.path().parent_path();
-                    fs::path libPath = (manifestDir / manifest.libraryPath).lexically_normal();
-
-                    // S2: Validate resolved path stays within plugin directory
-                    std::string normalLib = libPath.string();
-                    std::string normalDir = manifestDir.lexically_normal().string();
-                    if (normalLib.find("..") != std::string::npos ||
-                        normalLib.compare(0, normalDir.size(), normalDir) != 0) {
-                        ENJIN_LOG_ERROR(Script, "Plugin library path escapes plugin directory: %s", normalLib.c_str());
+                    std::string normalLib = Platform::ResolveWithinRoot(
+                        manifestDir.string(), manifest.libraryPath);
+                    if (normalLib.empty()) {
+                        ENJIN_LOG_ERROR(Script, "Plugin library path escapes plugin directory: %s",
+                            manifest.libraryPath.c_str());
                         continue;
                     }
 
-                    pluginEntry.manifest.libraryPath = libPath.string();
+                    pluginEntry.manifest.libraryPath = normalLib;
 
                     m_Plugins.push_back(pluginEntry);
                     ENJIN_LOG_INFO(Script, "Found plugin: %s v%s",

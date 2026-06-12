@@ -220,5 +220,71 @@ std::string GetAppTempDirectory() {
 #endif
 }
 
+// =============================================================================
+// Path sanitization
+// =============================================================================
+
+bool IsSafeRelativePath(const std::string& relative) {
+    if (relative.empty()) {
+        return false;
+    }
+    std::filesystem::path p(relative);
+    if (p.is_absolute() || p.has_root_name() || p.has_root_directory()) {
+        return false;
+    }
+    // After normalization any remaining ".." component escapes upward
+    // ("a/../b" collapses harmlessly; "../b" survives as a ".." component).
+    for (const auto& component : p.lexically_normal()) {
+        if (component == "..") {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool IsSafeFileName(const std::string& name) {
+    if (name.empty()) {
+        return false;
+    }
+    if (name.find('/') != std::string::npos || name.find('\\') != std::string::npos) {
+        return false;
+    }
+    if (name.find("..") != std::string::npos) {
+        return false;
+    }
+    return true;
+}
+
+std::string ResolveWithinRoot(const std::string& root, const std::string& relative) {
+    if (root.empty() || relative.empty()) {
+        return "";
+    }
+    auto resolved = (std::filesystem::path(root) / relative).lexically_normal();
+    auto rootNorm = std::filesystem::path(root).lexically_normal();
+    auto resolvedStr = resolved.string();
+    auto rootStr = rootNorm.string();
+    // Accept the root itself, or anything under root + separator. The
+    // separator boundary matters: "C:/proj2/x" must not pass for root
+    // "C:/proj" even though it shares the string prefix.
+    if (resolvedStr != rootStr &&
+        resolvedStr.find(rootStr + std::string(1, std::filesystem::path::preferred_separator)) != 0) {
+        return "";
+    }
+    return resolvedStr;
+}
+
+std::string MakeRelativeToRoot(const std::string& root, const std::string& absolute) {
+    if (root.empty() || absolute.empty()) {
+        return "";
+    }
+    auto rootNorm = std::filesystem::path(root).lexically_normal();
+    auto absNorm = std::filesystem::path(absolute).lexically_normal();
+    auto rel = absNorm.lexically_relative(rootNorm);
+    if (rel.empty() || rel.begin()->string() == "..") {
+        return "";
+    }
+    return rel.string();
+}
+
 } // namespace Enjin::Platform
 
