@@ -14,6 +14,16 @@ target_link_libraries(SerializerRoundTrip PRIVATE
 
 target_compile_features(SerializerRoundTrip PRIVATE cxx_std_20)
 
+add_executable(StableIdRoundTrip
+    Integration/StableIdRoundTrip.cpp
+)
+
+target_link_libraries(StableIdRoundTrip PRIVATE
+    EnjinEngine
+)
+
+target_compile_features(StableIdRoundTrip PRIVATE cxx_std_20)
+
 add_executable(DungeonCrawlerTest
     Integration/DungeonCrawlerTest.cpp
 )
@@ -176,6 +186,7 @@ enjin_add_test(TestPluginSystem       Unit/Plugin/TestPluginSystem.cpp)
 
 # Register integration tests with CTest
 add_test(NAME SerializerRoundTrip COMMAND SerializerRoundTrip)
+add_test(NAME StableIdRoundTrip   COMMAND StableIdRoundTrip)
 add_test(NAME DungeonCrawlerTest  COMMAND DungeonCrawlerTest)
 add_test(NAME SMTTemplateTest     COMMAND SMTTemplateTest)
 add_test(NAME StressTest          COMMAND StressTest)

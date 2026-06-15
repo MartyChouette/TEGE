@@ -1,5 +1,6 @@
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/StableId.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Mesh.h"
@@ -6708,6 +6709,15 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             json entityJson;
             entityJson["id"] = static_cast<u64>(entity);
 
+            // Durable scene-authoring identity (see StableId.h). Assigned here if
+            // missing so every persisted entity carries a stable address for the
+            // override-layer system. The runtime "id" above is remapped on load;
+            // "stableId" survives reload unchanged.
+            if (!m_World->HasComponent<ECS::StableIdComponent>(entity)) {
+                m_World->AddComponent<ECS::StableIdComponent>(entity, ECS::StableIdComponent{ ECS::GenerateStableId() });
+            }
+            entityJson["stableId"] = m_World->GetComponent<ECS::StableIdComponent>(entity)->id;
+
             // Serialize components
             if (m_World->HasComponent<ECS::NameComponent>(entity)) {
                 const auto* name = m_World->GetComponent<ECS::NameComponent>(entity);
@@ -7470,6 +7480,16 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 oldToNew[oldId] = entity;
             }
 
+            // Restore the durable scene-authoring identity. Legacy scenes saved
+            // before stableId existed get a fresh one backfilled here; the scene
+            // then persists it on next save (a visible, one-time VCS diff).
+            {
+                u64 stableId = (entityJson.contains("stableId") && entityJson["stableId"].is_number_unsigned())
+                                   ? entityJson["stableId"].get<u64>()
+                                   : ECS::GenerateStableId();
+                m_World->AddComponent<ECS::StableIdComponent>(entity, ECS::StableIdComponent{ stableId });
+            }
+
             // Set root entity to first entity
             if (result.rootEntity == ECS::INVALID_ENTITY) {
                 result.rootEntity = entity;
@@ -8111,6 +8131,15 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
 
             json entityJson;
             entityJson["id"] = static_cast<u64>(entity);
+
+            // Durable scene-authoring identity (see StableId.h). Assigned here if
+            // missing so every persisted entity carries a stable address for the
+            // override-layer system. The runtime "id" above is remapped on load;
+            // "stableId" survives reload unchanged.
+            if (!m_World->HasComponent<ECS::StableIdComponent>(entity)) {
+                m_World->AddComponent<ECS::StableIdComponent>(entity, ECS::StableIdComponent{ ECS::GenerateStableId() });
+            }
+            entityJson["stableId"] = m_World->GetComponent<ECS::StableIdComponent>(entity)->id;
 
             // Serialize components
             if (m_World->HasComponent<ECS::NameComponent>(entity)) {
@@ -8797,6 +8826,16 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("id")) {
                 u64 oldId = entityJson["id"].get<u64>();
                 oldToNew[oldId] = entity;
+            }
+
+            // Restore the durable scene-authoring identity. Legacy scenes saved
+            // before stableId existed get a fresh one backfilled here; the scene
+            // then persists it on next save (a visible, one-time VCS diff).
+            {
+                u64 stableId = (entityJson.contains("stableId") && entityJson["stableId"].is_number_unsigned())
+                                   ? entityJson["stableId"].get<u64>()
+                                   : ECS::GenerateStableId();
+                m_World->AddComponent<ECS::StableIdComponent>(entity, ECS::StableIdComponent{ stableId });
             }
 
             if (result.rootEntity == ECS::INVALID_ENTITY) {
@@ -10175,7 +10214,9 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
     try {
         json j;
         // Dispatch by component key â€" must match the keys used in scene JSON
-        if (key == "name" && world->HasComponent<ECS::NameComponent>(entity))
+        if (key == "stableId" && world->HasComponent<ECS::StableIdComponent>(entity))
+            j["id"] = world->GetComponent<ECS::StableIdComponent>(entity)->id;
+        else if (key == "name" && world->HasComponent<ECS::NameComponent>(entity))
             j = SerializeNameComponent(*world->GetComponent<ECS::NameComponent>(entity));
         else if (key == "transform" && world->HasComponent<ECS::TransformComponent>(entity))
             j = SerializeTransformComponent(*world->GetComponent<ECS::TransformComponent>(entity));
@@ -10437,6 +10478,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         json j = json::parse(jsonStr);
 
         // Dispatch by component key â€" must match the keys used in scene JSON
+        if (key == "stableId") { world->AddComponent<ECS::StableIdComponent>(entity, ECS::StableIdComponent{ j.value("id", u64{0}) }); return true; }
         if (key == "name") { world->AddComponent<ECS::NameComponent>(entity, DeserializeNameComponent(j)); return true; }
         if (key == "transform") { world->AddComponent<ECS::TransformComponent>(entity, DeserializeTransformComponent(j)); return true; }
         if (key == "material") { world->AddComponent<ECS::MaterialComponent>(entity, DeserializeMaterialComponent(j)); return true; }
