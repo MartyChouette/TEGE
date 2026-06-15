@@ -34,6 +34,16 @@ target_link_libraries(LayerResolveTest PRIVATE
 
 target_compile_features(LayerResolveTest PRIVATE cxx_std_20)
 
+add_executable(LayerCaptureTest
+    Integration/LayerCaptureTest.cpp
+)
+
+target_link_libraries(LayerCaptureTest PRIVATE
+    EnjinEngine
+)
+
+target_compile_features(LayerCaptureTest PRIVATE cxx_std_20)
+
 add_executable(DungeonCrawlerTest
     Integration/DungeonCrawlerTest.cpp
 )
@@ -198,6 +208,7 @@ enjin_add_test(TestPluginSystem       Unit/Plugin/TestPluginSystem.cpp)
 add_test(NAME SerializerRoundTrip COMMAND SerializerRoundTrip)
 add_test(NAME StableIdRoundTrip   COMMAND StableIdRoundTrip)
 add_test(NAME LayerResolveTest    COMMAND LayerResolveTest)
+add_test(NAME LayerCaptureTest    COMMAND LayerCaptureTest)
 add_test(NAME DungeonCrawlerTest  COMMAND DungeonCrawlerTest)
 add_test(NAME SMTTemplateTest     COMMAND SMTTemplateTest)
 add_test(NAME StressTest          COMMAND StressTest)
