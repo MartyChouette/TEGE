@@ -184,6 +184,7 @@ enjin_add_test(TestAssetLoaders       Unit/Assets/TestAssetLoaders.cpp)
 enjin_add_test(TestDataAsset          Unit/Assets/TestDataAsset.cpp)
 enjin_add_test(TestBuildPipeline      Unit/Assets/TestBuildPipeline.cpp)
 enjin_add_test(TestBuildConfig        Unit/Assets/TestBuildConfig.cpp)
+enjin_add_test(TestGoldenVerification Unit/Assets/TestGoldenVerification.cpp)
 
 # --- Animation ---
 enjin_add_test(TestAnimation          Unit/Animation/TestAnimation.cpp)
