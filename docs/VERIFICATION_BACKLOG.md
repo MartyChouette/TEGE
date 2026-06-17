@@ -77,9 +77,9 @@ cheap or ship-critical; P2 = fills out coverage.
 7. **Rewind: record then restore** — move an entity, record, `SeekEntityToTime`, assert transform matches the recorded frame; plus scene-rewind round-trip and delta-compression reconstruction.
 
 ### P1 — high value, cheap, or ship-critical
-8. **Camera matrices with computed expected values** — `SetPerspective`/`SetLookAt`/`GetViewProjectionMatrix == proj·view`; catches transpose/handedness/aspect bugs.
-9. **Transform `ToMatrix` rotation + full TRS** — non-identity quaternion produces expected basis; translate·rotate·scale composition verified.
-10. **`static_assert(sizeof(MaterialGPU) == 80)`** — one line, guards the documented SSBO-offset trap.
+8. **Camera matrices with computed expected values** — DONE. `GetViewProjectionMatrix == proj·view` (composition order), `SetLookAt` places the world origin at view-space z=-5, rotation drives an orthonormal forward basis. Note: `GetForward` extracts the rotation-matrix row (camera world-space basis), which differs in handedness from `Quaternion::Rotate` (column); both are internally consistent, not a bug.
+9. **Transform `ToMatrix` rotation + full TRS** — DONE. Non-identity quaternion produces the rotated basis; full translate·rotate·scale composition verified.
+10. **`static_assert(sizeof(MaterialGPU) == 112)`** — DONE, and it caught a real doc drift: the struct is **112 bytes**, not the 80 documented in CLAUDE.md and the header comment (SSS block + bindless texture indices were added later). Renderer works at 112, so 112 is the true SSBO stride; CLAUDE.md and the header comment corrected.
 11. **BuildPipeline end-to-end** — temp project + scene → `Execute()` → assert `.enjpak` contains the scene + a build manifest with correct window settings.
 12. **Prefab save/load round-trip** — `SavePrefab` a hierarchy to disk, `LoadPrefab`, assert entities/parents/component maps survive.
 13. **Tiered save slot persistence** — `SaveToSlot` to disk, fresh system, `LoadFromSlot`, assert KV + entity data match.

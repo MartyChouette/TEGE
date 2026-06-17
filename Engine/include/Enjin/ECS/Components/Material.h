@@ -222,7 +222,8 @@ struct MaterialComponent {
     }
 };
 
-// GPU-aligned material data for shader upload (80 bytes)
+// GPU-aligned material data for shader upload (112 bytes — must match the
+// material SSBO struct in the shaders and ShaderData.h)
 struct alignas(16) MaterialGPU {
     alignas(16) Math::Vector3 baseColor;
     alignas(4) f32 metallic;

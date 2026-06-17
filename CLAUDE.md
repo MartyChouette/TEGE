@@ -49,7 +49,7 @@ These are hard-won lessons. Violating any of these will cause bugs.
 - **Render pass formats:** Swapchain = `B8G8R8A8_SRGB` with MRT. Offscreen `RenderTarget`s = `B8G8R8A8_UNORM`, single color + depth, `colorAttachmentCount=1`, `SAMPLE_COUNT_1_BIT` (no MSAA)
 - **WebGPU depth-only pass:** `Depth32Float`, no stencil — stencil ops MUST be `Undefined`. Shadow pipeline has no fragment shader
 - **WebGPU tangent fallback:** PBR shader checks `dot(tangent,tangent) > 0.001` — without this, `normalize(vec3(0))` produces NaN and kills all lighting
-- **`MaterialGPU` = 80 bytes** — struct alignment matters for SSBO offsets
+- **`MaterialGPU` = 112 bytes** — struct alignment matters for SSBO offsets (guarded by `static_assert` in TestMaterial). Was 80 before the SSS block + bindless texture indices were added; keep this in sync with the shader SSBO struct + ShaderData.h
 
 ### Shaders (CRITICAL)
 - After ANY change to `LightingUBO`, `UniformBufferObject`, `MaterialGPU`, or other UBO/SSBO structs: **recompile ALL affected shaders AND regenerate `ShaderData.h`**. Stale SPIR-V = GPU reading wrong offsets (dark scenes, wrong colors, crashes)

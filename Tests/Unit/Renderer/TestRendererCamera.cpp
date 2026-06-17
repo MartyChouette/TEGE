@@ -4,6 +4,14 @@
 using namespace Enjin;
 using namespace Enjin::Renderer;
 
+// Transform a point by a column-major Matrix4 (element [r,c] = m[c*4 + r]).
+static Math::Vector3 TransformPoint(const Math::Matrix4& m, const Math::Vector3& p) {
+    return Math::Vector3(
+        m.m[0]*p.x + m.m[4]*p.y + m.m[8]*p.z  + m.m[12],
+        m.m[1]*p.x + m.m[5]*p.y + m.m[9]*p.z  + m.m[13],
+        m.m[2]*p.x + m.m[6]*p.y + m.m[10]*p.z + m.m[14]);
+}
+
 // ===========================================================================
 // Camera Defaults
 // ===========================================================================
@@ -139,6 +147,59 @@ ENJIN_TEST(RendererCamera, ProjectionMatrixNotZero) {
         if (p.m[i] != 0.0f) { anyNonZero = true; break; }
     }
     ENJIN_EXPECT_TRUE(anyNonZero);
+}
+
+// ===========================================================================
+// Camera Matrix Correctness (computed expected values, not "non-zero")
+// ===========================================================================
+
+ENJIN_TEST(RendererCamera, ViewProjectionIsProjectionTimesView) {
+    // Arrange
+    Camera cam;
+    cam.SetPerspective(60.0f, 16.0f / 9.0f, 0.1f, 100.0f);
+    cam.SetPosition(Math::Vector3(2.0f, 3.0f, 10.0f));
+    // Act
+    Math::Matrix4 vp = cam.GetViewProjectionMatrix();
+    Math::Matrix4 pv = cam.GetProjectionMatrix() * cam.GetViewMatrix();
+    // Assert: composition order is projection * view.
+    for (int i = 0; i < 16; ++i) {
+        ENJIN_EXPECT_FLOAT_NEAR(vp.m[i], pv.m[i], 0.001f);
+    }
+}
+
+ENJIN_TEST(RendererCamera, LookAtPlacesWorldOriginInFront) {
+    // Arrange: eye 5 units down +Z, looking at the origin.
+    Camera cam;
+    cam.SetLookAt(Math::Vector3(0.0f, 0.0f, 5.0f),
+                  Math::Vector3(0.0f, 0.0f, 0.0f),
+                  Math::Vector3(0.0f, 1.0f, 0.0f));
+    // Act: world origin into view space.
+    Math::Vector3 v = TransformPoint(cam.GetViewMatrix(), Math::Vector3(0.0f, 0.0f, 0.0f));
+    // Assert: 5 units in front of the camera (looks down -Z).
+    ENJIN_EXPECT_FLOAT_NEAR(v.x, 0.0f, 0.01f);
+    ENJIN_EXPECT_FLOAT_NEAR(v.y, 0.0f, 0.01f);
+    ENJIN_EXPECT_FLOAT_NEAR(v.z, -5.0f, 0.01f);
+}
+
+ENJIN_TEST(RendererCamera, RotationDrivesForwardVector) {
+    // Arrange: a 90-degree yaw (non-identity rotation). GetForward extracts the
+    // rotation-matrix row (camera world-space basis convention), so assert the
+    // geometric result rather than a column-based quaternion rotation.
+    Camera cam;
+    cam.SetRotation(Math::Quaternion::FromEulerDegrees(Math::Vector3(0.0f, 90.0f, 0.0f)));
+    // Act
+    Math::Vector3 fwd = cam.GetForward();
+    Math::Vector3 right = cam.GetRight();
+    Math::Vector3 up = cam.GetUp();
+    // Assert: forward rotated 90 deg out of -Z into the X axis, unit length.
+    f32 flen = std::sqrt(fwd.x*fwd.x + fwd.y*fwd.y + fwd.z*fwd.z);
+    ENJIN_EXPECT_FLOAT_NEAR(flen, 1.0f, 0.01f);
+    ENJIN_EXPECT_FLOAT_NEAR(fwd.y, 0.0f, 0.01f);
+    ENJIN_EXPECT_FLOAT_NEAR(fwd.z, 0.0f, 0.01f);
+    ENJIN_EXPECT_TRUE(std::fabs(fwd.x) > 0.99f);  // moved onto X (rotation applied)
+    // And the basis stays orthonormal.
+    ENJIN_EXPECT_FLOAT_NEAR(fwd.x*right.x + fwd.y*right.y + fwd.z*right.z, 0.0f, 0.01f);
+    ENJIN_EXPECT_FLOAT_NEAR(fwd.x*up.x + fwd.y*up.y + fwd.z*up.z, 0.0f, 0.01f);
 }
 
 ENJIN_TEST_MAIN()

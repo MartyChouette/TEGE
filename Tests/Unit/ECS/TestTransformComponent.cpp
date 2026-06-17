@@ -87,6 +87,46 @@ ENJIN_TEST(TransformMatrix, UniformScale) {
     ENJIN_EXPECT_FLOAT_NEAR(sx, 5.0f, 0.001f);
 }
 
+ENJIN_TEST(TransformMatrix, RotationAppliedToBasis) {
+    // Arrange: a 90-degree yaw about Y, no translation, unit scale.
+    TransformComponent t;
+    Math::Quaternion q = Math::Quaternion::FromEulerDegrees(Math::Vector3(0.0f, 90.0f, 0.0f));
+    t.rotation = q;
+    // Act
+    Math::Matrix4 mat = t.ToMatrix();
+    // Assert: each basis column equals the quaternion-rotated axis.
+    Math::Vector3 ex = q.Rotate(Math::Vector3(1.0f, 0.0f, 0.0f));
+    Math::Vector3 ey = q.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+    Math::Vector3 ez = q.Rotate(Math::Vector3(0.0f, 0.0f, 1.0f));
+    ENJIN_EXPECT_FLOAT_NEAR(mat.m[0], ex.x, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(mat.m[1], ex.y, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(mat.m[2], ex.z, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(mat.m[4], ey.x, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(mat.m[5], ey.y, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(mat.m[6], ey.z, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(mat.m[8], ez.x, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(mat.m[9], ez.y, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(mat.m[10], ez.z, 0.001f);
+    // Guard against "rotation silently ignored": the X axis must have moved.
+    ENJIN_EXPECT_TRUE(std::fabs(ex.x - 1.0f) > 0.1f);
+}
+
+ENJIN_TEST(TransformMatrix, FullTRSComposition) {
+    // Arrange: translate (1,2,3), yaw 90, uniform scale 2.
+    TransformComponent t;
+    t.position = Math::Vector3(1.0f, 2.0f, 3.0f);
+    t.rotation = Math::Quaternion::FromEulerDegrees(Math::Vector3(0.0f, 90.0f, 0.0f));
+    t.scale = Math::Vector3(2.0f, 2.0f, 2.0f);
+    // Act
+    Math::Matrix4 mat = t.ToMatrix();
+    // Assert: translation in the last column, scale recovered from column length.
+    ENJIN_EXPECT_FLOAT_NEAR(mat.m[12], 1.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(mat.m[13], 2.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(mat.m[14], 3.0f, 0.001f);
+    f32 col0len = std::sqrt(mat.m[0]*mat.m[0] + mat.m[1]*mat.m[1] + mat.m[2]*mat.m[2]);
+    ENJIN_EXPECT_FLOAT_NEAR(col0len, 2.0f, 0.001f);
+}
+
 // ===========================================================================
 // Teleport Flag
 // ===========================================================================

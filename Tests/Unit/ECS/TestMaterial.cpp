@@ -7,6 +7,21 @@ using namespace Enjin;
 using namespace Enjin::ECS;
 using namespace Enjin::Math;
 
+// The GPU upload struct stride must match the material SSBO layout in the
+// shaders. It is 112 bytes (base/emissive/metallic/roughness + SSS block +
+// six bindless texture indices + pad). If this changes, the matching shader
+// struct AND ShaderData.h must change too, or the GPU reads wrong offsets.
+static_assert(sizeof(MaterialGPU) == 112, "MaterialGPU stride must match the shader SSBO layout");
+
+// ===========================================================================
+// MaterialGPU layout invariant
+// ===========================================================================
+
+ENJIN_TEST(MaterialGPULayout, StrideMatchesShaderSSBO) {
+    // Arrange / Act / Assert: guard the SSBO-offset invariant at runtime too.
+    ENJIN_EXPECT_EQ(sizeof(MaterialGPU), (size_t)112);
+}
+
 // ===========================================================================
 // MaterialComponent Defaults
 // ===========================================================================
