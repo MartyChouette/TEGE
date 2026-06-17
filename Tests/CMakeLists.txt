@@ -112,6 +112,7 @@ enjin_add_test(TestGameplayComponents Unit/ECS/TestGameplayComponents.cpp)
 enjin_add_test(TestPhysicsTypes       Unit/Physics/TestPhysicsTypes.cpp)
 enjin_add_test(TestPhysics2D          Unit/Physics/TestPhysics2D.cpp)
 enjin_add_test(TestPhysicsBackends    Unit/Physics/TestPhysicsBackends.cpp)
+enjin_add_test(TestPhysicsSimulation  Unit/Physics/TestPhysicsSimulation.cpp)
 
 # --- Renderer ---
 enjin_add_test(TestRTConfig           Unit/Renderer/TestRTConfig.cpp)

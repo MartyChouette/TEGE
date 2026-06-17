@@ -39,7 +39,7 @@ result, or does it only construct structs and check defaults / failure paths?**
 | IK solver (FABRIK, LookAt) | **PROVEN** | Real convergence checks. (TwoBoneIK untested.) |
 | Screen transitions | **PROVEN** | Full phase machine driven. |
 | Visual script node eval | **PROVEN** | Node evaluate/branch asserted; no full graph traversal side-effect. |
-| **Physics (Jolt 3D + Box2D 2D)** | **SHALLOW** | **No test ever creates a backend and steps a simulation. Zero of the documented physics traps verified. Highest-risk gap.** |
+| **Physics (Jolt 3D + Box2D 2D)** | **PARTIAL** | `TestPhysicsSimulation` now steps both backends: a dynamic box falls under gravity and rests on a static floor (Jolt and Box2D), a 3D raycast hits the floor, gravity round-trips. Still open: sensor events, engine-applied collision filtering, character grounding, world-space collider-size trap. |
 | **Rewind (RecordRewindSystem)** | **NONE** | Capture/restore/seek/delta-compression never instantiated in any test. |
 | Camera view/projection matrix math | **THIN** | Deterministic and CPU-testable, but matrices only asserted "not all zeros". |
 | Transform `ToMatrix` rotation | **SHALLOW** | Only identity quaternion tested; rotation never applied. |
@@ -68,11 +68,11 @@ Prioritized. P0 = core system with no behavioral coverage; P1 = high-value and
 cheap or ship-critical; P2 = fills out coverage.
 
 ### P0 — core systems currently unproven
-1. **Physics: step a Jolt world** — dynamic box above a static floor, `Update()` ~1s, assert it falls and rests on the surface (no tunneling).
-2. **Physics: step a Box2D world** — drop a dynamic circle under gravity, assert Y decreases and velocity ≈ `g·t`.
+1. **Physics: step a Jolt world** — DONE (`TestPhysicsSimulation.PhysicsSim3D.DynamicBoxFallsAndRestsOnFloor`).
+2. **Physics: step a Box2D world** — DONE (`TestPhysicsSimulation.PhysicsSim2D.DynamicBodyFallsAndRestsOnFloor`).
 3. **Physics: sensor event fires** — kinematic sensor + moving body, assert enter/exit callbacks fire once (locks in the `enableSensorEvents = isSensor || !isStatic` trap).
 4. **Physics: filtering applied by the engine** — two bodies with exclusive category/mask, step together, assert no contact; flip to compatible, assert a contact fires (proves the engine path, not the test-local copy).
-5. **Physics: raycast + character grounding** — ray hits a static box with correct entity/distance; `CharacterVirtual` grounds on a floor with `groundNormal ≈ (0,1,0)` (verifies capsule height convention).
+5. **Physics: raycast + character grounding** — raycast DONE (`PhysicsSim3D.RaycastHitsFloor`). Character grounding (`CharacterVirtual` grounds with `groundNormal ≈ (0,1,0)`, capsule height convention) still open.
 6. **Physics: world-space collider size** — box `size=(50,0.1,50)` on a 2×-scaled entity, assert physical extent is 50 units (scale-independent — documented trap).
 7. **Rewind: record then restore** — move an entity, record, `SeekEntityToTime`, assert transform matches the recorded frame; plus scene-rewind round-trip and delta-compression reconstruction.
 
