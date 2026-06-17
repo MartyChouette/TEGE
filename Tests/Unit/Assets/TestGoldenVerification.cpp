@@ -14,6 +14,7 @@
 #include "EnjinTest.h"
 
 #include "Enjin/Assets/GLTFLoader.h"
+#include "Enjin/Assets/AssimpLoader.h"
 #include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
@@ -184,6 +185,45 @@ fs::path GoldenDir() {
     return fs::temp_directory_path() / "enjin_golden_verification";
 }
 
+// Writes a real .obj cube + .mtl (with a known diffuse color) for the Assimp
+// import path. Returns the path to the .obj, or empty on failure.
+std::string WriteGoldenOBJ(const fs::path& dir) {
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+
+    // Material: a distinctive diffuse color so we can assert it round-trips.
+    {
+        std::ofstream mtl(dir / "golden.mtl");
+        if (!mtl) return {};
+        mtl << "newmtl GoldenMat\n"
+               "Ka 0.0 0.0 0.0\n"
+               "Kd 0.8 0.2 0.1\n"
+               "Ks 0.0 0.0 0.0\n";
+    }
+
+    // A unit cube from (-1,-1,-1) to (1,1,1), explicit per-face normals,
+    // 12 triangles. Winding is irrelevant for the assertions below.
+    fs::path objPath = dir / "golden.obj";
+    {
+        std::ofstream obj(objPath);
+        if (!obj) return {};
+        obj << "mtllib golden.mtl\n"
+               "o GoldenCube\n"
+               "v -1 -1 -1\n" "v 1 -1 -1\n" "v 1 1 -1\n" "v -1 1 -1\n"
+               "v -1 -1 1\n"  "v 1 -1 1\n"  "v 1 1 1\n"  "v -1 1 1\n"
+               "vn 0 0 -1\n" "vn 0 0 1\n" "vn -1 0 0\n"
+               "vn 1 0 0\n"  "vn 0 -1 0\n" "vn 0 1 0\n"
+               "usemtl GoldenMat\n"
+               "f 1//1 2//1 3//1\n" "f 1//1 3//1 4//1\n"   // back  (-z)
+               "f 5//2 6//2 7//2\n" "f 5//2 7//2 8//2\n"   // front (+z)
+               "f 1//3 4//3 8//3\n" "f 1//3 8//3 5//3\n"   // left  (-x)
+               "f 2//4 3//4 7//4\n" "f 2//4 7//4 6//4\n"   // right (+x)
+               "f 1//5 2//5 6//5\n" "f 1//5 6//5 5//5\n"   // bottom(-y)
+               "f 4//6 3//6 7//6\n" "f 4//6 7//6 8//6\n";  // top   (+y)
+    }
+    return objPath.string();
+}
+
 } // namespace
 
 // ===========================================================================
@@ -268,6 +308,70 @@ ENJIN_TEST(Golden, SceneImporterBuildsEntities) {
     ENJIN_EXPECT_TRUE(r.animationCount >= 1);
     ENJIN_EXPECT_TRUE(r.entities.size() >= 1);
     ENJIN_EXPECT_TRUE(r.totalVertexCount >= 3);
+}
+
+// ===========================================================================
+// OBJ import via Assimp (mesh + material). FBX rig/animation is a separate
+// fixture-based test (FBX is binary and can't be generated at runtime); the
+// rig/animation import LOGIC is already proven by the glTF tests above.
+// ===========================================================================
+
+ENJIN_TEST(GoldenOBJ, AssimpLoadsMeshAndMaterial) {
+    std::string path = WriteGoldenOBJ(GoldenDir());
+    ENJIN_ASSERT_FALSE(path.empty());
+
+    Assets::AssimpScene scene;
+    bool ok = Assets::AssimpLoader::Load(path, scene);
+    ENJIN_ASSERT_TRUE(ok);
+
+    // Geometry parsed into at least one mesh/primitive.
+    ENJIN_ASSERT_TRUE(scene.meshes.size() >= 1);
+    ENJIN_ASSERT_TRUE(scene.meshes[0].primitives.size() >= 1);
+    const Assets::AssimpPrimitive& prim = scene.meshes[0].primitives[0];
+    ENJIN_EXPECT_TRUE(prim.vertices.size() >= 8);          // cube corners (split per normal)
+    ENJIN_ASSERT_TRUE(prim.indices.size() >= 12);
+    ENJIN_EXPECT_EQ(prim.indices.size() % 3, (size_t)0);   // triangulated
+
+    // Every vertex sits within the authored cube bounds, and at least one has
+    // a real (unit-length) normal — proves positions and normals both parsed.
+    bool foundUnitNormal = false;
+    for (const auto& v : prim.vertices) {
+        ENJIN_EXPECT_TRUE(v.position.x >= -1.01f && v.position.x <= 1.01f);
+        ENJIN_EXPECT_TRUE(v.position.y >= -1.01f && v.position.y <= 1.01f);
+        ENJIN_EXPECT_TRUE(v.position.z >= -1.01f && v.position.z <= 1.01f);
+        float nlen = std::sqrt(v.normal.x * v.normal.x + v.normal.y * v.normal.y +
+                               v.normal.z * v.normal.z);
+        if (nlen > 0.9f && nlen < 1.1f) foundUnitNormal = true;
+    }
+    ENJIN_EXPECT_TRUE(foundUnitNormal);
+
+    // The .mtl diffuse color (Kd 0.8 0.2 0.1) reached a material. Assimp may
+    // add a default material too, so search rather than assume index 0.
+    ENJIN_ASSERT_TRUE(scene.materials.size() >= 1);
+    bool foundColor = false;
+    for (const auto& m : scene.materials) {
+        if (std::fabs(m.baseColorFactor.x - 0.8f) < 0.05f &&
+            std::fabs(m.baseColorFactor.y - 0.2f) < 0.05f &&
+            std::fabs(m.baseColorFactor.z - 0.1f) < 0.05f) {
+            foundColor = true;
+        }
+    }
+    ENJIN_EXPECT_TRUE(foundColor);
+}
+
+ENJIN_TEST(GoldenOBJ, SceneImporterBuildsEntitiesFromOBJ) {
+    std::string path = WriteGoldenOBJ(GoldenDir());
+    ENJIN_ASSERT_FALSE(path.empty());
+
+    ECS::World world;
+    Assets::ImportOptions opts;
+    opts.generateColliders = false;
+    Assets::ImportResult r = Assets::SceneImporter::ImportAssimp(path, &world, opts);
+
+    ENJIN_ASSERT_TRUE(r.success);
+    ENJIN_EXPECT_TRUE(r.meshCount >= 1);
+    ENJIN_EXPECT_TRUE(r.entities.size() >= 1);
+    ENJIN_EXPECT_TRUE(r.totalVertexCount >= 8);
 }
 
 // ===========================================================================
