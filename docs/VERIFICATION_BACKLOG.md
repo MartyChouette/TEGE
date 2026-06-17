@@ -87,7 +87,14 @@ cheap or ship-critical; P2 = fills out coverage.
 15. **TimelineSystem `Update` (replace the self-referential tests)** — build a world+entity, `sys.Update(world, dt)`, assert time advances, loop wraps, ping-pong flips, events fire once, `isComplete` sets.
 16. **LevelGenerator `Generate()` + connectivity** — run it, assert rooms within bounds, start+end exist, BFS-reachable (no orphaned pockets). Same BFS check for BSP/RandomWalker output.
 17. **Script binding mutates world** — script calls a position setter, assert C++ `TransformComponent.position` changed (closes the only real scripting gap).
-18. **FBX/OBJ import golden (Assimp path)** — OBJ mesh + material DONE (`GoldenOBJ` suite: cube geometry, normals, `Kd` material color, full `ImportAssimp`). FBX rig/animation still pending: FBX is binary and needs a committed Blender-exported fixture; the rig/animation import *logic* is already proven via the glTF path. *(The original item that started this list.)*
+18. **FBX/OBJ import golden (Assimp path)** — OBJ mesh + material DONE (`GoldenOBJ` suite: cube geometry, normals, `Kd` material color, full `ImportAssimp`). FBX rig test SCAFFOLDED (`GoldenFBX.RiggedMeshImports`): asserts mesh+skeleton+skinning+animation, skips until a valid fixture lands at `Tests/Fixtures/humanrig.fbx` (recipe in `Tests/Fixtures/README.md`). The rig/animation import *logic* is already proven via the glTF path. *(The original item that started this list.)*
+
+> **Discovered while scaffolding the FBX test (2026-06-17):** `AssimpLoader::Load`
+> (`Engine/src/Assets/AssimpLoader.cpp:76`) treats Assimp's `AI_SCENE_FLAGS_INCOMPLETE`
+> as a hard failure, so **any mesh-less FBX is rejected** — a valid rig-only or
+> animation-only export (the standard "import an animation clip to retarget onto an
+> existing character" workflow) cannot be loaded. Decide: accept INCOMPLETE scenes
+> that still have a root node + bones/animations, or document this as intended.
 19. **Extend the golden round-trip** — save + reload a `SkeletonComponent` + `AnimatorComponent` and assert bones/clips survive (we proved tween; skeleton/animator serialization exists but is unproven on real data).
 
 ### P2 — coverage fill

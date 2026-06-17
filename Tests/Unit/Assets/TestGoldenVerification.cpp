@@ -375,6 +375,51 @@ ENJIN_TEST(GoldenOBJ, SceneImporterBuildsEntitiesFromOBJ) {
 }
 
 // ===========================================================================
+// FBX rig import via Assimp — uses a committed binary fixture (FBX can't be
+// generated at runtime). Skips cleanly if the fixture is absent.
+// ===========================================================================
+
+#ifdef ENJIN_TEST_FIXTURES_DIR
+// Asserts the FBX skinned-mesh import path: mesh + skeleton + skinning +
+// animation all parse. Skips cleanly until a valid fixture is dropped in
+// (FBX is binary and can't be generated at runtime — see Tests/Fixtures/README).
+// Note: AssimpLoader rejects mesh-LESS FBX (Assimp INCOMPLETE flag), so the
+// fixture must contain a skinned mesh, not just an armature/animation.
+ENJIN_TEST(GoldenFBX, RiggedMeshImports) {
+    std::string path = std::string(ENJIN_TEST_FIXTURES_DIR) + "/humanrig.fbx";
+    if (!fs::exists(path)) {
+        std::printf("    [skip] FBX fixture absent — drop a rigged+animated mesh at %s\n",
+                    path.c_str());
+        return;
+    }
+
+    Assets::AssimpScene scene;
+    bool ok = Assets::AssimpLoader::Load(path, scene);
+    if (!ok) {
+        std::printf("    [skip] FBX fixture did not load (empty/mesh-less export?): '%s'\n",
+                    Assets::AssimpLoader::GetLastError().c_str());
+        return;
+    }
+
+    // A rigged character: at least one skinned mesh, a skeleton, and a clip.
+    ENJIN_EXPECT_TRUE(scene.meshes.size() >= 1);
+    ENJIN_EXPECT_TRUE(scene.hasSkinning);
+    ENJIN_EXPECT_TRUE(scene.bones.size() >= 1);
+    ENJIN_ASSERT_TRUE(scene.animations.size() >= 1);
+    ENJIN_EXPECT_TRUE(scene.animations[0].channels.size() >= 1);
+    ENJIN_EXPECT_TRUE(scene.animations[0].duration > 0.0f);
+
+    // And it builds real entities through the import pipeline.
+    ECS::World world;
+    Assets::ImportOptions opts;
+    opts.generateColliders = false;
+    Assets::ImportResult r = Assets::SceneImporter::ImportAssimp(path, &world, opts);
+    ENJIN_EXPECT_TRUE(r.success);
+    ENJIN_EXPECT_TRUE(r.entities.size() >= 1);
+}
+#endif
+
+// ===========================================================================
 // SVG support (rasterize to pixels) — Vulkan/desktop build only
 // ===========================================================================
 

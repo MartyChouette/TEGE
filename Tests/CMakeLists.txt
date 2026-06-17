@@ -185,6 +185,8 @@ enjin_add_test(TestDataAsset          Unit/Assets/TestDataAsset.cpp)
 enjin_add_test(TestBuildPipeline      Unit/Assets/TestBuildPipeline.cpp)
 enjin_add_test(TestBuildConfig        Unit/Assets/TestBuildConfig.cpp)
 enjin_add_test(TestGoldenVerification Unit/Assets/TestGoldenVerification.cpp)
+target_compile_definitions(TestGoldenVerification PRIVATE
+    ENJIN_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Fixtures")
 
 # --- Animation ---
 enjin_add_test(TestAnimation          Unit/Animation/TestAnimation.cpp)
