@@ -71,3 +71,49 @@ work, not a loop edit.
 All three scheduled for fixing. The fire-light feature is correct and
 shipping-ready on the editor path; Gaps A and C are what stand between it and a
 built game.
+
+---
+
+## Re-check (2026-06-18)
+
+Re-audited the three runtime paths after a session of shared-engine changes
+(LOD unification, MaterialGPU size fix) and an editor-only feature (drag-and-drop
+import + its enable/disable setting). All three targets (`EnjinEditor`,
+`EnjinPlayer`) build against the current engine.
+
+**Gap A — ElementalSystem in the Player: FIXED.** `Player/src/main.cpp` now
+initializes it (`:398`), updates it (`:930`), and feeds the fire lights into the
+renderer (`BuildFireLights` -> `ClearTransientPointLights`/`AddTransientPointLight`,
+`:932-935`).
+
+**Gap B — AudioReactiveSystem in the Player: FIXED.** Set up at `:400-402`,
+updated at `:924`.
+
+**Gap C — compute-shader systems disabled in builds: STILL OPEN.**
+`Player/src/main.cpp:221` still `SetPlayerMode(true)` with "Skip GPU compute
+shaders not embedded in builds", so shipped games lose GPU culling and clustered
+lighting (and fog only scatters the sun). Unchanged from 2026-06-10; needs the
+build-pipeline fix (embed compute `.spv` as headers via `_gen_all.py`, or pack
+into the `.enjpak` and load via the asset reader, then drop the `m_PlayerMode`
+gates at `RenderSystem.cpp` ~3831/3912).
+
+**This session's changes — parity-safe:**
+- *LOD unification.* The two divergent LOD selectors in `RenderSystem.cpp` were
+  replaced by one `ECS::SelectLOD`. The Player runs the same `RenderSystem::Update`
+  (LOD site is reached before the player-mode GPU-culling gate), so editor and
+  player now select LOD identically. No new divergence.
+- *MaterialGPU 80 -> 112 size fix.* Engine-wide struct; both apps build against it.
+- *Drag-and-drop import + setting.* Editor-only by design (the Player has no file-
+  drop import path), so not a parity surface.
+
+**Installer (`installer/EnjinSetup.iss`) — complete for editor + player.** Packages
+`EnjinEditor.exe` (fixed component), `EnjinPlayer.exe` (full type), `Engine/shaders/*.spv`,
+scripts, and docs; associates `.enjinproject` and `.enjin` with the editor and
+cleans up the stale `.enjscene` key. Note: the loose `.spv` it ships are for the
+editor install dir; they do not resolve Gap C for shipped `.enjpak` games. Minor:
+`AppVersion` is still `0.9.6`; `API_REFERENCE.md` is listed `skipifsourcedoesntexist`
+(the repo ships `SCRIPTING_API.md` instead).
+
+**Bottom line.** Editor/player runtime parity is now down to the single
+pre-existing Gap C (compute shaders in shipped builds). Nothing from this session
+introduced a new gap.
