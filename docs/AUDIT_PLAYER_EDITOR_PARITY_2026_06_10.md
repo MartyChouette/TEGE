@@ -89,13 +89,27 @@ renderer (`BuildFireLights` -> `ClearTransientPointLights`/`AddTransientPointLig
 **Gap B — AudioReactiveSystem in the Player: FIXED.** Set up at `:400-402`,
 updated at `:924`.
 
-**Gap C — compute-shader systems disabled in builds: STILL OPEN.**
-`Player/src/main.cpp:221` still `SetPlayerMode(true)` with "Skip GPU compute
-shaders not embedded in builds", so shipped games lose GPU culling and clustered
-lighting (and fog only scatters the sun). Unchanged from 2026-06-10; needs the
-build-pipeline fix (embed compute `.spv` as headers via `_gen_all.py`, or pack
-into the `.enjpak` and load via the asset reader, then drop the `m_PlayerMode`
-gates at `RenderSystem.cpp` ~3831/3912).
+**Gap C — compute-shader systems disabled in builds: clustered lighting FIXED;
+GPU culling deferred.**
+
+*Clustered lighting — fixed.* The two cluster compute shaders are now loaded from
+embedded SPIR-V (`ClusterComputeShaderData.h`, which existed but was never wired
+up) via `VulkanShader::LoadFromSPIRV`, with disk paths as a dev fallback
+(`ClusteredLighting.cpp`). `Initialize` now returns false if they truly fail, so
+`RenderSystem` resets the system and the per-frame path skips instead of using
+null pipelines. The `!m_PlayerMode` gate at the clustered-lighting call site was
+removed, so shipped games get clustered lights and the fog in-scatter that reads
+the cluster grid (the fire-glow-through-smoke payoff). `TestEmbeddedShaders`
+guards the embed (valid SPIR-V magic + word-aligned). Editor + player build;
+suite 91/91. Runtime visual confirmation on a built game still wanted.
+
+*GPU culling — intentionally left gated.* Its gate is
+`!m_IsEditorMode && !m_PlayerMode` (disabled in BOTH editor and player), with a
+comment that built games would have empty indirect-draw buffers, marking entities
+"drawn" but never rendering them. That is a deeper indirect-draw/Hi-Z infra issue,
+not just a missing shader, and its `cull.comp.spv`/`cull_hiz.comp.spv` are not
+embedded. Enabling it blind risks invisible geometry, so it stays gated pending a
+dedicated pass. It is a performance optimization, not a visual feature.
 
 **This session's changes — parity-safe:**
 - *LOD unification.* The two divergent LOD selectors in `RenderSystem.cpp` were
@@ -114,6 +128,8 @@ editor install dir; they do not resolve Gap C for shipped `.enjpak` games. Minor
 `AppVersion` is still `0.9.6`; `API_REFERENCE.md` is listed `skipifsourcedoesntexist`
 (the repo ships `SCRIPTING_API.md` instead).
 
-**Bottom line.** Editor/player runtime parity is now down to the single
-pre-existing Gap C (compute shaders in shipped builds). Nothing from this session
-introduced a new gap.
+**Bottom line.** Gaps A and B are fixed, and Gap C's visual half (clustered
+lighting) is now fixed for shipped builds. The only remaining divergence is GPU
+culling, which is disabled in both editor and player for an unrelated indirect-
+draw infra reason — a performance optimization, not a feature gap. Nothing from
+this session introduced a new gap.

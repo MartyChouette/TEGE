@@ -2,6 +2,7 @@
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
 #include "Enjin/Renderer/Vulkan/VulkanShader.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
+#include "Enjin/Renderer/ClusterComputeShaderData.h"  // embedded compute SPIR-V
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 #include <cstring>
@@ -295,17 +296,23 @@ bool ClusteredLightingSystem::CreateComputePipelines() {
     }
 
     VulkanShader boundsShader(m_Context);
-    const char* boundsPaths[] = {
-        "shaders/light_cluster_bounds.comp.spv",
-        "Engine/shaders/light_cluster_bounds.comp.spv",
-        "../Engine/shaders/light_cluster_bounds.comp.spv",
-        "../../Engine/shaders/light_cluster_bounds.comp.spv"
-    };
-    bool boundsLoaded = false;
-    for (const char* path : boundsPaths) {
-        if (boundsShader.LoadFromFile(path) && boundsShader.GetModule() != VK_NULL_HANDLE) {
-            boundsLoaded = true;
-            break;
+    // Prefer embedded SPIR-V so clustered lighting works in shipped Player builds
+    // (no loose .spv on disk); fall back to disk for dev/hot-reload workflows.
+    bool boundsLoaded = boundsShader.LoadFromSPIRV(LightClusterBoundsComputeShaderData,
+                                                   LightClusterBoundsComputeShaderDataSize)
+                        && boundsShader.GetModule() != VK_NULL_HANDLE;
+    if (!boundsLoaded) {
+        const char* boundsPaths[] = {
+            "shaders/light_cluster_bounds.comp.spv",
+            "Engine/shaders/light_cluster_bounds.comp.spv",
+            "../Engine/shaders/light_cluster_bounds.comp.spv",
+            "../../Engine/shaders/light_cluster_bounds.comp.spv"
+        };
+        for (const char* path : boundsPaths) {
+            if (boundsShader.LoadFromFile(path) && boundsShader.GetModule() != VK_NULL_HANDLE) {
+                boundsLoaded = true;
+                break;
+            }
         }
     }
 
@@ -332,17 +339,21 @@ bool ClusteredLightingSystem::CreateComputePipelines() {
     }
 
     VulkanShader assignShader(m_Context);
-    const char* assignPaths[] = {
-        "shaders/light_cluster_assign.comp.spv",
-        "Engine/shaders/light_cluster_assign.comp.spv",
-        "../Engine/shaders/light_cluster_assign.comp.spv",
-        "../../Engine/shaders/light_cluster_assign.comp.spv"
-    };
-    bool assignLoaded = false;
-    for (const char* path : assignPaths) {
-        if (assignShader.LoadFromFile(path) && assignShader.GetModule() != VK_NULL_HANDLE) {
-            assignLoaded = true;
-            break;
+    bool assignLoaded = assignShader.LoadFromSPIRV(LightClusterAssignComputeShaderData,
+                                                   LightClusterAssignComputeShaderDataSize)
+                        && assignShader.GetModule() != VK_NULL_HANDLE;
+    if (!assignLoaded) {
+        const char* assignPaths[] = {
+            "shaders/light_cluster_assign.comp.spv",
+            "Engine/shaders/light_cluster_assign.comp.spv",
+            "../Engine/shaders/light_cluster_assign.comp.spv",
+            "../../Engine/shaders/light_cluster_assign.comp.spv"
+        };
+        for (const char* path : assignPaths) {
+            if (assignShader.LoadFromFile(path) && assignShader.GetModule() != VK_NULL_HANDLE) {
+                assignLoaded = true;
+                break;
+            }
         }
     }
 
@@ -360,7 +371,11 @@ bool ClusteredLightingSystem::CreateComputePipelines() {
     }
 
     if (!boundsLoaded || !assignLoaded) {
-        ENJIN_LOG_WARN(Renderer, "ClusteredLighting: Some compute shaders not found");
+        // Should not happen now that the SPIR-V is embedded, but if it does,
+        // report failure so RenderSystem resets the system and the per-frame
+        // clustered path is skipped instead of using null pipelines.
+        ENJIN_LOG_WARN(Renderer, "ClusteredLighting: compute shaders unavailable — disabling clustered path");
+        return false;
     }
 
     return true;

@@ -3900,7 +3900,10 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Clustered forward lighting: build light list and assign to spatial clusters before main render pass
 #ifdef ENJIN_CLUSTERED_LIGHTING
-    if (m_ClusteredLighting && !m_PlayerMode && m_SceneComposition.mode != SceneRenderMode::Scene2D && m_Camera) {
+    // Clustered lighting now runs in Player builds too: the compute SPIR-V is
+    // embedded (ClusterComputeShaderData.h), so m_ClusteredLighting is only
+    // non-null when its pipelines actually built. No m_PlayerMode gate needed.
+    if (m_ClusteredLighting && m_SceneComposition.mode != SceneRenderMode::Scene2D && m_Camera) {
         VkCommandBuffer cmdBuf = m_VulkanRenderer->GetCurrentCommandBuffer();
         if (cmdBuf != VK_NULL_HANDLE) {
             // Build ClusterLight array from cached light entities (reuse pre-allocated vector)
