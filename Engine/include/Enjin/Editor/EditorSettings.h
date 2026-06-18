@@ -192,6 +192,9 @@ struct EditorSettings {
     bool autoSaveEnabled = true;
     f32 autoSaveIntervalMinutes = 5.0f;
 
+    // Workflow
+    bool enableDragDropImport = true;  // Drag files onto the editor window to import them
+
     // Discord bug report webhook
     std::string discordWebhookUrl;  // Empty = disabled; set in Settings > System
 

@@ -1031,6 +1031,17 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
             ImGui::TreePop();
         }
 
+        // -- Workflow --
+        if (ImGui::TreeNode("Workflow")) {
+            if (ImGui::Checkbox("Enable Drag-and-Drop Import", &m_EditorSettings.enableDragDropImport)) {
+                settingsChanged = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Drag model, texture, audio, or scene files onto the editor window to import them");
+            }
+            ImGui::TreePop();
+        }
+
         // -- Input Accessibility --
         if (ImGui::TreeNode("Input")) {
             const char* holdToggle[] = { "Hold", "Toggle" };

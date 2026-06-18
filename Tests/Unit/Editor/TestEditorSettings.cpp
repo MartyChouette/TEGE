@@ -284,4 +284,23 @@ ENJIN_TEST(BackwardCompat, LegacyAudioAndIconFieldsStillRead) {
     std::remove(tmpPath.c_str());
 }
 
+ENJIN_TEST(Defaults, DragDropEnabledByDefault) {
+    EditorSettings s;
+    ENJIN_EXPECT_TRUE(s.enableDragDropImport);
+}
+
+ENJIN_TEST(JSONRoundTrip, DragDropToggle) {
+    std::string tmpPath = "test_editor_settings_dragdrop.json";
+
+    EditorSettings s1;
+    s1.enableDragDropImport = false;  // disable, then confirm it persists
+    s1.Save(tmpPath);
+
+    EditorSettings s2;
+    s2.Load(tmpPath);
+    ENJIN_EXPECT_FALSE(s2.enableDragDropImport);
+
+    std::remove(tmpPath.c_str());
+}
+
 ENJIN_TEST_MAIN()

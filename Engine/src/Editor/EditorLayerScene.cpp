@@ -482,6 +482,13 @@ ECS::Entity CreateSpriteEntity(ECS::World* world, const std::string& filePath) {
 }
 
 void EditorLayer::OnFileDrop(int count, const char** paths) {
+    if (!m_EditorSettings.enableDragDropImport) {
+        if (count > 0) {
+            ENJIN_LOG_INFO(Editor, "Drag-and-drop disabled; ignored %d dropped file(s)", count);
+            m_ConsoleLog.push_back("[Info] Drag-and-drop import is off (Settings > System > Workflow)");
+        }
+        return;
+    }
     for (int i = 0; i < count; ++i) {
         std::filesystem::path filePath(paths[i]);
         std::string ext = filePath.extension().string();
