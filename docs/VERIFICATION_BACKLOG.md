@@ -48,7 +48,7 @@ result, or does it only construct structs and check defaults / failure paths?**
 | Tiered save slots (disk) | **THIN** | In-memory KV tested; `SaveToSlot`/`LoadFromSlot` never round-tripped. |
 | Level streaming load/unload | **SHALLOW** | No `Update(cameraPos)`; state machine unproven. |
 | SkeletalAnimator pose sampling | **THIN** | `BoneTrack::SamplePosition` tested; no Play→Update→sample→bone-matrix; rotation/scale sampling untested. |
-| TimelineSystem `Update` | **SELF-REFERENTIAL** | `TestTimeline`'s loop/pingpong/easing tests re-implement the logic inline; the engine `Update` is never run. |
+| TimelineSystem `Update` | **PROVEN** | Rewritten: `TestTimeline` Forward/Loop/PingPong/Events/Easing now drive `TimelineSystem::Update` against a World and assert engine behavior (advance, loop wrap, ping-pong bounce, completion, event firing, easing through a property track). |
 | BlendTree pose blend | **THIN** | Clip selection proven; actual blended pose not checked. |
 | LevelGenerator `Generate()` | **SHALLOW** | Only prefab bookkeeping; the placement/connection algorithm never runs. |
 | Interactive water / weather | **SHALLOW** | No `Update()`; wave propagation, particle spawning, buoyancy unproven. |
@@ -58,7 +58,7 @@ result, or does it only construct structs and check defaults / failure paths?**
 | Plugin loader | **THIN** | No DLL fixture; load/symbol/init lifecycle unverified (by design). |
 | Audio playback | **SHALLOW** | dB/attenuation math real; no headless playback/pan (env-gated). |
 | LOD selection | **SELF-REFERENTIAL** | Test asserts its own arithmetic; the LOD-pick function is never called. |
-| Collision filtering | **SELF-REFERENTIAL** | Bitmask rule proven against a test-local copy, not the engine's filter path. |
+| Collision filtering | **COVERED ELSEWHERE** | `TestCollisionFiltering`'s bitmask math is a test-local copy, but the real engine path is now proven by `TestPhysicsSimulation.CollisionFilteringSuppressesContact`. No reusable engine filter function exists to point the unit test at. |
 
 ---
 
@@ -111,7 +111,7 @@ cheap or ship-critical; P2 = fills out coverage.
 30. Replace `EXPECT_TRUE(true)` "no crash" asserts in `TestStressFuzz` / `TestHardeningRegression` with concrete post-conditions so silent corruption is caught.
 
 ### Meta-fix
-- **Audit the SELF-REFERENTIAL suites** (`TestTimeline`, `TestLOD`, `TestCollisionFiltering` filter math, `TestHardeningRegression` oversized-payload): these pass while testing nothing in the engine. Rewrite each to call the real engine function. Until then they are worse than no test, because they read as covered.
+- **SELF-REFERENTIAL suites** — `TestTimeline` rewritten to drive `TimelineSystem::Update` (DONE). Collision-filtering math now backed by `TestPhysicsSimulation` (the engine path), so the test-local copy is no longer the only coverage. Still open: `TestLOD` (the real LOD selection lives inline in `RenderSystem.cpp` in **two divergent** implementations at ~1859 and ~4400; unifying them into one testable `SelectLOD` is a renderer behavior change, deliberately deferred rather than done blind) and `TestHardeningRegression`'s oversized-payload test (re-implements the bounds check instead of calling `NetworkSystem::HandlePacket`).
 
 ---
 
