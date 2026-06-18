@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/DropImport.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
@@ -453,6 +454,33 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
     }
 }
 
+// Drag-and-drop entity-creation helpers (declared in DropImport.h). Kept as free
+// functions so they can be unit-tested against a bare World, no editor required.
+ECS::Entity CreateAudioSourceEntity(ECS::World* world, const std::string& filePath) {
+    if (!world) return ECS::INVALID_ENTITY;
+    std::filesystem::path p(filePath);
+    ECS::Entity e = world->CreateEntity();
+    world->AddComponent<ECS::NameComponent>(e, p.stem().string());
+    world->AddComponent<ECS::TransformComponent>(e);
+    auto& src = world->AddComponent<ECS::AudioSourceComponent>(e);
+    src.clipPath = filePath;
+    return e;
+}
+
+ECS::Entity CreateSpriteEntity(ECS::World* world, const std::string& filePath) {
+    if (!world) return ECS::INVALID_ENTITY;
+    std::filesystem::path p(filePath);
+    ECS::Entity e = world->CreateEntity();
+    world->AddComponent<ECS::NameComponent>(e, p.stem().string());
+    auto& tr = world->AddComponent<ECS::TransformComponent>(e);
+    tr.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-90.0f)); // face camera
+    world->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+    auto& mat = world->AddComponent<ECS::MaterialComponent>(e);
+    mat.alphaMode = ECS::MaterialComponent::AlphaMode::Blend; // sprite transparency
+    mat.baseColorTexturePath = filePath;
+    return e;
+}
+
 void EditorLayer::OnFileDrop(int count, const char** paths) {
     for (int i = 0; i < count; ++i) {
         std::filesystem::path filePath(paths[i]);
@@ -520,8 +548,24 @@ void EditorLayer::OnFileDrop(int count, const char** paths) {
                     }
                 }
             } else {
-                ENJIN_LOG_WARN(Editor, "No entity selected for texture drop: %s", paths[i]);
-                m_ConsoleLog.push_back(std::string("[Warn] Select an entity first, then drop texture: ") + paths[i]);
+                // Nothing selected — create a sprite quad showing the texture, so a
+                // dropped image always produces something visible (Mac-style import).
+                ECS::Entity e = CreateSpriteEntity(m_World, filePath.string());
+                if (e != ECS::INVALID_ENTITY) {
+                    if (m_RenderSystem) m_RenderSystem->ClearFailedTexture(filePath.string());
+                    SelectEntity(e);
+                    ENJIN_LOG_INFO(Editor, "Created sprite from texture: %s", paths[i]);
+                    m_ConsoleLog.push_back(std::string("[Info] Created sprite from texture: ") + paths[i]);
+                }
+            }
+        } else if (ext == ".wav" || ext == ".mp3" || ext == ".ogg" || ext == ".flac" ||
+                   ext == ".aiff" || ext == ".aif") {
+            // Drop a sound -> spawn an audio source entity pointing at the file.
+            ECS::Entity e = CreateAudioSourceEntity(m_World, filePath.string());
+            if (e != ECS::INVALID_ENTITY) {
+                SelectEntity(e);
+                ENJIN_LOG_INFO(Editor, "Created audio source from drop: %s", paths[i]);
+                m_ConsoleLog.push_back(std::string("[Info] Created audio source: ") + paths[i]);
             }
         } else {
             ENJIN_LOG_WARN(Editor, "Unsupported file dropped: %s", paths[i]);
