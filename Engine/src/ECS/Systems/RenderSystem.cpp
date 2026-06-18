@@ -1853,16 +1853,7 @@ void RenderSystem::Update(f32 deltaTime) {
                     if (!xf) continue;
 
                     f32 dist = (xf->position - camPos).Length();
-                    i32 newLOD = 0;
-                    for (i32 l = 0; l < lod->levelCount - 1; l++) {
-                        f32 threshold = lod->levels[l].maxDistance;
-                        if (threshold <= 0.0f) threshold = lod->baseDistance * std::pow(lod->distanceMultiplier, static_cast<f32>(l));
-                        f32 hysteresis = threshold * lod->hysteresisRatio;
-                        f32 upgradeDist = threshold - hysteresis;
-                        f32 downgradeDist = threshold + hysteresis;
-                        if (l >= lod->activeLOD && dist > downgradeDist) newLOD = l + 1;
-                        else if (l < lod->activeLOD && dist < upgradeDist) newLOD = l;
-                    }
+                    i32 newLOD = SelectLOD(*lod, dist);
                     if (newLOD != lod->activeLOD && newLOD < lod->levelCount) {
                         auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
                         if (mesh && !lod->levels[newLOD].mesh.vertices.empty()) {
@@ -4393,30 +4384,8 @@ void RenderSystem::Update(f32 deltaTime) {
                             metric = (transform->position - camPos).Length();
                         }
 
-                        // LOD selection with directional hysteresis bands.
-                        // When at LOD N, upgrading to N-1 (more detail) requires metric < threshold - hysteresis.
-                        // Downgrading to N+1 (less detail) requires metric > threshold + hysteresis.
-                        i32 newLOD = lod->activeLOD;
-                        f32 hyst = lod->hysteresisRatio;
-                        for (i32 l = 0; l < lod->levelCount - 1; ++l) {
-                            f32 threshold = lod->levels[l].maxDistance;
-                            f32 band = threshold * hyst;
-                            if (l < lod->activeLOD) {
-                                // Considering upgrading to higher detail (lower LOD index)
-                                // Must be well within this level's range
-                                if (metric < threshold - band) {
-                                    newLOD = l;
-                                    break;
-                                }
-                            } else if (l >= lod->activeLOD) {
-                                // Considering downgrading to lower detail (higher LOD index)
-                                if (metric > threshold + band) {
-                                    newLOD = l + 1;
-                                } else {
-                                    break;
-                                }
-                            }
-                        }
+                        // Unified LOD selection (see ECS::SelectLOD) with directional hysteresis.
+                        i32 newLOD = SelectLOD(*lod, metric);
 
                         if (newLOD != lod->activeLOD && newLOD < lod->levelCount) {
                             auto* mesh = meshStorageLoop ? meshStorageLoop->Get(entity) : nullptr;

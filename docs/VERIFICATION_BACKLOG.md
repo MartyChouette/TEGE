@@ -57,7 +57,7 @@ result, or does it only construct structs and check defaults / failure paths?**
 | Script bindings (~960) | **THIN** | Read bindings proven (`IsValid`); no binding proven to MUTATE the world. |
 | Plugin loader | **THIN** | No DLL fixture; load/symbol/init lifecycle unverified (by design). |
 | Audio playback | **SHALLOW** | dB/attenuation math real; no headless playback/pan (env-gated). |
-| LOD selection | **SELF-REFERENTIAL** | Test asserts its own arithmetic; the LOD-pick function is never called. |
+| LOD selection | **PROVEN** | Unified: the two divergent inline implementations in `RenderSystem.cpp` were replaced by one `ECS::SelectLOD(lod, metric)` (header), called from both paths. `TestLOD` now drives it: distance downgrade, hysteresis dead-zone holds, upgrade-when-well-inside, threshold fallback, single-level no-op. |
 | Collision filtering | **COVERED ELSEWHERE** | `TestCollisionFiltering`'s bitmask math is a test-local copy, but the real engine path is now proven by `TestPhysicsSimulation.CollisionFilteringSuppressesContact`. No reusable engine filter function exists to point the unit test at. |
 
 ---
@@ -111,7 +111,7 @@ cheap or ship-critical; P2 = fills out coverage.
 30. Replace `EXPECT_TRUE(true)` "no crash" asserts in `TestStressFuzz` / `TestHardeningRegression` with concrete post-conditions so silent corruption is caught.
 
 ### Meta-fix
-- **SELF-REFERENTIAL suites** — `TestTimeline` rewritten to drive `TimelineSystem::Update` (DONE). Collision-filtering math now backed by `TestPhysicsSimulation` (the engine path), so the test-local copy is no longer the only coverage. Still open: `TestLOD` (the real LOD selection lives inline in `RenderSystem.cpp` in **two divergent** implementations at ~1859 and ~4400; unifying them into one testable `SelectLOD` is a renderer behavior change, deliberately deferred rather than done blind) and `TestHardeningRegression`'s oversized-payload test (re-implements the bounds check instead of calling `NetworkSystem::HandlePacket`).
+- **SELF-REFERENTIAL suites** — `TestTimeline` rewritten to drive `TimelineSystem::Update` (DONE). Collision-filtering math now backed by `TestPhysicsSimulation` (the engine path), so the test-local copy is no longer the only coverage. `TestLOD` DONE: the two divergent inline LOD implementations in `RenderSystem.cpp` were unified into one `ECS::SelectLOD` (break-based directional hysteresis + threshold fallback), called from both render paths, and `TestLOD` now drives that function. Still open: `TestHardeningRegression`'s oversized-payload test (re-implements the bounds check instead of calling `NetworkSystem::HandlePacket`).
 
 ---
 

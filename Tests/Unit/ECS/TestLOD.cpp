@@ -82,32 +82,72 @@ ENJIN_TEST(LODConfig, DisableLOD) {
     ENJIN_EXPECT_FALSE(lod.enabled);
 }
 
-ENJIN_TEST(LODConfig, DistanceMultiplierCalculation) {
+// ===========================================================================
+// LOD selection (ECS::SelectLOD) — the real engine function, shared by both
+// RenderSystem LOD paths. These replace earlier tests that recomputed the
+// distance/hysteresis arithmetic in the test body.
+// ===========================================================================
+
+namespace {
+LODComponent ThreeLevelLOD() {
     LODComponent lod;
-    lod.baseDistance = 10.0f;
-    lod.distanceMultiplier = 2.0f;
-    // LOD transitions: 10, 20, 40, 80, 160
-    f32 d0 = lod.baseDistance;
-    f32 d1 = d0 * lod.distanceMultiplier;
-    f32 d2 = d1 * lod.distanceMultiplier;
-    ENJIN_EXPECT_FLOAT_EQ(d0, 10.0f);
-    ENJIN_EXPECT_FLOAT_EQ(d1, 20.0f);
-    ENJIN_EXPECT_FLOAT_EQ(d2, 40.0f);
+    lod.levelCount = 3;
+    lod.levels[0].maxDistance = 10.0f;
+    lod.levels[1].maxDistance = 25.0f;
+    lod.levels[2].maxDistance = 50.0f;
+    lod.hysteresisRatio = 0.1f;  // band = 1.0 at threshold 10
+    return lod;
+}
+} // namespace
+
+ENJIN_TEST(LODSelect, StaysHighDetailWhenClose) {
+    LODComponent lod = ThreeLevelLOD();
+    lod.activeLOD = 0;
+    ENJIN_EXPECT_EQ(SelectLOD(lod, 1.0f), 0);  // very close -> full detail
 }
 
-ENJIN_TEST(LODConfig, HysteresisDeadZone) {
+ENJIN_TEST(LODSelect, DowngradesWithDistance) {
+    LODComponent lod = ThreeLevelLOD();
+    lod.activeLOD = 0;
+    ENJIN_EXPECT_EQ(SelectLOD(lod, 15.0f), 1);  // past level 0 band (>11)
+    ENJIN_EXPECT_EQ(SelectLOD(lod, 40.0f), 2);  // past level 1 band (>27.5)
+}
+
+ENJIN_TEST(LODSelect, HysteresisDeadZoneHoldsLevel) {
+    LODComponent lod = ThreeLevelLOD();
+    // At LOD 0, just past threshold 10 but inside the +band (11) -> no downgrade.
+    lod.activeLOD = 0;
+    ENJIN_EXPECT_EQ(SelectLOD(lod, 10.5f), 0);
+    // At LOD 1, just under threshold 10 but inside the -band (9) -> no upgrade.
+    lod.activeLOD = 1;
+    ENJIN_EXPECT_EQ(SelectLOD(lod, 9.5f), 1);
+}
+
+ENJIN_TEST(LODSelect, UpgradesWhenWellInside) {
+    LODComponent lod = ThreeLevelLOD();
+    lod.activeLOD = 2;
+    // Move close enough to clear level 1's lower band (25 - 2.5 = 22.5) and
+    // level 0's lower band (10 - 1 = 9) -> back to full detail.
+    ENJIN_EXPECT_EQ(SelectLOD(lod, 5.0f), 0);
+}
+
+ENJIN_TEST(LODSelect, SingleLevelNeverSwitches) {
     LODComponent lod;
-    lod.baseDistance = 100.0f;
+    lod.levelCount = 1;
+    lod.activeLOD = 0;
+    ENJIN_EXPECT_EQ(SelectLOD(lod, 9999.0f), 0);
+}
+
+ENJIN_TEST(LODSelect, ThresholdFallbackUsesBaseDistance) {
+    // maxDistance unset (0) -> falls back to baseDistance * mult^level (10, 20).
+    LODComponent lod;
+    lod.levelCount = 3;
+    lod.baseDistance = 10.0f;
+    lod.distanceMultiplier = 2.0f;
     lod.hysteresisRatio = 0.1f;
-    // Dead zone is 10% of transition distance
-    f32 deadZone = lod.baseDistance * lod.hysteresisRatio;
-    ENJIN_EXPECT_FLOAT_EQ(deadZone, 10.0f);
-    // Upgrade threshold: 100 - 10 = 90
-    // Downgrade threshold: 100 + 10 = 110
-    f32 upgradeThreshold = lod.baseDistance - deadZone;
-    f32 downgradeThreshold = lod.baseDistance + deadZone;
-    ENJIN_EXPECT_FLOAT_EQ(upgradeThreshold, 90.0f);
-    ENJIN_EXPECT_FLOAT_EQ(downgradeThreshold, 110.0f);
+    lod.activeLOD = 0;
+    ENJIN_EXPECT_EQ(SelectLOD(lod, 5.0f), 0);   // inside fallback threshold 10
+    ENJIN_EXPECT_EQ(SelectLOD(lod, 30.0f), 2);  // past fallback thresholds 10 and 20
 }
 
 ENJIN_TEST_MAIN()

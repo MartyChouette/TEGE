@@ -4,6 +4,7 @@
 #include "Enjin/ECS/Components/Mesh.h"
 #include <vector>
 #include <array>
+#include <cmath>
 
 namespace Enjin {
 namespace ECS {
@@ -48,6 +49,39 @@ struct LODComponent {
     // LOD 0 is always 1.0 (original), these are for LOD 1-4
     std::array<f32, MAX_LEVELS> reductionRatios = { 1.0f, 0.5f, 0.25f, 0.12f, 0.06f };
 };
+
+// Select which LOD index to display for `metric` (camera distance, or a
+// distance/screen-size ratio when useScreenSize is on), given the current
+// activeLOD. Directional hysteresis: upgrading to higher detail (lower index)
+// requires the metric to be well inside a level's range (threshold - band);
+// downgrading requires it to be well past (threshold + band). This prevents
+// flicker at a transition boundary. A level's threshold falls back to
+// baseDistance * distanceMultiplier^level when its maxDistance is unset (<= 0).
+//
+// This is the single source of truth for LOD selection — RenderSystem's LOD
+// update calls it from both the distance-based and screen-size-based paths.
+inline i32 SelectLOD(const LODComponent& lod, f32 metric) {
+    if (lod.levelCount <= 1) return lod.activeLOD;
+    i32 newLOD = lod.activeLOD;
+    for (i32 l = 0; l < lod.levelCount - 1; ++l) {
+        f32 threshold = lod.levels[l].maxDistance;
+        if (threshold <= 0.0f) {
+            threshold = lod.baseDistance * std::pow(lod.distanceMultiplier, static_cast<f32>(l));
+        }
+        f32 band = threshold * lod.hysteresisRatio;
+        if (l < lod.activeLOD) {
+            // Upgrade toward higher detail only when well inside this level's range.
+            if (metric < threshold - band) { newLOD = l; break; }
+        } else {
+            // Downgrade toward lower detail when well past the band; otherwise stop.
+            if (metric > threshold + band) newLOD = l + 1;
+            else break;
+        }
+    }
+    if (newLOD < 0) newLOD = 0;
+    if (newLOD >= lod.levelCount) newLOD = lod.levelCount - 1;
+    return newLOD;
+}
 
 } // namespace ECS
 } // namespace Enjin
