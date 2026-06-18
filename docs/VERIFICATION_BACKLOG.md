@@ -40,7 +40,7 @@ result, or does it only construct structs and check defaults / failure paths?**
 | Screen transitions | **PROVEN** | Full phase machine driven. |
 | Visual script node eval | **PROVEN** | Node evaluate/branch asserted; no full graph traversal side-effect. |
 | **Physics (Jolt 3D + Box2D 2D)** | **GOOD** | `TestPhysicsSimulation` steps both backends and asserts behavior: box falls and rests on a floor (Jolt + Box2D), 3D raycast hits, gravity round-trips, bilateral collision filtering suppresses contacts (incompatible masks tunnel through), collider size is world-space (ignores entity scale), `CharacterVirtual` grounds with normal up, and 2D sensor enter events fire. Remaining nice-to-haves: joint constraint behavior, 2D raycast-skips-sensors, kinematic-kinematic hazard sensors. |
-| **Rewind (RecordRewindSystem)** | **NONE** | Capture/restore/seek/delta-compression never instantiated in any test. |
+| **Rewind (RecordRewindSystem)** | **GOOD** | `TestRewindSimulation` drives the system: it records an entity's motion over ~2s, then `SeekEntityToTime` restores both the latest and an earlier recorded position; empty-history seek is a safe no-op. Scene-rewind + delta-compression still untested. |
 | Camera view/projection matrix math | **THIN** | Deterministic and CPU-testable, but matrices only asserted "not all zeros". |
 | Transform `ToMatrix` rotation | **SHALLOW** | Only identity quaternion tested; rotation never applied. |
 | Build pipeline `Execute()` success | **THIN** | Only the failure path runs; no project ever built into a `.enjpak`. |
@@ -74,7 +74,7 @@ cheap or ship-critical; P2 = fills out coverage.
 4. **Physics: filtering applied by the engine** — DONE (`PhysicsSim3D.CollisionFilteringSuppressesContact`): mutually-exclusive masks tunnel through, compatible masks rest. Proves the `JoltContactListener::OnContactValidate` path, not the test-local copy.
 5. **Physics: raycast + character grounding** — DONE. `PhysicsSim3D.RaycastHitsFloor` and `PhysicsSim3D.CharacterControllerGroundsOnFloor` (`CharacterVirtual` grounds, `groundNormal.y ≈ 1`).
 6. **Physics: world-space collider size** — DONE (`PhysicsSim3D.ColliderSizeIsWorldSpaceIgnoringScale`): a 2×-scaled entity rests at y=1.0, not 1.5.
-7. **Rewind: record then restore** — move an entity, record, `SeekEntityToTime`, assert transform matches the recorded frame; plus scene-rewind round-trip and delta-compression reconstruction.
+7. **Rewind: record then restore** — DONE (`TestRewindSimulation.RecordsThenRestoresEarlierTransform`). Scene-rewind round-trip + delta-compression reconstruction still open (nice-to-have).
 
 ### P1 — high value, cheap, or ship-critical
 8. **Camera matrices with computed expected values** — DONE. `GetViewProjectionMatrix == proj·view` (composition order), `SetLookAt` places the world origin at view-space z=-5, rotation drives an orthonormal forward basis. Note: `GetForward` extracts the rotation-matrix row (camera world-space basis), which differs in handedness from `Quaternion::Rotate` (column); both are internally consistent, not a bug.

@@ -174,6 +174,7 @@ enjin_add_test(TestElementalSystem    Unit/Gameplay/TestElementalSystem.cpp)
 enjin_add_test(TestInputAction        Unit/Gameplay/TestInputAction.cpp)
 enjin_add_test(TestInputActionMap     Unit/Gameplay/TestInputActionMap.cpp)
 enjin_add_test(TestRewindSystem       Unit/Gameplay/TestRewindSystem.cpp)
+enjin_add_test(TestRewindSimulation   Unit/Gameplay/TestRewindSimulation.cpp)
 
 # --- Networking ---
 enjin_add_test(TestNetworking         Unit/Networking/TestNetworking.cpp)
