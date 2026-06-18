@@ -161,4 +161,180 @@ ENJIN_TEST(PhysicsSim2D, DynamicBodyFallsAndRestsOnFloor) {
     ENJIN_EXPECT_FLOAT_NEAR(t->position.y, 1.0f, 0.5f);  // rests on the surface
 }
 
+// Drop a dynamic box onto a static floor with the given collision filters and
+// return the box's resting/final Y. Used to prove the engine applies filtering.
+static f32 RunFilteredFall(u32 boxCat, u32 boxMask, u32 floorCat, u32 floorMask) {
+    ECS::World world;
+
+    ECS::Entity floor = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 0.0f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(floor, t);
+        ECS::BoxColliderComponent bc;
+        bc.size = Math::Vector3(50.0f, 1.0f, 50.0f);
+        bc.categoryBits = floorCat;
+        bc.collisionMask = floorMask;
+        world.AddComponent<ECS::BoxColliderComponent>(floor, bc);
+    }
+
+    ECS::Entity box = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 10.0f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(box, t);
+        ECS::BoxColliderComponent bc;
+        bc.size = Math::Vector3(1.0f, 1.0f, 1.0f);
+        bc.categoryBits = boxCat;
+        bc.collisionMask = boxMask;
+        world.AddComponent<ECS::BoxColliderComponent>(box, bc);
+        ECS::RigidbodyComponent rb;
+        rb.bodyType = ECS::RigidbodyComponent::BodyType::Dynamic;
+        world.AddComponent<ECS::RigidbodyComponent>(box, rb);
+    }
+
+    auto backend = Physics::CreatePhysicsBackend(Physics::PhysicsBackendType::Auto);
+    backend->SetWorld(&world);
+    backend->SetColliderEntities({floor, box});
+    backend->SetGravity(Math::Vector3(0.0f, -9.81f, 0.0f));
+    for (int i = 0; i < 180; ++i) backend->Update(1.0f / 60.0f);
+    return world.GetComponent<ECS::TransformComponent>(box)->position.y;
+}
+
+ENJIN_TEST(PhysicsSim3D, CollisionFilteringSuppressesContact) {
+    // Compatible filters (defaults on both) -> the box rests on the floor.
+    f32 restY = RunFilteredFall(1, 0xFFFFFFFFu, 1, 0xFFFFFFFFu);
+    ENJIN_EXPECT_FLOAT_NEAR(restY, 1.0f, 0.4f);
+
+    // Mutually-exclusive groups -> bilateral mask fails, no contact, the box
+    // passes straight through the floor (proves the engine applies filtering,
+    // not just that the bitmask math is correct in the abstract).
+    f32 throughY = RunFilteredFall(2, 2, 1, 1);
+    ENJIN_EXPECT_TRUE(throughY < 0.0f);
+}
+
+ENJIN_TEST(PhysicsSim3D, ColliderSizeIsWorldSpaceIgnoringScale) {
+    // Arrange: a static floor (top at y=0.5) and a dynamic box whose ENTITY is
+    // scaled 2x but whose collider size is 1 unit. Collider extents are world
+    // space, so scale must not change them.
+    ECS::World world;
+
+    ECS::Entity floor = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 0.0f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(floor, t);
+        ECS::BoxColliderComponent bc;
+        bc.size = Math::Vector3(50.0f, 1.0f, 50.0f);
+        world.AddComponent<ECS::BoxColliderComponent>(floor, bc);
+    }
+
+    ECS::Entity box = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 10.0f, 0.0f);
+        t.scale = Math::Vector3(2.0f, 2.0f, 2.0f);  // 2x entity scale
+        world.AddComponent<ECS::TransformComponent>(box, t);
+        ECS::BoxColliderComponent bc;
+        bc.size = Math::Vector3(1.0f, 1.0f, 1.0f);  // half extent 0.5 in WORLD units
+        world.AddComponent<ECS::BoxColliderComponent>(box, bc);
+        ECS::RigidbodyComponent rb;
+        rb.bodyType = ECS::RigidbodyComponent::BodyType::Dynamic;
+        world.AddComponent<ECS::RigidbodyComponent>(box, rb);
+    }
+
+    auto backend = Physics::CreatePhysicsBackend(Physics::PhysicsBackendType::Auto);
+    backend->SetWorld(&world);
+    backend->SetColliderEntities({floor, box});
+    backend->SetGravity(Math::Vector3(0.0f, -9.81f, 0.0f));
+    for (int i = 0; i < 180; ++i) backend->Update(1.0f / 60.0f);
+
+    // Rests at floorTop(0.5) + colliderHalf(0.5) = 1.0. If scale wrongly applied,
+    // it would rest at 0.5 + 1.0 = 1.5.
+    auto* t = world.GetComponent<ECS::TransformComponent>(box);
+    ENJIN_EXPECT_FLOAT_NEAR(t->position.y, 1.0f, 0.3f);
+}
+
+ENJIN_TEST(PhysicsSim3D, CharacterControllerGroundsOnFloor) {
+    // Arrange: a static floor (top at y=0.5).
+    ECS::World world;
+    ECS::Entity floor = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 0.0f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(floor, t);
+        ECS::BoxColliderComponent bc;
+        bc.size = Math::Vector3(50.0f, 1.0f, 50.0f);
+        world.AddComponent<ECS::BoxColliderComponent>(floor, bc);
+    }
+
+    auto backend = Physics::CreatePhysicsBackend(Physics::PhysicsBackendType::Auto);
+    backend->SetWorld(&world);
+    backend->SetColliderEntities({floor});
+    backend->SetGravity(Math::Vector3(0.0f, -9.81f, 0.0f));
+    backend->Update(1.0f / 60.0f);  // create the floor body
+
+    // A capsule character starting above the floor.
+    ECS::Entity ch = world.CreateEntity();
+    ECS::TransformComponent ct;
+    ct.position = Math::Vector3(0.0f, 5.0f, 0.0f);
+    world.AddComponent<ECS::TransformComponent>(ch, ct);
+    backend->CreateCharacterController(ch, 0.3f, 0.9f, Math::Vector3(0.0f, 5.0f, 0.0f));
+
+    // Act: drive it downward until it lands.
+    Physics::IPhysicsBackend::CharacterState st;
+    for (int i = 0; i < 240; ++i) {
+        st = backend->UpdateCharacterController(ch, Math::Vector3(0.0f, -4.0f, 0.0f), 1.0f / 60.0f);
+        backend->Update(1.0f / 60.0f);
+    }
+
+    // Assert: it grounded on the flat floor.
+    ENJIN_EXPECT_EQ((int)st.groundState,
+                    (int)Physics::IPhysicsBackend::CharacterGroundState::OnGround);
+    ENJIN_EXPECT_FLOAT_NEAR(st.groundNormal.y, 1.0f, 0.15f);
+}
+
+ENJIN_TEST(PhysicsSim2D, SensorFiresOnOverlap) {
+    // Arrange: a static sensor zone at the origin and a dynamic body above it.
+    ECS::World world;
+
+    ECS::Entity zone = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 0.0f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(zone, t);
+        Physics::Body2DComponent b;
+        b.isStatic = true;
+        b.isSensor = true;
+        b.shapeType = Physics::Shape2DType::Box;
+        b.box.halfExtents = Math::Vector2(3.0f, 3.0f);
+        world.AddComponent<Physics::Body2DComponent>(zone, b);
+    }
+
+    ECS::Entity visitor = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 8.0f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(visitor, t);
+        Physics::Body2DComponent b;
+        b.isStatic = false;
+        b.shapeType = Physics::Shape2DType::Box;
+        b.box.halfExtents = Math::Vector2(0.5f, 0.5f);
+        world.AddComponent<Physics::Body2DComponent>(visitor, b);
+    }
+
+    auto backend = Physics::CreatePhysicsBackend2D(Physics::PhysicsBackendType::Auto);
+    backend->Initialize(&world);
+    backend->SetGravity(Math::Vector2(0.0f, -9.81f));
+
+    bool entered = false;
+    backend->SetOnSensorEnter([&](const Physics::Contact2D&) { entered = true; });
+
+    // Act: let the visitor fall through the sensor zone.
+    for (int i = 0; i < 180; ++i) backend->Update(1.0f / 60.0f);
+
+    // Assert: the sensor enter event fired.
+    ENJIN_EXPECT_TRUE(entered);
+}
+
 ENJIN_TEST_MAIN()

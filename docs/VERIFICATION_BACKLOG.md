@@ -39,7 +39,7 @@ result, or does it only construct structs and check defaults / failure paths?**
 | IK solver (FABRIK, LookAt) | **PROVEN** | Real convergence checks. (TwoBoneIK untested.) |
 | Screen transitions | **PROVEN** | Full phase machine driven. |
 | Visual script node eval | **PROVEN** | Node evaluate/branch asserted; no full graph traversal side-effect. |
-| **Physics (Jolt 3D + Box2D 2D)** | **PARTIAL** | `TestPhysicsSimulation` now steps both backends: a dynamic box falls under gravity and rests on a static floor (Jolt and Box2D), a 3D raycast hits the floor, gravity round-trips. Still open: sensor events, engine-applied collision filtering, character grounding, world-space collider-size trap. |
+| **Physics (Jolt 3D + Box2D 2D)** | **GOOD** | `TestPhysicsSimulation` steps both backends and asserts behavior: box falls and rests on a floor (Jolt + Box2D), 3D raycast hits, gravity round-trips, bilateral collision filtering suppresses contacts (incompatible masks tunnel through), collider size is world-space (ignores entity scale), `CharacterVirtual` grounds with normal up, and 2D sensor enter events fire. Remaining nice-to-haves: joint constraint behavior, 2D raycast-skips-sensors, kinematic-kinematic hazard sensors. |
 | **Rewind (RecordRewindSystem)** | **NONE** | Capture/restore/seek/delta-compression never instantiated in any test. |
 | Camera view/projection matrix math | **THIN** | Deterministic and CPU-testable, but matrices only asserted "not all zeros". |
 | Transform `ToMatrix` rotation | **SHALLOW** | Only identity quaternion tested; rotation never applied. |
@@ -70,10 +70,10 @@ cheap or ship-critical; P2 = fills out coverage.
 ### P0 — core systems currently unproven
 1. **Physics: step a Jolt world** — DONE (`TestPhysicsSimulation.PhysicsSim3D.DynamicBoxFallsAndRestsOnFloor`).
 2. **Physics: step a Box2D world** — DONE (`TestPhysicsSimulation.PhysicsSim2D.DynamicBodyFallsAndRestsOnFloor`).
-3. **Physics: sensor event fires** — kinematic sensor + moving body, assert enter/exit callbacks fire once (locks in the `enableSensorEvents = isSensor || !isStatic` trap).
-4. **Physics: filtering applied by the engine** — two bodies with exclusive category/mask, step together, assert no contact; flip to compatible, assert a contact fires (proves the engine path, not the test-local copy).
-5. **Physics: raycast + character grounding** — raycast DONE (`PhysicsSim3D.RaycastHitsFloor`). Character grounding (`CharacterVirtual` grounds with `groundNormal ≈ (0,1,0)`, capsule height convention) still open.
-6. **Physics: world-space collider size** — box `size=(50,0.1,50)` on a 2×-scaled entity, assert physical extent is 50 units (scale-independent — documented trap).
+3. **Physics: sensor event fires** — DONE (`PhysicsSim2D.SensorFiresOnOverlap`): a dynamic visitor falling through a static sensor zone fires `OnSensorEnter`.
+4. **Physics: filtering applied by the engine** — DONE (`PhysicsSim3D.CollisionFilteringSuppressesContact`): mutually-exclusive masks tunnel through, compatible masks rest. Proves the `JoltContactListener::OnContactValidate` path, not the test-local copy.
+5. **Physics: raycast + character grounding** — DONE. `PhysicsSim3D.RaycastHitsFloor` and `PhysicsSim3D.CharacterControllerGroundsOnFloor` (`CharacterVirtual` grounds, `groundNormal.y ≈ 1`).
+6. **Physics: world-space collider size** — DONE (`PhysicsSim3D.ColliderSizeIsWorldSpaceIgnoringScale`): a 2×-scaled entity rests at y=1.0, not 1.5.
 7. **Rewind: record then restore** — move an entity, record, `SeekEntityToTime`, assert transform matches the recorded frame; plus scene-rewind round-trip and delta-compression reconstruction.
 
 ### P1 — high value, cheap, or ship-critical
