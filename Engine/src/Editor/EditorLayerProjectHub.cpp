@@ -1252,7 +1252,7 @@ namespace {
     static const HubTemplateInfo s_BuiltinTemplates[] = {
         // -- Foundations (Stable) --
         { "blank",        "Blank",              "Empty scene\nStart from scratch",                       ImVec4(0.5f, 0.5f, 0.5f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Stable },
-        { "stresstest",   "Stress Test",        "Perf benchmark\n144 falling bodies + 49 point lights",  ImVec4(0.9f, 0.45f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
+        { "stresstest",   "Stress Test",        "Perf benchmark\n64 falling bodies + 16 point lights",   ImVec4(0.9f, 0.45f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
         { "platformer",   "2D Platformer",      "4-zone adventure\nMeadow + cave + tower + sky boss",    ImVec4(0.3f, 0.8f, 0.3f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
         // { "topdown2d",    "2D Top-Down Action", "Dungeon action\nMulti-room + enemies + HUD + particles",  ImVec4(0.3f, 0.6f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
         { "thirdperson",  "3D Third Person",    "Over-the-shoulder\nShadows + obstacles + point light",  ImVec4(0.8f, 0.3f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
@@ -2721,7 +2721,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
     // --- Common: directional light ---
     auto createLight = [&]() -> ECS::Entity {
         ECS::Entity light = m_World->CreateEntity();
-        m_World->AddComponent<ECS::NameComponent>(light, "Sun");
+        m_World->AddComponent<ECS::NameComponent>(light, "Global Directional Light");
         auto& lt = m_World->AddComponent<ECS::TransformComponent>(light);
         lt.position = Math::Vector3(0.0f, 15.0f, 10.0f);
         lt.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-45.0f));
@@ -2905,7 +2905,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // --- Directional Light ---
         {
             ECS::Entity sun = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(sun, "Sun");
+            m_World->AddComponent<ECS::NameComponent>(sun, "Global Directional Light");
             auto& lt = m_World->AddComponent<ECS::TransformComponent>(sun);
             lt.position = Math::Vector3(0.0f, 10.0f, 5.0f);
             lt.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-45.0f));
@@ -4508,32 +4508,56 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             }
         }
 
-        // Directional light (sun)
+        // Global directional light (neutral base illumination; not "sun")
         {
-            ECS::Entity sun = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(sun, "Directional Light");
-            auto& st = m_World->AddComponent<ECS::TransformComponent>(sun);
+            ECS::Entity dir = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(dir, "Global Directional Light");
+            auto& st = m_World->AddComponent<ECS::TransformComponent>(dir);
             st.position = Math::Vector3(0.0f, 10.0f, 0.0f);
             st.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-45.0f));
-            auto& slc = m_World->AddComponent<ECS::LightComponent>(sun);
+            auto& slc = m_World->AddComponent<ECS::LightComponent>(dir);
             slc.type = ECS::LightType::Directional;
-            slc.color = Math::Vector3(1.0f, 0.98f, 0.95f);
-            slc.intensity = 1.2f;
+            slc.color = Math::Vector3(0.85f, 0.87f, 0.92f);  // neutral, slightly cool
+            slc.intensity = 0.1f;                            // very dim so the colored lights dominate
             slc.castShadows = true;
         }
 
-        // Point light (fill)
+        // Two colored lights crossed on the player at ~(0,1.3,0): a deep-blue spot
+        // from the front-right and a magenta-pink point from the back-left.
+        const Math::Vector3 lookTarget(0.0f, 1.3f, 0.0f);
+
+        // Deep-blue spot: brighter, closer, and intentionally NOT a mirror of the
+        // magenta (different distance/height/angle) for an asymmetric cross.
         {
-            ECS::Entity pl = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(pl, "Point Light");
-            auto& plt = m_World->AddComponent<ECS::TransformComponent>(pl);
-            plt.position = Math::Vector3(3.0f, 4.0f, 2.0f);
-            auto& plc = m_World->AddComponent<ECS::LightComponent>(pl);
-            plc.type = ECS::LightType::Point;
-            plc.intensity = 2.0f;
-            plc.range = 15.0f;
-            plc.color = Math::Vector3(1.0f, 0.9f, 0.8f);
-            plc.castShadows = true;
+            ECS::Entity spot = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(spot, "Blue Spot");
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(spot);
+            t.position = Math::Vector3(3.0f, 3.2f, 2.2f);  // closer to the character
+            t.rotation = Math::Quaternion::FromToRotation(
+                Math::Vector3(0.0f, 0.0f, -1.0f), (lookTarget - t.position).Normalized());
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(spot);
+            lc.type = ECS::LightType::Spot;
+            lc.color = Math::Vector3(0.0f, 0.05f, 1.0f);   // deeper, more saturated blue
+            lc.intensity = 13.0f;                          // brighter
+            lc.range = 20.0f;
+            lc.innerConeAngle = 14.0f;
+            lc.outerConeAngle = 26.0f;                     // tighter, punchier beam up close
+            lc.castShadows = true;
+        }
+
+        // Magenta-pink point, farther and lower than the blue spot so the two
+        // lights cross on the character without mirroring each other.
+        {
+            ECS::Entity mp = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(mp, "Magenta Point");
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(mp);
+            t.position = Math::Vector3(-4.5f, 2.2f, -3.5f);
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(mp);
+            lc.type = ECS::LightType::Point;
+            lc.color = Math::Vector3(1.0f, 0.10f, 0.60f);   // magenta pink
+            lc.intensity = 4.5f;
+            lc.range = 14.0f;
+            lc.castShadows = true;
         }
 
         // Ramp
@@ -8266,7 +8290,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // Sun
         {
             ECS::Entity sun = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(sun, "Sun");
+            m_World->AddComponent<ECS::NameComponent>(sun, "Global Directional Light");
             auto& lt = m_World->AddComponent<ECS::TransformComponent>(sun);
             lt.position = Math::Vector3(0.0f, 20.0f, 10.0f);
             lt.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-50.0f));
@@ -9169,7 +9193,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // Sun
         {
             ECS::Entity sun = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(sun, "Sun");
+            m_World->AddComponent<ECS::NameComponent>(sun, "Global Directional Light");
             auto& lt = m_World->AddComponent<ECS::TransformComponent>(sun);
             lt.position = Math::Vector3(5.0f, 15.0f, 10.0f);
             auto& lc = m_World->AddComponent<ECS::LightComponent>(sun);
@@ -12398,8 +12422,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         createGround();
         createLight();  // directional sun
 
-        // --- Physics + draw-call load: 12x12 dynamic bodies that cascade down ---
-        const int kBodyGrid = 12;  // 144 dynamic rigid bodies
+        // --- Physics + draw-call load: 8x8 dynamic bodies that cascade down ---
+        const int kBodyGrid = 8;  // 64 dynamic rigid bodies
         int bodyIndex = 0;
         for (int gx = 0; gx < kBodyGrid; ++gx) {
             for (int gz = 0; gz < kBodyGrid; ++gz, ++bodyIndex) {
@@ -12427,9 +12451,10 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             }
         }
 
-        // --- Clustered-lighting load: 7x7 colored point lights overhead ---
-        // 49 lights sit under the 64-light surface cap so all of them contribute.
-        const int kLightGrid = 7;
+        // --- Clustered-lighting load: 4x4 colored point lights overhead ---
+        // Shadows off (16 shadow-casting point lights would thrash the cubemap
+        // shadow path); this is a clustered-lighting stress test, not a shadow one.
+        const int kLightGrid = 4;
         for (int lx = 0; lx < kLightGrid; ++lx) {
             for (int lz = 0; lz < kLightGrid; ++lz) {
                 ECS::Entity e = m_World->CreateEntity();
@@ -12444,6 +12469,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 lc.color = Math::Vector3((lx % 3) * 0.5f, (lz % 3) * 0.5f, 1.0f - (lx % 2) * 0.5f);
                 lc.intensity = 4.0f;
                 lc.range = 8.0f;
+                lc.castShadows = false;  // many shadow-casting point lights are too heavy
             }
         }
 
@@ -13112,7 +13138,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         }
         {
             ECS::Entity light = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(light, "Sun");
+            m_World->AddComponent<ECS::NameComponent>(light, "Global Directional Light");
             auto& lt = m_World->AddComponent<ECS::TransformComponent>(light);
             lt.position = Math::Vector3(0, 8, 0);
             lt.rotation = Math::Quaternion::FromEuler(Math::Vector3(0.8f, 0.3f, 0));
@@ -13215,7 +13241,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         }
         {
             ECS::Entity light = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(light, "Sun");
+            m_World->AddComponent<ECS::NameComponent>(light, "Global Directional Light");
             auto& lt = m_World->AddComponent<ECS::TransformComponent>(light);
             lt.position = Math::Vector3(0, 10, 0);
             lt.rotation = Math::Quaternion::FromEuler(Math::Vector3(0.9f, 0.5f, 0));
@@ -13280,7 +13306,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         }
         {
             ECS::Entity light = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(light, "Sun");
+            m_World->AddComponent<ECS::NameComponent>(light, "Global Directional Light");
             auto& lt = m_World->AddComponent<ECS::TransformComponent>(light);
             lt.position = Math::Vector3(0, 15, 0);
             lt.rotation = Math::Quaternion::FromEuler(Math::Vector3(1.0f, 0.4f, 0));
