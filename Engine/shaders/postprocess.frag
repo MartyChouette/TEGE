@@ -1702,12 +1702,14 @@ vec3 applyTiltShift(vec3 color, vec2 uv) {
 // Apply AA by mode index (used by comparison mode)
 // 0=None, 1=FXAA, 3=SMAA — TAA (2) is a compute pass and not handled here
 vec3 applyAAByMode(vec2 uv, uint mode) {
-    if (mode == 3 && settings.chromaticAberrationEnabled == 0) {
+    // AA modes resolve edges directly. Chromatic aberration no longer disables
+    // AA here; it is layered on top in main().
+    if (mode == 3) {
         return applySMAA(uv);
-    } else if (mode == 1 && settings.chromaticAberrationEnabled == 0) {
+    } else if (mode == 1) {
         return applyFXAA(uv);
     } else {
-        return applyChromaticAberration(uv);
+        return texture(sceneTexture, uv).rgb;
     }
 }
 
@@ -1746,14 +1748,25 @@ void main() {
         if (abs(uv.x - dividerX) < pixelWidth) {
             color = vec3(1.0);
         }
-    } else if (settings.aaMode == 3 && settings.chromaticAberrationEnabled == 0) {
-        // SMAA-lite: enhanced morphological edge-aware anti-aliasing
-        color = applySMAA(uv);
-    } else if (settings.aaMode == 1 && settings.chromaticAberrationEnabled == 0) {
-        // FXAA: fast approximate anti-aliasing
-        color = applyFXAA(uv);
     } else {
-        color = applyChromaticAberration(uv);
+        // Base resolve by AA mode: FXAA/SMAA smooth edges; other modes (None, TAA,
+        // MSAA — applied upstream) sample the scene directly.
+        if (settings.aaMode == 3) {
+            color = applySMAA(uv);   // SMAA-lite morphological edge AA
+        } else if (settings.aaMode == 1) {
+            color = applyFXAA(uv);   // FXAA fast approximate AA
+        } else {
+            color = texture(sceneTexture, uv).rgb;
+        }
+        // Chromatic aberration layers ON TOP of AA instead of replacing it, so
+        // enabling CA (or a lens) no longer turns AA off. R/B carry the fringe,
+        // G keeps the AA-resolved value.
+        if (settings.chromaticAberrationEnabled != 0) {
+            vec2 caCenter = uv - 0.5;
+            float caOff = settings.chromaticAberrationIntensity * length(caCenter);
+            color.r = texture(sceneTexture, uv + caCenter * caOff).r;
+            color.b = texture(sceneTexture, uv - caCenter * caOff).b;
+        }
     }
 
     // Screen-space effects (HDR, before DoF/tone mapping)
