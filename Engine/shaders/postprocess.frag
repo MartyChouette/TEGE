@@ -1712,10 +1712,6 @@ vec3 applyAAByMode(vec2 uv, uint mode) {
 }
 
 void main() {
-    // Passthrough: sample scene texture and output directly
-    outColor = vec4(texture(sceneTexture, fragUV).rgb, 1.0);
-    return;
-
     vec2 uv = fragUV;
 
     // Resolution downscale: snap UV at the very start so all sampling uses the low-res grid
