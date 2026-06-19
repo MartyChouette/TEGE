@@ -1376,6 +1376,11 @@ private:
     VkSampler m_RTDummySampler = VK_NULL_HANDLE;
     VkBuffer m_RTDummyBuffer = VK_NULL_HANDLE;
     VkDeviceMemory m_RTDummyBufferMemory = VK_NULL_HANDLE;
+    // 1x1 cube dummy for the probeCubemap binding (samplerCube) when no probe is baked.
+    // Without this the binding falls back to a 2D view and mismatches the shader's Dim=Cube.
+    VkImage m_DummyCubeImage = VK_NULL_HANDLE;
+    VkDeviceMemory m_DummyCubeImageMemory = VK_NULL_HANDLE;
+    VkImageView m_DummyCubeImageView = VK_NULL_HANDLE;
 
     // RT light data UBO (one per frame in flight)
     static constexpr u32 RT_FRAMES_IN_FLIGHT = 2;

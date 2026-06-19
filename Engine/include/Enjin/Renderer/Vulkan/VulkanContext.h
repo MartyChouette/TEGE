@@ -119,6 +119,7 @@ protected:
     // Device Generated Commands support (populated during SelectPhysicalDevice)
     bool m_DGCExtSupported = false;  // VK_EXT_device_generated_commands
     bool m_DGCNVSupported = false;   // VK_NV_device_generated_commands (fallback)
+    bool m_Maintenance5Supported = false;  // VK_KHR_maintenance5 (hard dependency of DGC EXT)
 
     // Mesh shader support (populated during SelectPhysicalDevice)
     bool m_MeshShaderSupported = false;

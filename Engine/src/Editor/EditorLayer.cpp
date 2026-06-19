@@ -714,6 +714,25 @@ void EditorLayer::Update(f32 deltaTime) {
     // After scene view renders (in RenderOffscreen), wireframe is turned off
     // so the game view always renders in fill mode. See restore block at line ~1540.
 
+    // Apply deferred shadow-state descriptor refresh here, before any frame command
+    // buffer begins recording. Doing it mid-render recreates the descriptor pool and
+    // invalidates bound sets (validation: "commandBuffer not in recording state").
+    if (m_PendingShadowRefresh && m_RenderSystem) {
+        m_RenderSystem->SetShadowsEnabled(m_PendingShadowState);
+        m_RenderSystem->RefreshDescriptorsIfDirty();
+        m_PendingShadowRefresh = false;
+    }
+
+    // In pure edit mode the World tick never runs, so deferred entity destructions
+    // (m_World->DestroyEntity) are never flushed. OnEntityRemoved -- which rebuilds
+    // the shadow caster cache, material SSBO, scene composition, etc. -- would not
+    // fire until play starts, so a deleted object's SHADOW lingers even though its
+    // mesh is gone (IsValid already reports false). Flush here each edit-mode frame
+    // so caches rebuild before the shadow pass. Play mode flushes via World::Update.
+    if (m_World && !m_PlayMode.IsPlaying() && !m_PlayMode.IsPaused()) {
+        m_World->FlushPendingDestructions();
+    }
+
     // Handle deferred template application (requested during Render-phase ImGui).
     // World::Clear() must not run during Render to avoid invalidating GPU resources
     // still referenced by in-flight Vulkan command buffers.
@@ -1631,8 +1650,14 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             // recreated the entire VkDescriptorPool every frame and orphaned the
             // offscreen render-target descriptor sets (use-after-free crash).
             if (!m_EditorShadowsTracked || m_EditorShadowsApplied != wantShadows) {
-                m_RenderSystem->SetShadowsEnabled(wantShadows);
-                m_RenderSystem->RefreshDescriptorsIfDirty();
+                // Defer the actual SetShadowsEnabled + descriptor refresh to Update().
+                // RefreshDescriptorsIfDirty recreates the whole VkDescriptorPool, which
+                // invalidates any descriptor set bound to a command buffer already
+                // recording this frame (the cascade of "commandBuffer not in recording
+                // state" validation errors). Update() runs before any command buffer
+                // records, same as the wireframe toggle above.
+                m_PendingShadowState = wantShadows;
+                m_PendingShadowRefresh = true;
                 m_EditorShadowsApplied = wantShadows;
                 m_EditorShadowsTracked = true;
             }

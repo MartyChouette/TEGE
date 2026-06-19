@@ -325,7 +325,15 @@ void ShadowMap::BeginCascadePass(VkCommandBuffer commandBuffer, u32 cascadeIndex
     vkCmdBeginRenderPass(commandBuffer, &renderPassInfo,
         useSecondary ? VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS : VK_SUBPASS_CONTENTS_INLINE);
 
-    // Set viewport and scissor
+    // In secondary mode the primary may only call vkCmdExecuteCommands; viewport/
+    // scissor must be set inside each secondary instead (done by the caller). In
+    // inline mode set the dynamic state here on the primary.
+    if (!useSecondary) {
+        ApplyCascadeViewportScissor(commandBuffer);
+    }
+}
+
+void ShadowMap::ApplyCascadeViewportScissor(VkCommandBuffer commandBuffer) const {
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;

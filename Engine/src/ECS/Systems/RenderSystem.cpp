@@ -2842,8 +2842,12 @@ void RenderSystem::Initialize() {
         m_ShadowDataBuffer.reset();
     }
 
-    // Create uniform buffers and descriptor sets
+    // Create uniform buffers and descriptor sets. Build the dummy placeholder
+    // resources first (idempotent) so the very first descriptor write already has
+    // valid views for bindings 19/21/22/23 -- these are statically sampled by the
+    // PBR shader even when ray tracing never initializes (RT off or unsupported).
     CreateUniformBuffers();
+    CreateRTDummyResources();
     CreateDescriptorSets();
 
     // Default active rendering target: main pass
@@ -6797,9 +6801,14 @@ void RenderSystem::CreateDescriptorSets() {
         // Matcap texture (binding 18) - fallback to white (procedural matcap used when white)
         VkDescriptorImageInfo matcapImageInfo = imageInfo;
 
-        // Baked reflection probe cubemap (binding 19) - fallback to white
-        // When a probe is baked, this is updated via UpdateProbeCubemapDescriptor()
+        // Baked reflection probe cubemap (binding 19) - fallback to a 1x1 cube.
+        // The shader declares this samplerCube, so the fallback MUST be a CUBE
+        // view, not the 2D white texture (else VUID-vkCmdDrawIndexed-viewType-07752).
+        // When a probe is baked, this is updated via UpdateProbeCubemapDescriptor().
         VkDescriptorImageInfo probeCubemapImageInfo = imageInfo;
+        if (m_DummyCubeImageView != VK_NULL_HANDLE) {
+            probeCubemapImageInfo.imageView = m_DummyCubeImageView;
+        }
 
         std::array<VkWriteDescriptorSet, 24> descriptorWrites{};
 
@@ -7164,10 +7173,31 @@ void RenderSystem::CreateDescriptorSets() {
                 VkDescriptorImageInfo offVtIndInfo = offImageInfo;
                 VkDescriptorImageInfo offVtAtlasInfo = offImageInfo;
                 VkDescriptorImageInfo offMatcapInfo = offImageInfo;
+                // Binding 19 is samplerCube: the fallback MUST be a cube view, not
+                // the 2D white texture (else VUID-vkCmdDrawIndexed-viewType-07752).
                 VkDescriptorImageInfo offProbeCubemapInfo = offImageInfo;
+                if (m_DummyCubeImageView != VK_NULL_HANDLE) {
+                    offProbeCubemapInfo.imageView = m_DummyCubeImageView;
+                }
 
-                std::array<VkWriteDescriptorSet, 21> offWrites{};
-                for (u32 w = 0; w < 21; ++w) {
+                // Bindings 21-23 (DDGI/froxel) are statically sampled by the PBR
+                // shader; if left unwritten the offscreen pass trips
+                // VUID-vkCmdDrawIndexed-None-08114. Fill them with the RT dummies.
+                const bool offHaveDummies = (m_RTDummyImageView != VK_NULL_HANDLE && m_RTDummySampler != VK_NULL_HANDLE);
+                VkDescriptorImageInfo offDummy2D{};
+                VkDescriptorImageInfo offDummy3D{};
+                if (offHaveDummies) {
+                    offDummy2D.imageView = m_RTDummyImageView;
+                    offDummy2D.sampler = m_RTDummySampler;
+                    offDummy2D.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    offDummy3D.imageView = m_RTDummy3DImageView ? m_RTDummy3DImageView : m_RTDummyImageView;
+                    offDummy3D.sampler = m_RTDummySampler;
+                    offDummy3D.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                }
+
+                std::array<VkWriteDescriptorSet, 24> offWrites{};
+                const u32 offWriteCount = offHaveDummies ? 24u : 21u;
+                for (u32 w = 0; w < offWriteCount; ++w) {
                     offWrites[w].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
                     offWrites[w].dstSet = m_OffscreenDescriptorSets[idx];
                     offWrites[w].dstBinding = w;
@@ -7226,8 +7256,18 @@ void RenderSystem::CreateDescriptorSets() {
                 offWrites[20].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
                 offWrites[20].pBufferInfo = &offMorphInfo;
 
+                // Bindings 21-23: DDGI irradiance (2D), froxel/scatter (2D), volume (3D).
+                if (offHaveDummies) {
+                    offWrites[21].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                    offWrites[21].pImageInfo = &offDummy2D;
+                    offWrites[22].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                    offWrites[22].pImageInfo = &offDummy2D;
+                    offWrites[23].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                    offWrites[23].pImageInfo = &offDummy3D;
+                }
+
                 vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(),
-                    static_cast<u32>(offWrites.size()), offWrites.data(), 0, nullptr);
+                    offWriteCount, offWrites.data(), 0, nullptr);
             }
         }
     }
@@ -9206,6 +9246,9 @@ void RenderSystem::RenderShadowPass() {
                     beginInfo.pInheritanceInfo = &inheritInfo;
                     vkBeginCommandBuffer(secCmd, &beginInfo);
 
+                    // Dynamic viewport/scissor must be set in the secondary itself —
+                    // state set on the primary does not carry into executed secondaries.
+                    m_ShadowMap->ApplyCascadeViewportScissor(secCmd);
                     m_ShadowPipeline->Bind(secCmd);
                     for (u32 i = start; i < end; ++i) {
                         Entity entity = m_ShadowCasters[i];
@@ -11397,6 +11440,12 @@ void RenderSystem::CompositeRTResults(VkCommandBuffer cmd) {
 }
 
 void RenderSystem::CreateRTDummyResources() {
+    // Idempotent: these placeholders are needed by the main PBR descriptor set
+    // (bindings 21-23) whether or not ray tracing initializes, so this is now
+    // called unconditionally during init AND from InitializeRayTracing(). Skip
+    // if already built.
+    if (m_RTDummyImageView != VK_NULL_HANDLE) return;
+
     auto* ctx = m_VulkanRenderer->GetContext();
     VkDevice device = ctx->GetDevice();
 
@@ -11478,6 +11527,45 @@ void RenderSystem::CreateRTDummyResources() {
                 view3DInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
                 view3DInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
                 vkCreateImageView(device, &view3DInfo, nullptr, &m_RTDummy3DImageView);
+            }
+        }
+    }
+
+    // Create 1x1 cube dummy for the probeCubemap binding (samplerCube). A 6-layer
+    // cube image with a CUBE view so binding 19 matches the shader when no
+    // reflection probe is baked (otherwise it falls back to a 2D view and trips
+    // VUID-vkCmdDrawIndexed-viewType-07752 every draw).
+    {
+        VkImageCreateInfo cubeInfo{};
+        cubeInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        cubeInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+        cubeInfo.imageType = VK_IMAGE_TYPE_2D;
+        cubeInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        cubeInfo.extent = { 1, 1, 1 };
+        cubeInfo.mipLevels = 1;
+        cubeInfo.arrayLayers = 6;
+        cubeInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        cubeInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        cubeInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+        cubeInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        cubeInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        if (vkCreateImage(device, &cubeInfo, nullptr, &m_DummyCubeImage) == VK_SUCCESS) {
+            VkMemoryRequirements memReqsCube;
+            vkGetImageMemoryRequirements(device, m_DummyCubeImage, &memReqsCube);
+            VkMemoryAllocateInfo allocCube{};
+            allocCube.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            allocCube.allocationSize = memReqsCube.size;
+            allocCube.memoryTypeIndex = ctx->FindMemoryType(memReqsCube.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            if (vkAllocateMemory(device, &allocCube, nullptr, &m_DummyCubeImageMemory) == VK_SUCCESS) {
+                vkBindImageMemory(device, m_DummyCubeImage, m_DummyCubeImageMemory, 0);
+                VkImageViewCreateInfo cubeView{};
+                cubeView.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+                cubeView.image = m_DummyCubeImage;
+                cubeView.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+                cubeView.format = VK_FORMAT_R8G8B8A8_UNORM;
+                cubeView.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 6 };
+                vkCreateImageView(device, &cubeView, nullptr, &m_DummyCubeImageView);
             }
         }
     }
@@ -11773,6 +11861,9 @@ void RenderSystem::DestroyRTDummyResources() {
     if (m_RTDummyImageMemory) { vkFreeMemory(device, m_RTDummyImageMemory, nullptr); m_RTDummyImageMemory = VK_NULL_HANDLE; }
     if (m_RTDummyBuffer) { vkDestroyBuffer(device, m_RTDummyBuffer, nullptr); m_RTDummyBuffer = VK_NULL_HANDLE; }
     if (m_RTDummyBufferMemory) { vkFreeMemory(device, m_RTDummyBufferMemory, nullptr); m_RTDummyBufferMemory = VK_NULL_HANDLE; }
+    if (m_DummyCubeImageView) { vkDestroyImageView(device, m_DummyCubeImageView, nullptr); m_DummyCubeImageView = VK_NULL_HANDLE; }
+    if (m_DummyCubeImage) { vkDestroyImage(device, m_DummyCubeImage, nullptr); m_DummyCubeImage = VK_NULL_HANDLE; }
+    if (m_DummyCubeImageMemory) { vkFreeMemory(device, m_DummyCubeImageMemory, nullptr); m_DummyCubeImageMemory = VK_NULL_HANDLE; }
 
     // Destroy NEE light SSBOs
     for (u32 i = 0; i < RT_FRAMES_IN_FLIGHT; ++i) {

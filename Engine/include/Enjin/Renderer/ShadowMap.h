@@ -43,6 +43,10 @@ public:
     void BeginCascadePass(VkCommandBuffer commandBuffer, u32 cascadeIndex, bool useSecondary = false);
     VkFramebuffer GetCurrentFramebuffer() const { return m_CurrentFramebuffer; }
     void EndCascadePass(VkCommandBuffer commandBuffer);
+    // Sets the cascade-sized dynamic viewport/scissor on a command buffer. Called on
+    // the primary in inline mode, and on each secondary in parallel mode (dynamic
+    // state does not cross the primary/secondary boundary).
+    void ApplyCascadeViewportScissor(VkCommandBuffer commandBuffer) const;
 
     // Adaptive shadow mapping
     void SetResolution(u32 size);  // 512/1024/2048/4096 - recreates resources

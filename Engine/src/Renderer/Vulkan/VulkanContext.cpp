@@ -278,6 +278,18 @@ bool VulkanContext::SelectPhysicalDevice() {
             if (strcmp(ext.extensionName, "VK_EXT_mesh_shader") == 0) {
                 m_MeshShaderSupported = true;
             }
+            if (strcmp(ext.extensionName, "VK_KHR_maintenance5") == 0) {
+                m_Maintenance5Supported = true;
+            }
+        }
+
+        // VK_EXT_device_generated_commands requires VK_KHR_maintenance5 in the
+        // enabled extension list (VUID-vkCreateDevice-...-01387). If the device
+        // somehow exposes DGC EXT without maintenance5, drop to the NV path or
+        // multi-draw indirect rather than create the device with a broken list.
+        if (m_DGCExtSupported && !m_Maintenance5Supported) {
+            ENJIN_LOG_INFO(Renderer, "VK_EXT_device_generated_commands present but VK_KHR_maintenance5 is not — disabling DGC EXT");
+            m_DGCExtSupported = false;
         }
 
         if (m_MeshShaderSupported) {
@@ -401,10 +413,12 @@ bool VulkanContext::CreateLogicalDevice() {
         ENJIN_LOG_INFO(Renderer, "Enabling %zu ray tracing device extensions", rtExts.size());
     }
 
-    // Add device generated commands extension if supported
+    // Add device generated commands extension if supported. DGC EXT has a hard
+    // dependency on VK_KHR_maintenance5, which must appear in the list too.
     if (m_DGCExtSupported) {
+        deviceExtensions.push_back("VK_KHR_maintenance5");
         deviceExtensions.push_back("VK_EXT_device_generated_commands");
-        ENJIN_LOG_INFO(Renderer, "Enabling VK_EXT_device_generated_commands extension");
+        ENJIN_LOG_INFO(Renderer, "Enabling VK_EXT_device_generated_commands (+ VK_KHR_maintenance5) extension");
     } else if (m_DGCNVSupported) {
         deviceExtensions.push_back("VK_NV_device_generated_commands");
         ENJIN_LOG_INFO(Renderer, "Enabling VK_NV_device_generated_commands extension");
