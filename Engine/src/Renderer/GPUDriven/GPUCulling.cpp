@@ -54,10 +54,11 @@ void GPUCullingSystem::Shutdown() {
         m_DescriptorSetLayout = VK_NULL_HANDLE;
     }
 
-    if (m_DescriptorSet != VK_NULL_HANDLE && m_DescriptorPool != VK_NULL_HANDLE) {
-        vkFreeDescriptorSets(m_Context->GetDevice(), m_DescriptorPool, 1, &m_DescriptorSet);
-        m_DescriptorSet = VK_NULL_HANDLE;
-    }
+    // Destroying the pool frees every set allocated from it. The pool was NOT
+    // created with VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT, so calling
+    // vkFreeDescriptorSets here is both redundant and illegal (corrupts the pool
+    // allocator -- validation VUID-vkFreeDescriptorSets-descriptorPool-00312).
+    m_DescriptorSet = VK_NULL_HANDLE;
 
     if (m_DescriptorPool != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(m_Context->GetDevice(), m_DescriptorPool, nullptr);

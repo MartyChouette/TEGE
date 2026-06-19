@@ -525,6 +525,7 @@ private:
     u32 m_Height = 0;
     bool m_Initialized = false;
     bool m_DepthSourceReady = false;  // True after UpdateDepthSource() provides valid depth
+    VkImageView m_LastDepthView = VK_NULL_HANDLE;  // Skip redundant binding-3 writes (avoids updating an in-flight set)
 
     // LUT texture resources
     std::string m_LUTPath;
