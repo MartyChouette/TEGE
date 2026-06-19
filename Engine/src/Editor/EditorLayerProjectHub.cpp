@@ -1252,6 +1252,7 @@ namespace {
     static const HubTemplateInfo s_BuiltinTemplates[] = {
         // -- Foundations (Stable) --
         { "blank",        "Blank",              "Empty scene\nStart from scratch",                       ImVec4(0.5f, 0.5f, 0.5f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Stable },
+        { "stresstest",   "Stress Test",        "Perf benchmark\n144 falling bodies + 49 point lights",  ImVec4(0.9f, 0.45f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
         { "platformer",   "2D Platformer",      "4-zone adventure\nMeadow + cave + tower + sky boss",    ImVec4(0.3f, 0.8f, 0.3f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
         // { "topdown2d",    "2D Top-Down Action", "Dungeon action\nMulti-room + enemies + HUD + particles",  ImVec4(0.3f, 0.6f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
         { "thirdperson",  "3D Third Person",    "Over-the-shoulder\nShadows + obstacles + point light",  ImVec4(0.8f, 0.3f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
@@ -1350,6 +1351,7 @@ static const char* GetTemplateSymbol(const char* templateId) {
     if (id == "soulslike")     return "DIE";
     if (id == "flower")        return "*";
     if (id == "shadowtest")    return "SHD";
+    if (id == "stresstest")    return "STR";
     if (id == "ray_tracing_showcase") return "RT";
     if (id == "procedural_world")     return "GEN";
     if (id == "ps1_horror")    return "PS1";
@@ -12386,6 +12388,68 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         }
     }
 
+    else if (templateId == "stresstest") {
+        // === STRESS TEST TEMPLATE ===
+        // Pushes the systems that define the engine's perf envelope in one scene:
+        // a grid of point lights (clustered forward lighting), a pile of dynamic
+        // Jolt rigid bodies, and the draw-call + shadow load of hundreds of lit
+        // meshes. Useful for profiling and for eyeballing parity (clustered
+        // lighting + fog now run in Player builds too).
+        createGround();
+        createLight();  // directional sun
+
+        // --- Physics + draw-call load: 12x12 dynamic bodies that cascade down ---
+        const int kBodyGrid = 12;  // 144 dynamic rigid bodies
+        int bodyIndex = 0;
+        for (int gx = 0; gx < kBodyGrid; ++gx) {
+            for (int gz = 0; gz < kBodyGrid; ++gz, ++bodyIndex) {
+                ECS::Entity e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, "Body");
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(e);
+                t.position = Math::Vector3(
+                    (gx - kBodyGrid * 0.5f) * 1.5f,
+                    3.0f + (bodyIndex % 5) * 1.2f,   // staggered heights -> cascade
+                    (gz - kBodyGrid * 0.5f) * 1.5f);
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
+                mat.baseColor = Math::Vector3(0.3f + 0.6f * ((gx % 4) / 3.0f), 0.45f, 0.75f);
+                mat.roughness = 0.6f;
+                mat.castShadows = true;
+                auto& rb = m_World->AddComponent<ECS::RigidbodyComponent>(e);
+                rb.bodyType = ECS::RigidbodyComponent::BodyType::Dynamic;
+                rb.mass = 1.0f;
+                if ((gx + gz) % 2 == 0) {
+                    m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateCube(1.0f));
+                    addBoxCollider3D(e, 1.0f, 1.0f, 1.0f);
+                } else {
+                    m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateSphere(0.5f, 16, 12));
+                    addSphereCollider3D(e, 0.5f);
+                }
+            }
+        }
+
+        // --- Clustered-lighting load: 7x7 colored point lights overhead ---
+        // 49 lights sit under the 64-light surface cap so all of them contribute.
+        const int kLightGrid = 7;
+        for (int lx = 0; lx < kLightGrid; ++lx) {
+            for (int lz = 0; lz < kLightGrid; ++lz) {
+                ECS::Entity e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, "PointLight");
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(e);
+                t.position = Math::Vector3(
+                    (lx - kLightGrid * 0.5f) * 3.0f,
+                    6.0f,
+                    (lz - kLightGrid * 0.5f) * 3.0f);
+                auto& lc = m_World->AddComponent<ECS::LightComponent>(e);
+                lc.type = ECS::LightType::Point;
+                lc.color = Math::Vector3((lx % 3) * 0.5f, (lz % 3) * 0.5f, 1.0f - (lx % 2) * 0.5f);
+                lc.intensity = 4.0f;
+                lc.range = 8.0f;
+            }
+        }
+
+        m_RenderSystem->SetShadowsEnabled(true);
+        m_RenderSystem->SetAmbientIntensity(0.08f);
+    }
     else if (templateId == "shadowtest") {
         // === SHADOW TEST TEMPLATE ===
         // Bright white ground so shadows are clearly visible
@@ -13490,7 +13554,7 @@ void EditorLayer::DrawTemplateCreatorWindow() {
             "uicanvas", "bullethell", "idleclicker", "pointclick", "ps1rpg",
             "visualnovel", "gamemanager", "citybuilder", "fpsarena", "teamsports",
             "towerdefense", "runner", "flower", "fixedcam", "metroidvania",
-            "vampsurvivor", "roguelike", "soulslike", "couchcoop", "justtwo", "shadowtest",
+            "vampsurvivor", "roguelike", "soulslike", "couchcoop", "justtwo", "shadowtest", "stresstest",
             "flash_td", "flash_dress", "flash_escape", "flash_rhythm"
         };
 
