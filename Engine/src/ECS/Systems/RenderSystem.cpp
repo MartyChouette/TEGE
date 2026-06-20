@@ -2802,6 +2802,20 @@ void RenderSystem::Initialize() {
         CreateSpotShadowPipeline();
     }
 
+    // All three shadow-map depth images are bound to the PBR descriptor set
+    // (bindings 4/10/11) and sampled every frame. A map whose pass never runs
+    // (e.g. no shadow-casting spot/point lights in the scene) stays in UNDEFINED
+    // layout, tripping the sampled-image layout check at draw time (validation
+    // vkCmdDraw-None-09600). Transition them to DEPTH_STENCIL_READ_ONLY_OPTIMAL
+    // once at init; shadow passes that do run leave them in the same layout.
+    {
+        std::vector<VkImage> shadowDepthImages;
+        if (m_ShadowMap)      shadowDepthImages.push_back(m_ShadowMap->GetDepthImage());
+        if (m_PointShadowMap) shadowDepthImages.push_back(m_PointShadowMap->GetDepthImage());
+        if (m_SpotShadowMap)  shadowDepthImages.push_back(m_SpotShadowMap->GetDepthImage());
+        TransitionDepthImagesToReadable(shadowDepthImages);
+    }
+
     // Create default white texture (used when no texture is bound).
     // This MUST succeed — without it, every texture fallback path leads to a null deref.
     m_DefaultWhiteTexture = std::make_unique<Renderer::Texture>(m_VulkanRenderer->GetContext());
@@ -2957,8 +2971,14 @@ void RenderSystem::Initialize() {
         }
     }
 
-    // Initialize Device Generated Commands (DGC) — GPU generates entire command stream
-    if (m_GPUCullingEnabled && m_GPUCulling && m_VulkanRenderer->GetContext()->IsDGCSupported()) {
+    // Initialize Device Generated Commands (DGC) — GPU generates entire command stream.
+    // DISABLED: the EXT init is incomplete — the IndirectExecutionSet is built from a
+    // pipeline lacking VK_PIPELINE_CREATE_2_INDIRECT_BINDABLE_BIT_EXT and the commands
+    // layout lacks the EXECUTION_SET token (validation 11153/11019/11011). DGC is
+    // off-by-default at render time anyway, so skip init until the EXT path is finished.
+    // Multi-draw indirect remains the active GPU-driven path.
+    constexpr bool kEnableDGCInit = false;
+    if (kEnableDGCInit && m_GPUCullingEnabled && m_GPUCulling && m_VulkanRenderer->GetContext()->IsDGCSupported()) {
         m_DGC = std::make_unique<Renderer::DeviceGeneratedCommands>();
         if (!m_DGC->Initialize(m_VulkanRenderer->GetContext(), m_GPUCulling->GetMaxObjects())) {
             ENJIN_LOG_INFO(Renderer, "DGC not available on this device, using multi-draw indirect");
@@ -6691,14 +6711,18 @@ void RenderSystem::CreateDescriptorSets() {
             imageInfo.sampler = VK_NULL_HANDLE;
         }
 
-        // Shadow map (binding 4) - 2D array for cascaded shadows
+        // Shadow map (binding 4) - 2D array for cascaded shadows. Bind the real
+        // depth-array view whenever the map exists (it lives for the whole session),
+        // matching point/spot bindings 10/11. The shader is sampler2DArrayShadow, so
+        // the old white-texture fallback was the wrong type/format/layout entirely
+        // (validation 07752/06479/09600). Shadow disable is handled by the lighting
+        // UBO flag, not by swapping the descriptor to a color texture.
         VkDescriptorImageInfo shadowImageInfo{};
-        if (m_ShadowMap && m_ShadowsEnabled) {
+        if (m_ShadowMap) {
             shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
             shadowImageInfo.imageView = m_ShadowMap->GetDepthArrayView();
             shadowImageInfo.sampler = m_ShadowMap->GetShadowSampler();
         } else {
-            // Use default white texture as fallback (will return 1.0 = no shadow)
             shadowImageInfo = imageInfo;
         }
 
@@ -7100,7 +7124,7 @@ void RenderSystem::CreateDescriptorSets() {
                     offImageInfo.sampler = VK_NULL_HANDLE;
                 }
                 VkDescriptorImageInfo offShadowInfo{};
-                if (m_ShadowMap && m_ShadowsEnabled) {
+                if (m_ShadowMap) {
                     offShadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
                     offShadowInfo.imageView = m_ShadowMap->GetDepthArrayView();
                     offShadowInfo.sampler = m_ShadowMap->GetShadowSampler();
@@ -9146,6 +9170,11 @@ void RenderSystem::RenderShadowPass() {
         if (dist > 5.0f) forceFullUpdate = true;
         m_PrevShadowCameraPos = pos;
     }
+    // When the shadow caster set changes (e.g. an object was deleted) every cascade
+    // must re-render this frame. Progressive updates otherwise skip far cascades, so
+    // the cascade holding a deleted object's shadow keeps it until it happens to
+    // refresh -- the "shadow with no object" lingering after a delete.
+    if (m_ShadowCastersDirty) forceFullUpdate = true;
 
     // Find the first directional light for shadow casting
     bool foundShadowLight = false;
@@ -11439,6 +11468,59 @@ void RenderSystem::CompositeRTResults(VkCommandBuffer cmd) {
     m_RTCompositor->Dispatch(cmd, m_RTDescriptorSet, extent.width, extent.height, enableFlags);
 }
 
+void RenderSystem::TransitionDepthImagesToReadable(const std::vector<VkImage>& images) {
+    if (images.empty() || !m_VulkanRenderer) return;
+    auto* ctx = m_VulkanRenderer->GetContext();
+    if (!ctx) return;
+    VkDevice device = ctx->GetDevice();
+
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.queueFamilyIndex = ctx->GetGraphicsQueueFamily();
+    VkCommandPool tempPool = VK_NULL_HANDLE;
+    if (vkCreateCommandPool(device, &poolInfo, nullptr, &tempPool) != VK_SUCCESS) return;
+
+    VkCommandBufferAllocateInfo cbAlloc{};
+    cbAlloc.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cbAlloc.commandPool = tempPool;
+    cbAlloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cbAlloc.commandBufferCount = 1;
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    if (vkAllocateCommandBuffers(device, &cbAlloc, &cmd) == VK_SUCCESS) {
+        VkCommandBufferBeginInfo begin{};
+        begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(cmd, &begin);
+
+        for (VkImage img : images) {
+            if (img == VK_NULL_HANDLE) continue;
+            VkImageMemoryBarrier b{};
+            b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            b.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            b.image = img;
+            b.subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS };
+            b.srcAccessMask = 0;
+            b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(cmd,
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                0, 0, nullptr, 0, nullptr, 1, &b);
+        }
+
+        vkEndCommandBuffer(cmd);
+        VkSubmitInfo submit{};
+        submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit.commandBufferCount = 1;
+        submit.pCommandBuffers = &cmd;
+        if (vkQueueSubmit(ctx->GetGraphicsQueue(), 1, &submit, VK_NULL_HANDLE) == VK_SUCCESS) {
+            vkQueueWaitIdle(ctx->GetGraphicsQueue());
+        }
+    }
+    vkDestroyCommandPool(device, tempPool, nullptr);
+}
+
 void RenderSystem::CreateRTDummyResources() {
     // Idempotent: these placeholders are needed by the main PBR descriptor set
     // (bindings 21-23) whether or not ray tracing initializes, so this is now
@@ -11610,6 +11692,64 @@ void RenderSystem::CreateRTDummyResources() {
         if (vkBindBufferMemory(device, m_RTDummyBuffer, m_RTDummyBufferMemory, 0) != VK_SUCCESS) {
             ENJIN_LOG_ERROR(Renderer, "Failed to bind RT dummy buffer memory");
             return;
+        }
+    }
+
+    // Transition the sampled dummy images UNDEFINED -> SHADER_READ_ONLY_OPTIMAL.
+    // They are bound to the PBR descriptor set (bindings 19/21/22/23) and sampled
+    // unconditionally, so leaving them UNDEFINED trips the layout check at draw
+    // time (validation vkCmdDraw-None-09600).
+    {
+        VkCommandPoolCreateInfo poolInfo{};
+        poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolInfo.queueFamilyIndex = ctx->GetGraphicsQueueFamily();
+        VkCommandPool tempPool = VK_NULL_HANDLE;
+        if (vkCreateCommandPool(device, &poolInfo, nullptr, &tempPool) == VK_SUCCESS) {
+            VkCommandBufferAllocateInfo cbAlloc{};
+            cbAlloc.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            cbAlloc.commandPool = tempPool;
+            cbAlloc.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            cbAlloc.commandBufferCount = 1;
+            VkCommandBuffer cmd = VK_NULL_HANDLE;
+            if (vkAllocateCommandBuffers(device, &cbAlloc, &cmd) == VK_SUCCESS) {
+                VkCommandBufferBeginInfo begin{};
+                begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+                begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+                vkBeginCommandBuffer(cmd, &begin);
+
+                struct DummyTransition { VkImage image; u32 layers; };
+                const DummyTransition dummies[] = {
+                    { m_RTDummyImage,   1 },
+                    { m_RTDummy3DImage, 1 },
+                    { m_DummyCubeImage, 6 },
+                };
+                for (const auto& d : dummies) {
+                    if (d.image == VK_NULL_HANDLE) continue;
+                    VkImageMemoryBarrier b{};
+                    b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                    b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+                    b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                    b.image = d.image;
+                    b.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, d.layers };
+                    b.srcAccessMask = 0;
+                    b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                    vkCmdPipelineBarrier(cmd,
+                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                        0, 0, nullptr, 0, nullptr, 1, &b);
+                }
+
+                vkEndCommandBuffer(cmd);
+                VkSubmitInfo submit{};
+                submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+                submit.commandBufferCount = 1;
+                submit.pCommandBuffers = &cmd;
+                if (vkQueueSubmit(ctx->GetGraphicsQueue(), 1, &submit, VK_NULL_HANDLE) == VK_SUCCESS) {
+                    vkQueueWaitIdle(ctx->GetGraphicsQueue());
+                }
+            }
+            vkDestroyCommandPool(device, tempPool, nullptr);
         }
     }
 

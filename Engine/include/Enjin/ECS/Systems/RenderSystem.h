@@ -1437,6 +1437,9 @@ private:
     usize m_GhostBoneBufferCapacity = 0;  // Current capacity in bytes
 
     void CreateRTDummyResources();
+    // One-shot transition of depth images UNDEFINED -> DEPTH_STENCIL_READ_ONLY_OPTIMAL
+    // so shadow maps are in a sampleable layout even when their pass never runs.
+    void TransitionDepthImagesToReadable(const std::vector<VkImage>& images);
     void DestroyRTDummyResources();
     void WriteRTDescriptors();
     void TransitionRTOutputImages(VkCommandBuffer cmd);

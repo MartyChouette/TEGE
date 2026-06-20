@@ -288,6 +288,14 @@ Math::Vector3 JoltBackend::GetGravity() const {
 void JoltBackend::Update(f32 deltaTime) {
     if (!m_World || !m_Initialized || deltaTime <= 0.0f) return;
 
+    // Clamp the step. The first frame after entering play mode (and any hitch)
+    // carries a large accumulated dt; stepping it in one go teleports dynamic
+    // bodies the full fall distance instantly instead of letting them visibly
+    // drop (reported on the stress test). Cap at ~3 frames @60 and substep so a
+    // big dt stays stable instead of being dropped.
+    constexpr f32 kMaxStep = 0.05f;
+    if (deltaTime > kMaxStep) deltaTime = kMaxStep;
+
     // PH-H9 fix: cache deltaTime for MoveKinematic calls in SyncECSToJolt
     m_LastDeltaTime = deltaTime;
 

@@ -35,6 +35,7 @@ public:
 
     // Getters for descriptor binding
     VkImageView GetCubeArrayView() const { return m_CubeArrayView; }
+    VkImage GetDepthImage() const { return m_DepthImage; }
     VkSampler GetShadowSampler() const { return m_ShadowSampler; }
     VkRenderPass GetRenderPass() const { return m_RenderPass; }
     u32 GetResolution() const { return m_Resolution; }

@@ -68,6 +68,7 @@ public:
 
     // Getters
     VkImageView GetDepthArrayView() const { return m_DepthArrayView; }
+    VkImage GetDepthImage() const { return m_DepthImage; }
     VkSampler GetShadowSampler() const { return m_ShadowSampler; }
     VkRenderPass GetRenderPass() const { return m_RenderPass; }
     u32 GetResolution() const { return m_Config.resolution; }

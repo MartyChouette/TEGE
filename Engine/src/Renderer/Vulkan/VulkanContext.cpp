@@ -401,6 +401,11 @@ bool VulkanContext::CreateLogicalDevice() {
     if (supportedFeatures.independentBlend) {
         deviceFeatures.independentBlend = VK_TRUE;
     }
+    // Point/spot shadow cube arrays and the probe cubemap use samplerCubeArray /
+    // VK_IMAGE_VIEW_TYPE_CUBE_ARRAY, which require this feature (validation 08740/01004).
+    if (supportedFeatures.imageCubeArray) {
+        deviceFeatures.imageCubeArray = VK_TRUE;
+    }
 
     std::vector<const char*> deviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
@@ -477,8 +482,15 @@ bool VulkanContext::CreateLogicalDevice() {
     descriptorIndexingFeatures.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
     descriptorIndexingFeatures.descriptorBindingPartiallyBound = VK_TRUE;
     descriptorIndexingFeatures.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+    descriptorIndexingFeatures.descriptorBindingStorageBufferUpdateAfterBind = VK_TRUE;  // a bindless layout uses it on an SSBO binding (validation 03008)
     descriptorIndexingFeatures.descriptorBindingVariableDescriptorCount = VK_TRUE;
     descriptorIndexingFeatures.runtimeDescriptorArray = VK_TRUE;
+
+    // Timeline semaphores are created by the engine; the feature must be enabled
+    // (validation 03252). Core in Vulkan 1.2; this feature struct is the 1.1 path.
+    VkPhysicalDeviceTimelineSemaphoreFeatures timelineSemaphoreFeatures{};
+    timelineSemaphoreFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
+    timelineSemaphoreFeatures.timelineSemaphore = VK_TRUE;
 
     VkPhysicalDeviceFeatures2 deviceFeatures2{};
     deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
@@ -495,6 +507,10 @@ bool VulkanContext::CreateLogicalDevice() {
         // Descriptor indexing (bindless) — always chain
         *chainTail = &descriptorIndexingFeatures;
         chainTail = &descriptorIndexingFeatures.pNext;
+
+        // Timeline semaphore — always chain (engine creates timeline semaphores)
+        *chainTail = &timelineSemaphoreFeatures;
+        chainTail = &timelineSemaphoreFeatures.pNext;
 
         // BDA is required by RT and by DGC (EXT variant uses device addresses)
         if (m_RTCapabilities.supported || m_DGCExtSupported) {
