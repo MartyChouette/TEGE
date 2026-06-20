@@ -6611,11 +6611,14 @@ void RenderSystem::CreateUniformBuffers() {
 }
 
 void RenderSystem::RefreshDescriptorsIfDirty() {
-    if (!m_ShadowDescriptorsDirty) return;
+    // No-op now: the shadow descriptor bindings (4/10/11) always bind the real
+    // shadow-map views regardless of shadow state, and shadows are enabled/disabled
+    // via the LightingUBO `shadowEnabled` flag (set from m_ShadowsEnabled each frame),
+    // not by swapping descriptors. Recreating the whole VkDescriptorPool here used to
+    // run mid-loop on the first frame (editor "Lit" default vs shadows-on default) and
+    // invalidate command buffers that had the old sets bound -- the startup cascade of
+    // "commandBuffer not in recording state" validation errors. Just clear the flag.
     m_ShadowDescriptorsDirty = false;
-    // Rebuild descriptor sets so shadow map bindings reflect the current shadow state
-    CreateDescriptorSets();
-    ENJIN_LOG_INFO(Renderer, "Descriptor sets refreshed (shadow state changed)");
 }
 
 void RenderSystem::CreateDescriptorSets() {
@@ -9206,6 +9209,15 @@ void RenderSystem::RenderShadowPass() {
 
     u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
+    // Rebuild the caster cache BEFORE the cascade loop so the parallel-vs-inline
+    // decision (caster count >= 32) is computed once on a stable count. Rebuilding
+    // mid-loop changed the count between BeginCascadePass (which picks INLINE vs
+    // SECONDARY contents) and the vkCmdExecuteCommands path, producing a contents
+    // mismatch (validation 09680) and re-recorded-secondary cascades.
+    if (m_ShadowCastersDirty) {
+        RebuildShadowCasterCache();
+    }
+
     // Render each cascade
     for (u32 cascade = 0; cascade < m_ShadowMap->GetCascadeCount(); ++cascade) {
         // Progressive update: skip far cascades on non-update frames
@@ -9235,12 +9247,7 @@ void RenderSystem::RenderShadowPass() {
             );
         }
 
-        // Render cached shadow-casting entities (rebuilt when dirty)
-        // This avoids O(n) iteration per cascade — instead we iterate O(k) shadow casters
-        if (m_ShadowCastersDirty) {
-            RebuildShadowCasterCache();
-        }
-
+        // Caster cache was rebuilt before the loop (above) so the count is stable.
         // Parallel shadow caster rendering (if enough entities to justify overhead)
         u32 casterCount = static_cast<u32>(m_ShadowCasters.size());
         bool useParallelShadow = (casterCount >= 32 && m_CmdBufferPool && m_ThreadPool.GetThreadCount() > 0);
