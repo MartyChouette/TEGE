@@ -4557,7 +4557,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             lc.color = Math::Vector3(1.0f, 0.10f, 0.60f);   // magenta pink
             lc.intensity = 4.5f;
             lc.range = 14.0f;
-            lc.castShadows = true;
+            // Accent light only: no shadows. A shadow-casting point light projects
+            // a confusing teal square (the region missing the magenta contribution
+            // reads as its complement) and point-light shadow cubemaps are costly.
+            // The blue spot + global directional carry the character's shadowing.
+            lc.castShadows = false;
         }
 
         // Ramp
