@@ -378,7 +378,6 @@ ImportResult SceneImporter::ImportGLTF(const std::string& filepath, ECS::World* 
         }
 
         // Features not supported — add warnings so users know
-        stats.warnings.push_back("Note: Morph targets / blend shapes are not imported (not yet supported)");
         stats.warnings.push_back("Note: Only UV set 0 is imported (additional UV sets are dropped)");
         stats.warnings.push_back("Note: glTF extensions (transmission, clearcoat, sheen) are not imported");
 
@@ -548,7 +547,46 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
             }
 
             world->AddComponent<ECS::MeshComponent>(entity, std::move(meshComp));
-// Create MorphTargetComponent if any primitive has morph targets            {                bool hasMorphTargets = false;                for (const auto& prim : mesh.primitives) {                    if (!prim.morphTargets.empty()) { hasMorphTargets = true; break; }                }                if (hasMorphTargets) {                    u32 totalVerts = static_cast<u32>(world->GetComponent<ECS::MeshComponent>(entity)->vertices.size());                    auto& morphComp = world->AddComponent<ECS::MorphTargetComponent>(entity);                    u32 vOff = 0;                    for (const auto& prim : mesh.primitives) {                        for (usize t = 0; t < prim.morphTargets.size(); ++t) {                            const auto& src = prim.morphTargets[t];                            i32 existingIdx = morphComp.FindTarget(src.name);                            if (existingIdx < 0) {                                ECS::MorphTarget tgt;                                tgt.name = src.name;                                tgt.deltas.resize(totalVerts, ECS::MorphTargetDelta{});                                morphComp.targets.push_back(std::move(tgt));                                existingIdx = static_cast<i32>(morphComp.targets.size()) - 1;                            }                            auto& dst = morphComp.targets[existingIdx];                            for (usize v = 0; v < src.positionDeltas.size() && (vOff + v) < dst.deltas.size(); ++v) {                                dst.deltas[vOff + v].positionDelta = src.positionDeltas[v];                                if (v < src.normalDeltas.size()) dst.deltas[vOff + v].normalDelta = src.normalDeltas[v];                            }                        }                        vOff += static_cast<u32>(prim.vertices.size());                    }                    morphComp.weights.resize(morphComp.targets.size(), 0.0f);                    if (!mesh.defaultMorphWeights.empty()) {                        for (usize w = 0; w < morphComp.weights.size() && w < mesh.defaultMorphWeights.size(); ++w)                            morphComp.weights[w] = mesh.defaultMorphWeights[w];                    }                    stats.warnings.push_back("Morph targets imported: " + std::to_string(morphComp.targets.size()) + " targets");                }            }
+
+            // Create MorphTargetComponent if any primitive has morph targets.
+            // The GPU side (UploadMorphTargetSSBO + binding 20 + triangle.vert) is
+            // already wired; this populates the per-vertex deltas it consumes.
+            {
+                bool hasMorphTargets = false;
+                for (const auto& prim : gltfMesh.primitives) {
+                    if (!prim.morphTargets.empty()) { hasMorphTargets = true; break; }
+                }
+                if (hasMorphTargets) {
+                    u32 totalVerts = static_cast<u32>(world->GetComponent<ECS::MeshComponent>(entity)->vertices.size());
+                    auto& morphComp = world->AddComponent<ECS::MorphTargetComponent>(entity);
+                    u32 vOff = 0;
+                    for (const auto& prim : gltfMesh.primitives) {
+                        for (usize t = 0; t < prim.morphTargets.size(); ++t) {
+                            const auto& src = prim.morphTargets[t];
+                            i32 existingIdx = morphComp.FindTarget(src.name);
+                            if (existingIdx < 0) {
+                                ECS::MorphTarget tgt;
+                                tgt.name = src.name;
+                                tgt.deltas.resize(totalVerts, ECS::MorphTargetDelta{});
+                                morphComp.targets.push_back(std::move(tgt));
+                                existingIdx = static_cast<i32>(morphComp.targets.size()) - 1;
+                            }
+                            auto& dst = morphComp.targets[existingIdx];
+                            for (usize v = 0; v < src.positionDeltas.size() && (vOff + v) < dst.deltas.size(); ++v) {
+                                dst.deltas[vOff + v].positionDelta = src.positionDeltas[v];
+                                if (v < src.normalDeltas.size()) dst.deltas[vOff + v].normalDelta = src.normalDeltas[v];
+                            }
+                        }
+                        vOff += static_cast<u32>(prim.vertices.size());
+                    }
+                    morphComp.weights.resize(morphComp.targets.size(), 0.0f);
+                    if (!gltfMesh.defaultMorphWeights.empty()) {
+                        for (usize w = 0; w < morphComp.weights.size() && w < gltfMesh.defaultMorphWeights.size(); ++w)
+                            morphComp.weights[w] = gltfMesh.defaultMorphWeights[w];
+                    }
+                    stats.warnings.push_back("Morph targets imported: " + std::to_string(morphComp.targets.size()) + " targets");
+                }
+            }
 
             // Add box collider from mesh AABB
             if (options.generateColliders) {
