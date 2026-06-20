@@ -45,6 +45,41 @@ std::vector<std::string> AssimpLoader::GetSupportedExtensions() {
     };
 }
 
+// Detects legacy FBX (version < 7100) which Assimp's importer cannot read.
+// Returns a human-readable version like "6.1" if unsupported, else "".
+// Binary FBX stores the version as a u32 at offset 23 after the "Kaydara FBX
+// Binary" magic; ASCII FBX carries an "FBXVersion:" token or an "FBX 6.x"
+// comment in its header.
+static std::string DetectLegacyFbxVersion(const std::string& filepath) {
+    std::ifstream f(filepath, std::ios::binary);
+    if (!f) return "";
+    char buf[1024] = {0};
+    f.read(buf, sizeof(buf) - 1);
+    std::streamsize n = f.gcount();
+    if (n <= 0) return "";
+    std::string head(buf, static_cast<size_t>(n));
+
+    auto versionString = [](u32 v) {
+        return std::to_string(v / 1000) + "." + std::to_string((v / 100) % 10);
+    };
+
+    const std::string magic = "Kaydara FBX Binary";
+    if (head.rfind(magic, 0) == 0 && n > 27) {
+        u32 version = static_cast<u8>(buf[23]) | (static_cast<u8>(buf[24]) << 8) |
+                      (static_cast<u8>(buf[25]) << 16) | (static_cast<u8>(buf[26]) << 24);
+        if (version > 0 && version < 7100) return versionString(version);
+        return "";
+    }
+
+    auto pos = head.find("FBXVersion:");
+    if (pos != std::string::npos) {
+        int v = std::atoi(head.c_str() + pos + 11);
+        if (v > 0 && v < 7100) return versionString(static_cast<u32>(v));
+    }
+    if (head.find("FBX 6.") != std::string::npos) return "6.x";
+    return "";
+}
+
 bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
     Assimp::Importer importer;
 
@@ -74,7 +109,13 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
     const aiScene* scene = importer.ReadFile(filepath, flags);
 
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
-        s_LastError = "Assimp error: " + std::string(importer.GetErrorString());
+        std::string legacyFbx = DetectLegacyFbxVersion(filepath);
+        if (!legacyFbx.empty()) {
+            s_LastError = "Legacy FBX " + legacyFbx + " is not supported. Re-export as "
+                          "FBX Binary (FBX 2011 / 7.x or newer) and import again.";
+        } else {
+            s_LastError = "Assimp error: " + std::string(importer.GetErrorString());
+        }
         ENJIN_LOG_ERROR(Asset, "Failed to load model: %s - %s", filepath.c_str(), s_LastError.c_str());
         return false;
     }
