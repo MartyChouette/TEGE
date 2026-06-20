@@ -525,6 +525,22 @@ void PlayMode::Stop() {
     // Restore the scene to its pre-play state
     RestoreEditorState();
 
+    // Tear down the physics backends so the next Play rebuilds every body from the
+    // restored pre-play transforms. The backend is only (re)created when !m_Physics,
+    // so without this it persists across plays and its dynamic bodies keep their
+    // simulated positions -- repeated plays of the stress test then start already
+    // settled on the ground instead of falling. All holders below are re-pointed at
+    // the fresh backend when Play() runs again, and every consuming system is
+    // disabled in edit mode, so clearing the pointers here is safe.
+    m_ControllerSystem.SetPhysics(nullptr);
+    m_ControllerSystem.SetPhysics2D(nullptr);
+    m_RecordRewindSystem.SetPhysics(nullptr);
+    m_RecordRewindSystem.SetPhysics2D(nullptr);
+    m_VisualScriptSystem.SetPhysics(nullptr);
+    Scripting::SetBindingsPhysics(nullptr);
+    m_Physics.reset();
+    m_Physics2D.reset();
+
     // Re-enable main-pass shadow rendering for editor mode
     if (m_RenderSystem) {
         m_RenderSystem->SetSkipMainPassShadows(false);
