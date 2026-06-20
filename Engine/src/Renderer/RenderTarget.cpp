@@ -174,7 +174,11 @@ bool RenderTarget::CreateImages() {
     colorInfo.arrayLayers = 1;
     colorInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     colorInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    colorInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    // TRANSFER_SRC/DST: the editor's no-post-process fallback path blits the scene
+    // render target into the game-view target (validation 01212/01213/00219/00224 when
+    // these bits are missing -- a blit can't transition the image to TRANSFER_*_OPTIMAL).
+    colorInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
+                    | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     colorInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     colorInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 

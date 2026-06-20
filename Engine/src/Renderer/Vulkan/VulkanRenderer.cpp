@@ -423,10 +423,17 @@ bool VulkanRenderer::CreateCommandBuffers() {
 }
 
 bool VulkanRenderer::CreateSyncObjects() {
+    // The render-finished semaphore must be PER SWAPCHAIN IMAGE, not per frame in
+    // flight: the present operation keeps waiting on it until the image is actually
+    // shown, so a per-frame semaphore can be re-signaled while a present that used
+    // it is still pending (validation vkQueueSubmit-pSignalSemaphores-00067). The
+    // image-in-flight fence wait already guarantees the prior present of a given
+    // image index has completed before we reuse that index's semaphore.
+    const u32 imageCount = m_Swapchain->GetImageCount();
     m_ImageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
-    m_RenderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    m_RenderFinishedSemaphores.resize(imageCount);
     m_InFlightFences.resize(MAX_FRAMES_IN_FLIGHT);
-    m_ImagesInFlight.resize(m_Swapchain->GetImageCount(), VK_NULL_HANDLE);
+    m_ImagesInFlight.resize(imageCount, VK_NULL_HANDLE);
 
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -437,9 +444,14 @@ bool VulkanRenderer::CreateSyncObjects() {
 
     for (usize i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
         if (vkCreateSemaphore(m_Context->GetDevice(), &semaphoreInfo, nullptr, &m_ImageAvailableSemaphores[i]) != VK_SUCCESS ||
-            vkCreateSemaphore(m_Context->GetDevice(), &semaphoreInfo, nullptr, &m_RenderFinishedSemaphores[i]) != VK_SUCCESS ||
             vkCreateFence(m_Context->GetDevice(), &fenceInfo, nullptr, &m_InFlightFences[i]) != VK_SUCCESS) {
             ENJIN_LOG_ERROR(Renderer, "Failed to create sync objects for frame %zu", i);
+            return false;
+        }
+    }
+    for (usize i = 0; i < imageCount; ++i) {
+        if (vkCreateSemaphore(m_Context->GetDevice(), &semaphoreInfo, nullptr, &m_RenderFinishedSemaphores[i]) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create render-finished semaphore %zu", i);
             return false;
         }
     }
@@ -470,11 +482,15 @@ void VulkanRenderer::DestroySyncObjects() {
         if (m_ImageAvailableSemaphores[i] != VK_NULL_HANDLE) {
             vkDestroySemaphore(m_Context->GetDevice(), m_ImageAvailableSemaphores[i], nullptr);
         }
-        if (m_RenderFinishedSemaphores[i] != VK_NULL_HANDLE) {
-            vkDestroySemaphore(m_Context->GetDevice(), m_RenderFinishedSemaphores[i], nullptr);
-        }
         if (m_InFlightFences[i] != VK_NULL_HANDLE) {
             vkDestroyFence(m_Context->GetDevice(), m_InFlightFences[i], nullptr);
+        }
+    }
+    // Render-finished semaphores are per swapchain image, so their count differs
+    // from MAX_FRAMES_IN_FLIGHT.
+    for (auto& sem : m_RenderFinishedSemaphores) {
+        if (sem != VK_NULL_HANDLE) {
+            vkDestroySemaphore(m_Context->GetDevice(), sem, nullptr);
         }
     }
 }
@@ -571,7 +587,9 @@ void VulkanRenderer::SubmitCommandBuffer() {
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &m_CommandBuffers[m_CurrentFrame];
 
-    VkSemaphore signalSemaphores[] = { m_RenderFinishedSemaphores[m_CurrentFrame] };
+    // Signal the per-image render-finished semaphore (present waits on it until the
+    // image is shown). Indexed by image, not frame in flight (validation 00067).
+    VkSemaphore signalSemaphores[] = { m_RenderFinishedSemaphores[m_CurrentImageIndex] };
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
