@@ -9,6 +9,9 @@ layout(location = 3) in vec4 inColor;
 layout(location = 4) in vec4 inTangent;
 layout(location = 5) in vec4 inBoneWeights;
 layout(location = 6) in uvec4 inBoneIndices;
+layout(location = 7) in vec2 inUV1;           // second UV channel (lightmap/detail)
+layout(location = 8) in vec4 inBoneWeights2;  // bone influences 5-8
+layout(location = 9) in uvec4 inBoneIndices2;
 
 // Push constant for per-object model matrix + material flags
 layout(push_constant) uniform PushConstants {
@@ -116,6 +119,7 @@ layout(location = 6) out vec4 fragTangent;
 layout(location = 7) out vec4 fragCurClipPos;  // Current clip position (for velocity)
 layout(location = 8) out vec4 fragPrevClipPos; // Previous frame clip position (for velocity)
 layout(location = 9) flat out int v_ObjectIndex; // >=0: indirect draw (SSBO index), -1: per-entity
+layout(location = 10) out vec2 fragUV1;          // second UV channel (passthrough; ready for detail/lightmap)
 
 // Flag bits (must match C++ Material.h and RenderSystem.cpp)
 #define FLAG_SKINNED          (1 << 3)
@@ -182,14 +186,19 @@ void main() {
         }
     }
 
-    // Apply skeletal skinning if enabled and vertex has bone weights
+    // Apply skeletal skinning if enabled and vertex has bone weights.
+    // Up to 8 influences: the first 4 (inBoneWeights/Indices) plus 5-8 (inBoneWeights2/Indices2).
     if ((objFlags & FLAG_SKINNED) != 0) {
-        float weightSum = inBoneWeights.x + inBoneWeights.y + inBoneWeights.z + inBoneWeights.w;
+        float weightSum = dot(inBoneWeights, vec4(1.0)) + dot(inBoneWeights2, vec4(1.0));
         if (weightSum > 0.0) {
             mat4 skinMatrix = inBoneWeights.x * boneMatrices[inBoneIndices.x]
                             + inBoneWeights.y * boneMatrices[inBoneIndices.y]
                             + inBoneWeights.z * boneMatrices[inBoneIndices.z]
-                            + inBoneWeights.w * boneMatrices[inBoneIndices.w];
+                            + inBoneWeights.w * boneMatrices[inBoneIndices.w]
+                            + inBoneWeights2.x * boneMatrices[inBoneIndices2.x]
+                            + inBoneWeights2.y * boneMatrices[inBoneIndices2.y]
+                            + inBoneWeights2.z * boneMatrices[inBoneIndices2.z]
+                            + inBoneWeights2.w * boneMatrices[inBoneIndices2.w];
 
             skinnedPos = (skinMatrix * vec4(inPosition, 1.0)).xyz;
             skinnedNormal = mat3(skinMatrix) * inNormal;
@@ -303,6 +312,9 @@ void main() {
     if ((objFlags & FLAG_UV_QUANTIZE) != 0) {
         fragUV = floor(fragUV * 128.0) / 128.0;
     }
+
+    // Second UV channel passthrough (no consumer yet; available for detail/lightmap).
+    fragUV1 = inUV1;
 
     // Pass through vertex color
     fragVertColor = inColor;

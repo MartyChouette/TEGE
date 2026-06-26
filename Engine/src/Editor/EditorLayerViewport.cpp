@@ -143,7 +143,12 @@ ImVec2 EditorLayer::ComputeAspectConstrainedSize(f32 availW, f32 availH, f32 asp
 
 void EditorLayer::DrawViewportPanel() {
     bool panelOpen = true;
-    ImGui::Begin("Scene", &panelOpen);
+    // NoScrollbar/NoScrollWithMouse: the panel hosts an aspect-constrained render-target image.
+    // If a scrollbar is ever allowed to appear it steals ~16px from the content region, which
+    // shrinks the image, which removes the overflow, which removes the scrollbar — an every-frame
+    // oscillation that resizes the render target each frame and makes the whole view visibly shake
+    // (and thrashes TAA/render-target allocation). The wheel is the camera zoom, not panel scroll.
+    ImGui::Begin("Scene", &panelOpen, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     if (!panelOpen) {
         SetPanelVisibility(EditorPanel::Viewport, false);
     }

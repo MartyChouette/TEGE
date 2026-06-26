@@ -17,9 +17,14 @@ struct ENJIN_API MeshComponent : public IComponent {
         Math::Vector2 uv;
         Math::Vector4 color = Math::Vector4(1.0f, 1.0f, 1.0f, 1.0f); // vertex color (default white)
         Math::Vector4 tangent = Math::Vector4(0.0f, 0.0f, 0.0f, 1.0f); // xyz=tangent dir, w=handedness
-        // Skeletal animation bone data
+        // Skeletal animation bone data (first 4 influences)
         Math::Vector4 boneWeights = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
         u32 boneIndices[4] = {0, 0, 0, 0};
+        // --- Appended fields (keep existing offsets above unchanged) ---
+        Math::Vector2 uv1 = Math::Vector2(0.0f, 0.0f);  // second UV channel (lightmap/detail; offset 96)
+        // Bone influences 5-8 for dense rigs (offset 104). All-zero weights = no extra influence.
+        Math::Vector4 boneWeights2 = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+        u32 boneIndices2[4] = {0, 0, 0, 0};  // offset 120, stride now 136
     };
 
     std::vector<Vertex> vertices;

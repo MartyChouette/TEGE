@@ -1200,12 +1200,6 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         auto state = m_Physics->UpdateCharacterController(entity, ctrl.velocity, dt);
         transform.position = state.position;
 
-        static int s_GroundLog = 0;
-        if (s_GroundLog++ < 10) {
-            printf("[JUMP] ground=%d pos=(%.1f,%.1f,%.1f) vel.y=%.2f\n",
-                static_cast<int>(state.groundState), state.position.x, state.position.y, state.position.z, ctrl.velocity.y);
-        }
-
         // Update ground state from physics
         bool physicsGrounded = (state.groundState == Physics::IPhysicsBackend::CharacterGroundState::OnGround ||
                                 state.groundState == Physics::IPhysicsBackend::CharacterGroundState::OnSteepGround);
@@ -1235,13 +1229,6 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
 
         f32 groundY = 0.0f;
         bool onGround = CheckGround(transform.position, groundY, entity);
-
-        static int s_FallbackLog = 0;
-        if (s_FallbackLog++ < 15) {
-            printf("[FALLBACK] pos=(%.1f,%.1f,%.1f) vel.y=%.2f grounded=%d groundY=%.1f checkGround=%d\n",
-                transform.position.x, transform.position.y, transform.position.z,
-                ctrl.velocity.y, ctrl.isGrounded, groundY, onGround);
-        }
 
         if (onGround && transform.position.y <= groundY + 0.05f && ctrl.velocity.y <= 0.0f) {
             transform.position.y = groundY;

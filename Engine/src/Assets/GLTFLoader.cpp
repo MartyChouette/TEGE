@@ -185,6 +185,8 @@ bool GLTFLoader::Load(const std::string& filepath, GLTFScene& outScene) {
                         case cgltf_attribute_type_texcoord: {
                             if (attr.index == 0) {
                                 cgltf_accessor_read_float(accessor, v, &vertex.texCoord.x, 2);
+                            } else if (attr.index == 1) {
+                                cgltf_accessor_read_float(accessor, v, &vertex.texCoord1.x, 2);
                             }
                             break;
                         }
@@ -193,19 +195,27 @@ bool GLTFLoader::Load(const std::string& filepath, GLTFScene& outScene) {
                             break;
                         }
                         case cgltf_attribute_type_joints: {
+                            // JOINTS_0 = influences 1-4, JOINTS_1 = influences 5-8 (dense rigs)
+                            cgltf_uint joints[4] = {0, 0, 0, 0};
+                            cgltf_accessor_read_uint(accessor, v, joints, 4);
                             if (attr.index == 0) {
-                                cgltf_uint joints[4] = {0, 0, 0, 0};
-                                cgltf_accessor_read_uint(accessor, v, joints, 4);
                                 vertex.boneIndices[0] = static_cast<u32>(joints[0]);
                                 vertex.boneIndices[1] = static_cast<u32>(joints[1]);
                                 vertex.boneIndices[2] = static_cast<u32>(joints[2]);
                                 vertex.boneIndices[3] = static_cast<u32>(joints[3]);
+                            } else if (attr.index == 1) {
+                                vertex.boneIndices2[0] = static_cast<u32>(joints[0]);
+                                vertex.boneIndices2[1] = static_cast<u32>(joints[1]);
+                                vertex.boneIndices2[2] = static_cast<u32>(joints[2]);
+                                vertex.boneIndices2[3] = static_cast<u32>(joints[3]);
                             }
                             break;
                         }
                         case cgltf_attribute_type_weights: {
                             if (attr.index == 0) {
                                 cgltf_accessor_read_float(accessor, v, &vertex.boneWeights.x, 4);
+                            } else if (attr.index == 1) {
+                                cgltf_accessor_read_float(accessor, v, &vertex.boneWeights2.x, 4);
                             }
                             break;
                         }

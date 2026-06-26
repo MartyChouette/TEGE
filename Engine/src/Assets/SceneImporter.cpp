@@ -66,16 +66,21 @@ static void ValidateImportedMeshes(ECS::World* world, const ImportResult& result
             if (absY > maxExtent) maxExtent = absY;
             if (absZ > maxExtent) maxExtent = absZ;
 
-            // Bone weight validation — check sum and normalize if needed
-            f32 wSum = vert.boneWeights.x + vert.boneWeights.y + vert.boneWeights.z + vert.boneWeights.w;
+            // Bone weight validation — sum across all 8 influences and normalize if needed
+            f32 wSum = vert.boneWeights.x + vert.boneWeights.y + vert.boneWeights.z + vert.boneWeights.w
+                     + vert.boneWeights2.x + vert.boneWeights2.y + vert.boneWeights2.z + vert.boneWeights2.w;
             if (wSum > 0.001f && std::fabs(wSum - 1.0f) > 0.01f) {
                 badBoneWeights++;
-                // Auto-fix: normalize
+                // Auto-fix: normalize all 8 weights so they sum to 1
                 f32 inv = 1.0f / wSum;
                 vert.boneWeights.x *= inv;
                 vert.boneWeights.y *= inv;
                 vert.boneWeights.z *= inv;
                 vert.boneWeights.w *= inv;
+                vert.boneWeights2.x *= inv;
+                vert.boneWeights2.y *= inv;
+                vert.boneWeights2.z *= inv;
+                vert.boneWeights2.w *= inv;
                 fixedBoneWeights++;
             }
         }
@@ -483,12 +488,19 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                     vertex.tangent = Math::Vector4(tang3.x, tang3.y, tang3.z, vertex.tangent.w);
                 }
                 vertex.uv = gltfVert.texCoord;
+                vertex.uv1 = gltfVert.texCoord1;
                 if (gltfVert.hasColor) vertex.color = gltfVert.color;
                 vertex.boneWeights = gltfVert.boneWeights;
                 vertex.boneIndices[0] = gltfVert.boneIndices[0];
                 vertex.boneIndices[1] = gltfVert.boneIndices[1];
                 vertex.boneIndices[2] = gltfVert.boneIndices[2];
                 vertex.boneIndices[3] = gltfVert.boneIndices[3];
+                // Influences 5-8 (JOINTS_1/WEIGHTS_1); all-zero when the rig has <=4 per vertex
+                vertex.boneWeights2 = gltfVert.boneWeights2;
+                vertex.boneIndices2[0] = gltfVert.boneIndices2[0];
+                vertex.boneIndices2[1] = gltfVert.boneIndices2[1];
+                vertex.boneIndices2[2] = gltfVert.boneIndices2[2];
+                vertex.boneIndices2[3] = gltfVert.boneIndices2[3];
                 meshComp.vertices.push_back(vertex);
             }
 
@@ -1108,6 +1120,18 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
 
         skelCtx.skeleton = skeleton;
 
+        // Assign a scene-unique group id so every co-skeleton mesh of THIS model re-shares one
+        // Skeleton after save/load (SkeletonComponent::skeletonGroupId). Take max+1 over skeletons
+        // already in the scene so two distinct characters never collapse onto one skeleton.
+        {
+            u64 maxId = 0;
+            for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::SkeletonComponent>()) {
+                const auto* sc = world->GetComponent<ECS::SkeletonComponent>(e);
+                if (sc && sc->skeletonGroupId > maxId) maxId = sc->skeletonGroupId;
+            }
+            skelCtx.groupId = maxId + 1;
+        }
+
         ENJIN_LOG_INFO(Asset, "Built skeleton: %zu bones, %zu animations from %s",
             scene.bones.size(), scene.animations.size(), filepath.c_str());
 
@@ -1559,13 +1583,20 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                         vertex.tangent = Math::Vector4(tang3.x, tang3.y, tang3.z, assimpVert.tangent.w);
                     }
                     vertex.uv = assimpVert.texCoord;
+                    vertex.uv1 = assimpVert.texCoord1;
                     if (assimpVert.hasColor) vertex.color = assimpVert.color;
-                    // Copy bone weights from Assimp vertex data
+                    // Copy bone weights from Assimp vertex data (influences 1-4)
                     vertex.boneWeights = assimpVert.boneWeights;
                     vertex.boneIndices[0] = assimpVert.boneIndices[0];
                     vertex.boneIndices[1] = assimpVert.boneIndices[1];
                     vertex.boneIndices[2] = assimpVert.boneIndices[2];
                     vertex.boneIndices[3] = assimpVert.boneIndices[3];
+                    // Influences 5-8 (dense rigs); all-zero when the vertex has <=4
+                    vertex.boneWeights2 = assimpVert.boneWeights2;
+                    vertex.boneIndices2[0] = assimpVert.boneIndices2[0];
+                    vertex.boneIndices2[1] = assimpVert.boneIndices2[1];
+                    vertex.boneIndices2[2] = assimpVert.boneIndices2[2];
+                    vertex.boneIndices2[3] = assimpVert.boneIndices2[3];
                     // Track if any vertex has bone weights
                     if (assimpVert.boneWeights.x > 0.0f) nodeHasSkinning = true;
                     meshComp.vertices.push_back(vertex);
@@ -1808,23 +1839,29 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         }
     }
 
-    // Attach skeleton and animator to EVERY node with skinned mesh data.
-    // Previously only attached to the first skinned node, which left other
-    // skinned mesh entities without an AnimatorComponent — they rendered
-    // without bone transforms (distorted). All skinned meshes in the same
-    // model share the same skeleton and bone matrices.
+    // Every skinned mesh in one model shares ONE skeleton and is driven by ONE animator
+    // (the "leader" = first skinned mesh). Followers get only a SkeletonComponent that
+    // references the same shared skeleton; the render system resolves the leader's animator
+    // for them by shared-skeleton identity (RenderSystem::ResolveAnimator). This is why a
+    // body + joints/clothing stay perfectly in sync: one clock, one set of bone matrices.
+    // Giving each mesh its OWN animator (the previous approach) ran independent clocks, so
+    // pausing one left the others walking and they slowly drifted apart.
     if (options.importAnimations && skelCtx.skeleton && nodeHasSkinning) {
         if (!skelCtx.attached) skelCtx.attached = true;
-        // Track first skinned entity (used for bone buffer fallback in render system)
-        if (skelCtx.bodyEntity == 0) {
+        // The first skinned node becomes the leader that owns the AnimatorComponent.
+        const bool isLeader = (skelCtx.bodyEntity == 0);
+        if (isLeader) {
             skelCtx.bodyEntity = entity;
         }
 
-        // Add skeleton component
+        // Add skeleton component (shared skeleton pointer — every mesh, leader and followers)
         auto& skelComp = world->AddComponent<ECS::SkeletonComponent>(entity);
         skelComp.skeleton = skelCtx.skeleton;
         skelComp.sourceAssetPath = stats.sourceFilePath;
+        skelComp.skeletonGroupId = skelCtx.groupId;  // shared by leader + followers, persists across save/load
 
+        // Only the leader carries the animator (playback clock + bone matrices).
+        if (isLeader) {
         // Add animator component
         auto& animComp = world->AddComponent<ECS::AnimatorComponent>(entity);
         animComp.Initialize(skelCtx.skeleton);
@@ -1898,9 +1935,10 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         // Auto-play first animation
         if (!scene.animations.empty()) {
             animComp.animator.Play(scene.animations[0].name);
-            ENJIN_LOG_INFO(Asset, "Auto-playing animation '%s' on entity '%s'",
+            ENJIN_LOG_INFO(Asset, "Auto-playing animation '%s' on entity '%s' (leader; drives all co-skeleton meshes)",
                 scene.animations[0].name.c_str(), name.c_str());
         }
+        } // end if (isLeader)
 
     }
 

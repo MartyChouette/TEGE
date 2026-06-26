@@ -1,0 +1,62 @@
+#version 450
+
+// GPU compute skinning — ADR-0002 Phase 1.
+// Skins bind-pose vertices to world space once per frame. The deformed buffer is then drawn
+// directly with FLAG_SKINNED cleared and an identity model matrix, so no raster pass re-skins
+// and (Phase 2) the RT BLAS can read the same deformed positions.
+//
+// The vertex is the tightly-packed 136-byte MeshComponent::Vertex (34 x 4-byte words). We index
+// it as a raw word array, NOT a std430 struct, because std430 pads vec3 to 16 bytes and would
+// not match the packed C++ layout. Word offsets (must match Mesh.h::Vertex):
+//   0..2  position    3..5  normal      6..7  uv        8..11 color    12..15 tangent(xyz,w)
+//  16..19 boneWeights 20..23 boneIndices(uint) 24..25 uv1 26..29 boneWeights2 30..33 boneIndices2(uint)
+
+layout(local_size_x = 64) in;
+
+layout(std430, binding = 0) readonly  buffer InVerts  { float inData[];  };
+layout(std430, binding = 1) readonly  buffer BoneSSBO { mat4  boneMatrices[]; };
+layout(std430, binding = 2) writeonly buffer OutVerts { float outData[]; };
+
+layout(push_constant) uniform Push {
+    uint vertexCount;
+} pc;
+
+const uint STRIDE = 34u; // words per vertex (136 bytes / 4)
+
+void main() {
+    uint v = gl_GlobalInvocationID.x;
+    if (v >= pc.vertexCount) return;
+    uint b = v * STRIDE;
+
+    vec3 pos     = vec3(inData[b + 0u],  inData[b + 1u],  inData[b + 2u]);
+    vec3 normal  = vec3(inData[b + 3u],  inData[b + 4u],  inData[b + 5u]);
+    vec3 tangent = vec3(inData[b + 12u], inData[b + 13u], inData[b + 14u]);
+
+    vec4  w0 = vec4(inData[b + 16u], inData[b + 17u], inData[b + 18u], inData[b + 19u]);
+    uvec4 i0 = uvec4(floatBitsToUint(inData[b + 20u]), floatBitsToUint(inData[b + 21u]),
+                     floatBitsToUint(inData[b + 22u]), floatBitsToUint(inData[b + 23u]));
+    vec4  w1 = vec4(inData[b + 26u], inData[b + 27u], inData[b + 28u], inData[b + 29u]);
+    uvec4 i1 = uvec4(floatBitsToUint(inData[b + 30u]), floatBitsToUint(inData[b + 31u]),
+                     floatBitsToUint(inData[b + 32u]), floatBitsToUint(inData[b + 33u]));
+
+    // Same 8-influence blend the vertex shader does today (triangle.vert), moved verbatim.
+    float wsum = dot(w0, vec4(1.0)) + dot(w1, vec4(1.0));
+    if (wsum > 0.0) {
+        mat4 m = w0.x * boneMatrices[i0.x] + w0.y * boneMatrices[i0.y]
+               + w0.z * boneMatrices[i0.z] + w0.w * boneMatrices[i0.w]
+               + w1.x * boneMatrices[i1.x] + w1.y * boneMatrices[i1.y]
+               + w1.z * boneMatrices[i1.z] + w1.w * boneMatrices[i1.w];
+        pos     = (m * vec4(pos, 1.0)).xyz;
+        normal  = mat3(m) * normal;
+        tangent = mat3(m) * tangent;
+    }
+
+    // Pass the whole vertex through (uv, color, weights, indices, uv1, tangent.w), then
+    // overwrite only the deformed channels so the output is a complete renderable vertex.
+    for (uint k = 0u; k < STRIDE; ++k) {
+        outData[b + k] = inData[b + k];
+    }
+    outData[b + 0u]  = pos.x;     outData[b + 1u]  = pos.y;     outData[b + 2u]  = pos.z;
+    outData[b + 3u]  = normal.x;  outData[b + 4u]  = normal.y;  outData[b + 5u]  = normal.z;
+    outData[b + 12u] = tangent.x; outData[b + 13u] = tangent.y; outData[b + 14u] = tangent.z;
+}

@@ -1,5 +1,8 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Logging/Log.h"
+#if !ENJIN_RENDERER_WEBGPU
+#include "Enjin/Renderer/SkinningComputeShaderData.h"  // embedded SPIR-V (ADR-0002 compute skinning)
+#endif
 
 // Effect renderer headers needed for unique_ptr destructor (incomplete type fix)
 #include "Enjin/Effects/WeatherRenderer.h"
@@ -1944,8 +1947,8 @@ void RenderSystem::Update(f32 deltaTime) {
             u32 offset = static_cast<u32>(objDataBuf.size());
             objDataBuf.resize(offset + OBJ_ALIGN, 0);
 
-            // Upload bone matrices for skinned meshes
-            auto* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+            // Upload bone matrices for skinned meshes (resolve shared animator for follower meshes)
+            auto* animComp = ResolveAnimator(entity);
             if (animComp && animComp->animator.GetSkeleton()) {
                 auto& skinMats = animComp->animator.GetSkinningMatrices();
                 if (!skinMats.empty()) {
@@ -3165,6 +3168,10 @@ void RenderSystem::Shutdown() {
         m_VulkanRenderer->GetContext()->WaitForGPU();
     }
 
+#if !ENJIN_RENDERER_WEBGPU
+    ShutdownComputeSkinning();
+#endif
+
     // Clean up descriptor pool
     if (m_DescriptorPool != VK_NULL_HANDLE && m_VulkanRenderer->GetContext()) {
         vkDestroyDescriptorPool(m_VulkanRenderer->GetContext()->GetDevice(), m_DescriptorPool, nullptr);
@@ -3622,13 +3629,16 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Update skeletal animators and apply IK constraints (single pass over AnimatorComponent entities)
     m_CachedFallbackAnimator = nullptr;
+    m_SkeletonToAnimator.clear();
     for (Entity entity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
-        AnimatorComponent* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
+        AnimatorComponent* animComp = ResolveAnimator(entity);
         if (!animComp) continue;
 
         // Cache first animator with a skeleton for orphan skinned meshes (Mixamo FBX split imports)
-        if (!m_CachedFallbackAnimator && animComp->animator.GetSkeleton()) {
-            m_CachedFallbackAnimator = animComp;
+        if (const auto* skel = animComp->animator.GetSkeleton()) {
+            if (!m_CachedFallbackAnimator) m_CachedFallbackAnimator = animComp;
+            // Index by shared skeleton so follower meshes resolve THIS animator (one clock).
+            m_SkeletonToAnimator[skel] = animComp;
         }
 
         animComp->Update(deltaTime);
@@ -4612,7 +4622,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // already transform vertices from bone-local → world space. Applying the
             // entity's parent hierarchy on top would double-transform the mesh.
             Renderer::PushConstants pushConstants{};
-            AnimatorComponent* preCheckAnim = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
+            AnimatorComponent* preCheckAnim = ResolveAnimator(entity);
             pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
 
             MaterialComponent* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
@@ -4907,7 +4917,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // scene (Mixamo FBX puts mesh and skeleton on different entities).
             // If this entity has bone weights, find the first AnimatorComponent
             // in the world to use its skinning matrices.
-            AnimatorComponent* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
+            AnimatorComponent* animComp = ResolveAnimator(entity);
             if (!animComp && renderData.indexCount > 0) {
                 // This entity has bone weights but no animator — use cached fallback
                 // (computed once per frame in Update, not per-entity)
@@ -4931,7 +4941,14 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 }
             }
 
-            if (animComp && renderData.boneBuffer) {
+            // Compute skinning (ADR-0002): if the pre-pass already deformed this mesh, draw the
+            // deformed buffer with FLAG_SKINNED cleared (the vertex shader must NOT re-skin) and
+            // keep binding 7 valid with the default bone buffer (the VS won't read it).
+            const bool computeSkinned = m_ComputeSkinningEnabled && renderData.skinnedThisFrame
+                                        && renderData.skinnedVertexBuffer;
+            if (computeSkinned) {
+                if (m_DefaultBoneBuffer) UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+            } else if (animComp && renderData.boneBuffer) {
                 const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
                 if (!skinningMatrices.empty()) {
                     renderData.boneBuffer->UploadData(skinningMatrices.data(),
@@ -4970,7 +4987,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 if (poolPath) {
                     if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
                 } else if (renderData.vertexBuffer && renderData.indexBuffer) {
-                    VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
+                    VkBuffer vertexBuffers[] = { computeSkinned
+                        ? renderData.skinnedVertexBuffer->GetBuffer()
+                        : renderData.vertexBuffer->GetBuffer() };
                     VkDeviceSize vbOffsets[] = { 0 };
                     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, vbOffsets);
                     vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
@@ -5114,7 +5133,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
                                      renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
                 } else if (renderData.vertexBuffer && renderData.indexBuffer) {
-                    VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
+                    VkBuffer vertexBuffers[] = { computeSkinned
+                        ? renderData.skinnedVertexBuffer->GetBuffer()
+                        : renderData.vertexBuffer->GetBuffer() };
                     VkDeviceSize offsets[] = { 0 };
                     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
                     vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
@@ -5285,7 +5306,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
             // Build push constants — skinned meshes use identity model matrix (cached storage)
             Renderer::PushConstants pushConstants{};
             {
-                AnimatorComponent* ac = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
+                AnimatorComponent* ac = ResolveAnimator(entity);
                 pushConstants.model = (ac && ac->animator.GetSkeleton())
                     ? Math::Matrix4::Identity()
                     : ECS::ComputeWorldMatrix(m_World, entity);
@@ -5514,7 +5535,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
             UpdateEntityTextureDescriptors(boundTexture, texHeight, texNormal, texMR, texEmissive, texMatcap);
 
             // Upload bone matrices for skinned meshes (bind pose or animation, cached storage)
-            AnimatorComponent* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
+            AnimatorComponent* animComp = ResolveAnimator(entity);
             if (animComp && renderData.boneBuffer) {
                 const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
                 if (!skinningMatrices.empty()) {
@@ -6398,7 +6419,7 @@ void RenderSystem::RenderWireframeOverlayPass() {
         pc.flags = 0;
 
         // Handle skinned meshes
-        auto* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
+        auto* animComp = ResolveAnimator(entity);
         if (animComp && renderData.boneBuffer) {
             pc.flags |= (1 << 3); // FLAG_SKINNED
             pc.model = Math::Matrix4::Identity();
@@ -7300,6 +7321,30 @@ void RenderSystem::CreateDescriptorSets() {
     }
 }
 
+// The geometry pool packs vertices at MergedGeometryBuffer::VERTEX_STRIDE and the
+// graphics pipeline reads them back at sizeof(MeshComponent::Vertex). If these ever
+// drift, pooled (static) meshes render as scattered garbage. Keep them locked.
+static_assert(Renderer::MergedGeometryBuffer::VERTEX_STRIDE == sizeof(MeshComponent::Vertex),
+              "GeometryPool vertex stride must match MeshComponent::Vertex size");
+
+AnimatorComponent* RenderSystem::ResolveAnimator(Entity entity) {
+    // 1. The entity's own animator (a single-mesh skinned model, or the leader mesh).
+    AnimatorComponent* own = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
+    if (own) return own;
+    // 2. Follower mesh: resolve the animator driving its SHARED skeleton, so every mesh in
+    //    one imported model skins from a single clock (fixes pause desync + slow drift between
+    //    co-skeleton meshes like a body + its joints/clothing).
+    if (SkeletonComponent* sk = m_World->GetComponent<SkeletonComponent>(entity)) {
+        if (sk->skeleton) {
+            auto it = m_SkeletonToAnimator.find(sk->skeleton.get());
+            if (it != m_SkeletonToAnimator.end()) return it->second;
+        }
+    }
+    // Non-skinned entity (or no driving animator found). Callers that want the legacy
+    // orphan fallback (m_CachedFallbackAnimator) apply it themselves.
+    return nullptr;
+}
+
 bool RenderSystem::IsPoolEligible(Entity entity) const {
     if (!m_GeometryPool) return false;
     // Dynamic meshes: terrain, jelly, sprites, tilemaps, water — keep per-entity buffers
@@ -7369,6 +7414,7 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
         renderData.Invalidate();
         return nullptr;
     }
+    renderData.vertexCount = static_cast<u32>(mesh->vertices.size());  // for compute skinning (ADR-0002)
 
     // Create index buffer
     usize indexBufferSize = mesh->indices.size() * sizeof(u32);
@@ -7390,7 +7436,7 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
     // Create bone SSBO if entity has a skeleton for animation.
     // The AnimatorComponent may be on this entity or on a sibling (Mixamo FBX
     // puts mesh and skeleton on different entities). Search globally if needed.
-    AnimatorComponent* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
+    AnimatorComponent* animComp = ResolveAnimator(entity);
     if (!animComp) {
         // Check if this mesh has bone weights — if so, find any AnimatorComponent
         bool hasBoneWeights = false;
@@ -8454,7 +8500,7 @@ void RenderSystem::RenderEntity(Entity entity) {
     // Push model matrix — skinned meshes use identity (skinning already transforms to world space)
     Renderer::PushConstants pushConstants{};
     {
-        AnimatorComponent* ac = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
+        AnimatorComponent* ac = ResolveAnimator(entity);
         pushConstants.model = (ac && ac->animator.GetSkeleton())
             ? Math::Matrix4::Identity()
             : ECS::ComputeWorldMatrix(m_World, entity);
@@ -8713,7 +8759,7 @@ void RenderSystem::RenderEntity(Entity entity) {
 
     // Upload bone matrices for skinned meshes (cached storage avoids type-ID lookup).
     // Always upload when skeleton exists, not just when animation is playing.
-    AnimatorComponent* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
+    AnimatorComponent* animComp = ResolveAnimator(entity);
     if (animComp && renderData.boneBuffer) {
         const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
         if (!skinningMatrices.empty()) {
@@ -8912,7 +8958,7 @@ void RenderSystem::RenderOutlinePass() {
         pc.flags = 0;
 
         // Propagate skinned flag so outline follows skeleton (playing or bind pose)
-        auto* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
+        auto* animComp = ResolveAnimator(entity);
         if (animComp && renderData.boneBuffer) {
             pc.flags |= (1 << 3); // FLAG_SKINNED
             pc.model = Math::Matrix4::Identity(); // Skinned: identity, bone matrices handle positioning
@@ -9005,7 +9051,7 @@ void RenderSystem::RenderOutlinePassForTarget() {
         pc.metallic = outlineWidth;
         pc.flags = 0;
 
-        auto* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
+        auto* animComp = ResolveAnimator(entity);
         if (animComp && renderData.boneBuffer) {
             pc.flags |= (1 << 3);
             pc.model = Math::Matrix4::Identity(); // Skinned: identity, bone matrices handle positioning
@@ -9389,7 +9435,7 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
 
     // Skinned mesh handling: upload bone matrices and use identity model matrix
     // so shadow geometry matches the main pass's skinned positions.
-    AnimatorComponent* animComp = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
+    AnimatorComponent* animComp = ResolveAnimator(entity);
     if (!animComp) {
         // Mesh entity may not have animator — search globally (same as main pass)
         for (auto animEntity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
@@ -9873,6 +9919,243 @@ void RenderSystem::UpdateEntityTextureDescriptors(
     // Single batched call instead of 6 individual calls
     vkUpdateDescriptorSets(device, 6, writes, 0, nullptr);
 }
+
+#if !ENJIN_RENDERER_WEBGPU
+// ============================================================================
+// GPU compute skinning (ADR-0002 Phase 1). Skins bind-pose vertices to world space once per
+// frame into a per-entity output buffer; raster passes then bind that buffer with FLAG_SKINNED
+// cleared. Pipeline is created lazily from embedded SPIR-V; descriptor sets are allocated
+// per-dispatch from a per-frame-in-flight pool that is reset at frame start.
+// ============================================================================
+
+bool RenderSystem::InitComputeSkinning() {
+    if (m_SkinningPipeline != VK_NULL_HANDLE) return true;  // already initialized
+    if (!m_VulkanRenderer || !m_VulkanRenderer->GetContext()) return false;
+    VkDevice device = m_VulkanRenderer->GetContext()->GetDevice();
+    if (device == VK_NULL_HANDLE) return false;
+
+    // Descriptor set layout: bindings 0=in verts, 1=bone matrices, 2=out verts (all storage).
+    VkDescriptorSetLayoutBinding bindings[3]{};
+    for (u32 i = 0; i < 3; ++i) {
+        bindings[i].binding = i;
+        bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        bindings[i].descriptorCount = 1;
+        bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+    VkDescriptorSetLayoutCreateInfo dslInfo{};
+    dslInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    dslInfo.bindingCount = 3;
+    dslInfo.pBindings = bindings;
+    if (vkCreateDescriptorSetLayout(device, &dslInfo, nullptr, &m_SkinningDescSetLayout) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Compute skinning: failed to create descriptor set layout");
+        return false;
+    }
+
+    // Pipeline layout with a single push constant: uint vertexCount.
+    VkPushConstantRange pcRange{};
+    pcRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    pcRange.offset = 0;
+    pcRange.size = sizeof(u32);
+    VkPipelineLayoutCreateInfo plInfo{};
+    plInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    plInfo.setLayoutCount = 1;
+    plInfo.pSetLayouts = &m_SkinningDescSetLayout;
+    plInfo.pushConstantRangeCount = 1;
+    plInfo.pPushConstantRanges = &pcRange;
+    if (vkCreatePipelineLayout(device, &plInfo, nullptr, &m_SkinningPipelineLayout) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Compute skinning: failed to create pipeline layout");
+        return false;
+    }
+
+    // Compute pipeline from embedded SPIR-V.
+    VkShaderModuleCreateInfo smInfo{};
+    smInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    smInfo.codeSize = Renderer::SkinningComputeShaderDataSize;
+    smInfo.pCode = reinterpret_cast<const u32*>(Renderer::SkinningComputeShaderData);
+    VkShaderModule module = VK_NULL_HANDLE;
+    if (vkCreateShaderModule(device, &smInfo, nullptr, &module) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Compute skinning: failed to create shader module");
+        return false;
+    }
+    VkPipelineShaderStageCreateInfo stage{};
+    stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stage.module = module;
+    stage.pName = "main";
+    VkComputePipelineCreateInfo cpInfo{};
+    cpInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    cpInfo.stage = stage;
+    cpInfo.layout = m_SkinningPipelineLayout;
+    VkResult pr = vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &cpInfo, nullptr, &m_SkinningPipeline);
+    vkDestroyShaderModule(device, module, nullptr);
+    if (pr != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Compute skinning: failed to create compute pipeline");
+        return false;
+    }
+
+    // One descriptor pool per frame-in-flight, each holding room for many per-dispatch sets.
+    constexpr u32 kMaxSkinnedPerFrame = 512;
+    u32 framesInFlight = m_VulkanRenderer->GetFramesInFlight();
+    m_SkinningDescPools.assign(framesInFlight, VK_NULL_HANDLE);
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSize.descriptorCount = kMaxSkinnedPerFrame * 3;
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = kMaxSkinnedPerFrame;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    for (u32 i = 0; i < framesInFlight; ++i) {
+        if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &m_SkinningDescPools[i]) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Compute skinning: failed to create descriptor pool");
+            return false;
+        }
+    }
+
+    ENJIN_LOG_INFO(Renderer, "Compute skinning pipeline initialized (%u frames in flight)", framesInFlight);
+    return true;
+}
+
+void RenderSystem::ShutdownComputeSkinning() {
+    if (!m_VulkanRenderer || !m_VulkanRenderer->GetContext()) return;
+    VkDevice device = m_VulkanRenderer->GetContext()->GetDevice();
+    if (device == VK_NULL_HANDLE) return;
+    for (VkDescriptorPool& pool : m_SkinningDescPools) {
+        if (pool != VK_NULL_HANDLE) { vkDestroyDescriptorPool(device, pool, nullptr); pool = VK_NULL_HANDLE; }
+    }
+    m_SkinningDescPools.clear();
+    if (m_SkinningPipeline != VK_NULL_HANDLE)       { vkDestroyPipeline(device, m_SkinningPipeline, nullptr); m_SkinningPipeline = VK_NULL_HANDLE; }
+    if (m_SkinningPipelineLayout != VK_NULL_HANDLE) { vkDestroyPipelineLayout(device, m_SkinningPipelineLayout, nullptr); m_SkinningPipelineLayout = VK_NULL_HANDLE; }
+    if (m_SkinningDescSetLayout != VK_NULL_HANDLE)  { vkDestroyDescriptorSetLayout(device, m_SkinningDescSetLayout, nullptr); m_SkinningDescSetLayout = VK_NULL_HANDLE; }
+}
+
+void RenderSystem::BeginComputeSkinningFrame() {
+    // Reset only the current frame-in-flight's pool. Safe because the engine has already waited
+    // on this frame index's fence before recording, so the GPU is done with its prior sets.
+    if (m_SkinningDescPools.empty() || !m_VulkanRenderer || !m_VulkanRenderer->GetContext()) return;
+    u32 frame = m_VulkanRenderer->GetCurrentFrameIndex() % static_cast<u32>(m_SkinningDescPools.size());
+    if (m_SkinningDescPools[frame] != VK_NULL_HANDLE) {
+        vkResetDescriptorPool(m_VulkanRenderer->GetContext()->GetDevice(), m_SkinningDescPools[frame], 0);
+    }
+}
+
+bool RenderSystem::DispatchComputeSkinning(VkCommandBuffer cmd, EntityRenderData& renderData,
+                                           Renderer::VulkanBuffer* boneBuffer) {
+    if (!InitComputeSkinning()) return false;
+    if (!cmd || !renderData.vertexBuffer || !boneBuffer || renderData.vertexCount == 0) return false;
+    VkDevice device = m_VulkanRenderer->GetContext()->GetDevice();
+
+    // Allocate the deformed output buffer on first use (VERTEX so raster can draw it, STORAGE so
+    // the compute shader can write it). Same 136-byte stride as the bind-pose vertices.
+    const VkDeviceSize outSize = static_cast<VkDeviceSize>(renderData.vertexCount) * sizeof(MeshComponent::Vertex);
+    if (!renderData.skinnedVertexBuffer || renderData.skinnedVertexBuffer->GetSize() < outSize) {
+        renderData.skinnedVertexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
+        if (!renderData.skinnedVertexBuffer->Create(outSize,
+                static_cast<VkBufferUsageFlags>(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT),
+                false)) {
+            renderData.skinnedVertexBuffer.reset();
+            return false;
+        }
+    }
+
+    // Allocate a descriptor set from this frame's pool and point it at in/bone/out buffers.
+    u32 frame = m_VulkanRenderer->GetCurrentFrameIndex() % static_cast<u32>(m_SkinningDescPools.size());
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_SkinningDescPools[frame];
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &m_SkinningDescSetLayout;
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    if (vkAllocateDescriptorSets(device, &allocInfo, &set) != VK_SUCCESS) {
+        // Pool exhausted this frame (more than kMaxSkinnedPerFrame skinned meshes) — skip; this
+        // mesh keeps its bind-pose buffer and the raster fallback skins it. Logged sparsely.
+        static u32 s_warned = 0;
+        if ((s_warned++ % 240) == 0) ENJIN_LOG_WARN(Renderer, "Compute skinning: descriptor pool exhausted this frame");
+        return false;
+    }
+
+    VkDescriptorBufferInfo inInfo{ renderData.vertexBuffer->GetBuffer(), 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo boneInfo{ boneBuffer->GetBuffer(), 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo outInfo{ renderData.skinnedVertexBuffer->GetBuffer(), 0, VK_WHOLE_SIZE };
+    VkWriteDescriptorSet writes[3]{};
+    const VkDescriptorBufferInfo* infos[3] = { &inInfo, &boneInfo, &outInfo };
+    for (u32 i = 0; i < 3; ++i) {
+        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[i].dstSet = set;
+        writes[i].dstBinding = i;
+        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[i].descriptorCount = 1;
+        writes[i].pBufferInfo = infos[i];
+    }
+    vkUpdateDescriptorSets(device, 3, writes, 0, nullptr);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_SkinningPipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_SkinningPipelineLayout, 0, 1, &set, 0, nullptr);
+    u32 vtxCount = renderData.vertexCount;
+    vkCmdPushConstants(cmd, m_SkinningPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(u32), &vtxCount);
+    const u32 groups = (renderData.vertexCount + 63u) / 64u;
+    vkCmdDispatch(cmd, groups, 1, 1);
+    return true;
+}
+
+void RenderSystem::RunComputeSkinningPass(VkCommandBuffer cmd) {
+    if (!m_ComputeSkinningEnabled || !cmd || !m_World) return;
+    if (!InitComputeSkinning()) return;
+    BeginComputeSkinningFrame();
+
+    bool anySkinned = false;
+    const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
+    for (Entity entity : meshEntities) {
+        if (!m_World->IsValid(entity)) continue;
+
+        // Skinned meshes only: must resolve to an animator with non-empty skinning matrices.
+        AnimatorComponent* animComp = ResolveAnimator(entity);
+        if (!animComp) continue;
+        const auto& mats = animComp->animator.GetSkinningMatrices();
+        if (mats.empty()) continue;
+
+        // Get-or-create per-entity buffers (same pattern as the draw loop; created once, reused).
+        EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size()
+                                 && m_EntityRenderData[static_cast<usize>(entity)].valid)
+            ? &m_EntityRenderData[static_cast<usize>(entity)] : SetupEntityBuffers(entity);
+        if (!pRD) continue;
+        EntityRenderData& rd = *pRD;
+        rd.skinnedThisFrame = false;
+
+        // Pooled meshes have no per-entity vertex buffer; Phase 1 also skips morph-target meshes
+        // (the compute shader doesn't apply morph yet — they fall back to vertex-shader skinning).
+        if (!rd.vertexBuffer || rd.vertexCount == 0) continue;
+        if (m_World->HasComponent<MorphTargetComponent>(entity)) continue;
+
+        // Ensure a bone buffer and upload this frame's matrices for the dispatch.
+        if (!rd.boneBuffer) {
+            rd.boneBuffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
+            if (!rd.boneBuffer->Create(mats.size() * sizeof(Math::Matrix4),
+                                       Renderer::BufferUsage::Storage, true)) {
+                rd.boneBuffer.reset();
+                continue;
+            }
+        }
+        rd.boneBuffer->UploadData(mats.data(), mats.size() * sizeof(Math::Matrix4));
+
+        if (DispatchComputeSkinning(cmd, rd, rd.boneBuffer.get())) {
+            rd.skinnedThisFrame = true;
+            anySkinned = true;
+        }
+    }
+
+    if (anySkinned) {
+        // Compute writes -> vertex-input reads: the deformed buffer is drawn as a vertex buffer.
+        VkMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT,
+            0, 1, &barrier, 0, nullptr, 0, nullptr);
+    }
+}
+#endif // !ENJIN_RENDERER_WEBGPU
 
 void RenderSystem::UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer) {
     if (!boneBuffer) return;

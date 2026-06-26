@@ -18,9 +18,12 @@ struct GLTFVertex {
     Math::Vector4 tangent;
     Math::Vector4 color = Math::Vector4(1.0f, 1.0f, 1.0f, 1.0f);  // Vertex color (RGBA)
     bool hasColor = false;
-    // Skeletal animation bone data
+    // Skeletal animation bone data (first 4 influences)
     Math::Vector4 boneWeights;
     u32 boneIndices[4] = {0, 0, 0, 0};
+    Math::Vector2 texCoord1 = Math::Vector2(0.0f, 0.0f);  // second UV set (TEXCOORD_1)
+    Math::Vector4 boneWeights2 = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);  // influences 5-8 (JOINTS_1/WEIGHTS_1)
+    u32 boneIndices2[4] = {0, 0, 0, 0};
 };
 
 // Morph target delta data (per-vertex)

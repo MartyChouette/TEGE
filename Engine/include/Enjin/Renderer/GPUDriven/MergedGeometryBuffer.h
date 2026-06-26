@@ -62,6 +62,14 @@ public:
     u32 GetUsedVertices() const { return m_UsedVertices; }
     u32 GetUsedIndices() const { return m_UsedIndices; }
 
+    // Vertex stride — MUST equal sizeof(MeshComponent::Vertex). The pool packs
+    // vertices at this stride and the pipeline reads them back at the same stride,
+    // so any mismatch scatters every vertex after the first into garbage.
+    // Guarded by a static_assert in RenderSystem.cpp where the Vertex type is visible.
+    // 136 = pos(12)+normal(12)+uv(8)+color(16)+tangent(16)+boneWeights(16)+
+    //       boneIndices(16)+uv1(8)+boneWeights2(16)+boneIndices2(16).
+    static constexpr u32 VERTEX_STRIDE = 136;
+
 private:
     // Free-list block (contiguous range of elements)
     struct FreeBlock {
@@ -76,9 +84,6 @@ private:
     VulkanContext* m_Context = nullptr;
     std::unique_ptr<VulkanBuffer> m_VertexBuffer;
     std::unique_ptr<VulkanBuffer> m_IndexBuffer;
-
-    // Vertex stride (MeshComponent::Vertex = 96 bytes)
-    static constexpr u32 VERTEX_STRIDE = 96;
 
     u32 m_MaxVertices = 0;
     u32 m_MaxIndices = 0;

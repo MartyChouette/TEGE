@@ -134,6 +134,8 @@ private:
         bool attached = false;       // True after skeleton is attached to first skinned node
         ECS::Entity bodyEntity = 0;  // First skinned mesh entity — subsequent meshes merge into this
         f32 unitScale = 1.0f;        // Auto-computed scale (cm→m) for skinned mesh entities
+        u64 groupId = 0;             // Stamped onto every co-skeleton mesh so the shared Skeleton
+                                     // survives save/load (SkeletonComponent::skeletonGroupId)
     };
 
     // Overload with skeleton context for skinned mesh import

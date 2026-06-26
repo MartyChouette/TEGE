@@ -1627,6 +1627,11 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         return;
     }
 
+    // GPU compute skinning (ADR-0002): skin all skinned meshes once here, OUTSIDE any render pass,
+    // before the shadow/viewport/game-view passes so they all read the deformed result. No-op unless
+    // compute skinning is enabled (default off → existing vertex-shader skinning path is untouched).
+    if (m_RenderSystem) m_RenderSystem->RunComputeSkinningPass(commandBuffer);
+
     // --- Editor viewport: render scene from editor camera to offscreen RT ---
     // (Resize is handled by PrepareRenderTargets() before command buffer recording)
     if (m_EditorViewportRT && m_EditorViewportRT->IsValid() &&

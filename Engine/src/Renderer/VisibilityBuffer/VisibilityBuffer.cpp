@@ -341,7 +341,7 @@ bool VisibilityBufferRenderer::CreateVisibilityPipeline() {
     // but we bind the full stride so the same vertex buffers work.
     VkVertexInputBindingDescription bindingDesc{};
     bindingDesc.binding = 0;
-    bindingDesc.stride = sizeof(f32) * 24; // Full engine vertex: 96 bytes
+    bindingDesc.stride = sizeof(f32) * 34; // Full engine vertex: 136 bytes (pos..boneIndices + uv1 + boneWeights2 + boneIndices2)
     bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     VkVertexInputAttributeDescription attribDescs[3] = {};

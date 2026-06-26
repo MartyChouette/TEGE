@@ -185,6 +185,14 @@ struct EntityRenderData {
     std::unique_ptr<Renderer::VulkanBuffer> indexBuffer;
     std::unique_ptr<Renderer::VulkanBuffer> boneBuffer;
     std::unique_ptr<Renderer::VulkanBuffer> morphBuffer;
+    // GPU compute skinning (ADR-0002 Phase 1): deformed (world-space) vertices written once
+    // per frame by skinning.comp. When present and compute skinning is active, raster passes
+    // bind this instead of vertexBuffer and clear FLAG_SKINNED so no pass re-skins. Created
+    // with VERTEX | STORAGE usage. u32 vertexCount tracks the bind-pose vertex count for the
+    // dispatch and the output allocation.
+    std::unique_ptr<Renderer::VulkanBuffer> skinnedVertexBuffer;
+    u32 vertexCount = 0;
+    bool skinnedThisFrame = false;  // true if the compute pass deformed skinnedVertexBuffer this frame
 #else
     Renderer::GPUBufferHandle vertexBuffer;
     Renderer::GPUBufferHandle indexBuffer;
@@ -205,6 +213,9 @@ struct EntityRenderData {
         indexBuffer.reset();
         boneBuffer.reset();
         morphBuffer.reset();
+        skinnedVertexBuffer.reset();
+        vertexCount = 0;
+        skinnedThisFrame = false;
 #else
         vertexBuffer = {};
         indexBuffer = {};
@@ -597,6 +608,12 @@ public:
     bool IsRayTracingSupported() const;
     bool IsRayTracingEnabled() const { return m_RTEnabled; }
     void SetRayTracingEnabled(bool enabled) { m_RTEnabled = enabled; }
+
+    // GPU compute skinning (ADR-0002 Phase 1, Vulkan-only). Default OFF: when disabled the
+    // engine uses the existing vertex-shader skinning path unchanged. When on, skinned meshes
+    // are skinned once per frame by a compute pass and all raster passes read the result.
+    void SetComputeSkinningEnabled(bool enabled) { m_ComputeSkinningEnabled = enabled; }
+    bool IsComputeSkinningEnabled() const { return m_ComputeSkinningEnabled; }
     // Player mode: skip GPU compute shaders (culling, HiZ, clustered lighting)
     // that use disk-loaded SPIR-V not available in built games.
     void SetPlayerMode(bool enabled) { m_PlayerMode = enabled; }
@@ -713,6 +730,14 @@ private:
     ComponentStorage<MaterialSlotsComponent>* m_CachedMaterialSlotsStorage = nullptr;
     ComponentStorage<AnimatorComponent>* m_CachedAnimatorStorage = nullptr;
     AnimatorComponent* m_CachedFallbackAnimator = nullptr; // First animator with skeleton (for orphan skinned meshes)
+    // Maps a shared Skeleton to the single AnimatorComponent that drives it. Lets follower
+    // skinned meshes (no animator of their own) resolve the leader's animator by shared
+    // skeleton identity, so every mesh in one model skins from ONE clock (no pause desync /
+    // drift). Rebuilt each frame in the animator update loop. Keyed by raw Skeleton pointer.
+    std::unordered_map<const Animation::Skeleton*, AnimatorComponent*> m_SkeletonToAnimator;
+    // Resolve the animator that should skin this entity: its own, else the leader driving
+    // its shared skeleton, else the per-frame fallback. Returns null for non-skinned entities.
+    AnimatorComponent* ResolveAnimator(Entity entity);
     ComponentStorage<TextComponent>* m_CachedTextStorage = nullptr;
     ComponentStorage<ArtStyleComponent>* m_CachedArtStyleStorage = nullptr;
     ComponentStorage<Sprite2DComponent>* m_CachedSpriteStorage = nullptr;
@@ -1024,6 +1049,29 @@ private:
     void UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer);
     void UpdateMorphDescriptor(Renderer::VulkanBuffer* morphBuffer);
     void UploadMorphTargetSSBO(Entity entity, ECS::MorphTargetComponent& morph, EntityRenderData& rd);
+
+    // GPU compute skinning (ADR-0002 Phase 1). Pipeline + a per-frame-reset descriptor pool.
+    // Created lazily on first use; torn down in Shutdown.
+    VkPipeline            m_SkinningPipeline       = VK_NULL_HANDLE;
+    VkPipelineLayout      m_SkinningPipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_SkinningDescSetLayout  = VK_NULL_HANDLE;
+    // One descriptor pool per frame-in-flight; the current frame's pool is reset each frame
+    // (safe after the frame fence wait) and per-dispatch sets are allocated from it.
+    std::vector<VkDescriptorPool> m_SkinningDescPools;
+    bool InitComputeSkinning();      // create pipeline/layout/pools from embedded SPIR-V (idempotent)
+    void ShutdownComputeSkinning();
+    void BeginComputeSkinningFrame();  // reset the descriptor pool for this frame's dispatches
+    // Skin one mesh into renderData.skinnedVertexBuffer (allocated on first use). Records a
+    // compute dispatch on cmd. The caller issues one barrier after all dispatches before raster.
+    // Returns true if a dispatch was recorded (output buffer holds this frame's deformed verts).
+    bool DispatchComputeSkinning(VkCommandBuffer cmd, EntityRenderData& renderData,
+                                 Renderer::VulkanBuffer* boneBuffer);
+public:
+    // Run the once-per-frame compute skinning pass. MUST be called OUTSIDE any render pass
+    // (compute cannot run inside one), before the passes that draw skinned meshes. No-op unless
+    // compute skinning is enabled. Records dispatches + one compute->vertex barrier on cmd.
+    void RunComputeSkinningPass(VkCommandBuffer cmd);
+private:
 #endif
 
     // Weather, particle, grass, shrub, tree, and sprite batch renderers
@@ -1333,6 +1381,10 @@ private:
     void CompositeRTResults(VkCommandBuffer cmd);
 
     bool m_RTEnabled = false;
+    // GPU compute skinning feature flag (ADR-0002 Phase 1). Default OFF. Declared outside the
+    // Vulkan-only block so the inline setter/getter compile on every backend; only the Vulkan
+    // path acts on it.
+    bool m_ComputeSkinningEnabled = false;
     u32 m_RTMode = 0;  // 0=Hybrid, 1=PathTrace
     u32 m_RTFrameCount = 0;
     Math::Matrix4 m_PrevViewProj;  // Previous frame's VP for path tracer camera change detection

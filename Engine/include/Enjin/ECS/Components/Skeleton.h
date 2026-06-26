@@ -13,6 +13,17 @@ namespace ECS {
 struct ENJIN_API SkeletonComponent : public IComponent {
     std::shared_ptr<Animation::Skeleton> skeleton;
     std::string sourceAssetPath;  // Original glTF/FBX path for potential re-import
+
+    // Stable id shared by every mesh imported from ONE model instance (body + joints +
+    // clothing, etc.). At import all co-skeleton meshes hold one Skeleton shared_ptr and the
+    // leader mesh owns the AnimatorComponent; followers resolve the leader's animator by
+    // shared-skeleton identity (RenderSystem::ResolveAnimator). That pointer identity does not
+    // survive serialization (each entity rebuilds its own Skeleton on load), so the group id is
+    // persisted and SceneSerializer re-shares one Skeleton per group after load — without it,
+    // a saved multi-mesh character's followers fall back to the wrong animator (pause desync,
+    // wrong character in multi-character scenes). 0 = ungrouped: each entity keeps its own
+    // skeleton on load and distinct group ids never merge.
+    u64 skeletonGroupId = 0;
 };
 
 // Onion skin settings for 3D skeletal animation preview in the editor

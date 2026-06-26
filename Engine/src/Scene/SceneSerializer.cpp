@@ -6232,6 +6232,8 @@ ECS::MovingPlatformComponent DeserializeMovingPlatformComponent(const json& j) {
 json SerializeSkeletonComponent(const ECS::SkeletonComponent& skelComp) {
     json j;
     j["sourceAssetPath"] = skelComp.sourceAssetPath;
+    // Only emit when grouped, so existing single-mesh scenes don't churn (0 = ungrouped default).
+    if (skelComp.skeletonGroupId != 0) j["skeletonGroupId"] = skelComp.skeletonGroupId;
 
     if (skelComp.skeleton) {
         j["name"] = skelComp.skeleton->name;
@@ -6254,6 +6256,7 @@ json SerializeSkeletonComponent(const ECS::SkeletonComponent& skelComp) {
 ECS::SkeletonComponent DeserializeSkeletonComponent(const json& j) {
     ECS::SkeletonComponent skelComp;
     if (j.contains("sourceAssetPath")) skelComp.sourceAssetPath = SafeStr(j["sourceAssetPath"], MAX_STR_PATH);
+    if (j.contains("skeletonGroupId")) skelComp.skeletonGroupId = j.value("skeletonGroupId", u64{0});
 
     auto skeleton = std::make_shared<Animation::Skeleton>();
     if (j.contains("name")) skeleton->name = SafeStr(j["name"], MAX_STR_NAME);
@@ -6272,6 +6275,39 @@ ECS::SkeletonComponent DeserializeSkeletonComponent(const json& j) {
     }
     skelComp.skeleton = skeleton;
     return skelComp;
+}
+
+// After a full scene load, re-establish the import-time invariant that every mesh in one model
+// instance shares a single Skeleton (see SkeletonComponent::skeletonGroupId). DeserializeSkeletonComponent
+// rebuilds an independent Skeleton per entity, so without this the leader and its followers end up with
+// distinct pointers and RenderSystem::ResolveAnimator can no longer match followers to the leader's
+// animator. Canonical-per-group is the member that owns the AnimatorComponent (the leader); order does
+// not matter. Groups of one and ungrouped (id 0) entities are left untouched.
+static void ReshareSkeletonGroups(ECS::World* world) {
+    if (!world) return;
+    const std::vector<ECS::Entity> ents = world->GetEntitiesWithComponent<ECS::SkeletonComponent>();
+
+    std::unordered_map<u64, ECS::Entity> canonical;
+    for (ECS::Entity e : ents) {
+        const auto* sc = world->GetComponent<ECS::SkeletonComponent>(e);
+        if (!sc || sc->skeletonGroupId == 0) continue;
+        auto it = canonical.find(sc->skeletonGroupId);
+        if (it == canonical.end()) { canonical.emplace(sc->skeletonGroupId, e); continue; }
+        // Prefer the animator owner (the leader) as the canonical skeleton holder.
+        if (world->HasComponent<ECS::AnimatorComponent>(e) &&
+            !world->HasComponent<ECS::AnimatorComponent>(it->second)) {
+            it->second = e;
+        }
+    }
+
+    for (ECS::Entity e : ents) {
+        auto* sc = world->GetComponent<ECS::SkeletonComponent>(e);
+        if (!sc || sc->skeletonGroupId == 0) continue;
+        ECS::Entity canon = canonical[sc->skeletonGroupId];
+        if (canon == e) continue;
+        const auto* canonSc = world->GetComponent<ECS::SkeletonComponent>(canon);
+        if (canonSc && canonSc->skeleton) sc->skeleton = canonSc->skeleton;
+    }
 }
 
 json SerializeAnimatorComponent(const ECS::AnimatorComponent& animComp) {
@@ -8094,6 +8130,10 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             }
         }
 
+        // Re-share one Skeleton per imported-model group so co-skeleton meshes (body + joints)
+        // resolve to a single animator after reload (see ReshareSkeletonGroups).
+        ReshareSkeletonGroups(m_World);
+
         result.success = true;
         ENJIN_LOG_INFO(Asset, "Loaded scene from %s (%zu entities)", filepath.c_str(), result.entities.size());
 
@@ -9440,6 +9480,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 }
             }
         }
+
+        // Re-share one Skeleton per imported-model group (see ReshareSkeletonGroups).
+        ReshareSkeletonGroups(m_World);
 
         result.success = true;
         ENJIN_LOG_DEBUG(Asset, "Loaded scene from string (%zu entities)", result.entities.size());

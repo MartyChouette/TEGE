@@ -422,7 +422,10 @@ void EditorLayer::DrawGameViewPanel() {
         ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
     }
 
-    ImGuiWindowFlags gameViewFlags = 0;
+    // NoScrollbar/NoScrollWithMouse: same reason as the Scene panel — a scrollbar appearing on the
+    // aspect-constrained game-view preview steals ~16px and sets up an every-frame resize oscillation
+    // (visible shake + TAA/render-target thrash). The preview must never grow a scrollbar.
+    ImGuiWindowFlags gameViewFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
     if (isPlayActive) {
         gameViewFlags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
     }
@@ -2467,6 +2470,20 @@ void EditorLayer::DrawSettingsSection_DisplayOptions() {
 
 void EditorLayer::DrawSettingsSection_RayTracing() {
     if (!m_RenderSystem) return;
+
+    // === GPU COMPUTE SKINNING (ADR-0002, experimental) ===
+    {
+        if (ImGui::CollapsingHeader("Compute Skinning (experimental)")) {
+            ImGui::TextDisabled("Skin meshes once per frame in a compute pass instead of re-skinning");
+            ImGui::TextDisabled("in every pass. Phase 1: main pass only (shadows/outline still use the");
+            ImGui::TextDisabled("vertex-shader path). Default off.");
+            bool csEnabled = m_RenderSystem->IsComputeSkinningEnabled();
+            if (ImGui::Checkbox("Enable Compute Skinning", &csEnabled)) {
+                m_RenderSystem->SetComputeSkinningEnabled(csEnabled);
+            }
+            ImGui::SetItemTooltip("ADR-0002 Phase 1. Skinned meshes are deformed by skinning.comp into a\nper-entity buffer that the main pass draws directly with skinning disabled.\nExpected to look identical to the vertex-shader path.");
+        }
+    }
 
     // === RAY TRACING ===
     {

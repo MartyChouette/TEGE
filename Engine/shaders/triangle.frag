@@ -13,6 +13,7 @@ layout(location = 6) in vec4 fragTangent;
 layout(location = 7) in vec4 fragCurClipPos;  // Current clip position (for velocity)
 layout(location = 8) in vec4 fragPrevClipPos; // Previous frame clip position (for velocity)
 layout(location = 9) flat in int v_ObjectIndex; // >=0: indirect draw (SSBO index), -1: per-entity
+layout(location = 10) in vec2 fragUV1;          // second UV channel (available for detail/lightmap)
 
 layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec2 outVelocity;    // Per-pixel screen-space motion vector (RG16F)

@@ -102,9 +102,13 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
         aiProcess_CalcTangentSpace |      // Calculate tangents if missing
         aiProcess_JoinIdenticalVertices | // Optimize mesh
         aiProcess_FlipUVs |               // Flip V for Vulkan/OpenGL (origin bottom-left)
-        aiProcess_LimitBoneWeights |      // Max 4 bones per vertex for GPU skinning
+        aiProcess_LimitBoneWeights |      // Cap influences per vertex (max set below) for GPU skinning
         aiProcess_ValidateDataStructure | // Validate the imported data
         aiProcess_PopulateArmatureData;   // Associate meshes with armatures for skinned models
+
+    // GPU skinning supports up to 8 influences per vertex (boneWeights + boneWeights2).
+    // Default LimitBoneWeights caps at 4; raise it so dense rigs keep influences 5-8.
+    importer.SetPropertyInteger(AI_CONFIG_PP_LBW_MAX_WEIGHTS, 8);
 
     const aiScene* scene = importer.ReadFile(filepath, flags);
 
@@ -303,6 +307,14 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
                 );
             }
 
+            // Second UV set (lightmap/detail) — present on multi-UV meshes
+            if (aiMeshData->HasTextureCoords(1)) {
+                vertex.texCoord1 = Math::Vector2(
+                    aiMeshData->mTextureCoords[1][v].x,
+                    aiMeshData->mTextureCoords[1][v].y
+                );
+            }
+
             // Tangent
             if (aiMeshData->HasTangentsAndBitangents()) {
                 vertex.tangent = Math::Vector4(
@@ -362,12 +374,16 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
                     if (vertId >= primitive.vertices.size()) continue;
 
                     AssimpVertex& vert = primitive.vertices[vertId];
-                    // Find next free slot (0-3) via weight array access
-                    f32* weights = &vert.boneWeights.x;
-                    for (int slot = 0; slot < 4; ++slot) {
-                        if (weights[slot] == 0.0f) {
-                            weights[slot] = weight;
-                            vert.boneIndices[slot] = globalBoneIdx;
+                    // Find next free slot (0-7): slots 0-3 in boneWeights, 4-7 in boneWeights2.
+                    // Vector4 fields are contiguous, but boneWeights/boneWeights2 are not
+                    // adjacent in the struct, so index each array separately.
+                    for (int slot = 0; slot < 8; ++slot) {
+                        f32* weights = (slot < 4) ? &vert.boneWeights.x : &vert.boneWeights2.x;
+                        u32* indices = (slot < 4) ? vert.boneIndices : vert.boneIndices2;
+                        int local = slot & 3;
+                        if (weights[local] == 0.0f) {
+                            weights[local] = weight;
+                            indices[local] = globalBoneIdx;
                             break;
                         }
                     }
@@ -380,13 +396,19 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
             // Without normalization, skinned vertices can appear too dark or too bright.
             for (auto& vert : primitive.vertices) {
                 f32 sum = vert.boneWeights.x + vert.boneWeights.y +
-                          vert.boneWeights.z + vert.boneWeights.w;
+                          vert.boneWeights.z + vert.boneWeights.w +
+                          vert.boneWeights2.x + vert.boneWeights2.y +
+                          vert.boneWeights2.z + vert.boneWeights2.w;
                 if (sum > 0.0001f && std::abs(sum - 1.0f) > 0.001f) {
                     f32 invSum = 1.0f / sum;
                     vert.boneWeights.x *= invSum;
                     vert.boneWeights.y *= invSum;
                     vert.boneWeights.z *= invSum;
                     vert.boneWeights.w *= invSum;
+                    vert.boneWeights2.x *= invSum;
+                    vert.boneWeights2.y *= invSum;
+                    vert.boneWeights2.z *= invSum;
+                    vert.boneWeights2.w *= invSum;
                 }
             }
         }

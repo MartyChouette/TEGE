@@ -12,6 +12,9 @@ layout(location = 3) in vec4 inColor;
 layout(location = 4) in vec4 inTangent;
 layout(location = 5) in vec4 inBoneWeights;
 layout(location = 6) in uvec4 inBoneIndices;
+layout(location = 7) in vec2 inUV1;           // unused here; declared to match the shared vertex layout
+layout(location = 8) in vec4 inBoneWeights2;  // bone influences 5-8
+layout(location = 9) in uvec4 inBoneIndices2;
 
 // Push constants layout must match the full PushConstants struct (128 bytes).
 // Shadow pass only uses the model matrix (bytes 0-63) and flags (byte 112).
@@ -40,12 +43,16 @@ void main() {
 
     // Apply skeletal skinning if FLAG_SKINNED is set
     if ((push.flags & FLAG_SKINNED) != 0) {
-        float weightSum = inBoneWeights.x + inBoneWeights.y + inBoneWeights.z + inBoneWeights.w;
+        float weightSum = dot(inBoneWeights, vec4(1.0)) + dot(inBoneWeights2, vec4(1.0));
         if (weightSum > 0.0) {
             mat4 skinMatrix = inBoneWeights.x * boneMatrices[inBoneIndices.x]
                             + inBoneWeights.y * boneMatrices[inBoneIndices.y]
                             + inBoneWeights.z * boneMatrices[inBoneIndices.z]
-                            + inBoneWeights.w * boneMatrices[inBoneIndices.w];
+                            + inBoneWeights.w * boneMatrices[inBoneIndices.w]
+                            + inBoneWeights2.x * boneMatrices[inBoneIndices2.x]
+                            + inBoneWeights2.y * boneMatrices[inBoneIndices2.y]
+                            + inBoneWeights2.z * boneMatrices[inBoneIndices2.z]
+                            + inBoneWeights2.w * boneMatrices[inBoneIndices2.w];
             pos = (skinMatrix * vec4(inPosition, 1.0)).xyz;
         }
     }
