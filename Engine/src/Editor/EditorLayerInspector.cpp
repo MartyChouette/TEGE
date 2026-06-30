@@ -130,6 +130,28 @@
 namespace Enjin {
 namespace Editor {
 
+// Compute an entity's local mesh AABB (min/max) and transform scale, for auto-fitting a freshly
+// added collider to the visible mesh. Collider sizes are WORLD-space (Jolt/Box2D do not apply the
+// transform scale), so a new collider must be sized to mesh-extent * scale rather than the 1x1x1
+// default — otherwise a scaled mesh (e.g. a 50x0.1x50 ground) gets a 1-unit collider and objects
+// pass straight through. Returns false if the entity has no usable mesh.
+static bool ComputeMeshLocalBounds(ECS::World* w, ECS::Entity e,
+                                   Math::Vector3& outMin, Math::Vector3& outMax, Math::Vector3& outScale) {
+    outScale = Math::Vector3(1.0f, 1.0f, 1.0f);
+    if (auto* t = w->GetComponent<ECS::TransformComponent>(e)) outScale = t->scale;
+    auto* mesh = w->GetComponent<ECS::MeshComponent>(e);
+    if (!mesh || mesh->vertices.empty()) return false;
+    Math::Vector3 mn = mesh->vertices[0].position;
+    Math::Vector3 mx = mesh->vertices[0].position;
+    for (const auto& v : mesh->vertices) {
+        mn.x = std::min(mn.x, v.position.x); mn.y = std::min(mn.y, v.position.y); mn.z = std::min(mn.z, v.position.z);
+        mx.x = std::max(mx.x, v.position.x); mx.y = std::max(mx.y, v.position.y); mx.z = std::max(mx.z, v.position.z);
+    }
+    outMin = mn;
+    outMax = mx;
+    return true;
+}
+
 // --- Undo-aware component removal helper ---
 
 template<typename T>
@@ -254,17 +276,44 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             "rigidbody"},
         {"Box Collider", "Physics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::BoxColliderComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BoxColliderComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) {
+                auto& col = w->AddComponent<ECS::BoxColliderComponent>(e);
+                Math::Vector3 mn, mx, s;
+                if (ComputeMeshLocalBounds(w, e, mn, mx, s)) {
+                    Math::Vector3 ext = mx - mn, ctr = (mx + mn) * 0.5f;
+                    col.size   = Math::Vector3(ext.x * s.x, ext.y * s.y, ext.z * s.z);
+                    col.center = Math::Vector3(ctr.x * s.x, ctr.y * s.y, ctr.z * s.z);
+                }
+            },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::BoxColliderComponent>(e); },
             "boxCollider"},
         {"Sphere Collider", "Physics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SphereColliderComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SphereColliderComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) {
+                auto& col = w->AddComponent<ECS::SphereColliderComponent>(e);
+                Math::Vector3 mn, mx, s;
+                if (ComputeMeshLocalBounds(w, e, mn, mx, s)) {
+                    Math::Vector3 ext = mx - mn, ctr = (mx + mn) * 0.5f;
+                    col.radius = 0.5f * std::max(ext.x * s.x, std::max(ext.y * s.y, ext.z * s.z));
+                    col.center = Math::Vector3(ctr.x * s.x, ctr.y * s.y, ctr.z * s.z);
+                }
+            },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SphereColliderComponent>(e); },
             "sphereCollider"},
         {"Capsule Collider", "Physics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::CapsuleColliderComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CapsuleColliderComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) {
+                auto& col = w->AddComponent<ECS::CapsuleColliderComponent>(e);
+                Math::Vector3 mn, mx, s;
+                if (ComputeMeshLocalBounds(w, e, mn, mx, s)) {
+                    Math::Vector3 ext = mx - mn, ctr = (mx + mn) * 0.5f;
+                    // Y-axis capsule (default): radius from XZ extent, height = cylinder portion only
+                    // (total = height + 2*radius per the capsule convention).
+                    col.radius = 0.5f * std::max(ext.x * s.x, ext.z * s.z);
+                    col.height = std::max(0.0f, ext.y * s.y - 2.0f * col.radius);
+                    col.center = Math::Vector3(ctr.x * s.x, ctr.y * s.y, ctr.z * s.z);
+                }
+            },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::CapsuleColliderComponent>(e); },
             "capsuleCollider"},
         {"Mesh Collider", "Physics", nullptr,

@@ -35,6 +35,13 @@ public:
     void SetGameCameraEntity(Entity entity) { m_GameCameraEntity = entity; }
     Entity GetGameCameraEntity() const { return m_GameCameraEntity; }
 
+    // When there is no game camera entity, controllers historically fell back to driving the
+    // editor's fly camera directly. In the editor that is a footgun: a character with no game
+    // camera drags the editor camera around (e.g. it falls forever with the player). The editor
+    // disables this so the fly camera is never hijacked; the standalone player always sets a game
+    // camera entity so it is unaffected.
+    void SetDriveEditorCameraFallback(bool v) { m_DriveEditorCameraFallback = v; }
+
     // Reduced motion (disables head bob, FOV effects)
     void SetReducedMotion(bool enabled) { m_ReducedMotion = enabled; }
     bool GetReducedMotion() const { return m_ReducedMotion; }
@@ -94,6 +101,7 @@ private:
     Physics::IPhysicsBackend2D* m_Physics2D = nullptr;
     InputSystem::InputActionMap* m_InputMap = nullptr;
     Entity m_GameCameraEntity = INVALID_ENTITY;
+    bool m_DriveEditorCameraFallback = true;  // editor sets false; see SetDriveEditorCameraFallback
     bool m_Enabled = false;  // Disabled by default (editor mode)
     bool m_ReducedMotion = false;
     bool m_DisableScreenShake = false;

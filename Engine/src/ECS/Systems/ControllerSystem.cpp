@@ -76,8 +76,11 @@ void ControllerSystem::UpdateGameCameraTransform(const Math::Vector3& position, 
         }
     }
 
-    // Fallback: update the editor camera directly (original behavior)
-    if (m_Camera) {
+    // Fallback: drive the editor camera directly (original behavior). Disabled in the editor so a
+    // controller without a game camera entity can't hijack the fly camera (e.g. drag it down while
+    // the player falls). The standalone player always sets a game camera entity, so it never reaches
+    // here anyway.
+    if (m_Camera && m_DriveEditorCameraFallback) {
         m_Camera->SetPosition(position);
         m_Camera->SetLookAt(position, target, up);
     }
@@ -940,12 +943,13 @@ void ControllerSystem::UpdateTopDown3D(Entity entity, TopDown3DController& ctrl,
         Math::Vector2 input = GetMovementInput(ctrl);
         input.y = -input.y;  // camera looks down -Z, so up input = -Z (away from camera)
         if (UpdateGridMovement(ctrl, transform, input, dt)) {
-            // Camera follow in grid mode
-            if (ctrl.lockCameraToPlayer && m_Camera) {
+            // Camera follow in grid mode — route through UpdateGameCameraTransform so it drives the
+            // game camera entity (and respects the editor-camera fallback gate) instead of writing
+            // the editor fly camera directly.
+            if (ctrl.lockCameraToPlayer) {
                 Math::Vector3 camOffset(0.0f, ctrl.cameraHeight, ctrl.cameraDistance);
                 Math::Vector3 camPos = transform.position + camOffset;
-                m_Camera->SetPosition(camPos);
-                m_Camera->SetLookAt(camPos, transform.position, Math::Vector3(0, 1, 0));
+                UpdateGameCameraTransform(camPos, transform.position, Math::Vector3(0, 1, 0));
             }
             return;
         }

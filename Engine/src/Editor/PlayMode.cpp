@@ -169,6 +169,13 @@ void PlayMode::Play() {
     // Find the active game camera entity so controllers drive it instead of the editor camera
     ECS::Entity gameCam = ECS::CameraManager::GetActiveCamera(m_World);
     m_ControllerSystem.SetGameCameraEntity(gameCam);
+    // Never let a controller drive the editor fly camera in the editor. Without this, a character
+    // with no game camera drags the editor camera around (it falls forever with the player).
+    m_ControllerSystem.SetDriveEditorCameraFallback(false);
+    if (gameCam == ECS::INVALID_ENTITY) {
+        ENJIN_LOG_WARN(Editor, "PlayMode: no active game camera in the scene — controllers will not "
+            "drive a camera. Add a Camera entity (or a controller via the templates which auto-create one).");
+    }
     ENJIN_LOG_INFO(Editor, "PlayMode: Camera setup done (cam=%llu)", (unsigned long long)gameCam);
 
     // Enable controller system, flower system, scripting, and gameplay systems

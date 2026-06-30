@@ -8959,7 +8959,14 @@ void RenderSystem::RenderOutlinePass() {
 
         // Propagate skinned flag so outline follows skeleton (playing or bind pose)
         auto* animComp = ResolveAnimator(entity);
-        if (animComp && renderData.boneBuffer) {
+        // Compute skinning (ADR-0002): draw the deformed (model-space) buffer with FLAG_SKINNED
+        // cleared, applying the world matrix via model (identical to the VS path at origin).
+        const bool computeSkinned = m_ComputeSkinningEnabled && renderData.skinnedThisFrame
+                                    && renderData.skinnedVertexBuffer;
+        if (computeSkinned) {
+            pc.model = ECS::ComputeWorldMatrix(m_World, entity);
+            if (m_DefaultBoneBuffer) UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+        } else if (animComp && renderData.boneBuffer) {
             pc.flags |= (1 << 3); // FLAG_SKINNED
             pc.model = Math::Matrix4::Identity(); // Skinned: identity, bone matrices handle positioning
             const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
@@ -8984,7 +8991,9 @@ void RenderSystem::RenderOutlinePass() {
             vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
                              renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
         } else if (renderData.vertexBuffer && renderData.indexCount > 0) {
-            VkBuffer buffers[] = {renderData.vertexBuffer->GetBuffer()};
+            VkBuffer buffers[] = { computeSkinned
+                ? renderData.skinnedVertexBuffer->GetBuffer()
+                : renderData.vertexBuffer->GetBuffer() };
             VkDeviceSize offsets[] = {0};
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
             if (renderData.indexBuffer) {
@@ -9052,7 +9061,13 @@ void RenderSystem::RenderOutlinePassForTarget() {
         pc.flags = 0;
 
         auto* animComp = ResolveAnimator(entity);
-        if (animComp && renderData.boneBuffer) {
+        // Compute skinning (ADR-0002): deformed buffer + cleared flag, world via model.
+        const bool computeSkinned = m_ComputeSkinningEnabled && renderData.skinnedThisFrame
+                                    && renderData.skinnedVertexBuffer;
+        if (computeSkinned) {
+            pc.model = ECS::ComputeWorldMatrix(m_World, entity);
+            if (m_DefaultBoneBuffer) UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+        } else if (animComp && renderData.boneBuffer) {
             pc.flags |= (1 << 3);
             pc.model = Math::Matrix4::Identity(); // Skinned: identity, bone matrices handle positioning
             const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
@@ -9076,7 +9091,9 @@ void RenderSystem::RenderOutlinePassForTarget() {
             vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
                              renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
         } else if (renderData.vertexBuffer && renderData.indexCount > 0) {
-            VkBuffer buffers[] = {renderData.vertexBuffer->GetBuffer()};
+            VkBuffer buffers[] = { computeSkinned
+                ? renderData.skinnedVertexBuffer->GetBuffer()
+                : renderData.vertexBuffer->GetBuffer() };
             VkDeviceSize offsets[] = {0};
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
             if (renderData.indexBuffer) {
@@ -9443,7 +9460,14 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
             if (ac && ac->animator.GetSkeleton()) { animComp = ac; break; }
         }
     }
-    if (animComp && renderData.boneBuffer) {
+    // Compute skinning (ADR-0002): if the pre-pass already deformed this mesh, draw the deformed
+    // (model-space) buffer with FLAG_SKINNED cleared. The model matrix still applies world+cascade,
+    // exactly as the vertex-shader path does, so shadow geometry matches the main pass.
+    const bool computeSkinned = m_ComputeSkinningEnabled && renderData.skinnedThisFrame
+                                && renderData.skinnedVertexBuffer;
+    if (computeSkinned) {
+        pushConstants.model = m_CurrentCascadeVP * ECS::ComputeWorldMatrix(m_World, entity);
+    } else if (animComp && renderData.boneBuffer) {
         const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
         if (!skinningMatrices.empty()) {
             renderData.boneBuffer->UploadData(skinningMatrices.data(),
@@ -9468,7 +9492,9 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
         vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
                          renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
     } else if (renderData.vertexBuffer && renderData.indexBuffer) {
-        VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
+        VkBuffer vertexBuffers[] = { computeSkinned
+            ? renderData.skinnedVertexBuffer->GetBuffer()
+            : renderData.vertexBuffer->GetBuffer() };
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
