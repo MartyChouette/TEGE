@@ -78,10 +78,15 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
         m_MouseCapturedByUs = false;
     }
 
+    // Radial deadzone for gamepad sticks. Without this, a connected controller's normal stick
+    // drift (commonly 0.05-0.15) feeds the fly camera every frame with no input, so the editor
+    // view slowly rotates or sinks on its own. Applies to both sticks below.
+    constexpr f32 kGamepadDeadzone = 0.2f;
+
     // Gamepad right stick for camera look (always active, no button hold required)
     if (Input::IsGamepadConnected()) {
         Math::Vector2 rightStick = Input::GetGamepadRightStick();
-        if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
+        if (rightStick.Length() > kGamepadDeadzone) {
             m_Yaw += rightStick.x * m_LookSensitivity * 80.0f * deltaTime;
             m_Pitch += rightStick.y * m_LookSensitivity * 80.0f * deltaTime;
             m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
@@ -133,15 +138,16 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
     // Gamepad left stick for movement
     if (Input::IsGamepadConnected()) {
         Math::Vector2 leftStick = Input::GetGamepadLeftStick();
-        if (leftStick.x != 0.0f || leftStick.y != 0.0f) {
+        if (leftStick.Length() > kGamepadDeadzone) {
             movement = movement + right * leftStick.x;
             movement = movement - forward * leftStick.y;  // Y inverted: up = forward
         }
-        // Triggers for vertical movement (RT = up, LT = down)
+        // Triggers for vertical movement (RT = up, LT = down). Higher deadzone than the 0.1 before,
+        // since a resting/creeping trigger otherwise pushes the camera straight down.
         f32 rt = Input::GetGamepadRightTrigger();
         f32 lt = Input::GetGamepadLeftTrigger();
-        if (rt > 0.1f) movement = movement + worldUp * rt;
-        if (lt > 0.1f) movement = movement - worldUp * lt;
+        if (rt > kGamepadDeadzone) movement = movement + worldUp * rt;
+        if (lt > kGamepadDeadzone) movement = movement - worldUp * lt;
     }
 
     // Normalize and apply movement
