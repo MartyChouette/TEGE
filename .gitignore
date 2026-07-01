@@ -137,3 +137,19 @@ scripts/
 /*.enjprefab
 /*.png
 nul
+
+# -----------------------------------------------------------------------------
+# In-source MSBuild/CMake artifacts (real build is out-of-source in build/).
+# These were committed once from an accidental in-source `cmake .`; ignore so
+# they never churn again. Covers the *.dir intermediate folders and their logs.
+# -----------------------------------------------------------------------------
+*.dir/
+*.tlog
+*.recipe
+*.lastbuildstate
+/ALL_BUILD.*
+/ZERO_CHECK.*
+/PACKAGE.*
+/INSTALL.*
+/bin/
+/lib/
