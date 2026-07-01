@@ -1,9 +1,0 @@
-[2026-03-20 09:34:35] [ERROR] [RENDER] VulkanShader.cpp:200 (Enjin::Renderer::ShaderCompiler::LoadSPIRV) Failed to open SPIR-V file: shaders/cull.comp.spv
-[2026-03-20 09:34:35] [ERROR] [RENDER] VulkanShader.cpp:200 (Enjin::Renderer::ShaderCompiler::LoadSPIRV) Failed to open SPIR-V file: Engine/shaders/cull.comp.spv
-[2026-03-20 09:34:35] [ERROR] [RENDER] VulkanShader.cpp:200 (Enjin::Renderer::ShaderCompiler::LoadSPIRV) Failed to open SPIR-V file: ../Engine/shaders/cull.comp.spv
-[2026-03-20 09:34:35] [ERROR] [RENDER] VulkanShader.cpp:200 (Enjin::Renderer::ShaderCompiler::LoadSPIRV) Failed to open SPIR-V file: ../../Engine/shaders/cull.comp.spv
-[2026-03-20 09:34:35] [ERROR] [RENDER] VulkanShader.cpp:200 (Enjin::Renderer::ShaderCompiler::LoadSPIRV) Failed to open SPIR-V file: shaders/dgc_generate.comp.spv
-[2026-03-20 09:34:35] [ERROR] [RENDER] VulkanShader.cpp:200 (Enjin::Renderer::ShaderCompiler::LoadSPIRV) Failed to open SPIR-V file: Engine/shaders/dgc_generate.comp.spv
-[2026-03-20 09:34:35] [ERROR] [RENDER] VulkanShader.cpp:200 (Enjin::Renderer::ShaderCompiler::LoadSPIRV) Failed to open SPIR-V file: ../Engine/shaders/dgc_generate.comp.spv
-[2026-03-20 09:34:35] [ERROR] [RENDER] VulkanShader.cpp:200 (Enjin::Renderer::ShaderCompiler::LoadSPIRV) Failed to open SPIR-V file: ../../Engine/shaders/dgc_generate.comp.spv
-[2026-03-20 09:34:35] [ERROR] [RENDER] VulkanShader.cpp:200 (Enjin::Renderer::ShaderCompiler::LoadSPIRV) Failed to open SPIR-V file: bin/shaders/dgc_generate.comp.spv
