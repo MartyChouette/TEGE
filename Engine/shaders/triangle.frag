@@ -1442,7 +1442,11 @@ void main() {
 
     // Artistic surface: environment reflection + rim light (non-water, non-dither-gradient entities)
     // Supports box-projected reflections when a reflection probe is active, with skybox fallback.
+    // surfaceParam1 < 99.5: values 100+ are ENCODED modes (100/200 dither, 300 elemental, 400
+    // surface noise) where params 2/3 carry mode data too — reading them here as
+    // reflectivity/fresnel/rim painted every encoded-mode surface sky-blue.
     if ((mat_flags & FLAG_WATER_SURFACE) == 0 && !isDitherGradient &&
+        mat_surfaceParam1 < 99.5 &&
         (mat_surfaceParam1 > 0.0 || mat_surfaceParam3 > 0.0)) {
         float reflectivity = mat_surfaceParam1;
         float fresnelPow   = mat_surfaceParam2;

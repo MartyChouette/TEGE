@@ -203,6 +203,12 @@ struct EntityRenderData {
 #endif
     u32 indexCount = 0;
     bool valid = false;  // true if this slot is occupied
+    // Full generational handle this slot was built for. Entity handles pack the slot index in
+    // the low 32 bits and a generation in the high 32, and this dense array is indexed by
+    // EntityIndex(entity) — so after a destroy+create the new entity lands on the SAME slot.
+    // valid alone can't tell the difference; owner must match the full handle or the cached
+    // buffers belong to the dead predecessor (its mesh would render instead of the new one).
+    Entity owner = INVALID_ENTITY;
 #if !ENJIN_RENDERER_WEBGPU
     Renderer::MeshAllocation poolAlloc;
 #endif
@@ -226,6 +232,7 @@ struct EntityRenderData {
 #endif
         indexCount = 0;
         valid = false;
+        owner = INVALID_ENTITY;
 #if !ENJIN_RENDERER_WEBGPU
         poolAlloc = {};
 #endif
@@ -714,6 +721,20 @@ private:
     // Sets up GPU buffers for an entity's mesh. Returns pointer to EntityRenderData,
     // or nullptr if the entity has no valid mesh.
     EntityRenderData* SetupEntityBuffers(Entity entity);
+
+    // Cache lookup for the dense render-data array. Indexed by EntityIndex (slot) but validated
+    // against the FULL generational handle — a recycled slot whose cache was built for a dead
+    // predecessor is treated as a miss (see EntityRenderData::owner).
+    EntityRenderData* GetRenderData(Entity entity) {
+        usize idx = static_cast<usize>(EntityIndex(entity));
+        if (idx >= m_EntityRenderData.size()) return nullptr;
+        EntityRenderData& rd = m_EntityRenderData[idx];
+        return (rd.valid && rd.owner == entity) ? &rd : nullptr;
+    }
+    EntityRenderData* GetOrCreateRenderData(Entity entity) {
+        EntityRenderData* rd = GetRenderData(entity);
+        return rd ? rd : SetupEntityBuffers(entity);
+    }
     void RenderShadowPass();
 #endif
 

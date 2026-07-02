@@ -1524,7 +1524,7 @@ void RenderSystem::Update(f32 deltaTime) {
                     if (!mesh || !xf || !xf->visible) continue;
                     if (mesh->vertices.empty() || mesh->indices.empty()) continue;
 
-                    u64 eid = static_cast<u64>(entity);
+                    u64 eid = EntityIndex(entity);  // dense index: low 32 bits (raw handle has generation in high bits)
                     if (eid >= m_EntityRenderData.size()) continue;
                     auto& rd = m_EntityRenderData[eid];
                     if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
@@ -1635,7 +1635,7 @@ void RenderSystem::Update(f32 deltaTime) {
                             auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
                             auto* exf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                             if (!mesh || !exf || !exf->visible || mesh->vertices.empty()) continue;
-                            u64 eid = static_cast<u64>(entity);
+                            u64 eid = EntityIndex(entity);  // dense index: low 32 bits (raw handle has generation in high bits)
                             if (eid >= m_EntityRenderData.size()) continue;
                             auto& rd = m_EntityRenderData[eid];
                             if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
@@ -1742,7 +1742,7 @@ void RenderSystem::Update(f32 deltaTime) {
                             auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
                             auto* exf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                             if (!mesh || !exf || !exf->visible || mesh->vertices.empty()) continue;
-                            u64 eid = static_cast<u64>(entity);
+                            u64 eid = EntityIndex(entity);  // dense index: low 32 bits (raw handle has generation in high bits)
                             if (eid >= m_EntityRenderData.size()) continue;
                             auto& rd = m_EntityRenderData[eid];
                             if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
@@ -1861,7 +1861,7 @@ void RenderSystem::Update(f32 deltaTime) {
                         auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
                         if (mesh && !lod->levels[newLOD].mesh.vertices.empty()) {
                             *mesh = lod->levels[newLOD].mesh;
-                            u64 eid = static_cast<u64>(entity);
+                            u64 eid = EntityIndex(entity);  // dense index: low 32 bits (raw handle has generation in high bits)
                             if (eid < m_EntityRenderData.size()) m_EntityRenderData[eid].Invalidate();
                             lod->activeLOD = newLOD;
                         }
@@ -1883,11 +1883,11 @@ void RenderSystem::Update(f32 deltaTime) {
             if (mesh->vertices.empty() || mesh->indices.empty()) continue;
 
             // Ensure GPU buffers
-            u64 eid = static_cast<u64>(entity);
+            u64 eid = EntityIndex(entity);  // dense index: low 32 bits (raw handle has generation in high bits)
             if (eid >= m_EntityRenderData.size()) m_EntityRenderData.resize(eid + 1);
             auto& rd = m_EntityRenderData[eid];
 
-            if (!rd.valid) {
+            if (!rd.valid || rd.owner != entity) {  // owner mismatch = slot recycled by a new entity
                 Renderer::GPUBufferDesc vbDesc;
                 vbDesc.size = mesh->vertices.size() * sizeof(MeshComponent::Vertex);
                 vbDesc.usage = Renderer::GPUBufferUsage::Vertex | Renderer::GPUBufferUsage::CopyDst;
@@ -1902,6 +1902,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
                 rd.indexCount = static_cast<u32>(mesh->indices.size());
                 rd.valid = true;
+                rd.owner = entity;
             }
 
             if (!rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
@@ -1994,7 +1995,7 @@ void RenderSystem::Update(f32 deltaTime) {
                     if (transA != transB) return !transA;
                     // For opaque: group by mesh identity (VB+IB) for instancing batches
                     if (!transA) {
-                        u64 eidA = static_cast<u64>(a.entity), eidB = static_cast<u64>(b.entity);
+                        u64 eidA = EntityIndex(a.entity), eidB = EntityIndex(b.entity);
                         if (eidA < m_EntityRenderData.size() && eidB < m_EntityRenderData.size()) {
                             auto& rdA = m_EntityRenderData[eidA];
                             auto& rdB = m_EntityRenderData[eidB];
@@ -2022,7 +2023,7 @@ void RenderSystem::Update(f32 deltaTime) {
         };
 
         auto getBatchKey = [&](const DrawCmd& cmd) -> BatchKey {
-            u64 eid = static_cast<u64>(cmd.entity);
+            u64 eid = EntityIndex(cmd.entity);
             auto& rd = m_EntityRenderData[eid];
             auto texBG = rd.texBindGroup.IsValid() ? rd.texBindGroup : m_WebDefaultTexBindGroup;
             return {static_cast<u32>(rd.vertexBuffer.id),
@@ -2031,7 +2032,7 @@ void RenderSystem::Update(f32 deltaTime) {
         };
 
         auto canBatch = [&](const DrawCmd& cmd) -> bool {
-            u64 eid = static_cast<u64>(cmd.entity);
+            u64 eid = EntityIndex(cmd.entity);
             auto& rd = m_EntityRenderData[eid];
             if (rd.boneBuffer.IsValid()) return false;  // Skinned — unique bone data
             auto* matSlots = m_CachedMaterialSlotsStorage ? m_CachedMaterialSlotsStorage->Get(cmd.entity) : nullptr;
@@ -2043,7 +2044,7 @@ void RenderSystem::Update(f32 deltaTime) {
         usize i = 0;
         while (i < drawCmds.size()) {
             const auto& cmd = drawCmds[i];
-            u64 eid = static_cast<u64>(cmd.entity);
+            u64 eid = EntityIndex(cmd.entity);
             auto& rd = m_EntityRenderData[eid];
 
             // Check if this entity can start a batch
@@ -2458,7 +2459,7 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
     m_LightListDirty = true;
     m_RenderListDirty = true;
 
-    u64 eid = static_cast<u64>(entity);
+    u64 eid = EntityIndex(entity);  // dense index: low 32 bits (raw handle has generation in high bits)
     if (eid < m_EntityRenderData.size() && m_EntityRenderData[eid].valid) {
         auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr;
         auto* bindMgr = m_Renderer ? m_Renderer->GetBindGroupManager() : nullptr;
@@ -3490,8 +3491,8 @@ void RenderSystem::Update(f32 deltaTime) {
                     m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
                 }
                 // Force re-upload of GPU buffers
-                if (static_cast<usize>(entity) < m_EntityRenderData.size())
-                    m_EntityRenderData[static_cast<usize>(entity)].Invalidate();
+                if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
+                    m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].Invalidate();
                 terrain->meshDirty = false;
             }
         }
@@ -3504,8 +3505,8 @@ void RenderSystem::Update(f32 deltaTime) {
                 } else {
                     m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
                 }
-                if (static_cast<usize>(entity) < m_EntityRenderData.size())
-                    m_EntityRenderData[static_cast<usize>(entity)].Invalidate();
+                if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
+                    m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].Invalidate();
                 terrain2d->meshDirty = false;
             }
         }
@@ -3515,8 +3516,7 @@ void RenderSystem::Update(f32 deltaTime) {
         for (Entity entity : m_World->GetEntitiesWithComponent<JellyMeshComponent>()) {
             auto* jelly = m_World->GetComponent<JellyMeshComponent>(entity);
             if (jelly && jelly->meshDirty) {
-                EntityRenderData* rd = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
-                    ? &m_EntityRenderData[static_cast<usize>(entity)] : nullptr;
+                EntityRenderData* rd = GetRenderData(entity);
                 if (rd && rd->vertexBuffer) {
                     auto* mesh = m_World->GetComponent<MeshComponent>(entity);
                     if (mesh && !mesh->vertices.empty()) {
@@ -3605,8 +3605,8 @@ void RenderSystem::Update(f32 deltaTime) {
             } else {
                 m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
             }
-            if (static_cast<usize>(entity) < m_EntityRenderData.size())
-                m_EntityRenderData[static_cast<usize>(entity)].Invalidate();
+            if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
+                m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].Invalidate();
             sprite->spriteDirty = false;
         }
 
@@ -3621,8 +3621,8 @@ void RenderSystem::Update(f32 deltaTime) {
             } else {
                 m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
             }
-            if (static_cast<usize>(entity) < m_EntityRenderData.size())
-                m_EntityRenderData[static_cast<usize>(entity)].Invalidate();
+            if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
+                m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].Invalidate();
             tilemap->meshDirty = false;
         }
     }
@@ -4428,8 +4428,8 @@ void RenderSystem::Update(f32 deltaTime) {
                             auto* mesh = meshStorageLoop ? meshStorageLoop->Get(entity) : nullptr;
                             if (mesh && lod->levels[newLOD].mesh.IsValid()) {
                                 *mesh = lod->levels[newLOD].mesh;
-                                if (static_cast<usize>(entity) < m_EntityRenderData.size())
-                                    m_EntityRenderData[static_cast<usize>(entity)].Invalidate();
+                                if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
+                                    m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].Invalidate();
                                 lod->activeLOD = newLOD;
                             }
                         }
@@ -4604,8 +4604,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
             if (spriteStorageRT && spriteStorageRT->Has(entity)) continue;
 
-            EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
-                ? &m_EntityRenderData[static_cast<usize>(entity)] : SetupEntityBuffers(entity);
+            EntityRenderData* pRD = GetOrCreateRenderData(entity);
             if (!pRD) continue;
             EntityRenderData& renderData = *pRD;
 
@@ -5289,8 +5288,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
             if (spriteStorageSS && spriteStorageSS->Has(entity)) continue;
 
-            EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
-                ? &m_EntityRenderData[static_cast<usize>(entity)] : SetupEntityBuffers(entity);
+            EntityRenderData* pRD = GetOrCreateRenderData(entity);
             if (!pRD) continue;
             EntityRenderData& renderData = *pRD;
 
@@ -5626,8 +5624,8 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
     // offsets, producing an identical address-based mesh hash that returns a stale BLAS
     // built for the old (now-freed) geometry — causing a GPU crash on ray trace dispatch.
     if (m_ASManager && m_RTEnabled &&
-        static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid) {
-        const auto& rd = m_EntityRenderData[static_cast<usize>(entity)];
+        static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].valid) {
+        const auto& rd = m_EntityRenderData[static_cast<usize>(EntityIndex(entity))];
         VkDeviceAddress vertAddr = 0, idxAddr = 0;
         if (rd.vertexBuffer && rd.indexBuffer) {
             vertAddr = rd.vertexBuffer->GetDeviceAddress();
@@ -5646,8 +5644,8 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
     }
 
     // Free merged geometry pool allocation before erasing render data
-    if (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid) {
-        auto& rd = m_EntityRenderData[static_cast<usize>(entity)];
+    if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].valid) {
+        auto& rd = m_EntityRenderData[static_cast<usize>(EntityIndex(entity))];
         if (rd.poolAlloc.valid && m_GeometryPool) {
             m_GeometryPool->Free(rd.poolAlloc);
         }
@@ -5846,11 +5844,11 @@ void RenderSystem::BuildCullableObjectList() {
 
         // Use pool offsets if entity has a merged geometry allocation
         bool hasPoolAlloc = false;
-        if (static_cast<usize>(entity) < m_EntityRenderData.size() &&
-            m_EntityRenderData[static_cast<usize>(entity)].valid &&
-            m_EntityRenderData[static_cast<usize>(entity)].poolAlloc.valid) {
-            obj.indexOffset = m_EntityRenderData[static_cast<usize>(entity)].poolAlloc.indexOffset;
-            obj.vertexOffset = m_EntityRenderData[static_cast<usize>(entity)].poolAlloc.vertexOffset;
+        if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size() &&
+            m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].valid &&
+            m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].poolAlloc.valid) {
+            obj.indexOffset = m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].poolAlloc.indexOffset;
+            obj.vertexOffset = m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].poolAlloc.vertexOffset;
             hasPoolAlloc = true;
         } else {
             obj.indexOffset = 0;
@@ -6407,8 +6405,7 @@ void RenderSystem::RenderWireframeOverlayPass() {
         auto* transform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
         if (!transform || !transform->visible) continue;
 
-        EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
-            ? &m_EntityRenderData[static_cast<usize>(entity)] : nullptr;
+        EntityRenderData* pRD = GetRenderData(entity);
         if (!pRD || !pRD->valid) continue;
         EntityRenderData& renderData = *pRD;
 
@@ -7367,12 +7364,13 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
     }
 
     // Ensure dense vector is large enough for this entity ID
-    if (static_cast<usize>(entity) >= m_EntityRenderData.size()) {
-        m_EntityRenderData.resize(static_cast<usize>(entity) + 1);
+    if (static_cast<usize>(EntityIndex(entity)) >= m_EntityRenderData.size()) {
+        m_EntityRenderData.resize(static_cast<usize>(EntityIndex(entity)) + 1);
     }
-    EntityRenderData& renderData = m_EntityRenderData[static_cast<usize>(entity)];
+    EntityRenderData& renderData = m_EntityRenderData[static_cast<usize>(EntityIndex(entity))];
     renderData.Invalidate();
     renderData.valid = true;
+    renderData.owner = entity;  // full generational handle — see EntityRenderData::owner
 
     // Try merged geometry pool for static 3D meshes
     if (IsPoolEligible(entity)) {
@@ -8471,8 +8469,7 @@ void RenderSystem::RenderEntity(Entity entity) {
     // Skip invisible entities (safety net — callers should also check)
     if (!transform->visible) return;
 
-    EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
-        ? &m_EntityRenderData[static_cast<usize>(entity)] : SetupEntityBuffers(entity);
+    EntityRenderData* pRD = GetOrCreateRenderData(entity);
     if (!pRD) return;
     EntityRenderData& renderData = *pRD;
 
@@ -8806,8 +8803,7 @@ void RenderSystem::RenderEntityGhost(Entity entity, const Math::Matrix4& modelMa
     MeshComponent* mesh = m_World->GetComponent<MeshComponent>(entity);
     if (!mesh || !mesh->IsValid()) return;
 
-    EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
-        ? &m_EntityRenderData[static_cast<usize>(entity)] : SetupEntityBuffers(entity);
+    EntityRenderData* pRD = GetOrCreateRenderData(entity);
     if (!pRD) return;
     EntityRenderData& renderData = *pRD;
 
@@ -8932,8 +8928,7 @@ void RenderSystem::RenderOutlinePass() {
         // Skip transparent objects
         if (material && material->alphaMode == MaterialComponent::AlphaMode::Blend) continue;
 
-        EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
-            ? &m_EntityRenderData[static_cast<usize>(entity)] : nullptr;
+        EntityRenderData* pRD = GetRenderData(entity);
         if (!pRD || !pRD->valid) continue;
         EntityRenderData& renderData = *pRD;
 
@@ -9038,8 +9033,7 @@ void RenderSystem::RenderOutlinePassForTarget() {
         if (spriteStorageOPT && spriteStorageOPT->Has(entity)) continue;
         if (material && material->alphaMode == MaterialComponent::AlphaMode::Blend) continue;
 
-        EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
-            ? &m_EntityRenderData[static_cast<usize>(entity)] : nullptr;
+        EntityRenderData* pRD = GetRenderData(entity);
         if (!pRD || !pRD->valid) continue;
         EntityRenderData& renderData = *pRD;
 
@@ -9440,8 +9434,7 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
 
     if (!transform || !mesh || !mesh->IsValid()) return;
 
-    EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
-        ? &m_EntityRenderData[static_cast<usize>(entity)] : SetupEntityBuffers(entity);
+    EntityRenderData* pRD = GetOrCreateRenderData(entity);
     if (!pRD) return;
     EntityRenderData& renderData = *pRD;
 
@@ -10141,9 +10134,7 @@ void RenderSystem::RunComputeSkinningPass(VkCommandBuffer cmd) {
         if (mats.empty()) continue;
 
         // Get-or-create per-entity buffers (same pattern as the draw loop; created once, reused).
-        EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size()
-                                 && m_EntityRenderData[static_cast<usize>(entity)].valid)
-            ? &m_EntityRenderData[static_cast<usize>(entity)] : SetupEntityBuffers(entity);
+        EntityRenderData* pRD = GetOrCreateRenderData(entity);
         if (!pRD) continue;
         EntityRenderData& rd = *pRD;
         rd.skinnedThisFrame = false;
@@ -11372,8 +11363,8 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         if (!transform || !mesh || !transform->visible) continue;
         if (mesh->vertices.empty() || mesh->indices.empty()) continue;
 
-        if (static_cast<usize>(entity) >= m_EntityRenderData.size()) continue;
-        const auto& rd = m_EntityRenderData[static_cast<usize>(entity)];
+        if (static_cast<usize>(EntityIndex(entity)) >= m_EntityRenderData.size()) continue;
+        const auto& rd = m_EntityRenderData[static_cast<usize>(EntityIndex(entity))];
         if (!rd.valid) continue;
 
         VkDeviceAddress vertAddr = 0;
@@ -12360,8 +12351,8 @@ void RenderSystem::UploadRTMaterials() {
         auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
         if (!transform || !mesh || !transform->visible) continue;
         if (mesh->vertices.empty() || mesh->indices.empty()) continue;
-        if (static_cast<usize>(entity) >= m_EntityRenderData.size()) continue;
-        if (!m_EntityRenderData[static_cast<usize>(entity)].valid) continue;
+        if (static_cast<usize>(EntityIndex(entity)) >= m_EntityRenderData.size()) continue;
+        if (!m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].valid) continue;
 
         u32 eid = static_cast<u32>(entity);
         if (eid > maxEntityId) maxEntityId = eid;
@@ -12406,8 +12397,8 @@ void RenderSystem::UploadRTMaterials() {
         auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
         if (!transform || !mesh || !transform->visible) continue;
         if (mesh->vertices.empty() || mesh->indices.empty()) continue;
-        if (static_cast<usize>(entity) >= m_EntityRenderData.size()) continue;
-        if (!m_EntityRenderData[static_cast<usize>(entity)].valid) continue;
+        if (static_cast<usize>(EntityIndex(entity)) >= m_EntityRenderData.size()) continue;
+        if (!m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].valid) continue;
 
         u32 eid = static_cast<u32>(entity);
         auto* mat = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
