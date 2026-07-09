@@ -50,10 +50,12 @@ set(ENJIN_EM_LINK_FLAGS
     -sASSERTIONS=1
     -sNO_DISABLE_EXCEPTION_CATCHING
     -fexceptions
-    -sASYNCIFY
     -O2
     --post-js=${CMAKE_SOURCE_DIR}/cmake/miniaudio_shim.js
 )
+# NOTE: -sASYNCIFY was removed 2026-07 — boot is fully callback-driven now
+# (emscripten_async_wget_data + WebGPURenderer::InitializeAsync). Reintroducing
+# any emscripten_sleep/emscripten_wget_data call will abort at runtime.
 
 # --- Apply flags ---
 add_compile_options(${ENJIN_EM_COMPILE_FLAGS})

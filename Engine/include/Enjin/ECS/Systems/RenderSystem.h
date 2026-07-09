@@ -348,8 +348,6 @@ public:
     bool GetEditorUnlit() const { return m_EditorUnlit; }
 
     // Shadow quality settings
-    f32 GetShadowDistance() const { return m_ShadowDistance; }
-    void SetShadowDistance(f32 d);
     f32 GetShadowStrength() const;
     void SetShadowStrength(f32 s);
     f32 GetShadowSoftness() const;
@@ -363,6 +361,10 @@ public:
     u32 GetCascadeFarUpdateInterval() const { return m_CascadeFarUpdateInterval; }
     void SetCascadeFarUpdateInterval(u32 interval) { m_CascadeFarUpdateInterval = std::clamp(interval, 2u, 8u); }
 #endif
+
+    // Shadow distance is used by BOTH backends (web: single-cascade frustum fit)
+    f32 GetShadowDistance() const { return m_ShadowDistance; }
+    void SetShadowDistance(f32 d);
 
     bool IsBackfaceCullingEnabled() const { return m_BackfaceCulling; }
     void SetBackfaceCullingEnabled(bool enabled);
@@ -957,7 +959,6 @@ private:
     bool m_EditorUnlit = false;
     bool m_PlayerMode = false;
     bool m_PendingMSAAChange = false;
-    f32 m_ShadowDistance = 100.0f;
     u32 m_PendingShadowResolution = 0; // 0 = no change pending
     bool m_CascadeProgressiveUpdate = false;
     u32 m_CascadeFarUpdateInterval = 2;   // Far cascades update every N frames (2-8)
@@ -999,6 +1000,9 @@ private:
     void RenderSpotShadowPass();
     void SelectShadowLights();
 #endif // !ENJIN_RENDERER_WEBGPU (shadow mapping block)
+
+    // Shared by both backends: Vulkan CSM range + web single-cascade frustum fit
+    f32 m_ShadowDistance = 100.0f;
 
     bool m_BackfaceCulling = false;
     bool m_WireframeMode = false;

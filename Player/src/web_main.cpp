@@ -73,43 +73,44 @@ static WebGamePlayer* g_Player = nullptr;
 // ============================================================================
 class WebGamePlayer {
 public:
-    void Initialize() {
+    // Boot is asynchronous — no ASYNCIFY, so nothing may block:
+    //   StartBoot (pak fetch) → StartRendererInit (adapter/device) → FinishInitialize.
+    // The main loop runs from the first frame and no-ops until m_Initialized flips.
+    void StartBoot() {
         ENJIN_LOG_INFO(Player, "Enjin Web Player starting...");
 
-        // Fetch game.enjpak from the server into the WASM virtual filesystem
-        bool hasPack = false;
-        {
-            void* buf = nullptr;
-            int len = 0;
-            int err = 0;
-            emscripten_wget_data("game.enjpak", &buf, &len, &err);
-            if (!err && buf && len > 0) {
+        // Fetch game.enjpak from the server into the WASM virtual filesystem.
+        // The download buffer is freed when onload returns, so persist it first.
+        emscripten_async_wget_data("game.enjpak", this,
+            [](void* arg, void* buf, int len) {
+                auto* self = static_cast<WebGamePlayer*>(arg);
                 FILE* f = fopen("game.enjpak", "wb");
-                if (f) { fwrite(buf, 1, len, f); fclose(f); }
-                free(buf);
-                hasPack = m_AssetReader.Open("game.enjpak", "");
-                if (!hasPack) hasPack = m_AssetReader.Open("game.enjpak", PACK_KEY);
-            } else {
+                if (f) { fwrite(buf, 1, static_cast<size_t>(len), f); fclose(f); }
+                self->m_HasPack = self->m_AssetReader.Open("game.enjpak", "");
+                if (!self->m_HasPack) self->m_HasPack = self->m_AssetReader.Open("game.enjpak", PACK_KEY);
+                self->StartRendererInit();
+            },
+            [](void* arg) {
+                auto* self = static_cast<WebGamePlayer*>(arg);
                 ENJIN_LOG_WARN(Player, "No game.enjpak available on server");
-            }
-        }
+                // Fallback: try fetching a loose scene file
+                emscripten_async_wget_data("scene.enjin", self,
+                    [](void* arg2, void* buf, int len) {
+                        auto* self2 = static_cast<WebGamePlayer*>(arg2);
+                        FILE* f = fopen("scene.enjin", "wb");
+                        if (f) { fwrite(buf, 1, static_cast<size_t>(len), f); fclose(f); }
+                        self2->StartRendererInit();
+                    },
+                    [](void* arg2) {
+                        static_cast<WebGamePlayer*>(arg2)->StartRendererInit();
+                    });
+            });
+    }
 
-        // Fallback: try fetching a loose scene file
-        if (!hasPack) {
-            void* buf = nullptr;
-            int len = 0;
-            int err = 0;
-            emscripten_wget_data("scene.enjin", &buf, &len, &err);
-            if (!err && buf && len > 0) {
-                FILE* f = fopen("scene.enjin", "wb");
-                if (f) { fwrite(buf, 1, len, f); fclose(f); }
-                free(buf);
-            }
-        }
-
+    void StartRendererInit() {
         // Read build manifest
         std::vector<Enjin::u8> manifestData;
-        if (hasPack) manifestData = m_AssetReader.ReadFile("_build/manifest.json");
+        if (m_HasPack) manifestData = m_AssetReader.ReadFile("_build/manifest.json");
         if (!manifestData.empty()) {
             try {
                 std::string manifestStr(manifestData.begin(), manifestData.end());
@@ -129,15 +130,24 @@ public:
         if (m_WindowHeight == 0) m_WindowHeight = 720;
         ENJIN_LOG_INFO(Player, "Game: %s (%ux%u)", m_WindowTitle.c_str(), m_WindowWidth, m_WindowHeight);
 
-        // --- WebGPU renderer ---
+        // --- WebGPU renderer (async: adapter/device come back via callbacks) ---
         m_Renderer = std::make_unique<Enjin::Renderer::WebGPURenderer>();
-        if (!m_Renderer->Initialize(nullptr)) {
-            ENJIN_LOG_ERROR(Player, "WebGPU initialization failed");
-            m_Renderer.reset();
-            return;
-        }
-        ENJIN_LOG_INFO(Player, "WebGPU renderer initialized");
+        m_Renderer->InitializeAsync(nullptr, [this](bool ok) {
+            if (!ok) {
+                ENJIN_LOG_ERROR(Player, "WebGPU initialization failed");
+                m_Renderer.reset();
+                EM_ASM({
+                    var el = document.getElementById('loading');
+                    if (el) el.textContent = 'WebGPU initialization failed';
+                });
+                return;
+            }
+            ENJIN_LOG_INFO(Player, "WebGPU renderer initialized");
+            FinishInitialize();
+        });
+    }
 
+    void FinishInitialize() {
         // --- Camera ---
         m_Camera = std::make_unique<Enjin::Renderer::Camera>();
         m_Camera->SetPerspective(45.0f, 16.0f / 9.0f, 0.1f, 1000.0f);
@@ -249,7 +259,7 @@ public:
         bool sceneLoaded = false;
 
         // Option 1: From enjpak
-        if (hasPack) {
+        if (m_HasPack) {
             if (m_StartScene.empty()) {
                 for (const auto& f : m_AssetReader.ListFiles()) {
                     if (f.size() > 6 && f.substr(f.size() - 6) == ".enjin") {
@@ -494,8 +504,11 @@ public:
         if (!m_Renderer->BeginFrameWebGPU()) return;
         m_RenderSystem->FlushPendingChanges();
         m_RenderSystem->Update(0.0f);  // deltaTime handled separately in Update()
-        // Ensure main render pass was started (even if Update had nothing to render)
-        m_Renderer->BeginMainRenderPass();
+        // Fallback clear ONLY if nothing rendered to the swapchain (e.g. RenderSystem
+        // early-out) — running it unconditionally wipes the post-processed frame
+        if (!m_Renderer->SwapchainWrittenThisFrame()) {
+            m_Renderer->BeginMainRenderPass();
+        }
         m_Renderer->EndFrame();
 
         // Sync CameraController after the first camera entity override
@@ -582,6 +595,7 @@ private:
 
     bool m_Initialized = false;
     bool m_CameraControllerSynced = false;
+    bool m_HasPack = false;
 
     // Renderer + render system
     std::unique_ptr<Enjin::Renderer::WebGPURenderer> m_Renderer;
@@ -669,7 +683,7 @@ int main(int argc, char* argv[]) {
 
     static WebGamePlayer player;
     g_Player = &player;
-    player.Initialize();
+    player.StartBoot();  // async — completes over several event-loop turns
 
     // Emscripten main loop with proper delta time
     emscripten_set_main_loop_arg([](void* userData) {

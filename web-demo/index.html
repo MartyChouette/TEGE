@@ -77,7 +77,8 @@ if (!navigator.gpu) {
     var hud = document.getElementById('perf-hud');
     hud.style.display = 'block';
     setInterval(function() {
-      if (Module._getDrawCallCount) {
+      // Emscripten export stubs abort if called before runtime init
+      if (_runtimeReady && Module._getDrawCallCount) {
         hud.textContent = 'DC: ' + Module._getDrawCallCount() +
                           ' | Ent: ' + Module._getEntityCount();
       }

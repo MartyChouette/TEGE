@@ -307,10 +307,9 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let specular = numerator / denominator;
         let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
         let NdotL = max(dot(N, L), 0.0);
-        var shadow = 1.0;
-        if (i == 0) {
-            shadow = mix(1.0, shadowFactor, shadowStrength);
-        }
+        // Sun shadow applies to ALL directional lights — they share one shadow map,
+        // and any unshadowed directional re-lights shadowed areas (washes shadows out)
+        let shadow = mix(1.0, shadowFactor, shadowStrength);
         Lo = Lo + (kD * albedo + specular) * radiance * NdotL * shadow;
     }
 
@@ -641,9 +640,10 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let color = textureSample(srcTexture, srcSampler, in.uv);
     let brightness = dot(color.rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
-    // Soft threshold with knee
-    let threshold = 0.8;
-    let knee = 0.2;
+    // Soft threshold with knee. Scene is linear HDR pre-ACES: only over-white
+    // pixels should bloom, else bright albedo under 2 suns blooms everywhere.
+    let threshold = 1.0;
+    let knee = 0.5;
     let soft = clamp(brightness - threshold + knee, 0.0, 2.0 * knee);
     let contrib = soft * soft / (4.0 * knee + 0.0001);
     let factor = max(brightness - threshold, contrib) / max(brightness, 0.0001);
@@ -715,7 +715,7 @@ fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let scene = textureSample(sceneTexture, sceneSampler, in.uv).rgb;
     let bloom = textureSample(bloomTexture, bloomSampler, in.uv).rgb;
-    let bloomIntensity = 0.3;
+    let bloomIntensity = 0.15;
     return vec4<f32>(scene + bloom * bloomIntensity, 1.0);
 }
 )";
@@ -1018,11 +1018,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let ndc = in.clipPos.xy / in.clipPos.w;
     // Build view ray from NDC (simplified inverse projection)
     let viewDir = normalize(vec3<f32>(ndc.x / invProj[0][0], ndc.y / invProj[1][1], -1.0));
-    // Transform to world space using transposed view rotation (inverse of rotation-only view matrix)
+    // Transform to world space with the TRANSPOSED view rotation (inverse of the
+    // rotation-only view matrix). WGSL mat[c][r] is column-major: row-i·v needs
+    // invView[j][i] — the previous indexing applied the UNtransposed matrix and
+    // rolled/mirrored the sky against camera yaw+pitch (diagonal horizons).
     let worldDir = normalize(vec3<f32>(
-        invView[0][0] * viewDir.x + invView[1][0] * viewDir.y + invView[2][0] * viewDir.z,
-        invView[0][1] * viewDir.x + invView[1][1] * viewDir.y + invView[2][1] * viewDir.z,
-        invView[0][2] * viewDir.x + invView[1][2] * viewDir.y + invView[2][2] * viewDir.z
+        invView[0][0] * viewDir.x + invView[0][1] * viewDir.y + invView[0][2] * viewDir.z,
+        invView[1][0] * viewDir.x + invView[1][1] * viewDir.y + invView[1][2] * viewDir.z,
+        invView[2][0] * viewDir.x + invView[2][1] * viewDir.y + invView[2][2] * viewDir.z
     ));
 
     // Atmospheric gradient: horizon to zenith

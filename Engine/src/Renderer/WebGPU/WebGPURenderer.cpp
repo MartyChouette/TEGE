@@ -34,88 +34,79 @@ WebGPURenderer::~WebGPURenderer() {
 // Lifecycle
 // ============================================================================
 
-bool WebGPURenderer::Initialize(Window* window) {
-    if (m_Initialized) return true;
+void WebGPURenderer::InitializeAsync(Window* window, std::function<void(bool)> onComplete) {
+    if (m_Initialized) {
+        if (onComplete) onComplete(true);
+        return;
+    }
     m_Window = window;
+    m_InitCallback = std::move(onComplete);
 
     // Create WebGPU instance
     WGPUInstanceDescriptor instanceDesc = {};
     m_Instance = wgpuCreateInstance(&instanceDesc);
     if (!m_Instance) {
         ENJIN_LOG_ERROR(Core, "WebGPURenderer: Failed to create WebGPU instance");
-        return false;
+        CompleteInit(false);
+        return;
     }
 
-    // Request adapter (synchronous in Emscripten)
+    // Request adapter — AllowSpontaneous fires the callback from the browser
+    // event loop, so control must return to the browser (no blocking wait)
     WGPURequestAdapterOptions adapterOpts = {};
     adapterOpts.powerPreference = WGPUPowerPreference_HighPerformance;
 
-    struct AdapterData { WGPUAdapter adapter = nullptr; bool done = false; bool failed = false; } adapterData;
     WGPURequestAdapterCallbackInfo adapterCB = {};
     adapterCB.mode = WGPUCallbackMode_AllowSpontaneous;
     adapterCB.callback = [](WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringView message, void* ud1, void* ud2) {
-        (void)ud2;
-        auto* data = static_cast<AdapterData*>(ud1);
-        if (status == WGPURequestAdapterStatus_Success) {
-            data->adapter = adapter;
-        } else {
-            data->failed = true;
+        (void)message; (void)ud2;
+        auto* self = static_cast<WebGPURenderer*>(ud1);
+        if (status != WGPURequestAdapterStatus_Success || !adapter) {
+            ENJIN_LOG_ERROR(Core, "WebGPURenderer: Failed to get WebGPU adapter — browser may not support WebGPU");
+            self->CompleteInit(false);
+            return;
         }
-        data->done = true;
+        self->OnAdapterReady(adapter);
     };
-    adapterCB.userdata1 = &adapterData;
+    adapterCB.userdata1 = this;
     wgpuInstanceRequestAdapter(m_Instance, &adapterOpts, adapterCB);
-    // Yield to browser, then flush Dawn's callback queue
-    while (!adapterData.done) {
-        emscripten_sleep(10);
-        wgpuInstanceProcessEvents(m_Instance);
-    }
-    if (adapterData.failed || !adapterData.adapter) {
-        ENJIN_LOG_ERROR(Core, "WebGPURenderer: Failed to get WebGPU adapter — browser may not support WebGPU");
-        return false;
-    }
-    ENJIN_LOG_INFO(Core, "WebGPU adapter acquired");
+}
 
-    // Request device
+void WebGPURenderer::OnAdapterReady(WGPUAdapter adapter) {
+    ENJIN_LOG_INFO(Core, "WebGPU adapter acquired");
+    m_PendingAdapter = adapter;
+
     WGPUDeviceDescriptor deviceDesc = {};
     deviceDesc.label = wgpuStr("EnjinDevice");
 
-    struct DeviceData { WGPUDevice device = nullptr; bool done = false; bool failed = false; } deviceData;
     WGPURequestDeviceCallbackInfo deviceCB = {};
     deviceCB.mode = WGPUCallbackMode_AllowSpontaneous;
     deviceCB.callback = [](WGPURequestDeviceStatus status, WGPUDevice device, WGPUStringView message, void* ud1, void* ud2) {
-        (void)ud2;
-        auto* data = static_cast<DeviceData*>(ud1);
-        if (status == WGPURequestDeviceStatus_Success) {
-            data->device = device;
-        } else {
-            data->failed = true;
+        (void)message; (void)ud2;
+        auto* self = static_cast<WebGPURenderer*>(ud1);
+        if (status != WGPURequestDeviceStatus_Success || !device) {
+            ENJIN_LOG_ERROR(Core, "WebGPURenderer: Failed to get WebGPU device");
+            self->CompleteInit(false);
+            return;
         }
-        data->done = true;
+        self->OnDeviceReady(device);
     };
-    deviceCB.userdata1 = &deviceData;
-    wgpuAdapterRequestDevice(adapterData.adapter, &deviceDesc, deviceCB);
-    // Yield to browser, then flush Dawn's callback queue
-    while (!deviceData.done) {
-        emscripten_sleep(10);
-        wgpuInstanceProcessEvents(m_Instance);
-    }
+    deviceCB.userdata1 = this;
+    wgpuAdapterRequestDevice(adapter, &deviceDesc, deviceCB);
+}
 
-    m_Device = deviceData.device;
+void WebGPURenderer::OnDeviceReady(WGPUDevice device) {
+    m_Device = device;
     ENJIN_LOG_INFO(Core, "WebGPU device acquired");
-    if (!m_Device) {
-        ENJIN_LOG_ERROR(Core, "WebGPURenderer: Failed to get WebGPU device");
-        wgpuAdapterRelease(adapterData.adapter);
-        return false;
-    }
 
     m_Queue = wgpuDeviceGetQueue(m_Device);
-    wgpuAdapterRelease(adapterData.adapter);
+    wgpuAdapterRelease(m_PendingAdapter);
+    m_PendingAdapter = nullptr;
 
     // Get canvas size — read from the actual canvas element if no window provided
-    if (window) {
-        m_SwapChainWidth = window->GetWidth();
-        m_SwapChainHeight = window->GetHeight();
+    if (m_Window) {
+        m_SwapChainWidth = m_Window->GetWidth();
+        m_SwapChainHeight = m_Window->GetHeight();
     } else {
         // Read actual canvas pixel dimensions from JS
         m_SwapChainWidth = static_cast<u32>(EM_ASM_INT({
@@ -145,7 +136,20 @@ bool WebGPURenderer::Initialize(Window* window) {
 
     m_Initialized = true;
     ENJIN_LOG_INFO(Core, "WebGPURenderer initialized (%ux%u)", m_SwapChainWidth, m_SwapChainHeight);
-    return true;
+    CompleteInit(true);
+}
+
+void WebGPURenderer::CompleteInit(bool success) {
+    if (!success && m_PendingAdapter) {
+        wgpuAdapterRelease(m_PendingAdapter);
+        m_PendingAdapter = nullptr;
+    }
+    if (m_InitCallback) {
+        // Move out first — the callback may re-enter (e.g. retry InitializeAsync)
+        auto cb = std::move(m_InitCallback);
+        m_InitCallback = nullptr;
+        cb(success);
+    }
 }
 
 void WebGPURenderer::Shutdown() {
@@ -181,6 +185,7 @@ bool WebGPURenderer::BeginFrameWebGPU() {
     // Clear encoder from any previous frame — callers must not use a stale encoder
     // if this function returns false.
     m_CommandEncoder = nullptr;
+    m_SwapchainWritten = false;
 
     if (!m_Initialized || !m_Surface) return false;
 
@@ -232,6 +237,7 @@ void WebGPURenderer::BeginMainRenderPass() {
     renderPassDesc.label = wgpuStr("MainPass");
 
     m_RenderPassEncoder = wgpuCommandEncoderBeginRenderPass(m_CommandEncoder, &renderPassDesc);
+    if (m_RenderPassEncoder) m_SwapchainWritten = true;
 }
 
 WGPURenderPassEncoder WebGPURenderer::BeginDepthOnlyPass(WGPUTextureView depthView, u32 width, u32 height) {
@@ -336,6 +342,9 @@ void WebGPURenderer::CreateDepthTexture() {
 
 void WebGPURenderer::Resize(u32 width, u32 height) {
     if (width == 0 || height == 0) return;
+    // Async init may still be waiting on the device; the swap chain is created
+    // from live canvas dimensions at device-ready time, so nothing is lost.
+    if (!m_Initialized) return;
     m_SwapChainWidth = width;
     m_SwapChainHeight = height;
 

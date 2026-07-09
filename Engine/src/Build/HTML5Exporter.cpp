@@ -307,16 +307,8 @@ bool HTML5Exporter::InvokeEmscriptenBuild(const std::string& outputDir,
         return false;
     }
 
-    // Step 4: Copy asset pack
-    if (!enjpakPath.empty() && std::filesystem::exists(enjpakPath)) {
-        try {
-            std::filesystem::copy_file(enjpakPath, outputDir + "/game.data",
-                                        std::filesystem::copy_options::overwrite_existing);
-        } catch (const std::exception& e) {
-            ENJIN_LOG_WARN(Build, "Web build: failed to copy asset pack: %s", e.what());
-        }
-    }
-
+    // The asset pack already sits in outputDir as game.enjpak (packed in Phase 3),
+    // which is the name the web player fetches — no extra copy needed.
     ENJIN_LOG_INFO(Build, "Web build: complete — output in %s", outputDir.c_str());
     return true;
 }

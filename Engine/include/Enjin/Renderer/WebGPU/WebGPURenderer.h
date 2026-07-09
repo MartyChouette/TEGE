@@ -9,6 +9,7 @@
 #include "Enjin/Renderer/WebGPU/WebGPUShaderCompiler.h"
 #include "Enjin/Renderer/WebGPU/WebGPUPipeline.h"
 #include "Enjin/Renderer/RenderBackend.h"
+#include <functional>
 #include <memory>
 #include <vector>
 #include <string>
@@ -56,13 +57,24 @@ public:
     ~WebGPURenderer();
 
     // --- Lifecycle (Window-based, primary entry point) ---
-    bool Initialize(Window* window);
+    // Adapter/device acquisition is callback-based in the browser; without
+    // ASYNCIFY there is no way to block on it, so init completes in
+    // onComplete, which fires from the browser event loop. Callers must
+    // defer everything that needs the device until then.
+    void InitializeAsync(Window* window, std::function<void(bool)> onComplete);
+    bool IsInitialized() const { return m_Initialized; }
 
     // Begin a new frame — acquires swapchain + creates command encoder. No render pass yet.
     bool BeginFrameWebGPU();
 
     // Begin the main swapchain render pass (call after BeginFrameWebGPU and any pre-passes)
     void BeginMainRenderPass();
+
+    // Swapchain-write tracking: the post-process path writes the swapchain with its
+    // own raw pass (bypassing BeginMainRenderPass), and must mark it so the frame
+    // loop's fallback clear pass doesn't wipe the finished image.
+    void MarkSwapchainWritten() { m_SwapchainWritten = true; }
+    bool SwapchainWrittenThisFrame() const { return m_SwapchainWritten; }
 
     // Begin a depth-only render pass for shadow mapping. Returns raw encoder (caller ends it).
     WGPURenderPassEncoder BeginDepthOnlyPass(WGPUTextureView depthView, u32 width, u32 height);
@@ -146,6 +158,12 @@ private:
     void CreateSwapChain();
     void CreateDepthTexture();
 
+    // Async init chain: InitializeAsync → OnAdapterReady → OnDeviceReady.
+    // CompleteInit fires the stored callback exactly once (success or failure).
+    void OnAdapterReady(WGPUAdapter adapter);
+    void OnDeviceReady(WGPUDevice device);
+    void CompleteInit(bool success);
+
     static constexpr u32 FRAMES_IN_FLIGHT = 2;
 
     // Core WebGPU objects
@@ -173,6 +191,13 @@ private:
     std::unique_ptr<WebGPUPipeline> m_PipelineFactory;
 
     Window* m_Window = nullptr;
+
+    // Async init state — adapter is held between the two request callbacks
+    WGPUAdapter m_PendingAdapter = nullptr;
+    std::function<void(bool)> m_InitCallback;
+
+    // True once anything rendered to the swapchain view this frame
+    bool m_SwapchainWritten = false;
     bool m_Initialized = false;
 
     // --- IRenderBackend sub-managers (owned, created in Initialize) ---

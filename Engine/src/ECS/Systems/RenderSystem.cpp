@@ -114,13 +114,17 @@ static Math::Matrix4 WebGPUPerspective(f32 fov, f32 aspect, f32 nearPlane, f32 f
     return r;
 }
 
-// Cubemap shadow perspective — NO Y-flip (cubemap sampler expects standard orientation)
+// Cubemap shadow perspective. The face view matrices use the Vulkan/GL cube
+// convention (up = -Y for the side faces), which assumes a Y-DOWN NDC rasterizer.
+// WebGPU rasterizes Y-UP, so without a Y-flip here every rendered face lands
+// vertically mirrored vs. the (spec-fixed) cube sampler layout — point shadows
+// detach from casters, move mirrored, and show face-seam "corners".
 static Math::Matrix4 WebGPUCubemapPerspective(f32 fov, f32 aspect, f32 nearPlane, f32 farPlane) {
     f32 tanHalfFov = std::tan(fov * 0.5f);
     Math::Matrix4 r;
     std::memset(&r, 0, sizeof(r));
     r.m[0]  = 1.0f / (aspect * tanHalfFov);
-    r.m[5]  = 1.0f / tanHalfFov;  // No Y-flip — matches Vulkan cubemap convention
+    r.m[5]  = -1.0f / tanHalfFov;  // Y-flip: compensate WebGPU's Y-up NDC (see above)
     r.m[10] = farPlane / (nearPlane - farPlane);
     r.m[11] = -1.0f;
     r.m[14] = (nearPlane * farPlane) / (nearPlane - farPlane);
@@ -1273,6 +1277,20 @@ void RenderSystem::Update(f32 deltaTime) {
     RefreshStorageCache();
     ResetFrameCounters();
 
+    // Index animators by shared skeleton so ResolveAnimator can match follower
+    // meshes to their leader's clock (animators themselves tick in web_main)
+    m_CachedFallbackAnimator = nullptr;
+    m_SkeletonToAnimator.clear();
+    for (Entity animEntity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
+        auto* ac = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(animEntity)
+                                           : m_World->GetComponent<AnimatorComponent>(animEntity);
+        if (!ac) continue;
+        if (const auto* skel = ac->animator.GetSkeleton()) {
+            if (!m_CachedFallbackAnimator) m_CachedFallbackAnimator = ac;
+            m_SkeletonToAnimator[skel] = ac;
+        }
+    }
+
     // Upload ViewProjection UBO
     {
         WebViewProjectionUBO vp{};
@@ -1284,6 +1302,24 @@ void RenderSystem::Update(f32 deltaTime) {
         bufMgr->UploadData(m_WebViewProjBuffer, &vp, sizeof(vp));
     }
 
+    // The shadow map follows the strongest shadow-casting directional light. It must
+    // also sit in lighting slot 0 — pbr.wgsl applies the shadow term to slot 0 only —
+    // so slot order and shadow-pass selection have to agree, or shadows detach from
+    // the light that visually casts them (backwards-looking shadows with 2+ suns).
+    Entity shadowCasterLight = INVALID_ENTITY;
+    {
+        f32 bestIntensity = -1.0f;
+        for (Entity le : m_CachedLightEntities) {
+            auto* lc = m_World->GetComponent<LightComponent>(le);
+            if (!lc || lc->type != LightType::Directional || !lc->castShadows) continue;
+            if (!m_CachedTransformStorage || !m_CachedTransformStorage->Get(le)) continue;
+            if (lc->intensity > bestIntensity) {
+                bestIntensity = lc->intensity;
+                shadowCasterLight = le;
+            }
+        }
+    }
+
     // Upload Lighting UBO
     {
         WebLightingUBO lit{};
@@ -1291,7 +1327,13 @@ void RenderSystem::Update(f32 deltaTime) {
 
         u32 dirCount = 0, pointCount = 0, spotCount = 0;
         if (m_CachedTransformStorage) {
-            for (Entity lightEntity : m_CachedLightEntities) {
+            // Shadow caster first so it lands in directional slot 0
+            std::vector<Entity> orderedLights(m_CachedLightEntities.begin(), m_CachedLightEntities.end());
+            if (shadowCasterLight != INVALID_ENTITY) {
+                auto it = std::find(orderedLights.begin(), orderedLights.end(), shadowCasterLight);
+                if (it != orderedLights.end()) std::iter_swap(orderedLights.begin(), it);
+            }
+            for (Entity lightEntity : orderedLights) {
                 auto* lc = m_World->GetComponent<LightComponent>(lightEntity);
                 auto* xf = m_CachedTransformStorage->Get(lightEntity);
                 if (!lc || !xf) continue;
@@ -1391,25 +1433,19 @@ void RenderSystem::Update(f32 deltaTime) {
     // Shadow depth pass (single cascade, directional light)
     // ========================================================================
     if (m_WebShadowPipeline.IsValid() && m_WebShadowMapTex.IsValid() && m_Camera) {
-        // Find shadow-casting directional light
+        // Same light the lighting UBO put in directional slot 0
         Math::Vector3 shadowLightDir(0.5f, -0.8f, 0.3f);
         bool hasShadowLight = false;
-        if (m_CachedTransformStorage) {
-            for (Entity lightEntity : m_CachedLightEntities) {
-                auto* lc = m_World->GetComponent<LightComponent>(lightEntity);
-                auto* xf = m_CachedTransformStorage->Get(lightEntity);
-                if (!lc || !xf) continue;
-                if (lc->type == LightType::Directional && lc->castShadows) {
-                    shadowLightDir = xf->rotation.GetForward();
-                    hasShadowLight = true;
-                    break;
-                }
+        if (shadowCasterLight != INVALID_ENTITY && m_CachedTransformStorage) {
+            if (auto* xf = m_CachedTransformStorage->Get(shadowCasterLight)) {
+                shadowLightDir = xf->rotation.GetForward();
+                hasShadowLight = true;
             }
         }
 
         // Compute light view-projection (single cascade covering shadow distance)
         f32 cameraNear = 0.1f;
-        f32 shadowDistance = 80.0f;
+        f32 shadowDistance = std::max(m_ShadowDistance, 1.0f);  // scene-configurable (was hardcoded 80)
         Math::Matrix4 camView = m_Camera->GetViewMatrix();
         Math::Matrix4 camProj = m_Camera->GetProjectionMatrix();
         Math::Matrix4 invViewProj = (camProj * camView).Inverse();
@@ -1485,6 +1521,18 @@ void RenderSystem::Update(f32 deltaTime) {
         lightProj.m[12] = -(maxX + minX) / (maxX - minX);
         lightProj.m[13] = -(maxY + minY) / (maxY - minY);
         lightProj.m[14] =  maxZ / (maxZ - minZ);
+
+        static int s_ShadowFitLog = 0;
+        if (s_ShadowFitLog++ < 3) {
+            EM_ASM({
+                console.log('[SHADOW_FIT] box=' + $0.toFixed(1) + 'x' + $1.toFixed(1) +
+                    ' zRange=' + $2.toFixed(1) + ' unitsPerTexel=' + $3.toFixed(3) +
+                    ' center=(' + $4.toFixed(1) + ',' + $5.toFixed(1) + ',' + $6.toFixed(1) + ')' +
+                    ' camFar=' + $7.toFixed(0) + ' dist=' + $8.toFixed(0));
+            }, maxX - minX, maxY - minY, maxZ - minZ,
+               std::max(maxX - minX, maxY - minY) / static_cast<f32>(WEB_SHADOW_MAP_SIZE),
+               center.x, center.y, center.z, cameraFar, shadowDistance);
+        }
 
         // Upload light VP to shadow UBO (used by both shadow pass and PBR pass group 3)
         WebViewProjectionUBO shadowVP{};
@@ -1790,6 +1838,21 @@ void RenderSystem::Update(f32 deltaTime) {
     f32 w = static_cast<f32>(m_Renderer->GetSwapchainWidth());
     f32 h = static_cast<f32>(m_Renderer->GetSwapchainHeight());
 
+    // The offscreen scene targets are created ONCE at boot size and are NOT
+    // recreated on window resize — the scene pass viewport must match ITS
+    // attachments, not the (possibly resized) swapchain, or every frame fails
+    // validation and the game dies to black. The post-process pass scales the
+    // fixed-size scene texture to the swapchain. TODO: recreate the offscreen
+    // chain on resize for native-res rendering after enlarge.
+    f32 sceneW = w, sceneH = h;
+    if (usePostProcess) {
+        if (auto* sceneNative = static_cast<Renderer::WebGPUTextureManager*>(
+                m_Renderer->GetTextureManager())->GetNativeTexture(m_WebSceneColorTex)) {
+            sceneW = static_cast<f32>(sceneNative->width);
+            sceneH = static_cast<f32>(sceneNative->height);
+        }
+    }
+
     if (usePostProcess) {
         // Render scene to MSAA texture, resolve to HDR offscreen
         WGPURenderPassColorAttachment colorAtt = {};
@@ -1832,8 +1895,8 @@ void RenderSystem::Update(f32 deltaTime) {
         encoder = sceneEncoder.get();
     }
     encoder->BindPipeline(m_MainPipeline);
-    encoder->SetViewport(0, 0, w, h);
-    encoder->SetScissor(0, 0, static_cast<u32>(w), static_cast<u32>(h));
+    encoder->SetViewport(0, 0, sceneW, sceneH);
+    encoder->SetScissor(0, 0, static_cast<u32>(sceneW), static_cast<u32>(sceneH));
     encoder->SetBindGroup(0, m_WebFrameBindGroup);
     if (m_WebShadowSampleBG.IsValid())
         encoder->SetBindGroup(3, m_WebShadowSampleBG);
@@ -2410,7 +2473,7 @@ void RenderSystem::Update(f32 deltaTime) {
             // Step 4: Composite scene + bloom[0] → scratch texture
             {
                 bloomPass(static_cast<WGPUTextureView>(m_WebBloomScratchView),
-                    static_cast<u32>(w), static_cast<u32>(h),
+                    static_cast<u32>(sceneW), static_cast<u32>(sceneH),
                     webPipeMgr->GetNativePipeline(m_WebBloomCompositePipeline),
                     webBindMgr->GetNativeGroup(m_WebBloomCompositeBG));
             }
@@ -2444,6 +2507,9 @@ void RenderSystem::Update(f32 deltaTime) {
             wgpuRenderPassEncoderDraw(ppPass, 3, 1, 0, 0);  // Fullscreen triangle
             wgpuRenderPassEncoderEnd(ppPass);
             wgpuRenderPassEncoderRelease(ppPass);
+            // Tell the frame loop the swapchain has the finished image — without this
+            // its fallback clear pass runs after us and wipes the frame to sky blue
+            webRenderer->MarkSwapchainWritten();
         }
     } else {
         m_Renderer->EndRenderPass(encoder);
@@ -2504,6 +2570,7 @@ void RenderSystem::RefreshStorageCache() {
     m_CachedMeshStorage = m_World->GetComponentStorage<MeshComponent>();
     m_CachedMaterialStorage = m_World->GetComponentStorage<MaterialComponent>();
     m_CachedMaterialSlotsStorage = m_World->GetComponentStorage<MaterialSlotsComponent>();
+    m_CachedAnimatorStorage = m_World->GetComponentStorage<AnimatorComponent>();
 
     // Rebuild light entity list if dirty
     if (m_LightListDirty) {
@@ -2514,6 +2581,22 @@ void RenderSystem::RefreshStorageCache() {
     }
 }
 
+// Web twin of the Vulkan-side ResolveAnimator (kept in both halves of this file's
+// #if/#else split): follower meshes of a shared skeleton skin from the leader's
+// animator so one imported model runs on a single animation clock.
+AnimatorComponent* RenderSystem::ResolveAnimator(Entity entity) {
+    AnimatorComponent* own = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity)
+                                                     : m_World->GetComponent<AnimatorComponent>(entity);
+    if (own) return own;
+    if (SkeletonComponent* sk = m_World->GetComponent<SkeletonComponent>(entity)) {
+        if (sk->skeleton) {
+            auto it = m_SkeletonToAnimator.find(sk->skeleton.get());
+            if (it != m_SkeletonToAnimator.end()) return it->second;
+        }
+    }
+    return nullptr;
+}
+
 void RenderSystem::RenderEntity(Entity /*entity*/) {}
 void RenderSystem::RenderSprites() {}
 void RenderSystem::ClassifySceneComposition() {}
@@ -2522,6 +2605,7 @@ void RenderSystem::CreatePipeline() {}
 
 // Stubs for methods not yet needed on WebGPU
 void RenderSystem::SetBackfaceCullingEnabled(bool enabled) { m_BackfaceCulling = enabled; }
+void RenderSystem::SetShadowDistance(f32 d) { m_ShadowDistance = d; }  // web: no ShadowMap object
 void RenderSystem::SetWireframeEnabled(bool enabled) { m_WireframeMode = enabled; }
 void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* /*sim*/) {}
 void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& /*w*/, bool /*r*/, u32, u32) {}

@@ -336,11 +336,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let kD = (vec3<f32>(1.0) - F) * (1.0 - metallic);
         let NdotL = max(dot(N, L), 0.0);
 
-        // Apply shadow to first directional light
-        var shadow = 1.0;
-        if (i == 0) {
-            shadow = mix(1.0, shadowFactor, shadowStrength);
-        }
+        // Apply the sun shadow to ALL directional lights — they share one shadow
+        // map, and any unshadowed directional re-lights shadowed areas, washing
+        // the shadows out (demo scene has two identical suns: 45% wash)
+        let shadow = mix(1.0, shadowFactor, shadowStrength);
         Lo = Lo + (kD * albedo + specular) * radiance * NdotL * shadow;
     }
 

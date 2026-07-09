@@ -377,10 +377,10 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
 // ---------------------------------------------------------------------------
 void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSettings* pp) const {
     if (rs) {
+        rs->SetShadowDistance(shadowDistance);  // both backends (web: single-cascade fit range)
 #if !ENJIN_RENDERER_WEBGPU
         rs->SetShadowsEnabled(shadowsEnabled);
         rs->SetShadowResolution(shadowResolution);
-        rs->SetShadowDistance(shadowDistance);
         rs->SetShadowStrength(shadowStrength);
         rs->SetShadowSoftness(shadowSoftness);
         rs->SetCascadeProgressiveUpdate(cascadeProgressiveUpdate);

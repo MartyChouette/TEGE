@@ -74,6 +74,8 @@ if(ENJIN_PLATFORM_WEB)
          "src/Renderer/RenderPipeline/*.cpp" "src/Renderer/Techniques/*.cpp"
          "src/Renderer/VRS/*.cpp" "src/Renderer/HaltonSequence.cpp"
          "src/Renderer/RenderPass.cpp" "src/Renderer/Scripting/*.cpp" "src/Renderer/ShaderManager.cpp"
+         "src/Renderer/VolumetricFog.cpp" "src/Renderer/ShadowAtlas.cpp"
+         "src/Renderer/DDGIProbeSystem.cpp" "src/Effects/GPUParticleSystem.cpp"
          "src/Effects/WeatherRenderer.cpp" "src/Effects/ParticleRenderer.cpp"
          "src/Effects/FluidRenderer.cpp" "src/Effects/GrassRenderer.cpp"
          "src/Effects/ShrubRenderer.cpp" "src/Effects/TreeRenderer.cpp"
