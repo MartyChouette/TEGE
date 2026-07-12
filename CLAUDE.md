@@ -186,7 +186,7 @@ enjin/
 ## Security
 
 - **Scene files:** Validate array sizes, `.contains()` before access. Vertex/index caps (10M), strings via `SafeStr()`
-- **Scripts:** AngelScript sandboxed, 1M instruction limit. `#include` paths not yet restricted
+- **Scripts:** AngelScript sandboxed, 1M instruction limit. `#include` paths restricted to the script directory (`ScriptEngine::IncludeCallback`: canonical + `MakeRelativeToRoot` containment, depth limit 16)
 - **Asset packs:** XOR obfuscation (not crypto-secure), CRC32 integrity. Path traversal rejected
 - **Process execution:** No `std::system()` — use `ShellExecuteA` (Win), `fork`/`execlp` (Linux/macOS)
 - **Thread safety:** See `docs/AUDIT_2026_04_12.md` for open issues

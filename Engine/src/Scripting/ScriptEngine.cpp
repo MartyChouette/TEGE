@@ -1,4 +1,5 @@
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/Platform/Paths.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/CoroutineScheduler.h"
 #include "Enjin/Logging/Log.h"
@@ -151,10 +152,22 @@ bool ScriptEngine::CompileScript(const std::string& path)
         return false;
     }
 
-    // Validate file path: reject directory traversal and verify it's a .as file
+    // Validate file path: reject directory traversal. scriptPath comes from
+    // scene data, so treat it as untrusted. Relative paths go through the
+    // shared component-wise validator (allows "a..b.as", rejects ".."
+    // components); absolute paths are editor-supplied and only need any
+    // surviving ".." components rejected after normalization.
     {
-        auto normalized = std::filesystem::path(path).lexically_normal().string();
-        if (normalized.find("..") != std::string::npos) {
+        std::filesystem::path fsp(path);
+        bool safe = true;
+        if (fsp.is_absolute()) {
+            for (const auto& part : fsp.lexically_normal()) {
+                if (part == "..") { safe = false; break; }
+            }
+        } else {
+            safe = Platform::IsSafeRelativePath(path);
+        }
+        if (!safe) {
             m_LastError = "Script path contains directory traversal";
             ENJIN_LOG_ERROR(Script, "%s: %s", m_LastError.c_str(), path.c_str());
             return false;
@@ -1143,8 +1156,11 @@ int ScriptEngine::IncludeCallback(const char* include,
             resolvedCanonical = std::filesystem::absolute(resolved.lexically_normal(), ec2);
             if (ec2) return false;
         }
-        auto relPath = resolvedCanonical.lexically_relative(baseDir);
-        if (relPath.empty() || relPath.string().find("..") == 0) {
+        // Component-wise containment check (Platform::MakeRelativeToRoot
+        // returns "" when the path lies outside the root). The old
+        // find("..") == 0 string test missed escapes when the relative
+        // path wasn't fully normalized, e.g. "subdir/../../escape".
+        if (Platform::MakeRelativeToRoot(baseDir.string(), resolvedCanonical.string()).empty()) {
             ENJIN_LOG_ERROR(Script, "Script #include path escapes script directory: %s", include);
             return false;
         }

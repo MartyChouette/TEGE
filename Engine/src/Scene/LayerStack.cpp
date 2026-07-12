@@ -12,6 +12,33 @@ using json = nlohmann::json;
 
 static constexpr u32 LAYER_FORMAT_VERSION = 1;
 
+// OOM caps for untrusted .layer files. SceneSerializer's own per-component
+// caps (10M verts etc.) only fire AFTER Resolve has built the full merged
+// document, so a hostile layer has to be bounded here, before the merge.
+static constexpr usize kMaxLayerEntities        = 100'000;  // deltas per layer
+static constexpr usize kMaxLayerComponentDeltas = 256;      // per entity delta
+
+// True if the layer fits the caps; logs and returns false otherwise.
+// Checked both at parse time (FromJson) and again in Resolve so that
+// programmatically-built stacks get the same bound.
+static bool LayerWithinCaps(const Layer& layer, const char* site) {
+    if (layer.entities.size() > kMaxLayerEntities) {
+        ENJIN_LOG_ERROR(Build, "%s: layer '%s' has %zu entity deltas (cap %zu) — rejecting layer",
+                        site, layer.name.c_str(), layer.entities.size(), kMaxLayerEntities);
+        return false;
+    }
+    for (const EntityDelta& d : layer.entities) {
+        if (d.components.size() > kMaxLayerComponentDeltas) {
+            ENJIN_LOG_ERROR(Build, "%s: layer '%s' entity %llu has %zu component deltas (cap %zu) — rejecting layer",
+                            site, layer.name.c_str(),
+                            static_cast<unsigned long long>(d.stableId),
+                            d.components.size(), kMaxLayerComponentDeltas);
+            return false;
+        }
+    }
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Layer (de)serialization
 // ---------------------------------------------------------------------------
@@ -55,18 +82,40 @@ Layer Layer::FromJson(const std::string& jsonStr) {
     if (jsonStr.empty()) return layer;
 
     try {
-        json root = json::parse(jsonStr);
+        json root = ParseSceneJson(jsonStr);
+
+        // Reject files written by a newer engine — the format can't be
+        // interpreted reliably. Missing field (hand-made file) = current.
+        u32 version = root.value("layerVersion", LAYER_FORMAT_VERSION);
+        if (version > LAYER_FORMAT_VERSION) {
+            ENJIN_LOG_ERROR(Build, "Layer::FromJson: layerVersion %u > engine %u — rejecting layer",
+                            version, LAYER_FORMAT_VERSION);
+            return layer;
+        }
+
         layer.name    = root.value("name", std::string{});
         layer.enabled = root.value("enabled", true);
         layer.locked  = root.value("locked", false);
 
         if (root.contains("entities") && root["entities"].is_array()) {
+            if (root["entities"].size() > kMaxLayerEntities) {
+                ENJIN_LOG_ERROR(Build, "Layer::FromJson: layer '%s' has %zu entity deltas (cap %zu) — rejecting layer",
+                                layer.name.c_str(), root["entities"].size(), kMaxLayerEntities);
+                return Layer{};
+            }
             for (const auto& e : root["entities"]) {
                 EntityDelta d;
                 d.stableId  = e.value("stableId", u64{0});
                 d.created   = e.value("created", false);
                 d.destroyed = e.value("destroyed", false);
                 if (e.contains("components") && e["components"].is_object()) {
+                    if (e["components"].size() > kMaxLayerComponentDeltas) {
+                        ENJIN_LOG_ERROR(Build, "Layer::FromJson: layer '%s' entity %llu has %zu component deltas (cap %zu) — rejecting layer",
+                                        layer.name.c_str(),
+                                        static_cast<unsigned long long>(d.stableId),
+                                        e["components"].size(), kMaxLayerComponentDeltas);
+                        return Layer{};
+                    }
                     for (auto it = e["components"].begin(); it != e["components"].end(); ++it) {
                         ComponentDelta c;
                         c.key  = it.key();
@@ -79,6 +128,7 @@ Layer Layer::FromJson(const std::string& jsonStr) {
         }
     } catch (const std::exception& ex) {
         ENJIN_LOG_ERROR(Build, "Layer::FromJson parse error: %s", ex.what());
+        return Layer{};
     }
     return layer;
 }
@@ -106,7 +156,7 @@ const EntityDelta* Layer::FindEntity(u64 stableId) const {
 std::string LayerStack::Resolve(const std::string& baseSceneJson) const {
     json root;
     try {
-        root = json::parse(baseSceneJson);
+        root = ParseSceneJson(baseSceneJson);
     } catch (const std::exception& ex) {
         ENJIN_LOG_ERROR(Build, "LayerStack::Resolve: base scene JSON parse error: %s", ex.what());
         return baseSceneJson;  // hand back the base unchanged on failure
@@ -133,6 +183,7 @@ std::string LayerStack::Resolve(const std::string& baseSceneJson) const {
     // Apply each enabled layer bottom-to-top.
     for (const Layer& layer : layers) {
         if (!layer.enabled) continue;
+        if (!LayerWithinCaps(layer, "LayerStack::Resolve")) continue;
 
         for (const EntityDelta& d : layer.entities) {
             if (d.stableId == 0) continue;
@@ -173,7 +224,7 @@ std::string LayerStack::Resolve(const std::string& baseSceneJson) const {
                     ents[pos].erase(c.key);                    // remove component
                 } else {
                     try {
-                        ents[pos][c.key] = json::parse(c.json); // override / add
+                        ents[pos][c.key] = ParseSceneJson(c.json); // override / add
                     } catch (const std::exception& ex) {
                         ENJIN_LOG_WARN(Build, "LayerStack::Resolve: bad delta for key '%s': %s",
                                        c.key.c_str(), ex.what());

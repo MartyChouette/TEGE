@@ -209,6 +209,7 @@ enjin_add_test(TestProceduralAdvanced Unit/Procedural/TestProceduralAdvanced.cpp
 # --- Stress ---
 enjin_add_test(TestStressFuzz         Unit/Stress/TestStressFuzz.cpp)
 enjin_add_test(TestHardeningRegression Unit/Stress/TestHardeningRegression.cpp)
+enjin_add_test(TestUntrustedInput     Unit/Stress/TestUntrustedInput.cpp)
 
 # --- Plugin ---
 enjin_add_test(TestPluginSystem       Unit/Plugin/TestPluginSystem.cpp)

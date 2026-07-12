@@ -64,6 +64,21 @@ using json = nlohmann::json;
 namespace Enjin {
 namespace Scene {
 
+// Depth-limited parse for untrusted scene/layer JSON (see SceneSerializer.h).
+// The parse callback fires per structural event with the current depth;
+// throwing aborts the parse before the recursive parser can overflow the
+// stack, and lands in the std::exception handler every call site already has.
+json ParseSceneJson(const std::string& text) {
+    return json::parse(text, [](int depth, json::parse_event_t, json&) -> bool {
+        if (depth > static_cast<int>(kMaxSceneJsonDepth)) {
+            throw std::runtime_error(
+                "JSON nesting depth exceeds limit (" +
+                std::to_string(kMaxSceneJsonDepth) + ") — rejecting document");
+        }
+        return true;
+    });
+}
+
 // JSON serialization helpers for math types
 namespace {
 
@@ -8791,7 +8806,7 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
     // Parse JSON FIRST â€" only clear the world after we know the JSON is valid
     json sceneJson;
     try {
-        sceneJson = json::parse(jsonString);
+        sceneJson = ParseSceneJson(jsonString);
     } catch (const std::exception& e) {
         result.error = std::string("JSON parse error: ") + e.what();
         return result;  // Return without clearing -- scene is untouched
@@ -9869,7 +9884,7 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
     if (!world || jsonStr.empty()) return ECS::INVALID_ENTITY;
 
     try {
-        json entityJson = json::parse(jsonStr);
+        json entityJson = ParseSceneJson(jsonStr);
         ECS::Entity entity = world->CreateEntity();
 
         // Deserialize all components (mirrors LoadFromString entity loop)
@@ -10518,7 +10533,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
     if (!world || !world->IsValid(entity) || jsonStr.empty()) return false;
 
     try {
-        json j = json::parse(jsonStr);
+        json j = ParseSceneJson(jsonStr);
 
         // Dispatch by component key â€" must match the keys used in scene JSON
         if (key == "stableId") { world->AddComponent<ECS::StableIdComponent>(entity, ECS::StableIdComponent{ j.value("id", u64{0}) }); return true; }

@@ -2,6 +2,9 @@
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptBindings.h"
 
+#include <filesystem>
+#include <fstream>
+
 using namespace Enjin;
 using namespace Enjin::Scripting;
 
@@ -260,6 +263,111 @@ ENJIN_TEST(Execution, GlobalVariableAccess) {
 
     engine.ReturnContext(ctx);
     engine.Shutdown();
+}
+
+// ===========================================================================
+// Script path validation (hardening: traversal rejection, 2026-06-16 sweep)
+// ===========================================================================
+
+ENJIN_TEST(PathValidation, CompileScript_RejectsLeadingTraversal) {
+    ScriptEngine engine;
+    engine.Initialize();
+
+    bool ok = engine.CompileScript("../evil.as");
+
+    ENJIN_EXPECT_FALSE(ok);
+    ENJIN_EXPECT_TRUE(engine.GetLastError().find("traversal") != std::string::npos);
+    engine.Shutdown();
+}
+
+ENJIN_TEST(PathValidation, CompileScript_RejectsEmbeddedTraversal) {
+    // "scripts/../../evil.as" normalizes to "../evil.as" — must be rejected
+    // even though the raw string does not START with "..".
+    ScriptEngine engine;
+    engine.Initialize();
+
+    bool ok = engine.CompileScript("scripts/../../evil.as");
+
+    ENJIN_EXPECT_FALSE(ok);
+    ENJIN_EXPECT_TRUE(engine.GetLastError().find("traversal") != std::string::npos);
+    engine.Shutdown();
+}
+
+ENJIN_TEST(PathValidation, CompileScript_DotDotInFilenameIsNotTraversal) {
+    // "a..b.as" contains ".." as a substring but is a legal file name. The
+    // old substring check wrongly rejected it; it must now fail only because
+    // the file does not exist, never with a traversal error.
+    ScriptEngine engine;
+    engine.Initialize();
+
+    bool ok = engine.CompileScript("a..b.as");
+
+    ENJIN_EXPECT_FALSE(ok);  // file doesn't exist
+    ENJIN_EXPECT_TRUE(engine.GetLastError().find("traversal") == std::string::npos);
+    engine.Shutdown();
+}
+
+ENJIN_TEST(PathValidation, IncludeEscapingScriptDirectoryIsRejected) {
+    // Real-file regression for the IncludeCallback containment check: a script
+    // inside the script directory tries to #include a file that resolves
+    // OUTSIDE it via an embedded "sub/../../" hop. Compilation must fail.
+    namespace fs = std::filesystem;
+    fs::path root = fs::temp_directory_path() / "enjin_test_include_escape";
+    fs::path scripts = root / "scripts";
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    fs::create_directories(scripts / "sub");
+
+    {   // The escape target, outside the script directory.
+        std::ofstream f(root / "outside.as");
+        f << "void Stolen() {}\n";
+    }
+    {   // The attacker script, inside the script directory.
+        std::ofstream f(scripts / "main.as");
+        f << "#include \"sub/../../outside.as\"\n"
+             "void main() { Stolen(); }\n";
+    }
+
+    ScriptEngine engine;
+    engine.Initialize();
+    engine.SetScriptDirectory(scripts.string());
+
+    bool ok = engine.CompileScript((scripts / "main.as").string());
+
+    ENJIN_EXPECT_FALSE(ok);
+    engine.Shutdown();
+    fs::remove_all(root, ec);
+}
+
+ENJIN_TEST(PathValidation, IncludeInsideScriptDirectoryStillWorks) {
+    // Control for the escape test: a well-behaved include in the same
+    // directory must keep compiling after the containment fix.
+    namespace fs = std::filesystem;
+    fs::path root = fs::temp_directory_path() / "enjin_test_include_ok";
+    fs::path scripts = root / "scripts";
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    fs::create_directories(scripts);
+
+    {
+        std::ofstream f(scripts / "helper.as");
+        f << "void Helper() {}\n";
+    }
+    {
+        std::ofstream f(scripts / "main.as");
+        f << "#include \"helper.as\"\n"
+             "void main() { Helper(); }\n";
+    }
+
+    ScriptEngine engine;
+    engine.Initialize();
+    engine.SetScriptDirectory(scripts.string());
+
+    bool ok = engine.CompileScript((scripts / "main.as").string());
+
+    ENJIN_EXPECT_TRUE(ok);
+    engine.Shutdown();
+    fs::remove_all(root, ec);
 }
 
 ENJIN_TEST_MAIN()

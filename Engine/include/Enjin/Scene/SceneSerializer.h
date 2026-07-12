@@ -31,6 +31,16 @@ struct DeserializationResult {
     ECS::Entity rootEntity = ECS::INVALID_ENTITY;
 };
 
+// Maximum JSON nesting depth accepted from scene/layer files. nlohmann's
+// parser recurses per nesting level, so unbounded depth in a hostile document
+// is a stack-overflow DoS. Legitimate scene JSON nests ~10 levels deep.
+inline constexpr u32 kMaxSceneJsonDepth = 64;
+
+// Depth-limited parse for untrusted scene/layer JSON. Throws std::exception
+// (same failure path as json::parse) when nesting exceeds kMaxSceneJsonDepth.
+// All scene/layer parse sites must use this instead of raw json::parse.
+ENJIN_API nlohmann::json ParseSceneJson(const std::string& text);
+
 // Scene serialization options
 struct SerializationOptions {
     bool prettyPrint = true;        // Format JSON for readability
