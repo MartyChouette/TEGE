@@ -119,6 +119,31 @@ ENJIN_TEST(EntityLifecycle, EntityRecycling) {
     ENJIN_EXPECT_TRUE(world.IsValid(e2));
 }
 
+ENJIN_TEST(EntityLifecycle, AddComponentToRecycledEntity) {
+    // Regression for the raw-handle indexing class (c8471de fixed it in
+    // RenderSystem; ComponentStorage's sparse array had the same disease).
+    // A recycled entity carries generation >= 1 in the high 32 bits, so any
+    // container sized by the raw u64 handle attempts a ~2^32-element resize.
+    World world;
+    Entity e1 = world.CreateEntity();
+    world.AddComponent<TransformComponent>(e1).position = Math::Vector3(1, 1, 1);
+    world.DestroyEntityImmediate(e1);
+
+    Entity e2 = world.CreateEntity();  // recycled slot, generation bumped
+    ENJIN_ASSERT_TRUE(EntityIndex(e1) == EntityIndex(e2));
+    ENJIN_ASSERT_TRUE(e1 != e2);
+
+    // Must not OOM, and must land on the new entity.
+    auto& t = world.AddComponent<TransformComponent>(e2);
+    t.position = Math::Vector3(2, 2, 2);
+
+    ENJIN_EXPECT_TRUE(world.HasComponent<TransformComponent>(e2));
+    ENJIN_EXPECT_FLOAT_EQ(world.GetComponent<TransformComponent>(e2)->position.x, 2.0f);
+    // The stale handle must not alias the recycled slot's new component.
+    ENJIN_EXPECT_TRUE(world.GetComponent<TransformComponent>(e1) == nullptr);
+    ENJIN_EXPECT_FALSE(world.HasComponent<TransformComponent>(e1));
+}
+
 ENJIN_TEST(EntityLifecycle, MassCreateDestroy) {
     World world;
     std::vector<Entity> entities;

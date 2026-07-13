@@ -50,13 +50,20 @@ static constexpr usize SPARSE_EMPTY = static_cast<usize>(-1);
 //
 // Previous implementation used std::unordered_map<Entity, usize> for the entity→index
 // lookup. Every Has() and Get() call paid the cost of hashing + bucket traversal.
-// Since entity IDs are sequential integers starting from 1, a flat sparse array
-// (std::vector<usize> indexed by entity ID) gives true O(1) lookup with zero hash
-// overhead — just a bounds check and an array dereference.
+// A flat sparse array gives true O(1) lookup with zero hash overhead — just a
+// bounds check and an array dereference.
 //
-// Memory trade-off: the sparse array may have gaps for destroyed entities, but entity
-// IDs are recycled (EntityManager::m_FreeEntities), so the sparse array stays compact
-// in practice. For 1000 entities, this costs ~8 KB (1000 * sizeof(usize)) vs the
+// GENERATIONAL HANDLES: Entity packs a generation counter in the high 32 bits
+// (Entity.h), so the sparse array is indexed by EntityIndex(entity) — NEVER by
+// the raw u64 handle. A recycled handle (generation >= 1) cast to an array index
+// is a multi-billion-element resize (the c8471de RenderSystem crash class).
+// Because a recycled slot index can map to a dense entry left behind by a dead
+// predecessor, every lookup verifies ownership against the full handle stored in
+// m_Entities; a generation mismatch is a miss, not the predecessor's component.
+//
+// Memory trade-off: the sparse array may have gaps for destroyed entities, but
+// slot indices are recycled (EntityManager::m_FreeIndices), so the sparse array
+// stays compact in practice. For 1000 entities, this costs ~8 KB vs the
 // unordered_map's ~48+ KB (hash table overhead with load factor).
 //
 // The dense component and entity arrays remain packed and contiguous for cache-friendly
@@ -65,28 +72,43 @@ template<typename T>
 class ComponentStorage {
 public:
     T& Add(Entity entity) {
+        usize eid = EntityIndex(entity);
+        EnsureSparseCapacity(eid);
+
+        usize existing = m_Sparse[eid];
+        if (existing != SPARSE_EMPTY) {
+            // The slot still maps to a dense entry from a previous generation
+            // of this index (destroyed entity whose component was never
+            // removed). Reclaim the entry in place instead of leaking it.
+            m_Entities[existing] = entity;
+            m_Components[existing] = T{};
+            return m_Components[existing];
+        }
+
         usize denseIndex = m_Components.size();
         m_Entities.push_back(entity);
         m_Components.push_back(T{});
-        EnsureSparseCapacity(entity);
-        m_Sparse[static_cast<usize>(entity)] = denseIndex;
+        m_Sparse[eid] = denseIndex;
         return m_Components.back();
     }
 
     void Remove(Entity entity) {
-        usize eid = static_cast<usize>(entity);
+        usize eid = EntityIndex(entity);
         if (eid >= m_Sparse.size() || m_Sparse[eid] == SPARSE_EMPTY) {
             return;
         }
 
         usize index = m_Sparse[eid];
+        if (m_Entities[index] != entity) {
+            return;  // stale handle from a previous generation of this slot
+        }
         usize lastIndex = m_Components.size() - 1;
 
         // Swap with last element to keep arrays dense
         if (index != lastIndex) {
             m_Components[index] = std::move(m_Components[lastIndex]);
             m_Entities[index] = m_Entities[lastIndex];
-            m_Sparse[static_cast<usize>(m_Entities[index])] = index;
+            m_Sparse[EntityIndex(m_Entities[index])] = index;
         }
 
         m_Components.pop_back();
@@ -95,24 +117,26 @@ public:
     }
 
     ENJIN_FORCE_INLINE T* Get(Entity entity) {
-        usize eid = static_cast<usize>(entity);
+        usize eid = EntityIndex(entity);
         if (eid >= m_Sparse.size()) return nullptr;
         usize idx = m_Sparse[eid];
-        if (idx == SPARSE_EMPTY) return nullptr;
+        if (idx == SPARSE_EMPTY || m_Entities[idx] != entity) return nullptr;
         return &m_Components[idx];
     }
 
     ENJIN_FORCE_INLINE const T* Get(Entity entity) const {
-        usize eid = static_cast<usize>(entity);
+        usize eid = EntityIndex(entity);
         if (eid >= m_Sparse.size()) return nullptr;
         usize idx = m_Sparse[eid];
-        if (idx == SPARSE_EMPTY) return nullptr;
+        if (idx == SPARSE_EMPTY || m_Entities[idx] != entity) return nullptr;
         return &m_Components[idx];
     }
 
     ENJIN_FORCE_INLINE bool Has(Entity entity) const {
-        usize eid = static_cast<usize>(entity);
-        return eid < m_Sparse.size() && m_Sparse[eid] != SPARSE_EMPTY;
+        usize eid = EntityIndex(entity);
+        if (eid >= m_Sparse.size()) return false;
+        usize idx = m_Sparse[eid];
+        return idx != SPARSE_EMPTY && m_Entities[idx] == entity;
     }
 
     // Get component by dense index (no entity lookup). Use when iterating
@@ -127,15 +151,17 @@ public:
     // Get the dense index for an entity (or SPARSE_EMPTY if not present).
     // Useful for prefetch calculations.
     ENJIN_FORCE_INLINE usize GetDenseIndex(Entity entity) const {
-        usize eid = static_cast<usize>(entity);
+        usize eid = EntityIndex(entity);
         if (eid >= m_Sparse.size()) return SPARSE_EMPTY;
-        return m_Sparse[eid];
+        usize idx = m_Sparse[eid];
+        if (idx != SPARSE_EMPTY && m_Entities[idx] != entity) return SPARSE_EMPTY;
+        return idx;
     }
 
     // Prefetch a component into L1 cache by entity ID.
     // Call this 2-4 iterations ahead to hide memory latency.
     ENJIN_FORCE_INLINE void Prefetch(Entity entity) const {
-        usize eid = static_cast<usize>(entity);
+        usize eid = EntityIndex(entity);
         if (eid < m_Sparse.size()) {
             usize idx = m_Sparse[eid];
             if (idx != SPARSE_EMPTY && idx < m_Components.size()) {
@@ -163,8 +189,8 @@ public:
     const T* Data() const { return m_Components.data(); }
 
 private:
-    void EnsureSparseCapacity(Entity entity) {
-        usize eid = static_cast<usize>(entity);
+    // Takes the SLOT INDEX (EntityIndex), never the raw generational handle.
+    void EnsureSparseCapacity(usize eid) {
         if (eid >= m_Sparse.size()) {
             // Grow with some headroom to avoid frequent reallocations
             usize newSize = eid + 1;

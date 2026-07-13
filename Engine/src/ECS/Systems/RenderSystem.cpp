@@ -4267,7 +4267,7 @@ void RenderSystem::Update(f32 deltaTime) {
                 if (!xform->visible) continue;
                 // Skip GPU-culled entities (frustum culling — disabled in editor mode)
                 if (m_GPUCullingEnabled && !m_IsEditorMode && m_GPUCulling && !m_CullableObjects.empty()) {
-                    usize entityIdx = static_cast<usize>(entity);
+                    usize entityIdx = static_cast<usize>(EntityIndex(entity));
                     if (entityIdx < m_EntityToCullIndex.size()) {
                         u32 cullIdx = m_EntityToCullIndex[entityIdx];
                         if (cullIdx != UINT32_MAX && !m_GPUCulling->IsVisible(cullIdx)) {
@@ -4344,7 +4344,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
             // Skip GPU-culled entities (frustum culling — disabled in editor mode)
             if (m_GPUCullingEnabled && !m_IsEditorMode && m_GPUCulling && !m_CullableObjects.empty()) {
-                usize entityIdx = static_cast<usize>(entity);
+                usize entityIdx = static_cast<usize>(EntityIndex(entity));
                 if (entityIdx < m_EntityToCullIndex.size()) {
                     u32 cullIdx = m_EntityToCullIndex[entityIdx];
                     if (cullIdx != UINT32_MAX && !m_GPUCulling->IsVisible(cullIdx)) {
@@ -4676,7 +4676,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
             // Skip GPU-culled entities (frustum culling — disabled in editor mode)
             if (m_GPUCullingEnabled && !m_IsEditorMode && m_GPUCulling && !m_CullableObjects.empty()) {
-                usize entityIdx = static_cast<usize>(entity);
+                usize entityIdx = static_cast<usize>(EntityIndex(entity));
                 if (entityIdx < m_EntityToCullIndex.size()) {
                     u32 cullIdx = m_EntityToCullIndex[entityIdx];
                     if (cullIdx != UINT32_MAX && !m_GPUCulling->IsVisible(cullIdx)) {
@@ -5923,8 +5923,14 @@ void RenderSystem::BuildCullableObjectList() {
         Renderer::CullableObject obj;
         obj.SetBounds(bounds);
         obj.transform = ECS::ComputeWorldMatrix(m_World, entity);
-        obj.meshIndex = static_cast<u32>(entity); // Use entity ID as mesh index for now
+        obj.meshIndex = EntityIndex(entity); // entity slot index doubles as mesh index for now
         obj.indexCount = static_cast<u32>(mesh->indices.size());
+
+        // Index the per-entity tracking vectors by EntityIndex (slot), NOT the
+        // raw generational handle — a recycled handle's raw value is billions
+        // and would silently fall outside these vectors. Grow-to-fit because
+        // EntityIndex can exceed GetEntityCount() after recycling.
+        const usize entIdx = static_cast<usize>(EntityIndex(entity));
 
         // Use pool offsets if entity has a merged geometry allocation
         bool hasPoolAlloc = false;
@@ -5956,9 +5962,8 @@ void RenderSystem::BuildCullableObjectList() {
             if (!hasTextures) {
                 // Non-textured: GPU culling emits indirect draw commands directly
                 obj.indirectEligible = 1;
-                if (static_cast<usize>(entity) < m_IndirectDrawn.size()) {
-                    m_IndirectDrawn[static_cast<usize>(entity)] = true;
-                }
+                if (entIdx >= m_IndirectDrawn.size()) m_IndirectDrawn.resize(entIdx + 1, false);
+                m_IndirectDrawn[entIdx] = true;
             } else if (m_IndirectDrawBatcher && material) {
                 // Textured pool entity: add to texture-grouped indirect draw batcher.
                 // The batcher groups entities by texture set hash and issues one
@@ -5966,19 +5971,17 @@ void RenderSystem::BuildCullableObjectList() {
                 material->ComputeSortKey(0.0f);
                 u64 texHash = (material->cachedSortKey >> 16) & 0xFFFFFFFFFFULL; // 40 texture bits
                 m_IndirectDrawBatcher->AddEntity(
-                    static_cast<u32>(entity), texHash,
+                    EntityIndex(entity), texHash,
                     obj.indexCount, obj.indexOffset, obj.vertexOffset,
                     cullIndex);
-                if (static_cast<usize>(entity) < m_IndirectDrawn.size()) {
-                    m_IndirectDrawn[static_cast<usize>(entity)] = true;
-                }
+                if (entIdx >= m_IndirectDrawn.size()) m_IndirectDrawn.resize(entIdx + 1, false);
+                m_IndirectDrawn[entIdx] = true;
             }
         }
 
         // Map entity to cull index
-        if (static_cast<usize>(entity) < m_EntityToCullIndex.size()) {
-            m_EntityToCullIndex[static_cast<usize>(entity)] = cullIndex;
-        }
+        if (entIdx >= m_EntityToCullIndex.size()) m_EntityToCullIndex.resize(entIdx + 1, UINT32_MAX);
+        m_EntityToCullIndex[entIdx] = cullIndex;
 
         m_CullableObjects.push_back(obj);
         cullIndex++;
@@ -8536,8 +8539,8 @@ void RenderSystem::RenderEntity(Entity entity) {
 
     // Skip entities already drawn by the multi-draw indirect batch
     if (m_GPUCullingEnabled && !m_IsEditorMode &&
-        static_cast<usize>(entity) < m_IndirectDrawn.size() &&
-        m_IndirectDrawn[static_cast<usize>(entity)]) {
+        static_cast<usize>(EntityIndex(entity)) < m_IndirectDrawn.size() &&
+        m_IndirectDrawn[static_cast<usize>(EntityIndex(entity))]) {
         return;
     }
 
@@ -11485,7 +11488,7 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         // Build world model matrix (includes parent chain)
         Math::Matrix4 model = ECS::ComputeWorldMatrix(m_World, entity);
 
-        m_ASManager->AddInstance(blasId, model, static_cast<u32>(entity));
+        m_ASManager->AddInstance(blasId, model, EntityIndex(entity));
     }
 
     // Upload per-entity material data to the RT material SSBO (binding 9).
@@ -12438,7 +12441,7 @@ void RenderSystem::UploadRTMaterials() {
         if (static_cast<usize>(EntityIndex(entity)) >= m_EntityRenderData.size()) continue;
         if (!m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].valid) continue;
 
-        u32 eid = static_cast<u32>(entity);
+        u32 eid = EntityIndex(entity);
         if (eid > maxEntityId) maxEntityId = eid;
         entityCount++;
     }
@@ -12484,7 +12487,7 @@ void RenderSystem::UploadRTMaterials() {
         if (static_cast<usize>(EntityIndex(entity)) >= m_EntityRenderData.size()) continue;
         if (!m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].valid) continue;
 
-        u32 eid = static_cast<u32>(entity);
+        u32 eid = EntityIndex(entity);
         auto* mat = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
         if (mat) {
             dst[eid] = MaterialGPU::FromComponent(*mat);
