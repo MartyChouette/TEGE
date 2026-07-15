@@ -1841,6 +1841,9 @@ void EditorLayer::DrawNewProjectDialog() {
                     if (m_RenderSystem) m_RenderSystem->OnSceneClear();
                     ClearSelection();
                 }
+                // Before SaveScene: a stale layer stack would otherwise be
+                // persisted beside the brand-new empty scene.
+                ResetLayerSession();
                 fs::path sceneFilePath = projRoot / relativeScenePath;
                 SaveScene(sceneFilePath.string());
                 m_CurrentScenePath = sceneFilePath.string();
@@ -2593,6 +2596,7 @@ void EditorLayer::DrawUnsavedChangesDialog() {
                         m_World->Clear();
                         if (m_RenderSystem) m_RenderSystem->OnSceneClear();
                         ClearSelection();
+                        ResetLayerSession();
                         m_CurrentScenePath.clear();
                         ClearDirty();
                         UpdateWindowTitle();
@@ -2634,6 +2638,7 @@ void EditorLayer::DrawUnsavedChangesDialog() {
                         m_World->Clear();
                         if (m_RenderSystem) m_RenderSystem->OnSceneClear();
                         ClearSelection();
+                        ResetLayerSession();
                         m_CurrentScenePath.clear();
                         UpdateWindowTitle();
                         m_HubPage = HubPage::WizardSetup;

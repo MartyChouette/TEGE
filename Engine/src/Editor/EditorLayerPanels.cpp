@@ -5160,6 +5160,7 @@ void EditorLayer::RegisterPaletteCommands() {
                 m_World->Clear();
                 if (m_RenderSystem) m_RenderSystem->OnSceneClear();
                 ClearSelection();
+                ResetLayerSession();
                 m_CurrentScenePath.clear();
             }
         }

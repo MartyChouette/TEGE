@@ -318,6 +318,18 @@ void EditorLayer::SaveScene(const std::string& path) {
         std::error_code ec;
         std::filesystem::remove(autoSavePath, ec);
 
+        // VWS: persist the layer session beside the scene. NOTE the .enjin just
+        // written holds the RESOLVED world (live state), not the pristine base —
+        // after a save+reopen, disabling a layer restores the values baked at
+        // this save, not the pre-layer originals. Base-vs-resolved save
+        // semantics are a deliberate open design item.
+        if (!m_LayerSystem.Stack().layers.empty()) {
+            if (m_LayerSystem.SaveLayers(path + ".layers")) {
+                m_ConsoleLog.push_back("[Info] Saved " +
+                    std::to_string(m_LayerSystem.Stack().layers.size()) + " layer(s) beside the scene");
+            }
+        }
+
         usize entityCount = m_World->GetEntityCount();
         std::stringstream ss;
         ss << "[Info] Saved scene to " << path << " (" << entityCount << " entities)";
@@ -421,6 +433,37 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
 
         // Initialize scene lock manager for this scene
         m_SceneLockManager.SetScenePath(path);
+
+        // VWS: a newly opened scene is a new pristine base — reset the layer
+        // session so Rebuild can never resurrect the PREVIOUS scene's base.
+        // The base is the file text itself (byte-identical to disk), not a
+        // re-serialization of the world.
+        {
+            ResetLayerSession();
+            std::ifstream baseFile(path, std::ios::binary);
+            std::string baseText((std::istreambuf_iterator<char>(baseFile)), std::istreambuf_iterator<char>());
+            m_LayerSystem.SetBaseScene(baseText);
+
+            // A layer session saved beside the scene reopens automatically.
+            // The .layers directory only exists if the user saved one, so
+            // auto-resume is opt-in by construction.
+            std::string layerDir = path + ".layers";
+            std::error_code lec;
+            if (std::filesystem::is_directory(layerDir, lec) && !lec) {
+                int n = m_LayerSystem.LoadLayers(layerDir);
+                if (n > 0) {
+                    auto lr = m_LayerSystem.ResolveIntoWorld();
+                    if (lr.success) {
+                        m_ConsoleLog.push_back("[Info] Resumed layer session (" + std::to_string(n) + " layer(s))");
+                        ENJIN_LOG_INFO(Editor, "Resumed %d layer(s) from '%s'", n, layerDir.c_str());
+                    } else {
+                        // Fall back to the plain base world the serializer just
+                        // loaded; the layers stay in the panel for inspection.
+                        ENJIN_LOG_WARN(Editor, "Layer session resolve failed: %s", lr.error.c_str());
+                    }
+                }
+            }
+        }
 
         // Check for auto-save file newer than the scene file
         std::string autoSavePath = path + ".autosave";

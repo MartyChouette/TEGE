@@ -2412,6 +2412,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
     m_World->Clear();
     if (m_RenderSystem) m_RenderSystem->OnSceneClear();
     ClearSelection();
+    ResetLayerSession();
     m_UndoRedo.Clear();
 
     // --- Configure editor layout per template ---

@@ -1026,6 +1026,16 @@ private:
     Scene::LayerSystem m_LayerSystem;
     bool m_ShowLayersPanel = false;
 
+    // Drop the layer session (base + stack). Must be called by EVERY path that
+    // changes the scene context without going through OpenSceneImmediate (New
+    // Scene, Apply Template, New Project) — a stale base would let "Rebuild
+    // From Layers" resurrect the previous scene into the new one.
+    void ResetLayerSession() {
+        m_LayerSystem.SetBaseScene(std::string{});
+        m_LayerSystem.Stack().layers.clear();
+        m_LayerSystem.SetActiveLayer(-1);
+    }
+
     // Fluid simulation (Stable Fluids solver for FluidVolumeComponent)
     Effects::FluidSimulation m_FluidSimulation;
 
