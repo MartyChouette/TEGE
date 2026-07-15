@@ -416,6 +416,8 @@ void EditorLayer::DrawMenuBar() {
                 if (ImGui::MenuItem("Asset Browser", nullptr, &assets)) {
                     SetPanelVisibility(EditorPanel::AssetBrowser, assets);
                 }
+                // VWS override layers (standalone bool — the EditorPanel bitmask is full)
+                ImGui::MenuItem("Layers", nullptr, &m_ShowLayersPanel);
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Settings")) {

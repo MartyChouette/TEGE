@@ -2706,6 +2706,10 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     if (HasPanel(m_VisiblePanels, EditorPanel::Inspector)) {
         DrawInspectorPanel();
     }
+    // VWS override-layer panel (standalone bool: the EditorPanel bitmask is full).
+    if (m_ShowLayersPanel) {
+        DrawLayersPanel();
+    }
     // Unified settings window — any of the 5 old settings bits activates it
     {
         bool anySettingsBit =

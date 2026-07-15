@@ -307,6 +307,121 @@ void EditorLayer::RefreshAssetBrowserCache() {
     }
 }
 
+void EditorLayer::DrawLayersPanel() {
+    ImGuiWindowFlags flags = 0;
+    if (m_FocusMode) flags |= ImGuiWindowFlags_NoInputs;
+    ImGui::Begin("Layers", &m_ShowLayersPanel, flags);
+
+    ImGui::TextWrapped("Non-destructive override layers over the pristine base scene. "
+                       "Inspector and gizmo edits are captured into the ACTIVE layer as "
+                       "sparse deltas. The base scene is never mutated.");
+    ImGui::Separator();
+
+    auto& stack = m_LayerSystem.Stack();
+    const bool haveBase = !m_LayerSystem.GetBaseScene().empty();
+
+    // --- Base scene status ---
+    if (haveBase) {
+        ImGui::TextColored(ImVec4(0.5f, 0.9f, 0.5f, 1.0f),
+                           "Base captured (%zu KB)", m_LayerSystem.GetBaseScene().size() / 1024);
+    } else {
+        ImGui::TextColored(ImVec4(0.9f, 0.7f, 0.3f, 1.0f),
+                           "No base captured — 'Rebuild' needs one.");
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton(haveBase ? "Re-capture Base" : "Capture Base") && m_World) {
+        Scene::SceneSerializer ser(m_World);
+        m_LayerSystem.SetBaseScene(ser.SaveToString());
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Snapshot the CURRENT world as the pristine base that layers resolve over.");
+    }
+    ImGui::Separator();
+
+    // --- Stack-wide actions ---
+    if (ImGui::Button("+ Add Layer")) {
+        m_LayerSystem.AddLayer("Layer " + std::to_string(stack.layers.size() + 1));
+        // First layer with no base yet: snapshot the current world so Rebuild works.
+        if (m_LayerSystem.GetBaseScene().empty() && m_World) {
+            Scene::SceneSerializer ser(m_World);
+            m_LayerSystem.SetBaseScene(ser.SaveToString());
+        }
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!haveBase || stack.layers.empty());
+    if (ImGui::Button("Rebuild From Layers")) {
+        auto res = m_LayerSystem.ResolveIntoWorld();
+        ClearSelection();   // the world was cleared + rebuilt; old handles are stale
+        if (res.success) {
+            ENJIN_LOG_INFO(Build, "Layer resolve rebuilt world (%zu entities)", res.entities.size());
+        } else {
+            ENJIN_LOG_WARN(Build, "Layer resolve failed: %s", res.error.c_str());
+        }
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Clear the world and rebuild it from base + all enabled layers.");
+    }
+    ImGui::Separator();
+
+    // --- Layer list (top layer = highest priority, drawn first) ---
+    if (stack.layers.empty()) {
+        ImGui::TextDisabled("No layers yet. Add one, then edit an entity to capture deltas.");
+    }
+
+    const int activeIdx = m_LayerSystem.ActiveLayerIndex();
+    int toDelete = -1;
+    for (int i = static_cast<int>(stack.layers.size()) - 1; i >= 0; --i) {
+        Scene::Layer& layer = stack.layers[i];
+        ImGui::PushID(i);
+
+        bool isActive = (i == activeIdx);
+        if (ImGui::RadioButton("##active", isActive)) {
+            m_LayerSystem.SetActiveLayer(i);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Active: edits are captured into this layer");
+        ImGui::SameLine();
+
+        ImGui::Checkbox("##enabled", &layer.enabled);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enabled: included when resolving");
+        ImGui::SameLine();
+
+        ImGui::Checkbox("L##locked", &layer.locked);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Locked: capture into this layer is blocked");
+        ImGui::SameLine();
+
+        char nameBuf[128];
+        strncpy(nameBuf, layer.name.c_str(), sizeof(nameBuf) - 1);
+        nameBuf[sizeof(nameBuf) - 1] = '\0';
+        ImGui::SetNextItemWidth(150.0f);
+        if (ImGui::InputText("##name", nameBuf, sizeof(nameBuf))) {
+            layer.name = nameBuf;
+        }
+        ImGui::SameLine();
+
+        usize deltaCount = 0;
+        for (const auto& ed : layer.entities) deltaCount += ed.components.size();
+        ImGui::TextDisabled("%zu ent / %zu delta", layer.entities.size(), deltaCount);
+
+        ImGui::SameLine();
+        if (ImGui::SmallButton("X")) toDelete = i;
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Delete this layer and its edits");
+
+        if (isActive) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "active");
+        }
+
+        ImGui::PopID();
+    }
+
+    if (toDelete >= 0) {
+        m_LayerSystem.RemoveLayer(toDelete);
+    }
+
+    ImGui::End();
+}
+
 void EditorLayer::DrawAssetBrowserPanel() {
     bool panelOpen = true;
     ImGui::Begin("Asset Browser", &panelOpen);

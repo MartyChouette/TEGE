@@ -146,6 +146,67 @@ int main() {
     CHECK(t2 && Vec3Near(t2->position, 7, 7, 7), "capture survives per-layer JSON file");
     CHECK(FindByName(replay2, "C") == ECS::INVALID_ENTITY, "tombstone survives per-layer JSON file");
 
+    // ---------- RecordEntityChanges: the editor's snapshot/diff capture ----------
+    // This is what the inspector does per frame: snapshot the entity on entry,
+    // diff at the end. Only actually-changed components may land in the layer.
+    std::printf("Testing RecordEntityChanges (snapshot/diff capture)...\n");
+    {
+        // Arrange: fresh layer on top; snapshot B (has transform + light from earlier).
+        int diffIdx = sys.AddLayer("diff-session");
+        CHECK(sys.ActiveLayerIndex() == diffIdx, "diff layer active");
+        Scene::Layer* diffLayer = sys.ActiveLayer();
+        u64 bSid = live.GetComponent<ECS::StableIdComponent>(b)->id;
+
+        std::string snap = Scene::SceneSerializer::SerializeEntityToString(&live, b, /*includeVertexData=*/false);
+        CHECK(!snap.empty(), "diff: snapshot taken");
+
+        // Act 1: no edit at all -> Assert: nothing may land (per-frame no-op path).
+        sys.RecordEntityChanges(b, snap);
+        CHECK(diffLayer->FindEntity(bSid) == nullptr, "diff: unchanged entity records nothing");
+
+        // Act 2: change ONE component (transform), leave light untouched.
+        live.GetComponent<ECS::TransformComponent>(b)->position = Math::Vector3(4, 4, 4);
+        sys.RecordEntityChanges(b, snap);
+
+        // Assert: exactly the transform delta, not the untouched light.
+        const Scene::EntityDelta* db = diffLayer->FindEntity(bSid);
+        CHECK(db != nullptr, "diff: changed entity recorded");
+        if (db) {
+            CHECK(db->components.size() == 1, "diff: only the changed component captured");
+            CHECK(!db->components.empty() && db->components[0].key == "transform",
+                  "diff: captured key is 'transform'");
+        }
+
+        // Act 3: remove a component that was in the snapshot.
+        std::string snap2 = Scene::SceneSerializer::SerializeEntityToString(&live, b, /*includeVertexData=*/false);
+        live.RemoveComponent<ECS::LightComponent>(b);
+        sys.RecordEntityChanges(b, snap2);
+
+        // Assert: removal recorded as an empty-json delta.
+        db = diffLayer->FindEntity(bSid);
+        bool sawLightRemoval = false;
+        if (db) {
+            for (const auto& cdelta : db->components) {
+                if (cdelta.key == "light" && cdelta.json.empty()) sawLightRemoval = true;
+            }
+        }
+        CHECK(sawLightRemoval, "diff: removed component captured as empty-json delta");
+
+        // Assert end-to-end: resolving base + both layers reproduces the live state
+        // (B at (4,4,4) with no light — the diff layer's removal wins over the
+        // first layer's light-add).
+        ECS::World replay3;
+        auto rr3 = sys.Stack().ResolveInto(replay3, baseJson);
+        CHECK(rr3.success, "diff: stack with diff layer resolves");
+        auto r3b = FindByName(replay3, "B");
+        CHECK(r3b != ECS::INVALID_ENTITY, "diff: B present in replay");
+        if (r3b != ECS::INVALID_ENTITY) {
+            auto* t = replay3.GetComponent<ECS::TransformComponent>(r3b);
+            CHECK(t && Vec3Near(t->position, 4, 4, 4), "diff: replayed B reflects diffed move (4,4,4)");
+            CHECK(!replay3.HasComponent<ECS::LightComponent>(r3b), "diff: replayed B lost the removed light");
+        }
+    }
+
     std::printf("\n=== Results: %d checks, %d failures ===\n", g_Checks, g_Failures);
     std::printf(g_Failures == 0 ? "ALL PASSED\n" : "SOME TESTS FAILED\n");
     return g_Failures > 0 ? 1 : 0;

@@ -1106,6 +1106,18 @@ void EditorLayer::DrawInspectorPanel() {
         // Multi-select inspector
         DrawMultiSelectInspector();
     } else if (m_PrimarySelected != ECS::INVALID_ENTITY && m_World) {
+        // VWS: snapshot the entity before this frame's inspector edits. Only the
+        // components the user actually changes get folded into the active override
+        // layer (see the RecordEntityChanges call at the end of this block).
+        Scene::Layer* vwsActive = m_LayerSystem.ActiveLayer();
+        const bool vwsCapturing = vwsActive && !vwsActive->locked;
+        std::string vwsBeforeSnapshot;
+        if (vwsCapturing) {
+            // includeVertexData=false: must match RecordEntityChanges' own snapshot,
+            // and keeps selecting a heavy mesh from serializing its geometry per frame.
+            vwsBeforeSnapshot = Scene::SceneSerializer::SerializeEntityToString(m_World, m_PrimarySelected, /*includeVertexData=*/false);
+        }
+
         // Entity name (editable)
         ECS::NameComponent* nameComp = m_World->GetComponent<ECS::NameComponent>(m_PrimarySelected);
         if (nameComp) {
@@ -3287,6 +3299,12 @@ void EditorLayer::DrawInspectorPanel() {
             // Popup closed — reset search state
             m_ComponentSearchBuf[0] = '\0';
             m_ComponentSearchSelectedIndex = -1;
+        }
+
+        // VWS: fold whatever the inspector changed this frame into the active layer.
+        // RecordEntityChanges is a no-op when nothing differs from the snapshot.
+        if (vwsCapturing && m_World->IsValid(m_PrimarySelected)) {
+            m_LayerSystem.RecordEntityChanges(m_PrimarySelected, vwsBeforeSnapshot);
         }
     } else {
         DrawEmptyState("< >", "No Entity Selected", "Select an entity in the Hierarchy to inspect it");

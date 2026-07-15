@@ -82,7 +82,10 @@ public:
 
     // Per-entity serialization (for undo/redo, clipboard, duplicate)
     // Serializes all components of a single entity to a JSON string
-    static std::string SerializeEntityToString(ECS::World* world, ECS::Entity entity);
+    // includeVertexData=false skips the mesh vertex/index arrays (keeps mesh
+    // metadata like path/material). Capture-diff callers pass false so selecting a
+    // heavy mesh doesn't serialize its whole geometry every frame.
+    static std::string SerializeEntityToString(ECS::World* world, ECS::Entity entity, bool includeVertexData = true);
     // Recreates an entity from a JSON string, returns the new entity ID
     static ECS::Entity DeserializeEntityFromString(ECS::World* world, const std::string& json);
 

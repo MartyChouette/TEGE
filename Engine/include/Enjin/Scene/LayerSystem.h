@@ -63,6 +63,14 @@ public:
     void RecordCreate(ECS::Entity e);
     // Tombstone a base-scene entity in the active layer.
     void RecordDestroy(ECS::Entity e);
+    // Capture only the components that changed between a prior snapshot of the
+    // entity and its current state. `beforeEntityJson` is a SerializeEntityToString
+    // taken before an edit burst (e.g. at the top of an inspector frame). Added or
+    // mutated components are folded into the active layer; components present in the
+    // snapshot but gone now are recorded as removals. Nothing lands when nothing
+    // changed, which keeps the layer a sparse delta even while the inspector redraws
+    // an entity every frame. No-op with no active layer / no world.
+    void RecordEntityChanges(ECS::Entity e, const std::string& beforeEntityJson);
 
     // Rebuild the world from base + the full stack (clears the world first).
     DeserializationResult ResolveIntoWorld();

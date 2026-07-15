@@ -9513,7 +9513,7 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
 // Static per-entity serialization (for undo/redo)
 // ============================================================================
 
-std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Entity entity) {
+std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Entity entity, bool includeVertexData) {
     if (!world || !world->IsValid(entity)) return "";
 
     try {
@@ -9530,7 +9530,7 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
         if (world->HasComponent<ECS::MaterialSlotsComponent>(entity))
             entityJson["materialSlots"] = SerializeMaterialSlotsComponent(*world->GetComponent<ECS::MaterialSlotsComponent>(entity));
         if (world->HasComponent<ECS::MeshComponent>(entity))
-            entityJson["mesh"] = SerializeMeshComponent(*world->GetComponent<ECS::MeshComponent>(entity), true);
+            entityJson["mesh"] = SerializeMeshComponent(*world->GetComponent<ECS::MeshComponent>(entity), includeVertexData);
         if (world->HasComponent<ECS::SkeletonComponent>(entity))
             entityJson["skeleton"] = SerializeSkeletonComponent(*world->GetComponent<ECS::SkeletonComponent>(entity));
         if (world->HasComponent<ECS::AnimatorComponent>(entity))

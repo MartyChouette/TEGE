@@ -37,6 +37,7 @@
 #include "Enjin/Effects/FluidTerrainCoupling.h"
 #include "Enjin/Effects/CurlNoiseSystem.h"
 #include "Enjin/Scene/SceneManager.h"
+#include "Enjin/Scene/LayerSystem.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Editor/PerformanceStats.h"
 #include "Enjin/Editor/TelemetrySystem.h"
@@ -206,7 +207,7 @@ public:
     void Render(VkCommandBuffer commandBuffer);            // Call DURING main render pass
 
     // Set the world to edit
-    void SetWorld(ECS::World* world) { m_World = world; m_SceneManager.SetWorld(world); m_ParallaxSystem.SetWorld(world); }
+    void SetWorld(ECS::World* world) { m_World = world; m_SceneManager.SetWorld(world); m_ParallaxSystem.SetWorld(world); m_LayerSystem.SetWorld(world); }
     ECS::World* GetWorld() const { return m_World; }
 
     // Set the camera for the viewport
@@ -293,6 +294,7 @@ private:
     void DrawInspectorPanel();
     void DrawViewportPanel();
     void DrawConsolePanel();
+    void DrawLayersPanel();  // VWS override-layer management (list/add/enable/lock/active/resolve)
     void DrawAssetBrowserPanel();
     void DrawPostProcessVolumeComponent(ECS::Entity entity);
     void DrawArtStyleComponent(ECS::Entity entity);
@@ -1018,6 +1020,11 @@ private:
 
     // Elemental system (unified fire/water/earth/air particle simulation)
     Effects::ElementalSystem m_ElementalSystem;
+
+    // VWS override-layer capture (DAW-for-games). Edits routed through it are
+    // folded into the active layer as sparse deltas over a pristine base scene.
+    Scene::LayerSystem m_LayerSystem;
+    bool m_ShowLayersPanel = false;
 
     // Fluid simulation (Stable Fluids solver for FluidVolumeComponent)
     Effects::FluidSimulation m_FluidSimulation;

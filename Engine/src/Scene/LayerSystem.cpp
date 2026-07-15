@@ -145,6 +145,52 @@ void LayerSystem::RecordDestroy(ECS::Entity e) {
     d.components.clear();
 }
 
+void LayerSystem::RecordEntityChanges(ECS::Entity e, const std::string& beforeEntityJson) {
+    Layer* layer = ActiveLayer();
+    if (!layer || !m_World || !m_World->IsValid(e)) return;
+
+    // No vertex data: the diff only tracks inspector-editable component fields, and
+    // the caller's `beforeEntityJson` was captured the same way. Excluding the mesh
+    // vertex/index arrays keeps this cheap enough to run every inspector frame.
+    std::string afterEntityJson = SceneSerializer::SerializeEntityToString(m_World, e, /*includeVertexData=*/false);
+    if (afterEntityJson.empty()) return;
+
+    json before, after;
+    try {
+        before = beforeEntityJson.empty() ? json::object() : json::parse(beforeEntityJson);
+        after  = json::parse(afterEntityJson);
+    } catch (const std::exception& ex) {
+        ENJIN_LOG_WARN(Build, "LayerSystem::RecordEntityChanges parse error: %s", ex.what());
+        return;
+    }
+
+    // Only touch the layer if something actually differs — otherwise a still
+    // inspector would fold every drawn component into the delta every frame.
+    if (before == after) return;
+
+    u64 sid = EnsureStableId(e);
+    if (sid == 0) return;
+    EntityDelta& d = layer->EntityFor(sid);
+
+    // Added or mutated components (skip the bookkeeping keys).
+    for (auto it = after.begin(); it != after.end(); ++it) {
+        const std::string& key = it.key();
+        if (key == "id" || key == "stableId") continue;
+        auto bit = before.find(key);
+        if (bit == before.end() || *bit != it.value()) {
+            UpsertComponent(d, key, it.value().dump());
+        }
+    }
+    // Components that were present before the edit and are gone now = removals.
+    for (auto it = before.begin(); it != before.end(); ++it) {
+        const std::string& key = it.key();
+        if (key == "id" || key == "stableId") continue;
+        if (after.find(key) == after.end()) {
+            UpsertComponent(d, key, std::string{});   // empty json = remove
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Resolve
 // ---------------------------------------------------------------------------
