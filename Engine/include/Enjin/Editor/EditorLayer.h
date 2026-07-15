@@ -1036,6 +1036,17 @@ private:
         m_LayerSystem.SetActiveLayer(-1);
     }
 
+    // Capture one component of every selected entity into the active layer.
+    // No-op without an unlocked active layer. For the batch-apply paths (gizmo
+    // drag end, multi-select inspector) where one action edits many entities.
+    void RecordLayerEditForSelection(const std::string& key) {
+        Scene::Layer* active = m_LayerSystem.ActiveLayer();
+        if (!active || active->locked) return;
+        for (ECS::Entity e : m_SelectedEntities) {
+            m_LayerSystem.RecordEdit(e, key);
+        }
+    }
+
     // Fluid simulation (Stable Fluids solver for FluidVolumeComponent)
     Effects::FluidSimulation m_FluidSimulation;
 

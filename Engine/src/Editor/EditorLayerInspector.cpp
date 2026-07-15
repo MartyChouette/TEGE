@@ -3355,6 +3355,7 @@ void EditorLayer::DrawMultiSelectInspector() {
                 auto* t = m_World->GetComponent<ECS::TransformComponent>(e);
                 if (t) t->position = t->position + batchOffset;
             }
+            RecordLayerEditForSelection("transform");
             batchOffset = Math::Vector3(0.0f, 0.0f, 0.0f);
         }
 
@@ -3373,6 +3374,7 @@ void EditorLayer::DrawMultiSelectInspector() {
                 auto* t = m_World->GetComponent<ECS::TransformComponent>(e);
                 if (t) t->rotation = dq * t->rotation;
             }
+            RecordLayerEditForSelection("transform");
             batchRotation = Math::Vector3(0.0f, 0.0f, 0.0f);
         }
 
@@ -3392,6 +3394,7 @@ void EditorLayer::DrawMultiSelectInspector() {
                                              t->scale.z * batchScale.z);
                 }
             }
+            RecordLayerEditForSelection("transform");
             batchScale = Math::Vector3(1.0f, 1.0f, 1.0f);
         }
     }

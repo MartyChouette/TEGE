@@ -829,12 +829,7 @@ void EditorLayer::DrawGizmos() {
         // VWS: fold the moved transform(s) into the active override layer. Fires
         // once per drag (not per manipulated frame) and no-ops without an active
         // layer. The inspector's own diff would miss this when it's closed.
-        Scene::Layer* vwsActive = m_LayerSystem.ActiveLayer();
-        if (vwsActive && !vwsActive->locked) {
-            for (ECS::Entity e : m_SelectedEntities) {
-                m_LayerSystem.RecordEdit(e, "transform");
-            }
-        }
+        RecordLayerEditForSelection("transform");
     }
 }
 
