@@ -83,11 +83,19 @@ struct ENJIN_API ComputePipelineSetup {
 
         // --- Load shader ---
         VulkanShader shader(context);
+        // NOTE: the exe sets cwd to its own directory (Application.cpp:78). In a dev
+        // build that is build/bin/Release/, so repo-root Engine/shaders/ is THREE
+        // levels up (../../../). The prior list stopped at two levels, so every
+        // file-loaded compute shader (particle sim, DDGI voxelize/probe, volumetric
+        // fog) silently fell through to the null-pipeline fallback. Keep the deployed
+        // "shaders/" next-to-exe path first; add the deeper dev-tree depths.
         std::string paths[] = {
             std::string("shaders/") + shaderName + ".spv",
             std::string("Engine/shaders/") + shaderName + ".spv",
             std::string("../Engine/shaders/") + shaderName + ".spv",
-            std::string("../../Engine/shaders/") + shaderName + ".spv"
+            std::string("../../Engine/shaders/") + shaderName + ".spv",
+            std::string("../../../Engine/shaders/") + shaderName + ".spv",
+            std::string("../../../../Engine/shaders/") + shaderName + ".spv"
         };
         bool loaded = false;
         for (const auto& path : paths) {
