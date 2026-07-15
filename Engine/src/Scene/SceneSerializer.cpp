@@ -10703,5 +10703,160 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
     }
 }
 
+
+bool SceneSerializer::RemoveOneComponent(ECS::World* world, ECS::Entity entity, const std::string& key) {
+    if (!world || !world->IsValid(entity)) return false;
+
+    // String-keyed mirror of the DeserializeOneComponent dispatch. Needed by the
+    // layer system's instant toggle: disabling a layer that ADDED a component has
+    // to take that component off the live entity, addressed only by its JSON key.
+    // "stableId" is deliberately absent — an entity's durable identity is never a
+    // layer delta and must not be removable through this path.
+    {
+        if (key == "name") { world->RemoveComponent<ECS::NameComponent>(entity); return true; }
+        if (key == "transform") { world->RemoveComponent<ECS::TransformComponent>(entity); return true; }
+        if (key == "material") { world->RemoveComponent<ECS::MaterialComponent>(entity); return true; }
+        if (key == "materialSlots") { world->RemoveComponent<ECS::MaterialSlotsComponent>(entity); return true; }
+        if (key == "mesh") { world->RemoveComponent<ECS::MeshComponent>(entity); return true; }
+        if (key == "skeleton") { world->RemoveComponent<ECS::SkeletonComponent>(entity); return true; }
+        if (key == "animator") { world->RemoveComponent<ECS::AnimatorComponent>(entity); return true; }
+        if (key == "boneAttachment") { world->RemoveComponent<ECS::BoneAttachmentComponent>(entity); return true; }
+        if (key == "light") { world->RemoveComponent<ECS::LightComponent>(entity); return true; }
+        if (key == "notes") { world->RemoveComponent<ECS::NotesComponent>(entity); return true; }
+        if (key == "text") { world->RemoveComponent<ECS::TextComponent>(entity); return true; }
+        if (key == "camera") { world->RemoveComponent<ECS::CameraComponent>(entity); return true; }
+        if (key == "weatherZone") { world->RemoveComponent<ECS::WeatherZoneComponent>(entity); return true; }
+        if (key == "waterVolume") { world->RemoveComponent<ECS::WaterVolumeComponent>(entity); return true; }
+        if (key == "water3D") { world->RemoveComponent<ECS::Water3DComponent>(entity); return true; }
+        if (key == "shrubVolume") { world->RemoveComponent<ECS::ShrubVolumeComponent>(entity); return true; }
+        if (key == "treeVolume") { world->RemoveComponent<ECS::TreeVolumeComponent>(entity); return true; }
+        if (key == "terrain") { world->RemoveComponent<ECS::TerrainComponent>(entity); return true; }
+        if (key == "terrain2d") { world->RemoveComponent<ECS::Terrain2DComponent>(entity); return true; }
+        if (key == "cameraTrigger") { world->RemoveComponent<ECS::CameraTriggerComponent>(entity); return true; }
+        if (key == "temperatureZone") { world->RemoveComponent<ECS::TemperatureZoneComponent>(entity); return true; }
+        if (key == "gravityZone") { world->RemoveComponent<ECS::GravityZoneComponent>(entity); return true; }
+        if (key == "reflectionProbe") { world->RemoveComponent<ECS::ReflectionProbeComponent>(entity); return true; }
+        if (key == "elementalSurface") { world->RemoveComponent<ECS::ElementalSurfaceComponent>(entity); return true; }
+        if (key == "elementalEmitter") { world->RemoveComponent<ECS::ElementalEmitterComponent>(entity); return true; }
+        if (key == "elementalVolume") { world->RemoveComponent<ECS::ElementalVolumeComponent>(entity); return true; }
+        if (key == "postProcessVolume") { world->RemoveComponent<ECS::PostProcessVolumeComponent>(entity); return true; }
+        if (key == "fluidVolume") { world->RemoveComponent<ECS::FluidVolumeComponent>(entity); return true; }
+        if (key == "platformer2D") { world->RemoveComponent<ECS::Platformer2DController>(entity); return true; }
+        if (key == "topDown2D") { world->RemoveComponent<ECS::TopDown2DController>(entity); return true; }
+        if (key == "topDown3D") { world->RemoveComponent<ECS::TopDown3DController>(entity); return true; }
+        if (key == "thirdPerson") { world->RemoveComponent<ECS::ThirdPersonController>(entity); return true; }
+        if (key == "firstPerson") { world->RemoveComponent<ECS::FirstPersonController>(entity); return true; }
+        if (key == "vehicle") { world->RemoveComponent<ECS::VehicleController>(entity); return true; }
+        if (key == "surfaceAligned") { world->RemoveComponent<ECS::SurfaceAlignedController>(entity); return true; }
+        if (key == "networkIdentity") { world->RemoveComponent<ECS::NetworkIdentityComponent>(entity); return true; }
+        if (key == "networkTransform") { world->RemoveComponent<ECS::NetworkTransformComponent>(entity); return true; }
+        if (key == "possessable") { world->RemoveComponent<ECS::PossessableComponent>(entity); return true; }
+        if (key == "lock") { world->RemoveComponent<ECS::LockComponent>(entity); return true; }
+        if (key == "pushable") { world->RemoveComponent<ECS::PushableComponent>(entity); return true; }
+        if (key == "switch") { world->RemoveComponent<ECS::SwitchComponent>(entity); return true; }
+        if (key == "goalZone") { world->RemoveComponent<ECS::GoalZoneComponent>(entity); return true; }
+        if (key == "conveyor") { world->RemoveComponent<ECS::ConveyorComponent>(entity); return true; }
+        if (key == "teleporter") { world->RemoveComponent<ECS::TeleporterComponent>(entity); return true; }
+        if (key == "destructible") { world->RemoveComponent<ECS::DestructibleComponent>(entity); return true; }
+        if (key == "curlNoiseField") { world->RemoveComponent<ECS::CurlNoiseFieldComponent>(entity); return true; }
+        if (key == "fractureConfig") { world->RemoveComponent<ECS::FractureConfigComponent>(entity); return true; }
+        if (key == "movingPlatform") { world->RemoveComponent<ECS::MovingPlatformComponent>(entity); return true; }
+        if (key == "scriptComponent") { world->RemoveComponent<ECS::ScriptComponent>(entity); return true; }
+        if (key == "audioSource") { world->RemoveComponent<ECS::AudioSourceComponent>(entity); return true; }
+        if (key == "audioListener") { world->RemoveComponent<ECS::AudioListenerComponent>(entity); return true; }
+        if (key == "rigidbody") { world->RemoveComponent<ECS::RigidbodyComponent>(entity); return true; }
+        if (key == "boxCollider") { world->RemoveComponent<ECS::BoxColliderComponent>(entity); return true; }
+        if (key == "polygonCollider2D") { world->RemoveComponent<ECS::PolygonCollider2DComponent>(entity); return true; }
+        if (key == "body2D") { world->RemoveComponent<Physics::Body2DComponent>(entity); return true; }
+        if (key == "joint2D") { world->RemoveComponent<Physics::Joint2DComponent>(entity); return true; }
+        if (key == "perFrameCollider") { world->RemoveComponent<ECS::PerFrameColliderComponent>(entity); return true; }
+        if (key == "sphereCollider") { world->RemoveComponent<ECS::SphereColliderComponent>(entity); return true; }
+        if (key == "capsuleCollider") { world->RemoveComponent<ECS::CapsuleColliderComponent>(entity); return true; }
+        if (key == "meshCollider") { world->RemoveComponent<ECS::MeshColliderComponent>(entity); return true; }
+        if (key == "meshRenderer") { world->RemoveComponent<ECS::MeshRendererComponent>(entity); return true; }
+        if (key == "health") { world->RemoveComponent<ECS::HealthComponent>(entity); return true; }
+        if (key == "recordRewind") { world->RemoveComponent<ECS::RecordRewindComponent>(entity); return true; }
+        if (key == "sceneRewind") { world->RemoveComponent<ECS::SceneRewindComponent>(entity); return true; }
+        if (key == "audioReactive") { world->RemoveComponent<ECS::AudioReactiveComponent>(entity); return true; }
+        if (key == "audioThresholdTrigger") { world->RemoveComponent<ECS::AudioThresholdTriggerComponent>(entity); return true; }
+        if (key == "rtpc") { world->RemoveComponent<ECS::RTPCComponent>(entity); return true; }
+        if (key == "beatClock") { world->RemoveComponent<ECS::BeatClockComponent>(entity); return true; }
+        if (key == "beatSync") { world->RemoveComponent<ECS::BeatSyncComponent>(entity); return true; }
+        if (key == "conductor") { world->RemoveComponent<ECS::ConductorComponent>(entity); return true; }
+        if (key == "audioCollision") { world->RemoveComponent<ECS::AudioCollisionComponent>(entity); return true; }
+        if (key == "sidechain") { world->RemoveComponent<ECS::SidechainComponent>(entity); return true; }
+        if (key == "reverbZone") { world->RemoveComponent<ECS::ReverbZoneComponent>(entity); return true; }
+        if (key == "musicZone") { world->RemoveComponent<ECS::MusicZoneComponent>(entity); return true; }
+        if (key == "audioSnapshotTrigger") { world->RemoveComponent<ECS::AudioSnapshotTriggerComponent>(entity); return true; }
+        if (key == "audioOcclusion") { world->RemoveComponent<ECS::AudioOcclusionComponent>(entity); return true; }
+        if (key == "poseLibrary") { world->RemoveComponent<ECS::PoseLibraryComponent>(entity); return true; }
+        if (key == "audioFidelity") { world->RemoveComponent<ECS::AudioFidelityComponent>(entity); return true; }
+        if (key == "midiBinding") { world->RemoveComponent<ECS::MIDIBindingComponent>(entity); return true; }
+        if (key == "materialInteractionTable") { world->RemoveComponent<ECS::MaterialInteractionTableComponent>(entity); return true; }
+        if (key == "damage") { world->RemoveComponent<ECS::DamageComponent>(entity); return true; }
+        if (key == "gameOver") { world->RemoveComponent<ECS::GameOverComponent>(entity); return true; }
+        if (key == "damageResistance") { world->RemoveComponent<ECS::DamageResistanceComponent>(entity); return true; }
+        if (key == "triggerZone") { world->RemoveComponent<ECS::TriggerZoneComponent>(entity); return true; }
+        if (key == "interactable") { world->RemoveComponent<ECS::InteractableComponent>(entity); return true; }
+        if (key == "pickup") { world->RemoveComponent<ECS::PickupComponent>(entity); return true; }
+        if (key == "tag") { world->RemoveComponent<ECS::TagComponent>(entity); return true; }
+        if (key == "billboard") { world->RemoveComponent<ECS::BillboardComponent>(entity); return true; }
+        if (key == "particleEmitter") { world->RemoveComponent<ECS::ParticleEmitterComponent>(entity); return true; }
+        if (key == "sprite2D") { world->RemoveComponent<ECS::Sprite2DComponent>(entity); return true; }
+        if (key == "animatedSprite2D") { world->RemoveComponent<ECS::AnimatedSprite2DComponent>(entity); return true; }
+        if (key == "tilemap") { world->RemoveComponent<ECS::TilemapComponent>(entity); return true; }
+        if (key == "camera2DBounds") { world->RemoveComponent<ECS::Camera2DBoundsComponent>(entity); return true; }
+        if (key == "parallaxMachine") { world->RemoveComponent<ECS::ParallaxMachineComponent>(entity); return true; }
+        if (key == "stateMachine") { world->RemoveComponent<ECS::StateMachineComponent>(entity); return true; }
+        if (key == "dialogue") { world->RemoveComponent<ECS::DialogueComponent>(entity); return true; }
+        if (key == "dialogueBox") { world->RemoveComponent<ECS::DialogueBoxComponent>(entity); return true; }
+        if (key == "tween") { world->RemoveComponent<ECS::TweenComponent>(entity); return true; }
+        if (key == "visualScript") { world->RemoveComponent<ECS::VisualScriptComponent>(entity); return true; }
+        if (key == "aiController") { world->RemoveComponent<ECS::AIControllerComponent>(entity); return true; }
+        if (key == "behaviorTree") { world->RemoveComponent<ECS::BehaviorTreeComponent>(entity); return true; }
+        if (key == "questFlow") { world->RemoveComponent<ECS::QuestFlowComponent>(entity); return true; }
+        if (key == "followTarget") { world->RemoveComponent<ECS::FollowTargetComponent>(entity); return true; }
+        if (key == "lookAtTarget") { world->RemoveComponent<ECS::LookAtTargetComponent>(entity); return true; }
+        if (key == "waypoint") { world->RemoveComponent<ECS::WaypointComponent>(entity); return true; }
+        if (key == "spawnPoint") { world->RemoveComponent<ECS::SpawnPointComponent>(entity); return true; }
+        if (key == "streamingVolume") { world->RemoveComponent<Scene::StreamingVolumeComponent>(entity); return true; }
+        if (key == "streamingPortal") { world->RemoveComponent<Scene::StreamingPortalComponent>(entity); return true; }
+        if (key == "interactiveWater") { world->RemoveComponent<Effects::InteractiveWaterComponent>(entity); return true; }
+        if (key == "waterInteractor") { world->RemoveComponent<Effects::WaterInteractorComponent>(entity); return true; }
+        if (key == "timer") { world->RemoveComponent<ECS::TimerComponent>(entity); return true; }
+        if (key == "inventory") { world->RemoveComponent<ECS::InventoryComponent>(entity); return true; }
+        if (key == "saveData") { world->RemoveComponent<ECS::SaveDataComponent>(entity); return true; }
+        if (key == "saveLoadMenu") { world->RemoveComponent<ECS::SaveLoadMenuComponent>(entity); return true; }
+        if (key == "resource") { world->RemoveComponent<ECS::ResourceComponent>(entity); return true; }
+        if (key == "footstep") { world->RemoveComponent<ECS::FootstepComponent>(entity); return true; }
+        if (key == "poolable") { world->RemoveComponent<ECS::PoolableComponent>(entity); return true; }
+        if (key == "questState") { world->RemoveComponent<ECS::QuestStateComponent>(entity); return true; }
+        if (key == "dynamicDifficulty") { world->RemoveComponent<ECS::DynamicDifficultyComponent>(entity); return true; }
+        if (key == "artStyle") { world->RemoveComponent<ECS::ArtStyleComponent>(entity); return true; }
+        if (key == "hudWidget") { world->RemoveComponent<ECS::HUDWidgetComponent>(entity); return true; }
+        if (key == "uiCanvas") { world->RemoveComponent<GUI::UICanvasComponent>(entity); return true; }
+        if (key == "cinematicCamera") { world->RemoveComponent<ECS::CinematicCameraComponent>(entity); return true; }
+        if (key == "distanceJoint") { world->RemoveComponent<ECS::DistanceJointComponent>(entity); return true; }
+        if (key == "hingeJoint") { world->RemoveComponent<ECS::HingeJointComponent>(entity); return true; }
+        if (key == "ballSocketJoint") { world->RemoveComponent<ECS::BallSocketJointComponent>(entity); return true; }
+        if (key == "springJoint") { world->RemoveComponent<ECS::SpringJointComponent>(entity); return true; }
+        if (key == "fixedJoint") { world->RemoveComponent<ECS::FixedJointComponent>(entity); return true; }
+        if (key == "sliderJoint") { world->RemoveComponent<ECS::SliderJointComponent>(entity); return true; }
+        if (key == "ragdoll") { world->RemoveComponent<ECS::RagdollComponent>(entity); return true; }
+        if (key == "animationRecorder") { world->RemoveComponent<ECS::AnimationRecorderComponent>(entity); return true; }
+        if (key == "jellyMesh") { world->RemoveComponent<ECS::JellyMeshComponent>(entity); return true; }
+        if (key == "tether") { world->RemoveComponent<ECS::TetherComponent>(entity); return true; }
+        if (key == "grabbable") { world->RemoveComponent<ECS::GrabbableComponent>(entity); return true; }
+        if (key == "flowerStem") { world->RemoveComponent<ECS::FlowerStemComponent>(entity); return true; }
+        if (key == "flowerParticleConfig") { world->RemoveComponent<ECS::FlowerParticleConfigComponent>(entity); return true; }
+        if (key == "lod") { world->RemoveComponent<ECS::LODComponent>(entity); return true; }
+        if (key == "grassVolume") { world->RemoveComponent<ECS::GrassVolumeComponent>(entity); return true; }
+        if (key == "vegetation") { world->RemoveComponent<ECS::VegetationComponent>(entity); return true; }
+    }
+
+    ENJIN_LOG_WARN(Asset, "Unknown component key for removal: '%s'", key.c_str());
+    return false;
+}
+
 } // namespace Scene
 } // namespace Enjin

@@ -95,6 +95,9 @@ public:
     // Deserializes and adds a single component from JSON
     static bool DeserializeOneComponent(ECS::World* world, ECS::Entity entity,
                                          const std::string& key, const std::string& json);
+    // Removes a single component identified by its JSON key (string-keyed mirror
+    // of the dispatch above). Used by the layer system's instant toggle.
+    static bool RemoveOneComponent(ECS::World* world, ECS::Entity entity, const std::string& key);
 
     // Scene-level accessibility content flags
     void SetContentFlags(const Accessibility::SceneContentFlags& flags) { m_ContentFlags = flags; }

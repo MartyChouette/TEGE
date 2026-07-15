@@ -5,6 +5,7 @@
 #include "Enjin/Scene/LayerStack.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include <string>
+#include <unordered_map>
 
 namespace Enjin {
 namespace Scene {
@@ -34,7 +35,7 @@ public:
     ECS::World* GetWorld() const { return m_World; }
 
     // The pristine base scene JSON that layers resolve over.
-    void SetBaseScene(const std::string& json) { m_BaseSceneJson = json; }
+    void SetBaseScene(const std::string& json) { m_BaseSceneJson = json; m_BaseIndexDirty = true; }
     const std::string& GetBaseScene() const { return m_BaseSceneJson; }
 
     LayerStack& Stack() { return m_Stack; }
@@ -75,7 +76,30 @@ public:
     // Rebuild the world from base + the full stack (clears the world first).
     DeserializationResult ResolveIntoWorld();
 
+    // --- Instant toggle (Phase 3) ---
+    // Enable/disable a layer and apply the effect directly to the live world in
+    // O(deltas of that layer): each (entity, component) the layer touches is
+    // recomputed from base + the other enabled layers and upserted/removed in
+    // place; created entities appear/disappear; tombstones destroy/resurrect.
+    // No scene reload, so live entity handles and un-captured edits elsewhere
+    // survive. The fallback is recomputed from the stack rather than read from a
+    // pre-image cache captured at edit time — a cached pre-image goes stale the
+    // moment a lower layer changes, the stack never does.
+    // Returns false when the live apply was skipped (no world, bad index, or no
+    // base scene captured); the enabled flag still flips so a later full
+    // ResolveIntoWorld honors it.
+    bool SetLayerEnabled(int index, bool enabled);
+
 private:
+    // Lazily parse m_BaseSceneJson into stableId -> entity-object text.
+    void EnsureBaseIndex();
+    // Winning value for (sid, key) across base + enabled layers, bottom-to-top.
+    // Returns false when nobody provides the component (out untouched).
+    bool WinningComponentJson(u64 sid, const std::string& key, std::string& out);
+    // Full resolved entity object (base + enabled deltas) as JSON text.
+    std::string ResolvedEntityJsonText(u64 sid);
+    // Re-apply one entity delta's footprint to the live world (see SetLayerEnabled).
+    void ReconcileEntity(const EntityDelta& d, std::unordered_map<u64, ECS::Entity>& liveBySid);
     // Insert-or-replace a component delta on an entity delta, keyed by component.
     static void UpsertComponent(EntityDelta& d, const std::string& key, const std::string& json);
     // Capture every serializable component currently on `e` into `d`.
@@ -85,6 +109,10 @@ private:
     std::string m_BaseSceneJson;
     LayerStack  m_Stack;
     int         m_ActiveLayer = -1;
+
+    // stableId -> base entity object text; rebuilt after SetBaseScene.
+    std::unordered_map<u64, std::string> m_BaseIndex;
+    bool m_BaseIndexDirty = true;
 };
 
 } // namespace Scene

@@ -382,8 +382,14 @@ void EditorLayer::DrawLayersPanel() {
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Active: edits are captured into this layer");
         ImGui::SameLine();
 
-        ImGui::Checkbox("##enabled", &layer.enabled);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enabled: included when resolving");
+        bool enabled = layer.enabled;
+        if (ImGui::Checkbox("##enabled", &enabled)) {
+            // Instant toggle: applies this layer's deltas to (or lifts them from)
+            // the live world in place. Without a captured base it only flips the
+            // flag, which the next Rebuild honors.
+            m_LayerSystem.SetLayerEnabled(i, enabled);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Enabled: applied to the live world instantly; included when resolving");
         ImGui::SameLine();
 
         ImGui::Checkbox("L##locked", &layer.locked);

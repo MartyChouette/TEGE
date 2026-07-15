@@ -200,5 +200,167 @@ DeserializationResult LayerSystem::ResolveIntoWorld() {
     return m_Stack.ResolveInto(*m_World, m_BaseSceneJson);
 }
 
+// ---------------------------------------------------------------------------
+// Instant toggle (Phase 3)
+// ---------------------------------------------------------------------------
+
+void LayerSystem::EnsureBaseIndex() {
+    if (!m_BaseIndexDirty) return;
+    m_BaseIndex.clear();
+    m_BaseIndexDirty = false;
+    if (m_BaseSceneJson.empty()) return;
+
+    try {
+        json root = ParseSceneJson(m_BaseSceneJson);
+        if (root.contains("entities") && root["entities"].is_array()) {
+            for (auto& e : root["entities"]) {
+                u64 sid = e.value("stableId", u64{0});
+                if (sid != 0) m_BaseIndex[sid] = e.dump();
+            }
+        }
+    } catch (const std::exception& ex) {
+        ENJIN_LOG_WARN(Build, "LayerSystem::EnsureBaseIndex parse error: %s", ex.what());
+    }
+}
+
+bool LayerSystem::WinningComponentJson(u64 sid, const std::string& key, std::string& out) {
+    bool present = false;
+
+    // Base first. destroyed/created flags don't strip component values here —
+    // LayerStack::Resolve reuses the entity object across tombstone+resurrect,
+    // so the fallback must too.
+    auto bit = m_BaseIndex.find(sid);
+    if (bit != m_BaseIndex.end()) {
+        try {
+            json obj = json::parse(bit->second);
+            auto it = obj.find(key);
+            if (it != obj.end()) { out = it->dump(); present = true; }
+        } catch (const std::exception&) { /* index entries were dumped by us; unreachable */ }
+    }
+
+    // Then every enabled layer bottom-to-top; the topmost provider wins.
+    for (const Layer& l : m_Stack.layers) {
+        if (!l.enabled) continue;
+        const EntityDelta* d = l.FindEntity(sid);
+        if (!d) continue;
+        for (const ComponentDelta& c : d->components) {
+            if (c.key != key) continue;
+            if (c.json.empty()) { present = false; }
+            else { out = c.json; present = true; }
+        }
+    }
+    return present;
+}
+
+std::string LayerSystem::ResolvedEntityJsonText(u64 sid) {
+    json obj;
+    auto bit = m_BaseIndex.find(sid);
+    if (bit != m_BaseIndex.end()) {
+        try { obj = json::parse(bit->second); } catch (const std::exception&) { obj = json::object(); }
+    }
+    if (obj.is_null() || obj.empty()) {
+        obj = json::object();
+        obj["id"] = sid;         // mirrors LayerStack::Resolve for layer-created
+        obj["stableId"] = sid;   // entities
+    }
+
+    for (const Layer& l : m_Stack.layers) {
+        if (!l.enabled) continue;
+        const EntityDelta* d = l.FindEntity(sid);
+        if (!d || d->destroyed) continue;
+        for (const ComponentDelta& c : d->components) {
+            if (c.key.empty()) continue;
+            if (c.json.empty()) { obj.erase(c.key); continue; }
+            try { obj[c.key] = ParseSceneJson(c.json); }
+            catch (const std::exception& ex) {
+                ENJIN_LOG_WARN(Build, "LayerSystem: bad delta for key '%s': %s", c.key.c_str(), ex.what());
+            }
+        }
+    }
+    return obj.dump();
+}
+
+void LayerSystem::ReconcileEntity(const EntityDelta& d, std::unordered_map<u64, ECS::Entity>& liveBySid) {
+    const u64 sid = d.stableId;
+
+    // Aliveness under the CURRENT stack state: base existence, then each enabled
+    // layer's created/destroyed flags bottom-to-top (mirrors LayerStack::Resolve).
+    bool alive = m_BaseIndex.count(sid) != 0;
+    for (const Layer& l : m_Stack.layers) {
+        if (!l.enabled) continue;
+        const EntityDelta* ld = l.FindEntity(sid);
+        if (!ld) continue;
+        if (ld->destroyed)    alive = false;
+        else if (ld->created) alive = true;
+    }
+
+    auto it = liveBySid.find(sid);
+    ECS::Entity live = (it != liveBySid.end() && m_World->IsValid(it->second))
+                       ? it->second : ECS::INVALID_ENTITY;
+
+    if (!alive) {
+        if (live != ECS::INVALID_ENTITY) {
+            m_World->DestroyEntity(live);   // deferred; flushed at World::Update
+            liveBySid.erase(sid);
+        }
+        return;
+    }
+
+    if (live == ECS::INVALID_ENTITY) {
+        // (Re)introduce: created entity enabled, or tombstone lifted. Build the
+        // fully resolved object and instantiate it.
+        ECS::Entity e = SceneSerializer::DeserializeEntityFromString(m_World, ResolvedEntityJsonText(sid));
+        if (m_World->IsValid(e)) {
+            // DeserializeEntityFromString does not restore stable ids (only the
+            // whole-scene path does) — re-attach the durable identity.
+            m_World->AddComponent<ECS::StableIdComponent>(e, ECS::StableIdComponent{sid});
+            liveBySid[sid] = e;
+        }
+        return;
+    }
+
+    // Alive and present: reconcile exactly the keys this layer touches. AddComponent
+    // overwrites in place, so the entity handle and unrelated components are stable.
+    for (const ComponentDelta& c : d.components) {
+        if (c.key.empty() || c.key == "id" || c.key == "stableId") continue;
+        std::string winning;
+        if (WinningComponentJson(sid, c.key, winning)) {
+            SceneSerializer::DeserializeOneComponent(m_World, live, c.key, winning);
+        } else {
+            SceneSerializer::RemoveOneComponent(m_World, live, c.key);
+        }
+    }
+}
+
+bool LayerSystem::SetLayerEnabled(int index, bool enabled) {
+    if (index < 0 || index >= static_cast<int>(m_Stack.layers.size())) return false;
+    Layer& layer = m_Stack.layers[index];
+    if (layer.enabled == enabled) return true;
+
+    // Flip first so aliveness/fallback computations see the new stack state.
+    layer.enabled = enabled;
+
+    if (!m_World) return false;
+    if (m_BaseSceneJson.empty()) {
+        ENJIN_LOG_WARN(Build, "LayerSystem::SetLayerEnabled: no base scene captured — flag flipped, live world not reconciled");
+        return false;
+    }
+    EnsureBaseIndex();
+
+    std::unordered_map<u64, ECS::Entity> liveBySid;
+    for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::StableIdComponent>()) {
+        if (!m_World->IsValid(e)) continue;
+        if (auto* s = m_World->GetComponent<ECS::StableIdComponent>(e)) {
+            if (s->id != 0) liveBySid[s->id] = e;
+        }
+    }
+
+    for (const EntityDelta& d : layer.entities) {
+        if (d.stableId == 0) continue;
+        ReconcileEntity(d, liveBySid);
+    }
+    return true;
+}
+
 } // namespace Scene
 } // namespace Enjin
