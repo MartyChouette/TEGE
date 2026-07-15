@@ -3,6 +3,9 @@
 #include "Enjin/Logging/Log.h"
 
 #include <nlohmann/json.hpp>
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
 
 namespace Enjin {
 namespace Scene {
@@ -359,6 +362,169 @@ bool LayerSystem::SetLayerEnabled(int index, bool enabled) {
         if (d.stableId == 0) continue;
         ReconcileEntity(d, liveBySid);
     }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Persistence (Phase 5)
+// ---------------------------------------------------------------------------
+
+namespace fs = std::filesystem;
+
+// Layer names are user-typed; the filename derived from one must not be able to
+// escape the layer directory or produce an unopenable path.
+static std::string SanitizeLayerFileName(const std::string& name) {
+    std::string out;
+    out.reserve(name.size());
+    for (char ch : name) {
+        const bool ok = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+                        (ch >= '0' && ch <= '9') || ch == '_' || ch == '-';
+        out.push_back(ok ? ch : '_');
+    }
+    if (out.empty()) out = "layer";
+    return out;
+}
+
+bool LayerSystem::SaveLayers(const std::string& dirPath) const {
+    if (dirPath.empty()) return false;
+
+    std::error_code ec;
+    fs::create_directories(dirPath, ec);
+    if (ec) {
+        ENJIN_LOG_ERROR(Build, "LayerSystem::SaveLayers: cannot create '%s': %s",
+                        dirPath.c_str(), ec.message().c_str());
+        return false;
+    }
+
+    // Drop stale .layer files so a layer deleted this session stays deleted.
+    for (const auto& entry : fs::directory_iterator(dirPath, ec)) {
+        if (!ec && entry.is_regular_file() && entry.path().extension() == ".layer") {
+            fs::remove(entry.path(), ec);
+        }
+    }
+
+    bool allOk = true;
+    for (usize i = 0; i < m_Stack.layers.size(); ++i) {
+        const Layer& layer = m_Stack.layers[i];
+        char prefix[8];
+        std::snprintf(prefix, sizeof(prefix), "%02zu_", i);
+        fs::path file = fs::path(dirPath) / (prefix + SanitizeLayerFileName(layer.name) + ".layer");
+
+        std::ofstream f(file, std::ios::binary | std::ios::trunc);
+        if (!f) {
+            ENJIN_LOG_ERROR(Build, "LayerSystem::SaveLayers: cannot write '%s'", file.string().c_str());
+            allOk = false;
+            continue;
+        }
+        f << layer.ToJson(true);
+    }
+    return allOk;
+}
+
+int LayerSystem::LoadLayers(const std::string& dirPath) {
+    m_Stack.layers.clear();
+    m_ActiveLayer = -1;
+    if (dirPath.empty()) return 0;
+
+    std::error_code ec;
+    if (!fs::is_directory(dirPath, ec) || ec) return 0;
+
+    // Filename order (the NN_ prefix) is the stack order.
+    std::vector<fs::path> files;
+    for (const auto& entry : fs::directory_iterator(dirPath, ec)) {
+        if (!ec && entry.is_regular_file() && entry.path().extension() == ".layer") {
+            files.push_back(entry.path());
+        }
+    }
+    std::sort(files.begin(), files.end());
+
+    for (const auto& file : files) {
+        std::ifstream f(file, std::ios::binary);
+        if (!f) {
+            ENJIN_LOG_WARN(Build, "LayerSystem::LoadLayers: cannot read '%s'", file.string().c_str());
+            continue;
+        }
+        std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        Layer layer = Layer::FromJson(text);
+        // FromJson returns a default (nameless, empty) layer on parse/cap
+        // failure — an authored empty layer still carries its name, so this
+        // only drops genuinely broken files.
+        if (layer.name.empty() && layer.entities.empty()) {
+            ENJIN_LOG_WARN(Build, "LayerSystem::LoadLayers: skipping unparseable '%s'", file.string().c_str());
+            continue;
+        }
+        m_Stack.layers.push_back(std::move(layer));
+    }
+
+    if (!m_Stack.layers.empty()) {
+        m_ActiveLayer = static_cast<int>(m_Stack.layers.size()) - 1;
+    }
+    return static_cast<int>(m_Stack.layers.size());
+}
+
+// ---------------------------------------------------------------------------
+// Merge-down (Phase 5)
+// ---------------------------------------------------------------------------
+
+bool LayerSystem::MergeDown(int index) {
+    if (index < 0 || index >= static_cast<int>(m_Stack.layers.size())) return false;
+    Layer& src = m_Stack.layers[index];
+
+    if (!src.enabled || src.locked) {
+        ENJIN_LOG_WARN(Build, "LayerSystem::MergeDown: layer '%s' is %s — not merging",
+                       src.name.c_str(), src.locked ? "locked" : "disabled");
+        return false;
+    }
+
+    if (index == 0) {
+        // Fold into the base scene: resolve base + just this layer, adopt the
+        // result as the new pristine base. The resolved world output is
+        // identical before and after by construction.
+        if (m_BaseSceneJson.empty()) {
+            ENJIN_LOG_WARN(Build, "LayerSystem::MergeDown: no base scene captured — cannot merge '%s' down",
+                           src.name.c_str());
+            return false;
+        }
+        LayerStack solo;
+        solo.layers.push_back(src);
+        m_BaseSceneJson = solo.Resolve(m_BaseSceneJson);
+        m_BaseIndexDirty = true;
+        RemoveLayer(0);
+        return true;
+    }
+
+    Layer& dst = m_Stack.layers[index - 1];
+    if (!dst.enabled || dst.locked) {
+        ENJIN_LOG_WARN(Build, "LayerSystem::MergeDown: target layer '%s' is %s — not merging",
+                       dst.name.c_str(), dst.locked ? "locked" : "disabled");
+        return false;
+    }
+
+    // Fold src's deltas over dst's, mirroring how Resolve would stack them.
+    for (const EntityDelta& d : src.entities) {
+        if (d.stableId == 0) continue;
+        EntityDelta& tgt = dst.EntityFor(d.stableId);
+
+        if (d.destroyed) {
+            tgt.destroyed = true;
+            tgt.created = false;
+            tgt.components.clear();
+            continue;
+        }
+        if (d.created) {
+            tgt.created = true;
+            tgt.destroyed = false;
+        } else if (tgt.destroyed) {
+            // dst tombstoned it and src edited without resurrecting: Resolve
+            // skips such stale deltas, so folding drops them too.
+            continue;
+        }
+        for (const ComponentDelta& c : d.components) {
+            if (c.key.empty()) continue;
+            UpsertComponent(tgt, c.key, c.json);
+        }
+    }
+    RemoveLayer(index);
     return true;
 }
 

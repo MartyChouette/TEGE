@@ -362,6 +362,22 @@ void EditorLayer::DrawLayersPanel() {
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Clear the world and rebuild it from base + all enabled layers.");
     }
+
+    // --- Persistence: one .layer file per layer next to the scene ---
+    const bool haveScenePath = !m_CurrentScenePath.empty();
+    ImGui::BeginDisabled(!haveScenePath);
+    if (ImGui::Button("Save Layers")) {
+        m_LayerSystem.SaveLayers(m_CurrentScenePath + ".layers");
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Load Layers")) {
+        int n = m_LayerSystem.LoadLayers(m_CurrentScenePath + ".layers");
+        ENJIN_LOG_INFO(Build, "Loaded %d layer(s) from '%s.layers'", n, m_CurrentScenePath.c_str());
+    }
+    ImGui::EndDisabled();
+    if (!haveScenePath && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip("Save the scene first — layers live in a <scene>.layers directory beside it.");
+    }
     ImGui::Separator();
 
     // --- Layer list (top layer = highest priority, drawn first) ---
@@ -371,6 +387,7 @@ void EditorLayer::DrawLayersPanel() {
 
     const int activeIdx = m_LayerSystem.ActiveLayerIndex();
     int toDelete = -1;
+    int toMerge = -1;   // deferred: merging mid-loop would shift indices
     for (int i = static_cast<int>(stack.layers.size()) - 1; i >= 0; --i) {
         Scene::Layer& layer = stack.layers[i];
         ImGui::PushID(i);
@@ -410,6 +427,10 @@ void EditorLayer::DrawLayersPanel() {
         ImGui::TextDisabled("%zu ent / %zu delta", layer.entities.size(), deltaCount);
 
         ImGui::SameLine();
+        if (ImGui::SmallButton("Mrg")) toMerge = i;
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Merge down into the layer below (or the base scene). The resolved scene doesn't change.");
+
+        ImGui::SameLine();
         if (ImGui::SmallButton("X")) toDelete = i;
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Delete this layer and its edits");
 
@@ -423,6 +444,9 @@ void EditorLayer::DrawLayersPanel() {
 
     if (toDelete >= 0) {
         m_LayerSystem.RemoveLayer(toDelete);
+    }
+    if (toMerge >= 0) {
+        m_LayerSystem.MergeDown(toMerge);   // refuses locked/disabled; logged
     }
 
     ImGui::End();

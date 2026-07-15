@@ -90,6 +90,26 @@ public:
     // ResolveIntoWorld honors it.
     bool SetLayerEnabled(int index, bool enabled);
 
+    // --- Persistence (Phase 5) ---
+    // One file per layer under `dirPath` ("NN_name.layer", NN = stack position so
+    // ordering survives the filesystem). Distinct layers in distinct files is the
+    // Git story: parallel edit sessions never conflict on a shared scene file.
+    // SaveLayers clears stale *.layer files in the directory first (a layer
+    // deleted this session must not resurrect on the next load).
+    bool SaveLayers(const std::string& dirPath) const;
+    // Replaces the current stack with the directory's *.layer files (filename
+    // order). Active layer becomes the topmost loaded layer, -1 when none.
+    // Returns the number of layers loaded.
+    int LoadLayers(const std::string& dirPath);
+
+    // --- Merge-down (Phase 5) ---
+    // Fold layer `index` into what's directly below it — layer index-1, or the
+    // base scene when index is 0 — then drop the layer. The resolved output is
+    // unchanged by construction; only the stack shape changes. Refuses (false)
+    // when either side is locked or disabled: merging a muted or locked track
+    // silently baking edits is never what the user meant.
+    bool MergeDown(int index);
+
 private:
     // Lazily parse m_BaseSceneJson into stableId -> entity-object text.
     void EnsureBaseIndex();

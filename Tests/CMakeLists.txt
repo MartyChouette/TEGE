@@ -54,6 +54,16 @@ target_link_libraries(LayerToggleTest PRIVATE
 
 target_compile_features(LayerToggleTest PRIVATE cxx_std_20)
 
+add_executable(LayerPersistTest
+    Integration/LayerPersistTest.cpp
+)
+
+target_link_libraries(LayerPersistTest PRIVATE
+    EnjinEngine
+)
+
+target_compile_features(LayerPersistTest PRIVATE cxx_std_20)
+
 add_executable(DungeonCrawlerTest
     Integration/DungeonCrawlerTest.cpp
 )
@@ -230,6 +240,7 @@ add_test(NAME StableIdRoundTrip   COMMAND StableIdRoundTrip)
 add_test(NAME LayerResolveTest    COMMAND LayerResolveTest)
 add_test(NAME LayerCaptureTest    COMMAND LayerCaptureTest)
 add_test(NAME LayerToggleTest     COMMAND LayerToggleTest)
+add_test(NAME LayerPersistTest    COMMAND LayerPersistTest)
 add_test(NAME DungeonCrawlerTest  COMMAND DungeonCrawlerTest)
 add_test(NAME SMTTemplateTest     COMMAND SMTTemplateTest)
 add_test(NAME StressTest          COMMAND StressTest)
