@@ -11,6 +11,9 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Controllers/CharacterController.h"
+#include "Enjin/Gameplay/GameplayLoop.h"
+#include <cmath>
 #include <memory>
 
 using namespace Enjin;
@@ -335,6 +338,177 @@ ENJIN_TEST(PhysicsSim2D, SensorFiresOnOverlap) {
 
     // Assert: the sensor enter event fired.
     ENJIN_EXPECT_TRUE(entered);
+}
+
+ENJIN_TEST(PhysicsSim2D, RaycastSkipsSensors) {
+    // Arrange: a sensor zone at x=5 and a solid wall at x=10, ray fired along +x.
+    // Box2DBackend::Raycast filters out sensor bodies BY DESIGN (documented
+    // engine rule) — the ray must report the wall behind the sensor, not the
+    // sensor itself.
+    ECS::World world;
+
+    ECS::Entity sensor = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(5.0f, 0.0f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(sensor, t);
+        Physics::Body2DComponent b;
+        b.isStatic = true;
+        b.isSensor = true;
+        b.shapeType = Physics::Shape2DType::Box;
+        b.box.halfExtents = Math::Vector2(1.0f, 3.0f);
+        world.AddComponent<Physics::Body2DComponent>(sensor, b);
+    }
+
+    ECS::Entity wall = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(10.0f, 0.0f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(wall, t);
+        Physics::Body2DComponent b;
+        b.isStatic = true;
+        b.shapeType = Physics::Shape2DType::Box;
+        b.box.halfExtents = Math::Vector2(0.5f, 3.0f);
+        world.AddComponent<Physics::Body2DComponent>(wall, b);
+    }
+
+    auto backend = Physics::CreatePhysicsBackend2D(Physics::PhysicsBackendType::Auto);
+    ENJIN_ASSERT_NOT_NULL(backend.get());
+    backend->Initialize(&world);
+    backend->Update(1.0f / 60.0f);  // create the bodies
+
+    // Act
+    Physics::RayHit2D hit;
+    bool hitAnything = backend->Raycast(Math::Vector2(0.0f, 0.0f), Math::Vector2(1.0f, 0.0f), 20.0f, hit);
+
+    // Assert: the wall (near face x=9.5), not the sensor (near face x=4).
+    ENJIN_ASSERT_TRUE(hitAnything);
+    ENJIN_EXPECT_EQ(hit.entity, wall);
+    ENJIN_EXPECT_FLOAT_NEAR(hit.distance, 9.5f, 0.3f);
+}
+
+ENJIN_TEST(PhysicsSim2D, DistanceJointMaintainsSeparation) {
+    // Arrange: a static anchor at (0,10) and a dynamic weight below it joined by
+    // a RIGID distance joint (stiffness 0) of length 2. Under gravity the weight
+    // must hang at the joint length instead of falling away.
+    ECS::World world;
+
+    ECS::Entity anchor = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 10.0f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(anchor, t);
+        Physics::Body2DComponent b;
+        b.isStatic = true;
+        b.shapeType = Physics::Shape2DType::Box;
+        b.box.halfExtents = Math::Vector2(0.25f, 0.25f);
+        world.AddComponent<Physics::Body2DComponent>(anchor, b);
+    }
+
+    ECS::Entity weight = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 7.0f, 0.0f);   // starts 3 below: joint must pull to 2
+        world.AddComponent<ECS::TransformComponent>(weight, t);
+        Physics::Body2DComponent b;
+        b.isStatic = false;
+        b.shapeType = Physics::Shape2DType::Box;
+        b.box.halfExtents = Math::Vector2(0.25f, 0.25f);
+        world.AddComponent<Physics::Body2DComponent>(weight, b);
+        Physics::Joint2DComponent j;
+        j.type = Physics::Joint2DType::Distance;
+        j.connectedEntity = anchor;
+        j.length = 2.0f;
+        j.stiffness = 0.0f;   // rigid, no spring
+        world.AddComponent<Physics::Joint2DComponent>(weight, j);
+    }
+
+    auto backend = Physics::CreatePhysicsBackend2D(Physics::PhysicsBackendType::Auto);
+    ENJIN_ASSERT_NOT_NULL(backend.get());
+    backend->Initialize(&world);
+    backend->SetGravity(Math::Vector2(0.0f, -9.81f));
+
+    // Act: settle for 3 seconds.
+    for (int i = 0; i < 180; ++i) backend->Update(1.0f / 60.0f);
+
+    // Assert: separation equals the joint length; the weight hangs, not falls.
+    auto* ta = world.GetComponent<ECS::TransformComponent>(anchor);
+    auto* tw = world.GetComponent<ECS::TransformComponent>(weight);
+    ENJIN_ASSERT_NOT_NULL(ta);
+    ENJIN_ASSERT_NOT_NULL(tw);
+    f32 dx = tw->position.x - ta->position.x;
+    f32 dy = tw->position.y - ta->position.y;
+    f32 dist = std::sqrt(dx * dx + dy * dy);
+    ENJIN_EXPECT_FLOAT_NEAR(dist, 2.0f, 0.3f);
+    ENJIN_EXPECT_TRUE(tw->position.y > 5.0f);   // did not fall away
+}
+
+ENJIN_TEST(GameplayHazards, HazardOverlapDamagesPlayerWithoutSensorEvents) {
+    // Box2D v3 doesn't fire sensor events between kinematic sensors and
+    // kinematic visitors — CheckHazardOverlaps is the engine's documented
+    // per-frame AABB workaround. Prove the workaround itself: overlap damages,
+    // damageOnce doesn't repeat, and a distant player is untouched.
+    ECS::World world;
+
+    ECS::Entity player = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 0.0f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(player, t);
+        world.AddComponent<ECS::Platformer2DController>(player);
+        ECS::HealthComponent hp;
+        hp.maxHealth = 100.0f;
+        hp.currentHealth = 100.0f;
+        world.AddComponent<ECS::HealthComponent>(player, hp);
+    }
+
+    ECS::Entity hazard = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(0.0f, 0.0f, 0.0f);   // overlapping the player
+        world.AddComponent<ECS::TransformComponent>(hazard, t);
+        ECS::DamageComponent dmg;
+        dmg.damage = 25.0f;
+        dmg.damageOnce = true;
+        world.AddComponent<ECS::DamageComponent>(hazard, dmg);
+        Physics::Body2DComponent b;
+        b.isKinematic = true;    // the documented hazard-sensor configuration
+        b.isSensor = true;
+        b.gravityScale = 0.0f;
+        b.shapeType = Physics::Shape2DType::Box;
+        b.box.halfExtents = Math::Vector2(1.0f, 1.0f);
+        world.AddComponent<Physics::Body2DComponent>(hazard, b);
+    }
+
+    // Act: one hazard pass while overlapping.
+    std::vector<ECS::Entity> deferred;
+    Gameplay::GameplayLoop::CheckHazardOverlaps(&world, 1.0f / 60.0f, deferred);
+
+    // Assert: damage applied exactly once.
+    auto* hp = world.GetComponent<ECS::HealthComponent>(player);
+    ENJIN_ASSERT_NOT_NULL(hp);
+    ENJIN_EXPECT_FLOAT_NEAR(hp->currentHealth, 75.0f, 0.01f);
+
+    // Act again: damageOnce must not re-apply.
+    Gameplay::GameplayLoop::CheckHazardOverlaps(&world, 1.0f / 60.0f, deferred);
+    ENJIN_EXPECT_FLOAT_NEAR(hp->currentHealth, 75.0f, 0.01f);
+
+    // A player far away takes no damage.
+    ECS::Entity farPlayer = world.CreateEntity();
+    {
+        ECS::TransformComponent t;
+        t.position = Math::Vector3(100.0f, 0.0f, 0.0f);
+        world.AddComponent<ECS::TransformComponent>(farPlayer, t);
+        world.AddComponent<ECS::Platformer2DController>(farPlayer);
+        ECS::HealthComponent fhp;
+        fhp.maxHealth = 100.0f;
+        fhp.currentHealth = 100.0f;
+        world.AddComponent<ECS::HealthComponent>(farPlayer, fhp);
+    }
+    Gameplay::GameplayLoop::CheckHazardOverlaps(&world, 1.0f / 60.0f, deferred);
+    auto* fhp = world.GetComponent<ECS::HealthComponent>(farPlayer);
+    ENJIN_ASSERT_NOT_NULL(fhp);
+    ENJIN_EXPECT_FLOAT_NEAR(fhp->currentHealth, 100.0f, 0.01f);
 }
 
 ENJIN_TEST_MAIN()
