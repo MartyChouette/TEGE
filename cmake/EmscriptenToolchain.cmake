@@ -47,12 +47,16 @@ set(ENJIN_EM_LINK_FLAGS
     -sEXPORTED_FUNCTIONS=['_main','_onCanvasResize','_getDrawCallCount','_getEntityCount']
     -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','HEAPF32']
     -sENVIRONMENT=web
-    -sASSERTIONS=1
     -sNO_DISABLE_EXCEPTION_CATCHING
     -fexceptions
     -O2
     --post-js=${CMAKE_SOURCE_DIR}/cmake/miniaudio_shim.js
 )
+# Runtime assertions cost size and speed — keep them for Debug configures only.
+# (They were unconditionally on until 2026-07; release WASM ships without.)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    list(APPEND ENJIN_EM_LINK_FLAGS -sASSERTIONS=1)
+endif()
 # NOTE: -sASYNCIFY was removed 2026-07 — boot is fully callback-driven now
 # (emscripten_async_wget_data + WebGPURenderer::InitializeAsync). Reintroducing
 # any emscripten_sleep/emscripten_wget_data call will abort at runtime.

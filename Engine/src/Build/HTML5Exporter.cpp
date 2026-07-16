@@ -215,7 +215,6 @@ bool HTML5Exporter::InvokeEmscriptenBuild(const std::string& outputDir,
     // looking for the repo structure (CMakeLists.txt + Engine/ + build-web/).
     // Also try common locations relative to known paths.
     fs::path repoRoot;
-    std::vector<fs::path> candidates;
 
     // Try walking up from the output dir (works if output is inside the repo)
     for (auto dir = fs::path(outputDir); dir.has_parent_path() && dir != dir.parent_path(); dir = dir.parent_path()) {
@@ -225,27 +224,23 @@ bool HTML5Exporter::InvokeEmscriptenBuild(const std::string& outputDir,
         }
     }
 
-    // Try common locations if not found
+    // Not found near the output: walk up from the editor executable instead.
+    // In a dev tree the exe sits at <repo>/build/bin/Release/, so the walk-up
+    // finds the repo wherever it was cloned — no hardcoded machine paths.
+    // (Installed distributions don't bundle the web runtime at all, so this
+    // path can only succeed in a source checkout.)
     if (repoRoot.empty()) {
-        candidates = {
-            fs::path("D:/GitHub/enjin"),
-            fs::path("C:/GitHub/enjin"),
-        };
-        // Also try relative to the editor exe (build/ is typically inside the repo)
 #ifdef _WIN32
         char exeBuf[MAX_PATH] = {};
         GetModuleFileNameA(nullptr, exeBuf, MAX_PATH);
-        fs::path exeDir = fs::path(exeBuf).parent_path();
-        // exe is at <repo>/build/bin/Release/ — go up 3 levels
-        candidates.push_back(exeDir / ".." / ".." / "..");
-#endif
-        for (const auto& c : candidates) {
-            auto canon = fs::weakly_canonical(c);
-            if (fs::exists(canon / "build-web" / "bin" / "EnjinPlayer.js")) {
-                repoRoot = canon;
+        for (auto dir = fs::path(exeBuf).parent_path();
+             dir.has_parent_path() && dir != dir.parent_path(); dir = dir.parent_path()) {
+            if (fs::exists(dir / "build-web" / "bin" / "EnjinPlayer.js")) {
+                repoRoot = dir;
                 break;
             }
         }
+#endif
     }
 
     // Try pre-built WASM from build-web/
