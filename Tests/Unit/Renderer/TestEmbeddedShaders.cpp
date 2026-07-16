@@ -5,6 +5,7 @@
 
 #include "EnjinTest.h"
 #include "Enjin/Renderer/ClusterComputeShaderData.h"
+#include "Enjin/Renderer/EmbeddedComputeShaders.h"
 
 using namespace Enjin;
 
@@ -23,6 +24,30 @@ ENJIN_TEST(EmbeddedShaders, ClusterBoundsIsValidSpirv) {
 ENJIN_TEST(EmbeddedShaders, ClusterAssignIsValidSpirv) {
     ENJIN_EXPECT_TRUE(IsValidSpirv(Renderer::LightClusterAssignComputeShaderData,
                                    Renderer::LightClusterAssignComputeShaderDataSize));
+}
+
+// --- ComputePipelineHelper embedded registry (_gen_compute.py) ---
+// Every shader created through ComputePipelineHelper must be in the registry,
+// or it silently no-ops in shipped Player builds (no shader tree on disk).
+
+ENJIN_TEST(EmbeddedShaders, RegistryCoversAllHelperShaders) {
+    const char* required[] = {
+        "particle_simulate.comp",   // GPUParticleSystem
+        "gpu_voxelize.comp",        // DDGIProbeSystem
+        "ddgi_probe_update.comp",   // DDGIProbeSystem
+        "ddgi_sample.comp",         // DDGIProbeSystem
+        "volumetric_fog.comp",      // VolumetricFog
+    };
+    for (const char* name : required) {
+        const auto* e = Renderer::FindEmbeddedComputeShader(name);
+        ENJIN_ASSERT_TRUE(e != nullptr);
+        ENJIN_EXPECT_TRUE(IsValidSpirv(e->data, e->size));
+    }
+}
+
+ENJIN_TEST(EmbeddedShaders, RegistryRejectsUnknownAndNull) {
+    ENJIN_EXPECT_TRUE(Renderer::FindEmbeddedComputeShader("not_a_shader.comp") == nullptr);
+    ENJIN_EXPECT_TRUE(Renderer::FindEmbeddedComputeShader(nullptr) == nullptr);
 }
 
 ENJIN_TEST_MAIN()
