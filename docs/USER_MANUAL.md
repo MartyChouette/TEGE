@@ -44,6 +44,11 @@ This manual covers everything you need to get started and build games with Enjin
 32. [Networking & Security Settings](#32-networking--security-settings)
 33. [Debug Panels](#33-debug-panels)
 34. [Drop-Down Console](#34-drop-down-console)
+35. [Record & Rewind](#35-record--rewind)
+36. [Narrative Integration](#36-narrative-integration)
+37. [Pose Library & Bone Regions](#37-pose-library--bone-regions)
+38. [Import Safety](#38-import-safety)
+39. [Scene Layers](#39-scene-layers)
 
 ---
 
@@ -4129,4 +4134,38 @@ Vertex colors from FBX (`aiMesh::mColors`) and glTF (`COLOR_0` attribute) are no
 ### Per-Entity Wireframe
 
 Add a **Mesh Renderer** component, enable the Wireframe checkbox, and pick a color. The wireframe renders as an overlay on top of solid geometry — useful for debugging mesh topology.
+
+## 39. Scene Layers
+
+Scene layers let you edit non-destructively, the way a DAW layers tracks over a recording. The scene on disk stays a pristine **base**; your edits are captured into **layers** stacked on top of it. Toggle a layer off and its edits vanish from the scene instantly. Toggle it back on and they return. The base is never touched until you decide to merge.
+
+Open the panel via **View > Panels > Layers**.
+
+### Working with Layers
+
+- **+ Add Layer** creates a new layer and makes it active. The first layer also snapshots the current scene as the base.
+- The **radio button** picks the active layer. While a layer is active, every edit you make — inspector fields, gizmo moves, multi-select batch edits, added or removed components, created or deleted entities — is captured into it automatically as a sparse delta. Without an active layer the editor behaves exactly as before.
+- Each row shows a live count of the entities and component edits the layer holds.
+- Renaming a layer edits its name in place.
+
+### Enable, Lock, Merge, Delete
+
+| Control | Effect |
+|---------|--------|
+| **Enable checkbox** | Mutes/unmutes the layer. Applied to the live scene instantly — no reload, and unsaved work elsewhere is untouched. |
+| **L (lock)** | Blocks capture into the layer. Edits made while the active layer is locked are not recorded. |
+| **Mrg** | Merges the layer down into the layer below it (or into the base scene if it is the bottom layer). The visible scene does not change — only the stack gets flatter. Locked or disabled layers refuse to merge. |
+| **X** | Deletes the layer and all of its edits. |
+
+### Saving and Loading
+
+- **Save Layers** writes one `.layer` file per layer into a `<scene>.layers` directory beside the scene file. Distinct layers in distinct files means two people editing the same scene on different layers never conflict in version control.
+- **Load Layers** restores the stack from that directory.
+- Saving the scene also saves its layers automatically, and opening a scene with a `.layers` directory beside it resumes the session — layers loaded, edits applied.
+- **Rebuild From Layers** clears the world and rebuilds it from the base plus all enabled layers — a full clean resolve if you ever want one.
+
+### Notes
+
+- The saved `.enjin` file contains the scene **as you see it** (base plus enabled layers). After saving and reopening, disabling a layer restores the values from that save, not from before the layer existed. Merge a layer down when you are happy with it.
+- Layer edits are addressed by stable entity IDs, so they survive scene reloads and entity reordering.
 
