@@ -885,6 +885,17 @@ private:
     Renderer::GPUTextureHandle m_WebBloomScratchTex;
     void* m_WebBloomScratchView = nullptr;
 
+    // Size the offscreen chain was (re)created at. 0 = never created. When the
+    // swapchain size diverges (canvas resize), the frame path calls
+    // RecreateWebSizedTargets before encoding any pass.
+    u32 m_WebSceneTargetW = 0;
+    u32 m_WebSceneTargetH = 0;
+    // (Re)create every swapchain-sized offscreen resource — scene color, MSAA
+    // color, depth, bloom chain, bloom scratch — plus the bind groups that
+    // reference them. Shaders/layouts/pipelines are size-independent and are
+    // created once in Initialize.
+    void RecreateWebSizedTargets(u32 sceneW, u32 sceneH);
+
     // Particle rendering (instanced billboard quads)
     Renderer::GPUShaderHandle m_WebParticleShader;
     Renderer::GPUPipelineHandle m_WebParticlePipeline;

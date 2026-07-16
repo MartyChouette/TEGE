@@ -142,6 +142,239 @@ RenderSystem::RenderSystem(World* world, Renderer::IRenderBackend* renderer)
 
 RenderSystem::~RenderSystem() { Shutdown(); }
 
+// Each registered texture handle owns its own sampler: WebGPUTextureManager::
+// DestroyTexture releases handle.sampler, so a sampler shared across handles
+// would be over-released on recreate.
+static WGPUSampler MakeWebLinearClampSampler(WGPUDevice device) {
+    WGPUSamplerDescriptor smpDesc = {};
+    smpDesc.addressModeU = WGPUAddressMode_ClampToEdge;
+    smpDesc.addressModeV = WGPUAddressMode_ClampToEdge;
+    smpDesc.addressModeW = WGPUAddressMode_ClampToEdge;
+    smpDesc.magFilter = WGPUFilterMode_Linear;
+    smpDesc.minFilter = WGPUFilterMode_Linear;
+    smpDesc.mipmapFilter = WGPUMipmapFilterMode_Nearest;
+    smpDesc.maxAnisotropy = 1;
+    return wgpuDeviceCreateSampler(device, &smpDesc);
+}
+
+void RenderSystem::RecreateWebSizedTargets(u32 sceneW, u32 sceneH) {
+    if (sceneW == 0 || sceneH == 0) return;
+
+    auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
+    auto* texMgr = m_Renderer->GetTextureManager();
+    auto* webTexMgr = static_cast<Renderer::WebGPUTextureManager*>(texMgr);
+    auto* bindMgr = m_Renderer->GetBindGroupManager();
+    WGPUDevice device = webRenderer->GetDevice();
+
+    // ---- Destroy the previous chain (no-op on first call). Safe mid-frame-
+    // loop as long as no pass has been encoded yet this frame: Dawn keeps
+    // resources referenced by already-submitted command buffers alive. ----
+    if (m_WebSceneTargetW != 0) {
+        // Bind groups that reference the sized textures.
+        bindMgr->DestroyBindGroup(m_WebPostProcessBG);
+        bindMgr->DestroyBindGroup(m_WebBloomThresholdBG);
+        bindMgr->DestroyBindGroup(m_WebBloomCompositeBG);
+        for (u32 i = 0; i < WEB_BLOOM_LEVELS; i++) {
+            bindMgr->DestroyBindGroup(m_WebBloomDownBG[i]);
+            bindMgr->DestroyBindGroup(m_WebBloomUpBG[i]);
+        }
+        m_WebPostProcessBG = {};
+        m_WebBloomThresholdBG = {};
+        m_WebBloomCompositeBG = {};
+
+        // Registered handles own texture + view + sampler; the manager
+        // releases all three. The cached raw view pointers alias handle.view,
+        // so they are nulled without an extra release.
+        texMgr->DestroyTexture(m_WebSceneColorTex);
+        m_WebSceneColorTex = {};
+        m_WebSceneColorView = nullptr;
+        for (u32 i = 0; i < WEB_BLOOM_LEVELS; i++) {
+            texMgr->DestroyTexture(m_WebBloomTex[i]);
+            m_WebBloomTex[i] = {};
+            m_WebBloomView[i] = nullptr;
+            m_WebBloomDownBG[i] = {};
+            m_WebBloomUpBG[i] = {};
+        }
+        texMgr->DestroyTexture(m_WebBloomScratchTex);
+        m_WebBloomScratchTex = {};
+        m_WebBloomScratchView = nullptr;
+
+        // MSAA + depth are raw (never registered) — release directly.
+        if (m_WebMSAAColorView) { wgpuTextureViewRelease(static_cast<WGPUTextureView>(m_WebMSAAColorView)); m_WebMSAAColorView = nullptr; }
+        if (m_WebMSAAColorTex)  { wgpuTextureRelease(static_cast<WGPUTexture>(m_WebMSAAColorTex)); m_WebMSAAColorTex = nullptr; }
+        if (m_WebSceneDepthView) { wgpuTextureViewRelease(static_cast<WGPUTextureView>(m_WebSceneDepthView)); m_WebSceneDepthView = nullptr; }
+        if (m_WebSceneDepthTex)  { wgpuTextureRelease(static_cast<WGPUTexture>(m_WebSceneDepthTex)); m_WebSceneDepthTex = nullptr; }
+    }
+
+    // ---- Offscreen scene color (RGBA16Float for HDR) ----
+    WGPUTextureDescriptor sceneTexDesc = {};
+    sceneTexDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+    sceneTexDesc.dimension = WGPUTextureDimension_2D;
+    sceneTexDesc.size = {sceneW, sceneH, 1};
+    sceneTexDesc.format = WGPUTextureFormat_RGBA16Float;
+    sceneTexDesc.mipLevelCount = 1;
+    sceneTexDesc.sampleCount = 1;
+    WGPUTexture sceneTex = wgpuDeviceCreateTexture(device, &sceneTexDesc);
+    WGPUTextureViewDescriptor sceneViewDesc = {};
+    sceneViewDesc.format = WGPUTextureFormat_RGBA16Float;
+    sceneViewDesc.dimension = WGPUTextureViewDimension_2D;
+    sceneViewDesc.mipLevelCount = 1;
+    sceneViewDesc.arrayLayerCount = 1;
+    m_WebSceneColorView = wgpuTextureCreateView(sceneTex, &sceneViewDesc);
+    Renderer::WebGPUTextureHandle nativeSceneTex;
+    nativeSceneTex.texture = sceneTex;
+    nativeSceneTex.view = static_cast<WGPUTextureView>(m_WebSceneColorView);
+    nativeSceneTex.width = sceneW;
+    nativeSceneTex.height = sceneH;
+    nativeSceneTex.format = WGPUTextureFormat_RGBA16Float;
+    nativeSceneTex.sampler = MakeWebLinearClampSampler(device);
+    m_WebSceneColorTex = webTexMgr->RegisterNativeTexture(nativeSceneTex);
+
+    // ---- MSAA 4x color (render target, resolved to scene color) ----
+    WGPUTextureDescriptor msaaColorDesc = {};
+    msaaColorDesc.usage = WGPUTextureUsage_RenderAttachment;
+    msaaColorDesc.dimension = WGPUTextureDimension_2D;
+    msaaColorDesc.size = {sceneW, sceneH, 1};
+    msaaColorDesc.format = WGPUTextureFormat_RGBA16Float;
+    msaaColorDesc.mipLevelCount = 1;
+    msaaColorDesc.sampleCount = 4;
+    WGPUTexture msaaTex = wgpuDeviceCreateTexture(device, &msaaColorDesc);
+    WGPUTextureViewDescriptor msaaViewDesc = {};
+    msaaViewDesc.format = WGPUTextureFormat_RGBA16Float;
+    msaaViewDesc.dimension = WGPUTextureViewDimension_2D;
+    msaaViewDesc.mipLevelCount = 1;
+    msaaViewDesc.arrayLayerCount = 1;
+    m_WebMSAAColorTex = msaaTex;
+    m_WebMSAAColorView = wgpuTextureCreateView(msaaTex, &msaaViewDesc);
+
+    // ---- Offscreen depth (4x MSAA, matches pipeline sample count) ----
+    WGPUTextureDescriptor depthDesc = {};
+    depthDesc.usage = WGPUTextureUsage_RenderAttachment;
+    depthDesc.dimension = WGPUTextureDimension_2D;
+    depthDesc.size = {sceneW, sceneH, 1};
+    depthDesc.format = Renderer::GetDepthStencilFormat();
+    depthDesc.mipLevelCount = 1;
+    depthDesc.sampleCount = 4;
+    WGPUTexture depthTex = wgpuDeviceCreateTexture(device, &depthDesc);
+    WGPUTextureViewDescriptor depthViewDesc = {};
+    depthViewDesc.format = Renderer::GetDepthStencilFormat();
+    depthViewDesc.dimension = WGPUTextureViewDimension_2D;
+    depthViewDesc.mipLevelCount = 1;
+    depthViewDesc.arrayLayerCount = 1;
+    m_WebSceneDepthTex = depthTex;
+    m_WebSceneDepthView = wgpuTextureCreateView(depthTex, &depthViewDesc);
+
+    // ---- Bloom mip chain (half-res each level) ----
+    u32 bw = sceneW / 2, bh = sceneH / 2;
+    for (u32 i = 0; i < WEB_BLOOM_LEVELS; i++) {
+        bw = std::max(bw, 1u);
+        bh = std::max(bh, 1u);
+        WGPUTextureDescriptor btd = {};
+        btd.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+        btd.dimension = WGPUTextureDimension_2D;
+        btd.size = {bw, bh, 1};
+        btd.format = WGPUTextureFormat_RGBA16Float;
+        btd.mipLevelCount = 1;
+        btd.sampleCount = 1;
+        WGPUTexture bt = wgpuDeviceCreateTexture(device, &btd);
+        WGPUTextureViewDescriptor bvd = {};
+        bvd.format = WGPUTextureFormat_RGBA16Float;
+        bvd.dimension = WGPUTextureViewDimension_2D;
+        bvd.mipLevelCount = 1;
+        bvd.arrayLayerCount = 1;
+        m_WebBloomView[i] = wgpuTextureCreateView(bt, &bvd);
+        Renderer::WebGPUTextureHandle nbt;
+        nbt.texture = bt;
+        nbt.view = static_cast<WGPUTextureView>(m_WebBloomView[i]);
+        nbt.width = bw;
+        nbt.height = bh;
+        nbt.format = WGPUTextureFormat_RGBA16Float;
+        nbt.sampler = MakeWebLinearClampSampler(device);
+        m_WebBloomTex[i] = webTexMgr->RegisterNativeTexture(nbt);
+        bw /= 2;
+        bh /= 2;
+    }
+
+    // ---- Scratch texture for composite output (scene-sized) ----
+    {
+        WGPUTextureDescriptor std2 = {};
+        std2.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
+        std2.dimension = WGPUTextureDimension_2D;
+        std2.size = {sceneW, sceneH, 1};
+        std2.format = WGPUTextureFormat_RGBA16Float;
+        std2.mipLevelCount = 1;
+        std2.sampleCount = 1;
+        WGPUTexture st = wgpuDeviceCreateTexture(device, &std2);
+        WGPUTextureViewDescriptor svd = {};
+        svd.format = WGPUTextureFormat_RGBA16Float;
+        svd.dimension = WGPUTextureViewDimension_2D;
+        svd.mipLevelCount = 1;
+        svd.arrayLayerCount = 1;
+        m_WebBloomScratchView = wgpuTextureCreateView(st, &svd);
+        Renderer::WebGPUTextureHandle nst;
+        nst.texture = st;
+        nst.view = static_cast<WGPUTextureView>(m_WebBloomScratchView);
+        nst.width = sceneW;
+        nst.height = sceneH;
+        nst.format = WGPUTextureFormat_RGBA16Float;
+        nst.sampler = MakeWebLinearClampSampler(device);
+        m_WebBloomScratchTex = webTexMgr->RegisterNativeTexture(nst);
+    }
+
+    // ---- Bind groups referencing the sized textures ----
+    // Post-process (texture + sampler + accessibility params UBO)
+    if (m_WebPostProcessLayout.IsValid() && m_WebPPAccessibilityBuffer.IsValid()) {
+        Renderer::GPUBindGroupDesc ppBGDesc;
+        ppBGDesc.layout = m_WebPostProcessLayout;
+        ppBGDesc.entries = {
+            {0, {}, 0, 0, m_WebSceneColorTex, {}},
+            {1, {}, 0, 0, {}, m_WebSceneColorTex},
+            {2, m_WebPPAccessibilityBuffer, 0, sizeof(WebPPAccessibilityParams), {}, {}},
+        };
+        m_WebPostProcessBG = bindMgr->CreateBindGroup(ppBGDesc);
+    }
+    if (m_WebBloomSingleTexLayout.IsValid()) {
+        // Threshold (scene -> bloom[0])
+        {
+            Renderer::GPUBindGroupDesc bg;
+            bg.layout = m_WebBloomSingleTexLayout;
+            bg.entries = {{0, {}, 0, 0, m_WebSceneColorTex, {}}, {1, {}, 0, 0, {}, m_WebSceneColorTex}};
+            m_WebBloomThresholdBG = bindMgr->CreateBindGroup(bg);
+        }
+        // Downsample (bloom[i] -> bloom[i+1])
+        for (u32 i = 0; i < WEB_BLOOM_LEVELS; i++) {
+            Renderer::GPUBindGroupDesc bg;
+            bg.layout = m_WebBloomSingleTexLayout;
+            Renderer::GPUTextureHandle src = m_WebBloomTex[i];
+            bg.entries = {{0, {}, 0, 0, src, {}}, {1, {}, 0, 0, {}, src}};
+            m_WebBloomDownBG[i] = bindMgr->CreateBindGroup(bg);
+        }
+        // Upsample (bloom[i+1] read, blend into bloom[i])
+        for (u32 i = 0; i < WEB_BLOOM_LEVELS; i++) {
+            Renderer::GPUBindGroupDesc bg;
+            bg.layout = m_WebBloomSingleTexLayout;
+            bg.entries = {{0, {}, 0, 0, m_WebBloomTex[i], {}}, {1, {}, 0, 0, {}, m_WebBloomTex[i]}};
+            m_WebBloomUpBG[i] = bindMgr->CreateBindGroup(bg);
+        }
+    }
+    if (m_WebBloomCompositeLayout.IsValid()) {
+        Renderer::GPUBindGroupDesc bg;
+        bg.layout = m_WebBloomCompositeLayout;
+        bg.entries = {
+            {0, {}, 0, 0, m_WebSceneColorTex, {}}, {1, {}, 0, 0, {}, m_WebSceneColorTex},
+            {2, {}, 0, 0, m_WebBloomTex[0], {}}, {3, {}, 0, 0, {}, m_WebBloomTex[0]},
+        };
+        m_WebBloomCompositeBG = bindMgr->CreateBindGroup(bg);
+    }
+
+    const bool firstCreate = (m_WebSceneTargetW == 0);
+    m_WebSceneTargetW = sceneW;
+    m_WebSceneTargetH = sceneH;
+    if (!firstCreate) {
+        ENJIN_LOG_INFO(Renderer, "RenderSystem: offscreen chain recreated at %ux%u (resize)", sceneW, sceneH);
+    }
+}
+
 void RenderSystem::Initialize() {
     if (m_Initialized) return;
     m_FrameAllocator = std::make_unique<FrameAllocator>(8 * 1024 * 1024);
@@ -478,81 +711,12 @@ void RenderSystem::Initialize() {
         }
     }
 
-    // Post-processing: offscreen scene texture + ACES tonemap pass
+    // Post-processing: offscreen scene texture + ACES tonemap pass.
+    // Size-independent pieces (shaders, layouts, pipelines, UBO) are created
+    // here; every swapchain-sized texture and the bind groups referencing them
+    // live in RecreateWebSizedTargets, called at the end of this block and
+    // again by the frame path whenever the canvas is resized.
     {
-        auto* webRenderer = static_cast<Renderer::WebGPURenderer*>(m_Renderer);
-        u32 sceneW = m_Renderer->GetSwapchainWidth();
-        u32 sceneH = m_Renderer->GetSwapchainHeight();
-
-        // Offscreen scene color texture (RGBA16Float for HDR)
-        WGPUTextureDescriptor sceneTexDesc = {};
-        sceneTexDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
-        sceneTexDesc.dimension = WGPUTextureDimension_2D;
-        sceneTexDesc.size = {sceneW, sceneH, 1};
-        sceneTexDesc.format = WGPUTextureFormat_RGBA16Float;
-        sceneTexDesc.mipLevelCount = 1;
-        sceneTexDesc.sampleCount = 1;
-        WGPUTexture sceneTex = wgpuDeviceCreateTexture(webRenderer->GetDevice(), &sceneTexDesc);
-        WGPUTextureViewDescriptor sceneViewDesc = {};
-        sceneViewDesc.format = WGPUTextureFormat_RGBA16Float;
-        sceneViewDesc.dimension = WGPUTextureViewDimension_2D;
-        sceneViewDesc.mipLevelCount = 1;
-        sceneViewDesc.arrayLayerCount = 1;
-        m_WebSceneColorView = wgpuTextureCreateView(sceneTex, &sceneViewDesc);
-        // Register with texture manager for bind group creation
-        Renderer::WebGPUTextureHandle nativeSceneTex;
-        nativeSceneTex.texture = sceneTex;
-        nativeSceneTex.view = static_cast<WGPUTextureView>(m_WebSceneColorView);
-        nativeSceneTex.width = sceneW;
-        nativeSceneTex.height = sceneH;
-        nativeSceneTex.format = WGPUTextureFormat_RGBA16Float;
-        // Create a linear sampler for the scene texture
-        WGPUSamplerDescriptor smpDesc = {};
-        smpDesc.addressModeU = WGPUAddressMode_ClampToEdge;
-        smpDesc.addressModeV = WGPUAddressMode_ClampToEdge;
-        smpDesc.addressModeW = WGPUAddressMode_ClampToEdge;
-        smpDesc.magFilter = WGPUFilterMode_Linear;
-        smpDesc.minFilter = WGPUFilterMode_Linear;
-        smpDesc.mipmapFilter = WGPUMipmapFilterMode_Nearest;
-        smpDesc.maxAnisotropy = 1;
-        nativeSceneTex.sampler = wgpuDeviceCreateSampler(webRenderer->GetDevice(), &smpDesc);
-        auto* webTexMgr = static_cast<Renderer::WebGPUTextureManager*>(texMgr);
-        m_WebSceneColorTex = webTexMgr->RegisterNativeTexture(nativeSceneTex);
-
-        // MSAA 4x color texture (render target, resolved to sceneColorTex)
-        WGPUTextureDescriptor msaaColorDesc = {};
-        msaaColorDesc.usage = WGPUTextureUsage_RenderAttachment;
-        msaaColorDesc.dimension = WGPUTextureDimension_2D;
-        msaaColorDesc.size = {sceneW, sceneH, 1};
-        msaaColorDesc.format = WGPUTextureFormat_RGBA16Float;
-        msaaColorDesc.mipLevelCount = 1;
-        msaaColorDesc.sampleCount = 4;
-        WGPUTexture msaaTex = wgpuDeviceCreateTexture(webRenderer->GetDevice(), &msaaColorDesc);
-        WGPUTextureViewDescriptor msaaViewDesc = {};
-        msaaViewDesc.format = WGPUTextureFormat_RGBA16Float;
-        msaaViewDesc.dimension = WGPUTextureViewDimension_2D;
-        msaaViewDesc.mipLevelCount = 1;
-        msaaViewDesc.arrayLayerCount = 1;
-        m_WebMSAAColorTex = msaaTex;
-        m_WebMSAAColorView = wgpuTextureCreateView(msaaTex, &msaaViewDesc);
-
-        // Offscreen depth texture (4x MSAA, matches pipeline sample count)
-        WGPUTextureDescriptor depthDesc = {};
-        depthDesc.usage = WGPUTextureUsage_RenderAttachment;
-        depthDesc.dimension = WGPUTextureDimension_2D;
-        depthDesc.size = {sceneW, sceneH, 1};
-        depthDesc.format = Renderer::GetDepthStencilFormat();
-        depthDesc.mipLevelCount = 1;
-        depthDesc.sampleCount = 4;
-        WGPUTexture depthTex = wgpuDeviceCreateTexture(webRenderer->GetDevice(), &depthDesc);
-        WGPUTextureViewDescriptor depthViewDesc = {};
-        depthViewDesc.format = Renderer::GetDepthStencilFormat();
-        depthViewDesc.dimension = WGPUTextureViewDimension_2D;
-        depthViewDesc.mipLevelCount = 1;
-        depthViewDesc.arrayLayerCount = 1;
-        m_WebSceneDepthTex = depthTex;
-        m_WebSceneDepthView = wgpuTextureCreateView(depthTex, &depthViewDesc);
-
         // Compile post-process shader
         m_WebPostProcessShader = shaderMgr->LoadShader(
             Renderer::WebShaderData::POSTPROCESS_WGSL,
@@ -595,19 +759,8 @@ void RenderSystem::Initialize() {
         // No vertex attributes — fullscreen triangle from vertex_index
         m_WebPostProcessPipeline = pipeMgr->CreateRenderPipeline(ppPipeDesc);
 
-        // Post-process bind group (texture + sampler + params UBO from scene color)
-        Renderer::GPUBindGroupDesc ppBGDesc;
-        ppBGDesc.layout = m_WebPostProcessLayout;
-        ppBGDesc.entries = {
-            {0, {}, 0, 0, m_WebSceneColorTex, {}},  // texture
-            {1, {}, 0, 0, {}, m_WebSceneColorTex},   // sampler
-            {2, m_WebPPAccessibilityBuffer, 0, sizeof(WebPPAccessibilityParams), {}, {}},  // params UBO
-        };
-        m_WebPostProcessBG = bindMgr->CreateBindGroup(ppBGDesc);
-
-        if (m_WebPostProcessPipeline.IsValid() && m_WebPostProcessBG.IsValid()) {
-            ENJIN_LOG_INFO(Renderer, "RenderSystem: Post-processing initialized (ACES tonemap)");
-        }
+        // (The post-process bind group references the sized scene texture and is
+        // built in RecreateWebSizedTargets.)
 
         // Procedural sky shader + pipeline (renders after scene, same offscreen target)
         m_WebSkyShader = shaderMgr->LoadShader(
@@ -714,95 +867,12 @@ void RenderSystem::Initialize() {
             m_WebBloomUpPipeline = pipeMgr->CreateRenderPipeline(pd);
         }
 
-        // Create bloom mip chain textures (half-res each level)
-        auto* webTexMgrB = static_cast<Renderer::WebGPUTextureManager*>(texMgr);
-        u32 bw = sceneW / 2, bh = sceneH / 2;
-        for (u32 i = 0; i < WEB_BLOOM_LEVELS; i++) {
-            bw = std::max(bw, 1u);
-            bh = std::max(bh, 1u);
-            WGPUTextureDescriptor btd = {};
-            btd.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
-            btd.dimension = WGPUTextureDimension_2D;
-            btd.size = {bw, bh, 1};
-            btd.format = WGPUTextureFormat_RGBA16Float;
-            btd.mipLevelCount = 1;
-            btd.sampleCount = 1;
-            WGPUTexture bt = wgpuDeviceCreateTexture(webRenderer->GetDevice(), &btd);
-            WGPUTextureViewDescriptor bvd = {};
-            bvd.format = WGPUTextureFormat_RGBA16Float;
-            bvd.dimension = WGPUTextureViewDimension_2D;
-            bvd.mipLevelCount = 1;
-            bvd.arrayLayerCount = 1;
-            m_WebBloomView[i] = wgpuTextureCreateView(bt, &bvd);
-            Renderer::WebGPUTextureHandle nbt;
-            nbt.texture = bt;
-            nbt.view = static_cast<WGPUTextureView>(m_WebBloomView[i]);
-            nbt.width = bw;
-            nbt.height = bh;
-            nbt.format = WGPUTextureFormat_RGBA16Float;
-            nbt.sampler = nativeSceneTex.sampler;  // Reuse linear sampler
-            m_WebBloomTex[i] = webTexMgrB->RegisterNativeTexture(nbt);
-            bw /= 2;
-            bh /= 2;
-        }
+        // All swapchain-sized textures (scene color, MSAA, depth, bloom chain,
+        // scratch) + the bind groups that reference them:
+        RecreateWebSizedTargets(m_Renderer->GetSwapchainWidth(), m_Renderer->GetSwapchainHeight());
 
-        // Scratch texture for composite output (same size as scene)
-        {
-            WGPUTextureDescriptor std2 = {};
-            std2.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
-            std2.dimension = WGPUTextureDimension_2D;
-            std2.size = {sceneW, sceneH, 1};
-            std2.format = WGPUTextureFormat_RGBA16Float;
-            std2.mipLevelCount = 1;
-            std2.sampleCount = 1;
-            WGPUTexture st = wgpuDeviceCreateTexture(webRenderer->GetDevice(), &std2);
-            WGPUTextureViewDescriptor svd = {};
-            svd.format = WGPUTextureFormat_RGBA16Float;
-            svd.dimension = WGPUTextureViewDimension_2D;
-            svd.mipLevelCount = 1;
-            svd.arrayLayerCount = 1;
-            m_WebBloomScratchView = wgpuTextureCreateView(st, &svd);
-            Renderer::WebGPUTextureHandle nst;
-            nst.texture = st;
-            nst.view = static_cast<WGPUTextureView>(m_WebBloomScratchView);
-            nst.width = sceneW;
-            nst.height = sceneH;
-            nst.format = WGPUTextureFormat_RGBA16Float;
-            nst.sampler = nativeSceneTex.sampler;
-            m_WebBloomScratchTex = webTexMgrB->RegisterNativeTexture(nst);
-        }
-
-        // Bind groups: threshold (scene → bloom[0])
-        {
-            Renderer::GPUBindGroupDesc bg;
-            bg.layout = m_WebBloomSingleTexLayout;
-            bg.entries = {{0, {}, 0, 0, m_WebSceneColorTex, {}}, {1, {}, 0, 0, {}, m_WebSceneColorTex}};
-            m_WebBloomThresholdBG = bindMgr->CreateBindGroup(bg);
-        }
-        // Bind groups: downsample (bloom[i] → bloom[i+1])
-        for (u32 i = 0; i < WEB_BLOOM_LEVELS; i++) {
-            Renderer::GPUBindGroupDesc bg;
-            bg.layout = m_WebBloomSingleTexLayout;
-            Renderer::GPUTextureHandle src = (i == 0) ? m_WebBloomTex[0] : m_WebBloomTex[i];
-            bg.entries = {{0, {}, 0, 0, src, {}}, {1, {}, 0, 0, {}, src}};
-            m_WebBloomDownBG[i] = bindMgr->CreateBindGroup(bg);
-        }
-        // Bind groups: upsample (bloom[i+1] → read, blend into bloom[i])
-        for (u32 i = 0; i < WEB_BLOOM_LEVELS; i++) {
-            Renderer::GPUBindGroupDesc bg;
-            bg.layout = m_WebBloomSingleTexLayout;
-            bg.entries = {{0, {}, 0, 0, m_WebBloomTex[i], {}}, {1, {}, 0, 0, {}, m_WebBloomTex[i]}};
-            m_WebBloomUpBG[i] = bindMgr->CreateBindGroup(bg);
-        }
-        // Bind group: composite (scene + bloom[0])
-        {
-            Renderer::GPUBindGroupDesc bg;
-            bg.layout = m_WebBloomCompositeLayout;
-            bg.entries = {
-                {0, {}, 0, 0, m_WebSceneColorTex, {}}, {1, {}, 0, 0, {}, m_WebSceneColorTex},
-                {2, {}, 0, 0, m_WebBloomTex[0], {}}, {3, {}, 0, 0, {}, m_WebBloomTex[0]},
-            };
-            m_WebBloomCompositeBG = bindMgr->CreateBindGroup(bg);
+        if (m_WebPostProcessPipeline.IsValid() && m_WebPostProcessBG.IsValid()) {
+            ENJIN_LOG_INFO(Renderer, "RenderSystem: Post-processing initialized (ACES tonemap)");
         }
 
         if (m_WebBloomThresholdPipeline.IsValid()) {
@@ -1838,12 +1908,28 @@ void RenderSystem::Update(f32 deltaTime) {
     f32 w = static_cast<f32>(m_Renderer->GetSwapchainWidth());
     f32 h = static_cast<f32>(m_Renderer->GetSwapchainHeight());
 
-    // The offscreen scene targets are created ONCE at boot size and are NOT
-    // recreated on window resize — the scene pass viewport must match ITS
-    // attachments, not the (possibly resized) swapchain, or every frame fails
-    // validation and the game dies to black. The post-process pass scales the
-    // fixed-size scene texture to the swapchain. TODO: recreate the offscreen
-    // chain on resize for native-res rendering after enlarge.
+    // Canvas resized since the offscreen chain was built? Recreate it at the
+    // new size BEFORE any pass is encoded this frame (in-flight command
+    // buffers from earlier frames keep their resources alive via Dawn's
+    // refcounting, so releasing here is safe). Restores native-res rendering
+    // after an enlarge instead of upscaling the boot-size texture forever.
+    {
+        u32 swW = m_Renderer->GetSwapchainWidth();
+        u32 swH = m_Renderer->GetSwapchainHeight();
+        if (usePostProcess && swW != 0 && swH != 0 &&
+            (swW != m_WebSceneTargetW || swH != m_WebSceneTargetH)) {
+            // console.log, not ENJIN_LOG: stdout does not reach the browser
+            // console, and this is the line that proves a resize recreated the
+            // chain when debugging in the field.
+            EM_ASM({ console.log('[RESIZE] recreating offscreen chain ' + $0 + 'x' + $1 + ' -> ' + $2 + 'x' + $3); },
+                   m_WebSceneTargetW, m_WebSceneTargetH, swW, swH);
+            RecreateWebSizedTargets(swW, swH);
+        }
+    }
+
+    // Safety net: the scene pass viewport must match ITS attachments, not the
+    // swapchain — if the recreate above ever fails or is skipped, clamping
+    // keeps every frame valid (upscaled) instead of dying to black.
     f32 sceneW = w, sceneH = h;
     if (usePostProcess) {
         if (auto* sceneNative = static_cast<Renderer::WebGPUTextureManager*>(
