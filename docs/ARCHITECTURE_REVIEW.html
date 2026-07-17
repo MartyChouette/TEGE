@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TEGE — Architecture Review</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #161b22; --panel2: #1c2330; --border: #2a3342;
+    --text: #d7dde6; --dim: #8a94a6; --accent: #4fc3f7; --accent2: #ce93d8;
+    --good: #81c784; --warn: #ffb74d; --bad: #e57373; --code: #223047;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.55; }
+  header { padding: 48px 24px 30px; text-align: center; background: linear-gradient(180deg, #131a26 0%, var(--bg) 100%); border-bottom: 1px solid var(--border); }
+  header h1 { margin: 0 0 6px; font-size: 2.1em; letter-spacing: 0.5px; }
+  header .sub { color: var(--dim); font-size: 1.02em; }
+  header .badges { margin-top: 14px; }
+  .badge { display: inline-block; padding: 3px 12px; margin: 2px 4px; border-radius: 12px; font-size: 0.8em; border: 1px solid var(--border); background: var(--panel); color: var(--accent); }
+  nav#toc { position: sticky; top: 0; z-index: 50; background: rgba(14,17,22,0.95); backdrop-filter: blur(6px); border-bottom: 1px solid var(--border); padding: 8px 16px; text-align: center; }
+  nav#toc a { color: var(--dim); text-decoration: none; margin: 0 10px; font-size: 0.9em; }
+  nav#toc a:hover { color: var(--accent); }
+  main { max-width: 1240px; margin: 0 auto; padding: 24px 20px 80px; }
+  section { margin: 44px 0; }
+  h2 { font-size: 1.55em; border-bottom: 1px solid var(--border); padding-bottom: 8px; color: #fff; }
+  h2 .num { color: var(--accent); margin-right: 8px; }
+  h3 { color: var(--accent); margin-top: 28px; }
+  h4 { color: var(--accent2); margin-bottom: 6px; }
+  p { color: var(--text); }
+  .dim { color: var(--dim); }
+  code { background: var(--code); padding: 1px 6px; border-radius: 4px; font-size: 0.88em; font-family: Consolas, monospace; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin: 14px 0; }
+  .cards2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 900px) { .cards2 { grid-template-columns: 1fr; } }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 0.92em; }
+  th { background: var(--panel2); text-align: left; padding: 8px 10px; border: 1px solid var(--border); color: var(--accent); position: sticky; top: 40px; }
+  td { padding: 7px 10px; border: 1px solid var(--border); vertical-align: top; }
+  tr:nth-child(even) td { background: var(--panel); }
+  .tag { display: inline-block; padding: 1px 9px; border-radius: 10px; font-size: 0.78em; font-weight: 600; }
+  .t-high { background: #4a1f1f; color: var(--bad); } .t-med { background: #4a3a1f; color: var(--warn); } .t-low { background: #1f3a26; color: var(--good); }
+  .t-ok { background: #1f3a26; color: var(--good); } .t-gap { background: #4a1f1f; color: var(--bad); } .t-partial { background: #4a3a1f; color: var(--warn); } .t-na { background: #262d3a; color: var(--dim); }
+  .t-notstarted { background: #4a1f1f; color: var(--bad); } .t-stub { background: #4a2a3a; color: #f48fb1; } .t-gated { background: #26304a; color: #90caf9; }
+  .diagram-viewport { overflow: auto; cursor: grab; max-height: 800px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; margin: 14px 0; }
+  .diagram-viewport .mermaid { transform-origin: 0 0; padding: 12px; }
+  .zoombar { text-align: right; margin: -6px 2px 4px; }
+  .zoombar button { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 2px 10px; margin-left: 6px; cursor: pointer; font-size: 0.85em; }
+  .zoombar button:hover { border-color: var(--accent); }
+  footer { text-align: center; color: var(--dim); font-size: 0.85em; padding: 24px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>TEGE &mdash; The Enjin Game Engine</h1>
+  <div class="sub">Complete Architecture Review &mdash; what it is, where it is lazy, where the web build trails the PC build, and what is still missing</div>
+  <div class="badges">
+    <span class="badge">v0.9.7</span>
+    <span class="badge">C++20</span>
+    <span class="badge">Vulkan + WebGPU</span>
+    <span class="badge">BSL 1.1</span>
+    <span class="badge">2026-07-16</span>
+  </div>
+</header>
+
+<nav id="toc">
+  <a href="#arch">1 Architecture</a>
+  <a href="#flows">2 Data Flows</a>
+  <a href="#perf">3 Optimization Targets</a>
+  <a href="#lazy">4 Lazy Spots</a>
+  <a href="#parity">5 PC vs Web Parity</a>
+  <a href="#missing">6 Still Missing</a>
+</nav>
+
+<main>
+
+<!-- ================================================================ -->
+<section id="arch">
+<h2><span class="num">1</span>Architecture</h2>
+
+<p>Enjin is a from-scratch C++20 engine in four strict layers. Each layer only
+depends downward; the renderer, physics, and platform are behind interfaces so
+backends swap without touching gameplay code.</p>
+
+<h3>1.1 Layer Stack</h3>
+<div class="zoombar" data-for="d-layers"><button onclick="zoom('d-layers',-1)">&minus;</button><button onclick="zoom('d-layers',1)">+</button><button onclick="zoom('d-layers',0)">reset</button></div>
+<div class="diagram-viewport"><pre class="mermaid" id="d-layers">
+flowchart TB
+    subgraph APPS["Applications"]
+        EDITOR["EnjinEditor&lt;br/&gt;ImGui editor, panels, gizmos,&lt;br/&gt;play mode, build UI"]
+        PLAYER["EnjinPlayer&lt;br/&gt;standalone runtime, loads game.enjpak&lt;br/&gt;desktop + web_main (WASM)"]
+    end
+    subgraph ENGINE["Engine — gameplay + rendering layer"]
+        ECS["ECS&lt;br/&gt;World, generational entities,&lt;br/&gt;150+ components, systems"]
+        REN["Renderer&lt;br/&gt;IRenderBackend: Vulkan / WebGPU / Metal-stub&lt;br/&gt;RT pipeline, clustered lights, post-fx"]
+        PHYS["Physics&lt;br/&gt;IPhysicsBackend: Jolt 3D&lt;br/&gt;IPhysicsBackend2D: Box2D"]
+        SCENE["Scene&lt;br/&gt;SceneSerializer (JSON), SceneManager,&lt;br/&gt;VWS override layers, streaming"]
+        SCRIPT["Scripting&lt;br/&gt;AngelScript sandbox,&lt;br/&gt;960+ bindings, VisualScript"]
+        GAMEPLAY["Gameplay&lt;br/&gt;Save, Quest, HUD, Cinematics,&lt;br/&gt;AI + navmesh, GUI canvas"]
+        FX["Effects &amp; Media&lt;br/&gt;Weather, Water, Elemental, Particles,&lt;br/&gt;SimpleAudio (miniaudio), Animation"]
+        BUILD["Build&lt;br/&gt;BuildPipeline, AssetPacker (.enjpak),&lt;br/&gt;HTML5 exporter"]
+    end
+    subgraph CORE["Core — zero engine dependencies"]
+        PLAT["Platform&lt;br/&gt;window, input, paths, types"]
+        MATH["Math&lt;br/&gt;Vector, Matrix4, Quaternion,&lt;br/&gt;Spline, Noise"]
+        LOGMEM["Logging + Memory&lt;br/&gt;categorized log, ring buffer,&lt;br/&gt;Stack/Pool/Linear allocators"]
+    end
+    EDITOR --> ENGINE
+    PLAYER --> ENGINE
+    ECS --> CORE
+    REN --> CORE
+    PHYS --> CORE
+    SCENE --> ECS
+    SCRIPT --> ECS
+    GAMEPLAY --> ECS
+    FX --> REN
+    BUILD --> SCENE
+</pre></div>
+
+<h3>1.2 Renderer Backend Abstraction</h3>
+<div class="zoombar" data-for="d-renderer"><button onclick="zoom('d-renderer',-1)">&minus;</button><button onclick="zoom('d-renderer',1)">+</button><button onclick="zoom('d-renderer',0)">reset</button></div>
+<div class="diagram-viewport"><pre class="mermaid" id="d-renderer">
+flowchart TB
+    RS["RenderSystem&lt;br/&gt;scene classification: Scene2D / Scene2_5D / Scene3D&lt;br/&gt;culling, batching, per-frame orchestration"]
+    IRB["IRenderBackend&lt;br/&gt;+ IGPUBufferManager + IGPUTextureManager&lt;br/&gt;+ IGPUPipelineManager + bind groups&lt;br/&gt;typed opaque handles, GPUCapabilities"]
+    subgraph VK["Vulkan backend — PC, full feature set"]
+        VKF["PBR + IBL, cascaded/spot/point shadows,&lt;br/&gt;clustered lighting, DDGI, volumetric fog,&lt;br/&gt;GPU particles, Hi-Z occlusion, indirect draw,&lt;br/&gt;bindless textures, MSAA, TAA/FXAA/DLSS-gated"]
+        RT["Ray tracing pipeline&lt;br/&gt;shadows / reflections / AO / GI / path trace&lt;br/&gt;SVGF + denoisers, auto-activates on RT GPUs"]
+    end
+    subgraph WG["WebGPU backend — browser via Emscripten"]
+        WGF["PBR + shadows (dir/spot/point),&lt;br/&gt;MSAA 4x, ACES post, Dual-Kawase bloom,&lt;br/&gt;FXAA + colorblind filters, procedural sky,&lt;br/&gt;resize-safe offscreen chain (2026-07)"]
+    end
+    MTL["Metal backend&lt;br/&gt;stubs only — planned"]
+    SH1["GLSL &rarr; SPIR-V&lt;br/&gt;embedded via ShaderData.h generators"]
+    SH2["WGSL embedded strings&lt;br/&gt;WebShaderData.h (reference copies in shaders/wgsl)"]
+    RS --> IRB
+    IRB --> VK
+    IRB --> WG
+    IRB --> MTL
+    VK --> SH1
+    WG --> SH2
+</pre></div>
+
+<h3>1.3 Subsystem Inventory</h3>
+<table>
+<thead><tr><th>Subsystem</th><th>What it is (verified against source, 2026-07)</th><th>Entry point</th></tr></thead>
+<tbody>
+<tr><td><strong>ECS</strong></td><td>Generational u64 entities (index low 32 / generation high 32), sparse storage indexed by <code>EntityIndex</code>, deferred destroy. <strong>140 component structs</strong> across 42 headers.</td><td><code>ECS/World.h</code></td></tr>
+<tr><td><strong>Renderer</strong></td><td>Multi-backend behind <code>IRenderBackend</code> + per-resource managers. Vulkan full (16 files, bindless, clustered, GPU-driven infra); WebGPU full manager set (11 files); Metal <strong>does not exist</strong> (one comment + a capabilities preset); NVN (Switch) header stub.</td><td><code>Renderer/RenderBackend.h</code></td></tr>
+<tr><td><strong>Ray tracing</strong></td><td>21 files: BLAS/TLAS, SBT, shadows/reflections/AO/GI/translucency/caustics, path tracer (NEE/MIS/RR), SVGF + OIDN/OptiX denoisers, ReSTIR DI, radiance caches, LightBVH, adaptive ray budget. Auto-activates on RT hardware.</td><td><code>Renderer/RayTracing/</code></td></tr>
+<tr><td><strong>Physics</strong></td><td>Strict 2D/3D split: Jolt 5.2 / Box2D 3.0 behind interfaces, world-space colliders, bilateral bitmask filtering, 6 joint types, <code>CharacterVirtual</code>. Behavioral test coverage now real.</td><td><code>Physics/IPhysicsBackend.h</code></td></tr>
+<tr><td><strong>Audio</strong></td><td><code>SimpleAudio</code> (miniaudio): bus hierarchy + EQ + snapshots, 14 audio-reactive subsystems, chip-emulation presets, MIDI. SteamAudio HRTF is fully written but entirely inside a default-OFF ifdef.</td><td><code>Audio/SimpleAudio.h</code></td></tr>
+<tr><td><strong>Scripting</strong></td><td>AngelScript sandbox (1M instruction cap, include containment), TegeBehavior lifecycle, coroutines, hot reload. <strong>1,009 registered bindings</strong> in 36 files.</td><td><code>Scripting/ScriptEngine.cpp</code></td></tr>
+<tr><td><strong>VisualScript</strong></td><td>Blueprint-style graphs, <strong>262 registered nodes</strong>, debugger with breakpoints/step/watch, latent nodes, subgraphs.</td><td><code>VisualScript/NodeRegistry.h</code></td></tr>
+<tr><td><strong>Scene</strong></td><td>JSON serializer (hardened: caps, depth guard, SafeStr), project manifests with <code>isStartScene</code> authority, level streaming, and the <strong>VWS override-layer system</strong> (DAW-style non-destructive edit layers, phases 0&ndash;5 complete).</td><td><code>Scene/SceneSerializer.h</code>, <code>Scene/LayerSystem.h</code></td></tr>
+<tr><td><strong>GUI</strong></td><td>Anchor-based UICanvas with keyboard/gamepad/switch-access navigation, dialogue trees (+Yarn/Twine I/O), game menus, localization manager, WCAG-AAA themes.</td><td><code>GUI/UICanvas.h</code></td></tr>
+<tr><td><strong>Gameplay</strong></td><td>Tiered saves (20 slots, 3 persistence tiers), quests + flow graphs, HUD, cinematics, Braid/SoT rewind, dynamic difficulty, footsteps, pooling.</td><td><code>Gameplay/</code></td></tr>
+<tr><td><strong>AI</strong></td><td>Behavior trees (20 node types + editor), navmesh generation + A*, controller/waypoint components.</td><td><code>AI/</code></td></tr>
+<tr><td><strong>Animation</strong></td><td>Skeletal + GPU skinning (compute phase 1 live), state machines, blend trees, retargeting, IK (FABRIK/TwoBone/LookAt), ragdoll, timeline sequencer, motion matching, morph targets.</td><td><code>Animation/</code></td></tr>
+<tr><td><strong>Effects</strong></td><td>33 headers: weather/seasons/wind, water + interactive + fluid sim with terrain coupling, particles (CPU+GPU), elemental fire/water/earth/air, destructibles, retro effects, and research toys (reaction-diffusion, physarum, 4D projection).</td><td><code>Effects/</code></td></tr>
+<tr><td><strong>Assets</strong></td><td>glTF (cgltf, golden-verified), Assimp (FBX/OBJ/DAE/VOX), prefabs, SWF import, texture compression, file watching.</td><td><code>Assets/</code></td></tr>
+<tr><td><strong>Build</strong></td><td>Pipeline scans scene-referenced assets &rarr; packs <code>.enjpak</code> (XOR + CRC32) &rarr; copies Player; HTML5 exporter; Linux AppImage; Inno installer.</td><td><code>Build/BuildPipeline.h</code></td></tr>
+<tr><td><strong>Networking</strong></td><td>LAN multiplayer (UDP, HMAC-SHA256, adversarially tested), HTTP client, Newgrounds API + save backends.</td><td><code>Networking/</code></td></tr>
+<tr><td><strong>Editor</strong></td><td>32 dockable panel flags + ~10 standalone windows (debug workstation, command palette, Layers, template creator, node-graph editors, collaborative editing, git panel), 17 undo command types, gamepad radial menus.</td><td><code>Engine/src/Editor/</code> (57 files)</td></tr>
+<tr><td><strong>Accessibility</strong></td><td>8 modules wired into PlayMode + desktop Player: subtitles, announcer, alternative input (switch/eye/sip-puff), audio-visual indicators, colorblind palettes, content warnings, font library.</td><td><code>Accessibility/</code></td></tr>
+</tbody>
+</table>
+
+<div class="cards2">
+<div class="card"><h4>Key numbers (measured, not quoted)</h4>
+<ul style="margin:4px 0;">
+<li><strong>814</strong> tracked C++ files (Core 29, Engine 782, apps 3)</li>
+<li><strong>140</strong> component structs &mdash; README says "80+"</li>
+<li><strong>1,009</strong> script bindings &mdash; README says "960+"</li>
+<li><strong>262</strong> visual-script nodes &mdash; README says "146+"</li>
+<li><strong>52</strong> project templates &mdash; README says 48</li>
+<li><strong>1,907</strong> test cases in 87 suite executables</li>
+<li><strong>166</strong> shader files (36 compute, 21 RT stages, 5 WGSL)</li>
+<li>Only <strong>18</strong> TODO/FIXME comments across Engine/src</li>
+</ul></div>
+<div class="card"><h4>Documentation drift found while verifying</h4>
+<ul style="margin:4px 0;">
+<li><code>ARCHITECTURE.md</code>: MaterialGPU listed as 80 bytes (real: 112); missing 10 subsystem dirs; stale counts</li>
+<li><code>ROADMAP.md</code>: backend-abstraction phases 2&ndash;9 marked "Pending" but shipped</li>
+<li><code>ADR-0002</code> still says "Proposed" &mdash; compute-skinning Phase 1 is committed and live</li>
+<li><code>README.md</code>: version, test, node, binding, template counts all stale (undersell)</li>
+</ul></div>
+</div>
+
+</section>
+
+<!-- ================================================================ -->
+<section id="flows">
+<h2><span class="num">2</span>Data Flows</h2>
+
+<h3>2.1 The Frame Loop</h3>
+<div class="zoombar" data-for="d-frame"><button onclick="zoom('d-frame',-1)">&minus;</button><button onclick="zoom('d-frame',1)">+</button><button onclick="zoom('d-frame',0)">reset</button></div>
+<div class="diagram-viewport"><pre class="mermaid" id="d-frame">
+flowchart LR
+    A["Application::Run&lt;br/&gt;poll input, dt clamp"] --> B["World::Update&lt;br/&gt;flush deferred destroys first"]
+    B --> C["Physics&lt;br/&gt;Jolt 3D / Box2D 2D&lt;br/&gt;SyncECSToJolt &rarr; step &rarr; SyncJoltToECS"]
+    C --> D["Gameplay Systems&lt;br/&gt;scripts, AI, animation,&lt;br/&gt;controllers, audio, effects"]
+    D --> E["RenderSystem::Update"]
+    E --> F["Shadow passes&lt;br/&gt;cascaded dir + spot + point cube"]
+    F --> G["Main pass&lt;br/&gt;offscreen HDR (MSAA on web),&lt;br/&gt;sky, transparents"]
+    G --> H["Post-processing&lt;br/&gt;bloom, tonemap, AA,&lt;br/&gt;accessibility filters"]
+    H --> I["Present&lt;br/&gt;swapchain"]
+</pre></div>
+
+<h3>2.2 Scene Pipeline &amp; VWS Override Layers</h3>
+<div class="zoombar" data-for="d-scene"><button onclick="zoom('d-scene',-1)">&minus;</button><button onclick="zoom('d-scene',1)">+</button><button onclick="zoom('d-scene',0)">reset</button></div>
+<div class="diagram-viewport"><pre class="mermaid" id="d-scene">
+flowchart LR
+    PROJ[".enjinproject&lt;br/&gt;manifest: scene list,&lt;br/&gt;build indices, start scene"] --> SM["SceneManager&lt;br/&gt;NormalizeSceneList"]
+    SM --> ENJ[".enjin scene JSON&lt;br/&gt;pristine BASE"]
+    ENJ --> SER["SceneSerializer&lt;br/&gt;validation caps, SafeStr,&lt;br/&gt;stable IDs assigned on save"]
+    SER --> WORLD["ECS World&lt;br/&gt;live entities"]
+    LAYERS[".layers directory&lt;br/&gt;one .layer JSON per layer&lt;br/&gt;(Git-friendly)"] --> STACK["LayerStack::Resolve&lt;br/&gt;JSON-level merge over base,&lt;br/&gt;bottom-to-top"]
+    ENJ --> STACK
+    STACK --> SER
+    WORLD -- "editor edits captured&lt;br/&gt;as sparse deltas" --> LSYS["LayerSystem&lt;br/&gt;RecordEdit / RecordEntityChanges&lt;br/&gt;instant toggle, merge-down"]
+    LSYS --> LAYERS
+</pre></div>
+
+<h3>2.3 Build &amp; Export</h3>
+<div class="zoombar" data-for="d-build"><button onclick="zoom('d-build',-1)">&minus;</button><button onclick="zoom('d-build',1)">+</button><button onclick="zoom('d-build',0)">reset</button></div>
+<div class="diagram-viewport"><pre class="mermaid" id="d-build">
+flowchart LR
+    CFG["BuildConfig&lt;br/&gt;project path, window,&lt;br/&gt;output dir"] --> BP["BuildPipeline::Execute"]
+    BP --> PACK["AssetPacker&lt;br/&gt;scenes + assets &rarr; game.enjpak&lt;br/&gt;XOR obfuscation + CRC32"]
+    PACK --> DESK["Desktop build&lt;br/&gt;EnjinPlayer.exe + game.enjpak"]
+    PACK --> WEB["HTML5 export&lt;br/&gt;EnjinPlayer.js/.wasm (prebuilt)&lt;br/&gt;+ game.enjpak + index.html"]
+    DESK --> RUN["Player boots pak&lt;br/&gt;from its own directory"]
+    WEB --> BROWSER["Browser&lt;br/&gt;WebGPU, callback async boot,&lt;br/&gt;no ASYNCIFY"]
+</pre></div>
+
+<div class="cards2">
+<div class="card"><h4>Play mode enter / exit</h4>
+<p style="margin:4px 0;">Play serializes the editing scene to an in-memory snapshot, creates physics backends per project mode, wires script-engine subsystem pointers, boots gameplay/audio/accessibility systems, and dispatches <code>OnCreate</code>. The in-loop order matters: physics steps <em>first</em>, 3D collision events dispatch to scripts, a second 2D sync prevents one-frame-late sensor events, then the ~20 gameplay systems tick. Stop tears backends down, restores the snapshot, and <code>PlayModeDiff</code> offers changed entities as a cherry-pick apply dialog.</p></div>
+<div class="card"><h4>Script lifecycle</h4>
+<p style="margin:4px 0;"><code>.as</code> file &rarr; sandboxed compile (canonical-path include containment, depth 16, 1M instruction cap) &rarr; <code>OnCreate</code> at play start &rarr; <code>OnUpdate/FixedUpdate/LateUpdate</code> per frame &rarr; coroutines resumed by the scheduler (yield seconds/frames/end-of-frame) &rarr; <code>OnDestroy</code>. Hot reload recompiles on file change; script-initiated destroys are deferred and flushed after the script pass.</p></div>
+</div>
+
+</section>
+
+<!-- ================================================================ -->
+<section id="perf">
+<h2><span class="num">3</span>Optimization Targets</h2>
+<p class="dim">Concrete per-frame costs found in the hot paths, ranked by estimated impact.
+Items already tracked in <code>docs/AUDIT_2026_04_12.md</code> are not repeated here.</p>
+<h3>3.1 High Impact</h3>
+<table>
+<thead><tr><th>Where</th><th>What happens</th><th>Cost</th><th>Fix</th></tr></thead>
+<tbody>
+<tr>
+  <td><code>ECS/World.h:105</code></td>
+  <td>A <code>recursive_mutex</code> is locked on <strong>every</strong> <code>GetComponent</code>/<code>HasComponent</code> call. The physics sync alone implies thousands of lock acquisitions per frame at 1000 entities; RenderSystem adds thousands more.</td>
+  <td><span class="tag t-high">HIGH</span> per-entity-per-frame</td>
+  <td>Batch access via storage iteration, or a read/write lock with lock-free reads on the hot path.</td>
+</tr>
+<tr>
+  <td><code>ECS/World.h:194</code></td>
+  <td><code>GetEntitiesWithComponents</code> builds and returns a <code>std::vector</code> by value; hot callers (physics joint sync and others) re-copy the entity list every frame.</td>
+  <td><span class="tag t-high">HIGH</span> per-frame alloc + copy</td>
+  <td>Return <code>const&amp;</code> to a cached list (single-component version already does) or fill a caller-provided buffer.</td>
+</tr>
+<tr>
+  <td><code>Physics/JoltBackend.cpp:797</code></td>
+  <td>Gravity zones run a nested loop: every body &times; every <code>GravityZoneComponent</code>, with two locked component lookups inside the inner loop.</td>
+  <td><span class="tag t-high">HIGH</span> O(bodies&nbsp;&times;&nbsp;zones) per frame</td>
+  <td>Pre-filter dynamic bodies with gravity once; hoist zone component fetches out of the body loop.</td>
+</tr>
+<tr>
+  <td><code>Editor/EditorLayerInspector.cpp:1118</code><br><code>Scene/LayerSystem.cpp:158</code></td>
+  <td>VWS capture serializes the selected entity's components to JSON <strong>twice per frame</strong> while the inspector is open with an active layer (snapshot at panel top, diff at panel bottom) &mdash; even when nothing changed. ~25 <code>HasComponent</code> checks + full JSON build, each side.</td>
+  <td><span class="tag t-high">HIGH</span> ~2&ndash;4ms/frame, editor only</td>
+  <td>Trigger capture on ImGui <em>item-deactivated-after-edit</em> instead of every frame; frame-diffing becomes a fallback.</td>
+</tr>
+<tr>
+  <td><code>ECS/Systems/RenderSystem.cpp:2025</code></td>
+  <td><code>std::vector&lt;DrawCmd&gt;</code> and the per-object data buffer are heap-allocated fresh every frame in <code>Update()</code>.</td>
+  <td><span class="tag t-high">HIGH</span> per-frame alloc, scales with entity count</td>
+  <td>Persist the vectors as members and <code>clear()</code>; capacity survives across frames.</td>
+</tr>
+<tr>
+  <td><code>ECS/Systems/RenderSystem.cpp:2137</code></td>
+  <td>Draw commands are re-sorted (transparency &rarr; mesh &rarr; distance) every frame even when nothing moved or changed material.</td>
+  <td><span class="tag t-high">HIGH</span> O(n&nbsp;log&nbsp;n) per frame</td>
+  <td>Dirty-flag the sort key inputs; re-sort only on add/remove/material/visibility change (camera-distance band check for the rest).</td>
+</tr>
+</tbody>
+</table>
+
+<h3>3.2 Medium / Low</h3>
+<table>
+<thead><tr><th>Where</th><th>What happens</th><th>Cost</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td><code>Physics/JoltBackend.cpp:349</code></td><td>Four sequential <code>GetEntitiesWithComponent</code> calls (one per collider type) rebuild the candidate set every frame; the same set is then iterated three more times (create/destroy/type-change phases).</td><td><span class="tag t-med">MED</span></td><td>One combined pass with staged flags.</td></tr>
+<tr><td><code>Physics/JoltBackend.cpp:425</code></td><td><code>GetColliderInfo</code> chains four locked <code>GetComponent</code> attempts per entity per frame.</td><td><span class="tag t-med">MED</span></td><td>Cache storage pointers for the frame.</td></tr>
+<tr><td><code>Scene/LayerStack.cpp:136</code></td><td><code>Layer::EntityFor</code>/<code>FindEntity</code> are linear scans, called per captured edit and per toggle reconcile; a big layer makes capture O(n&sup2;).</td><td><span class="tag t-med">MED</span></td><td>Hash map <code>stableId &rarr; index</code> inside <code>Layer</code>.</td></tr>
+<tr><td><code>GUI/UIElement.cpp:111</code></td><td><code>GetElement()</code> is a linear search; layout + input walk it ~15&times; per frame (~750 iterations at 50 elements). <code>GetRootElementIds()</code> also allocates a fresh vector per call.</td><td><span class="tag t-med">MED</span></td><td><code>unordered_map</code> id&rarr;index; reuse a member vector for roots.</td></tr>
+<tr><td><code>GUI/UISystem.cpp:80</code></td><td>Canvases re-sorted by <code>sortOrder</code> every frame.</td><td><span class="tag t-low">LOW</span></td><td>Sort on change only.</td></tr>
+<tr><td><code>ECS/Systems/RenderSystem.cpp:1353</code></td><td><code>m_SkeletonToAnimator</code> map rebuilt/queried per frame for skinned entities.</td><td><span class="tag t-low">LOW</span></td><td>Cache the resolved animator on the component; validate liveness.</td></tr>
+</tbody>
+</table>
+
+<div class="card"><strong>Reading the numbers.</strong> The editor-only findings (VWS snapshot) cost nothing in a shipped game. The engine-wide ones &mdash; the World mutex, per-frame draw-list allocation and sort, and the physics sync patterns &mdash; are what stand between the current engine and the 120-FPS-no-matter-what pillar on low-end hardware. The mutex is the deepest cut: it is architectural, and fixing it (storage-level iteration instead of per-entity locked lookups) also fixes findings 3.2's lock-churn rows for free.</div>
+<!-- SECTION:PERF-END -->
+</section>
+
+<!-- ================================================================ -->
+<section id="lazy">
+<h2><span class="num">4</span>Lazy Spots</h2>
+<p class="dim">Places where the code takes a shortcut a user eventually notices:
+stubs behind real APIs, hardcoded tunables, silently dropped features, settings nothing reads.</p>
+<div class="card" style="border-color:#7a5030;">
+<h4 style="margin-top:0;">The shared root cause worth fixing first</h4>
+<p style="margin:4px 0;">Three headline systems &mdash; <strong>Volumetric Fog</strong>, <strong>Software DDGI</strong>, and the <strong>GPU Particle System</strong> &mdash; were scaffolded in one pass and all stopped at the <em>same line</em>: the per-frame parameter UBO upload. Each creates its compute pipeline, each dispatches every frame, each has a full Settings panel of sliders &mdash; and each dispatches against an <em>unwritten uniform buffer</em>. Every slider is dead. One shared <code>UploadParams</code> helper on <code>ComputePipelineSetup</code> fixes the trio. Suggested rule going forward: a Settings slider ships in the same commit as its consumer.</p>
+</div>
+
+<h3>4.1 Settings UI that controls nothing</h3>
+<table>
+<thead><tr><th>#</th><th>Feature</th><th>Claims / Does</th><th>Evidence</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><strong>Volumetric Fog</strong></td><td>Checkbox + 10 sliders. <code>Update()</code> never uploads the params UBO &mdash; all 13 parameters are <code>(void)</code>-cast below a TODO; temporal reprojection also gets <code>prevVP = currentVP</code>.</td><td><code>VolumetricFog.cpp:94-106</code></td><td>M</td></tr>
+<tr><td>2</td><td><strong>Software DDGI</strong></td><td>GI checkbox + 8 sliders. Params UBO created, destroyed, never written; voxel grid never cleared between revoxelizations; triangle count hardcoded 100000.</td><td><code>DDGIProbeSystem.cpp:97,122,127</code></td><td>L</td></tr>
+<tr><td>3</td><td><strong>GPU Particles</strong></td><td>Full config panel. <code>Simulate()</code> dispatches with no emitter UBO upload; <code>Render()</code> is a comment block; <code>Spawn()</code> has zero callers. Also burns a pointless dispatch every frame on every scene.</td><td><code>GPUParticleSystem.cpp:76-147</code></td><td>L (S to gate)</td></tr>
+<tr><td>4</td><td><strong>Weighted Blended OIT</strong></td><td>Checkbox toggles a bool only the checkbox reads; <code>m_OITManager</code> is initialized, shut down, and used nowhere between.</td><td><code>RenderSystem.h:660</code>, <code>EditorLayerRendering.cpp:2416</code></td><td>S/L</td></tr>
+</tbody>
+</table>
+
+<h3>4.2 Component features that silently no-op</h3>
+<table>
+<thead><tr><th>#</th><th>Feature</th><th>Claims / Does</th><th>Evidence</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>5</td><td><strong>Click-to-move</strong></td><td>Inspector checkbox + serialized field; the runtime handler body is a comment ("In a real implementation, you'd raycast&hellip;").</td><td><code>ControllerSystem.cpp:979</code></td><td>M</td></tr>
+<tr><td>6</td><td><strong>AudioReactive</strong></td><td>"Mesh dances to your music": any clip path generates a hardcoded 110/880/5000&nbsp;Hz test tone; <code>useLiveInput</code> has no input path at all.</td><td><code>AudioReactive.cpp:370-384</code></td><td>M</td></tr>
+<tr><td>7</td><td><strong>ScreenDistortion Custom</strong></td><td>The user's distortion map path is never loaded; everyone gets the same hardcoded sine/cosine wobble.</td><td><code>ScreenDistortion.cpp:179</code></td><td>M</td></tr>
+<tr><td>8</td><td><strong>Quest conditions</strong></td><td>Condition nodes read their properties, discard them, and <code>return true</code> &mdash; every conditional quest branch takes the true path.</td><td><code>QuestFlow.cpp:152-160</code></td><td>M</td></tr>
+<tr><td>9</td><td><strong>Navmesh generation</strong></td><td>Recast-style settings struct; only <code>agentMaxSlope</code> is consumed. <code>agentRadius</code> &mdash; which the user manual tells users to set &mdash; has zero consumers. Agents path flush against walls.</td><td><code>Navmesh.cpp:557-594</code></td><td>L (S for doc honesty)</td></tr>
+</tbody>
+</table>
+
+<h3>4.3 Silent drops and divergence</h3>
+<table>
+<thead><tr><th>#</th><th>Feature</th><th>Claims / Does</th><th>Evidence</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>10</td><td><strong>Web sprite disclosure</strong></td><td>The export dialog's WebGPU Limitations panel lists particles/terrain/water/UI but omits that all sprites ship as untextured, unrotated white quads.</td><td><code>EditorLayerDialogs.cpp:1596</code>, <code>RenderSystem.cpp:2450</code></td><td>S disclosure / M fix</td></tr>
+<tr><td>11</td><td><strong>Collab editing removal sync</strong></td><td>Peer component-removal applies for 3 of 150+ component types; everything else warns, does nothing, then logs "Removed component &hellip; by peer" anyway. Sessions silently diverge.</td><td><code>CollaborativeEditingUI.cpp:604-648</code></td><td>M (SceneSerializer::RemoveOneComponent now exists &mdash; wire it)</td></tr>
+<tr><td>12</td><td><strong>Hot reload state</strong></td><td>Logs "Saving gameplay state before reload", returns an empty struct.</td><td><code>HotReload.cpp:153</code></td><td>S (honest log) / M</td></tr>
+<tr><td>13</td><td><strong>Rewind animation</strong></td><td>Rewound characters keep playing animation forward over rewound transforms &mdash; no time setter on SkeletalAnimator.</td><td><code>RecordRewindSystem.cpp:113</code></td><td>S</td></tr>
+<tr><td>14</td><td><strong>"Get Current Scene" node</strong></td><td>Visual-script node always returns <code>""</code>; graphs branching on scene name silently mis-route.</td><td><code>NodeRegistry.cpp:5607</code></td><td>S</td></tr>
+<tr><td>15</td><td><strong>OpenDyslexic font</strong></td><td>Accessibility-pillar font not embedded (OFL license permits it); the "similar effect" fallback applies only 1 of its 3 spacing values.</td><td><code>FontLibrary.cpp:18,88</code></td><td>M</td></tr>
+<tr><td>16</td><td><strong>Morph-target import warning</strong></td><td>The import-warning scan for unsupported features never sets its flags &mdash; blend shapes vanish on import with no note, defeating the warning system built to disclose exactly that.</td><td><code>SceneImporter.cpp:355-372</code></td><td>S</td></tr>
+</tbody>
+</table>
+
+<h3>4.4 Lower frequency, still real</h3>
+<table>
+<thead><tr><th>#</th><th>Feature</th><th>Claims / Does</th><th>Evidence</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>17</td><td><strong>.enjpak compression</strong></td><td>Packer's <code>CompressData</code> is a passthrough; reader hard-errors on any actually-compressed pack. The format advertises a capability neither side has.</td><td><code>AssetPacker.cpp:246</code>, <code>AssetReader.cpp:373</code></td><td>S (miniz both sides)</td></tr>
+<tr><td>18</td><td><strong>Material JSON params</strong></td><td>"Float only for now" &mdash; colors/vectors/bools in a .mat silently become 0.0; hand-rolled brace matching truncates on nested objects despite nlohmann being linked.</td><td><code>MaterialSystem.cpp:324-357</code></td><td>M</td></tr>
+<tr><td>19</td><td><strong>Editor first-person mode</strong></td><td>Fly mode with a hardcoded <code>y &gt;= 1.7</code> clamp against the grid plane &mdash; no gravity, no ground raycast; floats over terrain.</td><td><code>CameraController.cpp:257</code></td><td>S&ndash;M</td></tr>
+<tr><td>20</td><td><strong>LAN server authority</strong></td><td>The "server-authoritative" validation mode warns once at init and then allows everything, identical to P2P.</td><td><code>ServerAuthority.cpp:9-19</code></td><td>L / S to remove option</td></tr>
+</tbody>
+</table>
+
+<div class="card"><strong>Scope note.</strong> These are NEW findings &mdash; items already tracked in <code>docs/AUDIT_2026_04_12.md</code>, <code>docs/VERIFICATION_BACKLOG.md</code>, and session memory (Metal stubs, web bloom constants, dead raster transmission fields, collider friction bindings, AudioManager) are deliberately not repeated here.</div>
+<!-- SECTION:LAZY-END -->
+</section>
+
+<!-- ================================================================ -->
+<section id="parity">
+<h2><span class="num">5</span>PC (Vulkan) vs Web (WebGPU) Parity</h2>
+<p class="dim">Feature-by-feature matrix. "N/A" means intentionally out of scope for the web target.</p>
+<div class="card" style="border-color:#7a3040;">
+<h4 style="margin-top:0;">Top gaps by user impact</h4>
+<ol style="margin:6px 0 2px;">
+  <li><strong>No UI, HUD, or menus on web</strong> &mdash; UISystem/HUDSystem/GameMenuSystem never initialize in <code>web_main.cpp</code>. Any game with UI looks broken.</li>
+  <li><strong>No text rendering</strong> &mdash; <code>TextComponent</code> has zero references in the web render half.</li>
+  <li><strong>Sprites are untextured</strong> &mdash; web draws tinted white quads, rotation hardcoded to 0. 2D games are effectively broken on web.</li>
+  <li><strong>AI and Dialogue never tick</strong> &mdash; AISystem, DialogueSystem, StateMachineSystem absent from the web loop; NPCs freeze.</li>
+  <li><strong>Saves don't persist</strong> &mdash; web writes land in Emscripten MEMFS and vanish on page reload; no IDBFS/localStorage bridge, no autosave update.</li>
+  <li><strong>Water, terrain, scene skyboxes, weather rendering, elemental effects</strong> are all invisible on web (WeatherSystem even <em>updates</em> &mdash; nothing renders it).</li>
+  <li><strong>Accessibility runtime absent</strong> &mdash; subtitles, announcer, alternative input, content warnings all desktop-only; web keeps only the colorblind/brightness/contrast shader. This conflicts with the Accessibility-Everything pillar.</li>
+</ol>
+</div>
+
+<h3>5.1 Engine Systems on the Web Player</h3>
+<table>
+<thead><tr><th>System</th><th>PC Player</th><th>Web Player</th><th>Gap</th></tr></thead>
+<tbody>
+<tr><td>Physics (Jolt 3D + Box2D 2D)</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-ok">YES</span> both compile to wasm (known collider-list workaround)</td><td class="dim">parity</td></tr>
+<tr><td>Scripting (AngelScript, ~960 bindings)</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-ok">YES</span> no JIT; render + audio-graph binding TUs excluded</td><td class="dim">near-parity</td></tr>
+<tr><td>Audio (SimpleAudio / miniaudio)</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-ok">YES</span> WebAudio backend</td><td class="dim">parity</td></tr>
+<tr><td>VisualScript, BehaviorTree, Tween, Quest, Controllers, Coroutines, WorldTime</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-ok">YES</span></td><td class="dim">parity</td></tr>
+<tr><td>Gamepad / keyboard / mouse input</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-ok">YES</span> HTML5 Gamepad API, pointer lock</td><td class="dim">parity</td></tr>
+<tr><td>Asset packs (.enjpak), SceneManager, HTTPClient</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-ok">YES</span></td><td class="dim">parity</td></tr>
+<tr><td>UISystem / HUD / GameMenu</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-gap">ABSENT</span> HUD member declared, never initialized</td><td><span class="tag t-high">HIGH</span></td></tr>
+<tr><td>Text rendering (TextComponent)</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-gap">ABSENT</span></td><td><span class="tag t-high">HIGH</span></td></tr>
+<tr><td>Sprites (Sprite2DComponent)</td><td><span class="tag t-ok">YES</span> batched, atlased, textured</td><td><span class="tag t-partial">PARTIAL</span> white quads + tint, no rotation</td><td><span class="tag t-high">HIGH</span></td></tr>
+<tr><td>AISystem + pathfinding, DialogueSystem, StateMachine, Cinematics</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-gap">ABSENT</span> from web loop</td><td><span class="tag t-high">HIGH</span></td></tr>
+<tr><td>Save persistence</td><td><span class="tag t-ok">YES</span> disk + autosave</td><td><span class="tag t-partial">PARTIAL</span> MEMFS only &mdash; lost on reload</td><td><span class="tag t-high">HIGH</span></td></tr>
+<tr><td>Accessibility runtime (subtitles, announcer, alt input, warnings)</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-gap">ABSENT</span> (colorblind/brightness shader only)</td><td><span class="tag t-high">HIGH</span></td></tr>
+<tr><td>ElementalSystem, FluidSimulation, Destructible, InteractiveWater, SeasonalWeather</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-gap">ABSENT</span></td><td><span class="tag t-med">MED&ndash;HIGH</span></td></tr>
+<tr><td>Level streaming (StreamingManager)</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-gap">ABSENT</span></td><td><span class="tag t-med">MED</span></td></tr>
+<tr><td>AudioGraph runtime, AudioReactive, Footsteps, MIDI, RecordRewind</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-gap">ABSENT</span></td><td><span class="tag t-med">MED&ndash;LOW</span></td></tr>
+<tr><td>LAN networking</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-na">N/A</span> raw sockets impossible in browsers; bindings silently no-op (WebSocket transport would be the path)</td><td class="dim">by design, today</td></tr>
+</tbody>
+</table>
+
+<h3>5.2 Renderer Features</h3>
+<table>
+<thead><tr><th>Feature</th><th>Vulkan (PC)</th><th>WebGPU</th><th>Gap</th></tr></thead>
+<tbody>
+<tr><td>PBR core (GGX/Smith/Fresnel), base/normal/MR maps, alpha cutoff, analytic fog, LOD hysteresis, instancing</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-ok">YES</span> same math</td><td class="dim">parity</td></tr>
+<tr><td>Light budget</td><td>64 point + 32 spot + 32 transient fire lights</td><td>4 dir + 4 point + 4 spot &mdash; extra lights silently drop</td><td><span class="tag t-high">HIGH</span></td></tr>
+<tr><td>Shadows</td><td>4-cascade CSM, 4 point (cube array) + 4 spot, atlas + budget, dither art modes</td><td>1 cascade 2048px, 1 point cube 512px, 2 spots 512px, fixed 3&times;3 PCF</td><td><span class="tag t-med">MED</span></td></tr>
+<tr><td><code>surfaceParam</code> encodings (dither gradient/transparency, elemental char/wet/snow/frost, surface noise, reflectivity+rim)</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-gap">NONE</span> &mdash; fields not even in the web UBO; such materials render as plain PBR</td><td><span class="tag t-high">HIGH</span></td></tr>
+<tr><td>Cel/toon shading + cel outline pass</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-gap">NO</span></td><td><span class="tag t-high">HIGH</span> for toon projects</td></tr>
+<tr><td>Skybox</td><td>Cubemap/HDRI assets</td><td>Hardcoded procedural gradient; scene skybox assets ignored</td><td><span class="tag t-high">HIGH</span></td></tr>
+<tr><td>Water + terrain rendering</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-gap">ABSENT</span> (components invisible)</td><td><span class="tag t-high">HIGH</span></td></tr>
+<tr><td>SSS, parallax occlusion, emissive <em>textures</em>, vertex colors, morph targets, wind vertex sway</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-gap">NO</span></td><td><span class="tag t-med">MED</span></td></tr>
+<tr><td>Skinning</td><td>8-bone VS + experimental compute path</td><td>4-bone VS (influences 5&ndash;8 of the 136-byte vertex ignored)</td><td><span class="tag t-med">MED</span></td></tr>
+<tr><td>GI: DDGI, SH probes, reflection probes, clustered lighting, volumetric fog</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-gap">NO</span> (analytic fog only)</td><td><span class="tag t-med">MED</span></td></tr>
+<tr><td>Post chain</td><td>Tonemap modes, bloom, TAA/SMAA/MSAA, vignette, CA, grain, LUT, CRT/retro, DoF, SSAO, god rays, HDR out, post volumes</td><td>ACES + 4-level bloom (intensity hardcoded) + FXAA + colorblind/brightness/contrast; fixed 4&times;MSAA</td><td><span class="tag t-med">MED</span> (<span class="tag t-high">HIGH</span> for retro-styled templates)</td></tr>
+<tr><td>Ray tracing (shadows/reflections/AO/GI/path tracing + denoisers)</td><td><span class="tag t-ok">YES</span> auto-activates</td><td><span class="tag t-na">N/A</span> no RT in WebGPU</td><td class="dim">by design</td></tr>
+<tr><td>GPU particles / weather rendering / SVG sprites</td><td><span class="tag t-ok">YES</span></td><td>CPU particles only (cap 8192, untextured); weather updates but renders nothing; SVG loader excluded</td><td><span class="tag t-med">MED&ndash;HIGH</span></td></tr>
+<tr><td>Splitscreen / render-to-target cameras</td><td><span class="tag t-ok">YES</span></td><td><span class="tag t-gap">NO</span> single camera</td><td><span class="tag t-med">MED</span></td></tr>
+<tr><td>Frustum culling</td><td><span class="tag t-ok">YES</span> CPU cull</td><td><span class="tag t-gap">NONE</span> &mdash; every visible mesh draws, into every shadow pass, with per-entity buffer+bind-group churn</td><td><span class="tag t-med">MED perf</span></td></tr>
+</tbody>
+</table>
+
+<div class="card"><strong>How to read this.</strong> The web renderer's PBR core is honest parity &mdash; same math, same analytic fog, working shadows for one sun + a few lights. What the web build actually lacks splits into two families: <em>engine systems that simply never tick in <code>web_main.cpp</code></em> (UI, text, AI, dialogue, accessibility, save persistence &mdash; these are wiring work, not renderer work), and <em>renderer features excluded from the WASM build</em> (water, terrain, skybox assets, GI, post-fx depth &mdash; these are real porting work). The first family is the cheap, high-impact half: most of it is instantiating existing cross-platform systems in the web boot path. Evidence: <code>Engine/CMakeLists.txt:59-92</code> exclusion list, <code>Player/src/web_main.cpp</code> vs <code>Player/src/main.cpp</code>, <code>WebShaderData.h</code> vs <code>triangle.frag</code>.</div>
+<!-- SECTION:PARITY-END -->
+</section>
+
+<!-- ================================================================ -->
+<section id="missing">
+<h2><span class="num">6</span>Still Missing &mdash; the honest list</h2>
+<p class="dim">Everything that is not yet real, categorized:
+<span class="tag t-notstarted">NOT STARTED</span>
+<span class="tag t-stub">STUBBED</span>
+<span class="tag t-partial">PARTIAL</span>
+<span class="tag t-gated">GATED OFF</span></p>
+<h3>6.1 Platforms &amp; Backends</h3>
+<table>
+<thead><tr><th>Item</th><th>Status</th><th>What finishing entails</th></tr></thead>
+<tbody>
+<tr><td><strong>Metal backend</strong> (macOS/iOS)</td><td><span class="tag t-notstarted">NOT STARTED</span></td><td>Zero Metal files exist &mdash; only a comment and a capabilities preset. Needs the full manager set (buffer/texture/pipeline/bindgroup/encoder) mirroring the WebGPU one, MSL or SPIRV-Cross shaders, macOS surface glue. MoltenVK is the pragmatic interim.</td></tr>
+<tr><td><strong>Android</strong></td><td><span class="tag t-notstarted">NOT STARTED</span></td><td>ANativeWindow + Vulkan, touch input, Gradle/NDK build, TBDR-friendly render path, ASTC/ETC2 textures, thermal management.</td></tr>
+<tr><td><strong>iOS</strong></td><td><span class="tag t-notstarted">NOT STARTED</span></td><td>Metal (or MoltenVK) + Safe Area + Xcode toolchain. Blocked behind the Metal backend.</td></tr>
+<tr><td><strong>Consoles</strong> (Xbox GDK, PS5, Switch&nbsp;2)</td><td><span class="tag t-notstarted">NOT STARTED</span></td><td>Licensed SDKs + D3D12/AGC backends. Switch&nbsp;1 has header stubs (<code>NVNBackend.h</code>) only.</td></tr>
+<tr><td><strong>VR/XR</strong> (OpenXR)</td><td><span class="tag t-notstarted">NOT STARTED</span></td><td>Stereo rendering + spatial input.</td></tr>
+<tr><td><strong>Web player parity</strong></td><td><span class="tag t-partial">PARTIAL</span></td><td>The whole of Section 5. Cheapest wins first: instantiate UI/AI/dialogue/accessibility systems in <code>web_main.cpp</code>, IDBFS save persistence, textured sprites, TextComponent rendering.</td></tr>
+<tr><td><strong>Web size/perf</strong></td><td><span class="tag t-notstarted">NOT STARTED</span></td><td>Basis Universal textures, Opus audio, code splitting, render bundles, buffer reuse (per-frame churn), frustum culling on web.</td></tr>
+</tbody>
+</table>
+
+<h3>6.2 Built but Gated OFF (flip a flag + SDK + QA)</h3>
+<table>
+<thead><tr><th>Item</th><th>Status</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>SteamAudio HRTF/occlusion</td><td><span class="tag t-gated">GATED OFF</span></td><td>~500 lines fully written, entire file inside default-OFF ifdef. Without it there is no HRTF at all.</td></tr>
+<tr><td>DLSS / XeSS upscalers</td><td><span class="tag t-partial">PARTIAL</span></td><td>Real <code>IUpscaler</code> implementations that fall back to built-in Lanczos+CAS unless the vendor SDK is linked. Hidden from UI meanwhile.</td></tr>
+<tr><td>OIDN / OptiX denoisers</td><td><span class="tag t-gated">GATED OFF</span></td><td>Code exists; needs SDKs.</td></tr>
+<tr><td>VRS, virtual texturing, visibility buffer</td><td><span class="tag t-gated">GATED OFF</span></td><td>Deliberately gated as non-functional in the 2026-05 cleanup.</td></tr>
+<tr><td>Steamworks, Hub launcher</td><td><span class="tag t-gated">GATED OFF</span></td><td>CMake flags default OFF.</td></tr>
+</tbody>
+</table>
+
+<h3>6.3 Claimed by UI, Not Actually Functional (Section 4's top tier)</h3>
+<table>
+<thead><tr><th>Item</th><th>Status</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>Volumetric fog, software DDGI, GPU particles</td><td><span class="tag t-stub">STUBBED</span></td><td>Pipelines + panels exist; all three miss the same params-UBO upload. The trio is the highest-leverage fix in this document.</td></tr>
+<tr><td>Weighted-blended OIT</td><td><span class="tag t-stub">STUBBED</span></td><td>Manager initialized, never used in a render path.</td></tr>
+<tr><td>Click-to-move, AudioReactive live input, custom distortion maps, quest conditions, navmesh agent sizing</td><td><span class="tag t-stub">STUBBED</span></td><td>See Section 4.2 for each.</td></tr>
+</tbody>
+</table>
+
+<h3>6.4 In-Progress Systems with Named Remaining Phases</h3>
+<table>
+<thead><tr><th>System</th><th>Done</th><th>Remaining</th></tr></thead>
+<tbody>
+<tr><td><strong>GPU compute skinning</strong> (ADR-0002)</td><td>Phase 1 live: compute pre-pass feeds main/shadow/outline draws</td><td>Phase 2: RT BLAS from deformed buffers (skinned characters are currently bind-pose/invisible to RT). Phase 3: shared-pose dedup. Phase 4: pooled arena scale. Runtime toggle never GPU-verified.</td></tr>
+<tr><td><strong>VWS override layers</strong> (ADR-0001)</td><td>Phases 0&ndash;5 all committed: capture, panel, instant toggle, per-layer files, merge-down, lifecycle</td><td>Runtime pass in the editor UI; fuzz/adversarial testing of third-party <code>.layer</code> files before external loading ships; base-vs-resolved save semantics decision.</td></tr>
+<tr><td><strong>Reflection probes</strong></td><td>Component, box projection, UI, serialization</td><td>Cubemap baking + SSR fallback.</td></tr>
+<tr><td><strong>ReSTIR</strong></td><td>DI foundation, shadow consumption</td><td>Temporal + spatial reservoir reuse, debug viz.</td></tr>
+<tr><td><strong>Editor gamepad control</strong></td><td>Radial menus, hierarchy nav, viewport fly</td><td>Panel/widget-level navigation across the whole editor (inspector fields etc.).</td></tr>
+<tr><td><strong>Project Hub redesign</strong></td><td>Template creator + thumbnails</td><td>Landing 3-action flow, disposable Sandbox sessions, per-template layouts.</td></tr>
+</tbody>
+</table>
+
+<h3>6.5 Code-Level Limitations Worth Scheduling</h3>
+<table>
+<thead><tr><th>Item</th><th>Status</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>Inspector edits mostly not undoable</td><td><span class="tag t-partial">PARTIAL</span></td><td>17 undo command types exist, but there is no generic property-edit command &mdash; material colors, floats, checkboxes don't undo. A merge-capable <code>PropertyEditCommand</code> would also give VWS capture a clean event-driven trigger (fixing the perf finding in &sect;3.1).</td></tr>
+<tr><td>Physics friction/bounciness at runtime</td><td><span class="tag t-partial">PARTIAL</span></td><td>Script bindings write ECS values Jolt only reads at body creation.</td></tr>
+<tr><td>Raster transmission/IOR/thickness</td><td><span class="tag t-partial">PARTIAL</span></td><td>Fields flow end-to-end but the raster shader never consumes them; Glass preset is a no-op outside RT.</td></tr>
+<tr><td>Localization tooling</td><td><span class="tag t-partial">PARTIAL</span></td><td>A real <code>LocalizationManager</code> exists (string tables, LOC() macro, bindings) &mdash; missing an editor panel and string-extraction tooling; the editor UI itself is English-only.</td></tr>
+<tr><td>Animation-only FBX import</td><td><span class="tag t-partial">PARTIAL</span></td><td>Loader hard-rejects mesh-less FBX, blocking the standard retarget workflow.</td></tr>
+<tr><td>Legacy audio classes</td><td><span class="tag t-stub">STUBBED</span></td><td><code>AudioManager</code>/ECS <code>AudioSystem</code> compile, never instantiated &mdash; remove or revive.</td></tr>
+<tr><td>Test debt</td><td><span class="tag t-partial">PARTIAL</span></td><td>Still unproven: BuildPipeline end-to-end, prefab round-trip, save-slot disk persistence, level-streaming state machine, SkeletalAnimator pose-over-time, BlendTree blending, LevelGenerator connectivity.</td></tr>
+</tbody>
+</table>
+
+<h3>6.6 Research Roadmap (2026&ndash;2027+, intentionally unstarted)</h3>
+<p class="dim">Advanced ReSTIR, hash-grid radiance cache, NRD/FSR3.1 SDK integration, VK_EXT_shader_object / descriptor-buffer migration, Nanite-style virtual geometry, mesh-shader pipeline (groundwork exists), archetype ECS, SIMD math pass, async scene serialization, path-tracer reference mode, WFC building generation, neural rendering, and the Tege Rendering Language. These are direction, not debt.</p>
+</section>
+
+</main>
+
+<footer>
+  TEGE Architecture Review &mdash; generated 2026-07-16 against v0.9.7 (commit b63b213). Diagrams: Mermaid. Single self-contained file; findings verified against source at generation time.
+</footer>
+
+<script>
+mermaid.initialize({
+  startOnLoad: true,
+  theme: 'dark',
+  themeVariables: { fontSize: '14px' },
+  flowchart: { htmlLabels: true, curve: 'basis', padding: 15, useMaxWidth: true },
+  pie: { useMaxWidth: true, textPosition: 0.75 }
+});
+
+// Zoom: scale() alone doesn't create scrollbars — set explicit container size.
+var diagramNatural = {};
+var diagramScale = {};
+function zoom(id, dir) {
+  var pre = document.getElementById(id);
+  if (!pre) return;
+  var svg = pre.querySelector('svg');
+  if (!svg) return;
+  if (!diagramNatural[id]) diagramNatural[id] = { w: svg.scrollWidth, h: svg.scrollHeight };
+  var s = diagramScale[id] || 1;
+  if (dir === 0) s = 1; else s = Math.min(4, Math.max(0.4, s + dir * 0.25));
+  diagramScale[id] = s;
+  var nat = diagramNatural[id];
+  svg.style.transformOrigin = '0 0';
+  svg.style.transform = 'scale(' + s + ')';
+  pre.style.width = (nat.w * s) + 'px';
+  pre.style.height = (nat.h * s) + 'px';
+  pre.style.overflow = 'visible';
+}
+
+// Drag-scroll: cursor:grab is cosmetic without these handlers.
+document.querySelectorAll('.diagram-viewport').forEach(function (vp) {
+  var down = false, sx = 0, sy = 0, sl = 0, st = 0;
+  vp.addEventListener('mousedown', function (e) { down = true; sx = e.pageX; sy = e.pageY; sl = vp.scrollLeft; st = vp.scrollTop; vp.style.cursor = 'grabbing'; });
+  window.addEventListener('mousemove', function (e) { if (!down) return; vp.scrollLeft = sl - (e.pageX - sx); vp.scrollTop = st - (e.pageY - sy); });
+  window.addEventListener('mouseup', function () { down = false; vp.style.cursor = 'grab'; });
+});
+</script>
+</body>
+</html>
