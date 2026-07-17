@@ -91,6 +91,7 @@ layout(binding = 1) uniform LightingUBO {
     vec4 reflectionProbePosition; // xyz = probe center, w = intensity (0 = no probe)
     vec4 reflectionProbeBoxMin;   // xyz = world AABB min, w = blend distance
     vec4 reflectionProbeBoxMax;   // xyz = world AABB max, w = isBaked (1.0 = cubemap at binding 19)
+    vec4 fogScreenParams;         // xy = screen size px (froxel UV), z = camera near, w = reserved
     DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLight pointLights[MAX_POINT_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];
@@ -1640,10 +1641,14 @@ void main() {
         bool hasVolumetricFog = (froxelSize.x > 1 && froxelSize.y > 1 && froxelSize.z > 1);
 
         if (hasVolumetricFog) {
-            // Map fragment to froxel UV: XY from screen position, Z from view depth
-            vec2 screenUV = gl_FragCoord.xy / vec2(textureSize(ddgiIrradiance, 0));
+            // Map fragment to froxel UV: XY from screen position, Z from view depth.
+            // Screen size comes from fogScreenParams; ddgiIrradiance's size was
+            // used historically, which breaks when a 1x1 dummy is bound there.
+            vec2 screenSize = lighting.fogScreenParams.xy;
+            if (screenSize.x < 2.0) screenSize = vec2(textureSize(ddgiIrradiance, 0));
+            vec2 screenUV = gl_FragCoord.xy / screenSize;
             // Exponential depth mapping (must match froxel compute shader)
-            float nearP = 0.1; // Should match camera near plane
+            float nearP = lighting.fogScreenParams.z > 0.0 ? lighting.fogScreenParams.z : 0.1;
             float farP = lighting.fogParams.z; // Reuse fog end as far plane
             if (farP <= nearP) farP = 1000.0;
             float depthT = log(fragViewDepth / nearP) / log(farP / nearP);

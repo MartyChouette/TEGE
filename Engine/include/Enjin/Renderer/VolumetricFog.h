@@ -111,6 +111,9 @@ private:
     // Compute pipeline (via helper)
     ComputePipelineSetup m_FogSetup;
     bool m_PipelineCreated = false;
+    bool m_VolumesInitialized = false;   // first-frame layout transitions + history clear done
+    bool m_ClusterBuffersBound = false;  // bindings 2-4 written (clustered SSBOs exist lazily)
+    bool m_DisabledCleared = false;      // one-shot neutral clear after a runtime disable
 
     // Uniform buffer
     std::unique_ptr<VulkanBuffer> m_ParamsUBO;

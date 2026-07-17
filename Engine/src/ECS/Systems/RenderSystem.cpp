@@ -3246,6 +3246,35 @@ void RenderSystem::Initialize() {
             ENJIN_LOG_WARN(Renderer, "VolumetricFog init failed — volumetric effects disabled");
             m_VolumetricFog.reset();
         }
+
+        // Feed the REAL froxel volume to the main-pass sampler (binding 23),
+        // replacing the 1x1 dummy. The PBR shader gates volumetric fog on
+        // textureSize > 1, so this bind is what turns the feature on. Init
+        // time: no descriptor set is in flight yet.
+        if (m_VolumetricFog && m_VolumetricFog->GetFroxelVolumeView() &&
+            m_VolumetricFog->GetFroxelSampler() && !m_DescriptorSets.empty()) {
+            VkDescriptorImageInfo froxelInfo{};
+            froxelInfo.imageView = m_VolumetricFog->GetFroxelVolumeView();
+            froxelInfo.sampler = m_VolumetricFog->GetFroxelSampler();
+            froxelInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            std::vector<VkWriteDescriptorSet> froxelWrites;
+            auto queueWrite = [&](VkDescriptorSet set) {
+                VkWriteDescriptorSet w{};
+                w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                w.dstSet = set;
+                w.dstBinding = 23;
+                w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                w.descriptorCount = 1;
+                w.pImageInfo = &froxelInfo;
+                froxelWrites.push_back(w);
+            };
+            for (auto set : m_DescriptorSets) queueWrite(set);
+            for (auto set : m_OffscreenDescriptorSets) queueWrite(set);
+            vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(),
+                                   static_cast<u32>(froxelWrites.size()), froxelWrites.data(), 0, nullptr);
+            ENJIN_LOG_INFO(Renderer, "VolumetricFog: froxel volume bound to main pass (binding 23, %zu sets)",
+                           froxelWrites.size());
+        }
     }
 
     // Initialize GPU particle system (compute-based simulation)
@@ -4187,18 +4216,32 @@ void RenderSystem::Update(f32 deltaTime) {
                                  invVP, swapExtent.width, swapExtent.height);
         }
 
-        // Volumetric fog: froxel scattering pass
-        if (m_VolumetricFog && m_VolumetricFog->IsEnabled()) {
-            Math::Matrix4 invVP = (m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix()).Inverse();
-            Math::Matrix4 prevVP = m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix(); // TODO: use actual prev frame VP
+        // Volumetric fog: froxel scattering pass. Called even when disabled so
+        // the system can clear a stale volume once (the PBR shader keeps
+        // sampling whatever the bound volume holds).
+        if (m_VolumetricFog) {
+            Math::Matrix4 curVP = m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix();
+            Math::Matrix4 invVP = curVP.Inverse();
+            // Previous frame's VP for temporal reprojection. First frame falls
+            // back to the current VP (identity reprojection).
+            static Math::Matrix4 s_PrevFogVP;
+            static bool s_HavePrevFogVP = false;
+            Math::Matrix4 prevVP = s_HavePrevFogVP ? s_PrevFogVP : curVP;
+            s_PrevFogVP = curVP;
+            s_HavePrevFogVP = true;
             static f32 s_FogTime = 0.0f; s_FogTime += deltaTime;
+            // Froxel depth range must match the shader's reconstruction, which
+            // uses near = camera near and far = fogParams.z (fog end) with a
+            // 1000.0 fallback (triangle.frag volumetric block).
+            f32 froxelNear = m_Camera->GetNearPlane();
+            f32 froxelFar = (m_FogEnd > froxelNear) ? m_FogEnd : 1000.0f;
             m_VolumetricFog->Update(computeCmd, s_FogTime,
                                      invVP, prevVP, m_Camera->GetViewMatrix(),
                                      m_Camera->GetPosition(),
-                                     m_Camera->GetNearPlane(), m_Camera->GetFarPlane(),
+                                     froxelNear, froxelFar,
                                      swapExtent.width, swapExtent.height,
                                      sunDir, sunColor, sunIntensity);
-            m_VolumetricFog->SwapVolumes(); // Double-buffer for temporal reprojection
+            // History is maintained inside Update (copy 0 -> 1); no swap needed.
         }
 
         // GPU particles: simulate all alive particles
@@ -7747,6 +7790,15 @@ void RenderSystem::UpdateFrameUniforms() {
     lighting.pointLightCount = 0;
     lighting.spotLightCount = 0;
     lighting._pad1 = 0;
+
+    // Volumetric-fog screen mapping: set before the early-return paths so every
+    // upload carries it. xy = swapchain pixels, z = camera near (the froxel
+    // depth-slice mapping in triangle.frag must match the compute pass).
+    lighting.fogScreenParams = Math::Vector4(
+        static_cast<f32>(m_Renderer->GetSwapchainWidth()),
+        static_cast<f32>(m_Renderer->GetSwapchainHeight()),
+        m_Camera ? m_Camera->GetNearPlane() : 0.1f,
+        0.0f);
 
     // Scene2D fast path: skip light iteration, shadow data, wind — no consumers
     if (m_SceneComposition.mode == SceneRenderMode::Scene2D) {

@@ -82,6 +82,12 @@ public:
     // LightGrid at binding 14, LightIndex at binding 15
     VkBuffer GetLightGridBuffer() const;
     VkBuffer GetLightIndexBuffer() const;
+    // Light data SSBO + sizes, for other consumers of the cluster structure
+    // (volumetric fog samples per-froxel lights through these).
+    VkBuffer GetLightBuffer() const;
+    usize GetLightBufferSize() const;
+    usize GetLightGridBufferSize() const;
+    usize GetLightIndexBufferSize() const;
 
     // Descriptor layout for cluster bindings (bindings 14-15)
     VkDescriptorSetLayout GetDescriptorSetLayout() const { return m_DescriptorSetLayout; }

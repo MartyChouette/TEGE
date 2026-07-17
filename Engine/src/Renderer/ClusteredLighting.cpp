@@ -510,6 +510,22 @@ VkBuffer ClusteredLightingSystem::GetLightIndexBuffer() const {
     return m_LightIndexBuffer ? m_LightIndexBuffer->GetBuffer() : VK_NULL_HANDLE;
 }
 
+VkBuffer ClusteredLightingSystem::GetLightBuffer() const {
+    return m_LightBuffer ? m_LightBuffer->GetBuffer() : VK_NULL_HANDLE;
+}
+
+usize ClusteredLightingSystem::GetLightBufferSize() const {
+    return m_LightBuffer ? m_LightBuffer->GetSize() : 0;
+}
+
+usize ClusteredLightingSystem::GetLightGridBufferSize() const {
+    return m_LightGridBuffer ? m_LightGridBuffer->GetSize() : 0;
+}
+
+usize ClusteredLightingSystem::GetLightIndexBufferSize() const {
+    return m_LightIndexBuffer ? m_LightIndexBuffer->GetSize() : 0;
+}
+
 void ClusteredLightingSystem::Resize(u32 screenWidth, u32 screenHeight) {
     m_ScreenWidth = screenWidth;
     m_ScreenHeight = screenHeight;

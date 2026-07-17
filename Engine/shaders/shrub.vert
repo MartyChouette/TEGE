@@ -60,6 +60,7 @@ layout(binding = 1) uniform LightingUBO {
     vec4 reflectionProbePosition;
     vec4 reflectionProbeBoxMin;
     vec4 reflectionProbeBoxMax;
+    vec4 fogScreenParams;         // xy = screen size px (froxel UV), z = camera near, w = reserved
 } lighting;
 
 layout(location = 0) out vec3 fragWorldPos;

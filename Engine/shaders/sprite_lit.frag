@@ -84,6 +84,7 @@ layout(binding = 1) uniform LightingUBO {
     vec4 reflectionProbePosition;
     vec4 reflectionProbeBoxMin;
     vec4 reflectionProbeBoxMax;
+    vec4 fogScreenParams;         // xy = screen size px (froxel UV), z = camera near, w = reserved
     DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLight pointLights[MAX_POINT_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];

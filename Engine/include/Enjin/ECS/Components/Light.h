@@ -160,6 +160,12 @@ struct alignas(16) LightingUBO {
     // probeBoxMax: xyz = world-space AABB max, w = isBaked (1.0 = baked cubemap at binding 19)
     alignas(16) Math::Vector4 reflectionProbeBoxMax;
 
+    // Volumetric fog screen mapping: xy = swapchain size in pixels (froxel UV =
+    // fragCoord / xy), z = camera near plane (froxel depth-slice mapping must
+    // match the compute pass), w = reserved. xy == 0 means "not provided" and
+    // the shader falls back to legacy behavior.
+    alignas(16) Math::Vector4 fogScreenParams;
+
     // Light data arrays
     DirectionalLightData directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLightData pointLights[MAX_POINT_LIGHTS];
