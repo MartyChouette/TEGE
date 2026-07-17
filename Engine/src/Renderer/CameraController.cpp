@@ -1,5 +1,6 @@
 #include "Enjin/Renderer/CameraController.h"
 #include "Enjin/Platform/Input.h"
+#include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Math/Quaternion.h"
 
@@ -148,6 +149,19 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
         f32 lt = Input::GetGamepadLeftTrigger();
         if (rt > kGamepadDeadzone) movement = movement + worldUp * rt;
         if (lt > kGamepadDeadzone) movement = movement - worldUp * lt;
+
+        // Field-diagnosable breadcrumb: the "camera moves on its own" class of
+        // bug has now happened twice (stick drift, then a phantom trigger from
+        // a bad axis rest value). Log ONCE per session when gamepad input
+        // first drives the fly camera, so the log names the culprit device
+        // and axis values instead of leaving it to guesswork.
+        static bool s_LoggedFirstGamepadMove = false;
+        if (!s_LoggedFirstGamepadMove &&
+            (leftStick.Length() > kGamepadDeadzone || rt > kGamepadDeadzone || lt > kGamepadDeadzone)) {
+            s_LoggedFirstGamepadMove = true;
+            ENJIN_LOG_INFO(Editor, "Fly camera moved by gamepad '%s': stick=(%.2f,%.2f) LT=%.2f RT=%.2f",
+                           Input::GetGamepadName(), leftStick.x, leftStick.y, lt, rt);
+        }
     }
 
     // Normalize and apply movement

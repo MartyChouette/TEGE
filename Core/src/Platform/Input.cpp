@@ -268,23 +268,36 @@ void Input::Update() {
 
 #if !ENJIN_PLATFORM_WEB
         i32 joyId = GLFW_JOYSTICK_1 + gp;
-        if (glfwJoystickPresent(joyId) && glfwJoystickIsGamepad(joyId)) {
+        GLFWgamepadstate state;
+        // Connected ONLY when a full state read succeeds. Marking connected
+        // before the read left the axes zeroed on failure — and a raw trigger
+        // value of 0.0 remaps to 0.5 "half pulled" in GetGamepad*Trigger
+        // (released is -1), which pushed the editor fly camera straight down
+        // as if it had gravity.
+        if (glfwJoystickPresent(joyId) && glfwJoystickIsGamepad(joyId) &&
+            glfwGetGamepadState(joyId, &state)) {
             s_GamepadConnected[gp] = true;
-            GLFWgamepadstate state;
-            if (glfwGetGamepadState(joyId, &state)) {
-                for (i32 b = 0; b < MAX_GAMEPAD_BUTTONS; ++b) {
-                    s_GamepadButtons[gp][b] = (state.buttons[b] == GLFW_PRESS);
-                    if (s_GamepadButtons[gp][b]) s_GamepadActiveThisFrame[gp] = true;
-                }
-                for (i32 a = 0; a < MAX_GAMEPAD_AXES; ++a) {
-                    s_GamepadAxes[gp][a] = state.axes[a];
-                    if (std::abs(state.axes[a]) > s_GamepadDeadZone) s_GamepadActiveThisFrame[gp] = true;
-                }
+            for (i32 b = 0; b < MAX_GAMEPAD_BUTTONS; ++b) {
+                s_GamepadButtons[gp][b] = (state.buttons[b] == GLFW_PRESS);
+                if (s_GamepadButtons[gp][b]) s_GamepadActiveThisFrame[gp] = true;
             }
+            for (i32 a = 0; a < MAX_GAMEPAD_AXES; ++a) {
+                s_GamepadAxes[gp][a] = state.axes[a];
+                if (std::abs(state.axes[a]) > s_GamepadDeadZone) s_GamepadActiveThisFrame[gp] = true;
+            }
+            // Guard against mappings that carry no trigger entries (pads with
+            // digital triggers map LT/RT as buttons): an untouched slot reads
+            // exactly 0.0, which is "half pulled" in trigger convention. Snap
+            // it to released. A real analog trigger never rests at exactly 0.
+            if (s_GamepadAxes[gp][4] == 0.0f) s_GamepadAxes[gp][4] = -1.0f;
+            if (s_GamepadAxes[gp][5] == 0.0f) s_GamepadAxes[gp][5] = -1.0f;
         } else {
             s_GamepadConnected[gp] = false;
             std::memset(s_GamepadButtons[gp], 0, sizeof(s_GamepadButtons[gp]));
             std::memset(s_GamepadAxes[gp], 0, sizeof(s_GamepadAxes[gp]));
+            // Triggers rest at -1, not 0 (see above).
+            s_GamepadAxes[gp][4] = -1.0f;
+            s_GamepadAxes[gp][5] = -1.0f;
         }
 #else
         // HTML5 Gamepad API via Emscripten
@@ -327,17 +340,20 @@ void Input::Update() {
                 if (std::abs(s_GamepadAxes[gp][a]) > s_GamepadDeadZone) s_GamepadActiveThisFrame[gp] = true;
             }
             // Triggers: W3C reports as buttons 6 (LT) and 7 (RT) with analog values 0..1.
-            // Our convention: -1 released, +1 pressed. Remap.
-            if (gpEvent.numButtons > 6) {
-                s_GamepadAxes[gp][4] = static_cast<f32>(gpEvent.analogButton[6]) * 2.0f - 1.0f;
-            }
-            if (gpEvent.numButtons > 7) {
-                s_GamepadAxes[gp][5] = static_cast<f32>(gpEvent.analogButton[7]) * 2.0f - 1.0f;
-            }
+            // Our convention: -1 released, +1 pressed. Remap. A pad without those
+            // buttons gets explicit released (-1) — a 0.0 slot would remap to
+            // "half pulled" downstream.
+            s_GamepadAxes[gp][4] = (gpEvent.numButtons > 6)
+                ? static_cast<f32>(gpEvent.analogButton[6]) * 2.0f - 1.0f : -1.0f;
+            s_GamepadAxes[gp][5] = (gpEvent.numButtons > 7)
+                ? static_cast<f32>(gpEvent.analogButton[7]) * 2.0f - 1.0f : -1.0f;
         } else {
             s_GamepadConnected[gp] = false;
             std::memset(s_GamepadButtons[gp], 0, sizeof(s_GamepadButtons[gp]));
             std::memset(s_GamepadAxes[gp], 0, sizeof(s_GamepadAxes[gp]));
+            // Triggers rest at -1, not 0.
+            s_GamepadAxes[gp][4] = -1.0f;
+            s_GamepadAxes[gp][5] = -1.0f;
         }
 #endif
     }
@@ -509,15 +525,25 @@ Math::Vector2 Input::GetGamepadRightStick(i32 gamepadIndex) {
     return Math::Vector2(x / mag * norm, y / mag * norm);
 }
 
+// Triggers rest at -1 and press toward +1, so the CENTERED deadzone in
+// GetGamepadAxis is wrong for them twice over: it does nothing at the resting
+// end, and it zeroes a slightly-off-center rest (raw -0.1 -> 0.0), which the
+// 0..1 remap then turns into "half pulled" (0.5) — the editor fly camera sank
+// as if under gravity from exactly this. Read the raw axis and apply the
+// deadzone at the RELEASED end, after remapping.
+static f32 RemapTriggerAxis(f32 raw, f32 deadZone) {
+    f32 t = (raw + 1.0f) * 0.5f;
+    return (t < deadZone) ? 0.0f : t;
+}
+
 f32 Input::GetGamepadLeftTrigger(i32 gamepadIndex) {
-    // GLFW triggers: -1 released, +1 pressed. Remap to 0..1.
-    f32 raw = GetGamepadAxis(GamepadAxis::LeftTrigger, gamepadIndex);
-    return (raw + 1.0f) * 0.5f;
+    if (gamepadIndex < 0 || gamepadIndex >= MAX_GAMEPADS) return 0.0f;
+    return RemapTriggerAxis(s_GamepadAxes[gamepadIndex][static_cast<i32>(GamepadAxis::LeftTrigger)], s_GamepadDeadZone);
 }
 
 f32 Input::GetGamepadRightTrigger(i32 gamepadIndex) {
-    f32 raw = GetGamepadAxis(GamepadAxis::RightTrigger, gamepadIndex);
-    return (raw + 1.0f) * 0.5f;
+    if (gamepadIndex < 0 || gamepadIndex >= MAX_GAMEPADS) return 0.0f;
+    return RemapTriggerAxis(s_GamepadAxes[gamepadIndex][static_cast<i32>(GamepadAxis::RightTrigger)], s_GamepadDeadZone);
 }
 
 void Input::SetGamepadDeadZone(f32 deadZone) {
