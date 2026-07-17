@@ -1373,6 +1373,13 @@ public:
     std::unique_ptr<Renderer::VolumetricFogSystem> m_VolumetricFog;
     std::unique_ptr<Effects::GPUParticleSystem> m_GPUParticleSystem;
 private:
+    // DDGI geometry feed: a MeshInstance SSBO (transform + pool offsets per
+    // pool-eligible static mesh) built from m_EntityRenderData, handed to the
+    // DDGI voxelizer alongside the merged vertex/index buffers.
+    std::unique_ptr<Renderer::VulkanBuffer> m_DDGIInstanceBuffer;
+    bool m_DDGIGeometryDirty = true;   // rebuild the instance buffer + re-feed DDGI
+    void BuildDDGIGeometry();
+
     std::vector<Renderer::ClusterLight> m_ClusterLightsCache;  // Reused per frame to avoid heap allocation
 #endif
 

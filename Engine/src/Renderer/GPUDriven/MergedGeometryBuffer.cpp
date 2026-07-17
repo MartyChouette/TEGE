@@ -21,7 +21,9 @@ bool MergedGeometryBuffer::Initialize(u32 maxVertices, u32 maxIndices) {
     // Create vertex buffer (device-local with host-visible for uploads)
     usize vertexBufferSize = static_cast<usize>(maxVertices) * VERTEX_STRIDE;
     m_VertexBuffer = std::make_unique<VulkanBuffer>(m_Context);
-    VkBufferUsageFlags vertexUsage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    // STORAGE bit: DDGI voxelization reads this pool as a readonly SSBO.
+    VkBufferUsageFlags vertexUsage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     // Add RT usage flags when ray tracing is supported (needed for BLAS building)
     if (m_Context->IsRayTracingSupported()) {
         vertexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
@@ -36,7 +38,8 @@ bool MergedGeometryBuffer::Initialize(u32 maxVertices, u32 maxIndices) {
     // Create index buffer
     usize indexBufferSize = static_cast<usize>(maxIndices) * sizeof(u32);
     m_IndexBuffer = std::make_unique<VulkanBuffer>(m_Context);
-    VkBufferUsageFlags indexUsage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    VkBufferUsageFlags indexUsage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;   // DDGI voxelization SSBO
     if (m_Context->IsRayTracingSupported()) {
         indexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                       VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;

@@ -3228,7 +3228,9 @@ void RenderSystem::Initialize() {
     {
         m_DDGISystem = std::make_unique<Renderer::DDGIProbeSystem>(m_VulkanRenderer->GetContext());
         Renderer::DDGIConfig ddgiConfig;
-        // Start disabled — enable via editor UI or code when ready
+        // Start disabled — enable via editor UI or code when ready. Resources are
+        // created regardless so the runtime toggle and the probe-atlas main-pass
+        // binding work.
         ddgiConfig.enabled = false;
         if (!m_DDGISystem->Initialize(ddgiConfig)) {
             ENJIN_LOG_WARN(Renderer, "DDGI init failed — software GI disabled");
@@ -4208,8 +4210,12 @@ void RenderSystem::Update(f32 deltaTime) {
             }
         }
 
-        // DDGI: voxelize scene + update probes + sample irradiance
+        // DDGI: voxelize scene + update probes (direct fragment-shader apply)
         if (m_DDGISystem && m_DDGISystem->IsEnabled()) {
+            if (m_DDGIGeometryDirty) {
+                BuildDDGIGeometry();
+                m_DDGIGeometryDirty = false;
+            }
             Math::Matrix4 invVP = (m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix()).Inverse();
             m_DDGISystem->Update(computeCmd, m_World, frameNumber,
                                  sunDir, sunColor, sunIntensity,
@@ -7598,6 +7604,7 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
         if (alloc.valid) {
             renderData.poolAlloc = alloc;
             renderData.indexCount = alloc.indexCount;
+            m_DDGIGeometryDirty = true;  // new pooled mesh — refeed DDGI voxelizer
             // No per-entity VB/IB needed — pool owns the memory
             return &renderData;
         }
@@ -7725,6 +7732,62 @@ void RenderSystem::UpdateProbeCubemapDescriptor() {
         write.pImageInfo = &cubemapInfo;
         vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
     }
+}
+
+// std430 mirror of gpu_voxelize.comp's MeshInstance (binding 3).
+struct DDGIMeshInstance {
+    Math::Matrix4 transform;   // 0..63
+    u32 indexOffset;           // 64
+    u32 indexCount;            // 68
+    u32 vertexOffset;          // 72
+    u32 _pad;                  // 76
+};
+static_assert(sizeof(DDGIMeshInstance) == 80, "must match gpu_voxelize.comp MeshInstance std430");
+
+void RenderSystem::BuildDDGIGeometry() {
+    if (!m_DDGISystem || !m_GeometryPool || !m_World) return;
+    auto* vBuf = m_GeometryPool->GetVertexBuffer();
+    auto* iBuf = m_GeometryPool->GetIndexBuffer();
+    if (!vBuf || !iBuf) return;
+
+    // Gather one MeshInstance per pool-eligible static mesh from the render
+    // cache. Pool allocations carry the merged-buffer offsets; the world matrix
+    // places the mesh. Local indices + vertexOffset is exactly what the shader
+    // rebases (Upload stores indices un-rebased).
+    std::vector<DDGIMeshInstance> instances;
+    u32 triangleCount = 0;
+    for (const auto& rd : m_EntityRenderData) {
+        if (!rd.valid || !rd.poolAlloc.valid) continue;
+        if (!m_World->IsValid(rd.owner)) continue;
+        DDGIMeshInstance inst{};
+        inst.transform    = ECS::ComputeWorldMatrix(m_World, rd.owner);
+        inst.indexOffset  = rd.poolAlloc.indexOffset;
+        inst.indexCount   = rd.poolAlloc.indexCount;
+        inst.vertexOffset = rd.poolAlloc.vertexOffset;
+        instances.push_back(inst);
+        triangleCount += rd.poolAlloc.indexCount / 3;
+    }
+    if (instances.empty() || triangleCount == 0) return;
+
+    usize bytes = instances.size() * sizeof(DDGIMeshInstance);
+    if (!m_DDGIInstanceBuffer || m_DDGIInstanceBuffer->GetSize() < bytes) {
+        m_DDGIInstanceBuffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
+        if (!m_DDGIInstanceBuffer->Create(bytes,
+                static_cast<VkBufferUsageFlags>(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT), /*hostVisible=*/true)) {
+            m_DDGIInstanceBuffer.reset();
+            return;
+        }
+    }
+    m_DDGIInstanceBuffer->UploadData(instances.data(), bytes);
+
+    // Bind the WHOLE pool buffers as the SSBO range — allocations are first-fit
+    // anywhere in the buffer, so an instance offset can exceed the used count.
+    m_DDGISystem->SetGeometryBuffers(vBuf->GetBuffer(), vBuf->GetSize(),
+                                     iBuf->GetBuffer(), iBuf->GetSize(),
+                                     m_DDGIInstanceBuffer->GetBuffer(), bytes,
+                                     triangleCount, static_cast<u32>(instances.size()));
+    ENJIN_LOG_INFO(Renderer, "DDGI: geometry fed (%zu instances, %u triangles)",
+                   instances.size(), triangleCount);
 }
 
 void RenderSystem::UpdateFrameUniforms() {

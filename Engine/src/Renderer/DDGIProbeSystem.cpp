@@ -20,11 +20,10 @@ bool DDGIProbeSystem::Initialize(const DDGIConfig& config) {
     if (m_Initialized) return true;
     m_Config = config;
 
-    if (!m_Config.enabled) {
-        ENJIN_LOG_INFO(Renderer, "DDGI: disabled by config");
-        return true;
-    }
-
+    // Resources are created regardless of the enabled flag so the runtime
+    // Settings toggle works (Update gates dispatch on enabled + geometry). The
+    // probe atlas is bound to the main PBR pass for the direct fragment-shader
+    // apply, so it must exist even when DDGI starts off.
     if (!CreateVoxelGrid()) return false;
     if (!CreateProbeAtlas()) return false;
     if (!CreateSampler()) return false;

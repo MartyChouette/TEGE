@@ -50,15 +50,21 @@ layout(set = 0, binding = 4) uniform VoxelParams {
     uint instanceCount;  // Number of mesh instances
 };
 
-// Read a vertex position from the packed vertex buffer
+// Read a vertex position from the packed vertex buffer.
+// STRIDE = 34 floats (136 bytes) — must match MeshComponent::Vertex /
+// MergedGeometryBuffer::VERTEX_STRIDE. pos(3)+normal(3)+uv(2)+color(4)+
+// tangent(4)+boneWeights(4)+boneIndices(4)+uv1(2)+boneWeights2(4)+boneIndices2(4).
+// It was 24 (the pre-8-bone layout); the merged pool packs at 34, so 24 scattered
+// every vertex after the first — the same class of bug as the widened-vertex fix.
+const uint VERTEX_FLOATS = 34;
 vec3 readVertexPosition(uint vertexIndex) {
-    uint base = vertexIndex * 24; // 24 floats per vertex
+    uint base = vertexIndex * VERTEX_FLOATS;
     return vec3(vertices[base], vertices[base + 1], vertices[base + 2]);
 }
 
-// Read a vertex normal from the packed vertex buffer
+// Read a vertex normal from the packed vertex buffer (offset by 3 floats = position)
 vec3 readVertexNormal(uint vertexIndex) {
-    uint base = vertexIndex * 24 + 3; // Offset by 3 floats (position)
+    uint base = vertexIndex * VERTEX_FLOATS + 3;
     return vec3(vertices[base], vertices[base + 1], vertices[base + 2]);
 }
 
