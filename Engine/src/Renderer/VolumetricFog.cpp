@@ -56,11 +56,11 @@ bool VolumetricFogSystem::Initialize(const VolumetricFogConfig& config) {
     if (m_Initialized) return true;
     m_Config = config;
 
-    if (!m_Config.enabled) {
-        ENJIN_LOG_INFO(Renderer, "VolumetricFog: disabled by config");
-        return true;
-    }
-
+    // Resources are created regardless of the enabled flag. The froxel volume
+    // is bound to the main PBR pass and the runtime Settings toggle flips
+    // m_Config.enabled with no re-init, so the volumes must exist even when fog
+    // starts disabled. Only the per-frame compute dispatch is gated on enabled
+    // (see Update); the memory (~2x froxel volume) is the price of a live toggle.
     if (!CreateFroxelVolumes()) return false;
     if (!CreateSampler()) return false;
     // Compute pipeline created lazily (needs clustered lighting descriptor layout)

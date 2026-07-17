@@ -313,9 +313,15 @@ Items already tracked in <code>docs/AUDIT_2026_04_12.md</code> are not repeated 
 <h2><span class="num">4</span>Lazy Spots</h2>
 <p class="dim">Places where the code takes a shortcut a user eventually notices:
 stubs behind real APIs, hardcoded tunables, silently dropped features, settings nothing reads.</p>
-<div class="card" style="border-color:#7a5030;">
-<h4 style="margin-top:0;">The shared root cause worth fixing first</h4>
-<p style="margin:4px 0;">Three headline systems &mdash; <strong>Volumetric Fog</strong>, <strong>Software DDGI</strong>, and the <strong>GPU Particle System</strong> &mdash; were scaffolded in one pass and all stopped at the <em>same line</em>: the per-frame parameter UBO upload. Each creates its compute pipeline, each dispatches every frame, each has a full Settings panel of sliders &mdash; and each dispatches against an <em>unwritten uniform buffer</em>. Every slider is dead. One shared <code>UploadParams</code> helper on <code>ComputePipelineSetup</code> fixes the trio. Suggested rule going forward: a Settings slider ships in the same commit as its consumer.</p>
+<div class="card" style="border-color:#3a6a40;">
+<h4 style="margin-top:0;">Resolved 2026-07-17 &mdash; the trio, honestly</h4>
+<p style="margin:4px 0;">Three headline systems &mdash; <strong>Volumetric Fog</strong>, <strong>Software DDGI</strong>, and the <strong>GPU Particle System</strong> &mdash; were scaffolded in one pass and all stopped at the same line: the per-frame parameter UBO was never uploaded, so every Settings slider was dead. Closing them showed they were <em>not</em> one bug &mdash; only fog had its consumer end wired:</p>
+<ul style="margin:6px 0 2px;">
+  <li><strong>Volumetric fog &mdash; DONE, validation-clean while running.</strong> The UBO was one of five missing pieces (light SSBOs, image lifecycle, real prev-frame VP, the apply-path binding). Fixed end to end; the froxel path now runs with zero validation errors. Off by default; runtime toggle works. (See commit history.)</li>
+  <li><strong>Software DDGI &mdash; plumbing complete, honestly gated.</strong> All three params UBOs upload correctly and the real triangle count + voxel-grid clear replace the hardcoded stubs. But two passes have inputs the engine does not produce yet: <code>gpu_voxelize.comp</code> needs the merged-geometry vertex/index/instance SSBOs, and <code>ddgi_sample.comp</code> needs G-buffer depth + world normals. Rather than dispatch against unwritten descriptors, the system idles behind <code>SetGeometryBuffers</code>/<code>SetGBuffer</code> and the panel shows "(inactive)". Finishing = wire those two inputs.</li>
+  <li><strong>GPU particles &mdash; simulation correct, self-gated.</strong> The emitter UBO uploads properly now, but nothing calls <code>Spawn()</code> and <code>Render()</code> has no draw path. It no longer burns a 65,536-wide dispatch every frame on every scene &mdash; it stays dormant until something spawns. Finishing = an ECS emitter spawn source + a billboard render pipeline. The CPU particle path works today.</li>
+</ul>
+<p style="margin:4px 0;">Lesson banked: a Settings slider should ship in the same commit as the code that consumes it.</p>
 </div>
 
 <h3>4.1 Settings UI that controls nothing</h3>

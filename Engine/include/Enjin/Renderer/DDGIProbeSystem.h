@@ -73,6 +73,23 @@ public:
     // Voxelize scene (can be called manually or on timer)
     void Voxelize(VkCommandBuffer cmd, ECS::World* world);
 
+    // --- Input wiring -------------------------------------------------------
+    // Two of the three passes have hard inputs the engine does not provide yet.
+    // The system stays gated (no dispatches) until these are called; the
+    // Settings panel reflects the same state. See Update() for the gate.
+    //
+    // Voxelize inputs: the packed vertex/index/instance SSBOs (bindings 1-3 of
+    // gpu_voxelize.comp) — the merged static-geometry arena, once it is wired.
+    void SetGeometryBuffers(VkBuffer vertices, usize vertexBytes,
+                            VkBuffer indices, usize indexBytes,
+                            VkBuffer instances, usize instanceBytes,
+                            u32 triangleCount, u32 instanceCount);
+    // Sample-pass inputs: screen depth + world-space normal textures
+    // (bindings 1-2 of ddgi_sample.comp).
+    void SetGBuffer(VkImageView depthView, VkImageView normalView, VkSampler sampler);
+    bool HasGeometryInputs() const { return m_GeometryBound; }
+    bool HasGBufferInputs() const { return m_GBufferBound; }
+
     // Get the screen-space irradiance texture for the PBR shader to sample
     VkImageView GetIrradianceView() const { return m_IrradianceView; }
     VkSampler GetIrradianceSampler() const { return m_IrradianceSampler; }
@@ -140,6 +157,16 @@ private:
     // Scene dirty tracking
     bool m_NeedsRevoxelize = true;
     u32 m_VoxelizeFrameInterval = 30; // Re-voxelize every N frames (dynamic scenes)
+
+    // Input availability (see SetGeometryBuffers / SetGBuffer)
+    bool m_GeometryBound = false;
+    bool m_GBufferBound = false;
+    u32 m_TriangleCount = 0;
+    u32 m_InstanceCount = 0;
+    bool m_LoggedInactive = false;
+    // Image layout lifecycle
+    bool m_VoxelGridInitialized = false;   // cleared to "empty = far" once
+    bool m_AtlasesInitialized = false;     // probe atlases out of UNDEFINED
 
     bool m_Initialized = false;
 };

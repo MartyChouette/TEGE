@@ -109,6 +109,8 @@ private:
     // Spawn tracking
     u32 m_NextSpawnIndex = 0;
     u32 m_AliveCountReadback = 0; // Read back from GPU (1 frame latency)
+    bool m_HasSpawned = false;    // idle until something spawns (no per-frame waste)
+    bool m_LoggedDormant = false;
 
     bool m_Initialized = false;
 };

@@ -37,9 +37,38 @@ void GPUParticleSystem::Shutdown() {
     m_Initialized = false;
 }
 
+// std140 mirror of particle_simulate.comp's EmitterParams (binding 2). Each
+// vec3 is followed by a scalar that packs into its .w lane.
+struct EmitterParamsUBO {
+    Math::Vector3 emitterPosition;  f32 deltaTime;           // 0..15
+    Math::Vector3 emitterDirection; f32 emitterSpread;       // 16..31
+    Math::Vector3 gravity;          f32 damping;             // 32..47
+    Math::Vector3 windForce;        u32 maxParticles;        // 48..63
+    Math::Vector4 startColor;                                // 64..79
+    Math::Vector4 endColor;                                  // 80..95
+    f32 startSize; f32 endSize; f32 maxLifetime; f32 spawnRate;             // 96..111
+    f32 turbulenceStrength; f32 turbulenceFrequency; u32 frameNumber; f32 _pad; // 112..127
+};
+static_assert(sizeof(EmitterParamsUBO) == 128, "must match particle_simulate.comp EmitterParams");
+
 void GPUParticleSystem::Simulate(VkCommandBuffer cmd, f32 deltaTime, u32 frameNumber,
                                   const Math::Vector3& windForce) {
     if (!m_Initialized) return;
+
+    // Idle gate. Nothing spawns GPU particles yet (no ECS emitter wiring, no
+    // caller of Spawn), and Render() has no draw path. Dispatching the sim over
+    // maxParticles (65536) every frame on every scene was pure waste. Stay
+    // dormant until something actually spawns; the plumbing below is correct
+    // and ready the moment a spawn source exists.
+    if (!m_HasSpawned) {
+        if (!m_LoggedDormant) {
+            m_LoggedDormant = true;
+            ENJIN_LOG_INFO(Renderer,
+                "GPUParticleSystem: dormant — no spawn source wired (Spawn has no callers) and no "
+                "render path. Simulation UBO/dispatch are ready; the system runs once particles spawn.");
+        }
+        return;
+    }
 
     // Lazy pipeline creation
     if (!m_PipelineCreated) {
@@ -56,7 +85,7 @@ void GPUParticleSystem::Simulate(VkCommandBuffer cmd, f32 deltaTime, u32 frameNu
                                          m_Config.maxParticles * sizeof(GPUParticle));
             usize aliveSize = sizeof(u32) + m_Config.maxParticles * sizeof(u32);
             m_SimulateSetup.WriteBuffer(device, 1, m_AliveIndexBuffer->GetBuffer(), aliveSize);
-            m_SimulateSetup.WriteBuffer(device, 2, m_EmitterParamsUBO->GetBuffer(), 256,
+            m_SimulateSetup.WriteBuffer(device, 2, m_EmitterParamsUBO->GetBuffer(), sizeof(EmitterParamsUBO),
                                          VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
         }
         m_PipelineCreated = true;
@@ -73,20 +102,40 @@ void GPUParticleSystem::Simulate(VkCommandBuffer cmd, f32 deltaTime, u32 frameNu
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
                           VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &fillBarrier, 0, nullptr, 0, nullptr);
 
-    // TODO: Upload emitter params UBO with current deltaTime, gravity, wind, etc.
+    // Upload this frame's emitter params (host-visible UBO).
+    if (m_EmitterParamsUBO) {
+        EmitterParamsUBO params{};
+        params.emitterPosition     = m_Config.position;
+        params.deltaTime           = deltaTime;
+        params.emitterDirection    = m_Config.direction;
+        params.emitterSpread       = m_Config.spread;
+        params.gravity             = m_Config.gravity;
+        params.damping             = m_Config.damping;
+        params.windForce           = windForce;
+        params.maxParticles        = m_Config.maxParticles;
+        params.startColor          = m_Config.startColor;
+        params.endColor            = m_Config.endColor;
+        params.startSize           = m_Config.startSize;
+        params.endSize             = m_Config.endSize;
+        params.maxLifetime         = m_Config.maxLifetime;
+        params.spawnRate           = m_Config.spawnRate;
+        params.turbulenceStrength  = m_Config.turbulenceStrength;
+        params.turbulenceFrequency = m_Config.turbulenceFrequency;
+        params.frameNumber         = frameNumber;
+        m_EmitterParamsUBO->UploadData(&params, sizeof(params));
+    }
 
     // Dispatch simulation
     u32 workgroups = (m_Config.maxParticles + 255) / 256;
     m_SimulateSetup.Dispatch(cmd, workgroups);
     m_SimulateSetup.Barrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                               VK_PIPELINE_STAGE_VERTEX_INPUT_BIT);
-
-    (void)deltaTime; (void)frameNumber; (void)windForce;
 }
 
 void GPUParticleSystem::Spawn(u32 count, const Math::Vector3& position,
                                const Math::Vector3& direction) {
     if (!m_Initialized || count == 0) return;
+    m_HasSpawned = true;   // wakes the simulation (see Simulate's idle gate)
 
     // Initialize particles in a staging region of the SSBO
     std::vector<GPUParticle> newParticles(count);

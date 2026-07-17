@@ -3240,7 +3240,7 @@ void RenderSystem::Initialize() {
     {
         m_VolumetricFog = std::make_unique<Renderer::VolumetricFogSystem>(m_VulkanRenderer->GetContext());
         Renderer::VolumetricFogConfig fogConfig;
-        fogConfig.enabled = false; // Start disabled
+        fogConfig.enabled = false; // Off by default; resources still created so the runtime toggle works
         if (m_ClusteredLighting) m_VolumetricFog->SetClusteredLighting(m_ClusteredLighting.get());
         if (!m_VolumetricFog->Initialize(fogConfig)) {
             ENJIN_LOG_WARN(Renderer, "VolumetricFog init failed — volumetric effects disabled");

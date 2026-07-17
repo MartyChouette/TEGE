@@ -1999,6 +1999,15 @@ void EditorLayer::DrawSettingsWindow() {
                 if (ImGui::Checkbox("Software DDGI (Global Illumination)", &ddgiEnabled)) {
                     ddgi.SetEnabled(ddgiEnabled);
                 }
+                if (!ddgi.HasGeometryInputs()) {
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(inactive)");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("DDGI's voxelizer needs the merged geometry buffers and its sample pass "
+                                          "needs G-buffer depth/normals — neither is wired into the renderer yet. "
+                                          "The passes stay idle until then; these settings take effect once they run.");
+                    }
+                }
                 if (ddgiEnabled && ImGui::TreeNode("DDGI Settings")) {
                     ImGui::SliderInt("Probe Grid X", &cfg.probeCountX, 2, 32);
                     ImGui::SliderInt("Probe Grid Y", &cfg.probeCountY, 2, 16);
@@ -2046,6 +2055,13 @@ void EditorLayer::DrawSettingsWindow() {
                 auto& gpu = *m_RenderSystem->m_GPUParticleSystem;
                 auto& cfg = gpu.GetConfig();
                 if (ImGui::TreeNode("GPU Particle System")) {
+                    ImGui::TextDisabled("Dormant: no spawn source or render path is wired yet.");
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("The compute simulation is complete and correct, but nothing spawns GPU "
+                                          "particles and there is no draw path, so the system stays idle (no wasted "
+                                          "dispatch). These settings apply once a spawn source and renderer land. "
+                                          "The CPU ParticleEmitterComponent path works today.");
+                    }
                     ImGui::Text("Max particles: %u | Alive: %u", gpu.GetMaxParticles(), gpu.GetAliveCount());
                     ImGui::SliderFloat("Spawn Rate", &cfg.spawnRate, 0.0f, 10000.0f);
                     ImGui::SliderFloat("Max Lifetime", &cfg.maxLifetime, 0.1f, 30.0f);
