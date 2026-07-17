@@ -153,3 +153,4 @@ nul
 /INSTALL.*
 /bin/
 /lib/
+installer/output/
