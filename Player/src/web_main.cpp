@@ -42,6 +42,10 @@
 #include "Enjin/ECS/Systems/TweenSystem.h"
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
 #include "Enjin/ECS/Systems/BehaviorTreeSystem.h"
+#include "Enjin/ECS/Systems/AISystem.h"
+#include "Enjin/ECS/Systems/StateMachineSystem.h"
+#include "Enjin/ECS/Systems/DialogueSystem.h"
+#include "Enjin/Gameplay/CinematicSystem.h"
 #include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Gameplay/HUDSystem.h"
@@ -208,6 +212,20 @@ public:
         m_TweenSystem.SetScriptEngine(&m_ScriptEngine);
         m_VisualScriptSystem.SetWorld(m_World.get());
         m_BehaviorTreeSystem.SetWorld(m_World.get());
+        // AI, state machines, dialogue, and cinematics — previously desktop-only,
+        // so NPCs froze and dialogue never advanced on web. Same wiring as the
+        // desktop Player (main.cpp): AISystem drives navigation/perception,
+        // StateMachineSystem runs FSMs (needs the script engine), DialogueSystem
+        // advances conversations (wired to the event bus, quest, cinematic, and
+        // save systems the web build has), CinematicSystem plays cutscenes.
+        m_AISystem.SetWorld(m_World.get());
+        m_AISystem.SetEnabled(true);
+        m_StateMachineSystem.SetScriptEngine(&m_ScriptEngine);
+        m_CinematicSystem.SetEnabled(true);
+        m_DialogueSystem.SetEventBus(&m_EntityEventBus);
+        m_DialogueSystem.SetQuestSystem(&m_QuestSystem);
+        m_DialogueSystem.SetCinematicSystem(&m_CinematicSystem);
+        m_DialogueSystem.SetTieredSaveSystem(&m_TieredSaveSystem);
         m_TieredSaveSystem.LoadMeta();
         m_SimpleAudio.Initialize();
         m_SimpleAudio.SetWorld(m_World.get());
@@ -460,6 +478,13 @@ public:
         m_VisualScriptSystem.Update(deltaTime);
         m_BehaviorTreeSystem.Update(deltaTime);
 
+        // Ticking these is what makes NPCs move and dialogue advance on web
+        // (order mirrors the desktop Player).
+        m_StateMachineSystem.Update(m_World.get(), deltaTime);
+        m_AISystem.Update(deltaTime);
+        m_CinematicSystem.Update(m_World.get(), m_Camera.get(), deltaTime);
+        m_DialogueSystem.Update(m_World.get(), deltaTime);
+
         m_QuestSystem.Update(m_World.get(), deltaTime);
         m_ObjectPool.Update(m_World.get(), deltaTime);
         m_EntityEventBus.ProcessDeferred();
@@ -623,6 +648,10 @@ private:
     Enjin::ECS::TweenSystem m_TweenSystem;
     Enjin::ECS::VisualScriptSystem m_VisualScriptSystem;
     Enjin::ECS::BehaviorTreeSystem m_BehaviorTreeSystem;
+    Enjin::ECS::StateMachineSystem m_StateMachineSystem;
+    Enjin::ECS::AISystem m_AISystem;
+    Enjin::ECS::DialogueSystem m_DialogueSystem;
+    Enjin::Gameplay::CinematicSystem m_CinematicSystem;
     Enjin::ECS::EntityEventBus m_EntityEventBus;
     Enjin::Gameplay::HUDSystem m_HUDSystem;
     Enjin::Gameplay::QuestSystem m_QuestSystem;
