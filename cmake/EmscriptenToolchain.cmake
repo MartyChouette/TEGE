@@ -50,6 +50,7 @@ set(ENJIN_EM_LINK_FLAGS
     -sNO_DISABLE_EXCEPTION_CATCHING
     -fexceptions
     -O2
+    -lidbfs.js   # IndexedDB-backed FS for persistent saves (web_main mounts /saves)
     --post-js=${CMAKE_SOURCE_DIR}/cmake/miniaudio_shim.js
 )
 # Runtime assertions cost size and speed — keep them for Debug configures only.

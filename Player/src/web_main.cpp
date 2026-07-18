@@ -83,6 +83,23 @@ public:
     void StartBoot() {
         ENJIN_LOG_INFO(Player, "Enjin Web Player starting...");
 
+        // Persist saves across page reloads. The save directory (/saves, see
+        // SaveSystem::GetSaveDirectory) is otherwise MEMFS and vanishes on
+        // reload. Mount an IndexedDB-backed FS there and pull existing saves in.
+        // This is async, but it runs during the pak fetch + renderer init and
+        // completes long before any user-triggered load. Each write flushes back
+        // via FS.syncfs(false) (LocalSaveBackend::PersistWebSaves).
+        EM_ASM({
+            try {
+                FS.mkdirTree('/saves');
+                FS.mount(IDBFS, {}, '/saves');
+                FS.syncfs(true, function(err) {
+                    if (err) console.warn('[SAVES] IDBFS initial load error', err);
+                    else console.log('[SAVES] persistent saves ready (/saves via IndexedDB)');
+                });
+            } catch (e) { console.warn('[SAVES] IDBFS mount failed', e); }
+        });
+
         // Fetch game.enjpak from the server into the WASM virtual filesystem.
         // The download buffer is freed when onload returns, so persist it first.
         emscripten_async_wget_data("game.enjpak", this,

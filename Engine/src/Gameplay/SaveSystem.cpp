@@ -19,7 +19,11 @@ namespace Enjin {
 namespace Gameplay {
 
 std::string SaveSystem::GetSaveDirectory() {
-#ifdef _WIN32
+#if defined(__EMSCRIPTEN__)
+    // Web: a fixed IndexedDB-backed mount (see web_main StartBoot). Saves written
+    // here survive page reloads once FS.syncfs(false) runs after each write.
+    return "/saves/";
+#elif defined(_WIN32)
     const char* appdata = std::getenv("APPDATA");
     if (appdata) return std::string(appdata) + "\\enjin\\saves\\";
     return "saves\\";

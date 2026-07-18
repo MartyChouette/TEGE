@@ -7,8 +7,20 @@
 #include <filesystem>
 #include <sstream>
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten.h>
+#endif
+
 namespace Enjin {
 namespace Gameplay {
+
+// Flush the IndexedDB-backed save FS to disk (web only). The save directory is
+// an IDBFS mount (see web_main StartBoot); writes are otherwise lost on reload.
+static void PersistWebSaves() {
+#if defined(__EMSCRIPTEN__)
+    EM_ASM({ if (typeof FS !== 'undefined') FS.syncfs(false, function(e){ if (e) console.warn('[SAVES] syncfs error', e); }); });
+#endif
+}
 
 LocalSaveBackend::LocalSaveBackend(const std::string& baseDirectory) {
     if (baseDirectory.empty()) {
@@ -48,6 +60,7 @@ bool LocalSaveBackend::Write(const std::string& key, const std::string& data) {
         }
         file << data;
         file.close();
+        PersistWebSaves();   // flush to IndexedDB on web; no-op elsewhere
         return true;
     } catch (const std::exception& e) {
         ENJIN_LOG_ERROR(Editor, "LocalSaveBackend: Write failed: %s", e.what());
