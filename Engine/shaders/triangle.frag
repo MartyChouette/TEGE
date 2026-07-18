@@ -92,6 +92,9 @@ layout(binding = 1) uniform LightingUBO {
     vec4 reflectionProbeBoxMin;   // xyz = world AABB min, w = blend distance
     vec4 reflectionProbeBoxMax;   // xyz = world AABB max, w = isBaked (1.0 = cubemap at binding 19)
     vec4 fogScreenParams;         // xy = screen size px (froxel UV), z = camera near, w = reserved
+    vec4 ddgiGridOrigin;         // xyz = probe grid origin, w = spacing
+    ivec4 ddgiProbeCounts;       // xyz = probes per axis, w = oct resolution
+    vec4 ddgiAtlasParams;        // x = atlas W, y = atlas H, z = enabled, w = intensity
     DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLight pointLights[MAX_POINT_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];
@@ -1069,15 +1072,55 @@ void main() {
         result += lighting.shProbeIrradiance.xyz * albedo;
     }
 
-    // DDGI probe irradiance — software-traced global illumination.
-    // The ddgiIrradiance texture is filled by DDGIProbeSystem compute pass each frame.
-    // Sample at screen UV; alpha > 0 means DDGI data is available.
-    {
-        vec2 screenUV = gl_FragCoord.xy / vec2(textureSize(ddgiIrradiance, 0));
-        vec4 ddgiSample = texture(ddgiIrradiance, screenUV);
-        if (ddgiSample.a > 0.0) {
-            // DDGI replaces ambient when active; blend based on alpha
-            result += ddgiSample.rgb * albedo * ddgiSample.a;
+    // DDGI probe irradiance — software-traced global illumination, sampled
+    // DIRECTLY from the probe irradiance atlas (binding 22) using this
+    // fragment's own world position + normal. No screen-space pass, no G-buffer:
+    // the probe lookup + trilinear blend happens here (octahedral atlas layout
+    // matching ddgi_probe_update.comp). ddgiAtlasParams.z gates it.
+    if (lighting.ddgiAtlasParams.z > 0.5) {
+        vec3 gridOrigin = lighting.ddgiGridOrigin.xyz;
+        float gridSpacing = lighting.ddgiGridOrigin.w;
+        ivec3 probeCount = lighting.ddgiProbeCounts.xyz;
+        int octRes = lighting.ddgiProbeCounts.w;
+        float atlasW = lighting.ddgiAtlasParams.x;
+        float atlasH = lighting.ddgiAtlasParams.y;
+        int probesPerRow = int(atlasW) / octRes;
+
+        // Bias off the surface to avoid self-illumination.
+        vec3 gpos = fragWorldPos + normal * (gridSpacing * 0.05);
+        vec3 rel = (gpos - gridOrigin) / gridSpacing;
+        ivec3 baseProbe = clamp(ivec3(floor(rel)), ivec3(0), probeCount - 2);
+        vec3 alpha = clamp(rel - vec3(baseProbe), vec3(0.0), vec3(1.0));
+
+        vec3 irradiance = vec3(0.0);
+        float totalWeight = 0.0;
+        for (int c = 0; c < 8; ++c) {
+            ivec3 off = ivec3(c & 1, (c >> 1) & 1, (c >> 2) & 1);
+            ivec3 pc = baseProbe + off;
+            if (any(greaterThanEqual(pc, probeCount))) continue;
+            uint probeIndex = uint(pc.x) + uint(pc.y) * uint(probeCount.x)
+                            + uint(pc.z) * uint(probeCount.x) * uint(probeCount.y);
+            vec3 probePos = gridOrigin + vec3(pc) * gridSpacing;
+            vec3 dirToSurface = normalize(gpos - probePos);
+            vec3 triW = mix(vec3(1.0) - alpha, alpha, vec3(off));
+            float w = triW.x * triW.y * triW.z * max(0.0001, dot(dirToSurface, normal));
+            if (w <= 0.0001) continue;
+
+            // Octahedral-encode the surface normal, look it up in this probe's tile.
+            vec3 nn = normal / (abs(normal.x) + abs(normal.y) + abs(normal.z));
+            vec2 oct = nn.z < 0.0
+                ? (1.0 - abs(nn.yx)) * vec2(nn.x >= 0.0 ? 1.0 : -1.0, nn.y >= 0.0 ? 1.0 : -1.0)
+                : nn.xy;
+            oct = oct * 0.5 + 0.5;
+            uint ax = probeIndex % uint(probesPerRow);
+            uint ay = probeIndex / uint(probesPerRow);
+            vec2 origin = vec2(float(ax * uint(octRes)) + 0.5, float(ay * uint(octRes)) + 0.5);
+            vec2 atlasUV = (origin + oct * float(octRes - 1)) / vec2(atlasW, atlasH);
+            irradiance += texture(ddgiIrradiance, atlasUV).rgb * w;
+            totalWeight += w;
+        }
+        if (totalWeight > 0.0) {
+            result += (irradiance / totalWeight) * albedo * lighting.ddgiAtlasParams.w;
         }
     }
 

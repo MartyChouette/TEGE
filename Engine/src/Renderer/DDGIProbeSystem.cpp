@@ -209,24 +209,17 @@ void DDGIProbeSystem::Update(VkCommandBuffer cmd, ECS::World* world, u32 frameNu
         params.sunIntensity     = sunIntensity;
         params.sunColor         = sunColor;
         params.maxTraceDistance = m_Config.maxTraceDistance;
-        params.probeAtlasWidth  = static_cast<u32>(m_Config.probeCountX * m_Config.probeCountZ) * m_Config.octResolution;
+        params.probeAtlasWidth  = m_ProbeAtlasWidth;   // authoritative (see CreateProbeAtlas)
         params.octResolution    = m_Config.octResolution;
         params.amortizationRate = m_Config.amortizationRate;
         params.hysteresis       = m_Config.hysteresis;
         m_DDGIParamsUBO->UploadData(&params, sizeof(params));
 
-        u32 totalProbes = GetTotalProbes();
-        u32 totalWork = totalProbes * m_Config.raysPerProbe;
-        u32 workgroups = (totalWork + 63) / 64;
-        m_ProbeUpdateSetup.Dispatch(cmd, workgroups);
-        m_ProbeUpdateSetup.Barrier(cmd);
-    }
-
-    // Step 3: Sample probes into screen-space irradiance (needs G-buffer taps)
-    if (m_GBufferBound && m_ProbeSampleSetup.IsValid() && m_IrradianceView && m_SampleParamsUBO) {
-        // Atlases: storage-written in step 2 (GENERAL) -> sampled here.
+        // Atlases must be GENERAL for the storage write. Between frames they are
+        // left SHADER_READ_ONLY for the PBR pass, so flip them back first.
         auto atlasBarrier = [&](VkImageLayout oldL, VkImageLayout newL,
-                                VkAccessFlags srcA, VkAccessFlags dstA) {
+                                VkAccessFlags srcA, VkAccessFlags dstA,
+                                VkPipelineStageFlags srcS, VkPipelineStageFlags dstS) {
             VkImageSubresourceRange range{ VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
             VkImage atlases[2] = { m_ProbeIrradianceImage, m_ProbeDepthImage };
             for (VkImage img : atlases) {
@@ -238,38 +231,31 @@ void DDGIProbeSystem::Update(VkCommandBuffer cmd, ECS::World* world, u32 frameNu
                 b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
                 b.image = img; b.subresourceRange = range;
                 b.srcAccessMask = srcA; b.dstAccessMask = dstA;
-                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+                vkCmdPipelineBarrier(cmd, srcS, dstS, 0, 0, nullptr, 0, nullptr, 1, &b);
             }
         };
+        if (m_AtlasesReadable) {
+            atlasBarrier(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                         VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+            m_AtlasesReadable = false;
+        }
+
+        u32 totalProbes = GetTotalProbes();
+        u32 totalWork = totalProbes * m_Config.raysPerProbe;
+        u32 workgroups = (totalWork + 63) / 64;
+        m_ProbeUpdateSetup.Dispatch(cmd, workgroups);
+
+        // Step 3 (screen-space sample pass) is GONE: the PBR fragment shader
+        // samples the probe atlas directly (world pos + normal). So the only
+        // post-work is transitioning the atlas GENERAL -> SHADER_READ_ONLY for
+        // the main pass to sample this frame.
         atlasBarrier(VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                     VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
-        DDGISampleParamsUBO params{};
-        params.inverseViewProj  = inverseViewProj;
-        params.gridOrigin       = m_Config.gridOrigin;
-        params.gridSpacing      = m_Config.gridSpacing;
-        params.probeCount[0]    = m_Config.probeCountX;
-        params.probeCount[1]    = m_Config.probeCountY;
-        params.probeCount[2]    = m_Config.probeCountZ;
-        params.octResolution    = m_Config.octResolution;
-        params.probeAtlasWidth  = static_cast<u32>(m_Config.probeCountX * m_Config.probeCountZ) * m_Config.octResolution;
-        params.probeAtlasHeight = static_cast<u32>(m_Config.probeCountY) * m_Config.octResolution;
-        params.normalBias       = 0.1f;
-        params.viewBias         = 0.1f;
-        params.screenSize[0]    = static_cast<f32>(screenWidth);
-        params.screenSize[1]    = static_cast<f32>(screenHeight);
-        m_SampleParamsUBO->UploadData(&params, sizeof(params));
-
-        u32 groupsX = (screenWidth + 7) / 8;
-        u32 groupsY = (screenHeight + 7) / 8;
-        m_ProbeSampleSetup.Dispatch(cmd, groupsX, groupsY);
-        m_ProbeSampleSetup.Barrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
-
-        // Atlases back to GENERAL for the next frame's probe update.
-        atlasBarrier(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
-                     VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT);
+                     VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+        m_AtlasesReadable = true;
     }
+    (void)inverseViewProj; (void)screenWidth; (void)screenHeight;  // sample pass removed
 }
 
 void DDGIProbeSystem::Voxelize(VkCommandBuffer cmd, ECS::World* world) {
@@ -404,6 +390,11 @@ bool DDGIProbeSystem::CreateProbeAtlas() {
     u32 probesPerRow = static_cast<u32>(std::ceil(std::sqrt(static_cast<f32>(totalProbes))));
     u32 atlasWidth = probesPerRow * oct;
     u32 atlasHeight = ((totalProbes + probesPerRow - 1) / probesPerRow) * oct;
+    // Authoritative dimensions — the probe-update write, the params UBO, and the
+    // PBR fragment lookup all derive probesPerRow = width/oct, so this MUST be
+    // the single source (probeCountX*probeCountZ*oct was wrong: 512 vs 128).
+    m_ProbeAtlasWidth = atlasWidth;
+    m_ProbeAtlasHeight = atlasHeight;
 
     // Irradiance atlas (RGBA16F)
     auto createAtlasImage = [&](VkFormat format, VkImage& image, VkDeviceMemory& memory,

@@ -7788,6 +7788,32 @@ void RenderSystem::BuildDDGIGeometry() {
                                      triangleCount, static_cast<u32>(instances.size()));
     ENJIN_LOG_INFO(Renderer, "DDGI: geometry fed (%zu instances, %u triangles)",
                    instances.size(), triangleCount);
+
+    // Bind the probe irradiance atlas to the main PBR pass (binding 22),
+    // replacing the RT dummy, so the fragment shader can sample GI directly.
+    // Done once; the atlas exists from Initialize.
+    if (!m_DDGIAtlasBound && m_DDGISystem->GetProbeAtlasView() &&
+        m_DDGISystem->GetProbeAtlasSampler() && !m_DescriptorSets.empty()) {
+        VkDescriptorImageInfo atlasInfo{};
+        atlasInfo.imageView = m_DDGISystem->GetProbeAtlasView();
+        atlasInfo.sampler = m_DDGISystem->GetProbeAtlasSampler();
+        atlasInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        std::vector<VkWriteDescriptorSet> writes;
+        auto queue = [&](VkDescriptorSet set) {
+            VkWriteDescriptorSet w{};
+            w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            w.dstSet = set; w.dstBinding = 22;
+            w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            w.descriptorCount = 1; w.pImageInfo = &atlasInfo;
+            writes.push_back(w);
+        };
+        for (auto set : m_DescriptorSets) queue(set);
+        for (auto set : m_OffscreenDescriptorSets) queue(set);
+        vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(),
+                               static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
+        m_DDGIAtlasBound = true;
+        ENJIN_LOG_INFO(Renderer, "DDGI: probe atlas bound to main pass (binding 22, %zu sets)", writes.size());
+    }
 }
 
 void RenderSystem::UpdateFrameUniforms() {
@@ -7862,6 +7888,25 @@ void RenderSystem::UpdateFrameUniforms() {
         static_cast<f32>(m_Renderer->GetSwapchainHeight()),
         m_Camera ? m_Camera->GetNearPlane() : 0.1f,
         0.0f);
+
+    // DDGI params for the direct fragment-shader probe lookup. z of atlasParams
+    // gates the whole block in the shader, so it stays off unless DDGI is
+    // enabled AND geometry has been fed (probe atlas holds real data).
+    if (m_DDGISystem && m_DDGISystem->IsActive() && m_DDGIAtlasBound) {
+        const auto& dc = m_DDGISystem->GetConfig();
+        lighting.ddgiGridOrigin = Math::Vector4(dc.gridOrigin.x, dc.gridOrigin.y, dc.gridOrigin.z, dc.gridSpacing);
+        lighting.ddgiProbeCounts[0] = dc.probeCountX;
+        lighting.ddgiProbeCounts[1] = dc.probeCountY;
+        lighting.ddgiProbeCounts[2] = dc.probeCountZ;
+        lighting.ddgiProbeCounts[3] = static_cast<i32>(dc.octResolution);
+        lighting.ddgiAtlasParams = Math::Vector4(
+            static_cast<f32>(m_DDGISystem->GetProbeAtlasWidth()),
+            static_cast<f32>(m_DDGISystem->GetProbeAtlasHeight()),
+            1.0f,                       // enabled
+            1.0f);                      // intensity (exposed as a slider later)
+    } else {
+        lighting.ddgiAtlasParams = Math::Vector4(0, 0, 0, 0);  // disabled
+    }
 
     // Scene2D fast path: skip light iteration, shadow data, wind — no consumers
     if (m_SceneComposition.mode == SceneRenderMode::Scene2D) {

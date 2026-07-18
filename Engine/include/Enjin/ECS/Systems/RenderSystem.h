@@ -1378,6 +1378,7 @@ private:
     // DDGI voxelizer alongside the merged vertex/index buffers.
     std::unique_ptr<Renderer::VulkanBuffer> m_DDGIInstanceBuffer;
     bool m_DDGIGeometryDirty = true;   // rebuild the instance buffer + re-feed DDGI
+    bool m_DDGIAtlasBound = false;      // probe atlas written to main-pass binding 22 once
     void BuildDDGIGeometry();
 
     std::vector<Renderer::ClusterLight> m_ClusterLightsCache;  // Reused per frame to avoid heap allocation

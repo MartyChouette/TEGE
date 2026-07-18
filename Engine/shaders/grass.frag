@@ -78,6 +78,9 @@ layout(binding = 1) uniform LightingUBO {
     vec4 reflectionProbeBoxMin;
     vec4 reflectionProbeBoxMax;
     vec4 fogScreenParams;         // xy = screen size px (froxel UV), z = camera near, w = reserved
+    vec4 ddgiGridOrigin;         // xyz = probe grid origin, w = spacing
+    ivec4 ddgiProbeCounts;       // xyz = probes per axis, w = oct resolution
+    vec4 ddgiAtlasParams;        // x = atlas W, y = atlas H, z = enabled, w = intensity
     DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLight pointLights[MAX_POINT_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];

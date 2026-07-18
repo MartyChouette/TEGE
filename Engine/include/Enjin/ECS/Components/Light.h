@@ -166,6 +166,12 @@ struct alignas(16) LightingUBO {
     // the shader falls back to legacy behavior.
     alignas(16) Math::Vector4 fogScreenParams;
 
+    // DDGI (software global illumination) — the PBR shader samples the probe
+    // irradiance atlas (binding 22) directly via world position + normal.
+    alignas(16) Math::Vector4 ddgiGridOrigin;   // xyz = probe grid origin, w = spacing
+    alignas(16) i32 ddgiProbeCounts[4];         // xyz = probes per axis, w = oct resolution
+    alignas(16) Math::Vector4 ddgiAtlasParams;  // x = atlas width, y = atlas height, z = enabled (0/1), w = intensity
+
     // Light data arrays
     DirectionalLightData directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLightData pointLights[MAX_POINT_LIGHTS];

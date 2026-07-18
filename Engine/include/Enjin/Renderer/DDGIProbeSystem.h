@@ -94,8 +94,14 @@ public:
     VkImageView GetIrradianceView() const { return m_IrradianceView; }
     VkSampler GetIrradianceSampler() const { return m_IrradianceSampler; }
 
-    // Get probe atlas for debug visualization
+    // Probe irradiance atlas — sampled directly by the PBR fragment shader
+    // (binding 22) for the direct-lookup apply, and for debug visualization.
     VkImageView GetProbeAtlasView() const { return m_ProbeIrradianceView; }
+    VkSampler GetProbeAtlasSampler() const { return m_IrradianceSampler; }
+    u32 GetProbeAtlasWidth() const { return m_ProbeAtlasWidth; }
+    u32 GetProbeAtlasHeight() const { return m_ProbeAtlasHeight; }
+    // True once geometry is fed and the probe atlas holds usable data.
+    bool IsActive() const { return m_Config.enabled && m_GeometryBound; }
 
     // Configuration
     const DDGIConfig& GetConfig() const { return m_Config; }
@@ -142,6 +148,9 @@ private:
     VkSampler m_IrradianceSampler = VK_NULL_HANDLE;
     u32 m_IrradianceWidth = 0;
     u32 m_IrradianceHeight = 0;
+    // Authoritative probe-atlas dimensions (set in CreateProbeAtlas)
+    u32 m_ProbeAtlasWidth = 0;
+    u32 m_ProbeAtlasHeight = 0;
 
     // Compute pipelines (via helper — creates layout + pipeline + descriptors)
     ComputePipelineSetup m_VoxelizeSetup;
@@ -167,6 +176,7 @@ private:
     // Image layout lifecycle
     bool m_VoxelGridInitialized = false;   // cleared to "empty = far" once
     bool m_AtlasesInitialized = false;     // probe atlases out of UNDEFINED
+    bool m_AtlasesReadable = false;        // atlases left SHADER_READ_ONLY for the PBR pass
 
     bool m_Initialized = false;
 };
