@@ -2001,11 +2001,11 @@ void EditorLayer::DrawSettingsWindow() {
                 }
                 if (!ddgi.HasGeometryInputs()) {
                     ImGui::SameLine();
-                    ImGui::TextDisabled("(inactive)");
+                    ImGui::TextDisabled("(no geometry yet)");
                     if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("DDGI's voxelizer needs the merged geometry buffers and its sample pass "
-                                          "needs G-buffer depth/normals — neither is wired into the renderer yet. "
-                                          "The passes stay idle until then; these settings take effect once they run.");
+                        ImGui::SetTooltip("DDGI voxelizes the scene's static 3D meshes into an SDF, traces probes, "
+                                          "and the PBR shader samples them directly. It activates once the scene has "
+                                          "pool-eligible static geometry — an empty or 2D scene shows this note.");
                     }
                 }
                 if (ddgiEnabled && ImGui::TreeNode("DDGI Settings")) {

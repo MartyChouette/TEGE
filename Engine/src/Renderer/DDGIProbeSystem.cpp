@@ -131,28 +131,13 @@ void DDGIProbeSystem::Update(VkCommandBuffer cmd, ECS::World* world, u32 frameNu
         if (!m_LoggedInactive) {
             m_LoggedInactive = true;
             ENJIN_LOG_WARN(Renderer,
-                "DDGI: idle — voxelize inputs not wired (needs merged geometry vertex/index/instance "
-                "buffers via SetGeometryBuffers)%s. UBO/pipeline plumbing is ready; passes are gated "
-                "until the inputs exist.",
-                m_GBufferBound ? "" : ", and the sample pass needs G-buffer depth/normals via SetGBuffer");
+                "DDGI: idle — no static geometry fed yet (needs pool-eligible 3D meshes via "
+                "SetGeometryBuffers). Voxelize/probe plumbing is ready; the passes run once the "
+                "scene has geometry.");
         }
         return;
     }
-
-    // Recreate screen-space irradiance if resolution changed
-    if (screenWidth != m_IrradianceWidth || screenHeight != m_IrradianceHeight) {
-        if (m_IrradianceImage) {
-            // Destroy old resources
-            VkDevice device = m_Context->GetDevice();
-            vkDestroyImageView(device, m_IrradianceView, nullptr);
-            vkDestroyImage(device, m_IrradianceImage, nullptr);
-            vkFreeMemory(device, m_IrradianceMemory, nullptr);
-            m_IrradianceView = VK_NULL_HANDLE;
-            m_IrradianceImage = VK_NULL_HANDLE;
-            m_IrradianceMemory = VK_NULL_HANDLE;
-        }
-        CreateScreenIrradiance(screenWidth, screenHeight);
-    }
+    (void)screenWidth; (void)screenHeight;   // screen-space sample pass removed
 
     // Lazy pipeline creation (deferred so resources are ready)
     if (!m_PipelinesCreated) {
@@ -550,37 +535,11 @@ bool DDGIProbeSystem::CreateComputePipelines() {
         }
     }
 
-    // ddgi_sample.comp: binding 0=storageImage(output), 1=combinedImageSampler(depth),
-    //   2=combinedImageSampler(normal), 3=combinedImageSampler(probeIrradiance),
-    //   4=combinedImageSampler(probeDepth), 5=UBO(params)
-    m_ProbeSampleSetup.Create(m_Context, {
-        {0, BT::StorageImage}, {1, BT::CombinedImageSampler},
-        {2, BT::CombinedImageSampler}, {3, BT::CombinedImageSampler},
-        {4, BT::CombinedImageSampler}, {5, BT::UniformBuffer}
-    }, "ddgi_sample.comp");
-
-    if (m_ProbeSampleSetup.IsValid() && m_IrradianceView) {
-        m_ProbeSampleSetup.WriteStorageImage(device, 0, m_IrradianceView);
-        // G-buffer bindings (1, 2) written externally when available
-        if (m_ProbeIrradianceView && m_IrradianceSampler) {
-            m_ProbeSampleSetup.WriteImage(device, 3, m_ProbeIrradianceView, m_IrradianceSampler,
-                                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        }
-        if (m_ProbeDepthView && m_IrradianceSampler) {
-            m_ProbeSampleSetup.WriteImage(device, 4, m_ProbeDepthView, m_IrradianceSampler,
-                                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        }
-        m_SampleParamsUBO = std::make_unique<VulkanBuffer>(m_Context);
-        if (m_SampleParamsUBO->Create(sizeof(DDGISampleParamsUBO),
-                                      static_cast<VkBufferUsageFlags>(VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT),
-                                      /*hostVisible=*/true)) {
-            m_ProbeSampleSetup.WriteBuffer(device, 5, m_SampleParamsUBO->GetBuffer(), sizeof(DDGISampleParamsUBO),
-                                           VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
-        } else {
-            m_SampleParamsUBO.reset();
-        }
-        // G-buffer taps (bindings 1-2) are written by SetGBuffer.
-    }
+    // ddgi_sample.comp (the screen-space sample pass) is intentionally NOT
+    // created: the PBR fragment shader samples the probe atlas directly, so the
+    // pass, its screen-space irradiance output, and its G-buffer inputs are all
+    // gone. SetGBuffer / m_ProbeSampleSetup / m_SampleParamsUBO remain declared
+    // but unused for now (removable once the design is settled).
 
     return true;
 }
