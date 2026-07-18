@@ -46,6 +46,7 @@
 #include "Enjin/ECS/Systems/StateMachineSystem.h"
 #include "Enjin/ECS/Systems/DialogueSystem.h"
 #include "Enjin/Gameplay/CinematicSystem.h"
+#include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Gameplay/HUDSystem.h"
@@ -247,6 +248,11 @@ public:
         m_SimpleAudio.Initialize();
         m_SimpleAudio.SetWorld(m_World.get());
         m_WeatherSystem.Initialize();
+        // Elemental fire/water/earth/air simulation. Its particle visuals aren't
+        // rendered on web yet, but BuildFireLights feeds the renderer's transient
+        // point lights (which the web PBR consumes), so fire lights the scene.
+        m_ElementalSystem.Initialize(&m_WindSystem, &m_WeatherSystem);
+        m_FireLights.reserve(Enjin::Effects::ElementalSystem::MAX_FIRE_LIGHTS);
         m_SceneManager.SetWorld(m_World.get());
         m_SceneManager.SetAssetReader(&m_AssetReader);
         m_NetworkSystem.SetWorld(m_World.get());
@@ -514,6 +520,18 @@ public:
 
         m_ParticleSystem.Update(deltaTime, m_World.get());
 
+        // Elemental sim + fire lighting (particle visuals pending a web renderer
+        // path; the lights show now). Mirrors the desktop Player.
+        if (m_Camera && m_RenderSystem) {
+            m_ElementalSystem.Update(m_World.get(), deltaTime, m_Camera->GetPosition());
+            m_EffectsTime += deltaTime;
+            m_ElementalSystem.BuildFireLights(m_EffectsTime, m_FireLights);
+            m_RenderSystem->ClearTransientPointLights();
+            for (const auto& fl : m_FireLights) {
+                m_RenderSystem->AddTransientPointLight(fl.position, fl.range, fl.color, fl.intensity);
+            }
+        }
+
         // Sync Camera to the first CameraComponent entity (character controller drives the entity,
         // camera follows it). This mirrors what the desktop Player does.
         {
@@ -681,6 +699,9 @@ private:
     Enjin::Effects::WindSystem m_WindSystem;
     Enjin::Effects::WorldTimeSystem m_WorldTime;
     Enjin::Effects::ParticleSystem m_ParticleSystem;
+    Enjin::Effects::ElementalSystem m_ElementalSystem;
+    std::vector<Enjin::Effects::FireLight> m_FireLights;
+    Enjin::f32 m_EffectsTime = 0.0f;
 
     // Scene & networking
     Enjin::Scene::SceneManager m_SceneManager;
