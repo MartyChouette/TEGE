@@ -154,3 +154,6 @@ nul
 /bin/
 /lib/
 installer/output/
+
+# CMake-generated header in the web build tree (only build-web/bin binaries are tracked)
+build-web/Core/
