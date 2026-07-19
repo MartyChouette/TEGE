@@ -1547,10 +1547,54 @@ void RenderSystem::Update(f32 deltaTime) {
             corners[i + 4] = nearCorners[i] + ray * farT;  // shadow distance
         }
 
-        // Compute frustum center
+        // Fit the shadow map to the actual shadow CASTERS, not the whole camera
+        // frustum. Fitting the frustum-at-shadow-distance spread the 2048^2 map
+        // over a ~240-unit box for a ~15-unit scene, so small objects got a
+        // handful of texels -> blocky, acne'd shadows. Approximate each caster's
+        // world AABB from its transform (position +- scale, meshes are ~unit
+        // cubes) and skip large flat receivers (ground planes: wide XZ, thin Y)
+        // which receive shadows but cast none. Shadows fall on the ground near
+        // the casters, so a margin around the caster AABB (plus the ground
+        // plane at y=0) is exactly the region that needs coverage.
+        Math::Vector3 casterMin(1e9f, 1e9f, 1e9f), casterMax(-1e9f, -1e9f, -1e9f);
+        bool haveCasters = false;
+        {
+            const auto& fitEnts = m_World->GetEntitiesWithComponent<MeshComponent>();
+            for (Entity fe : fitEnts) {
+                auto* mx = m_CachedTransformStorage ? m_CachedTransformStorage->Get(fe) : nullptr;
+                auto* mm = m_CachedMeshStorage ? m_CachedMeshStorage->Get(fe) : nullptr;
+                if (!mx || !mm || !mx->visible) continue;
+                if (mm->vertices.empty() || mm->indices.empty()) continue;
+                Math::Vector3 he(std::abs(mx->scale.x), std::abs(mx->scale.y), std::abs(mx->scale.z));
+                if (std::max(he.x, he.z) * 2.0f > 30.0f && he.y * 2.0f < 1.0f) continue;  // ground-like receiver
+                Math::Vector3 lo = mx->position - he, hi = mx->position + he;
+                casterMin = Math::Vector3(std::min(casterMin.x, lo.x), std::min(casterMin.y, lo.y), std::min(casterMin.z, lo.z));
+                casterMax = Math::Vector3(std::max(casterMax.x, hi.x), std::max(casterMax.y, hi.y), std::max(casterMax.z, hi.z));
+                haveCasters = true;
+            }
+        }
+
+        // Fit volume: caster AABB (margin for shadow falloff + ground plane) when
+        // we have casters, else the frustum corners (empty/receiver-only scene).
+        Math::Vector3 fitCorners[8];
         Math::Vector3 center(0.0f);
-        for (int i = 0; i < 8; ++i) center = center + corners[i];
-        center = center * (1.0f / 8.0f);
+        if (haveCasters) {
+            const f32 margin = 4.0f;                 // catch shadows cast onto nearby ground
+            casterMin = casterMin - Math::Vector3(margin, margin, margin);
+            casterMax = casterMax + Math::Vector3(margin, margin, margin);
+            casterMin.y = std::min(casterMin.y, 0.0f);  // include the ground plane (receiver)
+            int ci = 0;
+            for (int zz = 0; zz < 2; ++zz)
+                for (int yy = 0; yy < 2; ++yy)
+                    for (int xx = 0; xx < 2; ++xx)
+                        fitCorners[ci++] = Math::Vector3(xx ? casterMax.x : casterMin.x,
+                                                         yy ? casterMax.y : casterMin.y,
+                                                         zz ? casterMax.z : casterMin.z);
+            center = (casterMin + casterMax) * 0.5f;
+        } else {
+            for (int i = 0; i < 8; ++i) { fitCorners[i] = corners[i]; center = center + corners[i]; }
+            center = center * (1.0f / 8.0f);
+        }
 
         // Build light view matrix
         Math::Vector3 lightDirN = shadowLightDir.Normalized();
@@ -1559,17 +1603,18 @@ void RenderSystem::Update(f32 deltaTime) {
             lightUp = Math::Vector3(0.0f, 0.0f, 1.0f);
         Math::Matrix4 lightView = Math::Matrix4::LookAt(center - lightDirN * 50.0f, center, lightUp);
 
-        // Light-space AABB
+        // Light-space AABB of the fit volume
         f32 minX = 1e9f, maxX = -1e9f;
         f32 minY = 1e9f, maxY = -1e9f;
         f32 minZ = 1e9f, maxZ = -1e9f;
         for (int i = 0; i < 8; ++i) {
-            Math::Vector4 ls = lightView * Math::Vector4(corners[i].x, corners[i].y, corners[i].z, 1.0f);
+            Math::Vector4 ls = lightView * Math::Vector4(fitCorners[i].x, fitCorners[i].y, fitCorners[i].z, 1.0f);
             minX = std::min(minX, ls.x); maxX = std::max(maxX, ls.x);
             minY = std::min(minY, ls.y); maxY = std::max(maxY, ls.y);
             minZ = std::min(minZ, ls.z); maxZ = std::max(maxZ, ls.z);
         }
-        minZ -= 50.0f; maxZ += 50.0f;
+        // Pull the near plane toward the light so off-fit casters still cast in.
+        minZ -= 20.0f;
 
         // Texel-size snapping (prevents shadow swimming)
         f32 sizeX = maxX - minX, sizeY = maxY - minY;
