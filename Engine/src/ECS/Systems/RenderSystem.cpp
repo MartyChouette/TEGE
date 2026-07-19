@@ -1687,6 +1687,16 @@ void RenderSystem::Update(f32 deltaTime) {
                     if (!mesh || !xf || !xf->visible) continue;
                     if (mesh->vertices.empty() || mesh->indices.empty()) continue;
 
+                    // Skip large flat receivers (ground planes) as shadow casters — same
+                    // heuristic as the shadow FIT above. A big flat plane rendered into the
+                    // shadow map self-shadows at the grazing light angle, producing the
+                    // triangular acne wedges seen across the open ground. The ground
+                    // receives shadows; it never needs to cast one.
+                    {
+                        Math::Vector3 she(std::abs(xf->scale.x), std::abs(xf->scale.y), std::abs(xf->scale.z));
+                        if (std::max(she.x, she.z) * 2.0f > 30.0f && she.y * 2.0f < 1.0f) continue;
+                    }
+
                     u64 eid = EntityIndex(entity);  // dense index: low 32 bits (raw handle has generation in high bits)
                     if (eid >= m_EntityRenderData.size()) continue;
                     auto& rd = m_EntityRenderData[eid];
@@ -1798,6 +1808,12 @@ void RenderSystem::Update(f32 deltaTime) {
                             auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
                             auto* exf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                             if (!mesh || !exf || !exf->visible || mesh->vertices.empty()) continue;
+                            // Skip large flat receivers (ground) as casters — same as the
+                            // directional pass; avoids flat-plane self-shadow acne.
+                            {
+                                Math::Vector3 she(std::abs(exf->scale.x), std::abs(exf->scale.y), std::abs(exf->scale.z));
+                                if (std::max(she.x, she.z) * 2.0f > 30.0f && she.y * 2.0f < 1.0f) continue;
+                            }
                             u64 eid = EntityIndex(entity);  // dense index: low 32 bits (raw handle has generation in high bits)
                             if (eid >= m_EntityRenderData.size()) continue;
                             auto& rd = m_EntityRenderData[eid];
@@ -1905,6 +1921,12 @@ void RenderSystem::Update(f32 deltaTime) {
                             auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
                             auto* exf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                             if (!mesh || !exf || !exf->visible || mesh->vertices.empty()) continue;
+                            // Skip large flat receivers (ground) as casters — same as the
+                            // directional pass; avoids flat-plane self-shadow acne.
+                            {
+                                Math::Vector3 she(std::abs(exf->scale.x), std::abs(exf->scale.y), std::abs(exf->scale.z));
+                                if (std::max(she.x, she.z) * 2.0f > 30.0f && she.y * 2.0f < 1.0f) continue;
+                            }
                             u64 eid = EntityIndex(entity);  // dense index: low 32 bits (raw handle has generation in high bits)
                             if (eid >= m_EntityRenderData.size()) continue;
                             auto& rd = m_EntityRenderData[eid];
