@@ -1011,12 +1011,16 @@ public:
 
         // Hazard/pickup overlap checks (for CharacterVirtual which doesn't fire collision events)
         Enjin::Gameplay::GameplayLoop::CheckHazardOverlaps(m_World.get(), deltaTime, m_DeferredDestroys);
+        Enjin::Gameplay::GameplayLoop::CheckHazardOverlaps3D(m_World.get(), m_DeferredDestroys);
         Enjin::Gameplay::GameplayLoop::CheckEnemyOverlaps2D(m_World.get(), deltaTime, m_DeferredDestroys);
         Enjin::Gameplay::GameplayLoop::CheckPickupOverlaps3D(m_World.get(), m_DeferredDestroys);
         Enjin::Gameplay::GameplayLoop::CheckPickupOverlaps2D(m_World.get(), m_DeferredDestroys);
 
         // Health system (regen, invulnerability, death) and deferred entity destruction
         Enjin::Gameplay::GameplayLoop::UpdateHealthSystems(m_World.get(), deltaTime, m_DeferredDestroys);
+
+        // Trigger zones (fills entitiesInside — required for reach-the-goal victory)
+        Enjin::Gameplay::GameplayLoop::UpdateTriggerZones(m_World.get());
 
         // Game over state (player death / victory detection)
         if (Enjin::Gameplay::GameplayLoop::UpdateGameOverState(m_World.get(), deltaTime)) {

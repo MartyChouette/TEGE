@@ -41,6 +41,15 @@ namespace GameplayLoop {
     ENJIN_API void CheckPickupOverlaps3D(ECS::World* world,
                                           std::vector<ECS::Entity>& deferredDestroys);
 
+    // 3D hazard overlap check. The 2D CheckHazardOverlaps needs a Body2DComponent
+    // and works on the XY plane, so it can't hurt a 3D controller. CharacterVirtual
+    // also doesn't generate contact events with static hazard bodies, so we check
+    // each frame: any 3D player overlapping a DamageComponent-without-HealthComponent
+    // entity takes contact damage (respects i-frames / damageOnce). Without this a
+    // 3D game has no working lose condition.
+    ENJIN_API void CheckHazardOverlaps3D(ECS::World* world,
+                                          std::vector<ECS::Entity>& deferredDestroys);
+
     // 2D pickup AABB overlap check. Box2D v3 kinematic-kinematic sensor events
     // are unreliable, so we manually check each frame for 2D controllers.
     ENJIN_API void CheckPickupOverlaps2D(ECS::World* world,
@@ -78,6 +87,14 @@ namespace GameplayLoop {
                                              ECS::World* world,
                                              ECS::VisualScriptSystem* vsSystem,
                                              std::vector<ECS::Entity>& deferredDestroys);
+
+    // Populate every TriggerZoneComponent's entitiesInside list by AABB/sphere
+    // overlap against player-controlled entities (2D + 3D controllers), and fire
+    // onEnter/onExit notify entities. Nothing else in the engine fills
+    // entitiesInside, so without this call trigger zones (and the
+    // victoryTriggerEntity "reach the goal" win condition) never activate.
+    // Call once per frame before UpdateGameOverState.
+    ENJIN_API void UpdateTriggerZones(ECS::World* world);
 
     // Update game over state: checks player death (defeat) and enemy
     // elimination / victory trigger (victory). Call once per frame after

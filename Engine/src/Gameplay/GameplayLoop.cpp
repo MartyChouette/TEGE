@@ -398,6 +398,49 @@ void CheckPickupOverlaps3D(ECS::World* world,
     for (auto e : world->GetEntitiesWithComponent<ECS::TopDown3DController>()) checkPlayer(e);
 }
 
+void CheckHazardOverlaps3D(ECS::World* world,
+                            std::vector<ECS::Entity>& deferredDestroys) {
+    if (!world) return;
+
+    auto checkPlayer = [&](ECS::Entity player) {
+        auto* pt = world->GetComponent<ECS::TransformComponent>(player);
+        auto* hp = world->GetComponent<ECS::HealthComponent>(player);
+        if (!pt || !hp || hp->isDead) return;
+
+        // Player radius (capsule approximation)
+        f32 pr = 0.5f;
+        if (auto* cap = world->GetComponent<ECS::CapsuleColliderComponent>(player)) pr = cap->radius;
+
+        for (auto hazard : world->GetEntitiesWithComponent<ECS::DamageComponent>()) {
+            // A DamageComponent WITH a HealthComponent is an enemy (stomp/contact),
+            // not a hazard. Only pure hazards are handled here.
+            if (world->GetComponent<ECS::HealthComponent>(hazard)) continue;
+
+            auto* ht = world->GetComponent<ECS::TransformComponent>(hazard);
+            if (!ht) continue;
+
+            // Hazard extent from a 3D collider (world-space size; not scaled).
+            f32 hr = 0.5f;
+            if (auto* box = world->GetComponent<ECS::BoxColliderComponent>(hazard)) {
+                hr = Math::Max(box->size.x, box->size.z) * 0.5f;
+            } else if (auto* sph = world->GetComponent<ECS::SphereColliderComponent>(hazard)) {
+                hr = sph->radius;
+            }
+
+            Math::Vector3 d = pt->position - ht->position;
+            f32 dist = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+            if (dist < pr + hr) {
+                // Shared damage path: respects damageOnce, i-frames, shields, death.
+                ProcessContactDamage(world, hazard, player, deferredDestroys);
+            }
+        }
+    };
+
+    for (auto e : world->GetEntitiesWithComponent<ECS::ThirdPersonController>()) checkPlayer(e);
+    for (auto e : world->GetEntitiesWithComponent<ECS::FirstPersonController>()) checkPlayer(e);
+    for (auto e : world->GetEntitiesWithComponent<ECS::TopDown3DController>()) checkPlayer(e);
+}
+
 void CheckPickupOverlaps2D(ECS::World* world,
                             std::vector<ECS::Entity>& deferredDestroys) {
     if (!world) return;
@@ -628,6 +671,63 @@ void Wire2DCollisionCallbacks(Physics::IPhysicsBackend2D* physics2D,
             vsSystem->OnTriggerExit(c.entityB, c.entityA, 0.0f);
         }
     });
+}
+
+void UpdateTriggerZones(ECS::World* world) {
+    if (!world) return;
+
+    // Gather all player-controlled entities (2D + 3D). A trigger zone only cares
+    // about players entering it (that's what the victory/notify logic keys on).
+    std::vector<ECS::Entity> players;
+    for (auto e : world->GetEntitiesWithComponent<ECS::ThirdPersonController>()) players.push_back(e);
+    for (auto e : world->GetEntitiesWithComponent<ECS::FirstPersonController>()) players.push_back(e);
+    for (auto e : world->GetEntitiesWithComponent<ECS::TopDown3DController>()) players.push_back(e);
+    for (auto e : world->GetEntitiesWithComponent<ECS::Platformer2DController>()) players.push_back(e);
+    for (auto e : world->GetEntitiesWithComponent<ECS::TopDown2DController>()) players.push_back(e);
+
+    for (auto zoneE : world->GetEntitiesWithComponent<ECS::TriggerZoneComponent>()) {
+        auto* zone = world->GetComponent<ECS::TriggerZoneComponent>(zoneE);
+        auto* zoneT = world->GetComponent<ECS::TransformComponent>(zoneE);
+        if (!zone || !zoneT) continue;
+
+        // triggerOnce zones latch: once fired they keep their occupants and never
+        // re-evaluate, so a one-shot victory/event can't be undone by walking out.
+        if (zone->triggerOnce && zone->hasTriggered) continue;
+
+        std::vector<ECS::Entity> nowInside;
+        for (auto player : players) {
+            auto* pt = world->GetComponent<ECS::TransformComponent>(player);
+            if (!pt) continue;
+
+            // Approximate the player as a small sphere (capsule/box radius ~0.5).
+            f32 pr = 0.5f;
+            if (auto* cap = world->GetComponent<ECS::CapsuleColliderComponent>(player)) pr = cap->radius;
+
+            Math::Vector3 d = pt->position - zoneT->position;
+            bool inside = false;
+            if (zone->shape == ECS::TriggerZoneComponent::Shape::Sphere) {
+                f32 dist = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
+                inside = dist < zone->sphereRadius + pr;
+            } else {
+                // boxSize is the full extent; half-extent + player radius per axis.
+                Math::Vector3 h = zone->boxSize * 0.5f;
+                inside = Math::Abs(d.x) < h.x + pr &&
+                         Math::Abs(d.y) < h.y + pr &&
+                         Math::Abs(d.z) < h.z + pr;
+            }
+            if (inside) nowInside.push_back(player);
+        }
+
+        // Enter/exit edge detection against last frame's occupants.
+        auto wasInside = [&](ECS::Entity e) {
+            for (auto p : zone->entitiesInside) if (p == e) return true;
+            return false;
+        };
+        for (auto e : nowInside) {
+            if (!wasInside(e)) zone->hasTriggered = true;  // enter edge
+        }
+        zone->entitiesInside = std::move(nowInside);
+    }
 }
 
 bool UpdateGameOverState(ECS::World* world, f32 deltaTime) {

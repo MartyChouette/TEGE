@@ -50,6 +50,7 @@
 #include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Gameplay/HUDSystem.h"
+#include "Enjin/Gameplay/GameplayLoop.h"
 #include "Enjin/Gameplay/QuestSystem.h"
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
@@ -529,6 +530,40 @@ public:
             m_RenderSystem->ClearTransientPointLights();
             for (const auto& fl : m_FireLights) {
                 m_RenderSystem->AddTransientPointLight(fl.position, fl.range, fl.color, fl.intensity);
+            }
+        }
+
+        // --- Gameplay loop (web parity with editor PlayMode / desktop Player) ---
+        // Without this the web build never processes pickups, hazards, health,
+        // trigger zones, or win/lose — games looked alive but weren't playable.
+        {
+            std::vector<Enjin::ECS::Entity> deferred;
+            if (m_Physics) {
+                Enjin::Gameplay::GameplayLoop::DispatchCollisionEvents3D(
+                    m_World.get(), m_Physics.get(), &m_VisualScriptSystem, deltaTime, deferred);
+            }
+            Enjin::Gameplay::GameplayLoop::CheckHazardOverlaps(m_World.get(), deltaTime, deferred);
+            Enjin::Gameplay::GameplayLoop::CheckHazardOverlaps3D(m_World.get(), deferred);
+            Enjin::Gameplay::GameplayLoop::CheckEnemyOverlaps2D(m_World.get(), deltaTime, deferred);
+            Enjin::Gameplay::GameplayLoop::CheckPickupOverlaps3D(m_World.get(), deferred);
+            Enjin::Gameplay::GameplayLoop::CheckPickupOverlaps2D(m_World.get(), deferred);
+            Enjin::Gameplay::GameplayLoop::UpdateHealthSystems(m_World.get(), deltaTime, deferred);
+            Enjin::Gameplay::GameplayLoop::UpdateTriggerZones(m_World.get());
+            (void)Enjin::Gameplay::GameplayLoop::UpdateGameOverState(m_World.get(), deltaTime);
+            Enjin::Gameplay::GameplayLoop::FlushDeferredDestroys(m_World.get(), deferred);
+
+            // Log the win/lose transition once so the game state is observable on web
+            // (the ImGui game-over screen isn't available on the web renderer yet).
+            static bool s_goLogged = false;
+            if (!s_goLogged) {
+                for (auto goe : m_World->GetEntitiesWithComponent<Enjin::ECS::GameOverComponent>()) {
+                    auto* go = m_World->GetComponent<Enjin::ECS::GameOverComponent>(goe);
+                    if (go && go->triggered) {
+                        EM_ASM({ console.log('[GAMEOVER] ' + ($0 ? 'VICTORY' : 'DEFEAT')); }, go->won ? 1 : 0);
+                        s_goLogged = true;
+                        break;
+                    }
+                }
             }
         }
 

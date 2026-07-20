@@ -1250,6 +1250,8 @@ namespace {
     };
 
     static const HubTemplateInfo s_BuiltinTemplates[] = {
+        // -- Flagships (a complete, winnable game in one scene) --
+        { "coinrush",     "Coin Rush",          "3D collectathon\nCollect coins, dodge spikes, reach the portal", ImVec4(1.0f, 0.8f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
         // -- Foundations (Stable) --
         { "blank",        "Blank",              "Empty scene\nStart from scratch",                       ImVec4(0.5f, 0.5f, 0.5f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Stable },
         { "stresstest",   "Stress Test",        "Perf benchmark\n64 falling bodies + 16 point lights",   ImVec4(0.9f, 0.45f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
@@ -2452,7 +2454,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewW = 650.0f;
         m_Layout.gameViewH = 420.0f;
     }
-    else if (templateId == "thirdperson" || templateId == "arena" || templateId == "teamsports") {
+    else if (templateId == "thirdperson" || templateId == "arena" || templateId == "teamsports" || templateId == "coinrush") {
         m_Layout.leftWidth = 0.16f;
         m_Layout.rightWidth = 0.23f;
         m_Layout.inspectorSplit = 0.65f;
@@ -4657,6 +4659,211 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 "  - Add more coins by duplicating the Coin entity\n"
                 "  - Change player speed via ThirdPersonController.moveSpeed\n"
                 "  - Add enemies with AIControllerComponent + DamageComponent";
+        }
+
+    } else if (templateId == "coinrush") {
+        // FLAGSHIP: a complete, winnable 3D loop. Collect coins for score, dodge
+        // the spinning spikes (they drain health), reach the glowing portal to win.
+        // Wires pickups + hazards + health + trigger-zone victory + HUD + shadows.
+        createGround();
+
+        ECS::Entity player = createPlayer3D("Player");
+        {
+            auto& hp = m_World->AddComponent<ECS::HealthComponent>(player);
+            hp.maxHealth = 100.0f;
+            hp.currentHealth = 100.0f;
+            hp.invulnerabilityTime = 1.0f;   // i-frames so a spike touch drains, not instakills
+        }
+        {
+            auto& ctrl = m_World->AddComponent<ECS::ThirdPersonController>(player);
+            ctrl.moveSpeed = 6.0f;
+            ctrl.cameraDistance = 6.0f;
+            ctrl.cameraHeight = 2.5f;
+        }
+        SetupCameraForController(player, "ThirdPerson");
+
+        // Coins in a ring around the arena — collectible score, emissive + bob.
+        {
+            const int coinCount = 8;
+            const f32 radius = 9.0f;
+            for (int i = 0; i < coinCount; ++i) {
+                f32 ang = (static_cast<f32>(i) / coinCount) * 6.2831853f;
+                Math::Vector3 cpos(std::cos(ang) * radius, 1.0f, std::sin(ang) * radius);
+                ECS::Entity coin = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(coin, "Coin " + std::to_string(i + 1));
+                auto& ct = m_World->AddComponent<ECS::TransformComponent>(coin);
+                ct.position = cpos;
+                ct.scale = Math::Vector3(0.4f, 0.4f, 0.4f);
+                auto& cmat = m_World->AddComponent<ECS::MaterialComponent>(coin);
+                cmat.baseColor = Math::Vector3(1.0f, 0.85f, 0.0f);
+                cmat.emissiveColor = Math::Vector3(1.0f, 0.8f, 0.0f);
+                cmat.emissiveStrength = 0.6f;
+                m_World->AddComponent<ECS::MeshComponent>(coin, Renderer::MeshFactory::CreateSphere(0.2f));
+                auto& pk = m_World->AddComponent<ECS::PickupComponent>(coin);
+                pk.type = ECS::PickupComponent::PickupType::Coin;
+                pk.value = 1.0f;
+                pk.pickupRange = 1.0f;
+                addSphereCollider3D(coin, 0.4f);
+                auto& tw = m_World->AddComponent<ECS::TweenComponent>(coin);
+                tw.autoPlay = true;
+                ECS::TweenEntry bob;
+                bob.property = ECS::TweenProperty::Position;
+                bob.easing = ECS::EasingType::EaseInOutSine;
+                bob.mode = ECS::TweenMode::PingPong;
+                bob.startValue = cpos;
+                bob.endValue = cpos + Math::Vector3(0.0f, 0.5f, 0.0f);
+                bob.duration = 1.2f;
+                tw.tweens.push_back(bob);
+            }
+        }
+
+        // Spinning spikes — pure hazards (DamageComponent, no HealthComponent).
+        // CheckHazardOverlaps3D applies contact damage on overlap.
+        {
+            const Math::Vector3 hazPos[] = { {3.5f, 0.5f, 0.0f}, {-3.0f, 0.5f, 3.5f}, {0.0f, 0.5f, -4.0f} };
+            for (int i = 0; i < 3; ++i) {
+                ECS::Entity spike = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(spike, "Spike " + std::to_string(i + 1));
+                auto& st = m_World->AddComponent<ECS::TransformComponent>(spike);
+                st.position = hazPos[i];
+                st.scale = Math::Vector3(1.0f, 1.0f, 1.0f);
+                auto& smat = m_World->AddComponent<ECS::MaterialComponent>(spike);
+                smat.baseColor = Math::Vector3(0.85f, 0.1f, 0.1f);
+                smat.emissiveColor = Math::Vector3(0.6f, 0.0f, 0.0f);
+                smat.emissiveStrength = 0.35f;
+                m_World->AddComponent<ECS::MeshComponent>(spike, Renderer::MeshFactory::CreateCube(1.0f));
+                addBoxCollider3D(spike, 1.0f, 1.0f, 1.0f);
+                auto& dmg = m_World->AddComponent<ECS::DamageComponent>(spike);
+                dmg.damage = 25.0f;
+                dmg.damageOnce = false;    // keeps hurting on each i-frame window
+                dmg.destroyOnHit = false;  // static hazard, not a one-shot projectile
+                // Slow spin so it reads as dangerous.
+                auto& tw = m_World->AddComponent<ECS::TweenComponent>(spike);
+                tw.autoPlay = true;
+                ECS::TweenEntry spin;
+                spin.property = ECS::TweenProperty::Rotation;
+                spin.easing = ECS::EasingType::Linear;
+                spin.mode = ECS::TweenMode::Loop;
+                spin.startValue = Math::Vector3(0.0f, 0.0f, 0.0f);
+                spin.endValue = Math::Vector3(0.0f, 360.0f, 0.0f);
+                spin.duration = 3.0f;
+                tw.tweens.push_back(spin);
+            }
+        }
+
+        // Goal portal — a glowing pad with a TriggerZone. Reaching it = victory.
+        ECS::Entity goal = m_World->CreateEntity();
+        {
+            m_World->AddComponent<ECS::NameComponent>(goal, "Goal Portal");
+            auto& gt = m_World->AddComponent<ECS::TransformComponent>(goal);
+            gt.position = Math::Vector3(0.0f, 0.6f, 14.0f);
+            gt.scale = Math::Vector3(2.0f, 1.2f, 2.0f);
+            auto& gmat = m_World->AddComponent<ECS::MaterialComponent>(goal);
+            gmat.baseColor = Math::Vector3(0.2f, 1.0f, 0.5f);
+            gmat.emissiveColor = Math::Vector3(0.1f, 1.0f, 0.4f);
+            gmat.emissiveStrength = 1.0f;
+            m_World->AddComponent<ECS::MeshComponent>(goal, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& tz = m_World->AddComponent<ECS::TriggerZoneComponent>(goal);
+            tz.shape = ECS::TriggerZoneComponent::Shape::Box;
+            tz.boxSize = Math::Vector3(2.5f, 3.0f, 2.5f);
+            tz.triggerOnce = true;
+        }
+
+        // Game-over controller: victory when the player reaches the goal trigger.
+        {
+            ECS::Entity go = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(go, "Game Rules");
+            m_World->AddComponent<ECS::TransformComponent>(go);
+            auto& goc = m_World->AddComponent<ECS::GameOverComponent>(go);
+            goc.victoryOnAllEnemiesDefeated = false;
+            goc.victoryTriggerEntity = goal;
+            goc.victoryMessage = "You reached the portal!";
+            goc.defeatMessage = "The spikes got you!";
+        }
+
+        // HUD: live health bar + objective label (ImGui overlay; editor + desktop).
+        {
+            ECS::Entity hb = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(hb, "HUD Health");
+            m_World->AddComponent<ECS::TransformComponent>(hb);
+            auto& w = m_World->AddComponent<ECS::HUDWidgetComponent>(hb);
+            w.type = ECS::HUDWidgetComponent::WidgetType::HealthBar;
+            w.sourceEntity = player;
+            w.anchorX = 0.04f; w.anchorY = 0.05f;
+            w.width = 0.25f; w.height = 0.03f;
+            w.fillColor = Math::Vector3(0.9f, 0.2f, 0.2f);
+        }
+        {
+            ECS::Entity ob = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(ob, "HUD Objective");
+            m_World->AddComponent<ECS::TransformComponent>(ob);
+            auto& w = m_World->AddComponent<ECS::HUDWidgetComponent>(ob);
+            w.type = ECS::HUDWidgetComponent::WidgetType::Label;
+            w.anchorX = 0.04f; w.anchorY = 0.10f;
+            w.text = "Grab the coins, dodge the red spikes, reach the green portal!";
+            w.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+            w.fontSize = 18.0f;
+        }
+
+        createLight();
+
+        // Warm key light so the arena has depth (our fixed directional shadows).
+        {
+            ECS::Entity spot = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(spot, "Key Point Light");
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(spot);
+            t.position = Math::Vector3(4.0f, 6.0f, 4.0f);
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(spot);
+            lc.type = ECS::LightType::Point;
+            lc.color = Math::Vector3(1.0f, 0.9f, 0.75f);
+            lc.intensity = 2.5f;
+            lc.range = 25.0f;
+        }
+
+        {
+            Renderer::SkyboxConfig sky;
+            sky.type = Renderer::SkyboxType::Procedural;
+            sky.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
+            sky.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
+            sky.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
+            sky.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+            m_RenderSystem->SetSkybox(sky);
+        }
+        m_RenderSystem->SetShadowsEnabled(true);
+        m_RenderSystem->SetAmbientIntensity(0.15f);
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+            pp.bloomEnabled = 1;
+            pp.bloomThreshold = 0.85f;
+            pp.bloomIntensity = 0.4f;
+        }
+
+        // Guide
+        {
+            ECS::Entity guide = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(guide, "-- Guide --");
+            m_World->AddComponent<ECS::TransformComponent>(guide);
+            m_World->AddComponent<ECS::NotesComponent>(guide).notes =
+                "COIN RUSH - FLAGSHIP 3D LOOP\n"
+                "============================\n\n"
+                "A complete, winnable game in one scene:\n"
+                "  GOAL     - Reach the green portal to WIN\n"
+                "  COINS    - 8 collectibles (PickupComponent) for score\n"
+                "  SPIKES   - Red hazards (DamageComponent) drain your health\n"
+                "  HEALTH   - 100 HP with 1s i-frames; 0 HP = defeat\n"
+                "  HUD      - Live health bar + objective (HUDWidgetComponent)\n\n"
+                "Systems wired together:\n"
+                "  - ThirdPersonController + Jolt physics (move/collide)\n"
+                "  - CheckPickupOverlaps3D collects coins on contact\n"
+                "  - CheckHazardOverlaps3D applies spike damage (i-frames)\n"
+                "  - UpdateTriggerZones + GameOverComponent = victory on the portal\n"
+                "  - HUDSystem draws the health bar bound to the Player\n\n"
+                "Reskin it:\n"
+                "  - Move/add coins by duplicating a Coin entity\n"
+                "  - Change difficulty via HealthComponent.maxHealth or Spike damage\n"
+                "  - Move the Goal Portal to change the route\n"
+                "  - Swap meshes/materials to theme the arena";
         }
 
     } else if (templateId == "firstperson") {
