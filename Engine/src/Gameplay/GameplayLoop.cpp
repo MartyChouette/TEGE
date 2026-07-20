@@ -402,14 +402,22 @@ void CheckHazardOverlaps3D(ECS::World* world,
                             std::vector<ECS::Entity>& deferredDestroys) {
     if (!world) return;
 
+    // Small forgiveness margin so a graze counts, and so a hazard that ended up
+    // as a solid body (collider without a trigger flag holds the character a hair
+    // outside the exact surface) still registers a touch.
+    constexpr f32 kMargin = 0.25f;
+
     auto checkPlayer = [&](ECS::Entity player) {
         auto* pt = world->GetComponent<ECS::TransformComponent>(player);
         auto* hp = world->GetComponent<ECS::HealthComponent>(player);
         if (!pt || !hp || hp->isDead) return;
 
-        // Player radius (capsule approximation)
-        f32 pr = 0.5f;
-        if (auto* cap = world->GetComponent<ECS::CapsuleColliderComponent>(player)) pr = cap->radius;
+        // Player capsule half-extents (radius horizontally, radius+halfHeight vertically).
+        f32 pr = 0.3f, ph = 0.9f;
+        if (auto* cap = world->GetComponent<ECS::CapsuleColliderComponent>(player)) {
+            pr = cap->radius;
+            ph = cap->height * 0.5f + cap->radius;
+        }
 
         for (auto hazard : world->GetEntitiesWithComponent<ECS::DamageComponent>()) {
             // A DamageComponent WITH a HealthComponent is an enemy (stomp/contact),
@@ -419,17 +427,20 @@ void CheckHazardOverlaps3D(ECS::World* world,
             auto* ht = world->GetComponent<ECS::TransformComponent>(hazard);
             if (!ht) continue;
 
-            // Hazard extent from a 3D collider (world-space size; not scaled).
-            f32 hr = 0.5f;
+            // Hazard half-extents from a 3D collider (world-space size; not scaled).
+            Math::Vector3 hh(0.5f, 0.5f, 0.5f);
             if (auto* box = world->GetComponent<ECS::BoxColliderComponent>(hazard)) {
-                hr = Math::Max(box->size.x, box->size.z) * 0.5f;
+                hh = box->size * 0.5f;
             } else if (auto* sph = world->GetComponent<ECS::SphereColliderComponent>(hazard)) {
-                hr = sph->radius;
+                hh = Math::Vector3(sph->radius, sph->radius, sph->radius);
             }
 
+            // Per-axis AABB overlap (correct for boxes; the old center-distance test
+            // was too tight for a low, wide hazard vs a taller player capsule).
             Math::Vector3 d = pt->position - ht->position;
-            f32 dist = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
-            if (dist < pr + hr) {
+            if (Math::Abs(d.x) < pr + hh.x + kMargin &&
+                Math::Abs(d.y) < ph + hh.y + kMargin &&
+                Math::Abs(d.z) < pr + hh.z + kMargin) {
                 // Shared damage path: respects damageOnce, i-frames, shields, death.
                 ProcessContactDamage(world, hazard, player, deferredDestroys);
             }

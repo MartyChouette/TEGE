@@ -70,14 +70,18 @@ ENJIN_TEST(FlagshipCoinRush, CoinOutOfRangeNotCollected) {
 
 ENJIN_TEST(FlagshipCoinRush, HazardDrainsHealthToDefeat) {
     World world;
-    Entity player = MakePlayer(world, Math::Vector3(0, 1, 0), 50.0f, 0.0f);
+    // Realistic geometry: a grounded capsule (center ~0.8) standing over a low,
+    // wide spike (center 0.5), offset horizontally — the case real play hits.
+    // The old center-distance check missed this; this test locks in the fix.
+    Entity player = MakePlayer(world, Math::Vector3(0.5f, 0.8f, 0.0f), 50.0f, 0.0f);
 
-    // Spike: pure hazard (DamageComponent, no HealthComponent), overlapping the player.
+    // Spike: pure hazard (DamageComponent, no HealthComponent), sitting on the ground.
     Entity spike = world.CreateEntity();
     auto& st = world.AddComponent<TransformComponent>(spike);
-    st.position = Math::Vector3(0, 1, 0);
+    st.position = Math::Vector3(0, 0.5f, 0);
     auto& box = world.AddComponent<BoxColliderComponent>(spike);
     box.size = Math::Vector3(1, 1, 1);
+    box.isTrigger = true;
     auto& dmg = world.AddComponent<DamageComponent>(spike);
     dmg.damage = 25.0f;
     dmg.damageOnce = false;

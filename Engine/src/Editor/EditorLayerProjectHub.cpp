@@ -4733,6 +4733,10 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 smat.emissiveStrength = 0.35f;
                 m_World->AddComponent<ECS::MeshComponent>(spike, Renderer::MeshFactory::CreateCube(1.0f));
                 addBoxCollider3D(spike, 1.0f, 1.0f, 1.0f);
+                // Trigger, not a wall — the player must walk INTO the spike to be hurt.
+                // A non-trigger collider becomes a solid static Jolt body that holds
+                // the character just outside the damage radius (no damage ever lands).
+                m_World->GetComponent<ECS::BoxColliderComponent>(spike)->isTrigger = true;
                 auto& dmg = m_World->AddComponent<ECS::DamageComponent>(spike);
                 dmg.damage = 25.0f;
                 dmg.damageOnce = false;    // keeps hurting on each i-frame window
