@@ -2902,6 +2902,7 @@ json SerializeGameOverComponent(const ECS::GameOverComponent& go) {
     j["returnToMenu"] = go.returnToMenu;
     j["victoryOnAllEnemiesDefeated"] = go.victoryOnAllEnemiesDefeated;
     j["victoryTriggerEntity"] = static_cast<u64>(go.victoryTriggerEntity);
+    j["victoryRequiresAllCoins"] = go.victoryRequiresAllCoins;
     return j;
 }
 
@@ -2914,6 +2915,7 @@ ECS::GameOverComponent DeserializeGameOverComponent(const json& j) {
     if (j.contains("returnToMenu")) go.returnToMenu = JB(j["returnToMenu"]);
     if (j.contains("victoryOnAllEnemiesDefeated")) go.victoryOnAllEnemiesDefeated = JB(j["victoryOnAllEnemiesDefeated"]);
     if (j.contains("victoryTriggerEntity")) go.victoryTriggerEntity = static_cast<ECS::Entity>(j["victoryTriggerEntity"].get<u64>());
+    if (j.contains("victoryRequiresAllCoins")) go.victoryRequiresAllCoins = JB(j["victoryRequiresAllCoins"]);
     return go;
 }
 

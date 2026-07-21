@@ -2698,6 +2698,11 @@ struct GameOverComponent {
 
     // Victory condition: trigger zone reached (set entity ID, 0 = disabled)
     Entity victoryTriggerEntity = 0;   // INVALID_ENTITY
+
+    // Gate the trigger-zone victory on collecting every coin first (a collectathon
+    // exit). When true, reaching victoryTriggerEntity only wins once no uncollected
+    // PickupType::Coin entities remain. Makes coins matter to the objective.
+    bool victoryRequiresAllCoins = false;
 };
 
 // ============================================================================

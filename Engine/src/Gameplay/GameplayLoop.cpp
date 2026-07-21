@@ -827,8 +827,20 @@ bool UpdateGameOverState(ECS::World* world, f32 deltaTime) {
 
         // --- Victory check 2: trigger zone reached ---
         if (go->victoryTriggerEntity != 0) {
+            // Optional collectathon gate: the exit only counts once every coin is
+            // collected. If any uncollected coin remains, the portal does nothing.
+            bool coinsBlockExit = false;
+            if (go->victoryRequiresAllCoins) {
+                for (auto pe : world->GetEntitiesWithComponent<ECS::PickupComponent>()) {
+                    auto* pk = world->GetComponent<ECS::PickupComponent>(pe);
+                    if (pk && pk->type == ECS::PickupComponent::PickupType::Coin && !pk->isCollected) {
+                        coinsBlockExit = true;
+                        break;
+                    }
+                }
+            }
             auto* trigger = world->GetComponent<ECS::TriggerZoneComponent>(go->victoryTriggerEntity);
-            if (trigger && !trigger->entitiesInside.empty()) {
+            if (!coinsBlockExit && trigger && !trigger->entitiesInside.empty()) {
                 // Check if any entity inside the trigger is a player
                 for (auto inside : trigger->entitiesInside) {
                     bool isPlayer = world->GetComponent<ECS::Platformer2DController>(inside) ||

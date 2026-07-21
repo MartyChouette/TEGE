@@ -37,11 +37,30 @@ void HUDSystem::Update(ECS::World* world, const Renderer::Camera* gameCamera,
                                 viewportX, viewportY, viewportW, viewportH);
                 break;
             }
-            case ECS::HUDWidgetComponent::WidgetType::Label:
-                DrawLabel(widget->text, widget->anchorX, widget->anchorY,
+            case ECS::HUDWidgetComponent::WidgetType::Label: {
+                // Live coin counter: a Label bound to "coins" shows collected/total
+                // by counting PickupType::Coin entities each frame.
+                std::string label = widget->text;
+                if (widget->bindField == "coins") {
+                    // Collected coins are destroyed on pickup, so count what REMAINS
+                    // and subtract from the known total (widget->maxValue, set at spawn).
+                    int total = static_cast<int>(widget->maxValue);
+                    int remaining = 0;
+                    for (auto pe : world->GetEntitiesWithComponent<ECS::PickupComponent>()) {
+                        auto* pk = world->GetComponent<ECS::PickupComponent>(pe);
+                        if (pk && pk->type == ECS::PickupComponent::PickupType::Coin && !pk->isCollected) {
+                            ++remaining;
+                        }
+                    }
+                    int got = total - remaining;
+                    if (got < 0) got = 0;
+                    label += " " + std::to_string(got) + " / " + std::to_string(total);
+                }
+                DrawLabel(label, widget->anchorX, widget->anchorY,
                           widget->textColor, widget->fontSize,
                           viewportX, viewportY, viewportW, viewportH);
                 break;
+            }
             case ECS::HUDWidgetComponent::WidgetType::Crosshair:
                 DrawCrosshair(viewportX, viewportY, viewportW, viewportH);
                 break;

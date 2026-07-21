@@ -145,4 +145,47 @@ ENJIN_TEST(FlagshipCoinRush, ReachingGoalTriggersVictory) {
     ENJIN_EXPECT_TRUE(go->won);  // VICTORY on reaching the portal
 }
 
+ENJIN_TEST(FlagshipCoinRush, PortalLockedUntilAllCoinsCollected) {
+    World world;
+    // Arrange: player standing ON the portal from the start, but coins remain.
+    Entity player = MakePlayer(world, Math::Vector3(0, 1, 5.0f));
+
+    Entity goal = world.CreateEntity();
+    auto& gt = world.AddComponent<TransformComponent>(goal);
+    gt.position = Math::Vector3(0, 0.6f, 5.0f);
+    auto& tz = world.AddComponent<TriggerZoneComponent>(goal);
+    tz.shape = TriggerZoneComponent::Shape::Box;
+    tz.boxSize = Math::Vector3(2.5f, 3.0f, 2.5f);
+
+    for (int i = 0; i < 2; ++i) {
+        Entity coin = world.CreateEntity();
+        world.AddComponent<TransformComponent>(coin).position = Math::Vector3(10.0f + i, 1, 0);
+        auto& pk = world.AddComponent<PickupComponent>(coin);
+        pk.type = PickupComponent::PickupType::Coin;
+    }
+
+    Entity rules = world.CreateEntity();
+    auto& goc = world.AddComponent<GameOverComponent>(rules);
+    goc.victoryOnAllEnemiesDefeated = false;
+    goc.victoryTriggerEntity = goal;
+    goc.victoryRequiresAllCoins = true;
+
+    // Act 1: on the portal but coins remain -> portal stays locked, no victory.
+    Gameplay::GameplayLoop::UpdateTriggerZones(&world);
+    Gameplay::GameplayLoop::UpdateGameOverState(&world, 0.016f);
+    ENJIN_EXPECT_TRUE(!world.GetComponent<GameOverComponent>(rules)->triggered);
+
+    // Act 2: collect every coin, then re-check on the portal.
+    for (auto pe : world.GetEntitiesWithComponent<PickupComponent>())
+        world.GetComponent<PickupComponent>(pe)->isCollected = true;
+    Gameplay::GameplayLoop::UpdateTriggerZones(&world);
+    Gameplay::GameplayLoop::UpdateGameOverState(&world, 0.016f);
+
+    // Assert: portal now opens -> victory.
+    auto* go = world.GetComponent<GameOverComponent>(rules);
+    ENJIN_EXPECT_TRUE(go->triggered);
+    ENJIN_EXPECT_TRUE(go->won);
+    (void)player;
+}
+
 ENJIN_TEST_MAIN()

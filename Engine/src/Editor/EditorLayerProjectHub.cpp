@@ -4781,7 +4781,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& goc = m_World->AddComponent<ECS::GameOverComponent>(go);
             goc.victoryOnAllEnemiesDefeated = false;
             goc.victoryTriggerEntity = goal;
-            goc.victoryMessage = "You reached the portal!";
+            goc.victoryRequiresAllCoins = true;   // portal only opens once all 8 coins are collected
+            goc.victoryMessage = "All coins collected — you escaped!";
             goc.defeatMessage = "The spikes got you!";
         }
 
@@ -4804,8 +4805,22 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& w = m_World->AddComponent<ECS::HUDWidgetComponent>(ob);
             w.type = ECS::HUDWidgetComponent::WidgetType::Label;
             w.anchorX = 0.04f; w.anchorY = 0.10f;
-            w.text = "Grab the coins, dodge the red spikes, reach the green portal!";
+            w.text = "Collect all coins, then reach the green portal. Dodge the red spikes!";
             w.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+            w.fontSize = 18.0f;
+        }
+        {
+            // Live coin counter (Label bound to "coins"; maxValue = total to collect).
+            ECS::Entity cc = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cc, "HUD Coins");
+            m_World->AddComponent<ECS::TransformComponent>(cc);
+            auto& w = m_World->AddComponent<ECS::HUDWidgetComponent>(cc);
+            w.type = ECS::HUDWidgetComponent::WidgetType::Label;
+            w.bindField = "coins";
+            w.maxValue = 8.0f;   // must match the coin count spawned above
+            w.anchorX = 0.04f; w.anchorY = 0.14f;
+            w.text = "Coins:";
+            w.textColor = Math::Vector3(1.0f, 0.9f, 0.3f);
             w.fontSize = 18.0f;
         }
 
@@ -4852,17 +4867,19 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 "COIN RUSH - FLAGSHIP 3D LOOP\n"
                 "============================\n\n"
                 "A complete, winnable game in one scene:\n"
-                "  GOAL     - Reach the green portal to WIN\n"
-                "  COINS    - 8 collectibles (PickupComponent) for score\n"
+                "  OBJECTIVE- Collect all 8 coins, THEN reach the green portal to WIN\n"
+                "  COINS    - 8 collectibles (PickupComponent); the portal stays\n"
+                "             locked until every one is collected\n"
                 "  SPIKES   - Red hazards (DamageComponent) drain your health\n"
                 "  HEALTH   - 100 HP with 1s i-frames; 0 HP = defeat\n"
-                "  HUD      - Live health bar + objective (HUDWidgetComponent)\n\n"
+                "  HUD      - Live health bar + coin counter + objective\n\n"
                 "Systems wired together:\n"
                 "  - ThirdPersonController + Jolt physics (move/collide)\n"
                 "  - CheckPickupOverlaps3D collects coins on contact\n"
                 "  - CheckHazardOverlaps3D applies spike damage (i-frames)\n"
+                "  - GameOverComponent.victoryRequiresAllCoins gates the portal\n"
                 "  - UpdateTriggerZones + GameOverComponent = victory on the portal\n"
-                "  - HUDSystem draws the health bar bound to the Player\n\n"
+                "  - HUDSystem draws the health bar + live coin counter\n\n"
                 "Reskin it:\n"
                 "  - Move/add coins by duplicating a Coin entity\n"
                 "  - Change difficulty via HealthComponent.maxHealth or Spike damage\n"
