@@ -389,6 +389,12 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
 
     ENJIN_LOG_INFO(Editor, "Opening scene: %s", path.c_str());
 
+    // Tell the render system the world is being torn down BEFORE the load clears
+    // it. serializer.Load(path, true) destroys every component storage; without
+    // this the render system's cached storage pointers dangle (ApplyTemplate does
+    // this, the scene-open path forgot to).
+    if (m_RenderSystem) m_RenderSystem->OnSceneClear();
+
     Scene::SceneSerializer serializer(m_World);
     Scene::DeserializationResult result;
     try {

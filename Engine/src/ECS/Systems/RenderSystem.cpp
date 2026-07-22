@@ -2760,6 +2760,7 @@ void RenderSystem::CreatePipeline() {}
 void RenderSystem::SetBackfaceCullingEnabled(bool enabled) { m_BackfaceCulling = enabled; }
 void RenderSystem::SetShadowDistance(f32 d) { m_ShadowDistance = d; }  // web: no ShadowMap object
 void RenderSystem::SetWireframeEnabled(bool enabled) { m_WireframeMode = enabled; }
+void RenderSystem::RequestPipelineRecreation() {}  // Vulkan-only heal; WebGPU rebuilds per-frame
 void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* /*sim*/) {}
 void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& /*w*/, bool /*r*/, u32, u32) {}
 void RenderSystem::RenderParticles(u32, u32) {}
@@ -3406,8 +3407,12 @@ void RenderSystem::FlushSceneClear() {
     m_CachedLightEntities.clear();
     m_LastBound.Reset();
     // Null ALL cached storage pointers — World::Clear() destroyed the storages
-    // they pointed to, so these are dangling. They'll be refreshed in Update()
-    // via RefreshStorageCache(). Until then, render code null-checks these.
+    // they pointed to, so these are dangling. They are refetched below.
+    // NOTE: "they'll be refreshed in Update()" was the old plan, but the EDITOR
+    // never calls Update() (it renders via RenderToTarget/RenderShadowPassForCamera
+    // only), so after a scene load every entity lookup null-checked against these
+    // and silently skipped — nothing drew, and the viewport stayed black until a
+    // play/stop cycle happened to repopulate state.
     m_CachedTransformStorage = nullptr;
     m_CachedMeshStorage = nullptr;
     m_CachedMaterialStorage = nullptr;
@@ -3419,6 +3424,12 @@ void RenderSystem::FlushSceneClear() {
     m_LightListDirty = true;
     m_SceneComposition.dirty = true;
     m_SceneClearCooldown = 2;  // Skip game view for 2 frames (double-buffered)
+
+    // Refetch storage pointers from the (possibly rebuilt) world immediately.
+    // FlushSceneClear runs at the frame boundary AFTER the new scene's entities
+    // were created, so the world's fresh storages exist now. Waiting for Update()
+    // to do this leaves the editor black (it never calls Update()).
+    RefreshStorageCache();
 
     // Invalidate RT acceleration structures so the driver doesn't access freed geometry
     if (m_ASManager) {
@@ -3640,6 +3651,25 @@ void RenderSystem::FlushPendingChanges() {
         m_SceneClearPending = false;
         FlushSceneClear();
     }
+
+    // Per-frame material SSBO reset. Each frame-in-flight has its OWN material
+    // buffer, so the SSBO must be (re)built once per frame for the current
+    // frame's buffer (cheap cached re-upload when clean). Update() also resets
+    // this, but in the editor Update() early-returns on m_SkipMainPassRendering
+    // before much of its per-frame work; FlushPendingChanges runs unconditionally
+    // in both loops, so the reset lives here too.
+    m_MaterialSSBOBuilt = false;
+
+    // Flush pending bindless texture registrations into the descriptor set.
+    // The only other flush site sits in Update() AFTER the m_SkipMainPassRendering
+    // early-return, which the editor takes every frame — so in the editor the
+    // default white texture registered at init NEVER reached the bindless set.
+    // Every untextured material's baseColorTexIdx pointed at an unwritten
+    // descriptor slot, sampled as zeros, and albedo * 0 rendered ALL geometry
+    // pitch black on scene load (lighting/materials were provably correct).
+    // No-op when nothing is dirty. Runs before command recording, so the set is
+    // never rebuilt under a recording command buffer.
+    if (m_BindlessManager) m_BindlessManager->UpdateDescriptorSet();
 
     // Apply deferred shadow resolution change before pipeline recreation
     // (ProcessPendingRecreation will wait for the GPU via WaitForAllFrames)
@@ -4812,6 +4842,12 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             m_CachedLightEntities.assign(liveLights.begin(), liveLights.end());
         }
         m_LightListDirty = false;
+    }
+
+    // Self-heal nulled storage caches (scene clear ran, Update() never does in the
+    // editor). Without this every entity lookup below silently skips -> black view.
+    if (m_World && !m_CachedTransformStorage) {
+        RefreshStorageCache();
     }
 
     // Upload frame-level uniforms to offscreen buffers (game camera view/proj + lighting)
@@ -8467,6 +8503,10 @@ void RenderSystem::SetWireframeEnabled(bool enabled) {
     m_PendingRecreation = PendingRecreationType::PipelineOnly;
 }
 
+void RenderSystem::RequestPipelineRecreation() {
+    m_PendingRecreation = PendingRecreationType::PipelineOnly;
+}
+
 void RenderSystem::SetShadowDistance(f32 d) {
     m_ShadowDistance = d;
     if (m_ShadowMap) m_ShadowMap->SetShadowDistance(d);
@@ -9796,6 +9836,27 @@ void RenderSystem::RenderShadowPassForCamera(Renderer::Camera* camera) {
     if (!m_ShadowsEnabled) return;
     if (!m_ShadowMap) { ENJIN_LOG_WARN(Renderer, "ShadowPassForCamera: no shadow map"); return; }
     if (!m_ShadowPipeline) { ENJIN_LOG_WARN(Renderer, "ShadowPassForCamera: no shadow pipeline"); return; }
+
+    // The editor renders this pass BEFORE RenderToTarget — which is the other place the
+    // light cache is rebuilt — so refresh the cache here first. Otherwise the first
+    // frame after a scene load classifies against an empty light cache, concludes there
+    // are no shadow-casting lights, skips rendering the shadow map, and consumes the
+    // dirty flag. The main pass then samples an unrendered shadow map as fully shadowed,
+    // so the whole scene is black until a play/stop cycle re-dirties everything.
+    if (m_World) {
+        const auto& liveLights = m_World->GetEntitiesWithComponent<LightComponent>();
+        if (m_LightListDirty || liveLights.size() != m_CachedLightEntities.size()) {
+            m_CachedLightEntities.assign(liveLights.begin(), liveLights.end());
+            m_LightListDirty = false;
+            m_SceneComposition.dirty = true;  // re-classify with the fresh light set
+        }
+        // Self-heal nulled storage caches (same reason as RenderToTarget: the editor
+        // never calls Update(), so a scene clear otherwise leaves these null and the
+        // shadow pass draws no casters).
+        if (!m_CachedTransformStorage) {
+            RefreshStorageCache();
+        }
+    }
 
     ClassifySceneComposition();
     if (m_SceneComposition.mode != SceneRenderMode::Scene3D) return;

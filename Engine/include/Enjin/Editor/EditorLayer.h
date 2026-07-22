@@ -832,8 +832,10 @@ private:
     // Cached player entity for per-frame zone detection (avoid GetAllEntities scan)
     ECS::Entity m_CachedPlayerEntity = ECS::INVALID_ENTITY;
 
-    // Track whether effect pipelines have been updated for the render target's render pass
-    bool m_EffectPipelinesUpdated = false;
+    // The render pass the offscreen/effect pipelines were last built against.
+    // When an RT resize replaces the pass, pipelines referencing the old pass
+    // render undefined (black geometry) — compare each frame and rebuild on change.
+    VkRenderPass m_LastEffectRenderPass = VK_NULL_HANDLE;
 
     // Splash screen
     bool m_ShowSplash = true;

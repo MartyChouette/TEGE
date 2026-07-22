@@ -372,6 +372,13 @@ public:
     bool IsWireframeEnabled() const { return m_WireframeMode; }
     void SetWireframeEnabled(bool enabled);
 
+    // Request a full deferred pipeline + descriptor-set recreation (processed at the
+    // next FlushPendingChanges, before command recording). Same heal path as the
+    // wireframe toggle. The editor calls this when a render target's render pass is
+    // recreated (RT resize on scene/template load destroys the old pass); pipelines
+    // built against the dead pass render undefined (black geometry, VUID-07609).
+    void RequestPipelineRecreation();
+
 #if !ENJIN_RENDERER_WEBGPU
     // Render line-list geometry with depth testing (for editor overlays)
     void RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 vertexCount,

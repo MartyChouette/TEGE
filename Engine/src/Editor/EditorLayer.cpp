@@ -1599,13 +1599,26 @@ void EditorLayer::PrepareRenderTargets() {
         }
     }
 
-    // One-shot: update effect pipelines for the appropriate render target's render pass
-    if (!m_EffectPipelinesUpdated && m_RenderSystem) {
+    // Rebuild pipelines whenever the effect render pass CHANGES — not one-shot.
+    // RT resizes (scene/template load changes the game-view size) destroy and
+    // recreate the render pass; pipelines built against the dead pass render
+    // undefined — every mesh came out pitch black until something else happened
+    // to trigger a pipeline recreation (wireframe toggle, play/stop side effects).
+    // Detecting the pass change and requesting the same full deferred recreation
+    // the wireframe toggle uses makes the first frame after any load correct.
+    if (m_RenderSystem) {
         VkRenderPass effectRenderPass = (m_SceneRenderTarget && m_SceneRenderTarget->IsValid())
             ? m_SceneRenderTarget->GetRenderPass()
             : m_GameViewRenderTarget->GetRenderPass();
-        m_RenderSystem->RecreateEffectPipelinesForRenderPass(effectRenderPass);
-        m_EffectPipelinesUpdated = true;
+        if (effectRenderPass != m_LastEffectRenderPass) {
+            m_RenderSystem->RecreateEffectPipelinesForRenderPass(effectRenderPass);
+            if (m_LastEffectRenderPass != VK_NULL_HANDLE) {
+                // Pass was REPLACED (resize/reload) — old pipelines reference the
+                // destroyed pass; request the full deferred recreation heal.
+                m_RenderSystem->RequestPipelineRecreation();
+            }
+            m_LastEffectRenderPass = effectRenderPass;
+        }
     }
 }
 
