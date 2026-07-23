@@ -228,6 +228,8 @@ private:
     Accessibility::AudioVisualIndicatorSystem* m_AudioIndicators = nullptr;
     Accessibility::ContentWarningSystem* m_ContentWarnings = nullptr;
     GUI::UISystem* m_UISystem = nullptr;
+    u32 m_GameOverRestartListener = 0;   // UI event bus listener id (0 = none)
+    bool m_RestartRequested = false;     // Set by "gameover_restart"; handled in Update()
     Effects::WeatherSystem* m_WeatherSystem = nullptr;
     Effects::ParticleSystem* m_ParticleSystem = nullptr;
     Scene::SceneManager* m_SceneManager = nullptr;

@@ -27,6 +27,8 @@
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Lens.h"
+#include "Enjin/ECS/Components/MorphTarget.h"
 #include "Enjin/ECS/Components/MeshRenderer.h"
 #include "Enjin/ECS/Components/DynamicDifficulty.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
@@ -2917,6 +2919,88 @@ ECS::GameOverComponent DeserializeGameOverComponent(const json& j) {
     if (j.contains("victoryTriggerEntity")) go.victoryTriggerEntity = static_cast<ECS::Entity>(j["victoryTriggerEntity"].get<u64>());
     if (j.contains("victoryRequiresAllCoins")) go.victoryRequiresAllCoins = JB(j["victoryRequiresAllCoins"]);
     return go;
+}
+
+// Camera lens effects (distortion/aberration/vignette). Was silently NEVER
+// serialized -- editor-tuned lenses reset on every save/load.
+json SerializeLensComponent(const ECS::LensComponent& lens) {
+    json j;
+    j["enabled"] = lens.enabled;
+    j["type"] = static_cast<u32>(lens.type);
+    j["distortion"] = RF(lens.distortion);
+    j["anamorphicSqueeze"] = RF(lens.anamorphicSqueeze);
+    j["chromaticAberration"] = RF(lens.chromaticAberration);
+    j["vignetteIntensity"] = RF(lens.vignetteIntensity);
+    j["vignetteSoftness"] = RF(lens.vignetteSoftness);
+    return j;
+}
+
+ECS::LensComponent DeserializeLensComponent(const json& j) {
+    ECS::LensComponent lens;
+    if (j.contains("enabled")) lens.enabled = JB(j["enabled"]);
+    if (j.contains("type")) {
+        u32 t = j["type"].get<u32>();
+        if (t < static_cast<u32>(ECS::LensType::COUNT)) lens.type = static_cast<ECS::LensType>(t);
+    }
+    if (j.contains("distortion")) lens.distortion = j["distortion"].get<f32>();
+    if (j.contains("anamorphicSqueeze")) lens.anamorphicSqueeze = j["anamorphicSqueeze"].get<f32>();
+    if (j.contains("chromaticAberration")) lens.chromaticAberration = j["chromaticAberration"].get<f32>();
+    if (j.contains("vignetteIntensity")) lens.vignetteIntensity = j["vignetteIntensity"].get<f32>();
+    if (j.contains("vignetteSoftness")) lens.vignetteSoftness = j["vignetteSoftness"].get<f32>();
+    return lens;
+}
+
+// Morph targets (blend shapes). Deltas are per-vertex import data -- serialized
+// like mesh vertices so a saved scene keeps its blend shapes; weights always saved.
+json SerializeMorphTargetComponent(const ECS::MorphTargetComponent& morph, bool includeDeltas) {
+    json j;
+    json targetsJson = json::array();
+    for (const auto& target : morph.targets) {
+        json t;
+        t["name"] = target.name;
+        if (includeDeltas) {
+            std::vector<f32> flat;
+            flat.reserve(target.deltas.size() * 6);
+            for (const auto& d : target.deltas) {
+                flat.push_back(d.positionDelta.x); flat.push_back(d.positionDelta.y); flat.push_back(d.positionDelta.z);
+                flat.push_back(d.normalDelta.x);   flat.push_back(d.normalDelta.y);   flat.push_back(d.normalDelta.z);
+            }
+            t["deltas"] = flat;
+        }
+        targetsJson.push_back(t);
+    }
+    j["targets"] = targetsJson;
+    j["weights"] = morph.weights;
+    return j;
+}
+
+ECS::MorphTargetComponent DeserializeMorphTargetComponent(const json& j) {
+    ECS::MorphTargetComponent morph;
+    if (j.contains("targets") && j["targets"].is_array()) {
+        for (const auto& t : j["targets"]) {
+            ECS::MorphTarget target;
+            if (t.contains("name")) target.name = SafeStr(t["name"]);
+            if (t.contains("deltas") && t["deltas"].is_array()) {
+                const auto& flat = t["deltas"];
+                usize count = flat.size() / 6;
+                target.deltas.reserve(count);
+                for (usize i = 0; i + 5 < flat.size(); i += 6) {
+                    ECS::MorphTargetDelta d;
+                    d.positionDelta = Math::Vector3(flat[i].get<f32>(), flat[i+1].get<f32>(), flat[i+2].get<f32>());
+                    d.normalDelta   = Math::Vector3(flat[i+3].get<f32>(), flat[i+4].get<f32>(), flat[i+5].get<f32>());
+                    target.deltas.push_back(d);
+                }
+            }
+            morph.targets.push_back(std::move(target));
+        }
+    }
+    if (j.contains("weights") && j["weights"].is_array()) {
+        for (const auto& w : j["weights"]) morph.weights.push_back(w.get<f32>());
+    }
+    morph.weights.resize(morph.targets.size(), 0.0f);
+    morph.weightsDirty = true;
+    morph.deltasDirty = true;
+    return morph;
 }
 
 // ============================================================================
@@ -7119,6 +7203,12 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::GameOverComponent>(entity)) {
                 entityJson["gameOver"] = SerializeGameOverComponent(*m_World->GetComponent<ECS::GameOverComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::LensComponent>(entity)) {
+                entityJson["lens"] = SerializeLensComponent(*m_World->GetComponent<ECS::LensComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::MorphTargetComponent>(entity)) {
+                entityJson["morphTargets"] = SerializeMorphTargetComponent(*m_World->GetComponent<ECS::MorphTargetComponent>(entity), options.includeVertexData);
+            }
 
             // Damage Resistance
             if (m_World->HasComponent<ECS::DamageResistanceComponent>(entity)) {
@@ -7886,6 +7976,12 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("gameOver")) {
                 m_World->AddComponent<ECS::GameOverComponent>(entity, DeserializeGameOverComponent(entityJson["gameOver"]));
             }
+            if (entityJson.contains("lens")) {
+                m_World->AddComponent<ECS::LensComponent>(entity, DeserializeLensComponent(entityJson["lens"]));
+            }
+            if (entityJson.contains("morphTargets")) {
+                m_World->AddComponent<ECS::MorphTargetComponent>(entity, DeserializeMorphTargetComponent(entityJson["morphTargets"]));
+            }
             if (entityJson.contains("damageResistance")) {
                 m_World->AddComponent<ECS::DamageResistanceComponent>(entity, DeserializeDamageResistanceComponent(entityJson["damageResistance"]));
             }
@@ -8545,6 +8641,12 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::GameOverComponent>(entity)) {
                 entityJson["gameOver"] = SerializeGameOverComponent(*m_World->GetComponent<ECS::GameOverComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::LensComponent>(entity)) {
+                entityJson["lens"] = SerializeLensComponent(*m_World->GetComponent<ECS::LensComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::MorphTargetComponent>(entity)) {
+                entityJson["morphTargets"] = SerializeMorphTargetComponent(*m_World->GetComponent<ECS::MorphTargetComponent>(entity), options.includeVertexData);
             }
 
             // Damage Resistance
@@ -9237,6 +9339,12 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("gameOver")) {
                 m_World->AddComponent<ECS::GameOverComponent>(entity, DeserializeGameOverComponent(entityJson["gameOver"]));
             }
+            if (entityJson.contains("lens")) {
+                m_World->AddComponent<ECS::LensComponent>(entity, DeserializeLensComponent(entityJson["lens"]));
+            }
+            if (entityJson.contains("morphTargets")) {
+                m_World->AddComponent<ECS::MorphTargetComponent>(entity, DeserializeMorphTargetComponent(entityJson["morphTargets"]));
+            }
             if (entityJson.contains("damageResistance")) {
                 m_World->AddComponent<ECS::DamageResistanceComponent>(entity, DeserializeDamageResistanceComponent(entityJson["damageResistance"]));
             }
@@ -9750,6 +9858,10 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["damage"] = SerializeDamageComponent(*world->GetComponent<ECS::DamageComponent>(entity));
         if (world->HasComponent<ECS::GameOverComponent>(entity))
             entityJson["gameOver"] = SerializeGameOverComponent(*world->GetComponent<ECS::GameOverComponent>(entity));
+        if (world->HasComponent<ECS::LensComponent>(entity))
+            entityJson["lens"] = SerializeLensComponent(*world->GetComponent<ECS::LensComponent>(entity));
+        if (world->HasComponent<ECS::MorphTargetComponent>(entity))
+            entityJson["morphTargets"] = SerializeMorphTargetComponent(*world->GetComponent<ECS::MorphTargetComponent>(entity), true);
         if (world->HasComponent<ECS::DamageResistanceComponent>(entity))
             entityJson["damageResistance"] = SerializeDamageResistanceComponent(*world->GetComponent<ECS::DamageResistanceComponent>(entity));
         if (world->HasComponent<ECS::TriggerZoneComponent>(entity))
@@ -10138,6 +10250,10 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             world->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(entityJson["damage"]));
         if (entityJson.contains("gameOver"))
             world->AddComponent<ECS::GameOverComponent>(entity, DeserializeGameOverComponent(entityJson["gameOver"]));
+        if (entityJson.contains("lens"))
+            world->AddComponent<ECS::LensComponent>(entity, DeserializeLensComponent(entityJson["lens"]));
+        if (entityJson.contains("morphTargets"))
+            world->AddComponent<ECS::MorphTargetComponent>(entity, DeserializeMorphTargetComponent(entityJson["morphTargets"]));
         if (entityJson.contains("damageResistance"))
             world->AddComponent<ECS::DamageResistanceComponent>(entity, DeserializeDamageResistanceComponent(entityJson["damageResistance"]));
         if (entityJson.contains("triggerZone"))
@@ -10405,6 +10521,10 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeDamageComponent(*world->GetComponent<ECS::DamageComponent>(entity));
         else if (key == "gameOver" && world->HasComponent<ECS::GameOverComponent>(entity))
             j = SerializeGameOverComponent(*world->GetComponent<ECS::GameOverComponent>(entity));
+        else if (key == "lens" && world->HasComponent<ECS::LensComponent>(entity))
+            j = SerializeLensComponent(*world->GetComponent<ECS::LensComponent>(entity));
+        else if (key == "morphTargets" && world->HasComponent<ECS::MorphTargetComponent>(entity))
+            j = SerializeMorphTargetComponent(*world->GetComponent<ECS::MorphTargetComponent>(entity), true);
         else if (key == "damageResistance" && world->HasComponent<ECS::DamageResistanceComponent>(entity))
             j = SerializeDamageResistanceComponent(*world->GetComponent<ECS::DamageResistanceComponent>(entity));
         else if (key == "triggerZone" && world->HasComponent<ECS::TriggerZoneComponent>(entity))
@@ -10638,6 +10758,8 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "materialInteractionTable") { world->AddComponent<ECS::MaterialInteractionTableComponent>(entity, DeserializeMaterialInteractionTableComponent(j)); return true; }
         if (key == "damage") { world->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(j)); return true; }
         if (key == "gameOver") { world->AddComponent<ECS::GameOverComponent>(entity, DeserializeGameOverComponent(j)); return true; }
+        if (key == "lens") { world->AddComponent<ECS::LensComponent>(entity, DeserializeLensComponent(j)); return true; }
+        if (key == "morphTargets") { world->AddComponent<ECS::MorphTargetComponent>(entity, DeserializeMorphTargetComponent(j)); return true; }
         if (key == "damageResistance") { world->AddComponent<ECS::DamageResistanceComponent>(entity, DeserializeDamageResistanceComponent(j)); return true; }
         if (key == "triggerZone") { world->AddComponent<ECS::TriggerZoneComponent>(entity, DeserializeTriggerZoneComponent(j)); return true; }
         if (key == "interactable") { world->AddComponent<ECS::InteractableComponent>(entity, DeserializeInteractableComponent(j)); return true; }
@@ -10797,6 +10919,8 @@ bool SceneSerializer::RemoveOneComponent(ECS::World* world, ECS::Entity entity, 
         if (key == "materialInteractionTable") { world->RemoveComponent<ECS::MaterialInteractionTableComponent>(entity); return true; }
         if (key == "damage") { world->RemoveComponent<ECS::DamageComponent>(entity); return true; }
         if (key == "gameOver") { world->RemoveComponent<ECS::GameOverComponent>(entity); return true; }
+        if (key == "lens") { world->RemoveComponent<ECS::LensComponent>(entity); return true; }
+        if (key == "morphTargets") { world->RemoveComponent<ECS::MorphTargetComponent>(entity); return true; }
         if (key == "damageResistance") { world->RemoveComponent<ECS::DamageResistanceComponent>(entity); return true; }
         if (key == "triggerZone") { world->RemoveComponent<ECS::TriggerZoneComponent>(entity); return true; }
         if (key == "interactable") { world->RemoveComponent<ECS::InteractableComponent>(entity); return true; }

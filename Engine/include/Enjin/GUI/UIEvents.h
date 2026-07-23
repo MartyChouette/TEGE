@@ -36,6 +36,12 @@ public:
     // Dispatch an event to all listeners for that event name
     void Dispatch(const UIEventData& event);
 
+    // Forwarder: called for EVERY dispatched UI event, before named listeners.
+    // The player loops bridge this into the ScriptEventBus so game scripts can
+    // react to any authored button/slider via the existing Events_Listen API --
+    // without it, onClickEvent strings are only reachable from C++.
+    void SetForwarder(Callback forwarder) { m_Forwarder = std::move(forwarder); }
+
     // Clear all listeners
     void Clear();
 
@@ -47,6 +53,7 @@ private:
     };
 
     std::vector<Listener> m_Listeners;
+    Callback m_Forwarder;   // optional bridge to the script event bus
     u32 m_NextListenerId = 1;
 };
 

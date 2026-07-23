@@ -29,8 +29,11 @@ UICanvasComponent CreateMainMenu(const std::string& gameTitle) {
         auto* t = canvas.GetElement(title);
         t->anchor.anchorMin = Math::Vector2(0.5f, 0.2f);
         t->anchor.anchorMax = Math::Vector2(0.5f, 0.2f);
-        t->anchor.offsetLeft = -300.0f; t->anchor.offsetRight = -300.0f;
-        t->anchor.offsetTop = -30.0f;   t->anchor.offsetBottom = -30.0f;
+        // Unity-style anchors: edge = anchor*parent + offset, so a centered
+        // 600-wide element is offsetLeft=-300 / offsetRight=+300 (NOT -300/-300,
+        // which yields zero width — the classic inverted-offset template bug).
+        t->anchor.offsetLeft = -300.0f; t->anchor.offsetRight = 300.0f;
+        t->anchor.offsetTop = -30.0f;   t->anchor.offsetBottom = 30.0f;
         t->data.text = gameTitle;
         t->data.textAlignH = 1;
         t->style.fontSize = 42.0f;
@@ -59,7 +62,7 @@ UICanvasComponent CreateMainMenu(const std::string& gameTitle) {
         b->anchor.anchorMin = Math::Vector2(0.1f, yPos);
         b->anchor.anchorMax = Math::Vector2(0.9f, yPos);
         b->anchor.offsetLeft = 0.0f; b->anchor.offsetRight = 0.0f;
-        b->anchor.offsetTop = -22.0f; b->anchor.offsetBottom = -22.0f;
+        b->anchor.offsetTop = -22.0f; b->anchor.offsetBottom = 22.0f;
         b->data.text = buttonNames[i];
         b->onClickEvent = buttonEvents[i];
     }
@@ -92,8 +95,8 @@ UICanvasComponent CreatePauseMenu() {
         auto* p = canvas.GetElement(panel);
         p->anchor.anchorMin = Math::Vector2(0.5f, 0.5f);
         p->anchor.anchorMax = Math::Vector2(0.5f, 0.5f);
-        p->anchor.offsetLeft = -180.0f; p->anchor.offsetRight = -180.0f;
-        p->anchor.offsetTop = -140.0f;  p->anchor.offsetBottom = -140.0f;
+        p->anchor.offsetLeft = -180.0f; p->anchor.offsetRight = 180.0f;
+        p->anchor.offsetTop = -140.0f;  p->anchor.offsetBottom = 140.0f;
         p->style.bgColor = Math::Vector3(0.10f, 0.10f, 0.14f);
         p->style.bgAlpha = 0.95f;
         p->style.borderRadius = 8.0f;
@@ -105,8 +108,8 @@ UICanvasComponent CreatePauseMenu() {
         auto* t = canvas.GetElement(title);
         t->anchor.anchorMin = Math::Vector2(0.5f, 0.10f);
         t->anchor.anchorMax = Math::Vector2(0.5f, 0.10f);
-        t->anchor.offsetLeft = -100.0f; t->anchor.offsetRight = -100.0f;
-        t->anchor.offsetTop = -16.0f;   t->anchor.offsetBottom = -16.0f;
+        t->anchor.offsetLeft = -100.0f; t->anchor.offsetRight = 100.0f;
+        t->anchor.offsetTop = -16.0f;   t->anchor.offsetBottom = 16.0f;
         t->data.text = "Paused";
         t->data.textAlignH = 1;
         t->style.fontSize = 28.0f;
@@ -123,7 +126,7 @@ UICanvasComponent CreatePauseMenu() {
         b->anchor.anchorMin = Math::Vector2(0.15f, yPos);
         b->anchor.anchorMax = Math::Vector2(0.85f, yPos);
         b->anchor.offsetLeft = 0.0f; b->anchor.offsetRight = 0.0f;
-        b->anchor.offsetTop = -20.0f; b->anchor.offsetBottom = -20.0f;
+        b->anchor.offsetTop = -20.0f; b->anchor.offsetBottom = 20.0f;
         b->data.text = buttonNames[i];
         b->onClickEvent = buttonEvents[i];
     }
@@ -156,8 +159,8 @@ UICanvasComponent CreateOptionsMenu() {
         auto* p = canvas.GetElement(panel);
         p->anchor.anchorMin = Math::Vector2(0.5f, 0.5f);
         p->anchor.anchorMax = Math::Vector2(0.5f, 0.5f);
-        p->anchor.offsetLeft = -250.0f; p->anchor.offsetRight = -250.0f;
-        p->anchor.offsetTop = -200.0f;  p->anchor.offsetBottom = -200.0f;
+        p->anchor.offsetLeft = -250.0f; p->anchor.offsetRight = 250.0f;
+        p->anchor.offsetTop = -200.0f;  p->anchor.offsetBottom = 200.0f;
         p->style.bgColor = Math::Vector3(0.10f, 0.10f, 0.14f);
         p->style.bgAlpha = 0.95f;
         p->style.borderRadius = 8.0f;
@@ -169,8 +172,8 @@ UICanvasComponent CreateOptionsMenu() {
         auto* t = canvas.GetElement(title);
         t->anchor.anchorMin = Math::Vector2(0.5f, 0.05f);
         t->anchor.anchorMax = Math::Vector2(0.5f, 0.05f);
-        t->anchor.offsetLeft = -100.0f; t->anchor.offsetRight = -100.0f;
-        t->anchor.offsetTop = -16.0f;   t->anchor.offsetBottom = -16.0f;
+        t->anchor.offsetLeft = -100.0f; t->anchor.offsetRight = 100.0f;
+        t->anchor.offsetTop = -16.0f;   t->anchor.offsetBottom = 16.0f;
         t->data.text = "Options";
         t->data.textAlignH = 1;
         t->style.fontSize = 28.0f;
@@ -183,7 +186,7 @@ UICanvasComponent CreateOptionsMenu() {
         l->anchor.anchorMin = Math::Vector2(0.05f, 0.18f);
         l->anchor.anchorMax = Math::Vector2(0.35f, 0.18f);
         l->anchor.offsetLeft = 0; l->anchor.offsetRight = 0;
-        l->anchor.offsetTop = -10.0f; l->anchor.offsetBottom = -10.0f;
+        l->anchor.offsetTop = -10.0f; l->anchor.offsetBottom = 10.0f;
         l->data.text = "Master Volume";
         l->data.textAlignH = 0;
     }
@@ -193,7 +196,7 @@ UICanvasComponent CreateOptionsMenu() {
         s->anchor.anchorMin = Math::Vector2(0.38f, 0.18f);
         s->anchor.anchorMax = Math::Vector2(0.92f, 0.18f);
         s->anchor.offsetLeft = 0; s->anchor.offsetRight = 0;
-        s->anchor.offsetTop = -12.0f; s->anchor.offsetBottom = -12.0f;
+        s->anchor.offsetTop = -12.0f; s->anchor.offsetBottom = 12.0f;
         s->data.sliderValue = 0.8f;
         s->onValueChangedEvent = "options_master_volume";
     }
@@ -205,7 +208,7 @@ UICanvasComponent CreateOptionsMenu() {
         l->anchor.anchorMin = Math::Vector2(0.05f, 0.30f);
         l->anchor.anchorMax = Math::Vector2(0.35f, 0.30f);
         l->anchor.offsetLeft = 0; l->anchor.offsetRight = 0;
-        l->anchor.offsetTop = -10.0f; l->anchor.offsetBottom = -10.0f;
+        l->anchor.offsetTop = -10.0f; l->anchor.offsetBottom = 10.0f;
         l->data.text = "SFX Volume";
         l->data.textAlignH = 0;
     }
@@ -215,7 +218,7 @@ UICanvasComponent CreateOptionsMenu() {
         s->anchor.anchorMin = Math::Vector2(0.38f, 0.30f);
         s->anchor.anchorMax = Math::Vector2(0.92f, 0.30f);
         s->anchor.offsetLeft = 0; s->anchor.offsetRight = 0;
-        s->anchor.offsetTop = -12.0f; s->anchor.offsetBottom = -12.0f;
+        s->anchor.offsetTop = -12.0f; s->anchor.offsetBottom = 12.0f;
         s->data.sliderValue = 1.0f;
         s->onValueChangedEvent = "options_sfx_volume";
     }
@@ -227,7 +230,7 @@ UICanvasComponent CreateOptionsMenu() {
         c->anchor.anchorMin = Math::Vector2(0.05f, 0.45f);
         c->anchor.anchorMax = Math::Vector2(0.5f, 0.45f);
         c->anchor.offsetLeft = 0; c->anchor.offsetRight = 0;
-        c->anchor.offsetTop = -12.0f; c->anchor.offsetBottom = -12.0f;
+        c->anchor.offsetTop = -12.0f; c->anchor.offsetBottom = 12.0f;
         c->data.text = "Fullscreen";
         c->data.checked = false;
         c->onValueChangedEvent = "options_fullscreen";
@@ -240,7 +243,7 @@ UICanvasComponent CreateOptionsMenu() {
         c->anchor.anchorMin = Math::Vector2(0.05f, 0.55f);
         c->anchor.anchorMax = Math::Vector2(0.5f, 0.55f);
         c->anchor.offsetLeft = 0; c->anchor.offsetRight = 0;
-        c->anchor.offsetTop = -12.0f; c->anchor.offsetBottom = -12.0f;
+        c->anchor.offsetTop = -12.0f; c->anchor.offsetBottom = 12.0f;
         c->data.text = "VSync";
         c->data.checked = true;
         c->onValueChangedEvent = "options_vsync";
@@ -253,7 +256,7 @@ UICanvasComponent CreateOptionsMenu() {
         t->anchor.anchorMin = Math::Vector2(0.05f, 0.65f);
         t->anchor.anchorMax = Math::Vector2(0.5f, 0.65f);
         t->anchor.offsetLeft = 0; t->anchor.offsetRight = 0;
-        t->anchor.offsetTop = -12.0f; t->anchor.offsetBottom = -12.0f;
+        t->anchor.offsetTop = -12.0f; t->anchor.offsetBottom = 12.0f;
         t->data.text = "Shadows";
         t->data.checked = true;
         t->onValueChangedEvent = "options_shadows";
@@ -266,7 +269,7 @@ UICanvasComponent CreateOptionsMenu() {
         b->anchor.anchorMin = Math::Vector2(0.3f, 0.85f);
         b->anchor.anchorMax = Math::Vector2(0.7f, 0.85f);
         b->anchor.offsetLeft = 0.0f; b->anchor.offsetRight = 0.0f;
-        b->anchor.offsetTop = -20.0f; b->anchor.offsetBottom = -20.0f;
+        b->anchor.offsetTop = -20.0f; b->anchor.offsetBottom = 20.0f;
         b->data.text = "Back";
         b->onClickEvent = "options_back";
     }
@@ -274,6 +277,54 @@ UICanvasComponent CreateOptionsMenu() {
     // Suppress unused variable warnings
     (void)volLabel; (void)sfxLabel; (void)fullscreenCheck;
     (void)vsyncCheck; (void)shadowsToggle;
+
+    return canvas;
+}
+
+UICanvasComponent CreateGameOverScreen(bool won, const std::string& message, bool allowRestart) {
+    UICanvasComponent canvas;
+    canvas.canvasName = "GameOverScreen";
+    canvas.sortOrder = 300;  // Above pause menu (200) and gameplay HUD canvases
+    canvas.theme = UITheme::Dark();
+
+    // Full-screen dark overlay
+    u32 overlay = canvas.AddElement(UIWidgetType::Panel, "Overlay");
+    {
+        auto* o = canvas.GetElement(overlay);
+        o->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
+        o->anchor.anchorMax = Math::Vector2(1.0f, 1.0f);
+        o->anchor.offsetLeft = 0; o->anchor.offsetRight = 0;
+        o->anchor.offsetTop = 0;  o->anchor.offsetBottom = 0;
+        o->style.bgColor = Math::Vector3(0.0f, 0.0f, 0.0f);
+        o->style.bgAlpha = 0.65f;
+        o->style.borderWidth = 0.0f;
+    }
+
+    // Victory/defeat message (green on win, red on loss)
+    u32 title = canvas.AddElement(UIWidgetType::Label, "Message", overlay);
+    {
+        auto* t = canvas.GetElement(title);
+        t->anchor.anchorMin = Math::Vector2(0.5f, 0.40f);
+        t->anchor.anchorMax = Math::Vector2(0.5f, 0.40f);
+        t->anchor.offsetLeft = -400.0f; t->anchor.offsetRight = 400.0f;
+        t->anchor.offsetTop = -30.0f;   t->anchor.offsetBottom = 30.0f;
+        t->data.text = message;
+        t->data.textAlignH = 1;
+        t->style.fontSize = 38.0f;
+        t->style.textColor = won ? Math::Vector3(0.45f, 1.0f, 0.45f)
+                                 : Math::Vector3(1.0f, 0.45f, 0.45f);
+    }
+
+    if (allowRestart) {
+        u32 btn = canvas.AddElement(UIWidgetType::Button, "PlayAgain", overlay);
+        auto* b = canvas.GetElement(btn);
+        b->anchor.anchorMin = Math::Vector2(0.5f, 0.55f);
+        b->anchor.anchorMax = Math::Vector2(0.5f, 0.55f);
+        b->anchor.offsetLeft = -120.0f; b->anchor.offsetRight = 120.0f;
+        b->anchor.offsetTop = -24.0f;   b->anchor.offsetBottom = 24.0f;
+        b->data.text = "Play Again";
+        b->onClickEvent = "gameover_restart";
+    }
 
     return canvas;
 }

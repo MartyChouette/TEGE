@@ -233,6 +233,23 @@ public:
         m_GameMenu.SetGameTitle(m_WindowTitle.empty() ? "Game" : m_WindowTitle);
 
         // Wire menu button callbacks for title screen and pause menu
+        // The UICanvas game-over screen (spawned by GameplayLoop, one UI source on
+        // all platforms) dispatches "gameover_restart" on the UI event bus.
+        m_UISystem.GetEventBus().Listen("gameover_restart",
+            [this](const Enjin::GUI::UIEventData&) { RestartGameSession(); });
+
+        // Bridge every UI event into the script event bus so game scripts can
+        // react to authored buttons/sliders via Events_Listen("<onClickEvent>", ...).
+        m_UISystem.GetEventBus().SetForwarder([this](const Enjin::GUI::UIEventData& e) {
+            Enjin::Scripting::EventData data;
+            data.SetString("source", "ui");
+            data.SetEntity("canvas", static_cast<Enjin::u64>(e.canvasEntity));
+            data.SetInt("elementId", static_cast<Enjin::i32>(e.elementId));
+            data.SetFloat("value", e.floatValue);
+            data.SetString("text", e.stringValue);
+            m_ScriptEventBus.Send(e.eventName, data);
+        });
+
         m_GameMenu.SetCallback([this](const std::string& action) {
             if (action == "new_game" || action == "continue") {
                 m_GameMenu.HideAll();
@@ -246,25 +263,7 @@ public:
             } else if (action == "how_to_play") {
                 m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::HowToPlay);
             } else if (action == "restart") {
-                m_GameMenu.HideAll();
-                Enjin::Input::SetMouseCaptured(true);
-                // Recreate physics backends so stale bodies/controllers don't persist
-                {
-                    auto backendType = static_cast<Enjin::Physics::PhysicsBackendType>(
-                        m_PhysicsBackendType <= 3 ? m_PhysicsBackendType : 0);
-                    auto projectMode = static_cast<Enjin::Scene::ProjectMode>(
-                        m_ProjectMode <= 2 ? m_ProjectMode : 1);
-                    m_Physics = Enjin::Physics::CreatePhysicsBackend(backendType, projectMode);
-                    if (m_Physics) m_Physics->SetWorld(m_World.get());
-                    m_Physics2D = Enjin::Physics::CreatePhysicsBackend2D(backendType, projectMode);
-                    if (m_Physics2D) m_Physics2D->Initialize(m_World.get());
-                    m_ControllerSystem.SetPhysics(m_Physics.get());
-                    m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
-                    // Re-wire 2D collision callbacks
-                    Enjin::Gameplay::GameplayLoop::Wire2DCollisionCallbacks(
-                        m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys);
-                }
-                if (!m_StartScene.empty()) LoadSceneFromPack(m_StartScene);
+                RestartGameSession();
             } else if (action == "quit_to_menu") {
                 m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
                 m_GameStarted = false;
@@ -272,24 +271,7 @@ public:
             } else if (action == "quit") {
                 if (GetWindow()) GetWindow()->Close();
             } else if (action == "game_over_restart") {
-                m_GameMenu.HideAll();
-                Enjin::Input::SetMouseCaptured(true);
-                // Recreate physics for clean restart
-                {
-                    auto backendType = static_cast<Enjin::Physics::PhysicsBackendType>(
-                        m_PhysicsBackendType <= 3 ? m_PhysicsBackendType : 0);
-                    auto projectMode = static_cast<Enjin::Scene::ProjectMode>(
-                        m_ProjectMode <= 2 ? m_ProjectMode : 1);
-                    m_Physics = Enjin::Physics::CreatePhysicsBackend(backendType, projectMode);
-                    if (m_Physics) m_Physics->SetWorld(m_World.get());
-                    m_Physics2D = Enjin::Physics::CreatePhysicsBackend2D(backendType, projectMode);
-                    if (m_Physics2D) m_Physics2D->Initialize(m_World.get());
-                    m_ControllerSystem.SetPhysics(m_Physics.get());
-                    m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
-                    Enjin::Gameplay::GameplayLoop::Wire2DCollisionCallbacks(
-                        m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys);
-                }
-                if (!m_StartScene.empty()) LoadSceneFromPack(m_StartScene);
+                RestartGameSession();
             } else if (action == "game_over_menu") {
                 m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
                 m_GameStarted = false;
@@ -1022,19 +1004,12 @@ public:
         // Trigger zones (fills entitiesInside — required for reach-the-goal victory)
         Enjin::Gameplay::GameplayLoop::UpdateTriggerZones(m_World.get());
 
-        // Game over state (player death / victory detection)
+        // Game over state (player death / victory detection). The game-over UI
+        // itself is the UICanvas screen GameplayLoop spawns (one source, rendered
+        // by UISystem on every platform) — just release the mouse so the player
+        // can click its "Play Again" button.
         if (Enjin::Gameplay::GameplayLoop::UpdateGameOverState(m_World.get(), deltaTime)) {
-            if (!m_GameMenu.IsGameOverScreen()) {
-                for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::GameOverComponent>()) {
-                    auto* go = m_World->GetComponent<Enjin::ECS::GameOverComponent>(entity);
-                    if (go && go->triggered && go->screenVisible) {
-                        const std::string& msg = go->won ? go->victoryMessage : go->defeatMessage;
-                        m_GameMenu.ShowGameOver(go->won, msg, go->allowRestart, go->returnToMenu);
-                        Enjin::Input::SetMouseCaptured(false);
-                        break;
-                    }
-                }
-            }
+            Enjin::Input::SetMouseCaptured(false);
         }
 
         Enjin::Gameplay::GameplayLoop::FlushDeferredDestroys(m_World.get(), m_DeferredDestroys);
@@ -1046,6 +1021,28 @@ public:
                 if (res) res->Regenerate(deltaTime);
             }
         }
+    }
+
+    // Restart the current game session: fresh physics backends (stale bodies and
+    // controllers must not persist) and reload the start scene. Shared by the pause
+    // menu Restart, the GameMenus game-over path, and the UICanvas game-over
+    // screen's "gameover_restart" UI event.
+    void RestartGameSession() {
+        m_GameMenu.HideAll();
+        Enjin::Input::SetMouseCaptured(true);
+        auto backendType = static_cast<Enjin::Physics::PhysicsBackendType>(
+            m_PhysicsBackendType <= 3 ? m_PhysicsBackendType : 0);
+        auto projectMode = static_cast<Enjin::Scene::ProjectMode>(
+            m_ProjectMode <= 2 ? m_ProjectMode : 1);
+        m_Physics = Enjin::Physics::CreatePhysicsBackend(backendType, projectMode);
+        if (m_Physics) m_Physics->SetWorld(m_World.get());
+        m_Physics2D = Enjin::Physics::CreatePhysicsBackend2D(backendType, projectMode);
+        if (m_Physics2D) m_Physics2D->Initialize(m_World.get());
+        m_ControllerSystem.SetPhysics(m_Physics.get());
+        m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
+        Enjin::Gameplay::GameplayLoop::Wire2DCollisionCallbacks(
+            m_Physics2D.get(), m_World.get(), &m_VisualScriptSystem, m_DeferredDestroys);
+        if (!m_StartScene.empty()) LoadSceneFromPack(m_StartScene);
     }
 
     void Render() override {

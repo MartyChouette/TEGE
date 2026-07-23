@@ -1598,13 +1598,17 @@ void EditorLayer::DrawBuildDialog() {
             ImGui::BulletText("Ray tracing: Not available");
             ImGui::BulletText("DLSS / XeSS: Not available (FXAA + MSAA 4x only)");
             ImGui::BulletText("Particles / Terrain / Water: Not yet implemented");
-            ImGui::BulletText("UI Canvas rendering: Not yet implemented");
+            ImGui::BulletText("UI Canvas / TextComponent rendering: Not yet implemented");
+            ImGui::BulletText("2D sprite textures: Not yet supported (sprites render untextured)");
             ImGui::BulletText("Multi-material (per-submesh): Not yet supported");
             ImGui::BulletText("LOD / Instancing: Not yet supported");
 
             ImGui::Spacing();
             ImGui::TextWrapped("Supported: PBR lighting, shadows (dir+spot+point), "
                 "skeletal animation, physics (Jolt+Box2D), audio, scripting, "
+                "full gameplay loop (pickups, hazards, health, trigger zones, win/lose), "
+                "built-in HTML game HUD (health bar, coin counter, victory/defeat screen), "
+                "AI / dialogue / cutscenes, save persistence (browser storage), "
                 "ACES tonemapping, bloom, MSAA 4x, FXAA, fog, procedural sky.");
 
             ImGui::PopStyleColor();

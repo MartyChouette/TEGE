@@ -7256,6 +7256,16 @@ static void XYWHToAnchor(GUI::UIAnchor& a, f32 x, f32 y, f32 w, f32 h) {
     a.offsetBottom = y + h;
 }
 
+void EditorLayer::OpenUIEditor(ECS::Entity canvasEntity) {
+    if (!m_World || !m_World->HasComponent<GUI::UICanvasComponent>(canvasEntity)) return;
+    SelectEntity(canvasEntity);
+    m_UIEditMode = true;
+    m_UIEditCanvasEntity = canvasEntity;
+    m_UIEditSelectedElementId = 0;
+    // Make sure the Game View is visible -- that's where the WYSIWYG overlay lives
+    SetPanelVisibility(EditorPanel::GameView, true);
+}
+
 void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("UI Canvas", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("UICanvasCtx")) {

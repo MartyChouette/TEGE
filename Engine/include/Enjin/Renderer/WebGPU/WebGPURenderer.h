@@ -70,6 +70,11 @@ public:
     // Begin the main swapchain render pass (call after BeginFrameWebGPU and any pre-passes)
     void BeginMainRenderPass();
 
+    // Return the open swapchain render pass for UI overlay drawing, or begin a
+    // NON-CLEARING (load) pass on the swapchain if the main pass already ended.
+    // Used by the web player to draw ImGui UI on top of the finished frame.
+    WGPURenderPassEncoder GetOrBeginUIOverlayPass();
+
     // Swapchain-write tracking: the post-process path writes the swapchain with its
     // own raw pass (bypassing BeginMainRenderPass), and must mark it so the frame
     // loop's fallback clear pass doesn't wipe the finished image.

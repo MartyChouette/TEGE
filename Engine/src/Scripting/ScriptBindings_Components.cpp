@@ -29,6 +29,33 @@ extern ECS::World* s_BindingsWorld;
 // Health component access
 // ============================================================================
 
+// --- Game over (win/lose) --------------------------------------------------
+// Lets game scripts end the game programmatically (timers, story beats, custom
+// fail states). GameplayLoop shows the unified UICanvas game-over screen.
+static void GameOver_Trigger(u64 id, bool won) {
+    if (!s_BindingsWorld) return;
+    auto* go = s_BindingsWorld->GetComponent<GameOverComponent>(static_cast<Entity>(id));
+    if (!go || go->triggered) return;
+    go->triggered = true;
+    go->won = won;
+    go->delayTimer = 0.0f;
+    go->screenVisible = false;
+}
+
+static bool GameOver_IsTriggered(u64 id) {
+    if (!s_BindingsWorld) return false;
+    auto* go = s_BindingsWorld->GetComponent<GameOverComponent>(static_cast<Entity>(id));
+    return go && go->triggered;
+}
+
+static void GameOver_SetMessages(u64 id, const std::string& victory, const std::string& defeat) {
+    if (!s_BindingsWorld) return;
+    auto* go = s_BindingsWorld->GetComponent<GameOverComponent>(static_cast<Entity>(id));
+    if (!go) return;
+    go->victoryMessage = victory;
+    go->defeatMessage = defeat;
+}
+
 static f32 Health_Get(u64 id) {
     if (!s_BindingsWorld) return 0.0f;
     auto* hc = s_BindingsWorld->GetComponent<HealthComponent>(static_cast<Entity>(id));
@@ -1860,6 +1887,9 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("float Health_GetMax(uint64)", asFUNCTION(Health_GetMax), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Health_SetCurrent(uint64, float)", asFUNCTION(Health_SetCurrent), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Health_Damage(uint64, float)", asFUNCTION(Health_Damage), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void GameOver_Trigger(uint64, bool)", asFUNCTION(GameOver_Trigger), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool GameOver_IsTriggered(uint64)", asFUNCTION(GameOver_IsTriggered), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void GameOver_SetMessages(uint64, const string &in, const string &in)", asFUNCTION(GameOver_SetMessages), asCALL_CDECL));
 
     // Material
     AS_CHECK(engine->RegisterGlobalFunction("void Material_SetBaseColor(uint64, const Vector3 &in)", asFUNCTION(Material_SetBaseColor), asCALL_CDECL));

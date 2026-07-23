@@ -7,6 +7,8 @@
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Physics/IPhysicsBackend2D.h"
+#include "Enjin/GUI/UITemplates.h"
+#include "Enjin/ECS/Components/Name.h"
 #include "Enjin/Math/Math.h"
 #include <algorithm>
 
@@ -121,11 +123,14 @@ void ProcessPickup(ECS::World* world, ECS::Entity entityA,
         auto* pickup = world->GetComponent<ECS::PickupComponent>(pickupEntity);
         if (!pickup || pickup->isCollected) return;
 
-        // Only characters with a controller or health can collect pickups
+        // Only characters with a controller or health can collect pickups.
+        // ALL player controller types (2D and 3D) count — a gameplay feature must
+        // work for every controller unless it's inherently 2D- or 3D-only.
         bool isPlayer = world->GetComponent<ECS::Platformer2DController>(collector) != nullptr ||
                         world->GetComponent<ECS::TopDown2DController>(collector) != nullptr ||
                         world->GetComponent<ECS::FirstPersonController>(collector) != nullptr ||
-                        world->GetComponent<ECS::ThirdPersonController>(collector) != nullptr;
+                        world->GetComponent<ECS::ThirdPersonController>(collector) != nullptr ||
+                        world->GetComponent<ECS::TopDown3DController>(collector) != nullptr;
         if (!isPlayer) return;
 
         // Apply pickup effect
@@ -533,11 +538,12 @@ void UpdateHealthSystems(ECS::World* world, f32 deltaTime,
                 }
             }
 
-            // Check if any player controller is present
+            // Check if any player controller is present (all 2D + 3D types)
             bool isPlayer = world->GetComponent<ECS::Platformer2DController>(entity) ||
                             world->GetComponent<ECS::TopDown2DController>(entity) ||
                             world->GetComponent<ECS::FirstPersonController>(entity) ||
-                            world->GetComponent<ECS::ThirdPersonController>(entity);
+                            world->GetComponent<ECS::ThirdPersonController>(entity) ||
+                            world->GetComponent<ECS::TopDown3DController>(entity);
 
             if (isPlayer) {
                 // If a GameOverComponent exists, skip auto-respawn — let the
@@ -755,6 +761,21 @@ bool UpdateGameOverState(ECS::World* world, f32 deltaTime) {
                 go->delayTimer += deltaTime;
                 if (go->delayTimer >= go->delay) {
                     go->screenVisible = true;
+                    // ONE game-over UI source: spawn the UICanvas screen from
+                    // UITemplates. UISystem renders it identically on desktop,
+                    // editor play mode, and web (UI unification Phase 2). The
+                    // "Play Again" button dispatches "gameover_restart" on the
+                    // UI event bus; each platform listens and restarts its way.
+                    if (!go->uiSpawned) {
+                        go->uiSpawned = true;
+                        ECS::Entity ui = world->CreateEntity();
+                        world->AddComponent<ECS::NameComponent>(ui, "GameOver UI");
+                        world->AddComponent<GUI::UICanvasComponent>(ui,
+                            GUI::UITemplates::CreateGameOverScreen(
+                                go->won,
+                                go->won ? go->victoryMessage : go->defeatMessage,
+                                go->allowRestart));
+                    }
                     return true;  // Signal caller to show game over UI
                 }
             }
@@ -777,6 +798,7 @@ bool UpdateGameOverState(ECS::World* world, f32 deltaTime) {
         if (!playerDead) check(world->GetEntitiesWithComponent<ECS::TopDown2DController>());
         if (!playerDead) check(world->GetEntitiesWithComponent<ECS::FirstPersonController>());
         if (!playerDead) check(world->GetEntitiesWithComponent<ECS::ThirdPersonController>());
+        if (!playerDead) check(world->GetEntitiesWithComponent<ECS::TopDown3DController>());
 
         if (playerDead) {
             go->triggered = true;
@@ -798,6 +820,7 @@ bool UpdateGameOverState(ECS::World* world, f32 deltaTime) {
                 if (world->GetComponent<ECS::TopDown2DController>(dmgEntity)) continue;
                 if (world->GetComponent<ECS::FirstPersonController>(dmgEntity)) continue;
                 if (world->GetComponent<ECS::ThirdPersonController>(dmgEntity)) continue;
+                if (world->GetComponent<ECS::TopDown3DController>(dmgEntity)) continue;
                 if (!hp->isDead) {
                     anyEnemyAlive = true;
                     break;
@@ -812,6 +835,7 @@ bool UpdateGameOverState(ECS::World* world, f32 deltaTime) {
                 if (world->GetComponent<ECS::TopDown2DController>(dmgEntity)) continue;
                 if (world->GetComponent<ECS::FirstPersonController>(dmgEntity)) continue;
                 if (world->GetComponent<ECS::ThirdPersonController>(dmgEntity)) continue;
+                if (world->GetComponent<ECS::TopDown3DController>(dmgEntity)) continue;
                 hasEnemies = true;
                 break;
             }
@@ -846,7 +870,8 @@ bool UpdateGameOverState(ECS::World* world, f32 deltaTime) {
                     bool isPlayer = world->GetComponent<ECS::Platformer2DController>(inside) ||
                                     world->GetComponent<ECS::TopDown2DController>(inside) ||
                                     world->GetComponent<ECS::FirstPersonController>(inside) ||
-                                    world->GetComponent<ECS::ThirdPersonController>(inside);
+                                    world->GetComponent<ECS::ThirdPersonController>(inside) ||
+                                    world->GetComponent<ECS::TopDown3DController>(inside);
                     if (isPlayer) {
                         go->triggered = true;
                         go->won = true;

@@ -26,6 +26,9 @@
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/GUI/UISystem.h"
+#include "Enjin/Renderer/WebGPU/WebGPUTypes.h"
+#include <imgui.h>
+#include <imgui_impl_wgpu.h>
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Effects/Wind.h"
@@ -51,6 +54,8 @@
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Gameplay/HUDSystem.h"
 #include "Enjin/Gameplay/GameplayLoop.h"
+#include "Enjin/Gameplay/FootstepSystem.h"
+#include "Enjin/Accessibility/SubtitleSystem.h"
 #include "Enjin/Gameplay/QuestSystem.h"
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
@@ -245,6 +250,10 @@ public:
         m_DialogueSystem.SetQuestSystem(&m_QuestSystem);
         m_DialogueSystem.SetCinematicSystem(&m_CinematicSystem);
         m_DialogueSystem.SetTieredSaveSystem(&m_TieredSaveSystem);
+        // Accessibility: dialogue lines flow into the subtitle overlay (rendered
+        // via the ImGui UI overlay -- unblocked by the web UI unification).
+        m_DialogueSystem.SetSubtitleSystem(&m_SubtitleSystem);
+        m_FootstepSystem.SetEnabled(true);
         m_TieredSaveSystem.LoadMeta();
         m_SimpleAudio.Initialize();
         m_SimpleAudio.SetWorld(m_World.get());
@@ -442,6 +451,7 @@ public:
 
     void Update(Enjin::f32 deltaTime) {
         if (!m_Initialized) return;
+        m_LastDeltaTime = deltaTime;
 
         m_SimpleAudio.Update(deltaTime);
         m_SimpleAudio.UpdateAudioSources(deltaTime);
@@ -542,6 +552,8 @@ public:
                 Enjin::Gameplay::GameplayLoop::DispatchCollisionEvents3D(
                     m_World.get(), m_Physics.get(), &m_VisualScriptSystem, deltaTime, deferred);
             }
+            m_FootstepSystem.Update(m_World.get(), deltaTime);
+            m_SubtitleSystem.Update(deltaTime);
             Enjin::Gameplay::GameplayLoop::CheckHazardOverlaps(m_World.get(), deltaTime, deferred);
             Enjin::Gameplay::GameplayLoop::CheckHazardOverlaps3D(m_World.get(), deferred);
             Enjin::Gameplay::GameplayLoop::CheckEnemyOverlaps2D(m_World.get(), deltaTime, deferred);
@@ -552,16 +564,20 @@ public:
             (void)Enjin::Gameplay::GameplayLoop::UpdateGameOverState(m_World.get(), deltaTime);
             Enjin::Gameplay::GameplayLoop::FlushDeferredDestroys(m_World.get(), deferred);
 
-            // Log the win/lose transition once so the game state is observable on web
-            // (the ImGui game-over screen isn't available on the web renderer yet).
-            static bool s_goLogged = false;
-            if (!s_goLogged) {
-                for (auto goe : m_World->GetEntitiesWithComponent<Enjin::ECS::GameOverComponent>()) {
-                    auto* go = m_World->GetComponent<Enjin::ECS::GameOverComponent>(goe);
-                    if (go && go->triggered) {
-                        EM_ASM({ console.log('[GAMEOVER] ' + ($0 ? 'VICTORY' : 'DEFEAT')); }, go->won ? 1 : 0);
-                        s_goLogged = true;
-                        break;
+            // Game-over UI is the UICanvas screen GameplayLoop spawns — rendered by
+            // the same UISystem as desktop (one source). Release pointer lock so the
+            // player can click its "Play Again" button, and log the transition once.
+            {
+                static bool s_goLogged = false;
+                if (!s_goLogged) {
+                    for (auto goe : m_World->GetEntitiesWithComponent<Enjin::ECS::GameOverComponent>()) {
+                        auto* go = m_World->GetComponent<Enjin::ECS::GameOverComponent>(goe);
+                        if (go && go->triggered) {
+                            s_goLogged = true;
+                            Enjin::Input::SetMouseCaptured(false);
+                            EM_ASM({ console.log('[GAMEOVER] ' + ($0 ? 'VICTORY' : 'DEFEAT')); }, go->won ? 1 : 0);
+                            break;
+                        }
                     }
                 }
             }
@@ -590,6 +606,88 @@ public:
         }
     }
 
+    // Draw the game's authored UI (UICanvasComponent + HUDWidgetComponent) into the
+    // swapchain via ImGui's WebGPU backend. This is the SAME UISystem/HUDSystem code
+    // the desktop player runs — one UI source, web/PC parity.
+    void RenderUIOverlay() {
+        if (!m_Renderer || !m_Renderer->IsInitialized()) return;
+
+        if (!m_WebImGuiInit) {
+            m_WebImGuiInit = true;
+            IMGUI_CHECKVERSION();
+            ImGui::CreateContext();
+            ImGuiIO& initIO = ImGui::GetIO();
+            initIO.IniFilename = nullptr;  // no imgui.ini in the browser sandbox
+            ImGui::StyleColorsDark();
+
+            ImGui_ImplWGPU_InitInfo info;
+            info.Device = m_Renderer->GetDevice();
+            info.NumFramesInFlight = 3;
+            info.RenderTargetFormat = Enjin::Renderer::GetPreferredSwapChainFormat();
+            // Depth format must match the main pass so the UI pipeline is
+            // pass-compatible (UI draws depth-test-always, no writes).
+            info.DepthStencilFormat = Enjin::Renderer::GetDepthStencilFormat();
+            if (!ImGui_ImplWGPU_Init(&info)) {
+                ENJIN_LOG_ERROR(Player, "ImGui WebGPU backend init failed — game UI disabled");
+                return;
+            }
+            m_HUDSystem.SetEnabled(true);
+            // The UICanvas game-over screen's "Play Again" button — on web the
+            // cleanest full restart is a page reload (fresh WASM + scene).
+            m_UISystem.GetEventBus().Listen("gameover_restart",
+                [](const Enjin::GUI::UIEventData&) {
+                    EM_ASM({ location.reload(); });
+                });
+
+            // Bridge every UI event into the script event bus so game scripts can
+            // react to authored buttons/sliders via Events_Listen("<onClickEvent>", ...).
+            m_UISystem.GetEventBus().SetForwarder([this](const Enjin::GUI::UIEventData& e) {
+                Enjin::Scripting::EventData data;
+                data.SetString("source", "ui");
+                data.SetEntity("canvas", static_cast<Enjin::u64>(e.canvasEntity));
+                data.SetInt("elementId", static_cast<Enjin::i32>(e.elementId));
+                data.SetFloat("value", e.floatValue);
+                data.SetString("text", e.stringValue);
+                m_ScriptEventBus.Send(e.eventName, data);
+            });
+            ENJIN_LOG_INFO(Player, "Web game UI initialized (ImGui WebGPU backend)");
+        }
+
+        Enjin::u32 w = m_Renderer->GetSwapChainWidth();
+        Enjin::u32 h = m_Renderer->GetSwapChainHeight();
+        if (w == 0 || h == 0) return;
+
+        ImGuiIO& io = ImGui::GetIO();
+        io.DisplaySize = ImVec2(static_cast<float>(w), static_cast<float>(h));
+        io.DeltaTime = m_LastDeltaTime > 0.0f ? m_LastDeltaTime : 1.0f / 60.0f;
+        // Mouse comes in CSS pixels from the HTML5 callbacks; the UI layout space
+        // is swapchain pixels — scale by devicePixelRatio.
+        Enjin::Math::Vector2 mp = Enjin::Input::GetMousePosition();
+        io.MousePos = ImVec2(mp.x * m_LastDPR, mp.y * m_LastDPR);
+        io.MouseDown[0] = Enjin::Input::IsMouseButtonDown(Enjin::MouseButton::Left);
+        io.MouseDown[1] = Enjin::Input::IsMouseButtonDown(Enjin::MouseButton::Right);
+
+        ImGui_ImplWGPU_NewFrame();
+        ImGui::NewFrame();
+
+        // Authored UICanvas UI (menus, dialogue boxes, in-game panels)
+        m_UISystem.Update(m_World.get(), static_cast<Enjin::f32>(w), static_cast<Enjin::f32>(h), io.DeltaTime);
+        // HUD widgets (health bars, labels, crosshair) bound to gameplay components
+        m_HUDSystem.Update(m_World.get(), m_Camera.get(), 0.0f, 0.0f,
+                           static_cast<Enjin::f32>(w), static_cast<Enjin::f32>(h));
+        // Subtitle overlay (accessibility) -- same draw code as desktop
+        m_SubtitleSystem.RenderOverlay(w, h);
+
+        ImGui::Render();
+        ImDrawData* drawData = ImGui::GetDrawData();
+        if (drawData && drawData->TotalVtxCount > 0) {
+            WGPURenderPassEncoder pass = m_Renderer->GetOrBeginUIOverlayPass();
+            if (pass) {
+                ImGui_ImplWGPU_RenderDrawData(drawData, pass);
+            }
+        }
+    }
+
     void Render() {
         if (!m_Initialized || !m_RenderSystem) return;
 
@@ -604,6 +702,11 @@ public:
         if (!m_Renderer->SwapchainWrittenThisFrame()) {
             m_Renderer->BeginMainRenderPass();
         }
+
+        // Authored game UI (UICanvas + HUD widgets) via ImGui — same systems and
+        // draw code as the desktop player (UI unification: one source, parity).
+        RenderUIOverlay();
+
         m_Renderer->EndFrame();
 
         // Sync CameraController after the first camera entity override
@@ -615,6 +718,7 @@ public:
 
     void OnCanvasResize(int w, int h, float dpr) {
         if (w <= 0 || h <= 0) return;
+        m_LastDPR = dpr > 0.0f ? dpr : 1.0f;
         Enjin::u32 pixelW = static_cast<Enjin::u32>(w * dpr);
         Enjin::u32 pixelH = static_cast<Enjin::u32>(h * dpr);
         if (m_Renderer) m_Renderer->Resize(pixelW, pixelH);
@@ -724,6 +828,14 @@ private:
     Enjin::Gameplay::CinematicSystem m_CinematicSystem;
     Enjin::ECS::EntityEventBus m_EntityEventBus;
     Enjin::Gameplay::HUDSystem m_HUDSystem;
+    Enjin::Gameplay::FootstepSystem m_FootstepSystem;
+    Enjin::Accessibility::SubtitleSystem m_SubtitleSystem;
+    // One true UI source: the same UISystem that renders UICanvasComponent on
+    // desktop renders it on web via ImGui's WebGPU backend (UI unification Phase 1).
+    Enjin::GUI::UISystem m_UISystem;
+    bool m_WebImGuiInit = false;
+    Enjin::f32 m_LastDeltaTime = 1.0f / 60.0f;
+    Enjin::f32 m_LastDPR = 1.0f;
     Enjin::Gameplay::QuestSystem m_QuestSystem;
     Enjin::Gameplay::ObjectPool m_ObjectPool;
     Enjin::Gameplay::TieredSaveSystem m_TieredSaveSystem;

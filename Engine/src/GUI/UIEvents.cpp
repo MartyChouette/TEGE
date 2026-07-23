@@ -24,6 +24,8 @@ void UIEventBus::RemoveListener(u32 listenerId) {
 void UIEventBus::Dispatch(const UIEventData& event) {
     if (event.eventName.empty()) return;
 
+    if (m_Forwarder) m_Forwarder(event);
+
     for (const auto& listener : m_Listeners) {
         if (listener.eventName == event.eventName) {
             listener.callback(event);

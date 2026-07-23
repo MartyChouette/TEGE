@@ -263,6 +263,26 @@ void PlayMode::Play() {
         m_Physics2D.get(), m_World, &m_VisualScriptSystem, m_DeferredDestroys);
 
     // Wire announcer to UISystem for screen reader support (Task #36)
+    // The UICanvas game-over screen (spawned by GameplayLoop, one UI source on all
+    // platforms) dispatches "gameover_restart" — in the editor that means restart
+    // the play session. Deferred via flag: Stop()/Play() can't run mid-dispatch.
+    if (m_UISystem) {
+        m_GameOverRestartListener = m_UISystem->GetEventBus().Listen("gameover_restart",
+            [this](const GUI::UIEventData&) { m_RestartRequested = true; });
+
+        // Bridge every UI event into the script event bus so game scripts can
+        // react to authored buttons/sliders via Events_Listen("<onClickEvent>", ...).
+        m_UISystem->GetEventBus().SetForwarder([this](const GUI::UIEventData& e) {
+            Scripting::EventData data;
+            data.SetString("source", "ui");
+            data.SetEntity("canvas", static_cast<u64>(e.canvasEntity));
+            data.SetInt("elementId", static_cast<i32>(e.elementId));
+            data.SetFloat("value", e.floatValue);
+            data.SetString("text", e.stringValue);
+            m_EventBus.Send(e.eventName, data);
+        });
+    }
+
     if (m_UISystem && m_Announcer) {
         m_UISystem->SetAnnouncerCallback([this](const std::string& text) {
             m_Announcer->Announce(text, Accessibility::AnnouncePriority::Normal);
@@ -553,12 +573,26 @@ void PlayMode::Stop() {
         m_RenderSystem->SetSkipMainPassShadows(false);
     }
 
+    // Drop the game-over restart listener (re-registered on next Play)
+    if (m_UISystem && m_GameOverRestartListener != 0) {
+        m_UISystem->GetEventBus().RemoveListener(m_GameOverRestartListener);
+        m_GameOverRestartListener = 0;
+    }
+
     m_State.store(PlayState::Stopped, std::memory_order_relaxed);
     ENJIN_LOG_INFO(Editor, "Exited Play Mode");
 }
 
 void PlayMode::Update(f32 deltaTime) {
     // Escape is now handled by EditorLayer (which manages focus mode exit vs stop).
+
+    // Deferred restart from the game-over screen's "Play Again" button
+    if (m_RestartRequested) {
+        m_RestartRequested = false;
+        Stop();
+        Play();
+        return;
+    }
 
     // Update controller system when playing
     if (m_State.load(std::memory_order_relaxed) == PlayState::Playing) {

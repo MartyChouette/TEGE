@@ -2703,6 +2703,10 @@ struct GameOverComponent {
     // exit). When true, reaching victoryTriggerEntity only wins once no uncollected
     // PickupType::Coin entities remain. Makes coins matter to the objective.
     bool victoryRequiresAllCoins = false;
+
+    // Runtime: the UICanvas game-over screen has been spawned (not serialized).
+    // GameplayLoop::UpdateGameOverState creates it once when the delay elapses.
+    bool uiSpawned = false;
 };
 
 // ============================================================================

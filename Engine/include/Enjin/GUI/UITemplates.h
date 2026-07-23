@@ -18,6 +18,13 @@ namespace UITemplates {
     // Create an options menu with volume sliders, graphics checkboxes, and back button
     ENJIN_API UICanvasComponent CreateOptionsMenu();
 
+    // Create a victory/defeat screen: dark overlay, colored message, optional
+    // "Play Again" button that dispatches the "gameover_restart" UI event.
+    // Spawned automatically by GameplayLoop when a GameOverComponent triggers ---
+    // ONE game-over UI source rendered identically on desktop, editor play, and web.
+    ENJIN_API UICanvasComponent CreateGameOverScreen(bool won, const std::string& message,
+                                                     bool allowRestart = true);
+
 } // namespace UITemplates
 
 } // namespace Enjin::GUI

@@ -240,6 +240,36 @@ void WebGPURenderer::BeginMainRenderPass() {
     if (m_RenderPassEncoder) m_SwapchainWritten = true;
 }
 
+WGPURenderPassEncoder WebGPURenderer::GetOrBeginUIOverlayPass() {
+    if (m_RenderPassEncoder) return m_RenderPassEncoder;  // main pass still open — draw into it
+    if (!m_CommandEncoder || !m_CurrentSwapChainView) return nullptr;
+
+    // Main pass already ended (e.g. post-process wrote the swapchain with its own
+    // pass): begin a LOAD pass that preserves the finished frame and composites UI.
+    WGPURenderPassColorAttachment colorAttachment = {};
+    colorAttachment.view = m_CurrentSwapChainView;
+    colorAttachment.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+    colorAttachment.loadOp = WGPULoadOp_Load;
+    colorAttachment.storeOp = WGPUStoreOp_Store;
+
+    WGPURenderPassDepthStencilAttachment depthAttachment = {};
+    depthAttachment.view = m_DepthTextureView;
+    depthAttachment.depthLoadOp = WGPULoadOp_Load;
+    depthAttachment.depthStoreOp = WGPUStoreOp_Store;
+    depthAttachment.stencilLoadOp = WGPULoadOp_Load;
+    depthAttachment.stencilStoreOp = WGPUStoreOp_Store;
+
+    WGPURenderPassDescriptor passDesc = {};
+    passDesc.colorAttachmentCount = 1;
+    passDesc.colorAttachments = &colorAttachment;
+    passDesc.depthStencilAttachment = &depthAttachment;
+    passDesc.label = wgpuStr("UIOverlayPass");
+
+    m_RenderPassEncoder = wgpuCommandEncoderBeginRenderPass(m_CommandEncoder, &passDesc);
+    if (m_RenderPassEncoder) m_SwapchainWritten = true;
+    return m_RenderPassEncoder;
+}
+
 WGPURenderPassEncoder WebGPURenderer::BeginDepthOnlyPass(WGPUTextureView depthView, u32 width, u32 height) {
     if (!m_CommandEncoder || !depthView) return nullptr;
 

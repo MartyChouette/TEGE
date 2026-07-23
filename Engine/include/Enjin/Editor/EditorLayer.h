@@ -257,6 +257,9 @@ public:
 
     // Multi-select entity management
     void SelectEntity(ECS::Entity entity, bool addToSelection = false);
+    // Jump straight into WYSIWYG UI editing for a canvas entity (selects the
+    // entity so the inspector shows its properties, enables Edit-in-Viewport).
+    void OpenUIEditor(ECS::Entity canvasEntity);
     void DeselectEntity(ECS::Entity entity);
     void ClearSelection();
     void SelectRange(ECS::Entity from, ECS::Entity to);

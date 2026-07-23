@@ -10,6 +10,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Gameplay/GameplayLoop.h"
+#include "Enjin/GUI/UICanvas.h"
 #include <vector>
 
 using namespace Enjin;
@@ -186,6 +187,131 @@ ENJIN_TEST(FlagshipCoinRush, PortalLockedUntilAllCoinsCollected) {
     ENJIN_EXPECT_TRUE(go->triggered);
     ENJIN_EXPECT_TRUE(go->won);
     (void)player;
+}
+
+// Cross-controller compatibility: every player controller type must be able to
+// collect pickups and trigger win/lose. TopDown3DController was silently excluded
+// from every isPlayer check (couldn't collect coins, die, or win) — this locks
+// the policy in: gameplay features work for ALL controllers unless inherently
+// 2D-only or 3D-only.
+ENJIN_TEST(FlagshipCoinRush, TopDown3DPlayerCollectsAndWins) {
+    World world;
+    // Arrange: a top-down 3D player (isometric-style) with health.
+    Entity player = world.CreateEntity();
+    world.AddComponent<TransformComponent>(player).position = Math::Vector3(0, 1, 0);
+    world.AddComponent<TopDown3DController>(player);
+    auto& cap = world.AddComponent<CapsuleColliderComponent>(player);
+    cap.radius = 0.3f;
+    cap.height = 1.0f;
+    auto& hp = world.AddComponent<HealthComponent>(player);
+    hp.maxHealth = 100.0f;
+    hp.currentHealth = 100.0f;
+
+    Entity coin = world.CreateEntity();
+    world.AddComponent<TransformComponent>(coin).position = Math::Vector3(0, 1, 0.5f);
+    auto& pk = world.AddComponent<PickupComponent>(coin);
+    pk.type = PickupComponent::PickupType::Coin;
+    pk.pickupRange = 1.0f;
+
+    Entity goal = world.CreateEntity();
+    world.AddComponent<TransformComponent>(goal).position = Math::Vector3(0, 0.6f, 5.0f);
+    auto& tz = world.AddComponent<TriggerZoneComponent>(goal);
+    tz.boxSize = Math::Vector3(2.5f, 3.0f, 2.5f);
+
+    Entity rules = world.CreateEntity();
+    auto& goc = world.AddComponent<GameOverComponent>(rules);
+    goc.victoryOnAllEnemiesDefeated = false;
+    goc.victoryTriggerEntity = goal;
+
+    // Act 1: coin collection for a top-down player.
+    std::vector<Entity> deferred;
+    Gameplay::GameplayLoop::CheckPickupOverlaps3D(&world, deferred);
+
+    // Assert 1: the coin was collected.
+    ENJIN_EXPECT_TRUE(world.GetComponent<PickupComponent>(coin)->isCollected);
+
+    // Act 2: walk into the goal.
+    world.GetComponent<TransformComponent>(player)->position = Math::Vector3(0, 1, 5.0f);
+    Gameplay::GameplayLoop::UpdateTriggerZones(&world);
+    Gameplay::GameplayLoop::UpdateGameOverState(&world, 0.016f);
+
+    // Assert 2: victory fires for a TopDown3D player.
+    auto* go = world.GetComponent<GameOverComponent>(rules);
+    ENJIN_EXPECT_TRUE(go->triggered);
+    ENJIN_EXPECT_TRUE(go->won);
+}
+
+// UI unification Phase 2: when a GameOverComponent's screen becomes visible, the
+// shared GameplayLoop spawns ONE UICanvas game-over screen (UITemplates) rendered
+// identically on desktop, editor play, and web. This proves the spawn.
+ENJIN_TEST(FlagshipCoinRush, GameOverSpawnsUnifiedCanvasScreen) {
+    World world;
+    // Arrange: dead player, defeat expected.
+    Entity player = world.CreateEntity();
+    world.AddComponent<TransformComponent>(player).position = Math::Vector3(0, 1, 0);
+    world.AddComponent<ThirdPersonController>(player);
+    auto& hp = world.AddComponent<HealthComponent>(player);
+    hp.maxHealth = 100.0f;
+    hp.currentHealth = 0.0f;
+    hp.isDead = true;
+
+    Entity rules = world.CreateEntity();
+    auto& goc = world.AddComponent<GameOverComponent>(rules);
+    goc.victoryOnAllEnemiesDefeated = false;
+    goc.delay = 0.5f;
+    goc.defeatMessage = "The spikes got you!";
+
+    // Act: trigger defeat, then tick past the delay so the screen becomes visible.
+    Gameplay::GameplayLoop::UpdateGameOverState(&world, 0.016f);   // triggers
+    Gameplay::GameplayLoop::UpdateGameOverState(&world, 1.0f);     // delay elapses -> spawn
+
+    // Assert: exactly one GameOverScreen canvas exists with the defeat message.
+    int canvasCount = 0;
+    bool foundMessage = false;
+    for (auto e : world.GetEntitiesWithComponent<GUI::UICanvasComponent>()) {
+        auto* canvas = world.GetComponent<GUI::UICanvasComponent>(e);
+        if (canvas && canvas->canvasName == "GameOverScreen") {
+            ++canvasCount;
+            for (const auto& el : canvas->elements) {
+                if (el.data.text == "The spikes got you!") foundMessage = true;
+            }
+        }
+    }
+    ENJIN_EXPECT_TRUE(canvasCount == 1);
+    ENJIN_EXPECT_TRUE(foundMessage);
+
+    // Act 2: further ticks must NOT spawn duplicates.
+    Gameplay::GameplayLoop::UpdateGameOverState(&world, 0.016f);
+    int secondCount = 0;
+    for (auto e : world.GetEntitiesWithComponent<GUI::UICanvasComponent>()) {
+        auto* canvas = world.GetComponent<GUI::UICanvasComponent>(e);
+        if (canvas && canvas->canvasName == "GameOverScreen") ++secondCount;
+    }
+    ENJIN_EXPECT_TRUE(secondCount == 1);
+}
+
+ENJIN_TEST(FlagshipCoinRush, TopDown3DPlayerDeathTriggersDefeat) {
+    World world;
+    // Arrange: top-down player already dead (spike drained them elsewhere).
+    Entity player = world.CreateEntity();
+    world.AddComponent<TransformComponent>(player).position = Math::Vector3(0, 1, 0);
+    world.AddComponent<TopDown3DController>(player);
+    auto& hp = world.AddComponent<HealthComponent>(player);
+    hp.maxHealth = 100.0f;
+    hp.currentHealth = 0.0f;
+    hp.isDead = true;
+
+    Entity rules = world.CreateEntity();
+    auto& goc = world.AddComponent<GameOverComponent>(rules);
+    goc.victoryOnAllEnemiesDefeated = false;
+
+    // Act
+    Gameplay::GameplayLoop::UpdateGameOverState(&world, 0.016f);
+
+    // Assert: defeat fires for a TopDown3D player.
+    auto* go = world.GetComponent<GameOverComponent>(rules);
+    ENJIN_EXPECT_TRUE(go->triggered);
+    ENJIN_EXPECT_TRUE(!go->won);
 }
 
 ENJIN_TEST_MAIN()

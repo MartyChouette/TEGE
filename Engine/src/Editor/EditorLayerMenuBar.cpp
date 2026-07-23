@@ -6,6 +6,7 @@
 #include <chrono>
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/GUI/UITemplates.h"
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Light.h"
@@ -419,6 +420,64 @@ void EditorLayer::DrawMenuBar() {
                 }
                 // VWS override layers (standalone bool — the EditorPanel bitmask is full)
                 ImGui::MenuItem("Layers", nullptr, &m_ShowLayersPanel);
+                ImGui::EndMenu();
+            }
+            // Easy entry into WYSIWYG UI editing: pick any canvas (or create one
+            // from a template) and land straight in Edit-in-Viewport mode with
+            // drag handles, snap guides, and the inspector focused on it.
+            if (ImGui::BeginMenu("UI Editor")) {
+                bool anyCanvas = false;
+                if (m_World) {
+                    for (auto e : m_World->GetEntitiesWithComponent<GUI::UICanvasComponent>()) {
+                        auto* c = m_World->GetComponent<GUI::UICanvasComponent>(e);
+                        if (!c) continue;
+                        anyCanvas = true;
+                        std::string label = "Edit: " + c->canvasName + "##uied" +
+                                            std::to_string(static_cast<unsigned long long>(e));
+                        bool active = m_UIEditMode && m_UIEditCanvasEntity == e;
+                        if (ImGui::MenuItem(label.c_str(), nullptr, active)) {
+                            OpenUIEditor(e);
+                        }
+                    }
+                }
+                if (!anyCanvas) {
+                    ImGui::TextDisabled("No UI canvases in this scene");
+                }
+                ImGui::Separator();
+                if (ImGui::BeginMenu("New Canvas")) {
+                    auto createCanvas = [this](const char* name, GUI::UICanvasComponent&& canvas) {
+                        ECS::Entity e = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::NameComponent>(e, name);
+                        m_World->AddComponent<GUI::UICanvasComponent>(e, std::move(canvas));
+                        MarkDirty();
+                        OpenUIEditor(e);
+                    };
+                    if (ImGui::MenuItem("Empty Canvas")) {
+                        createCanvas("UI Canvas", GUI::UICanvasComponent{});
+                    }
+                    if (ImGui::MenuItem("Main Menu")) {
+                        createCanvas("Main Menu UI", GUI::UITemplates::CreateMainMenu());
+                    }
+                    if (ImGui::MenuItem("Pause Menu")) {
+                        createCanvas("Pause Menu UI", GUI::UITemplates::CreatePauseMenu());
+                    }
+                    if (ImGui::MenuItem("Options Menu")) {
+                        createCanvas("Options Menu UI", GUI::UITemplates::CreateOptionsMenu());
+                    }
+                    if (ImGui::MenuItem("Game Over Screen")) {
+                        createCanvas("Game Over UI",
+                            GUI::UITemplates::CreateGameOverScreen(true, "You Win!"));
+                    }
+                    ImGui::EndMenu();
+                }
+                if (m_UIEditMode) {
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Exit UI Edit Mode")) {
+                        m_UIEditMode = false;
+                        m_UIEditCanvasEntity = ECS::INVALID_ENTITY;
+                        m_UIEditSelectedElementId = 0;
+                    }
+                }
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Settings")) {
