@@ -26,6 +26,7 @@
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/GUI/UISystem.h"
+#include "Enjin/GUI/UITemplates.h"
 #include "Enjin/Renderer/WebGPU/WebGPUTypes.h"
 #include <imgui.h>
 #include <imgui_impl_wgpu.h>
@@ -449,14 +450,49 @@ public:
         m_AssetReader.Close();
     }
 
+    void TogglePauseMenu() {
+        if (m_Paused) { ClosePauseMenu(); return; }
+        m_Paused = true;
+        m_PauseMenuEntity = m_World->CreateEntity();
+        m_World->AddComponent<Enjin::ECS::NameComponent>(m_PauseMenuEntity, "Pause Menu UI");
+        m_World->AddComponent<Enjin::GUI::UICanvasComponent>(m_PauseMenuEntity,
+            Enjin::GUI::UITemplates::CreatePauseMenu());
+        Enjin::Input::SetMouseCaptured(false);
+    }
+
+    void ClosePauseMenu() {
+        if (!m_Paused) return;
+        m_Paused = false;
+        if (m_PauseMenuEntity != Enjin::ECS::INVALID_ENTITY && m_World->IsValid(m_PauseMenuEntity)) {
+            m_World->DestroyEntity(m_PauseMenuEntity);
+        }
+        m_PauseMenuEntity = Enjin::ECS::INVALID_ENTITY;
+        Enjin::Input::SetMouseCaptured(true);
+    }
+
     void Update(Enjin::f32 deltaTime) {
         if (!m_Initialized) return;
         m_LastDeltaTime = deltaTime;
 
+        // Pause menu (UI unification: the same UITemplates pause canvas as any
+        // platform). Escape toggles; gameplay freezes while the menu is up but
+        // rendering + UI keep running so the menu is interactive.
+        if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape)) {
+            TogglePauseMenu();
+        }
+
         m_SimpleAudio.Update(deltaTime);
         m_SimpleAudio.UpdateAudioSources(deltaTime);
 
+        // Input must keep rotating its per-frame state while paused, or the
+        // Escape pressed-edge (and every other key edge) would freeze.
         Enjin::Input::Update();
+        if (m_Paused) {
+            // World::Update still runs so deferred entity destroys flush (the
+            // pause canvas removal on resume) -- gameplay systems stay skipped.
+            m_World->Update(0.0f);
+            return;
+        }
         m_InputMap.Update(deltaTime);
 
         // Tick skeletal animators (desktop: main.cpp:818-823)
@@ -638,6 +674,13 @@ public:
                 [](const Enjin::GUI::UIEventData&) {
                     EM_ASM({ location.reload(); });
                 });
+
+            // Pause menu buttons (pause_options is left to game scripts via the
+            // event bridge below -- no built-in options screen on web yet).
+            m_UISystem.GetEventBus().Listen("pause_resume",
+                [this](const Enjin::GUI::UIEventData&) { ClosePauseMenu(); });
+            m_UISystem.GetEventBus().Listen("pause_quit",
+                [](const Enjin::GUI::UIEventData&) { EM_ASM({ location.reload(); }); });
 
             // Bridge every UI event into the script event bus so game scripts can
             // react to authored buttons/sliders via Events_Listen("<onClickEvent>", ...).
@@ -833,6 +876,8 @@ private:
     // One true UI source: the same UISystem that renders UICanvasComponent on
     // desktop renders it on web via ImGui's WebGPU backend (UI unification Phase 1).
     Enjin::GUI::UISystem m_UISystem;
+    bool m_Paused = false;
+    Enjin::ECS::Entity m_PauseMenuEntity = Enjin::ECS::INVALID_ENTITY;
     bool m_WebImGuiInit = false;
     Enjin::f32 m_LastDeltaTime = 1.0f / 60.0f;
     Enjin::f32 m_LastDPR = 1.0f;

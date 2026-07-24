@@ -7559,6 +7559,32 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
         int vAlign = sel->data.textAlignV;
         ImGui::SetNextItemWidth(80.0f);
         if (ImGui::Combo("V Align", &vAlign, vAligns, 3)) sel->data.textAlignV = static_cast<u8>(vAlign);
+
+        // Data binding: live gameplay value pushed into this element every frame
+        // (same behavior on desktop, editor play, and web). "None" = static.
+        ImGui::TextDisabled("Bind To");
+        const char* bindOptions[] = { "None", "Player Health", "Coins" };
+        const char* bindKeys[]    = { "",     "health",        "coins" };
+        int bindIdx = 0;
+        for (int bi = 1; bi < 3; ++bi) {
+            if (sel->data.bindField == bindKeys[bi]) bindIdx = bi;
+        }
+        ImGui::SetNextItemWidth(140.0f);
+        if (ImGui::Combo("##BindField", &bindIdx, bindOptions, 3)) {
+            sel->data.bindField = bindKeys[bindIdx];
+            sel->data.boundText.clear();
+            MarkDirty();
+        }
+        if (sel->data.bindField == "coins") {
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(90.0f);
+            f32 total = sel->data.bindMaxValue;
+            if (ImGui::DragFloat("Total##BindMax", &total, 1.0f, 0.0f, 9999.0f, "%.0f")) {
+                sel->data.bindMaxValue = total;
+                MarkDirty();
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Total coins (0 = auto-detect from scene)");
+        }
     }
 
     if (sel->type == GUI::UIWidgetType::Image) {
@@ -7574,6 +7600,21 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
         ImGui::TextDisabled("Progress Bar");
         ImGui::DragFloat("Value", &sel->data.progressValue, 0.01f, 0.0f, 1.0f);
         ImGui::ColorEdit3("Fill Color", &sel->data.progressFillColor.x);
+
+        // Data binding (same combo as text widgets): a bound bar auto-fills from
+        // live gameplay each frame on every platform.
+        const char* pbBindOptions[] = { "None", "Player Health", "Coins" };
+        const char* pbBindKeys[]    = { "",     "health",        "coins" };
+        int pbBindIdx = 0;
+        for (int bi = 1; bi < 3; ++bi) {
+            if (sel->data.bindField == pbBindKeys[bi]) pbBindIdx = bi;
+        }
+        ImGui::SetNextItemWidth(140.0f);
+        if (ImGui::Combo("Bind To##PB", &pbBindIdx, pbBindOptions, 3)) {
+            sel->data.bindField = pbBindKeys[pbBindIdx];
+            sel->data.boundText.clear();
+            MarkDirty();
+        }
     }
 
     if (sel->type == GUI::UIWidgetType::Slider) {

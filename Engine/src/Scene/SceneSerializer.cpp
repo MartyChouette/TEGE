@@ -5327,6 +5327,8 @@ json SerializeUIElement(const GUI::UIElement& e) {
     data["imageTint"] = SerializeVector3(e.data.imageTint);
     data["imageAlpha"] = RF(e.data.imageAlpha);
     data["progressValue"] = RF(e.data.progressValue);
+    if (!e.data.bindField.empty()) data["bindField"] = e.data.bindField;
+    if (e.data.bindMaxValue != 0.0f) data["bindMaxValue"] = RF(e.data.bindMaxValue);
     data["progressFillColor"] = SerializeVector3(e.data.progressFillColor);
     data["sliderValue"] = RF(e.data.sliderValue);
     data["sliderMin"] = RF(e.data.sliderMin);
@@ -5410,6 +5412,8 @@ GUI::UIElement DeserializeUIElement(const json& j) {
         if (d.contains("imageTint")) e.data.imageTint = DeserializeVector3(d["imageTint"]);
         if (d.contains("imageAlpha")) e.data.imageAlpha = d["imageAlpha"].get<f32>();
         if (d.contains("progressValue")) e.data.progressValue = d["progressValue"].get<f32>();
+        if (d.contains("bindField")) e.data.bindField = SafeStr(d["bindField"]);
+        if (d.contains("bindMaxValue")) e.data.bindMaxValue = d["bindMaxValue"].get<f32>();
         if (d.contains("progressFillColor")) e.data.progressFillColor = DeserializeVector3(d["progressFillColor"]);
         if (d.contains("sliderValue")) e.data.sliderValue = d["sliderValue"].get<f32>();
         if (d.contains("sliderMin")) e.data.sliderMin = d["sliderMin"].get<f32>();

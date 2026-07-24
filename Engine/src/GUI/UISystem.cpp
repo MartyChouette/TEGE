@@ -1,6 +1,8 @@
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/Platform/Input.h"
+#include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Logging/Log.h"
 
 #include <imgui.h>
@@ -66,6 +68,71 @@ static void DrawCenteredText(ImDrawList* dl, const UIRect& rect, const char* tex
 // UPDATE (main entry point)
 // ============================================================================
 
+void UISystem::SyncDataBindings(ECS::World* world) {
+    // Resolve bind sources once per frame, then push into every bound element.
+    // Player = any controller type with health (cross-compatible by policy).
+    f32 healthPct = -1.0f;
+    {
+        auto tryController = [&](auto componentTag) {
+            using T = decltype(componentTag);
+            if (healthPct >= 0.0f) return;
+            for (ECS::Entity e : world->GetEntitiesWithComponent<T>()) {
+                if (auto* hp = world->GetComponent<ECS::HealthComponent>(e)) {
+                    healthPct = hp->GetHealthPercent();
+                    return;
+                }
+            }
+        };
+        tryController(ECS::ThirdPersonController{});
+        tryController(ECS::FirstPersonController{});
+        tryController(ECS::TopDown3DController{});
+        tryController(ECS::Platformer2DController{});
+        tryController(ECS::TopDown2DController{});
+    }
+
+    i32 coinsRemaining = -1;
+    {
+        i32 remaining = 0;
+        bool anyCoin = false;
+        for (ECS::Entity e : world->GetEntitiesWithComponent<ECS::PickupComponent>()) {
+            auto* pk = world->GetComponent<ECS::PickupComponent>(e);
+            if (pk && pk->type == ECS::PickupComponent::PickupType::Coin) {
+                anyCoin = true;
+                if (!pk->isCollected) ++remaining;
+            }
+        }
+        if (anyCoin) coinsRemaining = remaining;
+    }
+
+    for (auto& entry : m_CachedCanvases) {
+        auto* canvas = world->GetComponent<UICanvasComponent>(entry.entity);
+        if (!canvas) continue;
+        for (auto& element : canvas->elements) {
+            if (element.data.bindField.empty()) continue;
+
+            if (element.data.bindField == "health" && healthPct >= 0.0f) {
+                element.data.progressValue = healthPct;
+                char buf[32];
+                snprintf(buf, sizeof(buf), " %d%%", static_cast<int>(healthPct * 100.0f));
+                element.data.boundText = element.data.text + buf;
+            } else if (element.data.bindField == "coins" && coinsRemaining >= 0) {
+                // Total: authored bindMaxValue, else latch the highest count seen
+                // (collected coins are destroyed, so remaining only shrinks).
+                if (element.data.bindMaxValue < static_cast<f32>(coinsRemaining)) {
+                    element.data.bindMaxValue = static_cast<f32>(coinsRemaining);
+                }
+                i32 total = static_cast<i32>(element.data.bindMaxValue);
+                i32 got = total - coinsRemaining;
+                if (got < 0) got = 0;
+                element.data.progressValue = total > 0 ? static_cast<f32>(got) / total : 0.0f;
+                char buf[48];
+                snprintf(buf, sizeof(buf), " %d / %d", got, total);
+                element.data.boundText = element.data.text + buf;
+            }
+        }
+    }
+}
+
 void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime) {
     if (!world || vpW <= 0 || vpH <= 0) return;
 
@@ -93,6 +160,10 @@ void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime) {
     if (m_TooltipHoverElementId != 0) {
         m_TooltipHoverTimer += m_ReducedMotion ? 999.0f : deltaTime;
     }
+
+    // Refresh data-bound elements (health bars, coin counters) from gameplay
+    // state before layout/render -- one authored HUD source on every platform.
+    SyncDataBindings(world);
 
     for (auto& entry : m_CachedCanvases) {
         auto* canvas = world->GetComponent<UICanvasComponent>(entry.entity);
@@ -917,9 +988,12 @@ void UISystem::RenderLabel(const UIElement& element, const UITheme& theme) {
     f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody) * m_FontScale;
     ImVec4 textColor = ResolveColor(element.style.textColor, theme.textPrimary, 1.0f);
 
+    const std::string& labelText = element.data.boundText.empty()
+        ? element.data.text : element.data.boundText;
+
     // Fast path: no per-char colors, use single-call rendering
     if (element.data.charColors.empty()) {
-        DrawCenteredText(dl, element.computedRect, element.data.text.c_str(),
+        DrawCenteredText(dl, element.computedRect, labelText.c_str(),
             ImGui::ColorConvertFloat4ToU32(textColor),
             element.data.textAlignH, element.data.textAlignV, fontSize);
         return;

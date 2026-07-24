@@ -18,6 +18,10 @@ public:
     // vpW/vpH = viewport dimensions, deltaTime for animations
     void Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime);
 
+    // Push live gameplay values (health, coins) into data-bound elements
+    // (UIWidgetData::bindField). Called from Update() each frame.
+    void SyncDataBindings(ECS::World* world);
+
     // Access the event bus for registering listeners
     UIEventBus& GetEventBus() { return m_EventBus; }
 

@@ -143,6 +143,16 @@ struct UIWidgetData {
     // ListView
     i32 listSelectedIndex = -1; // Currently selected list item (-1 = none)
 
+    // Data binding: when set, UISystem::Update overwrites this element's display
+    // value from live gameplay state each frame -- ONE authored HUD element works
+    // identically on every platform. Supported fields:
+    //   "health" -- player health percent (ProgressBar fills; Label appends "87%")
+    //   "coins"  -- coin pickups (Label appends "collected / total")
+    // Empty = static element.
+    std::string bindField;
+    f32 bindMaxValue = 0.0f;    // "coins": authored total (0 = auto from first-seen count)
+    std::string boundText;      // Runtime: composed display text (not serialized)
+
     // SDF rendering (resolution-independent vector art)
     bool sdfMode = false;
     f32 sdfSoftness = 0.01f;          // Edge softness (smoothstep range)
