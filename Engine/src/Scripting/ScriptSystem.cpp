@@ -4,6 +4,7 @@
 #include "Enjin/Scripting/CoroutineScheduler.h"
 #include "Enjin/Logging/Log.h"
 #include <angelscript.h>
+#include <filesystem>
 #include <fstream>
 
 namespace Enjin {
@@ -152,19 +153,28 @@ bool ScriptSystem::CallCollisionMethod(ECS::ScriptAttachment& script, int method
 void ScriptSystem::InitScript(ECS::Entity entity, ECS::ScriptAttachment& script) {
     if (!m_ScriptEngine || script.initialized) return;
 
-    // Derive module name from script path
-    std::string moduleName = script.scriptPath;
-    auto lastSlash = moduleName.find_last_of("/\\");
-    if (lastSlash != std::string::npos) moduleName = moduleName.substr(lastSlash + 1);
-    auto dot = moduleName.find_last_of('.');
-    if (dot != std::string::npos) moduleName = moduleName.substr(0, dot);
+    // Resolve relative script paths against the script root (project dir).
+    // The process CWD is the exe directory, so scene-stored paths like
+    // "scripts/Foo.as" never resolve without this.
+    std::string resolvedPath = script.scriptPath;
+    if (!m_ScriptRoot.empty() && !std::filesystem::path(script.scriptPath).is_absolute()) {
+        resolvedPath = (std::filesystem::path(m_ScriptRoot) / script.scriptPath).string();
+    }
+
+    // Derive module name the same way ScriptEngine::CompileScript does
+    // (SC-3: parentDir_stem). A bare filename stem never matches for scripts
+    // in subdirectories and CreateInstance fails with "module not found".
+    std::filesystem::path fsPath(resolvedPath);
+    std::string stem = fsPath.stem().string();
+    std::string parentDir = fsPath.parent_path().filename().string();
+    std::string moduleName = parentDir.empty() ? stem : (parentDir + "_" + stem);
 
     // Compile if not already compiled
-    m_ScriptEngine->CompileScript(script.scriptPath);
+    m_ScriptEngine->CompileScript(resolvedPath);
 
     // Parse [Property] annotations from source for editor metadata
     {
-        std::ifstream file(script.scriptPath);
+        std::ifstream file(resolvedPath);
         if (file.is_open()) {
             std::string source((std::istreambuf_iterator<char>(file)),
                                 std::istreambuf_iterator<char>());

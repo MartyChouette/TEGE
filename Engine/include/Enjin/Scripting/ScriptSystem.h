@@ -32,6 +32,12 @@ public:
     void SetEnabled(bool enabled) { m_Enabled = enabled; }
     bool IsEnabled() const { return m_Enabled; }
 
+    // Root directory for resolving relative script paths. Scene data stores
+    // project-root-relative paths ("scripts/Foo.as") but the process CWD is
+    // the exe directory, so without a root those paths never resolve.
+    // Empty = resolve against CWD (legacy behavior, used by the Player).
+    void SetScriptRoot(const std::string& root) { m_ScriptRoot = root; }
+
     // Main update — call once per frame
     void Update(f32 deltaTime);
 
@@ -77,6 +83,7 @@ private:
     ScriptEngine* m_ScriptEngine = nullptr;
     CoroutineScheduler* m_Scheduler = nullptr;
     bool m_Enabled = false;
+    std::string m_ScriptRoot;
 
     // Per-frame cached script entity list (shared between Update/FixedUpdate/LateUpdate)
     std::vector<ECS::Entity> m_CachedScriptEntities;

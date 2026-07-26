@@ -1,4 +1,5 @@
 #include "Enjin/Editor/PlayMode.h"
+#include <filesystem>
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
@@ -177,6 +178,19 @@ void PlayMode::Play() {
             "drive a camera. Add a Camera entity (or a controller via the templates which auto-create one).");
     }
     ENJIN_LOG_INFO(Editor, "PlayMode: Camera setup done (cam=%llu)", (unsigned long long)gameCam);
+
+    // Resolve scene script paths against the project directory. Scene data
+    // stores project-root-relative paths ("scripts/Foo.as"); the process CWD
+    // is the exe directory, so without this no scene-attached script loads.
+    // The script directory (for #include resolution: scripts/ and
+    // scripts/enjin_api/) must be absolute for the same reason — the
+    // Initialize-time default is the CWD-relative "scripts".
+    if (m_SceneManager && !m_SceneManager->GetProjectPath().empty()) {
+        std::filesystem::path projDir =
+            std::filesystem::path(m_SceneManager->GetProjectPath()).parent_path();
+        m_ScriptSystem.SetScriptRoot(projDir.string());
+        m_ScriptEngine.SetScriptDirectory((projDir / "scripts").string());
+    }
 
     // Enable controller system, flower system, scripting, and gameplay systems
     m_ControllerSystem.SetEnabled(true);
