@@ -229,6 +229,15 @@ struct FirstPersonController : public CharacterControllerBase {
     f32 sprintFOVIncrease = 10.0f;  // FOV increase when sprinting
     f32 sprintFOVCurrent = 0.0f;    // Current interpolated FOV offset (runtime state, not serialized)
 
+    // Dash/dodge
+    bool enableDash = false;
+    f32 dashSpeed = 15.0f;
+    f32 dashDuration = 0.2f;
+    f32 dashCooldown = 1.0f;
+    f32 dashTimer = 0.0f;
+    f32 dashCooldownTimer = 0.0f;
+    bool isDashing = false;
+
     // Dungeon crawler mode (SMT-style)
     bool dungeonCrawlerMode = false; // Snap turns + facing-relative movement
     f32 snapTurnAngle = 90.0f;       // Degrees per snap turn (A/D)

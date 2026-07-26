@@ -1294,12 +1294,14 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
             if (!lockYaw) {
                 ctrl.yaw -= mouseDelta.x * ctrl.mouseSensitivity;
             }
-            // XOR per-controller invertY with global accessibility invertMouseY
+            // XOR per-controller invertY with global accessibility invertMouseY.
+            // Mouse delta is screen-space (y grows downward), pitch is positive-up,
+            // so the non-inverted default must subtract.
             bool effectiveInvertY = ctrl.invertY != m_InvertMouseY;
             if (effectiveInvertY) {
-                ctrl.pitch -= mouseDelta.y * ctrl.mouseSensitivity;
-            } else {
                 ctrl.pitch += mouseDelta.y * ctrl.mouseSensitivity;
+            } else {
+                ctrl.pitch -= mouseDelta.y * ctrl.mouseSensitivity;
             }
             ctrl.pitch = Math::Clamp(ctrl.pitch, ctrl.minPitch, ctrl.maxPitch);
         }
@@ -1312,11 +1314,12 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
                     ctrl.yaw -= rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
                 }
                 // XOR per-controller invertY with global accessibility invertMouseY
+                // (same sign convention as mouse — see above)
                 bool effectiveInvertYGP = ctrl.invertY != m_InvertMouseY;
                 if (effectiveInvertYGP) {
-                    ctrl.pitch -= rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
-                } else {
                     ctrl.pitch += rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                } else {
+                    ctrl.pitch -= rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
                 }
                 ctrl.pitch = Math::Clamp(ctrl.pitch, ctrl.minPitch, ctrl.maxPitch);
             }
@@ -1473,6 +1476,26 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
         moveMag = 1.0f;
     }
 
+    // Handle dash cooldown
+    if (ctrl.dashCooldownTimer > 0.0f) {
+        ctrl.dashCooldownTimer -= dt;
+    }
+
+    // Check for dash input
+    if (ctrl.enableDash && IsDashPressed() && ctrl.dashCooldownTimer <= 0.0f && !ctrl.isDashing) {
+        ctrl.isDashing = true;
+        ctrl.dashTimer = ctrl.dashDuration;
+        ctrl.dashCooldownTimer = ctrl.dashCooldown;
+    }
+
+    // Update dash
+    if (ctrl.isDashing) {
+        ctrl.dashTimer -= dt;
+        if (ctrl.dashTimer <= 0.0f) {
+            ctrl.isDashing = false;
+        }
+    }
+
     // Calculate speed (check stamina if ResourceComponent exists)
     ctrl.isSprinting = IsSprintHeld() && moveMag > 0.1f && !ctrl.isCrouching;
     if (ctrl.isSprinting && m_World) {
@@ -1490,14 +1513,25 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     if (ctrl.isCrouching) {
         speed *= ctrl.crouchSpeed;
     }
+    if (ctrl.isDashing) {
+        speed = ctrl.dashSpeed;
+        // Dash straight ahead when there is no movement input
+        if (moveMag <= 0.01f) {
+            moveDir = forward;
+            moveMag = 1.0f;
+        }
+    }
 
     // Apply horizontal movement
     Math::Vector3 targetVelocity = moveDir * speed;
 
+    // Dash snaps to dash speed near-instantly (camera is welded to the body, so it comes along 1:1)
+    f32 accel = ctrl.isDashing ? 1000.0f : ctrl.acceleration;
+
     if (moveMag > 0.01f) {
-        ctrl.velocity.x = Math::MoveTowards(ctrl.velocity.x, targetVelocity.x, ctrl.acceleration * dt);
-        ctrl.velocity.z = Math::MoveTowards(ctrl.velocity.z, targetVelocity.z, ctrl.acceleration * dt);
-    } else {
+        ctrl.velocity.x = Math::MoveTowards(ctrl.velocity.x, targetVelocity.x, accel * dt);
+        ctrl.velocity.z = Math::MoveTowards(ctrl.velocity.z, targetVelocity.z, accel * dt);
+    } else if (!ctrl.isDashing) {
         ctrl.velocity.x = Math::MoveTowards(ctrl.velocity.x, 0.0f, ctrl.deceleration * dt);
         ctrl.velocity.z = Math::MoveTowards(ctrl.velocity.z, 0.0f, ctrl.deceleration * dt);
     }

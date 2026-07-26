@@ -1578,6 +1578,10 @@ json SerializeFirstPerson(const ECS::FirstPersonController& ctrl) {
     j["sprintFOVIncrease"] = RF(ctrl.sprintFOVIncrease);
     j["dungeonCrawlerMode"] = ctrl.dungeonCrawlerMode;
     j["snapTurnAngle"] = RF(ctrl.snapTurnAngle);
+    j["enableDash"] = ctrl.enableDash;
+    j["dashSpeed"] = RF(ctrl.dashSpeed);
+    j["dashDuration"] = RF(ctrl.dashDuration);
+    j["dashCooldown"] = RF(ctrl.dashCooldown);
     return j;
 }
 
@@ -1602,6 +1606,10 @@ ECS::FirstPersonController DeserializeFirstPerson(const json& j) {
     if (j.contains("sprintFOVIncrease")) ctrl.sprintFOVIncrease = j["sprintFOVIncrease"].get<f32>();
     if (j.contains("dungeonCrawlerMode")) ctrl.dungeonCrawlerMode = JB(j["dungeonCrawlerMode"]);
     if (j.contains("snapTurnAngle")) ctrl.snapTurnAngle = j["snapTurnAngle"].get<f32>();
+    if (j.contains("enableDash")) ctrl.enableDash = JB(j["enableDash"]);
+    if (j.contains("dashSpeed")) ctrl.dashSpeed = j["dashSpeed"].get<f32>();
+    if (j.contains("dashDuration")) ctrl.dashDuration = j["dashDuration"].get<f32>();
+    if (j.contains("dashCooldown")) ctrl.dashCooldown = j["dashCooldown"].get<f32>();
     return ctrl;
 }
 

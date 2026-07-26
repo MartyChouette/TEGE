@@ -2772,6 +2772,16 @@ void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
 
         InspectorUndo::DragFloat(m_UndoRedo, "Sprint FOV Increase", &ctrl->sprintFOVIncrease, 0.5f, 0.0f, 30.0f);
 
+        if (ImGui::TreeNode("Dash")) {
+            InspectorUndo::Checkbox(m_UndoRedo, "Enable Dash", &ctrl->enableDash);
+            if (ctrl->enableDash) {
+                InspectorUndo::DragFloat(m_UndoRedo, "Dash Speed##fps", &ctrl->dashSpeed, 0.5f, 1.0f, 50.0f);
+                InspectorUndo::DragFloat(m_UndoRedo, "Dash Duration##fps", &ctrl->dashDuration, 0.05f, 0.05f, 2.0f);
+                InspectorUndo::DragFloat(m_UndoRedo, "Dash Cooldown##fps", &ctrl->dashCooldown, 0.1f, 0.0f, 10.0f);
+            }
+            ImGui::TreePop();
+        }
+
         if (ImGui::TreeNode("Dungeon Crawler")) {
             InspectorUndo::Checkbox(m_UndoRedo, "Dungeon Crawler Mode", &ctrl->dungeonCrawlerMode);
             if (ctrl->dungeonCrawlerMode) {
@@ -2782,10 +2792,11 @@ void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
 
         ImGui::Separator();
         ImGui::TextDisabled("State:");
-        ImGui::Text("Grounded: %s | Crouching: %s | Sprinting: %s",
+        ImGui::Text("Grounded: %s | Crouching: %s | Sprinting: %s | Dashing: %s",
             ctrl->isGrounded ? "Yes" : "No",
             ctrl->isCrouching ? "Yes" : "No",
-            ctrl->isSprinting ? "Yes" : "No");
+            ctrl->isSprinting ? "Yes" : "No",
+            ctrl->isDashing ? "Yes" : "No");
     }
 }
 
