@@ -390,8 +390,15 @@ public:
             }
         }
 
+        // Authored "MainMenu" canvas takes over the boot flow (one UI source):
+        // gameplay stays frozen and the mouse free until New Game / Continue.
+        for (auto e : m_World->GetEntitiesWithComponent<Enjin::GUI::UICanvasComponent>()) {
+            auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(e);
+            if (c && c->visible && c->canvasName == "MainMenu") { m_AtMainMenu = true; break; }
+        }
+
         // Capture mouse for look-around if any player controller exists
-        {
+        if (!m_AtMainMenu) {
             bool hasController =
                 !m_World->GetEntitiesWithComponent<Enjin::ECS::FirstPersonController>().empty()
                 || !m_World->GetEntitiesWithComponent<Enjin::ECS::ThirdPersonController>().empty();
@@ -477,7 +484,7 @@ public:
         // Pause menu (UI unification: the same UITemplates pause canvas as any
         // platform). Escape toggles; gameplay freezes while the menu is up but
         // rendering + UI keep running so the menu is interactive.
-        if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape)) {
+        if (!m_AtMainMenu && Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape)) {
             TogglePauseMenu();
         }
 
@@ -487,7 +494,7 @@ public:
         // Input must keep rotating its per-frame state while paused, or the
         // Escape pressed-edge (and every other key edge) would freeze.
         Enjin::Input::Update();
-        if (m_Paused) {
+        if (m_Paused || m_AtMainMenu) {
             // World::Update still runs so deferred entity destroys flush (the
             // pause canvas removal on resume) -- gameplay systems stay skipped.
             m_World->Update(0.0f);
@@ -679,6 +686,26 @@ public:
             // event bridge below -- no built-in options screen on web yet).
             m_UISystem.GetEventBus().Listen("pause_resume",
                 [this](const Enjin::GUI::UIEventData&) { ClosePauseMenu(); });
+            // Authored MainMenu canvas buttons: hide (not destroy -- authored
+            // content) and unfreeze gameplay.
+            auto startGame = [this]() {
+                if (!m_AtMainMenu) return;
+                m_AtMainMenu = false;
+                for (auto e : m_World->GetEntitiesWithComponent<Enjin::GUI::UICanvasComponent>()) {
+                    auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(e);
+                    if (c && c->canvasName == "MainMenu") c->visible = false;
+                }
+                bool hasController =
+                    !m_World->GetEntitiesWithComponent<Enjin::ECS::FirstPersonController>().empty()
+                    || !m_World->GetEntitiesWithComponent<Enjin::ECS::ThirdPersonController>().empty();
+                if (hasController) Enjin::Input::SetMouseCaptured(true);
+            };
+            m_UISystem.GetEventBus().Listen("menu_newgame",
+                [startGame](const Enjin::GUI::UIEventData&) { startGame(); });
+            m_UISystem.GetEventBus().Listen("menu_continue",
+                [startGame](const Enjin::GUI::UIEventData&) { startGame(); });
+            m_UISystem.GetEventBus().Listen("menu_quit",
+                [](const Enjin::GUI::UIEventData&) { EM_ASM({ location.reload(); }); });
             m_UISystem.GetEventBus().Listen("pause_quit",
                 [](const Enjin::GUI::UIEventData&) { EM_ASM({ location.reload(); }); });
 
@@ -878,6 +905,7 @@ private:
     Enjin::GUI::UISystem m_UISystem;
     bool m_Paused = false;
     Enjin::ECS::Entity m_PauseMenuEntity = Enjin::ECS::INVALID_ENTITY;
+    bool m_AtMainMenu = false;             // Authored "MainMenu" canvas showing at boot
     bool m_WebImGuiInit = false;
     Enjin::f32 m_LastDeltaTime = 1.0f / 60.0f;
     Enjin::f32 m_LastDPR = 1.0f;

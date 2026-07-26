@@ -33,15 +33,20 @@ body { background:#111; display:flex; justify-content:center; align-items:center
 <div id="hint"><b>WASD</b> move &nbsp;·&nbsp; <b>Hold RMB</b> look &nbsp;·&nbsp; <b>Shift</b> sprint &nbsp;·&nbsp; <b>Gamepad</b> supported</div>
 <div id="perf-hud"></div>
 <script>
-// Check WebGPU support before loading WASM
-if (!navigator.gpu) {
+// Check WebGPU support before loading WASM. Checking navigator.gpu alone is not
+// enough: some browsers (e.g. Firefox on blocklisted drivers) expose the API but
+// return a null adapter, which would otherwise boot the engine into a dead canvas.
+function showNoWebGPU(detail) {
   document.getElementById('loading').style.display = 'none';
   document.getElementById('game-canvas').style.display = 'none';
   var err = document.getElementById('error');
   err.style.display = 'block';
-  err.innerHTML = '<h2>WebGPU Not Available</h2><p>Your browser does not support WebGPU.</p>' +
+  err.innerHTML = '<h2>WebGPU Not Available</h2><p>' + detail + '</p>' +
     '<p>Try <a href="https://www.google.com/chrome/">Chrome</a> or <a href="https://www.microsoft.com/edge">Edge</a> (v113+).</p>' +
-    '<p>Firefox: enable <code>dom.webgpu.enabled</code> in <code>about:config</code>.</p>';
+    '<p>If you are on one of those and still see this, check that hardware acceleration is enabled.</p>';
+}
+if (!navigator.gpu) {
+  showNoWebGPU('Your browser does not support WebGPU.');
 } else {
   var canvas = document.getElementById('game-canvas');
 
@@ -61,6 +66,20 @@ if (!navigator.gpu) {
   });
   resizeObserver.observe(document.getElementById('game-container'));
 
+  // Debug overlay: add ?debug to the URL to see engine errors on screen
+  var _dbg = null;
+  if (location.search.includes('debug')) {
+    _dbg = document.createElement('pre');
+    _dbg.style.cssText = 'position:fixed;bottom:0;left:0;right:0;max-height:45vh;overflow:auto;margin:0;' +
+      'background:rgba(0,0,0,0.85);color:#f88;font:11px monospace;padding:8px;z-index:1000;white-space:pre-wrap;';
+    document.body.appendChild(_dbg);
+  }
+  function _dbgLog(prefix, msg) {
+    if (_dbg) _dbg.textContent += prefix + msg + '\n';
+  }
+  window.addEventListener('error', function(e) { _dbgLog('[js] ', e.message + ' @ ' + e.filename + ':' + e.lineno); });
+  window.addEventListener('unhandledrejection', function(e) { _dbgLog('[promise] ', String(e.reason)); });
+
   var Module = {
     canvas: canvas,
     onRuntimeInitialized: function() {
@@ -69,7 +88,9 @@ if (!navigator.gpu) {
     },
     setStatus: function(text) {
       if (text) document.getElementById('loading').textContent = text;
-    }
+    },
+    print: function(text) { console.log(text); _dbgLog('[out] ', text); },
+    printErr: function(text) { console.error(text); _dbgLog('[err] ', text); }
   };
 
   // Opt-in performance HUD: add ?perf to URL
@@ -85,9 +106,18 @@ if (!navigator.gpu) {
     }, 250);
   }
 
-  var s = document.createElement('script');
-  s.src = 'EnjinPlayer.js';
-  document.body.appendChild(s);
+  // Only load the engine once the browser has actually granted an adapter
+  navigator.gpu.requestAdapter().then(function(adapter) {
+    if (!adapter) {
+      showNoWebGPU('Your browser supports WebGPU but did not provide a graphics adapter. This usually means the graphics driver is blocklisted.');
+      return;
+    }
+    var s = document.createElement('script');
+    s.src = 'EnjinPlayer.js';
+    document.body.appendChild(s);
+  }).catch(function(e) {
+    showNoWebGPU('WebGPU adapter request failed: ' + e);
+  });
 }
 </script>
 </body></html>

@@ -23,6 +23,7 @@
 #include "Enjin/Input/MIDIInput.h"
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/ImGuiLayer.h"
+#include "Enjin/GUI/UITemplates.h"
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include <imgui.h>
@@ -237,6 +238,41 @@ public:
         // all platforms) dispatches "gameover_restart" on the UI event bus.
         m_UISystem.GetEventBus().Listen("gameover_restart",
             [this](const Enjin::GUI::UIEventData&) { RestartGameSession(); });
+        m_UISystem.GetEventBus().Listen("pause_resume",
+            [this](const Enjin::GUI::UIEventData&) { ClosePauseMenu(); });
+        // Authored MainMenu canvas buttons (UITemplates::CreateMainMenu events).
+        // Hide (not destroy) the canvas -- it's authored scene content.
+        auto startFromAuthoredMenu = [this]() {
+            Enjin::ECS::Entity menu = FindAuthoredMainMenu();
+            if (menu != Enjin::ECS::INVALID_ENTITY) {
+                if (auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(menu)) c->visible = false;
+            }
+            m_GameStarted = true;
+            Enjin::Input::SetMouseCaptured(true);
+        };
+        m_UISystem.GetEventBus().Listen("menu_newgame",
+            [startFromAuthoredMenu](const Enjin::GUI::UIEventData&) { startFromAuthoredMenu(); });
+        m_UISystem.GetEventBus().Listen("menu_continue",
+            [startFromAuthoredMenu](const Enjin::GUI::UIEventData&) { startFromAuthoredMenu(); });
+        m_UISystem.GetEventBus().Listen("menu_options",
+            [this](const Enjin::GUI::UIEventData&) {
+                m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::Options);
+            });
+        m_UISystem.GetEventBus().Listen("menu_quit",
+            [this](const Enjin::GUI::UIEventData&) {
+                if (GetWindow()) GetWindow()->Close();
+            });
+        m_UISystem.GetEventBus().Listen("pause_options",
+            [this](const Enjin::GUI::UIEventData&) {
+                m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::Options);
+            });
+        m_UISystem.GetEventBus().Listen("pause_quit",
+            [this](const Enjin::GUI::UIEventData&) {
+                ClosePauseMenu();
+                m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
+                m_GameStarted = false;
+                Enjin::Input::SetMouseCaptured(false);
+            });
 
         // Bridge every UI event into the script event bus so game scripts can
         // react to authored buttons/sliders via Events_Listen("<onClickEvent>", ...).
@@ -771,27 +807,32 @@ public:
         // Update input
         m_InputMap.Update(deltaTime);
 
-        // ESC: state-aware menu navigation
+        // ESC: state-aware menu navigation. The pause ROOT is the unified
+        // UICanvas menu (one UI source, parity with web/editor); GameMenus'
+        // bespoke screens remain for main menu / options / how-to-play.
         if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape)) {
             auto screen = m_GameMenu.GetCurrentScreen();
             if (screen == Enjin::GUI::MenuScreen::MainMenu) {
                 // On title screen — ESC does nothing
             } else if (screen == Enjin::GUI::MenuScreen::Options ||
                        screen == Enjin::GUI::MenuScreen::HowToPlay) {
-                // In sub-menu — go back to parent menu
+                // In sub-menu — back to parent (pause canvas stays open under it)
                 if (m_GameStarted) {
-                    m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::PauseMenu);
+                    m_GameMenu.HideAll();
+                    if (!m_Paused) OpenPauseMenu();
                 } else {
                     m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
                 }
+            } else if (m_Paused) {
+                // Pause canvas open — resume gameplay
+                ClosePauseMenu();
             } else if (m_GameMenu.IsMenuOpen()) {
-                // Pause menu — resume gameplay
+                // Legacy screen open — close it
                 m_GameMenu.HideAll();
                 Enjin::Input::SetMouseCaptured(true);
             } else {
                 // In gameplay — pause
-                m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::PauseMenu);
-                Enjin::Input::SetMouseCaptured(false);
+                OpenPauseMenu();
             }
         }
 
@@ -806,7 +847,7 @@ public:
         }
 
         // Skip gameplay updates when paused, on title screen, or content warning is shown
-        if (m_GameMenu.IsMenuOpen() || !m_GameStarted) return;
+        if (m_GameMenu.IsMenuOpen() || m_Paused || !m_GameStarted) return;
         if (m_ContentWarnings.IsVisible()) return;
 
         // --- Physics (must run first) ---
@@ -1021,6 +1062,37 @@ public:
                 if (res) res->Regenerate(deltaTime);
             }
         }
+    }
+
+    // Find a visible authored "MainMenu" canvas in the scene (empty = none).
+    Enjin::ECS::Entity FindAuthoredMainMenu() {
+        for (auto e : m_World->GetEntitiesWithComponent<Enjin::GUI::UICanvasComponent>()) {
+            auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(e);
+            if (c && c->visible && c->canvasName == "MainMenu") return e;
+        }
+        return Enjin::ECS::INVALID_ENTITY;
+    }
+
+    // Unified pause menu (same UITemplates canvas as web/editor). GameMenus keeps
+    // only the main menu and options screens; the pause ROOT is the canvas.
+    void OpenPauseMenu() {
+        if (m_Paused) return;
+        m_Paused = true;
+        m_PauseMenuEntity = m_World->CreateEntity();
+        m_World->AddComponent<Enjin::ECS::NameComponent>(m_PauseMenuEntity, "Pause Menu UI");
+        m_World->AddComponent<Enjin::GUI::UICanvasComponent>(m_PauseMenuEntity,
+            Enjin::GUI::UITemplates::CreatePauseMenu());
+        Enjin::Input::SetMouseCaptured(false);
+    }
+
+    void ClosePauseMenu() {
+        if (!m_Paused) return;
+        m_Paused = false;
+        if (m_PauseMenuEntity != Enjin::ECS::INVALID_ENTITY && m_World->IsValid(m_PauseMenuEntity)) {
+            m_World->DestroyEntity(m_PauseMenuEntity);
+        }
+        m_PauseMenuEntity = Enjin::ECS::INVALID_ENTITY;
+        Enjin::Input::SetMouseCaptured(true);
     }
 
     // Restart the current game session: fresh physics backends (stale bodies and
@@ -1739,8 +1811,16 @@ private:
             m_ScriptSystem.InitializeAllScripts();
         }
 
-        // Show title screen — gameplay starts when player clicks New Game / Continue
-        m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
+        // Show title screen — gameplay starts when player clicks New Game / Continue.
+        // An AUTHORED "MainMenu" UICanvas in the scene takes precedence over the
+        // built-in GameMenus title screen (one UI source; author it via the
+        // editor's View -> UI Editor -> New Canvas -> Main Menu).
+        if (FindAuthoredMainMenu() != Enjin::ECS::INVALID_ENTITY) {
+            Enjin::Input::SetMouseCaptured(false);
+            ENJIN_LOG_INFO(Player, "Authored MainMenu canvas found — using it as the title screen");
+        } else {
+            m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
+        }
 
         ENJIN_LOG_INFO(Player, "Splash screen ended, game loaded");
     }
@@ -2053,6 +2133,8 @@ private:
 
     bool m_Initialized = false;
     bool m_GameStarted = false;
+    bool m_Paused = false;                 // Unified canvas pause (desktop)
+    Enjin::ECS::Entity m_PauseMenuEntity = Enjin::ECS::INVALID_ENTITY;
     bool m_FullscreenChangeRequested = false;
     bool m_PendingFullscreen = false;
     Enjin::f32 m_PendingFOV = 0.0f;  // 0 = use camera component's FOV
