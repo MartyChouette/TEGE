@@ -3646,6 +3646,21 @@ void RenderSystem::ProcessPendingRecreation() {
 void RenderSystem::FlushPendingChanges() {
     if (!m_Renderer || !m_Initialized) return;
 
+    // MID-FRAME GUARD: in the editor, Update()'s fallback call to this function
+    // runs AFTER RenderOffscreen has recorded binds into the current command
+    // buffer (m_SkipMainPassRendering is set right after those binds and not
+    // yet consumed). Destroying or updating descriptor sets that are bound in
+    // a recording command buffer invalidates it — vkEndCommandBuffer fails and
+    // submitting the broken buffer access-violates in the driver. This was the
+    // resize/scene-load crash: PrepareRenderTargets' render-pass-change heal
+    // sets m_PendingRecreation mid-frame, and the fallback flush destroyed the
+    // main pipeline's descriptor pool while its sets were bound. Everything
+    // here defers to the next pre-recording flush (editor main.cpp and
+    // SimpleApp both flush before any binds each frame).
+    if (m_SkipMainPassRendering) {
+        return;
+    }
+
     // Flush deferred scene clear (set by OnSceneClear mid-frame)
     if (m_SceneClearPending) {
         m_SceneClearPending = false;

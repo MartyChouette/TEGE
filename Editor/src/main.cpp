@@ -259,6 +259,17 @@ public:
             m_EditorLayer->PrepareRenderTargets();
         }
 
+        // Flush AGAIN: PrepareRenderTargets' render-pass-change heal requests a
+        // deferred pipeline recreation. Processing it here — while the command
+        // buffer is still empty — means the recreated pipelines are used THIS
+        // frame. Left pending, the frame draws with pipelines built against the
+        // destroyed render pass, and the mid-frame fallback flush that used to
+        // pick it up destroyed descriptor sets already bound in the recording
+        // command buffer (the window-resize crash).
+        if (m_RenderSystem) {
+            m_RenderSystem->FlushPendingChanges();
+        }
+
         VkCommandBuffer cmd = m_Renderer->GetCurrentCommandBuffer();
 
         // Render offscreen targets (before main render pass)
