@@ -1255,6 +1255,9 @@ namespace {
         { "coinrush",     "Coin Rush",          "3D collectathon\nCollect coins, dodge spikes, reach the portal", ImVec4(1.0f, 0.8f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
         // -- Foundations (Stable) --
         { "blank",        "Blank",              "Empty scene\nStart from scratch",                       ImVec4(0.5f, 0.5f, 0.5f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Stable },
+        // -- The three authoring tiers: same tiny game, three ways to build it --
+        { "componentsonly", "Components Only",  "No code at all\nA winnable game from Inspector components alone", ImVec4(0.35f, 0.75f, 0.55f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
+        { "scriptonly",     "Script Only",      "One AngelScript file\nAll game logic lives in scripts/GameScript.as", ImVec4(0.85f, 0.65f, 0.25f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
         { "stresstest",   "Stress Test",        "Perf benchmark\n64 falling bodies + 16 point lights",   ImVec4(0.9f, 0.45f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
         { "platformer",   "2D Platformer",      "4-zone adventure\nMeadow + cave + tower + sky boss",    ImVec4(0.3f, 0.8f, 0.3f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
         // { "topdown2d",    "2D Top-Down Action", "Dungeon action\nMulti-room + enemies + HUD + particles",  ImVec4(0.3f, 0.6f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
@@ -2479,12 +2482,21 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewW = 680.0f;
         m_Layout.gameViewH = 440.0f;
     }
-    else if (templateId == "firstperson" || templateId == "fpsarena") {
+    else if (templateId == "firstperson" || templateId == "fpsarena" || templateId == "componentsonly") {
         m_Layout.leftWidth = 0.13f;
         m_Layout.rightWidth = 0.20f;
         m_Layout.bottomHeight = 0.18f;
         m_Layout.gameViewW = 800.0f;
         m_Layout.gameViewH = 500.0f;
+    }
+    else if (templateId == "scriptonly") {
+        // Script tier: give the console room — script output and compile
+        // errors are the feedback loop here
+        m_Layout.leftWidth = 0.13f;
+        m_Layout.rightWidth = 0.20f;
+        m_Layout.bottomHeight = 0.26f;
+        m_Layout.gameViewW = 760.0f;
+        m_Layout.gameViewH = 470.0f;
     }
     else if (templateId == "visualnovel" || templateId == "narrative") {
         m_Layout.leftWidth = 0.14f;
@@ -4903,6 +4915,244 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 "  - Change difficulty via HealthComponent.maxHealth or Spike damage\n"
                 "  - Move the Goal Portal to change the route\n"
                 "  - Swap meshes/materials to theme the arena";
+        }
+
+    } else if (templateId == "componentsonly") {
+        // TIER 1 DEMO: a complete, winnable game with ZERO code — every
+        // behavior is a component configured in the Inspector.
+        createGround();
+        ECS::Entity player = createPlayer3D("Player");
+        auto& ctrl = m_World->AddComponent<ECS::FirstPersonController>(player);
+        ctrl.moveSpeed = 5.0f;
+        ctrl.mouseSensitivity = 0.15f;
+        auto& health = m_World->AddComponent<ECS::HealthComponent>(player);
+        health.maxHealth = 100.0f;
+        health.currentHealth = 100.0f;
+        SetupCameraForController(player, "FirstPerson");
+
+        // Three pickups (PickupComponent does the collecting, no code)
+        const Math::Vector3 coinPos[] = { {3,0.6f,-4}, {-3,0.6f,-6}, {0,0.6f,-9} };
+        for (int i = 0; i < 3; ++i) {
+            ECS::Entity coin = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(coin, ("Pickup " + std::to_string(i + 1)).c_str());
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(coin);
+            t.position = coinPos[i];
+            t.scale = Math::Vector3(0.5f, 0.5f, 0.5f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(coin);
+            mat.baseColor = Math::Vector3(1.0f, 0.85f, 0.2f);
+            m_World->AddComponent<ECS::MeshComponent>(coin, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& pickup = m_World->AddComponent<ECS::PickupComponent>(coin);
+            pickup.type = ECS::PickupComponent::PickupType::Coin;
+            pickup.value = 1.0f;
+            pickup.pickupRange = 1.0f;
+        }
+
+        // One hazard (DamageComponent + kinematic sensor rule)
+        {
+            ECS::Entity spike = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(spike, "Hazard");
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(spike);
+            t.position = Math::Vector3(0.0f, 0.4f, -5.0f);
+            t.scale = Math::Vector3(1.2f, 0.8f, 1.2f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(spike);
+            mat.baseColor = Math::Vector3(0.9f, 0.2f, 0.15f);
+            m_World->AddComponent<ECS::MeshComponent>(spike, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& dmg = m_World->AddComponent<ECS::DamageComponent>(spike);
+            dmg.damage = 25.0f;
+            auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(spike);
+            col.size = Math::Vector3(1.2f, 0.8f, 1.2f);
+        }
+
+        // Win portal: trigger zone + game-over gated on all pickups
+        {
+            ECS::Entity portal = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(portal, "Win Portal");
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(portal);
+            t.position = Math::Vector3(0.0f, 1.0f, -12.0f);
+            t.scale = Math::Vector3(2.0f, 2.0f, 0.5f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(portal);
+            mat.baseColor = Math::Vector3(0.2f, 0.9f, 0.4f);
+            m_World->AddComponent<ECS::MeshComponent>(portal, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& tz = m_World->AddComponent<ECS::TriggerZoneComponent>(portal);
+            tz.shape = ECS::TriggerZoneComponent::Shape::Box;
+            tz.boxSize = Math::Vector3(2.0f, 2.0f, 1.5f);
+            tz.triggerOnce = true;
+
+            ECS::Entity rules = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(rules, "Game Rules");
+            m_World->AddComponent<ECS::TransformComponent>(rules);
+            auto& goc = m_World->AddComponent<ECS::GameOverComponent>(rules);
+            goc.victoryTriggerEntity = portal;
+            goc.victoryRequiresAllCoins = true;
+            goc.victoryMessage = "All pickups collected - you win!";
+            goc.defeatMessage = "The hazard got you!";
+        }
+
+        // HUD: health bar + coin counter, all component-driven
+        {
+            ECS::Entity hb = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(hb, "HUD Health");
+            m_World->AddComponent<ECS::TransformComponent>(hb);
+            auto& w = m_World->AddComponent<ECS::HUDWidgetComponent>(hb);
+            w.type = ECS::HUDWidgetComponent::WidgetType::HealthBar;
+            w.bindField = "health";
+            w.anchorX = 0.04f; w.anchorY = 0.06f;
+        }
+        {
+            ECS::Entity cc = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cc, "HUD Pickups");
+            m_World->AddComponent<ECS::TransformComponent>(cc);
+            auto& w = m_World->AddComponent<ECS::HUDWidgetComponent>(cc);
+            w.type = ECS::HUDWidgetComponent::WidgetType::Label;
+            w.bindField = "coins";
+            w.maxValue = 3.0f;
+            w.anchorX = 0.04f; w.anchorY = 0.12f;
+            w.text = "Pickups:";
+            w.textColor = Math::Vector3(1.0f, 0.85f, 0.2f);
+        }
+
+        createLight();
+
+        {
+            ECS::Entity guide = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(guide, "-- Guide --");
+            m_World->AddComponent<ECS::TransformComponent>(guide);
+            m_World->AddComponent<ECS::NotesComponent>(guide).notes =
+                "COMPONENTS ONLY - TIER 1\n"
+                "========================\n\n"
+                "A winnable game with ZERO code. Everything is a component you\n"
+                "can read in the Inspector:\n"
+                "  Player     - FirstPersonController + HealthComponent\n"
+                "  Pickup 1-3 - PickupComponent (collected on touch)\n"
+                "  Hazard     - DamageComponent (hurts on touch)\n"
+                "  Win Portal - TriggerZone + GameOverComponent, victory gated\n"
+                "               on collecting every pickup\n"
+                "  HUD        - HUDWidgetComponents bound to health/coins\n\n"
+                "Press Play: collect all 3 gold cubes, avoid the red one, walk\n"
+                "into the green portal to win.\n\n"
+                "See also the 'Script Only' template - the same idea built as\n"
+                "one AngelScript file - and Examples/ in the engine repo for\n"
+                "the C++-only version.";
+        }
+
+    } else if (templateId == "scriptonly") {
+        // TIER 2 DEMO: minimal scene, ALL game logic in one AngelScript file
+        // written into the project at scripts/GameScript.as.
+        createGround();
+        ECS::Entity player = createPlayer3D("Player");
+        auto& ctrl = m_World->AddComponent<ECS::FirstPersonController>(player);
+        ctrl.moveSpeed = 5.0f;
+        ctrl.mouseSensitivity = 0.15f;
+        SetupCameraForController(player, "FirstPerson");
+        createLight();
+
+        // Three collectible cubes the SCRIPT spins and collects by proximity
+        const Math::Vector3 orbPos[] = { {3,0.6f,-4}, {-3,0.6f,-6}, {0,0.6f,-9} };
+        for (int i = 0; i < 3; ++i) {
+            ECS::Entity orb = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(orb, ("Orb" + std::to_string(i)).c_str());
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(orb);
+            t.position = orbPos[i];
+            t.scale = Math::Vector3(0.5f, 0.5f, 0.5f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(orb);
+            mat.baseColor = Math::Vector3(0.9f, 0.65f, 0.2f);
+            m_World->AddComponent<ECS::MeshComponent>(orb, Renderer::MeshFactory::CreateCube(1.0f));
+        }
+
+        // HUD label the script drives
+        {
+            ECS::Entity hud = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(hud, "HUD_Text");
+            m_World->AddComponent<ECS::TransformComponent>(hud);
+            auto& w = m_World->AddComponent<ECS::HUDWidgetComponent>(hud);
+            w.type = ECS::HUDWidgetComponent::WidgetType::Label;
+            w.bindField = "custom";
+            w.anchorX = 0.04f; w.anchorY = 0.06f;
+            w.text = "collect the orbs";
+            w.fontSize = 20.0f;
+        }
+
+        // Write the game script into the project and attach it to a Game entity
+        {
+            namespace fs = std::filesystem;
+            fs::path projRoot;
+            if (!m_SceneManager.GetProjectPath().empty()) {
+                projRoot = fs::path(m_SceneManager.GetProjectPath()).parent_path();
+            }
+            std::error_code ec;
+            fs::create_directories(projRoot / "scripts", ec);
+            std::ofstream sf(projRoot / "scripts" / "GameScript.as");
+            if (sf.is_open()) {
+                sf <<
+"// The WHOLE game lives in this one file. Edit it and press Play again -\n"
+"// scripts hot-reload. No other code exists anywhere in this project.\n"
+"class GameScript : TegeBehavior {\n"
+"    [Property] float spinSpeed = 120.0f;\n"
+"    [Property] float collectRange = 1.5f;\n"
+"    int collected = 0;\n"
+"    uint64 hud = 0;\n"
+"\n"
+"    void OnStart() {\n"
+"        hud = Scene_FindEntity(\"HUD_Text\");\n"
+"        Say(\"collect the 3 orbs!\");\n"
+"    }\n"
+"\n"
+"    void OnUpdate(float dt) {\n"
+"        uint64 player = Scene_FindEntity(\"Player\");\n"
+"        if (player == 0) return;\n"
+"        Vector3 pp = Entity_GetPosition(player);\n"
+"\n"
+"        for (int i = 0; i < 3; i++) {\n"
+"            uint64 orb = Scene_FindEntity(\"Orb\" + i);\n"
+"            if (orb == 0) continue;                  // already collected\n"
+"            Vector3 rot = Entity_GetRotation(orb);   // spin so they feel alive\n"
+"            rot.y += spinSpeed * dt;\n"
+"            Entity_SetRotation(orb, rot);\n"
+"            Vector3 d = Entity_GetPosition(orb) - pp;\n"
+"            if (d.Length() <= collectRange) {\n"
+"                Scene_DestroyEntity(orb);\n"
+"                collected++;\n"
+"                Say(collected >= 3 ? \"YOU WIN!\" : (\"\" + collected + \" / 3\"));\n"
+"            }\n"
+"        }\n"
+"    }\n"
+"\n"
+"    void Say(const string &in msg) {\n"
+"        if (hud != 0) HUD_SetText(hud, msg);\n"
+"        Debug_Log(msg);\n"
+"    }\n"
+"}\n";
+                sf.close();
+            }
+
+            ECS::Entity game = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(game, "Game");
+            m_World->AddComponent<ECS::TransformComponent>(game);
+            auto& sc = m_World->AddComponent<ECS::ScriptComponent>(game);
+            ECS::ScriptAttachment att;
+            att.scriptPath = "scripts/GameScript.as";
+            att.className = "GameScript";
+            sc.scripts.push_back(std::move(att));
+        }
+
+        {
+            ECS::Entity guide = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(guide, "-- Guide --");
+            m_World->AddComponent<ECS::TransformComponent>(guide);
+            m_World->AddComponent<ECS::NotesComponent>(guide).notes =
+                "SCRIPT ONLY - TIER 2\n"
+                "====================\n\n"
+                "The entire game is ONE AngelScript file:\n"
+                "    scripts/GameScript.as   (attached to the 'Game' entity)\n\n"
+                "It spins the orbs, collects them by proximity, and drives the\n"
+                "HUD - no components beyond the bare scene, no visual scripts.\n\n"
+                "Press Play, walk into the orbs. Then open the script (select\n"
+                "the Game entity -> Script component) and change spinSpeed or\n"
+                "the win message - it hot-reloads while you play.\n\n"
+                "Scripts inherit TegeBehavior automatically (built into the\n"
+                "engine - no includes needed). API reference: docs/SCRIPTING_API.md\n\n"
+                "See also 'Components Only' (same idea, zero code) and\n"
+                "Examples/ in the engine repo (same idea, pure C++).";
         }
 
     } else if (templateId == "firstperson") {
