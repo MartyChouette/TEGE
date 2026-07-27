@@ -624,6 +624,9 @@ private:
     // deferred to mouse-release, and skipped entirely if a drag started.
     ECS::Entity m_HierarchyDeferredCollapse = ECS::INVALID_ENTITY;
 
+    // One-shot script-error surfacing per play session (toast + console)
+    bool m_ScriptErrorsChecked = false;
+
     // Marquee (rubber-band) drag state
     bool m_MarqueeDragging = false;
     ImVec2 m_MarqueeStart = {0, 0};
@@ -1294,6 +1297,7 @@ private:
     bool m_ShowCreateScriptPopup = false;
     char m_NewScriptNameBuf[128] = "";
     std::string m_NewScriptNameError;
+    int m_NewScriptTemplate = 0;   // 0 Empty, 1 Rotator, 2 Interactable, 3 Spawner
     void OpenInExternalIDE(const std::string& filePath);
 
     // Tilemap editor state

@@ -208,6 +208,12 @@ void ScriptSystem::InitScript(ECS::Entity entity, ECS::ScriptAttachment& script)
     if (!obj) {
         script.hasError = true;
         script.lastError = "Failed to create instance of " + script.className;
+        // Carry the compiler's actual message so the editor can show WHY
+        // (missing file, syntax error with line number) instead of just "failed"
+        const std::string& engineErr = m_ScriptEngine->GetLastError();
+        if (!engineErr.empty()) {
+            script.lastError += " — " + engineErr;
+        }
         ENJIN_LOG_ERROR(Script, "%s", script.lastError.c_str());
         return;
     }

@@ -5765,10 +5765,20 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
 
         // Create Script modal popup
         if (ImGui::BeginPopupModal("Create Script", &m_ShowCreateScriptPopup, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::Text("Enter a class name for the new TegeBehavior script:");
+            ImGui::Text("Enter a class name for the new script:");
             ImGui::Separator();
 
             ImGui::InputText("Class Name", m_NewScriptNameBuf, sizeof(m_NewScriptNameBuf));
+
+            // Starter template — shows a beginner what scripts look like
+            static const char* s_ScriptTemplates[] = { "Empty", "Rotator", "Interactable", "Spawner" };
+            ImGui::Combo("Template", &m_NewScriptTemplate, s_ScriptTemplates, 4);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Empty: lifecycle stubs only\n"
+                                  "Rotator: spins the entity (simplest visible behavior)\n"
+                                  "Interactable: reacts when the player is near and presses a key\n"
+                                  "Spawner: uses a repeating Timer");
+            }
 
             if (!m_NewScriptNameError.empty()) {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
@@ -5832,22 +5842,70 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
                         }
                     }
 
-                    // Write boilerplate TegeBehavior script
+                    // Write the chosen starter template
                     std::ofstream file(absPath);
                     if (file.is_open()) {
-                        file << "class " << name << " : TegeBehavior {\n";
-                        file << "    void OnCreate() {\n";
-                        file << "        // Called when the entity is created\n";
-                        file << "    }\n";
-                        file << "\n";
-                        file << "    void OnUpdate(float dt) {\n";
-                        file << "        // Called every frame\n";
-                        file << "    }\n";
-                        file << "\n";
-                        file << "    void OnDestroy() {\n";
-                        file << "        // Called when the entity is destroyed\n";
-                        file << "    }\n";
-                        file << "}\n";
+                        if (m_NewScriptTemplate == 1) {           // Rotator
+                            file << "// Spins this entity. The simplest visible behavior -\n";
+                            file << "// attach, press Play, watch it turn.\n";
+                            file << "class " << name << " : TegeBehavior {\n";
+                            file << "    [Property] float degreesPerSecond = 90.0f;\n";
+                            file << "\n";
+                            file << "    void OnUpdate(float dt) {\n";
+                            file << "        Vector3 rot = GetRotation();\n";
+                            file << "        rot.y += degreesPerSecond * dt;\n";
+                            file << "        SetRotation(rot);\n";
+                            file << "    }\n";
+                            file << "}\n";
+                        } else if (m_NewScriptTemplate == 2) {    // Interactable
+                            file << "// Reacts when the player is close and presses E.\n";
+                            file << "class " << name << " : TegeBehavior {\n";
+                            file << "    [Property] float interactRange = 2.0f;\n";
+                            file << "\n";
+                            file << "    void OnUpdate(float dt) {\n";
+                            file << "        uint64 player = Scene_FindEntityByTag(\"player\");\n";
+                            file << "        if (player == 0) return;\n";
+                            file << "        Vector3 toPlayer = Entity_GetPosition(player) - GetPosition();\n";
+                            file << "        if (toPlayer.Length() <= interactRange && Input_GetKeyDown(Key::E)) {\n";
+                            file << "            Debug_Log(GetName() + \" was interacted with!\");\n";
+                            file << "            // Your reaction here\n";
+                            file << "        }\n";
+                            file << "    }\n";
+                            file << "}\n";
+                        } else if (m_NewScriptTemplate == 3) {    // Spawner
+                            file << "#include \"Timer.as\"\n";
+                            file << "// Does something on a repeating timer.\n";
+                            file << "class " << name << " : TegeBehavior {\n";
+                            file << "    [Property] float intervalSeconds = 2.0f;\n";
+                            file << "    Timer timer;\n";
+                            file << "\n";
+                            file << "    void OnStart() {\n";
+                            file << "        timer.Start(intervalSeconds, true); // repeating\n";
+                            file << "    }\n";
+                            file << "\n";
+                            file << "    void OnUpdate(float dt) {\n";
+                            file << "        timer.Update(dt);\n";
+                            file << "        if (timer.JustFinished()) {\n";
+                            file << "            Debug_Log(\"tick from \" + GetName());\n";
+                            file << "            // Spawn / trigger something here\n";
+                            file << "        }\n";
+                            file << "    }\n";
+                            file << "}\n";
+                        } else {                                   // Empty
+                            file << "class " << name << " : TegeBehavior {\n";
+                            file << "    void OnCreate() {\n";
+                            file << "        // Called when the entity is created\n";
+                            file << "    }\n";
+                            file << "\n";
+                            file << "    void OnUpdate(float dt) {\n";
+                            file << "        // Called every frame\n";
+                            file << "    }\n";
+                            file << "\n";
+                            file << "    void OnDestroy() {\n";
+                            file << "        // Called when the entity is destroyed\n";
+                            file << "    }\n";
+                            file << "}\n";
+                        }
                         file.close();
 
                         // Add the script attachment

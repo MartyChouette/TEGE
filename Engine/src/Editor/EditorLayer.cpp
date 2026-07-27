@@ -705,6 +705,39 @@ void EditorLayer::Update(f32 deltaTime) {
     // Begin profiler frame measurement
     Debug::Profiler::Instance().BeginFrame();
 
+    // Surface script errors the moment play starts. A broken script otherwise
+    // fails silently into the log and the game just "does nothing" — the
+    // single most confusing beginner experience. Toast + force the Console
+    // open so the compiler's message (with line numbers) is on screen.
+    if (m_PlayMode.IsPlaying()) {
+        if (!m_ScriptErrorsChecked) {
+            m_ScriptErrorsChecked = true;
+            if (m_World) {
+                u32 errorCount = 0;
+                std::string firstError;
+                for (auto entity : m_World->GetEntitiesWithComponent<ECS::ScriptComponent>()) {
+                    auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
+                    if (!sc) continue;
+                    for (const auto& att : sc->scripts) {
+                        if (att.hasError) {
+                            ++errorCount;
+                            if (firstError.empty()) firstError = att.lastError;
+                        }
+                    }
+                }
+                if (errorCount > 0) {
+                    std::string msg = (errorCount == 1)
+                        ? ("Script error: " + firstError)
+                        : (std::to_string(errorCount) + " script errors — first: " + firstError);
+                    ShowNotification(msg, NotificationType::Error);
+                    m_VisiblePanels = m_VisiblePanels | EditorPanel::Console;
+                }
+            }
+        }
+    } else {
+        m_ScriptErrorsChecked = false;
+    }
+
     // Wireframe mode: only applies to the scene view (editor viewport).
     // The global pipeline is toggled for scene view render, then restored
     // for game view. Pipeline recreation is deferred to avoid mid-render crashes.

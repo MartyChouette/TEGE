@@ -1652,10 +1652,37 @@ void EditorLayer::DrawBuildDialog() {
     ImGui::Separator();
     ImGui::Spacing();
 
-    // --- Build button ---
+    // --- Build / Build & Run buttons ---
     bool canBuild = !m_BuildInProgress && !m_BuildConfig.outputDir.empty();
+    bool buildRequested = false;
+    bool runAfterBuild = false;
     if (!canBuild) ImGui::BeginDisabled();
     if (ImGui::Button("Build", ImVec2(120, 30))) {
+        buildRequested = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Build & Run", ImVec2(120, 30))) {
+        buildRequested = true;
+        runAfterBuild = true;
+    }
+    if (!canBuild) ImGui::EndDisabled();
+
+    // Resolve the exe the build will produce (same naming as CopyPlayer)
+    auto builtExePath = [this]() -> std::string {
+        std::string destName = m_BuildConfig.windowTitle.empty() ? "Game" : m_BuildConfig.windowTitle;
+        for (auto& c : destName) {
+            if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' ||
+                c == '"' || c == '<' || c == '>' || c == '|') {
+                c = '_';
+            }
+        }
+#ifdef ENJIN_PLATFORM_WINDOWS
+        destName += ".exe";
+#endif
+        return (std::filesystem::path(m_BuildConfig.outputDir) / destName).string();
+    };
+
+    if (buildRequested) {
         // Auto-save current scene before building so the .enjin file
         // on disk contains all current entities and mesh data
         if (!m_CurrentScenePath.empty()) {
@@ -1682,11 +1709,22 @@ void EditorLayer::DrawBuildDialog() {
         m_Telemetry.TrackBuildRun();
         if (m_BuildResult.success) {
             ShowNotification("Build complete!", NotificationType::Success);
+            if (runAfterBuild) {
+                std::string exePath = builtExePath();
+                if (std::filesystem::exists(exePath)) {
+#ifdef ENJIN_PLATFORM_WINDOWS
+                    ShellExecuteA(nullptr, "open", exePath.c_str(), nullptr,
+                                  m_BuildConfig.outputDir.c_str(), SW_SHOWNORMAL);
+#endif
+                    ShowNotification("Launching game...", NotificationType::Info);
+                } else {
+                    ShowNotification("Build succeeded but the game exe was not found", NotificationType::Warning);
+                }
+            }
         } else {
             ShowNotification("Build failed", NotificationType::Error);
         }
     }
-    if (!canBuild) ImGui::EndDisabled();
 
     // Progress bar
     if (m_BuildInProgress || m_BuildFinished) {
@@ -1701,8 +1739,20 @@ void EditorLayer::DrawBuildDialog() {
         }
     }
 
-    // Open output folder button
+    // Run + open output folder buttons
     if (m_BuildFinished && m_BuildResult.success) {
+        ImGui::SameLine();
+        if (ImGui::Button("Run")) {
+            std::string exePath = builtExePath();
+            if (std::filesystem::exists(exePath)) {
+#ifdef ENJIN_PLATFORM_WINDOWS
+                ShellExecuteA(nullptr, "open", exePath.c_str(), nullptr,
+                              m_BuildConfig.outputDir.c_str(), SW_SHOWNORMAL);
+#endif
+            } else {
+                ShowNotification("Game exe not found — rebuild first", NotificationType::Warning);
+            }
+        }
         ImGui::SameLine();
         if (ImGui::Button("Open Folder")) {
 #ifdef ENJIN_PLATFORM_WINDOWS
