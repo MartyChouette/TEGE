@@ -267,7 +267,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 **Components**:
 - `World` - Main ECS container managing entities and components
 - `Entity` - ID-based entities (u64)
-- 80+ component types across categories:
+- 140+ serializable component types (142 measured) across categories:
   - Core (Transform, Mesh, Material, MaterialSlots, Light, Camera, Name, Notes, Text)
   - Rendering (MeshRenderer, ArtStyle)
   - Controllers (Platformer2D, TopDown2D, TopDown3D, ThirdPerson, FirstPerson, Vehicle, Possessable)

@@ -157,7 +157,7 @@ enjin/
 │   │   ├── Animation/      # Sprite + skeletal animation, BlendTree, Retargeting
 │   │   ├── Assets/         # GLTFLoader, AssimpLoader, SceneImporter, Prefab
 │   │   ├── Audio/          # SimpleAudio (miniaudio), SteamAudioProcessor
-│   │   ├── ECS/            # Entity-Component-System (80+ component types)
+│   │   ├── ECS/            # Entity-Component-System (140+ component types)
 │   │   │   ├── Components/ # Transform, Mesh, Material, Light, Camera, etc.
 │   │   │   └── Systems/    # RenderSystem, ControllerSystem
 │   │   ├── Editor/         # EditorLayer, PlayMode, Settings, Tools
