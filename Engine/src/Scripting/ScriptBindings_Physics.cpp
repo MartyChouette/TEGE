@@ -223,6 +223,30 @@ static void Physics_SetVelocity(u64 entityId, const Vector3& velocity) {
     if (rb) rb->velocity = velocity;
 }
 
+static void Physics_Teleport(u64 entityId, const Vector3& position) {
+    if (!s_BindingsWorld) return;
+
+    Entity entity = static_cast<Entity>(entityId);
+    auto* t = s_BindingsWorld->GetComponent<TransformComponent>(entity);
+    if (!t) return;
+    t->position = position;
+
+    // Zero component-side velocity so the backend sync doesn't re-apply it
+    auto* rb = s_BindingsWorld->GetComponent<RigidbodyComponent>(entity);
+    if (rb) {
+        rb->velocity = Vector3(0, 0, 0);
+        rb->angularVelocity = Vector3(0, 0, 0);
+    }
+
+    // Teleport the physics body through the rewind system's force-set path.
+    // Setting only the TransformComponent is not enough for dynamic bodies —
+    // the body's pose overwrites the transform on the next physics step.
+    if (s_BindingsPhysics) {
+        s_BindingsPhysics->ForceSetBodyState(entity, position, t->rotation,
+                                             Vector3(0, 0, 0), Vector3(0, 0, 0));
+    }
+}
+
 static Vector3 Physics_GetVelocity(u64 entityId) {
     if (!s_BindingsWorld) return Vector3();
 
@@ -431,6 +455,10 @@ void RegisterPhysicsBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Physics_SetVelocity(uint64, const Vector3 &in)",
         asFUNCTION(Physics_SetVelocity), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Physics_Teleport(uint64, const Vector3 &in)",
+        asFUNCTION(Physics_Teleport), asCALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector3 Physics_GetVelocity(uint64)",
