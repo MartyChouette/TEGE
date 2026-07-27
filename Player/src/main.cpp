@@ -45,6 +45,7 @@
 #include "Enjin/Audio/SimpleAudio.h"
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Scripting/ScriptEngine.h"
+#include "Enjin/GUI/EngineSplash.h"
 #include "Enjin/Scripting/ScriptSystem.h"
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Scripting/FlashAPIShim.h"
@@ -1223,8 +1224,9 @@ public:
         if (m_ImGuiLayer && cmd != VK_NULL_HANDLE) {
             m_ImGuiLayer->BeginFrame();
 
-            // Pause menu
-            if (m_GameMenu.IsMenuOpen()) {
+            // Pause menu (suppressed while the engine intro card is up so
+            // clicks can't reach it through the card)
+            if (m_GameMenu.IsMenuOpen() && !EngineSplashActive()) {
                 m_GameMenu.Render(static_cast<Enjin::f32>(extent.width),
                                   static_cast<Enjin::f32>(extent.height));
             }
@@ -1242,8 +1244,9 @@ public:
                     static_cast<Enjin::f32>(extent.height));
             }
 
-            // Runtime UI canvases
-            if (!m_ShowingSplash && m_World) {
+            // Runtime UI canvases (also suppressed under the intro card —
+            // an authored MainMenu canvas would otherwise take clicks)
+            if (!m_ShowingSplash && !EngineSplashActive() && m_World) {
                 m_UISystem.Update(m_World.get(),
                     static_cast<Enjin::f32>(extent.width),
                     static_cast<Enjin::f32>(extent.height), 0.0f);
@@ -1262,6 +1265,12 @@ public:
                 }
             }
 
+            // Engine intro card ("Made with TEGE") — drawn last, on top of
+            // everything, only after the loading splash has finished
+            if (!m_ShowingSplash) {
+                DrawEngineSplash();
+            }
+
             // Tilde console (Quake-style, slides up from bottom)
             DrawConsole(cmd);
 
@@ -1269,6 +1278,34 @@ public:
         }
 
         m_Renderer->EndFrame();
+    }
+
+    static constexpr Enjin::f32 kEngineSplashDuration = 4.0f;   // matches the editor splash choreography
+
+    bool EngineSplashActive() const {
+        return m_EngineSplash && !m_ShowingSplash && m_EngineSplashTimer < kEngineSplashDuration;
+    }
+
+    // "Made with TEGE" intro card — the same animated splash the editor shows
+    // at startup, via the shared Enjin::GUI::DrawEngineSplash. Optional (build
+    // setting engineSplash, default on). Any key or click after half a second
+    // skips ahead to the fade-out.
+    void DrawEngineSplash() {
+        if (!EngineSplashActive()) return;
+
+        ImGuiIO& io = ImGui::GetIO();
+        m_EngineSplashTimer += io.DeltaTime;
+
+        constexpr Enjin::f32 kFadeStart = kEngineSplashDuration - 1.0f;
+        if (m_EngineSplashTimer > 0.5f && m_EngineSplashTimer < kFadeStart &&
+            (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || io.InputQueueCharacters.Size > 0 ||
+             ImGui::IsKeyPressed(ImGuiKey_Space) || ImGui::IsKeyPressed(ImGuiKey_Enter) ||
+             ImGui::IsKeyPressed(ImGuiKey_Escape))) {
+            m_EngineSplashTimer = kFadeStart;   // skip straight to the fade-out
+        }
+
+        Enjin::GUI::DrawEngineSplash(m_EngineSplashTimer, kEngineSplashDuration,
+                                     kFadeStart, "made with");
     }
 
     void DrawConsole(VkCommandBuffer) {
@@ -1853,6 +1890,7 @@ private:
         m_WindowWidth = manifest.value("windowWidth", 1280u);
         m_WindowHeight = manifest.value("windowHeight", 720u);
         m_Fullscreen = manifest.value("fullscreen", false);
+        m_EngineSplash = manifest.value("engineSplash", true);
         m_StartScene = manifest.value("startScene", "");
 
         // Read frame rate settings
@@ -2173,6 +2211,8 @@ private:
 
     // Splash screen
     bool m_ShowingSplash = false;
+    bool m_EngineSplash = true;          // "Made with TEGE" intro card (build setting)
+    Enjin::f32 m_EngineSplashTimer = 0.0f;
     Enjin::f32 m_SplashTimer = 0.0f;
     Enjin::f32 m_SplashAlpha = 0.0f;
     static constexpr Enjin::f32 m_SplashDuration = 3.0f;

@@ -641,6 +641,7 @@ bool BuildPipeline::WriteBuildManifest(const BuildConfig& config, AssetPacker& p
     manifest["windowWidth"] = config.windowWidth;
     manifest["windowHeight"] = config.windowHeight;
     manifest["fullscreen"] = config.fullscreen;
+    manifest["engineSplash"] = config.engineSplash;
     manifest["projectName"] = m_ProjectName;
 
     // Find start scene
@@ -830,6 +831,7 @@ bool BuildPipeline::WriteLooseManifest(const BuildConfig& config, const std::str
     manifest["windowWidth"] = config.windowWidth;
     manifest["windowHeight"] = config.windowHeight;
     manifest["fullscreen"] = config.fullscreen;
+    manifest["engineSplash"] = config.engineSplash;
     manifest["projectName"] = m_ProjectName;
 
     // Find start scene

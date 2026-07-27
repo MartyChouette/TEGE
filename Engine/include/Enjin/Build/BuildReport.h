@@ -40,6 +40,7 @@ struct BuildConfig {
     u32 windowWidth = 1280;
     u32 windowHeight = 720;
     bool fullscreen = false;
+    bool engineSplash = true;    // "Made with TEGE" intro card at game start
     BuildTargetPlatform target = BuildTargetPlatform::Desktop;
     PackagingMode packagingMode = PackagingMode::Packed;
 };

@@ -80,7 +80,7 @@ if(ENJIN_PLATFORM_WEB)
          "src/Effects/FluidRenderer.cpp" "src/Effects/GrassRenderer.cpp"
          "src/Effects/ShrubRenderer.cpp" "src/Effects/TreeRenderer.cpp"
          "src/Effects/SpriteBatchRenderer.cpp" "src/Effects/SpriteTextureAtlas.cpp"
-         "src/GUI/ImGuiLayer.cpp" "src/GUI/ShaderGUI.cpp"
+         "src/GUI/ImGuiLayer.cpp" "src/GUI/ShaderGUI.cpp" "src/GUI/EngineSplash.cpp"
          "src/Scripting/ScriptBindings_Render.cpp" "src/Scripting/ScriptBindings_AudioGraph.cpp"
          "src/Editor/*.cpp" "src/App/*.cpp"
          "src/Water/WaterRenderer.cpp")
