@@ -20,6 +20,8 @@ These are hard-won lessons. Violating any of these will cause bugs.
 - **Math headers:** `Enjin/Math/Vector.h` (not `Vector3.h`). `Matrix4` uses flat `f32 m[16]`
 - **`SceneSerializer`** requires `World*` in constructor
 - **File extensions:** `.enjinproject` = project manifest (JSON), `.enjin` = scene (JSON). There is no `.enjscene`
+- **Scene JSON script key is `scriptComponent`**, not `script` — unknown entity keys are silently ignored on load and erased by the next save (no warning anywhere)
+- **The C++ facade is `Enjin::App` / `Enjin::App2D`** (`Enjin/App.h`, source in `Engine/src/App/`) — renamed from SimpleApp. `ENJIN_SIMPLE_MAIN` emits WinMain on Windows
 - **Path validation:** use `Platform::IsSafeRelativePath` / `IsSafeFileName` / `ResolveWithinRoot` from `Enjin/Platform/Paths.h` — never hand-roll `find("..")` checks
 
 ### ECS
@@ -56,6 +58,19 @@ These are hard-won lessons. Violating any of these will cause bugs.
 - Shader edit workflow: edit GLSL → `glslangValidator -V` → `python _gen_all.py` → rebuild. No shortcuts
 - **RT shaders:** compile with `glslc --target-env=vulkan1.2 -I.` (they `#include rt_common.glsl`; glslangValidator rejects the include) → `python _gen_rt.py` regenerates `RTShaderData.h`
 - **GLSL cannot pass unsized arrays as function parameters** — helpers that loop over an SSBO array must be inlined in each shader that declares the SSBO (see rt_reflect.rgen SDF loop)
+
+### Scripting Runtime
+- **TegeBehavior + the enjin_api scripts are EMBEDDED in the engine** (`EnjinApiEmbedded.cpp`, regenerate with `python _gen_api.py` after editing `enjin_api/*.as`). TegeBehavior is auto-injected into every module unless the source mentions `TegeBehavior.as`; `#include "Timer.as"` etc. fall back to embedded copies. Project `scripts/enjin_api/` overrides
+- **Script module names are `parentDir_stem`** (`scripts/Foo.as` → `scripts_Foo`) — anything creating instances must derive the name identically or CreateInstance fails
+- **The process CWD is NEVER reliable** (editor/player CWD = exe dir). All relative paths resolve via roots set at play/boot: `ScriptSystem::SetScriptRoot`, `ScriptEngine::SetScriptDirectory`, `SimpleAudio::SetAssetRoot` — new path consumers must follow this pattern, never bare relative file access
+- **Exported games read scripts from DISK, not the pak** — BuildPipeline emits loose `scripts/`, `scripts/enjin_api/`, and `assets/` next to the exe (`EmitLooseRuntimeFiles`). Pak-side script loading is unimplemented
+- **The build copies a PREBUILT `EnjinPlayer.exe`** — after engine changes, rebuild the `EnjinPlayer` target too or exported games ship a stale engine
+
+### Frame Safety (crash class: mid-frame GPU resource destruction)
+- **`RenderSystem::FlushPendingChanges` is the ONLY safe home** for destroying/recreating GPU resources or updating descriptor sets. It early-returns when `m_SkipMainPassRendering` is set (the editor records offscreen binds BEFORE `World::Update`) — destroying/updating anything bound in the recording command buffer invalidates it and the driver access-violates at submit
+- **Parallel shadow path activates at ≥32 shadow casters.** With a render pass begun for SECONDARY_COMMAND_BUFFERS, the primary may record ONLY `vkCmdExecuteCommands`. Per-command-buffer state (e.g. merged-pool VB/IB bound) must never live in shared members — pass it per-CB (`RenderEntityShadow`'s `bool& poolBound`)
+- **Editor auto-saves the open scene on a timer** — never modify scene files out-of-band while an editor instance is running; close it first
+- **Parented entities render script euler rotations with Y and Z SWAPPED** (open bug; X/pitch is correct). Workaround until fixed: put yaw values in the Z slot
 
 ### Windows C++ Gotchas
 - `near` and `far` are reserved macros (`windef.h`) — don't use as variable names

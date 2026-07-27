@@ -210,7 +210,7 @@ cmake .. \
 | `ENJIN_BUILD_PLAYER` | ON | Build the standalone game player |
 | `ENJIN_BUILD_HUB` | OFF | Build the Enjin Hub launcher |
 | `ENJIN_BUILD_TESTS` | OFF | Build unit tests |
-| `ENJIN_BUILD_EXAMPLES` | OFF | Build example projects |
+| `ENJIN_BUILD_EXAMPLES` | OFF | Build the `Enjin::App` examples (output: `bin/Examples/`), including OrbCollector |
 | **Physics** | | |
 | `ENJIN_PHYSICS_JOLT` | ON | Enable Jolt Physics backend for 3D (FetchContent v5.2.0) |
 | `ENJIN_PHYSICS_BOX2D` | ON | Enable Box2D v3 backend for 2D (FetchContent v3.0.0) |
@@ -251,6 +251,8 @@ After building, executables are located in `build/bin/` (Linux/macOS) or `build/
 ./build/bin/Release/EnjinPlayer.exe   # Windows
 ./build/bin/EnjinPlayer               # Linux/macOS
 ```
+
+Exported game builds emit `game.enjpak` plus loose `scripts/`, `scripts/enjin_api/`, and `assets/` folders next to the player executable. Scripts are read from disk, not from the pak.
 
 ## 6. Shader Compilation
 

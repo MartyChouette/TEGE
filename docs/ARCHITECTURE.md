@@ -237,7 +237,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 ### CPU-Side Optimizations
 - **Per-frame linear allocator:** `FrameAllocator` (8 MB bump allocator reset each frame) with `FrameArray<T>` container, replaces hot-path `std::vector` allocations (`Core/include/Enjin/Memory/FrameAllocator.h`)
 - **64-bit material sort key:** `[8:pipeline][16:material][24:texture][16:depth]` layout for cache-friendly single-comparison sorting
-- **MaterialGPU:** 80-byte GPU-aligned struct with transmission/IOR/thickness/SSS fields (uploaded via batched Material SSBO at binding 2)
+- **MaterialGPU:** 112-byte GPU-aligned struct with transmission/IOR/thickness/SSS fields and bindless texture indices (uploaded via batched Material SSBO at binding 2; size guarded by static_assert in TestMaterial)
 - **LOD hysteresis:** Directional dead-zones prevent LOD ping-ponging, with optional screen-space projected size metric
 - **Binary search keyframes:** `Animation.cpp::SampleKeyframes()` uses `std::upper_bound` for O(log N) lookups instead of O(N) linear scan
 - **Integer sprite sort keys:** `SpriteBatchRenderer` uses pre-hashed `usize` keys instead of `std::string` comparison in sort comparator
@@ -466,7 +466,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 - `CoroutineScheduler` - Manages script coroutines (yield seconds, frames, end-of-frame)
 - `ScriptEventBus` - Script-to-script event dispatch system
 
-**Script Bindings** (~900+ bindings across 15+ categories):
+**Script Bindings** (~1,010 bindings across 15+ categories):
 - **Scene**: Entity transform access (Get/Set Position/Rotation/Scale/Name), scene loading
 - **Physics**: Raycast, sphere/box overlap, force/impulse/velocity, gravity scale
 - **Audio**: Play/stop/volume/pitch per entity, positional audio, master volume, channel mixing

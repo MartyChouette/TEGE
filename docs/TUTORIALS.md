@@ -176,6 +176,8 @@ Enjin uses an Entity-Component-System architecture:
 - **Drag in viewport** — Marquee/rubber-band select
 - **Delete** — Delete all selected entities
 - **Ctrl+D** — Duplicate all selected
+- **Drag any selected entity** — Reparent the whole selection at once
+- **Right-click a selected entity** — "Group Selected (N) into New Entity" parents the selection under a new empty entity named "Group"
 
 ### Parent-Child Relationships
 
@@ -608,6 +610,7 @@ The ControllerSystem uses raycasting to detect ground. With Jolt Physics enabled
 | Mouse Sensitivity | Look sensitivity |
 | Head Bob | Enable/disable head bobbing |
 | Weapon Sway | Camera-relative weapon movement |
+| Dash | Optional dash (Shift/E or gamepad Right Bumper) with speed, duration, and cooldown fields |
 
 ### Shooting Mechanics
 
@@ -779,6 +782,10 @@ Name your collision groups in **View > Settings > Project Settings > Collision G
 2. Add a `ScriptComponent`.
 3. Set the **Script Path** to a `.as` file (e.g., `scripts/player.as`).
 
+You can also click **Add Script** in the Inspector to create a new script. The New Script dialog offers four starter templates (Empty, Rotator, Interactable, Spawner) and creates the file in the project's `scripts/` folder.
+
+The engine API scripts (`TegeBehavior.as`, `Timer.as`, `Tween.as`, `Math.as`, `StateMachine.as`) are embedded in the engine, so `#include "Timer.as"` resolves automatically with no `enjin_api` folder on disk. A project-local `scripts/enjin_api/` copy overrides the embedded versions, but it is optional.
+
 ### Script Lifecycle
 
 ```angelscript
@@ -833,11 +840,14 @@ Vec3 Vec3_Lerp(Vec3 a, Vec3 b, float t);
 
 // Physics
 bool Physics_Raycast(Vec3 origin, Vec3 dir, float dist, RaycastHit& hit);
+void Physics_Teleport(uint64 entity, Vec3 pos); // Move a dynamic body and zero its velocities (respawns/resets)
 ```
 
 ### Hot-Reload
 
 Scripts automatically hot-reload when you save them during play mode. The engine detects file changes and recompiles without restarting.
+
+If a script fails to compile when you press Play, an error toast shows the compiler message and the Console panel opens automatically.
 
 ---
 
@@ -2192,14 +2202,14 @@ SaveGame_ToSlot(1);  // Uses NewgroundsSaveBackend
    - **Output Directory** — Where to export
    - **Window Title** — Game window title
    - **Window Size** — Default resolution
-3. Click **Build**.
+3. Click **Build**, or **Build & Run** to save the scene, build, and launch the game in one step. After any successful build, a **Run** button launches the built game.
 
 ### What Happens
 
 1. **Scan** — Finds all scenes, scripts, assets
 2. **Validate** — Checks for missing references
 3. **Pack** — Creates `game.enjpak` (compressed asset pack)
-4. **Copy** — Copies `EnjinPlayer.exe` alongside the pack
+4. **Copy** — Copies `EnjinPlayer.exe` alongside the pack, plus the project's loose `scripts/` folder (including `scripts/enjin_api/`) and the whole `assets/` folder
 
 ### Asset Pack Format
 
@@ -2215,6 +2225,8 @@ The built game is a standalone folder:
 MyGame/
 ├── EnjinPlayer.exe
 ├── game.enjpak
+├── scripts/          (loose scripts, including scripts/enjin_api/)
+├── assets/
 └── icon.png (optional)
 ```
 

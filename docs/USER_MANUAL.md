@@ -245,6 +245,8 @@ When multiple entities are selected:
   - **Scale multiplier** -- multiply the scale of all selected entities.
   - Each has an **Apply** button to commit the change.
 - The **Gizmo** appears at the centroid of all selected entities. Dragging the gizmo applies the delta transform to every selected entity.
+- **Drag to reparent** -- dragging any selected entity in the hierarchy moves the whole selection to the new parent at once.
+- **Group Selected** -- right-clicking a selected entity in the hierarchy offers **Group Selected (N) into New Entity**, which creates a new empty entity named "Group" and parents the selection under it.
 
 ---
 
@@ -294,13 +296,15 @@ FBX files (including Mixamo characters and animations) are imported via the Assi
 
 ## 4. Templates
 
-Enjin provides 51 built-in startup templates organized into multiple categories. When you create a new project or scene, the template selector offers these options. All templates start with a minimal 5-panel layout (Hierarchy, Inspector, Viewport, Console, Asset Browser) for a clean first impression:
+Enjin ships 15 curated startup templates in the Project Hub selector. (More exist in the codebase but are disabled pending a quality pass, so the tables below may list templates that are not currently selectable.) When you create a new project or scene, the template selector offers these options. All templates start with a minimal 5-panel layout (Hierarchy, Inspector, Viewport, Console, Asset Browser) for a clean first impression:
 
 **Foundations**
 
 | Template | Description |
 |----------|-------------|
 | **Blank** | Empty scene with directional light, procedural skybox, and FXAA. |
+| **Components Only** | A winnable mini-game built with zero code, entirely from Inspector components. |
+| **Script Only** | The same mini-game with all logic in one AngelScript file, `scripts/GameScript.as`. |
 | **2D Platformer** | Side-scrolling with wall jump, floating platforms, coin tween, torch particles. |
 | **2D Top-Down Action** | Overhead 2D with dash, health, AI patrol enemy, health pickup. |
 | **3D Third Person** | Over-the-shoulder camera with shadows, obstacle cubes, point light, bloom. |
@@ -345,6 +349,8 @@ Enjin provides 51 built-in startup templates organized into multiple categories.
 | **Accessibility Menu** | In-game accessibility settings: subtitle toggle + size, colorblind toggle, reduced motion, input sensitivity. All controls use UICanvas focus navigation (Tab/Arrow/Gamepad). |
 
 Each template creates the appropriate entities (ground, lights, player entity with controller, camera) and pre-configures component values for that genre. Every template includes NotesComponent hints explaining the featured systems.
+
+The **Components Only** and **Script Only** templates mirror the C++ example `Examples/OrbCollector`. Together the three build the same mini-game with each of the engine's authoring workflows: Inspector components, AngelScript, and C++.
 
 ### Custom Templates
 
@@ -615,7 +621,7 @@ Over-the-shoulder camera that orbits the player. Supports lock-on targeting.
 
 #### FirstPersonController
 
-FPS-style camera and movement with mouse look, crouching, and optional head bob.
+FPS-style camera and movement with mouse look, crouching, optional head bob, and an optional dash.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -626,7 +632,7 @@ FPS-style camera and movement with mouse look, crouching, and optional head bob.
 | `mouseSensitivity` | f32 | 2.0 | Mouse look sensitivity. |
 | `minPitch` | f32 | -89.0 | Minimum vertical look angle. |
 | `maxPitch` | f32 | 89.0 | Maximum vertical look angle. |
-| `invertY` | bool | false | Invert vertical mouse axis. |
+| `invertY` | bool | false | Invert vertical mouse axis. Off (the default) means mouse down looks down. |
 | `enableHeadBob` | bool | false | Subtle camera bob while walking. |
 | `headBobFrequency` | f32 | 8.0 | Bob oscillation speed. |
 | `headBobAmplitude` | f32 | 0.05 | Bob vertical displacement. |
@@ -635,6 +641,10 @@ FPS-style camera and movement with mouse look, crouching, and optional head bob.
 | `crouchingHeight` | f32 | 1.0 | Camera height when crouching. |
 | `crouchSpeed` | f32 | 0.5 | Movement speed multiplier when crouching. |
 | `sprintFOVIncrease` | f32 | 10.0 | FOV increase while sprinting. |
+| `enableDash` | bool | false | Enable dash (Shift/E or gamepad Right Bumper). Dashes along movement input, or straight ahead when idle. |
+| `dashSpeed` | f32 | 15.0 | Dash velocity. |
+| `dashDuration` | f32 | 0.2 | Dash length in seconds. |
+| `dashCooldown` | f32 | 1.0 | Cooldown between dashes. |
 | `dungeonCrawlerMode` | bool | false | SMT-style movement: snap turns and facing-relative movement. |
 | `snapTurnAngle` | f32 | 90.0 | Degrees per snap turn (A/D keys) in dungeon crawler mode. |
 
@@ -2426,6 +2436,8 @@ Open the build dialog from the editor menu. Configure:
 | **Fullscreen** | Whether the game launches in fullscreen. |
 | **Build Key** | Obfuscation key for the asset pack (a default is used if empty). |
 
+The dialog has a **Build** button and a **Build & Run** button, which saves the current scene, builds, and launches the game. After any successful build, a **Run** button launches the built game again.
+
 ### Build Pipeline Phases
 
 When you press Build, the pipeline executes these phases:
@@ -2433,7 +2445,7 @@ When you press Build, the pipeline executes these phases:
 1. **Scan Project** -- Reads the `.enjinproject` manifest and lists all scenes.
 2. **Validate Assets** -- Parses each scene JSON, collects all referenced assets (textures, models, scripts), and verifies they exist on disk.
 3. **Pack Assets** -- Compresses and packs all assets into a `.enjpak` archive.
-4. **Copy Player** -- Copies the standalone `EnjinPlayer` executable to the output directory.
+4. **Copy Player** -- Copies the standalone `EnjinPlayer` executable to the output directory, along with the project's loose `scripts/` folder (including `scripts/enjin_api/`) and the whole `assets/` folder.
 5. **Write Build Manifest** -- Writes `_build/manifest.json` into the pack with window title, resolution, fullscreen flag, and start scene.
 6. **Verify Build** -- Reads back the `.enjpak` archive and verifies all CRC32 checksums for data integrity.
 
@@ -2448,6 +2460,7 @@ The standalone Player executable includes:
 - **Options Menu** → Fullscreen, VSync, FOV (40-120), Shadows, Shadow Quality, Bloom, FXAA, Audio volumes
 - **Tilde Console** (~) → Quake-style drop-up console with commands: `god`, `kill`, `heal`, `speed`, `tp`, `restart`, `fps`, `stats`, `quit`
 - **Mouse capture** → Auto-captures on gameplay start, releases on pause/menu
+- **3D audio** → Positional audio follows the player camera
 - **Restart** → Full physics reset + scene reload from pack
 
 ### .enjpak Archive Format
@@ -2462,12 +2475,14 @@ The `.enjpak` format is a custom archive:
 
 ### Standalone Player
 
-The built game consists of two files:
+The built game consists of the player executable, the asset pack, and the project's loose script and asset folders:
 
 | File | Description |
 |------|-------------|
 | `EnjinPlayer.exe` | Standalone executable (no editor, no ImGui). |
 | `game.enjpak` | Packed asset archive. |
+| `scripts/` | Loose AngelScript files, including `scripts/enjin_api/`. |
+| `assets/` | Asset files referenced by scenes and scripts. |
 
 The player executable:
 
@@ -2476,7 +2491,7 @@ The player executable:
 3. Initializes Vulkan and runs the game loop.
 4. No editor UI is loaded -- only game systems run.
 
-To distribute: ship both files together. The player expects `game.enjpak` in the same directory.
+To distribute: ship the whole output folder. The player expects `game.enjpak` in the same directory as the executable.
 
 ### Distribution
 
@@ -2528,6 +2543,16 @@ Each entity can have multiple scripts attached. Each script attachment specifies
 - **Properties**: exposed values editable in the Inspector (see below).
 - **Enabled**: toggle script on/off.
 
+### Creating Scripts
+
+The **Add Script** button in the Inspector opens the New Script dialog. It offers four starter templates (**Empty**, **Rotator**, **Interactable**, **Spawner**) and creates the file in the project's `scripts/` folder.
+
+If a script fails to compile when play mode starts, an error toast shows the compiler message and the Console panel opens automatically.
+
+### Built-in API Scripts
+
+The engine API scripts (`TegeBehavior.as`, `Timer.as`, `Tween.as`, `Math.as`, `StateMachine.as`) are embedded in the engine and resolve automatically. `#include "Timer.as"` works even with no `enjin_api` folder on disk, so scripts do not need to include or ship these files. A project-local `scripts/enjin_api/` copy overrides the embedded versions, which is useful for modding the API, but it is optional.
+
 ### Lifecycle Callbacks
 
 Scripts can implement any of these methods:
@@ -2578,7 +2603,7 @@ Scripts have access to engine functionality through registered bindings:
 | **Math types** | Vector2, Vector3, Vector4, Quaternion, Matrix4. |
 | **Entity types** | Entity handles, component access. |
 | **Input** | Key/button state, mouse position. |
-| **Physics** | Raycasting, collision queries. |
+| **Physics** | Raycasting, collision queries, teleport (`Physics_Teleport` moves a dynamic body and zeroes its velocities). |
 | **Audio** | Play/stop sounds, set volume. |
 | **Scene** | Load scenes, get entities by name/tag. |
 | **Time** | Delta time, total time, time scale. |

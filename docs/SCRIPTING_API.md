@@ -1,6 +1,8 @@
 # AngelScript API Reference
 
-Complete reference for all functions callable from AngelScript via `TegeBehavior` scripts. ~960+ functions across all categories.
+Complete reference for all functions callable from AngelScript via `TegeBehavior` scripts. ~1,010 functions across all categories.
+
+The `TegeBehavior` base class and the `enjin_api` helper scripts (Timer, Tween, Math, StateMachine) are embedded in the engine. Scripts need no `#include` for TegeBehavior (it is auto-injected unless the source references `TegeBehavior.as` itself), and `#include "Timer.as"` etc. resolve from the embedded copies when no `enjin_api` folder exists. A project-local `scripts/enjin_api/` overrides the embedded copies.
 
 ---
 
