@@ -74,6 +74,11 @@ public:
 
     void SetWorld(ECS::World* world) { m_World = world; }
 
+    // Root for resolving relative clip paths (the project directory). The
+    // process CWD is the exe dir, so project-relative paths like
+    // "assets/sfx/x.wav" never resolve without this. Empty = CWD (legacy).
+    void SetAssetRoot(const std::string& root) { m_AssetRoot = root; }
+
     // Set listener position (usually camera)
     void SetListenerPosition(const Math::Vector3& position, const Math::Vector3& forward, const Math::Vector3& up);
 
@@ -159,6 +164,7 @@ private:
     std::unique_ptr<Impl> m_Impl;
 
     ECS::World* m_World = nullptr;
+    std::string m_AssetRoot;
 
     // Listener (camera) state
     Math::Vector3 m_ListenerPosition;

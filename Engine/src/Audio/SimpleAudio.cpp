@@ -4,6 +4,7 @@
 #include "Enjin/Math/Math.h"
 #include "Enjin/Logging/Log.h"
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <unordered_set>
 
@@ -183,9 +184,20 @@ bool SimpleAudio::LoadWAV(const std::string& filepath, AudioClipData& clip) {
 }
 
 AudioClipHandle SimpleAudio::LoadClip(const std::string& filepath) {
+    // Resolve relative paths against the asset root (project dir); the CWD is
+    // the exe dir, so project-relative paths never resolve without this.
+    std::string resolved = filepath;
+    if (!m_AssetRoot.empty() && !std::filesystem::path(filepath).is_absolute()) {
+        std::filesystem::path rooted = std::filesystem::path(m_AssetRoot) / filepath;
+        std::error_code ec;
+        if (std::filesystem::exists(rooted, ec)) {
+            resolved = rooted.string();
+        }
+    }
+
     // Check if already loaded
     for (const auto& [handle, clip] : m_Clips) {
-        if (clip.filepath == filepath) {
+        if (clip.filepath == resolved) {
             return handle;
         }
     }
@@ -193,19 +205,19 @@ AudioClipHandle SimpleAudio::LoadClip(const std::string& filepath) {
     AudioClipHandle handle = m_NextClipHandle++;
     if (m_NextClipHandle == 0) m_NextClipHandle = 1;
     AudioClipData clipData;
-    clipData.filepath = filepath;
+    clipData.filepath = resolved;
 
     // Verify file exists (miniaudio supports WAV, MP3, FLAC, and Vorbis natively)
-    std::ifstream testFile(filepath, std::ios::binary);
+    std::ifstream testFile(resolved, std::ios::binary);
     if (testFile.is_open()) {
         clipData.loaded = true;
         testFile.close();
     } else {
-        ENJIN_LOG_WARN(Audio, "Audio file not found: %s", filepath.c_str());
+        ENJIN_LOG_WARN(Audio, "Audio file not found: %s", resolved.c_str());
     }
 
     m_Clips[handle] = std::move(clipData);
-    ENJIN_LOG_INFO(Audio, "Registered audio clip: %s (handle: %u)", filepath.c_str(), handle);
+    ENJIN_LOG_INFO(Audio, "Registered audio clip: %s (handle: %u)", resolved.c_str(), handle);
     return handle;
 }
 

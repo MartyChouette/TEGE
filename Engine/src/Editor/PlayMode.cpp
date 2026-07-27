@@ -159,6 +159,9 @@ void PlayMode::Play() {
             m_Physics = Physics::CreatePhysicsBackend(backendType, projectMode);
             if (m_Physics) m_Physics->SetWorld(m_World);
             m_ControllerSystem.SetPhysics(m_Physics.get());
+            // Script bindings captured the (null) backend pointer at Initialize —
+            // refresh it or Physics_Raycast/Teleport silently no-op this session
+            Scripting::SetBindingsPhysics(m_Physics.get());
             ENJIN_LOG_INFO(Editor, "PlayMode: Created 3D physics backend on Play()");
         }
     }
@@ -190,6 +193,7 @@ void PlayMode::Play() {
             std::filesystem::path(m_SceneManager->GetProjectPath()).parent_path();
         m_ScriptSystem.SetScriptRoot(projDir.string());
         m_ScriptEngine.SetScriptDirectory((projDir / "scripts").string());
+        m_SimpleAudio.SetAssetRoot(projDir.string());
     }
 
     // Enable controller system, flower system, scripting, and gameplay systems
@@ -661,6 +665,21 @@ void PlayMode::Update(f32 deltaTime) {
 
         // Record & Rewind (Braid / Sands of Time mechanic)
         m_RecordRewindSystem.Update(deltaTime);
+
+        // Sync the 3D audio listener to the game camera. Without this the
+        // listener stays wherever it was initialized (world origin) and every
+        // positional sound attenuates/pans relative to spawn, not the player.
+        {
+            ECS::Entity cam = ECS::CameraManager::GetActiveCamera(m_World);
+            if (cam != ECS::INVALID_ENTITY) {
+                auto* camT = m_World->GetComponent<ECS::TransformComponent>(cam);
+                if (camT) {
+                    m_SimpleAudio.SetListenerPosition(camT->position,
+                                                      camT->rotation.GetForward(),
+                                                      camT->rotation.GetUp());
+                }
+            }
+        }
 
         // Audio-reactive systems (beat sync, VU→visual, RTPC, threshold triggers)
         m_AudioReactiveSystem.Update(deltaTime);
