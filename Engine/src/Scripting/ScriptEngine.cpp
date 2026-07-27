@@ -141,6 +141,42 @@ void ScriptEngine::Shutdown()
 }
 
 // ---------------------------------------------------------------------------
+// FindApiDirectory
+// ---------------------------------------------------------------------------
+
+std::filesystem::path ScriptEngine::FindApiDirectory(const std::string& scriptDir)
+{
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    // 1. Inside the project's script directory (the shipped-project layout)
+    if (!scriptDir.empty()) {
+        fs::path p = fs::path(scriptDir) / "enjin_api";
+        if (fs::exists(p / "TegeBehavior.as", ec)) return p;
+    }
+
+    // 2. Next to the exe / CWD (installed engine layout)
+    {
+        fs::path p = fs::path("enjin_api");
+        if (fs::exists(p / "TegeBehavior.as", ec)) return fs::absolute(p, ec);
+    }
+
+    // 3. Walk up from the CWD (dev tree: repo-root/enjin_api from build/bin/Release)
+    {
+        fs::path dir = fs::current_path(ec);
+        for (int i = 0; i < 5 && !dir.empty(); ++i) {
+            fs::path p = dir / "enjin_api";
+            if (fs::exists(p / "TegeBehavior.as", ec)) return p;
+            fs::path parent = dir.parent_path();
+            if (parent == dir) break;
+            dir = parent;
+        }
+    }
+
+    return {};
+}
+
+// ---------------------------------------------------------------------------
 // CompileScript (from file)
 // ---------------------------------------------------------------------------
 
@@ -202,6 +238,24 @@ bool ScriptEngine::CompileScript(const std::string& path)
         m_LastError = "Failed to start new module '" + moduleName + "'";
         ENJIN_LOG_ERROR(Script, "%s", m_LastError.c_str());
         return false;
+    }
+
+    // Auto-inject the TegeBehavior base class so beginner scripts don't need
+    // to know about #include. Skipped when the source mentions the file itself
+    // (explicit include) to avoid a duplicate class definition.
+    {
+        std::ifstream srcFile(path);
+        if (srcFile.is_open()) {
+            std::string src((std::istreambuf_iterator<char>(srcFile)),
+                             std::istreambuf_iterator<char>());
+            if (src.find("TegeBehavior.as") == std::string::npos) {
+                std::filesystem::path apiDir = FindApiDirectory(m_ScriptDirectory);
+                if (!apiDir.empty()) {
+                    std::string apiFile = (apiDir / "TegeBehavior.as").lexically_normal().string();
+                    builder.AddSectionFromFile(apiFile.c_str());
+                }
+            }
+        }
     }
 
     r = builder.AddSectionFromFile(path.c_str());

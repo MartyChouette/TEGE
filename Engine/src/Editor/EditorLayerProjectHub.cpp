@@ -2,6 +2,7 @@
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
+#include "Enjin/Scripting/ScriptEngine.h"
 #include <GLFW/glfw3.h>
 #include <chrono>
 #include "Enjin/Logging/Log.h"
@@ -2316,6 +2317,23 @@ bool EditorLayer::CreateProjectOnDisk(const std::string& projectDir, const std::
     fs::create_directories(projRoot / "scripts", ec);
     fs::create_directories(projRoot / "assets", ec);
     fs::create_directories(projRoot / "templates", ec);
+
+    // Ship the enjin_api script headers (TegeBehavior.as etc.) with the
+    // project — #include resolution looks in <project>/scripts/enjin_api,
+    // and the auto-injected TegeBehavior base resolves from there too.
+    {
+        fs::path engineApi = Scripting::ScriptEngine::FindApiDirectory("");
+        if (!engineApi.empty()) {
+            fs::copy(engineApi, projRoot / "scripts" / "enjin_api",
+                     fs::copy_options::recursive | fs::copy_options::skip_existing, ec);
+            if (ec) {
+                ENJIN_LOG_WARN(Editor, "Could not copy enjin_api into project: %s", ec.message().c_str());
+                ec.clear();
+            }
+        } else {
+            ENJIN_LOG_WARN(Editor, "enjin_api directory not found — project scripts will lack API headers");
+        }
+    }
 
     // Initialize git repository if requested
     if (m_GitInitOnCreate) {

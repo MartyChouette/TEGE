@@ -2,6 +2,7 @@
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
+#include "Enjin/Scripting/ScriptEngine.h"
 #include <GLFW/glfw3.h>
 #include <chrono>
 #include "Enjin/Logging/Log.h"
@@ -5795,22 +5796,44 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
                         }
                     }
                 }
+                // Resolve against the project root — the process CWD is the
+                // exe directory, so bare relative paths would create the
+                // script inside the engine install instead of the project.
+                std::filesystem::path projRoot;
+                if (!m_SceneManager.GetProjectPath().empty()) {
+                    projRoot = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path();
+                }
+                std::filesystem::path scriptsDir = projRoot / "scripts";
+                std::filesystem::path absPath = scriptsDir / (name + ".as");
+
                 if (valid) {
-                    std::string scriptPath = "scripts/" + name + ".as";
-                    if (std::filesystem::exists(scriptPath)) {
-                        m_NewScriptNameError = "File already exists: " + scriptPath;
+                    if (std::filesystem::exists(absPath)) {
+                        m_NewScriptNameError = "File already exists: scripts/" + name + ".as";
                         valid = false;
                     }
                 }
 
                 if (valid) {
+                    // The attachment stores the project-relative path; the
+                    // script root (set at play) resolves it back to absolute.
                     std::string scriptPath = "scripts/" + name + ".as";
-                    // Create scripts/ directory if needed
                     std::error_code ec;
-                    std::filesystem::create_directories("scripts", ec);
+                    std::filesystem::create_directories(scriptsDir, ec);
+
+                    // Self-heal: make sure the project carries the enjin_api
+                    // script headers (TegeBehavior.as etc.) for #include
+                    // resolution — older projects were created without them.
+                    if (!std::filesystem::exists(scriptsDir / "enjin_api" / "TegeBehavior.as", ec)) {
+                        std::filesystem::path engineApi = Scripting::ScriptEngine::FindApiDirectory("");
+                        if (!engineApi.empty()) {
+                            std::filesystem::copy(engineApi, scriptsDir / "enjin_api",
+                                std::filesystem::copy_options::recursive |
+                                std::filesystem::copy_options::skip_existing, ec);
+                        }
+                    }
 
                     // Write boilerplate TegeBehavior script
-                    std::ofstream file(scriptPath);
+                    std::ofstream file(absPath);
                     if (file.is_open()) {
                         file << "class " << name << " : TegeBehavior {\n";
                         file << "    void OnCreate() {\n";
@@ -5833,10 +5856,10 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
                         attachment.className = name;
                         sc->scripts.push_back(std::move(attachment));
 
-                        ENJIN_LOG_INFO(Editor, "Created script: %s", scriptPath.c_str());
+                        ENJIN_LOG_INFO(Editor, "Created script: %s", absPath.string().c_str());
 
                         // Open in IDE
-                        OpenInExternalIDE(scriptPath);
+                        OpenInExternalIDE(absPath.string());
 
                         m_ShowCreateScriptPopup = false;
                         ImGui::CloseCurrentPopup();

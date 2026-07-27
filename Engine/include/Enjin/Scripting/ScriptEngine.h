@@ -52,6 +52,12 @@ public:
     void PollFileChanges();  // Call each frame (throttled internally)
     bool ProcessHotReload(); // Recompile changed modules, returns true if anything reloaded
 
+    // Locate the engine-provided enjin_api/ script headers (TegeBehavior.as
+    // etc.). Searches: <scriptDir>/enjin_api, ./enjin_api (exe dir), then a
+    // walk up from the CWD (dev tree: repo-root/enjin_api from build/bin/...).
+    // Returns empty path if not found. scriptDir may be empty.
+    static std::filesystem::path FindApiDirectory(const std::string& scriptDir);
+
     // Get the underlying AngelScript engine
     asIScriptEngine* GetASEngine() { return m_Engine; }
 
