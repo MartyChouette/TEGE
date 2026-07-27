@@ -3656,7 +3656,7 @@ void RenderSystem::FlushPendingChanges() {
     // sets m_PendingRecreation mid-frame, and the fallback flush destroyed the
     // main pipeline's descriptor pool while its sets were bound. Everything
     // here defers to the next pre-recording flush (editor main.cpp and
-    // SimpleApp both flush before any binds each frame).
+    // Enjin::App both flush before any binds each frame).
     if (m_SkipMainPassRendering) {
         return;
     }

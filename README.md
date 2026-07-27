@@ -94,14 +94,14 @@ A pre-built Windows installer is available -- no build tools required:
 2. Run the installer -- it sets up the editor, player, and file associations (`.enjinproject`, `.enjin`)
 3. Launch TEGE from the Start Menu or desktop shortcut
 
-### SimpleApp -- Minimal Rendering
+### Enjin::App -- Minimal Rendering
 
 For users who want Vulkan rendering without the full editor:
 
 ```cpp
-#include "Enjin/SimpleApp.h"
+#include "Enjin/App.h"
 
-class MyApp : public Enjin::SimpleApp {
+class MyApp : public Enjin::App {
     void OnStart() override {
         AddPlane({0, 0, 0}, 20.0f);
         AddCube({0, 0.5f, 0});
@@ -257,7 +257,7 @@ All dependencies use permissive open-source licenses.
 | `ENJIN_BUILD_EDITOR` | ON | Editor application |
 | `ENJIN_BUILD_PLAYER` | ON | Standalone game player |
 | `ENJIN_BUILD_TESTS` | OFF | Unit tests (output: `bin/Tests/`) |
-| `ENJIN_BUILD_EXAMPLES` | OFF | SimpleApp examples (output: `bin/Examples/`) |
+| `ENJIN_BUILD_EXAMPLES` | OFF | Enjin::App examples (output: `bin/Examples/`) |
 | `ENJIN_PHYSICS_JOLT` | ON | Jolt 5.2.0 (3D physics) |
 | `ENJIN_PHYSICS_BOX2D` | ON | Box2D 3.0.0 (2D physics) |
 | `ENJIN_CLUSTERED_LIGHTING` | ON | Clustered forward lighting |

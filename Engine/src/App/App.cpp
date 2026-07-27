@@ -1,4 +1,4 @@
-#include "Enjin/SimpleApp.h"
+#include "Enjin/App.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
@@ -93,13 +93,13 @@ static void GeneratePlaneMesh(ECS::MeshComponent& mesh, f32 size) {
     mesh.indices = {0, 1, 2, 0, 2, 3};
 }
 
-// ─── SimpleApp ──────────────────────────────────────────────────────────────
+// ─── App ──────────────────────────────────────────────────────────────
 
-SimpleApp::SimpleApp() = default;
-SimpleApp::~SimpleApp() = default;
+App::App() = default;
+App::~App() = default;
 
-void SimpleApp::Initialize() {
-    ENJIN_LOG_INFO(Game, "SimpleApp initializing...");
+void App::Initialize() {
+    ENJIN_LOG_INFO(Game, "App initializing...");
 
     // Renderer
     m_Renderer = std::make_unique<Renderer::VulkanRenderer>();
@@ -128,12 +128,12 @@ void SimpleApp::Initialize() {
     m_RenderSystem->SetCamera(m_Camera.get());
     m_RenderSystem->Initialize();
 
-    ENJIN_LOG_INFO(Game, "SimpleApp ready — calling OnStart()");
+    ENJIN_LOG_INFO(Game, "App ready — calling OnStart()");
     OnStart();
 }
 
-void SimpleApp::Shutdown() {
-    ENJIN_LOG_INFO(Game, "SimpleApp shutting down...");
+void App::Shutdown() {
+    ENJIN_LOG_INFO(Game, "App shutting down...");
     OnShutdown();
 
     if (m_RenderSystem) {
@@ -146,7 +146,7 @@ void SimpleApp::Shutdown() {
     m_Renderer.reset();
 }
 
-void SimpleApp::Update(f32 deltaTime) {
+void App::Update(f32 deltaTime) {
     m_LastDeltaTime = deltaTime;
 
     if (m_FlyCamEnabled && m_CameraController) {
@@ -166,7 +166,7 @@ void SimpleApp::Update(f32 deltaTime) {
     OnUpdate(deltaTime);
 }
 
-void SimpleApp::Render() {
+void App::Render() {
     if (!m_Renderer) return;
     if (!m_Renderer->BeginFrameVulkan()) return;
 
@@ -183,7 +183,7 @@ void SimpleApp::Render() {
 
 // ── Scene building ──
 
-ECS::Entity SimpleApp::LoadModel(const std::string& path, Math::Vector3 position, Math::Vector3 scale) {
+ECS::Entity App::LoadModel(const std::string& path, Math::Vector3 position, Math::Vector3 scale) {
     if (!m_World) return ECS::Entity(0);
 
     Assets::ImportOptions options;
@@ -208,7 +208,7 @@ ECS::Entity SimpleApp::LoadModel(const std::string& path, Math::Vector3 position
     return ECS::Entity(0);
 }
 
-ECS::Entity SimpleApp::AddCube(Math::Vector3 position, Math::Vector3 scale, Math::Vector3 color) {
+ECS::Entity App::AddCube(Math::Vector3 position, Math::Vector3 scale, Math::Vector3 color) {
     if (!m_World) return ECS::Entity(0);
 
     auto entity = m_World->CreateEntity();
@@ -232,7 +232,7 @@ ECS::Entity SimpleApp::AddCube(Math::Vector3 position, Math::Vector3 scale, Math
     return entity;
 }
 
-ECS::Entity SimpleApp::AddPlane(Math::Vector3 position, f32 size, Math::Vector3 color) {
+ECS::Entity App::AddPlane(Math::Vector3 position, f32 size, Math::Vector3 color) {
     if (!m_World) return ECS::Entity(0);
 
     auto entity = m_World->CreateEntity();
@@ -255,7 +255,7 @@ ECS::Entity SimpleApp::AddPlane(Math::Vector3 position, f32 size, Math::Vector3 
     return entity;
 }
 
-ECS::Entity SimpleApp::AddDirectionalLight(Math::Vector3 direction, Math::Vector3 color, f32 intensity) {
+ECS::Entity App::AddDirectionalLight(Math::Vector3 direction, Math::Vector3 color, f32 intensity) {
     if (!m_World) return ECS::Entity(0);
 
     auto entity = m_World->CreateEntity();
@@ -280,7 +280,7 @@ ECS::Entity SimpleApp::AddDirectionalLight(Math::Vector3 direction, Math::Vector
     return entity;
 }
 
-ECS::Entity SimpleApp::AddPointLight(Math::Vector3 position, Math::Vector3 color, f32 intensity, f32 range) {
+ECS::Entity App::AddPointLight(Math::Vector3 position, Math::Vector3 color, f32 intensity, f32 range) {
     if (!m_World) return ECS::Entity(0);
 
     auto entity = m_World->CreateEntity();
@@ -300,61 +300,61 @@ ECS::Entity SimpleApp::AddPointLight(Math::Vector3 position, Math::Vector3 color
     return entity;
 }
 
-void SimpleApp::SetCameraPosition(Math::Vector3 position) {
+void App::SetCameraPosition(Math::Vector3 position) {
     if (m_Camera) m_Camera->SetPosition(position);
 }
 
-void SimpleApp::SetCameraRotation(f32 yaw, f32 pitch) {
+void App::SetCameraRotation(f32 yaw, f32 pitch) {
     if (!m_Camera) return;
     // Convert yaw/pitch (degrees) to quaternion via Euler angles
     m_Camera->SetRotation(Math::Quaternion::FromEuler(Math::Vector3(pitch, yaw, 0.0f)));
 }
 
-void SimpleApp::EnableFlyCam(bool enable) {
+void App::EnableFlyCam(bool enable) {
     m_FlyCamEnabled = enable;
 }
 
-void SimpleApp::SetPosition(ECS::Entity entity, Math::Vector3 position) {
+void App::SetPosition(ECS::Entity entity, Math::Vector3 position) {
     if (!m_World) return;
     auto* t = m_World->GetComponent<ECS::TransformComponent>(entity);
     if (t) t->position = position;
 }
 
-void SimpleApp::SetRotation(ECS::Entity entity, Math::Quaternion rotation) {
+void App::SetRotation(ECS::Entity entity, Math::Quaternion rotation) {
     if (!m_World) return;
     auto* t = m_World->GetComponent<ECS::TransformComponent>(entity);
     if (t) t->rotation = rotation;
 }
 
-void SimpleApp::SetScale(ECS::Entity entity, Math::Vector3 scale) {
+void App::SetScale(ECS::Entity entity, Math::Vector3 scale) {
     if (!m_World) return;
     auto* t = m_World->GetComponent<ECS::TransformComponent>(entity);
     if (t) t->scale = scale;
 }
 
-void SimpleApp::SetColor(ECS::Entity entity, Math::Vector3 color) {
+void App::SetColor(ECS::Entity entity, Math::Vector3 color) {
     if (!m_World) return;
     auto* mat = m_World->GetComponent<ECS::MaterialComponent>(entity);
     if (mat) mat->baseColor = color;
 }
 
-void SimpleApp::SetVisible(ECS::Entity entity, bool visible) {
+void App::SetVisible(ECS::Entity entity, bool visible) {
     if (!m_World) return;
     auto* t = m_World->GetComponent<ECS::TransformComponent>(entity);
     if (t) t->visible = visible;
 }
 
-void SimpleApp::DestroyEntity(ECS::Entity entity) {
+void App::DestroyEntity(ECS::Entity entity) {
     if (m_World) m_World->DestroyEntity(entity);
 }
 
-// ─── SimpleApp2D ────────────────────────────────────────────────────────────
+// ─── App2D ────────────────────────────────────────────────────────────
 
-SimpleApp2D::SimpleApp2D() = default;
+App2D::App2D() = default;
 
-void SimpleApp2D::Initialize() {
+void App2D::Initialize() {
     // Initialize base (renderer, world, render system)
-    SimpleApp::Initialize();
+    App::Initialize();
 
     // Switch camera to orthographic for 2D
     if (m_Camera && m_Renderer) {
@@ -369,7 +369,7 @@ void SimpleApp2D::Initialize() {
     EnableFlyCam(false);
 }
 
-ECS::Entity SimpleApp2D::AddSprite(const std::string& texturePath, Math::Vector2 position, Math::Vector2 size) {
+ECS::Entity App2D::AddSprite(const std::string& texturePath, Math::Vector2 position, Math::Vector2 size) {
     if (!m_World) return ECS::Entity(0);
 
     auto entity = m_World->CreateEntity();
@@ -388,7 +388,7 @@ ECS::Entity SimpleApp2D::AddSprite(const std::string& texturePath, Math::Vector2
     return entity;
 }
 
-ECS::Entity SimpleApp2D::AddRect(Math::Vector2 position, Math::Vector2 size, Math::Vector3 color) {
+ECS::Entity App2D::AddRect(Math::Vector2 position, Math::Vector2 size, Math::Vector3 color) {
     if (!m_World) return ECS::Entity(0);
 
     auto entity = m_World->CreateEntity();
@@ -407,11 +407,11 @@ ECS::Entity SimpleApp2D::AddRect(Math::Vector2 position, Math::Vector2 size, Mat
     return entity;
 }
 
-void SimpleApp2D::SetPosition2D(ECS::Entity entity, Math::Vector2 position) {
+void App2D::SetPosition2D(ECS::Entity entity, Math::Vector2 position) {
     SetPosition(entity, Math::Vector3(position.x, position.y, 0.0f));
 }
 
-void SimpleApp2D::SetSize(ECS::Entity entity, Math::Vector2 size) {
+void App2D::SetSize(ECS::Entity entity, Math::Vector2 size) {
     SetScale(entity, Math::Vector3(size.x, size.y, 1.0f));
 }
 

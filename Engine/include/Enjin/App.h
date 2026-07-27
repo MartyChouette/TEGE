@@ -1,9 +1,9 @@
 #pragma once
 
-// SimpleApp — Quick-start facade for Enjin rendering
+// App — Quick-start facade for Enjin rendering
 //
 // Usage (3D):
-//   class MyApp : public Enjin::SimpleApp {
+//   class MyApp : public Enjin::App {
 //       void OnStart() override {
 //           LoadModel("scene.gltf");
 //           AddDirectionalLight({1, -1, -0.5f}, {1, 1, 0.95f}, 2.0f);
@@ -14,7 +14,7 @@
 //   ENJIN_SIMPLE_MAIN(MyApp)
 //
 // Usage (2D):
-//   class MyApp : public Enjin::SimpleApp2D {
+//   class MyApp : public Enjin::App2D {
 //       void OnStart() override {
 //           AddSprite("player.png", {400, 300});
 //       }
@@ -46,12 +46,12 @@ namespace ECS {
     class RenderSystem;
 }
 
-// ─── SimpleApp (3D) ─────────────────────────────────────────────────────────
+// ─── App (3D) ─────────────────────────────────────────────────────────
 
-class ENJIN_API SimpleApp : public Application {
+class ENJIN_API App : public Application {
 public:
-    SimpleApp();
-    virtual ~SimpleApp();
+    App();
+    virtual ~App();
 
     // Override these in your app
     virtual void OnStart() {}
@@ -123,11 +123,11 @@ protected:
     bool m_FlyCamEnabled = true;
 };
 
-// ─── SimpleApp2D ────────────────────────────────────────────────────────────
+// ─── App2D ────────────────────────────────────────────────────────────
 
-class ENJIN_API SimpleApp2D : public SimpleApp {
+class ENJIN_API App2D : public App {
 public:
-    SimpleApp2D();
+    App2D();
 
     // Override these in your app
     void OnStart() override {}
@@ -156,13 +156,29 @@ protected:
 
 } // namespace Enjin
 
-// Macro to create the entry point — use instead of writing main() yourself
+// Macro to create the entry point — use instead of writing main() yourself.
+// On Windows, App executables are GUI-subsystem (no console window), so the
+// macro must emit WinMain — emitting only main() left every Enjin::App
+// example unlinkable. void* parameters avoid dragging <Windows.h> into a
+// public header; entry-point names are not mangled, so the types don't
+// affect linking.
+#ifdef _WIN32
 #define ENJIN_SIMPLE_MAIN(AppClass) \
     Enjin::Application* CreateApplication() { return new AppClass(); } \
-    int main(int argc, char* argv[]) { \
-        (void)argc; (void)argv; \
-        auto* app = CreateApplication(); \
+    int __stdcall WinMain(void*, void*, char*, int) { \
+        Enjin::Application* app = CreateApplication(); \
         int result = app->Run(); \
         delete app; \
         return result; \
     }
+#else
+#define ENJIN_SIMPLE_MAIN(AppClass) \
+    Enjin::Application* CreateApplication() { return new AppClass(); } \
+    int main(int argc, char* argv[]) { \
+        (void)argc; (void)argv; \
+        Enjin::Application* app = CreateApplication(); \
+        int result = app->Run(); \
+        delete app; \
+        return result; \
+    }
+#endif

@@ -1,11 +1,11 @@
-// Simple3D — Minimal 3D scene using Enjin's SimpleApp
+// Simple3D — Minimal 3D scene using Enjin's App
 //
 // Creates a lit scene with a ground plane and some cubes.
 // Use RMB + WASD to fly around, scroll wheel to adjust speed.
 
-#include "Enjin/SimpleApp.h"
+#include "Enjin/App.h"
 
-class Simple3DApp : public Enjin::SimpleApp {
+class Simple3DApp : public Enjin::App {
 public:
     void OnStart() override {
         // Ground plane

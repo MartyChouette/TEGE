@@ -1,13 +1,13 @@
-// Simple2D — Minimal 2D scene using Enjin's SimpleApp2D
+// Simple2D — Minimal 2D scene using Enjin's App2D
 //
 // Creates a simple 2D scene with sprites and colored rectangles.
 // Coordinates are in pixels from bottom-left.
 
-#include "Enjin/SimpleApp.h"
+#include "Enjin/App.h"
 #include "Enjin/Platform/Input.h"
 #include <cmath>
 
-class Simple2DApp : public Enjin::SimpleApp2D {
+class Simple2DApp : public Enjin::App2D {
 public:
     void OnStart() override {
         // Background rectangles
