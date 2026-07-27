@@ -27,6 +27,11 @@ extern Enjin::Scripting::CoroutineScheduler* GetBindingsCoroutineScheduler();
 namespace Enjin {
 namespace Scripting {
 
+// Engine-embedded enjin_api script sources (EnjinApiEmbedded.cpp, generated
+// by _gen_api.py from enjin_api/*.as)
+const char* GetEmbeddedApiSource(const char* name);
+const char* GetEmbeddedTegeBehaviorSource();
+
 // ---------------------------------------------------------------------------
 // Constructor / Destructor
 // ---------------------------------------------------------------------------
@@ -240,19 +245,28 @@ bool ScriptEngine::CompileScript(const std::string& path)
         return false;
     }
 
-    // Auto-inject the TegeBehavior base class so beginner scripts don't need
-    // to know about #include. Skipped when the source mentions the file itself
-    // (explicit include) to avoid a duplicate class definition.
+    // Auto-inject the TegeBehavior base class so scripts don't need to know
+    // about #include. Skipped when the source mentions the file itself
+    // (explicit include) to avoid a duplicate class definition. A project's
+    // own scripts/enjin_api/TegeBehavior.as overrides the engine's embedded
+    // copy (modding / engine development); the embedded copy guarantees the
+    // base class can never be missing from a build or a fresh project.
     {
         std::ifstream srcFile(path);
         if (srcFile.is_open()) {
             std::string src((std::istreambuf_iterator<char>(srcFile)),
                              std::istreambuf_iterator<char>());
             if (src.find("TegeBehavior.as") == std::string::npos) {
+                bool injected = false;
                 std::filesystem::path apiDir = FindApiDirectory(m_ScriptDirectory);
                 if (!apiDir.empty()) {
                     std::string apiFile = (apiDir / "TegeBehavior.as").lexically_normal().string();
-                    builder.AddSectionFromFile(apiFile.c_str());
+                    injected = builder.AddSectionFromFile(apiFile.c_str()) >= 0;
+                }
+                if (!injected) {
+                    const char* embedded = GetEmbeddedTegeBehaviorSource();
+                    builder.AddSectionFromMemory("TegeBehavior.as", embedded,
+                                                 static_cast<unsigned int>(std::strlen(embedded)));
                 }
             }
         }
@@ -1283,6 +1297,21 @@ int ScriptEngine::IncludeCallback(const char* include,
             i32 r = builder->AddSectionFromFile(apiPathStr.c_str());
             if (r >= 0) {
                 ENJIN_LOG_INFO(Script, "Included '%s' (enjin_api directory)", apiPathStr.c_str());
+                return 0;
+            }
+        }
+    }
+
+    // Strategy 4: engine-embedded enjin_api sources (TegeBehavior, Timer,
+    // Tween, Math, StateMachine). Guarantees the standard API always resolves
+    // even when no enjin_api directory exists on disk.
+    {
+        const char* embedded = GetEmbeddedApiSource(include);
+        if (embedded != nullptr) {
+            i32 r = builder->AddSectionFromMemory(include, embedded,
+                        static_cast<unsigned int>(std::strlen(embedded)));
+            if (r >= 0) {
+                ENJIN_LOG_INFO(Script, "Included '%s' (engine-embedded)", include);
                 return 0;
             }
         }
