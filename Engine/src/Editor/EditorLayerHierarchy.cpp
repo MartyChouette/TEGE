@@ -254,10 +254,28 @@ void EditorLayer::DrawHierarchyPanel() {
         // Drop target for the empty area — unparent entities dropped here
         if (ImGui::BeginDragDropTarget()) {
             if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_REPARENT")) {
-                ECS::Entity droppedEntity = *(const ECS::Entity*)payload->Data;
-                ECS::Entity oldParent = ECS::GetParent(m_World, droppedEntity);
-                auto cmd = std::make_unique<ReparentEntityCommand>(m_World, droppedEntity, oldParent, ECS::INVALID_ENTITY);
-                m_UndoRedo.Execute(std::move(cmd));
+                const ECS::Entity* items = static_cast<const ECS::Entity*>(payload->Data);
+                usize count = static_cast<usize>(payload->DataSize) / sizeof(ECS::Entity);
+                std::unordered_set<ECS::Entity> draggedSet(items, items + count);
+                for (usize di = 0; di < count; ++di) {
+                    ECS::Entity droppedEntity = items[di];
+                    if (!m_World->IsValid(droppedEntity)) continue;
+                    // Keep dragged sub-hierarchies intact: only unparent the
+                    // topmost dragged member of each chain
+                    bool ancestorDragged = false;
+                    ECS::Entity up = ECS::GetParent(m_World, droppedEntity);
+                    u32 d2 = 0;
+                    while (up != ECS::INVALID_ENTITY && d2 < 1000) {
+                        if (draggedSet.count(up)) { ancestorDragged = true; break; }
+                        up = ECS::GetParent(m_World, up);
+                        ++d2;
+                    }
+                    if (ancestorDragged) continue;
+                    ECS::Entity oldParent = ECS::GetParent(m_World, droppedEntity);
+                    if (oldParent == ECS::INVALID_ENTITY) continue;
+                    auto cmd = std::make_unique<ReparentEntityCommand>(m_World, droppedEntity, oldParent, ECS::INVALID_ENTITY);
+                    m_UndoRedo.Execute(std::move(cmd));
+                }
             }
             ImGui::EndDragDropTarget();
         }
@@ -369,20 +387,55 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
     bool nodeClicked = ImGui::IsItemClicked();
     bool nodeHovered = ImGui::IsItemHovered();
 
-    // Drag source — start dragging this entity for reparenting
+    // Drag source — start dragging for reparenting. Dragging an entity that is
+    // part of the multi-selection drags the WHOLE selection; dragging an
+    // unselected entity drags just that one.
     // (Must be before eye icon, which overwrites ImGui's "last item")
     if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
-        ImGui::SetDragDropPayload("ENTITY_REPARENT", &entity, sizeof(ECS::Entity));
-        ImGui::Text("%s", name.c_str());
+        m_HierarchyDeferredCollapse = ECS::INVALID_ENTITY;  // drag started: never collapse
+        std::vector<ECS::Entity> dragged;
+        if (IsSelected(entity) && m_SelectedEntities.size() > 1) {
+            dragged.assign(m_SelectedEntities.begin(), m_SelectedEntities.end());
+        } else {
+            dragged.push_back(entity);
+        }
+        ImGui::SetDragDropPayload("ENTITY_REPARENT", dragged.data(),
+                                  dragged.size() * sizeof(ECS::Entity));
+        if (dragged.size() > 1) {
+            ImGui::Text("%d entities", static_cast<int>(dragged.size()));
+        } else {
+            ImGui::Text("%s", name.c_str());
+        }
         ImGui::EndDragDropSource();
     }
 
-    // Drop target — drop an entity onto this one to make it a child
+    // Drop target — drop one or more entities onto this one to make them children
     if (ImGui::BeginDragDropTarget()) {
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_REPARENT")) {
-            ECS::Entity droppedEntity = *(const ECS::Entity*)payload->Data;
-            // Prevent parenting to self or to own descendant
-            if (droppedEntity != entity) {
+            const ECS::Entity* items = static_cast<const ECS::Entity*>(payload->Data);
+            usize count = static_cast<usize>(payload->DataSize) / sizeof(ECS::Entity);
+            std::unordered_set<ECS::Entity> draggedSet(items, items + count);
+
+            for (usize di = 0; di < count; ++di) {
+                ECS::Entity droppedEntity = items[di];
+                if (droppedEntity == entity) continue;
+                if (!m_World->IsValid(droppedEntity)) continue;
+
+                // Skip entities whose ancestor is also being dragged — the
+                // sub-hierarchy moves as one piece via its topmost member
+                {
+                    bool ancestorDragged = false;
+                    ECS::Entity up = ECS::GetParent(m_World, droppedEntity);
+                    u32 d2 = 0;
+                    while (up != ECS::INVALID_ENTITY && d2 < 1000) {
+                        if (draggedSet.count(up)) { ancestorDragged = true; break; }
+                        up = ECS::GetParent(m_World, up);
+                        ++d2;
+                    }
+                    if (ancestorDragged) continue;
+                }
+
+                // Prevent parenting to self or to own descendant
                 bool isDescendant = false;
                 ECS::Entity check = entity;
                 u32 depth = 0;
@@ -420,6 +473,44 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
         }
         if (ImGui::MenuItem("Focus", "F")) {
             FocusOnEntity(entity);
+        }
+        // Group the multi-selection under a new empty entity. The group parent
+        // sits at the origin with identity transform, so nothing moves.
+        if (m_SelectedEntities.size() > 1 && IsSelected(entity)) {
+            char groupLabel[64];
+            snprintf(groupLabel, sizeof(groupLabel), "Group Selected (%d) into New Entity",
+                     static_cast<int>(m_SelectedEntities.size()));
+            if (ImGui::MenuItem(groupLabel)) {
+                ECS::Entity group = m_World->CreateEntity();
+                m_World->AddComponent<ECS::TransformComponent>(group);
+                ECS::NameComponent groupName;
+                groupName.name = "Group";
+                m_World->AddComponent<ECS::NameComponent>(group, groupName);
+                if (m_CollabSystem.IsActive()) {
+                    m_CollabSystem.OnEntityCreated(group,
+                        Scene::SceneSerializer::SerializeEntityToString(m_World, group));
+                }
+
+                // Reparent only the topmost selected member of each chain so
+                // dragged sub-hierarchies stay intact
+                std::vector<ECS::Entity> toGroup(m_SelectedEntities.begin(), m_SelectedEntities.end());
+                for (ECS::Entity sel : toGroup) {
+                    if (!m_World->IsValid(sel) || sel == group) continue;
+                    bool ancestorSelected = false;
+                    ECS::Entity up = ECS::GetParent(m_World, sel);
+                    u32 d2 = 0;
+                    while (up != ECS::INVALID_ENTITY && d2 < 1000) {
+                        if (m_SelectedEntities.count(up)) { ancestorSelected = true; break; }
+                        up = ECS::GetParent(m_World, up);
+                        ++d2;
+                    }
+                    if (ancestorSelected) continue;
+                    ECS::Entity oldParent = ECS::GetParent(m_World, sel);
+                    auto cmd = std::make_unique<ReparentEntityCommand>(m_World, sel, oldParent, group);
+                    m_UndoRedo.Execute(std::move(cmd));
+                }
+                SelectEntity(group);
+            }
         }
         // Unparent option if entity has a parent
         if (ECS::HasParent(m_World, entity)) {
@@ -520,9 +611,23 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
             }
         } else if (shiftHeld && m_PrimarySelected != ECS::INVALID_ENTITY) {
             SelectRange(m_PrimarySelected, entity);
+        } else if (IsSelected(entity) && m_SelectedEntities.size() > 1) {
+            // Plain click on an already-multi-selected entity: DON'T collapse
+            // the selection yet — the user may be starting a multi-drag.
+            // Collapse happens on mouse release if no drag began.
+            m_HierarchyDeferredCollapse = entity;
         } else {
             SelectEntity(entity);
         }
+    }
+
+    // Deferred collapse: mouse released over this entity without a drag having
+    // started -> the click really was a click, collapse selection to it.
+    if (m_HierarchyDeferredCollapse == entity && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        if (nodeHovered && ImGui::GetDragDropPayload() == nullptr) {
+            SelectEntity(entity);
+        }
+        m_HierarchyDeferredCollapse = ECS::INVALID_ENTITY;
     }
 
     // Double-click to focus camera on entity

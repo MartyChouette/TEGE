@@ -619,6 +619,11 @@ private:
     std::unordered_set<ECS::Entity> m_SelectedEntities;
     ECS::Entity m_PrimarySelected = ECS::INVALID_ENTITY;
 
+    // Hierarchy: clicking an already-multi-selected entity must not collapse
+    // the selection on mouse-down (that killed multi-drag) — the collapse is
+    // deferred to mouse-release, and skipped entirely if a drag started.
+    ECS::Entity m_HierarchyDeferredCollapse = ECS::INVALID_ENTITY;
+
     // Marquee (rubber-band) drag state
     bool m_MarqueeDragging = false;
     ImVec2 m_MarqueeStart = {0, 0};
