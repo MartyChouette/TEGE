@@ -31,6 +31,10 @@ private:
     bool PackAssets(const std::string& outputDir, const std::string& key);
     // Phase 3 (alt): Copy loose files to output directory (no packing)
     bool CopyLooseFiles(const std::string& outputDir);
+    // Phase 3.5 (pak mode): scripts + enjin_api + assets must also ship loose —
+    // the script engine reads from the filesystem (pak script loading is
+    // unimplemented) and script-referenced assets are invisible to scene scans
+    void EmitLooseRuntimeFiles(const std::string& outputDir);
     // Phase 4: Copy player executable to output
     bool CopyPlayer(const std::string& outputDir);
     // Phase 5: Write build manifest (window title, resolution) into pack

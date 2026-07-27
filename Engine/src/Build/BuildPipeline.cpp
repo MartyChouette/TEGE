@@ -99,6 +99,12 @@ BuildResult BuildPipeline::Execute(const BuildConfig& config) {
             AddMessage(MessageSeverity::Info, "Web export: " + htmlResult.outputPath);
         }
     } else {
+        // Scripts, the enjin_api headers, and script-referenced assets must
+        // ship as loose files: the pack DOES contain the scripts, but the
+        // script engine only reads from the filesystem (pak-side script
+        // loading is unimplemented), and assets referenced from script code
+        // (Audio_PlayAtPosition paths etc.) are invisible to scene scanning.
+        EmitLooseRuntimeFiles(config.outputDir);
         if (!CopyPlayer(config.outputDir)) {
             // Non-fatal: warn but continue (user may not have built the player)
             AddMessage(MessageSeverity::Warning, "Player executable not found. Build the player target (EnjinPlayer) separately.");
@@ -538,6 +544,49 @@ bool BuildPipeline::PackAssets(const std::string& outputDir, const std::string& 
 
     AddMessage(MessageSeverity::Info, "Packed " + std::to_string(m_Result.filesPacked) + " files to " + pakPath);
     return true;
+}
+
+void BuildPipeline::EmitLooseRuntimeFiles(const std::string& outputDir) {
+    std::error_code ec;
+    u32 copied = 0;
+
+    auto copyRel = [&](const std::string& absPath) {
+        auto rel = fs::relative(fs::path(absPath), fs::path(m_ProjectDir), ec);
+        if (ec || rel.empty()) return;
+        fs::path dest = fs::path(outputDir) / rel;
+        fs::create_directories(dest.parent_path(), ec);
+        if (fs::copy_file(absPath, dest, fs::copy_options::overwrite_existing, ec)) {
+            ++copied;
+        }
+    };
+
+    // Scene-referenced scripts
+    for (const auto& path : m_ScriptPaths) {
+        copyRel(path);
+    }
+
+    // enjin_api script headers (TegeBehavior.as etc. — needed for #include
+    // resolution and the auto-injected base class)
+    fs::path apiDir = fs::path(m_ProjectDir) / "scripts" / "enjin_api";
+    if (fs::exists(apiDir, ec)) {
+        fs::create_directories(fs::path(outputDir) / "scripts" / "enjin_api", ec);
+        fs::copy(apiDir, fs::path(outputDir) / "scripts" / "enjin_api",
+                 fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+        ++copied;
+    }
+
+    // The whole assets/ directory: script-referenced files (audio one-shots,
+    // UI images set at runtime) can't be discovered by scene scanning
+    fs::path assetsDir = fs::path(m_ProjectDir) / "assets";
+    if (fs::exists(assetsDir, ec)) {
+        fs::create_directories(fs::path(outputDir) / "assets", ec);
+        fs::copy(assetsDir, fs::path(outputDir) / "assets",
+                 fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+        ++copied;
+    }
+
+    AddMessage(MessageSeverity::Info,
+               "Emitted loose runtime files (scripts + enjin_api + assets) to " + outputDir);
 }
 
 bool BuildPipeline::CopyPlayer(const std::string& outputDir) {
