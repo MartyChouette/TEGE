@@ -357,15 +357,20 @@ public:
                 (int)gfx.vsync, (int)gfx.fullscreen, gfx.fieldOfView, (int)gfx.shadows, (int)gfx.bloom, (int)gfx.fxaa);
         });
 
-        // Initialize scripting engine
+        // Initialize scripting engine. Anchor all roots to the exe directory —
+        // the CWD is whatever launched us (shortcuts, double-click from another
+        // folder), and everything the build emits sits next to the exe.
+        std::string gameRoot = Enjin::Platform::GetExecutableDirectory();
         if (m_ScriptEngine.Initialize()) {
             Enjin::Scripting::RegisterAllBindings(m_ScriptEngine.GetASEngine());
             m_ScriptEngine.SetWorld(m_World.get());
-            m_ScriptEngine.SetScriptDirectory("scripts");
+            m_ScriptEngine.SetScriptDirectory(
+                (std::filesystem::path(gameRoot) / "scripts").string());
 
             m_ScriptSystem.SetWorld(m_World.get());
             m_ScriptSystem.SetScriptEngine(&m_ScriptEngine);
             m_ScriptSystem.SetCoroutineScheduler(&m_CoroutineScheduler);
+            m_ScriptSystem.SetScriptRoot(gameRoot);
 
             m_CoroutineScheduler.SetEngine(m_ScriptEngine.GetASEngine());
             m_ScriptEventBus.SetScriptEngine(&m_ScriptEngine);
@@ -412,6 +417,7 @@ public:
         // Initialize systems needed for script bindings
         m_SimpleAudio.Initialize();
         m_SimpleAudio.SetWorld(m_World.get());
+        m_SimpleAudio.SetAssetRoot(gameRoot);
         m_WeatherSystem.Initialize();
         m_ElementalSystem.Initialize(&m_WindSystem, &m_WeatherSystem, &m_SeasonalWeather);
         m_FireLights.reserve(Enjin::Effects::ElementalSystem::MAX_FIRE_LIGHTS);
@@ -1156,6 +1162,9 @@ public:
                         Enjin::Math::Vector3 up = camTransform->rotation.GetUp();
                         m_Camera->SetLookAt(camTransform->position,
                                             camTransform->position + forward, up);
+                        // 3D audio listener follows the camera (without this,
+                        // all positional sound pans relative to world origin)
+                        m_SimpleAudio.SetListenerPosition(camTransform->position, forward, up);
                     }
                 }
             }
@@ -1607,6 +1616,20 @@ private:
                 ENJIN_LOG_WARN(Player, "PostProcessing init failed");
                 m_PostProcessing.reset();
             }
+        }
+        // React to swapchain recreation (fullscreen toggle, resolution change,
+        // window resize): post-processing holds targets and descriptors sized
+        // and bound against the old swapchain. Without this rebind, the first
+        // frame after a fullscreen switch sampled destroyed images — instant
+        // driver crash from the options menu. The callback fires inside
+        // OnWindowResize, after WaitForAllFrames and outside recording.
+        if (m_PostProcessing) {
+            m_Renderer->AddResizeCallback([this](Enjin::u32 w, Enjin::u32 h) {
+                if (m_PostProcessing && m_Renderer) {
+                    m_PostProcessing->OnResize(w, h);
+                    m_PostProcessing->UpdateRenderPass(m_Renderer->GetRenderPass());
+                }
+            });
         }
         Enjin::Scripting::SetBindingsPostProcessing(m_PostProcessing.get());
         Enjin::Scripting::SetBindingsPhysics2D(m_Physics2D.get());
