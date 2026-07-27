@@ -716,7 +716,13 @@ private:
     void CreatePipeline();
 
 #if !ENJIN_RENDERER_WEBGPU
-    void RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer);
+    // poolBound tracks whether the merged geometry pool's VB/IB are bound in
+    // THIS command buffer. Must be per-command-buffer state: the parallel
+    // shadow path records into per-thread secondaries, and the old shared
+    // member flag meant threads skipped the bind after another thread's
+    // secondary bound it (indexed draws with no index buffer = driver crash
+    // the moment a scene crossed the 32-shadow-caster parallel threshold).
+    void RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer, bool& poolBound);
     void RenderEntityGhost(Entity entity, const Math::Matrix4& modelMatrix,
                            const Math::Vector3& tint, f32 opacity,
                            const std::vector<Math::Matrix4>* skinningMatrices = nullptr);

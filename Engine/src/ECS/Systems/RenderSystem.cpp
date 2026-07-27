@@ -3661,6 +3661,14 @@ void RenderSystem::FlushPendingChanges() {
         return;
     }
 
+    // Reset per-thread secondary command pools for this frame. Safe here and
+    // ONLY here: this code runs pre-recording (the mid-frame guard above
+    // returns before it in the editor's fallback flush). Resetting after
+    // secondaries were executed into the current primary invalidates it.
+    if (m_CmdBufferPool && m_VulkanRenderer) {
+        m_CmdBufferPool->ResetFrame(m_VulkanRenderer->GetCurrentFrameIndex());
+    }
+
     // Flush deferred scene clear (set by OnSceneClear mid-frame)
     if (m_SceneClearPending) {
         m_SceneClearPending = false;
@@ -3773,10 +3781,13 @@ void RenderSystem::Update(f32 deltaTime) {
         m_LightListDirty = false;
     }
 
-    // Reset per-thread command buffer pools for this frame
-    if (m_CmdBufferPool) {
-        m_CmdBufferPool->ResetFrame(m_VulkanRenderer->GetCurrentFrameIndex());
-    }
+    // NOTE: the per-thread secondary command pool reset used to live here, but
+    // in the editor Update() runs AFTER RenderOffscreen has recorded secondaries
+    // and referenced them in the primary via vkCmdExecuteCommands — resetting
+    // the pools mid-frame re-records those secondaries and invalidates the
+    // primary (instant driver crash the moment a scene crossed the 32-shadow-
+    // caster parallel threshold). The reset now lives in FlushPendingChanges,
+    // which only executes at the pre-recording flush points in both loops.
 
     // Poll texture and shader file watchers every 5 seconds (time-based, not frame-count).
     m_WatcherPollTimer += deltaTime;
@@ -9747,8 +9758,14 @@ void RenderSystem::RenderShadowPass() {
         // Bind shadow pipeline (only for inline mode — parallel mode binds per-thread)
         if (!parallelShadow) m_ShadowPipeline->Bind(commandBuffer);
 
-        // Bind descriptor set (pipeline layout requires it even though shadow shader doesn't use material)
-        {
+        // Bind descriptor set (pipeline layout requires it even though shadow shader
+        // doesn't use material). INLINE MODE ONLY: when the pass was begun with
+        // SECONDARY_COMMAND_BUFFERS contents, the only legal command on the primary
+        // is vkCmdExecuteCommands — this bind recorded into the primary invalidated
+        // the command buffer and crashed the driver the moment a scene crossed the
+        // 32-shadow-caster parallel threshold. Parallel mode binds inside each
+        // secondary instead (state does not inherit from the primary anyway).
+        if (!parallelShadow) {
             u32 zeroOff = 0;
             vkCmdBindDescriptorSets(
                 commandBuffer,
@@ -9768,6 +9785,13 @@ void RenderSystem::RenderShadowPass() {
             u32 threadCount = m_ThreadPool.GetThreadCount();
             u32 chunkSize = (casterCount + threadCount - 1) / threadCount;
             u32 frameIdx = m_VulkanRenderer->GetCurrentFrameIndex();
+
+            // Pre-warm render data on the main thread — GetOrCreateRenderData
+            // creates GPU buffers and mutates the map, which is not safe from
+            // the worker threads recording the secondaries.
+            for (u32 i = 0; i < casterCount; ++i) {
+                GetOrCreateRenderData(m_ShadowCasters[i]);
+            }
 
             std::vector<std::future<void>> futures;
             std::vector<VkCommandBuffer> secondaryBuffers(threadCount, VK_NULL_HANDLE);
@@ -9798,11 +9822,24 @@ void RenderSystem::RenderShadowPass() {
                     // state set on the primary does not carry into executed secondaries.
                     m_ShadowMap->ApplyCascadeViewportScissor(secCmd);
                     m_ShadowPipeline->Bind(secCmd);
+                    // Descriptor set too — layout compatibility for the draw, and
+                    // primary-recorded binds never inherit into secondaries.
+                    {
+                        u32 zeroOff = 0;
+                        vkCmdBindDescriptorSets(
+                            secCmd,
+                            VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            m_ShadowPipeline->GetLayout(),
+                            0, 1, &m_DescriptorSets[frameIdx],
+                            1, &zeroOff
+                        );
+                    }
+                    bool secPoolBound = false;   // per-secondary bind state
                     for (u32 i = start; i < end; ++i) {
                         Entity entity = m_ShadowCasters[i];
                         auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                         if (xform && !xform->visible) continue;
-                        RenderEntityShadow(entity, secCmd);
+                        RenderEntityShadow(entity, secCmd, secPoolBound);
                     }
 
                     vkEndCommandBuffer(secCmd);
@@ -9830,7 +9867,7 @@ void RenderSystem::RenderShadowPass() {
                 Entity entity = m_ShadowCasters[si];
                 auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                 if (xform && !xform->visible) continue;
-                RenderEntityShadow(entity, commandBuffer);
+                RenderEntityShadow(entity, commandBuffer, m_GeometryPoolBound);
             }
         }
 
@@ -9904,7 +9941,7 @@ void RenderSystem::RenderShadowPassForCamera(Renderer::Camera* camera) {
     m_Camera = prevCamera;
 }
 
-void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer) {
+void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer, bool& poolBound) {
     TransformComponent* transform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
     MeshComponent* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
 
@@ -9955,9 +9992,11 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
     vkCmdPushConstants(commandBuffer, m_ShadowPipeline->GetLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::PushConstants), &pushConstants);
 
-    // Bind and draw — pool-allocated entities use merged buffer with offsets
+    // Bind and draw — pool-allocated entities use merged buffer with offsets.
+    // poolBound is per-command-buffer state supplied by the caller (never a
+    // shared member: secondaries on worker threads each need their own bind).
     if (renderData.poolAlloc.valid && m_GeometryPool) {
-        if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
+        if (!poolBound) { m_GeometryPool->BindBuffers(commandBuffer); poolBound = true; }
         vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
                          renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
     } else if (renderData.vertexBuffer && renderData.indexBuffer) {
@@ -9968,7 +10007,7 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
-        m_GeometryPoolBound = false;
+        poolBound = false;
     }
 }
 
@@ -10095,7 +10134,7 @@ void RenderSystem::RenderPointShadowPass() {
             for (Entity entity : m_ShadowCasters) {
                 auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                 if (xform && !xform->visible) continue;
-                RenderEntityShadow(entity, commandBuffer);
+                RenderEntityShadow(entity, commandBuffer, m_GeometryPoolBound);
             }
 
             m_PointShadowMap->EndFacePass(commandBuffer);
@@ -10131,7 +10170,7 @@ void RenderSystem::RenderSpotShadowPass() {
         for (Entity entity : m_ShadowCasters) {
             auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
             if (xform && !xform->visible) continue;
-            RenderEntityShadow(entity, commandBuffer);
+            RenderEntityShadow(entity, commandBuffer, m_GeometryPoolBound);
         }
 
         m_SpotShadowMap->EndPass(commandBuffer);
