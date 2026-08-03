@@ -1649,9 +1649,10 @@ private:
         auto ppExtent = m_Renderer->GetSwapchainExtent();
         m_PostProcessing = std::make_unique<Enjin::Renderer::PostProcessing>();
         if (m_Renderer && m_Renderer->GetContext()) {
+            // Swapchain MRT pass (color + velocity) — blend state needs 2 attachments (VUID-07609)
             if (!m_PostProcessing->Initialize(m_Renderer->GetContext(),
                     m_Renderer->GetRenderPass(),
-                    ppExtent.width, ppExtent.height, m_Renderer.get())) {
+                    ppExtent.width, ppExtent.height, m_Renderer.get(), 2)) {
                 ENJIN_LOG_WARN(Player, "PostProcessing init failed");
                 m_PostProcessing.reset();
             }
@@ -1666,7 +1667,7 @@ private:
             m_Renderer->AddResizeCallback([this](Enjin::u32 w, Enjin::u32 h) {
                 if (m_PostProcessing && m_Renderer) {
                     m_PostProcessing->OnResize(w, h);
-                    m_PostProcessing->UpdateRenderPass(m_Renderer->GetRenderPass());
+                    m_PostProcessing->UpdateRenderPass(m_Renderer->GetRenderPass(), 2);
                 }
             });
         }

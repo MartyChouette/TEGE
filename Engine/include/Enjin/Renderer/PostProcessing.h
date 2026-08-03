@@ -362,8 +362,10 @@ public:
     ~PostProcessing();
 
     // Initialize/Shutdown
+    // colorAttachmentCount must match renderPass's subpass (VUID-07609): 1 for the
+    // editor's offscreen PP pass, 2 for the player's swapchain MRT pass (color+velocity).
     bool Initialize(VulkanContext* context, VkRenderPass renderPass, u32 width, u32 height,
-                     VulkanRenderer* renderer = nullptr);
+                     VulkanRenderer* renderer = nullptr, u32 colorAttachmentCount = 1);
     void Shutdown();
 
     // Resize handling
@@ -378,7 +380,7 @@ public:
 
     // Update the source image that post-processing reads from (rebinds descriptor set binding 0)
     void UpdateSourceImage(VkImageView imageView, VkSampler sampler);
-    void UpdateRenderPass(VkRenderPass newPass);
+    void UpdateRenderPass(VkRenderPass newPass, u32 colorAttachmentCount = 1);
 
     // Settings
     PostProcessSettings& GetSettings() { return m_Settings; }
@@ -523,6 +525,7 @@ private:
 
     u32 m_Width = 0;
     u32 m_Height = 0;
+    u32 m_ColorAttachmentCount = 1;  // Blend states in m_Pipeline; must match m_RenderPass (VUID-07609)
     bool m_Initialized = false;
     bool m_DepthSourceReady = false;  // True after UpdateDepthSource() provides valid depth
     VkImageView m_LastDepthView = VK_NULL_HANDLE;  // Skip redundant binding-3 writes (avoids updating an in-flight set)

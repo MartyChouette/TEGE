@@ -52,6 +52,7 @@ These are hard-won lessons. Violating any of these will cause bugs.
 - **WebGPU depth-only pass:** `Depth32Float`, no stencil — stencil ops MUST be `Undefined`. Shadow pipeline has no fragment shader
 - **WebGPU tangent fallback:** PBR shader checks `dot(tangent,tangent) > 0.001` — without this, `normalize(vec3(0))` produces NaN and kills all lighting
 - **`MaterialGPU` = 112 bytes** — struct alignment matters for SSBO offsets (guarded by `static_assert` in TestMaterial). Was 80 before the SSS block + bindless texture indices were added; keep this in sync with the shader SSBO struct + ShaderData.h
+- **Any pipeline used in the swapchain main pass needs a 2-attachment blend state** (MRT color + velocity, VUID-07609) — extra attachment gets `colorWriteMask = 0`. `third_party/imgui` is an untracked NESTED git clone: the backend's MRT patch lives only there; re-apply `third_party/patches/imgui-mrt-colorattachmentcount.patch` after any imgui update (ImGuiLayer guards the field behind `IMGUI_IMPL_VULKAN_HAS_COLOR_ATTACHMENT_COUNT`)
 
 ### Shaders (CRITICAL)
 - After ANY change to `LightingUBO`, `UniformBufferObject`, `MaterialGPU`, or other UBO/SSBO structs: **recompile ALL affected shaders AND regenerate `ShaderData.h`**. Stale SPIR-V = GPU reading wrong offsets (dark scenes, wrong colors, crashes)

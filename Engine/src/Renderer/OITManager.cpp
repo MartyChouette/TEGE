@@ -778,10 +778,20 @@ bool OITManager::CreateCompositePipeline(VkRenderPass opaqueRenderPass) {
     colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
+    // opaqueRenderPass is the swapchain MRT pass (color + velocity), so the blend
+    // state must cover both attachments (VUID-07609). The composite shader only
+    // writes location 0; the velocity attachment gets colorWriteMask = 0 so it's
+    // left untouched.
+    VkPipelineColorBlendAttachmentState velocityBlendAttachment{};
+    velocityBlendAttachment.colorWriteMask = 0;
+
+    std::array<VkPipelineColorBlendAttachmentState, 2> blendAttachments = {
+        colorBlendAttachment, velocityBlendAttachment };
+
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+    colorBlending.attachmentCount = static_cast<u32>(blendAttachments.size());
+    colorBlending.pAttachments = blendAttachments.data();
 
     // No depth testing for composite fullscreen pass
     VkPipelineDepthStencilStateCreateInfo depthStencil{};

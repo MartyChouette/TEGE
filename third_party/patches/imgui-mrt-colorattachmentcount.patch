@@ -1,0 +1,63 @@
+[Enjin patch] imgui_impl_vulkan: ColorAttachmentCount for MRT render passes
+============================================================================
+The engine's swapchain render pass is MRT (color + velocity), but the stock
+imgui Vulkan backend hardcodes a 1-attachment blend state, which is illegal
+against a 2-attachment subpass (VUID-VkGraphicsPipelineCreateInfo-renderPass-07609).
+
+This patch adds ImGui_ImplVulkan_PipelineInfo::ColorAttachmentCount (default 1,
+extra attachments get colorWriteMask=0) plus the feature macro
+IMGUI_IMPL_VULKAN_HAS_COLOR_ATTACHMENT_COUNT. ImGuiLayer.cpp only uses the field
+behind that macro, so a stock backend still compiles (but re-emits the error).
+
+third_party/imgui is an untracked nested git clone, so this patch is the only
+versioned copy. Re-apply after updating/re-cloning imgui:
+
+    git -C third_party/imgui apply ../patches/imgui-mrt-colorattachmentcount.patch
+diff --git a/backends/imgui_impl_vulkan.cpp b/backends/imgui_impl_vulkan.cpp
+index 1d61e01f1..76db8523a 100644
+--- a/backends/imgui_impl_vulkan.cpp
++++ b/backends/imgui_impl_vulkan.cpp
+@@ -1023,7 +1023,13 @@ static VkPipeline ImGui_ImplVulkan_CreatePipeline(VkDevice device, const VkAlloc
+     ms_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+     ms_info.rasterizationSamples = (info->MSAASamples != 0) ? info->MSAASamples : VK_SAMPLE_COUNT_1_BIT;
+ 
+-    VkPipelineColorBlendAttachmentState color_attachment[1] = {};
++    // [Enjin patch] One blend state per color attachment so the pipeline is legal
++    // against MRT render passes (VUID-07609). Attachment 0 keeps ImGui's normal
++    // alpha blend; attachments 1..N-1 stay zero-initialized (colorWriteMask = 0)
++    // so extra targets (e.g. the engine's velocity buffer) are left untouched.
++    uint32_t color_attachment_count = (info->ColorAttachmentCount > 0) ? info->ColorAttachmentCount : 1;
++    IM_ASSERT(color_attachment_count <= 8 && "ColorAttachmentCount above supported maximum");
++    VkPipelineColorBlendAttachmentState color_attachment[8] = {};
+     color_attachment[0].blendEnable = VK_TRUE;
+     color_attachment[0].srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+     color_attachment[0].dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+@@ -1038,7 +1044,7 @@ static VkPipeline ImGui_ImplVulkan_CreatePipeline(VkDevice device, const VkAlloc
+ 
+     VkPipelineColorBlendStateCreateInfo blend_info = {};
+     blend_info.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+-    blend_info.attachmentCount = 1;
++    blend_info.attachmentCount = color_attachment_count;
+     blend_info.pAttachments = color_attachment;
+ 
+     ImVector<VkDynamicState> dynamic_states = info->ExtraDynamicStates;
+diff --git a/backends/imgui_impl_vulkan.h b/backends/imgui_impl_vulkan.h
+index 503643130..562e3c0b0 100644
+--- a/backends/imgui_impl_vulkan.h
++++ b/backends/imgui_impl_vulkan.h
+@@ -82,10 +82,15 @@
+ #define IMGUI_IMPL_VULKAN_MINIMUM_IMAGE_SAMPLER_POOL_SIZE   (8)     // Minimum per atlas
+ 
+ // Specify settings to create pipeline and swapchain
++// [Enjin patch] Signals ColorAttachmentCount support so engine code can compile
++// against a stock (unpatched) imgui backend too.
++#define IMGUI_IMPL_VULKAN_HAS_COLOR_ATTACHMENT_COUNT 1
++
+ struct ImGui_ImplVulkan_PipelineInfo
+ {
+     // For Main viewport only
+     VkRenderPass                    RenderPass;                     // Ignored if using dynamic rendering
++    uint32_t                        ColorAttachmentCount = 1;       // [Enjin patch] Must match RenderPass's subpass colorAttachmentCount (VUID-07609). ImGui writes attachment 0 only; extras get colorWriteMask=0.
+ 
+     // For Main and Secondary viewports
+     uint32_t                        Subpass;                        //

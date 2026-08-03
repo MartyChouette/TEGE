@@ -130,6 +130,12 @@ bool ImGuiLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer,
     initInfo.PipelineInfoMain.RenderPass = renderer->GetRenderPass();
     initInfo.PipelineInfoMain.Subpass = 0;
     initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+#ifdef IMGUI_IMPL_VULKAN_HAS_COLOR_ATTACHMENT_COUNT
+    // Patched backend (see [Enjin patch] in imgui_impl_vulkan.h): blend state must
+    // cover the swapchain MRT pass's two attachments (color + velocity, VUID-07609).
+    // A stock backend compiles but re-introduces the validation error.
+    initInfo.PipelineInfoMain.ColorAttachmentCount = 2;
+#endif
 
     if (!ImGui_ImplVulkan_Init(&initInfo)) {
         ENJIN_LOG_ERROR(Editor, "Failed to initialize ImGui Vulkan backend");
@@ -311,6 +317,9 @@ void ImGuiLayer::UpdateRenderPass(VkRenderPass renderPass, VkSampleCountFlagBits
     pipelineInfo.RenderPass = renderPass;
     pipelineInfo.Subpass = 0;
     pipelineInfo.MSAASamples = msaaSamples;
+#ifdef IMGUI_IMPL_VULKAN_HAS_COLOR_ATTACHMENT_COUNT
+    pipelineInfo.ColorAttachmentCount = 2;  // Swapchain MRT: color + velocity (VUID-07609)
+#endif
     ImGui_ImplVulkan_CreateMainPipeline(&pipelineInfo);
 
     ENJIN_LOG_INFO(Editor, "ImGui pipeline recreated for MSAA %dx", static_cast<int>(msaaSamples));

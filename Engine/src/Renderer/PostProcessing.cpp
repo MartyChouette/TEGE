@@ -4422,7 +4422,7 @@ PostProcessing::~PostProcessing() {
 }
 
 bool PostProcessing::Initialize(VulkanContext* context, VkRenderPass renderPass, u32 width, u32 height,
-                                VulkanRenderer* renderer) {
+                                VulkanRenderer* renderer, u32 colorAttachmentCount) {
     if (m_Initialized) {
         return true;
     }
@@ -4430,6 +4430,7 @@ bool PostProcessing::Initialize(VulkanContext* context, VkRenderPass renderPass,
     m_Context = context;
     m_Renderer = renderer;
     m_RenderPass = renderPass;
+    m_ColorAttachmentCount = (colorAttachmentCount > 0) ? colorAttachmentCount : 1;
     m_Width = width;
     m_Height = height;
     m_Settings.screenWidth = width;
@@ -4763,11 +4764,12 @@ void PostProcessing::UpdateSourceImage(VkImageView imageView, VkSampler sampler)
     m_LastDepthView = VK_NULL_HANDLE;  // Set was rewritten; force next UpdateDepthSource to re-bind real depth
 }
 
-void PostProcessing::UpdateRenderPass(VkRenderPass newPass) {
+void PostProcessing::UpdateRenderPass(VkRenderPass newPass, u32 colorAttachmentCount) {
     if (!m_Initialized || !m_Context || newPass == VK_NULL_HANDLE) return;
-    if (newPass == m_RenderPass) return;
+    if (newPass == m_RenderPass && colorAttachmentCount == m_ColorAttachmentCount) return;
 
     m_RenderPass = newPass;
+    m_ColorAttachmentCount = (colorAttachmentCount > 0) ? colorAttachmentCount : 1;
 
     // Recreate the pipeline against the new render pass
     VkDevice device = m_Context->GetDevice();
@@ -5239,15 +5241,21 @@ bool PostProcessing::CreatePipeline() {
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
+    // Blend states must match the render pass's colorAttachmentCount (VUID-07609):
+    // 1 for the editor's offscreen PP pass, 2 when compositing into the player's
+    // swapchain MRT pass. The shader writes location 0 only; extra attachments
+    // (velocity) get colorWriteMask = 0 so they're left untouched.
+    VkPipelineColorBlendAttachmentState blendAttachments[2] = {};
+    blendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    blendAttachments[0].blendEnable = VK_FALSE;
+
+    u32 blendCount = (m_ColorAttachmentCount <= 2) ? m_ColorAttachmentCount : 2;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+    colorBlending.attachmentCount = blendCount;
+    colorBlending.pAttachments = blendAttachments;
 
     // No depth testing for post-process
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
