@@ -54,9 +54,9 @@ bool VulkanShader::CompileFromGLSL(const std::string& source, VkShaderStageFlagB
     return LoadFromSPIRV(reinterpret_cast<const u8*>(spirv.data()), spirv.size() * sizeof(u32));
 }
 
-bool VulkanShader::LoadFromFile(const std::string& filepath) {
+bool VulkanShader::LoadFromFile(const std::string& filepath, bool logMissing) {
     std::vector<u32> spirv;
-    if (!ShaderCompiler::LoadSPIRV(filepath, spirv)) {
+    if (!ShaderCompiler::LoadSPIRV(filepath, spirv, logMissing)) {
         return false;
     }
 
@@ -194,10 +194,14 @@ bool CompileGLSL(const std::string& source, VkShaderStageFlagBits stage, std::ve
     return true;
 }
 
-bool LoadSPIRV(const std::string& filepath, std::vector<u32>& spirv) {
+bool LoadSPIRV(const std::string& filepath, std::vector<u32>& spirv, bool logMissing) {
     std::ifstream file(filepath, std::ios::ate | std::ios::binary);
     if (!file.is_open()) {
-        ENJIN_LOG_ERROR(Renderer, "Failed to open SPIR-V file: %s", filepath.c_str());
+        // Not-found is a soft failure during fallback path searches; only the
+        // caller knows if that's fatal, so it can silence this per-attempt log.
+        if (logMissing) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to open SPIR-V file: %s", filepath.c_str());
+        }
         return false;
     }
 

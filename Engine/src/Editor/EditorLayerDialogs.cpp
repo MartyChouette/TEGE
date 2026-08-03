@@ -2019,6 +2019,12 @@ void EditorLayer::PushConsoleMessage(LogLevel level, LogCategory category, const
 void EditorLayer::CheckForCrashReport() {
     if (Debug::HasPreviousCrashReport()) {
         m_PreviousCrashReport = Debug::ReadPreviousCrashReport();
+        // Consume the crash file NOW that it's in memory. It used to be cleared
+        // only when the user dismissed the dialog, so closing the editor with the
+        // dialog still up left the file behind and re-fired this warning (and
+        // re-spammed the Discord webhook) on every subsequent launch. The dialog
+        // and auto-submit below both work from the in-memory copy.
+        Debug::ClearPreviousCrashReport();
         if (!m_PreviousCrashReport.empty()) {
             ENJIN_LOG_WARN(Editor, "Previous session crashed — auto-submitting report and showing dialog.");
 
@@ -2044,7 +2050,7 @@ void EditorLayer::CheckForCrashReport() {
             // Show the dialog so the user can also review, add context, or submit to GitHub
             m_ShowCrashDialog = true;
         }
-        // Don't clear yet — dialog will clear on dismiss
+        // File already cleared above; the dialog's Clear calls are now no-ops.
     }
 }
 

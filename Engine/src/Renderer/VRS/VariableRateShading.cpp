@@ -287,7 +287,7 @@ bool VariableRateShading::CreateComputePipeline() {
     };
     bool loaded = false;
     for (const char* path : shaderPaths) {
-        if (shader.LoadFromFile(path) && shader.GetModule() != VK_NULL_HANDLE) {
+        if (shader.LoadFromFile(path, false) && shader.GetModule() != VK_NULL_HANDLE) {
             loaded = true;
             break;
         }

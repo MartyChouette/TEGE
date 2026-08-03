@@ -275,7 +275,7 @@ bool DeviceGeneratedCommands::CreateComputePipeline() {
 
     bool loaded = false;
     for (const char* path : shaderPaths) {
-        if (computeShader.LoadFromFile(path) && computeShader.GetModule() != VK_NULL_HANDLE) {
+        if (computeShader.LoadFromFile(path, false) && computeShader.GetModule() != VK_NULL_HANDLE) {
             loaded = true;
             ENJIN_LOG_INFO(Renderer, "DGC: Loaded command generation shader from: %s", path);
             break;

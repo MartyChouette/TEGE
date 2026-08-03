@@ -828,7 +828,7 @@ bool FSR2Upscaler::CreateComputePipelines() {
         VulkanShader shader(m_Context);
         bool loaded = false;
         for (u32 i = 0; i < pathCount; i++) {
-            if (shader.LoadFromFile(shaderPaths[i]) && shader.GetModule() != VK_NULL_HANDLE) {
+            if (shader.LoadFromFile(shaderPaths[i], false) && shader.GetModule() != VK_NULL_HANDLE) {
                 loaded = true;
                 break;
             }
@@ -999,7 +999,7 @@ bool FSR2Upscaler::CreateComputePipelines() {
             VulkanShader shader(m_Context);
             bool loaded = false;
             for (u32 i = 0; i < 4; i++) {
-                if (shader.LoadFromFile(temporalPaths[i]) && shader.GetModule() != VK_NULL_HANDLE) {
+                if (shader.LoadFromFile(temporalPaths[i], false) && shader.GetModule() != VK_NULL_HANDLE) {
                     loaded = true;
                     break;
                 }

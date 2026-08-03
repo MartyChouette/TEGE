@@ -481,7 +481,9 @@ bool GPUCullingSystem::CreateComputePipeline() {
     
     bool shaderLoaded = false;
     for (const char* path : shaderPaths) {
-        if (computeShader.LoadFromFile(path)) {
+        // logMissing=false: these are candidate probes, most will not exist —
+        // the loop logs the real outcome (loaded / CPU fallback) below.
+        if (computeShader.LoadFromFile(path, false)) {
             if (computeShader.GetModule() != VK_NULL_HANDLE) {
                 shaderLoaded = true;
                 ENJIN_LOG_INFO(Renderer, "Loaded compute shader from: %s", path);
@@ -700,7 +702,7 @@ bool GPUCullingSystem::CreateHiZComputePipeline() {
 
     bool loaded = false;
     for (const char* path : shaderPaths) {
-        if (computeShader.LoadFromFile(path) && computeShader.GetModule() != VK_NULL_HANDLE) {
+        if (computeShader.LoadFromFile(path, false) && computeShader.GetModule() != VK_NULL_HANDLE) {
             loaded = true;
             ENJIN_LOG_INFO(Renderer, "Loaded HiZ cull shader from: %s", path);
             break;

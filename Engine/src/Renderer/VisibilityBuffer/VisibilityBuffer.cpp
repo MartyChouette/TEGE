@@ -300,7 +300,7 @@ bool VisibilityBufferRenderer::CreateVisibilityPipeline() {
 
     bool vertLoaded = false;
     for (const char* path : vertPaths) {
-        if (vertShader.LoadFromFile(path) && vertShader.GetModule() != VK_NULL_HANDLE) {
+        if (vertShader.LoadFromFile(path, false) && vertShader.GetModule() != VK_NULL_HANDLE) {
             vertLoaded = true;
             break;
         }
@@ -312,7 +312,7 @@ bool VisibilityBufferRenderer::CreateVisibilityPipeline() {
 
     bool fragLoaded = false;
     for (const char* path : fragPaths) {
-        if (fragShader.LoadFromFile(path) && fragShader.GetModule() != VK_NULL_HANDLE) {
+        if (fragShader.LoadFromFile(path, false) && fragShader.GetModule() != VK_NULL_HANDLE) {
             fragLoaded = true;
             break;
         }
@@ -556,7 +556,7 @@ bool VisibilityBufferRenderer::CreateResolvePipeline() {
     };
     bool loaded = false;
     for (const char* path : shaderPaths) {
-        if (shader.LoadFromFile(path) && shader.GetModule() != VK_NULL_HANDLE) {
+        if (shader.LoadFromFile(path, false) && shader.GetModule() != VK_NULL_HANDLE) {
             loaded = true;
             break;
         }

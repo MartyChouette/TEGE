@@ -61,6 +61,7 @@ SHADERS_LIST = [
     ("sprite_lit.frag.spv",    "SpriteLitFragmentShaderData",    "uchar"),
     ("outline.vert.spv",       "OutlineVertexShaderData",        "uchar"),
     ("outline.frag.spv",       "OutlineFragmentShaderData",      "uchar"),
+    ("wireframe.frag.spv",     "WireframeFragmentShaderData",    "uchar"),
     ("shadow.vert.spv",        "ShadowVertexShaderData",         "uchar"),
     ("fullscreen.vert.spv",    "FullscreenVertexShaderData",     "uchar"),
     ("fluid.vert.spv",         "FluidVertexShaderData",          "uchar"),

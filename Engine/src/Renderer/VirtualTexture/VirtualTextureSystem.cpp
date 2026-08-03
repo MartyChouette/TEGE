@@ -8,9 +8,10 @@
 #include <algorithm>
 #include <cmath>
 
-// stb_image for page loading — needs its own static implementation because
-// VulkanImage.cpp's STB_IMAGE_IMPLEMENTATION is static-linked to that TU.
-#define STB_IMAGE_IMPLEMENTATION
+// stb_image for page loading — declarations only. The implementation lives in
+// VulkanImage.cpp's TU with EXTERNAL linkage (no STB_IMAGE_STATIC there), so we
+// link against those symbols. Defining STB_IMAGE_IMPLEMENTATION here too emitted
+// duplicate stbi_* symbols across both objects (LNK4006).
 #include "stb_image.h"
 
 namespace Enjin {

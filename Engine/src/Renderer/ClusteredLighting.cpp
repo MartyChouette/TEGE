@@ -309,7 +309,7 @@ bool ClusteredLightingSystem::CreateComputePipelines() {
             "../../Engine/shaders/light_cluster_bounds.comp.spv"
         };
         for (const char* path : boundsPaths) {
-            if (boundsShader.LoadFromFile(path) && boundsShader.GetModule() != VK_NULL_HANDLE) {
+            if (boundsShader.LoadFromFile(path, false) && boundsShader.GetModule() != VK_NULL_HANDLE) {
                 boundsLoaded = true;
                 break;
             }
@@ -350,7 +350,7 @@ bool ClusteredLightingSystem::CreateComputePipelines() {
             "../../Engine/shaders/light_cluster_assign.comp.spv"
         };
         for (const char* path : assignPaths) {
-            if (assignShader.LoadFromFile(path) && assignShader.GetModule() != VK_NULL_HANDLE) {
+            if (assignShader.LoadFromFile(path, false) && assignShader.GetModule() != VK_NULL_HANDLE) {
                 assignLoaded = true;
                 break;
             }

@@ -972,6 +972,7 @@ private:
     // Per-entity wireframe overlay (VK_POLYGON_MODE_LINE over solid geometry)
     std::unique_ptr<Renderer::VulkanPipeline> m_WireframeOverlayPipeline;
     std::unique_ptr<Renderer::VulkanPipeline> m_OffscreenWireframeOverlayPipeline;
+    std::unique_ptr<Renderer::VulkanShader> m_WireframeFragmentShader;  // flat push-constant color; no vertex inputs (interface-safe with triangle.vert)
     void CreateWireframeOverlayPipeline();
     void RenderWireframeOverlayPass();
 #endif

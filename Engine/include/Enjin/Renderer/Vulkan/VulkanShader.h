@@ -25,8 +25,10 @@ public:
     // Compile GLSL to SPIR-V (requires shaderc)
     bool CompileFromGLSL(const std::string& source, VkShaderStageFlagBits stage);
     
-    // Load from file
-    bool LoadFromFile(const std::string& filepath);
+    // Load from file. Pass logMissing=false when probing a list of candidate
+    // paths (the caller logs the final outcome) so a not-found file doesn't spam
+    // a red ERROR per failed candidate.
+    bool LoadFromFile(const std::string& filepath, bool logMissing = true);
 
     VkShaderModule GetModule() const { return m_Module; }
     VkShaderStageFlagBits GetStage() const { return m_Stage; }
@@ -44,8 +46,9 @@ namespace ShaderCompiler {
     // Compile GLSL source to SPIR-V
     bool CompileGLSL(const std::string& source, VkShaderStageFlagBits stage, std::vector<u32>& spirv);
     
-    // Load SPIR-V from file
-    bool LoadSPIRV(const std::string& filepath, std::vector<u32>& spirv);
+    // Load SPIR-V from file. logMissing=false suppresses the "failed to open"
+    // ERROR for a not-found file (used by multi-path fallback searches).
+    bool LoadSPIRV(const std::string& filepath, std::vector<u32>& spirv, bool logMissing = true);
     
     // Save SPIR-V to file
     bool SaveSPIRV(const std::string& filepath, const std::vector<u32>& spirv);

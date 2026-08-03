@@ -208,7 +208,7 @@ bool HiZPyramid::CreateComputePipeline() {
     };
     bool loaded = false;
     for (const char* path : shaderPaths) {
-        if (computeShader.LoadFromFile(path)) { loaded = true; break; }
+        if (computeShader.LoadFromFile(path, false)) { loaded = true; break; }
     }
     if (!loaded) {
         ENJIN_LOG_WARN(Renderer, "HiZ downsample shader not found — Hi-Z occlusion disabled");

@@ -3005,6 +3005,13 @@ void RenderSystem::Initialize() {
         ENJIN_LOG_WARN(Renderer, "Failed to load outline fragment shader");
         m_OutlineFragmentShader.reset();
     }
+    m_WireframeFragmentShader = std::make_unique<Renderer::VulkanShader>(m_VulkanRenderer->GetContext());
+    if (!m_WireframeFragmentShader->LoadFromSPIRV(
+        reinterpret_cast<const u8*>(Renderer::ShaderData::WireframeFragmentShaderData),
+        Renderer::ShaderData::WireframeFragmentShaderDataSize)) {
+        ENJIN_LOG_WARN(Renderer, "Failed to load wireframe fragment shader");
+        m_WireframeFragmentShader.reset();
+    }
     CreateOutlinePipeline();
     CreateWireframeOverlayPipeline();
 
@@ -6709,11 +6716,13 @@ void RenderSystem::CreateOutlinePipeline() {
 // Per-entity wireframe overlay pipeline + pass
 // Renders entities with MeshRendererComponent::wireframe=true as LINE overlay
 // on top of solid geometry. Uses the main vertex shader (for skinning support)
-// and the outline fragment shader (flat color output).
+// and the dedicated wireframe fragment shader (flat push-constant color, no
+// vertex inputs — outline.frag reads location 0 as vec4 but triangle.vert
+// writes vec3 there, an interface mismatch: VUID-08743).
 // ============================================================================
 
 void RenderSystem::CreateWireframeOverlayPipeline() {
-    if (!m_Pipeline || !m_VertexShader || !m_OutlineFragmentShader) return;
+    if (!m_Pipeline || !m_VertexShader || !m_WireframeFragmentShader) return;
 
     Renderer::PipelineConfig config;
     config.renderPass = m_VulkanRenderer->GetRenderPass();
@@ -6728,7 +6737,7 @@ void RenderSystem::CreateWireframeOverlayPipeline() {
 
     m_WireframeOverlayPipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
     if (m_BindlessManager) m_WireframeOverlayPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
-    if (!m_WireframeOverlayPipeline->CreateWithLayout(config, m_VertexShader.get(), m_OutlineFragmentShader.get(),
+    if (!m_WireframeOverlayPipeline->CreateWithLayout(config, m_VertexShader.get(), m_WireframeFragmentShader.get(),
             m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create wireframe overlay pipeline");
         m_WireframeOverlayPipeline.reset();

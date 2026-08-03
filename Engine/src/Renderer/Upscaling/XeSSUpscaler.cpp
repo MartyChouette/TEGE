@@ -704,7 +704,7 @@ bool XeSSUpscaler::CreateComputePipelines() {
         VulkanShader shader(m_Context);
         bool loaded = false;
         for (u32 i = 0; i < pathCount; i++) {
-            if (shader.LoadFromFile(shaderPaths[i]) && shader.GetModule() != VK_NULL_HANDLE) {
+            if (shader.LoadFromFile(shaderPaths[i], false) && shader.GetModule() != VK_NULL_HANDLE) {
                 loaded = true;
                 break;
             }
