@@ -67,6 +67,11 @@ public:
 
 private:
     bool CreateImages();
+    // One-time clear + transition of the fresh color image to SHADER_READ_ONLY_OPTIMAL.
+    // Consumers (ImGui viewport widget, PostProcessing source/placeholder bindings)
+    // may sample the target before its first Begin/End cycle — without this the
+    // first-frame sample hits VK_IMAGE_LAYOUT_UNDEFINED (VUID-09600).
+    void InitializeColorLayout();
     bool CreateRenderPass();
     bool CreateFramebuffer();
     bool CreatePPRenderPass();

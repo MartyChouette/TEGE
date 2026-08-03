@@ -32,6 +32,7 @@ bool RenderTarget::Create(VulkanRenderer* renderer, u32 width, u32 height) {
     if (!CreatePPFramebuffer()) return false;
     if (!CreateSampler()) return false;
 
+    InitializeColorLayout();
     RegisterTexture();
 
     ENJIN_LOG_INFO(Renderer, "RenderTarget created (%ux%u)", width, height);
@@ -71,6 +72,7 @@ bool RenderTarget::Resize(u32 width, u32 height) {
     if (!CreatePPFramebuffer()) return false;
     if (!CreateSampler()) return false;
 
+    InitializeColorLayout();
     RegisterTexture();
 
     ENJIN_LOG_INFO(Renderer, "RenderTarget resized to %ux%u", width, height);
@@ -160,6 +162,72 @@ void RenderTarget::End(VkCommandBuffer cmd) {
 }
 
 // --- Private implementation ---
+
+void RenderTarget::InitializeColorLayout() {
+    if (!m_Context || m_ColorImage == VK_NULL_HANDLE) return;
+
+    VkDevice device = m_Context->GetDevice();
+    VkQueue queue = m_Context->GetGraphicsQueue();
+
+    VkCommandPool tempPool = VK_NULL_HANDLE;
+    VkCommandPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    poolInfo.queueFamilyIndex = m_Context->GetGraphicsQueueFamily();
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    if (vkCreateCommandPool(device, &poolInfo, nullptr, &tempPool) != VK_SUCCESS) return;
+
+    VkCommandBufferAllocateInfo cmdAllocInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    cmdAllocInfo.commandPool = tempPool;
+    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdAllocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    if (vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmd) != VK_SUCCESS) {
+        vkDestroyCommandPool(device, tempPool, nullptr);
+        return;
+    }
+
+    VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
+        vkDestroyCommandPool(device, tempPool, nullptr);
+        return;
+    }
+
+    // UNDEFINED -> TRANSFER_DST, clear to the same dark background Begin() uses,
+    // then -> SHADER_READ_ONLY so any pre-first-render sample is legal and clean
+    VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = m_ColorImage;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VkClearColorValue clearColor{{0.1f, 0.1f, 0.15f, 1.0f}};
+    VkImageSubresourceRange range{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    vkCmdClearColorImage(cmd, m_ColorImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearColor, 1, &range);
+
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    if (vkEndCommandBuffer(cmd) == VK_SUCCESS) {
+        VkSubmitInfo submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &cmd;
+        if (vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE) == VK_SUCCESS) {
+            vkQueueWaitIdle(queue);
+        }
+    }
+    vkDestroyCommandPool(device, tempPool, nullptr);
+}
 
 bool RenderTarget::CreateImages() {
     VkDevice device = m_Context->GetDevice();
