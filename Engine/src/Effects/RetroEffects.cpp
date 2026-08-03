@@ -25,6 +25,7 @@ void RetroEffects::UpdateTransition(f32 deltaTime) {
 }
 
 void RetroEffects::ApplyPS1Preset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
 
     // Low resolution
@@ -69,6 +70,7 @@ void RetroEffects::ApplyPS1Preset() {
 }
 
 void RetroEffects::ApplyN64Preset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
 
     // N64 resolution (slightly higher than PS1)
@@ -103,6 +105,7 @@ void RetroEffects::ApplyN64Preset() {
 }
 
 void RetroEffects::ApplyPS2Preset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
 
     // PS2 resolution (higher than PS1)
@@ -133,6 +136,7 @@ void RetroEffects::ApplyPS2Preset() {
 }
 
 void RetroEffects::ApplyGameCubePreset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
 
     // GameCube had good resolution
@@ -159,6 +163,7 @@ void RetroEffects::ApplyGameCubePreset() {
 }
 
 void RetroEffects::ApplySNESPreset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
 
     // SNES resolution
@@ -188,6 +193,7 @@ void RetroEffects::ApplySNESPreset() {
 }
 
 void RetroEffects::ApplyDreamcastPreset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
 
     // Dreamcast resolution
@@ -219,6 +225,7 @@ void RetroEffects::ApplyDreamcastPreset() {
 }
 
 void RetroEffects::ApplyNESPreset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
     m_Resolution.renderWidth = 256;
     m_Resolution.renderHeight = 240;
@@ -235,6 +242,7 @@ void RetroEffects::ApplyNESPreset() {
 }
 
 void RetroEffects::ApplyGameBoyPreset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
     m_Resolution.renderWidth = 160;
     m_Resolution.renderHeight = 144;
@@ -251,6 +259,7 @@ void RetroEffects::ApplyGameBoyPreset() {
 }
 
 void RetroEffects::ApplyGBAPreset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
     m_Resolution.renderWidth = 240;
     m_Resolution.renderHeight = 160;
@@ -267,6 +276,7 @@ void RetroEffects::ApplyGBAPreset() {
 }
 
 void RetroEffects::ApplyGenesisPreset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
     m_Resolution.renderWidth = 320;
     m_Resolution.renderHeight = 224;
@@ -283,6 +293,7 @@ void RetroEffects::ApplyGenesisPreset() {
 }
 
 void RetroEffects::ApplySaturnPreset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
     m_Resolution.renderWidth = 352;
     m_Resolution.renderHeight = 240;
@@ -308,6 +319,7 @@ void RetroEffects::ApplySaturnPreset() {
 }
 
 void RetroEffects::ApplyMasterSystemPreset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
     m_Resolution.renderWidth = 256;
     m_Resolution.renderHeight = 192;
@@ -324,6 +336,7 @@ void RetroEffects::ApplyMasterSystemPreset() {
 }
 
 void RetroEffects::ApplyPSPPreset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
     m_Resolution.renderWidth = 480;
     m_Resolution.renderHeight = 272;
@@ -343,6 +356,7 @@ void RetroEffects::ApplyPSPPreset() {
 }
 
 void RetroEffects::ApplyDOSVGAPreset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
     m_Resolution.renderWidth = 320;
     m_Resolution.renderHeight = 200;
@@ -359,6 +373,7 @@ void RetroEffects::ApplyDOSVGAPreset() {
 }
 
 void RetroEffects::ApplyVirtualBoyPreset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
     m_Resolution.renderWidth = 384;
     m_Resolution.renderHeight = 224;
@@ -375,6 +390,7 @@ void RetroEffects::ApplyVirtualBoyPreset() {
 }
 
 void RetroEffects::ApplyNeoGeoPreset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
     m_Resolution.renderWidth = 320;
     m_Resolution.renderHeight = 224;
@@ -391,6 +407,7 @@ void RetroEffects::ApplyNeoGeoPreset() {
 }
 
 void RetroEffects::Apply3DOPreset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
     m_Resolution.renderWidth = 320;
     m_Resolution.renderHeight = 240;
@@ -416,6 +433,7 @@ void RetroEffects::Apply3DOPreset() {
 }
 
 void RetroEffects::ApplyXboxPreset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
     m_Resolution.renderWidth = 640;
     m_Resolution.renderHeight = 480;
@@ -435,6 +453,7 @@ void RetroEffects::ApplyXboxPreset() {
 }
 
 void RetroEffects::ApplyAtari2600Preset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
     m_Resolution.renderWidth = 160;
     m_Resolution.renderHeight = 192;
@@ -451,6 +470,7 @@ void RetroEffects::ApplyAtari2600Preset() {
 }
 
 void RetroEffects::ApplyPCEnginePreset() {
+    ClearAllEffects(); // reset to neutral first so no field bleeds in from a prior preset
     m_Enabled = true;
     m_Resolution.renderWidth = 256;
     m_Resolution.renderHeight = 240;
@@ -498,13 +518,24 @@ void RetroEffects::ClearAllEffects() {
     m_ColorPreset = ColorPreset::None;
 
     m_Affine.enabled = false;
+    m_Affine.warpStrength = 1.0f;
+    m_Affine.vertexSnapping = false;
+    m_Affine.snapGridSize = 1.0f;
+    m_Affine.texturePageSize = 0.0f;
     m_VertexJitter.enabled = false;
+    m_VertexJitter.jitterAmount = 0.5f;
+    m_VertexJitter.snapToGrid = false;
+    m_VertexJitter.gridResolution = 160;
+    m_VertexJitter.depthSortJitter = 0.0f;
+    m_Resolution.aspectRatio = 4.0f / 3.0f;
     m_GouraudOnly = false;
     m_SphereEnvMap = false;
     m_SphereEnvStrength = 0.5f;
     m_PosterizeLevels = 0.0f;
     m_CRT.enabled = false;
     m_Fog.enabled = false;
+    m_Fog.hardCutoff = false;
+    m_VHS.enabled = false;
 }
 
 } // namespace Effects

@@ -270,10 +270,14 @@ public:
 #if !ENJIN_RENDERER_WEBGPU
     Renderer::VulkanSwapchain* GetSwapchain() const;
 
-    // HDR output — delegates to VulkanRenderer which handles swapchain + render pass + pipeline recreation
+    // HDR output — delegates to VulkanRenderer which handles swapchain + render pass + pipeline recreation.
+    // The recreation is unsafe mid-frame (same crash class as MSAA), so SetHDREnabled only records
+    // the request; ApplyPendingHDRChange performs it at the start of the next frame.
     void SetHDREnabled(bool enabled);
     bool IsHDREnabled() const;
     u32 GetHDROutputMode() const;
+    bool IsHDRChangePending() const { return m_PendingHDRChange; }
+    void ApplyPendingHDRChange(); // Deferred HDR application (safe between frames)
 #endif
 
     // Editor mode: when true, GPU frustum culling is disabled so all entities
@@ -983,6 +987,8 @@ private:
     bool m_EditorUnlit = false;
     bool m_PlayerMode = false;
     bool m_PendingMSAAChange = false;
+    bool m_PendingHDRChange = false;   // Deferred HDR toggle requested mid-frame
+    bool m_PendingHDREnabled = false;  // Target HDR state for the pending change
     u32 m_PendingShadowResolution = 0; // 0 = no change pending
     bool m_CascadeProgressiveUpdate = false;
     u32 m_CascadeFarUpdateInterval = 2;   // Far cascades update every N frames (2-8)
@@ -1257,6 +1263,10 @@ private:
 
     // Batched material SSBO — collects all MaterialGPU data at frame start, uploads once
     void BuildMaterialSSBO();
+    // Grow the per-frame material SSBOs + rebind descriptor binding 2 when the entity
+    // count outgrows capacity. MUST run pre-recording (FlushPendingChanges) — never from
+    // BuildMaterialSSBO, which records mid-frame and would invalidate the bound command buffer.
+    void EnsureMaterialSSBOCapacity();
     u32 GetMaterialIndex(Entity entity) const;
 
     // Uniform buffers (one per frame in flight)

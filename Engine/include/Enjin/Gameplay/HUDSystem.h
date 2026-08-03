@@ -24,7 +24,7 @@ private:
                          const std::string& label, f32 vpX, f32 vpY, f32 vpW, f32 vpH);
     void DrawLabel(const std::string& text, f32 anchorX, f32 anchorY,
                    const Math::Vector3& textColor, f32 fontSize,
-                   f32 vpX, f32 vpY, f32 vpW, f32 vpH);
+                   f32 vpX, f32 vpY, f32 vpW, f32 vpH, bool centered = false);
     void DrawCrosshair(f32 vpX, f32 vpY, f32 vpW, f32 vpH);
 
     bool m_Enabled = false;

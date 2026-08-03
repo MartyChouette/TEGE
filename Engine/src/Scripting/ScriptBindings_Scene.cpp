@@ -83,6 +83,30 @@ static void Entity_SetRotation(u64 id, const Vector3& eulerDeg) {
     }
 }
 
+// Direction bases straight from the transform quaternion. Scripts should use
+// these for aiming instead of rebuilding rotations from Entity_GetRotation's
+// euler angles - the euler roundtrip degenerates near yaw +/-90.
+static Vector3 Entity_GetForward(u64 id) {
+    if (!s_BindingsWorld || !s_BindingsWorld->IsValid(static_cast<Entity>(id))) return Vector3(0, 0, -1);
+    auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
+    if (!t) return Vector3(0, 0, -1);
+    return t->rotation.Rotate(Vector3(0, 0, -1));
+}
+
+static Vector3 Entity_GetRight(u64 id) {
+    if (!s_BindingsWorld || !s_BindingsWorld->IsValid(static_cast<Entity>(id))) return Vector3(1, 0, 0);
+    auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
+    if (!t) return Vector3(1, 0, 0);
+    return t->rotation.Rotate(Vector3(1, 0, 0));
+}
+
+static Vector3 Entity_GetUp(u64 id) {
+    if (!s_BindingsWorld || !s_BindingsWorld->IsValid(static_cast<Entity>(id))) return Vector3(0, 1, 0);
+    auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
+    if (!t) return Vector3(0, 1, 0);
+    return t->rotation.Rotate(Vector3(0, 1, 0));
+}
+
 static Vector3 Entity_GetScale(u64 id) {
     if (!s_BindingsWorld || !s_BindingsWorld->IsValid(static_cast<Entity>(id))) return Vector3(1.0f);
     auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
@@ -378,6 +402,18 @@ void RegisterSceneBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Entity_SetRotation(uint64, const Vector3 &in)",
         asFUNCTION(Entity_SetRotation), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "Vector3 Entity_GetForward(uint64)",
+        asFUNCTION(Entity_GetForward), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "Vector3 Entity_GetRight(uint64)",
+        asFUNCTION(Entity_GetRight), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "Vector3 Entity_GetUp(uint64)",
+        asFUNCTION(Entity_GetUp), asCALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector3 Entity_GetScale(uint64)",

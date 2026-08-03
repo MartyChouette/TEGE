@@ -53,8 +53,9 @@ public:
             return;
         }
 
-        // Begin frame (starts command buffer recording)
-        if (!m_Renderer->BeginFrame()) {
+        // Begin frame (acquires swapchain image, starts command buffer recording;
+        // RenderSystem begins the main render pass itself during World::Update)
+        if (!m_Renderer->BeginFrameVulkan()) {
             return;
         }
 

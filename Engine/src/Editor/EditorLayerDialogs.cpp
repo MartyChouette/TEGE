@@ -2636,6 +2636,8 @@ void EditorLayer::DrawDiscordBugReportDialog() {
 // ── Quit Feedback Survey Dialog ──────────────────────────────────────
 
 void EditorLayer::DrawQuitFeedbackDialog() {
+    if (!m_ShowQuitFeedbackDialog) return;
+
     ImGui::OpenPopup("##QuitFeedback");
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
@@ -2759,6 +2761,10 @@ void EditorLayer::DrawQuitFeedbackDialog() {
         }
 
         ImGui::EndPopup();
+    } else {
+        // Popup was closed externally or failed to open
+        m_ShowQuitFeedbackDialog = false;
+        m_QuitSurvey = {};
     }
 }
 

@@ -104,6 +104,21 @@ static void HUD_SetBindField(u64 entity, const std::string& field) {
     if (hud) hud->bindField = field;
 }
 
+// World-space widgets: track another entity's transform at draw time. This is
+// the lag-free way to pin a tag on a moving object - the HUD system reads the
+// source's position after physics has run, not the position a script cached.
+static void HUD_SetSourceEntity(u64 entity, u64 source) {
+    if (!s_BindingsWorld) return;
+    auto* hud = s_BindingsWorld->GetComponent<ECS::HUDWidgetComponent>(entity);
+    if (hud) hud->sourceEntity = static_cast<ECS::Entity>(source);
+}
+
+static void HUD_SetWorldOffset(u64 entity, const Math::Vector3& offset) {
+    if (!s_BindingsWorld) return;
+    auto* hud = s_BindingsWorld->GetComponent<ECS::HUDWidgetComponent>(entity);
+    if (hud) hud->worldOffset = offset;
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
@@ -149,6 +164,12 @@ void RegisterHUDBindings(asIScriptEngine* engine) {
     // Data binding
     AS_CHECK(engine->RegisterGlobalFunction("void HUD_SetBindField(uint64, const string &in)",
         asFUNCTION(HUD_SetBindField), asCALL_CDECL));
+
+    // World-space tracking
+    AS_CHECK(engine->RegisterGlobalFunction("void HUD_SetSourceEntity(uint64, uint64)",
+        asFUNCTION(HUD_SetSourceEntity), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void HUD_SetWorldOffset(uint64, const Vector3 &in)",
+        asFUNCTION(HUD_SetWorldOffset), asCALL_CDECL));
 }
 
 } // namespace Scripting

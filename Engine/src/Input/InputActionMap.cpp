@@ -94,11 +94,10 @@ void InputActionMap::LoadDefaults() {
     addKey(crouch, KeyCode::C);
     addGamepadBtn(crouch, GamepadButton::B);
 
-    // Dash: Shift/E, Right Bumper
+    // Dash: Shift, Right Bumper (E is reserved for Interact)
     auto& dash = m_Actions[static_cast<u32>(GameAction::Dash)];
     dash.mode = ActionMode::Press;
     addKey(dash, KeyCode::LeftShift);
-    addKey(dash, KeyCode::E);
     addGamepadBtn(dash, GamepadButton::RightBumper);
 
     // Interact: E, Gamepad X

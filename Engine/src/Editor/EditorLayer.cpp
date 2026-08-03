@@ -399,10 +399,13 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     // Intercept window close to prompt for unsaved changes or show quit feedback
     if (m_Window) {
         m_Window->SetCloseCallback([this]() -> bool {
-            // If we're still on the project hub (no project open), close immediately
-            // without blocking for the feedback survey.
-            if (m_ShowProjectHub) {
+            // If we're still on the project hub (no project open) or pending quit, close immediately
+            if (m_ShowProjectHub || m_PendingQuit) {
                 return true; // Allow close
+            }
+            // If a quit prompt or unsaved changes dialog is already active and user closes again, allow close
+            if (m_ShowUnsavedChangesDialog || m_ShowQuitFeedbackDialog) {
+                return true; // Allow immediate close
             }
             if (m_SceneDirty) {
                 m_UnsavedChangesAction = UnsavedAction::Quit;
@@ -2596,6 +2599,23 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
             m_ImGuiLayer->UpdateRenderPass(
                 m_RenderSystem->GetVulkanRenderer()->GetRenderPass(),
                 m_RenderSystem->GetVulkanRenderer()->GetMSAASamples());
+        }
+    }
+
+    // Apply deferred ImGui pipeline + post-process update after an HDR toggle.
+    // The swapchain/render-pass recreation ran at the start of RenderSystem::Update();
+    // only now (between frames) is it safe to rebuild the ImGui pipeline for the new
+    // render-pass format and read back the resolved HDR output mode. Skip until the
+    // deferred change has actually been applied.
+    if (m_HDRImGuiUpdatePending && m_RenderSystem && !m_RenderSystem->IsHDRChangePending()) {
+        m_HDRImGuiUpdatePending = false;
+        if (m_RenderSystem->GetRenderer()) {
+            m_ImGuiLayer->UpdateRenderPass(
+                m_RenderSystem->GetVulkanRenderer()->GetRenderPass(),
+                m_RenderSystem->GetVulkanRenderer()->GetMSAASamples());
+        }
+        if (m_PostProcessing) {
+            m_PostProcessing->GetSettings().hdrOutputMode = m_RenderSystem->GetHDROutputMode();
         }
     }
 

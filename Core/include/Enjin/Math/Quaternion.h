@@ -213,24 +213,24 @@ struct ENJIN_API Quaternion {
         if (trace > 0.0f) {
             f32 s = Sqrt(trace + 1.0f) * 2.0f;
             q.w = 0.25f * s;
-            q.x = (m12 - m21) / s;
-            q.y = (m20 - m02) / s;
-            q.z = (m01 - m10) / s;
+            q.x = (m21 - m12) / s;
+            q.y = (m02 - m20) / s;
+            q.z = (m10 - m01) / s;
         } else if (m00 > m11 && m00 > m22) {
             f32 s = Sqrt(1.0f + m00 - m11 - m22) * 2.0f;
-            q.w = (m12 - m21) / s;
+            q.w = (m21 - m12) / s;
             q.x = 0.25f * s;
             q.y = (m01 + m10) / s;
             q.z = (m02 + m20) / s;
         } else if (m11 > m22) {
             f32 s = Sqrt(1.0f + m11 - m00 - m22) * 2.0f;
-            q.w = (m20 - m02) / s;
+            q.w = (m02 - m20) / s;
             q.x = (m01 + m10) / s;
             q.y = 0.25f * s;
             q.z = (m12 + m21) / s;
         } else {
             f32 s = Sqrt(1.0f + m22 - m00 - m11) * 2.0f;
-            q.w = (m01 - m10) / s;
+            q.w = (m10 - m01) / s;
             q.x = (m02 + m20) / s;
             q.y = (m12 + m21) / s;
             q.z = 0.25f * s;

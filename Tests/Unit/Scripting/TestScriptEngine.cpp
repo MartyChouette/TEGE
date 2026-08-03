@@ -330,6 +330,7 @@ ENJIN_TEST(PathValidation, IncludeEscapingScriptDirectoryIsRejected) {
 
     ScriptEngine engine;
     engine.Initialize();
+    Scripting::RegisterAllBindings(engine.GetASEngine());
     engine.SetScriptDirectory(scripts.string());
 
     bool ok = engine.CompileScript((scripts / "main.as").string());
@@ -361,6 +362,7 @@ ENJIN_TEST(PathValidation, IncludeInsideScriptDirectoryStillWorks) {
 
     ScriptEngine engine;
     engine.Initialize();
+    Scripting::RegisterAllBindings(engine.GetASEngine());
     engine.SetScriptDirectory(scripts.string());
 
     bool ok = engine.CompileScript((scripts / "main.as").string());

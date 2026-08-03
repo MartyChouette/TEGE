@@ -279,6 +279,14 @@ std::string MakeRelativeToRoot(const std::string& root, const std::string& absol
     }
     auto rootNorm = std::filesystem::path(root).lexically_normal();
     auto absNorm = std::filesystem::path(absolute).lexically_normal();
+#if defined(ENJIN_PLATFORM_WINDOWS)
+    std::string rootStr = rootNorm.string();
+    std::string absStr = absNorm.string();
+    if (rootStr.size() >= 2 && rootStr[1] == ':') rootStr[0] = static_cast<char>(::tolower(static_cast<unsigned char>(rootStr[0])));
+    if (absStr.size() >= 2 && absStr[1] == ':') absStr[0] = static_cast<char>(::tolower(static_cast<unsigned char>(absStr[0])));
+    rootNorm = std::filesystem::path(rootStr);
+    absNorm = std::filesystem::path(absStr);
+#endif
     auto rel = absNorm.lexically_relative(rootNorm);
     if (rel.empty() || rel.begin()->string() == "..") {
         return "";

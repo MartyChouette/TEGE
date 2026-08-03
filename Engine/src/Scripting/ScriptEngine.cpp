@@ -2,6 +2,7 @@
 #include "Enjin/Platform/Paths.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/CoroutineScheduler.h"
+#include "Enjin/Build/AssetReader.h"
 #include "Enjin/Logging/Log.h"
 
 // AngelScript compiles under Emscripten with AS_MAX_PORTABILITY (set in
@@ -181,8 +182,40 @@ std::filesystem::path ScriptEngine::FindApiDirectory(const std::string& scriptDi
     return {};
 }
 
+bool ScriptEngine::ReadScriptSource(const std::string& path, std::string& outSource) const {
+    outSource.clear();
+
+    // Strategy 1: Try AssetReader (for packed assets in .enjpak)
+    if (m_AssetReader && m_AssetReader->IsOpen()) {
+        std::vector<std::string> candidates = {
+            path,
+            "scripts/" + path,
+            std::filesystem::path(path).generic_string()
+        };
+        for (const auto& cand : candidates) {
+            if (m_AssetReader->HasFile(cand)) {
+                auto data = m_AssetReader->ReadFile(cand);
+                if (!data.empty()) {
+                    outSource.assign(reinterpret_cast<const char*>(data.data()), data.size());
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Strategy 2: Read from local disk file
+    std::ifstream file(path, std::ios::binary);
+    if (file.is_open()) {
+        outSource.assign((std::istreambuf_iterator<char>(file)),
+                          std::istreambuf_iterator<char>());
+        return true;
+    }
+
+    return false;
+}
+
 // ---------------------------------------------------------------------------
-// CompileScript (from file)
+// CompileScript (from file or packed .enjpak)
 // ---------------------------------------------------------------------------
 
 bool ScriptEngine::CompileScript(const std::string& path)
@@ -252,11 +285,9 @@ bool ScriptEngine::CompileScript(const std::string& path)
     // copy (modding / engine development); the embedded copy guarantees the
     // base class can never be missing from a build or a fresh project.
     {
-        std::ifstream srcFile(path);
-        if (srcFile.is_open()) {
-            std::string src((std::istreambuf_iterator<char>(srcFile)),
-                             std::istreambuf_iterator<char>());
-            if (src.find("TegeBehavior.as") == std::string::npos) {
+        std::string scriptSrc;
+        if (ReadScriptSource(path, scriptSrc)) {
+            if (scriptSrc.find("TegeBehavior.as") == std::string::npos) {
                 bool injected = false;
                 std::filesystem::path apiDir = FindApiDirectory(m_ScriptDirectory);
                 if (!apiDir.empty()) {
@@ -269,10 +300,12 @@ bool ScriptEngine::CompileScript(const std::string& path)
                                                  static_cast<unsigned int>(std::strlen(embedded)));
                 }
             }
+            r = builder.AddSectionFromMemory(path.c_str(), scriptSrc.c_str(),
+                                             static_cast<unsigned int>(scriptSrc.length()));
+        } else {
+            r = builder.AddSectionFromFile(path.c_str());
         }
     }
-
-    r = builder.AddSectionFromFile(path.c_str());
     if (r < 0) {
         m_LastError = "Failed to load script file: " + path;
         ENJIN_LOG_ERROR(Script, "%s", m_LastError.c_str());
@@ -1212,24 +1245,18 @@ int ScriptEngine::IncludeCallback(const char* include,
     auto isPathSafe = [&](const std::filesystem::path& resolved) -> bool {
         if (self->m_ScriptDirectory.empty()) return true; // No restriction if no directory set
         std::error_code ec2;
-        auto baseDir = std::filesystem::canonical(self->m_ScriptDirectory, ec2);
+        auto baseDir = std::filesystem::weakly_canonical(self->m_ScriptDirectory, ec2);
         if (ec2) {
-            // Fall back to absolute() if canonical fails (e.g. directory doesn't exist yet)
-            baseDir = std::filesystem::absolute(self->m_ScriptDirectory, ec2);
-            if (ec2) return false;
+            baseDir = std::filesystem::absolute(self->m_ScriptDirectory, ec2).lexically_normal();
         }
-        auto resolvedCanonical = std::filesystem::canonical(resolved, ec2);
+        auto resolvedCanon = std::filesystem::weakly_canonical(resolved, ec2);
         if (ec2) {
-            // File might not exist yet — fall back to absolute of the normalized path
-            resolvedCanonical = std::filesystem::absolute(resolved.lexically_normal(), ec2);
-            if (ec2) return false;
+            resolvedCanon = std::filesystem::absolute(resolved, ec2).lexically_normal();
         }
-        // Component-wise containment check (Platform::MakeRelativeToRoot
-        // returns "" when the path lies outside the root). The old
-        // find("..") == 0 string test missed escapes when the relative
-        // path wasn't fully normalized, e.g. "subdir/../../escape".
-        if (Platform::MakeRelativeToRoot(baseDir.string(), resolvedCanonical.string()).empty()) {
-            ENJIN_LOG_ERROR(Script, "Script #include path escapes script directory: %s", include);
+        std::string rel = Platform::MakeRelativeToRoot(baseDir.string(), resolvedCanon.string());
+        if (rel.empty()) {
+            ENJIN_LOG_ERROR(Script, "Script #include path escapes script directory: %s (base=%s, resolved=%s)",
+                            include, baseDir.string().c_str(), resolvedCanon.string().c_str());
             return false;
         }
         return true;
@@ -1244,6 +1271,37 @@ int ScriptEngine::IncludeCallback(const char* include,
     }
     s_IncludeDepth++;
     struct DepthGuard { ~DepthGuard() { s_IncludeDepth--; } } depthGuard;
+
+    // Strategy 0: resolve via AssetReader if available (packed assets in .enjpak)
+    if (self->m_AssetReader && self->m_AssetReader->IsOpen()) {
+        std::vector<std::string> candPaths;
+        if (from && from[0] != '\0') {
+            std::filesystem::path fromParent = std::filesystem::path(from).parent_path();
+            candPaths.push_back((fromParent / include).generic_string());
+        }
+        if (!self->m_ScriptDirectory.empty()) {
+            candPaths.push_back((std::filesystem::path(self->m_ScriptDirectory) / include).generic_string());
+            candPaths.push_back((std::filesystem::path(self->m_ScriptDirectory) / "enjin_api" / include).generic_string());
+        }
+        candPaths.push_back(include);
+        candPaths.push_back(std::string("scripts/") + include);
+        candPaths.push_back(std::string("scripts/enjin_api/") + include);
+
+        for (const auto& cand : candPaths) {
+            if (self->m_AssetReader->HasFile(cand)) {
+                auto data = self->m_AssetReader->ReadFile(cand);
+                if (!data.empty()) {
+                    std::string code(reinterpret_cast<const char*>(data.data()), data.size());
+                    i32 r = builder->AddSectionFromMemory(include, code.c_str(),
+                                static_cast<unsigned int>(code.length()));
+                    if (r >= 0) {
+                        ENJIN_LOG_INFO(Script, "Included '%s' (from .enjpak asset pack)", cand.c_str());
+                        return 0;
+                    }
+                }
+            }
+        }
+    }
 
     // Strategy 1: resolve relative to the file doing the including
     if (from && from[0] != '\0') {

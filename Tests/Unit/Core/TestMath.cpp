@@ -393,6 +393,50 @@ ENJIN_TEST(Quaternion, ConjugateTimesOriginal) {
     ENJIN_EXPECT_FLOAT_NEAR(product.w, 1.0f, 0.001f);
 }
 
+// Regression: FromMatrix must return the SAME rotation that produced the
+// matrix, not its conjugate/inverse. Round-tripping an asymmetric rotation
+// through ToMatrix -> FromMatrix and applying it to a vector must match the
+// original rotation applied to that vector. The pre-fix code extracted the
+// transposed antisymmetric terms and returned the inverse rotation, which
+// this test would have caught (rotated vector would come out mirrored).
+ENJIN_TEST(Quaternion, FromMatrixRoundTripPreservesRotation) {
+    // Arrange: an asymmetric rotation (skew axis, non-trivial angle)
+    Quaternion q = Quaternion(Vector3(0.3f, 0.7f, -0.5f), Radians(50.0f)).Normalized();
+    Vector3 v(0.4f, -0.2f, 0.9f);
+    Vector3 expected = q.Rotate(v);
+
+    // Act: round-trip through the matrix and re-apply
+    Matrix4 m = q.ToMatrix();
+    Quaternion r = Quaternion::FromMatrix(m);
+    Vector3 got = r.Rotate(v);
+
+    // Assert: same rotation action (±q both rotate identically)
+    ENJIN_EXPECT_FLOAT_NEAR(got.x, expected.x, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(got.y, expected.y, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(got.z, expected.z, 0.001f);
+}
+
+// Sign anchor: a hand-built 90-degrees-about-+Y matrix (active rotation,
+// column-major) must extract to a quaternion that maps +X to -Z, NOT +Z.
+// The pre-fix (conjugate) code would have mapped +X to +Z here.
+ENJIN_TEST(Quaternion, FromMatrixSignMatchesActiveRotation) {
+    // Arrange: 90deg about +Y. Columns are the rotated basis axes.
+    //   +X (1,0,0) -> (0,0,-1);  +Y unchanged;  +Z (0,0,1) -> (1,0,0)
+    Matrix4 m; // starts as identity
+    m.m[0] = 0.0f; m.m[1] = 0.0f; m.m[2] = -1.0f; // column 0
+    m.m[4] = 0.0f; m.m[5] = 1.0f; m.m[6] = 0.0f;  // column 1
+    m.m[8] = 1.0f; m.m[9] = 0.0f; m.m[10] = 0.0f; // column 2
+
+    // Act
+    Quaternion q = Quaternion::FromMatrix(m);
+    Vector3 rotatedX = q.Rotate(Vector3(1.0f, 0.0f, 0.0f));
+
+    // Assert: +X rotates to -Z (right-hand rule), proving no conjugation
+    ENJIN_EXPECT_FLOAT_NEAR(rotatedX.x, 0.0f, 0.01f);
+    ENJIN_EXPECT_FLOAT_NEAR(rotatedX.y, 0.0f, 0.01f);
+    ENJIN_EXPECT_FLOAT_NEAR(rotatedX.z, -1.0f, 0.01f);
+}
+
 ENJIN_TEST(Quaternion, GetForwardRightUpIdentity) {
     Quaternion q = Quaternion::Identity();
     Vector3 fwd = q.GetForward();

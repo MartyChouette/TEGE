@@ -38,6 +38,7 @@
 #include "Enjin/Effects/CurlNoiseSystem.h"
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Scene/LayerSystem.h"
+#include "Enjin/ECS/Components/CineComponent.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Editor/PerformanceStats.h"
 #include "Enjin/Editor/TelemetrySystem.h"
@@ -514,6 +515,7 @@ private:
     void DrawHUDWidgetComponent(ECS::Entity entity);
     void DrawUICanvasComponent(ECS::Entity entity);
     void DrawCinematicCameraComponent(ECS::Entity entity);
+    void DrawCineComponent(ECS::Entity entity);
     void DrawTweenComponent(ECS::Entity entity);
     void DrawDynamicDifficultyComponent(ECS::Entity entity);
 
@@ -636,6 +638,7 @@ private:
 
     // Panel state
     bool m_MSAAImGuiUpdatePending = false;  // Deferred ImGui pipeline update after MSAA change
+    bool m_HDRImGuiUpdatePending = false;   // Deferred ImGui pipeline + PP hdrOutputMode update after HDR change
     bool m_PendingWireframe = false;       // Deferred wireframe toggle (pipeline recreation unsafe mid-render)
     bool m_EditorShadowsApplied = false;   // Last shadow state the editor view-mode toggle applied (avoids per-frame descriptor pool churn)
     bool m_EditorShadowsTracked = false;   // Whether m_EditorShadowsApplied has been initialized

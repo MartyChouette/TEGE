@@ -2348,17 +2348,13 @@ void EditorLayer::DrawSettingsSection_DisplayOptions() {
                 ImGui::BeginDisabled();
             }
             if (ImGui::Checkbox("HDR Output", &hdrEnabled)) {
+                // Record the request only. RenderSystem recreates the swapchain,
+                // render pass and pipelines at the next frame start — doing it here,
+                // mid-frame, crashes the driver at submit. The ImGui pipeline and the
+                // post-process hdrOutputMode are reconciled in EditorLayer::Render()
+                // once the deferred change has been applied.
                 m_RenderSystem->SetHDREnabled(hdrEnabled);
-                // Update post-process settings with actual HDR mode
-                if (m_PostProcessing) {
-                    m_PostProcessing->GetSettings().hdrOutputMode = m_RenderSystem->GetHDROutputMode();
-                }
-                // ImGui's pipeline must match the new render pass format
-                if (m_ImGuiLayer && m_RenderSystem->GetRenderer()) {
-                    m_ImGuiLayer->UpdateRenderPass(
-                        m_RenderSystem->GetVulkanRenderer()->GetRenderPass(),
-                        m_RenderSystem->GetVulkanRenderer()->GetMSAASamples());
-                }
+                m_HDRImGuiUpdatePending = true;
             }
             if (!hdrAvailable && !hdrEnabled) {
                 ImGui::EndDisabled();

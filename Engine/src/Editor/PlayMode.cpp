@@ -903,7 +903,11 @@ void PlayMode::RestoreEditorState() {
 
     if (anyDestroyed && !m_PrePlaySceneJson.empty()) {
         // Full restore: reload the pre-play scene to recover destroyed entities.
-        // Clear and reload from saved JSON.
+        // Flush render system scene caches and wait for GPU idle to prevent mid-frame descriptor crashes
+        if (m_RenderSystem) {
+            m_RenderSystem->OnSceneClear();
+            m_RenderSystem->FlushSceneClear();
+        }
         m_World->Clear();
         Scene::SceneSerializer serializer(m_World);
         serializer.LoadFromString(m_PrePlaySceneJson);

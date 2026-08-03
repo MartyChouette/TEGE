@@ -61,6 +61,12 @@ public:
     virtual void WaitEvents() = 0;
 };
 
+// If Windows.h got included first, its CreateWindow macro would mangle this
+// declaration into CreateWindowA(...)
+#ifdef CreateWindow
+    #undef CreateWindow
+#endif
+
 ENJIN_API Window* CreateWindow(const WindowDesc& desc);
 ENJIN_API void DestroyWindow(Window* window);
 

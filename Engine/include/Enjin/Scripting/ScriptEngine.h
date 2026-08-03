@@ -12,6 +12,7 @@
 class CScriptBuilder;
 
 namespace Enjin {
+namespace Build { class AssetReader; }
 namespace ECS { class World; }
 namespace Scripting {
 
@@ -22,6 +23,13 @@ public:
 
     bool Initialize();
     void Shutdown();
+
+    // Set AssetReader for packed script loading from .enjpak
+    void SetAssetReader(Build::AssetReader* reader) { m_AssetReader = reader; }
+    Build::AssetReader* GetAssetReader() const { return m_AssetReader; }
+
+    // Read script source from AssetReader or disk
+    bool ReadScriptSource(const std::string& path, std::string& outSource) const;
 
     // Compile a script file into a module, returns true on success
     bool CompileScript(const std::string& path);
@@ -109,6 +117,7 @@ private:
     static void LineCallback(asIScriptContext* ctx, void* param);
 
     ECS::World* m_World = nullptr;
+    Build::AssetReader* m_AssetReader = nullptr;
 };
 
 } // namespace Scripting

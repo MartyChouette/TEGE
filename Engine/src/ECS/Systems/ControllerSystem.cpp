@@ -514,7 +514,7 @@ bool ControllerSystem::IsCrouchPressed() {
 bool ControllerSystem::IsDashPressed() {
     if (m_InputMap) return m_InputMap->IsActionPressed(InputSystem::GameAction::Dash);
 
-    bool pressed = Input::IsKeyPressed(KeyCode::LeftShift) || Input::IsKeyPressed(KeyCode::E);
+    bool pressed = Input::IsKeyPressed(KeyCode::LeftShift);
     for (i32 gp = 0; gp < 4; ++gp) {
         if (Input::IsGamepadConnected(gp) && Input::IsGamepadButtonPressed(GamepadButton::RightBumper, gp)) {
             pressed = true;

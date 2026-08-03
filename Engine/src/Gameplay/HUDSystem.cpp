@@ -15,6 +15,40 @@ void HUDSystem::Update(ECS::World* world, const Renderer::Camera* gameCamera,
         auto* widget = world->GetComponent<ECS::HUDWidgetComponent>(entity);
         if (!widget || !widget->visible) continue;
 
+        // World-space widgets project the entity's position (+ worldOffset)
+        // through the game camera and draw as a billboard at that point.
+        f32 anchorX = widget->anchorX;
+        f32 anchorY = widget->anchorY;
+        bool worldSpace = !widget->screenSpace;
+        if (worldSpace) {
+            if (!gameCamera) continue;
+            ECS::Entity src = widget->sourceEntity != 0 ? widget->sourceEntity : entity;
+            auto* tf = world->GetComponent<ECS::TransformComponent>(src);
+            if (!tf) continue;
+            Math::Vector3 wp = tf->position + widget->worldOffset;
+
+            Math::Vector3 d = wp - gameCamera->GetPosition();
+            f32 dist = d.Length();
+            if (widget->maxRenderDistance > 0.0f && dist > widget->maxRenderDistance) continue;
+
+            Math::Vector4 clip = gameCamera->GetViewProjectionMatrix()
+                               * Math::Vector4(wp.x, wp.y, wp.z, 1.0f);
+            if (clip.w <= 0.001f) continue;
+            f32 ndcX = clip.x / clip.w;
+            f32 ndcY = clip.y / clip.w;
+            f32 ndcZ = clip.z / clip.w;
+            if (ndcZ < 0.0f || ndcZ > 1.0f) continue;   // behind / past far plane
+            anchorX = (ndcX + 1.0f) * 0.5f;
+            anchorY = (ndcY + 1.0f) * 0.5f;
+            if (anchorX < -0.2f || anchorX > 1.2f || anchorY < -0.2f || anchorY > 1.2f) continue;
+            // bars anchor their top-left corner; center them on the point
+            if (widget->type == ECS::HUDWidgetComponent::WidgetType::HealthBar ||
+                widget->type == ECS::HUDWidgetComponent::WidgetType::ResourceBar) {
+                anchorX -= widget->width * 0.5f;
+                anchorY -= widget->height * 0.5f;
+            }
+        }
+
         switch (widget->type) {
             case ECS::HUDWidgetComponent::WidgetType::HealthBar: {
                 // Try to read from source entity's HealthComponent
@@ -22,7 +56,7 @@ void HUDSystem::Update(ECS::World* world, const Renderer::Camera* gameCamera,
                 auto* health = world->GetComponent<ECS::HealthComponent>(src);
                 f32 pct = health ? health->GetHealthPercent() : widget->currentValue / std::max(widget->maxValue, 0.001f);
                 pct = std::max(0.0f, std::min(1.0f, pct));
-                DrawHealthBar(widget->anchorX, widget->anchorY, widget->width, widget->height,
+                DrawHealthBar(anchorX, anchorY, widget->width, widget->height,
                               pct, widget->fillColor, widget->bgColor,
                               viewportX, viewportY, viewportW, viewportH);
                 break;
@@ -32,7 +66,7 @@ void HUDSystem::Update(ECS::World* world, const Renderer::Camera* gameCamera,
                 auto* res = world->GetComponent<ECS::ResourceComponent>(src);
                 f32 pct = res ? res->GetPercent() : widget->currentValue / std::max(widget->maxValue, 0.001f);
                 pct = std::max(0.0f, std::min(1.0f, pct));
-                DrawResourceBar(widget->anchorX, widget->anchorY, widget->width, widget->height,
+                DrawResourceBar(anchorX, anchorY, widget->width, widget->height,
                                 pct, widget->fillColor, widget->bgColor, widget->text,
                                 viewportX, viewportY, viewportW, viewportH);
                 break;
@@ -56,9 +90,9 @@ void HUDSystem::Update(ECS::World* world, const Renderer::Camera* gameCamera,
                     if (got < 0) got = 0;
                     label += " " + std::to_string(got) + " / " + std::to_string(total);
                 }
-                DrawLabel(label, widget->anchorX, widget->anchorY,
+                DrawLabel(label, anchorX, anchorY,
                           widget->textColor, widget->fontSize,
-                          viewportX, viewportY, viewportW, viewportH);
+                          viewportX, viewportY, viewportW, viewportH, worldSpace);
                 break;
             }
             case ECS::HUDWidgetComponent::WidgetType::Crosshair:
@@ -99,11 +133,21 @@ void HUDSystem::DrawResourceBar(f32 anchorX, f32 anchorY, f32 width, f32 height,
 
 void HUDSystem::DrawLabel(const std::string& text, f32 anchorX, f32 anchorY,
                            const Math::Vector3& textColor, f32 fontSize,
-                           f32 vpX, f32 vpY, f32 vpW, f32 vpH) {
+                           f32 vpX, f32 vpY, f32 vpW, f32 vpH, bool centered) {
     if (text.empty()) return;
     ImVec2 pos(vpX + anchorX * vpW, vpY + anchorY * vpH);
     auto* drawList = ImGui::GetForegroundDrawList();
     ImU32 col = IM_COL32((int)(textColor.x * 255), (int)(textColor.y * 255), (int)(textColor.z * 255), 255);
+    if (centered) {
+        // world-space tags anchor their center on the projected point
+        ImVec2 sz = ImGui::GetFont()->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, text.c_str());
+        pos.x -= sz.x * 0.5f;
+        pos.y -= sz.y * 0.5f;
+        // slight dark backing so the tag reads over any surface
+        drawList->AddRectFilled(ImVec2(pos.x - 4.0f, pos.y - 2.0f),
+                                ImVec2(pos.x + sz.x + 4.0f, pos.y + sz.y + 2.0f),
+                                IM_COL32(0, 0, 0, 120), 3.0f);
+    }
     // Use default font at scaled size
     drawList->AddText(nullptr, fontSize, pos, col, text.c_str());
 }

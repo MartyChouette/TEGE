@@ -138,6 +138,9 @@ scripts/
 /*.png
 nul
 
+# Local test/scratch game project (nested git repo, bundles a web export zip)
+/MyGame/
+
 # -----------------------------------------------------------------------------
 # In-source MSBuild/CMake artifacts (real build is out-of-source in build/).
 # These were committed once from an accidental in-source `cmake .`; ignore so

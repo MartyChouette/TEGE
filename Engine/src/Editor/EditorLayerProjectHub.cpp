@@ -5036,30 +5036,251 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         }
 
     } else if (templateId == "scriptonly") {
-        // TIER 2 DEMO: minimal scene, ALL game logic in one AngelScript file
-        // written into the project at scripts/GameScript.as.
+        // TIER 2 DEMO: Identical scene layout & gameplay to "componentsonly",
+        // but every behavior is split up into bite-sized AngelScript files
+        // attached directly to each individual game object.
         createGround();
-        ECS::Entity player = createPlayer3D("Player");
-        auto& ctrl = m_World->AddComponent<ECS::FirstPersonController>(player);
-        ctrl.moveSpeed = 5.0f;
-        ctrl.mouseSensitivity = 0.15f;
-        SetupCameraForController(player, "FirstPerson");
         createLight();
 
-        // Three collectible cubes the SCRIPT spins and collects by proximity
-        const Math::Vector3 orbPos[] = { {3,0.6f,-4}, {-3,0.6f,-6}, {0,0.6f,-9} };
-        for (int i = 0; i < 3; ++i) {
-            ECS::Entity orb = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(orb, ("Orb" + std::to_string(i)).c_str());
-            auto& t = m_World->AddComponent<ECS::TransformComponent>(orb);
-            t.position = orbPos[i];
-            t.scale = Math::Vector3(0.5f, 0.5f, 0.5f);
-            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(orb);
-            mat.baseColor = Math::Vector3(0.9f, 0.65f, 0.2f);
-            m_World->AddComponent<ECS::MeshComponent>(orb, Renderer::MeshFactory::CreateCube(1.0f));
+        namespace fs = std::filesystem;
+        fs::path projRoot;
+        if (!m_SceneManager.GetProjectPath().empty()) {
+            projRoot = fs::path(m_SceneManager.GetProjectPath()).parent_path();
+        }
+        std::error_code ec;
+        fs::create_directories(projRoot / "scripts", ec);
+
+        // 1. Write PlayerController.as
+        {
+            std::ofstream sf(projRoot / "scripts" / "PlayerController.as");
+            if (sf.is_open()) {
+                sf <<
+"// PlayerController.as — Bite-sized behavior attached to Player\n"
+"class PlayerController : TegeBehavior {\n"
+"    [Property] float moveSpeed = 5.0f;\n"
+"    [Property] float maxHealth = 100.0f;\n"
+"\n"
+"    float currentHealth = 100.0f;\n"
+"    int pickupsCollected = 0;\n"
+"\n"
+"    void OnStart() {\n"
+"        currentHealth = maxHealth;\n"
+"        UpdateHUD();\n"
+"    }\n"
+"\n"
+"    void OnUpdate(float dt) {\n"
+"        Vector3 move = Vector3(0, 0, 0);\n"
+"        if (Input_GetKey(Key::W)) move.z -= 1.0f;\n"
+"        if (Input_GetKey(Key::S)) move.z += 1.0f;\n"
+"        if (Input_GetKey(Key::A)) move.x -= 1.0f;\n"
+"        if (Input_GetKey(Key::D)) move.x += 1.0f;\n"
+"\n"
+"        if (move.Length() > 0.001f) {\n"
+"            move = move.Normalized() * (moveSpeed * dt);\n"
+"            SetPosition(GetPosition() + move);\n"
+"        }\n"
+"    }\n"
+"\n"
+"    void AddPickup() {\n"
+"        pickupsCollected++;\n"
+"        UpdateHUD();\n"
+"        Debug_Log(\"Collected pickup! Total: \" + pickupsCollected);\n"
+"    }\n"
+"\n"
+"    void TakeDamage(float damage) {\n"
+"        currentHealth -= damage;\n"
+"        if (currentHealth < 0.0f) currentHealth = 0.0f;\n"
+"        UpdateHUD();\n"
+"        Debug_Log(\"Player took \" + damage + \" damage. HP: \" + currentHealth);\n"
+"        if (currentHealth <= 0.0f) {\n"
+"            uint64 hud = Scene_FindEntity(\"HUD_Text\");\n"
+"            if (hud != 0) HUD_SetText(hud, \"GAME OVER! Health Depleted.\");\n"
+"        }\n"
+"    }\n"
+"\n"
+"    void UpdateHUD() {\n"
+"        uint64 hud = Scene_FindEntity(\"HUD_Text\");\n"
+"        if (hud != 0) {\n"
+"            HUD_SetText(hud, \"HP: \" + int(currentHealth) + \"/100  |  Pickups: \" + pickupsCollected + \"/3\");\n"
+"        }\n"
+"    }\n"
+"}\n";
+                sf.close();
+            }
         }
 
-        // HUD label the script drives
+        // 2. Write PickupItem.as
+        {
+            std::ofstream sf(projRoot / "scripts" / "PickupItem.as");
+            if (sf.is_open()) {
+                sf <<
+"// PickupItem.as — Bite-sized behavior attached to each Pickup object\n"
+"class PickupItem : TegeBehavior {\n"
+"    [Property] float spinSpeed = 90.0f;\n"
+"    [Property] float pickupRadius = 1.2f;\n"
+"\n"
+"    void OnUpdate(float dt) {\n"
+"        Vector3 rot = GetRotation();\n"
+"        rot.y += spinSpeed * dt;\n"
+"        SetRotation(rot);\n"
+"\n"
+"        uint64 player = Scene_FindEntity(\"Player\");\n"
+"        if (player != 0) {\n"
+"            Vector3 diff = GetPosition() - Entity_GetPosition(player);\n"
+"            if (diff.Length() <= pickupRadius) {\n"
+"                PlayerController@ controller = cast<PlayerController>(Entity_GetBehavior(player, \"PlayerController\"));\n"
+"                if (controller !is null) {\n"
+"                    controller.AddPickup();\n"
+"                }\n"
+"                Scene_DestroyEntity(GetEntity());\n"
+"            }\n"
+"        }\n"
+"    }\n"
+"}\n";
+                sf.close();
+            }
+        }
+
+        // 3. Write HazardSpike.as
+        {
+            std::ofstream sf(projRoot / "scripts" / "HazardSpike.as");
+            if (sf.is_open()) {
+                sf <<
+"// HazardSpike.as — Bite-sized behavior attached to the Hazard object\n"
+"class HazardSpike : TegeBehavior {\n"
+"    [Property] float damageAmount = 25.0f;\n"
+"    [Property] float hazardRadius = 1.2f;\n"
+"    [Property] float cooldownTime = 1.0f;\n"
+"\n"
+"    private float _timer = 0.0f;\n"
+"\n"
+"    void OnUpdate(float dt) {\n"
+"        if (_timer > 0.0f) {\n"
+"            _timer -= dt;\n"
+"            return;\n"
+"        }\n"
+"\n"
+"        uint64 player = Scene_FindEntity(\"Player\");\n"
+"        if (player != 0) {\n"
+"            Vector3 diff = GetPosition() - Entity_GetPosition(player);\n"
+"            if (diff.Length() <= hazardRadius) {\n"
+"                PlayerController@ controller = cast<PlayerController>(Entity_GetBehavior(player, \"PlayerController\"));\n"
+"                if (controller !is null) {\n"
+"                    controller.TakeDamage(damageAmount);\n"
+"                    _timer = cooldownTime;\n"
+"                }\n"
+"            }\n"
+"        }\n"
+"    }\n"
+"}\n";
+                sf.close();
+            }
+        }
+
+        // 4. Write WinPortal.as
+        {
+            std::ofstream sf(projRoot / "scripts" / "WinPortal.as");
+            if (sf.is_open()) {
+                sf <<
+"// WinPortal.as — Bite-sized behavior attached to the Win Portal object\n"
+"class WinPortal : TegeBehavior {\n"
+"    [Property] float portalRadius = 1.8f;\n"
+"    [Property] int requiredPickups = 3;\n"
+"\n"
+"    void OnUpdate(float dt) {\n"
+"        Vector3 rot = GetRotation();\n"
+"        rot.z += 45.0f * dt;\n"
+"        SetRotation(rot);\n"
+"\n"
+"        uint64 player = Scene_FindEntity(\"Player\");\n"
+"        if (player != 0) {\n"
+"            Vector3 diff = GetPosition() - Entity_GetPosition(player);\n"
+"            if (diff.Length() <= portalRadius) {\n"
+"                PlayerController@ controller = cast<PlayerController>(Entity_GetBehavior(player, \"PlayerController\"));\n"
+"                if (controller !is null) {\n"
+"                    uint64 hud = Scene_FindEntity(\"HUD_Text\");\n"
+"                    if (controller.pickupsCollected >= requiredPickups) {\n"
+"                        if (hud != 0) HUD_SetText(hud, \"YOU WIN! All \" + requiredPickups + \" Pickups Collected!\");\n"
+"                        Debug_Log(\"VICTORY! Reached portal with all pickups.\");\n"
+"                    } else {\n"
+"                        if (hud != 0) HUD_SetText(hud, \"Need \" + requiredPickups + \" Pickups to Win! (\" + controller.pickupsCollected + \"/\" + requiredPickups + \")\");\n"
+"                    }\n"
+"                }\n"
+"            }\n"
+"        }\n"
+"    }\n"
+"}\n";
+                sf.close();
+            }
+        }
+
+        // Create Player entity and attach PlayerController.as
+        ECS::Entity player = createPlayer3D("Player");
+        SetupCameraForController(player, "FirstPerson");
+        {
+            auto& sc = m_World->AddComponent<ECS::ScriptComponent>(player);
+            ECS::ScriptAttachment att;
+            att.scriptPath = "scripts/PlayerController.as";
+            att.className = "PlayerController";
+            sc.scripts.push_back(std::move(att));
+        }
+
+        // Three Pickups (identical positions & visuals to componentsonly)
+        const Math::Vector3 coinPos[] = { {3,0.6f,-4}, {-3,0.6f,-6}, {0,0.6f,-9} };
+        for (int i = 0; i < 3; ++i) {
+            ECS::Entity coin = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(coin, ("Pickup " + std::to_string(i + 1)).c_str());
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(coin);
+            t.position = coinPos[i];
+            t.scale = Math::Vector3(0.5f, 0.5f, 0.5f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(coin);
+            mat.baseColor = Math::Vector3(1.0f, 0.85f, 0.2f);
+            m_World->AddComponent<ECS::MeshComponent>(coin, Renderer::MeshFactory::CreateCube(1.0f));
+
+            auto& sc = m_World->AddComponent<ECS::ScriptComponent>(coin);
+            ECS::ScriptAttachment att;
+            att.scriptPath = "scripts/PickupItem.as";
+            att.className = "PickupItem";
+            sc.scripts.push_back(std::move(att));
+        }
+
+        // One Hazard (identical position & visual to componentsonly)
+        {
+            ECS::Entity spike = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(spike, "Hazard");
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(spike);
+            t.position = Math::Vector3(0.0f, 0.4f, -5.0f);
+            t.scale = Math::Vector3(1.2f, 0.8f, 1.2f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(spike);
+            mat.baseColor = Math::Vector3(0.9f, 0.2f, 0.15f);
+            m_World->AddComponent<ECS::MeshComponent>(spike, Renderer::MeshFactory::CreateCube(1.0f));
+
+            auto& sc = m_World->AddComponent<ECS::ScriptComponent>(spike);
+            ECS::ScriptAttachment att;
+            att.scriptPath = "scripts/HazardSpike.as";
+            att.className = "HazardSpike";
+            sc.scripts.push_back(std::move(att));
+        }
+
+        // Win Portal (identical position & visual to componentsonly)
+        {
+            ECS::Entity portal = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(portal, "Win Portal");
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(portal);
+            t.position = Math::Vector3(0.0f, 1.0f, -12.0f);
+            t.scale = Math::Vector3(2.0f, 2.0f, 0.5f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(portal);
+            mat.baseColor = Math::Vector3(0.2f, 0.9f, 0.4f);
+            m_World->AddComponent<ECS::MeshComponent>(portal, Renderer::MeshFactory::CreateCube(1.0f));
+
+            auto& sc = m_World->AddComponent<ECS::ScriptComponent>(portal);
+            ECS::ScriptAttachment att;
+            att.scriptPath = "scripts/WinPortal.as";
+            att.className = "WinPortal";
+            sc.scripts.push_back(std::move(att));
+        }
+
+        // HUD Text entity
         {
             ECS::Entity hud = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(hud, "HUD_Text");
@@ -5068,73 +5289,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             w.type = ECS::HUDWidgetComponent::WidgetType::Label;
             w.bindField = "custom";
             w.anchorX = 0.04f; w.anchorY = 0.06f;
-            w.text = "collect the orbs";
+            w.text = "HP: 100/100  |  Pickups: 0/3";
             w.fontSize = 20.0f;
         }
 
-        // Write the game script into the project and attach it to a Game entity
-        {
-            namespace fs = std::filesystem;
-            fs::path projRoot;
-            if (!m_SceneManager.GetProjectPath().empty()) {
-                projRoot = fs::path(m_SceneManager.GetProjectPath()).parent_path();
-            }
-            std::error_code ec;
-            fs::create_directories(projRoot / "scripts", ec);
-            std::ofstream sf(projRoot / "scripts" / "GameScript.as");
-            if (sf.is_open()) {
-                sf <<
-"// The WHOLE game lives in this one file. Edit it and press Play again -\n"
-"// scripts hot-reload. No other code exists anywhere in this project.\n"
-"class GameScript : TegeBehavior {\n"
-"    [Property] float spinSpeed = 120.0f;\n"
-"    [Property] float collectRange = 1.5f;\n"
-"    int collected = 0;\n"
-"    uint64 hud = 0;\n"
-"\n"
-"    void OnStart() {\n"
-"        hud = Scene_FindEntity(\"HUD_Text\");\n"
-"        Say(\"collect the 3 orbs!\");\n"
-"    }\n"
-"\n"
-"    void OnUpdate(float dt) {\n"
-"        uint64 player = Scene_FindEntity(\"Player\");\n"
-"        if (player == 0) return;\n"
-"        Vector3 pp = Entity_GetPosition(player);\n"
-"\n"
-"        for (int i = 0; i < 3; i++) {\n"
-"            uint64 orb = Scene_FindEntity(\"Orb\" + i);\n"
-"            if (orb == 0) continue;                  // already collected\n"
-"            Vector3 rot = Entity_GetRotation(orb);   // spin so they feel alive\n"
-"            rot.y += spinSpeed * dt;\n"
-"            Entity_SetRotation(orb, rot);\n"
-"            Vector3 d = Entity_GetPosition(orb) - pp;\n"
-"            if (d.Length() <= collectRange) {\n"
-"                Scene_DestroyEntity(orb);\n"
-"                collected++;\n"
-"                Say(collected >= 3 ? \"YOU WIN!\" : (\"\" + collected + \" / 3\"));\n"
-"            }\n"
-"        }\n"
-"    }\n"
-"\n"
-"    void Say(const string &in msg) {\n"
-"        if (hud != 0) HUD_SetText(hud, msg);\n"
-"        Debug_Log(msg);\n"
-"    }\n"
-"}\n";
-                sf.close();
-            }
-
-            ECS::Entity game = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(game, "Game");
-            m_World->AddComponent<ECS::TransformComponent>(game);
-            auto& sc = m_World->AddComponent<ECS::ScriptComponent>(game);
-            ECS::ScriptAttachment att;
-            att.scriptPath = "scripts/GameScript.as";
-            att.className = "GameScript";
-            sc.scripts.push_back(std::move(att));
-        }
-
+        // Guide Entity
         {
             ECS::Entity guide = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(guide, "-- Guide --");
@@ -5142,17 +5301,17 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_World->AddComponent<ECS::NotesComponent>(guide).notes =
                 "SCRIPT ONLY - TIER 2\n"
                 "====================\n\n"
-                "The entire game is ONE AngelScript file:\n"
-                "    scripts/GameScript.as   (attached to the 'Game' entity)\n\n"
-                "It spins the orbs, collects them by proximity, and drives the\n"
-                "HUD - no components beyond the bare scene, no visual scripts.\n\n"
-                "Press Play, walk into the orbs. Then open the script (select\n"
-                "the Game entity -> Script component) and change spinSpeed or\n"
-                "the win message - it hot-reloads while you play.\n\n"
-                "Scripts inherit TegeBehavior automatically (built into the\n"
-                "engine - no includes needed). API reference: docs/SCRIPTING_API.md\n\n"
-                "See also 'Components Only' (same idea, zero code) and\n"
-                "Examples/ in the engine repo (same idea, pure C++).";
+                "The EXACT SAME game as 'Components Only', but with logic split\n"
+                "into bite-sized AngelScript files on each game object:\n\n"
+                "  Player     -> scripts/PlayerController.as (WASD movement, 100 HP, HUD)\n"
+                "  Pickup 1-3 -> scripts/PickupItem.as       (spins cube, collects on touch)\n"
+                "  Hazard     -> scripts/HazardSpike.as      (detects touch, deals 25 damage)\n"
+                "  Win Portal -> scripts/WinPortal.as        (rotates portal, checks 3 pickups to win)\n\n"
+                "Compare this 1:1 with 'Components Only' to see how AngelScript\n"
+                "behaviors replace built-in components on a per-object basis.\n\n"
+                "Press Play, collect all 3 gold cubes, avoid the red hazard, and\n"
+                "walk into the green portal to win.\n\n"
+                "Edit any script and press Play again — scripts hot-reload instantly.";
         }
 
     } else if (templateId == "firstperson") {

@@ -3683,6 +3683,11 @@ void RenderSystem::FlushPendingChanges() {
     // in both loops, so the reset lives here too.
     m_MaterialSSBOBuilt = false;
 
+    // Grow the material SSBO here (pre-recording, safe) if the scene outgrew it.
+    // Doing this inside BuildMaterialSSBO would rewrite a descriptor bound to the
+    // in-flight command buffer and hang the GPU at submit.
+    EnsureMaterialSSBOCapacity();
+
     // Flush pending bindless texture registrations into the descriptor set.
     // The only other flush site sits in Update() AFTER the m_SkipMainPassRendering
     // early-return, which the editor takes every frame — so in the editor the
@@ -3732,6 +3737,13 @@ void RenderSystem::Update(f32 deltaTime) {
     // Must happen before any rendering — it recreates swapchain, render pass, pipelines.
     if (m_PendingMSAAChange) {
         ApplyPendingMSAAChange();
+    }
+
+    // Apply deferred HDR toggle (requested mid-frame by editor rendering UI).
+    // Like MSAA, it recreates swapchain + render pass + pipelines and must run
+    // before any rendering this frame.
+    if (m_PendingHDRChange) {
+        ApplyPendingHDRChange();
     }
 
     // Process any pending changes not yet flushed (fallback if FlushPendingChanges
@@ -8343,6 +8355,69 @@ void RenderSystem::UpdateFrameUniforms() {
     }
 }
 
+void RenderSystem::EnsureMaterialSSBOCapacity() {
+    // Runs pre-recording from FlushPendingChanges (after the m_SkipMainPassRendering
+    // guard), so it is safe to recreate buffers and rewrite descriptors here — no
+    // command buffer has bound them yet this frame. Growing the material SSBO from
+    // inside BuildMaterialSSBO (mid-recording) is what invalidated the in-flight
+    // command buffer and caused the intermittent GPU-submit hang.
+    if (!m_Renderer || !m_Initialized || !m_World) return;
+    if (m_MaterialBuffers.empty() || m_MaterialSSBOStride == 0) return;
+
+    u32 entityCount = static_cast<u32>(m_World->GetEntitiesWithComponent<MeshComponent>().size());
+    if (entityCount <= m_MaterialSSBOCapacity) return;  // buffers already large enough
+
+    u32 newCapacity = entityCount + (entityCount / 2);  // 1.5x growth headroom
+    if (newCapacity < 256) newCapacity = 256;
+    usize bufferSize = static_cast<usize>(m_MaterialSSBOStride) * newCapacity;
+
+    // No command buffer references these yet, but prior in-flight frames might —
+    // drain them before recreating (matches the original growth path).
+    m_VulkanRenderer->GetContext()->WaitForGPU();
+    VkDevice device = m_VulkanRenderer->GetContext()->GetDevice();
+
+    // Capacity is shared across frames-in-flight, so grow EVERY frame's buffer and
+    // rebind its descriptors — otherwise a frame whose buffer wasn't recreated would
+    // overflow (this also fixes a pre-existing single-frame-only growth bug).
+    const u32 frameCount = static_cast<u32>(m_MaterialBuffers.size());
+    for (u32 f = 0; f < frameCount; ++f) {
+        m_MaterialBuffers[f] = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
+        if (!m_MaterialBuffers[f]->Create(bufferSize, Renderer::BufferUsage::Storage, true)) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to grow material SSBO to %u entries", newCapacity);
+            return;
+        }
+
+        VkDescriptorBufferInfo bufInfo{};
+        bufInfo.buffer = m_MaterialBuffers[f]->GetBuffer();
+        bufInfo.offset = 0;
+        bufInfo.range = m_MaterialSSBOStride;
+
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstBinding = 2;
+        write.dstArrayElement = 0;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+        write.descriptorCount = 1;
+        write.pBufferInfo = &bufInfo;
+
+        if (f < m_DescriptorSets.size()) {
+            write.dstSet = m_DescriptorSets[f];
+            vkUpdateDescriptorSets(device, 1, &write, 0, nullptr);
+        }
+        for (u32 v = 0; v < MAX_SPLITSCREEN_VIEWPORTS; ++v) {
+            u32 offIdx = GetOffscreenBufferIndex(f, v);
+            if (offIdx < m_OffscreenDescriptorSets.size()) {
+                VkWriteDescriptorSet offWrite = write;
+                offWrite.dstSet = m_OffscreenDescriptorSets[offIdx];
+                vkUpdateDescriptorSets(device, 1, &offWrite, 0, nullptr);
+            }
+        }
+    }
+
+    m_MaterialSSBOCapacity = newCapacity;
+    m_MaterialSSBODirty = true;  // the freshly-created buffers must be repopulated
+}
+
 void RenderSystem::BuildMaterialSSBO() {
     if (m_MaterialSSBOBuilt) return;
     m_MaterialSSBOBuilt = true;
@@ -8376,45 +8451,17 @@ void RenderSystem::BuildMaterialSSBO() {
     m_EntityMaterialIndex.clear();
     m_MaterialSSBOCount = 0;
 
-    // Grow GPU buffer if needed (recreate with larger capacity)
+    // GPU buffer growth happens ahead of recording in EnsureMaterialSSBOCapacity()
+    // (called from FlushPendingChanges). BuildMaterialSSBO runs mid command-buffer
+    // recording, so it must NEVER recreate the buffer or rewrite binding 2's
+    // descriptor here — that invalidates the in-flight command buffer and hangs the
+    // GPU at submit. If capacity is somehow still short (e.g. entities added after
+    // this frame's flush), clamp to what the buffer holds; the next frame's flush
+    // grows it. The fill loop below is bounded by entityCount to match.
     if (entityCount > m_MaterialSSBOCapacity) {
-        u32 newCapacity = entityCount + (entityCount / 2);  // 1.5x growth
-        if (newCapacity < 256) newCapacity = 256;
-        usize bufferSize = static_cast<usize>(m_MaterialSSBOStride) * newCapacity;
-
-        m_VulkanRenderer->GetContext()->WaitForGPU();
-        m_MaterialBuffers[currentFrame] = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
-        if (!m_MaterialBuffers[currentFrame]->Create(bufferSize, Renderer::BufferUsage::Storage, true)) {
-            ENJIN_LOG_ERROR(Renderer, "Failed to grow material SSBO to %u entries", newCapacity);
-            return;
-        }
-        m_MaterialSSBOCapacity = newCapacity;
-
-        // Must update the descriptor set to point to the new buffer
-        VkDescriptorBufferInfo bufInfo{};
-        bufInfo.buffer = m_MaterialBuffers[currentFrame]->GetBuffer();
-        bufInfo.offset = 0;
-        bufInfo.range = m_MaterialSSBOStride;
-
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.dstSet = m_DescriptorSets[currentFrame];
-        write.dstBinding = 2;
-        write.dstArrayElement = 0;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
-        write.descriptorCount = 1;
-        write.pBufferInfo = &bufInfo;
-        vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &write, 0, nullptr);
-
-        // Also update offscreen descriptor sets that share this material buffer
-        for (u32 v = 0; v < MAX_SPLITSCREEN_VIEWPORTS; ++v) {
-            u32 offIdx = GetOffscreenBufferIndex(currentFrame, v);
-            if (offIdx < m_OffscreenDescriptorSets.size()) {
-                VkWriteDescriptorSet offWrite = write;
-                offWrite.dstSet = m_OffscreenDescriptorSets[offIdx];
-                vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &offWrite, 0, nullptr);
-            }
-        }
+        ENJIN_LOG_WARN(Renderer, "Material SSBO capacity %u < %u entities; clamping this frame (grows next frame)",
+                       m_MaterialSSBOCapacity, entityCount);
+        entityCount = m_MaterialSSBOCapacity;
     }
 
     // Resize CPU staging buffer
@@ -8433,6 +8480,7 @@ void RenderSystem::BuildMaterialSSBO() {
     // Fill material data for each entity
     u32 index = 0;
     for (Entity entity : meshEntities) {
+        if (index >= entityCount) break;  // buffer full (defensive; grows next frame)
         MaterialGPU materialGPU;
         MaterialComponent* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
         if (material) {
@@ -8573,10 +8621,24 @@ void RenderSystem::SetHDREnabled(bool enabled) {
     if (!m_Renderer) return;
     if (m_VulkanRenderer->IsHDREnabled() == enabled) return;
 
+    // HDR toggling recreates the swapchain, render pass, framebuffers, and pipelines.
+    // Doing that synchronously here is unsafe: the editor calls this from inside its
+    // ImGui panel draw, mid-frame, while a command buffer that references those
+    // resources is still open — the driver access-violates at submit (same crash
+    // class as MSAA, see ApplyPendingMSAAChange). Defer to the next frame's start.
+    m_PendingHDREnabled = enabled;
+    m_PendingHDRChange = true;
+}
+
+void RenderSystem::ApplyPendingHDRChange() {
+    m_PendingHDRChange = false;
+    if (!m_Renderer) return;
+    if (m_VulkanRenderer->IsHDREnabled() == m_PendingHDREnabled) return;
+
     // VulkanRenderer::SetHDREnabled handles: swapchain recreate, render pass recreate,
-    // framebuffer recreate, and notifies resize callbacks. After that, our pipelines
-    // (which reference the render pass) must be recreated too.
-    m_VulkanRenderer->SetHDREnabled(enabled);
+    // framebuffer recreate, and notifies resize callbacks (GPU is idled internally).
+    // After that, our pipelines (which reference the render pass) must be recreated too.
+    m_VulkanRenderer->SetHDREnabled(m_PendingHDREnabled);
     RecreatePipelines(true);  // GPU already idle from VulkanRenderer::SetHDREnabled
 }
 

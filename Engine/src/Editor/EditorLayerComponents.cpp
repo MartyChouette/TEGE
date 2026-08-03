@@ -41,6 +41,7 @@
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
+#include "Enjin/ECS/Components/CineComponent.h"
 #include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/IKComponents.h"
@@ -5070,6 +5071,79 @@ void EditorLayer::DrawStreamingPortalComponent(ECS::Entity entity) {
         if (ImGui::BeginPopupContextItem("StreamingPortalCtx")) {
             if (ImGui::MenuItem("Remove Component")) {
                 RemoveComponentWithUndo<Scene::StreamingPortalComponent>(entity, "streamingPortal", "Streaming Portal");
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawCineComponent(ECS::Entity entity) {
+    std::string hdr = std::string(GetComponentIcon("Camera")) + "Virtual Cinematography (CINE)";
+    if (ImGui::CollapsingHeader(hdr.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* cine = m_World->GetComponent<ECS::CineComponent>(entity);
+        if (!cine) return;
+
+        ImGui::Checkbox("Enabled##CineComp", &cine->enabled);
+
+        ImGui::SeparatorText("Director Preset");
+        const char* directorNames[] = {
+            "Kubrick (1-Point Dolly, Deep Focus, No Ease)",
+            "Hitchcock (Triads, Vertigo Zoom, Proximity)",
+            "Polanski (Eye-Level Lock, Claustrophobic Track)",
+            "Welles (Extreme Low Angle, Crane Oner, Contrast)",
+            "Spielberg (Retargeted Oner, Emotional Reveals)",
+            "Lucas (Graphic Tableaux, Dual-Vcam Wipes)",
+            "Ford (Locked Frame Holds, Absolute Look Aim)",
+            "Kurosawa (Telephoto Compression, A/B/C Multicam)"
+        };
+        int currentDirector = static_cast<int>(cine->directorStyle);
+        if (ImGui::Combo("Director Style##CineComp", &currentDirector, directorNames, 8)) {
+            cine->directorStyle = static_cast<ECS::CineDirectorStyle>(currentDirector);
+        }
+
+        ImGui::SeparatorText("Grip Department & Rig");
+        const char* rigNames[] = {
+            "Fixed (Lock-off)",
+            "HumanCarried (Steadicam / Handheld)",
+            "Tracked (Dolly Track)",
+            "Arm (Crane / Boom Arm)",
+            "Suspended (Cable Cam)",
+            "FreeFlying (Drone / Flycam)"
+        };
+        int currentRig = static_cast<int>(cine->rigArchetype);
+        if (ImGui::Combo("Rig Archetype##CineComp", &currentRig, rigNames, 6)) {
+            cine->rigArchetype = static_cast<ECS::CineRigArchetype>(currentRig);
+        }
+
+        ImGui::SeparatorText("Second-Order Dynamics");
+        ImGui::SliderFloat("Frequency (f)##CineComp", &cine->frequency, 0.1f, 10.0f, "%.1f Hz");
+        ImGui::SetItemTooltip("Spring responsiveness (higher = faster, lower = heavier mass)");
+        ImGui::SliderFloat("Damping Ratio (zeta)##CineComp", &cine->dampingRatio, 0.1f, 2.0f, "%.2f");
+        ImGui::SetItemTooltip("1.0 = Critically Damped, <1.0 = Underdamped / Overshoot, >1.0 = Overdamped");
+        ImGui::SliderFloat("Initial Response (r)##CineComp", &cine->initialResponse, -2.0f, 2.0f, "%.2f");
+        ImGui::SetItemTooltip("0 = Smooth Start, >0 = Immediate, <0 = Anticipation");
+
+        ImGui::SeparatorText("Camera & Optics");
+        ImGui::SliderFloat("Focal Length (mm)##CineComp", &cine->focalLengthMm, 12.0f, 300.0f, "%.0f mm");
+        ImGui::SliderFloat("Aperture (T-Stop)##CineComp", &cine->apertureTStop, 1.0f, 22.0f, "T%.1f");
+        ImGui::DragFloat("Focus Distance (m)##CineComp", &cine->focusDistanceMeters, 0.1f, 0.1f, 100.0f, "%.2f m");
+        ImGui::SliderFloat("Anamorphic Squeeze##CineComp", &cine->squeezeRatio, 1.0f, 2.0f, "%.2fx");
+
+        ImGui::SeparatorText("Electric & Lighting Ratios");
+        ImGui::DragFloat("Key Intensity (EV)##CineComp", &cine->keyIntensityEv, 0.1f, 0.0f, 20.0f, "%.1f EV");
+        ImGui::SliderFloat("Key : Fill Ratio##CineComp", &cine->keyToFillRatio, 1.0f, 16.0f, "%.1f : 1");
+        ImGui::SliderFloat("Key : Rim Ratio##CineComp", &cine->keyToRimRatio, 1.0f, 16.0f, "%.1f : 1");
+
+        ImGui::SeparatorText("Staging & Target Intent");
+        i32 targetId = static_cast<i32>(cine->targetSubjectEntityId);
+        if (ImGui::InputInt("Target Subject Entity ID##CineComp", &targetId)) {
+            cine->targetSubjectEntityId = static_cast<u64>(targetId);
+        }
+        ImGui::DragFloat3("Framing Offset##CineComp", &cine->framingOffset.x, 0.05f);
+
+        if (ImGui::BeginPopupContextItem("CineCompCtx")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                RemoveComponentWithUndo<ECS::CineComponent>(entity, "cineComponent", "Virtual Cinematography (CINE)");
             }
             ImGui::EndPopup();
         }

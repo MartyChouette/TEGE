@@ -78,21 +78,28 @@ void GameMenuSystem::Render(f32 screenW, f32 screenH) {
 // ---------------------------------------------------------------------------
 
 void GameMenuSystem::RenderMainMenu(f32 w, f32 h) {
-    // Semi-transparent dim overlay so the game scene shows through
+    // Solid full-screen opaque background cover card over the game scene
     ImDrawList* draw = ImGui::GetBackgroundDrawList();
     draw->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(w, h),
-        IM_COL32(8, 10, 18, 100),   // top-left (lighter)
-        IM_COL32(8, 10, 18, 100),   // top-right
-        IM_COL32(12, 12, 20, 180),  // bottom-right (darker)
-        IM_COL32(12, 12, 20, 180)); // bottom-left
+        IM_COL32(12, 14, 24, 255),   // top-left
+        IM_COL32(18, 22, 34, 255),   // top-right
+        IM_COL32(10, 12, 20, 255),   // bottom-right
+        IM_COL32(8, 10, 18, 255));   // bottom-left
 
     const f32 buttonW = 280.0f;
-    const f32 panelH = 340.0f;
-    const f32 startX = (w - buttonW) * 0.5f;
-    const f32 startY = (h - panelH) * 0.5f;
+    const f32 cardW = 380.0f;
+    const f32 cardH = 440.0f;
+    const f32 cardX = (w - cardW) * 0.5f;
+    const f32 cardY = (h - cardH) * 0.5f;
 
-    ImGui::SetNextWindowPos(ImVec2(startX - 40.0f, startY - 60.0f));
-    ImGui::SetNextWindowSize(ImVec2(buttonW + 80.0f, panelH + 100.0f));
+    // Main Menu Card container frame
+    draw->AddRectFilled(ImVec2(cardX, cardY), ImVec2(cardX + cardW, cardY + cardH),
+        IM_COL32(20, 24, 38, 245), 14.0f);
+    draw->AddRect(ImVec2(cardX, cardY), ImVec2(cardX + cardW, cardY + cardH),
+        IM_COL32(65, 80, 120, 200), 14.0f, 0, 1.5f);
+
+    ImGui::SetNextWindowPos(ImVec2(cardX, cardY + 24.0f));
+    ImGui::SetNextWindowSize(ImVec2(cardW, cardH - 24.0f));
     ImGui::Begin("##MainMenu", nullptr,
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
@@ -102,7 +109,7 @@ void GameMenuSystem::RenderMainMenu(f32 w, f32 h) {
     ImGui::PushFont(nullptr); // use default; engine may push a large font externally
     {
         ImVec2 titleSize = ImGui::CalcTextSize(m_GameTitle.c_str());
-        ImGui::SetCursorPosX((buttonW + 80.0f - titleSize.x) * 0.5f);
+        ImGui::SetCursorPosX((cardW - titleSize.x) * 0.5f);
         ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "%s", m_GameTitle.c_str());
     }
     ImGui::PopFont();
@@ -111,7 +118,7 @@ void GameMenuSystem::RenderMainMenu(f32 w, f32 h) {
 
     // Center buttons
     auto CenterButton = [&](const char* label, const char* action) {
-        ImGui::SetCursorPosX((buttonW + 80.0f - buttonW) * 0.5f);
+        ImGui::SetCursorPosX((cardW - buttonW) * 0.5f);
         if (RenderMenuButton(label, buttonW)) {
             if (m_Callback) m_Callback(action);
         }
@@ -185,11 +192,19 @@ void GameMenuSystem::RenderPauseMenu(f32 w, f32 h) {
 
 void GameMenuSystem::RenderOptions(f32 w, f32 h) {
     ImDrawList* draw = ImGui::GetBackgroundDrawList();
-    draw->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(w, h),
-        IM_COL32(8, 10, 18, 100),   // top-left (lighter)
-        IM_COL32(8, 10, 18, 100),   // top-right
-        IM_COL32(12, 12, 20, 180),  // bottom-right (darker)
-        IM_COL32(12, 12, 20, 180)); // bottom-left
+    if (m_ReturnScreen == MenuScreen::MainMenu || m_CurrentScreen == MenuScreen::MainMenu) {
+        draw->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(w, h),
+            IM_COL32(12, 14, 24, 255),
+            IM_COL32(18, 22, 34, 255),
+            IM_COL32(10, 12, 20, 255),
+            IM_COL32(8, 10, 18, 255));
+    } else {
+        draw->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(w, h),
+            IM_COL32(8, 10, 18, 100),   // top-left (lighter)
+            IM_COL32(8, 10, 18, 100),   // top-right
+            IM_COL32(12, 12, 20, 180),  // bottom-right (darker)
+            IM_COL32(12, 12, 20, 180)); // bottom-left
+    }
 
     const f32 panelW = 640.0f;
     const f32 panelH = 520.0f;
@@ -531,11 +546,19 @@ void GameMenuSystem::RenderControls(f32 w, f32 h) {
 
 void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
     ImDrawList* draw = ImGui::GetBackgroundDrawList();
-    draw->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(w, h),
-        IM_COL32(8, 10, 18, 100),   // top-left (lighter)
-        IM_COL32(8, 10, 18, 100),   // top-right
-        IM_COL32(12, 12, 20, 180),  // bottom-right (darker)
-        IM_COL32(12, 12, 20, 180)); // bottom-left
+    if (m_ReturnScreen == MenuScreen::MainMenu || m_CurrentScreen == MenuScreen::MainMenu) {
+        draw->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(w, h),
+            IM_COL32(12, 14, 24, 255),
+            IM_COL32(18, 22, 34, 255),
+            IM_COL32(10, 12, 20, 255),
+            IM_COL32(8, 10, 18, 255));
+    } else {
+        draw->AddRectFilledMultiColor(ImVec2(0, 0), ImVec2(w, h),
+            IM_COL32(8, 10, 18, 100),   // top-left (lighter)
+            IM_COL32(8, 10, 18, 100),   // top-right
+            IM_COL32(12, 12, 20, 180),  // bottom-right (darker)
+            IM_COL32(12, 12, 20, 180)); // bottom-left
+    }
 
     const f32 panelW = 520.0f;
     const f32 panelH = 460.0f;

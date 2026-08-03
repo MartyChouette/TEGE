@@ -99,11 +99,11 @@ BuildResult BuildPipeline::Execute(const BuildConfig& config) {
             AddMessage(MessageSeverity::Info, "Web export: " + htmlResult.outputPath);
         }
     } else {
-        // Scripts, the enjin_api headers, and script-referenced assets must
-        // ship as loose files: the pack DOES contain the scripts, but the
-        // script engine only reads from the filesystem (pak-side script
-        // loading is unimplemented), and assets referenced from script code
-        // (Audio_PlayAtPosition paths etc.) are invisible to scene scanning.
+        // Scripts, the enjin_api headers, and script-referenced assets (audio
+        // one-shots etc., invisible to scene scanning) always ship as loose
+        // files next to the executable. The script engine can now also read
+        // scripts from the .enjpak asset pack (ScriptEngine::SetAssetReader) as
+        // a fallback, but the loose copies are what the runtime loads today.
         EmitLooseRuntimeFiles(config.outputDir);
         if (!CopyPlayer(config.outputDir)) {
             // Non-fatal: warn but continue (user may not have built the player)
@@ -598,12 +598,17 @@ bool BuildPipeline::CopyPlayer(const std::string& outputDir) {
 #ifdef ENJIN_PLATFORM_WINDOWS
     candidates.push_back((fs::path(exeDir) / "EnjinPlayer.exe").string());
     candidates.push_back((fs::path(exeDir) / ".." / "EnjinPlayer.exe").string());
-    // Also check build directories
     candidates.push_back((fs::path(exeDir) / ".." / "Release" / "EnjinPlayer.exe").string());
     candidates.push_back((fs::path(exeDir) / ".." / "Debug" / "EnjinPlayer.exe").string());
+    candidates.push_back((fs::path(exeDir) / ".." / ".." / "bin" / "Release" / "EnjinPlayer.exe").string());
+    candidates.push_back((fs::path(exeDir) / ".." / ".." / "bin" / "Debug" / "EnjinPlayer.exe").string());
+    candidates.push_back((fs::path(exeDir) / "bin" / "Release" / "EnjinPlayer.exe").string());
+    candidates.push_back((fs::path(exeDir) / "bin" / "Debug" / "EnjinPlayer.exe").string());
 #else
     candidates.push_back((fs::path(exeDir) / "EnjinPlayer").string());
     candidates.push_back((fs::path(exeDir) / ".." / "EnjinPlayer").string());
+    candidates.push_back((fs::path(exeDir) / ".." / ".." / "bin" / "EnjinPlayer").string());
+    candidates.push_back((fs::path(exeDir) / "bin" / "EnjinPlayer").string());
 #endif
 
     for (const auto& candidate : candidates) {

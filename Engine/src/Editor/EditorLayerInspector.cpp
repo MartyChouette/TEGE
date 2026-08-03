@@ -42,6 +42,7 @@
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/ArtStyle.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
+#include "Enjin/ECS/Components/CineComponent.h"
 #include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/IKComponents.h"
@@ -225,6 +226,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CameraComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::CameraComponent>(e); },
             "camera"},
+        {"Virtual Cinematography (CINE)", "Rendering", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::CineComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CineComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::CineComponent>(e); },
+            "cineComponent", DimensionTag::Only3D},
         {"Text", "Rendering", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TextComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TextComponent>(e); },
@@ -1643,6 +1649,10 @@ void EditorLayer::DrawInspectorPanel() {
                     ImGui::SetItemTooltip("Direction hint for elbow/knee bend");
                 }
             }
+        }
+
+        if (m_World->HasComponent<ECS::CineComponent>(m_PrimarySelected)) {
+            DrawCineComponent(m_PrimarySelected);
         }
 
         // Visual components

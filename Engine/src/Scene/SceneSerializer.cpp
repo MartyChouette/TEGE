@@ -28,6 +28,7 @@
 #include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Lens.h"
+#include "Enjin/ECS/Components/CineComponent.h"
 #include "Enjin/ECS/Components/MorphTarget.h"
 #include "Enjin/ECS/Components/MeshRenderer.h"
 #include "Enjin/ECS/Components/DynamicDifficulty.h"
@@ -1040,6 +1041,46 @@ ECS::ElementalVolumeComponent DeserializeElementalVolumeComponent(const json& j)
     if (j.contains("windMultiplier")) v.windMultiplier = j["windMultiplier"].get<f32>();
     if (j.contains("killOnContact")) v.killOnContact = JB(j["killOnContact"]);
     return v;
+}
+
+json SerializeCineComponent(const ECS::CineComponent& c) {
+    json j;
+    j["enabled"] = c.enabled;
+    j["directorStyle"] = static_cast<int>(c.directorStyle);
+    j["rigArchetype"] = static_cast<int>(c.rigArchetype);
+    j["focalLengthMm"] = RF(c.focalLengthMm);
+    j["apertureTStop"] = RF(c.apertureTStop);
+    j["focusDistanceMeters"] = RF(c.focusDistanceMeters);
+    j["squeezeRatio"] = RF(c.squeezeRatio);
+    j["keyIntensityEv"] = RF(c.keyIntensityEv);
+    j["keyToFillRatio"] = RF(c.keyToFillRatio);
+    j["keyToRimRatio"] = RF(c.keyToRimRatio);
+    j["frequency"] = RF(c.frequency);
+    j["dampingRatio"] = RF(c.dampingRatio);
+    j["initialResponse"] = RF(c.initialResponse);
+    j["targetSubjectEntityId"] = c.targetSubjectEntityId;
+    j["framingOffset"] = SerializeVector3(c.framingOffset);
+    return j;
+}
+
+ECS::CineComponent DeserializeCineComponent(const json& j) {
+    ECS::CineComponent c;
+    if (j.contains("enabled")) c.enabled = JB(j["enabled"]);
+    if (j.contains("directorStyle")) c.directorStyle = static_cast<ECS::CineDirectorStyle>(j["directorStyle"].get<int>());
+    if (j.contains("rigArchetype")) c.rigArchetype = static_cast<ECS::CineRigArchetype>(j["rigArchetype"].get<int>());
+    if (j.contains("focalLengthMm")) c.focalLengthMm = j["focalLengthMm"].get<f32>();
+    if (j.contains("apertureTStop")) c.apertureTStop = j["apertureTStop"].get<f32>();
+    if (j.contains("focusDistanceMeters")) c.focusDistanceMeters = j["focusDistanceMeters"].get<f32>();
+    if (j.contains("squeezeRatio")) c.squeezeRatio = j["squeezeRatio"].get<f32>();
+    if (j.contains("keyIntensityEv")) c.keyIntensityEv = j["keyIntensityEv"].get<f32>();
+    if (j.contains("keyToFillRatio")) c.keyToFillRatio = j["keyToFillRatio"].get<f32>();
+    if (j.contains("keyToRimRatio")) c.keyToRimRatio = j["keyToRimRatio"].get<f32>();
+    if (j.contains("frequency")) c.frequency = j["frequency"].get<f32>();
+    if (j.contains("dampingRatio")) c.dampingRatio = j["dampingRatio"].get<f32>();
+    if (j.contains("initialResponse")) c.initialResponse = j["initialResponse"].get<f32>();
+    if (j.contains("targetSubjectEntityId")) c.targetSubjectEntityId = j["targetSubjectEntityId"].get<u64>();
+    if (j.contains("framingOffset")) c.framingOffset = DeserializeVector3(j["framingOffset"]);
+    return c;
 }
 
 // Serialize PostProcessSettings (GPU-aligned UBO struct) to JSON
@@ -6992,6 +7033,10 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 entityJson["postProcessVolume"] = SerializePostProcessVolumeComponent(*vol);
             }
 
+            if (m_World->HasComponent<ECS::CineComponent>(entity)) {
+                entityJson["cineComponent"] = SerializeCineComponent(*m_World->GetComponent<ECS::CineComponent>(entity));
+            }
+
             if (m_World->HasComponent<ECS::FluidVolumeComponent>(entity)) {
                 const auto* vol = m_World->GetComponent<ECS::FluidVolumeComponent>(entity);
                 entityJson["fluidVolume"] = SerializeFluidVolumeComponent(*vol);
@@ -7990,6 +8035,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             }
             if (entityJson.contains("lens")) {
                 m_World->AddComponent<ECS::LensComponent>(entity, DeserializeLensComponent(entityJson["lens"]));
+            }
+            if (entityJson.contains("cineComponent")) {
+                m_World->AddComponent<ECS::CineComponent>(entity, DeserializeCineComponent(entityJson["cineComponent"]));
             }
             if (entityJson.contains("morphTargets")) {
                 m_World->AddComponent<ECS::MorphTargetComponent>(entity, DeserializeMorphTargetComponent(entityJson["morphTargets"]));

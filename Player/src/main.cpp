@@ -1231,22 +1231,21 @@ public:
                                   static_cast<Enjin::f32>(extent.height));
             }
 
-            // Runtime dialogue overlay
-            if (!m_ShowingSplash) {
+            // Runtime dialogue overlay (only during active gameplay)
+            if (!m_ShowingSplash && m_GameStarted && !m_GameMenu.IsMenuOpen()) {
                 DrawDialogueOverlay();
             }
 
-            // HUD widgets (health bars, etc.)
-            if (!m_ShowingSplash && m_World) {
+            // HUD widgets (health bars, tube readout, crosshair, etc. — only during active gameplay)
+            if (!m_ShowingSplash && m_GameStarted && !m_GameMenu.IsMenuOpen() && m_World) {
                 m_HUDSystem.Update(m_World.get(), m_Camera.get(),
                     0.0f, 0.0f,
                     static_cast<Enjin::f32>(extent.width),
                     static_cast<Enjin::f32>(extent.height));
             }
 
-            // Runtime UI canvases (also suppressed under the intro card —
-            // an authored MainMenu canvas would otherwise take clicks)
-            if (!m_ShowingSplash && !EngineSplashActive() && m_World) {
+            // Runtime UI canvases (suppressed when built-in GameMenu is open or intro card active to prevent double menus)
+            if (!m_ShowingSplash && !EngineSplashActive() && !m_GameMenu.IsMenuOpen() && m_World) {
                 m_UISystem.Update(m_World.get(),
                     static_cast<Enjin::f32>(extent.width),
                     static_cast<Enjin::f32>(extent.height), 0.0f);
@@ -1616,6 +1615,9 @@ private:
         m_SplashTitleEntity = 0;
         m_SplashSubEntity = 0;
         m_SplashLightEntity = 0;
+
+        // Wire AssetReader for packed script loading from .enjpak
+        m_ScriptEngine.SetAssetReader(&m_AssetReader);
 
         // Load the actual game scene
         if (!m_StartScene.empty()) {
@@ -2317,10 +2319,9 @@ private:
 
     Enjin::Effects::Water3D m_Water3D;
 
-    // TODO(F11): RetroEffects — RetroEffects is a settings/config class (resolution, dither,
-    //   CRT, VHS, fog, color mode). It has no Vulkan rendering integration in RenderSystem or
-    //   PostProcessing yet. To wire: add RetroEffects member, apply settings to push constant
-    //   retro flags and shader uniforms, integrate CRT/VHS as post-process passes.
+    // Retro effects (dither/CRT/VHS/vertex-snap/etc.) are not driven here: they
+    // are baked into the scene's SceneRenderSettings by the editor and applied
+    // at load via renderSettings.ApplyToRuntime() (see LoadSceneFromPack).
 
     // Audio event graph runtime
     Enjin::Audio::AudioEventGraphRuntime m_AudioGraphRuntime;
