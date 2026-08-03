@@ -1219,16 +1219,25 @@ private:
     bool m_PendingSkyboxConfig = false;
     Renderer::SkyboxConfig m_PendingSkybox;
     VkPipeline m_SkyboxPipelineHandle = VK_NULL_HANDLE;
+    VkPipeline m_SkyboxPipelineOffscreen = VK_NULL_HANDLE;  // offscreen UNORM 1-attachment pass variant (VUID-02684)
     VkPipelineLayout m_SkyboxPipelineLayoutHandle = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_SkyboxDescriptorSetLayoutHandle = VK_NULL_HANDLE;
     std::unique_ptr<Renderer::VulkanBuffer> m_SkyboxVertexBuffer;
     VkDescriptorPool m_SkyboxDescriptorPool = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> m_SkyboxDescriptorSets;
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_SkyboxUniformBuffers;
+    // Last contents written to each per-frame skybox set — skip redundant
+    // vkUpdateDescriptorSets (updating a set bound in the recording command buffer
+    // invalidates the whole buffer: the '-recording' validation storm)
+    std::vector<VkImageView> m_SkyboxSetWrittenView;
+    std::vector<VkBuffer> m_SkyboxSetWrittenBuffer;
     void CreateSkyboxPipeline(VkRenderPass renderPass = VK_NULL_HANDLE);
+    bool CreateSkyboxPipelineVariant(VkRenderPass renderPass, u32 colorAttachmentCount,
+                                     VkSampleCountFlagBits samples, VkPipeline& outPipeline);
     void RenderSkybox(VkCommandBuffer commandBuffer,
                       const VkViewport* viewportOverride = nullptr,
-                      const VkRect2D* scissorOverride = nullptr);
+                      const VkRect2D* scissorOverride = nullptr,
+                      bool offscreenPass = false);
     void CreateSkyboxCubeVBO();
 
     // Water surface mesh generation

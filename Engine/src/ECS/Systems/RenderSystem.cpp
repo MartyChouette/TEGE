@@ -3542,6 +3542,10 @@ void RenderSystem::Shutdown() {
             vkDestroyPipeline(device, m_SkyboxPipelineHandle, nullptr);
             m_SkyboxPipelineHandle = VK_NULL_HANDLE;
         }
+        if (m_SkyboxPipelineOffscreen != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, m_SkyboxPipelineOffscreen, nullptr);
+            m_SkyboxPipelineOffscreen = VK_NULL_HANDLE;
+        }
         if (m_SkyboxPipelineLayoutHandle != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(device, m_SkyboxPipelineLayoutHandle, nullptr);
             m_SkyboxPipelineLayoutHandle = VK_NULL_HANDLE;
@@ -3620,6 +3624,10 @@ void RenderSystem::ProcessPendingRecreation() {
                 vkDestroyPipeline(device, m_SkyboxPipelineHandle, nullptr);
                 m_SkyboxPipelineHandle = VK_NULL_HANDLE;
             }
+            if (m_SkyboxPipelineOffscreen != VK_NULL_HANDLE) {
+                vkDestroyPipeline(device, m_SkyboxPipelineOffscreen, nullptr);
+                m_SkyboxPipelineOffscreen = VK_NULL_HANDLE;
+            }
             if (m_SkyboxPipelineLayoutHandle != VK_NULL_HANDLE) {
                 vkDestroyPipelineLayout(device, m_SkyboxPipelineLayoutHandle, nullptr);
                 m_SkyboxPipelineLayoutHandle = VK_NULL_HANDLE;
@@ -3635,6 +3643,10 @@ void RenderSystem::ProcessPendingRecreation() {
             m_SkyboxDescriptorSets.clear();
             m_SkyboxUniformBuffers.clear();
             CreateSkyboxPipeline();
+            // Rebuild the offscreen variant against the new pipeline layout
+            if (m_OffscreenRenderPass != VK_NULL_HANDLE) {
+                CreateSkyboxPipelineVariant(m_OffscreenRenderPass, 1, VK_SAMPLE_COUNT_1_BIT, m_SkyboxPipelineOffscreen);
+            }
             ENJIN_LOG_INFO(Renderer, "Shader hot-reload: skybox shaders reloaded successfully");
             break;
         }
@@ -4917,7 +4929,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     // Render skybox in game view (pass viewport/scissor for render target dimensions)
-    RenderSkybox(commandBuffer, &viewport, &scissor);
+    RenderSkybox(commandBuffer, &viewport, &scissor, /*offscreenPass=*/true);
 
     // Reset descriptor cache for this render pass
     m_LastBound.Reset(); m_GeometryPoolBound = false;
@@ -5623,7 +5635,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
         // Render skybox for this viewport
-        RenderSkybox(commandBuffer, &vkViewport, &scissor);
+        RenderSkybox(commandBuffer, &vkViewport, &scissor, /*offscreenPass=*/true);
 
         // Reset descriptor cache for each viewport
         m_LastBound.Reset(); m_GeometryPoolBound = false;
@@ -11175,6 +11187,19 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         }
     }
 
+    // Offscreen skybox pipeline — the main skybox pipeline targets the SRGB MRT
+    // swapchain pass and is incompatible with the UNORM 1-attachment offscreen
+    // pass (VUID-02684); RenderSkybox skips the skybox offscreen until this exists
+    if (m_SkyboxPipelineLayoutHandle != VK_NULL_HANDLE) {
+        if (m_SkyboxPipelineOffscreen != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_VulkanRenderer->GetContext()->GetDevice(), m_SkyboxPipelineOffscreen, nullptr);
+            m_SkyboxPipelineOffscreen = VK_NULL_HANDLE;
+        }
+        if (!CreateSkyboxPipelineVariant(renderPass, 1, VK_SAMPLE_COUNT_1_BIT, m_SkyboxPipelineOffscreen)) {
+            ENJIN_LOG_WARN(Renderer, "Failed to create offscreen skybox pipeline");
+        }
+    }
+
     // Note: skybox pipeline is NOT recreated here — it was created for the swapchain
     // render pass in Initialize() and works in both passes via driver-level render pass
     // compatibility (SRGB/UNORM same memory layout). Destroying and recreating it here
@@ -11215,64 +11240,33 @@ void RenderSystem::CreateSkyboxCubeVBO() {
     m_SkyboxVertexBuffer->UploadData(cubeVertices, sizeof(cubeVertices));
 }
 
-void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
-    ENJIN_LOG_INFO(Renderer, "CreateSkyboxPipeline called");
-
-    if (!m_Renderer || !m_VulkanRenderer->GetContext()) {
-        ENJIN_LOG_ERROR(Renderer, "CreateSkyboxPipeline: No renderer or context!");
-        return;
+// Creates one skybox VkPipeline against the given render pass. The pipeline must be
+// compatible with the pass it's bound in (VUID-02684): the swapchain main pass is
+// SRGB MRT (2 attachments, MSAA-capable), offscreen RenderTargets are UNORM single
+// color (1 attachment, always 1 sample) — one pipeline cannot serve both.
+// Requires m_SkyboxPipelineLayoutHandle (created by CreateSkyboxPipeline).
+bool RenderSystem::CreateSkyboxPipelineVariant(VkRenderPass renderPass, u32 colorAttachmentCount,
+                                               VkSampleCountFlagBits samples, VkPipeline& outPipeline) {
+    if (!m_Renderer || !m_VulkanRenderer->GetContext() || renderPass == VK_NULL_HANDLE ||
+        m_SkyboxPipelineLayoutHandle == VK_NULL_HANDLE) {
+        return false;
     }
-
     auto* context = m_VulkanRenderer->GetContext();
     VkDevice device = context->GetDevice();
 
-    // Load skybox shaders
-    auto skyboxVert = std::make_unique<Renderer::VulkanShader>(context);
-    if (!skyboxVert->LoadFromSPIRV(
+    Renderer::VulkanShader skyboxVert(context);
+    if (!skyboxVert.LoadFromSPIRV(
         reinterpret_cast<const u8*>(Renderer::ShaderData::SkyboxVertexShaderData),
         Renderer::ShaderData::SkyboxVertexShaderDataSize)) {
         ENJIN_LOG_WARN(Renderer, "Skybox vertex shader not available, skybox disabled");
-        return;
+        return false;
     }
-
-    auto skyboxFrag = std::make_unique<Renderer::VulkanShader>(context);
-    if (!skyboxFrag->LoadFromSPIRV(
+    Renderer::VulkanShader skyboxFrag(context);
+    if (!skyboxFrag.LoadFromSPIRV(
         reinterpret_cast<const u8*>(Renderer::ShaderData::SkyboxFragmentShaderData),
         Renderer::ShaderData::SkyboxFragmentShaderDataSize)) {
         ENJIN_LOG_WARN(Renderer, "Skybox fragment shader not available, skybox disabled");
-        return;
-    }
-
-    // Create descriptor set layout (binding 0: UBO, binding 1: cubemap sampler)
-    std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
-    bindings[0].binding = 0;
-    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    bindings[0].descriptorCount = 1;
-    bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-    bindings[1].binding = 1;
-    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[1].descriptorCount = 1;
-    bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    VkDescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = static_cast<u32>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &m_SkyboxDescriptorSetLayoutHandle) != VK_SUCCESS) {
-        ENJIN_LOG_WARN(Renderer, "Failed to create skybox descriptor set layout");
-        return;
-    }
-
-    // Create pipeline layout
-    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &m_SkyboxDescriptorSetLayoutHandle;
-
-    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &m_SkyboxPipelineLayoutHandle) != VK_SUCCESS) {
-        ENJIN_LOG_WARN(Renderer, "Failed to create skybox pipeline layout");
-        return;
+        return false;
     }
 
     // Vertex input: position only (vec3)
@@ -11318,7 +11312,7 @@ void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
 
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.rasterizationSamples = m_VulkanRenderer->GetMSAASamples();
+    multisampling.rasterizationSamples = samples;
 
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -11326,32 +11320,28 @@ void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
     depthStencil.depthWriteEnable = VK_FALSE;
     depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-
-    // MRT: second attachment for velocity buffer (write zero velocity for skybox)
-    VkPipelineColorBlendAttachmentState velocityBlendAttachment{};
-    velocityBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-
-    std::array<VkPipelineColorBlendAttachmentState, 2> skyboxBlendAttachments = { colorBlendAttachment, velocityBlendAttachment };
+    // Attachment 0 = color; attachment 1 (main pass only) = velocity
+    std::array<VkPipelineColorBlendAttachmentState, 2> blendAttachments{};
+    blendAttachments[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    blendAttachments[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.attachmentCount = 2; // Swapchain MRT: color + velocity (main pass only; offscreen uses 1)
-    colorBlending.pAttachments = skyboxBlendAttachments.data();
+    colorBlending.attachmentCount = (colorAttachmentCount <= 2) ? colorAttachmentCount : 2;
+    colorBlending.pAttachments = blendAttachments.data();
 
     VkPipelineShaderStageCreateInfo vertStage{};
     vertStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vertStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertStage.module = skyboxVert->GetModule();
+    vertStage.module = skyboxVert.GetModule();
     vertStage.pName = "main";
 
     VkPipelineShaderStageCreateInfo fragStage{};
     fragStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragStage.module = skyboxFrag->GetModule();
+    fragStage.module = skyboxFrag.GetModule();
     fragStage.pName = "main";
 
     VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
@@ -11369,10 +11359,64 @@ void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = m_SkyboxPipelineLayoutHandle;
-    pipelineInfo.renderPass = (renderPass != VK_NULL_HANDLE) ? renderPass : m_VulkanRenderer->GetRenderPass();
+    pipelineInfo.renderPass = renderPass;
     pipelineInfo.subpass = 0;
 
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_SkyboxPipelineHandle) != VK_SUCCESS) {
+    return vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &outPipeline) == VK_SUCCESS;
+}
+
+void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
+    ENJIN_LOG_INFO(Renderer, "CreateSkyboxPipeline called");
+
+    if (!m_Renderer || !m_VulkanRenderer->GetContext()) {
+        ENJIN_LOG_ERROR(Renderer, "CreateSkyboxPipeline: No renderer or context!");
+        return;
+    }
+
+    auto* context = m_VulkanRenderer->GetContext();
+    VkDevice device = context->GetDevice();
+
+    // Descriptor sets get (re)allocated below — forget what the old sets held so
+    // RenderSkybox rewrites the new ones on first use
+    m_SkyboxSetWrittenView.clear();
+    m_SkyboxSetWrittenBuffer.clear();
+
+    // Create descriptor set layout (binding 0: UBO, binding 1: cubemap sampler)
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
+    bindings[0].binding = 0;
+    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    bindings[0].descriptorCount = 1;
+    bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    bindings[1].binding = 1;
+    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[1].descriptorCount = 1;
+    bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = static_cast<u32>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
+
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &m_SkyboxDescriptorSetLayoutHandle) != VK_SUCCESS) {
+        ENJIN_LOG_WARN(Renderer, "Failed to create skybox descriptor set layout");
+        return;
+    }
+
+    // Create pipeline layout
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &m_SkyboxDescriptorSetLayoutHandle;
+
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &m_SkyboxPipelineLayoutHandle) != VK_SUCCESS) {
+        ENJIN_LOG_WARN(Renderer, "Failed to create skybox pipeline layout");
+        return;
+    }
+
+    // Build the main-pass pipeline (swapchain MRT: 2 attachments). The offscreen
+    // variant (UNORM, 1 attachment) is created in RecreateEffectPipelinesForRenderPass.
+    VkRenderPass targetPass = (renderPass != VK_NULL_HANDLE) ? renderPass : m_VulkanRenderer->GetRenderPass();
+    if (!CreateSkyboxPipelineVariant(targetPass, 2, m_VulkanRenderer->GetMSAASamples(), m_SkyboxPipelineHandle)) {
         ENJIN_LOG_WARN(Renderer, "Failed to create skybox pipeline");
         return;
     }
@@ -11423,8 +11467,13 @@ void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
 
 void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
                                 const VkViewport* viewportOverride,
-                                const VkRect2D* scissorOverride) {
-    if (!m_Skybox.IsValid() || m_SkyboxPipelineHandle == VK_NULL_HANDLE || !m_SkyboxVertexBuffer || !m_Camera) {
+                                const VkRect2D* scissorOverride,
+                                bool offscreenPass) {
+    // The pipeline must match the pass we're recording inside (VUID-02684):
+    // swapchain MRT vs offscreen UNORM are incompatible. No cross-pass fallback —
+    // if the variant for this pass doesn't exist yet, skip the skybox this frame.
+    VkPipeline pipeline = offscreenPass ? m_SkyboxPipelineOffscreen : m_SkyboxPipelineHandle;
+    if (!m_Skybox.IsValid() || pipeline == VK_NULL_HANDLE || !m_SkyboxVertexBuffer || !m_Camera) {
         return;
     }
 
@@ -11441,30 +11490,47 @@ void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
     // Upload UBO
     m_SkyboxUniformBuffers[currentFrame]->UploadData(&viewProj, sizeof(Math::Matrix4));
 
-    // Update descriptor set with UBO and cubemap
-    VkDescriptorBufferInfo uboInfo{};
-    uboInfo.buffer = m_SkyboxUniformBuffers[currentFrame]->GetBuffer();
-    uboInfo.offset = 0;
-    uboInfo.range = sizeof(Math::Matrix4);
-
+    // Rewrite the descriptor set ONLY when its contents actually changed (first use,
+    // or the skybox cubemap / UBO buffer was recreated). Updating a set that is
+    // bound in the recording command buffer invalidates the whole buffer — this
+    // per-draw update was the source of the '-recording' validation storm and its
+    // driver-crash risk. Cubemap changes go through ApplyPendingSkybox at frame
+    // start, so a mid-recording rewrite no longer happens in normal operation.
+    VkBuffer uboBuffer = m_SkyboxUniformBuffers[currentFrame]->GetBuffer();
     VkDescriptorImageInfo cubemapInfo = m_Skybox.GetDescriptorInfo();
 
-    std::array<VkWriteDescriptorSet, 2> writes{};
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].dstSet = m_SkyboxDescriptorSets[currentFrame];
-    writes[0].dstBinding = 0;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    writes[0].descriptorCount = 1;
-    writes[0].pBufferInfo = &uboInfo;
+    if (m_SkyboxSetWrittenView.size() != m_SkyboxDescriptorSets.size()) {
+        m_SkyboxSetWrittenView.assign(m_SkyboxDescriptorSets.size(), VK_NULL_HANDLE);
+        m_SkyboxSetWrittenBuffer.assign(m_SkyboxDescriptorSets.size(), VK_NULL_HANDLE);
+    }
 
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = m_SkyboxDescriptorSets[currentFrame];
-    writes[1].dstBinding = 1;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    writes[1].descriptorCount = 1;
-    writes[1].pImageInfo = &cubemapInfo;
+    if (m_SkyboxSetWrittenView[currentFrame] != cubemapInfo.imageView ||
+        m_SkyboxSetWrittenBuffer[currentFrame] != uboBuffer) {
+        VkDescriptorBufferInfo uboInfo{};
+        uboInfo.buffer = uboBuffer;
+        uboInfo.offset = 0;
+        uboInfo.range = sizeof(Math::Matrix4);
 
-    vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
+        std::array<VkWriteDescriptorSet, 2> writes{};
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = m_SkyboxDescriptorSets[currentFrame];
+        writes[0].dstBinding = 0;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[0].descriptorCount = 1;
+        writes[0].pBufferInfo = &uboInfo;
+
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = m_SkyboxDescriptorSets[currentFrame];
+        writes[1].dstBinding = 1;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[1].descriptorCount = 1;
+        writes[1].pImageInfo = &cubemapInfo;
+
+        vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
+
+        m_SkyboxSetWrittenView[currentFrame] = cubemapInfo.imageView;
+        m_SkyboxSetWrittenBuffer[currentFrame] = uboBuffer;
+    }
 
     // Set viewport and scissor — use overrides if provided (offscreen / splitscreen),
     // otherwise fall back to swapchain extent (main pass single-camera)
@@ -11489,7 +11555,7 @@ void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
     }
 
     // Bind skybox pipeline and draw
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_SkyboxPipelineHandle);
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
         m_SkyboxPipelineLayoutHandle, 0, 1, &m_SkyboxDescriptorSets[currentFrame], 0, nullptr);
 
