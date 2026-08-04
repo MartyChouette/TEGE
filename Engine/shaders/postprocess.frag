@@ -181,6 +181,10 @@ layout(binding = 1) uniform PostProcessSettings {
     vec4 invViewProj1;
     vec4 invViewProj2;
     vec4 invViewProj3;
+    vec4 viewProj0;       // Forward view-projection columns (world -> clip;
+    vec4 viewProj1;       // SSAO sample projection, contact-shadow march)
+    vec4 viewProj2;
+    vec4 viewProj3;
     vec3 lightDirWorld;   // Directional light direction (toward light)
     float _ssPad0;
     vec4 lightScreenPos;  // xy=NDC 0..1, z=depth, w=1 if on-screen
@@ -1292,7 +1296,8 @@ float interleavedGradientNoise(vec2 screenPos) {
 
 // Reconstruct world-space position from UV + depth using inverse view-projection matrix
 vec3 reconstructWorldPos(vec2 uv, float depth) {
-    // NDC: x,y in [-1,1], z = depth (Vulkan 0..1 reversed Z)
+    // NDC: x,y in [-1,1], z = depth (Vulkan 0..1, STANDARD Z: 0=near, 1=far —
+    // the depth attachment clears to 1.0; sky pixels read 1.0)
     vec4 clip = vec4(uv * 2.0 - 1.0, depth, 1.0);
     // Manually multiply by inverse view-projection matrix (stored as 4 column vectors)
     vec4 world;
@@ -1301,6 +1306,20 @@ vec3 reconstructWorldPos(vec2 uv, float depth) {
     world.z = dot(clip, vec4(settings.invViewProj0.z, settings.invViewProj1.z, settings.invViewProj2.z, settings.invViewProj3.z));
     world.w = dot(clip, vec4(settings.invViewProj0.w, settings.invViewProj1.w, settings.invViewProj2.w, settings.invViewProj3.w));
     return world.xyz / world.w;
+}
+
+// Project a world-space point to screen: returns (uv.xy, ndcDepth). clipW out
+// param goes <= 0 when the point is behind the camera (result unusable).
+vec3 projectWorldToScreen(vec3 worldPos, out float clipW) {
+    vec4 wp = vec4(worldPos, 1.0);
+    vec4 clip;
+    clip.x = dot(wp, vec4(settings.viewProj0.x, settings.viewProj1.x, settings.viewProj2.x, settings.viewProj3.x));
+    clip.y = dot(wp, vec4(settings.viewProj0.y, settings.viewProj1.y, settings.viewProj2.y, settings.viewProj3.y));
+    clip.z = dot(wp, vec4(settings.viewProj0.z, settings.viewProj1.z, settings.viewProj2.z, settings.viewProj3.z));
+    clip.w = dot(wp, vec4(settings.viewProj0.w, settings.viewProj1.w, settings.viewProj2.w, settings.viewProj3.w));
+    clipW = clip.w;
+    vec3 ndc = clip.xyz / max(abs(clip.w), 1e-6);
+    return vec3(ndc.xy * 0.5 + 0.5, ndc.z);
 }
 
 // Reconstruct normal from depth buffer using cross product of partial derivatives
@@ -1354,13 +1373,13 @@ vec3 applySSAO(vec3 color, vec2 uv) {
     if (settings.ssaoEnabled == 0) return color;
 
     float depth = texture(depthTexture, uv).r;
-    if (depth < 0.0001) return color; // Sky
+    if (depth >= 0.9999) return color; // Sky (standard Z: cleared to 1.0)
 
     vec3 fragPos = reconstructWorldPos(uv, depth);
     vec3 normal = reconstructNormal(uv);
 
-    vec2 texelSize = 1.0 / vec2(settings.screenWidth, settings.screenHeight);
     vec2 screenPos = uv * vec2(settings.screenWidth, settings.screenHeight);
+    float fragLinear = linearizeDepth(depth, settings.cameraNearPlane, settings.cameraFarPlane);
 
     float occlusion = 0.0;
     uint sampleCount = min(settings.ssaoSamples, 32u);
@@ -1383,20 +1402,21 @@ vec3 applySSAO(vec3 color, vec2 uv) {
 
         vec3 samplePos = fragPos + sampleOffset * settings.ssaoRadius;
 
-        // Project sample back to screen
-        vec4 projSample;
-        projSample.x = dot(vec4(samplePos, 1.0), vec4(settings.invViewProj0.x, settings.invViewProj0.y, settings.invViewProj0.z, settings.invViewProj0.w));
-        // We need VIEW-PROJ, not INV-VIEW-PROJ to project. Use depth comparison instead:
-        // Approximate: offset UV by projected radius and compare depths
-        vec2 offsetUV = uv + sampleOffset.xy * settings.ssaoRadius * texelSize * 100.0;
-        offsetUV = clamp(offsetUV, 0.001, 0.999);
-        float sampleDepth = texture(depthTexture, offsetUV).r;
-        float sampleLinear = linearizeDepth(sampleDepth, settings.cameraNearPlane, settings.cameraFarPlane);
-        float fragLinear = linearizeDepth(depth, settings.cameraNearPlane, settings.cameraFarPlane);
+        // Project the hemisphere sample to screen with the FORWARD view-proj
+        // and compare against the depth buffer: the sample is occluded when
+        // scene geometry sits in front of it (classic Crysis-style SSAO).
+        float clipW;
+        vec3 s = projectWorldToScreen(samplePos, clipW);
+        if (clipW <= 0.0 || s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0) continue;
 
-        // Range check + depth comparison
-        float rangeCheck = smoothstep(0.0, 1.0, settings.ssaoRadius / max(abs(fragLinear - sampleLinear), 0.001));
-        occlusion += (sampleLinear <= fragLinear - settings.ssaoBias ? 1.0 : 0.0) * rangeCheck;
+        float sceneDepth = texture(depthTexture, s.xy).r;
+        if (sceneDepth >= 0.9999) continue; // Sample landed on sky
+        float sceneLinear = linearizeDepth(sceneDepth, settings.cameraNearPlane, settings.cameraFarPlane);
+        float sampleLinear = linearizeDepth(s.z, settings.cameraNearPlane, settings.cameraFarPlane);
+
+        // Range check keeps distant foreground silhouettes from haloing
+        float rangeCheck = smoothstep(0.0, 1.0, settings.ssaoRadius / max(abs(fragLinear - sceneLinear), 0.001));
+        occlusion += (sceneLinear <= sampleLinear - settings.ssaoBias ? 1.0 : 0.0) * rangeCheck;
     }
 
     occlusion = 1.0 - (occlusion / float(sampleCount)) * settings.ssaoIntensity;
@@ -1413,33 +1433,39 @@ vec3 applyContactShadows(vec3 color, vec2 uv) {
     if (settings.contactShadowsEnabled == 0) return color;
 
     float depth = texture(depthTexture, uv).r;
-    if (depth < 0.0001) return color; // Sky
+    if (depth >= 0.9999) return color; // Sky (standard Z: cleared to 1.0)
 
-    // March from fragment toward light in screen space
-    // Project light direction to screen-space step
-    vec2 lightDir2D = normalize(settings.lightScreenPos.xy - uv);
+    // March in WORLD space along the actual light direction and project each
+    // ray point back to screen (the old screen-space march toward
+    // lightScreenPos.xy was garbage whenever the sun was off-screen — the .w
+    // on-screen flag was never checked — and its expected-depth heuristic
+    // assumed marching toward the light always approaches the camera).
+    // contactShadowsLength is the ray length in world units.
+    vec3 fragPos = reconstructWorldPos(uv, depth);
     uint csSteps = min(settings.contactShadowsSteps, 64u);
-    vec2 stepUV = lightDir2D * settings.contactShadowsLength / float(csSteps);
 
-    float fragLinear = linearizeDepth(depth, settings.cameraNearPlane, settings.cameraFarPlane);
-    vec2 sampleUV = uv;
+    // Dither the march start per pixel to trade banding for noise
+    float noise = interleavedGradientNoise(uv * vec2(settings.screenWidth, settings.screenHeight));
+
     float shadow = 0.0;
-
     for (uint i = 1u; i <= csSteps; i++) {
-        sampleUV += stepUV;
-        if (sampleUV.x < 0.0 || sampleUV.x > 1.0 || sampleUV.y < 0.0 || sampleUV.y > 1.0) break;
+        float t = (float(i) - 0.5 + noise) / float(csSteps);
+        vec3 rayPos = fragPos + settings.lightDirWorld * (t * settings.contactShadowsLength);
 
-        float sampleDepth = texture(depthTexture, sampleUV).r;
-        float sampleLinear = linearizeDepth(sampleDepth, settings.cameraNearPlane, settings.cameraFarPlane);
+        float clipW;
+        vec3 s = projectWorldToScreen(rayPos, clipW);
+        if (clipW <= 0.0 || s.x < 0.0 || s.x > 1.0 || s.y < 0.0 || s.y > 1.0) break;
 
-        // Interpolated expected depth along ray (linear interpolation in view space)
-        float t = float(i) / float(csSteps);
-        float expectedDepth = fragLinear - t * settings.contactShadowsLength * fragLinear;
+        float sceneDepth = texture(depthTexture, s.xy).r;
+        if (sceneDepth >= 0.9999) continue; // Sky along the ray
+        float sceneLinear = linearizeDepth(sceneDepth, settings.cameraNearPlane, settings.cameraFarPlane);
+        float rayLinear = linearizeDepth(s.z, settings.cameraNearPlane, settings.cameraFarPlane);
 
-        // Hit test: sample is closer than expected (occluder found)
-        float thickness = abs(sampleLinear - expectedDepth);
-        if (sampleLinear < expectedDepth && thickness < settings.contactShadowsLength * fragLinear * 0.5) {
-            shadow = 1.0 - t; // Fade with distance
+        // Occluder: scene surface in front of the ray point, but only by a
+        // plausible thickness (skip self-intersection and distant background)
+        float thickness = rayLinear - sceneLinear;
+        if (thickness > 0.02 && thickness < settings.contactShadowsLength) {
+            shadow = 1.0 - t; // Fade with distance from the surface
             break;
         }
     }
@@ -1456,7 +1482,8 @@ vec3 applyCaustics(vec3 color, vec2 uv) {
     if (settings.causticsEnabled == 0) return color;
 
     float depth = texture(depthTexture, uv).r;
-    if (depth < 0.0001) return color; // Sky
+    if (depth >= 0.9999) return color; // Sky (standard Z: cleared to 1.0 — the old
+                                       // <0.0001 test let caustics paint the sky)
 
     vec3 worldPos = reconstructWorldPos(uv, depth);
 
@@ -1474,14 +1501,16 @@ vec3 applyCaustics(vec3 color, vec2 uv) {
         for (int x = -1; x <= 1; x++) {
             vec2 cell = vec2(float(x), float(y));
             vec2 cellID = floor(p) + cell;
-            // Pseudo-random cell center
-            vec2 cellCenter = cellID + vec2(
+            // Pseudo-random offset of the center within its cell
+            vec2 rnd = vec2(
                 fract(sin(dot(cellID, vec2(127.1, 311.7))) * 43758.5453),
                 fract(sin(dot(cellID, vec2(269.5, 183.3))) * 43758.5453)
             );
-            // Animate cell centers
-            cellCenter += 0.3 * vec2(sin(t + cellCenter.x * 6.28), cos(t + cellCenter.y * 6.28));
-            float d = length(fract(p) - cell - fract(cellCenter));
+            // Animate the offset. Do NOT fract() the animated value like the
+            // old code did — wrapping the wobble across an integer boundary
+            // teleported the cell center, making caustic cells pop.
+            vec2 offset = rnd + 0.3 * vec2(sin(t + rnd.x * 6.2831853), cos(t + rnd.y * 6.2831853));
+            float d = length(cell + offset - fract(p));
             if (d < minDist1) {
                 minDist2 = minDist1;
                 minDist1 = d;
@@ -1507,6 +1536,12 @@ vec3 applyCaustics(vec3 color, vec2 uv) {
 // ============================================================
 vec3 applyFogShafts(vec3 color, vec2 uv) {
     if (settings.fogShaftsEnabled == 0) return color;
+    // Sun must be on screen (same check god rays does). Skipping this also
+    // guards the normalize() calls below: the off-screen default is exactly
+    // (0.5, 0.5), which made normalize(lightScreenPos.xy - vec2(0.5)) a
+    // normalize(vec2(0)) — NaN, written straight into the frame whenever the
+    // sun was behind the camera.
+    if (settings.lightScreenPos.w < 0.5) return color;
 
     float depth = texture(depthTexture, uv).r;
     float fragLinear = linearizeDepth(depth, settings.cameraNearPlane, settings.cameraFarPlane);
@@ -1515,7 +1550,8 @@ vec3 applyFogShafts(vec3 color, vec2 uv) {
     vec2 screenPos = uv * vec2(settings.screenWidth, settings.screenHeight);
     float noise0 = interleavedGradientNoise(screenPos);
 
-    vec2 lightDir2D = normalize(settings.lightScreenPos.xy - uv);
+    vec2 toLight = settings.lightScreenPos.xy - uv;
+    vec2 lightDir2D = toLight / max(length(toLight), 1e-4);
     float fog = 0.0;
     float decay = 1.0;
 
@@ -1523,7 +1559,9 @@ vec3 applyFogShafts(vec3 color, vec2 uv) {
 
     for (uint i = 0u; i < sampleCount; i++) {
         float t = (float(i) + noise0) / float(sampleCount);
-        vec2 sampleUV = uv - lightDir2D * t * 0.2; // March toward light
+        // March TOWARD the light (the old `uv - lightDir2D * t` marched away
+        // from it — shafts radiated in the wrong direction)
+        vec2 sampleUV = uv + lightDir2D * t * 0.2;
         sampleUV = clamp(sampleUV, 0.001, 0.999);
 
         float sampleDepth = texture(depthTexture, sampleUV).r;
@@ -1538,7 +1576,11 @@ vec3 applyFogShafts(vec3 color, vec2 uv) {
     }
 
     // Modulate by light direction alignment (stronger when looking toward light)
-    float lightAlignment = max(dot(normalize(settings.lightScreenPos.xy - vec2(0.5)), uv - vec2(0.5)), 0.0);
+    vec2 alignVec = settings.lightScreenPos.xy - vec2(0.5);
+    float alignLen = length(alignVec);
+    float lightAlignment = (alignLen > 1e-4)
+        ? max(dot(alignVec / alignLen, uv - vec2(0.5)), 0.0)
+        : 0.5; // Sun dead-center: neutral alignment instead of normalize(0)
     lightAlignment = pow(lightAlignment + 0.3, 2.0); // Bias to prevent total darkness
 
     fog *= settings.fogShaftsIntensity * lightAlignment;
@@ -1570,8 +1612,11 @@ vec3 applyCelOutline(vec3 color, vec2 uv) {
         // Modulate thickness: flat surfaces get thinner lines, curved edges get thicker
         // Remap curvature (typically 0..~2) to a multiplier around 1.0
         thickness *= (1.0 + settings.celOutlineCurvatureWeight * curvature * 5.0);
-        // Clamp to prevent excessively thick outlines
-        thickness = clamp(thickness, 0.5, settings.celOutlineThickness * 3.0);
+        // Clamp to prevent excessively thick outlines. Bounds must stay ordered:
+        // with a thin base thickness (< 1/6) the old fixed 0.5 lower bound
+        // exceeded the upper bound — undefined clamp() in GLSL.
+        float thickLo = min(0.5, settings.celOutlineThickness);
+        thickness = clamp(thickness, thickLo, max(settings.celOutlineThickness * 3.0, thickLo));
     }
 
     // Sample 3x3 depth neighborhood
@@ -1584,8 +1629,9 @@ vec3 applyCelOutline(vec3 color, vec2 uv) {
     float d12 = texture(depthTexture, uv + vec2( 0.0,       thickness) * texelSize).r;
     float d22 = texture(depthTexture, uv + vec2( thickness,  thickness) * texelSize).r;
 
-    // Linearize depth for better edge detection (Vulkan reversed Z: 1=near, 0=far)
-    // Simple linearization: use 1/d to amplify differences at distance
+    // Sobel runs on raw (non-linear) depth — edge threshold is depth-relative
+    // (standard Z: 0=near, 1=far; NOT reversed, despite what an older comment
+    // here claimed — that stale claim already misled the sky tests once)
 
     // Sobel operators on depth
     float sobelX = (d00 + 2.0 * d01 + d02) - (d20 + 2.0 * d21 + d22);

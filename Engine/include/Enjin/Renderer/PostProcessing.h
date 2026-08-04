@@ -234,6 +234,14 @@ struct alignas(16) PostProcessSettings {
     alignas(16) Math::Vector4 invViewProj2 = Math::Vector4(0, 0, 1, 0);  // column 2
     alignas(16) Math::Vector4 invViewProj3 = Math::Vector4(0, 0, 0, 1);  // column 3
 
+    // Forward view-projection matrix — required to project world-space points
+    // back to screen (SSAO sample projection, contact-shadow world-space march).
+    // Must stay in lockstep with the GLSL block in postprocess.frag.
+    alignas(16) Math::Vector4 viewProj0 = Math::Vector4(1, 0, 0, 0);  // column 0
+    alignas(16) Math::Vector4 viewProj1 = Math::Vector4(0, 1, 0, 0);  // column 1
+    alignas(16) Math::Vector4 viewProj2 = Math::Vector4(0, 0, 1, 0);  // column 2
+    alignas(16) Math::Vector4 viewProj3 = Math::Vector4(0, 0, 0, 1);  // column 3
+
     // Light direction (world space, normalized, toward light)
     alignas(16) Math::Vector3 lightDirWorld = Math::Vector3(0.0f, -1.0f, 0.0f);
     alignas(4) f32 _ssPad0 = 0.0f;
@@ -413,6 +421,17 @@ public:
         m_Settings.invViewProj1 = col1;
         m_Settings.invViewProj2 = col2;
         m_Settings.invViewProj3 = col3;
+    }
+
+    // Set forward view-projection matrix (for projecting world-space points to
+    // screen in SSAO / contact shadows). Callers that set the inverse must set
+    // this too or those effects sample the wrong screen locations.
+    void SetViewProjection(const Math::Vector4& col0, const Math::Vector4& col1,
+                            const Math::Vector4& col2, const Math::Vector4& col3) {
+        m_Settings.viewProj0 = col0;
+        m_Settings.viewProj1 = col1;
+        m_Settings.viewProj2 = col2;
+        m_Settings.viewProj3 = col3;
     }
 
     // Set directional light direction (world space, normalized, toward light)

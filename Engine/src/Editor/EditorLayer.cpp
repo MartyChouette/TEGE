@@ -2311,10 +2311,11 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
 
     // Apply post-processing: read from scene RT, write to game view RT
     if (usePostProcessing) {
-        // Pass camera planes for depth linearization (DoF/Tilt-Shift)
-        if (m_Camera) {
-            m_PostProcessing->SetCameraPlanes(m_Camera->GetNearPlane(), m_Camera->GetFarPlane());
-        }
+        // Camera planes for depth linearization — from the GAME camera: this
+        // pass post-processes the game view, and SSAO/contact shadows/DoF all
+        // linearize the game view's depth (was m_Camera, the EDITOR fly-cam,
+        // whose near/far can differ).
+        m_PostProcessing->SetCameraPlanes(gameCamera.GetNearPlane(), gameCamera.GetFarPlane());
 
         // Pass inverse view-projection + light data for screen-space effects
         {
@@ -2328,6 +2329,13 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                 Math::Vector4(invVP.m[4], invVP.m[5], invVP.m[6], invVP.m[7]),
                 Math::Vector4(invVP.m[8], invVP.m[9], invVP.m[10], invVP.m[11]),
                 Math::Vector4(invVP.m[12], invVP.m[13], invVP.m[14], invVP.m[15]));
+            // Forward view-projection — SSAO sample projection and the
+            // contact-shadow world-space march project world points to screen
+            m_PostProcessing->SetViewProjection(
+                Math::Vector4(vp.m[0], vp.m[1], vp.m[2], vp.m[3]),
+                Math::Vector4(vp.m[4], vp.m[5], vp.m[6], vp.m[7]),
+                Math::Vector4(vp.m[8], vp.m[9], vp.m[10], vp.m[11]),
+                Math::Vector4(vp.m[12], vp.m[13], vp.m[14], vp.m[15]));
 
             // Find first directional light for god rays / contact shadows / fog shafts
             Math::Vector3 lightDir(0.0f, -1.0f, 0.0f);
