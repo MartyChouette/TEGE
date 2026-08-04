@@ -337,7 +337,12 @@ void ScriptSystem::Update(f32 deltaTime) {
         if (!sc) continue;
 
         for (auto& script : sc->scripts) {
-            if (!script.initialized) {
+            // hasError gates the retry: a failed init used to re-run EVERY
+            // frame (full compile attempt + file IO + 4 error lines — 50k log
+            // lines in a minute when a script file is missing). Hot reload
+            // clears hasError when the source changes, and play-mode stop
+            // resets it, so those remain the retry paths.
+            if (!script.initialized && !script.hasError) {
                 InitScript(entity, script);
             }
             if (script.initialized && !script.started && !script.hasError && script.enabled) {

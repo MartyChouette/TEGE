@@ -12,6 +12,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <string>
+#include <filesystem>
 #include <initializer_list>
 
 namespace Enjin {
@@ -100,6 +101,10 @@ struct ENJIN_API ComputePipelineSetup {
         };
         bool loaded = false;
         for (const auto& path : paths) {
+            // Probe existence first: LoadFromFile logs an ERROR per miss, which
+            // turned every normal dev-tree load into 4 lines of red herring
+            // (the shallow deployed paths miss before ../../../ hits).
+            if (!std::filesystem::exists(path)) continue;
             if (shader.LoadFromFile(path.c_str()) && shader.GetModule() != VK_NULL_HANDLE) {
                 loaded = true;
                 break;

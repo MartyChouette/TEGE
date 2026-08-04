@@ -3013,27 +3013,19 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
                     }
                 }
 
-                // Simplified RT Materials
+                // Simplified RT Materials — PLANNED, not implemented. The
+                // fields exist in SceneRenderSettings (serialized for forward
+                // compat) but no RT shader or runtime setter consumes them
+                // (2026-08-04 settings audit). Show the intent honestly
+                // instead of a checkbox that silently does nothing.
                 {
                     ImGui::Separator();
-                    auto settings = Renderer::SceneRenderSettings::CaptureFromRuntime(
-                        m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-                    bool changed = false;
-                    if (ImGui::Checkbox("Simplified RT Materials", &settings.rtSimplifiedMaterials)) {
-                        changed = true;
-                    }
-                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pre-bake material properties to reduce hit shader divergence");
-                    if (settings.rtSimplifiedMaterials) {
-                        int bounce = static_cast<int>(settings.rtSimplifyAfterBounce);
-                        if (ImGui::SliderInt("Simplify After Bounce", &bounce, 0, 4)) {
-                            settings.rtSimplifyAfterBounce = static_cast<u32>(bounce);
-                            changed = true;
-                        }
-                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Use simplified materials (no SSS/transmission) after this bounce depth");
-                    }
-                    if (changed) {
-                        settings.ApplyToRuntime(m_RenderSystem,
-                            m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+                    ImGui::BeginDisabled();
+                    bool inert = true;
+                    ImGui::Checkbox("Simplified RT Materials (planned)", &inert);
+                    ImGui::EndDisabled();
+                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                        ImGui::SetTooltip("Planned optimization: simplified material evaluation after N bounces.\nNot wired to the RT pipeline yet — the toggle would do nothing.");
                     }
                 }
 
