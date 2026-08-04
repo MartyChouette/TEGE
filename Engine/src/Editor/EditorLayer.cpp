@@ -741,6 +741,13 @@ void EditorLayer::Update(f32 deltaTime) {
         m_ScriptErrorsChecked = false;
     }
 
+    // --compute-skinning probe support: force ADR-0002 compute skinning on.
+    if (s_ComputeSkinningOnLaunch && m_RenderSystem) {
+        s_ComputeSkinningOnLaunch = false;
+        m_RenderSystem->SetComputeSkinningEnabled(true);
+        ENJIN_LOG_INFO(Editor, "--compute-skinning: compute skinning forced ON");
+    }
+
     // --play probe support: enter play mode ~2s after boot, once the launch
     // project's scene is fully loaded and a few frames have rendered.
     if (s_AutoPlayOnLaunch && m_RenderSystem) {

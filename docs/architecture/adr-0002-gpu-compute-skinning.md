@@ -2,9 +2,23 @@
 
 ## Status
 
-Proposed (not implemented). Groundwork exists (MergedGeometryBuffer, device-generated
-commands, mesh shaders). Depends on no other in-flight work; the shared-animator fix in
-the FBX import session is orthogonal and already landed.
+Phase 1 implemented, runtime-verified, and ACTIVE BY DEFAULT (2026-08-03). The compute
+path was landed in the skinning session behind a default-off flag and first ran on GPU
+during this activation: one bug found and fixed (per-entity vertex buffers lacked
+STORAGE usage for the compute read, VUID-00331), after which the 2-skinned-mesh probe
+project runs validation-clean (0 errors / 0 invalidations) with dispatches confirmed
+live. The default flipped to ON for Vulkan; the vertex-shader path remains the
+automatic fallback (pooled meshes, morph targets, WebGPU, dispatch failure) and the
+editor Rendering panel checkbox is the opt-out. RenderSystem::Update now dispatches for
+the player path too (same-command-buffer guard prevents double-skinning in the editor).
+
+Phase 1 notes vs the plan below: the landed implementation uses one deformed buffer per
+entity (the plan's rejected Alternative 4 shape) rather than the pooled arena — fine at
+current content scale, revisit when Phase 4 (scale) matters. Phases 2-4 (RT BLAS from
+skinned output, pose dedup, arena + baked tiers) remain open.
+
+Original groundwork context: MergedGeometryBuffer, device-generated commands, mesh
+shaders; the shared-animator fix from the FBX import session is orthogonal and landed.
 
 ## Date
 

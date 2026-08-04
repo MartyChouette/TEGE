@@ -316,10 +316,15 @@ int main(int argc, char* argv[]) {
         }
     }
     // --play (any position): auto-enter play mode once the launch project loads.
+    // --compute-skinning: force ADR-0002 compute skinning on at boot.
     // For automated probes (validation runs) — not user-facing.
     for (int i = 1; i < argc; i++) {
-        if (argv[i] && std::string(argv[i]) == "--play") {
+        if (!argv[i]) continue;
+        std::string flag = argv[i];
+        if (flag == "--play") {
             Enjin::Editor::EditorLayer::s_AutoPlayOnLaunch = true;
+        } else if (flag == "--compute-skinning") {
+            Enjin::Editor::EditorLayer::s_ComputeSkinningOnLaunch = true;
         }
     }
 

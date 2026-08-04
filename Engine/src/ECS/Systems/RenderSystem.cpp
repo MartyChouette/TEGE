@@ -4342,6 +4342,16 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // --- Phase 2/5/6 compute dispatches (after clustered lighting, before main geometry) ---
     VkCommandBuffer computeCmd = m_VulkanRenderer->GetCurrentCommandBuffer();
+
+    // ADR-0002 compute skinning for the player path: skin once, outside any render
+    // pass, before the shadow/main passes read the deformed buffers. The editor
+    // already dispatches earlier in its frame (EditorLayer::Render, before the
+    // offscreen passes record) — the same-command-buffer guard inside
+    // RunComputeSkinningPass turns this second call into a no-op there.
+    if (computeCmd != VK_NULL_HANDLE) {
+        RunComputeSkinningPass(computeCmd);
+    }
+
     if (computeCmd != VK_NULL_HANDLE && m_Camera) {
         u32 frameNumber = m_VulkanRenderer->GetCurrentFrameIndex();
         auto swapExtent = m_VulkanRenderer->GetSwapchainExtent();
@@ -7762,8 +7772,10 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
     }
 
     // Per-entity buffers (dynamic meshes, pool overflow fallback)
+    // STORAGE on the vertex buffer: the ADR-0002 compute skinning pass reads the
+    // bind-pose vertices through a storage descriptor (VUID-00331 without it).
     // Add ShaderDeviceAddress usage when RT is supported for BLAS building
-    VkBufferUsageFlags vertexUsage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    VkBufferUsageFlags vertexUsage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     VkBufferUsageFlags indexUsage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
     if (IsRayTracingSupported()) {
         vertexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
@@ -10700,6 +10712,12 @@ bool RenderSystem::DispatchComputeSkinning(VkCommandBuffer cmd, EntityRenderData
 
 void RenderSystem::RunComputeSkinningPass(VkCommandBuffer cmd) {
     if (!m_ComputeSkinningEnabled || !cmd || !m_World) return;
+    // Once per frame: the editor calls this from EditorLayer::Render AND
+    // RenderSystem::Update calls it for the player path — both record into the
+    // same per-frame command buffer, so a repeat call on the same buffer is the
+    // second caller and must not re-skin.
+    if (cmd == m_LastSkinningCmd) return;
+    m_LastSkinningCmd = cmd;
     if (!InitComputeSkinning()) return;
     BeginComputeSkinningFrame();
 
@@ -10743,6 +10761,14 @@ void RenderSystem::RunComputeSkinningPass(VkCommandBuffer cmd) {
     }
 
     if (anySkinned) {
+        // One-shot engagement log so automated probes can confirm the compute
+        // path is actually live (not silently falling back to VS skinning).
+        static bool s_LoggedFirstDispatch = false;
+        if (!s_LoggedFirstDispatch) {
+            s_LoggedFirstDispatch = true;
+            ENJIN_LOG_INFO(Renderer, "Compute skinning: first frame dispatched (ADR-0002 path live)");
+        }
+
         // Compute writes -> vertex-input reads: the deformed buffer is drawn as a vertex buffer.
         VkMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;

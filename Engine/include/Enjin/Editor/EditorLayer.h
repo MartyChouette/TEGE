@@ -198,6 +198,9 @@ public:
     // Set by main() from --play: auto-enter play mode shortly after the launch
     // project's scene loads. For automated testing (e.g. validation probes).
     static inline bool s_AutoPlayOnLaunch = false;
+    // Set by main() from --compute-skinning: force ADR-0002 compute skinning on
+    // at boot. For automated verification probes.
+    static inline bool s_ComputeSkinningOnLaunch = false;
 
     EditorLayer();
     ~EditorLayer();

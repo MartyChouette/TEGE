@@ -1461,7 +1461,13 @@ private:
     // GPU compute skinning feature flag (ADR-0002 Phase 1). Default OFF. Declared outside the
     // Vulkan-only block so the inline setter/getter compile on every backend; only the Vulkan
     // path acts on it.
-    bool m_ComputeSkinningEnabled = false;
+    // ADR-0002 compute skinning — default ON since 2026-08-03 (runtime-verified,
+    // validation-clean on the 2-skinned-mesh probe). The vertex-shader skinning
+    // path remains the automatic fallback wherever the compute pass doesn't run
+    // (pooled meshes, morph targets, WebGPU, dispatch failure). Editor Rendering
+    // panel checkbox is the opt-out.
+    bool m_ComputeSkinningEnabled = true;
+    VkCommandBuffer m_LastSkinningCmd = VK_NULL_HANDLE;  // once-per-frame guard for RunComputeSkinningPass
     u32 m_RTMode = 0;  // 0=Hybrid, 1=PathTrace
     u32 m_RTFrameCount = 0;
     Math::Matrix4 m_PrevViewProj;  // Previous frame's VP for path tracer camera change detection
