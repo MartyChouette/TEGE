@@ -46,7 +46,7 @@ These are hard-won lessons. Violating any of these will cause bugs.
 - **3D character controllers:** Use `JPH::CharacterVirtual` (not manual raycasts). Self-excluded from own raycasts via `EnjinBodyFilter.ignoreBodyID`
 
 ### Renderer
-- **Descriptor set binding 2** is `STORAGE_BUFFER_DYNAMIC` — ALL `vkCmdBindDescriptorSets` calls MUST pass `dynamicOffsetCount=1` with a `u32` offset for the material SSBO
+- **Descriptor set binding 2** is a plain `STORAGE_BUFFER` (adr-0003) — the material SSBO is a runtime array indexed per draw by `firstInstance` → `gl_InstanceIndex` → `v_MaterialIndex`. ALL set-0 `vkCmdBindDescriptorSets` calls pass `dynamicOffsetCount=0, nullptr`; direct entity draws MUST pass `GetMaterialIndex(entity)` as the draw's `firstInstance`. Set 0 uses `UPDATE_AFTER_BIND` on bindings 2-23 (pool + layout flags must stay in sync); this is what legalizes the per-entity bone/morph/sprite descriptor writes mid-recording
 - **WGSL rule:** `textureSample` must be called from uniform control flow — never inside `if` branches that depend on per-vertex/per-fragment data
 - **Render pass formats:** Swapchain = `B8G8R8A8_SRGB` with MRT. Offscreen `RenderTarget`s = `B8G8R8A8_UNORM`, single color + depth, `colorAttachmentCount=1`, `SAMPLE_COUNT_1_BIT` (no MSAA)
 - **WebGPU depth-only pass:** `Depth32Float`, no stencil — stencil ops MUST be `Undefined`. Shadow pipeline has no fragment shader

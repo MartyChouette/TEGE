@@ -2,11 +2,20 @@
 
 ## Status
 
-Proposed (not implemented). One sub-fix has already landed (material SSBO growth moved
-out of the recording path, see "Already Done" below). The larger unification described
-here is deliberately deferred to a focused session with a cross-scene test pass, because
-it touches the core material path and the renderer's stability pillar ("120 FPS No Matter
-What") outweighs closing a rare, intermittent freeze in a hurry.
+Accepted and implemented (2026-08-03). The hazard was first reproduced on demand the same
+day (two skinned meshes, `TestAdr3SceneEmit` probe project: 140 validation errors / 235
+command-buffer invalidations in 45s), then both coordinated changes below were landed:
+binding 2 is a plain `STORAGE_BUFFER` runtime array indexed per draw via `firstInstance`
+(`v_MaterialIndex`, location 11), and set 0 carries `UPDATE_AFTER_BIND` on bindings 2-23
+with the matching pool flag. Indirect draws keep their historical extended-material
+source (entry 0) explicitly. Validation results and the test-matrix state are recorded
+in the implementing commit.
+
+Known limitation, unchanged by this ADR: per-draw bone/morph rewrites are now LEGAL but
+a single set still means last-write-wins at execution — with 2+ DIFFERENT skinned
+characters in one pass, all of them skin with the last-written bone buffer. That was
+equally true (plus undefined behavior) before this change; the real per-draw bone fix is
+ADR-0002's compute skinning path, which removes draw-time bone descriptors entirely.
 
 ## Date
 

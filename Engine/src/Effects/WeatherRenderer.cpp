@@ -200,7 +200,6 @@ void WeatherRenderer::Render(VkCommandBuffer commandBuffer,
                               u32 viewportWidth,
                               u32 viewportHeight) {
     if (!m_Initialized || !m_Pipeline) return;
-    u32 zeroOffset = 0;
 
     u32 particleCount = weather.GetActiveParticleCount();
     if (particleCount == 0) return;
@@ -247,7 +246,7 @@ void WeatherRenderer::Render(VkCommandBuffer commandBuffer,
 
     // Bind descriptor set
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 1, &zeroOffset);
+        m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
     // Set viewport and scissor (use override dimensions if provided, else swapchain)
     VkExtent2D extent;

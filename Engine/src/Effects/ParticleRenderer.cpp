@@ -190,7 +190,6 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
                                u32 viewportWidth,
                                u32 viewportHeight) {
     if (!m_Initialized || !m_Pipeline || !world) return;
-    u32 zeroOffset = 0;  // Dynamic offset for material SSBO (binding 2)
 
     // Gather all emitter pool particles into instance cache
     m_InstanceDataCache.clear();
@@ -248,7 +247,7 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
 
     // Bind descriptor set
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 1, &zeroOffset);
+        m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
     // Set viewport and scissor
     VkExtent2D extent;
@@ -305,7 +304,6 @@ void ParticleRenderer::RenderElementalParticles(VkCommandBuffer commandBuffer,
                                                   u32 viewportWidth,
                                                   u32 viewportHeight) {
     if (!m_Initialized || !m_Pipeline) return;
-    u32 zeroOffset = 0;  // Dynamic offset for material SSBO (binding 2)
 
     const auto& pool = elementalSystem.GetPool();
     if (pool.activeCount == 0) return;
@@ -346,7 +344,7 @@ void ParticleRenderer::RenderElementalParticles(VkCommandBuffer commandBuffer,
     m_Pipeline->Bind(commandBuffer);
 
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 1, &zeroOffset);
+        m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
     VkExtent2D extent;
     if (viewportWidth > 0 && viewportHeight > 0) {

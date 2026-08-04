@@ -330,7 +330,6 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
                                   u32 viewportHeight,
                                   bool litMode) {
     if (!m_Initialized || !m_Pipeline || !world) return;
-    u32 zeroOffset = 0;  // Dynamic offset for material SSBO (binding 2)
 
     // Select active pipeline: lit (2.5D Blinn-Phong) or unlit (flat 2D)
     Renderer::VulkanPipeline* activePipeline = m_Pipeline.get();
@@ -501,7 +500,7 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
             // Use unlit pipeline for shadows (no lighting on shadow quads)
             m_Pipeline->Bind(commandBuffer);
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 1, &zeroOffset);
+                m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
             VkViewport viewport{};
             viewport.x = 0.0f; viewport.y = 0.0f;
@@ -593,7 +592,7 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
     activePipeline->Bind(commandBuffer);
 
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        activePipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 1, &zeroOffset);
+        activePipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
     VkViewport viewport{};
     viewport.x = 0.0f;

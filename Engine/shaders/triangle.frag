@@ -13,6 +13,7 @@ layout(location = 6) in vec4 fragTangent;
 layout(location = 7) in vec4 fragCurClipPos;  // Current clip position (for velocity)
 layout(location = 8) in vec4 fragPrevClipPos; // Previous frame clip position (for velocity)
 layout(location = 9) flat in int v_ObjectIndex; // >=0: indirect draw (SSBO index), -1: per-entity
+layout(location = 11) flat in int v_MaterialIndex; // material SSBO index (adr-0003; from firstInstance on direct draws)
 layout(location = 10) in vec2 fragUV1;          // second UV channel (available for detail/lightmap)
 
 layout(location = 0) out vec4 outColor;
@@ -117,9 +118,12 @@ layout(push_constant) uniform PushConstants {
     float surfaceParam3;  // water: foamScale | artistic: rimLightStrength
 } material;
 
-// Material SSBO (binding 2) — batched material data with per-entity dynamic offset
-// Layout matches C++ MaterialGPU (std430, 112 bytes per entry)
-layout(std430, binding = 2) readonly buffer MaterialSSBO {
+// Material SSBO (binding 2) — batched material data as a runtime array indexed
+// per draw by v_MaterialIndex (direct draws pass the index via firstInstance,
+// adr-0003). No more dynamic offset: the descriptor is a plain STORAGE_BUFFER
+// covering the whole buffer, which is what makes UPDATE_AFTER_BIND legal on
+// set 0. Entry layout matches C++ MaterialGPU (std430, 112 bytes).
+struct MaterialEntry {
     vec3  matBaseColor;
     float matMetallic;
     vec3  matEmissiveColor;
@@ -142,7 +146,13 @@ layout(std430, binding = 2) readonly buffer MaterialSSBO {
     uint  matEmissiveTexIdx;
     uint  matMatcapTexIdx;
     uint  _bindlessPad[2];
-} materialData;
+};
+layout(std430, binding = 2) readonly buffer MaterialSSBO {
+    MaterialEntry materialEntries[];
+};
+// Global copy selected once in main() — keeps every existing materialData.*
+// reference (including in helper functions) unchanged.
+MaterialEntry materialData;
 
 // Specialization constants — static material properties baked into pipeline variants.
 // Defaults = all features enabled (backward-compatible with default pipeline).
@@ -832,6 +842,17 @@ vec4 sampleVirtualTexture(vec2 uv) {
 #endif
 
 void main() {
+
+    // Select this draw's material entry (adr-0003). Direct draws encode the
+    // index in firstInstance -> v_MaterialIndex. Indirect draws (v_ObjectIndex
+    // >= 0) keep their historical source: entry 0 (the pre-array dynamic offset
+    // was always 0 for the indirect batch) — core material comes from
+    // ObjectData; only the extended fields (SSS/transmission/bindless indices)
+    // read from here.
+    {
+        int mi = (v_ObjectIndex >= 0) ? 0 : max(v_MaterialIndex, 0);
+        materialData = materialEntries[mi];
+    }
 
     if (v_ObjectIndex >= 0) {
         ObjectData od = objectData[v_ObjectIndex];

@@ -4531,10 +4531,9 @@ void RenderSystem::Update(f32 deltaTime) {
 
             m_Pipeline->Bind(commandBuffer);
             {
-                u32 zeroOff = 0;
                 vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                     m_Pipeline->GetLayout(), 0, 1,
-                    &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &zeroOff);
+                    &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
                 // Bind bindless texture set 1 for offscreen/splitscreen viewport
                 if (m_BindlessManager) {
                     VkDescriptorSet bs = m_BindlessManager->GetDescriptorSet();
@@ -4681,9 +4680,8 @@ void RenderSystem::Update(f32 deltaTime) {
     // Bind pipeline, descriptor set, viewport, and scissor once for all entities
     m_Pipeline->Bind(commandBuffer);
     m_BoundSpecKey.bits = 0xFFFFFFFF; // Reset variant tracking for main render path
-    u32 matDynOffset = 0;
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-        m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &matDynOffset);
+        m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
 
     // Bind bindless texture array at set 1 (persists for entire pass)
     if (m_BindlessManager) {
@@ -4942,9 +4940,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     targetPipeline->Bind(commandBuffer);
     m_BoundSpecKey.bits = 0xFFFFFFFF; // Reset variant tracking — force rebind on first entity
     {
-        u32 zeroOff = 0;
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            targetPipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &zeroOff);
+            targetPipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
         // Bind bindless set 1 for offscreen render target
         if (m_BindlessManager) {
             VkDescriptorSet bs = m_BindlessManager->GetDescriptorSet();
@@ -4987,13 +4984,11 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             if (!pRD) continue;
             EntityRenderData& renderData = *pRD;
 
-            // Bind material SSBO at this entity's dynamic offset
-            {
-                u32 matIdx = GetMaterialIndex(entity);
-                u32 dynOffset = matIdx * m_MaterialSSBOStride;
-                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    targetPipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &dynOffset);
-            }
+            // Material SSBO index for this entity — reaches the shader as
+            // firstInstance -> gl_InstanceIndex -> v_MaterialIndex (adr-0003).
+            // No per-entity descriptor rebind: the set stays bound from the
+            // pass-start bind.
+            const u32 matIdx = GetMaterialIndex(entity);
 
             // Push constants (world matrix includes parent chain).
             // For skinned meshes: use identity model matrix because skinning matrices
@@ -5489,13 +5484,14 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                         sizeof(Renderer::PushConstants), &subPC);
 
-                    // Draw this sub-mesh range
+                    // Draw this sub-mesh range (firstInstance = material index, adr-0003;
+                    // sub-meshes share the entity's extended-material entry as before)
                     if (poolPath) {
                         vkCmdDrawIndexed(commandBuffer, subMesh.indexCount, 1,
                                          renderData.poolAlloc.indexOffset + subMesh.indexOffset,
-                                         renderData.poolAlloc.vertexOffset, 0);
+                                         renderData.poolAlloc.vertexOffset, matIdx);
                     } else {
-                        vkCmdDrawIndexed(commandBuffer, subMesh.indexCount, 1, subMesh.indexOffset, 0, 0);
+                        vkCmdDrawIndexed(commandBuffer, subMesh.indexCount, 1, subMesh.indexOffset, 0, matIdx);
                     }
                     m_DrawCallCount++;
                     m_TriangleCount += subMesh.indexCount / 3;
@@ -5509,7 +5505,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 if (renderData.poolAlloc.valid && m_GeometryPool) {
                     if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
                     vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
-                                     renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
+                                     renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, matIdx);
                 } else if (renderData.vertexBuffer && renderData.indexBuffer) {
                     VkBuffer vertexBuffers[] = { computeSkinned
                         ? renderData.skinnedVertexBuffer->GetBuffer()
@@ -5517,7 +5513,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     VkDeviceSize offsets[] = { 0 };
                     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
                     vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
-                    vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+                    vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, matIdx);
                     m_GeometryPoolBound = false;
                 }
                 m_DrawCallCount++;
@@ -5646,10 +5642,9 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         // Bind pipeline, descriptor set, viewport, and scissor once per viewport
         ssPipeline->Bind(commandBuffer);
         {
-            u32 zeroOff = 0;
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                 ssPipeline->GetLayout(), 0, 1,
-                &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &zeroOff);
+                &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
         }
         vkCmdSetViewport(commandBuffer, 0, 1, &vkViewport);
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
@@ -5671,14 +5666,9 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
             if (!pRD) continue;
             EntityRenderData& renderData = *pRD;
 
-            // Bind material SSBO at this entity's dynamic offset
-            {
-                u32 matIdx = GetMaterialIndex(entity);
-                u32 dynOffset = matIdx * m_MaterialSSBOStride;
-                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    ssPipeline->GetLayout(), 0, 1,
-                    &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &dynOffset);
-            }
+            // Material SSBO index for this entity — reaches the shader as
+            // firstInstance -> gl_InstanceIndex -> v_MaterialIndex (adr-0003).
+            const u32 matIdx = GetMaterialIndex(entity);
 
             // Build push constants — skinned meshes use identity model matrix (cached storage)
             Renderer::PushConstants pushConstants{};
@@ -5934,13 +5924,13 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
             if (renderData.poolAlloc.valid && m_GeometryPool) {
                 if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
                 vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
-                                 renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
+                                 renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, matIdx);
             } else if (renderData.vertexBuffer && renderData.indexBuffer) {
                 VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
                 VkDeviceSize offsets[] = { 0 };
                 vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
                 vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
-                vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+                vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, matIdx);
                 m_GeometryPoolBound = false;
             }
             m_DrawCallCount++;
@@ -6777,9 +6767,8 @@ void RenderSystem::RenderWireframeOverlayPass() {
 
     m_WireframeOverlayPipeline->Bind(commandBuffer);
     {
-        u32 zeroOff = 0;
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_WireframeOverlayPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &zeroOff);
+            m_WireframeOverlayPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
     }
 
     for (Entity entity : m_SortedRenderList) {
@@ -6850,9 +6839,8 @@ void RenderSystem::RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 ver
     m_LinePipeline->Bind(commandBuffer);
 
     {
-        u32 zeroOff = 0;
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_LinePipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &zeroOff);
+            m_LinePipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
     }
 
     VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
@@ -6908,9 +6896,8 @@ void RenderSystem::RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 ver
 
     // Use offscreen descriptor sets (camera matrices match the editor viewport camera)
     {
-        u32 zeroOff = 0;
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            linePL->GetLayout(), 0, 1, &m_OffscreenDescriptorSets[currentFrame], 1, &zeroOff);
+            linePL->GetLayout(), 0, 1, &m_OffscreenDescriptorSets[currentFrame], 0, nullptr);
     }
 
     VkViewport viewport{};
@@ -7044,20 +7031,19 @@ void RenderSystem::CreateDescriptorSets() {
     // Create descriptor pool — must account for ALL bindings in the layout (24 total)
     // UBOs: bindings 0, 1 = 2
     // Combined image samplers: bindings 3,4,5,6,8,9,10,11,16,17,18,19,21,22,23 = 15
-    // SSBOs: bindings 7,12,13,14,15,20 = 6
-    // SSBO dynamic: binding 2 = 1
-    std::array<VkDescriptorPoolSize, 4> poolSizes{};
+    // SSBOs: bindings 2,7,12,13,14,15,20 = 7 (binding 2 no longer dynamic — adr-0003)
+    std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = totalSets * 2;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = totalSets * 15;  // 12 original + 3 new (21,22,23)
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[2].descriptorCount = totalSets * 6;
-    poolSizes[3].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
-    poolSizes[3].descriptorCount = totalSets * 1;
+    poolSizes[2].descriptorCount = totalSets * 7;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    // Layout uses UPDATE_AFTER_BIND_POOL (adr-0003) — the pool must match.
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
     poolInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
     poolInfo.maxSets = totalSets;
@@ -7100,10 +7086,11 @@ void RenderSystem::CreateDescriptorSets() {
         bufferInfos[1].offset = 0;
         bufferInfos[1].range = sizeof(LightingUBO);
 
-        // Material SSBO (dynamic offset — range = one material entry stride)
+        // Material SSBO — whole buffer; shader indexes materialEntries[] per
+        // draw via firstInstance (adr-0003, no dynamic offset)
         bufferInfos[2].buffer = m_MaterialBuffers[i]->GetBuffer();
         bufferInfos[2].offset = 0;
-        bufferInfos[2].range = m_MaterialSSBOStride;
+        bufferInfos[2].range = VK_WHOLE_SIZE;
 
         // Default texture (binding 3)
         VkDescriptorImageInfo imageInfo{};
@@ -7259,12 +7246,12 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[1].descriptorCount = 1;
         descriptorWrites[1].pBufferInfo = &bufferInfos[1];
 
-        // Material SSBO descriptor (dynamic offset)
+        // Material SSBO descriptor (indexed per draw, adr-0003)
         descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites[2].dstSet = m_DescriptorSets[i];
         descriptorWrites[2].dstBinding = 2;
         descriptorWrites[2].dstArrayElement = 0;
-        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         descriptorWrites[2].descriptorCount = 1;
         descriptorWrites[2].pBufferInfo = &bufferInfos[2];
 
@@ -7515,10 +7502,11 @@ void RenderSystem::CreateDescriptorSets() {
                 offBufInfos[1].buffer = m_OffscreenLightingBuffers[idx]->GetBuffer();
                 offBufInfos[1].offset = 0;
                 offBufInfos[1].range = sizeof(LightingUBO);
-                // Share the material SSBO — batched per-frame, indexed via dynamic offset
+                // Share the material SSBO — whole buffer, indexed per draw via
+                // firstInstance (adr-0003)
                 offBufInfos[2].buffer = m_MaterialBuffers[i]->GetBuffer();
                 offBufInfos[2].offset = 0;
-                offBufInfos[2].range = m_MaterialSSBOStride;
+                offBufInfos[2].range = VK_WHOLE_SIZE;
 
                 VkDescriptorImageInfo offImageInfo{};
                 if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
@@ -7637,7 +7625,7 @@ void RenderSystem::CreateDescriptorSets() {
                 offWrites[0].pBufferInfo = &offBufInfos[0];
                 offWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
                 offWrites[1].pBufferInfo = &offBufInfos[1];
-                offWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+                offWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
                 offWrites[2].pBufferInfo = &offBufInfos[2];
                 offWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
                 offWrites[3].pImageInfo = &offImageInfo;
@@ -8411,13 +8399,13 @@ void RenderSystem::EnsureMaterialSSBOCapacity() {
         VkDescriptorBufferInfo bufInfo{};
         bufInfo.buffer = m_MaterialBuffers[f]->GetBuffer();
         bufInfo.offset = 0;
-        bufInfo.range = m_MaterialSSBOStride;
+        bufInfo.range = VK_WHOLE_SIZE;
 
         VkWriteDescriptorSet write{};
         write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         write.dstBinding = 2;
         write.dstArrayElement = 0;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         write.descriptorCount = 1;
         write.pBufferInfo = &bufInfo;
 
@@ -9028,19 +9016,19 @@ void RenderSystem::RenderEntity(Entity entity) {
         return;
     }
 
-    // Bind material SSBO at this entity's dynamic offset (or fallback to legacy upload)
+    // Material SSBO index for this entity (adr-0003): reaches the shader as
+    // firstInstance -> gl_InstanceIndex -> v_MaterialIndex. Legacy fallback
+    // uploads entry 0 when the SSBO hasn't been built this frame.
+    u32 matIdx = 0;
     if (m_MaterialSSBOBuilt) {
-        u32 matIdx = GetMaterialIndex(entity);
-        u32 dynOffset = matIdx * m_MaterialSSBOStride;
-        u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &dynOffset);
+        matIdx = GetMaterialIndex(entity);
     } else {
         UpdateMaterialBuffer(entity);
+    }
+    {
         u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
-        u32 zeroOffset = 0;
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &zeroOffset);
+            m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
     }
 
     // Push model matrix — skinned meshes use identity (skinning already transforms to world space)
@@ -9325,19 +9313,20 @@ void RenderSystem::RenderEntity(Entity entity) {
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::PushConstants), &pushConstants);
 
     // Bind and draw — pool-allocated entities use merged buffer with offsets
+    // (firstInstance = material index, adr-0003)
     if (renderData.poolAlloc.valid && m_GeometryPool) {
         if (!m_GeometryPoolBound) {
             m_GeometryPool->BindBuffers(commandBuffer);
             m_GeometryPoolBound = true;
         }
         vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
-                         renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
+                         renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, matIdx);
     } else if (renderData.vertexBuffer && renderData.indexBuffer) {
         VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
-        vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+        vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, matIdx);
         m_GeometryPoolBound = false;  // Non-pool entity invalidates pool binding
     }
     m_DrawCallCount++;
@@ -9457,9 +9446,8 @@ void RenderSystem::RenderOutlinePass() {
 
     m_OutlinePipeline->Bind(commandBuffer);
     {
-        u32 zeroOff = 0;
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            m_OutlinePipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &zeroOff);
+            m_OutlinePipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
     }
 
     // Cache storage pointers for the outline pass hot loop
@@ -9561,9 +9549,8 @@ void RenderSystem::RenderOutlinePassForTarget() {
     auto* outlinePL = m_OffscreenOutlinePipeline ? m_OffscreenOutlinePipeline.get() : m_OutlinePipeline.get();
     outlinePL->Bind(commandBuffer);
     {
-        u32 zeroOff = 0;
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            outlinePL->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 1, &zeroOff);
+            outlinePL->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
     }
 
     const auto& renderList = m_SortedRenderList.empty()
@@ -9849,13 +9836,12 @@ void RenderSystem::RenderShadowPass() {
         // 32-shadow-caster parallel threshold. Parallel mode binds inside each
         // secondary instead (state does not inherit from the primary anyway).
         if (!parallelShadow) {
-            u32 zeroOff = 0;
             vkCmdBindDescriptorSets(
                 commandBuffer,
                 VK_PIPELINE_BIND_POINT_GRAPHICS,
                 m_ShadowPipeline->GetLayout(),
                 0, 1, &m_DescriptorSets[currentFrame],
-                1, &zeroOff
+                 0, nullptr
             );
         }
 
@@ -9908,13 +9894,12 @@ void RenderSystem::RenderShadowPass() {
                     // Descriptor set too — layout compatibility for the draw, and
                     // primary-recorded binds never inherit into secondaries.
                     {
-                        u32 zeroOff = 0;
                         vkCmdBindDescriptorSets(
                             secCmd,
                             VK_PIPELINE_BIND_POINT_GRAPHICS,
                             m_ShadowPipeline->GetLayout(),
                             0, 1, &m_DescriptorSets[frameIdx],
-                            1, &zeroOff
+                             0, nullptr
                         );
                     }
                     bool secPoolBound = false;   // per-secondary bind state
@@ -10209,9 +10194,8 @@ void RenderSystem::RenderPointShadowPass() {
             m_PointShadowPipeline->Bind(commandBuffer);
 
             {
-                u32 zeroOff = 0;
                 vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                    m_PointShadowPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &zeroOff);
+                    m_PointShadowPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
             }
 
             for (Entity entity : m_ShadowCasters) {
@@ -10245,9 +10229,8 @@ void RenderSystem::RenderSpotShadowPass() {
         m_SpotShadowPipeline->Bind(commandBuffer);
 
         {
-            u32 zeroOff = 0;
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_SpotShadowPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 1, &zeroOff);
+                m_SpotShadowPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
         }
 
         for (Entity entity : m_ShadowCasters) {

@@ -253,7 +253,6 @@ void GrassRenderer::Render(VkCommandBuffer commandBuffer,
                             u32 viewportWidth,
                             u32 viewportHeight) {
     if (!m_Initialized || !m_Pipeline || !world) return;
-    u32 zeroOffset = 0;
 
     bool hasBound = false;
 
@@ -270,7 +269,7 @@ void GrassRenderer::Render(VkCommandBuffer commandBuffer,
             m_Pipeline->Bind(commandBuffer);
 
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 1, &zeroOffset);
+                m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
             // Use override dimensions if provided, else swapchain
             VkExtent2D extent;

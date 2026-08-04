@@ -107,9 +107,11 @@ bool VulkanPipeline::CreateDescriptorSetLayout() {
     bindings[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[1].pImmutableSamplers = nullptr;
 
-    // SSBO binding 2: batched material data with dynamic offset (fragment shader)
+    // SSBO binding 2: batched material data, indexed per draw by firstInstance
+    // (adr-0003). Non-dynamic on purpose: UPDATE_AFTER_BIND below is illegal on
+    // any set containing a dynamic descriptor (VUID-03001).
     bindings[2].binding = 2;
-    bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
+    bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     bindings[2].descriptorCount = 1;
     bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[2].pImmutableSamplers = nullptr;
@@ -261,8 +263,26 @@ bool VulkanPipeline::CreateDescriptorSetLayout() {
     bindings[23].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[23].pImmutableSamplers = nullptr;
 
+    // UPDATE_AFTER_BIND on every non-UBO binding (adr-0003): legalizes the
+    // per-entity mid-recording writes (bone binding 7, morph binding 20, sprite
+    // textures 3/6) that previously invalidated the in-flight command buffer —
+    // the intermittent Play-Mode freeze class. Bindings 0/1 stay plain: the
+    // uniform-buffer UAB feature is not among the enabled descriptor-indexing
+    // features, and nothing rewrites them after bind. The matching pool flag
+    // lives on RenderSystem's m_DescriptorPool.
+    std::array<VkDescriptorBindingFlags, 24> bindingFlags{};
+    for (usize i = 2; i < bindingFlags.size(); i++) {
+        bindingFlags[i] = VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT;
+    }
+    VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo{};
+    bindingFlagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+    bindingFlagsInfo.bindingCount = static_cast<u32>(bindingFlags.size());
+    bindingFlagsInfo.pBindingFlags = bindingFlags.data();
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.pNext = &bindingFlagsInfo;
+    layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT;
     layoutInfo.bindingCount = static_cast<u32>(bindings.size());
     layoutInfo.pBindings = bindings.data();
 

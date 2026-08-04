@@ -124,6 +124,7 @@ layout(location = 7) out vec4 fragCurClipPos;  // Current clip position (for vel
 layout(location = 8) out vec4 fragPrevClipPos; // Previous frame clip position (for velocity)
 layout(location = 9) flat out int v_ObjectIndex; // >=0: indirect draw (SSBO index), -1: per-entity
 layout(location = 10) out vec2 fragUV1;          // second UV channel (passthrough; ready for detail/lightmap)
+layout(location = 11) flat out int v_MaterialIndex; // material SSBO index (direct draws set it via firstInstance)
 
 // Flag bits (must match C++ Material.h and RenderSystem.cpp)
 #define FLAG_SKINNED          (1 << 3)
@@ -145,6 +146,10 @@ void main() {
     // Otherwise, per-entity push constants are used (traditional path).
     bool indirectMode = (pushConstants.parallaxScale == -1.0);
     v_ObjectIndex = indirectMode ? gl_InstanceIndex : -1;
+    // Direct draws encode the material SSBO index in firstInstance (adr-0003);
+    // in indirect mode gl_InstanceIndex is the OBJECT index and the fragment
+    // shader ignores this varying (falls back to material entry 0).
+    v_MaterialIndex = gl_InstanceIndex;
 
     // Select data source: ObjectData SSBO for indirect draws, push constants otherwise
     mat4 objModel;
