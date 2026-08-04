@@ -6,6 +6,7 @@
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 #include <cstring>
+#include <cstddef>  // offsetof
 
 namespace Enjin {
 namespace Renderer {
@@ -85,9 +86,14 @@ bool ClusteredLightingSystem::CreateBuffers() {
         return false;
     }
 
-    // Light grid buffer (offset + count per cluster)
+    // Light grid buffer (offset + count per cluster).
+    // TRANSFER_DST: AssignLights clears it with vkCmdFillBuffer — Storage-only
+    // usage made that fill invalid (VUID-vkCmdFillBuffer-dstBuffer-00029; it
+    // never showed in editor validation runs because the editor path never
+    // dispatches AssignLights — only the Player path does).
+    VkBufferUsageFlags storageDst = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
     m_LightGridBuffer = std::make_unique<VulkanBuffer>(m_Context);
-    if (!m_LightGridBuffer->Create(BC::TOTAL_CLUSTERS * sizeof(ClusterLightGrid), BufferUsage::Storage, true)) {
+    if (!m_LightGridBuffer->Create(BC::TOTAL_CLUSTERS * sizeof(ClusterLightGrid), storageDst, true)) {
         return false;
     }
 
@@ -97,9 +103,11 @@ bool ClusteredLightingSystem::CreateBuffers() {
         return false;
     }
 
-    // Light data buffer
+    // Light data buffer. TRANSFER_DST: light data is written with
+    // vkCmdUpdateBuffer on the GPU timeline — the old host-visible UploadData
+    // at record time raced the PREVIOUS in-flight frame's reads.
     m_LightBuffer = std::make_unique<VulkanBuffer>(m_Context);
-    if (!m_LightBuffer->Create(BC::MAX_LIGHTS * sizeof(ClusterLight), BufferUsage::Storage, true)) {
+    if (!m_LightBuffer->Create(BC::MAX_LIGHTS * sizeof(ClusterLight), storageDst, true)) {
         return false;
     }
 
@@ -110,7 +118,8 @@ bool ClusteredLightingSystem::CreateBuffers() {
         return false;
     }
 
-    // Cluster params UBO
+    // Cluster params UBO. TRANSFER_DST: the per-frame lightCount patch goes
+    // through vkCmdUpdateBuffer (the old Map() write raced in-flight frames).
     struct ClusterParams {
         Math::Matrix4 inverseProjection;
         f32 nearPlane;
@@ -123,7 +132,8 @@ bool ClusteredLightingSystem::CreateBuffers() {
         u32 lightCount;
     };
     m_ClusterParamsBuffer = std::make_unique<VulkanBuffer>(m_Context);
-    if (!m_ClusterParamsBuffer->Create(sizeof(ClusterParams), BufferUsage::Uniform, true)) {
+    if (!m_ClusterParamsBuffer->Create(sizeof(ClusterParams),
+            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, true)) {
         return false;
     }
 
@@ -420,12 +430,26 @@ void ClusteredLightingSystem::AssignLights(
     const Math::Matrix4& viewMatrix
 ) {
     if (!m_Initialized || lightCount == 0) return;
+    if (m_AssignPipeline == VK_NULL_HANDLE) return;
 
-    // Upload light data to GPU
-    u32 uploadCount = Math::Min(lightCount, ClusterGridConfig::MAX_LIGHTS);
-    m_LightBuffer->UploadData(lights, uploadCount * sizeof(ClusterLight));
+    // Cross-frame ordering: with two frames in flight, the PREVIOUS frame's
+    // fragment shaders (and the fog compute) may still be reading the grid /
+    // index / light buffers when this frame's clears and uploads execute.
+    // Pipeline barriers order against ALL previously submitted work on the
+    // queue, so this write-after-read barrier closes the race that made
+    // lighting data shift under an in-flight frame.
+    VkMemoryBarrier prevReadBarrier{};
+    prevReadBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    prevReadBarrier.srcAccessMask = 0;  // prior reads need no availability op
+    prevReadBarrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(commandBuffer,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0, 1, &prevReadBarrier, 0, nullptr, 0, nullptr);
 
-    // Update light count in params
+    // Upload light data on the GPU timeline. The old host-visible UploadData
+    // wrote the mapped memory at RECORD time, racing the previous in-flight
+    // frame's reads of the same buffer (barriers cannot order host writes).
     struct ClusterParams {
         Math::Matrix4 inverseProjection;
         f32 nearPlane;
@@ -437,16 +461,13 @@ void ClusteredLightingSystem::AssignLights(
         u32 tilesZ;
         u32 lightCount;
     };
-    // Patch just the light count (offset 92 = 64 + 4*4 + 3*4)
-    // Instead, re-read and re-upload the whole params to be safe
-    void* mapped = m_ClusterParamsBuffer->Map();
-    if (mapped) {
-        auto* params = static_cast<ClusterParams*>(mapped);
-        params->lightCount = uploadCount;
-        m_ClusterParamsBuffer->Unmap();
-    }
-
-    if (m_AssignPipeline == VK_NULL_HANDLE) return;
+    static_assert(ClusterGridConfig::MAX_LIGHTS * sizeof(ClusterLight) <= 65536,
+                  "light upload must fit vkCmdUpdateBuffer's 64KB limit");
+    u32 uploadCount = Math::Min(lightCount, ClusterGridConfig::MAX_LIGHTS);
+    vkCmdUpdateBuffer(commandBuffer, m_LightBuffer->GetBuffer(), 0,
+        static_cast<VkDeviceSize>(uploadCount) * sizeof(ClusterLight), lights);
+    vkCmdUpdateBuffer(commandBuffer, m_ClusterParamsBuffer->GetBuffer(),
+        offsetof(ClusterParams, lightCount), sizeof(u32), &uploadCount);
 
     // Reset atomic counter
     vkCmdFillBuffer(commandBuffer, m_GlobalIndexCountBuffer->GetBuffer(), 0, sizeof(u32), 0);
@@ -455,6 +476,7 @@ void ClusteredLightingSystem::AssignLights(
     vkCmdFillBuffer(commandBuffer, m_LightGridBuffer->GetBuffer(), 0,
         ClusterGridConfig::TOTAL_CLUSTERS * sizeof(ClusterLightGrid), 0);
 
+    // Transfer writes (uploads + fills) -> compute reads
     VkMemoryBarrier clearBarrier{};
     clearBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     clearBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
