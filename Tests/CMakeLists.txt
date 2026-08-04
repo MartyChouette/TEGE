@@ -214,6 +214,8 @@ enjin_add_test(TestBuildConfig        Unit/Assets/TestBuildConfig.cpp)
 enjin_add_test(TestGoldenVerification Unit/Assets/TestGoldenVerification.cpp)
 target_compile_definitions(TestGoldenVerification PRIVATE
     ENJIN_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Fixtures")
+# Emit tool for the adr-0003 probe scene (no-op pass unless ENJIN_ADR3_PROBE_DIR is set)
+enjin_add_test(TestAdr3SceneEmit      Unit/Assets/TestAdr3SceneEmit.cpp)
 
 # --- Animation ---
 enjin_add_test(TestAnimation          Unit/Animation/TestAnimation.cpp)
