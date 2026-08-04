@@ -1516,26 +1516,6 @@ void EditorLayer::HandleTilemapBrush() {
     }
 }
 
-// Helper: read X/Y/W/H from anchor offsets (fixed-position mode)
-static void AnchorToXYWH(const GUI::UIAnchor& a, f32& x, f32& y, f32& w, f32& h) {
-    x = a.offsetLeft;
-    y = a.offsetTop;
-    w = a.offsetRight - a.offsetLeft;
-    h = a.offsetBottom - a.offsetTop;
-}
-
-// Helper: write X/Y/W/H back to anchor (forces fixed-position mode)
-static void XYWHToAnchor(GUI::UIAnchor& a, f32 x, f32 y, f32 w, f32 h) {
-    a.anchorMin = Math::Vector2(0, 0);
-    a.anchorMax = Math::Vector2(0, 0);
-    a.pivot = Math::Vector2(0.5f, 0.5f);
-    a.offsetLeft = x;
-    a.offsetTop = y;
-    a.offsetRight = x + w;
-    a.offsetBottom = y + h;
-}
-
-
 void EditorLayer::DrawUIEditorOverlay() {
     if (!m_World || m_UIEditCanvasEntity == ECS::INVALID_ENTITY) return;
 

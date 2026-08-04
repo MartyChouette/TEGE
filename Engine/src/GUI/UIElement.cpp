@@ -1,8 +1,70 @@
 #include "Enjin/GUI/UICanvas.h"
 
 #include <algorithm>
+#include <vector>
 
 namespace Enjin::GUI {
+
+// Resolve an anchor against a parent rect at design scale (scale factor 1).
+// Mirrors UISystem::ComputeElementRect, including the inverted-edge swap.
+static void ResolveDesignRect(const UIAnchor& a, const UIRect& p, UIRect& out) {
+    f32 l = p.x + a.anchorMin.x * p.w + a.offsetLeft;
+    f32 r = p.x + a.anchorMax.x * p.w + a.offsetRight;
+    f32 t = p.y + a.anchorMin.y * p.h + a.offsetTop;
+    f32 b = p.y + a.anchorMax.y * p.h + a.offsetBottom;
+    if (r < l) { f32 tmp = l; l = r; r = tmp; }
+    if (b < t) { f32 tmp = t; t = b; b = tmp; }
+    out.x = l; out.y = t; out.w = r - l; out.h = b - t;
+}
+
+UIRect UICanvasComponent::GetDesignRect(u32 id) const {
+    // Collect the parent chain (depth-capped against cycles), resolve top-down
+    std::vector<const UIElement*> chain;
+    const UIElement* e = GetElement(id);
+    i32 guard = 0;
+    while (e && guard++ < 16) {
+        chain.push_back(e);
+        e = e->parentId ? GetElement(e->parentId) : nullptr;
+    }
+    UIRect rect{0.0f, 0.0f, designWidth, designHeight};
+    for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+        UIRect r;
+        ResolveDesignRect((*it)->anchor, rect, r);
+        rect = r;
+    }
+    return rect;
+}
+
+void UICanvasComponent::SetDesignRect(u32 id, f32 x, f32 y, f32 w, f32 h) {
+    UIElement* e = GetElement(id);
+    if (!e) return;
+    UIRect p = e->parentId ? GetDesignRect(e->parentId)
+                           : UIRect{0.0f, 0.0f, designWidth, designHeight};
+    if (p.w <= 0.0f || p.h <= 0.0f) return;
+    auto& a = e->anchor;
+    a.offsetLeft   = x - (p.x + a.anchorMin.x * p.w);
+    a.offsetRight  = (x + w) - (p.x + a.anchorMax.x * p.w);
+    a.offsetTop    = y - (p.y + a.anchorMin.y * p.h);
+    a.offsetBottom = (y + h) - (p.y + a.anchorMax.y * p.h);
+}
+
+void UICanvasComponent::ApplyAnchorPreset(u32 id, i32 presetX, i32 presetY) {
+    UIElement* e = GetElement(id);
+    if (!e) return;
+    UIRect keep = GetDesignRect(id);
+    auto& a = e->anchor;
+    auto setAxis = [](i32 preset, f32& mn, f32& mx, f32& pivot) {
+        switch (preset) {
+            case 0:  mn = mx = 0.0f; pivot = 0.0f; break;   // min edge
+            case 1:  mn = mx = 0.5f; pivot = 0.5f; break;   // center
+            case 2:  mn = mx = 1.0f; pivot = 1.0f; break;   // max edge
+            default: mn = 0.0f; mx = 1.0f; pivot = 0.5f; break; // stretch
+        }
+    };
+    setAxis(presetX, a.anchorMin.x, a.anchorMax.x, a.pivot.x);
+    setAxis(presetY, a.anchorMin.y, a.anchorMax.y, a.pivot.y);
+    SetDesignRect(id, keep.x, keep.y, keep.w, keep.h);
+}
 
 u32 UICanvasComponent::AddElement(UIWidgetType type, const std::string& name, u32 parentId) {
     UIElement element;

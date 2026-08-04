@@ -7403,24 +7403,8 @@ void EditorLayer::SetupCameraForController(ECS::Entity controllerEntity, const s
 // ============================================================================
 
 
-// Helper: read X/Y/W/H from anchor offsets (fixed-position mode)
-static void AnchorToXYWH(const GUI::UIAnchor& a, f32& x, f32& y, f32& w, f32& h) {
-    x = a.offsetLeft;
-    y = a.offsetTop;
-    w = a.offsetRight - a.offsetLeft;
-    h = a.offsetBottom - a.offsetTop;
-}
-
-// Helper: write X/Y/W/H back to anchor (forces fixed-position mode)
-static void XYWHToAnchor(GUI::UIAnchor& a, f32 x, f32 y, f32 w, f32 h) {
-    a.anchorMin = Math::Vector2(0, 0);
-    a.anchorMax = Math::Vector2(0, 0);
-    a.pivot = Math::Vector2(0.5f, 0.5f);
-    a.offsetLeft = x;
-    a.offsetTop = y;
-    a.offsetRight = x + w;
-    a.offsetBottom = y + h;
-}
+// (X/Y/W/H <-> anchor conversion now lives on UICanvasComponent as
+// GetDesignRect/SetDesignRect — anchor-preserving, parent-chain aware.)
 
 void EditorLayer::OpenUIEditor(ECS::Entity canvasEntity) {
     if (!m_World || !m_World->HasComponent<GUI::UICanvasComponent>(canvasEntity)) return;
@@ -7664,10 +7648,14 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
 
     ImGui::Spacing();
 
-    // --- Position & Size (X/Y/W/H) ---
+    // --- Position & Size (X/Y/W/H, design-space, anchor-preserving) ---
+    // GetDesignRect/SetDesignRect resolve through the CURRENT anchors, so
+    // editing here no longer silently re-anchors everything to the top-left
+    // corner (the old XYWHToAnchor did — which is why authored UI never
+    // scaled with the play screen).
     ImGui::TextDisabled("Position & Size");
-    f32 x, y, w, h;
-    AnchorToXYWH(sel->anchor, x, y, w, h);
+    GUI::UIRect dr = canvas->GetDesignRect(sel->id);
+    f32 x = dr.x, y = dr.y, w = dr.w, h = dr.h;
 
     bool changed = false;
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.24f);
@@ -7683,7 +7671,7 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
     if (ImGui::DragFloat("##H", &h, 1.0f, 1.0f, 10000.0f, "H: %.0f")) changed = true;
 
     if (changed) {
-        XYWHToAnchor(sel->anchor, x, y, w, h);
+        canvas->SetDesignRect(sel->id, x, y, w, h);
     }
 
     // --- Alignment Buttons ---
@@ -7691,19 +7679,90 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
         f32 dw = canvas->designWidth;
         f32 dh = canvas->designHeight;
 
-        if (ImGui::SmallButton("AlignL")) { x = 0; XYWHToAnchor(sel->anchor, x, y, w, h); }
+        if (ImGui::SmallButton("AlignL")) { canvas->SetDesignRect(sel->id, 0, y, w, h); }
         ImGui::SameLine();
-        if (ImGui::SmallButton("CenterH")) { x = (dw - w) * 0.5f; XYWHToAnchor(sel->anchor, x, y, w, h); }
+        if (ImGui::SmallButton("CenterH")) { canvas->SetDesignRect(sel->id, (dw - w) * 0.5f, y, w, h); }
         ImGui::SameLine();
-        if (ImGui::SmallButton("AlignR")) { x = dw - w; XYWHToAnchor(sel->anchor, x, y, w, h); }
+        if (ImGui::SmallButton("AlignR")) { canvas->SetDesignRect(sel->id, dw - w, y, w, h); }
         ImGui::SameLine();
         ImGui::TextDisabled("|");
         ImGui::SameLine();
-        if (ImGui::SmallButton("AlignT")) { y = 0; XYWHToAnchor(sel->anchor, x, y, w, h); }
+        if (ImGui::SmallButton("AlignT")) { canvas->SetDesignRect(sel->id, x, 0, w, h); }
         ImGui::SameLine();
-        if (ImGui::SmallButton("CenterV")) { y = (dh - h) * 0.5f; XYWHToAnchor(sel->anchor, x, y, w, h); }
+        if (ImGui::SmallButton("CenterV")) { canvas->SetDesignRect(sel->id, x, (dh - h) * 0.5f, w, h); }
         ImGui::SameLine();
-        if (ImGui::SmallButton("AlignB")) { y = dh - h; XYWHToAnchor(sel->anchor, x, y, w, h); }
+        if (ImGui::SmallButton("AlignB")) { canvas->SetDesignRect(sel->id, x, dh - h, w, h); }
+    }
+
+    // --- Anchor presets: which part of the screen the element follows ---
+    // Re-anchors WITHOUT moving the element at design resolution; the anchor
+    // decides how it tracks other screen sizes. 3x3 point grid + stretch.
+    {
+        ImGui::TextDisabled("Anchor");
+        ImGui::SameLine();
+        ImGui::TextDisabled("(?)");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Which part of the screen this element follows when the\n"
+                              "window size changes. Picking a preset keeps the element\n"
+                              "where it is now. Auto picks from its current position.");
+        }
+
+        const auto& an = sel->anchor;
+        auto axisPreset = [](f32 mn, f32 mx) -> i32 {
+            if (mn == 0.0f && mx == 1.0f) return 3;              // stretch
+            if (mn == mx) {
+                if (mn == 0.0f) return 0;
+                if (mn == 0.5f) return 1;
+                if (mn == 1.0f) return 2;
+            }
+            return -1;                                            // custom
+        };
+        i32 curX = axisPreset(an.anchorMin.x, an.anchorMax.x);
+        i32 curY = axisPreset(an.anchorMin.y, an.anchorMax.y);
+
+        static const char* rowLabels[3] = { "T", "M", "B" };
+        static const char* colLabels[3] = { "L", "C", "R" };
+        for (i32 py = 0; py < 3; ++py) {
+            for (i32 px = 0; px < 3; ++px) {
+                if (px > 0) ImGui::SameLine();
+                char label[8];
+                snprintf(label, sizeof(label), "%s%s##anch%d%d", rowLabels[py], colLabels[px], px, py);
+                bool active = (curX == px && curY == py);
+                if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.26f, 0.55f, 0.96f, 1.0f));
+                if (ImGui::SmallButton(label)) canvas->ApplyAnchorPreset(sel->id, px, py);
+                if (active) ImGui::PopStyleColor();
+            }
+            ImGui::SameLine();
+            if (py == 0) {
+                bool active = (curX == 3 && curY != 3);
+                if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.26f, 0.55f, 0.96f, 1.0f));
+                if (ImGui::SmallButton("Stretch X")) canvas->ApplyAnchorPreset(sel->id, 3, curY < 0 ? 1 : curY);
+                if (active) ImGui::PopStyleColor();
+            } else if (py == 1) {
+                bool active = (curY == 3 && curX != 3);
+                if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.26f, 0.55f, 0.96f, 1.0f));
+                if (ImGui::SmallButton("Stretch Y")) canvas->ApplyAnchorPreset(sel->id, curX < 0 ? 1 : curX, 3);
+                if (active) ImGui::PopStyleColor();
+            } else {
+                bool active = (curX == 3 && curY == 3);
+                if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.26f, 0.55f, 0.96f, 1.0f));
+                if (ImGui::SmallButton("Stretch All")) canvas->ApplyAnchorPreset(sel->id, 3, 3);
+                if (active) ImGui::PopStyleColor();
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Auto")) {
+                    // Pick the nearest ninth from the element's center position
+                    GUI::UIRect r = canvas->GetDesignRect(sel->id);
+                    f32 fx = (r.x + r.w * 0.5f) / (canvas->designWidth  > 0 ? canvas->designWidth  : 1.0f);
+                    f32 fy = (r.y + r.h * 0.5f) / (canvas->designHeight > 0 ? canvas->designHeight : 1.0f);
+                    i32 ax = fx < (1.0f / 3.0f) ? 0 : (fx < (2.0f / 3.0f) ? 1 : 2);
+                    i32 ay = fy < (1.0f / 3.0f) ? 0 : (fy < (2.0f / 3.0f) ? 1 : 2);
+                    canvas->ApplyAnchorPreset(sel->id, ax, ay);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Anchor to the screen region the element currently sits in");
+                }
+            }
+        }
     }
 
     ImGui::Spacing();

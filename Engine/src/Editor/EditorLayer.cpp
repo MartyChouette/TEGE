@@ -3933,12 +3933,16 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
             m_GameViewImageMaxY - m_GameViewImageMinY);
     }
 
-    // Render UI canvases during play mode (editor game view)
+    // Render UI canvases during play mode (editor game view). Pass the game
+    // view image ORIGIN too — without it the UI laid out from the window's
+    // top-left corner: drawn over the editor panels, clicks offset, and none
+    // of it aligned with the game image.
     if (m_PlayMode.IsPlaying()) {
         f32 gvW = m_GameViewImageMaxX - m_GameViewImageMinX;
         f32 gvH = m_GameViewImageMaxY - m_GameViewImageMinY;
         if (gvW > 0 && gvH > 0) {
-            m_UISystem.Update(m_World, gvW, gvH, m_LastDeltaTime);
+            m_UISystem.Update(m_World, gvW, gvH, m_LastDeltaTime,
+                              m_GameViewImageMinX, m_GameViewImageMinY);
         }
     }
 

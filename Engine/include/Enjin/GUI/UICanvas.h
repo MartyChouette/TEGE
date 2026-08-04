@@ -59,6 +59,22 @@ struct UICanvasComponent {
     // Reorder element in the elements vector (render order)
     void MoveElementUp(u32 id);    // Swap with previous sibling
     void MoveElementDown(u32 id);  // Swap with next sibling
+
+    // --- Design-space rect helpers (anchor-aware authoring) ---
+    // Resolved rect of an element at design resolution (scale 1), through the
+    // parent chain. This is THE conversion the editor must use: reading
+    // offsetLeft as "x" is only valid for top-left anchors.
+    UIRect GetDesignRect(u32 id) const;
+    // Write a design-space rect into an element's offsets PRESERVING its
+    // anchors. (The old editor path rewrote anchors to top-left on every
+    // simple X/Y/W/H edit, which is why authored UI never tracked screen
+    // edges or center at other resolutions.)
+    void SetDesignRect(u32 id, f32 x, f32 y, f32 w, f32 h);
+    // Re-anchor WITHOUT moving the element: per axis 0=min edge, 1=center,
+    // 2=max edge, 3=stretch. The element keeps its on-screen rect at design
+    // resolution; what changes is which part of the screen it follows when
+    // the resolution differs.
+    void ApplyAnchorPreset(u32 id, i32 presetX, i32 presetY);
 };
 
 } // namespace Enjin::GUI

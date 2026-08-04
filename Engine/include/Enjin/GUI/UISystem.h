@@ -14,9 +14,15 @@ namespace Enjin::GUI {
 
 class ENJIN_API UISystem {
 public:
-    // Main update: layout + render + input for all UICanvasComponents in the world
-    // vpW/vpH = viewport dimensions, deltaTime for animations
-    void Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime);
+    // Main update: layout + render + input for all UICanvasComponents in the world.
+    // vpW/vpH = viewport dimensions, deltaTime for animations.
+    // originX/originY = top-left of the viewport in window coordinates: the
+    // editor's DOCKED game view sits inside the window, so laying out from
+    // (0,0) drew the UI over the editor panels and offset all hit-testing.
+    // Fullscreen/player/web callers keep the (0,0) default. Rendering is
+    // clipped to the viewport rect so nothing bleeds past its borders.
+    void Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime,
+                f32 originX = 0.0f, f32 originY = 0.0f);
 
     // Push live gameplay values (health, coins) into data-bound elements
     // (UIWidgetData::bindField). Called from Update() each frame.
@@ -118,7 +124,8 @@ private:
     f32 m_TooltipMouseY = 0.0f;
 
     // Layout pass: compute rects for all elements in a canvas
-    void ComputeLayout(UICanvasComponent& canvas, f32 vpW, f32 vpH);
+    void ComputeLayout(UICanvasComponent& canvas, f32 vpW, f32 vpH,
+                       f32 originX = 0.0f, f32 originY = 0.0f);
     void ComputeElementRect(UIElement& element, const UIRect& parentRect, f32 scaleFactor);
 
     // Render pass: draw all visible elements

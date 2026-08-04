@@ -133,7 +133,8 @@ void UISystem::SyncDataBindings(ECS::World* world) {
     }
 }
 
-void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime) {
+void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime,
+                      f32 originX, f32 originY) {
     if (!world || vpW <= 0 || vpH <= 0) return;
 
     // Collect all canvas entities and sort by sortOrder (reuses member vector)
@@ -165,22 +166,31 @@ void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime) {
     // state before layout/render -- one authored HUD source on every platform.
     SyncDataBindings(world);
 
+    // Clip all canvas drawing to the viewport rect: elements (and dropdown /
+    // tooltip overlays) must never bleed past the game view's borders.
+    ImDrawList* clipDL = ImGui::GetForegroundDrawList();
+    clipDL->PushClipRect(ImVec2(originX, originY),
+                         ImVec2(originX + vpW, originY + vpH), false);
+
     for (auto& entry : m_CachedCanvases) {
         auto* canvas = world->GetComponent<UICanvasComponent>(entry.entity);
         if (!canvas) continue;
 
-        ComputeLayout(*canvas, vpW, vpH);
+        ComputeLayout(*canvas, vpW, vpH, originX, originY);
         ProcessInput(*canvas, vpW, vpH);
         ProcessFocusNavigation(*canvas, deltaTime);
         RenderCanvas(*canvas);
     }
+
+    clipDL->PopClipRect();
 }
 
 // ============================================================================
 // LAYOUT
 // ============================================================================
 
-void UISystem::ComputeLayout(UICanvasComponent& canvas, f32 vpW, f32 vpH) {
+void UISystem::ComputeLayout(UICanvasComponent& canvas, f32 vpW, f32 vpH,
+                             f32 originX, f32 originY) {
     if (canvas.designWidth <= 0.0f || canvas.designHeight <= 0.0f) return; // UI-H1: prevent div-by-zero
     f32 scaleX = vpW / canvas.designWidth;
     f32 scaleY = vpH / canvas.designHeight;
@@ -188,7 +198,9 @@ void UISystem::ComputeLayout(UICanvasComponent& canvas, f32 vpW, f32 vpH) {
         ? 1.0f
         : std::min(scaleX, scaleY);
 
-    UIRect rootRect = {0.0f, 0.0f, vpW, vpH};
+    // Root at the viewport origin: computed rects are in WINDOW coordinates,
+    // which is what both the ImGui draw lists and io.MousePos hit-tests use.
+    UIRect rootRect = {originX, originY, vpW, vpH};
 
     // Process root elements
     for (auto& element : canvas.elements) {
@@ -220,27 +232,21 @@ void UISystem::ComputeElementRect(UIElement& element, const UIRect& parentRect, 
 
     // When anchorMin == anchorMax, offsets define size relative to anchor point
     // offsetLeft/Right become -halfWidth/+halfWidth style
-    f32 w = resolvedRight - resolvedLeft;
-    f32 h = resolvedBottom - resolvedTop;
-
-    // Ensure non-negative dimensions
-    if (w < 0.0f) {
-        // Interpret as fixed-size: offsets are (-halfW, -halfW) from anchor point
-        f32 cx = parentRect.x + a.anchorMin.x * parentRect.w;
-        f32 cy = parentRect.y + a.anchorMin.y * parentRect.h;
-        w = std::abs(a.offsetLeft * scaleFactor) + std::abs(a.offsetRight * scaleFactor);
-        h = std::abs(a.offsetTop * scaleFactor) + std::abs(a.offsetBottom * scaleFactor);
-        element.computedRect.x = cx - w * a.pivot.x;
-        element.computedRect.y = cy - h * a.pivot.y;
-        element.computedRect.w = w;
-        element.computedRect.h = h;
-        return;
-    }
+    //
+    // Inverted edges (right < left / bottom < top) are the single most common
+    // authoring mistake: writing the intuitive +100/-100 instead of the
+    // Unity-convention -100/+100 for a centered 200-wide element. The old
+    // "legacy center-on-anchor" fallback reinterpreted the offsets through the
+    // pivot, which flung top-anchored elements off-screen. Swapping the edges
+    // instead yields exactly the rect the author meant, and correctly-authored
+    // content (non-negative sizes) is untouched.
+    if (resolvedRight < resolvedLeft) { f32 t = resolvedLeft; resolvedLeft = resolvedRight; resolvedRight = t; }
+    if (resolvedBottom < resolvedTop) { f32 t = resolvedTop; resolvedTop = resolvedBottom; resolvedBottom = t; }
 
     element.computedRect.x = resolvedLeft;
     element.computedRect.y = resolvedTop;
-    element.computedRect.w = w;
-    element.computedRect.h = h;
+    element.computedRect.w = resolvedRight - resolvedLeft;
+    element.computedRect.h = resolvedBottom - resolvedTop;
 }
 
 // ============================================================================
