@@ -470,55 +470,48 @@ void ShadowMap::UpdateCascades(const Math::Matrix4& cameraView, const Math::Matr
         }
         center = center * (1.0f / 8.0f);
 
-        // Build light view matrix
+        // Fit the cascade to the BOUNDING SPHERE of the slice, not the
+        // light-space AABB of its corners (stable CSM). The AABB changes size
+        // as the camera ROTATES, which rescales worldUnitsPerTexel — the
+        // snapping grid itself — every frame, so the old center-snap below
+        // only ever stabilized translation: rotating the camera re-quantized
+        // every cascade per frame (shadow edges shimmer/crawl, borderline
+        // surfaces pop in and out of shadow). The sphere's radius depends only
+        // on the slice shape (FOV/aspect/splits), so the ortho extent and
+        // texel size are constant and snapping holds under rotation too. The
+        // slightly looser fit is the standard stable-CSM tradeoff.
+        f32 radius = 0.0f;
+        for (int i = 0; i < 8; ++i) {
+            radius = std::max(radius, (corners[i] - center).Length());
+        }
+        // Quantize the radius so FP noise in the corner math can't wobble the fit
+        radius = std::ceil(radius * 16.0f) / 16.0f;
+
+        // Build light view matrix (eye pulled back far enough that the whole
+        // sphere plus zPad worth of behind-frustum casters sits in front of it)
+        const f32 zPad = 50.0f;
         Math::Vector3 lightDirN = lightDir.Normalized();
         Math::Vector3 lightUp(0.0f, 1.0f, 0.0f);
         if (std::abs(lightDirN.Dot(lightUp)) > 0.99f) {
             lightUp = Math::Vector3(0.0f, 0.0f, 1.0f);
         }
-        Math::Matrix4 lightView = Math::Matrix4::LookAt(center - lightDirN * 50.0f, center, lightUp);
+        Math::Matrix4 lightView = Math::Matrix4::LookAt(center - lightDirN * (radius + zPad), center, lightUp);
 
-        // Transform frustum corners to light space and compute AABB
-        f32 minX = 1e9f, maxX = -1e9f;
-        f32 minY = 1e9f, maxY = -1e9f;
+        // Constant-size ortho bounds from the sphere. Z still comes from the
+        // light-space corners: it affects only the depth mapping, which the
+        // shadow render and the main-pass sample share, so it doesn't need to
+        // be rotation-stable — X/Y extent is what texel stability requires.
+        f32 minX = -radius, maxX = radius;
+        f32 minY = -radius, maxY = radius;
         f32 minZ = 1e9f, maxZ = -1e9f;
-
         for (int i = 0; i < 8; ++i) {
             Math::Vector4 lsCorner = lightView * Math::Vector4(corners[i].x, corners[i].y, corners[i].z, 1.0f);
-            minX = std::min(minX, lsCorner.x);
-            maxX = std::max(maxX, lsCorner.x);
-            minY = std::min(minY, lsCorner.y);
-            maxY = std::max(maxY, lsCorner.y);
             minZ = std::min(minZ, lsCorner.z);
             maxZ = std::max(maxZ, lsCorner.z);
         }
-
-        // Add Z padding so shadow casters behind the frustum are captured
-        f32 zPad = 50.0f;
+        // Z padding so shadow casters behind the frustum are captured
         minZ -= zPad;
         maxZ += zPad;
-
-        // Texel-size snapping to prevent shadow swimming when camera moves.
-        // Snap the CENTER of the AABB (not min/max independently) to preserve
-        // consistent dimensions across cascades and prevent banding artifacts.
-        f32 sizeX = maxX - minX;
-        f32 sizeY = maxY - minY;
-        f32 worldUnitsPerTexel = std::max(sizeX, sizeY) / static_cast<f32>(m_Config.resolution);
-        if (worldUnitsPerTexel > 0.0f) {
-            // Round the dimensions UP to the next texel-aligned size
-            sizeX = std::ceil(sizeX / worldUnitsPerTexel) * worldUnitsPerTexel;
-            sizeY = std::ceil(sizeY / worldUnitsPerTexel) * worldUnitsPerTexel;
-            // Snap the center point to texel grid
-            f32 centerX = (minX + maxX) * 0.5f;
-            f32 centerY = (minY + maxY) * 0.5f;
-            centerX = std::floor(centerX / worldUnitsPerTexel) * worldUnitsPerTexel;
-            centerY = std::floor(centerY / worldUnitsPerTexel) * worldUnitsPerTexel;
-            // Rebuild min/max from snapped center + consistent size
-            minX = centerX - sizeX * 0.5f;
-            maxX = centerX + sizeX * 0.5f;
-            minY = centerY - sizeY * 0.5f;
-            maxY = centerY + sizeY * 0.5f;
-        }
 
         // Build orthographic projection directly from light-space AABB bounds.
         // We bypass Math::Matrix4::Orthographic() because it applies a Vulkan Y-flip
@@ -532,6 +525,20 @@ void ShadowMap::UpdateCascades(const Math::Matrix4& cameraView, const Math::Matr
         lightProj.m[12] = -(maxX + minX) / (maxX - minX);
         lightProj.m[13] = -(maxY + minY) / (maxY - minY);
         lightProj.m[14] =  maxZ / (maxZ - minZ);
+
+        // Texel snapping, stable form: the ortho size is constant, so the
+        // texel grid never rescales — snapping the projection of a fixed
+        // world point (the origin) to texel increments pins the whole map to
+        // the grid under any camera motion, rotation included.
+        {
+            Math::Matrix4 lightViewProj = lightProj * lightView;
+            f32 halfRes = static_cast<f32>(m_Config.resolution) * 0.5f;
+            Math::Vector4 shadowOrigin = lightViewProj * Math::Vector4(0.0f, 0.0f, 0.0f, 1.0f);
+            f32 ox = shadowOrigin.x * halfRes;
+            f32 oy = shadowOrigin.y * halfRes;
+            lightProj.m[12] += (std::round(ox) - ox) / halfRes;
+            lightProj.m[13] += (std::round(oy) - oy) / halfRes;
+        }
 
         m_CascadeViewProj[cascade] = lightProj * lightView;
     }
