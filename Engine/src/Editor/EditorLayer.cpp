@@ -1077,6 +1077,11 @@ void EditorLayer::Update(f32 deltaTime) {
         bool canUseCamera = !activelyPlaying ||
             (Input::IsMouseButtonDown(MouseButton::Right) && !m_GameViewMouseCaptured);
         m_CameraController->SetEnabled(!ImGui::GetIO().WantTextInput && !usingGizmo && canUseCamera);
+        // Viewport gating: look-capture and scroll only start over the Scene
+        // viewport image (RMB-drag over the Inspector used to rotate the
+        // camera, and scrolling any panel changed fly speed); WASD also works
+        // while the viewport has focus. One-frame-stale hover state is fine.
+        m_CameraController->SetViewportInputState(m_EditorViewportHovered, m_EditorViewportFocused);
 
         // Set orbit target to selected entity position for MMB orbit
         if (m_PrimarySelected != ECS::INVALID_ENTITY && m_World && m_World->IsValid(m_PrimarySelected)) {

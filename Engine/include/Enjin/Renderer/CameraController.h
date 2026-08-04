@@ -63,6 +63,16 @@ public:
     void SetEnabled(bool enabled) { m_Enabled = enabled; }
     bool IsEnabled() const { return m_Enabled; }
 
+    // Viewport input state from the host UI. pointerOver gates capture START
+    // and scroll (so RMB-drag / scroll over other panels doesn't drive the
+    // camera); focused additionally allows keyboard movement. An active
+    // capture always keeps control until the button is released. Defaults are
+    // true so standalone (non-editor) hosts keep the old always-on behavior.
+    void SetViewportInputState(bool pointerOver, bool focused) {
+        m_PointerOverViewport = pointerOver;
+        m_ViewportFocused = focused;
+    }
+
     // Check if camera controller currently has mouse captured (RMB held)
     bool IsMouseCaptured() const { return m_MouseCapturedByUs; }
 
@@ -94,6 +104,19 @@ private:
     f32 m_MoveSpeed = 5.0f;
     f32 m_SprintMultiplier = 2.5f;
     f32 m_LookSensitivity = 0.1f;
+
+    // Feel: frame-rate-independent smoothing. Velocity ramps toward the input
+    // direction instead of snapping (instant start/stop felt stiff); the look
+    // filter kills per-frame sensor jitter with ~1 frame of lag.
+    f32 m_MoveAccel = 12.0f;        // 1/s — ~150ms to reach speed
+    f32 m_MoveDecel = 16.0f;        // 1/s — slightly quicker glide-to-stop
+    f32 m_LookSmoothTime = 0.008f;  // seconds; 0 = raw deltas
+    Math::Vector3 m_Velocity = Math::Vector3(0.0f, 0.0f, 0.0f);
+    Math::Vector2 m_SmoothedLook = Math::Vector2(0.0f, 0.0f);
+
+    // Viewport input gating (see SetViewportInputState)
+    bool m_PointerOverViewport = true;
+    bool m_ViewportFocused = true;
 
     // Rotation (euler angles in degrees)
     f32 m_Yaw = -90.0f;   // Looking towards -Z by default

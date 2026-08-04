@@ -3,6 +3,7 @@
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Math/Quaternion.h"
+#include <cmath>
 
 namespace Enjin {
 namespace Renderer {
@@ -37,6 +38,9 @@ void CameraController::Update(f32 deltaTime) {
         // Clear our tracking flag but don't release mouse capture —
         // play mode may have captured it for the FPS controller
         m_MouseCapturedByUs = false;
+        // Drop smoothed state so re-enabling doesn't glide on stale velocity
+        m_Velocity = Math::Vector3(0.0f, 0.0f, 0.0f);
+        m_SmoothedLook = Math::Vector2(0.0f, 0.0f);
         return;
     }
 
@@ -56,8 +60,12 @@ void CameraController::Update(f32 deltaTime) {
 void CameraController::UpdateFlyMode(f32 deltaTime) {
     // Right mouse button OR middle mouse button to look around.
     // Mouse is captured while held — cursor hidden, free look active.
-    bool wantLook = Input::IsMouseButtonDown(MouseButton::Right) ||
-                    Input::IsMouseButtonDown(MouseButton::Middle);
+    // Capture may only START over the viewport (RMB-dragging in the
+    // Inspector used to rotate the camera); once captured it persists
+    // until release regardless of where the hidden cursor sits.
+    bool wantLook = (Input::IsMouseButtonDown(MouseButton::Right) ||
+                     Input::IsMouseButtonDown(MouseButton::Middle)) &&
+                    (m_MouseCapturedByUs || m_PointerOverViewport);
 
     if (wantLook) {
         if (!m_MouseCapturedByUs) {
@@ -67,10 +75,20 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
             // Consume the first-frame mouse delta so the camera doesn't whip
             // to wherever the mouse was moving before the button was pressed
             Input::GetMouseDelta();
+            m_SmoothedLook = Math::Vector2(0.0f, 0.0f);
         } else {
             Math::Vector2 mouseDelta = Input::GetMouseDelta();
-            m_Yaw += mouseDelta.x * m_LookSensitivity;
-            m_Pitch -= mouseDelta.y * m_LookSensitivity;  // Inverted: drag up → look up
+            // Light exponential filter: kills per-frame sensor jitter with
+            // about one frame of lag, and gives release a soft landing.
+            if (m_LookSmoothTime > 0.0f) {
+                f32 a = 1.0f - std::exp(-deltaTime / m_LookSmoothTime);
+                m_SmoothedLook.x += (mouseDelta.x - m_SmoothedLook.x) * a;
+                m_SmoothedLook.y += (mouseDelta.y - m_SmoothedLook.y) * a;
+            } else {
+                m_SmoothedLook = mouseDelta;
+            }
+            m_Yaw += m_SmoothedLook.x * m_LookSensitivity;
+            m_Pitch -= m_SmoothedLook.y * m_LookSensitivity;  // Inverted: drag up → look up
             m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
             ApplyRotation();
         }
@@ -78,6 +96,10 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
         Input::SetMouseCaptured(false);
         m_MouseCapturedByUs = false;
     }
+
+    // Keyboard movement follows pointer-over/focus (or an active look-drag);
+    // gamepad input is gated only by m_Enabled.
+    bool keyboardAllowed = m_MouseCapturedByUs || m_PointerOverViewport || m_ViewportFocused;
 
     // Radial deadzone for gamepad sticks. Without this, a connected controller's normal stick
     // drift (commonly 0.05-0.15) feeds the fly camera every frame with no input, so the editor
@@ -117,23 +139,25 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
 
     Math::Vector3 worldUp(0.0f, 1.0f, 0.0f);
 
-    if (Input::IsKeyDown(KeyCode::W)) {
-        movement = movement + forward;
-    }
-    if (Input::IsKeyDown(KeyCode::S)) {
-        movement = movement - forward;
-    }
-    if (Input::IsKeyDown(KeyCode::A)) {
-        movement = movement - right;
-    }
-    if (Input::IsKeyDown(KeyCode::D)) {
-        movement = movement + right;
-    }
-    if (Input::IsKeyDown(KeyCode::E)) {
-        movement = movement + worldUp;
-    }
-    if (Input::IsKeyDown(KeyCode::Q)) {
-        movement = movement - worldUp;
+    if (keyboardAllowed) {
+        if (Input::IsKeyDown(KeyCode::W)) {
+            movement = movement + forward;
+        }
+        if (Input::IsKeyDown(KeyCode::S)) {
+            movement = movement - forward;
+        }
+        if (Input::IsKeyDown(KeyCode::A)) {
+            movement = movement - right;
+        }
+        if (Input::IsKeyDown(KeyCode::D)) {
+            movement = movement + right;
+        }
+        if (Input::IsKeyDown(KeyCode::E)) {
+            movement = movement + worldUp;
+        }
+        if (Input::IsKeyDown(KeyCode::Q)) {
+            movement = movement - worldUp;
+        }
     }
 
     // Gamepad left stick for movement
@@ -164,19 +188,36 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
         }
     }
 
-    // Normalize and apply movement
+    // Smooth the velocity toward the input direction instead of snapping.
+    // Instant full-speed-on-keydown / dead-stop-on-release is what made the
+    // fly cam feel stiff; a short frame-rate-independent ramp (~150ms up,
+    // slightly quicker glide down) matches how other editors feel.
     f32 length = movement.Length();
+    Math::Vector3 targetVel(0.0f, 0.0f, 0.0f);
     if (length > 0.001f) {
-        movement = movement * (1.0f / length);
-        Math::Vector3 newPos = m_Camera->GetPosition() + movement * speed * deltaTime;
-        m_Camera->SetPosition(newPos);
+        targetVel = movement * (speed / length);
+    }
+    f32 rate = (length > 0.001f) ? m_MoveAccel : m_MoveDecel;
+    f32 alpha = 1.0f - std::exp(-rate * deltaTime);
+    m_Velocity.x += (targetVel.x - m_Velocity.x) * alpha;
+    m_Velocity.y += (targetVel.y - m_Velocity.y) * alpha;
+    m_Velocity.z += (targetVel.z - m_Velocity.z) * alpha;
+    // Snap tiny residuals to zero so the camera never creeps forever
+    if (length <= 0.001f && m_Velocity.Length() < 0.01f) {
+        m_Velocity = Math::Vector3(0.0f, 0.0f, 0.0f);
+    }
+    if (m_Velocity.Length() > 0.0001f) {
+        m_Camera->SetPosition(m_Camera->GetPosition() + m_Velocity * deltaTime);
     }
 
-    // Scroll to adjust speed (or orbit distance when MMB orbiting)
-    Math::Vector2 scroll = Input::GetScrollDelta();
-    if (scroll.y != 0.0f) {
-        m_MoveSpeed *= (1.0f + scroll.y * 0.1f);
-        m_MoveSpeed = Math::Clamp(m_MoveSpeed, 0.1f, 100.0f);
+    // Scroll to adjust speed — only while look-dragging or over the viewport,
+    // so scrolling the Inspector/Hierarchy doesn't silently change fly speed
+    if (m_MouseCapturedByUs || m_PointerOverViewport) {
+        Math::Vector2 scroll = Input::GetScrollDelta();
+        if (scroll.y != 0.0f) {
+            m_MoveSpeed *= (1.0f + scroll.y * 0.1f);
+            m_MoveSpeed = Math::Clamp(m_MoveSpeed, 0.1f, 100.0f);
+        }
     }
     // Gamepad: D-pad up/down to adjust speed
     if (Input::IsGamepadConnected()) {
@@ -194,8 +235,9 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
 void CameraController::UpdateOrbitMode(f32 deltaTime) {
     (void)deltaTime;
 
-    // Hold right mouse button to orbit
-    bool rightMouseDown = Input::IsMouseButtonDown(MouseButton::Right);
+    // Hold right mouse button to orbit (capture may only start over the viewport)
+    bool rightMouseDown = Input::IsMouseButtonDown(MouseButton::Right) &&
+                          (m_MouseCapturedByUs || m_PointerOverViewport);
 
     if (rightMouseDown) {
         if (!m_MouseCapturedByUs) {
@@ -214,8 +256,9 @@ void CameraController::UpdateOrbitMode(f32 deltaTime) {
         m_MouseCapturedByUs = false;
     }
 
-    // Middle mouse to pan
-    bool middleMouseDown = Input::IsMouseButtonDown(MouseButton::Middle);
+    // Middle mouse to pan (viewport only)
+    bool middleMouseDown = Input::IsMouseButtonDown(MouseButton::Middle) &&
+                           (m_MouseCapturedByUs || m_PointerOverViewport);
     if (middleMouseDown) {
         Math::Vector2 mouseDelta = Input::GetMouseDelta();
         Math::Vector3 right = m_Camera->GetRight();
@@ -225,11 +268,13 @@ void CameraController::UpdateOrbitMode(f32 deltaTime) {
         m_OrbitTarget = m_OrbitTarget + up * mouseDelta.y * panSpeed;
     }
 
-    // Scroll to zoom
-    Math::Vector2 scroll = Input::GetScrollDelta();
-    if (scroll.y != 0.0f) {
-        m_OrbitDistance *= (1.0f - scroll.y * 0.1f);
-        m_OrbitDistance = Math::Clamp(m_OrbitDistance, m_MinOrbitDistance, m_MaxOrbitDistance);
+    // Scroll to zoom — viewport only, so panel scrolling doesn't zoom the orbit
+    if (m_MouseCapturedByUs || m_PointerOverViewport) {
+        Math::Vector2 scroll = Input::GetScrollDelta();
+        if (scroll.y != 0.0f) {
+            m_OrbitDistance *= (1.0f - scroll.y * 0.1f);
+            m_OrbitDistance = Math::Clamp(m_OrbitDistance, m_MinOrbitDistance, m_MaxOrbitDistance);
+        }
     }
 
     // Calculate camera position from orbit parameters.
