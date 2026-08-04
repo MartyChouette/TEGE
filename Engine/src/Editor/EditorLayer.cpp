@@ -741,6 +741,19 @@ void EditorLayer::Update(f32 deltaTime) {
         m_ScriptErrorsChecked = false;
     }
 
+    // --play probe support: enter play mode ~2s after boot, once the launch
+    // project's scene is fully loaded and a few frames have rendered.
+    if (s_AutoPlayOnLaunch && m_RenderSystem) {
+        static int s_AutoPlayCountdown = 120;
+        if (s_AutoPlayCountdown > 0 && --s_AutoPlayCountdown == 0) {
+            s_AutoPlayOnLaunch = false;
+            if (m_PlayMode.IsStopped()) {
+                StartPlayMode();
+                ENJIN_LOG_INFO(Editor, "--play: auto-entered play mode");
+            }
+        }
+    }
+
     // Wireframe mode: only applies to the scene view (editor viewport).
     // The global pipeline is toggled for scene view render, then restored
     // for game view. Pipeline recreation is deferred to avoid mid-render crashes.

@@ -315,6 +315,13 @@ int main(int argc, char* argv[]) {
             Enjin::Editor::EditorLayer::s_LaunchProjectPath = arg;
         }
     }
+    // --play (any position): auto-enter play mode once the launch project loads.
+    // For automated probes (validation runs) — not user-facing.
+    for (int i = 1; i < argc; i++) {
+        if (argv[i] && std::string(argv[i]) == "--play") {
+            Enjin::Editor::EditorLayer::s_AutoPlayOnLaunch = true;
+        }
+    }
 
     Enjin::Application* app = CreateApplication();
     int result = app->Run();

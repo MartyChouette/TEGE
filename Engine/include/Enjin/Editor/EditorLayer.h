@@ -195,6 +195,9 @@ class ENJIN_API EditorLayer {
 public:
     // Set by main() before Run() — if non-empty, opens this project directly (skips hub)
     static inline std::string s_LaunchProjectPath;
+    // Set by main() from --play: auto-enter play mode shortly after the launch
+    // project's scene loads. For automated testing (e.g. validation probes).
+    static inline bool s_AutoPlayOnLaunch = false;
 
     EditorLayer();
     ~EditorLayer();
