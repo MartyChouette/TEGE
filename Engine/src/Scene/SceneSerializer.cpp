@@ -4194,7 +4194,10 @@ json SerializeBehaviorTreeComponent(const ECS::BehaviorTreeComponent& bt) {
     for (const auto& entry : bt.blackboardDefaults) {
         json e;
         e["key"] = entry.key;
-        e["val"] = RF(SerializeBlackboardValue(entry.value));
+        // NOT RF-wrapped: the blackboard value serializes as an OBJECT — same
+        // Feb-09 sweep accident as the canvas theme; this one ALWAYS threw,
+        // so scenes with AI blackboard entries could not save at all.
+        e["val"] = SerializeBlackboardValue(entry.value);
         bbArr.push_back(e);
     }
     j["blackboardDefaults"] = bbArr;
@@ -5611,7 +5614,11 @@ json SerializeUICanvasComponent(const GUI::UICanvasComponent& c) {
     j["designWidth"] = RF(c.designWidth);
     j["designHeight"] = RF(c.designHeight);
     j["scaleMode"] = static_cast<u8>(c.scaleMode);
-    j["theme"] = RF(SerializeUITheme(c.theme));
+    // NOT RF-wrapped: RF takes f32 and the theme is an OBJECT — the Feb-09
+    // deterministic-serialization sweep wrapped it by accident, making any
+    // scene save with a UICanvas throw type_error.302 (dormant until the
+    // HUD->canvas migration put canvases in ordinary scenes).
+    j["theme"] = SerializeUITheme(c.theme);
     j["nextElementId"] = c.nextElementId;
 
     json elementsArr = json::array();
