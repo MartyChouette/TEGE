@@ -2809,6 +2809,10 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     if (m_ShowLayersPanel) {
         DrawLayersPanel();
     }
+    // Undo/redo history panel (standalone bool, same reason)
+    if (m_ShowHistoryPanel) {
+        DrawHistoryPanel();
+    }
     // Unified settings window — any of the 5 old settings bits activates it
     {
         bool anySettingsBit =

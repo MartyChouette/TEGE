@@ -6,6 +6,7 @@
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Logging/Log.h"
 #include <cstring>
+#include <nlohmann/json.hpp>
 
 namespace Enjin {
 namespace Editor {
@@ -649,6 +650,87 @@ void UndoRedoManager::EndCompound() {
 void UndoRedoManager::NotifyStateChanged() {
     if (m_OnStateChanged) {
         m_OnStateChanged();
+    }
+}
+
+// ============================================================================
+// EntityEditCommand
+// ============================================================================
+
+EntityEditCommand::EntityEditCommand(ECS::World* world, ECS::Entity entity,
+                                     std::string beforeJson, std::string afterJson)
+    : m_World(world)
+    , m_Entity(entity)
+    , m_Before(std::move(beforeJson))
+    , m_After(std::move(afterJson)) {
+    // Name the command after the first component that differs so the History
+    // panel reads "Edit light" instead of a generic label.
+    m_Description = "Edit Properties";
+    try {
+        nlohmann::json b = Scene::ParseSceneJson(m_Before);
+        nlohmann::json a = Scene::ParseSceneJson(m_After);
+        if (b.is_object() && a.is_object()) {
+            for (auto it = a.begin(); it != a.end(); ++it) {
+                const std::string& key = it.key();
+                if (key == "id" || key == "stableId") continue;
+                if (!b.contains(key) || b[key] != it.value()) {
+                    m_Description = "Edit " + key;
+                    break;
+                }
+            }
+            if (m_Description == "Edit Properties") {
+                for (auto it = b.begin(); it != b.end(); ++it) {
+                    const std::string& key = it.key();
+                    if (key == "id" || key == "stableId") continue;
+                    if (!a.contains(key)) { m_Description = "Edit " + key; break; }
+                }
+            }
+        }
+    } catch (...) {
+        // Description stays generic; the snapshots are still applied verbatim
+    }
+}
+
+void EntityEditCommand::Execute() {
+    if (m_FirstExecute) {
+        // The edit is already live in the world when the command is recorded
+        m_FirstExecute = false;
+        return;
+    }
+    ApplyState(m_After);
+}
+
+void EntityEditCommand::Undo() {
+    ApplyState(m_Before);
+}
+
+void EntityEditCommand::ApplyState(const std::string& targetJson) {
+    if (!m_World || !m_World->IsValid(m_Entity)) return;
+    try {
+        nlohmann::json target = Scene::ParseSceneJson(targetJson);
+        if (!target.is_object()) return;
+
+        // Current state, so components absent from the target get removed
+        std::string curStr = Scene::SceneSerializer::SerializeEntityToString(
+            m_World, m_Entity, /*includeVertexData=*/false);
+        nlohmann::json cur = Scene::ParseSceneJson(curStr);
+
+        for (auto it = target.begin(); it != target.end(); ++it) {
+            const std::string& key = it.key();
+            if (key == "id" || key == "stableId") continue;
+            Scene::SceneSerializer::DeserializeOneComponent(m_World, m_Entity, key, it.value().dump());
+        }
+        if (cur.is_object()) {
+            for (auto it = cur.begin(); it != cur.end(); ++it) {
+                const std::string& key = it.key();
+                if (key == "id" || key == "stableId") continue;
+                if (!target.contains(key)) {
+                    Scene::SceneSerializer::RemoveOneComponent(m_World, m_Entity, key);
+                }
+            }
+        }
+    } catch (...) {
+        ENJIN_LOG_WARN(Editor, "EntityEditCommand: failed to apply state (malformed snapshot)");
     }
 }
 

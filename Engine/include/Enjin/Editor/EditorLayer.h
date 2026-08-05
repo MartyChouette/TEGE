@@ -1165,6 +1165,24 @@ private:
     Math::Matrix4 m_GizmoStartTransform;
     bool m_GizmoDragging = false;
 
+    // Generic inspector-edit undo capture: baseline entity JSON from the last
+    // quiet frame; while an ImGui item is active (drag/typing) the baseline is
+    // frozen, and when activity ends the before/after diff becomes ONE
+    // EntityEditCommand. External mutations on quiet frames (animators,
+    // scripts) are adopted silently — only widget interaction creates history.
+    bool m_PropUndoEditing = false;
+    ECS::Entity m_PropUndoBaselineEntity = ECS::INVALID_ENTITY;
+    std::string m_PropUndoBaseline;
+    u32 m_PropUndoStackAtSessionStart = 0;
+
+    // History panel: lists the undo/redo stacks, click any entry to jump
+    bool m_ShowHistoryPanel = false;
+    void DrawHistoryPanel();
+
+    // Golden-image capture (--golden): frame countdown + writer
+    i32 m_GoldenFrameCounter = 0;
+    void WriteGoldenCapture();
+
     // Game View mouse interaction during play mode
     bool m_GameViewMouseCaptured = false;
     f32 m_GameViewImageMinX = 0.0f, m_GameViewImageMinY = 0.0f;

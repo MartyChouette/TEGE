@@ -307,6 +307,70 @@ void EditorLayer::RefreshAssetBrowserCache() {
     }
 }
 
+void EditorLayer::DrawHistoryPanel() {
+    ImGuiWindowFlags flags = 0;
+    if (m_FocusMode) flags |= ImGuiWindowFlags_NoInputs;
+    ImGui::Begin("History", &m_ShowHistoryPanel, flags);
+
+    const u32 undoCount = m_UndoRedo.GetUndoCount();
+    const u32 redoCount = m_UndoRedo.GetRedoCount();
+
+    if (undoCount == 0 && redoCount == 0) {
+        ImGui::TextDisabled("No history yet — edits, moves, deletes and");
+        ImGui::TextDisabled("property changes will appear here.");
+        ImGui::End();
+        return;
+    }
+
+    ImGui::TextDisabled("%u action%s  (Ctrl+Z / Ctrl+Y)", undoCount + redoCount,
+                        (undoCount + redoCount) == 1 ? "" : "s");
+    ImGui::Separator();
+
+    ImGui::BeginChild("##historyList", ImVec2(0, 0));
+
+    // Oldest action first. Clicking an entry jumps to the state right AFTER
+    // that action; "(start)" jumps to before anything was done. The jump is
+    // deferred past the loops so the stacks never mutate mid-iteration.
+    i32 jumpTarget = -1;
+    if (ImGui::Selectable("(start)", undoCount == 0)) {
+        jumpTarget = 0;
+    }
+    for (u32 i = 0; i < undoCount; ++i) {
+        ImGui::PushID(static_cast<int>(i));
+        bool isCurrent = (i == undoCount - 1);
+        if (isCurrent) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.85f, 1.0f, 1.0f));
+        }
+        if (ImGui::Selectable(m_UndoRedo.GetUndoDescriptionAt(i), isCurrent)) {
+            jumpTarget = static_cast<i32>(i) + 1;
+        }
+        if (isCurrent) ImGui::PopStyleColor();
+        ImGui::PopID();
+    }
+    // Redo entries (grayed): clicking replays forward through that action
+    for (u32 i = 0; i < redoCount; ++i) {
+        ImGui::PushID(static_cast<int>(undoCount + i));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+        if (ImGui::Selectable(m_UndoRedo.GetRedoDescriptionAt(i), false)) {
+            jumpTarget = static_cast<i32>(undoCount + i) + 1;
+        }
+        ImGui::PopStyleColor();
+        ImGui::PopID();
+    }
+
+    // Follow the tip while new actions stream in
+    if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 4.0f && redoCount == 0) {
+        ImGui::SetScrollHereY(1.0f);
+    }
+
+    ImGui::EndChild();
+    ImGui::End();
+
+    if (jumpTarget >= 0) {
+        m_UndoRedo.JumpTo(static_cast<u32>(jumpTarget));
+    }
+}
+
 void EditorLayer::DrawLayersPanel() {
     ImGuiWindowFlags flags = 0;
     if (m_FocusMode) flags |= ImGuiWindowFlags_NoInputs;

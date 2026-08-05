@@ -1124,6 +1124,24 @@ void EditorLayer::DrawInspectorPanel() {
             vwsBeforeSnapshot = Scene::SceneSerializer::SerializeEntityToString(m_World, m_PrimarySelected, /*includeVertexData=*/false);
         }
 
+        // Generic property-edit undo: on quiet frames (no active widget, no
+        // edit session) refresh the baseline snapshot. While a widget is
+        // active the baseline stays frozen at the pre-edit state; the session
+        // resolves into one EntityEditCommand at the bottom of this block.
+        // Skipped during ACTIVE play (gameplay mutates components every frame
+        // — paused/stopped editing still captures).
+        const bool propUndoEligible = !m_PlayMode.IsPlaying();
+        if (propUndoEligible && !m_PropUndoEditing) {
+            if (vwsCapturing) {
+                m_PropUndoBaseline = vwsBeforeSnapshot;  // reuse, don't serialize twice
+            } else {
+                m_PropUndoBaseline = Scene::SceneSerializer::SerializeEntityToString(
+                    m_World, m_PrimarySelected, /*includeVertexData=*/false);
+            }
+            m_PropUndoBaselineEntity = m_PrimarySelected;
+            m_PropUndoStackAtSessionStart = m_UndoRedo.GetUndoCount();
+        }
+
         // Entity name (editable)
         ECS::NameComponent* nameComp = m_World->GetComponent<ECS::NameComponent>(m_PrimarySelected);
         if (nameComp) {
@@ -3315,6 +3333,32 @@ void EditorLayer::DrawInspectorPanel() {
         // RecordEntityChanges is a no-op when nothing differs from the snapshot.
         if (vwsCapturing && m_World->IsValid(m_PrimarySelected)) {
             m_LayerSystem.RecordEntityChanges(m_PrimarySelected, vwsBeforeSnapshot);
+        }
+
+        // Generic property-edit undo: resolve the edit session. A session
+        // spans from the first frame a widget goes active to the first quiet
+        // frame after; the whole drag/typing burst becomes ONE undo step.
+        if (propUndoEligible && m_PropUndoBaselineEntity == m_PrimarySelected &&
+            m_World->IsValid(m_PrimarySelected)) {
+            const bool anyActive = ImGui::IsAnyItemActive();
+            if (anyActive) {
+                m_PropUndoEditing = true;
+            } else if (m_PropUndoEditing) {
+                m_PropUndoEditing = false;
+                // If another command landed during the session (Add/Remove
+                // Component, a bespoke transform command), that command owns
+                // the change — don't double-record it.
+                if (m_UndoRedo.GetUndoCount() == m_PropUndoStackAtSessionStart) {
+                    std::string after = Scene::SceneSerializer::SerializeEntityToString(
+                        m_World, m_PrimarySelected, /*includeVertexData=*/false);
+                    if (after != m_PropUndoBaseline) {
+                        m_UndoRedo.Execute(std::make_unique<EntityEditCommand>(
+                            m_World, m_PrimarySelected, m_PropUndoBaseline, std::move(after)));
+                    }
+                }
+            }
+        } else {
+            m_PropUndoEditing = false;  // selection changed or ineligible: drop the session
         }
     } else {
         DrawEmptyState("< >", "No Entity Selected", "Select an entity in the Hierarchy to inspect it");

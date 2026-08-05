@@ -420,6 +420,7 @@ void EditorLayer::DrawMenuBar() {
                 }
                 // VWS override layers (standalone bool — the EditorPanel bitmask is full)
                 ImGui::MenuItem("Layers", nullptr, &m_ShowLayersPanel);
+                ImGui::MenuItem("History", nullptr, &m_ShowHistoryPanel);
                 ImGui::EndMenu();
             }
             // Easy entry into WYSIWYG UI editing: pick any canvas (or create one

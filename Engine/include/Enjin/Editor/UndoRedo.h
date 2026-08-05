@@ -256,6 +256,33 @@ private:
 };
 
 /**
+ * @brief Generic property-edit command: before/after JSON snapshots of ONE
+ * entity's full component state. This is what makes arbitrary inspector
+ * edits undoable across all 140 component types without a bespoke command
+ * per component. Applying a state deserializes every component key present
+ * in the snapshot and removes components the snapshot doesn't have.
+ */
+class ENJIN_API EntityEditCommand : public ICommand {
+public:
+    EntityEditCommand(ECS::World* world, ECS::Entity entity,
+                      std::string beforeJson, std::string afterJson);
+
+    void Execute() override;   // first call is a no-op: the edit is already live
+    void Undo() override;
+    const char* GetDescription() const override { return m_Description.c_str(); }
+
+private:
+    void ApplyState(const std::string& targetJson);
+
+    ECS::World* m_World;
+    ECS::Entity m_Entity;
+    std::string m_Before;
+    std::string m_After;
+    std::string m_Description;
+    bool m_FirstExecute = true;
+};
+
+/**
  * @brief Command to reparent an entity (drag-drop or unparent).
  */
 class ENJIN_API ReparentEntityCommand : public ICommand {
@@ -501,6 +528,23 @@ public:
 
     /// Get redo stack size
     u32 GetRedoCount() const { return static_cast<u32>(m_RedoStack.size()); }
+
+    // --- History enumeration (History panel) ---
+    /// Description of undo stack entry i, i=0 is the OLDEST action
+    const char* GetUndoDescriptionAt(u32 i) const {
+        return i < m_UndoStack.size() ? m_UndoStack[i]->GetDescription() : "";
+    }
+    /// Description of redo entry i, i=0 is the NEXT action redo would apply
+    const char* GetRedoDescriptionAt(u32 i) const {
+        usize n = m_RedoStack.size();
+        return i < n ? m_RedoStack[n - 1 - i]->GetDescription() : "";
+    }
+    /// Jump so that exactly `undoDepth` actions are applied (0 = before the
+    /// first recorded action). Undoes or redoes as many steps as needed.
+    void JumpTo(u32 undoDepth) {
+        while (GetUndoCount() > undoDepth && CanUndo()) Undo();
+        while (GetUndoCount() < undoDepth && CanRedo()) Redo();
+    }
 
     /// Begin a compound command group
     void BeginCompound(const std::string& description);
