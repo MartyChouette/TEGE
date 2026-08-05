@@ -76,11 +76,6 @@ ENJIN_TEST(PlayModeSystems, EventBus) {
     ENJIN_ASSERT_NOT_NULL(pm.GetEventBus());
 }
 
-ENJIN_TEST(PlayModeSystems, HUDSystem) {
-    PlayMode pm;
-    ENJIN_ASSERT_NOT_NULL(pm.GetHUDSystem());
-}
-
 ENJIN_TEST(PlayModeSystems, QuestSystem) {
     PlayMode pm;
     ENJIN_ASSERT_NOT_NULL(pm.GetQuestSystem());

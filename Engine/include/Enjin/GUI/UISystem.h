@@ -10,6 +10,8 @@
 
 struct ImDrawList;
 
+namespace Enjin { namespace Renderer { class Camera; } }
+
 namespace Enjin::GUI {
 
 class ENJIN_API UISystem {
@@ -21,8 +23,12 @@ public:
     // (0,0) drew the UI over the editor panels and offset all hit-testing.
     // Fullscreen/player/web callers keep the (0,0) default. Rendering is
     // clipped to the viewport rect so nothing bleeds past its borders.
+    // camera: game camera for WORLD-SPACE elements (billboard tags glued to
+    // entities — the HUDSystem capability folded into UICanvas). Null = all
+    // world-space elements are culled.
     void Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime,
-                f32 originX = 0.0f, f32 originY = 0.0f);
+                f32 originX = 0.0f, f32 originY = 0.0f,
+                const Renderer::Camera* camera = nullptr);
 
     // Push live gameplay values (health, coins) into data-bound elements
     // (UIWidgetData::bindField). Called from Update() each frame.
@@ -30,6 +36,15 @@ public:
 
     // Access the event bus for registering listeners
     UIEventBus& GetEventBus() { return m_EventBus; }
+
+    // HUD-tier gate (replaces the retired HUDSystem's SetEnabled): canvases
+    // with sortOrder >= HUD_SORT_ORDER (the tier the hudWidget migration
+    // assigns) are skipped while disabled. Menus and dialogue canvases below
+    // that tier are unaffected. Driven by PlayMode, the player boot flow, and
+    // the "Set HUD Enabled" visual-script node.
+    static constexpr i32 HUD_SORT_ORDER = 100;
+    void SetHUDEnabled(bool enabled) { m_HUDEnabled = enabled; }
+    bool IsHUDEnabled() const { return m_HUDEnabled; }
 
     // Editor-facing API: compute layout and render preview for a single canvas
     void ComputeLayoutForCanvas(UICanvasComponent& canvas, f32 vpW, f32 vpH);
@@ -78,6 +93,7 @@ public:
 
 private:
     UIEventBus m_EventBus;
+    bool m_HUDEnabled = true;  // HUD-tier canvas gate (see SetHUDEnabled)
     TextureResolver m_TextureResolver;
     AnnouncerCallback m_AnnouncerCallback;
     f32 m_FontScale = 1.0f;
@@ -126,6 +142,11 @@ private:
     // Layout pass: compute rects for all elements in a canvas
     void ComputeLayout(UICanvasComponent& canvas, f32 vpW, f32 vpH,
                        f32 originX = 0.0f, f32 originY = 0.0f);
+    // World-space pass: recenter worldSpace elements on their projected entity
+    // position (or cull them) after ComputeLayout
+    void ApplyWorldSpaceAnchors(UICanvasComponent& canvas, ECS::World* world,
+                                ECS::Entity canvasEntity, const Renderer::Camera* camera,
+                                f32 originX, f32 originY, f32 vpW, f32 vpH);
     void ComputeElementRect(UIElement& element, const UIRect& parentRect, f32 scaleFactor);
 
     // Render pass: draw all visible elements

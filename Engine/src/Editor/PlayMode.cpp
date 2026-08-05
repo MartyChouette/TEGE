@@ -33,7 +33,7 @@
 extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
 extern Enjin::Effects::WeatherSystem* s_VisualScriptWeather;
 extern Enjin::Effects::Water3D* s_VisualScriptWater;
-extern Enjin::Gameplay::HUDSystem* s_VisualScriptHUD;
+extern Enjin::GUI::UISystem* s_VisualScriptUI;
 extern Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
 extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
 extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
@@ -206,7 +206,7 @@ void PlayMode::Play() {
     ENJIN_LOG_INFO(Editor, "PlayMode: FlowerSystem enabled");
     m_ScriptSystem.SetEnabled(true);
     ENJIN_LOG_INFO(Editor, "PlayMode: ScriptSystem enabled");
-    m_HUDSystem.SetEnabled(true);
+    if (m_UISystem) m_UISystem->SetHUDEnabled(true);
     m_QuestSystem.SetEnabled(true);
     m_FootstepSystem.SetEnabled(true);
     m_CinematicSystem.SetEnabled(true);
@@ -249,7 +249,7 @@ void PlayMode::Play() {
     s_VisualScriptWeather = m_WeatherSystem;
     s_VisualScriptElemental = m_ElementalSystem;
     Scripting::SetBindingsElemental(m_ElementalSystem);
-    s_VisualScriptHUD = &m_HUDSystem;
+    s_VisualScriptUI = m_UISystem;
     s_VisualScriptSubtitleSystem = m_SubtitleSystem;
     s_VisualScriptAnnouncer = m_Announcer;
     s_VisualScriptAudio = &m_SimpleAudio;
@@ -399,7 +399,7 @@ void PlayMode::Pause() {
     m_ControllerSystem.SetEnabled(false);
     m_FlowerSystem.SetEnabled(false);
     m_ScriptSystem.SetEnabled(false);
-    m_HUDSystem.SetEnabled(false);
+    if (m_UISystem) m_UISystem->SetHUDEnabled(false);
     m_QuestSystem.SetEnabled(false);
     m_FootstepSystem.SetEnabled(false);
     m_CinematicSystem.SetEnabled(false);
@@ -425,7 +425,7 @@ void PlayMode::Resume() {
     m_ControllerSystem.SetEnabled(true);
     m_FlowerSystem.SetEnabled(true);
     m_ScriptSystem.SetEnabled(true);
-    m_HUDSystem.SetEnabled(true);
+    if (m_UISystem) m_UISystem->SetHUDEnabled(true);
     m_QuestSystem.SetEnabled(true);
     m_FootstepSystem.SetEnabled(true);
     m_CinematicSystem.SetEnabled(true);
@@ -495,7 +495,7 @@ void PlayMode::Stop() {
     s_VisualScriptWeather = nullptr;
     s_VisualScriptElemental = nullptr;
     s_VisualScriptWater = nullptr;
-    s_VisualScriptHUD = nullptr;
+    s_VisualScriptUI = nullptr;
     s_VisualScriptSubtitleSystem = nullptr;
     s_VisualScriptAnnouncer = nullptr;
     s_VisualScriptAudio = nullptr;
@@ -550,7 +550,7 @@ void PlayMode::Stop() {
     m_ControllerSystem.SetEnabled(false);
     m_ControllerSystem.SetGameCameraEntity(ECS::INVALID_ENTITY);
     m_FlowerSystem.SetEnabled(false);
-    m_HUDSystem.SetEnabled(false);
+    if (m_UISystem) m_UISystem->SetHUDEnabled(false);
     m_QuestSystem.SetEnabled(false);
     m_FootstepSystem.SetEnabled(false);
     m_CinematicSystem.SetEnabled(false);

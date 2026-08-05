@@ -158,6 +158,17 @@ struct UIWidgetData {
     f32 sdfSoftness = 0.01f;          // Edge softness (smoothstep range)
     f32 sdfOutlineWidth = 0.0f;       // 0 = no outline
     Math::Vector3 sdfOutlineColor = Math::Vector3(0, 0, 0);
+
+    // World-space anchoring (billboard tags glued to entities — the HUDSystem
+    // capability folded into UICanvas). When worldSpace is set, the element's
+    // anchor POINT each frame is the projected position of worldSourceEntity
+    // (+ worldOffset) through the game camera; the authored offsets still size
+    // the element around that point. Culled beyond maxRenderDistance or when
+    // behind the camera.
+    bool worldSpace = false;
+    u64 worldSourceEntity = 0;   // Runtime: set by scripts; not serialized (entity ids don't persist)
+    Math::Vector3 worldOffset = Math::Vector3(0, 0, 0);
+    f32 maxRenderDistance = 50.0f;
 };
 
 // Computed rectangle (filled at layout time)
@@ -222,6 +233,7 @@ struct UIElement {
     // Runtime state (not serialized)
     UIRect computedRect;
     UIInteractionState interaction;
+    bool worldCulled = false;  // World-space element behind camera / out of range this frame
 };
 
 } // namespace Enjin::GUI

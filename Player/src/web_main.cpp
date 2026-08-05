@@ -53,7 +53,6 @@
 #include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/ECS/Components/Skeleton.h"
-#include "Enjin/Gameplay/HUDSystem.h"
 #include "Enjin/Gameplay/GameplayLoop.h"
 #include "Enjin/Gameplay/FootstepSystem.h"
 #include "Enjin/Accessibility/SubtitleSystem.h"
@@ -650,7 +649,7 @@ public:
     }
 
     // Draw the game's authored UI (UICanvasComponent + HUDWidgetComponent) into the
-    // swapchain via ImGui's WebGPU backend. This is the SAME UISystem/HUDSystem code
+    // swapchain via ImGui's WebGPU backend. This is the SAME UISystem code
     // the desktop player runs — one UI source, web/PC parity.
     void RenderUIOverlay() {
         if (!m_Renderer || !m_Renderer->IsInitialized()) return;
@@ -674,7 +673,6 @@ public:
                 ENJIN_LOG_ERROR(Player, "ImGui WebGPU backend init failed — game UI disabled");
                 return;
             }
-            m_HUDSystem.SetEnabled(true);
             // The UICanvas game-over screen's "Play Again" button — on web the
             // cleanest full restart is a page reload (fresh WASM + scene).
             m_UISystem.GetEventBus().Listen("gameover_restart",
@@ -740,11 +738,11 @@ public:
         ImGui_ImplWGPU_NewFrame();
         ImGui::NewFrame();
 
-        // Authored UICanvas UI (menus, dialogue boxes, in-game panels)
-        m_UISystem.Update(m_World.get(), static_cast<Enjin::f32>(w), static_cast<Enjin::f32>(h), io.DeltaTime);
-        // HUD widgets (health bars, labels, crosshair) bound to gameplay components
-        m_HUDSystem.Update(m_World.get(), m_Camera.get(), 0.0f, 0.0f,
-                           static_cast<Enjin::f32>(w), static_cast<Enjin::f32>(h));
+        // Authored UICanvas UI (menus, dialogue boxes, in-game panels, HUD).
+        // HUDSystem is retired: hudWidget data migrates to UICanvas on load,
+        // so this is the ONE UI path on web too (camera = world-space tags).
+        m_UISystem.Update(m_World.get(), static_cast<Enjin::f32>(w), static_cast<Enjin::f32>(h),
+                          io.DeltaTime, 0.0f, 0.0f, m_Camera.get());
         // Subtitle overlay (accessibility) -- same draw code as desktop
         m_SubtitleSystem.RenderOverlay(w, h);
 
@@ -897,7 +895,6 @@ private:
     Enjin::ECS::DialogueSystem m_DialogueSystem;
     Enjin::Gameplay::CinematicSystem m_CinematicSystem;
     Enjin::ECS::EntityEventBus m_EntityEventBus;
-    Enjin::Gameplay::HUDSystem m_HUDSystem;
     Enjin::Gameplay::FootstepSystem m_FootstepSystem;
     Enjin::Accessibility::SubtitleSystem m_SubtitleSystem;
     // One true UI source: the same UISystem that renders UICanvasComponent on

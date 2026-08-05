@@ -19,7 +19,7 @@
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Effects/Water.h"
 #include "Enjin/Effects/Destructible.h"
-#include "Enjin/Gameplay/HUDSystem.h"
+#include "Enjin/GUI/UISystem.h"
 #include "Enjin/Assets/Prefab.h"
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/GUI/Localization.h"
@@ -59,7 +59,8 @@ Enjin::Audio::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime = nullptr;
 Enjin::Plugin::PluginSystem* s_VisualScriptPluginSystem = nullptr;
 Enjin::Effects::WeatherSystem* s_VisualScriptWeather = nullptr;
 Enjin::Effects::Water3D* s_VisualScriptWater = nullptr;
-Enjin::Gameplay::HUDSystem* s_VisualScriptHUD = nullptr;
+// HUDSystem is retired: the HUD nodes drive the unified UISystem
+Enjin::GUI::UISystem* s_VisualScriptUI = nullptr;
 Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem = nullptr;
 Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer = nullptr;
 #if !ENJIN_RENDERER_WEBGPU
@@ -6605,9 +6606,8 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Gameplay::HUDSystem* s_VisualScriptHUD;
             bool enabled = (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) ? std::get<bool>(inputs[1]) : true;
-            if (s_VisualScriptHUD) s_VisualScriptHUD->SetEnabled(enabled);
+            if (s_VisualScriptUI) s_VisualScriptUI->SetHUDEnabled(enabled);
             ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);
@@ -6625,8 +6625,7 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.flags = NodeDefFlags::Pure;
         def.keywords = {"hud", "enabled", "active", "check"};
         def.evaluate = [](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
-            extern Gameplay::HUDSystem* s_VisualScriptHUD;
-            if (s_VisualScriptHUD) return s_VisualScriptHUD->IsEnabled();
+            if (s_VisualScriptUI) return s_VisualScriptUI->IsHUDEnabled();
             return false;
         };
         RegisterNode(def);
@@ -6658,8 +6657,8 @@ void NodeRegistry::RegisterBuiltinNodes() {
             bool visible = (inputs.size() > 2 && std::holds_alternative<bool>(inputs[2]))
                 ? std::get<bool>(inputs[2]) : true;
             if (ctx.world && target != ECS::INVALID_ENTITY) {
-                auto* hud = ctx.world->GetComponent<ECS::HUDWidgetComponent>(target);
-                if (hud) hud->visible = visible;
+                auto* canvas = ctx.world->GetComponent<GUI::UICanvasComponent>(target);
+                if (canvas) canvas->visible = visible;
             }
             ctx.nextFlowIndex = 0;
         };
@@ -6692,8 +6691,12 @@ void NodeRegistry::RegisterBuiltinNodes() {
             if (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2]))
                 text = std::get<std::string>(inputs[2]);
             if (ctx.world && target != ECS::INVALID_ENTITY) {
-                auto* hud = ctx.world->GetComponent<ECS::HUDWidgetComponent>(target);
-                if (hud) hud->text = text;
+                auto* canvas = ctx.world->GetComponent<GUI::UICanvasComponent>(target);
+                if (canvas) {
+                    for (auto& el : canvas->elements) {
+                        if (el.type == GUI::UIWidgetType::Label) { el.data.text = text; break; }
+                    }
+                }
             }
             ctx.nextFlowIndex = 0;
         };
@@ -6728,10 +6731,15 @@ void NodeRegistry::RegisterBuiltinNodes() {
             f32 maxVal = (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3]))
                 ? std::get<f32>(inputs[3]) : 1.0f;
             if (ctx.world && target != ECS::INVALID_ENTITY) {
-                auto* hud = ctx.world->GetComponent<ECS::HUDWidgetComponent>(target);
-                if (hud) {
-                    hud->currentValue = current;
-                    hud->maxValue = maxVal;
+                auto* canvas = ctx.world->GetComponent<GUI::UICanvasComponent>(target);
+                if (canvas) {
+                    for (auto& el : canvas->elements) {
+                        if (el.type == GUI::UIWidgetType::ProgressBar) {
+                            el.data.bindMaxValue = maxVal;
+                            el.data.progressValue = (maxVal > 0.0f) ? (current / maxVal) : 0.0f;
+                            break;
+                        }
+                    }
                 }
             }
             ctx.nextFlowIndex = 0;

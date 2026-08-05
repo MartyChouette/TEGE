@@ -2,7 +2,10 @@
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
+#include "Enjin/Renderer/Camera.h"
+#include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Logging/Log.h"
 
 #include <imgui.h>
@@ -134,14 +137,22 @@ void UISystem::SyncDataBindings(ECS::World* world) {
 }
 
 void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime,
-                      f32 originX, f32 originY) {
+                      f32 originX, f32 originY, const Renderer::Camera* camera) {
     if (!world || vpW <= 0 || vpH <= 0) return;
+
+    // Self-healing UI unification: any legacy hudWidget component that reaches
+    // this frame (old templates, scripts adding the retired component) is
+    // converted to a UICanvas before layout — scene loads already migrate.
+    if (!world->GetEntitiesWithComponent<ECS::HUDWidgetComponent>().empty()) {
+        Scene::SceneSerializer::MigrateHUDWidgetsToCanvases(world);
+    }
 
     // Collect all canvas entities and sort by sortOrder (reuses member vector)
     m_CachedCanvases.clear();
     for (ECS::Entity entity : world->GetEntitiesWithComponent<UICanvasComponent>()) {
         auto* canvas = world->GetComponent<UICanvasComponent>(entity);
         if (!canvas || !canvas->visible) continue;
+        if (!m_HUDEnabled && canvas->sortOrder >= HUD_SORT_ORDER) continue;  // HUD tier gated off
         m_CachedCanvases.push_back({entity, canvas->sortOrder});
     }
 
@@ -177,12 +188,59 @@ void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime,
         if (!canvas) continue;
 
         ComputeLayout(*canvas, vpW, vpH, originX, originY);
+        ApplyWorldSpaceAnchors(*canvas, world, entry.entity, camera,
+                               originX, originY, vpW, vpH);
         ProcessInput(*canvas, vpW, vpH);
         ProcessFocusNavigation(*canvas, deltaTime);
         RenderCanvas(*canvas);
     }
 
     clipDL->PopClipRect();
+}
+
+void UISystem::ApplyWorldSpaceAnchors(UICanvasComponent& canvas, ECS::World* world,
+                                      ECS::Entity canvasEntity, const Renderer::Camera* camera,
+                                      f32 originX, f32 originY, f32 vpW, f32 vpH) {
+    for (auto& element : canvas.elements) {
+        element.worldCulled = false;
+        if (!element.data.worldSpace) continue;
+        if (!camera || !world) { element.worldCulled = true; continue; }
+
+        // Anchor to the source entity (default: the canvas's own entity)
+        ECS::Entity src = element.data.worldSourceEntity != 0
+                              ? static_cast<ECS::Entity>(element.data.worldSourceEntity)
+                              : canvasEntity;
+        auto* tf = world->GetComponent<ECS::TransformComponent>(src);
+        if (!tf) { element.worldCulled = true; continue; }
+
+        Math::Vector3 wp = tf->position + element.data.worldOffset;
+        Math::Vector3 d = wp - camera->GetPosition();
+        f32 dist = d.Length();
+        if (element.data.maxRenderDistance > 0.0f && dist > element.data.maxRenderDistance) {
+            element.worldCulled = true;
+            continue;
+        }
+
+        Math::Vector4 clip = camera->GetViewProjectionMatrix()
+                           * Math::Vector4(wp.x, wp.y, wp.z, 1.0f);
+        if (clip.w <= 0.001f) { element.worldCulled = true; continue; }
+        f32 ndcX = clip.x / clip.w;
+        f32 ndcY = clip.y / clip.w;
+        f32 ndcZ = clip.z / clip.w;
+        if (ndcZ < 0.0f || ndcZ > 1.0f) { element.worldCulled = true; continue; }
+        f32 fx = (ndcX + 1.0f) * 0.5f;
+        f32 fy = (ndcY + 1.0f) * 0.5f;
+        if (fx < -0.2f || fx > 1.2f || fy < -0.2f || fy > 1.2f) {
+            element.worldCulled = true;
+            continue;
+        }
+
+        // Recenter the laid-out rect on the projected point (size unchanged)
+        f32 cx = originX + fx * vpW;
+        f32 cy = originY + fy * vpH;
+        element.computedRect.x = cx - element.computedRect.w * 0.5f;
+        element.computedRect.y = cy - element.computedRect.h * 0.5f;
+    }
 }
 
 // ============================================================================
@@ -298,7 +356,7 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
     // Iterate elements in reverse order (front-to-back for hit testing)
     for (i32 i = static_cast<i32>(canvas.elements.size()) - 1; i >= 0; --i) {
         auto& element = canvas.elements[static_cast<usize>(i)];
-        if (!element.visible || !element.enabled) {
+        if (!element.visible || !element.enabled || element.worldCulled) {
             element.interaction = {};
             continue;
         }
@@ -523,7 +581,7 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
     {
         u32 newTooltipHover = 0;
         for (const auto& element : canvas.elements) {
-            if (!element.visible || !element.enabled) continue;
+            if (!element.visible || !element.enabled || element.worldCulled) continue;
             if (element.data.tooltipText.empty()) continue;
             if (element.computedRect.Contains(mouseX, mouseY)) {
                 newTooltipHover = element.id;
@@ -742,7 +800,7 @@ void UISystem::RenderCanvas(const UICanvasComponent& canvas) {
     // Render root elements, then their children recursively
     // Note: ScrollArea, Grid, TabGroup, Modal handle their own children
     for (const auto& element : canvas.elements) {
-        if (element.parentId == 0 && element.visible) {
+        if (element.parentId == 0 && element.visible && !element.worldCulled) {
             RenderElement(element, canvas.theme, focusedId, canvas);
 
             // Container widgets render their own children
@@ -756,7 +814,7 @@ void UISystem::RenderCanvas(const UICanvasComponent& canvas) {
             // Render children
             for (u32 childId : element.childIds) {
                 const UIElement* child = canvas.GetElement(childId);
-                if (child && child->visible) {
+                if (child && child->visible && !child->worldCulled) {
                     RenderElement(*child, canvas.theme, focusedId, canvas);
 
                     // Container children handle their own sub-children
@@ -770,7 +828,7 @@ void UISystem::RenderCanvas(const UICanvasComponent& canvas) {
                     // One level of nesting for children's children
                     for (u32 grandchildId : child->childIds) {
                         const UIElement* grandchild = canvas.GetElement(grandchildId);
-                        if (grandchild && grandchild->visible) {
+                        if (grandchild && grandchild->visible && !grandchild->worldCulled) {
                             RenderElement(*grandchild, canvas.theme, focusedId, canvas);
                         }
                     }
@@ -1467,7 +1525,7 @@ void UISystem::RenderScrollArea(const UIElement& element, const UITheme& theme,
     f32 contentH = 0.0f;
     for (u32 childId : element.childIds) {
         const UIElement* child = canvas.GetElement(childId);
-        if (child && child->visible) {
+        if (child && child->visible && !child->worldCulled) {
             f32 childBottom = (child->computedRect.y + child->computedRect.h) - element.computedRect.y;
             if (childBottom > contentH) contentH = childBottom;
         }
@@ -1487,7 +1545,7 @@ void UISystem::RenderScrollArea(const UIElement& element, const UITheme& theme,
     // Render children with scroll offset
     for (u32 childId : element.childIds) {
         const UIElement* child = canvas.GetElement(childId);
-        if (!child || !child->visible) continue;
+        if (!child || !child->visible || child->worldCulled) continue;
 
         // Create a temporary element with offset rect for rendering
         UIElement shifted = *child;
@@ -1562,7 +1620,7 @@ void UISystem::RenderGrid(const UIElement& element, const UITheme& theme,
     f32 cellH = 0.0f;
     for (u32 childId : element.childIds) {
         const UIElement* child = canvas.GetElement(childId);
-        if (child && child->visible) {
+        if (child && child->visible && !child->worldCulled) {
             cellH = child->computedRect.h;
             break;
         }
@@ -1571,7 +1629,7 @@ void UISystem::RenderGrid(const UIElement& element, const UITheme& theme,
 
     for (i32 i = 0; i < static_cast<i32>(element.childIds.size()); ++i) {
         const UIElement* child = canvas.GetElement(element.childIds[i]);
-        if (!child || !child->visible) continue;
+        if (!child || !child->visible || child->worldCulled) continue;
 
         i32 col = i % cols;
         i32 row = i / cols;
@@ -1684,7 +1742,7 @@ void UISystem::RenderTabGroup(const UIElement& element, const UITheme& theme,
         // Render grandchildren of active tab
         for (u32 grandchildId : activeChild->childIds) {
             const UIElement* grandchild = canvas.GetElement(grandchildId);
-            if (grandchild && grandchild->visible) {
+            if (grandchild && grandchild->visible && !grandchild->worldCulled) {
                 RenderElement(*grandchild, theme, focusedId, canvas);
             }
         }
@@ -1797,12 +1855,12 @@ void UISystem::RenderModal(const UIElement& element, const UITheme& theme,
     // Render children on top of modal panel
     for (u32 childId : element.childIds) {
         const UIElement* child = canvas.GetElement(childId);
-        if (child && child->visible) {
+        if (child && child->visible && !child->worldCulled) {
             RenderElement(*child, theme, focusedId, canvas);
             // Render grandchildren
             for (u32 grandchildId : child->childIds) {
                 const UIElement* grandchild = canvas.GetElement(grandchildId);
-                if (grandchild && grandchild->visible) {
+                if (grandchild && grandchild->visible && !grandchild->worldCulled) {
                     RenderElement(*grandchild, theme, focusedId, canvas);
                 }
             }

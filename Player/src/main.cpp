@@ -65,7 +65,6 @@
 #include "Enjin/ECS/Systems/AISystem.h"
 #include "Enjin/Gameplay/RecordRewindSystem.h"
 #include "Enjin/ECS/EntityEventBus.h"
-#include "Enjin/Gameplay/HUDSystem.h"
 #include "Enjin/Gameplay/QuestSystem.h"
 #include "Enjin/Gameplay/FootstepSystem.h"
 #include "Enjin/Gameplay/CinematicSystem.h"
@@ -639,7 +638,7 @@ public:
             extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
             extern Enjin::Effects::WeatherSystem* s_VisualScriptWeather;
             extern Enjin::Effects::Water3D* s_VisualScriptWater;
-            extern Enjin::Gameplay::HUDSystem* s_VisualScriptHUD;
+            extern Enjin::GUI::UISystem* s_VisualScriptUI;
             extern Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
             extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
             extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
@@ -649,7 +648,7 @@ public:
             s_VisualScriptSaveSystem = nullptr;
             s_VisualScriptWeather = nullptr;
             s_VisualScriptWater = nullptr;
-            s_VisualScriptHUD = nullptr;
+            s_VisualScriptUI = nullptr;
             s_VisualScriptSubtitleSystem = nullptr;
             s_VisualScriptAnnouncer = nullptr;
             s_VisualScriptAudio = nullptr;
@@ -665,7 +664,7 @@ public:
         m_AISystem.SetEnabled(false);
         m_ControllerSystem.SetEnabled(false);
         m_FlowerSystem.SetEnabled(false);
-        m_HUDSystem.SetEnabled(false);
+        m_UISystem.SetHUDEnabled(false);
         m_QuestSystem.SetEnabled(false);
         m_FootstepSystem.SetEnabled(false);
         m_CinematicSystem.SetEnabled(false);
@@ -1243,19 +1242,15 @@ public:
                 DrawDialogueOverlay();
             }
 
-            // HUD widgets (health bars, tube readout, crosshair, etc. — only during active gameplay)
-            if (!m_ShowingSplash && m_GameStarted && !m_GameMenu.IsMenuOpen() && m_World) {
-                m_HUDSystem.Update(m_World.get(), m_Camera.get(),
-                    0.0f, 0.0f,
-                    static_cast<Enjin::f32>(extent.width),
-                    static_cast<Enjin::f32>(extent.height));
-            }
-
-            // Runtime UI canvases (suppressed when built-in GameMenu is open or intro card active to prevent double menus)
+            // Runtime UI canvases (suppressed when built-in GameMenu is open or
+            // intro card active to prevent double menus). HUDSystem is retired:
+            // hudWidget data migrates to UICanvas on load, so canvases are the
+            // ONE UI path — the camera drives world-space billboard elements.
             if (!m_ShowingSplash && !EngineSplashActive() && !m_GameMenu.IsMenuOpen() && m_World) {
                 m_UISystem.Update(m_World.get(),
                     static_cast<Enjin::f32>(extent.width),
-                    static_cast<Enjin::f32>(extent.height), 0.0f);
+                    static_cast<Enjin::f32>(extent.height), 0.0f,
+                    0.0f, 0.0f, m_Camera.get());
             }
 
             // Accessibility overlays
@@ -1696,7 +1691,7 @@ private:
             extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
             extern Enjin::Effects::WeatherSystem* s_VisualScriptWeather;
             extern Enjin::Effects::Water3D* s_VisualScriptWater;
-            extern Enjin::Gameplay::HUDSystem* s_VisualScriptHUD;
+            extern Enjin::GUI::UISystem* s_VisualScriptUI;
             extern Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
             extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
             extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
@@ -1706,7 +1701,7 @@ private:
             s_VisualScriptSaveSystem = &m_TieredSaveSystem;
             s_VisualScriptWeather = &m_WeatherSystem;
             s_VisualScriptWater = &m_Water3D;
-            s_VisualScriptHUD = &m_HUDSystem;
+            s_VisualScriptUI = &m_UISystem;
             s_VisualScriptSubtitleSystem = &m_SubtitleSystem;
             s_VisualScriptAnnouncer = &m_Announcer;
             s_VisualScriptAudio = &m_SimpleAudio;
@@ -1821,7 +1816,7 @@ private:
         m_ControllerSystem.SetEnabled(true);
         m_FlowerSystem.SetEnabled(true);
         m_AISystem.SetEnabled(true);
-        m_HUDSystem.SetEnabled(true);
+        m_UISystem.SetHUDEnabled(true);
         m_QuestSystem.SetEnabled(true);
         m_FootstepSystem.SetEnabled(true);
         m_CinematicSystem.SetEnabled(true);
@@ -2288,7 +2283,6 @@ private:
     Enjin::ECS::EntityEventBus m_EntityEventBus;
     Enjin::ECS::DialogueSystem m_DialogueSystem;
     Enjin::ECS::Entity m_ActiveDialogueEntity = 0;
-    Enjin::Gameplay::HUDSystem m_HUDSystem;
     Enjin::Gameplay::QuestSystem m_QuestSystem;
     Enjin::Gameplay::FootstepSystem m_FootstepSystem;
     Enjin::Gameplay::ObjectPool m_ObjectPool;

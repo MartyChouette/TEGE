@@ -5392,6 +5392,13 @@ json SerializeUIElement(const GUI::UIElement& e) {
     data["tooltipDelay"] = RF(e.data.tooltipDelay);
     if (!e.data.tooltipText.empty()) data["tooltipText"] = e.data.tooltipText;
     data["listSelectedIndex"] = RF(e.data.listSelectedIndex);
+    // World-space anchoring (migrated HUD billboards). worldSourceEntity is
+    // runtime-only (entity ids don't survive save/load; scripts re-set it).
+    if (e.data.worldSpace) {
+        data["worldSpace"] = true;
+        data["worldOffset"] = SerializeVector3(e.data.worldOffset);
+        data["maxRenderDistance"] = RF(e.data.maxRenderDistance);
+    }
     j["data"] = data;
 
     // Accessibility
@@ -5481,6 +5488,9 @@ GUI::UIElement DeserializeUIElement(const json& j) {
         if (d.contains("tooltipDelay")) e.data.tooltipDelay = d["tooltipDelay"].get<f32>();
         if (d.contains("tooltipText")) e.data.tooltipText = SafeStr(d["tooltipText"]);
         if (d.contains("listSelectedIndex")) e.data.listSelectedIndex = d["listSelectedIndex"].get<i32>();
+        if (d.contains("worldSpace")) e.data.worldSpace = JB(d["worldSpace"]);
+        if (d.contains("worldOffset")) e.data.worldOffset = DeserializeVector3(d["worldOffset"]);
+        if (d.contains("maxRenderDistance")) e.data.maxRenderDistance = d["maxRenderDistance"].get<f32>();
     }
 
     if (j.contains("accessibleLabel")) e.accessibleLabel = SafeStr(j["accessibleLabel"], MAX_STR_NAME);
@@ -8307,6 +8317,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
         // resolve to a single animator after reload (see ReshareSkeletonGroups).
         ReshareSkeletonGroups(m_World);
 
+        // UI unification: convert legacy hudWidget components to UICanvases
+        MigrateHUDWidgetsToCanvases(m_World);
+
         result.success = true;
         ENJIN_LOG_INFO(Asset, "Loaded scene from %s (%zu entities)", filepath.c_str(), result.entities.size());
 
@@ -9668,6 +9681,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
 
         // Re-share one Skeleton per imported-model group (see ReshareSkeletonGroups).
         ReshareSkeletonGroups(m_World);
+
+        // UI unification: convert legacy hudWidget components to UICanvases
+        MigrateHUDWidgetsToCanvases(m_World);
 
         result.success = true;
         ENJIN_LOG_DEBUG(Asset, "Loaded scene from string (%zu entities)", result.entities.size());
@@ -11042,6 +11058,129 @@ bool SceneSerializer::RemoveOneComponent(ECS::World* world, ECS::Entity entity, 
 
     ENJIN_LOG_WARN(Asset, "Unknown component key for removal: '%s'", key.c_str());
     return false;
+}
+
+// UI unification: legacy HUDWidgetComponents become per-entity UICanvases on
+// load. HUDSystem is RETIRED — UICanvas is the one authorable UI system on
+// every platform. Entity names are preserved so Scene_FindEntity-based
+// scripts keep working; the HUD_* script API drives these canvases now.
+// Saved scenes write uiCanvas from here on (hudWidget disappears on save).
+void SceneSerializer::MigrateHUDWidgetsToCanvases(ECS::World* world) {
+    if (!world) return;
+    std::vector<ECS::Entity> hudEntities = world->GetEntitiesWithComponent<ECS::HUDWidgetComponent>();
+    usize migrated = 0;
+    for (ECS::Entity e : hudEntities) {
+        auto* hw = world->GetComponent<ECS::HUDWidgetComponent>(e);
+        if (!hw) continue;
+        // Copy the widget: adding components below may reallocate storage
+        ECS::HUDWidgetComponent w = *hw;
+
+        if (!world->HasComponent<GUI::UICanvasComponent>(e)) {
+            world->AddComponent<GUI::UICanvasComponent>(e);
+        }
+        auto* canvas = world->GetComponent<GUI::UICanvasComponent>(e);
+        if (!canvas) continue;
+        auto* nameComp = world->GetComponent<ECS::NameComponent>(e);
+        canvas->canvasName = nameComp ? nameComp->name : std::string("HUD");
+        canvas->visible = w.visible;
+        canvas->sortOrder = 100;  // HUD sits above menu canvases
+
+        auto pointAnchor = [&](GUI::UIElement& el, f32 ax, f32 ay, f32 wFrac, f32 hFrac) {
+            el.anchor.anchorMin = Math::Vector2(ax, ay);
+            el.anchor.anchorMax = Math::Vector2(ax, ay);
+            el.anchor.offsetLeft = 0.0f;
+            el.anchor.offsetTop = 0.0f;
+            el.anchor.offsetRight = wFrac * canvas->designWidth;
+            el.anchor.offsetBottom = hFrac * canvas->designHeight;
+        };
+        auto applyWorldSpace = [&](GUI::UIElement& el) {
+            if (w.screenSpace) return;
+            el.data.worldSpace = true;
+            el.data.worldSourceEntity = w.sourceEntity;
+            el.data.worldOffset = w.worldOffset;
+            el.data.maxRenderDistance = w.maxRenderDistance;
+        };
+
+        using WT = ECS::HUDWidgetComponent::WidgetType;
+        switch (w.type) {
+            case WT::HealthBar:
+            case WT::ResourceBar: {
+                u32 barId = canvas->AddElement(GUI::UIWidgetType::ProgressBar, "bar");
+                GUI::UIElement* bar = canvas->GetElement(barId);
+                pointAnchor(*bar, w.anchorX, w.anchorY, w.width, w.height);
+                bar->focusable = false;
+                bar->data.progressValue = w.maxValue > 0.0f ? w.currentValue / w.maxValue : 0.0f;
+                bar->data.bindMaxValue = w.maxValue;
+                bar->data.progressFillColor = w.fillColor;
+                bar->style.bgColor = w.bgColor;
+                bar->data.bindField = (w.bindField == "custom") ? std::string("") : w.bindField;
+                applyWorldSpace(*bar);
+                if (!w.text.empty()) {
+                    u32 lblId = canvas->AddElement(GUI::UIWidgetType::Label, "label", barId);
+                    GUI::UIElement* lbl = canvas->GetElement(lblId);
+                    lbl->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
+                    lbl->anchor.anchorMax = Math::Vector2(1.0f, 1.0f);
+                    lbl->anchor.offsetLeft = lbl->anchor.offsetRight = 0.0f;
+                    lbl->anchor.offsetTop = lbl->anchor.offsetBottom = 0.0f;
+                    lbl->focusable = false;
+                    lbl->data.text = w.text;
+                    lbl->style.fontSize = w.fontSize;
+                    lbl->style.textColor = w.textColor;
+                }
+                break;
+            }
+            case WT::Label:
+            case WT::ObjectiveMarker: {
+                u32 id = canvas->AddElement(GUI::UIWidgetType::Label, "text");
+                GUI::UIElement* el = canvas->GetElement(id);
+                if (w.screenSpace) {
+                    // Screen labels anchored top-left at the point, generous
+                    // wrap box, left/top aligned — mirrors old HUD drawing
+                    pointAnchor(*el, w.anchorX, w.anchorY, 0.8f, 0.10f);
+                    el->data.textAlignH = 0;
+                    el->data.textAlignV = 0;
+                } else {
+                    // World tags: small box centered on the projected point
+                    pointAnchor(*el, w.anchorX, w.anchorY, 0.12f, 0.04f);
+                    el->data.textAlignH = 1;
+                    el->data.textAlignV = 1;
+                }
+                el->focusable = false;
+                el->data.text = w.text;
+                el->style.fontSize = w.fontSize;
+                el->style.textColor = w.textColor;
+                el->data.bindField = (w.bindField == "custom") ? std::string("") : w.bindField;
+                applyWorldSpace(*el);
+                break;
+            }
+            case WT::Crosshair: {
+                // Two thin centered panels replace the bespoke crosshair draw
+                for (int axis = 0; axis < 2; ++axis) {
+                    u32 id = canvas->AddElement(GUI::UIWidgetType::Panel, axis == 0 ? "crossH" : "crossV");
+                    GUI::UIElement* el = canvas->GetElement(id);
+                    el->anchor.anchorMin = Math::Vector2(0.5f, 0.5f);
+                    el->anchor.anchorMax = Math::Vector2(0.5f, 0.5f);
+                    el->anchor.offsetLeft   = axis == 0 ? -10.0f : -1.0f;
+                    el->anchor.offsetRight  = axis == 0 ?  10.0f :  1.0f;
+                    el->anchor.offsetTop    = axis == 0 ?  -1.0f : -10.0f;
+                    el->anchor.offsetBottom = axis == 0 ?   1.0f :  10.0f;
+                    el->focusable = false;
+                    el->style.bgColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+                    el->style.bgAlpha = 0.8f;
+                }
+                break;
+            }
+            default:
+                ENJIN_LOG_WARN(Asset, "HUD widget type %d on entity %llu had no renderer — dropped in UICanvas migration",
+                               static_cast<int>(w.type), static_cast<unsigned long long>(e));
+                break;
+        }
+        world->RemoveComponent<ECS::HUDWidgetComponent>(e);
+        ++migrated;
+    }
+    if (migrated > 0) {
+        ENJIN_LOG_INFO(Asset, "UI unification: migrated %zu legacy HUD widget(s) to UICanvas", migrated);
+    }
 }
 
 } // namespace Scene

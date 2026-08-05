@@ -2717,15 +2717,12 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                 static_cast<u32>(io.DisplaySize.y));
         }
 
-        // Render HUD widgets during play mode (fullscreen)
+        // Render UI canvases during play mode (fullscreen). HUDSystem is
+        // retired — legacy hudWidget data migrates to UICanvas on scene load,
+        // so canvases are the ONE UI path (world-space tags need the camera).
         if (m_PlayMode.IsPlaying()) {
-            m_PlayMode.GetHUDSystem()->Update(m_World, m_Camera,
-                0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
-        }
-
-        // Render UI canvases during play mode (fullscreen)
-        if (m_PlayMode.IsPlaying()) {
-            m_UISystem.Update(m_World, io.DisplaySize.x, io.DisplaySize.y, m_LastDeltaTime);
+            m_UISystem.Update(m_World, io.DisplaySize.x, io.DisplaySize.y, m_LastDeltaTime,
+                              0.0f, 0.0f, m_Camera);
         }
 
         // Render pause menu overlay on top of fullscreen game view
@@ -3938,24 +3935,18 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // Render alternative input overlays (switch scanning highlight, gaze indicator)
     m_AlternativeInput.RenderOverlay();
 
-    // Render HUD widgets during play mode (editor game view)
-    if (m_PlayMode.IsPlaying()) {
-        m_PlayMode.GetHUDSystem()->Update(m_World, m_Camera,
-            m_GameViewImageMinX, m_GameViewImageMinY,
-            m_GameViewImageMaxX - m_GameViewImageMinX,
-            m_GameViewImageMaxY - m_GameViewImageMinY);
-    }
-
     // Render UI canvases during play mode (editor game view). Pass the game
     // view image ORIGIN too — without it the UI laid out from the window's
     // top-left corner: drawn over the editor panels, clicks offset, and none
-    // of it aligned with the game image.
+    // of it aligned with the game image. HUDSystem is retired: hudWidget data
+    // migrates to UICanvas on load, so this is the ONE UI path. The camera
+    // drives world-space elements (tags glued to entities).
     if (m_PlayMode.IsPlaying()) {
         f32 gvW = m_GameViewImageMaxX - m_GameViewImageMinX;
         f32 gvH = m_GameViewImageMaxY - m_GameViewImageMinY;
         if (gvW > 0 && gvH > 0) {
             m_UISystem.Update(m_World, gvW, gvH, m_LastDeltaTime,
-                              m_GameViewImageMinX, m_GameViewImageMinY);
+                              m_GameViewImageMinX, m_GameViewImageMinY, m_Camera);
         }
     }
 

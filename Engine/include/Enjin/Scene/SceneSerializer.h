@@ -99,6 +99,12 @@ public:
     // of the dispatch above). Used by the layer system's instant toggle.
     static bool RemoveOneComponent(ECS::World* world, ECS::Entity entity, const std::string& key);
 
+    // UI unification: convert legacy HUDWidgetComponents into per-entity
+    // UICanvases (HUDSystem is retired). Runs after every scene load; the
+    // UISystem also calls it as a self-healing backstop for templates or
+    // scripts that still spawn hudWidget components.
+    static void MigrateHUDWidgetsToCanvases(ECS::World* world);
+
     // Scene-level accessibility content flags
     void SetContentFlags(const Accessibility::SceneContentFlags& flags) { m_ContentFlags = flags; }
     const Accessibility::SceneContentFlags& GetContentFlags() const { return m_ContentFlags; }

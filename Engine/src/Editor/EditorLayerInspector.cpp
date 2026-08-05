@@ -524,11 +524,9 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::QuestFlowComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::QuestFlowComponent>(e); },
             "questFlow"},
-        {"HUD Widget", "Gameplay", nullptr,
-            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::HUDWidgetComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HUDWidgetComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::HUDWidgetComponent>(e); },
-            "hudWidget"},
+        // "HUD Widget" removed from the Add Component menu: HUDSystem is
+        // retired — HUD elements are authored as UICanvas (UI unification).
+        // Legacy hudWidget data still loads and auto-migrates to canvases.
         {"UI Canvas", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<GUI::UICanvasComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<GUI::UICanvasComponent>(e); },

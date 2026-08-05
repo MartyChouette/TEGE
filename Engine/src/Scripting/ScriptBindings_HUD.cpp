@@ -3,6 +3,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/GUI/UICanvas.h"
 #include <angelscript.h>
 #include <cassert>
 
@@ -14,109 +15,126 @@ using namespace Enjin;
 extern ECS::World* s_BindingsWorld;
 
 // ============================================================================
-// HUDWidgetComponent access
+// HUD_* API — now backed by UICanvasComponent.
+// HUDSystem is RETIRED (UI unification: UICanvas is the one authorable UI
+// system on every platform). Legacy hudWidget scene data is migrated to
+// per-entity canvases on load, so scripts written against HUD widget entities
+// keep working unchanged: text ops hit the canvas's first Label, value ops
+// its first ProgressBar, layout ops its root elements.
 // ============================================================================
 
+static GUI::UICanvasComponent* HudCanvas(u64 entity) {
+    if (!s_BindingsWorld) return nullptr;
+    return s_BindingsWorld->GetComponent<GUI::UICanvasComponent>(static_cast<ECS::Entity>(entity));
+}
+
+static GUI::UIElement* FirstOfType(GUI::UICanvasComponent* c, GUI::UIWidgetType t) {
+    if (!c) return nullptr;
+    for (auto& e : c->elements) {
+        if (e.type == t) return &e;
+    }
+    return nullptr;
+}
+
 static void HUD_SetVisible(u64 entity, bool visible) {
-    if (!s_BindingsWorld) return;
-    auto* hud = s_BindingsWorld->GetComponent<ECS::HUDWidgetComponent>(entity);
-    if (hud) hud->visible = visible;
+    if (auto* c = HudCanvas(entity)) c->visible = visible;
 }
 
 static bool HUD_IsVisible(u64 entity) {
-    if (!s_BindingsWorld) return false;
-    auto* hud = s_BindingsWorld->GetComponent<ECS::HUDWidgetComponent>(entity);
-    return hud ? hud->visible : false;
+    auto* c = HudCanvas(entity);
+    return c ? c->visible : false;
 }
 
 static void HUD_SetText(u64 entity, const std::string& text) {
-    if (!s_BindingsWorld) return;
-    auto* hud = s_BindingsWorld->GetComponent<ECS::HUDWidgetComponent>(entity);
-    if (hud) hud->text = text;
+    if (auto* el = FirstOfType(HudCanvas(entity), GUI::UIWidgetType::Label)) el->data.text = text;
 }
 
 static std::string HUD_GetText(u64 entity) {
-    if (!s_BindingsWorld) return "";
-    auto* hud = s_BindingsWorld->GetComponent<ECS::HUDWidgetComponent>(entity);
-    return hud ? hud->text : std::string("");
+    auto* el = FirstOfType(HudCanvas(entity), GUI::UIWidgetType::Label);
+    return el ? el->data.text : std::string("");
 }
 
 static void HUD_SetValue(u64 entity, float current, float max) {
-    if (!s_BindingsWorld) return;
-    auto* hud = s_BindingsWorld->GetComponent<ECS::HUDWidgetComponent>(entity);
-    if (hud) {
-        hud->currentValue = current;
-        hud->maxValue = max;
+    if (auto* el = FirstOfType(HudCanvas(entity), GUI::UIWidgetType::ProgressBar)) {
+        el->data.bindMaxValue = max;
+        el->data.progressValue = (max > 0.0f) ? (current / max) : 0.0f;
     }
 }
 
 static float HUD_GetValue(u64 entity) {
-    if (!s_BindingsWorld) return 0.0f;
-    auto* hud = s_BindingsWorld->GetComponent<ECS::HUDWidgetComponent>(entity);
-    return hud ? hud->currentValue : 0.0f;
+    auto* el = FirstOfType(HudCanvas(entity), GUI::UIWidgetType::ProgressBar);
+    return el ? el->data.progressValue * el->data.bindMaxValue : 0.0f;
 }
 
 static float HUD_GetMaxValue(u64 entity) {
-    if (!s_BindingsWorld) return 0.0f;
-    auto* hud = s_BindingsWorld->GetComponent<ECS::HUDWidgetComponent>(entity);
-    return hud ? hud->maxValue : 0.0f;
+    auto* el = FirstOfType(HudCanvas(entity), GUI::UIWidgetType::ProgressBar);
+    return el ? el->data.bindMaxValue : 0.0f;
 }
 
 static void HUD_SetFillColor(u64 entity, float r, float g, float b) {
-    if (!s_BindingsWorld) return;
-    auto* hud = s_BindingsWorld->GetComponent<ECS::HUDWidgetComponent>(entity);
-    if (hud) hud->fillColor = Math::Vector3(r, g, b);
+    if (auto* el = FirstOfType(HudCanvas(entity), GUI::UIWidgetType::ProgressBar)) {
+        el->data.progressFillColor = Math::Vector3(r, g, b);
+    }
 }
 
 static void HUD_SetTextColor(u64 entity, float r, float g, float b) {
-    if (!s_BindingsWorld) return;
-    auto* hud = s_BindingsWorld->GetComponent<ECS::HUDWidgetComponent>(entity);
-    if (hud) hud->textColor = Math::Vector3(r, g, b);
+    if (auto* el = FirstOfType(HudCanvas(entity), GUI::UIWidgetType::Label)) {
+        el->style.textColor = Math::Vector3(r, g, b);
+    }
 }
 
 static void HUD_SetPosition(u64 entity, float anchorX, float anchorY) {
-    if (!s_BindingsWorld) return;
-    auto* hud = s_BindingsWorld->GetComponent<ECS::HUDWidgetComponent>(entity);
-    if (hud) {
-        hud->anchorX = anchorX;
-        hud->anchorY = anchorY;
+    if (auto* c = HudCanvas(entity)) {
+        for (auto& el : c->elements) {
+            if (el.parentId != 0) continue;  // roots carry the widget position
+            el.anchor.anchorMin = Math::Vector2(anchorX, anchorY);
+            el.anchor.anchorMax = Math::Vector2(anchorX, anchorY);
+        }
     }
 }
 
 static void HUD_SetSize(u64 entity, float width, float height) {
-    if (!s_BindingsWorld) return;
-    auto* hud = s_BindingsWorld->GetComponent<ECS::HUDWidgetComponent>(entity);
-    if (hud) {
-        hud->width = width;
-        hud->height = height;
+    // width/height are viewport fractions (legacy HUD semantics) — mapped to
+    // design-resolution offsets from the anchored point
+    if (auto* c = HudCanvas(entity)) {
+        for (auto& el : c->elements) {
+            if (el.parentId != 0) continue;
+            el.anchor.offsetLeft = 0.0f;
+            el.anchor.offsetTop = 0.0f;
+            el.anchor.offsetRight = width * c->designWidth;
+            el.anchor.offsetBottom = height * c->designHeight;
+        }
     }
 }
 
 static void HUD_SetFontSize(u64 entity, float size) {
-    if (!s_BindingsWorld) return;
-    auto* hud = s_BindingsWorld->GetComponent<ECS::HUDWidgetComponent>(entity);
-    if (hud) hud->fontSize = size;
+    if (auto* el = FirstOfType(HudCanvas(entity), GUI::UIWidgetType::Label)) {
+        el->style.fontSize = size;
+    }
 }
 
 static void HUD_SetBindField(u64 entity, const std::string& field) {
-    if (!s_BindingsWorld) return;
-    auto* hud = s_BindingsWorld->GetComponent<ECS::HUDWidgetComponent>(entity);
-    if (hud) hud->bindField = field;
+    if (auto* c = HudCanvas(entity)) {
+        // "custom" meant script-driven in the old HUD — canvas equivalent is
+        // no binding (scripts drive via HUD_SetValue/HUD_SetText)
+        std::string mapped = (field == "custom") ? std::string("") : field;
+        for (auto& el : c->elements) el.data.bindField = mapped;
+    }
 }
 
-// World-space widgets: track another entity's transform at draw time. This is
-// the lag-free way to pin a tag on a moving object - the HUD system reads the
+// World-space elements: track another entity's transform at draw time. This is
+// the lag-free way to pin a tag on a moving object - the UI system reads the
 // source's position after physics has run, not the position a script cached.
 static void HUD_SetSourceEntity(u64 entity, u64 source) {
-    if (!s_BindingsWorld) return;
-    auto* hud = s_BindingsWorld->GetComponent<ECS::HUDWidgetComponent>(entity);
-    if (hud) hud->sourceEntity = static_cast<ECS::Entity>(source);
+    if (auto* c = HudCanvas(entity)) {
+        for (auto& el : c->elements) el.data.worldSourceEntity = source;
+    }
 }
 
 static void HUD_SetWorldOffset(u64 entity, const Math::Vector3& offset) {
-    if (!s_BindingsWorld) return;
-    auto* hud = s_BindingsWorld->GetComponent<ECS::HUDWidgetComponent>(entity);
-    if (hud) hud->worldOffset = offset;
+    if (auto* c = HudCanvas(entity)) {
+        for (auto& el : c->elements) el.data.worldOffset = offset;
+    }
 }
 
 // ============================================================================
