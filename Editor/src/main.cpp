@@ -317,6 +317,8 @@ int main(int argc, char* argv[]) {
     }
     // --play (any position): auto-enter play mode once the launch project loads.
     // --compute-skinning: force ADR-0002 compute skinning on at boot.
+    // --golden <basePath> [--golden-frames N]: capture the game view after N
+    //   frames as <basePath>.png/.ppm and exit (golden-image harness).
     // For automated probes (validation runs) — not user-facing.
     for (int i = 1; i < argc; i++) {
         if (!argv[i]) continue;
@@ -325,6 +327,10 @@ int main(int argc, char* argv[]) {
             Enjin::Editor::EditorLayer::s_AutoPlayOnLaunch = true;
         } else if (flag == "--compute-skinning") {
             Enjin::Editor::EditorLayer::s_ComputeSkinningOnLaunch = true;
+        } else if (flag == "--golden" && i + 1 < argc && argv[i + 1]) {
+            Enjin::Editor::EditorLayer::s_GoldenCapturePath = argv[++i];
+        } else if (flag == "--golden-frames" && i + 1 < argc && argv[i + 1]) {
+            Enjin::Editor::EditorLayer::s_GoldenCaptureFrame = std::atoi(argv[++i]);
         }
     }
 

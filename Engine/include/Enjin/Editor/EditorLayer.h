@@ -201,6 +201,13 @@ public:
     // Set by main() from --compute-skinning: force ADR-0002 compute skinning on
     // at boot. For automated verification probes.
     static inline bool s_ComputeSkinningOnLaunch = false;
+    // Set by main() from --golden <basePath>: after s_GoldenCaptureFrame
+    // frames, the game view render target is read back and written as
+    // <basePath>.png (human diffing) + <basePath>.ppm (dependency-free
+    // comparer), then the editor exits. Golden-image regression harness
+    // (_golden.ps1). Combine with --play to capture play-mode frames.
+    static inline std::string s_GoldenCapturePath;
+    static inline i32 s_GoldenCaptureFrame = 180;
 
     EditorLayer();
     ~EditorLayer();

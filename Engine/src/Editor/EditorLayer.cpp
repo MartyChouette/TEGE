@@ -105,6 +105,7 @@
 #include <vulkan/vulkan.h>
 #include <sstream>
 #include <fstream>
+#include <stb_image_write.h>  // --golden PNG capture (impl lives in the stb TU)
 #include <filesystem>
 #include <cstdio>
 #include <cstdlib>
@@ -758,6 +759,14 @@ void EditorLayer::Update(f32 deltaTime) {
                 StartPlayMode();
                 ENJIN_LOG_INFO(Editor, "--play: auto-entered play mode");
             }
+        }
+    }
+
+    // --golden probe support: after the configured frame count, read back the
+    // game view render target, write the reference images, and exit.
+    if (!s_GoldenCapturePath.empty() && m_RenderSystem && m_GameViewRenderTarget) {
+        if (++m_GoldenFrameCounter >= s_GoldenCaptureFrame) {
+            WriteGoldenCapture();
         }
     }
 
@@ -4169,6 +4178,50 @@ void EditorLayer::SyncRuntimeAccessibility() {
     a.invertMouseY = false;
     a.sprintMode = s.sprintMode;
     a.crouchMode = s.crouchMode;
+}
+
+// ============================================================================
+// Golden-image capture (--golden)
+// ============================================================================
+
+void EditorLayer::WriteGoldenCapture() {
+    // One shot: clear the trigger before anything can early-return
+    std::string basePath = s_GoldenCapturePath;
+    s_GoldenCapturePath.clear();
+
+    std::vector<u8> pixels = m_GameViewRenderTarget->CaptureToPixels();
+    u32 w = m_GameViewRenderTarget->GetWidth();
+    u32 h = m_GameViewRenderTarget->GetHeight();
+
+    if (pixels.empty() || w == 0 || h == 0) {
+        ENJIN_LOG_ERROR(Editor, "--golden: game view readback failed (%ux%u, %zu bytes)",
+                        w, h, pixels.size());
+    } else {
+        // PNG for human eyeballing/diffing
+        std::string pngPath = basePath + ".png";
+        stbi_write_png(pngPath.c_str(), static_cast<int>(w), static_cast<int>(h), 4,
+                       pixels.data(), static_cast<int>(w * 4));
+
+        // P6 PPM for the dependency-free comparer (_golden_compare.py, stdlib only)
+        std::string ppmPath = basePath + ".ppm";
+        std::ofstream ppm(ppmPath, std::ios::binary);
+        if (ppm.is_open()) {
+            ppm << "P6\n" << w << " " << h << "\n255\n";
+            std::vector<u8> rgb(static_cast<usize>(w) * h * 3);
+            for (usize i = 0, j = 0; i < pixels.size(); i += 4, j += 3) {
+                rgb[j + 0] = pixels[i + 0];
+                rgb[j + 1] = pixels[i + 1];
+                rgb[j + 2] = pixels[i + 2];
+            }
+            ppm.write(reinterpret_cast<const char*>(rgb.data()),
+                      static_cast<std::streamsize>(rgb.size()));
+        }
+        ENJIN_LOG_INFO(Editor, "--golden: captured %ux%u game view -> %s(.png/.ppm)",
+                       w, h, basePath.c_str());
+    }
+
+    // Done — exit so the harness can move to the next scene
+    if (m_Window) m_Window->Close();
 }
 
 } // namespace Editor
