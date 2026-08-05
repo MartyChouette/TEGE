@@ -72,12 +72,23 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
             Input::SetMouseCaptured(true);
             m_MouseCapturedByUs = true;
             SyncFromCamera();
-            // Consume the first-frame mouse delta so the camera doesn't whip
-            // to wherever the mouse was moving before the button was pressed
-            Input::GetMouseDelta();
+            // Input::SetMouseCaptured resets the delta origin, so the frame
+            // after capture reads a clean 0. One extra warmup frame skips any
+            // straggler delta from the capture transition — the mouse takes
+            // over from the CURRENT view direction, never from wherever the
+            // cursor happened to be.
+            m_LookWarmupFrames = 1;
             m_SmoothedLook = Math::Vector2(0.0f, 0.0f);
+        } else if (m_LookWarmupFrames > 0) {
+            --m_LookWarmupFrames;
         } else {
             Math::Vector2 mouseDelta = Input::GetMouseDelta();
+            // Spike clamp: a legitimate flick is well under this per frame; a
+            // larger delta is a capture/warp artifact from some other system
+            // toggling the cursor. Drop it rather than whip the view.
+            if (mouseDelta.Length() > 300.0f) {
+                mouseDelta = Math::Vector2(0.0f, 0.0f);
+            }
             // Light exponential filter: kills per-frame sensor jitter with
             // about one frame of lag, and gives release a soft landing.
             if (m_LookSmoothTime > 0.0f) {
@@ -244,9 +255,14 @@ void CameraController::UpdateOrbitMode(f32 deltaTime) {
             Input::SetMouseCaptured(true);
             m_MouseCapturedByUs = true;
             SyncFromCamera();
-            Input::GetMouseDelta(); // consume first-frame delta
+            m_LookWarmupFrames = 1;  // capture transition: same guard as fly mode
+        } else if (m_LookWarmupFrames > 0) {
+            --m_LookWarmupFrames;
         } else {
             Math::Vector2 mouseDelta = Input::GetMouseDelta();
+            if (mouseDelta.Length() > 300.0f) {
+                mouseDelta = Math::Vector2(0.0f, 0.0f);  // warp artifact, not a flick
+            }
             m_Yaw += mouseDelta.x * m_LookSensitivity;
             m_Pitch -= mouseDelta.y * m_LookSensitivity;  // Inverted: drag up → look up
             m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);

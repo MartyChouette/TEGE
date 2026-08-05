@@ -113,6 +113,7 @@ private:
     f32 m_LookSmoothTime = 0.008f;  // seconds; 0 = raw deltas
     Math::Vector3 m_Velocity = Math::Vector3(0.0f, 0.0f, 0.0f);
     Math::Vector2 m_SmoothedLook = Math::Vector2(0.0f, 0.0f);
+    i32 m_LookWarmupFrames = 0;     // skip look right after capture starts (warp guard)
 
     // Viewport input gating (see SetViewportInputState)
     bool m_PointerOverViewport = true;

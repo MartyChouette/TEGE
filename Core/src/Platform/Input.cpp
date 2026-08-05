@@ -420,10 +420,10 @@ void Input::SetMouseCaptured(bool captured) {
 #if ENJIN_PLATFORM_WEB
     if (captured) {
         emscripten_request_pointerlock("#game-canvas", true);
-        s_FirstMouseMove = true;
     } else {
         emscripten_exit_pointerlock();
     }
+    s_FirstMouseMove = true;
 #else
     if (!s_Window) return;
     if (captured) {
@@ -431,11 +431,15 @@ void Input::SetMouseCaptured(bool captured) {
         if (s_UseRawInput && glfwRawMouseMotionSupported()) {
             glfwSetInputMode(s_Window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
         }
-        s_FirstMouseMove = true;
     } else {
         glfwSetInputMode(s_Window, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
         glfwSetInputMode(s_Window, GLFW_CURSOR, s_CursorVisible ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_HIDDEN);
     }
+    // BOTH transitions change the coordinate source (physical cursor vs the
+    // unbounded virtual position of GLFW_CURSOR_DISABLED). Releasing without
+    // resetting left the next frame's delta = physical - virtual: a massive
+    // spike that whipped any camera reading GetMouseDelta that frame.
+    s_FirstMouseMove = true;
 #endif
 }
 
