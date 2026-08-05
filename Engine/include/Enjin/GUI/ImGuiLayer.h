@@ -148,8 +148,10 @@ struct EditorFontConfig {
     std::string headingFontPath;    // Path to heading font TTF/OTF (empty = default)
     std::string monoFontPath;       // Path to monospace font TTF/OTF (empty = default)
     f32 bodyFontSize = 15.0f;
-    f32 headingFontSize = 19.0f;
-    f32 h2FontSize = 16.0f;         // Section titles (uses heading font)
+    f32 headingFontSize = 20.0f;
+    f32 h2FontSize = 17.0f;         // Section titles (uses heading font) — must
+                                    // read visibly larger than body or the type
+                                    // hierarchy disappears
     f32 smallFontSize = 12.0f;      // Labels, hints (uses body font)
     f32 monoFontSize = 14.0f;
 };
@@ -185,6 +187,10 @@ public:
     ImFont* GetSmallFont() const { return m_SmallFont; }
     ImFont* GetMonoFont() const { return m_MonoFont; }
 
+    // Static access to the section (H2) typeface for free-function widget
+    // helpers (Editor::UI::SectionHeader) — refreshed by every LoadFonts
+    static ImFont* SectionFont() { return s_SectionFont; }
+
     // Reload fonts with new configuration (requires atlas rebuild)
     void ReloadFonts(const EditorFontConfig& fontConfig);
 
@@ -216,6 +222,7 @@ private:
     ImFont* m_H2Font = nullptr;       // H2 (18px section titles)
     ImFont* m_SmallFont = nullptr;    // Small (14px labels/hints)
     ImFont* m_MonoFont = nullptr;
+    static inline ImFont* s_SectionFont = nullptr;  // = m_H2Font of the live layer
 };
 
 } // namespace GUI

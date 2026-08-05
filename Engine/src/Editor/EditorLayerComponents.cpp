@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/EditorWidgets.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
@@ -198,7 +199,7 @@ void EditorLayer::RemoveComponentWithUndo(ECS::Entity entity, const std::string&
 
 void EditorLayer::DrawTransformComponent(ECS::Entity entity) {
     std::string hdr = std::string(GetComponentIcon("Transform")) + "Transform";
-    if (ImGui::CollapsingHeader(hdr.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader(hdr.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
         ECS::TransformComponent* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (!transform) return;
 
@@ -239,7 +240,7 @@ void EditorLayer::DrawTransformComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawMeshComponent(ECS::Entity entity) {
-    bool meshOpen = ImGui::CollapsingHeader("[M] Mesh", ImGuiTreeNodeFlags_DefaultOpen);
+    bool meshOpen = UI::SectionHeader("[M] Mesh", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("MeshCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::MeshComponent>(entity, "mesh", "Mesh");
@@ -342,7 +343,7 @@ void EditorLayer::DrawMeshComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawLODComponent(ECS::Entity entity) {
-    bool lodOpen = ImGui::CollapsingHeader("LOD", ImGuiTreeNodeFlags_DefaultOpen);
+    bool lodOpen = UI::SectionHeader("LOD", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("LODCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::LODComponent>(entity, "lod", "LOD");
@@ -413,7 +414,7 @@ void EditorLayer::DrawLODComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
-    bool matOpen = ImGui::CollapsingHeader("[*] Material", ImGuiTreeNodeFlags_DefaultOpen);
+    bool matOpen = UI::SectionHeader("[*] Material", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("MaterialCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::MaterialComponent>(entity, "material", "Material");
@@ -793,7 +794,7 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawMaterialSlotsComponent(ECS::Entity entity) {
-    bool slotsOpen = ImGui::CollapsingHeader("[M+] Material Slots", ImGuiTreeNodeFlags_DefaultOpen);
+    bool slotsOpen = UI::SectionHeader("[M+] Material Slots", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("MaterialSlotsCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::MaterialSlotsComponent>(entity, "materialSlots", "Material Slots");
@@ -954,7 +955,7 @@ void EditorLayer::DrawMaterialSlotsComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawLightComponent(ECS::Entity entity) {
-    bool lightOpen = ImGui::CollapsingHeader("[L] Light", ImGuiTreeNodeFlags_DefaultOpen);
+    bool lightOpen = UI::SectionHeader("[L] Light", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("LightCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::LightComponent>(entity, "light", "Light");
@@ -1018,7 +1019,7 @@ void EditorLayer::DrawLightComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
-    bool camOpen = ImGui::CollapsingHeader("[C] Camera", ImGuiTreeNodeFlags_DefaultOpen);
+    bool camOpen = UI::SectionHeader("[C] Camera", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("CameraCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::CameraComponent>(entity, "camera", "Camera");
@@ -1125,7 +1126,7 @@ void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawNotesComponent(ECS::Entity entity) {
-    bool notesOpen = ImGui::CollapsingHeader("Notes", ImGuiTreeNodeFlags_DefaultOpen);
+    bool notesOpen = UI::SectionHeader("Notes", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("NotesCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::NotesComponent>(entity, "notes", "Notes");
@@ -1153,7 +1154,7 @@ void EditorLayer::DrawNotesComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawTextComponent(ECS::Entity entity) {
-    bool textOpen = ImGui::CollapsingHeader("Text", ImGuiTreeNodeFlags_DefaultOpen);
+    bool textOpen = UI::SectionHeader("Text", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("TextCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::TextComponent>(entity, "text", "Text");
@@ -1261,7 +1262,7 @@ void EditorLayer::DrawTextComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawWeatherZoneComponent(ECS::Entity entity) {
-    bool wzOpen = ImGui::CollapsingHeader("Weather Zone", ImGuiTreeNodeFlags_DefaultOpen);
+    bool wzOpen = UI::SectionHeader("Weather Zone", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("WeatherZoneCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::WeatherZoneComponent>(entity, "weatherZone", "Weather Zone");
@@ -1337,7 +1338,7 @@ void EditorLayer::DrawWeatherZoneComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawWaterVolumeComponent(ECS::Entity entity) {
-    bool wvOpen = ImGui::CollapsingHeader("Water Volume", ImGuiTreeNodeFlags_DefaultOpen);
+    bool wvOpen = UI::SectionHeader("Water Volume", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("WaterVolumeCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::WaterVolumeComponent>(entity, "waterVolume", "Water Volume");
@@ -1439,7 +1440,7 @@ void EditorLayer::DrawWaterVolumeComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawWater3DComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("[W] Water 3D", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("[W] Water 3D", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("Water3DCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::Water3DComponent>(entity, "water3D", "Water 3D");
@@ -1508,7 +1509,7 @@ void EditorLayer::DrawWater3DComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawGrassVolumeComponent(ECS::Entity entity) {
-    bool gvOpen = ImGui::CollapsingHeader("Grass Volume", ImGuiTreeNodeFlags_DefaultOpen);
+    bool gvOpen = UI::SectionHeader("Grass Volume", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("GrassVolumeCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::GrassVolumeComponent>(entity, "grassVolume", "Grass Volume");
@@ -1580,7 +1581,7 @@ void EditorLayer::DrawGrassVolumeComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawShrubVolumeComponent(ECS::Entity entity) {
-    bool svOpen = ImGui::CollapsingHeader("Shrub Volume", ImGuiTreeNodeFlags_DefaultOpen);
+    bool svOpen = UI::SectionHeader("Shrub Volume", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("ShrubVolumeCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::ShrubVolumeComponent>(entity, "shrubVolume", "Shrub Volume");
@@ -1650,7 +1651,7 @@ void EditorLayer::DrawShrubVolumeComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawTreeVolumeComponent(ECS::Entity entity) {
-    bool tvOpen = ImGui::CollapsingHeader("Tree Volume", ImGuiTreeNodeFlags_DefaultOpen);
+    bool tvOpen = UI::SectionHeader("Tree Volume", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("TreeVolumeCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::TreeVolumeComponent>(entity, "treeVolume", "Tree Volume");
@@ -1775,7 +1776,7 @@ void EditorLayer::DrawTreeVolumeComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawTerrainComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("3D Terrain", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("3D Terrain", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("TerrainCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::TerrainComponent>(entity, "terrain", "Terrain");
@@ -1866,7 +1867,7 @@ void EditorLayer::DrawTerrainComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawTerrain2DComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("2D Terrain", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("2D Terrain", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("Terrain2DCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::Terrain2DComponent>(entity, "terrain2d", "Terrain 2D");
@@ -1921,7 +1922,7 @@ void EditorLayer::DrawTerrain2DComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawVegetationComponent(ECS::Entity entity) {
-    bool vegOpen = ImGui::CollapsingHeader("Vegetation", ImGuiTreeNodeFlags_DefaultOpen);
+    bool vegOpen = UI::SectionHeader("Vegetation", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("VegetationCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::VegetationComponent>(entity, "vegetation", "Vegetation");
@@ -1945,7 +1946,7 @@ void EditorLayer::DrawVegetationComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawCameraTriggerComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Camera Trigger", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Camera Trigger", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* trigger = m_World->GetComponent<ECS::CameraTriggerComponent>(entity);
         if (!trigger) return;
 
@@ -2012,7 +2013,7 @@ void EditorLayer::DrawCameraTriggerComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawTemperatureZoneComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Temperature Zone", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Temperature Zone", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* tempZone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
         if (!tempZone) return;
 
@@ -2050,7 +2051,7 @@ void EditorLayer::DrawTemperatureZoneComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawGravityZoneComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Gravity Zone", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Gravity Zone", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* zone = m_World->GetComponent<ECS::GravityZoneComponent>(entity);
         if (!zone) return;
 
@@ -2147,7 +2148,7 @@ void EditorLayer::DrawGravityZoneComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawReflectionProbeComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Reflection Probe", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Reflection Probe", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* probe = m_World->GetComponent<ECS::ReflectionProbeComponent>(entity);
         if (!probe) return;
 
@@ -2240,7 +2241,7 @@ void EditorLayer::DrawReflectionProbeComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawFluidVolumeComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Fluid Volume", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Fluid Volume", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* vol = m_World->GetComponent<ECS::FluidVolumeComponent>(entity);
         if (!vol) return;
 
@@ -2320,7 +2321,7 @@ void EditorLayer::DrawFluidVolumeComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawFluidTerrainCoupling(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Fluid Terrain Coupling")) {
+    if (UI::SectionHeader("Fluid Terrain Coupling")) {
         auto& config = m_FluidTerrainCoupling.GetConfig();
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled##FluidTerrain", &config.enabled);
@@ -2360,7 +2361,7 @@ void EditorLayer::DrawFluidTerrainCoupling(ECS::Entity entity) {
 
 
 void EditorLayer::DrawPlatformer2DController(ECS::Entity entity) {
-    bool ctrlOpen = ImGui::CollapsingHeader("2D Platformer Controller", ImGuiTreeNodeFlags_DefaultOpen);
+    bool ctrlOpen = UI::SectionHeader("2D Platformer Controller", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("Platformer2DCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::Platformer2DController>(entity, "platformer2D", "2D Platformer");
@@ -2452,7 +2453,7 @@ void EditorLayer::DrawPlatformer2DController(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawTopDown2DController(ECS::Entity entity) {
-    bool ctrlOpen = ImGui::CollapsingHeader("2D Top-Down Controller", ImGuiTreeNodeFlags_DefaultOpen);
+    bool ctrlOpen = UI::SectionHeader("2D Top-Down Controller", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("TopDown2DCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::TopDown2DController>(entity, "topDown2D", "2D Top-Down");
@@ -2522,7 +2523,7 @@ void EditorLayer::DrawTopDown2DController(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawTopDown3DController(ECS::Entity entity) {
-    bool ctrlOpen = ImGui::CollapsingHeader("3D Top-Down Controller", ImGuiTreeNodeFlags_DefaultOpen);
+    bool ctrlOpen = UI::SectionHeader("3D Top-Down Controller", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("TopDown3DCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::TopDown3DController>(entity, "topDown3D", "3D Top-Down");
@@ -2599,7 +2600,7 @@ void EditorLayer::DrawTopDown3DController(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawThirdPersonController(ECS::Entity entity) {
-    bool ctrlOpen = ImGui::CollapsingHeader("3D Third Person Controller", ImGuiTreeNodeFlags_DefaultOpen);
+    bool ctrlOpen = UI::SectionHeader("3D Third Person Controller", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("ThirdPersonCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::ThirdPersonController>(entity, "thirdPerson", "3D Third Person");
@@ -2691,7 +2692,7 @@ void EditorLayer::DrawThirdPersonController(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
-    bool ctrlOpen = ImGui::CollapsingHeader("3D First Person Controller", ImGuiTreeNodeFlags_DefaultOpen);
+    bool ctrlOpen = UI::SectionHeader("3D First Person Controller", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("FirstPersonCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::FirstPersonController>(entity, "firstPerson", "3D First Person");
@@ -2807,7 +2808,7 @@ void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
 // ============================================================================
 
 void EditorLayer::DrawHealthComponent(ECS::Entity entity) {
-    bool healthOpen = ImGui::CollapsingHeader("[H] Health", ImGuiTreeNodeFlags_DefaultOpen);
+    bool healthOpen = UI::SectionHeader("[H] Health", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("HealthCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::HealthComponent>(entity, "health", "Health");
@@ -2855,7 +2856,7 @@ void EditorLayer::DrawHealthComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawRecordRewindComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("[RW] Record Rewind", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("[RW] Record Rewind", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("RecordRewindCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::RecordRewindComponent>(entity, "recordRewind", "Record Rewind");
@@ -2912,7 +2913,7 @@ void EditorLayer::DrawRecordRewindComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawSceneRewindComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("[SW] Scene Rewind", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("[SW] Scene Rewind", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("SceneRewindCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::SceneRewindComponent>(entity, "sceneRewind", "Scene Rewind");
@@ -2982,7 +2983,7 @@ void EditorLayer::DrawSceneRewindComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
-    bool spriteOpen = ImGui::CollapsingHeader("[S] Sprite 2D", ImGuiTreeNodeFlags_DefaultOpen);
+    bool spriteOpen = UI::SectionHeader("[S] Sprite 2D", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("Sprite2DCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::Sprite2DComponent>(entity, "sprite2D", "Sprite");
@@ -3296,7 +3297,7 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawAnimatedSprite2DComponent(ECS::Entity entity) {
-    bool animOpen = ImGui::CollapsingHeader("Animated Sprite 2D", ImGuiTreeNodeFlags_DefaultOpen);
+    bool animOpen = UI::SectionHeader("Animated Sprite 2D", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("AnimSprite2DCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::AnimatedSprite2DComponent>(entity, "animatedSprite2D", "Animated Sprite");
@@ -3457,7 +3458,7 @@ void EditorLayer::DrawAnimatedSprite2DComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawTilemapComponent(ECS::Entity entity) {
-    bool tilemapOpen = ImGui::CollapsingHeader("Tilemap", ImGuiTreeNodeFlags_DefaultOpen);
+    bool tilemapOpen = UI::SectionHeader("Tilemap", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("TilemapCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::TilemapComponent>(entity, "tilemap", "Tilemap");
@@ -3659,7 +3660,7 @@ void EditorLayer::DrawTilemapComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawStateMachineComponent(ECS::Entity entity) {
-    bool smOpen = ImGui::CollapsingHeader("State Machine", ImGuiTreeNodeFlags_DefaultOpen);
+    bool smOpen = UI::SectionHeader("State Machine", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("StateMachineCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::StateMachineComponent>(entity, "stateMachine", "State Machine");
@@ -3934,7 +3935,7 @@ void EditorLayer::DrawStateMachineComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawDialogueComponent(ECS::Entity entity) {
-    bool dlgOpen = ImGui::CollapsingHeader("Dialogue", ImGuiTreeNodeFlags_DefaultOpen);
+    bool dlgOpen = UI::SectionHeader("Dialogue", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("DialogueCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::DialogueComponent>(entity, "dialogue", "Dialogue");
@@ -4110,7 +4111,7 @@ void EditorLayer::DrawDialogueComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawDialogueBoxComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Dialogue Box", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Dialogue Box", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* box = m_World->GetComponent<ECS::DialogueBoxComponent>(entity);
         if (!box) return;
 
@@ -4183,7 +4184,7 @@ void EditorLayer::DrawDialogueBoxComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawDamageComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Damage", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Damage", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* dmg = m_World->GetComponent<ECS::DamageComponent>(entity);
         if (!dmg) return;
 
@@ -4213,7 +4214,7 @@ void EditorLayer::DrawDamageComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawInteractableComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Interactable", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Interactable", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* inter = m_World->GetComponent<ECS::InteractableComponent>(entity);
         if (!inter) return;
 
@@ -4255,7 +4256,7 @@ void EditorLayer::DrawInteractableComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawPickupComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Pickup", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Pickup", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* pickup = m_World->GetComponent<ECS::PickupComponent>(entity);
         if (!pickup) return;
 
@@ -4316,7 +4317,7 @@ void EditorLayer::DrawPickupComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawInventoryComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Inventory", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Inventory", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* inv = m_World->GetComponent<ECS::InventoryComponent>(entity);
         if (!inv) return;
 
@@ -4372,7 +4373,7 @@ void EditorLayer::DrawInventoryComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawTimerComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Timer", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Timer", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* timer = m_World->GetComponent<ECS::TimerComponent>(entity);
         if (!timer) return;
 
@@ -4400,7 +4401,7 @@ void EditorLayer::DrawTimerComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawGameOverComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Game Over", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Game Over", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* go = m_World->GetComponent<ECS::GameOverComponent>(entity);
         if (!go) return;
 
@@ -4454,7 +4455,7 @@ void EditorLayer::DrawGameOverComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawAIControllerComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("AI Controller", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("AI Controller", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* ai = m_World->GetComponent<ECS::AIControllerComponent>(entity);
         if (!ai) return;
 
@@ -4557,7 +4558,7 @@ void EditorLayer::DrawAIControllerComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawFollowTargetComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Follow Target", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Follow Target", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* follow = m_World->GetComponent<ECS::FollowTargetComponent>(entity);
         if (!follow) return;
 
@@ -4589,7 +4590,7 @@ void EditorLayer::DrawFollowTargetComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawLookAtTargetComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Look At Target", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Look At Target", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* lookAt = m_World->GetComponent<ECS::LookAtTargetComponent>(entity);
         if (!lookAt) return;
 
@@ -4631,7 +4632,7 @@ void EditorLayer::DrawLookAtTargetComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawWaypointComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Waypoint", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Waypoint", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* wp = m_World->GetComponent<ECS::WaypointComponent>(entity);
         if (!wp) return;
 
@@ -4657,7 +4658,7 @@ void EditorLayer::DrawWaypointComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawBillboardComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Billboard", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Billboard", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* bb = m_World->GetComponent<ECS::BillboardComponent>(entity);
         if (!bb) return;
 
@@ -4675,7 +4676,7 @@ void EditorLayer::DrawBillboardComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawParticleEmitterComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Particle Emitter", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Particle Emitter", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* emitter = m_World->GetComponent<ECS::ParticleEmitterComponent>(entity);
         if (!emitter) return;
 
@@ -4773,7 +4774,7 @@ void EditorLayer::DrawParticleEmitterComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawCamera2DBoundsComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Camera 2D Bounds", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Camera 2D Bounds", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* bounds = m_World->GetComponent<ECS::Camera2DBoundsComponent>(entity);
         if (!bounds) return;
 
@@ -4913,7 +4914,7 @@ void EditorLayer::DrawCamera2DBoundsComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawTagComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Tags", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Tags", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* tags = m_World->GetComponent<ECS::TagComponent>(entity);
         if (!tags) return;
 
@@ -4948,7 +4949,7 @@ void EditorLayer::DrawTagComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawSpawnPointComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Spawn Point", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Spawn Point", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* spawn = m_World->GetComponent<ECS::SpawnPointComponent>(entity);
         if (!spawn) return;
 
@@ -4988,7 +4989,7 @@ void EditorLayer::DrawSpawnPointComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawLayerComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Layer", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Layer", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* layer = m_World->GetComponent<ECS::LayerComponent>(entity);
         if (!layer) return;
 
@@ -5014,7 +5015,7 @@ void EditorLayer::DrawLayerComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawStreamingVolumeComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Streaming Volume", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Streaming Volume", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* vol = m_World->GetComponent<Scene::StreamingVolumeComponent>(entity);
         if (!vol) return;
 
@@ -5048,7 +5049,7 @@ void EditorLayer::DrawStreamingVolumeComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawStreamingPortalComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Streaming Portal", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Streaming Portal", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* portal = m_World->GetComponent<Scene::StreamingPortalComponent>(entity);
         if (!portal) return;
 
@@ -5079,7 +5080,7 @@ void EditorLayer::DrawStreamingPortalComponent(ECS::Entity entity) {
 
 void EditorLayer::DrawCineComponent(ECS::Entity entity) {
     std::string hdr = std::string(GetComponentIcon("Camera")) + "Virtual Cinematography (CINE)";
-    if (ImGui::CollapsingHeader(hdr.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader(hdr.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* cine = m_World->GetComponent<ECS::CineComponent>(entity);
         if (!cine) return;
 
@@ -5151,7 +5152,7 @@ void EditorLayer::DrawCineComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawSaveDataComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Save Data", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Save Data", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* save = m_World->GetComponent<ECS::SaveDataComponent>(entity);
         if (!save) return;
 
@@ -5245,7 +5246,7 @@ void EditorLayer::DrawSaveDataComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawSaveLoadMenuComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Save/Load Menu", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Save/Load Menu", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* menu = m_World->GetComponent<ECS::SaveLoadMenuComponent>(entity);
         if (!menu) return;
 
@@ -5273,7 +5274,7 @@ void EditorLayer::DrawSaveLoadMenuComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawSkeletonComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Skeleton", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Skeleton", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* skel = m_World->GetComponent<ECS::SkeletonComponent>(entity);
         if (!skel) return;
 
@@ -5305,7 +5306,7 @@ void EditorLayer::DrawSkeletonComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawJellyMeshComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Jelly Mesh", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Jelly Mesh", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* jelly = m_World->GetComponent<ECS::JellyMeshComponent>(entity);
         if (!jelly) return;
 
@@ -5329,7 +5330,7 @@ void EditorLayer::DrawJellyMeshComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawTetherComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Tether", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Tether", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* tether = m_World->GetComponent<ECS::TetherComponent>(entity);
         if (!tether) return;
 
@@ -5391,7 +5392,7 @@ void EditorLayer::DrawTetherComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawGrabbableComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Grabbable", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Grabbable", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* grab = m_World->GetComponent<ECS::GrabbableComponent>(entity);
         if (!grab) return;
 
@@ -5416,7 +5417,7 @@ void EditorLayer::DrawGrabbableComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawFlowerStemComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Flower Stem", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Flower Stem", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* stem = m_World->GetComponent<ECS::FlowerStemComponent>(entity);
         if (!stem) return;
 
@@ -5449,7 +5450,7 @@ void EditorLayer::DrawFlowerStemComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawFlowerParticleConfigComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Flower Particle Config", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Flower Particle Config", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* cfg = m_World->GetComponent<ECS::FlowerParticleConfigComponent>(entity);
         if (!cfg) return;
 
@@ -5605,7 +5606,7 @@ void EditorLayer::OpenInExternalIDE(const std::string& filePath) {
 // ============================================================================
 
 void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
-    bool scriptOpen = ImGui::CollapsingHeader("Scripts", ImGuiTreeNodeFlags_DefaultOpen);
+    bool scriptOpen = UI::SectionHeader("Scripts", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("ScriptComponentCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::ScriptComponent>(entity, "scriptComponent", "Script");
@@ -6015,7 +6016,7 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
 // ============================================================================
 
 void EditorLayer::DrawVehicleController(ECS::Entity entity) {
-    bool ctrlOpen = ImGui::CollapsingHeader("Vehicle Controller", ImGuiTreeNodeFlags_DefaultOpen);
+    bool ctrlOpen = UI::SectionHeader("Vehicle Controller", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("VehicleControllerCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::VehicleController>(entity, "vehicle", "Vehicle");
@@ -6096,7 +6097,7 @@ void EditorLayer::DrawVehicleController(ECS::Entity entity) {
 // ============================================================================
 
 void EditorLayer::DrawSurfaceAlignedController(ECS::Entity entity) {
-    bool ctrlOpen = ImGui::CollapsingHeader("Surface Aligned (Planet) Controller", ImGuiTreeNodeFlags_DefaultOpen);
+    bool ctrlOpen = UI::SectionHeader("Surface Aligned (Planet) Controller", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("SurfaceAlignedCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::SurfaceAlignedController>(entity, "surfaceAligned", "Surface Aligned");
@@ -6166,7 +6167,7 @@ void EditorLayer::DrawSurfaceAlignedController(ECS::Entity entity) {
 // ============================================================================
 
 void EditorLayer::DrawPossessableComponent(ECS::Entity entity) {
-    bool possOpen = ImGui::CollapsingHeader("Possessable", ImGuiTreeNodeFlags_DefaultOpen);
+    bool possOpen = UI::SectionHeader("Possessable", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("PossessableCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::PossessableComponent>(entity, "possessable", "Possessable");
@@ -6204,7 +6205,7 @@ void EditorLayer::DrawPossessableComponent(ECS::Entity entity) {
 // ============================================================================
 
 void EditorLayer::DrawLockComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Lock", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Lock", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("LockCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::LockComponent>(entity, "lock", "Lock");
@@ -6261,7 +6262,7 @@ void EditorLayer::DrawLockComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawPushableComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Pushable", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Pushable", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("PushableCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::PushableComponent>(entity, "pushable", "Pushable");
@@ -6294,7 +6295,7 @@ void EditorLayer::DrawPushableComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawSwitchComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Switch", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Switch", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("SwitchCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::SwitchComponent>(entity, "switch", "Switch");
@@ -6348,7 +6349,7 @@ void EditorLayer::DrawSwitchComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawGoalZoneComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Goal Zone", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Goal Zone", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("GoalZoneCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::GoalZoneComponent>(entity, "goalZone", "Goal Zone");
@@ -6396,7 +6397,7 @@ void EditorLayer::DrawGoalZoneComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawConveyorComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Conveyor", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Conveyor", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("ConveyorCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::ConveyorComponent>(entity, "conveyor", "Conveyor");
@@ -6420,7 +6421,7 @@ void EditorLayer::DrawConveyorComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawTeleporterComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Teleporter", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Teleporter", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("TeleporterCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::TeleporterComponent>(entity, "teleporter", "Teleporter");
@@ -6449,7 +6450,7 @@ void EditorLayer::DrawTeleporterComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawDestructibleComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Destructible", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Destructible", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("DestructibleCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::DestructibleComponent>(entity, "destructible", "Destructible");
@@ -6484,7 +6485,7 @@ void EditorLayer::DrawDestructibleComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawCurlNoiseFieldComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Curl Noise Field", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Curl Noise Field", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("CurlNoiseFieldCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::CurlNoiseFieldComponent>(entity, "curlNoiseField", "Curl Noise Field");
@@ -6536,7 +6537,7 @@ void EditorLayer::DrawCurlNoiseFieldComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawFractureConfigComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Fracture Config", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Fracture Config", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("FractureConfigCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::FractureConfigComponent>(entity, "fractureConfig", "Fracture Config");
@@ -6592,7 +6593,7 @@ void EditorLayer::DrawFractureConfigComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawMovingPlatformComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Moving Platform", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Moving Platform", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("MovingPlatformCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::MovingPlatformComponent>(entity, "movingPlatform", "Moving Platform");
@@ -6641,7 +6642,7 @@ void EditorLayer::DrawMovingPlatformComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawDamageResistanceComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Damage Resistance", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Damage Resistance", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("DamResCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::DamageResistanceComponent>(entity, "damageResistance", "Damage Resistance");
@@ -6664,7 +6665,7 @@ void EditorLayer::DrawDamageResistanceComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawResourceComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Resource", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Resource", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("ResCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::ResourceComponent>(entity, "resource", "Resource");
@@ -6710,7 +6711,7 @@ void EditorLayer::DrawResourceComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawFootstepComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Footsteps", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Footsteps", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("FootCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::FootstepComponent>(entity, "footstep", "Footstep");
@@ -6763,7 +6764,7 @@ void EditorLayer::DrawFootstepComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawPoolableComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Poolable", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Poolable", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("PoolCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::PoolableComponent>(entity, "poolable", "Poolable");
@@ -6786,7 +6787,7 @@ void EditorLayer::DrawPoolableComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawQuestStateComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Quest State", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Quest State", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("QuestCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::QuestStateComponent>(entity, "questState", "Quest State");
@@ -6838,7 +6839,7 @@ void EditorLayer::DrawQuestStateComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawHUDWidgetComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("HUD Widget", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("HUD Widget", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("HUDCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::HUDWidgetComponent>(entity, "hudWidget", "HUD Widget");
@@ -6900,7 +6901,7 @@ void EditorLayer::DrawHUDWidgetComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawCinematicCameraComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Cinematic Camera", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Cinematic Camera", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("CineCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::CinematicCameraComponent>(entity, "cinematicCamera", "Cinematic Camera");
@@ -6975,7 +6976,7 @@ void EditorLayer::DrawCinematicCameraComponent(ECS::Entity entity) {
 // ============================================================================
 
 void EditorLayer::DrawTweenComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Tween", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Tween", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("TweenCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::TweenComponent>(entity, "tween", "Tween");
@@ -7098,7 +7099,7 @@ void EditorLayer::DrawTweenComponent(ECS::Entity entity) {
 // ============================================================================
 
 void EditorLayer::DrawAnimationRecorderComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Animation Recorder", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Animation Recorder", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("AnimRecorderCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::AnimationRecorderComponent>(entity, "animationRecorder", "Animation Recorder");
@@ -7417,7 +7418,7 @@ void EditorLayer::OpenUIEditor(ECS::Entity canvasEntity) {
 }
 
 void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("UI Canvas", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("UI Canvas", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("UICanvasCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<GUI::UICanvasComponent>(entity, "uiCanvas", "UI Canvas");
@@ -7538,10 +7539,12 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
         if (ImGui::SmallButton("^")) {
             canvas->MoveElementUp(elem.id);
         }
+        ImGui::SetItemTooltip("Move up (draws earlier)");
         ImGui::SameLine();
         if (ImGui::SmallButton("v")) {
             canvas->MoveElementDown(elem.id);
         }
+        ImGui::SetItemTooltip("Move down (draws later)");
 
         ImGui::PopID();
     }
@@ -8146,7 +8149,7 @@ void EditorLayer::DrawBehaviorTreeComponent(ECS::Entity entity) {
     auto* bt = m_World->GetComponent<ECS::BehaviorTreeComponent>(entity);
     if (!bt) return;
 
-    if (!ImGui::CollapsingHeader("Behavior Tree", ImGuiTreeNodeFlags_DefaultOpen))
+    if (!UI::SectionHeader("Behavior Tree", ImGuiTreeNodeFlags_DefaultOpen))
         return;
 
     ImGui::Checkbox("Enabled##bt", &bt->enabled);
@@ -8181,7 +8184,7 @@ void EditorLayer::DrawQuestFlowComponent(ECS::Entity entity) {
     auto* qf = m_World->GetComponent<ECS::QuestFlowComponent>(entity);
     if (!qf) return;
 
-    if (!ImGui::CollapsingHeader("Quest Flow", ImGuiTreeNodeFlags_DefaultOpen))
+    if (!UI::SectionHeader("Quest Flow", ImGuiTreeNodeFlags_DefaultOpen))
         return;
 
     ImGui::Checkbox("Enabled##qf", &qf->enabled);
@@ -8215,7 +8218,7 @@ void EditorLayer::DrawNetworkIdentityComponent(ECS::Entity entity) {
     auto* net = m_World->GetComponent<ECS::NetworkIdentityComponent>(entity);
     if (!net) return;
 
-    bool open = ImGui::CollapsingHeader("[N] Network Identity", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("[N] Network Identity", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
         ImGui::OpenPopup("NetworkIdentityContext");
     }
@@ -8239,7 +8242,7 @@ void EditorLayer::DrawNetworkTransformComponent(ECS::Entity entity) {
     auto* nt = m_World->GetComponent<ECS::NetworkTransformComponent>(entity);
     if (!nt) return;
 
-    bool open = ImGui::CollapsingHeader("Network Transform", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Network Transform", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
         ImGui::OpenPopup("NetworkTransformContext");
     }
@@ -8263,7 +8266,7 @@ void EditorLayer::DrawNetworkTransformComponent(ECS::Entity entity) {
 // ============================================================================
 
 void EditorLayer::DrawElementalSurfaceComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Elemental Surface", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Elemental Surface", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("ElementalSurfaceCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::ElementalSurfaceComponent>(entity, "elementalSurface", "Elemental Surface");
@@ -8306,7 +8309,7 @@ void EditorLayer::DrawElementalSurfaceComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawElementalEmitterComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Elemental Emitter", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Elemental Emitter", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("ElementalEmitterCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::ElementalEmitterComponent>(entity, "elementalEmitter", "Elemental Emitter");
@@ -8360,7 +8363,7 @@ void EditorLayer::DrawElementalEmitterComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawElementalVolumeComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Elemental Volume", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Elemental Volume", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("ElementalVolumeCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::ElementalVolumeComponent>(entity, "elementalVolume", "Elemental Volume");
@@ -8398,7 +8401,7 @@ void EditorLayer::DrawElementalVolumeComponent(ECS::Entity entity) {
 // ============================================================================
 
 void EditorLayer::DrawDynamicDifficultyComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Dynamic Difficulty", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Dynamic Difficulty", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("DynDiffCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::DynamicDifficultyComponent>(entity, "dynamicDifficulty", "Dynamic Difficulty");
@@ -8578,7 +8581,7 @@ void EditorLayer::DrawDynamicDifficultyComponent(ECS::Entity entity) {
 // ============================================================================
 
 void EditorLayer::DrawArtStyleComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Art Style", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Art Style", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("ArtStyleCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::ArtStyleComponent>(entity, "artStyle", "Art Style");
@@ -8813,7 +8816,7 @@ void EditorLayer::DrawArtStyleComponent(ECS::Entity entity) {
 // ============================================================================
 
 void EditorLayer::DrawBoneAttachmentComponent(ECS::Entity entity) {
-    bool open = ImGui::CollapsingHeader("Bone Attachment", ImGuiTreeNodeFlags_DefaultOpen);
+    bool open = UI::SectionHeader("Bone Attachment", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("BoneAttachmentCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::BoneAttachmentComponent>(entity, "boneAttachment", "Bone Attachment");

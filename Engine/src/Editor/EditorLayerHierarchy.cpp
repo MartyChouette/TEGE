@@ -198,9 +198,19 @@ void EditorLayer::DrawHierarchyPanel() {
     }
 
     if (m_World) {
-        // Search/filter bar
+        // Search/filter bar with a drawn magnifier affordance (right side, so
+        // the text needs no asymmetric padding ImGui can't do)
         ImGui::SetNextItemWidth(-1);
         ImGui::InputTextWithHint("##HierarchySearch", "Search entities...", m_HierarchySearchBuf, sizeof(m_HierarchySearchBuf));
+        {
+            ImVec2 mn = ImGui::GetItemRectMin();
+            ImVec2 mx = ImGui::GetItemRectMax();
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            const ImU32 col = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+            ImVec2 c(mx.x - 14.0f, (mn.y + mx.y) * 0.5f - 1.0f);
+            dl->AddCircle(c, 4.5f, col, 0, 1.5f);
+            dl->AddLine(ImVec2(c.x + 3.2f, c.y + 3.2f), ImVec2(c.x + 6.5f, c.y + 6.5f), col, 1.5f);
+        }
         ImGui::Separator();
 
         bool hasFilter = m_HierarchySearchBuf[0] != '\0';

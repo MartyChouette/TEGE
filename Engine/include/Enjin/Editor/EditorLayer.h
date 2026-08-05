@@ -1190,6 +1190,11 @@ private:
     i32 m_GoldenFrameCounter = 0;
     void WriteGoldenCapture();
 
+    // Floating viewport toolbar screen rect — picking/marquee must not fire
+    // through its buttons (set each frame the toolbar draws)
+    f32 m_ViewportToolbarMinX = 0.0f, m_ViewportToolbarMinY = 0.0f;
+    f32 m_ViewportToolbarMaxX = 0.0f, m_ViewportToolbarMaxY = 0.0f;
+
     // Game View mouse interaction during play mode
     bool m_GameViewMouseCaptured = false;
     f32 m_GameViewImageMinX = 0.0f, m_GameViewImageMinY = 0.0f;

@@ -1,4 +1,5 @@
 #include "Enjin/GUI/ImGuiLayer.h"
+#include "Enjin/GUI/EmbeddedFonts.h"
 #include "Enjin/Platform/Window.h"
 #include "Enjin/Logging/Log.h"
 
@@ -244,6 +245,16 @@ void ImGuiLayer::DestroyDescriptorPool() {
     }
 }
 
+// Embedded-font loader: the TTF data lives in the engine, so the atlas must
+// not free it (FontDataOwnedByAtlas=false). const_cast is safe — ImGui only
+// reads the data when ownership is off.
+static ImFont* AddEmbeddedFont(ImGuiIO& io, const unsigned char* data, unsigned int size, f32 sizePx) {
+    ImFontConfig cfg;
+    cfg.FontDataOwnedByAtlas = false;
+    return io.Fonts->AddFontFromMemoryTTF(
+        const_cast<unsigned char*>(data), static_cast<int>(size), sizePx, &cfg);
+}
+
 void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
     ImGuiIO& io = ImGui::GetIO();
 
@@ -261,7 +272,12 @@ void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
         }
     }
 
-    // If no body font loaded, add the default font at the configured size
+    // Zero-config default: embedded Roboto Medium, NOT ImGui's bitmap font.
+    // The bitmap default was the single loudest "generic ImGui" tell in every
+    // editor screenshot; a real typeface is the identity baseline.
+    if (!m_BodyFont) {
+        m_BodyFont = AddEmbeddedFont(io, RobotoMediumTTF, RobotoMediumTTFSize, fontConfig.bodyFontSize);
+    }
     if (!m_BodyFont) {
         ImFontConfig cfg;
         cfg.SizePixels = fontConfig.bodyFontSize;
@@ -273,11 +289,11 @@ void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
         m_HeadingFont = io.Fonts->AddFontFromFileTTF(fontConfig.headingFontPath.c_str(), fontConfig.headingFontSize);
         if (!m_HeadingFont) {
             ENJIN_LOG_WARN(Editor, "Failed to load heading font: %s, falling back to body font", fontConfig.headingFontPath.c_str());
-            m_HeadingFont = m_BodyFont;
         }
     }
-
-    // Fallback: if heading font is still null, use body font
+    if (!m_HeadingFont) {
+        m_HeadingFont = AddEmbeddedFont(io, RobotoMediumTTF, RobotoMediumTTFSize, fontConfig.headingFontSize);
+    }
     if (!m_HeadingFont) {
         m_HeadingFont = m_BodyFont;
     }
@@ -290,6 +306,9 @@ void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
             ENJIN_LOG_WARN(Editor, "Failed to load H2 font from: %s", h2Path.c_str());
         }
     }
+    if (!m_H2Font) {
+        m_H2Font = AddEmbeddedFont(io, RobotoMediumTTF, RobotoMediumTTFSize, fontConfig.h2FontSize);
+    }
 
     // Load small font (labels/hints — uses body font at smaller size)
     if (!fontConfig.bodyFontPath.empty()) {
@@ -298,14 +317,24 @@ void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
             ENJIN_LOG_WARN(Editor, "Failed to load small font from: %s", fontConfig.bodyFontPath.c_str());
         }
     }
+    if (!m_SmallFont) {
+        m_SmallFont = AddEmbeddedFont(io, RobotoMediumTTF, RobotoMediumTTFSize, fontConfig.smallFontSize);
+    }
 
-    // Load monospace font
+    // Load monospace font (embedded Cousine when unconfigured — console,
+    // script errors, and numeric readouts deserve a real mono face too)
     if (!fontConfig.monoFontPath.empty()) {
         m_MonoFont = io.Fonts->AddFontFromFileTTF(fontConfig.monoFontPath.c_str(), fontConfig.monoFontSize);
         if (!m_MonoFont) {
             ENJIN_LOG_WARN(Editor, "Failed to load monospace font: %s", fontConfig.monoFontPath.c_str());
         }
     }
+    if (!m_MonoFont) {
+        m_MonoFont = AddEmbeddedFont(io, CousineRegularTTF, CousineRegularTTFSize, fontConfig.monoFontSize);
+    }
+
+    // Publish the section typeface for free-function widget helpers
+    s_SectionFont = m_H2Font;
 
     // Atlas builds automatically on first ImGui_ImplVulkan_NewFrame() call
 }
@@ -962,6 +991,53 @@ void ImGuiLayer::ApplyTheme(Editor::EditorTheme theme, const Editor::AccentColor
         colors[ImGuiCol_DragDropTarget]  = ToImVec4(accentColors->dragDropTarget);
         colors[ImGuiCol_TabActive]       = ToImVec4(accentColors->tabActive);
         colors[ImGuiCol_TabHovered]      = ToImVec4(accentColors->tabHovered);
+    }
+
+    // ------------------------------------------------------------------
+    // Derived slots: fill every color no theme sets explicitly from the
+    // theme's own palette. Without this, stock ImGui colors leak into
+    // tables, docking previews, nav highlights, plots, and unfocused tabs
+    // on ALL themes — the loudest "generic ImGui" tells after the font.
+    // Runs after the accent overrides so custom accents propagate too.
+    // ------------------------------------------------------------------
+    {
+        const ImVec4 win       = colors[ImGuiCol_WindowBg];
+        const ImVec4 frame     = colors[ImGuiCol_FrameBg];
+        const ImVec4 accent    = colors[ImGuiCol_CheckMark];
+        const ImVec4 tab       = colors[ImGuiCol_Tab];
+        const ImVec4 tabActive = colors[ImGuiCol_TabActive];
+        const ImVec4 border    = colors[ImGuiCol_Border];
+        auto scaled = [](const ImVec4& c, f32 f, f32 a) {
+            return ImVec4(std::min(c.x * f, 1.0f), std::min(c.y * f, 1.0f), std::min(c.z * f, 1.0f), a);
+        };
+
+        colors[ImGuiCol_TitleBgCollapsed]      = scaled(colors[ImGuiCol_TitleBg], 1.0f, 0.75f);
+        colors[ImGuiCol_TabUnfocused]          = scaled(tab, 0.85f, tab.w);
+        colors[ImGuiCol_TabUnfocusedActive]    = scaled(tabActive, 0.85f, tabActive.w);
+        colors[ImGuiCol_DockingPreview]        = ImVec4(accent.x, accent.y, accent.z, 0.55f);
+        colors[ImGuiCol_DockingEmptyBg]        = scaled(win, 0.55f, 1.0f);
+        colors[ImGuiCol_TableHeaderBg]         = scaled(frame, 1.10f, 1.0f);
+        colors[ImGuiCol_TableBorderStrong]     = ImVec4(border.x, border.y, border.z, 0.80f);
+        colors[ImGuiCol_TableBorderLight]      = ImVec4(border.x, border.y, border.z, 0.40f);
+        colors[ImGuiCol_TableRowBg]            = ImVec4(0, 0, 0, 0);
+        colors[ImGuiCol_TableRowBgAlt]         = ImVec4(1, 1, 1, 0.03f);
+        colors[ImGuiCol_NavHighlight]          = ImVec4(accent.x, accent.y, accent.z, 1.0f);
+        colors[ImGuiCol_NavWindowingHighlight] = ImVec4(accent.x, accent.y, accent.z, 0.70f);
+        colors[ImGuiCol_NavWindowingDimBg]     = ImVec4(0.10f, 0.10f, 0.10f, 0.55f);
+        colors[ImGuiCol_ModalWindowDimBg]      = ImVec4(0.05f, 0.05f, 0.05f, 0.60f);
+        colors[ImGuiCol_PlotLines]             = accent;
+        colors[ImGuiCol_PlotLinesHovered]      = scaled(accent, 1.25f, 1.0f);
+        colors[ImGuiCol_PlotHistogram]         = accent;
+        colors[ImGuiCol_PlotHistogramHovered]  = scaled(accent, 1.25f, 1.0f);
+        colors[ImGuiCol_SeparatorHovered]      = ImVec4(accent.x, accent.y, accent.z, 0.55f);
+        colors[ImGuiCol_SeparatorActive]       = ImVec4(accent.x, accent.y, accent.z, 0.85f);
+
+        // Metrics no theme sets: table cell breathing room, thin docking
+        // separators, a visible tab-bar edge, consistent disabled dimming
+        style.CellPadding         = ImVec2(6.0f, 4.0f);
+        style.DockingSeparatorSize = 2.0f;
+        style.TabBarBorderSize    = 1.0f;
+        style.DisabledAlpha       = 0.5f;
     }
 }
 

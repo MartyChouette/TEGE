@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/EditorWidgets.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
@@ -126,7 +127,7 @@ namespace Editor {
 // ── System settings section drawers ──
 
 void EditorLayer::DrawSettingsSection_Camera() {
-    if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
         if (m_CameraController) {
             // View preset buttons
             ImGui::Text("View Presets:");
@@ -316,7 +317,7 @@ void EditorLayer::DrawSettingsSection_Camera() {
 }
 
 void EditorLayer::DrawSettingsSection_EditorPerformance() {
-    if (ImGui::CollapsingHeader("Grid", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Grid", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Checkbox("Show Grid", &m_ShowGrid);
         if (m_ShowGrid) {
             ImGui::DragFloat("Grid Size", &m_GridSize, 1.0f, 1.0f, 500.0f);
@@ -324,7 +325,7 @@ void EditorLayer::DrawSettingsSection_EditorPerformance() {
         }
     }
 
-    if (ImGui::CollapsingHeader("Performance")) {
+    if (UI::SectionHeader("Performance")) {
         bool settingsChanged = false;
 
         // Frame Rate Limit
@@ -411,7 +412,7 @@ void EditorLayer::DrawSettingsSection_EditorPerformance() {
         }
     }
 
-    if (ImGui::CollapsingHeader("Gizmos", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Gizmos", ImGuiTreeNodeFlags_DefaultOpen)) {
         // Gizmo operation
         const char* operations[] = { "Translate (1)", "Rotate (2)", "Scale (3)" };
         int currentOp = static_cast<int>(m_GizmoOperation);
@@ -453,7 +454,7 @@ void EditorLayer::DrawSettingsSection_EditorPerformance() {
         }
     }
 
-    if (ImGui::CollapsingHeader("Gamepad")) {
+    if (UI::SectionHeader("Gamepad")) {
         // Global dead zone setting
         f32 deadZone = Input::GetGamepadDeadZone();
         if (ImGui::SliderFloat("Dead Zone", &deadZone, 0.01f, 0.5f, "%.2f")) {
@@ -551,7 +552,7 @@ void EditorLayer::DrawSettingsSection_EditorPerformance() {
         ImGui::BulletText("D-pad Up/Down - Adjust editor speed");
     }
 
-    if (ImGui::CollapsingHeader("Controls")) {
+    if (UI::SectionHeader("Controls")) {
         if (ImGui::TreeNode("Active Controllers")) {
             bool foundAny = false;
             auto getEntName = [this](ECS::Entity entity) -> std::string {
@@ -679,7 +680,7 @@ void EditorLayer::DrawSettingsSection_EditorPerformance() {
         }
     }
 
-    if (ImGui::CollapsingHeader("Keyboard Shortcuts")) {
+    if (UI::SectionHeader("Keyboard Shortcuts")) {
         ImGui::BulletText("RMB + WASD - Fly camera (horizontal plane)");
         ImGui::BulletText("Space / Q - Move up / down");
         ImGui::BulletText("Shift - Sprint");
@@ -698,7 +699,7 @@ void EditorLayer::DrawSettingsSection_EditorPerformance() {
 }
 
 void EditorLayer::DrawSettingsSection_ExternalIDE() {
-    if (ImGui::CollapsingHeader("External IDE")) {
+    if (UI::SectionHeader("External IDE")) {
         bool ideChanged = false;
 
         const char* ideNames[] = { "Auto (VS Code)", "VS Code", "Visual Studio", "Rider", "Custom" };
@@ -745,7 +746,7 @@ void EditorLayer::DrawSettingsSection_ExternalIDE() {
 }
 
 void EditorLayer::DrawSettingsSection_BugReporting() {
-    if (ImGui::CollapsingHeader("Bug Reporting")) {
+    if (UI::SectionHeader("Bug Reporting")) {
         bool changed = false;
 
         ImGui::TextDisabled("Bug reports and feedback are sent to the TEGE Discord automatically.");
@@ -754,7 +755,7 @@ void EditorLayer::DrawSettingsSection_BugReporting() {
 }
 
 void EditorLayer::DrawSettingsSection_Accessibility() {
-    if (ImGui::CollapsingHeader("Accessibility")) {
+    if (UI::SectionHeader("Accessibility")) {
         bool settingsChanged = false;
 
         // Theme
@@ -1254,7 +1255,7 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
 }
 
 void EditorLayer::DrawSettingsSection_Fonts() {
-    if (ImGui::CollapsingHeader("Fonts")) {
+    if (UI::SectionHeader("Fonts")) {
         static char bodyFontPath[512] = "";
         static char headingFontPath[512] = "";
         static char monoFontPath[512] = "";
@@ -1377,7 +1378,7 @@ void EditorLayer::DrawSettingsSection_Fonts() {
 // ── Project settings section drawers ──
 
 void EditorLayer::DrawSettingsSection_ProjectMode() {
-    if (ImGui::CollapsingHeader("Project", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Project", ImGuiTreeNodeFlags_DefaultOpen)) {
         const char* modeNames[] = { "2D", "3D", "Mixed (2.5D)" };
         int currentMode = static_cast<int>(m_SceneManager.GetProjectMode());
         if (ImGui::Combo("Project Mode", &currentMode, modeNames, 3)) {
@@ -1403,7 +1404,7 @@ void EditorLayer::DrawSettingsSection_ProjectMode() {
 }
 
 void EditorLayer::DrawSettingsSection_WindowIcon() {
-    if (ImGui::CollapsingHeader("Window Icon")) {
+    if (UI::SectionHeader("Window Icon")) {
         std::string iconPath = m_SceneManager.GetWindowIconPath();
         char iconBuf[256];
         strncpy(iconBuf, iconPath.c_str(), sizeof(iconBuf) - 1);
@@ -1440,7 +1441,7 @@ void EditorLayer::DrawSettingsSection_WindowIcon() {
 }
 
 void EditorLayer::DrawSettingsSection_Physics() {
-    if (ImGui::CollapsingHeader("Physics", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Physics", ImGuiTreeNodeFlags_DefaultOpen)) {
         // Physics Backend selection
         {
             const char* backendNames[] = { "Auto", "Jolt (3D)", "Box2D (2D)" };
@@ -1507,7 +1508,7 @@ void EditorLayer::DrawSettingsSection_Physics() {
 }
 
 void EditorLayer::DrawSettingsSection_FrameRate() {
-    if (ImGui::CollapsingHeader("Frame Rate")) {
+    if (UI::SectionHeader("Frame Rate")) {
         Scene::GameFrameSettings frameSettings = m_SceneManager.GetGameFrameSettings();
         bool changed = false;
 
@@ -1586,7 +1587,7 @@ void EditorLayer::DrawSettingsSection_FrameRate() {
 }
 
 void EditorLayer::DrawSettingsSection_Audio() {
-    if (ImGui::CollapsingHeader("Audio")) {
+    if (UI::SectionHeader("Audio")) {
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
         auto* audio = m_PlayMode.GetSimpleAudio();
         if (audio) {
@@ -1643,7 +1644,7 @@ void EditorLayer::DrawSettingsSection_Audio() {
 }
 
 void EditorLayer::DrawSettingsSection_CollisionGroups() {
-    if (ImGui::CollapsingHeader("Collision Groups")) {
+    if (UI::SectionHeader("Collision Groups")) {
         auto& groupNames = m_SceneManager.GetCollisionGroupNames();
 
         // Determine visible count: all named groups + 2 blank slots
@@ -1682,7 +1683,7 @@ void EditorLayer::DrawSettingsSection_CollisionGroups() {
 }
 
 void EditorLayer::DrawSettingsSection_Environment() {
-    if (ImGui::CollapsingHeader("Environment")) {
+    if (UI::SectionHeader("Environment")) {
         // === WORLD TIME / DAY-NIGHT CYCLE ===
         if (ImGui::TreeNode("World Time / Day-Night")) {
             ImGui::Checkbox("Enable World Time", &m_WorldTimeEnabled);
@@ -2108,7 +2109,7 @@ void EditorLayer::DrawSettingsWindow() {
 }
 
 void EditorLayer::DrawSettingsSection_BuildScenes() {
-    if (!ImGui::CollapsingHeader("Build Scenes")) return;
+    if (!UI::SectionHeader("Build Scenes")) return;
 
     bool hasProject = !m_SceneManager.GetProjectPath().empty();
     if (!hasProject) {
@@ -2240,7 +2241,7 @@ void EditorLayer::DrawSettingsSection_BuildScenes() {
 }
 
 void EditorLayer::DrawSettingsSection_BuildConfig() {
-    if (ImGui::CollapsingHeader("Build Config")) {
+    if (UI::SectionHeader("Build Config")) {
         bool changed = false;
 
         // Window title — synced between SceneManager (persisted) and m_BuildConfig (build-time)
@@ -2292,7 +2293,7 @@ void EditorLayer::DrawSettingsSection_BuildConfig() {
 
 
 void EditorLayer::DrawSettingsSection_Networking() {
-    if (ImGui::CollapsingHeader("Networking")) {
+    if (UI::SectionHeader("Networking")) {
         bool changed = false;
 
         // --- Connection ---

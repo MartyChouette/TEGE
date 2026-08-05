@@ -313,6 +313,82 @@ void EditorLayer::DrawViewportPanel() {
         m_EditorViewportFocused = false;
     }
 
+    // --- Floating viewport toolbar (gizmo mode + space), top-left over the image ---
+    // Drawn last so it sits above the image; vector icons via the draw list
+    // (same pattern as the menu-bar transport buttons). Keys 1/2/3/4 still work.
+    if (m_EditorViewportRT && m_EditorViewportRT->IsValid() &&
+        m_EditorViewportImageMaxX > m_EditorViewportImageMinX) {
+        const f32 btn = 26.0f;
+        const f32 pad = 3.0f;
+        ImVec2 origin(m_EditorViewportImageMinX + 8.0f, m_EditorViewportImageMinY + 8.0f);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec4 accent = ImGui::GetStyleColorVec4(ImGuiCol_CheckMark);
+        const ImU32 accentCol = ImGui::GetColorU32(accent);
+        const ImU32 idleCol = ImGui::GetColorU32(ImGuiCol_Text);
+
+        // Toolbar backing pill: 3 icon buttons + space toggle
+        f32 spaceW = ImGui::CalcTextSize(m_GizmoSpace == GizmoSpace::World ? "World" : "Local").x + 14.0f;
+        ImVec2 barMax(origin.x + pad * 2.0f + btn * 3.0f + pad * 2.0f + 6.0f + spaceW,
+                      origin.y + btn + pad * 2.0f);
+        dl->AddRectFilled(ImVec2(origin.x - pad, origin.y - pad), barMax,
+                          ImGui::GetColorU32(ImGuiCol_WindowBg, 0.85f), 6.0f);
+        dl->AddRect(ImVec2(origin.x - pad, origin.y - pad), barMax,
+                    ImGui::GetColorU32(ImGuiCol_Border), 6.0f);
+        m_ViewportToolbarMinX = origin.x - pad;
+        m_ViewportToolbarMinY = origin.y - pad;
+        m_ViewportToolbarMaxX = barMax.x;
+        m_ViewportToolbarMaxY = barMax.y;
+
+        // icon: 0 = translate cross-arrows, 1 = rotate circle, 2 = scale boxes
+        auto gizmoButton = [&](const char* id, int icon, bool active, const char* tip) {
+            if (active) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(accent.x, accent.y, accent.z, 0.28f));
+            }
+            bool clicked = ImGui::Button(id, ImVec2(btn, btn));
+            if (active) ImGui::PopStyleColor();
+            ImGui::SetItemTooltip("%s", tip);
+            ImVec2 mn = ImGui::GetItemRectMin();
+            ImVec2 mx = ImGui::GetItemRectMax();
+            ImVec2 c((mn.x + mx.x) * 0.5f, (mn.y + mx.y) * 0.5f);
+            const ImU32 col = active ? accentCol : idleCol;
+            const f32 s = btn * 0.28f;
+            if (icon == 0) {
+                dl->AddLine(ImVec2(c.x - s, c.y), ImVec2(c.x + s, c.y), col, 1.5f);
+                dl->AddLine(ImVec2(c.x, c.y - s), ImVec2(c.x, c.y + s), col, 1.5f);
+                const f32 a = 3.0f;
+                dl->AddTriangleFilled(ImVec2(c.x + s, c.y - a), ImVec2(c.x + s, c.y + a), ImVec2(c.x + s + a, c.y), col);
+                dl->AddTriangleFilled(ImVec2(c.x - s, c.y - a), ImVec2(c.x - s, c.y + a), ImVec2(c.x - s - a, c.y), col);
+                dl->AddTriangleFilled(ImVec2(c.x - a, c.y - s), ImVec2(c.x + a, c.y - s), ImVec2(c.x, c.y - s - a), col);
+                dl->AddTriangleFilled(ImVec2(c.x - a, c.y + s), ImVec2(c.x + a, c.y + s), ImVec2(c.x, c.y + s + a), col);
+            } else if (icon == 1) {
+                dl->AddCircle(c, s, col, 0, 1.6f);
+                dl->AddTriangleFilled(ImVec2(c.x + s - 3.0f, c.y - 4.0f), ImVec2(c.x + s + 3.0f, c.y - 4.0f), ImVec2(c.x + s, c.y + 1.0f), col);
+            } else {
+                dl->AddRect(ImVec2(c.x - s, c.y - s * 0.2f), ImVec2(c.x + s * 0.2f, c.y + s), col, 0.0f, 0, 1.5f);
+                dl->AddRect(ImVec2(c.x - s * 0.2f, c.y - s), ImVec2(c.x + s, c.y + s * 0.2f), col, 0.0f, 0, 1.5f);
+            }
+            return clicked;
+        };
+
+        ImGui::SetCursorScreenPos(origin);
+        if (gizmoButton("##vpTranslate", 0, m_GizmoOperation == GizmoOperation::Translate, "Translate (1)")) {
+            m_GizmoOperation = GizmoOperation::Translate;
+        }
+        ImGui::SameLine(0.0f, pad);
+        if (gizmoButton("##vpRotate", 1, m_GizmoOperation == GizmoOperation::Rotate, "Rotate (2)")) {
+            m_GizmoOperation = GizmoOperation::Rotate;
+        }
+        ImGui::SameLine(0.0f, pad);
+        if (gizmoButton("##vpScale", 2, m_GizmoOperation == GizmoOperation::Scale, "Scale (3)")) {
+            m_GizmoOperation = GizmoOperation::Scale;
+        }
+        ImGui::SameLine(0.0f, pad + 6.0f);
+        if (ImGui::Button(m_GizmoSpace == GizmoSpace::World ? "World" : "Local", ImVec2(spaceW, btn))) {
+            m_GizmoSpace = (m_GizmoSpace == GizmoSpace::World) ? GizmoSpace::Local : GizmoSpace::World;
+        }
+        ImGui::SetItemTooltip("Gizmo space (4)");
+    }
+
     ImGui::End();
 }
 
@@ -335,6 +411,13 @@ void EditorLayer::HandleViewportPicking() {
     f32 vpW = m_EditorViewportImageMaxX - m_EditorViewportImageMinX;
     f32 vpH = m_EditorViewportImageMaxY - m_EditorViewportImageMinY;
     if (vpW <= 0 || vpH <= 0) return;
+
+    // Don't pick or start a marquee through the floating viewport toolbar
+    if (!m_MarqueeDragging &&
+        mousePos.x >= m_ViewportToolbarMinX && mousePos.x <= m_ViewportToolbarMaxX &&
+        mousePos.y >= m_ViewportToolbarMinY && mousePos.y <= m_ViewportToolbarMaxY) {
+        return;
+    }
 
     bool ctrlHeld = Input::IsKeyDown(KeyCode::LeftControl) || Input::IsKeyDown(KeyCode::RightControl);
 

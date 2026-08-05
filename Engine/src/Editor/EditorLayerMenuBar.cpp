@@ -1109,75 +1109,105 @@ void EditorLayer::DrawMenuBar() {
             ImGui::EndMenu();
         }
 
-        // --- Play mode controls (centered) ---
+        // --- Play mode controls (centered transport bar) ---
+        // Vector icons drawn through the draw list: crisp at any scale, no
+        // dependency on font glyph coverage. Colors derive from the active
+        // theme (accent = CheckMark) instead of hardcoded RGB.
         {
-            // Measure play control widths to center them
-            const char* playLabel = m_PlayMode.IsStopped() ? "  Play  " :
-                                    m_PlayMode.IsPlaying() ? " Pause " : " Resume";
-            f32 playBtnW = ImGui::CalcTextSize(playLabel).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-            f32 stopBtnW = ImGui::CalcTextSize(" Stop ").x + ImGui::GetStyle().FramePadding.x * 2.0f;
-            f32 stateW = 0.0f;
-            if (m_PlayMode.IsPlaying()) stateW = ImGui::CalcTextSize("[PLAYING]").x + 8.0f;
-            else if (m_PlayMode.IsPaused()) stateW = ImGui::CalcTextSize("[PAUSED]").x + 8.0f;
-            f32 totalW = playBtnW + (m_PlayMode.IsStopped() ? 0.0f : 4.0f + stopBtnW) + stateW;
+            const f32 btnH = ImGui::GetFrameHeight();
+            const f32 btnW = btnH * 1.35f;
+            const bool stopped = m_PlayMode.IsStopped();
+            const bool playing = m_PlayMode.IsPlaying();
 
-            f32 barW = ImGui::GetWindowWidth();
-            f32 centerX = (barW - totalW) * 0.5f;
-            f32 cursorX = ImGui::GetCursorPosX();
-            if (centerX > cursorX) {
+            f32 badgeW = 0.0f;
+            if (!stopped) {
+                badgeW = ImGui::CalcTextSize(playing ? "PLAYING" : "PAUSED").x + 16.0f + 8.0f;
+            }
+            f32 totalW = btnW + (stopped ? 0.0f : (4.0f + btnW)) + badgeW;
+            f32 centerX = (ImGui::GetWindowWidth() - totalW) * 0.5f;
+            if (centerX > ImGui::GetCursorPosX()) {
                 ImGui::SetCursorPosX(centerX);
             }
-        }
 
-        // Color the background based on play state
-        if (m_PlayMode.IsPlaying()) {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
-        } else if (m_PlayMode.IsPaused()) {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.6f, 0.2f, 1.0f));
-        } else {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
-        }
+            ImDrawList* dl = ImGui::GetWindowDrawList();
+            const ImVec4 accent = ImGui::GetStyleColorVec4(ImGuiCol_CheckMark);
+            const ImU32 accentCol = ImGui::GetColorU32(accent);
+            const ImU32 textCol = ImGui::GetColorU32(ImGuiCol_Text);
+            const ImU32 stopCol = ImGui::GetColorU32(ImVec4(0.90f, 0.38f, 0.34f, 1.0f));
 
-        // Play/Pause button
-        if (m_PlayMode.IsStopped()) {
-            if (ImGui::Button("  Play  ")) {
-                // Save render settings before play mode
-                m_PrePlayRenderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
-                    m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-                StartPlayMode();
-                if (m_EditorSettings.autoFocusMode) {
-                    m_FocusMode = true;
-                    Input::SetMouseCaptured(true);
+            // icon: 0 = play triangle, 1 = pause bars, 2 = stop square
+            auto iconButton = [&](const char* id, int icon, ImU32 iconCol) {
+                bool clicked = ImGui::Button(id, ImVec2(btnW, btnH));
+                ImVec2 mn = ImGui::GetItemRectMin();
+                ImVec2 mx = ImGui::GetItemRectMax();
+                ImVec2 c((mn.x + mx.x) * 0.5f, (mn.y + mx.y) * 0.5f);
+                f32 s = btnH * 0.26f;
+                if (icon == 0) {
+                    dl->AddTriangleFilled(ImVec2(c.x - s * 0.7f, c.y - s),
+                                          ImVec2(c.x - s * 0.7f, c.y + s),
+                                          ImVec2(c.x + s * 0.95f, c.y), iconCol);
+                } else if (icon == 1) {
+                    f32 bw = s * 0.55f;
+                    dl->AddRectFilled(ImVec2(c.x - s * 0.85f, c.y - s),
+                                      ImVec2(c.x - s * 0.85f + bw, c.y + s), iconCol, 1.0f);
+                    dl->AddRectFilled(ImVec2(c.x + s * 0.85f - bw, c.y - s),
+                                      ImVec2(c.x + s * 0.85f, c.y + s), iconCol, 1.0f);
+                } else {
+                    dl->AddRectFilled(ImVec2(c.x - s * 0.8f, c.y - s * 0.8f),
+                                      ImVec2(c.x + s * 0.8f, c.y + s * 0.8f), iconCol, 1.5f);
                 }
-            }
-        } else if (m_PlayMode.IsPlaying()) {
-            if (ImGui::Button(" Pause ")) {
-                m_PlayMode.Pause();
-            }
-        } else {  // Paused
-            if (ImGui::Button(" Resume")) {
-                m_PlayMode.Resume();
-            }
-        }
-        ImGui::PopStyleColor();
+                return clicked;
+            };
 
-        // Stop button (only when playing or paused)
-        if (!m_PlayMode.IsStopped()) {
-            ImGui::SameLine(0.0f, 4.0f);
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
-            if (ImGui::Button(" Stop ")) {
-                m_PendingPlayStop = true;
+            if (stopped) {
+                if (iconButton("##playbtn", 0, accentCol)) {
+                    // Save render settings before play mode
+                    m_PrePlayRenderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
+                        m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+                    StartPlayMode();
+                    if (m_EditorSettings.autoFocusMode) {
+                        m_FocusMode = true;
+                        Input::SetMouseCaptured(true);
+                    }
+                }
+                ImGui::SetItemTooltip("Play");
+            } else if (playing) {
+                if (iconButton("##pausebtn", 1, textCol)) {
+                    m_PlayMode.Pause();
+                }
+                ImGui::SetItemTooltip("Pause");
+            } else {  // Paused
+                if (iconButton("##resumebtn", 0, accentCol)) {
+                    m_PlayMode.Resume();
+                }
+                ImGui::SetItemTooltip("Resume");
             }
-            ImGui::PopStyleColor();
-        }
 
-        // Show play state indicator
-        if (m_PlayMode.IsPlaying()) {
-            ImGui::SameLine(0.0f, 8.0f);
-            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "[PLAYING]");
-        } else if (m_PlayMode.IsPaused()) {
-            ImGui::SameLine(0.0f, 8.0f);
-            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "[PAUSED]");
+            // Stop button (only when playing or paused)
+            if (!stopped) {
+                ImGui::SameLine(0.0f, 4.0f);
+                if (iconButton("##stopbtn", 2, stopCol)) {
+                    m_PendingPlayStop = true;
+                }
+                ImGui::SetItemTooltip("Stop and restore the scene");
+            }
+
+            // Play state chip: rounded pill, theme-tinted, reads at a glance
+            if (!stopped) {
+                const char* stateTxt = playing ? "PLAYING" : "PAUSED";
+                ImVec4 chip = playing ? accent : ImVec4(0.95f, 0.80f, 0.35f, 1.0f);
+                ImGui::SameLine(0.0f, 8.0f);
+                ImVec2 ts = ImGui::CalcTextSize(stateTxt);
+                ImVec2 pos = ImGui::GetCursorScreenPos();
+                const f32 padX = 8.0f;
+                f32 chipH = ts.y + 6.0f;
+                f32 y0 = pos.y + (btnH - chipH) * 0.5f;
+                dl->AddRectFilled(ImVec2(pos.x, y0), ImVec2(pos.x + ts.x + padX * 2.0f, y0 + chipH),
+                                  ImGui::GetColorU32(ImVec4(chip.x, chip.y, chip.z, 0.18f)), chipH * 0.5f);
+                dl->AddText(ImVec2(pos.x + padX, y0 + 3.0f),
+                            ImGui::GetColorU32(ImVec4(chip.x, chip.y, chip.z, 1.0f)), stateTxt);
+                ImGui::Dummy(ImVec2(ts.x + padX * 2.0f, btnH));
+            }
         }
 
         // Show collab status indicator

@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/EditorWidgets.h"
 #include "Enjin/Editor/EditorTheme.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
@@ -132,36 +133,53 @@ void EditorLayer::DrawConsolePanel() {
         SetPanelVisibility(EditorPanel::Console, false);
     }
 
-    // ── Feed tabs ──
-    const char* feedLabels[] = { "All", "Editor", "Runtime" };
-    for (int i = 0; i < 3; ++i) {
-        if (i > 0) ImGui::SameLine();
-        bool selected = (m_ConsoleFeedTab == i);
-        if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-        if (ImGui::SmallButton(feedLabels[i])) m_ConsoleFeedTab = i;
-        if (selected) ImGui::PopStyleColor();
+    // ── Feed tabs: segmented control (joined, accent-selected) ──
+    {
+        const ImVec4 accent = ImGui::GetStyleColorVec4(ImGuiCol_CheckMark);
+        const char* feedLabels[] = { "All", "Editor", "Runtime" };
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(1.0f, ImGui::GetStyle().ItemSpacing.y));
+        for (int i = 0; i < 3; ++i) {
+            if (i > 0) ImGui::SameLine();
+            bool selected = (m_ConsoleFeedTab == i);
+            if (selected) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(accent.x, accent.y, accent.z, 0.30f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(accent.x, accent.y, accent.z, 1.0f));
+            }
+            if (ImGui::SmallButton(feedLabels[i])) m_ConsoleFeedTab = i;
+            if (selected) ImGui::PopStyleColor(2);
+        }
+        ImGui::PopStyleVar();
     }
 
-    ImGui::SameLine();
-    ImGui::TextDisabled("|");
-    ImGui::SameLine();
+    ImGui::SameLine(0.0f, 12.0f);
 
-    // ── Level filter toggles (colored) ──
-    auto toggleButton = [](const char* label, bool& active, const ImVec4& color) {
-        if (active) ImGui::PushStyleColor(ImGuiCol_Button, color);
-        else        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.2f, 0.2f, 1.0f));
-        if (ImGui::SmallButton(label)) active = !active;
+    // ── Level filter toggles: colored status dot + label, tooltip ──
+    auto toggleButton = [](const char* label, bool& active, const ImVec4& color, const char* tip) {
+        if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(color.x, color.y, color.z, 0.85f));
+        else        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.20f, 0.22f, 1.0f));
+        // Space for the drawn dot before the label
+        std::string padded = std::string("   ") + label;
+        if (ImGui::SmallButton(padded.c_str())) active = !active;
         ImGui::PopStyleColor();
+        ImGui::SetItemTooltip("%s", tip);
+        // Level dot: stays colored even when the filter is off (affordance)
+        ImVec2 mn = ImGui::GetItemRectMin();
+        ImVec2 mx = ImGui::GetItemRectMax();
+        ImGui::GetWindowDrawList()->AddCircleFilled(
+            ImVec2(mn.x + 8.0f, (mn.y + mx.y) * 0.5f), 3.0f,
+            ImGui::GetColorU32(ImVec4(color.x, color.y, color.z, active ? 1.0f : 0.45f)));
     };
 
-    toggleButton("Info",  m_ConsoleShowInfo,  ImVec4(0.20f, 0.40f, 0.60f, 1.0f));
+    toggleButton("Info",  m_ConsoleShowInfo,  ImVec4(0.25f, 0.50f, 0.75f, 1.0f), "Show info messages");
     ImGui::SameLine();
-    toggleButton("Warn",  m_ConsoleShowWarn,  ImVec4(0.60f, 0.50f, 0.10f, 1.0f));
+    toggleButton("Warn",  m_ConsoleShowWarn,  ImVec4(0.75f, 0.62f, 0.15f, 1.0f), "Show warnings");
     ImGui::SameLine();
-    toggleButton("Error", m_ConsoleShowError, ImVec4(0.65f, 0.15f, 0.15f, 1.0f));
+    toggleButton("Error", m_ConsoleShowError, ImVec4(0.80f, 0.25f, 0.25f, 1.0f), "Show errors");
 
-    // ── Console output ──
+    // ── Console output (mono face — it's a console) ──
     ImGui::BeginChild("ConsoleOutput", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), true);
+    ImFont* consoleMono = m_ImGuiLayer ? m_ImGuiLayer->GetMonoFont() : nullptr;
+    if (consoleMono) ImGui::PushFont(consoleMono);
 
     // Classify categories into editor vs runtime feeds
     // Editor: Editor, Asset, Assets, Build, Core
@@ -236,6 +254,7 @@ void EditorLayer::DrawConsolePanel() {
     if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
         ImGui::SetScrollHereY(1.0f);
     }
+    if (consoleMono) ImGui::PopFont();
     ImGui::EndChild();
 
     // ── Input line ──
@@ -2478,7 +2497,7 @@ void EditorLayer::DrawParticleEditorPanel() {
     ImGui::Separator();
 
     // --- Presets ---
-    if (ImGui::CollapsingHeader("Presets", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Presets", ImGuiTreeNodeFlags_DefaultOpen)) {
         const char* presets[] = { "Fire", "Smoke", "Sparks", "Snow", "Rain", "Magic", "Explosion" };
         for (int i = 0; i < 7; ++i) {
             if (i > 0) ImGui::SameLine();
@@ -2498,7 +2517,7 @@ void EditorLayer::DrawParticleEditorPanel() {
     }
 
     // --- Color Gradient ---
-    if (ImGui::CollapsingHeader("Color Gradient")) {
+    if (UI::SectionHeader("Color Gradient")) {
         f32 startCol[3] = { emitter->startColor.x, emitter->startColor.y, emitter->startColor.z };
         if (ImGui::ColorEdit3("Start Color##pe", startCol)) {
             emitter->startColor = Math::Vector3(startCol[0], startCol[1], startCol[2]);
@@ -2550,7 +2569,7 @@ void EditorLayer::DrawParticleEditorPanel() {
     }
 
     // --- Size Over Lifetime ---
-    if (ImGui::CollapsingHeader("Size Over Lifetime")) {
+    if (UI::SectionHeader("Size Over Lifetime")) {
         ImGui::DragFloat("Start Size##pe", &emitter->startSize, 0.01f, 0.001f, 10.0f);
         ImGui::DragFloat("Mid Size##pe", &emitter->sizeMid, 0.01f, -1.0f, 10.0f, "%.3f (-1=auto)");
         ImGui::DragFloat("End Size##pe", &emitter->endSize, 0.01f, 0.0f, 10.0f);
@@ -2583,7 +2602,7 @@ void EditorLayer::DrawParticleEditorPanel() {
     }
 
     // --- Speed Over Lifetime ---
-    if (ImGui::CollapsingHeader("Speed Over Lifetime")) {
+    if (UI::SectionHeader("Speed Over Lifetime")) {
         ImGui::DragFloat("Mid Multiplier##spd", &emitter->speedMultiplierMid, 0.01f, 0.0f, 5.0f);
         ImGui::DragFloat("End Multiplier##spd", &emitter->speedMultiplierEnd, 0.01f, 0.0f, 5.0f);
 
@@ -2611,7 +2630,7 @@ void EditorLayer::DrawParticleEditorPanel() {
     }
 
     // --- Shape Preview ---
-    if (ImGui::CollapsingHeader("Shape Preview")) {
+    if (UI::SectionHeader("Shape Preview")) {
         const char* shapes[] = { "Point", "Sphere", "Hemisphere", "Cone", "Box" };
         int shape = static_cast<int>(emitter->shape);
         if (ImGui::Combo("Shape##pe", &shape, shapes, 5)) {
@@ -2679,7 +2698,7 @@ void EditorLayer::DrawParticleEditorPanel() {
     }
 
     // --- Additional Settings ---
-    if (ImGui::CollapsingHeader("Emission")) {
+    if (UI::SectionHeader("Emission")) {
         ImGui::DragFloat("Rate##pe", &emitter->emissionRate, 0.5f, 0.0f, 1000.0f);
         ImGui::DragInt("Burst Count##pe", &emitter->burstCount, 1, 0, 100);
         if (emitter->burstCount > 0) {
@@ -2691,14 +2710,14 @@ void EditorLayer::DrawParticleEditorPanel() {
         }
     }
 
-    if (ImGui::CollapsingHeader("Rotation")) {
+    if (UI::SectionHeader("Rotation")) {
         ImGui::DragFloat("Start Rotation##pe", &emitter->startRotation, 0.01f, -6.28f, 6.28f);
         ImGui::DragFloat("Rotation Variance##pe", &emitter->rotationVariance, 0.01f, 0.0f, 6.28f);
         ImGui::DragFloat("Rotation Speed##pe", &emitter->rotationSpeed, 0.01f, -10.0f, 10.0f);
         ImGui::DragFloat("Speed Variance##pe2", &emitter->rotationSpeedVariance, 0.01f, 0.0f, 10.0f);
     }
 
-    if (ImGui::CollapsingHeader("Forces##pe")) {
+    if (UI::SectionHeader("Forces##pe")) {
         f32 grav[3] = { emitter->gravity.x, emitter->gravity.y, emitter->gravity.z };
         if (ImGui::DragFloat3("Gravity##pe", grav, 0.1f)) {
             emitter->gravity = Math::Vector3(grav[0], grav[1], grav[2]);
@@ -2706,7 +2725,7 @@ void EditorLayer::DrawParticleEditorPanel() {
         ImGui::DragFloat("Drag##pe", &emitter->drag, 0.01f, 0.0f, 10.0f);
     }
 
-    if (ImGui::CollapsingHeader("Rendering##pe")) {
+    if (UI::SectionHeader("Rendering##pe")) {
         const char* renderModes[] = { "Billboard", "Velocity Stretch" };
         int currentMode = static_cast<int>(emitter->renderMode);
         if (ImGui::Combo("Render Mode##pe", &currentMode, renderModes, 2)) {
@@ -4386,7 +4405,7 @@ void EditorLayer::DrawPluginBrowserPanel() {
 
     // Repository sources management
     ImGui::Separator();
-    if (ImGui::CollapsingHeader("Repository Sources")) {
+    if (UI::SectionHeader("Repository Sources")) {
         const auto& sources = m_PluginRepository.GetSources();
         for (size_t i = 0; i < sources.size(); i++) {
             ImGui::PushID(static_cast<int>(i));
@@ -4676,7 +4695,7 @@ void EditorLayer::DrawProceduralGenPanel() {
 
     // --- One-Click Forest Generation ---
     ImGui::Separator();
-    if (ImGui::CollapsingHeader("Generate Forest", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Generate Forest", ImGuiTreeNodeFlags_DefaultOpen)) {
         static i32 forestType = 0; // 0=Mixed, 1=Dense Conifer, 2=Deciduous, 3=Sparse Savanna
         static f32 forestAreaHalf = 30.0f;
         static u32 treeDensity = 120;
@@ -5690,7 +5709,7 @@ void EditorLayer::DrawSaveDebugPanel() {
     ImGui::Separator();
 
     // Auto-save config
-    if (ImGui::CollapsingHeader("Auto-Save Config")) {
+    if (UI::SectionHeader("Auto-Save Config")) {
         auto& cfg = saveSystem->GetAutoSaveConfig();
         ImGui::Checkbox("Enabled", &cfg.enabled);
         ImGui::Checkbox("On Scene Transition", &cfg.onSceneTransition);
@@ -5702,7 +5721,7 @@ void EditorLayer::DrawSaveDebugPanel() {
     }
 
     // Save slots grid
-    if (ImGui::CollapsingHeader("Save Slots", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Save Slots", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto slots = saveSystem->GetAllSlots();
 
         if (ImGui::BeginTable("SaveSlots", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
@@ -5766,7 +5785,7 @@ void EditorLayer::DrawSaveDebugPanel() {
     }
 
     // Meta-progression viewer
-    if (ImGui::CollapsingHeader("Meta-Progression")) {
+    if (UI::SectionHeader("Meta-Progression")) {
         const auto& floats = saveSystem->GetMetaFloats();
         const auto& ints = saveSystem->GetMetaInts();
         const auto& bools = saveSystem->GetMetaBools();
@@ -5814,7 +5833,7 @@ void EditorLayer::DrawSaveDebugPanel() {
 
     // Cloud sync
     if (saveSystem->GetCloudBackend()) {
-        if (ImGui::CollapsingHeader("Cloud Sync")) {
+        if (UI::SectionHeader("Cloud Sync")) {
             ImGui::Text("Backend: %s", saveSystem->GetCloudBackend()->GetName().c_str());
             if (ImGui::Button("Sync To Cloud")) {
                 saveSystem->SyncToCloud();
@@ -8762,7 +8781,7 @@ void EditorLayer::DrawUVPreviewPanel() {
     }
 
     // UV statistics header
-    if (ImGui::CollapsingHeader("UV Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("UV Statistics", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Text("Vertices: %zu  Triangles: %zu", verts.size(), indices.size() / 3);
         ImGui::Text("UV Range: (%.3f, %.3f) to (%.3f, %.3f)", uvMinU, uvMinV, uvMaxU, uvMaxV);
 

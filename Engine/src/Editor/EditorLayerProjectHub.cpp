@@ -824,6 +824,13 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
         ImDrawList* cdl = ImGui::GetWindowDrawList();
         ImVec2 scrollOrigin = ImGui::GetCursorScreenPos();
 
+        // Card accents come from the active THEME (CheckMark = accent), not
+        // hardcoded blues — the hub is the first screen and must match the
+        // editor's identity
+        const ImVec4 hubAccent = ImGui::GetStyleColorVec4(ImGuiCol_CheckMark);
+        const ImU32 hubAccentStrong = ImGui::GetColorU32(ImVec4(hubAccent.x, hubAccent.y, hubAccent.z, 0.85f));
+        const ImU32 hubAccentSoft   = ImGui::GetColorU32(ImVec4(hubAccent.x, hubAccent.y, hubAccent.z, 0.55f));
+
         f32 cardW = 520.0f, cardH = 380.0f, cardGap = 32.0f;
         i32 cardsPerRow = (std::max)(1, static_cast<i32>(std::floor((area.x - sectionPad * 2.0f) / (cardW + cardGap))));
         f32 gridW = cardsPerRow * cardW + (cardsPerRow - 1) * cardGap;
@@ -848,7 +855,7 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
                              io.MousePos.y >= pMin.y && io.MousePos.y <= pMax.y);
 
             // Dashed border (simulated with dotted rect segments)
-            ImU32 dashCol = phHovered ? IM_COL32(80, 110, 180, 200) : IM_COL32(60, 65, 85, 150);
+            ImU32 dashCol = phHovered ? hubAccentSoft : IM_COL32(60, 65, 85, 150);
             f32 dashLen = 8.0f, gapLen = 6.0f;
             // Top and bottom edges
             for (f32 dx = 0; dx < cardW; dx += dashLen + gapLen) {
@@ -870,7 +877,7 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
             cdl->AddText(nullptr, plusSize,
                 ImVec2(placeholderX + (cardW - plusSz.x) * 0.5f,
                        placeholderY + (cardH - plusSz.y) * 0.5f),
-                phHovered ? IM_COL32(120, 150, 220, 255) : IM_COL32(80, 90, 115, 180), plusText);
+                phHovered ? hubAccentStrong : IM_COL32(80, 90, 115, 180), plusText);
 
             if (phHovered && ImGui::IsMouseClicked(0)) {
                 m_SelectedTemplate = -1;
@@ -902,14 +909,19 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
                                    io.MousePos.y >= cMin.y && io.MousePos.y <= cMax.y);
                 bool hovered = anyHovered && !missing;
 
+                // Soft drop shadow lifts the card off the page
+                cdl->AddRectFilled(ImVec2(cMin.x + 1.0f, cMin.y + 4.0f),
+                                   ImVec2(cMax.x + 1.0f, cMax.y + 5.0f),
+                                   IM_COL32(0, 0, 0, hovered ? 110 : 70), 9.0f);
+
                 // Card background
                 ImU32 cardBg = hovered ? IM_COL32(32, 38, 55, 255) : IM_COL32(22, 25, 35, 255);
                 if (missing) cardBg = IM_COL32(20, 20, 26, 200);
                 cdl->AddRectFilled(cMin, cMax, cardBg, 8.0f);
 
-                // Border
+                // Border: theme accent on hover
                 if (hovered)
-                    cdl->AddRect(cMin, cMax, IM_COL32(70, 100, 180, 200), 8.0f, 0, 1.5f);
+                    cdl->AddRect(cMin, cMax, hubAccentStrong, 8.0f, 0, 2.0f);
                 else
                     cdl->AddRect(cMin, cMax, IM_COL32(40, 45, 60, missing ? 80u : 150u), 8.0f);
 

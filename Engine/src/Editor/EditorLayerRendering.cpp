@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/EditorWidgets.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Renderer/Upscaling/IUpscaler.h"
@@ -200,7 +201,7 @@ void EditorLayer::EvaluatePostProcessVolumes(const Math::Vector3& cameraPosition
 
 
 void EditorLayer::DrawPostProcessVolumeComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("[PP] Post-Process Volume", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("[PP] Post-Process Volume", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* vol = m_World->GetComponent<ECS::PostProcessVolumeComponent>(entity);
         if (!vol) return;
 
@@ -1034,13 +1035,13 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         return;
     }
 
-    if (ImGui::CollapsingHeader("Post Processing", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Post Processing", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::TextDisabled("Bloom, color grading, film grain, depth of field, screen-space effects");
         auto& settings = m_PostProcessing->GetSettings();
         bool hasDepth = m_PostProcessing->IsDepthSourceReady();
 
         // Tone Mapping
-        if (ImGui::CollapsingHeader("Tone Mapping", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (UI::SectionHeader("Tone Mapping", ImGuiTreeNodeFlags_DefaultOpen)) {
             const char* toneMappingModes[] = { "None", "Reinhard", "Reinhard Extended", "ACES", "Uncharted 2", "AgX" };
             int currentMode = static_cast<int>(settings.toneMappingMode);
             if (ImGui::Combo("Mode", &currentMode, toneMappingModes, 6)) {
@@ -1056,7 +1057,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // Bloom
-        if (ImGui::CollapsingHeader("Bloom")) {
+        if (UI::SectionHeader("Bloom")) {
             bool bloomEnabled = settings.bloomEnabled != 0;
             if (ImGui::Checkbox("Enabled##Bloom", &bloomEnabled)) {
                 settings.bloomEnabled = bloomEnabled ? 1 : 0;
@@ -1073,7 +1074,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // Vignette
-        if (ImGui::CollapsingHeader("Vignette")) {
+        if (UI::SectionHeader("Vignette")) {
             bool vignetteEnabled = settings.vignetteEnabled != 0;
             if (ImGui::Checkbox("Enabled##Vignette", &vignetteEnabled)) {
                 settings.vignetteEnabled = vignetteEnabled ? 1 : 0;
@@ -1088,7 +1089,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // Chromatic Aberration
-        if (ImGui::CollapsingHeader("Chromatic Aberration")) {
+        if (UI::SectionHeader("Chromatic Aberration")) {
             bool caEnabled = settings.chromaticAberrationEnabled != 0;
             if (ImGui::Checkbox("Enabled##CA", &caEnabled)) {
                 settings.chromaticAberrationEnabled = caEnabled ? 1 : 0;
@@ -1101,7 +1102,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // Color Grading
-        if (ImGui::CollapsingHeader("Color Grading")) {
+        if (UI::SectionHeader("Color Grading")) {
             f32 colorFilter[3] = { settings.colorFilter.x, settings.colorFilter.y, settings.colorFilter.z };
             if (ImGui::ColorEdit3("Color Filter", colorFilter)) {
                 settings.colorFilter = Math::Vector3(colorFilter[0], colorFilter[1], colorFilter[2]);
@@ -1113,7 +1114,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // Film Grain
-        if (ImGui::CollapsingHeader("Film Grain")) {
+        if (UI::SectionHeader("Film Grain")) {
             bool grainEnabled = settings.filmGrainEnabled != 0;
             if (ImGui::Checkbox("Enabled##Grain", &grainEnabled)) {
                 settings.filmGrainEnabled = grainEnabled ? 1 : 0;
@@ -1126,7 +1127,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // Depth of Field
-        if (ImGui::CollapsingHeader("Depth of Field")) {
+        if (UI::SectionHeader("Depth of Field")) {
             if (!hasDepth) ImGui::BeginDisabled();
             bool dofEnabled = settings.dofEnabled != 0;
             if (ImGui::Checkbox("Enabled##DOF", &dofEnabled)) {
@@ -1160,7 +1161,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // Tilt-Shift
-        if (ImGui::CollapsingHeader("Tilt-Shift")) {
+        if (UI::SectionHeader("Tilt-Shift")) {
             if (!hasDepth) ImGui::BeginDisabled();
             bool tsEnabled = settings.tiltShiftEnabled != 0;
             if (ImGui::Checkbox("Enabled##TiltShift", &tsEnabled)) {
@@ -1178,7 +1179,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // Anti-Aliasing
-        if (ImGui::CollapsingHeader("Anti-Aliasing")) {
+        if (UI::SectionHeader("Anti-Aliasing")) {
             const char* aaModes[] = { "None", "FXAA", "TAA", "SMAA", "MSAA 2x", "MSAA 4x", "MSAA 8x" };
             int aaMode = static_cast<int>(settings.aaMode);
             if (ImGui::Combo("AA Mode", &aaMode, aaModes, IM_ARRAYSIZE(aaModes))) {
@@ -1269,7 +1270,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // Temporal Upscaling
-        if (ImGui::CollapsingHeader("Upscaling")) {
+        if (UI::SectionHeader("Upscaling")) {
             // Build upscaler list based on which SDKs are available
             struct UpscalerEntry { const char* name; u32 type; };
             UpscalerEntry availableUpscalers[] = {
@@ -1397,7 +1398,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // LUT Color Grading
-        if (ImGui::CollapsingHeader("LUT Color Grading")) {
+        if (UI::SectionHeader("LUT Color Grading")) {
             bool lutEnabled = settings.lutEnabled != 0;
             if (ImGui::Checkbox("Enabled##LUT", &lutEnabled)) {
                 settings.lutEnabled = lutEnabled ? 1 : 0;
@@ -1430,7 +1431,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // Color Palette Lock
-        if (ImGui::CollapsingHeader("Palette Lock")) {
+        if (UI::SectionHeader("Palette Lock")) {
             bool paletteEnabled = settings.paletteEnabled != 0;
             if (ImGui::Checkbox("Enabled##Palette", &paletteEnabled)) {
                 settings.paletteEnabled = paletteEnabled ? 1 : 0;
@@ -1456,7 +1457,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // Normal Quantization (Pixel Art)
-        if (ImGui::CollapsingHeader("Normal Quantization")) {
+        if (UI::SectionHeader("Normal Quantization")) {
             f32 nqSteps = m_RenderSystem ? m_RenderSystem->GetNormalQuantizeSteps() : 0.0f;
             bool nqEnabled = nqSteps >= 4.0f;
             if (ImGui::Checkbox("Enabled##NormQuant", &nqEnabled)) {
@@ -1472,7 +1473,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // Stipple / Dither
-        if (ImGui::CollapsingHeader("Stipple / Dither")) {
+        if (UI::SectionHeader("Stipple / Dither")) {
             bool stippleEnabled = settings.stippleEnabled != 0;
             if (ImGui::Checkbox("Enabled##Stipple", &stippleEnabled)) {
                 settings.stippleEnabled = stippleEnabled ? 1 : 0;
@@ -1557,7 +1558,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // SSAO
-        if (ImGui::CollapsingHeader("SSAO (Ambient Occlusion)")) {
+        if (UI::SectionHeader("SSAO (Ambient Occlusion)")) {
             if (!hasDepth) ImGui::BeginDisabled();
             bool ssaoOn = settings.ssaoEnabled != 0;
             if (ImGui::Checkbox("Enabled##SSAO", &ssaoOn)) {
@@ -1580,7 +1581,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // Contact Shadows
-        if (ImGui::CollapsingHeader("Contact Shadows")) {
+        if (UI::SectionHeader("Contact Shadows")) {
             if (!hasDepth) ImGui::BeginDisabled();
             bool csOn = settings.contactShadowsEnabled != 0;
             if (ImGui::Checkbox("Enabled##ContactShadows", &csOn)) {
@@ -1601,7 +1602,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // God Rays
-        if (ImGui::CollapsingHeader("God Rays")) {
+        if (UI::SectionHeader("God Rays")) {
             if (!hasDepth) ImGui::BeginDisabled();
             bool grOn = settings.godRaysEnabled != 0;
             if (ImGui::Checkbox("Enabled##GodRays", &grOn)) {
@@ -1626,7 +1627,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // Fake Caustics
-        if (ImGui::CollapsingHeader("Fake Caustics")) {
+        if (UI::SectionHeader("Fake Caustics")) {
             if (!hasDepth) ImGui::BeginDisabled();
             bool fcOn = settings.causticsEnabled != 0;
             if (ImGui::Checkbox("Enabled##Caustics", &fcOn)) {
@@ -1646,7 +1647,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
         }
 
         // Fog Shafts
-        if (ImGui::CollapsingHeader("Fog Shafts")) {
+        if (UI::SectionHeader("Fog Shafts")) {
             if (!hasDepth) ImGui::BeginDisabled();
             bool fsOn = settings.fogShaftsEnabled != 0;
             if (ImGui::Checkbox("Enabled##FogShafts", &fsOn)) {
@@ -1672,7 +1673,7 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
 
 void EditorLayer::DrawSettingsSection_RetroEffects() {
     // === RETRO EFFECTS (PS1/N64/PS2/GameCube presets) ===
-    if (ImGui::CollapsingHeader("Retro Effects", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Retro Effects", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::TextDisabled("Vertex snapping, affine textures, scanlines, dithering, color reduction");
         bool retroEnabled = m_RetroEffects.IsEnabled();
         if (ImGui::Checkbox("Enable Retro Effects", &retroEnabled)) {
@@ -1986,7 +1987,7 @@ void EditorLayer::DrawSettingsSection_Skybox() {
     if (!m_RenderSystem) return;
 
     // === SKYBOX ===
-    if (ImGui::CollapsingHeader("Skybox", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Skybox", ImGuiTreeNodeFlags_DefaultOpen)) {
         Renderer::SkyboxConfig config = m_RenderSystem->GetSkyboxConfig();
         bool changed = false;
 
@@ -2090,7 +2091,7 @@ void EditorLayer::DrawSettingsSection_Shadows() {
     if (!m_RenderSystem) return;
 
     // === SHADOWS ===
-    if (ImGui::CollapsingHeader("Shadows", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Shadows", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::TextDisabled("Cascaded shadow maps, soft shadows, per-entity dithering");
         bool shadows = m_RenderSystem->IsShadowsEnabled();
         if (ImGui::Checkbox("Shadows", &shadows)) {
@@ -2154,7 +2155,7 @@ void EditorLayer::DrawSettingsSection_AmbientLighting() {
     if (!m_RenderSystem) return;
 
     // === AMBIENT LIGHTING ===
-    if (ImGui::CollapsingHeader("Ambient Lighting")) {
+    if (UI::SectionHeader("Ambient Lighting")) {
         Math::Vector3 ambientColor = m_RenderSystem->GetAmbientColor();
         f32 ambient[3] = { ambientColor.x, ambientColor.y, ambientColor.z };
         if (ImGui::ColorEdit3("Ambient Color", ambient)) {
@@ -2173,7 +2174,7 @@ void EditorLayer::DrawSettingsSection_AmbientLighting() {
 void EditorLayer::DrawSettingsSection_ShadingModel() {
     if (!m_RenderSystem) return;
 
-    if (ImGui::CollapsingHeader("Shading Model")) {
+    if (UI::SectionHeader("Shading Model")) {
         const char* modelNames[] = { "Blinn-Phong", "PBR (GGX)" };
         int model = static_cast<int>(m_RenderSystem->GetShadingModel());
         if (ImGui::Combo("Specular Model", &model, modelNames, 2)) {
@@ -2222,7 +2223,7 @@ void EditorLayer::DrawSettingsSection_ShadingModel() {
 void EditorLayer::DrawSettingsSection_DreamcastEffects() {
     if (!m_RenderSystem) return;
 
-    if (ImGui::CollapsingHeader("Dreamcast Effects")) {
+    if (UI::SectionHeader("Dreamcast Effects")) {
         ImGui::TextDisabled("Sphere environment maps, modifier volume shadows — Dreamcast/6th-gen era");
         // Spherical Environment Mapping
         bool sphereEnv = m_RenderSystem->IsSphereEnvMapEnabled();
@@ -2271,7 +2272,7 @@ void EditorLayer::DrawSettingsSection_CelShading() {
     if (!m_RenderSystem) return;
 
     // === CEL SHADING ===
-    if (ImGui::CollapsingHeader("Cel Shading")) {
+    if (UI::SectionHeader("Cel Shading")) {
         ImGui::TextDisabled("Anime, cartoon, comic book styles — band quantization + edge outlines");
         bool celEnabled = m_RenderSystem->IsCelShadingEnabled();
         if (ImGui::Checkbox("Cel Shading##Rendering", &celEnabled)) {
@@ -2322,7 +2323,7 @@ void EditorLayer::DrawSettingsSection_DisplayOptions() {
     if (!m_RenderSystem) return;
 
     // === DISPLAY OPTIONS ===
-    if (ImGui::CollapsingHeader("Display Options")) {
+    if (UI::SectionHeader("Display Options")) {
         // Backface culling
         bool culling = m_RenderSystem->IsBackfaceCullingEnabled();
         if (ImGui::Checkbox("Backface Culling", &culling)) {
@@ -2379,7 +2380,7 @@ void EditorLayer::DrawSettingsSection_DisplayOptions() {
 
     // === SDF SCENE ===
     {
-        if (ImGui::CollapsingHeader("SDF Primitives")) {
+        if (UI::SectionHeader("SDF Primitives")) {
             if (auto* sdfScene = m_RenderSystem->GetSDFScene()) {
                 ImGui::Text("Objects: %u", sdfScene->GetObjectCount());
                 ImGui::TextDisabled("CPU-side SDF evaluation. GPU ray march requires compute shader.");
@@ -2409,7 +2410,7 @@ void EditorLayer::DrawSettingsSection_DisplayOptions() {
 
     // === ORDER-INDEPENDENT TRANSPARENCY ===
     {
-        if (ImGui::CollapsingHeader("Transparency (OIT)")) {
+        if (UI::SectionHeader("Transparency (OIT)")) {
             bool oitEnabled = m_RenderSystem->IsOITEnabled();
             if (ImGui::Checkbox("Enable Weighted Blended OIT", &oitEnabled)) {
                 m_RenderSystem->SetOITEnabled(oitEnabled);
@@ -2422,7 +2423,7 @@ void EditorLayer::DrawSettingsSection_DisplayOptions() {
     }
 
     // === PER-SCENE OVERRIDE & PROJECT DEFAULTS ===
-    if (ImGui::CollapsingHeader("Scene Overrides")) {
+    if (UI::SectionHeader("Scene Overrides")) {
         if (ImGui::Checkbox("Use Project Defaults", &m_CurrentSceneUsesProjectDefaults)) {
             if (m_CurrentSceneUsesProjectDefaults) {
                 m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
@@ -2469,7 +2470,7 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
 
     // === GPU COMPUTE SKINNING (ADR-0002, experimental) ===
     {
-        if (ImGui::CollapsingHeader("Compute Skinning (experimental)")) {
+        if (UI::SectionHeader("Compute Skinning (experimental)")) {
             ImGui::TextDisabled("Skin meshes once per frame in a compute pass instead of re-skinning");
             ImGui::TextDisabled("in every pass. Phase 1: main pass only (shadows/outline still use the");
             ImGui::TextDisabled("vertex-shader path). Default off.");
@@ -2484,7 +2485,7 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
     // === RAY TRACING ===
     {
         bool rtSupported = m_RenderSystem->IsRayTracingSupported();
-        if (ImGui::CollapsingHeader("Ray Tracing")) {
+        if (UI::SectionHeader("Ray Tracing")) {
             ImGui::TextDisabled("Hardware-accelerated shadows, reflections, AO, GI, path tracing");
             if (rtSupported) {
                 ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "Supported");
@@ -3045,7 +3046,7 @@ void EditorLayer::DrawSettingsSection_LightProbes() {
 
     // === LIGHT PROBES ===
     {
-        if (ImGui::CollapsingHeader("Light Probes")) {
+        if (UI::SectionHeader("Light Probes")) {
             ImGui::TextDisabled("Baked indirect lighting for static scenes — interiors, walkthroughs");
             if (auto* shLighting = m_RenderSystem->GetSHLighting()) {
                 auto& grid = shLighting->GetGrid();
@@ -3245,7 +3246,7 @@ void EditorLayer::DrawSettingsConflictWarnings() {
 
     ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.3f, 0.2f, 0.05f, 0.8f));
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.4f, 0.3f, 0.1f, 0.9f));
-    if (ImGui::CollapsingHeader("Setting Conflicts", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Setting Conflicts", ImGuiTreeNodeFlags_DefaultOpen)) {
         for (const auto& c : conflicts) {
             bool isError = (c.icon[0] == '!');
             ImVec4 col = isError ? errorColor : warnColor;

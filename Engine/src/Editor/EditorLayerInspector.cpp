@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/EditorWidgets.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
@@ -1202,7 +1203,7 @@ void EditorLayer::DrawInspectorPanel() {
 
         // Mesh Renderer component
         if (m_World->HasComponent<ECS::MeshRendererComponent>(m_PrimarySelected)) {
-            bool mrOpen = ImGui::CollapsingHeader("[R] Mesh Renderer", ImGuiTreeNodeFlags_DefaultOpen);
+            bool mrOpen = UI::SectionHeader("[R] Mesh Renderer", ImGuiTreeNodeFlags_DefaultOpen);
             if (ImGui::BeginPopupContextItem("MeshRendererCtx")) {
                 if (ImGui::MenuItem("Remove Component")) {
                     RemoveComponentWithUndo<ECS::MeshRendererComponent>(m_PrimarySelected, "meshRenderer", "Mesh Renderer");
@@ -1516,7 +1517,7 @@ void EditorLayer::DrawInspectorPanel() {
 
         // IK Components
         if (m_World->HasComponent<ECS::LookAtIKComponent>(m_PrimarySelected)) {
-            bool ikOpen = ImGui::CollapsingHeader("[IK] Look-At IK", ImGuiTreeNodeFlags_DefaultOpen);
+            bool ikOpen = UI::SectionHeader("[IK] Look-At IK", ImGuiTreeNodeFlags_DefaultOpen);
             if (ImGui::BeginPopupContextItem("LookAtIKCtx")) {
                 if (ImGui::MenuItem("Remove Component")) {
                     RemoveComponentWithUndo<ECS::LookAtIKComponent>(m_PrimarySelected, "lookAtIK", "Look-At IK");
@@ -1557,7 +1558,7 @@ void EditorLayer::DrawInspectorPanel() {
         }
 
         if (m_World->HasComponent<ECS::InteractionIKComponent>(m_PrimarySelected)) {
-            bool ikOpen = ImGui::CollapsingHeader("[IK] Interaction IK", ImGuiTreeNodeFlags_DefaultOpen);
+            bool ikOpen = UI::SectionHeader("[IK] Interaction IK", ImGuiTreeNodeFlags_DefaultOpen);
             if (ImGui::BeginPopupContextItem("InteractionIKCtx")) {
                 if (ImGui::MenuItem("Remove Component")) {
                     RemoveComponentWithUndo<ECS::InteractionIKComponent>(m_PrimarySelected, "interactionIK", "Interaction IK");
@@ -1610,7 +1611,7 @@ void EditorLayer::DrawInspectorPanel() {
         }
 
         if (m_World->HasComponent<ECS::TwoBoneIKComponent>(m_PrimarySelected)) {
-            bool ikOpen = ImGui::CollapsingHeader("[IK] Two-Bone IK", ImGuiTreeNodeFlags_DefaultOpen);
+            bool ikOpen = UI::SectionHeader("[IK] Two-Bone IK", ImGuiTreeNodeFlags_DefaultOpen);
             if (ImGui::BeginPopupContextItem("TwoBoneIKCtx")) {
                 if (ImGui::MenuItem("Remove Component")) {
                     RemoveComponentWithUndo<ECS::TwoBoneIKComponent>(m_PrimarySelected, "twoBoneIK", "Two-Bone IK");
@@ -1698,7 +1699,7 @@ void EditorLayer::DrawInspectorPanel() {
 
         // Parallax Machine component
         if (m_World->HasComponent<ECS::ParallaxMachineComponent>(m_PrimarySelected)) {
-            bool pmOpen = ImGui::CollapsingHeader("[||] Parallax Machine", ImGuiTreeNodeFlags_DefaultOpen);
+            bool pmOpen = UI::SectionHeader("[||] Parallax Machine", ImGuiTreeNodeFlags_DefaultOpen);
             if (ImGui::BeginPopupContextItem("ParallaxMachineCtx")) {
                 if (ImGui::MenuItem("Remove Component")) {
                     RemoveComponentWithUndo<ECS::ParallaxMachineComponent>(m_PrimarySelected, "parallaxMachine", "Parallax Machine");
@@ -1809,7 +1810,7 @@ void EditorLayer::DrawInspectorPanel() {
             DrawStreamingPortalComponent(m_PrimarySelected);
         }
         if (m_World->HasComponent<Effects::InteractiveWaterComponent>(m_PrimarySelected)) {
-            bool waterOpen = ImGui::CollapsingHeader("[~] Interactive Water", ImGuiTreeNodeFlags_DefaultOpen);
+            bool waterOpen = UI::SectionHeader("[~] Interactive Water", ImGuiTreeNodeFlags_DefaultOpen);
             if (ImGui::BeginPopupContextItem("InteractiveWaterCtx")) {
                 if (ImGui::MenuItem("Remove Component")) {
                     RemoveComponentWithUndo<Effects::InteractiveWaterComponent>(m_PrimarySelected, "interactiveWater", "Interactive Water");
@@ -1859,7 +1860,7 @@ void EditorLayer::DrawInspectorPanel() {
             }
         }
         if (m_World->HasComponent<Effects::WaterInteractorComponent>(m_PrimarySelected)) {
-            bool interactorOpen = ImGui::CollapsingHeader("[~] Water Interactor", ImGuiTreeNodeFlags_DefaultOpen);
+            bool interactorOpen = UI::SectionHeader("[~] Water Interactor", ImGuiTreeNodeFlags_DefaultOpen);
             if (ImGui::BeginPopupContextItem("WaterInteractorCtx")) {
                 if (ImGui::MenuItem("Remove Component")) {
                     RemoveComponentWithUndo<Effects::WaterInteractorComponent>(m_PrimarySelected, "waterInteractor", "Water Interactor");
@@ -1881,7 +1882,7 @@ void EditorLayer::DrawInspectorPanel() {
         // Morph targets (blend shapes)
         if (m_World->HasComponent<ECS::MorphTargetComponent>(m_PrimarySelected)) {
             auto* morph = m_World->GetComponent<ECS::MorphTargetComponent>(m_PrimarySelected);
-            if (morph && ImGui::CollapsingHeader("[M] Morph Targets", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (morph && UI::SectionHeader("[M] Morph Targets", ImGuiTreeNodeFlags_DefaultOpen)) {
                 ImGui::TextDisabled("%zu blend shapes", morph->targets.size());
 
                 ImGui::Separator();
@@ -1909,7 +1910,7 @@ void EditorLayer::DrawInspectorPanel() {
 
         if (m_World->HasComponent<ECS::AnimatorComponent>(m_PrimarySelected)) {
             // Animator component inspector (inline)
-            bool animOpen = ImGui::CollapsingHeader("[>] Animator", ImGuiTreeNodeFlags_DefaultOpen);
+            bool animOpen = UI::SectionHeader("[>] Animator", ImGuiTreeNodeFlags_DefaultOpen);
             if (ImGui::BeginPopupContextItem("AnimatorCtx")) {
                 if (ImGui::MenuItem("Remove Component")) {
                     RemoveComponentWithUndo<ECS::AnimatorComponent>(m_PrimarySelected, "animator", "Animator");
@@ -3271,7 +3272,7 @@ void EditorLayer::DrawInspectorPanel() {
                         // New category header
                         if (!currentCategory || std::strcmp(currentCategory, ve.entry->category) != 0) {
                             currentCategory = ve.entry->category;
-                            if (!ImGui::CollapsingHeader(currentCategory, ImGuiTreeNodeFlags_DefaultOpen)) {
+                            if (!UI::SectionHeader(currentCategory, ImGuiTreeNodeFlags_DefaultOpen)) {
                                 // Skip all entries in this collapsed category
                                 while (vi + 1 < static_cast<int>(visible.size()) &&
                                        std::strcmp(visible[vi + 1].entry->category, currentCategory) == 0) {
@@ -3372,7 +3373,7 @@ void EditorLayer::DrawMultiSelectInspector() {
     ImGui::Separator();
 
     // List selected entity names
-    if (ImGui::CollapsingHeader("Selected Entities", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Selected Entities", ImGuiTreeNodeFlags_DefaultOpen)) {
         for (ECS::Entity e : m_SelectedEntities) {
             std::string name = "Entity " + std::to_string(e);
             if (m_World->HasComponent<ECS::NameComponent>(e)) {
@@ -3387,7 +3388,7 @@ void EditorLayer::DrawMultiSelectInspector() {
     }
 
     // Batch transform editing
-    if (ImGui::CollapsingHeader("Batch Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (UI::SectionHeader("Batch Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::TextDisabled("Changes apply as delta to all selected");
         ImGui::Spacing();
 
@@ -3856,7 +3857,7 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
     if (buttonCount == 0) return;
 
     ImGui::Spacing();
-    if (ImGui::CollapsingHeader("Quick Setup")) {
+    if (UI::SectionHeader("Quick Setup")) {
         f32 buttonWidth = ImGui::GetContentRegionAvail().x;
 
         // Pattern 1: Add Basic Movement
