@@ -152,6 +152,7 @@ enjin_add_test(TestTemplateCreator    Unit/Editor/TestTemplateCreator.cpp)
 enjin_add_test(TestAccessibility      Unit/Editor/TestAccessibility.cpp)
 enjin_add_test(TestPlayMode           Unit/Editor/TestPlayMode.cpp)
 enjin_add_test(TestCameraController   Unit/Editor/TestCameraController.cpp)
+enjin_add_test(TestUndoRedo           Unit/Editor/TestUndoRedo.cpp)
 enjin_add_test(TestDropImport         Unit/Editor/TestDropImport.cpp)
 
 # --- Scene ---

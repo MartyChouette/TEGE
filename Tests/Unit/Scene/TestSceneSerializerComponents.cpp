@@ -7,6 +7,10 @@
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/Scene/SceneSerializer.h"
+#include "Enjin/GUI/UICanvas.h"
+#include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Script.h"
 
 using namespace Enjin;
 using namespace Enjin::ECS;
@@ -457,6 +461,166 @@ ENJIN_TEST(MultiComponent, MaterialAndLightOnSameEntity) {
     ENJIN_EXPECT_FLOAT_EQ(m->metallic, 0.7f);
     ENJIN_EXPECT_TRUE(m->ditherGradient);
     ENJIN_EXPECT_FLOAT_EQ(l->intensity, 3.0f);
+}
+
+// ===========================================================================
+// UICanvasComponent — guards the RF(SerializeUITheme) save crash (the theme
+// is an OBJECT; wrapping it in the float-rounding helper threw on every save
+// of a canvas-bearing scene) and the world-space element fields
+// ===========================================================================
+
+ENJIN_TEST(UICanvas, CanvasRoundTripWithThemeAndWorldSpaceElement) {
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& canvas = w1.AddComponent<GUI::UICanvasComponent>(e);
+    canvas.canvasName = "HUD";
+    canvas.sortOrder = 100;
+    u32 lbl = canvas.AddElement(GUI::UIWidgetType::Label, "tag");
+    auto* el = canvas.GetElement(lbl);
+    el->data.text = "CATCH W/ E";
+    el->data.worldSpace = true;
+    el->data.worldOffset = Math::Vector3(0.0f, 0.12f, 0.0f);
+    el->data.maxRenderDistance = 42.0f;
+
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* c2 = w2.GetComponent<GUI::UICanvasComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(c2);
+    ENJIN_EXPECT_EQ(c2->sortOrder, 100);
+    ENJIN_ASSERT_TRUE(c2->elements.size() == 1);
+    ENJIN_EXPECT_TRUE(c2->elements[0].data.worldSpace);
+    ENJIN_EXPECT_FLOAT_EQ(c2->elements[0].data.maxRenderDistance, 42.0f);
+    ENJIN_EXPECT_FLOAT_EQ(c2->elements[0].data.worldOffset.y, 0.12f);
+    ENJIN_EXPECT_TRUE(c2->elements[0].data.text == "CATCH W/ E");
+}
+
+// ===========================================================================
+// HUD widget -> UICanvas migration (HUDSystem retirement)
+// ===========================================================================
+
+ENJIN_TEST(UICanvas, HUDWidgetMigratesToCanvas) {
+    World w;
+    Entity e = w.CreateEntity();
+    w.AddComponent<NameComponent>(e, "HUD_Tube");
+    auto& hw = w.AddComponent<HUDWidgetComponent>(e);
+    hw.type = HUDWidgetComponent::WidgetType::Label;
+    hw.text = "hello";
+    hw.anchorX = 0.15f;
+    hw.anchorY = 0.86f;
+
+    Entity e2 = w.CreateEntity();
+    auto& bar = w.AddComponent<HUDWidgetComponent>(e2);
+    bar.type = HUDWidgetComponent::WidgetType::HealthBar;
+    bar.currentValue = 30.0f;
+    bar.maxValue = 100.0f;
+    bar.bindField = "health";
+
+    Entity e3 = w.CreateEntity();
+    auto& ch = w.AddComponent<HUDWidgetComponent>(e3);
+    ch.type = HUDWidgetComponent::WidgetType::Crosshair;
+
+    Scene::SceneSerializer::MigrateHUDWidgetsToCanvases(&w);
+
+    // Legacy component is gone; canvases replaced it in place
+    ENJIN_EXPECT_FALSE(w.HasComponent<HUDWidgetComponent>(e));
+    auto* c1 = w.GetComponent<GUI::UICanvasComponent>(e);
+    ENJIN_ASSERT_NOT_NULL(c1);
+    ENJIN_EXPECT_TRUE(c1->canvasName == "HUD_Tube");
+    ENJIN_EXPECT_EQ(c1->sortOrder, 100);
+    ENJIN_ASSERT_TRUE(c1->elements.size() == 1);
+    ENJIN_EXPECT_TRUE(c1->elements[0].type == GUI::UIWidgetType::Label);
+    ENJIN_EXPECT_TRUE(c1->elements[0].data.text == "hello");
+    ENJIN_EXPECT_FLOAT_EQ(c1->elements[0].anchor.anchorMin.x, 0.15f);
+
+    auto* c2 = w.GetComponent<GUI::UICanvasComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(c2);
+    ENJIN_ASSERT_TRUE(!c2->elements.empty());
+    ENJIN_EXPECT_TRUE(c2->elements[0].type == GUI::UIWidgetType::ProgressBar);
+    ENJIN_EXPECT_FLOAT_EQ(c2->elements[0].data.progressValue, 0.3f);
+    ENJIN_EXPECT_FLOAT_EQ(c2->elements[0].data.bindMaxValue, 100.0f);
+    ENJIN_EXPECT_TRUE(c2->elements[0].data.bindField == "health");
+
+    auto* c3 = w.GetComponent<GUI::UICanvasComponent>(e3);
+    ENJIN_ASSERT_NOT_NULL(c3);
+    ENJIN_EXPECT_TRUE(c3->elements.size() == 2);  // crosshair = two centered panels
+}
+
+// ===========================================================================
+// RigidbodyComponent — physics state must survive a round-trip (was ZERO
+// coverage; velocity/constraint corruption hides until runtime collisions)
+// ===========================================================================
+
+ENJIN_TEST(Rigidbody, PhysicsStateRoundTrip) {
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& rb = w1.AddComponent<RigidbodyComponent>(e);
+    rb.mass = 12.5f;
+    rb.drag = 0.4f;
+    rb.angularDrag = 0.15f;
+    rb.useGravity = false;
+    rb.gravityScale = 0.5f;
+    rb.velocity = Math::Vector3(1.0f, -2.0f, 3.0f);
+    rb.angularVelocity = Math::Vector3(0.1f, 0.2f, 0.3f);
+    rb.freezePositionY = true;
+    rb.freezeRotationX = true;
+
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* r = w2.GetComponent<RigidbodyComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(r);
+    ENJIN_EXPECT_FLOAT_EQ(r->mass, 12.5f);
+    ENJIN_EXPECT_FLOAT_EQ(r->drag, 0.4f);
+    ENJIN_EXPECT_FALSE(r->useGravity);
+    ENJIN_EXPECT_FLOAT_EQ(r->gravityScale, 0.5f);
+    ENJIN_EXPECT_FLOAT_EQ(r->velocity.y, -2.0f);
+    ENJIN_EXPECT_FLOAT_EQ(r->angularVelocity.z, 0.3f);
+    ENJIN_EXPECT_TRUE(r->freezePositionY);
+    ENJIN_EXPECT_TRUE(r->freezeRotationX);
+    ENJIN_EXPECT_FALSE(r->freezePositionX);
+}
+
+// ===========================================================================
+// ScriptComponent — attachment paths, class names, and property overrides
+// must survive (was ZERO coverage; broken script refs fail at play time)
+// ===========================================================================
+
+ENJIN_TEST(Script, AttachmentAndPropertyRoundTrip) {
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& sc = w1.AddComponent<ScriptComponent>(e);
+    ScriptAttachment att;
+    att.scriptPath = "scripts/PlayerController.as";
+    att.className = "PlayerController";
+    att.enabled = true;
+    ScriptProperty prop;
+    prop.name = "speed";
+    prop.type = ScriptPropertyType::Float;
+    prop.instanceValue.floatVal = 7.5f;
+    prop.isOverridden = true;
+    att.properties.push_back(prop);
+    sc.scripts.push_back(att);
+
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* s2 = w2.GetComponent<ScriptComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(s2);
+    ENJIN_ASSERT_TRUE(s2->scripts.size() == 1);
+    ENJIN_EXPECT_TRUE(s2->scripts[0].scriptPath == "scripts/PlayerController.as");
+    ENJIN_EXPECT_TRUE(s2->scripts[0].className == "PlayerController");
+    ENJIN_EXPECT_TRUE(s2->scripts[0].enabled);
+    // Runtime state must NOT round-trip as live
+    ENJIN_EXPECT_FALSE(s2->scripts[0].initialized);
+    ENJIN_EXPECT_TRUE(s2->scripts[0].instance == nullptr);
+    ENJIN_ASSERT_TRUE(s2->scripts[0].properties.size() == 1);
+    ENJIN_EXPECT_TRUE(s2->scripts[0].properties[0].name == "speed");
+    ENJIN_EXPECT_TRUE(s2->scripts[0].properties[0].isOverridden);
+    ENJIN_EXPECT_FLOAT_EQ(s2->scripts[0].properties[0].instanceValue.floatVal, 7.5f);
 }
 
 ENJIN_TEST_MAIN()

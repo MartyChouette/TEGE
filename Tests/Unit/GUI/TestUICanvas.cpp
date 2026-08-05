@@ -163,4 +163,95 @@ ENJIN_TEST(UIFocusable, TextInputIsFocusable) {
     ENJIN_EXPECT_TRUE(IsFocusableType(UIWidgetType::TextInput));
 }
 
+// ===========================================================================
+// Anchor-aware design-rect API (the editor's positioning backbone)
+// ===========================================================================
+
+ENJIN_TEST(UIAnchorAPI, SetDesignRectPreservesAnchors) {
+    UICanvasComponent c;
+    u32 id = c.AddElement(UIWidgetType::Panel, "p");
+    UIElement* el = c.GetElement(id);
+    // Anchor to bottom-right, then position via the design-rect API
+    el->anchor.anchorMin = Math::Vector2(1.0f, 1.0f);
+    el->anchor.anchorMax = Math::Vector2(1.0f, 1.0f);
+    c.SetDesignRect(id, 1600.0f, 980.0f, 200.0f, 80.0f);
+    // Anchors must be untouched (the old editor path force-reset to top-left)
+    ENJIN_EXPECT_FLOAT_EQ(el->anchor.anchorMin.x, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(el->anchor.anchorMax.y, 1.0f);
+    // And the resolved rect must be exactly what was asked for
+    UIRect r = c.GetDesignRect(id);
+    ENJIN_EXPECT_FLOAT_EQ(r.x, 1600.0f);
+    ENJIN_EXPECT_FLOAT_EQ(r.y, 980.0f);
+    ENJIN_EXPECT_FLOAT_EQ(r.w, 200.0f);
+    ENJIN_EXPECT_FLOAT_EQ(r.h, 80.0f);
+}
+
+ENJIN_TEST(UIAnchorAPI, ApplyAnchorPresetKeepsElementInPlace) {
+    UICanvasComponent c;
+    u32 id = c.AddElement(UIWidgetType::Button, "b");
+    c.SetDesignRect(id, 100.0f, 50.0f, 300.0f, 120.0f);
+    UIRect before = c.GetDesignRect(id);
+    // Re-anchor to bottom-right point; rect must not move at design res
+    c.ApplyAnchorPreset(id, 2, 2);
+    UIElement* el = c.GetElement(id);
+    ENJIN_EXPECT_FLOAT_EQ(el->anchor.anchorMin.x, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(el->anchor.anchorMin.y, 1.0f);
+    UIRect after = c.GetDesignRect(id);
+    ENJIN_EXPECT_FLOAT_EQ(after.x, before.x);
+    ENJIN_EXPECT_FLOAT_EQ(after.y, before.y);
+    ENJIN_EXPECT_FLOAT_EQ(after.w, before.w);
+    ENJIN_EXPECT_FLOAT_EQ(after.h, before.h);
+}
+
+ENJIN_TEST(UIAnchorAPI, StretchPresetTracksParentSize) {
+    UICanvasComponent c;
+    u32 id = c.AddElement(UIWidgetType::Panel, "bar");
+    c.SetDesignRect(id, 0.0f, 0.0f, c.designWidth, 60.0f);
+    c.ApplyAnchorPreset(id, 3, 0);  // stretch X, anchored top
+    UIElement* el = c.GetElement(id);
+    ENJIN_EXPECT_FLOAT_EQ(el->anchor.anchorMin.x, 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(el->anchor.anchorMax.x, 1.0f);
+    // Rect unchanged at design resolution
+    UIRect r = c.GetDesignRect(id);
+    ENJIN_EXPECT_FLOAT_EQ(r.w, c.designWidth);
+    ENJIN_EXPECT_FLOAT_EQ(r.h, 60.0f);
+}
+
+ENJIN_TEST(UIAnchorAPI, InvertedOffsetsResolveToIntendedRect) {
+    // The classic authoring mistake: +100/-100 instead of -100/+100 for a
+    // centered 200-wide element. The edge-swap semantics must yield the
+    // intended rect instead of the old off-screen legacy fallback.
+    UICanvasComponent c;
+    u32 id = c.AddElement(UIWidgetType::Label, "l");
+    UIElement* el = c.GetElement(id);
+    el->anchor.anchorMin = Math::Vector2(0.5f, 0.5f);
+    el->anchor.anchorMax = Math::Vector2(0.5f, 0.5f);
+    el->anchor.offsetLeft = 100.0f;   // inverted on purpose
+    el->anchor.offsetRight = -100.0f;
+    el->anchor.offsetTop = -40.0f;    // correct order
+    el->anchor.offsetBottom = 40.0f;
+    UIRect r = c.GetDesignRect(id);
+    ENJIN_EXPECT_FLOAT_EQ(r.w, 200.0f);
+    ENJIN_EXPECT_FLOAT_EQ(r.h, 80.0f);
+    ENJIN_EXPECT_FLOAT_EQ(r.x, c.designWidth * 0.5f - 100.0f);
+}
+
+ENJIN_TEST(UIAnchorAPI, ChildDesignRectResolvesThroughParent) {
+    UICanvasComponent c;
+    u32 parent = c.AddElement(UIWidgetType::Panel, "parent");
+    c.SetDesignRect(parent, 100.0f, 100.0f, 400.0f, 200.0f);
+    u32 child = c.AddElement(UIWidgetType::Label, "child", parent);
+    UIElement* el = c.GetElement(child);
+    // Child stretches over the parent
+    el->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
+    el->anchor.anchorMax = Math::Vector2(1.0f, 1.0f);
+    el->anchor.offsetLeft = el->anchor.offsetRight = 0.0f;
+    el->anchor.offsetTop = el->anchor.offsetBottom = 0.0f;
+    UIRect r = c.GetDesignRect(child);
+    ENJIN_EXPECT_FLOAT_EQ(r.x, 100.0f);
+    ENJIN_EXPECT_FLOAT_EQ(r.y, 100.0f);
+    ENJIN_EXPECT_FLOAT_EQ(r.w, 400.0f);
+    ENJIN_EXPECT_FLOAT_EQ(r.h, 200.0f);
+}
+
 ENJIN_TEST_MAIN()
