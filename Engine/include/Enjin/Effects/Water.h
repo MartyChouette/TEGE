@@ -33,10 +33,12 @@ struct Water3DSettings {
     f32 depth = 100.0f;
     f32 tileSize = 2.0f;        // Mesh tessellation
 
-    // Visual style
+    // Visual style. Shared palette: teal shallow -> dark navy deep, keeping
+    // B > G > R so water reads as water even in retro palette mode.
+    // See docs/art/PROCEDURAL_EFFECTS_DIRECTION.md.
     WaterStyle style = WaterStyle::VertexWave;
-    Math::Vector3 shallowColor = Math::Vector3(0.1f, 0.4f, 0.5f);
-    Math::Vector3 deepColor = Math::Vector3(0.0f, 0.1f, 0.3f);
+    Math::Vector3 shallowColor = Math::Vector3(0.15f, 0.42f, 0.55f);  // teal
+    Math::Vector3 deepColor = Math::Vector3(0.04f, 0.12f, 0.28f);     // dark navy
     f32 opacity = 0.7f;
 
     // Wave animation (vertex displacement)

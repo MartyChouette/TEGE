@@ -111,8 +111,10 @@ void main() {
         tipColor = mix(tipColor, vec3(0.95, 0.97, 1.0), snowIntensity);
     }
 
-    // Lerp between base and (possibly snowy) tip color
-    vec3 albedo = mix(material.baseColor, tipColor, fragHeightFraction);
+    // Lerp between base and (possibly snowy) tip color. Ramp curve pow(0.7):
+    // the dark ground tone holds through the lower blade and transitions faster
+    // near the tip. Reads better at distance.
+    vec3 albedo = mix(material.baseColor, tipColor, pow(fragHeightFraction, 0.7));
 
     // Also whiten the base color slightly when snow is heavy
     if (snowIntensity > 0.5) {

@@ -1,4 +1,5 @@
 #include "Enjin/Effects/ShrubRenderer.h"
+#include "Enjin/Effects/VegetationTemplates.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
 #include "Enjin/Logging/Log.h"
@@ -51,57 +52,29 @@ void ShrubRenderer::Shutdown() {
 }
 
 void ShrubRenderer::CreateShrubMesh() {
-    // 3 intersecting quads forming a star pattern (0, 60, 120 degrees)
-    // Each quad: 4 verts, 6 indices
-    // Total: 12 verts, 18 indices
+    // Shrub geometry is defined once in VegTemplates (tapered dome quads, shared
+    // with the RT path). 5 floats/vertex.
+    std::vector<Effects::VegTemplates::VegVertex> verts;
+    std::vector<u32> indices;
+    Effects::VegTemplates::BuildShrub(verts, indices);
 
-    struct ShrubVertex {
-        f32 px, py, pz;  // position
-        f32 u, v;         // UV
-    };
-
-    ShrubVertex verts[12];
-    u32 indices[18];
-
-    for (u32 q = 0; q < 3; ++q) {
-        f32 angle = static_cast<f32>(q) * 3.14159265f / 3.0f;  // 0, 60, 120 degrees
-        f32 cosA = std::cos(angle);
-        f32 sinA = std::sin(angle);
-
-        u32 vi = q * 4;
-        // Bottom-left
-        verts[vi + 0] = { -0.5f * cosA, 0.0f, -0.5f * sinA,  0.0f, 0.0f };
-        // Bottom-right
-        verts[vi + 1] = {  0.5f * cosA, 0.0f,  0.5f * sinA,  1.0f, 0.0f };
-        // Top-right
-        verts[vi + 2] = {  0.5f * cosA, 1.0f,  0.5f * sinA,  1.0f, 1.0f };
-        // Top-left
-        verts[vi + 3] = { -0.5f * cosA, 1.0f, -0.5f * sinA,  0.0f, 1.0f };
-
-        u32 ii = q * 6;
-        indices[ii + 0] = vi + 0;
-        indices[ii + 1] = vi + 1;
-        indices[ii + 2] = vi + 2;
-        indices[ii + 3] = vi + 2;
-        indices[ii + 4] = vi + 3;
-        indices[ii + 5] = vi + 0;
-    }
-
-    m_IndexCount = 18;
+    m_IndexCount = static_cast<u32>(indices.size());
+    usize vtxBytes = verts.size() * sizeof(Effects::VegTemplates::VegVertex);
+    usize idxBytes = indices.size() * sizeof(u32);
 
     m_VertexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
-    if (!m_VertexBuffer->Create(sizeof(verts), Renderer::BufferUsage::Vertex, true)) {
+    if (!m_VertexBuffer->Create(vtxBytes, Renderer::BufferUsage::Vertex, true)) {
         ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to create vertex buffer");
         return;
     }
-    m_VertexBuffer->UploadData(verts, sizeof(verts));
+    m_VertexBuffer->UploadData(verts.data(), vtxBytes);
 
     m_IndexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
-    if (!m_IndexBuffer->Create(sizeof(indices), Renderer::BufferUsage::Index, true)) {
+    if (!m_IndexBuffer->Create(idxBytes, Renderer::BufferUsage::Index, true)) {
         ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to create index buffer");
         return;
     }
-    m_IndexBuffer->UploadData(indices, sizeof(indices));
+    m_IndexBuffer->UploadData(indices.data(), idxBytes);
 }
 
 void ShrubRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {

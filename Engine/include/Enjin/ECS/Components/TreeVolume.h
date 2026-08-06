@@ -29,15 +29,17 @@ struct ENJIN_API TreeVolumeComponent {
     f32 canopyRadius = 1.0f;
     f32 canopyOffset = 1.5f;  // Y offset from base where canopy center is
 
-    // Default colors (used as summer reference)
-    Math::Vector3 trunkColor = Math::Vector3(0.35f, 0.22f, 0.1f);
-    Math::Vector3 canopyBaseColor = Math::Vector3(0.1f, 0.35f, 0.08f);
-    Math::Vector3 canopyTipColor = Math::Vector3(0.2f, 0.5f, 0.15f);
+    // Default colors (used as summer reference). Shared palette: warm bark,
+    // deep-ground canopy shadow -> light-green mid -> sun-catching tip.
+    // See docs/art/PROCEDURAL_EFFECTS_DIRECTION.md.
+    Math::Vector3 trunkColor = Math::Vector3(0.22f, 0.15f, 0.09f);        // warm bark brown
+    Math::Vector3 canopyBaseColor = Math::Vector3(0.11f, 0.18f, 0.09f);   // canopy shadow (deep ground)
+    Math::Vector3 canopyTipColor = Math::Vector3(0.52f, 0.68f, 0.32f);    // sun-catching tip
 
     // Seasonal canopy colors (for deciduous trees)
-    Math::Vector3 springCanopyColor = Math::Vector3(0.3f, 0.6f, 0.2f);   // bright green
-    Math::Vector3 summerCanopyColor = Math::Vector3(0.1f, 0.35f, 0.08f);  // deep green
-    Math::Vector3 fallCanopyColor = Math::Vector3(0.7f, 0.4f, 0.1f);     // orange-brown
+    Math::Vector3 springCanopyColor = Math::Vector3(0.42f, 0.62f, 0.24f);  // bright green
+    Math::Vector3 summerCanopyColor = Math::Vector3(0.24f, 0.37f, 0.16f);  // mid green
+    Math::Vector3 fallCanopyColor = Math::Vector3(0.68f, 0.42f, 0.12f);    // orange-brown
 
     // Wind response
     f32 windSwayStrength = 0.3f;

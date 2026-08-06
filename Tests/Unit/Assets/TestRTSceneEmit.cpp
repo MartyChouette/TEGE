@@ -26,6 +26,10 @@
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/GrassVolume.h"
+#include "Enjin/ECS/Components/ShrubVolume.h"
+#include "Enjin/ECS/Components/TreeVolume.h"
+#include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/Renderer/MeshFactory.h"
 #include "Enjin/Scene/SceneSerializer.h"
 
@@ -111,6 +115,45 @@ ENJIN_TEST(RTSceneEmit, EmitsRayTracingProbeProject) {
         world.AddComponent<ECS::MeshComponent>(p, Renderer::MeshFactory::CreateCube(1.0f));
     }
 
+    // Vegetation volumes (GPU-procedural instancing — exercises the RT
+    // vegetation TLAS path) + a water plane (transmission material + the
+    // FLAG_WATER_SURFACE raster/RT parity case)
+    {
+        ECS::Entity grass = world.CreateEntity();
+        world.AddComponent<ECS::NameComponent>(grass, "GrassPatch");
+        auto& t = world.AddComponent<ECS::TransformComponent>(grass);
+        t.position = Math::Vector3(-6.5f, 0.0f, 2.0f);
+        auto& g = world.AddComponent<ECS::GrassVolumeComponent>(grass);
+        g.halfExtents = Math::Vector3(3.0f, 0.0f, 3.0f);
+        g.density = 400;
+        g.bladeHeight = 0.5f;
+
+        ECS::Entity shrubs = world.CreateEntity();
+        world.AddComponent<ECS::NameComponent>(shrubs, "ShrubPatch");
+        auto& st = world.AddComponent<ECS::TransformComponent>(shrubs);
+        st.position = Math::Vector3(6.5f, 0.0f, 2.0f);
+        auto& sh = world.AddComponent<ECS::ShrubVolumeComponent>(shrubs);
+        sh.halfExtents = Math::Vector3(2.5f, 0.0f, 2.5f);
+        sh.density = 40;
+
+        ECS::Entity trees = world.CreateEntity();
+        world.AddComponent<ECS::NameComponent>(trees, "TreeGrove");
+        auto& tt = world.AddComponent<ECS::TransformComponent>(trees);
+        tt.position = Math::Vector3(-7.5f, 0.0f, -6.0f);
+        auto& tv = world.AddComponent<ECS::TreeVolumeComponent>(trees);
+        tv.halfExtents = Math::Vector3(3.0f, 0.0f, 3.0f);
+        tv.density = 6;
+
+        ECS::Entity water = world.CreateEntity();
+        world.AddComponent<ECS::NameComponent>(water, "WaterPool");
+        auto& wt = world.AddComponent<ECS::TransformComponent>(water);
+        wt.position = Math::Vector3(7.5f, 0.05f, -5.0f);
+        auto& w = world.AddComponent<ECS::Water3DComponent>(water);
+        w.settings.position = Math::Vector3(7.5f, 0.05f, -5.0f);
+        w.settings.width = 7.0f;
+        w.settings.depth = 7.0f;
+    }
+
     // Sun with shadows + a colored point light (multi-light RT paths)
     {
         ECS::Entity sun = world.CreateEntity();
@@ -145,7 +188,17 @@ ENJIN_TEST(RTSceneEmit, EmitsRayTracingProbeProject) {
         cc.isActive = true;
     }
 
+    // Procedural sky: the path tracer samples the scene skybox for miss rays,
+    // so the probe needs a real one (no skybox = correctly black sky in PT)
     Scene::SceneSerializer serializer(&world);
+    {
+        Renderer::SkyboxConfig sky;
+        sky.type = Renderer::SkyboxType::Procedural;
+        sky.topColor = Math::Vector3(0.25f, 0.45f, 0.85f);
+        sky.horizonColor = Math::Vector3(0.7f, 0.8f, 0.95f);
+        sky.bottomColor = Math::Vector3(0.45f, 0.42f, 0.4f);
+        serializer.SetSkyboxConfig(sky);
+    }
     auto saveResult = serializer.Save((projDir / "scenes" / "main.enjin").string());
     ENJIN_ASSERT_TRUE(saveResult.success);
 
@@ -166,16 +219,22 @@ ENJIN_TEST(RTSceneEmit, EmitsRayTracingProbeProject) {
     Scene::SceneSerializer verifySer(&verify);
     auto loadResult = verifySer.Load((projDir / "scenes" / "main.enjin").string());
     ENJIN_ASSERT_TRUE(loadResult.success);
-    u32 meshes = 0, lights = 0, emissive = 0;
+    u32 meshes = 0, lights = 0, emissive = 0, vegetation = 0, water = 0;
     for (ECS::Entity e : verify.GetEntitiesWithComponent<ECS::MeshComponent>()) { (void)e; meshes++; }
     for (ECS::Entity e : verify.GetEntitiesWithComponent<ECS::LightComponent>()) { (void)e; lights++; }
     for (ECS::Entity e : verify.GetEntitiesWithComponent<ECS::MaterialComponent>()) {
         auto* m = verify.GetComponent<ECS::MaterialComponent>(e);
         if (m && m->emissiveStrength > 0.0f) emissive++;
     }
+    for (ECS::Entity e : verify.GetEntitiesWithComponent<ECS::GrassVolumeComponent>()) { (void)e; vegetation++; }
+    for (ECS::Entity e : verify.GetEntitiesWithComponent<ECS::ShrubVolumeComponent>()) { (void)e; vegetation++; }
+    for (ECS::Entity e : verify.GetEntitiesWithComponent<ECS::TreeVolumeComponent>()) { (void)e; vegetation++; }
+    for (ECS::Entity e : verify.GetEntitiesWithComponent<ECS::Water3DComponent>()) { (void)e; water++; }
     ENJIN_ASSERT_EQ(meshes, static_cast<u32>(12));  // floor + 5 metal + 2 dielectric + emissive + 3 pillars
     ENJIN_ASSERT_EQ(lights, static_cast<u32>(2));
     ENJIN_ASSERT_EQ(emissive, static_cast<u32>(1));
+    ENJIN_ASSERT_EQ(vegetation, static_cast<u32>(3));
+    ENJIN_ASSERT_EQ(water, static_cast<u32>(1));
 }
 
 ENJIN_TEST_MAIN()

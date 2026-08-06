@@ -20,9 +20,10 @@ struct ENJIN_API ShrubVolumeComponent {
     f32 heightVariance = 0.2f;
     f32 width = 0.4f;
 
-    // Colors (lerped base-to-tip)
-    Math::Vector3 baseColor = Math::Vector3(0.15f, 0.35f, 0.1f);
-    Math::Vector3 tipColor = Math::Vector3(0.3f, 0.55f, 0.15f);
+    // Colors (lerped base-to-tip). Shared palette: deep ground base (shared with
+    // grass for ground unity) -> light green tip.
+    Math::Vector3 baseColor = Math::Vector3(0.11f, 0.18f, 0.09f);  // deep ground
+    Math::Vector3 tipColor = Math::Vector3(0.42f, 0.58f, 0.27f);   // light green
 
     // Wind response (bushier, less flexible than grass)
     f32 windSwayStrength = 0.5f;

@@ -113,6 +113,14 @@ void main() {
     vec3 localPos = inPosition;
     localPos.x *= bladeWidth;
     localPos.y *= bladeHeight;
+    // Scale the baked forward arc (template Z) with blade height so it stays a
+    // proportional lean at any size
+    localPos.z *= bladeHeight;
+
+    // Per-instance rest tilt: blades lean slightly in random directions at rest
+    // (scaled by height so the base stays planted), so a patch reads as different
+    // plants, not stamped copies
+    localPos.z += (hash(instanceID * 5u) * 0.06 - 0.03) * inUV.y * bladeHeight;
 
     // Rotate around Y
     vec3 rotatedPos;
@@ -123,7 +131,9 @@ void main() {
     // Height fraction for wind and color
     float heightFraction = inUV.y;  // 0 at base, 1 at tip
 
-    // Wind displacement: stronger at tip (heightFraction^2 keeps roots planted)
+    // Wind displacement: stronger at tip (heightFraction^2 keeps roots planted).
+    // Clamped so high windSwayStrength can't fold the blade over and break the
+    // silhouette.
     vec3 windDir = lighting.windData.xyz;
     float windTime = lighting.windData.w;
     float windSway = pushConstants.parallaxScale; // windSwayStrength
@@ -135,7 +145,9 @@ void main() {
     float windPhase2 = dot(bladeOrigin.xz, vec2(0.4, 0.6)) + windTime * 4.5;
     float windOffset2 = sin(windPhase2) * heightFraction * heightFraction * windSway * 0.3;
 
-    vec3 windDisplacement = windDir * (windOffset + windOffset2);
+    float windTotal = windOffset + windOffset2;
+    windTotal = clamp(windTotal, -0.35 * bladeHeight, 0.35 * bladeHeight);
+    vec3 windDisplacement = windDir * windTotal;
 
     vec3 worldPos = bladeOrigin + rotatedPos + windDisplacement;
 

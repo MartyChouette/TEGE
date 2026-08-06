@@ -114,7 +114,9 @@ void main() {
         // Canopy: lerp base -> tip based on UV.y (0.5 = base, 1.0 = tip)
         float canopyHeight = (fragUVy - 0.5) * 2.0;  // Remap to 0..1
         vec3 canopyBaseColor = vec3(material.canopyBaseR, material.canopyBaseG, material.canopyBaseB);
-        albedo = mix(canopyBaseColor, material.canopyTipColor, canopyHeight);
+        // Ramp curve pow(0.5): the square-root curve gives the diamond crown more
+        // visible mid-green surface area than a linear lerp
+        albedo = mix(canopyBaseColor, material.canopyTipColor, pow(canopyHeight, 0.5));
 
         // Snow on canopy
         float snowIntensity = lighting.fogColorSnow.w;

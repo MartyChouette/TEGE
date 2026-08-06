@@ -20,9 +20,12 @@ enum class SkyboxType : u32 {
 struct SkyboxConfig {
     SkyboxType type = SkyboxType::None;
     std::array<std::string, 6> cubemapPaths;
-    Math::Vector3 topColor = Math::Vector3(0.1f, 0.2f, 0.6f);
-    Math::Vector3 bottomColor = Math::Vector3(0.8f, 0.6f, 0.3f);
-    Math::Vector3 horizonColor = Math::Vector3(0.5f, 0.7f, 0.9f);
+    // Shared palette: deep blue zenith, warm light horizon, dark blue-grey ground
+    // arc (keeps the sky in the same blue-teal family as water).
+    // See docs/art/PROCEDURAL_EFFECTS_DIRECTION.md.
+    Math::Vector3 topColor = Math::Vector3(0.05f, 0.12f, 0.52f);
+    Math::Vector3 bottomColor = Math::Vector3(0.18f, 0.22f, 0.28f);
+    Math::Vector3 horizonColor = Math::Vector3(0.55f, 0.72f, 0.88f);
     Math::Vector3 sunDirection = Math::Vector3(0.5f, 0.8f, 0.3f);
     Math::Vector3 solidColor = Math::Vector3(0.2f, 0.3f, 0.4f);
     f32 rotation = 0.0f;

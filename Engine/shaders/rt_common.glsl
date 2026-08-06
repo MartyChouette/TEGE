@@ -146,8 +146,10 @@ layout(buffer_reference, buffer_reference_align = 4, std430) readonly buffer RTG
 layout(buffer_reference, buffer_reference_align = 4, std430) readonly buffer RTGeomIndices { uint i[]; };
 
 // Interpolated object-space vertex normal for the current hit triangle.
-// Falls back to the face normal when vertex normals are degenerate, and to
-// object-space +Y when the instance has no geometry entry.
+// Vertex formats without normals (vegetation templates: pos3 + uv2, encoded as
+// normalOffsetFloats >= strideFloats) use the face normal from positions.
+// Degenerate vertex normals also fall back to the face normal, and instances
+// with no geometry entry fall back to object-space +Y.
 vec3 rtHitObjectNormal(vec2 baryAttribs) {
     RTInstanceGeom geom = instanceGeoms[gl_InstanceCustomIndexEXT];
     if (geom.strideFloats == 0u) return vec3(0.0, 1.0, 0.0);
@@ -161,21 +163,22 @@ vec3 rtHitObjectNormal(vec2 baryAttribs) {
     RTGeomFloats vb = RTGeomFloats(geom.vertexAddr);
     uint s = geom.strideFloats;
     uint n = geom.normalOffsetFloats;
-    vec3 n0 = vec3(vb.f[i0 * s + n], vb.f[i0 * s + n + 1u], vb.f[i0 * s + n + 2u]);
-    vec3 n1 = vec3(vb.f[i1 * s + n], vb.f[i1 * s + n + 1u], vb.f[i1 * s + n + 2u]);
-    vec3 n2 = vec3(vb.f[i2 * s + n], vb.f[i2 * s + n + 1u], vb.f[i2 * s + n + 2u]);
 
-    vec3 bary = vec3(1.0 - baryAttribs.x - baryAttribs.y, baryAttribs.x, baryAttribs.y);
-    vec3 objNormal = n0 * bary.x + n1 * bary.y + n2 * bary.z;
+    if (n + 3u <= s) {
+        vec3 n0 = vec3(vb.f[i0 * s + n], vb.f[i0 * s + n + 1u], vb.f[i0 * s + n + 2u]);
+        vec3 n1 = vec3(vb.f[i1 * s + n], vb.f[i1 * s + n + 1u], vb.f[i1 * s + n + 2u]);
+        vec3 n2 = vec3(vb.f[i2 * s + n], vb.f[i2 * s + n + 1u], vb.f[i2 * s + n + 2u]);
 
-    if (dot(objNormal, objNormal) < 1e-8) {
-        // Degenerate vertex normals — face normal from positions
-        vec3 p0 = vec3(vb.f[i0 * s], vb.f[i0 * s + 1u], vb.f[i0 * s + 2u]);
-        vec3 p1 = vec3(vb.f[i1 * s], vb.f[i1 * s + 1u], vb.f[i1 * s + 2u]);
-        vec3 p2 = vec3(vb.f[i2 * s], vb.f[i2 * s + 1u], vb.f[i2 * s + 2u]);
-        objNormal = cross(p1 - p0, p2 - p0);
+        vec3 bary = vec3(1.0 - baryAttribs.x - baryAttribs.y, baryAttribs.x, baryAttribs.y);
+        vec3 objNormal = n0 * bary.x + n1 * bary.y + n2 * bary.z;
+        if (dot(objNormal, objNormal) >= 1e-8) return objNormal;
     }
-    return objNormal;
+
+    // Face normal from positions (no-normal vertex formats, degenerate normals)
+    vec3 p0 = vec3(vb.f[i0 * s], vb.f[i0 * s + 1u], vb.f[i0 * s + 2u]);
+    vec3 p1 = vec3(vb.f[i1 * s], vb.f[i1 * s + 1u], vb.f[i1 * s + 2u]);
+    vec3 p2 = vec3(vb.f[i2 * s], vb.f[i2 * s + 1u], vb.f[i2 * s + 2u]);
+    return cross(p1 - p0, p2 - p0);
 }
 
 // World-space hit normal: inverse-transpose transform (vec * WorldToObject ==

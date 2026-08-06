@@ -1,4 +1,5 @@
 #include "Enjin/Effects/GrassRenderer.h"
+#include "Enjin/Effects/VegetationTemplates.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
 #include "Enjin/Logging/Log.h"
@@ -50,65 +51,29 @@ void GrassRenderer::Shutdown() {
 }
 
 void GrassRenderer::CreateBladeMesh() {
-    // Tapered grass blade: 7 vertices forming a tapered shape from base to tip
-    // Viewed from front: wider at base, narrowing to a point at top
-    //
-    //       6 (tip)
-    //      / \
-    //     4   5
-    //    / \ / \
-    //   2       3
-    //  / \     / \
-    // 0         1   (base)
-    //
-    // Position (vec3) + UV (vec2) = 5 floats per vertex
-    // Y ranges from 0 (base) to 1 (tip), X ranges from -0.5 to 0.5 at base
+    // Blade geometry is defined once in VegTemplates (shared with the RT path so
+    // raster and ray tracing draw the identical silhouette). 5 floats/vertex.
+    std::vector<Effects::VegTemplates::VegVertex> verts;
+    std::vector<u32> indices;
+    Effects::VegTemplates::BuildGrassBlade(verts, indices);
 
-    struct BladeVertex {
-        f32 px, py, pz;  // position
-        f32 u, v;         // UV
-    };
-
-    BladeVertex verts[] = {
-        // Base row (y=0, full width)
-        { -0.5f, 0.0f, 0.0f,   0.0f, 0.0f },  // 0: bottom-left
-        {  0.5f, 0.0f, 0.0f,   1.0f, 0.0f },  // 1: bottom-right
-        // Middle-low row (y=0.33, narrower)
-        { -0.35f, 0.33f, 0.0f, 0.15f, 0.33f }, // 2: mid-left
-        {  0.35f, 0.33f, 0.0f, 0.85f, 0.33f }, // 3: mid-right
-        // Middle-high row (y=0.66, narrower)
-        { -0.2f, 0.66f, 0.0f,  0.3f, 0.66f },  // 4: upper-left
-        {  0.2f, 0.66f, 0.0f,  0.7f, 0.66f },  // 5: upper-right
-        // Tip (y=1, point)
-        {  0.0f, 1.0f, 0.0f,   0.5f, 1.0f },   // 6: tip
-    };
-
-    u32 indices[] = {
-        // Bottom quad (2 tris)
-        0, 1, 2,
-        2, 1, 3,
-        // Middle quad (2 tris)
-        2, 3, 4,
-        4, 3, 5,
-        // Top triangle
-        4, 5, 6,
-    };
-
-    m_BladeIndexCount = sizeof(indices) / sizeof(u32);
+    m_BladeIndexCount = static_cast<u32>(indices.size());
+    usize vtxBytes = verts.size() * sizeof(Effects::VegTemplates::VegVertex);
+    usize idxBytes = indices.size() * sizeof(u32);
 
     m_BladeVertexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
-    if (!m_BladeVertexBuffer->Create(sizeof(verts), Renderer::BufferUsage::Vertex, true)) {
+    if (!m_BladeVertexBuffer->Create(vtxBytes, Renderer::BufferUsage::Vertex, true)) {
         ENJIN_LOG_ERROR(Renderer, "GrassRenderer: Failed to create blade vertex buffer");
         return;
     }
-    m_BladeVertexBuffer->UploadData(verts, sizeof(verts));
+    m_BladeVertexBuffer->UploadData(verts.data(), vtxBytes);
 
     m_BladeIndexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
-    if (!m_BladeIndexBuffer->Create(sizeof(indices), Renderer::BufferUsage::Index, true)) {
+    if (!m_BladeIndexBuffer->Create(idxBytes, Renderer::BufferUsage::Index, true)) {
         ENJIN_LOG_ERROR(Renderer, "GrassRenderer: Failed to create blade index buffer");
         return;
     }
-    m_BladeIndexBuffer->UploadData(indices, sizeof(indices));
+    m_BladeIndexBuffer->UploadData(indices.data(), idxBytes);
 }
 
 void GrassRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {

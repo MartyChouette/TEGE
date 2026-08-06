@@ -2801,6 +2801,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/ECS/Components/ShrubVolume.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
+#include "Enjin/Effects/VegetationTemplates.h"
 #include "Enjin/ECS/Components/Terrain.h"
 #include "Enjin/ECS/Components/Terrain2D.h"
 #include "Enjin/ECS/Components/Flower.h"
@@ -11601,8 +11602,8 @@ void RenderSystem::InitializeRayTracing() {
     auto* ctx = m_VulkanRenderer->GetContext();
     ENJIN_LOG_INFO(Renderer, "Initializing ray tracing subsystems...");
 
-    // Create RT descriptor set layout (28 bindings: 0-16 existing + 17 SDF + 18 simplified materials + 19-20 ReSTIR + 21-23 radiance cache + 24-26 surfel cache + 27 light BVH)
-    std::array<VkDescriptorSetLayoutBinding, 28> rtBindings{};
+    // Create RT descriptor set layout (29 bindings: 0-16 existing + 17 SDF + 18 simplified materials + 19-20 ReSTIR + 21-23 radiance cache + 24-26 surfel cache + 27 light BVH + 28 skybox cube)
+    std::array<VkDescriptorSetLayoutBinding, 29> rtBindings{};
 
     // Binding 0: TLAS
     rtBindings[0].binding = 0;
@@ -11756,6 +11757,12 @@ void RenderSystem::InitializeRayTracing() {
     rtBindings[27].descriptorCount = 1;
     rtBindings[27].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
+    // Binding 28: Skybox cubemap (path tracer miss rays sample the real sky)
+    rtBindings[28].binding = 28;
+    rtBindings[28].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    rtBindings[28].descriptorCount = 1;
+    rtBindings[28].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<u32>(rtBindings.size());
@@ -11770,7 +11777,7 @@ void RenderSystem::InitializeRayTracing() {
     std::array<VkDescriptorPoolSize, 5> poolSizes{};
     poolSizes[0] = { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1 };
     poolSizes[1] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 9 };   // 5-8, 14-15, 23, 26 + radiance cache output + surfel output
-    poolSizes[2] = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 };
+    poolSizes[2] = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4 };  // 2-4 + 28 skybox
     poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 14 }; // 9-12, 16-20, 21-22, 24-25, 27 (radiance cache + surfel cache + light BVH)
     poolSizes[4] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 };
 
@@ -11989,6 +11996,9 @@ void RenderSystem::ShutdownRayTracing() {
     if (m_Renderer && m_VulkanRenderer && m_VulkanRenderer->GetContext()) {
         vkDeviceWaitIdle(m_VulkanRenderer->GetContext()->GetDevice());
     }
+    DestroyRTVegetationResources();
+    m_RTVegBudgetWarned = false;
+
     m_SurfelRadianceCache.reset();
     m_RTTemporalReuse.reset();
     m_RTCompositor.reset();
@@ -12018,6 +12028,36 @@ void RenderSystem::ShutdownRayTracing() {
     }
     m_RTDescriptorSet = VK_NULL_HANDLE;
     m_RTDescriptorsWritten = false;
+}
+
+// Per-instance geometry table entry (binding 10): hit shaders read real triangle
+// data through these buffer device addresses. Must match the GLSL RTInstanceGeom
+// struct in rt_common.glsl (32 bytes, std430).
+struct RTInstanceGeomGPU {
+    u64 vertexAddr;         // Device address of this mesh's first vertex
+    u64 indexAddr;          // Device address of this mesh's first index (u32)
+    u32 strideFloats;       // Vertex stride in floats (0 = no entry, use fallback normal)
+    u32 normalOffsetFloats; // Offset of the normal within a vertex, in floats (>= stride = no normals, face normal)
+    u32 _pad0;
+    u32 _pad1;
+};
+static_assert(sizeof(RTInstanceGeomGPU) == 32, "RTInstanceGeomGPU must be 32 bytes for std430");
+
+// Pre-baked material entry (binding 18). Must match rt_common.glsl (64 bytes, std430).
+struct RTSimplifiedMaterialGPU {
+    f32 albedo[3];          f32 effectiveRoughness;  // 16 bytes
+    f32 f0[3];              f32 kDiffuse;             // 16 bytes
+    f32 emissive[3];        f32 opacity;              // 16 bytes
+    f32 transmission;       f32 ior;  f32 _pad0;  f32 _pad1; // 16 bytes
+};
+static_assert(sizeof(RTSimplifiedMaterialGPU) == 64, "RTSimplifiedMaterialGPU must be 64 bytes for std430");
+
+// The vegetation vertex shaders' placement hash, replicated exactly
+// (grass.vert/shrub.vert/tree.vert `hash`): instance ID -> [0,1)
+static f32 VegPlacementHash(u32 n) {
+    n = (n << 13u) ^ n;
+    n = n * (n * n * 15731u + 789221u) + 1376312589u;
+    return static_cast<f32>(n & 0x7fffffffu) / static_cast<f32>(0x7fffffff);
 }
 
 void RenderSystem::RecordRTFrame(bool allowAsync) {
@@ -12111,18 +12151,6 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
 
     m_ASManager->ResetInstances();
 
-    // Per-instance geometry table (binding 10): hit shaders read real triangle
-    // data through these buffer device addresses. Must match the GLSL
-    // RTInstanceGeom struct in rt_common.glsl (32 bytes, std430).
-    struct RTInstanceGeomGPU {
-        u64 vertexAddr;         // Device address of this mesh's first vertex
-        u64 indexAddr;          // Device address of this mesh's first index (u32)
-        u32 strideFloats;       // Vertex stride in floats (0 = no entry, use fallback normal)
-        u32 normalOffsetFloats; // Offset of the normal within a vertex, in floats
-        u32 _pad0;
-        u32 _pad1;
-    };
-    static_assert(sizeof(RTInstanceGeomGPU) == 32, "RTInstanceGeomGPU must be 32 bytes for std430");
     static_assert(sizeof(MeshComponent::Vertex) % sizeof(f32) == 0, "Vertex stride must be float-aligned");
     static_assert(offsetof(MeshComponent::Vertex, normal) == 12, "RT hit shaders assume normal at float offset 3");
 
@@ -12197,6 +12225,11 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         }
     }
 
+    // Vegetation (grass/shrub/tree volumes): GPU-procedural instanced draws the
+    // MeshComponent loop above never sees — replicate their placement on the CPU
+    // and add every blade/shrub/tree as a TLAS instance of its template mesh
+    CollectVegetationRTInstances();
+
     // Upload per-entity material data to the RT material SSBO (binding 9).
     // Must happen before TLAS build so the buffer is valid when descriptors are written,
     // and every frame thereafter since material properties can change at runtime.
@@ -12240,7 +12273,15 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         geomBufInfo.range = (m_RTInstanceGeomBuffer != VK_NULL_HANDLE)
             ? VK_WHOLE_SIZE : static_cast<VkDeviceSize>(256);
 
-        std::array<VkWriteDescriptorSet, 3> matWrites{};
+        // Skybox can change on scene load — keep binding 28 current
+        VkDescriptorImageInfo skyboxRefresh = m_Skybox.GetDescriptorInfo();
+        if (skyboxRefresh.imageView == VK_NULL_HANDLE || skyboxRefresh.sampler == VK_NULL_HANDLE) {
+            skyboxRefresh.imageView = m_DummyCubeImageView;
+            skyboxRefresh.sampler = m_RTDummySampler;
+            skyboxRefresh.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        }
+
+        std::array<VkWriteDescriptorSet, 4> matWrites{};
 
         // Binding 9: Full material SSBO
         matWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -12265,6 +12306,14 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         matWrites[2].descriptorCount = 1;
         matWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         matWrites[2].pBufferInfo = &geomBufInfo;
+
+        // Binding 28: Skybox cubemap
+        matWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        matWrites[3].dstSet = m_RTDescriptorSet;
+        matWrites[3].dstBinding = 28;
+        matWrites[3].descriptorCount = 1;
+        matWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        matWrites[3].pImageInfo = &skyboxRefresh;
 
         vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(),
                                static_cast<u32>(matWrites.size()), matWrites.data(), 0, nullptr);
@@ -13184,6 +13233,300 @@ void RenderSystem::EnsureRTInstanceGeomBuffer(u32 requiredCapacity) {
                    newCapacity, static_cast<unsigned long long>(bufSize));
 }
 
+bool RenderSystem::CreateRTVegBuffers(RTVegGeometry& g, const void* vtxData, usize vtxBytes, u32 vertexCount,
+                                      const u32* idxData, u32 indexCount) {
+    auto* ctx = m_VulkanRenderer->GetContext();
+    VkDevice device = ctx->GetDevice();
+
+    auto makeBuffer = [&](const void* data, VkDeviceSize size, VkBuffer& buf, VkDeviceMemory& mem,
+                          VkDeviceAddress& addr) -> bool {
+        VkBufferCreateInfo bufCI{};
+        bufCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufCI.size = size;
+        bufCI.usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+                      VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        bufCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        if (vkCreateBuffer(device, &bufCI, nullptr, &buf) != VK_SUCCESS) return false;
+
+        VkMemoryRequirements memReqs;
+        vkGetBufferMemoryRequirements(device, buf, &memReqs);
+
+        VkMemoryAllocateFlagsInfo allocFlags{};
+        allocFlags.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+        allocFlags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.pNext = &allocFlags;
+        allocInfo.allocationSize = memReqs.size;
+        allocInfo.memoryTypeIndex = ctx->FindMemoryType(memReqs.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        if (vkAllocateMemory(device, &allocInfo, nullptr, &mem) != VK_SUCCESS) {
+            vkDestroyBuffer(device, buf, nullptr); buf = VK_NULL_HANDLE;
+            return false;
+        }
+        vkBindBufferMemory(device, buf, mem, 0);
+
+        void* mapped = nullptr;
+        if (vkMapMemory(device, mem, 0, size, 0, &mapped) != VK_SUCCESS) return false;
+        std::memcpy(mapped, data, static_cast<size_t>(size));
+        vkUnmapMemory(device, mem);
+
+        VkBufferDeviceAddressInfo addrInfo{};
+        addrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+        addrInfo.buffer = buf;
+        addr = vkGetBufferDeviceAddress(device, &addrInfo);
+        return addr != 0;
+    };
+
+    if (!makeBuffer(vtxData, static_cast<VkDeviceSize>(vtxBytes), g.vtx, g.vtxMem, g.vtxAddr)) {
+        ENJIN_LOG_ERROR(Renderer, "RT vegetation: failed to create vertex buffer");
+        return false;
+    }
+    if (!makeBuffer(idxData, static_cast<VkDeviceSize>(indexCount) * sizeof(u32), g.idx, g.idxMem, g.idxAddr)) {
+        ENJIN_LOG_ERROR(Renderer, "RT vegetation: failed to create index buffer");
+        DestroyRTVegGeometry(g);
+        return false;
+    }
+    g.vertexCount = vertexCount;
+    g.indexCount = indexCount;
+    return true;
+}
+
+void RenderSystem::DestroyRTVegGeometry(RTVegGeometry& g) {
+    VkDevice device = m_VulkanRenderer->GetContext()->GetDevice();
+    if (g.vtx) { vkDestroyBuffer(device, g.vtx, nullptr); g.vtx = VK_NULL_HANDLE; }
+    if (g.vtxMem) { vkFreeMemory(device, g.vtxMem, nullptr); g.vtxMem = VK_NULL_HANDLE; }
+    if (g.idx) { vkDestroyBuffer(device, g.idx, nullptr); g.idx = VK_NULL_HANDLE; }
+    if (g.idxMem) { vkFreeMemory(device, g.idxMem, nullptr); g.idxMem = VK_NULL_HANDLE; }
+    g.vtxAddr = 0; g.idxAddr = 0; g.blasId = 0xFFFFFFFFu;
+}
+
+void RenderSystem::DestroyRTVegetationResources() {
+    DestroyRTVegGeometry(m_RTGrassGeom);
+    DestroyRTVegGeometry(m_RTShrubGeom);
+    for (auto& [eid, g] : m_RTTreeGeoms) DestroyRTVegGeometry(g);
+    m_RTTreeGeoms.clear();
+    for (auto& g : m_RTVegRetired) DestroyRTVegGeometry(g);
+    m_RTVegRetired.clear();
+}
+
+namespace VegTpl = ::Enjin::Effects::VegTemplates;
+
+void RenderSystem::CollectVegetationRTInstances() {
+    if (!m_World || !m_ASManager || !m_RTInstanceGeomMapped) return;
+
+    auto* geomDst = static_cast<RTInstanceGeomGPU*>(m_RTInstanceGeomMapped);
+    auto* matDst = static_cast<MaterialGPU*>(m_RTMaterialMapped);
+    auto* smatDst = m_RTSimplifiedMaterialMapped
+        ? static_cast<RTSimplifiedMaterialGPU*>(m_RTSimplifiedMaterialMapped) : nullptr;
+    if (!matDst || !smatDst) return;
+
+    // Global instance budget: a runaway density setting should degrade RT
+    // coverage, not frame time. Raster is unaffected.
+    constexpr u32 kMaxVegInstances = 65536;
+    u32 vegInstances = 0;
+
+    // 20-byte vegetation vertex: pos3 + uv2, no normals -> hit shaders take the
+    // face-normal path (normalOffsetFloats == strideFloats sentinel)
+    constexpr u32 kVegStrideFloats = 5;
+
+    auto writeVegEntry = [&](u32 eid, const RTVegGeometry& g, const Math::Vector3& color) {
+        if (eid >= m_RTInstanceGeomCapacity) return;
+        auto& ge = geomDst[eid];
+        ge.vertexAddr = g.vtxAddr;
+        ge.indexAddr = g.idxAddr;
+        ge.strideFloats = kVegStrideFloats;
+        ge.normalOffsetFloats = kVegStrideFloats;  // sentinel: no normals in vertex
+        ge._pad0 = 0; ge._pad1 = 0;
+
+        if (eid < m_RTMaterialBufferCapacity) {
+            auto& m = matDst[eid];
+            m = MaterialGPU{};
+            m.baseColor = color;
+            m.roughness = 0.9f;
+            m.opacity = 1.0f;
+            m.alphaCutoff = 0.5f;
+            m.ior = 1.5f;
+        }
+        if (eid < m_RTSimplifiedMaterialBufferCapacity) {
+            auto& s = smatDst[eid];
+            s = RTSimplifiedMaterialGPU{};
+            s.albedo[0] = color.x; s.albedo[1] = color.y; s.albedo[2] = color.z;
+            s.effectiveRoughness = 0.9f;
+            s.f0[0] = s.f0[1] = s.f0[2] = 0.04f;
+            s.kDiffuse = 1.0f;
+            s.opacity = 1.0f;
+            s.ior = 1.5f;
+        }
+    };
+
+    // Instance transform = Translate(origin) * RotY(rot) * Scale(sx, sy, sz),
+    // exactly the vegetation vertex shaders' per-instance math (wind excluded)
+    auto vegInstanceMatrix = [](const Math::Vector3& origin, f32 rot, f32 sx, f32 sy, f32 sz) {
+        Math::Matrix4 m = Math::Matrix4::Identity();
+        f32 c = std::cos(rot), s = std::sin(rot);
+        m.m[0] = c * sx;  m.m[2] = s * sx;    // col0
+        m.m[5] = sy;                           // col1
+        m.m[8] = -s * sz; m.m[10] = c * sz;    // col2
+        m.m[12] = origin.x; m.m[13] = origin.y; m.m[14] = origin.z;
+        return m;
+    };
+
+    // --- Grass: shared template blade (grass.vert placement: hash i*3+0/1 -> xz,
+    // i*3+2 -> height variance, i*7+5 -> yaw) ---
+    if (m_RTGrassGeom.vtx == VK_NULL_HANDLE) {
+        std::vector<VegTpl::VegVertex> tverts;
+        std::vector<u32> tidx;
+        VegTpl::BuildGrassBlade(tverts, tidx);
+        CreateRTVegBuffers(m_RTGrassGeom, tverts.data(),
+                           tverts.size() * sizeof(VegTpl::VegVertex),
+                           static_cast<u32>(tverts.size()), tidx.data(), static_cast<u32>(tidx.size()));
+    }
+    if (m_RTGrassGeom.vtx != VK_NULL_HANDLE) {
+        for (Entity e : m_World->GetEntitiesWithComponent<GrassVolumeComponent>()) {
+            auto* g = m_World->GetComponent<GrassVolumeComponent>(e);
+            auto* t = m_CachedTransformStorage ? m_CachedTransformStorage->Get(e) : nullptr;
+            if (!g || !t || !t->visible) continue;
+            if (!g->customAssetPath.empty()) continue;  // custom asset overrides procedural
+
+            m_RTGrassGeom.blasId = m_ASManager->RegisterMesh(
+                m_RTGrassGeom.vtxAddr ^ 0x67726173u, m_RTGrassGeom.vtxAddr, m_RTGrassGeom.vertexCount,
+                kVegStrideFloats * sizeof(f32), m_RTGrassGeom.idxAddr, m_RTGrassGeom.indexCount);
+
+            u32 eid = EntityIndex(e);
+            writeVegEntry(eid, m_RTGrassGeom, (g->baseColor + g->tipColor) * 0.5f);
+
+            for (u32 i = 0; i < g->density; ++i) {
+                if (vegInstances >= kMaxVegInstances) break;
+                f32 px = VegPlacementHash(i * 3u + 0u) * 2.0f - 1.0f;
+                f32 pz = VegPlacementHash(i * 3u + 1u) * 2.0f - 1.0f;
+                f32 hv = VegPlacementHash(i * 3u + 2u) * 2.0f - 1.0f;
+                f32 rot = VegPlacementHash(i * 7u + 5u) * 6.28318f;
+                Math::Vector3 origin = t->position +
+                    Math::Vector3(px * g->halfExtents.x, 0.0f, pz * g->halfExtents.z);
+                f32 h = g->bladeHeight + hv * g->bladeHeightVariance;
+                // z scaled by height too so the baked forward arc scales with the blade
+                m_ASManager->AddInstance(m_RTGrassGeom.blasId,
+                    vegInstanceMatrix(origin, rot, g->bladeWidth, h, h), eid);
+                ++vegInstances;
+            }
+        }
+    }
+
+    // --- Shrubs: shared tapered-dome template (shrub.vert placement, same hash scheme) ---
+    if (m_RTShrubGeom.vtx == VK_NULL_HANDLE) {
+        std::vector<VegTpl::VegVertex> tverts;
+        std::vector<u32> tidx;
+        VegTpl::BuildShrub(tverts, tidx);
+        CreateRTVegBuffers(m_RTShrubGeom, tverts.data(),
+                           tverts.size() * sizeof(VegTpl::VegVertex),
+                           static_cast<u32>(tverts.size()), tidx.data(), static_cast<u32>(tidx.size()));
+    }
+    if (m_RTShrubGeom.vtx != VK_NULL_HANDLE) {
+        for (Entity e : m_World->GetEntitiesWithComponent<ShrubVolumeComponent>()) {
+            auto* sh = m_World->GetComponent<ShrubVolumeComponent>(e);
+            auto* t = m_CachedTransformStorage ? m_CachedTransformStorage->Get(e) : nullptr;
+            if (!sh || !t || !t->visible) continue;
+            if (!sh->customAssetPath.empty()) continue;
+
+            m_RTShrubGeom.blasId = m_ASManager->RegisterMesh(
+                m_RTShrubGeom.vtxAddr ^ 0x73687275u, m_RTShrubGeom.vtxAddr, m_RTShrubGeom.vertexCount,
+                kVegStrideFloats * sizeof(f32), m_RTShrubGeom.idxAddr, m_RTShrubGeom.indexCount);
+
+            u32 eid = EntityIndex(e);
+            writeVegEntry(eid, m_RTShrubGeom, (sh->baseColor + sh->tipColor) * 0.5f);
+
+            for (u32 i = 0; i < sh->density; ++i) {
+                if (vegInstances >= kMaxVegInstances) break;
+                f32 px = VegPlacementHash(i * 3u + 0u) * 2.0f - 1.0f;
+                f32 pz = VegPlacementHash(i * 3u + 1u) * 2.0f - 1.0f;
+                f32 hv = VegPlacementHash(i * 3u + 2u) * 2.0f - 1.0f;
+                f32 rot = VegPlacementHash(i * 7u + 5u) * 6.28318f;
+                Math::Vector3 origin = t->position +
+                    Math::Vector3(px * sh->halfExtents.x, 0.0f, pz * sh->halfExtents.z);
+                f32 h = sh->shrubHeight + hv * sh->heightVariance;
+                // shrub.vert scales x by width only (z keeps template extent)
+                m_ASManager->AddInstance(m_RTShrubGeom.blasId,
+                    vegInstanceMatrix(origin, rot, sh->width, h, 1.0f), eid);
+                ++vegInstances;
+            }
+        }
+    }
+
+    // --- Trees: per-volume baked mesh (trunk/canopy scale differently per
+    // vertex, so the volume's params bake into the geometry and the instance
+    // matrix carries only the uniform per-tree size variance) ---
+    for (Entity e : m_World->GetEntitiesWithComponent<TreeVolumeComponent>()) {
+        auto* tv = m_World->GetComponent<TreeVolumeComponent>(e);
+        auto* t = m_CachedTransformStorage ? m_CachedTransformStorage->Get(e) : nullptr;
+        if (!tv || !t || !t->visible) continue;
+
+        u32 eid = EntityIndex(e);
+        auto& cache = m_RTTreeGeoms[eid];
+        const f32 key[4] = { tv->trunkHeight, tv->trunkWidth, tv->canopyRadius, tv->canopyOffset };
+        bool stale = cache.vtx != VK_NULL_HANDLE &&
+                     (cache.paramKey[0] != key[0] || cache.paramKey[1] != key[1] ||
+                      cache.paramKey[2] != key[2] || cache.paramKey[3] != key[3]);
+        if (stale) {
+            // Params edited: retire the old bake (a prior frame may still trace
+            // against it) and rebuild. Retired bakes free at RT shutdown.
+            m_RTVegRetired.push_back(cache);
+            cache = RTVegGeometry{};
+        }
+        if (cache.vtx == VK_NULL_HANDLE) {
+            // Shared template base verts + tree.vert's per-vertex scaling baked in
+            // (canopyScale = 1, full summer canopy). Trunk = uv.y < 0.5, canopy >=.
+            std::vector<VegTpl::VegVertex> verts;
+            std::vector<u32> indices;
+            VegTpl::BuildTree(verts, indices);
+            for (auto& v : verts) {
+                bool isCanopy = v.v >= 0.5f;
+                if (isCanopy) {
+                    v.px *= tv->canopyRadius * 2.0f;
+                    v.pz *= tv->canopyRadius * 2.0f;
+                    v.py = (v.py - 0.5f) * tv->canopyRadius * 2.0f + tv->canopyOffset;
+                } else {
+                    v.px *= tv->trunkWidth * 2.0f;
+                    v.pz *= tv->trunkWidth * 2.0f;
+                    v.py *= tv->trunkHeight;
+                }
+            }
+            if (!CreateRTVegBuffers(cache, verts.data(),
+                                    verts.size() * sizeof(VegTpl::VegVertex),
+                                    static_cast<u32>(verts.size()), indices.data(),
+                                    static_cast<u32>(indices.size()))) continue;
+            cache.paramKey[0] = key[0]; cache.paramKey[1] = key[1];
+            cache.paramKey[2] = key[2]; cache.paramKey[3] = key[3];
+        }
+
+        cache.blasId = m_ASManager->RegisterMesh(
+            cache.vtxAddr ^ 0x74726565u, cache.vtxAddr, cache.vertexCount,
+            kVegStrideFloats * sizeof(f32), cache.idxAddr, cache.indexCount);
+
+        writeVegEntry(eid, cache, tv->canopyBaseColor);
+
+        for (u32 i = 0; i < tv->density; ++i) {
+            if (vegInstances >= kMaxVegInstances) break;
+            f32 px = VegPlacementHash(i * 3u + 0u) * 2.0f - 1.0f;
+            f32 pz = VegPlacementHash(i * 3u + 1u) * 2.0f - 1.0f;
+            f32 sizeVar = VegPlacementHash(i * 3u + 2u) * 0.8f + 0.6f;
+            f32 rot = VegPlacementHash(i * 7u + 5u) * 6.28318f;
+            Math::Vector3 origin = t->position +
+                Math::Vector3(px * tv->halfExtents.x, 0.0f, pz * tv->halfExtents.z);
+            m_ASManager->AddInstance(cache.blasId,
+                vegInstanceMatrix(origin, rot, sizeVar, sizeVar, sizeVar), eid);
+            ++vegInstances;
+        }
+    }
+
+    if (vegInstances >= kMaxVegInstances && !m_RTVegBudgetWarned) {
+        ENJIN_LOG_WARN(Renderer, "RT vegetation instance budget (%u) reached — some vegetation is not ray traced", kMaxVegInstances);
+        m_RTVegBudgetWarned = true;
+    }
+}
+
 void RenderSystem::DestroyRTDummyResources() {
     if (!m_Renderer || !m_VulkanRenderer->GetContext()) return;
     VkDevice device = m_VulkanRenderer->GetContext()->GetDevice();
@@ -13282,14 +13625,6 @@ void RenderSystem::UploadRTMaterials() {
     if (!m_RTMaterialMapped) return;
 
     // GPU struct matching GLSL RTSimplifiedMaterial (std430 layout, 64 bytes)
-    struct RTSimplifiedMaterialGPU {
-        f32 albedo[3];          f32 effectiveRoughness;  // 16 bytes
-        f32 f0[3];              f32 kDiffuse;             // 16 bytes
-        f32 emissive[3];        f32 opacity;              // 16 bytes
-        f32 transmission;       f32 ior;  f32 _pad0;  f32 _pad1; // 16 bytes
-    };
-    static_assert(sizeof(RTSimplifiedMaterialGPU) == 64, "RTSimplifiedMaterialGPU must be 64 bytes for std430");
-
     // Upload MaterialGPU for each renderable entity, indexed by entity ID
     // (matches gl_InstanceCustomIndexEXT set in AddInstance)
     auto* dst = static_cast<MaterialGPU*>(m_RTMaterialMapped);
@@ -13352,6 +13687,29 @@ void RenderSystem::UploadRTMaterials() {
             s.ior = m.ior;
             s._pad0 = 0.0f;
             s._pad1 = 0.0f;
+        }
+
+        // Water surfaces: the raster look comes from FLAG_WATER_SURFACE shader
+        // magic, not the material component, so without this override the path
+        // tracer sees water as default white plastic. Give it the component's
+        // color with glassy transmission instead.
+        if (auto* water = m_World->GetComponent<Water3DComponent>(entity)) {
+            const auto& ws = water->settings;
+            Math::Vector3 waterColor = (ws.shallowColor + ws.deepColor) * 0.5f;
+            dst[eid].baseColor = waterColor;
+            dst[eid].roughness = 0.05f;
+            dst[eid].transmission = 0.65f;
+            dst[eid].ior = 1.33f;
+            dst[eid].opacity = ws.opacity;
+            if (sdst) {
+                auto& s = sdst[eid];
+                s.albedo[0] = waterColor.x; s.albedo[1] = waterColor.y; s.albedo[2] = waterColor.z;
+                s.effectiveRoughness = 0.05f;
+                s.f0[0] = s.f0[1] = s.f0[2] = 0.02f;
+                s.transmission = 0.65f;
+                s.ior = 1.33f;
+                s.opacity = ws.opacity;
+            }
         }
     }
 }
@@ -13555,8 +13913,16 @@ void RenderSystem::WriteRTDescriptors() {
         lightBVHBufInfo.range = 256;
     }
 
-    // Build write array for all 28 bindings
-    std::array<VkWriteDescriptorSet, 28> writes{};
+    // Binding 28: Skybox cubemap (dummy cube when the skybox has no cubemap yet)
+    VkDescriptorImageInfo skyboxInfo = m_Skybox.GetDescriptorInfo();
+    if (skyboxInfo.imageView == VK_NULL_HANDLE || skyboxInfo.sampler == VK_NULL_HANDLE) {
+        skyboxInfo.imageView = m_DummyCubeImageView;
+        skyboxInfo.sampler = m_RTDummySampler;
+        skyboxInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+
+    // Build write array for all 29 bindings
+    std::array<VkWriteDescriptorSet, 29> writes{};
 
     // Binding 0: TLAS
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -13724,9 +14090,17 @@ void RenderSystem::WriteRTDescriptors() {
     writes[27].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     writes[27].pBufferInfo = &lightBVHBufInfo;
 
+    // Binding 28: Skybox cubemap
+    writes[28].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[28].dstSet = m_RTDescriptorSet;
+    writes[28].dstBinding = 28;
+    writes[28].descriptorCount = 1;
+    writes[28].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[28].pImageInfo = &skyboxInfo;
+
     vkUpdateDescriptorSets(device, static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
 
-    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 28 bindings)");
+    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 29 bindings)");
 }
 
 void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {

@@ -112,7 +112,9 @@ void main() {
         tipColor = mix(tipColor, vec3(0.93, 0.95, 0.98), snowIntensity);
     }
 
-    vec3 albedo = mix(material.baseColor, tipColor, height);
+    // Ramp curve pow(0.6): push the darker ground tone toward the base so the
+    // dome's lower mass reads as shadowed foliage
+    vec3 albedo = mix(material.baseColor, tipColor, pow(height, 0.6));
 
     // Per-instance darkening for depth variety
     float darkAmount = max(-fragHeightFraction, 0.0) * 2.0;

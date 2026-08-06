@@ -1,4 +1,5 @@
 #include "Enjin/Effects/TreeRenderer.h"
+#include "Enjin/Effects/VegetationTemplates.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
@@ -59,81 +60,30 @@ void TreeRenderer::CreateTreeMesh() {
     // Total: 20 verts, 30 indices
     // UV.y < 0.5 = trunk, >= 0.5 = canopy (for color selection in shader)
 
-    struct TreeVertex {
-        f32 px, py, pz;  // position
-        f32 u, v;         // UV
-    };
+    // Tree geometry (tapered trunk + diamond canopy) is defined once in
+    // VegTemplates, shared with the RT path. tree.vert scales trunk (uv.y < 0.5)
+    // and canopy (uv.y >= 0.5) by the volume's params in-shader. 5 floats/vertex.
+    std::vector<Effects::VegTemplates::VegVertex> verts;
+    std::vector<u32> indices;
+    Effects::VegTemplates::BuildTree(verts, indices);
 
-    TreeVertex verts[20];
-    u32 indices[30];
-
-    // Trunk: 2 intersecting tapered quads at 0 and 90 degrees
-    f32 trunkBaseW = 0.5f;
-    f32 trunkTopW = 0.3f;
-    for (u32 q = 0; q < 2; ++q) {
-        f32 angle = static_cast<f32>(q) * 3.14159265f / 2.0f;
-        f32 cosA = std::cos(angle);
-        f32 sinA = std::sin(angle);
-
-        u32 vi = q * 4;
-        // Bottom-left (base width)
-        verts[vi + 0] = { -trunkBaseW * cosA, 0.0f, -trunkBaseW * sinA,  0.0f, 0.0f };
-        // Bottom-right
-        verts[vi + 1] = {  trunkBaseW * cosA, 0.0f,  trunkBaseW * sinA,  1.0f, 0.0f };
-        // Top-right (tapered)
-        verts[vi + 2] = {  trunkTopW * cosA, 1.0f,  trunkTopW * sinA,  1.0f, 0.4f };
-        // Top-left
-        verts[vi + 3] = { -trunkTopW * cosA, 1.0f, -trunkTopW * sinA,  0.0f, 0.4f };
-
-        u32 ii = q * 6;
-        indices[ii + 0] = vi + 0;
-        indices[ii + 1] = vi + 1;
-        indices[ii + 2] = vi + 2;
-        indices[ii + 3] = vi + 2;
-        indices[ii + 4] = vi + 3;
-        indices[ii + 5] = vi + 0;
-    }
-
-    // Canopy: 3 intersecting quads at 0, 60, 120 degrees (elevated at y=1.0 center)
-    for (u32 q = 0; q < 3; ++q) {
-        f32 angle = static_cast<f32>(q) * 3.14159265f / 3.0f;
-        f32 cosA = std::cos(angle);
-        f32 sinA = std::sin(angle);
-
-        u32 vi = 8 + q * 4;  // After trunk verts
-        // Bottom-left (canopy base)
-        verts[vi + 0] = { -0.5f * cosA, 0.5f, -0.5f * sinA,  0.0f, 0.5f };
-        // Bottom-right
-        verts[vi + 1] = {  0.5f * cosA, 0.5f,  0.5f * sinA,  1.0f, 0.5f };
-        // Top-right
-        verts[vi + 2] = {  0.5f * cosA, 1.5f,  0.5f * sinA,  1.0f, 1.0f };
-        // Top-left
-        verts[vi + 3] = { -0.5f * cosA, 1.5f, -0.5f * sinA,  0.0f, 1.0f };
-
-        u32 ii = 12 + q * 6;  // After trunk indices
-        indices[ii + 0] = vi + 0;
-        indices[ii + 1] = vi + 1;
-        indices[ii + 2] = vi + 2;
-        indices[ii + 3] = vi + 2;
-        indices[ii + 4] = vi + 3;
-        indices[ii + 5] = vi + 0;
-    }
-
-    m_IndexCount = 30;
+    m_IndexCount = static_cast<u32>(indices.size());
+    usize vtxBytes = verts.size() * sizeof(Effects::VegTemplates::VegVertex);
+    usize idxBytes = indices.size() * sizeof(u32);
 
     m_VertexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
-    if (!m_VertexBuffer->Create(sizeof(verts), Renderer::BufferUsage::Vertex, true)) {
+    if (!m_VertexBuffer->Create(vtxBytes, Renderer::BufferUsage::Vertex, true)) {
         ENJIN_LOG_ERROR(Renderer, "TreeRenderer: Failed to create vertex buffer");
         return;
     }
-    m_VertexBuffer->UploadData(verts, sizeof(verts));
+    m_VertexBuffer->UploadData(verts.data(), vtxBytes);
 
     m_IndexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
-    if (!m_IndexBuffer->Create(sizeof(indices), Renderer::BufferUsage::Index, true)) {
+    if (!m_IndexBuffer->Create(idxBytes, Renderer::BufferUsage::Index, true)) {
         ENJIN_LOG_ERROR(Renderer, "TreeRenderer: Failed to create index buffer");
         return;
     }
-    m_IndexBuffer->UploadData(indices, sizeof(indices));
+    m_IndexBuffer->UploadData(indices.data(), idxBytes);
 }
 
 void TreeRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount) {

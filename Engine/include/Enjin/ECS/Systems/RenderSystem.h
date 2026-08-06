@@ -1575,6 +1575,29 @@ private:
     u32 m_RTInstanceGeomCapacity = 0;
     void EnsureRTInstanceGeomBuffer(u32 requiredCapacity);
 
+    // RT vegetation: grass/shrub/tree are GPU-procedural instanced draws the TLAS
+    // never sees. These are RT-side copies of the template meshes (device-address
+    // usage) plus per-tree-volume bakes; instance transforms replicate the vertex
+    // shaders' hash placement on the CPU so the traced scene matches the raster one.
+    struct RTVegGeometry {
+        VkBuffer vtx = VK_NULL_HANDLE; VkDeviceMemory vtxMem = VK_NULL_HANDLE;
+        VkBuffer idx = VK_NULL_HANDLE; VkDeviceMemory idxMem = VK_NULL_HANDLE;
+        VkDeviceAddress vtxAddr = 0; VkDeviceAddress idxAddr = 0;
+        u32 vertexCount = 0; u32 indexCount = 0;
+        u32 blasId = 0xFFFFFFFFu;
+        f32 paramKey[4] = {0, 0, 0, 0};  // Tree bakes: trunkH/trunkW/canopyR/canopyO for staleness
+    };
+    RTVegGeometry m_RTGrassGeom;
+    RTVegGeometry m_RTShrubGeom;
+    std::unordered_map<u32, RTVegGeometry> m_RTTreeGeoms;      // key: volume EntityIndex
+    std::vector<RTVegGeometry> m_RTVegRetired;                  // param-edited bakes, freed at RT shutdown
+    bool m_RTVegBudgetWarned = false;
+    bool CreateRTVegBuffers(RTVegGeometry& g, const void* vtxData, usize vtxBytes, u32 vertexCount,
+                            const u32* idxData, u32 indexCount);
+    void DestroyRTVegGeometry(RTVegGeometry& g);
+    void CollectVegetationRTInstances();
+    void DestroyRTVegetationResources();
+
     // NEE light SSBO (binding 16) — scene lights for path tracer direct light sampling
     VkBuffer m_RTNEELightBuffer[RT_FRAMES_IN_FLIGHT] = {};
     VkDeviceMemory m_RTNEELightMemory[RT_FRAMES_IN_FLIGHT] = {};

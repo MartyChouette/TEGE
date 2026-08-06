@@ -21,9 +21,10 @@ struct ENJIN_API GrassVolumeComponent {
     f32 bladeHeightVariance = 0.1f;
     f32 bladeWidth = 0.03f;
 
-    // Colors (lerped base-to-tip)
-    Math::Vector3 baseColor = Math::Vector3(0.2f, 0.5f, 0.1f);
-    Math::Vector3 tipColor = Math::Vector3(0.4f, 0.7f, 0.2f);
+    // Colors (lerped base-to-tip). Shared palette: deep ground base -> mid green
+    // tip. See docs/art/PROCEDURAL_EFFECTS_DIRECTION.md.
+    Math::Vector3 baseColor = Math::Vector3(0.11f, 0.18f, 0.09f);  // deep ground
+    Math::Vector3 tipColor = Math::Vector3(0.24f, 0.37f, 0.16f);   // mid green
 
     // Wind response
     f32 windSwayStrength = 1.0f;
