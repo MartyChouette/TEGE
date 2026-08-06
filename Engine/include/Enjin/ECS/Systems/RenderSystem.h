@@ -1643,6 +1643,15 @@ private:
     static constexpr u32 RT_SDF_BUFFER_SIZE = 16 + 48 * 256;  // Header (16B) + up to 256 SDF objects
 
     bool m_RTDescriptorsWritten = false;
+    // Handles last written to the per-frame RT descriptor refresh (bindings 9/18/
+    // 10/28). These only change on buffer realloc or scene load, so the refresh is
+    // skipped when they're unchanged — rewriting an in-use descriptor set every
+    // frame is VUID-03047 (the set is single, not per-frame).
+    VkBuffer m_RTLastMatBuffer = VK_NULL_HANDLE;
+    VkBuffer m_RTLastSimplifiedBuffer = VK_NULL_HANDLE;
+    VkBuffer m_RTLastGeomBuffer = VK_NULL_HANDLE;
+    VkImageView m_RTLastSkyboxView = VK_NULL_HANDLE;
+    VkAccelerationStructureKHR m_RTLastTLAS = VK_NULL_HANDLE;  // binding 0; stable across in-place refits
 
     // --- Order-Independent Transparency (Weighted Blended OIT) ---
     std::unique_ptr<Renderer::OITManager> m_OITManager;
@@ -1674,7 +1683,7 @@ private:
     void UploadRTMaterials();
     void EnsureRTMaterialBuffer(u32 requiredCapacity);
     void EnsureRTSimplifiedMaterialBuffer(u32 requiredCapacity);
-    void UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math::Vector3& lightDir,
+    void UpdateRTLightUBO(VkCommandBuffer cmd, const Math::Matrix4& invViewProj, const Math::Vector3& lightDir,
                           f32 lightIntensity, f32 shadowDistance, f32 shadowRadius, u32 frameCount,
                           f32 fireflyClamp, i32 enableNEE, i32 enableMIS,
                           i32 rrMinBounce, f32 rrMinProb,

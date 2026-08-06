@@ -12117,6 +12117,11 @@ void RenderSystem::ShutdownRayTracing() {
     }
     m_RTDescriptorSet = VK_NULL_HANDLE;
     m_RTDescriptorsWritten = false;
+    m_RTLastMatBuffer = VK_NULL_HANDLE;
+    m_RTLastSimplifiedBuffer = VK_NULL_HANDLE;
+    m_RTLastGeomBuffer = VK_NULL_HANDLE;
+    m_RTLastSkyboxView = VK_NULL_HANDLE;
+    m_RTLastTLAS = VK_NULL_HANDLE;
 }
 
 // Per-instance geometry table entry (binding 10): hit shaders read real triangle
@@ -12343,10 +12348,46 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         WriteRTDescriptors();
         TransitionRTOutputImages(cmd);
         m_RTDescriptorsWritten = true;
+        // Seed the refresh-tracking handles so the else-branch below doesn't
+        // immediately rewrite the just-written set.
+        m_RTLastMatBuffer = m_RTMaterialBuffer;
+        m_RTLastSimplifiedBuffer = (m_RTSimplifiedMaterialBuffer != VK_NULL_HANDLE)
+            ? m_RTSimplifiedMaterialBuffer : m_RTDummyBuffer;
+        m_RTLastGeomBuffer = (m_RTInstanceGeomBuffer != VK_NULL_HANDLE)
+            ? m_RTInstanceGeomBuffer : m_RTDummyBuffer;
+        m_RTLastSkyboxView = m_Skybox.GetDescriptorInfo().imageView;
+        if (m_RTLastSkyboxView == VK_NULL_HANDLE) m_RTLastSkyboxView = m_DummyCubeImageView;
+        m_RTLastTLAS = m_ASManager->GetTLAS();  // WriteRTDescriptors just wrote binding 0
     } else if (m_RTDescriptorsWritten && m_RTMaterialBuffer != VK_NULL_HANDLE) {
-        // Update bindings 9 and 18 each frame to reflect current material data.
-        // The buffer contents are already uploaded via UploadRTMaterials() above;
-        // this ensures the descriptors point to the correct buffers after any reallocation.
+        // Refresh bindings 9/18/10/28 ONLY when a handle changed. The material,
+        // simplified-material, and instance-geometry SSBO contents update via the
+        // mapped pointer each frame — the descriptor only needs rewriting when the
+        // buffer is reallocated (grow) or the skybox changes (scene load). The RT
+        // descriptor set is single (not per-frame), so rewriting it every frame
+        // while a prior frame's command buffer is in flight is VUID-03047.
+        VkBuffer curSimplified = (m_RTSimplifiedMaterialBuffer != VK_NULL_HANDLE)
+            ? m_RTSimplifiedMaterialBuffer : m_RTDummyBuffer;
+        VkBuffer curGeom = (m_RTInstanceGeomBuffer != VK_NULL_HANDLE)
+            ? m_RTInstanceGeomBuffer : m_RTDummyBuffer;
+        VkImageView curSkybox = m_Skybox.GetDescriptorInfo().imageView;
+        if (curSkybox == VK_NULL_HANDLE) curSkybox = m_DummyCubeImageView;
+
+        bool changed = m_RTMaterialBuffer != m_RTLastMatBuffer ||
+                       curSimplified != m_RTLastSimplifiedBuffer ||
+                       curGeom != m_RTLastGeomBuffer ||
+                       curSkybox != m_RTLastSkyboxView;
+        if (!changed) return;  // nothing to rewrite this frame
+
+        m_RTLastMatBuffer = m_RTMaterialBuffer;
+        m_RTLastSimplifiedBuffer = curSimplified;
+        m_RTLastGeomBuffer = curGeom;
+        m_RTLastSkyboxView = curSkybox;
+
+        // A handle changed: the descriptor set may be referenced by an in-flight
+        // frame, so wait for the device before rewriting (rare — only on realloc /
+        // scene load, not per frame).
+        vkDeviceWaitIdle(m_VulkanRenderer->GetContext()->GetDevice());
+
         VkDescriptorBufferInfo matBufInfo{};
         matBufInfo.buffer = m_RTMaterialBuffer;
         matBufInfo.offset = 0;
@@ -12604,29 +12645,37 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
     u32 ptLightCount = m_CachedLightingData.pointLightCount;
     u32 sptLightCount = m_CachedLightingData.spotLightCount;
 
-    UpdateRTLightUBO(invViewProj, lightDir, lightIntensity, lightShadowDistance,
+    UpdateRTLightUBO(cmd, invViewProj, lightDir, lightIntensity, lightShadowDistance,
                      shadowRadius, m_RTFrameCount,
                      fireflyClamp, enableNEE, enableMIS, rrMinBounce, rrMinProb,
                      dirLightCount, ptLightCount, sptLightCount,
                      ptMaxBounces, ptAccumulatedSamples);
 
-    // Update TLAS descriptor (handle may change on rebuild)
+    // Update the TLAS descriptor (binding 0) ONLY when the handle changes. In-place
+    // refits (static frames) keep the same handle, so this is skipped every frame;
+    // it changes only on a full rebuild (instance-count change). Rewriting it every
+    // frame while a prior frame's command buffer references the single RT set is
+    // VUID-03047. On change, wait for idle first (rare — only structural changes).
     {
         auto* ctx = m_VulkanRenderer->GetContext();
         VkAccelerationStructureKHR tlas = m_ASManager->GetTLAS();
-        VkWriteDescriptorSetAccelerationStructureKHR asInfo{};
-        asInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
-        asInfo.accelerationStructureCount = 1;
-        asInfo.pAccelerationStructures = &tlas;
+        if (tlas != m_RTLastTLAS) {
+            vkDeviceWaitIdle(ctx->GetDevice());
+            VkWriteDescriptorSetAccelerationStructureKHR asInfo{};
+            asInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+            asInfo.accelerationStructureCount = 1;
+            asInfo.pAccelerationStructures = &tlas;
 
-        VkWriteDescriptorSet write{};
-        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write.pNext = &asInfo;
-        write.dstSet = m_RTDescriptorSet;
-        write.dstBinding = 0;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-        vkUpdateDescriptorSets(ctx->GetDevice(), 1, &write, 0, nullptr);
+            VkWriteDescriptorSet write{};
+            write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            write.pNext = &asInfo;
+            write.dstSet = m_RTDescriptorSet;
+            write.dstBinding = 0;
+            write.descriptorCount = 1;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+            vkUpdateDescriptorSets(ctx->GetDevice(), 1, &write, 0, nullptr);
+            m_RTLastTLAS = tlas;
+        }
     }
 
     if (m_RTMode == 1 && m_PathTracer) {
@@ -13170,12 +13219,13 @@ void RenderSystem::CreateRTDummyResources() {
         }
     }
 
-    // Create RT light UBOs (per frame in flight, host visible + coherent, persistently mapped)
+    // Create RT light UBO. Only [0] is used now (bound at binding 13 and updated
+    // via vkCmdUpdateBuffer on the GPU timeline); TRANSFER_DST is required for that.
     for (u32 i = 0; i < RT_FRAMES_IN_FLIGHT; ++i) {
         VkBufferCreateInfo bufInfo{};
         bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufInfo.size = 256;  // Enough for RTLightUBO struct (112 bytes + padding)
-        bufInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        bufInfo.size = 256;  // Enough for RTLightUBO struct (224 bytes with viewProj)
+        bufInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         vkCreateBuffer(device, &bufInfo, nullptr, &m_RTLightUBO[i]);
 
@@ -13200,7 +13250,8 @@ void RenderSystem::CreateRTDummyResources() {
         VkBufferCreateInfo bufInfo{};
         bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         bufInfo.size = RT_NEE_LIGHT_BUFFER_SIZE;
-        bufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        // TRANSFER_DST: the NEE data is written via vkCmdUpdateBuffer each frame
+        bufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         vkCreateBuffer(device, &bufInfo, nullptr, &m_RTNEELightBuffer[i]);
 
@@ -14034,17 +14085,19 @@ void RenderSystem::WriteRTDescriptors() {
         dummyBufInfos[1].range = VK_WHOLE_SIZE;
     }
 
-    // Binding 13: RT light UBO
+    // Binding 13: RT light UBO — single buffer [0], updated via vkCmdUpdateBuffer
+    // each frame, so this descriptor is written once and never rewritten.
     VkDescriptorBufferInfo uboInfo{};
-    uboInfo.buffer = m_RTLightUBO[frameIdx];
+    uboInfo.buffer = m_RTLightUBO[0];
     uboInfo.offset = 0;
     uboInfo.range = 256;
 
-    // Binding 16: NEE light SSBO
+    // Binding 16: NEE light SSBO — single buffer [0], written via vkCmdUpdateBuffer
+    // each frame, so this descriptor is written once and never rewritten.
     VkDescriptorBufferInfo neeBufInfo{};
-    neeBufInfo.buffer = m_RTNEELightBuffer[frameIdx] ? m_RTNEELightBuffer[frameIdx] : m_RTDummyBuffer;
+    neeBufInfo.buffer = m_RTNEELightBuffer[0] ? m_RTNEELightBuffer[0] : m_RTDummyBuffer;
     neeBufInfo.offset = 0;
-    neeBufInfo.range = m_RTNEELightBuffer[frameIdx] ? static_cast<VkDeviceSize>(RT_NEE_LIGHT_BUFFER_SIZE) : 256;
+    neeBufInfo.range = m_RTNEELightBuffer[0] ? static_cast<VkDeviceSize>(RT_NEE_LIGHT_BUFFER_SIZE) : 256;
 
     // Binding 17: SDF scene SSBO
     VkDescriptorBufferInfo sdfBufInfo{};
@@ -14418,14 +14471,16 @@ void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {
     ENJIN_LOG_INFO(Renderer, "RT output images transitioned to GENERAL layout (%zu images)", barriers.size());
 }
 
-void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math::Vector3& lightDir,
+void RenderSystem::UpdateRTLightUBO(VkCommandBuffer cmd, const Math::Matrix4& invViewProj, const Math::Vector3& lightDir,
                                      f32 lightIntensity, f32 shadowDistance, f32 shadowRadius, u32 frameCount,
                                      f32 fireflyClamp, i32 enableNEE, i32 enableMIS,
                                      i32 rrMinBounce, f32 rrMinProb,
                                      u32 dirLightCount, u32 ptLightCount, u32 sptLightCount,
                                      u32 maxBounces, u32 accumulatedSamples) {
-    u32 frameIdx = m_VulkanRenderer->GetCurrentFrameIndex();
-    if (!m_RTLightUBOMapped[frameIdx]) return;
+    // The light UBO (binding 13) and NEE SSBO (binding 16) are now single buffers
+    // written on the GPU timeline via vkCmdUpdateBuffer, so neither descriptor is
+    // rewritten per frame (VUID-03047 on the single RT descriptor set).
+    if (m_RTLightUBO[0] == VK_NULL_HANDLE) return;
 
     VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
 
@@ -14524,25 +14579,32 @@ void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math
     Math::Matrix4 vp = invViewProj.Inverse();
     for (int i = 0; i < 16; ++i) data.viewProj[i] = vp.m[i];
 
-    std::memcpy(m_RTLightUBOMapped[frameIdx], &data, sizeof(data));
+    // Write the UBO on the GPU timeline: ordered after the previous frame's read
+    // completes and before this frame's RT dispatch reads it. No host-write hazard,
+    // no per-frame descriptor rewrite (binding 13 points to m_RTLightUBO[0] for the
+    // life of the descriptor set). Must be outside a render pass (RecordRTFrame is).
+    static_assert(sizeof(data) <= 65536, "vkCmdUpdateBuffer limit");
+    vkCmdUpdateBuffer(cmd, m_RTLightUBO[0], 0, sizeof(data), &data);
 
-    // Update descriptor binding 13 to point to this frame's UBO
-    VkDescriptorBufferInfo uboInfo{};
-    uboInfo.buffer = m_RTLightUBO[frameIdx];
-    uboInfo.offset = 0;
-    uboInfo.range = 256;
+    VkBufferMemoryBarrier uboBarrier{};
+    uboBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    uboBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    uboBarrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
+    uboBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    uboBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    uboBarrier.buffer = m_RTLightUBO[0];
+    uboBarrier.offset = 0;
+    uboBarrier.size = VK_WHOLE_SIZE;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0, 0, nullptr, 1, &uboBarrier, 0, nullptr);
 
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = m_RTDescriptorSet;
-    write.dstBinding = 13;
-    write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    write.pBufferInfo = &uboInfo;
-    vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &write, 0, nullptr);
-
-    // Upload NEE light data to SSBO (binding 16) for path tracer direct light sampling
-    if (m_RTNEELightMapped[frameIdx] && (dirLightCount > 0 || ptLightCount > 0 || sptLightCount > 0)) {
+    // Upload NEE light data to SSBO (binding 16) for path tracer direct light
+    // sampling + ReSTIR-guided shadows. Built into a local buffer and written via
+    // vkCmdUpdateBuffer on the GPU timeline so binding 16 (single RT descriptor
+    // set) is never rewritten per frame (VUID-03047). vkCmdUpdateBuffer caps at
+    // 65536 bytes = 1024 lights, which comfortably exceeds any real scene.
+    if (m_RTNEELightBuffer[0] != VK_NULL_HANDLE && (dirLightCount > 0 || ptLightCount > 0 || sptLightCount > 0)) {
         // NEE light SSBO layout: packed RTLight structs (64 bytes each, matches rt_common.glsl)
         // RTLight { vec3 position, float range, vec3 direction, float intensity,
         //           vec3 color, int type, float innerCutoff, float outerCutoff, float _pad0, float _pad1 }
@@ -14554,9 +14616,11 @@ void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math
             f32 _pad0; f32 _pad1;
         };
 
-        u8* dst = static_cast<u8*>(m_RTNEELightMapped[frameIdx]);
+        constexpr u32 kMaxNEEUpdate = 65536 / sizeof(RTLightGPU);  // vkCmdUpdateBuffer limit
+        u32 maxLights = std::min(dirLightCount + ptLightCount + sptLightCount, kMaxNEEUpdate);
+        std::vector<u8> neeLocal(static_cast<usize>(maxLights) * sizeof(RTLightGPU));
+        u8* dst = neeLocal.data();
         u32 offset = 0;
-        u32 maxLights = RT_NEE_LIGHT_BUFFER_SIZE / sizeof(RTLightGPU);
         u32 totalLights = 0;
 
         // Copy directional lights
@@ -14621,20 +14685,23 @@ void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math
             totalLights++;
         }
 
-        // Update descriptor binding 16 to point to this frame's NEE light SSBO
-        VkDescriptorBufferInfo neeBufInfo{};
-        neeBufInfo.buffer = m_RTNEELightBuffer[frameIdx];
-        neeBufInfo.offset = 0;
-        neeBufInfo.range = VK_WHOLE_SIZE;
-
-        VkWriteDescriptorSet neeWrite{};
-        neeWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        neeWrite.dstSet = m_RTDescriptorSet;
-        neeWrite.dstBinding = 16;
-        neeWrite.descriptorCount = 1;
-        neeWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        neeWrite.pBufferInfo = &neeBufInfo;
-        vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &neeWrite, 0, nullptr);
+        // Write the packed lights to the single NEE buffer on the GPU timeline.
+        // Binding 16 points to m_RTNEELightBuffer[0] permanently (WriteRTDescriptors).
+        if (offset > 0) {
+            vkCmdUpdateBuffer(cmd, m_RTNEELightBuffer[0], 0, offset, neeLocal.data());
+            VkBufferMemoryBarrier neeBarrier{};
+            neeBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+            neeBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            neeBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            neeBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            neeBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            neeBarrier.buffer = m_RTNEELightBuffer[0];
+            neeBarrier.offset = 0;
+            neeBarrier.size = VK_WHOLE_SIZE;
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                0, 0, nullptr, 1, &neeBarrier, 0, nullptr);
+        }
     }
 }
 

@@ -198,6 +198,14 @@ ENJIN_TEST(RTSceneEmit, EmitsRayTracingProbeProject) {
         sky.horizonColor = Math::Vector3(0.7f, 0.8f, 0.95f);
         sky.bottomColor = Math::Vector3(0.45f, 0.42f, 0.4f);
         serializer.SetSkyboxConfig(sky);
+
+        // Low ambient so ray-traced shadows/AO/GI actually read in captures —
+        // the default 1.0 flat-fill ambient washes out exactly the shadowing the
+        // hybrid effects produce.
+        Renderer::SceneRenderSettings rs = serializer.GetRenderSettings();
+        rs.ambientIntensity = 0.25f;
+        rs.ambientColor = Math::Vector3(0.12f, 0.13f, 0.18f);
+        serializer.SetRenderSettings(rs);
     }
     auto saveResult = serializer.Save((projDir / "scenes" / "main.enjin").string());
     ENJIN_ASSERT_TRUE(saveResult.success);
