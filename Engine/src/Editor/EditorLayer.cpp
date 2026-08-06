@@ -2296,15 +2296,25 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                                                 m_RenderSystem->GetRTHybridReflectView(),
                                                 m_RenderSystem->GetRTHybridGIView(),
                                                 m_RenderSystem->GetRTHybridSampler());
+            // Per-effect strengths come from the RT compositor config, which the
+            // Scene Settings "RT Compositor" sliders drive and which serializes.
+            // A disabled effect contributes 0 regardless of its slider.
+            f32 shadowS = 1.0f, reflectS = 0.5f, aoS = 1.0f, giS = 0.5f;
+            if (auto* comp = m_RenderSystem->GetRTCompositor()) {
+                shadowS = comp->GetConfig().shadowStrength;
+                reflectS = comp->GetConfig().reflectionStrength;
+                aoS = comp->GetConfig().aoStrength;
+                giS = comp->GetConfig().giStrength;
+            }
             pps.rtHybridEnable = 1;
             pps.rtShadowStrength = (m_RenderSystem->GetRTShadows() &&
-                                    m_RenderSystem->GetRTShadows()->GetConfig().enabled) ? 1.0f : 0.0f;
+                                    m_RenderSystem->GetRTShadows()->GetConfig().enabled) ? shadowS : 0.0f;
             pps.rtAOStrength = (m_RenderSystem->GetRTAO() &&
-                                m_RenderSystem->GetRTAO()->GetConfig().enabled) ? 1.0f : 0.0f;
+                                m_RenderSystem->GetRTAO()->GetConfig().enabled) ? aoS : 0.0f;
             pps.rtReflectStrength = (m_RenderSystem->GetRTReflections() &&
-                                     m_RenderSystem->GetRTReflections()->GetConfig().enabled) ? 0.5f : 0.0f;
+                                     m_RenderSystem->GetRTReflections()->GetConfig().enabled) ? reflectS : 0.0f;
             pps.rtGIStrength = (m_RenderSystem->GetRTGI() &&
-                                m_RenderSystem->GetRTGI()->GetConfig().enabled) ? 0.5f : 0.0f;
+                                m_RenderSystem->GetRTGI()->GetConfig().enabled) ? giS : 0.0f;
         } else {
             pps.rtHybridEnable = 0;
             m_PostProcessing->SetRTHybridInputs(VK_NULL_HANDLE, VK_NULL_HANDLE,
