@@ -7,6 +7,7 @@
 #if !ENJIN_RENDERER_WEBGPU
 #include <vulkan/vulkan.h>
 #endif
+#include <vector>
 
 namespace Enjin {
 namespace Renderer {
@@ -76,10 +77,27 @@ private:
     VkDeviceMemory m_Memory = VK_NULL_HANDLE;
     VkBuffer m_ScratchBuffer = VK_NULL_HANDLE;
     VkDeviceMemory m_ScratchMemory = VK_NULL_HANDLE;
+    VkDeviceSize m_ScratchSize = 0;  // Allocated scratch size (reused when large enough)
     VkBuffer m_InstanceBuffer = VK_NULL_HANDLE;
     VkDeviceMemory m_InstanceMemory = VK_NULL_HANDLE;
     usize m_AllocatedSize = 0;
     u32 m_MaxInstanceCount = 0;  // Allocated capacity
+
+    // Deferred destruction: a full rebuild replaces the TLAS while the previous
+    // frame's command buffer may still reference the old one (VUID-02442).
+    // Replaced resources are retired here and freed after enough Build() calls
+    // (one per frame) have passed for all in-flight frames to complete.
+    struct RetiredResources {
+        VkAccelerationStructureKHR handle = VK_NULL_HANDLE;
+        VkBuffer buffer = VK_NULL_HANDLE;
+        VkDeviceMemory memory = VK_NULL_HANDLE;
+        u32 age = 0;
+    };
+    std::vector<RetiredResources> m_Retired;
+    void RetireCurrent();          // Move handle/buffer/memory into m_Retired
+    void RetireScratch();          // Move scratch buffer/memory into m_Retired
+    void AgeAndFreeRetired();      // Called per Build(); frees entries older than in-flight depth
+    void FlushRetired();           // Immediate free (shutdown, after wait-idle)
 
     bool CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
                       VkBuffer& outBuffer, VkDeviceMemory& outMemory);

@@ -3707,6 +3707,19 @@ void RenderSystem::FlushPendingChanges() {
     // in-flight command buffer and hang the GPU at submit.
     EnsureMaterialSSBOCapacity();
 
+    // Deferred RT bring-up: a scene enabled ray tracing after boot (init at
+    // boot ran before any scene settings existed). Pipeline/descriptor
+    // creation is only safe here, pre-recording. After init, set 0 is
+    // re-created so the RT dummy bindings 21-23 get written — the same dance
+    // RenderSystem::Initialize does for boot-time RT.
+    if (m_PendingRTInit) {
+        m_PendingRTInit = false;
+        InitializeRayTracing();
+        if (m_RTInitialized && m_RTDummyImageView && m_RTDummySampler && !m_DescriptorSets.empty()) {
+            CreateDescriptorSets();
+        }
+    }
+
     // Flush pending bindless texture registrations into the descriptor set.
     // The only other flush site sits in Update() AFTER the m_SkipMainPassRendering
     // early-return, which the editor takes every frame — so in the editor the
@@ -4259,33 +4272,7 @@ void RenderSystem::Update(f32 deltaTime) {
     }
 
     // Ray tracing pass (after shadow passes, before main render pass)
-    // When async compute is available, dispatch RT effects and denoising on the compute
-    // queue so they overlap with main geometry rasterization on the graphics queue.
-    // TLAS rebuild stays on graphics (needs vertex/index buffer access).
-    // Compositing is deferred until after main pass when compute results are ready.
-    if (m_RTEnabled && m_ASManager && m_SceneComposition.mode == SceneRenderMode::Scene3D) {
-        VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
-        if (commandBuffer != VK_NULL_HANDLE) {
-            RebuildTLAS(commandBuffer);
-
-            u32 frameIdx = m_VulkanRenderer->GetCurrentFrameIndex();
-            bool asyncRT = m_AsyncComputeScheduler &&
-                           m_AsyncComputeScheduler->ShouldUseAsync(Renderer::AsyncComputeWorkType::RTDispatch);
-
-            if (asyncRT) {
-                // Dispatch RT effects on async compute queue (overlaps with main geometry)
-                DispatchRTEffectsAsync(frameIdx);
-                // Denoising also runs on compute queue after RT finishes
-                // (submitted as part of the same compute command buffer)
-            } else {
-                // Single-queue fallback: RT effects + temporal reuse + denoise + composite on graphics queue
-                DispatchRTEffects(commandBuffer);
-                TemporalReuseRTOutputs(commandBuffer);
-                DenoiseRTOutputs(commandBuffer);
-                CompositeRTResults(commandBuffer);
-            }
-        }
-    }
+    RecordRTFrame(true);
 
     // Clustered forward lighting: build light list and assign to spatial clusters before main render pass
 #ifdef ENJIN_CLUSTERED_LIGHTING
@@ -7778,10 +7765,13 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
     VkBufferUsageFlags vertexUsage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     VkBufferUsageFlags indexUsage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
     if (IsRayTracingSupported()) {
+        // STORAGE on the index buffer: RT hit shaders read triangle indices
+        // through buffer device addresses for real normal interpolation
         vertexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
                        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
         indexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-                      VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+                      VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     }
 
     usize vertexBufferSize = mesh->vertices.size() * sizeof(MeshComponent::Vertex);
@@ -9939,7 +9929,14 @@ void RenderSystem::RenderShadowPass() {
                 vkCmdExecuteCommands(commandBuffer, static_cast<u32>(validBuffers.size()), validBuffers.data());
             }
         } else {
-            // Single-threaded fallback (< 32 entities) with prefetching
+            // Single-threaded fallback (< 32 entities) with prefetching.
+            // Per-command-buffer bind state must be LOCAL, never the shared member:
+            // m_GeometryPoolBound survives across frames, so frame N+1's command
+            // buffer would skip the pool bind entirely (draws with no VB/IB bound —
+            // the editor masked this because RenderToTarget resets the member each
+            // frame; the player path has no such reset). Same fix as secPoolBound
+            // in the parallel branch above.
+            bool serialPoolBound = false;
             for (usize si = 0; si < m_ShadowCasters.size(); ++si) {
                 if (si + 4 < m_ShadowCasters.size() && m_CachedTransformStorage) {
                     m_CachedTransformStorage->Prefetch(m_ShadowCasters[si + 4]);
@@ -9947,7 +9944,7 @@ void RenderSystem::RenderShadowPass() {
                 Entity entity = m_ShadowCasters[si];
                 auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                 if (xform && !xform->visible) continue;
-                RenderEntityShadow(entity, commandBuffer, m_GeometryPoolBound);
+                RenderEntityShadow(entity, commandBuffer, serialPoolBound);
             }
         }
 
@@ -10210,10 +10207,13 @@ void RenderSystem::RenderPointShadowPass() {
                     m_PointShadowPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
             }
 
+            // Per-command-buffer bind state must be local, not the shared member
+            // (stale-true across frames skips the pool VB/IB bind — see RenderShadowPass)
+            bool facePoolBound = false;
             for (Entity entity : m_ShadowCasters) {
                 auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                 if (xform && !xform->visible) continue;
-                RenderEntityShadow(entity, commandBuffer, m_GeometryPoolBound);
+                RenderEntityShadow(entity, commandBuffer, facePoolBound);
             }
 
             m_PointShadowMap->EndFacePass(commandBuffer);
@@ -10245,10 +10245,13 @@ void RenderSystem::RenderSpotShadowPass() {
                 m_SpotShadowPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
         }
 
+        // Per-command-buffer bind state must be local, not the shared member
+        // (stale-true across frames skips the pool VB/IB bind — see RenderShadowPass)
+        bool spotPoolBound = false;
         for (Entity entity : m_ShadowCasters) {
             auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
             if (xform && !xform->visible) continue;
-            RenderEntityShadow(entity, commandBuffer, m_GeometryPoolBound);
+            RenderEntityShadow(entity, commandBuffer, spotPoolBound);
         }
 
         m_SpotShadowMap->EndPass(commandBuffer);
@@ -11585,6 +11588,7 @@ bool RenderSystem::IsRayTracingSupported() const {
 }
 
 void RenderSystem::InitializeRayTracing() {
+    if (m_RTInitialized) return;
     if (!m_RTEnabled) {
         ENJIN_LOG_INFO(Renderer, "Ray tracing disabled by configuration");
         return;
@@ -11597,8 +11601,8 @@ void RenderSystem::InitializeRayTracing() {
     auto* ctx = m_VulkanRenderer->GetContext();
     ENJIN_LOG_INFO(Renderer, "Initializing ray tracing subsystems...");
 
-    // Create RT descriptor set layout (27 bindings: 0-16 existing + 17 SDF + 18 simplified materials + 19-20 ReSTIR + 21-23 radiance cache + 24-26 surfel cache)
-    std::array<VkDescriptorSetLayoutBinding, 27> rtBindings{};
+    // Create RT descriptor set layout (28 bindings: 0-16 existing + 17 SDF + 18 simplified materials + 19-20 ReSTIR + 21-23 radiance cache + 24-26 surfel cache + 27 light BVH)
+    std::array<VkDescriptorSetLayoutBinding, 28> rtBindings{};
 
     // Binding 0: TLAS
     rtBindings[0].binding = 0;
@@ -11680,11 +11684,11 @@ void RenderSystem::InitializeRayTracing() {
     rtBindings[15].descriptorCount = 1;
     rtBindings[15].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
 
-    // Binding 16: NEE light SSBO (scene lights for path tracer direct light sampling)
+    // Binding 16: NEE light SSBO (path tracer direct light sampling + ReSTIR compute passes)
     rtBindings[16].binding = 16;
     rtBindings[16].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     rtBindings[16].descriptorCount = 1;
-    rtBindings[16].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+    rtBindings[16].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
 
     // Binding 17: SDF scene SSBO (SDF objects for reflection fallback sphere tracing)
     rtBindings[17].binding = 17;
@@ -11746,6 +11750,12 @@ void RenderSystem::InitializeRayTracing() {
     rtBindings[26].descriptorCount = 1;
     rtBindings[26].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
+    // Binding 27: Light BVH node SSBO (ReSTIR importance-weighted light selection; dummy until LightBVH is wired)
+    rtBindings[27].binding = 27;
+    rtBindings[27].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    rtBindings[27].descriptorCount = 1;
+    rtBindings[27].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<u32>(rtBindings.size());
@@ -11761,7 +11771,7 @@ void RenderSystem::InitializeRayTracing() {
     poolSizes[0] = { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1 };
     poolSizes[1] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 9 };   // 5-8, 14-15, 23, 26 + radiance cache output + surfel output
     poolSizes[2] = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 };
-    poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 13 }; // 9-12, 16-20, 21-22, 24-25 (radiance cache + surfel cache)
+    poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 14 }; // 9-12, 16-20, 21-22, 24-25, 27 (radiance cache + surfel cache + light BVH)
     poolSizes[4] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 };
 
     VkDescriptorPoolCreateInfo poolInfo{};
@@ -11965,6 +11975,7 @@ void RenderSystem::InitializeRayTracing() {
             m_OptiXDenoiser->RegisterImageMapping(velView, velImage, Renderer::VulkanSwapchain::VELOCITY_FORMAT);
     }
 
+    m_RTInitialized = true;
     ENJIN_LOG_INFO(Renderer, "Ray tracing subsystems initialized (shadows=%s, reflections=%s, AO=%s, GI=%s, pathtracer=%s, restir=%s, surfel_cache=%s)",
                    m_RTShadows ? "yes" : "no", m_RTReflections ? "yes" : "no",
                    m_RTAO ? "yes" : "no", m_RTGI ? "yes" : "no",
@@ -11973,6 +11984,11 @@ void RenderSystem::InitializeRayTracing() {
 }
 
 void RenderSystem::ShutdownRayTracing() {
+    // The last submitted frame may still reference the TLAS/BLAS and RT images;
+    // destroying them mid-flight is VUID-02442. Idle is fine here — shutdown only.
+    if (m_Renderer && m_VulkanRenderer && m_VulkanRenderer->GetContext()) {
+        vkDeviceWaitIdle(m_VulkanRenderer->GetContext()->GetDevice());
+    }
     m_SurfelRadianceCache.reset();
     m_RTTemporalReuse.reset();
     m_RTCompositor.reset();
@@ -12004,10 +12020,115 @@ void RenderSystem::ShutdownRayTracing() {
     m_RTDescriptorsWritten = false;
 }
 
+void RenderSystem::RecordRTFrame(bool allowAsync) {
+    // Records the full per-frame RT chain (TLAS rebuild + dispatch + denoise +
+    // composite) into the current command buffer. Called from Update() for the
+    // player/main-pass path, and from EditorLayer::RenderOffscreen for the editor
+    // (Update() early-returns on m_SkipMainPassRendering before reaching RT, so
+    // without the editor call RT never dispatches there). Must be recorded
+    // OUTSIDE a render pass.
+    if (!m_RTEnabled || !m_ASManager || m_SceneComposition.mode != SceneRenderMode::Scene3D) return;
+
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    // Once per frame: the same command buffer never records the RT chain twice
+    // (handles alternate per frame in flight, so comparing against the previous
+    // call's handle is a safe per-frame guard — same pattern as m_LastSkinningCmd)
+    if (commandBuffer == m_LastRTFrameCmd) return;
+    m_LastRTFrameCmd = commandBuffer;
+
+    // Restore the PT accumulation image to GENERAL if the previous frame's display
+    // pass left it in SHADER_READ_ONLY (the dispatch below writes it as storage)
+    if (m_PTImageReadOnly && m_PathTracer && m_PathTracer->GetOutputImage() != VK_NULL_HANDLE) {
+        VkImageMemoryBarrier toGeneral{};
+        toGeneral.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        toGeneral.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        toGeneral.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        toGeneral.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toGeneral.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toGeneral.image = m_PathTracer->GetOutputImage();
+        toGeneral.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        toGeneral.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        toGeneral.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        vkCmdPipelineBarrier(commandBuffer,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+            0, 0, nullptr, 0, nullptr, 1, &toGeneral);
+        m_PTImageReadOnly = false;
+    }
+
+    // When async compute is available, dispatch RT effects and denoising on the compute
+    // queue so they overlap with main geometry rasterization on the graphics queue.
+    // TLAS rebuild stays on graphics (needs vertex/index buffer access).
+    // Compositing is deferred until after main pass when compute results are ready.
+    RebuildTLAS(commandBuffer);
+
+    u32 frameIdx = m_VulkanRenderer->GetCurrentFrameIndex();
+    // Path-trace mode always takes the single-queue path: the display transition
+    // below must be on the graphics queue in this command buffer
+    bool asyncRT = allowAsync && m_RTMode != 1 && m_AsyncComputeScheduler &&
+                   m_AsyncComputeScheduler->ShouldUseAsync(Renderer::AsyncComputeWorkType::RTDispatch);
+
+    if (asyncRT) {
+        // Dispatch RT effects on async compute queue (overlaps with main geometry)
+        DispatchRTEffectsAsync(frameIdx);
+        // Denoising also runs on compute queue after RT finishes
+        // (submitted as part of the same compute command buffer)
+    } else {
+        // Single-queue path: RT effects + temporal reuse + denoise + composite on graphics queue
+        DispatchRTEffects(commandBuffer);
+        TemporalReuseRTOutputs(commandBuffer);
+        DenoiseRTOutputs(commandBuffer);
+        CompositeRTResults(commandBuffer);
+    }
+
+    // Path-trace mode: hand the accumulation image to the display pass in
+    // SHADER_READ_ONLY. Recorded here because it must sit outside a render pass
+    // (the player's PP draw happens inside the already-open swapchain pass).
+    if (m_RTMode == 1 && m_PathTracer && m_PathTracer->GetOutputImage() != VK_NULL_HANDLE &&
+        m_RTDescriptorsWritten && m_ASManager->HasValidTLAS()) {
+        VkImageMemoryBarrier toRead{};
+        toRead.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        toRead.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        toRead.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        toRead.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toRead.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toRead.image = m_PathTracer->GetOutputImage();
+        toRead.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        toRead.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        toRead.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(commandBuffer,
+            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            0, 0, nullptr, 0, nullptr, 1, &toRead);
+        m_PTImageReadOnly = true;
+    }
+}
+
 void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
     if (!m_ASManager || !m_RTEnabled) return;
 
     m_ASManager->ResetInstances();
+
+    // Per-instance geometry table (binding 10): hit shaders read real triangle
+    // data through these buffer device addresses. Must match the GLSL
+    // RTInstanceGeom struct in rt_common.glsl (32 bytes, std430).
+    struct RTInstanceGeomGPU {
+        u64 vertexAddr;         // Device address of this mesh's first vertex
+        u64 indexAddr;          // Device address of this mesh's first index (u32)
+        u32 strideFloats;       // Vertex stride in floats (0 = no entry, use fallback normal)
+        u32 normalOffsetFloats; // Offset of the normal within a vertex, in floats
+        u32 _pad0;
+        u32 _pad1;
+    };
+    static_assert(sizeof(RTInstanceGeomGPU) == 32, "RTInstanceGeomGPU must be 32 bytes for std430");
+    static_assert(sizeof(MeshComponent::Vertex) % sizeof(f32) == 0, "Vertex stride must be float-aligned");
+    static_assert(offsetof(MeshComponent::Vertex, normal) == 12, "RT hit shaders assume normal at float offset 3");
+
+    EnsureRTInstanceGeomBuffer(std::max<u32>(RT_MATERIAL_BUFFER_INITIAL_CAPACITY,
+                                             static_cast<u32>(m_EntityRenderData.size())));
+    auto* geomDst = static_cast<RTInstanceGeomGPU*>(m_RTInstanceGeomMapped);
 
     // Cache pool buffer device addresses (computed once, reused for all pool entities)
     VkDeviceAddress poolVertBase = 0;
@@ -12063,6 +12184,17 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         Math::Matrix4 model = ECS::ComputeWorldMatrix(m_World, entity);
 
         m_ASManager->AddInstance(blasId, model, EntityIndex(entity));
+
+        // Record this instance's geometry addresses for hit-shader normal reads
+        if (geomDst && EntityIndex(entity) < m_RTInstanceGeomCapacity) {
+            auto& g = geomDst[EntityIndex(entity)];
+            g.vertexAddr = vertAddr;
+            g.indexAddr = idxAddr;
+            g.strideFloats = static_cast<u32>(sizeof(MeshComponent::Vertex) / sizeof(f32));
+            g.normalOffsetFloats = 3;  // Vertex.normal follows Vertex.position (vec3)
+            g._pad0 = 0;
+            g._pad1 = 0;
+        }
     }
 
     // Upload per-entity material data to the RT material SSBO (binding 9).
@@ -12070,14 +12202,18 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
     // and every frame thereafter since material properties can change at runtime.
     UploadRTMaterials();
 
-    // Flush BLAS builds and build/update TLAS
+    // Flush BLAS builds and build/update TLAS. transformsOnly=true: static frames
+    // refit in place instead of a full rebuild (a rebuild every frame also retired
+    // and replaced the TLAS while the previous frame still traced against it)
     if (m_ASManager->HasPendingBuilds()) {
         m_ASManager->FlushPendingBLASBuilds(cmd);
     }
-    m_ASManager->BuildTLAS(cmd);
+    m_ASManager->BuildTLAS(cmd, true);
 
     // Write all RT descriptors once TLAS is valid (need a real handle for binding 0)
     if (!m_RTDescriptorsWritten && m_ASManager->HasValidTLAS()) {
+        ENJIN_LOG_INFO(Renderer, "TLAS valid (%u instances) — writing RT descriptors",
+                       m_ASManager->GetInstanceCount());
         WriteRTDescriptors();
         TransitionRTOutputImages(cmd);
         m_RTDescriptorsWritten = true;
@@ -12097,7 +12233,14 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         simplifiedMatBufInfo.range = (m_RTSimplifiedMaterialBuffer != VK_NULL_HANDLE)
             ? VK_WHOLE_SIZE : static_cast<VkDeviceSize>(256);
 
-        std::array<VkWriteDescriptorSet, 2> matWrites{};
+        VkDescriptorBufferInfo geomBufInfo{};
+        geomBufInfo.buffer = (m_RTInstanceGeomBuffer != VK_NULL_HANDLE)
+            ? m_RTInstanceGeomBuffer : m_RTDummyBuffer;
+        geomBufInfo.offset = 0;
+        geomBufInfo.range = (m_RTInstanceGeomBuffer != VK_NULL_HANDLE)
+            ? VK_WHOLE_SIZE : static_cast<VkDeviceSize>(256);
+
+        std::array<VkWriteDescriptorSet, 3> matWrites{};
 
         // Binding 9: Full material SSBO
         matWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -12114,6 +12257,14 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         matWrites[1].descriptorCount = 1;
         matWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         matWrites[1].pBufferInfo = &simplifiedMatBufInfo;
+
+        // Binding 10: Instance geometry SSBO (may have been reallocated on growth)
+        matWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        matWrites[2].dstSet = m_RTDescriptorSet;
+        matWrites[2].dstBinding = 10;
+        matWrites[2].descriptorCount = 1;
+        matWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        matWrites[2].pBufferInfo = &geomBufInfo;
 
         vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(),
                                static_cast<u32>(matWrites.size()), matWrites.data(), 0, nullptr);
@@ -12133,23 +12284,29 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
         }
     }
 
-    // Compute inverse view-projection and camera position
-    Math::Matrix4 view = m_Camera->GetViewMatrix();
-    Math::Matrix4 proj = m_Camera->GetProjectionMatrix();
+    // Compute inverse view-projection and camera position. The override (editor:
+    // game camera) wins so RT/path tracing renders the game view, not the fly cam.
+    Renderer::Camera* rtCamera = m_RTCameraOverride ? m_RTCameraOverride : m_Camera;
+    Math::Matrix4 view = rtCamera->GetViewMatrix();
+    Math::Matrix4 proj = rtCamera->GetProjectionMatrix();
     Math::Matrix4 viewProj = proj * view;
     Math::Matrix4 invViewProj = viewProj.Inverse();
-    Math::Vector3 cameraPos = m_Camera->GetPosition();
+    Math::Vector3 cameraPos = rtCamera->GetPosition();
 
-    // Detect camera changes for path tracer accumulation reset
+    // Detect camera changes for path tracer accumulation reset.
+    // Uses a dedicated member: m_PrevViewProj is the motion-vector prev-VP and is
+    // rewritten by UpdateFrameUniforms with whichever camera renders (in the editor
+    // the fly cam and game cam alternate within one frame) — comparing against it
+    // reported a camera change every frame and reset PT accumulation to 1 spp.
     bool cameraChanged = false;
     {
         // Compare VP matrices — any significant change resets accumulation
         const f32* a = viewProj.m;
-        const f32* b = m_PrevViewProj.m;
+        const f32* b = m_RTPrevViewProj.m;
         f32 diff = 0.0f;
         for (int i = 0; i < 16; ++i) diff += std::abs(a[i] - b[i]);
         cameraChanged = (diff > 0.001f);
-        m_PrevViewProj = viewProj;
+        m_RTPrevViewProj = viewProj;
     }
     if (cameraChanged && m_PathTracer) {
         m_PathTracer->ResetAccumulation();
@@ -12242,6 +12399,9 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
 
     if (m_RTMode == 1 && m_PathTracer) {
         // Path trace mode — progressive accumulation
+        if (m_RTFrameCount == 1) {
+            ENJIN_LOG_INFO(Renderer, "Path tracer dispatching (first frame)");
+        }
         m_PathTracer->Dispatch(cmd, m_RTDescriptorSet, invViewProj, cameraPos,
                                lightDir, m_RTFrameCount);
         return;
@@ -12950,6 +13110,80 @@ void RenderSystem::EnsureRTSimplifiedMaterialBuffer(u32 requiredCapacity) {
                    newCapacity, static_cast<unsigned long long>(simplifiedBufSize));
 }
 
+void RenderSystem::EnsureRTInstanceGeomBuffer(u32 requiredCapacity) {
+    if (requiredCapacity <= m_RTInstanceGeomCapacity && m_RTInstanceGeomBuffer != VK_NULL_HANDLE) return;
+
+    auto* ctx = m_VulkanRenderer->GetContext();
+    VkDevice device = ctx->GetDevice();
+
+    if (m_RTInstanceGeomMapped) {
+        vkUnmapMemory(device, m_RTInstanceGeomMemory);
+        m_RTInstanceGeomMapped = nullptr;
+    }
+    if (m_RTInstanceGeomBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device, m_RTInstanceGeomBuffer, nullptr);
+        m_RTInstanceGeomBuffer = VK_NULL_HANDLE;
+    }
+    if (m_RTInstanceGeomMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, m_RTInstanceGeomMemory, nullptr);
+        m_RTInstanceGeomMemory = VK_NULL_HANDLE;
+    }
+
+    // Grow by at least 2x to avoid frequent reallocations
+    u32 newCapacity = m_RTInstanceGeomCapacity > 0
+        ? m_RTInstanceGeomCapacity * 2
+        : RT_MATERIAL_BUFFER_INITIAL_CAPACITY;
+    if (newCapacity < requiredCapacity) newCapacity = requiredCapacity;
+
+    // RTInstanceGeomGPU is 32 bytes per entry
+    VkDeviceSize bufSize = static_cast<VkDeviceSize>(newCapacity) * 32;
+
+    VkBufferCreateInfo bufCI{};
+    bufCI.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufCI.size = bufSize;
+    bufCI.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    bufCI.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(device, &bufCI, nullptr, &m_RTInstanceGeomBuffer) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create RT instance geometry SSBO (%u entries)", newCapacity);
+        return;
+    }
+
+    VkMemoryRequirements memReqs;
+    vkGetBufferMemoryRequirements(device, m_RTInstanceGeomBuffer, &memReqs);
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memReqs.size;
+    allocInfo.memoryTypeIndex = ctx->FindMemoryType(memReqs.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &m_RTInstanceGeomMemory) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to allocate RT instance geometry SSBO memory");
+        vkDestroyBuffer(device, m_RTInstanceGeomBuffer, nullptr);
+        m_RTInstanceGeomBuffer = VK_NULL_HANDLE;
+        return;
+    }
+
+    if (vkBindBufferMemory(device, m_RTInstanceGeomBuffer, m_RTInstanceGeomMemory, 0) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to bind RT instance geometry SSBO memory");
+        return;
+    }
+
+    if (vkMapMemory(device, m_RTInstanceGeomMemory, 0, bufSize, 0, &m_RTInstanceGeomMapped) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to map RT instance geometry SSBO");
+        m_RTInstanceGeomMapped = nullptr;
+        return;
+    }
+
+    // Zeroed = strideFloats 0 for every entry, which hit shaders treat as
+    // "no geometry data, use fallback normal"
+    std::memset(m_RTInstanceGeomMapped, 0, static_cast<size_t>(bufSize));
+    m_RTInstanceGeomCapacity = newCapacity;
+
+    ENJIN_LOG_INFO(Renderer, "RT instance geometry SSBO created/resized: %u entries (%llu bytes)",
+                   newCapacity, static_cast<unsigned long long>(bufSize));
+}
+
 void RenderSystem::DestroyRTDummyResources() {
     if (!m_Renderer || !m_VulkanRenderer->GetContext()) return;
     VkDevice device = m_VulkanRenderer->GetContext()->GetDevice();
@@ -12967,6 +13201,9 @@ void RenderSystem::DestroyRTDummyResources() {
     if (m_RTDummyImageView) { vkDestroyImageView(device, m_RTDummyImageView, nullptr); m_RTDummyImageView = VK_NULL_HANDLE; }
     if (m_RTDummyImage) { vkDestroyImage(device, m_RTDummyImage, nullptr); m_RTDummyImage = VK_NULL_HANDLE; }
     if (m_RTDummyImageMemory) { vkFreeMemory(device, m_RTDummyImageMemory, nullptr); m_RTDummyImageMemory = VK_NULL_HANDLE; }
+    if (m_RTDummy3DImageView) { vkDestroyImageView(device, m_RTDummy3DImageView, nullptr); m_RTDummy3DImageView = VK_NULL_HANDLE; }
+    if (m_RTDummy3DImage) { vkDestroyImage(device, m_RTDummy3DImage, nullptr); m_RTDummy3DImage = VK_NULL_HANDLE; }
+    if (m_RTDummy3DImageMemory) { vkFreeMemory(device, m_RTDummy3DImageMemory, nullptr); m_RTDummy3DImageMemory = VK_NULL_HANDLE; }
     if (m_RTDummyBuffer) { vkDestroyBuffer(device, m_RTDummyBuffer, nullptr); m_RTDummyBuffer = VK_NULL_HANDLE; }
     if (m_RTDummyBufferMemory) { vkFreeMemory(device, m_RTDummyBufferMemory, nullptr); m_RTDummyBufferMemory = VK_NULL_HANDLE; }
     if (m_DummyCubeImageView) { vkDestroyImageView(device, m_DummyCubeImageView, nullptr); m_DummyCubeImageView = VK_NULL_HANDLE; }
@@ -12999,6 +13236,12 @@ void RenderSystem::DestroyRTDummyResources() {
     if (m_RTSimplifiedMaterialBuffer != VK_NULL_HANDLE) { vkDestroyBuffer(device, m_RTSimplifiedMaterialBuffer, nullptr); m_RTSimplifiedMaterialBuffer = VK_NULL_HANDLE; }
     if (m_RTSimplifiedMaterialMemory != VK_NULL_HANDLE) { vkFreeMemory(device, m_RTSimplifiedMaterialMemory, nullptr); m_RTSimplifiedMaterialMemory = VK_NULL_HANDLE; }
     m_RTSimplifiedMaterialBufferCapacity = 0;
+
+    // Destroy RT instance geometry SSBO
+    if (m_RTInstanceGeomMapped) { vkUnmapMemory(device, m_RTInstanceGeomMemory); m_RTInstanceGeomMapped = nullptr; }
+    if (m_RTInstanceGeomBuffer != VK_NULL_HANDLE) { vkDestroyBuffer(device, m_RTInstanceGeomBuffer, nullptr); m_RTInstanceGeomBuffer = VK_NULL_HANDLE; }
+    if (m_RTInstanceGeomMemory != VK_NULL_HANDLE) { vkFreeMemory(device, m_RTInstanceGeomMemory, nullptr); m_RTInstanceGeomMemory = VK_NULL_HANDLE; }
+    m_RTInstanceGeomCapacity = 0;
 }
 
 void RenderSystem::UploadRTMaterials() {
@@ -13173,11 +13416,17 @@ void RenderSystem::WriteRTDescriptors() {
         dummyBufInfos[0].offset = 0;
         dummyBufInfos[0].range = 256;
     }
-    // Bindings 10-12: Still dummy (vertex/index/transforms — future work)
+    // Bindings 11-12: Still dummy (per-vertex extras / transforms — future work)
     for (u32 i = 1; i < 4; ++i) {
         dummyBufInfos[i].buffer = m_RTDummyBuffer;
         dummyBufInfos[i].offset = 0;
         dummyBufInfos[i].range = 256;
+    }
+    // Binding 10: Instance geometry SSBO (vertex/index device addresses for hit-shader normal reads)
+    if (m_RTInstanceGeomBuffer != VK_NULL_HANDLE && m_RTInstanceGeomCapacity > 0) {
+        dummyBufInfos[1].buffer = m_RTInstanceGeomBuffer;
+        dummyBufInfos[1].offset = 0;
+        dummyBufInfos[1].range = VK_WHOLE_SIZE;
     }
 
     // Binding 13: RT light UBO
@@ -13292,8 +13541,22 @@ void RenderSystem::WriteRTDescriptors() {
     surfelOutputImgInfo.imageView = m_SurfelRadianceCache ? m_SurfelRadianceCache->GetOutputView() : m_RTDummyImageView;
     surfelOutputImgInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-    // Build write array for all 27 bindings
-    std::array<VkWriteDescriptorSet, 27> writes{};
+    // Binding 27: Light BVH node SSBO — dummy until LightBVH build is wired.
+    // restir_initial.comp only reads bvhNodes[] when pc.bvhNodeCount > 0, which
+    // ReSTIR::Dispatch defaults to 0, so the dummy is never dereferenced.
+    VkDescriptorBufferInfo lightBVHBufInfo{};
+    if (m_LightBVH && m_LightBVH->IsValid()) {
+        lightBVHBufInfo.buffer = m_LightBVH->GetNodeBuffer();
+        lightBVHBufInfo.offset = 0;
+        lightBVHBufInfo.range = VK_WHOLE_SIZE;
+    } else {
+        lightBVHBufInfo.buffer = m_RTDummyBuffer;
+        lightBVHBufInfo.offset = 0;
+        lightBVHBufInfo.range = 256;
+    }
+
+    // Build write array for all 28 bindings
+    std::array<VkWriteDescriptorSet, 28> writes{};
 
     // Binding 0: TLAS
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -13453,9 +13716,17 @@ void RenderSystem::WriteRTDescriptors() {
     writes[26].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[26].pImageInfo = &surfelOutputImgInfo;
 
+    // Binding 27: Light BVH node SSBO
+    writes[27].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[27].dstSet = m_RTDescriptorSet;
+    writes[27].dstBinding = 27;
+    writes[27].descriptorCount = 1;
+    writes[27].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[27].pBufferInfo = &lightBVHBufInfo;
+
     vkUpdateDescriptorSets(device, static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
 
-    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 27 bindings)");
+    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 28 bindings)");
 }
 
 void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {

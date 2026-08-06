@@ -1955,6 +1955,13 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     Math::Vector3 target = cameraTransform->position + forward;
     gameCamera.SetLookAt(cameraTransform->position, target, up);
 
+    // Hand RT the game camera: ray tracing / path tracing renders the game view,
+    // not the editor fly cam (RT dispatch happens in RenderSystem::Update).
+    if (m_RenderSystem) {
+        m_RTGameCamera = gameCamera;
+        m_RenderSystem->SetRTCameraOverride(&m_RTGameCamera);
+    }
+
     // Find active weather zone containing the game camera
     ECS::WeatherZoneComponent* activeWeatherZone = nullptr;
     i32 bestWeatherPriority = INT_MIN;
@@ -2265,8 +2272,19 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             if (cc) cameraPPEnabled = cc->enablePostProcessing;
         }
     }
+    // Path tracer display: when RT is in path-trace mode with accumulated samples,
+    // the PT image replaces the rasterized scene as the post-process source. The PP
+    // shader path is forced even if the camera disables post-processing — the PT
+    // image is HDR radiance and needs the tonemap to be displayable.
+    bool ptDisplayActive = false;
+    if (m_RenderSystem && m_RenderSystem->IsRayTracingEnabled() && m_RenderSystem->GetRTMode() == 1) {
+        auto* pathTracer = m_RenderSystem->GetPathTracer();
+        ptDisplayActive = pathTracer && pathTracer->GetOutputView() != VK_NULL_HANDLE &&
+                          pathTracer->GetAccumulatedSamples() > 0;
+    }
+
     bool usePPShader = usePostProcessing && m_PostProcessing &&
-                       m_PostProcessing->IsInitialized() && cameraPPEnabled;
+                       m_PostProcessing->IsInitialized() && (cameraPPEnabled || ptDisplayActive);
 
     // Choose render target: scene RT when post-processing is active, game view RT otherwise
     Renderer::RenderTarget* sceneTarget = usePostProcessing
@@ -2305,6 +2323,12 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     }
 
     m_RenderSystem->RenderShadowPassForCamera(&gameCamera);
+
+    // Record the RT chain (TLAS + dispatch) for the game view. Update() never
+    // reaches RT in editor mode (m_SkipMainPassRendering early-return), so this
+    // is the editor's only RT dispatch site. Must be outside a render pass;
+    // single-queue path (no async compute) keeps ordering simple.
+    m_RenderSystem->RecordRTFrame(false);
 
     // Render scene + effects into the chosen target
     sceneTarget->Begin(commandBuffer);
@@ -2400,6 +2424,11 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         // Both compute dispatches must happen outside a render pass.
         bool upscalerActive = m_RenderSystem && m_RenderSystem->IsUpscalerActive();
 
+        // Tracks whether some pass (TAA/upscaler/path tracer) redirected the PP
+        // source this frame; when none did, the source is rebound to the scene RT
+        // color below (it may still hold last frame's redirect).
+        bool ppSourceRedirected = false;
+
         // TAA resolve pass (runs at render resolution — same as scene target)
         if (cameraPPEnabled && m_PostProcessing->IsTAAEnabled() && m_Renderer && !upscalerActive) {
             auto* swapchain = m_Renderer->GetSwapchain();
@@ -2415,6 +2444,8 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             VkImageView taaOutput = m_PostProcessing->GetTAAOutputImageView();
             if (taaOutput != VK_NULL_HANDLE && m_SceneRenderTarget) {
                 m_PostProcessing->UpdateSourceImage(taaOutput, m_SceneRenderTarget->GetSampler());
+                m_LastPPSourceView = taaOutput;
+                ppSourceRedirected = true;
             }
         }
 
@@ -2467,6 +2498,8 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                 VkImageView upscaledOutput = upscaler->GetOutputImageView();
                 if (upscaledOutput != VK_NULL_HANDLE) {
                     m_PostProcessing->UpdateSourceImage(upscaledOutput, m_SceneRenderTarget->GetSampler());
+                    m_LastPPSourceView = upscaledOutput;
+                    ppSourceRedirected = true;
                 }
             }
         }
@@ -2498,6 +2531,36 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
 
             m_PostProcessing->UpdateDepthSource(m_SceneRenderTarget->GetDepthImageView());
             depthBound = true;
+        }
+
+        // Path tracer display: bind the accumulated PT image as the PP source.
+        // RecordRTFrame already transitioned it to SHADER_READ_ONLY after dispatch
+        // (and restores GENERAL before the next dispatch), so no barriers here.
+        // The descriptor rebind is change-tracked: in steady state the set is
+        // written once, not per frame (the set is plain, no update-after-bind).
+        if (ptDisplayActive && usePPShader) {
+            auto* pathTracer = m_RenderSystem->GetPathTracer();
+            if (pathTracer && pathTracer->GetOutputImage() != VK_NULL_HANDLE) {
+                if (m_LastPPSourceView != pathTracer->GetOutputView()) {
+                    m_PostProcessing->UpdateSourceImage(pathTracer->GetOutputView(),
+                                                        pathTracer->GetOutputSampler());
+                    m_LastPPSourceView = pathTracer->GetOutputView();
+                    ENJIN_LOG_INFO(Editor, "Path tracer display active: game view shows PT accumulation (%u samples)",
+                                   pathTracer->GetAccumulatedSamples());
+                }
+                ppSourceRedirected = true;
+            }
+        }
+
+        // No redirect this frame: make sure the source is the scene RT color
+        // (the set may still hold last frame's TAA/upscaler/PT view).
+        if (!ppSourceRedirected && usePPShader &&
+            m_SceneRenderTarget && m_SceneRenderTarget->IsValid() &&
+            m_LastPPSourceView != m_SceneRenderTarget->GetColorImageView()) {
+            m_PostProcessing->UpdateSourceImage(
+                m_SceneRenderTarget->GetColorImageView(),
+                m_SceneRenderTarget->GetSampler());
+            m_LastPPSourceView = m_SceneRenderTarget->GetColorImageView();
         }
 
         if (usePPShader) {
@@ -2584,12 +2647,10 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                 0, 0, nullptr, 0, nullptr, 1, &depthRestore);
         }
 
-        // Restore original source image for next frame (avoid stale TAA reference)
-        if (m_PostProcessing->IsTAAEnabled() && m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
-            m_PostProcessing->UpdateSourceImage(
-                m_SceneRenderTarget->GetColorImageView(),
-                m_SceneRenderTarget->GetSampler());
-        }
+        // NOTE: no source-image restore here. The PP descriptor set is recorded
+        // into this frame's command buffer — rewriting it after the draw is
+        // recorded (pre-submit) makes the draw sample the restored view instead.
+        // Stale sources are handled by the change-tracked rebind above instead.
 
         // GPU timestamp: post-process end
         if (m_Renderer) {

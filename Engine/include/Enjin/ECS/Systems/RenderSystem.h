@@ -264,6 +264,11 @@ public:
     void SetCamera(Renderer::Camera* camera) { m_Camera = camera; }
     Renderer::Camera* GetCamera() const { return m_Camera; }
 
+    // RT camera override: when set, ray tracing dispatch traces from this camera
+    // instead of m_Camera. The editor uses it so RT/path tracing renders the game
+    // view (game camera) while the fly cam keeps driving the scene viewport.
+    void SetRTCameraOverride(Renderer::Camera* camera) { m_RTCameraOverride = camera; }
+
     // Asset reader for loading textures from .enjpak on web
     void SetAssetReader(Build::AssetReader* reader) { m_AssetReader = reader; }
 
@@ -627,7 +632,15 @@ public:
     // Ray tracing
     bool IsRayTracingSupported() const;
     bool IsRayTracingEnabled() const { return m_RTEnabled; }
-    void SetRayTracingEnabled(bool enabled) { m_RTEnabled = enabled; }
+    // Enabling after boot defers initialization to the next pre-recording
+    // flush. InitializeRayTracing used to run ONCE at RenderSystem::Initialize
+    // — before any scene could set rtEnabled — so the whole RT stack was
+    // unreachable at runtime (every rtEnabled scene rendered pure raster).
+    void SetRayTracingEnabled(bool enabled) {
+        if (enabled == m_RTEnabled) return;
+        m_RTEnabled = enabled;
+        if (enabled && !m_RTInitialized) m_PendingRTInit = true;
+    }
 
     // GPU compute skinning (ADR-0002 Phase 1, Vulkan-only). Default OFF: when disabled the
     // engine uses the existing vertex-shader skinning path unchanged. When on, skinned meshes
@@ -640,6 +653,12 @@ public:
     bool IsPlayerMode() const { return m_PlayerMode; }
     u32 GetRTMode() const { return m_RTMode; }
     void SetRTMode(u32 mode) { m_RTMode = mode; }
+
+    // Record the per-frame RT chain (TLAS rebuild + dispatch + denoise + composite)
+    // into the current command buffer, outside a render pass. Update() calls this on
+    // the main-pass path; the editor calls it from RenderOffscreen because Update()
+    // early-returns on m_SkipMainPassRendering before reaching RT. Idempotent per frame.
+    void RecordRTFrame(bool allowAsync);
 
     // RT subsystem accessors
     Renderer::AccelerationStructureManager* GetASManager() { return m_ASManager.get(); }
@@ -1458,6 +1477,8 @@ private:
     void CompositeRTResults(VkCommandBuffer cmd);
 
     bool m_RTEnabled = false;
+    bool m_RTInitialized = false;   // InitializeRayTracing completed successfully
+    bool m_PendingRTInit = false;   // RT enabled post-boot; init at next flush
     // GPU compute skinning feature flag (ADR-0002 Phase 1). Default OFF. Declared outside the
     // Vulkan-only block so the inline setter/getter compile on every backend; only the Vulkan
     // path acts on it.
@@ -1470,7 +1491,14 @@ private:
     VkCommandBuffer m_LastSkinningCmd = VK_NULL_HANDLE;  // once-per-frame guard for RunComputeSkinningPass
     u32 m_RTMode = 0;  // 0=Hybrid, 1=PathTrace
     u32 m_RTFrameCount = 0;
-    Math::Matrix4 m_PrevViewProj;  // Previous frame's VP for path tracer camera change detection
+    Math::Matrix4 m_PrevViewProj;    // Previous frame's VP for velocity/motion vectors (UpdateFrameUniforms)
+    Math::Matrix4 m_RTPrevViewProj;  // RT camera's previous VP for path tracer accumulation reset detection
+    Renderer::Camera* m_RTCameraOverride = nullptr;  // RT traces from this camera when set (editor game view)
+    VkCommandBuffer m_LastRTFrameCmd = VK_NULL_HANDLE;  // once-per-frame guard for RecordRTFrame
+    // PT accumulation image layout state: RecordRTFrame leaves it SHADER_READ_ONLY
+    // after a path-trace dispatch so display passes (editor game view PP, player PP)
+    // can sample it, and restores GENERAL before the next dispatch.
+    bool m_PTImageReadOnly = false;
 
     std::unique_ptr<Renderer::AccelerationStructureManager> m_ASManager;
     std::unique_ptr<Renderer::RTShadows> m_RTShadows;
@@ -1536,6 +1564,16 @@ private:
     VkDeviceMemory m_RTSimplifiedMaterialMemory = VK_NULL_HANDLE;
     void* m_RTSimplifiedMaterialMapped = nullptr;
     u32 m_RTSimplifiedMaterialBufferCapacity = 0;
+
+    // RT instance geometry SSBO (binding 10) — per-entity vertex/index buffer
+    // device addresses so hit shaders can read the real triangle and interpolate
+    // true vertex normals (indexed by gl_InstanceCustomIndexEXT = EntityIndex,
+    // same scheme as the material SSBOs; filled in RebuildTLAS alongside AddInstance)
+    VkBuffer m_RTInstanceGeomBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_RTInstanceGeomMemory = VK_NULL_HANDLE;
+    void* m_RTInstanceGeomMapped = nullptr;
+    u32 m_RTInstanceGeomCapacity = 0;
+    void EnsureRTInstanceGeomBuffer(u32 requiredCapacity);
 
     // NEE light SSBO (binding 16) — scene lights for path tracer direct light sampling
     VkBuffer m_RTNEELightBuffer[RT_FRAMES_IN_FLIGHT] = {};

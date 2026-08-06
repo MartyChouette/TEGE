@@ -53,6 +53,9 @@ public:
     VkImageView GetOutputView() const { return m_AccumulationView; }
     VkImage GetOutputImage() const { return m_AccumulationImage; }
 
+    // Linear clamp sampler for displaying the accumulation image (PP fullscreen draw)
+    VkSampler GetOutputSampler() const { return m_OutputSampler; }
+
     PathTracerConfig& GetConfig() { return m_Config; }
     const PathTracerConfig& GetConfig() const { return m_Config; }
 
@@ -72,6 +75,7 @@ private:
     VkImage m_AccumulationImage = VK_NULL_HANDLE;
     VkDeviceMemory m_AccumulationMemory = VK_NULL_HANDLE;
     VkImageView m_AccumulationView = VK_NULL_HANDLE;
+    VkSampler m_OutputSampler = VK_NULL_HANDLE;
 
     u32 m_AccumulatedSamples = 0;
     Math::Matrix4 m_LastViewProj;  // For detecting camera movement

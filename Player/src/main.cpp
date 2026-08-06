@@ -82,6 +82,7 @@
 #include "Enjin/Accessibility/FontLibrary.h"
 #include "Enjin/Accessibility/ColorblindPalette.h"
 #include "Enjin/Renderer/PostProcessing.h"
+#include "Enjin/Renderer/RayTracing/PathTracer.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/Audio/AudioEventGraph.h"
 #include "Enjin/Assets/DataAsset.h"
@@ -1220,6 +1221,29 @@ public:
             m_World->Update(0.0f);
         }
 
+        // Path tracer display: when RT is in path-trace mode, draw the accumulated
+        // PT image over the rasterized scene via the post-process fullscreen pass
+        // (built against the swapchain MRT pass, which is open at this point).
+        // RecordRTFrame left the PT image in SHADER_READ_ONLY for sampling.
+        if (m_RenderSystem && m_PostProcessing && m_PostProcessing->IsInitialized() &&
+            m_RenderSystem->IsRayTracingEnabled() && m_RenderSystem->GetRTMode() == 1) {
+            auto* pathTracer = m_RenderSystem->GetPathTracer();
+            if (pathTracer && pathTracer->GetOutputView() != VK_NULL_HANDLE &&
+                pathTracer->GetAccumulatedSamples() > 0) {
+                VkCommandBuffer ptCmd = m_Renderer->GetCurrentCommandBuffer();
+                if (ptCmd != VK_NULL_HANDLE) {
+                    if (m_LastPTSourceView != pathTracer->GetOutputView()) {
+                        m_PostProcessing->UpdateSourceImage(pathTracer->GetOutputView(),
+                                                            pathTracer->GetOutputSampler());
+                        m_LastPTSourceView = pathTracer->GetOutputView();
+                        ENJIN_LOG_INFO(Player, "Path tracer display active (%u samples)",
+                                       pathTracer->GetAccumulatedSamples());
+                    }
+                    m_PostProcessing->ApplyToCurrentPass(ptCmd, extent.width, extent.height);
+                }
+            }
+        }
+
         // Shadow pass runs inside RenderSystem::Update() (called by World::Update above).
         // Do NOT call RenderShadowPassForCamera here — the main render pass is already
         // active at this point, and starting a shadow render pass inside it crashes the
@@ -1953,10 +1977,12 @@ private:
         }
 
         // Apply scene render settings (shadows, ambient, cel shading, post-processing, etc.)
+        // RT is allowed through since 0.9.7: the historical force-off dated from when
+        // RTShaderData.h held invalid placeholder SPIR-V (crashed the NVIDIA driver);
+        // all RT/compute shaders are real embedded SPIR-V now, and unsupported GPUs
+        // bail out gracefully in InitializeRayTracing (IsRayTracingSupported check).
         if (m_RenderSystem) {
             auto renderSettings = serializer.GetRenderSettings();
-            // Force RT off — Player doesn't embed RT compute shaders (crashes NVIDIA driver)
-            renderSettings.rtEnabled = false;
             renderSettings.ApplyToRuntime(m_RenderSystem,
                 m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
         }
@@ -2340,8 +2366,11 @@ private:
     Enjin::Accessibility::RuntimeAccessibilitySettings m_AccessibilitySettings;
     Enjin::Accessibility::FontLibrary m_FontLibrary;
 
-    // Post-processing (settings only — full render pipeline deferred)
+    // Post-processing: settings for script bindings + the path tracer display draw
     std::unique_ptr<Enjin::Renderer::PostProcessing> m_PostProcessing;
+
+    // Last view bound as the PP source (plain descriptor set — only rewrite on change)
+    VkImageView m_LastPTSourceView = VK_NULL_HANDLE;
 
     // ImGui texture descriptor cache for UISystem texture resolver
     std::unordered_map<std::string, VkDescriptorSet> m_ImGuiTextureCache;

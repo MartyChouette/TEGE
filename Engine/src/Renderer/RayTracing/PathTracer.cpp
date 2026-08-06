@@ -22,6 +22,23 @@ bool PathTracer::Initialize(u32 width, u32 height, VkDescriptorSetLayout rtDescL
 
     CreateAccumulationImage();
 
+    // Linear clamp sampler for the display path (PP fullscreen draw samples the
+    // accumulation image; also handles the swapchain-to-view downscale)
+    if (m_OutputSampler == VK_NULL_HANDLE) {
+        VkSamplerCreateInfo sampInfo{};
+        sampInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        sampInfo.magFilter = VK_FILTER_LINEAR;
+        sampInfo.minFilter = VK_FILTER_LINEAR;
+        sampInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        if (vkCreateSampler(m_Context->GetDevice(), &sampInfo, nullptr, &m_OutputSampler) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "PathTracer: Failed to create output sampler");
+            return false;
+        }
+    }
+
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     layoutInfo.setLayoutCount = 1;
@@ -156,6 +173,10 @@ void PathTracer::Shutdown() {
     if (!m_Initialized) return;
     m_Pipeline.reset();
     DestroyAccumulationImage();
+    if (m_OutputSampler) {
+        vkDestroySampler(m_Context->GetDevice(), m_OutputSampler, nullptr);
+        m_OutputSampler = VK_NULL_HANDLE;
+    }
     if (m_PipelineLayout) {
         vkDestroyPipelineLayout(m_Context->GetDevice(), m_PipelineLayout, nullptr);
         m_PipelineLayout = VK_NULL_HANDLE;

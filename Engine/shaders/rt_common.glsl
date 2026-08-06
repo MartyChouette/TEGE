@@ -118,6 +118,77 @@ layout(binding = 9, set = 0) readonly buffer MaterialSSBO {
     MaterialGPU materials[];
 };
 
+// ============================================================================
+// Real triangle normals (binding 10 + buffer device addresses)
+//
+// Opt-in: define RT_USE_INSTANCE_GEOM before including this file, AND declare
+//   #extension GL_EXT_buffer_reference : require
+//   #extension GL_EXT_buffer_reference_uvec2 : require
+// Closest-hit stages only (uses gl_InstanceCustomIndexEXT / gl_PrimitiveID).
+// ============================================================================
+#ifdef RT_USE_INSTANCE_GEOM
+
+// Matches RTInstanceGeomGPU in RenderSystem::RebuildTLAS (32 bytes, std430)
+struct RTInstanceGeom {
+    uvec2 vertexAddr;         // u64 device address of the mesh's first vertex (lo, hi)
+    uvec2 indexAddr;          // u64 device address of the mesh's first index (u32)
+    uint strideFloats;        // Vertex stride in floats (0 = no entry, use fallback)
+    uint normalOffsetFloats;  // Offset of the normal within a vertex, in floats
+    uint _pad0;
+    uint _pad1;
+};
+
+layout(binding = 10, set = 0) readonly buffer InstanceGeomBuffer {
+    RTInstanceGeom instanceGeoms[];
+};
+
+layout(buffer_reference, buffer_reference_align = 4, std430) readonly buffer RTGeomFloats { float f[]; };
+layout(buffer_reference, buffer_reference_align = 4, std430) readonly buffer RTGeomIndices { uint i[]; };
+
+// Interpolated object-space vertex normal for the current hit triangle.
+// Falls back to the face normal when vertex normals are degenerate, and to
+// object-space +Y when the instance has no geometry entry.
+vec3 rtHitObjectNormal(vec2 baryAttribs) {
+    RTInstanceGeom geom = instanceGeoms[gl_InstanceCustomIndexEXT];
+    if (geom.strideFloats == 0u) return vec3(0.0, 1.0, 0.0);
+
+    RTGeomIndices ib = RTGeomIndices(geom.indexAddr);
+    uint base = uint(gl_PrimitiveID) * 3u;
+    uint i0 = ib.i[base + 0u];
+    uint i1 = ib.i[base + 1u];
+    uint i2 = ib.i[base + 2u];
+
+    RTGeomFloats vb = RTGeomFloats(geom.vertexAddr);
+    uint s = geom.strideFloats;
+    uint n = geom.normalOffsetFloats;
+    vec3 n0 = vec3(vb.f[i0 * s + n], vb.f[i0 * s + n + 1u], vb.f[i0 * s + n + 2u]);
+    vec3 n1 = vec3(vb.f[i1 * s + n], vb.f[i1 * s + n + 1u], vb.f[i1 * s + n + 2u]);
+    vec3 n2 = vec3(vb.f[i2 * s + n], vb.f[i2 * s + n + 1u], vb.f[i2 * s + n + 2u]);
+
+    vec3 bary = vec3(1.0 - baryAttribs.x - baryAttribs.y, baryAttribs.x, baryAttribs.y);
+    vec3 objNormal = n0 * bary.x + n1 * bary.y + n2 * bary.z;
+
+    if (dot(objNormal, objNormal) < 1e-8) {
+        // Degenerate vertex normals — face normal from positions
+        vec3 p0 = vec3(vb.f[i0 * s], vb.f[i0 * s + 1u], vb.f[i0 * s + 2u]);
+        vec3 p1 = vec3(vb.f[i1 * s], vb.f[i1 * s + 1u], vb.f[i1 * s + 2u]);
+        vec3 p2 = vec3(vb.f[i2 * s], vb.f[i2 * s + 1u], vb.f[i2 * s + 2u]);
+        objNormal = cross(p1 - p0, p2 - p0);
+    }
+    return objNormal;
+}
+
+// World-space hit normal: inverse-transpose transform (vec * WorldToObject ==
+// transpose(WorldToObject) * vec), normalized, flipped to face the incoming ray.
+vec3 rtHitWorldNormal(vec2 baryAttribs) {
+    vec3 objNormal = rtHitObjectNormal(baryAttribs);
+    vec3 worldNormal = normalize(objNormal * mat3(gl_WorldToObjectEXT));
+    if (dot(worldNormal, gl_WorldRayDirectionEXT) > 0.0) worldNormal = -worldNormal;
+    return worldNormal;
+}
+
+#endif // RT_USE_INSTANCE_GEOM
+
 // Fetch material for the hit instance and convert to RTMaterial
 RTMaterial fetchMaterial(uint instanceIndex) {
     MaterialGPU m = materials[instanceIndex];

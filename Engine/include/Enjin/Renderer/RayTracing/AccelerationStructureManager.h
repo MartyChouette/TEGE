@@ -95,6 +95,7 @@ private:
     // TLAS
     std::unique_ptr<TLAS> m_TLAS;
     bool m_TLASNeedsFullRebuild = true;
+    u32 m_LastBuiltInstanceCount = 0;  // In-place updates require an unchanged instance count
 
     bool m_Initialized = false;
 };

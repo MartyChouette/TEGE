@@ -246,9 +246,17 @@ bool TLAS::Build(VkCommandBuffer cmd,
     VkDeviceSize instanceDataSize = sizeof(VkAccelerationStructureInstanceKHR) * instanceCount;
     if (instanceDataSize == 0) instanceDataSize = sizeof(VkAccelerationStructureInstanceKHR);
 
-    // Recreate instance buffer if capacity is insufficient
+    // Recreate instance buffer if capacity is insufficient (retire the old one —
+    // the previous frame's build may still read it)
     if (instanceCount > m_MaxInstanceCount || m_InstanceBuffer == VK_NULL_HANDLE) {
-        FreeBuffer(m_InstanceBuffer, m_InstanceMemory);
+        if (m_InstanceBuffer != VK_NULL_HANDLE) {
+            RetiredResources r;
+            r.buffer = m_InstanceBuffer;
+            r.memory = m_InstanceMemory;
+            m_Retired.push_back(r);
+            m_InstanceBuffer = VK_NULL_HANDLE;
+            m_InstanceMemory = VK_NULL_HANDLE;
+        }
         u32 newCapacity = instanceCount > 0 ? instanceCount * 2 : 64;  // Over-allocate
 
         // Instance buffer needs host-visible for upload + shader device address
@@ -333,15 +341,14 @@ bool TLAS::Build(VkCommandBuffer cmd,
     s_vkGetASBuildSizes(m_Context->GetDevice(), VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
                          &buildInfo, &instanceCount, &sizeInfo);
 
+    // Age deferred-destroy entries once per Build (== once per frame)
+    AgeAndFreeRetired();
+
     // Create or recreate TLAS buffer if needed (only on full build)
     if (buildInfo.mode == VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR) {
-        // Destroy old
-        if (m_Handle != VK_NULL_HANDLE) {
-            s_vkDestroyAS(m_Context->GetDevice(), m_Handle, nullptr);
-            m_Handle = VK_NULL_HANDLE;
-        }
-        FreeBuffer(m_Buffer, m_Memory);
-        FreeBuffer(m_ScratchBuffer, m_ScratchMemory);
+        // Retire the old TLAS instead of destroying it: the previous frame's
+        // command buffer may still be executing against it (VUID-02442)
+        RetireCurrent();
 
         // Create buffer
         if (!CreateBuffer(sizeInfo.accelerationStructureSize,
@@ -365,12 +372,18 @@ bool TLAS::Build(VkCommandBuffer cmd,
         }
     }
 
-    // Create scratch buffer
-    FreeBuffer(m_ScratchBuffer, m_ScratchMemory);
-    if (!CreateBuffer(sizeInfo.buildScratchSize,
-                      VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                      m_ScratchBuffer, m_ScratchMemory)) {
-        return false;
+    // Scratch buffer: reuse when large enough — recreating per frame would
+    // free scratch still referenced by the previous frame's build command
+    VkDeviceSize scratchNeeded = (buildInfo.mode == VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR)
+        ? sizeInfo.updateScratchSize : sizeInfo.buildScratchSize;
+    if (m_ScratchBuffer == VK_NULL_HANDLE || m_ScratchSize < scratchNeeded) {
+        RetireScratch();
+        if (!CreateBuffer(scratchNeeded,
+                          VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                          m_ScratchBuffer, m_ScratchMemory)) {
+            return false;
+        }
+        m_ScratchSize = scratchNeeded;
     }
 
     VkBufferDeviceAddressInfo scratchAddrInfo{};
@@ -407,9 +420,61 @@ void TLAS::Destroy() {
     }
     FreeBuffer(m_Buffer, m_Memory);
     FreeBuffer(m_ScratchBuffer, m_ScratchMemory);
+    m_ScratchSize = 0;
     FreeBuffer(m_InstanceBuffer, m_InstanceMemory);
+    FlushRetired();
     m_AllocatedSize = 0;
     m_MaxInstanceCount = 0;
+}
+
+void TLAS::RetireCurrent() {
+    if (m_Handle == VK_NULL_HANDLE && m_Buffer == VK_NULL_HANDLE) return;
+    RetiredResources r;
+    r.handle = m_Handle;
+    r.buffer = m_Buffer;
+    r.memory = m_Memory;
+    m_Retired.push_back(r);
+    m_Handle = VK_NULL_HANDLE;
+    m_Buffer = VK_NULL_HANDLE;
+    m_Memory = VK_NULL_HANDLE;
+}
+
+void TLAS::RetireScratch() {
+    if (m_ScratchBuffer == VK_NULL_HANDLE) return;
+    RetiredResources r;
+    r.buffer = m_ScratchBuffer;
+    r.memory = m_ScratchMemory;
+    m_Retired.push_back(r);
+    m_ScratchBuffer = VK_NULL_HANDLE;
+    m_ScratchMemory = VK_NULL_HANDLE;
+    m_ScratchSize = 0;
+}
+
+void TLAS::AgeAndFreeRetired() {
+    // 3 Build() calls > any frames-in-flight depth in the engine (2)
+    constexpr u32 kRetireFrames = 3;
+    for (auto it = m_Retired.begin(); it != m_Retired.end();) {
+        if (++it->age >= kRetireFrames) {
+            if (it->handle != VK_NULL_HANDLE && s_vkDestroyAS) {
+                s_vkDestroyAS(m_Context->GetDevice(), it->handle, nullptr);
+            }
+            FreeBuffer(it->buffer, it->memory);
+            it = m_Retired.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void TLAS::FlushRetired() {
+    // Shutdown path only — caller has already waited for device idle
+    for (auto& r : m_Retired) {
+        if (r.handle != VK_NULL_HANDLE && s_vkDestroyAS) {
+            s_vkDestroyAS(m_Context->GetDevice(), r.handle, nullptr);
+        }
+        FreeBuffer(r.buffer, r.memory);
+    }
+    m_Retired.clear();
 }
 
 bool TLAS::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage,

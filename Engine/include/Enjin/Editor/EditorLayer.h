@@ -623,6 +623,16 @@ private:
     Renderer::CameraController* m_CameraController = nullptr;
     ECS::RenderSystem* m_RenderSystem = nullptr;
 
+    // Persistent copy of the game camera handed to RenderSystem as the RT camera
+    // override (RT dispatch runs before the game view rebuilds its local camera,
+    // so the override must outlive the frame).
+    Renderer::Camera m_RTGameCamera;
+
+    // Last image view bound as the post-process source. The PP descriptor set is
+    // a single plain set (no update-after-bind), so it must only be rewritten when
+    // the source actually changes, never restored after recording a draw with it.
+    VkImageView m_LastPPSourceView = VK_NULL_HANDLE;
+
     std::unique_ptr<GUI::ImGuiLayer> m_ImGuiLayer;
 
     // Default visible panels: core editing panels without debug/dev panels.

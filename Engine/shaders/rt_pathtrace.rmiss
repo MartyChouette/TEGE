@@ -1,9 +1,13 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
 
-// Primary ray miss — signal no hit (w <= 0)
-layout(location = 0) rayPayloadInEXT vec4 pathPayload;
+// Primary ray miss — signal no hit (colorDist.w <= 0)
+struct PathPayload {
+    vec4 colorDist;
+    vec4 normalMat;
+};
+layout(location = 0) rayPayloadInEXT PathPayload pathPayload;
 
 void main() {
-    pathPayload = vec4(0.0, 0.0, 0.0, -1.0);
+    pathPayload.colorDist = vec4(0.0, 0.0, 0.0, -1.0);
 }

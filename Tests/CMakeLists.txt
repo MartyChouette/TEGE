@@ -217,6 +217,8 @@ target_compile_definitions(TestGoldenVerification PRIVATE
     ENJIN_TEST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Fixtures")
 # Emit tool for the adr-0003 probe scene (no-op pass unless ENJIN_ADR3_PROBE_DIR is set)
 enjin_add_test(TestAdr3SceneEmit      Unit/Assets/TestAdr3SceneEmit.cpp)
+enjin_add_test(TestRTSceneEmit        Unit/Assets/TestRTSceneEmit.cpp)
+enjin_add_test(TestRTPlayerExport     Unit/Assets/TestRTPlayerExport.cpp)
 
 # --- Animation ---
 enjin_add_test(TestAnimation          Unit/Animation/TestAnimation.cpp)

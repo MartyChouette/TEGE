@@ -110,10 +110,16 @@ void AccelerationStructureManager::BuildTLAS(VkCommandBuffer cmd, bool transform
     // and some drivers don't handle 0-instance TLAS builds correctly
     if (m_Instances.empty()) return;
 
+    // An in-place update requires the same instance count as the last full build
+    // (entities added/removed = structural change)
+    u32 count = static_cast<u32>(m_Instances.size());
+    if (count != m_LastBuiltInstanceCount) m_TLASNeedsFullRebuild = true;
+
     bool updateOnly = transformsOnly && !m_TLASNeedsFullRebuild && m_TLAS->IsValid();
-    m_TLAS->Build(cmd, m_Instances.data(), static_cast<u32>(m_Instances.size()), updateOnly);
+    m_TLAS->Build(cmd, m_Instances.data(), count, updateOnly);
 
     m_TLASNeedsFullRebuild = false;
+    m_LastBuiltInstanceCount = count;
 }
 
 void AccelerationStructureManager::ResetInstances() {
