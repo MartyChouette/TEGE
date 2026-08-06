@@ -2841,6 +2841,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include "Enjin/Renderer/RayTracing/RadianceCache.h"
 #include "Enjin/Renderer/RayTracing/SurfelRadianceCache.h"
 #include "Enjin/Renderer/RayTracing/RTShaderData.h"
+#include "Enjin/Renderer/RayTracing/RTPipeline.h"
 #include "Enjin/Renderer/SHLightProbe.h"
 #include "Enjin/Renderer/ReflectionProbeSystem.h"
 #include "Enjin/Renderer/SDFScene.h"
@@ -11602,8 +11603,8 @@ void RenderSystem::InitializeRayTracing() {
     auto* ctx = m_VulkanRenderer->GetContext();
     ENJIN_LOG_INFO(Renderer, "Initializing ray tracing subsystems...");
 
-    // Create RT descriptor set layout (29 bindings: 0-16 existing + 17 SDF + 18 simplified materials + 19-20 ReSTIR + 21-23 radiance cache + 24-26 surfel cache + 27 light BVH + 28 skybox cube)
-    std::array<VkDescriptorSetLayoutBinding, 29> rtBindings{};
+    // Create RT descriptor set layout (31 bindings: 0-16 existing + 17 SDF + 18 simplified materials + 19-20 ReSTIR + 21-23 radiance cache + 24-26 surfel cache + 27 light BVH + 28 skybox cube + 29-30 hybrid G-buffer depth/normal)
+    std::array<VkDescriptorSetLayoutBinding, 31> rtBindings{};
 
     // Binding 0: TLAS
     rtBindings[0].binding = 0;
@@ -11763,6 +11764,19 @@ void RenderSystem::InitializeRayTracing() {
     rtBindings[28].descriptorCount = 1;
     rtBindings[28].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
+    // Binding 29: Hybrid G-buffer depth (storage; written by the G-buffer raygen,
+    // then sampled via binding 2 by the hybrid effects)
+    rtBindings[29].binding = 29;
+    rtBindings[29].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    rtBindings[29].descriptorCount = 1;
+    rtBindings[29].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
+    // Binding 30: Hybrid G-buffer normal (storage; sampled via binding 3)
+    rtBindings[30].binding = 30;
+    rtBindings[30].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    rtBindings[30].descriptorCount = 1;
+    rtBindings[30].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<u32>(rtBindings.size());
@@ -11776,7 +11790,7 @@ void RenderSystem::InitializeRayTracing() {
     // Create RT descriptor pool (includes all descriptor types used by RT bindings)
     std::array<VkDescriptorPoolSize, 5> poolSizes{};
     poolSizes[0] = { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1 };
-    poolSizes[1] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 9 };   // 5-8, 14-15, 23, 26 + radiance cache output + surfel output
+    poolSizes[1] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 11 };  // 5-8, 14-15, 23, 26 + radiance/surfel output + 29-30 G-buffer
     poolSizes[2] = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4 };  // 2-4 + 28 skybox
     poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 14 }; // 9-12, 16-20, 21-22, 24-25, 27 (radiance cache + surfel cache + light BVH)
     poolSizes[4] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 };
@@ -11869,6 +11883,67 @@ void RenderSystem::InitializeRayTracing() {
     if (!m_PathTracer->Initialize(width, height, m_RTDescriptorSetLayout)) {
         ENJIN_LOG_WARN(Renderer, "Path Tracer initialization failed");
         m_PathTracer.reset();
+    }
+
+    // Hybrid G-buffer: depth (r32f) + normal (rgba16f) images + a primary-ray
+    // pipeline. Feeds real depth/normal to the hybrid effects (bindings 2/3).
+    {
+        m_RTGBufferWidth = width;
+        m_RTGBufferHeight = height;
+        auto makeGBufImage = [&](VkFormat fmt, VkImage& img, VkDeviceMemory& mem, VkImageView& view) {
+            VkImageCreateInfo ci{};
+            ci.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+            ci.imageType = VK_IMAGE_TYPE_2D;
+            ci.format = fmt;
+            ci.extent = { width, height, 1 };
+            ci.mipLevels = 1; ci.arrayLayers = 1;
+            ci.samples = VK_SAMPLE_COUNT_1_BIT;
+            ci.tiling = VK_IMAGE_TILING_OPTIMAL;
+            ci.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+            ci.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            ci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            if (vkCreateImage(ctx->GetDevice(), &ci, nullptr, &img) != VK_SUCCESS) return false;
+            VkMemoryRequirements mr; vkGetImageMemoryRequirements(ctx->GetDevice(), img, &mr);
+            VkMemoryAllocateInfo ai{}; ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            ai.allocationSize = mr.size;
+            ai.memoryTypeIndex = ctx->FindMemoryType(mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            if (vkAllocateMemory(ctx->GetDevice(), &ai, nullptr, &mem) != VK_SUCCESS) return false;
+            vkBindImageMemory(ctx->GetDevice(), img, mem, 0);
+            VkImageViewCreateInfo vi{}; vi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            vi.image = img; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = fmt;
+            vi.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+            return vkCreateImageView(ctx->GetDevice(), &vi, nullptr, &view) == VK_SUCCESS;
+        };
+        bool ok = makeGBufImage(VK_FORMAT_R32_SFLOAT, m_RTGBufferDepthImage, m_RTGBufferDepthMemory, m_RTGBufferDepthView)
+               && makeGBufImage(VK_FORMAT_R16G16B16A16_SFLOAT, m_RTGBufferNormalImage, m_RTGBufferNormalMemory, m_RTGBufferNormalView);
+        if (ok) {
+            VkPipelineLayoutCreateInfo pli{};
+            pli.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+            pli.setLayoutCount = 1;
+            pli.pSetLayouts = &m_RTDescriptorSetLayout;
+            vkCreatePipelineLayout(ctx->GetDevice(), &pli, nullptr, &m_RTGBufferPipelineLayout);
+
+            m_RTGBufferPipeline = std::make_unique<Renderer::RTPipeline>(ctx);
+            std::vector<Renderer::RTPipeline::ShaderStage> stages = {
+                { VK_SHADER_STAGE_RAYGEN_BIT_KHR, Renderer::RT_GBUFFER_RGEN_SPV, sizeof(Renderer::RT_GBUFFER_RGEN_SPV) },
+                { VK_SHADER_STAGE_MISS_BIT_KHR, Renderer::RT_PATHTRACE_RMISS_SPV, sizeof(Renderer::RT_PATHTRACE_RMISS_SPV) },
+                { VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, Renderer::RT_PATHTRACE_RCHIT_SPV, sizeof(Renderer::RT_PATHTRACE_RCHIT_SPV) }
+            };
+            std::vector<Renderer::RTPipeline::ShaderGroup> groups = {
+                { VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR, 0, VK_SHADER_UNUSED_KHR, VK_SHADER_UNUSED_KHR, VK_SHADER_UNUSED_KHR },
+                { VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR, 1, VK_SHADER_UNUSED_KHR, VK_SHADER_UNUSED_KHR, VK_SHADER_UNUSED_KHR },
+                { VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR, VK_SHADER_UNUSED_KHR, 2, VK_SHADER_UNUSED_KHR, VK_SHADER_UNUSED_KHR }
+            };
+            if (!m_RTGBufferPipeline->Create(stages, groups, m_RTDescriptorSetLayout, m_RTGBufferPipelineLayout, 1)) {
+                ENJIN_LOG_WARN(Renderer, "RT G-buffer pipeline creation failed — hybrid effects will have no screen inputs");
+                m_RTGBufferPipeline.reset();
+            } else {
+                ENJIN_LOG_INFO(Renderer, "RT hybrid G-buffer initialized (%ux%u)", width, height);
+            }
+        } else {
+            ENJIN_LOG_WARN(Renderer, "RT G-buffer image creation failed");
+        }
+        m_RTGBufferLayoutInitialized = false;
     }
 
     m_ReSTIR = std::make_unique<Renderer::ReSTIR>(ctx);
@@ -11998,6 +12073,20 @@ void RenderSystem::ShutdownRayTracing() {
     }
     DestroyRTVegetationResources();
     m_RTVegBudgetWarned = false;
+
+    // Hybrid G-buffer
+    m_RTGBufferPipeline.reset();
+    if (m_Renderer && m_VulkanRenderer->GetContext()) {
+        VkDevice dev = m_VulkanRenderer->GetContext()->GetDevice();
+        if (m_RTGBufferPipelineLayout) { vkDestroyPipelineLayout(dev, m_RTGBufferPipelineLayout, nullptr); m_RTGBufferPipelineLayout = VK_NULL_HANDLE; }
+        if (m_RTGBufferDepthView) { vkDestroyImageView(dev, m_RTGBufferDepthView, nullptr); m_RTGBufferDepthView = VK_NULL_HANDLE; }
+        if (m_RTGBufferDepthImage) { vkDestroyImage(dev, m_RTGBufferDepthImage, nullptr); m_RTGBufferDepthImage = VK_NULL_HANDLE; }
+        if (m_RTGBufferDepthMemory) { vkFreeMemory(dev, m_RTGBufferDepthMemory, nullptr); m_RTGBufferDepthMemory = VK_NULL_HANDLE; }
+        if (m_RTGBufferNormalView) { vkDestroyImageView(dev, m_RTGBufferNormalView, nullptr); m_RTGBufferNormalView = VK_NULL_HANDLE; }
+        if (m_RTGBufferNormalImage) { vkDestroyImage(dev, m_RTGBufferNormalImage, nullptr); m_RTGBufferNormalImage = VK_NULL_HANDLE; }
+        if (m_RTGBufferNormalMemory) { vkFreeMemory(dev, m_RTGBufferNormalMemory, nullptr); m_RTGBufferNormalMemory = VK_NULL_HANDLE; }
+    }
+    m_RTGBufferLayoutInitialized = false;
 
     m_SurfelRadianceCache.reset();
     m_RTTemporalReuse.reset();
@@ -12321,6 +12410,57 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
 
 }
 
+void RenderSystem::DispatchRTGBuffer(VkCommandBuffer cmd) {
+    if (!m_RTGBufferPipeline || m_RTGBufferDepthImage == VK_NULL_HANDLE) return;
+
+    static PFN_vkCmdTraceRaysKHR s_traceRays =
+        (PFN_vkCmdTraceRaysKHR)vkGetDeviceProcAddr(m_VulkanRenderer->GetContext()->GetDevice(), "vkCmdTraceRaysKHR");
+    if (!s_traceRays) return;
+
+    auto barrier = [&](VkImage img, VkImageLayout oldL, VkImageLayout newL,
+                       VkAccessFlags srcA, VkAccessFlags dstA,
+                       VkPipelineStageFlags srcS, VkPipelineStageFlags dstS) {
+        VkImageMemoryBarrier b{};
+        b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        b.oldLayout = oldL; b.newLayout = newL;
+        b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.image = img;
+        b.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        b.srcAccessMask = srcA; b.dstAccessMask = dstA;
+        vkCmdPipelineBarrier(cmd, srcS, dstS, 0, 0, nullptr, 0, nullptr, 1, &b);
+    };
+
+    // Transition both G-buffer images to GENERAL for storage writes. First frame
+    // comes from UNDEFINED; later frames from SHADER_READ_ONLY (last frame's read).
+    VkImageLayout fromLayout = m_RTGBufferLayoutInitialized
+        ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
+    VkAccessFlags fromAccess = m_RTGBufferLayoutInitialized ? VK_ACCESS_SHADER_READ_BIT : 0;
+    barrier(m_RTGBufferDepthImage, fromLayout, VK_IMAGE_LAYOUT_GENERAL, fromAccess,
+            VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+    barrier(m_RTGBufferNormalImage, fromLayout, VK_IMAGE_LAYOUT_GENERAL, fromAccess,
+            VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+    m_RTGBufferLayoutInitialized = true;
+
+    // Primary-ray pass fills depth (binding 29) + normal (binding 30)
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, m_RTGBufferPipeline->GetPipeline());
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
+                            m_RTGBufferPipelineLayout, 0, 1, &m_RTDescriptorSet, 0, nullptr);
+    const auto& sbt = m_RTGBufferPipeline->GetSBTRegions();
+    s_traceRays(cmd, &sbt.raygen, &sbt.miss, &sbt.hit, &sbt.callable,
+                m_RTGBufferWidth, m_RTGBufferHeight, 1);
+
+    // Hand the filled images to the effects as sampled (bindings 2/3)
+    barrier(m_RTGBufferDepthImage, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+    barrier(m_RTGBufferNormalImage, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+}
+
 void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
     if (!m_RTEnabled || !m_ASManager || !m_ASManager->HasValidTLAS()) return;
     if (!m_RTDescriptorsWritten) return;
@@ -12455,6 +12595,10 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
                                lightDir, m_RTFrameCount);
         return;
     }
+
+    // Hybrid mode: fill the G-buffer (depth + normal) from primary rays so the
+    // effects below reconstruct real world positions. Runs before every effect.
+    DispatchRTGBuffer(cmd);
 
     // Upload SDF scene data to SSBO (binding 17) for reflection fallback sphere tracing
     if (m_RTSDFMapped && m_SDFScene) {
@@ -13731,17 +13875,24 @@ void RenderSystem::WriteRTDescriptors() {
     storageImageInfo1.imageView = m_PathTracer ? m_PathTracer->GetOutputView() : m_RTDummyImageView;
     storageImageInfo1.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-    // Bindings 2, 3, 4: Depth, normals, motion vectors (combined image sampler)
-    // Binding 2 uses real swapchain depth when available; bindings 3-4 use dummy (no G-buffer MRT yet)
+    // Bindings 2, 3, 4: Depth, normals, motion vectors (combined image sampler).
+    // Depth (2) and normal (3) sample the RT-native G-buffer images (filled each
+    // frame by the primary-ray pass) so the hybrid effects reconstruct real world
+    // positions. The G-buffer pass leaves them in SHADER_READ_ONLY before effects.
     VkDescriptorImageInfo samplerInfos[3]{};
     for (auto& si : samplerInfos) {
         si.sampler = m_RTDummySampler;
         si.imageView = m_RTDummyImageView;
         si.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
     }
-    // Wire real depth buffer from swapchain
     auto* swapchain = m_VulkanRenderer->GetSwapchain();
-    if (swapchain && swapchain->GetDepthImageView() != VK_NULL_HANDLE) {
+    if (m_RTGBufferDepthView != VK_NULL_HANDLE && m_RTGBufferNormalView != VK_NULL_HANDLE) {
+        samplerInfos[0].imageView = m_RTGBufferDepthView;
+        samplerInfos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        samplerInfos[1].imageView = m_RTGBufferNormalView;
+        samplerInfos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    } else if (swapchain && swapchain->GetDepthImageView() != VK_NULL_HANDLE) {
+        // Fallback: swapchain depth (used only if the G-buffer failed to create)
         samplerInfos[0].imageView = swapchain->GetDepthImageView();
         samplerInfos[0].imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
     }
@@ -13921,8 +14072,17 @@ void RenderSystem::WriteRTDescriptors() {
         skyboxInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     }
 
-    // Build write array for all 29 bindings
-    std::array<VkWriteDescriptorSet, 29> writes{};
+    // Bindings 29-30: G-buffer depth/normal as storage (written by the primary-ray
+    // pass; declared GENERAL, the pass transitions to GENERAL before writing)
+    VkDescriptorImageInfo gbufDepthInfo{};
+    gbufDepthInfo.imageView = (m_RTGBufferDepthView != VK_NULL_HANDLE) ? m_RTGBufferDepthView : m_RTDummyImageView;
+    gbufDepthInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    VkDescriptorImageInfo gbufNormalInfo{};
+    gbufNormalInfo.imageView = (m_RTGBufferNormalView != VK_NULL_HANDLE) ? m_RTGBufferNormalView : m_RTDummyImageView;
+    gbufNormalInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    // Build write array for all 31 bindings
+    std::array<VkWriteDescriptorSet, 31> writes{};
 
     // Binding 0: TLAS
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -14098,9 +14258,25 @@ void RenderSystem::WriteRTDescriptors() {
     writes[28].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[28].pImageInfo = &skyboxInfo;
 
+    // Binding 29: G-buffer depth (storage)
+    writes[29].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[29].dstSet = m_RTDescriptorSet;
+    writes[29].dstBinding = 29;
+    writes[29].descriptorCount = 1;
+    writes[29].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[29].pImageInfo = &gbufDepthInfo;
+
+    // Binding 30: G-buffer normal (storage)
+    writes[30].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[30].dstSet = m_RTDescriptorSet;
+    writes[30].dstBinding = 30;
+    writes[30].descriptorCount = 1;
+    writes[30].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[30].pImageInfo = &gbufNormalInfo;
+
     vkUpdateDescriptorSets(device, static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
 
-    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 29 bindings)");
+    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 31 bindings)");
 }
 
 void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {
@@ -14198,6 +14374,9 @@ void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math
         // SDF fallback (reflection shader reads these at offset 152-160)
         f32 sdfFallbackEnabled;   // >0.5 = SDF sphere-trace fallback active
         f32 sdfMaxDistance;       // Max sphere-trace distance
+        // Forward view-projection (offset 160) — the G-buffer pass projects hit
+        // world positions to NDC depth. Only rt_gbuffer.rgen reads it.
+        f32 viewProj[16];
     };
 
     RTLightData data{};
@@ -14244,6 +14423,10 @@ void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math
         data.sdfFallbackEnabled = 0.0f;
         data.sdfMaxDistance = 0.0f;
     }
+
+    // Forward viewProj for the G-buffer pass (projects hit world pos -> NDC depth)
+    Math::Matrix4 vp = invViewProj.Inverse();
+    for (int i = 0; i < 16; ++i) data.viewProj[i] = vp.m[i];
 
     std::memcpy(m_RTLightUBOMapped[frameIdx], &data, sizeof(data));
 

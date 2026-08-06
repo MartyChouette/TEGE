@@ -1,0 +1,86 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+
+// RT-native G-buffer: cast one primary ray per pixel through the TLAS and write
+// NDC depth + encoded world normal. Hybrid RT effects (shadows, AO, GI,
+// reflections) and the ReSTIR/radiance/surfel compute passes already read a
+// depth+normal buffer at bindings 2/3; this pass fills those from the traced
+// geometry so hybrid works identically in the editor game view and the player,
+// without depending on the forward renderer producing a normal buffer.
+//
+// Output is written to storage bindings 29/30; bindings 2/3 sample the same
+// images, so the consuming shaders are unchanged. Reuses the path tracer's
+// closest-hit and miss (they compute the interpolated world normal already).
+
+layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
+layout(binding = 29, set = 0, r32f) uniform image2D gbufDepth;      // NDC depth (1.0 = miss)
+layout(binding = 30, set = 0, rgba16f) uniform image2D gbufNormal;  // encoded world normal (n*0.5+0.5)
+
+// Full LightData layout (must match RTLightData in RenderSystem.cpp offset-for-
+// offset). viewProj is appended at offset 160. Other shaders declare only the
+// prefix they read.
+layout(binding = 13, set = 0) uniform LightData {
+    vec4 lightDir;
+    vec4 lightColor;
+    mat4 invViewProj;
+    vec2 screenSize;
+    uint frameCount;
+    float shadowRadius;
+    float fireflyClamp;
+    int enableNEE;
+    int enableMIS;
+    int rrMinBounce;
+    float rrMinProb;
+    uint directionalLightCount;
+    uint pointLightCount;
+    uint spotLightCount;
+    uint maxBounces;
+    uint accumulatedSamples;
+    float sdfFallbackEnabled;
+    float sdfMaxDistance;
+    mat4 viewProj;
+} uLight;
+
+// Matches rt_pathtrace's PathPayload (colorDist.w = hitDist, normalMat.xyz = world normal)
+struct PathPayload {
+    vec4 colorDist;
+    vec4 normalMat;
+};
+layout(location = 0) rayPayloadEXT PathPayload pathPayload;
+
+void main() {
+    ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
+    vec2 uv = (vec2(pixel) + 0.5) / uLight.screenSize;
+    vec2 ndc = uv * 2.0 - 1.0;
+
+    // Build the primary ray by unprojecting the near and far clip points
+    vec4 nearH = uLight.invViewProj * vec4(ndc, 0.0, 1.0);
+    vec4 farH  = uLight.invViewProj * vec4(ndc, 1.0, 1.0);
+    vec3 nearP = nearH.xyz / nearH.w;
+    vec3 farP  = farH.xyz / farH.w;
+    vec3 rayOrigin = nearP;
+    vec3 rayDir = normalize(farP - nearP);
+
+    pathPayload.colorDist = vec4(0.0);
+    pathPayload.normalMat = vec4(0.0);
+
+    traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xFF, 0, 0, 0,
+        rayOrigin, 0.001, rayDir, 10000.0, 0);
+
+    if (pathPayload.colorDist.w <= 0.0) {
+        // Miss (sky): far depth so consumers early-out exactly as on a raster miss
+        imageStore(gbufDepth, pixel, vec4(1.0));
+        imageStore(gbufNormal, pixel, vec4(0.5, 0.5, 1.0, 0.0));
+        return;
+    }
+
+    vec3 hitPos = rayOrigin + rayDir * pathPayload.colorDist.w;
+    vec3 worldNormal = normalize(pathPayload.normalMat.xyz);
+
+    // Project the hit to NDC depth so depth-reconstruction consumers are unchanged
+    vec4 clip = uLight.viewProj * vec4(hitPos, 1.0);
+    float ndcDepth = clamp(clip.z / clip.w, 0.0, 1.0);
+
+    imageStore(gbufDepth, pixel, vec4(ndcDepth));
+    imageStore(gbufNormal, pixel, vec4(worldNormal * 0.5 + 0.5, 1.0));
+}

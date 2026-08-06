@@ -28,6 +28,7 @@ BLOCKS = [
     ("rt_pathtrace.rgen.spv",    "RT_PATHTRACE_RGEN_SPV",    "Path tracer ray generation"),
     ("rt_pathtrace.rmiss.spv",   "RT_PATHTRACE_RMISS_SPV",   "Path tracer ray miss"),
     ("rt_pathtrace.rchit.spv",   "RT_PATHTRACE_RCHIT_SPV",   "Path tracer ray closest hit"),
+    ("rt_gbuffer.rgen.spv",      "RT_GBUFFER_RGEN_SPV",      "Hybrid RT G-buffer ray generation (primary rays -> depth+normal)"),
     ("svgf_temporal.comp.spv",   "RT_SVGF_TEMPORAL_COMP_SPV", "SVGF temporal accumulation compute"),
     ("svgf_variance.comp.spv",   "RT_SVGF_VARIANCE_COMP_SPV", "SVGF variance estimation compute"),
     ("svgf_atrous.comp.spv",     "RT_SVGF_ATROUS_COMP_SPV",   "SVGF a-trous wavelet compute"),

@@ -103,6 +103,7 @@ namespace Enjin { namespace Renderer {
     class RTTranslucency;
     class RTCaustics;
     class PathTracer;
+    class RTPipeline;
     class SVGFDenoiser;
     class OIDNDenoiser;
     class OptiXDenoiser;
@@ -1508,6 +1509,22 @@ private:
     std::unique_ptr<Renderer::RTTranslucency> m_RTTranslucency;
     std::unique_ptr<Renderer::RTCaustics> m_RTCaustics;
     std::unique_ptr<Renderer::PathTracer> m_PathTracer;
+
+    // Hybrid RT G-buffer: a primary-ray pass fills depth (binding 29/2) + normal
+    // (binding 30/3) from the TLAS so hybrid effects have real screen inputs in
+    // the editor game view and the player (the forward pass has no normal buffer).
+    std::unique_ptr<Renderer::RTPipeline> m_RTGBufferPipeline;
+    VkPipelineLayout m_RTGBufferPipelineLayout = VK_NULL_HANDLE;
+    VkImage m_RTGBufferDepthImage = VK_NULL_HANDLE;
+    VkDeviceMemory m_RTGBufferDepthMemory = VK_NULL_HANDLE;
+    VkImageView m_RTGBufferDepthView = VK_NULL_HANDLE;
+    VkImage m_RTGBufferNormalImage = VK_NULL_HANDLE;
+    VkDeviceMemory m_RTGBufferNormalMemory = VK_NULL_HANDLE;
+    VkImageView m_RTGBufferNormalView = VK_NULL_HANDLE;
+    u32 m_RTGBufferWidth = 0, m_RTGBufferHeight = 0;
+    bool m_RTGBufferLayoutInitialized = false;  // false until first GENERAL transition
+    void DispatchRTGBuffer(VkCommandBuffer cmd);
+
     std::unique_ptr<Renderer::SVGFDenoiser> m_SVGFDenoiser;
     std::unique_ptr<Renderer::OIDNDenoiser> m_OIDNDenoiser;
     std::unique_ptr<Renderer::OptiXDenoiser> m_OptiXDenoiser;
