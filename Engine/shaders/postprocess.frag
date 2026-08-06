@@ -242,10 +242,14 @@ layout(binding = 1) uniform PostProcessSettings {
     float aaComparisonDivider;    // Divider position (0=left edge, 1=right edge)
 
     // Hybrid ray tracing overlay (applied to the resolved scene color pre-tonemap)
-    uint rtHybridEnable;          // 0 = off (rtShadow/rtAO textures ignored)
+    uint rtHybridEnable;          // 0 = off (RT textures ignored)
     float rtShadowStrength;       // 0..1 blend of RT shadow multiplier
     float rtAOStrength;           // 0..1 blend of RT AO multiplier
+    float rtReflectStrength;      // additive RT reflection weight
+    float rtGIStrength;           // additive RT GI weight
     float _rtHybridPad0;
+    float _rtHybridPad1;
+    float _rtHybridPad2;
 } settings;
 
 // LUT texture (binding 2)
@@ -254,11 +258,13 @@ layout(binding = 2) uniform sampler2D lutTexture;
 // Depth texture (binding 3) for cel outline edge detection
 layout(binding = 3) uniform sampler2D depthTexture;
 
-// Hybrid RT effect outputs (bindings 4-5). Screen-space aligned with the scene
+// Hybrid RT effect outputs (bindings 4-7). Screen-space aligned with the scene
 // (same camera); sampled at the scene uv, linear-filtered across the RT/game-view
 // resolution difference. Only read when settings.rtHybridEnable != 0.
-layout(binding = 4) uniform sampler2D rtShadowTex;  // r: 0 = shadowed, 1 = lit
-layout(binding = 5) uniform sampler2D rtAOTex;      // r: 0 = occluded, 1 = open
+layout(binding = 4) uniform sampler2D rtShadowTex;   // r: 0 = shadowed, 1 = lit
+layout(binding = 5) uniform sampler2D rtAOTex;       // r: 0 = occluded, 1 = open
+layout(binding = 6) uniform sampler2D rtReflectTex;  // rgb: reflection radiance
+layout(binding = 7) uniform sampler2D rtGITex;       // rgb: indirect GI radiance
 
 // Tone mapping mode constants
 #define TONEMAP_NONE 0
@@ -1837,6 +1843,9 @@ void main() {
         float rtAO = texture(rtAOTex, uv).r;           // 0 = occluded, 1 = open
         color *= mix(1.0, rtShadow, settings.rtShadowStrength);
         color *= mix(1.0, rtAO, settings.rtAOStrength);
+        // Reflections and GI add radiance on top of the shadowed/occluded base
+        color += texture(rtReflectTex, uv).rgb * settings.rtReflectStrength;
+        color += texture(rtGITex, uv).rgb * settings.rtGIStrength;
     }
 
     // Screen-space effects (HDR, before DoF/tone mapping)

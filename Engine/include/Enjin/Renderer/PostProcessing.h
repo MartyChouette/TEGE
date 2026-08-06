@@ -301,12 +301,17 @@ struct alignas(16) PostProcessSettings {
     alignas(4) u32 aaComparisonModeRight = 1;  // AA mode for right side
     alignas(4) f32 aaComparisonDivider = 0.5f; // Divider position (0=left edge, 1=right edge)
 
-    // Hybrid ray tracing overlay (RT shadow/AO applied to the scene pre-tonemap).
-    // GPU-uploaded; must stay in lockstep with the postprocess.frag settings block.
+    // Hybrid ray tracing overlay (RT shadow/AO/reflect/GI applied to the scene
+    // pre-tonemap). GPU-uploaded; must stay in lockstep with the postprocess.frag
+    // settings block.
     alignas(4) u32 rtHybridEnable = 0;         // 0 = off (RT textures ignored)
     alignas(4) f32 rtShadowStrength = 1.0f;
     alignas(4) f32 rtAOStrength = 1.0f;
+    alignas(4) f32 rtReflectStrength = 0.5f;
+    alignas(4) f32 rtGIStrength = 0.5f;
     alignas(4) f32 _rtHybridPad0 = 0.0f;
+    alignas(4) f32 _rtHybridPad1 = 0.0f;
+    alignas(4) f32 _rtHybridPad2 = 0.0f;
 
     // TAA config (CPU-side only — used by the TAA compute pass, not the post-process UBO)
     f32 taaSharpness   = 0.1f;     // Sharpening strength applied after TAA resolve (0 = off)
@@ -396,11 +401,13 @@ public:
     // Update the source image that post-processing reads from (rebinds descriptor set binding 0)
     void UpdateSourceImage(VkImageView imageView, VkSampler sampler);
 
-    // Bind the hybrid RT effect outputs (shadow/AO) for the pre-tonemap overlay.
-    // Pass VK_NULL_HANDLE views to disable; the overlay is also gated by
+    // Bind the hybrid RT effect outputs (shadow/AO/reflect/GI) for the pre-tonemap
+    // overlay. Pass VK_NULL_HANDLE views to disable; the overlay is also gated by
     // GetSettings().rtHybridEnable. Takes effect on the next UpdateSourceImage.
-    void SetRTHybridInputs(VkImageView shadowView, VkImageView aoView, VkSampler sampler) {
-        m_RTShadowView = shadowView; m_RTAOView = aoView; m_RTHybridSampler = sampler;
+    void SetRTHybridInputs(VkImageView shadowView, VkImageView aoView,
+                           VkImageView reflectView, VkImageView giView, VkSampler sampler) {
+        m_RTShadowView = shadowView; m_RTAOView = aoView;
+        m_RTReflectView = reflectView; m_RTGIView = giView; m_RTHybridSampler = sampler;
     }
     void UpdateRenderPass(VkRenderPass newPass, u32 colorAttachmentCount = 1);
 
@@ -563,10 +570,12 @@ private:
     bool m_DepthSourceReady = false;  // True after UpdateDepthSource() provides valid depth
     VkImageView m_LastDepthView = VK_NULL_HANDLE;  // Skip redundant binding-3 writes (avoids updating an in-flight set)
 
-    // Hybrid RT overlay inputs (bindings 4-5). Null = bind the scene placeholder;
+    // Hybrid RT overlay inputs (bindings 4-7). Null = bind the scene placeholder;
     // the shader ignores them unless m_Settings.rtHybridEnable is set.
     VkImageView m_RTShadowView = VK_NULL_HANDLE;
     VkImageView m_RTAOView = VK_NULL_HANDLE;
+    VkImageView m_RTReflectView = VK_NULL_HANDLE;
+    VkImageView m_RTGIView = VK_NULL_HANDLE;
     VkSampler m_RTHybridSampler = VK_NULL_HANDLE;
 
     // LUT texture resources

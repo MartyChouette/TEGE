@@ -1531,8 +1531,10 @@ private:
 public:
     VkImageView GetRTHybridShadowView() const;
     VkImageView GetRTHybridAOView() const;
+    VkImageView GetRTHybridReflectView() const;
+    VkImageView GetRTHybridGIView() const;
     VkSampler GetRTHybridSampler() const { return m_RTDummySampler; }
-    bool IsRTHybridActive() const;  // RT on, hybrid mode, shadows or AO enabled, TLAS valid
+    bool IsRTHybridActive() const;  // RT on, hybrid mode, any hybrid effect enabled, TLAS valid
 private:
 
     std::unique_ptr<Renderer::SVGFDenoiser> m_SVGFDenoiser;

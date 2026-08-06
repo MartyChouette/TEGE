@@ -12469,12 +12469,21 @@ VkImageView RenderSystem::GetRTHybridAOView() const {
     return m_RTAO ? m_RTAO->GetOutputView() : VK_NULL_HANDLE;
 }
 
+VkImageView RenderSystem::GetRTHybridReflectView() const {
+    return m_RTReflections ? m_RTReflections->GetOutputView() : VK_NULL_HANDLE;
+}
+
+VkImageView RenderSystem::GetRTHybridGIView() const {
+    return m_RTGI ? m_RTGI->GetOutputView() : VK_NULL_HANDLE;
+}
+
 bool RenderSystem::IsRTHybridActive() const {
     if (!m_RTEnabled || m_RTMode == 1) return false;  // off, or path-trace mode
     if (!m_ASManager || !m_ASManager->HasValidTLAS() || !m_RTDescriptorsWritten) return false;
-    bool shadowOn = m_RTShadows && m_RTShadows->GetConfig().enabled;
-    bool aoOn = m_RTAO && m_RTAO->GetConfig().enabled;
-    return shadowOn || aoOn;
+    return (m_RTShadows && m_RTShadows->GetConfig().enabled) ||
+           (m_RTAO && m_RTAO->GetConfig().enabled) ||
+           (m_RTReflections && m_RTReflections->GetConfig().enabled) ||
+           (m_RTGI && m_RTGI->GetConfig().enabled);
 }
 
 void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
@@ -12658,15 +12667,17 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
             VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 0, 0, nullptr, 0, nullptr, 1, &b);
     };
     if (m_RTHybridOutputsReadable) {
-        // Both images (shadow + AO) are held in READ for the overlay even when only
-        // one effect is enabled (the other is multiplied by strength 0), so both
+        // All four overlay images (shadow/AO/reflect/GI) are held in READ for the
+        // overlay even when an effect is disabled (gated by strength 0), so all
         // must come back to GENERAL here.
-        if (m_RTShadows) transitionEffectImg(m_RTShadows->GetOutputImage(),
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
-            VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT);
-        if (m_RTAO) transitionEffectImg(m_RTAO->GetOutputImage(),
-            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
-            VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT);
+        auto toGeneral = [&](VkImage img) {
+            transitionEffectImg(img, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+                VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT);
+        };
+        if (m_RTShadows) toGeneral(m_RTShadows->GetOutputImage());
+        if (m_RTAO) toGeneral(m_RTAO->GetOutputImage());
+        if (m_RTReflections) toGeneral(m_RTReflections->GetOutputImage());
+        if (m_RTGI) toGeneral(m_RTGI->GetOutputImage());
         m_RTHybridOutputsReadable = false;
     }
 
@@ -12688,20 +12699,24 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
                          cameraPos, m_RTFrameCount);
     }
 
-    // Hand the shadow/AO outputs to the post-process overlay as sampled images.
-    // The overlay applies them to the scene color before tonemapping. Both images
-    // go to READ whenever either effect is on (the overlay samples both, gating a
-    // disabled one with strength 0).
+    // Hand the shadow/AO/reflect/GI outputs to the post-process overlay as sampled
+    // images. The overlay applies them to the scene color before tonemapping. All
+    // four go to READ whenever any effect is on (the overlay samples all four,
+    // gating a disabled one with strength 0).
     {
-        bool shadowOn = m_RTShadows && m_RTShadows->GetConfig().enabled;
-        bool aoOn = m_RTAO && m_RTAO->GetConfig().enabled;
-        if (shadowOn || aoOn) {
-            if (m_RTShadows) transitionEffectImg(m_RTShadows->GetOutputImage(),
-                VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
-            if (m_RTAO) transitionEffectImg(m_RTAO->GetOutputImage(),
-                VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+        bool anyOn = (m_RTShadows && m_RTShadows->GetConfig().enabled) ||
+                     (m_RTAO && m_RTAO->GetConfig().enabled) ||
+                     (m_RTReflections && m_RTReflections->GetConfig().enabled) ||
+                     (m_RTGI && m_RTGI->GetConfig().enabled);
+        if (anyOn) {
+            auto toRead = [&](VkImage img) {
+                transitionEffectImg(img, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+            };
+            if (m_RTShadows) toRead(m_RTShadows->GetOutputImage());
+            if (m_RTAO) toRead(m_RTAO->GetOutputImage());
+            if (m_RTReflections) toRead(m_RTReflections->GetOutputImage());
+            if (m_RTGI) toRead(m_RTGI->GetOutputImage());
             m_RTHybridOutputsReadable = true;
         }
     }

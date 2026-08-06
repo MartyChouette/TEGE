@@ -4733,20 +4733,26 @@ void PostProcessing::UpdateSourceImage(VkImageView imageView, VkSampler sampler)
     // rtHybridEnable is set). Always written so the set is complete.
     VkDescriptorImageInfo rtShadowInfo = imageInfo;
     VkDescriptorImageInfo rtAOInfo = imageInfo;
+    VkDescriptorImageInfo rtReflectInfo = imageInfo;
+    VkDescriptorImageInfo rtGIInfo = imageInfo;
     if (m_RTShadowView != VK_NULL_HANDLE && m_RTAOView != VK_NULL_HANDLE &&
+        m_RTReflectView != VK_NULL_HANDLE && m_RTGIView != VK_NULL_HANDLE &&
         m_RTHybridSampler != VK_NULL_HANDLE) {
-        rtShadowInfo.imageView = m_RTShadowView;
-        rtShadowInfo.sampler = m_RTHybridSampler;
-        rtShadowInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        rtAOInfo.imageView = m_RTAOView;
-        rtAOInfo.sampler = m_RTHybridSampler;
-        rtAOInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        auto setInfo = [&](VkDescriptorImageInfo& info, VkImageView v) {
+            info.imageView = v;
+            info.sampler = m_RTHybridSampler;
+            info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        };
+        setInfo(rtShadowInfo, m_RTShadowView);
+        setInfo(rtAOInfo, m_RTAOView);
+        setInfo(rtReflectInfo, m_RTReflectView);
+        setInfo(rtGIInfo, m_RTGIView);
     }
 
     // If a real LUT is loaded, preserve binding 2 — only update bindings 0 and 3.
     // If no LUT is loaded, also write a placeholder to binding 2.
     u32 writeCount = 0;
-    VkWriteDescriptorSet writes[5]{};
+    VkWriteDescriptorSet writes[7]{};
 
     writes[writeCount].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writes[writeCount].dstSet = m_DescriptorSet;
@@ -4790,6 +4796,24 @@ void PostProcessing::UpdateSourceImage(VkImageView imageView, VkSampler sampler)
     writes[writeCount].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[writeCount].descriptorCount = 1;
     writes[writeCount].pImageInfo = &rtAOInfo;
+    writeCount++;
+
+    // Binding 6: RT hybrid reflections
+    writes[writeCount].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[writeCount].dstSet = m_DescriptorSet;
+    writes[writeCount].dstBinding = 6;
+    writes[writeCount].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[writeCount].descriptorCount = 1;
+    writes[writeCount].pImageInfo = &rtReflectInfo;
+    writeCount++;
+
+    // Binding 7: RT hybrid GI
+    writes[writeCount].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[writeCount].dstSet = m_DescriptorSet;
+    writes[writeCount].dstBinding = 7;
+    writes[writeCount].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[writeCount].descriptorCount = 1;
+    writes[writeCount].pImageInfo = &rtGIInfo;
     writeCount++;
 
     vkUpdateDescriptorSets(m_Context->GetDevice(), writeCount, writes, 0, nullptr);
@@ -5346,9 +5370,9 @@ bool PostProcessing::CreateDescriptorSets() {
     VkDevice device = m_Context->GetDevice();
 
     // Descriptor set layout: 0=scene, 1=settings UBO, 2=LUT, 3=depth,
-    // 4=RT hybrid shadow, 5=RT hybrid AO (all fragment-stage samplers)
-    VkDescriptorSetLayoutBinding bindings[6]{};
-    for (int i = 0; i < 6; ++i) {
+    // 4-7=RT hybrid shadow/AO/reflect/GI (all fragment-stage samplers)
+    VkDescriptorSetLayoutBinding bindings[8]{};
+    for (int i = 0; i < 8; ++i) {
         bindings[i].binding = static_cast<u32>(i);
         bindings[i].descriptorType = (i == 1)
             ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -5358,7 +5382,7 @@ bool PostProcessing::CreateDescriptorSets() {
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 6;
+    layoutInfo.bindingCount = 8;
     layoutInfo.pBindings = bindings;
 
     if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &m_DescriptorSetLayout) != VK_SUCCESS) {
@@ -5366,10 +5390,10 @@ bool PostProcessing::CreateDescriptorSets() {
         return false;
     }
 
-    // Descriptor pool (5 samplers + 1 UBO)
+    // Descriptor pool (7 samplers + 1 UBO)
     VkDescriptorPoolSize poolSizes[2]{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[0].descriptorCount = 5;  // scene + LUT + depth + RT shadow + RT AO
+    poolSizes[0].descriptorCount = 7;  // scene + LUT + depth + RT shadow/AO/reflect/GI
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[1].descriptorCount = 1;
 

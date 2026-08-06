@@ -2293,15 +2293,22 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         if (rtHybridActive) {
             m_PostProcessing->SetRTHybridInputs(m_RenderSystem->GetRTHybridShadowView(),
                                                 m_RenderSystem->GetRTHybridAOView(),
+                                                m_RenderSystem->GetRTHybridReflectView(),
+                                                m_RenderSystem->GetRTHybridGIView(),
                                                 m_RenderSystem->GetRTHybridSampler());
             pps.rtHybridEnable = 1;
             pps.rtShadowStrength = (m_RenderSystem->GetRTShadows() &&
                                     m_RenderSystem->GetRTShadows()->GetConfig().enabled) ? 1.0f : 0.0f;
             pps.rtAOStrength = (m_RenderSystem->GetRTAO() &&
                                 m_RenderSystem->GetRTAO()->GetConfig().enabled) ? 1.0f : 0.0f;
+            pps.rtReflectStrength = (m_RenderSystem->GetRTReflections() &&
+                                     m_RenderSystem->GetRTReflections()->GetConfig().enabled) ? 0.5f : 0.0f;
+            pps.rtGIStrength = (m_RenderSystem->GetRTGI() &&
+                                m_RenderSystem->GetRTGI()->GetConfig().enabled) ? 0.5f : 0.0f;
         } else {
             pps.rtHybridEnable = 0;
-            m_PostProcessing->SetRTHybridInputs(VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE);
+            m_PostProcessing->SetRTHybridInputs(VK_NULL_HANDLE, VK_NULL_HANDLE,
+                                                VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE);
         }
     }
 
