@@ -1524,6 +1524,16 @@ private:
     u32 m_RTGBufferWidth = 0, m_RTGBufferHeight = 0;
     bool m_RTGBufferLayoutInitialized = false;  // false until first GENERAL transition
     void DispatchRTGBuffer(VkCommandBuffer cmd);
+    // Hybrid shadow/AO outputs get flipped GENERAL<->SHADER_READ_ONLY each frame so
+    // the post-process overlay can sample them. Accessors expose them to the editor
+    // and player, which bind them to PostProcessing::SetRTHybridInputs.
+    bool m_RTHybridOutputsReadable = false;
+public:
+    VkImageView GetRTHybridShadowView() const;
+    VkImageView GetRTHybridAOView() const;
+    VkSampler GetRTHybridSampler() const { return m_RTDummySampler; }
+    bool IsRTHybridActive() const;  // RT on, hybrid mode, shadows or AO enabled, TLAS valid
+private:
 
     std::unique_ptr<Renderer::SVGFDenoiser> m_SVGFDenoiser;
     std::unique_ptr<Renderer::OIDNDenoiser> m_OIDNDenoiser;

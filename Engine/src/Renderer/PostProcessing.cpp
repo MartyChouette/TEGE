@@ -4728,10 +4728,25 @@ void PostProcessing::UpdateSourceImage(VkImageView imageView, VkSampler sampler)
         lutPlaceholderInfo.sampler = m_LUTSampler;
     }
 
+    // Hybrid RT overlay (bindings 4-5): the RT shadow/AO views when hybrid is
+    // active, else the scene placeholder (the shader ignores them unless
+    // rtHybridEnable is set). Always written so the set is complete.
+    VkDescriptorImageInfo rtShadowInfo = imageInfo;
+    VkDescriptorImageInfo rtAOInfo = imageInfo;
+    if (m_RTShadowView != VK_NULL_HANDLE && m_RTAOView != VK_NULL_HANDLE &&
+        m_RTHybridSampler != VK_NULL_HANDLE) {
+        rtShadowInfo.imageView = m_RTShadowView;
+        rtShadowInfo.sampler = m_RTHybridSampler;
+        rtShadowInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        rtAOInfo.imageView = m_RTAOView;
+        rtAOInfo.sampler = m_RTHybridSampler;
+        rtAOInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    }
+
     // If a real LUT is loaded, preserve binding 2 — only update bindings 0 and 3.
     // If no LUT is loaded, also write a placeholder to binding 2.
     u32 writeCount = 0;
-    VkWriteDescriptorSet writes[3]{};
+    VkWriteDescriptorSet writes[5]{};
 
     writes[writeCount].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     writes[writeCount].dstSet = m_DescriptorSet;
@@ -4757,6 +4772,24 @@ void PostProcessing::UpdateSourceImage(VkImageView imageView, VkSampler sampler)
     writes[writeCount].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     writes[writeCount].descriptorCount = 1;
     writes[writeCount].pImageInfo = &imageInfo;
+    writeCount++;
+
+    // Binding 4: RT hybrid shadow
+    writes[writeCount].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[writeCount].dstSet = m_DescriptorSet;
+    writes[writeCount].dstBinding = 4;
+    writes[writeCount].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[writeCount].descriptorCount = 1;
+    writes[writeCount].pImageInfo = &rtShadowInfo;
+    writeCount++;
+
+    // Binding 5: RT hybrid AO
+    writes[writeCount].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[writeCount].dstSet = m_DescriptorSet;
+    writes[writeCount].dstBinding = 5;
+    writes[writeCount].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[writeCount].descriptorCount = 1;
+    writes[writeCount].pImageInfo = &rtAOInfo;
     writeCount++;
 
     vkUpdateDescriptorSets(m_Context->GetDevice(), writeCount, writes, 0, nullptr);
@@ -5312,31 +5345,20 @@ bool PostProcessing::CreateDescriptorSets() {
 
     VkDevice device = m_Context->GetDevice();
 
-    // Descriptor set layout: binding 0 = scene texture, binding 1 = settings UBO, binding 2 = LUT texture, binding 3 = depth texture
-    VkDescriptorSetLayoutBinding bindings[4]{};
-    bindings[0].binding = 0;
-    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[0].descriptorCount = 1;
-    bindings[0].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    bindings[1].binding = 1;
-    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    bindings[1].descriptorCount = 1;
-    bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    bindings[2].binding = 2;
-    bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[2].descriptorCount = 1;
-    bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-    bindings[3].binding = 3;
-    bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    bindings[3].descriptorCount = 1;
-    bindings[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    // Descriptor set layout: 0=scene, 1=settings UBO, 2=LUT, 3=depth,
+    // 4=RT hybrid shadow, 5=RT hybrid AO (all fragment-stage samplers)
+    VkDescriptorSetLayoutBinding bindings[6]{};
+    for (int i = 0; i < 6; ++i) {
+        bindings[i].binding = static_cast<u32>(i);
+        bindings[i].descriptorType = (i == 1)
+            ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[i].descriptorCount = 1;
+        bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    }
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 4;
+    layoutInfo.bindingCount = 6;
     layoutInfo.pBindings = bindings;
 
     if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &m_DescriptorSetLayout) != VK_SUCCESS) {
@@ -5344,10 +5366,10 @@ bool PostProcessing::CreateDescriptorSets() {
         return false;
     }
 
-    // Descriptor pool (3 samplers + 1 UBO)
+    // Descriptor pool (5 samplers + 1 UBO)
     VkDescriptorPoolSize poolSizes[2]{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[0].descriptorCount = 3;  // scene + LUT + depth
+    poolSizes[0].descriptorCount = 5;  // scene + LUT + depth + RT shadow + RT AO
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[1].descriptorCount = 1;
 

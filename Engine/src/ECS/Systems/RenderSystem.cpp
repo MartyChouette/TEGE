@@ -12461,6 +12461,22 @@ void RenderSystem::DispatchRTGBuffer(VkCommandBuffer cmd) {
             VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
 }
 
+VkImageView RenderSystem::GetRTHybridShadowView() const {
+    return m_RTShadows ? m_RTShadows->GetOutputView() : VK_NULL_HANDLE;
+}
+
+VkImageView RenderSystem::GetRTHybridAOView() const {
+    return m_RTAO ? m_RTAO->GetOutputView() : VK_NULL_HANDLE;
+}
+
+bool RenderSystem::IsRTHybridActive() const {
+    if (!m_RTEnabled || m_RTMode == 1) return false;  // off, or path-trace mode
+    if (!m_ASManager || !m_ASManager->HasValidTLAS() || !m_RTDescriptorsWritten) return false;
+    bool shadowOn = m_RTShadows && m_RTShadows->GetConfig().enabled;
+    bool aoOn = m_RTAO && m_RTAO->GetConfig().enabled;
+    return shadowOn || aoOn;
+}
+
 void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
     if (!m_RTEnabled || !m_ASManager || !m_ASManager->HasValidTLAS()) return;
     if (!m_RTDescriptorsWritten) return;
@@ -12625,6 +12641,35 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
         m_ReSTIR->Dispatch(cmd, m_RTDescriptorSet, m_RTFrameCount, totalLightCount);
     }
 
+    // Flip shadow/AO outputs back to GENERAL for this frame's storage writes
+    // (the post-process overlay left them SHADER_READ_ONLY last frame)
+    auto transitionEffectImg = [&](VkImage img, VkImageLayout oldL, VkImageLayout newL,
+                                   VkAccessFlags srcA, VkAccessFlags dstA) {
+        if (img == VK_NULL_HANDLE) return;
+        VkImageMemoryBarrier b{};
+        b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        b.oldLayout = oldL; b.newLayout = newL;
+        b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.image = img;
+        b.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        b.srcAccessMask = srcA; b.dstAccessMask = dstA;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 0, 0, nullptr, 0, nullptr, 1, &b);
+    };
+    if (m_RTHybridOutputsReadable) {
+        // Both images (shadow + AO) are held in READ for the overlay even when only
+        // one effect is enabled (the other is multiplied by strength 0), so both
+        // must come back to GENERAL here.
+        if (m_RTShadows) transitionEffectImg(m_RTShadows->GetOutputImage(),
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+            VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT);
+        if (m_RTAO) transitionEffectImg(m_RTAO->GetOutputImage(),
+            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL,
+            VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_SHADER_WRITE_BIT);
+        m_RTHybridOutputsReadable = false;
+    }
+
     // Hybrid mode — dispatch individual effects
     if (m_RTShadows && m_RTShadows->GetConfig().enabled) {
         m_RTShadows->Dispatch(cmd, m_RTDescriptorSet, invViewProj, lightDir,
@@ -12641,6 +12686,24 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
     if (m_RTGI && m_RTGI->GetConfig().enabled) {
         m_RTGI->Dispatch(cmd, m_RTDescriptorSet, invViewProj, lightDir,
                          cameraPos, m_RTFrameCount);
+    }
+
+    // Hand the shadow/AO outputs to the post-process overlay as sampled images.
+    // The overlay applies them to the scene color before tonemapping. Both images
+    // go to READ whenever either effect is on (the overlay samples both, gating a
+    // disabled one with strength 0).
+    {
+        bool shadowOn = m_RTShadows && m_RTShadows->GetConfig().enabled;
+        bool aoOn = m_RTAO && m_RTAO->GetConfig().enabled;
+        if (shadowOn || aoOn) {
+            if (m_RTShadows) transitionEffectImg(m_RTShadows->GetOutputImage(),
+                VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+            if (m_RTAO) transitionEffectImg(m_RTAO->GetOutputImage(),
+                VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT);
+            m_RTHybridOutputsReadable = true;
+        }
     }
 
     // Radiance cache — update tile validity and read cached irradiance.

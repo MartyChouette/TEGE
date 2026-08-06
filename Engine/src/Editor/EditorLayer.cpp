@@ -2283,8 +2283,30 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
                           pathTracer->GetAccumulatedSamples() > 0;
     }
 
+    // Hybrid RT overlay: when RT is in hybrid mode with shadows or AO enabled, the
+    // post-process shader multiplies the resolved scene by the ray-traced shadow/AO.
+    // Forces the PP shader path on (the overlay needs it) even if the camera
+    // disables other post effects.
+    bool rtHybridActive = m_RenderSystem && m_RenderSystem->IsRTHybridActive();
+    if (m_PostProcessing && m_PostProcessing->IsInitialized()) {
+        auto& pps = m_PostProcessing->GetSettings();
+        if (rtHybridActive) {
+            m_PostProcessing->SetRTHybridInputs(m_RenderSystem->GetRTHybridShadowView(),
+                                                m_RenderSystem->GetRTHybridAOView(),
+                                                m_RenderSystem->GetRTHybridSampler());
+            pps.rtHybridEnable = 1;
+            pps.rtShadowStrength = (m_RenderSystem->GetRTShadows() &&
+                                    m_RenderSystem->GetRTShadows()->GetConfig().enabled) ? 1.0f : 0.0f;
+            pps.rtAOStrength = (m_RenderSystem->GetRTAO() &&
+                                m_RenderSystem->GetRTAO()->GetConfig().enabled) ? 1.0f : 0.0f;
+        } else {
+            pps.rtHybridEnable = 0;
+            m_PostProcessing->SetRTHybridInputs(VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE);
+        }
+    }
+
     bool usePPShader = usePostProcessing && m_PostProcessing &&
-                       m_PostProcessing->IsInitialized() && (cameraPPEnabled || ptDisplayActive);
+                       m_PostProcessing->IsInitialized() && (cameraPPEnabled || ptDisplayActive || rtHybridActive);
 
     // Choose render target: scene RT when post-processing is active, game view RT otherwise
     Renderer::RenderTarget* sceneTarget = usePostProcessing

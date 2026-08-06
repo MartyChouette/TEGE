@@ -240,6 +240,12 @@ layout(binding = 1) uniform PostProcessSettings {
     uint aaComparisonModeLeft;    // AA mode for left side (0=None, 1=FXAA, 3=SMAA)
     uint aaComparisonModeRight;   // AA mode for right side
     float aaComparisonDivider;    // Divider position (0=left edge, 1=right edge)
+
+    // Hybrid ray tracing overlay (applied to the resolved scene color pre-tonemap)
+    uint rtHybridEnable;          // 0 = off (rtShadow/rtAO textures ignored)
+    float rtShadowStrength;       // 0..1 blend of RT shadow multiplier
+    float rtAOStrength;           // 0..1 blend of RT AO multiplier
+    float _rtHybridPad0;
 } settings;
 
 // LUT texture (binding 2)
@@ -247,6 +253,12 @@ layout(binding = 2) uniform sampler2D lutTexture;
 
 // Depth texture (binding 3) for cel outline edge detection
 layout(binding = 3) uniform sampler2D depthTexture;
+
+// Hybrid RT effect outputs (bindings 4-5). Screen-space aligned with the scene
+// (same camera); sampled at the scene uv, linear-filtered across the RT/game-view
+// resolution difference. Only read when settings.rtHybridEnable != 0.
+layout(binding = 4) uniform sampler2D rtShadowTex;  // r: 0 = shadowed, 1 = lit
+layout(binding = 5) uniform sampler2D rtAOTex;      // r: 0 = occluded, 1 = open
 
 // Tone mapping mode constants
 #define TONEMAP_NONE 0
@@ -1815,6 +1827,16 @@ void main() {
             color.r = texture(sceneTexture, uv + caCenter * caOff).r;
             color.b = texture(sceneTexture, uv - caCenter * caOff).b;
         }
+    }
+
+    // Hybrid ray-traced shadows + AO, applied to the resolved scene color before
+    // any tonemapping. Screen-space aligned with the scene, so this pixel's uv
+    // indexes the same world point in both.
+    if (settings.rtHybridEnable != 0u) {
+        float rtShadow = texture(rtShadowTex, uv).r;   // 0 = shadowed, 1 = lit
+        float rtAO = texture(rtAOTex, uv).r;           // 0 = occluded, 1 = open
+        color *= mix(1.0, rtShadow, settings.rtShadowStrength);
+        color *= mix(1.0, rtAO, settings.rtAOStrength);
     }
 
     // Screen-space effects (HDR, before DoF/tone mapping)
