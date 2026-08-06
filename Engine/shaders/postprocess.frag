@@ -1131,15 +1131,17 @@ vec3 applyPaletteLock(vec3 color) {
         pal[2]=vec3(0.545,0.674,0.059); pal[3]=vec3(0.608,0.737,0.059);
         palCount = 4;
     } else if (settings.paletteMode == 3u) {
-        // NES (subset — 16 representative colors)
-        pal[ 0]=vec3(0.000,0.000,0.000); pal[ 1]=vec3(0.988,0.988,0.988);
-        pal[ 2]=vec3(0.671,0.671,0.671); pal[ 3]=vec3(0.376,0.376,0.376);
-        pal[ 4]=vec3(0.894,0.149,0.173); pal[ 5]=vec3(0.988,0.494,0.463);
-        pal[ 6]=vec3(0.000,0.000,0.659); pal[ 7]=vec3(0.208,0.463,0.988);
-        pal[ 8]=vec3(0.000,0.471,0.000); pal[ 9]=vec3(0.298,0.745,0.298);
-        pal[10]=vec3(0.988,0.843,0.000); pal[11]=vec3(0.988,0.631,0.282);
-        pal[12]=vec3(0.471,0.169,0.529); pal[13]=vec3(0.988,0.608,0.839);
-        pal[14]=vec3(0.000,0.659,0.659); pal[15]=vec3(0.659,0.471,0.325);
+        // NES (16-color subset of the 2C02 palette, chosen for luminance spread —
+        // dark grey/brown/dark green/dark blue catch dark scene pixels that would
+        // otherwise all snap to pure black under nearest-RGB matching)
+        pal[ 0]=vec3(0.000,0.000,0.000); pal[ 1]=vec3(0.329,0.329,0.329);
+        pal[ 2]=vec3(0.596,0.588,0.596); pal[ 3]=vec3(0.925,0.933,0.925);
+        pal[ 4]=vec3(0.000,0.118,0.455); pal[ 5]=vec3(0.188,0.196,0.925);
+        pal[ 6]=vec3(0.298,0.604,0.925); pal[ 7]=vec3(0.031,0.486,0.000);
+        pal[ 8]=vec3(0.298,0.816,0.125); pal[ 9]=vec3(0.596,0.133,0.125);
+        pal[10]=vec3(0.925,0.416,0.392); pal[11]=vec3(0.471,0.235,0.000);
+        pal[12]=vec3(0.925,0.604,0.125); pal[13]=vec3(0.800,0.831,0.125);
+        pal[14]=vec3(0.533,0.078,0.690); pal[15]=vec3(0.925,0.345,0.706);
         palCount = 16;
     } else if (settings.paletteMode == 4u) {
         // CGA (4 colors — palette 1 high)
