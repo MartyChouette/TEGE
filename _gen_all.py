@@ -68,6 +68,7 @@ SHADERS_LIST = [
     ("fluid.frag.spv",         "FluidFragmentShaderData",        "uchar"),
     ("oit_composite.frag.spv", "OitCompositeFragmentShaderData", "uchar"),
     ("taa_resolve.comp.spv",   "TAAResolveComputeShaderData",    "uchar"),
+    ("rt_hybrid_apply.frag.spv", "RTHybridApplyFragmentShaderData", "uchar"),
 ]
 
 BL = []

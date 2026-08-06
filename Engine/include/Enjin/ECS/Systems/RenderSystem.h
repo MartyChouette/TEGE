@@ -1535,6 +1535,9 @@ public:
     VkImageView GetRTHybridGIView() const;
     VkSampler GetRTHybridSampler() const { return m_RTDummySampler; }
     bool IsRTHybridActive() const;  // RT on, hybrid mode, any hybrid effect enabled, TLAS valid
+    // Overlay strengths from the RT compositor config, each already gated to 0 if
+    // its effect is disabled. Lets callers (player) avoid the RT effect headers.
+    void GetRTHybridStrengths(f32& shadow, f32& ao, f32& reflect, f32& gi) const;
 private:
 
     std::unique_ptr<Renderer::SVGFDenoiser> m_SVGFDenoiser;

@@ -83,6 +83,8 @@
 #include "Enjin/Accessibility/ColorblindPalette.h"
 #include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Renderer/RayTracing/PathTracer.h"
+#include "Enjin/Renderer/RayTracing/RTHybridApply.h"
+#include "Enjin/Renderer/RayTracing/RTCompositor.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/Audio/AudioEventGraph.h"
 #include "Enjin/Assets/DataAsset.h"
@@ -684,6 +686,10 @@ public:
             m_PostProcessing->Shutdown();
             m_PostProcessing.reset();
         }
+        if (m_RTHybridApply) {
+            m_RTHybridApply->Shutdown();
+            m_RTHybridApply.reset();
+        }
 
         // Clear accessibility
         m_SubtitleSystem.Clear();
@@ -1244,6 +1250,24 @@ public:
             }
         }
 
+        // Hybrid RT overlay: when RT is in hybrid mode with shadows/AO/reflect/GI
+        // enabled, blend the ray-traced effects onto the swapchain scene. The
+        // effect images were left SHADER_READ_ONLY by RecordRTFrame (inside
+        // World::Update). Runs in the still-open swapchain pass.
+        if (m_RTHybridApply && m_RenderSystem && m_RenderSystem->IsRTHybridActive()) {
+            VkCommandBuffer hCmd = m_Renderer->GetCurrentCommandBuffer();
+            if (hCmd != VK_NULL_HANDLE) {
+                m_RTHybridApply->SetInputs(m_RenderSystem->GetRTHybridShadowView(),
+                                           m_RenderSystem->GetRTHybridAOView(),
+                                           m_RenderSystem->GetRTHybridReflectView(),
+                                           m_RenderSystem->GetRTHybridGIView(),
+                                           m_RenderSystem->GetRTHybridSampler());
+                Enjin::f32 sS, aS, rS, gS;
+                m_RenderSystem->GetRTHybridStrengths(sS, aS, rS, gS);
+                m_RTHybridApply->Apply(hCmd, extent.width, extent.height, sS, aS, rS, gS);
+            }
+        }
+
         // Shadow pass runs inside RenderSystem::Update() (called by World::Update above).
         // Do NOT call RenderShadowPassForCamera here — the main render pass is already
         // active at this point, and starting a shadow render pass inside it crashes the
@@ -1696,6 +1720,21 @@ private:
                     m_PostProcessing->UpdateRenderPass(m_Renderer->GetRenderPass(), 2);
                 }
             });
+        }
+
+        // Player hybrid RT overlay (blends RT shadow/AO/reflect/GI onto the
+        // swapchain scene). Same swapchain MRT pass as post-processing.
+        if (m_Renderer && m_Renderer->GetContext()) {
+            m_RTHybridApply = std::make_unique<Enjin::Renderer::RTHybridApply>(m_Renderer->GetContext());
+            if (!m_RTHybridApply->Initialize(m_Renderer->GetRenderPass(), 2)) {
+                ENJIN_LOG_WARN(Player, "RTHybridApply init failed — hybrid RT overlay disabled in player");
+                m_RTHybridApply.reset();
+            } else {
+                m_Renderer->AddResizeCallback([this](Enjin::u32, Enjin::u32) {
+                    if (m_RTHybridApply && m_Renderer)
+                        m_RTHybridApply->UpdateRenderPass(m_Renderer->GetRenderPass(), 2);
+                });
+            }
         }
         Enjin::Scripting::SetBindingsPostProcessing(m_PostProcessing.get());
         Enjin::Scripting::SetBindingsPhysics2D(m_Physics2D.get());
@@ -2368,6 +2407,11 @@ private:
 
     // Post-processing: settings for script bindings + the path tracer display draw
     std::unique_ptr<Enjin::Renderer::PostProcessing> m_PostProcessing;
+
+    // Player hybrid RT overlay: blends ray-traced shadow/AO/reflect/GI onto the
+    // swapchain scene (the player has no offscreen target for the editor's PP
+    // overlay path). See RTHybridApply.
+    std::unique_ptr<Enjin::Renderer::RTHybridApply> m_RTHybridApply;
 
     // Last view bound as the PP source (plain descriptor set — only rewrite on change)
     VkImageView m_LastPTSourceView = VK_NULL_HANDLE;

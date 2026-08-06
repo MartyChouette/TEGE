@@ -12194,10 +12194,14 @@ void RenderSystem::RecordRTFrame(bool allowAsync) {
     RebuildTLAS(commandBuffer);
 
     u32 frameIdx = m_VulkanRenderer->GetCurrentFrameIndex();
-    // Path-trace mode always takes the single-queue path: the display transition
-    // below must be on the graphics queue in this command buffer
-    bool asyncRT = allowAsync && m_RTMode != 1 && m_AsyncComputeScheduler &&
-                   m_AsyncComputeScheduler->ShouldUseAsync(Renderer::AsyncComputeWorkType::RTDispatch);
+    // Both RT modes take the single-queue path now. Path tracing needs its display
+    // transition on the graphics queue; hybrid needs the G-buffer, the shadow/AO/
+    // reflect/GI read transitions, and the overlay to run in deterministic order on
+    // the graphics queue (the async compute path skips the G-buffer's pass ordering
+    // and races the overlay). Async RT dispatch is disabled pending a rework that
+    // accounts for the G-buffer + overlay.
+    bool asyncRT = false;
+    (void)allowAsync;
 
     if (asyncRT) {
         // Dispatch RT effects on async compute queue (overlaps with main geometry)
@@ -12484,6 +12488,20 @@ bool RenderSystem::IsRTHybridActive() const {
            (m_RTAO && m_RTAO->GetConfig().enabled) ||
            (m_RTReflections && m_RTReflections->GetConfig().enabled) ||
            (m_RTGI && m_RTGI->GetConfig().enabled);
+}
+
+void RenderSystem::GetRTHybridStrengths(f32& shadow, f32& ao, f32& reflect, f32& gi) const {
+    f32 sS = 1.0f, aS = 1.0f, rS = 0.5f, gS = 0.5f;
+    if (m_RTCompositor) {
+        sS = m_RTCompositor->GetConfig().shadowStrength;
+        aS = m_RTCompositor->GetConfig().aoStrength;
+        rS = m_RTCompositor->GetConfig().reflectionStrength;
+        gS = m_RTCompositor->GetConfig().giStrength;
+    }
+    shadow  = (m_RTShadows && m_RTShadows->GetConfig().enabled) ? sS : 0.0f;
+    ao      = (m_RTAO && m_RTAO->GetConfig().enabled) ? aS : 0.0f;
+    reflect = (m_RTReflections && m_RTReflections->GetConfig().enabled) ? rS : 0.0f;
+    gi      = (m_RTGI && m_RTGI->GetConfig().enabled) ? gS : 0.0f;
 }
 
 void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
