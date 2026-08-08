@@ -1779,6 +1779,50 @@ vec3 applyAAByMode(vec2 uv, uint mode) {
     }
 }
 
+// ============================================================
+// Bloom — single-pass HDR threshold + gaussian glow
+// ============================================================
+// The post chain is one fullscreen pass, so bloom runs inline rather than as a
+// separate mip pyramid: a soft bright-pass (energy above bloomThreshold) blurred
+// by a 2D gaussian kernel and added back to the HDR color before tone mapping.
+// Not a multi-mip bloom, but stable, contained, and driven by the existing
+// bloomThreshold / bloomIntensity / bloomRadius UBO fields.
+vec3 applyBloom(vec3 color, vec2 uv) {
+    if (settings.bloomEnabled == 0u) return color;
+
+    // The kernel must be DENSE inside the radius: bloomRadius is the total
+    // UV-space reach, divided across the taps. The first version used
+    // bloomRadius as the PER-TAP spacing, which put ~7px gaps between taps —
+    // every bright shape rendered as a grid of faint offset copies (ghosting)
+    // instead of a smooth glow.
+    vec2 texelSize = 1.0 / vec2(settings.screenWidth, settings.screenHeight);
+    const int R = 5;
+    float stepUV = max(settings.bloomRadius / float(R), texelSize.x);
+    float sigma = float(R) * 0.5;
+
+    vec3 bloom = vec3(0.0);
+    float totalWeight = 0.0;
+    for (int dy = -R; dy <= R; ++dy) {
+        for (int dx = -R; dx <= R; ++dx) {
+            // Scale the y step by aspect so the glow is round, not stretched
+            vec2 offset = vec2(float(dx) * stepUV,
+                               float(dy) * stepUV * (texelSize.y / texelSize.x));
+            vec3 s = texture(sceneTexture, uv + offset).rgb;
+            // Soft bright-pass: keep only the luminance energy above the
+            // threshold, preserving hue.
+            float lum = dot(s, vec3(0.2126, 0.7152, 0.0722));
+            float excess = max(lum - settings.bloomThreshold, 0.0);
+            vec3 bright = (lum > 1e-4) ? s * (excess / lum) : vec3(0.0);
+            float w = exp(-float(dx * dx + dy * dy) / (2.0 * sigma * sigma));
+            bloom += bright * w;
+            totalWeight += w;
+        }
+    }
+    bloom /= max(totalWeight, 1e-4);
+
+    return color + bloom * settings.bloomIntensity;
+}
+
 void main() {
     vec2 uv = fragUV;
 
@@ -1864,6 +1908,10 @@ void main() {
     if (settings.tiltShiftEnabled != 0u) {
         color = applyTiltShift(color, uv);
     }
+
+    // Bloom: HDR highlight glow, added before tone mapping so highlights bloom
+    // in linear space.
+    color = applyBloom(color, uv);
 
     // Apply tone mapping
     if (settings.toneMappingMode != TONEMAP_NONE) {
