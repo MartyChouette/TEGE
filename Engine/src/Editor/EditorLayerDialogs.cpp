@@ -652,6 +652,21 @@ void EditorLayer::DrawImportDialog() {
         ImGui::Checkbox("Import Materials", &m_ImportDialogOptions.importMaterials);
         ImGui::Checkbox("Import Animations", &m_ImportDialogOptions.importAnimations);
         ImGui::Checkbox("Generate Colliders", &m_ImportDialogOptions.generateColliders);
+        if (m_ImportDialogOptions.generateColliders) {
+            const char* shapeNames[] = { "Box", "Sphere", "Capsule", "Convex Mesh" };
+            int shapeIdx = static_cast<int>(m_ImportDialogOptions.colliderShape);
+            ImGui::Indent(16.0f);
+            ImGui::SetNextItemWidth(160.0f);
+            if (ImGui::Combo("Collider Shape", &shapeIdx, shapeNames, 4)) {
+                m_ImportDialogOptions.colliderShape = static_cast<Assets::ImportColliderShape>(shapeIdx);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Box/Sphere/Capsule fit the mesh bounds. Convex Mesh hugs the\n"
+                                  "actual geometry (best fit, higher physics cost). Sizes are baked\n"
+                                  "in world space from the imported scale.");
+            }
+            ImGui::Unindent(16.0f);
+        }
         ImGui::Checkbox("Generate LODs", &m_ImportDialogOptions.generateLODs);
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Generate Level-of-Detail meshes (can be slow for large models)");

@@ -168,10 +168,16 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
             mat.baseColorFactor = Math::Vector4(color.r, color.g, color.b, color.a);
         }
 
-        // Opacity
+        // Opacity — guard the classic Blender-FBX trap: the exporter writes
+        // TransparencyFactor=0 with TransparentColor=(1,1,1) and Assimp derives
+        // AI_MATKEY_OPACITY = 0 ("fully transparent") for materials the artist
+        // authored as opaque. The mesh then renders invisible in the main pass
+        // while its shadow still draws (the shadow pass ignores opacity) — the
+        // Stag/Wolf "body missing, antlers fine" import bug (2026-08-08). A truly
+        // invisible material is never the intent of an import: treat ~0 as opaque.
         float opacity = 1.0f;
         if (aiMat->Get(AI_MATKEY_OPACITY, opacity) == AI_SUCCESS) {
-            mat.opacity = opacity;
+            mat.opacity = (opacity <= 0.01f) ? 1.0f : opacity;
         }
 
         // Metallic/roughness

@@ -44,6 +44,16 @@ ENJIN_API SourceAppPreset GetSourceAppPreset(SourceApp app);
 // Get the display name for a source app enum value
 ENJIN_API const char* GetSourceAppName(SourceApp app);
 
+// Shape of the auto-generated collider for imported meshes. All shapes are
+// sized in WORLD space (the entity's import scale is baked in — physics
+// backends ignore transform scale).
+enum class ImportColliderShape : u8 {
+    Box = 0,      // AABB of the mesh (default)
+    Sphere,       // bounding sphere (radius = half the largest extent)
+    Capsule,      // Y-axis capsule fit to the AABB
+    ConvexMesh,   // MeshColliderComponent convex hull from the mesh vertices
+};
+
 // Import options for scene loading
 struct ImportOptions {
     f32 scale = 1.0f;
@@ -51,6 +61,7 @@ struct ImportOptions {
     bool importLights = true;
     bool importAnimations = true;
     bool generateColliders = true;
+    ImportColliderShape colliderShape = ImportColliderShape::Box;
     bool generateLODs = false;  // Off by default — LOD generation is expensive for large meshes
 
     // Source application preset
@@ -138,12 +149,16 @@ private:
                                      // survives save/load (SkeletonComponent::skeletonGroupId)
     };
 
-    // Overload with skeleton context for skinned mesh import
+    // Overload with skeleton context for skinned mesh import. pendingParent is the
+    // entity the created node should attach to — threaded through the recursion so
+    // meshes under SKIPPED nodes ($AssimpFbx$ helpers, bone nodes, empty transforms)
+    // still land under the import root instead of orphaned at scene root.
     static ECS::Entity CreateEntityFromAssimpNode(const AssimpScene& scene, i32 nodeIndex,
                                                    ECS::World* world, const ImportOptions& options,
                                                    std::vector<ECS::Entity>& outEntities,
                                                    ImportStats& stats,
-                                                   AssimpSkeletonContext& skelCtx);
+                                                   AssimpSkeletonContext& skelCtx,
+                                                   ECS::Entity pendingParent = ECS::INVALID_ENTITY);
 };
 
 } // namespace Assets

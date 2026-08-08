@@ -25,6 +25,57 @@
 namespace Enjin {
 namespace Assets {
 
+// Auto-collider generation for imported meshes. Collider sizes are WORLD SPACE
+// (physics backends ignore transform scale), so the entity's scale is baked in —
+// otherwise a cm-unit FBX gets a collider 100x bigger than the displayed model.
+static void AddImportCollider(ECS::World* world, ECS::Entity entity,
+                              const Math::Vector3& minBounds, const Math::Vector3& maxBounds,
+                              const ImportOptions& options) {
+    // WORLD scale: the entity is already parented (import root carries the
+    // cm→m auto-scale), so read the accumulated hierarchy scale, not the local one.
+    const Math::Matrix4 wm = ECS::ComputeWorldMatrix(world, entity);
+    const Math::Vector3 s(
+        Math::Vector3(wm.m[0], wm.m[1], wm.m[2]).Length(),
+        Math::Vector3(wm.m[4], wm.m[5], wm.m[6]).Length(),
+        Math::Vector3(wm.m[8], wm.m[9], wm.m[10]).Length());
+    const Math::Vector3 center((minBounds.x + maxBounds.x) * 0.5f * s.x,
+                               (minBounds.y + maxBounds.y) * 0.5f * s.y,
+                               (minBounds.z + maxBounds.z) * 0.5f * s.z);
+    const Math::Vector3 size((maxBounds.x - minBounds.x) * s.x,
+                             (maxBounds.y - minBounds.y) * s.y,
+                             (maxBounds.z - minBounds.z) * s.z);
+    switch (options.colliderShape) {
+        case ImportColliderShape::Sphere: {
+            auto& c = world->AddComponent<ECS::SphereColliderComponent>(entity);
+            c.center = center;
+            c.radius = 0.5f * std::max(size.x, std::max(size.y, size.z));
+            break;
+        }
+        case ImportColliderShape::Capsule: {
+            auto& c = world->AddComponent<ECS::CapsuleColliderComponent>(entity);
+            c.center = center;
+            c.direction = ECS::CapsuleColliderComponent::Direction::Y;
+            c.radius = 0.5f * std::max(size.x, size.z);
+            // height = cylinder section only (total = height + 2*radius)
+            c.height = std::max(0.0f, size.y - 2.0f * c.radius);
+            break;
+        }
+        case ImportColliderShape::ConvexMesh: {
+            auto& c = world->AddComponent<ECS::MeshColliderComponent>(entity);
+            c.convex = true;
+            c.autoGenerate = true;  // populated (world-scaled) at first physics use
+            break;
+        }
+        case ImportColliderShape::Box:
+        default: {
+            auto& c = world->AddComponent<ECS::BoxColliderComponent>(entity);
+            c.center = center;
+            c.size = size;
+            break;
+        }
+    }
+}
+
 // ============================================================================
 // Mesh Validation — detect and auto-fix common import problems
 // ============================================================================
@@ -600,11 +651,9 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                 }
             }
 
-            // Add box collider from mesh AABB
+            // Add collider from mesh AABB (shape from import options, world-scaled)
             if (options.generateColliders) {
-                auto& collider = world->AddComponent<ECS::BoxColliderComponent>(entity);
-                collider.center = (minBounds + maxBounds) * 0.5f;
-                collider.size = maxBounds - minBounds;
+                AddImportCollider(world, entity, minBounds, maxBounds, options);
             }
 
             // Resolve texture paths from glTF image URIs with fallback directories
@@ -1152,31 +1201,52 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
     Math::Vector3 boundsMin(FLT_MAX, FLT_MAX, FLT_MAX);
     Math::Vector3 boundsMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
 
-    // For SKINNED meshes, the entity build path bakes the mesh node's accumulated
-    // world transform into vertices, so the post-bake scale matches the bone bind
-    // data (cm). Use the BONE world bind positions for the auto-scale check —
-    // they're already in the post-bake unit and represent the actual character
-    // size, regardless of which mesh-local space the raw FBX vertices were in.
-    if (skelCtx.skeleton && !skelCtx.skeleton->bones.empty()) {
-        // Compute world bind transforms by walking parent chain (parents always
-        // come before children thanks to the topological sort step).
-        std::vector<Math::Vector3> boneWorldPos(skelCtx.skeleton->bones.size());
-        for (usize i = 0; i < skelCtx.skeleton->bones.size(); ++i) {
-            const auto& b = skelCtx.skeleton->bones[i];
-            Math::Vector3 localPos = b.bindPosition;
-            if (b.parentIndex >= 0 && b.parentIndex < static_cast<i32>(i)) {
-                // World pos = parent.world + parent.rotation * local (approximate;
-                // good enough for size detection without full matrix math)
-                boneWorldPos[i] = boneWorldPos[b.parentIndex] + localPos;
-            } else {
-                boneWorldPos[i] = localPos;
+    // For SKINNED meshes, the entity build path bakes each mesh node's accumulated
+    // world transform into vertices — so measure the POST-BAKE mesh bounds by
+    // applying the same node world transforms here. The previous approach summed
+    // BONE bind positions, which wildly underestimates rigs whose armature node
+    // carries the unit scale (bones read ~1.8 while the baked mesh is 395 units):
+    // auto-scale never fired and cm-unit animals imported giant, with the import
+    // focus flying the camera INSIDE the model — "only see a shadow"
+    // (ShibaInu/Stag/Wolf, 2026-08-08).
+    if (skelCtx.skeleton) {
+        for (usize ni = 0; ni < scene.nodes.size(); ++ni) {
+            const auto& n = scene.nodes[ni];
+            const bool nodeHasMesh = n.meshIndex >= 0 || !n.meshIndices.empty();
+            if (!nodeHasMesh) continue;
+
+            // Accumulated FBX world transform of this mesh node (same math the
+            // entity build path uses for the vertex bake)
+            Math::Matrix4 nodeWorld = Math::Matrix4::Identity();
+            std::vector<i32> chain;
+            i32 walk = static_cast<i32>(ni);
+            while (walk >= 0) {
+                chain.push_back(walk);
+                walk = scene.nodes[walk].parentIndex;
             }
-            boundsMin.x = Math::Min(boundsMin.x, boneWorldPos[i].x);
-            boundsMin.y = Math::Min(boundsMin.y, boneWorldPos[i].y);
-            boundsMin.z = Math::Min(boundsMin.z, boneWorldPos[i].z);
-            boundsMax.x = Math::Max(boundsMax.x, boneWorldPos[i].x);
-            boundsMax.y = Math::Max(boundsMax.y, boneWorldPos[i].y);
-            boundsMax.z = Math::Max(boundsMax.z, boneWorldPos[i].z);
+            for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+                const auto& cn = scene.nodes[*it];
+                nodeWorld = nodeWorld * (Math::Matrix4::Translation(cn.translation) *
+                                         cn.rotation.ToMatrix() *
+                                         Math::Matrix4::Scale(cn.scale));
+            }
+
+            const std::vector<i32> nodeMeshes = n.meshIndices.empty()
+                ? std::vector<i32>{n.meshIndex} : n.meshIndices;
+            for (i32 mi : nodeMeshes) {
+                if (mi < 0 || mi >= static_cast<i32>(scene.meshes.size())) continue;
+                for (const auto& prim : scene.meshes[mi].primitives) {
+                    for (const auto& v : prim.vertices) {
+                        Math::Vector4 p = nodeWorld * Math::Vector4(v.position.x, v.position.y, v.position.z, 1.0f);
+                        boundsMin.x = Math::Min(boundsMin.x, p.x);
+                        boundsMin.y = Math::Min(boundsMin.y, p.y);
+                        boundsMin.z = Math::Min(boundsMin.z, p.z);
+                        boundsMax.x = Math::Max(boundsMax.x, p.x);
+                        boundsMax.y = Math::Max(boundsMax.y, p.y);
+                        boundsMax.z = Math::Max(boundsMax.z, p.z);
+                    }
+                }
+            }
         }
     } else {
         for (const auto& mesh : scene.meshes) {
@@ -1205,13 +1275,12 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
     result.entities.push_back(importRoot);
     result.rootEntity = importRoot;
 
-    // Create entities from root nodes, parented under the import root
+    // Create entities from root nodes, parented under the import root.
+    // pendingParent threads through skipped nodes, so meshes buried under
+    // $AssimpFbx$/bone/empty nodes still land under the import root.
     for (i32 rootIndex : scene.rootNodes) {
-        ECS::Entity entity = CreateEntityFromAssimpNode(scene, rootIndex, world, effectiveOptions,
-                                                         result.entities, stats, skelCtx);
-        if (entity != ECS::INVALID_ENTITY) {
-            ECS::SetParent(world, entity, importRoot);
-        }
+        CreateEntityFromAssimpNode(scene, rootIndex, world, effectiveOptions,
+                                   result.entities, stats, skelCtx, importRoot);
     }
 
     // --- Mesh Validation (auto-fix NaN, normalize weights, detect degenerate triangles) ---
@@ -1395,7 +1464,8 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                                                        ECS::World* world, const ImportOptions& options,
                                                        std::vector<ECS::Entity>& outEntities,
                                                        ImportStats& stats,
-                                                       AssimpSkeletonContext& skelCtx) {
+                                                       AssimpSkeletonContext& skelCtx,
+                                                       ECS::Entity pendingParent) {
     if (nodeIndex < 0 || nodeIndex >= static_cast<i32>(scene.nodes.size())) {
         return ECS::INVALID_ENTITY;
     }
@@ -1405,7 +1475,8 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         if (excluded == nodeIndex) {
             const AssimpNode& skippedNode = scene.nodes[nodeIndex];
             for (i32 childIdx : skippedNode.children) {
-                CreateEntityFromAssimpNode(scene, childIdx, world, options, outEntities, stats, skelCtx);
+                CreateEntityFromAssimpNode(scene, childIdx, world, options, outEntities, stats, skelCtx,
+                                           pendingParent);
             }
             return ECS::INVALID_ENTITY;
         }
@@ -1433,9 +1504,15 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         skipNode = true; // Skip empty nodes in skinned models
     }
     if (skipNode) {
-        // Don't create an entity — just recurse into children
+        // Don't create an entity — recurse into children, passing the pending
+        // parent through so meshes under skipped nodes still get parented.
+        // (Returning INVALID_ENTITY used to drop the whole subtree out of the
+        // hierarchy: callers only SetParent on a valid return, so mesh entities
+        // under $AssimpFbx$/bone/empty nodes were orphaned at scene root —
+        // "pieces not placed into the auto parent", Marty 2026-08-08.)
         for (i32 childIdx : node.children) {
-            CreateEntityFromAssimpNode(scene, childIdx, world, options, outEntities, stats, skelCtx);
+            CreateEntityFromAssimpNode(scene, childIdx, world, options, outEntities, stats, skelCtx,
+                                       pendingParent);
         }
         return ECS::INVALID_ENTITY;
     }
@@ -1448,6 +1525,9 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
     // Create entity
     ECS::Entity entity = world->CreateEntity();
     outEntities.push_back(entity);
+    if (pendingParent != ECS::INVALID_ENTITY) {
+        ECS::SetParent(world, entity, pendingParent);
+    }
 
     // Add name component — clean up common DCC prefixes for readability
     std::string name = node.name.empty() ? "Node_" + std::to_string(nodeIndex) : node.name;
@@ -1467,6 +1547,55 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
     bool zToY = doAxisConvert && preset.zUpToYUp;
     bool lToR = doAxisConvert && preset.leftToRight;
 
+    // Combine all meshes referenced by this node into one MeshComponent (list
+    // needed before the transform decision below)
+    const std::vector<i32> meshIndices = node.meshIndices.empty()
+        ? (node.meshIndex >= 0 ? std::vector<i32>{node.meshIndex} : std::vector<i32>{})
+        : node.meshIndices;
+
+    // Accumulated FBX-space world transform of this node (includes SKIPPED
+    // ancestor nodes — $AssimpFbx$ helpers, bones). Used to bake weighted
+    // meshes into skeleton space, or to preserve placement on the entity for
+    // rigid meshes in skinned files.
+    Math::Matrix4 meshNodeWorld = Math::Matrix4::Identity();
+    if (skelCtx.skeleton && hasMeshes) {
+        std::vector<i32> chain;
+        i32 walk = nodeIndex;
+        while (walk >= 0) {
+            chain.push_back(walk);
+            walk = scene.nodes[walk].parentIndex;
+        }
+        for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+            const auto& n = scene.nodes[*it];
+            Math::Matrix4 local = Math::Matrix4::Translation(n.translation) *
+                                  n.rotation.ToMatrix() *
+                                  Math::Matrix4::Scale(n.scale);
+            meshNodeWorld = meshNodeWorld * local;
+        }
+    }
+
+    // Rigid-vs-weighted: a mesh node in a skinned file whose vertices carry NO
+    // bone weights (antlers/props socketed under a bone node) is placed by its
+    // node transform, not by the skeleton — flattening it to origin loses the
+    // authored placement (Marty 2026-08-08).
+    bool nodeMeshesWeighted = false;
+    if (skelCtx.skeleton && hasMeshes) {
+        for (i32 mi : meshIndices) {
+            if (mi < 0 || mi >= static_cast<i32>(scene.meshes.size())) continue;
+            for (const auto& prim : scene.meshes[mi].primitives) {
+                for (const auto& v : prim.vertices) {
+                    if (v.boneWeights.x > 0.0f || v.boneWeights.y > 0.0f ||
+                        v.boneWeights.z > 0.0f || v.boneWeights.w > 0.0f) {
+                        nodeMeshesWeighted = true;
+                        break;
+                    }
+                }
+                if (nodeMeshesWeighted) break;
+            }
+            if (nodeMeshesWeighted) break;
+        }
+    }
+
     // Add transform component
     auto& transform = world->AddComponent<ECS::TransformComponent>(entity);
     Math::Vector3 pos = node.translation;
@@ -1477,13 +1606,41 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
     }
     // Scale is applied on the import root entity, so children use
     // their node-local transforms without additional scale multiplication.
-    if (skelCtx.skeleton && hasMeshes) {
-        // Skinned mesh: zero position/rotation (skinning handles placement),
-        // apply auto-computed scale directly (cm→m) so it works regardless
-        // of parent-child hierarchy propagation through ComputeWorldMatrix.
+    if (skelCtx.skeleton && hasMeshes && nodeMeshesWeighted) {
+        // Weighted (skinned) mesh: zero position/rotation — the SKELETON places
+        // the vertices; the entity transform is an offset on top of that.
+        // The import root carries the auto-computed cm→m unitScale and this
+        // entity is parented under it (pendingParent), so local scale stays 1 —
+        // re-applying unitScale here would double-scale through the hierarchy.
+        // Unparented calls (legacy overload) still need the scale themselves.
         transform.position = Math::Vector3(0.0f);
         transform.rotation = Math::Quaternion::Identity();
-        transform.scale = Math::Vector3(skelCtx.unitScale, skelCtx.unitScale, skelCtx.unitScale);
+        const f32 selfScale = (pendingParent != ECS::INVALID_ENTITY) ? 1.0f : skelCtx.unitScale;
+        transform.scale = Math::Vector3(selfScale, selfScale, selfScale);
+    } else if (skelCtx.skeleton && hasMeshes) {
+        // Rigid mesh in a skinned file: keep the authored FBX placement on the
+        // ENTITY (accumulated through skipped ancestors) and leave the vertices
+        // mesh-local — position/rotation stay editable in the inspector.
+        Math::Vector3 wpos(meshNodeWorld.m[12], meshNodeWorld.m[13], meshNodeWorld.m[14]);
+        Math::Vector3 c0(meshNodeWorld.m[0], meshNodeWorld.m[1], meshNodeWorld.m[2]);
+        Math::Vector3 c1(meshNodeWorld.m[4], meshNodeWorld.m[5], meshNodeWorld.m[6]);
+        Math::Vector3 c2(meshNodeWorld.m[8], meshNodeWorld.m[9], meshNodeWorld.m[10]);
+        Math::Vector3 wscale(c0.Length(), c1.Length(), c2.Length());
+        if (wscale.x > 1e-6f) c0 = c0 / wscale.x;
+        if (wscale.y > 1e-6f) c1 = c1 / wscale.y;
+        if (wscale.z > 1e-6f) c2 = c2 / wscale.z;
+        Math::Matrix4 rotM = Math::Matrix4::Identity();
+        rotM.m[0] = c0.x; rotM.m[1] = c0.y; rotM.m[2]  = c0.z;
+        rotM.m[4] = c1.x; rotM.m[5] = c1.y; rotM.m[6]  = c1.z;
+        rotM.m[8] = c2.x; rotM.m[9] = c2.y; rotM.m[10] = c2.z;
+        Math::Quaternion wrot = Math::Quaternion::FromMatrix(rotM);
+        if (zToY || lToR || options.flipX || options.flipY || options.flipZ) {
+            wpos = ConvertPosition(wpos, zToY, lToR, options.flipX, options.flipY, options.flipZ);
+            wrot = ConvertRotation(wrot, zToY, lToR);
+        }
+        transform.position = wpos;
+        transform.rotation = wrot;
+        transform.scale = wscale;
     } else {
         transform.position = pos;
         transform.rotation = rot;
@@ -1491,42 +1648,19 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
     }
 
     // Add mesh component if node has meshes
-    // Combine all meshes referenced by this node into one MeshComponent
-    const auto& meshIndices = node.meshIndices.empty()
-        ? (node.meshIndex >= 0 ? std::vector<i32>{node.meshIndex} : std::vector<i32>{})
-        : node.meshIndices;
-
     bool nodeHasSkinning = false;
     if (!meshIndices.empty()) {
         ECS::MeshComponent meshComp;
 
-        // For SKINNED meshes: compute the accumulated world transform of THIS mesh node
-        // and bake it into vertex positions. Bone bind data + IBMs come from the FBX in
-        // a single common space (typically cm), but mesh vertices are in mesh-local
-        // space — for files where the mesh node has a non-identity transform (e.g. a
-        // 100x scale because the mesh was authored in meters), the vertices end up in
-        // a different unit than the bones, and the GPU skinning produces a stretched
-        // mess. Walking happens to work because its mesh node is identity; "Female
-        // Laying Pose" / "Laying Idle" has mesh scale baked into the node transform.
-        Math::Matrix4 meshNodeWorld = Math::Matrix4::Identity();
-        bool bakeMeshNodeIntoVertices = (skelCtx.skeleton != nullptr);
-        if (bakeMeshNodeIntoVertices) {
-            // Walk parent chain from THIS node up to the root, accumulating local
-            // transforms. The result is the node's world transform in FBX space.
-            std::vector<i32> chain;
-            i32 walk = nodeIndex;
-            while (walk >= 0) {
-                chain.push_back(walk);
-                walk = scene.nodes[walk].parentIndex;
-            }
-            for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
-                const auto& n = scene.nodes[*it];
-                Math::Matrix4 local = Math::Matrix4::Translation(n.translation) *
-                                      n.rotation.ToMatrix() *
-                                      Math::Matrix4::Scale(n.scale);
-                meshNodeWorld = meshNodeWorld * local;
-            }
-        }
+        // For WEIGHTED (skinned) meshes: bake the accumulated node world transform
+        // (precomputed above) into vertex positions. Bone bind data + IBMs come
+        // from the FBX in a single common space (typically cm), but mesh vertices
+        // are in mesh-local space — for files where the mesh node has a
+        // non-identity transform (e.g. a 100x scale because the mesh was authored
+        // in meters), the vertices end up in a different unit than the bones, and
+        // the GPU skinning produces a stretched mess. RIGID meshes in skinned
+        // files skip the bake — their placement lives on the entity transform.
+        bool bakeMeshNodeIntoVertices = (skelCtx.skeleton != nullptr) && nodeMeshesWeighted;
 
         u32 vertexOffset = 0;
         i32 materialIndex = -1;  // First material (backward compat for single-material)
@@ -1717,11 +1851,9 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                 }
             }
 
-            // Add box collider from mesh AABB
+            // Add collider from mesh AABB (shape from import options, world-scaled)
             if (options.generateColliders) {
-                auto& collider = world->AddComponent<ECS::BoxColliderComponent>(entity);
-                collider.center = (minBounds + maxBounds) * 0.5f;
-                collider.size = maxBounds - minBounds;
+                AddImportCollider(world, entity, minBounds, maxBounds, options);
             }
 
             // Resolve texture paths relative to model directory with fallback directories
@@ -1805,6 +1937,15 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                         if (assimpIdx >= 0 && assimpIdx < static_cast<i32>(scene.materials.size())) {
                             slotsComp.slots[slotIdx] = buildMatComp(scene.materials[assimpIdx]);
                         }
+                    }
+
+                    // Import diagnostic: material slot values decide visibility
+                    // (opacity 0 = invisible mesh with a working shadow)
+                    for (usize si = 0; si < slotsComp.slots.size(); ++si) {
+                        const auto& sm = slotsComp.slots[si];
+                        ENJIN_LOG_INFO(Asset, "  slot %zu: opacity=%.3f baseColor=(%.2f,%.2f,%.2f) alphaMode=%d",
+                            si, sm.opacity, sm.baseColor.x, sm.baseColor.y, sm.baseColor.z,
+                            static_cast<i32>(sm.alphaMode));
                     }
 
                     world->AddComponent<ECS::MaterialSlotsComponent>(entity, std::move(slotsComp));
@@ -1942,13 +2083,24 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
 
     }
 
-    // Recursively create child entities with parent-child hierarchy
-    for (i32 childIndex : node.children) {
-        ECS::Entity childEntity = CreateEntityFromAssimpNode(scene, childIndex, world, options,
-                                                              outEntities, stats, skelCtx);
-        if (childEntity != ECS::INVALID_ENTITY) {
-            ECS::SetParent(world, childEntity, entity);
+    // Import diagnostic: transform + skinning state per entity (invisible-model
+    // bugs have hidden in exactly these values — scale/parent/weighted)
+    if (hasMeshes) {
+        auto* xfDiag = world->GetComponent<ECS::TransformComponent>(entity);
+        if (xfDiag) {
+            ENJIN_LOG_INFO(Asset, "  entity '%s': parent=%s pos=(%.2f,%.2f,%.2f) scale=(%.4f,%.4f,%.4f) weighted=%d",
+                name.c_str(), pendingParent != ECS::INVALID_ENTITY ? "yes" : "NO",
+                xfDiag->position.x, xfDiag->position.y, xfDiag->position.z,
+                xfDiag->scale.x, xfDiag->scale.y, xfDiag->scale.z,
+                nodeMeshesWeighted ? 1 : 0);
         }
+    }
+
+    // Recursively create child entities — parenting happens at creation time via
+    // pendingParent (survives skipped intermediate nodes).
+    for (i32 childIndex : node.children) {
+        CreateEntityFromAssimpNode(scene, childIndex, world, options,
+                                   outEntities, stats, skelCtx, entity);
     }
 
     return entity;

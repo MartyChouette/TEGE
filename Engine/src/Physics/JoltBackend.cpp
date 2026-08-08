@@ -41,6 +41,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/Logging/Log.h"
@@ -500,14 +501,24 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
         bounciness = capsule->bounciness;
         colliderInfo = {capsule->categoryBits, capsule->collisionMask, capsule->isTrigger, true};
     } else if (auto* meshCol = m_World->GetComponent<ECS::MeshColliderComponent>(entity)) {
-        // Auto-generate collision geometry from MeshComponent if needed
+        // Auto-generate collision geometry from MeshComponent if needed.
+        // Collider geometry is WORLD SPACE (this backend never applies transform
+        // scale), so bake the entity's scale into the cached vertices — raw
+        // mesh-local positions gave scaled imports (cm-unit FBX) colliders 100x
+        // bigger than the displayed model.
         if (meshCol->autoGenerate && !meshCol->generated) {
             auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
+            const Math::Matrix4 wmGen = ECS::ComputeWorldMatrix(m_World, entity);
+            const Math::Vector3 gs(
+                Math::Vector3(wmGen.m[0], wmGen.m[1], wmGen.m[2]).Length(),
+                Math::Vector3(wmGen.m[4], wmGen.m[5], wmGen.m[6]).Length(),
+                Math::Vector3(wmGen.m[8], wmGen.m[9], wmGen.m[10]).Length());
             if (mesh && mesh->IsValid()) {
                 meshCol->vertices.clear();
                 meshCol->vertices.reserve(mesh->vertices.size());
                 for (const auto& v : mesh->vertices) {
-                    meshCol->vertices.push_back(v.position);
+                    meshCol->vertices.push_back(Math::Vector3(
+                        v.position.x * gs.x, v.position.y * gs.y, v.position.z * gs.z));
                 }
                 meshCol->indices = mesh->indices;
                 meshCol->generated = true;
