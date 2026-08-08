@@ -4009,10 +4009,16 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 panel->focusable = false;
             }
 
+            // NOTE: AddElement pre-fills type-based offsets for CENTERED anchors
+            // (labels -100/-100, buttons -80/-80...). Every element here anchors
+            // by fractions, so the horizontal offsets MUST be zeroed or each row
+            // shifts left by its widget-type default (the "alignment all off"
+            // bug, Marty 2026-08-08).
             u32 titleId = canvas.AddElement(GUI::UIWidgetType::Label, "Title", panelId);
             if (auto* title = canvas.GetElement(titleId)) {
                 title->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
                 title->anchor.anchorMax = Math::Vector2(1.0f, 0.0f);
+                title->anchor.offsetLeft = 0.0f; title->anchor.offsetRight = 0.0f;
                 title->anchor.offsetTop = 16.0f; title->anchor.offsetBottom = 56.0f;
                 title->data.text = "Accessibility Demo";
                 title->data.textAlignH = 1;
@@ -4027,6 +4033,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 if (auto* lbl = canvas.GetElement(id)) {
                     lbl->anchor.anchorMin = Math::Vector2(0.05f, 0.0f);
                     lbl->anchor.anchorMax = Math::Vector2(0.55f, 0.0f);
+                    lbl->anchor.offsetLeft = 0.0f; lbl->anchor.offsetRight = 0.0f;
                     lbl->anchor.offsetTop = top; lbl->anchor.offsetBottom = top + 30.0f;
                     lbl->data.text = text;
                     lbl->data.textAlignH = 0;
@@ -4040,6 +4047,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 if (auto* tog = canvas.GetElement(id)) {
                     tog->anchor.anchorMin = Math::Vector2(0.72f, 0.0f);
                     tog->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
+                    tog->anchor.offsetLeft = 0.0f; tog->anchor.offsetRight = 0.0f;
                     tog->anchor.offsetTop = top; tog->anchor.offsetBottom = top + 30.0f;
                     tog->data.checked = checked;
                     tog->tabOrder = tabOrder++;
@@ -4053,6 +4061,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 if (auto* sl = canvas.GetElement(id)) {
                     sl->anchor.anchorMin = Math::Vector2(0.55f, 0.0f);
                     sl->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
+                    sl->anchor.offsetLeft = 0.0f; sl->anchor.offsetRight = 0.0f;
                     sl->anchor.offsetTop = top; sl->anchor.offsetBottom = top + 30.0f;
                     sl->data.sliderMin = mn;
                     sl->data.sliderMax = mx;
@@ -4066,6 +4075,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 if (auto* btn = canvas.GetElement(id)) {
                     btn->anchor.anchorMin = Math::Vector2(0.15f, 0.0f);
                     btn->anchor.anchorMax = Math::Vector2(0.85f, 0.0f);
+                    btn->anchor.offsetLeft = 0.0f; btn->anchor.offsetRight = 0.0f;
                     btn->anchor.offsetTop = top; btn->anchor.offsetBottom = top + 42.0f;
                     btn->data.text = text;
                     btn->tabOrder = tabOrder++;
@@ -4076,7 +4086,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 }
             };
 
-            addSlider("Colorblind Mode",   80.0f, "a11y_cb_mode",       0.0f, 7.0f, 0.0f);
+            addSlider("Colorblind Mode",   80.0f, "a11y_cb_mode",       0.0f, 8.0f, 0.0f);
             addSlider("Filter Strength",  132.0f, "a11y_cb_strength",   0.0f, 1.0f, 1.0f);
             addSlider("Font Scale",       184.0f, "a11y_font_scale",    0.75f, 2.5f, 1.0f);
             addToggle("Dyslexia Text",    236.0f, "a11y_dyslexia",      false);
@@ -4112,7 +4122,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
 "// (where Announcer_Announce is spoken aloud via the Web Speech API).\n"
 "class AccessibilityDemo : TegeBehavior {\n"
 "    array<string> modeNames = {\"Off\", \"Protanopia\", \"Deuteranopia\", \"Tritanopia\",\n"
-"                               \"Protanomaly\", \"Deuteranomaly\", \"Tritanomaly\", \"Achromatopsia\"};\n"
+"                               \"Protanomaly\", \"Deuteranomaly\", \"Tritanomaly\",\n"
+"                               \"Achromatopsia\", \"Achromatomaly\"};\n"
 "    int lastMode = 0;\n"
 "\n"
 "    void OnStart() {\n"
@@ -4134,7 +4145,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
 "    void OnColorblindMode(const string &in ev) {\n"
 "        int mode = int(Events_CurrentFloat(\"value\") + 0.5f);\n"
 "        if (mode < 0) mode = 0;\n"
-"        if (mode > 7) mode = 7;\n"
+"        if (mode > 8) mode = 8;\n"
 "        Colorblind_SetMode(mode);\n"
 "        if (mode != lastMode) {\n"
 "            lastMode = mode;\n"
