@@ -41,12 +41,28 @@ layout(binding = 13, set = 0) uniform LightData {
     mat4 viewProj;
 } uLight;
 
-// Matches rt_pathtrace's PathPayload (colorDist.w = hitDist, normalMat.xyz = world normal)
+// Matches rt_pathtrace's PathPayload (colorDist.w = hitDist, normalMat.xyz = world
+// normal, normalMat.w = material index as uintBitsToFloat)
 struct PathPayload {
     vec4 colorDist;
     vec4 normalMat;
 };
 layout(location = 0) rayPayloadEXT PathPayload pathPayload;
+
+// Per-entity simplified material (binding 18) — same SSBO the path tracer reads.
+// We fetch it here to bake a scalar specular reflectivity into the normal buffer's
+// w channel. The reflection pass has no other route to material data, so without
+// this it mirrors the environment onto every matte surface — the white "ghost"
+// wash. Layout must match RTSimplifiedMaterial in rt_common.glsl.
+struct RTSimplifiedMaterial {
+    vec3 albedo;         float effectiveRoughness;
+    vec3 f0;             float kDiffuse;
+    vec3 emissive;       float opacity;
+    float transmission;  float ior;  float _pad0;  float _pad1;
+};
+layout(binding = 18, set = 0) readonly buffer SimplifiedMaterialBuffer {
+    RTSimplifiedMaterial simplifiedMaterials[];
+};
 
 void main() {
     ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
@@ -77,10 +93,20 @@ void main() {
     vec3 hitPos = rayOrigin + rayDir * pathPayload.colorDist.w;
     vec3 worldNormal = normalize(pathPayload.normalMat.xyz);
 
+    // Bake specular reflectivity into normal.w. f0 luma is the base reflectance
+    // (~0.04 for dielectrics, high/tinted for metals); (1-roughness)^2 fades out
+    // rough surfaces that scatter rather than mirror. Matte walls land near 0 so
+    // the reflection pass skips them; smooth/metallic surfaces keep reflecting.
+    uint matIdx = floatBitsToUint(pathPayload.normalMat.w);
+    RTSimplifiedMaterial smat = simplifiedMaterials[matIdx];
+    float f0luma = dot(smat.f0, vec3(0.2126, 0.7152, 0.0722));
+    float smoothness = 1.0 - clamp(smat.effectiveRoughness, 0.0, 1.0);
+    float reflectivity = clamp(f0luma * smoothness * smoothness, 0.0, 1.0);
+
     // Project the hit to NDC depth so depth-reconstruction consumers are unchanged
     vec4 clip = uLight.viewProj * vec4(hitPos, 1.0);
     float ndcDepth = clamp(clip.z / clip.w, 0.0, 1.0);
 
     imageStore(gbufDepth, pixel, vec4(ndcDepth));
-    imageStore(gbufNormal, pixel, vec4(worldNormal * 0.5 + 0.5, 1.0));
+    imageStore(gbufNormal, pixel, vec4(worldNormal * 0.5 + 0.5, reflectivity));
 }

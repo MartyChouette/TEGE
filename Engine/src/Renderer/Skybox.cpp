@@ -182,13 +182,14 @@ bool Skybox::CreateProcedural(const Math::Vector3& topColor, const Math::Vector3
                 // Map vertical direction to color
                 float t = dy * 0.5f + 0.5f; // [0, 1] from bottom to top
                 Math::Vector3 color;
-                // 30% horizon band (0.35..0.65) for a softer atmospheric gradient
-                // that reads better in path-traced GI bounce
-                if (t > 0.65f) {
-                    float blend = (t - 0.65f) / 0.35f;
+                // 10% horizon band (0.45..0.55). The wider 30% band tuned for
+                // path-traced GI washed out the default raster sky, so keep the
+                // band tight and let the RT path art-direct its own sky.
+                if (t > 0.55f) {
+                    float blend = (t - 0.55f) / 0.45f;
                     color = horizonColor * (1.0f - blend) + topColor * blend;
-                } else if (t < 0.35f) {
-                    float blend = (0.35f - t) / 0.35f;
+                } else if (t < 0.45f) {
+                    float blend = (0.45f - t) / 0.45f;
                     color = horizonColor * (1.0f - blend) + bottomColor * blend;
                 } else {
                     color = horizonColor;

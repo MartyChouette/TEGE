@@ -47,6 +47,15 @@ void main() {
         return;
     }
 
+    // Per-surface specular reflectivity baked into normal.w by the G-buffer pass
+    // (f0 luma faded by roughness). Matte surfaces are ~0 — skip the ray entirely
+    // so they no longer mirror the sky/level (the white ghost) and we save a trace.
+    float reflectivity = texture(normalTex, uv).w;
+    if (reflectivity < 0.004) {
+        imageStore(reflectionOutput, pixel, vec4(0.0));
+        return;
+    }
+
     vec4 clipPos = vec4(uv * 2.0 - 1.0, depth, 1.0);
     vec4 worldPos = uLight.invViewProj * clipPos;
     worldPos /= worldPos.w;
@@ -200,5 +209,11 @@ void main() {
         }
     }
 
-    imageStore(reflectionOutput, pixel, reflectPayload);
+    // Weight the reflection by surface reflectivity with a grazing-angle Fresnel
+    // boost. reflectivity caps the contribution (matte -> ~0, mirror -> full), so
+    // even the grazing term can't reintroduce the wash on matte geometry.
+    float NdotV = clamp(dot(worldNormal, -viewDir), 0.0, 1.0);
+    float grazing = pow(1.0 - NdotV, 5.0);
+    float weight = reflectivity + (1.0 - reflectivity) * grazing * reflectivity;
+    imageStore(reflectionOutput, pixel, vec4(reflectPayload.rgb * weight, reflectPayload.w));
 }

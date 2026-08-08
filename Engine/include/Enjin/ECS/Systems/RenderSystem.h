@@ -1524,6 +1524,14 @@ private:
     u32 m_RTGBufferWidth = 0, m_RTGBufferHeight = 0;
     bool m_RTGBufferLayoutInitialized = false;  // false until first GENERAL transition
     void DispatchRTGBuffer(VkCommandBuffer cmd);
+    // Swapchain size the RT screen-space resources were last (re)sized to. All RT
+    // images are created at init-time swapchain size; without tracking this they
+    // never follow a window resize, and the hybrid overlay then samples stale-sized
+    // textures and paints an offset ghost. ResizeRayTracing rebuilds everything when
+    // this goes stale (driven lazily from RecordRTFrame).
+    VkExtent2D m_RTOutputExtent{};
+    void ResizeRayTracing(u32 width, u32 height);
+    void RecreateRTGBufferImages(u32 width, u32 height);
     // Hybrid shadow/AO outputs get flipped GENERAL<->SHADER_READ_ONLY each frame so
     // the post-process overlay can sample them. Accessors expose them to the editor
     // and player, which bind them to PostProcessing::SetRTHybridInputs.

@@ -11841,6 +11841,7 @@ void RenderSystem::InitializeRayTracing() {
     VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
     u32 width = extent.width;
     u32 height = extent.height;
+    m_RTOutputExtent = extent;  // baseline for the lazy resize check in RecordRTFrame
 
     // Initialize RT effect subsystems
     m_RTShadows = std::make_unique<Renderer::RTShadows>(ctx);
@@ -12154,6 +12155,92 @@ static f32 VegPlacementHash(u32 n) {
     return static_cast<f32>(n & 0x7fffffffu) / static_cast<f32>(0x7fffffff);
 }
 
+void RenderSystem::RecreateRTGBufferImages(u32 width, u32 height) {
+    auto* ctx = m_VulkanRenderer->GetContext();
+    VkDevice dev = ctx->GetDevice();
+
+    // Destroy previous images/views/memory (all safe on VK_NULL_HANDLE).
+    if (m_RTGBufferDepthView)    { vkDestroyImageView(dev, m_RTGBufferDepthView, nullptr);   m_RTGBufferDepthView = VK_NULL_HANDLE; }
+    if (m_RTGBufferDepthImage)   { vkDestroyImage(dev, m_RTGBufferDepthImage, nullptr);      m_RTGBufferDepthImage = VK_NULL_HANDLE; }
+    if (m_RTGBufferDepthMemory)  { vkFreeMemory(dev, m_RTGBufferDepthMemory, nullptr);       m_RTGBufferDepthMemory = VK_NULL_HANDLE; }
+    if (m_RTGBufferNormalView)   { vkDestroyImageView(dev, m_RTGBufferNormalView, nullptr);  m_RTGBufferNormalView = VK_NULL_HANDLE; }
+    if (m_RTGBufferNormalImage)  { vkDestroyImage(dev, m_RTGBufferNormalImage, nullptr);     m_RTGBufferNormalImage = VK_NULL_HANDLE; }
+    if (m_RTGBufferNormalMemory) { vkFreeMemory(dev, m_RTGBufferNormalMemory, nullptr);      m_RTGBufferNormalMemory = VK_NULL_HANDLE; }
+
+    m_RTGBufferWidth = width;
+    m_RTGBufferHeight = height;
+
+    // Same spec as the inline creation in InitializeRayTracing: depth r32f, normal
+    // rgba16f, storage + sampled, created UNDEFINED. The pipeline/SBT are resolution
+    // independent, so only the images are rebuilt here. Clearing the layout flag makes
+    // DispatchRTGBuffer transition from UNDEFINED again next frame.
+    auto makeGBufImage = [&](VkFormat fmt, VkImage& img, VkDeviceMemory& mem, VkImageView& view) {
+        VkImageCreateInfo ci{};
+        ci.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        ci.imageType = VK_IMAGE_TYPE_2D;
+        ci.format = fmt;
+        ci.extent = { width, height, 1 };
+        ci.mipLevels = 1; ci.arrayLayers = 1;
+        ci.samples = VK_SAMPLE_COUNT_1_BIT;
+        ci.tiling = VK_IMAGE_TILING_OPTIMAL;
+        ci.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+        ci.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        ci.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        if (vkCreateImage(dev, &ci, nullptr, &img) != VK_SUCCESS) return false;
+        VkMemoryRequirements mr; vkGetImageMemoryRequirements(dev, img, &mr);
+        VkMemoryAllocateInfo ai{}; ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        ai.allocationSize = mr.size;
+        ai.memoryTypeIndex = ctx->FindMemoryType(mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        if (vkAllocateMemory(dev, &ai, nullptr, &mem) != VK_SUCCESS) return false;
+        vkBindImageMemory(dev, img, mem, 0);
+        VkImageViewCreateInfo vi{}; vi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        vi.image = img; vi.viewType = VK_IMAGE_VIEW_TYPE_2D; vi.format = fmt;
+        vi.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        return vkCreateImageView(dev, &vi, nullptr, &view) == VK_SUCCESS;
+    };
+    bool ok = makeGBufImage(VK_FORMAT_R32_SFLOAT, m_RTGBufferDepthImage, m_RTGBufferDepthMemory, m_RTGBufferDepthView)
+           && makeGBufImage(VK_FORMAT_R16G16B16A16_SFLOAT, m_RTGBufferNormalImage, m_RTGBufferNormalMemory, m_RTGBufferNormalView);
+    if (!ok) ENJIN_LOG_WARN(Renderer, "RT G-buffer image recreation failed on resize");
+    m_RTGBufferLayoutInitialized = false;
+}
+
+void RenderSystem::ResizeRayTracing(u32 width, u32 height) {
+    if (!m_RTInitialized) return;
+    if (width == 0 || height == 0) return;
+    if (width == m_RTOutputExtent.width && height == m_RTOutputExtent.height) return;
+
+    // Every RT screen-space resource is sized to the swapchain and must be rebuilt
+    // when it changes. All subsystems below own their images and expose Resize();
+    // the G-buffer is recreated explicitly; the shared descriptor set is re-pointed
+    // by clearing m_RTDescriptorsWritten, which makes the per-frame path ("TLAS
+    // valid â€” writing RT descriptors") re-run WriteRTDescriptors + TransitionRTOutputImages.
+    auto* ctx = m_VulkanRenderer->GetContext();
+    vkDeviceWaitIdle(ctx->GetDevice());  // no in-flight work may reference the old images
+
+    if (m_RTShadows)           m_RTShadows->Resize(width, height);
+    if (m_RTAO)                m_RTAO->Resize(width, height);
+    if (m_RTReflections)       m_RTReflections->Resize(width, height);
+    if (m_RTGI)                m_RTGI->Resize(width, height);
+    if (m_RTTranslucency)      m_RTTranslucency->Resize(width, height);
+    if (m_RTCaustics)          m_RTCaustics->Resize(width, height);
+    if (m_PathTracer)          m_PathTracer->Resize(width, height);
+    if (m_SVGFDenoiser)        m_SVGFDenoiser->Resize(width, height);
+    if (m_OIDNDenoiser)        m_OIDNDenoiser->Resize(width, height);
+    if (m_OptiXDenoiser)       m_OptiXDenoiser->Resize(width, height);
+    if (m_RTTemporalReuse)     m_RTTemporalReuse->Resize(width, height);
+    if (m_ReSTIR)              m_ReSTIR->Resize(width, height);
+    if (m_RadianceCache)       m_RadianceCache->Resize(width, height);
+    if (m_SurfelRadianceCache) m_SurfelRadianceCache->Resize(width, height);
+    if (m_AdaptiveRayBudget)   m_AdaptiveRayBudget->Resize(width, height);
+
+    RecreateRTGBufferImages(width, height);
+
+    m_RTOutputExtent = { width, height };
+    m_RTDescriptorsWritten = false;  // per-frame path re-points descriptors + re-transitions
+
+    ENJIN_LOG_INFO(Renderer, "Ray tracing resized to %ux%u", width, height);
+}
+
 void RenderSystem::RecordRTFrame(bool allowAsync) {
     // Records the full per-frame RT chain (TLAS rebuild + dispatch + denoise +
     // composite) into the current command buffer. Called from Update() for the
@@ -12171,6 +12258,19 @@ void RenderSystem::RecordRTFrame(bool allowAsync) {
     // call's handle is a safe per-frame guard — same pattern as m_LastSkinningCmd)
     if (commandBuffer == m_LastRTFrameCmd) return;
     m_LastRTFrameCmd = commandBuffer;
+
+    // Keep all RT screen-space resources sized to the swapchain. RT images are
+    // created at init-time swapchain size and otherwise never track a resize, so
+    // the hybrid overlay ends up sampling stale-sized textures and paints an offset
+    // ghost. This is the correct spot: RecordRTFrame runs OUTSIDE any render pass,
+    // once per frame, and ResizeRayTracing no-ops unless the size actually changed.
+    {
+        VkExtent2D scExtent = m_VulkanRenderer->GetSwapchainExtent();
+        if (scExtent.width != 0 && scExtent.height != 0 &&
+            (scExtent.width != m_RTOutputExtent.width || scExtent.height != m_RTOutputExtent.height)) {
+            ResizeRayTracing(scExtent.width, scExtent.height);
+        }
+    }
 
     // Restore the PT accumulation image to GENERAL if the previous frame's display
     // pass left it in SHADER_READ_ONLY (the dispatch below writes it as storage)

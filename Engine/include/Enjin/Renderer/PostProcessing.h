@@ -67,7 +67,7 @@ struct alignas(16) PostProcessSettings {
     alignas(4) f32 whitePoint = 4.0f;
 
     // Bloom
-    alignas(4) u32 bloomEnabled = 1;
+    alignas(4) u32 bloomEnabled = 0;
     alignas(4) f32 bloomThreshold = 1.0f;
     alignas(4) f32 bloomIntensity = 0.5f;
     alignas(4) f32 bloomRadius = 0.005f;

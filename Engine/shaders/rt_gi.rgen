@@ -60,6 +60,10 @@ void main() {
         0
     );
 
+    // GI is indirect bounce added on top of the already-lit scene. Clamp its
+    // luminance so a bright sky miss can't stack into a white wash — the giStrength
+    // slider still scales the final contribution in the hybrid apply pass.
     vec3 gi = giPayload.rgb * uLight.giIntensity;
+    gi = clampRadiance(gi, 1.0);
     imageStore(giOutput, pixel, vec4(gi, 1.0));
 }
