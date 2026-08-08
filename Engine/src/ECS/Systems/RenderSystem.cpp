@@ -1349,15 +1349,15 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Index animators by shared skeleton so ResolveAnimator can match follower
     // meshes to their leader's clock (animators themselves tick in web_main)
-    m_CachedFallbackAnimator = nullptr;
+    m_FallbackAnimatorEntity = INVALID_ENTITY;
     m_SkeletonToAnimator.clear();
     for (Entity animEntity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
         auto* ac = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(animEntity)
                                            : m_World->GetComponent<AnimatorComponent>(animEntity);
         if (!ac) continue;
         if (const auto* skel = ac->animator.GetSkeleton()) {
-            if (!m_CachedFallbackAnimator) m_CachedFallbackAnimator = ac;
-            m_SkeletonToAnimator[skel] = ac;
+            if (m_FallbackAnimatorEntity == INVALID_ENTITY) m_FallbackAnimatorEntity = animEntity;
+            m_SkeletonToAnimator[skel] = animEntity;
         }
     }
 
@@ -2744,9 +2744,15 @@ void RenderSystem::EnsureStorageCacheFresh() {
     // World::Clear() ran since the last refetch (scene reload, play-stop full
     // restore, template apply) — every cached storage pointer AND every raw
     // component pointer derived from them is dangling.
-    m_CachedFallbackAnimator = nullptr;
+    m_FallbackAnimatorEntity = INVALID_ENTITY;
     m_SkeletonToAnimator.clear();
     RefreshStorageCache();
+}
+
+AnimatorComponent* RenderSystem::AnimatorFromEntity(Entity e) {
+    if (e == INVALID_ENTITY || !m_World) return nullptr;
+    return m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(e)
+                                   : m_World->GetComponent<AnimatorComponent>(e);
 }
 
 AnimatorComponent* RenderSystem::ResolveAnimator(Entity entity) {
@@ -2757,7 +2763,7 @@ AnimatorComponent* RenderSystem::ResolveAnimator(Entity entity) {
     if (SkeletonComponent* sk = m_World->GetComponent<SkeletonComponent>(entity)) {
         if (sk->skeleton) {
             auto it = m_SkeletonToAnimator.find(sk->skeleton.get());
-            if (it != m_SkeletonToAnimator.end()) return it->second;
+            if (it != m_SkeletonToAnimator.end()) return AnimatorFromEntity(it->second);
         }
     }
     return nullptr;
@@ -2881,6 +2887,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <unordered_set>
 
 namespace Enjin {
 namespace ECS {
@@ -3423,6 +3430,8 @@ void RenderSystem::FlushSceneClear() {
         m_VulkanRenderer->GetContext()->WaitForGPU();
     }
 
+    // GPU is idle — retired buffers from deleted entities can go now too
+    m_BufferGraveyard.clear();
     m_EntityRenderData.clear();
     m_SortedRenderList.clear();
     m_EntityMaterialIndex.clear();
@@ -3441,11 +3450,10 @@ void RenderSystem::FlushSceneClear() {
     m_CachedMeshStorage = nullptr;
     m_CachedMaterialStorage = nullptr;
     m_CachedAnimatorStorage = nullptr;
-    m_CachedFallbackAnimator = nullptr;
+    m_FallbackAnimatorEntity = INVALID_ENTITY;
     m_CachedTextStorage = nullptr;
-    // The skeleton->animator map holds raw AnimatorComponent* into the destroyed
-    // storages — ResolveAnimator returns these to SetupEntityBuffers during
-    // scene reload (play-stop full-restore crash, 2026-08-07).
+    // Skeleton keys point into the destroyed storages — the entity values are
+    // stale too after a scene clear (play-stop full-restore crash, 2026-08-07).
     m_SkeletonToAnimator.clear();
     m_MaterialSSBOBuilt = false;
     m_MaterialSSBODirty = true;
@@ -3683,6 +3691,18 @@ void RenderSystem::ProcessPendingRecreation() {
     m_PendingFragmentShader.reset();
 }
 
+void RenderSystem::RetireEntityBuffers(EntityRenderData& rd) {
+    RetiredBufferSet set;
+    set.flushTick = m_FlushTick;
+    if (rd.vertexBuffer) set.buffers.push_back(std::move(rd.vertexBuffer));
+    if (rd.indexBuffer) set.buffers.push_back(std::move(rd.indexBuffer));
+    if (rd.boneBuffer) set.buffers.push_back(std::move(rd.boneBuffer));
+    if (rd.morphBuffer) set.buffers.push_back(std::move(rd.morphBuffer));
+    if (rd.skinnedVertexBuffer) set.buffers.push_back(std::move(rd.skinnedVertexBuffer));
+    if (!set.buffers.empty()) m_BufferGraveyard.push_back(std::move(set));
+    rd.Invalidate();
+}
+
 void RenderSystem::FlushPendingChanges() {
     if (!m_Renderer || !m_Initialized) return;
 
@@ -3707,6 +3727,17 @@ void RenderSystem::FlushPendingChanges() {
     // secondaries were executed into the current primary invalidates it.
     if (m_CmdBufferPool && m_VulkanRenderer) {
         m_CmdBufferPool->ResetFrame(m_VulkanRenderer->GetCurrentFrameIndex());
+    }
+
+    // Destroy retired entity buffers once every frame that could reference them
+    // has finished. The frame-slot fence for tick N is waited at most
+    // MAX_FRAMES_IN_FLIGHT flushes later; 4 ticks is conservatively past that.
+    ++m_FlushTick;
+    if (!m_BufferGraveyard.empty()) {
+        constexpr u64 kRetireTicks = 4;
+        std::erase_if(m_BufferGraveyard, [&](const RetiredBufferSet& s) {
+            return m_FlushTick - s.flushTick >= kRetireTicks;
+        });
     }
 
     // Flush deferred scene clear (set by OnSceneClear mid-frame)
@@ -3900,9 +3931,9 @@ void RenderSystem::Update(f32 deltaTime) {
                 } else {
                     m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
                 }
-                // Force re-upload of GPU buffers
+                // Force re-upload of GPU buffers (retire — old buffers may be in flight)
                 if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
-                    m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].Invalidate();
+                    RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
                 terrain->meshDirty = false;
             }
         }
@@ -3916,7 +3947,7 @@ void RenderSystem::Update(f32 deltaTime) {
                     m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
                 }
                 if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
-                    m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].Invalidate();
+                    RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
                 terrain2d->meshDirty = false;
             }
         }
@@ -4016,7 +4047,7 @@ void RenderSystem::Update(f32 deltaTime) {
                 m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
             }
             if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
-                m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].Invalidate();
+                RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
             sprite->spriteDirty = false;
         }
 
@@ -4032,23 +4063,23 @@ void RenderSystem::Update(f32 deltaTime) {
                 m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
             }
             if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
-                m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].Invalidate();
+                RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
             tilemap->meshDirty = false;
         }
     }
 
     // Update skeletal animators and apply IK constraints (single pass over AnimatorComponent entities)
-    m_CachedFallbackAnimator = nullptr;
+    m_FallbackAnimatorEntity = INVALID_ENTITY;
     m_SkeletonToAnimator.clear();
     for (Entity entity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
         AnimatorComponent* animComp = ResolveAnimator(entity);
         if (!animComp) continue;
 
-        // Cache first animator with a skeleton for orphan skinned meshes (Mixamo FBX split imports)
+        // Cache first animator-with-skeleton ENTITY for orphan skinned meshes (Mixamo FBX split imports)
         if (const auto* skel = animComp->animator.GetSkeleton()) {
-            if (!m_CachedFallbackAnimator) m_CachedFallbackAnimator = animComp;
+            if (m_FallbackAnimatorEntity == INVALID_ENTITY) m_FallbackAnimatorEntity = entity;
             // Index by shared skeleton so follower meshes resolve THIS animator (one clock).
-            m_SkeletonToAnimator[skel] = animComp;
+            m_SkeletonToAnimator[skel] = entity;
         }
 
         animComp->Update(deltaTime);
@@ -4838,8 +4869,10 @@ void RenderSystem::Update(f32 deltaTime) {
                             auto* mesh = meshStorageLoop ? meshStorageLoop->Get(entity) : nullptr;
                             if (mesh && lod->levels[newLOD].mesh.IsValid()) {
                                 *mesh = lod->levels[newLOD].mesh;
+                                // Retire, not destroy: this runs MID-RECORDING and the
+                                // outgoing LOD's buffers are referenced by in-flight frames
                                 if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
-                                    m_EntityRenderData[static_cast<usize>(EntityIndex(entity))].Invalidate();
+                                    RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
                                 lod->activeLOD = newLOD;
                             }
                         }
@@ -5331,9 +5364,10 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // in the world to use its skinning matrices.
             AnimatorComponent* animComp = ResolveAnimator(entity);
             if (!animComp && renderData.indexCount > 0) {
-                // This entity has bone weights but no animator — use cached fallback
-                // (computed once per frame in Update, not per-entity)
-                animComp = m_CachedFallbackAnimator;
+                // This entity has bone weights but no animator — use the per-frame
+                // fallback, resolved to a pointer at USE time (the entity is cached,
+                // never the pointer — mid-frame imports realloc animator storage)
+                animComp = AnimatorFromEntity(m_FallbackAnimatorEntity);
             }
 
             // Upload skinning matrices. If this entity doesn't have its own bone
@@ -5414,6 +5448,30 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             if (useSubMeshes) {
                 // Total index count for bounds validation
                 u32 totalIndexCount = poolPath ? renderData.poolAlloc.indexCount : renderData.indexCount;
+
+                // One-shot per-entity diagnostic: a multi-material mesh whose
+                // sub-meshes all skip renders ONLY its shadow (invisible-model
+                // class). Log the gate values once so the cause is in enjin.log.
+                static std::unordered_set<u64> s_SubMeshDiagLogged;
+                if (s_SubMeshDiagLogged.insert(static_cast<u64>(entity)).second) {
+                    u32 drawable = 0;
+                    for (const auto& sm : meshForSubMesh->subMeshes) {
+                        if (sm.indexCount != 0 &&
+                            sm.indexOffset + sm.indexCount <= totalIndexCount &&
+                            sm.materialSlot >= 0 &&
+                            sm.materialSlot < static_cast<i32>(matSlots->slots.size()) &&
+                            matSlots->GetSlot(sm.materialSlot)) {
+                            drawable++;
+                        }
+                    }
+                    const auto& s0 = matSlots->slots[0];
+                    ENJIN_LOG_INFO(Renderer,
+                        "SubMeshDiag e%llu: %zu subs, %zu slots, totalIdx=%u, drawable=%u, pool=%d, computeSkinned=%d, slot0 opacity=%.3f alphaMode=%d",
+                        static_cast<unsigned long long>(entity),
+                        meshForSubMesh->subMeshes.size(), matSlots->slots.size(),
+                        totalIndexCount, drawable, poolPath ? 1 : 0, computeSkinned ? 1 : 0,
+                        s0.opacity, static_cast<i32>(s0.alphaMode));
+                }
 
                 for (const auto& subMesh : meshForSubMesh->subMeshes) {
                     // Validate sub-mesh bounds: skip if index range exceeds buffer
@@ -6061,7 +6119,11 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
         if (rd.poolAlloc.valid && m_GeometryPool) {
             m_GeometryPool->Free(rd.poolAlloc);
         }
-        rd.Invalidate();
+        // Retire, not destroy: entity deletion is flushed at World::Update start
+        // while the previous frame is still executing on the GPU — immediate
+        // vkDestroyBuffer here was the "delete imported stag = device lost"
+        // crash (2026-08-08).
+        RetireEntityBuffers(rd);
     }
     m_TextTextureCache.erase(entity);
     m_PrevModelMatrices.erase(static_cast<u64>(entity));
@@ -7745,9 +7807,15 @@ void RenderSystem::EnsureStorageCacheFresh() {
     // World::Clear() ran since the last refetch (scene reload, play-stop full
     // restore, template apply) — every cached storage pointer AND every raw
     // component pointer derived from them is dangling.
-    m_CachedFallbackAnimator = nullptr;
+    m_FallbackAnimatorEntity = INVALID_ENTITY;
     m_SkeletonToAnimator.clear();
     RefreshStorageCache();
+}
+
+AnimatorComponent* RenderSystem::AnimatorFromEntity(Entity e) {
+    if (e == INVALID_ENTITY || !m_World) return nullptr;
+    return m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(e)
+                                   : m_World->GetComponent<AnimatorComponent>(e);
 }
 
 AnimatorComponent* RenderSystem::ResolveAnimator(Entity entity) {
@@ -7757,15 +7825,17 @@ AnimatorComponent* RenderSystem::ResolveAnimator(Entity entity) {
     if (own) return own;
     // 2. Follower mesh: resolve the animator driving its SHARED skeleton, so every mesh in
     //    one imported model skins from a single clock (fixes pause desync + slow drift between
-    //    co-skeleton meshes like a body + its joints/clothing).
+    //    co-skeleton meshes like a body + its joints/clothing). The map stores the ENTITY;
+    //    the pointer is fetched fresh here because AddComponent<AnimatorComponent> mid-frame
+    //    (import dialog) reallocates the storage and dangles cached pointers (2026-08-08).
     if (SkeletonComponent* sk = m_World->GetComponent<SkeletonComponent>(entity)) {
         if (sk->skeleton) {
             auto it = m_SkeletonToAnimator.find(sk->skeleton.get());
-            if (it != m_SkeletonToAnimator.end()) return it->second;
+            if (it != m_SkeletonToAnimator.end()) return AnimatorFromEntity(it->second);
         }
     }
     // Non-skinned entity (or no driving animator found). Callers that want the legacy
-    // orphan fallback (m_CachedFallbackAnimator) apply it themselves.
+    // orphan fallback (m_FallbackAnimatorEntity) apply it themselves.
     return nullptr;
 }
 
@@ -7796,7 +7866,10 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
         m_EntityRenderData.resize(static_cast<usize>(EntityIndex(entity)) + 1);
     }
     EntityRenderData& renderData = m_EntityRenderData[static_cast<usize>(EntityIndex(entity))];
-    renderData.Invalidate();
+    // Retire, not destroy: a REBUILD replaces buffers the previous frame may
+    // still be reading (deferred setups run pre-recording, but pre-recording
+    // does not mean GPU-idle — MAX_FRAMES_IN_FLIGHT frames stay live).
+    RetireEntityBuffers(renderData);
     renderData.valid = true;
     renderData.owner = entity;  // full generational handle — see EntityRenderData::owner
 

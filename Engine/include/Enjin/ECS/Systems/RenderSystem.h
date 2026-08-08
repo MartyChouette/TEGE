@@ -798,20 +798,45 @@ private:
     // FlushPendingChanges (pre-recording). OnEntityAdded queues here instead of
     // building inline, which destroyed live buffers under the recording frame.
     std::vector<Entity> m_PendingBufferSetups;
+#if !ENJIN_RENDERER_WEBGPU
+    // Deferred GPU-buffer destruction. VulkanBuffer::Destroy is an immediate
+    // vkDestroyBuffer and frames stay in flight for MAX_FRAMES_IN_FLIGHT —
+    // destroying a buffer a still-executing frame references is a device loss
+    // (deleting an imported skinned mesh, 2026-08-08). Entity buffers being
+    // freed or rebuilt are parked here and destroyed a few flushes later.
+    struct RetiredBufferSet {
+        u64 flushTick = 0;
+        std::vector<std::unique_ptr<Renderer::VulkanBuffer>> buffers;
+    };
+    std::vector<RetiredBufferSet> m_BufferGraveyard;
+    u64 m_FlushTick = 0;
+    // Move rd's GPU buffers into the graveyard, then Invalidate() it. Use this
+    // instead of calling Invalidate() directly anywhere the GPU might still be
+    // reading the buffers (i.e., everywhere except device-idle paths).
+    void RetireEntityBuffers(EntityRenderData& rd);
+#endif
     ComponentStorage<TransformComponent>* m_CachedTransformStorage = nullptr;
     ComponentStorage<MeshComponent>* m_CachedMeshStorage = nullptr;
     ComponentStorage<MaterialComponent>* m_CachedMaterialStorage = nullptr;
     ComponentStorage<MaterialSlotsComponent>* m_CachedMaterialSlotsStorage = nullptr;
     ComponentStorage<AnimatorComponent>* m_CachedAnimatorStorage = nullptr;
-    AnimatorComponent* m_CachedFallbackAnimator = nullptr; // First animator with skeleton (for orphan skinned meshes)
-    // Maps a shared Skeleton to the single AnimatorComponent that drives it. Lets follower
+    // First animator-with-skeleton entity (orphan skinned mesh fallback). Stored as an
+    // ENTITY, not an AnimatorComponent*: AddComponent<AnimatorComponent> mid-frame (FBX
+    // import dialog runs between Update and RenderToTarget) reallocates the component
+    // storage and dangles every cached pointer — 2026-08-08 multi-FBX import crash.
+    Entity m_FallbackAnimatorEntity = INVALID_ENTITY;
+    // Maps a shared Skeleton to the entity whose AnimatorComponent drives it. Lets follower
     // skinned meshes (no animator of their own) resolve the leader's animator by shared
     // skeleton identity, so every mesh in one model skins from ONE clock (no pause desync /
     // drift). Rebuilt each frame in the animator update loop. Keyed by raw Skeleton pointer.
-    std::unordered_map<const Animation::Skeleton*, AnimatorComponent*> m_SkeletonToAnimator;
+    // Values are ENTITIES for the same dangling-pointer reason as m_FallbackAnimatorEntity.
+    std::unordered_map<const Animation::Skeleton*, Entity> m_SkeletonToAnimator;
     // Resolve the animator that should skin this entity: its own, else the leader driving
     // its shared skeleton, else the per-frame fallback. Returns null for non-skinned entities.
     AnimatorComponent* ResolveAnimator(Entity entity);
+    // Fetch the AnimatorComponent on an entity at USE time (never cache the result across
+    // anything that can AddComponent).
+    AnimatorComponent* AnimatorFromEntity(Entity e);
     ComponentStorage<TextComponent>* m_CachedTextStorage = nullptr;
     ComponentStorage<ArtStyleComponent>* m_CachedArtStyleStorage = nullptr;
     ComponentStorage<Sprite2DComponent>* m_CachedSpriteStorage = nullptr;
