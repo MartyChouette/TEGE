@@ -297,6 +297,15 @@ json SerializeMeshComponent(const ECS::MeshComponent& mesh, bool includeVertexDa
             if (v.boneWeights.x != 0.0f || v.boneWeights.y != 0.0f || v.boneWeights.z != 0.0f || v.boneWeights.w != 0.0f) {
                 vertex["boneWeights"] = SerializeVector4(v.boneWeights);
                 vertex["boneIndices"] = json::array({v.boneIndices[0], v.boneIndices[1], v.boneIndices[2], v.boneIndices[3]});
+                // Influences 5-8: dropping these was the ~10% spiky-vert import
+                // corruption — dense rigs normalize across 8 weights at import,
+                // so a save that keeps only 4 leaves those verts under-weighted
+                // on every subsequent load (2026-08-07).
+                if (v.boneWeights2.x != 0.0f || v.boneWeights2.y != 0.0f ||
+                    v.boneWeights2.z != 0.0f || v.boneWeights2.w != 0.0f) {
+                    vertex["boneWeights2"] = SerializeVector4(v.boneWeights2);
+                    vertex["boneIndices2"] = json::array({v.boneIndices2[0], v.boneIndices2[1], v.boneIndices2[2], v.boneIndices2[3]});
+                }
             }
             vertices.push_back(vertex);
         }
@@ -508,6 +517,32 @@ ECS::MeshComponent DeserializeMeshComponent(const json& j) {
                 vertex.boneIndices[1] = std::min(v["boneIndices"][1].get<u32>(), 255u);
                 vertex.boneIndices[2] = std::min(v["boneIndices"][2].get<u32>(), 255u);
                 vertex.boneIndices[3] = std::min(v["boneIndices"][3].get<u32>(), 255u);
+            }
+            if (v.contains("boneWeights2")) {
+                vertex.boneWeights2 = DeserializeVector4(v["boneWeights2"]);
+            }
+            if (v.contains("boneIndices2") && v["boneIndices2"].is_array() && v["boneIndices2"].size() >= 4) {
+                vertex.boneIndices2[0] = std::min(v["boneIndices2"][0].get<u32>(), 255u);
+                vertex.boneIndices2[1] = std::min(v["boneIndices2"][1].get<u32>(), 255u);
+                vertex.boneIndices2[2] = std::min(v["boneIndices2"][2].get<u32>(), 255u);
+                vertex.boneIndices2[3] = std::min(v["boneIndices2"][3].get<u32>(), 255u);
+            }
+            // Heal scenes saved before boneWeights2 serialization existed: their
+            // dense-rig verts carry truncated weight sets that don't sum to 1
+            // (spiky skinning). Renormalizing what survived is the closest
+            // reconstruction available.
+            {
+                f32 wsum = vertex.boneWeights.x + vertex.boneWeights.y +
+                           vertex.boneWeights.z + vertex.boneWeights.w +
+                           vertex.boneWeights2.x + vertex.boneWeights2.y +
+                           vertex.boneWeights2.z + vertex.boneWeights2.w;
+                if (wsum > 0.0001f && std::abs(wsum - 1.0f) > 0.01f) {
+                    f32 inv = 1.0f / wsum;
+                    vertex.boneWeights.x *= inv;  vertex.boneWeights.y *= inv;
+                    vertex.boneWeights.z *= inv;  vertex.boneWeights.w *= inv;
+                    vertex.boneWeights2.x *= inv; vertex.boneWeights2.y *= inv;
+                    vertex.boneWeights2.z *= inv; vertex.boneWeights2.w *= inv;
+                }
             }
             mesh.vertices.push_back(vertex);
         }
