@@ -447,25 +447,31 @@ void AnimationGraphEditor::Render(const EditorSettings& settings, bool isPlaying
 
     DrawToolbar();
 
-    // Layout: canvas on left, inspector on right
+    // Layout: canvas on left, inspector on right. The canvas child is
+    // user-resizable from its RIGHT edge (drag the splitter between canvas and
+    // inspector); the inspector stretches into whatever remains.
     f32 inspectorWidth = 260.0f * settings.uiScale;
     ImVec2 avail = ImGui::GetContentRegionAvail();
     f32 canvasWidth = avail.x - inspectorWidth - 8.0f;
     if (canvasWidth < 200.0f) canvasWidth = avail.x;  // Don't show inspector if too narrow
 
     // Canvas
-    ImGui::BeginChild("##AnimGraphCanvas", ImVec2(canvasWidth, avail.y), false,
+    ImGui::SetNextWindowSizeConstraints(ImVec2(200.0f, avail.y),
+                                        ImVec2(std::max(200.0f, avail.x), avail.y));
+    ImGui::BeginChild("##AnimGraphCanvas", ImVec2(canvasWidth, avail.y),
+        ImGuiChildFlags_ResizeX,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     m_GraphEditor.Render(m_GraphData, m_Callbacks, m_Colors, settings.uiScale);
     ImGui::EndChild();
+    canvasWidth = ImGui::GetItemRectSize().x;  // Actual (possibly user-dragged) width
 
     // Write back positions continuously
     SyncToComponent();
 
-    // Inspector sidebar
-    if (canvasWidth < avail.x) {
+    // Inspector sidebar — fills the remaining width after the canvas splitter
+    if (avail.x - canvasWidth > 80.0f) {
         ImGui::SameLine();
-        ImGui::BeginChild("##AnimGraphInspector", ImVec2(inspectorWidth, avail.y), true);
+        ImGui::BeginChild("##AnimGraphInspector", ImVec2(0, avail.y), ImGuiChildFlags_Borders);
         DrawInspector(isPlaying);
         ImGui::EndChild();
     }

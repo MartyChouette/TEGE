@@ -2655,10 +2655,13 @@ void EditorLayer::DrawQuitFeedbackDialog() {
     ImVec2 display = ImGui::GetMainViewport()->Size;
     ImVec2 dlgSize(std::min(760.0f * dlgScale, display.x * 0.85f),
                    std::min(680.0f * dlgScale, display.y * 0.85f));
-    ImGui::SetNextWindowSize(dlgSize);
+    // Default size only — the dialog is user-resizable (drag any edge)
+    ImGui::SetNextWindowSize(dlgSize, ImGuiCond_Appearing);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(420.0f, 320.0f),
+                                        ImVec2(display.x * 0.95f, display.y * 0.95f));
 
     if (ImGui::BeginPopupModal("##QuitFeedback", nullptr,
-        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar)) {
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar)) {
 
         ImGui::TextColored(ImVec4(1, 1, 1, 1), "Before you go...");
         ImGui::Separator();

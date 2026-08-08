@@ -215,15 +215,17 @@ void GameMenuSystem::RenderOptions(f32 w, f32 h) {
     const f32 panelW = 640.0f;
     const f32 panelH = 520.0f;
 
-    ImGui::SetNextWindowPos(ImVec2((w - panelW) * 0.5f, (h - panelH) * 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(panelW, panelH));
+    // Default size + centered position; the panel is user-resizable (drag any
+    // edge) so scaled-up fonts and long binding lists get room to breathe.
+    ImGui::SetNextWindowPos(ImVec2((w - panelW) * 0.5f, (h - panelH) * 0.5f), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSize(ImVec2(panelW, panelH), ImGuiCond_Appearing);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(460.0f, 360.0f), ImVec2(w, h));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.10f, 0.11f, 0.14f, 0.95f));
     ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.3f, 0.5f, 0.6f, 0.5f));
     ImGui::Begin("##Options", nullptr,
-        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings);
 
     ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "Options");
     ImGui::Separator();
