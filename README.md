@@ -4,7 +4,7 @@
 
 <br><br>
 
-**An aesthetics-first game engine built from scratch in C++20 and Vulkan.**
+**An aesthetics-first game engine where any art style is a one-click preset and every game ships accessible by default. Built from scratch in C++20 and Vulkan.**
 
 <br>
 
@@ -13,11 +13,11 @@
 [![Vulkan 1.3](https://img.shields.io/badge/Vulkan-1.3-AC162C.svg?logo=vulkan&logoColor=white)](https://www.vulkan.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey.svg)]()
 [![CMake](https://img.shields.io/badge/Build-CMake-064F8C.svg?logo=cmake&logoColor=white)](https://cmake.org/)
-[![Tests](https://img.shields.io/badge/Tests-1800%2B_passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-1900%2B_passing-brightgreen.svg)]()
 
 <br>
 
-[Website](https://www.marty64.net/enjin/) · [Download](https://www.marty64.net/enjin/TEGE-0.9.6.zip) · [Documentation](docs/) · [Build Guide](docs/BUILD.md) · [Scripting API](docs/SCRIPTING_API.md)
+[Website](https://www.marty64.net/enjin/) · [Download](https://www.marty64.net/enjin/TEGE-0.9.7.zip) · [Documentation](docs/) · [Build Guide](docs/BUILD.md) · [Scripting API](docs/SCRIPTING_API.md)
 
 </div>
 
@@ -42,7 +42,7 @@
 </tr>
 </table>
 
-> Full editor with hierarchy, inspector, viewport, console, and asset browser. 15 curated starter templates.
+> Full editor with hierarchy, inspector, viewport, console, and asset browser. Starter templates covering common genres.
 
 ---
 
@@ -50,17 +50,21 @@
 
 TEGE is a complete game engine -- editor, renderer, physics, scripting, audio, build pipeline -- written from scratch. It ships with everything you need to make and publish a game, from 2D platformers to 3D open worlds.
 
+It's built for artists, educators, and new videogame makers of all backgrounds: people who want to make something that looks like them and plays for everyone, without first becoming a graphics programmer or an accessibility consultant. How your game looks and who can play it are choices you make in a dropdown, not specialist work you bolt on.
+
+The engine is free and open source now. A paid official 1.0 release (installer, pre-built binaries, updates -- the Aseprite model) launches in spring 2027. You are always free to build from source, and games you make with TEGE are yours to sell. No account, no license server, works fully offline.
+
 | | |
 |:---|:---|
-| **Complete Editor** | Hierarchy, inspector, viewport, play mode, undo/redo, command palette, project hub, 15 curated starter templates, drag-and-drop import with validation |
-| **80+ ECS Components** | Transform, mesh, material, lights, cameras, physics, AI, UI, audio, scripting, rewind, pose library -- all with inspector UI |
-| **Vulkan PBR Renderer** | Cascaded shadows, reflection probes, path tracer, TAA/FXAA/SMAA, FSR 2 upscaling |
+| **Complete Editor** | Hierarchy, inspector, viewport, play mode, undo/redo, command palette, project hub, curated starter templates, drag-and-drop import with validation |
+| **ECS Architecture** | Transform, mesh, material, lights, cameras, physics, AI, UI, audio, scripting, rewind, pose library -- all with inspector UI |
+| **Vulkan PBR Renderer** | Cascaded shadows, reflection probes, TAA/FXAA/SMAA, FSR 2 upscaling, experimental path tracer |
 | **8 Art Styles** | Realistic PBR, Blinn-Phong, Hand-Painted, Cel/Toon, Low-Poly Retro, Pixel Art, NPR Sketch, Analog -- one-click presets |
-| **Dual Scripting** | 960+ AngelScript bindings with hot-reload + visual scripting with 146+ nodes and breakpoint debugging |
+| **Dual Scripting** | 1,000+ AngelScript bindings with hot-reload + visual scripting with 256 nodes and breakpoint debugging |
 | **Dual Physics** | Jolt 5.2.0 (3D) + Box2D 3.0.0 (2D), 5 character controller types, joints, ragdolls, sensors |
 | **Ship Everywhere** | Standalone builds, HTML5/WebAssembly, Windows installer, Linux AppImage |
 | **Gameplay Systems** | Save/load, quests, dialogue trees (quest/cinematic/flag integration), record & rewind, destructibles, LAN multiplayer, localization, dynamic difficulty, pose library |
-| **Accessibility** | Colorblind correction (8 modes), screen reader, switch access, dyslexia mode, WCAG AAA themes |
+| **Accessibility** | Colorblind correction (8 modes), screen reader, switch access, dyslexia mode, high-contrast themes |
 
 ---
 
@@ -90,7 +94,7 @@ cmake --build . --config Release
 
 A pre-built Windows installer is available -- no build tools required:
 
-1. Download **[TEGE-0.9.6.zip](https://www.marty64.net/enjin/TEGE-0.9.6.zip)** from the website
+1. Download **[TEGE-0.9.7.zip](https://www.marty64.net/enjin/TEGE-0.9.7.zip)** from the website
 2. Run the installer -- it sets up the editor, player, and file associations (`.enjinproject`, `.enjin`)
 3. Launch TEGE from the Start Menu or desktop shortcut
 
@@ -126,7 +130,7 @@ Build with `-DENJIN_BUILD_EXAMPLES=ON`. See `Examples/Simple3D/`, `Examples/Simp
 - **Shadow Mapping** -- 4-cascade CSM, cubemap point shadows, spot shadows, 16-sample Poisson PCF, 6 dither patterns
 - **Anti-Aliasing** -- TAA (Halton jitter, velocity reprojection), FXAA, SMAA
 - **Post-Processing** -- Bloom, vignette, color grading, film grain, tone mapping, depth of field, tilt-shift, post-process volumes with spatial blending
-- **Ray Tracing** -- Path tracer with NEE, MIS, Russian Roulette, Cook-Torrance BRDF. 3 denoisers (SVGF, Intel OIDN, NVIDIA OptiX). ReSTIR light sampling with temporal and spatial reuse. Hybrid RT effects (shadows, reflections, AO, GI) have shader source and C++ infrastructure but require manual SPIR-V compilation
+- **Ray Tracing (experimental, in progress)** -- Path tracer with NEE, MIS, Russian Roulette, Cook-Torrance BRDF. 3 denoisers (SVGF, Intel OIDN, NVIDIA OptiX). ReSTIR light sampling with temporal and spatial reuse. Hybrid RT effects (shadows, reflections, AO, GI) have shader source and C++ infrastructure but require manual SPIR-V compilation
 - **Upscaling** -- FSR 2 (built-in Lanczos + CAS). 4 quality modes. DLSS/XeSS available when vendor SDKs are linked
 - **Retro Effects** -- PSX vertex snapping, affine textures, flat/Gouraud shading, CRT scanlines (11 models), VHS, film gate weave, light leaks, 6 named palettes (PICO-8, Game Boy, NES, CGA, C64)
 - **Environment** -- Procedural sky, cubemap skybox, weather (rain, snow, fog, storms), water with Gerstner waves, instanced vegetation with wind
@@ -141,8 +145,8 @@ Build with `-DENJIN_BUILD_EXAMPLES=ON`. See `Examples/Simple3D/`, `Examples/Simp
 - **Core** -- Hierarchy, inspector, viewport, play/pause/stop, undo/redo, cut/copy/paste, multi-select (Ctrl+click, Shift+range, marquee), entity icons
 - **Gizmos** -- Translate/rotate/scale via ImGuizmo, click-to-select, terrain sculpting (5 brush modes), stats overlay, wireframe toggle
 - **Visual Authoring** -- Shader Graph (54 nodes), Audio Event Graph, Particle Graph, Dialogue Tree Editor, Animation Graph, Vector Drawing Editor
-- **Visual Scripting** -- Blueprint-style editor, 146+ nodes, breakpoint debugging (F9/F5/F10), execution profiler
-- **Project Tools** -- Project Hub with 15 curated starter templates (including "Components Only" and "Script Only" starting points), Template Creator, Template Marketplace
+- **Visual Scripting** -- Blueprint-style editor, 256 nodes, breakpoint debugging (F9/F5/F10), execution profiler
+- **Project Tools** -- Project Hub with 16 built-in starter templates (including "Components Only" and "Script Only" starting points), Template Creator, Template Marketplace
 - **Smart Features** -- Context-aware suggestions, Quick Setup Patterns, Command Palette (Ctrl+P), keyboard shortcuts help
 - **Debug** -- Game Debug Panel (F1), Debug Workstation (F2), Quake-style drop-down console (backtick, 60+ commands)
 - **Collaboration** -- Real-time multi-user editing with OT protocol, peer cursors, conflict resolution
@@ -185,8 +189,8 @@ Build with `-DENJIN_BUILD_EXAMPLES=ON`. See `Examples/Simple3D/`, `Examples/Simp
 <summary><b>Scripting & Plugins</b></summary>
 <br>
 
-- **AngelScript** -- TegeBehavior base class, ~1,010 API bindings, hot-reload, coroutines, event system
-- **Visual Scripting** -- 146+ node types, breakpoint debugging, execution profiler, latent nodes
+- **AngelScript** -- TegeBehavior base class, 1,000+ API bindings, hot-reload, coroutines, event system
+- **Visual Scripting** -- 256 node types, breakpoint debugging, execution profiler, latent nodes
 - **Plugin System** -- IPlugin interface, DLL/SO hot-reload with state save/restore
 - **DataAssets** -- Schema definitions with typed instances, JSON I/O, script bindings
 
@@ -196,7 +200,7 @@ Build with `-DENJIN_BUILD_EXAMPLES=ON`. See `Examples/Simple3D/`, `Examples/Simp
 <summary><b>Accessibility</b></summary>
 <br>
 
-- **Vision** -- Colorblind correction (8 GPU modes), high contrast themes (WCAG AAA), font scaling, colorblind-safe palettes
+- **Vision** -- Colorblind correction (8 GPU modes), high contrast themes (7:1+ contrast), font scaling, colorblind-safe palettes
 - **Motor** -- Remappable input, one-handed presets, dwell-click, sticky drag, switch access
 - **Cognitive** -- Dyslexia mode (OpenDyslexic font, spacing adjustments), reduced motion, content warnings
 - **Communication** -- Screen reader, subtitles (configurable size/background/speaker), audio-visual indicators
@@ -227,7 +231,7 @@ TEGE/
 │   └── shaders/    GLSL shaders (compiled to SPIR-V)
 ├── Editor/         Editor application (ImGui)
 ├── Player/         Standalone game player (no editor UI)
-├── Tests/          1100+ unit and integration tests (18 categories)
+├── Tests/          1,900+ unit and integration tests (18 categories)
 ├── third_party/    GLFW, ImGui, ImGuizmo
 └── build/          Build output
 ```
@@ -274,7 +278,7 @@ All dependencies use permissive open-source licenses.
 | [Architecture](docs/ARCHITECTURE.md) | System design and diagrams |
 | [Build Guide](docs/BUILD.md) | Prerequisites and platform instructions |
 | [User Manual](docs/USER_MANUAL.md) | Editor walkthrough and component reference |
-| [Scripting API](docs/SCRIPTING_API.md) | Complete AngelScript reference (960+ bindings) |
+| [Scripting API](docs/SCRIPTING_API.md) | Complete AngelScript reference (1,000+ bindings) |
 | [Roadmap](docs/ROADMAP.md) | Planned work and progress |
 
 ---
