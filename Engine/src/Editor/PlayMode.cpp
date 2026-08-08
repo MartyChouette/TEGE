@@ -296,6 +296,7 @@ void PlayMode::Play() {
             data.SetEntity("canvas", static_cast<u64>(e.canvasEntity));
             data.SetInt("elementId", static_cast<i32>(e.elementId));
             data.SetFloat("value", e.floatValue);
+            data.SetInt("checked", e.boolValue ? 1 : 0);
             data.SetString("text", e.stringValue);
             m_EventBus.Send(e.eventName, data);
         });
@@ -646,6 +647,10 @@ void PlayMode::Update(f32 deltaTime) {
         if (m_AccessibilitySettings && m_PostProcessing) {
             m_AccessibilitySettings->ApplyToPostProcessing(m_PostProcessing->GetSettings());
         }
+        // Font scale too — game scripts (Accessibility Demo) change it live.
+        if (m_AccessibilitySettings && m_UISystem) {
+            m_UISystem->SetFontScale(m_AccessibilitySettings->fontScale);
+        }
 
         // Re-sync controller-driven positions to Box2D and fire sensor events.
         // Controllers move entities after the physics step, so without this
@@ -909,8 +914,18 @@ void PlayMode::RestoreEditorState() {
             m_RenderSystem->FlushSceneClear();
         }
         m_World->Clear();
+        // FlushSceneClear's tail refetched the component-storage caches from the
+        // OLD world — World::Clear() just destroyed those storages, so the
+        // caches dangle. Refetch now (null/fresh, both safe): without this,
+        // LoadFromString's AddComponent<AnimatorComponent> -> OnEntityAdded ->
+        // SetupEntityBuffers -> ResolveAnimator walked the freed animator
+        // storage and access-violated (skinned-entity play-stop crash).
+        if (m_RenderSystem) m_RenderSystem->RefreshStorageCache();
         Scene::SceneSerializer serializer(m_World);
         serializer.LoadFromString(m_PrePlaySceneJson);
+        // The reload created the real storages — point the caches at them so
+        // the editor draws immediately (it never calls Update()).
+        if (m_RenderSystem) m_RenderSystem->RefreshStorageCache();
         ENJIN_LOG_INFO(Editor, "Restored editor state (full reload — entities were destroyed during play)");
     } else {
         // Lightweight restore: just reset transforms (no entities destroyed)

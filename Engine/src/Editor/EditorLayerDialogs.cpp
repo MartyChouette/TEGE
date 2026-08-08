@@ -2118,6 +2118,11 @@ void EditorLayer::DrawUnsavedChangesDialog() {
     ImGui::OpenPopup("Unsaved Changes");
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    // Auto-resize fits the text, but enforce a comfortable minimum so the
+    // exit prompt isn't a cramped strip at high UI scales.
+    const f32 exitScale = m_EditorSettings.uiScale;
+    ImGui::SetNextWindowSizeConstraints(ImVec2(440.0f * exitScale, 0.0f),
+                                        ImVec2(FLT_MAX, FLT_MAX));
     if (ImGui::BeginPopupModal("Unsaved Changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("You have unsaved changes.");
         if (!m_CurrentScenePath.empty()) {
@@ -2129,7 +2134,8 @@ void EditorLayer::DrawUnsavedChangesDialog() {
         ImGui::Separator();
         ImGui::Spacing();
 
-        if (ImGui::Button("Save", ImVec2(100, 0))) {
+        const ImVec2 exitBtn(110.0f * exitScale, 34.0f * exitScale);
+        if (ImGui::Button("Save", exitBtn)) {
             // Save, then proceed with the pending action
             if (!m_CurrentScenePath.empty()) {
                 SaveScene(m_CurrentScenePath);
@@ -2190,7 +2196,7 @@ void EditorLayer::DrawUnsavedChangesDialog() {
         }
 
         ImGui::SameLine();
-        if (ImGui::Button("Don't Save", ImVec2(100, 0))) {
+        if (ImGui::Button("Don't Save", exitBtn)) {
             // Discard changes and proceed
             UnsavedAction action = m_UnsavedChangesAction;
             m_ShowUnsavedChangesDialog = false;
@@ -2231,7 +2237,7 @@ void EditorLayer::DrawUnsavedChangesDialog() {
         }
 
         ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(100, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        if (ImGui::Button("Cancel", exitBtn) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
             m_ShowUnsavedChangesDialog = false;
             m_UnsavedChangesAction = UnsavedAction::None;
             m_PendingOpenPath.clear();
@@ -2261,37 +2267,15 @@ void EditorLayer::DrawAutoSaveRecoveryDialog() {
         ImGui::Spacing();
 
         if (ImGui::Button("Recover", ImVec2(120, 0))) {
-            // Load the auto-save file instead
-            std::string recoveryPath = m_AutoSaveRecoveryPath;
+            // Defer the load to Update() — this modal runs during the Render
+            // phase, and clearing/reloading the World here invalidates entity
+            // GPU buffers the in-flight frame still references (crash on
+            // recovery, 2026-08-07 report: read of 0x17 right after the
+            // additive autosave load + skybox create).
+            m_PendingRecoveryLoadPath = m_AutoSaveRecoveryPath;
             m_ShowAutoSaveRecoveryDialog = false;
             m_AutoSaveRecoveryPath.clear();
             ImGui::CloseCurrentPopup();
-
-            if (m_World && !recoveryPath.empty()) {
-                Scene::SceneSerializer serializer(m_World);
-                auto result = serializer.Load(recoveryPath, true);
-                if (result.success) {
-                    // Apply loaded skybox config
-                    if (m_RenderSystem) {
-                        m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
-                    }
-                    const auto& loaded = serializer.GetRenderSettings();
-                    m_CurrentSceneUsesProjectDefaults = loaded.useProjectDefaults;
-                    if (loaded.useProjectDefaults) {
-                        m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
-                            m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-                    } else {
-                        loaded.ApplyToRuntime(
-                            m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-                    }
-                    MarkDirty(); // Recovered scene has unsaved changes
-                    ENJIN_LOG_INFO(Editor, "Recovered from auto-save: %s", recoveryPath.c_str());
-                    ShowNotification("Recovered auto-saved scene", NotificationType::Success);
-                } else {
-                    ENJIN_LOG_ERROR(Editor, "Failed to load auto-save: %s", result.error.c_str());
-                    ShowNotification("Failed to recover auto-save", NotificationType::Error);
-                }
-            }
         }
 
         ImGui::SameLine();
@@ -2647,7 +2631,13 @@ void EditorLayer::DrawQuitFeedbackDialog() {
     ImGui::OpenPopup("##QuitFeedback");
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(690, 600));
+    // Scale with the UI so large ui-scale settings don't cram the content
+    // into a fixed pixel box; clamp to the display so it never overflows.
+    const f32 dlgScale = m_EditorSettings.uiScale;
+    ImVec2 display = ImGui::GetMainViewport()->Size;
+    ImVec2 dlgSize(std::min(760.0f * dlgScale, display.x * 0.92f),
+                   std::min(680.0f * dlgScale, display.y * 0.92f));
+    ImGui::SetNextWindowSize(dlgSize);
 
     if (ImGui::BeginPopupModal("##QuitFeedback", nullptr,
         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar)) {
@@ -2657,9 +2647,9 @@ void EditorLayer::DrawQuitFeedbackDialog() {
         ImGui::Dummy(ImVec2(0, 4));
 
         // Helper for 1-5 rating row
-        auto RatingRow = [](const char* label, u8& value) {
+        auto RatingRow = [dlgScale](const char* label, u8& value) {
             ImGui::Text("%s", label);
-            ImGui::SameLine(260);
+            ImGui::SameLine(280.0f * dlgScale);
             ImGui::PushID(label);
             for (u8 i = 1; i <= 5; i++) {
                 ImGui::PushID(static_cast<int>(i));
@@ -2692,24 +2682,26 @@ void EditorLayer::DrawQuitFeedbackDialog() {
         static char frustrateBuf[512] = {};
         static char featureBuf[512] = {};
 
+        const f32 inputH = 56.0f * dlgScale;
         ImGui::Text("What did you like?");
-        ImGui::InputTextMultiline("##like", likeBuf, sizeof(likeBuf), ImVec2(-1, 40));
+        ImGui::InputTextMultiline("##like", likeBuf, sizeof(likeBuf), ImVec2(-1, inputH));
 
         ImGui::Text("What frustrated you?");
-        ImGui::InputTextMultiline("##frustrate", frustrateBuf, sizeof(frustrateBuf), ImVec2(-1, 40));
+        ImGui::InputTextMultiline("##frustrate", frustrateBuf, sizeof(frustrateBuf), ImVec2(-1, inputH));
 
         ImGui::Text("What feature do you want most?");
-        ImGui::InputTextMultiline("##feature", featureBuf, sizeof(featureBuf), ImVec2(-1, 40));
+        ImGui::InputTextMultiline("##feature", featureBuf, sizeof(featureBuf), ImVec2(-1, inputH));
 
         ImGui::Dummy(ImVec2(0, 8));
 
-        // Buttons
-        float buttonWidth = 170.0f;
+        // Buttons — centered against the real window width, not a hardcoded one
+        float buttonWidth = 175.0f * dlgScale;
+        float buttonHeight = 36.0f * dlgScale;
         float spacing = 16.0f;
         float totalWidth = buttonWidth * 3 + spacing * 2;
-        ImGui::SetCursorPosX((640 - totalWidth) * 0.5f);
+        ImGui::SetCursorPosX((ImGui::GetWindowSize().x - totalWidth) * 0.5f);
 
-        if (ImGui::Button("Submit & Quit", ImVec2(buttonWidth, 32))) {
+        if (ImGui::Button("Submit & Quit", ImVec2(buttonWidth, buttonHeight))) {
             m_QuitSurvey.whatDidYouLike = likeBuf;
             m_QuitSurvey.whatFrustratedYou = frustrateBuf;
             m_QuitSurvey.mostWantedFeature = featureBuf;
@@ -2745,13 +2737,13 @@ void EditorLayer::DrawQuitFeedbackDialog() {
             FinalizeQuit();
         }
         ImGui::SameLine(0, spacing);
-        if (ImGui::Button("Skip & Quit", ImVec2(buttonWidth, 32))) {
+        if (ImGui::Button("Skip & Quit", ImVec2(buttonWidth, buttonHeight))) {
             likeBuf[0] = frustrateBuf[0] = featureBuf[0] = '\0';
             ImGui::CloseCurrentPopup();
             FinalizeQuit();
         }
         ImGui::SameLine(0, spacing);
-        if (ImGui::Button("Cancel", ImVec2(buttonWidth, 32))) {
+        if (ImGui::Button("Cancel", ImVec2(buttonWidth, buttonHeight))) {
             likeBuf[0] = frustrateBuf[0] = featureBuf[0] = '\0';
             m_ShowQuitFeedbackDialog = false;
             m_QuitSurvey = {};

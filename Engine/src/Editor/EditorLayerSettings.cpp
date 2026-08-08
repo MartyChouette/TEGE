@@ -1985,6 +1985,7 @@ void EditorLayer::DrawSettingsWindow() {
             // Photorealistic reflections, soft shadows, global illumination (RTX / RDNA2+ GPU)
             ImGui::SeparatorText("Ray Tracing & Path Tracing");
             ImGui::PushTextWrapPos(); ImGui::TextDisabled("Photorealistic reflections, global illumination, path tracing (RTX/RDNA2+)"); ImGui::PopTextWrapPos();
+            ImGui::PushTextWrapPos(); ImGui::TextColored(ImVec4(0.82f, 0.67f, 0.2f, 1.0f), "Experimental in 0.9.7 — expect glitches while it stabilizes"); ImGui::PopTextWrapPos();
             DrawSettingsSection_RayTracing();
 
             // --- Advanced Rendering (Glacier-inspired) ---

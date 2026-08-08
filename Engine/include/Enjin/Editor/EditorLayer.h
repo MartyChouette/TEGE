@@ -198,6 +198,9 @@ public:
     // Set by main() from --play: auto-enter play mode shortly after the launch
     // project's scene loads. For automated testing (e.g. validation probes).
     static inline bool s_AutoPlayOnLaunch = false;
+    // Set by main() from --play-cycle <N>: stop/restart play mode every N
+    // frames (skinned-mesh play-transition crash probe). 0 = off.
+    static inline i32 s_PlayCycleFrames = 0;
     // Set by main() from --compute-skinning: force ADR-0002 compute skinning on
     // at boot. For automated verification probes.
     static inline bool s_ComputeSkinningOnLaunch = false;
@@ -1284,6 +1287,10 @@ private:
 
     // Deferred scene open (prevents World::Clear during Render-phase ImGui callbacks)
     std::string m_PendingSceneLoadPath;
+
+    // Deferred auto-save recovery load (same reason — the recovery dialog is a
+    // Render-phase ImGui modal; loading the world from inside it crashed)
+    std::string m_PendingRecoveryLoadPath;
 
     // Deferred template application (same reason — must not Clear during Render)
     std::string m_PendingTemplateId;

@@ -334,6 +334,19 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
         }
     });
 
+    // Fill the Options menu from live state when it opens — otherwise Back
+    // applies the menu's struct defaults (bloom=true) over the panel settings
+    m_GameMenu.SetSettingsSyncCallback([this](GUI::GraphicsSettings& gfx,
+                                              GUI::AudioSettings& audio) {
+        if (m_PostProcessing) {
+            gfx.bloom = m_PostProcessing->GetSettings().bloomEnabled != 0;
+            gfx.fxaa = m_PostProcessing->GetSettings().fxaaEnabled != 0;
+        }
+        if (m_RenderSystem) gfx.shadows = m_RenderSystem->IsShadowsEnabled();
+        auto* sa = m_PlayMode.GetSimpleAudio();
+        if (sa) audio.masterVolume = sa->GetMasterVolume();
+    });
+
     // Apply graphics/audio settings when user exits Options menu in play mode
     m_GameMenu.SetSettingsCallback([this](const GUI::GraphicsSettings& gfx,
                                           const GUI::AudioSettings& audio) {
@@ -762,6 +775,38 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
 
+    // --play-cycle probe support: stop and restart play mode every N frames via
+    // the same deferred stop path the toolbar uses. Exercises the
+    // play -> stop-restore -> play transition (skinned-mesh crash repro).
+    if (s_PlayCycleFrames > 0 && m_RenderSystem) {
+        static int s_cycleCountdown = 0;
+        static int s_restartDelay = 0;
+        if (m_PlayMode.IsPlaying()) {
+            if (s_cycleCountdown == 0) s_cycleCountdown = s_PlayCycleFrames;
+            if (--s_cycleCountdown == 0) {
+                // Destroy a skinned entity first so Stop takes the FULL-RELOAD
+                // restore path (recreates skinned entities from JSON — the
+                // documented use-after-free shape for the play-transition crash)
+                if (m_World) {
+                    auto skinned = m_World->GetEntitiesWithComponent<ECS::SkeletonComponent>();
+                    if (!skinned.empty()) {
+                        m_World->DestroyEntity(skinned.front());
+                        ENJIN_LOG_INFO(Editor, "--play-cycle: destroyed skinned entity %u to force full restore",
+                            (u32)skinned.front());
+                    }
+                }
+                m_PendingPlayStop = true;
+                ENJIN_LOG_INFO(Editor, "--play-cycle: requesting stop");
+            }
+        } else if (m_PlayMode.IsStopped() && !m_PendingPlayStop && !s_AutoPlayOnLaunch) {
+            if (++s_restartDelay >= 30) {  // let the restore settle half a second
+                s_restartDelay = 0;
+                StartPlayMode();
+                ENJIN_LOG_INFO(Editor, "--play-cycle: re-entered play mode");
+            }
+        }
+    }
+
     // --golden probe support: after the configured frame count, read back the
     // game view render target, write the reference images, and exit.
     if (!s_GoldenCapturePath.empty() && m_RenderSystem && m_GameViewRenderTarget) {
@@ -824,6 +869,39 @@ void EditorLayer::Update(f32 deltaTime) {
             ClearSelection();
         }
         OpenSceneImmediate(path);
+    }
+
+    // Handle deferred auto-save recovery (requested from the Render-phase
+    // recovery modal — same World::Clear-during-Render hazard as above).
+    if (!m_PendingRecoveryLoadPath.empty()) {
+        std::string recoveryPath = std::move(m_PendingRecoveryLoadPath);
+        m_PendingRecoveryLoadPath.clear();
+        if (m_World) {
+            if (m_Renderer) m_Renderer->WaitForAllFrames();
+            ClearSelection();
+            Scene::SceneSerializer serializer(m_World);
+            auto result = serializer.Load(recoveryPath, true);
+            if (result.success) {
+                if (m_RenderSystem) {
+                    m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
+                }
+                const auto& loaded = serializer.GetRenderSettings();
+                m_CurrentSceneUsesProjectDefaults = loaded.useProjectDefaults;
+                if (loaded.useProjectDefaults) {
+                    m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
+                        m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+                } else {
+                    loaded.ApplyToRuntime(
+                        m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+                }
+                MarkDirty(); // Recovered scene has unsaved changes
+                ENJIN_LOG_INFO(Editor, "Recovered from auto-save: %s", recoveryPath.c_str());
+                ShowNotification("Recovered auto-saved scene", NotificationType::Success);
+            } else {
+                ENJIN_LOG_ERROR(Editor, "Failed to load auto-save: %s", result.error.c_str());
+                ShowNotification("Failed to recover auto-save", NotificationType::Error);
+            }
+        }
     }
 
     // Handle deferred model import (requested during previous frame's Render).
@@ -1691,6 +1769,7 @@ void EditorLayer::PrepareRenderTargets() {
         }
     }
 }
+
 
 void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     ENJIN_PROFILE_SCOPE("Render");
@@ -2607,6 +2686,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             m_GameViewRenderTarget->BeginPPPass(commandBuffer);
             m_PostProcessing->ApplyToCurrentPass(commandBuffer, rtWidth, rtHeight);
             m_GameViewRenderTarget->EndPPPass(commandBuffer);
+
         } else {
             // Blit fallback: direct copy without effects
             VkImageMemoryBarrier barriers[2]{};

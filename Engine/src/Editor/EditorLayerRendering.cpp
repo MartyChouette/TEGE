@@ -1037,6 +1037,29 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
 
     if (UI::SectionHeader("Post Processing", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::TextDisabled("Bloom, color grading, film grain, depth of field, screen-space effects");
+
+        // The game view silently skips the whole post chain when the active
+        // camera opts out — without this warning every control below is an
+        // inert no-op and nothing says why (2026-08-07 bloom hunt).
+        if (m_World) {
+            auto activeCam = ECS::CameraManager::GetActiveCamera(m_World);
+            if (activeCam != ECS::INVALID_ENTITY) {
+                auto* cc = m_World->GetComponent<ECS::CameraComponent>(activeCam);
+                if (cc && !cc->enablePostProcessing) {
+                    ImGui::PushTextWrapPos();
+                    ImGui::TextColored(ImVec4(0.9f, 0.6f, 0.2f, 1.0f),
+                        "Post-processing is DISABLED on the active game camera — none of these "
+                        "controls will have any effect. Enable it on the Camera component.");
+                    ImGui::PopTextWrapPos();
+                    if (ImGui::SmallButton("Enable on active camera")) {
+                        cc->enablePostProcessing = true;
+                        MarkDirty();
+                    }
+                    ImGui::Spacing();
+                }
+            }
+        }
+
         auto& settings = m_PostProcessing->GetSettings();
         bool hasDepth = m_PostProcessing->IsDepthSourceReady();
 
@@ -2487,6 +2510,8 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
         bool rtSupported = m_RenderSystem->IsRayTracingSupported();
         if (UI::SectionHeader("Ray Tracing")) {
             ImGui::TextDisabled("Hardware-accelerated shadows, reflections, AO, GI, path tracing");
+            ImGui::TextColored(ImVec4(0.82f, 0.67f, 0.2f, 1.0f), "Experimental");
+            ImGui::SetItemTooltip("Ray tracing and path tracing are experimental in 0.9.7.\nExpect visual glitches and performance swings while they stabilize.");
             if (rtSupported) {
                 ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "Supported");
             } else {

@@ -325,6 +325,8 @@ int main(int argc, char* argv[]) {
         std::string flag = argv[i];
         if (flag == "--play") {
             Enjin::Editor::EditorLayer::s_AutoPlayOnLaunch = true;
+        } else if (flag == "--play-cycle" && i + 1 < argc && argv[i + 1]) {
+            Enjin::Editor::EditorLayer::s_PlayCycleFrames = std::atoi(argv[++i]);
         } else if (flag == "--compute-skinning") {
             Enjin::Editor::EditorLayer::s_ComputeSkinningOnLaunch = true;
         } else if (flag == "--golden" && i + 1 < argc && argv[i + 1]) {
