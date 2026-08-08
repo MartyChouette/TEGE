@@ -794,6 +794,10 @@ public:
     void EnsureStorageCacheFresh();
 private:
     u32 m_CachedStorageEpoch = 0;  // epoch captured at last RefreshStorageCache
+    // Entities whose GPU buffers need (re)building — processed in
+    // FlushPendingChanges (pre-recording). OnEntityAdded queues here instead of
+    // building inline, which destroyed live buffers under the recording frame.
+    std::vector<Entity> m_PendingBufferSetups;
     ComponentStorage<TransformComponent>* m_CachedTransformStorage = nullptr;
     ComponentStorage<MeshComponent>* m_CachedMeshStorage = nullptr;
     ComponentStorage<MaterialComponent>* m_CachedMaterialStorage = nullptr;

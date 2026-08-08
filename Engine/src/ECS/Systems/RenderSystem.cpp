@@ -3715,6 +3715,27 @@ void RenderSystem::FlushPendingChanges() {
         FlushSceneClear();
     }
 
+    // Deferred per-entity buffer setup. OnEntityAdded fires for EVERY
+    // AddComponent — including from inspector UI during the RENDER phase —
+    // and building buffers there Invalidate()s the entity's LIVE GPU buffers
+    // while the recording frame still references them (instant crash on
+    // skinned meshes: "add controller to FBX" 2026-08-07). Deferring here
+    // (pre-recording, the one safe home) also coalesces the ~6 redundant
+    // rebuilds per entity during scene loads into one.
+    if (!m_PendingBufferSetups.empty()) {
+        // Dedup — scene loads queue the same entity once per component
+        std::sort(m_PendingBufferSetups.begin(), m_PendingBufferSetups.end());
+        m_PendingBufferSetups.erase(
+            std::unique(m_PendingBufferSetups.begin(), m_PendingBufferSetups.end()),
+            m_PendingBufferSetups.end());
+        for (Entity e : m_PendingBufferSetups) {
+            if (m_World && m_World->IsValid(e)) {
+                SetupEntityBuffers(e);
+            }
+        }
+        m_PendingBufferSetups.clear();
+    }
+
     // Per-frame material SSBO reset. Each frame-in-flight has its OWN material
     // buffer, so the SSBO must be (re)built once per frame for the current
     // frame's buffer (cheap cached re-upload when clean). Update() also resets
@@ -5976,7 +5997,11 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
 }
 
 void RenderSystem::OnEntityAdded(Entity entity) {
-    SetupEntityBuffers(entity);
+    // DO NOT build buffers here: this fires for every AddComponent, including
+    // from inspector UI mid-recording — rebuilding destroys the entity's live
+    // GPU buffers under the in-flight frame (skinned meshes crashed on
+    // "add controller"). Deferred to FlushPendingChanges (pre-recording).
+    m_PendingBufferSetups.push_back(entity);
 
     // Invalidate scene composition cache (new entity may change 2D/3D classification)
     m_SceneComposition.dirty = true;
