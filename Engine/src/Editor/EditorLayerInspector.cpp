@@ -1131,14 +1131,28 @@ void EditorLayer::DrawInspectorPanel() {
         // — paused/stopped editing still captures).
         const bool propUndoEligible = !m_PlayMode.IsPlaying();
         if (propUndoEligible && !m_PropUndoEditing) {
-            if (vwsCapturing) {
-                m_PropUndoBaseline = vwsBeforeSnapshot;  // reuse, don't serialize twice
-            } else {
-                m_PropUndoBaseline = Scene::SceneSerializer::SerializeEntityToString(
-                    m_World, m_PrimarySelected, /*includeVertexData=*/false);
+            // Refresh the baseline ONLY when something could have changed the
+            // entity: selection switch, an undo/redo, or a half-second
+            // heartbeat. Serializing the whole entity every quiet frame
+            // tanked editor FPS whenever a heavy entity was selected — an
+            // animated FBX carries megabytes of clip keyframes per snapshot
+            // (Marty, 2026-08-07: "selecting an FBX slows its anim fps").
+            const bool needRefresh =
+                m_PropUndoBaselineEntity != m_PrimarySelected ||
+                m_PropUndoStackAtSessionStart != m_UndoRedo.GetUndoCount() ||
+                (++m_PropUndoRefreshTick >= 30) ||
+                vwsCapturing;  // VWS capture serialized this frame anyway — reuse is free
+            if (needRefresh) {
+                m_PropUndoRefreshTick = 0;
+                if (vwsCapturing) {
+                    m_PropUndoBaseline = vwsBeforeSnapshot;  // reuse, don't serialize twice
+                } else {
+                    m_PropUndoBaseline = Scene::SceneSerializer::SerializeEntityToString(
+                        m_World, m_PrimarySelected, /*includeVertexData=*/false);
+                }
+                m_PropUndoBaselineEntity = m_PrimarySelected;
+                m_PropUndoStackAtSessionStart = m_UndoRedo.GetUndoCount();
             }
-            m_PropUndoBaselineEntity = m_PrimarySelected;
-            m_PropUndoStackAtSessionStart = m_UndoRedo.GetUndoCount();
         }
 
         // Entity name (editable)

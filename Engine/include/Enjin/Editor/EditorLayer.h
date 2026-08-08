@@ -1192,6 +1192,7 @@ private:
     // scripts) are adopted silently — only widget interaction creates history.
     bool m_PropUndoEditing = false;
     ECS::Entity m_PropUndoBaselineEntity = ECS::INVALID_ENTITY;
+    i32 m_PropUndoRefreshTick = 0;   // frames since last baseline refresh (heavy-entity throttle)
     std::string m_PropUndoBaseline;
     u32 m_PropUndoStackAtSessionStart = 0;
 
