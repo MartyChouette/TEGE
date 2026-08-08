@@ -863,24 +863,20 @@ pkg-config --modversion glfw3</code></pre>
       </thead>
       <tbody>
         <tr>
+          <td><strong>Flagship</strong></td>
+          <td>Coin Rush</td>
+        </tr>
+        <tr>
           <td><strong>Foundations</strong></td>
-          <td>Blank, 2D Platformer, 2D Top-Down Action, 3D Third Person, 3D First Person</td>
+          <td>Blank, Components Only, Script Only, Stress Test, 2D Platformer, 3D Third Person, 3D First Person</td>
         </tr>
         <tr>
           <td><strong>Genre Showcases</strong></td>
-          <td>Sokoban Puzzle, Survival, RPG Village, Horror, Vehicle Racing, PS1 RPG, Arena Fighter</td>
-        </tr>
-        <tr>
-          <td><strong>Systems Deep-Dives</strong></td>
-          <td>Physics Playground, Dialogue &amp; Narrative, Save System Demo, Visual Scripting, UI Canvas Demo</td>
-        </tr>
-        <tr>
-          <td><strong>Retro &amp; Flash</strong></td>
-          <td>Point &amp; Click, Bullet Hell, Idle/Clicker</td>
+          <td>Dialogue &amp; Narrative, Point &amp; Click, Idle/Clicker, 3D Isometric, Team Sports, Flower Garden</td>
         </tr>
         <tr>
           <td><strong>Advanced</strong></td>
-          <td>Planet Gravity, Dungeon Crawler, Accessibility Menu</td>
+          <td>Planet Gravity, Accessibility Demo</td>
         </tr>
       </tbody>
     </table>
@@ -14410,9 +14406,10 @@ string LoadProgress() {
   </div>
 
   <p>
-    The <strong>Arena Fighter</strong> template demonstrates 2-player
-    splitscreen with per-player cameras, health, stamina, and arena walls. The
-    same technique scales to 4-player by adjusting viewport fields accordingly.
+    For 2-player splitscreen, give each player its own camera with a half-screen
+    viewport, plus per-player health and controllers bound to separate gamepad
+    indices. The same technique scales to 4-player by adjusting viewport fields
+    accordingly.
   </p>
 </section>
 
@@ -14897,11 +14894,27 @@ void MySystem::Render() {
   <h2>Appendix A: Templates Reference</h2>
 
   <p>
-    TEGE provides 23 built-in startup templates organized into 5 categories.
-    When you create a new project, the template selector offers these starting
-    points. Each template creates the appropriate entities (ground, lights,
-    player, camera) and pre-configures component values for its genre.
+    TEGE provides 16 built-in startup templates. When you create a new project,
+    the template selector offers these starting points. Each template creates
+    the appropriate entities (ground, lights, player, camera) and
+    pre-configures component values for its genre.
   </p>
+
+  <h3 id="templates-flagship">Flagship</h3>
+
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Template</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Coin Rush</strong></td><td>Complete winnable 3D collectathon: collect coins, dodge spikes, reach the portal. HUD, win/lose states.</td></tr>
+      </tbody>
+    </table>
+  </div>
 
   <h3 id="templates-foundations">Foundations</h3>
 
@@ -14915,8 +14928,10 @@ void MySystem::Render() {
       </thead>
       <tbody>
         <tr><td><strong>Blank</strong></td><td>Empty scene with directional light, procedural skybox, and FXAA.</td></tr>
+        <tr><td><strong>Components Only</strong></td><td>A winnable mini-game built with zero code, entirely from Inspector components.</td></tr>
+        <tr><td><strong>Script Only</strong></td><td>The same mini-game with all logic in one AngelScript file, <code>scripts/GameScript.as</code>.</td></tr>
+        <tr><td><strong>Stress Test</strong></td><td>Performance benchmark: 64 falling rigidbodies and 16 point lights.</td></tr>
         <tr><td><strong>2D Platformer</strong></td><td>Side-scrolling with wall jump, floating platforms, coin tween, torch particles.</td></tr>
-        <tr><td><strong>2D Top-Down Action</strong></td><td>Overhead 2D with dash, health, AI patrol enemy, health pickup.</td></tr>
         <tr><td><strong>3D Third Person</strong></td><td>Over-the-shoulder camera with shadows, obstacle cubes, point light, bloom.</td></tr>
         <tr><td><strong>3D First Person</strong></td><td>FPS camera in an L-shaped corridor with warm point light and vignette.</td></tr>
       </tbody>
@@ -14934,51 +14949,12 @@ void MySystem::Render() {
         </tr>
       </thead>
       <tbody>
-        <tr><td><strong>Sokoban Puzzle</strong></td><td>Pushable crates with grid snap, 3 goal plates, switch door, top-down 3D camera.</td></tr>
-        <tr><td><strong>Survival</strong></td><td>Temperature zones, weather zones, campfire particles, stamina, fog, hazard zone.</td></tr>
-        <tr><td><strong>RPG Village</strong></td><td>NPC dialogue, chest pickup, house/fences, lantern point light.</td></tr>
-        <tr><td><strong>Horror</strong></td><td>Flashlight (spot light with follow), fog, dark ambient, collectible notes, door switch.</td></tr>
-        <tr><td><strong>Vehicle Racing</strong></td><td>VehicleController with chase camera, track barriers, checkpoint/finish goal zones, cinematic camera.</td></tr>
-        <tr><td><strong>PS1 RPG</strong></td><td>Retro effects (pixelation, dither, color quantization, 320x240), flat shading, save point with magic particles.</td></tr>
-        <tr><td><strong>Arena Fighter</strong></td><td>2-player splitscreen with per-player cameras, health + stamina, arena walls.</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h3 id="templates-systems">Systems Deep-Dives</h3>
-
-  <div class="table-wrapper">
-    <table>
-      <thead>
-        <tr>
-          <th>Template</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr><td><strong>Physics Playground</strong></td><td>Ramp, 5 rigidbodies (spheres/cubes/capsule), gravity zone (point mode), conveyor, moving platform.</td></tr>
         <tr><td><strong>Dialogue &amp; Narrative</strong></td><td>3 NPCs with dialogue, quest state entity, dialogue box component, branching conversation notes.</td></tr>
-        <tr><td><strong>Save System Demo</strong></td><td>3-tier persistence demo: RunState collectibles, SceneState checkpoint, MetaProgression stats, save/load menu.</td></tr>
-        <tr><td><strong>Visual Scripting</strong></td><td>3 entities with VisualScriptComponent, switch, particle effect, guide notes for node editor.</td></tr>
-        <tr><td><strong>UI Canvas Demo</strong></td><td>UICanvasComponent, HUD health bar widget, guide notes for the UI editor.</td></tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h3 id="templates-retro">Retro &amp; Flash</h3>
-
-  <div class="table-wrapper">
-    <table>
-      <thead>
-        <tr>
-          <th>Template</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
         <tr><td><strong>Point &amp; Click</strong></td><td>Adventure game with background, 3 click hotspots, inventory UI canvas, dialogue descriptions.</td></tr>
-        <tr><td><strong>Bullet Hell</strong></td><td>Fast top-down 2D, enemy spawner with particles, bullet pool, boundary walls.</td></tr>
         <tr><td><strong>Idle/Clicker</strong></td><td>Click target with scale tween feedback, UI canvas, MetaProgression save data.</td></tr>
+        <tr><td><strong>3D Isometric</strong></td><td>45-degree CRPG-style camera with player setup.</td></tr>
+        <tr><td><strong>Team Sports</strong></td><td>3D soccer/basketball with two teams, ball physics, and goal scoring.</td></tr>
+        <tr><td><strong>Flower Garden</strong></td><td>Procedural flower with pluckable petals and scoring. Relaxing nature sim.</td></tr>
       </tbody>
     </table>
   </div>
@@ -14995,8 +14971,7 @@ void MySystem::Render() {
       </thead>
       <tbody>
         <tr><td><strong>Planet Gravity</strong></td><td>Spherical planet with point gravity zone, surface-aligned controller, dark space skybox.</td></tr>
-        <tr><td><strong>Dungeon Crawler</strong></td><td>Grid-based FPS with snap turns, L-shaped corridor walls, skeleton enemy, treasure, torch lights.</td></tr>
-        <tr><td><strong>Accessibility Menu</strong></td><td>In-game accessibility settings: subtitle toggle + size, colorblind toggle, reduced motion, input sensitivity. All controls use UICanvas focus navigation.</td></tr>
+        <tr><td><strong>Accessibility Demo</strong></td><td>Live in-game accessibility settings: colorblind modes, font scale, dyslexia-friendly text, screen reader announcements, subtitles, reduced motion. All controls use UICanvas focus navigation and apply immediately. Also the browser demo on the website.</td></tr>
       </tbody>
     </table>
   </div>

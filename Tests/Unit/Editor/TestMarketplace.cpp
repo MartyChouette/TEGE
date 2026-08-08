@@ -18,11 +18,12 @@ ENJIN_TEST(CatalogIntegrity, CatalogIsNotEmpty) {
     ENJIN_EXPECT_GT(mp.GetCatalog().size(), (size_t)0);
 }
 
-ENJIN_TEST(CatalogIntegrity, Exactly48Entries) {
-    // 48 since the four Flash templates were removed in 0.9.6
+ENJIN_TEST(CatalogIntegrity, Exactly16Entries) {
+    // 16 since the 2026-08-07 roster cut: the catalog now mirrors the
+    // project hub's 16 built-in templates exactly (same ids)
     TemplateMarketplace mp;
     mp.Initialize("");
-    ENJIN_EXPECT_EQ(mp.GetCatalog().size(), (size_t)48);
+    ENJIN_EXPECT_EQ(mp.GetCatalog().size(), (size_t)16);
 }
 
 ENJIN_TEST(CatalogIntegrity, AllIDsAreUnique) {
@@ -96,22 +97,24 @@ ENJIN_TEST(CatalogIntegrity, AccentColorsAreNormalized) {
 // Maturity Tiers
 // ===========================================================================
 
-ENJIN_TEST(MaturityTier, AllTiersRepresented) {
+ENJIN_TEST(MaturityTier, OnlyShippingTiersPresent) {
+    // The 16-template roster ships only Stable and Beta entries —
+    // Preview/Experimental tiers were cut with the old 48-entry catalog
     TemplateMarketplace mp;
     mp.Initialize("");
-    bool hasStable = false, hasBeta = false, hasPreview = false, hasExperimental = false;
+    bool hasStable = false, hasBeta = false;
     for (auto& e : mp.GetCatalog()) {
         switch (e.maturity) {
             case MaturityTier::Stable:       hasStable = true; break;
             case MaturityTier::Beta:         hasBeta = true; break;
-            case MaturityTier::Preview:      hasPreview = true; break;
-            case MaturityTier::Experimental: hasExperimental = true; break;
+            case MaturityTier::Preview:
+            case MaturityTier::Experimental:
+                ENJIN_EXPECT_TRUE(false); // no Preview/Experimental in roster
+                break;
         }
     }
     ENJIN_EXPECT_TRUE(hasStable);
     ENJIN_EXPECT_TRUE(hasBeta);
-    ENJIN_EXPECT_TRUE(hasPreview);
-    ENJIN_EXPECT_TRUE(hasExperimental);
 }
 
 ENJIN_TEST(MaturityTier, GetMaturityNameReturnsNonNull) {
@@ -156,11 +159,11 @@ ENJIN_TEST(QualityNames, GetCategoryNameReturnsNonNull) {
 ENJIN_TEST(SearchFilter, SearchByNameFindsMatch) {
     TemplateMarketplace mp;
     mp.Initialize("");
-    auto results = mp.Search("Empty Canvas");
+    auto results = mp.Search("Coin Rush");
     ENJIN_EXPECT_GE(results.size(), (size_t)1);
     bool found = false;
     for (auto* r : results) {
-        if (r->id == "empty_canvas") found = true;
+        if (r->id == "coinrush") found = true;
     }
     ENJIN_EXPECT_TRUE(found);
 }
@@ -168,7 +171,7 @@ ENJIN_TEST(SearchFilter, SearchByNameFindsMatch) {
 ENJIN_TEST(SearchFilter, SearchByTagFindsMatch) {
     TemplateMarketplace mp;
     mp.Initialize("");
-    auto results = mp.Search("roguelike");
+    auto results = mp.Search("platformer");
     ENJIN_EXPECT_GE(results.size(), (size_t)1);
 }
 
@@ -183,7 +186,7 @@ ENJIN_TEST(SearchFilter, FilterByCategoryStarter) {
     TemplateMarketplace mp;
     mp.Initialize("");
     auto results = mp.FilterByCategory("Starter");
-    ENJIN_EXPECT_GE(results.size(), (size_t)3); // Empty Canvas, Hello Sprite, Physics Playground
+    ENJIN_EXPECT_GE(results.size(), (size_t)3); // Blank, Components Only, Script Only
     for (auto* r : results) {
         ENJIN_EXPECT_STR_EQ(r->category.c_str(), "Starter");
     }
@@ -199,12 +202,12 @@ ENJIN_TEST(SearchFilter, FilterByCategoryAll) {
 ENJIN_TEST(SearchFilter, FilterAndSearchCombines) {
     TemplateMarketplace mp;
     mp.Initialize("");
-    auto results = mp.FilterAndSearch("ray", "Advanced");
-    bool foundRT = false;
+    auto results = mp.FilterAndSearch("gravity", "Advanced");
+    bool foundPlanet = false;
     for (auto* r : results) {
-        if (r->id == "ray_tracing_showcase") foundRT = true;
+        if (r->id == "planetgravity") foundPlanet = true;
     }
-    ENJIN_EXPECT_TRUE(foundRT);
+    ENJIN_EXPECT_TRUE(foundPlanet);
 }
 
 // ===========================================================================
@@ -214,9 +217,9 @@ ENJIN_TEST(SearchFilter, FilterAndSearchCombines) {
 ENJIN_TEST(FindById, ExistingIdReturnsEntry) {
     TemplateMarketplace mp;
     mp.Initialize("");
-    auto* entry = mp.FindById("empty_canvas");
+    auto* entry = mp.FindById("coinrush");
     ENJIN_ASSERT_NOT_NULL(entry);
-    ENJIN_EXPECT_STR_EQ(entry->name.c_str(), "Empty Canvas");
+    ENJIN_EXPECT_STR_EQ(entry->name.c_str(), "Coin Rush");
 }
 
 ENJIN_TEST(FindById, NonExistentIdReturnsNull) {

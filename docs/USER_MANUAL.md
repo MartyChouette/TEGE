@@ -296,7 +296,13 @@ FBX files (including Mixamo characters and animations) are imported via the Assi
 
 ## 4. Templates
 
-Enjin ships 15 curated startup templates in the Project Hub selector. (More exist in the codebase but are disabled pending a quality pass, so the tables below may list templates that are not currently selectable.) When you create a new project or scene, the template selector offers these options. All templates start with a minimal 5-panel layout (Hierarchy, Inspector, Viewport, Console, Asset Browser) for a clean first impression:
+Enjin ships 16 built-in templates in the Project Hub selector. When you create a new project or scene, the template selector offers these options. All templates start with a minimal 5-panel layout (Hierarchy, Inspector, Viewport, Console, Asset Browser) for a clean first impression:
+
+**Flagship**
+
+| Template | Description |
+|----------|-------------|
+| **Coin Rush** | Complete winnable 3D collectathon: collect coins, dodge spikes, reach the portal. HUD, win/lose states. |
 
 **Foundations**
 
@@ -305,8 +311,8 @@ Enjin ships 15 curated startup templates in the Project Hub selector. (More exis
 | **Blank** | Empty scene with directional light, procedural skybox, and FXAA. |
 | **Components Only** | A winnable mini-game built with zero code, entirely from Inspector components. |
 | **Script Only** | The same mini-game with all logic in one AngelScript file, `scripts/GameScript.as`. |
+| **Stress Test** | Performance benchmark: 64 falling rigidbodies and 16 point lights. |
 | **2D Platformer** | Side-scrolling with wall jump, floating platforms, coin tween, torch particles. |
-| **2D Top-Down Action** | Overhead 2D with dash, health, AI patrol enemy, health pickup. |
 | **3D Third Person** | Over-the-shoulder camera with shadows, obstacle cubes, point light, bloom. |
 | **3D First Person** | FPS camera in an L-shaped corridor with warm point light and vignette. |
 
@@ -314,39 +320,19 @@ Enjin ships 15 curated startup templates in the Project Hub selector. (More exis
 
 | Template | Description |
 |----------|-------------|
-| **Sokoban Puzzle** | Pushable crates with grid snap, 3 goal plates, switch door, top-down 3D camera. |
-| **Survival** | Temperature zones, weather zones, campfire particles, stamina, fog, hazard zone. |
-| **RPG Village** | NPC dialogue, chest pickup, house/fences, lantern point light. |
-| **Horror** | Flashlight (spot light with follow), fog, dark ambient, collectible notes, door switch. |
-| **Vehicle Racing** | VehicleController with chase camera, track barriers, checkpoint/finish goal zones, cinematic camera. |
-| **PS1 RPG** | Retro effects (pixelation, dither, color quantization, 320x240), flat shading, save point with magic particles. |
-| **Arena Fighter** | 2-player splitscreen with per-player cameras, health + stamina, arena walls. |
-
-**Systems Deep-Dives**
-
-| Template | Description |
-|----------|-------------|
-| **Physics Playground** | Ramp, 5 rigidbodies (spheres/cubes/capsule), gravity zone (point mode), conveyor, moving platform. |
 | **Dialogue & Narrative** | 3 NPCs with dialogue, quest state entity, dialogue box component, branching conversation notes. |
-| **Save System Demo** | 3-tier persistence demo: RunState collectibles, SceneState checkpoint, MetaProgression stats, save/load menu. |
-| **Visual Scripting** | 3 entities with VisualScriptComponent, switch, particle effect, guide notes for node editor. |
-| **UI Canvas Demo** | UICanvasComponent, HUD health bar widget, guide notes for the UI editor. |
-
-**Retro & Flash**
-
-| Template | Description |
-|----------|-------------|
 | **Point & Click** | Adventure game with background, 3 click hotspots, inventory UI canvas, dialogue descriptions. |
-| **Bullet Hell** | Fast top-down 2D, enemy spawner with particles, bullet pool, boundary walls. |
 | **Idle/Clicker** | Click target with scale tween feedback, UI canvas, MetaProgression save data. |
+| **3D Isometric** | 45-degree CRPG-style camera with player setup. |
+| **Team Sports** | 3D soccer/basketball with two teams, ball physics, and goal scoring. |
+| **Flower Garden** | Procedural flower with pluckable petals and scoring. Relaxing nature sim. |
 
 **Advanced**
 
 | Template | Description |
 |----------|-------------|
 | **Planet Gravity** | Spherical planet with point gravity zone, surface-aligned controller, dark space skybox. |
-| **Dungeon Crawler** | Grid-based FPS with snap turns, L-shaped corridor walls, skeleton enemy, treasure, torch lights. |
-| **Accessibility Menu** | In-game accessibility settings: subtitle toggle + size, colorblind toggle, reduced motion, input sensitivity. All controls use UICanvas focus navigation (Tab/Arrow/Gamepad). |
+| **Accessibility Demo** | Live in-game accessibility settings: colorblind modes, font scale, dyslexia-friendly text, screen reader announcements, subtitles, reduced motion. All controls use UICanvas focus navigation (Tab/Arrow/Gamepad) and change the running game immediately. This scene is also the browser demo on the website. |
 
 Each template creates the appropriate entities (ground, lights, player entity with controller, camera) and pre-configures component values for that genre. Every template includes NotesComponent hints explaining the featured systems.
 
@@ -2693,7 +2679,7 @@ Enjin supports splitscreen rendering for local multiplayer games.
 
 ### Example: 4-Player Setup
 
-The **4P Racing** template demonstrates splitscreen with four viewport cameras and four vehicle controllers, each bound to a different gamepad index.
+For a 4-player splitscreen, create four cameras with quadrant viewports and four controllers, each bound to a different gamepad index.
 
 For a 4-player quadrant layout:
 
