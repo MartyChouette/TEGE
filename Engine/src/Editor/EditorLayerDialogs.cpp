@@ -2119,8 +2119,9 @@ void EditorLayer::DrawUnsavedChangesDialog() {
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     // Auto-resize fits the text, but enforce a comfortable minimum so the
-    // exit prompt isn't a cramped strip at high UI scales.
-    const f32 exitScale = m_EditorSettings.uiScale;
+    // exit prompt isn't a cramped strip at high UI scales (half-weight scale —
+    // fonts already grow with uiScale).
+    const f32 exitScale = 1.0f + (m_EditorSettings.uiScale - 1.0f) * 0.5f;
     ImGui::SetNextWindowSizeConstraints(ImVec2(440.0f * exitScale, 0.0f),
                                         ImVec2(FLT_MAX, FLT_MAX));
     if (ImGui::BeginPopupModal("Unsaved Changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
@@ -2631,12 +2632,14 @@ void EditorLayer::DrawQuitFeedbackDialog() {
     ImGui::OpenPopup("##QuitFeedback");
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    // Scale with the UI so large ui-scale settings don't cram the content
-    // into a fixed pixel box; clamp to the display so it never overflows.
-    const f32 dlgScale = m_EditorSettings.uiScale;
+    // Scale with the UI so large ui-scale settings don't cram the content into
+    // a fixed pixel box — but at HALF weight (fonts already scale, so full
+    // linear scaling made the dialog comically large at 1.9x), clamped to the
+    // display so it never overflows.
+    const f32 dlgScale = 1.0f + (m_EditorSettings.uiScale - 1.0f) * 0.5f;
     ImVec2 display = ImGui::GetMainViewport()->Size;
-    ImVec2 dlgSize(std::min(760.0f * dlgScale, display.x * 0.92f),
-                   std::min(680.0f * dlgScale, display.y * 0.92f));
+    ImVec2 dlgSize(std::min(760.0f * dlgScale, display.x * 0.85f),
+                   std::min(680.0f * dlgScale, display.y * 0.85f));
     ImGui::SetNextWindowSize(dlgSize);
 
     if (ImGui::BeginPopupModal("##QuitFeedback", nullptr,
