@@ -60,6 +60,29 @@ struct ENJIN_API AnimatorComponent : public IComponent {
     Animation::BlendTree blendTree;
     std::unordered_map<std::string, f32> blendParameters;  // Runtime parameter values
 
+    // Movement-driven playback: the animator switches idle/walk/run/air clips
+    // from the entity's world-space velocity, cross-fading between them. The
+    // importer auto-fills the clip names from the model's animations; empty
+    // clip names disable that state. All part of the Animator — no separate
+    // component to discover.
+    struct MovementDrive {
+        bool enabled = true;
+        std::string idleClip;
+        std::string walkClip;
+        std::string runClip;
+        std::string jumpClip;
+        f32 walkThreshold = 0.05f;  // horizontal units/sec that counts as moving
+        f32 runThreshold = 4.0f;    // horizontal units/sec that counts as running
+        f32 jumpThreshold = 1.5f;   // vertical units/sec that counts as airborne
+        f32 fadeTime = 0.15f;       // cross-fade duration between states
+        // Runtime (not serialized)
+        Math::Vector3 lastPosition = Math::Vector3(0.0f);
+        bool hasLastPosition = false;
+        u8 currentState = 255;      // 255 unset, 0 idle, 1 walk, 2 run, 3 air
+        bool HasAnyClip() const { return !idleClip.empty() || !walkClip.empty(); }
+    };
+    MovementDrive movement;
+
     AnimatorComponent() = default;
 
     // stateMachine holds a raw `SkeletalAnimator*` to its sibling `animator` member.
@@ -72,7 +95,8 @@ struct ENJIN_API AnimatorComponent : public IComponent {
           matricesDirty(other.matricesDirty), showBones(other.showBones),
           selectedBoneIndex(other.selectedBoneIndex), showWeights(other.showWeights),
           weightPreviewBoneIndex(other.weightPreviewBoneIndex), onionSkin(other.onionSkin),
-          blendTree(other.blendTree), blendParameters(other.blendParameters) {
+          blendTree(other.blendTree), blendParameters(other.blendParameters),
+          movement(other.movement) {
         stateMachine.SetAnimator(&animator);
     }
 
@@ -82,7 +106,8 @@ struct ENJIN_API AnimatorComponent : public IComponent {
           selectedBoneIndex(other.selectedBoneIndex), showWeights(other.showWeights),
           weightPreviewBoneIndex(other.weightPreviewBoneIndex),
           onionSkin(std::move(other.onionSkin)), blendTree(std::move(other.blendTree)),
-          blendParameters(std::move(other.blendParameters)) {
+          blendParameters(std::move(other.blendParameters)),
+          movement(std::move(other.movement)) {
         stateMachine.SetAnimator(&animator);
     }
 
@@ -98,6 +123,7 @@ struct ENJIN_API AnimatorComponent : public IComponent {
         onionSkin = other.onionSkin;
         blendTree = other.blendTree;
         blendParameters = other.blendParameters;
+        movement = other.movement;
         stateMachine.SetAnimator(&animator);
         return *this;
     }
@@ -114,6 +140,7 @@ struct ENJIN_API AnimatorComponent : public IComponent {
         onionSkin = std::move(other.onionSkin);
         blendTree = std::move(other.blendTree);
         blendParameters = std::move(other.blendParameters);
+        movement = std::move(other.movement);
         stateMachine.SetAnimator(&animator);
         return *this;
     }

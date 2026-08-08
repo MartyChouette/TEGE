@@ -15,6 +15,7 @@
 #include "Enjin/Animation/Animation.h"
 #include "Enjin/Renderer/MeshSimplifier.h"
 #include "Enjin/Logging/Log.h"
+#include <cctype>
 #include <cfloat>
 #include <cmath>
 #include <cstring>
@@ -2073,11 +2074,40 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
             }
         }
 
-        // Auto-play first animation
+        // Movement-driven animation: match clip names against the standard
+        // locomotion vocabulary (idle/walk/run/jump, case-insensitive substring
+        // — covers "AnimalArmature|Walk", "mixamo.com|Running", etc.) and give
+        // the leader a MovementAnimatorComponent so the model idles when still
+        // and walks/runs/jumps as it moves, with no scripting.
+        std::string clipIdle, clipWalk, clipRun, clipJump, clipFirst;
+        for (const auto& anim : scene.animations) {
+            if (clipFirst.empty()) clipFirst = anim.name;
+            std::string lower = anim.name;
+            std::transform(lower.begin(), lower.end(), lower.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (clipIdle.empty() && lower.find("idle") != std::string::npos) clipIdle = anim.name;
+            if (clipWalk.empty() && lower.find("walk") != std::string::npos) clipWalk = anim.name;
+            if (clipRun.empty()  && (lower.find("run") != std::string::npos ||
+                                     lower.find("gallop") != std::string::npos)) clipRun = anim.name;
+            if (clipJump.empty() && (lower.find("jump") != std::string::npos ||
+                                     lower.find("fall") != std::string::npos)) clipJump = anim.name;
+        }
+        if (!clipIdle.empty() || !clipWalk.empty()) {
+            animComp.movement.idleClip = clipIdle;
+            animComp.movement.walkClip = clipWalk;
+            animComp.movement.runClip = clipRun;
+            animComp.movement.jumpClip = clipJump;
+            ENJIN_LOG_INFO(Asset, "Animator movement drive: idle='%s' walk='%s' run='%s' jump='%s'",
+                clipIdle.c_str(), clipWalk.c_str(), clipRun.c_str(), clipJump.c_str());
+        }
+
+        // Auto-play: prefer the idle clip — playing whatever is alphabetically
+        // first meant every dropped-in animal led with its attack animation.
         if (!scene.animations.empty()) {
-            animComp.animator.Play(scene.animations[0].name);
+            const std::string& startClip = !clipIdle.empty() ? clipIdle : clipFirst;
+            animComp.animator.Play(startClip);
             ENJIN_LOG_INFO(Asset, "Auto-playing animation '%s' on entity '%s' (leader; drives all co-skeleton meshes)",
-                scene.animations[0].name.c_str(), name.c_str());
+                startClip.c_str(), name.c_str());
         }
         } // end if (isLeader)
 

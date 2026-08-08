@@ -1939,6 +1939,49 @@ void EditorLayer::DrawInspectorPanel() {
                     auto& animator = animComp->animator;
                     const auto& animations = animator.GetAnimations();
 
+                    // Empty animator guidance: imported models keep their animator
+                    // (with all the FBX clips) on the SKINNED MESH entity, which is
+                    // a child of the import root — and often shares its name.
+                    // Adding a fresh Animator to the root silently does nothing, so
+                    // point at the entity that actually owns the animations.
+                    if (animations.empty()) {
+                        ImGui::PushTextWrapPos();
+                        ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.3f, 1.0f),
+                            "This animator has no animation clips.");
+                        ImGui::PopTextWrapPos();
+
+                        ECS::Entity clipOwner = ECS::INVALID_ENTITY;
+                        std::vector<ECS::Entity> walk;
+                        walk.push_back(m_PrimarySelected);
+                        for (usize wi = 0; wi < walk.size() && clipOwner == ECS::INVALID_ENTITY; ++wi) {
+                            for (ECS::Entity child : ECS::GetChildren(m_World, walk[wi])) {
+                                auto* ca = m_World->GetComponent<ECS::AnimatorComponent>(child);
+                                if (ca && !ca->animator.GetAnimations().empty()) {
+                                    clipOwner = child;
+                                    break;
+                                }
+                                walk.push_back(child);
+                            }
+                        }
+                        if (clipOwner != ECS::INVALID_ENTITY) {
+                            std::string ownerName = "child entity";
+                            if (auto* nc = m_World->GetComponent<ECS::NameComponent>(clipOwner)) {
+                                ownerName = nc->name;
+                            }
+                            ImGui::PushTextWrapPos();
+                            ImGui::Text("This model's imported animations live on '%s'.", ownerName.c_str());
+                            ImGui::PopTextWrapPos();
+                            if (ImGui::SmallButton("Select It")) {
+                                SelectEntity(clipOwner);
+                            }
+                        } else {
+                            ImGui::PushTextWrapPos();
+                            ImGui::TextDisabled("Animators need a skinned mesh with a skeleton. "
+                                "Imported FBX models get one automatically on their mesh entity.");
+                            ImGui::PopTextWrapPos();
+                        }
+                    }
+
                     // Current animation name (read-only)
                     const auto& currentName = animator.GetCurrentAnimationName();
                     ImGui::Text("Current: %s", currentName.empty() ? "(none)" : currentName.c_str());
@@ -2393,6 +2436,46 @@ void EditorLayer::DrawInspectorPanel() {
                         };
 
                         drawBoneTree(-1); // Start from root bones (parentIndex == -1)
+                        ImGui::TreePop();
+                    }
+
+                    // Movement drive: the animator switches clips from the
+                    // entity's world velocity — idle standing still, walk/run by
+                    // speed, jump while airborne. Auto-filled by the importer.
+                    ImGui::Separator();
+                    if (ImGui::TreeNodeEx("Movement##Animator", ImGuiTreeNodeFlags_DefaultOpen)) {
+                        auto& mova = animComp->movement;
+                        ImGui::Checkbox("Play By Movement", &mova.enabled);
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Automatically play these clips as the entity moves:\n"
+                                              "idle when still, walk/run by speed, jump in the air.\n"
+                                              "Leave a clip empty to skip that state.");
+                        }
+
+                        // Clip pickers: combo over the animator's clips + "(none)"
+                        auto clipCombo = [&](const char* label, std::string& target) {
+                            std::string preview = target.empty() ? "(none)" : target;
+                            if (ImGui::BeginCombo(label, preview.c_str())) {
+                                if (ImGui::Selectable("(none)", target.empty())) target.clear();
+                                for (const auto& [animName, animClip] : animations) {
+                                    (void)animClip;
+                                    if (ImGui::Selectable(animName.c_str(), target == animName)) {
+                                        target = animName;
+                                        mova.currentState = 255;  // re-evaluate state with new clip
+                                    }
+                                }
+                                ImGui::EndCombo();
+                            }
+                        };
+                        clipCombo("Idle##MovA", mova.idleClip);
+                        clipCombo("Walk##MovA", mova.walkClip);
+                        clipCombo("Run##MovA", mova.runClip);
+                        clipCombo("Jump##MovA", mova.jumpClip);
+
+                        ImGui::DragFloat("Walk Speed##MovA", &mova.walkThreshold, 0.01f, 0.01f, 2.0f, "%.2f u/s");
+                        ImGui::DragFloat("Run Speed##MovA", &mova.runThreshold, 0.1f, 0.5f, 20.0f, "%.1f u/s");
+                        ImGui::DragFloat("Air Speed##MovA", &mova.jumpThreshold, 0.1f, 0.2f, 20.0f, "%.1f u/s");
+                        ImGui::DragFloat("Fade Time##MovA", &mova.fadeTime, 0.01f, 0.0f, 1.0f, "%.2f s");
                         ImGui::TreePop();
                     }
 

@@ -41,9 +41,11 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Math/Math.h"
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <emscripten.h>
 
@@ -1358,6 +1360,43 @@ void RenderSystem::Update(f32 deltaTime) {
         if (const auto* skel = ac->animator.GetSkeleton()) {
             if (m_FallbackAnimatorEntity == INVALID_ENTITY) m_FallbackAnimatorEntity = animEntity;
             m_SkeletonToAnimator[skel] = animEntity;
+        }
+
+        // Movement-driven playback (web twin of the Vulkan-path block): switch
+        // idle/walk/run/air from world-space velocity, cross-faded. The clip
+        // switch happens here; the animator itself still ticks in web_main.
+        auto& mova = ac->movement;
+        if (mova.enabled && mova.HasAnyClip() && deltaTime > 0.0001f) {
+            Math::Matrix4 wm = ComputeWorldMatrix(m_World, animEntity);
+            Math::Vector3 wpos(wm.m[12], wm.m[13], wm.m[14]);
+            if (!mova.hasLastPosition) {
+                mova.lastPosition = wpos;
+                mova.hasLastPosition = true;
+            } else {
+                Math::Vector3 delta = wpos - mova.lastPosition;
+                mova.lastPosition = wpos;
+                f32 horizSpeed = Math::Vector3(delta.x, 0.0f, delta.z).Length() / deltaTime;
+                f32 vertSpeed = std::abs(delta.y) / deltaTime;
+
+                u8 state = 0;
+                if (vertSpeed > mova.jumpThreshold && !mova.jumpClip.empty()) state = 3;
+                else if (horizSpeed > mova.runThreshold && !mova.runClip.empty()) state = 2;
+                else if (horizSpeed > mova.walkThreshold && !mova.walkClip.empty()) state = 1;
+
+                if (state != mova.currentState) {
+                    const std::string* clip = nullptr;
+                    switch (state) {
+                        case 3: clip = &mova.jumpClip; break;
+                        case 2: clip = &mova.runClip;  break;
+                        case 1: clip = &mova.walkClip; break;
+                        default: clip = &mova.idleClip; break;
+                    }
+                    if (!clip->empty()) {
+                        ac->animator.CrossFade(*clip, mova.fadeTime);
+                    }
+                    mova.currentState = state;
+                }
+            }
         }
     }
 
@@ -4080,6 +4119,46 @@ void RenderSystem::Update(f32 deltaTime) {
             if (m_FallbackAnimatorEntity == INVALID_ENTITY) m_FallbackAnimatorEntity = entity;
             // Index by shared skeleton so follower meshes resolve THIS animator (one clock).
             m_SkeletonToAnimator[skel] = entity;
+        }
+
+        // Movement-driven playback (Animator "movement" block): pick
+        // idle/walk/run/air from the entity's WORLD-space velocity (parent
+        // chains included — moving the import root drives the skinned child's
+        // state) and cross-fade. The importer auto-fills the clip names.
+        {
+            auto& mova = animComp->movement;
+            if (mova.enabled && mova.HasAnyClip() && deltaTime > 0.0001f) {
+                Math::Matrix4 wm = ComputeWorldMatrix(m_World, entity);
+                Math::Vector3 wpos(wm.m[12], wm.m[13], wm.m[14]);
+                if (!mova.hasLastPosition) {
+                    mova.lastPosition = wpos;
+                    mova.hasLastPosition = true;
+                } else {
+                    Math::Vector3 delta = wpos - mova.lastPosition;
+                    mova.lastPosition = wpos;
+                    f32 horizSpeed = Math::Vector3(delta.x, 0.0f, delta.z).Length() / deltaTime;
+                    f32 vertSpeed = std::abs(delta.y) / deltaTime;
+
+                    u8 state = 0;
+                    if (vertSpeed > mova.jumpThreshold && !mova.jumpClip.empty()) state = 3;
+                    else if (horizSpeed > mova.runThreshold && !mova.runClip.empty()) state = 2;
+                    else if (horizSpeed > mova.walkThreshold && !mova.walkClip.empty()) state = 1;
+
+                    if (state != mova.currentState) {
+                        const std::string* clip = nullptr;
+                        switch (state) {
+                            case 3: clip = &mova.jumpClip; break;
+                            case 2: clip = &mova.runClip;  break;
+                            case 1: clip = &mova.walkClip; break;
+                            default: clip = &mova.idleClip; break;
+                        }
+                        if (!clip->empty()) {
+                            animComp->animator.CrossFade(*clip, mova.fadeTime);
+                        }
+                        mova.currentState = state;
+                    }
+                }
+            }
         }
 
         animComp->Update(deltaTime);

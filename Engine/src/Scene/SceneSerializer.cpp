@@ -6523,6 +6523,21 @@ json SerializeAnimatorComponent(const ECS::AnimatorComponent& animComp) {
     j["speed"] = RF(animator.GetSpeed());
     j["currentAnimation"] = animator.GetCurrentAnimationName();
 
+    // Movement drive (only when configured — keeps clip-less animators compact)
+    if (animComp.movement.HasAnyClip() || !animComp.movement.enabled) {
+        json mv;
+        mv["enabled"] = animComp.movement.enabled;
+        mv["idleClip"] = animComp.movement.idleClip;
+        mv["walkClip"] = animComp.movement.walkClip;
+        mv["runClip"] = animComp.movement.runClip;
+        mv["jumpClip"] = animComp.movement.jumpClip;
+        mv["walkThreshold"] = RF(animComp.movement.walkThreshold);
+        mv["runThreshold"] = RF(animComp.movement.runThreshold);
+        mv["jumpThreshold"] = RF(animComp.movement.jumpThreshold);
+        mv["fadeTime"] = RF(animComp.movement.fadeTime);
+        j["movement"] = mv;
+    }
+
     // Serialize all animation clips
     json animsObj = json::object();
     for (const auto& [name, anim] : animator.GetAnimations()) {
@@ -6683,6 +6698,20 @@ ECS::AnimatorComponent DeserializeAnimatorComponent(const json& j, std::shared_p
     f32 speed = 1.0f;
     if (j.contains("speed")) speed = j["speed"].get<f32>();
     animComp.animator.SetSpeed(speed);
+
+    if (j.contains("movement") && j["movement"].is_object()) {
+        const auto& mv = j["movement"];
+        auto& m = animComp.movement;
+        if (mv.contains("enabled")) m.enabled = mv["enabled"].get<bool>();
+        if (mv.contains("idleClip")) m.idleClip = SafeStr(mv["idleClip"]);
+        if (mv.contains("walkClip")) m.walkClip = SafeStr(mv["walkClip"]);
+        if (mv.contains("runClip")) m.runClip = SafeStr(mv["runClip"]);
+        if (mv.contains("jumpClip")) m.jumpClip = SafeStr(mv["jumpClip"]);
+        if (mv.contains("walkThreshold")) m.walkThreshold = mv["walkThreshold"].get<f32>();
+        if (mv.contains("runThreshold")) m.runThreshold = mv["runThreshold"].get<f32>();
+        if (mv.contains("jumpThreshold")) m.jumpThreshold = mv["jumpThreshold"].get<f32>();
+        if (mv.contains("fadeTime")) m.fadeTime = mv["fadeTime"].get<f32>();
+    }
 
     // Deserialize animation clips
     if (j.contains("animations") && j["animations"].is_object()) {
