@@ -47,20 +47,21 @@ struct AccentColor {
     AccentColor(f32 r_, f32 g_, f32 b_, f32 a_ = 1.0f) : r(r_), g(g_), b(b_), a(a_) {}
 };
 
-// Customizable accent color configuration for the editor UI
+// Customizable accent color configuration for the editor UI.
+// Defaults = the shipped TEGE look: teal accents (Marty's palette, 2026-08-08).
 struct AccentColorConfig {
-    AccentColor button       = {0.22f, 0.27f, 0.24f, 1.00f};
-    AccentColor buttonHover  = {0.30f, 0.38f, 0.32f, 1.00f};
-    AccentColor buttonActive = {0.35f, 0.45f, 0.38f, 1.00f};
-    AccentColor checkMark    = {0.55f, 0.78f, 0.58f, 1.00f};
-    AccentColor sliderGrab   = {0.50f, 0.70f, 0.52f, 1.00f};
-    AccentColor sliderGrabActive = {0.60f, 0.82f, 0.63f, 1.00f};
-    AccentColor resizeGrip   = {0.30f, 0.40f, 0.33f, 0.50f};
-    AccentColor textSelected = {0.35f, 0.50f, 0.38f, 0.50f};
-    AccentColor dragDropTarget = {0.55f, 0.78f, 0.58f, 0.90f};
-    AccentColor tabActive    = {0.25f, 0.33f, 0.28f, 1.00f};
-    AccentColor tabHovered   = {0.35f, 0.45f, 0.38f, 1.00f};
-    bool useCustom = false;  // When false, theme defaults are used
+    AccentColor button       = {0.105f, 0.385f, 0.420f, 1.00f};
+    AccentColor buttonHover  = {0.150f, 0.550f, 0.600f, 1.00f};
+    AccentColor buttonActive = {0.1725f, 0.6325f, 0.690f, 1.00f};
+    AccentColor checkMark    = {0.165f, 0.605f, 0.660f, 1.00f};
+    AccentColor sliderGrab   = {0.135f, 0.495f, 0.540f, 1.00f};
+    AccentColor sliderGrabActive = {0.180f, 0.660f, 0.720f, 1.00f};
+    AccentColor resizeGrip   = {0.090f, 0.330f, 0.360f, 0.50f};
+    AccentColor textSelected = {0.105f, 0.385f, 0.420f, 0.50f};
+    AccentColor dragDropTarget = {0.150f, 0.550f, 0.600f, 0.90f};
+    AccentColor tabActive    = {0.0975f, 0.3575f, 0.390f, 1.00f};
+    AccentColor tabHovered   = {0.1275f, 0.4675f, 0.510f, 1.00f};
+    bool useCustom = true;   // Shipped look uses the teal palette above
 
     static AccentColorConfig DefaultDark();
     static AccentColorConfig DefaultLight();
@@ -78,9 +79,10 @@ struct AccentColorConfig {
 
 // Persistent editor settings (saved to disk as JSON)
 struct EditorSettings {
-    // Visual
-    EditorTheme theme = EditorTheme::Dark;
-    f32 uiScale = 1.0f;          // 0.75 - 2.0
+    // Visual — shipped defaults match the reference TEGE setup (SegaSaturn
+    // theme, large UI scale; accessibility pillar: readable out of the box)
+    EditorTheme theme = EditorTheme::SegaSaturn;
+    f32 uiScale = 1.9f;          // 0.75 - 2.0
 
     // Accent Colors
     AccentColorConfig accentColors;
@@ -181,12 +183,12 @@ struct EditorSettings {
     void AddRecentVisualScriptNode(const std::string& nodeTypeId);
 
     // Layout persistence
-    u32 visiblePanels = 0xFFFFFFFF;   // EditorPanel bitmask - all visible by default
+    u32 visiblePanels = 319;          // EditorPanel bitmask - shipped default panel set
     f32 leftPanelWidth = 0.18f;
     f32 rightPanelWidth = 0.25f;
     f32 bottomPanelHeight = 0.22f;
     u32 gizmoOperation = 0;           // 0=Translate, 1=Rotate, 2=Scale
-    u32 gizmoSpace = 0;               // 0=Local, 1=World
+    u32 gizmoSpace = 1;               // 0=Local, 1=World (shipped default: World)
 
     // Auto-save
     bool autoSaveEnabled = true;
