@@ -63,6 +63,10 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
     // Capture may only START over the viewport (RMB-dragging in the
     // Inspector used to rotate the camera); once captured it persists
     // until release regardless of where the hidden cursor sits.
+    // RMB/MMB owns looking; WASD ONLY translates and must never disturb the
+    // view direction. (An experiment auto-engaging look on WASD re-synced
+    // orientation on every key tap and nudged the view — reverted per Marty,
+    // 2026-08-07: "wasd should just move the cam location".)
     bool wantLook = (Input::IsMouseButtonDown(MouseButton::Right) ||
                      Input::IsMouseButtonDown(MouseButton::Middle)) &&
                     (m_MouseCapturedByUs || m_PointerOverViewport);
@@ -73,11 +77,11 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
             m_MouseCapturedByUs = true;
             SyncFromCamera();
             // Input::SetMouseCaptured resets the delta origin, so the frame
-            // after capture reads a clean 0. One extra warmup frame skips any
-            // straggler delta from the capture transition — the mouse takes
-            // over from the CURRENT view direction, never from wherever the
-            // cursor happened to be.
-            m_LookWarmupFrames = 1;
+            // after capture reads a clean 0. NO warmup frame: eating a frame
+            // of look right as movement starts was the visible hitch when
+            // RMB+WASD land together (UT-fly feel wants zero dead frames);
+            // the 300px spike clamp below still guards capture-warp glitches.
+            m_LookWarmupFrames = 0;
             m_SmoothedLook = Math::Vector2(0.0f, 0.0f);
         } else if (m_LookWarmupFrames > 0) {
             --m_LookWarmupFrames;

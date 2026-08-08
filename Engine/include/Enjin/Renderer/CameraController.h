@@ -108,8 +108,8 @@ private:
     // Feel: frame-rate-independent smoothing. Velocity ramps toward the input
     // direction instead of snapping (instant start/stop felt stiff); the look
     // filter kills per-frame sensor jitter with ~1 frame of lag.
-    f32 m_MoveAccel = 12.0f;        // 1/s — ~150ms to reach speed
-    f32 m_MoveDecel = 16.0f;        // 1/s — slightly quicker glide-to-stop
+    f32 m_MoveAccel = 30.0f;        // 1/s — ~35ms to reach speed (UT-fly crisp)
+    f32 m_MoveDecel = 35.0f;        // 1/s — quick glide-to-stop
     f32 m_LookSmoothTime = 0.008f;  // seconds; 0 = raw deltas
     Math::Vector3 m_Velocity = Math::Vector3(0.0f, 0.0f, 0.0f);
     Math::Vector2 m_SmoothedLook = Math::Vector2(0.0f, 0.0f);

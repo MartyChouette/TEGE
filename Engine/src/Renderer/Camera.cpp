@@ -45,11 +45,17 @@ void Camera::SetLookAt(const Math::Vector3& eye, const Math::Vector3& center, co
     m_ViewMatrix.m[14] = (forward.x * eye.x + forward.y * eye.y + forward.z * eye.z);
 
     // Keep m_Rotation in sync so SetPosition doesn't rebuild from stale rotation.
-    // Build rotation quaternion from the basis vectors (camera convention: -Z forward).
+    // m_Rotation must be the camera's WORLD rotation: basis vectors go in the
+    // COLUMNS (column-major m[0..2] = col 0 = right, m[4..6] = col 1 = up,
+    // m[8..10] = col 2 = -forward). The previous code spread them across ROWS,
+    // storing the INVERSE rotation — after any look-at (F-focus, orbit,
+    // presets), the first position-only change rebuilt the view from that
+    // inverted rotation and the scene-view look direction flipped/skewed on
+    // every WASD press (Marty, 2026-08-07).
     Math::Matrix4 rotMat = Math::Matrix4::Identity();
-    rotMat.m[0] = right.x;      rotMat.m[4] = right.y;      rotMat.m[8]  = right.z;
-    rotMat.m[1] = actualUp.x;   rotMat.m[5] = actualUp.y;   rotMat.m[9]  = actualUp.z;
-    rotMat.m[2] = -forward.x;   rotMat.m[6] = -forward.y;   rotMat.m[10] = -forward.z;
+    rotMat.m[0] = right.x;      rotMat.m[1] = right.y;      rotMat.m[2]  = right.z;
+    rotMat.m[4] = actualUp.x;   rotMat.m[5] = actualUp.y;   rotMat.m[6]  = actualUp.z;
+    rotMat.m[8] = -forward.x;   rotMat.m[9] = -forward.y;   rotMat.m[10] = -forward.z;
     m_Rotation = Math::Quaternion::FromMatrix(rotMat);
 
     m_ViewDirty = false; // Already computed
@@ -104,18 +110,25 @@ Math::Matrix4 Camera::GetViewProjectionMatrix() const {
 }
 
 Math::Vector3 Camera::GetForward() const {
+    // m_Rotation is the camera's WORLD rotation; ToMatrix stores the basis in
+    // COLUMNS (column-major: col0 = m[0..2] right, col1 = m[4..6] up,
+    // col2 = m[8..10] = -forward — matches GetViewMatrix's ToMatrix().Transposed()).
+    // These getters used to read ROWS (the transpose): paired with the old
+    // inverse-storing SetLookAt the errors cancelled, but they made RMB-grab
+    // snap to a mirrored direction once SetLookAt stored the true rotation
+    // (Marty, 2026-08-07).
     Math::Matrix4 rot = m_Rotation.ToMatrix();
-    return Math::Vector3(-rot.m[2], -rot.m[6], -rot.m[10]).Normalized();
+    return Math::Vector3(-rot.m[8], -rot.m[9], -rot.m[10]).Normalized();
 }
 
 Math::Vector3 Camera::GetRight() const {
     Math::Matrix4 rot = m_Rotation.ToMatrix();
-    return Math::Vector3(rot.m[0], rot.m[4], rot.m[8]).Normalized();
+    return Math::Vector3(rot.m[0], rot.m[1], rot.m[2]).Normalized();
 }
 
 Math::Vector3 Camera::GetUp() const {
     Math::Matrix4 rot = m_Rotation.ToMatrix();
-    return Math::Vector3(rot.m[1], rot.m[5], rot.m[9]).Normalized();
+    return Math::Vector3(rot.m[4], rot.m[5], rot.m[6]).Normalized();
 }
 
 void Camera::UpdateViewMatrix() {
