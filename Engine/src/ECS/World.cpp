@@ -121,6 +121,8 @@ void World::Clear() {
     m_EntityManager.Reset();
     m_NameCache.clear();
     m_NameCacheDirty = true;
+    // Every raw ComponentStorage* cached anywhere is now dangling.
+    m_StorageEpoch++;
 }
 
 void World::RebuildNameCache() {

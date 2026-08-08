@@ -268,7 +268,11 @@ public:
     // RT camera override: when set, ray tracing dispatch traces from this camera
     // instead of m_Camera. The editor uses it so RT/path tracing renders the game
     // view (game camera) while the fly cam keeps driving the scene viewport.
+#if !ENJIN_RENDERER_WEBGPU
     void SetRTCameraOverride(Renderer::Camera* camera) { m_RTCameraOverride = camera; }
+#else
+    void SetRTCameraOverride(Renderer::Camera*) {} // no RT on web
+#endif
 
     // Asset reader for loading textures from .enjpak on web
     void SetAssetReader(Build::AssetReader* reader) { m_AssetReader = reader; }
@@ -783,7 +787,13 @@ private:
     // caching the storage pointer eliminates the first lookup for every entity.
 public:
     void RefreshStorageCache();
+    // Compare against World::GetStorageEpoch() before using cached storage
+    // pointers — on mismatch (World::Clear ran) every cached pointer is
+    // dangling; refetches and drops derived raw pointers. One int compare
+    // in the common case.
+    void EnsureStorageCacheFresh();
 private:
+    u32 m_CachedStorageEpoch = 0;  // epoch captured at last RefreshStorageCache
     ComponentStorage<TransformComponent>* m_CachedTransformStorage = nullptr;
     ComponentStorage<MeshComponent>* m_CachedMeshStorage = nullptr;
     ComponentStorage<MaterialComponent>* m_CachedMaterialStorage = nullptr;

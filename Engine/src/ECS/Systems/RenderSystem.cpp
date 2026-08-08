@@ -2719,6 +2719,7 @@ void RenderSystem::FlushPendingChanges() {
 
 void RenderSystem::RefreshStorageCache() {
     if (!m_World) return;
+    m_CachedStorageEpoch = m_World->GetStorageEpoch();
     m_CachedTransformStorage = m_World->GetComponentStorage<TransformComponent>();
     m_CachedMeshStorage = m_World->GetComponentStorage<MeshComponent>();
     m_CachedMaterialStorage = m_World->GetComponentStorage<MaterialComponent>();
@@ -2737,7 +2738,19 @@ void RenderSystem::RefreshStorageCache() {
 // Web twin of the Vulkan-side ResolveAnimator (kept in both halves of this file's
 // #if/#else split): follower meshes of a shared skeleton skin from the leader's
 // animator so one imported model runs on a single animation clock.
+void RenderSystem::EnsureStorageCacheFresh() {
+    if (!m_World) return;
+    if (m_CachedStorageEpoch == m_World->GetStorageEpoch()) return;
+    // World::Clear() ran since the last refetch (scene reload, play-stop full
+    // restore, template apply) — every cached storage pointer AND every raw
+    // component pointer derived from them is dangling.
+    m_CachedFallbackAnimator = nullptr;
+    m_SkeletonToAnimator.clear();
+    RefreshStorageCache();
+}
+
 AnimatorComponent* RenderSystem::ResolveAnimator(Entity entity) {
+    EnsureStorageCacheFresh();
     AnimatorComponent* own = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity)
                                                      : m_World->GetComponent<AnimatorComponent>(entity);
     if (own) return own;
@@ -2904,6 +2917,7 @@ u32 RenderSystem::GetHDROutputMode() const {
 
 void RenderSystem::RefreshStorageCache() {
     if (!m_World) {
+        m_CachedStorageEpoch = 0;
         m_CachedTransformStorage = nullptr;
         m_CachedMeshStorage = nullptr;
         m_CachedMaterialStorage = nullptr;
@@ -2916,6 +2930,7 @@ void RenderSystem::RefreshStorageCache() {
         m_CachedWater3DStorage = nullptr;
         return;
     }
+    m_CachedStorageEpoch = m_World->GetStorageEpoch();
     m_CachedTransformStorage = m_World->GetComponentStorage<TransformComponent>();
     m_CachedMeshStorage = m_World->GetComponentStorage<MeshComponent>();
     m_CachedMaterialStorage = m_World->GetComponentStorage<MaterialComponent>();
@@ -3428,6 +3443,10 @@ void RenderSystem::FlushSceneClear() {
     m_CachedAnimatorStorage = nullptr;
     m_CachedFallbackAnimator = nullptr;
     m_CachedTextStorage = nullptr;
+    // The skeleton->animator map holds raw AnimatorComponent* into the destroyed
+    // storages — ResolveAnimator returns these to SetupEntityBuffers during
+    // scene reload (play-stop full-restore crash, 2026-08-07).
+    m_SkeletonToAnimator.clear();
     m_MaterialSSBOBuilt = false;
     m_MaterialSSBODirty = true;
     m_LightListDirty = true;
@@ -7695,7 +7714,19 @@ void RenderSystem::CreateDescriptorSets() {
 static_assert(Renderer::MergedGeometryBuffer::VERTEX_STRIDE == sizeof(MeshComponent::Vertex),
               "GeometryPool vertex stride must match MeshComponent::Vertex size");
 
+void RenderSystem::EnsureStorageCacheFresh() {
+    if (!m_World) return;
+    if (m_CachedStorageEpoch == m_World->GetStorageEpoch()) return;
+    // World::Clear() ran since the last refetch (scene reload, play-stop full
+    // restore, template apply) — every cached storage pointer AND every raw
+    // component pointer derived from them is dangling.
+    m_CachedFallbackAnimator = nullptr;
+    m_SkeletonToAnimator.clear();
+    RefreshStorageCache();
+}
+
 AnimatorComponent* RenderSystem::ResolveAnimator(Entity entity) {
+    EnsureStorageCacheFresh();
     // 1. The entity's own animator (a single-mesh skinned model, or the leader mesh).
     AnimatorComponent* own = m_CachedAnimatorStorage ? m_CachedAnimatorStorage->Get(entity) : nullptr;
     if (own) return own;
@@ -7729,6 +7760,7 @@ bool RenderSystem::IsPoolEligible(Entity entity) const {
 }
 
 EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
+    EnsureStorageCacheFresh();
     MeshComponent* mesh = m_World->GetComponent<MeshComponent>(entity);
     if (!mesh || !mesh->IsValid()) {
         return nullptr;
@@ -12213,7 +12245,7 @@ void RenderSystem::ResizeRayTracing(u32 width, u32 height) {
     // when it changes. All subsystems below own their images and expose Resize();
     // the G-buffer is recreated explicitly; the shared descriptor set is re-pointed
     // by clearing m_RTDescriptorsWritten, which makes the per-frame path ("TLAS
-    // valid â€” writing RT descriptors") re-run WriteRTDescriptors + TransitionRTOutputImages.
+    // valid — writing RT descriptors") re-run WriteRTDescriptors + TransitionRTOutputImages.
     auto* ctx = m_VulkanRenderer->GetContext();
     vkDeviceWaitIdle(ctx->GetDevice());  // no in-flight work may reference the old images
 

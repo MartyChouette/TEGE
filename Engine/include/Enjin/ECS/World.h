@@ -228,6 +228,15 @@ public:
     void InvalidateNameCache() { m_NameCacheDirty = true; }
 
     /**
+     * @brief Storage epoch — incremented every time Clear() destroys the
+     * component storages. Systems caching raw ComponentStorage pointers MUST
+     * compare this against the epoch captured at refetch time before using a
+     * cached pointer; a mismatch means every cached pointer is dangling
+     * (scene reload, play-stop full restore, template apply).
+     */
+    u32 GetStorageEpoch() const { return m_StorageEpoch; }
+
+    /**
      * @brief Get all active entities
      * @return Vector of all active entity handles
      */
@@ -317,6 +326,9 @@ private:
     // Name cache for O(1) entity lookup by name
     std::unordered_map<std::string, Entity> m_NameCache;
     bool m_NameCacheDirty = true;
+
+    // Bumped by Clear() -- see GetStorageEpoch()
+    u32 m_StorageEpoch = 1;
 
     // Thread safety: guards structural modifications (Create/Destroy/Add/Remove/Clear)
     mutable std::recursive_mutex m_Mutex;
