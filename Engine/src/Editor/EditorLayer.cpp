@@ -300,6 +300,56 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     // Initialize in-game pause menu system
     m_GameMenu.SetInputMap(&m_InputMap);
     m_GameMenu.SetEditorSettings(&m_EditorSettings);
+    // Accessibility tab (same tab exported games get). The menu edits
+    // m_RuntimeAccessibility in place; reverse-sync the editor-settings twins
+    // so the next SyncRuntimeAccessibility (settings edit / play start) doesn't
+    // stomp the player's menu choices, and push the boot-time consumers.
+    m_GameMenu.SetAccessibilitySettings(&m_RuntimeAccessibility);
+    m_GameMenu.SetAccessibilityChangedCallback([this]() {
+        auto& a = m_RuntimeAccessibility;
+        auto& s = m_EditorSettings;
+        s.colorblindMode = static_cast<decltype(s.colorblindMode)>(a.colorblindMode);
+        s.colorblindStrength = a.colorblindStrength;
+        s.screenBrightness = a.screenBrightness;
+        s.screenContrast = a.screenContrast;
+        s.reducedMotion = a.reducedMotion;
+        s.disableScreenShake = a.disableScreenShake;
+        s.disableFOVEffects = a.disableFOVEffects;
+        s.disableFlashingLights = a.disableFlashingLights;
+        s.subtitlesEnabled = a.subtitlesEnabled;
+        s.closedCaptionsEnabled = a.closedCaptionsEnabled;
+        s.subtitleFontSize = a.subtitleFontSize;
+        s.subtitleBgOpacity = a.subtitleBgOpacity;
+        s.subtitleSpeakerNames = a.subtitleSpeakerNames;
+        s.gameFontScale = a.fontScale;
+        s.dyslexiaFontEnabled = a.dyslexiaFriendly;
+        s.dwellClickEnabled = a.dwellClickEnabled;
+        s.dwellClickDelay = a.dwellClickTime;
+        s.stickyDragEnabled = a.stickyDragEnabled;
+
+        // Push consumers that only read on demand
+        m_Announcer.enabled = a.screenReaderEnabled;
+        m_AudioIndicators.GetConfig().enabled = a.audioIndicatorsEnabled;
+        auto& subConfig = m_SubtitleSystem.GetConfig();
+        subConfig.enabled = a.subtitlesEnabled;
+        subConfig.captionsEnabled = a.closedCaptionsEnabled;
+        subConfig.fontSize = a.subtitleFontSize;
+        subConfig.backgroundOpacity = a.subtitleBgOpacity;
+        subConfig.showSpeakerNames = a.subtitleSpeakerNames;
+        subConfig.showDirectionIndicators = a.subtitleDirectionIndicators;
+        if (auto* ctrlSys = m_PlayMode.GetControllerSystem()) {
+            ctrlSys->SetReducedMotion(a.reducedMotion);
+            ctrlSys->SetDisableScreenShake(a.disableScreenShake);
+            ctrlSys->SetDisableFOVEffects(a.disableFOVEffects);
+        }
+        if (auto* uiSys = m_PlayMode.GetUISystem()) {
+            uiSys->SetReducedMotion(a.reducedMotion);
+            uiSys->SetFontScale(a.fontScale);
+            uiSys->SetSwitchAccessEnabled(a.switchAccessEnabled, a.switchScanSpeed);
+            uiSys->SetDwellClickEnabled(a.dwellClickEnabled, a.dwellClickTime);
+            uiSys->SetStickyDragEnabled(a.stickyDragEnabled);
+        }
+    });
     m_GameMenu.SetCallback([this](const std::string& action) {
         if (action == "resume") {
             m_GameMenu.HideAll();
@@ -1460,10 +1510,12 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
 
-    // Game View click-to-capture: when playing, clicking the Game View image
-    // captures the mouse so FPS/TPS controllers receive mouse delta for look
+    // Game View click-to-capture: when ACTIVELY playing, clicking the Game View
+    // image captures the mouse so FPS/TPS controllers receive mouse delta for
+    // look. Not while paused — a paused game must never own the cursor (the
+    // editor is in charge; see the paused safety net below).
     if (!m_FocusMode && !m_GameViewMouseCaptured &&
-        (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) &&
+        m_PlayMode.IsPlaying() &&
         m_GameViewHovered && Input::IsMouseButtonPressed(MouseButton::Left)) {
         if (SceneHasMouseLookController()) {
             m_GameViewMouseCaptured = true;
@@ -1531,6 +1583,16 @@ void EditorLayer::Update(f32 deltaTime) {
 
     // Safety net: release mouse capture if play mode stopped
     if (m_GameViewMouseCaptured && m_PlayMode.IsStopped()) {
+        m_GameViewMouseCaptured = false;
+        Input::SetMouseCaptured(false);
+    }
+
+    // Safety net: release mouse capture while PAUSED. Escape-pause released it,
+    // but the toolbar pause button didn't — the game kept the cursor locked, so
+    // the scene view got no hover/look input and the editor felt frozen
+    // (Marty, 2026-08-08). The scene view never abides by game-screen capture
+    // rules; resuming re-captures via click-to-capture or the Escape-menu path.
+    if (m_GameViewMouseCaptured && m_PlayMode.IsPaused()) {
         m_GameViewMouseCaptured = false;
         Input::SetMouseCaptured(false);
     }
@@ -3484,8 +3546,14 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                 }
             }
 
-            // --- Physics debug visualization: colliders + joints ---
-            if (m_ShowColliderWireframes) {
+            // --- Physics debug visualization: colliders + joints + gizmos ---
+            // Selected entities ALWAYS show their gizmos/colliders; the
+            // m_ShowColliderWireframes flag (View > Show Colliders, F2, Rendering
+            // panel) additionally reveals them for every entity in the scene.
+            // This block used to be entirely gated on the flag, which defaults
+            // off — so colliders and the component gizmos were never visible
+            // unless you found the toggle (Marty, 2026-08-07).
+            {
                 // Wire circle helper (draws N-segment circle in a plane)
                 auto drawWireCircle = [&](ImDrawList* dl, const Math::Vector3& center, f32 radius,
                                           const Math::Vector3& axisU, const Math::Vector3& axisV,
@@ -3506,6 +3574,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
                     if (box && transform) {
                         bool sel = IsSelected(entity);
+                        if (!m_ShowColliderWireframes && !sel) continue;
                         ImU32 color = sel ? IM_COL32(255, 220, 50, 220) : IM_COL32(255, 220, 50, 100);
                         f32 thick = sel ? 2.0f : 1.0f;
                         Math::Vector3 halfExt = box->size * 0.5f;
@@ -3520,6 +3589,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
                     if (sphere && transform) {
                         bool sel = IsSelected(entity);
+                        if (!m_ShowColliderWireframes && !sel) continue;
                         ImU32 color = sel ? IM_COL32(180, 230, 50, 220) : IM_COL32(180, 230, 50, 100);
                         f32 thick = sel ? 2.0f : 1.0f;
                         Math::Vector3 c = transform->position + sphere->center;
@@ -3536,6 +3606,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
                     if (capsule && transform) {
                         bool sel = IsSelected(entity);
+                        if (!m_ShowColliderWireframes && !sel) continue;
                         ImU32 color = sel ? IM_COL32(255, 160, 40, 220) : IM_COL32(255, 160, 40, 100);
                         f32 thick = sel ? 2.0f : 1.0f;
                         Math::Vector3 c = transform->position + transform->rotation.Rotate(capsule->center);
@@ -3601,17 +3672,19 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
                     if (meshCol && transform && meshCol->generated && !meshCol->vertices.empty()) {
                         bool sel = IsSelected(entity);
+                        if (!m_ShowColliderWireframes && !sel) continue;
                         ImU32 color = sel ? IM_COL32(220, 80, 220, 220) : IM_COL32(220, 80, 220, 80);
                         f32 thick = sel ? 2.0f : 1.0f;
 
-                        // Draw triangle edges if we have indices
+                        // Draw triangle edges if we have indices. Cached collider
+                        // vertices are WORLD-SCALE (JoltBackend bakes entity scale
+                        // at generation) — apply only rotation + translation here,
+                        // matching how the box/sphere/capsule wireframes treat
+                        // their world-space sizes.
                         if (!meshCol->indices.empty() && meshCol->indices.size() % 3 == 0) {
                             for (size_t i = 0; i + 2 < meshCol->indices.size(); i += 3) {
                                 auto transformVert = [&](const Math::Vector3& v) {
-                                    Math::Vector3 scaled(v.x * transform->scale.x,
-                                                        v.y * transform->scale.y,
-                                                        v.z * transform->scale.z);
-                                    return transform->position + transform->rotation.Rotate(scaled);
+                                    return transform->position + transform->rotation.Rotate(v);
                                 };
                                 Math::Vector3 a = transformVert(meshCol->vertices[meshCol->indices[i]]);
                                 Math::Vector3 b = transformVert(meshCol->vertices[meshCol->indices[i + 1]]);
@@ -3630,6 +3703,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
                     if (body2d && transform) {
                         bool sel = IsSelected(entity);
+                        if (!m_ShowColliderWireframes && !sel) continue;
                         ImU32 color = sel ? IM_COL32(50, 220, 255, 220) : IM_COL32(50, 220, 255, 100);
                         f32 thick = sel ? 2.0f : 1.0f;
                         Math::Vector3 pos = transform->position;
@@ -3656,35 +3730,39 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     drawLine3D(dl, tA->position + anchorA, tB->position + anchorB, color, 1.5f);
                 };
 
+                // Joints draw when the flag is on OR either connected entity is selected
+                auto jointVisible = [&](ECS::Entity holder, ECS::Entity eA, ECS::Entity eB) {
+                    return m_ShowColliderWireframes || IsSelected(holder) || IsSelected(eA) || IsSelected(eB);
+                };
                 // Distance joints (white)
                 for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::DistanceJointComponent>()) {
                     auto* j = m_World->GetComponent<ECS::DistanceJointComponent>(e);
-                    if (j) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(255, 255, 255, 180));
+                    if (j && jointVisible(e, j->entityA, j->entityB)) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(255, 255, 255, 180));
                 }
                 // Hinge joints (cyan)
                 for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::HingeJointComponent>()) {
                     auto* j = m_World->GetComponent<ECS::HingeJointComponent>(e);
-                    if (j) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(0, 220, 255, 180));
+                    if (j && jointVisible(e, j->entityA, j->entityB)) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(0, 220, 255, 180));
                 }
                 // BallSocket joints (magenta)
                 for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::BallSocketJointComponent>()) {
                     auto* j = m_World->GetComponent<ECS::BallSocketJointComponent>(e);
-                    if (j) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(220, 50, 220, 180));
+                    if (j && jointVisible(e, j->entityA, j->entityB)) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(220, 50, 220, 180));
                 }
                 // Spring joints (green)
                 for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::SpringJointComponent>()) {
                     auto* j = m_World->GetComponent<ECS::SpringJointComponent>(e);
-                    if (j) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(50, 220, 50, 180));
+                    if (j && jointVisible(e, j->entityA, j->entityB)) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(50, 220, 50, 180));
                 }
                 // Fixed joints (red)
                 for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::FixedJointComponent>()) {
                     auto* j = m_World->GetComponent<ECS::FixedJointComponent>(e);
-                    if (j) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(220, 50, 50, 180));
+                    if (j && jointVisible(e, j->entityA, j->entityB)) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(220, 50, 50, 180));
                 }
                 // Slider joints (blue)
                 for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::SliderJointComponent>()) {
                     auto* j = m_World->GetComponent<ECS::SliderJointComponent>(e);
-                    if (j) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(50, 100, 255, 180));
+                    if (j && jointVisible(e, j->entityA, j->entityB)) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(50, 100, 255, 180));
                 }
 
                 // Post-Process Volume wireframes (purple)
@@ -3693,6 +3771,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     auto* transform = m_World->GetComponent<ECS::TransformComponent>(e);
                     if (!vol || !vol->isActive || vol->isGlobal || !transform) continue;
                     bool sel = IsSelected(e);
+                    if (!m_ShowColliderWireframes && !sel) continue;
                     ImU32 color = sel ? IM_COL32(180, 100, 255, 220) : IM_COL32(180, 100, 255, 80);
                     f32 thick = sel ? 2.0f : 1.0f;
                     if (vol->shape == ECS::PPVolumeShape::Box) {
@@ -3722,6 +3801,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     auto* transform = m_World->GetComponent<ECS::TransformComponent>(e);
                     if (!gz || !gz->isActive || !transform) continue;
                     bool sel = IsSelected(e);
+                    if (!m_ShowColliderWireframes && !sel) continue;
                     ImU32 color = sel ? IM_COL32(100, 80, 255, 200) : IM_COL32(100, 80, 255, 60);
                     f32 thick = sel ? 2.0f : 1.0f;
                     if (gz->shape == ECS::GravityZoneShape::Sphere) {
@@ -3741,6 +3821,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     auto* transform = m_World->GetComponent<ECS::TransformComponent>(e);
                     if (!lc || !transform) continue;
                     bool sel = IsSelected(e);
+                    if (!m_ShowColliderWireframes && !sel) continue;
                     if (lc->type == ECS::LightType::Point) {
                         ImU32 color = sel ? IM_COL32(255, 220, 50, 180) : IM_COL32(255, 220, 50, 40);
                         f32 thick = sel ? 1.5f : 0.8f;
@@ -3780,7 +3861,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     auto* transform = m_World->GetComponent<ECS::TransformComponent>(e);
                     if (!src || !src->is3D || !transform) continue;
                     bool sel = IsSelected(e);
-                    if (!sel) continue; // Only show for selected audio sources
+                    if (!m_ShowColliderWireframes && !sel) continue;
                     Math::Vector3 c = transform->position;
                     ImU32 innerColor = IM_COL32(50, 200, 255, 140);
                     ImU32 outerColor = IM_COL32(50, 200, 255, 80);
@@ -3794,6 +3875,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     auto* transform = m_World->GetComponent<ECS::TransformComponent>(e);
                     if (!tz || !transform) continue;
                     bool sel = IsSelected(e);
+                    if (!m_ShowColliderWireframes && !sel) continue;
                     ImU32 color = sel ? IM_COL32(100, 255, 100, 180) : IM_COL32(100, 255, 100, 50);
                     f32 thick = sel ? 2.0f : 1.0f;
                     if (tz->shape == ECS::TriggerZoneComponent::Shape::Sphere) {
@@ -3808,6 +3890,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     auto* transform = m_World->GetComponent<ECS::TransformComponent>(e);
                     if (!transform) continue;
                     bool sel = IsSelected(e);
+                    if (!m_ShowColliderWireframes && !sel) continue;
                     ImU32 color = sel ? IM_COL32(255, 50, 200, 220) : IM_COL32(255, 50, 200, 80);
                     f32 sz = 0.5f;
                     Math::Vector3 c = transform->position;
@@ -3820,8 +3903,17 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         bgDrawList->AddLine(s0, s1, color, 2.0f);
                 }
 
-                // Waypoint markers (cyan dots + connecting lines)
+                // Waypoint markers (cyan dots + connecting lines).
+                // Selecting ANY waypoint reveals the whole chain — a lone dot
+                // without its path is meaningless.
+                bool anyWaypointSelected = false;
+                if (!m_ShowColliderWireframes) {
+                    for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::WaypointComponent>()) {
+                        if (IsSelected(e)) { anyWaypointSelected = true; break; }
+                    }
+                }
                 for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::WaypointComponent>()) {
+                    if (!m_ShowColliderWireframes && !anyWaypointSelected) break;
                     auto* wp = m_World->GetComponent<ECS::WaypointComponent>(e);
                     auto* transform = m_World->GetComponent<ECS::TransformComponent>(e);
                     if (!wp || !transform) continue;

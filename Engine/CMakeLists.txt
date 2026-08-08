@@ -121,7 +121,7 @@ target_compile_features(EnjinEngine PUBLIC cxx_std_20)
 if(ENJIN_PLATFORM_WEB)
     # Emscripten provides networking via fetch API and WebSocket — no native libs needed
 elseif(WIN32)
-    target_link_libraries(EnjinEngine PUBLIC ws2_32 winhttp)
+    target_link_libraries(EnjinEngine PUBLIC ws2_32 winhttp ole32)
 elseif(UNIX)
     # Linux/macOS: POSIX sockets are in libc (no extra link needed),
     # but we need libcurl for HTTP client functionality

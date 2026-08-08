@@ -1,4 +1,5 @@
 #include "Enjin/Accessibility/FontLibrary.h"
+#include "Enjin/Accessibility/OpenDyslexicFont.h"
 #include "Enjin/Logging/Log.h"
 
 #include <imgui.h>
@@ -8,16 +9,15 @@ namespace Enjin {
 namespace Accessibility {
 
 // ============================================================================
-// OpenDyslexic font placeholder
-// The real OpenDyslexic font data would be embedded here as a byte array.
-// OpenDyslexic is licensed under the SIL Open Font License and can be
-// legally embedded. For now, we fall back to the default font with
-// increased letter/word spacing which achieves a similar effect.
+// OpenDyslexic font (embedded)
+// OpenDyslexic-Regular is embedded as a byte array in OpenDyslexicFont.h
+// (SIL Open Font License 1.1, based on Bitstream Vera — embedding permitted
+// with attribution). The data is TrueType-outline ('00 01 00 00' sfnt), which
+// stb_truetype requires; CFF/'OTTO'-flavored OTF files will not parse.
+// The spacing fallback below is kept for non-embedded builds.
 // ============================================================================
 
-static constexpr bool OPEN_DYSLEXIC_EMBEDDED = false;
-// static const unsigned char s_OpenDyslexicFontData[] = { ... };
-// static const u32 s_OpenDyslexicFontDataSize = sizeof(s_OpenDyslexicFontData);
+static constexpr bool OPEN_DYSLEXIC_EMBEDDED = true;
 
 void FontLibrary::SetFont(FontFamily family) {
     m_Config.selectedFamily = family;
@@ -47,13 +47,26 @@ void FontLibrary::SetFont(FontFamily family) {
 
         case FontFamily::OpenDyslexic:
             if constexpr (OPEN_DYSLEXIC_EMBEDDED) {
-                // Load embedded OpenDyslexic font into ImGui
-                // ImFontConfig cfg;
-                // cfg.FontDataOwnedByAtlas = false;
-                // io.Fonts->AddFontFromMemoryTTF((void*)s_OpenDyslexicFontData,
-                //     s_OpenDyslexicFontDataSize, 17.0f, &cfg);
-                // io.Fonts->Build();
-                // m_FontLoaded = true;
+                // Load embedded OpenDyslexic font into ImGui (once — the atlas
+                // keeps the font across calls, so only add it the first time).
+                static ImFont* s_OpenDyslexicFont = nullptr;
+                if (!s_OpenDyslexicFont) {
+                    ImFontConfig cfg;
+                    cfg.FontDataOwnedByAtlas = false;
+                    s_OpenDyslexicFont = io.Fonts->AddFontFromMemoryTTF(
+                        (void*)s_OpenDyslexicFontData,
+                        (int)s_OpenDyslexicFontDataSize, 17.0f, &cfg);
+                    io.Fonts->Build();
+                }
+                if (s_OpenDyslexicFont) {
+                    io.FontDefault = s_OpenDyslexicFont;
+                    m_FontLoaded = true;
+                    ENJIN_LOG_INFO(Editor, "FontLibrary: Set to OpenDyslexic font (embedded)");
+                } else if (io.Fonts->Fonts.Size > 0) {
+                    io.FontDefault = io.Fonts->Fonts[0];
+                    m_FontLoaded = true;
+                    ENJIN_LOG_WARN(Editor, "FontLibrary: OpenDyslexic embedded data failed to load — using default font");
+                }
             } else {
                 // Fallback: use default font with dyslexia-friendly spacing
                 // OpenDyslexic font data would be embedded here in a production build.

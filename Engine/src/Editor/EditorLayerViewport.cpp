@@ -1060,19 +1060,35 @@ void EditorLayer::FocusOnEntity(ECS::Entity entity) {
         return;
     }
 
+    // WORLD-space focus: imported meshes live under a scaled import root, so
+    // local position/scale point at raw FBX coordinates — F used to fly the
+    // camera hundreds of units off (often INSIDE an unscaled model, seeing only
+    // its shadow). Everything below goes through ComputeWorldMatrix.
+    auto worldPointOf = [&](ECS::Entity e, const Math::Vector3& p) {
+        Math::Matrix4 wm = ECS::ComputeWorldMatrix(m_World, e);
+        Math::Vector4 r = wm * Math::Vector4(p.x, p.y, p.z, 1.0f);
+        return Math::Vector3(r.x, r.y, r.z);
+    };
+    auto worldMaxScaleOf = [&](ECS::Entity e) {
+        Math::Matrix4 wm = ECS::ComputeWorldMatrix(m_World, e);
+        return Math::Max(
+            Math::Vector3(wm.m[0], wm.m[1], wm.m[2]).Length(),
+            Math::Max(Math::Vector3(wm.m[4], wm.m[5], wm.m[6]).Length(),
+                      Math::Vector3(wm.m[8], wm.m[9], wm.m[10]).Length()));
+    };
+
     // Calculate bounding size for appropriate distance
     f32 boundingSize = 2.0f;  // Default size
-    Math::Vector3 targetPos = transform->position;
+    Math::Vector3 targetPos = worldPointOf(entity, Math::Vector3(0.0f));
 
     // If entity has a box collider, use its AABB for accurate sizing
+    // (collider sizes are WORLD space — no scale multiplication)
     if (m_World->HasComponent<ECS::BoxColliderComponent>(entity)) {
         auto* collider = m_World->GetComponent<ECS::BoxColliderComponent>(entity);
         boundingSize = Math::Max(collider->size.x, Math::Max(collider->size.y, collider->size.z));
-        boundingSize *= Math::Max(transform->scale.x, Math::Max(transform->scale.y, transform->scale.z));
-        f32 maxScale = Math::Max(transform->scale.x, Math::Max(transform->scale.y, transform->scale.z));
-        targetPos = transform->position + collider->center * maxScale;
+        targetPos = worldPointOf(entity, Math::Vector3(0.0f)) + collider->center;
     } else if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
-        // Estimate from mesh vertices
+        // Estimate from mesh vertices (local bounds -> world center + scale)
         auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
         if (mesh && mesh->IsValid()) {
             Math::Vector3 minB(FLT_MAX, FLT_MAX, FLT_MAX);
@@ -1086,51 +1102,53 @@ void EditorLayer::FocusOnEntity(ECS::Entity entity) {
                 if (v.position.z > maxB.z) maxB.z = v.position.z;
             }
             Math::Vector3 size = maxB - minB;
-            boundingSize = Math::Max(size.x, Math::Max(size.y, size.z));
-            boundingSize *= Math::Max(transform->scale.x, Math::Max(transform->scale.y, transform->scale.z));
-            Math::Vector3 center = (minB + maxB) * 0.5f;
-            f32 maxScale = Math::Max(transform->scale.x, Math::Max(transform->scale.y, transform->scale.z));
-            targetPos = transform->position + center * maxScale;
+            boundingSize = Math::Max(size.x, Math::Max(size.y, size.z)) * worldMaxScaleOf(entity);
+            targetPos = worldPointOf(entity, (minB + maxB) * 0.5f);
         }
     } else {
         // Container node: scan children for mesh bounds (colliders first, then meshes)
         Math::Vector3 globalMin(FLT_MAX, FLT_MAX, FLT_MAX);
         Math::Vector3 globalMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
         bool foundChild = false;
+        auto growBounds = [&](const Math::Vector3& p) {
+            globalMin.x = Math::Min(globalMin.x, p.x);
+            globalMin.y = Math::Min(globalMin.y, p.y);
+            globalMin.z = Math::Min(globalMin.z, p.z);
+            globalMax.x = Math::Max(globalMax.x, p.x);
+            globalMax.y = Math::Max(globalMax.y, p.y);
+            globalMax.z = Math::Max(globalMax.z, p.z);
+        };
 
         for (ECS::Entity child : ECS::GetChildren(m_World, entity)) {
             auto* childTransform = m_World->GetComponent<ECS::TransformComponent>(child);
             if (!childTransform) continue;
 
-            // Try box collider first
+            // Try box collider first (world-space sizes)
             auto* childCollider = m_World->GetComponent<ECS::BoxColliderComponent>(child);
             if (childCollider) {
-                f32 ms = Math::Max(childTransform->scale.x, Math::Max(childTransform->scale.y, childTransform->scale.z));
-                Math::Vector3 ctr = childTransform->position + childCollider->center * ms;
-                Math::Vector3 half = childCollider->size * 0.5f * ms;
-                globalMin.x = Math::Min(globalMin.x, ctr.x - half.x);
-                globalMin.y = Math::Min(globalMin.y, ctr.y - half.y);
-                globalMin.z = Math::Min(globalMin.z, ctr.z - half.z);
-                globalMax.x = Math::Max(globalMax.x, ctr.x + half.x);
-                globalMax.y = Math::Max(globalMax.y, ctr.y + half.y);
-                globalMax.z = Math::Max(globalMax.z, ctr.z + half.z);
+                Math::Vector3 ctr = worldPointOf(child, Math::Vector3(0.0f)) + childCollider->center;
+                Math::Vector3 half = childCollider->size * 0.5f;
+                growBounds(ctr - half);
+                growBounds(ctr + half);
                 foundChild = true;
                 continue;
             }
 
-            // Fall back to mesh bounds
+            // Fall back to mesh bounds (local AABB corners through the world matrix)
             auto* childMesh = m_World->GetComponent<ECS::MeshComponent>(child);
             if (childMesh && childMesh->IsValid()) {
-                f32 ms = Math::Max(childTransform->scale.x, Math::Max(childTransform->scale.y, childTransform->scale.z));
+                Math::Vector3 minB(FLT_MAX, FLT_MAX, FLT_MAX);
+                Math::Vector3 maxB(-FLT_MAX, -FLT_MAX, -FLT_MAX);
                 for (const auto& v : childMesh->vertices) {
-                    Math::Vector3 wp = childTransform->position + v.position * ms;
-                    globalMin.x = Math::Min(globalMin.x, wp.x);
-                    globalMin.y = Math::Min(globalMin.y, wp.y);
-                    globalMin.z = Math::Min(globalMin.z, wp.z);
-                    globalMax.x = Math::Max(globalMax.x, wp.x);
-                    globalMax.y = Math::Max(globalMax.y, wp.y);
-                    globalMax.z = Math::Max(globalMax.z, wp.z);
+                    if (v.position.x < minB.x) minB.x = v.position.x;
+                    if (v.position.y < minB.y) minB.y = v.position.y;
+                    if (v.position.z < minB.z) minB.z = v.position.z;
+                    if (v.position.x > maxB.x) maxB.x = v.position.x;
+                    if (v.position.y > maxB.y) maxB.y = v.position.y;
+                    if (v.position.z > maxB.z) maxB.z = v.position.z;
                 }
+                growBounds(worldPointOf(child, minB));
+                growBounds(worldPointOf(child, maxB));
                 foundChild = true;
             }
         }
@@ -1144,9 +1162,11 @@ void EditorLayer::FocusOnEntity(ECS::Entity entity) {
 
     if (boundingSize < 0.01f) boundingSize = 2.0f;
 
-    // Calculate camera distance based on bounding size
+    // Calculate camera distance based on bounding size. Generous max: a 200-unit
+    // clamp left the camera INSIDE anything bigger (unscaled cm-unit FBX imports
+    // are ~400 units tall) — F must be able to frame whatever exists.
     f32 distance = boundingSize * 2.5f;
-    distance = Math::Clamp(distance, 2.0f, 200.0f);
+    distance = Math::Clamp(distance, 2.0f, 5000.0f);
 
     // Get current camera direction (maintain viewing angle)
     Math::Vector3 cameraForward = m_Camera->GetForward();

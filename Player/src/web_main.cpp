@@ -73,6 +73,7 @@
 #include <string>
 #include <memory>
 #include <fstream>
+#include <sstream>
 #include <algorithm>
 
 static constexpr const char* PACK_KEY = "enjin_default_pack_key";
@@ -312,6 +313,40 @@ public:
         Enjin::Scripting::SetBindingsSubtitles(&m_SubtitleSystem);
         Enjin::Scripting::SetBindingsAnnouncer(&m_Announcer);
         Enjin::Scripting::SetBindingsAccessibilitySettings(&m_AccessibilitySettings);
+        Enjin::Scripting::SetBindingsAccessibilitySaveCallback([this]() {
+            SaveWebAccessibilitySettings();
+            SaveWebInputBindings();
+        });
+        Enjin::Scripting::SetBindingsAccessibilityApplyCallback([this]() { ApplyWebAccessibilitySettings(); });
+
+        // Restore persisted accessibility settings + control bindings (IDBFS
+        // mounted in StartBoot; the initial syncfs completed during the pak
+        // fetch) and push them into every consumer.
+        LoadWebAccessibilitySettings();
+        LoadWebInputBindings();
+        ApplyWebAccessibilitySettings();
+
+        // Audio-visual sound indicators: ImGui draw lists don't exist on web,
+        // so indicators are DOM elements (same pattern as the DOM HUD).
+        m_SimpleAudio.SetOnSoundPlayed([this](const std::string& soundName) {
+            if (!m_AccessibilitySettings.audioIndicatorsEnabled) return;
+            EM_ASM({
+                var label = UTF8ToString($0);
+                var c = document.getElementById('enjin-audio-indicators');
+                if (!c) {
+                    c = document.createElement('div');
+                    c.id = 'enjin-audio-indicators';
+                    c.style.cssText = 'position:fixed;top:5%;right:2%;z-index:1000;pointer-events:none;font-family:sans-serif;font-size:14px;text-align:right;';
+                    document.body.appendChild(c);
+                }
+                var d = document.createElement('div');
+                d.textContent = '♪ ' + label;
+                d.style.cssText = 'color:#66ccff;background:rgba(10,15,25,0.75);padding:2px 8px;margin-top:4px;border-radius:4px;transition:opacity 0.5s;';
+                c.appendChild(d);
+                setTimeout(function() { d.style.opacity = '0'; }, 1000);
+                setTimeout(function() { d.remove(); }, 1600);
+            }, soundName.c_str());
+        });
 
         // --- Load scene ---
         bool sceneLoaded = false;
@@ -336,6 +371,7 @@ public:
                     m_SceneRenderSettings = serializer.GetRenderSettings();
                     sceneLoaded = true;
                     ENJIN_LOG_INFO(Player, "Loaded scene: %s", m_StartScene.c_str());
+                    ShowWebContentWarnings(sceneStr);
                 }
             }
         }
@@ -352,6 +388,7 @@ public:
                     m_SceneRenderSettings = serializer.GetRenderSettings();
                     sceneLoaded = true;
                     ENJIN_LOG_INFO(Player, "Loaded loose scene: scene.enjin");
+                    ShowWebContentWarnings(sceneStr);
                 }
             }
         }
@@ -830,6 +867,187 @@ public:
     }
 
 private:
+    // Web accessibility persistence: /saves/accessibility.json on the IDBFS
+    // mount (StartBoot). Desktop uses accessibility.json next to the exe.
+    void LoadWebAccessibilitySettings() {
+        std::ifstream f("/saves/accessibility.json");
+        if (!f.is_open()) return;
+        std::stringstream ss;
+        ss << f.rdbuf();
+        try {
+            auto j = nlohmann::json::parse(ss.str());
+            auto& s = m_AccessibilitySettings;
+            if (j.contains("colorblindMode")) {
+                Enjin::u32 v = j["colorblindMode"].get<Enjin::u32>();
+                if (v <= 8) s.colorblindMode = static_cast<Enjin::Accessibility::ColorblindMode>(v);
+            }
+            if (j.contains("colorblindStrength")) s.colorblindStrength = j["colorblindStrength"].get<Enjin::f32>();
+            if (j.contains("screenBrightness")) s.screenBrightness = j["screenBrightness"].get<Enjin::f32>();
+            if (j.contains("screenContrast")) s.screenContrast = j["screenContrast"].get<Enjin::f32>();
+            if (j.contains("fontScale")) s.fontScale = j["fontScale"].get<Enjin::f32>();
+            if (j.contains("reducedMotion")) s.reducedMotion = j["reducedMotion"].get<bool>();
+            if (j.contains("subtitlesEnabled")) s.subtitlesEnabled = j["subtitlesEnabled"].get<bool>();
+            if (j.contains("screenReaderEnabled")) s.screenReaderEnabled = j["screenReaderEnabled"].get<bool>();
+            if (j.contains("audioIndicatorsEnabled")) s.audioIndicatorsEnabled = j["audioIndicatorsEnabled"].get<bool>();
+            if (j.contains("dyslexiaFriendly")) s.dyslexiaFriendly = j["dyslexiaFriendly"].get<bool>();
+            if (j.contains("dwellClickEnabled")) s.dwellClickEnabled = j["dwellClickEnabled"].get<bool>();
+            if (j.contains("dwellClickTime")) s.dwellClickTime = j["dwellClickTime"].get<Enjin::f32>();
+            if (j.contains("switchAccessEnabled")) s.switchAccessEnabled = j["switchAccessEnabled"].get<bool>();
+            if (j.contains("switchScanSpeed")) s.switchScanSpeed = j["switchScanSpeed"].get<Enjin::f32>();
+            if (j.contains("stickyDragEnabled")) s.stickyDragEnabled = j["stickyDragEnabled"].get<bool>();
+            ENJIN_LOG_INFO(Player, "Loaded accessibility settings from /saves/accessibility.json");
+        } catch (const std::exception& e) {
+            ENJIN_LOG_WARN(Player, "Failed to parse /saves/accessibility.json: %s", e.what());
+        }
+    }
+
+    void SaveWebAccessibilitySettings() {
+        try {
+            const auto& s = m_AccessibilitySettings;
+            nlohmann::json j;
+            j["colorblindMode"] = static_cast<Enjin::u32>(s.colorblindMode);
+            j["colorblindStrength"] = s.colorblindStrength;
+            j["screenBrightness"] = s.screenBrightness;
+            j["screenContrast"] = s.screenContrast;
+            j["fontScale"] = s.fontScale;
+            j["reducedMotion"] = s.reducedMotion;
+            j["subtitlesEnabled"] = s.subtitlesEnabled;
+            j["screenReaderEnabled"] = s.screenReaderEnabled;
+            j["audioIndicatorsEnabled"] = s.audioIndicatorsEnabled;
+            j["dyslexiaFriendly"] = s.dyslexiaFriendly;
+            j["dwellClickEnabled"] = s.dwellClickEnabled;
+            j["dwellClickTime"] = s.dwellClickTime;
+            j["switchAccessEnabled"] = s.switchAccessEnabled;
+            j["switchScanSpeed"] = s.switchScanSpeed;
+            j["stickyDragEnabled"] = s.stickyDragEnabled;
+            {
+                std::ofstream f("/saves/accessibility.json");
+                f << j.dump(2);
+            }
+            // Flush MEMFS -> IndexedDB so the settings survive a reload
+            EM_ASM({
+                FS.syncfs(false, function(err) {
+                    if (err) console.warn('[A11Y] settings persist error', err);
+                });
+            });
+            ENJIN_LOG_INFO(Player, "Saved accessibility settings to /saves/accessibility.json");
+        } catch (const std::exception& e) {
+            ENJIN_LOG_WARN(Player, "Failed to save /saves/accessibility.json: %s", e.what());
+        }
+    }
+
+    // Web twin of the desktop content-warning overlay (ContentWarning.cpp is
+    // ImGui-based, unavailable here) — a DOM overlay dismissed by click.
+    void ShowWebContentWarnings(const std::string& sceneStr) {
+        try {
+            auto sceneJson = nlohmann::json::parse(sceneStr);
+            const char* key = sceneJson.contains("accessibility") ? "accessibility"
+                            : (sceneJson.contains("contentWarnings") ? "contentWarnings" : nullptr);
+            if (!key) return;
+            auto& cw = sceneJson[key];
+            Enjin::u32 flags = cw.contains("flags") ? cw["flags"].get<Enjin::u32>() : 0u;
+
+            auto escapeHtml = [](const std::string& in) {
+                std::string out;
+                out.reserve(in.size());
+                for (char c : in) {
+                    if (c == '<') out += "&lt;";
+                    else if (c == '>') out += "&gt;";
+                    else if (c == '&') out += "&amp;";
+                    else out += c;
+                }
+                return out;
+            };
+
+            static const char* kWarningNames[8] = {
+                "Flashing Lights", "Rapid Motion", "Violence", "Heights",
+                "Loud Sounds", "Spiders", "Gore", "Drowning"
+            };
+            std::string items;
+            for (int i = 0; i < 8; ++i) {
+                if (flags & (1u << i)) {
+                    items += "<li>";
+                    items += kWarningNames[i];
+                    items += "</li>";
+                }
+            }
+            if (cw.contains("customWarnings") && cw["customWarnings"].is_array()) {
+                for (const auto& w : cw["customWarnings"]) {
+                    std::string s = w.get<std::string>();
+                    if (!s.empty()) items += "<li>" + escapeHtml(s) + "</li>";
+                }
+            }
+            if (items.empty()) return;
+
+            EM_ASM({
+                var items = UTF8ToString($0);
+                var o = document.createElement('div');
+                o.id = 'enjin-content-warning';
+                o.style.cssText = 'position:fixed;inset:0;background:rgba(5,7,12,0.92);color:#fff;z-index:2000;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:sans-serif;cursor:pointer;';
+                o.innerHTML = '<h2 style="color:#e8c14a;margin:0 0 8px 0;">Content Warning</h2>' +
+                    '<p style="color:#aaa;margin:0 0 12px 0;">This game contains the following content:</p>' +
+                    '<ul style="text-align:left;line-height:1.6;">' + items + '</ul>' +
+                    '<p style="color:#888;margin-top:16px;">Click or press any key to continue</p>';
+                var dismiss = function() {
+                    o.remove();
+                    document.removeEventListener('keydown', dismiss);
+                };
+                o.addEventListener('click', dismiss);
+                document.addEventListener('keydown', dismiss);
+                document.body.appendChild(o);
+            }, items.c_str());
+        } catch (const std::exception&) {
+            // Content warnings are best-effort; a parse failure is non-fatal
+        }
+    }
+
+    // Player-remapped controls persist alongside the accessibility settings
+    void LoadWebInputBindings() {
+        std::ifstream f("/saves/bindings.json");
+        if (!f.is_open()) return;
+        std::stringstream ss;
+        ss << f.rdbuf();
+        if (m_InputMap.FromJson(ss.str())) {
+            ENJIN_LOG_INFO(Player, "Loaded control bindings from /saves/bindings.json");
+        }
+    }
+
+    void SaveWebInputBindings() {
+        {
+            std::ofstream f("/saves/bindings.json");
+            f << m_InputMap.ToJson();
+        }
+        EM_ASM({
+            FS.syncfs(false, function(err) {
+                if (err) console.warn('[BINDINGS] persist error', err);
+            });
+        });
+    }
+
+    // Push settings into consumers that only read them when pushed (mirror of
+    // the desktop player's ApplyAccessibilitySettings)
+    void ApplyWebAccessibilitySettings() {
+        auto& s = m_AccessibilitySettings;
+        auto& subConfig = m_SubtitleSystem.GetConfig();
+        subConfig.enabled = s.subtitlesEnabled;
+        subConfig.captionsEnabled = s.closedCaptionsEnabled;
+        subConfig.fontSize = s.subtitleFontSize;
+        subConfig.backgroundOpacity = s.subtitleBgOpacity;
+        subConfig.showSpeakerNames = s.subtitleSpeakerNames;
+        subConfig.showDirectionIndicators = s.subtitleDirectionIndicators;
+        m_Announcer.enabled = s.screenReaderEnabled;
+        m_UISystem.SetReducedMotion(s.reducedMotion);
+        m_UISystem.SetFontScale(s.fontScale);
+        m_UISystem.SetSwitchAccessEnabled(s.switchAccessEnabled, s.switchScanSpeed);
+        m_UISystem.SetDwellClickEnabled(s.dwellClickEnabled, s.dwellClickTime);
+        m_UISystem.SetStickyDragEnabled(s.stickyDragEnabled);
+        if (m_RenderSystem) {
+            m_RenderSystem->SetWebAccessibility(
+                static_cast<Enjin::u32>(s.colorblindMode), s.colorblindStrength,
+                s.screenBrightness, s.screenContrast);
+        }
+    }
+
     void CreateDemoScene() {
         if (!m_World) return;
 

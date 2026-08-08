@@ -8,8 +8,52 @@
 #include <emscripten.h>
 #endif
 
+#ifdef ENJIN_PLATFORM_WINDOWS
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <sapi.h>
+#endif
+
 namespace Enjin {
 namespace Accessibility {
+
+AccessibilityAnnouncer::~AccessibilityAnnouncer() {
+#ifdef ENJIN_PLATFORM_WINDOWS
+    if (m_SAPIVoice) {
+        static_cast<ISpVoice*>(m_SAPIVoice)->Release();
+        m_SAPIVoice = nullptr;
+    }
+    if (m_SAPICOMOwned) {
+        CoUninitialize();
+        m_SAPICOMOwned = false;
+    }
+#endif
+}
+
+#ifdef ENJIN_PLATFORM_WINDOWS
+// Lazy-create the SAPI voice on first speak. All failures are silent — no TTS
+// device just means the visual status bar carries the announcement alone.
+// RPC_E_CHANGED_MODE means another apartment already initialized COM on this
+// thread; the voice can still be created, we just don't own the uninit.
+static ISpVoice* AcquireSAPIVoice(void*& slot, bool& comOwned) {
+    if (slot) return static_cast<ISpVoice*>(slot);
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (SUCCEEDED(hr)) {
+        comOwned = true;
+    } else if (hr != RPC_E_CHANGED_MODE) {
+        return nullptr;
+    }
+    ISpVoice* voice = nullptr;
+    hr = CoCreateInstance(__uuidof(SpVoice), nullptr, CLSCTX_ALL,
+                          __uuidof(ISpVoice), reinterpret_cast<void**>(&voice));
+    if (FAILED(hr)) {
+        if (comOwned) { CoUninitialize(); comOwned = false; }
+        return nullptr;
+    }
+    slot = voice;
+    return voice;
+}
+#endif
 
 void AccessibilityAnnouncer::Announce(const std::string& text, AnnouncePriority priority) {
     Announcement ann;
@@ -51,6 +95,23 @@ void AccessibilityAnnouncer::Announce(const std::string& text, AnnouncePriority 
                 window.speechSynthesis.speak(u);
             }
         }, text.c_str(), priority >= AnnouncePriority::High ? 1 : 0);
+    }
+#endif
+
+#ifdef ENJIN_PLATFORM_WINDOWS
+    // Desktop Windows speaks through SAPI — same semantics as the web branch:
+    // async, High/Critical purge whatever is mid-sentence.
+    if (enabled) {
+        if (ISpVoice* voice = AcquireSAPIVoice(m_SAPIVoice, m_SAPICOMOwned)) {
+            int wlen = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, nullptr, 0);
+            if (wlen > 0) {
+                std::wstring wtext(static_cast<size_t>(wlen), L'\0');
+                MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, wtext.data(), wlen);
+                DWORD flags = SPF_ASYNC | SPF_IS_NOT_XML;
+                if (priority >= AnnouncePriority::High) flags |= SPF_PURGEBEFORESPEAK;
+                voice->Speak(wtext.c_str(), flags, nullptr);
+            }
+        }
     }
 #endif
 }

@@ -18,6 +18,10 @@ static Accessibility::AccessibilityAnnouncer* s_BindingsAnnouncer = nullptr;
 static Accessibility::RuntimeAccessibilitySettings* s_BindingsAccessibility = nullptr;
 static std::function<void()> s_SaveAccessibilityCallback;
 static std::function<void(bool)> s_DyslexiaFontCallback;
+// Host re-applies settings to consumers that only read them when pushed
+// (UISystem motor toggles, subtitle config, announcer). Fired by the motor
+// setters below so script changes take effect immediately.
+static std::function<void()> s_ApplyAccessibilityCallback;
 
 namespace Enjin {
 namespace Scripting {
@@ -40,6 +44,10 @@ void SetBindingsAccessibilitySaveCallback(std::function<void()> callback) {
 
 void SetBindingsDyslexiaFontCallback(std::function<void(bool)> callback) {
     s_DyslexiaFontCallback = std::move(callback);
+}
+
+void SetBindingsAccessibilityApplyCallback(std::function<void()> callback) {
+    s_ApplyAccessibilityCallback = std::move(callback);
 }
 
 } // namespace Scripting
@@ -121,7 +129,7 @@ static bool Announcer_IsEnabled() {
 
 static void Colorblind_SetMode(int mode) {
     if (!s_BindingsAccessibility) return;
-    if (mode < 0 || mode > 7) return;
+    if (mode < 0 || mode > 8) return;
     s_BindingsAccessibility->colorblindMode = static_cast<Accessibility::ColorblindMode>(mode);
 }
 
@@ -202,6 +210,63 @@ static float Accessibility_GetContrast() {
 }
 
 // ============================================================================
+// Motor accessibility bindings — write the settings struct, then have the host
+// push them into UISystem (these are not read per-frame like the visual ones)
+// ============================================================================
+
+static void Accessibility_SetDwellClick(bool enabled, float dwellTime) {
+    if (s_BindingsAccessibility) {
+        s_BindingsAccessibility->dwellClickEnabled = enabled;
+        if (dwellTime > 0.0f) s_BindingsAccessibility->dwellClickTime = dwellTime;
+    }
+    if (s_ApplyAccessibilityCallback) s_ApplyAccessibilityCallback();
+}
+
+static bool Accessibility_GetDwellClick() {
+    return s_BindingsAccessibility ? s_BindingsAccessibility->dwellClickEnabled : false;
+}
+
+static void Accessibility_SetSwitchAccess(bool enabled, float scanSpeed) {
+    if (s_BindingsAccessibility) {
+        s_BindingsAccessibility->switchAccessEnabled = enabled;
+        if (scanSpeed > 0.0f) s_BindingsAccessibility->switchScanSpeed = scanSpeed;
+    }
+    if (s_ApplyAccessibilityCallback) s_ApplyAccessibilityCallback();
+}
+
+static bool Accessibility_GetSwitchAccess() {
+    return s_BindingsAccessibility ? s_BindingsAccessibility->switchAccessEnabled : false;
+}
+
+static void Accessibility_SetStickyDrag(bool enabled) {
+    if (s_BindingsAccessibility) s_BindingsAccessibility->stickyDragEnabled = enabled;
+    if (s_ApplyAccessibilityCallback) s_ApplyAccessibilityCallback();
+}
+
+static bool Accessibility_GetStickyDrag() {
+    return s_BindingsAccessibility ? s_BindingsAccessibility->stickyDragEnabled : false;
+}
+
+static void Accessibility_SetScreenReader(bool enabled) {
+    if (s_BindingsAccessibility) s_BindingsAccessibility->screenReaderEnabled = enabled;
+    if (s_BindingsAnnouncer) s_BindingsAnnouncer->enabled = enabled;
+    if (s_ApplyAccessibilityCallback) s_ApplyAccessibilityCallback();
+}
+
+static bool Accessibility_GetScreenReader() {
+    return s_BindingsAccessibility ? s_BindingsAccessibility->screenReaderEnabled : false;
+}
+
+static void Accessibility_SetAudioIndicators(bool enabled) {
+    if (s_BindingsAccessibility) s_BindingsAccessibility->audioIndicatorsEnabled = enabled;
+    if (s_ApplyAccessibilityCallback) s_ApplyAccessibilityCallback();
+}
+
+static bool Accessibility_GetAudioIndicators() {
+    return s_BindingsAccessibility ? s_BindingsAccessibility->audioIndicatorsEnabled : false;
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -219,6 +284,7 @@ void RegisterAccessibilityBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterEnumValue("ColorblindMode", "CB_DEUTERANOMALY", 5));
     AS_CHECK(engine->RegisterEnumValue("ColorblindMode", "CB_TRITANOMALY", 6));
     AS_CHECK(engine->RegisterEnumValue("ColorblindMode", "CB_ACHROMATOPSIA", 7));
+    AS_CHECK(engine->RegisterEnumValue("ColorblindMode", "CB_ACHROMATOMALY", 8));
 
     // Subtitles
     AS_CHECK(engine->RegisterGlobalFunction("void Subtitle_Show(const string&in, const string&in = \"\", float = 3.0)",
@@ -291,6 +357,28 @@ void RegisterAccessibilityBindings(asIScriptEngine* engine) {
         asFUNCTION(Accessibility_GetDyslexiaFont), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SaveSettings()",
         asFUNCTION(Accessibility_SaveSettings), asCALL_CDECL));
+
+    // Motor accessibility + screen reader + indicators
+    AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetDwellClick(bool, float = 0.0)",
+        asFUNCTION(Accessibility_SetDwellClick), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Accessibility_GetDwellClick()",
+        asFUNCTION(Accessibility_GetDwellClick), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetSwitchAccess(bool, float = 0.0)",
+        asFUNCTION(Accessibility_SetSwitchAccess), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Accessibility_GetSwitchAccess()",
+        asFUNCTION(Accessibility_GetSwitchAccess), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetStickyDrag(bool)",
+        asFUNCTION(Accessibility_SetStickyDrag), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Accessibility_GetStickyDrag()",
+        asFUNCTION(Accessibility_GetStickyDrag), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetScreenReader(bool)",
+        asFUNCTION(Accessibility_SetScreenReader), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Accessibility_GetScreenReader()",
+        asFUNCTION(Accessibility_GetScreenReader), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetAudioIndicators(bool)",
+        asFUNCTION(Accessibility_SetAudioIndicators), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Accessibility_GetAudioIndicators()",
+        asFUNCTION(Accessibility_GetAudioIndicators), asCALL_CDECL));
 }
 
 } // namespace Scripting

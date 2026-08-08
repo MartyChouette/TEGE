@@ -89,10 +89,13 @@ fn applyColorblindCorrection(color: vec3<f32>) -> vec3<f32> {
     let mode = params.colorblindMode;
     if (mode == 0u) { return color; }
 
-    // Achromatopsia (complete color blindness) — convert to grayscale
-    if (mode == 7u) {
+    // Achromatopsia (complete color blindness) — convert to grayscale.
+    // Achromatomaly (mode 8, weak color vision) — same at half strength.
+    if (mode == 7u || mode == 8u) {
         let gray = dot(color, vec3<f32>(0.299, 0.587, 0.114));
-        return mix(color, vec3<f32>(gray), params.colorblindStrength);
+        var achromaStrength = params.colorblindStrength;
+        if (mode == 8u) { achromaStrength = achromaStrength * 0.5; }
+        return mix(color, vec3<f32>(gray), achromaStrength);
     }
 
     // Simulation matrices for full deficiency (Brettel/Machado)

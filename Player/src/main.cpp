@@ -94,6 +94,7 @@
 #include <memory>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <algorithm>
 
 namespace fs = std::filesystem;
@@ -236,6 +237,10 @@ public:
         m_GameMenu.SetInputMap(&m_InputMap);
         m_GameMenu.SetGameTitle(m_WindowTitle.empty() ? "Game" : m_WindowTitle);
 
+        // Restore the player's saved control bindings (bindings.json next to the
+        // exe — written whenever the Options menu closes after a rebind).
+        LoadInputBindings();
+
         // Wire menu button callbacks for title screen and pause menu
         // The UICanvas game-over screen (spawned by GameplayLoop, one UI source on
         // all platforms) dispatches "gameover_restart" on the UI event bus.
@@ -332,12 +337,24 @@ public:
             audio.masterVolume = m_SimpleAudio.GetMasterVolume();
         });
 
+        // Accessibility tab: the menu edits the live settings struct in place;
+        // every change re-applies the boot-time consumers and persists.
+        m_GameMenu.SetAccessibilitySettings(&m_AccessibilitySettings);
+        m_GameMenu.SetAccessibilityChangedCallback([this]() {
+            ApplyAccessibilitySettings();
+            SaveAccessibilitySettings();
+            // The tab's one-handed/gamepad preset buttons rewrite bindings
+            SaveInputBindings();
+        });
+
         // Apply graphics/audio settings when user exits Options menu.
         // Some changes (VSync, fullscreen) must be deferred — they recreate the
         // swapchain/window, which is unsafe mid-frame. Store pending changes and
         // apply them at the start of the next Update().
         m_GameMenu.SetSettingsCallback([this](const Enjin::GUI::GraphicsSettings& gfx,
                                               const Enjin::GUI::AudioSettings& audio) {
+            // Persist any Controls-tab rebinds along with the settings exit
+            SaveInputBindings();
             // --- Audio (safe to apply immediately) ---
             m_SimpleAudio.SetMasterVolume(audio.masterMute ? 0.0f : audio.masterVolume);
             m_SimpleAudio.SetChannelVolume(Enjin::Audio::AudioChannel::Music, audio.musicMute ? 0.0f : audio.musicVolume);
@@ -1766,6 +1783,7 @@ private:
         Enjin::Scripting::SetBindingsAnnouncer(&m_Announcer);
         Enjin::Scripting::SetBindingsAccessibilitySettings(&m_AccessibilitySettings);
         Enjin::Scripting::SetBindingsAccessibilitySaveCallback([this]() { SaveAccessibilitySettings(); });
+        Enjin::Scripting::SetBindingsAccessibilityApplyCallback([this]() { ApplyAccessibilitySettings(); });
         Enjin::Scripting::SetBindingsDyslexiaFontCallback([this](bool on) {
             m_FontLibrary.SetFont(on ? Enjin::Accessibility::FontFamily::OpenDyslexic
                                      : Enjin::Accessibility::FontFamily::Default);
@@ -1810,76 +1828,14 @@ private:
         // Load accessibility settings from accessibility.json next to executable
         LoadAccessibilitySettings();
 
-        // Configure subtitle system from accessibility settings
-        auto& subConfig = m_SubtitleSystem.GetConfig();
-        subConfig.enabled = m_AccessibilitySettings.subtitlesEnabled;
-        subConfig.captionsEnabled = m_AccessibilitySettings.closedCaptionsEnabled;
-        subConfig.fontSize = m_AccessibilitySettings.subtitleFontSize;
-        subConfig.backgroundOpacity = m_AccessibilitySettings.subtitleBgOpacity;
-        subConfig.showSpeakerNames = m_AccessibilitySettings.subtitleSpeakerNames;
-        subConfig.showDirectionIndicators = m_AccessibilitySettings.subtitleDirectionIndicators;
-
         // Wire announcer to UISystem for screen reader support (Task #36)
         m_UISystem.SetAnnouncerCallback([this](const std::string& text) {
             m_Announcer.Announce(text, Enjin::Accessibility::AnnouncePriority::Normal);
         });
 
-        // Apply reduced motion setting to controller system and UI
-        m_ControllerSystem.SetReducedMotion(m_AccessibilitySettings.reducedMotion);
-        m_ControllerSystem.SetDisableScreenShake(m_AccessibilitySettings.disableScreenShake);
-        m_ControllerSystem.SetDisableFOVEffects(m_AccessibilitySettings.disableFOVEffects);
-        m_ControllerSystem.SetInvertMouseY(m_AccessibilitySettings.invertMouseY);
-        m_UISystem.SetReducedMotion(m_AccessibilitySettings.reducedMotion);
-
-        // Apply font scale to UISystem
-        m_UISystem.SetFontScale(m_AccessibilitySettings.fontScale);
-
-        // Apply motor accessibility to UISystem (Task #34, #40)
-        m_UISystem.SetSwitchAccessEnabled(m_AccessibilitySettings.switchAccessEnabled,
-                                           m_AccessibilitySettings.switchScanSpeed);
-        m_UISystem.SetDwellClickEnabled(m_AccessibilitySettings.dwellClickEnabled,
-                                         m_AccessibilitySettings.dwellClickTime);
-        m_UISystem.SetStickyDragEnabled(m_AccessibilitySettings.stickyDragEnabled);
-
-        // Configure audio visual indicators (Task #38)
-        m_AudioIndicators.GetConfig().enabled = m_AccessibilitySettings.audioIndicatorsEnabled;
-
-        // Wire SimpleAudio callback for audio visual indicators
-        if (m_AudioIndicators.GetConfig().enabled) {
-            m_SimpleAudio.SetOnSoundPlayed([this](const std::string& soundName) {
-                m_AudioIndicators.ShowIndicator(soundName,
-                    Enjin::Math::Vector3(0.4f, 0.8f, 1.0f), 1.5f);
-            });
-        }
-
-        // Apply font library settings (Task #35)
-        if (m_AccessibilitySettings.dyslexiaFriendly) {
-            m_FontLibrary.SetFont(Enjin::Accessibility::FontFamily::OpenDyslexic);
-        } else if (m_AccessibilitySettings.fontFamily != Enjin::Accessibility::FontFamily::Default) {
-            m_FontLibrary.SetFont(m_AccessibilitySettings.fontFamily);
-        }
-        {
-            Enjin::Accessibility::FontLibraryConfig flConfig;
-            flConfig.selectedFamily = m_AccessibilitySettings.fontFamily;
-            flConfig.letterSpacing = m_AccessibilitySettings.letterSpacing;
-            flConfig.wordSpacing = m_AccessibilitySettings.wordSpacing;
-            flConfig.lineSpacing = m_AccessibilitySettings.lineSpacing;
-            m_FontLibrary.SetConfig(flConfig);
-        }
-
-        // Apply colorblind mode and visual settings to post-processing
-        if (m_PostProcessing) {
-            m_AccessibilitySettings.ApplyToPostProcessing(m_PostProcessing->GetSettings());
-        }
-
-        // Also push accessibility params to RenderSystem for WebGPU post-process
-        if (m_RenderSystem) {
-            m_RenderSystem->SetWebAccessibility(
-                static_cast<Enjin::u32>(m_AccessibilitySettings.colorblindMode),
-                m_AccessibilitySettings.colorblindStrength,
-                m_AccessibilitySettings.screenBrightness,
-                m_AccessibilitySettings.screenContrast);
-        }
+        // Push settings into every consumer (also re-run by the in-game
+        // Accessibility menu tab whenever the player changes something)
+        ApplyAccessibilitySettings();
 
         // Wire UISystem texture resolver (loads textures via RenderSystem, registers with ImGui)
         m_UISystem.SetTextureResolver([this](const std::string& path, Enjin::u32& outW, Enjin::u32& outH) -> void* {
@@ -2053,11 +2009,15 @@ private:
                 m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
         }
 
-        // Read content warning flags from scene JSON if present (Task #39)
+        // Read content warning flags from scene JSON if present (Task #39).
+        // SceneSerializer writes them under "accessibility"; "contentWarnings"
+        // stays supported for hand-authored scene files.
         try {
             auto sceneJson = nlohmann::json::parse(sceneStr);
-            if (sceneJson.contains("contentWarnings")) {
-                auto& cw = sceneJson["contentWarnings"];
+            const char* cwKey = sceneJson.contains("accessibility") ? "accessibility"
+                              : (sceneJson.contains("contentWarnings") ? "contentWarnings" : nullptr);
+            if (cwKey) {
+                auto& cw = sceneJson[cwKey];
                 Enjin::Accessibility::SceneContentFlags flags;
                 if (cw.contains("flags")) {
                     flags.flags = static_cast<Enjin::Accessibility::ContentWarningType>(
@@ -2084,6 +2044,107 @@ private:
 
         ENJIN_LOG_INFO(Player, "Loaded scene: %s (%zu entities)", scenePath.c_str(), result.entities.size());
         return true;
+    }
+
+    // Push m_AccessibilitySettings into every consumer. Called at boot and by
+    // the in-game Accessibility menu tab on every change — several consumers
+    // (subtitle config, indicators, announcer, UISystem motor toggles, fonts)
+    // only read these values when pushed, unlike the per-frame PP apply.
+    void ApplyAccessibilitySettings() {
+        // Subtitles
+        auto& subConfig = m_SubtitleSystem.GetConfig();
+        subConfig.enabled = m_AccessibilitySettings.subtitlesEnabled;
+        subConfig.captionsEnabled = m_AccessibilitySettings.closedCaptionsEnabled;
+        subConfig.fontSize = m_AccessibilitySettings.subtitleFontSize;
+        subConfig.backgroundOpacity = m_AccessibilitySettings.subtitleBgOpacity;
+        subConfig.showSpeakerNames = m_AccessibilitySettings.subtitleSpeakerNames;
+        subConfig.showDirectionIndicators = m_AccessibilitySettings.subtitleDirectionIndicators;
+
+        // Screen reader (visual status bar + platform TTS)
+        m_Announcer.enabled = m_AccessibilitySettings.screenReaderEnabled;
+
+        // Motion
+        m_ControllerSystem.SetReducedMotion(m_AccessibilitySettings.reducedMotion);
+        m_ControllerSystem.SetDisableScreenShake(m_AccessibilitySettings.disableScreenShake);
+        m_ControllerSystem.SetDisableFOVEffects(m_AccessibilitySettings.disableFOVEffects);
+        m_ControllerSystem.SetInvertMouseY(m_AccessibilitySettings.invertMouseY);
+        m_UISystem.SetReducedMotion(m_AccessibilitySettings.reducedMotion);
+
+        // Font scale + motor accessibility
+        m_UISystem.SetFontScale(m_AccessibilitySettings.fontScale);
+        m_UISystem.SetSwitchAccessEnabled(m_AccessibilitySettings.switchAccessEnabled,
+                                           m_AccessibilitySettings.switchScanSpeed);
+        m_UISystem.SetDwellClickEnabled(m_AccessibilitySettings.dwellClickEnabled,
+                                         m_AccessibilitySettings.dwellClickTime);
+        m_UISystem.SetStickyDragEnabled(m_AccessibilitySettings.stickyDragEnabled);
+
+        // Audio visual indicators (callback wired unconditionally — the overlay
+        // render gates on config.enabled, so a disabled state just drops events)
+        m_AudioIndicators.GetConfig().enabled = m_AccessibilitySettings.audioIndicatorsEnabled;
+        m_SimpleAudio.SetOnSoundPlayed([this](const std::string& soundName) {
+            if (m_AudioIndicators.GetConfig().enabled) {
+                m_AudioIndicators.ShowIndicator(soundName,
+                    Enjin::Math::Vector3(0.4f, 0.8f, 1.0f), 1.5f);
+            }
+        });
+
+        // Fonts (dyslexia mode swaps to OpenDyslexic when embedded, else spacing)
+        if (m_AccessibilitySettings.dyslexiaFriendly) {
+            m_FontLibrary.SetFont(Enjin::Accessibility::FontFamily::OpenDyslexic);
+        } else {
+            m_FontLibrary.SetFont(m_AccessibilitySettings.fontFamily);
+        }
+        {
+            Enjin::Accessibility::FontLibraryConfig flConfig;
+            flConfig.selectedFamily = m_AccessibilitySettings.dyslexiaFriendly
+                ? Enjin::Accessibility::FontFamily::OpenDyslexic
+                : m_AccessibilitySettings.fontFamily;
+            flConfig.letterSpacing = m_AccessibilitySettings.letterSpacing;
+            flConfig.wordSpacing = m_AccessibilitySettings.wordSpacing;
+            flConfig.lineSpacing = m_AccessibilitySettings.lineSpacing;
+            m_FontLibrary.SetConfig(flConfig);
+        }
+
+        // Colorblind + brightness/contrast into post-processing
+        if (m_PostProcessing) {
+            m_AccessibilitySettings.ApplyToPostProcessing(m_PostProcessing->GetSettings());
+        }
+        if (m_RenderSystem) {
+            m_RenderSystem->SetWebAccessibility(
+                static_cast<Enjin::u32>(m_AccessibilitySettings.colorblindMode),
+                m_AccessibilitySettings.colorblindStrength,
+                m_AccessibilitySettings.screenBrightness,
+                m_AccessibilitySettings.screenContrast);
+        }
+    }
+
+    // Player-remapped controls persist next to accessibility.json. Ship-time
+    // defaults come from the pak/scene; this file only exists after a rebind.
+    void LoadInputBindings() {
+        std::string exeDir = Enjin::Platform::GetExecutableDirectory();
+        std::string path = (fs::path(exeDir) / "bindings.json").string();
+        if (!fs::exists(path)) return;
+        std::ifstream file(path);
+        if (!file.is_open()) return;
+        std::stringstream ss;
+        ss << file.rdbuf();
+        if (m_InputMap.FromJson(ss.str())) {
+            ENJIN_LOG_INFO(Player, "Loaded control bindings from %s", path.c_str());
+        } else {
+            ENJIN_LOG_WARN(Player, "Failed to parse bindings.json — using defaults");
+        }
+    }
+
+    void SaveInputBindings() {
+        std::string exeDir = Enjin::Platform::GetExecutableDirectory();
+        std::string path = (fs::path(exeDir) / "bindings.json").string();
+        try {
+            std::ofstream file(path);
+            file << m_InputMap.ToJson();
+            ENJIN_LOG_INFO(Player, "Saved control bindings to %s", path.c_str());
+        } catch (const std::exception& e) {
+            ENJIN_LOG_WARN(Player, "Failed to save bindings.json: %s", e.what());
+        }
     }
 
     void LoadAccessibilitySettings() {
@@ -2182,6 +2243,10 @@ private:
             if (j.contains("audioIndicatorsEnabled"))
                 m_AccessibilitySettings.audioIndicatorsEnabled = j["audioIndicatorsEnabled"].get<bool>();
 
+            // Screen reader (announcer status bar + TTS)
+            if (j.contains("screenReaderEnabled"))
+                m_AccessibilitySettings.screenReaderEnabled = j["screenReaderEnabled"].get<bool>();
+
             // Alternative input device settings (Task #37)
             if (j.contains("alternativeInput")) {
                 auto& ai = j["alternativeInput"];
@@ -2269,6 +2334,7 @@ private:
             j["switchAccessEnabled"] = m_AccessibilitySettings.switchAccessEnabled;
             j["switchScanSpeed"] = m_AccessibilitySettings.switchScanSpeed;
             j["audioIndicatorsEnabled"] = m_AccessibilitySettings.audioIndicatorsEnabled;
+            j["screenReaderEnabled"] = m_AccessibilitySettings.screenReaderEnabled;
             j["sprintMode"] = m_AccessibilitySettings.sprintMode;
             j["crouchMode"] = m_AccessibilitySettings.crouchMode;
             j["mouseSensitivity"] = m_AccessibilitySettings.mouseSensitivity;

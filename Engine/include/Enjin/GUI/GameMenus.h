@@ -5,6 +5,7 @@
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Editor/EditorSettings.h"
+#include "Enjin/Accessibility/AccessibilitySettings.h"
 
 #include <imgui.h>
 
@@ -73,6 +74,15 @@ public:
     using SettingsSyncCallback = std::function<void(GraphicsSettings&, AudioSettings&)>;
     void SetSettingsSyncCallback(SettingsSyncCallback cb) { m_SettingsSyncCallback = std::move(cb); }
 
+    // Accessibility tab edits the host's LIVE RuntimeAccessibilitySettings in
+    // place (no copy — the host's per-frame apply loops pick most fields up).
+    // The changed callback fires on any edit so the host can re-push the fields
+    // that are only read at boot (subtitle config, indicators, announcer,
+    // UISystem motor toggles, dyslexia font) and persist to accessibility.json.
+    void SetAccessibilitySettings(Accessibility::RuntimeAccessibilitySettings* s) { m_Accessibility = s; }
+    using AccessibilityChangedCallback = std::function<void()>;
+    void SetAccessibilityChangedCallback(AccessibilityChangedCallback cb) { m_AccessibilityChanged = std::move(cb); }
+
     void ShowScreen(MenuScreen screen);
     void HideAll();
     MenuScreen GetCurrentScreen() const;
@@ -94,9 +104,11 @@ private:
     AudioSettings m_Audio;
     InputSystem::InputActionMap* m_InputMap = nullptr;
     Editor::EditorSettings* m_EditorSettings = nullptr;
+    Accessibility::RuntimeAccessibilitySettings* m_Accessibility = nullptr;
     MenuCallback m_Callback;
     SettingsCallback m_SettingsCallback;
     SettingsSyncCallback m_SettingsSyncCallback;
+    AccessibilityChangedCallback m_AccessibilityChanged;
     std::string m_GameTitle = "My Game";
     i32 m_RebindingAction = -1;
     MenuScreen m_ReturnScreen = MenuScreen::PauseMenu;
@@ -106,6 +118,7 @@ private:
     void RenderOptions(f32 w, f32 h);
     void RenderGraphics(f32 w, f32 h);
     void RenderAudio(f32 w, f32 h);
+    void RenderAccessibility(f32 w, f32 h);
     void RenderControls(f32 w, f32 h);
     void RenderHowToPlay(f32 w, f32 h);
     void RenderGameOver(f32 w, f32 h);

@@ -238,6 +238,10 @@ void GameMenuSystem::RenderOptions(f32 w, f32 h) {
             RenderAudio(w, h);
             ImGui::EndTabItem();
         }
+        if (m_Accessibility && ImGui::BeginTabItem("Accessibility")) {
+            RenderAccessibility(w, h);
+            ImGui::EndTabItem();
+        }
         if (ImGui::BeginTabItem("Controls")) {
             RenderControls(w, h);
             ImGui::EndTabItem();
@@ -367,6 +371,111 @@ void GameMenuSystem::RenderGraphics(f32 w, f32 h) {
     }
 
     ImGui::PopItemWidth();
+}
+
+// ---------------------------------------------------------------------------
+// Accessibility Settings — every exported game gets this tab for free.
+// Edits the host's live RuntimeAccessibilitySettings; the changed callback
+// lets the host re-push boot-time-only consumers and persist.
+// ---------------------------------------------------------------------------
+
+void GameMenuSystem::RenderAccessibility(f32 w, f32 h) {
+    (void)w;
+    (void)h;
+    if (!m_Accessibility) return;
+    auto& a = *m_Accessibility;
+    bool changed = false;
+
+    ImGui::Dummy(ImVec2(0, 4));
+    ImGui::BeginChild("##A11yScroll", ImVec2(0, 330), false);
+    ImGui::PushItemWidth(280.0f);
+
+    // --- Vision ---
+    ImGui::Text("Vision");
+    ImGui::Separator();
+    static const char* cbModes[] = {
+        "Off",
+        "Protanopia (no red)", "Deuteranopia (no green)", "Tritanopia (no blue)",
+        "Protanomaly (weak red)", "Deuteranomaly (weak green)", "Tritanomaly (weak blue)",
+        "Achromatopsia (no color)", "Achromatomaly (weak color)"
+    };
+    i32 cbMode = static_cast<i32>(a.colorblindMode);
+    if (cbMode < 0 || cbMode > 8) cbMode = 0;
+    if (ImGui::Combo("Colorblind Mode", &cbMode, cbModes, 9)) {
+        a.colorblindMode = static_cast<Accessibility::ColorblindMode>(cbMode);
+        changed = true;
+    }
+    if (a.colorblindMode != Accessibility::ColorblindMode::Off) {
+        changed |= ImGui::SliderFloat("Correction Strength", &a.colorblindStrength, 0.0f, 1.0f, "%.2f");
+    }
+    changed |= ImGui::SliderFloat("Brightness", &a.screenBrightness, -0.5f, 0.5f, "%.2f");
+    changed |= ImGui::SliderFloat("Contrast", &a.screenContrast, 0.5f, 2.0f, "%.2f");
+    changed |= ImGui::SliderFloat("UI Font Scale", &a.fontScale, 0.5f, 3.0f, "%.2f");
+
+    // --- Text & Reading ---
+    ImGui::Dummy(ImVec2(0, 6));
+    ImGui::Text("Text & Reading");
+    ImGui::Separator();
+    changed |= ImGui::Checkbox("Dyslexia-Friendly Font", &a.dyslexiaFriendly);
+    changed |= ImGui::Checkbox("Subtitles", &a.subtitlesEnabled);
+    if (a.subtitlesEnabled) {
+        ImGui::Indent(16.0f);
+        changed |= ImGui::Checkbox("Speaker Names", &a.subtitleSpeakerNames);
+        changed |= ImGui::Checkbox("Closed Captions (sound effects)", &a.closedCaptionsEnabled);
+        changed |= ImGui::Checkbox("Direction Indicators", &a.subtitleDirectionIndicators);
+        changed |= ImGui::SliderFloat("Subtitle Size", &a.subtitleFontSize, 16.0f, 48.0f, "%.0f");
+        changed |= ImGui::SliderFloat("Background Opacity", &a.subtitleBgOpacity, 0.0f, 1.0f, "%.2f");
+        ImGui::Unindent(16.0f);
+    }
+
+    // --- Motion ---
+    ImGui::Dummy(ImVec2(0, 6));
+    ImGui::Text("Motion");
+    ImGui::Separator();
+    changed |= ImGui::Checkbox("Reduced Motion", &a.reducedMotion);
+    changed |= ImGui::Checkbox("Disable Screen Shake", &a.disableScreenShake);
+    changed |= ImGui::Checkbox("Disable FOV Effects", &a.disableFOVEffects);
+    changed |= ImGui::Checkbox("Disable Flashing Lights", &a.disableFlashingLights);
+
+    // --- Motor ---
+    ImGui::Dummy(ImVec2(0, 6));
+    ImGui::Text("Motor");
+    ImGui::Separator();
+    changed |= ImGui::Checkbox("Dwell Click (hover to click)", &a.dwellClickEnabled);
+    if (a.dwellClickEnabled) {
+        ImGui::Indent(16.0f);
+        changed |= ImGui::SliderFloat("Dwell Time", &a.dwellClickTime, 0.3f, 3.0f, "%.1f s");
+        ImGui::Unindent(16.0f);
+    }
+    changed |= ImGui::Checkbox("Switch Access (one-button scanning)", &a.switchAccessEnabled);
+    if (a.switchAccessEnabled) {
+        ImGui::Indent(16.0f);
+        changed |= ImGui::SliderFloat("Scan Speed", &a.switchScanSpeed, 0.5f, 5.0f, "%.1f s");
+        ImGui::Unindent(16.0f);
+    }
+    changed |= ImGui::Checkbox("Sticky Slider Drag", &a.stickyDragEnabled);
+    if (m_InputMap) {
+        ImGui::Dummy(ImVec2(0, 4));
+        ImGui::TextUnformatted("Control Presets");
+        if (ImGui::Button("Left Hand Only", ImVec2(130, 0))) { m_InputMap->ApplyLeftHandOnly(); changed = true; }
+        ImGui::SameLine();
+        if (ImGui::Button("Right Hand Only", ImVec2(130, 0))) { m_InputMap->ApplyRightHandOnly(); changed = true; }
+        ImGui::SameLine();
+        if (ImGui::Button("Gamepad Only", ImVec2(130, 0))) { m_InputMap->ApplyGamepadOnly(); changed = true; }
+        if (ImGui::Button("Reset Controls to Default", ImVec2(200, 0))) { m_InputMap->ResetToDefaults(); changed = true; }
+    }
+
+    // --- Audio & Communication ---
+    ImGui::Dummy(ImVec2(0, 6));
+    ImGui::Text("Audio & Communication");
+    ImGui::Separator();
+    changed |= ImGui::Checkbox("Screen Reader / Announcements", &a.screenReaderEnabled);
+    changed |= ImGui::Checkbox("Visual Sound Indicators", &a.audioIndicatorsEnabled);
+
+    ImGui::PopItemWidth();
+    ImGui::EndChild();
+
+    if (changed && m_AccessibilityChanged) m_AccessibilityChanged();
 }
 
 // ---------------------------------------------------------------------------

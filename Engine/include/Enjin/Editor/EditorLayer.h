@@ -24,6 +24,7 @@
 #include "Enjin/Editor/CommandPalette.h"
 #include "Enjin/Accessibility/AlternativeInput.h"
 #include "Enjin/Accessibility/AccessibilitySettings.h"
+#include "Enjin/Accessibility/ContentWarning.h"
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Effects/Water.h"
 #include "Enjin/Effects/Wind.h"
@@ -1113,6 +1114,10 @@ private:
 
     // One-time migration of deprecated EditorSettings fields to .enjinproject
     void MigrateEditorSettingsToProject();
+
+    // Per-scene content warning flags — authored in Settings > Scene, saved
+    // with the scene, shown by the player before gameplay starts
+    Accessibility::SceneContentFlags m_SceneContentFlags;
 
     // Per-scene render settings
     bool m_CurrentSceneUsesProjectDefaults = true;

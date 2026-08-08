@@ -31,7 +31,7 @@ struct Announcement {
 class ENJIN_API AccessibilityAnnouncer {
 public:
     AccessibilityAnnouncer() = default;
-    ~AccessibilityAnnouncer() = default;
+    ~AccessibilityAnnouncer();
 
     // Announce an action or status change
     void Announce(const std::string& text, AnnouncePriority priority = AnnouncePriority::Normal);
@@ -56,6 +56,10 @@ public:
 private:
     std::deque<Announcement> m_Queue;
     std::string m_EmptyString;
+    // SAPI voice handle — void* keeps <sapi.h> out of this header
+    void* m_SAPIVoice = nullptr;
+    // true only if this instance's CoInitializeEx succeeded (paired CoUninitialize)
+    bool m_SAPICOMOwned = false;
 };
 
 } // namespace Accessibility

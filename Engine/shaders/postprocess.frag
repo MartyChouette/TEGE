@@ -441,14 +441,19 @@ vec3 applyColorGrading(vec3 color) {
 #define CB_DEUTERANOMALY 5
 #define CB_TRITANOMALY 6
 #define CB_ACHROMATOPSIA 7
+#define CB_ACHROMATOMALY 8
 
 vec3 applyColorblindCorrection(vec3 color) {
     if (settings.colorblindMode == CB_OFF) return color;
 
-    // Achromatopsia: convert to luminance
-    if (settings.colorblindMode == CB_ACHROMATOPSIA) {
+    // Achromatopsia: convert to luminance.
+    // Achromatomaly (weak color vision): same correction at partial strength.
+    if (settings.colorblindMode == CB_ACHROMATOPSIA ||
+        settings.colorblindMode == CB_ACHROMATOMALY) {
         float lum = dot(color, vec3(0.2126, 0.7152, 0.0722));
-        return mix(color, vec3(lum), settings.colorblindStrength);
+        float achromaStrength = settings.colorblindStrength;
+        if (settings.colorblindMode == CB_ACHROMATOMALY) achromaStrength *= 0.5;
+        return mix(color, vec3(lum), achromaStrength);
     }
 
     // Simulation matrices (how colorblind person perceives color)

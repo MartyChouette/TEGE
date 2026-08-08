@@ -21,7 +21,8 @@ enum class ColorblindMode : u32 {
     Protanomaly = 4,
     Deuteranomaly = 5,
     Tritanomaly = 6,
-    Achromatopsia = 7
+    Achromatopsia = 7,
+    Achromatomaly = 8   // partial color weakness (mild achromatopsia)
 };
 
 // Font family for accessibility text rendering
@@ -72,6 +73,9 @@ struct RuntimeAccessibilitySettings {
 
     // Audio visual indicators
     bool audioIndicatorsEnabled = false;
+
+    // Screen reader (announcer TTS + status bar) in exported games
+    bool screenReaderEnabled = false;
 
     // Input
     u32 sprintMode = 0;   // 0=Hold, 1=Toggle

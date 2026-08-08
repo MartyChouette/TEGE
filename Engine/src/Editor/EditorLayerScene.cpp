@@ -297,6 +297,7 @@ void EditorLayer::SaveScene(const std::string& path) {
     if (m_RenderSystem) {
         serializer.SetSkyboxConfig(m_RenderSystem->GetSkyboxConfig());
     }
+    serializer.SetContentFlags(m_SceneContentFlags);
 
     // Capture current render settings for serialization
     auto renderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
@@ -412,6 +413,11 @@ void EditorLayer::OpenSceneImmediate(const std::string& path) {
     // Apply loaded skybox config
     if (result.success && m_RenderSystem) {
         m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
+    }
+
+    // Adopt the scene's content warning flags (authored in Settings > Scene)
+    if (result.success) {
+        m_SceneContentFlags = serializer.GetContentFlags();
     }
 
     // Apply loaded render settings
@@ -815,26 +821,47 @@ void EditorLayer::DeleteSelectedEntities() {
     }
     if (validEntities.empty()) return;
 
+    // Deleting a parent deletes its whole subtree (imported FBX roots, empty
+    // group parents). Collect descendants BEFORE issuing any delete (children
+    // lists mutate during deletion), breadth-first with dedup, then delete
+    // leaf-first so no command ever leaves live children on a dead parent.
+    std::vector<ECS::Entity> toDelete;
+    auto alreadyListed = [&](ECS::Entity e) {
+        return std::find(toDelete.begin(), toDelete.end(), e) != toDelete.end();
+    };
+    for (ECS::Entity e : validEntities) {
+        if (!alreadyListed(e)) toDelete.push_back(e);
+    }
+    for (usize i = 0; i < toDelete.size(); ++i) {
+        for (ECS::Entity child : ECS::GetChildren(m_World, toDelete[i])) {
+            if (m_World->IsValid(child) && !alreadyListed(child)) {
+                toDelete.push_back(child);
+            }
+        }
+    }
+    std::reverse(toDelete.begin(), toDelete.end());  // leaf-first
+
     ClearSelection();
 
-    if (validEntities.size() == 1) {
+    if (toDelete.size() == 1) {
         auto cmd = std::make_unique<FullDeleteEntityCommand>(
-            m_World, validEntities[0],
+            m_World, toDelete[0],
             [this](ECS::Entity restored) { SelectEntity(restored); });
         m_UndoRedo.Execute(std::move(cmd));
     } else {
         m_UndoRedo.BeginCompound("Delete Entities");
-        for (ECS::Entity e : validEntities) {
+        for (ECS::Entity e : toDelete) {
             auto cmd = std::make_unique<FullDeleteEntityCommand>(m_World, e);
             m_UndoRedo.Execute(std::move(cmd));
         }
         m_UndoRedo.EndCompound();
     }
-    ENJIN_LOG_INFO(Editor, "Deleted %zu entities", validEntities.size());
+    ENJIN_LOG_INFO(Editor, "Deleted %zu entities (%zu selected + descendants)",
+                   toDelete.size(), validEntities.size());
 
     // Accessibility announcement
     if (m_Announcer.enabled) {
-        m_Announcer.Announce("Deleted " + std::to_string(validEntities.size()) + " entities",
+        m_Announcer.Announce("Deleted " + std::to_string(toDelete.size()) + " entities",
             Accessibility::AnnouncePriority::Normal);
     }
 }
@@ -861,6 +888,7 @@ void EditorLayer::AutoSave() {
     if (m_RenderSystem) {
         serializer.SetSkyboxConfig(m_RenderSystem->GetSkyboxConfig());
     }
+    serializer.SetContentFlags(m_SceneContentFlags);
 
     auto renderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
         m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);

@@ -272,11 +272,13 @@ void EditorLayer::DrawSettingsSection_Camera() {
                 if (ImGui::Button("Apply Editor View to Game Camera")) {
                     gameCamTransform->position = m_Camera->GetPosition();
 
-                    f32 yawRad = Math::Radians(m_CameraController->GetYaw());
-                    f32 pitchRad = Math::Radians(m_CameraController->GetPitch());
-                    Math::Quaternion yawQuat(Math::Vector3(0.0f, 1.0f, 0.0f), yawRad);
-                    Math::Quaternion pitchQuat(Math::Vector3(1.0f, 0.0f, 0.0f), pitchRad);
-                    gameCamTransform->rotation = yawQuat * pitchQuat;
+                    // Copy the camera's actual world rotation. Both the renderer
+                    // camera and the game camera treat forward as -Z, so this is
+                    // exact. Rebuilding from controller yaw/pitch (previous code)
+                    // negated yaw vs the controller's own forward convention and
+                    // went stale after orbit/F-focus — position landed right but
+                    // the view faced the wrong way (Marty, 2026-08-07).
+                    gameCamTransform->rotation = m_Camera->GetRotation();
 
                     if (m_CameraController->IsOrthographic()) {
                         gameCamComp->projectionType = ECS::ProjectionType::Orthographic;
@@ -1969,6 +1971,53 @@ void EditorLayer::DrawSettingsWindow() {
 
             // --- Art Style Preset ---
             DrawSettingsSection_ArtStylePreset();
+            ImGui::Separator();
+
+            // --- Content Warnings (accessibility) ---
+            // Saved with the scene; the player shows them as a dismissable
+            // overlay before gameplay starts.
+            ImGui::SeparatorText("Content Warnings");
+            ImGui::PushTextWrapPos(); ImGui::TextDisabled("Shown to players before this scene starts (dismissed with any key)"); ImGui::PopTextWrapPos();
+            {
+                u32 cwFlags = static_cast<u32>(m_SceneContentFlags.flags);
+                struct CWEntry { const char* label; u32 bit; };
+                static const CWEntry cwEntries[] = {
+                    { "Flashing Lights", 1u << 0 }, { "Rapid Motion", 1u << 1 },
+                    { "Violence",        1u << 2 }, { "Heights",      1u << 3 },
+                    { "Loud Sounds",     1u << 4 }, { "Spiders",      1u << 5 },
+                    { "Gore",            1u << 6 }, { "Drowning",     1u << 7 },
+                };
+                for (int cwI = 0; cwI < 8; ++cwI) {
+                    bool on = (cwFlags & cwEntries[cwI].bit) != 0;
+                    if ((cwI % 2) == 1) ImGui::SameLine(220.0f);
+                    if (ImGui::Checkbox(cwEntries[cwI].label, &on)) {
+                        if (on) cwFlags |= cwEntries[cwI].bit;
+                        else    cwFlags &= ~cwEntries[cwI].bit;
+                        m_SceneContentFlags.flags = static_cast<Accessibility::ContentWarningType>(cwFlags);
+                    }
+                }
+
+                for (usize cwI = 0; cwI < m_SceneContentFlags.customWarnings.size(); ++cwI) {
+                    ImGui::PushID(static_cast<int>(cwI));
+                    char cwBuf[256] = {};
+                    strncpy(cwBuf, m_SceneContentFlags.customWarnings[cwI].c_str(), sizeof(cwBuf) - 1);
+                    ImGui::SetNextItemWidth(260.0f);
+                    if (ImGui::InputText("##cwCustom", cwBuf, sizeof(cwBuf))) {
+                        m_SceneContentFlags.customWarnings[cwI] = cwBuf;
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("X")) {
+                        m_SceneContentFlags.customWarnings.erase(
+                            m_SceneContentFlags.customWarnings.begin() + static_cast<std::ptrdiff_t>(cwI));
+                        ImGui::PopID();
+                        break;
+                    }
+                    ImGui::PopID();
+                }
+                if (ImGui::SmallButton("+ Add Custom Warning")) {
+                    m_SceneContentFlags.customWarnings.push_back("");
+                }
+            }
             ImGui::Separator();
 
             // --- Lighting & Shadows ---
