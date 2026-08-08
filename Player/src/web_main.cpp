@@ -56,6 +56,8 @@
 #include "Enjin/Gameplay/GameplayLoop.h"
 #include "Enjin/Gameplay/FootstepSystem.h"
 #include "Enjin/Accessibility/SubtitleSystem.h"
+#include "Enjin/Accessibility/Announcer.h"
+#include "Enjin/Accessibility/AccessibilitySettings.h"
 #include "Enjin/Gameplay/QuestSystem.h"
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
@@ -305,6 +307,11 @@ public:
         Enjin::Scripting::SetBindingsPhysics2D(m_Physics2D.get());
         Enjin::Scripting::SetBindingsNetworking(&m_NetworkSystem);
         Enjin::Scripting::SetBindingsInputActionMap(&m_InputMap);
+        // Accessibility bindings — without these every Subtitle_/Announcer_/
+        // Colorblind_/Accessibility_ script call is a silent no-op on web.
+        Enjin::Scripting::SetBindingsSubtitles(&m_SubtitleSystem);
+        Enjin::Scripting::SetBindingsAnnouncer(&m_Announcer);
+        Enjin::Scripting::SetBindingsAccessibilitySettings(&m_AccessibilitySettings);
 
         // --- Load scene ---
         bool sceneLoaded = false;
@@ -439,6 +446,9 @@ public:
         Enjin::Scripting::SetBindingsPhysics2D(nullptr);
         Enjin::Scripting::SetBindingsNetworking(nullptr);
         Enjin::Scripting::SetBindingsInputActionMap(nullptr);
+        Enjin::Scripting::SetBindingsSubtitles(nullptr);
+        Enjin::Scripting::SetBindingsAnnouncer(nullptr);
+        Enjin::Scripting::SetBindingsAccessibilitySettings(nullptr);
 
         m_ScriptSystem.ShutdownAllScripts();
         m_ScriptSystem.SetEnabled(false);
@@ -596,6 +606,19 @@ public:
             }
             m_FootstepSystem.Update(m_World.get(), deltaTime);
             m_SubtitleSystem.Update(deltaTime);
+            m_Announcer.Update(deltaTime);
+
+            // Live accessibility sync: scripts change these mid-game (Accessibility
+            // Demo). Colorblind/brightness/contrast go through the WebGPU
+            // post-process params; font scale through UISystem.
+            if (m_RenderSystem) {
+                m_RenderSystem->SetWebAccessibility(
+                    static_cast<Enjin::u32>(m_AccessibilitySettings.colorblindMode),
+                    m_AccessibilitySettings.colorblindStrength,
+                    m_AccessibilitySettings.screenBrightness,
+                    m_AccessibilitySettings.screenContrast);
+            }
+            m_UISystem.SetFontScale(m_AccessibilitySettings.fontScale);
             Enjin::Gameplay::GameplayLoop::CheckHazardOverlaps(m_World.get(), deltaTime, deferred);
             Enjin::Gameplay::GameplayLoop::CheckHazardOverlaps3D(m_World.get(), deferred);
             Enjin::Gameplay::GameplayLoop::CheckEnemyOverlaps2D(m_World.get(), deltaTime, deferred);
@@ -715,6 +738,7 @@ public:
                 data.SetEntity("canvas", static_cast<Enjin::u64>(e.canvasEntity));
                 data.SetInt("elementId", static_cast<Enjin::i32>(e.elementId));
                 data.SetFloat("value", e.floatValue);
+                data.SetInt("checked", e.boolValue ? 1 : 0);
                 data.SetString("text", e.stringValue);
                 m_ScriptEventBus.Send(e.eventName, data);
             });
@@ -745,6 +769,8 @@ public:
                           io.DeltaTime, 0.0f, 0.0f, m_Camera.get());
         // Subtitle overlay (accessibility) -- same draw code as desktop
         m_SubtitleSystem.RenderOverlay(w, h);
+        // Screen reader status bar (announcements also speak via Web Speech API)
+        m_Announcer.RenderStatusBar();
 
         ImGui::Render();
         ImDrawData* drawData = ImGui::GetDrawData();
@@ -897,6 +923,8 @@ private:
     Enjin::ECS::EntityEventBus m_EntityEventBus;
     Enjin::Gameplay::FootstepSystem m_FootstepSystem;
     Enjin::Accessibility::SubtitleSystem m_SubtitleSystem;
+    Enjin::Accessibility::AccessibilityAnnouncer m_Announcer;
+    Enjin::Accessibility::RuntimeAccessibilitySettings m_AccessibilitySettings;
     // One true UI source: the same UISystem that renders UICanvasComponent on
     // desktop renders it on web via ImGui's WebGPU backend (UI unification Phase 1).
     Enjin::GUI::UISystem m_UISystem;

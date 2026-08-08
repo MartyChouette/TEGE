@@ -111,6 +111,7 @@ Channel constants: `AUDIO_CHANNEL_SFX=0`, `AUDIO_CHANNEL_MUSIC=1`, `AUDIO_CHANNE
 - **EventData** class: `SetFloat/GetFloat`, `SetInt/GetInt`, `SetString/GetString`, `SetEntity/GetEntity`
 - `Events_Listen(string, EventCallback@)` — returns listener ID
 - `Events_Send(string, EventData@)`, `Events_Broadcast(EventData@)`
+- `Events_CurrentFloat(string key)`, `Events_CurrentInt(string key)`, `Events_CurrentString(string key)` — read the payload of the event currently being dispatched (valid only inside an EventCallback). UI events bridge with keys `"value"` (slider), `"checked"` (toggle, 0/1), `"text"` (button label).
 
 ## Tweening
 
@@ -485,6 +486,8 @@ Per-entity (Braid-style) and scene-wide (Sands of Time-style) time rewind.
 - `Accessibility_GetBrightness()` — Get current brightness offset.
 - `Accessibility_SetContrast(float)` — Set multiplicative contrast (0.5 to 2.0).
 - `Accessibility_GetContrast()` — Get current contrast.
+- `Accessibility_SetDyslexiaFont(bool)` — Enable/disable dyslexia-friendly text (font/spacing).
+- `Accessibility_GetDyslexiaFont()` — Check if dyslexia-friendly text is on.
 
 **Motion / Photosensitivity**
 
@@ -513,7 +516,7 @@ Per-entity (Braid-style) and scene-wide (Sands of Time-style) time rewind.
 
 **Screen Reader / Announcer**
 
-- `Announcer_Announce(string text)` — Queue an accessibility announcement.
+- `Announcer_Announce(string text)` — Queue an accessibility announcement. In browser exports, announcements are also spoken aloud via the Web Speech API.
 - `Announcer_AnnounceHighPriority(string text)` — Queue a high-priority announcement.
 - `Announcer_Clear()` — Clear all announcements.
 - `Announcer_SetEnabled(bool)` — Enable/disable the announcer.

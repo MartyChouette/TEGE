@@ -71,6 +71,13 @@ void ScriptEventBus::RemoveAllForEntity(u64 entityId) {
 static constexpr u32 kMaxEventRecursionDepth = 8;
 static u32 s_EventDispatchDepth = 0;
 
+// Payload of the event currently being dispatched (see GetCurrentDispatchEventData)
+static const EventData* s_CurrentDispatchData = nullptr;
+
+const EventData* GetCurrentDispatchEventData() {
+    return s_CurrentDispatchData;
+}
+
 void ScriptEventBus::Send(const std::string& eventName, const EventData& data) {
     if (s_EventDispatchDepth >= kMaxEventRecursionDepth) {
         ENJIN_LOG_WARN(Script, "ScriptEventBus: recursion depth limit (%u) reached for event '%s'",
@@ -128,11 +135,18 @@ void ScriptEventBus::DispatchToListener(EventListener& listener, const std::stri
         ctx->SetArgObject(0, const_cast<std::string*>(&eventName));
     }
 
+    // Expose the payload to Events_Current* bindings for the duration of the
+    // callback. Save/restore handles nested dispatch (event firing an event).
+    const EventData* prevData = s_CurrentDispatchData;
+    s_CurrentDispatchData = &data;
+
     int r = ctx->Execute();
     if (r == asEXECUTION_EXCEPTION) {
         ENJIN_LOG_ERROR(Script, "Event callback exception for '%s': %s",
             eventName.c_str(), ctx->GetExceptionString());
     }
+
+    s_CurrentDispatchData = prevData;
 
     m_ScriptEngine->ReturnContext(ctx);
 }

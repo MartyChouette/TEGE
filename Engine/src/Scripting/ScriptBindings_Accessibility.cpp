@@ -17,6 +17,7 @@ static Accessibility::SubtitleSystem* s_BindingsSubtitles = nullptr;
 static Accessibility::AccessibilityAnnouncer* s_BindingsAnnouncer = nullptr;
 static Accessibility::RuntimeAccessibilitySettings* s_BindingsAccessibility = nullptr;
 static std::function<void()> s_SaveAccessibilityCallback;
+static std::function<void(bool)> s_DyslexiaFontCallback;
 
 namespace Enjin {
 namespace Scripting {
@@ -35,6 +36,10 @@ void SetBindingsAccessibilitySettings(Accessibility::RuntimeAccessibilitySetting
 
 void SetBindingsAccessibilitySaveCallback(std::function<void()> callback) {
     s_SaveAccessibilityCallback = std::move(callback);
+}
+
+void SetBindingsDyslexiaFontCallback(std::function<void(bool)> callback) {
+    s_DyslexiaFontCallback = std::move(callback);
 }
 
 } // namespace Scripting
@@ -179,6 +184,15 @@ static float Accessibility_GetBrightness() {
     return s_BindingsAccessibility ? s_BindingsAccessibility->screenBrightness : 0.0f;
 }
 
+static void Accessibility_SetDyslexiaFont(bool enabled) {
+    if (s_BindingsAccessibility) s_BindingsAccessibility->dyslexiaFriendly = enabled;
+    if (s_DyslexiaFontCallback) s_DyslexiaFontCallback(enabled);
+}
+
+static bool Accessibility_GetDyslexiaFont() {
+    return s_BindingsAccessibility ? s_BindingsAccessibility->dyslexiaFriendly : false;
+}
+
 static void Accessibility_SetContrast(float v) {
     if (s_BindingsAccessibility) s_BindingsAccessibility->screenContrast = v;
 }
@@ -271,6 +285,10 @@ void RegisterAccessibilityBindings(asIScriptEngine* engine) {
         asFUNCTION(Accessibility_SetContrast), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Accessibility_GetContrast()",
         asFUNCTION(Accessibility_GetContrast), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetDyslexiaFont(bool)",
+        asFUNCTION(Accessibility_SetDyslexiaFont), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Accessibility_GetDyslexiaFont()",
+        asFUNCTION(Accessibility_GetDyslexiaFont), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SaveSettings()",
         asFUNCTION(Accessibility_SaveSettings), asCALL_CDECL));
 }

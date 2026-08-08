@@ -677,6 +677,24 @@ static void Events_Broadcast(ScriptEventData* data) {
     s_BindingsEventBus->Broadcast(data->data);
 }
 
+// Payload of the event currently being dispatched. EventCallback only receives
+// the event name; these read the payload keys (UI bridge sets "value" for
+// sliders, "checked" for toggles, "text" for buttons).
+static float Events_CurrentFloat(const std::string& key) {
+    const Enjin::Scripting::EventData* d = Enjin::Scripting::GetCurrentDispatchEventData();
+    return d ? d->GetFloat(key) : 0.0f;
+}
+
+static int Events_CurrentInt(const std::string& key) {
+    const Enjin::Scripting::EventData* d = Enjin::Scripting::GetCurrentDispatchEventData();
+    return d ? d->GetInt(key) : 0;
+}
+
+static std::string Events_CurrentString(const std::string& key) {
+    const Enjin::Scripting::EventData* d = Enjin::Scripting::GetCurrentDispatchEventData();
+    return d ? d->GetString(key) : "";
+}
+
 // ============================================================================
 // REGISTRATION FUNCTIONS
 // ============================================================================
@@ -1001,6 +1019,19 @@ void RegisterEventBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Events_Broadcast(EventData@)",
         asFUNCTION(Events_Broadcast), asCALL_CDECL));
+
+    // Read the payload of the event currently being dispatched (valid inside
+    // an EventCallback). UI bridge keys: "value" (slider), "checked" (toggle),
+    // "text" (button label).
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float Events_CurrentFloat(const string &in)",
+        asFUNCTION(Events_CurrentFloat), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int Events_CurrentInt(const string &in)",
+        asFUNCTION(Events_CurrentInt), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "string Events_CurrentString(const string &in)",
+        asFUNCTION(Events_CurrentString), asCALL_CDECL));
 }
 
 // ---------------------------------------------------------------------------

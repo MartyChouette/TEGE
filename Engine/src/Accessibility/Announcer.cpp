@@ -4,6 +4,10 @@
 #include <imgui.h>
 #include <algorithm>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 namespace Enjin {
 namespace Accessibility {
 
@@ -35,6 +39,20 @@ void AccessibilityAnnouncer::Announce(const std::string& text, AnnouncePriority 
         }
         ENJIN_LOG_INFO(Editor, "[Announce/%s] %s", priorityStr, text.c_str());
     }
+
+#ifdef __EMSCRIPTEN__
+    // In the browser the announcer can actually speak: Web Speech API.
+    // High/Critical announcements interrupt whatever is being spoken.
+    if (enabled) {
+        EM_ASM({
+            if (window.speechSynthesis) {
+                if ($1) { window.speechSynthesis.cancel(); }
+                var u = new SpeechSynthesisUtterance(UTF8ToString($0));
+                window.speechSynthesis.speak(u);
+            }
+        }, text.c_str(), priority >= AnnouncePriority::High ? 1 : 0);
+    }
+#endif
 }
 
 void AccessibilityAnnouncer::Update(f32 dt) {

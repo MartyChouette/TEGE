@@ -285,6 +285,7 @@ public:
             data.SetEntity("canvas", static_cast<Enjin::u64>(e.canvasEntity));
             data.SetInt("elementId", static_cast<Enjin::i32>(e.elementId));
             data.SetFloat("value", e.floatValue);
+            data.SetInt("checked", e.boolValue ? 1 : 0);
             data.SetString("text", e.stringValue);
             m_ScriptEventBus.Send(e.eventName, data);
         });
@@ -316,6 +317,19 @@ public:
                 m_GameStarted = false;
                 Enjin::Input::SetMouseCaptured(false);
             }
+        });
+
+        // Fill the Options menu from live state when it opens — otherwise Back
+        // applies the menu's struct defaults (bloom=true) over the scene's
+        // render settings every time the player visits Options.
+        m_GameMenu.SetSettingsSyncCallback([this](Enjin::GUI::GraphicsSettings& gfx,
+                                                  Enjin::GUI::AudioSettings& audio) {
+            if (m_PostProcessing) {
+                gfx.bloom = m_PostProcessing->GetSettings().bloomEnabled != 0;
+                gfx.fxaa = m_PostProcessing->GetSettings().fxaaEnabled != 0;
+            }
+            if (m_RenderSystem) gfx.shadows = m_RenderSystem->IsShadowsEnabled();
+            audio.masterVolume = m_SimpleAudio.GetMasterVolume();
         });
 
         // Apply graphics/audio settings when user exits Options menu.
@@ -1221,6 +1235,15 @@ public:
             }
         }
 
+        // Live accessibility sync BEFORE the frame renders: game scripts can
+        // change colorblind mode / brightness / contrast / font scale mid-game
+        // (Accessibility Demo template does exactly this). Without the per-frame
+        // re-apply, script changes only took effect after a restart.
+        if (m_PostProcessing) {
+            m_AccessibilitySettings.ApplyToPostProcessing(m_PostProcessing->GetSettings());
+        }
+        m_UISystem.SetFontScale(m_AccessibilitySettings.fontScale);
+
         // World::Update triggers all registered systems including RenderSystem.
         // RenderSystem::Update starts the main render pass and draws entities.
         if (m_World) {
@@ -1743,6 +1766,10 @@ private:
         Enjin::Scripting::SetBindingsAnnouncer(&m_Announcer);
         Enjin::Scripting::SetBindingsAccessibilitySettings(&m_AccessibilitySettings);
         Enjin::Scripting::SetBindingsAccessibilitySaveCallback([this]() { SaveAccessibilitySettings(); });
+        Enjin::Scripting::SetBindingsDyslexiaFontCallback([this](bool on) {
+            m_FontLibrary.SetFont(on ? Enjin::Accessibility::FontFamily::OpenDyslexic
+                                     : Enjin::Accessibility::FontFamily::Default);
+        });
         Enjin::Scripting::SetBindingsPluginSystem(nullptr);  // No PluginSystem in player — null-safe
         Enjin::Scripting::SetBindingsAudioGraphRuntime(&m_AudioGraphRuntime);
         m_MIDIInput.Initialize();

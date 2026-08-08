@@ -55,6 +55,12 @@ struct EventListener {
     u32 id = 0;                           // Unique listener ID
 };
 
+// The event currently being dispatched to a script callback, or null outside
+// dispatch. EventCallback only receives the event NAME; scripts read the
+// payload (e.g. slider "value", toggle "checked") via the Events_Current*
+// bindings, which resolve through this.
+ENJIN_API const EventData* GetCurrentDispatchEventData();
+
 // Event bus for script-to-script communication
 // Scripts can Listen for named events and Send/Broadcast them.
 class ENJIN_API ScriptEventBus {
