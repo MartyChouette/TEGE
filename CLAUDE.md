@@ -56,6 +56,7 @@ These are hard-won lessons. Violating any of these will cause bugs.
 
 ### Shaders (CRITICAL)
 - After ANY change to `LightingUBO`, `UniformBufferObject`, `MaterialGPU`, or other UBO/SSBO structs: **recompile ALL affected shaders AND regenerate `ShaderData.h`**. Stale SPIR-V = GPU reading wrong offsets (dark scenes, wrong colors, crashes)
+- **If a shader edit visibly does NOTHING, suspect a FOSSIL BAKED ARRAY**: PostProcessing.cpp carried its own `static const u32 PostProcessFragmentShader[]` copy that shadowed the generated `ShaderData::PostProcessFragmentShaderData` for months — postprocess.frag edits compiled into ShaderData.h but never ran, and as PostProcessSettings grew the fossil read the UBO at stale offsets (ghost/wash/offset artifacts, panel toggles inert; fixed 2026-08-07). Verify with a byte search: the exe must contain the .spv's bytes. **OITManager.cpp still has two baked arrays (OITFullscreenVertexShader, OITCompositeFragmentShader) — same trap waiting; migrate to ShaderData:: before editing OIT shaders**
 - Shader edit workflow: edit GLSL → `glslangValidator -V` → `python _gen_all.py` → rebuild. No shortcuts
 - **RT shaders:** compile with `glslc --target-env=vulkan1.2 -I.` (they `#include rt_common.glsl`; glslangValidator rejects the include) → `python _gen_rt.py` regenerates `RTShaderData.h`
 - **GLSL cannot pass unsized arrays as function parameters** — helpers that loop over an SSBO array must be inlined in each shader that declares the SSBO (see rt_reflect.rgen SDF loop)
