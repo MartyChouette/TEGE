@@ -32,6 +32,12 @@ void GameMenuSystem::ShowScreen(MenuScreen screen) {
             m_ReturnScreen = m_CurrentScreen;
         }
     }
+    // Pull live settings into the menu on open so Back applies what the user
+    // actually sees, not the struct defaults.
+    if ((screen == MenuScreen::Options || screen == MenuScreen::Graphics) &&
+        m_CurrentScreen != screen && m_SettingsSyncCallback) {
+        m_SettingsSyncCallback(m_Graphics, m_Audio);
+    }
     m_CurrentScreen = screen;
     m_RebindingAction = -1;
 }

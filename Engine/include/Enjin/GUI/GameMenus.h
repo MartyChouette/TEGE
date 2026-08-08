@@ -67,6 +67,12 @@ public:
     using SettingsCallback = std::function<void(const GraphicsSettings&, const AudioSettings&)>;
     void SetSettingsCallback(SettingsCallback cb) { m_SettingsCallback = std::move(cb); }
 
+    // Called when the Options screen OPENS, so the host can fill the menu from
+    // live state. Without this the menu applies its own struct defaults on Back
+    // (bloom = true stomped the renderer's setting every options visit).
+    using SettingsSyncCallback = std::function<void(GraphicsSettings&, AudioSettings&)>;
+    void SetSettingsSyncCallback(SettingsSyncCallback cb) { m_SettingsSyncCallback = std::move(cb); }
+
     void ShowScreen(MenuScreen screen);
     void HideAll();
     MenuScreen GetCurrentScreen() const;
@@ -90,6 +96,7 @@ private:
     Editor::EditorSettings* m_EditorSettings = nullptr;
     MenuCallback m_Callback;
     SettingsCallback m_SettingsCallback;
+    SettingsSyncCallback m_SettingsSyncCallback;
     std::string m_GameTitle = "My Game";
     i32 m_RebindingAction = -1;
     MenuScreen m_ReturnScreen = MenuScreen::PauseMenu;
