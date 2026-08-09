@@ -133,6 +133,35 @@
 namespace Enjin {
 namespace Editor {
 
+// WebGPU runs best on Chromium browsers. The system default may be Firefox
+// (spotty WebGPU on Windows), so web previews prefer Chrome, then Edge, then
+// fall back to whatever the OS default is.
+static void OpenUrlPreferChromium(const std::string& url) {
+#ifdef _WIN32
+    namespace fs = std::filesystem;
+    std::vector<std::string> candidates;
+    const char* localAppData = std::getenv("LOCALAPPDATA");
+    if (localAppData) {
+        candidates.push_back(std::string(localAppData) + "\\Google\\Chrome\\Application\\chrome.exe");
+    }
+    candidates.push_back("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe");
+    candidates.push_back("C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe");
+    candidates.push_back("C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe");
+    candidates.push_back("C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe");
+    for (const auto& exe : candidates) {
+        if (fs::exists(exe)) {
+            if (reinterpret_cast<INT_PTR>(ShellExecuteA(nullptr, "open", exe.c_str(),
+                    url.c_str(), nullptr, SW_SHOWNORMAL)) > 32) {
+                return;
+            }
+        }
+    }
+    ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#else
+    (void)url;
+#endif
+}
+
 void EditorLayer::DrawStatsOverlay() {
     const float DISTANCE = 10.0f;
     ImGuiIO& io = ImGui::GetIO();
@@ -1234,15 +1263,27 @@ void EditorLayer::DrawBuildDialog() {
         if (m_BuildResult.success) {
             ShowNotification("Build complete!", NotificationType::Success);
             if (runAfterBuild) {
-                std::string exePath = builtExePath();
-                if (std::filesystem::exists(exePath)) {
-#ifdef ENJIN_PLATFORM_WINDOWS
-                    ShellExecuteA(nullptr, "open", exePath.c_str(), nullptr,
-                                  m_BuildConfig.outputDir.c_str(), SW_SHOWNORMAL);
-#endif
-                    ShowNotification("Launching game...", NotificationType::Info);
+                if (m_BuildConfig.target == Build::BuildTargetPlatform::Web) {
+                    // Web builds have no exe — serve the output on localhost
+                    // and open the browser (browsers refuse wasm over file://)
+                    u16 port = m_DevWebServer.Start(m_BuildConfig.outputDir);
+                    if (port != 0) {
+                        OpenUrlPreferChromium("http://localhost:" + std::to_string(port) + "/");
+                        ShowNotification("Running in browser...", NotificationType::Info);
+                    } else {
+                        ShowNotification("Build succeeded but the preview server could not start", NotificationType::Warning);
+                    }
                 } else {
-                    ShowNotification("Build succeeded but the game exe was not found", NotificationType::Warning);
+                    std::string exePath = builtExePath();
+                    if (std::filesystem::exists(exePath)) {
+#ifdef ENJIN_PLATFORM_WINDOWS
+                        ShellExecuteA(nullptr, "open", exePath.c_str(), nullptr,
+                                      m_BuildConfig.outputDir.c_str(), SW_SHOWNORMAL);
+#endif
+                        ShowNotification("Launching game...", NotificationType::Info);
+                    } else {
+                        ShowNotification("Build succeeded but the game exe was not found", NotificationType::Warning);
+                    }
                 }
             }
         } else {
@@ -1763,10 +1804,35 @@ void EditorLayer::DrawHTML5ExportDialog() {
         }
     }
     ImGui::SameLine();
+    // The maker-simple path: serve the export from the editor's built-in
+    // localhost server and open the browser — no Python, no terminal.
+    // (Browsers refuse WebAssembly over file://, so double-clicking
+    // index.html can never work.)
+    if (ImGui::Button("Run in Browser", ImVec2(130, 30)) && !m_HTML5Config.outputDir.empty()) {
+        u16 port = m_DevWebServer.Start(m_HTML5Config.outputDir);
+        if (port != 0) {
+            OpenUrlPreferChromium("http://localhost:" + std::to_string(port) + "/");
+        } else {
+            ShowNotification("Could not start the preview server", NotificationType::Error);
+        }
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Serve the exported build on localhost and open it in your browser.\nRe-export, then just reload the browser tab.");
+    }
+    ImGui::SameLine();
     if (ImGui::Button("Open Output Folder") && !m_HTML5Config.outputDir.empty()) {
 #ifdef _WIN32
         ShellExecuteA(nullptr, "explore", m_HTML5Config.outputDir.c_str(), nullptr, nullptr, SW_SHOWDEFAULT);
 #endif
+    }
+    if (m_DevWebServer.IsRunning()) {
+        ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f),
+            "Serving at http://localhost:%u  (reload the tab after re-export)",
+            static_cast<u32>(m_DevWebServer.GetPort()));
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Stop Server")) {
+            m_DevWebServer.Stop();
+        }
     }
 
     // Export result feedback
