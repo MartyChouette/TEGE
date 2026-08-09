@@ -32,6 +32,20 @@ namespace {
     bool s_KeysDown[MAX_KEYS] = {};
     bool s_MouseButtonsDown[MAX_MOUSE_BUTTONS] = {};
 
+#if ENJIN_PLATFORM_WEB
+    // Browser events land BETWEEN frames, so they must never write s_KeysDown
+    // directly: Update() copies current->previous first, and a write that
+    // arrived before the copy makes curr==prev, erasing the pressed edge
+    // (IsKeyPressed/IsMouseButtonPressed never fire — Tab and UI clicks dead).
+    // Callbacks write this pending state; Update() applies it AFTER the copy.
+    // The down-latch keeps a press visible for one frame even if the release
+    // also arrived within the same frame gap.
+    bool s_WebKeysLatest[MAX_KEYS] = {};
+    bool s_WebKeysDownLatch[MAX_KEYS] = {};
+    bool s_WebMouseLatest[MAX_MOUSE_BUTTONS] = {};
+    bool s_WebMouseDownLatch[MAX_MOUSE_BUTTONS] = {};
+#endif
+
     // Previous frame state (for pressed/released detection)
     bool s_KeysDownPrev[MAX_KEYS] = {};
     bool s_MouseButtonsDownPrev[MAX_MOUSE_BUTTONS] = {};
@@ -119,7 +133,9 @@ namespace {
         (void)userData;
         i32 keyCode = MapDomKeyCode(static_cast<i32>(e->keyCode));
         if (keyCode >= 0 && keyCode < MAX_KEYS) {
-            s_KeysDown[keyCode] = (eventType == EMSCRIPTEN_EVENT_KEYDOWN);
+            bool down = (eventType == EMSCRIPTEN_EVENT_KEYDOWN);
+            s_WebKeysLatest[keyCode] = down;
+            if (down) s_WebKeysDownLatch[keyCode] = true;
         }
         // Prevent browser from scrolling on space/arrows when game has focus
         return EM_TRUE;
@@ -127,7 +143,13 @@ namespace {
 
     EM_BOOL WebMouseMoveCallback(int eventType, const EmscriptenMouseEvent* e, void* userData) {
         (void)eventType; (void)userData;
-        s_MousePosition = Math::Vector2(static_cast<f32>(e->targetX), static_cast<f32>(e->targetY));
+        // targetX/Y are CSS pixels but the canvas backing store (and every UI
+        // rect the engine tests against) is devicePixelRatio-scaled — without
+        // this, clicks land short of the real UI at any display scale != 100%
+        f32 dpr = static_cast<f32>(emscripten_get_device_pixel_ratio());
+        if (dpr <= 0.0f) dpr = 1.0f;
+        s_MousePosition = Math::Vector2(static_cast<f32>(e->targetX) * dpr,
+                                        static_cast<f32>(e->targetY) * dpr);
         // Accumulate relative movement for pointer-locked look (clamp to prevent spikes)
         f32 dx = static_cast<f32>(e->movementX);
         f32 dy = static_cast<f32>(e->movementY);
@@ -141,7 +163,9 @@ namespace {
         (void)userData;
         i32 button = static_cast<i32>(e->button);
         if (button >= 0 && button < MAX_MOUSE_BUTTONS) {
-            s_MouseButtonsDown[button] = (eventType == EMSCRIPTEN_EVENT_MOUSEDOWN);
+            bool down = (eventType == EMSCRIPTEN_EVENT_MOUSEDOWN);
+            s_WebMouseLatest[button] = down;
+            if (down) s_WebMouseDownLatch[button] = true;
         }
         return EM_TRUE;
     }
@@ -210,7 +234,18 @@ void Input::Update() {
     std::memcpy(s_MouseButtonsDownPrev, s_MouseButtonsDown, sizeof(s_MouseButtonsDown));
 
 #if ENJIN_PLATFORM_WEB
-    // On web, key/mouse state is updated via Emscripten callbacks (WebKeyCallback, etc.)
+    // Apply the async browser event state now that previous is snapshotted.
+    // A latched down forces the key visible for this one frame even if its
+    // keyup already arrived; the latch then clears so the release edge
+    // follows next frame.
+    for (i32 key = 0; key < MAX_KEYS; ++key) {
+        s_KeysDown[key] = s_WebKeysLatest[key] || s_WebKeysDownLatch[key];
+        s_WebKeysDownLatch[key] = false;
+    }
+    for (i32 button = 0; button < MAX_MOUSE_BUTTONS; ++button) {
+        s_MouseButtonsDown[button] = s_WebMouseLatest[button] || s_WebMouseDownLatch[button];
+        s_WebMouseDownLatch[button] = false;
+    }
     // For pointer-locked mode, prefer accumulated movementX/Y over position deltas.
 #else
     if (!s_Window) return;
@@ -418,6 +453,11 @@ Math::Vector2 Input::GetScrollDelta() {
 void Input::SetMouseCaptured(bool captured) {
     s_MouseCaptured = captured;
 #if ENJIN_PLATFORM_WEB
+    // Mirror intent to JS: the canvas click handler re-locks the pointer only
+    // while the game WANTS capture. Without this, releasing the cursor for
+    // on-screen UI (Web Demo's Tab menu mode) re-locked on the first menu
+    // click and made the UI unusable.
+    EM_ASM({ Module.tegeWantPointerLock = $0 ? true : false; }, captured ? 1 : 0);
     if (captured) {
         emscripten_request_pointerlock("#game-canvas", true);
     } else {
