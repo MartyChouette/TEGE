@@ -7,6 +7,13 @@
 #include "Enjin/Assets/AssetMetadata.h"
 #include "Enjin/Assets/PLYLoader.h"
 #include "Enjin/Assets/VOXLoader.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/ECS/Components/Mesh.h"
+#include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Skeleton.h"
+#include <filesystem>
+#include <cfloat>
+#include <cmath>
 
 using namespace Enjin;
 using namespace Enjin::Assets;
@@ -504,6 +511,107 @@ ENJIN_TEST(Assimp, PrimitiveDefaults) {
     ENJIN_EXPECT_EQ(prim.materialIndex, -1);
     ENJIN_EXPECT_EQ(prim.vertices.size(), (size_t)0);
     ENJIN_EXPECT_EQ(prim.indices.size(), (size_t)0);
+}
+
+// ===========================================================================
+// FBX end-to-end import probe (env-gated: needs a real animal FBX on disk).
+// Regression net for the invisible-model class: asserts every mesh entity
+// lands parented under the import root at a VISIBLE world size.
+// ===========================================================================
+
+ENJIN_TEST(FbxImportProbe, SkinnedFbxImportsAtVisibleWorldSize) {
+    namespace fs = std::filesystem;
+    const char* kProbePath =
+        "C:/Users/jerma/Downloads/FBX-20260807T212605Z-1-001/FBX/ShibaInu.fbx";
+    if (!fs::exists(kProbePath)) {
+        printf("  [skip] probe FBX not present: %s\n", kProbePath);
+        return;
+    }
+
+    // Arrange
+    ECS::World world;
+    ImportOptions options;
+
+    // Act
+    ImportResult result = SceneImporter::Import(kProbePath, &world, options);
+
+    // Assert: import succeeded and produced a root + mesh entities
+    ENJIN_ASSERT_TRUE(result.success);
+    ENJIN_ASSERT_TRUE(result.rootEntity != ECS::INVALID_ENTITY);
+    ENJIN_ASSERT_TRUE(result.entities.size() >= 2);
+
+    auto* rootXf = world.GetComponent<ECS::TransformComponent>(result.rootEntity);
+    ENJIN_ASSERT_NOT_NULL(rootXf);
+    printf("  root scale = (%.5f, %.5f, %.5f)\n",
+           rootXf->scale.x, rootXf->scale.y, rootXf->scale.z);
+
+    u32 meshEntities = 0;
+    for (ECS::Entity e : result.entities) {
+        auto* mesh = world.GetComponent<ECS::MeshComponent>(e);
+        if (!mesh || mesh->vertices.empty()) continue;
+        meshEntities++;
+
+        // Local-space mesh bounds
+        Math::Vector3 mn(FLT_MAX, FLT_MAX, FLT_MAX), mx(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+        for (const auto& v : mesh->vertices) {
+            mn.x = Math::Min(mn.x, v.position.x); mx.x = Math::Max(mx.x, v.position.x);
+            mn.y = Math::Min(mn.y, v.position.y); mx.y = Math::Max(mx.y, v.position.y);
+            mn.z = Math::Min(mn.z, v.position.z); mx.z = Math::Max(mx.z, v.position.z);
+        }
+
+        // World size = local extent through the hierarchy world matrix
+        Math::Matrix4 wm = ECS::ComputeWorldMatrix(&world, e);
+        f32 sx = Math::Vector3(wm.m[0], wm.m[1], wm.m[2]).Length();
+        f32 sy = Math::Vector3(wm.m[4], wm.m[5], wm.m[6]).Length();
+        f32 sz = Math::Vector3(wm.m[8], wm.m[9], wm.m[10]).Length();
+        f32 worldH = (mx.y - mn.y) * sy;
+        f32 worldMax = Math::Max((mx.x - mn.x) * sx,
+                       Math::Max(worldH, (mx.z - mn.z) * sz));
+
+        auto* nc = world.GetComponent<ECS::NameComponent>(e);
+        printf("  mesh '%s': %zu verts, localH=%.1f worldScale=(%.5f,%.5f,%.5f) worldMax=%.2f\n",
+               nc ? nc->name.c_str() : "?", mesh->vertices.size(),
+               mx.y - mn.y, sx, sy, sz, worldMax);
+
+        // The whole point: pieces must be VISIBLE — not microscopic, not giant
+        ENJIN_EXPECT_TRUE(worldMax > 0.05f);
+        ENJIN_EXPECT_TRUE(worldMax < 50.0f);
+
+        // And parented (directly or transitively) under the import root
+        ECS::Entity p = ECS::GetParent(&world, e);
+        bool underRoot = false;
+        for (int guard = 0; p != ECS::INVALID_ENTITY && guard < 32; ++guard) {
+            if (p == result.rootEntity) { underRoot = true; break; }
+            p = ECS::GetParent(&world, p);
+        }
+        ENJIN_EXPECT_TRUE(underRoot);
+    }
+    ENJIN_ASSERT_TRUE(meshEntities >= 1);
+
+    // Regression: the movement drive fired CrossFade before the animator's
+    // first Update, blending against an EMPTY pose — zero skinning matrices,
+    // collapsed (invisible) mesh. Simulate the engine's first frames in the
+    // same order (crossfade, then update) and assert usable matrices.
+    for (ECS::Entity e : result.entities) {
+        auto* ac = world.GetComponent<ECS::AnimatorComponent>(e);
+        if (!ac || !ac->animator.GetSkeleton()) continue;
+        if (ac->movement.enabled && !ac->movement.idleClip.empty()) {
+            ac->animator.CrossFade(ac->movement.idleClip, ac->movement.fadeTime);
+        }
+        ac->Update(1.0f / 60.0f);
+        ac->Update(1.0f / 60.0f);
+        const auto& mats = ac->animator.GetSkinningMatrices();
+        ENJIN_ASSERT_TRUE(!mats.empty());
+        f32 maxAbs = 0.0f;
+        for (const auto& m : mats) {
+            for (int i = 0; i < 16; ++i) {
+                maxAbs = Math::Max(maxAbs, std::abs(m.m[i]));
+            }
+        }
+        printf("  animator skinning: %zu bones, maxAbs=%.3f\n", mats.size(), maxAbs);
+        ENJIN_EXPECT_TRUE(maxAbs > 0.01f);      // collapsed pose = all near zero
+        ENJIN_EXPECT_TRUE(maxAbs < 10000.0f);   // exploded pose = garbage
+    }
 }
 
 ENJIN_TEST_MAIN()

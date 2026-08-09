@@ -294,6 +294,22 @@ void SkeletalAnimator::CrossFade(const std::string& name, f32 fadeTime) {
     auto it = m_Animations.find(name);
     if (it == m_Animations.end()) return;
 
+    // Already playing (or already fading to) this exact clip — restarting the
+    // blend every call just churns the pose.
+    if (m_NextAnim ? (m_NextAnimName == name)
+                   : (m_IsPlaying && m_CurrentAnimName == name)) {
+        return;
+    }
+
+    // No pose computed yet (cross-fade requested before the first Update):
+    // blending against an EMPTY pose produced zero-bone skinning matrices and
+    // collapsed the mesh — freshly imported models rendered invisible
+    // (movement drive fired on frame one, 2026-08-08). Snap instead.
+    if (m_CurrentPose.worldTransforms.empty()) {
+        Play(name, 0.0f);
+        return;
+    }
+
     // Store current pose for blending
     m_BlendPose = m_CurrentPose;
 
