@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Components/Transform.h"
@@ -197,61 +198,61 @@ namespace Scripting {
 void RegisterFlowerBindings(asIScriptEngine* engine) {
     // Tether queries
     AS_CHECK(engine->RegisterGlobalFunction("float Flower_GetTension(uint64)",
-        asFUNCTION(Flower_GetTension), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_GetTension), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Flower_IsBroken(uint64)",
-        asFUNCTION(Flower_IsBroken), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_IsBroken), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Flower_JustBroke(uint64)",
-        asFUNCTION(Flower_JustBroke), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_JustBroke), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Flower_SetMaxDistance(uint64, float)",
-        asFUNCTION(Flower_SetMaxDistance), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_SetMaxDistance), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Flower_GetMaxDistance(uint64)",
-        asFUNCTION(Flower_GetMaxDistance), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_GetMaxDistance), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Flower_SetSpringK(uint64, float)",
-        asFUNCTION(Flower_SetSpringK), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_SetSpringK), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Flower_SetDamping(uint64, float)",
-        asFUNCTION(Flower_SetDamping), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_SetDamping), ENJIN_AS_CALL_CDECL));
 
     // Grabbable queries
     AS_CHECK(engine->RegisterGlobalFunction("bool Flower_IsGrabbed(uint64)",
-        asFUNCTION(Flower_IsGrabbed), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_IsGrabbed), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Flower_SetGrabRadius(uint64, float)",
-        asFUNCTION(Flower_SetGrabRadius), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_SetGrabRadius), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Flower_GetGrabRadius(uint64)",
-        asFUNCTION(Flower_GetGrabRadius), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_GetGrabRadius), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Flower_SetGrabSpring(uint64, float)",
-        asFUNCTION(Flower_SetGrabSpring), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_SetGrabSpring), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Flower_GetGrabSpring(uint64)",
-        asFUNCTION(Flower_GetGrabSpring), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_GetGrabSpring), ENJIN_AS_CALL_CDECL));
 
     // Stem / scoring
     AS_CHECK(engine->RegisterGlobalFunction("float Flower_GetScore(uint64)",
-        asFUNCTION(Flower_GetScore), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_GetScore), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("int Flower_GetPartsRemoved(uint64)",
-        asFUNCTION(Flower_GetPartsRemoved), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_GetPartsRemoved), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Flower_IsEvaluated(uint64)",
-        asFUNCTION(Flower_IsEvaluated), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_IsEvaluated), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Flower_SetSapColor(uint64, float, float, float)",
-        asFUNCTION(Flower_SetSapColor), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_SetSapColor), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Flower_SetLiquidIntensity(uint64, float)",
-        asFUNCTION(Flower_SetLiquidIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_SetLiquidIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Flower_SetGroundLevel(uint64, float)",
-        asFUNCTION(Flower_SetGroundLevel), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_SetGroundLevel), ENJIN_AS_CALL_CDECL));
 
     // Jelly mesh
     AS_CHECK(engine->RegisterGlobalFunction("void Flower_SetJellyStiffness(uint64, float)",
-        asFUNCTION(Flower_SetJellyStiffness), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_SetJellyStiffness), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Flower_SetJellyDamping(uint64, float)",
-        asFUNCTION(Flower_SetJellyDamping), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_SetJellyDamping), ENJIN_AS_CALL_CDECL));
 
     // Component queries
     AS_CHECK(engine->RegisterGlobalFunction("bool Flower_HasTether(uint64)",
-        asFUNCTION(Flower_HasTether), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_HasTether), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Flower_HasGrabbable(uint64)",
-        asFUNCTION(Flower_HasGrabbable), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_HasGrabbable), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Flower_HasStem(uint64)",
-        asFUNCTION(Flower_HasStem), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_HasStem), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Flower_HasJelly(uint64)",
-        asFUNCTION(Flower_HasJelly), asCALL_CDECL));
+        ENJIN_AS_FN(Flower_HasJelly), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

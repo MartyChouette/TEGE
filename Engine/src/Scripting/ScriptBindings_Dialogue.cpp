@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -107,43 +108,43 @@ namespace Scripting {
 void RegisterDialogueBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Dialogue_Start(uint64)",
-        asFUNCTION(Dialogue_Start), asCALL_CDECL));
+        ENJIN_AS_FN(Dialogue_Start), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Dialogue_Advance(uint64)",
-        asFUNCTION(Dialogue_Advance), asCALL_CDECL));
+        ENJIN_AS_FN(Dialogue_Advance), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Dialogue_Choose(uint64, uint)",
-        asFUNCTION(Dialogue_Choose), asCALL_CDECL));
+        ENJIN_AS_FN(Dialogue_Choose), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Dialogue_SetVariable(uint64, const string&in, const string&in)",
-        asFUNCTION(Dialogue_SetVariable), asCALL_CDECL));
+        ENJIN_AS_FN(Dialogue_SetVariable), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "string Dialogue_GetVariable(uint64, const string&in)",
-        asFUNCTION(Dialogue_GetVariable), asCALL_CDECL));
+        ENJIN_AS_FN(Dialogue_GetVariable), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Dialogue_IsActive(uint64)",
-        asFUNCTION(Dialogue_IsActive), asCALL_CDECL));
+        ENJIN_AS_FN(Dialogue_IsActive), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "string Dialogue_GetCurrentSpeaker(uint64)",
-        asFUNCTION(Dialogue_GetCurrentSpeaker), asCALL_CDECL));
+        ENJIN_AS_FN(Dialogue_GetCurrentSpeaker), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "string Dialogue_GetCurrentText(uint64)",
-        asFUNCTION(Dialogue_GetCurrentText), asCALL_CDECL));
+        ENJIN_AS_FN(Dialogue_GetCurrentText), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint Dialogue_GetChoiceCount(uint64)",
-        asFUNCTION(Dialogue_GetChoiceCount), asCALL_CDECL));
+        ENJIN_AS_FN(Dialogue_GetChoiceCount), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "string Dialogue_GetChoiceText(uint64, uint)",
-        asFUNCTION(Dialogue_GetChoiceText), asCALL_CDECL));
+        ENJIN_AS_FN(Dialogue_GetChoiceText), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/Components/Tween.h"
@@ -195,43 +196,43 @@ void RegisterTweenBindings(asIScriptEngine* engine) {
     // Tween functions — all return uint (tween index) except StopAll and setters
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint Tween_Position(uint64, const Vector3&in, float, int)",
-        asFUNCTION(Tween_Position), asCALL_CDECL));
+        ENJIN_AS_FN(Tween_Position), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint Tween_Rotation(uint64, const Vector3&in, float, int)",
-        asFUNCTION(Tween_Rotation), asCALL_CDECL));
+        ENJIN_AS_FN(Tween_Rotation), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint Tween_Scale(uint64, const Vector3&in, float, int)",
-        asFUNCTION(Tween_Scale), asCALL_CDECL));
+        ENJIN_AS_FN(Tween_Scale), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint Tween_Color(uint64, const Vector3&in, float, int)",
-        asFUNCTION(Tween_Color), asCALL_CDECL));
+        ENJIN_AS_FN(Tween_Color), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint Tween_Opacity(uint64, float, float, int)",
-        asFUNCTION(Tween_Opacity), asCALL_CDECL));
+        ENJIN_AS_FN(Tween_Opacity), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint Tween_Float(uint64, float, float, float, int)",
-        asFUNCTION(Tween_Float), asCALL_CDECL));
+        ENJIN_AS_FN(Tween_Float), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Tween_SetOnComplete(uint64, uint, const string&in)",
-        asFUNCTION(Tween_SetOnComplete), asCALL_CDECL));
+        ENJIN_AS_FN(Tween_SetOnComplete), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Tween_SetDelay(uint64, uint, float)",
-        asFUNCTION(Tween_SetDelay), asCALL_CDECL));
+        ENJIN_AS_FN(Tween_SetDelay), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Tween_GetValue(uint64, uint)",
-        asFUNCTION(Tween_GetValue), asCALL_CDECL));
+        ENJIN_AS_FN(Tween_GetValue), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Tween_StopAll(uint64)",
-        asFUNCTION(Tween_StopAll), asCALL_CDECL));
+        ENJIN_AS_FN(Tween_StopAll), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

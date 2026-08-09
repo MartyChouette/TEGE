@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
@@ -147,47 +148,47 @@ namespace Scripting {
 void RegisterHUDBindings(asIScriptEngine* engine) {
     // Visibility
     AS_CHECK(engine->RegisterGlobalFunction("void HUD_SetVisible(uint64, bool)",
-        asFUNCTION(HUD_SetVisible), asCALL_CDECL));
+        ENJIN_AS_FN(HUD_SetVisible), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool HUD_IsVisible(uint64)",
-        asFUNCTION(HUD_IsVisible), asCALL_CDECL));
+        ENJIN_AS_FN(HUD_IsVisible), ENJIN_AS_CALL_CDECL));
 
     // Text
     AS_CHECK(engine->RegisterGlobalFunction("void HUD_SetText(uint64, const string &in)",
-        asFUNCTION(HUD_SetText), asCALL_CDECL));
+        ENJIN_AS_FN(HUD_SetText), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("string HUD_GetText(uint64)",
-        asFUNCTION(HUD_GetText), asCALL_CDECL));
+        ENJIN_AS_FN(HUD_GetText), ENJIN_AS_CALL_CDECL));
 
     // Values (for bars)
     AS_CHECK(engine->RegisterGlobalFunction("void HUD_SetValue(uint64, float, float)",
-        asFUNCTION(HUD_SetValue), asCALL_CDECL));
+        ENJIN_AS_FN(HUD_SetValue), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float HUD_GetValue(uint64)",
-        asFUNCTION(HUD_GetValue), asCALL_CDECL));
+        ENJIN_AS_FN(HUD_GetValue), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float HUD_GetMaxValue(uint64)",
-        asFUNCTION(HUD_GetMaxValue), asCALL_CDECL));
+        ENJIN_AS_FN(HUD_GetMaxValue), ENJIN_AS_CALL_CDECL));
 
     // Colors
     AS_CHECK(engine->RegisterGlobalFunction("void HUD_SetFillColor(uint64, float, float, float)",
-        asFUNCTION(HUD_SetFillColor), asCALL_CDECL));
+        ENJIN_AS_FN(HUD_SetFillColor), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void HUD_SetTextColor(uint64, float, float, float)",
-        asFUNCTION(HUD_SetTextColor), asCALL_CDECL));
+        ENJIN_AS_FN(HUD_SetTextColor), ENJIN_AS_CALL_CDECL));
 
     // Layout
     AS_CHECK(engine->RegisterGlobalFunction("void HUD_SetPosition(uint64, float, float)",
-        asFUNCTION(HUD_SetPosition), asCALL_CDECL));
+        ENJIN_AS_FN(HUD_SetPosition), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void HUD_SetSize(uint64, float, float)",
-        asFUNCTION(HUD_SetSize), asCALL_CDECL));
+        ENJIN_AS_FN(HUD_SetSize), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void HUD_SetFontSize(uint64, float)",
-        asFUNCTION(HUD_SetFontSize), asCALL_CDECL));
+        ENJIN_AS_FN(HUD_SetFontSize), ENJIN_AS_CALL_CDECL));
 
     // Data binding
     AS_CHECK(engine->RegisterGlobalFunction("void HUD_SetBindField(uint64, const string &in)",
-        asFUNCTION(HUD_SetBindField), asCALL_CDECL));
+        ENJIN_AS_FN(HUD_SetBindField), ENJIN_AS_CALL_CDECL));
 
     // World-space tracking
     AS_CHECK(engine->RegisterGlobalFunction("void HUD_SetSourceEntity(uint64, uint64)",
-        asFUNCTION(HUD_SetSourceEntity), asCALL_CDECL));
+        ENJIN_AS_FN(HUD_SetSourceEntity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void HUD_SetWorldOffset(uint64, const Vector3 &in)",
-        asFUNCTION(HUD_SetWorldOffset), asCALL_CDECL));
+        ENJIN_AS_FN(HUD_SetWorldOffset), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

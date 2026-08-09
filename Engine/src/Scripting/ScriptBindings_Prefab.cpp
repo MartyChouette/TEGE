@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
@@ -68,16 +69,16 @@ namespace Scripting {
 void RegisterPrefabBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint64 Prefab_Instantiate(const string &in, float, float, float)",
-        asFUNCTION(Prefab_Instantiate), asCALL_CDECL));
+        ENJIN_AS_FN(Prefab_Instantiate), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint64 Prefab_InstantiateEx(const string &in, float, float, float, float, float, float, float, float, float)",
-        asFUNCTION(Prefab_InstantiateEx), asCALL_CDECL));
+        ENJIN_AS_FN(Prefab_InstantiateEx), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Prefab_IsPrefabInstance(uint64)",
-        asFUNCTION(Prefab_IsPrefabInstance), asCALL_CDECL));
+        ENJIN_AS_FN(Prefab_IsPrefabInstance), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Prefab_Unpack(uint64)",
-        asFUNCTION(Prefab_Unpack), asCALL_CDECL));
+        ENJIN_AS_FN(Prefab_Unpack), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

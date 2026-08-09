@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
@@ -80,21 +81,21 @@ static void Rewind_SetEntityChannels(u64 id, u32 channelMask) {
 
 void RegisterRewindBindings(asIScriptEngine* engine) {
     // Entity rewind (Braid-style)
-    AS_CHECK(engine->RegisterGlobalFunction("void Rewind_StartEntity(uint64)", asFUNCTION(Rewind_StartEntity), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Rewind_StopEntity(uint64)", asFUNCTION(Rewind_StopEntity), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Rewind_IsEntityRewinding(uint64)", asFUNCTION(Rewind_IsEntityRewinding), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Rewind_SetEntityChannels(uint64, uint)", asFUNCTION(Rewind_SetEntityChannels), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Rewind_StartEntity(uint64)", ENJIN_AS_FN(Rewind_StartEntity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Rewind_StopEntity(uint64)", ENJIN_AS_FN(Rewind_StopEntity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Rewind_IsEntityRewinding(uint64)", ENJIN_AS_FN(Rewind_IsEntityRewinding), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Rewind_SetEntityChannels(uint64, uint)", ENJIN_AS_FN(Rewind_SetEntityChannels), ENJIN_AS_CALL_CDECL));
 
     // Scene rewind (Sands of Time-style)
-    AS_CHECK(engine->RegisterGlobalFunction("void Rewind_StartScene()", asFUNCTION(Rewind_StartScene), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Rewind_StopScene()", asFUNCTION(Rewind_StopScene), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Rewind_IsSceneRewinding()", asFUNCTION(Rewind_IsSceneRewinding), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Rewind_SeekScene(float)", asFUNCTION(Rewind_SeekScene), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Rewind_StartScene()", ENJIN_AS_FN(Rewind_StartScene), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Rewind_StopScene()", ENJIN_AS_FN(Rewind_StopScene), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Rewind_IsSceneRewinding()", ENJIN_AS_FN(Rewind_IsSceneRewinding), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Rewind_SeekScene(float)", ENJIN_AS_FN(Rewind_SeekScene), ENJIN_AS_CALL_CDECL));
 
     // Query
-    AS_CHECK(engine->RegisterGlobalFunction("float Rewind_GetRecordedDuration()", asFUNCTION(Rewind_GetRecordedDuration), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Rewind_GetCurrentTime()", asFUNCTION(Rewind_GetCurrentTime), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Rewind_IsAnyRewinding()", asFUNCTION(Rewind_IsAnyRewinding), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Rewind_GetRecordedDuration()", ENJIN_AS_FN(Rewind_GetRecordedDuration), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Rewind_GetCurrentTime()", ENJIN_AS_FN(Rewind_GetCurrentTime), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Rewind_IsAnyRewinding()", ENJIN_AS_FN(Rewind_IsAnyRewinding), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

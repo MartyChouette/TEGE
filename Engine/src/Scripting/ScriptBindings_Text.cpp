@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
@@ -78,27 +79,27 @@ namespace Scripting {
 void RegisterTextBindings(asIScriptEngine* engine) {
     // Content
     AS_CHECK(engine->RegisterGlobalFunction("void Text_SetContent(uint64, const string &in)",
-        asFUNCTION(Text_SetContent), asCALL_CDECL));
+        ENJIN_AS_FN(Text_SetContent), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("string Text_GetContent(uint64)",
-        asFUNCTION(Text_GetContent), asCALL_CDECL));
+        ENJIN_AS_FN(Text_GetContent), ENJIN_AS_CALL_CDECL));
 
     // Font
     AS_CHECK(engine->RegisterGlobalFunction("void Text_SetFontSize(uint64, float)",
-        asFUNCTION(Text_SetFontSize), asCALL_CDECL));
+        ENJIN_AS_FN(Text_SetFontSize), ENJIN_AS_CALL_CDECL));
 
     // Colors
     AS_CHECK(engine->RegisterGlobalFunction("void Text_SetColor(uint64, float, float, float)",
-        asFUNCTION(Text_SetColor), asCALL_CDECL));
+        ENJIN_AS_FN(Text_SetColor), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Text_SetBgColor(uint64, float, float, float)",
-        asFUNCTION(Text_SetBgColor), asCALL_CDECL));
+        ENJIN_AS_FN(Text_SetBgColor), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Text_SetBgOpacity(uint64, float)",
-        asFUNCTION(Text_SetBgOpacity), asCALL_CDECL));
+        ENJIN_AS_FN(Text_SetBgOpacity), ENJIN_AS_CALL_CDECL));
 
     // Layout
     AS_CHECK(engine->RegisterGlobalFunction("void Text_SetAlignment(uint64, int)",
-        asFUNCTION(Text_SetAlignment), asCALL_CDECL));
+        ENJIN_AS_FN(Text_SetAlignment), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Text_SetWrapWidth(uint64, float)",
-        asFUNCTION(Text_SetWrapWidth), asCALL_CDECL));
+        ENJIN_AS_FN(Text_SetWrapWidth), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

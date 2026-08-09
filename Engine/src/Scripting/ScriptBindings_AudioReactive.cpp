@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
@@ -134,33 +135,33 @@ static int Morph_GetTargetCount(u64 id) {
 
 void RegisterAudioReactiveBindings(asIScriptEngine* engine) {
     // RTPC
-    AS_CHECK(engine->RegisterGlobalFunction("void RTPC_SetParameter(uint64, const string &in, float)", asFUNCTION(RTPC_SetParameter), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float RTPC_GetParameter(uint64, const string &in)", asFUNCTION(RTPC_GetParameter), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void RTPC_SetParameter(uint64, const string &in, float)", ENJIN_AS_FN(RTPC_SetParameter), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float RTPC_GetParameter(uint64, const string &in)", ENJIN_AS_FN(RTPC_GetParameter), ENJIN_AS_CALL_CDECL));
 
     // Beat Clock
-    AS_CHECK(engine->RegisterGlobalFunction("float BeatClock_GetBPM(uint64)", asFUNCTION(BeatClock_GetBPM), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void BeatClock_SetBPM(uint64, float)", asFUNCTION(BeatClock_SetBPM), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("uint BeatClock_GetCurrentBeat(uint64)", asFUNCTION(BeatClock_GetCurrentBeat), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("uint BeatClock_GetCurrentBar(uint64)", asFUNCTION(BeatClock_GetCurrentBar), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool BeatClock_IsBeatThisFrame(uint64)", asFUNCTION(BeatClock_IsBeatThisFrame), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool BeatClock_IsDownbeatThisFrame(uint64)", asFUNCTION(BeatClock_IsDownbeatThisFrame), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float BeatClock_GetBPM(uint64)", ENJIN_AS_FN(BeatClock_GetBPM), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void BeatClock_SetBPM(uint64, float)", ENJIN_AS_FN(BeatClock_SetBPM), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint BeatClock_GetCurrentBeat(uint64)", ENJIN_AS_FN(BeatClock_GetCurrentBeat), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint BeatClock_GetCurrentBar(uint64)", ENJIN_AS_FN(BeatClock_GetCurrentBar), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool BeatClock_IsBeatThisFrame(uint64)", ENJIN_AS_FN(BeatClock_IsBeatThisFrame), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool BeatClock_IsDownbeatThisFrame(uint64)", ENJIN_AS_FN(BeatClock_IsDownbeatThisFrame), ENJIN_AS_CALL_CDECL));
 
     // Conductor
-    AS_CHECK(engine->RegisterGlobalFunction("void Conductor_SetState(uint64, int)", asFUNCTION(Conductor_SetState), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int Conductor_GetState(uint64)", asFUNCTION(Conductor_GetState), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Conductor_SetState(uint64, int)", ENJIN_AS_FN(Conductor_SetState), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Conductor_GetState(uint64)", ENJIN_AS_FN(Conductor_GetState), ENJIN_AS_CALL_CDECL));
 
     // Audio Reactive
-    AS_CHECK(engine->RegisterGlobalFunction("void AudioReactive_SetEnabled(uint64, bool)", asFUNCTION(AudioReactive_SetEnabled), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float AudioReactive_GetCurrentValue(uint64)", asFUNCTION(AudioReactive_GetCurrentValue), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void AudioReactive_SetEnabled(uint64, bool)", ENJIN_AS_FN(AudioReactive_SetEnabled), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float AudioReactive_GetCurrentValue(uint64)", ENJIN_AS_FN(AudioReactive_GetCurrentValue), ENJIN_AS_CALL_CDECL));
 
     // Sidechain
-    AS_CHECK(engine->RegisterGlobalFunction("void Sidechain_SetEnabled(uint64, bool)", asFUNCTION(Sidechain_SetEnabled), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Sidechain_IsDucking(uint64)", asFUNCTION(Sidechain_IsDucking), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Sidechain_SetEnabled(uint64, bool)", ENJIN_AS_FN(Sidechain_SetEnabled), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Sidechain_IsDucking(uint64)", ENJIN_AS_FN(Sidechain_IsDucking), ENJIN_AS_CALL_CDECL));
 
     // Morph Targets
-    AS_CHECK(engine->RegisterGlobalFunction("void Morph_SetWeight(uint64, const string &in, float)", asFUNCTION(Morph_SetWeight), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Morph_GetWeight(uint64, const string &in)", asFUNCTION(Morph_GetWeight), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int Morph_GetTargetCount(uint64)", asFUNCTION(Morph_GetTargetCount), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Morph_SetWeight(uint64, const string &in, float)", ENJIN_AS_FN(Morph_SetWeight), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Morph_GetWeight(uint64, const string &in)", ENJIN_AS_FN(Morph_GetWeight), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Morph_GetTargetCount(uint64)", ENJIN_AS_FN(Morph_GetTargetCount), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

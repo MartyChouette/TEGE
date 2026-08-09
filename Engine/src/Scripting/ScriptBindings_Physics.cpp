@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/ECS/World.h"
@@ -396,9 +397,9 @@ void RegisterPhysicsBindings(asIScriptEngine* engine) {
         asOBJ_VALUE | asOBJ_POD | asGetTypeTraits<RaycastHit>()));
 
     AS_CHECK(engine->RegisterObjectBehaviour("RaycastHit", asBEHAVE_CONSTRUCT,
-        "void f()", asFUNCTION(RaycastHit_DefaultConstruct), asCALL_CDECL_OBJLAST));
+        "void f()", ENJIN_AS_OBJ_LAST(RaycastHit_DefaultConstruct), ENJIN_AS_CALL_CDECL_OBJLAST));
     AS_CHECK(engine->RegisterObjectBehaviour("RaycastHit", asBEHAVE_CONSTRUCT,
-        "void f(const RaycastHit &in)", asFUNCTION(RaycastHit_CopyConstruct), asCALL_CDECL_OBJLAST));
+        "void f(const RaycastHit &in)", ENJIN_AS_OBJ_LAST(RaycastHit_CopyConstruct), ENJIN_AS_CALL_CDECL_OBJLAST));
 
     AS_CHECK(engine->RegisterObjectProperty("RaycastHit", "Vector3 point",
         asOFFSET(RaycastHit, point)));
@@ -412,108 +413,108 @@ void RegisterPhysicsBindings(asIScriptEngine* engine) {
     // ---- Physics query functions ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics_Raycast(const Vector3 &in, const Vector3 &in, float)",
-        asFUNCTION(Physics_Raycast), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_Raycast), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics_RaycastHit(const Vector3 &in, const Vector3 &in, float, RaycastHit &out)",
-        asFUNCTION(Physics_RaycastHit), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_RaycastHit), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics_CheckSphere(const Vector3 &in, float)",
-        asFUNCTION(Physics_CheckSphere), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_CheckSphere), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics_CheckBox(const Vector3 &in, const Vector3 &in)",
-        asFUNCTION(Physics_CheckBox), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_CheckBox), ENJIN_AS_CALL_CDECL));
 
     // Masked overloads (with layerMask parameter)
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics_Raycast(const Vector3 &in, const Vector3 &in, float, uint)",
-        asFUNCTION(Physics_Raycast_Masked), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_Raycast_Masked), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics_RaycastHit(const Vector3 &in, const Vector3 &in, float, uint, RaycastHit &out)",
-        asFUNCTION(Physics_RaycastHit_Masked), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_RaycastHit_Masked), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics_CheckSphere(const Vector3 &in, float, uint)",
-        asFUNCTION(Physics_CheckSphere_Masked), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_CheckSphere_Masked), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics_CheckBox(const Vector3 &in, const Vector3 &in, uint)",
-        asFUNCTION(Physics_CheckBox_Masked), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_CheckBox_Masked), ENJIN_AS_CALL_CDECL));
 
     // ---- Physics body manipulation ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Physics_AddForce(uint64, const Vector3 &in)",
-        asFUNCTION(Physics_AddForce), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_AddForce), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Physics_AddImpulse(uint64, const Vector3 &in)",
-        asFUNCTION(Physics_AddImpulse), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_AddImpulse), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Physics_SetVelocity(uint64, const Vector3 &in)",
-        asFUNCTION(Physics_SetVelocity), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_SetVelocity), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Physics_Teleport(uint64, const Vector3 &in)",
-        asFUNCTION(Physics_Teleport), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_Teleport), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector3 Physics_GetVelocity(uint64)",
-        asFUNCTION(Physics_GetVelocity), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_GetVelocity), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Physics_SetGravityScale(uint64, float)",
-        asFUNCTION(Physics_SetGravityScale), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_SetGravityScale), ENJIN_AS_CALL_CDECL));
 
     // ---- Physics joints ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint64 Physics_CreateDistanceJoint(uint64, uint64, float)",
-        asFUNCTION(Physics_CreateDistanceJoint), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_CreateDistanceJoint), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint64 Physics_CreateHingeJoint(uint64, uint64, float, float, float)",
-        asFUNCTION(Physics_CreateHingeJoint), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_CreateHingeJoint), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Physics_DestroyJoint(uint64)",
-        asFUNCTION(Physics_DestroyJoint), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_DestroyJoint), ENJIN_AS_CALL_CDECL));
 
     // Distance joint accessors
     AS_CHECK(engine->RegisterGlobalFunction(
         "void DistanceJoint_SetRestDistance(uint64, float)",
-        asFUNCTION(DistanceJoint_SetRestDistance), asCALL_CDECL));
+        ENJIN_AS_FN(DistanceJoint_SetRestDistance), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float DistanceJoint_GetCurrentStress(uint64)",
-        asFUNCTION(DistanceJoint_GetCurrentStress), asCALL_CDECL));
+        ENJIN_AS_FN(DistanceJoint_GetCurrentStress), ENJIN_AS_CALL_CDECL));
 
     // Hinge joint accessors
     AS_CHECK(engine->RegisterGlobalFunction(
         "void HingeJoint_SetLimits(uint64, float, float)",
-        asFUNCTION(HingeJoint_SetLimits), asCALL_CDECL));
+        ENJIN_AS_FN(HingeJoint_SetLimits), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void HingeJoint_SetMotor(uint64, float, float)",
-        asFUNCTION(HingeJoint_SetMotor), asCALL_CDECL));
+        ENJIN_AS_FN(HingeJoint_SetMotor), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float HingeJoint_GetCurrentAngle(uint64)",
-        asFUNCTION(HingeJoint_GetCurrentAngle), asCALL_CDECL));
+        ENJIN_AS_FN(HingeJoint_GetCurrentAngle), ENJIN_AS_CALL_CDECL));
 
     // ---- Overlap queries returning entities ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "int Physics_OverlapSphereEntities(const Vector3 &in, float)",
-        asFUNCTION(Physics_OverlapSphereEntities), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_OverlapSphereEntities), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "int Physics_OverlapSphereEntitiesMask(const Vector3 &in, float, uint)",
-        asFUNCTION(Physics_OverlapSphereEntitiesMask), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_OverlapSphereEntitiesMask), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "int Physics_OverlapBoxEntities(const Vector3 &in, const Vector3 &in)",
-        asFUNCTION(Physics_OverlapBoxEntities), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_OverlapBoxEntities), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "int Physics_OverlapBoxEntitiesMask(const Vector3 &in, const Vector3 &in, uint)",
-        asFUNCTION(Physics_OverlapBoxEntitiesMask), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_OverlapBoxEntitiesMask), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint64 Physics_GetOverlapResult(int)",
-        asFUNCTION(Physics_GetOverlapResult), asCALL_CDECL));
+        ENJIN_AS_FN(Physics_GetOverlapResult), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

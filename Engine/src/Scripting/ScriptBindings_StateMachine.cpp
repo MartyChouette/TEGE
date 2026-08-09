@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -173,84 +174,84 @@ namespace Scripting {
 void RegisterStateMachineBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "void SM_AddState(uint64, const string&in)",
-        asFUNCTION(SM_AddState), asCALL_CDECL));
+        ENJIN_AS_FN(SM_AddState), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void SM_AddTransition(uint64, const string&in, const string&in)",
-        asFUNCTION(SM_AddTransition), asCALL_CDECL));
+        ENJIN_AS_FN(SM_AddTransition), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void SM_SetState(uint64, const string&in)",
-        asFUNCTION(SM_SetState), asCALL_CDECL));
+        ENJIN_AS_FN(SM_SetState), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "string SM_GetCurrentState(uint64)",
-        asFUNCTION(SM_GetCurrentState), asCALL_CDECL));
+        ENJIN_AS_FN(SM_GetCurrentState), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "string SM_GetPreviousState(uint64)",
-        asFUNCTION(SM_GetPreviousState), asCALL_CDECL));
+        ENJIN_AS_FN(SM_GetPreviousState), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "float SM_GetStateTime(uint64)",
-        asFUNCTION(SM_GetStateTime), asCALL_CDECL));
+        ENJIN_AS_FN(SM_GetStateTime), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void SM_SendTrigger(uint64, const string&in)",
-        asFUNCTION(SM_SendTrigger), asCALL_CDECL));
+        ENJIN_AS_FN(SM_SendTrigger), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void SM_SetBool(uint64, const string&in, bool)",
-        asFUNCTION(SM_SetBool), asCALL_CDECL));
+        ENJIN_AS_FN(SM_SetBool), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool SM_GetBool(uint64, const string&in)",
-        asFUNCTION(SM_GetBool), asCALL_CDECL));
+        ENJIN_AS_FN(SM_GetBool), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void SM_SetFloat(uint64, const string&in, float)",
-        asFUNCTION(SM_SetFloat), asCALL_CDECL));
+        ENJIN_AS_FN(SM_SetFloat), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "float SM_GetFloat(uint64, const string&in)",
-        asFUNCTION(SM_GetFloat), asCALL_CDECL));
+        ENJIN_AS_FN(SM_GetFloat), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void SM_SetInt(uint64, const string&in, int)",
-        asFUNCTION(SM_SetInt), asCALL_CDECL));
+        ENJIN_AS_FN(SM_SetInt), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "int SM_GetInt(uint64, const string&in)",
-        asFUNCTION(SM_GetInt), asCALL_CDECL));
+        ENJIN_AS_FN(SM_GetInt), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool SM_HasState(uint64, const string&in)",
-        asFUNCTION(SM_HasState), asCALL_CDECL));
+        ENJIN_AS_FN(SM_HasState), ENJIN_AS_CALL_CDECL));
 
     // State callback setters/getters
     AS_CHECK(engine->RegisterGlobalFunction(
         "void SM_SetOnEnter(uint64, const string&in, const string&in)",
-        asFUNCTION(SM_SetOnEnter), asCALL_CDECL));
+        ENJIN_AS_FN(SM_SetOnEnter), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void SM_SetOnUpdate(uint64, const string&in, const string&in)",
-        asFUNCTION(SM_SetOnUpdate), asCALL_CDECL));
+        ENJIN_AS_FN(SM_SetOnUpdate), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void SM_SetOnExit(uint64, const string&in, const string&in)",
-        asFUNCTION(SM_SetOnExit), asCALL_CDECL));
+        ENJIN_AS_FN(SM_SetOnExit), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "string SM_GetOnEnter(uint64, const string&in)",
-        asFUNCTION(SM_GetOnEnter), asCALL_CDECL));
+        ENJIN_AS_FN(SM_GetOnEnter), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "string SM_GetOnUpdate(uint64, const string&in)",
-        asFUNCTION(SM_GetOnUpdate), asCALL_CDECL));
+        ENJIN_AS_FN(SM_GetOnUpdate), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "string SM_GetOnExit(uint64, const string&in)",
-        asFUNCTION(SM_GetOnExit), asCALL_CDECL));
+        ENJIN_AS_FN(SM_GetOnExit), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

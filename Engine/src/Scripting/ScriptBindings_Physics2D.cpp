@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
@@ -201,72 +202,72 @@ void RegisterPhysics2DBindings(asIScriptEngine* engine) {
     // ---- Raycast ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics2D_Raycast(const Vector2 &in, const Vector2 &in, float)",
-        asFUNCTION(Physics2D_Raycast), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_Raycast), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics2D_RaycastMask(const Vector2 &in, const Vector2 &in, float, uint)",
-        asFUNCTION(Physics2D_RaycastMask), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_RaycastMask), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint64 Physics2D_RaycastHit(const Vector2 &in, const Vector2 &in, float)",
-        asFUNCTION(Physics2D_RaycastHit), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_RaycastHit), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint64 Physics2D_RaycastHitMask(const Vector2 &in, const Vector2 &in, float, uint)",
-        asFUNCTION(Physics2D_RaycastHitMask), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_RaycastHitMask), ENJIN_AS_CALL_CDECL));
 
     // ---- Overlap queries ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics2D_OverlapCircle(const Vector2 &in, float)",
-        asFUNCTION(Physics2D_OverlapCircle), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_OverlapCircle), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics2D_OverlapCircleMask(const Vector2 &in, float, uint)",
-        asFUNCTION(Physics2D_OverlapCircleMask), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_OverlapCircleMask), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics2D_OverlapBox(const Vector2 &in, const Vector2 &in)",
-        asFUNCTION(Physics2D_OverlapBox), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_OverlapBox), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics2D_OverlapBoxMask(const Vector2 &in, const Vector2 &in, uint)",
-        asFUNCTION(Physics2D_OverlapBoxMask), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_OverlapBoxMask), ENJIN_AS_CALL_CDECL));
 
     // ---- Body manipulation ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Physics2D_AddForce(uint64, const Vector2 &in)",
-        asFUNCTION(Physics2D_AddForce), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_AddForce), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Physics2D_AddImpulse(uint64, const Vector2 &in)",
-        asFUNCTION(Physics2D_AddImpulse), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_AddImpulse), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Physics2D_SetVelocity(uint64, const Vector2 &in)",
-        asFUNCTION(Physics2D_SetVelocity), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_SetVelocity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector2 Physics2D_GetVelocity(uint64)",
-        asFUNCTION(Physics2D_GetVelocity), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_GetVelocity), ENJIN_AS_CALL_CDECL));
 
     // ---- Gravity ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Physics2D_SetGravity(const Vector2 &in)",
-        asFUNCTION(Physics2D_SetGravity), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_SetGravity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector2 Physics2D_GetGravity()",
-        asFUNCTION(Physics2D_GetGravity), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_GetGravity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Physics2D_SetGravityScale(uint64, float)",
-        asFUNCTION(Physics2D_SetGravityScale), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_SetGravityScale), ENJIN_AS_CALL_CDECL));
 
     // ---- Overlap queries returning entities ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "int Physics2D_OverlapCircleEntities(const Vector2 &in, float)",
-        asFUNCTION(Physics2D_OverlapCircleEntities), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_OverlapCircleEntities), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "int Physics2D_OverlapCircleEntitiesMask(const Vector2 &in, float, uint)",
-        asFUNCTION(Physics2D_OverlapCircleEntitiesMask), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_OverlapCircleEntitiesMask), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "int Physics2D_OverlapBoxEntities(const Vector2 &in, const Vector2 &in)",
-        asFUNCTION(Physics2D_OverlapBoxEntities), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_OverlapBoxEntities), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "int Physics2D_OverlapBoxEntitiesMask(const Vector2 &in, const Vector2 &in, uint)",
-        asFUNCTION(Physics2D_OverlapBoxEntitiesMask), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_OverlapBoxEntitiesMask), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint64 Physics2D_GetOverlapResult(int)",
-        asFUNCTION(Physics2D_GetOverlapResult), asCALL_CDECL));
+        ENJIN_AS_FN(Physics2D_GetOverlapResult), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

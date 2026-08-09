@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Scene/LevelStreaming.h"
 #include <angelscript.h>
@@ -67,17 +68,17 @@ void RegisterStreamingBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterEnumValue("ChunkState", "CHUNK_UNLOADING", 3));
 
     AS_CHECK(engine->RegisterGlobalFunction("void Streaming_ForceLoad(const string &in)",
-        asFUNCTION(Streaming_ForceLoad), asCALL_CDECL));
+        ENJIN_AS_FN(Streaming_ForceLoad), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Streaming_ForceUnload(const string &in)",
-        asFUNCTION(Streaming_ForceUnload), asCALL_CDECL));
+        ENJIN_AS_FN(Streaming_ForceUnload), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("int Streaming_GetState(const string &in)",
-        asFUNCTION(Streaming_GetState), asCALL_CDECL));
+        ENJIN_AS_FN(Streaming_GetState), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Streaming_IsLoaded(const string &in)",
-        asFUNCTION(Streaming_IsLoaded), asCALL_CDECL));
+        ENJIN_AS_FN(Streaming_IsLoaded), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("int Streaming_GetLoadedCount()",
-        asFUNCTION(Streaming_GetLoadedCount), asCALL_CDECL));
+        ENJIN_AS_FN(Streaming_GetLoadedCount), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Streaming_SetEnabled(bool)",
-        asFUNCTION(Streaming_SetEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(Streaming_SetEnabled), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

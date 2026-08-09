@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/FlashAPIShim.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Name.h"
@@ -753,80 +754,80 @@ void RegisterFlashAPIBindings(asIScriptEngine* engine) {
     using namespace FlashAPI;
 
     // --- DisplayObject / MovieClip API ---
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetX(uint64)", asFUNCTION(Flash_GetX), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetX(uint64, float)", asFUNCTION(Flash_SetX), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetY(uint64)", asFUNCTION(Flash_GetY), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetY(uint64, float)", asFUNCTION(Flash_SetY), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetScaleX(uint64)", asFUNCTION(Flash_GetScaleX), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetScaleX(uint64, float)", asFUNCTION(Flash_SetScaleX), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetScaleY(uint64)", asFUNCTION(Flash_GetScaleY), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetScaleY(uint64, float)", asFUNCTION(Flash_SetScaleY), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetRotation(uint64)", asFUNCTION(Flash_GetRotation), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetRotation(uint64, float)", asFUNCTION(Flash_SetRotation), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetAlpha(uint64)", asFUNCTION(Flash_GetAlpha), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetAlpha(uint64, float)", asFUNCTION(Flash_SetAlpha), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Flash_GetVisible(uint64)", asFUNCTION(Flash_GetVisible), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetVisible(uint64, bool)", asFUNCTION(Flash_SetVisible), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_GotoAndPlay(uint64, int)", asFUNCTION(Flash_GotoAndPlay), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_GotoAndStop(uint64, int)", asFUNCTION(Flash_GotoAndStop), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_Play(uint64)", asFUNCTION(Flash_Play), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_Stop(uint64)", asFUNCTION(Flash_Stop), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int Flash_GetCurrentFrame(uint64)", asFUNCTION(Flash_GetCurrentFrame), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int Flash_GetTotalFrames(uint64)", asFUNCTION(Flash_GetTotalFrames), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("uint64 Flash_GetChildByName(uint64, const string &in)", asFUNCTION(Flash_GetChildByName), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetX(uint64)", ENJIN_AS_FN(Flash_GetX), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetX(uint64, float)", ENJIN_AS_FN(Flash_SetX), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetY(uint64)", ENJIN_AS_FN(Flash_GetY), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetY(uint64, float)", ENJIN_AS_FN(Flash_SetY), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetScaleX(uint64)", ENJIN_AS_FN(Flash_GetScaleX), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetScaleX(uint64, float)", ENJIN_AS_FN(Flash_SetScaleX), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetScaleY(uint64)", ENJIN_AS_FN(Flash_GetScaleY), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetScaleY(uint64, float)", ENJIN_AS_FN(Flash_SetScaleY), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetRotation(uint64)", ENJIN_AS_FN(Flash_GetRotation), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetRotation(uint64, float)", ENJIN_AS_FN(Flash_SetRotation), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetAlpha(uint64)", ENJIN_AS_FN(Flash_GetAlpha), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetAlpha(uint64, float)", ENJIN_AS_FN(Flash_SetAlpha), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Flash_GetVisible(uint64)", ENJIN_AS_FN(Flash_GetVisible), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetVisible(uint64, bool)", ENJIN_AS_FN(Flash_SetVisible), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_GotoAndPlay(uint64, int)", ENJIN_AS_FN(Flash_GotoAndPlay), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_GotoAndStop(uint64, int)", ENJIN_AS_FN(Flash_GotoAndStop), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_Play(uint64)", ENJIN_AS_FN(Flash_Play), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_Stop(uint64)", ENJIN_AS_FN(Flash_Stop), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Flash_GetCurrentFrame(uint64)", ENJIN_AS_FN(Flash_GetCurrentFrame), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Flash_GetTotalFrames(uint64)", ENJIN_AS_FN(Flash_GetTotalFrames), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint64 Flash_GetChildByName(uint64, const string &in)", ENJIN_AS_FN(Flash_GetChildByName), ENJIN_AS_CALL_CDECL));
 
     // --- Stage ---
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetStageWidth()", asFUNCTION(Flash_GetStageWidth), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetStageHeight()", asFUNCTION(Flash_GetStageHeight), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetFrameRate()", asFUNCTION(Flash_GetFrameRate), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetStageWidth()", ENJIN_AS_FN(Flash_GetStageWidth), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetStageHeight()", ENJIN_AS_FN(Flash_GetStageHeight), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetFrameRate()", ENJIN_AS_FN(Flash_GetFrameRate), ENJIN_AS_CALL_CDECL));
 
     // --- Mouse / Keyboard ---
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetMouseX()", asFUNCTION(Flash_GetMouseX), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetMouseY()", asFUNCTION(Flash_GetMouseY), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Flash_IsKeyDown(int)", asFUNCTION(Flash_IsKeyDown), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetMouseX()", ENJIN_AS_FN(Flash_GetMouseX), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_GetMouseY()", ENJIN_AS_FN(Flash_GetMouseY), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Flash_IsKeyDown(int)", ENJIN_AS_FN(Flash_IsKeyDown), ENJIN_AS_CALL_CDECL));
 
     // --- TextField ---
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetText(uint64, const string &in)", asFUNCTION(Flash_SetText), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("string Flash_GetText(uint64)", asFUNCTION(Flash_GetText), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetText(uint64, const string &in)", ENJIN_AS_FN(Flash_SetText), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string Flash_GetText(uint64)", ENJIN_AS_FN(Flash_GetText), ENJIN_AS_CALL_CDECL));
 
     // --- Math ---
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathRandom()", asFUNCTION(Flash_MathRandom), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathFloor(float)", asFUNCTION(Flash_MathFloor), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathCeil(float)", asFUNCTION(Flash_MathCeil), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathRound(float)", asFUNCTION(Flash_MathRound), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathAbs(float)", asFUNCTION(Flash_MathAbs), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathSqrt(float)", asFUNCTION(Flash_MathSqrt), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathSin(float)", asFUNCTION(Flash_MathSin), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathCos(float)", asFUNCTION(Flash_MathCos), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathAtan2(float, float)", asFUNCTION(Flash_MathAtan2), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathRandom()", ENJIN_AS_FN(Flash_MathRandom), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathFloor(float)", ENJIN_AS_FN(Flash_MathFloor), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathCeil(float)", ENJIN_AS_FN(Flash_MathCeil), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathRound(float)", ENJIN_AS_FN(Flash_MathRound), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathAbs(float)", ENJIN_AS_FN(Flash_MathAbs), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathSqrt(float)", ENJIN_AS_FN(Flash_MathSqrt), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathSin(float)", ENJIN_AS_FN(Flash_MathSin), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathCos(float)", ENJIN_AS_FN(Flash_MathCos), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flash_MathAtan2(float, float)", ENJIN_AS_FN(Flash_MathAtan2), ENJIN_AS_CALL_CDECL));
 
     // --- Sound ---
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_PlaySound(const string &in)", asFUNCTION(Flash_PlaySound), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_StopSound(const string &in)", asFUNCTION(Flash_StopSound), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetVolume(const string &in, float)", asFUNCTION(Flash_SetVolume), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_PlaySound(const string &in)", ENJIN_AS_FN(Flash_PlaySound), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_StopSound(const string &in)", ENJIN_AS_FN(Flash_StopSound), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SetVolume(const string &in, float)", ENJIN_AS_FN(Flash_SetVolume), ENJIN_AS_CALL_CDECL));
 
     // --- Timer ---
-    AS_CHECK(engine->RegisterGlobalFunction("uint Flash_SetTimeout(float)", asFUNCTION(Flash_SetTimeout), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("uint Flash_SetInterval(float)", asFUNCTION(Flash_SetInterval), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_ClearInterval(uint)", asFUNCTION(Flash_ClearInterval), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint Flash_SetTimeout(float)", ENJIN_AS_FN(Flash_SetTimeout), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint Flash_SetInterval(float)", ENJIN_AS_FN(Flash_SetInterval), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_ClearInterval(uint)", ENJIN_AS_FN(Flash_ClearInterval), ENJIN_AS_CALL_CDECL));
 
     // --- SharedObject (persisted via TieredSaveSystem meta-progression) ---
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SO_Set(const string &in, const string &in, const string &in)", asFUNCTION(Flash_SO_Set), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("string Flash_SO_Get(const string &in, const string &in)", asFUNCTION(Flash_SO_Get), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Flash_SO_Has(const string &in, const string &in)", asFUNCTION(Flash_SO_Has), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SO_Flush(const string &in)", asFUNCTION(Flash_SO_Flush), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SO_Clear(const string &in)", asFUNCTION(Flash_SO_Clear), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SO_Set(const string &in, const string &in, const string &in)", ENJIN_AS_FN(Flash_SO_Set), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string Flash_SO_Get(const string &in, const string &in)", ENJIN_AS_FN(Flash_SO_Get), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Flash_SO_Has(const string &in, const string &in)", ENJIN_AS_FN(Flash_SO_Has), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SO_Flush(const string &in)", ENJIN_AS_FN(Flash_SO_Flush), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SO_Clear(const string &in)", ENJIN_AS_FN(Flash_SO_Clear), ENJIN_AS_CALL_CDECL));
 
     // --- Compatibility aliases (match transpiler output function names) ---
-    AS_CHECK(engine->RegisterGlobalFunction("float Math_Random()", asFUNCTION(Flash_MathRandom), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Math_Floor(float)", asFUNCTION(Flash_MathFloor), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Math_Ceil(float)", asFUNCTION(Flash_MathCeil), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Math_Round(float)", asFUNCTION(Flash_MathRound), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Math_Abs(float)", asFUNCTION(Flash_MathAbs), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Math_Sqrt(float)", asFUNCTION(Flash_MathSqrt), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Math_Sin(float)", asFUNCTION(Flash_MathSin), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Math_Cos(float)", asFUNCTION(Flash_MathCos), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Math_Atan2(float, float)", asFUNCTION(Flash_MathAtan2), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Math_Random()", ENJIN_AS_FN(Flash_MathRandom), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Math_Floor(float)", ENJIN_AS_FN(Flash_MathFloor), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Math_Ceil(float)", ENJIN_AS_FN(Flash_MathCeil), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Math_Round(float)", ENJIN_AS_FN(Flash_MathRound), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Math_Abs(float)", ENJIN_AS_FN(Flash_MathAbs), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Math_Sqrt(float)", ENJIN_AS_FN(Flash_MathSqrt), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Math_Sin(float)", ENJIN_AS_FN(Flash_MathSin), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Math_Cos(float)", ENJIN_AS_FN(Flash_MathCos), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Math_Atan2(float, float)", ENJIN_AS_FN(Flash_MathAtan2), ENJIN_AS_CALL_CDECL));
 
     ENJIN_LOG_INFO(Script, "Flash API shim registered: 48 global functions "
                            "(DisplayObject, Stage, Mouse, Keyboard, TextField, Math, Sound, Timer)");

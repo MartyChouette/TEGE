@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
@@ -624,342 +625,342 @@ void RegisterRenderBindings(asIScriptEngine* engine) {
     // ---- Shadows ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Render_SetShadowsEnabled(bool)",
-        asFUNCTION(Render_SetShadowsEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(Render_SetShadowsEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Render_IsShadowsEnabled()",
-        asFUNCTION(Render_IsShadowsEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(Render_IsShadowsEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Render_SetShadowDistance(float)",
-        asFUNCTION(Render_SetShadowDistance), asCALL_CDECL));
+        ENJIN_AS_FN(Render_SetShadowDistance), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Render_GetShadowDistance()",
-        asFUNCTION(Render_GetShadowDistance), asCALL_CDECL));
+        ENJIN_AS_FN(Render_GetShadowDistance), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Render_SetShadowStrength(float)",
-        asFUNCTION(Render_SetShadowStrength), asCALL_CDECL));
+        ENJIN_AS_FN(Render_SetShadowStrength), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Render_GetShadowStrength()",
-        asFUNCTION(Render_GetShadowStrength), asCALL_CDECL));
+        ENJIN_AS_FN(Render_GetShadowStrength), ENJIN_AS_CALL_CDECL));
 
     // ---- Ambient ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Render_SetAmbientIntensity(float)",
-        asFUNCTION(Render_SetAmbientIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(Render_SetAmbientIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Render_GetAmbientIntensity()",
-        asFUNCTION(Render_GetAmbientIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(Render_GetAmbientIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Render_SetAmbientColor(const Vector3 &in)",
-        asFUNCTION(Render_SetAmbientColor), asCALL_CDECL));
+        ENJIN_AS_FN(Render_SetAmbientColor), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector3 Render_GetAmbientColor()",
-        asFUNCTION(Render_GetAmbientColor), asCALL_CDECL));
+        ENJIN_AS_FN(Render_GetAmbientColor), ENJIN_AS_CALL_CDECL));
 
     // ---- Fog ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Render_SetFogDensity(float)",
-        asFUNCTION(Render_SetFogDensity), asCALL_CDECL));
+        ENJIN_AS_FN(Render_SetFogDensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Render_GetFogDensity()",
-        asFUNCTION(Render_GetFogDensity), asCALL_CDECL));
+        ENJIN_AS_FN(Render_GetFogDensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Render_SetFogColor(const Vector3 &in)",
-        asFUNCTION(Render_SetFogColor), asCALL_CDECL));
+        ENJIN_AS_FN(Render_SetFogColor), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector3 Render_GetFogColor()",
-        asFUNCTION(Render_GetFogColor), asCALL_CDECL));
+        ENJIN_AS_FN(Render_GetFogColor), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Render_SetFogStart(float)",
-        asFUNCTION(Render_SetFogStart), asCALL_CDECL));
+        ENJIN_AS_FN(Render_SetFogStart), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Render_GetFogStart()",
-        asFUNCTION(Render_GetFogStart), asCALL_CDECL));
+        ENJIN_AS_FN(Render_GetFogStart), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Render_SetFogEnd(float)",
-        asFUNCTION(Render_SetFogEnd), asCALL_CDECL));
+        ENJIN_AS_FN(Render_SetFogEnd), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Render_GetFogEnd()",
-        asFUNCTION(Render_GetFogEnd), asCALL_CDECL));
+        ENJIN_AS_FN(Render_GetFogEnd), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Render_SetFogHeightFalloff(float)",
-        asFUNCTION(Render_SetFogHeightFalloff), asCALL_CDECL));
+        ENJIN_AS_FN(Render_SetFogHeightFalloff), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Render_GetFogHeightFalloff()",
-        asFUNCTION(Render_GetFogHeightFalloff), asCALL_CDECL));
+        ENJIN_AS_FN(Render_GetFogHeightFalloff), ENJIN_AS_CALL_CDECL));
 
     // ---- Snow, Curvature, Wireframe, Rain ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Render_SetSnowIntensity(float)",
-        asFUNCTION(Render_SetSnowIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(Render_SetSnowIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Render_GetSnowIntensity()",
-        asFUNCTION(Render_GetSnowIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(Render_GetSnowIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Render_SetWorldCurvature(float)",
-        asFUNCTION(Render_SetWorldCurvature), asCALL_CDECL));
+        ENJIN_AS_FN(Render_SetWorldCurvature), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Render_GetWorldCurvature()",
-        asFUNCTION(Render_GetWorldCurvature), asCALL_CDECL));
+        ENJIN_AS_FN(Render_GetWorldCurvature), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Render_SetWireframeEnabled(bool)",
-        asFUNCTION(Render_SetWireframeEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(Render_SetWireframeEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Render_IsWireframeEnabled()",
-        asFUNCTION(Render_IsWireframeEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(Render_IsWireframeEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Render_SetRainActive(bool)",
-        asFUNCTION(Render_SetRainActive), asCALL_CDECL));
+        ENJIN_AS_FN(Render_SetRainActive), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Render_IsRainActive()",
-        asFUNCTION(Render_IsRainActive), asCALL_CDECL));
+        ENJIN_AS_FN(Render_IsRainActive), ENJIN_AS_CALL_CDECL));
 
     // ---- PostProcess: Tone Mapping & Exposure ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetToneMapping(int)",
-        asFUNCTION(PostProcess_SetToneMapping), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetToneMapping), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "int PostProcess_GetToneMapping()",
-        asFUNCTION(PostProcess_GetToneMapping), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetToneMapping), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetExposure(float)",
-        asFUNCTION(PostProcess_SetExposure), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetExposure), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetExposure()",
-        asFUNCTION(PostProcess_GetExposure), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetExposure), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetGamma(float)",
-        asFUNCTION(PostProcess_SetGamma), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetGamma), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetGamma()",
-        asFUNCTION(PostProcess_GetGamma), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetGamma), ENJIN_AS_CALL_CDECL));
 
     // ---- PostProcess: Bloom ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetBloomEnabled(bool)",
-        asFUNCTION(PostProcess_SetBloomEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetBloomEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool PostProcess_IsBloomEnabled()",
-        asFUNCTION(PostProcess_IsBloomEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_IsBloomEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetBloomThreshold(float)",
-        asFUNCTION(PostProcess_SetBloomThreshold), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetBloomThreshold), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetBloomThreshold()",
-        asFUNCTION(PostProcess_GetBloomThreshold), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetBloomThreshold), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetBloomIntensity(float)",
-        asFUNCTION(PostProcess_SetBloomIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetBloomIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetBloomIntensity()",
-        asFUNCTION(PostProcess_GetBloomIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetBloomIntensity), ENJIN_AS_CALL_CDECL));
 
     // ---- PostProcess: Vignette ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetVignetteEnabled(bool)",
-        asFUNCTION(PostProcess_SetVignetteEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetVignetteEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool PostProcess_IsVignetteEnabled()",
-        asFUNCTION(PostProcess_IsVignetteEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_IsVignetteEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetVignetteIntensity(float)",
-        asFUNCTION(PostProcess_SetVignetteIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetVignetteIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetVignetteIntensity()",
-        asFUNCTION(PostProcess_GetVignetteIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetVignetteIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetVignetteSmoothness(float)",
-        asFUNCTION(PostProcess_SetVignetteSmoothness), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetVignetteSmoothness), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetVignetteSmoothness()",
-        asFUNCTION(PostProcess_GetVignetteSmoothness), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetVignetteSmoothness), ENJIN_AS_CALL_CDECL));
 
     // ---- PostProcess: Chromatic Aberration ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetChromaticAberrationEnabled(bool)",
-        asFUNCTION(PostProcess_SetChromaticAberrationEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetChromaticAberrationEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool PostProcess_IsChromaticAberrationEnabled()",
-        asFUNCTION(PostProcess_IsChromaticAberrationEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_IsChromaticAberrationEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetChromaticAberrationIntensity(float)",
-        asFUNCTION(PostProcess_SetChromaticAberrationIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetChromaticAberrationIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetChromaticAberrationIntensity()",
-        asFUNCTION(PostProcess_GetChromaticAberrationIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetChromaticAberrationIntensity), ENJIN_AS_CALL_CDECL));
 
     // ---- PostProcess: Color Grading ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetColorFilter(const Vector3 &in)",
-        asFUNCTION(PostProcess_SetColorFilter), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetColorFilter), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector3 PostProcess_GetColorFilter()",
-        asFUNCTION(PostProcess_GetColorFilter), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetColorFilter), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetSaturation(float)",
-        asFUNCTION(PostProcess_SetSaturation), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetSaturation), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetSaturation()",
-        asFUNCTION(PostProcess_GetSaturation), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetSaturation), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetContrast(float)",
-        asFUNCTION(PostProcess_SetContrast), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetContrast), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetContrast()",
-        asFUNCTION(PostProcess_GetContrast), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetContrast), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetBrightness(float)",
-        asFUNCTION(PostProcess_SetBrightness), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetBrightness), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetBrightness()",
-        asFUNCTION(PostProcess_GetBrightness), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetBrightness), ENJIN_AS_CALL_CDECL));
 
     // ---- PostProcess: Film Grain ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetFilmGrainEnabled(bool)",
-        asFUNCTION(PostProcess_SetFilmGrainEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetFilmGrainEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool PostProcess_IsFilmGrainEnabled()",
-        asFUNCTION(PostProcess_IsFilmGrainEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_IsFilmGrainEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetFilmGrainIntensity(float)",
-        asFUNCTION(PostProcess_SetFilmGrainIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetFilmGrainIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetFilmGrainIntensity()",
-        asFUNCTION(PostProcess_GetFilmGrainIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetFilmGrainIntensity), ENJIN_AS_CALL_CDECL));
 
     // ---- PostProcess: FXAA ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetFXAAEnabled(bool)",
-        asFUNCTION(PostProcess_SetFXAAEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetFXAAEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool PostProcess_IsFXAAEnabled()",
-        asFUNCTION(PostProcess_IsFXAAEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_IsFXAAEnabled), ENJIN_AS_CALL_CDECL));
 
     // ---- Screen-Space Effects: God Rays ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetGodRaysEnabled(bool)",
-        asFUNCTION(PostProcess_SetGodRaysEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetGodRaysEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool PostProcess_IsGodRaysEnabled()",
-        asFUNCTION(PostProcess_IsGodRaysEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_IsGodRaysEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetGodRaysIntensity(float)",
-        asFUNCTION(PostProcess_SetGodRaysIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetGodRaysIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetGodRaysIntensity()",
-        asFUNCTION(PostProcess_GetGodRaysIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetGodRaysIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetGodRaysSamples(int)",
-        asFUNCTION(PostProcess_SetGodRaysSamples), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetGodRaysSamples), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "int PostProcess_GetGodRaysSamples()",
-        asFUNCTION(PostProcess_GetGodRaysSamples), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetGodRaysSamples), ENJIN_AS_CALL_CDECL));
 
     // ---- Screen-Space Effects: SSAO ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetSSAOEnabled(bool)",
-        asFUNCTION(PostProcess_SetSSAOEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetSSAOEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool PostProcess_IsSSAOEnabled()",
-        asFUNCTION(PostProcess_IsSSAOEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_IsSSAOEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetSSAORadius(float)",
-        asFUNCTION(PostProcess_SetSSAORadius), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetSSAORadius), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetSSAORadius()",
-        asFUNCTION(PostProcess_GetSSAORadius), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetSSAORadius), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetSSAOIntensity(float)",
-        asFUNCTION(PostProcess_SetSSAOIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetSSAOIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetSSAOIntensity()",
-        asFUNCTION(PostProcess_GetSSAOIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetSSAOIntensity), ENJIN_AS_CALL_CDECL));
 
     // ---- Screen-Space Effects: Contact Shadows ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetContactShadowsEnabled(bool)",
-        asFUNCTION(PostProcess_SetContactShadowsEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetContactShadowsEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool PostProcess_IsContactShadowsEnabled()",
-        asFUNCTION(PostProcess_IsContactShadowsEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_IsContactShadowsEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetContactShadowsIntensity(float)",
-        asFUNCTION(PostProcess_SetContactShadowsIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetContactShadowsIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetContactShadowsIntensity()",
-        asFUNCTION(PostProcess_GetContactShadowsIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetContactShadowsIntensity), ENJIN_AS_CALL_CDECL));
 
     // ---- Screen-Space Effects: Caustics ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetCausticsEnabled(bool)",
-        asFUNCTION(PostProcess_SetCausticsEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetCausticsEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool PostProcess_IsCausticsEnabled()",
-        asFUNCTION(PostProcess_IsCausticsEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_IsCausticsEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetCausticsIntensity(float)",
-        asFUNCTION(PostProcess_SetCausticsIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetCausticsIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetCausticsIntensity()",
-        asFUNCTION(PostProcess_GetCausticsIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetCausticsIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetCausticsWaterY(float)",
-        asFUNCTION(PostProcess_SetCausticsWaterY), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetCausticsWaterY), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetCausticsWaterY()",
-        asFUNCTION(PostProcess_GetCausticsWaterY), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetCausticsWaterY), ENJIN_AS_CALL_CDECL));
 
     // ---- Screen-Space Effects: Fog Shafts ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetFogShaftsEnabled(bool)",
-        asFUNCTION(PostProcess_SetFogShaftsEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetFogShaftsEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool PostProcess_IsFogShaftsEnabled()",
-        asFUNCTION(PostProcess_IsFogShaftsEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_IsFogShaftsEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetFogShaftsIntensity(float)",
-        asFUNCTION(PostProcess_SetFogShaftsIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetFogShaftsIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetFogShaftsIntensity()",
-        asFUNCTION(PostProcess_GetFogShaftsIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetFogShaftsIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PostProcess_SetFogShaftsMaxDistance(float)",
-        asFUNCTION(PostProcess_SetFogShaftsMaxDistance), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_SetFogShaftsMaxDistance), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PostProcess_GetFogShaftsMaxDistance()",
-        asFUNCTION(PostProcess_GetFogShaftsMaxDistance), asCALL_CDECL));
+        ENJIN_AS_FN(PostProcess_GetFogShaftsMaxDistance), ENJIN_AS_CALL_CDECL));
 
     // ---- Post-Process Volumes ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PPVolume_SetActive(uint64, bool)",
-        asFUNCTION(PPVolume_SetActive), asCALL_CDECL));
+        ENJIN_AS_FN(PPVolume_SetActive), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool PPVolume_IsActive(uint64)",
-        asFUNCTION(PPVolume_IsActive), asCALL_CDECL));
+        ENJIN_AS_FN(PPVolume_IsActive), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PPVolume_SetWeight(uint64, float)",
-        asFUNCTION(PPVolume_SetWeight), asCALL_CDECL));
+        ENJIN_AS_FN(PPVolume_SetWeight), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PPVolume_GetWeight(uint64)",
-        asFUNCTION(PPVolume_GetWeight), asCALL_CDECL));
+        ENJIN_AS_FN(PPVolume_GetWeight), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PPVolume_SetBlendRadius(uint64, float)",
-        asFUNCTION(PPVolume_SetBlendRadius), asCALL_CDECL));
+        ENJIN_AS_FN(PPVolume_SetBlendRadius), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float PPVolume_GetBlendRadius(uint64)",
-        asFUNCTION(PPVolume_GetBlendRadius), asCALL_CDECL));
+        ENJIN_AS_FN(PPVolume_GetBlendRadius), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PPVolume_SetPriority(uint64, int)",
-        asFUNCTION(PPVolume_SetPriority), asCALL_CDECL));
+        ENJIN_AS_FN(PPVolume_SetPriority), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "int PPVolume_GetPriority(uint64)",
-        asFUNCTION(PPVolume_GetPriority), asCALL_CDECL));
+        ENJIN_AS_FN(PPVolume_GetPriority), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void PPVolume_SetGlobal(uint64, bool)",
-        asFUNCTION(PPVolume_SetGlobal), asCALL_CDECL));
+        ENJIN_AS_FN(PPVolume_SetGlobal), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool PPVolume_IsGlobal(uint64)",
-        asFUNCTION(PPVolume_IsGlobal), asCALL_CDECL));
+        ENJIN_AS_FN(PPVolume_IsGlobal), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

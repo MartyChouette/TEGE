@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Scripting/ScriptEvents.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Networking/NetworkSystem.h"
@@ -185,72 +186,72 @@ void RegisterNetworkBindings(asIScriptEngine* engine) {
     // ---- Connection ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Net_HostGame(int, const string &in)",
-        asFUNCTION(Net_HostGame), asCALL_CDECL));
+        ENJIN_AS_FN(Net_HostGame), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Net_JoinGame(const string &in, int, const string &in)",
-        asFUNCTION(Net_JoinGame), asCALL_CDECL));
+        ENJIN_AS_FN(Net_JoinGame), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Net_Disconnect()",
-        asFUNCTION(Net_Disconnect), asCALL_CDECL));
+        ENJIN_AS_FN(Net_Disconnect), ENJIN_AS_CALL_CDECL));
 
     // ---- State ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Net_IsConnected()",
-        asFUNCTION(Net_IsConnected), asCALL_CDECL));
+        ENJIN_AS_FN(Net_IsConnected), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Net_IsHost()",
-        asFUNCTION(Net_IsHost), asCALL_CDECL));
+        ENJIN_AS_FN(Net_IsHost), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "int Net_GetRole()",
-        asFUNCTION(Net_GetRole), asCALL_CDECL));
+        ENJIN_AS_FN(Net_GetRole), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "int Net_GetLocalPlayerId()",
-        asFUNCTION(Net_GetLocalPlayerId), asCALL_CDECL));
+        ENJIN_AS_FN(Net_GetLocalPlayerId), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "int Net_GetPlayerCount()",
-        asFUNCTION(Net_GetPlayerCount), asCALL_CDECL));
+        ENJIN_AS_FN(Net_GetPlayerCount), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Net_GetPing()",
-        asFUNCTION(Net_GetPing), asCALL_CDECL));
+        ENJIN_AS_FN(Net_GetPing), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Net_GetPacketLoss()",
-        asFUNCTION(Net_GetPacketLoss), asCALL_CDECL));
+        ENJIN_AS_FN(Net_GetPacketLoss), ENJIN_AS_CALL_CDECL));
 
     // ---- Lobby ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Net_SetReady(bool)",
-        asFUNCTION(Net_SetReady), asCALL_CDECL));
+        ENJIN_AS_FN(Net_SetReady), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "int Net_GetLobbyPlayerCount()",
-        asFUNCTION(Net_GetLobbyPlayerCount), asCALL_CDECL));
+        ENJIN_AS_FN(Net_GetLobbyPlayerCount), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "string Net_GetLobbyPlayerName(int)",
-        asFUNCTION(Net_GetLobbyPlayerName), asCALL_CDECL));
+        ENJIN_AS_FN(Net_GetLobbyPlayerName), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Net_GetLobbyPlayerReady(int)",
-        asFUNCTION(Net_GetLobbyPlayerReady), asCALL_CDECL));
+        ENJIN_AS_FN(Net_GetLobbyPlayerReady), ENJIN_AS_CALL_CDECL));
 
     // ---- Entity ownership ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "int Net_RegisterEntity(uint64)",
-        asFUNCTION(Net_RegisterEntity), asCALL_CDECL));
+        ENJIN_AS_FN(Net_RegisterEntity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Net_UnregisterEntity(int)",
-        asFUNCTION(Net_UnregisterEntity), asCALL_CDECL));
+        ENJIN_AS_FN(Net_UnregisterEntity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Net_RequestOwnership(int)",
-        asFUNCTION(Net_RequestOwnership), asCALL_CDECL));
+        ENJIN_AS_FN(Net_RequestOwnership), ENJIN_AS_CALL_CDECL));
 
     // ---- RPC ----
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Net_CallRPC(const string &in, int, const string &in)",
-        asFUNCTION(Net_CallRPC), asCALL_CDECL));
+        ENJIN_AS_FN(Net_CallRPC), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Net_CallRPCAll(const string &in, const string &in)",
-        asFUNCTION(Net_CallRPCAll), asCALL_CDECL));
+        ENJIN_AS_FN(Net_CallRPCAll), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Net_RegisterRPCHandler(const string &in)",
-        asFUNCTION(Net_RegisterRPCHandler), asCALL_CDECL));
+        ENJIN_AS_FN(Net_RegisterRPCHandler), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

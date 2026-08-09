@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Procedural/ProceduralAlgorithms.h"
 #include "Enjin/Procedural/LevelGenerator.h"
@@ -324,61 +325,61 @@ void RegisterProceduralBindings(asIScriptEngine* engine) {
     // Grid generation algorithms
     AS_CHECK(engine->RegisterGlobalFunction(
         "void ProceduralGen_CellularAutomata(uint width, uint height, uint fillPct, uint smoothPasses, uint seed)",
-        asFUNCTION(ProceduralGen_CellularAutomata), asCALL_CDECL));
+        ENJIN_AS_FN(ProceduralGen_CellularAutomata), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void ProceduralGen_RandomWalker(uint width, uint height, uint steps, uint seed)",
-        asFUNCTION(ProceduralGen_RandomWalker), asCALL_CDECL));
+        ENJIN_AS_FN(ProceduralGen_RandomWalker), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void ProceduralGen_BSP(uint width, uint height, uint minRoomSize, uint maxRoomSize, uint seed)",
-        asFUNCTION(ProceduralGen_BSP), asCALL_CDECL));
+        ENJIN_AS_FN(ProceduralGen_BSP), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void ProceduralGen_DiamondSquare(uint size, float roughness, uint seed)",
-        asFUNCTION(ProceduralGen_DiamondSquare), asCALL_CDECL));
+        ENJIN_AS_FN(ProceduralGen_DiamondSquare), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "string ProceduralGen_LSystem(const string &in axiom, const string &in rules, uint iterations)",
-        asFUNCTION(ProceduralGen_LSystem), asCALL_CDECL));
+        ENJIN_AS_FN(ProceduralGen_LSystem), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void ProceduralGen_Voronoi(uint width, uint height, uint numPoints, uint seed)",
-        asFUNCTION(ProceduralGen_Voronoi), asCALL_CDECL));
+        ENJIN_AS_FN(ProceduralGen_Voronoi), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void ProceduralGen_WFC(uint width, uint height, uint tileSetSize, uint seed)",
-        asFUNCTION(ProceduralGen_WFC), asCALL_CDECL));
+        ENJIN_AS_FN(ProceduralGen_WFC), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "string ProceduralGen_Grammar(const string &in rules, const string &in startSymbol, uint seed)",
-        asFUNCTION(ProceduralGen_Grammar), asCALL_CDECL));
+        ENJIN_AS_FN(ProceduralGen_Grammar), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "int ProceduralGen_PrefabAssemble(int maxRooms, uint seed)",
-        asFUNCTION(ProceduralGen_PrefabAssemble), asCALL_CDECL));
+        ENJIN_AS_FN(ProceduralGen_PrefabAssemble), ENJIN_AS_CALL_CDECL));
 
     // Result query functions
     AS_CHECK(engine->RegisterGlobalFunction(
         "int ProceduralGen_GetCell(int x, int y)",
-        asFUNCTION(ProceduralGen_GetCell), asCALL_CDECL));
+        ENJIN_AS_FN(ProceduralGen_GetCell), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "float ProceduralGen_GetHeight(int x, int y)",
-        asFUNCTION(ProceduralGen_GetHeight), asCALL_CDECL));
+        ENJIN_AS_FN(ProceduralGen_GetHeight), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "int ProceduralGen_GetWidth()",
-        asFUNCTION(ProceduralGen_GetWidth), asCALL_CDECL));
+        ENJIN_AS_FN(ProceduralGen_GetWidth), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "int ProceduralGen_GetGridHeight()",
-        asFUNCTION(ProceduralGen_GetHeight_Size), asCALL_CDECL));
+        ENJIN_AS_FN(ProceduralGen_GetHeight_Size), ENJIN_AS_CALL_CDECL));
 
     // Entity spawning
     AS_CHECK(engine->RegisterGlobalFunction(
         "void ProceduralGen_SpawnGrid(float cellSize, int wallValue, int floorValue)",
-        asFUNCTION(ProceduralGen_SpawnGrid), asCALL_CDECL));
+        ENJIN_AS_FN(ProceduralGen_SpawnGrid), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
@@ -158,6 +159,17 @@ static void UI_SetBgColor(u64 entity, int elementId, float r, float g, float b, 
     el->style.bgAlpha = a;
 }
 
+static void UI_SetElementOffsets(u64 entity, int elementId, float l, float r, float t, float b) {
+    auto* canvas = GetCanvas(entity);
+    if (!canvas) return;
+    auto* el = canvas->GetElement(static_cast<u32>(elementId));
+    if (!el) return;
+    el->anchor.offsetLeft = l;
+    el->anchor.offsetRight = r;
+    el->anchor.offsetTop = t;
+    el->anchor.offsetBottom = b;
+}
+
 static void UI_SetTextColor(u64 entity, int elementId, float r, float g, float b) {
     auto* canvas = GetCanvas(entity);
     if (!canvas) return;
@@ -292,95 +304,99 @@ namespace Scripting {
 void RegisterUIBindings(asIScriptEngine* engine) {
     // -- Canvas --
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetCanvasVisible(uint64, bool)",
-        asFUNCTION(UI_SetCanvasVisible), asCALL_CDECL));
+        ENJIN_AS_FN(UI_SetCanvasVisible), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool UI_IsCanvasVisible(uint64)",
-        asFUNCTION(UI_IsCanvasVisible), asCALL_CDECL));
+        ENJIN_AS_FN(UI_IsCanvasVisible), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetCanvasSortOrder(uint64, int)",
-        asFUNCTION(UI_SetCanvasSortOrder), asCALL_CDECL));
+        ENJIN_AS_FN(UI_SetCanvasSortOrder), ENJIN_AS_CALL_CDECL));
 
     // -- Text --
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetText(uint64, int, const string &in)",
-        asFUNCTION(UI_SetText), asCALL_CDECL));
+        ENJIN_AS_FN(UI_SetText), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("string UI_GetText(uint64, int)",
-        asFUNCTION(UI_GetText), asCALL_CDECL));
+        ENJIN_AS_FN(UI_GetText), ENJIN_AS_CALL_CDECL));
 
     // -- Visibility / Enabled --
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetElementVisible(uint64, int, bool)",
-        asFUNCTION(UI_SetElementVisible), asCALL_CDECL));
+        ENJIN_AS_FN(UI_SetElementVisible), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool UI_IsElementVisible(uint64, int)",
-        asFUNCTION(UI_IsElementVisible), asCALL_CDECL));
+        ENJIN_AS_FN(UI_IsElementVisible), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetElementEnabled(uint64, int, bool)",
-        asFUNCTION(UI_SetElementEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(UI_SetElementEnabled), ENJIN_AS_CALL_CDECL));
 
     // -- Progress Bar --
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetProgress(uint64, int, float)",
-        asFUNCTION(UI_SetProgress), asCALL_CDECL));
+        ENJIN_AS_FN(UI_SetProgress), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float UI_GetProgress(uint64, int)",
-        asFUNCTION(UI_GetProgress), asCALL_CDECL));
+        ENJIN_AS_FN(UI_GetProgress), ENJIN_AS_CALL_CDECL));
 
     // -- Slider --
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetSliderValue(uint64, int, float)",
-        asFUNCTION(UI_SetSliderValue), asCALL_CDECL));
+        ENJIN_AS_FN(UI_SetSliderValue), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float UI_GetSliderValue(uint64, int)",
-        asFUNCTION(UI_GetSliderValue), asCALL_CDECL));
+        ENJIN_AS_FN(UI_GetSliderValue), ENJIN_AS_CALL_CDECL));
 
     // -- Checkbox / Toggle --
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetChecked(uint64, int, bool)",
-        asFUNCTION(UI_SetChecked), asCALL_CDECL));
+        ENJIN_AS_FN(UI_SetChecked), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool UI_IsChecked(uint64, int)",
-        asFUNCTION(UI_IsChecked), asCALL_CDECL));
+        ENJIN_AS_FN(UI_IsChecked), ENJIN_AS_CALL_CDECL));
 
     // -- Image --
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetImagePath(uint64, int, const string &in)",
-        asFUNCTION(UI_SetImagePath), asCALL_CDECL));
+        ENJIN_AS_FN(UI_SetImagePath), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetImageAlpha(uint64, int, float)",
-        asFUNCTION(UI_SetImageAlpha), asCALL_CDECL));
+        ENJIN_AS_FN(UI_SetImageAlpha), ENJIN_AS_CALL_CDECL));
 
     // -- Style --
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetBgColor(uint64, int, float, float, float, float)",
-        asFUNCTION(UI_SetBgColor), asCALL_CDECL));
+        ENJIN_AS_FN(UI_SetBgColor), ENJIN_AS_CALL_CDECL));
+    // Animate/reposition elements from scripts (slide-in menus etc.) — offsets
+    // are pixel insets on top of the element's anchors
+    AS_CHECK(engine->RegisterGlobalFunction("void UI_SetElementOffsets(uint64, int, float, float, float, float)",
+        ENJIN_AS_FN(UI_SetElementOffsets), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetTextColor(uint64, int, float, float, float)",
-        asFUNCTION(UI_SetTextColor), asCALL_CDECL));
+        ENJIN_AS_FN(UI_SetTextColor), ENJIN_AS_CALL_CDECL));
 
     // -- Per-character text colors --
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetCharColor(uint64, int, int, float, float, float)",
-        asFUNCTION(UI_SetCharColor), asCALL_CDECL));
+        ENJIN_AS_FN(UI_SetCharColor), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetCharColorRange(uint64, int, int, int, float, float, float)",
-        asFUNCTION(UI_SetCharColorRange), asCALL_CDECL));
+        ENJIN_AS_FN(UI_SetCharColorRange), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void UI_ClearCharColors(uint64, int)",
-        asFUNCTION(UI_ClearCharColors), asCALL_CDECL));
+        ENJIN_AS_FN(UI_ClearCharColors), ENJIN_AS_CALL_CDECL));
 
     // -- Interaction --
     AS_CHECK(engine->RegisterGlobalFunction("bool UI_IsHovered(uint64, int)",
-        asFUNCTION(UI_IsHovered), asCALL_CDECL));
+        ENJIN_AS_FN(UI_IsHovered), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool UI_IsPressed(uint64, int)",
-        asFUNCTION(UI_IsPressed), asCALL_CDECL));
+        ENJIN_AS_FN(UI_IsPressed), ENJIN_AS_CALL_CDECL));
 
     // -- Focus --
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetFocus(uint64, int)",
-        asFUNCTION(UI_SetFocus), asCALL_CDECL));
+        ENJIN_AS_FN(UI_SetFocus), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void UI_ClearFocus(uint64)",
-        asFUNCTION(UI_ClearFocus), asCALL_CDECL));
+        ENJIN_AS_FN(UI_ClearFocus), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("int UI_GetFocusedElement(uint64)",
-        asFUNCTION(UI_GetFocusedElement), asCALL_CDECL));
+        ENJIN_AS_FN(UI_GetFocusedElement), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool UI_IsFocused(uint64, int)",
-        asFUNCTION(UI_IsFocused), asCALL_CDECL));
+        ENJIN_AS_FN(UI_IsFocused), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetTabOrder(uint64, int, int)",
-        asFUNCTION(UI_SetTabOrder), asCALL_CDECL));
+        ENJIN_AS_FN(UI_SetTabOrder), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void UI_SetFocusable(uint64, int, bool)",
-        asFUNCTION(UI_SetFocusable), asCALL_CDECL));
+        ENJIN_AS_FN(UI_SetFocusable), ENJIN_AS_CALL_CDECL));
 
     // -- Localization --
     AS_CHECK(engine->RegisterGlobalFunction("string Loc_Get(const string &in)",
-        asFUNCTION(Loc_Get), asCALL_CDECL));
+        ENJIN_AS_FN(Loc_Get), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("string Loc_GetWithFallback(const string &in, const string &in)",
-        asFUNCTION(Loc_GetWithFallback), asCALL_CDECL));
+        ENJIN_AS_FN(Loc_GetWithFallback), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Loc_SetLocale(const string &in)",
-        asFUNCTION(Loc_SetLocale), asCALL_CDECL));
+        ENJIN_AS_FN(Loc_SetLocale), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("string Loc_GetLocale()",
-        asFUNCTION(Loc_GetLocale), asCALL_CDECL));
+        ENJIN_AS_FN(Loc_GetLocale), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Loc_HasString(const string &in)",
-        asFUNCTION(Loc_HasString), asCALL_CDECL));
+        ENJIN_AS_FN(Loc_HasString), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

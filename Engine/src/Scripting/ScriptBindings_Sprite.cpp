@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/ECS/World.h"
@@ -134,21 +135,21 @@ namespace Scripting {
 
 void RegisterSpriteBindings(asIScriptEngine* engine) {
     // Sprite2D
-    AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetTexture(uint64, const string &in)", asFUNCTION(Sprite_SetTexture), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("string Sprite_GetTexture(uint64)", asFUNCTION(Sprite_GetTexture), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetColor(uint64, float, float, float, float)", asFUNCTION(Sprite_SetColor), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetAlpha(uint64, float)", asFUNCTION(Sprite_SetAlpha), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetFlipX(uint64, bool)", asFUNCTION(Sprite_SetFlipX), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetFlipY(uint64, bool)", asFUNCTION(Sprite_SetFlipY), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetSortOrder(uint64, int)", asFUNCTION(Sprite_SetSortOrder), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetVisible(uint64, bool)", asFUNCTION(Sprite_SetVisible), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetTexture(uint64, const string &in)", ENJIN_AS_FN(Sprite_SetTexture), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string Sprite_GetTexture(uint64)", ENJIN_AS_FN(Sprite_GetTexture), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetColor(uint64, float, float, float, float)", ENJIN_AS_FN(Sprite_SetColor), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetAlpha(uint64, float)", ENJIN_AS_FN(Sprite_SetAlpha), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetFlipX(uint64, bool)", ENJIN_AS_FN(Sprite_SetFlipX), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetFlipY(uint64, bool)", ENJIN_AS_FN(Sprite_SetFlipY), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetSortOrder(uint64, int)", ENJIN_AS_FN(Sprite_SetSortOrder), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Sprite_SetVisible(uint64, bool)", ENJIN_AS_FN(Sprite_SetVisible), ENJIN_AS_CALL_CDECL));
 
     // AnimatedSprite2D
-    AS_CHECK(engine->RegisterGlobalFunction("void SpriteAnim_Play(uint64, const string &in)", asFUNCTION(SpriteAnim_Play), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void SpriteAnim_Stop(uint64)", asFUNCTION(SpriteAnim_Stop), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void SpriteAnim_SetSpeed(uint64, float)", asFUNCTION(SpriteAnim_SetSpeed), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool SpriteAnim_IsPlaying(uint64)", asFUNCTION(SpriteAnim_IsPlaying), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("uint SpriteAnim_GetCurrentFrame(uint64)", asFUNCTION(SpriteAnim_GetCurrentFrame), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SpriteAnim_Play(uint64, const string &in)", ENJIN_AS_FN(SpriteAnim_Play), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SpriteAnim_Stop(uint64)", ENJIN_AS_FN(SpriteAnim_Stop), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SpriteAnim_SetSpeed(uint64, float)", ENJIN_AS_FN(SpriteAnim_SetSpeed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool SpriteAnim_IsPlaying(uint64)", ENJIN_AS_FN(SpriteAnim_IsPlaying), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint SpriteAnim_GetCurrentFrame(uint64)", ENJIN_AS_FN(SpriteAnim_GetCurrentFrame), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

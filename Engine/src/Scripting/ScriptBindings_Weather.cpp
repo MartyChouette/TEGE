@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Effects/Weather.h"
 #include <angelscript.h>
@@ -107,41 +108,41 @@ void RegisterWeatherBindings(asIScriptEngine* engine) {
 
     // Weather control
     AS_CHECK(engine->RegisterGlobalFunction("void Weather_Set(int, float = 2.0)",
-        asFUNCTION(Weather_Set), asCALL_CDECL));
+        ENJIN_AS_FN(Weather_Set), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("int Weather_Get()",
-        asFUNCTION(Weather_Get), asCALL_CDECL));
+        ENJIN_AS_FN(Weather_Get), ENJIN_AS_CALL_CDECL));
 
     // Intensity
     AS_CHECK(engine->RegisterGlobalFunction("void Weather_SetRainIntensity(float)",
-        asFUNCTION(Weather_SetRainIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(Weather_SetRainIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Weather_GetRainIntensity()",
-        asFUNCTION(Weather_GetRainIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(Weather_GetRainIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Weather_SetSnowIntensity(float)",
-        asFUNCTION(Weather_SetSnowIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(Weather_SetSnowIntensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Weather_GetSnowIntensity()",
-        asFUNCTION(Weather_GetSnowIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(Weather_GetSnowIntensity), ENJIN_AS_CALL_CDECL));
 
     // Fog
     AS_CHECK(engine->RegisterGlobalFunction("void Weather_SetFogDensity(float)",
-        asFUNCTION(Weather_SetFogDensity), asCALL_CDECL));
+        ENJIN_AS_FN(Weather_SetFogDensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Weather_GetFogDensity()",
-        asFUNCTION(Weather_GetFogDensity), asCALL_CDECL));
+        ENJIN_AS_FN(Weather_GetFogDensity), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Weather_SetFogColor(float, float, float)",
-        asFUNCTION(Weather_SetFogColor), asCALL_CDECL));
+        ENJIN_AS_FN(Weather_SetFogColor), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Weather_SetFogRange(float, float)",
-        asFUNCTION(Weather_SetFogRange), asCALL_CDECL));
+        ENJIN_AS_FN(Weather_SetFogRange), ENJIN_AS_CALL_CDECL));
 
     // Wind
     AS_CHECK(engine->RegisterGlobalFunction("void Weather_SetWind(float, float, float, float)",
-        asFUNCTION(Weather_SetWind), asCALL_CDECL));
+        ENJIN_AS_FN(Weather_SetWind), ENJIN_AS_CALL_CDECL));
 
     // Lightning
     AS_CHECK(engine->RegisterGlobalFunction("bool Weather_IsLightning()",
-        asFUNCTION(Weather_IsLightning), asCALL_CDECL));
+        ENJIN_AS_FN(Weather_IsLightning), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Weather_LightningJustFired()",
-        asFUNCTION(Weather_LightningJustFired), asCALL_CDECL));
+        ENJIN_AS_FN(Weather_LightningJustFired), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Weather_SetLightningInterval(float, float)",
-        asFUNCTION(Weather_SetLightningInterval), asCALL_CDECL));
+        ENJIN_AS_FN(Weather_SetLightningInterval), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

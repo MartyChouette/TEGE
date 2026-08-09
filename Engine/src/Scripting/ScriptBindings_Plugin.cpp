@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Plugin/PluginSystem.h"
 #include "Enjin/Logging/Log.h"
 #include <angelscript.h>
@@ -38,10 +39,10 @@ static void AS_Plugin_Unload(const std::string&) {
 }
 
 void RegisterPluginBindings(asIScriptEngine* engine) {
-    engine->RegisterGlobalFunction("bool Plugin_IsLoaded(const string &in)", asFUNCTION(AS_Plugin_IsLoaded), asCALL_CDECL);
-    engine->RegisterGlobalFunction("string Plugin_GetVersion(const string &in)", asFUNCTION(AS_Plugin_GetVersion), asCALL_CDECL);
-    engine->RegisterGlobalFunction("bool Plugin_Load(const string &in)", asFUNCTION(AS_Plugin_Load), asCALL_CDECL);
-    engine->RegisterGlobalFunction("void Plugin_Unload(const string &in)", asFUNCTION(AS_Plugin_Unload), asCALL_CDECL);
+    engine->RegisterGlobalFunction("bool Plugin_IsLoaded(const string &in)", ENJIN_AS_FN(AS_Plugin_IsLoaded), ENJIN_AS_CALL_CDECL);
+    engine->RegisterGlobalFunction("string Plugin_GetVersion(const string &in)", ENJIN_AS_FN(AS_Plugin_GetVersion), ENJIN_AS_CALL_CDECL);
+    engine->RegisterGlobalFunction("bool Plugin_Load(const string &in)", ENJIN_AS_FN(AS_Plugin_Load), ENJIN_AS_CALL_CDECL);
+    engine->RegisterGlobalFunction("void Plugin_Unload(const string &in)", ENJIN_AS_FN(AS_Plugin_Unload), ENJIN_AS_CALL_CDECL);
 }
 
 } // namespace Scripting

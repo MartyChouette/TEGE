@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
@@ -117,39 +118,39 @@ namespace Scripting {
 void RegisterParticleBindings(asIScriptEngine* engine) {
     // Playback
     AS_CHECK(engine->RegisterGlobalFunction("void Particle_Play(uint64)",
-        asFUNCTION(Particle_Play), asCALL_CDECL));
+        ENJIN_AS_FN(Particle_Play), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Particle_Stop(uint64)",
-        asFUNCTION(Particle_Stop), asCALL_CDECL));
+        ENJIN_AS_FN(Particle_Stop), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Particle_IsPlaying(uint64)",
-        asFUNCTION(Particle_IsPlaying), asCALL_CDECL));
+        ENJIN_AS_FN(Particle_IsPlaying), ENJIN_AS_CALL_CDECL));
 
     // Emission
     AS_CHECK(engine->RegisterGlobalFunction("void Particle_SetEmissionRate(uint64, float)",
-        asFUNCTION(Particle_SetEmissionRate), asCALL_CDECL));
+        ENJIN_AS_FN(Particle_SetEmissionRate), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Particle_GetEmissionRate(uint64)",
-        asFUNCTION(Particle_GetEmissionRate), asCALL_CDECL));
+        ENJIN_AS_FN(Particle_GetEmissionRate), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Particle_Burst(uint64, int)",
-        asFUNCTION(Particle_Burst), asCALL_CDECL));
+        ENJIN_AS_FN(Particle_Burst), ENJIN_AS_CALL_CDECL));
 
     // Properties
     AS_CHECK(engine->RegisterGlobalFunction("void Particle_SetLifetime(uint64, float)",
-        asFUNCTION(Particle_SetLifetime), asCALL_CDECL));
+        ENJIN_AS_FN(Particle_SetLifetime), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Particle_SetSpeed(uint64, float)",
-        asFUNCTION(Particle_SetSpeed), asCALL_CDECL));
+        ENJIN_AS_FN(Particle_SetSpeed), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Particle_SetSize(uint64, float, float)",
-        asFUNCTION(Particle_SetSize), asCALL_CDECL));
+        ENJIN_AS_FN(Particle_SetSize), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Particle_SetColor(uint64, float, float, float, float, float, float)",
-        asFUNCTION(Particle_SetColor), asCALL_CDECL));
+        ENJIN_AS_FN(Particle_SetColor), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Particle_SetAlpha(uint64, float, float)",
-        asFUNCTION(Particle_SetAlpha), asCALL_CDECL));
+        ENJIN_AS_FN(Particle_SetAlpha), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Particle_SetLoop(uint64, bool)",
-        asFUNCTION(Particle_SetLoop), asCALL_CDECL));
+        ENJIN_AS_FN(Particle_SetLoop), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Particle_SetGravity(uint64, float, float, float)",
-        asFUNCTION(Particle_SetGravity), asCALL_CDECL));
+        ENJIN_AS_FN(Particle_SetGravity), ENJIN_AS_CALL_CDECL));
 
     // Preset
     AS_CHECK(engine->RegisterGlobalFunction("void Particle_ApplyPreset(uint64, const string &in)",
-        asFUNCTION(Particle_ApplyPreset), asCALL_CDECL));
+        ENJIN_AS_FN(Particle_ApplyPreset), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

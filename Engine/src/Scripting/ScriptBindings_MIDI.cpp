@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Input/MIDIInput.h"
 #include "Enjin/Logging/Log.h"
 #include <angelscript.h>
@@ -78,33 +79,33 @@ void RegisterMIDIBindings(asIScriptEngine* engine) {
 
     // Device management
     AS_CHECK(engine->RegisterGlobalFunction("uint32 MIDI_GetDeviceCount()",
-        asFUNCTION(MIDI_GetDeviceCount), asCALL_CDECL));
+        ENJIN_AS_FN(MIDI_GetDeviceCount), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("string MIDI_GetDeviceName(uint32)",
-        asFUNCTION(MIDI_GetDeviceName), asCALL_CDECL));
+        ENJIN_AS_FN(MIDI_GetDeviceName), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool MIDI_OpenDevice(uint32)",
-        asFUNCTION(MIDI_OpenDevice), asCALL_CDECL));
+        ENJIN_AS_FN(MIDI_OpenDevice), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void MIDI_CloseDevice()",
-        asFUNCTION(MIDI_CloseDevice), asCALL_CDECL));
+        ENJIN_AS_FN(MIDI_CloseDevice), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool MIDI_IsDeviceOpen()",
-        asFUNCTION(MIDI_IsDeviceOpen), asCALL_CDECL));
+        ENJIN_AS_FN(MIDI_IsDeviceOpen), ENJIN_AS_CALL_CDECL));
 
     // Note queries (per-frame)
     AS_CHECK(engine->RegisterGlobalFunction("bool MIDI_IsNoteOn(uint8, uint8 = 0xFF)",
-        asFUNCTION(MIDI_IsNoteOn), asCALL_CDECL));
+        ENJIN_AS_FN(MIDI_IsNoteOn), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool MIDI_IsNoteOff(uint8, uint8 = 0xFF)",
-        asFUNCTION(MIDI_IsNoteOff), asCALL_CDECL));
+        ENJIN_AS_FN(MIDI_IsNoteOff), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("uint8 MIDI_GetNoteVelocity(uint8, uint8 = 0xFF)",
-        asFUNCTION(MIDI_GetNoteVelocity), asCALL_CDECL));
+        ENJIN_AS_FN(MIDI_GetNoteVelocity), ENJIN_AS_CALL_CDECL));
 
     // CC queries
     AS_CHECK(engine->RegisterGlobalFunction("uint8 MIDI_GetCC(uint8, uint8 = 0xFF)",
-        asFUNCTION(MIDI_GetCC), asCALL_CDECL));
+        ENJIN_AS_FN(MIDI_GetCC), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("uint8 MIDI_GetCCValue(uint8, uint8 = 0)",
-        asFUNCTION(MIDI_GetCCValue), asCALL_CDECL));
+        ENJIN_AS_FN(MIDI_GetCCValue), ENJIN_AS_CALL_CDECL));
 
     // Event count
     AS_CHECK(engine->RegisterGlobalFunction("uint32 MIDI_GetEventCount()",
-        asFUNCTION(MIDI_GetEventCount), asCALL_CDECL));
+        ENJIN_AS_FN(MIDI_GetEventCount), ENJIN_AS_CALL_CDECL));
 
     #undef AS_CHECK
 

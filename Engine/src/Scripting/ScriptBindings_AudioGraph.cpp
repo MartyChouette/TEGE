@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Audio/AudioEventGraph.h"
 #include "Enjin/Logging/Log.h"
 #include <angelscript.h>
@@ -52,16 +53,16 @@ namespace Scripting {
 void RegisterAudioGraphBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "void AudioGraph_TriggerEvent(const string &in)",
-        asFUNCTION(AS_AudioGraph_TriggerEvent), asCALL_CDECL));
+        ENJIN_AS_FN(AS_AudioGraph_TriggerEvent), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void AudioGraph_SetParameter(const string &in, float)",
-        asFUNCTION(AS_AudioGraph_SetParameter), asCALL_CDECL));
+        ENJIN_AS_FN(AS_AudioGraph_SetParameter), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float AudioGraph_GetParameter(const string &in)",
-        asFUNCTION(AS_AudioGraph_GetParameter), asCALL_CDECL));
+        ENJIN_AS_FN(AS_AudioGraph_GetParameter), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void AudioGraph_StopAll()",
-        asFUNCTION(AS_AudioGraph_StopAll), asCALL_CDECL));
+        ENJIN_AS_FN(AS_AudioGraph_StopAll), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

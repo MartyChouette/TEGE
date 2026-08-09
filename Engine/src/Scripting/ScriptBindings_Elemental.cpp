@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/ECS/World.h"
@@ -199,75 +200,75 @@ namespace Scripting {
 void RegisterElementalBindings(asIScriptEngine* engine) {
     // --- Spawn functions ---
     AS_CHECK(engine->RegisterGlobalFunction("uint Elemental_SpawnFire(float, float, float, float, float)",
-        asFUNCTION(Elemental_SpawnFire), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_SpawnFire), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("uint Elemental_SpawnWater(float, float, float, float, float, float, float)",
-        asFUNCTION(Elemental_SpawnWater), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_SpawnWater), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("uint Elemental_SpawnEarth(float, float, float, float, float, float, float)",
-        asFUNCTION(Elemental_SpawnEarth), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_SpawnEarth), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("uint Elemental_SpawnSnow(float, float, float, float)",
-        asFUNCTION(Elemental_SpawnSnow), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_SpawnSnow), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("uint Elemental_SpawnSteam(float, float, float, float)",
-        asFUNCTION(Elemental_SpawnSteam), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_SpawnSteam), ENJIN_AS_CALL_CDECL));
 
     // --- Bulk spawners ---
     AS_CHECK(engine->RegisterGlobalFunction("void Elemental_SpawnRainBurst(float, float, float, float, int)",
-        asFUNCTION(Elemental_SpawnRainBurst), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_SpawnRainBurst), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Elemental_SpawnDebrisBurst(float, float, float, float, float, float, int)",
-        asFUNCTION(Elemental_SpawnDebrisBurst), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_SpawnDebrisBurst), ENJIN_AS_CALL_CDECL));
 
     // --- Query functions ---
     AS_CHECK(engine->RegisterGlobalFunction("float Elemental_GetFireIntensityAt(float, float, float, float)",
-        asFUNCTION(Elemental_GetFireIntensityAt), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_GetFireIntensityAt), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Elemental_GetMoistureAt(float, float, float, float)",
-        asFUNCTION(Elemental_GetMoistureAt), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_GetMoistureAt), ENJIN_AS_CALL_CDECL));
 
     // --- Stats ---
     AS_CHECK(engine->RegisterGlobalFunction("int Elemental_GetActiveCount()",
-        asFUNCTION(Elemental_GetActiveCount), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_GetActiveCount), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("int Elemental_GetFireCount()",
-        asFUNCTION(Elemental_GetFireCount), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_GetFireCount), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("int Elemental_GetWaterCount()",
-        asFUNCTION(Elemental_GetWaterCount), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_GetWaterCount), ENJIN_AS_CALL_CDECL));
 
     // --- Emitter component ---
     AS_CHECK(engine->RegisterGlobalFunction("bool Elemental_HasEmitter(uint64)",
-        asFUNCTION(Elemental_HasEmitter), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_HasEmitter), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Elemental_SetEmitterActive(uint64, bool)",
-        asFUNCTION(Elemental_SetEmitterActive), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_SetEmitterActive), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Elemental_IsEmitterActive(uint64)",
-        asFUNCTION(Elemental_IsEmitterActive), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_IsEmitterActive), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Elemental_SetEmitterElement(uint64, float, float, float, float)",
-        asFUNCTION(Elemental_SetEmitterElement), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_SetEmitterElement), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Elemental_SetEmitterRate(uint64, float)",
-        asFUNCTION(Elemental_SetEmitterRate), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_SetEmitterRate), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Elemental_GetEmitterRate(uint64)",
-        asFUNCTION(Elemental_GetEmitterRate), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_GetEmitterRate), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Elemental_SetEmitterIntensity(uint64, float)",
-        asFUNCTION(Elemental_SetEmitterIntensity), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_SetEmitterIntensity), ENJIN_AS_CALL_CDECL));
 
     // --- Surface component ---
     AS_CHECK(engine->RegisterGlobalFunction("bool Elemental_HasSurface(uint64)",
-        asFUNCTION(Elemental_HasSurface), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_HasSurface), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Elemental_GetSurfaceChar(uint64)",
-        asFUNCTION(Elemental_GetSurfaceChar), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_GetSurfaceChar), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Elemental_GetSurfaceWetness(uint64)",
-        asFUNCTION(Elemental_GetSurfaceWetness), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_GetSurfaceWetness), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Elemental_GetSurfaceSnow(uint64)",
-        asFUNCTION(Elemental_GetSurfaceSnow), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_GetSurfaceSnow), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Elemental_GetSurfaceFrost(uint64)",
-        asFUNCTION(Elemental_GetSurfaceFrost), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_GetSurfaceFrost), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Elemental_SetFlammability(uint64, float)",
-        asFUNCTION(Elemental_SetFlammability), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_SetFlammability), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Elemental_GetFlammability(uint64)",
-        asFUNCTION(Elemental_GetFlammability), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_GetFlammability), ENJIN_AS_CALL_CDECL));
 
     // --- Volume component ---
     AS_CHECK(engine->RegisterGlobalFunction("bool Elemental_HasVolume(uint64)",
-        asFUNCTION(Elemental_HasVolume), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_HasVolume), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Elemental_SetVolumeKill(uint64, bool)",
-        asFUNCTION(Elemental_SetVolumeKill), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_SetVolumeKill), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Elemental_SetVolumeTempBias(uint64, float)",
-        asFUNCTION(Elemental_SetVolumeTempBias), asCALL_CDECL));
+        ENJIN_AS_FN(Elemental_SetVolumeTempBias), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

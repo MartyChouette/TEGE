@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -285,83 +286,83 @@ void RegisterAIBindings(asIScriptEngine* engine) {
 
     // AI Controller
     AS_CHECK(engine->RegisterGlobalFunction("void AI_SetState(uint64, int)",
-        asFUNCTION(AI_SetState), asCALL_CDECL));
+        ENJIN_AS_FN(AI_SetState), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("int AI_GetState(uint64)",
-        asFUNCTION(AI_GetState), asCALL_CDECL));
+        ENJIN_AS_FN(AI_GetState), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void AI_SetTarget(uint64, uint64)",
-        asFUNCTION(AI_SetTarget), asCALL_CDECL));
+        ENJIN_AS_FN(AI_SetTarget), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("uint64 AI_GetTarget(uint64)",
-        asFUNCTION(AI_GetTarget), asCALL_CDECL));
+        ENJIN_AS_FN(AI_GetTarget), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void AI_SetTargetPosition(uint64, float, float, float)",
-        asFUNCTION(AI_SetTargetPosition), asCALL_CDECL));
+        ENJIN_AS_FN(AI_SetTargetPosition), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void AI_SetMoveSpeed(uint64, float)",
-        asFUNCTION(AI_SetMoveSpeed), asCALL_CDECL));
+        ENJIN_AS_FN(AI_SetMoveSpeed), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float AI_GetMoveSpeed(uint64)",
-        asFUNCTION(AI_GetMoveSpeed), asCALL_CDECL));
+        ENJIN_AS_FN(AI_GetMoveSpeed), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void AI_SetDetectionRange(uint64, float)",
-        asFUNCTION(AI_SetDetectionRange), asCALL_CDECL));
+        ENJIN_AS_FN(AI_SetDetectionRange), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float AI_GetDetectionRange(uint64)",
-        asFUNCTION(AI_GetDetectionRange), asCALL_CDECL));
+        ENJIN_AS_FN(AI_GetDetectionRange), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void AI_SetAttackRange(uint64, float)",
-        asFUNCTION(AI_SetAttackRange), asCALL_CDECL));
+        ENJIN_AS_FN(AI_SetAttackRange), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float AI_GetAttackRange(uint64)",
-        asFUNCTION(AI_GetAttackRange), asCALL_CDECL));
+        ENJIN_AS_FN(AI_GetAttackRange), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void AI_SetChaseSpeed(uint64, float)",
-        asFUNCTION(AI_SetChaseSpeed), asCALL_CDECL));
+        ENJIN_AS_FN(AI_SetChaseSpeed), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void AI_SetFleeSpeed(uint64, float)",
-        asFUNCTION(AI_SetFleeSpeed), asCALL_CDECL));
+        ENJIN_AS_FN(AI_SetFleeSpeed), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void AI_SetFieldOfView(uint64, float)",
-        asFUNCTION(AI_SetFieldOfView), asCALL_CDECL));
+        ENJIN_AS_FN(AI_SetFieldOfView), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void AI_SetUseNavmesh(uint64, bool)",
-        asFUNCTION(AI_SetUseNavmesh), asCALL_CDECL));
+        ENJIN_AS_FN(AI_SetUseNavmesh), ENJIN_AS_CALL_CDECL));
 
     // Behavior Tree
     AS_CHECK(engine->RegisterGlobalFunction("bool BT_IsEnabled(uint64)",
-        asFUNCTION(BT_IsEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(BT_IsEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void BT_Enable(uint64)",
-        asFUNCTION(BT_Enable), asCALL_CDECL));
+        ENJIN_AS_FN(BT_Enable), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void BT_Disable(uint64)",
-        asFUNCTION(BT_Disable), asCALL_CDECL));
+        ENJIN_AS_FN(BT_Disable), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void BT_Reset(uint64)",
-        asFUNCTION(BT_Reset), asCALL_CDECL));
+        ENJIN_AS_FN(BT_Reset), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void BT_SetBlackboardFloat(uint64, const string&in, float)",
-        asFUNCTION(BT_SetBlackboardFloat), asCALL_CDECL));
+        ENJIN_AS_FN(BT_SetBlackboardFloat), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float BT_GetBlackboardFloat(uint64, const string&in)",
-        asFUNCTION(BT_GetBlackboardFloat), asCALL_CDECL));
+        ENJIN_AS_FN(BT_GetBlackboardFloat), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void BT_SetBlackboardInt(uint64, const string&in, int)",
-        asFUNCTION(BT_SetBlackboardInt), asCALL_CDECL));
+        ENJIN_AS_FN(BT_SetBlackboardInt), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("int BT_GetBlackboardInt(uint64, const string&in)",
-        asFUNCTION(BT_GetBlackboardInt), asCALL_CDECL));
+        ENJIN_AS_FN(BT_GetBlackboardInt), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void BT_SetBlackboardBool(uint64, const string&in, bool)",
-        asFUNCTION(BT_SetBlackboardBool), asCALL_CDECL));
+        ENJIN_AS_FN(BT_SetBlackboardBool), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool BT_GetBlackboardBool(uint64, const string&in)",
-        asFUNCTION(BT_GetBlackboardBool), asCALL_CDECL));
+        ENJIN_AS_FN(BT_GetBlackboardBool), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void BT_SetBlackboardString(uint64, const string&in, const string&in)",
-        asFUNCTION(BT_SetBlackboardString), asCALL_CDECL));
+        ENJIN_AS_FN(BT_SetBlackboardString), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("string BT_GetBlackboardString(uint64, const string&in)",
-        asFUNCTION(BT_GetBlackboardString), asCALL_CDECL));
+        ENJIN_AS_FN(BT_GetBlackboardString), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void BT_ClearBlackboard(uint64)",
-        asFUNCTION(BT_ClearBlackboard), asCALL_CDECL));
+        ENJIN_AS_FN(BT_ClearBlackboard), ENJIN_AS_CALL_CDECL));
 
     // Navmesh
     AS_CHECK(engine->RegisterGlobalFunction("bool Navmesh_IsPointOnNavmesh(float, float, float)",
-        asFUNCTION(Navmesh_IsPointOnNavmesh), asCALL_CDECL));
+        ENJIN_AS_FN(Navmesh_IsPointOnNavmesh), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Navmesh_HasNavmesh()",
-        asFUNCTION(Navmesh_HasNavmesh), asCALL_CDECL));
+        ENJIN_AS_FN(Navmesh_HasNavmesh), ENJIN_AS_CALL_CDECL));
 
     // Pathfinding
     AS_CHECK(engine->RegisterGlobalFunction(
         "int Navmesh_FindPath(float, float, float, float, float, float)",
-        asFUNCTION(Navmesh_FindPath), asCALL_CDECL));
+        ENJIN_AS_FN(Navmesh_FindPath), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Navmesh_PathExists(float, float, float, float, float, float)",
-        asFUNCTION(Navmesh_PathExists), asCALL_CDECL));
+        ENJIN_AS_FN(Navmesh_PathExists), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector3 Navmesh_GetPathWaypoint(int)",
-        asFUNCTION(Navmesh_GetPathWaypoint), asCALL_CDECL));
+        ENJIN_AS_FN(Navmesh_GetPathWaypoint), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Navmesh_GetPathCost()",
-        asFUNCTION(Navmesh_GetPathCost), asCALL_CDECL));
+        ENJIN_AS_FN(Navmesh_GetPathCost), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

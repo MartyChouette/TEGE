@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Platform/Platform.h"
@@ -153,37 +154,37 @@ void RegisterInputActionBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterEnumValue("GameAction", "CameraZoomOut", 17));
 
     // Action query functions
-    AS_CHECK(engine->RegisterGlobalFunction("bool InputAction_IsDown(int action)", asFUNCTION(Input_IsActionDown), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool InputAction_IsPressed(int action)", asFUNCTION(Input_IsActionPressed), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool InputAction_IsReleased(int action)", asFUNCTION(Input_IsActionReleased), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float InputAction_GetValue(int action)", asFUNCTION(Input_GetActionValue), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("Vector2 InputAction_GetMovement()", asFUNCTION(Input_GetMovementVector), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool InputAction_IsDown(int action)", ENJIN_AS_FN(Input_IsActionDown), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool InputAction_IsPressed(int action)", ENJIN_AS_FN(Input_IsActionPressed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool InputAction_IsReleased(int action)", ENJIN_AS_FN(Input_IsActionReleased), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float InputAction_GetValue(int action)", ENJIN_AS_FN(Input_GetActionValue), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector2 InputAction_GetMovement()", ENJIN_AS_FN(Input_GetMovementVector), ENJIN_AS_CALL_CDECL));
 
     // Sensitivity
-    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_SetSensitivity(int action, float sensitivity)", asFUNCTION(Input_SetSensitivity), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float InputAction_GetMouseSensitivity()", asFUNCTION(Input_GetMouseSensitivity), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_SetMouseSensitivity(float sens)", asFUNCTION(Input_SetMouseSensitivity), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_SetSensitivity(int action, float sensitivity)", ENJIN_AS_FN(Input_SetSensitivity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float InputAction_GetMouseSensitivity()", ENJIN_AS_FN(Input_GetMouseSensitivity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_SetMouseSensitivity(float sens)", ENJIN_AS_FN(Input_SetMouseSensitivity), ENJIN_AS_CALL_CDECL));
 
     // Toggle settings
-    AS_CHECK(engine->RegisterGlobalFunction("bool InputAction_IsSprintToggle()", asFUNCTION(Input_IsSprintToggle), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_SetSprintToggle(bool toggle)", asFUNCTION(Input_SetSprintToggle), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool InputAction_IsCrouchToggle()", asFUNCTION(Input_IsCrouchToggle), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_SetCrouchToggle(bool toggle)", asFUNCTION(Input_SetCrouchToggle), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool InputAction_IsSprintToggle()", ENJIN_AS_FN(Input_IsSprintToggle), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_SetSprintToggle(bool toggle)", ENJIN_AS_FN(Input_SetSprintToggle), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool InputAction_IsCrouchToggle()", ENJIN_AS_FN(Input_IsCrouchToggle), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_SetCrouchToggle(bool toggle)", ENJIN_AS_FN(Input_SetCrouchToggle), ENJIN_AS_CALL_CDECL));
 
     // Rebinding
-    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_Rebind(int actionIndex, int keyCode)", asFUNCTION(Input_RebindAction), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int InputAction_PollNextKey()", asFUNCTION(Input_PollNextKeyPress), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_Rebind(int actionIndex, int keyCode)", ENJIN_AS_FN(Input_RebindAction), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int InputAction_PollNextKey()", ENJIN_AS_FN(Input_PollNextKeyPress), ENJIN_AS_CALL_CDECL));
 
     // Display helpers
-    AS_CHECK(engine->RegisterGlobalFunction("int InputAction_GetCount()", asFUNCTION(Input_GetActionCount), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("string InputAction_GetName(int index)", asFUNCTION(Input_GetActionName), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("string InputAction_GetBindingName(int index)", asFUNCTION(Input_GetBindingDisplayName), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int InputAction_GetCount()", ENJIN_AS_FN(Input_GetActionCount), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string InputAction_GetName(int index)", ENJIN_AS_FN(Input_GetActionName), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string InputAction_GetBindingName(int index)", ENJIN_AS_FN(Input_GetBindingDisplayName), ENJIN_AS_CALL_CDECL));
 
     // Presets
-    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_ApplyLeftHandOnly()", asFUNCTION(Input_ApplyLeftHandOnly), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_ApplyRightHandOnly()", asFUNCTION(Input_ApplyRightHandOnly), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_ApplyGamepadOnly()", asFUNCTION(Input_ApplyGamepadOnly), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_ResetDefaults()", asFUNCTION(Input_ResetToDefaults), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_ApplyLeftHandOnly()", ENJIN_AS_FN(Input_ApplyLeftHandOnly), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_ApplyRightHandOnly()", ENJIN_AS_FN(Input_ApplyRightHandOnly), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_ApplyGamepadOnly()", ENJIN_AS_FN(Input_ApplyGamepadOnly), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void InputAction_ResetDefaults()", ENJIN_AS_FN(Input_ResetToDefaults), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

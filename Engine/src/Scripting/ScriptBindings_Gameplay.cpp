@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
@@ -142,37 +143,37 @@ namespace Scripting {
 void RegisterGameplayBindings(asIScriptEngine* engine) {
     // -- Quest System --
     AS_CHECK(engine->RegisterGlobalFunction("void Quest_Start(const string &in)",
-        asFUNCTION(Quest_Start), asCALL_CDECL));
+        ENJIN_AS_FN(Quest_Start), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Quest_CompleteObjective(const string &in, int)",
-        asFUNCTION(Quest_CompleteObjective), asCALL_CDECL));
+        ENJIN_AS_FN(Quest_CompleteObjective), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Quest_Fail(const string &in)",
-        asFUNCTION(Quest_Fail), asCALL_CDECL));
+        ENJIN_AS_FN(Quest_Fail), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Quest_IsActive(const string &in)",
-        asFUNCTION(Quest_IsActive), asCALL_CDECL));
+        ENJIN_AS_FN(Quest_IsActive), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Quest_IsComplete(const string &in)",
-        asFUNCTION(Quest_IsComplete), asCALL_CDECL));
+        ENJIN_AS_FN(Quest_IsComplete), ENJIN_AS_CALL_CDECL));
 
     // -- Cinematic System --
     AS_CHECK(engine->RegisterGlobalFunction("void Cinematic_Play(uint64)",
-        asFUNCTION(Cinematic_Play), asCALL_CDECL));
+        ENJIN_AS_FN(Cinematic_Play), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Cinematic_Stop(uint64)",
-        asFUNCTION(Cinematic_Stop), asCALL_CDECL));
+        ENJIN_AS_FN(Cinematic_Stop), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Cinematic_IsPlaying()",
-        asFUNCTION(Cinematic_IsPlaying), asCALL_CDECL));
+        ENJIN_AS_FN(Cinematic_IsPlaying), ENJIN_AS_CALL_CDECL));
 
     // -- Object Pool --
     AS_CHECK(engine->RegisterGlobalFunction("uint64 Pool_Acquire(const string &in)",
-        asFUNCTION(Pool_Acquire), asCALL_CDECL));
+        ENJIN_AS_FN(Pool_Acquire), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Pool_Release(const string &in, uint64)",
-        asFUNCTION(Pool_Release), asCALL_CDECL));
+        ENJIN_AS_FN(Pool_Release), ENJIN_AS_CALL_CDECL));
 
     // -- Destructible System --
     AS_CHECK(engine->RegisterGlobalFunction("void Destructible_Destroy(uint64, float, float, float, float)",
-        asFUNCTION(Destructible_Destroy), asCALL_CDECL));
+        ENJIN_AS_FN(Destructible_Destroy), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Destructible_ApplyDamage(uint64, float)",
-        asFUNCTION(Destructible_ApplyDamage), asCALL_CDECL));
+        ENJIN_AS_FN(Destructible_ApplyDamage), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Destructible_ApplyDamageAt(uint64, float, float, float, float)",
-        asFUNCTION(Destructible_ApplyDamageAt), asCALL_CDECL));
+        ENJIN_AS_FN(Destructible_ApplyDamageAt), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

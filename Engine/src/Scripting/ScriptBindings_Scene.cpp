@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Math/Quaternion.h"
@@ -389,139 +390,139 @@ void RegisterSceneBindings(asIScriptEngine* engine) {
     // Entity transform/name functions (used by TegeBehavior.as)
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector3 Entity_GetPosition(uint64)",
-        asFUNCTION(Entity_GetPosition), asCALL_CDECL));
+        ENJIN_AS_FN(Entity_GetPosition), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Entity_SetPosition(uint64, const Vector3 &in)",
-        asFUNCTION(Entity_SetPosition), asCALL_CDECL));
+        ENJIN_AS_FN(Entity_SetPosition), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector3 Entity_GetRotation(uint64)",
-        asFUNCTION(Entity_GetRotation), asCALL_CDECL));
+        ENJIN_AS_FN(Entity_GetRotation), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Entity_SetRotation(uint64, const Vector3 &in)",
-        asFUNCTION(Entity_SetRotation), asCALL_CDECL));
+        ENJIN_AS_FN(Entity_SetRotation), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector3 Entity_GetForward(uint64)",
-        asFUNCTION(Entity_GetForward), asCALL_CDECL));
+        ENJIN_AS_FN(Entity_GetForward), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector3 Entity_GetRight(uint64)",
-        asFUNCTION(Entity_GetRight), asCALL_CDECL));
+        ENJIN_AS_FN(Entity_GetRight), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector3 Entity_GetUp(uint64)",
-        asFUNCTION(Entity_GetUp), asCALL_CDECL));
+        ENJIN_AS_FN(Entity_GetUp), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "Vector3 Entity_GetScale(uint64)",
-        asFUNCTION(Entity_GetScale), asCALL_CDECL));
+        ENJIN_AS_FN(Entity_GetScale), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Entity_SetScale(uint64, const Vector3 &in)",
-        asFUNCTION(Entity_SetScale), asCALL_CDECL));
+        ENJIN_AS_FN(Entity_SetScale), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "string Entity_GetName(uint64)",
-        asFUNCTION(Entity_GetName), asCALL_CDECL));
+        ENJIN_AS_FN(Entity_GetName), ENJIN_AS_CALL_CDECL));
 
     // Entity visibility
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Entity_IsVisible(uint64)",
-        asFUNCTION(Entity_IsVisible), asCALL_CDECL));
+        ENJIN_AS_FN(Entity_IsVisible), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Entity_SetVisible(uint64, bool)",
-        asFUNCTION(Entity_SetVisible), asCALL_CDECL));
+        ENJIN_AS_FN(Entity_SetVisible), ENJIN_AS_CALL_CDECL));
 
     // Entity hierarchy (parent-child)
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Entity_SetParent(uint64, uint64)",
-        asFUNCTION(Entity_SetParent), asCALL_CDECL));
+        ENJIN_AS_FN(Entity_SetParent), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Entity_RemoveParent(uint64)",
-        asFUNCTION(Entity_RemoveParent), asCALL_CDECL));
+        ENJIN_AS_FN(Entity_RemoveParent), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint64 Entity_GetParent(uint64)",
-        asFUNCTION(Entity_GetParent), asCALL_CDECL));
+        ENJIN_AS_FN(Entity_GetParent), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "int Entity_GetChildCount(uint64)",
-        asFUNCTION(Entity_GetChildCount), asCALL_CDECL));
+        ENJIN_AS_FN(Entity_GetChildCount), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint64 Entity_GetChild(uint64, int)",
-        asFUNCTION(Entity_GetChild), asCALL_CDECL));
+        ENJIN_AS_FN(Entity_GetChild), ENJIN_AS_CALL_CDECL));
 
     // Entity lookup
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint64 Scene_FindEntity(const string &in)",
-        asFUNCTION(Scene_FindEntity), asCALL_CDECL));
+        ENJIN_AS_FN(Scene_FindEntity), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint64 Scene_FindEntityByTag(const string &in)",
-        asFUNCTION(Scene_FindEntityByTag), asCALL_CDECL));
+        ENJIN_AS_FN(Scene_FindEntityByTag), ENJIN_AS_CALL_CDECL));
 
     // Entity lifecycle
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Scene_DestroyEntity(uint64)",
-        asFUNCTION(Scene_DestroyEntity), asCALL_CDECL));
+        ENJIN_AS_FN(Scene_DestroyEntity), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint64 Scene_Instantiate()",
-        asFUNCTION(Scene_Instantiate), asCALL_CDECL));
+        ENJIN_AS_FN(Scene_Instantiate), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint64 Scene_InstantiateNamed(const string &in)",
-        asFUNCTION(Scene_InstantiateNamed), asCALL_CDECL));
+        ENJIN_AS_FN(Scene_InstantiateNamed), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint64 Scene_InstantiateAt(const Vector3 &in)",
-        asFUNCTION(Scene_InstantiateAt), asCALL_CDECL));
+        ENJIN_AS_FN(Scene_InstantiateAt), ENJIN_AS_CALL_CDECL));
 
     // Entity queries
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Scene_IsValid(uint64)",
-        asFUNCTION(Scene_IsValid), asCALL_CDECL));
+        ENJIN_AS_FN(Scene_IsValid), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "uint64 Scene_GetEntityCount()",
-        asFUNCTION(Scene_GetEntityCount), asCALL_CDECL));
+        ENJIN_AS_FN(Scene_GetEntityCount), ENJIN_AS_CALL_CDECL));
 
     // Name management
     AS_CHECK(engine->RegisterGlobalFunction(
         "string Scene_GetEntityName(uint64)",
-        asFUNCTION(Scene_GetEntityName), asCALL_CDECL));
+        ENJIN_AS_FN(Scene_GetEntityName), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Scene_SetEntityName(uint64, const string &in)",
-        asFUNCTION(Scene_SetEntityName), asCALL_CDECL));
+        ENJIN_AS_FN(Scene_SetEntityName), ENJIN_AS_CALL_CDECL));
 
     // Tag management
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Scene_AddTag(uint64, const string &in)",
-        asFUNCTION(Scene_AddTag), asCALL_CDECL));
+        ENJIN_AS_FN(Scene_AddTag), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Scene_RemoveTag(uint64, const string &in)",
-        asFUNCTION(Scene_RemoveTag), asCALL_CDECL));
+        ENJIN_AS_FN(Scene_RemoveTag), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Scene_HasTag(uint64, const string &in)",
-        asFUNCTION(Scene_HasTag), asCALL_CDECL));
+        ENJIN_AS_FN(Scene_HasTag), ENJIN_AS_CALL_CDECL));
 
     // Scene management (SceneManager integration)
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Scene_LoadScene(const string &in)",
-        asFUNCTION(Scene_LoadScene), asCALL_CDECL));
+        ENJIN_AS_FN(Scene_LoadScene), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "string Scene_GetCurrentScene()",
-        asFUNCTION(Scene_GetCurrentScene), asCALL_CDECL));
+        ENJIN_AS_FN(Scene_GetCurrentScene), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Scene_Restart()",
-        asFUNCTION(Scene_Restart), asCALL_CDECL));
+        ENJIN_AS_FN(Scene_Restart), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

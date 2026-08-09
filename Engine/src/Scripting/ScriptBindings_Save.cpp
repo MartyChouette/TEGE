@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
@@ -119,39 +120,39 @@ namespace Scripting {
 void RegisterSaveBindings(asIScriptEngine* engine) {
     // Save/Load
     AS_CHECK(engine->RegisterGlobalFunction("bool SaveGame_ToSlot(int)",
-        asFUNCTION(SaveGame_ToSlot), asCALL_CDECL));
+        ENJIN_AS_FN(SaveGame_ToSlot), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool SaveGame_FromSlot(int)",
-        asFUNCTION(SaveGame_FromSlot), asCALL_CDECL));
+        ENJIN_AS_FN(SaveGame_FromSlot), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool SaveGame_DeleteSlot(int)",
-        asFUNCTION(SaveGame_DeleteSlot), asCALL_CDECL));
+        ENJIN_AS_FN(SaveGame_DeleteSlot), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void SaveGame_Checkpoint()",
-        asFUNCTION(SaveGame_Checkpoint), asCALL_CDECL));
+        ENJIN_AS_FN(SaveGame_Checkpoint), ENJIN_AS_CALL_CDECL));
 
     // Meta-progression
     AS_CHECK(engine->RegisterGlobalFunction("void Meta_SetFloat(const string &in, float)",
-        asFUNCTION(Meta_SetFloat), asCALL_CDECL));
+        ENJIN_AS_FN(Meta_SetFloat), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Meta_GetFloat(const string &in, float)",
-        asFUNCTION(Meta_GetFloat), asCALL_CDECL));
+        ENJIN_AS_FN(Meta_GetFloat), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Meta_SetInt(const string &in, int)",
-        asFUNCTION(Meta_SetInt), asCALL_CDECL));
+        ENJIN_AS_FN(Meta_SetInt), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("int Meta_GetInt(const string &in, int)",
-        asFUNCTION(Meta_GetInt), asCALL_CDECL));
+        ENJIN_AS_FN(Meta_GetInt), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Meta_SetBool(const string &in, bool)",
-        asFUNCTION(Meta_SetBool), asCALL_CDECL));
+        ENJIN_AS_FN(Meta_SetBool), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Meta_GetBool(const string &in, bool)",
-        asFUNCTION(Meta_GetBool), asCALL_CDECL));
+        ENJIN_AS_FN(Meta_GetBool), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Meta_SetString(const string &in, const string &in)",
-        asFUNCTION(Meta_SetString), asCALL_CDECL));
+        ENJIN_AS_FN(Meta_SetString), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("string Meta_GetString(const string &in, const string &in)",
-        asFUNCTION(Meta_GetString), asCALL_CDECL));
+        ENJIN_AS_FN(Meta_GetString), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Meta_Save()",
-        asFUNCTION(Meta_Save), asCALL_CDECL));
+        ENJIN_AS_FN(Meta_Save), ENJIN_AS_CALL_CDECL));
 
     // Auto-save
     AS_CHECK(engine->RegisterGlobalFunction("void AutoSave_Enable(bool)",
-        asFUNCTION(AutoSave_Enable), asCALL_CDECL));
+        ENJIN_AS_FN(AutoSave_Enable), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void AutoSave_SetInterval(float)",
-        asFUNCTION(AutoSave_SetInterval), asCALL_CDECL));
+        ENJIN_AS_FN(AutoSave_SetInterval), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

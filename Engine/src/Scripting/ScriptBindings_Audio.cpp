@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/ECS/World.h"
@@ -179,52 +180,52 @@ namespace Scripting {
 void RegisterAudioBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Audio_Play(uint64)",
-        asFUNCTION(Audio_Play), asCALL_CDECL));
+        ENJIN_AS_FN(Audio_Play), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Audio_PlayAtPosition(const string &in, const Vector3 &in)",
-        asFUNCTION(Audio_PlayAtPosition), asCALL_CDECL));
+        ENJIN_AS_FN(Audio_PlayAtPosition), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Audio_Stop(uint64)",
-        asFUNCTION(Audio_Stop), asCALL_CDECL));
+        ENJIN_AS_FN(Audio_Stop), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Audio_StopAll()",
-        asFUNCTION(Audio_StopAll), asCALL_CDECL));
+        ENJIN_AS_FN(Audio_StopAll), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Audio_SetVolume(uint64, float)",
-        asFUNCTION(Audio_SetVolume), asCALL_CDECL));
+        ENJIN_AS_FN(Audio_SetVolume), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Audio_SetPitch(uint64, float)",
-        asFUNCTION(Audio_SetPitch), asCALL_CDECL));
+        ENJIN_AS_FN(Audio_SetPitch), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Audio_IsPlaying(uint64)",
-        asFUNCTION(Audio_IsPlaying), asCALL_CDECL));
+        ENJIN_AS_FN(Audio_IsPlaying), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Audio_SetMasterVolume(float)",
-        asFUNCTION(Audio_SetMasterVolume), asCALL_CDECL));
+        ENJIN_AS_FN(Audio_SetMasterVolume), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Audio_GetMasterVolume()",
-        asFUNCTION(Audio_GetMasterVolume), asCALL_CDECL));
+        ENJIN_AS_FN(Audio_GetMasterVolume), ENJIN_AS_CALL_CDECL));
 
     // Channel volume (0=SFX, 1=Music, 2=UI, 3=Voice)
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Audio_SetChannelVolume(uint8, float)",
-        asFUNCTION(Audio_SetChannelVolume), asCALL_CDECL));
+        ENJIN_AS_FN(Audio_SetChannelVolume), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Audio_GetChannelVolume(uint8)",
-        asFUNCTION(Audio_GetChannelVolume), asCALL_CDECL));
+        ENJIN_AS_FN(Audio_GetChannelVolume), ENJIN_AS_CALL_CDECL));
 
     AS_CHECK(engine->RegisterGlobalFunction(
         "void Audio_StopChannel(uint8)",
-        asFUNCTION(Audio_StopChannel), asCALL_CDECL));
+        ENJIN_AS_FN(Audio_StopChannel), ENJIN_AS_CALL_CDECL));
 
     // Channel constants for convenience
     AS_CHECK(engine->RegisterGlobalProperty("const uint8 AUDIO_CHANNEL_SFX", const_cast<u8*>(&s_ChannelSFX)));

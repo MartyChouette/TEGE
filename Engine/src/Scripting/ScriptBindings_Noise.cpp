@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Math/Noise.h"
 #include "Enjin/Logging/Log.h"
 #include <angelscript.h>
@@ -105,60 +106,60 @@ void RegisterNoiseBindings(asIScriptEngine* engine) {
     // Base noise (2D)
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Noise_Value2D(float, float, uint)",
-        asFUNCTION(Noise_Value2D), asCALL_CDECL));
+        ENJIN_AS_FN(Noise_Value2D), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Noise_Perlin2D(float, float, uint)",
-        asFUNCTION(Noise_Perlin2D), asCALL_CDECL));
+        ENJIN_AS_FN(Noise_Perlin2D), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Noise_Simplex2D(float, float, uint)",
-        asFUNCTION(Noise_Simplex2D), asCALL_CDECL));
+        ENJIN_AS_FN(Noise_Simplex2D), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Noise_Worley2D(float, float, uint)",
-        asFUNCTION(Noise_Worley2D), asCALL_CDECL));
+        ENJIN_AS_FN(Noise_Worley2D), ENJIN_AS_CALL_CDECL));
 
     // Base noise (3D)
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Noise_Value3D(float, float, float, uint)",
-        asFUNCTION(Noise_Value3D), asCALL_CDECL));
+        ENJIN_AS_FN(Noise_Value3D), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Noise_Perlin3D(float, float, float, uint)",
-        asFUNCTION(Noise_Perlin3D), asCALL_CDECL));
+        ENJIN_AS_FN(Noise_Perlin3D), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Noise_Simplex3D(float, float, float, uint)",
-        asFUNCTION(Noise_Simplex3D), asCALL_CDECL));
+        ENJIN_AS_FN(Noise_Simplex3D), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Noise_Worley3D(float, float, float, uint)",
-        asFUNCTION(Noise_Worley3D), asCALL_CDECL));
+        ENJIN_AS_FN(Noise_Worley3D), ENJIN_AS_CALL_CDECL));
 
     // Fractal (2D)
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Noise_FBM2D(float, float, int, float, float, float, uint)",
-        asFUNCTION(Noise_FBM2D), asCALL_CDECL));
+        ENJIN_AS_FN(Noise_FBM2D), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Noise_Ridged2D(float, float, int, float, float, float, uint)",
-        asFUNCTION(Noise_Ridged2D), asCALL_CDECL));
+        ENJIN_AS_FN(Noise_Ridged2D), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Noise_Billow2D(float, float, int, float, float, float, uint)",
-        asFUNCTION(Noise_Billow2D), asCALL_CDECL));
+        ENJIN_AS_FN(Noise_Billow2D), ENJIN_AS_CALL_CDECL));
 
     // Fractal (3D)
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Noise_FBM3D(float, float, float, int, float, float, float, uint)",
-        asFUNCTION(Noise_FBM3D), asCALL_CDECL));
+        ENJIN_AS_FN(Noise_FBM3D), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Noise_Ridged3D(float, float, float, int, float, float, float, uint)",
-        asFUNCTION(Noise_Ridged3D), asCALL_CDECL));
+        ENJIN_AS_FN(Noise_Ridged3D), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Noise_Billow3D(float, float, float, int, float, float, float, uint)",
-        asFUNCTION(Noise_Billow3D), asCALL_CDECL));
+        ENJIN_AS_FN(Noise_Billow3D), ENJIN_AS_CALL_CDECL));
 
     // Domain warp
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Noise_DomainWarp2D(float, float, float, float, uint)",
-        asFUNCTION(Noise_DomainWarp2D), asCALL_CDECL));
+        ENJIN_AS_FN(Noise_DomainWarp2D), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Noise_DomainWarp3D(float, float, float, float, float, uint)",
-        asFUNCTION(Noise_DomainWarp3D), asCALL_CDECL));
+        ENJIN_AS_FN(Noise_DomainWarp3D), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

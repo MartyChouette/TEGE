@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/NewgroundsBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Networking/NewgroundsAPI.h"
 #include "Enjin/Logging/Log.h"
 #include <angelscript.h>
@@ -73,39 +74,39 @@ void RegisterNewgroundsBindings(asIScriptEngine* engine) {
 
     r = engine->RegisterGlobalFunction(
         "void NG_Connect(const string &in appId, const string &in key)",
-        asFUNCTION(NG_Connect), asCALL_CDECL); (void)r;
+        ENJIN_AS_FN(NG_Connect), ENJIN_AS_CALL_CDECL); (void)r;
 
     r = engine->RegisterGlobalFunction(
         "bool NG_IsConnected()",
-        asFUNCTION(NG_IsConnected), asCALL_CDECL); (void)r;
+        ENJIN_AS_FN(NG_IsConnected), ENJIN_AS_CALL_CDECL); (void)r;
 
     r = engine->RegisterGlobalFunction(
         "bool NG_CheckSession()",
-        asFUNCTION(NG_CheckSession), asCALL_CDECL); (void)r;
+        ENJIN_AS_FN(NG_CheckSession), ENJIN_AS_CALL_CDECL); (void)r;
 
     r = engine->RegisterGlobalFunction(
         "bool NG_UnlockMedal(int medalId)",
-        asFUNCTION(NG_UnlockMedal), asCALL_CDECL); (void)r;
+        ENJIN_AS_FN(NG_UnlockMedal), ENJIN_AS_CALL_CDECL); (void)r;
 
     r = engine->RegisterGlobalFunction(
         "bool NG_PostScore(int boardId, int value)",
-        asFUNCTION(NG_PostScore), asCALL_CDECL); (void)r;
+        ENJIN_AS_FN(NG_PostScore), ENJIN_AS_CALL_CDECL); (void)r;
 
     r = engine->RegisterGlobalFunction(
         "string NG_GetPassportUrl()",
-        asFUNCTION(NG_GetPassportUrl), asCALL_CDECL); (void)r;
+        ENJIN_AS_FN(NG_GetPassportUrl), ENJIN_AS_CALL_CDECL); (void)r;
 
     r = engine->RegisterGlobalFunction(
         "string NG_GetUserName()",
-        asFUNCTION(NG_GetUserName), asCALL_CDECL); (void)r;
+        ENJIN_AS_FN(NG_GetUserName), ENJIN_AS_CALL_CDECL); (void)r;
 
     r = engine->RegisterGlobalFunction(
         "bool NG_SaveSlot(int slotId, const string &in data)",
-        asFUNCTION(NG_SaveSlot), asCALL_CDECL); (void)r;
+        ENJIN_AS_FN(NG_SaveSlot), ENJIN_AS_CALL_CDECL); (void)r;
 
     r = engine->RegisterGlobalFunction(
         "string NG_LoadSlot(int slotId)",
-        asFUNCTION(NG_LoadSlot), asCALL_CDECL); (void)r;
+        ENJIN_AS_FN(NG_LoadSlot), ENJIN_AS_CALL_CDECL); (void)r;
 
     ENJIN_LOG_INFO(Script, "Newgrounds API bindings registered (9 functions)");
 }

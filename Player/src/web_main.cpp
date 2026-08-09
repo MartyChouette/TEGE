@@ -195,7 +195,9 @@ public:
             if (!c.hasAttribute('tabindex')) c.setAttribute('tabindex', '0');
             c.addEventListener('click', function(){
                 c.focus();
-                c.requestPointerLock();
+                // Re-lock only while the game wants capture (Web Demo menu
+                // mode releases the cursor for the on-screen UI)
+                if (Module.tegeWantPointerLock !== false) c.requestPointerLock();
             });
             c.addEventListener('contextmenu', function(e){ e.preventDefault(); });
             c.focus();
@@ -212,6 +214,9 @@ public:
             Enjin::Scripting::RegisterAllBindings(m_ScriptEngine.GetASEngine());
             m_ScriptEngine.SetWorld(m_World.get());
             m_ScriptEngine.SetScriptDirectory("scripts");
+            // Web has no loose script files — sources come from the pak
+            // (desktop wires this too, main.cpp "packed script loading").
+            m_ScriptEngine.SetAssetReader(&m_AssetReader);
             m_ScriptSystem.SetWorld(m_World.get());
             m_ScriptSystem.SetScriptEngine(&m_ScriptEngine);
             m_ScriptSystem.SetCoroutineScheduler(&m_CoroutineScheduler);
@@ -441,13 +446,8 @@ public:
         }
 
         // Capture mouse for look-around if any player controller exists
-        if (!m_AtMainMenu) {
-            bool hasController =
-                !m_World->GetEntitiesWithComponent<Enjin::ECS::FirstPersonController>().empty()
-                || !m_World->GetEntitiesWithComponent<Enjin::ECS::ThirdPersonController>().empty();
-            if (hasController) {
-                Enjin::Input::SetMouseCaptured(true);
-            }
+        if (!m_AtMainMenu && SceneWantsMouseCapture()) {
+            Enjin::Input::SetMouseCaptured(true);
         }
 
         // --- RenderSystem (same system as desktop, uses abstract IRenderBackend) ---
@@ -503,6 +503,22 @@ public:
         m_AssetReader.Close();
     }
 
+    // Whether any mouse-look controller in the scene wants the cursor captured.
+    // Controllers with captureMouseOnClick=false (Web Demo) keep the cursor
+    // free: RMB-hold orbits, on-screen UI stays clickable while playing.
+    bool SceneWantsMouseCapture() {
+        if (!m_World) return false;
+        for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::FirstPersonController>()) {
+            auto* c = m_World->GetComponent<Enjin::ECS::FirstPersonController>(e);
+            if (c && c->captureMouseOnClick) return true;
+        }
+        for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::ThirdPersonController>()) {
+            auto* c = m_World->GetComponent<Enjin::ECS::ThirdPersonController>(e);
+            if (c && c->captureMouseOnClick) return true;
+        }
+        return false;
+    }
+
     void TogglePauseMenu() {
         if (m_Paused) { ClosePauseMenu(); return; }
         m_Paused = true;
@@ -520,7 +536,7 @@ public:
             m_World->DestroyEntity(m_PauseMenuEntity);
         }
         m_PauseMenuEntity = Enjin::ECS::INVALID_ENTITY;
-        Enjin::Input::SetMouseCaptured(true);
+        if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
     }
 
     void Update(Enjin::f32 deltaTime) {
@@ -753,10 +769,7 @@ public:
                     auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(e);
                     if (c && c->canvasName == "MainMenu") c->visible = false;
                 }
-                bool hasController =
-                    !m_World->GetEntitiesWithComponent<Enjin::ECS::FirstPersonController>().empty()
-                    || !m_World->GetEntitiesWithComponent<Enjin::ECS::ThirdPersonController>().empty();
-                if (hasController) Enjin::Input::SetMouseCaptured(true);
+                if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
             };
             m_UISystem.GetEventBus().Listen("menu_newgame",
                 [startGame](const Enjin::GUI::UIEventData&) { startGame(); });
@@ -1210,6 +1223,11 @@ EMSCRIPTEN_KEEPALIVE void setColorblindMode(int mode, float strength) {
 // ============================================================================
 int main(int argc, char* argv[]) {
     (void)argc; (void)argv;
+
+    // Without this every ENJIN_LOG_* call is dropped (Logger::Log early-outs
+    // when uninitialized) — the web player was a diagnostic black box.
+    // stdout/stderr reach the browser console; the file lands in MEMFS.
+    Enjin::Logger::Get().Initialize("enjin.log");
 
     static WebGamePlayer player;
     g_Player = &player;

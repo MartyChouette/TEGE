@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Logging/Log.h"
@@ -251,55 +252,55 @@ void RegisterInputBindings(asIScriptEngine* engine) {
 
     // ---- Keyboard functions ----
     AS_CHECK(engine->RegisterGlobalFunction("bool Input_GetKey(int)",
-        asFUNCTION(Input_GetKey), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetKey), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Input_GetKeyDown(int)",
-        asFUNCTION(Input_GetKeyDown), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetKeyDown), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Input_GetKeyUp(int)",
-        asFUNCTION(Input_GetKeyUp), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetKeyUp), ENJIN_AS_CALL_CDECL));
 
     // ---- Text input (character-level) ----
     AS_CHECK(engine->RegisterGlobalFunction("string Input_GetTextInput()",
-        asFUNCTION(Input_GetTextInput), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetTextInput), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("int Input_GetTextInputCount()",
-        asFUNCTION(Input_GetTextInputCount), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetTextInputCount), ENJIN_AS_CALL_CDECL));
 
     // ---- Mouse functions ----
     AS_CHECK(engine->RegisterGlobalFunction("bool Input_GetMouseButton(int)",
-        asFUNCTION(Input_GetMouseButton), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetMouseButton), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Input_GetMouseButtonDown(int)",
-        asFUNCTION(Input_GetMouseButtonDown), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetMouseButtonDown), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Input_GetMouseButtonUp(int)",
-        asFUNCTION(Input_GetMouseButtonUp), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetMouseButtonUp), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("Vector2 Input_GetMousePosition()",
-        asFUNCTION(Input_GetMousePosition), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetMousePosition), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("Vector2 Input_GetMouseDelta()",
-        asFUNCTION(Input_GetMouseDelta), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetMouseDelta), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("Vector2 Input_GetScrollDelta()",
-        asFUNCTION(Input_GetScrollDelta), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetScrollDelta), ENJIN_AS_CALL_CDECL));
 
     // ---- Mouse capture ----
     AS_CHECK(engine->RegisterGlobalFunction("bool Input_IsMouseCaptured()",
-        asFUNCTION(Input_IsMouseCaptured), asCALL_CDECL));
+        ENJIN_AS_FN(Input_IsMouseCaptured), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Input_SetMouseCaptured(bool)",
-        asFUNCTION(Input_SetMouseCaptured), asCALL_CDECL));
+        ENJIN_AS_FN(Input_SetMouseCaptured), ENJIN_AS_CALL_CDECL));
 
     // ---- Gamepad functions ----
     AS_CHECK(engine->RegisterGlobalFunction("bool Input_IsGamepadConnected(int)",
-        asFUNCTION(Input_IsGamepadConnected), asCALL_CDECL));
+        ENJIN_AS_FN(Input_IsGamepadConnected), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Input_GetGamepadButton(int, int)",
-        asFUNCTION(Input_GetGamepadButton), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetGamepadButton), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Input_GetGamepadButtonDown(int, int)",
-        asFUNCTION(Input_GetGamepadButtonDown), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetGamepadButtonDown), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Input_GetGamepadAxis(int, int)",
-        asFUNCTION(Input_GetGamepadAxis), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetGamepadAxis), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("Vector2 Input_GetGamepadLeftStick(int)",
-        asFUNCTION(Input_GetGamepadLeftStick), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetGamepadLeftStick), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("Vector2 Input_GetGamepadRightStick(int)",
-        asFUNCTION(Input_GetGamepadRightStick), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetGamepadRightStick), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Input_GetGamepadLeftTrigger(int)",
-        asFUNCTION(Input_GetGamepadLeftTrigger), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetGamepadLeftTrigger), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Input_GetGamepadRightTrigger(int)",
-        asFUNCTION(Input_GetGamepadRightTrigger), asCALL_CDECL));
+        ENJIN_AS_FN(Input_GetGamepadRightTrigger), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting
