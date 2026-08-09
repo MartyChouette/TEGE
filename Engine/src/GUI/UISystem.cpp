@@ -48,6 +48,21 @@ static void DrawCenteredText(ImDrawList* dl, const UIRect& rect, const char* tex
     if (!text || text[0] == '\0') return;
 
     ImFont* font = ImGui::GetFont();
+
+    // Shrink-to-fit: accessibility font scaling can push text past its widget
+    // rect (buttons/toggles keep their authored box) — clamp the effective size
+    // so letters stay inside the frame instead of spilling over its edges.
+    if (rect.h > 4.0f && fontSize > rect.h - 4.0f) {
+        fontSize = rect.h - 4.0f;
+    }
+    if (rect.w > 8.0f) {
+        ImVec2 fullSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, text);
+        if (fullSize.x > rect.w - 8.0f) {
+            fontSize *= (rect.w - 8.0f) / fullSize.x;
+        }
+    }
+    if (fontSize < 6.0f) fontSize = 6.0f;
+
     ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, text);
 
     f32 x = rect.x;

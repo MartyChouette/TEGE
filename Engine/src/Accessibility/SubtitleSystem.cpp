@@ -1,6 +1,7 @@
 #include "Enjin/Accessibility/SubtitleSystem.h"
 #include <imgui.h>
 #include <algorithm>
+#include <cfloat>
 
 namespace Enjin {
 namespace Accessibility {
@@ -112,6 +113,12 @@ void SubtitleSystem::RenderOverlay(u32 viewportWidth, u32 viewportHeight) {
             }
         }
 
+        // Render at the CONFIGURED size. The layout always scaled with
+        // fontSize but the glyphs were drawn with the size-less AddText —
+        // the Subtitle Size setting moved the box and never the text.
+        ImFont* font = ImGui::GetFont();
+        f32 fontSize = m_Config.fontSize;
+
         // Caption brackets
         if (entry.isCaption) {
             line += "[" + entry.text + "]";
@@ -123,15 +130,15 @@ void SubtitleSystem::RenderOverlay(u32 viewportWidth, u32 viewportHeight) {
                     ImVec4(entry.speakerColor.x, entry.speakerColor.y, entry.speakerColor.z, alpha));
                 std::string speakerText = entry.speaker + ": ";
 
-                ImVec2 textSize = ImGui::CalcTextSize(speakerText.c_str());
-                f32 fullLineW = textSize.x + ImGui::CalcTextSize(entry.text.c_str()).x;
+                ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, speakerText.c_str());
+                f32 fullLineW = textSize.x + font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, entry.text.c_str()).x;
                 f32 lineX = centerX - fullLineW * 0.5f;
 
-                drawList->AddText(ImVec2(lineX, y), speakerCol, speakerText.c_str());
+                drawList->AddText(font, fontSize, ImVec2(lineX, y), speakerCol, speakerText.c_str());
 
                 // Then draw dialogue text in white
                 ImU32 textCol = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 1.0f, 1.0f, alpha));
-                drawList->AddText(ImVec2(lineX + textSize.x, y), textCol, entry.text.c_str());
+                drawList->AddText(font, fontSize, ImVec2(lineX + textSize.x, y), textCol, entry.text.c_str());
 
                 y += lineHeight;
                 continue;
@@ -140,7 +147,7 @@ void SubtitleSystem::RenderOverlay(u32 viewportWidth, u32 viewportHeight) {
         }
 
         // Center the text
-        ImVec2 textSize = ImGui::CalcTextSize(line.c_str());
+        ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, line.c_str());
         f32 textX = centerX - textSize.x * 0.5f;
 
         ImU32 textCol = ImGui::ColorConvertFloat4ToU32(
@@ -149,8 +156,8 @@ void SubtitleSystem::RenderOverlay(u32 viewportWidth, u32 viewportHeight) {
         // Drop shadow for readability
         ImU32 shadowCol = ImGui::ColorConvertFloat4ToU32(
             ImVec4(0.0f, 0.0f, 0.0f, alpha * 0.8f));
-        drawList->AddText(ImVec2(textX + 1.0f, y + 1.0f), shadowCol, line.c_str());
-        drawList->AddText(ImVec2(textX, y), textCol, line.c_str());
+        drawList->AddText(font, fontSize, ImVec2(textX + 1.0f, y + 1.0f), shadowCol, line.c_str());
+        drawList->AddText(font, fontSize, ImVec2(textX, y), textCol, line.c_str());
 
         y += lineHeight;
     }
