@@ -25,6 +25,7 @@
 #include "Enjin/Accessibility/AlternativeInput.h"
 #include "Enjin/Accessibility/AccessibilitySettings.h"
 #include "Enjin/Accessibility/ContentWarning.h"
+#include "Enjin/Networking/DevWebServer.h"
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Effects/Water.h"
 #include "Enjin/Effects/Wind.h"
@@ -944,6 +945,10 @@ private:
     void DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW);
     void DrawTemplateHoverPreview(ImDrawList* dl, i32 templateIdx, const ImVec2& cardPos, const ImVec2& cardEnd);
     void ApplyTemplate(const std::string& templateId);
+    // Live accessibility settings menu (UICanvas + controller entity +
+    // scripts/AccessibilityDemo.as) — shared by the Accessibility Demo and
+    // Web Demo templates
+    void CreateAccessibilityMenu();
     void SaveCustomTemplate(const std::string& name);
     void LoadCustomTemplates();
     bool CreateProjectOnDisk(const std::string& projectDir, const std::string& projectName,
@@ -1118,6 +1123,15 @@ private:
     // Per-scene content warning flags — authored in Settings > Scene, saved
     // with the scene, shown by the player before gameplay starts
     Accessibility::SceneContentFlags m_SceneContentFlags;
+
+    // One-button local preview of web exports ("Run in Browser") — browsers
+    // refuse wasm over file://, so the editor serves the export itself
+    Networking::DevWebServer m_DevWebServer;
+
+    // True while a game script explicitly released the cursor during play
+    // (Web Demo menu mode) — suppresses the editor's click-to-recapture so
+    // the game's own toggle stays in charge
+    bool m_GameScriptReleasedCursor = false;
 
     // Per-scene render settings
     bool m_CurrentSceneUsesProjectDefaults = true;

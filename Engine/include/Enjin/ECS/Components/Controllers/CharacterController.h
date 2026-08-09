@@ -33,6 +33,11 @@ struct CharacterControllerBase {
     // Mouse look
     bool disableMouseLook = false;      // Disable mouse/stick camera control
 
+    // When false, the game never captures/hides the cursor for this controller:
+    // the cursor stays visible, camera look requires holding RMB, and on-screen
+    // UI stays clickable while moving (the Web Demo template's mode).
+    bool captureMouseOnClick = true;
+
     // Grid/tile-based movement (alternative to free movement)
     bool gridMovement = false;          // Snap to grid cells instead of free movement
     f32 gridCellSize = 1.0f;            // Size of each grid cell in world units

@@ -1453,6 +1453,7 @@ json SerializeControllerBase(const ECS::CharacterControllerBase& base) {
     j["gamepadIndex"] = RF(base.gamepadIndex);
     j["gamepadLookSensitivity"] = RF(base.gamepadLookSensitivity);
     j["disableMouseLook"] = base.disableMouseLook;
+    j["captureMouseOnClick"] = base.captureMouseOnClick;
     j["gridMovement"] = base.gridMovement;
     j["gridCellSize"] = RF(base.gridCellSize);
     j["gridMoveSpeed"] = RF(base.gridMoveSpeed);
@@ -1473,6 +1474,7 @@ void DeserializeControllerBase(const json& j, ECS::CharacterControllerBase& base
     if (j.contains("gamepadIndex")) base.gamepadIndex = j["gamepadIndex"].get<i32>();
     if (j.contains("gamepadLookSensitivity")) base.gamepadLookSensitivity = j["gamepadLookSensitivity"].get<f32>();
     if (j.contains("disableMouseLook")) base.disableMouseLook = JB(j["disableMouseLook"]);
+    if (j.contains("captureMouseOnClick")) base.captureMouseOnClick = JB(j["captureMouseOnClick"]);
     if (j.contains("gridMovement")) base.gridMovement = JB(j["gridMovement"]);
     if (j.contains("gridCellSize")) base.gridCellSize = j["gridCellSize"].get<f32>();
     if (j.contains("gridMoveSpeed")) base.gridMoveSpeed = j["gridMoveSpeed"].get<f32>();

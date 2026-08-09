@@ -2664,6 +2664,12 @@ void EditorLayer::DrawThirdPersonController(ECS::Entity entity) {
 
         if (ImGui::TreeNode("Camera")) {
             InspectorUndo::Checkbox(m_UndoRedo, "Disable Mouse Look##tps", &ctrl->disableMouseLook);
+            InspectorUndo::Checkbox(m_UndoRedo, "Capture Mouse On Click##tps", &ctrl->captureMouseOnClick);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("On: clicking the game captures the cursor for free look.\n"
+                                  "Off: cursor stays visible, camera orbits only while holding\n"
+                                  "right mouse, and on-screen UI stays clickable (Web Demo mode).");
+            }
             InspectorUndo::DragFloat(m_UndoRedo, "Distance", &ctrl->cameraDistance, 0.1f, ctrl->cameraMinDistance, ctrl->cameraMaxDistance);
             InspectorUndo::DragFloat(m_UndoRedo, "Min Distance##tps", &ctrl->cameraMinDistance, 0.1f, 0.5f, ctrl->cameraMaxDistance);
             InspectorUndo::DragFloat(m_UndoRedo, "Max Distance##tps", &ctrl->cameraMaxDistance, 0.1f, ctrl->cameraMinDistance, 50.0f);

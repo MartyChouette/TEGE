@@ -768,19 +768,6 @@ void EditorLayer::DrawGameViewPanel() {
             ImVec2 textPos((p0.x + p1.x - textSize.x) * 0.5f, p0.y + 10);
             drawList->AddText(textPos, IM_COL32(200, 200, 200, 200), previewText);
 
-            // Interaction hint during play mode (centered near bottom of preview)
-            if (isPlaying && SceneHasMouseLookController()) {
-                const char* hintText = m_GameViewMouseCaptured
-                    ? "Press ESC to pause"
-                    : "Click to capture mouse";
-                ImVec2 hintSize = ImGui::CalcTextSize(hintText);
-                ImVec2 hintPos((p0.x + p1.x - hintSize.x) * 0.5f, p1.y - 40);
-                // Semi-transparent background pill
-                ImVec2 pillMin(hintPos.x - 8, hintPos.y - 4);
-                ImVec2 pillMax(hintPos.x + hintSize.x + 8, hintPos.y + hintSize.y + 4);
-                drawList->AddRectFilled(pillMin, pillMax, IM_COL32(0, 0, 0, 140), 6.0f);
-                drawList->AddText(hintPos, IM_COL32(255, 255, 255, 200), hintText);
-            }
 
             // Debug: zone detection status at bottom of preview
             char debugBuf[128];

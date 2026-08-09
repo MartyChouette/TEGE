@@ -123,8 +123,17 @@ namespace Editor {
 
 bool EditorLayer::SceneHasMouseLookController() const {
     if (!m_World) return false;
-    if (!m_World->GetEntitiesWithComponent<ECS::FirstPersonController>().empty()) return true;
-    if (!m_World->GetEntitiesWithComponent<ECS::ThirdPersonController>().empty()) return true;
+    // Controllers can opt out of cursor capture (captureMouseOnClick=false):
+    // the Web Demo keeps the cursor free so its settings menu stays clickable
+    // while RMB-hold orbits the camera.
+    for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::FirstPersonController>()) {
+        auto* c = m_World->GetComponent<ECS::FirstPersonController>(e);
+        if (c && c->captureMouseOnClick) return true;
+    }
+    for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::ThirdPersonController>()) {
+        auto* c = m_World->GetComponent<ECS::ThirdPersonController>(e);
+        if (c && c->captureMouseOnClick) return true;
+    }
     return false;
 }
 

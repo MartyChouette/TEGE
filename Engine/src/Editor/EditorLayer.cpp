@@ -1510,11 +1510,27 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
 
+    // A game script released the cursor mid-play (Web Demo's Tab menu mode):
+    // adopt that state and stop click-to-recapturing — the game owns the
+    // toggle now, and clicking its on-screen UI must not fight the script.
+    // Cleared when the script re-captures (Tab back to play mode).
+    if (m_PlayMode.IsPlaying()) {
+        if (m_GameViewMouseCaptured && !Input::IsMouseCaptured()) {
+            m_GameViewMouseCaptured = false;
+            m_GameScriptReleasedCursor = true;
+        } else if (m_GameScriptReleasedCursor && Input::IsMouseCaptured()) {
+            m_GameViewMouseCaptured = true;
+            m_GameScriptReleasedCursor = false;
+        }
+    } else {
+        m_GameScriptReleasedCursor = false;
+    }
+
     // Game View click-to-capture: when ACTIVELY playing, clicking the Game View
     // image captures the mouse so FPS/TPS controllers receive mouse delta for
     // look. Not while paused — a paused game must never own the cursor (the
     // editor is in charge; see the paused safety net below).
-    if (!m_FocusMode && !m_GameViewMouseCaptured &&
+    if (!m_FocusMode && !m_GameViewMouseCaptured && !m_GameScriptReleasedCursor &&
         m_PlayMode.IsPlaying() &&
         m_GameViewHovered && Input::IsMouseButtonPressed(MouseButton::Left)) {
         if (SceneHasMouseLookController()) {
