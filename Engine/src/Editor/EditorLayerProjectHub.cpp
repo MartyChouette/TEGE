@@ -1281,10 +1281,12 @@ namespace {
         { "isometric",   "3D Isometric",    "45-degree CRPG\nPerspective + player",               ImVec4(0.9f, 0.6f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
         { "teamsports",  "Team Sports",    "3D soccer/basketball\n2 teams + ball + goals",         ImVec4(0.2f, 0.8f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
         { "flower",      "Flower Garden", "Procedural flower\nPluckable petals + score",             ImVec4(0.9f, 0.4f, 0.6f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
-        // -- Accessibility showcase (doubles as the website web demo) --
+        // -- Accessibility showcase --
         { "accessibility","Accessibility Demo","Live settings demo\nColorblind + font + screen reader",    ImVec4(0.3f, 0.75f, 0.9f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Beta },
+        // -- The website's browser demo: third person + live accessibility --
+        { "webdemo",      "Web Demo",           "Site browser demo\nThird person + live accessibility menu", ImVec4(0.25f, 0.85f, 0.75f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
     };
-    constexpr int s_BuiltinCount = 16;
+    constexpr int s_BuiltinCount = 17;
 } // anonymous namespace
 
 // Draw a procedural mini-preview for template cards (first 4 templates get custom art)
@@ -1301,6 +1303,7 @@ static const char* GetTemplateSymbol(const char* templateId) {
     if (id == "firstperson")   return "FPS";
     if (id == "narrative")     return "...";
     if (id == "accessibility") return "A11";
+    if (id == "webdemo")       return "WWW";
     if (id == "planetgravity") return "@";
     if (id == "isometric")     return "ISO";
     if (id == "teamsports")    return "VS";
@@ -2392,7 +2395,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewW = 680.0f;
         m_Layout.gameViewH = 440.0f;
     }
-    else if (templateId == "thirdperson" || templateId == "teamsports" || templateId == "coinrush") {
+    else if (templateId == "thirdperson" || templateId == "teamsports" || templateId == "coinrush" ||
+             templateId == "webdemo") {
         m_Layout.leftWidth = 0.16f;
         m_Layout.rightWidth = 0.23f;
         m_Layout.inspectorSplit = 0.65f;
@@ -2794,7 +2798,9 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
     // Preserved behind "platformer_demo" templateId for the Demos tab.
     // ═══════════════════════════════════════════════════
     }
-    else if (templateId == "thirdperson") {
+    else if (templateId == "thirdperson" || templateId == "webdemo") {
+        // "webdemo" = this same third-person scene + the live accessibility
+        // menu — the scene exported as the website's WebGPU browser demo.
         createGround();
         ECS::Entity player = createPlayer3D("Player");
         // Player needs HealthComponent for pickup/damage interactions
@@ -2975,6 +2981,173 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 "  - Add more coins by duplicating the Coin entity\n"
                 "  - Change player speed via ThirdPersonController.moveSpeed\n"
                 "  - Add enemies with AIControllerComponent + DamageComponent";
+        }
+
+        if (templateId == "webdemo") {
+            // Color swatch row along the back edge — makes the colorblind
+            // filter changes visibly obvious while walking around
+            const Math::Vector3 swatchColors[6] = {
+                {0.85f, 0.10f, 0.10f}, {0.90f, 0.50f, 0.10f}, {0.90f, 0.85f, 0.10f},
+                {0.10f, 0.70f, 0.20f}, {0.15f, 0.35f, 0.90f}, {0.60f, 0.20f, 0.80f} };
+            const char* swatchNames[6] = { "Swatch Red", "Swatch Orange", "Swatch Yellow",
+                                           "Swatch Green", "Swatch Blue", "Swatch Purple" };
+            for (int i = 0; i < 6; ++i) {
+                ECS::Entity cube = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(cube, swatchNames[i]);
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(cube);
+                t.position = Math::Vector3(-4.0f + i * 1.6f, 0.55f, -7.0f);
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(cube);
+                mat.baseColor = swatchColors[i];
+                mat.roughness = 0.6f;
+                m_World->AddComponent<ECS::MeshComponent>(cube, Renderer::MeshFactory::CreateCube(1.0f));
+            }
+
+            // The live accessibility menu (canvas + controller + script)
+            CreateAccessibilityMenu();
+
+            // Cute pulsing "Tab" pill, bottom center — authored UI, animated
+            // by the demo script (breathing glow, hides while the menu is open)
+            {
+                ECS::Entity hintEntity = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(hintEntity, "Tab Hint");
+                m_World->AddComponent<ECS::TransformComponent>(hintEntity);
+                auto& canvas = m_World->AddComponent<GUI::UICanvasComponent>(hintEntity);
+                canvas.canvasName = "TabHint";
+                canvas.designWidth = 1920.0f;
+                canvas.designHeight = 1080.0f;
+
+                u32 pillId = canvas.AddElement(GUI::UIWidgetType::Panel, "Tab Pill");
+                if (auto* pill = canvas.GetElement(pillId)) {
+                    pill->anchor.anchorMin = Math::Vector2(0.5f, 1.0f);
+                    pill->anchor.anchorMax = Math::Vector2(0.5f, 1.0f);
+                    pill->anchor.offsetLeft = -215.0f;
+                    pill->anchor.offsetRight = 215.0f;
+                    pill->anchor.offsetTop = -74.0f;
+                    pill->anchor.offsetBottom = -26.0f;
+                    pill->style.bgColor = Math::Vector3(0.10f, 0.42f, 0.46f);
+                    pill->style.bgAlpha = 0.8f;
+                    pill->style.borderRadius = 24.0f;   // full pill
+                    pill->style.borderWidth = 1.5f;
+                    pill->style.borderColor = Math::Vector3(0.45f, 0.85f, 0.9f);
+                    pill->focusable = false;
+                }
+                u32 hintLabelId = canvas.AddElement(GUI::UIWidgetType::Label, "Tab Label", pillId);
+                if (auto* lbl = canvas.GetElement(hintLabelId)) {
+                    lbl->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
+                    lbl->anchor.anchorMax = Math::Vector2(1.0f, 1.0f);
+                    lbl->anchor.offsetLeft = 0.0f; lbl->anchor.offsetRight = 0.0f;
+                    lbl->anchor.offsetTop = 0.0f; lbl->anchor.offsetBottom = 0.0f;
+                    lbl->data.text = "press  [ Tab ]  ~  accessibility settings";
+                    lbl->data.textAlignH = 1;
+                    lbl->data.textAlignV = 1;
+                    lbl->style.fontSize = 20.0f;
+                    lbl->style.textColor = Math::Vector3(0.92f, 0.98f, 1.0f);
+                    lbl->focusable = false;
+                }
+            }
+
+            // Demo input entity: Tab toggles play mode <-> the sliding menu
+            {
+                ECS::Entity input = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(input, "Web Demo Input");
+                m_World->AddComponent<ECS::TransformComponent>(input);
+                auto& sc = m_World->AddComponent<ECS::ScriptComponent>(input);
+                ECS::ScriptAttachment att;
+                att.scriptPath = "scripts/WebDemoInput.as";
+                att.className = "WebDemoInput";
+                sc.scripts.push_back(std::move(att));
+            }
+
+            // Write the demo input script next to the project
+            {
+                namespace fs = std::filesystem;
+                fs::path projRoot;
+                if (!m_SceneManager.GetProjectPath().empty()) {
+                    projRoot = fs::path(m_SceneManager.GetProjectPath()).parent_path();
+                }
+                std::error_code ec;
+                fs::create_directories(projRoot / "scripts", ec);
+                std::ofstream sf(projRoot / "scripts" / "WebDemoInput.as");
+                if (sf.is_open()) {
+                    sf <<
+"// WebDemoInput.as — Tab switches between playing and the accessibility menu.\n"
+"// Play mode: cursor captured, WASD + mouse look. Menu mode: cursor free,\n"
+"// the settings panel slides in from the right, everything is clickable.\n"
+"class WebDemoInput : TegeBehavior {\n"
+"    uint64 menuCanvas = 0;\n"
+"    uint64 hintCanvas = 0;\n"
+"    uint64 player = 0;\n"
+"    float slide = 1.0f;        // 0 = menu on screen, 1 = parked off the right edge\n"
+"    float slideTarget = 1.0f;\n"
+"    float pulseT = 0.0f;\n"
+"    bool menuOpen = false;\n"
+"\n"
+"    void OnStart() {\n"
+"        menuCanvas = Scene_FindEntity(\"Accessibility Menu\");\n"
+"        hintCanvas = Scene_FindEntity(\"Tab Hint\");\n"
+"        player = Scene_FindEntity(\"Player\");\n"
+"        // Park the menu off screen before the first frame renders\n"
+"        if (menuCanvas != 0) UI_SetElementOffsets(menuCanvas, 1, 900.0f, 900.0f, 0.0f, 0.0f);\n"
+"        Subtitle_Show(\"WASD to move, mouse to look. Press Tab for accessibility settings.\", \"\", 5.0f);\n"
+"    }\n"
+"\n"
+"    void OnUpdate(float dt) {\n"
+"        if (Input_GetKeyDown(Key::Tab)) {\n"
+"            menuOpen = !menuOpen;\n"
+"            slideTarget = menuOpen ? 0.0f : 1.0f;\n"
+"            Input_SetMouseCaptured(!menuOpen);\n"
+"            // Menu mode = the character stops listening entirely: no WASD\n"
+"            // drift, no camera spin while the cursor crosses the panel.\n"
+"            if (player != 0) Controller_SetEnabled(player, !menuOpen);\n"
+"            if (menuOpen) {\n"
+"                Announcer_Announce(\"Accessibility settings open\");\n"
+"            } else {\n"
+"                Subtitle_Show(\"Back to play mode\", \"\", 1.5f);\n"
+"            }\n"
+"        }\n"
+"\n"
+"        // Ease the panel toward its target (springy slide from the right)\n"
+"        float step = dt * 7.0f;\n"
+"        if (step > 1.0f) step = 1.0f;\n"
+"        slide += (slideTarget - slide) * step;\n"
+"        if (slide < 0.001f) slide = 0.0f;\n"
+"        if (slide > 0.999f) slide = 1.0f;\n"
+"        if (menuCanvas != 0) {\n"
+"            float off = slide * 900.0f;\n"
+"            UI_SetElementOffsets(menuCanvas, 1, off, off, 0.0f, 0.0f);\n"
+"        }\n"
+"\n"
+"        // Breathing glow on the Tab pill; hide it while the menu is open\n"
+"        pulseT += dt;\n"
+"        if (pulseT > 2.4f) pulseT -= 2.4f;\n"
+"        if (hintCanvas != 0) {\n"
+"            UI_SetElementVisible(hintCanvas, 1, !menuOpen);\n"
+"            UI_SetElementVisible(hintCanvas, 2, !menuOpen);\n"
+"            float half = 1.2f;\n"
+"            float tri = pulseT < half ? pulseT / half : (2.4f - pulseT) / half;\n"
+"            UI_SetBgColor(hintCanvas, 1, 0.10f, 0.42f, 0.46f, 0.55f + 0.30f * tri);\n"
+"        }\n"
+"    }\n"
+"}\n";
+                    sf.close();
+                }
+            }
+
+            // Web Demo guide replaces the third-person notes intent
+            ECS::Entity guide = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(guide, "-- Web Demo Guide --");
+            m_World->AddComponent<ECS::TransformComponent>(guide);
+            m_World->AddComponent<ECS::NotesComponent>(guide).notes =
+                "WEB DEMO — the website's browser demo\n"
+                "======================================\n\n"
+                "Third-person playable scene + the LIVE accessibility menu:\n"
+                "  WASD + mouse to move, collect the coin, climb the ramp.\n"
+                "  TAB toggles menu mode: the cursor appears and the settings\n"
+                "  panel slides in from the right (WebDemoInput.as drives it —\n"
+                "  pure script + UICanvas, no engine magic).\n"
+                "  Every control applies immediately; in browser exports the\n"
+                "  screen reader speaks via Web Speech.\n\n"
+                "Build & Run with target Web opens it in your browser.";
         }
 
     }
@@ -3973,135 +4146,10 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             interact.promptText = "Press E to interact";
         }
 
-        // Controller entity running the live settings script
-        {
-            ECS::Entity ctrl = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(ctrl, "A11y Controller");
-            m_World->AddComponent<ECS::TransformComponent>(ctrl);
-            auto& sc = m_World->AddComponent<ECS::ScriptComponent>(ctrl);
-            ECS::ScriptAttachment att;
-            att.scriptPath = "scripts/AccessibilityDemo.as";
-            att.className = "AccessibilityDemo";
-            sc.scripts.push_back(std::move(att));
-        }
+        // Menu UI + controller entity + live-settings script — shared with
+        // the Web Demo template
+        CreateAccessibilityMenu();
 
-        // Live settings UICanvas — right side so the scene stays visible
-        {
-            ECS::Entity uiEntity = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(uiEntity, "Accessibility Menu");
-            m_World->AddComponent<ECS::TransformComponent>(uiEntity);
-            auto& canvas = m_World->AddComponent<GUI::UICanvasComponent>(uiEntity);
-            canvas.canvasName = "AccessibilityDemo";
-            canvas.designWidth = 1920.0f;
-            canvas.designHeight = 1080.0f;
-
-            u32 panelId = canvas.AddElement(GUI::UIWidgetType::Panel, "Settings Panel");
-            if (auto* panel = canvas.GetElement(panelId)) {
-                panel->anchor.anchorMin = Math::Vector2(0.55f, 0.04f);
-                panel->anchor.anchorMax = Math::Vector2(0.98f, 0.97f);
-                panel->anchor.offsetLeft = 0; panel->anchor.offsetRight = 0;
-                panel->anchor.offsetTop = 0; panel->anchor.offsetBottom = 0;
-                panel->style.bgColor = Math::Vector3(0.12f, 0.13f, 0.16f);
-                panel->style.bgAlpha = 0.93f;
-                panel->style.borderRadius = 12.0f;
-                panel->style.borderWidth = 1.0f;
-                panel->style.borderColor = Math::Vector3(0.3f, 0.35f, 0.45f);
-                panel->focusable = false;
-            }
-
-            // NOTE: AddElement pre-fills type-based offsets for CENTERED anchors
-            // (labels -100/-100, buttons -80/-80...). Every element here anchors
-            // by fractions, so the horizontal offsets MUST be zeroed or each row
-            // shifts left by its widget-type default (the "alignment all off"
-            // bug, Marty 2026-08-08).
-            u32 titleId = canvas.AddElement(GUI::UIWidgetType::Label, "Title", panelId);
-            if (auto* title = canvas.GetElement(titleId)) {
-                title->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
-                title->anchor.anchorMax = Math::Vector2(1.0f, 0.0f);
-                title->anchor.offsetLeft = 0.0f; title->anchor.offsetRight = 0.0f;
-                title->anchor.offsetTop = 16.0f; title->anchor.offsetBottom = 56.0f;
-                title->data.text = "Accessibility Demo";
-                title->data.textAlignH = 1;
-                title->style.fontSize = 28.0f;
-                title->style.textColor = Math::Vector3(0.9f, 0.92f, 0.96f);
-                title->focusable = false;
-            }
-
-            i32 tabOrder = 1;
-            auto addRowLabel = [&](const char* text, f32 top) {
-                u32 id = canvas.AddElement(GUI::UIWidgetType::Label, text, panelId);
-                if (auto* lbl = canvas.GetElement(id)) {
-                    lbl->anchor.anchorMin = Math::Vector2(0.05f, 0.0f);
-                    lbl->anchor.anchorMax = Math::Vector2(0.55f, 0.0f);
-                    lbl->anchor.offsetLeft = 0.0f; lbl->anchor.offsetRight = 0.0f;
-                    lbl->anchor.offsetTop = top; lbl->anchor.offsetBottom = top + 30.0f;
-                    lbl->data.text = text;
-                    lbl->data.textAlignH = 0;
-                    lbl->style.textColor = Math::Vector3(0.8f, 0.82f, 0.88f);
-                    lbl->focusable = false;
-                }
-            };
-            auto addToggle = [&](const char* label, f32 top, const char* ev, bool checked) {
-                addRowLabel(label, top);
-                u32 id = canvas.AddElement(GUI::UIWidgetType::Toggle, label, panelId);
-                if (auto* tog = canvas.GetElement(id)) {
-                    tog->anchor.anchorMin = Math::Vector2(0.72f, 0.0f);
-                    tog->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
-                    tog->anchor.offsetLeft = 0.0f; tog->anchor.offsetRight = 0.0f;
-                    tog->anchor.offsetTop = top; tog->anchor.offsetBottom = top + 30.0f;
-                    tog->data.checked = checked;
-                    tog->tabOrder = tabOrder++;
-                    tog->onValueChangedEvent = ev;
-                }
-            };
-            auto addSlider = [&](const char* label, f32 top, const char* ev,
-                                 f32 mn, f32 mx, f32 val) {
-                addRowLabel(label, top);
-                u32 id = canvas.AddElement(GUI::UIWidgetType::Slider, label, panelId);
-                if (auto* sl = canvas.GetElement(id)) {
-                    sl->anchor.anchorMin = Math::Vector2(0.55f, 0.0f);
-                    sl->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
-                    sl->anchor.offsetLeft = 0.0f; sl->anchor.offsetRight = 0.0f;
-                    sl->anchor.offsetTop = top; sl->anchor.offsetBottom = top + 30.0f;
-                    sl->data.sliderMin = mn;
-                    sl->data.sliderMax = mx;
-                    sl->data.sliderValue = val;
-                    sl->tabOrder = tabOrder++;
-                    sl->onValueChangedEvent = ev;
-                }
-            };
-            auto addButton = [&](const char* text, f32 top, const char* ev) {
-                u32 id = canvas.AddElement(GUI::UIWidgetType::Button, text, panelId);
-                if (auto* btn = canvas.GetElement(id)) {
-                    btn->anchor.anchorMin = Math::Vector2(0.15f, 0.0f);
-                    btn->anchor.anchorMax = Math::Vector2(0.85f, 0.0f);
-                    btn->anchor.offsetLeft = 0.0f; btn->anchor.offsetRight = 0.0f;
-                    btn->anchor.offsetTop = top; btn->anchor.offsetBottom = top + 42.0f;
-                    btn->data.text = text;
-                    btn->tabOrder = tabOrder++;
-                    btn->onClickEvent = ev;
-                    btn->style.bgColor = Math::Vector3(0.2f, 0.5f, 0.8f);
-                    btn->style.bgAlpha = 1.0f;
-                    btn->style.borderRadius = 6.0f;
-                }
-            };
-
-            addSlider("Colorblind Mode",   80.0f, "a11y_cb_mode",       0.0f, 8.0f, 0.0f);
-            addSlider("Filter Strength",  132.0f, "a11y_cb_strength",   0.0f, 1.0f, 1.0f);
-            addSlider("Font Scale",       184.0f, "a11y_font_scale",    0.75f, 2.5f, 1.0f);
-            addToggle("Dyslexia Text",    236.0f, "a11y_dyslexia",      false);
-            addToggle("Screen Reader",    288.0f, "a11y_reader",        false);
-            addButton("Speak Test Announcement", 340.0f, "a11y_reader_test");
-            addToggle("Subtitles",        400.0f, "a11y_subtitles",     true);
-            addSlider("Subtitle Size",    452.0f, "a11y_subtitle_size", 16.0f, 48.0f, 24.0f);
-            addToggle("Reduced Motion",   504.0f, "a11y_reduced_motion", false);
-            addSlider("Brightness",       556.0f, "a11y_brightness",    -0.5f, 0.5f, 0.0f);
-            addSlider("Contrast",         608.0f, "a11y_contrast",      0.5f, 2.0f, 1.0f);
-            addButton("Save Settings",    668.0f, "a11y_save");
-
-            canvas.theme.focusBorderWidth = 3.0f;
-            canvas.theme.inputFocused = Math::Vector3(0.3f, 0.7f, 1.0f);
-        }
 
         // Write the demo scripts next to the project (same pattern as scriptonly)
         {
@@ -4113,106 +4161,6 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             std::error_code ec;
             fs::create_directories(projRoot / "scripts", ec);
 
-            {
-                std::ofstream sf(projRoot / "scripts" / "AccessibilityDemo.as");
-                if (sf.is_open()) {
-                    sf <<
-"// AccessibilityDemo.as — applies UI control changes to the engine LIVE.\n"
-"// Works identically in the editor, exported desktop games, and the browser\n"
-"// (where Announcer_Announce is spoken aloud via the Web Speech API).\n"
-"class AccessibilityDemo : TegeBehavior {\n"
-"    array<string> modeNames = {\"Off\", \"Protanopia\", \"Deuteranopia\", \"Tritanopia\",\n"
-"                               \"Protanomaly\", \"Deuteranomaly\", \"Tritanomaly\",\n"
-"                               \"Achromatopsia\", \"Achromatomaly\"};\n"
-"    int lastMode = 0;\n"
-"\n"
-"    void OnStart() {\n"
-"        Events_Listen(\"a11y_cb_mode\", EventCallback(this.OnColorblindMode));\n"
-"        Events_Listen(\"a11y_cb_strength\", EventCallback(this.OnColorblindStrength));\n"
-"        Events_Listen(\"a11y_font_scale\", EventCallback(this.OnFontScale));\n"
-"        Events_Listen(\"a11y_dyslexia\", EventCallback(this.OnDyslexia));\n"
-"        Events_Listen(\"a11y_reader\", EventCallback(this.OnScreenReader));\n"
-"        Events_Listen(\"a11y_reader_test\", EventCallback(this.OnReaderTest));\n"
-"        Events_Listen(\"a11y_subtitles\", EventCallback(this.OnSubtitles));\n"
-"        Events_Listen(\"a11y_subtitle_size\", EventCallback(this.OnSubtitleSize));\n"
-"        Events_Listen(\"a11y_reduced_motion\", EventCallback(this.OnReducedMotion));\n"
-"        Events_Listen(\"a11y_brightness\", EventCallback(this.OnBrightness));\n"
-"        Events_Listen(\"a11y_contrast\", EventCallback(this.OnContrast));\n"
-"        Events_Listen(\"a11y_save\", EventCallback(this.OnSave));\n"
-"        Subtitle_Show(\"Accessibility demo ready. Navigate with Tab, arrows, or gamepad.\", \"\", 4.0f);\n"
-"    }\n"
-"\n"
-"    void OnColorblindMode(const string &in ev) {\n"
-"        int mode = int(Events_CurrentFloat(\"value\") + 0.5f);\n"
-"        if (mode < 0) mode = 0;\n"
-"        if (mode > 8) mode = 8;\n"
-"        Colorblind_SetMode(mode);\n"
-"        if (mode != lastMode) {\n"
-"            lastMode = mode;\n"
-"            Subtitle_Show(\"Colorblind mode: \" + modeNames[mode], \"\", 2.0f);\n"
-"            Announcer_Announce(\"Colorblind mode \" + modeNames[mode]);\n"
-"        }\n"
-"    }\n"
-"\n"
-"    void OnColorblindStrength(const string &in ev) {\n"
-"        Colorblind_SetStrength(Events_CurrentFloat(\"value\"));\n"
-"    }\n"
-"\n"
-"    void OnFontScale(const string &in ev) {\n"
-"        Accessibility_SetFontScale(Events_CurrentFloat(\"value\"));\n"
-"    }\n"
-"\n"
-"    void OnDyslexia(const string &in ev) {\n"
-"        bool on = Events_CurrentInt(\"checked\") != 0;\n"
-"        Accessibility_SetDyslexiaFont(on);\n"
-"        Subtitle_Show(on ? \"Dyslexia-friendly text on\" : \"Dyslexia-friendly text off\", \"\", 2.0f);\n"
-"    }\n"
-"\n"
-"    void OnScreenReader(const string &in ev) {\n"
-"        bool on = Events_CurrentInt(\"checked\") != 0;\n"
-"        Announcer_SetEnabled(on);\n"
-"        if (on) Announcer_Announce(\"Screen reader enabled\");\n"
-"        Subtitle_Show(on ? \"Screen reader on\" : \"Screen reader off\", \"\", 2.0f);\n"
-"    }\n"
-"\n"
-"    void OnReaderTest(const string &in ev) {\n"
-"        Announcer_AnnounceHighPriority(\"This is a test announcement. In the browser this is spoken aloud.\");\n"
-"    }\n"
-"\n"
-"    void OnSubtitles(const string &in ev) {\n"
-"        bool on = Events_CurrentInt(\"checked\") != 0;\n"
-"        Subtitle_SetEnabled(on);\n"
-"        if (on) Subtitle_Show(\"Subtitles enabled\", \"\", 2.0f);\n"
-"    }\n"
-"\n"
-"    void OnSubtitleSize(const string &in ev) {\n"
-"        Subtitle_SetFontSize(Events_CurrentFloat(\"value\"));\n"
-"        Subtitle_Show(\"Subtitle size \" + int(Events_CurrentFloat(\"value\")), \"\", 1.5f);\n"
-"    }\n"
-"\n"
-"    void OnReducedMotion(const string &in ev) {\n"
-"        bool on = Events_CurrentInt(\"checked\") != 0;\n"
-"        Accessibility_SetReducedMotion(on);\n"
-"        Subtitle_Show(on ? \"Reduced motion on\" : \"Reduced motion off\", \"\", 2.0f);\n"
-"    }\n"
-"\n"
-"    void OnBrightness(const string &in ev) {\n"
-"        Accessibility_SetBrightness(Events_CurrentFloat(\"value\"));\n"
-"    }\n"
-"\n"
-"    void OnContrast(const string &in ev) {\n"
-"        Accessibility_SetContrast(Events_CurrentFloat(\"value\"));\n"
-"    }\n"
-"\n"
-"    void OnSave(const string &in ev) {\n"
-"        Accessibility_SaveSettings();\n"
-"        Subtitle_Show(\"Settings saved\", \"\", 2.0f);\n"
-"        Announcer_Announce(\"Settings saved\");\n"
-"    }\n"
-"}\n";
-                    sf.close();
-                }
-            }
 
             {
                 std::ofstream sf(projRoot / "scripts" / "SpinningCube.as");
@@ -5923,6 +5871,257 @@ void EditorLayer::DrawTemplateMarketplaceWindow() {
 // ============================================================================
 // Notification Toast System
 // ============================================================================
+
+
+// --------------------------------------------------
+// Live accessibility settings menu: UICanvas controls + controller entity +
+// scripts/AccessibilityDemo.as. Shared by the Accessibility Demo template and
+// the Web Demo template (third-person scene + this menu = the site demo).
+// --------------------------------------------------
+void EditorLayer::CreateAccessibilityMenu() {
+    if (!m_World) return;
+
+    // Controller entity running the live settings script
+    {
+        ECS::Entity ctrl = m_World->CreateEntity();
+        m_World->AddComponent<ECS::NameComponent>(ctrl, "A11y Controller");
+        m_World->AddComponent<ECS::TransformComponent>(ctrl);
+        auto& sc = m_World->AddComponent<ECS::ScriptComponent>(ctrl);
+        ECS::ScriptAttachment att;
+        att.scriptPath = "scripts/AccessibilityDemo.as";
+        att.className = "AccessibilityDemo";
+        sc.scripts.push_back(std::move(att));
+    }
+
+    // Live settings UICanvas — right side so the scene stays visible
+    {
+        ECS::Entity uiEntity = m_World->CreateEntity();
+        m_World->AddComponent<ECS::NameComponent>(uiEntity, "Accessibility Menu");
+        m_World->AddComponent<ECS::TransformComponent>(uiEntity);
+        auto& canvas = m_World->AddComponent<GUI::UICanvasComponent>(uiEntity);
+        canvas.canvasName = "AccessibilityDemo";
+        canvas.designWidth = 1920.0f;
+        canvas.designHeight = 1080.0f;
+
+        u32 panelId = canvas.AddElement(GUI::UIWidgetType::Panel, "Settings Panel");
+        if (auto* panel = canvas.GetElement(panelId)) {
+            panel->anchor.anchorMin = Math::Vector2(0.55f, 0.04f);
+            panel->anchor.anchorMax = Math::Vector2(0.98f, 0.97f);
+            panel->anchor.offsetLeft = 0; panel->anchor.offsetRight = 0;
+            panel->anchor.offsetTop = 0; panel->anchor.offsetBottom = 0;
+            panel->style.bgColor = Math::Vector3(0.12f, 0.13f, 0.16f);
+            panel->style.bgAlpha = 0.93f;
+            panel->style.borderRadius = 12.0f;
+            panel->style.borderWidth = 1.0f;
+            panel->style.borderColor = Math::Vector3(0.3f, 0.35f, 0.45f);
+            panel->focusable = false;
+        }
+
+        // NOTE: AddElement pre-fills type-based offsets for CENTERED anchors
+        // (labels -100/-100, buttons -80/-80...). Every element here anchors
+        // by fractions, so the horizontal offsets MUST be zeroed or each row
+        // shifts left by its widget-type default (the "alignment all off"
+        // bug, Marty 2026-08-08).
+        u32 titleId = canvas.AddElement(GUI::UIWidgetType::Label, "Title", panelId);
+        if (auto* title = canvas.GetElement(titleId)) {
+            title->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
+            title->anchor.anchorMax = Math::Vector2(1.0f, 0.0f);
+            title->anchor.offsetLeft = 0.0f; title->anchor.offsetRight = 0.0f;
+            title->anchor.offsetTop = 16.0f; title->anchor.offsetBottom = 56.0f;
+            title->data.text = "Accessibility Demo";
+            title->data.textAlignH = 1;
+            title->style.fontSize = 28.0f;
+            title->style.textColor = Math::Vector3(0.9f, 0.92f, 0.96f);
+            title->focusable = false;
+        }
+
+        i32 tabOrder = 1;
+        auto addRowLabel = [&](const char* text, f32 top) {
+            u32 id = canvas.AddElement(GUI::UIWidgetType::Label, text, panelId);
+            if (auto* lbl = canvas.GetElement(id)) {
+                lbl->anchor.anchorMin = Math::Vector2(0.05f, 0.0f);
+                lbl->anchor.anchorMax = Math::Vector2(0.55f, 0.0f);
+                lbl->anchor.offsetLeft = 0.0f; lbl->anchor.offsetRight = 0.0f;
+                lbl->anchor.offsetTop = top; lbl->anchor.offsetBottom = top + 30.0f;
+                lbl->data.text = text;
+                lbl->data.textAlignH = 0;
+                lbl->style.textColor = Math::Vector3(0.8f, 0.82f, 0.88f);
+                lbl->focusable = false;
+            }
+        };
+        auto addToggle = [&](const char* label, f32 top, const char* ev, bool checked) {
+            addRowLabel(label, top);
+            u32 id = canvas.AddElement(GUI::UIWidgetType::Toggle, label, panelId);
+            if (auto* tog = canvas.GetElement(id)) {
+                tog->anchor.anchorMin = Math::Vector2(0.72f, 0.0f);
+                tog->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
+                tog->anchor.offsetLeft = 0.0f; tog->anchor.offsetRight = 0.0f;
+                tog->anchor.offsetTop = top; tog->anchor.offsetBottom = top + 30.0f;
+                tog->data.checked = checked;
+                tog->tabOrder = tabOrder++;
+                tog->onValueChangedEvent = ev;
+            }
+        };
+        auto addSlider = [&](const char* label, f32 top, const char* ev,
+                             f32 mn, f32 mx, f32 val) {
+            addRowLabel(label, top);
+            u32 id = canvas.AddElement(GUI::UIWidgetType::Slider, label, panelId);
+            if (auto* sl = canvas.GetElement(id)) {
+                sl->anchor.anchorMin = Math::Vector2(0.55f, 0.0f);
+                sl->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
+                sl->anchor.offsetLeft = 0.0f; sl->anchor.offsetRight = 0.0f;
+                sl->anchor.offsetTop = top; sl->anchor.offsetBottom = top + 30.0f;
+                sl->data.sliderMin = mn;
+                sl->data.sliderMax = mx;
+                sl->data.sliderValue = val;
+                sl->tabOrder = tabOrder++;
+                sl->onValueChangedEvent = ev;
+            }
+        };
+        auto addButton = [&](const char* text, f32 top, const char* ev) {
+            u32 id = canvas.AddElement(GUI::UIWidgetType::Button, text, panelId);
+            if (auto* btn = canvas.GetElement(id)) {
+                btn->anchor.anchorMin = Math::Vector2(0.15f, 0.0f);
+                btn->anchor.anchorMax = Math::Vector2(0.85f, 0.0f);
+                btn->anchor.offsetLeft = 0.0f; btn->anchor.offsetRight = 0.0f;
+                btn->anchor.offsetTop = top; btn->anchor.offsetBottom = top + 42.0f;
+                btn->data.text = text;
+                btn->tabOrder = tabOrder++;
+                btn->onClickEvent = ev;
+                btn->style.bgColor = Math::Vector3(0.2f, 0.5f, 0.8f);
+                btn->style.bgAlpha = 1.0f;
+                btn->style.borderRadius = 6.0f;
+            }
+        };
+
+        addSlider("Colorblind Mode",   80.0f, "a11y_cb_mode",       0.0f, 8.0f, 0.0f);
+        addSlider("Filter Strength",  132.0f, "a11y_cb_strength",   0.0f, 1.0f, 1.0f);
+        addSlider("Font Scale",       184.0f, "a11y_font_scale",    0.75f, 2.5f, 1.0f);
+        addToggle("Dyslexia Text",    236.0f, "a11y_dyslexia",      false);
+        addToggle("Screen Reader",    288.0f, "a11y_reader",        false);
+        addButton("Speak Test Announcement", 340.0f, "a11y_reader_test");
+        addToggle("Subtitles",        400.0f, "a11y_subtitles",     true);
+        addSlider("Subtitle Size",    452.0f, "a11y_subtitle_size", 16.0f, 48.0f, 24.0f);
+        addToggle("Reduced Motion",   504.0f, "a11y_reduced_motion", false);
+        addSlider("Brightness",       556.0f, "a11y_brightness",    -0.5f, 0.5f, 0.0f);
+        addSlider("Contrast",         608.0f, "a11y_contrast",      0.5f, 2.0f, 1.0f);
+        addButton("Save Settings",    668.0f, "a11y_save");
+
+        canvas.theme.focusBorderWidth = 3.0f;
+        canvas.theme.inputFocused = Math::Vector3(0.3f, 0.7f, 1.0f);
+    }
+
+    // Write the live-settings script next to the project
+    {
+        namespace fs = std::filesystem;
+        fs::path projRoot;
+        if (!m_SceneManager.GetProjectPath().empty()) {
+            projRoot = fs::path(m_SceneManager.GetProjectPath()).parent_path();
+        }
+        std::error_code ec;
+        fs::create_directories(projRoot / "scripts", ec);
+    {
+        std::ofstream sf(projRoot / "scripts" / "AccessibilityDemo.as");
+        if (sf.is_open()) {
+            sf <<
+"// AccessibilityDemo.as — applies UI control changes to the engine LIVE.\n"
+"// Works identically in the editor, exported desktop games, and the browser\n"
+"// (where Announcer_Announce is spoken aloud via the Web Speech API).\n"
+"class AccessibilityDemo : TegeBehavior {\n"
+"    array<string> modeNames = {\"Off\", \"Protanopia\", \"Deuteranopia\", \"Tritanopia\",\n"
+"                               \"Protanomaly\", \"Deuteranomaly\", \"Tritanomaly\",\n"
+"                               \"Achromatopsia\", \"Achromatomaly\"};\n"
+"    int lastMode = 0;\n"
+"\n"
+"    void OnStart() {\n"
+"        Events_Listen(\"a11y_cb_mode\", EventCallback(this.OnColorblindMode));\n"
+"        Events_Listen(\"a11y_cb_strength\", EventCallback(this.OnColorblindStrength));\n"
+"        Events_Listen(\"a11y_font_scale\", EventCallback(this.OnFontScale));\n"
+"        Events_Listen(\"a11y_dyslexia\", EventCallback(this.OnDyslexia));\n"
+"        Events_Listen(\"a11y_reader\", EventCallback(this.OnScreenReader));\n"
+"        Events_Listen(\"a11y_reader_test\", EventCallback(this.OnReaderTest));\n"
+"        Events_Listen(\"a11y_subtitles\", EventCallback(this.OnSubtitles));\n"
+"        Events_Listen(\"a11y_subtitle_size\", EventCallback(this.OnSubtitleSize));\n"
+"        Events_Listen(\"a11y_reduced_motion\", EventCallback(this.OnReducedMotion));\n"
+"        Events_Listen(\"a11y_brightness\", EventCallback(this.OnBrightness));\n"
+"        Events_Listen(\"a11y_contrast\", EventCallback(this.OnContrast));\n"
+"        Events_Listen(\"a11y_save\", EventCallback(this.OnSave));\n"
+"        Subtitle_Show(\"Accessibility demo ready. Navigate with Tab, arrows, or gamepad.\", \"\", 4.0f);\n"
+"    }\n"
+"\n"
+"    void OnColorblindMode(const string &in ev) {\n"
+"        int mode = int(Events_CurrentFloat(\"value\") + 0.5f);\n"
+"        if (mode < 0) mode = 0;\n"
+"        if (mode > 8) mode = 8;\n"
+"        Colorblind_SetMode(mode);\n"
+"        if (mode != lastMode) {\n"
+"            lastMode = mode;\n"
+"            Subtitle_Show(\"Colorblind mode: \" + modeNames[mode], \"\", 2.0f);\n"
+"            Announcer_Announce(\"Colorblind mode \" + modeNames[mode]);\n"
+"        }\n"
+"    }\n"
+"\n"
+"    void OnColorblindStrength(const string &in ev) {\n"
+"        Colorblind_SetStrength(Events_CurrentFloat(\"value\"));\n"
+"    }\n"
+"\n"
+"    void OnFontScale(const string &in ev) {\n"
+"        Accessibility_SetFontScale(Events_CurrentFloat(\"value\"));\n"
+"    }\n"
+"\n"
+"    void OnDyslexia(const string &in ev) {\n"
+"        bool on = Events_CurrentInt(\"checked\") != 0;\n"
+"        Accessibility_SetDyslexiaFont(on);\n"
+"        Subtitle_Show(on ? \"Dyslexia-friendly text on\" : \"Dyslexia-friendly text off\", \"\", 2.0f);\n"
+"    }\n"
+"\n"
+"    void OnScreenReader(const string &in ev) {\n"
+"        bool on = Events_CurrentInt(\"checked\") != 0;\n"
+"        Announcer_SetEnabled(on);\n"
+"        if (on) Announcer_Announce(\"Screen reader enabled\");\n"
+"        Subtitle_Show(on ? \"Screen reader on\" : \"Screen reader off\", \"\", 2.0f);\n"
+"    }\n"
+"\n"
+"    void OnReaderTest(const string &in ev) {\n"
+"        Announcer_AnnounceHighPriority(\"This is a test announcement. In the browser this is spoken aloud.\");\n"
+"    }\n"
+"\n"
+"    void OnSubtitles(const string &in ev) {\n"
+"        bool on = Events_CurrentInt(\"checked\") != 0;\n"
+"        Subtitle_SetEnabled(on);\n"
+"        if (on) Subtitle_Show(\"Subtitles enabled\", \"\", 2.0f);\n"
+"    }\n"
+"\n"
+"    void OnSubtitleSize(const string &in ev) {\n"
+"        Subtitle_SetFontSize(Events_CurrentFloat(\"value\"));\n"
+"        Subtitle_Show(\"Subtitle size \" + int(Events_CurrentFloat(\"value\")), \"\", 1.5f);\n"
+"    }\n"
+"\n"
+"    void OnReducedMotion(const string &in ev) {\n"
+"        bool on = Events_CurrentInt(\"checked\") != 0;\n"
+"        Accessibility_SetReducedMotion(on);\n"
+"        Subtitle_Show(on ? \"Reduced motion on\" : \"Reduced motion off\", \"\", 2.0f);\n"
+"    }\n"
+"\n"
+"    void OnBrightness(const string &in ev) {\n"
+"        Accessibility_SetBrightness(Events_CurrentFloat(\"value\"));\n"
+"    }\n"
+"\n"
+"    void OnContrast(const string &in ev) {\n"
+"        Accessibility_SetContrast(Events_CurrentFloat(\"value\"));\n"
+"    }\n"
+"\n"
+"    void OnSave(const string &in ev) {\n"
+"        Accessibility_SaveSettings();\n"
+"        Subtitle_Show(\"Settings saved\", \"\", 2.0f);\n"
+"        Announcer_Announce(\"Settings saved\");\n"
+"    }\n"
+"}\n";
+            sf.close();
+        }
+    }
+    }
+}
 
 } // namespace Editor
 } // namespace Enjin

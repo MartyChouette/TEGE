@@ -18,12 +18,13 @@ ENJIN_TEST(CatalogIntegrity, CatalogIsNotEmpty) {
     ENJIN_EXPECT_GT(mp.GetCatalog().size(), (size_t)0);
 }
 
-ENJIN_TEST(CatalogIntegrity, Exactly16Entries) {
-    // 16 since the 2026-08-07 roster cut: the catalog now mirrors the
-    // project hub's 16 built-in templates exactly (same ids)
+ENJIN_TEST(CatalogIntegrity, Exactly17Entries) {
+    // 16 from the 2026-08-07 roster cut + the Web Demo template (2026-08-09,
+    // third person + live accessibility menu = the site's browser demo).
+    // The catalog mirrors the project hub's built-in templates exactly.
     TemplateMarketplace mp;
     mp.Initialize("");
-    ENJIN_EXPECT_EQ(mp.GetCatalog().size(), (size_t)16);
+    ENJIN_EXPECT_EQ(mp.GetCatalog().size(), (size_t)17);
 }
 
 ENJIN_TEST(CatalogIntegrity, AllIDsAreUnique) {

@@ -126,10 +126,15 @@ void TemplateMarketplace::BuildCatalog() {
         0.7f, 0.6f, 0.85f, 510, 4.6f, 22, 35200,
         {"dialogue", "quest", "narrative", "branching"});
 
-    add("accessibility", "Accessibility Demo", "Live accessibility settings demo: colorblind modes, font scale, dyslexia-friendly font, screen reader. Doubles as the browser web demo.",
+    add("accessibility", "Accessibility Demo", "Live accessibility settings demo: colorblind modes, font scale, dyslexia-friendly font, screen reader.",
         "Systems", "Enjin Team", "1.0.0", "CC0", "All", TemplateQuality::Official, MaturityTier::Beta,
         0.3f, 0.75f, 0.9f, 340, 4.5f, 14, 20200,
-        {"accessibility", "a11y", "settings", "colorblind", "web"});
+        {"accessibility", "a11y", "settings", "colorblind"});
+
+    add("webdemo", "Web Demo", "The website's browser demo: third-person playable scene combined with the live accessibility menu.",
+        "Systems", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Stable,
+        0.25f, 0.85f, 0.75f, 120, 4.8f, 6, 22000,
+        {"web", "demo", "thirdperson", "accessibility", "browser"});
 
     // --- Advanced ---
     add("planetgravity", "Planet Gravity", "Spherical gravity with walk-on-planet-surface mechanics. Advanced physics demo.",
