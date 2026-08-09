@@ -240,6 +240,30 @@ void PlayMode::Play() {
     Scripting::SetBindingsSubtitles(m_SubtitleSystem);
     Scripting::SetBindingsAnnouncer(m_Announcer);
     Scripting::SetBindingsAccessibilitySettings(m_AccessibilitySettings);
+    // Push script-driven accessibility changes into the live consumers —
+    // without this, Colorblind_SetMode etc. write the settings struct and
+    // nothing in the editor ever reads it (works in player, dead in editor).
+    Scripting::SetBindingsAccessibilityApplyCallback([this]() {
+        if (!m_AccessibilitySettings) return;
+        if (m_PostProcessing) {
+            m_AccessibilitySettings->ApplyToPostProcessing(m_PostProcessing->GetSettings());
+        }
+        if (m_SubtitleSystem) {
+            auto& sc = m_SubtitleSystem->GetConfig();
+            sc.enabled = m_AccessibilitySettings->subtitlesEnabled;
+            sc.fontSize = m_AccessibilitySettings->subtitleFontSize;
+        }
+        if (m_UISystem) {
+            m_UISystem->SetFontScale(m_AccessibilitySettings->fontScale);
+            m_UISystem->SetReducedMotion(m_AccessibilitySettings->reducedMotion);
+            m_UISystem->SetSwitchAccessEnabled(m_AccessibilitySettings->switchAccessEnabled,
+                                               m_AccessibilitySettings->switchScanSpeed);
+            m_UISystem->SetDwellClickEnabled(m_AccessibilitySettings->dwellClickEnabled,
+                                             m_AccessibilitySettings->dwellClickTime);
+            m_UISystem->SetStickyDragEnabled(m_AccessibilitySettings->stickyDragEnabled);
+        }
+        m_ControllerSystem.SetReducedMotion(m_AccessibilitySettings->reducedMotion);
+    });
     Scripting::SetBindingsPluginSystem(nullptr);  // No PluginSystem instance yet — null-safe
     Scripting::SetBindingsAudioGraphRuntime(&m_AudioGraphRuntime);
     m_MIDIInput.Initialize();
@@ -513,6 +537,7 @@ void PlayMode::Stop() {
     Scripting::SetBindingsSubtitles(nullptr);
     Scripting::SetBindingsAnnouncer(nullptr);
     Scripting::SetBindingsAccessibilitySettings(nullptr);
+    Scripting::SetBindingsAccessibilityApplyCallback(nullptr);
     Scripting::SetBindingsSaveSystem(nullptr);
     Scripting::SetFlashShimSaveSystem(nullptr);
     Scripting::SetBindingsQuestSystem(nullptr);

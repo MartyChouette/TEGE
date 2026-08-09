@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Accessibility/SubtitleSystem.h"
 #include "Enjin/Accessibility/Announcer.h"
 #include "Enjin/Accessibility/AccessibilitySettings.h"
@@ -131,6 +132,7 @@ static void Colorblind_SetMode(int mode) {
     if (!s_BindingsAccessibility) return;
     if (mode < 0 || mode > 8) return;
     s_BindingsAccessibility->colorblindMode = static_cast<Accessibility::ColorblindMode>(mode);
+    if (s_ApplyAccessibilityCallback) s_ApplyAccessibilityCallback();
 }
 
 static int Colorblind_GetMode() {
@@ -141,6 +143,7 @@ static int Colorblind_GetMode() {
 static void Colorblind_SetStrength(float strength) {
     if (!s_BindingsAccessibility) return;
     s_BindingsAccessibility->colorblindStrength = strength;
+    if (s_ApplyAccessibilityCallback) s_ApplyAccessibilityCallback();
 }
 
 static float Colorblind_GetStrength() {
@@ -150,6 +153,7 @@ static float Colorblind_GetStrength() {
 
 static void Accessibility_SetReducedMotion(bool enabled) {
     if (s_BindingsAccessibility) s_BindingsAccessibility->reducedMotion = enabled;
+    if (s_ApplyAccessibilityCallback) s_ApplyAccessibilityCallback();
 }
 
 static bool Accessibility_GetReducedMotion() {
@@ -158,6 +162,7 @@ static bool Accessibility_GetReducedMotion() {
 
 static void Accessibility_SetScreenShake(bool enabled) {
     if (s_BindingsAccessibility) s_BindingsAccessibility->disableScreenShake = !enabled;
+    if (s_ApplyAccessibilityCallback) s_ApplyAccessibilityCallback();
 }
 
 static bool Accessibility_GetScreenShake() {
@@ -170,6 +175,7 @@ static void Accessibility_SaveSettings() {
 
 static void Accessibility_SetFlashingLights(bool enabled) {
     if (s_BindingsAccessibility) s_BindingsAccessibility->disableFlashingLights = !enabled;
+    if (s_ApplyAccessibilityCallback) s_ApplyAccessibilityCallback();
 }
 
 static bool Accessibility_GetFlashingLights() {
@@ -178,6 +184,7 @@ static bool Accessibility_GetFlashingLights() {
 
 static void Accessibility_SetFontScale(float scale) {
     if (s_BindingsAccessibility) s_BindingsAccessibility->fontScale = scale;
+    if (s_ApplyAccessibilityCallback) s_ApplyAccessibilityCallback();
 }
 
 static float Accessibility_GetFontScale() {
@@ -186,6 +193,7 @@ static float Accessibility_GetFontScale() {
 
 static void Accessibility_SetBrightness(float v) {
     if (s_BindingsAccessibility) s_BindingsAccessibility->screenBrightness = v;
+    if (s_ApplyAccessibilityCallback) s_ApplyAccessibilityCallback();
 }
 
 static float Accessibility_GetBrightness() {
@@ -195,6 +203,7 @@ static float Accessibility_GetBrightness() {
 static void Accessibility_SetDyslexiaFont(bool enabled) {
     if (s_BindingsAccessibility) s_BindingsAccessibility->dyslexiaFriendly = enabled;
     if (s_DyslexiaFontCallback) s_DyslexiaFontCallback(enabled);
+    if (s_ApplyAccessibilityCallback) s_ApplyAccessibilityCallback();
 }
 
 static bool Accessibility_GetDyslexiaFont() {
@@ -203,6 +212,7 @@ static bool Accessibility_GetDyslexiaFont() {
 
 static void Accessibility_SetContrast(float v) {
     if (s_BindingsAccessibility) s_BindingsAccessibility->screenContrast = v;
+    if (s_ApplyAccessibilityCallback) s_ApplyAccessibilityCallback();
 }
 
 static float Accessibility_GetContrast() {
@@ -288,97 +298,97 @@ void RegisterAccessibilityBindings(asIScriptEngine* engine) {
 
     // Subtitles
     AS_CHECK(engine->RegisterGlobalFunction("void Subtitle_Show(const string&in, const string&in = \"\", float = 3.0)",
-        asFUNCTION(Subtitle_Show), asCALL_CDECL));
+        ENJIN_AS_FN(Subtitle_Show), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Subtitle_ShowWithColor(const string&in, const string&in, float, float, float, float = 3.0)",
-        asFUNCTION(Subtitle_ShowWithColor), asCALL_CDECL));
+        ENJIN_AS_FN(Subtitle_ShowWithColor), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Subtitle_ShowCaption(const string&in, float = 2.5)",
-        asFUNCTION(Subtitle_ShowCaption), asCALL_CDECL));
+        ENJIN_AS_FN(Subtitle_ShowCaption), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Subtitle_Clear()",
-        asFUNCTION(Subtitle_Clear), asCALL_CDECL));
+        ENJIN_AS_FN(Subtitle_Clear), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Subtitle_SetEnabled(bool)",
-        asFUNCTION(Subtitle_SetEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(Subtitle_SetEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Subtitle_IsEnabled()",
-        asFUNCTION(Subtitle_IsEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(Subtitle_IsEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Subtitle_SetFontSize(float)",
-        asFUNCTION(Subtitle_SetFontSize), asCALL_CDECL));
+        ENJIN_AS_FN(Subtitle_SetFontSize), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Subtitle_GetFontSize()",
-        asFUNCTION(Subtitle_GetFontSize), asCALL_CDECL));
+        ENJIN_AS_FN(Subtitle_GetFontSize), ENJIN_AS_CALL_CDECL));
 
     // Announcer (screen reader)
     AS_CHECK(engine->RegisterGlobalFunction("void Announcer_Announce(const string&in)",
-        asFUNCTION(Announcer_Announce), asCALL_CDECL));
+        ENJIN_AS_FN(Announcer_Announce), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Announcer_AnnounceHighPriority(const string&in)",
-        asFUNCTION(Announcer_AnnounceHighPriority), asCALL_CDECL));
+        ENJIN_AS_FN(Announcer_AnnounceHighPriority), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Announcer_Clear()",
-        asFUNCTION(Announcer_Clear), asCALL_CDECL));
+        ENJIN_AS_FN(Announcer_Clear), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Announcer_SetEnabled(bool)",
-        asFUNCTION(Announcer_SetEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(Announcer_SetEnabled), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Announcer_IsEnabled()",
-        asFUNCTION(Announcer_IsEnabled), asCALL_CDECL));
+        ENJIN_AS_FN(Announcer_IsEnabled), ENJIN_AS_CALL_CDECL));
 
     // Colorblind filter
     AS_CHECK(engine->RegisterGlobalFunction("void Colorblind_SetMode(int)",
-        asFUNCTION(Colorblind_SetMode), asCALL_CDECL));
+        ENJIN_AS_FN(Colorblind_SetMode), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("int Colorblind_GetMode()",
-        asFUNCTION(Colorblind_GetMode), asCALL_CDECL));
+        ENJIN_AS_FN(Colorblind_GetMode), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Colorblind_SetStrength(float)",
-        asFUNCTION(Colorblind_SetStrength), asCALL_CDECL));
+        ENJIN_AS_FN(Colorblind_SetStrength), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Colorblind_GetStrength()",
-        asFUNCTION(Colorblind_GetStrength), asCALL_CDECL));
+        ENJIN_AS_FN(Colorblind_GetStrength), ENJIN_AS_CALL_CDECL));
 
     // General accessibility
     AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetReducedMotion(bool)",
-        asFUNCTION(Accessibility_SetReducedMotion), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_SetReducedMotion), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Accessibility_GetReducedMotion()",
-        asFUNCTION(Accessibility_GetReducedMotion), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_GetReducedMotion), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetScreenShake(bool)",
-        asFUNCTION(Accessibility_SetScreenShake), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_SetScreenShake), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Accessibility_GetScreenShake()",
-        asFUNCTION(Accessibility_GetScreenShake), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_GetScreenShake), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetFlashingLights(bool)",
-        asFUNCTION(Accessibility_SetFlashingLights), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_SetFlashingLights), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Accessibility_GetFlashingLights()",
-        asFUNCTION(Accessibility_GetFlashingLights), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_GetFlashingLights), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetFontScale(float)",
-        asFUNCTION(Accessibility_SetFontScale), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_SetFontScale), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Accessibility_GetFontScale()",
-        asFUNCTION(Accessibility_GetFontScale), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_GetFontScale), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetBrightness(float)",
-        asFUNCTION(Accessibility_SetBrightness), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_SetBrightness), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Accessibility_GetBrightness()",
-        asFUNCTION(Accessibility_GetBrightness), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_GetBrightness), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetContrast(float)",
-        asFUNCTION(Accessibility_SetContrast), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_SetContrast), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Accessibility_GetContrast()",
-        asFUNCTION(Accessibility_GetContrast), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_GetContrast), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetDyslexiaFont(bool)",
-        asFUNCTION(Accessibility_SetDyslexiaFont), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_SetDyslexiaFont), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Accessibility_GetDyslexiaFont()",
-        asFUNCTION(Accessibility_GetDyslexiaFont), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_GetDyslexiaFont), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SaveSettings()",
-        asFUNCTION(Accessibility_SaveSettings), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_SaveSettings), ENJIN_AS_CALL_CDECL));
 
     // Motor accessibility + screen reader + indicators
     AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetDwellClick(bool, float = 0.0)",
-        asFUNCTION(Accessibility_SetDwellClick), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_SetDwellClick), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Accessibility_GetDwellClick()",
-        asFUNCTION(Accessibility_GetDwellClick), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_GetDwellClick), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetSwitchAccess(bool, float = 0.0)",
-        asFUNCTION(Accessibility_SetSwitchAccess), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_SetSwitchAccess), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Accessibility_GetSwitchAccess()",
-        asFUNCTION(Accessibility_GetSwitchAccess), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_GetSwitchAccess), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetStickyDrag(bool)",
-        asFUNCTION(Accessibility_SetStickyDrag), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_SetStickyDrag), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Accessibility_GetStickyDrag()",
-        asFUNCTION(Accessibility_GetStickyDrag), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_GetStickyDrag), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetScreenReader(bool)",
-        asFUNCTION(Accessibility_SetScreenReader), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_SetScreenReader), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Accessibility_GetScreenReader()",
-        asFUNCTION(Accessibility_GetScreenReader), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_GetScreenReader), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Accessibility_SetAudioIndicators(bool)",
-        asFUNCTION(Accessibility_SetAudioIndicators), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_SetAudioIndicators), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Accessibility_GetAudioIndicators()",
-        asFUNCTION(Accessibility_GetAudioIndicators), asCALL_CDECL));
+        ENJIN_AS_FN(Accessibility_GetAudioIndicators), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

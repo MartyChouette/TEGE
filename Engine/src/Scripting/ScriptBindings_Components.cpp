@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/ECS/World.h"
@@ -439,6 +440,17 @@ static void Controller_SetMoveSpeed(u64 id, f32 speed) {
     if (auto* c = s_BindingsWorld->GetComponent<TopDown3DController>(entity)) { c->moveSpeed = speed; return; }
     if (auto* c = s_BindingsWorld->GetComponent<TopDown2DController>(entity)) { c->moveSpeed = speed; return; }
     if (auto* c = s_BindingsWorld->GetComponent<Platformer2DController>(entity)) { c->moveSpeed = speed; return; }
+}
+
+static void Controller_SetEnabled(u64 id, bool enabled) {
+    if (!s_BindingsWorld) return;
+    Entity entity = static_cast<Entity>(id);
+
+    if (auto* c = s_BindingsWorld->GetComponent<FirstPersonController>(entity)) { c->isEnabled = enabled; return; }
+    if (auto* c = s_BindingsWorld->GetComponent<ThirdPersonController>(entity)) { c->isEnabled = enabled; return; }
+    if (auto* c = s_BindingsWorld->GetComponent<TopDown3DController>(entity)) { c->isEnabled = enabled; return; }
+    if (auto* c = s_BindingsWorld->GetComponent<TopDown2DController>(entity)) { c->isEnabled = enabled; return; }
+    if (auto* c = s_BindingsWorld->GetComponent<Platformer2DController>(entity)) { c->isEnabled = enabled; return; }
 }
 
 static Vector3 Controller_GetVelocity(u64 id) {
@@ -1883,341 +1895,342 @@ namespace Scripting {
 
 void RegisterComponentBindings(asIScriptEngine* engine) {
     // Health
-    AS_CHECK(engine->RegisterGlobalFunction("float Health_Get(uint64)", asFUNCTION(Health_Get), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Health_GetMax(uint64)", asFUNCTION(Health_GetMax), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Health_SetCurrent(uint64, float)", asFUNCTION(Health_SetCurrent), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Health_Damage(uint64, float)", asFUNCTION(Health_Damage), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void GameOver_Trigger(uint64, bool)", asFUNCTION(GameOver_Trigger), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool GameOver_IsTriggered(uint64)", asFUNCTION(GameOver_IsTriggered), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void GameOver_SetMessages(uint64, const string &in, const string &in)", asFUNCTION(GameOver_SetMessages), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Health_Get(uint64)", ENJIN_AS_FN(Health_Get), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Health_GetMax(uint64)", ENJIN_AS_FN(Health_GetMax), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Health_SetCurrent(uint64, float)", ENJIN_AS_FN(Health_SetCurrent), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Health_Damage(uint64, float)", ENJIN_AS_FN(Health_Damage), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void GameOver_Trigger(uint64, bool)", ENJIN_AS_FN(GameOver_Trigger), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool GameOver_IsTriggered(uint64)", ENJIN_AS_FN(GameOver_IsTriggered), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void GameOver_SetMessages(uint64, const string &in, const string &in)", ENJIN_AS_FN(GameOver_SetMessages), ENJIN_AS_CALL_CDECL));
 
     // Material
-    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetBaseColor(uint64, const Vector3 &in)", asFUNCTION(Material_SetBaseColor), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Material_GetBaseColor(uint64)", asFUNCTION(Material_GetBaseColor), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetMetallic(uint64, float)", asFUNCTION(Material_SetMetallic), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetRoughness(uint64, float)", asFUNCTION(Material_SetRoughness), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetTransmission(uint64, float)", asFUNCTION(Material_SetTransmission), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Material_GetTransmission(uint64)", asFUNCTION(Material_GetTransmission), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetIOR(uint64, float)", asFUNCTION(Material_SetIOR), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Material_GetIOR(uint64)", asFUNCTION(Material_GetIOR), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetThickness(uint64, float)", asFUNCTION(Material_SetThickness), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Material_GetThickness(uint64)", asFUNCTION(Material_GetThickness), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetSSSIntensity(uint64, float)", asFUNCTION(Material_SetSSSIntensity), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Material_GetSSSIntensity(uint64)", asFUNCTION(Material_GetSSSIntensity), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetSSSRadius(uint64, float)", asFUNCTION(Material_SetSSSRadius), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Material_GetSSSRadius(uint64)", asFUNCTION(Material_GetSSSRadius), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetSSSColor(uint64, const Vector3 &in)", asFUNCTION(Material_SetSSSColor), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Material_GetSSSColor(uint64)", asFUNCTION(Material_GetSSSColor), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetBaseColor(uint64, const Vector3 &in)", ENJIN_AS_FN(Material_SetBaseColor), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Material_GetBaseColor(uint64)", ENJIN_AS_FN(Material_GetBaseColor), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetMetallic(uint64, float)", ENJIN_AS_FN(Material_SetMetallic), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetRoughness(uint64, float)", ENJIN_AS_FN(Material_SetRoughness), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetTransmission(uint64, float)", ENJIN_AS_FN(Material_SetTransmission), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Material_GetTransmission(uint64)", ENJIN_AS_FN(Material_GetTransmission), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetIOR(uint64, float)", ENJIN_AS_FN(Material_SetIOR), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Material_GetIOR(uint64)", ENJIN_AS_FN(Material_GetIOR), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetThickness(uint64, float)", ENJIN_AS_FN(Material_SetThickness), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Material_GetThickness(uint64)", ENJIN_AS_FN(Material_GetThickness), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetSSSIntensity(uint64, float)", ENJIN_AS_FN(Material_SetSSSIntensity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Material_GetSSSIntensity(uint64)", ENJIN_AS_FN(Material_GetSSSIntensity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetSSSRadius(uint64, float)", ENJIN_AS_FN(Material_SetSSSRadius), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Material_GetSSSRadius(uint64)", ENJIN_AS_FN(Material_GetSSSRadius), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetSSSColor(uint64, const Vector3 &in)", ENJIN_AS_FN(Material_SetSSSColor), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Material_GetSSSColor(uint64)", ENJIN_AS_FN(Material_GetSSSColor), ENJIN_AS_CALL_CDECL));
 
     // Light
-    AS_CHECK(engine->RegisterGlobalFunction("void Light_SetColor(uint64, const Vector3 &in)", asFUNCTION(Light_SetColor), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Light_GetColor(uint64)", asFUNCTION(Light_GetColor), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Light_SetIntensity(uint64, float)", asFUNCTION(Light_SetIntensity), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Light_GetIntensity(uint64)", asFUNCTION(Light_GetIntensity), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Light_SetRange(uint64, float)", asFUNCTION(Light_SetRange), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Light_GetRange(uint64)", asFUNCTION(Light_GetRange), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Light_SetType(uint64, int)", asFUNCTION(Light_SetType), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int Light_GetType(uint64)", asFUNCTION(Light_GetType), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Light_SetCastShadows(uint64, bool)", asFUNCTION(Light_SetCastShadows), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Light_GetCastShadows(uint64)", asFUNCTION(Light_GetCastShadows), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Light_SetSpotAngles(uint64, float, float)", asFUNCTION(Light_SetSpotAngles), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Light_SetColor(uint64, const Vector3 &in)", ENJIN_AS_FN(Light_SetColor), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Light_GetColor(uint64)", ENJIN_AS_FN(Light_GetColor), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Light_SetIntensity(uint64, float)", ENJIN_AS_FN(Light_SetIntensity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Light_GetIntensity(uint64)", ENJIN_AS_FN(Light_GetIntensity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Light_SetRange(uint64, float)", ENJIN_AS_FN(Light_SetRange), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Light_GetRange(uint64)", ENJIN_AS_FN(Light_GetRange), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Light_SetType(uint64, int)", ENJIN_AS_FN(Light_SetType), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Light_GetType(uint64)", ENJIN_AS_FN(Light_GetType), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Light_SetCastShadows(uint64, bool)", ENJIN_AS_FN(Light_SetCastShadows), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Light_GetCastShadows(uint64)", ENJIN_AS_FN(Light_GetCastShadows), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Light_SetSpotAngles(uint64, float, float)", ENJIN_AS_FN(Light_SetSpotAngles), ENJIN_AS_CALL_CDECL));
 
     // Camera
-    AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetFOV(uint64, float)", asFUNCTION(Camera_SetFOV), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Camera_GetFOV(uint64)", asFUNCTION(Camera_GetFOV), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Camera_ApplyPreset(uint64, int)", asFUNCTION(Camera_ApplyPreset), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("string Camera_GetPresetName(int)", asFUNCTION(Camera_GetPresetName), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetOrthoSize(uint64, float)", asFUNCTION(Camera_SetOrthoSize), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Camera_GetOrthoSize(uint64)", asFUNCTION(Camera_GetOrthoSize), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetNearFar(uint64, float, float)", asFUNCTION(Camera_SetNearFar), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetProjectionType(uint64, int)", asFUNCTION(Camera_SetProjectionType), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int Camera_GetProjectionType(uint64)", asFUNCTION(Camera_GetProjectionType), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetFOV(uint64, float)", ENJIN_AS_FN(Camera_SetFOV), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Camera_GetFOV(uint64)", ENJIN_AS_FN(Camera_GetFOV), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_ApplyPreset(uint64, int)", ENJIN_AS_FN(Camera_ApplyPreset), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string Camera_GetPresetName(int)", ENJIN_AS_FN(Camera_GetPresetName), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetOrthoSize(uint64, float)", ENJIN_AS_FN(Camera_SetOrthoSize), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Camera_GetOrthoSize(uint64)", ENJIN_AS_FN(Camera_GetOrthoSize), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetNearFar(uint64, float, float)", ENJIN_AS_FN(Camera_SetNearFar), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetProjectionType(uint64, int)", ENJIN_AS_FN(Camera_SetProjectionType), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Camera_GetProjectionType(uint64)", ENJIN_AS_FN(Camera_GetProjectionType), ENJIN_AS_CALL_CDECL));
 
     // AudioSource
-    AS_CHECK(engine->RegisterGlobalFunction("void AudioSource_Play(uint64)", asFUNCTION(AudioSource_Play), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void AudioSource_Stop(uint64)", asFUNCTION(AudioSource_Stop), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void AudioSource_SetClip(uint64, const string &in)", asFUNCTION(AudioSource_SetClip), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void AudioSource_SetVolume(uint64, float)", asFUNCTION(AudioSource_SetVolume), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void AudioSource_Play(uint64)", ENJIN_AS_FN(AudioSource_Play), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void AudioSource_Stop(uint64)", ENJIN_AS_FN(AudioSource_Stop), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void AudioSource_SetClip(uint64, const string &in)", ENJIN_AS_FN(AudioSource_SetClip), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void AudioSource_SetVolume(uint64, float)", ENJIN_AS_FN(AudioSource_SetVolume), ENJIN_AS_CALL_CDECL));
 
     // Animator
-    AS_CHECK(engine->RegisterGlobalFunction("void Animator_Play(uint64, const string &in)", asFUNCTION(Animator_Play), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Animator_SetSpeed(uint64, float)", asFUNCTION(Animator_SetSpeed), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Animator_Stop(uint64)", asFUNCTION(Animator_Stop), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Animator_Pause(uint64)", asFUNCTION(Animator_Pause), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Animator_Resume(uint64)", asFUNCTION(Animator_Resume), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Animator_IsPlaying(uint64)", asFUNCTION(Animator_IsPlaying), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("string Animator_GetCurrentAnimation(uint64)", asFUNCTION(Animator_GetCurrentAnimation), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Animator_GetSpeed(uint64)", asFUNCTION(Animator_GetSpeed), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Animator_CrossFade(uint64, const string &in, float)", asFUNCTION(Animator_CrossFade), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Animator_Play(uint64, const string &in)", ENJIN_AS_FN(Animator_Play), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Animator_SetSpeed(uint64, float)", ENJIN_AS_FN(Animator_SetSpeed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Animator_Stop(uint64)", ENJIN_AS_FN(Animator_Stop), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Animator_Pause(uint64)", ENJIN_AS_FN(Animator_Pause), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Animator_Resume(uint64)", ENJIN_AS_FN(Animator_Resume), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Animator_IsPlaying(uint64)", ENJIN_AS_FN(Animator_IsPlaying), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string Animator_GetCurrentAnimation(uint64)", ENJIN_AS_FN(Animator_GetCurrentAnimation), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Animator_GetSpeed(uint64)", ENJIN_AS_FN(Animator_GetSpeed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Animator_CrossFade(uint64, const string &in, float)", ENJIN_AS_FN(Animator_CrossFade), ENJIN_AS_CALL_CDECL));
 
     // CharacterController
-    AS_CHECK(engine->RegisterGlobalFunction("void Controller_SetMoveSpeed(uint64, float)", asFUNCTION(Controller_SetMoveSpeed), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Controller_GetVelocity(uint64)", asFUNCTION(Controller_GetVelocity), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Controller_SetMoveSpeed(uint64, float)", ENJIN_AS_FN(Controller_SetMoveSpeed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Controller_SetEnabled(uint64, bool)", ENJIN_AS_FN(Controller_SetEnabled), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Controller_GetVelocity(uint64)", ENJIN_AS_FN(Controller_GetVelocity), ENJIN_AS_CALL_CDECL));
 
     // HasComponent queries
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Health(uint64)", asFUNCTION(HasComponent_Health), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Light(uint64)", asFUNCTION(HasComponent_Light), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Camera(uint64)", asFUNCTION(HasComponent_Camera), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Material(uint64)", asFUNCTION(HasComponent_Material), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_AudioSource(uint64)", asFUNCTION(HasComponent_AudioSource), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Rigidbody(uint64)", asFUNCTION(HasComponent_Rigidbody), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_BoxCollider(uint64)", asFUNCTION(HasComponent_BoxCollider), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Animator(uint64)", asFUNCTION(HasComponent_Animator), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Health(uint64)", ENJIN_AS_FN(HasComponent_Health), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Light(uint64)", ENJIN_AS_FN(HasComponent_Light), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Camera(uint64)", ENJIN_AS_FN(HasComponent_Camera), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Material(uint64)", ENJIN_AS_FN(HasComponent_Material), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_AudioSource(uint64)", ENJIN_AS_FN(HasComponent_AudioSource), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Rigidbody(uint64)", ENJIN_AS_FN(HasComponent_Rigidbody), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_BoxCollider(uint64)", ENJIN_AS_FN(HasComponent_BoxCollider), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Animator(uint64)", ENJIN_AS_FN(HasComponent_Animator), ENJIN_AS_CALL_CDECL));
 
     // Camera2D
-    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_Shake(uint64, float, float)", asFUNCTION(Camera2D_Shake), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Camera2D_GetZoom(uint64)", asFUNCTION(Camera2D_GetZoom), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_SetZoom(uint64, float)", asFUNCTION(Camera2D_SetZoom), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_AddTarget(uint64, uint64)", asFUNCTION(Camera2D_AddTarget), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_RemoveTarget(uint64, uint64)", asFUNCTION(Camera2D_RemoveTarget), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_ClearTargets(uint64)", asFUNCTION(Camera2D_ClearTargets), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_SetDeadZone(uint64, float, float)", asFUNCTION(Camera2D_SetDeadZone), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_SetLookAhead(uint64, float, float)", asFUNCTION(Camera2D_SetLookAhead), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_SetFollowTarget(uint64, uint64)", asFUNCTION(Camera2D_SetFollowTarget), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("uint64 Camera2D_GetFollowTarget(uint64)", asFUNCTION(Camera2D_GetFollowTarget), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_Shake(uint64, float, float)", ENJIN_AS_FN(Camera2D_Shake), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Camera2D_GetZoom(uint64)", ENJIN_AS_FN(Camera2D_GetZoom), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_SetZoom(uint64, float)", ENJIN_AS_FN(Camera2D_SetZoom), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_AddTarget(uint64, uint64)", ENJIN_AS_FN(Camera2D_AddTarget), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_RemoveTarget(uint64, uint64)", ENJIN_AS_FN(Camera2D_RemoveTarget), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_ClearTargets(uint64)", ENJIN_AS_FN(Camera2D_ClearTargets), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_SetDeadZone(uint64, float, float)", ENJIN_AS_FN(Camera2D_SetDeadZone), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_SetLookAhead(uint64, float, float)", ENJIN_AS_FN(Camera2D_SetLookAhead), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_SetFollowTarget(uint64, uint64)", ENJIN_AS_FN(Camera2D_SetFollowTarget), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint64 Camera2D_GetFollowTarget(uint64)", ENJIN_AS_FN(Camera2D_GetFollowTarget), ENJIN_AS_CALL_CDECL));
 
     // Rigidbody
-    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Rigidbody_GetVelocity(uint64)", asFUNCTION(Rigidbody_GetVelocity), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Rigidbody_SetVelocity(uint64, float, float, float)", asFUNCTION(Rigidbody_SetVelocity), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Rigidbody_GetAngularVelocity(uint64)", asFUNCTION(Rigidbody_GetAngularVelocity), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Rigidbody_SetAngularVelocity(uint64, float, float, float)", asFUNCTION(Rigidbody_SetAngularVelocity), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Rigidbody_GetMass(uint64)", asFUNCTION(Rigidbody_GetMass), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Rigidbody_SetMass(uint64, float)", asFUNCTION(Rigidbody_SetMass), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Rigidbody_GetUseGravity(uint64)", asFUNCTION(Rigidbody_GetUseGravity), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Rigidbody_SetUseGravity(uint64, bool)", asFUNCTION(Rigidbody_SetUseGravity), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Rigidbody_IsKinematic(uint64)", asFUNCTION(Rigidbody_IsKinematic), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Rigidbody_SetKinematic(uint64, bool)", asFUNCTION(Rigidbody_SetKinematic), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Rigidbody_GetDrag(uint64)", asFUNCTION(Rigidbody_GetDrag), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Rigidbody_SetDrag(uint64, float)", asFUNCTION(Rigidbody_SetDrag), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Rigidbody_GetAngularDrag(uint64)", asFUNCTION(Rigidbody_GetAngularDrag), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Rigidbody_SetAngularDrag(uint64, float)", asFUNCTION(Rigidbody_SetAngularDrag), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Rigidbody_IsGrounded(uint64)", asFUNCTION(Rigidbody_IsGrounded), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Rigidbody_GetGravityScale(uint64)", asFUNCTION(Rigidbody_GetGravityScale), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Rigidbody_SetGravityScale(uint64, float)", asFUNCTION(Rigidbody_SetGravityScale), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Rigidbody_GetVelocity(uint64)", ENJIN_AS_FN(Rigidbody_GetVelocity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Rigidbody_SetVelocity(uint64, float, float, float)", ENJIN_AS_FN(Rigidbody_SetVelocity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Rigidbody_GetAngularVelocity(uint64)", ENJIN_AS_FN(Rigidbody_GetAngularVelocity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Rigidbody_SetAngularVelocity(uint64, float, float, float)", ENJIN_AS_FN(Rigidbody_SetAngularVelocity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Rigidbody_GetMass(uint64)", ENJIN_AS_FN(Rigidbody_GetMass), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Rigidbody_SetMass(uint64, float)", ENJIN_AS_FN(Rigidbody_SetMass), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Rigidbody_GetUseGravity(uint64)", ENJIN_AS_FN(Rigidbody_GetUseGravity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Rigidbody_SetUseGravity(uint64, bool)", ENJIN_AS_FN(Rigidbody_SetUseGravity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Rigidbody_IsKinematic(uint64)", ENJIN_AS_FN(Rigidbody_IsKinematic), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Rigidbody_SetKinematic(uint64, bool)", ENJIN_AS_FN(Rigidbody_SetKinematic), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Rigidbody_GetDrag(uint64)", ENJIN_AS_FN(Rigidbody_GetDrag), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Rigidbody_SetDrag(uint64, float)", ENJIN_AS_FN(Rigidbody_SetDrag), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Rigidbody_GetAngularDrag(uint64)", ENJIN_AS_FN(Rigidbody_GetAngularDrag), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Rigidbody_SetAngularDrag(uint64, float)", ENJIN_AS_FN(Rigidbody_SetAngularDrag), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Rigidbody_IsGrounded(uint64)", ENJIN_AS_FN(Rigidbody_IsGrounded), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Rigidbody_GetGravityScale(uint64)", ENJIN_AS_FN(Rigidbody_GetGravityScale), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Rigidbody_SetGravityScale(uint64, float)", ENJIN_AS_FN(Rigidbody_SetGravityScale), ENJIN_AS_CALL_CDECL));
 
     // BoxCollider
-    AS_CHECK(engine->RegisterGlobalFunction("Vector3 BoxCollider_GetSize(uint64)", asFUNCTION(BoxCollider_GetSize), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetSize(uint64, float, float, float)", asFUNCTION(BoxCollider_SetSize), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("Vector3 BoxCollider_GetCenter(uint64)", asFUNCTION(BoxCollider_GetCenter), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetCenter(uint64, float, float, float)", asFUNCTION(BoxCollider_SetCenter), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool BoxCollider_IsTrigger(uint64)", asFUNCTION(BoxCollider_IsTrigger), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetTrigger(uint64, bool)", asFUNCTION(BoxCollider_SetTrigger), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("uint BoxCollider_GetCategoryBits(uint64)", asFUNCTION(BoxCollider_GetCategoryBits), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetCategoryBits(uint64, uint)", asFUNCTION(BoxCollider_SetCategoryBits), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("uint BoxCollider_GetCollisionMask(uint64)", asFUNCTION(BoxCollider_GetCollisionMask), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetCollisionMask(uint64, uint)", asFUNCTION(BoxCollider_SetCollisionMask), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float BoxCollider_GetFriction(uint64)", asFUNCTION(BoxCollider_GetFriction), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetFriction(uint64, float)", asFUNCTION(BoxCollider_SetFriction), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float BoxCollider_GetBounciness(uint64)", asFUNCTION(BoxCollider_GetBounciness), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetBounciness(uint64, float)", asFUNCTION(BoxCollider_SetBounciness), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector3 BoxCollider_GetSize(uint64)", ENJIN_AS_FN(BoxCollider_GetSize), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetSize(uint64, float, float, float)", ENJIN_AS_FN(BoxCollider_SetSize), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector3 BoxCollider_GetCenter(uint64)", ENJIN_AS_FN(BoxCollider_GetCenter), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetCenter(uint64, float, float, float)", ENJIN_AS_FN(BoxCollider_SetCenter), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool BoxCollider_IsTrigger(uint64)", ENJIN_AS_FN(BoxCollider_IsTrigger), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetTrigger(uint64, bool)", ENJIN_AS_FN(BoxCollider_SetTrigger), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint BoxCollider_GetCategoryBits(uint64)", ENJIN_AS_FN(BoxCollider_GetCategoryBits), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetCategoryBits(uint64, uint)", ENJIN_AS_FN(BoxCollider_SetCategoryBits), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint BoxCollider_GetCollisionMask(uint64)", ENJIN_AS_FN(BoxCollider_GetCollisionMask), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetCollisionMask(uint64, uint)", ENJIN_AS_FN(BoxCollider_SetCollisionMask), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float BoxCollider_GetFriction(uint64)", ENJIN_AS_FN(BoxCollider_GetFriction), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetFriction(uint64, float)", ENJIN_AS_FN(BoxCollider_SetFriction), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float BoxCollider_GetBounciness(uint64)", ENJIN_AS_FN(BoxCollider_GetBounciness), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void BoxCollider_SetBounciness(uint64, float)", ENJIN_AS_FN(BoxCollider_SetBounciness), ENJIN_AS_CALL_CDECL));
 
     // SphereCollider
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_SphereCollider(uint64)", asFUNCTION(HasComponent_SphereCollider), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float SphereCollider_GetRadius(uint64)", asFUNCTION(SphereCollider_GetRadius), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetRadius(uint64, float)", asFUNCTION(SphereCollider_SetRadius), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("Vector3 SphereCollider_GetCenter(uint64)", asFUNCTION(SphereCollider_GetCenter), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetCenter(uint64, float, float, float)", asFUNCTION(SphereCollider_SetCenter), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool SphereCollider_IsTrigger(uint64)", asFUNCTION(SphereCollider_IsTrigger), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetTrigger(uint64, bool)", asFUNCTION(SphereCollider_SetTrigger), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("uint SphereCollider_GetCategoryBits(uint64)", asFUNCTION(SphereCollider_GetCategoryBits), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetCategoryBits(uint64, uint)", asFUNCTION(SphereCollider_SetCategoryBits), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("uint SphereCollider_GetCollisionMask(uint64)", asFUNCTION(SphereCollider_GetCollisionMask), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetCollisionMask(uint64, uint)", asFUNCTION(SphereCollider_SetCollisionMask), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float SphereCollider_GetFriction(uint64)", asFUNCTION(SphereCollider_GetFriction), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetFriction(uint64, float)", asFUNCTION(SphereCollider_SetFriction), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float SphereCollider_GetBounciness(uint64)", asFUNCTION(SphereCollider_GetBounciness), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetBounciness(uint64, float)", asFUNCTION(SphereCollider_SetBounciness), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_SphereCollider(uint64)", ENJIN_AS_FN(HasComponent_SphereCollider), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float SphereCollider_GetRadius(uint64)", ENJIN_AS_FN(SphereCollider_GetRadius), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetRadius(uint64, float)", ENJIN_AS_FN(SphereCollider_SetRadius), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector3 SphereCollider_GetCenter(uint64)", ENJIN_AS_FN(SphereCollider_GetCenter), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetCenter(uint64, float, float, float)", ENJIN_AS_FN(SphereCollider_SetCenter), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool SphereCollider_IsTrigger(uint64)", ENJIN_AS_FN(SphereCollider_IsTrigger), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetTrigger(uint64, bool)", ENJIN_AS_FN(SphereCollider_SetTrigger), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint SphereCollider_GetCategoryBits(uint64)", ENJIN_AS_FN(SphereCollider_GetCategoryBits), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetCategoryBits(uint64, uint)", ENJIN_AS_FN(SphereCollider_SetCategoryBits), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint SphereCollider_GetCollisionMask(uint64)", ENJIN_AS_FN(SphereCollider_GetCollisionMask), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetCollisionMask(uint64, uint)", ENJIN_AS_FN(SphereCollider_SetCollisionMask), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float SphereCollider_GetFriction(uint64)", ENJIN_AS_FN(SphereCollider_GetFriction), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetFriction(uint64, float)", ENJIN_AS_FN(SphereCollider_SetFriction), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float SphereCollider_GetBounciness(uint64)", ENJIN_AS_FN(SphereCollider_GetBounciness), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SphereCollider_SetBounciness(uint64, float)", ENJIN_AS_FN(SphereCollider_SetBounciness), ENJIN_AS_CALL_CDECL));
 
     // CapsuleCollider
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_CapsuleCollider(uint64)", asFUNCTION(HasComponent_CapsuleCollider), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float CapsuleCollider_GetRadius(uint64)", asFUNCTION(CapsuleCollider_GetRadius), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void CapsuleCollider_SetRadius(uint64, float)", asFUNCTION(CapsuleCollider_SetRadius), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float CapsuleCollider_GetHeight(uint64)", asFUNCTION(CapsuleCollider_GetHeight), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void CapsuleCollider_SetHeight(uint64, float)", asFUNCTION(CapsuleCollider_SetHeight), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("Vector3 CapsuleCollider_GetCenter(uint64)", asFUNCTION(CapsuleCollider_GetCenter), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void CapsuleCollider_SetCenter(uint64, float, float, float)", asFUNCTION(CapsuleCollider_SetCenter), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool CapsuleCollider_IsTrigger(uint64)", asFUNCTION(CapsuleCollider_IsTrigger), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void CapsuleCollider_SetTrigger(uint64, bool)", asFUNCTION(CapsuleCollider_SetTrigger), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float CapsuleCollider_GetFriction(uint64)", asFUNCTION(CapsuleCollider_GetFriction), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void CapsuleCollider_SetFriction(uint64, float)", asFUNCTION(CapsuleCollider_SetFriction), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float CapsuleCollider_GetBounciness(uint64)", asFUNCTION(CapsuleCollider_GetBounciness), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void CapsuleCollider_SetBounciness(uint64, float)", asFUNCTION(CapsuleCollider_SetBounciness), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_CapsuleCollider(uint64)", ENJIN_AS_FN(HasComponent_CapsuleCollider), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float CapsuleCollider_GetRadius(uint64)", ENJIN_AS_FN(CapsuleCollider_GetRadius), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void CapsuleCollider_SetRadius(uint64, float)", ENJIN_AS_FN(CapsuleCollider_SetRadius), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float CapsuleCollider_GetHeight(uint64)", ENJIN_AS_FN(CapsuleCollider_GetHeight), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void CapsuleCollider_SetHeight(uint64, float)", ENJIN_AS_FN(CapsuleCollider_SetHeight), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector3 CapsuleCollider_GetCenter(uint64)", ENJIN_AS_FN(CapsuleCollider_GetCenter), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void CapsuleCollider_SetCenter(uint64, float, float, float)", ENJIN_AS_FN(CapsuleCollider_SetCenter), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool CapsuleCollider_IsTrigger(uint64)", ENJIN_AS_FN(CapsuleCollider_IsTrigger), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void CapsuleCollider_SetTrigger(uint64, bool)", ENJIN_AS_FN(CapsuleCollider_SetTrigger), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float CapsuleCollider_GetFriction(uint64)", ENJIN_AS_FN(CapsuleCollider_GetFriction), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void CapsuleCollider_SetFriction(uint64, float)", ENJIN_AS_FN(CapsuleCollider_SetFriction), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float CapsuleCollider_GetBounciness(uint64)", ENJIN_AS_FN(CapsuleCollider_GetBounciness), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void CapsuleCollider_SetBounciness(uint64, float)", ENJIN_AS_FN(CapsuleCollider_SetBounciness), ENJIN_AS_CALL_CDECL));
 
     // TriggerZone
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_TriggerZone(uint64)", asFUNCTION(HasComponent_TriggerZone), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int TriggerZone_GetShape(uint64)", asFUNCTION(TriggerZone_GetShape), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void TriggerZone_SetShape(uint64, int)", asFUNCTION(TriggerZone_SetShape), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("Vector3 TriggerZone_GetBoxSize(uint64)", asFUNCTION(TriggerZone_GetBoxSize), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void TriggerZone_SetBoxSize(uint64, float, float, float)", asFUNCTION(TriggerZone_SetBoxSize), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float TriggerZone_GetSphereRadius(uint64)", asFUNCTION(TriggerZone_GetSphereRadius), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void TriggerZone_SetSphereRadius(uint64, float)", asFUNCTION(TriggerZone_SetSphereRadius), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool TriggerZone_GetTriggerOnce(uint64)", asFUNCTION(TriggerZone_GetTriggerOnce), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void TriggerZone_SetTriggerOnce(uint64, bool)", asFUNCTION(TriggerZone_SetTriggerOnce), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_TriggerZone(uint64)", ENJIN_AS_FN(HasComponent_TriggerZone), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int TriggerZone_GetShape(uint64)", ENJIN_AS_FN(TriggerZone_GetShape), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void TriggerZone_SetShape(uint64, int)", ENJIN_AS_FN(TriggerZone_SetShape), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector3 TriggerZone_GetBoxSize(uint64)", ENJIN_AS_FN(TriggerZone_GetBoxSize), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void TriggerZone_SetBoxSize(uint64, float, float, float)", ENJIN_AS_FN(TriggerZone_SetBoxSize), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float TriggerZone_GetSphereRadius(uint64)", ENJIN_AS_FN(TriggerZone_GetSphereRadius), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void TriggerZone_SetSphereRadius(uint64, float)", ENJIN_AS_FN(TriggerZone_SetSphereRadius), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool TriggerZone_GetTriggerOnce(uint64)", ENJIN_AS_FN(TriggerZone_GetTriggerOnce), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void TriggerZone_SetTriggerOnce(uint64, bool)", ENJIN_AS_FN(TriggerZone_SetTriggerOnce), ENJIN_AS_CALL_CDECL));
 
     // Interactable
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Interactable(uint64)", asFUNCTION(HasComponent_Interactable), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("string Interactable_GetPrompt(uint64)", asFUNCTION(Interactable_GetPrompt), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Interactable_SetPrompt(uint64, const string &in)", asFUNCTION(Interactable_SetPrompt), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Interactable_GetRange(uint64)", asFUNCTION(Interactable_GetRange), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Interactable_SetRange(uint64, float)", asFUNCTION(Interactable_SetRange), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Interactable_IsEnabled(uint64)", asFUNCTION(Interactable_IsEnabled), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Interactable_SetEnabled(uint64, bool)", asFUNCTION(Interactable_SetEnabled), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Interactable_HasBeenUsed(uint64)", asFUNCTION(Interactable_HasBeenUsed), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Interactable(uint64)", ENJIN_AS_FN(HasComponent_Interactable), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string Interactable_GetPrompt(uint64)", ENJIN_AS_FN(Interactable_GetPrompt), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Interactable_SetPrompt(uint64, const string &in)", ENJIN_AS_FN(Interactable_SetPrompt), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Interactable_GetRange(uint64)", ENJIN_AS_FN(Interactable_GetRange), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Interactable_SetRange(uint64, float)", ENJIN_AS_FN(Interactable_SetRange), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Interactable_IsEnabled(uint64)", ENJIN_AS_FN(Interactable_IsEnabled), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Interactable_SetEnabled(uint64, bool)", ENJIN_AS_FN(Interactable_SetEnabled), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Interactable_HasBeenUsed(uint64)", ENJIN_AS_FN(Interactable_HasBeenUsed), ENJIN_AS_CALL_CDECL));
 
     // Pickup
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Pickup(uint64)", asFUNCTION(HasComponent_Pickup), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int Pickup_GetType(uint64)", asFUNCTION(Pickup_GetType), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Pickup_SetType(uint64, int)", asFUNCTION(Pickup_SetType), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Pickup_GetValue(uint64)", asFUNCTION(Pickup_GetValue), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Pickup_SetValue(uint64, float)", asFUNCTION(Pickup_SetValue), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("string Pickup_GetCustomId(uint64)", asFUNCTION(Pickup_GetCustomId), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Pickup_SetCustomId(uint64, const string &in)", asFUNCTION(Pickup_SetCustomId), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Pickup_GetRange(uint64)", asFUNCTION(Pickup_GetRange), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Pickup_SetRange(uint64, float)", asFUNCTION(Pickup_SetRange), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Pickup_GetDestroyOnPickup(uint64)", asFUNCTION(Pickup_GetDestroyOnPickup), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Pickup_SetDestroyOnPickup(uint64, bool)", asFUNCTION(Pickup_SetDestroyOnPickup), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Pickup(uint64)", ENJIN_AS_FN(HasComponent_Pickup), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Pickup_GetType(uint64)", ENJIN_AS_FN(Pickup_GetType), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Pickup_SetType(uint64, int)", ENJIN_AS_FN(Pickup_SetType), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Pickup_GetValue(uint64)", ENJIN_AS_FN(Pickup_GetValue), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Pickup_SetValue(uint64, float)", ENJIN_AS_FN(Pickup_SetValue), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string Pickup_GetCustomId(uint64)", ENJIN_AS_FN(Pickup_GetCustomId), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Pickup_SetCustomId(uint64, const string &in)", ENJIN_AS_FN(Pickup_SetCustomId), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Pickup_GetRange(uint64)", ENJIN_AS_FN(Pickup_GetRange), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Pickup_SetRange(uint64, float)", ENJIN_AS_FN(Pickup_SetRange), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Pickup_GetDestroyOnPickup(uint64)", ENJIN_AS_FN(Pickup_GetDestroyOnPickup), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Pickup_SetDestroyOnPickup(uint64, bool)", ENJIN_AS_FN(Pickup_SetDestroyOnPickup), ENJIN_AS_CALL_CDECL));
 
     // Inventory
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Inventory(uint64)", asFUNCTION(HasComponent_Inventory), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int Inventory_GetItemCount(uint64, const string &in)", asFUNCTION(Inventory_GetItemCount), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Inventory_AddItem(uint64, const string &in, int)", asFUNCTION(Inventory_AddItem), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Inventory_RemoveItem(uint64, const string &in, int)", asFUNCTION(Inventory_RemoveItem), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Inventory_HasItem(uint64, const string &in)", asFUNCTION(Inventory_HasItem), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Inventory_Clear(uint64)", asFUNCTION(Inventory_Clear), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int Inventory_GetCoins(uint64)", asFUNCTION(Inventory_GetCoins), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Inventory_SetCoins(uint64, int)", asFUNCTION(Inventory_SetCoins), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int Inventory_GetGems(uint64)", asFUNCTION(Inventory_GetGems), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Inventory_SetGems(uint64, int)", asFUNCTION(Inventory_SetGems), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Inventory_HasKey(uint64, const string &in)", asFUNCTION(Inventory_HasKey), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Inventory_AddKey(uint64, const string &in)", asFUNCTION(Inventory_AddKey), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Inventory(uint64)", ENJIN_AS_FN(HasComponent_Inventory), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Inventory_GetItemCount(uint64, const string &in)", ENJIN_AS_FN(Inventory_GetItemCount), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Inventory_AddItem(uint64, const string &in, int)", ENJIN_AS_FN(Inventory_AddItem), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Inventory_RemoveItem(uint64, const string &in, int)", ENJIN_AS_FN(Inventory_RemoveItem), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Inventory_HasItem(uint64, const string &in)", ENJIN_AS_FN(Inventory_HasItem), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Inventory_Clear(uint64)", ENJIN_AS_FN(Inventory_Clear), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Inventory_GetCoins(uint64)", ENJIN_AS_FN(Inventory_GetCoins), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Inventory_SetCoins(uint64, int)", ENJIN_AS_FN(Inventory_SetCoins), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Inventory_GetGems(uint64)", ENJIN_AS_FN(Inventory_GetGems), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Inventory_SetGems(uint64, int)", ENJIN_AS_FN(Inventory_SetGems), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Inventory_HasKey(uint64, const string &in)", ENJIN_AS_FN(Inventory_HasKey), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Inventory_AddKey(uint64, const string &in)", ENJIN_AS_FN(Inventory_AddKey), ENJIN_AS_CALL_CDECL));
 
     // Timer
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Timer(uint64)", asFUNCTION(HasComponent_Timer), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Timer_GetDuration(uint64)", asFUNCTION(Timer_GetDuration), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Timer_SetDuration(uint64, float)", asFUNCTION(Timer_SetDuration), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Timer_GetElapsed(uint64)", asFUNCTION(Timer_GetElapsed), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Timer_SetElapsed(uint64, float)", asFUNCTION(Timer_SetElapsed), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Timer_IsRunning(uint64)", asFUNCTION(Timer_IsRunning), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Timer_SetRunning(uint64, bool)", asFUNCTION(Timer_SetRunning), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Timer_GetLoop(uint64)", asFUNCTION(Timer_GetLoop), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Timer_SetLoop(uint64, bool)", asFUNCTION(Timer_SetLoop), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Timer_GetProgress(uint64)", asFUNCTION(Timer_GetProgress), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Timer_GetRemaining(uint64)", asFUNCTION(Timer_GetRemaining), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Timer_IsComplete(uint64)", asFUNCTION(Timer_IsComplete), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Timer(uint64)", ENJIN_AS_FN(HasComponent_Timer), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Timer_GetDuration(uint64)", ENJIN_AS_FN(Timer_GetDuration), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Timer_SetDuration(uint64, float)", ENJIN_AS_FN(Timer_SetDuration), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Timer_GetElapsed(uint64)", ENJIN_AS_FN(Timer_GetElapsed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Timer_SetElapsed(uint64, float)", ENJIN_AS_FN(Timer_SetElapsed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Timer_IsRunning(uint64)", ENJIN_AS_FN(Timer_IsRunning), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Timer_SetRunning(uint64, bool)", ENJIN_AS_FN(Timer_SetRunning), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Timer_GetLoop(uint64)", ENJIN_AS_FN(Timer_GetLoop), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Timer_SetLoop(uint64, bool)", ENJIN_AS_FN(Timer_SetLoop), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Timer_GetProgress(uint64)", ENJIN_AS_FN(Timer_GetProgress), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Timer_GetRemaining(uint64)", ENJIN_AS_FN(Timer_GetRemaining), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Timer_IsComplete(uint64)", ENJIN_AS_FN(Timer_IsComplete), ENJIN_AS_CALL_CDECL));
 
     // Extended Health
-    AS_CHECK(engine->RegisterGlobalFunction("float Health_GetShield(uint64)", asFUNCTION(Health_GetShield), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Health_SetShield(uint64, float)", asFUNCTION(Health_SetShield), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Health_SetMaxHealth(uint64, float)", asFUNCTION(Health_SetMaxHealth), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Health_IsDead(uint64)", asFUNCTION(Health_IsDead), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Health_IsInvulnerable(uint64)", asFUNCTION(Health_IsInvulnerable), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Health_SetInvulnerable(uint64, bool)", asFUNCTION(Health_SetInvulnerable), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Health_GetPercent(uint64)", asFUNCTION(Health_GetPercent), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Health_Heal(uint64, float)", asFUNCTION(Health_Heal), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Health_GetShield(uint64)", ENJIN_AS_FN(Health_GetShield), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Health_SetShield(uint64, float)", ENJIN_AS_FN(Health_SetShield), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Health_SetMaxHealth(uint64, float)", ENJIN_AS_FN(Health_SetMaxHealth), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Health_IsDead(uint64)", ENJIN_AS_FN(Health_IsDead), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Health_IsInvulnerable(uint64)", ENJIN_AS_FN(Health_IsInvulnerable), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Health_SetInvulnerable(uint64, bool)", ENJIN_AS_FN(Health_SetInvulnerable), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Health_GetPercent(uint64)", ENJIN_AS_FN(Health_GetPercent), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Health_Heal(uint64, float)", ENJIN_AS_FN(Health_Heal), ENJIN_AS_CALL_CDECL));
 
     // Lock
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Lock(uint64)", asFUNCTION(HasComponent_Lock), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Lock_IsLocked(uint64)", asFUNCTION(Lock_IsLocked), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Lock_SetLocked(uint64, bool)", asFUNCTION(Lock_SetLocked), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("string Lock_GetRequiredKey(uint64)", asFUNCTION(Lock_GetRequiredKey), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Lock_IsOpen(uint64)", asFUNCTION(Lock_IsOpen), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Lock_SetOpen(uint64, bool)", asFUNCTION(Lock_SetOpen), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Lock(uint64)", ENJIN_AS_FN(HasComponent_Lock), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Lock_IsLocked(uint64)", ENJIN_AS_FN(Lock_IsLocked), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Lock_SetLocked(uint64, bool)", ENJIN_AS_FN(Lock_SetLocked), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string Lock_GetRequiredKey(uint64)", ENJIN_AS_FN(Lock_GetRequiredKey), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Lock_IsOpen(uint64)", ENJIN_AS_FN(Lock_IsOpen), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Lock_SetOpen(uint64, bool)", ENJIN_AS_FN(Lock_SetOpen), ENJIN_AS_CALL_CDECL));
 
     // Switch
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Switch(uint64)", asFUNCTION(HasComponent_Switch), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Switch_IsActive(uint64)", asFUNCTION(Switch_IsActive), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Switch_SetActive(uint64, bool)", asFUNCTION(Switch_SetActive), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int Switch_GetLinkedCount(uint64)", asFUNCTION(Switch_GetLinkedCount), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("uint64 Switch_GetLinkedEntity(uint64, int)", asFUNCTION(Switch_GetLinkedEntity), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("string Switch_GetPrompt(uint64)", asFUNCTION(Switch_GetPrompt), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Switch(uint64)", ENJIN_AS_FN(HasComponent_Switch), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Switch_IsActive(uint64)", ENJIN_AS_FN(Switch_IsActive), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Switch_SetActive(uint64, bool)", ENJIN_AS_FN(Switch_SetActive), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Switch_GetLinkedCount(uint64)", ENJIN_AS_FN(Switch_GetLinkedCount), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint64 Switch_GetLinkedEntity(uint64, int)", ENJIN_AS_FN(Switch_GetLinkedEntity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string Switch_GetPrompt(uint64)", ENJIN_AS_FN(Switch_GetPrompt), ENJIN_AS_CALL_CDECL));
 
     // GoalZone
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_GoalZone(uint64)", asFUNCTION(HasComponent_GoalZone), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool GoalZone_IsSatisfied(uint64)", asFUNCTION(GoalZone_IsSatisfied), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("string GoalZone_GetRequiredTag(uint64)", asFUNCTION(GoalZone_GetRequiredTag), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int GoalZone_GetGoalGroup(uint64)", asFUNCTION(GoalZone_GetGoalGroup), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("string GoalZone_GetNextScene(uint64)", asFUNCTION(GoalZone_GetNextScene), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_GoalZone(uint64)", ENJIN_AS_FN(HasComponent_GoalZone), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool GoalZone_IsSatisfied(uint64)", ENJIN_AS_FN(GoalZone_IsSatisfied), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string GoalZone_GetRequiredTag(uint64)", ENJIN_AS_FN(GoalZone_GetRequiredTag), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int GoalZone_GetGoalGroup(uint64)", ENJIN_AS_FN(GoalZone_GetGoalGroup), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string GoalZone_GetNextScene(uint64)", ENJIN_AS_FN(GoalZone_GetNextScene), ENJIN_AS_CALL_CDECL));
 
     // Conveyor
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Conveyor(uint64)", asFUNCTION(HasComponent_Conveyor), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Conveyor_GetDirection(uint64)", asFUNCTION(Conveyor_GetDirection), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Conveyor_SetDirection(uint64, float, float, float)", asFUNCTION(Conveyor_SetDirection), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Conveyor_GetSpeed(uint64)", asFUNCTION(Conveyor_GetSpeed), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Conveyor_SetSpeed(uint64, float)", asFUNCTION(Conveyor_SetSpeed), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Conveyor_IsActive(uint64)", asFUNCTION(Conveyor_IsActive), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Conveyor_SetActive(uint64, bool)", asFUNCTION(Conveyor_SetActive), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Conveyor(uint64)", ENJIN_AS_FN(HasComponent_Conveyor), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Conveyor_GetDirection(uint64)", ENJIN_AS_FN(Conveyor_GetDirection), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Conveyor_SetDirection(uint64, float, float, float)", ENJIN_AS_FN(Conveyor_SetDirection), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Conveyor_GetSpeed(uint64)", ENJIN_AS_FN(Conveyor_GetSpeed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Conveyor_SetSpeed(uint64, float)", ENJIN_AS_FN(Conveyor_SetSpeed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Conveyor_IsActive(uint64)", ENJIN_AS_FN(Conveyor_IsActive), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Conveyor_SetActive(uint64, bool)", ENJIN_AS_FN(Conveyor_SetActive), ENJIN_AS_CALL_CDECL));
 
     // Teleporter
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Teleporter(uint64)", asFUNCTION(HasComponent_Teleporter), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Teleporter_GetDestination(uint64)", asFUNCTION(Teleporter_GetDestination), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Teleporter_SetDestination(uint64, float, float, float)", asFUNCTION(Teleporter_SetDestination), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Teleporter_GetCooldown(uint64)", asFUNCTION(Teleporter_GetCooldown), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Teleporter_SetCooldown(uint64, float)", asFUNCTION(Teleporter_SetCooldown), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Teleporter_GetPreserveVelocity(uint64)", asFUNCTION(Teleporter_GetPreserveVelocity), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Teleporter_SetPreserveVelocity(uint64, bool)", asFUNCTION(Teleporter_SetPreserveVelocity), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Teleporter(uint64)", ENJIN_AS_FN(HasComponent_Teleporter), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Teleporter_GetDestination(uint64)", ENJIN_AS_FN(Teleporter_GetDestination), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Teleporter_SetDestination(uint64, float, float, float)", ENJIN_AS_FN(Teleporter_SetDestination), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Teleporter_GetCooldown(uint64)", ENJIN_AS_FN(Teleporter_GetCooldown), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Teleporter_SetCooldown(uint64, float)", ENJIN_AS_FN(Teleporter_SetCooldown), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Teleporter_GetPreserveVelocity(uint64)", ENJIN_AS_FN(Teleporter_GetPreserveVelocity), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Teleporter_SetPreserveVelocity(uint64, bool)", ENJIN_AS_FN(Teleporter_SetPreserveVelocity), ENJIN_AS_CALL_CDECL));
 
     // MovingPlatform
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_MovingPlatform(uint64)", asFUNCTION(HasComponent_MovingPlatform), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float MovingPlatform_GetSpeed(uint64)", asFUNCTION(MovingPlatform_GetSpeed), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void MovingPlatform_SetSpeed(uint64, float)", asFUNCTION(MovingPlatform_SetSpeed), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool MovingPlatform_IsMoving(uint64)", asFUNCTION(MovingPlatform_IsMoving), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void MovingPlatform_SetMoving(uint64, bool)", asFUNCTION(MovingPlatform_SetMoving), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int MovingPlatform_GetWaypointCount(uint64)", asFUNCTION(MovingPlatform_GetWaypointCount), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float MovingPlatform_GetWaitTime(uint64)", asFUNCTION(MovingPlatform_GetWaitTime), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void MovingPlatform_SetWaitTime(uint64, float)", asFUNCTION(MovingPlatform_SetWaitTime), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_MovingPlatform(uint64)", ENJIN_AS_FN(HasComponent_MovingPlatform), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float MovingPlatform_GetSpeed(uint64)", ENJIN_AS_FN(MovingPlatform_GetSpeed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void MovingPlatform_SetSpeed(uint64, float)", ENJIN_AS_FN(MovingPlatform_SetSpeed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool MovingPlatform_IsMoving(uint64)", ENJIN_AS_FN(MovingPlatform_IsMoving), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void MovingPlatform_SetMoving(uint64, bool)", ENJIN_AS_FN(MovingPlatform_SetMoving), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int MovingPlatform_GetWaypointCount(uint64)", ENJIN_AS_FN(MovingPlatform_GetWaypointCount), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float MovingPlatform_GetWaitTime(uint64)", ENJIN_AS_FN(MovingPlatform_GetWaitTime), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void MovingPlatform_SetWaitTime(uint64, float)", ENJIN_AS_FN(MovingPlatform_SetWaitTime), ENJIN_AS_CALL_CDECL));
 
     // Damage
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Damage(uint64)", asFUNCTION(HasComponent_Damage), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Damage_GetDamage(uint64)", asFUNCTION(Damage_GetDamage), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Damage_SetDamage(uint64, float)", asFUNCTION(Damage_SetDamage), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Damage_GetKnockback(uint64)", asFUNCTION(Damage_GetKnockback), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Damage_SetKnockback(uint64, float)", asFUNCTION(Damage_SetKnockback), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Damage_GetInterval(uint64)", asFUNCTION(Damage_GetInterval), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Damage_SetInterval(uint64, float)", asFUNCTION(Damage_SetInterval), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Damage(uint64)", ENJIN_AS_FN(HasComponent_Damage), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Damage_GetDamage(uint64)", ENJIN_AS_FN(Damage_GetDamage), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Damage_SetDamage(uint64, float)", ENJIN_AS_FN(Damage_SetDamage), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Damage_GetKnockback(uint64)", ENJIN_AS_FN(Damage_GetKnockback), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Damage_SetKnockback(uint64, float)", ENJIN_AS_FN(Damage_SetKnockback), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Damage_GetInterval(uint64)", ENJIN_AS_FN(Damage_GetInterval), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Damage_SetInterval(uint64, float)", ENJIN_AS_FN(Damage_SetInterval), ENJIN_AS_CALL_CDECL));
 
     // Resource (Stamina)
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Resource(uint64)", asFUNCTION(HasComponent_Resource), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Resource_GetValue(uint64)", asFUNCTION(Resource_GetValue), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Resource_SetValue(uint64, float)", asFUNCTION(Resource_SetValue), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Resource_GetMax(uint64)", asFUNCTION(Resource_GetMax), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Resource_SetMax(uint64, float)", asFUNCTION(Resource_SetMax), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Resource_GetPercent(uint64)", asFUNCTION(Resource_GetPercent), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Resource_TryConsume(uint64, float)", asFUNCTION(Resource_TryConsume), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Resource_IsDepleted(uint64)", asFUNCTION(Resource_IsDepleted), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("string Resource_GetName(uint64)", asFUNCTION(Resource_GetName), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Resource(uint64)", ENJIN_AS_FN(HasComponent_Resource), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Resource_GetValue(uint64)", ENJIN_AS_FN(Resource_GetValue), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Resource_SetValue(uint64, float)", ENJIN_AS_FN(Resource_SetValue), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Resource_GetMax(uint64)", ENJIN_AS_FN(Resource_GetMax), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Resource_SetMax(uint64, float)", ENJIN_AS_FN(Resource_SetMax), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Resource_GetPercent(uint64)", ENJIN_AS_FN(Resource_GetPercent), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Resource_TryConsume(uint64, float)", ENJIN_AS_FN(Resource_TryConsume), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Resource_IsDepleted(uint64)", ENJIN_AS_FN(Resource_IsDepleted), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string Resource_GetName(uint64)", ENJIN_AS_FN(Resource_GetName), ENJIN_AS_CALL_CDECL));
 
     // LOD
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_LOD(uint64)", asFUNCTION(HasComponent_LOD), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int LOD_GetCurrentLOD(uint64)", asFUNCTION(LOD_GetCurrentLOD), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int LOD_GetLevelCount(uint64)", asFUNCTION(LOD_GetLevelCount), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool LOD_IsEnabled(uint64)", asFUNCTION(LOD_IsEnabled), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void LOD_SetEnabled(uint64, bool)", asFUNCTION(LOD_SetEnabled), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_LOD(uint64)", ENJIN_AS_FN(HasComponent_LOD), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int LOD_GetCurrentLOD(uint64)", ENJIN_AS_FN(LOD_GetCurrentLOD), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int LOD_GetLevelCount(uint64)", ENJIN_AS_FN(LOD_GetLevelCount), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool LOD_IsEnabled(uint64)", ENJIN_AS_FN(LOD_IsEnabled), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void LOD_SetEnabled(uint64, bool)", ENJIN_AS_FN(LOD_SetEnabled), ENJIN_AS_CALL_CDECL));
 
     // Layer
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Layer(uint64)", asFUNCTION(HasComponent_Layer), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("uint Layer_GetLayer(uint64)", asFUNCTION(Layer_GetLayer), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Layer_SetLayer(uint64, uint)", asFUNCTION(Layer_SetLayer), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("string Layer_GetName(uint64)", asFUNCTION(Layer_GetName), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Layer(uint64)", ENJIN_AS_FN(HasComponent_Layer), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint Layer_GetLayer(uint64)", ENJIN_AS_FN(Layer_GetLayer), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Layer_SetLayer(uint64, uint)", ENJIN_AS_FN(Layer_SetLayer), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string Layer_GetName(uint64)", ENJIN_AS_FN(Layer_GetName), ENJIN_AS_CALL_CDECL));
 
     // Notes
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Notes(uint64)", asFUNCTION(HasComponent_Notes), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("string Notes_Get(uint64)", asFUNCTION(Notes_Get), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Notes_Set(uint64, const string &in)", asFUNCTION(Notes_Set), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Notes(uint64)", ENJIN_AS_FN(HasComponent_Notes), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string Notes_Get(uint64)", ENJIN_AS_FN(Notes_Get), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Notes_Set(uint64, const string &in)", ENJIN_AS_FN(Notes_Set), ENJIN_AS_CALL_CDECL));
 
     // Tag
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Tag(uint64)", asFUNCTION(HasComponent_Tag), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int Tag_GetCount(uint64)", asFUNCTION(Tag_GetCount), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("string Tag_GetAt(uint64, int)", asFUNCTION(Tag_GetAt), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Tag_Add(uint64, const string &in)", asFUNCTION(Tag_Add), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Tag_Remove(uint64, const string &in)", asFUNCTION(Tag_Remove), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("bool Tag_Has(uint64, const string &in)", asFUNCTION(Tag_Has), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Tag(uint64)", ENJIN_AS_FN(HasComponent_Tag), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Tag_GetCount(uint64)", ENJIN_AS_FN(Tag_GetCount), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string Tag_GetAt(uint64, int)", ENJIN_AS_FN(Tag_GetAt), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Tag_Add(uint64, const string &in)", ENJIN_AS_FN(Tag_Add), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Tag_Remove(uint64, const string &in)", ENJIN_AS_FN(Tag_Remove), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Tag_Has(uint64, const string &in)", ENJIN_AS_FN(Tag_Has), ENJIN_AS_CALL_CDECL));
 
     // Tilemap
-    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Tilemap(uint64)", asFUNCTION(HasComponent_Tilemap), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int Tilemap_GetTile(uint64, int, int)", asFUNCTION(Tilemap_GetTile), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Tilemap_SetTile(uint64, int, int, int)", asFUNCTION(Tilemap_SetTile), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int Tilemap_GetWidth(uint64)", asFUNCTION(Tilemap_GetWidth), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("int Tilemap_GetHeight(uint64)", asFUNCTION(Tilemap_GetHeight), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Tilemap(uint64)", ENJIN_AS_FN(HasComponent_Tilemap), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Tilemap_GetTile(uint64, int, int)", ENJIN_AS_FN(Tilemap_GetTile), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Tilemap_SetTile(uint64, int, int, int)", ENJIN_AS_FN(Tilemap_SetTile), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Tilemap_GetWidth(uint64)", ENJIN_AS_FN(Tilemap_GetWidth), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int Tilemap_GetHeight(uint64)", ENJIN_AS_FN(Tilemap_GetHeight), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting
