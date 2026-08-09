@@ -121,15 +121,32 @@ void ScriptEventBus::DispatchToListener(EventListener& listener, const std::stri
     asIScriptContext* ctx = m_ScriptEngine->AcquireContext();
     if (!ctx) return;
 
-    ctx->Prepare(listener.callback);
+    // EventCallback(this.Method) arrives as a DELEGATE: it carries its own
+    // bound object. Preparing the delegate and then calling SetObject with the
+    // registering script's `this` broke the prepared state — every authored-UI
+    // listener silently failed with asCONTEXT_NOT_PREPARED on Execute (the
+    // Accessibility Demo "UI does nothing" bug, 2026-08-08). Unwrap delegates:
+    // prepare the underlying method and set the delegate's OWN object.
+    asIScriptFunction* func = listener.callback;
+    asIScriptObject* callObj = listener.object;
+    if (func->GetFuncType() == asFUNC_DELEGATE) {
+        callObj = static_cast<asIScriptObject*>(func->GetDelegateObject());
+        func = func->GetDelegateFunction();
+    }
 
-    // If it's an object method, set the object
-    if (listener.object) {
-        ctx->SetObject(listener.object);
+    int pr = ctx->Prepare(func);
+    if (pr < 0) {
+        ENJIN_LOG_ERROR(Script, "Event listener prepare failed for '%s' (err=%d, fn=%s)",
+            eventName.c_str(), pr, func->GetName() ? func->GetName() : "?");
+        m_ScriptEngine->ReturnContext(ctx);
+        return;
+    }
+
+    if (callObj) {
+        ctx->SetObject(callObj);
     }
 
     // Pass event name as first argument (if the callback accepts it)
-    asIScriptFunction* func = listener.callback;
     if (func->GetParamCount() >= 1) {
         // First param is the event name string
         ctx->SetArgObject(0, const_cast<std::string*>(&eventName));

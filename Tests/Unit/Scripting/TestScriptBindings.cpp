@@ -1,6 +1,7 @@
 #include "EnjinTest.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/ScriptEvents.h"
 #include "Enjin/ECS/World.h"
 #include <angelscript.h>
 #include <string>
@@ -593,6 +594,75 @@ ENJIN_TEST(CompilationErrors, MissingReturnTypeIsError) {
         "int GetValue() { }"); // no return statement for non-void
     ENJIN_EXPECT_FALSE(ok);
 
+    engine.Shutdown();
+}
+
+// ===========================================================================
+// Script Events — delegate dispatch (regression: Accessibility Demo UI)
+// ===========================================================================
+
+// Regression for the "UI does nothing" bug (2026-08-08): listeners registered
+// with EventCallback(this.Method) delegates never fired — dispatch prepared
+// the delegate then also called SetObject, and Execute failed with
+// asCONTEXT_NOT_PREPARED. This test drives the EXACT authored-UI path:
+// Events_Listen with a method delegate, then a payload dispatch like the
+// UI forwarder sends.
+ENJIN_TEST(ScriptEvents, DelegateListenerFiresAndReadsPayload) {
+    // Arrange: engine + bindings + event bus wired the way PlayMode wires them
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(InitWithBindings(engine));
+    ScriptEventBus bus;
+    bus.SetScriptEngine(&engine);
+    SetBindingsEventBus(&bus);
+
+    const char* src =
+        "int gHits = 0;\n"
+        "float gValue = 0.0f;\n"
+        "class Demo {\n"
+        "    void Register() {\n"
+        "        Events_Listen(\"ui_test\", EventCallback(this.OnEvent));\n"
+        "    }\n"
+        "    void OnEvent(const string &in ev) {\n"
+        "        gHits++;\n"
+        "        gValue = Events_CurrentFloat(\"value\");\n"
+        "    }\n"
+        "}\n"
+        "Demo gDemo;\n"
+        "void Setup() { gDemo.Register(); }\n";
+    ENJIN_ASSERT_TRUE(engine.CompileScriptFromMemory("delegate_event_test", src));
+
+    asIScriptModule* mod = engine.GetASEngine()->GetModule("delegate_event_test");
+    ENJIN_ASSERT_NOT_NULL(mod);
+    asIScriptFunction* setup = mod->GetFunctionByDecl("void Setup()");
+    ENJIN_ASSERT_NOT_NULL(setup);
+    {
+        asIScriptContext* ctx = engine.AcquireContext();
+        ENJIN_ASSERT_NOT_NULL(ctx);
+        ENJIN_ASSERT_TRUE(ctx->Prepare(setup) >= 0);
+        ENJIN_ASSERT_TRUE(ctx->Execute() == asEXECUTION_FINISHED);
+        engine.ReturnContext(ctx);
+    }
+
+    // Act: dispatch with a payload exactly like the UI slider forwarder
+    EventData data;
+    data.SetFloat("value", 0.75f);
+    bus.Send("ui_test", data);
+
+    // Assert: the delegate ran and read the payload
+    int hitsIdx = mod->GetGlobalVarIndexByName("gHits");
+    int valueIdx = mod->GetGlobalVarIndexByName("gValue");
+    ENJIN_ASSERT_TRUE(hitsIdx >= 0);
+    ENJIN_ASSERT_TRUE(valueIdx >= 0);
+    int* hits = static_cast<int*>(mod->GetAddressOfGlobalVar(hitsIdx));
+    float* value = static_cast<float*>(mod->GetAddressOfGlobalVar(valueIdx));
+    ENJIN_ASSERT_NOT_NULL(hits);
+    ENJIN_ASSERT_NOT_NULL(value);
+    ENJIN_EXPECT_EQ(*hits, 1);
+    ENJIN_EXPECT_TRUE(*value > 0.74f && *value < 0.76f);
+
+    // Clean up global state
+    bus.Clear();
+    SetBindingsEventBus(nullptr);
     engine.Shutdown();
 }
 
