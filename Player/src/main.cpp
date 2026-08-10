@@ -82,6 +82,7 @@
 #include "Enjin/Accessibility/FontLibrary.h"
 #include "Enjin/Accessibility/ColorblindPalette.h"
 #include "Enjin/Renderer/PostProcessing.h"
+#include "Enjin/Renderer/RenderTarget.h"
 #include "Enjin/Renderer/RayTracing/PathTracer.h"
 #include "Enjin/Renderer/RayTracing/RTHybridApply.h"
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
@@ -256,7 +257,7 @@ public:
                 if (auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(menu)) c->visible = false;
             }
             m_GameStarted = true;
-            Enjin::Input::SetMouseCaptured(true);
+            if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
         };
         m_UISystem.GetEventBus().Listen("menu_newgame",
             [startFromAuthoredMenu](const Enjin::GUI::UIEventData&) { startFromAuthoredMenu(); });
@@ -299,10 +300,10 @@ public:
             if (action == "new_game" || action == "continue") {
                 m_GameMenu.HideAll();
                 m_GameStarted = true;
-                Enjin::Input::SetMouseCaptured(true);
+                if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
             } else if (action == "resume") {
                 m_GameMenu.HideAll();
-                Enjin::Input::SetMouseCaptured(true);
+                if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
             } else if (action == "options") {
                 m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::Options);
             } else if (action == "how_to_play") {
@@ -796,6 +797,7 @@ public:
 
     void Update(Enjin::f32 deltaTime) override {
         if (!m_Initialized) return;
+        m_FrameDeltaTime = deltaTime;  // Render() needs it for the compute pre-pass
 
         // Apply deferred fullscreen change (safe between frames)
         if (m_FullscreenChangeRequested) {
@@ -873,7 +875,7 @@ public:
             } else if (m_GameMenu.IsMenuOpen()) {
                 // Legacy screen open — close it
                 m_GameMenu.HideAll();
-                Enjin::Input::SetMouseCaptured(true);
+                if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
             } else {
                 // In gameplay — pause
                 OpenPauseMenu();
@@ -1116,6 +1118,22 @@ public:
     }
 
     // Find a visible authored "MainMenu" canvas in the scene (empty = none).
+    // Whether any mouse-look controller in the scene wants the cursor captured.
+    // Controllers with captureMouseOnClick=false (Web Demo) keep the cursor
+    // free: RMB-hold orbits, on-screen UI stays clickable while playing.
+    bool SceneWantsMouseCapture() {
+        if (!m_World) return false;
+        for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::FirstPersonController>()) {
+            auto* c = m_World->GetComponent<Enjin::ECS::FirstPersonController>(e);
+            if (c && c->captureMouseOnClick) return true;
+        }
+        for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::ThirdPersonController>()) {
+            auto* c = m_World->GetComponent<Enjin::ECS::ThirdPersonController>(e);
+            if (c && c->captureMouseOnClick) return true;
+        }
+        return false;
+    }
+
     Enjin::ECS::Entity FindAuthoredMainMenu() {
         for (auto e : m_World->GetEntitiesWithComponent<Enjin::GUI::UICanvasComponent>()) {
             auto* c = m_World->GetComponent<Enjin::GUI::UICanvasComponent>(e);
@@ -1143,7 +1161,7 @@ public:
             m_World->DestroyEntity(m_PauseMenuEntity);
         }
         m_PauseMenuEntity = Enjin::ECS::INVALID_ENTITY;
-        Enjin::Input::SetMouseCaptured(true);
+        if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
     }
 
     // Restart the current game session: fresh physics backends (stale bodies and
@@ -1152,7 +1170,7 @@ public:
     // screen's "gameover_restart" UI event.
     void RestartGameSession() {
         m_GameMenu.HideAll();
-        Enjin::Input::SetMouseCaptured(true);
+        if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
         auto backendType = static_cast<Enjin::Physics::PhysicsBackendType>(
             m_PhysicsBackendType <= 3 ? m_PhysicsBackendType : 0);
         auto projectMode = static_cast<Enjin::Scene::ProjectMode>(
@@ -1217,6 +1235,7 @@ public:
         }
 
         // Detect splitscreen: multiple active cameras with non-default viewports
+        bool splitscreenActive = false;
         if (m_World && m_RenderSystem) {
             auto allCameras = Enjin::ECS::CameraManager::GetAllActiveCameras(m_World.get());
             bool useSplitscreen = false;
@@ -1250,6 +1269,7 @@ public:
             } else {
                 m_RenderSystem->SetMainPassSplitscreen({});
             }
+            splitscreenActive = useSplitscreen;
         }
 
         // Live accessibility sync BEFORE the frame renders: game scripts can
@@ -1260,6 +1280,56 @@ public:
             m_AccessibilitySettings.ApplyToPostProcessing(m_PostProcessing->GetSettings());
         }
         m_UISystem.SetFontScale(m_AccessibilitySettings.fontScale);
+
+        // Raster post-process path (editor game-view pattern): render the scene
+        // into the offscreen target, let RenderSystem::Update open an EMPTY
+        // swapchain pass (skip flag), then draw the post-process fullscreen quad
+        // sampling the scene target after World::Update. Without this the scene
+        // drew straight into the swapchain — unsampleable mid-pass — so nothing
+        // in postprocess.frag ever applied in exported games. PT mode keeps its
+        // own PP source; splitscreen falls back to the direct path (no PP).
+        m_RasterPPThisFrame = false;
+        {
+            bool ptMode = m_RenderSystem && m_RenderSystem->IsRayTracingEnabled() &&
+                          m_RenderSystem->GetRTMode() == 1;
+            bool cameraPP = true;
+            if (m_World) {
+                auto activeCam = Enjin::ECS::CameraManager::GetActiveCamera(m_World.get());
+                if (activeCam != Enjin::ECS::INVALID_ENTITY) {
+                    auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(activeCam);
+                    if (cc) cameraPP = cc->enablePostProcessing;
+                }
+            }
+            if (cameraPP && !ptMode && !splitscreenActive &&
+                m_PostProcessing && m_PostProcessing->IsInitialized() &&
+                m_ScenePPTarget && m_ScenePPTarget->IsValid() &&
+                m_RenderSystem && m_Camera && m_World) {
+                VkCommandBuffer preCmd = m_Renderer->GetCurrentCommandBuffer();
+                if (preCmd != VK_NULL_HANDLE) {
+                    // Pre-recording flush: Update()'s own flush is guarded off
+                    // by the skip flag (mid-frame guard), so materials/bindless
+                    // must flush here — same contract as the editor loop.
+                    m_RenderSystem->FlushPendingChanges();
+                    // Compute pre-pass (fog froxels, DDGI, clustered lights,
+                    // skinning, GPU particles) — Update() never reaches it
+                    // when the skip flag is set. Without this the fog volume
+                    // never gets its neutral clear and the fog composite
+                    // renders the whole scene black.
+                    m_RenderSystem->RecordComputePrePass(m_FrameDeltaTime);
+                    m_RenderSystem->RenderShadowPassForCamera(m_Camera.get());
+                    // Editor-only RT dispatch site: Update() early-returns on
+                    // the skip flag before reaching RT (no-op when RT is off)
+                    m_RenderSystem->RecordRTFrame(false);
+                    m_ScenePPTarget->Begin(preCmd);
+                    m_RenderSystem->RenderToTarget(m_ScenePPTarget.get(), m_Camera.get(), 1);
+                    m_RenderSystem->RenderElementalParticles(m_ElementalSystem,
+                        m_ScenePPTarget->GetWidth(), m_ScenePPTarget->GetHeight());
+                    m_ScenePPTarget->End(preCmd);
+                    m_RenderSystem->SetSkipMainPassRendering(true);
+                    m_RasterPPThisFrame = true;
+                }
+            }
+        }
 
         // World::Update triggers all registered systems including RenderSystem.
         // RenderSystem::Update starts the main render pass and draws entities.
@@ -1287,6 +1357,21 @@ public:
                     }
                     m_PostProcessing->ApplyToCurrentPass(ptCmd, extent.width, extent.height);
                 }
+            }
+        }
+
+        // Raster PP composite: the scene rendered offscreen this frame and the
+        // swapchain pass is open and empty — draw the post-processed scene into
+        // it (colorblind/tonemap/brightness/contrast/vignette all live here)
+        if (m_RasterPPThisFrame && m_PostProcessing && m_ScenePPTarget) {
+            VkCommandBuffer ppCmd = m_Renderer->GetCurrentCommandBuffer();
+            if (ppCmd != VK_NULL_HANDLE) {
+                if (m_LastPTSourceView != m_ScenePPTarget->GetColorImageView()) {
+                    m_PostProcessing->UpdateSourceImage(m_ScenePPTarget->GetColorImageView(),
+                                                        m_ScenePPTarget->GetSampler());
+                    m_LastPTSourceView = m_ScenePPTarget->GetColorImageView();
+                }
+                m_PostProcessing->ApplyToCurrentPass(ppCmd, extent.width, extent.height);
             }
         }
 
@@ -1759,7 +1844,31 @@ private:
                     m_PostProcessing->OnResize(w, h);
                     m_PostProcessing->UpdateRenderPass(m_Renderer->GetRenderPass(), 2);
                 }
+                if (m_ScenePPTarget) {
+                    m_ScenePPTarget->Resize(w, h);
+                    // Force the PP source rebind — the color view just changed
+                    m_LastPTSourceView = VK_NULL_HANDLE;
+                }
             });
+        }
+
+        // Offscreen scene target for the raster post-process path — DISABLED.
+        // First attempt (2026-08-09) drew geometry unlit-black and crashed on
+        // scene entry: RecreateEffectPipelinesForRenderPass points the shared
+        // effect renderers (weather/sprite/particle) at the offscreen pass,
+        // breaking them for the swapchain path, and the offscreen lighting
+        // path needs more than RenderToTarget provides in player mode. Needs
+        // a validation-layer session before this can ship. Until then exported
+        // games run WITHOUT the post-process pass (colorblind/brightness/
+        // contrast filters work in the editor and web player only).
+        if (kEnableRasterPP && m_PostProcessing) {
+            m_ScenePPTarget = std::make_unique<Enjin::Renderer::RenderTarget>();
+            if (!m_ScenePPTarget->Create(m_Renderer.get(), ppExtent.width, ppExtent.height)) {
+                ENJIN_LOG_WARN(Player, "Scene PP target creation failed — post-processing disabled in raster path");
+                m_ScenePPTarget.reset();
+            } else if (m_RenderSystem) {
+                m_RenderSystem->RecreateEffectPipelinesForRenderPass(m_ScenePPTarget->GetRenderPass());
+            }
         }
 
         // Player hybrid RT overlay (blends RT shadow/AO/reflect/GI onto the
@@ -2500,6 +2609,15 @@ private:
 
     // Post-processing: settings for script bindings + the path tracer display draw
     std::unique_ptr<Enjin::Renderer::PostProcessing> m_PostProcessing;
+    // Offscreen scene target for the raster post-process path: the scene
+    // renders here (like the editor's game view) so the post-process pass has
+    // something to sample. Without it, postprocess.frag (colorblind, tonemap,
+    // brightness/contrast, vignette, FXAA) NEVER ran in exported games.
+    // Gated off — see the creation site for what broke on the first attempt.
+    static constexpr bool kEnableRasterPP = true;
+    std::unique_ptr<Enjin::Renderer::RenderTarget> m_ScenePPTarget;
+    bool m_RasterPPThisFrame = false;
+    Enjin::f32 m_FrameDeltaTime = 0.016f;
 
     // Player hybrid RT overlay: blends ray-traced shadow/AO/reflect/GI onto the
     // swapchain scene (the player has no offscreen target for the editor's PP

@@ -128,6 +128,7 @@ void VolumetricFogSystem::Update(VkCommandBuffer cmd, f32 time,
                                  0, 0, nullptr, 0, nullptr, 1, &toRead);
         }
         m_VolumesInitialized = true;
+        ENJIN_LOG_INFO(Renderer, "VolumetricFog: volumes neutral-cleared (one-shot)");
     }
 
     if (!m_Config.enabled) {

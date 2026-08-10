@@ -3760,6 +3760,9 @@ void RenderSystem::FlushPendingChanges() {
         return;
     }
 
+    // New frame is about to record — allow the compute pre-pass to run once
+    m_ComputePrePassDone = false;
+
     // Reset per-thread secondary command pools for this frame. Safe here and
     // ONLY here: this code runs pre-recording (the mid-frame guard above
     // returns before it in the editor's fallback flush). Resetting after
@@ -3829,6 +3832,39 @@ void RenderSystem::FlushPendingChanges() {
         InitializeRayTracing();
         if (m_RTInitialized && m_RTDummyImageView && m_RTDummySampler && !m_DescriptorSets.empty()) {
             CreateDescriptorSets();
+        }
+    }
+
+    // Re-assert the froxel volume on binding 23 of every set-0 descriptor set.
+    // Hardening: the init-time bind (Initialize) would be lost if descriptor
+    // sets were ever recreated after boot; binding 23 is statically sampled by
+    // the PBR shader, and a stale slot turns the fog composite into a
+    // full-screen multiply toward black. Pre-recording site, so the writes
+    // never race a bound command buffer.
+    if (m_VolumetricFog && m_VolumetricFog->GetFroxelVolumeView() &&
+        m_VolumetricFog->GetFroxelSampler() &&
+        (!m_DescriptorSets.empty() || !m_OffscreenDescriptorSets.empty())) {
+        VkDescriptorImageInfo froxelInfo{};
+        froxelInfo.imageView = m_VolumetricFog->GetFroxelVolumeView();
+        froxelInfo.sampler = m_VolumetricFog->GetFroxelSampler();
+        froxelInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        std::vector<VkWriteDescriptorSet> froxelWrites;
+        froxelWrites.reserve(m_DescriptorSets.size() + m_OffscreenDescriptorSets.size());
+        auto queueFroxel = [&](VkDescriptorSet set) {
+            VkWriteDescriptorSet w{};
+            w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            w.dstSet = set;
+            w.dstBinding = 23;
+            w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            w.descriptorCount = 1;
+            w.pImageInfo = &froxelInfo;
+            froxelWrites.push_back(w);
+        };
+        for (auto set : m_DescriptorSets) queueFroxel(set);
+        for (auto set : m_OffscreenDescriptorSets) queueFroxel(set);
+        if (!froxelWrites.empty()) {
+            vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(),
+                                   static_cast<u32>(froxelWrites.size()), froxelWrites.data(), 0, nullptr);
         }
     }
 
@@ -4426,139 +4462,10 @@ void RenderSystem::Update(f32 deltaTime) {
     // Ray tracing pass (after shadow passes, before main render pass)
     RecordRTFrame(true);
 
-    // Clustered forward lighting: build light list and assign to spatial clusters before main render pass
-#ifdef ENJIN_CLUSTERED_LIGHTING
-    // Clustered lighting now runs in Player builds too: the compute SPIR-V is
-    // embedded (ClusterComputeShaderData.h), so m_ClusteredLighting is only
-    // non-null when its pipelines actually built. No m_PlayerMode gate needed.
-    if (m_ClusteredLighting && m_SceneComposition.mode != SceneRenderMode::Scene2D && m_Camera) {
-        VkCommandBuffer cmdBuf = m_VulkanRenderer->GetCurrentCommandBuffer();
-        if (cmdBuf != VK_NULL_HANDLE) {
-            // Build ClusterLight array from cached light entities (reuse pre-allocated vector)
-            std::vector<Renderer::ClusterLight> clusterLights;
-            
-            auto* lightStorageCL = m_World->GetComponentStorage<LightComponent>();
-            for (Entity e : m_CachedLightEntities) {
-                auto* light = lightStorageCL ? lightStorageCL->Get(e) : nullptr;
-                auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(e) : nullptr;
-                if (!light || light->type == LightType::Directional) continue;
-
-                Renderer::ClusterLight cl{};
-                cl.position = xform ? xform->position : Math::Vector3(0.0f);
-                cl.range = light->range;
-                cl.color = light->color;
-                cl.intensity = light->intensity;
-                if (light->type == LightType::Spot) {
-                    Math::Vector3 fwd(0.0f, 0.0f, -1.0f);
-                    cl.direction = xform ? xform->rotation.Rotate(fwd).Normalized() : Math::Vector3(0, -1, 0);
-                    cl.outerConeAngle = light->outerConeAngle;
-                } else {
-                    cl.direction = Math::Vector3(0.0f);
-                    cl.outerConeAngle = 0.0f;
-                }
-                clusterLights.push_back(cl);
-            }
-            // Append transient point lights (fire, muzzle flashes, spells) so the
-            // froxel volume scatters them through fog/smoke, matching the surface pass.
-            for (const auto& tpl : m_TransientPointLights) {
-                Renderer::ClusterLight cl{};
-                cl.position = tpl.position;
-                cl.range = tpl.range;
-                cl.color = tpl.color;
-                cl.intensity = tpl.intensity;
-                cl.direction = Math::Vector3(0.0f);
-                cl.outerConeAngle = 0.0f;
-                clusterLights.push_back(cl);
-            }
-            if (!clusterLights.empty()) {
-                Math::Matrix4 viewMatrix = m_Camera->GetViewMatrix();
-                m_ClusteredLighting->AssignLights(cmdBuf, clusterLights.data(),
-                    static_cast<u32>(clusterLights.size()), viewMatrix);
-            }
-        }
-    }
-#endif
-
-    // --- Phase 2/5/6 compute dispatches (after clustered lighting, before main geometry) ---
-    VkCommandBuffer computeCmd = m_VulkanRenderer->GetCurrentCommandBuffer();
-
-    // ADR-0002 compute skinning for the player path: skin once, outside any render
-    // pass, before the shadow/main passes read the deformed buffers. The editor
-    // already dispatches earlier in its frame (EditorLayer::Render, before the
-    // offscreen passes record) — the same-command-buffer guard inside
-    // RunComputeSkinningPass turns this second call into a no-op there.
-    if (computeCmd != VK_NULL_HANDLE) {
-        RunComputeSkinningPass(computeCmd);
-    }
-
-    if (computeCmd != VK_NULL_HANDLE && m_Camera) {
-        u32 frameNumber = m_VulkanRenderer->GetCurrentFrameIndex();
-        auto swapExtent = m_VulkanRenderer->GetSwapchainExtent();
-
-        // Find sun direction for GI and fog
-        Math::Vector3 sunDir(0.5f, 0.8f, 0.3f);
-        Math::Vector3 sunColor(1.0f, 0.95f, 0.9f);
-        f32 sunIntensity = 1.0f;
-        if (m_CachedLightEntities.size() > 0) {
-            auto* lightStor = m_World->GetComponentStorage<LightComponent>();
-            for (Entity le : m_CachedLightEntities) {
-                auto* light = lightStor ? lightStor->Get(le) : nullptr;
-                if (light && light->type == LightType::Directional) {
-                    auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(le) : nullptr;
-                    if (xf) sunDir = xf->rotation.Rotate(Math::Vector3(0, 0, -1)).Normalized();
-                    sunColor = light->color;
-                    sunIntensity = light->intensity;
-                    break;
-                }
-            }
-        }
-
-        // DDGI: voxelize scene + update probes (direct fragment-shader apply)
-        if (m_DDGISystem && m_DDGISystem->IsEnabled()) {
-            if (m_DDGIGeometryDirty) {
-                BuildDDGIGeometry();
-                m_DDGIGeometryDirty = false;
-            }
-            Math::Matrix4 invVP = (m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix()).Inverse();
-            m_DDGISystem->Update(computeCmd, m_World, frameNumber,
-                                 sunDir, sunColor, sunIntensity,
-                                 invVP, swapExtent.width, swapExtent.height);
-        }
-
-        // Volumetric fog: froxel scattering pass. Called even when disabled so
-        // the system can clear a stale volume once (the PBR shader keeps
-        // sampling whatever the bound volume holds).
-        if (m_VolumetricFog) {
-            Math::Matrix4 curVP = m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix();
-            Math::Matrix4 invVP = curVP.Inverse();
-            // Previous frame's VP for temporal reprojection. First frame falls
-            // back to the current VP (identity reprojection).
-            static Math::Matrix4 s_PrevFogVP;
-            static bool s_HavePrevFogVP = false;
-            Math::Matrix4 prevVP = s_HavePrevFogVP ? s_PrevFogVP : curVP;
-            s_PrevFogVP = curVP;
-            s_HavePrevFogVP = true;
-            static f32 s_FogTime = 0.0f; s_FogTime += deltaTime;
-            // Froxel depth range must match the shader's reconstruction, which
-            // uses near = camera near and far = fogParams.z (fog end) with a
-            // 1000.0 fallback (triangle.frag volumetric block).
-            f32 froxelNear = m_Camera->GetNearPlane();
-            f32 froxelFar = (m_FogEnd > froxelNear) ? m_FogEnd : 1000.0f;
-            m_VolumetricFog->Update(computeCmd, s_FogTime,
-                                     invVP, prevVP, m_Camera->GetViewMatrix(),
-                                     m_Camera->GetPosition(),
-                                     froxelNear, froxelFar,
-                                     swapExtent.width, swapExtent.height,
-                                     sunDir, sunColor, sunIntensity);
-            // History is maintained inside Update (copy 0 -> 1); no swap needed.
-        }
-
-        // GPU particles: simulate all alive particles
-        if (m_GPUParticleSystem) {
-            Math::Vector3 wind(0.0f); // TODO: read from WindSystem
-            m_GPUParticleSystem->Simulate(computeCmd, deltaTime, frameNumber, wind);
-        }
-    }
+    // Compute pre-pass: clustered lights, skinning, DDGI, fog froxels, GPU
+    // particles. Extracted so the player's offscreen post-process path can run
+    // it too (Update() never reaches this point when the skip flag is set).
+    RecordComputePrePass(deltaTime);
 
     // Periodic diagnostic warnings (every 300 frames)
     if (++m_DiagnosticFrameCounter >= 300) {
@@ -4996,6 +4903,147 @@ void RenderSystem::Update(f32 deltaTime) {
     }
 }
 
+
+void RenderSystem::RecordComputePrePass(f32 deltaTime) {
+    if (m_ComputePrePassDone) return;
+    if (!m_VulkanRenderer || !m_World) return;
+    m_ComputePrePassDone = true;
+
+    // Clustered forward lighting: build light list and assign to spatial clusters before main render pass
+#ifdef ENJIN_CLUSTERED_LIGHTING
+    // Clustered lighting now runs in Player builds too: the compute SPIR-V is
+    // embedded (ClusterComputeShaderData.h), so m_ClusteredLighting is only
+    // non-null when its pipelines actually built. No m_PlayerMode gate needed.
+    if (m_ClusteredLighting && m_SceneComposition.mode != SceneRenderMode::Scene2D && m_Camera) {
+        VkCommandBuffer cmdBuf = m_VulkanRenderer->GetCurrentCommandBuffer();
+        if (cmdBuf != VK_NULL_HANDLE) {
+            // Build ClusterLight array from cached light entities (reuse pre-allocated vector)
+            std::vector<Renderer::ClusterLight> clusterLights;
+            
+            auto* lightStorageCL = m_World->GetComponentStorage<LightComponent>();
+            for (Entity e : m_CachedLightEntities) {
+                auto* light = lightStorageCL ? lightStorageCL->Get(e) : nullptr;
+                auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(e) : nullptr;
+                if (!light || light->type == LightType::Directional) continue;
+
+                Renderer::ClusterLight cl{};
+                cl.position = xform ? xform->position : Math::Vector3(0.0f);
+                cl.range = light->range;
+                cl.color = light->color;
+                cl.intensity = light->intensity;
+                if (light->type == LightType::Spot) {
+                    Math::Vector3 fwd(0.0f, 0.0f, -1.0f);
+                    cl.direction = xform ? xform->rotation.Rotate(fwd).Normalized() : Math::Vector3(0, -1, 0);
+                    cl.outerConeAngle = light->outerConeAngle;
+                } else {
+                    cl.direction = Math::Vector3(0.0f);
+                    cl.outerConeAngle = 0.0f;
+                }
+                clusterLights.push_back(cl);
+            }
+            // Append transient point lights (fire, muzzle flashes, spells) so the
+            // froxel volume scatters them through fog/smoke, matching the surface pass.
+            for (const auto& tpl : m_TransientPointLights) {
+                Renderer::ClusterLight cl{};
+                cl.position = tpl.position;
+                cl.range = tpl.range;
+                cl.color = tpl.color;
+                cl.intensity = tpl.intensity;
+                cl.direction = Math::Vector3(0.0f);
+                cl.outerConeAngle = 0.0f;
+                clusterLights.push_back(cl);
+            }
+            if (!clusterLights.empty()) {
+                Math::Matrix4 viewMatrix = m_Camera->GetViewMatrix();
+                m_ClusteredLighting->AssignLights(cmdBuf, clusterLights.data(),
+                    static_cast<u32>(clusterLights.size()), viewMatrix);
+            }
+        }
+    }
+#endif
+
+    // --- Phase 2/5/6 compute dispatches (after clustered lighting, before main geometry) ---
+    VkCommandBuffer computeCmd = m_VulkanRenderer->GetCurrentCommandBuffer();
+
+    // ADR-0002 compute skinning for the player path: skin once, outside any render
+    // pass, before the shadow/main passes read the deformed buffers. The editor
+    // already dispatches earlier in its frame (EditorLayer::Render, before the
+    // offscreen passes record) — the same-command-buffer guard inside
+    // RunComputeSkinningPass turns this second call into a no-op there.
+    if (computeCmd != VK_NULL_HANDLE) {
+        RunComputeSkinningPass(computeCmd);
+    }
+
+    if (computeCmd != VK_NULL_HANDLE && m_Camera) {
+        u32 frameNumber = m_VulkanRenderer->GetCurrentFrameIndex();
+        auto swapExtent = m_VulkanRenderer->GetSwapchainExtent();
+
+        // Find sun direction for GI and fog
+        Math::Vector3 sunDir(0.5f, 0.8f, 0.3f);
+        Math::Vector3 sunColor(1.0f, 0.95f, 0.9f);
+        f32 sunIntensity = 1.0f;
+        if (m_CachedLightEntities.size() > 0) {
+            auto* lightStor = m_World->GetComponentStorage<LightComponent>();
+            for (Entity le : m_CachedLightEntities) {
+                auto* light = lightStor ? lightStor->Get(le) : nullptr;
+                if (light && light->type == LightType::Directional) {
+                    auto* xf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(le) : nullptr;
+                    if (xf) sunDir = xf->rotation.Rotate(Math::Vector3(0, 0, -1)).Normalized();
+                    sunColor = light->color;
+                    sunIntensity = light->intensity;
+                    break;
+                }
+            }
+        }
+
+        // DDGI: voxelize scene + update probes (direct fragment-shader apply)
+        if (m_DDGISystem && m_DDGISystem->IsEnabled()) {
+            if (m_DDGIGeometryDirty) {
+                BuildDDGIGeometry();
+                m_DDGIGeometryDirty = false;
+            }
+            Math::Matrix4 invVP = (m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix()).Inverse();
+            m_DDGISystem->Update(computeCmd, m_World, frameNumber,
+                                 sunDir, sunColor, sunIntensity,
+                                 invVP, swapExtent.width, swapExtent.height);
+        }
+
+        // Volumetric fog: froxel scattering pass. Called even when disabled so
+        // the system can clear a stale volume once (the PBR shader keeps
+        // sampling whatever the bound volume holds).
+        if (m_VolumetricFog) {
+            Math::Matrix4 curVP = m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix();
+            Math::Matrix4 invVP = curVP.Inverse();
+            // Previous frame's VP for temporal reprojection. First frame falls
+            // back to the current VP (identity reprojection).
+            static Math::Matrix4 s_PrevFogVP;
+            static bool s_HavePrevFogVP = false;
+            Math::Matrix4 prevVP = s_HavePrevFogVP ? s_PrevFogVP : curVP;
+            s_PrevFogVP = curVP;
+            s_HavePrevFogVP = true;
+            static f32 s_FogTime = 0.0f; s_FogTime += deltaTime;
+            // Froxel depth range must match the shader's reconstruction, which
+            // uses near = camera near and far = fogParams.z (fog end) with a
+            // 1000.0 fallback (triangle.frag volumetric block).
+            f32 froxelNear = m_Camera->GetNearPlane();
+            f32 froxelFar = (m_FogEnd > froxelNear) ? m_FogEnd : 1000.0f;
+            m_VolumetricFog->Update(computeCmd, s_FogTime,
+                                     invVP, prevVP, m_Camera->GetViewMatrix(),
+                                     m_Camera->GetPosition(),
+                                     froxelNear, froxelFar,
+                                     swapExtent.width, swapExtent.height,
+                                     sunDir, sunColor, sunIntensity);
+            // History is maintained inside Update (copy 0 -> 1); no swap needed.
+        }
+
+        // GPU particles: simulate all alive particles
+        if (m_GPUParticleSystem) {
+            Math::Vector3 wind(0.0f); // TODO: read from WindSystem
+            m_GPUParticleSystem->Simulate(computeCmd, deltaTime, frameNumber, wind);
+        }
+    }
+}
+
 void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera, u32 viewportIndex) {
     if (!target || !target->IsValid() || !camera || !m_Renderer || !m_Initialized || !m_Pipeline) {
         return;
@@ -5059,6 +5107,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     // Upload frame-level uniforms to offscreen buffers (game camera view/proj + lighting)
     UpdateFrameUniforms();
     BuildMaterialSSBO();
+
 
     m_ShadowDistance = prevShadowDist;
 
@@ -5150,6 +5199,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
 
             MaterialComponent* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
+
             Renderer::Texture* boundTexture = nullptr;
             Renderer::Texture* texHeight = nullptr;
             Renderer::Texture* texNormal = nullptr;

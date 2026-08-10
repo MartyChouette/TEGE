@@ -665,6 +665,16 @@ public:
     // early-returns on m_SkipMainPassRendering before reaching RT. Idempotent per frame.
     void RecordRTFrame(bool allowAsync);
 
+    // Record the per-frame compute pre-pass (clustered light assign, compute
+    // skinning, DDGI, volumetric fog froxels, GPU particles) into the current
+    // command buffer, outside a render pass. Update() calls this on the
+    // main-pass path; the player's offscreen post-process path calls it
+    // explicitly because Update() early-returns on m_SkipMainPassRendering
+    // before reaching it — without it the fog volume never gets its one-shot
+    // neutral clear and the PBR fog composite multiplies the scene toward
+    // black. Idempotent per frame (flag reset in FlushPendingChanges).
+    void RecordComputePrePass(f32 deltaTime);
+
     // RT subsystem accessors
     Renderer::AccelerationStructureManager* GetASManager() { return m_ASManager.get(); }
     Renderer::RTShadows* GetRTShadows() { return m_RTShadows.get(); }
@@ -1239,6 +1249,7 @@ private:
     bool m_IsEditorMode = false;      // When true, skip frustum culling (show all entities)
     bool m_SkipMainPassShadows = false; // When true, skip shadow passes in Update() (play mode)
     bool m_SkipMainPassRendering = false; // When true, skip geometry+effects in Update() (play mode — game view handles rendering)
+    bool m_ComputePrePassDone = false;    // Per-frame guard for RecordComputePrePass (reset in FlushPendingChanges)
 
 #if !ENJIN_RENDERER_WEBGPU
     void BuildCullableObjectList();
