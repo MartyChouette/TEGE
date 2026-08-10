@@ -1641,6 +1641,48 @@ void EditorLayer::DrawUIEditorOverlay() {
     auto* canvas = m_World->GetComponent<GUI::UICanvasComponent>(m_UIEditCanvasEntity);
     if (!canvas) return;
 
+    // Context menu, opened on request from HandleUIEditorInput. Lives HERE,
+    // inside the ImGui frame, where CurrentWindow is valid.
+    if (m_UIEditContextMenuRequest) {
+        m_UIEditContextMenuRequest = false;
+        ImGui::OpenPopup("UIEditorContextMenu");
+    }
+
+    if (ImGui::BeginPopup("UIEditorContextMenu")) {
+        const f32 designX = m_UIEditContextMenuDesignX;
+        const f32 designY = m_UIEditContextMenuDesignY;
+
+        ImGui::TextDisabled("Add UI Element");
+        ImGui::Separator();
+
+        auto addAtPosition = [&](GUI::UIWidgetType type, const char* name, f32 defaultW, f32 defaultH) {
+            u32 id = canvas->AddElement(type, name);
+            auto* newElem = canvas->GetElement(id);
+            if (newElem) {
+                newElem->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
+                newElem->anchor.anchorMax = Math::Vector2(0.0f, 0.0f);
+                newElem->anchor.offsetLeft   = designX;
+                newElem->anchor.offsetRight  = designX + defaultW;
+                newElem->anchor.offsetTop    = designY;
+                newElem->anchor.offsetBottom = designY + defaultH;
+                if (type == GUI::UIWidgetType::Button) newElem->data.text = "Button";
+                if (type == GUI::UIWidgetType::Label)  newElem->data.text = "Label";
+                m_UIEditSelectedElementId = id;
+            }
+        };
+
+        if (ImGui::MenuItem("Panel"))       addAtPosition(GUI::UIWidgetType::Panel,       "Panel",       200, 150);
+        if (ImGui::MenuItem("Button"))      addAtPosition(GUI::UIWidgetType::Button,      "Button",      160, 40);
+        if (ImGui::MenuItem("Label"))       addAtPosition(GUI::UIWidgetType::Label,       "Label",       200, 30);
+        if (ImGui::MenuItem("Image"))       addAtPosition(GUI::UIWidgetType::Image,       "Image",       100, 100);
+        if (ImGui::MenuItem("ProgressBar")) addAtPosition(GUI::UIWidgetType::ProgressBar, "ProgressBar", 200, 24);
+        if (ImGui::MenuItem("Slider"))      addAtPosition(GUI::UIWidgetType::Slider,      "Slider",      200, 30);
+        if (ImGui::MenuItem("Checkbox"))    addAtPosition(GUI::UIWidgetType::Checkbox,    "Checkbox",    120, 24);
+        if (ImGui::MenuItem("Toggle"))      addAtPosition(GUI::UIWidgetType::Toggle,      "Toggle",      120, 24);
+        ImGui::EndPopup();
+    }
+
+
     f32 gvW = m_GameViewImageMaxX - m_GameViewImageMinX;
     f32 gvH = m_GameViewImageMaxY - m_GameViewImageMinY;
     if (gvW <= 0 || gvH <= 0) return;
@@ -1968,47 +2010,20 @@ void EditorLayer::HandleUIEditorInput() {
         }
     }
 
-    // Right-click context menu — add new elements at click position
+    // Right-click context menu: only REQUEST it here. This runs in the update
+    // phase, outside the ImGui frame, where BeginPopup dereferences a null
+    // CurrentWindow the moment any other popup is open (this was the
+    // delete-a-menu-entity crash). The popup itself is handled inside the
+    // frame by DrawUIEditorOverlay.
     if (ImGui::IsMouseClicked(1) && inGameView) {
-        ImGui::OpenPopup("UIEditorContextMenu");
-    }
-
-    if (ImGui::BeginPopup("UIEditorContextMenu")) {
-        f32 designX, designY;
-        UIEditorScreenToDesign(mouseX, mouseY, designX, designY);
-
-        ImGui::TextDisabled("Add UI Element");
-        ImGui::Separator();
-
-        auto addAtPosition = [&](GUI::UIWidgetType type, const char* name, f32 defaultW, f32 defaultH) {
-            u32 id = canvas->AddElement(type, name);
-            auto* newElem = canvas->GetElement(id);
-            if (newElem) {
-                newElem->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
-                newElem->anchor.anchorMax = Math::Vector2(0.0f, 0.0f);
-                newElem->anchor.offsetLeft   = designX;
-                newElem->anchor.offsetRight  = designX + defaultW;
-                newElem->anchor.offsetTop    = designY;
-                newElem->anchor.offsetBottom = designY + defaultH;
-                if (type == GUI::UIWidgetType::Button) newElem->data.text = "Button";
-                if (type == GUI::UIWidgetType::Label)  newElem->data.text = "Label";
-                m_UIEditSelectedElementId = id;
-            }
-        };
-
-        if (ImGui::MenuItem("Panel"))       addAtPosition(GUI::UIWidgetType::Panel,       "Panel",       200, 150);
-        if (ImGui::MenuItem("Button"))      addAtPosition(GUI::UIWidgetType::Button,      "Button",      160, 40);
-        if (ImGui::MenuItem("Label"))       addAtPosition(GUI::UIWidgetType::Label,       "Label",       200, 30);
-        if (ImGui::MenuItem("Image"))       addAtPosition(GUI::UIWidgetType::Image,       "Image",       100, 100);
-        if (ImGui::MenuItem("ProgressBar")) addAtPosition(GUI::UIWidgetType::ProgressBar, "ProgressBar", 200, 24);
-        if (ImGui::MenuItem("Slider"))      addAtPosition(GUI::UIWidgetType::Slider,      "Slider",      200, 30);
-        if (ImGui::MenuItem("Checkbox"))    addAtPosition(GUI::UIWidgetType::Checkbox,    "Checkbox",    120, 24);
-        if (ImGui::MenuItem("Toggle"))      addAtPosition(GUI::UIWidgetType::Toggle,      "Toggle",      120, 24);
-        ImGui::EndPopup();
+        UIEditorScreenToDesign(mouseX, mouseY, m_UIEditContextMenuDesignX, m_UIEditContextMenuDesignY);
+        m_UIEditContextMenuRequest = true;
     }
 }
 
 // ============================================================================
+// PARTICLE EDITOR PANEL
+// ============================================================================// ============================================================================
 // PARTICLE EDITOR PANEL
 // ============================================================================
 
