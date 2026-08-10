@@ -34,6 +34,7 @@
 #include "Enjin/ECS/Components/Terrain.h"
 #include "Enjin/ECS/Components/Terrain2D.h"
 #include "Enjin/ECS/Components/Vegetation.h"
+#include "Enjin/ECS/Components/Viewmodel.h"
 #include "Enjin/ECS/Components/CameraTrigger.h"
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include "Enjin/ECS/Components/GravityZone.h"
@@ -1918,6 +1919,28 @@ void EditorLayer::DrawTerrain2DComponent(ECS::Entity entity) {
             }
             ImGui::PopID();
         }
+    }
+}
+
+void EditorLayer::DrawViewmodelComponent(ECS::Entity entity) {
+    bool vmOpen = UI::SectionHeader("Viewmodel (First Person)", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("ViewmodelCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::ViewmodelComponent>(entity, "viewmodel", "Viewmodel");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (vmOpen) {
+        ECS::ViewmodelComponent* vm = m_World->GetComponent<ECS::ViewmodelComponent>(entity);
+        if (!vm) return;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &vm->enabled);
+
+        ImGui::Spacing();
+        ImGui::TextDisabled("Renders in front of world geometry, never clips walls,");
+        ImGui::TextDisabled("casts no shadows. Parent this entity to the camera.");
     }
 }
 

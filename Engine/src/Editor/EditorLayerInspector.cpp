@@ -36,6 +36,7 @@
 #include "Enjin/ECS/Components/Terrain.h"
 #include "Enjin/ECS/Components/Terrain2D.h"
 #include "Enjin/ECS/Components/Vegetation.h"
+#include "Enjin/ECS/Components/Viewmodel.h"
 #include "Enjin/ECS/Components/CameraTrigger.h"
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include "Enjin/ECS/Components/GravityZone.h"
@@ -703,6 +704,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::VegetationComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::VegetationComponent>(e); },
             "vegetation", DimensionTag::Only3D},
+        {"Viewmodel (First Person)", "Rendering", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ViewmodelComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ViewmodelComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ViewmodelComponent>(e); },
+            "viewmodel", DimensionTag::Only3D},
         {"Camera Trigger", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::CameraTriggerComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CameraTriggerComponent>(e); },
@@ -1312,6 +1318,11 @@ void EditorLayer::DrawInspectorPanel() {
         // Vegetation component
         if (m_World->HasComponent<ECS::VegetationComponent>(m_PrimarySelected)) {
             DrawVegetationComponent(m_PrimarySelected);
+        }
+
+        // Viewmodel component
+        if (m_World->HasComponent<ECS::ViewmodelComponent>(m_PrimarySelected)) {
+            DrawViewmodelComponent(m_PrimarySelected);
         }
 
         // Camera Trigger component

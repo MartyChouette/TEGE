@@ -416,6 +416,7 @@ private:
     void DrawShrubVolumeComponent(ECS::Entity entity);
     void DrawTreeVolumeComponent(ECS::Entity entity);
     void DrawVegetationComponent(ECS::Entity entity);
+    void DrawViewmodelComponent(ECS::Entity entity);
     void DrawCameraTriggerComponent(ECS::Entity entity);
     void DrawTemperatureZoneComponent(ECS::Entity entity);
     void DrawGravityZoneComponent(ECS::Entity entity);
@@ -1395,6 +1396,13 @@ private:
     u32 m_UIEditSelectedElementId = 0;
     ECS::Entity m_UIEditCanvasEntity = ECS::INVALID_ENTITY;
     UIEditDragMode m_UIEditDragMode = UIEditDragMode::None;
+    // Context-menu open request, carried from HandleUIEditorInput (update
+    // phase, outside the ImGui frame) to DrawUIEditorOverlay (render phase).
+    // BeginPopup MUST NOT be called from the update phase: with any popup
+    // open it dereferences a null CurrentWindow (the delete-a-menu crash).
+    bool m_UIEditContextMenuRequest = false;
+    f32 m_UIEditContextMenuDesignX = 0.0f;
+    f32 m_UIEditContextMenuDesignY = 0.0f;
     ImVec2 m_UIEditDragStart = {0, 0};
     GUI::UIAnchor m_UIEditDragStartAnchor;
 

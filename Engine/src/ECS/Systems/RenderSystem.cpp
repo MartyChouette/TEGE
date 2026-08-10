@@ -1349,6 +1349,17 @@ void RenderSystem::Update(f32 deltaTime) {
     RefreshStorageCache();
     ResetFrameCounters();
 
+    // Mark all transform world-matrix caches dirty so each entity recomputes at
+    // most once this frame — same contract as the Vulkan Update. Without this
+    // the web path served every parented entity its FIRST frame's cached world
+    // matrix forever (the Shells viewmodel rig froze in mid-air at boot pose).
+    if (m_CachedTransformStorage) {
+        auto& transforms = m_CachedTransformStorage->GetComponents();
+        for (auto& t : transforms) {
+            t.worldMatrixDirty = true;
+        }
+    }
+
     // Index animators by shared skeleton so ResolveAnimator can match follower
     // meshes to their leader's clock (animators themselves tick in web_main)
     m_FallbackAnimatorEntity = INVALID_ENTITY;
@@ -1726,6 +1737,12 @@ void RenderSystem::Update(f32 deltaTime) {
                     if (!mesh || !xf || !xf->visible) continue;
                     if (mesh->vertices.empty() || mesh->indices.empty()) continue;
 
+                    // Viewmodels cast no shadows (see Vulkan RenderEntityShadow)
+                    {
+                        auto* vmcS = m_CachedViewmodelStorage ? m_CachedViewmodelStorage->Get(entity) : nullptr;
+                        if (vmcS && vmcS->enabled) continue;
+                    }
+
                     // Skip large flat receivers (ground planes) as shadow casters — same
                     // heuristic as the shadow FIT above. A big flat plane rendered into the
                     // shadow map self-shadows at the grazing light angle, producing the
@@ -1744,7 +1761,7 @@ void RenderSystem::Update(f32 deltaTime) {
                     // Create per-entity buffer with model matrix (can't reuse one buffer —
                     // wgpuQueueWriteBuffer runs before the command buffer, so last write wins)
                     WebObjectDataUBO shadowObj{};
-                    shadowObj.model = xf->ToMatrix();
+                    shadowObj.model = ECS::ComputeWorldMatrix(m_World, entity);
 
                     Renderer::GPUBufferDesc perEntDesc;
                     perEntDesc.size = sizeof(WebObjectDataUBO);
@@ -1847,6 +1864,10 @@ void RenderSystem::Update(f32 deltaTime) {
                             auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
                             auto* exf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                             if (!mesh || !exf || !exf->visible || mesh->vertices.empty()) continue;
+                            {   // Viewmodels cast no shadows (see Vulkan RenderEntityShadow)
+                                auto* vmcS = m_CachedViewmodelStorage ? m_CachedViewmodelStorage->Get(entity) : nullptr;
+                                if (vmcS && vmcS->enabled) continue;
+                            }
                             // Skip large flat receivers (ground) as casters — same as the
                             // directional pass; avoids flat-plane self-shadow acne.
                             {
@@ -1859,7 +1880,7 @@ void RenderSystem::Update(f32 deltaTime) {
                             if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
 
                             WebObjectDataUBO shadowObj{};
-                            shadowObj.model = exf->ToMatrix();
+                            shadowObj.model = ECS::ComputeWorldMatrix(m_World, entity);
                             auto perBuf = bufMgr->CreateBufferWithData(
                                 {sizeof(WebObjectDataUBO), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true},
                                 &shadowObj);
@@ -1960,6 +1981,10 @@ void RenderSystem::Update(f32 deltaTime) {
                             auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
                             auto* exf = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                             if (!mesh || !exf || !exf->visible || mesh->vertices.empty()) continue;
+                            {   // Viewmodels cast no shadows (see Vulkan RenderEntityShadow)
+                                auto* vmcS = m_CachedViewmodelStorage ? m_CachedViewmodelStorage->Get(entity) : nullptr;
+                                if (vmcS && vmcS->enabled) continue;
+                            }
                             // Skip large flat receivers (ground) as casters — same as the
                             // directional pass; avoids flat-plane self-shadow acne.
                             {
@@ -1972,7 +1997,7 @@ void RenderSystem::Update(f32 deltaTime) {
                             if (!rd.valid || !rd.vertexBuffer.IsValid() || !rd.indexBuffer.IsValid()) continue;
 
                             WebObjectDataUBO shadowObj{};
-                            shadowObj.model = exf->ToMatrix();
+                            shadowObj.model = ECS::ComputeWorldMatrix(m_World, entity);
                             auto perBuf = bufMgr->CreateBufferWithData(
                                 {sizeof(WebObjectDataUBO), Renderer::GPUBufferUsage::Uniform | Renderer::GPUBufferUsage::CopyDst, true},
                                 &shadowObj);
@@ -2222,7 +2247,7 @@ void RenderSystem::Update(f32 deltaTime) {
             }
 
             WebObjectDataUBO obj{};
-            obj.model = xf->ToMatrix();
+            obj.model = ECS::ComputeWorldMatrix(m_World, entity);
             obj.baseColor = mat ? mat->baseColor : Math::Vector3(0.8f, 0.8f, 0.8f);
             obj.metallic = mat ? mat->metallic : 0.0f;
             obj.roughness = mat ? mat->roughness : 0.5f;
@@ -2290,6 +2315,10 @@ void RenderSystem::Update(f32 deltaTime) {
             u64 eid = EntityIndex(cmd.entity);
             auto& rd = m_EntityRenderData[eid];
             if (rd.boneBuffer.IsValid()) return false;  // Skinned — unique bone data
+            {   // Viewmodel — draws with its own viewport depth range
+                auto* vmc = m_CachedViewmodelStorage ? m_CachedViewmodelStorage->Get(cmd.entity) : nullptr;
+                if (vmc && vmc->enabled) return false;
+            }
             auto* matSlots = m_CachedMaterialSlotsStorage ? m_CachedMaterialSlotsStorage->Get(cmd.entity) : nullptr;
             auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(cmd.entity) : nullptr;
             if (matSlots && mesh && mesh->HasSubMeshes()) return false;  // Multi-material — unique draw per submesh
@@ -2297,10 +2326,23 @@ void RenderSystem::Update(f32 deltaTime) {
         };
 
         usize i = 0;
+        bool vmDepthActive = false;
         while (i < drawCmds.size()) {
             const auto& cmd = drawCmds[i];
             u64 eid = EntityIndex(cmd.entity);
             auto& rd = m_EntityRenderData[eid];
+
+            // Viewmodel entities render in the compressed near depth slice so
+            // they stay in front of world geometry (same trick as the Vulkan
+            // path; 0.05 matches kViewmodelDepthMax)
+            {
+                auto* vmc = m_CachedViewmodelStorage ? m_CachedViewmodelStorage->Get(cmd.entity) : nullptr;
+                bool wantVM = vmc && vmc->enabled;
+                if (wantVM != vmDepthActive) {
+                    vmDepthActive = wantVM;
+                    encoder->SetViewport(0, 0, sceneW, sceneH, 0.0f, wantVM ? 0.05f : 1.0f);
+                }
+            }
 
             // Check if this entity can start a batch
             if (canBatch(cmd)) {
@@ -2407,6 +2449,7 @@ void RenderSystem::Update(f32 deltaTime) {
                 i++;
             }
         }
+        if (vmDepthActive) encoder->SetViewport(0, 0, sceneW, sceneH, 0.0f, 1.0f);
     }
 
     // ========================================================================
@@ -2764,6 +2807,7 @@ void RenderSystem::RefreshStorageCache() {
     m_CachedMaterialStorage = m_World->GetComponentStorage<MaterialComponent>();
     m_CachedMaterialSlotsStorage = m_World->GetComponentStorage<MaterialSlotsComponent>();
     m_CachedAnimatorStorage = m_World->GetComponentStorage<AnimatorComponent>();
+    m_CachedViewmodelStorage = m_World->GetComponentStorage<ViewmodelComponent>();
 
     // Rebuild light entity list if dirty
     if (m_LightListDirty) {
@@ -2969,6 +3013,7 @@ void RenderSystem::RefreshStorageCache() {
         m_CachedMaterialStorage = nullptr;
         m_CachedMaterialSlotsStorage = nullptr;
         m_CachedAnimatorStorage = nullptr;
+        m_CachedViewmodelStorage = nullptr;
         m_CachedTextStorage = nullptr;
         m_CachedArtStyleStorage = nullptr;
         m_CachedSpriteStorage = nullptr;
@@ -2982,6 +3027,7 @@ void RenderSystem::RefreshStorageCache() {
     m_CachedMaterialStorage = m_World->GetComponentStorage<MaterialComponent>();
     m_CachedMaterialSlotsStorage = m_World->GetComponentStorage<MaterialSlotsComponent>();
     m_CachedAnimatorStorage = m_World->GetComponentStorage<AnimatorComponent>();
+    m_CachedViewmodelStorage = m_World->GetComponentStorage<ViewmodelComponent>();
     m_CachedTextStorage = m_World->GetComponentStorage<TextComponent>();
     m_CachedArtStyleStorage = m_World->GetComponentStorage<ArtStyleComponent>();
     m_CachedSpriteStorage = m_World->GetComponentStorage<Sprite2DComponent>();
@@ -3489,6 +3535,7 @@ void RenderSystem::FlushSceneClear() {
     m_CachedMeshStorage = nullptr;
     m_CachedMaterialStorage = nullptr;
     m_CachedAnimatorStorage = nullptr;
+        m_CachedViewmodelStorage = nullptr;
     m_FallbackAnimatorEntity = INVALID_ENTITY;
     m_CachedTextStorage = nullptr;
     // Skeleton keys point into the destroyed storages — the entity values are
@@ -4757,6 +4804,9 @@ void RenderSystem::Update(f32 deltaTime) {
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+    m_PassViewportW = viewport.width;
+    m_PassViewportH = viewport.height;
+    m_ViewmodelDepthActive = false;
 
     VkRect2D scissor{};
     scissor.offset = { 0, 0 };
@@ -4868,6 +4918,8 @@ void RenderSystem::Update(f32 deltaTime) {
 
             RenderEntity(entity);
         }
+        // Restore the full depth range if the last entity was a viewmodel
+        SetViewmodelDepth(commandBuffer, false);
     }
 
     // Geometry outline pass (inverted-hull backface extrusion, after main geometry)
@@ -5120,6 +5172,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+    m_PassViewportW = viewport.width;
+    m_PassViewportH = viewport.height;
+    m_ViewmodelDepthActive = false;
 
     VkRect2D scissor{};
     scissor.offset = { 0, 0 };
@@ -5183,6 +5238,12 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             EntityRenderData* pRD = GetOrCreateRenderData(entity);
             if (!pRD) continue;
             EntityRenderData& renderData = *pRD;
+
+            // Viewmodel entities render in the compressed near depth slice
+            {
+                ViewmodelComponent* vmcRT = m_CachedViewmodelStorage ? m_CachedViewmodelStorage->Get(entity) : nullptr;
+                SetViewmodelDepth(commandBuffer, vmcRT && vmcRT->enabled);
+            }
 
             // Material SSBO index for this entity — reaches the shader as
             // firstInstance -> gl_InstanceIndex -> v_MaterialIndex (adr-0003).
@@ -5747,6 +5808,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             }
         }
     }
+
+    // Restore the full depth range if the last entity was a viewmodel
+    SetViewmodelDepth(commandBuffer, false);
 
     // Geometry outline pass (inverted-hull backface extrusion, after main geometry)
     RenderOutlinePassForTarget();
@@ -9245,6 +9309,20 @@ void RenderSystem::CreateDefaultMesh() {
     ENJIN_LOG_INFO(Renderer, "Created default sphere entity: %llu", m_DefaultEntity);
 }
 
+void RenderSystem::SetViewmodelDepth(VkCommandBuffer cmd, bool viewmodel) {
+    if (viewmodel == m_ViewmodelDepthActive) return;
+    if (m_PassViewportW <= 0.0f || m_PassViewportH <= 0.0f) return;
+    m_ViewmodelDepthActive = viewmodel;
+    VkViewport vp{};
+    vp.x = 0.0f;
+    vp.y = 0.0f;
+    vp.width = m_PassViewportW;
+    vp.height = m_PassViewportH;
+    vp.minDepth = 0.0f;
+    vp.maxDepth = viewmodel ? kViewmodelDepthMax : 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &vp);
+}
+
 void RenderSystem::RenderEntity(Entity entity) {
     if (!m_Pipeline || !m_Renderer) {
         return;
@@ -9277,6 +9355,12 @@ void RenderSystem::RenderEntity(Entity entity) {
     VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) {
         return;
+    }
+
+    // Viewmodel entities render in the compressed near depth slice
+    {
+        ViewmodelComponent* vmc = m_CachedViewmodelStorage ? m_CachedViewmodelStorage->Get(entity) : nullptr;
+        SetViewmodelDepth(commandBuffer, vmc && vmc->enabled);
     }
 
     // Material SSBO index for this entity (adr-0003): reaches the shader as
@@ -10280,6 +10364,13 @@ void RenderSystem::RenderShadowPassForCamera(Renderer::Camera* camera) {
 }
 
 void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer, bool& poolBound) {
+    // Viewmodel entities cast no shadows: a wall-sized first-person gun
+    // shadow gives the depth-remap trick away instantly
+    if (m_CachedViewmodelStorage) {
+        ViewmodelComponent* vmc = m_CachedViewmodelStorage->Get(entity);
+        if (vmc && vmc->enabled) return;
+    }
+
     TransformComponent* transform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
     MeshComponent* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
 

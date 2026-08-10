@@ -1,5 +1,6 @@
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Viewmodel.h"
 #include "Enjin/ECS/Components/StableId.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Material.h"
@@ -4948,6 +4949,18 @@ ECS::VegetationComponent DeserializeVegetationComponent(const json& j) {
     return v;
 }
 
+json SerializeViewmodelComponent(const ECS::ViewmodelComponent& v) {
+    json j;
+    j["enabled"] = v.enabled;
+    return j;
+}
+
+ECS::ViewmodelComponent DeserializeViewmodelComponent(const json& j) {
+    ECS::ViewmodelComponent v;
+    if (j.contains("enabled")) v.enabled = JB(j["enabled"]);
+    return v;
+}
+
 json SerializeDamageResistanceComponent(const ECS::DamageResistanceComponent& r) {
     json j;
     j["physicalMult"] = RF(r.physicalMult);
@@ -7553,6 +7566,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::VegetationComponent>(entity)) {
                 entityJson["vegetation"] = SerializeVegetationComponent(*m_World->GetComponent<ECS::VegetationComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::ViewmodelComponent>(entity)) {
+                entityJson["viewmodel"] = SerializeViewmodelComponent(*m_World->GetComponent<ECS::ViewmodelComponent>(entity));
+            }
 
             entitiesArray.push_back(entityJson);
         }
@@ -8319,6 +8335,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("vegetation")) {
                 m_World->AddComponent<ECS::VegetationComponent>(entity, DeserializeVegetationComponent(entityJson["vegetation"]));
             }
+            if (entityJson.contains("viewmodel")) {
+                m_World->AddComponent<ECS::ViewmodelComponent>(entity, DeserializeViewmodelComponent(entityJson["viewmodel"]));
+            }
         }
 
         // Remap entity references (parent, IK target) from old IDs to new IDs
@@ -8997,6 +9016,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::VegetationComponent>(entity)) {
                 entityJson["vegetation"] = SerializeVegetationComponent(*m_World->GetComponent<ECS::VegetationComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::ViewmodelComponent>(entity)) {
+                entityJson["viewmodel"] = SerializeViewmodelComponent(*m_World->GetComponent<ECS::ViewmodelComponent>(entity));
             }
 
             entitiesArray.push_back(entityJson);
@@ -9685,6 +9707,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("vegetation")) {
                 m_World->AddComponent<ECS::VegetationComponent>(entity, DeserializeVegetationComponent(entityJson["vegetation"]));
             }
+            if (entityJson.contains("viewmodel")) {
+                m_World->AddComponent<ECS::ViewmodelComponent>(entity, DeserializeViewmodelComponent(entityJson["viewmodel"]));
+            }
         }
 
         // Remap entity references (parent, IK target) from old IDs to new IDs
@@ -10134,6 +10159,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["grassVolume"] = SerializeGrassVolumeComponent(*world->GetComponent<ECS::GrassVolumeComponent>(entity));
         if (world->HasComponent<ECS::VegetationComponent>(entity))
             entityJson["vegetation"] = SerializeVegetationComponent(*world->GetComponent<ECS::VegetationComponent>(entity));
+        if (world->HasComponent<ECS::ViewmodelComponent>(entity))
+            entityJson["viewmodel"] = SerializeViewmodelComponent(*world->GetComponent<ECS::ViewmodelComponent>(entity));
 
         return entityJson.dump();
 
@@ -10520,6 +10547,8 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             world->AddComponent<ECS::GrassVolumeComponent>(entity, DeserializeGrassVolumeComponent(entityJson["grassVolume"]));
         if (entityJson.contains("vegetation"))
             world->AddComponent<ECS::VegetationComponent>(entity, DeserializeVegetationComponent(entityJson["vegetation"]));
+        if (entityJson.contains("viewmodel"))
+            world->AddComponent<ECS::ViewmodelComponent>(entity, DeserializeViewmodelComponent(entityJson["viewmodel"]));
 
         return entity;
 
@@ -10534,6 +10563,12 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
 // ============================================================================
 
 std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entity entity, const std::string& key) {
+    // Newer components sit ABOVE the legacy else-if chain: MSVC's C1061 block
+    // nesting limit is already saturated by the 140-entry chain below, so new
+    // keys must early-return here instead of extending it.
+    if (key == "viewmodel" && world->HasComponent<ECS::ViewmodelComponent>(entity))
+        return SerializeViewmodelComponent(*world->GetComponent<ECS::ViewmodelComponent>(entity)).dump();
+
     if (!world || !world->IsValid(entity)) return "";
 
     try {
@@ -10966,6 +11001,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "lod") { world->AddComponent<ECS::LODComponent>(entity, DeserializeLODComponent(j)); return true; }
         if (key == "grassVolume") { world->AddComponent<ECS::GrassVolumeComponent>(entity, DeserializeGrassVolumeComponent(j)); return true; }
         if (key == "vegetation") { world->AddComponent<ECS::VegetationComponent>(entity, DeserializeVegetationComponent(j)); return true; }
+        if (key == "viewmodel") { world->AddComponent<ECS::ViewmodelComponent>(entity, DeserializeViewmodelComponent(j)); return true; }
 
         ENJIN_LOG_WARN(Asset, "Unknown component key for deserialization: '%s'", key.c_str());
         return false;
@@ -11127,6 +11163,7 @@ bool SceneSerializer::RemoveOneComponent(ECS::World* world, ECS::Entity entity, 
         if (key == "lod") { world->RemoveComponent<ECS::LODComponent>(entity); return true; }
         if (key == "grassVolume") { world->RemoveComponent<ECS::GrassVolumeComponent>(entity); return true; }
         if (key == "vegetation") { world->RemoveComponent<ECS::VegetationComponent>(entity); return true; }
+        if (key == "viewmodel") { world->RemoveComponent<ECS::ViewmodelComponent>(entity); return true; }
     }
 
     ENJIN_LOG_WARN(Asset, "Unknown component key for removal: '%s'", key.c_str());

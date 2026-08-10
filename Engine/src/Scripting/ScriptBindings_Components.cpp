@@ -5,6 +5,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Viewmodel.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Light.h"
@@ -451,6 +452,24 @@ static void Controller_SetEnabled(u64 id, bool enabled) {
     if (auto* c = s_BindingsWorld->GetComponent<TopDown3DController>(entity)) { c->isEnabled = enabled; return; }
     if (auto* c = s_BindingsWorld->GetComponent<TopDown2DController>(entity)) { c->isEnabled = enabled; return; }
     if (auto* c = s_BindingsWorld->GetComponent<Platformer2DController>(entity)) { c->isEnabled = enabled; return; }
+}
+
+static void Viewmodel_Set(u64 id, bool enabled) {
+    if (!s_BindingsWorld) return;
+    Entity entity = static_cast<Entity>(id);
+    if (auto* vm = s_BindingsWorld->GetComponent<ViewmodelComponent>(entity)) {
+        vm->enabled = enabled;
+        return;
+    }
+    if (enabled) {
+        s_BindingsWorld->AddComponent<ViewmodelComponent>(entity);
+    }
+}
+
+static bool Viewmodel_Get(u64 id) {
+    if (!s_BindingsWorld) return false;
+    auto* vm = s_BindingsWorld->GetComponent<ViewmodelComponent>(static_cast<Entity>(id));
+    return vm && vm->enabled;
 }
 
 static Vector3 Controller_GetVelocity(u64 id) {
@@ -1965,6 +1984,8 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     // CharacterController
     AS_CHECK(engine->RegisterGlobalFunction("void Controller_SetMoveSpeed(uint64, float)", ENJIN_AS_FN(Controller_SetMoveSpeed), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Controller_SetEnabled(uint64, bool)", ENJIN_AS_FN(Controller_SetEnabled), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Viewmodel_Set(uint64, bool)", ENJIN_AS_FN(Viewmodel_Set), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Viewmodel_Get(uint64)", ENJIN_AS_FN(Viewmodel_Get), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("Vector3 Controller_GetVelocity(uint64)", ENJIN_AS_FN(Controller_GetVelocity), ENJIN_AS_CALL_CDECL));
 
     // HasComponent queries

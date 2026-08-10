@@ -36,6 +36,7 @@ namespace Enjin::Build { class AssetReader; }
 #endif
 #include "Enjin/Renderer/TextRasterizer.h"
 #include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/ECS/Components/Viewmodel.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Text.h"
@@ -761,6 +762,17 @@ private:
     // secondary bound it (indexed draws with no index buffer = driver crash
     // the moment a scene crossed the 32-shadow-caster parallel threshold).
     void RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer, bool& poolBound);
+    // First-person viewmodel depth remap: entities tagged ViewmodelComponent
+    // draw with the viewport depth range compressed to [0, kViewmodelDepthMax]
+    // so they render in front of all world geometry and never visually clip
+    // into walls. State-tracked to avoid redundant viewport sets; the flag and
+    // pass dimensions reset wherever a pass (re)sets its viewport. Splitscreen
+    // viewports are not remapped (viewmodels draw normally there).
+    static constexpr f32 kViewmodelDepthMax = 0.05f;
+    void SetViewmodelDepth(VkCommandBuffer cmd, bool viewmodel);
+    bool m_ViewmodelDepthActive = false;
+    f32 m_PassViewportW = 0.0f;
+    f32 m_PassViewportH = 0.0f;
     void RenderEntityGhost(Entity entity, const Math::Matrix4& modelMatrix,
                            const Math::Vector3& tint, f32 opacity,
                            const std::vector<Math::Matrix4>* skinningMatrices = nullptr);
@@ -830,6 +842,7 @@ private:
     ComponentStorage<MaterialComponent>* m_CachedMaterialStorage = nullptr;
     ComponentStorage<MaterialSlotsComponent>* m_CachedMaterialSlotsStorage = nullptr;
     ComponentStorage<AnimatorComponent>* m_CachedAnimatorStorage = nullptr;
+    ComponentStorage<ViewmodelComponent>* m_CachedViewmodelStorage = nullptr;
     // First animator-with-skeleton entity (orphan skinned mesh fallback). Stored as an
     // ENTITY, not an AnimatorComponent*: AddComponent<AnimatorComponent> mid-frame (FBX
     // import dialog runs between Update and RenderToTarget) reallocates the component
