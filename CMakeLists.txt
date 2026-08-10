@@ -12,6 +12,15 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
+# Release builds carry full debug info (PDBs). The editor writes a minidump on
+# crash (enjin_crash.dmp) but without symbols every user crash report has been
+# an unreadable RVA. /Zi + /DEBUG costs nothing at runtime; the PDB just has to
+# ship alongside dev builds (it is NOT packaged into the distribution zip).
+if(MSVC)
+    add_compile_options("$<$<CONFIG:Release>:/Zi>")
+    add_link_options("$<$<CONFIG:Release>:/DEBUG>" "$<$<CONFIG:Release>:/OPT:REF>" "$<$<CONFIG:Release>:/OPT:ICF>")
+endif()
+
 # Sanitizer options (for development builds)
 option(ENJIN_ENABLE_ASAN  "Enable AddressSanitizer"                        OFF)
 option(ENJIN_ENABLE_UBSAN "Enable UndefinedBehaviorSanitizer (GCC/Clang)"  OFF)
