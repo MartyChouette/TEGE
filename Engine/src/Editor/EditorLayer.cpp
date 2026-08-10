@@ -1872,6 +1872,15 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // compute skinning is enabled (default off → existing vertex-shader skinning path is untouched).
     if (m_RenderSystem) m_RenderSystem->RunComputeSkinningPass(commandBuffer);
 
+    // Fog/DDGI/clustered/GPU-particle compute pre-pass. Update() never
+    // reaches it when the skip flag is set (every editor frame with a game
+    // view), so without this call the fog froxel volume never receives its
+    // one-shot neutral clear: a project opened directly (launch arg, open-
+    // last, or before any hub frame ran) rendered BLACK until a play/stop
+    // cycle happened to run Update without the skip flag. Idempotent per
+    // frame; its internal skinning call no-ops after the line above.
+    if (m_RenderSystem) m_RenderSystem->RecordComputePrePass(m_LastDeltaTime);
+
     // --- Editor viewport: render scene from editor camera to offscreen RT ---
     // (Resize is handled by PrepareRenderTargets() before command buffer recording)
     if (m_EditorViewportRT && m_EditorViewportRT->IsValid() &&

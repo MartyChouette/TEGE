@@ -17,7 +17,7 @@ endif()
 # an unreadable RVA. /Zi + /DEBUG costs nothing at runtime; the PDB just has to
 # ship alongside dev builds (it is NOT packaged into the distribution zip).
 if(MSVC)
-    add_compile_options("$<$<CONFIG:Release>:/Zi>")
+    add_compile_options("$<$<CONFIG:Release>:/Zi>" "$<$<CONFIG:Release>:/FS>")
     add_link_options("$<$<CONFIG:Release>:/DEBUG>" "$<$<CONFIG:Release>:/OPT:REF>" "$<$<CONFIG:Release>:/OPT:ICF>")
 endif()
 
