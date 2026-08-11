@@ -4196,6 +4196,8 @@ void RenderSystem::Update(f32 deltaTime) {
     m_FallbackAnimatorEntity = INVALID_ENTITY;
     m_SkeletonToAnimator.clear();
     m_AnimJobs.clear();
+    {
+    ENJIN_PROFILE_SCOPE("Anim/1-collect");   // serial: movement-drive + LOD + ComputeWorldMatrix (World lock)
     for (Entity entity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
         AnimatorComponent* animComp = ResolveAnimator(entity);
         if (!animComp) continue;
@@ -4277,6 +4279,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
         m_AnimJobs.push_back({ entity, animComp, stepDt });
     }
+    }   // end Anim/1-collect scope
 
     // --- Pass 2: parallel pose sampling ------------------------------------------
     // comp->Update() samples the animation and builds the world + skinning matrices,
@@ -4286,6 +4289,7 @@ void RenderSystem::Update(f32 deltaTime) {
     // animator work across the render thread pool with the main thread taking the first
     // chunk. Small counts run inline — the hand-off would cost more than the work.
     {
+        ENJIN_PROFILE_SCOPE("Anim/2-sample");   // parallel pose sampling across the thread pool
         const usize jobCount = m_AnimJobs.size();
         const u32 workers = m_ThreadPool.GetThreadCount();
         if (jobCount >= 24 && workers > 1) {
@@ -11225,6 +11229,7 @@ void RenderSystem::RunComputeSkinningPass(VkCommandBuffer cmd) {
         if (DispatchComputeSkinning(cmd, rd, rd.boneBuffer.get())) {
             rd.skinnedThisFrame = true;
             anySkinned = true;
+            m_SkinnedMeshCount++;
         }
     }
 

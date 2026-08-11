@@ -501,13 +501,18 @@ public:
     u32 GetTriangleCount() const { return m_LastTriangleCount; }
     u32 GetDescriptorCacheHits() const { return m_LastDescriptorCacheHits; }
     u32 GetDescriptorCacheWrites() const { return m_LastDescriptorCacheWrites; }
+    // Skinned meshes compute-skinned this frame — each is currently one descriptor
+    // alloc + 3 writes + one dispatch (the per-entity cost the arena work removes).
+    u32 GetSkinnedMeshCount() const { return m_LastSkinnedMeshCount; }
     void ResetFrameCounters() {
         m_LastDrawCallCount = m_DrawCallCount;
         m_LastTriangleCount = m_TriangleCount;
         m_LastDescriptorCacheHits = m_DescriptorCacheHits;
         m_LastDescriptorCacheWrites = m_DescriptorCacheWrites;
+        m_LastSkinnedMeshCount = m_SkinnedMeshCount;
         m_DrawCallCount = 0; m_TriangleCount = 0;
         m_DescriptorCacheHits = 0; m_DescriptorCacheWrites = 0;
+        m_SkinnedMeshCount = 0;
     }
 
     // Fog and snow parameters (set by editor, uploaded to LightingUBO)
@@ -1451,6 +1456,8 @@ private:
     u32 m_TriangleCount = 0;
     u32 m_DescriptorCacheHits = 0;
     u32 m_DescriptorCacheWrites = 0;
+    u32 m_SkinnedMeshCount = 0;   // compute-skinned meshes this frame
+    u32 m_LastSkinnedMeshCount = 0;
 
     // Last completed frame's counters (snapshot taken in ResetFrameCounters before zeroing)
     u32 m_LastDrawCallCount = 0;

@@ -7354,6 +7354,7 @@ void EditorLayer::DrawDebugWorkstation() {
             ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Render Stats --");
             if (m_RenderSystem) {
                 ImGui::Text("Draw Calls: %u", m_RenderSystem->GetDrawCallCount());
+                ImGui::Text("Skinned meshes: %u", m_RenderSystem->GetSkinnedMeshCount());
                 u32 tris = m_RenderSystem->GetTriangleCount();
                 if (tris > 1000000)
                     ImGui::Text("Triangles: %.2f M", static_cast<f32>(tris) / 1000000.0f);
@@ -7367,6 +7368,37 @@ void EditorLayer::DrawDebugWorkstation() {
                     f32 hitRate = static_cast<f32>(m_RenderSystem->GetDescriptorCacheHits()) / static_cast<f32>(totalDesc) * 100.0f;
                     ImGui::Text("Descriptor Cache Hit Rate: %.0f%%", hitRate);
                 }
+
+                // Stress spawner: re-import the last-imported model into a grid, so each
+                // copy is a full correct hierarchy (skinned mesh included). Loads up the
+                // skinning path so "Skinned meshes" + frame time actually measure it.
+                // (Duplicate-selection didn't work: it clones one entity, not the subtree.)
+                ImGui::Separator();
+                ImGui::TextDisabled("Stress test (re-import last model into a grid):");
+                bool haveModel = !m_LastImportedModelPath.empty();
+                if (haveModel) {
+                    ImGui::TextDisabled("  %s", std::filesystem::path(m_LastImportedModelPath).filename().string().c_str());
+                } else {
+                    ImGui::TextDisabled("  (import a model first)");
+                }
+                ImGui::BeginDisabled(!haveModel);
+                auto spawnGrid = [&](int n) {
+                    if (!haveModel) return;
+                    int side = static_cast<int>(std::ceil(std::sqrt(static_cast<f32>(n))));
+                    f32 off = static_cast<f32>(side - 1) * 0.5f * 2.5f;   // center the grid
+                    for (int i = 0; i < n; ++i) {
+                        f32 x = static_cast<f32>(i % side) * 2.5f - off;
+                        f32 z = static_cast<f32>(i / side) * 2.5f - off;
+                        ImportModelImmediate(m_LastImportedModelPath, Math::Vector3(x, 0.0f, z));
+                    }
+                };
+                if (ImGui::SmallButton("+10")) spawnGrid(10);
+                ImGui::SameLine();
+                if (ImGui::SmallButton("+50")) spawnGrid(50);
+                ImGui::SameLine();
+                if (ImGui::SmallButton("+200")) spawnGrid(200);
+                ImGui::TextDisabled("(re-import is slow; the per-frame skinning cost is what to watch after)");
+                ImGui::EndDisabled();
             } else {
                 ImGui::TextDisabled("RenderSystem not available");
             }
