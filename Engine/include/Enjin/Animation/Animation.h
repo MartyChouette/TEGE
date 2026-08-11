@@ -466,6 +466,11 @@ private:
     SkeletonPose m_BlendTreePoseA;
     SkeletonPose m_BlendTreePoseB;
 
+    // Persistent scratch pose for the normal Update() sampling path. Reused every
+    // frame so sampling never heap-allocates once sized (resize-to-same is a no-op).
+    // At hundreds of animators this removes ~5 vector allocations per animator/frame.
+    SkeletonPose m_SampledPose;
+
     EventCallback m_OnEvent;
 
     // Morph target weight output (sampled each frame from current animation)

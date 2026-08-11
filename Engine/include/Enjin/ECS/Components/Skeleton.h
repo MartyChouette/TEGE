@@ -83,6 +83,13 @@ struct ENJIN_API AnimatorComponent : public IComponent {
     };
     MovementDrive movement;
 
+    // Animation LOD runtime state (NOT serialized). Distant animators refresh their
+    // pose at a reduced rate; skipped frames' dt is banked here so time never drifts.
+    // Deliberately absent from the copy/move member lists below — resetting to 0 on
+    // copy is harmless for a runtime accumulator.
+    f32 lodAccumulatedTime = 0.0f;
+    u32 lodFramePhase = 0;
+
     AnimatorComponent() = default;
 
     // stateMachine holds a raw `SkeletalAnimator*` to its sibling `animator` member.

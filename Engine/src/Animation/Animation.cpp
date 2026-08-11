@@ -433,16 +433,15 @@ void SkeletalAnimator::Update(f32 deltaTime) {
 
     m_NormalizedTime = (duration > 0.0f) ? m_CurrentTime / duration : 0.0f;
 
-    // Sample current animation
-    SkeletonPose sampledPose;
-    sampledPose.Resize(m_Skeleton->bones.size());
-    SampleAnimation(*m_CurrentAnim, m_CurrentTime, sampledPose);
+    // Sample current animation into the persistent scratch pose (no per-frame alloc).
+    m_SampledPose.Resize(m_Skeleton->bones.size());
+    SampleAnimation(*m_CurrentAnim, m_CurrentTime, m_SampledPose);
 
     // Blend if needed
     if (m_BlendProgress < 1.0f) {
-        BlendPoses(m_BlendPose, sampledPose, m_BlendProgress, m_CurrentPose);
+        BlendPoses(m_BlendPose, m_SampledPose, m_BlendProgress, m_CurrentPose);
     } else {
-        m_CurrentPose = sampledPose;
+        m_CurrentPose = m_SampledPose;
     }
 
     // Calculate world transforms

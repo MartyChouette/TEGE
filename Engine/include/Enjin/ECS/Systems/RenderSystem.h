@@ -653,6 +653,11 @@ public:
     // are skinned once per frame by a compute pass and all raster passes read the result.
     void SetComputeSkinningEnabled(bool enabled) { m_ComputeSkinningEnabled = enabled; }
     bool IsComputeSkinningEnabled() const { return m_ComputeSkinningEnabled; }
+    // Animation LOD: distant skeletal animators refresh their pose at a reduced
+    // rate (dt is banked so time never drifts). The single biggest CPU lever for
+    // hundreds of animated entities. On by default; off = every animator full-rate.
+    void SetAnimationLODEnabled(bool enabled) { m_AnimationLODEnabled = enabled; }
+    bool IsAnimationLODEnabled() const { return m_AnimationLODEnabled; }
     // Player mode: skip GPU compute shaders (culling, HiZ, clustered lighting)
     // that use disk-loaded SPIR-V not available in built games.
     void SetPlayerMode(bool enabled) { m_PlayerMode = enabled; }
@@ -1546,12 +1551,12 @@ private:
     // GPU compute skinning feature flag (ADR-0002 Phase 1). Default OFF. Declared outside the
     // Vulkan-only block so the inline setter/getter compile on every backend; only the Vulkan
     // path acts on it.
-    // ADR-0002 compute skinning — default ON since 2026-08-03 (runtime-verified,
-    // validation-clean on the 2-skinned-mesh probe). The vertex-shader skinning
-    // path remains the automatic fallback wherever the compute pass doesn't run
-    // (pooled meshes, morph targets, WebGPU, dispatch failure). Editor Rendering
-    // panel checkbox is the opt-out.
+    // ADR-0002 compute skinning — default ON. Deforms each skinned mesh once into a
+    // shared buffer that BOTH the main and shadow passes read, so their skinned
+    // positions are guaranteed identical (no shadow-acne flicker from the two passes
+    // skinning independently). Editor Rendering panel checkbox toggles it at runtime.
     bool m_ComputeSkinningEnabled = true;
+    bool m_AnimationLODEnabled = true;   // distance-based animator update-rate LOD (see SetAnimationLODEnabled)
     VkCommandBuffer m_LastSkinningCmd = VK_NULL_HANDLE;  // once-per-frame guard for RunComputeSkinningPass
     u32 m_RTMode = 0;  // 0=Hybrid, 1=PathTrace
     u32 m_RTFrameCount = 0;

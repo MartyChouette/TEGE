@@ -4244,7 +4244,32 @@ void RenderSystem::Update(f32 deltaTime) {
             }
         }
 
-        animComp->Update(deltaTime);
+        // Animation LOD: refresh distant animators less often. Time is preserved by
+        // banking dt into lodAccumulatedTime, so the pose is still correct when it
+        // does refresh — it just refreshes at 1/2 or 1/4 rate far from the camera.
+        // The per-entity phase offset spreads the refreshes across frames so they
+        // don't all land on the same frame (thundering herd). IK below is gated with
+        // the pose refresh: applying IK to a stale, un-refreshed pose would stack.
+        f32 stepDt = deltaTime;
+        if (m_AnimationLODEnabled && m_Camera && deltaTime > 0.0f) {
+            constexpr f32 kAnimLODNear = 30.0f;   // full rate within this radius
+            constexpr f32 kAnimLODFar  = 70.0f;   // half rate to here, quarter beyond
+            Math::Matrix4 lodWm = ComputeWorldMatrix(m_World, entity);
+            Math::Vector3 lodPos(lodWm.m[12], lodWm.m[13], lodWm.m[14]);
+            f32 camDist = (lodPos - m_Camera->GetPosition()).Length();
+            u32 interval = (camDist < kAnimLODNear) ? 1u : (camDist < kAnimLODFar ? 2u : 4u);
+
+            animComp->lodAccumulatedTime += deltaTime;
+            animComp->lodFramePhase++;
+            if (interval > 1u &&
+                ((animComp->lodFramePhase + EntityIndex(entity)) % interval) != 0u) {
+                continue;   // skip this frame's refresh; dt stays banked for next time
+            }
+            stepDt = animComp->lodAccumulatedTime;
+            animComp->lodAccumulatedTime = 0.0f;
+        }
+
+        animComp->Update(stepDt);
 
         if (!animComp->animator.IsPlaying()) continue;
 
@@ -5569,8 +5594,11 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 usize boneCount = animComp->animator.GetSkeleton()
                     ? animComp->animator.GetSkeleton()->bones.size() : 0;
                 if (boneCount > 0) {
+                    // Headroom (>=256): the animator resolved here at draw time may
+                    // differ in bone count from a later/other resolve; the runtime-array
+                    // bone SSBO tolerates the extra space and it prevents upload overflow.
                     renderData.boneBuffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
-                    if (!renderData.boneBuffer->Create(boneCount * sizeof(Math::Matrix4),
+                    if (!renderData.boneBuffer->Create(std::max<usize>(boneCount, 256) * sizeof(Math::Matrix4),
                                                         Renderer::BufferUsage::Storage, true)) {
                         renderData.boneBuffer.reset();
                     }
@@ -5638,6 +5666,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             if (useSubMeshes) {
                 // Total index count for bounds validation
                 u32 totalIndexCount = poolPath ? renderData.poolAlloc.indexCount : renderData.indexCount;
+                u32 subMeshDrawn = 0;   // if this stays 0, the mesh would render NOTHING
 
                 // One-shot per-entity diagnostic: a multi-material mesh whose
                 // sub-meshes all skip renders ONLY its shadow (invisible-model
@@ -5782,6 +5811,32 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     }
                     m_DrawCallCount++;
                     m_TriangleCount += subMesh.indexCount / 3;
+                    subMeshDrawn++;
+                }
+
+                // Fallback: if EVERY sub-mesh was gated out (bad material-slot indices,
+                // out-of-range index ranges, missing slot materials), the mesh would
+                // render nothing but its shadow — the "invisible imported model" class.
+                // Draw the whole index buffer once with the base material so geometry
+                // ALWAYS shows. Buffers are already bound above.
+                if (subMeshDrawn == 0) {
+                    static std::unordered_set<u64> s_SubMeshFallbackLogged;
+                    if (s_SubMeshFallbackLogged.insert(static_cast<u64>(entity)).second) {
+                        ENJIN_LOG_WARN(Renderer, "SubMesh fallback e%llu: all %zu sub-meshes gated out "
+                            "(material-slot mismatch) — drawing whole mesh with base material",
+                            static_cast<unsigned long long>(entity), meshForSubMesh->subMeshes.size());
+                    }
+                    vkCmdPushConstants(commandBuffer, targetPipeline->GetLayout(),
+                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                        sizeof(Renderer::PushConstants), &pushConstants);
+                    if (poolPath) {
+                        vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
+                                         renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, matIdx);
+                    } else if (renderData.vertexBuffer && renderData.indexBuffer) {
+                        vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, matIdx);
+                    }
+                    m_DrawCallCount++;
+                    m_TriangleCount += renderData.indexCount / 3;
                 }
             } else {
                 // Single-material path (original behavior)
@@ -8156,16 +8211,23 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
     if (animComp && animComp->animator.GetSkeleton()) {
         usize boneCount = animComp->animator.GetSkeleton()->bones.size();
         if (boneCount > 0) {
-            usize boneBufferSize = boneCount * sizeof(Math::Matrix4);
+            // Size with headroom (>= the engine's 256-bone default). The animator that
+            // resolves at DRAW time can differ from the one resolved here at SETUP time
+            // (the skeleton->animator map isn't populated until the first Update after a
+            // fresh import, so setup may fall back to a different skeleton). Sizing every
+            // bone buffer to at least 256 means any skinning upload fits regardless —
+            // the bone SSBO is a runtime array, so the extra space is harmless. Without
+            // this, dropping several skinned models overflows the buffer on upload.
+            usize boneBufferSize = std::max<usize>(boneCount, 256) * sizeof(Math::Matrix4);
             renderData.boneBuffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
             if (!renderData.boneBuffer->Create(boneBufferSize, Renderer::BufferUsage::Storage, true)) {
                 ENJIN_LOG_ERROR(Renderer, "Failed to create bone buffer for entity %llu", entity);
                 renderData.boneBuffer.reset();
             } else {
-                // Initialize bone buffer with identity matrices so bind-pose
-                // skinning is a no-op. Without this, the buffer contains garbage
-                // until the first animation frame uploads real matrices.
-                std::vector<Math::Matrix4> identityMatrices(boneCount, Math::Matrix4::Identity());
+                // Initialize the WHOLE buffer (including headroom) with identity so
+                // bind-pose skinning is a no-op and no slot is ever garbage.
+                std::vector<Math::Matrix4> identityMatrices(boneBufferSize / sizeof(Math::Matrix4),
+                                                            Math::Matrix4::Identity());
                 renderData.boneBuffer->UploadData(identityMatrices.data(), boneBufferSize);
             }
         }
