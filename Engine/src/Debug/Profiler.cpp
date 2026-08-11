@@ -90,11 +90,12 @@ void Profiler::DrawProfilerPanel() {
     if (!m_Enabled) return;
 
     if (ImGui::Begin("Profiler")) {
-        // FPS and frame time header
+        // FPS and frame time header — flow with fixed spacing so it never overlaps at
+        // larger font scales (the old absolute SameLine(150/300) collided).
         ImGui::Text("FPS: %.1f", m_FPS);
-        ImGui::SameLine(150);
+        ImGui::SameLine(0, 24);
         ImGui::Text("Frame: %.2f ms", m_CurrentFrame.totalMs);
-        ImGui::SameLine(300);
+        ImGui::SameLine(0, 24);
         ImGui::Text("Avg: %.2f ms", GetAverageFrameTimeMs());
 
         ImGui::Separator();
@@ -140,9 +141,9 @@ void Profiler::DrawProfilerPanel() {
 
         // Counters
         ImGui::Text("Draw Calls: %u", m_CurrentFrame.drawCalls);
-        ImGui::SameLine(200);
+        ImGui::SameLine(0, 24);
         ImGui::Text("Entities: %u", m_CurrentFrame.entityCount);
-        ImGui::SameLine(400);
+        ImGui::SameLine(0, 24);
         ImGui::Text("Triangles: %u", m_CurrentFrame.triangleCount);
 
         if (m_CurrentFrame.memoryUsedBytes > 0) {
@@ -152,22 +153,10 @@ void Profiler::DrawProfilerPanel() {
 
         ImGui::Separator();
 
-        // Detailed scope timings
+        // Detailed scope timings — a resizable, auto-sizing table so long scope names
+        // and 3-decimal values are never clipped (the old fixed 200/80px columns cut off
+        // "RenderSys/Update" and truncated the Max column).
         if (ImGui::TreeNode("Detailed Scopes")) {
-            ImGui::Columns(5, "##Scopes");
-            ImGui::SetColumnWidth(0, 200);
-            ImGui::SetColumnWidth(1, 80);
-            ImGui::SetColumnWidth(2, 80);
-            ImGui::SetColumnWidth(3, 80);
-            ImGui::SetColumnWidth(4, 80);
-
-            ImGui::Text("Scope"); ImGui::NextColumn();
-            ImGui::Text("Last"); ImGui::NextColumn();
-            ImGui::Text("Avg"); ImGui::NextColumn();
-            ImGui::Text("Max"); ImGui::NextColumn();
-            ImGui::Text("Calls"); ImGui::NextColumn();
-            ImGui::Separator();
-
             // Sort scopes by last time (descending)
             std::vector<const ProfileScope*> sorted;
             for (const auto& [name, scope] : m_Scopes) {
@@ -178,15 +167,27 @@ void Profiler::DrawProfilerPanel() {
                     return a->lastTimeMs > b->lastTimeMs;
                 });
 
-            for (const auto* scope : sorted) {
-                ImGui::Text("%s", scope->name.c_str()); ImGui::NextColumn();
-                ImGui::Text("%.3f", scope->lastTimeMs); ImGui::NextColumn();
-                ImGui::Text("%.3f", scope->avgTimeMs); ImGui::NextColumn();
-                ImGui::Text("%.3f", scope->maxTimeMs); ImGui::NextColumn();
-                ImGui::Text("%llu", static_cast<unsigned long long>(scope->callCount)); ImGui::NextColumn();
-            }
+            constexpr ImGuiTableFlags tblFlags =
+                ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp;
+            if (ImGui::BeginTable("##Scopes", 5, tblFlags)) {
+                ImGui::TableSetupColumn("Scope", ImGuiTableColumnFlags_WidthStretch, 2.4f);
+                ImGui::TableSetupColumn("Last",  ImGuiTableColumnFlags_WidthStretch, 1.0f);
+                ImGui::TableSetupColumn("Avg",   ImGuiTableColumnFlags_WidthStretch, 1.0f);
+                ImGui::TableSetupColumn("Max",   ImGuiTableColumnFlags_WidthStretch, 1.0f);
+                ImGui::TableSetupColumn("Calls", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+                ImGui::TableHeadersRow();
 
-            ImGui::Columns(1);
+                for (const auto* scope : sorted) {
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn(); ImGui::TextUnformatted(scope->name.c_str());
+                    ImGui::TableNextColumn(); ImGui::Text("%.3f", scope->lastTimeMs);
+                    ImGui::TableNextColumn(); ImGui::Text("%.3f", scope->avgTimeMs);
+                    ImGui::TableNextColumn(); ImGui::Text("%.3f", scope->maxTimeMs);
+                    ImGui::TableNextColumn(); ImGui::Text("%llu", static_cast<unsigned long long>(scope->callCount));
+                }
+                ImGui::EndTable();
+            }
             ImGui::TreePop();
         }
     }
