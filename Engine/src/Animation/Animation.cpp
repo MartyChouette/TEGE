@@ -450,7 +450,10 @@ void SkeletalAnimator::Update(f32 deltaTime) {
 
     // Fire animation events that occurred between m_PreviousTime and m_CurrentTime.
     // Handles loop wrapping: if we looped, fire events from [prevTime, duration) and [0, currentTime).
-    if (m_OnEvent && !m_CurrentAnim->events.empty()) {
+    // Collect (do NOT fire) events — Update() may run on a worker thread. FlushEvents()
+    // dispatches them on the main thread. Collected regardless of m_OnEvent so a callback
+    // wired later loses nothing.
+    if (!m_CurrentAnim->events.empty()) {
         for (const auto& event : m_CurrentAnim->events) {
             bool shouldFire = false;
             if (looped) {
@@ -461,10 +464,18 @@ void SkeletalAnimator::Update(f32 deltaTime) {
                 shouldFire = (event.time >= m_PreviousTime && event.time < m_CurrentTime);
             }
             if (shouldFire) {
-                m_OnEvent(event.name);
+                m_PendingEvents.push_back(event.name);
             }
         }
     }
+}
+
+void SkeletalAnimator::FlushEvents() {
+    if (m_PendingEvents.empty()) return;
+    if (m_OnEvent) {
+        for (const auto& name : m_PendingEvents) m_OnEvent(name);
+    }
+    m_PendingEvents.clear();
 }
 
 void SkeletalAnimator::SampleAnimation(const SkeletalAnimation& anim, f32 time, SkeletonPose& outPose) {
@@ -651,8 +662,9 @@ void SkeletalAnimator::UpdateBlendTree(const BlendTree& blendTree, f32 paramValu
     // Mark as playing for inspector display
     m_IsPlaying = true;
 
-    // Fire events from primary animation
-    if (m_OnEvent && !animA->events.empty()) {
+    // Collect events from the primary animation (fired later by FlushEvents on the main
+    // thread — UpdateBlendTree may run on a worker thread).
+    if (!animA->events.empty()) {
         f32 prevTime = m_CurrentTime - dt;
         bool looped = (prevTime < 0.0f);
         if (looped) prevTime += durationA;
@@ -665,7 +677,7 @@ void SkeletalAnimator::UpdateBlendTree(const BlendTree& blendTree, f32 paramValu
                 shouldFire = (event.time >= prevTime && event.time < m_CurrentTime);
             }
             if (shouldFire) {
-                m_OnEvent(event.name);
+                m_PendingEvents.push_back(event.name);
             }
         }
     }

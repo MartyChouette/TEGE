@@ -1,5 +1,6 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Debug/Profiler.h"
 #if !ENJIN_RENDERER_WEBGPU
 #include "Enjin/Renderer/SkinningComputeShaderData.h"  // embedded SPIR-V (ADR-0002 compute skinning)
 #endif
@@ -3956,6 +3957,7 @@ void RenderSystem::FlushPendingChanges() {
 }
 
 void RenderSystem::Update(f32 deltaTime) {
+    ENJIN_PROFILE_SCOPE("RenderSys/Update");   // CPU update: skeletal animation, IK, culling, buffer setup (editor skips main-pass draw)
     if (!m_Renderer || !m_Initialized) {
         return;
     }
@@ -4193,6 +4195,7 @@ void RenderSystem::Update(f32 deltaTime) {
     // Update skeletal animators and apply IK constraints (single pass over AnimatorComponent entities)
     m_FallbackAnimatorEntity = INVALID_ENTITY;
     m_SkeletonToAnimator.clear();
+    m_AnimJobs.clear();
     for (Entity entity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
         AnimatorComponent* animComp = ResolveAnimator(entity);
         if (!animComp) continue;
@@ -4253,11 +4256,14 @@ void RenderSystem::Update(f32 deltaTime) {
         f32 stepDt = deltaTime;
         if (m_AnimationLODEnabled && m_Camera && deltaTime > 0.0f) {
             constexpr f32 kAnimLODNear = 30.0f;   // full rate within this radius
-            constexpr f32 kAnimLODFar  = 70.0f;   // half rate to here, quarter beyond
+            constexpr f32 kAnimLODFar  = 70.0f;   // half rate to here
+            constexpr f32 kAnimLODFar2 = 140.0f;  // quarter to here, eighth beyond
             Math::Matrix4 lodWm = ComputeWorldMatrix(m_World, entity);
             Math::Vector3 lodPos(lodWm.m[12], lodWm.m[13], lodWm.m[14]);
             f32 camDist = (lodPos - m_Camera->GetPosition()).Length();
-            u32 interval = (camDist < kAnimLODNear) ? 1u : (camDist < kAnimLODFar ? 2u : 4u);
+            u32 interval = (camDist < kAnimLODNear) ? 1u
+                         : (camDist < kAnimLODFar)  ? 2u
+                         : (camDist < kAnimLODFar2) ? 4u : 8u;
 
             animComp->lodAccumulatedTime += deltaTime;
             animComp->lodFramePhase++;
@@ -4269,8 +4275,43 @@ void RenderSystem::Update(f32 deltaTime) {
             animComp->lodAccumulatedTime = 0.0f;
         }
 
-        animComp->Update(stepDt);
+        m_AnimJobs.push_back({ entity, animComp, stepDt });
+    }
 
+    // --- Pass 2: parallel pose sampling ------------------------------------------
+    // comp->Update() samples the animation and builds the world + skinning matrices,
+    // touching ONLY that animator's own state (no World access; clip events are collected
+    // into the animator, not fired, so nothing calls gameplay/script code on a worker
+    // thread — they're dispatched later by the serial FlushEvents pass). Fan the per-
+    // animator work across the render thread pool with the main thread taking the first
+    // chunk. Small counts run inline — the hand-off would cost more than the work.
+    {
+        const usize jobCount = m_AnimJobs.size();
+        const u32 workers = m_ThreadPool.GetThreadCount();
+        if (jobCount >= 24 && workers > 1) {
+            const usize chunk = (jobCount + workers) / (workers + 1);
+            std::vector<std::future<void>> futures;
+            futures.reserve(workers);
+            for (usize start = chunk; start < jobCount; start += chunk) {
+                const usize end = std::min(start + chunk, jobCount);
+                futures.push_back(m_ThreadPool.Submit([this, start, end]() {
+                    for (usize i = start; i < end; ++i)
+                        m_AnimJobs[i].comp->Update(m_AnimJobs[i].stepDt);
+                }));
+            }
+            const usize mainEnd = std::min(chunk, jobCount);
+            for (usize i = 0; i < mainEnd; ++i)
+                m_AnimJobs[i].comp->Update(m_AnimJobs[i].stepDt);
+            for (auto& f : futures) f.get();
+        } else {
+            for (auto& j : m_AnimJobs) j.comp->Update(j.stepDt);
+        }
+    }
+
+    // --- Pass 3: serial IK (reads/writes the World and the just-sampled poses) -----
+    for (auto& job : m_AnimJobs) {
+        Entity entity = job.entity;
+        AnimatorComponent* animComp = job.comp;
         if (!animComp->animator.IsPlaying()) continue;
 
         auto* lookAtIK = m_World->GetComponent<LookAtIKComponent>(entity);
@@ -4461,6 +4502,15 @@ void RenderSystem::Update(f32 deltaTime) {
             transform->rotation = finalRot;
             transform->worldMatrixDirty = true;
         }
+    }
+
+    // Fire deferred animation events LAST — collected during the parallel pose sample,
+    // dispatched here on the main thread. Re-resolve the animator per entity (NOT the
+    // cached job pointer): a script's OnAnimationEvent handler can add/remove components
+    // and reallocate the animator storage, so looking up fresh each iteration avoids the
+    // dangling-cached-animator crash class. No-op in the editor (no callback wired).
+    for (auto& job : m_AnimJobs) {
+        if (AnimatorComponent* a = ResolveAnimator(job.entity)) a->animator.FlushEvents();
     }
 
     // Classify scene composition (2D / 2.5D / 3D) before rendering decisions
@@ -11128,6 +11178,7 @@ bool RenderSystem::DispatchComputeSkinning(VkCommandBuffer cmd, EntityRenderData
 }
 
 void RenderSystem::RunComputeSkinningPass(VkCommandBuffer cmd) {
+    ENJIN_PROFILE_SCOPE("Skin/Compute");   // per-entity bone upload + compute dispatch record
     if (!m_ComputeSkinningEnabled || !cmd || !m_World) return;
     // Once per frame: the editor calls this from EditorLayer::Render AND
     // RenderSystem::Update calls it for the player path — both record into the

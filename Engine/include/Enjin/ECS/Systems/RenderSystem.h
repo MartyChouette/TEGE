@@ -859,6 +859,14 @@ private:
     // drift). Rebuilt each frame in the animator update loop. Keyed by raw Skeleton pointer.
     // Values are ENTITIES for the same dangling-pointer reason as m_FallbackAnimatorEntity.
     std::unordered_map<const Animation::Skeleton*, Entity> m_SkeletonToAnimator;
+    // Per-frame work list for the parallel animation pass. Pass 1 (serial) collects the
+    // animators to sample this frame plus their banked dt; Pass 2 fans comp->Update()
+    // across m_ThreadPool (pose sampling touches only per-animator state, no World access;
+    // clip events are COLLECTED, not fired, so nothing calls into gameplay/scripts on a
+    // worker thread); Pass 3 (serial) applies IK and fires the deferred events. Reused
+    // across frames to avoid per-frame allocation.
+    struct AnimUpdateJob { Entity entity; AnimatorComponent* comp; f32 stepDt; };
+    std::vector<AnimUpdateJob> m_AnimJobs;
     // Resolve the animator that should skin this entity: its own, else the leader driving
     // its shared skeleton, else the per-frame fallback. Returns null for non-skinned entities.
     AnimatorComponent* ResolveAnimator(Entity entity);

@@ -60,6 +60,10 @@ public:
     void OnTriggerEnter(ECS::Entity entity, ECS::Entity other);
     void OnTriggerExit(ECS::Entity entity, ECS::Entity other);
 
+    // Dispatch an animation event (from the animator's clip events) to the entity's
+    // optional script hook: void OnAnimationEvent(string name). Called on the main thread.
+    void OnAnimationEvent(ECS::Entity entity, const std::string& name);
+
 private:
     // Initialize a single script attachment (create instance, call OnCreate)
     void InitScript(ECS::Entity entity, ECS::ScriptAttachment& script);
@@ -72,6 +76,9 @@ private:
 
     // Call a void(Entity) collision method
     bool CallCollisionMethod(ECS::ScriptAttachment& script, int methodId, const char* methodName, ECS::Entity other);
+
+    // Call a void(string) method (e.g. OnAnimationEvent)
+    bool CallStringMethod(ECS::ScriptAttachment& script, int methodId, const char* methodName, const std::string& arg);
 
     // Cache method IDs for a script attachment
     void CacheMethodIds(ECS::ScriptAttachment& script);

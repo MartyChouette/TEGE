@@ -76,6 +76,7 @@ struct ScriptAttachment {
     int methodOnCollisionExit = -1;
     int methodOnTriggerEnter = -1;
     int methodOnTriggerExit = -1;
+    int methodOnAnimationEvent = -1;   // void OnAnimationEvent(string) — optional
 };
 
 // Component that holds all scripts attached to an entity

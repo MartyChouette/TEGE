@@ -408,6 +408,12 @@ public:
     // Events
     using EventCallback = std::function<void(const std::string&)>;
     void SetEventCallback(EventCallback callback) { m_OnEvent = callback; }
+    // Update() runs on worker threads (the render animation pass parallelizes pose
+    // sampling), so animation events are COLLECTED during sampling and dispatched here on
+    // the main thread — Update() must never call into gameplay/script code directly.
+    // Safe to call every frame; no-op when nothing fired.
+    void FlushEvents();
+    bool HasPendingEvents() const { return !m_PendingEvents.empty(); }
 
     // Accessors for serialization and editor
     const std::unordered_map<std::string, SkeletalAnimation>& GetAnimations() const { return m_Animations; }
@@ -472,6 +478,10 @@ private:
     SkeletonPose m_SampledPose;
 
     EventCallback m_OnEvent;
+    // Events fired during Update()/UpdateBlendTree() (possibly on a worker thread), drained
+    // by FlushEvents() on the main thread. Collected even when no callback is set so wiring
+    // one later loses nothing; bounded because FlushEvents() clears every frame.
+    std::vector<std::string> m_PendingEvents;
 
     // Morph target weight output (sampled each frame from current animation)
     std::vector<f32> m_MorphWeights;

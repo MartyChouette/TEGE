@@ -1,5 +1,6 @@
 #include "Enjin/Scripting/ScriptSystem.h"
 #include "Enjin/Scripting/ScriptEngine.h"
+#include "Enjin/ECS/Components/Skeleton.h"   // AnimatorComponent — animation-event wiring
 #include "Enjin/Scripting/ScriptPropertyParser.h"
 #include "Enjin/Scripting/CoroutineScheduler.h"
 #include "Enjin/Logging/Log.h"
@@ -38,6 +39,9 @@ void ScriptSystem::CacheMethodIds(ECS::ScriptAttachment& script) {
     script.methodOnCollisionExit  = findMethod("void OnCollisionExit(uint64)");
     script.methodOnTriggerEnter   = findMethod("void OnTriggerEnter(uint64)");
     script.methodOnTriggerExit    = findMethod("void OnTriggerExit(uint64)");
+    script.methodOnAnimationEvent = findMethod("void OnAnimationEvent(string)");
+    if (script.methodOnAnimationEvent < 0)
+        script.methodOnAnimationEvent = findMethod("void OnAnimationEvent(const string&in)");
 }
 
 void ScriptSystem::HandleScriptError(ECS::ScriptAttachment& script, const char* methodName) {
@@ -150,6 +154,49 @@ bool ScriptSystem::CallCollisionMethod(ECS::ScriptAttachment& script, int method
     return success;
 }
 
+bool ScriptSystem::CallStringMethod(ECS::ScriptAttachment& script, int methodId, const char* methodName, const std::string& arg) {
+    if (methodId < 0 || !script.instance || script.hasError || !script.enabled) return true;
+    if (!m_ScriptEngine) return false;
+
+    asIScriptObject* obj = static_cast<asIScriptObject*>(script.instance);
+    asIScriptContext* ctx = m_ScriptEngine->AcquireContext();
+    if (!ctx) return false;
+
+    asIScriptEngine* engine = m_ScriptEngine->GetASEngine();
+    asIScriptFunction* func = engine->GetFunctionById(methodId);
+    if (!func) {
+        m_ScriptEngine->ReturnContext(ctx);
+        return true;
+    }
+
+    ctx->Prepare(func);
+    ctx->SetObject(obj);
+    // AngelScript 'string' is registered as std::string (RegisterStdString), so the arg is
+    // passed as a pointer to a std::string. The copy outlives Execute().
+    std::string argCopy = arg;
+    ctx->SetArgObject(0, &argCopy);
+
+    int r = ctx->Execute();
+    bool success = true;
+    if (r == asEXECUTION_EXCEPTION) {
+        script.lastError = ctx->GetExceptionString();
+        HandleScriptError(script, methodName);
+        success = false;
+    }
+
+    m_ScriptEngine->ReturnContext(ctx);
+    return success;
+}
+
+void ScriptSystem::OnAnimationEvent(ECS::Entity entity, const std::string& name) {
+    if (!m_World || !m_World->HasComponent<ECS::ScriptComponent>(entity)) return;
+    auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
+    if (!sc) return;
+    for (auto& script : sc->scripts) {
+        CallStringMethod(script, script.methodOnAnimationEvent, "OnAnimationEvent", name);
+    }
+}
+
 void ScriptSystem::InitScript(ECS::Entity entity, ECS::ScriptAttachment& script) {
     if (!m_ScriptEngine || script.initialized) return;
 
@@ -224,6 +271,20 @@ void ScriptSystem::InitScript(ECS::Entity entity, ECS::ScriptAttachment& script)
 
     // Cache method IDs
     CacheMethodIds(script);
+
+    // Wire animation events to this script's optional OnAnimationEvent(string) hook.
+    // The animator collects events during the parallel pose sample; RenderSystem fires
+    // this callback on the main thread (FlushEvents), so calling AngelScript here is safe.
+    // Captures the entity by value and re-looks-up the script on dispatch, so it stays
+    // valid across script teardown/replay (no-ops when the instance is gone).
+    if (script.methodOnAnimationEvent >= 0 && m_World) {
+        if (auto* anim = m_World->GetComponent<ECS::AnimatorComponent>(entity)) {
+            ECS::Entity e = entity;
+            anim->animator.SetEventCallback([this, e](const std::string& name) {
+                OnAnimationEvent(e, name);
+            });
+        }
+    }
 
     // Apply property overrides
     m_ScriptEngine->ApplyProperties(obj, script.properties);
