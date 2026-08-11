@@ -2870,47 +2870,59 @@ void EditorLayer::DrawQuitFeedbackDialog() {
     ImGui::OpenPopup("##QuitFeedback");
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    // Scale with the UI so large ui-scale settings don't cram the content into
-    // a fixed pixel box — but at HALF weight (fonts already scale, so full
-    // linear scaling made the dialog comically large at 1.9x), clamped to the
-    // display so it never overflows.
+    // Scale with the UI at HALF weight (fonts already scale, so full linear scaling
+    // made the card comically large at high ui-scale).
     const f32 dlgScale = 1.0f + (m_EditorSettings.uiScale - 1.0f) * 0.5f;
-    ImVec2 display = ImGui::GetMainViewport()->Size;
-    ImVec2 dlgSize(std::min(760.0f * dlgScale, display.x * 0.85f),
-                   std::min(680.0f * dlgScale, display.y * 0.85f));
-    // Default size only — the dialog is user-resizable (drag any edge)
-    ImGui::SetNextWindowSize(dlgSize, ImGuiCond_Appearing);
-    ImGui::SetNextWindowSizeConstraints(ImVec2(420.0f, 320.0f),
-                                        ImVec2(display.x * 0.95f, display.y * 0.95f));
+    const f32 contentW = 540.0f * dlgScale;
+    const ImVec4 accent(0.36f, 0.62f, 1.0f, 1.0f);
+
+    // Framed, rounded card with an accent border so it reads as a distinct panel
+    // rather than a borderless slab. AlwaysAutoResize hugs the content, so there's no
+    // awkward empty space below the buttons and no fixed box to fight the ui-scale.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(26.0f * dlgScale, 22.0f * dlgScale));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(8.0f, 7.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, accent);
 
     if (ImGui::BeginPopupModal("##QuitFeedback", nullptr,
-        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar)) {
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize)) {
 
-        ImGui::TextColored(ImVec4(1, 1, 1, 1), "Before you go...");
+        // ── Header: larger accented title + a light subtitle ──
+        ImGui::SetWindowFontScale(1.55f);
+        ImGui::TextColored(accent, "Before you go...");
+        ImGui::SetWindowFontScale(1.0f);
+        ImGui::TextDisabled("A few seconds of feedback helps shape TEGE. Totally optional.");
+        ImGui::Dummy(ImVec2(0, 6));
         ImGui::Separator();
-        ImGui::Dummy(ImVec2(0, 4));
+        ImGui::Dummy(ImVec2(0, 8));
 
-        // Helper for 1-5 rating row
-        auto RatingRow = [dlgScale](const char* label, u8& value) {
+        // Helper for a 1-5 rating row — right-aligned pill buttons, accent when picked
+        auto RatingRow = [&](const char* label, u8& value) {
+            ImGui::AlignTextToFramePadding();
             ImGui::Text("%s", label);
-            ImGui::SameLine(280.0f * dlgScale);
+            ImGui::SameLine(contentW - (5.0f * 30.0f + 4.0f * 6.0f) * dlgScale);
             ImGui::PushID(label);
             for (u8 i = 1; i <= 5; i++) {
                 ImGui::PushID(static_cast<int>(i));
                 bool selected = (value == i);
-                if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.6f, 1.0f, 1.0f));
+                if (selected) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, accent);
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, accent);
+                }
                 char num[4];
                 snprintf(num, sizeof(num), "%d", i);
-                if (ImGui::SmallButton(num)) value = i;
-                if (selected) ImGui::PopStyleColor();
+                if (ImGui::Button(num, ImVec2(30.0f * dlgScale, 0))) value = i;
+                if (selected) ImGui::PopStyleColor(2);
                 ImGui::PopID();
-                if (i < 5) ImGui::SameLine();
+                if (i < 5) ImGui::SameLine(0, 6.0f * dlgScale);
             }
             ImGui::PopID();
         };
 
-        ImGui::Text("Rate your experience (1-5):");
-        ImGui::Dummy(ImVec2(0, 2));
+        ImGui::TextColored(accent, "Rate your experience  (1 = poor, 5 = great)");
+        ImGui::Dummy(ImVec2(0, 3));
         RatingRow("Overall Satisfaction", m_QuitSurvey.ratingOverall);
         RatingRow("Stability", m_QuitSurvey.ratingStability);
         RatingRow("Performance", m_QuitSurvey.ratingPerformance);
@@ -2919,33 +2931,37 @@ void EditorLayer::DrawQuitFeedbackDialog() {
 
         ImGui::Dummy(ImVec2(0, 8));
         ImGui::Separator();
-        ImGui::Dummy(ImVec2(0, 4));
+        ImGui::Dummy(ImVec2(0, 8));
 
         // Text fields — static buffers required by ImGui
         static char likeBuf[512] = {};
         static char frustrateBuf[512] = {};
         static char featureBuf[512] = {};
 
-        const f32 inputH = 56.0f * dlgScale;
-        ImGui::Text("What did you like?");
-        ImGui::InputTextMultiline("##like", likeBuf, sizeof(likeBuf), ImVec2(-1, inputH));
+        const f32 inputH = 52.0f * dlgScale;
+        ImGui::TextColored(accent, "What did you like?");
+        ImGui::InputTextMultiline("##like", likeBuf, sizeof(likeBuf), ImVec2(contentW, inputH));
+        ImGui::Dummy(ImVec2(0, 2));
+        ImGui::TextColored(accent, "What frustrated you?");
+        ImGui::InputTextMultiline("##frustrate", frustrateBuf, sizeof(frustrateBuf), ImVec2(contentW, inputH));
+        ImGui::Dummy(ImVec2(0, 2));
+        ImGui::TextColored(accent, "What feature do you want most?");
+        ImGui::InputTextMultiline("##feature", featureBuf, sizeof(featureBuf), ImVec2(contentW, inputH));
 
-        ImGui::Text("What frustrated you?");
-        ImGui::InputTextMultiline("##frustrate", frustrateBuf, sizeof(frustrateBuf), ImVec2(-1, inputH));
+        ImGui::Dummy(ImVec2(0, 14));
 
-        ImGui::Text("What feature do you want most?");
-        ImGui::InputTextMultiline("##feature", featureBuf, sizeof(featureBuf), ImVec2(-1, inputH));
-
-        ImGui::Dummy(ImVec2(0, 8));
-
-        // Buttons — centered against the real window width, not a hardcoded one
-        float buttonWidth = 175.0f * dlgScale;
-        float buttonHeight = 36.0f * dlgScale;
-        float spacing = 16.0f;
+        // Buttons — centered against the real window width; primary gets the accent fill
+        float buttonWidth = 168.0f * dlgScale;
+        float buttonHeight = 34.0f * dlgScale;
+        float spacing = 12.0f * dlgScale;
         float totalWidth = buttonWidth * 3 + spacing * 2;
         ImGui::SetCursorPosX((ImGui::GetWindowSize().x - totalWidth) * 0.5f);
 
-        if (ImGui::Button("Submit & Quit", ImVec2(buttonWidth, buttonHeight))) {
+        ImGui::PushStyleColor(ImGuiCol_Button, accent);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.46f, 0.70f, 1.0f, 1.0f));
+        bool submitQuit = ImGui::Button("Submit & Quit", ImVec2(buttonWidth, buttonHeight));
+        ImGui::PopStyleColor(2);
+        if (submitQuit) {
             m_QuitSurvey.whatDidYouLike = likeBuf;
             m_QuitSurvey.whatFrustratedYou = frustrateBuf;
             m_QuitSurvey.mostWantedFeature = featureBuf;
@@ -3008,6 +3024,9 @@ void EditorLayer::DrawQuitFeedbackDialog() {
         m_ShowQuitFeedbackDialog = false;
         m_QuitSurvey = {};
     }
+
+    ImGui::PopStyleColor(1);   // Border
+    ImGui::PopStyleVar(5);     // WindowBorderSize, WindowRounding, WindowPadding, FrameRounding, ItemSpacing
 }
 
 void EditorLayer::FinalizeQuit() {
