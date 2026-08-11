@@ -5,6 +5,8 @@
 #include "Enjin/ECS/Component.h"
 #include "Enjin/ECS/System.h"
 #include <unordered_map>
+#include <typeinfo>
+#include <utility>
 #include <unordered_set>
 #include <memory>
 #include <string>
@@ -248,6 +250,29 @@ public:
      */
     usize GetEntityCount() const { return m_EntityManager.GetEntityCount(); }
 
+    // --- ECS introspection (for the debug workstation) ---------------------------
+    // Number of distinct component TYPES that currently have storage allocated.
+    usize GetComponentStorageCount() const { return m_ComponentStorages.size(); }
+
+    // Total live component INSTANCES across every storage (sum of per-type counts).
+    usize GetTotalComponentCount() const {
+        usize total = 0;
+        for (const auto& [id, storage] : m_ComponentStorages) {
+            if (storage) total += storage->Size();
+        }
+        return total;
+    }
+
+    // Fill out with (component name, live count) for every non-empty storage. Unsorted.
+    void GetComponentStats(std::vector<std::pair<const char*, usize>>& out) const {
+        out.clear();
+        out.reserve(m_ComponentStorages.size());
+        for (const auto& [id, storage] : m_ComponentStorages) {
+            if (storage && storage->Size() > 0)
+                out.emplace_back(storage->TypeName(), storage->Size());
+        }
+    }
+
     /**
      * @brief Lock the world for external batch operations (prevents structural modifications)
      * Use sparingly — prefer DestroyEntity (deferred) over DestroyEntityImmediate
@@ -266,7 +291,20 @@ private:
         virtual bool Has(Entity entity) const = 0;
         virtual usize Size() const = 0;
         virtual const std::vector<Entity>& GetEntities() const = 0;
+        // Short component name (e.g. "MeshComponent") for the ECS debug panel.
+        virtual const char* TypeName() const = 0;
     };
+
+    // Strip the compiler's decorated type name down to the bare class name:
+    // "struct Enjin::ECS::MeshComponent" -> "MeshComponent".
+    static std::string CleanTypeName(const char* raw) {
+        std::string s = raw ? raw : "";
+        usize colon = s.rfind(':');
+        if (colon != std::string::npos) s = s.substr(colon + 1);
+        else if (s.rfind("struct ", 0) == 0) s = s.substr(7);
+        else if (s.rfind("class ", 0) == 0) s = s.substr(6);
+        return s;
+    }
 
     template<typename T>
     struct StorageWrapper : public StorageBase {
@@ -283,6 +321,10 @@ private:
         }
         const std::vector<Entity>& GetEntities() const override {
             return storage.GetEntities();
+        }
+        const char* TypeName() const override {
+            static const std::string s = CleanTypeName(typeid(T).name());
+            return s.c_str();
         }
     };
 

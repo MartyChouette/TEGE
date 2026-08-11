@@ -7409,17 +7409,90 @@ void EditorLayer::DrawDebugWorkstation() {
 
             ImGui::Separator();
             ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Memory --");
+
+            // Rolling history (persists across frames; sampled once per draw).
+            static constexpr int kMemHist = 180;
+            static f32 s_ProcHist[kMemHist] = {};
+            static f32 s_GpuHist[kMemHist] = {};
+            static int s_MemHead = 0;
+            static f32 s_ProcPeak = 0.0f, s_GpuPeak = 0.0f;
+
             f32 processMB = static_cast<f32>(m_PerfMetrics.processMemoryBytes) / (1024.0f * 1024.0f);
-            ImGui::Text("Process: %.1f MB", processMB);
+            f32 gpuAllocMB = m_PerfMetrics.gpuTotalBytes > 0
+                ? static_cast<f32>(m_PerfMetrics.gpuAllocatedBytes) / (1024.0f * 1024.0f) : 0.0f;
+            f32 gpuTotalMB = static_cast<f32>(m_PerfMetrics.gpuTotalBytes) / (1024.0f * 1024.0f);
+            s_ProcHist[s_MemHead] = processMB;
+            s_GpuHist[s_MemHead] = gpuAllocMB;
+            s_MemHead = (s_MemHead + 1) % kMemHist;
+            if (processMB > s_ProcPeak) s_ProcPeak = processMB;
+            if (gpuAllocMB > s_GpuPeak) s_GpuPeak = gpuAllocMB;
+
+            ImGui::Text("Process RAM: %.1f MB   (peak %.1f)", processMB, s_ProcPeak);
+            {
+                f32 hi = s_ProcPeak > 1.0f ? s_ProcPeak * 1.15f : 1.0f;
+                ImGui::PlotLines("##procmem", s_ProcHist, kMemHist, s_MemHead, nullptr, 0.0f, hi,
+                                 ImVec2(ImGui::GetContentRegionAvail().x, 40));
+            }
             if (m_PerfMetrics.totalPhysicalMemory > 0) {
                 f32 availMB = static_cast<f32>(m_PerfMetrics.availablePhysicalMemory) / (1024.0f * 1024.0f);
                 f32 totalMB = static_cast<f32>(m_PerfMetrics.totalPhysicalMemory) / (1024.0f * 1024.0f);
-                ImGui::Text("System: %.0f / %.0f MB", totalMB - availMB, totalMB);
+                f32 usedMB = totalMB - availMB;
+                char sysbuf[48];
+                snprintf(sysbuf, sizeof(sysbuf), "%.0f / %.0f MB", usedMB, totalMB);
+                ImGui::Text("System RAM:"); ImGui::SameLine();
+                ImGui::ProgressBar(totalMB > 0.0f ? usedMB / totalMB : 0.0f, ImVec2(-1, 0), sysbuf);
             }
             if (m_PerfMetrics.gpuTotalBytes > 0) {
-                f32 gpuAllocMB = static_cast<f32>(m_PerfMetrics.gpuAllocatedBytes) / (1024.0f * 1024.0f);
-                f32 gpuTotalMB = static_cast<f32>(m_PerfMetrics.gpuTotalBytes) / (1024.0f * 1024.0f);
-                ImGui::Text("GPU VRAM: %.1f / %.0f MB", gpuAllocMB, gpuTotalMB);
+                ImGui::Text("GPU VRAM: %.1f / %.0f MB   (peak %.1f)", gpuAllocMB, gpuTotalMB, s_GpuPeak);
+                char gpubuf[48];
+                snprintf(gpubuf, sizeof(gpubuf), "%.0f%%", gpuTotalMB > 0.0f ? gpuAllocMB / gpuTotalMB * 100.0f : 0.0f);
+                ImGui::ProgressBar(gpuTotalMB > 0.0f ? gpuAllocMB / gpuTotalMB : 0.0f, ImVec2(-1, 0), gpubuf);
+                f32 hi = s_GpuPeak > 1.0f ? s_GpuPeak * 1.15f : 1.0f;
+                ImGui::PlotLines("##gpumem", s_GpuHist, kMemHist, s_MemHead, nullptr, 0.0f, hi,
+                                 ImVec2(ImGui::GetContentRegionAvail().x, 40));
+            }
+
+            // -- ECS live introspection --
+            if (m_World) {
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- ECS --");
+                ImGui::Text("Entities: %zu", m_World->GetEntityCount());
+                ImGui::SameLine(220);
+                ImGui::Text("Types: %zu", m_World->GetComponentStorageCount());
+                ImGui::SameLine(340);
+                ImGui::Text("Instances: %zu", m_World->GetTotalComponentCount());
+
+                static constexpr int kEntHist = 180;
+                static f32 s_EntHist[kEntHist] = {};
+                static int s_EntHead = 0;
+                s_EntHist[s_EntHead] = static_cast<f32>(m_World->GetEntityCount());
+                s_EntHead = (s_EntHead + 1) % kEntHist;
+                f32 emax = 1.0f;
+                for (int i = 0; i < kEntHist; ++i) if (s_EntHist[i] > emax) emax = s_EntHist[i];
+                ImGui::PlotLines("##entcount", s_EntHist, kEntHist, s_EntHead, "entities", 0.0f, emax * 1.15f,
+                                 ImVec2(ImGui::GetContentRegionAvail().x, 32));
+
+                static std::vector<std::pair<const char*, usize>> s_CompStats;
+                m_World->GetComponentStats(s_CompStats);
+                std::sort(s_CompStats.begin(), s_CompStats.end(),
+                          [](const std::pair<const char*, usize>& a, const std::pair<const char*, usize>& b) {
+                              return a.second > b.second;
+                          });
+                usize maxCount = s_CompStats.empty() ? 1 : s_CompStats.front().second;
+                if (ImGui::TreeNodeEx("Components by count", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    int shown = 0;
+                    for (const auto& entry : s_CompStats) {
+                        if (shown++ >= 16) {
+                            ImGui::TextDisabled("  ... %zu more types", s_CompStats.size() - 16);
+                            break;
+                        }
+                        char cbuf[80];
+                        snprintf(cbuf, sizeof(cbuf), "%s  (%zu)", entry.first, entry.second);
+                        ImGui::ProgressBar(maxCount > 0 ? static_cast<f32>(entry.second) / static_cast<f32>(maxCount) : 0.0f,
+                                           ImVec2(-1, 0), cbuf);
+                    }
+                    ImGui::TreePop();
+                }
             }
 
             // GPU per-pass timing from timestamp queries
