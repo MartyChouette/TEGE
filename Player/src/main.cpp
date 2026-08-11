@@ -680,6 +680,8 @@ public:
             extern Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing;
             extern Enjin::Audio::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime;
             extern Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool;
+            extern Enjin::Gameplay::QuestSystem* s_VisualScriptQuestSystem;
+            extern Enjin::Gameplay::CinematicSystem* s_VisualScriptCinematic;
             s_VisualScriptSaveSystem = nullptr;
             s_VisualScriptWeather = nullptr;
             s_VisualScriptWater = nullptr;
@@ -690,6 +692,8 @@ public:
             s_VisualScriptPostProcessing = nullptr;
             s_VisualScriptAudioGraphRuntime = nullptr;
             s_VisualScriptObjectPool = nullptr;
+            s_VisualScriptQuestSystem = nullptr;
+            s_VisualScriptCinematic = nullptr;
         }
 
         // Shutdown gameplay systems before world is destroyed
@@ -1915,6 +1919,8 @@ private:
             extern Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing;
             extern Enjin::Audio::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime;
             extern Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool;
+            extern Enjin::Gameplay::QuestSystem* s_VisualScriptQuestSystem;
+            extern Enjin::Gameplay::CinematicSystem* s_VisualScriptCinematic;
             s_VisualScriptSaveSystem = &m_TieredSaveSystem;
             s_VisualScriptWeather = &m_WeatherSystem;
             s_VisualScriptWater = &m_Water3D;
@@ -1925,6 +1931,8 @@ private:
             s_VisualScriptPostProcessing = m_PostProcessing.get();
             s_VisualScriptAudioGraphRuntime = &m_AudioGraphRuntime;
             s_VisualScriptObjectPool = &m_ObjectPool;
+            s_VisualScriptQuestSystem = &m_QuestSystem;
+            s_VisualScriptCinematic = &m_CinematicSystem;
         }
 
         // Wire dialogue system event bus, subtitle system, and narrative systems

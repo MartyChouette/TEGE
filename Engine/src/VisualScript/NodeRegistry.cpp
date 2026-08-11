@@ -68,6 +68,8 @@ Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing = nullptr;
 #endif
 Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool = nullptr;
 Enjin::Effects::ElementalSystem* s_VisualScriptElemental = nullptr;
+Enjin::Gameplay::QuestSystem* s_VisualScriptQuestSystem = nullptr;
+Enjin::Gameplay::CinematicSystem* s_VisualScriptCinematic = nullptr;
 
 namespace Enjin {
 namespace VisualScript {
@@ -3725,7 +3727,13 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            // Quest nodes delegate to the ScriptBindings static pointers
+            extern Gameplay::QuestSystem* s_VisualScriptQuestSystem;
+            std::string questId = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                ? std::get<std::string>(inputs[1]) : std::string();
+            if (s_VisualScriptQuestSystem && ctx.world && !questId.empty()) {
+                s_VisualScriptQuestSystem->StartQuest(ctx.world, questId);
+            }
+            ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);
     }
@@ -3747,6 +3755,15 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
+            extern Gameplay::QuestSystem* s_VisualScriptQuestSystem;
+            std::string questId = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                ? std::get<std::string>(inputs[1]) : std::string();
+            i32 objective = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2]))
+                ? std::get<i32>(inputs[2]) : 0;
+            if (s_VisualScriptQuestSystem && ctx.world && !questId.empty()) {
+                s_VisualScriptQuestSystem->CompleteObjective(ctx.world, questId, objective);
+            }
+            ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);
     }
@@ -3766,11 +3783,15 @@ void NodeRegistry::RegisterBuiltinNodes() {
             Bool("Active", PK::Output)
         };
         def.keywords = {"quest", "active", "check"};
-        def.execute = [](ExecutionContext& ctx,
-                         const std::vector<ECS::VariableValue>& inputs,
-                         std::vector<ECS::VariableValue>& outputs) {
-            outputs.resize(1);
-            outputs[0] = false;
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            extern Gameplay::QuestSystem* s_VisualScriptQuestSystem;
+            std::string questId = (!inputs.empty() && std::holds_alternative<std::string>(inputs[0]))
+                ? std::get<std::string>(inputs[0]) : std::string();
+            if (s_VisualScriptQuestSystem && ctx.world && !questId.empty()) {
+                return s_VisualScriptQuestSystem->IsQuestActive(ctx.world, questId);
+            }
+            return false;
         };
         RegisterNode(def);
     }
@@ -3795,6 +3816,13 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
+            extern Gameplay::CinematicSystem* s_VisualScriptCinematic;
+            ECS::Entity target = (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1]))
+                ? std::get<ECS::Entity>(inputs[1]) : ctx.entity;
+            if (s_VisualScriptCinematic && ctx.world) {
+                s_VisualScriptCinematic->Play(ctx.world, target);
+            }
+            ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);
     }
@@ -3815,6 +3843,13 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
+            extern Gameplay::CinematicSystem* s_VisualScriptCinematic;
+            ECS::Entity target = (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1]))
+                ? std::get<ECS::Entity>(inputs[1]) : ctx.entity;
+            if (s_VisualScriptCinematic && ctx.world) {
+                s_VisualScriptCinematic->Stop(ctx.world, target);
+            }
+            ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);
     }
