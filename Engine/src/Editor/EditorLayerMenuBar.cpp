@@ -402,10 +402,19 @@ void EditorLayer::DrawMenuBar() {
 
         if (ImGui::BeginMenu("View")) {
             if (ImGui::BeginMenu("Panels")) {
+                bool sceneView = IsPanelVisible(EditorPanel::Viewport);
+                bool gameView = IsPanelVisible(EditorPanel::GameView);
                 bool hierarchy = IsPanelVisible(EditorPanel::Hierarchy);
                 bool inspector = IsPanelVisible(EditorPanel::Inspector);
                 bool console = IsPanelVisible(EditorPanel::Console);
                 bool assets = IsPanelVisible(EditorPanel::AssetBrowser);
+                if (ImGui::MenuItem("Scene", nullptr, &sceneView)) {
+                    SetPanelVisibility(EditorPanel::Viewport, sceneView);
+                }
+                if (ImGui::MenuItem("Game View", nullptr, &gameView)) {
+                    SetPanelVisibility(EditorPanel::GameView, gameView);
+                }
+                ImGui::Separator();
                 if (ImGui::MenuItem("Hierarchy", nullptr, &hierarchy)) {
                     SetPanelVisibility(EditorPanel::Hierarchy, hierarchy);
                 }
@@ -655,6 +664,8 @@ void EditorLayer::DrawMenuBar() {
             ImGui::MenuItem("Gamepad Editor", nullptr, &m_GamepadEditorEnabled);
             ImGui::SetItemTooltip("RB=Tools, LB=File, Start=Play, Y=Create (radial menus)");
             ImGui::MenuItem("Stats Overlay", nullptr, &m_ShowStatsOverlay);
+            ImGui::MenuItem("Debug Workstation", nullptr, &m_ShowDebugWorkstation);
+            ImGui::SetItemTooltip("Perf counters (draw calls, skinned meshes) + skinning stress test");
             ImGui::MenuItem("ImGui Demo", nullptr, &m_ShowDemoWindow);
             ImGui::Separator();
             if (ImGui::MenuItem("Reset Layout")) {
@@ -1088,6 +1099,8 @@ void EditorLayer::DrawMenuBar() {
             bool userManual = IsPanelVisible(EditorPanel::UserManual);
             if (ImGui::MenuItem("User Manual", nullptr, &userManual)) {
                 SetPanelVisibility(EditorPanel::UserManual, userManual);
+            }
+            if (ImGui::MenuItem("Keyboard Shortcuts", "Ctrl+Shift+/", &m_ShowShortcutsHelp)) {
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Report Bug...", "Ctrl+Shift+B")) {

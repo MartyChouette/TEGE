@@ -678,7 +678,7 @@ private:
     bool m_ShowDemoWindow = false;
     bool m_ShowStatsOverlay = false;
     bool m_ShowAboutDialog = false;
-    bool m_ShowDebugWorkstation = false;  // Legacy — kept for backward compat
+    bool m_ShowDebugWorkstation = false;  // perf counters + skinning stress tool; opened from View menu
     bool m_ShowGameDebug = false;          // Legacy — kept for backward compat
     bool m_ShowDebugOverlay = false;       // Debug HUD overlay (shown by F1)
     u8 m_DebugOverlayDetail = 0;           // 0=compact, 1=detailed (shown by F2)
