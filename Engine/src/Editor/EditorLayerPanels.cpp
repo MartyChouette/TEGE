@@ -5714,6 +5714,14 @@ void EditorLayer::DrawSaveDebugPanel() {
         return;
     }
 
+    // When stopped there's no live session, so every field below is empty/zero — which
+    // reads as a broken panel. Say so plainly instead of showing a wall of blank rows.
+    if (m_PlayMode.IsStopped()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.4f, 1.0f),
+            "No active play session. Press Play to populate save data.");
+        ImGui::Separator();
+    }
+
     // Session info
     ImGui::Text("Session Play Time: %.1f s", saveSystem->GetSessionPlayTime());
     ImGui::Text("Current Scene: %s", saveSystem->GetCurrentScene().empty()
@@ -7557,13 +7565,15 @@ void EditorLayer::DrawDebugWorkstation() {
                     f32 frac = m_FrameHistogramTotal > 0
                         ? static_cast<f32>(m_FrameHistogram[i]) / static_cast<f32>(m_FrameHistogramTotal)
                         : 0.0f;
+                    // Label + count + percent as plain left-aligned text so the numbers are
+                    // never clipped by a narrow/docked panel (the old centered ProgressBar
+                    // overlay ran off the right edge). The bar fills whatever width is left
+                    // with no overlay text, so it can't overflow.
+                    ImGui::Text("%-8s %7u (%4.1f%%)", bucketLabels[i], m_FrameHistogram[i], frac * 100.0f);
+                    ImGui::SameLine();
                     ImGui::PushStyleColor(ImGuiCol_PlotHistogram, bucketColors[i]);
-                    char overlay[64];
-                    snprintf(overlay, sizeof(overlay), "%u (%.1f%%)", m_FrameHistogram[i], frac * 100.0f);
-                    ImGui::Text("%-8s", bucketLabels[i]);
-                    ImGui::SameLine(90);
                     ImGui::ProgressBar(maxFraction > 0.0f ? frac / maxFraction : 0.0f,
-                                       ImVec2(ImGui::GetContentRegionAvail().x - 10, 14), overlay);
+                                       ImVec2(-1.0f, 14), "");
                     ImGui::PopStyleColor();
                 }
                 if (ImGui::SmallButton("Reset Histogram")) {
@@ -7974,6 +7984,8 @@ void EditorLayer::DrawDebugOverlay() {
     ImVec2 overlayPos(vp->WorkPos.x, vp->WorkPos.y + vp->WorkSize.y);
     ImGui::SetNextWindowPos(overlayPos, ImGuiCond_Always, ImVec2(0.0f, 1.0f));
     ImGui::SetNextWindowSize(ImVec2(overlaySize.x, 0));
+    // Cap width to the viewport so the auto-resized bar can't spill off the right edge.
+    ImGui::SetNextWindowSizeConstraints(ImVec2(0.0f, 0.0f), ImVec2(vp->WorkSize.x, vp->WorkSize.y));
     ImGui::SetNextWindowBgAlpha(0.82f); // Strong opaque background for readability
 
     ImGuiWindowFlags flags =
@@ -8008,6 +8020,8 @@ void EditorLayer::DrawDebugOverlay() {
     if (m_RenderSystem) {
         ImGui::SameLine(0, 16);
         ImGui::Text("DC: %u", m_RenderSystem->GetDrawCallCount());
+        ImGui::SameLine(0, 16);
+        ImGui::Text("Skin: %u", m_RenderSystem->GetSkinnedMeshCount());
 
         u32 tris = m_RenderSystem->GetTriangleCount();
         ImGui::SameLine(0, 16);
@@ -8033,9 +8047,17 @@ void EditorLayer::DrawDebugOverlay() {
             ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "PAUSED");
     }
 
-    // F1/F2 hint
-    ImGui::SameLine(ImGui::GetContentRegionMax().x - 195);
-    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 0.7f), "F1 Game Debug | F2 Engine Debug");
+    // F1/F2 hint — flush right, width measured at the overlay's 1.4x font scale so it
+    // never spills off the screen edge (the old hardcoded -195 offset assumed 1.0x and
+    // clipped the text at high ui-scale).
+    {
+        const char* hint = "F1 Game Debug | F2 Engine Debug";
+        float hintW = ImGui::CalcTextSize(hint).x * 1.4f;
+        float rightX = ImGui::GetContentRegionMax().x - hintW - 8.0f;
+        if (rightX > ImGui::GetCursorPosX()) ImGui::SameLine(rightX);
+        else ImGui::SameLine(0, 16);
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 0.7f), "%s", hint);
+    }
 
     // --- Detailed line (F2 to toggle) ---
     if (m_DebugOverlayDetail >= 1) {
