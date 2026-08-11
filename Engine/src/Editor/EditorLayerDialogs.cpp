@@ -610,6 +610,27 @@ void EditorLayer::DrawImportDialog() {
             ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "(Re-import)");
         }
 
+        // --- Group (multi-drop) batch header ---
+        const bool isBatch = m_ImportBatchTotal > 1;
+        if (isBatch) {
+            ImGui::Separator();
+            int doneIdx = m_ImportBatchTotal - static_cast<int>(m_ImportBatchQueue.size());
+            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Group import — %d models (this is #%d of %d)",
+                               m_ImportBatchTotal, doneIdx + 1, m_ImportBatchTotal);
+            ImGui::Checkbox("Apply these settings to all", &m_ImportBatchApplyToAll);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("ON: import all %d models now with the settings below.\n"
+                                  "OFF: step through them one at a time, choosing settings per model.",
+                                  m_ImportBatchTotal);
+            }
+            if (ImGui::TreeNodeEx("Files in this batch", ImGuiTreeNodeFlags_None)) {
+                for (const auto& p : m_ImportBatchQueue) {
+                    ImGui::BulletText("%s", std::filesystem::path(p).filename().string().c_str());
+                }
+                ImGui::TreePop();
+            }
+        }
+
         ImGui::Separator();
         ImGui::Spacing();
 
@@ -678,8 +699,22 @@ void EditorLayer::DrawImportDialog() {
         // --- Import Options ---
         ImGui::Text("Import Options");
         ImGui::DragFloat("Scale", &m_ImportDialogOptions.scale, 0.01f, 0.001f, 100.0f, "%.3f");
+        ImGui::Checkbox("Normalize size (~1.8m)", &m_ImportDialogOptions.normalizeScale);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("ON: rescale to a sane on-screen size when the file's unit is unreliable.\n"
+                              "OFF: import at the file's true unit-converted size — no size magic, you scale it.");
+        }
         ImGui::Checkbox("Import Materials", &m_ImportDialogOptions.importMaterials);
         ImGui::Checkbox("Import Animations", &m_ImportDialogOptions.importAnimations);
+        if (m_ImportDialogOptions.importAnimations) {
+            ImGui::Indent(16.0f);
+            ImGui::Checkbox("Auto-play on import", &m_ImportDialogOptions.autoPlayAnimation);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Start the first animation immediately. OFF = import at the rest\n"
+                                  "pose (recommended while skinned animation is being fixed).");
+            }
+            ImGui::Unindent(16.0f);
+        }
         ImGui::Checkbox("Generate Colliders", &m_ImportDialogOptions.generateColliders);
         if (m_ImportDialogOptions.generateColliders) {
             const char* shapeNames[] = { "Box", "Sphere", "Capsule", "Convex Mesh" };
@@ -875,7 +910,9 @@ void EditorLayer::DrawImportDialog() {
         ImGui::Spacing();
 
         // Buttons
-        if (ImGui::Button("Import", ImVec2(120, 0))) {
+        const char* importLabel = !isBatch ? "Import"
+                                : (m_ImportBatchApplyToAll ? "Import All" : "Import This");
+        if (ImGui::Button(importLabel, ImVec2(140, 0))) {
             // Build excluded node list from deselected preview checkboxes
             m_ImportDialogOptions.excludedNodeIndices.clear();
             for (usize i = 0; i < m_ImportPreviewNodes.size(); ++i) {
@@ -884,21 +921,68 @@ void EditorLayer::DrawImportDialog() {
                 }
             }
 
-            // Defer import to next frame so a loading overlay can render first
-            m_ImportPending = true;
-            m_ImportPendingPath = m_ImportDialogPath;
-            m_ImportPendingOptions = m_ImportDialogOptions;
-            m_ShowImportDialog = false;
-            ImGui::CloseCurrentPopup();
+            if (isBatch && m_ImportBatchApplyToAll) {
+                // Apply the same settings to every model. The per-frame processor in
+                // Update() imports the queue, spaced into a row, then frames them all.
+                m_ImportBatchOptions = m_ImportDialogOptions;
+                m_ImportBatchActive = true;
+                m_ShowImportDialog = false;
+                ImGui::CloseCurrentPopup();
+            } else if (isBatch) {
+                // Step-through: import THIS model now with its own settings, then reopen
+                // the dialog for the next one (fresh options / re-import metadata).
+                int doneIdx = m_ImportBatchTotal - static_cast<int>(m_ImportBatchQueue.size());
+                const f32 spacing = 3.0f;
+                f32 x = (static_cast<f32>(doneIdx) - static_cast<f32>(m_ImportBatchTotal - 1) * 0.5f) * spacing;
+                std::string cur = m_ImportBatchQueue.front();
+                m_ImportBatchQueue.erase(m_ImportBatchQueue.begin());
+                ExecuteImport(cur, m_ImportDialogOptions, Math::Vector3(x, 0.0f, 0.0f), /*showResultDialog=*/false);
+                if (m_LastImportResult.rootEntity != ECS::INVALID_ENTITY)
+                    m_ImportBatchRoots.push_back(m_LastImportResult.rootEntity);
+                ImGui::CloseCurrentPopup();
+                if (!m_ImportBatchQueue.empty()) {
+                    ImportModel(m_ImportBatchQueue.front());   // reopens the dialog for the next file
+                } else {
+                    FinishGroupImport();
+                    m_ShowImportDialog = false;
+                }
+            } else {
+                // Single import: defer to next frame so the loading overlay can render.
+                m_ImportPending = true;
+                m_ImportPendingPath = m_ImportDialogPath;
+                m_ImportPendingOptions = m_ImportDialogOptions;
+                m_ShowImportDialog = false;
+                ImGui::CloseCurrentPopup();
+            }
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+        if (ImGui::Button(isBatch ? "Cancel Batch" : "Cancel", ImVec2(140, 0))) {
+            // Cancelling abandons the whole batch.
+            m_ImportBatchQueue.clear();
+            m_ImportBatchTotal = 0;
+            m_ImportBatchActive = false;
+            m_ImportBatchRoots.clear();
             m_ShowImportDialog = false;
             ImGui::CloseCurrentPopup();
         }
 
         ImGui::EndPopup();
     }
+}
+
+// Frame + select every model imported in a group batch, then clear the batch state.
+void EditorLayer::FinishGroupImport() {
+    if (!m_World) { m_ImportBatchRoots.clear(); m_ImportBatchTotal = 0; return; }
+    if (m_ImportBatchRoots.size() > 1) {
+        m_SelectedEntities.clear();
+        for (ECS::Entity r : m_ImportBatchRoots) {
+            if (m_World->IsValid(r)) m_SelectedEntities.insert(r);
+        }
+        if (!m_ImportBatchRoots.empty()) m_PrimarySelected = m_ImportBatchRoots.back();
+        FocusOnSelection();
+    }
+    m_ImportBatchRoots.clear();
+    m_ImportBatchTotal = 0;
 }
 
 void EditorLayer::DrawImportLoadingOverlay() {
@@ -923,12 +1007,75 @@ void EditorLayer::DrawImportLoadingOverlay() {
     ImGui::End();
 }
 
-void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOptions& options) {
+void EditorLayer::ImportModelImmediate(const std::string& path, const Math::Vector3& placementOffset) {
+    if (!m_World) {
+        ENJIN_LOG_ERROR(Editor, "Cannot import model: no world loaded");
+        m_ConsoleLog.push_back("[Error] Cannot import model: no world loaded");
+        return;
+    }
+    // Project-first workflow: make sure there's a project so references/assets resolve.
+    EnsureProjectForScene(path);
+
+    // Auto-detected options: reuse a saved .enjinasset if this file was imported
+    // before, otherwise defaults. sourceApp stays Auto so the importer detects axis
+    // from metadata, and scale is now driven by the file's UnitScaleFactor — no dialog
+    // needed for the geometry to come in correctly sized.
+    Assets::ImportOptions opts;
+    if (Assets::AssetMetadata::Exists(path)) {
+        Assets::AssetMetadata meta;
+        if (meta.Load(path)) opts = meta.importOptions;
+    }
+
+    // No modal dialog, no per-file result popup — that is what makes dropping many
+    // models at once "just work".
+    ExecuteImport(path, opts, placementOffset, /*showResultDialog=*/false);
+}
+
+void EditorLayer::BeginGroupImport(const std::vector<std::string>& paths) {
+    if (paths.empty() || !m_World) return;
+    m_ImportBatchQueue = paths;
+    m_ImportBatchTotal = static_cast<int>(paths.size());
+    m_ImportBatchApplyToAll = true;
+    m_ImportBatchActive = false;
+    m_ImportBatchRoots.clear();
+    // Open the standard import dialog on the first file. It sets up options, source-app
+    // detection and the scene preview; DrawImportDialog shows the batch UI + "apply to
+    // all" because m_ImportBatchTotal > 1.
+    ImportModel(paths.front());
+}
+
+void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOptions& options,
+                                const Math::Vector3& placementOffset, bool showResultDialog) {
     if (!m_World) return;
 
     Assets::ImportResult result = Assets::SceneImporter::Import(path, m_World, options);
 
     if (result.success) {
+        // Make imported mesh source references portable: store the source path
+        // relative to the project root so the reference survives moving/shipping the
+        // project. Assets outside the project keep their absolute path (still works
+        // locally). The cache's search root (set each frame in Update) resolves the
+        // relative form back to a real file on load.
+        {
+            std::string projPath = m_SceneManager.GetProjectPath();
+            if (!projPath.empty()) {
+                std::filesystem::path root = std::filesystem::path(projPath).parent_path();
+                std::error_code ec;
+                for (ECS::Entity e : result.entities) {
+                    if (!m_World->IsValid(e)) continue;
+                    auto* mc = m_World->GetComponent<ECS::MeshComponent>(e);
+                    if (!mc || !mc->source.Valid()) continue;
+                    std::filesystem::path rel =
+                        std::filesystem::relative(mc->source.sourcePath, root, ec);
+                    bool escapes = ec || rel.empty();
+                    if (!escapes) {
+                        for (const auto& part : rel) { if (part == "..") { escapes = true; break; } }
+                    }
+                    if (!escapes) mc->source.sourcePath = rel.generic_string();
+                }
+            }
+        }
+
         // Detailed summary log
         std::stringstream ss;
         ss << "[Info] Imported " << result.entities.size() << " entities from "
@@ -1003,6 +1150,16 @@ void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOpt
             }
         }
 
+        // Place the import where requested (drag-drop spreads multiple models into a
+        // row instead of stacking them all at the origin). Applied to the root, which
+        // carries the whole hierarchy.
+        if (result.rootEntity != ECS::INVALID_ENTITY &&
+            (placementOffset.x != 0.0f || placementOffset.y != 0.0f || placementOffset.z != 0.0f)) {
+            if (auto* rootXf = m_World->GetComponent<ECS::TransformComponent>(result.rootEntity)) {
+                rootXf->position = rootXf->position + placementOffset;
+            }
+        }
+
         // Select the root entity and focus camera on the first child with a mesh
         // (the root is just a transform node for scale, it has no geometry)
         if (result.rootEntity != ECS::INVALID_ENTITY) {
@@ -1027,9 +1184,9 @@ void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOpt
         m_LastImportEntities = result.entities;
     }
 
-    // Store result and show dialog (for both success and failure)
+    // Store result and (unless suppressed, e.g. batch drag-drop) show the dialog.
     m_LastImportResult = result;
-    m_ShowImportResultDialog = true;
+    if (showResultDialog) m_ShowImportResultDialog = true;
 
     // Screen reader announcement
     if (m_Announcer.enabled) {

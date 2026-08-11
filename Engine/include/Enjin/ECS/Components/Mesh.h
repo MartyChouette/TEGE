@@ -30,6 +30,21 @@ struct ENJIN_API MeshComponent : public IComponent {
     std::vector<Vertex> vertices;
     std::vector<u32> indices;
 
+    // Reference to the source asset this mesh was imported from. Empty path = an
+    // authored/procedural mesh with no source (always serialized inline). When set,
+    // the geometry is reproducible by re-importing meshIndex from sourcePath with the
+    // recorded axis conversion, which lets scenes store a compact reference instead of
+    // inline vertices and lets the engine share/free CPU copies.
+    struct SourceRef {
+        std::string sourcePath;    // .fbx/.gltf/... the mesh was imported from
+        i32   meshIndex = -1;      // which mesh/node within that file
+        bool  axisZToY = false;    // Z-up -> Y-up conversion applied to vertices at import
+        bool  axisLToR = false;    // left- -> right-handed conversion applied at import
+        u64   contentHash = 0;     // hash of the imported vertex+index bytes (dedup + drift check)
+        bool  Valid() const { return !sourcePath.empty() && meshIndex >= 0; }
+    };
+    SourceRef source;
+
     // Sub-mesh support for multi-material rendering.
     // When populated, each SubMesh defines a range within the shared vertex/index
     // buffers that should be drawn with a specific material slot.
@@ -52,6 +67,21 @@ struct ENJIN_API MeshComponent : public IComponent {
 
     bool HasSubMeshes() const {
         return subMeshes.size() > 1;
+    }
+
+    // FNV-1a hash over the raw vertex + index bytes. Identifies mesh content for
+    // dedup and for detecting when a referenced source file has drifted from what
+    // a scene was saved against. Stable across runs for identical geometry.
+    static u64 ComputeContentHash(const std::vector<Vertex>& verts,
+                                  const std::vector<u32>& inds) {
+        u64 h = 1469598103934665603ULL;  // FNV offset basis
+        auto mix = [&h](const void* data, usize bytes) {
+            const u8* p = static_cast<const u8*>(data);
+            for (usize i = 0; i < bytes; ++i) { h ^= p[i]; h *= 1099511628211ULL; }
+        };
+        if (!verts.empty()) mix(verts.data(), verts.size() * sizeof(Vertex));
+        if (!inds.empty())  mix(inds.data(), inds.size() * sizeof(u32));
+        return h;
     }
 };
 

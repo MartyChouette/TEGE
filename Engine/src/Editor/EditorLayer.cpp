@@ -15,6 +15,8 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Notes.h"
+#include "Enjin/ECS/Components/StableId.h"
+#include "Enjin/Assets/MeshAssetCache.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/VisualScript.h"
@@ -762,6 +764,17 @@ void EditorLayer::Shutdown() {
 
 void EditorLayer::Update(f32 deltaTime) {
 
+    // Keep the mesh-reference cache pointed at the current project root so imported
+    // meshes stored as project-relative references resolve on scene load/save. Cheap
+    // no-op once set; only re-clears the cache when the project actually changes.
+    {
+        const std::string& projPath = m_SceneManager.GetProjectPath();
+        if (!projPath.empty()) {
+            Assets::MeshAssetCache::Get().SetSearchRoot(
+                std::filesystem::path(projPath).parent_path().string());
+        }
+    }
+
     // Deferred quit (Close() called during ImGui rendering crashes some drivers)
     if (m_PendingQuit) {
         m_PendingQuit = false;
@@ -961,6 +974,24 @@ void EditorLayer::Update(f32 deltaTime) {
         m_ImportPending = false;
         ExecuteImport(m_ImportPendingPath, m_ImportPendingOptions);
         m_ImportPendingPath.clear();
+    }
+
+    // Group import "apply to all": import one queued model per frame (so the UI can
+    // breathe between blocking imports), spaced into a row; frame them all at the end.
+    if (m_ImportBatchActive) {
+        if (!m_ImportBatchQueue.empty()) {
+            int doneIdx = m_ImportBatchTotal - static_cast<int>(m_ImportBatchQueue.size());
+            const f32 spacing = 3.0f;
+            f32 x = (static_cast<f32>(doneIdx) - static_cast<f32>(m_ImportBatchTotal - 1) * 0.5f) * spacing;
+            std::string p = m_ImportBatchQueue.front();
+            m_ImportBatchQueue.erase(m_ImportBatchQueue.begin());
+            ExecuteImport(p, m_ImportBatchOptions, Math::Vector3(x, 0.0f, 0.0f), /*showResultDialog=*/false);
+            if (m_LastImportResult.rootEntity != ECS::INVALID_ENTITY)
+                m_ImportBatchRoots.push_back(m_LastImportResult.rootEntity);
+        } else {
+            m_ImportBatchActive = false;
+            FinishGroupImport();
+        }
     }
 
     // Handle deferred play mode stop (requested during previous frame's Render)

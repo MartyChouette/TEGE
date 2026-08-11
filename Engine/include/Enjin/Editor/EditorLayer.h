@@ -1286,6 +1286,15 @@ private:
     Assets::ImportOptions m_ImportDialogOptions;
     std::string m_LastImportedModelPath;
 
+    // Group (multi-drop) import: one dialog for a batch of dropped models, with an
+    // "apply to all" choice. m_ImportBatchQueue holds the files still to import.
+    std::vector<std::string> m_ImportBatchQueue;
+    bool m_ImportBatchApplyToAll = true;
+    int  m_ImportBatchTotal = 0;      // count when the batch started (for "X of Y" + spread)
+    bool m_ImportBatchActive = false; // apply-to-all processor runs across frames in Update
+    Assets::ImportOptions m_ImportBatchOptions;
+    std::vector<ECS::Entity> m_ImportBatchRoots;  // roots imported so far (to frame at the end)
+
     // Import result dialog + undo support
     bool m_ShowImportResultDialog = false;
     Assets::ImportResult m_LastImportResult;
@@ -1332,7 +1341,18 @@ private:
 
     void DrawImportDialog();
     void DrawImportLoadingOverlay();
-    void ExecuteImport(const std::string& path, const Assets::ImportOptions& options);
+    void ExecuteImport(const std::string& path, const Assets::ImportOptions& options,
+                       const Math::Vector3& placementOffset = Math::Vector3(0.0f),
+                       bool showResultDialog = true);
+    // Drag-and-drop fast path: import a model immediately with auto-detected options
+    // (no modal dialog), placed at placementOffset. Used for dropping one or many
+    // models at once so they "just work" without clicking through a dialog per file.
+    void ImportModelImmediate(const std::string& path, const Math::Vector3& placementOffset);
+    // Open the group-import dialog for a batch of dropped models (>1). The dialog lets
+    // you set shared options and choose whether to apply them to all or step through.
+    void BeginGroupImport(const std::vector<std::string>& paths);
+    // Frame + select every model imported in a group batch, then clear batch state.
+    void FinishGroupImport();
 
     // Build dialog state
     bool m_ShowBuildDialog = false;

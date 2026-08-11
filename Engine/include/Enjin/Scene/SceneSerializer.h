@@ -47,6 +47,16 @@ struct SerializationOptions {
     bool includeVertexData = true;  // Include full mesh vertex/index data
     u32 indentSize = 2;             // JSON indent size (if prettyPrint)
     bool deterministic = true;      // Sort entities by ID, round floats for stable diffs
+    // When true, an imported mesh that carries a valid source reference is written as
+    // that reference (path + mesh index + axis + content hash) instead of inline
+    // vertices — the geometry is reloaded/shared from the source file on load. Shrinks
+    // scene files and dedups repeated assets. OFF by default: opt-in, needs the source
+    // files to stay reachable at their recorded paths. Authored/procedural meshes
+    // (no source ref) always serialize inline regardless. This is the standard engine
+    // model (scenes reference imported assets, not copies of their geometry). It is
+    // loss-safe: the saver only drops a mesh's inline vertices when the source can be
+    // verifiably reloaded at that moment, otherwise it keeps them inline.
+    bool useMeshReferences = true;
 };
 
 // Scene Serializer - Saves and loads scenes to/from JSON files

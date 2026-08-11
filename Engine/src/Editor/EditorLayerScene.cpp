@@ -544,6 +544,10 @@ void EditorLayer::OnFileDrop(int count, const char** paths) {
         }
         return;
     }
+    // Collect model files first: a single model imports immediately ("just works"),
+    // a GROUP opens one import dialog with an "apply to all" choice (below the loop).
+    std::vector<std::string> modelPaths;
+
     for (int i = 0; i < count; ++i) {
         std::filesystem::path filePath(paths[i]);
         std::string ext = filePath.extension().string();
@@ -553,9 +557,7 @@ void EditorLayer::OnFileDrop(int count, const char** paths) {
 
         if (ext == ".fbx" || ext == ".obj" || ext == ".gltf" || ext == ".glb" ||
             ext == ".dae" || ext == ".3ds") {
-            ENJIN_LOG_INFO(Editor, "Drag-and-drop import: %s", paths[i]);
-            m_ConsoleLog.push_back(std::string("[Info] Drag-and-drop import: ") + paths[i]);
-            ImportModel(filePath.string());
+            modelPaths.push_back(filePath.string());
         } else if (ext == ".enjin") {
             ENJIN_LOG_INFO(Editor, "Drag-and-drop scene open: %s", paths[i]);
             m_ConsoleLog.push_back(std::string("[Info] Drag-and-drop scene open: ") + paths[i]);
@@ -629,10 +631,20 @@ void EditorLayer::OnFileDrop(int count, const char** paths) {
                 ENJIN_LOG_INFO(Editor, "Created audio source from drop: %s", paths[i]);
                 m_ConsoleLog.push_back(std::string("[Info] Created audio source: ") + paths[i]);
             }
-        } else {
+        } else if (ext != ".fbx" && ext != ".obj" && ext != ".gltf" && ext != ".glb" &&
+                   ext != ".dae" && ext != ".3ds") {
             ENJIN_LOG_WARN(Editor, "Unsupported file dropped: %s", paths[i]);
             m_ConsoleLog.push_back(std::string("[Warn] Unsupported file type: ") + paths[i]);
         }
+    }
+
+    // Dispatch the collected models. One model imports immediately (no dialog — it
+    // "just works"). A GROUP opens a single import dialog with an "apply to all"
+    // choice; the actual imports run from that dialog (see DrawImportDialog).
+    if (modelPaths.size() == 1) {
+        ImportModelImmediate(modelPaths[0], Math::Vector3(0.0f, 0.0f, 0.0f));
+    } else if (modelPaths.size() > 1) {
+        BeginGroupImport(modelPaths);
     }
 }
 

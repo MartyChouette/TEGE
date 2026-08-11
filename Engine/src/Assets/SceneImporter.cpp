@@ -332,6 +332,22 @@ static std::string TryTextureSearchPaths(const std::string& filename,
 }
 
 // Helper: copy accumulated stats into ImportResult
+// Stamp the source file path onto every imported mesh. The per-node builders set
+// meshIndex/axis/hash (they know the geometry) but have no filepath in scope, so the
+// path is filled here once all entities exist. Authored/procedural meshes never set a
+// meshIndex, so they stay reference-less and keep serializing inline.
+static void FillMeshSourcePaths(ECS::World* world, const std::vector<ECS::Entity>& entities,
+                                const std::string& filepath) {
+    if (!world) return;
+    for (ECS::Entity e : entities) {
+        if (!world->IsValid(e)) continue;
+        auto* mc = world->GetComponent<ECS::MeshComponent>(e);
+        if (mc && mc->source.meshIndex >= 0 && mc->source.sourcePath.empty()) {
+            mc->source.sourcePath = filepath;
+        }
+    }
+}
+
 static void CopyStatsToResult(ImportResult& result, const SceneImporter::ImportStats& stats) {
     result.meshCount = stats.meshCount;
     result.materialCount = stats.materialCount;
@@ -454,6 +470,7 @@ ImportResult SceneImporter::ImportGLTF(const std::string& filepath, ECS::World* 
         ENJIN_LOG_INFO(Asset, "--- End Import Report ---");
     }
 
+    FillMeshSourcePaths(world, result.entities, filepath);
     CopyStatsToResult(result, stats);
     result.success = true;
     return result;
@@ -609,6 +626,15 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                 ENJIN_LOG_INFO(Asset, "  Multi-material mesh: %zu sub-meshes, %zu material slots",
                     meshComp.subMeshes.size(), uniqueMaterials.size());
             }
+
+            // Record the source reference so the scene can serialize a compact
+            // reference and the engine can share/free this geometry later. sourcePath
+            // is filled by ImportGLTF's post-pass (this fn has no filepath in scope).
+            meshComp.source.meshIndex = node.meshIndex;
+            meshComp.source.axisZToY = zToY;
+            meshComp.source.axisLToR = lToR;
+            meshComp.source.contentHash =
+                ECS::MeshComponent::ComputeContentHash(meshComp.vertices, meshComp.indices);
 
             world->AddComponent<ECS::MeshComponent>(entity, std::move(meshComp));
 
@@ -817,6 +843,67 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
             }
         }
 
+        // Topological sort: parent bones MUST have lower indices than their children,
+        // or CalculateWorldTransforms reads an uninitialized parent transform and the
+        // bind pose collapses — the classic "skinned glTF imports invisible" bug. The
+        // FBX path already did this; the glTF path did not. Build an old->new remap and
+        // fix EVERY reference into the bone array: bone.parentIndex, this mesh's vertex
+        // joint indices (JOINTS_0/JOINTS_1), and the animation tracks below.
+        std::vector<i32> boneRemap(skeleton->bones.size());
+        for (usize i = 0; i < boneRemap.size(); ++i) boneRemap[i] = static_cast<i32>(i); // identity default
+        {
+            std::vector<i32> sortedOrder;
+            sortedOrder.reserve(skeleton->bones.size());
+            std::vector<bool> placed(skeleton->bones.size(), false);
+            bool progress = true;
+            while (progress && sortedOrder.size() < skeleton->bones.size()) {
+                progress = false;
+                for (usize i = 0; i < skeleton->bones.size(); ++i) {
+                    if (placed[i]) continue;
+                    i32 parent = skeleton->bones[i].parentIndex;
+                    if (parent < 0 || placed[parent]) {
+                        sortedOrder.push_back(static_cast<i32>(i));
+                        placed[i] = true; progress = true;
+                    }
+                }
+            }
+            // Cycles (shouldn't happen in a valid skin): append leftovers as-is.
+            for (usize i = 0; i < skeleton->bones.size(); ++i)
+                if (!placed[i]) sortedOrder.push_back(static_cast<i32>(i));
+
+            bool needsReorder = false;
+            for (usize i = 0; i < sortedOrder.size(); ++i)
+                if (sortedOrder[i] != static_cast<i32>(i)) { needsReorder = true; break; }
+
+            if (needsReorder) {
+                for (usize i = 0; i < sortedOrder.size(); ++i) boneRemap[sortedOrder[i]] = static_cast<i32>(i);
+
+                std::vector<Animation::Bone> reordered(skeleton->bones.size());
+                for (usize i = 0; i < sortedOrder.size(); ++i) {
+                    reordered[i] = skeleton->bones[sortedOrder[i]];
+                    if (reordered[i].parentIndex >= 0)
+                        reordered[i].parentIndex = boneRemap[reordered[i].parentIndex];
+                }
+                skeleton->bones = std::move(reordered);
+
+                // Remap the skinned mesh's vertex joint indices (already on this entity).
+                if (auto* skinnedMesh = world->GetComponent<ECS::MeshComponent>(entity)) {
+                    for (auto& v : skinnedMesh->vertices) {
+                        f32* w0 = &v.boneWeights.x;
+                        for (int s = 0; s < 4; ++s)
+                            if (w0[s] > 0.0f && v.boneIndices[s] < boneRemap.size())
+                                v.boneIndices[s] = static_cast<u32>(boneRemap[v.boneIndices[s]]);
+                        f32* w1 = &v.boneWeights2.x;
+                        for (int s = 0; s < 4; ++s)
+                            if (w1[s] > 0.0f && v.boneIndices2[s] < boneRemap.size())
+                                v.boneIndices2[s] = static_cast<u32>(boneRemap[v.boneIndices2[s]]);
+                    }
+                }
+                ENJIN_LOG_INFO(Asset, "glTF: reordered %zu bones for parent-before-child traversal",
+                    skeleton->bones.size());
+            }
+        }
+
         // Add skeleton component
         auto& skelComp = world->AddComponent<ECS::SkeletonComponent>(entity);
         skelComp.skeleton = skeleton;
@@ -835,10 +922,14 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
             for (const auto& channel : gltfAnim.channels) {
                 if (channel.targetNode < 0) continue;
 
-                // Find which bone this channel targets
+                // Find which bone this channel targets, then map through the bone
+                // reorder so tracks point at the sorted bone indices (identity if the
+                // skeleton didn't need reordering).
                 auto jointIt = nodeToJoint.find(channel.targetNode);
                 if (jointIt == nodeToJoint.end()) continue;
                 i32 boneIndex = jointIt->second;
+                if (boneIndex >= 0 && boneIndex < static_cast<i32>(boneRemap.size()))
+                    boneIndex = boneRemap[boneIndex];
 
                 // Find or create a track for this bone
                 Animation::BoneTrack* track = nullptr;
@@ -934,8 +1025,8 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
             }
         }
 
-        // Auto-play first animation
-        if (!scene.animations.empty()) {
+        // Auto-play first animation (opt-in — off by default keeps imports at rest)
+        if (options.autoPlayAnimation && !scene.animations.empty()) {
             animComp.animator.Play(scene.animations[0].name);
             ENJIN_LOG_INFO(Asset, "Auto-playing animation '%s' on entity '%s'",
                 scene.animations[0].name.c_str(), node.name.c_str());
@@ -977,12 +1068,14 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
         effectiveOptions.sourceApp = resolvedApp;
     }
 
+    // Axis conversion comes from the source-app preset. SCALE does NOT: the preset
+    // scale was only ever a guess at the file's unit, and we have the real thing —
+    // the FBX UnitScaleFactor metadata — which is applied below. Keeping the preset
+    // scale here on top of the metadata would double-convert.
     if (effectiveOptions.convertAxes && resolvedApp != SourceApp::Auto) {
         SourceAppPreset preset = GetSourceAppPreset(resolvedApp);
-        effectiveOptions.scale *= preset.scale;
-        ENJIN_LOG_INFO(Asset, "Applying %s preset (scale=%.4f, zToY=%d, lToR=%d) for %s",
-                       preset.name, effectiveOptions.scale, preset.zUpToYUp, preset.leftToRight,
-                       filepath.c_str());
+        ENJIN_LOG_INFO(Asset, "Applying %s preset axes (zToY=%d, lToR=%d) for %s",
+                       preset.name, preset.zUpToYUp, preset.leftToRight, filepath.c_str());
     }
 
     ImportStats stats;
@@ -1149,7 +1242,11 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
                     boneNameToBoneIdx[skeleton->bones[b].name] = b;
                 }
 
-                // Remap vertex bone indices in ALL meshes
+                // Remap vertex bone indices in ALL meshes — BOTH influence sets. The
+                // loader fills up to 8 influences (boneIndices + boneIndices2); missing
+                // the second set left dense-rig verts pointing at pre-sort (wrong) bones
+                // whenever a reorder happened, corrupting exactly the heavily-weighted
+                // vertices.
                 for (auto& mesh : scene.meshes) {
                     for (auto& prim : mesh.primitives) {
                         for (auto& vert : prim.vertices) {
@@ -1159,6 +1256,12 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
                                     vert.boneIndices[s] = static_cast<u32>(oldToNew[vert.boneIndices[s]]);
                                 }
                             }
+                            f32* weights2 = &vert.boneWeights2.x;
+                            for (int s = 0; s < 4; ++s) {
+                                if (weights2[s] > 0.0f && vert.boneIndices2[s] < oldToNew.size()) {
+                                    vert.boneIndices2[s] = static_cast<u32>(oldToNew[vert.boneIndices2[s]]);
+                                }
+                            }
                         }
                     }
                 }
@@ -1166,6 +1269,51 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
                 ENJIN_LOG_INFO(Asset, "Reordered %zu bones for parent-before-child traversal",
                     skeleton->bones.size());
             }
+        }
+
+        // Derive inverse-bind matrices from the bind pose. Assimp's offsetMatrix does
+        // not match these files' node bind pose (it collapses the mesh), so instead
+        // IBM = inverse(globalBindTransform) from the bone bind TRS, which guarantees
+        // worldBind*IBM == identity at bind. Bones are topologically sorted above, so
+        // each parent's global bind is computed before its children.
+        {
+            std::vector<Math::Matrix4> globalBind(skeleton->bones.size());
+            for (usize b = 0; b < skeleton->bones.size(); ++b) {
+                Math::Matrix4 local = Math::Matrix4::Translation(skeleton->bones[b].bindPosition) *
+                                      skeleton->bones[b].bindRotation.ToMatrix() *
+                                      Math::Matrix4::Scale(skeleton->bones[b].bindScale);
+                i32 p = skeleton->bones[b].parentIndex;
+                globalBind[b] = (p >= 0 && p < static_cast<i32>(b)) ? globalBind[p] * local : local;
+                skeleton->bones[b].inverseBindMatrix = globalBind[b].Inverse();
+            }
+        }
+
+        // Compute the "armature" frame: the world transform of the root bone's PARENT
+        // node. The bone hierarchy's bind pose is relative to this frame (Mixamo/Blender
+        // put a 100x scale on the armature node), but skinned vertices are baked in full
+        // scene space. Skinned meshes get their vertices dropped into THIS frame and the
+        // entity carries armatureWorld back out, so bone motions animate at the matching
+        // scale instead of 100x off. See the bake + the weighted-mesh transform below.
+        {
+            Math::Matrix4 armWorld = Math::Matrix4::Identity();
+            if (!skeleton->bones.empty()) {
+                auto it = boneNameToNodeIdx.find(skeleton->bones[0].name);
+                if (it != boneNameToNodeIdx.end()) {
+                    i32 rootParentNode = scene.nodes[it->second].parentIndex;
+                    if (rootParentNode >= 0) {
+                        std::vector<i32> chain;
+                        i32 walk = rootParentNode;
+                        while (walk >= 0) { chain.push_back(walk); walk = scene.nodes[walk].parentIndex; }
+                        for (auto cit = chain.rbegin(); cit != chain.rend(); ++cit) {
+                            const auto& n = scene.nodes[*cit];
+                            armWorld = armWorld * (Math::Matrix4::Translation(n.translation) *
+                                                   n.rotation.ToMatrix() * Math::Matrix4::Scale(n.scale));
+                        }
+                    }
+                }
+            }
+            skelCtx.armatureWorld = armWorld;
+            skelCtx.armatureWorldInverse = armWorld.Inverse();
         }
 
         skelCtx.skeleton = skeleton;
@@ -1263,13 +1411,59 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
             }
         }
     }
-    f32 height = boundsMax.y - boundsMin.y; // Y-up height
-    if (height < 1.0f) height = boundsMax.z - boundsMin.z; // Try Z-up
-    if (height > 10.0f) {
-        // Target ~1.8 units (standard capsule/character controller height).
-        unitScale *= 1.8f / height;
-        ENJIN_LOG_INFO(Asset, "FBX auto-scale: height=%.1f, bounds=[%.1f,%.1f,%.1f]-[%.1f,%.1f,%.1f], scale=%.4f",
-            height, boundsMin.x, boundsMin.y, boundsMin.z, boundsMax.x, boundsMax.y, boundsMax.z, unitScale);
+    // ---- Import scale: deterministic from unit metadata, self-correcting fallback ----
+    // Measure the LARGEST extent (in raw file units), not just Y height: a wide/flat
+    // model short in Y (vehicle, dragon) would otherwise slip a height-only check and
+    // import as a giant the camera sits inside.
+    f32 extentX = boundsMax.x - boundsMin.x;
+    f32 extentY = boundsMax.y - boundsMin.y;
+    f32 extentZ = boundsMax.z - boundsMin.z;
+    f32 largest = Math::Max(extentX, Math::Max(extentY, extentZ));
+    // Measurable only if at least one vertex was seen (otherwise the ±FLT_MAX seed
+    // makes extents -inf) and finite. Guarding this stops the classic silent failure:
+    // unmeasured bounds -> no sane scale -> model imports at raw units and vanishes.
+    bool boundsMeasurable = (boundsMax.y >= boundsMin.y) && std::isfinite(largest) && largest > 1e-6f;
+
+    // Primary: convert file units to meters using the file's real UnitScaleFactor
+    // (FBX metadata: 1 = cm, 100 = m). This is deterministic per file and works even
+    // when the source app can't be detected — unlike guessing from height.
+    bool haveUnitMeta = std::isfinite(scene.unitScaleFactor) && scene.unitScaleFactor > 0.0f;
+    f32 unitConv = haveUnitMeta ? (scene.unitScaleFactor / 100.0f) : 1.0f;   // cm->0.01, m->1.0
+    unitScale = effectiveOptions.scale * unitConv;   // effectiveOptions.scale = user multiplier
+
+    if (boundsMeasurable) {
+        f32 sizeMeters = largest * unitScale;   // model's largest dimension, in meters
+        // Sanity net. Without metadata, normalize any oversized model to human scale.
+        // With metadata, trust it UNLESS the result is outside a sane viewable range —
+        // FBX UnitScaleFactor often LIES (these Wolf/Cow files claim cm but are ~5-unit
+        // meshes, so the cm conversion made a 5 cm wolf). A real 0.5-20 m model is kept;
+        // anything that lands under ~0.4 m or over ~25 m is re-normalized to ~1.8 m.
+        bool absurd = haveUnitMeta ? (sizeMeters > 25.0f || sizeMeters < 0.4f)
+                                   : (sizeMeters > 10.0f || sizeMeters < 0.4f);
+        if (!effectiveOptions.normalizeScale) absurd = false;   // user opted out of size magic
+        if (absurd && sizeMeters > 1e-6f) {
+            f32 corrected = unitScale * (1.8f / sizeMeters);   // ~1.8 m target
+            ENJIN_LOG_WARN(Asset, "FBX auto-scale: %s produced %.3f m (largest=%.1f units); "
+                                  "rescaling to ~1.8 m (scale %.5f -> %.5f) for %s",
+                           haveUnitMeta ? "unit metadata" : "no unit metadata", sizeMeters,
+                           largest, unitScale, corrected, filepath.c_str());
+            unitScale = corrected;
+        } else {
+            ENJIN_LOG_INFO(Asset, "FBX scale: UnitScaleFactor=%.3f, largest=%.1f units -> %.3f m (scale=%.5f) for %s",
+                           scene.unitScaleFactor, largest, sizeMeters, unitScale, filepath.c_str());
+        }
+    } else {
+        ENJIN_LOG_WARN(Asset, "FBX import: could not measure model bounds (degenerate/empty geometry) "
+                              "— importing at scale %.5f; model may be off-screen or collapsed", unitScale);
+    }
+
+    // Final safety: a zero / NaN / inf root scale collapses the ENTIRE imported
+    // hierarchy to a point (every child is parentWorld * local, and skinned children
+    // keep scale=1/pos=0 so they cannot survive a bad root). That is the difference
+    // between "wrong size" and "completely invisible" — never let it through.
+    if (!std::isfinite(unitScale) || unitScale <= 1e-6f) {
+        ENJIN_LOG_WARN(Asset, "FBX import: computed unit scale %.6f is invalid — forcing 1.0", unitScale);
+        unitScale = 1.0f;
     }
     rootTransform.scale = Math::Vector3(unitScale, unitScale, unitScale);
     skelCtx.unitScale = unitScale; // Pass to skinned mesh entities
@@ -1335,6 +1529,7 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
         ENJIN_LOG_INFO(Asset, "--- End Import Report ---");
     }
 
+    FillMeshSourcePaths(world, result.entities, filepath);
     CopyStatsToResult(result, stats);
     result.success = true;
     return result;
@@ -1614,10 +1809,30 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         // entity is parented under it (pendingParent), so local scale stays 1 —
         // re-applying unitScale here would double-scale through the hierarchy.
         // Unparented calls (legacy overload) still need the scale themselves.
-        transform.position = Math::Vector3(0.0f);
-        transform.rotation = Math::Quaternion::Identity();
-        const f32 selfScale = (pendingParent != ECS::INVALID_ENTITY) ? 1.0f : skelCtx.unitScale;
-        transform.scale = Math::Vector3(selfScale, selfScale, selfScale);
+        //
+        // The skinned vertices are baked into the ARMATURE frame (÷ armatureWorld, see
+        // the bake below), so the entity carries the armature transform to bring the
+        // skinned result back to scene space. This is what makes ANIMATION correct: the
+        // bone motions live in the armature frame and now match the vertex scale. At
+        // rest it is identical to before (armatureWorld · armatureWorld⁻¹ · v = v).
+        const Math::Matrix4& aw = skelCtx.armatureWorld;
+        Math::Vector3 awPos(aw.m[12], aw.m[13], aw.m[14]);
+        Math::Vector3 ac0(aw.m[0], aw.m[1], aw.m[2]);
+        Math::Vector3 ac1(aw.m[4], aw.m[5], aw.m[6]);
+        Math::Vector3 ac2(aw.m[8], aw.m[9], aw.m[10]);
+        Math::Vector3 awScale(ac0.Length(), ac1.Length(), ac2.Length());
+        if (awScale.x > 1e-6f) ac0 = ac0 / awScale.x;
+        if (awScale.y > 1e-6f) ac1 = ac1 / awScale.y;
+        if (awScale.z > 1e-6f) ac2 = ac2 / awScale.z;
+        Math::Matrix4 awRotM = Math::Matrix4::Identity();
+        awRotM.m[0] = ac0.x; awRotM.m[1] = ac0.y; awRotM.m[2]  = ac0.z;
+        awRotM.m[4] = ac1.x; awRotM.m[5] = ac1.y; awRotM.m[6]  = ac1.z;
+        awRotM.m[8] = ac2.x; awRotM.m[9] = ac2.y; awRotM.m[10] = ac2.z;
+        Math::Quaternion awRot = Math::Quaternion::FromMatrix(awRotM);
+        const f32 extraScale = (pendingParent != ECS::INVALID_ENTITY) ? 1.0f : skelCtx.unitScale;
+        transform.position = awPos * extraScale;
+        transform.rotation = awRot;
+        transform.scale = awScale * extraScale;
     } else if (skelCtx.skeleton && hasMeshes) {
         // Rigid mesh in a skinned file: keep the authored FBX placement on the
         // ENTITY (accumulated through skipped ancestors) and leave the vertices
@@ -1653,14 +1868,11 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
     if (!meshIndices.empty()) {
         ECS::MeshComponent meshComp;
 
-        // For WEIGHTED (skinned) meshes: bake the accumulated node world transform
-        // (precomputed above) into vertex positions. Bone bind data + IBMs come
-        // from the FBX in a single common space (typically cm), but mesh vertices
-        // are in mesh-local space — for files where the mesh node has a
-        // non-identity transform (e.g. a 100x scale because the mesh was authored
-        // in meters), the vertices end up in a different unit than the bones, and
-        // the GPU skinning produces a stretched mess. RIGID meshes in skinned
-        // files skip the bake — their placement lives on the entity transform.
+        // Bake the mesh node's world transform into skinned vertices so they share the
+        // native space with the rigid parts and size correctly. This is the known-
+        // VISIBLE state (bind-pose inverse-bind above keeps it from collapsing). The
+        // animation-space mismatch (vertices in scene space vs bones in armature space)
+        // is the remaining issue tackled separately.
         bool bakeMeshNodeIntoVertices = (skelCtx.skeleton != nullptr) && nodeMeshesWeighted;
 
         u32 vertexOffset = 0;
@@ -1696,13 +1908,18 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                     ECS::MeshComponent::Vertex vertex;
                     vertex.position = assimpVert.position;
                     vertex.normal = assimpVert.normal;
-                    // For skinned meshes, bake the mesh node's accumulated world
-                    // transform into the vertex position so it ends up in the SAME
-                    // coordinate space as the bone bind data (see meshNodeWorld above).
+                    // For skinned meshes, put the vertex in the ARMATURE frame:
+                    // armatureWorld⁻¹ · meshNodeWorld · v. meshNodeWorld brings it to
+                    // scene space; armatureWorld⁻¹ then drops it into the frame the bone
+                    // hierarchy lives in (the armature node carries a 100× scale). The
+                    // entity transform (= armatureWorld) puts the skinned result back.
+                    // This is the fix that makes animation deform at the right scale.
                     if (bakeMeshNodeIntoVertices) {
-                        Math::Vector4 p4 = meshNodeWorld * Math::Vector4(vertex.position.x, vertex.position.y, vertex.position.z, 1.0f);
+                        Math::Vector4 p4 = skelCtx.armatureWorldInverse *
+                            (meshNodeWorld * Math::Vector4(vertex.position.x, vertex.position.y, vertex.position.z, 1.0f));
                         vertex.position = Math::Vector3(p4.x, p4.y, p4.z);
-                        Math::Vector4 n4 = meshNodeWorld * Math::Vector4(vertex.normal.x, vertex.normal.y, vertex.normal.z, 0.0f);
+                        Math::Vector4 n4 = skelCtx.armatureWorldInverse *
+                            (meshNodeWorld * Math::Vector4(vertex.normal.x, vertex.normal.y, vertex.normal.z, 0.0f));
                         vertex.normal = Math::Vector3(n4.x, n4.y, n4.z).Normalized();
                     }
                     // Apply axis conversion to vertex positions, normals, tangents.
@@ -1811,6 +2028,17 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
             }
 
             u32 totalAssimpVerts = static_cast<u32>(meshComp.vertices.size());
+
+            // Record the source reference. Key on nodeIndex (not mesh index): the
+            // Assimp path merges a node's meshes AND bakes the node world transform
+            // into skinned vertices, so the node is what reproduces this geometry.
+            // sourcePath is filled by ImportAssimp's post-pass (no filepath here).
+            meshComp.source.meshIndex = nodeIndex;
+            meshComp.source.axisZToY = zToY;
+            meshComp.source.axisLToR = lToR;
+            meshComp.source.contentHash =
+                ECS::MeshComponent::ComputeContentHash(meshComp.vertices, meshComp.indices);
+
             world->AddComponent<ECS::MeshComponent>(entity, std::move(meshComp));
 
             // Create MorphTargetComponent if any primitive has morph targets (FBX blend shapes)
@@ -2103,7 +2331,8 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
 
         // Auto-play: prefer the idle clip — playing whatever is alphabetically
         // first meant every dropped-in animal led with its attack animation.
-        if (!scene.animations.empty()) {
+        // Opt-in (off by default) so imports come in at their correct rest pose.
+        if (options.autoPlayAnimation && !scene.animations.empty()) {
             const std::string& startClip = !clipIdle.empty() ? clipIdle : clipFirst;
             animComp.animator.Play(startClip);
             ENJIN_LOG_INFO(Asset, "Auto-playing animation '%s' on entity '%s' (leader; drives all co-skeleton meshes)",

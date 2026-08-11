@@ -57,9 +57,16 @@ enum class ImportColliderShape : u8 {
 // Import options for scene loading
 struct ImportOptions {
     f32 scale = 1.0f;
+    // Normalize the model to a sane on-screen size (~1.8 m largest dimension) when the
+    // file's unit is unreliable or the result is absurd. OFF = import at the file's
+    // real unit-converted size, no size magic (predictable, you scale it yourself).
+    bool normalizeScale = true;
     bool importMaterials = true;
     bool importLights = true;
     bool importAnimations = true;
+    // Start playing the first animation on import. OFF = the model comes in at its
+    // bind/rest pose. Default ON — imported rigs animate immediately.
+    bool autoPlayAnimation = true;
     bool generateColliders = true;
     ImportColliderShape colliderShape = ImportColliderShape::Box;
     bool generateLODs = false;  // Off by default — LOD generation is expensive for large meshes
@@ -147,6 +154,11 @@ private:
         f32 unitScale = 1.0f;        // Auto-computed scale (cm→m) for skinned mesh entities
         u64 groupId = 0;             // Stamped onto every co-skeleton mesh so the shared Skeleton
                                      // survives save/load (SkeletonComponent::skeletonGroupId)
+        // World transform of the root bone's PARENT node (the "armature" frame the bone
+        // hierarchy is relative to). Skinned vertices are baked in full scene space,
+        // which differs from this frame — the delta is what breaks animation.
+        Math::Matrix4 armatureWorld = Math::Matrix4::Identity();
+        Math::Matrix4 armatureWorldInverse = Math::Matrix4::Identity();
     };
 
     // Overload with skeleton context for skinned mesh import. pendingParent is the

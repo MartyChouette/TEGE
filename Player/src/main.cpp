@@ -89,6 +89,7 @@
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/Audio/AudioEventGraph.h"
 #include "Enjin/Assets/DataAsset.h"
+#include "Enjin/Assets/MeshAssetCache.h"
 #include "Enjin/Gameplay/GameplayLoop.h"
 #include <nlohmann/json.hpp>
 #include <iostream>
@@ -453,6 +454,11 @@ public:
         m_SimpleAudio.Initialize();
         m_SimpleAudio.SetWorld(m_World.get());
         m_SimpleAudio.SetAssetRoot(gameRoot);
+        // Resolve project-relative mesh references against the game root (loose assets
+        // ship next to the exe). NOTE: for this to work in an exported game the source
+        // mesh files must ship with the build; otherwise reference-mode scenes need to
+        // be baked inline at build time. Tracked as a follow-up.
+        Enjin::Assets::MeshAssetCache::Get().SetSearchRoot(gameRoot);
         m_WeatherSystem.Initialize();
         m_ElementalSystem.Initialize(&m_WindSystem, &m_WeatherSystem, &m_SeasonalWeather);
         m_FireLights.reserve(Enjin::Effects::ElementalSystem::MAX_FIRE_LIGHTS);

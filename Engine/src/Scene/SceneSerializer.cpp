@@ -45,6 +45,7 @@
 #include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Assets/Prefab.h"
+#include "Enjin/Assets/MeshAssetCache.h"
 #include "Enjin/Renderer/Skybox.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Accessibility/ContentWarning.h"
@@ -274,12 +275,23 @@ ECS::MaterialSlotsComponent DeserializeMaterialSlotsComponent(const json& j) {
     return comp;
 }
 
-json SerializeMeshComponent(const ECS::MeshComponent& mesh, bool includeVertexData) {
+json SerializeMeshComponent(const ECS::MeshComponent& mesh, bool includeVertexData,
+                            bool preferReference = false) {
     json j;
     j["vertexCount"] = static_cast<u32>(mesh.vertices.size());
     j["indexCount"] = static_cast<u32>(mesh.indices.size());
 
-    if (includeVertexData) {
+    // Reference mode: an imported mesh with a valid source ref serializes as the
+    // reference only (written below), skipping the heavy inline vertex/index arrays;
+    // the loader reloads/shares the geometry from the source file via MeshAssetCache.
+    // CRITICAL SAFETY: only drop the inline vertices if the cache can actually reload
+    // this mesh RIGHT NOW (source present + hash matches). If it can't, we keep the
+    // inline geometry, so geometry is never lost even if a source file is missing or
+    // has drifted — worst case the file just doesn't shrink for that mesh.
+    const bool writeAsReference = preferReference && mesh.source.Valid()
+        && Assets::MeshAssetCache::Get().CanResolve(mesh.source);
+
+    if (includeVertexData && !writeAsReference) {
         json vertices = json::array();
         for (const auto& v : mesh.vertices) {
             json vertex;
@@ -326,6 +338,19 @@ json SerializeMeshComponent(const ECS::MeshComponent& mesh, bool includeVertexDa
             subMeshes.push_back(smJson);
         }
         j["subMeshes"] = subMeshes;
+    }
+
+    // Source asset reference for imported meshes. Written additively — Phase A still
+    // serializes inline vertices above, so older loaders ignore this and newer ones
+    // can prefer the reference (load-once/share) and skip the inline geometry.
+    if (mesh.source.Valid()) {
+        json src;
+        src["path"] = mesh.source.sourcePath;
+        src["meshIndex"] = mesh.source.meshIndex;
+        src["axisZToY"] = mesh.source.axisZToY;
+        src["axisLToR"] = mesh.source.axisLToR;
+        src["contentHash"] = mesh.source.contentHash;
+        j["source"] = src;
     }
 
     return j;
@@ -570,6 +595,26 @@ ECS::MeshComponent DeserializeMeshComponent(const json& j) {
             if (smJson.contains("name")) sm.name = smJson["name"].get<std::string>();
             mesh.subMeshes.push_back(sm);
         }
+    }
+
+    // Source asset reference (imported meshes). Additive/backward compatible:
+    // scenes saved before this field simply won't have it.
+    if (j.contains("source") && j["source"].is_object()) {
+        const auto& src = j["source"];
+        mesh.source.sourcePath = src.value("path", std::string{});
+        mesh.source.meshIndex = src.value("meshIndex", -1);
+        mesh.source.axisZToY = src.value("axisZToY", false);
+        mesh.source.axisLToR = src.value("axisLToR", false);
+        mesh.source.contentHash = src.value("contentHash", u64{0});
+    }
+
+    // Reference mode: the scene stored a source reference instead of inline vertices,
+    // so pull the geometry from the source file (shared across every mesh that
+    // references it). Only when the inline path produced nothing — an inline mesh
+    // always wins, keeping old/authored scenes untouched. On failure the mesh stays
+    // empty and the cache logs why (missing file / hash drift), rather than crashing.
+    if (mesh.vertices.empty() && mesh.source.Valid()) {
+        Assets::MeshAssetCache::Get().Resolve(mesh.source, mesh);
     }
 
     return mesh;
@@ -7027,7 +7072,7 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
 
             if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
                 const auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
-                entityJson["mesh"] = SerializeMeshComponent(*mesh, options.includeVertexData);
+                entityJson["mesh"] = SerializeMeshComponent(*mesh, options.includeVertexData, options.useMeshReferences);
             }
 
             if (m_World->HasComponent<ECS::SkeletonComponent>(entity)) {
@@ -8482,7 +8527,7 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
 
             if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
                 const auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
-                entityJson["mesh"] = SerializeMeshComponent(*mesh, options.includeVertexData);
+                entityJson["mesh"] = SerializeMeshComponent(*mesh, options.includeVertexData, options.useMeshReferences);
             }
 
             if (m_World->HasComponent<ECS::SkeletonComponent>(entity)) {
