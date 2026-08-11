@@ -1096,6 +1096,15 @@ private:
         }
     }
 
+    // Fold a newly created entity into the active layer as a "created" delta so
+    // toggling the layer adds/removes it. No-op without an unlocked active layer,
+    // so entities made with no layer active just belong to the base scene.
+    void RecordLayerCreate(ECS::Entity e) {
+        Scene::Layer* active = m_LayerSystem.ActiveLayer();
+        if (!active || active->locked) return;
+        m_LayerSystem.RecordCreate(e);
+    }
+
     // Fluid simulation (Stable Fluids solver for FluidVolumeComponent)
     Effects::FluidSimulation m_FluidSimulation;
 

@@ -19,6 +19,19 @@ using json = nlohmann::json;
 int LayerSystem::AddLayer(const std::string& name) {
     Layer layer;
     layer.name = name;
+    // Seed a distinct default color from a rotating palette so new layers are
+    // visually distinguishable in the viewport highlight without any user setup.
+    static const Math::Vector3 kPalette[] = {
+        {0.40f, 0.80f, 1.00f}, // cyan
+        {1.00f, 0.55f, 0.30f}, // orange
+        {0.55f, 1.00f, 0.45f}, // green
+        {1.00f, 0.45f, 0.75f}, // pink
+        {0.75f, 0.60f, 1.00f}, // violet
+        {1.00f, 0.90f, 0.35f}, // yellow
+        {0.45f, 0.70f, 1.00f}, // blue
+        {1.00f, 0.45f, 0.45f}, // red
+    };
+    layer.color = kPalette[m_Stack.layers.size() % (sizeof(kPalette) / sizeof(kPalette[0]))];
     m_Stack.layers.push_back(std::move(layer));
     m_ActiveLayer = static_cast<int>(m_Stack.layers.size()) - 1;
     return m_ActiveLayer;

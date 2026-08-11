@@ -496,6 +496,18 @@ void EditorLayer::DrawLayersPanel() {
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Locked: capture into this layer is blocked");
         ImGui::SameLine();
 
+        float layerCol[3] = { layer.color.x, layer.color.y, layer.color.z };
+        if (ImGui::ColorEdit3("##color", layerCol,
+                ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel)) {
+            layer.color = Math::Vector3(layerCol[0], layerCol[1], layerCol[2]);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Layer color: entities this layer touches are highlighted in this color");
+        ImGui::SameLine();
+
+        ImGui::Checkbox("H##highlight", &layer.highlight);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Highlight: mark this layer's entities in the viewport with its color");
+        ImGui::SameLine();
+
         char nameBuf[128];
         strncpy(nameBuf, layer.name.c_str(), sizeof(nameBuf) - 1);
         nameBuf[sizeof(nameBuf) - 1] = '\0';

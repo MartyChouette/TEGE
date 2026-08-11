@@ -3515,6 +3515,47 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                 ImVec2(m_EditorViewportImageMinX, m_EditorViewportImageMinY),
                 ImVec2(m_EditorViewportImageMaxX, m_EditorViewportImageMaxY), true);
 
+            // --- Override-layer color highlight ---
+            // Each layer can carry a color; every entity a layer touches is marked
+            // in that color so you can see at a glance which layer owns what. Driven
+            // by the per-layer `highlight` toggle in the Layers panel.
+            {
+                const Scene::LayerStack& layerStack = m_LayerSystem.Stack();
+                bool anyHighlight = false;
+                for (const Scene::Layer& l : layerStack.layers) {
+                    if (l.highlight && !l.entities.empty()) { anyHighlight = true; break; }
+                }
+                if (anyHighlight) {
+                    // Map stable id -> live entity once for the whole pass.
+                    std::unordered_map<u64, ECS::Entity> bySid;
+                    for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::StableIdComponent>()) {
+                        auto* sid = m_World->GetComponent<ECS::StableIdComponent>(e);
+                        if (sid && sid->id != 0) bySid[sid->id] = e;
+                    }
+                    for (const Scene::Layer& layer : layerStack.layers) {
+                        if (!layer.highlight) continue;
+                        ImU32 col = IM_COL32(static_cast<int>(layer.color.x * 255.0f),
+                                             static_cast<int>(layer.color.y * 255.0f),
+                                             static_cast<int>(layer.color.z * 255.0f), 230);
+                        for (const Scene::EntityDelta& ed : layer.entities) {
+                            auto it = bySid.find(ed.stableId);
+                            if (it == bySid.end()) continue;
+                            auto* tr = m_World->GetComponent<ECS::TransformComponent>(it->second);
+                            if (!tr) continue;
+                            ImVec2 sp;
+                            if (worldToScreen(tr->position, sp)) {
+                                bgDrawList->AddCircleFilled(sp, 5.0f, col);
+                                bgDrawList->AddCircle(sp, 9.0f, col, 0, 2.0f);
+                            }
+                            // Wrap the object when it has a box collider (world-space size).
+                            if (auto* bc = m_World->GetComponent<ECS::BoxColliderComponent>(it->second)) {
+                                drawWireBox(bgDrawList, tr->position + bc->center, bc->size * 0.5f, col, 1.5f);
+                            }
+                        }
+                    }
+                }
+            }
+
             // Weather zone wireframe (light blue)
             for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::WeatherZoneComponent>()) {
                 auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);

@@ -672,7 +672,7 @@ void EditorLayer::DrawMenuBar() {
                 if (m_World) {
                     ECS::Entity entity = m_World->CreateEntity();
                     m_World->AddComponent<ECS::TransformComponent>(entity);
-                    SelectEntity(entity);
+                    SelectEntity(entity); RecordLayerCreate(entity);
                     if (m_CollabSystem.IsActive()) {
                         m_CollabSystem.OnEntityCreated(entity,
                             Scene::SceneSerializer::SerializeEntityToString(m_World, entity));
@@ -686,7 +686,7 @@ void EditorLayer::DrawMenuBar() {
                 m_World->AddComponent<ECS::TransformComponent>(entity);
                 m_World->AddComponent<ECS::MeshComponent>(entity, std::move(mesh));
                 m_World->AddComponent<ECS::MaterialComponent>(entity);
-                SelectEntity(entity);
+                SelectEntity(entity); RecordLayerCreate(entity);
             };
 
             if (ImGui::BeginMenu("3D Object")) {
@@ -729,7 +729,7 @@ void EditorLayer::DrawMenuBar() {
                         auto& material = m_World->AddComponent<ECS::MaterialComponent>(entity);
                         material.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;  // Support transparency for sprites
                         m_World->AddComponent<ECS::NameComponent>(entity, "Sprite");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Circle")) {
@@ -740,7 +740,7 @@ void EditorLayer::DrawMenuBar() {
                         transform.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-90.0f));
                         m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateSphere(0.5f, 32, 1));
                         m_World->AddComponent<ECS::MaterialComponent>(entity);
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Capsule 2D")) {
@@ -757,7 +757,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::NameComponent>(entity, "Ground");
                         auto& collider = m_World->AddComponent<ECS::BoxColliderComponent>(entity);
                         collider.size = Math::Vector3(20.0f, 0.5f, 1.0f);
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Panel (UI)")) {
@@ -770,7 +770,7 @@ void EditorLayer::DrawMenuBar() {
                         material.opacity = 0.9f;
                         material.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
                         m_World->AddComponent<ECS::NameComponent>(entity, "UI Panel");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 ImGui::EndMenu();
@@ -787,7 +787,7 @@ void EditorLayer::DrawMenuBar() {
                     auto& collider = m_World->AddComponent<ECS::BoxColliderComponent>(entity);
                     collider.size = Math::Vector3(50.0f, 0.1f, 50.0f);
                     collider.center = Math::Vector3(0.0f, -0.05f, 0.0f);
-                    SelectEntity(entity);
+                    SelectEntity(entity); RecordLayerCreate(entity);
                 }
             }
             ImGui::Separator();
@@ -802,7 +802,7 @@ void EditorLayer::DrawMenuBar() {
                         light.type = ECS::LightType::Directional;
                         light.intensity = 1.0f;
                         light.castShadows = true;
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Point Light")) {
@@ -813,7 +813,7 @@ void EditorLayer::DrawMenuBar() {
                         transform.position = Math::Vector3(0, 2, 0);
                         auto& light = m_World->AddComponent<ECS::LightComponent>(entity);
                         light.type = ECS::LightType::Point;
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Spot Light")) {
@@ -824,7 +824,7 @@ void EditorLayer::DrawMenuBar() {
                         transform.position = Math::Vector3(0, 3, 0);
                         auto& light = m_World->AddComponent<ECS::LightComponent>(entity);
                         light.type = ECS::LightType::Spot;
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 ImGui::EndMenu();
@@ -839,7 +839,7 @@ void EditorLayer::DrawMenuBar() {
                         cam.projectionType = ECS::ProjectionType::Perspective;
                         cam.fieldOfView = 60.0f;
                         m_World->AddComponent<ECS::NameComponent>(entity, "Game Camera");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Orthographic Camera")) {
@@ -852,7 +852,7 @@ void EditorLayer::DrawMenuBar() {
                         cam.projectionType = ECS::ProjectionType::Orthographic;
                         cam.orthoSize = 10.0f;
                         m_World->AddComponent<ECS::NameComponent>(entity, "2D Camera");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 ImGui::EndMenu();
@@ -864,7 +864,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::WeatherZoneComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "Weather Zone");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Water Volume")) {
@@ -873,7 +873,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::WaterVolumeComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "Water Volume");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Water 3D")) {
@@ -882,7 +882,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::Water3DComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "Water 3D");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Grass Volume")) {
@@ -891,7 +891,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::GrassVolumeComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "Grass Volume");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Shrub Volume")) {
@@ -900,7 +900,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::ShrubVolumeComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "Shrub Volume");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Tree Volume")) {
@@ -909,7 +909,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::TreeVolumeComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "Tree Volume");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Camera Trigger")) {
@@ -918,7 +918,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::CameraTriggerComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "Camera Trigger");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Temperature Zone")) {
@@ -927,7 +927,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::TemperatureZoneComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "Temperature Zone");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 ImGui::EndMenu();
@@ -943,7 +943,7 @@ void EditorLayer::DrawMenuBar() {
                     terrain.InitializeFlat(0.0f);
                     m_World->AddComponent<ECS::MaterialComponent>(entity);
                     m_World->AddComponent<ECS::NameComponent>(entity, "Terrain");
-                    SelectEntity(entity);
+                    SelectEntity(entity); RecordLayerCreate(entity);
                 }
             }
 
@@ -958,7 +958,7 @@ void EditorLayer::DrawMenuBar() {
                     terrain2d.AddPoint(Math::Vector2(10.0f, 0.0f));
                     m_World->AddComponent<ECS::MaterialComponent>(entity);
                     m_World->AddComponent<ECS::NameComponent>(entity, "2D Terrain");
-                    SelectEntity(entity);
+                    SelectEntity(entity); RecordLayerCreate(entity);
                 }
             }
 
@@ -981,7 +981,7 @@ void EditorLayer::DrawMenuBar() {
                         dialogue.dialogueLines.push_back("Be careful out there.");
                         m_World->AddComponent<ECS::StateMachineComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "NPC");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Health Pickup")) {
@@ -1000,7 +1000,7 @@ void EditorLayer::DrawMenuBar() {
                         pickup.value = 25.0f;
                         pickup.magnetRange = 2.0f;
                         m_World->AddComponent<ECS::NameComponent>(entity, "Health Pickup");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Coin Collectible")) {
@@ -1019,7 +1019,7 @@ void EditorLayer::DrawMenuBar() {
                         pickup.type = ECS::PickupComponent::PickupType::Coin;
                         pickup.value = 1.0f;
                         m_World->AddComponent<ECS::NameComponent>(entity, "Coin");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Damage Zone")) {
@@ -1038,7 +1038,7 @@ void EditorLayer::DrawMenuBar() {
                         dmg.damage = 5.0f;
                         dmg.damageInterval = 1.0f;
                         m_World->AddComponent<ECS::NameComponent>(entity, "Damage Zone");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Patrol Enemy")) {
@@ -1058,7 +1058,7 @@ void EditorLayer::DrawMenuBar() {
                         auto& dmg = m_World->AddComponent<ECS::DamageComponent>(entity);
                         dmg.damage = 10.0f;
                         m_World->AddComponent<ECS::NameComponent>(entity, "Patrol Enemy");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 if (ImGui::MenuItem("Interactable Chest")) {
@@ -1076,7 +1076,7 @@ void EditorLayer::DrawMenuBar() {
                         auto& inv = m_World->AddComponent<ECS::InventoryComponent>(entity);
                         inv.maxSlots = 5;
                         m_World->AddComponent<ECS::NameComponent>(entity, "Chest");
-                        SelectEntity(entity);
+                        SelectEntity(entity); RecordLayerCreate(entity);
                     }
                 }
                 ImGui::EndMenu();

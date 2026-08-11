@@ -230,6 +230,7 @@ void EditorLayer::DrawHierarchyPanel() {
                     ECS::Entity entity = m_World->CreateEntity();
                     m_World->AddComponent<ECS::TransformComponent>(entity);
                     SelectEntity(entity);
+                    RecordLayerCreate(entity);
                 });
         }
 
@@ -296,6 +297,7 @@ void EditorLayer::DrawHierarchyPanel() {
                 ECS::Entity entity = m_World->CreateEntity();
                 m_World->AddComponent<ECS::TransformComponent>(entity);
                 SelectEntity(entity);
+                RecordLayerCreate(entity);
                 if (m_CollabSystem.IsActive()) {
                     m_CollabSystem.OnEntityCreated(entity,
                         Scene::SceneSerializer::SerializeEntityToString(m_World, entity));

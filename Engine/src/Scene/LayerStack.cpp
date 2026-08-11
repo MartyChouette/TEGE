@@ -49,6 +49,8 @@ std::string Layer::ToJson(bool prettyPrint) const {
     root["name"] = name;
     root["enabled"] = enabled;
     root["locked"] = locked;
+    root["color"] = { color.x, color.y, color.z };
+    root["highlight"] = highlight;
 
     json ents = json::array();
     for (const EntityDelta& d : entities) {
@@ -96,6 +98,12 @@ Layer Layer::FromJson(const std::string& jsonStr) {
         layer.name    = root.value("name", std::string{});
         layer.enabled = root.value("enabled", true);
         layer.locked  = root.value("locked", false);
+        layer.highlight = root.value("highlight", true);
+        if (root.contains("color") && root["color"].is_array() && root["color"].size() == 3) {
+            layer.color = Math::Vector3(root["color"][0].get<f32>(),
+                                        root["color"][1].get<f32>(),
+                                        root["color"][2].get<f32>());
+        }
 
         if (root.contains("entities") && root["entities"].is_array()) {
             if (root["entities"].size() > kMaxLayerEntities) {

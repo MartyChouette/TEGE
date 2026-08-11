@@ -806,6 +806,7 @@ void EditorLayer::DuplicateEntity(ECS::Entity entity) {
     m_UndoRedo.Execute(std::move(cmd));
 
     SelectEntity(newEntity);
+    RecordLayerCreate(newEntity);
     ENJIN_LOG_INFO(Editor, "Duplicated entity %llu -> %llu", entity, newEntity);
 }
 

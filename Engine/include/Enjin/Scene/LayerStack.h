@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Scene/SceneSerializer.h"
+#include "Enjin/Math/Vector.h"
 #include <string>
 #include <vector>
 
@@ -52,6 +53,10 @@ struct ENJIN_API Layer {
     std::string name;
     bool enabled = true;
     bool locked  = false;            // UI hint: edits to this layer are blocked
+    // Viewport color-coding: every entity this layer touches is marked in `color`
+    // when `highlight` is on, so you can see at a glance which layer owns what.
+    Math::Vector3 color = Math::Vector3(0.4f, 0.8f, 1.0f);
+    bool highlight = true;
     std::vector<EntityDelta> entities;
 
     // Serialize/deserialize this layer to its own JSON document (per-layer file).
