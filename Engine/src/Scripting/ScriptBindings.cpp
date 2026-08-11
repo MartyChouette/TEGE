@@ -1,6 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Scripting/ASCallConv.h"
-#include "Enjin/Scripting/NewgroundsBindings.h"
 #include "Enjin/Scripting/CoroutineScheduler.h"
 #include "Enjin/Scripting/ScriptEvents.h"
 #include "Enjin/Scripting/ScriptEngine.h"
@@ -1169,7 +1168,6 @@ void RegisterAllBindings(asIScriptEngine* engine) {
     RegisterVisualScriptBindings(engine);
     RegisterDataAssetBindings(engine);
     RegisterSaveBindings(engine);
-    RegisterNewgroundsBindings(engine);
     RegisterWeatherBindings(engine);
     RegisterGameplayBindings(engine);
     RegisterUIBindings(engine);

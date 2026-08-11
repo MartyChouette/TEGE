@@ -74,7 +74,6 @@
 #include "Enjin/Editor/TemplateCreator.h"
 #include "Enjin/Editor/TemplateMarketplace.h"
 #include "Enjin/Scripting/AS3Transpiler.h"
-#include "Enjin/Networking/NewgroundsAPI.h"
 #include "Enjin/Networking/NetworkTypes.h"
 #include "Enjin/Build/HTML5Exporter.h"
 #include "Enjin/Plugin/PluginRepository.h"
@@ -1590,11 +1589,6 @@ private:
     void ResetBugReportForm();
     void ResetFeedbackForm();
     DiagnosticSnapshot CaptureDiagnostics(bool includeScene);
-
-    // Newgrounds API
-    Networking::NewgroundsAPI m_NewgroundsAPI;
-    char m_NGAppId[64] = {};
-    char m_NGEncryptionKey[128] = {};
 
     // HTML5 Export
     Build::HTML5ExportConfig m_HTML5Config;

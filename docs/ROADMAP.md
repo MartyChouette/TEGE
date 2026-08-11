@@ -712,7 +712,6 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | 8 | ~~**UI System — No Script Bindings**~~ | ~~UICanvas/UISystem have zero AngelScript or Visual Script bindings~~ ✅ Fixed | UI canvas bindings + focus management + VS nodes added |
 | 9 | ~~**Level Streaming**~~ | ~~Fully implemented but no trigger volumes, no editor UI, no script bindings~~ ✅ Fixed | StreamingVolume/Portal serialization, inspector UI, 6 AS + 6 VS bindings |
 | 10 | ~~**Localization System**~~ | ~~LocalizationManager complete but no editor panel, no runtime script bindings~~ ✅ Fixed | 5 AS bindings + 1 VS node added |
-| 11 | ~~**Newgrounds Bindings**~~ | ~~RegisterNewgroundsBindings() fully written but never called~~ ✅ Fixed | Called in RegisterAllBindings() |
 | 12 | ~~**Player App — Game Menus**~~ | ~~GameMenuSystem rendered MainMenu/PauseMenu but no callback wired — all buttons dead, no title screen shown~~ ✅ Fixed | Callback wired (New Game/Continue/Resume/Options/How to Play/Quit to Menu/Quit), MainMenu shown after splash, ESC state-aware, Options/HowToPlay Back returns to correct parent screen |
 
 ### HIGH — Systems Partially Walled Off (No Script Bindings)
@@ -822,7 +821,6 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Player App: Wire physics/particles/weather/post-process/save | Critical | High | P0 | ✅ Complete (physics via IPhysicsBackend) |
 | Build Pipeline: Pack scripts/audio/dialogue/prefabs/data assets | Critical | Medium | P0 | ✅ Complete |
 | Wire ScriptEngine subsystem pointers in Player | Critical | Medium | P0 | ✅ Complete |
-| Register Newgrounds script bindings (dead code) | High | Low | P0 | ✅ Complete |
 | Add UI System script bindings (AS + VS) | Critical | High | P1 | ✅ Complete |
 | Add Weather/Water/Particles script bindings | High | Medium | P1 | ✅ Complete |
 | Add Physics 2D script bindings | High | Medium | P1 | ✅ Complete |
@@ -988,7 +986,7 @@ Import dialog enhancements:
 - **Simple Fluid Simulation** — ~~Grid-based Eulerian fluid (water, lava, gas). FluidVolumeComponent with preset configs. Target: 64x64 2D / 32x32x32 3D at 60fps~~ ✅ Stable Fluids solver (Jos Stam), 5 presets (Water/Lava/Gas/Smoke/Steam), GPU instanced cell renderer, full editor integration
 - **SVG Support** — ~~nanosvg parsing, rasterize-to-texture via SVGLoader, GetOrLoadTexture routing for .svg files~~ ✅. ~~SDF vector rendering~~ ✅. ~~UIElement Image widget integration~~ ✅ (RenderImage uses TextureResolver, SVG routes automatically)
 - ~~**Dialogue System Future Work**~~ ✅ (partial) — .enjdlg asset files (DialogueAsset save/load with versioned JSON), LocalizationManager singleton (string key → locale tables, CSV/JSON import/export, parameterized strings with {key} substitution, runtime locale switching, LOC() macro). ~~UICanvas dialogue box~~ ✅ (DialogueBoxComponent auto-builds UICanvas elements with speaker name, typewriter text, portrait, choice buttons, continue indicator). Remaining: Yarn Spinner/Twine import/export
-- ~~**Tiered Save System**~~ ✅ — 20-slot save system (17 manual + 3 rotating auto-save) with 3-tier persistence (`PersistenceTier`: SceneState/RunState/MetaProgression). `TieredSaveSystem` class with slot operations, meta-progression key-value store (float/int/bool/string), auto-save timer (configurable interval + on scene transition + on checkpoint), `ISaveBackend` interface with pluggable backends (`LocalSaveBackend`, `NewgroundsSaveBackend`, `SteamSaveBackend` via `ENJIN_STEAM` CMake flag). 15 AngelScript bindings (SaveGame_ToSlot/FromSlot/DeleteSlot/Checkpoint, Meta_Set/Get Float/Int/Bool/String, Meta_Save, AutoSave_Enable/SetInterval). 6 visual script nodes (Gameplay category: SaveToSlot, LoadFromSlot, DeleteSlot, Checkpoint, MetaSetFloat, MetaGetFloat). `SaveLoadMenuComponent` for in-game save/load grid UI. Save Debug editor panel (bit 31). `PlayModeDiff` for cherry-pick entity changes on play mode Stop
+- ~~**Tiered Save System**~~ ✅ — 20-slot save system (17 manual + 3 rotating auto-save) with 3-tier persistence (`PersistenceTier`: SceneState/RunState/MetaProgression). `TieredSaveSystem` class with slot operations, meta-progression key-value store (float/int/bool/string), auto-save timer (configurable interval + on scene transition + on checkpoint), `ISaveBackend` interface with pluggable backends (`LocalSaveBackend`, `SteamSaveBackend` via `ENJIN_STEAM` CMake flag). 15 AngelScript bindings (SaveGame_ToSlot/FromSlot/DeleteSlot/Checkpoint, Meta_Set/Get Float/Int/Bool/String, Meta_Save, AutoSave_Enable/SetInterval). 6 visual script nodes (Gameplay category: SaveToSlot, LoadFromSlot, DeleteSlot, Checkpoint, MetaSetFloat, MetaGetFloat). `SaveLoadMenuComponent` for in-game save/load grid UI. Save Debug editor panel (bit 31). `PlayModeDiff` for cherry-pick entity changes on play mode Stop
 
 ---
 
@@ -1801,7 +1799,7 @@ The following accessibility features exist as infrastructure/settings structs bu
 
 ## Flash Game Revival & Retro Web Game Support
 
-Target audience: Flash game creators and fans of the Flash/Newgrounds era looking for modern tooling.
+Target audience: Flash game creators and fans of the Flash era looking for modern tooling.
 
 ### ~~SWF Import & Conversion~~ ✅ Done
 - ~~**SWF parser**~~ ✅ — `SWFLoader` + `SWFConverter` — parse SWF, rasterize shapes to PNG, extract bitmaps/sounds, convert to ECS entities with Sprite2DComponent
@@ -1816,11 +1814,9 @@ Target audience: Flash game creators and fans of the Flash/Newgrounds era lookin
 ### ~~ActionScript Compatibility Layer~~ ✅ Done
 - ~~**AS2/AS3 → AngelScript transpiler**~~ ✅ — `AS3Transpiler` class: pattern-based line-by-line transpilation with regex, type mapping (Number→float, etc.), class/function/var conversion, Flash API → shim calls, scope tracking
 - ~~**Flash API shim library**~~ ✅ — `FlashAPIShim` namespace: `RegisterFlashBindings()` with DisplayObject (position/scale/rotation/alpha/visible), MovieClip (gotoAndPlay/Stop/Play/Stop), Stage (width/height/fps), Mouse/Keyboard, TextField, Math, Sound (via SimpleAudio), Timer (setTimeout/setInterval)
-- ~~**Newgrounds.io integration**~~ ✅ — Medal/scoreboard API bindings via HTTP. `SharedObject` persistence mapped to `TieredSaveSystem` meta-progression (`so_{name}_{key}` namespacing), 5 AngelScript bindings (Flash_SO_Set/Get/Has/Flush/Clear), AS3 transpiler mappings, wired in PlayMode + Player
 
 ### Flash Game Templates
 - ~~**Starter templates**~~ ✅ — Pre-built project templates for common Flash game genres: point-and-click adventure, dress-up game, tower defense, bullet hell, rhythm game, escape room, idle/clicker. All included in the 43 built-in templates and polished with HUD elements, enemies, inventory, and gameplay setups
-- ~~**Newgrounds-style game page**~~ ✅ — NewgroundsGamePage.h/cpp: dark-theme game page with medal sidebar, scoreboard, NG.io API init, toast notifications, responsive layout, embed codes
 
 ### WebAssembly Export (Prerequisite) ✅ COMPLETE
 - ~~**WebGPU/WebAssembly target**~~ ✅ — WebGPU renderer backend with WGSL shaders (PBR, shadow, post-process), compile-time switching via `ENJIN_RENDERER_WEBGPU`

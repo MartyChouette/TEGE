@@ -73,7 +73,6 @@ A comprehensive, hands-on guide to building games with the Enjin Engine. Each tu
 
 ### Part XI: Networking
 46. [LAN Multiplayer Basics](#tutorial-46-lan-multiplayer-basics)
-47. [Newgrounds.io Integration](#tutorial-47-newgroundsio-integration)
 
 ### Part XII: Building and Distribution
 48. [Building Your Game](#tutorial-48-building-your-game)
@@ -2148,48 +2147,6 @@ The system syncs at 20Hz with interpolation buffer, providing smooth movement ev
 
 ---
 
-## Tutorial 47: Newgrounds.io Integration
-
-**Goal:** Publish your game on Newgrounds with medals and scoreboards.
-
-### Setup
-
-1. Create a project on Newgrounds.com.
-2. Get your App ID and Encryption Key.
-3. Configure in editor settings.
-
-### Medals (Achievements)
-
-```angelscript
-// Unlock a medal
-NG_UnlockMedal(12345);  // Medal ID from Newgrounds
-
-// Check if unlocked
-if (NG_IsMedalUnlocked(12345)) {
-    // Show unlocked badge
-}
-```
-
-### Scoreboards
-
-```angelscript
-// Submit a score
-NG_SubmitScore(67890, playerScore);  // Board ID, score value
-
-// Get scores
-NG_GetScores(67890, 10);  // Board ID, count
-```
-
-### Cloud Saves
-
-Use the Newgrounds save backend:
-```angelscript
-// Saves sync to Newgrounds cloud
-SaveGame_ToSlot(1);  // Uses NewgroundsSaveBackend
-```
-
----
-
 ## Tutorial 48: Building Your Game
 
 **Goal:** Export a standalone game package.
@@ -2246,10 +2203,6 @@ Double-click `EnjinPlayer.exe` to play.
    - `game.js` — Game logic
    - `game.enjpak` — Asset pack
 3. Includes preloader and responsive scaling.
-
-### Newgrounds Embed
-
-The HTML5 export is compatible with Newgrounds embedding. Upload the files to your Newgrounds project for instant web play.
 
 ### Considerations
 
@@ -2530,8 +2483,7 @@ The real power of Enjin comes from combining multiple systems. Here are some adv
 2. Apply **Retro Effects** (pixelation, dithering)
 3. Add **Sprite Animations** with the sheet importer
 4. Score tracking with **HUD/UICanvas**
-5. **Newgrounds** integration for medals/scoreboards
-6. **HTML5 Export** for web play
+5. **HTML5 Export** for web play
 
 ### Pattern: Narrative RPG
 

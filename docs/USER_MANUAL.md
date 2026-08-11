@@ -40,7 +40,6 @@ This manual covers everything you need to get started and build games with Enjin
 28. [Bug Reporting & Feedback](#28-bug-reporting--feedback)
 29. [Vector Drawing Editor](#29-vector-drawing-editor)
 30. [HTML5 Export](#30-html5-export)
-31. [Newgrounds.io Integration](#31-negroundsio-integration)
 32. [Networking & Security Settings](#32-networking--security-settings)
 33. [Debug Panels](#33-debug-panels)
 34. [Drop-Down Console](#34-drop-down-console)
@@ -1457,7 +1456,7 @@ The engine provides a 20-slot tiered save system with 3 persistence tiers:
 
 **Meta-progression:** Separate `meta.enjsave` file stores permanent key-value data (float, int, bool, string) that survives across runs and save slot deletion.
 
-**Cloud sync:** Pluggable backends via `ISaveBackend` interface. Built-in: `LocalSaveBackend` (filesystem), `NewgroundsSaveBackend` (wraps NG.io cloud saves), `SteamSaveBackend` (Steam Cloud via ISteamRemoteStorage, requires `ENJIN_STEAM` CMake flag).
+**Cloud sync:** Pluggable backends via `ISaveBackend` interface. Built-in: `LocalSaveBackend` (filesystem), `SteamSaveBackend` (Steam Cloud via ISteamRemoteStorage, requires `ENJIN_STEAM` CMake flag).
 
 **Save Debug Panel:** Open from **View > Tools > Save Debug** to inspect all 20 save slots, view meta-progression key-value tables, configure auto-save, and trigger manual cloud sync.
 
@@ -3799,30 +3798,7 @@ Export your project as a web-ready HTML5 application. Access via **Build > Expor
 Configure the export via a modal dialog:
 - Output directory selection
 - Window title and resolution
-- Embed code generation (iframe, Newgrounds-compatible)
-
----
-
-## 31. Newgrounds.io Integration
-
-Built-in support for the Newgrounds.io API for publishing Flash-style web games. Provides session management, medals, scoreboards, and cloud saves.
-
-### AngelScript Functions
-
-| Function | Description |
-|----------|-------------|
-| `NG_Connect(appId, encKey)` | Initialize connection |
-| `NG_IsConnected()` | Check connection status |
-| `NG_CheckSession()` | Validate current session |
-| `NG_UnlockMedal(medalId)` | Unlock an achievement |
-| `NG_PostScore(boardId, value)` | Submit a high score |
-| `NG_GetPassportUrl()` | Get login URL |
-| `NG_GetUserName()` | Get logged-in username |
-| `NG_SaveSlot(slotId, data)` | Save to cloud slot |
-| `NG_LoadSlot(slotId)` | Load from cloud slot |
-
-Configuration is done via the Newgrounds tab in the Flash Timeline panel.
-
+- Embed code generation (iframe)
 
 ---
 

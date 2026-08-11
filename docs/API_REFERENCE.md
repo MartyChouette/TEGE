@@ -435,40 +435,13 @@ config.title = "My Game";
 config.width = 800;
 config.height = 600;
 config.outputDir = "export/html5";
-config.newgroundsCompatible = true;
 
 // Generates: index.html, preloader.js, style.css
 // Includes: responsive scaling, fullscreen, click-to-play audio
 exporter.Export(config);
 
-// Get embed code (iframe, NG-compatible)
+// Get embed code (iframe)
 std::string embedCode = exporter.GetEmbedCode();
-```
-
-## Newgrounds.io API
-
-```cpp
-#include "Enjin/Networking/NewgroundsAPI.h"
-using namespace Enjin::Networking;
-
-NewgroundsAPI ng;
-ng.Connect(appId, encryptionKey);
-
-// Session management
-ng.CheckSession();
-bool connected = ng.IsConnected();
-std::string user = ng.GetUserName();
-
-// Medals & Scoreboards
-ng.UnlockMedal(medalId);
-ng.PostScore(scoreboardId, score);
-
-// Cloud saves
-ng.SaveSlot(slotId, jsonData);
-ng.LoadSlot(slotId);
-
-// Passport URL for login
-std::string url = ng.GetPassportUrl();
 ```
 
 ## Complete API Documentation

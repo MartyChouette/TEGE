@@ -6755,7 +6755,6 @@ pkg-config --modversion glfw3</code></pre>
       </thead>
       <tbody>
         <tr><td><strong>LocalSaveBackend</strong></td><td>Filesystem-based (default). Saves to the local disk.</td></tr>
-        <tr><td><strong>NewgroundsSaveBackend</strong></td><td>Wraps NG.io cloud saves for web-published games.</td></tr>
         <tr><td><strong>SteamSaveBackend</strong></td><td>Uses Steam Cloud via <code>ISteamRemoteStorage</code>. Requires the <code>ENJIN_STEAM</code> CMake flag.</td></tr>
       </tbody>
     </table>
@@ -13657,7 +13656,7 @@ glslangValidator -V Engine/shaders/triangle.frag -o Engine/shaders/triangle.frag
 
   <p>
     TEGE can export your project as a web-ready HTML5 application, suitable for embedding on
-    websites, game portals, and platforms like Newgrounds. Access the export dialog via
+    websites and game portals. Access the export dialog via
     <strong>Build &gt; Export HTML5</strong>.
   </p>
 
@@ -13699,7 +13698,7 @@ glslangValidator -V Engine/shaders/triangle.frag -o Engine/shaders/triangle.frag
     <li><strong>Window Title</strong> &mdash; sets the HTML page title and the canvas label.</li>
     <li><strong>Resolution</strong> &mdash; canvas width and height in pixels.</li>
     <li><strong>Embed Code Generation</strong> &mdash; generates ready-to-use <code>&lt;iframe&gt;</code>
-    embed code, compatible with Newgrounds and other game portal embed systems.</li>
+    embed code, compatible with common game portal embed systems.</li>
   </ul>
 
   <p>
@@ -13709,115 +13708,6 @@ glslangValidator -V Engine/shaders/triangle.frag -o Engine/shaders/triangle.frag
 
 </section>
 
-<!-- ============================================================
-     Section 54 — Newgrounds Integration
-     ============================================================ -->
-<section id="newgrounds-integration" data-aos="fade-up">
-  <h2>Newgrounds Integration</h2>
-
-  <p>
-    TEGE includes built-in support for the <strong>Newgrounds.io API</strong>, enabling session
-    management, achievements (medals), scoreboards, and cloud saves for web-published games.
-    Configuration is done via the Newgrounds tab in the Flash Timeline panel.
-  </p>
-
-  <h3 id="ng-angelscript-api">AngelScript Functions</h3>
-
-  <p>
-    The following AngelScript functions are available for interacting with the Newgrounds.io API
-    at runtime:
-  </p>
-
-  <div class="table-wrapper">
-    <table>
-      <thead>
-        <tr>
-          <th>Function</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code>NG_Connect(appId, encKey)</code></td>
-          <td>Initialize the Newgrounds.io connection with your application ID and encryption key.</td>
-        </tr>
-        <tr>
-          <td><code>NG_IsConnected()</code></td>
-          <td>Returns <code>true</code> if the connection to Newgrounds.io is active.</td>
-        </tr>
-        <tr>
-          <td><code>NG_CheckSession()</code></td>
-          <td>Validate the current user session. Call after <code>NG_Connect</code> to verify the user is logged in.</td>
-        </tr>
-        <tr>
-          <td><code>NG_UnlockMedal(medalId)</code></td>
-          <td>Unlock an achievement (medal) by its numeric ID. The medal must be configured on the Newgrounds.io dashboard.</td>
-        </tr>
-        <tr>
-          <td><code>NG_PostScore(boardId, value)</code></td>
-          <td>Submit a high score to the specified scoreboard. The board must exist on the Newgrounds.io dashboard.</td>
-        </tr>
-        <tr>
-          <td><code>NG_GetPassportUrl()</code></td>
-          <td>Returns the Newgrounds Passport login URL. Open this in the user's browser for authentication.</td>
-        </tr>
-        <tr>
-          <td><code>NG_GetUserName()</code></td>
-          <td>Returns the logged-in Newgrounds username, or an empty string if not authenticated.</td>
-        </tr>
-        <tr>
-          <td><code>NG_SaveSlot(slotId, data)</code></td>
-          <td>Save a string to a cloud save slot. Slots are configured on the Newgrounds.io dashboard.</td>
-        </tr>
-        <tr>
-          <td><code>NG_LoadSlot(slotId)</code></td>
-          <td>Load a string from a cloud save slot. Returns the saved data or an empty string if the slot is empty.</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-  <h3 id="ng-usage-example">Usage Example</h3>
-
-  <pre><code class="language-cpp">// Initialize Newgrounds connection in OnStart()
-void OnStart() {
-    NG_Connect("12345:abcdef", "encryption_key_here");
-}
-
-// Check session and unlock a medal
-void OnUpdate(float dt) {
-    if (NG_IsConnected()) {
-        // Unlock medal #1234 when player reaches the goal
-        if (playerReachedGoal) {
-            NG_UnlockMedal(1234);
-        }
-    }
-}
-
-// Submit a high score when the game ends
-void OnGameOver(int score) {
-    if (NG_IsConnected()) {
-        NG_PostScore(5678, score);
-    }
-}
-
-// Cloud save/load
-void SaveProgress(const string &amp;in data) {
-    NG_SaveSlot(1, data);
-}
-
-string LoadProgress() {
-    return NG_LoadSlot(1);
-}</code></pre>
-
-  <div class="callout tip">
-    <div class="callout-title">Tip</div>
-    <p>The Newgrounds API works in both HTML5 exports and the standalone player. For web builds,
-    the session is automatically detected from the Newgrounds portal. For standalone builds,
-    use <code>NG_GetPassportUrl()</code> to direct users to the browser-based login flow.</p>
-  </div>
-
-</section>
 <!-- ================================================================
      Part VIII — Advanced Topics
      Sections 55-62: Architecture, Physics, Accessibility,

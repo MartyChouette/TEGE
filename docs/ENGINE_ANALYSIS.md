@@ -181,7 +181,6 @@ graph TB
         LANMultiplayer["LAN Multiplayer<br/>(Host-Authoritative UDP)"]
         NetworkSecurity["Network Security<br/>(HMAC-SHA256, Replay<br/>Protection)"]
         HTTPClient["HTTP Client<br/>(WinHTTP + libcurl)"]
-        NewgroundsAPI["Newgrounds.io API<br/>(Medals, Scores, Cloud)"]
         SteamBackend["Steam Save Backend<br/>(ENJIN_STEAM)"]
     end
 
@@ -214,7 +213,7 @@ graph TB
         AssimpLoader["AssimpLoader<br/>(FBX/OBJ/DAE/PLY/VOX)"]
         SceneImporter["SceneImporter<br/>(Auto-Detect Format)"]
         PrefabManager["PrefabManager<br/>(.enjprefab)"]
-        HTML5Export["HTML5 Export<br/>(Canvas, Preloader,<br/>Newgrounds Template)"]
+        HTML5Export["HTML5 Export<br/>(Canvas, Preloader,<br/>Web Portal Template)"]
         SceneSerializer["SceneSerializer<br/>(JSON)"]
         LevelStreaming["Level Streaming<br/>(StreamingVolume/Portal)"]
     end
@@ -419,7 +418,6 @@ This matrix compares Enjin's current feature set against five established game e
 | **Level Streaming** | Full | Full | None | Full | None | None |
 | **Retro/CRT Effects** | Full | Basic | None | None | None | None |
 | **Flash/SWF Import** | Full | None | None | None | None | None |
-| **Newgrounds Integration** | Full | None | None | None | None | None |
 | **HRTF Binaural Audio** | Full | Partial | None | Full | None | None |
 | **Audio Occlusion/Transmission** | Full | Partial | None | Full | None | None |
 | **Sprite Normal Map Lighting** | Full | Full | Full | N/A | None | None |
@@ -501,7 +499,7 @@ gantt
     Localization, Fluid Sim, Pixel Editor       :done, m2, 2026-02-09, 2026-02-09
     SVG, Empty States, Dialogue Box, Icons      :done, m3, 2026-02-09, 2026-02-09
     RT Pipeline, Collaborative Editing          :done, m4, 2026-02-10, 2026-02-10
-    Newgrounds API, HTML5 Export, Vector Editor  :done, m5, 2026-02-10, 2026-02-10
+    HTML5 Export, Vector Editor                 :done, m5, 2026-02-10, 2026-02-10
     Cel Shading, Save System, PlayMode Diff     :done, m6, 2026-02-10, 2026-02-10
 
     section Physics & Platform (Week 9)
@@ -516,7 +514,7 @@ gantt
     Linux/Steam Deck, Switch Stub, Hub App      :done, a1, 2026-02-14, 2026-02-14
     9 Exotic Rendering Systems                  :done, a2, 2026-02-14, 2026-02-14
     Shader/Audio/Particle Graphs, MIDI Input    :done, a3, 2026-02-14, 2026-02-14
-    Symbol Library, Newgrounds Game Page         :done, a4, 2026-02-14, 2026-02-14
+    Symbol Library, Web Portal Game Page         :done, a4, 2026-02-14, 2026-02-14
     Template Marketplace, Gamepad Editor         :done, a5, 2026-02-14, 2026-02-14
 
     section Polish & Audits (Week 11)
@@ -754,7 +752,7 @@ Enjin occupies a unique position in the game engine market by targeting several 
 | Audience Segment | Why Enjin Appeals | Primary Competitors |
 |---|---|---|
 | **Indie Developers** | All-in-one 2D+3D with built-in gameplay systems (save, quest, dialogue, AI) that competitors require plugins for. Hardened codebase with 80+ test targets builds production confidence | Unity, Godot |
-| **Flash Game Creators** | SWF import, AS2/AS3 transpiler, Newgrounds.io API, HTML5 export, Flash-style timeline editor -- no other engine offers this combination | None (Enjin is unique) |
+| **Flash Game Creators** | SWF import, AS2/AS3 transpiler, HTML5 export, Flash-style timeline editor -- no other engine offers this combination | None (Enjin is unique) |
 | **Retro Game Makers** | CRT effects, pixel editor, 9 retro resolution presets, dithered gradients, stipple patterns, sprite sheet workflow | GameMaker, Pico-8 |
 | **Students & Educators** | Built-in behavior trees, visual scripting, procedural generation, and comprehensive accessibility -- strong teaching tool | Godot, Scratch |
 | **Accessibility-First Developers** | 8 colorblind modes, screen reader, switch access, dwell-click, high contrast (WCAG AAA), font scaling, reduced motion -- most comprehensive in any engine | None (Enjin leads) |
@@ -767,7 +765,7 @@ Enjin occupies a unique position in the game engine market by targeting several 
 - **Ray tracing pipeline** (Godot has none)
 - **Production physics** via Jolt + Box2D (Godot uses custom physics)
 - **Built-in gameplay systems** (save/quest/dialogue/AI) -- Godot requires addons
-- **Flash ecosystem support** (SWF import, Newgrounds API)
+- **Flash ecosystem support** (SWF import, web portal export)
 - **Deeper accessibility** (switch access, eye tracking, dwell-click, WCAG AAA themes)
 - **Shader graph with GLSL codegen** (Godot has visual shaders but different approach)
 - **Steam Audio HRTF spatial audio** with occlusion/transmission (Godot has no equivalent)
@@ -805,7 +803,7 @@ Enjin occupies a unique position in the game engine market by targeting several 
 
 ### Unique Selling Points
 
-1. **Flash Game Revival Platform**: The only engine with SWF import, AS2/AS3 transpilation, Newgrounds.io integration (medals, scoreboards, cloud saves), HTML5 export with Newgrounds game page templates, Flash-style timeline editor, and SharedObject persistence mapping. This is a market of one.
+1. **Flash Game Revival Platform**: The only engine with SWF import, AS2/AS3 transpilation, HTML5 export with web game portal page templates, Flash-style timeline editor, and SharedObject persistence mapping. This is a market of one.
 
 2. **Accessibility Leadership**: With 8 colorblind modes, screen reader announcer, switch access scanning, dwell-click, eye tracking stubs, WCAG AAA high-contrast themes, dyslexia-friendly fonts, reduced motion, and runtime font scaling, Enjin has the most comprehensive accessibility suite of any game engine on the market.
 
@@ -930,7 +928,7 @@ The global game engine market is estimated at $3.5-4.5B (2025), with the indie/h
 | **Game devs worldwide** | ~2.5M active | GDC surveys, itch.io registrations |
 | **Indie developers** | ~1.5M | Using non-AAA engines |
 | **Hobbyist/student devs** | ~800K | Game jams, educational use |
-| **Flash game community** | ~50K-100K active | Newgrounds, Kongregate legacy, web game forums |
+| **Flash game community** | ~50K-100K active | Web game portal communities, web game forums |
 | **Game engine market CAGR** | 12-15% | Industry reports |
 
 ### Realistic Market Capture Estimates
@@ -948,7 +946,7 @@ For context, Godot reached ~2,500 monthly contributors and an estimated 500K-1M 
 
 1. **Post-Unity migration wave**: Unity's pricing changes created a lasting trust deficit. Developers actively seeking alternatives have already boosted Godot significantly; Enjin could capture a portion of this migration.
 
-2. **Flash game nostalgia + revival**: The Flash game community (Newgrounds, Kongregate legacy) has no dedicated modern engine. Enjin's SWF import, AS transpiler, and Newgrounds API integration make it the only viable migration path.
+2. **Flash game nostalgia + revival**: The Flash game community (web game portal communities) has no dedicated modern engine. Enjin's SWF import, AS transpiler, and HTML5 web portal export make it the only viable migration path.
 
 3. **Accessibility regulations**: Growing legal requirements for accessible software (EU Accessibility Act 2025, US Section 508) make Enjin's built-in accessibility suite increasingly valuable as a compliance advantage.
 
@@ -1277,7 +1275,6 @@ graph TB
         LANMulti["LAN Multiplayer"]
         NetSecurity["HMAC-SHA256 Auth"]
         HTTP["HTTP Client"]
-        Newgrounds["Newgrounds API"]
     end
 
     subgraph BuildFeatures["Build & Export"]
@@ -1415,7 +1412,6 @@ graph TB
     %% Gameplay Dependencies
     World --> SaveSystem
     SaveSystem --> SaveBackends
-    SaveBackends --> Newgrounds
     World --> QuestSys
     World --> DialogueSys
     World --> AISys
@@ -1454,7 +1450,6 @@ graph TB
     %% Network Dependencies
     World --> LANMulti
     LANMulti --> NetSecurity
-    HTTP --> Newgrounds
 
     %% Build Dependencies
     SceneSerial --> BuildPipe

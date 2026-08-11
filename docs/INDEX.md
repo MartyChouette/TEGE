@@ -46,8 +46,7 @@ See [About](../README.md#about) for the developer disclaimer.
 | Ray Tracing | `Enjin/Renderer/RayTracing/` | RT pipeline, acceleration structures, SVGF/OIDN/OptiX denoisers, path tracer, material SSBO (binding 9), motion vectors (binding 4) |
 | Feedback | `Enjin/Editor/FeedbackSystem.h` | Bug reporting, feedback collection, diagnostics capture, JSON persistence |
 | Vector Drawing | `Enjin/Editor/VectorDrawingEditor.h` | 7 shape types, layers, SVG export, Flash symbol library |
-| HTML5 Export | `Enjin/Build/HTML5Exporter.h` | Canvas export, preloader, responsive scaling, Newgrounds embed |
-| Newgrounds | `Enjin/Networking/NewgroundsAPI.h` | NG.io REST gateway: medals, scoreboards, cloud saves |
+| HTML5 Export | `Enjin/Build/HTML5Exporter.h` | Canvas export, preloader, responsive scaling, web embed |
 | 2D Physics | `Enjin/Physics/Physics2D.h` | Circle/Box/Polygon shapes, 5 joint types, CCD, SAT collision |
 | Localization | `Enjin/GUI/Localization.h` | String tables, CSV/JSON I/O, LOC() macro, parameterized strings |
 | Behavior Trees | `Enjin/AI/BehaviorTree.h` | 20 node types, visual editor, blackboard, play-mode debugging |
@@ -55,7 +54,7 @@ See [About](../README.md#about) for the developer disclaimer.
 | Destructible | `Enjin/Effects/Destructible.h` | 4 fracture patterns, debris physics, chain destruction |
 | Networking | `Enjin/Networking/LANMultiplayer.h` | Host-authoritative UDP, prediction, interpolation, RPC, lobby |
 | Save System | `Enjin/Gameplay/TieredSaveSystem.h` | 20-slot tiered saves (SceneState/RunState/MetaProgression), auto-save, checkpoints, cloud backends |
-| Save Backends | `Enjin/Gameplay/SaveBackend.h` | ISaveBackend interface + Local/Newgrounds/Steam implementations |
+| Save Backends | `Enjin/Gameplay/SaveBackend.h` | ISaveBackend interface + Local/Steam implementations |
 | Play Mode Diff | `Enjin/Editor/PlayModeDiff.h` | JSON diff of pre/post play scene states, cherry-pick apply dialog |
 | Reaction-Diffusion | `Enjin/Effects/ReactionDiffusion.h` | Gray-Scott model, 9 presets, bake-to-texture/heightmap |
 | Cellular Automata | `Enjin/Effects/CellularAutomataGeometry.h` | 7 CA rules, 3 mesh modes (Voxels/MarchingCubes/PointCloud) |
@@ -88,7 +87,6 @@ See [About](../README.md#about) for the developer disclaimer.
 | Audio Reactive | `Enjin/Effects/AudioReactive.h` | Cooley-Tukey FFT, bass/mid/treble bands, per-vertex mesh displacement |
 | Collaborative Editing UI | `Enjin/Editor/CollaborativeEditingUI.h` | OT protocol UI, peer cursors, conflict resolution, session management |
 | Symbol Library | `Enjin/Editor/SymbolLibrary.h` | Reusable graphic symbols as prefabs, nested editing, category browser, update propagation |
-| Newgrounds Game Page | `Enjin/Build/NewgroundsGamePage.h` | Themed HTML5 export template with medal sidebar, scoreboard, embed codes |
 | Input Action Map | `Enjin/Input/InputAction.h` | Remappable input bindings, sensitivity, deadzone, presets, 18 game actions |
 | Screen-Space Effects | `Enjin/Renderer/PostProcessing.h` | SSAO, god rays, contact shadows, caustics, fog shafts (all in postprocess.frag) |
 

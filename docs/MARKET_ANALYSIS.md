@@ -44,7 +44,6 @@ Enjin isn't a Unity/Unreal clone. It occupies a space **no other engine targets*
 | Feature | Unity | Unreal | Godot | Enjin |
 |---------|-------|--------|-------|-------|
 | SWF import + AS2/AS3 transpiler | — | — | — | **Yes** |
-| Newgrounds.io API (medals, scores, cloud) | — | — | — | **Yes** |
 | Flash-style timeline editor + symbol library | — | — | — | **Yes** |
 | PS1-era per-material retro rendering | Custom shader | Custom material | Custom shader | **Built-in** |
 | 8 combinable dither patterns (post-process) | — | — | — | **Yes** |
@@ -79,13 +78,13 @@ Enjin packs AAA-tier feature depth into a single-developer engine:
 
 ### Primary: The Flash Revival / Retro Web Game Niche
 
-**Market size:** $3.8B retro gaming (2025), growing to $8.5B by 2033. Newgrounds active and running annual Flash jams. Ruffle emulator making Flash playable again. TikTok driving nostalgic rediscovery.
+**Market size:** $3.8B retro gaming (2025), growing to $8.5B by 2033. Annual Flash jams still running. Ruffle emulator making Flash playable again. TikTok driving nostalgic rediscovery.
 
-**Why Enjin wins here:** No other engine has SWF import, AS2/AS3 transpilation, Newgrounds.io integration, Flash SharedObject mapping, timeline editor, symbol library, AND HTML5 export with a Newgrounds game page template. This is a complete Flash-to-modern pipeline that doesn't exist anywhere else.
+**Why Enjin wins here:** No other engine has SWF import, AS2/AS3 transpilation, Flash SharedObject mapping, timeline editor, symbol library, AND HTML5 export for web game portals. This is a complete Flash-to-modern pipeline that doesn't exist anywhere else.
 
-**Target users:** Flash game porters, Newgrounds creators, web game developers, retro game enthusiasts, game jam participants.
+**Target users:** Flash game porters, web game developers, retro game enthusiasts, game jam participants.
 
-**Positioning:** *"The engine that brings Flash back. Import your SWFs, keep your ActionScript logic, publish to Newgrounds with one click."*
+**Positioning:** *"The engine that brings Flash back. Import your SWFs, keep your ActionScript logic, publish to web game portals with one click."*
 
 ### Secondary: Accessibility-First Game Development
 
@@ -164,22 +163,21 @@ Enjin packs AAA-tier feature depth into a single-developer engine:
 
 ### Path B: "Flash Revival Platform" (Niche Domination)
 
-**Model:** Free engine + paid Newgrounds/web deployment services + marketplace revenue share.
+**Model:** Free engine + paid web deployment services + marketplace revenue share.
 
 | Revenue Stream | Price |
 |---------------|-------|
 | Engine | Free |
-| Newgrounds Pro Publisher (analytics, A/B testing, monetization) | $9.99/mo |
 | Web deployment CDN hosting | $4.99/mo |
 | Template marketplace (30% commission) | Per-sale |
 | Asset pack marketplace (30% commission) | Per-sale |
 | Flash-to-Enjin porting service (for studios) | Project-based |
 
-**Revenue projection (Year 3):** 2,000 Newgrounds Pro ($240K) + 1,000 hosting ($60K) + marketplace ($100K) + porting contracts ($200K) = ~$600K/yr
+**Revenue projection (Year 3):** 1,000 hosting ($60K) + marketplace ($100K) + porting contracts ($200K) = ~$360K/yr
 
 **Pros:** Unique market position with no competition. Aligns with growing Flash nostalgia trend. Low per-user cost drives adoption.
 
-**Cons:** Niche market ceiling. Dependent on Newgrounds ecosystem health.
+**Cons:** Niche market ceiling. Dependent on the health of the broader Flash-revival ecosystem.
 
 ### Path C: "Accessibility Compliance Engine" (B2B)
 
@@ -237,7 +235,7 @@ The hybrid model diversifies revenue, hedges against any single niche failing to
 ## 5. Competitive Moats
 
 ### Moat 1: Flash Heritage (No Competition)
-No other engine can import SWFs, transpile ActionScript, or publish to Newgrounds. Building this from scratch would take 6-12 months. First-mover advantage is strong.
+No other engine can import SWFs, transpile ActionScript, or publish to web game portals. Building this from scratch would take 6-12 months. First-mover advantage is strong.
 
 ### Moat 2: Accessibility Depth (Regulatory Tailwind)
 The EAA creates *demand* for engine-level accessibility. Building 8 colorblind modes + switch access + screen reader + dwell-click + motor input devices from scratch is 3-6 months of work. Enjin has it shipping today.
@@ -275,7 +273,7 @@ Having a full ray tracing pipeline, three physics backends, and SVGF + OIDN deno
 
 **For developers:**
 - "70+ gameplay components out of the box. Your first week is building your game, not your save system."
-- "Import your Flash games. Keep your ActionScript logic. Publish to Newgrounds in one click."
+- "Import your Flash games. Keep your ActionScript logic. Publish to web game portals in one click."
 - "Play mode changes persist. Cherry-pick what you want to keep. No more losing your test tweaks."
 - "Three physics backends. Switch from Simple to Jolt with one dropdown. No code changes."
 
@@ -286,7 +284,7 @@ Having a full ray tracing pipeline, three physics backends, and SVGF + OIDN deno
 
 **For press/media:**
 - "A from-scratch C++20 engine with ray tracing, 3 physics backends, and 143 visual script nodes — built by one developer."
-- "The Flash revival engine: SWF import, AS2/AS3 transpiler, Newgrounds medals, and HTML5 export."
+- "The Flash revival engine: SWF import, AS2/AS3 transpiler, and HTML5 export."
 - "The first game engine with built-in European Accessibility Act compliance."
 
 ---
@@ -294,10 +292,9 @@ Having a full ray tracing pipeline, three physics backends, and SVGF + OIDN deno
 ## 8. Recommended Next Steps
 
 ### Immediate (0-3 months)
-1. **Ship a playable demo game** built with Enjin — a retro-styled Flash-aesthetic game published on Newgrounds. This is the single most impactful marketing action.
+1. **Ship a playable demo game** built with Enjin — a retro-styled Flash-aesthetic game published to a web game portal. This is the single most impactful marketing action.
 2. **Create a "Getting Started" video series** (5-10 minutes each) showing the batteries-included workflow.
 3. **Launch a landing page** with feature comparison tables vs Unity/Godot/GameMaker.
-4. **Submit to the next Newgrounds Flash Forward jam** — both as a tool and with a demo game.
 
 ### Short-term (3-6 months)
 5. **Open-source the engine core** under a permissive license. This builds trust and enables community contributions.
@@ -319,7 +316,6 @@ Having a full ray tracing pipeline, three physics backends, and SVGF + OIDN deno
 - Astute Analytica: Global Game Engine Market to Worth Over US$ 12.84 Billion By 2033
 - GDC 2025: State of the Game Industry Survey (3,000+ developers)
 - TechTimes: Retro Game Boom 2025
-- 80.lv: Adobe Flash Revived in Newgrounds' Forward Jam 2025
 - MarketsAndMarkets: Game-Based Learning Market Size
 - European Accessibility Act compliance documentation
 - Playgama: Web-Based Game Engine Rankings H1 2025

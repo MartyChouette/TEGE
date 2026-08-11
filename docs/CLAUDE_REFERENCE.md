@@ -251,7 +251,7 @@ Per-entity texture (bindings 3/5/6/8/9/18) and bone buffer (binding 7) descripto
 ## Scripting Details
 
 - **AngelScript** via `TegeBehavior` base class with hot-reload. The base class + enjin_api scripts (Timer/Tween/Math/StateMachine) are embedded in the engine and auto-injected — scripts need no includes; regenerate the embeds with `python _gen_api.py` after editing `enjin_api/*.as`
-- ~1000+ bound functions across math, entity, scene, input, physics (2D+3D), audio, components, sprites, coroutines, events, tweening, noise, rendering, post-processing, PP volumes, screen-space effects, input actions, dialogue, save/load, weather, particles, quests, cinematics, object pool, destructibles, UI canvas, localization, prefabs, networking, AI/BT, accessibility, procedural gen, camera presets, Newgrounds, audio event graph, plugins, MIDI input, Flash API shim
+- ~1000+ bound functions across math, entity, scene, input, physics (2D+3D), audio, components, sprites, coroutines, events, tweening, noise, rendering, post-processing, PP volumes, screen-space effects, input actions, dialogue, save/load, weather, particles, quests, cinematics, object pool, destructibles, UI canvas, localization, prefabs, networking, AI/BT, accessibility, procedural gen, camera presets, audio event graph, plugins, MIDI input, Flash API shim
 - See `docs/SCRIPTING_API.md` for the complete API reference
 - **Visual scripting** (Blueprint-style) with 262 built-in nodes, debugger with breakpoints/step-through
 

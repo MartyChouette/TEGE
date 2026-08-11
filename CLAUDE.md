@@ -170,7 +170,7 @@ enjin/
 │   │   ├── GUI/            # UICanvas, UISystem, DialogueTree
 │   │   ├── Build/          # BuildPipeline, AssetPacker, AssetReader
 │   │   ├── Gameplay/       # SaveSystem, QuestSystem, HUD, Cinematics
-│   │   ├── Networking/     # LAN Multiplayer, HTTPClient, NewgroundsAPI
+│   │   ├── Networking/     # LAN Multiplayer, HTTPClient
 │   │   ├── Physics/        # IPhysicsBackend (Jolt/Box2D)
 │   │   ├── Renderer/       # Multi-backend renderer (Vulkan/WebGPU/Metal)
 │   │   ├── Scene/          # SceneSerializer, SceneManager, LevelStreaming

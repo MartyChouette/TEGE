@@ -160,7 +160,7 @@ flowchart TB
 <tr><td><strong>Effects</strong></td><td>33 headers: weather/seasons/wind, water + interactive + fluid sim with terrain coupling, particles (CPU+GPU), elemental fire/water/earth/air, destructibles, retro effects, and research toys (reaction-diffusion, physarum, 4D projection).</td><td><code>Effects/</code></td></tr>
 <tr><td><strong>Assets</strong></td><td>glTF (cgltf, golden-verified), Assimp (FBX/OBJ/DAE/VOX), prefabs, SWF import, texture compression, file watching.</td><td><code>Assets/</code></td></tr>
 <tr><td><strong>Build</strong></td><td>Pipeline scans scene-referenced assets &rarr; packs <code>.enjpak</code> (XOR + CRC32) &rarr; copies Player; HTML5 exporter; Linux AppImage; Inno installer.</td><td><code>Build/BuildPipeline.h</code></td></tr>
-<tr><td><strong>Networking</strong></td><td>LAN multiplayer (UDP, HMAC-SHA256, adversarially tested), HTTP client, Newgrounds API + save backends.</td><td><code>Networking/</code></td></tr>
+<tr><td><strong>Networking</strong></td><td>LAN multiplayer (UDP, HMAC-SHA256, adversarially tested), HTTP client, save backends.</td><td><code>Networking/</code></td></tr>
 <tr><td><strong>Editor</strong></td><td>32 dockable panel flags + ~10 standalone windows (debug workstation, command palette, Layers, template creator, node-graph editors, collaborative editing, git panel), 17 undo command types, gamepad radial menus.</td><td><code>Engine/src/Editor/</code> (57 files)</td></tr>
 <tr><td><strong>Accessibility</strong></td><td>8 modules wired into PlayMode + desktop Player: subtitles, announcer, alternative input (switch/eye/sip-puff), audio-visual indicators, colorblind palettes, content warnings, font library.</td><td><code>Accessibility/</code></td></tr>
 </tbody>

@@ -83,7 +83,7 @@ enjin/
 │   │   ├── Effects/        # Weather, Water, Wind, RetroEffects, Destructible, SpriteTextureAtlas, SpriteContourTracer
 │   │   ├── GUI/            # ImGui integration, Localization, DialogueTree, UICanvas, UISystem
 │   │   ├── Gameplay/       # TieredSaveSystem, SaveBackend, SaveLoadMenu, HUDSystem, QuestSystem, FootstepSystem, ObjectPool, CinematicSystem, DialogueAsset
-│   │   ├── Networking/     # LANMultiplayer, NetworkPanel, NewgroundsSaveBackend, SteamSaveBackend
+│   │   ├── Networking/     # LANMultiplayer, NetworkPanel, SteamSaveBackend
 │   │   ├── Physics/        # IPhysicsBackend, JoltBackend, Box2DBackend, PhysicsBackendFactory
 │   │   ├── Platform/       # FileDialog
 │   │   ├── Plugin/         # PluginSystem, HotReload
@@ -400,7 +400,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 
 ### Gameplay Systems
 
-- `TieredSaveSystem` - 20-slot tiered save/load (17 manual + 3 rotating auto-save) with 3-tier persistence (SceneState/RunState/MetaProgression), meta-progression key-value store, auto-save, checkpoints, pluggable backends (`ISaveBackend`: `LocalSaveBackend`, `NewgroundsSaveBackend`, `SteamSaveBackend`)
+- `TieredSaveSystem` - 20-slot tiered save/load (17 manual + 3 rotating auto-save) with 3-tier persistence (SceneState/RunState/MetaProgression), meta-progression key-value store, auto-save, checkpoints, pluggable backends (`ISaveBackend`: `LocalSaveBackend`, `SteamSaveBackend`)
 - `PlayModeDiff` - JSON diff of pre/post play mode scene states with cherry-pick apply dialog (created/deleted/modified entities, component-level diffs)
 - `SaveLoadMenuComponent` - In-game save/load grid overlay (ImGui) with slot cards, confirmation dialogs, save/load/delete per slot
 - `HUDSystem` - Runtime health bars, resource bars, labels, crosshair
@@ -454,7 +454,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 - `SceneImporter` - Converts loaded models to ECS entities (auto-detect format)
 - `MeshFactory` - Primitive mesh generation (cube, sphere, plane, cylinder, cone, quad)
 - `BuildPipeline` - Full game export: scan, validate, pack `.enjpak`, copy player, manifest
-- `HTML5Exporter` - Canvas export, preloader, responsive scaling, Newgrounds embed template
+- `HTML5Exporter` - Canvas export, preloader, responsive scaling, web embed template
 - Distribution: Inno Setup installer (`installer/EnjinSetup.iss` with app icon, Start Menu/Desktop shortcuts), CMake CPack (ZIP, TGZ, DEB)
 
 ### Scripting System (AngelScript)
@@ -478,7 +478,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 - **Accessibility**: Subtitles, announcer, colorblind filter, font scaling (20 bindings)
 - **Input**: InputActionMap remapping, sensitivity, presets (22 bindings)
 - **Rendering**: Post-processing, screen-space effects, post-process volumes
-- **Networking**: LAN multiplayer, Newgrounds API
+- **Networking**: LAN multiplayer
 - **Flash**: ~40 bindings emulating Flash APIs (AS2/AS3 transpiler support)
 
 **Script Lifecycle**: `OnCreate()` → `OnUpdate(deltaTime)` per frame → `OnDestroy()`
