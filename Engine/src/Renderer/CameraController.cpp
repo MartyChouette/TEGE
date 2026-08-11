@@ -358,7 +358,7 @@ void CameraController::SetViewPreset(ViewPreset preset) {
         case ViewPreset::Perspective:
             // Keep current position, switch to perspective
             m_IsOrthographic = false;
-            m_Camera->SetPerspective(45.0f, 16.0f / 9.0f, 0.1f, 1000.0f);
+            m_Camera->SetPerspective(45.0f, m_Aspect, 0.1f, 1000.0f);
             return;
 
         // Presets use the orbit convention: camera is at (target - forward * distance).
@@ -418,12 +418,30 @@ void CameraController::SetOrthographic(bool ortho) {
 
     m_IsOrthographic = ortho;
     if (ortho) {
-        f32 aspect = 16.0f / 9.0f;
         f32 halfHeight = m_OrthoSize * 0.5f;
-        f32 halfWidth = halfHeight * aspect;
+        f32 halfWidth = halfHeight * m_Aspect;
         m_Camera->SetOrthographic(-halfWidth, halfWidth, -halfHeight, halfHeight, 0.1f, 1000.0f);
     } else {
-        m_Camera->SetPerspective(45.0f, 16.0f / 9.0f, 0.1f, 1000.0f);
+        m_Camera->SetPerspective(45.0f, m_Aspect, 0.1f, 1000.0f);
+    }
+}
+
+void CameraController::SetViewportAspect(f32 aspect) {
+    if (!m_Camera || aspect <= 0.0f) return;
+    // Called every frame from the viewport — skip the projection rebuild when nothing
+    // moved. Only the aspect changes here; FOV / near / far (and ortho size) are kept.
+    f32 diff = aspect - m_Aspect;
+    if ((diff < 0.0f ? -diff : diff) < 0.0001f) return;
+
+    m_Aspect = aspect;
+    if (m_IsOrthographic) {
+        f32 halfHeight = m_OrthoSize * 0.5f;
+        f32 halfWidth = halfHeight * m_Aspect;
+        m_Camera->SetOrthographic(-halfWidth, halfWidth, -halfHeight, halfHeight,
+                                  m_Camera->GetNearPlane(), m_Camera->GetFarPlane());
+    } else {
+        m_Camera->SetPerspective(m_Camera->GetFOV(), m_Aspect,
+                                 m_Camera->GetNearPlane(), m_Camera->GetFarPlane());
     }
 }
 

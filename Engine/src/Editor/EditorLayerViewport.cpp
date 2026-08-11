@@ -199,22 +199,27 @@ void EditorLayer::DrawViewportPanel() {
         DrawAudioMeterStrip();
     }
 
-    // Update desired render target size from available content region
+    // Compute the aspect-constrained image size from the available content region, then
+    // drive the render target (and thus the scene camera's aspect) from THAT constrained
+    // size — not the raw pane. Rendering at the pane's shape and displaying it in a
+    // letterboxed rect stretches the scene; sizing the RT to the constrained rect and
+    // matching the camera aspect keeps a fixed ratio undistorted at any pane size, and
+    // lets only "Free" fill the pane. Matches the Game View, which does the same.
     ImVec2 availSize = ImGui::GetContentRegionAvail();
+    f32 aspect = AspectRatioValues[static_cast<int>(m_SceneViewAspect)];
+    ImVec2 imgSize = availSize;
     if (availSize.x > 0 && availSize.y > 0) {
-        m_EditorViewportWidth = static_cast<u32>(availSize.x);
-        m_EditorViewportHeight = static_cast<u32>(availSize.y);
+        imgSize = ComputeAspectConstrainedSize(availSize.x, availSize.y, aspect);
+        m_EditorViewportWidth = static_cast<u32>(imgSize.x);
+        m_EditorViewportHeight = static_cast<u32>(imgSize.y);
+        if (m_CameraController && imgSize.y > 0.0f) {
+            m_CameraController->SetViewportAspect(imgSize.x / imgSize.y);
+        }
     }
 
-    // Compute constrained image size
-    f32 aspect = AspectRatioValues[static_cast<int>(m_SceneViewAspect)];
-    ImVec2 imgSize = ComputeAspectConstrainedSize(
-        static_cast<f32>(m_EditorViewportWidth),
-        static_cast<f32>(m_EditorViewportHeight), aspect);
-
-    // Center the image within the available space
-    f32 padX = (static_cast<f32>(m_EditorViewportWidth) - imgSize.x) * 0.5f;
-    f32 padY = (static_cast<f32>(m_EditorViewportHeight) - imgSize.y) * 0.5f;
+    // Center the image within the available space (letterbox / pillarbox padding)
+    f32 padX = (availSize.x - imgSize.x) * 0.5f;
+    f32 padY = (availSize.y - imgSize.y) * 0.5f;
     if (padX > 0.0f || padY > 0.0f) {
         ImVec2 cursorPos = ImGui::GetCursorPos();
         ImGui::SetCursorPos(ImVec2(cursorPos.x + padX, cursorPos.y + padY));

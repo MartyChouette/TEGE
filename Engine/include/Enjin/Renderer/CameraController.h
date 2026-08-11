@@ -90,6 +90,13 @@ public:
     void SetOrthoSize(f32 size) { m_OrthoSize = size; }
     f32 GetOrthoSize() const { return m_OrthoSize; }
 
+    // Match the camera's projection aspect to the viewport that renders it. Preserves
+    // FOV / near / far (and the ortho view size) — only the aspect changes. No-op when
+    // the aspect is unchanged, so it's safe to call every frame. Keeps geometry from
+    // stretching when the Scene panel is a different shape than the rendered image.
+    void SetViewportAspect(f32 aspect);
+    f32 GetViewportAspect() const { return m_Aspect; }
+
 private:
     void UpdateFlyMode(f32 deltaTime);
     void UpdateOrbitMode(f32 deltaTime);
@@ -136,6 +143,7 @@ private:
     ViewPreset m_ViewPreset = ViewPreset::Perspective;
     bool m_IsOrthographic = false;
     f32 m_OrthoSize = 10.0f;  // Orthographic view size
+    f32 m_Aspect = 16.0f / 9.0f;  // Projection aspect, driven by the host viewport
 };
 
 } // namespace Renderer

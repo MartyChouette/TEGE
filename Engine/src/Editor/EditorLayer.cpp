@@ -1954,6 +1954,18 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             m_RenderSystem->RenderShadowPassForCamera(m_Camera);
         }
 
+        // Lock the fly camera's projection aspect to the viewport RT right before we
+        // render into it. Setting it in the UI pass (DrawViewportPanel) is a frame late
+        // — the offscreen render below runs earlier in the frame — which left the scene
+        // rendered at the old aspect and then squeezed into the letterboxed panel (a
+        // tall panel stretched everything vertically). Matching it here, at render time,
+        // is what the Game View already does.
+        if (m_CameraController && m_EditorViewportRT->GetHeight() > 0) {
+            m_CameraController->SetViewportAspect(
+                static_cast<f32>(m_EditorViewportRT->GetWidth()) /
+                static_cast<f32>(m_EditorViewportRT->GetHeight()));
+        }
+
         // Render scene to editor viewport RT
         m_EditorViewportRT->Begin(commandBuffer);
         if (m_RenderSystem && m_Camera) {
