@@ -897,8 +897,15 @@ void PlayMode::SaveEditorState() {
     // The lightweight snapshot above handles transforms, but can't recreate
     // entities that were destroyed during play (e.g. collected coins).
     {
+        auto t0 = std::chrono::high_resolution_clock::now();
         Scene::SceneSerializer serializer(m_World);
         m_PrePlaySceneJson = serializer.SaveToString();
+        f64 ms = std::chrono::duration<f64, std::milli>(
+            std::chrono::high_resolution_clock::now() - t0).count();
+        // Diagnostic for the play-start hitch: a huge byte count means the reference-based
+        // mesh serialization (Phase B) isn't engaging and geometry is going inline.
+        ENJIN_LOG_INFO(Editor, "PlayMode: pre-play scene snapshot took %.1f ms (%zu KB JSON, %zu entities)",
+                       ms, m_PrePlaySceneJson.size() / 1024, m_SavedEntityState.size());
     }
 
     ENJIN_LOG_DEBUG(Editor, "Saved editor state (%zu entities snapshotted)", m_SavedEntityState.size());
@@ -952,12 +959,15 @@ void PlayMode::RestoreEditorState() {
         // SetupEntityBuffers -> ResolveAnimator walked the freed animator
         // storage and access-violated (skinned-entity play-stop crash).
         if (m_RenderSystem) m_RenderSystem->RefreshStorageCache();
+        auto rt0 = std::chrono::high_resolution_clock::now();
         Scene::SceneSerializer serializer(m_World);
         serializer.LoadFromString(m_PrePlaySceneJson);
+        f64 rms = std::chrono::duration<f64, std::milli>(
+            std::chrono::high_resolution_clock::now() - rt0).count();
         // The reload created the real storages — point the caches at them so
         // the editor draws immediately (it never calls Update()).
         if (m_RenderSystem) m_RenderSystem->RefreshStorageCache();
-        ENJIN_LOG_INFO(Editor, "Restored editor state (full reload — entities were destroyed during play)");
+        ENJIN_LOG_INFO(Editor, "Restored editor state (full reload — entities were destroyed during play); reload took %.1f ms", rms);
     } else {
         // Lightweight restore: just reset transforms (no entities destroyed)
         usize restored = 0;
