@@ -987,6 +987,18 @@ private:
     bool m_GameViewVSync = false;  // Simulated VSync for game view (caps to ~60fps)
     f64 m_GameViewLastRenderTime = 0.0;  // For frame rate limiting
 
+    // Hidden-viewport skip: the editor renders the scene into BOTH the Scene and Game
+    // view targets every frame, which doubles the (draw-call-bound) GPU cost with many
+    // meshes. We skip rendering whichever view isn't actually visible. "*ThisFrame" is set
+    // by the panel's ImGui::Begin return (true only when the dock tab is showing);
+    // RenderOffscreen reads the previous frame's value (it runs before the panels), so a
+    // freshly-revealed tab is one frame stale — imperceptible. Default true so the first
+    // frame renders both.
+    bool m_SceneViewVisibleThisFrame = true;
+    bool m_SceneViewVisiblePrev = true;
+    bool m_GameViewVisibleThisFrame = true;
+    bool m_GameViewVisiblePrev = true;
+
     // Render profiling (logs avg render time every 120 frames during play)
     f32 m_RenderProfileAccum = 0.0f;
     u32 m_RenderProfileFrames = 0;

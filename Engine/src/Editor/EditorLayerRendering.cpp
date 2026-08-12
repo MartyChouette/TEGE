@@ -431,7 +431,9 @@ void EditorLayer::DrawGameViewPanel() {
         gameViewFlags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
     }
     bool panelOpen = true;
-    ImGui::Begin("Game View", &panelOpen, gameViewFlags);
+    // Begin returns false when the dock tab is hidden behind another — drives the
+    // hidden-viewport skip so we don't render the Game View target when nobody sees it.
+    m_GameViewVisibleThisFrame = ImGui::Begin("Game View", &panelOpen, gameViewFlags);
     if (!panelOpen) {
         SetPanelVisibility(EditorPanel::GameView, false);
     }

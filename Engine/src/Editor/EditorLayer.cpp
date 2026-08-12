@@ -1883,6 +1883,14 @@ void EditorLayer::PrepareRenderTargets() {
 void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     ENJIN_PROFILE_SCOPE("Render");
 
+    // Advance the hidden-viewport-skip latches. This runs before the panels draw, so we
+    // gate this frame's renders on the PREVIOUS frame's panel visibility; the panels set
+    // *ThisFrame again below (in DrawViewportPanel / DrawGameViewPanel).
+    m_SceneViewVisiblePrev = m_SceneViewVisibleThisFrame;
+    m_GameViewVisiblePrev = m_GameViewVisibleThisFrame;
+    m_SceneViewVisibleThisFrame = false;
+    m_GameViewVisibleThisFrame = false;
+
     // Skip one frame after PlayMode::Stop — the world was just rebuilt and
     // the render system has stale entity caches that would crash.
     if (m_SkipNextRender) {
@@ -1914,7 +1922,9 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
 
     // --- Editor viewport: render scene from editor camera to offscreen RT ---
     // (Resize is handled by PrepareRenderTargets() before command buffer recording)
-    if (m_EditorViewportRT && m_EditorViewportRT->IsValid() &&
+    // Skipped when the Scene panel isn't visible (hidden-viewport skip).
+    if (m_SceneViewVisiblePrev &&
+        m_EditorViewportRT && m_EditorViewportRT->IsValid() &&
         m_EditorViewportWidth > 0 && m_EditorViewportHeight > 0) {
 
         // Apply scene view mode — save previous state so game view is unaffected.
@@ -2023,6 +2033,12 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     }
 
     if (!m_GameViewRenderTarget || !m_GameViewRenderTarget->IsValid()) {
+        return;
+    }
+
+    // Hidden-viewport skip: don't render the Game View when its panel isn't visible.
+    // Keep rendering during a golden capture (headless RT verification reads the output).
+    if (!m_GameViewVisiblePrev && s_GoldenCapturePath.empty()) {
         return;
     }
 

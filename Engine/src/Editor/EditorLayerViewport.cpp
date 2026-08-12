@@ -157,7 +157,9 @@ void EditorLayer::DrawViewportPanel() {
     // shrinks the image, which removes the overflow, which removes the scrollbar — an every-frame
     // oscillation that resizes the render target each frame and makes the whole view visibly shake
     // (and thrashes TAA/render-target allocation). The wheel is the camera zoom, not panel scroll.
-    ImGui::Begin("Scene", &panelOpen, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    // Begin returns false when the dock tab is hidden behind another — drives the
+    // hidden-viewport skip so we don't render the Scene target when nobody sees it.
+    m_SceneViewVisibleThisFrame = ImGui::Begin("Scene", &panelOpen, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     if (!panelOpen) {
         SetPanelVisibility(EditorPanel::Viewport, false);
     }
