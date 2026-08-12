@@ -6553,6 +6553,26 @@ void RenderSystem::RebuildShadowCasterCache() {
     m_ShadowCastersDirty = false;
 }
 
+void RenderSystem::BuildFrameShadowCasterList() {
+    m_FrameShadowCasters.clear();
+    m_FrameShadowCasters.reserve(m_ShadowCasters.size());
+
+    // Skinned shadow LOD distance: matches the animation LOD far band — a character far
+    // enough to animate at quarter rate is far enough that its shadow is sub-pixel in the
+    // cascade. Static casters always pass (large architecture must keep its shadow).
+    constexpr f32 kSkinnedShadowMaxDist = 70.0f;
+    const Math::Vector3 camPos = m_Camera ? m_Camera->GetPosition() : Math::Vector3(0.0f, 0.0f, 0.0f);
+
+    for (Entity entity : m_ShadowCasters) {
+        if (m_Camera && ResolveAnimator(entity)) {
+            Math::Matrix4 wm = ECS::ComputeWorldMatrix(m_World, entity);
+            Math::Vector3 p(wm.m[12], wm.m[13], wm.m[14]);
+            if ((p - camPos).Length() > kSkinnedShadowMaxDist) continue;
+        }
+        m_FrameShadowCasters.push_back(entity);
+    }
+}
+
 void RenderSystem::BuildCullableObjectList() {
     m_CullableObjects.clear();
     m_EntityToCullIndex.clear();
@@ -10302,6 +10322,9 @@ void RenderSystem::RenderShadowPass() {
     }
 
     // Render each cascade
+    // Distance-cull skinned casters once for all cascades (skinned shadow LOD)
+    BuildFrameShadowCasterList();
+
     for (u32 cascade = 0; cascade < m_ShadowMap->GetCascadeCount(); ++cascade) {
         // Progressive update: skip far cascades on non-update frames
         if (!forceFullUpdate && !ShouldUpdateCascade(cascade)) continue;
@@ -10311,7 +10334,7 @@ void RenderSystem::RenderShadowPass() {
         // the HOST_COHERENT UBO race that was causing empty shadow maps.
         m_CurrentCascadeVP = m_ShadowMap->GetCascadeViewProj(cascade);
 
-        u32 numCasters = static_cast<u32>(m_ShadowCasters.size());
+        u32 numCasters = static_cast<u32>(m_FrameShadowCasters.size());
         bool parallelShadow = (numCasters >= 32 && m_CmdBufferPool && m_ThreadPool.GetThreadCount() > 0);
         m_ShadowMap->BeginCascadePass(commandBuffer, cascade, parallelShadow);
 
@@ -10337,7 +10360,7 @@ void RenderSystem::RenderShadowPass() {
 
         // Caster cache was rebuilt before the loop (above) so the count is stable.
         // Parallel shadow caster rendering (if enough entities to justify overhead)
-        u32 casterCount = static_cast<u32>(m_ShadowCasters.size());
+        u32 casterCount = static_cast<u32>(m_FrameShadowCasters.size());
         bool useParallelShadow = (casterCount >= 32 && m_CmdBufferPool && m_ThreadPool.GetThreadCount() > 0);
 
         if (useParallelShadow) {
@@ -10349,7 +10372,7 @@ void RenderSystem::RenderShadowPass() {
             // creates GPU buffers and mutates the map, which is not safe from
             // the worker threads recording the secondaries.
             for (u32 i = 0; i < casterCount; ++i) {
-                GetOrCreateRenderData(m_ShadowCasters[i]);
+                GetOrCreateRenderData(m_FrameShadowCasters[i]);
             }
 
             std::vector<std::future<void>> futures;
@@ -10394,7 +10417,7 @@ void RenderSystem::RenderShadowPass() {
                     }
                     bool secPoolBound = false;   // per-secondary bind state
                     for (u32 i = start; i < end; ++i) {
-                        Entity entity = m_ShadowCasters[i];
+                        Entity entity = m_FrameShadowCasters[i];
                         auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                         if (xform && !xform->visible) continue;
                         RenderEntityShadow(entity, secCmd, secPoolBound);
@@ -10425,11 +10448,11 @@ void RenderSystem::RenderShadowPass() {
             // frame; the player path has no such reset). Same fix as secPoolBound
             // in the parallel branch above.
             bool serialPoolBound = false;
-            for (usize si = 0; si < m_ShadowCasters.size(); ++si) {
-                if (si + 4 < m_ShadowCasters.size() && m_CachedTransformStorage) {
-                    m_CachedTransformStorage->Prefetch(m_ShadowCasters[si + 4]);
+            for (usize si = 0; si < m_FrameShadowCasters.size(); ++si) {
+                if (si + 4 < m_FrameShadowCasters.size() && m_CachedTransformStorage) {
+                    m_CachedTransformStorage->Prefetch(m_FrameShadowCasters[si + 4]);
                 }
-                Entity entity = m_ShadowCasters[si];
+                Entity entity = m_FrameShadowCasters[si];
                 auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                 if (xform && !xform->visible) continue;
                 RenderEntityShadow(entity, commandBuffer, serialPoolBound);
@@ -10686,6 +10709,7 @@ void RenderSystem::RenderPointShadowPass() {
     if (m_ShadowCastersDirty) {
         RebuildShadowCasterCache();
     }
+    BuildFrameShadowCasterList();   // skinned shadow LOD (see RenderShadowPass)
 
     for (u32 lightIdx = 0; lightIdx < m_ActivePointShadowCount; ++lightIdx) {
         auto& sl = m_ShadowPointLights[lightIdx];
@@ -10705,7 +10729,7 @@ void RenderSystem::RenderPointShadowPass() {
             // Per-command-buffer bind state must be local, not the shared member
             // (stale-true across frames skips the pool VB/IB bind — see RenderShadowPass)
             bool facePoolBound = false;
-            for (Entity entity : m_ShadowCasters) {
+            for (Entity entity : m_FrameShadowCasters) {
                 auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                 if (xform && !xform->visible) continue;
                 RenderEntityShadow(entity, commandBuffer, facePoolBound);
@@ -10725,6 +10749,7 @@ void RenderSystem::RenderSpotShadowPass() {
     if (m_ShadowCastersDirty) {
         RebuildShadowCasterCache();
     }
+    BuildFrameShadowCasterList();   // skinned shadow LOD (see RenderShadowPass)
 
     for (u32 spotIdx = 0; spotIdx < m_ActiveSpotShadowCount; ++spotIdx) {
         auto& sl = m_ShadowSpotLights[spotIdx];
@@ -10743,7 +10768,7 @@ void RenderSystem::RenderSpotShadowPass() {
         // Per-command-buffer bind state must be local, not the shared member
         // (stale-true across frames skips the pool VB/IB bind — see RenderShadowPass)
         bool spotPoolBound = false;
-        for (Entity entity : m_ShadowCasters) {
+        for (Entity entity : m_FrameShadowCasters) {
             auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
             if (xform && !xform->visible) continue;
             RenderEntityShadow(entity, commandBuffer, spotPoolBound);

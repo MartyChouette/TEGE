@@ -1266,6 +1266,13 @@ private:
     std::vector<Entity> m_ShadowCasters;
     bool m_ShadowCastersDirty = true;
     void RebuildShadowCasterCache();
+    // Per-frame filtered view of m_ShadowCasters: skinned casters beyond a camera
+    // distance are dropped (skinned shadow LOD). A distant animated character
+    // contributes nothing visible to a cascade but costs a full per-cascade skinned
+    // draw — with hundreds of characters this is a large slice of shadow GPU time.
+    // Rebuilt cheaply each shadow pass; static casters always pass through.
+    std::vector<Entity> m_FrameShadowCasters;
+    void BuildFrameShadowCasterList();
 #endif
 
     // Cached light entity list — rebuilt only when dirty (entity add/remove or light count change)
