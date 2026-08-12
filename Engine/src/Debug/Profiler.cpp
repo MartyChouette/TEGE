@@ -86,10 +86,10 @@ f64 Profiler::GetAverageFrameTimeMs() const {
     return sum / static_cast<f64>(m_FrameTimeHistory.size());
 }
 
-void Profiler::DrawProfilerPanel() {
+void Profiler::DrawProfilerPanel(bool* open) {
     if (!m_Enabled) return;
 
-    if (ImGui::Begin("Profiler")) {
+    if (ImGui::Begin("Profiler", open)) {
         // FPS and frame time header — flow with fixed spacing so it never overlaps at
         // larger font scales (the old absolute SameLine(150/300) collided).
         ImGui::Text("FPS: %.1f", m_FPS);

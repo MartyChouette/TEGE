@@ -77,8 +77,9 @@ public:
     const std::vector<f32>& GetFrameTimeHistory() const { return m_FrameTimeHistory; }
     static constexpr usize HISTORY_SIZE = 240;
 
-    // ImGui overlay
-    void DrawProfilerPanel();
+    // ImGui overlay. When `open` is non-null the window gets a close (X) button and
+    // *open is set false when the user clicks it — the host syncs its panel flag.
+    void DrawProfilerPanel(bool* open = nullptr);
 
     // Enable/disable
     void SetEnabled(bool enabled) { m_Enabled = enabled; }

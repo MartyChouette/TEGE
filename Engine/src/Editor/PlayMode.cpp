@@ -813,7 +813,8 @@ void PlayMode::Update(f32 deltaTime) {
         // Log every 120 frames
         if (m_ProfileFrameCount >= 120) {
             f32 n = static_cast<f32>(m_ProfileFrameCount);
-            ENJIN_LOG_INFO(Editor,
+            // WARN level on purpose — the console's Warn filter isolates the perf diagnostics.
+            ENJIN_LOG_WARN(Editor,
                 "PlayMode Update avg (%.0f frames): Total=%.2fms  Physics=%.2fms  ECS=%.2fms  Script=%.2fms  Gameplay=%.2fms",
                 n,
                 m_ProfileAccumTotal / n,
@@ -904,7 +905,8 @@ void PlayMode::SaveEditorState() {
             std::chrono::high_resolution_clock::now() - t0).count();
         // Diagnostic for the play-start hitch: a huge byte count means the reference-based
         // mesh serialization (Phase B) isn't engaging and geometry is going inline.
-        ENJIN_LOG_INFO(Editor, "PlayMode: pre-play scene snapshot took %.1f ms (%zu KB JSON, %zu entities)",
+        // WARN level on purpose — the console's Warn filter isolates the perf diagnostics.
+        ENJIN_LOG_WARN(Editor, "PlayMode: pre-play scene snapshot took %.1f ms (%zu KB JSON, %zu entities)",
                        ms, m_PrePlaySceneJson.size() / 1024, m_SavedEntityState.size());
     }
 
@@ -967,7 +969,7 @@ void PlayMode::RestoreEditorState() {
         // The reload created the real storages — point the caches at them so
         // the editor draws immediately (it never calls Update()).
         if (m_RenderSystem) m_RenderSystem->RefreshStorageCache();
-        ENJIN_LOG_INFO(Editor, "Restored editor state (full reload — entities were destroyed during play); reload took %.1f ms", rms);
+        ENJIN_LOG_WARN(Editor, "Restored editor state (full reload — entities were destroyed during play); reload took %.1f ms", rms);
     } else {
         // Lightweight restore: just reset transforms (no entities destroyed)
         usize restored = 0;

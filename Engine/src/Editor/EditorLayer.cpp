@@ -2942,7 +2942,8 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
 
         if (m_RenderProfileFrames >= 120) {
             f32 n = static_cast<f32>(m_RenderProfileFrames);
-            ENJIN_LOG_INFO(Editor,
+            // WARN level on purpose — the console's Warn filter isolates the perf diagnostics.
+            ENJIN_LOG_WARN(Editor,
                 "RenderOffscreen avg (%u frames): %.2fms  (RT: %ux%u)",
                 m_RenderProfileFrames,
                 m_RenderProfileAccum / n,
@@ -3198,7 +3199,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // --- Floating tool windows (not pre-docked, but user can dock them) ---
     if (HasPanel(m_VisiblePanels, EditorPanel::Profiler)) {
         ImGui::SetNextWindowSize(ImVec2(520 * s, 450 * s), ImGuiCond_FirstUseEver);
-        Debug::Profiler::Instance().DrawProfilerPanel();
+        bool profilerOpen = true;
+        Debug::Profiler::Instance().DrawProfilerPanel(&profilerOpen);
+        if (!profilerOpen) {
+            SetPanelVisibility(EditorPanel::Profiler, false);
+        }
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::ParticleEditor)) {
         ImGui::SetNextWindowSize(ImVec2(380 * s, 600 * s), ImGuiCond_FirstUseEver);
