@@ -32,6 +32,13 @@ public:
     void SetSearchRoot(const std::string& root);
     const std::string& GetSearchRoot() const { return m_SearchRoot; }
 
+    // Directory where baked binary mesh caches (.enjmesh) are written/read. When empty,
+    // it's derived from the search root (<root>/.enjin/meshcache/); if that's also empty
+    // baking is disabled and the cache falls back to re-importing the source every time.
+    // The baked cache turns a multi-second Assimp/glTF re-parse into a raw buffer read.
+    void SetCacheDir(const std::string& dir) { m_CacheDir = dir; }
+    const std::string& GetCacheDir() const { return m_CacheDir; }
+
     // Fill out.vertices/indices/subMeshes from the referenced source mesh. Loads and
     // caches the file on first use. Returns true on success. When ref.contentHash is
     // non-zero it is verified against the reloaded geometry; a mismatch (source file
@@ -61,10 +68,20 @@ private:
     };
     std::unordered_map<std::string, CachedFile> m_Files;
     std::string m_SearchRoot;   // base for resolving project-relative source paths
+    std::string m_CacheDir;     // where baked .enjmesh files live (empty = derive from root)
 
     // Resolve a (possibly project-relative) source path to an absolute filesystem path.
     std::string ResolvePath(const std::string& sourcePath) const;
     CachedFile& LoadFile(const std::string& path);
+
+    // Baked binary cache: skip the importer when a valid .enjmesh already exists.
+    // BakedPath returns "" when no cache directory is available (baking disabled).
+    // LoadBaked verifies the source's size+mtime and fills `out` on success (leaving it
+    // untouched on any failure so the caller re-imports). WriteBaked persists a file after
+    // a successful import.
+    std::string BakedPath(const std::string& resolvedSource) const;
+    bool LoadBaked(const std::string& resolvedSource, CachedFile& out) const;
+    void WriteBaked(const std::string& resolvedSource, const CachedFile& file) const;
     // Locate the cached geometry for a ref (loads the file if needed, verifies hash).
     // Returns nullptr if unresolvable. logMismatch controls whether a miss is logged.
     const CachedMesh* Find(const ECS::MeshComponent::SourceRef& ref, bool logMismatch);
