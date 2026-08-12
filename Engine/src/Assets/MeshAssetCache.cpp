@@ -249,6 +249,12 @@ bool MeshAssetCache::CanResolve(const ECS::MeshComponent::SourceRef& ref) {
     return Find(ref, /*logMismatch=*/false) != nullptr;
 }
 
+bool MeshAssetCache::EnsureCpuData(ECS::MeshComponent& mc) {
+    if (!mc.vertices.empty()) return true;      // already resident
+    if (!mc.source.Valid()) return false;       // authored/procedural — nothing to reload
+    return Resolve(mc.source, mc);              // fast: baked cache or in-memory copy
+}
+
 bool MeshAssetCache::Resolve(const ECS::MeshComponent::SourceRef& ref, ECS::MeshComponent& out) {
     const CachedMesh* cm = Find(ref, /*logMismatch=*/true);
     if (!cm) return false;

@@ -53,6 +53,13 @@ public:
     // reload. Loads/caches the file as a side effect, same as Resolve.
     bool CanResolve(const ECS::MeshComponent::SourceRef& ref);
 
+    // Reload CPU vertices/indices into `mc` when they've been freed (to reclaim RAM after
+    // GPU upload) but the mesh is source-reproducible. No-op when data is already present.
+    // Returns true if `mc` has usable CPU geometry afterward. This is the reload half of
+    // "free CPU mesh data after upload": consumers that need the vertices again (physics
+    // collider build, precise picking, device-loss re-upload) call this first.
+    bool EnsureCpuData(ECS::MeshComponent& mc);
+
     void Clear();  // drop all cached files (e.g., on project/scene close)
 
 private:

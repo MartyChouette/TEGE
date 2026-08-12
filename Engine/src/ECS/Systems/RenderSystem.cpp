@@ -1,6 +1,7 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Debug/Profiler.h"
+#include "Enjin/Assets/MeshAssetCache.h"   // reload/free CPU mesh data after upload (task #3)
 #if !ENJIN_RENDERER_WEBGPU
 #include "Enjin/Renderer/SkinningComputeShaderData.h"  // embedded SPIR-V (ADR-0002 compute skinning)
 #endif
@@ -8159,6 +8160,10 @@ bool RenderSystem::IsPoolEligible(Entity entity) const {
 EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
     EnsureStorageCacheFresh();
     MeshComponent* mesh = m_World->GetComponent<MeshComponent>(entity);
+    // Reload CPU vertices if they were freed after a prior upload (task #3). Cheap no-op
+    // when data is resident; restores geometry from the baked/in-memory cache before a
+    // rebuild (device loss, mesh change) re-reads mesh->vertices below.
+    if (mesh) Assets::MeshAssetCache::Get().EnsureCpuData(*mesh);
     if (!mesh || !mesh->IsValid()) {
         return nullptr;
     }
