@@ -91,8 +91,9 @@ AABB ScenePicker::CalculateEntityAABB(ECS::World* world, ECS::Entity entity) {
     auto* mesh = world->GetComponent<ECS::MeshComponent>(entity);
     auto* transform = world->GetComponent<ECS::TransformComponent>(entity);
 
-    if (!mesh || mesh->vertices.empty()) {
-        // No mesh - create a small default AABB at entity position
+    // Usable geometry = has verts, or a cached local AABB (which survives freeing the CPU
+    // verts after GPU upload, task #3). Otherwise a small default box at the entity.
+    if (!mesh || (mesh->vertices.empty() && mesh->aabbDirty)) {
         Math::Vector3 pos = transform ? transform->position : Math::Vector3(0.0f);
         aabb.min = pos - Math::Vector3(0.5f);
         aabb.max = pos + Math::Vector3(0.5f);
@@ -107,7 +108,20 @@ AABB ScenePicker::CalculateEntityAABB(ECS::World* world, ECS::Entity entity) {
                       Math::Matrix4::Scale(transform->scale);
     }
 
-    // Transform all vertices to world space and expand AABB
+    // Prefer the cached local AABB: transforming its 8 corners is correct even when the CPU
+    // verts were freed, and far cheaper than looping every vertex on each pick.
+    if (!mesh->aabbDirty) {
+        Math::Vector3 lo = mesh->cachedAABBMin, hi = mesh->cachedAABBMax;
+        for (int i = 0; i < 8; ++i) {
+            Math::Vector4 w = worldMatrix * Math::Vector4((i & 1) ? hi.x : lo.x,
+                                                          (i & 2) ? hi.y : lo.y,
+                                                          (i & 4) ? hi.z : lo.z, 1.0f);
+            aabb.Expand(Math::Vector3(w.x, w.y, w.z));
+        }
+        return aabb;
+    }
+
+    // Fallback (no cached AABB yet): expand from vertices.
     for (const auto& vertex : mesh->vertices) {
         Math::Vector4 worldPos = worldMatrix * Math::Vector4(vertex.position.x, vertex.position.y,
                                                               vertex.position.z, 1.0f);

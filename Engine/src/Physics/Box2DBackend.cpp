@@ -4,6 +4,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/Assets/MeshAssetCache.h"   // reload freed CPU verts for collider gen (task #3)
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/Logging/Log.h"
@@ -348,6 +349,7 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
     if (auto* meshCol = m_World->GetComponent<ECS::MeshColliderComponent>(entity)) {
         if (meshCol->autoGenerate && !meshCol->generated) {
             auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
+            if (mesh) Assets::MeshAssetCache::Get().EnsureCpuData(*mesh);  // reload if CPU verts were freed after GPU upload
             if (mesh && mesh->IsValid()) {
                 meshCol->vertices.clear();
                 meshCol->vertices.reserve(mesh->vertices.size());

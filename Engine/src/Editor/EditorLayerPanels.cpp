@@ -7363,6 +7363,15 @@ void EditorLayer::DrawDebugWorkstation() {
             if (m_RenderSystem) {
                 ImGui::Text("Draw Calls: %u", m_RenderSystem->GetDrawCallCount());
                 ImGui::Text("Skinned meshes: %u", m_RenderSystem->GetSkinnedMeshCount());
+
+                // Task #3 (experimental): free a mesh's CPU vertices after GPU upload to
+                // reclaim RAM. Only affects meshes uploaded AFTER toggling — reload the
+                // scene (or re-import) to apply retroactively. Watch Process RAM + the ECS
+                // "Instances" count below.
+                bool freeCpu = m_RenderSystem->IsFreeMeshCpuData();
+                if (ImGui::Checkbox("Free mesh CPU data after upload (experimental)", &freeCpu)) {
+                    m_RenderSystem->SetFreeMeshCpuData(freeCpu);
+                }
                 u32 tris = m_RenderSystem->GetTriangleCount();
                 if (tris > 1000000)
                     ImGui::Text("Triangles: %.2f M", static_cast<f32>(tris) / 1000000.0f);

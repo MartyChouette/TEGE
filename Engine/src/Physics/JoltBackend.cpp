@@ -43,6 +43,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Mesh.h"
+#include "Enjin/Assets/MeshAssetCache.h"   // reload freed CPU verts for collider gen (task #3)
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
@@ -508,6 +509,7 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
         // bigger than the displayed model.
         if (meshCol->autoGenerate && !meshCol->generated) {
             auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
+            if (mesh) Assets::MeshAssetCache::Get().EnsureCpuData(*mesh);  // reload if CPU verts were freed after GPU upload
             const Math::Matrix4 wmGen = ECS::ComputeWorldMatrix(m_World, entity);
             const Math::Vector3 gs(
                 Math::Vector3(wmGen.m[0], wmGen.m[1], wmGen.m[2]).Length(),

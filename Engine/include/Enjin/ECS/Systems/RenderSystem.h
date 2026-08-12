@@ -658,6 +658,13 @@ public:
     // are skinned once per frame by a compute pass and all raster passes read the result.
     void SetComputeSkinningEnabled(bool enabled) { m_ComputeSkinningEnabled = enabled; }
     bool IsComputeSkinningEnabled() const { return m_ComputeSkinningEnabled; }
+
+    // Free a mesh's CPU vertices/indices after they're uploaded to the GPU, reclaiming RAM
+    // for source-reproducible meshes (task #3). Reload is on-demand via
+    // MeshAssetCache::EnsureCpuData (baked/in-memory cache). OFF by default until every CPU
+    // consumer (physics colliders, picking, effects) is routed through the reload.
+    void SetFreeMeshCpuData(bool enabled) { m_FreeMeshCpuData = enabled; }
+    bool IsFreeMeshCpuData() const { return m_FreeMeshCpuData; }
     // Animation LOD: distant skeletal animators refresh their pose at a reduced
     // rate (dt is banked so time never drifts). The single biggest CPU lever for
     // hundreds of animated entities. On by default; off = every animator full-rate.
@@ -1571,6 +1578,7 @@ private:
     // positions are guaranteed identical (no shadow-acne flicker from the two passes
     // skinning independently). Editor Rendering panel checkbox toggles it at runtime.
     bool m_ComputeSkinningEnabled = true;
+    bool m_FreeMeshCpuData = false;   // task #3: free CPU verts after upload (opt-in)
     bool m_AnimationLODEnabled = true;   // distance-based animator update-rate LOD (see SetAnimationLODEnabled)
     VkCommandBuffer m_LastSkinningCmd = VK_NULL_HANDLE;  // once-per-frame guard for RunComputeSkinningPass
     u32 m_RTMode = 0;  // 0=Hybrid, 1=PathTrace

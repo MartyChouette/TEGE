@@ -8168,6 +8168,26 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
         return nullptr;
     }
 
+    // Free the CPU vertex/index copy once uploaded (task #3, opt-in via m_FreeMeshCpuData).
+    // The AABB is computed first so bounds consumers (which read the cached AABB) still work,
+    // and we only free when the geometry can be reloaded — EnsureCpuData at the top restores
+    // it before a rebuild, and physics/picking/effects call EnsureCpuData too.
+    auto maybeFreeCpu = [&]() {
+        if (!m_FreeMeshCpuData || mesh->vertices.empty() || !mesh->source.Valid()) return;
+        if (mesh->aabbDirty) {
+            Math::Vector3 mn = mesh->vertices[0].position, mx = mn;
+            for (const auto& v : mesh->vertices) {
+                mn.x = std::min(mn.x, v.position.x); mn.y = std::min(mn.y, v.position.y); mn.z = std::min(mn.z, v.position.z);
+                mx.x = std::max(mx.x, v.position.x); mx.y = std::max(mx.y, v.position.y); mx.z = std::max(mx.z, v.position.z);
+            }
+            mesh->cachedAABBMin = mn; mesh->cachedAABBMax = mx; mesh->aabbDirty = false;
+        }
+        if (Assets::MeshAssetCache::Get().CanResolve(mesh->source)) {
+            std::vector<MeshComponent::Vertex>().swap(mesh->vertices);
+            std::vector<u32>().swap(mesh->indices);
+        }
+    };
+
     // Ensure dense vector is large enough for this entity ID
     if (static_cast<usize>(EntityIndex(entity)) >= m_EntityRenderData.size()) {
         m_EntityRenderData.resize(static_cast<usize>(EntityIndex(entity)) + 1);
@@ -8192,6 +8212,7 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
             renderData.indexCount = alloc.indexCount;
             m_DDGIGeometryDirty = true;  // new pooled mesh — refeed DDGI voxelizer
             // No per-entity VB/IB needed — pool owns the memory
+            maybeFreeCpu();
             return &renderData;
         }
         // Pool allocation failed (overflow) — fall through to per-entity buffers
@@ -8292,6 +8313,7 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
         }
     }
 
+    maybeFreeCpu();
     return &renderData;
 }
 
