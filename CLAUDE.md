@@ -25,6 +25,7 @@ These are hard-won lessons. Violating any of these will cause bugs.
 - **Path validation:** use `Platform::IsSafeRelativePath` / `IsSafeFileName` / `ResolveWithinRoot` from `Enjin/Platform/Paths.h` — never hand-roll `find("..")` checks
 
 ### ECS
+- **Structural mutation is MAIN-THREAD ONLY (adr-0004):** `World::GetComponent`/`HasComponent` are lock-free reads. That is only safe because `Add`/`Remove`/`Create`/`Destroy`/`Clear` run solely on the owner thread (the one that constructed the World) and every parallel region is fork-join (the owner is parked at the join while workers read). NEVER add/remove components or create/destroy entities from a worker thread — worker threads may only READ. `World::AssertOwnerThread()` catches violations in all builds (debug aborts, release logs a loud error once). If you add a job system that must mutate components off-thread, this invariant is broken and you must redesign it (do not just silence the guard). `IsValid`/`IsPendingDestruction`/`FindEntityByName` keep their locks; the read hot path does not
 - **`DestroyEntity()` is deferred** — flushed at `World::Update()` start. `IsValid()` returns false for pending-destruction entities
 - **Entity IDs are generational:** destroying recycles the slot index but bumps the generation, so a recreated entity never equals the old handle. Compare slots with `EntityIndex(e)`
 - **`MeshComponent.subMeshes`** array for multi-material meshes. `MaterialSlotsComponent` holds per-sub-mesh materials

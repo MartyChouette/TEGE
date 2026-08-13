@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/Core/Assert.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/Component.h"
 #include "Enjin/ECS/System.h"
@@ -11,6 +12,8 @@
 #include <memory>
 #include <string>
 #include <mutex>
+#include <thread>
+#include <atomic>
 #include <vector>
 
 /**
@@ -29,10 +32,25 @@ namespace ECS {
  * It acts as the container for all entities, components, and systems.
  * It provides methods to create/destroy entities and access components.
  *
- * Thread safety: All component storage access (Create/Destroy/Add/Remove/Clear
- * and Get/Has) is guarded by a recursive mutex. DestroyEntity is deferred —
- * entities are queued and actually destroyed at the start of Update() to
- * prevent iterator invalidation during system iteration.
+ * Thread safety (adr-0004 — single-writer / fork-join reads):
+ *   - Structural mutation (Create/Destroy/Add/Remove/Clear and the deferred
+ *     destruction flush) runs ONLY on the owner thread — the thread that
+ *     constructed the World, or one re-designated via AdoptOwnerThread(). Those
+ *     paths are serialized by a recursive mutex and, in debug builds, assert the
+ *     caller is the owner thread.
+ *   - GetComponent()/HasComponent() are LOCK-FREE reads. They are safe without a
+ *     lock because the only writer (the owner thread) never mutates concurrently
+ *     with a parallel read region: every parallel region in the engine is
+ *     fork-join (RenderSystem's animation-sample and shadow-record passes), so
+ *     the owner is parked at the join while worker threads read. Removing the
+ *     per-call lock eliminated thousands of uncontended lock/unlock pairs per
+ *     frame in the component hot path. If a future job system needs to mutate
+ *     components off the owner thread, this invariant no longer holds —
+ *     AssertOwnerThread() catches it in every build (debug aborts at the call;
+ *     release logs a loud error once). Structural changes must stay on the owner
+ *     thread; worker threads may only read.
+ *   - DestroyEntity is deferred — entities are queued and destroyed at the start
+ *     of Update() to prevent iterator invalidation during system iteration.
  */
 class ENJIN_API World {
 public:
@@ -81,6 +99,7 @@ public:
     // Component management
     template<typename T>
     T& AddComponent(Entity entity, const T& component = T{}) {
+        AssertOwnerThread();
         std::lock_guard<std::recursive_mutex> lock(m_Mutex);
         auto storage = GetOrCreateStorage<T>();
         if (storage->Has(entity)) {
@@ -95,6 +114,7 @@ public:
 
     template<typename T>
     void RemoveComponent(Entity entity) {
+        AssertOwnerThread();
         std::lock_guard<std::recursive_mutex> lock(m_Mutex);
         auto storage = GetOrCreateStorage<T>();
         if (storage->Has(entity)) {
@@ -105,8 +125,8 @@ public:
 
     template<typename T>
     T* GetComponent(Entity entity) {
-        // ECS-C1 fix: lock to prevent race with concurrent AddComponent/RemoveComponent
-        std::lock_guard<std::recursive_mutex> lock(m_Mutex);
+        // Lock-free read (adr-0004): structural mutation is owner-thread-only and
+        // parallel read regions are fork-join, so no writer ever overlaps this read.
         auto* storage = GetStorageMut<T>();
         if (!storage) return nullptr;
         return storage->Get(entity);
@@ -114,8 +134,8 @@ public:
 
     template<typename T>
     const T* GetComponent(Entity entity) const {
-        // ECS-C1 fix: lock to prevent race with concurrent AddComponent/RemoveComponent
-        std::lock_guard<std::recursive_mutex> lock(m_Mutex);
+        // Lock-free read (adr-0004): structural mutation is owner-thread-only and
+        // parallel read regions are fork-join, so no writer ever overlaps this read.
         auto storage = GetStorage<T>();
         if (!storage) {
             return nullptr;
@@ -125,8 +145,8 @@ public:
 
     template<typename T>
     bool HasComponent(Entity entity) const {
-        // ECS-C1 fix: lock to prevent race with concurrent AddComponent/RemoveComponent
-        std::lock_guard<std::recursive_mutex> lock(m_Mutex);
+        // Lock-free read (adr-0004): structural mutation is owner-thread-only and
+        // parallel read regions are fork-join, so no writer ever overlaps this read.
         auto storage = GetStorage<T>();
         if (!storage) {
             return false;
@@ -299,8 +319,47 @@ public:
     void Lock() { m_Mutex.lock(); }
     void Unlock() { m_Mutex.unlock(); }
 
+    /**
+     * @brief Re-designate the calling thread as the structural-mutation owner (adr-0004).
+     *
+     * The owner thread is captured at construction. Call this only if the World is
+     * created on one thread and then driven on another (e.g. a loader hands the World
+     * off to the main thread). Compiles to a trivial store; only the debug asserts in
+     * AssertOwnerThread() consult it.
+     */
+    void AdoptOwnerThread() { m_OwnerThreadId = std::this_thread::get_id(); }
+
 private:
     void RebuildNameCache();
+
+    // Invariant guard (adr-0004): every structural mutation
+    // (Create/Destroy/Add/Remove/Clear + the deferred flush) must run on the owner
+    // thread. This is what legalizes the lock-free GetComponent/HasComponent reads —
+    // writes never happen off the owner thread, and parallel read regions are
+    // fork-join (the owner is parked at the join), so no write overlaps a worker read.
+    //
+    // The thread check runs in ALL builds (mutation is the rare, non-hot path, so a
+    // thread-id compare here is free relative to a frame). Debug builds hard-stop at
+    // the offending call via ENJIN_ASSERT; release builds log a loud error once and
+    // keep going, so even a shipped build surfaces a broken invariant instead of
+    // silently racing the lock-free readers. The reads themselves stay unchecked and
+    // lock-free.
+    void AssertOwnerThread() const {
+        if (std::this_thread::get_id() == m_OwnerThreadId) return;
+        ENJIN_ASSERT(false,
+            "World structural mutation off the owner thread — breaks the lock-free "
+            "GetComponent/HasComponent invariant (adr-0004)");
+#ifndef ENJIN_BUILD_DEBUG
+        if (!m_OwnerThreadWarned.exchange(true)) {
+            ENJIN_LOG_ERROR(Core,
+                "World structural mutation off the owner thread — this breaks the "
+                "lock-free ECS read invariant (adr-0004). Structural changes "
+                "(Add/Remove/Create/Destroy/Clear) must run on the main thread; "
+                "worker threads may only read components.");
+        }
+#endif
+    }
+
     void DestroyEntityInternal(Entity entity);
 
     // Type-erased component storage wrapper
@@ -391,8 +450,19 @@ private:
     // Bumped by Clear() -- see GetStorageEpoch()
     u32 m_StorageEpoch = 1;
 
-    // Thread safety: guards structural modifications (Create/Destroy/Add/Remove/Clear)
+    // Thread safety: guards structural modifications (Create/Destroy/Add/Remove/Clear).
+    // Reads (GetComponent/HasComponent) are lock-free — see the class-level thread
+    // safety note and adr-0004.
     mutable std::recursive_mutex m_Mutex;
+
+    // The one thread allowed to perform structural mutation (adr-0004). Captured at
+    // construction, overridable via AdoptOwnerThread(). Consulted by AssertOwnerThread()
+    // on every mutation in all build configs (the write path is not the hot path).
+    std::thread::id m_OwnerThreadId;
+
+    // Latches the first off-owner-thread mutation in release builds so the error is
+    // logged once, not every frame. Debug builds abort instead, so this is unused there.
+    mutable std::atomic<bool> m_OwnerThreadWarned{false};
 
     // Deferred entity destruction queue (flushed at start of Update)
     std::vector<Entity> m_PendingDestructions;

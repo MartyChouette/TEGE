@@ -124,7 +124,8 @@ Not release-blocking: goldens blessing, settings A/B matrix.
 ### Architecture consolidation
 - Retire AudioManager (SimpleAudio is the system). Retire legacy AIAgent. ConstraintSolver decision.
 - Visual-script globals into ExecutionContext.
-- World.h per-GetComponent recursive_mutex; per-frame DrawCmd alloc and sort; ECS archetype storage evaluation.
+- World.h per-GetComponent recursive_mutex: Stage A DONE (2026-08-13, adr-0004) — GetComponent/HasComponent are lock-free reads under the single-writer / fork-join model, writes keep the recursive_mutex + debug owner-thread assert, fork-join concurrency test added. Stage B (hoist GetComponentStorage into the hottest per-entity loops = remove calls not just locks) still open.
+- Per-frame DrawCmd alloc and sort; ECS archetype storage evaluation.
 
 ### Pipeline honesty
 - Real .enjpak compression (currently passthrough). Pak-only exports (loose files still ship).
@@ -141,6 +142,10 @@ Not release-blocking: goldens blessing, settings A/B matrix.
 
 ### Docs
 - ARCHITECTURE.md drift (MaterialGPU 80 to 112, backend phases). Dual-system explanations. RT shader workflow. ROADMAP refresh against this document.
+
+### Simulation and materials (Marty backlog, added 2026-08-13)
+- Buoyancy volumes: water zones that float/sink bodies via depth-based buoyancy + drag, with a 2D-heightfield wave sim. **Full spec (Gobliny-driven, canonical): `D:\TEGE_Projects\goblin\design\tech\tege-buoyancy-spec.md`.** Four components: `WaterVolume` (bounds/rest_height/heightfield resolution/damping/wave_speed + `get_surface_height`/`apply_displacement`/`apply_sustained_pressure`), `BuoyancyBody` (density, waterlog_rate, submerged/surface drag, displaced volume; polls the volume per physics tick), `WaterEnterEvent` (velocity-threshold splash → auto-displacement + game-subscribable), `WaterCurrent` (directional/spline flow for lazy river). MVP = WaterVolume heightfield + BuoyancyBody upward force + WaterEnterEvent + player submersion drag. Explicitly OUT: full 3D fluid, underwater refraction (separate render concern), boat pitch/roll, inter-object wave interaction. Physics side is Jolt 3D / Box2D 2D per the strict separation; net-sync the displacement EVENTS not the heightfield (deterministic local sim). 5 open impl questions in the spec (reuse a heightfield struct? tick rate? non-rect bounds? rigidbody drag controls? shader sampling of the heightfield).
+- Refractive indices: real refraction through transparent/glass/water materials. Material already carries IOR (extended MaterialGPU: SSS/transmission/IOR/thickness), so this is the render consumer — screen-space refraction / IOR-based bending, and the RT path can read true IOR for path-traced glass.
 
 ### Parked (1.0+ or cut, Marty's call)
 - DLSS/XeSS vendor SDKs. FMOD/Wwise/NVN stubs (cut candidates). SteamAudio default-on decision.

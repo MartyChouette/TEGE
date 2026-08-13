@@ -16,6 +16,9 @@ namespace ECS {
 
 World::World() {
     m_SystemManager = std::make_unique<SystemManager>();
+    // Capture the constructing thread as the structural-mutation owner (adr-0004).
+    // Re-designate with AdoptOwnerThread() if the World is later driven elsewhere.
+    m_OwnerThreadId = std::this_thread::get_id();
 }
 
 World::~World() {
@@ -23,11 +26,13 @@ World::~World() {
 }
 
 Entity World::CreateEntity() {
+    AssertOwnerThread();
     std::lock_guard<std::recursive_mutex> lock(m_Mutex);
     return m_EntityManager.CreateEntity();
 }
 
 void World::DestroyEntity(Entity entity) {
+    AssertOwnerThread();
     std::lock_guard<std::recursive_mutex> lock(m_Mutex);
     if (!m_EntityManager.IsValid(entity)) {
         return;
@@ -39,6 +44,7 @@ void World::DestroyEntity(Entity entity) {
 }
 
 void World::DestroyEntityImmediate(Entity entity) {
+    AssertOwnerThread();
     std::lock_guard<std::recursive_mutex> lock(m_Mutex);
     DestroyEntityInternal(entity);
 }
@@ -81,6 +87,7 @@ void World::DestroyEntityInternal(Entity entity) {
 }
 
 void World::FlushPendingDestructions() {
+    AssertOwnerThread();
     std::lock_guard<std::recursive_mutex> lock(m_Mutex);
     if (m_PendingDestructions.empty()) return;
 
@@ -114,6 +121,7 @@ void World::Update(f32 deltaTime) {
 }
 
 void World::Clear() {
+    AssertOwnerThread();
     std::lock_guard<std::recursive_mutex> lock(m_Mutex);
     m_PendingDestructions.clear();
     m_PendingDestructionSet.clear();

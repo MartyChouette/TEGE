@@ -5,6 +5,9 @@
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/ECS/StringIntern.h"
+#include <atomic>
+#include <thread>
+#include <vector>
 
 using namespace Enjin;
 using namespace Enjin::ECS;
@@ -390,6 +393,74 @@ ENJIN_TEST(Hierarchy, DestroyChildUpdatesParent) {
     ENJIN_ASSERT_NOT_NULL(cc);
     ENJIN_EXPECT_EQ(cc->children.size(), (size_t)1);
     ENJIN_EXPECT_EQ(cc->children[0], child2);
+}
+
+// ===========================================================================
+// Lock-free reads (adr-0004): fork-join concurrency
+// ===========================================================================
+
+ENJIN_TEST(ComponentThreadSafety, ConcurrentReadsAreConsistentAndRaceFree) {
+    // adr-0004: GetComponent/HasComponent are lock-free. This mirrors the engine's
+    // fork-join pattern — the owner (this) thread fully populates the world, then
+    // parks at the join while N worker threads ONLY read. No structural mutation
+    // happens during the parallel region, so every read must observe stable, correct
+    // data across multiple component storages with no crash and no torn value.
+    // Under a thread sanitizer this also proves the read path is race-free for the
+    // intended usage; if a lock were still required for correctness, the removed
+    // guard would surface here.
+
+    // Arrange: populate two storages so the concurrent map lookups traverse >1 entry.
+    World world;
+    constexpr int kEntities = 2000;
+    std::vector<Entity> entities;
+    entities.reserve(kEntities);
+    for (int i = 0; i < kEntities; ++i) {
+        Entity e = world.CreateEntity();
+        TransformComponent tc;
+        tc.position = Math::Vector3((f32)i, (f32)(i * 2), (f32)(i * 3));
+        world.AddComponent<TransformComponent>(e, tc);
+        if (i % 2 == 0) {
+            world.AddComponent<NameComponent>(e, NameComponent("even"));
+        }
+        entities.push_back(e);
+    }
+
+    // Act: fan lock-free reads across worker threads while the owner is parked here.
+    constexpr int kThreads = 8;
+    constexpr int kPasses = 50;
+    std::atomic<int> missing{0};
+    std::atomic<int> mismatches{0};
+    std::atomic<int> nameMismatch{0};
+    std::vector<std::thread> workers;
+    workers.reserve(kThreads);
+    for (int t = 0; t < kThreads; ++t) {
+        workers.emplace_back([&]() {
+            for (int pass = 0; pass < kPasses; ++pass) {
+                for (int i = 0; i < kEntities; ++i) {
+                    Entity e = entities[i];
+                    if (!world.HasComponent<TransformComponent>(e)) { missing++; continue; }
+                    const auto* tc = world.GetComponent<TransformComponent>(e);
+                    if (!tc) { missing++; continue; }
+                    if (tc->position.x != (f32)i) mismatches++;
+                    // Odd entities never got a NameComponent — the miss path (null
+                    // storage / sparse gap) must also be safe under concurrency.
+                    const bool hasName = world.HasComponent<NameComponent>(e);
+                    if (hasName != (i % 2 == 0)) nameMismatch++;
+                }
+            }
+        });
+    }
+    for (auto& w : workers) w.join();
+
+    // Assert: every read landed on correct, stable data.
+    ENJIN_EXPECT_EQ(missing.load(), 0);
+    ENJIN_EXPECT_EQ(mismatches.load(), 0);
+    ENJIN_EXPECT_EQ(nameMismatch.load(), 0);
+
+    // The owner thread resumes mutation after the join — the world is not wedged.
+    Entity extra = world.CreateEntity();
+    world.AddComponent<TransformComponent>(extra);
+    ENJIN_EXPECT_TRUE(world.HasComponent<TransformComponent>(extra));
 }
 
 // ===========================================================================
