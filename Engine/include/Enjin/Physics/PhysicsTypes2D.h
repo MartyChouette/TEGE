@@ -60,6 +60,8 @@ struct ENJIN_API Body2DComponent {
     bool isStatic = false;
     bool isKinematic = false;       // Kinematic: position driven by ECS, triggers sensor events as visitor
     bool isSensor = false;          // Overlap detector, no physical blocking
+    bool networkControlled = false; // Remote-owned networked body: kinematic + driven by the snapshot
+                                    // stream (see NetworkSystem); false by default so offline is unchanged
     bool fixedRotation = false;
     f32 gravityScale = 1.0f;
     f32 linearDamping = 0.1f;

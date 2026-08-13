@@ -1829,6 +1829,14 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         awRotM.m[4] = ac1.x; awRotM.m[5] = ac1.y; awRotM.m[6]  = ac1.z;
         awRotM.m[8] = ac2.x; awRotM.m[9] = ac2.y; awRotM.m[10] = ac2.z;
         Math::Quaternion awRot = Math::Quaternion::FromMatrix(awRotM);
+        // Axis-convert the armature transform to match the (already-converted) vertices and inverse
+        // bind matrices — the rigid path below does this, but the skinned path didn't, so skinned
+        // meshes imported with convertAxes came in tilted (the entity frame and the skinning frame
+        // disagreed). Mirrors the rigid-mesh conversion at the `else if` branch.
+        if (zToY || lToR || options.flipX || options.flipY || options.flipZ) {
+            awPos = ConvertPosition(awPos, zToY, lToR, options.flipX, options.flipY, options.flipZ);
+            awRot = ConvertRotation(awRot, zToY, lToR);
+        }
         const f32 extraScale = (pendingParent != ECS::INVALID_ENTITY) ? 1.0f : skelCtx.unitScale;
         transform.position = awPos * extraScale;
         transform.rotation = awRot;

@@ -5,6 +5,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/Physics/PhysicsTypes2D.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Debug/Profiler.h"
 #include <cmath>
@@ -208,6 +209,7 @@ NetworkId NetworkSystem::RegisterNetworkEntity(ECS::Entity entity, PlayerId owne
             netId->networkId = id;
             netId->ownerId = owner;
             netId->isLocallyOwned = (owner == m_LocalPlayerId);
+            ApplyPhysicsAuthority(entity, netId->isLocallyOwned);
         }
     }
 
@@ -1072,6 +1074,10 @@ void NetworkSystem::HandleEntitySnapshot(const u8* payload, u32 size) {
         if (netTrans) {
             netTrans->networkVelocity = snap.velocity;
         }
+
+        // Ensure this remote body is network-driven (kinematic). Done here, per snapshot, so it
+        // takes effect even if the Rigidbody was added after the entity spawned.
+        ApplyPhysicsAuthority(entity, /*isLocallyOwned=*/false);
     }
 }
 
@@ -1169,6 +1175,7 @@ void NetworkSystem::HandleOwnershipRequest(PlayerId senderId, const u8* payload,
     PlayerId oldOwner = netComp->ownerId;
     netComp->ownerId = senderId;
     netComp->isLocallyOwned = (senderId == m_LocalPlayerId);
+    ApplyPhysicsAuthority(entity, netComp->isLocallyOwned);
 
     // Notify requester
     {
@@ -1203,6 +1210,19 @@ void NetworkSystem::HandleOwnershipGrant(const u8* payload, u32 size) {
     if (netComp) {
         netComp->ownerId = newOwner;
         netComp->isLocallyOwned = (newOwner == m_LocalPlayerId);
+        ApplyPhysicsAuthority(it->second, netComp->isLocallyOwned);
+    }
+}
+
+void NetworkSystem::ApplyPhysicsAuthority(ECS::Entity entity, bool isLocallyOwned) {
+    if (!m_World) return;
+    const bool networkDriven = !isLocallyOwned;
+    // Remote-owned -> network-driven (kinematic); owned -> simulate + replicate locally.
+    if (auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity)) {
+        rb->networkControlled = networkDriven;        // 3D (Jolt)
+    }
+    if (auto* body2d = m_World->GetComponent<Physics::Body2DComponent>(entity)) {
+        body2d->networkControlled = networkDriven;    // 2D (Box2D)
     }
 }
 
@@ -1451,6 +1471,7 @@ void NetworkSystem::SendEntitySnapshots() {
         if (!transform) continue;
 
         auto* netTrans = m_World->GetComponent<ECS::NetworkTransformComponent>(entity);
+        auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
 
         // Determine which fields changed (M3 fix: delta compress rotation/scale too)
         u8 fieldMask = 0;
@@ -1471,6 +1492,11 @@ void NetworkSystem::SendEntitySnapshots() {
             std::abs(transform->scale.z - netTrans->lastSyncedScale.z) > 0.001f) {
             fieldMask |= SnapScale;
         }
+        // Physics bodies: replicate linear velocity so remotes can extrapolate between snapshots
+        // (and so a moving body doesn't stall on the receiver between position updates).
+        if (rb && rb->velocity.Length() > 0.001f) {
+            fieldMask |= SnapVelocity;
+        }
 
         if (fieldMask == 0) continue;
 
@@ -1481,7 +1507,7 @@ void NetworkSystem::SendEntitySnapshots() {
         if (fieldMask & SnapPosition) WriteVector3(payload, transform->position);
         if (fieldMask & SnapRotation) WriteQuaternion(payload, transform->rotation);
         if (fieldMask & SnapScale) WriteVector3(payload, transform->scale);
-        if (fieldMask & SnapVelocity) WriteVector3(payload, Math::Vector3(0, 0, 0));
+        if (fieldMask & SnapVelocity) WriteVector3(payload, rb ? rb->velocity : Math::Vector3(0, 0, 0));
 
         // Update last synced
         if (netTrans) {
@@ -1535,6 +1561,22 @@ void NetworkSystem::InterpolateRemoteEntities(f32 dt) {
 
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (!transform) continue;
+
+        // If renderTime has run past the newest snapshot (late/lost packets), DON'T freeze at the
+        // last position — dead-reckon forward using the last replicated velocity. Capped so a peer
+        // that vanished doesn't drift off forever; the next real snapshot snaps it back.
+        InterpolationState newest;
+        f32 aheadTime = 0.0f;
+        if (it->second.GetNewest(newest, renderTime, aheadTime) && aheadTime > 0.0f) {
+            constexpr f32 MAX_EXTRAP = 0.25f;   // 250 ms of dead reckoning before we hold position
+            f32 extra = std::min(aheadTime, MAX_EXTRAP);
+            auto* netTrans = m_World->GetComponent<ECS::NetworkTransformComponent>(entity);
+            Math::Vector3 vel = netTrans ? netTrans->networkVelocity : Math::Vector3(0, 0, 0);
+            transform->position = newest.position + vel * extra;
+            transform->rotation = newest.rotation;   // no angular velocity replicated yet
+            transform->scale = newest.scale;
+            continue;
+        }
 
         InterpolationState from, to;
         f32 t;

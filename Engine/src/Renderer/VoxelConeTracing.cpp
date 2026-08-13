@@ -74,8 +74,9 @@ void VoxelGrid::Voxelize(ECS::World* world)
         voxel = VoxelData{};
     }
 
-    // Get all entities with both mesh and transform
-    auto meshEntities = world->GetEntitiesWithComponents<ECS::MeshComponent, ECS::TransformComponent>();
+    // Get all entities with both mesh and transform (reuse a buffer — no per-frame heap alloc).
+    static std::vector<ECS::Entity> meshEntities;
+    world->GetEntitiesWithComponents<ECS::MeshComponent, ECS::TransformComponent>(meshEntities);
 
     for (ECS::Entity entity : meshEntities) {
         auto* mesh = world->GetComponent<ECS::MeshComponent>(entity);

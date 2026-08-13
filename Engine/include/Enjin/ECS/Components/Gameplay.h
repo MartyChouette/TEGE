@@ -119,6 +119,13 @@ struct RigidbodyComponent {
 
     bool isGrounded = false;
     bool isSleeping = false;
+
+    // Networking: when true, this body is driven by the network (a remote-owned entity). The
+    // physics backend treats it as KINEMATIC and moves it to the ECS transform the snapshot
+    // stream writes each step, and does NOT sim it back into the ECS — otherwise the local
+    // simulation and the network overwrite fight each other. Set by NetworkSystem on non-owned
+    // networked entities; false by default so single-player physics is completely unchanged.
+    bool networkControlled = false;
 };
 
 // Box Collider

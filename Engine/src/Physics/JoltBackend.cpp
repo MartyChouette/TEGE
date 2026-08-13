@@ -382,7 +382,9 @@ void JoltBackend::SyncECSToJolt() {
         JPH::EMotionType currentMotion = bodyInterface.GetMotionType(bodyID);
         JPH::EMotionType desiredMotion = JPH::EMotionType::Static;
         if (rb) {
-            if (rb->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic)
+            if (rb->networkControlled)
+                desiredMotion = JPH::EMotionType::Kinematic;   // network owns it — don't locally sim
+            else if (rb->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic)
                 desiredMotion = JPH::EMotionType::Dynamic;
             else if (rb->bodyType == ECS::RigidbodyComponent::BodyType::Kinematic)
                 desiredMotion = JPH::EMotionType::Kinematic;
@@ -402,8 +404,10 @@ void JoltBackend::SyncECSToJolt() {
         auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
         if (!transform) continue;
 
-        if (rb && rb->bodyType == ECS::RigidbodyComponent::BodyType::Kinematic) {
-            // Kinematic bodies: drive position from ECS
+        if (rb && (rb->networkControlled || rb->bodyType == ECS::RigidbodyComponent::BodyType::Kinematic)) {
+            // Kinematic (or network-driven) bodies: drive position from the ECS transform. For a
+            // network-controlled body the snapshot stream wrote that transform this frame, so
+            // MoveKinematic carries it to the sim (and generates contact velocities for collisions).
             bodyInterface.MoveKinematic(bodyID, ToJoltR(transform->position), ToJolt(transform->rotation), m_LastDeltaTime);
         } else if (rb && rb->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic) {
             // Dynamic bodies: sync gravity and velocity from ECS when externally modified
@@ -593,7 +597,12 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
     JPH::EMotionType motionType = JPH::EMotionType::Static;
     JPH::ObjectLayer objectLayer = 0;  // static layer
 
-    if (rb) {
+    if (rb && rb->networkControlled) {
+        // Network-driven remote body: kinematic regardless of the authored bodyType, so the
+        // local sim never fights the snapshot stream that owns its transform.
+        motionType = JPH::EMotionType::Kinematic;
+        objectLayer = 1;
+    } else if (rb) {
         switch (rb->bodyType) {
             case ECS::RigidbodyComponent::BodyType::Dynamic:
                 motionType = JPH::EMotionType::Dynamic;
@@ -741,8 +750,10 @@ void JoltBackend::SyncJoltToECS() {
         auto* rb = rbStorage ? rbStorage->Get(entity) : nullptr;
         if (!transform) continue;
 
-        // Only sync dynamic bodies back to ECS
-        if (rb && rb->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic) {
+        // Only sync dynamic bodies back to ECS — and NEVER a network-controlled body: the
+        // snapshot stream owns its transform, so writing the local (kinematic) sim result back
+        // would clobber the replicated position and desync it.
+        if (rb && rb->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic && !rb->networkControlled) {
             // Position and rotation
             transform->position = FromJoltR(bodyInterface.GetPosition(bodyID));
             transform->rotation = FromJolt(bodyInterface.GetRotation(bodyID));

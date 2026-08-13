@@ -584,6 +584,20 @@ bool NavmeshGenerator::Generate(const std::vector<Math::Vector3>& vertices,
             poly.walkable = (slope <= settings.agentMaxSlope);
         }
 
+        // Consume agentRadius: reject triangles the agent physically can't fit in. A triangle
+        // whose inscribed-circle radius is smaller than the agent radius is too tight to stand on.
+        // Coarse (proper nav would erode walkable edges Recast-style), but agentRadius now affects
+        // the mesh instead of being ignored.
+        if (poly.walkable && settings.agentRadius > 0.0f) {
+            f32 ea = (poly.vertices[1] - poly.vertices[0]).Length();
+            f32 eb = (poly.vertices[2] - poly.vertices[1]).Length();
+            f32 ec = (poly.vertices[0] - poly.vertices[2]).Length();
+            f32 sp = (ea + eb + ec) * 0.5f;
+            f32 area = Math::Sqrt(std::max(0.0f, sp * (sp - ea) * (sp - eb) * (sp - ec)));
+            f32 inradius = (sp > 0.0001f) ? area / sp : 0.0f;
+            if (inradius < settings.agentRadius) poly.walkable = false;
+        }
+
         m_Navmesh.AddPolygon(poly);
     }
 

@@ -629,17 +629,14 @@ void CollaborativeEditingUI::ApplyRemoveComponent(const EditOperation& op) {
     } else if (op.componentKey == "parent") {
         ECS::RemoveParent(m_World, entity);
     } else {
-        // For all other component types, the best we can do without a
-        // type-erased remove-by-key is to log a warning. The remote peer
-        // is removing a component we may not have code paths to handle
-        // generically.
-        ENJIN_LOG_WARN(Editor,
-            "CollabUI: RemoveComponent '%s' on entity %llu - "
-            "generic removal not implemented, applying full entity re-sync may be needed",
-            op.componentKey.c_str(), (unsigned long long)op.entityId);
-
-        // Attempt to deserialize an empty component which might effectively
-        // reset it. This is a best-effort approach.
+        // Generic type-erased removal by scene-JSON key — handles all ~140 component types the
+        // serializer knows (not just transform/name/parent). Previously this only warned, so a
+        // peer removing any other component silently desynced.
+        if (!Scene::SceneSerializer::RemoveOneComponent(m_World, entity, op.componentKey)) {
+            ENJIN_LOG_WARN(Editor,
+                "CollabUI: RemoveComponent '%s' on entity %llu - unknown key, ignored",
+                op.componentKey.c_str(), (unsigned long long)op.entityId);
+        }
     }
 
     ENJIN_LOG_INFO(Editor, "CollabUI: Removed component '%s' from entity %llu by peer '%s'",

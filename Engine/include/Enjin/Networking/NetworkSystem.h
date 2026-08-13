@@ -131,6 +131,11 @@ private:
     void HandleOwnershipGrant(const u8* payload, u32 size);
     void HandleRPCCall(PlayerId senderId, const u8* payload, u32 size);
 
+    // Physics authority: a networked Rigidbody we do NOT own is switched to network-driven
+    // (kinematic) so the local sim doesn't fight the snapshot stream; owned bodies simulate
+    // normally. No-op on entities without a Rigidbody (so single-player is untouched).
+    void ApplyPhysicsAuthority(ECS::Entity entity, bool isLocallyOwned);
+
     // Sending
     void SendPacket(const NetworkAddress& addr, MessageType type, const std::vector<u8>& payload);
     void SendToAll(MessageType type, const std::vector<u8>& payload, PlayerId exclude = INVALID_PLAYER);

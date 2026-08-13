@@ -360,6 +360,17 @@ struct InterpolationBuffer {
         t = 1.0f;
         return true;
     }
+
+    // Newest buffered state + how far renderTime is PAST it. aheadTime > 0 means the buffer ran
+    // out (late/lost packets) and the caller should extrapolate (dead-reckon with the last
+    // replicated velocity) instead of freezing at the newest position.
+    bool GetNewest(InterpolationState& out, f32 renderTime, f32& aheadTime) const {
+        if (count == 0) return false;
+        u32 latestIdx = (writeIndex - 1 + INTERP_BUFFER_SIZE) % INTERP_BUFFER_SIZE;
+        out = states[latestIdx];
+        aheadTime = renderTime - out.timestamp;
+        return true;
+    }
 };
 
 // ============================================================================

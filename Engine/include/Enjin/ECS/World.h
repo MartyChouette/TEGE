@@ -192,6 +192,25 @@ public:
      * @tparam T2 Second component type
      * @return Vector of entities with both components
      */
+    /**
+     * @brief Fill a caller-provided vector with entities that have both component types.
+     *
+     * Same intersection as the returning overload, but writes into @p out (cleared first) so a
+     * per-frame caller can reuse one buffer instead of heap-allocating a fresh vector each call.
+     */
+    template<typename T1, typename T2>
+    void GetEntitiesWithComponents(std::vector<Entity>& out) const {
+        out.clear();
+        auto* s1 = GetStorage<T1>();
+        auto* s2 = GetStorage<T2>();
+        if (!s1 || !s2) return;
+        if (s1->Size() <= s2->Size()) {
+            for (Entity e : s1->GetEntities()) { if (s2->Has(e)) out.push_back(e); }
+        } else {
+            for (Entity e : s2->GetEntities()) { if (s1->Has(e)) out.push_back(e); }
+        }
+    }
+
     template<typename T1, typename T2>
     std::vector<Entity> GetEntitiesWithComponents() const {
         auto* s1 = GetStorage<T1>();

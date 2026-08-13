@@ -195,7 +195,19 @@ void Box2DBackend::SyncECSToBox2D() {
         auto* body2d = m_World->GetComponent<Body2DComponent>(entity);
         if (!transform || !body2d) continue;
 
-        if (body2d->isKinematic) {
+        // Reconcile body type in place — a networkControlled flip (ownership change, or the
+        // Body2DComponent added after the entity spawned) must switch a dynamic body to kinematic
+        // (and back when ownership is regained) so the local sim never fights the snapshot stream.
+        {
+            b2BodyType desiredType = body2d->isStatic ? b2_staticBody
+                : (body2d->isKinematic || body2d->networkControlled) ? b2_kinematicBody
+                : b2_dynamicBody;
+            if (b2Body_GetType(bodyId) != desiredType) {
+                b2Body_SetType(bodyId, desiredType);
+            }
+        }
+
+        if (body2d->isKinematic || body2d->networkControlled) {
             // Kinematic bodies: compute velocity to reach ECS position.
             // Using SetLinearVelocity instead of SetTransform ensures Box2D
             // properly detects sensor overlaps during the step.
@@ -254,7 +266,9 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
 
     if (body2d->isStatic) {
         bodyDef.type = b2_staticBody;
-    } else if (body2d->isKinematic) {
+    } else if (body2d->isKinematic || body2d->networkControlled) {
+        // networkControlled: remote body driven by the snapshot stream, kinematic so the local
+        // sim doesn't fight it (same treatment as an authored kinematic body).
         bodyDef.type = b2_kinematicBody;
     } else {
         bodyDef.type = b2_dynamicBody;
@@ -442,7 +456,9 @@ void Box2DBackend::SyncBox2DToECS() {
 
         // Only sync dynamic non-sensor non-kinematic bodies back to ECS.
         // Sensor/kinematic bodies are driven by ECS (controllers, AI, tweens) — don't overwrite.
-        if (body2d->isStatic || body2d->isSensor || body2d->isKinematic) continue;
+        // networkControlled bodies are driven by the snapshot stream — never write the local sim
+        // back over the replicated transform.
+        if (body2d->isStatic || body2d->isSensor || body2d->isKinematic || body2d->networkControlled) continue;
 
         // Position
         b2Vec2 pos = b2Body_GetPosition(bodyId);
