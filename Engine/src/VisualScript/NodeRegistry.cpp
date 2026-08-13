@@ -3727,7 +3727,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Gameplay::QuestSystem* s_VisualScriptQuestSystem;
             std::string questId = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
                 ? std::get<std::string>(inputs[1]) : std::string();
             if (s_VisualScriptQuestSystem && ctx.world && !questId.empty()) {
@@ -3755,7 +3754,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Gameplay::QuestSystem* s_VisualScriptQuestSystem;
             std::string questId = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
                 ? std::get<std::string>(inputs[1]) : std::string();
             i32 objective = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2]))
@@ -3785,7 +3783,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.keywords = {"quest", "active", "check"};
         def.evaluate = [](const ExecutionContext& ctx,
                           const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
-            extern Gameplay::QuestSystem* s_VisualScriptQuestSystem;
             std::string questId = (!inputs.empty() && std::holds_alternative<std::string>(inputs[0]))
                 ? std::get<std::string>(inputs[0]) : std::string();
             if (s_VisualScriptQuestSystem && ctx.world && !questId.empty()) {
@@ -3816,7 +3813,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Gameplay::CinematicSystem* s_VisualScriptCinematic;
             ECS::Entity target = (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1]))
                 ? std::get<ECS::Entity>(inputs[1]) : ctx.entity;
             if (s_VisualScriptCinematic && ctx.world) {
@@ -3843,7 +3839,6 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            extern Gameplay::CinematicSystem* s_VisualScriptCinematic;
             ECS::Entity target = (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1]))
                 ? std::get<ECS::Entity>(inputs[1]) : ctx.entity;
             if (s_VisualScriptCinematic && ctx.world) {
