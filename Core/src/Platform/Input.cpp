@@ -143,13 +143,27 @@ namespace {
 
     EM_BOOL WebMouseMoveCallback(int eventType, const EmscriptenMouseEvent* e, void* userData) {
         (void)eventType; (void)userData;
-        // targetX/Y are CSS pixels but the canvas backing store (and every UI
-        // rect the engine tests against) is devicePixelRatio-scaled — without
-        // this, clicks land short of the real UI at any display scale != 100%
-        f32 dpr = static_cast<f32>(emscripten_get_device_pixel_ratio());
-        if (dpr <= 0.0f) dpr = 1.0f;
-        s_MousePosition = Math::Vector2(static_cast<f32>(e->targetX) * dpr,
-                                        static_cast<f32>(e->targetY) * dpr);
+        // targetX/Y are CSS pixels relative to the canvas; the UI hit-tests in canvas
+        // BACKING-STORE pixels. Scale by backingSize/cssSize — the actual CSS->backing
+        // mapping — which is correct windowed AND fullscreen. Fullscreen CSS-stretches the
+        // canvas to the screen while the backing store keeps its render resolution, so the
+        // old devicePixelRatio scale sent every click to the wrong place and nothing was
+        // clickable. Falls back to DPR if the element size can't be read.
+        double cssW = 0.0, cssH = 0.0;
+        int bw = 0, bh = 0;
+        f32 sx, sy;
+        if (emscripten_get_element_css_size("#game-canvas", &cssW, &cssH) == EMSCRIPTEN_RESULT_SUCCESS &&
+            emscripten_get_canvas_element_size("#game-canvas", &bw, &bh) == EMSCRIPTEN_RESULT_SUCCESS &&
+            cssW > 0.0 && cssH > 0.0) {
+            sx = static_cast<f32>(bw) / static_cast<f32>(cssW);
+            sy = static_cast<f32>(bh) / static_cast<f32>(cssH);
+        } else {
+            f32 dpr = static_cast<f32>(emscripten_get_device_pixel_ratio());
+            if (dpr <= 0.0f) dpr = 1.0f;
+            sx = sy = dpr;
+        }
+        s_MousePosition = Math::Vector2(static_cast<f32>(e->targetX) * sx,
+                                        static_cast<f32>(e->targetY) * sy);
         // Accumulate relative movement for pointer-locked look (clamp to prevent spikes)
         f32 dx = static_cast<f32>(e->movementX);
         f32 dy = static_cast<f32>(e->movementY);
