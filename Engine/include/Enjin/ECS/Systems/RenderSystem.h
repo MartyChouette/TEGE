@@ -1245,11 +1245,88 @@ private:
     bool m_UseBoneArena = false;
     void UpdateBoneArena();                             // pack all skinned bones into m_BoneArena
     u32  GetBoneArenaSlot(Entity e) const;             // slot for an entity (0 if none)
+    bool HasBoneArenaSlot(Entity e) const { return m_BoneArenaSlot.find(e) != m_BoneArenaSlot.end(); }
+
+    // --- #1 Shared skinning arena (step 2: the instanced draw path) ------------------
+    // All identical skinned meshes (e.g. a grid of the same imported FBX) share ONE
+    // bind-pose VB/IB keyed by mesh content hash, and are drawn with a single instanced
+    // vkCmdDrawIndexed: per-instance bone offset comes from the bone arena (binding 7),
+    // and per-instance model/material from an ObjectData SSBO (binding 13) exactly like
+    // the static textured-indirect path. Collapses N per-entity skinned draws into 1.
+    // Gated by m_UseBoneArena (default OFF); shadows stay on the per-entity path (they
+    // upload their own bone matrices), so this only replaces the main color draw.
+    struct ArenaSharedMesh {
+        std::unique_ptr<Renderer::VulkanBuffer> vertexBuffer;   // shared bind-pose (bone-local) verts
+        std::unique_ptr<Renderer::VulkanBuffer> indexBuffer;
+        u32 indexCount = 0;
+        u32 vertexCount = 0;   // for pose-dedup compute skinning (input vertex count)
+    };
+    std::unordered_map<u64, ArenaSharedMesh> m_ArenaSharedMeshes;   // contentHash -> shared buffers
+    std::unique_ptr<Renderer::VulkanBuffer> m_ArenaObjectData;      // per-frame ObjectData SSBO
+    u32 m_ArenaObjectDataCapacity = 0;                             // element capacity of m_ArenaObjectData
+    // Per-frame batch accumulation, grouped by (meshHash, material signature). Instances
+    // sharing a mesh + materials collapse together; each instance stores only its transform +
+    // bone offset (material comes from the representative's sub-meshes at flush time, so
+    // multi-material skinned characters are supported — one instanced draw per sub-mesh range).
+    struct ArenaInstance {
+        Math::Matrix4 model;
+        Math::Matrix4 prevModel;
+        u32 boneBase = 0;
+        u32 teleported = 0;
+        u64 poseKey = 0;   // pose-dedup: instances sharing (meshHash,clip,quantized phase) skin once
+    };
+    struct ArenaBatch {
+        u64 meshHash = 0;
+        u64 poseKey = 0;   // pose-dedup: this batch's shared deformed buffer (0 = VS-skinned path)
+        Entity representative = INVALID_ENTITY;   // supplies mesh sub-mesh ranges + materials
+        std::vector<ArenaInstance> instances;
+    };
+    std::vector<ArenaBatch> m_ArenaBatches;
+    std::unordered_map<u64, u32> m_ArenaBatchKeyToIndex;   // (meshHash ^ materialSig) -> batch index
+    bool m_ArenaEngageLogged = false;                     // one-shot per toggle-on engagement report
+    void EnsureArenaSharedMeshes();                        // build shared VB/IB (FlushPendingChanges only)
+    bool ArenaEligible(Entity e, MeshComponent* mesh, u64& outHash) const;
+    void FlushArenaBatches(VkCommandBuffer cmd, VkPipelineLayout layout);
+    void UpdateArenaObjectDataDescriptor(Renderer::VulkanBuffer* buf);   // rebind binding 13
+
+    // --- #1 step 3: pose-dedup (skin each unique pose ONCE, reuse across instances+passes) ----
+    // A pose = (meshHash, clip, quantized normalized time). All instances with the same pose key
+    // share ONE compute-skinned deformed buffer, computed once per frame in the pre-pass, then
+    // drawn instanced with FLAG_SKINNED cleared. Gated by m_UsePoseDedup (needs m_UseBoneArena).
+    struct PoseDeformed {
+        std::unique_ptr<Renderer::VulkanBuffer> buffer;   // deformed verts (VERTEX|STORAGE), one mesh's worth
+        u32 vertexCount = 0;
+        u64 lastFrameSkinned = 0;   // dedup within a frame: skin a given pose key only once
+    };
+    bool m_UsePoseDedup = false;
+    std::unordered_map<u64, PoseDeformed> m_PoseDeformed;      // (meshHash ^ poseKey) -> deformed buffer
+    std::unordered_map<Entity, u64> m_EntityPoseKey;          // entity -> pose key this frame
+    u32 m_PoseUniqueCount = 0;                                // unique poses skinned this frame (stat)
+    u64 m_PoseFrameCounter = 0;                               // increments per SkinUniquePoses call
+    u64 ComputePoseKey(Entity e, u64 meshHash);              // (clip, quantized phase) hash
+    void SkinUniquePoses(VkCommandBuffer cmd);               // pre-pass: compute-skin each unique pose once
+    // Compute-skin an explicit (in, bones@offset, out) triple. Returns true if a dispatch recorded.
+    bool DispatchComputeSkinningExplicit(VkCommandBuffer cmd, Renderer::VulkanBuffer* inVerts,
+                                         Renderer::VulkanBuffer* boneBuf, VkDeviceSize boneOffset,
+                                         Renderer::VulkanBuffer* outVerts, u32 vertexCount);
 public:
-    void SetUseBoneArena(bool b) { m_UseBoneArena = b; }
+    void SetUsePoseDedup(bool b) { m_UsePoseDedup = b; }
+    bool IsUsePoseDedup() const { return m_UsePoseDedup; }
+    u32  GetPoseUniqueCount() const { return m_PoseUniqueCount; }
+private:
+public:
+    void SetUseBoneArena(bool b) { m_UseBoneArena = b; m_ArenaEngageLogged = false; }
     bool IsUseBoneArena() const { return m_UseBoneArena; }
     u32  GetBoneArenaSlotCount() const { return m_BoneArenaSlotCount; }
+    // Live arena draw stats (populated each frame by FlushArenaBatches) for the Debug Workstation.
+    struct ArenaDebugStats {
+        u32 batches = 0;
+        u32 draws = 0;
+        u32 instanceSubmeshes = 0;
+    };
+    const ArenaDebugStats& GetArenaDebugStats() const { return m_ArenaDebugStats; }
 private:
+    ArenaDebugStats m_ArenaDebugStats;                    // live stats for the Debug Workstation
 public:
     // Run the once-per-frame compute skinning pass. MUST be called OUTSIDE any render pass
     // (compute cannot run inside one), before the passes that draw skinned meshes. No-op unless

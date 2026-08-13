@@ -2155,8 +2155,13 @@ void RenderSystem::Update(f32 deltaTime) {
         // Phase 1: Collect visible entities, ensure GPU buffers, build ObjectData array
         constexpr u32 OBJ_ALIGN = 256;  // WebGPU minUniformBufferOffsetAlignment
         struct DrawCmd { Entity entity; u32 offset; };
-        std::vector<DrawCmd> drawCmds;
-        std::vector<u8> objDataBuf;
+        // Reused across frames (render = single thread) — avoids re-allocating these two vectors
+        // every frame. (#4: the per-frame heap alloc is gone; the sort below still runs each frame
+        // because it depends on camera position — skipping it would need movement dirty-tracking.)
+        static std::vector<DrawCmd> drawCmds;
+        static std::vector<u8> objDataBuf;
+        drawCmds.clear();
+        objDataBuf.clear();
 
         for (Entity entity : meshEntities) {
             auto* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity) : nullptr;
@@ -3520,6 +3525,18 @@ void RenderSystem::FlushSceneClear() {
     // GPU is idle — retired buffers from deleted entities can go now too
     m_BufferGraveyard.clear();
     m_EntityRenderData.clear();
+    // Arena (step 2): shared bind-pose buffers key off the old scene's mesh hashes and the
+    // arena bone slots are stale — drop them so the next frame rebuilds against the new scene.
+    m_ArenaSharedMeshes.clear();
+    m_ArenaBatches.clear();
+    m_ArenaBatchKeyToIndex.clear();
+    m_ArenaObjectData.reset();
+    m_ArenaObjectDataCapacity = 0;
+    m_BoneArenaSlot.clear();
+    m_BoneArenaSlotCount = 0;
+    m_PoseDeformed.clear();
+    m_EntityPoseKey.clear();
+    m_PoseUniqueCount = 0;
     m_SortedRenderList.clear();
     m_EntityMaterialIndex.clear();
     m_EntityToCullIndex.clear();
@@ -3710,6 +3727,14 @@ void RenderSystem::Shutdown() {
     m_GhostBoneBuffer.reset();
     m_GhostBoneBufferCapacity = 0;
 
+    // Skinning arena buffers
+    m_BoneArena.reset();
+    m_ArenaSharedMeshes.clear();
+    m_ArenaObjectData.reset();
+    m_ArenaObjectDataCapacity = 0;
+    m_PoseDeformed.clear();
+    m_EntityPoseKey.clear();
+
     // Clean up pipeline
     m_OffscreenPipeline.reset();
     m_Pipeline.reset();
@@ -3857,6 +3882,10 @@ void RenderSystem::FlushPendingChanges() {
         }
         m_PendingBufferSetups.clear();
     }
+
+    // #1 arena (step 2): build shared bind-pose VB/IB for skinned meshes present this frame.
+    // GPU buffer creation is only safe here (pre-recording). No-op unless m_UseBoneArena is set.
+    if (m_UseBoneArena) EnsureArenaSharedMeshes();
 
     // Per-frame material SSBO reset. Each frame-in-flight has its OWN material
     // buffer, so the SSBO must be (re)built once per frame for the current
@@ -5295,6 +5324,13 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     // Cache storage pointers for the RenderToTarget entity loop
     auto* spriteStorageRT = m_World->GetComponentStorage<Sprite2DComponent>();
 
+    // #1 arena (step 2): reset per-frame batch accumulation (keep capacity for reuse).
+    if (m_UseBoneArena) {
+        for (auto& b : m_ArenaBatches) b.instances.clear();
+        m_ArenaBatches.clear();
+        m_ArenaBatchKeyToIndex.clear();
+    }
+
     for (Entity entity : renderList) {
         {
             // Skip invisible entities or entities without transform (cached storage)
@@ -5591,6 +5627,83 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 if (water3d) {
                     pushConstants.baseColor = water3d->settings.shallowColor;
                     pushConstants.opacity = water3d->settings.opacity;
+                }
+            }
+
+            // #1 arena (step 2): if this is an instanceable skinned mesh, accumulate it into a
+            // per-(mesh, texture-set) batch and skip the per-entity draw. FlushArenaBatches issues
+            // one instanced draw per group after the loop. pushConstants is fully built here
+            // (model/material/flags), so it feeds the per-instance ObjectData directly.
+            {
+                u64 arenaHash = 0;
+                MeshComponent* arenaMesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity)
+                                                               : m_World->GetComponent<MeshComponent>(entity);
+                if (ArenaEligible(entity, arenaMesh, arenaHash)) {
+                    // Group key: same mesh + same MATERIAL SET (content-hashed via each slot's
+                    // base texture pointer + baseColor). Only visually-identical instances batch,
+                    // so the representative's materials correctly describe every instance.
+                    u64 matSig = 1469598103934665603ULL;
+                    auto mixBits = [&matSig](u64 v) {
+                        for (int i = 0; i < 8; ++i) { matSig ^= (v & 0xFF); matSig *= 1099511628211ULL; v >>= 8; }
+                    };
+                    auto mixMat = [&](const MaterialComponent* m) {
+                        if (!m) { mixBits(0); return; }
+                        mixBits(reinterpret_cast<u64>(m->cachedBaseColorTexture));
+                        u32 c = (static_cast<u32>(m->baseColor.x * 255.0f) & 0xFF)
+                              | ((static_cast<u32>(m->baseColor.y * 255.0f) & 0xFF) << 8)
+                              | ((static_cast<u32>(m->baseColor.z * 255.0f) & 0xFF) << 16);
+                        mixBits(c);
+                    };
+                    MaterialSlotsComponent* arenaSlots = m_CachedMaterialSlotsStorage ? m_CachedMaterialSlotsStorage->Get(entity) : nullptr;
+                    if (arenaMesh->HasSubMeshes() && arenaSlots && !arenaSlots->slots.empty()) {
+                        for (const auto& sm : arenaMesh->subMeshes) mixMat(arenaSlots->GetSlot(sm.materialSlot));
+                    } else {
+                        mixMat(material);
+                    }
+                    // Pose-dedup: instances also group by pose key so a batch shares ONE deformed
+                    // buffer (skinned once in the pre-pass). 0 when dedup is off (VS-skinned path).
+                    u64 poseKey = 0;
+                    if (m_UsePoseDedup) {
+                        auto pit = m_EntityPoseKey.find(entity);
+                        poseKey = (pit != m_EntityPoseKey.end()) ? pit->second : 0;
+                    }
+                    const u64 batchKey = arenaHash ^ (matSig * 1099511628211ULL) ^ (poseKey * 0x9E3779B97F4A7C15ULL);
+
+                    auto bit = m_ArenaBatchKeyToIndex.find(batchKey);
+                    u32 bIdx;
+                    if (bit == m_ArenaBatchKeyToIndex.end()) {
+                        bIdx = static_cast<u32>(m_ArenaBatches.size());
+                        m_ArenaBatches.push_back(ArenaBatch{});
+                        m_ArenaBatches[bIdx].meshHash = arenaHash;
+                        m_ArenaBatches[bIdx].poseKey = poseKey;
+                        m_ArenaBatches[bIdx].representative = entity;
+                        m_ArenaBatchKeyToIndex.emplace(batchKey, bIdx);
+                    } else {
+                        bIdx = bit->second;
+                    }
+
+                    ArenaInstance inst{};
+                    inst.poseKey = poseKey;
+                    // Skinning matrices are MODEL-LOCAL (bone0 maxScale ~1, not the entity's 100x
+                    // world scale) — the world transform lives in the model matrix. So the arena
+                    // must use the full world matrix, exactly like the per-entity + compute paths.
+                    inst.model = pushConstants.model;   // = ComputeWorldMatrix(entity)
+                    inst.boneBase = GetBoneArenaSlot(entity) * kBonesPerSlot;
+
+                    // Previous-frame model matrix for motion vectors (mirrors UploadObjectData).
+                    u64 entityId = static_cast<u64>(entity);
+                    auto prevIt = m_PrevModelMatrices.find(entityId);
+                    if (prevIt != m_PrevModelMatrices.end()) {
+                        inst.prevModel = prevIt->second;
+                        inst.teleported = 0;
+                    } else {
+                        inst.prevModel = inst.model;
+                        inst.teleported = 1;
+                    }
+                    m_PrevModelMatrices[entityId] = inst.model;
+
+                    m_ArenaBatches[bIdx].instances.push_back(inst);
+                    continue;   // handled by FlushArenaBatches — skip the per-entity draw
                 }
             }
 
@@ -5918,6 +6031,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             }
         }
     }
+
+    // #1 arena (step 2): one instanced draw per accumulated (mesh, texture-set) group.
+    if (m_UseBoneArena) FlushArenaBatches(commandBuffer, targetPipeline->GetLayout());
 
     // Restore the full depth range if the last entity was a viewmodel
     SetViewmodelDepth(commandBuffer, false);
@@ -11233,6 +11349,129 @@ bool RenderSystem::DispatchComputeSkinning(VkCommandBuffer cmd, EntityRenderData
     return true;
 }
 
+// Compute-skin an explicit (in, bones@offset, out) triple — the pose-dedup variant of
+// DispatchComputeSkinning. Skins ONE mesh's bind pose with one pose's bone matrices (read from
+// m_BoneArena at boneOffset) into a shared deformed buffer. Records a dispatch on cmd.
+bool RenderSystem::DispatchComputeSkinningExplicit(VkCommandBuffer cmd, Renderer::VulkanBuffer* inVerts,
+                                                   Renderer::VulkanBuffer* boneBuf, VkDeviceSize boneOffset,
+                                                   Renderer::VulkanBuffer* outVerts, u32 vertexCount) {
+    if (!InitComputeSkinning()) return false;
+    if (!cmd || !inVerts || !boneBuf || !outVerts || vertexCount == 0) return false;
+    VkDevice device = m_VulkanRenderer->GetContext()->GetDevice();
+
+    u32 frame = m_VulkanRenderer->GetCurrentFrameIndex() % static_cast<u32>(m_SkinningDescPools.size());
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_SkinningDescPools[frame];
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &m_SkinningDescSetLayout;
+    VkDescriptorSet set = VK_NULL_HANDLE;
+    if (vkAllocateDescriptorSets(device, &allocInfo, &set) != VK_SUCCESS) {
+        static u32 s_warned = 0;
+        if ((s_warned++ % 240) == 0) ENJIN_LOG_WARN(Renderer, "Pose-dedup skinning: descriptor pool exhausted this frame");
+        return false;
+    }
+
+    // Bones bound with an offset into the arena so boneMatrices[0..] is this pose's slot.
+    VkDescriptorBufferInfo inInfo{ inVerts->GetBuffer(), 0, VK_WHOLE_SIZE };
+    VkDescriptorBufferInfo boneInfo{ boneBuf->GetBuffer(), boneOffset,
+        static_cast<VkDeviceSize>(kBonesPerSlot) * sizeof(Math::Matrix4) };
+    VkDescriptorBufferInfo outInfo{ outVerts->GetBuffer(), 0, VK_WHOLE_SIZE };
+    VkWriteDescriptorSet writes[3]{};
+    const VkDescriptorBufferInfo* infos[3] = { &inInfo, &boneInfo, &outInfo };
+    for (u32 i = 0; i < 3; ++i) {
+        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[i].dstSet = set;
+        writes[i].dstBinding = i;
+        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[i].descriptorCount = 1;
+        writes[i].pBufferInfo = infos[i];
+    }
+    vkUpdateDescriptorSets(device, 3, writes, 0, nullptr);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_SkinningPipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_SkinningPipelineLayout, 0, 1, &set, 0, nullptr);
+    vkCmdPushConstants(cmd, m_SkinningPipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(u32), &vertexCount);
+    const u32 groups = (vertexCount + 63u) / 64u;
+    vkCmdDispatch(cmd, groups, 1, 1);
+    return true;
+}
+
+// Pose key = hash(meshHash, current clip name, quantized normalized time). Instances that share
+// it produce identical skinned geometry, so they share one deformed buffer (skin once, draw many).
+u64 RenderSystem::ComputePoseKey(Entity e, u64 meshHash) {
+    u64 h = 1469598103934665603ULL;
+    auto mixU64 = [&h](u64 v) { for (int i = 0; i < 8; ++i) { h ^= (v & 0xFF); h *= 1099511628211ULL; v >>= 8; } };
+    mixU64(meshHash);
+    AnimatorComponent* anim = ResolveAnimator(e);
+    if (anim) {
+        const std::string& clip = anim->animator.GetCurrentAnimationName();
+        for (unsigned char c : clip) { h ^= c; h *= 1099511628211ULL; }
+        // 64 phase buckets: balances dedup rate against visible pose stepping.
+        constexpr u32 kPhaseBuckets = 64;
+        f32 nt = anim->animator.GetNormalizedTime();
+        if (nt < 0.0f) nt = 0.0f; if (nt > 1.0f) nt = 1.0f;
+        mixU64(static_cast<u32>(nt * static_cast<f32>(kPhaseBuckets)) % kPhaseBuckets);
+    }
+    return h;
+}
+
+// Pre-pass (called from RunComputeSkinningPass, OUTSIDE any render pass): find every unique pose
+// present this frame and compute-skin its bind pose ONCE into a pooled deformed buffer. The main
+// entity loop then draws all instances of a pose from that one buffer (no per-instance VS skin).
+void RenderSystem::SkinUniquePoses(VkCommandBuffer cmd) {
+    if (!m_UsePoseDedup || !m_UseBoneArena || !m_BoneArena || !m_World) return;
+    ++m_PoseFrameCounter;
+    m_EntityPoseKey.clear();
+    m_PoseUniqueCount = 0;
+
+    // Collect unique (meshHash ^ poseKey) -> a representative entity to skin from.
+    static std::unordered_map<u64, Entity> uniquePose;   // reused across frames
+    uniquePose.clear();
+    for (Entity e : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+        if (!m_World->IsValid(e)) continue;
+        MeshComponent* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(e)
+                                                  : m_World->GetComponent<MeshComponent>(e);
+        u64 meshHash = 0;
+        if (!ArenaEligible(e, mesh, meshHash)) continue;
+        const u64 poseKey = ComputePoseKey(e, meshHash);
+        m_EntityPoseKey[e] = poseKey;
+        const u64 cacheKey = meshHash ^ (poseKey * 1099511628211ULL);
+        uniquePose.emplace(cacheKey, e);   // first entity wins as representative
+    }
+    if (uniquePose.empty()) return;
+
+    for (auto& [cacheKey, rep] : uniquePose) {
+        MeshComponent* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(rep)
+                                                  : m_World->GetComponent<MeshComponent>(rep);
+        if (!mesh) continue;
+        auto sharedIt = m_ArenaSharedMeshes.find(mesh->source.contentHash);
+        if (sharedIt == m_ArenaSharedMeshes.end() || !sharedIt->second.vertexBuffer) continue;
+        ArenaSharedMesh& shared = sharedIt->second;
+
+        PoseDeformed& pd = m_PoseDeformed[cacheKey];
+        const VkDeviceSize outSize = static_cast<VkDeviceSize>(shared.vertexCount) * sizeof(MeshComponent::Vertex);
+        if (!pd.buffer || pd.vertexCount < shared.vertexCount) {
+            pd.buffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
+            if (!pd.buffer->Create(outSize,
+                    static_cast<VkBufferUsageFlags>(VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT),
+                    false)) {
+                pd.buffer.reset();
+                continue;
+            }
+            pd.vertexCount = shared.vertexCount;
+        }
+
+        const u32 slot = GetBoneArenaSlot(rep);
+        const VkDeviceSize boneOffset = static_cast<VkDeviceSize>(slot) * kBonesPerSlot * sizeof(Math::Matrix4);
+        if (DispatchComputeSkinningExplicit(cmd, shared.vertexBuffer.get(), m_BoneArena.get(),
+                                            boneOffset, pd.buffer.get(), shared.vertexCount)) {
+            pd.lastFrameSkinned = m_PoseFrameCounter;
+            ++m_PoseUniqueCount;
+        }
+    }
+}
+
 // #1 arena (step 1): pack every skinned entity's bone matrices into one SSBO, slot i at
 // matrix offset i*kBonesPerSlot (padded to kBonesPerSlot with identity). Nothing consumes
 // this yet — it's the shared-bone foundation the instanced draw path (steps 2-3) will read
@@ -11287,6 +11526,281 @@ u32 RenderSystem::GetBoneArenaSlot(Entity e) const {
     return it != m_BoneArenaSlot.end() ? it->second : 0u;
 }
 
+// Build the shared bind-pose VB/IB for every distinct skinned mesh content hash present
+// this frame. Called ONLY from FlushPendingChanges (pre-recording, the one safe home for
+// GPU buffer creation). Buffers persist across frames keyed by content hash — identical
+// meshes reuse one entry, which is the whole point (200 dogs -> 1 shared VB/IB).
+void RenderSystem::EnsureArenaSharedMeshes() {
+    if (!m_World || !m_VulkanRenderer || !m_UseBoneArena) return;
+
+    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+        if (!m_World->IsValid(entity)) continue;
+        MeshComponent* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity)
+                                                   : m_World->GetComponent<MeshComponent>(entity);
+        if (!mesh) continue;
+        const u64 hash = mesh->source.contentHash;
+        if (hash == 0) continue;                       // authored/procedural meshes: not shareable
+        if (!HasBoneArenaSlot(entity)) continue;       // only meshes actually skinned this frame
+        if (m_ArenaSharedMeshes.find(hash) != m_ArenaSharedMeshes.end()) continue;  // already built
+
+        // Restore CPU geometry if it was freed (free-CPU toggle); cheap no-op when resident.
+        Assets::MeshAssetCache::Get().EnsureCpuData(*mesh);
+        if (mesh->vertices.empty() || mesh->indices.empty()) continue;
+
+        ArenaSharedMesh shared;
+        const usize vbSize = mesh->vertices.size() * sizeof(MeshComponent::Vertex);
+        const usize ibSize = mesh->indices.size() * sizeof(u32);
+        shared.vertexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
+        // STORAGE too: pose-dedup compute skinning reads the shared bind pose through a storage
+        // descriptor (skinning.comp binding 0), same as the per-entity compute path.
+        if (!shared.vertexBuffer->Create(vbSize,
+                VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, true) ||
+            !shared.vertexBuffer->UploadData(mesh->vertices.data(), vbSize)) {
+            continue;
+        }
+        shared.indexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
+        if (!shared.indexBuffer->Create(ibSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, true) ||
+            !shared.indexBuffer->UploadData(mesh->indices.data(), ibSize)) {
+            continue;
+        }
+        shared.indexCount = static_cast<u32>(mesh->indices.size());
+        shared.vertexCount = static_cast<u32>(mesh->vertices.size());
+        m_ArenaSharedMeshes.emplace(hash, std::move(shared));
+
+        static bool s_loggedArenaMesh = false;
+        if (!s_loggedArenaMesh) {
+            s_loggedArenaMesh = true;
+            ENJIN_LOG_INFO(Renderer, "Bone arena (step 2): built shared bind-pose VB/IB for mesh hash %llu (%u indices)",
+                           static_cast<unsigned long long>(hash), shared.indexCount);
+        }
+    }
+}
+
+// Is this entity drawable through the instanced arena path this frame? Requires a shared
+// bind-pose buffer (built in EnsureArenaSharedMeshes), an arena bone slot, and a plain
+// single-material mesh (no sub-meshes, morph targets, or text override — those need the
+// per-entity path). outHash returns the shared-mesh key on success.
+bool RenderSystem::ArenaEligible(Entity e, MeshComponent* mesh, u64& outHash) const {
+    if (!m_UseBoneArena || !mesh) return false;
+    const u64 hash = mesh->source.contentHash;
+    if (hash == 0) return false;
+    if (!HasBoneArenaSlot(e)) return false;
+    if (m_ArenaSharedMeshes.find(hash) == m_ArenaSharedMeshes.end()) return false;
+    // Sub-meshes ARE supported (one instanced draw per range at flush) — no exclusion here.
+    if (m_World->HasComponent<MorphTargetComponent>(e)) return false;
+    if (m_CachedTextStorage && m_CachedTextStorage->Has(e)) return false;
+    if (m_CachedViewmodelStorage) {
+        ViewmodelComponent* vmc = m_CachedViewmodelStorage->Get(e);
+        if (vmc && vmc->enabled) return false;
+    }
+    outHash = hash;
+    return true;
+}
+
+// Rebind the ObjectData SSBO (binding 13) to an arbitrary buffer. Mirrors UpdateBoneDescriptor;
+// legalized by set-0's UPDATE_AFTER_BIND on bindings 2-23 (adr-0003). Used to point binding 13
+// at the arena's per-frame ObjectData during the instanced skinned draw, then restored after.
+void RenderSystem::UpdateArenaObjectDataDescriptor(Renderer::VulkanBuffer* buf) {
+    if (!buf) return;
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
+    VkDescriptorBufferInfo info{};
+    info.buffer = buf->GetBuffer();
+    info.offset = 0;
+    info.range = buf->GetSize();
+
+    VkWriteDescriptorSet w{};
+    w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    w.dstSet = (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)];
+    w.dstBinding = 13;
+    w.dstArrayElement = 0;
+    w.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    w.descriptorCount = 1;
+    w.pBufferInfo = &info;
+    vkUpdateDescriptorSets(m_VulkanRenderer->GetContext()->GetDevice(), 1, &w, 0, nullptr);
+}
+
+// Fill an ObjectData's material core + flags from a MaterialComponent (mirrors the sub-mesh
+// push-constant build in RenderToTarget). FLAG_SKINNED is always set — arena entities skin in
+// the vertex shader from the bone arena. Texture-presence flags gate the bound samplers.
+static void FillArenaMaterial(ObjectDataGPU& od, const MaterialComponent* m, bool globalFlat, bool preSkinned) {
+    // Pose-dedup draws PRE-skinned geometry, so the vertex shader must NOT re-skin: clear
+    // FLAG_SKINNED. The VS-skinned arena path keeps it set (skins from the bone arena).
+    const i32 skinFlag = preSkinned ? 0 : (1 << 3);   // FLAG_SKINNED
+    if (!m) {
+        od.baseColor = Math::Vector3(0.8f); od.metallic = 0.0f; od.emissiveColor = Math::Vector3(0.0f);
+        od.roughness = 0.5f; od.emissiveStrength = 0.0f; od.opacity = 1.0f; od.alphaCutoff = 0.5f;
+        od.parallaxScale = 0.0f; od.flags = skinFlag; if (globalFlat) od.flags |= (1 << 20);
+        return;
+    }
+    od.baseColor = m->baseColor; od.metallic = m->metallic; od.emissiveColor = m->emissiveColor;
+    od.roughness = m->roughness; od.emissiveStrength = m->emissiveStrength; od.opacity = m->opacity;
+    od.alphaCutoff = m->alphaCutoff; od.parallaxScale = m->parallaxScale;
+    i32 f = skinFlag;   // FLAG_SKINNED (cleared when pre-skinned by pose-dedup)
+    if (m->doubleSided) f |= 1;
+    if (m->castShadows) f |= 2;
+    if (m->receiveShadows) f |= 4;
+    f |= (static_cast<i32>(m->alphaMode) << 8);
+    if (m->cachedBaseColorTexture) f |= (1 << 16);
+    if (m->normalTexture >= 0) f |= (1 << 17);
+    if (m->metallicRoughnessTexture >= 0) f |= (1 << 18);
+    if (m->emissiveTexture >= 0) f |= (1 << 19);
+    if (m->heightTexture >= 0) f |= (1 << 10);
+    if (m->flatShading || globalFlat) f |= (1 << 20);
+    if (m->affineTexturing) f |= (1 << 21);
+    if (m->vertexSnapping) f |= (1 << 22);
+    if (m->stippleTransparency) f |= (1 << 23);
+    if (m->uvQuantize) f |= (1 << 12);
+    if (m->gouraudOnly) f |= (1 << 13);
+    f |= (static_cast<i32>(m->shadowDitherMode & 0x3) << 14);
+    f |= (static_cast<i32>((m->vertexSnapResolution / 8) & 0x1F) << 24);
+    f |= (static_cast<i32>(m->shadowDitherPattern & 0x7) << 29);
+    od.flags = f;
+}
+
+// Draw all accumulated arena batches. Multi-material characters are supported: one instanced
+// vkCmdDrawIndexed per (batch, sub-mesh range). Per-instance model+bone-offset rides in the
+// ObjectData SSBO (binding 13, indexed by gl_InstanceIndex); the sub-mesh material is baked
+// into each instance's ObjectData and its textures bound once per range. Called at the end of
+// the main entity loop, still inside the active render pass.
+void RenderSystem::FlushArenaBatches(VkCommandBuffer cmd, VkPipelineLayout layout) {
+    if (m_ArenaBatches.empty() || !m_BoneArena) return;
+
+    // A single draw of one sub-mesh range for all instances of a batch. flatOffset points at
+    // this range's slice of the shared ObjectData upload (via firstInstance).
+    struct DrawRange {
+        Renderer::VulkanBuffer* vb;   // vertex buffer to bind: pose-deformed (pre-skinned) or shared bind-pose
+        Renderer::VulkanBuffer* ib;
+        u32 indexOffset; u32 indexCount;
+        u32 firstInstance; u32 instanceCount; const MaterialComponent* mat;
+    };
+    static std::vector<ObjectDataGPU> flat;   // reused across frames (main thread only)
+    static std::vector<DrawRange> ranges;
+    flat.clear();
+    ranges.clear();
+
+    for (auto& b : m_ArenaBatches) {
+        const u32 n = static_cast<u32>(b.instances.size());
+        if (n == 0) continue;
+        auto meshIt = m_ArenaSharedMeshes.find(b.meshHash);
+        if (meshIt == m_ArenaSharedMeshes.end() || !meshIt->second.vertexBuffer || !meshIt->second.indexBuffer) continue;
+        ArenaSharedMesh& shared = meshIt->second;
+        const u32 totalIndex = shared.indexCount;
+        MeshComponent* mesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(b.representative)
+                                                  : m_World->GetComponent<MeshComponent>(b.representative);
+        if (!mesh) continue;
+        MaterialSlotsComponent* slots = m_CachedMaterialSlotsStorage ? m_CachedMaterialSlotsStorage->Get(b.representative) : nullptr;
+        MaterialComponent* single = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(b.representative)
+                                                            : m_World->GetComponent<MaterialComponent>(b.representative);
+
+        // Pose-dedup: if this batch has a deformed buffer (skinned once in the pre-pass), draw it
+        // PRE-skinned. Otherwise fall back to the shared bind pose + VS skinning from the arena.
+        Renderer::VulkanBuffer* vb = shared.vertexBuffer.get();
+        bool preSkinned = false;
+        if (m_UsePoseDedup && b.poseKey != 0) {
+            const u64 cacheKey = b.meshHash ^ (b.poseKey * 1099511628211ULL);
+            auto pit = m_PoseDeformed.find(cacheKey);
+            if (pit != m_PoseDeformed.end() && pit->second.buffer) {
+                vb = pit->second.buffer.get();
+                preSkinned = true;
+            }
+        }
+
+        // Emit one range (all instances) for a given index span + material.
+        auto emitRange = [&](u32 idxOff, u32 idxCount, const MaterialComponent* mat) {
+            if (idxCount == 0 || idxOff + idxCount > totalIndex) return;
+            const u32 first = static_cast<u32>(flat.size());
+            for (auto& inst : b.instances) {
+                ObjectDataGPU od{};
+                od.model = inst.model;
+                od.prevModel = inst.prevModel;
+                od.teleported = inst.teleported;
+                od.boneBase = inst.boneBase;
+                FillArenaMaterial(od, mat, m_GlobalFlatShading, preSkinned);
+                flat.push_back(od);
+            }
+            ranges.push_back({ vb, shared.indexBuffer.get(), idxOff, idxCount, first, n, mat });
+        };
+
+        if (mesh->HasSubMeshes() && slots && !slots->slots.empty()) {
+            for (const auto& sm : mesh->subMeshes) {
+                if (sm.materialSlot < 0 || sm.materialSlot >= static_cast<i32>(slots->slots.size())) continue;
+                emitRange(sm.indexOffset, sm.indexCount, slots->GetSlot(sm.materialSlot));
+            }
+        } else {
+            emitRange(0, totalIndex, single);
+        }
+    }
+    if (flat.empty()) return;
+
+    const VkDeviceSize needed = static_cast<VkDeviceSize>(flat.size()) * sizeof(ObjectDataGPU);
+    if (!m_ArenaObjectData || m_ArenaObjectDataCapacity < flat.size()) {
+        m_ArenaObjectData = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
+        const u32 cap = static_cast<u32>(flat.size() + flat.size() / 2 + 16);
+        if (!m_ArenaObjectData->Create(static_cast<VkDeviceSize>(cap) * sizeof(ObjectDataGPU),
+                                       Renderer::BufferUsage::Storage, true)) {
+            m_ArenaObjectData.reset();
+            m_ArenaObjectDataCapacity = 0;
+            return;
+        }
+        m_ArenaObjectDataCapacity = cap;
+    }
+    m_ArenaObjectData->UploadData(flat.data(), needed);
+
+    // Live stats for the Debug Workstation.
+    m_ArenaDebugStats.batches = static_cast<u32>(m_ArenaBatches.size());
+    m_ArenaDebugStats.draws = static_cast<u32>(ranges.size());
+    m_ArenaDebugStats.instanceSubmeshes = static_cast<u32>(flat.size());
+
+    // One-shot engagement report: how much collapsed (N instance-submeshes -> M instanced draws).
+    if (!m_ArenaEngageLogged) {
+        m_ArenaEngageLogged = true;
+        ENJIN_LOG_INFO(Renderer, "Bone arena (step 2): %zu batch(es), %zu instanced draw(s), %zu instance-submeshes",
+                       m_ArenaBatches.size(), ranges.size(), flat.size());
+    }
+
+    // Point binding 13 at the arena ObjectData, and binding 7 at the shared bone arena.
+    UpdateArenaObjectDataDescriptor(m_ArenaObjectData.get());
+    UpdateBoneDescriptor(m_BoneArena.get());
+
+    // Sentinel push constants: parallaxScale == -1.0 switches the shaders to indirect mode.
+    Renderer::PushConstants pc{};
+    pc.parallaxScale = -1.0f;
+    vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(Renderer::PushConstants), &pc);
+
+    VkBuffer boundVB = VK_NULL_HANDLE;   // avoid rebinding the same VB/IB across a group's sub-mesh draws
+    for (const DrawRange& r : ranges) {
+        if (!r.vb || !r.ib) continue;
+
+        if (r.mat) {
+            UpdateEntityTextureDescriptors(r.mat->cachedBaseColorTexture, r.mat->cachedHeightTexture,
+                r.mat->cachedNormalTexture, r.mat->cachedMetallicRoughnessTexture,
+                r.mat->cachedEmissiveTexture, r.mat->cachedMatcapTexture);
+        }
+
+        if (boundVB != r.vb->GetBuffer()) {
+            VkBuffer vbs[] = { r.vb->GetBuffer() };
+            VkDeviceSize offs[] = { 0 };
+            vkCmdBindVertexBuffers(cmd, 0, 1, vbs, offs);
+            vkCmdBindIndexBuffer(cmd, r.ib->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+            boundVB = r.vb->GetBuffer();
+            m_GeometryPoolBound = false;   // we bound our own buffers, not the pool
+        }
+
+        vkCmdDrawIndexed(cmd, r.indexCount, r.instanceCount, r.indexOffset, 0, r.firstInstance);
+        m_DrawCallCount++;
+        m_TriangleCount += (r.indexCount / 3) * r.instanceCount;
+    }
+
+    // NOTE: do NOT restore binding 13 here. vkUpdateDescriptorSets is a HOST op that takes
+    // effect at submit time; a restore recorded after the arena draws would (on last-write-wins
+    // drivers) make those draws read the restored buffer instead of the arena ObjectData —
+    // exactly the "od.model reads garbage -> invisible dogs" symptom. Binding 13 is re-pointed
+    // every frame (arena flush, or the static indirect path before its own draws), so leaving it
+    // on the arena buffer is harmless in the editor where static indirect is inactive.
+    m_LastBound.boneBuffer = nullptr;   // force a rebind for any subsequent per-entity draws
+}
+
 void RenderSystem::RunComputeSkinningPass(VkCommandBuffer cmd) {
     ENJIN_PROFILE_SCOPE("Skin/Compute");   // per-entity bone upload + compute dispatch record
     if (!m_ComputeSkinningEnabled || !cmd || !m_World) return;
@@ -11303,7 +11817,11 @@ void RenderSystem::RunComputeSkinningPass(VkCommandBuffer cmd) {
     // reads it yet, so this only costs when explicitly toggled on for bring-up.
     if (m_UseBoneArena) UpdateBoneArena();
 
+    // #1 step 3: pose-dedup — compute-skin each UNIQUE pose once into a pooled deformed buffer.
+    // Must run here (outside the render pass); the compute->vertex barrier below covers it.
     bool anySkinned = false;
+    if (m_UsePoseDedup) { SkinUniquePoses(cmd); if (m_PoseUniqueCount > 0) anySkinned = true; }
+
     const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
     for (Entity entity : meshEntities) {
         if (!m_World->IsValid(entity)) continue;
@@ -11313,6 +11831,23 @@ void RenderSystem::RunComputeSkinningPass(VkCommandBuffer cmd) {
         if (!animComp) continue;
         const auto& mats = animComp->animator.GetSkinningMatrices();
         if (mats.empty()) continue;
+
+        // Arena-instanced skinned meshes skin in the vertex shader from the shared bone arena,
+        // so compute-skinning them is wasted work (the arena draw never reads skinnedVertexBuffer).
+        // CRITICAL: clear skinnedThisFrame first — otherwise it keeps a STALE 'true' from before
+        // the arena was toggled, and the shadow pass would draw the dog's shadow from a stale
+        // compute-skinned buffer while the color comes from fresh arena skinning (shadow acne).
+        // Clearing it forces the shadow pass onto the per-entity VS path, matching the arena color.
+        if (m_UseBoneArena) {
+            u64 arenaHash = 0;
+            MeshComponent* am = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity)
+                                                    : m_World->GetComponent<MeshComponent>(entity);
+            if (ArenaEligible(entity, am, arenaHash)) {
+                EntityRenderData* ard = GetOrCreateRenderData(entity);
+                if (ard) ard->skinnedThisFrame = false;
+                continue;
+            }
+        }
 
         // Get-or-create per-entity buffers (same pattern as the draw loop; created once, reused).
         EntityRenderData* pRD = GetOrCreateRenderData(entity);

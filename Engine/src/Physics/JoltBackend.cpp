@@ -728,9 +728,17 @@ ColliderInfo JoltBackend::GetColliderInfo(ECS::Entity entity) {
 void JoltBackend::SyncJoltToECS() {
     auto& bodyInterface = m_PhysicsSystem->GetBodyInterface();
 
+    // Hoist storages once — the per-body writeback ran ~5 locked GetComponents/body/frame; grabbing
+    // the storage pointers up front turns each into a lock-free storage->Get (part of the #1 fix).
+    auto* transformStorage = m_World->GetComponentStorage<ECS::TransformComponent>();
+    auto* rbStorage = m_World->GetComponentStorage<ECS::RigidbodyComponent>();
+    auto* boxStorage = m_World->GetComponentStorage<ECS::BoxColliderComponent>();
+    auto* capsuleStorage = m_World->GetComponentStorage<ECS::CapsuleColliderComponent>();
+    auto* meshColStorage = m_World->GetComponentStorage<ECS::MeshColliderComponent>();
+
     for (auto& [entity, bodyID] : m_EntityToBody) {
-        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
-        auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
+        auto* transform = transformStorage ? transformStorage->Get(entity) : nullptr;
+        auto* rb = rbStorage ? rbStorage->Get(entity) : nullptr;
         if (!transform) continue;
 
         // Only sync dynamic bodies back to ECS
@@ -763,11 +771,11 @@ void JoltBackend::SyncJoltToECS() {
             // Cast a short ray downward from entity bottom
             // Approximate entity half-height
             f32 halfHeight = 0.5f;
-            if (auto* box = m_World->GetComponent<ECS::BoxColliderComponent>(entity)) {
+            if (auto* box = boxStorage ? boxStorage->Get(entity) : nullptr) {
                 halfHeight = box->size.y * transform->scale.y * 0.5f;
-            } else if (auto* capsule = m_World->GetComponent<ECS::CapsuleColliderComponent>(entity)) {
+            } else if (auto* capsule = capsuleStorage ? capsuleStorage->Get(entity) : nullptr) {
                 halfHeight = capsule->height * transform->scale.y * 0.5f;
-            } else if (auto* meshCol = m_World->GetComponent<ECS::MeshColliderComponent>(entity)) {
+            } else if (auto* meshCol = meshColStorage ? meshColStorage->Get(entity) : nullptr) {
                 // Approximate half-height from cached mesh vertices AABB
                 if (meshCol->generated && !meshCol->vertices.empty()) {
                     f32 minY = meshCol->vertices[0].y, maxY = meshCol->vertices[0].y;
@@ -802,33 +810,51 @@ void JoltBackend::SyncJoltToECS() {
 // ============================================================================
 
 void JoltBackend::ApplyGravityZones() {
-    auto gravityZoneEntities = m_World->GetEntitiesWithComponent<ECS::GravityZoneComponent>();
+    const auto& gravityZoneEntities = m_World->GetEntitiesWithComponent<ECS::GravityZoneComponent>();
     if (gravityZoneEntities.empty()) return;
 
     auto& bodyInterface = m_PhysicsSystem->GetBodyInterface();
 
+    // Pre-collect the active zones ONCE (their components don't change per body). This turns the
+    // per-body inner loop from O(bodies × zones) locked GetComponent lookups into a flat scan of a
+    // small cached array — the zones are fetched via storage pointers (no per-call World lock).
+    struct ActiveZone { const ECS::GravityZoneComponent* zone; Math::Vector3 zonePos; };
+    static std::vector<ActiveZone> activeZones;   // reused across frames (physics = single thread)
+    activeZones.clear();
+    {
+        auto* zoneStorage = m_World->GetComponentStorage<ECS::GravityZoneComponent>();
+        auto* xformStorage = m_World->GetComponentStorage<ECS::TransformComponent>();
+        for (ECS::Entity zoneEntity : gravityZoneEntities) {
+            auto* zone = zoneStorage ? zoneStorage->Get(zoneEntity) : nullptr;
+            auto* zoneTransform = xformStorage ? xformStorage->Get(zoneEntity) : nullptr;
+            if (zone && zoneTransform && zone->isActive) {
+                activeZones.push_back({ zone, zoneTransform->position });
+            }
+        }
+    }
+
+    // Hoist the body-side storages too (one lookup instead of two locked GetComponents per body).
+    auto* rbStorage = m_World->GetComponentStorage<ECS::RigidbodyComponent>();
+    auto* transformStorage = m_World->GetComponentStorage<ECS::TransformComponent>();
+
     for (auto& [entity, bodyID] : m_EntityToBody) {
-        auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
+        auto* rb = rbStorage ? rbStorage->Get(entity) : nullptr;
         if (!rb || rb->bodyType != ECS::RigidbodyComponent::BodyType::Dynamic) continue;
         if (!rb->useGravity) continue;
 
-        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+        auto* transform = transformStorage ? transformStorage->Get(entity) : nullptr;
         if (!transform) continue;
 
-        // Find highest-priority gravity zone containing this entity
+        // Find highest-priority gravity zone containing this entity (flat scan, no lookups).
         i32 bestPriority = INT_MIN;
         Math::Vector3 customGravity = m_Gravity;
         bool inZone = false;
 
-        for (ECS::Entity zoneEntity : gravityZoneEntities) {
-            auto* zone = m_World->GetComponent<ECS::GravityZoneComponent>(zoneEntity);
-            auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(zoneEntity);
-            if (!zone || !zoneTransform || !zone->isActive) continue;
-            if (zone->priority <= bestPriority) continue;
-
-            if (zone->ContainsPoint(zoneTransform->position, transform->position)) {
-                customGravity = zone->GetGravityAt(zoneTransform->position, transform->position);
-                bestPriority = zone->priority;
+        for (const ActiveZone& az : activeZones) {
+            if (az.zone->priority <= bestPriority) continue;
+            if (az.zone->ContainsPoint(az.zonePos, transform->position)) {
+                customGravity = az.zone->GetGravityAt(az.zonePos, transform->position);
+                bestPriority = az.zone->priority;
                 inZone = true;
             }
         }

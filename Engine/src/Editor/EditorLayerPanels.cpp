@@ -122,6 +122,7 @@
 #include <climits>
 #include <cmath>
 #include <algorithm>
+#include <random>
 
 namespace Enjin {
 namespace Editor {
@@ -7373,15 +7374,28 @@ void EditorLayer::DrawDebugWorkstation() {
                     m_RenderSystem->SetFreeMeshCpuData(freeCpu);
                 }
 
-                // #1 arena bring-up (step 1): populate the shared bone SSBO. No visual
-                // change yet — "slots" should match Skinned meshes above.
+                // #1 arena bring-up (step 2): identical skinned meshes now collapse into ONE
+                // instanced draw (shared bind-pose VB/IB + bone arena). Toggle ON with a grid of
+                // the same skinned FBX and watch Draw calls drop; shadows stay per-entity.
                 bool useArena = m_RenderSystem->IsUseBoneArena();
-                if (ImGui::Checkbox("Bone arena: populate shared SSBO (step 1)", &useArena)) {
+                if (ImGui::Checkbox("Bone arena: instanced skinned draw (step 2)", &useArena)) {
                     m_RenderSystem->SetUseBoneArena(useArena);
                 }
                 if (useArena) {
                     ImGui::SameLine();
                     ImGui::TextDisabled("(slots: %u)", m_RenderSystem->GetBoneArenaSlotCount());
+                    const auto& as = m_RenderSystem->GetArenaDebugStats();
+                    ImGui::TextDisabled("  %u batches -> %u instanced draws (%u instance-submeshes)",
+                        as.batches, as.draws, as.instanceSubmeshes);
+                    // Step 3: pose-dedup — skin each unique pose once, reuse across instances+passes.
+                    bool poseDedup = m_RenderSystem->IsUsePoseDedup();
+                    if (ImGui::Checkbox("Pose-dedup: skin unique poses once (step 3)", &poseDedup)) {
+                        m_RenderSystem->SetUsePoseDedup(poseDedup);
+                    }
+                    if (poseDedup) {
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("(unique poses: %u)", m_RenderSystem->GetPoseUniqueCount());
+                    }
                 }
                 u32 tris = m_RenderSystem->GetTriangleCount();
                 if (tris > 1000000)
@@ -7409,6 +7423,43 @@ void EditorLayer::DrawDebugWorkstation() {
                 } else {
                     ImGui::TextDisabled("  (import a model first)");
                 }
+                // Stress-anim options: default ON so a grid immediately exercises VARIED poses
+                // (identical synced poses would let pose-dedup cheat; unsynced is the real test).
+                static bool s_stressUnsync = true;   // stagger playback phase + jitter speed
+                static bool s_stressRandom = false;   // pick a random clip per copy (if >1 exists)
+                ImGui::Checkbox("Unsync animation phase", &s_stressUnsync);
+                ImGui::SameLine();
+                ImGui::Checkbox("Random clip (if multiple)", &s_stressRandom);
+
+                // Apply per-copy animation variety across ALL animators after a spawn. Re-shuffles
+                // existing copies too, which is fine for a stress tool. No-op when both toggles off.
+                auto applyStressAnim = [&]() {
+                    if (!m_World || (!s_stressUnsync && !s_stressRandom)) return;
+                    static std::mt19937 rng(0xC0FFEEu);
+                    std::uniform_real_distribution<f32> phaseDist(0.0f, 1.0f);
+                    std::uniform_real_distribution<f32> speedDist(0.85f, 1.15f);
+                    for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::AnimatorComponent>()) {
+                        auto* ac = m_World->GetComponent<ECS::AnimatorComponent>(e);
+                        if (!ac) continue;
+                        auto& anim = ac->animator;
+                        const auto& clips = anim.GetAnimations();
+                        if (clips.empty()) continue;
+                        std::string clip = anim.GetCurrentAnimationName();
+                        if (s_stressRandom && clips.size() > 1) {
+                            std::uniform_int_distribution<size_t> pick(0, clips.size() - 1);
+                            auto it = clips.begin();
+                            std::advance(it, pick(rng));
+                            clip = it->first;
+                        }
+                        if (clip.empty()) clip = clips.begin()->first;
+                        anim.Play(clip, 0.0f);
+                        if (s_stressUnsync) {
+                            anim.SetSpeed(speedDist(rng));
+                            anim.SetNormalizedTime(phaseDist(rng));
+                        }
+                    }
+                };
+
                 ImGui::BeginDisabled(!haveModel);
                 auto spawnGrid = [&](int n) {
                     if (!haveModel) return;
@@ -7419,12 +7470,17 @@ void EditorLayer::DrawDebugWorkstation() {
                         f32 z = static_cast<f32>(i / side) * 2.5f - off;
                         ImportModelImmediate(m_LastImportedModelPath, Math::Vector3(x, 0.0f, z));
                     }
+                    applyStressAnim();
                 };
                 if (ImGui::SmallButton("+10")) spawnGrid(10);
                 ImGui::SameLine();
                 if (ImGui::SmallButton("+50")) spawnGrid(50);
                 ImGui::SameLine();
                 if (ImGui::SmallButton("+200")) spawnGrid(200);
+                ImGui::SameLine();
+                if (ImGui::SmallButton("+1000")) spawnGrid(1000);
+                // Re-shuffle animation variety without spawning more copies.
+                if (ImGui::SmallButton("Reshuffle anim")) applyStressAnim();
                 ImGui::TextDisabled("(re-import is slow; the per-frame skinning cost is what to watch after)");
                 ImGui::EndDisabled();
             } else {

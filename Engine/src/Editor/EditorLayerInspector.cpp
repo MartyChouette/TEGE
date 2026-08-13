@@ -1117,17 +1117,8 @@ void EditorLayer::DrawInspectorPanel() {
         // Multi-select inspector
         DrawMultiSelectInspector();
     } else if (m_PrimarySelected != ECS::INVALID_ENTITY && m_World) {
-        // VWS: snapshot the entity before this frame's inspector edits. Only the
-        // components the user actually changes get folded into the active override
-        // layer (see the RecordEntityChanges call at the end of this block).
         Scene::Layer* vwsActive = m_LayerSystem.ActiveLayer();
         const bool vwsCapturing = vwsActive && !vwsActive->locked;
-        std::string vwsBeforeSnapshot;
-        if (vwsCapturing) {
-            // includeVertexData=false: must match RecordEntityChanges' own snapshot,
-            // and keeps selecting a heavy mesh from serializing its geometry per frame.
-            vwsBeforeSnapshot = Scene::SceneSerializer::SerializeEntityToString(m_World, m_PrimarySelected, /*includeVertexData=*/false);
-        }
 
         // Generic property-edit undo: on quiet frames (no active widget, no
         // edit session) refresh the baseline snapshot. While a widget is
@@ -1146,18 +1137,31 @@ void EditorLayer::DrawInspectorPanel() {
             const bool needRefresh =
                 m_PropUndoBaselineEntity != m_PrimarySelected ||
                 m_PropUndoStackAtSessionStart != m_UndoRedo.GetUndoCount() ||
-                (++m_PropUndoRefreshTick >= 30) ||
-                vwsCapturing;  // VWS capture serialized this frame anyway — reuse is free
+                (++m_PropUndoRefreshTick >= 30);
             if (needRefresh) {
                 m_PropUndoRefreshTick = 0;
-                if (vwsCapturing) {
-                    m_PropUndoBaseline = vwsBeforeSnapshot;  // reuse, don't serialize twice
-                } else {
-                    m_PropUndoBaseline = Scene::SceneSerializer::SerializeEntityToString(
-                        m_World, m_PrimarySelected, /*includeVertexData=*/false);
-                }
+                m_PropUndoBaseline = Scene::SceneSerializer::SerializeEntityToString(
+                    m_World, m_PrimarySelected, /*includeVertexData=*/false);
                 m_PropUndoBaselineEntity = m_PrimarySelected;
                 m_PropUndoStackAtSessionStart = m_UndoRedo.GetUndoCount();
+            }
+        }
+
+        // VWS: the "before" snapshot for layer capture is the SAME pre-edit state the undo
+        // baseline holds, and that baseline is frozen during an edit + only re-serialized on a
+        // selection/undo/heartbeat. So reuse it instead of re-serializing the entity every frame
+        // (#5: this was the ~2-4ms/frame cost with a heavy animated FBX selected + a layer active).
+        // includeVertexData=false in both keeps them byte-identical. During play the baseline isn't
+        // maintained, so fall back to a fresh serialize there to preserve capture behavior.
+        std::string vwsBeforeFallback;
+        const std::string* vwsBeforeSnapshot = nullptr;
+        if (vwsCapturing) {
+            if (propUndoEligible && m_PropUndoBaselineEntity == m_PrimarySelected) {
+                vwsBeforeSnapshot = &m_PropUndoBaseline;
+            } else {
+                vwsBeforeFallback = Scene::SceneSerializer::SerializeEntityToString(
+                    m_World, m_PrimarySelected, /*includeVertexData=*/false);
+                vwsBeforeSnapshot = &vwsBeforeFallback;
             }
         }
 
@@ -3437,9 +3441,10 @@ void EditorLayer::DrawInspectorPanel() {
         }
 
         // VWS: fold whatever the inspector changed this frame into the active layer.
-        // RecordEntityChanges is a no-op when nothing differs from the snapshot.
-        if (vwsCapturing && m_World->IsValid(m_PrimarySelected)) {
-            m_LayerSystem.RecordEntityChanges(m_PrimarySelected, vwsBeforeSnapshot);
+        // RecordEntityChanges is a no-op when nothing differs from the snapshot. The "before"
+        // is the frozen pre-edit baseline, so the diff captures the whole edit cumulatively.
+        if (vwsCapturing && vwsBeforeSnapshot && m_World->IsValid(m_PrimarySelected)) {
+            m_LayerSystem.RecordEntityChanges(m_PrimarySelected, *vwsBeforeSnapshot);
         }
 
         // Generic property-edit undo: resolve the edit session. A session
