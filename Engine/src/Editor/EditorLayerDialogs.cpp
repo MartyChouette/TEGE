@@ -337,17 +337,21 @@ void EditorLayer::DrawNotifications(f32 deltaTime) {
     if (m_Notifications.empty()) return;
 
     ImGuiIO& io = ImGui::GetIO();
-    f32 padding = 16.0f;
-    f32 toastW = 300.0f;
-    f32 toastH = 40.0f;
-    f32 spacing = 6.0f;
-    f32 startX = io.DisplaySize.x - toastW - padding;
-    f32 startY = io.DisplaySize.y - padding;
+    // Everything scales with the editor UI scale — the font does (io.FontGlobalScale), so
+    // the box, padding and text offsets must too, or the (larger) glyphs overflow a fixed
+    // box and the icon collides with the message.
+    const f32 s = m_EditorSettings.uiScale > 0.0f ? m_EditorSettings.uiScale : 1.0f;
+    const f32 padding  = 16.0f * s;
+    const f32 minToastW = 300.0f * s;
+    const f32 spacing  = 6.0f * s;
+    const f32 padX     = 12.0f * s;   // inner left/right padding
+    const f32 gap      = 8.0f * s;    // icon -> message gap
+    const f32 startY   = io.DisplaySize.y - padding;
 
     ImDrawList* fg = ImGui::GetForegroundDrawList();
 
-    // Update and draw toasts from bottom up
-    i32 visibleIdx = 0;
+    // Draw toasts stacked bottom-up (accumulate per-toast height so variable sizes stack cleanly)
+    f32 stackedH = 0.0f;
     for (i32 i = static_cast<i32>(m_Notifications.size()) - 1; i >= 0; --i) {
         auto& notif = m_Notifications[i];
         notif.elapsed += deltaTime;
@@ -366,10 +370,26 @@ void EditorLayer::DrawNotifications(f32 deltaTime) {
             if (fadeAlpha < 0.0f) fadeAlpha = 0.0f;
         }
 
-        // Slide from right
-        f32 slideOffset = (1.0f - notif.slideIn) * (toastW + padding);
-        f32 yPos = startY - (toastH + spacing) * (visibleIdx + 1);
-        f32 xPos = startX + slideOffset;
+        // Type icon
+        const char* icon;
+        switch (notif.type) {
+            case NotificationType::Success: icon = "[OK]"; break;
+            case NotificationType::Warning: icon = "[!]"; break;
+            case NotificationType::Error:   icon = "[X]"; break;
+            default:                        icon = "[i]"; break;
+        }
+
+        // Measure at the current (scaled) font so the box fits and nothing overlaps.
+        const ImVec2 iconSz = ImGui::CalcTextSize(icon);
+        const ImVec2 msgSz  = ImGui::CalcTextSize(notif.message.c_str());
+        const f32 toastH = std::max(40.0f * s, std::max(iconSz.y, msgSz.y) + 12.0f * s);
+        const f32 contentW = padX + iconSz.x + gap + msgSz.x + padX;
+        const f32 toastW = std::min(std::max(minToastW, contentW), io.DisplaySize.x - 2.0f * padding);
+
+        // Right-anchored; slide in from the right.
+        const f32 slideOffset = (1.0f - notif.slideIn) * (toastW + padding);
+        const f32 yPos = startY - stackedH - toastH;
+        const f32 xPos = io.DisplaySize.x - padding - toastW + slideOffset;
 
         // Background color based on type
         ImU32 bgColor;
@@ -380,24 +400,15 @@ void EditorLayer::DrawNotifications(f32 deltaTime) {
             default:                        bgColor = IM_COL32(40, 60, 90, static_cast<u8>(220 * fadeAlpha)); break;
         }
 
-        ImVec2 p0(xPos, yPos);
-        ImVec2 p1(xPos + toastW, yPos + toastH);
-        fg->AddRectFilled(p0, p1, bgColor, 6.0f);
+        fg->AddRectFilled(ImVec2(xPos, yPos), ImVec2(xPos + toastW, yPos + toastH), bgColor, 6.0f * s);
 
-        // Type icon
-        const char* icon;
-        switch (notif.type) {
-            case NotificationType::Success: icon = "[OK]"; break;
-            case NotificationType::Warning: icon = "[!]"; break;
-            case NotificationType::Error:   icon = "[X]"; break;
-            default:                        icon = "[i]"; break;
-        }
+        // Icon + message, vertically centered; message placed AFTER the measured icon.
+        const ImU32 textColor = IM_COL32(255, 255, 255, static_cast<u8>(240 * fadeAlpha));
+        fg->AddText(ImVec2(xPos + padX, yPos + (toastH - iconSz.y) * 0.5f), textColor, icon);
+        fg->AddText(ImVec2(xPos + padX + iconSz.x + gap, yPos + (toastH - msgSz.y) * 0.5f),
+                    textColor, notif.message.c_str());
 
-        ImU32 textColor = IM_COL32(255, 255, 255, static_cast<u8>(240 * fadeAlpha));
-        fg->AddText(ImVec2(xPos + 10, yPos + 11), textColor, icon);
-        fg->AddText(ImVec2(xPos + 40, yPos + 11), textColor, notif.message.c_str());
-
-        visibleIdx++;
+        stackedH += toastH + spacing;
     }
 
     // Remove expired notifications
