@@ -7372,6 +7372,17 @@ void EditorLayer::DrawDebugWorkstation() {
                 if (ImGui::Checkbox("Free mesh CPU data after upload (experimental)", &freeCpu)) {
                     m_RenderSystem->SetFreeMeshCpuData(freeCpu);
                 }
+
+                // #1 arena bring-up (step 1): populate the shared bone SSBO. No visual
+                // change yet — "slots" should match Skinned meshes above.
+                bool useArena = m_RenderSystem->IsUseBoneArena();
+                if (ImGui::Checkbox("Bone arena: populate shared SSBO (step 1)", &useArena)) {
+                    m_RenderSystem->SetUseBoneArena(useArena);
+                }
+                if (useArena) {
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(slots: %u)", m_RenderSystem->GetBoneArenaSlotCount());
+                }
                 u32 tris = m_RenderSystem->GetTriangleCount();
                 if (tris > 1000000)
                     ImGui::Text("Triangles: %.2f M", static_cast<f32>(tris) / 1000000.0f);

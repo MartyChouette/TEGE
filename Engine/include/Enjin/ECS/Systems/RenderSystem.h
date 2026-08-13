@@ -1229,6 +1229,26 @@ private:
     // Returns true if a dispatch was recorded (output buffer holds this frame's deformed verts).
     bool DispatchComputeSkinning(VkCommandBuffer cmd, EntityRenderData& renderData,
                                  Renderer::VulkanBuffer* boneBuffer);
+
+    // --- #1 Shared skinning arena (step 1: foundation only) --------------------------
+    // A single SSBO holding EVERY skinned entity's bone matrices this frame, entity's
+    // slot i at matrix offset i*kBonesPerSlot. Replaces the 200 per-entity bone buffers
+    // and is what lets steps 2-3 draw all instances of one mesh in a single instanced
+    // draw (vertex-shader skinning reads its slot via gl_InstanceIndex). Populated by
+    // UpdateBoneArena only when m_UseBoneArena is set — OFF by default, so this is
+    // additive scaffolding with zero behavior change until the draw path consumes it.
+    static constexpr u32 kBonesPerSlot = 256;   // matches the per-entity 256-bone headroom
+    std::unique_ptr<Renderer::VulkanBuffer> m_BoneArena;
+    std::unordered_map<Entity, u32> m_BoneArenaSlot;   // entity -> slot, rebuilt each frame
+    u32 m_BoneArenaSlotCount = 0;                       // slots populated this frame
+    bool m_UseBoneArena = false;
+    void UpdateBoneArena();                             // pack all skinned bones into m_BoneArena
+    u32  GetBoneArenaSlot(Entity e) const;             // slot for an entity (0 if none)
+public:
+    void SetUseBoneArena(bool b) { m_UseBoneArena = b; }
+    bool IsUseBoneArena() const { return m_UseBoneArena; }
+    u32  GetBoneArenaSlotCount() const { return m_BoneArenaSlotCount; }
+private:
 public:
     // Run the once-per-frame compute skinning pass. MUST be called OUTSIDE any render pass
     // (compute cannot run inside one), before the passes that draw skinned meshes. No-op unless

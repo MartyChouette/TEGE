@@ -11233,6 +11233,60 @@ bool RenderSystem::DispatchComputeSkinning(VkCommandBuffer cmd, EntityRenderData
     return true;
 }
 
+// #1 arena (step 1): pack every skinned entity's bone matrices into one SSBO, slot i at
+// matrix offset i*kBonesPerSlot (padded to kBonesPerSlot with identity). Nothing consumes
+// this yet — it's the shared-bone foundation the instanced draw path (steps 2-3) will read
+// per-instance. Rebuilt each frame; grows the GPU buffer when the skinned count rises.
+void RenderSystem::UpdateBoneArena() {
+    if (!m_World || !m_VulkanRenderer) return;
+
+    m_BoneArenaSlot.clear();
+    static std::vector<Math::Matrix4> staging;   // reused across frames (main thread only)
+    staging.clear();
+
+    u32 slot = 0;
+    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+        if (!m_World->IsValid(entity)) continue;
+        AnimatorComponent* animComp = ResolveAnimator(entity);
+        if (!animComp) continue;
+        const auto& mats = animComp->animator.GetSkinningMatrices();
+        if (mats.empty()) continue;
+
+        m_BoneArenaSlot[entity] = slot;
+        const usize base = static_cast<usize>(slot) * kBonesPerSlot;
+        staging.resize(base + kBonesPerSlot, Math::Matrix4::Identity());
+        const usize n = std::min<usize>(mats.size(), static_cast<usize>(kBonesPerSlot));
+        for (usize i = 0; i < n; ++i) staging[base + i] = mats[i];
+        ++slot;
+    }
+
+    m_BoneArenaSlotCount = slot;
+    if (slot == 0) return;
+
+    const VkDeviceSize needed = static_cast<VkDeviceSize>(staging.size()) * sizeof(Math::Matrix4);
+    if (!m_BoneArena || m_BoneArena->GetSize() < needed) {
+        m_BoneArena = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
+        if (!m_BoneArena->Create(needed, Renderer::BufferUsage::Storage, true)) {
+            m_BoneArena.reset();
+            m_BoneArenaSlotCount = 0;
+            return;
+        }
+    }
+    m_BoneArena->UploadData(staging.data(), needed);
+
+    static bool s_loggedArena = false;
+    if (!s_loggedArena) {
+        s_loggedArena = true;
+        ENJIN_LOG_INFO(Renderer, "Bone arena (step 1): %u slots, %zu matrices, %llu KB",
+                       slot, staging.size(), static_cast<unsigned long long>(needed / 1024));
+    }
+}
+
+u32 RenderSystem::GetBoneArenaSlot(Entity e) const {
+    auto it = m_BoneArenaSlot.find(e);
+    return it != m_BoneArenaSlot.end() ? it->second : 0u;
+}
+
 void RenderSystem::RunComputeSkinningPass(VkCommandBuffer cmd) {
     ENJIN_PROFILE_SCOPE("Skin/Compute");   // per-entity bone upload + compute dispatch record
     if (!m_ComputeSkinningEnabled || !cmd || !m_World) return;
@@ -11244,6 +11298,10 @@ void RenderSystem::RunComputeSkinningPass(VkCommandBuffer cmd) {
     m_LastSkinningCmd = cmd;
     if (!InitComputeSkinning()) return;
     BeginComputeSkinningFrame();
+
+    // #1 arena (step 1): populate the shared bone SSBO when enabled. Additive — nothing
+    // reads it yet, so this only costs when explicitly toggled on for bring-up.
+    if (m_UseBoneArena) UpdateBoneArena();
 
     bool anySkinned = false;
     const auto& meshEntities = m_World->GetEntitiesWithComponent<MeshComponent>();
