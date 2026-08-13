@@ -175,7 +175,8 @@ struct ObjectDataGPU {
     i32 flags;                       // 4 bytes
     f32 parallaxScale;               // 4 bytes
     u32 teleported;                  // 1 = network snap/spawn (zero velocity), 0 = normal
-    f32 _pad[2];                     // 8 bytes (pad to 192 total)
+    u32 boneBase;                    // skinning arena: base matrix offset (slot*256); 0 = per-entity path
+    f32 _pad[1];                     // pad to 192 total
     Math::Matrix4 prevModel;         // 64 bytes — previous frame model matrix for velocity
 };
 static_assert(sizeof(ObjectDataGPU) == 192, "ObjectDataGPU must be 192 bytes for std430");

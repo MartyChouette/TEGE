@@ -106,7 +106,8 @@ struct ObjectData {
     int flags;
     float parallaxScale;
     uint teleported;       // 1 = network snap/spawn (zero velocity), 0 = normal
-    float _objPad[2];
+    uint boneBase;         // skinning arena: base matrix offset (slot*kBonesPerSlot); 0 = per-entity path
+    float _objPad[1];
     mat4 prevModel;        // Previous frame model matrix for velocity
 };
 layout(std430, binding = 13) readonly buffer ObjectDataSSBO {
@@ -156,12 +157,14 @@ void main() {
     int  objFlags;
     float objParallaxScale;
     mat4 objPrevModel;
+    uint boneBase = 0u;   // arena skinning slot offset (0 = per-entity bone buffer at binding 7)
     if (indirectMode) {
         ObjectData od = objectData[gl_InstanceIndex];
         objModel = od.model;
         objFlags = od.flags;
         objParallaxScale = od.parallaxScale;
         objPrevModel = od.prevModel;
+        boneBase = od.boneBase;
     } else {
         objModel = pushConstants.model;
         objFlags = pushConstants.flags;
@@ -200,14 +203,16 @@ void main() {
     if ((objFlags & FLAG_SKINNED) != 0) {
         float weightSum = dot(inBoneWeights, vec4(1.0)) + dot(inBoneWeights2, vec4(1.0));
         if (weightSum > 0.0) {
-            mat4 skinMatrix = inBoneWeights.x * boneMatrices[inBoneIndices.x]
-                            + inBoneWeights.y * boneMatrices[inBoneIndices.y]
-                            + inBoneWeights.z * boneMatrices[inBoneIndices.z]
-                            + inBoneWeights.w * boneMatrices[inBoneIndices.w]
-                            + inBoneWeights2.x * boneMatrices[inBoneIndices2.x]
-                            + inBoneWeights2.y * boneMatrices[inBoneIndices2.y]
-                            + inBoneWeights2.z * boneMatrices[inBoneIndices2.z]
-                            + inBoneWeights2.w * boneMatrices[inBoneIndices2.w];
+            // boneBase offsets into the shared bone arena for instanced skinned draws;
+            // it's 0 for the per-entity path so this is unchanged there.
+            mat4 skinMatrix = inBoneWeights.x * boneMatrices[boneBase + inBoneIndices.x]
+                            + inBoneWeights.y * boneMatrices[boneBase + inBoneIndices.y]
+                            + inBoneWeights.z * boneMatrices[boneBase + inBoneIndices.z]
+                            + inBoneWeights.w * boneMatrices[boneBase + inBoneIndices.w]
+                            + inBoneWeights2.x * boneMatrices[boneBase + inBoneIndices2.x]
+                            + inBoneWeights2.y * boneMatrices[boneBase + inBoneIndices2.y]
+                            + inBoneWeights2.z * boneMatrices[boneBase + inBoneIndices2.z]
+                            + inBoneWeights2.w * boneMatrices[boneBase + inBoneIndices2.w];
 
             skinnedPos = (skinMatrix * vec4(inPosition, 1.0)).xyz;
             skinnedNormal = mat3(skinMatrix) * inNormal;
