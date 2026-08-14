@@ -176,6 +176,64 @@ ENJIN_TEST(Health, FieldsRoundTrip) {
 }
 
 // ===========================================================================
+// Collider components (collision filtering)
+// ===========================================================================
+
+ENJIN_TEST(BoxCollider, FieldsRoundTrip) {
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& c = w1.AddComponent<BoxColliderComponent>(e);
+    c.center = Math::Vector3(0.5f, 1.0f, -0.5f);
+    c.size = Math::Vector3(2.0f, 3.0f, 4.0f);
+    c.isTrigger = true;
+    c.friction = 0.3f;
+    c.bounciness = 0.7f;
+    c.categoryBits = 0x4u;
+    c.collisionMask = 0x6u;
+
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<BoxColliderComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+    ENJIN_EXPECT_FLOAT_EQ(g->center.y, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(g->size.z, 4.0f);
+    ENJIN_EXPECT_TRUE(g->isTrigger);
+    ENJIN_EXPECT_FLOAT_EQ(g->friction, 0.3f);
+    ENJIN_EXPECT_FLOAT_EQ(g->bounciness, 0.7f);
+    ENJIN_EXPECT_EQ(g->categoryBits, 0x4u);
+    ENJIN_EXPECT_EQ(g->collisionMask, 0x6u);
+}
+
+ENJIN_TEST(SphereCollider, FieldsRoundTrip) {
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& c = w1.AddComponent<SphereColliderComponent>(e);
+    c.center = Math::Vector3(1.0f, 2.0f, 3.0f);
+    c.radius = 2.5f;
+    c.isTrigger = false;
+    c.friction = 0.8f;
+    c.bounciness = 0.2f;
+    c.categoryBits = 0x2u;
+    c.collisionMask = 0x5u;
+
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<SphereColliderComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+    ENJIN_EXPECT_FLOAT_EQ(g->center.x, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(g->radius, 2.5f);
+    ENJIN_EXPECT_FALSE(g->isTrigger);
+    ENJIN_EXPECT_FLOAT_EQ(g->friction, 0.8f);
+    ENJIN_EXPECT_FLOAT_EQ(g->bounciness, 0.2f);
+    ENJIN_EXPECT_EQ(g->categoryBits, 0x2u);
+    ENJIN_EXPECT_EQ(g->collisionMask, 0x5u);
+}
+
+// ===========================================================================
 // MaterialComponent
 // ===========================================================================
 
