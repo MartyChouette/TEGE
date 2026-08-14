@@ -187,10 +187,10 @@ void EditorLayer::DrawViewportPanel() {
         ImGui::SameLine(0, 20);
     }
 
-    // Aspect ratio dropdown
+    // Aspect ratio dropdown (widened to match the game-view screen-ratio dropdown)
     {
         int current = static_cast<int>(m_SceneViewAspect);
-        ImGui::SetNextItemWidth(90.0f);
+        ImGui::SetNextItemWidth(150.0f);
         if (ImGui::Combo("##SceneAspect", &current, AspectRatioLabels, static_cast<int>(AspectRatio::Count))) {
             m_SceneViewAspect = static_cast<AspectRatio>(current);
         }
