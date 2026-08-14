@@ -913,4 +913,43 @@ ENJIN_TEST(SerializerNegative, TruncatedEntitiesArrayDoesNotCrash) {
     ENJIN_EXPECT_FALSE(r.success);
 }
 
+// ===========================================================================
+// InventoryComponent — nested slot array is the interesting case
+// ===========================================================================
+
+ENJIN_TEST(Inventory, NestedSlotsAndScalarsRoundTrip) {
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& inv = w1.AddComponent<InventoryComponent>(e);
+    inv.maxSlots = 32;
+    inv.coins = 1500;
+    inv.gems = 7;
+    inv.keys = { "brass_key", "silver_key" };
+    inv.slots.push_back({ "health_potion", 5, 20 });
+    inv.slots.push_back({ "iron_sword", 1, 1 });
+    inv.slots.push_back({ "arrow", 60, 99 });
+
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<InventoryComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+
+    ENJIN_EXPECT_EQ((int)g->maxSlots, 32);
+    ENJIN_EXPECT_EQ(g->coins, 1500);
+    ENJIN_EXPECT_EQ(g->gems, 7);
+    ENJIN_ASSERT_EQ(g->keys.size(), (usize)2);
+    ENJIN_EXPECT_EQ(g->keys[0], std::string("brass_key"));
+    ENJIN_EXPECT_EQ(g->keys[1], std::string("silver_key"));
+
+    ENJIN_ASSERT_EQ(g->slots.size(), (usize)3);
+    ENJIN_EXPECT_EQ(g->slots[0].itemId, std::string("health_potion"));
+    ENJIN_EXPECT_EQ(g->slots[0].quantity, 5);
+    ENJIN_EXPECT_EQ(g->slots[0].maxStack, 20);
+    ENJIN_EXPECT_EQ(g->slots[2].itemId, std::string("arrow"));
+    ENJIN_EXPECT_EQ(g->slots[2].quantity, 60);
+    ENJIN_EXPECT_EQ(g->slots[2].maxStack, 99);
+}
+
 ENJIN_TEST_MAIN()
