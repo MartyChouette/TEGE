@@ -314,6 +314,42 @@ void EditorLayer::DrawViewportPanel() {
                         }
                     } else if (ext == ".enjin" || ext == ".json") {
                         OpenScene(dropPath);
+                    } else if (ext == ".as" || ext == ".angelscript") {
+                        // Attach the script to the entity under the drop (or the selected one).
+                        Math::Vector2 mousePos = Input::GetMousePosition();
+                        f32 vpW = imgMax.x - imgMin.x;
+                        f32 vpH = imgMax.y - imgMin.y;
+                        ECS::Entity target = ECS::INVALID_ENTITY;
+                        if (vpW > 0 && vpH > 0 && m_World && m_Camera) {
+                            target = ScenePicker::PickEntity(m_World, m_Camera,
+                                mousePos.x - imgMin.x, mousePos.y - imgMin.y, vpW, vpH);
+                        }
+                        if (target == ECS::INVALID_ENTITY) target = m_PrimarySelected;
+                        if (target != ECS::INVALID_ENTITY && m_World) {
+                            // Store the path relative to the project root (e.g. scripts/Foo.as)
+                            // so the runtime's script root resolves it.
+                            std::string rel = dropPath;
+                            std::string proj = m_SceneManager.GetProjectPath();
+                            if (!proj.empty()) {
+                                std::error_code ec;
+                                auto r = std::filesystem::relative(fp, std::filesystem::path(proj).parent_path(), ec);
+                                if (!ec && !r.empty() && r.generic_string().rfind("..", 0) != 0)
+                                    rel = r.generic_string();
+                            }
+                            auto* sc = m_World->GetComponent<ECS::ScriptComponent>(target);
+                            if (!sc) sc = &m_World->AddComponent<ECS::ScriptComponent>(target);
+                            ECS::ScriptAttachment att;
+                            att.scriptPath = rel;
+                            att.className = fp.stem().string();  // best guess; editable in the inspector
+                            att.enabled = true;
+                            sc->scripts.push_back(att);
+                            SelectEntity(target);
+                            ShowNotification("Attached " + fp.filename().string() + " to entity",
+                                NotificationType::Info);
+                        } else {
+                            ShowNotification("Drop the script onto an entity to attach it",
+                                NotificationType::Info);
+                        }
                     }
                 }
                 ImGui::EndDragDropTarget();
