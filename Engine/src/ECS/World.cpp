@@ -54,6 +54,13 @@ void World::DestroyEntityInternal(Entity entity) {
         return;
     }
 
+    // Notify any observer while the entity's data is still fully intact (before the
+    // hierarchy fix-up and component removal below). Single choke point for both the
+    // deferred flush and DestroyEntityImmediate. See SetEntityDestroyObserver().
+    if (m_DestroyObserver) {
+        m_DestroyObserver(entity);
+    }
+
     // Clean up hierarchy: reparent children to root
     if (HasComponent<ChildrenComponent>(entity)) {
         auto children = GetComponent<ChildrenComponent>(entity)->children; // copy

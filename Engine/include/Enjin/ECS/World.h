@@ -14,6 +14,7 @@
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include <functional>
 #include <vector>
 
 /**
@@ -269,6 +270,22 @@ public:
     void InvalidateNameCache() { m_NameCacheDirty = true; }
 
     /**
+     * @brief Observe every entity destruction just BEFORE its components are removed.
+     *
+     * The callback fires inside DestroyEntityInternal, the single choke point for ALL
+     * destruction (deferred flush and DestroyEntityImmediate alike), while the entity's
+     * data is still fully intact. It runs on the owner thread. Set to null to clear.
+     *
+     * Used by PlayMode to serialize each pre-play entity the moment it dies during play,
+     * so Stop can recreate exactly the entities that were destroyed without snapshotting
+     * the whole scene up front (the play-start hitch). Keep observers cheap and
+     * read-only; do not mutate the World from inside one.
+     */
+    using EntityDestroyObserver = std::function<void(Entity)>;
+    void SetEntityDestroyObserver(EntityDestroyObserver observer) { m_DestroyObserver = std::move(observer); }
+    void ClearEntityDestroyObserver() { m_DestroyObserver = nullptr; }
+
+    /**
      * @brief Storage epoch — incremented every time Clear() destroys the
      * component storages. Systems caching raw ComponentStorage pointers MUST
      * compare this against the epoch captured at refetch time before using a
@@ -467,6 +484,10 @@ private:
     // Deferred entity destruction queue (flushed at start of Update)
     std::vector<Entity> m_PendingDestructions;
     std::unordered_set<Entity> m_PendingDestructionSet;  // O(1) lookup companion
+
+    // Optional observer fired just before an entity's components are removed. See
+    // SetEntityDestroyObserver(). Null when nothing is watching.
+    EntityDestroyObserver m_DestroyObserver;
 };
 
 } // namespace ECS

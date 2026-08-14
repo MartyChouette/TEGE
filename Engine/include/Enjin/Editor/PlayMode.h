@@ -284,7 +284,12 @@ private:
         bool hadName = false;
     };
     std::unordered_map<u64, EntitySnapshot> m_SavedEntityState;
-    std::string m_PrePlaySceneJson;  // Full scene JSON for restoring destroyed entities
+    // Incremental capture (adr-0004 sibling — kills the play-start hitch): instead of
+    // serializing the whole scene to JSON on every Play, a World destroy-observer
+    // serializes ONLY the pre-play entities that actually die during play, keyed by
+    // their original entity handle, at the moment they die. Stop recreates exactly
+    // these. Empty when nothing was destroyed (the common case), so Play pays nothing.
+    std::unordered_map<u64, std::string> m_DestroyedEntityJson;
     Math::Vector3 m_SavedCameraPos;
     Math::Quaternion m_SavedCameraRot;
     f32 m_SavedCameraFov = 45.0f;

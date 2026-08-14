@@ -464,6 +464,62 @@ ENJIN_TEST(ComponentThreadSafety, ConcurrentReadsAreConsistentAndRaceFree) {
 }
 
 // ===========================================================================
+// Entity destroy observer (PlayMode incremental capture mechanism)
+// ===========================================================================
+
+ENJIN_TEST(EntityDestroyObserver, FiresWithIntactDataBeforeComponentRemoval) {
+    // The observer must fire BEFORE components are removed, so a listener (PlayMode)
+    // can serialize the dying entity while its data is still intact. This is the hook
+    // that lets Stop recreate exactly the entities destroyed during play.
+    World world;
+    Entity e = world.CreateEntity();
+    TransformComponent tc; tc.position = Math::Vector3(7.0f, 0.0f, 0.0f);
+    world.AddComponent<TransformComponent>(e, tc);
+    world.AddComponent<NameComponent>(e, NameComponent("victim"));
+
+    int fireCount = 0;
+    bool sawIntactData = false;
+    world.SetEntityDestroyObserver([&](Entity observed) {
+        ++fireCount;
+        auto* t = world.GetComponent<TransformComponent>(observed);
+        auto* n = world.GetComponent<NameComponent>(observed);
+        sawIntactData = (t && t->position.x == 7.0f && n && n->name == "victim");
+    });
+
+    world.DestroyEntityImmediate(e);
+
+    ENJIN_EXPECT_EQ(fireCount, 1);
+    ENJIN_EXPECT_TRUE(sawIntactData);
+    ENJIN_EXPECT_NULL(world.GetComponent<TransformComponent>(e));  // gone after destroy
+}
+
+ENJIN_TEST(EntityDestroyObserver, FiresOnDeferredFlushNotOnQueue) {
+    // Deferred DestroyEntity must not fire the observer until the flush actually
+    // destroys the entity — that is where the data is still live.
+    World world;
+    Entity e = world.CreateEntity();
+    world.AddComponent<TransformComponent>(e);
+    int fireCount = 0;
+    world.SetEntityDestroyObserver([&](Entity) { ++fireCount; });
+
+    world.DestroyEntity(e);            // queued only
+    ENJIN_EXPECT_EQ(fireCount, 0);
+    world.FlushPendingDestructions();  // now the entity actually dies
+    ENJIN_EXPECT_EQ(fireCount, 1);
+}
+
+ENJIN_TEST(EntityDestroyObserver, ClearStopsObservation) {
+    World world;
+    Entity e = world.CreateEntity();
+    world.AddComponent<TransformComponent>(e);
+    int fireCount = 0;
+    world.SetEntityDestroyObserver([&](Entity) { ++fireCount; });
+    world.ClearEntityDestroyObserver();
+    world.DestroyEntityImmediate(e);
+    ENJIN_EXPECT_EQ(fireCount, 0);
+}
+
+// ===========================================================================
 // EntityEventBus
 // ===========================================================================
 

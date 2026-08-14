@@ -872,6 +872,7 @@ void PlayMode::SaveEditorState() {
     // mesh + skeleton + animation track data through nlohmann::json was producing
     // 100MB+ payloads for multi-mesh skeletal characters and OOMing on restore.
     m_SavedEntityState.clear();
+    m_DestroyedEntityJson.clear();
     auto entities = m_World->GetAllEntities();
     for (auto entity : entities) {
         EntitySnapshot snap;
@@ -894,21 +895,18 @@ void PlayMode::SaveEditorState() {
     m_SavedCameraRot = m_Camera->GetRotation();
     m_SavedCameraFov = m_Camera->GetFOV();
 
-    // Capture full scene JSON for restoring destroyed entities on Stop.
-    // The lightweight snapshot above handles transforms, but can't recreate
-    // entities that were destroyed during play (e.g. collected coins).
-    {
-        auto t0 = std::chrono::high_resolution_clock::now();
-        Scene::SceneSerializer serializer(m_World);
-        m_PrePlaySceneJson = serializer.SaveToString();
-        f64 ms = std::chrono::duration<f64, std::milli>(
-            std::chrono::high_resolution_clock::now() - t0).count();
-        // Diagnostic for the play-start hitch: a huge byte count means the reference-based
-        // mesh serialization (Phase B) isn't engaging and geometry is going inline.
-        // WARN level on purpose — the console's Warn filter isolates the perf diagnostics.
-        ENJIN_LOG_WARN(Editor, "PlayMode: pre-play scene snapshot took %.1f ms (%zu KB JSON, %zu entities)",
-                       ms, m_PrePlaySceneJson.size() / 1024, m_SavedEntityState.size());
-    }
+    // Instead of a full up-front scene serialize (the play-start hitch), install a
+    // destroy-observer that serializes ONLY the pre-play entities that actually die
+    // during play, at the moment they die. Stop recreates exactly these. The common
+    // case (nothing destroyed) pays zero serialization cost on Play.
+    m_World->SetEntityDestroyObserver([this](ECS::Entity e) {
+        const u64 id = static_cast<u64>(e);
+        // Only pre-play entities are restorable; play-created ones must stay gone.
+        if (m_SavedEntityState.find(id) == m_SavedEntityState.end()) return;
+        if (m_DestroyedEntityJson.count(id)) return;  // capture once, at first death
+        m_DestroyedEntityJson[id] =
+            Scene::SceneSerializer::SerializeEntityToString(m_World, e, /*includeVertexData=*/true);
+    });
 
     ENJIN_LOG_DEBUG(Editor, "Saved editor state (%zu entities snapshotted)", m_SavedEntityState.size());
 }
@@ -918,77 +916,73 @@ void PlayMode::RestoreEditorState() {
         return;
     }
 
-    // Restore each tracked entity's gameplay-mutable state in place. This
-    // intentionally does NOT destroy and recreate entities — the static asset
-    // data (mesh, skeleton, animator) is left untouched, which both avoids the
-    // multi-megabyte JSON roundtrip AND prevents the use-after-free that came
-    // from re-adding AnimatorComponent on reloaded skinned entities.
-    // Detect whether any pre-play entities were destroyed during play.
-    // We can't just check IsValid(oldId) — the entity manager recycles IDs,
-    // so a new entity created during play may reuse a destroyed entity's slot,
-    // making IsValid() return true even though the original is gone.
-    // Instead, verify each saved entity still has its original name.
-    bool anyDestroyed = false;
+    // Capture any destroys still queued from the final play frame while the observer
+    // is still installed (their data is intact until the flush actually runs), then
+    // stop observing so nothing captures during the restore mutations below.
+    m_World->FlushPendingDestructions();
+    m_World->ClearEntityDestroyObserver();
+
+    // Restore each SURVIVING tracked entity's gameplay-mutable state in place
+    // (transform + visible). Static asset data (mesh, skeleton, animator) is left
+    // untouched, which avoids the old multi-megabyte JSON roundtrip AND the reload
+    // use-after-free that came from re-adding AnimatorComponent on reloaded entities.
+    // Entities destroyed during play are handled by the recreate pass below; ID
+    // recycling means a valid handle whose name changed is a different entity that
+    // reused the slot, so treat the original as destroyed (skip it here).
+    usize restored = 0;
     for (const auto& [eid, snap] : m_SavedEntityState) {
         ECS::Entity entity = static_cast<ECS::Entity>(eid);
-        if (!m_World->IsValid(entity)) {
-            anyDestroyed = true;
-            break;
-        }
-        // ID recycling check: if the entity is valid but its name changed,
-        // the original was destroyed and a new entity reused this ID.
+        if (!m_World->IsValid(entity)) continue;   // destroyed — recreated below
         if (snap.hadName) {
             auto* nc = m_World->GetComponent<ECS::NameComponent>(entity);
-            if (!nc || nc->name != snap.name) {
-                anyDestroyed = true;
-                break;
+            if (!nc || nc->name != snap.name) continue;  // slot reused by another entity
+        }
+        if (snap.hadTransform) {
+            if (auto* t = m_World->GetComponent<ECS::TransformComponent>(entity)) {
+                t->position = snap.position;
+                t->rotation = snap.rotation;
+                t->scale = snap.scale;
+                t->visible = snap.visible;
+                ++restored;
             }
         }
     }
 
-    if (anyDestroyed && !m_PrePlaySceneJson.empty()) {
-        // Full restore: reload the pre-play scene to recover destroyed entities.
-        // Flush render system scene caches and wait for GPU idle to prevent mid-frame descriptor crashes
-        if (m_RenderSystem) {
-            m_RenderSystem->OnSceneClear();
-            m_RenderSystem->FlushSceneClear();
-        }
-        m_World->Clear();
-        // FlushSceneClear's tail refetched the component-storage caches from the
-        // OLD world — World::Clear() just destroyed those storages, so the
-        // caches dangle. Refetch now (null/fresh, both safe): without this,
-        // LoadFromString's AddComponent<AnimatorComponent> -> OnEntityAdded ->
-        // SetupEntityBuffers -> ResolveAnimator walked the freed animator
-        // storage and access-violated (skinned-entity play-stop crash).
-        if (m_RenderSystem) m_RenderSystem->RefreshStorageCache();
-        auto rt0 = std::chrono::high_resolution_clock::now();
-        Scene::SceneSerializer serializer(m_World);
-        serializer.LoadFromString(m_PrePlaySceneJson);
-        f64 rms = std::chrono::duration<f64, std::milli>(
-            std::chrono::high_resolution_clock::now() - rt0).count();
-        // The reload created the real storages — point the caches at them so
-        // the editor draws immediately (it never calls Update()).
-        if (m_RenderSystem) m_RenderSystem->RefreshStorageCache();
-        ENJIN_LOG_WARN(Editor, "Restored editor state (full reload — entities were destroyed during play); reload took %.1f ms", rms);
-    } else {
-        // Lightweight restore: just reset transforms (no entities destroyed)
-        usize restored = 0;
-        for (const auto& [eid, snap] : m_SavedEntityState) {
-            ECS::Entity entity = static_cast<ECS::Entity>(eid);
-            if (!m_World->IsValid(entity)) continue;
-            if (snap.hadTransform) {
-                if (auto* t = m_World->GetComponent<ECS::TransformComponent>(entity)) {
-                    t->position = snap.position;
-                    t->rotation = snap.rotation;
-                    t->scale = snap.scale;
-                    t->visible = snap.visible;
-                    ++restored;
-                }
+    // Recreate the pre-play entities that died during play, from their incrementally
+    // captured JSON. No World::Clear + full reload (that was the crash-historied path
+    // and the source of the play-start/stop cost) — each entity comes back through the
+    // normal per-entity add path (DeserializeEntityFromString -> AddComponent ->
+    // OnEntityAdded rebuilds its render buffers), and we stamp its pre-play transform
+    // back on so it returns to where it started rather than where it died.
+    usize recreated = 0;
+    for (const auto& [eid, json] : m_DestroyedEntityJson) {
+        if (json.empty()) continue;
+        ECS::Entity created = Scene::SceneSerializer::DeserializeEntityFromString(m_World, json);
+        if (!m_World->IsValid(created)) continue;
+        auto snapIt = m_SavedEntityState.find(eid);
+        if (snapIt != m_SavedEntityState.end() && snapIt->second.hadTransform) {
+            if (auto* t = m_World->GetComponent<ECS::TransformComponent>(created)) {
+                const auto& snap = snapIt->second;
+                t->position = snap.position;
+                t->rotation = snap.rotation;
+                t->scale = snap.scale;
+                t->visible = snap.visible;
             }
         }
+        ++recreated;
+    }
+    m_DestroyedEntityJson.clear();
+
+    // The recreate pass added entities/components; point the render caches at the
+    // current storages so the editor (which never calls World::Update in edit mode)
+    // draws the recreated entities immediately.
+    if (m_RenderSystem && recreated > 0) m_RenderSystem->RefreshStorageCache();
+
+    if (recreated > 0) {
+        ENJIN_LOG_INFO(Editor, "Restored editor state (%zu reset, %zu recreated from incremental capture)", restored, recreated);
+    } else {
         ENJIN_LOG_INFO(Editor, "Restored editor state (%zu entities, lightweight)", restored);
     }
-    m_PrePlaySceneJson.clear();  // Free memory
 
     // Restore camera state
     m_Camera->SetPosition(m_SavedCameraPos);
