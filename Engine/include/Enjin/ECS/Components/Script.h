@@ -18,7 +18,8 @@ enum class ScriptPropertyType : u8 {
     Vector3,
     Vector4,
     Entity,
-    Enum
+    Enum,
+    EntityArray   // array<uint64> / array<Entity> — a drag-assignable list of entity refs
 };
 
 // Value storage for script properties
@@ -31,7 +32,8 @@ struct ScriptPropertyValue {
     Math::Vector3 vec3Val;
     Math::Vector4 vec4Val;
     u64 entityVal = 0;
-    std::vector<std::string> enumNames; // For Enum display
+    std::vector<std::string> enumNames;   // For Enum display
+    std::vector<u64> entityArrayVal;       // For EntityArray
 };
 
 // A single exposed property from a script class

@@ -15,6 +15,8 @@ static ECS::ScriptPropertyType TypeNameToPropertyType(const std::string& typeNam
     if (typeName == "Vector3") return ECS::ScriptPropertyType::Vector3;
     if (typeName == "Vector4") return ECS::ScriptPropertyType::Vector4;
     if (typeName == "Entity" || typeName == "uint64") return ECS::ScriptPropertyType::Entity;
+    if (typeName == "array<uint64>" || typeName == "array<Entity>")
+        return ECS::ScriptPropertyType::EntityArray;
     return ECS::ScriptPropertyType::Float; // Default fallback
 }
 
@@ -124,7 +126,7 @@ std::vector<ParsedProperty> ParseProperties(const std::string& source) {
     // Captures: attributes, type, name, optional default value
     std::regex propRegex(
         R"(\[\s*Property\s*([^\]]*)\]\s*)"          // [Property, attrs]
-        R"(([\w:]+)\s+)"                              // type
+        R"(([\w:]+(?:<[\w:]+>)?)\s+)"                 // type (incl. array<uint64>)
         R"((\w+))"                                    // name
         R"(\s*(?:=\s*([^;]+))?\s*;)"                  // optional = default;
     );

@@ -6114,6 +6114,11 @@ json SerializeScriptPropertyValue(const ECS::ScriptPropertyValue& val, ECS::Scri
             return SerializeVector4(val.vec4Val);
         case ECS::ScriptPropertyType::Entity:
             return val.entityVal;
+        case ECS::ScriptPropertyType::EntityArray: {
+            json arr = json::array();
+            for (u64 id : val.entityArrayVal) arr.push_back(id);
+            return arr;
+        }
     }
     return nullptr;
 }
@@ -6145,6 +6150,11 @@ ECS::ScriptPropertyValue DeserializeScriptPropertyValue(const json& j, ECS::Scri
             break;
         case ECS::ScriptPropertyType::Entity:
             if (j.is_number_unsigned()) val.entityVal = j.get<u64>();
+            break;
+        case ECS::ScriptPropertyType::EntityArray:
+            if (j.is_array()) {
+                for (const auto& e : j) if (e.is_number_unsigned()) val.entityArrayVal.push_back(e.get<u64>());
+            }
             break;
     }
     return val;

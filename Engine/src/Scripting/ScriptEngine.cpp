@@ -1027,6 +1027,21 @@ void ScriptEngine::ApplyProperties(asIScriptObject* obj,
                 }
                 break;
 
+            case ECS::ScriptPropertyType::EntityArray: {
+                // array<uint64> member — the property slot holds a CScriptArray handle.
+                asITypeInfo* ti = m_Engine->GetTypeInfoById(propTypeId);
+                if (ti && ti->GetSubTypeId() == asTYPEID_UINT64) {
+                    CScriptArray* arr = *reinterpret_cast<CScriptArray**>(addr);
+                    if (arr) {
+                        arr->Resize(static_cast<asUINT>(val.entityArrayVal.size()));
+                        for (asUINT k = 0; k < arr->GetSize(); ++k) {
+                            *reinterpret_cast<u64*>(arr->At(k)) = val.entityArrayVal[k];
+                        }
+                    }
+                }
+                break;
+            }
+
             case ECS::ScriptPropertyType::Enum:
                 // Enums are stored as i32 in AngelScript
                 if (propTypeId == asTYPEID_INT32 ||
@@ -1166,6 +1181,20 @@ void ScriptEngine::ReadProperties(asIScriptObject* obj,
                     prop.instanceValue.entityVal = *reinterpret_cast<u64*>(addr);
                 }
                 break;
+
+            case ECS::ScriptPropertyType::EntityArray: {
+                asITypeInfo* ti = m_Engine->GetTypeInfoById(propTypeId);
+                if (ti && ti->GetSubTypeId() == asTYPEID_UINT64) {
+                    CScriptArray* arr = *reinterpret_cast<CScriptArray**>(addr);
+                    prop.instanceValue.entityArrayVal.clear();
+                    if (arr) {
+                        for (asUINT k = 0; k < arr->GetSize(); ++k) {
+                            prop.instanceValue.entityArrayVal.push_back(*reinterpret_cast<u64*>(arr->At(k)));
+                        }
+                    }
+                }
+                break;
+            }
 
             case ECS::ScriptPropertyType::Enum:
                 if (propTypeId == asTYPEID_INT32 ||

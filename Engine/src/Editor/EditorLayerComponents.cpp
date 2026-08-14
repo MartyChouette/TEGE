@@ -5869,6 +5869,58 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
                             ImGui::Text("%s", prop.name.c_str());
                             break;
                         }
+                        case ECS::ScriptPropertyType::EntityArray: {
+                            // Resizable list of entity-reference slots. Drag an entity
+                            // from the Hierarchy onto a slot to assign it; +/X add/remove.
+                            auto& arr = prop.instanceValue.entityArrayVal;
+                            ImGui::Text("%s", prop.name.c_str());
+                            ImGui::SameLine();
+                            ImGui::TextDisabled("(%d)", static_cast<int>(arr.size()));
+                            ImGui::SameLine();
+                            if (ImGui::SmallButton(("+##add_" + prop.name).c_str())) {
+                                arr.push_back(0);
+                                prop.isOverridden = true;
+                            }
+                            ImGui::Indent();
+                            int removeIdx = -1;
+                            for (size_t k = 0; k < arr.size(); ++k) {
+                                ImGui::PushID(static_cast<int>(k));
+                                u64 eid = arr[k];
+                                ECS::Entity ent = static_cast<ECS::Entity>(eid);
+                                std::string slot = "None";
+                                if (eid != 0) {
+                                    if (m_World && m_World->IsValid(ent)) {
+                                        auto* nc = m_World->GetComponent<ECS::NameComponent>(ent);
+                                        slot = (nc && !nc->name.empty())
+                                            ? nc->name
+                                            : ("Entity " + std::to_string(ECS::EntityIndex(ent)));
+                                    } else {
+                                        slot = "(missing)";
+                                    }
+                                }
+                                ImGui::Text("%d:", static_cast<int>(k));
+                                ImGui::SameLine();
+                                ImGui::Button((slot + "##el").c_str(), ImVec2(140.0f, 0.0f));
+                                if (ImGui::BeginDragDropTarget()) {
+                                    if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ENTITY_REPARENT")) {
+                                        if (pl->Data && pl->DataSize >= static_cast<int>(sizeof(ECS::Entity))) {
+                                            arr[k] = static_cast<u64>(*static_cast<const ECS::Entity*>(pl->Data));
+                                            prop.isOverridden = true;
+                                        }
+                                    }
+                                    ImGui::EndDragDropTarget();
+                                }
+                                ImGui::SameLine();
+                                if (ImGui::SmallButton("X")) removeIdx = static_cast<int>(k);
+                                ImGui::PopID();
+                            }
+                            if (removeIdx >= 0) {
+                                arr.erase(arr.begin() + removeIdx);
+                                prop.isOverridden = true;
+                            }
+                            ImGui::Unindent();
+                            break;
+                        }
                         case ECS::ScriptPropertyType::Enum: {
                             int v = val.intVal;
                             if (!val.enumNames.empty()) {
