@@ -211,6 +211,15 @@ Permanent key-value storage that survives across runs and save slot deletion.
 - `Particle_SetGravity(uint64, float gx, float gy, float gz)` — Particle gravity vector.
 - `Particle_ApplyPreset(uint64, const string &in)` — Apply a named preset ("Fire", "Smoke", "Sparks", "Snow", "Rain", "Magic", "Explosion", "Water Splash", "Blood/Sap", "Lava", "Fountain", "Drip").
 
+## Interactive Water
+
+Drive the height-field water on an entity that has an `InteractiveWaterComponent` (the entity's `TransformComponent` positions the surface). Coordinates are world-space X/Z.
+
+- `Water_Splash(uint64, float x, float z, float strength)` — One-shot impulse at a point (a cannonball hit). Bigger strength = bigger wave.
+- `Water_Wake(uint64, float x, float z, float velX, float velZ, float wakeWidth)` — Continuous V-wake behind a moving object.
+- `Water_SustainedPressure(uint64, float x, float z, float radius, float force)` — Hold a standing depression while called each frame (a leafblower); stop calling and it relaxes back.
+- `Water_GetHeight(uint64, float x, float z)` — Sample the current surface height (world Y) at a point, for gameplay/NPC logic.
+
 ## HUD Widget
 
 - `HUD_SetVisible(uint64, bool)` — Show/hide a HUD widget.

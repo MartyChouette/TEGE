@@ -800,4 +800,27 @@ ENJIN_TEST(MultipleEngines, ErrorInOneDoesNotAffectOther) {
     engine2.Shutdown();
 }
 
+// ===========================================================================
+// Water interaction bindings (splash / wake / sustained pressure / height query)
+// ===========================================================================
+
+ENJIN_TEST(WaterBindings, RegisteredWithCorrectSignatures) {
+    // The script compiles only if Water_* are registered with these exact signatures
+    // (also exercises the ENJIN_AS macro path that WASM requires). No execution needed.
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(InitWithBindings(engine));
+
+    const char* src =
+        "void Use() {\n"
+        "    uint64 e = 1;\n"
+        "    Water_Splash(e, 0.0f, 0.0f, 1.0f);\n"
+        "    Water_Wake(e, 0.0f, 0.0f, 1.0f, 0.0f, 0.5f);\n"
+        "    Water_SustainedPressure(e, 0.0f, 0.0f, 2.0f, 1.0f);\n"
+        "    float h = Water_GetHeight(e, 0.0f, 0.0f);\n"
+        "}\n";
+    ENJIN_ASSERT_TRUE(engine.CompileScriptFromMemory("water_bindings_test", src));
+
+    engine.Shutdown();
+}
+
 ENJIN_TEST_MAIN()
