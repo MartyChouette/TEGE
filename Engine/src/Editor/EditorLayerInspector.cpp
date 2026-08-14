@@ -1179,6 +1179,13 @@ void EditorLayer::DrawInspectorPanel() {
                     m_CollabSystem.OnEntityRenamed(m_PrimarySelected, oldName, nameComp->name);
                 }
             }
+            // Drop a .as script from the Asset Browser onto the name to attach it here.
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* aspl = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
+                    AttachScriptFromAsset(m_PrimarySelected, static_cast<const char*>(aspl->Data));
+                }
+                ImGui::EndDragDropTarget();
+            }
         } else {
             // No name component - show entity ID and add button
             ImGui::Text("Entity %llu", (unsigned long long)m_PrimarySelected);

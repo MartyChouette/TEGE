@@ -516,6 +516,9 @@ private:
 
     // Scripting
     void DrawScriptComponent(ECS::Entity entity);
+    // Attach an AngelScript asset (dropped from the Asset Browser) to an entity. Shared
+    // by the Scene view, Hierarchy, and Inspector drop targets. Ignores non-.as paths.
+    void AttachScriptFromAsset(ECS::Entity target, const std::string& assetPath);
     void DrawBehaviorTreeComponent(ECS::Entity entity);
     void DrawQuestFlowComponent(ECS::Entity entity);
 

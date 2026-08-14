@@ -5634,6 +5634,33 @@ void EditorLayer::OpenInExternalIDE(const std::string& filePath) {
 // Script Component Inspector
 // ============================================================================
 
+void EditorLayer::AttachScriptFromAsset(ECS::Entity target, const std::string& assetPath) {
+    if (target == ECS::INVALID_ENTITY || !m_World) return;
+    std::filesystem::path fp(assetPath);
+    std::string ext = fp.extension().string();
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (ext != ".as" && ext != ".angelscript") return;
+
+    // Store relative to the project root (e.g. scripts/Foo.as) so the runtime resolves it.
+    std::string rel = assetPath;
+    std::string proj = m_SceneManager.GetProjectPath();
+    if (!proj.empty()) {
+        std::error_code ec;
+        auto r = std::filesystem::relative(fp, std::filesystem::path(proj).parent_path(), ec);
+        if (!ec && !r.empty() && r.generic_string().rfind("..", 0) != 0) rel = r.generic_string();
+    }
+    auto* sc = m_World->GetComponent<ECS::ScriptComponent>(target);
+    if (!sc) sc = &m_World->AddComponent<ECS::ScriptComponent>(target);
+    ECS::ScriptAttachment att;
+    att.scriptPath = rel;
+    att.className = fp.stem().string();  // best guess; editable in the inspector
+    att.enabled = true;
+    sc->scripts.push_back(att);
+    SelectEntity(target);
+    ShowNotification("Attached " + fp.filename().string() + " to entity", NotificationType::Info);
+}
+
 void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
     bool scriptOpen = UI::SectionHeader("Scripts", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("ScriptComponentCtx")) {

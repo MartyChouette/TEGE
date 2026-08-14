@@ -421,8 +421,12 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
         ImGui::EndDragDropSource();
     }
 
-    // Drop target — drop one or more entities onto this one to make them children
+    // Drop target — drop one or more entities onto this one to make them children,
+    // or drop a .as script from the Asset Browser onto it to attach the script.
     if (ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload* aspl = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
+            AttachScriptFromAsset(entity, static_cast<const char*>(aspl->Data));
+        }
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_REPARENT")) {
             const ECS::Entity* items = static_cast<const ECS::Entity*>(payload->Data);
             usize count = static_cast<usize>(payload->DataSize) / sizeof(ECS::Entity);
