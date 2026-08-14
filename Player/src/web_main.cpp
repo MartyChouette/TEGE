@@ -255,7 +255,8 @@ public:
         m_StateMachineSystem.SetScriptEngine(&m_ScriptEngine);
         m_CinematicSystem.SetEnabled(true);
         m_DialogueSystem.SetEventBus(&m_EntityEventBus);
-        m_InteractiveWaterSystem.SetEventBus(&m_EntityEventBus);  // water_enter events
+        // NOTE: the web player does not run InteractiveWaterSystem (no member); water
+        // simulation/events are desktop-only for now. (Was erroneously wired here.)
         m_DialogueSystem.SetQuestSystem(&m_QuestSystem);
         m_DialogueSystem.SetCinematicSystem(&m_CinematicSystem);
         m_DialogueSystem.SetTieredSaveSystem(&m_TieredSaveSystem);
@@ -537,7 +538,36 @@ public:
             m_World->DestroyEntity(m_PauseMenuEntity);
         }
         m_PauseMenuEntity = Enjin::ECS::INVALID_ENTITY;
+        CloseOptionsMenu(false);
         if (SceneWantsMouseCapture()) Enjin::Input::SetMouseCaptured(true);
+    }
+
+    // The built-in options screen (parity with the PC build) — the same shared
+    // UITemplates canvas. We swap the pause canvas for the options canvas while
+    // staying paused, so gameplay keeps frozen. Back returns to the pause menu.
+    void ShowOptionsMenu() {
+        if (m_PauseMenuEntity != Enjin::ECS::INVALID_ENTITY && m_World->IsValid(m_PauseMenuEntity)) {
+            m_World->DestroyEntity(m_PauseMenuEntity);
+            m_PauseMenuEntity = Enjin::ECS::INVALID_ENTITY;
+        }
+        m_OptionsMenuEntity = m_World->CreateEntity();
+        m_World->AddComponent<Enjin::ECS::NameComponent>(m_OptionsMenuEntity, "Options Menu UI");
+        m_World->AddComponent<Enjin::GUI::UICanvasComponent>(m_OptionsMenuEntity,
+            Enjin::GUI::UITemplates::CreateOptionsMenu());
+        Enjin::Input::SetMouseCaptured(false);
+    }
+
+    void CloseOptionsMenu(bool reopenPause) {
+        if (m_OptionsMenuEntity != Enjin::ECS::INVALID_ENTITY && m_World->IsValid(m_OptionsMenuEntity)) {
+            m_World->DestroyEntity(m_OptionsMenuEntity);
+        }
+        m_OptionsMenuEntity = Enjin::ECS::INVALID_ENTITY;
+        if (reopenPause && m_Paused) {
+            m_PauseMenuEntity = m_World->CreateEntity();
+            m_World->AddComponent<Enjin::ECS::NameComponent>(m_PauseMenuEntity, "Pause Menu UI");
+            m_World->AddComponent<Enjin::GUI::UICanvasComponent>(m_PauseMenuEntity,
+                Enjin::GUI::UITemplates::CreatePauseMenu());
+        }
     }
 
     void Update(Enjin::f32 deltaTime) {
@@ -548,7 +578,8 @@ public:
         // platform). Escape toggles; gameplay freezes while the menu is up but
         // rendering + UI keep running so the menu is interactive.
         if (!m_AtMainMenu && Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape)) {
-            TogglePauseMenu();
+            if (m_OptionsMenuEntity != Enjin::ECS::INVALID_ENTITY) CloseOptionsMenu(true);  // back to pause
+            else TogglePauseMenu();
         }
 
         m_SimpleAudio.Update(deltaTime);
@@ -757,10 +788,30 @@ public:
                     EM_ASM({ location.reload(); });
                 });
 
-            // Pause menu buttons (pause_options is left to game scripts via the
-            // event bridge below -- no built-in options screen on web yet).
+            // Pause menu buttons. Options now opens the built-in options canvas
+            // (parity with the PC build); its controls are wired below. Events still
+            // forward to scripts via the bridge, so games can also react.
             m_UISystem.GetEventBus().Listen("pause_resume",
                 [this](const Enjin::GUI::UIEventData&) { ClosePauseMenu(); });
+            m_UISystem.GetEventBus().Listen("pause_options",
+                [this](const Enjin::GUI::UIEventData&) { ShowOptionsMenu(); });
+            m_UISystem.GetEventBus().Listen("options_back",
+                [this](const Enjin::GUI::UIEventData&) { CloseOptionsMenu(true); });
+            m_UISystem.GetEventBus().Listen("options_master_volume",
+                [this](const Enjin::GUI::UIEventData& e) { m_SimpleAudio.SetMasterVolume(e.floatValue); });
+            m_UISystem.GetEventBus().Listen("options_sfx_volume",
+                [this](const Enjin::GUI::UIEventData& e) {
+                    m_SimpleAudio.SetChannelVolume(Enjin::Audio::AudioChannel::SFX, e.floatValue);
+                });
+            m_UISystem.GetEventBus().Listen("options_fullscreen",
+                [](const Enjin::GUI::UIEventData& e) {
+                    if (e.boolValue) {
+                        EM_ASM({ var c = Module.canvas || document.getElementById('canvas');
+                                 if (c && c.requestFullscreen) c.requestFullscreen(); });
+                    } else {
+                        EM_ASM({ if (document.exitFullscreen) document.exitFullscreen(); });
+                    }
+                });
             // Authored MainMenu canvas buttons: hide (not destroy -- authored
             // content) and unfreeze gameplay.
             auto startGame = [this]() {
@@ -1162,6 +1213,7 @@ private:
     Enjin::GUI::UISystem m_UISystem;
     bool m_Paused = false;
     Enjin::ECS::Entity m_PauseMenuEntity = Enjin::ECS::INVALID_ENTITY;
+    Enjin::ECS::Entity m_OptionsMenuEntity = Enjin::ECS::INVALID_ENTITY;
     bool m_AtMainMenu = false;             // Authored "MainMenu" canvas showing at boot
     bool m_WebImGuiInit = false;
     Enjin::f32 m_LastDeltaTime = 1.0f / 60.0f;
