@@ -369,4 +369,42 @@ ENJIN_TEST(Current, NoCurrentLeavesVelocityAlone) {
     ENJIN_EXPECT_FLOAT_NEAR(rb->velocity.z, 0.0f, 1e-4f);
 }
 
+// ===========================================================================
+// ApplySustainedPressure (Surfs Up leafblower standing wave)
+// ===========================================================================
+
+ENJIN_TEST(SustainedPressure, DrivesSurfaceTowardHeldDepression) {
+    InteractiveWaterComponent water; water.gridResolution = 32; water.baseHeight = 0.0f;
+    InteractiveWaterSystem sys;
+    sys.Initialize(water);
+    ECS::TransformComponent transform;
+    transform.position = Math::Vector3(0, 0, 0); transform.scale = Math::Vector3(1, 1, 1);
+
+    // A single application eases the surface partway toward the target (-force), not all
+    // the way — it is a continuous source, not a one-shot impulse.
+    sys.ApplySustainedPressure(water, transform, 0.0f, 0.0f, /*radius=*/2.0f, /*force=*/1.0f);
+    f32 after1 = sys.GetWaterHeight(water, transform, 0.0f, 0.0f);
+    ENJIN_ASSERT_TRUE(after1 < -0.1f);     // pushed down
+    ENJIN_ASSERT_TRUE(after1 > -1.0f);     // but not fully in one step
+
+    // Sustained application converges toward and holds the depression.
+    for (int i = 0; i < 30; ++i)
+        sys.ApplySustainedPressure(water, transform, 0.0f, 0.0f, 2.0f, 1.0f);
+    f32 held = sys.GetWaterHeight(water, transform, 0.0f, 0.0f);
+    ENJIN_ASSERT_TRUE(held < -0.7f);       // held deep near the target
+    ENJIN_ASSERT_TRUE(held > -1.05f);      // clamped near the target, no overshoot
+}
+
+ENJIN_TEST(SustainedPressure, OutOfBoundsIsHarmless) {
+    InteractiveWaterComponent water; water.gridResolution = 16; water.baseHeight = 0.0f;
+    InteractiveWaterSystem sys;
+    sys.Initialize(water);
+    ECS::TransformComponent transform;
+    transform.position = Math::Vector3(0, 0, 0); transform.scale = Math::Vector3(1, 1, 1);
+
+    // Far outside the grid: WorldToGrid rejects it, nothing changes, no crash.
+    sys.ApplySustainedPressure(water, transform, 1000.0f, 1000.0f, 2.0f, 1.0f);
+    ENJIN_EXPECT_FLOAT_NEAR(sys.GetWaterHeight(water, transform, 0.0f, 0.0f), 0.0f, 0.01f);
+}
+
 ENJIN_TEST_MAIN()

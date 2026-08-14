@@ -213,6 +213,49 @@ void InteractiveWaterSystem::CreateSplash(InteractiveWaterComponent& water,
     }
 }
 
+void InteractiveWaterSystem::ApplySustainedPressure(InteractiveWaterComponent& water,
+                                                    const ECS::TransformComponent& transform,
+                                                    f32 worldX, f32 worldZ,
+                                                    f32 radius, f32 force) {
+    if (!water.initialized) return;
+
+    f32 gx, gz;
+    if (!WorldToGrid(water, transform, worldX, worldZ, gx, gz)) return;
+
+    i32 res = water.gridResolution;
+    i32 cx = static_cast<i32>(gx);
+    i32 cz = static_cast<i32>(gz);
+
+    // Convert the world-space radius to grid cells.
+    f32 cellSize = GetCellSize(water);
+    f32 radiusCells = (cellSize > 1e-5f) ? (radius / cellSize) : radius;
+    i32 r = static_cast<i32>(Math::Ceil(radiusCells));
+    if (r < 1) r = 1;
+    f32 radiusSq = radiusCells * radiusCells;
+
+    // Ease each cell toward a sustained displacement of -force (falling off over the
+    // radius) and damp its velocity so the depression holds instead of oscillating.
+    // Called every frame while the source is active, this maintains a standing wave.
+    for (i32 dz = -r; dz <= r; ++dz) {
+        for (i32 dx = -r; dx <= r; ++dx) {
+            i32 ix = cx + dx;
+            i32 iz = cz + dz;
+            if (ix < 1 || ix >= res - 1 || iz < 1 || iz >= res - 1) continue;
+
+            f32 distSq = static_cast<f32>(dx * dx + dz * dz);
+            if (distSq > radiusSq) continue;
+
+            f32 falloff = 1.0f - (distSq / (radiusSq + 0.001f));
+            falloff = falloff * falloff;
+
+            i32 idx = iz * res + ix;
+            f32 target = water.baseHeight - force * falloff;
+            water.heightField[idx] += (target - water.heightField[idx]) * 0.5f;
+            water.velocityField[idx] *= 0.5f;
+        }
+    }
+}
+
 void InteractiveWaterSystem::CreateWake(InteractiveWaterComponent& water,
                                          const ECS::TransformComponent& transform,
                                          f32 worldX, f32 worldZ,

@@ -191,6 +191,21 @@ public:
                       f32 worldX, f32 worldZ, f32 strength);
 
     /**
+     * @brief Apply a CONTINUOUS pressure at a world position (call every frame).
+     *
+     * Unlike CreateSplash (a one-shot impulse), this eases the surface toward a
+     * sustained displacement each call, so a source held in place (the Surfs Up
+     * leafblower) maintains a standing wave. Stop calling it and the wave relaxes
+     * back via propagation + damping.
+     *
+     * @param radius  Radius of the pressure area in world units.
+     * @param force   Depression depth held at the center (positive pushes down).
+     */
+    void ApplySustainedPressure(InteractiveWaterComponent& water,
+                                const ECS::TransformComponent& transform,
+                                f32 worldX, f32 worldZ, f32 radius, f32 force);
+
+    /**
      * @brief Apply a continuous V-shaped wake pattern behind a moving object
      * @param water     The water component (modified)
      * @param transform World transform of the water entity
