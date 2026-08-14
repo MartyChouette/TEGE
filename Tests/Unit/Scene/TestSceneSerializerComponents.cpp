@@ -234,6 +234,47 @@ ENJIN_TEST(SphereCollider, FieldsRoundTrip) {
 }
 
 // ===========================================================================
+// Script EntityArray property (drag-assignable entity lists)
+// ===========================================================================
+
+ENJIN_TEST(Script, EntityArrayPropertyRoundTrip) {
+    // Regression: EntityArray is ScriptPropertyType value 9, and the ScriptComponent
+    // deserializer clamped the type to <= 8 — so an array-entity property serialized but
+    // was rejected on load, losing the assigned entities. Now it round-trips.
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& sc = w1.AddComponent<ScriptComponent>(e);
+
+    ScriptAttachment att;
+    att.scriptPath = "scripts/Foo.as";
+    att.className = "Foo";
+    att.enabled = true;
+    ScriptProperty prop;
+    prop.name = "carriers";
+    prop.type = ScriptPropertyType::EntityArray;
+    prop.isOverridden = true;
+    prop.instanceValue.entityArrayVal = { 11u, 22u, 33u };
+    att.properties.push_back(prop);
+    sc.scripts.push_back(att);
+
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<ScriptComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+    ENJIN_ASSERT_TRUE(!g->scripts.empty());
+
+    const ScriptProperty* found = nullptr;
+    for (const auto& p : g->scripts[0].properties) if (p.name == "carriers") found = &p;
+    ENJIN_ASSERT_NOT_NULL(found);
+    ENJIN_EXPECT_EQ((int)found->type, (int)ScriptPropertyType::EntityArray);
+    ENJIN_ASSERT_TRUE(found->instanceValue.entityArrayVal.size() == 3);
+    ENJIN_EXPECT_EQ(found->instanceValue.entityArrayVal[0], (u64)11);
+    ENJIN_EXPECT_EQ(found->instanceValue.entityArrayVal[2], (u64)33);
+}
+
+// ===========================================================================
 // MaterialComponent
 // ===========================================================================
 

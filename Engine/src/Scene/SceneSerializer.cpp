@@ -6202,7 +6202,8 @@ ECS::ScriptComponent DeserializeScriptComponent(const json& j) {
                     prop.isOverridden = true;
                     if (it.value().contains("type")) {
                         int v = it.value()["type"].get<int>();
-                        if (v >= 0 && v <= 8) prop.type = static_cast<ECS::ScriptPropertyType>(v);
+                        // 0..EntityArray(9) — keep in sync with ScriptPropertyType.
+                        if (v >= 0 && v <= 9) prop.type = static_cast<ECS::ScriptPropertyType>(v);
                     }
                     if (it.value().contains("value")) {
                         prop.instanceValue = DeserializeScriptPropertyValue(it.value()["value"], prop.type);
