@@ -1943,6 +1943,7 @@ private:
 
         // Wire dialogue system event bus, subtitle system, and narrative systems
         m_DialogueSystem.SetEventBus(&m_EntityEventBus);
+        m_InteractiveWaterSystem.SetEventBus(&m_EntityEventBus);  // water_enter events
         m_DialogueSystem.SetSubtitleSystem(&m_SubtitleSystem);
         m_DialogueSystem.SetQuestSystem(&m_QuestSystem);
         m_DialogueSystem.SetCinematicSystem(&m_CinematicSystem);

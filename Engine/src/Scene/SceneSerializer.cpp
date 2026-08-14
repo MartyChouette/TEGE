@@ -4569,6 +4569,7 @@ json SerializeInteractiveWaterComponent(const Effects::InteractiveWaterComponent
     j["enableBuoyancy"] = iw.enableBuoyancy;
     j["buoyancyForce"] = RF(iw.buoyancyForce);
     j["waterDrag"] = RF(iw.waterDrag);
+    j["entryVelocityThreshold"] = RF(iw.entryVelocityThreshold);
     j["boundaryMode"] = static_cast<int>(iw.boundaryMode);
     return j;
 }
@@ -4597,6 +4598,7 @@ Effects::InteractiveWaterComponent DeserializeInteractiveWaterComponent(const js
     if (j.contains("enableBuoyancy")) iw.enableBuoyancy = JB(j["enableBuoyancy"]);
     if (j.contains("buoyancyForce")) iw.buoyancyForce = j["buoyancyForce"].get<f32>();
     if (j.contains("waterDrag")) iw.waterDrag = j["waterDrag"].get<f32>();
+    if (j.contains("entryVelocityThreshold")) iw.entryVelocityThreshold = j["entryVelocityThreshold"].get<f32>();
     if (j.contains("boundaryMode")) { int v = j["boundaryMode"].get<int>(); if (v >= 0 && v <= 2) iw.boundaryMode = static_cast<Effects::InteractiveWaterComponent::BoundaryMode>(v); }
     return iw;
 }

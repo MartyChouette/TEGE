@@ -22,6 +22,7 @@
  */
 
 namespace Enjin {
+namespace ECS { class EntityEventBus; }
 namespace Effects {
 
 // ============================================================================
@@ -56,6 +57,10 @@ struct InteractiveWaterComponent {
     bool enableBuoyancy = true;       // Apply upward force to objects in water
     f32 buoyancyForce = 9.81f;        // Buoyancy force per unit depth
     f32 waterDrag = 0.5f;             // Drag on submerged objects
+    // Minimum downward speed (world units/sec) for an entering interactor to fire a
+    // "water_enter" event on the entity event bus (the spec's WaterEnterEvent — for
+    // splash VFX, sound, camera shake, score). Slow/settling contact does not fire.
+    f32 entryVelocityThreshold = 0.5f;
 
     // --- Shoreline ---
     bool enableShoreline = true;
@@ -100,6 +105,7 @@ struct WaterInteractorComponent {
     f32 waterlogRate = 0.0f;           // effective density gained per second submerged
     f32 waterlogMaxDensity = 1.5f;     // cap the waterlogged effective density
     f32 currentWaterlog = 0.0f;        // runtime accumulator (not authored/serialized)
+    bool wasSubmerged = false;         // runtime: submersion last frame, for entry edge detection
 };
 
 // ============================================================================
@@ -110,6 +116,16 @@ class ENJIN_API InteractiveWaterSystem {
 public:
     InteractiveWaterSystem() = default;
     ~InteractiveWaterSystem() = default;
+
+    /**
+     * @brief Set the entity event bus that receives "water_enter" events (optional).
+     *
+     * When set, an interactor crossing the surface downward faster than the water's
+     * entryVelocityThreshold fires a deferred "water_enter" event with impact data
+     * (target = interactor, sender = water, floats: impactForce/velocityY/x/y/z). The
+     * game/scripts subscribe via the event bus. No bus set = feature dormant, no cost.
+     */
+    void SetEventBus(ECS::EntityEventBus* bus) { m_EventBus = bus; }
 
     /**
      * @brief Initialize the height field arrays for a water component
@@ -209,6 +225,9 @@ private:
 
     // Reusable entity list to avoid per-frame allocation
     std::vector<ECS::Entity> m_InteractorCache;
+
+    // Optional event bus for "water_enter" events (null = feature dormant)
+    ECS::EntityEventBus* m_EventBus = nullptr;
 };
 
 } // namespace Effects

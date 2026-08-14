@@ -255,6 +255,7 @@ public:
         m_StateMachineSystem.SetScriptEngine(&m_ScriptEngine);
         m_CinematicSystem.SetEnabled(true);
         m_DialogueSystem.SetEventBus(&m_EntityEventBus);
+        m_InteractiveWaterSystem.SetEventBus(&m_EntityEventBus);  // water_enter events
         m_DialogueSystem.SetQuestSystem(&m_QuestSystem);
         m_DialogueSystem.SetCinematicSystem(&m_CinematicSystem);
         m_DialogueSystem.SetTieredSaveSystem(&m_TieredSaveSystem);

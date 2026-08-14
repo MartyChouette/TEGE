@@ -1,5 +1,6 @@
 #include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/EntityEventBus.h"
 #include <algorithm>
 #include <cmath>
 
@@ -324,6 +325,30 @@ void InteractiveWaterSystem::Update(ECS::World* world, f32 dt) {
             if (rb) {
                 entityVel = rb->velocity;
             }
+
+            // Water-enter event (spec's WaterEnterEvent): fire once when the interactor
+            // crosses the surface downward faster than the threshold, so the game can
+            // react (splash VFX, sound, camera shake, chaos score). Deferred so listeners
+            // run at frame end via ProcessDeferred, not mid-water-update. Edge-detected
+            // against wasSubmerged so it fires on entry, not every submerged frame.
+            bool isSubmerged = heightDiff < 0.0f;
+            if (m_EventBus && isSubmerged && !interactorComp->wasSubmerged) {
+                f32 downSpeed = -entityVel.y;   // positive when moving down
+                if (downSpeed >= water->entryVelocityThreshold) {
+                    f32 mass = rb ? rb->mass : 1.0f;
+                    ECS::EntityEvent evt;
+                    evt.name = "water_enter";
+                    evt.sender = waterEntity;
+                    evt.target = interactor;
+                    evt.floats["impactForce"] = downSpeed * mass;
+                    evt.floats["velocityY"] = entityVel.y;
+                    evt.floats["x"] = entityX;
+                    evt.floats["y"] = entityY;
+                    evt.floats["z"] = entityZ;
+                    m_EventBus->SendDeferred("water_enter", evt);
+                }
+            }
+            interactorComp->wasSubmerged = isSubmerged;
 
             // Apply splash when entity enters water (moving downward through surface)
             if (heightDiff < 0.0f) {

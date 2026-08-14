@@ -359,6 +359,8 @@ void PlayMode::Play() {
 
     // Wire EntityEventBus and SubtitleSystem to DialogueSystem
     m_DialogueSystem.SetEventBus(&m_EntityEventBus);
+    // Water-enter events (splash VFX / sound / score) go through the same bus.
+    m_InteractiveWaterSystem.SetEventBus(&m_EntityEventBus);
     m_DialogueSystem.SetSubtitleSystem(m_SubtitleSystem);
     m_DialogueSystem.SetQuestSystem(&m_QuestSystem);
     m_DialogueSystem.SetCinematicSystem(&m_CinematicSystem);

@@ -3,9 +3,31 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/EntityEventBus.h"
 
 using namespace Enjin;
 using namespace Enjin::Effects;
+
+// Build a water body at the origin (surface y=0) and an interactor above it moving
+// downward at downSpeed, mass 2. Returns the interactor entity; the caller runs one
+// Update (above, no entry), moves it below, and Updates again (the entry crossing).
+static ECS::Entity SetupEntryScene(ECS::World& world, InteractiveWaterSystem& sys, f32 downSpeed) {
+    ECS::Entity waterE = world.CreateEntity();
+    ECS::TransformComponent wt; wt.position = Math::Vector3(0, 0, 0); wt.scale = Math::Vector3(1, 1, 1);
+    world.AddComponent<ECS::TransformComponent>(waterE, wt);
+    InteractiveWaterComponent water; water.gridResolution = 16; water.baseHeight = 0.0f;
+    world.AddComponent<InteractiveWaterComponent>(waterE, water);
+
+    ECS::Entity e = world.CreateEntity();
+    ECS::TransformComponent t; t.position = Math::Vector3(0.0f, 1.0f, 0.0f); t.scale = Math::Vector3(1, 1, 1);
+    world.AddComponent<ECS::TransformComponent>(e, t);
+    ECS::RigidbodyComponent rb; rb.bodyType = ECS::RigidbodyComponent::BodyType::Dynamic;
+    rb.velocity = Math::Vector3(0, -downSpeed, 0); rb.mass = 2.0f;
+    world.AddComponent<ECS::RigidbodyComponent>(e, rb);
+    WaterInteractorComponent wi; wi.generateWake = false;
+    world.AddComponent<WaterInteractorComponent>(e, wi);
+    return e;
+}
 
 // Build a water body at the origin with its surface at y=0, plus one interactor with a
 // dynamic rigidbody submerged 1 unit below the surface and the given density. Returns the
@@ -217,6 +239,79 @@ ENJIN_TEST(Splash, ModifiesVelocityField) {
         if (std::abs(v) > 0.01f) { anyVelocity = true; break; }
     }
     ENJIN_EXPECT_TRUE(anyVelocity);
+}
+
+// ===========================================================================
+// WaterEnterEvent (Gobliny spec)
+// ===========================================================================
+
+ENJIN_TEST(WaterEnter, FiresOnFastEntryWithImpactForce) {
+    ECS::World world;
+    InteractiveWaterSystem sys;
+    ECS::EntityEventBus bus;
+    sys.SetEventBus(&bus);
+
+    ECS::Entity e = SetupEntryScene(world, sys, /*downSpeed=*/5.0f);
+
+    int fireCount = 0;
+    f32 seenForce = 0.0f;
+    ECS::Entity seenTarget = ECS::INVALID_ENTITY;
+    bus.Listen("water_enter", [&](const ECS::EntityEvent& ev) {
+        ++fireCount;
+        auto it = ev.floats.find("impactForce");
+        if (it != ev.floats.end()) seenForce = it->second;
+        seenTarget = ev.target;
+    });
+
+    // Frame 1: above the surface -> no entry.
+    sys.Update(&world, 0.016f);
+    bus.ProcessDeferred();
+    ENJIN_EXPECT_EQ(fireCount, 0);
+
+    // Move below the surface (still moving down) -> entry crossing.
+    world.GetComponent<ECS::TransformComponent>(e)->position.y = -1.0f;
+    sys.Update(&world, 0.016f);
+    bus.ProcessDeferred();
+
+    ENJIN_EXPECT_EQ(fireCount, 1);
+    ENJIN_EXPECT_FLOAT_NEAR(seenForce, 10.0f, 0.01f);   // downSpeed(5) * mass(2)
+    ENJIN_EXPECT_EQ(seenTarget, e);
+
+    // Staying submerged must NOT fire again (edge-detected).
+    sys.Update(&world, 0.016f);
+    bus.ProcessDeferred();
+    ENJIN_EXPECT_EQ(fireCount, 1);
+}
+
+ENJIN_TEST(WaterEnter, SlowEntryBelowThresholdDoesNotFire) {
+    ECS::World world;
+    InteractiveWaterSystem sys;
+    ECS::EntityEventBus bus;
+    sys.SetEventBus(&bus);
+
+    ECS::Entity e = SetupEntryScene(world, sys, /*downSpeed=*/0.2f);  // below the 0.5 default
+
+    int fireCount = 0;
+    bus.Listen("water_enter", [&](const ECS::EntityEvent&) { ++fireCount; });
+
+    sys.Update(&world, 0.016f);                                       // above
+    bus.ProcessDeferred();
+    world.GetComponent<ECS::TransformComponent>(e)->position.y = -1.0f;
+    sys.Update(&world, 0.016f);                                       // below but slow
+    bus.ProcessDeferred();
+
+    ENJIN_EXPECT_EQ(fireCount, 0);
+}
+
+ENJIN_TEST(WaterEnter, NoBusIsHarmless) {
+    // With no event bus wired the feature is dormant and Update must not crash.
+    ECS::World world;
+    InteractiveWaterSystem sys;   // no SetEventBus
+    ECS::Entity e = SetupEntryScene(world, sys, /*downSpeed=*/5.0f);
+    sys.Update(&world, 0.016f);
+    world.GetComponent<ECS::TransformComponent>(e)->position.y = -1.0f;
+    sys.Update(&world, 0.016f);
+    ENJIN_EXPECT_TRUE(true);   // reached here without crashing
 }
 
 ENJIN_TEST_MAIN()
