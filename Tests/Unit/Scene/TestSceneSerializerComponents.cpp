@@ -28,6 +28,89 @@ static Entity RoundTrip(World& src, World& dst) {
 }
 
 // ===========================================================================
+// AudioSourceComponent
+// ===========================================================================
+
+ENJIN_TEST(AudioSource, FieldsRoundTrip) {
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& a = w1.AddComponent<AudioSourceComponent>(e);
+    a.clipPath = "sfx/jump.wav";
+    a.volume = 0.6f;
+    a.pitch = 1.2f;
+    a.minDistance = 3.0f;
+    a.maxDistance = 40.0f;
+    a.playOnAwake = true;
+    a.loop = true;
+    a.is3D = false;
+    a.spatialBlend = 0.25f;
+    a.priority = 64;
+    a.pitchMin = 0.9f;
+    a.pitchMax = 1.1f;
+
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<AudioSourceComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+    ENJIN_EXPECT_EQ(g->clipPath, std::string("sfx/jump.wav"));
+    ENJIN_EXPECT_FLOAT_EQ(g->volume, 0.6f);
+    ENJIN_EXPECT_FLOAT_EQ(g->pitch, 1.2f);
+    ENJIN_EXPECT_FLOAT_EQ(g->minDistance, 3.0f);
+    ENJIN_EXPECT_FLOAT_EQ(g->maxDistance, 40.0f);
+    ENJIN_EXPECT_TRUE(g->playOnAwake);
+    ENJIN_EXPECT_TRUE(g->loop);
+    ENJIN_EXPECT_FALSE(g->is3D);
+    ENJIN_EXPECT_FLOAT_EQ(g->spatialBlend, 0.25f);
+    ENJIN_EXPECT_EQ(g->priority, 64);
+    ENJIN_EXPECT_FLOAT_EQ(g->pitchMin, 0.9f);   // regression: was not serialized
+    ENJIN_EXPECT_FLOAT_EQ(g->pitchMax, 1.1f);
+}
+
+// ===========================================================================
+// ParticleEmitterComponent
+// ===========================================================================
+
+ENJIN_TEST(ParticleEmitter, FieldsRoundTrip) {
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& p = w1.AddComponent<ParticleEmitterComponent>(e);
+    p.playOnAwake = false;
+    p.loop = false;
+    p.emissionRate = 42.0f;
+    p.burstCount = 5;
+    p.lifetime = 3.5f;
+    p.startSpeed = 7.0f;
+    p.startSize = 1.2f;
+    p.endSize = 0.2f;
+    p.startColor = Math::Vector3(1.0f, 0.5f, 0.0f);
+    p.endColor = Math::Vector3(0.0f, 0.0f, 1.0f);
+    p.startAlpha = 0.9f;
+    p.endAlpha = 0.0f;
+
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<ParticleEmitterComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+    ENJIN_EXPECT_FALSE(g->playOnAwake);
+    ENJIN_EXPECT_FALSE(g->loop);
+    ENJIN_EXPECT_FLOAT_EQ(g->emissionRate, 42.0f);
+    ENJIN_EXPECT_EQ(g->burstCount, 5);
+    ENJIN_EXPECT_FLOAT_EQ(g->lifetime, 3.5f);
+    ENJIN_EXPECT_FLOAT_EQ(g->startSpeed, 7.0f);
+    ENJIN_EXPECT_FLOAT_EQ(g->startSize, 1.2f);
+    ENJIN_EXPECT_FLOAT_EQ(g->endSize, 0.2f);
+    ENJIN_EXPECT_FLOAT_EQ(g->startColor.x, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(g->startColor.y, 0.5f);
+    ENJIN_EXPECT_FLOAT_EQ(g->endColor.z, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(g->startAlpha, 0.9f);
+    ENJIN_EXPECT_FLOAT_EQ(g->endAlpha, 0.0f);
+}
+
+// ===========================================================================
 // MaterialComponent
 // ===========================================================================
 
