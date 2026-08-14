@@ -411,7 +411,10 @@ json SerializeCameraComponent(const ECS::CameraComponent& camera) {
     j["viewportWidth"] = RF(camera.viewportWidth);
     j["viewportHeight"] = RF(camera.viewportHeight);
     j["cullingMask"] = camera.cullingMask;
-    if (!camera.enablePostProcessing) j["enablePostProcessing"] = false;
+    // Default is now OFF (opt-in), so persist the flag when it is ON. Older scenes that
+    // omitted this field (when the default was ON) will load with PP off; re-enable it on
+    // the camera (the editor prompts when you turn on a PP effect).
+    if (camera.enablePostProcessing) j["enablePostProcessing"] = true;
     return j;
 }
 

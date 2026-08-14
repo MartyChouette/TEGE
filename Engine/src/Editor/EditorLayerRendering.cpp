@@ -1681,6 +1681,52 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
             }
             if (!hasDepth) ImGui::EndDisabled();
         }
+
+        // Reactive prompt: PP is opt-in per camera. If the user just edited any PP
+        // control while the active camera has PP off, offer to turn it on so the effect
+        // actually shows (the whole chain is skipped otherwise). Byte-compares the
+        // POD settings frame-over-frame; only prompts on the first edit, then latches.
+        {
+            auto activeCam = m_World ? ECS::CameraManager::GetActiveCamera(m_World) : ECS::INVALID_ENTITY;
+            auto* cc = (activeCam != ECS::INVALID_ENTITY) ? m_World->GetComponent<ECS::CameraComponent>(activeCam) : nullptr;
+            bool camPPOff = cc && !cc->enablePostProcessing;
+            if (!camPPOff) m_PPPromptSuppressed = false;  // reset the latch once PP is on
+
+            const auto* bytes = reinterpret_cast<const unsigned char*>(&settings);
+            const size_t n = sizeof(settings);
+            bool hadBaseline = (m_PrevPPBytes.size() == n);
+            bool changed = hadBaseline && std::memcmp(m_PrevPPBytes.data(), bytes, n) != 0;
+            if (camPPOff && changed && !m_PPPromptSuppressed && !m_AskEnablePPPopup) {
+                m_AskEnablePPPopup = true;
+                m_AskEnablePPCamera = activeCam;
+            }
+            m_PrevPPBytes.assign(bytes, bytes + n);
+        }
+
+        if (m_AskEnablePPPopup) {
+            ImGui::OpenPopup("Enable Post-Processing?");
+            m_AskEnablePPPopup = false;  // OpenPopup latches the popup open
+        }
+        if (ImGui::BeginPopupModal("Enable Post-Processing?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextWrapped("This effect needs post-processing, which is off on the main camera. "
+                               "Turn it on so the effect shows?");
+            ImGui::Spacing();
+            if (ImGui::Button("Turn On", ImVec2(120, 0))) {
+                if (m_AskEnablePPCamera != ECS::INVALID_ENTITY && m_World) {
+                    if (auto* cc2 = m_World->GetComponent<ECS::CameraComponent>(m_AskEnablePPCamera)) {
+                        cc2->enablePostProcessing = true;
+                        MarkDirty();
+                    }
+                }
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Not Now", ImVec2(120, 0))) {
+                m_PPPromptSuppressed = true;  // stop nagging until PP is toggled back on
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
     }
 }
 

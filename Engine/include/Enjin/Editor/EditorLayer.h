@@ -1220,6 +1220,13 @@ private:
     bool m_AssetBrowserCacheDirty = true;
     void RefreshAssetBrowserCache();
 
+    // Post-processing enable prompt: PP is opt-in per camera (default off). When the
+    // user edits a PP effect while the active camera has PP off, offer to turn it on.
+    std::vector<unsigned char> m_PrevPPBytes;   // last frame's PostProcessSettings bytes
+    bool m_PPPromptSuppressed = false;          // latched by "Not Now" until PP is on again
+    bool m_AskEnablePPPopup = false;            // request to open the modal this frame
+    ECS::Entity m_AskEnablePPCamera = ECS::INVALID_ENTITY;
+
     // Undo/Redo manager
     UndoRedoManager m_UndoRedo;
     Math::Matrix4 m_GizmoStartTransform;
