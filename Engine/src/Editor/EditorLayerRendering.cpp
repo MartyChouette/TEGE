@@ -516,17 +516,18 @@ void EditorLayer::DrawGameViewPanel() {
         Input::SetMouseCaptured(true);
     }
 
-    // Game View aspect ratio + frame rate controls (right side)
-    ImGui::SameLine(ImGui::GetWindowWidth() - 380);
+    // Game View aspect ratio + frame rate controls (right side). Widened to match the
+    // screen-ratio dropdown so the cluster reads comfortably instead of cramped.
+    ImGui::SameLine(ImGui::GetWindowWidth() - 430);
     {
         int current = static_cast<int>(m_GameViewAspect);
-        ImGui::SetNextItemWidth(130.0f);
+        ImGui::SetNextItemWidth(150.0f);
         if (ImGui::Combo("##GameAspect", &current, AspectRatioLabels, static_cast<int>(AspectRatio::Count))) {
             m_GameViewAspect = static_cast<AspectRatio>(current);
         }
     }
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(90);
+    ImGui::SetNextItemWidth(120);
     const char* fpsOptions[] = { "Max", "24", "30", "60", "120", "144", "240" };
     ImGui::Combo("##GameFPS", &m_GameViewFPSIndex, fpsOptions, 7);
     if (ImGui::IsItemHovered()) {

@@ -555,9 +555,24 @@ void EditorLayer::DrawAssetBrowserPanel() {
         SetPanelVisibility(EditorPanel::AssetBrowser, false);
     }
 
-    // Initialize browse path to current working directory
-    if (m_AssetBrowserPath.empty()) {
-        m_AssetBrowserPath = ".";
+    namespace fs = std::filesystem;
+
+    // The browser's home is the project's assets/ folder (or the project root if there
+    // is no assets/ yet). Anchoring here means it opens ON the game's content instead of
+    // wherever the editor was launched from — the old "." default was the whole mess.
+    std::string assetsHome;
+    {
+        std::string projPath = m_SceneManager.GetProjectPath();
+        if (!projPath.empty()) {
+            fs::path root = fs::path(projPath).parent_path();
+            std::error_code ec;
+            fs::path assets = root / "assets";
+            assetsHome = fs::is_directory(assets, ec) ? assets.string() : root.string();
+        }
+    }
+    // Anchor on first use, or if we're still on the bare CWD after a project has loaded.
+    if (m_AssetBrowserPath.empty() || (m_AssetBrowserPath == "." && !assetsHome.empty())) {
+        m_AssetBrowserPath = assetsHome.empty() ? std::string(".") : assetsHome;
         m_AssetBrowserCacheDirty = true;
     }
 
@@ -568,6 +583,12 @@ void EditorLayer::DrawAssetBrowserPanel() {
 
     // --- Toolbar ---
     // Navigation
+    if (ImGui::Button("Assets")) {
+        if (!assetsHome.empty()) m_AssetBrowserPath = assetsHome;
+        m_AssetBrowserCacheDirty = true;
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Jump to the project's assets folder");
+    ImGui::SameLine();
     if (ImGui::Button("Up")) {
         auto pos = m_AssetBrowserPath.find_last_of("/\\");
         if (pos != std::string::npos && pos > 0) {
@@ -615,8 +636,52 @@ void EditorLayer::DrawAssetBrowserPanel() {
         }
     }
 
-    // Path display
-    ImGui::TextDisabled("%s", m_AssetBrowserPath.c_str());
+    // Path display: a clickable breadcrumb from the assets root down to the current
+    // folder, so you always see where you are and can jump back up in one click.
+    {
+        fs::path cur = fs::path(m_AssetBrowserPath).lexically_normal();
+        std::vector<std::pair<std::string, std::string>> crumbs;  // (label, fullPath)
+        fs::path home = assetsHome.empty() ? fs::path() : fs::path(assetsHome).lexically_normal();
+        bool under = false;
+        if (!home.empty()) {
+            std::error_code ec;
+            fs::path rel = cur.lexically_relative(home);
+            std::string relStr = rel.string();
+            under = !relStr.empty() && relStr.rfind("..", 0) != 0;  // not escaping the root
+            if (under) {
+                fs::path acc = home;
+                std::string rootLabel = home.filename().string();
+                crumbs.push_back({ rootLabel.empty() ? std::string("assets") : rootLabel, acc.string() });
+                if (relStr != ".") {
+                    for (const auto& part : rel) {
+                        std::string p = part.string();
+                        if (p.empty() || p == ".") continue;
+                        acc /= part;
+                        crumbs.push_back({ p, acc.string() });
+                    }
+                }
+            }
+        }
+        if (!under) {
+            // Outside the assets root: fall back to absolute segments.
+            fs::path acc;
+            for (const auto& part : cur) {
+                std::string p = part.string();
+                if (p.empty()) continue;
+                acc /= part;
+                crumbs.push_back({ p, acc.string() });
+            }
+        }
+        for (size_t i = 0; i < crumbs.size(); ++i) {
+            if (i > 0) { ImGui::SameLine(0, 2); ImGui::TextDisabled("/"); ImGui::SameLine(0, 2); }
+            ImGui::PushID(static_cast<int>(i));
+            if (ImGui::SmallButton(crumbs[i].first.c_str())) {
+                m_AssetBrowserPath = crumbs[i].second;
+                m_AssetBrowserCacheDirty = true;
+            }
+            ImGui::PopID();
+        }
+    }
 
     // Search bar
     ImGui::SetNextItemWidth(-1);
