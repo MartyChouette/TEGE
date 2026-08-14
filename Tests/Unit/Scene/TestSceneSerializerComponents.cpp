@@ -111,6 +111,71 @@ ENJIN_TEST(ParticleEmitter, FieldsRoundTrip) {
 }
 
 // ===========================================================================
+// RigidbodyComponent
+// ===========================================================================
+
+ENJIN_TEST(Rigidbody, FieldsRoundTrip) {
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& rb = w1.AddComponent<RigidbodyComponent>(e);
+    rb.mass = 3.0f;
+    rb.drag = 0.4f;
+    rb.angularDrag = 0.2f;
+    rb.useGravity = false;
+    rb.gravityScale = 2.0f;
+    rb.velocity = Math::Vector3(1.0f, -2.0f, 3.0f);
+    rb.maxVelocity = 42.0f;
+    rb.freezePositionY = true;
+    rb.bodyType = RigidbodyComponent::BodyType::Kinematic;
+
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<RigidbodyComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+    ENJIN_EXPECT_FLOAT_EQ(g->mass, 3.0f);
+    ENJIN_EXPECT_FLOAT_EQ(g->drag, 0.4f);
+    ENJIN_EXPECT_FLOAT_EQ(g->angularDrag, 0.2f);
+    ENJIN_EXPECT_FALSE(g->useGravity);
+    ENJIN_EXPECT_FLOAT_EQ(g->gravityScale, 2.0f);
+    ENJIN_EXPECT_FLOAT_EQ(g->velocity.x, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(g->velocity.z, 3.0f);
+    ENJIN_EXPECT_FLOAT_EQ(g->maxVelocity, 42.0f);
+    ENJIN_EXPECT_TRUE(g->freezePositionY);
+    ENJIN_EXPECT_EQ((int)g->bodyType, (int)RigidbodyComponent::BodyType::Kinematic);
+}
+
+// ===========================================================================
+// HealthComponent
+// ===========================================================================
+
+ENJIN_TEST(Health, FieldsRoundTrip) {
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& h = w1.AddComponent<HealthComponent>(e);
+    h.maxHealth = 150.0f;
+    h.currentHealth = 90.0f;
+    h.regenRate = 5.0f;
+    h.maxShield = 50.0f;
+    h.currentShield = 25.0f;
+    h.isInvulnerable = true;
+
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<HealthComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+    ENJIN_EXPECT_FLOAT_EQ(g->maxHealth, 150.0f);
+    ENJIN_EXPECT_FLOAT_EQ(g->currentHealth, 90.0f);
+    ENJIN_EXPECT_FLOAT_EQ(g->regenRate, 5.0f);
+    ENJIN_EXPECT_FLOAT_EQ(g->maxShield, 50.0f);
+    ENJIN_EXPECT_FLOAT_EQ(g->currentShield, 25.0f);
+    ENJIN_EXPECT_TRUE(g->isInvulnerable);
+}
+
+// ===========================================================================
 // MaterialComponent
 // ===========================================================================
 
