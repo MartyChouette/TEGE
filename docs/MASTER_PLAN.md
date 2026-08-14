@@ -87,7 +87,7 @@ Not release-blocking: goldens blessing, settings A/B matrix.
 - Roster cut to 16 templates on 08-07 (the old 48-entry catalog is gone for good). Most of the 16 still untested — biggest user-facing risk for anyone downloading 0.9.7. The play-probe and golden harness can automate the boots-and-plays tier.
 
 ### Earmarked latent bugs (diagnosed, unfixed)
-- Progressive cascade update: matrices update every frame while far-cascade textures lag; forceFullUpdate checks position only, never rotation.
+- ~~Progressive cascade update: forceFullUpdate checks position only, never rotation~~ **FIXED 2026-08-14**: also forces a full cascade update when the camera's view direction changes appreciably (fwd dot < 0.9998, ~1 deg/frame), so far cascades no longer lag/show stale shadows while turning in place. Wants an eyeball (turn the camera with progressive cascades on).
 - God rays: hardcoded 0.5 luminance threshold.
 - Cel outline: distance-dependent Sobel threshold on raw depth.
 

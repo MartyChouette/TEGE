@@ -1381,6 +1381,7 @@ private:
     // Progressive cascade shadow updates — far cascades update less frequently
     u32 m_ShadowFrameCounter = 0;
     Math::Vector3 m_PrevShadowCameraPos{0, 0, 0};
+    Math::Vector3 m_PrevShadowCameraForward{0, 0, -1};  // for cascade full-update on rotation
     u32 m_CascadeUpdateCooldown = 0;    // Frames until next forced cascade recalc during rotation-only
     bool ShouldUpdateCascade(u32 cascade) const;
 

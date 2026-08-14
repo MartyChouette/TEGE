@@ -10426,6 +10426,14 @@ void RenderSystem::RenderShadowPass() {
         f32 dist = (pos - m_PrevShadowCameraPos).Length();
         if (dist > 5.0f) forceFullUpdate = true;
         m_PrevShadowCameraPos = pos;
+
+        // Rotation matters as much as position: a camera turning in place changes every
+        // cascade's frustum but not its position, so progressive updates would let far
+        // cascades lag and show stale shadows while you look around. Force a full update
+        // whenever the view direction changes appreciably (~1 deg/frame => any real turn).
+        Math::Vector3 fwd = m_Camera->GetForward();
+        if (fwd.Dot(m_PrevShadowCameraForward) < 0.9998f) forceFullUpdate = true;
+        m_PrevShadowCameraForward = fwd;
     }
     // When the shadow caster set changes (e.g. an object was deleted) every cascade
     // must re-render this frame. Progressive updates otherwise skip far cascades, so
