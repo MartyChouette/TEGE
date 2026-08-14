@@ -812,6 +812,28 @@ public:
                         EM_ASM({ if (document.exitFullscreen) document.exitFullscreen(); });
                     }
                 });
+            // Accessibility toggles — write the runtime settings; colorblind/font
+            // re-apply every frame, and we apply colorblind immediately so it shows
+            // live even while the menu is up.
+            m_UISystem.GetEventBus().Listen("options_reduced_motion",
+                [this](const Enjin::GUI::UIEventData& e) { m_AccessibilitySettings.reducedMotion = e.boolValue; });
+            m_UISystem.GetEventBus().Listen("options_subtitles",
+                [this](const Enjin::GUI::UIEventData& e) { m_AccessibilitySettings.subtitlesEnabled = e.boolValue; });
+            m_UISystem.GetEventBus().Listen("options_dyslexia",
+                [this](const Enjin::GUI::UIEventData& e) {
+                    m_AccessibilitySettings.dyslexiaFriendly = e.boolValue;
+                    m_UISystem.SetFontScale(m_AccessibilitySettings.fontScale);
+                });
+            m_UISystem.GetEventBus().Listen("options_colorblind",
+                [this](const Enjin::GUI::UIEventData& e) {
+                    Enjin::u32 mode = static_cast<Enjin::u32>(e.floatValue * 8.0f + 0.5f);
+                    if (mode > 8) mode = 8;
+                    m_AccessibilitySettings.colorblindMode = static_cast<Enjin::Accessibility::ColorblindMode>(mode);
+                    if (m_RenderSystem) {
+                        m_RenderSystem->SetWebAccessibility(mode, m_AccessibilitySettings.colorblindStrength,
+                            m_AccessibilitySettings.screenBrightness, m_AccessibilitySettings.screenContrast);
+                    }
+                });
             // Authored MainMenu canvas buttons: hide (not destroy -- authored
             // content) and unfreeze gameplay.
             auto startGame = [this]() {

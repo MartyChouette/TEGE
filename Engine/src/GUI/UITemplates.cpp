@@ -160,7 +160,7 @@ UICanvasComponent CreateOptionsMenu() {
         p->anchor.anchorMin = Math::Vector2(0.5f, 0.5f);
         p->anchor.anchorMax = Math::Vector2(0.5f, 0.5f);
         p->anchor.offsetLeft = -250.0f; p->anchor.offsetRight = 250.0f;
-        p->anchor.offsetTop = -200.0f;  p->anchor.offsetBottom = 200.0f;
+        p->anchor.offsetTop = -280.0f;  p->anchor.offsetBottom = 280.0f;
         p->style.bgColor = Math::Vector3(0.10f, 0.10f, 0.14f);
         p->style.bgAlpha = 0.95f;
         p->style.borderRadius = 8.0f;
@@ -262,12 +262,81 @@ UICanvasComponent CreateOptionsMenu() {
         t->onValueChangedEvent = "options_shadows";
     }
 
+    // --- Accessibility section -------------------------------------------------
+    u32 a11yLabel = canvas.AddElement(UIWidgetType::Label, "AccessLabel", panel);
+    {
+        auto* l = canvas.GetElement(a11yLabel);
+        l->anchor.anchorMin = Math::Vector2(0.05f, 0.71f);
+        l->anchor.anchorMax = Math::Vector2(0.5f, 0.71f);
+        l->anchor.offsetLeft = 0; l->anchor.offsetRight = 0;
+        l->anchor.offsetTop = -12.0f; l->anchor.offsetBottom = 12.0f;
+        l->data.text = "Accessibility";
+        l->data.textAlignH = 0;
+        l->style.fontSize = 18.0f;
+    }
+    // Reduced Motion (left) + Subtitles (right)
+    u32 reducedMotion = canvas.AddElement(UIWidgetType::Checkbox, "ReducedMotion", panel);
+    {
+        auto* c = canvas.GetElement(reducedMotion);
+        c->anchor.anchorMin = Math::Vector2(0.05f, 0.77f);
+        c->anchor.anchorMax = Math::Vector2(0.48f, 0.77f);
+        c->anchor.offsetLeft = 0; c->anchor.offsetRight = 0;
+        c->anchor.offsetTop = -12.0f; c->anchor.offsetBottom = 12.0f;
+        c->data.text = "Reduced Motion";
+        c->data.checked = false;
+        c->onValueChangedEvent = "options_reduced_motion";
+    }
+    u32 subtitlesChk = canvas.AddElement(UIWidgetType::Checkbox, "Subtitles", panel);
+    {
+        auto* c = canvas.GetElement(subtitlesChk);
+        c->anchor.anchorMin = Math::Vector2(0.52f, 0.77f);
+        c->anchor.anchorMax = Math::Vector2(0.95f, 0.77f);
+        c->anchor.offsetLeft = 0; c->anchor.offsetRight = 0;
+        c->anchor.offsetTop = -12.0f; c->anchor.offsetBottom = 12.0f;
+        c->data.text = "Subtitles";
+        c->data.checked = false;
+        c->onValueChangedEvent = "options_subtitles";
+    }
+    // Dyslexia Font (left)
+    u32 dyslexiaChk = canvas.AddElement(UIWidgetType::Checkbox, "DyslexiaFont", panel);
+    {
+        auto* c = canvas.GetElement(dyslexiaChk);
+        c->anchor.anchorMin = Math::Vector2(0.05f, 0.83f);
+        c->anchor.anchorMax = Math::Vector2(0.48f, 0.83f);
+        c->anchor.offsetLeft = 0; c->anchor.offsetRight = 0;
+        c->anchor.offsetTop = -12.0f; c->anchor.offsetBottom = 12.0f;
+        c->data.text = "Dyslexia Font";
+        c->data.checked = false;
+        c->onValueChangedEvent = "options_dyslexia";
+    }
+    // Colorblind mode label + slider (0 = Off .. 8 modes)
+    u32 cbLabel = canvas.AddElement(UIWidgetType::Label, "ColorblindLabel", panel);
+    {
+        auto* l = canvas.GetElement(cbLabel);
+        l->anchor.anchorMin = Math::Vector2(0.05f, 0.89f);
+        l->anchor.anchorMax = Math::Vector2(0.35f, 0.89f);
+        l->anchor.offsetLeft = 0; l->anchor.offsetRight = 0;
+        l->anchor.offsetTop = -10.0f; l->anchor.offsetBottom = 10.0f;
+        l->data.text = "Colorblind";
+        l->data.textAlignH = 0;
+    }
+    u32 cbSlider = canvas.AddElement(UIWidgetType::Slider, "ColorblindSlider", panel);
+    {
+        auto* s = canvas.GetElement(cbSlider);
+        s->anchor.anchorMin = Math::Vector2(0.38f, 0.89f);
+        s->anchor.anchorMax = Math::Vector2(0.92f, 0.89f);
+        s->anchor.offsetLeft = 0; s->anchor.offsetRight = 0;
+        s->anchor.offsetTop = -12.0f; s->anchor.offsetBottom = 12.0f;
+        s->data.sliderValue = 0.0f;
+        s->onValueChangedEvent = "options_colorblind";
+    }
+
     // Back button
     u32 backBtn = canvas.AddElement(UIWidgetType::Button, "Back", panel);
     {
         auto* b = canvas.GetElement(backBtn);
-        b->anchor.anchorMin = Math::Vector2(0.3f, 0.85f);
-        b->anchor.anchorMax = Math::Vector2(0.7f, 0.85f);
+        b->anchor.anchorMin = Math::Vector2(0.3f, 0.95f);
+        b->anchor.anchorMax = Math::Vector2(0.7f, 0.95f);
         b->anchor.offsetLeft = 0.0f; b->anchor.offsetRight = 0.0f;
         b->anchor.offsetTop = -20.0f; b->anchor.offsetBottom = 20.0f;
         b->data.text = "Back";
@@ -277,6 +346,8 @@ UICanvasComponent CreateOptionsMenu() {
     // Suppress unused variable warnings
     (void)volLabel; (void)sfxLabel; (void)fullscreenCheck;
     (void)vsyncCheck; (void)shadowsToggle;
+    (void)a11yLabel; (void)reducedMotion; (void)subtitlesChk;
+    (void)dyslexiaChk; (void)cbLabel; (void)cbSlider;
 
     return canvas;
 }
