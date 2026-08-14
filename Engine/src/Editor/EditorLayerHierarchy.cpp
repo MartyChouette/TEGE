@@ -288,6 +288,25 @@ void EditorLayer::DrawHierarchyPanel() {
                     m_UndoRedo.Execute(std::move(cmd));
                 }
             }
+            if (const ImGuiPayload* aspl = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
+                std::string assetPath(static_cast<const char*>(aspl->Data));
+                std::filesystem::path fp(assetPath);
+                std::string ext = fp.extension().string();
+                std::transform(ext.begin(), ext.end(), ext.begin(),
+                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (ext == ".fbx" || ext == ".gltf" || ext == ".glb" ||
+                    ext == ".obj" || ext == ".dae" || ext == ".3ds") {
+                    ImportModel(assetPath);
+                } else if (ext == ".as" || ext == ".angelscript") {
+                    ECS::Entity e = m_World->CreateEntity();
+                    m_World->AddComponent<ECS::TransformComponent>(e);
+                    ECS::NameComponent nc; nc.name = fp.stem().string();
+                    m_World->AddComponent<ECS::NameComponent>(e, nc);
+                    AttachScriptFromAsset(e, assetPath);
+                    SelectEntity(e);
+                    RecordLayerCreate(e);
+                }
+            }
             ImGui::EndDragDropTarget();
         }
 
@@ -296,6 +315,7 @@ void EditorLayer::DrawHierarchyPanel() {
             if (ImGui::MenuItem("Create Empty Entity")) {
                 ECS::Entity entity = m_World->CreateEntity();
                 m_World->AddComponent<ECS::TransformComponent>(entity);
+                { ECS::NameComponent nc; nc.name = "Empty"; m_World->AddComponent<ECS::NameComponent>(entity, nc); }
                 SelectEntity(entity);
                 RecordLayerCreate(entity);
                 if (m_CollabSystem.IsActive()) {
@@ -425,7 +445,17 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
     // or drop a .as script from the Asset Browser onto it to attach the script.
     if (ImGui::BeginDragDropTarget()) {
         if (const ImGuiPayload* aspl = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
-            AttachScriptFromAsset(entity, static_cast<const char*>(aspl->Data));
+            std::string assetPath(static_cast<const char*>(aspl->Data));
+            std::filesystem::path fp(assetPath);
+            std::string asExt = fp.extension().string();
+            std::transform(asExt.begin(), asExt.end(), asExt.begin(),
+                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (asExt == ".fbx" || asExt == ".gltf" || asExt == ".glb" ||
+                asExt == ".obj" || asExt == ".dae" || asExt == ".3ds") {
+                ImportModel(assetPath);
+            } else {
+                AttachScriptFromAsset(entity, assetPath);
+            }
         }
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_REPARENT")) {
             const ECS::Entity* items = static_cast<const ECS::Entity*>(payload->Data);

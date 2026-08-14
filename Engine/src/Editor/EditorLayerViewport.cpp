@@ -1,6 +1,7 @@
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
+#include "Enjin/Assets/AssetPipeline.h"
 #include "Enjin/Core/Version.h"
 #include <imgui_internal.h>
 #include <GLFW/glfw3.h>
@@ -254,6 +255,17 @@ void EditorLayer::DrawViewportPanel() {
 
                     if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" ||
                         ext == ".tga" || ext == ".bmp" || ext == ".svg") {
+                        // Copy into project assets so the reference stays valid if the source moves.
+                        {
+                            std::string projPath = m_SceneManager.GetProjectPath();
+                            if (!projPath.empty()) {
+                                std::string copied = Assets::AssetPipeline::CopyToProjectAssets(
+                                    dropPath,
+                                    std::filesystem::path(projPath).parent_path().string(),
+                                    "assets/textures");
+                                if (!copied.empty()) dropPath = copied;
+                            }
+                        }
                         // Pick the entity under the drop location and assign as base color texture
                         Math::Vector2 mousePos = Input::GetMousePosition();
                         f32 vpW = imgMax.x - imgMin.x;

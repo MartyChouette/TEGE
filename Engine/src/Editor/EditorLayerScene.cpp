@@ -1,5 +1,6 @@
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Editor/DropImport.h"
+#include "Enjin/Assets/AssetPipeline.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
@@ -593,9 +594,12 @@ void EditorLayer::OnFileDrop(int count, const char** paths) {
             OpenScene(filePath.string());
         } else if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga" || ext == ".bmp") {
             // Assign texture to selected entity's material (or all mesh children if container)
+            std::string texPath = Assets::AssetPipeline::CopyToProjectAssets(
+                filePath.string(),
+                std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string(),
+                "assets/textures");
             ECS::Entity selected = m_PrimarySelected;
             if (selected != ECS::INVALID_ENTITY && m_World) {
-                std::string texPath = filePath.string();
 
                 // Helper: assign texture to a single entity
                 auto assignTexture = [&](ECS::Entity e) {
@@ -643,9 +647,9 @@ void EditorLayer::OnFileDrop(int count, const char** paths) {
             } else {
                 // Nothing selected — create a sprite quad showing the texture, so a
                 // dropped image always produces something visible (Mac-style import).
-                ECS::Entity e = CreateSpriteEntity(m_World, filePath.string());
+                ECS::Entity e = CreateSpriteEntity(m_World, texPath);
                 if (e != ECS::INVALID_ENTITY) {
-                    if (m_RenderSystem) m_RenderSystem->ClearFailedTexture(filePath.string());
+                    if (m_RenderSystem) m_RenderSystem->ClearFailedTexture(texPath);
                     SelectEntity(e);
                     ENJIN_LOG_INFO(Editor, "Created sprite from texture: %s", paths[i]);
                     m_ConsoleLog.push_back(std::string("[Info] Created sprite from texture: ") + paths[i]);

@@ -1,5 +1,6 @@
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Editor/InspectorUndo.h"
+#include "Enjin/Assets/AssetPipeline.h"
 #include <thread>
 
 // Webhook URLs — compiled in, not user-configurable. File is .gitignored.
@@ -1083,6 +1084,34 @@ void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOpt
                         for (const auto& part : rel) { if (part == "..") { escapes = true; break; } }
                     }
                     if (!escapes) mc->source.sourcePath = rel.generic_string();
+                }
+            }
+        }
+
+        // Copy imported textures into project assets and update the material paths.
+        // Mirrors the mesh source portability block above: textures that resolved to
+        // an absolute path outside the project are copied to assets/textures/ so they
+        // stay valid after the project is moved or shared.
+        {
+            std::string projPath = m_SceneManager.GetProjectPath();
+            if (!projPath.empty()) {
+                std::string projRoot = std::filesystem::path(projPath).parent_path().string();
+                auto importTex = [&](std::string& texPath) {
+                    if (!texPath.empty())
+                        texPath = Assets::AssetPipeline::CopyToProjectAssets(
+                            texPath, projRoot, "assets/textures");
+                };
+                for (ECS::Entity e : result.entities) {
+                    if (!m_World->IsValid(e)) continue;
+                    auto* mat = m_World->GetComponent<ECS::MaterialComponent>(e);
+                    if (!mat) continue;
+                    importTex(mat->baseColorTexturePath);
+                    importTex(mat->normalTexturePath);
+                    importTex(mat->metallicRoughnessTexturePath);
+                    importTex(mat->emissiveTexturePath);
+                    importTex(mat->specularTexturePath);
+                    importTex(mat->heightTexturePath);
+                    importTex(mat->matcapTexturePath);
                 }
             }
         }
