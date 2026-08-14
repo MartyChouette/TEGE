@@ -3992,6 +3992,12 @@ void RenderSystem::Update(f32 deltaTime) {
         return;
     }
 
+    // Adaptive quality: measure this frame's FPS and (at its own interval) scale the
+    // shadow levers to hold the target frame rate. Default OFF; the game runtime opts in.
+    if (m_AdaptiveQualityEnabled && deltaTime > 0.0f) {
+        m_AdaptiveQuality.Update(deltaTime, 1.0f / deltaTime);
+    }
+
     // Apply deferred MSAA change (requested mid-frame by editor settings UI).
     // Must happen before any rendering — it recreates swapchain, render pass, pipelines.
     if (m_PendingMSAAChange) {
@@ -9230,6 +9236,35 @@ void RenderSystem::SetShadowResolution(u32 r) {
     // Defer the actual resize to FlushPendingChanges() where the GPU is already idle
     m_PendingShadowResolution = r;
     m_PendingRecreation = PendingRecreationType::PipelineOnly;
+}
+
+void RenderSystem::SetAdaptiveQualityEnabled(bool enabled) {
+    if (enabled == m_AdaptiveQualityEnabled) return;
+    m_AdaptiveQualityEnabled = enabled;
+    if (enabled) {
+        // Fresh start: keep the configured target FPS and register the apply callback.
+        // We deliberately do NOT apply the starting (max) level here — that would stomp
+        // the game's authored quality upward at boot. Levers only change when the system
+        // decides to (downgrade under load, upgrade when there's headroom).
+        Renderer::AdaptiveQualityConfig cfg = m_AdaptiveQuality.GetConfig();
+        m_AdaptiveQuality.Initialize(cfg);
+        m_AdaptiveQuality.SetEnabled(true);
+        m_AdaptiveQuality.SetQualityChangeCallback(
+            [this](Renderer::QualityLevel, Renderer::QualityLevel to) { ApplyAdaptiveQualityLevel(to); });
+    } else {
+        m_AdaptiveQuality.SetEnabled(false);
+    }
+}
+
+void RenderSystem::ApplyAdaptiveQualityLevel(Renderer::QualityLevel level) {
+    using QL = Renderer::QualityLevel;
+    // Shadow resolution resize is frame-safe (SetShadowResolution defers to
+    // FlushPendingChanges). Drop shadows entirely at the floor; cheapen far cascades
+    // below High. These are the levers RenderSystem owns directly; render-scale and
+    // cross-system levers (post-process, particles) are phase 2.
+    SetShadowResolution(m_AdaptiveQuality.GetRecommendedShadowResolution());
+    SetShadowsEnabled(level > QL::VeryLow);
+    SetCascadeProgressiveUpdate(level <= QL::Medium);
 }
 
 void RenderSystem::SetHDREnabled(bool enabled) {

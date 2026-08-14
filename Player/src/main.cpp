@@ -228,6 +228,12 @@ public:
         m_RenderSystem->SetPlayerMode(true);  // Skip GPU compute shaders not embedded in builds
         m_RenderSystem->Initialize();
 
+        // 120-FPS-No-Matter-What pillar: hold the frame rate by scaling shadow quality
+        // under load (adr / AdaptiveQualitySystem). Target 60 by default; a high-refresh
+        // build can raise it. Shipped games opt in here; the editor leaves it off.
+        m_RenderSystem->SetAdaptiveQualityTargetFPS(60.0f);
+        m_RenderSystem->SetAdaptiveQualityEnabled(true);
+
         // Initialize ImGui layer for pause menu and dialogue overlays
         m_ImGuiLayer = std::make_unique<Enjin::GUI::ImGuiLayer>();
         if (!m_ImGuiLayer->Initialize(GetWindow(), m_Renderer.get())) {

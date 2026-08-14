@@ -30,6 +30,7 @@ namespace Enjin::Build { class AssetReader; }
 #endif
 
 #include "Enjin/Renderer/Camera.h"
+#include "Enjin/Renderer/AdaptiveQuality.h"
 #if !ENJIN_RENDERER_WEBGPU
 #include "Enjin/Renderer/RenderTarget.h"
 #include "Enjin/Renderer/Texture.h"
@@ -381,6 +382,21 @@ public:
     // Shadow distance is used by BOTH backends (web: single-cascade frustum fit)
     f32 GetShadowDistance() const { return m_ShadowDistance; }
     void SetShadowDistance(f32 d);
+
+#if !ENJIN_RENDERER_WEBGPU
+    // --- Adaptive quality (120-FPS-No-Matter-What pillar) ------------------------
+    // Dynamically scales rendering quality to HOLD a target frame rate. Default OFF
+    // (the editor must not change quality while you author) — enable it in the game
+    // runtime. Ticked from Update() with 1/deltaTime; a quality change applies the
+    // frame-safe shadow levers (resolution defers to FlushPendingChanges). Target FPS
+    // defaults to 60; raise it for high-refresh displays. NOTE: with vsync the measured
+    // FPS is capped at the display refresh, so set the target at or below it.
+    // (Vulkan only for now — the shadow levers are Vulkan-side; WebGPU is a follow-up.)
+    void SetAdaptiveQualityEnabled(bool enabled);
+    bool IsAdaptiveQualityEnabled() const { return m_AdaptiveQualityEnabled; }
+    void SetAdaptiveQualityTargetFPS(f32 fps) { m_AdaptiveQuality.SetTargetFPS(fps); }
+    Renderer::QualityLevel GetAdaptiveQualityLevel() const { return m_AdaptiveQuality.GetCurrentLevel(); }
+#endif
 
     bool IsBackfaceCullingEnabled() const { return m_BackfaceCulling; }
     void SetBackfaceCullingEnabled(bool enabled);
@@ -1142,6 +1158,14 @@ private:
 
     // Shared by both backends: Vulkan CSM range + web single-cascade frustum fit
     f32 m_ShadowDistance = 100.0f;
+
+#if !ENJIN_RENDERER_WEBGPU
+    // Adaptive quality (120-FPS pillar). Default OFF; enabled by the game runtime.
+    // Ticked in Update(); a level change applies frame-safe shadow levers.
+    Renderer::AdaptiveQualitySystem m_AdaptiveQuality;
+    bool m_AdaptiveQualityEnabled = false;
+    void ApplyAdaptiveQualityLevel(Renderer::QualityLevel level);
+#endif
 
     bool m_BackfaceCulling = false;
     bool m_WireframeMode = false;

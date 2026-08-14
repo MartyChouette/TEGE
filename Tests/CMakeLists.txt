@@ -144,6 +144,7 @@ enjin_add_test(TestPathTracerConfig   Unit/Renderer/TestPathTracerConfig.cpp)
 enjin_add_test(TestSceneRenderSettingsExt Unit/Renderer/TestSceneRenderSettingsExt.cpp)
 enjin_add_test(TestEmbeddedShaders    Unit/Renderer/TestEmbeddedShaders.cpp)
 enjin_add_test(TestMeshFactory        Unit/Renderer/TestMeshFactory.cpp)
+enjin_add_test(TestAdaptiveQuality    Unit/Renderer/TestAdaptiveQuality.cpp)
 
 # --- Editor ---
 enjin_add_test(TestEditorSettings     Unit/Editor/TestEditorSettings.cpp)
