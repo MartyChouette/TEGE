@@ -934,6 +934,23 @@ void EditorLayer::DrawAssetBrowserPanel() {
                     }
                 }
 
+                // Drag source — MUST be immediately after the item, before any tooltip.
+                // A hover tooltip opens a separate window that clobbers ImGui's last-item
+                // state, so calling BeginDragDropSource after it failed to attach for
+                // non-image files (scripts, audio, etc.) — you could not grab them.
+                if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+                    ImGui::SetDragDropPayload("ASSET_PATH", entry.fullPath.c_str(), entry.fullPath.size() + 1);
+                    if (IsImage(entry.extension)) {
+                        VkDescriptorSet dragTexId = GetImGuiTexture(entry.fullPath);
+                        if (dragTexId != VK_NULL_HANDLE) {
+                            ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(dragTexId)),
+                                         ImVec2(64.0f, 64.0f));
+                        }
+                    }
+                    ImGui::Text("%s", entry.name.c_str());
+                    ImGui::EndDragDropSource();
+                }
+
                 // Double-click to import/open
                 if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
                     if (IsModel(entry.extension)) {
@@ -949,21 +966,6 @@ void EditorLayer::DrawAssetBrowserPanel() {
                     ImGui::Text("%s", entry.name.c_str());
                     ImGui::TextDisabled("%s  |  %s", entry.extension.c_str(), FormatFileSize(entry.fileSize).c_str());
                     ImGui::EndTooltip();
-                }
-
-                // Drag source for drag-to-viewport / drag-to-inspector
-                if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
-                    ImGui::SetDragDropPayload("ASSET_PATH", entry.fullPath.c_str(), entry.fullPath.size() + 1);
-                    // Show preview tooltip during drag for image files
-                    if (IsImage(entry.extension)) {
-                        VkDescriptorSet dragTexId = GetImGuiTexture(entry.fullPath);
-                        if (dragTexId != VK_NULL_HANDLE) {
-                            ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(dragTexId)),
-                                         ImVec2(64.0f, 64.0f));
-                        }
-                    }
-                    ImGui::Text("%s", entry.name.c_str());
-                    ImGui::EndDragDropSource();
                 }
 
                 // Right-click context menu
@@ -1056,6 +1058,14 @@ void EditorLayer::DrawAssetBrowserPanel() {
 
                 ImGui::PopStyleColor();
 
+                // Drag source — attach to the file's row item (the Selectable above),
+                // before the size text and tooltip, so non-image files (scripts) drag too.
+                if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+                    ImGui::SetDragDropPayload("ASSET_PATH", entry.fullPath.c_str(), entry.fullPath.size() + 1);
+                    ImGui::Text("%s", entry.name.c_str());
+                    ImGui::EndDragDropSource();
+                }
+
                 // Size on same line
                 ImGui::SameLine(ImGui::GetContentRegionAvail().x - 60);
                 ImGui::TextDisabled("%s", FormatFileSize(entry.fileSize).c_str());
@@ -1072,21 +1082,6 @@ void EditorLayer::DrawAssetBrowserPanel() {
                             ImGui::EndTooltip();
                         }
                     }
-                }
-
-                // Drag source
-                if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
-                    ImGui::SetDragDropPayload("ASSET_PATH", entry.fullPath.c_str(), entry.fullPath.size() + 1);
-                    // Show preview tooltip during drag for image files
-                    if (IsImage(entry.extension)) {
-                        VkDescriptorSet dragTexId = GetImGuiTexture(entry.fullPath);
-                        if (dragTexId != VK_NULL_HANDLE) {
-                            ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(dragTexId)),
-                                         ImVec2(64.0f, 64.0f));
-                        }
-                    }
-                    ImGui::Text("%s", entry.name.c_str());
-                    ImGui::EndDragDropSource();
                 }
 
                 // Right-click context menu
