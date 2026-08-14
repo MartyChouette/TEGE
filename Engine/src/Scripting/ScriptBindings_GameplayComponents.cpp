@@ -6,6 +6,8 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include "Enjin/ECS/Components/ReflectionProbe.h"
+#include "Enjin/ECS/Components/Lens.h"
+#include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include <angelscript.h>
 #include <string>
 #include <cctype>
@@ -174,6 +176,166 @@ static void Billboard_SetRotationOffset(u64 self, float deg) {
     if (auto* c = s_BindingsWorld->GetComponent<ECS::BillboardComponent>(self)) c->rotationOffset = deg;
 }
 
+// --- Possessable: entities the player can take control of -------------------
+static bool Possessable_IsPossessed(u64 self) {
+    if (!s_BindingsWorld) return false;
+    auto* c = s_BindingsWorld->GetComponent<ECS::PossessableComponent>(self);
+    return c ? c->isPossessed : false;
+}
+static void Possessable_SetPrompt(u64 self, const std::string& text) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::PossessableComponent>(self)) c->promptText = text;
+}
+static void Possessable_SetRange(u64 self, float range) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::PossessableComponent>(self)) c->possessRange = range;
+}
+static void Possessable_SetPlayerIndex(u64 self, int index) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::PossessableComponent>(self)) c->playerIndex = index;
+}
+
+// --- SavePoint --------------------------------------------------------------
+static void SavePoint_SetSlot(u64 self, int slot) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::SavePointComponent>(self)) c->slotTarget = slot;
+}
+static void SavePoint_SetSaveOnEnter(u64 self, bool on) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::SavePointComponent>(self)) c->saveOnEnter = on;
+}
+static bool SavePoint_IsUsed(u64 self) {
+    if (!s_BindingsWorld) return false;
+    auto* c = s_BindingsWorld->GetComponent<ECS::SavePointComponent>(self);
+    return c ? c->used : false;
+}
+static void SavePoint_SetRadius(u64 self, float r) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::SavePointComponent>(self)) c->radius = r;
+}
+static void SavePoint_SetMessage(u64 self, const std::string& msg) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::SavePointComponent>(self)) c->saveMessage = msg;
+}
+
+// --- Footstep ---------------------------------------------------------------
+static void Footstep_SetVolume(u64 self, float v) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::FootstepComponent>(self)) c->volume = v;
+}
+static void Footstep_SetWalkInterval(u64 self, float s) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::FootstepComponent>(self)) c->walkStepInterval = s;
+}
+static void Footstep_SetRunInterval(u64 self, float s) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::FootstepComponent>(self)) c->runStepInterval = s;
+}
+static void Footstep_SetPitchVariance(u64 self, float v) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::FootstepComponent>(self)) c->pitchVariance = v;
+}
+
+// --- ReverbZone -------------------------------------------------------------
+static void Reverb_SetActive(u64 self, bool a) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::ReverbZoneComponent>(self)) c->isActive = a;
+}
+static void Reverb_SetRoomSize(u64 self, float v) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::ReverbZoneComponent>(self)) c->roomSize = v;
+}
+static void Reverb_SetDamping(u64 self, float v) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::ReverbZoneComponent>(self)) c->damping = v;
+}
+static void Reverb_SetWetDryMix(u64 self, float v) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::ReverbZoneComponent>(self)) c->wetDryMix = v;
+}
+static void Reverb_SetDecayTime(u64 self, float v) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::ReverbZoneComponent>(self)) c->decayTime = v;
+}
+
+// --- Lens: per-camera lens distortion/vignette ------------------------------
+static void Lens_SetEnabled(u64 self, bool e) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::LensComponent>(self)) c->enabled = e;
+}
+static void Lens_SetDistortion(u64 self, float v) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::LensComponent>(self)) c->distortion = v;
+}
+static void Lens_SetChromaticAberration(u64 self, float v) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::LensComponent>(self)) c->chromaticAberration = v;
+}
+static void Lens_SetVignette(u64 self, float intensity, float softness) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::LensComponent>(self)) {
+        c->vignetteIntensity = intensity; c->vignetteSoftness = softness;
+    }
+}
+static void Lens_SetAnamorphicSqueeze(u64 self, float v) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::LensComponent>(self)) c->anamorphicSqueeze = v;
+}
+
+// --- Physics joints (runtime tuning) ----------------------------------------
+static void SpringJoint_SetRestLength(u64 self, float v) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::SpringJointComponent>(self)) c->restLength = v;
+}
+static void SpringJoint_SetStiffness(u64 self, float v) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::SpringJointComponent>(self)) c->springConstant = v;
+}
+static void SpringJoint_SetDamping(u64 self, float v) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::SpringJointComponent>(self)) c->dampingCoefficient = v;
+}
+static float SpringJoint_GetStress(u64 self) {
+    if (!s_BindingsWorld) return 0.0f;
+    auto* c = s_BindingsWorld->GetComponent<ECS::SpringJointComponent>(self);
+    return c ? c->currentStress : 0.0f;
+}
+static void SliderJoint_SetMotor(u64 self, bool enable, float speed, float maxForce) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::SliderJointComponent>(self)) {
+        c->useMotor = enable; c->motorSpeed = speed; c->motorMaxForce = maxForce;
+    }
+}
+static void SliderJoint_SetLimits(u64 self, bool use, float lower, float upper) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::SliderJointComponent>(self)) {
+        c->useLimits = use; c->lowerLimit = lower; c->upperLimit = upper;
+    }
+}
+static float SliderJoint_GetDisplacement(u64 self) {
+    if (!s_BindingsWorld) return 0.0f;
+    auto* c = s_BindingsWorld->GetComponent<ECS::SliderJointComponent>(self);
+    return c ? c->currentDisplacement : 0.0f;
+}
+static void FixedJoint_SetBreakable(u64 self, bool breakable, float force) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::FixedJointComponent>(self)) {
+        c->breakable = breakable; c->breakForce = force;
+    }
+}
+static void BallSocket_SetConeLimit(u64 self, bool use, float angleDeg) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::BallSocketJointComponent>(self)) {
+        c->useConeLimit = use; c->coneAngleLimit = angleDeg;
+    }
+}
+static void BallSocket_SetTwistLimit(u64 self, bool use, float lower, float upper) {
+    if (!s_BindingsWorld) return;
+    if (auto* c = s_BindingsWorld->GetComponent<ECS::BallSocketJointComponent>(self)) {
+        c->useTwistLimit = use; c->twistLowerLimit = lower; c->twistUpperLimit = upper;
+    }
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
@@ -221,6 +383,51 @@ void RegisterGameplayComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("void Billboard_SetFaceCamera(uint64, bool)", ENJIN_AS_FN(Billboard_SetFaceCamera), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Billboard_SetLockY(uint64, bool)", ENJIN_AS_FN(Billboard_SetLockY), ENJIN_AS_CALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Billboard_SetRotationOffset(uint64, float)", ENJIN_AS_FN(Billboard_SetRotationOffset), ENJIN_AS_CALL_CDECL));
+
+    // Possessable
+    AS_CHECK(engine->RegisterGlobalFunction("bool Possessable_IsPossessed(uint64)", ENJIN_AS_FN(Possessable_IsPossessed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Possessable_SetPrompt(uint64, const string &in)", ENJIN_AS_FN(Possessable_SetPrompt), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Possessable_SetRange(uint64, float)", ENJIN_AS_FN(Possessable_SetRange), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Possessable_SetPlayerIndex(uint64, int)", ENJIN_AS_FN(Possessable_SetPlayerIndex), ENJIN_AS_CALL_CDECL));
+
+    // SavePoint
+    AS_CHECK(engine->RegisterGlobalFunction("void SavePoint_SetSlot(uint64, int)", ENJIN_AS_FN(SavePoint_SetSlot), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SavePoint_SetSaveOnEnter(uint64, bool)", ENJIN_AS_FN(SavePoint_SetSaveOnEnter), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool SavePoint_IsUsed(uint64)", ENJIN_AS_FN(SavePoint_IsUsed), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SavePoint_SetRadius(uint64, float)", ENJIN_AS_FN(SavePoint_SetRadius), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SavePoint_SetMessage(uint64, const string &in)", ENJIN_AS_FN(SavePoint_SetMessage), ENJIN_AS_CALL_CDECL));
+
+    // Footstep
+    AS_CHECK(engine->RegisterGlobalFunction("void Footstep_SetVolume(uint64, float)", ENJIN_AS_FN(Footstep_SetVolume), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Footstep_SetWalkInterval(uint64, float)", ENJIN_AS_FN(Footstep_SetWalkInterval), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Footstep_SetRunInterval(uint64, float)", ENJIN_AS_FN(Footstep_SetRunInterval), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Footstep_SetPitchVariance(uint64, float)", ENJIN_AS_FN(Footstep_SetPitchVariance), ENJIN_AS_CALL_CDECL));
+
+    // ReverbZone
+    AS_CHECK(engine->RegisterGlobalFunction("void Reverb_SetActive(uint64, bool)", ENJIN_AS_FN(Reverb_SetActive), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Reverb_SetRoomSize(uint64, float)", ENJIN_AS_FN(Reverb_SetRoomSize), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Reverb_SetDamping(uint64, float)", ENJIN_AS_FN(Reverb_SetDamping), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Reverb_SetWetDryMix(uint64, float)", ENJIN_AS_FN(Reverb_SetWetDryMix), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Reverb_SetDecayTime(uint64, float)", ENJIN_AS_FN(Reverb_SetDecayTime), ENJIN_AS_CALL_CDECL));
+
+    // Lens
+    AS_CHECK(engine->RegisterGlobalFunction("void Lens_SetEnabled(uint64, bool)", ENJIN_AS_FN(Lens_SetEnabled), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Lens_SetDistortion(uint64, float)", ENJIN_AS_FN(Lens_SetDistortion), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Lens_SetChromaticAberration(uint64, float)", ENJIN_AS_FN(Lens_SetChromaticAberration), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Lens_SetVignette(uint64, float, float)", ENJIN_AS_FN(Lens_SetVignette), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Lens_SetAnamorphicSqueeze(uint64, float)", ENJIN_AS_FN(Lens_SetAnamorphicSqueeze), ENJIN_AS_CALL_CDECL));
+
+    // Physics joints
+    AS_CHECK(engine->RegisterGlobalFunction("void SpringJoint_SetRestLength(uint64, float)", ENJIN_AS_FN(SpringJoint_SetRestLength), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SpringJoint_SetStiffness(uint64, float)", ENJIN_AS_FN(SpringJoint_SetStiffness), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SpringJoint_SetDamping(uint64, float)", ENJIN_AS_FN(SpringJoint_SetDamping), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float SpringJoint_GetStress(uint64)", ENJIN_AS_FN(SpringJoint_GetStress), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SliderJoint_SetMotor(uint64, bool, float, float)", ENJIN_AS_FN(SliderJoint_SetMotor), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void SliderJoint_SetLimits(uint64, bool, float, float)", ENJIN_AS_FN(SliderJoint_SetLimits), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float SliderJoint_GetDisplacement(uint64)", ENJIN_AS_FN(SliderJoint_GetDisplacement), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void FixedJoint_SetBreakable(uint64, bool, float)", ENJIN_AS_FN(FixedJoint_SetBreakable), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void BallSocket_SetConeLimit(uint64, bool, float)", ENJIN_AS_FN(BallSocket_SetConeLimit), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void BallSocket_SetTwistLimit(uint64, bool, float, float)", ENJIN_AS_FN(BallSocket_SetTwistLimit), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

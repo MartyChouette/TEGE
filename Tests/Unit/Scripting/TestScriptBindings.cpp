@@ -848,6 +848,14 @@ ENJIN_TEST(GameplayComponentBindings, RegisteredWithCorrectSignatures) {
         "    TempZone_SetTemperature(e, -5.0f);\n"
         "    ReflectionProbe_SetIntensity(e, 0.8f);\n"
         "    Billboard_SetLockY(e, true);\n"
+        "    bool p = Possessable_IsPossessed(e);\n"
+        "    SavePoint_SetSlot(e, 2);\n"
+        "    Footstep_SetVolume(e, 0.7f);\n"
+        "    Reverb_SetWetDryMix(e, 0.4f);\n"
+        "    Lens_SetVignette(e, 0.3f, 0.5f);\n"
+        "    SpringJoint_SetStiffness(e, 80.0f);\n"
+        "    SliderJoint_SetMotor(e, true, 2.0f, 100.0f);\n"
+        "    BallSocket_SetConeLimit(e, true, 30.0f);\n"
         "}\n";
     ENJIN_ASSERT_TRUE(engine.CompileScriptFromMemory("gameplay_component_bindings", src));
 

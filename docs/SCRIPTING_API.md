@@ -231,6 +231,12 @@ Accessors for components that previously had no script access (closing the scrip
 - **TemperatureZone** — hot/cold regions: `TempZone_SetTemperature(uint64, float)`, `TempZone_GetTemperature(uint64)`, `TempZone_SetPriority(uint64, int)`.
 - **ReflectionProbe** — environment reflections: `ReflectionProbe_SetIntensity(uint64, float)`, `ReflectionProbe_GetIntensity(uint64)`, `ReflectionProbe_SetActive(uint64, bool)`, `ReflectionProbe_IsActive(uint64)`.
 - **Billboard** — camera-facing quads: `Billboard_SetFaceCamera(uint64, bool)`, `Billboard_SetLockY(uint64, bool)`, `Billboard_SetRotationOffset(uint64, float degrees)`.
+- **Possessable** — entities the player can take control of: `Possessable_IsPossessed(uint64)`, `Possessable_SetPrompt(uint64, const string &in)`, `Possessable_SetRange(uint64, float)`, `Possessable_SetPlayerIndex(uint64, int)`.
+- **SavePoint** — `SavePoint_SetSlot(uint64, int)`, `SavePoint_SetSaveOnEnter(uint64, bool)`, `SavePoint_IsUsed(uint64)`, `SavePoint_SetRadius(uint64, float)`, `SavePoint_SetMessage(uint64, const string &in)`.
+- **Footstep** — `Footstep_SetVolume(uint64, float)`, `Footstep_SetWalkInterval(uint64, float)`, `Footstep_SetRunInterval(uint64, float)`, `Footstep_SetPitchVariance(uint64, float)`.
+- **ReverbZone** — audio ambiance: `Reverb_SetActive(uint64, bool)`, `Reverb_SetRoomSize(uint64, float)`, `Reverb_SetDamping(uint64, float)`, `Reverb_SetWetDryMix(uint64, float)`, `Reverb_SetDecayTime(uint64, float)`.
+- **Lens** — per-camera lens: `Lens_SetEnabled(uint64, bool)`, `Lens_SetDistortion(uint64, float)`, `Lens_SetChromaticAberration(uint64, float)`, `Lens_SetVignette(uint64, float intensity, float softness)`, `Lens_SetAnamorphicSqueeze(uint64, float)`.
+- **Physics joints** (runtime tuning): `SpringJoint_SetRestLength/SetStiffness/SetDamping(uint64, float)`, `SpringJoint_GetStress(uint64)`; `SliderJoint_SetMotor(uint64, bool, float speed, float maxForce)`, `SliderJoint_SetLimits(uint64, bool, float lower, float upper)`, `SliderJoint_GetDisplacement(uint64)`; `FixedJoint_SetBreakable(uint64, bool, float force)`; `BallSocket_SetConeLimit(uint64, bool, float angle)`, `BallSocket_SetTwistLimit(uint64, bool, float lower, float upper)`.
 
 ## HUD Widget
 
