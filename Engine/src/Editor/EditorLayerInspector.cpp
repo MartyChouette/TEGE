@@ -1905,6 +1905,15 @@ void EditorLayer::DrawInspectorPanel() {
                     ImGui::DragFloat("Wake Width", &wi->wakeWidth, 0.1f, 0.0f, 5.0f);
                     ImGui::Checkbox("Generate Wake", &wi->generateWake);
                     ImGui::Checkbox("Apply Buoyancy", &wi->applyBuoyancy);
+                    // Per-object density: < 1 floats, > 1 sinks (flamingo 0.05, human 0.95, grill 3.5)
+                    ImGui::DragFloat("Density", &wi->density, 0.01f, 0.0f, 10.0f);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Relative to water. < 1 floats, 1 neutral, > 1 sinks.\nflamingo 0.05, foam 0.1, human 0.95, grill 3.5");
+                    ImGui::DragFloat("Displaced Volume", &wi->volume, 0.1f, 0.0f, 50.0f);
+                    ImGui::DragFloat("Waterlog Rate", &wi->waterlogRate, 0.05f, 0.0f, 5.0f);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Effective density gained per second while submerged.\n0 = never waterlogs (metal); ~0.3 sinks cardboard in a few seconds.");
+                    ImGui::DragFloat("Waterlog Max Density", &wi->waterlogMaxDensity, 0.05f, 0.0f, 10.0f);
                 }
             }
         }

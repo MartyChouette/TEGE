@@ -340,15 +340,30 @@ void InteractiveWaterSystem::Update(ECS::World* world, f32 dt) {
                 }
             }
 
-            // 3. Buoyancy
+            // 3. Buoyancy — per-object density (Gobliny spec). Density relative to
+            // water drives the vertical force: < 1 rises, > 1 sinks, == 1 neutral, so
+            // a flamingo floaty and a grill in the same pool behave differently.
             if (water->enableBuoyancy && interactorComp->applyBuoyancy && rb) {
                 if (entityY < waterHeight) {
                     f32 submergedDepth = waterHeight - entityY;
                     submergedDepth = Math::Min(submergedDepth, water->gridSize * 0.25f);
 
-                    // Upward buoyancy force
-                    f32 buoyancy = water->buoyancyForce * submergedDepth;
-                    rb->velocity.y += buoyancy * dt;
+                    // Waterlog: absorbent objects gain effective density while submerged
+                    // (cardboard floats, then rides lower and sinks). Accumulate up to
+                    // the object's waterlogMaxDensity.
+                    if (interactorComp->waterlogRate > 0.0f) {
+                        f32 maxLog = Math::Max(0.0f, interactorComp->waterlogMaxDensity - interactorComp->density);
+                        interactorComp->currentWaterlog = Math::Min(
+                            interactorComp->currentWaterlog + interactorComp->waterlogRate * dt, maxLog);
+                    }
+                    f32 effectiveDensity = interactorComp->density + interactorComp->currentWaterlog;
+
+                    // (1 - density) is the sign+strength of the vertical force: light
+                    // objects rise, dense objects sink. Scaled by submerged depth (a
+                    // proxy for displaced volume) and the object's volume multiplier.
+                    f32 buoyancyAccel = water->buoyancyForce * submergedDepth
+                                      * interactorComp->volume * (1.0f - effectiveDensity);
+                    rb->velocity.y += buoyancyAccel * dt;
 
                     // Water drag on horizontal velocity
                     f32 dragFactor = 1.0f - water->waterDrag * dt;

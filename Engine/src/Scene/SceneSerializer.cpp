@@ -4607,6 +4607,11 @@ json SerializeWaterInteractorComponent(const Effects::WaterInteractorComponent& 
     j["wakeWidth"] = RF(wi.wakeWidth);
     j["generateWake"] = wi.generateWake;
     j["applyBuoyancy"] = wi.applyBuoyancy;
+    // Per-object density model (currentWaterlog is runtime, not serialized)
+    j["density"] = RF(wi.density);
+    j["volume"] = RF(wi.volume);
+    j["waterlogRate"] = RF(wi.waterlogRate);
+    j["waterlogMaxDensity"] = RF(wi.waterlogMaxDensity);
     return j;
 }
 
@@ -4616,6 +4621,10 @@ Effects::WaterInteractorComponent DeserializeWaterInteractorComponent(const json
     if (j.contains("wakeWidth")) wi.wakeWidth = j["wakeWidth"].get<f32>();
     if (j.contains("generateWake")) wi.generateWake = JB(j["generateWake"]);
     if (j.contains("applyBuoyancy")) wi.applyBuoyancy = JB(j["applyBuoyancy"]);
+    if (j.contains("density")) wi.density = j["density"].get<f32>();
+    if (j.contains("volume")) wi.volume = j["volume"].get<f32>();
+    if (j.contains("waterlogRate")) wi.waterlogRate = j["waterlogRate"].get<f32>();
+    if (j.contains("waterlogMaxDensity")) wi.waterlogMaxDensity = j["waterlogMaxDensity"].get<f32>();
     return wi;
 }
 

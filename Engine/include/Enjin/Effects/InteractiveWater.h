@@ -85,6 +85,21 @@ struct WaterInteractorComponent {
     f32 wakeWidth = 0.5f;          // Width of V-wake in grid cells
     bool generateWake = true;       // Generate continuous wake when moving
     bool applyBuoyancy = true;      // Whether this entity receives buoyancy
+
+    // --- Per-object density (Gobliny buoyancy spec) ---
+    // density is relative to water: 1.0 = neutral, < 1.0 floats, > 1.0 sinks. This is
+    // what gives buoyancy VARIETY — a flamingo floaty and a grill in the same pool
+    // behave differently. Examples: flamingo 0.05, foam noodle 0.1, foam cup 0.2,
+    // wooden table 0.6, human 0.95, grill 3.5.
+    f32 density = 0.5f;
+    // Displaced-volume multiplier on the buoyant force (approximate the object's size;
+    // bigger objects get more lift for the same submersion). 1.0 = default.
+    f32 volume = 1.0f;
+    // Waterlogging: absorbent objects gain effective density while submerged and ride
+    // lower over time (cardboard floats, then sinks). 0.0 = never waterlogs.
+    f32 waterlogRate = 0.0f;           // effective density gained per second submerged
+    f32 waterlogMaxDensity = 1.5f;     // cap the waterlogged effective density
+    f32 currentWaterlog = 0.0f;        // runtime accumulator (not authored/serialized)
 };
 
 // ============================================================================

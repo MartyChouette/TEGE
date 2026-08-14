@@ -1,8 +1,34 @@
 #include "EnjinTest.h"
 #include "Enjin/Effects/InteractiveWater.h"
+#include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 
 using namespace Enjin;
 using namespace Enjin::Effects;
+
+// Build a water body at the origin with its surface at y=0, plus one interactor with a
+// dynamic rigidbody submerged 1 unit below the surface and the given density. Returns the
+// interactor entity so the caller can inspect its velocity after sys.Update().
+static ECS::Entity MakeSubmergedInteractor(ECS::World& world, f32 density, f32 waterlogRate = 0.0f) {
+    ECS::Entity e = world.CreateEntity();
+    ECS::TransformComponent t;
+    t.position = Math::Vector3(0.0f, -1.0f, 0.0f);   // below the y=0 surface -> submerged
+    t.scale = Math::Vector3(1, 1, 1);
+    world.AddComponent<ECS::TransformComponent>(e, t);
+
+    ECS::RigidbodyComponent rb;
+    rb.bodyType = ECS::RigidbodyComponent::BodyType::Dynamic;
+    rb.velocity = Math::Vector3(0, 0, 0);
+    world.AddComponent<ECS::RigidbodyComponent>(e, rb);
+
+    WaterInteractorComponent wi;
+    wi.density = density;
+    wi.waterlogRate = waterlogRate;
+    wi.generateWake = false;
+    world.AddComponent<WaterInteractorComponent>(e, wi);
+    return e;
+}
 
 // ===========================================================================
 // InteractiveWaterComponent Defaults
@@ -88,6 +114,64 @@ ENJIN_TEST(Interactor, Defaults) {
     ENJIN_EXPECT_FLOAT_NEAR(interactor.wakeWidth, 0.5f, 0.01f);
     ENJIN_EXPECT_TRUE(interactor.generateWake);
     ENJIN_EXPECT_TRUE(interactor.applyBuoyancy);
+}
+
+ENJIN_TEST(Interactor, DensityDefaults) {
+    WaterInteractorComponent interactor;
+    ENJIN_EXPECT_FLOAT_NEAR(interactor.density, 0.5f, 0.001f);
+    ENJIN_EXPECT_FLOAT_EQ(interactor.volume, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(interactor.waterlogRate, 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(interactor.currentWaterlog, 0.0f);
+}
+
+// ===========================================================================
+// Per-object buoyancy density (Gobliny spec)
+// ===========================================================================
+
+ENJIN_TEST(Buoyancy, LightObjectRisesDenseObjectSinks) {
+    // A light object (density < 1) must get an UPWARD velocity in water; a dense
+    // object (density > 1) must get a DOWNWARD velocity, from the same submersion.
+    // This is the per-object variety the density model exists for.
+    ECS::World world;
+    InteractiveWaterSystem sys;
+
+    ECS::Entity waterE = world.CreateEntity();
+    ECS::TransformComponent wt; wt.position = Math::Vector3(0, 0, 0); wt.scale = Math::Vector3(1, 1, 1);
+    world.AddComponent<ECS::TransformComponent>(waterE, wt);
+    InteractiveWaterComponent water; water.gridResolution = 16; water.baseHeight = 0.0f;
+    world.AddComponent<InteractiveWaterComponent>(waterE, water);
+
+    ECS::Entity light = MakeSubmergedInteractor(world, 0.1f);   // foam noodle -> floats
+    ECS::Entity heavy = MakeSubmergedInteractor(world, 3.5f);   // grill -> sinks
+
+    sys.Update(&world, 0.016f);
+
+    ENJIN_ASSERT_TRUE(world.GetComponent<ECS::RigidbodyComponent>(light)->velocity.y > 0.0f);
+    ENJIN_ASSERT_TRUE(world.GetComponent<ECS::RigidbodyComponent>(heavy)->velocity.y < 0.0f);
+}
+
+ENJIN_TEST(Buoyancy, WaterlogRaisesEffectiveDensityOverTime) {
+    // A buoyant but absorbent object waterlogs while submerged: currentWaterlog climbs
+    // toward waterlogMaxDensity, so its upward force weakens step over step.
+    ECS::World world;
+    InteractiveWaterSystem sys;
+
+    ECS::Entity waterE = world.CreateEntity();
+    ECS::TransformComponent wt; wt.position = Math::Vector3(0, 0, 0); wt.scale = Math::Vector3(1, 1, 1);
+    world.AddComponent<ECS::TransformComponent>(waterE, wt);
+    InteractiveWaterComponent water; water.gridResolution = 16; water.baseHeight = 0.0f;
+    world.AddComponent<InteractiveWaterComponent>(waterE, water);
+
+    ECS::Entity cardboard = MakeSubmergedInteractor(world, 0.4f, /*waterlogRate=*/2.0f);
+
+    // Run several steps; the interactor stays submerged (buoyancy only nudges velocity,
+    // it does not integrate position here), so waterlog keeps accumulating.
+    for (int i = 0; i < 30; ++i) sys.Update(&world, 0.016f);
+
+    auto* wi = world.GetComponent<WaterInteractorComponent>(cardboard);
+    ENJIN_ASSERT_TRUE(wi->currentWaterlog > 0.0f);
+    // Effective density (0.4 + waterlog) must not exceed the configured cap.
+    ENJIN_ASSERT_TRUE(0.4f + wi->currentWaterlog <= wi->waterlogMaxDensity + 0.001f);
 }
 
 // ===========================================================================
