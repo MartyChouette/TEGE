@@ -127,13 +127,42 @@ namespace Editor {
 // ---------------------------------------------------------------------------
 
 void EditorLayer::AutoDetectProjectForScene(const std::string& scenePath) {
-    // Already have a loaded project — nothing to do
-    if (!m_SceneManager.GetProjectPath().empty()) return;
     if (scenePath.empty()) return;
 
     namespace fs = std::filesystem;
     fs::path sceneFile(scenePath);
     if (!fs::exists(sceneFile)) return;
+
+    // A project is already loaded. Make sure this scene actually belongs to it — opening
+    // a scene from a DIFFERENT project used to keep the old script/asset roots silently,
+    // so the scene's scripts and assets would fail to resolve with no explanation. Warn.
+    // (We do not auto-switch projects here: that could discard unsaved work in this one.)
+    if (!m_SceneManager.GetProjectPath().empty()) {
+        fs::path curRoot = fs::path(m_SceneManager.GetProjectPath()).parent_path().lexically_normal();
+        fs::path rel = sceneFile.lexically_normal().lexically_relative(curRoot);
+        bool underCurrent = !rel.empty() && rel.string().rfind("..", 0) != 0;
+        if (!underCurrent) {
+            fs::path dir = sceneFile.parent_path();
+            for (int depth = 0; depth < 3 && !dir.empty(); ++depth) {
+                std::error_code ec;
+                for (auto& entry : fs::directory_iterator(dir, ec)) {
+                    if (entry.path().extension() == ".enjinproject" && entry.is_regular_file()) {
+                        ShowNotification("This scene belongs to project '" +
+                            entry.path().stem().string() +
+                            "'. Open that project so its scripts and assets resolve.",
+                            NotificationType::Warning);
+                        ENJIN_LOG_WARN(Editor, "Opened scene '%s' from a different project than the loaded '%s' — its scripts/assets may not resolve until you open it",
+                            scenePath.c_str(), m_SceneManager.GetProjectName().c_str());
+                        return;
+                    }
+                }
+                fs::path parent = dir.parent_path();
+                if (parent == dir) break;
+                dir = parent;
+            }
+        }
+        return;  // scene is under the current project (or has no project of its own)
+    }
 
     // Walk up from scene directory looking for a .enjinproject file
     fs::path dir = sceneFile.parent_path();

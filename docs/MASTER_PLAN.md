@@ -81,7 +81,7 @@ Not release-blocking: goldens blessing, settings A/B matrix.
 
 ### Editor
 - Redesign wave 4: default dockspace declutter, remaining toolbar and panel polish, tooltip sweep on icon-only buttons (draw-list vector icons only; the font atlas has no emoji).
-- Cross-project scene open keeps the wrong script root silently (warn or switch context).
+- ~~Cross-project scene open keeps the wrong script root silently~~ **FIXED 2026-08-14 (warn)**: AutoDetectProjectForScene early-returned whenever any project was loaded, so opening a scene from a different project kept the old script/asset roots silently. Now, if the opened scene isn't under the current project root and has its own .enjinproject, it warns + logs (does not auto-switch — that could discard unsaved work).
 
 ### Template QA
 - Roster cut to 16 templates on 08-07 (the old 48-entry catalog is gone for good). Most of the 16 still untested — biggest user-facing risk for anyone downloading 0.9.7. The play-probe and golden harness can automate the boots-and-plays tier.
