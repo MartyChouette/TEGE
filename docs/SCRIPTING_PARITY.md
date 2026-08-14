@@ -35,7 +35,7 @@ The node graph is strong in the areas a designer uses constantly and thin exactl
 ## Where AngelScript falls short of C++
 
 Much smaller. AngelScript is close to full parity for gameplay. The gaps are:
-- **Unbound components/systems.** A capability is only reachable from script if a binding exists. The ~35 removed-from-review "~35 unbound components" earmark lives here: components with no accessor functions yet. New engine features default to C++-only until bound.
+- **Unbound components/systems.** A capability is only reachable from script if a binding exists. Components with no accessor functions yet. New engine features default to C++-only until bound. *Progress 2026-08-13:* a first batch of previously-unbound gameplay/visual components was bound — LookAtTarget, DamageResistance, Ragdoll, Pushable, TemperatureZone, ReflectionProbe, Billboard (`ScriptBindings_GameplayComponents.cpp`). Remaining truly-unbound gameplay candidates: Possessable, SavePoint, Footstep, ReverbZone, Lens, and the physics joint components (BallSocket/Fixed/Slider/Spring). Data/editor-internal components (Mesh, Skeleton, StableId, Script, Save*, hierarchy, network internals) are intentionally not script-bound.
 - **No direct memory / raw pointers / custom allocators / new engine systems.** Anything that needs to define a new component type, a new system, or touch the renderer/backend directly is C++ only.
 - **The sandbox.** AngelScript runs under a 1M-instruction watchdog and cannot escape it. That is a feature (safety), but it caps what a single script tick can do.
 

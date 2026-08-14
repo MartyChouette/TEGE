@@ -220,6 +220,18 @@ Drive the height-field water on an entity that has an `InteractiveWaterComponent
 - `Water_SustainedPressure(uint64, float x, float z, float radius, float force)` — Hold a standing depression while called each frame (a leafblower); stop calling and it relaxes back.
 - `Water_GetHeight(uint64, float x, float z)` — Sample the current surface height (world Y) at a point, for gameplay/NPC logic.
 
+## Gameplay & Visual Components
+
+Accessors for components that previously had no script access (closing the script-vs-C++ parity gap, see docs/SCRIPTING_PARITY.md).
+
+- **LookAtTarget** — make an entity rotate to face a target: `LookAt_SetTarget(uint64, uint64 target)`, `LookAt_SetTargetPosition(uint64, float x, y, z)`, `LookAt_ClearTarget(uint64)`, `LookAt_SetSpeed(uint64, float degPerSec)`, `LookAt_GetSpeed(uint64)`, `LookAt_SetInstant(uint64, bool)`, `LookAt_SetConstraints(uint64, bool x, bool y, bool z)`.
+- **DamageResistance** — per-type damage multipliers (type = "physical"/"fire"/"ice"/"electric"/"poison"/"magic"): `DamageResist_Set(uint64, const string &in type, float mult)`, `DamageResist_Get(uint64, const string &in type)`.
+- **Ragdoll** — physics-driven bodies: `Ragdoll_SetActive(uint64, bool)`, `Ragdoll_IsActive(uint64)`, `Ragdoll_SetBlendWeight(uint64, float)`, `Ragdoll_SetGravityScale(uint64, float)`.
+- **Pushable** — block-pushing objects: `Pushable_SetAxes(uint64, bool x, bool y, bool z)`, `Pushable_SetPushSpeed(uint64, float)`, `Pushable_IsBeingPushed(uint64)`.
+- **TemperatureZone** — hot/cold regions: `TempZone_SetTemperature(uint64, float)`, `TempZone_GetTemperature(uint64)`, `TempZone_SetPriority(uint64, int)`.
+- **ReflectionProbe** — environment reflections: `ReflectionProbe_SetIntensity(uint64, float)`, `ReflectionProbe_GetIntensity(uint64)`, `ReflectionProbe_SetActive(uint64, bool)`, `ReflectionProbe_IsActive(uint64)`.
+- **Billboard** — camera-facing quads: `Billboard_SetFaceCamera(uint64, bool)`, `Billboard_SetLockY(uint64, bool)`, `Billboard_SetRotationOffset(uint64, float degrees)`.
+
 ## HUD Widget
 
 - `HUD_SetVisible(uint64, bool)` — Show/hide a HUD widget.

@@ -50,6 +50,7 @@ void RegisterGameplayBindings(asIScriptEngine* engine);
 void RegisterUIBindings(asIScriptEngine* engine);
 void RegisterParticleBindings(asIScriptEngine* engine);
 void RegisterWaterBindings(asIScriptEngine* engine);
+void RegisterGameplayComponentBindings(asIScriptEngine* engine);
 void RegisterPrefabBindings(asIScriptEngine* engine);
 void RegisterStreamingBindings(asIScriptEngine* engine);
 void RegisterFlowerBindings(asIScriptEngine* engine);

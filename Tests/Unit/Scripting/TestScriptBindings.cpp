@@ -823,4 +823,35 @@ ENJIN_TEST(WaterBindings, RegisteredWithCorrectSignatures) {
     engine.Shutdown();
 }
 
+// ===========================================================================
+// Gameplay-component bindings (parity gap: previously-unbound components)
+// ===========================================================================
+
+ENJIN_TEST(GameplayComponentBindings, RegisteredWithCorrectSignatures) {
+    // Compiles only if the newly-bound component accessors are registered with these
+    // signatures (exercises the ENJIN_AS macro path that WASM requires).
+    ScriptEngine engine;
+    ENJIN_ASSERT_TRUE(InitWithBindings(engine));
+
+    const char* src =
+        "void Use() {\n"
+        "    uint64 e = 1;\n"
+        "    LookAt_SetTarget(e, 2);\n"
+        "    LookAt_SetTargetPosition(e, 0.0f, 1.0f, 0.0f);\n"
+        "    LookAt_SetSpeed(e, 90.0f);\n"
+        "    float s = LookAt_GetSpeed(e);\n"
+        "    DamageResist_Set(e, \"fire\", 0.5f);\n"
+        "    float r = DamageResist_Get(e, \"fire\");\n"
+        "    Ragdoll_SetActive(e, true);\n"
+        "    bool rg = Ragdoll_IsActive(e);\n"
+        "    Pushable_SetAxes(e, true, false, true);\n"
+        "    TempZone_SetTemperature(e, -5.0f);\n"
+        "    ReflectionProbe_SetIntensity(e, 0.8f);\n"
+        "    Billboard_SetLockY(e, true);\n"
+        "}\n";
+    ENJIN_ASSERT_TRUE(engine.CompileScriptFromMemory("gameplay_component_bindings", src));
+
+    engine.Shutdown();
+}
+
 ENJIN_TEST_MAIN()
