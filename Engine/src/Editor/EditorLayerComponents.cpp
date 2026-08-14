@@ -5803,12 +5803,43 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
                             break;
                         }
                         case ECS::ScriptPropertyType::Entity: {
+                            // Entity-reference slot: drag an entity from the Hierarchy onto
+                            // it to statically assign a reference (like Unity's object slot),
+                            // instead of typing a raw numeric ID. Accepts the same payload
+                            // the Hierarchy uses for reparenting.
                             u64 eid = val.entityVal;
-                            int eidInt = static_cast<int>(eid);
-                            if (ImGui::DragInt(prop.name.c_str(), &eidInt, 1.0f, 0, 100000)) {
-                                prop.instanceValue.entityVal = static_cast<u64>(eidInt);
+                            ECS::Entity ent = static_cast<ECS::Entity>(eid);
+                            std::string slot = "None";
+                            if (eid != 0) {
+                                if (m_World && m_World->IsValid(ent)) {
+                                    auto* nc = m_World->GetComponent<ECS::NameComponent>(ent);
+                                    slot = (nc && !nc->name.empty())
+                                        ? nc->name
+                                        : ("Entity " + std::to_string(ECS::EntityIndex(ent)));
+                                } else {
+                                    slot = "(missing)";
+                                }
+                            }
+                            ImGui::Button((slot + "##ent_" + prop.name).c_str(), ImVec2(160.0f, 0.0f));
+                            if (ImGui::BeginDragDropTarget()) {
+                                if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ENTITY_REPARENT")) {
+                                    if (pl->Data && pl->DataSize >= static_cast<int>(sizeof(ECS::Entity))) {
+                                        ECS::Entity dropped = *static_cast<const ECS::Entity*>(pl->Data);
+                                        prop.instanceValue.entityVal = static_cast<u64>(dropped);
+                                        prop.isOverridden = true;
+                                    }
+                                }
+                                ImGui::EndDragDropTarget();
+                            }
+                            if (ImGui::IsItemHovered())
+                                ImGui::SetTooltip("Drag an entity from the Hierarchy to assign");
+                            ImGui::SameLine();
+                            if (ImGui::SmallButton(("X##entclr_" + prop.name).c_str())) {
+                                prop.instanceValue.entityVal = 0;
                                 prop.isOverridden = true;
                             }
+                            ImGui::SameLine();
+                            ImGui::Text("%s", prop.name.c_str());
                             break;
                         }
                         case ECS::ScriptPropertyType::Enum: {

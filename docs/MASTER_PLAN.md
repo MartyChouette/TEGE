@@ -92,8 +92,8 @@ Not release-blocking: goldens blessing, settings A/B matrix.
 - Cel outline: distance-dependent Sobel threshold on raw depth.
 
 ### Tests
-- Component round-trip batch: Animator, ParticleEmitter, AudioSource, Skeleton.
-- Negative-path serializer suite (corrupt JSON, invalid enums, missing refs).
+- Component round-trip batch: ~~ParticleEmitter, AudioSource~~ DONE 2026-08-14 (also fixed AudioSource pitchMin/pitchMax not serializing); Animator + Skeleton remain (complex nested data; partly covered by TestGoldenVerification).
+- ~~Negative-path serializer suite~~ DONE 2026-08-14 (empty/garbage/non-object/truncated JSON fail gracefully).
 - ShadowMap::UpdateCascades unit test (rotation invariance).
 - Input mock seam, then CameraController behavioral tests.
 
@@ -134,6 +134,7 @@ Not release-blocking: goldens blessing, settings A/B matrix.
 
 ### Editor authoring tools
 - Navmesh generation + visualization UI. Terrain sculpting. Tilemap painter. Visual UI layout editor. Template preview images.
+- ~~Entity-reference script property drag-assign (Marty)~~ **DONE 2026-08-14**: `[Property] uint64`/`[Property] Entity` script properties existed (ScriptPropertyType::Entity) but the inspector only drew a raw DragInt (type the numeric ID). Now a proper object slot — shows the assigned entity's name (or None/missing), drop an entity from the Hierarchy to assign it (accepts the existing ENTITY_REPARENT payload), with a clear button. This is the static entity-reference assignment mechanism.
 
 ### Scripting and serialization surface
 - Remaining unbound/partially-bound components (joints, colliders, tilemap, and hierarchy were bound in the May cleanup; ~35 remain).
