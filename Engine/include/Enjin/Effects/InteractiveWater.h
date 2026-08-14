@@ -62,6 +62,14 @@ struct InteractiveWaterComponent {
     // splash VFX, sound, camera shake, score). Slow/settling contact does not fire.
     f32 entryVelocityThreshold = 0.5f;
 
+    // --- Current (lazy river) ---
+    // A directional flow inside the volume. Floating interactors are carried along it:
+    // their horizontal velocity is pulled toward the flow velocity, so a passive object
+    // drifts at flow speed while one with its own motion (a swimmer) can fight it.
+    Math::Vector3 currentDirection = Math::Vector3(0.0f, 0.0f, 0.0f);  // horizontal; y ignored
+    f32 currentSpeed = 0.0f;           // flow speed (world units/sec); 0 = no current
+    f32 currentPull = 2.0f;            // how fast objects reach flow speed (per second)
+
     // --- Shoreline ---
     bool enableShoreline = true;
     f32 shorelineDistance = 1.0f;     // Distance from edge for foam band

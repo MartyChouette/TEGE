@@ -400,9 +400,27 @@ void InteractiveWaterSystem::Update(ECS::World* world, f32 dt) {
                     rb->velocity.y *= 1.0f - (water->waterDrag * 0.3f * dt);
                 }
             }
+
+            // 4. Current (lazy river): carry floating interactors along the flow. Lerp
+            // horizontal velocity toward the flow velocity so a passive object drifts at
+            // flow speed while one with its own motion (a swimmer) can fight it. Applies
+            // to objects at or below the surface (a small float band above counts too).
+            if (rb && water->currentSpeed > 0.0f && heightDiff < 0.5f) {
+                f32 dirX = water->currentDirection.x;
+                f32 dirZ = water->currentDirection.z;
+                f32 len = std::sqrt(dirX * dirX + dirZ * dirZ);
+                if (len > 1e-4f) {
+                    dirX /= len; dirZ /= len;
+                    f32 flowX = dirX * water->currentSpeed;
+                    f32 flowZ = dirZ * water->currentSpeed;
+                    f32 pull = Math::Min(water->currentPull * dt, 1.0f);
+                    rb->velocity.x += (flowX - rb->velocity.x) * pull;
+                    rb->velocity.z += (flowZ - rb->velocity.z) * pull;
+                }
+            }
         }
 
-        // 4. Apply boundary conditions
+        // 5. Apply boundary conditions
         ApplyBoundary(*water);
 
         // Update UV scroll time

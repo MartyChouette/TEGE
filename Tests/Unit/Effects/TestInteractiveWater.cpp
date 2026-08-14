@@ -314,4 +314,59 @@ ENJIN_TEST(WaterEnter, NoBusIsHarmless) {
     ENJIN_EXPECT_TRUE(true);   // reached here without crashing
 }
 
+// ===========================================================================
+// WaterCurrent (lazy river)
+// ===========================================================================
+
+// Water at origin (surface y=0) with a +X current, and a submerged interactor at rest
+// with buoyancy off so the current force is isolated from buoyancy drag.
+static ECS::Entity SetupCurrentScene(ECS::World& world, f32 flowSpeed, f32 pull) {
+    ECS::Entity waterE = world.CreateEntity();
+    ECS::TransformComponent wt; wt.position = Math::Vector3(0, 0, 0); wt.scale = Math::Vector3(1, 1, 1);
+    world.AddComponent<ECS::TransformComponent>(waterE, wt);
+    InteractiveWaterComponent water; water.gridResolution = 16; water.baseHeight = 0.0f;
+    water.currentDirection = Math::Vector3(1.0f, 0.0f, 0.0f);
+    water.currentSpeed = flowSpeed;
+    water.currentPull = pull;
+    world.AddComponent<InteractiveWaterComponent>(waterE, water);
+
+    ECS::Entity e = world.CreateEntity();
+    ECS::TransformComponent t; t.position = Math::Vector3(0.0f, -0.2f, 0.0f); t.scale = Math::Vector3(1, 1, 1);
+    world.AddComponent<ECS::TransformComponent>(e, t);
+    ECS::RigidbodyComponent rb; rb.bodyType = ECS::RigidbodyComponent::BodyType::Dynamic; rb.velocity = Math::Vector3(0, 0, 0);
+    world.AddComponent<ECS::RigidbodyComponent>(e, rb);
+    WaterInteractorComponent wi; wi.generateWake = false; wi.applyBuoyancy = false;
+    world.AddComponent<WaterInteractorComponent>(e, wi);
+    return e;
+}
+
+ENJIN_TEST(Current, CarriesFloatingObjectUpToFlowSpeed) {
+    ECS::World world;
+    InteractiveWaterSystem sys;
+    ECS::Entity e = SetupCurrentScene(world, /*flowSpeed=*/3.0f, /*pull=*/5.0f);
+
+    f32 prevVx = 0.0f;
+    for (int i = 0; i < 60; ++i) {
+        sys.Update(&world, 0.016f);
+        f32 vx = world.GetComponent<ECS::RigidbodyComponent>(e)->velocity.x;
+        ENJIN_ASSERT_TRUE(vx >= prevVx - 1e-4f);     // monotonically pulled toward the flow
+        ENJIN_ASSERT_TRUE(vx <= 3.0f + 0.01f);       // never overshoots flow speed
+        prevVx = vx;
+    }
+    // Asymptotes to the flow speed, moving with the current.
+    ENJIN_EXPECT_FLOAT_NEAR(world.GetComponent<ECS::RigidbodyComponent>(e)->velocity.x, 3.0f, 0.1f);
+}
+
+ENJIN_TEST(Current, NoCurrentLeavesVelocityAlone) {
+    ECS::World world;
+    InteractiveWaterSystem sys;
+    ECS::Entity e = SetupCurrentScene(world, /*flowSpeed=*/0.0f, /*pull=*/5.0f);  // no flow
+
+    for (int i = 0; i < 10; ++i) sys.Update(&world, 0.016f);
+
+    auto* rb = world.GetComponent<ECS::RigidbodyComponent>(e);
+    ENJIN_EXPECT_FLOAT_NEAR(rb->velocity.x, 0.0f, 1e-4f);
+    ENJIN_EXPECT_FLOAT_NEAR(rb->velocity.z, 0.0f, 1e-4f);
+}
+
 ENJIN_TEST_MAIN()

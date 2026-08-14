@@ -1880,6 +1880,15 @@ void EditorLayer::DrawInspectorPanel() {
                         ImGui::DragFloat("Water Drag", &iw->waterDrag, 0.01f, 0.0f, 5.0f);
                     }
                     ImGui::Separator();
+                    ImGui::Text("Current (lazy river)");
+                    ImGui::DragFloat3("Flow Direction", &iw->currentDirection.x, 0.05f, -1.0f, 1.0f);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("Horizontal flow direction (y ignored). Set Flow Speed > 0 to carry floating objects.");
+                    ImGui::DragFloat("Flow Speed", &iw->currentSpeed, 0.05f, 0.0f, 20.0f);
+                    ImGui::DragFloat("Flow Pull", &iw->currentPull, 0.05f, 0.0f, 20.0f);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("How fast objects are dragged up to flow speed (per second).");
+                    ImGui::Separator();
                     const char* boundaryModes[] = { "Absorbing", "Reflecting" };
                     int bm = static_cast<int>(iw->boundaryMode);
                     if (ImGui::Combo("Boundary Mode", &bm, boundaryModes, 2)) {

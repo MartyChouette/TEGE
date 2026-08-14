@@ -4570,6 +4570,9 @@ json SerializeInteractiveWaterComponent(const Effects::InteractiveWaterComponent
     j["buoyancyForce"] = RF(iw.buoyancyForce);
     j["waterDrag"] = RF(iw.waterDrag);
     j["entryVelocityThreshold"] = RF(iw.entryVelocityThreshold);
+    j["currentDirection"] = {RF(iw.currentDirection.x), RF(iw.currentDirection.y), RF(iw.currentDirection.z)};
+    j["currentSpeed"] = RF(iw.currentSpeed);
+    j["currentPull"] = RF(iw.currentPull);
     j["boundaryMode"] = static_cast<int>(iw.boundaryMode);
     return j;
 }
@@ -4599,6 +4602,10 @@ Effects::InteractiveWaterComponent DeserializeInteractiveWaterComponent(const js
     if (j.contains("buoyancyForce")) iw.buoyancyForce = j["buoyancyForce"].get<f32>();
     if (j.contains("waterDrag")) iw.waterDrag = j["waterDrag"].get<f32>();
     if (j.contains("entryVelocityThreshold")) iw.entryVelocityThreshold = j["entryVelocityThreshold"].get<f32>();
+    if (j.contains("currentDirection") && j["currentDirection"].is_array() && j["currentDirection"].size() >= 3)
+        iw.currentDirection = Math::Vector3(j["currentDirection"][0].get<f32>(), j["currentDirection"][1].get<f32>(), j["currentDirection"][2].get<f32>());
+    if (j.contains("currentSpeed")) iw.currentSpeed = j["currentSpeed"].get<f32>();
+    if (j.contains("currentPull")) iw.currentPull = j["currentPull"].get<f32>();
     if (j.contains("boundaryMode")) { int v = j["boundaryMode"].get<int>(); if (v >= 0 && v <= 2) iw.boundaryMode = static_cast<Effects::InteractiveWaterComponent::BoundaryMode>(v); }
     return iw;
 }
