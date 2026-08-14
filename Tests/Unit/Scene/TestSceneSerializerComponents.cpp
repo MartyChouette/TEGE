@@ -706,4 +706,47 @@ ENJIN_TEST(Script, AttachmentAndPropertyRoundTrip) {
     ENJIN_EXPECT_FLOAT_EQ(s2->scripts[0].properties[0].instanceValue.floatVal, 7.5f);
 }
 
+// ===========================================================================
+// Negative paths — malformed input must fail gracefully, never crash
+// ===========================================================================
+
+ENJIN_TEST(SerializerNegative, EmptyStringFails) {
+    World w;
+    Scene::SceneSerializer de(&w);
+    auto r = de.LoadFromString("");
+    ENJIN_EXPECT_FALSE(r.success);
+    ENJIN_EXPECT_TRUE(r.entities.empty());
+}
+
+ENJIN_TEST(SerializerNegative, GarbageJsonFails) {
+    World w;
+    Scene::SceneSerializer de(&w);
+    auto r = de.LoadFromString("{ this is not valid json ]");
+    ENJIN_EXPECT_FALSE(r.success);
+    ENJIN_EXPECT_TRUE(r.entities.empty());
+}
+
+ENJIN_TEST(SerializerNegative, TopLevelArrayDoesNotCrash) {
+    // Valid JSON but not a scene object. Must not crash; loads nothing.
+    World w;
+    Scene::SceneSerializer de(&w);
+    auto r = de.LoadFromString("[1,2,3]");
+    ENJIN_EXPECT_TRUE(r.entities.empty());
+}
+
+ENJIN_TEST(SerializerNegative, EmptyObjectLoadsNothing) {
+    World w;
+    Scene::SceneSerializer de(&w);
+    auto r = de.LoadFromString("{}");
+    ENJIN_EXPECT_TRUE(r.entities.empty());
+}
+
+ENJIN_TEST(SerializerNegative, TruncatedEntitiesArrayDoesNotCrash) {
+    // Malformed entities payload — parse fails or loads nothing, but never crashes.
+    World w;
+    Scene::SceneSerializer de(&w);
+    auto r = de.LoadFromString("{\"entities\":[{\"name\":");
+    ENJIN_EXPECT_FALSE(r.success);
+}
+
 ENJIN_TEST_MAIN()
