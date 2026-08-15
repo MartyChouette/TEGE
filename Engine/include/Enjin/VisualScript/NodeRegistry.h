@@ -219,6 +219,14 @@ constexpr const char* MetaGetString      = "Meta_GetString";
 // Weather
 constexpr const char* WeatherSet           = "Weather_Set";
 constexpr const char* WeatherSetFog        = "Weather_SetFog";
+constexpr const char* WeatherGetType       = "Weather_GetType";
+constexpr const char* WeatherGetRain       = "Weather_GetRain";
+constexpr const char* WeatherGetSnow       = "Weather_GetSnow";
+constexpr const char* WeatherGetFogDensity = "Weather_GetFogDensity";
+constexpr const char* WeatherIsLightning   = "Weather_IsLightning";
+constexpr const char* WeatherSetWind       = "Weather_SetWind";
+constexpr const char* WeatherGetWindStrength  = "Weather_GetWindStrength";
+constexpr const char* WeatherGetWindDirection = "Weather_GetWindDirection";
 
 // Quests
 constexpr const char* QuestStart           = "Quest_Start";

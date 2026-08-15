@@ -9736,6 +9736,112 @@ void NodeRegistry::RegisterBuiltinNodes() {
         };
         RegisterNode(def);
     }
+
+    // =======================================================================
+    // Weather reads + wind (docs/NODE_COVERAGE.md tier-3). Same access as the
+    // existing Set Weather / Set Fog nodes: the s_VisualScriptWeather global.
+    // =======================================================================
+
+    // Compact helper for pure float/bool weather getters.
+    auto addWeatherGetFloat = [this](const char* id, const char* name, const char* desc,
+                                     const char* kw, f32(*read)(Effects::WeatherSystem*)) {
+        NodeDefinition def;
+        def.typeId = id; def.displayName = name; def.description = desc;
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.4f, 0.6f, 0.75f);
+        def.flags = NodeDefFlags::Pure;
+        def.outputs = {Float("Value", PK::Output)};
+        def.keywords = {"weather", kw, "get"};
+        def.evaluate = [read](const ExecutionContext&, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
+            extern Effects::WeatherSystem* s_VisualScriptWeather;
+            return s_VisualScriptWeather ? read(s_VisualScriptWeather) : 0.0f;
+        };
+        RegisterNode(def);
+    };
+    addWeatherGetFloat(NodeTypes::WeatherGetRain, "Get Rain Intensity",
+        "Current rain intensity (0-1)", "rain", [](Effects::WeatherSystem* w) { return w->GetRainIntensity(); });
+    addWeatherGetFloat(NodeTypes::WeatherGetSnow, "Get Snow Intensity",
+        "Current snow intensity (0-1)", "snow", [](Effects::WeatherSystem* w) { return w->GetSnowIntensity(); });
+    addWeatherGetFloat(NodeTypes::WeatherGetFogDensity, "Get Fog Density",
+        "Current fog density (0-1)", "fog", [](Effects::WeatherSystem* w) { return w->GetFogDensity(); });
+    addWeatherGetFloat(NodeTypes::WeatherGetWindStrength, "Get Wind Strength",
+        "Current wind strength", "wind", [](Effects::WeatherSystem* w) { return w->GetWindStrength(); });
+
+    // Get Weather Type (pure, int = WeatherType enum value)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::WeatherGetType;
+        def.displayName = "Get Weather";
+        def.description = "Current weather type (0=Clear 1=Cloudy 2=Rain 3=HeavyRain 4=Snow 5=Fog 6=Storm)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.4f, 0.6f, 0.75f);
+        def.flags = NodeDefFlags::Pure;
+        def.outputs = {Int("Type", PK::Output)};
+        def.keywords = {"weather", "type", "get", "current"};
+        def.evaluate = [](const ExecutionContext&, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
+            extern Effects::WeatherSystem* s_VisualScriptWeather;
+            return s_VisualScriptWeather ? static_cast<i32>(s_VisualScriptWeather->GetWeather()) : static_cast<i32>(0);
+        };
+        RegisterNode(def);
+    }
+    // Is Lightning (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::WeatherIsLightning;
+        def.displayName = "Is Lightning";
+        def.description = "True while a lightning flash is active";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.4f, 0.6f, 0.75f);
+        def.flags = NodeDefFlags::Pure;
+        def.outputs = {Bool("Lightning", PK::Output)};
+        def.keywords = {"weather", "lightning", "storm", "flash"};
+        def.evaluate = [](const ExecutionContext&, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
+            extern Effects::WeatherSystem* s_VisualScriptWeather;
+            return s_VisualScriptWeather ? s_VisualScriptWeather->IsLightningActive() : false;
+        };
+        RegisterNode(def);
+    }
+    // Get Wind Direction (pure, Vec3)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::WeatherGetWindDirection;
+        def.displayName = "Get Wind Direction";
+        def.description = "Current wind direction vector";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.4f, 0.6f, 0.75f);
+        def.flags = NodeDefFlags::Pure;
+        def.outputs = {Vec3("Direction", PK::Output)};
+        def.keywords = {"weather", "wind", "direction", "get"};
+        def.evaluate = [](const ExecutionContext&, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
+            extern Effects::WeatherSystem* s_VisualScriptWeather;
+            return s_VisualScriptWeather ? s_VisualScriptWeather->GetWindDirection() : Math::Vector3(0, 0, 0);
+        };
+        RegisterNode(def);
+    }
+    // Set Wind (flow: direction + strength)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::WeatherSetWind;
+        def.displayName = "Set Wind";
+        def.description = "Set the wind direction and strength";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.4f, 0.6f, 0.75f);
+        def.inputs = {FlowIn(), Vec3("Direction", PK::Input), Float("Strength", PK::Input, 1.0f)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"weather", "wind", "set", "direction", "strength"};
+        def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            extern Effects::WeatherSystem* s_VisualScriptWeather;
+            if (s_VisualScriptWeather) {
+                Math::Vector3 dir = (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1]))
+                    ? std::get<Math::Vector3>(inputs[1]) : Math::Vector3(1, 0, 0);
+                f32 strength = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) ? std::get<f32>(inputs[2]) : 1.0f;
+                s_VisualScriptWeather->SetWindDirection(dir);
+                s_VisualScriptWeather->SetWindStrength(strength);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
 }
 
 } // namespace VisualScript

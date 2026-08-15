@@ -13,6 +13,7 @@
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/AI/BehaviorTree.h"
 #include "Enjin/ECS/Components/Tween.h"
+#include "Enjin/Effects/Weather.h"
 
 using namespace Enjin;
 using namespace Enjin::VisualScript;
@@ -1226,6 +1227,39 @@ ENJIN_TEST(NetworkingNodes, RegisterAndSafeWithoutSession) {
     ENJIN_EXPECT_STR_EQ(std::get<std::string>(reg.FindNode(NodeTypes::NetLobbyName)->evaluate(ctx, { static_cast<i32>(0) })).c_str(), "");
     // Set Ready is a safe no-op without a session
     reg.FindNode(NodeTypes::NetSetReady)->execute(ctx, { false, true }, outs);
+}
+
+// ===========================================================================
+// Weather read/wind nodes (docs/NODE_COVERAGE.md tier-3)
+// ===========================================================================
+
+ENJIN_TEST(WeatherNodes, ReadsAndWindThroughRealSystem) {
+    extern Effects::WeatherSystem* s_VisualScriptWeather;
+
+    Effects::WeatherSystem weather;   // default-constructible; no Initialize needed for state reads
+    weather.SetRainIntensity(0.7f);
+    weather.SetFogDensity(0.3f);
+    s_VisualScriptWeather = &weather;
+
+    auto& reg = NodeRegistry::Instance();
+    ExecutionContext ctx;
+    std::vector<VariableValue> outs;
+
+    ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(reg.FindNode(NodeTypes::WeatherGetRain)->evaluate(ctx, {})), 0.7f);
+    ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(reg.FindNode(NodeTypes::WeatherGetFogDensity)->evaluate(ctx, {})), 0.3f);
+    ENJIN_EXPECT_EQ(std::get<i32>(reg.FindNode(NodeTypes::WeatherGetType)->evaluate(ctx, {})), 0);  // Clear
+    ENJIN_EXPECT_FALSE(std::get<bool>(reg.FindNode(NodeTypes::WeatherIsLightning)->evaluate(ctx, {})));
+
+    // Set Wind then read back direction + strength
+    reg.FindNode(NodeTypes::WeatherSetWind)->execute(ctx, { false, Math::Vector3(0, 0, 1), 3.5f }, outs);
+    ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(reg.FindNode(NodeTypes::WeatherGetWindStrength)->evaluate(ctx, {})), 3.5f);
+    Math::Vector3 dir = std::get<Math::Vector3>(reg.FindNode(NodeTypes::WeatherGetWindDirection)->evaluate(ctx, {}));
+    ENJIN_EXPECT_FLOAT_EQ(dir.z, 1.0f);
+
+    // Unwired -> safe defaults
+    s_VisualScriptWeather = nullptr;
+    ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(reg.FindNode(NodeTypes::WeatherGetRain)->evaluate(ctx, {})), 0.0f);
+    ENJIN_EXPECT_FALSE(std::get<bool>(reg.FindNode(NodeTypes::WeatherIsLightning)->evaluate(ctx, {})));
 }
 
 // ===========================================================================
