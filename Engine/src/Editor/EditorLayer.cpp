@@ -775,6 +775,22 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
 
+    // Feed the viewport selection highlight: the selected entities plus all
+    // their descendants, so clicking a mesh or picking the root in the hierarchy
+    // lights up every part of an imported FBX (its parts are child entities).
+    if (m_RenderSystem && m_World) {
+        std::unordered_set<ECS::Entity> highlight;
+        std::vector<ECS::Entity> stack(m_SelectedEntities.begin(), m_SelectedEntities.end());
+        while (!stack.empty()) {
+            ECS::Entity e = stack.back();
+            stack.pop_back();
+            if (!m_World->IsValid(e) || highlight.count(e)) continue;
+            highlight.insert(e);
+            for (ECS::Entity c : ECS::GetChildren(m_World, e)) stack.push_back(c);
+        }
+        m_RenderSystem->SetHighlightEntities(std::move(highlight));
+    }
+
     // Deferred quit (Close() called during ImGui rendering crashes some drivers)
     if (m_PendingQuit) {
         m_PendingQuit = false;

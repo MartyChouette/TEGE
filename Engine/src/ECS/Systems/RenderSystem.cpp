@@ -5047,6 +5047,8 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Geometry outline pass (inverted-hull backface extrusion, after main geometry)
     RenderOutlinePass();
+    // Editor selection highlight (bright outline on selected entity + descendants)
+    RenderSelectionHighlight();
 
     // Per-entity wireframe overlay
     RenderWireframeOverlayPass();
@@ -6087,6 +6089,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
     // Geometry outline pass (inverted-hull backface extrusion, after main geometry)
     RenderOutlinePassForTarget();
+    // Editor selection highlight (bright outline on selected entity + descendants)
+    RenderSelectionHighlight();
 
     // Sorted 2D sprite rendering pass (after 3D geometry)
     RenderSprites();
@@ -10239,6 +10243,86 @@ void RenderSystem::RenderOutlinePass() {
             m_GeometryPoolBound = false;
         }
     }
+}
+
+void RenderSystem::RenderSelectionHighlight() {
+    if (!m_OutlinePipeline || m_HighlightEntities.empty() || !m_Renderer || !m_World) return;
+
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    // The editor game view renders to a 1-attachment offscreen pass, but the
+    // main m_OutlinePipeline is built for the 2-attachment swapchain MRT. Use
+    // the matching offscreen outline pipeline when it exists (same choice the
+    // offscreen outline pass makes), or the draw silently no-ops.
+    auto* outlinePL = m_OffscreenOutlinePipeline ? m_OffscreenOutlinePipeline.get() : m_OutlinePipeline.get();
+
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
+    outlinePL->Bind(commandBuffer);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        outlinePL->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
+
+    // Fixed, clearly-visible rim independent of the (small) art-outline width.
+    const f32 highlightWidth = m_HighlightWidth;
+
+    int drawn = 0;
+    for (Entity entity : m_HighlightEntities) {
+        auto* transform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
+        if (!transform || !transform->visible) continue;
+
+        EntityRenderData* pRD = GetRenderData(entity);
+        if (!pRD || !pRD->valid) continue;   // only entities with real geometry (FBX parts qualify)
+        EntityRenderData& renderData = *pRD;
+
+        Renderer::PushConstants pc{};
+        pc.baseColor = m_HighlightColor;   // outline color
+        pc.metallic = highlightWidth;      // outline width
+        pc.flags = 0;
+
+        auto* animComp = ResolveAnimator(entity);
+        const bool computeSkinned = m_ComputeSkinningEnabled && renderData.skinnedThisFrame
+                                    && renderData.skinnedVertexBuffer;
+        if (computeSkinned) {
+            pc.model = ECS::ComputeWorldMatrix(m_World, entity);
+            if (m_DefaultBoneBuffer) UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+        } else if (animComp && renderData.boneBuffer) {
+            pc.flags |= (1 << 3); // FLAG_SKINNED
+            pc.model = Math::Matrix4::Identity();
+            const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
+            if (!skinningMatrices.empty()) {
+                renderData.boneBuffer->UploadData(skinningMatrices.data(),
+                    skinningMatrices.size() * sizeof(Math::Matrix4));
+            }
+            UpdateBoneDescriptor(renderData.boneBuffer.get());
+        } else {
+            pc.model = ECS::ComputeWorldMatrix(m_World, entity);
+            if (m_DefaultBoneBuffer) UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+        }
+
+        vkCmdPushConstants(commandBuffer, outlinePL->GetLayout(),
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+
+        if (renderData.poolAlloc.valid && m_GeometryPool) {
+            if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
+            vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
+                             renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
+        } else if (renderData.vertexBuffer && renderData.indexCount > 0) {
+            VkBuffer buffers[] = { computeSkinned
+                ? renderData.skinnedVertexBuffer->GetBuffer()
+                : renderData.vertexBuffer->GetBuffer() };
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
+            if (renderData.indexBuffer)
+                vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+            m_GeometryPoolBound = false;
+        }
+        ++drawn;
+    }
+    static int s_HlLog = 0;
+    if (s_HlLog++ < 3)
+        ENJIN_LOG_INFO(Renderer, "SelectionHighlight: drew %d of %zu entities (w=%.3f)",
+                       drawn, m_HighlightEntities.size(), highlightWidth);
 }
 
 void RenderSystem::RenderOutlinePassForTarget() {

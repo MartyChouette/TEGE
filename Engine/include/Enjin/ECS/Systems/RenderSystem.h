@@ -635,6 +635,12 @@ public:
     Math::Vector3 GetGeometryOutlineColor() const { return m_GeometryOutlineColor; }
     void SetGeometryOutlineColor(const Math::Vector3& c) { m_GeometryOutlineColor = c; }
 
+    // Editor selection highlight: the entities to draw a bright outline around
+    // (the selected entity plus its descendants, so all parts of a picked FBX
+    // light up). Set each frame by the editor; empty = nothing highlighted.
+    void SetHighlightEntities(std::unordered_set<Entity> entities) { m_HighlightEntities = std::move(entities); }
+    void SetHighlightColor(const Math::Vector3& c) { m_HighlightColor = c; }
+
     // Anti-aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA, 4=MSAA 2x, 5=MSAA 4x, 6=MSAA 8x
     u32 GetAAMode() const { return m_AAMode; }
     void SetAAMode(u32 mode);
@@ -1098,6 +1104,7 @@ private:
     void CreateOutlinePipeline();
     void RenderOutlinePass();
     void RenderOutlinePassForTarget();  // Offscreen render target variant
+    void RenderSelectionHighlight();    // Editor: bright outline on selected entities + descendants
 
     // Per-entity wireframe overlay (VK_POLYGON_MODE_LINE over solid geometry)
     std::unique_ptr<Renderer::VulkanPipeline> m_WireframeOverlayPipeline;
@@ -1205,6 +1212,9 @@ private:
     f32 m_CelSpecularCutoff = 0.5f;   // Hard cutoff threshold for specular highlights
 
     // Geometry outlines (inverted-hull backface extrusion)
+    std::unordered_set<Entity> m_HighlightEntities;
+    Math::Vector3 m_HighlightColor = Math::Vector3(1.0f, 0.55f, 0.0f);  // editor selection: bright orange
+    f32 m_HighlightWidth = 0.05f;   // world-units rim; visible without swamping the model
     bool m_GeometryOutlinesEnabled = false;
     f32 m_GeometryOutlineWidth = 0.02f;   // Global outline width (world units)
     Math::Vector3 m_GeometryOutlineColor = Math::Vector3(0.0f, 0.0f, 0.0f);
