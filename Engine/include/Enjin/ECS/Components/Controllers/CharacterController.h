@@ -289,6 +289,13 @@ struct VehicleController : public CharacterControllerBase {
     f32 bodyRollAmount = 5.0f;      // Degrees of body roll in turns
     f32 bodyPitchAmount = 3.0f;     // Degrees of body pitch on accel/brake
 
+    // Model alignment: the engine's forward is -Z (right-handed, +Y up, +X
+    // right — the glTF/OpenGL convention). If a car model was authored facing a
+    // different local axis, spin the VISUAL body by this yaw (degrees) so its
+    // nose lines up with the drive direction, without touching the physics.
+    // 0 = model already faces -Z; 180 = model faces +Z; -90/+90 = faces +X/-X.
+    f32 modelForwardYaw = 0.0f;
+
     // State
     f32 currentRPM = 0.0f;          // For engine sound/visual
     f32 heading = 0.0f;             // Current facing (yaw degrees)

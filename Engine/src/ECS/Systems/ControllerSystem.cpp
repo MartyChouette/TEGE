@@ -1730,8 +1730,11 @@ void ControllerSystem::UpdateVehicle(Entity entity, VehicleController& ctrl, Tra
     // Decompose velocity into forward and lateral components
     Math::Vector3 velocityWorld = ctrl.forwardDir * ctrl.currentSpeed;
 
-    // Right vector (perpendicular to forward on XZ plane)
-    Math::Vector3 rightDir(ctrl.forwardDir.z, 0.0f, -ctrl.forwardDir.x);
+    // Right vector, engine-consistent (Rotate(+X) about +Y). For forward
+    // F = (-sin h, 0, -cos h) this gives (cos h, 0, -sin h) = +X at heading 0,
+    // matching Quaternion::GetRight(). The old form was sign-flipped (left-
+    // handed); harmless for the symmetric drift math below but wrong as a basis.
+    Math::Vector3 rightDir(-ctrl.forwardDir.z, 0.0f, ctrl.forwardDir.x);
 
     // Project current velocity onto forward and right
     Math::Vector3 currentVel = ctrl.velocity;
@@ -1778,11 +1781,13 @@ void ControllerSystem::UpdateVehicle(Entity entity, VehicleController& ctrl, Tra
         }
     }
 
-    // Compose rotation: yaw (heading) then pitch then roll
+    // Compose rotation: heading yaw, then the model-forward alignment offset
+    // (so an oddly-authored model's nose lines up with -Z drive), then pitch/roll.
     Math::Quaternion yawQ = Math::Quaternion(Math::Vector3(0, 1, 0), headingRad);
+    Math::Quaternion modelQ = Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(ctrl.modelForwardYaw));
     Math::Quaternion pitchQ = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(pitchAngle));
     Math::Quaternion rollQ = Math::Quaternion(Math::Vector3(0, 0, 1), Math::Radians(rollAngle));
-    transform.rotation = (yawQ * pitchQ * rollQ).Normalized();
+    transform.rotation = (yawQ * modelQ * pitchQ * rollQ).Normalized();
 
     // --- RPM (cosmetic, for sound/effects) ---
     ctrl.currentRPM = Math::Abs(ctrl.currentSpeed) / ctrl.maxSpeed * 6000.0f;

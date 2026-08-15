@@ -1761,6 +1761,7 @@ json SerializeVehicle(const ECS::VehicleController& ctrl) {
     j["cameraLookAhead"] = RF(ctrl.cameraLookAhead);
     j["bodyRollAmount"] = RF(ctrl.bodyRollAmount);
     j["bodyPitchAmount"] = RF(ctrl.bodyPitchAmount);
+    j["modelForwardYaw"] = RF(ctrl.modelForwardYaw);
     return j;
 }
 
@@ -1786,6 +1787,7 @@ ECS::VehicleController DeserializeVehicle(const json& j) {
     if (j.contains("cameraLookAhead")) ctrl.cameraLookAhead = j["cameraLookAhead"].get<f32>();
     if (j.contains("bodyRollAmount")) ctrl.bodyRollAmount = j["bodyRollAmount"].get<f32>();
     if (j.contains("bodyPitchAmount")) ctrl.bodyPitchAmount = j["bodyPitchAmount"].get<f32>();
+    if (j.contains("modelForwardYaw")) ctrl.modelForwardYaw = j["modelForwardYaw"].get<f32>();
     return ctrl;
 }
 

@@ -6208,6 +6208,9 @@ void EditorLayer::DrawVehicleController(ECS::Entity entity) {
         if (ImGui::TreeNode("Visuals")) {
             InspectorUndo::DragFloat(m_UndoRedo, "Body Roll Amount", &ctrl->bodyRollAmount, 0.5f, 0.0f, 30.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Body Pitch Amount", &ctrl->bodyPitchAmount, 0.5f, 0.0f, 20.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Model Forward Yaw", &ctrl->modelForwardYaw, 1.0f, -180.0f, 180.0f);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Spin the visual body so its nose faces the drive direction (-Z).\n0 = model faces -Z, 180 = faces +Z, -90/+90 = faces +X/-X.");
             ImGui::TreePop();
         }
 
