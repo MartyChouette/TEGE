@@ -164,10 +164,13 @@ void GPUParticleSystem::Spawn(u32 count, const Math::Vector3& position,
     // Upload to SSBO at m_NextSpawnIndex
     u32 uploadCount = std::min(count, m_Config.maxParticles - m_NextSpawnIndex);
     if (uploadCount > 0 && m_ParticleBuffer) {
-        m_ParticleBuffer->UploadData(newParticles.data(),
-                                      uploadCount * sizeof(GPUParticle),
-                                      m_NextSpawnIndex * sizeof(GPUParticle));
+        bool ok = m_ParticleBuffer->UploadData(newParticles.data(),
+                                                uploadCount * sizeof(GPUParticle),
+                                                m_NextSpawnIndex * sizeof(GPUParticle));
         m_NextSpawnIndex = (m_NextSpawnIndex + uploadCount) % m_Config.maxParticles;
+        ENJIN_LOG_INFO(Renderer, "GPUParticleSystem: spawned %u at (%.1f, %.1f, %.1f)%s",
+                       uploadCount, position.x, position.y, position.z,
+                       ok ? "" : " — UPLOAD FAILED");
     }
 }
 
@@ -281,13 +284,23 @@ VkBuffer GPUParticleSystem::GetAliveIndexBuffer() const {
 bool GPUParticleSystem::CreateBuffers() {
     // Particle state SSBO (read-write, GPU-local with staging upload)
     m_ParticleBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Context);
+    // Host-visible: VulkanBuffer::UploadData has no staging path for
+    // device-local memory, and Spawn() seeds particles from the CPU. 4 MB of
+    // host-visible SSBO is fine for now; a staged device-local upgrade is a
+    // perf follow-up, not a correctness need.
     if (!m_ParticleBuffer->Create(
             m_Config.maxParticles * sizeof(GPUParticle),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
             VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,   // draw path reads it as an instance VB
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
         ENJIN_LOG_ERROR(Renderer, "GPUParticleSystem: failed to create particle SSBO");
         return false;
+    }
+    // Zero the whole buffer so every un-spawned slot reads as dead
+    // (lifetime = 0) instead of uninitialized garbage in the sim and draw.
+    {
+        std::vector<u8> zero(m_Config.maxParticles * sizeof(GPUParticle), 0);
+        m_ParticleBuffer->UploadData(zero.data(), zero.size());
     }
 
     // Alive index buffer: 4 bytes (atomic counter) + maxParticles * 4 bytes (indices)

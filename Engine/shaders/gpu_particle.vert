@@ -34,11 +34,11 @@ const vec2 kUVs[6] = vec2[6](
 );
 
 void main() {
+    // lifetime counts DOWN (seconds remaining); age counts up. Dead = no time left.
     float lifetime = inPosLife.w;
-    float age = inVelAge.w;
 
     // Dead slot: collapse the quad (clipped, zero area, zero fill cost)
-    if (lifetime <= 0.0 || age >= lifetime) {
+    if (lifetime <= 0.0 || isnan(lifetime)) {
         gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
         fragUV = vec2(0.0);
         fragColor = vec4(0.0);

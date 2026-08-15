@@ -3476,6 +3476,8 @@ void RenderSystem::Initialize() {
     {
         m_GPUParticleSystem = std::make_unique<Effects::GPUParticleSystem>(m_VulkanRenderer->GetContext());
         Effects::GPUEmitterConfig particleConfig;
+        particleConfig.startSize = 0.3f;   // chunky enough to see a burst clearly
+        particleConfig.endSize = 0.6f;
         // Don't auto-initialize — created on demand when GPU emitters are added
         if (!m_GPUParticleSystem->Initialize(particleConfig)) {
             ENJIN_LOG_WARN(Renderer, "GPUParticleSystem init failed — GPU particles disabled");
