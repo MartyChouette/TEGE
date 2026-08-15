@@ -281,6 +281,9 @@ constexpr const char* TweenPosition        = "Tween_Position";
 constexpr const char* TweenRotation        = "Tween_Rotation";
 constexpr const char* TweenScale           = "Tween_Scale";
 constexpr const char* TweenFloat           = "Tween_Float";
+constexpr const char* TweenOpacity         = "Tween_Opacity";
+constexpr const char* TweenGetValue        = "Tween_GetValue";
+constexpr const char* TweenStopAll         = "Tween_StopAll";
 
 // Dialogue
 constexpr const char* DialogueStart        = "Dialogue_Start";

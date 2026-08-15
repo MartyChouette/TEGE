@@ -9509,6 +9509,94 @@ void NodeRegistry::RegisterBuiltinNodes() {
         };
         RegisterNode(def);
     }
+
+    // =======================================================================
+    // Tween extras (docs/NODE_COVERAGE.md tier-2): opacity, read value, stop all.
+    // Mirrors the existing Tween Float/Scale nodes (operate on TweenComponent).
+    // =======================================================================
+
+    // Tween Opacity (flow) — animate MaterialComponent.opacity
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::TweenOpacity;
+        def.displayName = "Tween Opacity";
+        def.description = "Fade an entity's material opacity from Start to End over Duration";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.3f, 0.8f);
+        def.inputs = {FlowIn(), EntityPin("Entity", PK::Input), Float("Start", PK::Input, 1.0f),
+                      Float("End", PK::Input, 0.0f), Float("Duration", PK::Input, 1.0f)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"tween", "opacity", "fade", "alpha", "animate"};
+        def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>&) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            if (!ctx.world) { ctx.nextFlowIndex = 0; return; }
+            auto* tc = ctx.world->GetComponent<ECS::TweenComponent>(target);
+            if (!tc) { ctx.nextFlowIndex = 0; return; }
+            if (tc->tweens.empty()) tc->tweens.push_back(ECS::TweenEntry{});
+            auto& entry = tc->tweens[0];
+            f32 startVal = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) ? std::get<f32>(inputs[2]) : 1.0f;
+            f32 endVal   = (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3])) ? std::get<f32>(inputs[3]) : 0.0f;
+            entry.property = ECS::TweenProperty::Opacity;
+            entry.startValue = Math::Vector3(startVal, 0, 0);
+            entry.endValue = Math::Vector3(endVal, 0, 0);
+            entry.useCurrentAsStart = false;
+            if (inputs.size() > 4 && std::holds_alternative<f32>(inputs[4])) entry.duration = std::get<f32>(inputs[4]);
+            entry.elapsed = 0.0f;
+            entry.isPlaying = true;
+            entry.isComplete = false;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Tween Get Value (pure) — current interpolated value of a tween
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::TweenGetValue;
+        def.displayName = "Tween Get Value";
+        def.description = "Current interpolated value (x) of the tween at Index";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.3f, 0.8f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input), Int("Index", PK::Input, 0)};
+        def.outputs = {Float("Value", PK::Output)};
+        def.keywords = {"tween", "value", "get", "current", "progress"};
+        def.evaluate = [](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            i32 index = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1])) ? std::get<i32>(inputs[1]) : 0;
+            auto* tc = ctx.world ? ctx.world->GetComponent<ECS::TweenComponent>(target) : nullptr;
+            if (tc && index >= 0 && static_cast<usize>(index) < tc->tweens.size())
+                return tc->tweens[static_cast<usize>(index)].currentValue.x;
+            return 0.0f;
+        };
+        RegisterNode(def);
+    }
+    // Tween Stop All (flow) — halt every tween on the entity
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::TweenStopAll;
+        def.displayName = "Tween Stop All";
+        def.description = "Stop all tweens currently running on an entity";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.3f, 0.8f);
+        def.inputs = {FlowIn(), EntityPin("Entity", PK::Input)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"tween", "stop", "halt", "cancel", "all"};
+        def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>&) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            auto* tc = ctx.world ? ctx.world->GetComponent<ECS::TweenComponent>(target) : nullptr;
+            if (tc) for (auto& tw : tc->tweens) { tw.isPlaying = false; tw.isComplete = true; }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
 }
 
 } // namespace VisualScript

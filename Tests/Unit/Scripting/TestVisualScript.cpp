@@ -12,6 +12,7 @@
 #include "Enjin/Accessibility/AccessibilitySettings.h"
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/AI/BehaviorTree.h"
+#include "Enjin/ECS/Components/Tween.h"
 
 using namespace Enjin;
 using namespace Enjin::VisualScript;
@@ -1164,6 +1165,43 @@ ENJIN_TEST(NavmeshNodes, RegisterAndSafeWithoutNavmesh) {
 
     VariableValue pe = reg.FindNode(NodeTypes::NavmeshPathExists)->evaluate(ctx, { Math::Vector3(0,0,0), Math::Vector3(1,0,1) });
     ENJIN_EXPECT_FALSE(std::get<bool>(pe));
+}
+
+// ===========================================================================
+// Tween extra nodes (docs/NODE_COVERAGE.md tier-2)
+// ===========================================================================
+
+ENJIN_TEST(TweenNodes, OpacityGetValueStopAll) {
+    World world;
+    Entity e = world.CreateEntity();
+    world.AddComponent<TweenComponent>(e);
+
+    auto& reg = NodeRegistry::Instance();
+    ExecutionContext ctx;
+    ctx.world = &world;
+    ctx.entity = e;
+    std::vector<VariableValue> outs;
+
+    // Opacity: configures tweens[0] as an opacity fade 1 -> 0 over 2s
+    reg.FindNode(NodeTypes::TweenOpacity)->execute(ctx, { false, static_cast<Entity>(e), 1.0f, 0.0f, 2.0f }, outs);
+    auto* tc = world.GetComponent<TweenComponent>(e);
+    ENJIN_ASSERT_NOT_NULL(tc);
+    ENJIN_ASSERT_TRUE(tc->tweens.size() >= 1);
+    ENJIN_EXPECT_TRUE(tc->tweens[0].property == TweenProperty::Opacity);
+    ENJIN_EXPECT_TRUE(tc->tweens[0].isPlaying);
+    ENJIN_EXPECT_FLOAT_EQ(tc->tweens[0].startValue.x, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(tc->tweens[0].endValue.x, 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(tc->tweens[0].duration, 2.0f);
+
+    // Get Value reads currentValue.x
+    tc->tweens[0].currentValue = Math::Vector3(0.42f, 0.0f, 0.0f);
+    VariableValue v = reg.FindNode(NodeTypes::TweenGetValue)->evaluate(ctx, { static_cast<Entity>(e), static_cast<i32>(0) });
+    ENJIN_ASSERT_TRUE(std::holds_alternative<f32>(v));
+    ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(v), 0.42f);
+
+    // Stop All halts it
+    reg.FindNode(NodeTypes::TweenStopAll)->execute(ctx, { false, static_cast<Entity>(e) }, outs);
+    ENJIN_EXPECT_FALSE(tc->tweens[0].isPlaying);
 }
 
 // ===========================================================================
