@@ -253,6 +253,15 @@ constexpr const char* PrefabInstantiate    = "Prefab_Instantiate";
 constexpr const char* UISetText            = "UI_SetText";
 constexpr const char* UISetProgress        = "UI_SetProgress";
 constexpr const char* UISetVisible         = "UI_SetElementVisible";
+constexpr const char* UIIsChecked          = "UI_IsChecked";
+constexpr const char* UIGetSliderValue     = "UI_GetSliderValue";
+constexpr const char* UIIsHovered          = "UI_IsHovered";
+constexpr const char* UIIsPressed          = "UI_IsPressed";
+constexpr const char* UIGetText            = "UI_GetText";
+constexpr const char* UIGetProgress        = "UI_GetProgress";
+constexpr const char* UISetTextColor       = "UI_SetTextColor";
+constexpr const char* UISetBgColor         = "UI_SetBgColor";
+constexpr const char* UISetImageAlpha      = "UI_SetImageAlpha";
 
 // Localization
 constexpr const char* LocGetString         = "Loc_Get";

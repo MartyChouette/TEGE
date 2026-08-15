@@ -9842,6 +9842,126 @@ void NodeRegistry::RegisterBuiltinNodes() {
         };
         RegisterNode(def);
     }
+
+    // =======================================================================
+    // UI read-state + styling (docs/NODE_COVERAGE.md tier-3). Same component
+    // path as the existing UI Set nodes: UICanvasComponent -> GetElement(id).
+    // Inputs: Canvas Entity + Element Id.
+    // =======================================================================
+
+    // Resolve canvas element from (entity, elementId) node inputs starting at idx.
+    auto uiElement = [](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs,
+                        usize idx) -> GUI::UIElement* {
+        if (!ctx.world || inputs.size() <= idx + 1) return nullptr;
+        ECS::Entity entity = std::holds_alternative<u64>(inputs[idx])
+            ? static_cast<ECS::Entity>(std::get<u64>(inputs[idx])) : ECS::INVALID_ENTITY;
+        i32 elemId = std::holds_alternative<i32>(inputs[idx + 1]) ? std::get<i32>(inputs[idx + 1]) : 0;
+        auto* canvas = ctx.world->GetComponent<GUI::UICanvasComponent>(entity);
+        return canvas ? canvas->GetElement(static_cast<u32>(elemId)) : nullptr;
+    };
+
+    // Pure read nodes.
+    struct UIReadDef { const char* id; const char* name; const char* desc; const char* kw; int kind; };
+    // kind: 0=checked(bool) 1=slider(f32) 2=hovered(bool) 3=pressed(bool) 4=text(string) 5=progress(f32)
+    const UIReadDef uiReads[] = {
+        {NodeTypes::UIIsChecked,      "UI Is Checked",       "Whether a checkbox element is checked",       "checkbox", 0},
+        {NodeTypes::UIGetSliderValue, "UI Get Slider Value", "Current value of a slider element",           "slider",   1},
+        {NodeTypes::UIIsHovered,      "UI Is Hovered",       "Whether the pointer is over the element",     "hover",    2},
+        {NodeTypes::UIIsPressed,      "UI Is Pressed",       "Whether the element is being pressed",        "press",    3},
+        {NodeTypes::UIGetText,        "UI Get Text",         "Current text of a text/button element",       "text",     4},
+        {NodeTypes::UIGetProgress,    "UI Get Progress",     "Current fill of a progress bar (0-1)",        "progress", 5},
+    };
+    for (const auto& rd : uiReads) {
+        NodeDefinition def;
+        def.typeId = rd.id; def.displayName = rd.name; def.description = rd.desc;
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.35f, 0.55f, 0.65f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Canvas", PK::Input), Int("Element Id", PK::Input, 0)};
+        switch (rd.kind) {
+            case 1: case 5: def.outputs = {Float("Value", PK::Output)}; break;
+            case 4:         def.outputs = {String("Text", PK::Output)}; break;
+            default:        def.outputs = {Bool("Value", PK::Output)}; break;
+        }
+        def.keywords = {"ui", "canvas", rd.kw, "get"};
+        const int kind = rd.kind;
+        def.evaluate = [uiElement, kind](const ExecutionContext& ctx,
+                                         const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            GUI::UIElement* el = uiElement(ctx, inputs, 0);
+            switch (kind) {
+                case 0: return el ? el->data.checked : false;
+                case 1: return el ? el->data.sliderValue : 0.0f;
+                case 2: return el ? el->interaction.hovered : false;
+                case 3: return el ? el->interaction.pressed : false;
+                case 4: return el ? el->data.text : std::string("");
+                default: return el ? el->data.progressValue : 0.0f;
+            }
+        };
+        RegisterNode(def);
+    }
+
+    // UI Set Text Color (flow)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::UISetTextColor;
+        def.displayName = "UI Set Text Color";
+        def.description = "Set an element's text color (RGB 0-1)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.35f, 0.55f, 0.65f);
+        def.inputs = {FlowIn(), EntityPin("Canvas", PK::Input), Int("Element Id", PK::Input, 0), Vec3("Color", PK::Input, Math::Vector3(1, 1, 1))};
+        def.outputs = {FlowOut()};
+        def.keywords = {"ui", "canvas", "text", "color", "style", "set"};
+        def.execute = [uiElement](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            if (GUI::UIElement* el = uiElement(ctx, inputs, 1)) {
+                if (inputs.size() > 3 && std::holds_alternative<Math::Vector3>(inputs[3]))
+                    el->style.textColor = std::get<Math::Vector3>(inputs[3]);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // UI Set Bg Color (flow)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::UISetBgColor;
+        def.displayName = "UI Set Bg Color";
+        def.description = "Set an element's background color (RGB 0-1) and alpha";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.35f, 0.55f, 0.65f);
+        def.inputs = {FlowIn(), EntityPin("Canvas", PK::Input), Int("Element Id", PK::Input, 0), Vec3("Color", PK::Input, Math::Vector3(0, 0, 0)), Float("Alpha", PK::Input, 1.0f)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"ui", "canvas", "background", "color", "style", "set"};
+        def.execute = [uiElement](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            if (GUI::UIElement* el = uiElement(ctx, inputs, 1)) {
+                if (inputs.size() > 3 && std::holds_alternative<Math::Vector3>(inputs[3]))
+                    el->style.bgColor = std::get<Math::Vector3>(inputs[3]);
+                if (inputs.size() > 4 && std::holds_alternative<f32>(inputs[4]))
+                    el->style.bgAlpha = std::get<f32>(inputs[4]);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // UI Set Image Alpha (flow)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::UISetImageAlpha;
+        def.displayName = "UI Set Image Alpha";
+        def.description = "Set an image element's opacity (0-1)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.35f, 0.55f, 0.65f);
+        def.inputs = {FlowIn(), EntityPin("Canvas", PK::Input), Int("Element Id", PK::Input, 0), Float("Alpha", PK::Input, 1.0f)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"ui", "canvas", "image", "alpha", "opacity", "style", "set"};
+        def.execute = [uiElement](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            if (GUI::UIElement* el = uiElement(ctx, inputs, 1)) {
+                if (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3]))
+                    el->data.imageAlpha = Math::Clamp(std::get<f32>(inputs[3]), 0.0f, 1.0f);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
 }
 
 } // namespace VisualScript

@@ -1263,6 +1263,51 @@ ENJIN_TEST(WeatherNodes, ReadsAndWindThroughRealSystem) {
 }
 
 // ===========================================================================
+// UI read-state + styling nodes (docs/NODE_COVERAGE.md tier-3)
+// ===========================================================================
+
+ENJIN_TEST(UINodes, ReadStateAndStylingRoundTrip) {
+    World world;
+    Entity e = world.CreateEntity();
+    auto& canvas = world.AddComponent<GUI::UICanvasComponent>(e);
+    u32 elemId = canvas.AddElement(GUI::UIWidgetType::Button, "TestButton");
+    auto* el = canvas.GetElement(elemId);
+    ENJIN_ASSERT_NOT_NULL(el);
+    el->data.checked = true;
+    el->data.sliderValue = 0.6f;
+    el->data.text = "Hello";
+    el->data.progressValue = 0.25f;
+    el->interaction.hovered = true;
+
+    auto& reg = NodeRegistry::Instance();
+    ExecutionContext ctx;
+    ctx.world = &world;
+    ctx.entity = e;
+    std::vector<VariableValue> outs;
+    const i32 id = static_cast<i32>(elemId);
+
+    ENJIN_EXPECT_TRUE(std::get<bool>(reg.FindNode(NodeTypes::UIIsChecked)->evaluate(ctx, { static_cast<Entity>(e), id })));
+    ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(reg.FindNode(NodeTypes::UIGetSliderValue)->evaluate(ctx, { static_cast<Entity>(e), id })), 0.6f);
+    ENJIN_EXPECT_TRUE(std::get<bool>(reg.FindNode(NodeTypes::UIIsHovered)->evaluate(ctx, { static_cast<Entity>(e), id })));
+    ENJIN_EXPECT_FALSE(std::get<bool>(reg.FindNode(NodeTypes::UIIsPressed)->evaluate(ctx, { static_cast<Entity>(e), id })));
+    ENJIN_EXPECT_STR_EQ(std::get<std::string>(reg.FindNode(NodeTypes::UIGetText)->evaluate(ctx, { static_cast<Entity>(e), id })).c_str(), "Hello");
+    ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(reg.FindNode(NodeTypes::UIGetProgress)->evaluate(ctx, { static_cast<Entity>(e), id })), 0.25f);
+
+    // Styling: set text color / bg color+alpha / image alpha, verify on the element
+    reg.FindNode(NodeTypes::UISetTextColor)->execute(ctx, { false, static_cast<Entity>(e), id, Math::Vector3(1, 0, 0) }, outs);
+    ENJIN_EXPECT_FLOAT_EQ(el->style.textColor.x, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(el->style.textColor.y, 0.0f);
+    reg.FindNode(NodeTypes::UISetBgColor)->execute(ctx, { false, static_cast<Entity>(e), id, Math::Vector3(0, 0.5f, 0), 0.8f }, outs);
+    ENJIN_EXPECT_FLOAT_EQ(el->style.bgColor.y, 0.5f);
+    ENJIN_EXPECT_FLOAT_EQ(el->style.bgAlpha, 0.8f);
+    reg.FindNode(NodeTypes::UISetImageAlpha)->execute(ctx, { false, static_cast<Entity>(e), id, 0.4f }, outs);
+    ENJIN_EXPECT_FLOAT_EQ(el->data.imageAlpha, 0.4f);
+
+    // Bad element id -> safe defaults
+    ENJIN_EXPECT_FALSE(std::get<bool>(reg.FindNode(NodeTypes::UIIsChecked)->evaluate(ctx, { static_cast<Entity>(e), static_cast<i32>(9999) })));
+}
+
+// ===========================================================================
 // Entry point
 // ===========================================================================
 
