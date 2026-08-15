@@ -2,6 +2,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
 #include <functional>
+#include <string>
 
 class asIScriptEngine;
 
@@ -108,6 +109,18 @@ void VSAccessSetSubtitles(bool v);         bool VSAccessGetSubtitles();
 void VSAccessSetDyslexiaFont(bool v);      bool VSAccessGetDyslexiaFont();
 void VSAccessSetScreenReader(bool v);      bool VSAccessGetScreenReader();
 void VSAccessSave();
+
+// VisualScript input-action node forwarders — reuse the AngelScript action-map
+// wiring. See ScriptBindings_InputAction.cpp.
+bool VSInputActionIsDown(i32 action);
+bool VSInputActionIsPressed(i32 action);
+f32  VSInputActionGetValue(i32 action);
+i32  VSInputActionCount();
+std::string VSInputActionName(i32 index);
+std::string VSInputBindingName(i32 index);
+void VSInputRebind(i32 actionIndex, i32 keyCode);
+i32  VSInputPollKey();
+void VSInputResetBindings();
 
 // VisualScript navmesh node forwarders — reuse the AngelScript navmesh wiring
 // (navmesh + pathfinder pointers + last-path buffer). See ScriptBindings_AI.cpp.

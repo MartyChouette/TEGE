@@ -362,6 +362,17 @@ constexpr const char* BTGetBBInt           = "BT_GetBlackboardInt";
 constexpr const char* BTSetBBString        = "BT_SetBlackboardString";
 constexpr const char* BTGetBBString        = "BT_GetBlackboardString";
 
+// Input actions (rebindable action layer)
+constexpr const char* ActionIsDown         = "Action_IsDown";
+constexpr const char* ActionIsPressed      = "Action_IsPressed";
+constexpr const char* ActionGetValue       = "Action_GetValue";
+constexpr const char* ActionCount          = "Action_Count";
+constexpr const char* ActionGetName        = "Action_GetName";
+constexpr const char* ActionGetBinding     = "Action_GetBinding";
+constexpr const char* ActionRebind         = "Action_Rebind";
+constexpr const char* ActionPollKey        = "Action_PollKey";
+constexpr const char* ActionResetBindings  = "Action_ResetBindings";
+
 // Physics joints
 constexpr const char* JointCreateHinge     = "Joint_CreateHinge";
 constexpr const char* JointCreateDistance  = "Joint_CreateDistance";

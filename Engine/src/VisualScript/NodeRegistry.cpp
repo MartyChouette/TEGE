@@ -10256,6 +10256,118 @@ void NodeRegistry::RegisterBuiltinNodes() {
         };
         RegisterNode(def);
     }
+
+    // =======================================================================
+    // Input actions (docs/NODE_COVERAGE.md tier-4, Marty call 2026-08-15):
+    // the rebindable action layer, so node-built games can offer rebinding.
+    // VSInput* forwarders reuse the AngelScript action-map wiring.
+    // =======================================================================
+
+    // Pure action-index readers.
+    struct ActionReadDef { const char* id; const char* name; const char* desc; const char* kw; int kind; };
+    // kind: 0=isDown(bool) 1=isPressed(bool) 2=value(f32) 3=name(string) 4=binding(string)
+    const ActionReadDef actionReads[] = {
+        {NodeTypes::ActionIsDown,     "Action Is Down",    "True while the action's key/button is held",       "held",    0},
+        {NodeTypes::ActionIsPressed,  "Action Is Pressed", "True on the frame the action is pressed",          "pressed", 1},
+        {NodeTypes::ActionGetValue,   "Action Get Value",  "Analog value of the action (0-1)",                 "value",   2},
+        {NodeTypes::ActionGetName,    "Action Get Name",   "Display name of the action at Index",              "name",    3},
+        {NodeTypes::ActionGetBinding, "Action Get Binding","Display name of the key currently bound at Index", "binding", 4},
+    };
+    for (const auto& ad : actionReads) {
+        NodeDefinition def;
+        def.typeId = ad.id; def.displayName = ad.name; def.description = ad.desc;
+        def.category = NodeCategory::Input;
+        def.headerColor = Math::Vector3(0.65f, 0.55f, 0.25f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {Int(ad.kind >= 3 ? "Index" : "Action", PK::Input, 0)};
+        switch (ad.kind) {
+            case 2:  def.outputs = {Float("Value", PK::Output)}; break;
+            case 3: case 4: def.outputs = {String("Name", PK::Output)}; break;
+            default: def.outputs = {Bool("Value", PK::Output)}; break;
+        }
+        def.keywords = {"input", "action", "rebind", ad.kw};
+        const int kind = ad.kind;
+        def.evaluate = [kind](const ExecutionContext&, const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            i32 idx = (!inputs.empty() && std::holds_alternative<i32>(inputs[0])) ? std::get<i32>(inputs[0]) : 0;
+            switch (kind) {
+                case 0: return Enjin::Scripting::VSInputActionIsDown(idx);
+                case 1: return Enjin::Scripting::VSInputActionIsPressed(idx);
+                case 2: return Enjin::Scripting::VSInputActionGetValue(idx);
+                case 3: return Enjin::Scripting::VSInputActionName(idx);
+                default: return Enjin::Scripting::VSInputBindingName(idx);
+            }
+        };
+        RegisterNode(def);
+    }
+    // Action Count (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ActionCount;
+        def.displayName = "Action Count";
+        def.description = "Number of rebindable actions";
+        def.category = NodeCategory::Input;
+        def.headerColor = Math::Vector3(0.65f, 0.55f, 0.25f);
+        def.flags = NodeDefFlags::Pure;
+        def.outputs = {Int("Count", PK::Output)};
+        def.keywords = {"input", "action", "count", "rebind"};
+        def.evaluate = [](const ExecutionContext&, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
+            return Enjin::Scripting::VSInputActionCount();
+        };
+        RegisterNode(def);
+    }
+    // Rebind Action (flow: action index + key code)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ActionRebind;
+        def.displayName = "Rebind Action";
+        def.description = "Bind the action at Index to Key Code (use Poll Key to capture one)";
+        def.category = NodeCategory::Input;
+        def.headerColor = Math::Vector3(0.65f, 0.55f, 0.25f);
+        def.inputs = {FlowIn(), Int("Action", PK::Input, 0), Int("Key Code", PK::Input, 0)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"input", "action", "rebind", "bind", "key", "remap"};
+        def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            i32 action = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1])) ? std::get<i32>(inputs[1]) : 0;
+            i32 key = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2])) ? std::get<i32>(inputs[2]) : 0;
+            Enjin::Scripting::VSInputRebind(action, key);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Poll Key (pure: key code of the next fresh key press, -1 if none — drives
+    // "press a key to rebind" UI)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ActionPollKey;
+        def.displayName = "Poll Key Press";
+        def.description = "Key code of a key pressed this frame (-1 if none); feed into Rebind Action";
+        def.category = NodeCategory::Input;
+        def.headerColor = Math::Vector3(0.65f, 0.55f, 0.25f);
+        def.flags = NodeDefFlags::Pure;
+        def.outputs = {Int("Key Code", PK::Output)};
+        def.keywords = {"input", "key", "poll", "capture", "rebind", "listen"};
+        def.evaluate = [](const ExecutionContext&, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
+            return Enjin::Scripting::VSInputPollKey();
+        };
+        RegisterNode(def);
+    }
+    // Reset Bindings (flow)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ActionResetBindings;
+        def.displayName = "Reset Bindings";
+        def.description = "Restore all action bindings to their defaults";
+        def.category = NodeCategory::Input;
+        def.headerColor = Math::Vector3(0.65f, 0.55f, 0.25f);
+        def.inputs = {FlowIn()};
+        def.outputs = {FlowOut()};
+        def.keywords = {"input", "action", "reset", "defaults", "rebind"};
+        def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>&, std::vector<ECS::VariableValue>&) {
+            Enjin::Scripting::VSInputResetBindings();
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
 }
 
 } // namespace VisualScript

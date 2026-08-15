@@ -22,6 +22,47 @@ void SetBindingsInputActionMap(InputSystem::InputActionMap* map) {
     s_BindingsInputActionMap = map;
 }
 
+// ---------------------------------------------------------------------------
+// Public forwarders for VisualScript input-action nodes. Reuse the same map
+// pointer the AngelScript API uses (set via SetBindingsInputActionMap at every
+// call site) so node rebinding behaves identically to scripted rebinding.
+// ---------------------------------------------------------------------------
+bool VSInputActionIsDown(i32 action) {
+    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return false;
+    return s_BindingsInputActionMap->IsActionDown(static_cast<InputSystem::GameAction>(action));
+}
+bool VSInputActionIsPressed(i32 action) {
+    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return false;
+    return s_BindingsInputActionMap->IsActionPressed(static_cast<InputSystem::GameAction>(action));
+}
+f32 VSInputActionGetValue(i32 action) {
+    if (!s_BindingsInputActionMap || action < 0 || action >= static_cast<i32>(InputSystem::GameAction::Count)) return 0.0f;
+    return s_BindingsInputActionMap->GetActionValue(static_cast<InputSystem::GameAction>(action));
+}
+i32 VSInputActionCount() {
+    return s_BindingsInputActionMap ? s_BindingsInputActionMap->GetActionCount() : 0;
+}
+std::string VSInputActionName(i32 index) {
+    if (!s_BindingsInputActionMap || index < 0 || index >= s_BindingsInputActionMap->GetActionCount()) return "";
+    const char* name = s_BindingsInputActionMap->GetActionName(index);
+    return name ? std::string(name) : std::string();
+}
+std::string VSInputBindingName(i32 index) {
+    if (!s_BindingsInputActionMap || index < 0 || index >= s_BindingsInputActionMap->GetActionCount()) return "";
+    const char* name = s_BindingsInputActionMap->GetBindingDisplayName(index);
+    return name ? std::string(name) : std::string();
+}
+void VSInputRebind(i32 actionIndex, i32 keyCode) {
+    if (!s_BindingsInputActionMap || actionIndex < 0 || actionIndex >= static_cast<i32>(InputSystem::GameAction::Count)) return;
+    s_BindingsInputActionMap->RebindAction(actionIndex, keyCode);
+}
+i32 VSInputPollKey() {
+    return s_BindingsInputActionMap ? s_BindingsInputActionMap->PollNextKeyPress() : -1;
+}
+void VSInputResetBindings() {
+    if (s_BindingsInputActionMap) s_BindingsInputActionMap->ResetToDefaults();
+}
+
 // --- Wrapper functions ---
 
 static bool Input_IsActionDown(i32 action) {

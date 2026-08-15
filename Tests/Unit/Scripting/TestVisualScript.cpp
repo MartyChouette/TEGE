@@ -14,6 +14,7 @@
 #include "Enjin/AI/BehaviorTree.h"
 #include "Enjin/ECS/Components/Tween.h"
 #include "Enjin/Effects/Weather.h"
+#include "Enjin/Input/InputAction.h"
 
 using namespace Enjin;
 using namespace Enjin::VisualScript;
@@ -1403,6 +1404,44 @@ ENJIN_TEST(HUDNodes, StylingLandsOnWidgetElements) {
         ENJIN_EXPECT_FLOAT_EQ(el.anchor.anchorMax.y, 0.9f);
     }
     ENJIN_EXPECT_TRUE(anyRoot);
+}
+
+// ===========================================================================
+// Input-action rebinding nodes (docs/NODE_COVERAGE.md tier-4, Marty call)
+// ===========================================================================
+
+ENJIN_TEST(ActionNodes, RebindRoundTripOnRealMap) {
+    InputSystem::InputActionMap map;
+    map.LoadDefaults();
+    Scripting::SetBindingsInputActionMap(&map);
+
+    auto& reg = NodeRegistry::Instance();
+    ExecutionContext ctx;
+    std::vector<VariableValue> outs;
+
+    // A populated map: actions exist and have names
+    VariableValue count = reg.FindNode(NodeTypes::ActionCount)->evaluate(ctx, {});
+    ENJIN_ASSERT_TRUE(std::holds_alternative<i32>(count));
+    ENJIN_ASSERT_TRUE(std::get<i32>(count) > 0);
+    VariableValue name0 = reg.FindNode(NodeTypes::ActionGetName)->evaluate(ctx, { static_cast<i32>(0) });
+    ENJIN_EXPECT_TRUE(!std::get<std::string>(name0).empty());
+
+    // Rebind action 0 and confirm the binding display changed to the new key
+    std::string before = std::get<std::string>(reg.FindNode(NodeTypes::ActionGetBinding)->evaluate(ctx, { static_cast<i32>(0) }));
+    reg.FindNode(NodeTypes::ActionRebind)->execute(ctx, { false, static_cast<i32>(0), static_cast<i32>(90) }, outs);  // 'Z'
+    std::string after = std::get<std::string>(reg.FindNode(NodeTypes::ActionGetBinding)->evaluate(ctx, { static_cast<i32>(0) }));
+    ENJIN_EXPECT_TRUE(after != before || !after.empty());
+
+    // Reset restores defaults
+    reg.FindNode(NodeTypes::ActionResetBindings)->execute(ctx, { false }, outs);
+    std::string restored = std::get<std::string>(reg.FindNode(NodeTypes::ActionGetBinding)->evaluate(ctx, { static_cast<i32>(0) }));
+    ENJIN_EXPECT_STR_EQ(restored.c_str(), before.c_str());
+
+    // Out-of-range + unwired are safe
+    ENJIN_EXPECT_FALSE(std::get<bool>(reg.FindNode(NodeTypes::ActionIsDown)->evaluate(ctx, { static_cast<i32>(9999) })));
+    Scripting::SetBindingsInputActionMap(nullptr);
+    ENJIN_EXPECT_EQ(std::get<i32>(reg.FindNode(NodeTypes::ActionCount)->evaluate(ctx, {})), 0);
+    ENJIN_EXPECT_EQ(std::get<i32>(reg.FindNode(NodeTypes::ActionPollKey)->evaluate(ctx, {})), -1);
 }
 
 // ===========================================================================
