@@ -676,10 +676,25 @@ void EditorLayer::DrawGizmos() {
     Math::Matrix4 projMat = m_Camera->GetProjectionMatrix();
     projMat.m[5] *= -1.0f; // ImGuizmo expects OpenGL Y-up
 
-    // Build gizmo transform matrix
-    Math::Matrix4 entityMat = Math::Matrix4::Translation(gizmoPos) *
-                               gizmoRot.ToMatrix() *
-                               Math::Matrix4::Scale(gizmoScale);
+    // Build gizmo transform matrix. For a single selection use the WORLD matrix
+    // so a child of a moved/scaled parent (e.g. an imported FBX piece under the
+    // unit-scaled import root) shows its gizmo ON the mesh, not at its raw local
+    // origin — which for a cm-unit FBX sits thousands of units away. The
+    // manipulated world matrix is converted back to parent-local on write.
+    // Multi-select keeps the centroid-of-locals behavior.
+    const bool gizmoSingle = (m_SelectedEntities.size() == 1);
+    Math::Matrix4 gizmoParentWorld = Math::Matrix4::Identity();
+    Math::Matrix4 entityMat;
+    if (gizmoSingle) {
+        ECS::Entity gizmoParent = ECS::GetParent(m_World, m_PrimarySelected);
+        if (gizmoParent != ECS::INVALID_ENTITY && m_World->IsValid(gizmoParent))
+            gizmoParentWorld = ECS::ComputeWorldMatrix(m_World, gizmoParent);
+        entityMat = ECS::ComputeWorldMatrix(m_World, m_PrimarySelected);
+    } else {
+        entityMat = Math::Matrix4::Translation(gizmoPos) *
+                    gizmoRot.ToMatrix() *
+                    Math::Matrix4::Scale(gizmoScale);
+    }
 
     // Determine ImGuizmo operation
     ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
@@ -746,7 +761,9 @@ void EditorLayer::DrawGizmos() {
     bool gizmoActive = ImGuizmo::IsUsing();
     if (gizmoActive && !m_GizmoDragging) {
         m_GizmoDragging = true;
-        m_GizmoStartTransform = entityMat;
+        // Store the start in parent-LOCAL space so the undo snapshot matches
+        // what we write (entityMat is world-space for a single selection).
+        m_GizmoStartTransform = gizmoSingle ? (gizmoParentWorld.Inverse() * entityMat) : entityMat;
     }
 
     // Draw and manipulate gizmo
@@ -766,15 +783,20 @@ void EditorLayer::DrawGizmos() {
             oldScale[1] != 0.0f ? newScale[1] / oldScale[1] : 1.0f,
             oldScale[2] != 0.0f ? newScale[2] / oldScale[2] : 1.0f);
 
-        if (m_SelectedEntities.size() == 1) {
-            // Single entity: apply directly
+        if (gizmoSingle) {
+            // Single entity: entityMat is the new WORLD matrix — convert it back
+            // to parent-local before writing (so children of a scaled/moved
+            // parent are placed correctly, not at world coords).
             auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
             if (transform) {
-                transform->position = Math::Vector3(newTrans[0], newTrans[1], newTrans[2]);
-                transform->scale = Math::Vector3(newScale[0], newScale[1], newScale[2]);
-                f32 rx = Math::Radians(newRot[0]);
-                f32 ry = Math::Radians(newRot[1]);
-                f32 rz = Math::Radians(newRot[2]);
+                Math::Matrix4 newLocal = gizmoParentWorld.Inverse() * entityMat;
+                f32 lt[3], lr[3], ls[3];
+                ImGuizmo::DecomposeMatrixToComponents(newLocal.m, lt, lr, ls);
+                transform->position = Math::Vector3(lt[0], lt[1], lt[2]);
+                transform->scale = Math::Vector3(ls[0], ls[1], ls[2]);
+                f32 rx = Math::Radians(lr[0]);
+                f32 ry = Math::Radians(lr[1]);
+                f32 rz = Math::Radians(lr[2]);
                 transform->rotation = Math::Quaternion(Math::Vector3(0, 1, 0), ry)
                                     * Math::Quaternion(Math::Vector3(1, 0, 0), rx)
                                     * Math::Quaternion(Math::Vector3(0, 0, 1), rz);
