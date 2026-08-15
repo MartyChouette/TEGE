@@ -9115,6 +9115,139 @@ void NodeRegistry::RegisterBuiltinNodes() {
         };
         RegisterNode(def);
     }
+
+    // =======================================================================
+    // Entity direction vectors + AI tuning (docs/NODE_COVERAGE.md tier-2).
+    // Pure ECS component access.
+    // =======================================================================
+
+    // Direction vectors from TransformComponent rotation.
+    auto addDirection = [this](const char* id, const char* name, const char* desc,
+                               const char* kw, Math::Vector3 axis) {
+        NodeDefinition def;
+        def.typeId = id; def.displayName = name; def.description = desc;
+        def.category = NodeCategory::Transform;
+        def.headerColor = Math::Vector3(0.4f, 0.55f, 0.7f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Vec3("Direction", PK::Output)};
+        def.keywords = {"direction", "vector", kw, "transform"};
+        def.evaluate = [axis](const ExecutionContext& ctx,
+                              const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity e = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                e = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            auto* t = ctx.world ? ctx.world->GetComponent<ECS::TransformComponent>(e) : nullptr;
+            return t ? t->rotation.Rotate(axis) : axis;
+        };
+        RegisterNode(def);
+    };
+    addDirection(NodeTypes::EntityGetForward, "Get Forward",
+        "The entity's forward (-Z) direction in world space", "forward", Math::Vector3(0, 0, -1));
+    addDirection(NodeTypes::EntityGetRight, "Get Right",
+        "The entity's right (+X) direction in world space", "right", Math::Vector3(1, 0, 0));
+    addDirection(NodeTypes::EntityGetUp, "Get Up",
+        "The entity's up (+Y) direction in world space", "up", Math::Vector3(0, 1, 0));
+
+    // AI tuning — set/get scalar fields on AIControllerComponent.
+    auto addAISetFloat = [this](const char* id, const char* name, const char* desc,
+                                const char* kw, f32 ECS::AIControllerComponent::* field, f32 def_) {
+        NodeDefinition def;
+        def.typeId = id; def.displayName = name; def.description = desc;
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.7f, 0.45f, 0.35f);
+        def.inputs = {FlowIn(), EntityPin("Entity", PK::Input), Float("Value", PK::Input, def_)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"ai", "agent", kw, "set"};
+        def.execute = [field](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs,
+                              std::vector<ECS::VariableValue>&) {
+            ECS::Entity e = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                e = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            f32 v = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) ? std::get<f32>(inputs[2]) : 0.0f;
+            auto* ai = ctx.world ? ctx.world->GetComponent<ECS::AIControllerComponent>(e) : nullptr;
+            if (ai) ai->*field = v;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    };
+    auto addAIGetFloat = [this](const char* id, const char* name, const char* desc,
+                                const char* kw, f32 ECS::AIControllerComponent::* field, f32 fallback) {
+        NodeDefinition def;
+        def.typeId = id; def.displayName = name; def.description = desc;
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.7f, 0.45f, 0.35f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Float("Value", PK::Output)};
+        def.keywords = {"ai", "agent", kw, "get"};
+        def.evaluate = [field, fallback](const ExecutionContext& ctx,
+                                         const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity e = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                e = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            auto* ai = ctx.world ? ctx.world->GetComponent<ECS::AIControllerComponent>(e) : nullptr;
+            return ai ? ai->*field : fallback;
+        };
+        RegisterNode(def);
+    };
+    addAISetFloat(NodeTypes::AISetMoveSpeed, "AI Set Move Speed", "Set the agent's move speed", "speed", &ECS::AIControllerComponent::moveSpeed, 3.0f);
+    addAIGetFloat(NodeTypes::AIGetMoveSpeed, "AI Get Move Speed", "Read the agent's move speed", "speed", &ECS::AIControllerComponent::moveSpeed, 0.0f);
+    addAISetFloat(NodeTypes::AISetDetectionRange, "AI Set Detection Range", "Set how far the agent can sense targets", "detection", &ECS::AIControllerComponent::detectionRange, 10.0f);
+    addAIGetFloat(NodeTypes::AIGetDetectionRange, "AI Get Detection Range", "Read the agent's detection range", "detection", &ECS::AIControllerComponent::detectionRange, 0.0f);
+    addAISetFloat(NodeTypes::AISetAttackRange, "AI Set Attack Range", "Set the agent's attack range", "attack", &ECS::AIControllerComponent::attackRange, 2.0f);
+    addAIGetFloat(NodeTypes::AIGetAttackRange, "AI Get Attack Range", "Read the agent's attack range", "attack", &ECS::AIControllerComponent::attackRange, 0.0f);
+    addAISetFloat(NodeTypes::AISetChaseSpeed, "AI Set Chase Speed", "Set the agent's speed while chasing", "chase", &ECS::AIControllerComponent::chaseSpeed, 5.0f);
+    addAISetFloat(NodeTypes::AISetFleeSpeed, "AI Set Flee Speed", "Set the agent's speed while fleeing", "flee", &ECS::AIControllerComponent::fleeSpeed, 6.0f);
+    addAISetFloat(NodeTypes::AISetFieldOfView, "AI Set Field Of View", "Set the agent's vision cone in degrees", "fov", &ECS::AIControllerComponent::fieldOfView, 120.0f);
+
+    // AI Set Use Navmesh (bool)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AISetUseNavmesh;
+        def.displayName = "AI Set Use Navmesh";
+        def.description = "Toggle whether the agent uses navmesh pathfinding";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.7f, 0.45f, 0.35f);
+        def.inputs = {FlowIn(), EntityPin("Entity", PK::Input), Bool("Use Navmesh", PK::Input, true)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"ai", "agent", "navmesh", "pathfinding", "set"};
+        def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>&) {
+            ECS::Entity e = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                e = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            bool v = (inputs.size() > 2 && std::holds_alternative<bool>(inputs[2])) && std::get<bool>(inputs[2]);
+            auto* ai = ctx.world ? ctx.world->GetComponent<ECS::AIControllerComponent>(e) : nullptr;
+            if (ai) ai->useNavmesh = v;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // AI Set Target Position (Vector3)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AISetTargetPosition;
+        def.displayName = "AI Set Target Position";
+        def.description = "Set the world position the agent moves toward";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.7f, 0.45f, 0.35f);
+        def.inputs = {FlowIn(), EntityPin("Entity", PK::Input), Vec3("Position", PK::Input)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"ai", "agent", "target", "position", "move", "set"};
+        def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>&) {
+            ECS::Entity e = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                e = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            Math::Vector3 pos = (inputs.size() > 2 && std::holds_alternative<Math::Vector3>(inputs[2]))
+                ? std::get<Math::Vector3>(inputs[2]) : Math::Vector3(0, 0, 0);
+            auto* ai = ctx.world ? ctx.world->GetComponent<ECS::AIControllerComponent>(e) : nullptr;
+            if (ai) ai->targetPosition = pos;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
 }
 
 } // namespace VisualScript

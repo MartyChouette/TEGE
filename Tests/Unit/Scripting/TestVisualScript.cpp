@@ -1036,6 +1036,59 @@ ENJIN_TEST(AccessibilityNodes, NoOpAndDefaultsWithoutSettings) {
 }
 
 // ===========================================================================
+// Direction vectors + AI tuning nodes (docs/NODE_COVERAGE.md tier-2)
+// ===========================================================================
+
+ENJIN_TEST(DirectionNodes, IdentityRotationGivesWorldAxes) {
+    World world;
+    Entity e = world.CreateEntity();
+    world.AddComponent<TransformComponent>(e);   // identity rotation
+
+    auto& reg = NodeRegistry::Instance();
+    ExecutionContext ctx;
+    ctx.world = &world;
+    ctx.entity = e;
+
+    VariableValue fwd = reg.FindNode(NodeTypes::EntityGetForward)->evaluate(ctx, { static_cast<Entity>(e) });
+    ENJIN_ASSERT_TRUE(std::holds_alternative<Math::Vector3>(fwd));
+    Math::Vector3 f = std::get<Math::Vector3>(fwd);
+    ENJIN_EXPECT_FLOAT_EQ(f.x, 0.0f); ENJIN_EXPECT_FLOAT_EQ(f.y, 0.0f); ENJIN_EXPECT_FLOAT_EQ(f.z, -1.0f);
+
+    Math::Vector3 r = std::get<Math::Vector3>(reg.FindNode(NodeTypes::EntityGetRight)->evaluate(ctx, { static_cast<Entity>(e) }));
+    ENJIN_EXPECT_FLOAT_EQ(r.x, 1.0f);
+    Math::Vector3 u = std::get<Math::Vector3>(reg.FindNode(NodeTypes::EntityGetUp)->evaluate(ctx, { static_cast<Entity>(e) }));
+    ENJIN_EXPECT_FLOAT_EQ(u.y, 1.0f);
+}
+
+ENJIN_TEST(AITuningNodes, SetGetScalarsAndFlags) {
+    World world;
+    Entity e = world.CreateEntity();
+    world.AddComponent<AIControllerComponent>(e);
+
+    auto& reg = NodeRegistry::Instance();
+    ExecutionContext ctx;
+    ctx.world = &world;
+    ctx.entity = e;
+    std::vector<VariableValue> outs;
+
+    reg.FindNode(NodeTypes::AISetMoveSpeed)->execute(ctx, { false, static_cast<Entity>(e), 7.5f }, outs);
+    ENJIN_EXPECT_FLOAT_EQ(world.GetComponent<AIControllerComponent>(e)->moveSpeed, 7.5f);
+    VariableValue ms = reg.FindNode(NodeTypes::AIGetMoveSpeed)->evaluate(ctx, { static_cast<Entity>(e) });
+    ENJIN_ASSERT_TRUE(std::holds_alternative<f32>(ms));
+    ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(ms), 7.5f);
+
+    reg.FindNode(NodeTypes::AISetDetectionRange)->execute(ctx, { false, static_cast<Entity>(e), 20.0f }, outs);
+    ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(reg.FindNode(NodeTypes::AIGetDetectionRange)->evaluate(ctx, { static_cast<Entity>(e) })), 20.0f);
+
+    reg.FindNode(NodeTypes::AISetUseNavmesh)->execute(ctx, { false, static_cast<Entity>(e), false }, outs);
+    ENJIN_EXPECT_FALSE(world.GetComponent<AIControllerComponent>(e)->useNavmesh);
+
+    reg.FindNode(NodeTypes::AISetTargetPosition)->execute(ctx, { false, static_cast<Entity>(e), Math::Vector3(3, 4, 5) }, outs);
+    Math::Vector3 tp = world.GetComponent<AIControllerComponent>(e)->targetPosition;
+    ENJIN_EXPECT_FLOAT_EQ(tp.x, 3.0f); ENJIN_EXPECT_FLOAT_EQ(tp.z, 5.0f);
+}
+
+// ===========================================================================
 // Entry point
 // ===========================================================================
 

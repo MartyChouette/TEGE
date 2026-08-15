@@ -303,12 +303,36 @@ constexpr const char* AISetTarget          = "AI_SetTarget";
 constexpr const char* AIGetTarget          = "AI_GetTarget";
 constexpr const char* AISetState           = "AI_SetState";
 constexpr const char* AIGetState           = "AI_GetState";
+constexpr const char* AISetMoveSpeed       = "AI_SetMoveSpeed";
+constexpr const char* AIGetMoveSpeed       = "AI_GetMoveSpeed";
+constexpr const char* AISetDetectionRange  = "AI_SetDetectionRange";
+constexpr const char* AIGetDetectionRange  = "AI_GetDetectionRange";
+constexpr const char* AISetAttackRange     = "AI_SetAttackRange";
+constexpr const char* AIGetAttackRange     = "AI_GetAttackRange";
+constexpr const char* AISetChaseSpeed      = "AI_SetChaseSpeed";
+constexpr const char* AISetFleeSpeed       = "AI_SetFleeSpeed";
+constexpr const char* AISetFieldOfView     = "AI_SetFieldOfView";
+constexpr const char* AISetUseNavmesh      = "AI_SetUseNavmesh";
+constexpr const char* AISetTargetPosition  = "AI_SetTargetPosition";
+
+// Entity direction vectors
+constexpr const char* EntityGetForward     = "Entity_GetForward";
+constexpr const char* EntityGetRight       = "Entity_GetRight";
+constexpr const char* EntityGetUp          = "Entity_GetUp";
 
 // Behavior Tree
 constexpr const char* BTEnable             = "BT_Enable";
 constexpr const char* BTDisable            = "BT_Disable";
 constexpr const char* BTReset              = "BT_Reset";
 constexpr const char* BTGetEnabled         = "BT_GetEnabled";
+constexpr const char* BTSetBBBool          = "BT_SetBlackboardBool";
+constexpr const char* BTGetBBBool          = "BT_GetBlackboardBool";
+constexpr const char* BTSetBBFloat         = "BT_SetBlackboardFloat";
+constexpr const char* BTGetBBFloat         = "BT_GetBlackboardFloat";
+constexpr const char* BTSetBBInt           = "BT_SetBlackboardInt";
+constexpr const char* BTGetBBInt           = "BT_GetBlackboardInt";
+constexpr const char* BTSetBBString        = "BT_SetBlackboardString";
+constexpr const char* BTGetBBString        = "BT_GetBlackboardString";
 
 // Navmesh
 constexpr const char* NavmeshIsPointOn     = "Navmesh_IsPointOnNavmesh";
