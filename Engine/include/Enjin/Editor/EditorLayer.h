@@ -652,6 +652,14 @@ private:
     std::unordered_set<ECS::Entity> m_SelectedEntities;
     ECS::Entity m_PrimarySelected = ECS::INVALID_ENTITY;
 
+    // Inspector rotation edit cache. Euler angles are re-extracted from the
+    // quaternion only when the selection or the quaternion changes externally,
+    // so dragging past +/-90 degrees stays smooth instead of gimbal-locking
+    // (ToEuler is singular at the poles; caching the edited euler avoids the
+    // quaternion->euler->quaternion round-trip that jumps there).
+    ECS::Entity m_RotEulerEntity = ECS::INVALID_ENTITY;
+    Math::Vector3 m_RotEulerCacheDeg = Math::Vector3(0.0f, 0.0f, 0.0f);
+
     // Hierarchy: clicking an already-multi-selected entity must not collapse
     // the selection on mouse-down (that killed multi-drag) — the collapse is
     // deferred to mouse-release, and skipped entirely if a drag started.

@@ -453,4 +453,41 @@ ENJIN_TEST(Quaternion, GetForwardRightUpIdentity) {
     ENJIN_EXPECT_FLOAT_NEAR(up.z, 0.0f, 0.001f);
 }
 
+ENJIN_TEST(Quaternion, LookRotationMapsForwardAndUp) {
+    // Local +Z -> forward, local +Y -> up (as re-orthogonalized).
+    Vector3 fwd(1, 0, 0);
+    Vector3 up(0, 1, 0);
+    Quaternion q = Quaternion::LookRotation(fwd, up);
+    Vector3 zLocal = q.Rotate(Vector3(0, 0, 1));
+    Vector3 yLocal = q.Rotate(Vector3(0, 1, 0));
+    ENJIN_EXPECT_FLOAT_NEAR(zLocal.x, 1.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(zLocal.y, 0.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(zLocal.z, 0.0f, 0.001f);
+    ENJIN_EXPECT_FLOAT_NEAR(yLocal.y, 1.0f, 0.001f);
+}
+
+ENJIN_TEST(Quaternion, LookRotationIsPoleStable) {
+    // Sweep the up vector from the north pole through the equator to the south
+    // pole while keeping a consistent forward reference; the resulting forward
+    // must vary continuously (no sudden flip), unlike FromToRotation.
+    Vector3 forwardRef(0, 0, 1);
+    Vector3 prevF = forwardRef;
+    Quaternion prev = Quaternion::LookRotation(forwardRef, Vector3(0, 1, 0));
+    for (int i = 0; i <= 180; ++i) {
+        f32 a = Radians(static_cast<f32>(i));
+        Vector3 up(0, Cos(a), Sin(a));          // north pole -> equator -> ... -> south-ish
+        // Re-project the previous forward onto the tangent plane (what the
+        // controller does) so heading is preserved.
+        Vector3 tf = prevF - up * up.Dot(prevF);
+        if (tf.LengthSquared() < 1e-4f) tf = forwardRef;
+        Quaternion q = Quaternion::LookRotation(tf, up);
+        Vector3 f = q.Rotate(Vector3(0, 0, 1));
+        // Step-to-step forward change must be small (continuous), never a flip.
+        f32 dot = f.Dot(prevF);
+        ENJIN_ASSERT_TRUE(dot > 0.9f);          // < ~25 deg per 1-deg step
+        prevF = f;
+        prev = q;
+    }
+}
+
 ENJIN_TEST_MAIN()

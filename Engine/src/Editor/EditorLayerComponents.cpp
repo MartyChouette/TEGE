@@ -216,14 +216,36 @@ void EditorLayer::DrawTransformComponent(ECS::Entity entity) {
         }
         ImGui::SetItemTooltip("World position (X, Y, Z)");
 
-        // Rotation (euler angles in degrees)
-        Math::Vector3 eulerRad = transform->rotation.ToEuler();
-        f32 rot[3] = { Math::Degrees(eulerRad.x), Math::Degrees(eulerRad.y), Math::Degrees(eulerRad.z) };
+        // Rotation (euler degrees). Re-extract from the quaternion ONLY when the
+        // selection changed or something else moved the rotation (gizmo, script,
+        // controller) — detected by comparing the live quaternion to the one the
+        // cached euler would produce. While the user drags, we keep editing the
+        // cached euler so crossing +/-90 doesn't gimbal-lock.
+        {
+            bool resync = (m_RotEulerEntity != m_PrimarySelected);
+            if (!resync) {
+                Math::Quaternion fromCache = Math::Quaternion::FromEuler(Math::Vector3(
+                    Math::Radians(m_RotEulerCacheDeg.x),
+                    Math::Radians(m_RotEulerCacheDeg.y),
+                    Math::Radians(m_RotEulerCacheDeg.z)));
+                // Quaternion double-cover: q and -q are the same rotation.
+                f32 dot = fromCache.x * transform->rotation.x + fromCache.y * transform->rotation.y +
+                          fromCache.z * transform->rotation.z + fromCache.w * transform->rotation.w;
+                if (Math::Abs(dot) < 0.99995f) resync = true;   // changed elsewhere
+            }
+            if (resync) {
+                m_RotEulerEntity = m_PrimarySelected;
+                m_RotEulerCacheDeg = transform->rotation.ToEulerDegrees();
+            }
+        }
+        f32 rot[3] = { m_RotEulerCacheDeg.x, m_RotEulerCacheDeg.y, m_RotEulerCacheDeg.z };
         if (InspectorUndo::DragFloat3(m_UndoRedo, "Rotation", rot,
-                [transform](f32 x, f32 y, f32 z) {
+                [this, transform](f32 x, f32 y, f32 z) {
+                    m_RotEulerCacheDeg = Math::Vector3(x, y, z);
                     transform->rotation = Math::Quaternion::FromEuler(
                         Math::Vector3(Math::Radians(x), Math::Radians(y), Math::Radians(z)));
                 }, 1.0f)) {
+            m_RotEulerCacheDeg = Math::Vector3(rot[0], rot[1], rot[2]);
             transform->rotation = Math::Quaternion::FromEuler(
                 Math::Vector3(Math::Radians(rot[0]), Math::Radians(rot[1]), Math::Radians(rot[2])));
         }

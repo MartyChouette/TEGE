@@ -1854,9 +1854,25 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
         ctrl.localUp = gravity * (-1.0f / gravLen);
     }
 
-    // Build target surface rotation: align Y axis to localUp
-    Math::Quaternion targetRot = Math::Quaternion::FromToRotation(
-        Math::Vector3(0.0f, 1.0f, 0.0f), ctrl.localUp);
+    // Build target surface rotation aligning +Y to localUp. FromToRotation
+    // aligns only the up axis and leaves yaw arbitrary, so crossing a planet's
+    // pole (localUp flipping toward -Y) made the tangent frame spin/jump. Build
+    // a yaw-STABLE rotation instead: keep the previous frame's tangent forward,
+    // re-project it onto the new tangent plane, and LookRotation from it. This
+    // stays continuous over the whole sphere, poles included.
+    Math::Vector3 prevFwd = ctrl.surfaceRotation.Rotate(Math::Vector3(0.0f, 0.0f, 1.0f));
+    Math::Vector3 tangentFwd = prevFwd - ctrl.localUp * ctrl.localUp.Dot(prevFwd);
+    if (tangentFwd.LengthSquared() < 1e-4f) {
+        // Previous forward parallel to the new up: reseed from the previous right.
+        Math::Vector3 prevRight = ctrl.surfaceRotation.GetRight();
+        tangentFwd = prevRight - ctrl.localUp * ctrl.localUp.Dot(prevRight);
+        if (tangentFwd.LengthSquared() < 1e-4f) {
+            Math::Vector3 ref = (Math::Abs(ctrl.localUp.y) < 0.99f)
+                ? Math::Vector3(0, 1, 0) : Math::Vector3(1, 0, 0);
+            tangentFwd = ref - ctrl.localUp * ctrl.localUp.Dot(ref);
+        }
+    }
+    Math::Quaternion targetRot = Math::Quaternion::LookRotation(tangentFwd, ctrl.localUp);
 
     // On first frame (surfaceRotation is identity/default), snap immediately
     f32 dotCheck = ctrl.surfaceRotation.x * ctrl.surfaceRotation.x +
