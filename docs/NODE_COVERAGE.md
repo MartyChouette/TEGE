@@ -24,14 +24,22 @@ node graph cannot.
 - Entity direction vectors (3 nodes): Get Forward/Right/Up.
 - BehaviorTree blackboard (8 nodes): Set/Get Blackboard Bool/Float/Int/String.
 
-Remaining Tier-2 leftovers: **navmesh query nodes** (FindPath/PathExists/
-GetPathWaypoint — need a pathfinder pointer or forwarders like accessibility)
-and **tween completion/opacity** (Opacity/SetOnComplete/GetValue/StopAll).
+Tier-2 leftovers now also DONE:
+- Navmesh queries (5 nodes): Has Navmesh, Find Path, Get Waypoint, Path Exists,
+  plus the previously-stubbed Is Point On Navmesh (now forwards through the AI
+  bindings' navmesh/pathfinder via VSNavmesh* helpers).
+- Tween extras (3 nodes): Opacity, Get Value, Stop All.
+
+**Tiers 1 and 2 are complete.** Only `SetOnComplete`-style callback nodes are
+intentionally skipped (callbacks don't map cleanly to a graph). What remains is
+Tier 3/4 (physics joints, UI read-state/styling, HUD styling, weather reads,
+networking lobby, and the whole-system gaps: Rewind, MIDI, InputAction).
 
 ## Numbers
 
-- **327 nodes** registered in `Engine/src/VisualScript/NodeRegistry.cpp`
-  (261 original + 27 tier-1 + 17 accessibility + 14 AI/direction + 8 BT blackboard)
+- **335 nodes** registered in `Engine/src/VisualScript/NodeRegistry.cpp`
+  (261 original + 27 tier-1 + 17 accessibility + 14 AI/direction + 8 BT
+  blackboard + 5 navmesh + 3 tween)
 - **~940 script bindings** across 36 `ScriptBindings_*.cpp` files (718 global
   functions matched by name plus object methods/properties)
 - Node categories are cosmetic — the 90-entry "Gameplay" category is a
