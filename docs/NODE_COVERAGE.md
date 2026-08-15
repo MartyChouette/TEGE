@@ -14,13 +14,17 @@ node graph cannot.
   PlayMode/Player/web call sites) — reads are pure component lookups, but
   Choose and the variable nodes use the runtime tree player on the system.
 
-Next highest-value node work is **Tier 2** — the Accessibility node set (a
-pillar feature: 42 bindings, only 3 nodes today).
+Tier 2's headline item — the **Accessibility node set** — is also **DONE**:
+17 nodes (font scale, reduced motion, screen-shake, contrast, colorblind
+strength, subtitles, dyslexia font, screen reader get+set, plus Save). They
+forward through helpers in `ScriptBindings_Accessibility.cpp` that reuse the
+AngelScript settings pointer + apply/save callbacks, so Set takes effect and
+persists at every call site.
 
 ## Numbers
 
-- **288 nodes** registered in `Engine/src/VisualScript/NodeRegistry.cpp`
-  (261 original + 27 tier-1 additions)
+- **305 nodes** registered in `Engine/src/VisualScript/NodeRegistry.cpp`
+  (261 original + 27 tier-1 + 17 accessibility)
 - **~940 script bindings** across 36 `ScriptBindings_*.cpp` files (718 global
   functions matched by name plus object methods/properties)
 - Node categories are cosmetic — the 90-entry "Gameplay" category is a
@@ -82,10 +86,10 @@ concrete "add these nodes" work item.
 5. ~~**Save meta (non-float)**~~ — **DONE** (Set/Get Meta Bool/Int/String).
 
 ### Tier 2 — needed for polish / core pillar
-6. **Accessibility** — the 42-binding surface (font scale, contrast, reduced
-   motion, screen reader, subtitles, colorblind strength) has 3 nodes. This is
-   a stated engine pillar; node builders should be able to wire an in-game
-   accessibility menu. Add Get/Set nodes for the settings + subtitle controls.
+6. ~~**Accessibility**~~ — **DONE** (17 nodes: font scale, reduced motion,
+   screen-shake, contrast, colorblind strength, subtitles, dyslexia font,
+   screen reader get+set, plus Save). Node builders can now wire an in-game
+   accessibility menu.
 7. **AI tuning & navmesh query** — `AI_Set/GetMoveSpeed`, `DetectionRange`,
    `AttackRange`, `SetTargetPosition`, `Navmesh_FindPath/PathExists/
    GetPathWaypoint`. AI state nodes exist but you can't tune the agent or
@@ -126,9 +130,13 @@ concrete "add these nodes" work item.
 
 ## Suggested next step
 
-All of Tier 1 is shipped. The highest-value remaining node work is **Tier 2 —
-the Accessibility node set**: a stated engine pillar with 42 bindings but only
-3 nodes today. A node-only builder can't wire an in-game accessibility menu
-(font scale, contrast, reduced motion, screen reader, subtitles, colorblind
-strength). Those are plain Get/Set over the accessibility settings, so no new
-`ExecutionContext` plumbing is needed — mirror the save-meta node pattern.
+Tier 1 and the Tier-2 Accessibility set are shipped. Remaining Tier-2 items,
+in rough value order:
+- **AI tuning & navmesh query** (#7): `AI_Set/GetMoveSpeed`, detection/attack
+  range, `SetTargetPosition`, `Navmesh_FindPath/PathExists/GetPathWaypoint`.
+- **BehaviorTree blackboard** (#8): `BT_Get/SetBlackboard{Bool,Float,Int,String}`.
+- **Entity direction vectors** (#9): `Entity_GetForward/Right/Up`.
+- **Tween completion & opacity** (#10): `Tween_Opacity/SetOnComplete/GetValue/StopAll`.
+
+Then Tier 3 (physics joints, UI read-state/styling, HUD styling, weather
+reads, networking lobby) and Tier 4 (Rewind/MIDI/InputAction whole systems).
