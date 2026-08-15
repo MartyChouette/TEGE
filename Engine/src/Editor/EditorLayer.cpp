@@ -3293,6 +3293,12 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     }
     if (m_ShowDebugWorkstation) {
         DrawDebugWorkstation();
+        // X-closing the panel ends the F2 group, so the next F2 reopens it
+        if (!m_ShowDebugWorkstation && m_EngineDebugActive) {
+            m_EngineDebugActive = false;
+            m_DebugOverlayDetail = 0;
+            m_ShowDebugOverlay = m_GameDebugActive;
+        }
     }
     if (m_ShowHTML5ExportDialog) {
         DrawHTML5ExportDialog();

@@ -7373,7 +7373,7 @@ void EditorLayer::DrawAudioMeterStrip() {
 // ---------------------------------------------------------------------------
 void EditorLayer::DrawDebugWorkstation() {
     ImGui::SetNextWindowSize(ImVec2(700, 500), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Debug Workstation", &m_ShowDebugWorkstation)) {
+    if (!ImGui::Begin("Debug Workstation (F2)", &m_ShowDebugWorkstation)) {
         ImGui::End();
         return;
     }
@@ -8297,12 +8297,7 @@ void EditorLayer::ToggleGameDebug() {
     // Close Engine Debug when opening Game Debug (only one debug group at a time)
     if (m_GameDebugActive && m_EngineDebugActive) {
         m_EngineDebugActive = false;
-        SetPanelVisibility(EditorPanel::Profiler, false);
-        SetPanelVisibility(EditorPanel::Rendering, false);
-        SetPanelVisibility(EditorPanel::PostProcessing, false);
-        SetPanelVisibility(EditorPanel::RetroEffects, false);
-        SetPanelVisibility(EditorPanel::SaveDebug, false);
-        m_ShowColliderWireframes = false;
+        m_ShowDebugWorkstation = false;
         m_DebugOverlayDetail = 0;
     }
 
@@ -8320,9 +8315,12 @@ void EditorLayer::ToggleGameDebug() {
 }
 
 // ---------------------------------------------------------------------------
-// F2 — Toggle Engine Debug group
-// Profiler, Rendering, PostProcessing, RetroEffects, SaveDebug panels +
-// detailed overlay + collider wireframes
+// F2 — Toggle Engine Debug: the Debug Workstation (perf counters, frame/memory
+// graphs, stress tools, GPU particles) + detailed overlay. The old behavior
+// opened a five-panel barrage (Profiler/Rendering/PostProcessing/RetroEffects/
+// SaveDebug) — those are settings/niche panels, still reachable from their
+// menus, not what a debug hotkey should dump on screen. CLAUDE.md always
+// documented F2 as the Debug Workstation; the code now matches.
 // ---------------------------------------------------------------------------
 void EditorLayer::ToggleEngineDebug() {
     m_EngineDebugActive = !m_EngineDebugActive;
@@ -8331,23 +8329,14 @@ void EditorLayer::ToggleEngineDebug() {
     if (m_EngineDebugActive && m_GameDebugActive) {
         m_GameDebugActive = false;
         SetPanelVisibility(EditorPanel::Console, false);
+        m_ShowGameDebug = false;
     }
 
-    // Toggle engine/editor debug panels
-    SetPanelVisibility(EditorPanel::Profiler, m_EngineDebugActive);
-    SetPanelVisibility(EditorPanel::Rendering, m_EngineDebugActive);
-    SetPanelVisibility(EditorPanel::PostProcessing, m_EngineDebugActive);
-    SetPanelVisibility(EditorPanel::RetroEffects, m_EngineDebugActive);
-    SetPanelVisibility(EditorPanel::SaveDebug, m_EngineDebugActive);
+    m_ShowDebugWorkstation = m_EngineDebugActive;
 
-    // Show detailed overlay line when engine debug is active
+    // Detailed overlay line while engine debug is active
     m_DebugOverlayDetail = m_EngineDebugActive ? 1 : 0;
-
-    // Also ensure the overlay HUD itself is visible when engine debug is on
     m_ShowDebugOverlay = m_EngineDebugActive;
-
-    // Toggle collider wireframe visualization
-    m_ShowColliderWireframes = m_EngineDebugActive;
 }
 
 // ---------------------------------------------------------------------------
