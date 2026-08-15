@@ -31,10 +31,33 @@ struct GPUParticle {
     Math::Vector4 color;
     f32 size;
     f32 rotation;
-    f32 _pad0;
-    f32 _pad1;
+    f32 gravityScale;   // per-particle gravity multiplier (0 float, <0 rise)
+    f32 drag;           // per-particle extra velocity damping / sec
 };
 static_assert(sizeof(GPUParticle) == 64, "GPUParticle must match GLSL layout");
+
+// Named looks for the emitter (maps to a ParticleSpawnParams). "Custom" uses
+// the emitter component's own fields.
+enum class GPUParticlePreset : u8 {
+    Custom = 0, Smoke, Fire, Sparks, Blood, Mist, Spray, Dust, Magic, Snow, Count
+};
+
+// Per-particle spawn appearance + physics, baked into each particle at spawn.
+// This is what makes presets look distinct within one shared simulation.
+struct ParticleSpawnParams {
+    Math::Vector4 color = {1, 1, 1, 1};
+    f32 size = 0.3f;
+    f32 lifetime = 3.0f;
+    f32 speed = 2.0f;          // initial speed along direction
+    f32 spread = 0.5f;         // cone/random spread
+    f32 gravityScale = 1.0f;   // 0 = float, <0 = rise (smoke)
+    f32 drag = 0.0f;           // extra per-particle damping
+    f32 sizeJitter = 0.3f;     // 0-1 random size variation
+};
+
+// The canonical look for each preset.
+ParticleSpawnParams PresetSpawnParams(GPUParticlePreset preset);
+const char* GPUParticlePresetName(GPUParticlePreset preset);
 
 // Emitter configuration for GPU particles
 struct GPUEmitterConfig {
@@ -75,6 +98,11 @@ public:
 
     // Spawn new particles (CPU-side, uploads to staging region of particle SSBO)
     void Spawn(u32 count, const Math::Vector3& position, const Math::Vector3& direction);
+
+    // Spawn with explicit per-particle appearance/physics (this is what emitters
+    // and presets use so different looks coexist in the one shared buffer).
+    void SpawnWithParams(u32 count, const Math::Vector3& position,
+                         const Math::Vector3& direction, const ParticleSpawnParams& params);
 
     // Render: draw the particle SSBO as an instance-rate vertex buffer inside
     // the current (already begun) render pass. Dead slots collapse to

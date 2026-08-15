@@ -147,8 +147,78 @@ void GPUParticleSystem::Simulate(VkCommandBuffer cmd, f32 deltaTime, u32 frameNu
     }
 }
 
+// Cheap deterministic hash -> [0,1) for per-particle jitter.
+static f32 HashUnit(u32 n) {
+    n = (n << 13u) ^ n;
+    n = n * (n * n * 15731u + 789221u) + 1376312589u;
+    return static_cast<f32>(n & 0x7FFFFFFFu) / static_cast<f32>(0x7FFFFFFF);
+}
+
+const char* GPUParticlePresetName(GPUParticlePreset p) {
+    switch (p) {
+        case GPUParticlePreset::Custom: return "Custom";
+        case GPUParticlePreset::Smoke:  return "Smoke";
+        case GPUParticlePreset::Fire:   return "Fire";
+        case GPUParticlePreset::Sparks: return "Sparks";
+        case GPUParticlePreset::Blood:  return "Blood";
+        case GPUParticlePreset::Mist:   return "Mist";
+        case GPUParticlePreset::Spray:  return "Spray";
+        case GPUParticlePreset::Dust:   return "Dust";
+        case GPUParticlePreset::Magic:  return "Magic";
+        case GPUParticlePreset::Snow:   return "Snow";
+        default: return "Custom";
+    }
+}
+
+ParticleSpawnParams PresetSpawnParams(GPUParticlePreset preset) {
+    ParticleSpawnParams p;
+    switch (preset) {
+        case GPUParticlePreset::Smoke:
+            p.color = {0.35f, 0.35f, 0.38f, 0.5f}; p.size = 0.8f; p.lifetime = 4.0f;
+            p.speed = 1.2f; p.spread = 0.4f; p.gravityScale = -0.15f; p.drag = 0.8f; p.sizeJitter = 0.5f; break;
+        case GPUParticlePreset::Fire:
+            p.color = {1.0f, 0.55f, 0.12f, 0.9f}; p.size = 0.5f; p.lifetime = 1.0f;
+            p.speed = 2.5f; p.spread = 0.35f; p.gravityScale = -0.4f; p.drag = 1.2f; p.sizeJitter = 0.4f; break;
+        case GPUParticlePreset::Sparks:
+            p.color = {1.0f, 0.85f, 0.4f, 1.0f}; p.size = 0.08f; p.lifetime = 0.8f;
+            p.speed = 6.0f; p.spread = 1.0f; p.gravityScale = 1.4f; p.drag = 0.2f; p.sizeJitter = 0.6f; break;
+        case GPUParticlePreset::Blood:
+            p.color = {0.55f, 0.02f, 0.02f, 1.0f}; p.size = 0.12f; p.lifetime = 1.2f;
+            p.speed = 4.0f; p.spread = 0.6f; p.gravityScale = 1.8f; p.drag = 0.1f; p.sizeJitter = 0.5f; break;
+        case GPUParticlePreset::Mist:
+            p.color = {0.85f, 0.88f, 0.92f, 0.3f}; p.size = 1.2f; p.lifetime = 5.0f;
+            p.speed = 0.6f; p.spread = 0.9f; p.gravityScale = 0.0f; p.drag = 1.5f; p.sizeJitter = 0.6f; break;
+        case GPUParticlePreset::Spray:
+            p.color = {0.7f, 0.85f, 1.0f, 0.7f}; p.size = 0.15f; p.lifetime = 1.5f;
+            p.speed = 5.0f; p.spread = 0.5f; p.gravityScale = 1.0f; p.drag = 0.4f; p.sizeJitter = 0.5f; break;
+        case GPUParticlePreset::Dust:
+            p.color = {0.7f, 0.62f, 0.5f, 0.45f}; p.size = 0.4f; p.lifetime = 3.0f;
+            p.speed = 0.8f; p.spread = 0.8f; p.gravityScale = 0.1f; p.drag = 1.2f; p.sizeJitter = 0.6f; break;
+        case GPUParticlePreset::Magic:
+            p.color = {0.6f, 0.35f, 1.0f, 1.0f}; p.size = 0.18f; p.lifetime = 2.0f;
+            p.speed = 1.5f; p.spread = 1.0f; p.gravityScale = -0.2f; p.drag = 0.6f; p.sizeJitter = 0.7f; break;
+        case GPUParticlePreset::Snow:
+            p.color = {1.0f, 1.0f, 1.0f, 0.9f}; p.size = 0.12f; p.lifetime = 6.0f;
+            p.speed = 0.4f; p.spread = 0.6f; p.gravityScale = 0.15f; p.drag = 1.8f; p.sizeJitter = 0.4f; break;
+        case GPUParticlePreset::Custom:
+        default: break;   // defaults on the struct
+    }
+    return p;
+}
+
 void GPUParticleSystem::Spawn(u32 count, const Math::Vector3& position,
                                const Math::Vector3& direction) {
+    // Default look = a plain white puff (kept for the debug burst buttons).
+    ParticleSpawnParams params;
+    params.color = m_Config.startColor;
+    params.size = m_Config.startSize;
+    params.lifetime = m_Config.maxLifetime;
+    SpawnWithParams(count, position, direction, params);
+}
+
+void GPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& position,
+                                         const Math::Vector3& direction,
+                                         const ParticleSpawnParams& params) {
     if (!m_Initialized || count == 0) return;
     m_HasSpawned = true;   // wakes the simulation (see Simulate's idle gate)
 
@@ -157,19 +227,21 @@ void GPUParticleSystem::Spawn(u32 count, const Math::Vector3& position,
     for (u32 i = 0; i < count; ++i) {
         GPUParticle& p = newParticles[i];
         p.position = position;
-        p.lifetime = m_Config.maxLifetime;
+        p.lifetime = params.lifetime * (0.7f + 0.6f * HashUnit(i * 2654435761u + 11u));
         p.age = 0.0f;
-        // Random velocity within cone
-        f32 theta = static_cast<f32>(i) * 2.39996f; // Golden angle
-        f32 phi = m_Config.spread * static_cast<f32>(i % 16) / 16.0f;
+        // Random velocity within a cone around direction
+        f32 theta = static_cast<f32>(i) * 2.39996f; // golden angle
+        f32 phi = params.spread * static_cast<f32>(i % 16) / 16.0f;
         p.velocity = Math::Vector3(
-            direction.x + sinf(phi) * cosf(theta) * m_Config.spread,
+            direction.x + sinf(phi) * cosf(theta) * params.spread,
             direction.y + cosf(phi),
-            direction.z + sinf(phi) * sinf(theta) * m_Config.spread
-        ) * 2.0f; // Initial speed
-        p.color = m_Config.startColor;
-        p.size = m_Config.startSize;
-        p.rotation = 0.0f;
+            direction.z + sinf(phi) * sinf(theta) * params.spread
+        ) * params.speed;
+        p.color = params.color;
+        p.size = params.size * (1.0f - params.sizeJitter + 2.0f * params.sizeJitter * HashUnit(i * 40503u + 7u));
+        p.rotation = HashUnit(i * 22699u + 3u) * 6.2831853f;
+        p.gravityScale = params.gravityScale;
+        p.drag = params.drag;
     }
 
     // Upload to SSBO at m_NextSpawnIndex

@@ -2875,6 +2875,7 @@ void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* /*sim*/) {}
 void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& /*w*/, bool /*r*/, u32, u32) {}
 void RenderSystem::RenderGPUParticles() {}  // Vulkan-only (needs WebGPU compute first)
 void RenderSystem::SpawnGPUParticles(u32, const Math::Vector3&, const Math::Vector3&) {}
+void RenderSystem::TickGPUEmitters(f32) {}
 void RenderSystem::RenderParticles(u32, u32) {}
 void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem&, u32, u32) {}
 void RenderSystem::RenderFluid(u32, u32) {}
@@ -2963,6 +2964,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include "Enjin/Renderer/DDGIProbeSystem.h"
 #include "Enjin/Renderer/VolumetricFog.h"
 #include "Enjin/Effects/GPUParticleSystem.h"
+#include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #endif
 #ifdef ENJIN_VISIBILITY_BUFFER
 #include "Enjin/Renderer/VisibilityBuffer/VisibilityBuffer.h"
@@ -5212,10 +5214,40 @@ void RenderSystem::RecordComputePrePass(f32 deltaTime) {
             // History is maintained inside Update (copy 0 -> 1); no swap needed.
         }
 
-        // GPU particles: simulate all alive particles
+        // GPU particles: tick ECS emitters (spawn), then simulate all particles
         if (m_GPUParticleSystem) {
+            TickGPUEmitters(deltaTime);
             Math::Vector3 wind(0.0f); // TODO: read from WindSystem
             m_GPUParticleSystem->Simulate(computeCmd, deltaTime, frameNumber, wind);
+        }
+    }
+}
+
+void RenderSystem::TickGPUEmitters(f32 deltaTime) {
+    if (!m_World || !m_GPUParticleSystem) return;
+
+    for (Entity e : m_World->GetEntitiesWithComponent<GPUParticleEmitterComponent>()) {
+        auto* em = m_World->GetComponent<GPUParticleEmitterComponent>(e);
+        if (!em) continue;
+
+        Math::Vector3 pos(0.0f);
+        if (auto* t = m_World->GetComponent<TransformComponent>(e)) pos = t->position;
+
+        // One-shot burst (fired once, then cleared)
+        if (em->burstNow && em->burstCount > 0) {
+            m_GPUParticleSystem->SpawnWithParams(em->burstCount, pos, em->direction, em->ResolveParams());
+            em->burstNow = false;
+        }
+
+        // Continuous emission, accumulating fractional spawns
+        if (em->emitting && em->spawnRate > 0.0f) {
+            em->accumulator += em->spawnRate * deltaTime;
+            u32 n = static_cast<u32>(em->accumulator);
+            if (n > 0) {
+                em->accumulator -= static_cast<f32>(n);
+                if (n > 4096) n = 4096;   // clamp a single frame's spawn spike
+                m_GPUParticleSystem->SpawnWithParams(n, pos, em->direction, em->ResolveParams());
+            }
         }
     }
 }

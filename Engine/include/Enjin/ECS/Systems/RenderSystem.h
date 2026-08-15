@@ -495,6 +495,8 @@ public:
     void RenderGPUParticles();
     // Seed GPU particles (wakes the compute sim; Debug Workstation has a burst button)
     void SpawnGPUParticles(u32 count, const Math::Vector3& position, const Math::Vector3& direction);
+    // Spawn every frame from GPUParticleEmitterComponent entities (continuous + burst)
+    void TickGPUEmitters(f32 deltaTime);
     void RenderParticles(u32 viewportWidth = 0, u32 viewportHeight = 0);
     void RenderElementalParticles(const Effects::ElementalSystem& elementalSystem,
                                   u32 viewportWidth = 0, u32 viewportHeight = 0);

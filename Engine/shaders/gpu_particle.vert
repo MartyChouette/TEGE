@@ -22,6 +22,7 @@ layout(binding = 0) uniform UniformBufferObject {
 
 layout(location = 0) out vec2 fragUV;
 layout(location = 1) out vec4 fragColor;
+layout(location = 2) out float fragLifeT;   // 0 at spawn -> 1 at death
 
 // Two-triangle quad in [-0.5, 0.5]
 const vec2 kCorners[6] = vec2[6](
@@ -36,12 +37,14 @@ const vec2 kUVs[6] = vec2[6](
 void main() {
     // lifetime counts DOWN (seconds remaining); age counts up. Dead = no time left.
     float lifetime = inPosLife.w;
+    float age = inVelAge.w;
 
     // Dead slot: collapse the quad (clipped, zero area, zero fill cost)
     if (lifetime <= 0.0 || isnan(lifetime)) {
         gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
         fragUV = vec2(0.0);
         fragColor = vec4(0.0);
+        fragLifeT = 1.0;
         return;
     }
 
@@ -60,4 +63,7 @@ void main() {
     gl_Position = ubo.proj * ubo.view * vec4(worldPos, 1.0);
     fragUV = kUVs[gl_VertexIndex];
     fragColor = inColor;
+    // Life fraction from age vs remaining lifetime (drives the alpha fade)
+    float total = age + max(lifetime, 0.0001);
+    fragLifeT = clamp(age / total, 0.0, 1.0);
 }

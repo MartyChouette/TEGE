@@ -15,8 +15,8 @@ struct Particle {
     vec4 color;          // Current RGBA (interpolated over lifetime)
     float size;          // Current billboard size
     float rotation;      // Billboard rotation angle
-    float _pad0;
-    float _pad1;
+    float gravityScale;  // Per-particle gravity multiplier (0 = float, <0 = rise)
+    float drag;          // Per-particle extra velocity damping (per second)
 };
 
 layout(std430, set = 0, binding = 0) buffer ParticleBuffer {
@@ -87,8 +87,9 @@ void main() {
         return;
     }
 
-    // Physics update
-    vec3 acceleration = gravity;
+    // Physics update — gravity is scaled per particle so presets differ
+    // (sparks fall hard, smoke rises with a negative scale, mist floats at 0).
+    vec3 acceleration = gravity * p.gravityScale;
     acceleration += windForce;
 
     // Turbulence
@@ -96,15 +97,14 @@ void main() {
         acceleration += turbulence(p.position, turbulenceFrequency, turbulenceStrength, idx + frameNumber);
     }
 
-    // Velocity verlet integration
+    // Velocity integration with global + per-particle drag
     p.velocity += acceleration * deltaTime;
-    p.velocity *= (1.0 - damping * deltaTime); // Damping
+    p.velocity *= (1.0 - (damping + p.drag) * deltaTime);
     p.position += p.velocity * deltaTime;
 
-    // Interpolate color and size over lifetime
-    float t = clamp(p.age / maxLifetime, 0.0, 1.0);
-    p.color = mix(startColor, endColor, t);
-    p.size = mix(startSize, endSize, t);
+    // Color and size stay as baked at spawn (per-preset). The alpha fade over
+    // life happens in the draw fragment shader from age/lifetime, so the sim
+    // never clobbers the per-particle preset color.
 
     // Write back
     particles[idx] = p;

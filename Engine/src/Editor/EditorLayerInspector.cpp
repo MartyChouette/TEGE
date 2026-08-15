@@ -17,6 +17,7 @@
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/Swarm.h"
+#include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/DynamicDifficulty.h"
@@ -367,6 +368,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SwarmComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SwarmComponent>(e); },
             "swarm crowd agents boids instanced"},
+        {"GPU Particle Emitter", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::GPUParticleEmitterComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GPUParticleEmitterComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::GPUParticleEmitterComponent>(e); },
+            "particle emitter gpu compute fire smoke sparks blood mist fx"},
         {"Reverb Zone", "Audio", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ReverbZoneComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ReverbZoneComponent>(e); },
@@ -1427,6 +1433,21 @@ void EditorLayer::DrawInspectorPanel() {
         // Gameplay components
         if (m_World->HasComponent<ECS::HealthComponent>(m_PrimarySelected)) {
             DrawHealthComponent(m_PrimarySelected);
+        }
+        if (auto* em = m_World->GetComponent<ECS::GPUParticleEmitterComponent>(m_PrimarySelected)) {
+            if (ImGui::CollapsingHeader("GPU Particle Emitter", ImGuiTreeNodeFlags_DefaultOpen)) {
+                int preset = static_cast<int>(em->preset);
+                const char* names[] = {"Custom","Smoke","Fire","Sparks","Blood","Mist","Spray","Dust","Magic","Snow"};
+                if (ImGui::Combo("Preset", &preset, names, IM_ARRAYSIZE(names)))
+                    em->preset = static_cast<Effects::GPUParticlePreset>(preset);
+                ImGui::Checkbox("Emitting", &em->emitting);
+                ImGui::DragFloat("Rate (/sec)", &em->spawnRate, 5.0f, 0.0f, 5000.0f);
+                ImGui::DragFloat3("Direction", &em->direction.x, 0.05f);
+                if (ImGui::Button("Burst 500")) { em->burstCount = 500; em->burstNow = true; }
+                ImGui::SameLine();
+                if (ImGui::Button("Burst 5000")) { em->burstCount = 5000; em->burstNow = true; }
+                ImGui::TextDisabled("(sim + draw run entirely on the GPU)");
+            }
         }
         if (m_World->HasComponent<ECS::RecordRewindComponent>(m_PrimarySelected)) {
             DrawRecordRewindComponent(m_PrimarySelected);
