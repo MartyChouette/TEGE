@@ -466,6 +466,10 @@ constexpr const char* HUDIsEnabled   = "HUD_IsEnabled";
 constexpr const char* HUDSetVisible  = "HUD_SetVisible";
 constexpr const char* HUDSetText     = "HUD_SetText";
 constexpr const char* HUDSetValue    = "HUD_SetValue";
+constexpr const char* HUDSetFillColor = "HUD_SetFillColor";
+constexpr const char* HUDSetTextColor = "HUD_SetTextColor";
+constexpr const char* HUDSetFontSize  = "HUD_SetFontSize";
+constexpr const char* HUDSetPosition  = "HUD_SetPosition";
 
 // Text
 constexpr const char* TextSetContent = "Text_SetContent";

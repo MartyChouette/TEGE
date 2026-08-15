@@ -1368,6 +1368,44 @@ ENJIN_TEST(JointNodes, CreateConfigureReadDestroy) {
 }
 
 // ===========================================================================
+// HUD styling nodes (docs/NODE_COVERAGE.md tier-3)
+// ===========================================================================
+
+ENJIN_TEST(HUDNodes, StylingLandsOnWidgetElements) {
+    World world;
+    Entity hud = world.CreateEntity();
+    auto& canvas = world.AddComponent<GUI::UICanvasComponent>(hud);
+    u32 barId = canvas.AddElement(GUI::UIWidgetType::ProgressBar, "Bar");
+    u32 labelId = canvas.AddElement(GUI::UIWidgetType::Label, "Label");
+
+    auto& reg = NodeRegistry::Instance();
+    ExecutionContext ctx;
+    ctx.world = &world;
+    ctx.entity = hud;
+    std::vector<VariableValue> outs;
+
+    reg.FindNode(NodeTypes::HUDSetFillColor)->execute(ctx, { false, static_cast<Entity>(hud), Math::Vector3(1, 0, 0) }, outs);
+    ENJIN_EXPECT_FLOAT_EQ(canvas.GetElement(barId)->data.progressFillColor.x, 1.0f);
+
+    reg.FindNode(NodeTypes::HUDSetTextColor)->execute(ctx, { false, static_cast<Entity>(hud), Math::Vector3(0, 0, 1) }, outs);
+    ENJIN_EXPECT_FLOAT_EQ(canvas.GetElement(labelId)->style.textColor.z, 1.0f);
+
+    reg.FindNode(NodeTypes::HUDSetFontSize)->execute(ctx, { false, static_cast<Entity>(hud), 32.0f }, outs);
+    ENJIN_EXPECT_FLOAT_EQ(canvas.GetElement(labelId)->style.fontSize, 32.0f);
+
+    reg.FindNode(NodeTypes::HUDSetPosition)->execute(ctx, { false, static_cast<Entity>(hud), Math::Vector2(0.1f, 0.9f) }, outs);
+    // Root elements re-anchored
+    bool anyRoot = false;
+    for (auto& el : canvas.elements) {
+        if (el.parentId != 0) continue;
+        anyRoot = true;
+        ENJIN_EXPECT_FLOAT_EQ(el.anchor.anchorMin.x, 0.1f);
+        ENJIN_EXPECT_FLOAT_EQ(el.anchor.anchorMax.y, 0.9f);
+    }
+    ENJIN_EXPECT_TRUE(anyRoot);
+}
+
+// ===========================================================================
 // Entry point
 // ===========================================================================
 

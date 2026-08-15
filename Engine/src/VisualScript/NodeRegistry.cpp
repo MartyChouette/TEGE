@@ -10152,6 +10152,110 @@ void NodeRegistry::RegisterBuiltinNodes() {
         };
         RegisterNode(def);
     }
+
+    // =======================================================================
+    // HUD styling (docs/NODE_COVERAGE.md tier-3). HUD widgets are UICanvas
+    // entities; these style the first element of the relevant widget type,
+    // mirroring the HUD_* bindings' legacy semantics.
+    // =======================================================================
+
+    auto hudFirstOfType = [](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs,
+                             GUI::UIWidgetType t) -> GUI::UIElement* {
+        if (!ctx.world || inputs.size() < 2 || !std::holds_alternative<u64>(inputs[1])) return nullptr;
+        auto* c = ctx.world->GetComponent<GUI::UICanvasComponent>(static_cast<ECS::Entity>(std::get<u64>(inputs[1])));
+        if (!c) return nullptr;
+        for (auto& e : c->elements) if (e.type == t) return &e;
+        return nullptr;
+    };
+
+    // HUD Set Fill Color (progress bar)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::HUDSetFillColor;
+        def.displayName = "HUD Set Fill Color";
+        def.description = "Set a HUD bar's fill color (RGB 0-1)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.45f, 0.6f, 0.4f);
+        def.inputs = {FlowIn(), EntityPin("HUD Entity", PK::Input), Vec3("Color", PK::Input, Math::Vector3(0.2f, 0.8f, 0.2f))};
+        def.outputs = {FlowOut()};
+        def.keywords = {"hud", "bar", "fill", "color", "style"};
+        def.execute = [hudFirstOfType](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            if (auto* el = hudFirstOfType(ctx, inputs, GUI::UIWidgetType::ProgressBar)) {
+                if (inputs.size() > 2 && std::holds_alternative<Math::Vector3>(inputs[2]))
+                    el->data.progressFillColor = std::get<Math::Vector3>(inputs[2]);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // HUD Set Text Color (label)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::HUDSetTextColor;
+        def.displayName = "HUD Set Text Color";
+        def.description = "Set a HUD label's text color (RGB 0-1)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.45f, 0.6f, 0.4f);
+        def.inputs = {FlowIn(), EntityPin("HUD Entity", PK::Input), Vec3("Color", PK::Input, Math::Vector3(1, 1, 1))};
+        def.outputs = {FlowOut()};
+        def.keywords = {"hud", "text", "color", "style"};
+        def.execute = [hudFirstOfType](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            if (auto* el = hudFirstOfType(ctx, inputs, GUI::UIWidgetType::Label)) {
+                if (inputs.size() > 2 && std::holds_alternative<Math::Vector3>(inputs[2]))
+                    el->style.textColor = std::get<Math::Vector3>(inputs[2]);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // HUD Set Font Size (label)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::HUDSetFontSize;
+        def.displayName = "HUD Set Font Size";
+        def.description = "Set a HUD label's font size";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.45f, 0.6f, 0.4f);
+        def.inputs = {FlowIn(), EntityPin("HUD Entity", PK::Input), Float("Size", PK::Input, 24.0f)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"hud", "font", "size", "text", "style"};
+        def.execute = [hudFirstOfType](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            if (auto* el = hudFirstOfType(ctx, inputs, GUI::UIWidgetType::Label)) {
+                if (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
+                    el->style.fontSize = std::get<f32>(inputs[2]);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // HUD Set Position (anchor 0-1 on root elements)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::HUDSetPosition;
+        def.displayName = "HUD Set Position";
+        def.description = "Anchor a HUD widget at a screen position (0-1 both axes)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.45f, 0.6f, 0.4f);
+        def.inputs = {FlowIn(), EntityPin("HUD Entity", PK::Input), Vec2("Anchor", PK::Input, Math::Vector2(0.5f, 0.5f))};
+        def.outputs = {FlowOut()};
+        def.keywords = {"hud", "position", "anchor", "move", "style"};
+        def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            if (ctx.world && inputs.size() > 1 && std::holds_alternative<u64>(inputs[1])) {
+                auto* c = ctx.world->GetComponent<GUI::UICanvasComponent>(static_cast<ECS::Entity>(std::get<u64>(inputs[1])));
+                Math::Vector2 anchor = (inputs.size() > 2 && std::holds_alternative<Math::Vector2>(inputs[2]))
+                    ? std::get<Math::Vector2>(inputs[2]) : Math::Vector2(0.5f, 0.5f);
+                if (c) {
+                    for (auto& el : c->elements) {
+                        if (el.parentId != 0) continue;  // roots carry the widget position
+                        el.anchor.anchorMin = anchor;
+                        el.anchor.anchorMax = anchor;
+                    }
+                }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
 }
 
 } // namespace VisualScript
