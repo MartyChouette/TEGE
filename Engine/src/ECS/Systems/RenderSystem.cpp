@@ -1,6 +1,7 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Debug/Profiler.h"
+#include <cstdlib>   // getenv (GPU-particle headless test hook)
 #include "Enjin/Assets/MeshAssetCache.h"   // reload/free CPU mesh data after upload (task #3)
 #if !ENJIN_RENDERER_WEBGPU
 #include "Enjin/Renderer/SkinningComputeShaderData.h"  // embedded SPIR-V (ADR-0002 compute skinning)
@@ -4808,6 +4809,7 @@ void RenderSystem::Update(f32 deltaTime) {
             RenderTrees(vpW, vpH);
             RenderParticles(vpW, vpH);
             RenderFluid(vpW, vpH);
+            RenderGPUParticles();
         }
 
         m_Camera = prevCamera;
@@ -6066,6 +6068,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     RenderTrees(targetW, targetH);
     RenderParticles(targetW, targetH);
     RenderFluid(targetW, targetH);
+    RenderGPUParticles();
 
     // Restore main pass camera, buffers, and descriptor sets
     m_Camera = prevCamera;
@@ -6475,6 +6478,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         RenderTrees(targetW, targetH);
         RenderParticles(targetW, targetH);
         RenderFluid(targetW, targetH);
+        RenderGPUParticles();
     }
 
     // Restore main pass state
@@ -12194,6 +12198,29 @@ void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& weather,
 
 void RenderSystem::RenderGPUParticles() {
     if (!m_GPUParticleSystem || !m_Renderer || !m_Initialized || !m_ActiveDescriptorSets || !m_Pipeline) return;
+
+    // One-time proof-of-execution for headless debugging
+    static bool s_LoggedActive = false;
+    if (!s_LoggedActive) {
+        s_LoggedActive = true;
+        ENJIN_LOG_INFO(Renderer, "RenderGPUParticles: draw path active");
+    }
+
+    // Headless-test hook: ENJIN_GPUPART_TEST=1 auto-bursts once after ~30
+    // frames so probe runs (--golden capture) can exercise the draw path
+    // without a UI click.
+    {
+        static int s_AutoBurst = []() {
+            const char* v = std::getenv("ENJIN_GPUPART_TEST");
+            return (v && v[0] == '1') ? 30 : -1;
+        }();
+        if (s_AutoBurst > 0 && --s_AutoBurst == 0) {
+            // Spawn right in front of the active camera so framing can't hide it
+            Math::Vector3 pos(0.0f, 2.0f, 0.0f);
+            if (m_Camera) pos = m_Camera->GetPosition() + m_Camera->GetForward() * 8.0f;
+            SpawnGPUParticles(5000, pos, Math::Vector3(0, 1, 0));
+        }
+    }
 
     VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;

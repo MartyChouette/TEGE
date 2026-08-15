@@ -132,8 +132,19 @@ void GPUParticleSystem::Simulate(VkCommandBuffer cmd, f32 deltaTime, u32 frameNu
     // Dispatch simulation
     u32 workgroups = (m_Config.maxParticles + 255) / 256;
     m_SimulateSetup.Dispatch(cmd, workgroups);
-    m_SimulateSetup.Barrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                              VK_PIPELINE_STAGE_VERTEX_INPUT_BIT);
+    // Compute writes -> the draw reads the particle buffer as an instance
+    // vertex buffer. The vertex-input stage only supports
+    // VERTEX_ATTRIBUTE_READ (the helper's generic SHADER_READ trips
+    // VUID-vkCmdPipelineBarrier-dstAccessMask-02816), so barrier explicitly.
+    {
+        VkMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0,
+                             1, &barrier, 0, nullptr, 0, nullptr);
+    }
 }
 
 void GPUParticleSystem::Spawn(u32 count, const Math::Vector3& position,
