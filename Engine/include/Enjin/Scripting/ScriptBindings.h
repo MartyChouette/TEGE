@@ -1,5 +1,6 @@
 #pragma once
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/Platform/Types.h"
 #include <functional>
 
 class asIScriptEngine;
@@ -95,6 +96,18 @@ void SetBindingsAccessibilitySettings(Accessibility::RuntimeAccessibilitySetting
 void SetBindingsAccessibilitySaveCallback(std::function<void()> callback);
 void SetBindingsDyslexiaFontCallback(std::function<void(bool)> callback);
 void SetBindingsAccessibilityApplyCallback(std::function<void()> callback);
+
+// VisualScript node forwarders — reuse the AngelScript accessibility wiring
+// (settings pointer + apply/save callbacks). See ScriptBindings_Accessibility.cpp.
+void VSAccessSetFontScale(f32 v);          f32  VSAccessGetFontScale();
+void VSAccessSetReducedMotion(bool v);     bool VSAccessGetReducedMotion();
+void VSAccessSetDisableScreenShake(bool v); bool VSAccessGetDisableScreenShake();
+void VSAccessSetContrast(f32 v);           f32  VSAccessGetContrast();
+void VSAccessSetColorblindStrength(f32 v); f32  VSAccessGetColorblindStrength();
+void VSAccessSetSubtitles(bool v);         bool VSAccessGetSubtitles();
+void VSAccessSetDyslexiaFont(bool v);      bool VSAccessGetDyslexiaFont();
+void VSAccessSetScreenReader(bool v);      bool VSAccessGetScreenReader();
+void VSAccessSave();
 
 // Registration for accessibility bindings (defined in ScriptBindings_Accessibility.cpp)
 void RegisterAccessibilityBindings(asIScriptEngine* engine);

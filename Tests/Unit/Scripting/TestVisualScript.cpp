@@ -9,6 +9,8 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Systems/DialogueSystem.h"
+#include "Enjin/Accessibility/AccessibilitySettings.h"
+#include "Enjin/Scripting/ScriptBindings.h"
 
 using namespace Enjin;
 using namespace Enjin::VisualScript;
@@ -953,6 +955,84 @@ ENJIN_TEST(DialogueNodes, VariableNodesNoOpWithoutSystem) {
     VariableValue v = reg.FindNode(NodeTypes::DialogueGetVariable)->evaluate(
         ctx, { static_cast<Entity>(e), std::string("x") });
     ENJIN_EXPECT_STR_EQ(std::get<std::string>(v).c_str(), "");
+}
+
+// ===========================================================================
+// Accessibility nodes (docs/NODE_COVERAGE.md tier-2)
+// ===========================================================================
+
+ENJIN_TEST(AccessibilityNodes, AllRegister) {
+    auto& reg = NodeRegistry::Instance();
+    const char* ids[] = {
+        NodeTypes::A11ySetFontScale, NodeTypes::A11yGetFontScale,
+        NodeTypes::A11ySetReducedMotion, NodeTypes::A11yGetReducedMotion,
+        NodeTypes::A11ySetScreenShake, NodeTypes::A11yGetScreenShake,
+        NodeTypes::A11ySetContrast, NodeTypes::A11yGetContrast,
+        NodeTypes::A11ySetColorblindStrength, NodeTypes::A11yGetColorblindStrength,
+        NodeTypes::A11ySetSubtitles, NodeTypes::A11yGetSubtitles,
+        NodeTypes::A11ySetDyslexiaFont, NodeTypes::A11yGetDyslexiaFont,
+        NodeTypes::A11ySetScreenReader, NodeTypes::A11yGetScreenReader,
+        NodeTypes::A11ySave,
+    };
+    for (const char* id : ids) {
+        const NodeDefinition* def = reg.FindNode(id);
+        ENJIN_ASSERT_NOT_NULL(def);
+        ENJIN_EXPECT_STR_EQ(def->typeId, id);
+    }
+}
+
+ENJIN_TEST(AccessibilityNodes, SetAppliesGetReadsSameSettings) {
+    // The nodes forward to the same runtime settings + apply callback the
+    // AngelScript API uses. Wire a settings struct and confirm round-trip.
+    Accessibility::RuntimeAccessibilitySettings settings;
+    bool appliedCalled = false;
+    Scripting::SetBindingsAccessibilitySettings(&settings);
+    Scripting::SetBindingsAccessibilityApplyCallback([&]() { appliedCalled = true; });
+
+    auto& reg = NodeRegistry::Instance();
+    ExecutionContext ctx;                 // accessibility nodes need no world
+    std::vector<VariableValue> outs;
+
+    // Font scale (float): set fires apply, get reads it back
+    reg.FindNode(NodeTypes::A11ySetFontScale)->execute(ctx, { false, 2.0f }, outs);
+    ENJIN_EXPECT_TRUE(appliedCalled);
+    ENJIN_EXPECT_FLOAT_EQ(settings.fontScale, 2.0f);
+    VariableValue fs = reg.FindNode(NodeTypes::A11yGetFontScale)->evaluate(ctx, {});
+    ENJIN_ASSERT_TRUE(std::holds_alternative<f32>(fs));
+    ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(fs), 2.0f);
+
+    // Reduced motion (bool)
+    reg.FindNode(NodeTypes::A11ySetReducedMotion)->execute(ctx, { false, true }, outs);
+    ENJIN_EXPECT_TRUE(settings.reducedMotion);
+    VariableValue rm = reg.FindNode(NodeTypes::A11yGetReducedMotion)->evaluate(ctx, {});
+    ENJIN_ASSERT_TRUE(std::holds_alternative<bool>(rm));
+    ENJIN_EXPECT_TRUE(std::get<bool>(rm));
+
+    // Screen-shake-disabled + subtitles (bool) and colorblind strength (float)
+    reg.FindNode(NodeTypes::A11ySetScreenShake)->execute(ctx, { false, true }, outs);
+    ENJIN_EXPECT_TRUE(settings.disableScreenShake);
+    reg.FindNode(NodeTypes::A11ySetSubtitles)->execute(ctx, { false, true }, outs);
+    ENJIN_EXPECT_TRUE(settings.subtitlesEnabled);
+    reg.FindNode(NodeTypes::A11ySetColorblindStrength)->execute(ctx, { false, 0.5f }, outs);
+    ENJIN_EXPECT_FLOAT_EQ(settings.colorblindStrength, 0.5f);
+
+    // Cleanup so global state does not leak to other tests
+    Scripting::SetBindingsAccessibilitySettings(nullptr);
+    Scripting::SetBindingsAccessibilityApplyCallback(nullptr);
+}
+
+ENJIN_TEST(AccessibilityNodes, NoOpAndDefaultsWithoutSettings) {
+    Scripting::SetBindingsAccessibilitySettings(nullptr);
+    auto& reg = NodeRegistry::Instance();
+    ExecutionContext ctx;
+    std::vector<VariableValue> outs;
+
+    // Set is a safe no-op; Get returns sane defaults.
+    reg.FindNode(NodeTypes::A11ySetFontScale)->execute(ctx, { false, 3.0f }, outs);
+    VariableValue fs = reg.FindNode(NodeTypes::A11yGetFontScale)->evaluate(ctx, {});
+    ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(fs), 1.0f);   // default
+    VariableValue rm = reg.FindNode(NodeTypes::A11yGetReducedMotion)->evaluate(ctx, {});
+    ENJIN_EXPECT_FALSE(std::get<bool>(rm));
 }
 
 // ===========================================================================

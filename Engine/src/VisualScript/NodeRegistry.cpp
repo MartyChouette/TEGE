@@ -8992,6 +8992,129 @@ void NodeRegistry::RegisterBuiltinNodes() {
         };
         RegisterNode(def);
     }
+
+    // =======================================================================
+    // Accessibility settings (docs/NODE_COVERAGE.md tier-2). Get/Set over the
+    // runtime accessibility settings so a node-only game can drive an in-game
+    // accessibility menu. Forwarders reuse the AngelScript wiring (settings
+    // pointer + apply/save callbacks) so Set takes effect immediately.
+    // =======================================================================
+
+    // Small helpers to cut the boilerplate for uniform Set/Get nodes.
+    auto addA11ySetFloat = [this](const char* id, const char* name, const char* desc,
+                                  const char* kw, void(*fn)(f32), f32 def_) {
+        NodeDefinition def;
+        def.typeId = id; def.displayName = name; def.description = desc;
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.35f, 0.6f);
+        def.inputs = {FlowIn(), Float("Value", PK::Input, def_)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"accessibility", "a11y", kw, "set"};
+        def.execute = [fn](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs,
+                           std::vector<ECS::VariableValue>&) {
+            f32 v = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) ? std::get<f32>(inputs[1]) : 0.0f;
+            fn(v);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    };
+    auto addA11yGetFloat = [this](const char* id, const char* name, const char* desc,
+                                  const char* kw, f32(*fn)()) {
+        NodeDefinition def;
+        def.typeId = id; def.displayName = name; def.description = desc;
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.35f, 0.6f);
+        def.flags = NodeDefFlags::Pure;
+        def.outputs = {Float("Value", PK::Output)};
+        def.keywords = {"accessibility", "a11y", kw, "get"};
+        def.evaluate = [fn](const ExecutionContext&, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
+            return fn();
+        };
+        RegisterNode(def);
+    };
+    auto addA11ySetBool = [this](const char* id, const char* name, const char* desc,
+                                 const char* kw, void(*fn)(bool)) {
+        NodeDefinition def;
+        def.typeId = id; def.displayName = name; def.description = desc;
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.35f, 0.6f);
+        def.inputs = {FlowIn(), Bool("Enabled", PK::Input, false)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"accessibility", "a11y", kw, "set", "toggle"};
+        def.execute = [fn](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs,
+                           std::vector<ECS::VariableValue>&) {
+            bool v = (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) && std::get<bool>(inputs[1]);
+            fn(v);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    };
+    auto addA11yGetBool = [this](const char* id, const char* name, const char* desc,
+                                 const char* kw, bool(*fn)()) {
+        NodeDefinition def;
+        def.typeId = id; def.displayName = name; def.description = desc;
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.35f, 0.6f);
+        def.flags = NodeDefFlags::Pure;
+        def.outputs = {Bool("Enabled", PK::Output)};
+        def.keywords = {"accessibility", "a11y", kw, "get"};
+        def.evaluate = [fn](const ExecutionContext&, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
+            return fn();
+        };
+        RegisterNode(def);
+    };
+
+    using namespace Enjin::Scripting;
+    addA11ySetFloat(NodeTypes::A11ySetFontScale, "A11y Set Font Scale",
+        "Set the UI font scale (0.5-3.0)", "font", &VSAccessSetFontScale, 1.0f);
+    addA11yGetFloat(NodeTypes::A11yGetFontScale, "A11y Get Font Scale",
+        "Read the UI font scale", "font", &VSAccessGetFontScale);
+    addA11ySetBool(NodeTypes::A11ySetReducedMotion, "A11y Set Reduced Motion",
+        "Toggle reduced-motion mode", "motion", &VSAccessSetReducedMotion);
+    addA11yGetBool(NodeTypes::A11yGetReducedMotion, "A11y Get Reduced Motion",
+        "Read reduced-motion mode", "motion", &VSAccessGetReducedMotion);
+    addA11ySetBool(NodeTypes::A11ySetScreenShake, "A11y Set Screen Shake Disabled",
+        "Disable/enable screen shake", "shake", &VSAccessSetDisableScreenShake);
+    addA11yGetBool(NodeTypes::A11yGetScreenShake, "A11y Get Screen Shake Disabled",
+        "Read whether screen shake is disabled", "shake", &VSAccessGetDisableScreenShake);
+    addA11ySetFloat(NodeTypes::A11ySetContrast, "A11y Set Contrast",
+        "Set the screen contrast multiplier", "contrast", &VSAccessSetContrast, 1.0f);
+    addA11yGetFloat(NodeTypes::A11yGetContrast, "A11y Get Contrast",
+        "Read the screen contrast multiplier", "contrast", &VSAccessGetContrast);
+    addA11ySetFloat(NodeTypes::A11ySetColorblindStrength, "A11y Set Colorblind Strength",
+        "Set colorblind-filter strength (0-1)", "colorblind", &VSAccessSetColorblindStrength, 1.0f);
+    addA11yGetFloat(NodeTypes::A11yGetColorblindStrength, "A11y Get Colorblind Strength",
+        "Read colorblind-filter strength", "colorblind", &VSAccessGetColorblindStrength);
+    addA11ySetBool(NodeTypes::A11ySetSubtitles, "A11y Set Subtitles",
+        "Toggle subtitles", "subtitles", &VSAccessSetSubtitles);
+    addA11yGetBool(NodeTypes::A11yGetSubtitles, "A11y Get Subtitles",
+        "Read whether subtitles are on", "subtitles", &VSAccessGetSubtitles);
+    addA11ySetBool(NodeTypes::A11ySetDyslexiaFont, "A11y Set Dyslexia Font",
+        "Toggle the dyslexia-friendly font", "dyslexia", &VSAccessSetDyslexiaFont);
+    addA11yGetBool(NodeTypes::A11yGetDyslexiaFont, "A11y Get Dyslexia Font",
+        "Read whether the dyslexia font is on", "dyslexia", &VSAccessGetDyslexiaFont);
+    addA11ySetBool(NodeTypes::A11ySetScreenReader, "A11y Set Screen Reader",
+        "Toggle the screen reader", "screenreader", &VSAccessSetScreenReader);
+    addA11yGetBool(NodeTypes::A11yGetScreenReader, "A11y Get Screen Reader",
+        "Read whether the screen reader is on", "screenreader", &VSAccessGetScreenReader);
+    // Save (persist current settings)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::A11ySave;
+        def.displayName = "A11y Save Settings";
+        def.description = "Persist the current accessibility settings to disk";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.35f, 0.6f);
+        def.inputs = {FlowIn()};
+        def.outputs = {FlowOut()};
+        def.keywords = {"accessibility", "a11y", "save", "persist"};
+        def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>&,
+                         std::vector<ECS::VariableValue>&) {
+            Enjin::Scripting::VSAccessSave();
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
 }
 
 } // namespace VisualScript

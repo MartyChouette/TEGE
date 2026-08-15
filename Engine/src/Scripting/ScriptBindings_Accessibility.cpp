@@ -51,6 +51,32 @@ void SetBindingsAccessibilityApplyCallback(std::function<void()> callback) {
     s_ApplyAccessibilityCallback = std::move(callback);
 }
 
+// ---------------------------------------------------------------------------
+// Public forwarders for VisualScript nodes. These reuse the same runtime
+// settings pointer + apply/save callbacks the AngelScript API uses, so node
+// changes take effect (and persist) exactly like scripted ones. Set helpers
+// fire the apply callback; readers fall back to sane defaults when unwired.
+// ---------------------------------------------------------------------------
+static void VSAccessApply() { if (s_ApplyAccessibilityCallback) s_ApplyAccessibilityCallback(); }
+
+void VSAccessSetFontScale(f32 v)        { if (s_BindingsAccessibility) { s_BindingsAccessibility->fontScale = v; VSAccessApply(); } }
+f32  VSAccessGetFontScale()             { return s_BindingsAccessibility ? s_BindingsAccessibility->fontScale : 1.0f; }
+void VSAccessSetReducedMotion(bool v)   { if (s_BindingsAccessibility) { s_BindingsAccessibility->reducedMotion = v; VSAccessApply(); } }
+bool VSAccessGetReducedMotion()         { return s_BindingsAccessibility ? s_BindingsAccessibility->reducedMotion : false; }
+void VSAccessSetDisableScreenShake(bool v) { if (s_BindingsAccessibility) { s_BindingsAccessibility->disableScreenShake = v; VSAccessApply(); } }
+bool VSAccessGetDisableScreenShake()    { return s_BindingsAccessibility ? s_BindingsAccessibility->disableScreenShake : false; }
+void VSAccessSetContrast(f32 v)         { if (s_BindingsAccessibility) { s_BindingsAccessibility->screenContrast = v; VSAccessApply(); } }
+f32  VSAccessGetContrast()              { return s_BindingsAccessibility ? s_BindingsAccessibility->screenContrast : 1.0f; }
+void VSAccessSetColorblindStrength(f32 v) { if (s_BindingsAccessibility) { s_BindingsAccessibility->colorblindStrength = v; VSAccessApply(); } }
+f32  VSAccessGetColorblindStrength()    { return s_BindingsAccessibility ? s_BindingsAccessibility->colorblindStrength : 1.0f; }
+void VSAccessSetSubtitles(bool v)       { if (s_BindingsAccessibility) { s_BindingsAccessibility->subtitlesEnabled = v; VSAccessApply(); } }
+bool VSAccessGetSubtitles()             { return s_BindingsAccessibility ? s_BindingsAccessibility->subtitlesEnabled : false; }
+void VSAccessSetDyslexiaFont(bool v)    { if (s_BindingsAccessibility) { s_BindingsAccessibility->dyslexiaFriendly = v; if (s_DyslexiaFontCallback) s_DyslexiaFontCallback(v); VSAccessApply(); } }
+bool VSAccessGetDyslexiaFont()          { return s_BindingsAccessibility ? s_BindingsAccessibility->dyslexiaFriendly : false; }
+void VSAccessSetScreenReader(bool v)    { if (s_BindingsAccessibility) { s_BindingsAccessibility->screenReaderEnabled = v; VSAccessApply(); } }
+bool VSAccessGetScreenReader()          { return s_BindingsAccessibility ? s_BindingsAccessibility->screenReaderEnabled : false; }
+void VSAccessSave()                     { if (s_SaveAccessibilityCallback) s_SaveAccessibilityCallback(); }
+
 } // namespace Scripting
 } // namespace Enjin
 

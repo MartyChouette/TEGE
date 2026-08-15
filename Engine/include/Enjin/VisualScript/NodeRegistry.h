@@ -321,6 +321,23 @@ constexpr const char* SMGetState           = "StateMachine_GetState";
 constexpr const char* SubtitleShow         = "Subtitle_Show";
 constexpr const char* AnnouncerAnnounce    = "Announcer_Announce";
 constexpr const char* ColorblindSetMode    = "Colorblind_SetMode";
+constexpr const char* A11ySetFontScale        = "A11y_SetFontScale";
+constexpr const char* A11yGetFontScale        = "A11y_GetFontScale";
+constexpr const char* A11ySetReducedMotion    = "A11y_SetReducedMotion";
+constexpr const char* A11yGetReducedMotion    = "A11y_GetReducedMotion";
+constexpr const char* A11ySetScreenShake      = "A11y_SetScreenShake";
+constexpr const char* A11yGetScreenShake      = "A11y_GetScreenShake";
+constexpr const char* A11ySetContrast         = "A11y_SetContrast";
+constexpr const char* A11yGetContrast         = "A11y_GetContrast";
+constexpr const char* A11ySetColorblindStrength = "A11y_SetColorblindStrength";
+constexpr const char* A11yGetColorblindStrength = "A11y_GetColorblindStrength";
+constexpr const char* A11ySetSubtitles        = "A11y_SetSubtitles";
+constexpr const char* A11yGetSubtitles        = "A11y_GetSubtitles";
+constexpr const char* A11ySetDyslexiaFont     = "A11y_SetDyslexiaFont";
+constexpr const char* A11yGetDyslexiaFont     = "A11y_GetDyslexiaFont";
+constexpr const char* A11ySetScreenReader     = "A11y_SetScreenReader";
+constexpr const char* A11yGetScreenReader     = "A11y_GetScreenReader";
+constexpr const char* A11ySave                = "A11y_Save";
 
 // Input
 constexpr const char* InputIsKeyPressed    = "Input_IsKeyPressed";
