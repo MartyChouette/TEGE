@@ -1467,6 +1467,31 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
     }
     rootTransform.scale = Math::Vector3(unitScale, unitScale, unitScale);
     skelCtx.unitScale = unitScale; // Pass to skinned mesh entities
+
+    // Clean-import scale bake — RIGID (non-skinned) files only. The FBX path
+    // stores rigid node positions in native file units and puts the cm->m unit
+    // scale on the import ROOT, so each piece's local origin sits hundreds-to-
+    // thousands of units from where it renders (ugly pivots / inspector values).
+    // In a purely-rigid file every node takes the plain-local branch, so folding
+    // the unit scale into node translations + vertices and setting the root scale
+    // to 1 preserves every world transform exactly (a uniform parent scale
+    // distributes cleanly into child translations + geometry) while giving
+    // in-meters pivots. Skinned/mixed files keep the root-scale path untouched:
+    // baking their bind poses + animation is risky, and their gizmos are already
+    // world-correct after the gizmo fix.
+    if (!scene.hasSkinning && std::isfinite(unitScale) && unitScale > 1e-6f &&
+        std::fabs(unitScale - 1.0f) > 1e-4f) {
+        for (auto& n : scene.nodes) n.translation = n.translation * unitScale;
+        for (auto& m : scene.meshes)
+            for (auto& prim : m.primitives)
+                for (auto& v : prim.vertices) v.position = v.position * unitScale;
+        rootTransform.scale = Math::Vector3(1.0f, 1.0f, 1.0f);
+        skelCtx.unitScale = 1.0f;
+        ENJIN_LOG_INFO(Asset, "Clean-import: baked unit scale %.5f into rigid geometry (root scale=1) for %s",
+                       unitScale, filepath.c_str());
+        unitScale = 1.0f;
+    }
+
     result.entities.push_back(importRoot);
     result.rootEntity = importRoot;
 
