@@ -16,6 +16,7 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Notes.h"
+#include "Enjin/ECS/Components/Swarm.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/DynamicDifficulty.h"
@@ -361,6 +362,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HealthComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::HealthComponent>(e); },
             "health"},
+        {"Swarm (crowd demo)", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SwarmComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SwarmComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SwarmComponent>(e); },
+            "swarm crowd agents boids instanced"},
         {"Reverb Zone", "Audio", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ReverbZoneComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ReverbZoneComponent>(e); },

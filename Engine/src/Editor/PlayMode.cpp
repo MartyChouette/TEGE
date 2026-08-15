@@ -487,6 +487,9 @@ void PlayMode::Stop() {
     // Destroy pooled objects before shutting down scripts (scripts may reference pooled entities)
     m_ObjectPool.DestroyAll(m_World);
 
+    // Tear down swarm proxy entities so they don't leak into the restored scene
+    m_SwarmSystem.Reset(m_World);
+
     // Shutdown quest flows, behavior trees, visual scripts, and scripts first (before scene restore destroys entities)
     {
         auto qfEntities = m_World->GetEntitiesWithComponent<ECS::QuestFlowComponent>();
@@ -725,6 +728,7 @@ void PlayMode::Update(f32 deltaTime) {
 
         // Gameplay systems
         m_TweenSystem.Update(m_World, deltaTime);
+        m_SwarmSystem.Update(m_World, deltaTime);
         m_StateMachineSystem.Update(m_World, deltaTime);
         m_VisualScriptSystem.Update(deltaTime);
         m_BehaviorTreeSystem.Update(deltaTime);

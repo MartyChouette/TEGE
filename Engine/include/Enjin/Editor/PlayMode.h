@@ -8,6 +8,7 @@
 #include "Enjin/ECS/Systems/FlowerSystem.h"
 #include "Enjin/ECS/Systems/TweenSystem.h"
 #include "Enjin/ECS/Systems/StateMachineSystem.h"
+#include "Enjin/ECS/Systems/SwarmSystem.h"
 #include "Enjin/ECS/Systems/DialogueSystem.h"
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
 #include "Enjin/ECS/Systems/BehaviorTreeSystem.h"
@@ -190,6 +191,9 @@ private:
 
     // Tween system
     ECS::TweenSystem m_TweenSystem;
+
+    // Swarm system (data-oriented crowd proxies)
+    ECS::SwarmSystem m_SwarmSystem;
 
     // Record & Rewind (Braid / Sands of Time mechanic)
     Gameplay::RecordRewindSystem m_RecordRewindSystem;
