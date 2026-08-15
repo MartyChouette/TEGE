@@ -9248,6 +9248,184 @@ void NodeRegistry::RegisterBuiltinNodes() {
         };
         RegisterNode(def);
     }
+
+    // =======================================================================
+    // BehaviorTree blackboard (docs/NODE_COVERAGE.md tier-2). Pure component
+    // access: bt->blackboard.Set/Get on ECS::BehaviorTreeComponent. The
+    // blackboard is how BTs carry data, so this is what makes BT nodes usable.
+    // =======================================================================
+
+    // Shared entity-input resolver for the BB nodes.
+    auto bbEntity = [](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, usize idx) -> ECS::Entity {
+        ECS::Entity e = ctx.entity;
+        if (inputs.size() > idx && std::holds_alternative<u64>(inputs[idx]) && std::get<u64>(inputs[idx]) != 0)
+            e = static_cast<ECS::Entity>(std::get<u64>(inputs[idx]));
+        return e;
+    };
+
+    // --- Set Blackboard {Bool,Float,Int,String} (flow) ---
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::BTSetBBBool;
+        def.displayName = "BT Set Blackboard Bool";
+        def.description = "Write a bool into the entity's behavior-tree blackboard";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.55f, 0.5f, 0.3f);
+        def.inputs = {FlowIn(), EntityPin("Entity", PK::Input), String("Key", PK::Input, ""), Bool("Value", PK::Input, false)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"behaviortree", "bt", "blackboard", "bool", "set"};
+        def.execute = [bbEntity](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            ECS::Entity e = bbEntity(ctx, inputs, 1);
+            std::string key = (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2])) ? std::get<std::string>(inputs[2]) : "";
+            bool v = (inputs.size() > 3 && std::holds_alternative<bool>(inputs[3])) && std::get<bool>(inputs[3]);
+            auto* bt = ctx.world ? ctx.world->GetComponent<ECS::BehaviorTreeComponent>(e) : nullptr;
+            if (bt && !key.empty()) bt->blackboard.Set(key, AI::BlackboardValue(v));
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::BTSetBBFloat;
+        def.displayName = "BT Set Blackboard Float";
+        def.description = "Write a float into the entity's behavior-tree blackboard";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.55f, 0.5f, 0.3f);
+        def.inputs = {FlowIn(), EntityPin("Entity", PK::Input), String("Key", PK::Input, ""), Float("Value", PK::Input, 0.0f)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"behaviortree", "bt", "blackboard", "float", "set"};
+        def.execute = [bbEntity](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            ECS::Entity e = bbEntity(ctx, inputs, 1);
+            std::string key = (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2])) ? std::get<std::string>(inputs[2]) : "";
+            f32 v = (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3])) ? std::get<f32>(inputs[3]) : 0.0f;
+            auto* bt = ctx.world ? ctx.world->GetComponent<ECS::BehaviorTreeComponent>(e) : nullptr;
+            if (bt && !key.empty()) bt->blackboard.Set(key, AI::BlackboardValue(v));
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::BTSetBBInt;
+        def.displayName = "BT Set Blackboard Int";
+        def.description = "Write an int into the entity's behavior-tree blackboard";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.55f, 0.5f, 0.3f);
+        def.inputs = {FlowIn(), EntityPin("Entity", PK::Input), String("Key", PK::Input, ""), Int("Value", PK::Input, 0)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"behaviortree", "bt", "blackboard", "int", "set"};
+        def.execute = [bbEntity](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            ECS::Entity e = bbEntity(ctx, inputs, 1);
+            std::string key = (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2])) ? std::get<std::string>(inputs[2]) : "";
+            i32 v = (inputs.size() > 3 && std::holds_alternative<i32>(inputs[3])) ? std::get<i32>(inputs[3]) : 0;
+            auto* bt = ctx.world ? ctx.world->GetComponent<ECS::BehaviorTreeComponent>(e) : nullptr;
+            if (bt && !key.empty()) bt->blackboard.Set(key, AI::BlackboardValue(v));
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::BTSetBBString;
+        def.displayName = "BT Set Blackboard String";
+        def.description = "Write a string into the entity's behavior-tree blackboard";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.55f, 0.5f, 0.3f);
+        def.inputs = {FlowIn(), EntityPin("Entity", PK::Input), String("Key", PK::Input, ""), String("Value", PK::Input, "")};
+        def.outputs = {FlowOut()};
+        def.keywords = {"behaviortree", "bt", "blackboard", "string", "set"};
+        def.execute = [bbEntity](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            ECS::Entity e = bbEntity(ctx, inputs, 1);
+            std::string key = (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2])) ? std::get<std::string>(inputs[2]) : "";
+            std::string v = (inputs.size() > 3 && std::holds_alternative<std::string>(inputs[3])) ? std::get<std::string>(inputs[3]) : "";
+            auto* bt = ctx.world ? ctx.world->GetComponent<ECS::BehaviorTreeComponent>(e) : nullptr;
+            if (bt && !key.empty()) bt->blackboard.Set(key, AI::BlackboardValue(v));
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // --- Get Blackboard {Bool,Float,Int,String} (pure) ---
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::BTGetBBBool;
+        def.displayName = "BT Get Blackboard Bool";
+        def.description = "Read a bool from the entity's behavior-tree blackboard";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.55f, 0.5f, 0.3f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input), String("Key", PK::Input, "")};
+        def.outputs = {Bool("Value", PK::Output)};
+        def.keywords = {"behaviortree", "bt", "blackboard", "bool", "get"};
+        def.evaluate = [bbEntity](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity e = bbEntity(ctx, inputs, 0);
+            std::string key = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1])) ? std::get<std::string>(inputs[1]) : "";
+            auto* bt = ctx.world ? ctx.world->GetComponent<ECS::BehaviorTreeComponent>(e) : nullptr;
+            if (bt && !key.empty()) { auto* v = bt->blackboard.Get(key); if (v && std::holds_alternative<bool>(*v)) return std::get<bool>(*v); }
+            return false;
+        };
+        RegisterNode(def);
+    }
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::BTGetBBFloat;
+        def.displayName = "BT Get Blackboard Float";
+        def.description = "Read a float from the entity's behavior-tree blackboard";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.55f, 0.5f, 0.3f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input), String("Key", PK::Input, "")};
+        def.outputs = {Float("Value", PK::Output)};
+        def.keywords = {"behaviortree", "bt", "blackboard", "float", "get"};
+        def.evaluate = [bbEntity](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity e = bbEntity(ctx, inputs, 0);
+            std::string key = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1])) ? std::get<std::string>(inputs[1]) : "";
+            auto* bt = ctx.world ? ctx.world->GetComponent<ECS::BehaviorTreeComponent>(e) : nullptr;
+            if (bt && !key.empty()) { auto* v = bt->blackboard.Get(key); if (v && std::holds_alternative<f32>(*v)) return std::get<f32>(*v); }
+            return 0.0f;
+        };
+        RegisterNode(def);
+    }
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::BTGetBBInt;
+        def.displayName = "BT Get Blackboard Int";
+        def.description = "Read an int from the entity's behavior-tree blackboard";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.55f, 0.5f, 0.3f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input), String("Key", PK::Input, "")};
+        def.outputs = {Int("Value", PK::Output)};
+        def.keywords = {"behaviortree", "bt", "blackboard", "int", "get"};
+        def.evaluate = [bbEntity](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity e = bbEntity(ctx, inputs, 0);
+            std::string key = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1])) ? std::get<std::string>(inputs[1]) : "";
+            auto* bt = ctx.world ? ctx.world->GetComponent<ECS::BehaviorTreeComponent>(e) : nullptr;
+            if (bt && !key.empty()) { auto* v = bt->blackboard.Get(key); if (v && std::holds_alternative<i32>(*v)) return std::get<i32>(*v); }
+            return static_cast<i32>(0);
+        };
+        RegisterNode(def);
+    }
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::BTGetBBString;
+        def.displayName = "BT Get Blackboard String";
+        def.description = "Read a string from the entity's behavior-tree blackboard";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.55f, 0.5f, 0.3f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input), String("Key", PK::Input, "")};
+        def.outputs = {String("Value", PK::Output)};
+        def.keywords = {"behaviortree", "bt", "blackboard", "string", "get"};
+        def.evaluate = [bbEntity](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity e = bbEntity(ctx, inputs, 0);
+            std::string key = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1])) ? std::get<std::string>(inputs[1]) : "";
+            auto* bt = ctx.world ? ctx.world->GetComponent<ECS::BehaviorTreeComponent>(e) : nullptr;
+            if (bt && !key.empty()) { auto* v = bt->blackboard.Get(key); if (v && std::holds_alternative<std::string>(*v)) return std::get<std::string>(*v); }
+            return std::string("");
+        };
+        RegisterNode(def);
+    }
 }
 
 } // namespace VisualScript

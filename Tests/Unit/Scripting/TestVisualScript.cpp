@@ -11,6 +11,7 @@
 #include "Enjin/ECS/Systems/DialogueSystem.h"
 #include "Enjin/Accessibility/AccessibilitySettings.h"
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/AI/BehaviorTree.h"
 
 using namespace Enjin;
 using namespace Enjin::VisualScript;
@@ -1086,6 +1087,47 @@ ENJIN_TEST(AITuningNodes, SetGetScalarsAndFlags) {
     reg.FindNode(NodeTypes::AISetTargetPosition)->execute(ctx, { false, static_cast<Entity>(e), Math::Vector3(3, 4, 5) }, outs);
     Math::Vector3 tp = world.GetComponent<AIControllerComponent>(e)->targetPosition;
     ENJIN_EXPECT_FLOAT_EQ(tp.x, 3.0f); ENJIN_EXPECT_FLOAT_EQ(tp.z, 5.0f);
+}
+
+// ===========================================================================
+// BehaviorTree blackboard nodes (docs/NODE_COVERAGE.md tier-2)
+// ===========================================================================
+
+ENJIN_TEST(BlackboardNodes, SetGetRoundTripPerType) {
+    World world;
+    Entity e = world.CreateEntity();
+    world.AddComponent<BehaviorTreeComponent>(e);
+
+    auto& reg = NodeRegistry::Instance();
+    ExecutionContext ctx;
+    ctx.world = &world;
+    ctx.entity = e;
+    std::vector<VariableValue> outs;
+
+    // Bool
+    reg.FindNode(NodeTypes::BTSetBBBool)->execute(ctx, { false, static_cast<Entity>(e), std::string("alert"), true }, outs);
+    VariableValue b = reg.FindNode(NodeTypes::BTGetBBBool)->evaluate(ctx, { static_cast<Entity>(e), std::string("alert") });
+    ENJIN_ASSERT_TRUE(std::holds_alternative<bool>(b));
+    ENJIN_EXPECT_TRUE(std::get<bool>(b));
+
+    // Float
+    reg.FindNode(NodeTypes::BTSetBBFloat)->execute(ctx, { false, static_cast<Entity>(e), std::string("range"), 12.5f }, outs);
+    VariableValue f = reg.FindNode(NodeTypes::BTGetBBFloat)->evaluate(ctx, { static_cast<Entity>(e), std::string("range") });
+    ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(f), 12.5f);
+
+    // Int
+    reg.FindNode(NodeTypes::BTSetBBInt)->execute(ctx, { false, static_cast<Entity>(e), std::string("ammo"), static_cast<i32>(7) }, outs);
+    VariableValue iv = reg.FindNode(NodeTypes::BTGetBBInt)->evaluate(ctx, { static_cast<Entity>(e), std::string("ammo") });
+    ENJIN_EXPECT_EQ(std::get<i32>(iv), 7);
+
+    // String
+    reg.FindNode(NodeTypes::BTSetBBString)->execute(ctx, { false, static_cast<Entity>(e), std::string("state"), std::string("hunting") }, outs);
+    VariableValue s = reg.FindNode(NodeTypes::BTGetBBString)->evaluate(ctx, { static_cast<Entity>(e), std::string("state") });
+    ENJIN_EXPECT_STR_EQ(std::get<std::string>(s).c_str(), "hunting");
+
+    // Type mismatch / missing key -> default, no crash
+    VariableValue miss = reg.FindNode(NodeTypes::BTGetBBFloat)->evaluate(ctx, { static_cast<Entity>(e), std::string("nope") });
+    ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(miss), 0.0f);
 }
 
 // ===========================================================================
