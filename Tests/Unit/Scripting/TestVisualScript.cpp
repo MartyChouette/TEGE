@@ -1308,6 +1308,66 @@ ENJIN_TEST(UINodes, ReadStateAndStylingRoundTrip) {
 }
 
 // ===========================================================================
+// Physics joint nodes (docs/NODE_COVERAGE.md tier-3)
+// ===========================================================================
+
+ENJIN_TEST(JointNodes, CreateConfigureReadDestroy) {
+    World world;
+    Entity a = world.CreateEntity();
+    Entity b = world.CreateEntity();
+
+    auto& reg = NodeRegistry::Instance();
+    ExecutionContext ctx;
+    ctx.world = &world;
+    ctx.entity = a;
+    std::vector<VariableValue> outs;
+
+    // Create hinge -> joint entity with component wired to A/B
+    reg.FindNode(NodeTypes::JointCreateHinge)->execute(
+        ctx, { false, static_cast<Entity>(a), static_cast<Entity>(b), Math::Vector3(0, 1, 0) }, outs);
+    ENJIN_ASSERT_TRUE(!outs.empty() && std::holds_alternative<Entity>(outs[0]));
+    Entity hinge = std::get<Entity>(outs[0]);
+    ENJIN_ASSERT_NE(hinge, INVALID_ENTITY);
+    auto* hc = world.GetComponent<HingeJointComponent>(hinge);
+    ENJIN_ASSERT_NOT_NULL(hc);
+    ENJIN_EXPECT_EQ(hc->entityA, a);
+    ENJIN_EXPECT_EQ(hc->entityB, b);
+
+    // Limits + motor land on the component
+    reg.FindNode(NodeTypes::JointHingeSetLimits)->execute(ctx, { false, static_cast<Entity>(hinge), -30.0f, 30.0f }, outs);
+    ENJIN_EXPECT_TRUE(hc->useLimits);
+    ENJIN_EXPECT_FLOAT_EQ(hc->lowerLimit, -30.0f);
+    reg.FindNode(NodeTypes::JointHingeSetMotor)->execute(ctx, { false, static_cast<Entity>(hinge), 2.0f, 50.0f }, outs);
+    ENJIN_EXPECT_TRUE(hc->useMotor);
+    ENJIN_EXPECT_FLOAT_EQ(hc->motorSpeed, 2.0f);
+
+    // Angle read
+    hc->currentAngle = 12.0f;
+    ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(reg.FindNode(NodeTypes::JointHingeGetAngle)->evaluate(ctx, { static_cast<Entity>(hinge) })), 12.0f);
+
+    // Distance joint round-trip
+    reg.FindNode(NodeTypes::JointCreateDistance)->execute(
+        ctx, { false, static_cast<Entity>(a), static_cast<Entity>(b), 3.0f }, outs);
+    Entity dist = std::get<Entity>(outs[0]);
+    auto* dc = world.GetComponent<DistanceJointComponent>(dist);
+    ENJIN_ASSERT_NOT_NULL(dc);
+    ENJIN_EXPECT_FLOAT_EQ(dc->restDistance, 3.0f);
+    reg.FindNode(NodeTypes::JointDistanceSetRest)->execute(ctx, { false, static_cast<Entity>(dist), 5.0f }, outs);
+    ENJIN_EXPECT_FLOAT_EQ(dc->restDistance, 5.0f);
+    dc->currentStress = 0.9f;
+    ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(reg.FindNode(NodeTypes::JointDistanceGetStress)->evaluate(ctx, { static_cast<Entity>(dist) })), 0.9f);
+
+    // Destroy is deferred; entity reports invalid after the node runs
+    reg.FindNode(NodeTypes::JointDestroy)->execute(ctx, { false, static_cast<Entity>(hinge) }, outs);
+    ENJIN_EXPECT_FALSE(world.IsValid(hinge));
+
+    // Invalid A/B -> no joint created
+    reg.FindNode(NodeTypes::JointCreateHinge)->execute(
+        ctx, { false, static_cast<Entity>(INVALID_ENTITY), static_cast<Entity>(b), Math::Vector3(0, 1, 0) }, outs);
+    ENJIN_EXPECT_EQ(std::get<Entity>(outs[0]), (Entity)INVALID_ENTITY);
+}
+
+// ===========================================================================
 // Entry point
 // ===========================================================================
 

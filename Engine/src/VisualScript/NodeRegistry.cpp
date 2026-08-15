@@ -9962,6 +9962,196 @@ void NodeRegistry::RegisterBuiltinNodes() {
         };
         RegisterNode(def);
     }
+
+    // =======================================================================
+    // Physics joints (docs/NODE_COVERAGE.md tier-3). Joints are entities
+    // carrying Hinge/DistanceJointComponent — mirror the AngelScript bindings.
+    // Nodes run on the main thread, so CreateEntity here is safe (adr-0004).
+    // =======================================================================
+
+    // Create Hinge Joint (flow: A, B, Axis -> Joint)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::JointCreateHinge;
+        def.displayName = "Create Hinge Joint";
+        def.description = "Create a hinge joint entity connecting A and B around Axis";
+        def.category = NodeCategory::Physics;
+        def.headerColor = Math::Vector3(0.55f, 0.45f, 0.35f);
+        def.inputs = {FlowIn(), EntityPin("Entity A", PK::Input), EntityPin("Entity B", PK::Input), Vec3("Axis", PK::Input, Math::Vector3(0, 1, 0))};
+        def.outputs = {FlowOut(), EntityPin("Joint", PK::Output)};
+        def.keywords = {"joint", "hinge", "physics", "create", "door", "constraint"};
+        def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            outputs.resize(1);
+            outputs[0] = static_cast<ECS::Entity>(ECS::INVALID_ENTITY);
+            ECS::Entity a = (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1])) ? static_cast<ECS::Entity>(std::get<u64>(inputs[1])) : ECS::INVALID_ENTITY;
+            ECS::Entity b = (inputs.size() > 2 && std::holds_alternative<u64>(inputs[2])) ? static_cast<ECS::Entity>(std::get<u64>(inputs[2])) : ECS::INVALID_ENTITY;
+            Math::Vector3 axis = (inputs.size() > 3 && std::holds_alternative<Math::Vector3>(inputs[3])) ? std::get<Math::Vector3>(inputs[3]) : Math::Vector3(0, 1, 0);
+            if (ctx.world && ctx.world->IsValid(a) && ctx.world->IsValid(b)) {
+                ECS::Entity joint = ctx.world->CreateEntity();
+                ctx.world->AddComponent<ECS::NameComponent>(joint, ECS::NameComponent{"HingeJoint"});
+                auto& jc = ctx.world->AddComponent<ECS::HingeJointComponent>(joint);
+                jc.entityA = a;
+                jc.entityB = b;
+                jc.axis = axis;
+                outputs[0] = joint;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Create Distance Joint (flow: A, B, Rest Distance -> Joint)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::JointCreateDistance;
+        def.displayName = "Create Distance Joint";
+        def.description = "Create a distance joint entity holding A and B at Rest Distance";
+        def.category = NodeCategory::Physics;
+        def.headerColor = Math::Vector3(0.55f, 0.45f, 0.35f);
+        def.inputs = {FlowIn(), EntityPin("Entity A", PK::Input), EntityPin("Entity B", PK::Input), Float("Rest Distance", PK::Input, 2.0f)};
+        def.outputs = {FlowOut(), EntityPin("Joint", PK::Output)};
+        def.keywords = {"joint", "distance", "physics", "create", "rope", "constraint"};
+        def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            outputs.resize(1);
+            outputs[0] = static_cast<ECS::Entity>(ECS::INVALID_ENTITY);
+            ECS::Entity a = (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1])) ? static_cast<ECS::Entity>(std::get<u64>(inputs[1])) : ECS::INVALID_ENTITY;
+            ECS::Entity b = (inputs.size() > 2 && std::holds_alternative<u64>(inputs[2])) ? static_cast<ECS::Entity>(std::get<u64>(inputs[2])) : ECS::INVALID_ENTITY;
+            f32 rest = (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3])) ? std::get<f32>(inputs[3]) : 2.0f;
+            if (ctx.world && ctx.world->IsValid(a) && ctx.world->IsValid(b)) {
+                ECS::Entity joint = ctx.world->CreateEntity();
+                ctx.world->AddComponent<ECS::NameComponent>(joint, ECS::NameComponent{"DistanceJoint"});
+                auto& jc = ctx.world->AddComponent<ECS::DistanceJointComponent>(joint);
+                jc.entityA = a;
+                jc.entityB = b;
+                jc.restDistance = rest;
+                outputs[0] = joint;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Destroy Joint (flow)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::JointDestroy;
+        def.displayName = "Destroy Joint";
+        def.description = "Destroy a joint entity (deferred to end of frame)";
+        def.category = NodeCategory::Physics;
+        def.headerColor = Math::Vector3(0.55f, 0.45f, 0.35f);
+        def.inputs = {FlowIn(), EntityPin("Joint", PK::Input)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"joint", "destroy", "remove", "physics"};
+        def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            ECS::Entity joint = (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1])) ? static_cast<ECS::Entity>(std::get<u64>(inputs[1])) : ECS::INVALID_ENTITY;
+            if (ctx.world && ctx.world->IsValid(joint)) ctx.world->DestroyEntity(joint);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Hinge Set Limits (flow)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::JointHingeSetLimits;
+        def.displayName = "Hinge Set Limits";
+        def.description = "Enable and set a hinge joint's angle limits (degrees)";
+        def.category = NodeCategory::Physics;
+        def.headerColor = Math::Vector3(0.55f, 0.45f, 0.35f);
+        def.inputs = {FlowIn(), EntityPin("Joint", PK::Input), Float("Lower", PK::Input, -45.0f), Float("Upper", PK::Input, 45.0f)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"joint", "hinge", "limits", "angle", "set"};
+        def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            ECS::Entity joint = (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1])) ? static_cast<ECS::Entity>(std::get<u64>(inputs[1])) : ECS::INVALID_ENTITY;
+            auto* jc = ctx.world ? ctx.world->GetComponent<ECS::HingeJointComponent>(joint) : nullptr;
+            if (jc) {
+                jc->useLimits = true;
+                if (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) jc->lowerLimit = std::get<f32>(inputs[2]);
+                if (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3])) jc->upperLimit = std::get<f32>(inputs[3]);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Hinge Set Motor (flow)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::JointHingeSetMotor;
+        def.displayName = "Hinge Set Motor";
+        def.description = "Enable and set a hinge joint's motor speed and max force";
+        def.category = NodeCategory::Physics;
+        def.headerColor = Math::Vector3(0.55f, 0.45f, 0.35f);
+        def.inputs = {FlowIn(), EntityPin("Joint", PK::Input), Float("Speed", PK::Input, 1.0f), Float("Max Force", PK::Input, 100.0f)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"joint", "hinge", "motor", "spin", "set"};
+        def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            ECS::Entity joint = (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1])) ? static_cast<ECS::Entity>(std::get<u64>(inputs[1])) : ECS::INVALID_ENTITY;
+            auto* jc = ctx.world ? ctx.world->GetComponent<ECS::HingeJointComponent>(joint) : nullptr;
+            if (jc) {
+                jc->useMotor = true;
+                if (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) jc->motorSpeed = std::get<f32>(inputs[2]);
+                if (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3])) jc->motorMaxForce = std::get<f32>(inputs[3]);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Hinge Get Angle (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::JointHingeGetAngle;
+        def.displayName = "Hinge Get Angle";
+        def.description = "Current angle of a hinge joint (degrees)";
+        def.category = NodeCategory::Physics;
+        def.headerColor = Math::Vector3(0.55f, 0.45f, 0.35f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Joint", PK::Input)};
+        def.outputs = {Float("Angle", PK::Output)};
+        def.keywords = {"joint", "hinge", "angle", "get"};
+        def.evaluate = [](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity joint = (!inputs.empty() && std::holds_alternative<u64>(inputs[0])) ? static_cast<ECS::Entity>(std::get<u64>(inputs[0])) : ECS::INVALID_ENTITY;
+            auto* jc = ctx.world ? ctx.world->GetComponent<ECS::HingeJointComponent>(joint) : nullptr;
+            return jc ? jc->currentAngle : 0.0f;
+        };
+        RegisterNode(def);
+    }
+    // Distance Set Rest (flow)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::JointDistanceSetRest;
+        def.displayName = "Distance Set Rest";
+        def.description = "Set a distance joint's rest distance";
+        def.category = NodeCategory::Physics;
+        def.headerColor = Math::Vector3(0.55f, 0.45f, 0.35f);
+        def.inputs = {FlowIn(), EntityPin("Joint", PK::Input), Float("Distance", PK::Input, 2.0f)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"joint", "distance", "rest", "length", "set"};
+        def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            ECS::Entity joint = (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1])) ? static_cast<ECS::Entity>(std::get<u64>(inputs[1])) : ECS::INVALID_ENTITY;
+            auto* jc = ctx.world ? ctx.world->GetComponent<ECS::DistanceJointComponent>(joint) : nullptr;
+            if (jc && inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) jc->restDistance = std::get<f32>(inputs[2]);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Distance Get Stress (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::JointDistanceGetStress;
+        def.displayName = "Distance Get Stress";
+        def.description = "Current stress on a distance joint (for breakable ropes)";
+        def.category = NodeCategory::Physics;
+        def.headerColor = Math::Vector3(0.55f, 0.45f, 0.35f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Joint", PK::Input)};
+        def.outputs = {Float("Stress", PK::Output)};
+        def.keywords = {"joint", "distance", "stress", "break", "get"};
+        def.evaluate = [](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity joint = (!inputs.empty() && std::holds_alternative<u64>(inputs[0])) ? static_cast<ECS::Entity>(std::get<u64>(inputs[0])) : ECS::INVALID_ENTITY;
+            auto* jc = ctx.world ? ctx.world->GetComponent<ECS::DistanceJointComponent>(joint) : nullptr;
+            return jc ? jc->currentStress : 0.0f;
+        };
+        RegisterNode(def);
+    }
 }
 
 } // namespace VisualScript

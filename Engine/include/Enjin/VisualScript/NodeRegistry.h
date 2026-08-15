@@ -362,6 +362,16 @@ constexpr const char* BTGetBBInt           = "BT_GetBlackboardInt";
 constexpr const char* BTSetBBString        = "BT_SetBlackboardString";
 constexpr const char* BTGetBBString        = "BT_GetBlackboardString";
 
+// Physics joints
+constexpr const char* JointCreateHinge     = "Joint_CreateHinge";
+constexpr const char* JointCreateDistance  = "Joint_CreateDistance";
+constexpr const char* JointDestroy         = "Joint_Destroy";
+constexpr const char* JointHingeSetLimits  = "Joint_HingeSetLimits";
+constexpr const char* JointHingeSetMotor   = "Joint_HingeSetMotor";
+constexpr const char* JointHingeGetAngle   = "Joint_HingeGetAngle";
+constexpr const char* JointDistanceSetRest = "Joint_DistanceSetRest";
+constexpr const char* JointDistanceGetStress = "Joint_DistanceGetStress";
+
 // Navmesh
 constexpr const char* NavmeshIsPointOn     = "Navmesh_IsPointOnNavmesh";
 constexpr const char* NavmeshHasNavmesh    = "Navmesh_HasNavmesh";
