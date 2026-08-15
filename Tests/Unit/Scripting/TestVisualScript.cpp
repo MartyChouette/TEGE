@@ -8,6 +8,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/ECS/Systems/DialogueSystem.h"
 
 using namespace Enjin;
 using namespace Enjin::VisualScript;
@@ -851,6 +852,107 @@ ENJIN_TEST(TierOneNodes, SpriteAnimPlayStopSpeedFrame) {
     reg.FindNode(NodeTypes::SpriteAnimStop)->execute(ctx, { false, static_cast<Entity>(e) }, outs);
     VariableValue stopped = reg.FindNode(NodeTypes::SpriteAnimIsPlaying)->evaluate(ctx, { static_cast<Entity>(e) });
     ENJIN_EXPECT_FALSE(std::get<bool>(stopped));
+}
+
+// ===========================================================================
+// Branching dialogue nodes (docs/NODE_COVERAGE.md tier-1 #1)
+// ===========================================================================
+
+ENJIN_TEST(DialogueNodes, AllSevenRegister) {
+    auto& reg = NodeRegistry::Instance();
+    const char* ids[] = {
+        NodeTypes::DialogueChoose, NodeTypes::DialogueGetChoiceCount,
+        NodeTypes::DialogueGetChoiceText, NodeTypes::DialogueGetSpeaker,
+        NodeTypes::DialogueGetText, NodeTypes::DialogueSetVariable,
+        NodeTypes::DialogueGetVariable,
+    };
+    for (const char* id : ids) {
+        const NodeDefinition* def = reg.FindNode(id);
+        ENJIN_ASSERT_NOT_NULL(def);
+        ENJIN_EXPECT_STR_EQ(def->typeId, id);
+    }
+}
+
+ENJIN_TEST(DialogueNodes, ReadsChoicesSpeakerAndText) {
+    World world;
+    Entity e = world.CreateEntity();
+    auto& dlg = world.AddComponent<DialogueComponent>(e);
+    dlg.speakerName = "Guard";
+    dlg.dialogueLines = { "Halt!" };
+    dlg.currentLine = 0;
+    dlg.currentChar = 5;                    // full "Halt!" visible
+    dlg.choices.push_back({ "Surrender", "" });
+    dlg.choices.push_back({ "Fight", "" });
+
+    auto& reg = NodeRegistry::Instance();
+    ExecutionContext ctx;
+    ctx.world = &world;
+    ctx.entity = e;
+
+    VariableValue cc = reg.FindNode(NodeTypes::DialogueGetChoiceCount)->evaluate(ctx, { static_cast<Entity>(e) });
+    ENJIN_ASSERT_TRUE(std::holds_alternative<i32>(cc));
+    ENJIN_EXPECT_EQ(std::get<i32>(cc), 2);
+
+    VariableValue ct = reg.FindNode(NodeTypes::DialogueGetChoiceText)->evaluate(ctx, { static_cast<Entity>(e), static_cast<i32>(1) });
+    ENJIN_ASSERT_TRUE(std::holds_alternative<std::string>(ct));
+    ENJIN_EXPECT_STR_EQ(std::get<std::string>(ct).c_str(), "Fight");
+
+    VariableValue sp = reg.FindNode(NodeTypes::DialogueGetSpeaker)->evaluate(ctx, { static_cast<Entity>(e) });
+    ENJIN_EXPECT_STR_EQ(std::get<std::string>(sp).c_str(), "Guard");
+
+    VariableValue tx = reg.FindNode(NodeTypes::DialogueGetText)->evaluate(ctx, { static_cast<Entity>(e) });
+    ENJIN_EXPECT_STR_EQ(std::get<std::string>(tx).c_str(), "Halt!");
+
+    // Out-of-range choice index -> empty string, no crash
+    VariableValue oob = reg.FindNode(NodeTypes::DialogueGetChoiceText)->evaluate(ctx, { static_cast<Entity>(e), static_cast<i32>(9) });
+    ENJIN_EXPECT_STR_EQ(std::get<std::string>(oob).c_str(), "");
+}
+
+ENJIN_TEST(DialogueNodes, SetThenGetVariableRoundTrips) {
+    World world;
+    Entity e = world.CreateEntity();
+    world.AddComponent<DialogueComponent>(e);
+
+    DialogueSystem dialogueSystem;   // no active tree player -> component-backed variables
+
+    auto& reg = NodeRegistry::Instance();
+    ExecutionContext ctx;
+    ctx.world = &world;
+    ctx.entity = e;
+    ctx.dialogue = &dialogueSystem;
+    std::vector<VariableValue> outs;
+
+    reg.FindNode(NodeTypes::DialogueSetVariable)->execute(
+        ctx, { false, static_cast<Entity>(e), std::string("mood"), std::string("angry") }, outs);
+
+    VariableValue v = reg.FindNode(NodeTypes::DialogueGetVariable)->evaluate(
+        ctx, { static_cast<Entity>(e), std::string("mood") });
+    ENJIN_ASSERT_TRUE(std::holds_alternative<std::string>(v));
+    ENJIN_EXPECT_STR_EQ(std::get<std::string>(v).c_str(), "angry");
+
+    // Unset variable -> empty
+    VariableValue miss = reg.FindNode(NodeTypes::DialogueGetVariable)->evaluate(
+        ctx, { static_cast<Entity>(e), std::string("unset") });
+    ENJIN_EXPECT_STR_EQ(std::get<std::string>(miss).c_str(), "");
+}
+
+ENJIN_TEST(DialogueNodes, VariableNodesNoOpWithoutSystem) {
+    World world;
+    Entity e = world.CreateEntity();
+    world.AddComponent<DialogueComponent>(e);
+
+    auto& reg = NodeRegistry::Instance();
+    ExecutionContext ctx;             // ctx.dialogue stays null
+    ctx.world = &world;
+    ctx.entity = e;
+    std::vector<VariableValue> outs;
+
+    // Should not crash and should return empty when no system is wired.
+    reg.FindNode(NodeTypes::DialogueSetVariable)->execute(
+        ctx, { false, static_cast<Entity>(e), std::string("x"), std::string("y") }, outs);
+    VariableValue v = reg.FindNode(NodeTypes::DialogueGetVariable)->evaluate(
+        ctx, { static_cast<Entity>(e), std::string("x") });
+    ENJIN_EXPECT_STR_EQ(std::get<std::string>(v).c_str(), "");
 }
 
 // ===========================================================================

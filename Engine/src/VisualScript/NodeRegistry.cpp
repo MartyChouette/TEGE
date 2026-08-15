@@ -5,6 +5,7 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/ECS/Systems/DialogueSystem.h"
 #include "Enjin/AI/BehaviorTree.h"
 #include "Enjin/Audio/SimpleAudio.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
@@ -8805,6 +8806,189 @@ void NodeRegistry::RegisterBuiltinNodes() {
                 e = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
             auto* ac = ctx.world ? ctx.world->GetComponent<ECS::AnimatedSprite2DComponent>(e) : nullptr;
             return ac ? static_cast<i32>(ac->currentFrame) : static_cast<i32>(0);
+        };
+        RegisterNode(def);
+    }
+
+    // =======================================================================
+    // Branching dialogue (docs/NODE_COVERAGE.md tier-1 #1). Reads are pure
+    // component lookups; Choose / Get-Set Variable need the DialogueSystem
+    // runtime tree player (ctx.dialogue), wired in VisualScriptExecutor.
+    // =======================================================================
+
+    // Choose (select a branching choice)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::DialogueChoose;
+        def.displayName = "Dialogue Choose";
+        def.description = "Select a branching dialogue choice by index";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.6f, 0.9f);
+        def.inputs = {FlowIn(), EntityPin("Entity", PK::Input), Int("Choice", PK::Input, 0)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"dialogue", "choice", "choose", "select", "branch", "option"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            i32 choice = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2])) ? std::get<i32>(inputs[2]) : 0;
+            if (ctx.dialogue && ctx.world && target != ECS::INVALID_ENTITY && choice >= 0)
+                ctx.dialogue->SelectChoice(ctx.world, target, static_cast<u32>(choice));
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Get Choice Count
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::DialogueGetChoiceCount;
+        def.displayName = "Dialogue Choice Count";
+        def.description = "Number of choices currently offered by the dialogue";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.6f, 0.9f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Int("Count", PK::Output)};
+        def.keywords = {"dialogue", "choice", "count", "options"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            auto* dlg = ctx.world ? ctx.world->GetComponent<ECS::DialogueComponent>(target) : nullptr;
+            if (!dlg) return static_cast<i32>(0);
+            return static_cast<i32>(dlg->IsTreeMode() ? dlg->currentChoices.size() : dlg->choices.size());
+        };
+        RegisterNode(def);
+    }
+    // Get Choice Text
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::DialogueGetChoiceText;
+        def.displayName = "Dialogue Choice Text";
+        def.description = "Text of the choice at the given index";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.6f, 0.9f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input), Int("Index", PK::Input, 0)};
+        def.outputs = {String("Text", PK::Output)};
+        def.keywords = {"dialogue", "choice", "text", "option", "label"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            i32 index = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1])) ? std::get<i32>(inputs[1]) : 0;
+            auto* dlg = ctx.world ? ctx.world->GetComponent<ECS::DialogueComponent>(target) : nullptr;
+            if (!dlg || index < 0) return std::string("");
+            if (dlg->IsTreeMode()) {
+                if (static_cast<usize>(index) < dlg->currentChoices.size())
+                    return dlg->currentChoices[static_cast<usize>(index)].text;
+            } else {
+                if (static_cast<usize>(index) < dlg->choices.size())
+                    return dlg->choices[static_cast<usize>(index)].text;
+            }
+            return std::string("");
+        };
+        RegisterNode(def);
+    }
+    // Get Current Speaker
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::DialogueGetSpeaker;
+        def.displayName = "Dialogue Speaker";
+        def.description = "Name of the current dialogue speaker";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.6f, 0.9f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {String("Speaker", PK::Output)};
+        def.keywords = {"dialogue", "speaker", "name", "who"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            auto* dlg = ctx.world ? ctx.world->GetComponent<ECS::DialogueComponent>(target) : nullptr;
+            if (!dlg) return std::string("");
+            return dlg->IsTreeMode() ? dlg->currentSpeaker : dlg->speakerName;
+        };
+        RegisterNode(def);
+    }
+    // Get Current Text
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::DialogueGetText;
+        def.displayName = "Dialogue Text";
+        def.description = "Currently visible dialogue line (respects typewriter)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.6f, 0.9f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {String("Text", PK::Output)};
+        def.keywords = {"dialogue", "text", "line", "say"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            auto* dlg = ctx.world ? ctx.world->GetComponent<ECS::DialogueComponent>(target) : nullptr;
+            if (!dlg) return std::string("");
+            return dlg->IsTreeMode() ? dlg->GetTreeVisibleText() : dlg->GetVisibleText();
+        };
+        RegisterNode(def);
+    }
+    // Set Variable
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::DialogueSetVariable;
+        def.displayName = "Dialogue Set Variable";
+        def.description = "Set a dialogue variable (drives branching conditions)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.6f, 0.9f);
+        def.inputs = {FlowIn(), EntityPin("Entity", PK::Input), String("Name", PK::Input, ""), String("Value", PK::Input, "")};
+        def.outputs = {FlowOut()};
+        def.keywords = {"dialogue", "variable", "set", "flag", "condition"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            std::string name = (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2]))
+                ? std::get<std::string>(inputs[2]) : "";
+            std::string value = (inputs.size() > 3 && std::holds_alternative<std::string>(inputs[3]))
+                ? std::get<std::string>(inputs[3]) : "";
+            if (ctx.dialogue && ctx.world && target != ECS::INVALID_ENTITY && !name.empty())
+                ctx.dialogue->SetVariable(ctx.world, target, name, value);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Get Variable
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::DialogueGetVariable;
+        def.displayName = "Dialogue Get Variable";
+        def.description = "Read a dialogue variable value";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.6f, 0.9f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input), String("Name", PK::Input, "")};
+        def.outputs = {String("Value", PK::Output)};
+        def.keywords = {"dialogue", "variable", "get", "flag", "condition"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            std::string name = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                ? std::get<std::string>(inputs[1]) : "";
+            if (ctx.dialogue && ctx.world && target != ECS::INVALID_ENTITY && !name.empty())
+                return ctx.dialogue->GetVariable(ctx.world, target, name);
+            return std::string("");
         };
         RegisterNode(def);
     }

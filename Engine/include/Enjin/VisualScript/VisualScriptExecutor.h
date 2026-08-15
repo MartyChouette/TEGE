@@ -76,6 +76,9 @@ public:
     void SetSceneManager(Scene::SceneManager* sm) { m_SceneManager = sm; }
     Scene::SceneManager* GetSceneManager() const { return m_SceneManager; }
 
+    void SetDialogue(ECS::DialogueSystem* d) { m_Dialogue = d; }
+    ECS::DialogueSystem* GetDialogue() const { return m_Dialogue; }
+
     // Configuration
     void SetMaxIterations(u32 max) { m_MaxIterations = max; }
     u32 GetMaxIterations() const { return m_MaxIterations; }
@@ -115,6 +118,7 @@ private:
     Networking::NetworkSystem* m_Networking = nullptr;
     Scene::StreamingManager* m_Streaming = nullptr;
     Scene::SceneManager* m_SceneManager = nullptr;
+    ECS::DialogueSystem* m_Dialogue = nullptr;
     u32 m_FunctionCallDepth = 0;
     static constexpr u32 MAX_CALL_DEPTH = 32;
 };

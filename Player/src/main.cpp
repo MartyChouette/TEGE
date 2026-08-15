@@ -2040,6 +2040,7 @@ private:
         m_VisualScriptSystem.SetNetworking(&m_NetworkSystem);
         m_VisualScriptSystem.SetScriptEngine(&m_ScriptEngine);
         m_VisualScriptSystem.SetStreaming(&m_StreamingManager);
+        m_VisualScriptSystem.SetDialogue(&m_DialogueSystem);
         m_VisualScriptSystem.Initialize();
         m_BehaviorTreeSystem.Initialize();
 

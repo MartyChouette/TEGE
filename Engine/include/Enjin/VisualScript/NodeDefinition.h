@@ -14,6 +14,7 @@ namespace Enjin {
 // Forward declarations
 namespace ECS {
     class World;
+    class DialogueSystem;
 }
 namespace Physics {
     class IPhysicsBackend;
@@ -67,6 +68,10 @@ struct ExecutionContext {
 
     // Scene manager for scene loading nodes
     Scene::SceneManager* sceneManager = nullptr;
+
+    // Dialogue system for branching-dialogue nodes (choose / variables need
+    // the runtime tree player, which lives on the system, not the component)
+    ECS::DialogueSystem* dialogue = nullptr;
 
     // For event nodes, additional data
     std::string customEventName;

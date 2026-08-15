@@ -43,6 +43,9 @@ public:
     // Set scene manager for scene loading nodes
     void SetSceneManager(Scene::SceneManager* sm) { m_Executor.SetSceneManager(sm); }
 
+    // Set dialogue system for branching-dialogue nodes
+    void SetDialogue(DialogueSystem* d) { m_Executor.SetDialogue(d); }
+
     // Called once when play mode starts
     void Initialize();
 

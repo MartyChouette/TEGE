@@ -422,6 +422,7 @@ public:
         m_VisualScriptSystem.SetPhysics(m_Physics.get());
         m_VisualScriptSystem.SetPhysics2D(m_Physics2D.get());
         m_VisualScriptSystem.SetScriptEngine(&m_ScriptEngine);
+        m_VisualScriptSystem.SetDialogue(&m_DialogueSystem);
         m_VisualScriptSystem.Initialize();
         m_BehaviorTreeSystem.Initialize();
 

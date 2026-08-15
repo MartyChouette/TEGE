@@ -286,6 +286,13 @@ constexpr const char* TweenFloat           = "Tween_Float";
 constexpr const char* DialogueStart        = "Dialogue_Start";
 constexpr const char* DialogueAdvance      = "Dialogue_Advance";
 constexpr const char* DialogueIsActive     = "Dialogue_IsActive";
+constexpr const char* DialogueChoose         = "Dialogue_Choose";
+constexpr const char* DialogueGetChoiceCount = "Dialogue_GetChoiceCount";
+constexpr const char* DialogueGetChoiceText  = "Dialogue_GetChoiceText";
+constexpr const char* DialogueGetSpeaker     = "Dialogue_GetSpeaker";
+constexpr const char* DialogueGetText        = "Dialogue_GetText";
+constexpr const char* DialogueGetVariable    = "Dialogue_GetVariable";
+constexpr const char* DialogueSetVariable    = "Dialogue_SetVariable";
 
 // Animator (extended)
 constexpr const char* AnimatorStop         = "Animator_Stop";

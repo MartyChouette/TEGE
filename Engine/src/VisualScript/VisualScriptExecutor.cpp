@@ -64,6 +64,7 @@ void VisualScriptExecutor::ExecuteFromNode(ECS::World* world, ECS::Entity entity
     ctx.networking = m_Networking;
     ctx.streamingManager = m_Streaming;
     ctx.sceneManager = m_SceneManager;
+    ctx.dialogue = m_Dialogue;
     ctx.nextFlowIndex = 0;
 
     // Execute flow starting from the entry node
@@ -538,6 +539,7 @@ void VisualScriptExecutor::UpdateLatentNodes(ECS::World* world, ECS::Entity enti
             ctx.entity = entity;
             ctx.script = script;
             ctx.deltaTime = deltaTime;
+            ctx.dialogue = m_Dialogue;
             ctx.nextFlowIndex = 0;
 
             // Continue execution from next node
