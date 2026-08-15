@@ -140,6 +140,19 @@ constexpr const char* SpawnEntity   = "Entity_Spawn";
 constexpr const char* IsValid       = "Entity_IsValid";
 constexpr const char* GetName       = "Entity_GetName";
 
+// Hierarchy
+constexpr const char* EntitySetParent    = "Entity_SetParent";
+constexpr const char* EntityRemoveParent = "Entity_RemoveParent";
+constexpr const char* EntityGetParent    = "Entity_GetParent";
+constexpr const char* EntityGetChildCount = "Entity_GetChildCount";
+constexpr const char* EntityGetChild     = "Entity_GetChild";
+
+// Tags
+constexpr const char* EntityAddTag       = "Entity_AddTag";
+constexpr const char* EntityRemoveTag    = "Entity_RemoveTag";
+constexpr const char* EntityHasTag       = "Entity_HasTag";
+constexpr const char* FindEntityByTag    = "Entity_FindByTag";
+
 // Physics
 constexpr const char* Raycast       = "Physics_Raycast";
 constexpr const char* SphereCheck   = "Physics_SphereCheck";
@@ -196,6 +209,12 @@ constexpr const char* DeleteSlot         = "Gameplay_DeleteSlot";
 constexpr const char* Checkpoint         = "Gameplay_Checkpoint";
 constexpr const char* MetaSetFloat       = "Meta_SetFloat";
 constexpr const char* MetaGetFloat       = "Meta_GetFloat";
+constexpr const char* MetaSetBool        = "Meta_SetBool";
+constexpr const char* MetaGetBool        = "Meta_GetBool";
+constexpr const char* MetaSetInt         = "Meta_SetInt";
+constexpr const char* MetaGetInt         = "Meta_GetInt";
+constexpr const char* MetaSetString      = "Meta_SetString";
+constexpr const char* MetaGetString      = "Meta_GetString";
 
 // Weather
 constexpr const char* WeatherSet           = "Weather_Set";
@@ -367,6 +386,11 @@ constexpr const char* SpriteSetTexture       = "Sprite_SetTexture";
 constexpr const char* SpriteSetColor         = "Sprite_SetColor";
 constexpr const char* SpriteSetFlip          = "Sprite_SetFlip";
 constexpr const char* SpriteGetFlip          = "Sprite_GetFlip";
+constexpr const char* SpriteAnimPlay         = "SpriteAnim_Play";
+constexpr const char* SpriteAnimStop         = "SpriteAnim_Stop";
+constexpr const char* SpriteAnimSetSpeed     = "SpriteAnim_SetSpeed";
+constexpr const char* SpriteAnimIsPlaying    = "SpriteAnim_IsPlaying";
+constexpr const char* SpriteAnimGetFrame     = "SpriteAnim_GetFrame";
 
 // Light
 constexpr const char* LightSetColor          = "Light_SetColor";

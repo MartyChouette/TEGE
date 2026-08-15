@@ -6,6 +6,8 @@
 #include "Enjin/ECS/Components/VisualScript.h"
 #include "Enjin/Editor/NodeGraph.h"
 #include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 
 using namespace Enjin;
 using namespace Enjin::VisualScript;
@@ -712,6 +714,143 @@ ENJIN_TEST(Variables_Extended, PureNodeCacheClearedByReset) {
 
     script.ResetRuntimeState();
     ENJIN_EXPECT_TRUE(script.pureNodeCache.empty());
+}
+
+// ===========================================================================
+// Tier-1 node-coverage additions (docs/NODE_COVERAGE.md):
+// hierarchy, tags, save-meta, sprite animation
+// ===========================================================================
+
+ENJIN_TEST(TierOneNodes, AllTwentyRegister) {
+    auto& reg = NodeRegistry::Instance();
+    const char* ids[] = {
+        NodeTypes::EntitySetParent, NodeTypes::EntityRemoveParent, NodeTypes::EntityGetParent,
+        NodeTypes::EntityGetChildCount, NodeTypes::EntityGetChild,
+        NodeTypes::EntityAddTag, NodeTypes::EntityRemoveTag, NodeTypes::EntityHasTag,
+        NodeTypes::FindEntityByTag,
+        NodeTypes::MetaSetBool, NodeTypes::MetaGetBool, NodeTypes::MetaSetInt,
+        NodeTypes::MetaGetInt, NodeTypes::MetaSetString, NodeTypes::MetaGetString,
+        NodeTypes::SpriteAnimPlay, NodeTypes::SpriteAnimStop, NodeTypes::SpriteAnimSetSpeed,
+        NodeTypes::SpriteAnimIsPlaying, NodeTypes::SpriteAnimGetFrame,
+    };
+    for (const char* id : ids) {
+        const NodeDefinition* def = reg.FindNode(id);
+        ENJIN_ASSERT_NOT_NULL(def);
+        ENJIN_EXPECT_STR_EQ(def->typeId, id);
+    }
+}
+
+ENJIN_TEST(TierOneNodes, HierarchySetGetChildParent) {
+    World world;
+    Entity parent = world.CreateEntity();
+    Entity child  = world.CreateEntity();
+    auto& reg = NodeRegistry::Instance();
+
+    ExecutionContext ctx;
+    ctx.world = &world;
+    ctx.entity = child;
+    std::vector<VariableValue> outs;
+
+    // Arrange: Set Parent (inputs: flow, child, parent)
+    const NodeDefinition* setParent = reg.FindNode(NodeTypes::EntitySetParent);
+    ENJIN_ASSERT_NOT_NULL(setParent->execute);
+    setParent->execute(ctx, { false, static_cast<Entity>(child), static_cast<Entity>(parent) }, outs);
+
+    // Assert: Get Parent returns the parent
+    const NodeDefinition* getParent = reg.FindNode(NodeTypes::EntityGetParent);
+    VariableValue gp = getParent->evaluate(ctx, { static_cast<Entity>(child) });
+    ENJIN_ASSERT_TRUE(std::holds_alternative<Entity>(gp));
+    ENJIN_EXPECT_EQ(std::get<Entity>(gp), parent);
+
+    // Assert: Get Child Count == 1, Get Child[0] == child
+    const NodeDefinition* childCount = reg.FindNode(NodeTypes::EntityGetChildCount);
+    VariableValue cc = childCount->evaluate(ctx, { static_cast<Entity>(parent) });
+    ENJIN_ASSERT_TRUE(std::holds_alternative<i32>(cc));
+    ENJIN_EXPECT_EQ(std::get<i32>(cc), 1);
+
+    const NodeDefinition* getChild = reg.FindNode(NodeTypes::EntityGetChild);
+    VariableValue gc = getChild->evaluate(ctx, { static_cast<Entity>(parent), static_cast<i32>(0) });
+    ENJIN_ASSERT_TRUE(std::holds_alternative<Entity>(gc));
+    ENJIN_EXPECT_EQ(std::get<Entity>(gc), child);
+
+    // Out of range -> invalid
+    VariableValue oob = getChild->evaluate(ctx, { static_cast<Entity>(parent), static_cast<i32>(5) });
+    ENJIN_EXPECT_EQ(std::get<Entity>(oob), (Entity)INVALID_ENTITY);
+
+    // Act: Remove Parent -> Get Parent invalid
+    const NodeDefinition* removeParent = reg.FindNode(NodeTypes::EntityRemoveParent);
+    removeParent->execute(ctx, { false, static_cast<Entity>(child) }, outs);
+    VariableValue gp2 = getParent->evaluate(ctx, { static_cast<Entity>(child) });
+    ENJIN_EXPECT_EQ(std::get<Entity>(gp2), (Entity)INVALID_ENTITY);
+}
+
+ENJIN_TEST(TierOneNodes, TagsAddHasFindRemove) {
+    World world;
+    Entity e = world.CreateEntity();
+    auto& reg = NodeRegistry::Instance();
+
+    ExecutionContext ctx;
+    ctx.world = &world;
+    ctx.entity = e;
+    std::vector<VariableValue> outs;
+
+    // Add Tag (inputs: flow, entity, tag) — creates TagComponent
+    const NodeDefinition* addTag = reg.FindNode(NodeTypes::EntityAddTag);
+    addTag->execute(ctx, { false, static_cast<Entity>(e), std::string("enemy") }, outs);
+
+    // Has Tag == true
+    const NodeDefinition* hasTag = reg.FindNode(NodeTypes::EntityHasTag);
+    VariableValue h = hasTag->evaluate(ctx, { static_cast<Entity>(e), std::string("enemy") });
+    ENJIN_ASSERT_TRUE(std::holds_alternative<bool>(h));
+    ENJIN_EXPECT_TRUE(std::get<bool>(h));
+
+    // Missing tag == false
+    VariableValue h2 = hasTag->evaluate(ctx, { static_cast<Entity>(e), std::string("ally") });
+    ENJIN_EXPECT_FALSE(std::get<bool>(h2));
+
+    // Find Entity By Tag finds it
+    const NodeDefinition* findByTag = reg.FindNode(NodeTypes::FindEntityByTag);
+    VariableValue f = findByTag->evaluate(ctx, { std::string("enemy") });
+    ENJIN_ASSERT_TRUE(std::holds_alternative<Entity>(f));
+    ENJIN_EXPECT_EQ(std::get<Entity>(f), e);
+
+    // Remove Tag -> Has Tag false
+    const NodeDefinition* removeTag = reg.FindNode(NodeTypes::EntityRemoveTag);
+    removeTag->execute(ctx, { false, static_cast<Entity>(e), std::string("enemy") }, outs);
+    VariableValue h3 = hasTag->evaluate(ctx, { static_cast<Entity>(e), std::string("enemy") });
+    ENJIN_EXPECT_FALSE(std::get<bool>(h3));
+}
+
+ENJIN_TEST(TierOneNodes, SpriteAnimPlayStopSpeedFrame) {
+    World world;
+    Entity e = world.CreateEntity();
+    auto& sprite = world.AddComponent<AnimatedSprite2DComponent>(e);
+    sprite.playing = false;
+    sprite.currentFrame = 4;
+    auto& reg = NodeRegistry::Instance();
+
+    ExecutionContext ctx;
+    ctx.world = &world;
+    ctx.entity = e;
+    std::vector<VariableValue> outs;
+
+    // Play resets to frame 0 and marks playing
+    reg.FindNode(NodeTypes::SpriteAnimPlay)->execute(ctx, { false, static_cast<Entity>(e) }, outs);
+    VariableValue playing = reg.FindNode(NodeTypes::SpriteAnimIsPlaying)->evaluate(ctx, { static_cast<Entity>(e) });
+    ENJIN_ASSERT_TRUE(std::holds_alternative<bool>(playing));
+    ENJIN_EXPECT_TRUE(std::get<bool>(playing));
+    VariableValue frame = reg.FindNode(NodeTypes::SpriteAnimGetFrame)->evaluate(ctx, { static_cast<Entity>(e) });
+    ENJIN_ASSERT_TRUE(std::holds_alternative<i32>(frame));
+    ENJIN_EXPECT_EQ(std::get<i32>(frame), 0);
+
+    // Set Speed
+    reg.FindNode(NodeTypes::SpriteAnimSetSpeed)->execute(ctx, { false, static_cast<Entity>(e), 2.5f }, outs);
+    ENJIN_EXPECT_FLOAT_EQ(world.GetComponent<AnimatedSprite2DComponent>(e)->playbackSpeed, 2.5f);
+
+    // Stop
+    reg.FindNode(NodeTypes::SpriteAnimStop)->execute(ctx, { false, static_cast<Entity>(e) }, outs);
+    VariableValue stopped = reg.FindNode(NodeTypes::SpriteAnimIsPlaying)->evaluate(ctx, { static_cast<Entity>(e) });
+    ENJIN_EXPECT_FALSE(std::get<bool>(stopped));
 }
 
 // ===========================================================================

@@ -4,6 +4,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/AI/BehaviorTree.h"
 #include "Enjin/Audio/SimpleAudio.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
@@ -8297,6 +8298,513 @@ void NodeRegistry::RegisterBuiltinNodes() {
                 if (surface) return surface->charAmount;
             }
             return 0.0f;
+        };
+        RegisterNode(def);
+    }
+
+    // =======================================================================
+    // Tier-1 node-coverage additions (see docs/NODE_COVERAGE.md):
+    // hierarchy, tags, save-meta (bool/int/string), sprite animation.
+    // All operate at the ECS component level like their sibling nodes.
+    // =======================================================================
+
+    // Helper lambda pattern for entity input: default to ctx.entity, override
+    // with a connected entity pin when non-zero.
+
+    // --- Hierarchy ---
+    // Set Parent
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::EntitySetParent;
+        def.displayName = "Set Parent";
+        def.description = "Re-parent Child under Parent (keeps hierarchy transforms)";
+        def.category = NodeCategory::Entity;
+        def.headerColor = Math::Vector3(0.5f, 0.4f, 0.5f);
+        def.inputs = {FlowIn(), EntityPin("Child", PK::Input), EntityPin("Parent", PK::Input)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"parent", "child", "hierarchy", "attach", "reparent"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity child = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                child = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            ECS::Entity parent = ECS::INVALID_ENTITY;
+            if (inputs.size() > 2 && std::holds_alternative<u64>(inputs[2]))
+                parent = static_cast<ECS::Entity>(std::get<u64>(inputs[2]));
+            if (ctx.world && child != ECS::INVALID_ENTITY)
+                ECS::SetParent(ctx.world, child, parent);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Remove Parent
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::EntityRemoveParent;
+        def.displayName = "Remove Parent";
+        def.description = "Detach an entity from its parent (becomes a root)";
+        def.category = NodeCategory::Entity;
+        def.headerColor = Math::Vector3(0.5f, 0.4f, 0.5f);
+        def.inputs = {FlowIn(), EntityPin("Child", PK::Input)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"parent", "detach", "unparent", "hierarchy", "root"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity child = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                child = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            if (ctx.world && child != ECS::INVALID_ENTITY)
+                ECS::RemoveParent(ctx.world, child);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Get Parent
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::EntityGetParent;
+        def.displayName = "Get Parent";
+        def.description = "The parent of an entity (invalid if it is a root)";
+        def.category = NodeCategory::Entity;
+        def.headerColor = Math::Vector3(0.5f, 0.4f, 0.5f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Child", PK::Input)};
+        def.outputs = {EntityPin("Parent", PK::Output)};
+        def.keywords = {"parent", "hierarchy", "get"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity child = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                child = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            if (!ctx.world || child == ECS::INVALID_ENTITY) return ECS::INVALID_ENTITY;
+            return ECS::GetParent(ctx.world, child);
+        };
+        RegisterNode(def);
+    }
+    // Get Child Count
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::EntityGetChildCount;
+        def.displayName = "Get Child Count";
+        def.description = "Number of direct children of an entity";
+        def.category = NodeCategory::Entity;
+        def.headerColor = Math::Vector3(0.5f, 0.4f, 0.5f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Int("Count", PK::Output)};
+        def.keywords = {"child", "children", "count", "hierarchy"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity e = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                e = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            if (!ctx.world || e == ECS::INVALID_ENTITY) return static_cast<i32>(0);
+            return static_cast<i32>(ECS::GetChildren(ctx.world, e).size());
+        };
+        RegisterNode(def);
+    }
+    // Get Child
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::EntityGetChild;
+        def.displayName = "Get Child";
+        def.description = "The child at Index (invalid if out of range)";
+        def.category = NodeCategory::Entity;
+        def.headerColor = Math::Vector3(0.5f, 0.4f, 0.5f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input), Int("Index", PK::Input, 0)};
+        def.outputs = {EntityPin("Child", PK::Output)};
+        def.keywords = {"child", "children", "index", "hierarchy"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity e = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                e = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            i32 index = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1])) ? std::get<i32>(inputs[1]) : 0;
+            if (!ctx.world || e == ECS::INVALID_ENTITY || index < 0) return ECS::INVALID_ENTITY;
+            const auto& kids = ECS::GetChildren(ctx.world, e);
+            if (static_cast<usize>(index) >= kids.size()) return ECS::INVALID_ENTITY;
+            return kids[static_cast<usize>(index)];
+        };
+        RegisterNode(def);
+    }
+
+    // --- Tags ---
+    // Add Tag
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::EntityAddTag;
+        def.displayName = "Add Tag";
+        def.description = "Add a string tag to an entity (creates TagComponent if needed)";
+        def.category = NodeCategory::Entity;
+        def.headerColor = Math::Vector3(0.4f, 0.5f, 0.45f);
+        def.inputs = {FlowIn(), EntityPin("Entity", PK::Input), String("Tag", PK::Input, "")};
+        def.outputs = {FlowOut()};
+        def.keywords = {"tag", "label", "add", "mark"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity e = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                e = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            std::string tag = (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2]))
+                ? std::get<std::string>(inputs[2]) : "";
+            if (ctx.world && e != ECS::INVALID_ENTITY && !tag.empty()) {
+                auto* tc = ctx.world->GetComponent<ECS::TagComponent>(e);
+                if (!tc) tc = &ctx.world->AddComponent<ECS::TagComponent>(e);
+                tc->AddTag(tag);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Remove Tag
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::EntityRemoveTag;
+        def.displayName = "Remove Tag";
+        def.description = "Remove a string tag from an entity";
+        def.category = NodeCategory::Entity;
+        def.headerColor = Math::Vector3(0.4f, 0.5f, 0.45f);
+        def.inputs = {FlowIn(), EntityPin("Entity", PK::Input), String("Tag", PK::Input, "")};
+        def.outputs = {FlowOut()};
+        def.keywords = {"tag", "label", "remove", "unmark"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity e = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                e = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            std::string tag = (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2]))
+                ? std::get<std::string>(inputs[2]) : "";
+            if (ctx.world && e != ECS::INVALID_ENTITY && !tag.empty()) {
+                auto* tc = ctx.world->GetComponent<ECS::TagComponent>(e);
+                if (tc) tc->RemoveTag(tag);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Has Tag
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::EntityHasTag;
+        def.displayName = "Has Tag";
+        def.description = "True if the entity carries the given tag";
+        def.category = NodeCategory::Entity;
+        def.headerColor = Math::Vector3(0.4f, 0.5f, 0.45f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input), String("Tag", PK::Input, "")};
+        def.outputs = {Bool("Has Tag", PK::Output)};
+        def.keywords = {"tag", "label", "has", "check", "is"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity e = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                e = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            std::string tag = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                ? std::get<std::string>(inputs[1]) : "";
+            if (!ctx.world || e == ECS::INVALID_ENTITY || tag.empty()) return false;
+            auto* tc = ctx.world->GetComponent<ECS::TagComponent>(e);
+            return tc ? tc->HasTag(tag) : false;
+        };
+        RegisterNode(def);
+    }
+    // Find Entity By Tag
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::FindEntityByTag;
+        def.displayName = "Find Entity By Tag";
+        def.description = "First entity carrying the given tag (invalid if none)";
+        def.category = NodeCategory::Entity;
+        def.headerColor = Math::Vector3(0.4f, 0.5f, 0.45f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {String("Tag", PK::Input, "")};
+        def.outputs = {EntityPin("Entity", PK::Output)};
+        def.keywords = {"tag", "find", "search", "query", "byTag"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            std::string tag = (!inputs.empty() && std::holds_alternative<std::string>(inputs[0]))
+                ? std::get<std::string>(inputs[0]) : "";
+            if (!ctx.world || tag.empty()) return ECS::INVALID_ENTITY;
+            for (ECS::Entity e : ctx.world->GetEntitiesWithComponent<ECS::TagComponent>()) {
+                auto* tc = ctx.world->GetComponent<ECS::TagComponent>(e);
+                if (tc && tc->HasTag(tag)) return e;
+            }
+            return ECS::INVALID_ENTITY;
+        };
+        RegisterNode(def);
+    }
+
+    // --- Save meta (bool / int / string) ---
+    // Set Meta Bool
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::MetaSetBool;
+        def.displayName = "Set Meta Bool";
+        def.description = "Set a permanent meta-progression bool value";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.7f);
+        def.inputs = {FlowIn(), String("Key", PK::Input, ""), Bool("Value", PK::Input, false)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"meta", "progression", "set", "bool", "flag", "permanent"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string key = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                ? std::get<std::string>(inputs[1]) : "";
+            bool val = (inputs.size() > 2 && std::holds_alternative<bool>(inputs[2])) && std::get<bool>(inputs[2]);
+            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            if (s_VisualScriptSaveSystem && !key.empty()) {
+                s_VisualScriptSaveSystem->SetMetaBool(key, val);
+                s_VisualScriptSaveSystem->SaveMeta();
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Get Meta Bool
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::MetaGetBool;
+        def.displayName = "Get Meta Bool";
+        def.description = "Read a permanent meta-progression bool value";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.7f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {String("Key", PK::Input, "")};
+        def.outputs = {Bool("Value", PK::Output)};
+        def.keywords = {"meta", "progression", "get", "bool", "flag"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            std::string key = (!inputs.empty() && std::holds_alternative<std::string>(inputs[0]))
+                ? std::get<std::string>(inputs[0]) : "";
+            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            if (s_VisualScriptSaveSystem && !key.empty())
+                return s_VisualScriptSaveSystem->GetMetaBool(key, false);
+            return false;
+        };
+        RegisterNode(def);
+    }
+    // Set Meta Int
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::MetaSetInt;
+        def.displayName = "Set Meta Int";
+        def.description = "Set a permanent meta-progression int value";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.7f);
+        def.inputs = {FlowIn(), String("Key", PK::Input, ""), Int("Value", PK::Input, 0)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"meta", "progression", "set", "int", "permanent"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string key = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                ? std::get<std::string>(inputs[1]) : "";
+            i32 val = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2])) ? std::get<i32>(inputs[2]) : 0;
+            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            if (s_VisualScriptSaveSystem && !key.empty()) {
+                s_VisualScriptSaveSystem->SetMetaInt(key, val);
+                s_VisualScriptSaveSystem->SaveMeta();
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Get Meta Int
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::MetaGetInt;
+        def.displayName = "Get Meta Int";
+        def.description = "Read a permanent meta-progression int value";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.7f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {String("Key", PK::Input, "")};
+        def.outputs = {Int("Value", PK::Output)};
+        def.keywords = {"meta", "progression", "get", "int"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            std::string key = (!inputs.empty() && std::holds_alternative<std::string>(inputs[0]))
+                ? std::get<std::string>(inputs[0]) : "";
+            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            if (s_VisualScriptSaveSystem && !key.empty())
+                return s_VisualScriptSaveSystem->GetMetaInt(key, 0);
+            return static_cast<i32>(0);
+        };
+        RegisterNode(def);
+    }
+    // Set Meta String
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::MetaSetString;
+        def.displayName = "Set Meta String";
+        def.description = "Set a permanent meta-progression string value";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.7f);
+        def.inputs = {FlowIn(), String("Key", PK::Input, ""), String("Value", PK::Input, "")};
+        def.outputs = {FlowOut()};
+        def.keywords = {"meta", "progression", "set", "string", "text", "permanent"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string key = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                ? std::get<std::string>(inputs[1]) : "";
+            std::string val = (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2]))
+                ? std::get<std::string>(inputs[2]) : "";
+            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            if (s_VisualScriptSaveSystem && !key.empty()) {
+                s_VisualScriptSaveSystem->SetMetaString(key, val);
+                s_VisualScriptSaveSystem->SaveMeta();
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Get Meta String
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::MetaGetString;
+        def.displayName = "Get Meta String";
+        def.description = "Read a permanent meta-progression string value";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.7f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {String("Key", PK::Input, "")};
+        def.outputs = {String("Value", PK::Output)};
+        def.keywords = {"meta", "progression", "get", "string", "text"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            std::string key = (!inputs.empty() && std::holds_alternative<std::string>(inputs[0]))
+                ? std::get<std::string>(inputs[0]) : "";
+            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            if (s_VisualScriptSaveSystem && !key.empty())
+                return s_VisualScriptSaveSystem->GetMetaString(key, "");
+            return std::string("");
+        };
+        RegisterNode(def);
+    }
+
+    // --- Sprite animation (AnimatedSprite2DComponent) ---
+    // Play
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SpriteAnimPlay;
+        def.displayName = "Sprite Anim Play";
+        def.description = "Start/restart the sprite's frame animation from frame 0";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.6f, 0.5f, 0.3f);
+        def.inputs = {FlowIn(), EntityPin("Entity", PK::Input)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"sprite", "animation", "play", "start", "frame"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity e = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                e = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            auto* ac = ctx.world ? ctx.world->GetComponent<ECS::AnimatedSprite2DComponent>(e) : nullptr;
+            if (ac) {
+                ac->playing = true;
+                ac->animationComplete = false;
+                ac->currentFrame = 0;
+                ac->frameTimer = 0.0f;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Stop
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SpriteAnimStop;
+        def.displayName = "Sprite Anim Stop";
+        def.description = "Pause the sprite's frame animation";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.6f, 0.5f, 0.3f);
+        def.inputs = {FlowIn(), EntityPin("Entity", PK::Input)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"sprite", "animation", "stop", "pause", "frame"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity e = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                e = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            auto* ac = ctx.world ? ctx.world->GetComponent<ECS::AnimatedSprite2DComponent>(e) : nullptr;
+            if (ac) ac->playing = false;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Set Speed
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SpriteAnimSetSpeed;
+        def.displayName = "Sprite Anim Set Speed";
+        def.description = "Set the sprite animation playback speed multiplier";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.6f, 0.5f, 0.3f);
+        def.inputs = {FlowIn(), EntityPin("Entity", PK::Input), Float("Speed", PK::Input, 1.0f)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"sprite", "animation", "speed", "rate", "frame"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity e = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                e = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            f32 speed = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) ? std::get<f32>(inputs[2]) : 1.0f;
+            auto* ac = ctx.world ? ctx.world->GetComponent<ECS::AnimatedSprite2DComponent>(e) : nullptr;
+            if (ac) ac->playbackSpeed = speed;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Is Playing
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SpriteAnimIsPlaying;
+        def.displayName = "Sprite Anim Is Playing";
+        def.description = "True while the sprite's frame animation is running";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.6f, 0.5f, 0.3f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Bool("Playing", PK::Output)};
+        def.keywords = {"sprite", "animation", "playing", "is", "frame"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity e = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                e = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            auto* ac = ctx.world ? ctx.world->GetComponent<ECS::AnimatedSprite2DComponent>(e) : nullptr;
+            return ac ? ac->playing : false;
+        };
+        RegisterNode(def);
+    }
+    // Get Current Frame
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SpriteAnimGetFrame;
+        def.displayName = "Sprite Anim Get Frame";
+        def.description = "The current frame index of the sprite animation";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.6f, 0.5f, 0.3f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Int("Frame", PK::Output)};
+        def.keywords = {"sprite", "animation", "frame", "current", "index"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity e = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                e = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            auto* ac = ctx.world ? ctx.world->GetComponent<ECS::AnimatedSprite2DComponent>(e) : nullptr;
+            return ac ? static_cast<i32>(ac->currentFrame) : static_cast<i32>(0);
         };
         RegisterNode(def);
     }
