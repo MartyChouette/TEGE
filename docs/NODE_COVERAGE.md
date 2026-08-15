@@ -6,17 +6,21 @@ node graph cannot.
 
 ## Status (2026-08-14)
 
-Tier-1 items 2–5 (hierarchy, tags, save-meta bool/int/string, sprite
-animation) are **DONE** — 20 nodes added, `NodeRegistry.cpp`, tested in
-`TestVisualScript`. The one remaining Tier-1 gap is **branching dialogue
-(#1)**, which needs a `DialogueSystem` pointer threaded into
-`ExecutionContext` (nodes currently only reach ECS components, and tree-mode
-dialogue state is owned by the system). That is the next node work item.
+**All of Tier 1 is DONE** (27 nodes added, tested in `TestVisualScript`):
+- Hierarchy, tags, save-meta bool/int/string, sprite animation (20 nodes).
+- Branching dialogue (7 nodes): Choose, Choice Count, Choice Text, Speaker,
+  Text, Set/Get Variable. This one required threading a `DialogueSystem*`
+  into `ExecutionContext` (wired through `VisualScriptSystem`, set at the
+  PlayMode/Player/web call sites) — reads are pure component lookups, but
+  Choose and the variable nodes use the runtime tree player on the system.
+
+Next highest-value node work is **Tier 2** — the Accessibility node set (a
+pillar feature: 42 bindings, only 3 nodes today).
 
 ## Numbers
 
-- **281 nodes** registered in `Engine/src/VisualScript/NodeRegistry.cpp`
-  (261 original + 20 tier-1 additions)
+- **288 nodes** registered in `Engine/src/VisualScript/NodeRegistry.cpp`
+  (261 original + 27 tier-1 additions)
 - **~940 script bindings** across 36 `ScriptBindings_*.cpp` files (718 global
   functions matched by name plus object methods/properties)
 - Node categories are cosmetic — the 90-entry "Gameplay" category is a
@@ -67,12 +71,9 @@ Ranked by how likely a node-only game builder hits the wall. Each line is a
 concrete "add these nodes" work item.
 
 ### Tier 1 — blocks common beginner games
-1. **Dialogue choices & text** — `Dialogue_Choose`, `GetChoiceCount`,
-   `GetChoiceText`, `GetCurrentSpeaker`, `GetCurrentText`, `Get/SetVariable`.
-   Nodes can start/advance dialogue but cannot present a branching choice or
-   read the current line. Branching dialogue is impossible in pure nodes today.
-   **STILL OPEN** — needs a `DialogueSystem*` on `ExecutionContext` (tree-mode
-   state is system-owned, not on the component).
+1. ~~**Dialogue choices & text**~~ — **DONE** (Choose, Choice Count, Choice
+   Text, Speaker, Text, Set/Get Variable). Branching dialogue now works in
+   pure nodes.
 2. ~~**Scene hierarchy**~~ — **DONE** (Set/Remove/Get Parent, Get Child Count,
    Get Child).
 3. ~~**Tags**~~ — **DONE** (Add/Remove/Has Tag, Find Entity By Tag).
@@ -125,10 +126,9 @@ concrete "add these nodes" work item.
 
 ## Suggested next step
 
-Tier-1 items 2–5 are shipped. The remaining sharp wall is **branching
-dialogue (#1)**: add a `DialogueSystem*` to `ExecutionContext` (wired in
-`VisualScriptExecutor` alongside `physics`/`networking`, and set at every
-call site — PlayMode, Player, web), then add Choose / GetChoiceCount /
-GetChoiceText / GetCurrentSpeaker / GetCurrentText / Get-Set Variable nodes.
-After that, Tier 2 (Accessibility node set — a pillar feature with 42 bindings
-and only 3 nodes) is the highest-value follow-up.
+All of Tier 1 is shipped. The highest-value remaining node work is **Tier 2 —
+the Accessibility node set**: a stated engine pillar with 42 bindings but only
+3 nodes today. A node-only builder can't wire an in-game accessibility menu
+(font scale, contrast, reduced motion, screen reader, subtitles, colorblind
+strength). Those are plain Get/Set over the accessibility settings, so no new
+`ExecutionContext` plumbing is needed — mirror the save-meta node pattern.
