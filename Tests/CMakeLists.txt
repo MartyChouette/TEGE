@@ -117,6 +117,7 @@ enjin_add_test(TestSpline             Unit/Core/TestSpline.cpp)
 enjin_add_test(TestObjectPool         Unit/Core/TestObjectPool.cpp)
 enjin_add_test(TestProfiler           Unit/Core/TestProfiler.cpp)
 enjin_add_test(TestLocalization       Unit/Core/TestLocalization.cpp)
+enjin_add_test(TestSwarm              Unit/Sim/TestSwarm.cpp)
 
 # --- ECS ---
 enjin_add_test(TestECS                Unit/ECS/TestECS.cpp)
