@@ -134,6 +134,16 @@ Not release-blocking: goldens blessing, settings A/B matrix.
 
 ### Editor authoring tools
 - Navmesh generation + visualization UI. Terrain sculpting. Tilemap painter. Visual UI layout editor. Template preview images.
+- **Sprite / pixel-art editor upgrade (Marty backlog, added 2026-08-15)**: a `PixelEditor` already exists (`Engine/*/Editor/PixelEditor.{h,cpp}` — NewCanvas, LoadImage, ExportPNG, layers, named palettes, drawing tools, Render). TODO: (1) **pass it through the unified UICanvas UI** (per the UI unification charter — it's currently ImGui) so it's consistent + web-capable; (2) **upgrade the workflow so people can easily edit IMPORTED pixel art** — open an imported sprite/texture straight into the editor, edit + save back to the asset (round-trip), palette extraction from the imported image, per-layer editing, zoom/grid/onion-skin niceties. Make "right-click a sprite asset → Edit" a first-class flow.
+
+### Particle system overhaul (Marty backlog, added 2026-08-15)
+Goal: a particle system that is robust, user-friendly, cool, and dead-easy to fire/start/stop/loop from nodes OR script, in 2D or 3D, with a good variety of particle PRIMITIVES and a preset library so you can make mist/spray/blood/sparks/smoke/etc. without fiddling.
+- **What exists**: CPU `ParticleSystem` + `ParticleRenderer` + `GPUParticleSystem` (compute, dormant — see the DOTS/GPU-compute note); `ParticleEmitterComponent` has loop, `EmitterShape` (Cone + others), shapeRadius, `RenderMode` (Billboard/VelocityStretch), texture sheet animation; nodes exist: Play Particles / Stop Particles / Particle Burst / Apply Particle Preset. So the bones are there.
+- **Robustness + UX**: audit the CPU path for correctness/perf; make emitters reliable and cheap; clear inspector with live preview; sensible defaults so a fresh emitter looks good immediately.
+- **Control parity (node + script, 2D + 3D)**: easy Fire/Start/Stop/Loop/Burst from BOTH VisualScript nodes and AngelScript (some particle nodes exist; fill gaps + ensure script bindings match; works the same in 2D and 3D scenes). This ties into the node-coverage + scripting-parity work.
+- **Primitive variety**: billboard (have), stretched/velocity (have), plus mesh particles (spawn a mesh per particle), ribbons/trails, point sprites, soft particles; multiple emitter shapes (cone/sphere/box/circle/edge/mesh-surface).
+- **Preset library**: ship ready-made presets — mist, spray, blood, sparks, smoke, fire, dust, rain-splash, magic — selectable in inspector and via `Apply Particle Preset`. This is the "easily make anything" payoff.
+- **GPU scale path**: for huge counts, route through the GPU-compute particle system once its draw path is revived (shared work with the DOTS-competitor).
 - ~~Entity-reference script property drag-assign (Marty)~~ **DONE 2026-08-14**: `[Property] uint64`/`[Property] Entity` script properties existed (ScriptPropertyType::Entity) but the inspector only drew a raw DragInt (type the numeric ID). Now a proper object slot — shows the assigned entity's name (or None/missing), drop an entity from the Hierarchy to assign it (accepts the existing ENTITY_REPARENT payload), with a clear button. This is the static entity-reference assignment mechanism.
 
 ### Scripting and serialization surface
