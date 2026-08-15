@@ -14,17 +14,24 @@ node graph cannot.
   PlayMode/Player/web call sites) — reads are pure component lookups, but
   Choose and the variable nodes use the runtime tree player on the system.
 
-Tier 2's headline item — the **Accessibility node set** — is also **DONE**:
-17 nodes (font scale, reduced motion, screen-shake, contrast, colorblind
-strength, subtitles, dyslexia font, screen reader get+set, plus Save). They
-forward through helpers in `ScriptBindings_Accessibility.cpp` that reuse the
-AngelScript settings pointer + apply/save callbacks, so Set takes effect and
-persists at every call site.
+**Tier 2 is now essentially DONE too:**
+- Accessibility (17 nodes): font scale, reduced motion, screen-shake, contrast,
+  colorblind strength, subtitles, dyslexia font, screen reader get+set, Save.
+  Forward through helpers in `ScriptBindings_Accessibility.cpp` that reuse the
+  AngelScript settings pointer + apply/save callbacks.
+- AI tuning (11 nodes): get/set move speed, detection range, attack range; set
+  chase/flee speed, field of view, use-navmesh, target position.
+- Entity direction vectors (3 nodes): Get Forward/Right/Up.
+- BehaviorTree blackboard (8 nodes): Set/Get Blackboard Bool/Float/Int/String.
+
+Remaining Tier-2 leftovers: **navmesh query nodes** (FindPath/PathExists/
+GetPathWaypoint — need a pathfinder pointer or forwarders like accessibility)
+and **tween completion/opacity** (Opacity/SetOnComplete/GetValue/StopAll).
 
 ## Numbers
 
-- **305 nodes** registered in `Engine/src/VisualScript/NodeRegistry.cpp`
-  (261 original + 27 tier-1 + 17 accessibility)
+- **327 nodes** registered in `Engine/src/VisualScript/NodeRegistry.cpp`
+  (261 original + 27 tier-1 + 17 accessibility + 14 AI/direction + 8 BT blackboard)
 - **~940 script bindings** across 36 `ScriptBindings_*.cpp` files (718 global
   functions matched by name plus object methods/properties)
 - Node categories are cosmetic — the 90-entry "Gameplay" category is a
