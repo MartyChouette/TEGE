@@ -30,16 +30,28 @@ Tier-2 leftovers now also DONE:
   bindings' navmesh/pathfinder via VSNavmesh* helpers).
 - Tween extras (3 nodes): Opacity, Get Value, Stop All.
 
-**Tiers 1 and 2 are complete.** Only `SetOnComplete`-style callback nodes are
-intentionally skipped (callbacks don't map cleanly to a graph). What remains is
-Tier 3/4 (physics joints, UI read-state/styling, HUD styling, weather reads,
-networking lobby, and the whole-system gaps: Rewind, MIDI, InputAction).
+**Tiers 1, 2, AND 3 are complete** (2026-08-15). Tier-3 additions:
+- Networking lobby/session (8): Player Count, Is Host, Local Player Id, Packet
+  Loss, Set Ready, Lobby Player Count/Name/Ready — via `ctx.networking`.
+- Weather reads + wind (8): Get Weather/Rain/Snow/Fog Density, Is Lightning,
+  Get Wind Strength/Direction, Set Wind — via the `s_VisualScriptWeather` global.
+- UI read-state + styling (9): Is Checked, Get Slider Value, Is Hovered, Is
+  Pressed, Get Text, Get Progress, Set Text/Bg Color, Set Image Alpha — via
+  `UICanvasComponent`.
+- Physics joints (8): Create Hinge/Distance, Destroy, Hinge Limits/Motor/Angle,
+  Distance Rest/Stress — joint entities with components, like the bindings.
+- HUD styling (4): Fill Color, Text Color, Font Size, Position.
+
+Only `SetOnComplete`-style callback nodes are intentionally skipped (callbacks
+don't map cleanly to a graph). What remains is **Tier 4 only** — the
+whole-system gaps (Rewind, MIDI, InputAction/rebinding), which the audit marks
+"decide: node-worthy?" — a design call, not a mechanical gap.
 
 ## Numbers
 
-- **335 nodes** registered in `Engine/src/VisualScript/NodeRegistry.cpp`
-  (261 original + 27 tier-1 + 17 accessibility + 14 AI/direction + 8 BT
-  blackboard + 5 navmesh + 3 tween)
+- **371 nodes** registered in `Engine/src/VisualScript/NodeRegistry.cpp`
+  (261 original + 110 added: 27 tier-1, 46 tier-2 incl. navmesh/tween,
+  37 tier-3; plus 1 existing stub fixed)
 - **~940 script bindings** across 36 `ScriptBindings_*.cpp` files (718 global
   functions matched by name plus object methods/properties)
 - Node categories are cosmetic — the 90-entry "Gameplay" category is a
