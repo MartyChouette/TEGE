@@ -594,7 +594,7 @@ void EditorLayer::OnFileDrop(int count, const char** paths) {
             OpenScene(filePath.string());
         } else if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga" || ext == ".bmp") {
             // Assign texture to selected entity's material (or all mesh children if container)
-            std::string texPath = Assets::AssetPipeline::CopyToProjectAssets(
+            std::string texPath = Assets::CopyToProjectAssets(
                 filePath.string(),
                 std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string(),
                 "assets/textures");

@@ -1098,7 +1098,7 @@ void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOpt
                 std::string projRoot = std::filesystem::path(projPath).parent_path().string();
                 auto importTex = [&](std::string& texPath) {
                     if (!texPath.empty())
-                        texPath = Assets::AssetPipeline::CopyToProjectAssets(
+                        texPath = Assets::CopyToProjectAssets(
                             texPath, projRoot, "assets/textures");
                 };
                 for (ECS::Entity e : result.entities) {

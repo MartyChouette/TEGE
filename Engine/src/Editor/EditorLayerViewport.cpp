@@ -259,7 +259,7 @@ void EditorLayer::DrawViewportPanel() {
                         {
                             std::string projPath = m_SceneManager.GetProjectPath();
                             if (!projPath.empty()) {
-                                std::string copied = Assets::AssetPipeline::CopyToProjectAssets(
+                                std::string copied = Assets::CopyToProjectAssets(
                                     dropPath,
                                     std::filesystem::path(projPath).parent_path().string(),
                                     "assets/textures");
