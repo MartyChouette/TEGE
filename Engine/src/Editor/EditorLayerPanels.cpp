@@ -7564,6 +7564,16 @@ void EditorLayer::DrawDebugWorkstation() {
                 if (ImGui::SmallButton("Reshuffle anim")) applyStressAnim();
                 ImGui::TextDisabled("(re-import is slow; the per-frame skinning cost is what to watch after)");
                 ImGui::EndDisabled();
+
+                // GPU-compute particles (simulation + draw fully on the GPU)
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- GPU Particles (compute) --");
+                if (m_RenderSystem) {
+                    if (ImGui::SmallButton("Burst 5k")) m_RenderSystem->SpawnGPUParticles(5000, Math::Vector3(0.0f, 2.0f, 0.0f), Math::Vector3(0, 1, 0));
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Burst 50k")) m_RenderSystem->SpawnGPUParticles(50000, Math::Vector3(0.0f, 2.0f, 0.0f), Math::Vector3(0, 1, 0));
+                    ImGui::TextDisabled("(spawns at origin; sim + draw never touch the CPU)");
+                }
             } else {
                 ImGui::TextDisabled("RenderSystem not available");
             }

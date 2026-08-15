@@ -2,7 +2,11 @@
 #include "Enjin/Renderer/ComputePipelineHelper.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
+#include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
+#include "Enjin/Renderer/Vulkan/VulkanShader.h"
+#include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include "Enjin/Logging/Log.h"
+#include <array>
 #include <cstring>
 
 #if !ENJIN_RENDERER_WEBGPU
@@ -167,32 +171,101 @@ void GPUParticleSystem::Spawn(u32 count, const Math::Vector3& position,
     }
 }
 
-void GPUParticleSystem::Render(VkCommandBuffer cmd) {
-    if (!m_Initialized) return;
+void GPUParticleSystem::EnsureDrawPipeline(VkRenderPass renderPass,
+                                            VkDescriptorSetLayout sharedLayout,
+                                            u32 colorAttachmentCount) {
+    if (!m_Initialized || m_DrawPipeline) return;
 
-    // Bind particle SSBO as vertex source (shader reads from SSBO via alive indices).
-    // The particle fragment shader uses the SAME lighting path as opaque geometry:
-    //   - Clustered lights (bindings 14-15)
-    //   - Shadow atlas (shadow map bindings)
-    //   - DDGI irradiance (binding 20)
-    //   - Froxel fog volume (binding 21)
-    // ONE lighting system for ALL renderable objects — no separate particle lighting.
-
-    // Draw alive particles using indirect count from alive buffer.
-    // The alive buffer layout: [u32 count, u32 indices[]]
-    // We use the count as the instance count for a single-quad draw.
-    // Each instance reads its particle data from the SSBO via the alive index.
-    VkBuffer aliveBuffer = m_AliveIndexBuffer->GetBuffer();
-    if (aliveBuffer) {
-        // vkCmdDrawIndirect: vertexCount=6 (quad), instanceCount=aliveCount (from buffer)
-        // The indirect buffer at offset 0 contains the alive count.
-        // NOTE: This requires the alive buffer to be laid out as VkDrawIndirectCommand
-        // which it isn't directly. A more correct approach would be a separate
-        // indirect draw command buffer filled by the compute shader.
-        // For now, we read back the alive count with 1-frame latency.
-        // TODO: Use vkCmdDrawIndirect with a properly formatted indirect buffer
+    m_DrawVS = std::make_unique<Renderer::VulkanShader>(m_Context);
+    if (!m_DrawVS->LoadFromSPIRV(
+            reinterpret_cast<const u8*>(Renderer::ShaderData::GpuParticleVertexShaderData),
+            Renderer::ShaderData::GpuParticleVertexShaderDataSize)) {
+        ENJIN_LOG_ERROR(Renderer, "GPUParticleSystem: failed to load draw vertex shader");
+        m_DrawVS.reset();
+        return;
     }
-    (void)cmd;
+    m_DrawFS = std::make_unique<Renderer::VulkanShader>(m_Context);
+    if (!m_DrawFS->LoadFromSPIRV(
+            reinterpret_cast<const u8*>(Renderer::ShaderData::GpuParticleFragmentShaderData),
+            Renderer::ShaderData::GpuParticleFragmentShaderDataSize)) {
+        ENJIN_LOG_ERROR(Renderer, "GPUParticleSystem: failed to load draw fragment shader");
+        m_DrawVS.reset();
+        m_DrawFS.reset();
+        return;
+    }
+
+    // Single instance-rate binding: the particle SSBO itself (stride = GPUParticle).
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = sizeof(GPUParticle);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+
+    std::array<VkVertexInputAttributeDescription, 4> attrs{};
+    // vec4 position + lifetime
+    attrs[0] = {0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 0};
+    // vec4 velocity + age
+    attrs[1] = {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 16};
+    // vec4 color
+    attrs[2] = {2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 32};
+    // vec4 size + rotation + pads
+    attrs[3] = {3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 48};
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = 1;
+    vertexInput.pVertexBindingDescriptions = &binding;
+    vertexInput.vertexAttributeDescriptionCount = static_cast<u32>(attrs.size());
+    vertexInput.pVertexAttributeDescriptions = attrs.data();
+
+    Renderer::PipelineConfig config;
+    config.renderPass = renderPass;
+    config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    config.depthTest = true;
+    config.depthWrite = false;   // transparent particles don't write depth
+    config.cullMode = VK_CULL_MODE_NONE;
+    config.alphaBlend = true;
+    config.colorAttachmentCount = colorAttachmentCount;  // MRT rule (VUID-07609)
+    config.customVertexInput = &vertexInput;
+
+    m_DrawPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Context);
+    if (!m_DrawPipeline->CreateWithLayout(config, m_DrawVS.get(), m_DrawFS.get(), sharedLayout)) {
+        ENJIN_LOG_ERROR(Renderer, "GPUParticleSystem: failed to create draw pipeline");
+        m_DrawPipeline.reset();
+        return;
+    }
+    m_DrawRenderPass = renderPass;
+    ENJIN_LOG_INFO(Renderer, "GPUParticleSystem: draw pipeline created (%u attachment(s))",
+                   colorAttachmentCount);
+}
+
+void GPUParticleSystem::RecreateDrawPipeline(VkRenderPass renderPass,
+                                              VkDescriptorSetLayout sharedLayout,
+                                              u32 colorAttachmentCount) {
+    if (!m_Initialized) return;
+    // Frame-safe caller contract: GPU idle / not mid-recording.
+    m_DrawPipeline.reset();
+    m_DrawVS.reset();
+    m_DrawFS.reset();
+    m_DrawRenderPass = VK_NULL_HANDLE;
+    EnsureDrawPipeline(renderPass, sharedLayout, colorAttachmentCount);
+}
+
+void GPUParticleSystem::Render(VkCommandBuffer cmd, VkDescriptorSet sharedSet) {
+    if (!m_Initialized || !m_HasSpawned || !m_DrawPipeline) return;
+
+    // The particle buffer doubles as an instance-rate vertex buffer; Simulate's
+    // trailing barrier (COMPUTE -> VERTEX_INPUT) makes this read safe. Dead
+    // slots collapse to degenerate quads in the vertex shader, so we can draw
+    // maxParticles instances without any alive-count readback.
+    m_DrawPipeline->Bind(cmd);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            m_DrawPipeline->GetLayout(), 0, 1, &sharedSet, 0, nullptr);
+
+    VkBuffer vb = m_ParticleBuffer->GetBuffer();
+    VkDeviceSize offset = 0;
+    vkCmdBindVertexBuffers(cmd, 0, 1, &vb, &offset);
+
+    vkCmdDraw(cmd, 6, m_Config.maxParticles, 0, 0);
 }
 
 VkBuffer GPUParticleSystem::GetParticleBuffer() const {
@@ -210,7 +283,8 @@ bool GPUParticleSystem::CreateBuffers() {
     m_ParticleBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Context);
     if (!m_ParticleBuffer->Create(
             m_Config.maxParticles * sizeof(GPUParticle),
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,   // draw path reads it as an instance VB
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
         ENJIN_LOG_ERROR(Renderer, "GPUParticleSystem: failed to create particle SSBO");
         return false;
@@ -246,6 +320,11 @@ void GPUParticleSystem::DestroyResources() {
 
     m_SimulateSetup.Destroy(device);
     m_PipelineCreated = false;
+
+    m_DrawPipeline.reset();
+    m_DrawVS.reset();
+    m_DrawFS.reset();
+    m_DrawRenderPass = VK_NULL_HANDLE;
 
     m_ParticleBuffer.reset();
     m_AliveIndexBuffer.reset();

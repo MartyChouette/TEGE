@@ -491,6 +491,10 @@ public:
     // viewportWidth/Height: 0 = swapchain, >0 = render target override
     void RenderWeatherParticles(const Effects::WeatherSystem& weather, bool isRain,
                                 u32 viewportWidth = 0, u32 viewportHeight = 0);
+    // GPU-compute particles: draw the sim's particle buffer (dormant until spawned)
+    void RenderGPUParticles();
+    // Seed GPU particles (wakes the compute sim; Debug Workstation has a burst button)
+    void SpawnGPUParticles(u32 count, const Math::Vector3& position, const Math::Vector3& direction);
     void RenderParticles(u32 viewportWidth = 0, u32 viewportHeight = 0);
     void RenderElementalParticles(const Effects::ElementalSystem& elementalSystem,
                                   u32 viewportWidth = 0, u32 viewportHeight = 0);

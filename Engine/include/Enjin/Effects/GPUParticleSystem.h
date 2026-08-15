@@ -16,6 +16,8 @@ namespace ECS { class World; }
 namespace Renderer {
 class VulkanContext;
 class VulkanBuffer;
+class VulkanPipeline;
+class VulkanShader;
 }
 
 namespace Effects {
@@ -74,8 +76,21 @@ public:
     // Spawn new particles (CPU-side, uploads to staging region of particle SSBO)
     void Spawn(u32 count, const Math::Vector3& position, const Math::Vector3& direction);
 
-    // Render: bind particle SSBO + alive index buffer, issue indirect draw
-    void Render(VkCommandBuffer cmd);
+    // Render: draw the particle SSBO as an instance-rate vertex buffer inside
+    // the current (already begun) render pass. Dead slots collapse to
+    // degenerate quads in the vertex shader, so no readback and no indirect
+    // buffer are needed. Inherits the pass's dynamic viewport/scissor.
+    void Render(VkCommandBuffer cmd, VkDescriptorSet sharedSet);
+
+    // Create the draw pipeline if it doesn't exist yet (creation mid-recording
+    // is legal; destruction is not — that's what RecreateDrawPipeline is for).
+    void EnsureDrawPipeline(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout,
+                            u32 colorAttachmentCount);
+
+    // Destroy + rebuild the draw pipeline for a new render pass. Call ONLY at
+    // frame-safe times (RenderSystem::RecreateEffectPipelinesForRenderPass).
+    void RecreateDrawPipeline(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout,
+                              u32 colorAttachmentCount);
 
     // Accessors
     u32 GetMaxParticles() const { return m_Config.maxParticles; }
@@ -105,6 +120,12 @@ private:
     // Compute pipeline (via helper)
     Renderer::ComputePipelineSetup m_SimulateSetup;
     bool m_PipelineCreated = false;
+
+    // Draw pipeline (billboard from the particle buffer as instance VB)
+    std::unique_ptr<Renderer::VulkanShader> m_DrawVS;
+    std::unique_ptr<Renderer::VulkanShader> m_DrawFS;
+    std::unique_ptr<Renderer::VulkanPipeline> m_DrawPipeline;
+    VkRenderPass m_DrawRenderPass = VK_NULL_HANDLE;
 
     // Spawn tracking
     u32 m_NextSpawnIndex = 0;

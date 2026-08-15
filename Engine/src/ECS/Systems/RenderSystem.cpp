@@ -2872,6 +2872,8 @@ void RenderSystem::SetWireframeEnabled(bool enabled) { m_WireframeMode = enabled
 void RenderSystem::RequestPipelineRecreation() {}  // Vulkan-only heal; WebGPU rebuilds per-frame
 void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* /*sim*/) {}
 void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& /*w*/, bool /*r*/, u32, u32) {}
+void RenderSystem::RenderGPUParticles() {}  // Vulkan-only (needs WebGPU compute first)
+void RenderSystem::SpawnGPUParticles(u32, const Math::Vector3&, const Math::Vector3&) {}
 void RenderSystem::RenderParticles(u32, u32) {}
 void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem&, u32, u32) {}
 void RenderSystem::RenderFluid(u32, u32) {}
@@ -5060,6 +5062,9 @@ void RenderSystem::Update(f32 deltaTime) {
     if (m_MainPassWeather) {
         RenderWeatherParticles(*m_MainPassWeather, m_MainPassWeatherIsRain, 0, 0);
     }
+
+    // GPU-compute particles: draw the sim's particle buffer (dormant until spawned)
+    RenderGPUParticles();
 
     // GPU timestamp: main geometry end
     {
@@ -12185,6 +12190,31 @@ void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& weather,
                               viewportWidth, viewportHeight);
 }
 
+void RenderSystem::RenderGPUParticles() {
+    if (!m_GPUParticleSystem || !m_Renderer || !m_Initialized || !m_ActiveDescriptorSets || !m_Pipeline) return;
+
+    VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    // First use: create the draw pipeline against whichever pass the effect
+    // renderers were built for (offscreen in the editor, swapchain in the
+    // player). Creation mid-recording is legal; recreation happens only at the
+    // frame-safe RecreateEffectPipelinesForRenderPass.
+    VkRenderPass pass = m_OffscreenRenderPass ? m_OffscreenRenderPass
+                                              : m_VulkanRenderer->GetRenderPass();
+    u32 attachments = m_OffscreenRenderPass ? 1u : 2u;   // offscreen = single color, swapchain = MRT
+    m_GPUParticleSystem->EnsureDrawPipeline(pass, m_Pipeline->GetDescriptorSetLayout(), attachments);
+
+    u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
+    m_GPUParticleSystem->Render(commandBuffer,
+                                (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)]);
+}
+
+void RenderSystem::SpawnGPUParticles(u32 count, const Math::Vector3& position,
+                                     const Math::Vector3& direction) {
+    if (m_GPUParticleSystem) m_GPUParticleSystem->Spawn(count, position, direction);
+}
+
 void RenderSystem::RenderParticles(u32 viewportWidth, u32 viewportHeight) {
     if (!m_ParticleRenderer || !m_Renderer || !m_Initialized || !m_World || !m_ActiveDescriptorSets) return;
 
@@ -12290,6 +12320,9 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
     }
     if (m_SpriteBatchRenderer) {
         m_SpriteBatchRenderer->RecreateForRenderPass(renderPass, layout, 1);
+    }
+    if (m_GPUParticleSystem) {
+        m_GPUParticleSystem->RecreateDrawPipeline(renderPass, layout, 1);
     }
 
     // Recreate main pipeline for offscreen render pass (fixes SRGB vs UNORM format mismatch
