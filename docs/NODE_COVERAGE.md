@@ -4,9 +4,19 @@ Generated 2026-08-14. Compares the VisualScript node catalog against the
 AngelScript binding surface to find where a scripter can do something the
 node graph cannot.
 
+## Status (2026-08-14)
+
+Tier-1 items 2–5 (hierarchy, tags, save-meta bool/int/string, sprite
+animation) are **DONE** — 20 nodes added, `NodeRegistry.cpp`, tested in
+`TestVisualScript`. The one remaining Tier-1 gap is **branching dialogue
+(#1)**, which needs a `DialogueSystem` pointer threaded into
+`ExecutionContext` (nodes currently only reach ECS components, and tree-mode
+dialogue state is owned by the system). That is the next node work item.
+
 ## Numbers
 
-- **261 nodes** registered in `Engine/src/VisualScript/NodeRegistry.cpp`
+- **281 nodes** registered in `Engine/src/VisualScript/NodeRegistry.cpp`
+  (261 original + 20 tier-1 additions)
 - **~940 script bindings** across 36 `ScriptBindings_*.cpp` files (718 global
   functions matched by name plus object methods/properties)
 - Node categories are cosmetic — the 90-entry "Gameplay" category is a
@@ -61,14 +71,14 @@ concrete "add these nodes" work item.
    `GetChoiceText`, `GetCurrentSpeaker`, `GetCurrentText`, `Get/SetVariable`.
    Nodes can start/advance dialogue but cannot present a branching choice or
    read the current line. Branching dialogue is impossible in pure nodes today.
-2. **Scene hierarchy** — `Entity_GetParent/SetParent/RemoveParent/GetChild/
-   GetChildCount`. No way to reparent or walk children from a graph.
-3. **Tags** — `Scene_AddTag/RemoveTag/HasTag/FindEntityByTag`. Tag-based
-   queries are a staple ("find all enemies") and have zero node coverage.
-4. **Sprite animation** — `SpriteAnim_Play/Stop/SetSpeed/IsPlaying/
-   GetCurrentFrame`. 2D games can set a texture but can't drive frame anim.
-5. **Save meta (non-float)** — `Meta_Get/SetBool/Int/String`. Only Float has
-   nodes; a scripter can't persist a bool flag or a string via nodes.
+   **STILL OPEN** — needs a `DialogueSystem*` on `ExecutionContext` (tree-mode
+   state is system-owned, not on the component).
+2. ~~**Scene hierarchy**~~ — **DONE** (Set/Remove/Get Parent, Get Child Count,
+   Get Child).
+3. ~~**Tags**~~ — **DONE** (Add/Remove/Has Tag, Find Entity By Tag).
+4. ~~**Sprite animation**~~ — **DONE** (Sprite Anim Play/Stop/Set Speed/Is
+   Playing/Get Frame, over `AnimatedSprite2DComponent`).
+5. ~~**Save meta (non-float)**~~ — **DONE** (Set/Get Meta Bool/Int/String).
 
 ### Tier 2 — needed for polish / core pillar
 6. **Accessibility** — the 42-binding surface (font scale, contrast, reduced
@@ -115,6 +125,10 @@ concrete "add these nodes" work item.
 
 ## Suggested next step
 
-Tier 1 is ~20 nodes and would remove the sharpest "nodes can't do this"
-walls (branching dialogue, hierarchy, tags, sprite anim, save flags). That is
-the natural follow-up work item to this audit.
+Tier-1 items 2–5 are shipped. The remaining sharp wall is **branching
+dialogue (#1)**: add a `DialogueSystem*` to `ExecutionContext` (wired in
+`VisualScriptExecutor` alongside `physics`/`networking`, and set at every
+call site — PlayMode, Player, web), then add Choose / GetChoiceCount /
+GetChoiceText / GetCurrentSpeaker / GetCurrentText / Get-Set Variable nodes.
+After that, Tier 2 (Accessibility node set — a pillar feature with 42 bindings
+and only 3 nodes) is the highest-value follow-up.
