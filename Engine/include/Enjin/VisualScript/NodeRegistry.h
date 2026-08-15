@@ -270,6 +270,14 @@ constexpr const char* NetDisconnect        = "Net_Disconnect";
 constexpr const char* NetIsConnected       = "Net_IsConnected";
 constexpr const char* NetGetPing           = "Net_GetPing";
 constexpr const char* NetCallRPC           = "Net_CallRPC";
+constexpr const char* NetGetPlayerCount    = "Net_GetPlayerCount";
+constexpr const char* NetIsHost            = "Net_IsHost";
+constexpr const char* NetGetLocalPlayerId  = "Net_GetLocalPlayerId";
+constexpr const char* NetGetPacketLoss     = "Net_GetPacketLoss";
+constexpr const char* NetSetReady          = "Net_SetReady";
+constexpr const char* NetLobbyCount        = "Net_LobbyPlayerCount";
+constexpr const char* NetLobbyName         = "Net_LobbyPlayerName";
+constexpr const char* NetLobbyReady        = "Net_LobbyPlayerReady";
 
 // UI Focus
 constexpr const char* UISetFocus           = "UI_SetFocus";

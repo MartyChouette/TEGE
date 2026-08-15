@@ -1205,6 +1205,30 @@ ENJIN_TEST(TweenNodes, OpacityGetValueStopAll) {
 }
 
 // ===========================================================================
+// Networking lobby nodes (docs/NODE_COVERAGE.md tier-3)
+// ===========================================================================
+
+ENJIN_TEST(NetworkingNodes, RegisterAndSafeWithoutSession) {
+    auto& reg = NodeRegistry::Instance();
+    const char* ids[] = {
+        NodeTypes::NetGetPlayerCount, NodeTypes::NetIsHost, NodeTypes::NetGetLocalPlayerId,
+        NodeTypes::NetGetPacketLoss, NodeTypes::NetSetReady, NodeTypes::NetLobbyCount,
+        NodeTypes::NetLobbyName, NodeTypes::NetLobbyReady,
+    };
+    for (const char* id : ids) ENJIN_ASSERT_NOT_NULL(reg.FindNode(id));
+
+    ExecutionContext ctx;   // ctx.networking is null
+    std::vector<VariableValue> outs;
+
+    ENJIN_EXPECT_EQ(std::get<i32>(reg.FindNode(NodeTypes::NetGetPlayerCount)->evaluate(ctx, {})), 0);
+    ENJIN_EXPECT_FALSE(std::get<bool>(reg.FindNode(NodeTypes::NetIsHost)->evaluate(ctx, {})));
+    ENJIN_EXPECT_EQ(std::get<i32>(reg.FindNode(NodeTypes::NetLobbyCount)->evaluate(ctx, {})), 0);
+    ENJIN_EXPECT_STR_EQ(std::get<std::string>(reg.FindNode(NodeTypes::NetLobbyName)->evaluate(ctx, { static_cast<i32>(0) })).c_str(), "");
+    // Set Ready is a safe no-op without a session
+    reg.FindNode(NodeTypes::NetSetReady)->execute(ctx, { false, true }, outs);
+}
+
+// ===========================================================================
 // Entry point
 // ===========================================================================
 

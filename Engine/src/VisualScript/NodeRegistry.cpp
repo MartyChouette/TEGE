@@ -9597,6 +9597,145 @@ void NodeRegistry::RegisterBuiltinNodes() {
         };
         RegisterNode(def);
     }
+
+    // =======================================================================
+    // Networking lobby/session queries (docs/NODE_COVERAGE.md tier-3).
+    // Read straight off ctx.networking (like the existing Get Ping node).
+    // =======================================================================
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NetGetPlayerCount;
+        def.displayName = "Net Player Count";
+        def.description = "Number of connected players";
+        def.category = NodeCategory::Networking;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.7f);
+        def.flags = NodeDefFlags::Pure;
+        def.outputs = {Int("Count", PK::Output)};
+        def.keywords = {"net", "network", "players", "count", "multiplayer"};
+        def.evaluate = [](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
+            return ctx.networking ? static_cast<i32>(ctx.networking->GetConnectedPlayerCount()) : static_cast<i32>(0);
+        };
+        RegisterNode(def);
+    }
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NetIsHost;
+        def.displayName = "Net Is Host";
+        def.description = "True if this instance is the host";
+        def.category = NodeCategory::Networking;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.7f);
+        def.flags = NodeDefFlags::Pure;
+        def.outputs = {Bool("Is Host", PK::Output)};
+        def.keywords = {"net", "network", "host", "server", "multiplayer"};
+        def.evaluate = [](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
+            return ctx.networking ? ctx.networking->IsHost() : false;
+        };
+        RegisterNode(def);
+    }
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NetGetLocalPlayerId;
+        def.displayName = "Net Local Player Id";
+        def.description = "This client's player id";
+        def.category = NodeCategory::Networking;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.7f);
+        def.flags = NodeDefFlags::Pure;
+        def.outputs = {Int("Player Id", PK::Output)};
+        def.keywords = {"net", "network", "player", "id", "local"};
+        def.evaluate = [](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
+            return ctx.networking ? static_cast<i32>(ctx.networking->GetLocalPlayerId()) : static_cast<i32>(-1);
+        };
+        RegisterNode(def);
+    }
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NetGetPacketLoss;
+        def.displayName = "Net Packet Loss";
+        def.description = "Current packet loss fraction (0-1)";
+        def.category = NodeCategory::Networking;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.7f);
+        def.flags = NodeDefFlags::Pure;
+        def.outputs = {Float("Packet Loss", PK::Output)};
+        def.keywords = {"net", "network", "packet", "loss", "quality"};
+        def.evaluate = [](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
+            return ctx.networking ? ctx.networking->GetPacketLoss() : 0.0f;
+        };
+        RegisterNode(def);
+    }
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NetSetReady;
+        def.displayName = "Net Set Ready";
+        def.description = "Set this player's lobby ready state";
+        def.category = NodeCategory::Networking;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.7f);
+        def.inputs = {FlowIn(), Bool("Ready", PK::Input, true)};
+        def.outputs = {FlowOut()};
+        def.keywords = {"net", "network", "ready", "lobby", "set"};
+        def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs, std::vector<ECS::VariableValue>&) {
+            bool ready = (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) ? std::get<bool>(inputs[1]) : true;
+            if (ctx.networking) ctx.networking->SetReady(ready);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NetLobbyCount;
+        def.displayName = "Net Lobby Player Count";
+        def.description = "Number of players in the lobby";
+        def.category = NodeCategory::Networking;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.7f);
+        def.flags = NodeDefFlags::Pure;
+        def.outputs = {Int("Count", PK::Output)};
+        def.keywords = {"net", "network", "lobby", "players", "count"};
+        def.evaluate = [](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
+            return ctx.networking ? static_cast<i32>(ctx.networking->GetLobbyPlayers().size()) : static_cast<i32>(0);
+        };
+        RegisterNode(def);
+    }
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NetLobbyName;
+        def.displayName = "Net Lobby Player Name";
+        def.description = "Name of the lobby player at Index";
+        def.category = NodeCategory::Networking;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.7f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {Int("Index", PK::Input, 0)};
+        def.outputs = {String("Name", PK::Output)};
+        def.keywords = {"net", "network", "lobby", "player", "name"};
+        def.evaluate = [](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            i32 index = (!inputs.empty() && std::holds_alternative<i32>(inputs[0])) ? std::get<i32>(inputs[0]) : 0;
+            if (ctx.networking) {
+                const auto& players = ctx.networking->GetLobbyPlayers();
+                if (index >= 0 && static_cast<usize>(index) < players.size()) return players[static_cast<usize>(index)].name;
+            }
+            return std::string("");
+        };
+        RegisterNode(def);
+    }
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NetLobbyReady;
+        def.displayName = "Net Lobby Player Ready";
+        def.description = "Whether the lobby player at Index is ready";
+        def.category = NodeCategory::Networking;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.7f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {Int("Index", PK::Input, 0)};
+        def.outputs = {Bool("Ready", PK::Output)};
+        def.keywords = {"net", "network", "lobby", "player", "ready"};
+        def.evaluate = [](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            i32 index = (!inputs.empty() && std::holds_alternative<i32>(inputs[0])) ? std::get<i32>(inputs[0]) : 0;
+            if (ctx.networking) {
+                const auto& players = ctx.networking->GetLobbyPlayers();
+                if (index >= 0 && static_cast<usize>(index) < players.size()) return players[static_cast<usize>(index)].ready;
+            }
+            return false;
+        };
+        RegisterNode(def);
+    }
 }
 
 } // namespace VisualScript
