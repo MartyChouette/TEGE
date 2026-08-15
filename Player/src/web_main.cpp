@@ -3,6 +3,10 @@
 // timing, responsive canvas via ResizeObserver, all gameplay systems active.
 
 #include "Enjin/Platform/Platform.h"
+#include <filesystem>
+#include <set>
+#include <cctype>
+#include <cstdio>
 #if ENJIN_PLATFORM_WEB
 
 #include "Enjin/Core/Application.h"
@@ -119,6 +123,7 @@ public:
                 if (f) { fwrite(buf, 1, static_cast<size_t>(len), f); fclose(f); }
                 self->m_HasPack = self->m_AssetReader.Open("game.enjpak", "");
                 if (!self->m_HasPack) self->m_HasPack = self->m_AssetReader.Open("game.enjpak", PACK_KEY);
+                self->ExtractPackAssetsToMemFS();
                 self->StartRendererInit();
             },
             [](void* arg) {
@@ -136,6 +141,38 @@ public:
                         static_cast<WebGamePlayer*>(arg2)->StartRendererInit();
                     });
             });
+    }
+
+    // Extract model/texture/audio/font files from the pak to the WASM MEMFS so
+    // the disk-based loaders find them by path. GLTFLoader (cgltf_parse_file)
+    // and the raster texture/audio loaders read straight from disk; on web the
+    // game ships only as game.enjpak, so without this, models and textures
+    // never load. Scenes/scripts already load through the AssetReader directly.
+    void ExtractPackAssetsToMemFS() {
+        if (!m_HasPack) return;
+        static const std::set<std::string> kDiskExts = {
+            ".glb", ".gltf", ".fbx", ".obj", ".dae", ".3ds", ".ply", ".vox",
+            ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".svg", ".hdr",
+            ".wav", ".ogg", ".mp3", ".flac", ".ttf", ".otf"
+        };
+        int extracted = 0;
+        for (const auto& vpath : m_AssetReader.ListFiles()) {
+            auto dot = vpath.find_last_of('.');
+            if (dot == std::string::npos) continue;
+            std::string ext = vpath.substr(dot);
+            for (auto& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (kDiskExts.find(ext) == kDiskExts.end()) continue;
+
+            std::vector<Enjin::u8> data = m_AssetReader.ReadFile(vpath);
+            if (data.empty()) continue;
+
+            std::error_code ec;
+            std::filesystem::path p(vpath);
+            if (p.has_parent_path()) std::filesystem::create_directories(p.parent_path(), ec);
+            FILE* f = fopen(vpath.c_str(), "wb");
+            if (f) { fwrite(data.data(), 1, data.size(), f); fclose(f); ++extracted; }
+        }
+        ENJIN_LOG_INFO(Player, "Extracted %d pak assets to MEMFS (models/textures/audio/fonts)", extracted);
     }
 
     void StartRendererInit() {

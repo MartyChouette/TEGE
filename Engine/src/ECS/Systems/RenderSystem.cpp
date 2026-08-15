@@ -10996,13 +10996,31 @@ std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::str
         return nullptr;
     }
 
+    // Resolve project-relative texture paths against the same game root that
+    // models use (MeshAssetCache search root). Exported builds ship textures
+    // loose under <exe>/assets/, but a material stores a project-relative path
+    // like "assets/textures/foo.png" — without rooting it, LoadFromFile
+    // resolves against the (unreliable) CWD and materials render untextured.
+    std::string loadPath = path;
+    {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        if (fs::path(path).is_relative() && !fs::exists(path, ec)) {
+            const std::string& root = Assets::MeshAssetCache::Get().GetSearchRoot();
+            if (!root.empty()) {
+                std::string joined = (fs::path(root) / path).string();
+                if (fs::exists(joined, ec)) loadPath = joined;
+            }
+        }
+    }
+
     // Load new texture (SVG or raster)
     std::shared_ptr<Renderer::Texture> texture;
-    if (Renderer::SVGLoader::IsSVGFile(path)) {
-        texture = Renderer::SVGLoader::LoadAsTexture(m_VulkanRenderer->GetContext(), path);
+    if (Renderer::SVGLoader::IsSVGFile(loadPath)) {
+        texture = Renderer::SVGLoader::LoadAsTexture(m_VulkanRenderer->GetContext(), loadPath);
     } else {
         texture = std::make_shared<Renderer::Texture>(m_VulkanRenderer->GetContext());
-        if (!texture->LoadFromFile(path)) {
+        if (!texture->LoadFromFile(loadPath)) {
             texture = nullptr;
         }
     }
