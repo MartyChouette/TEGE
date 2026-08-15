@@ -7523,12 +7523,33 @@ void EditorLayer::DrawDebugWorkstation() {
                 ImGui::BeginDisabled(!haveModel);
                 auto spawnGrid = [&](int n) {
                     if (!haveModel) return;
+                    // Grid copies should match the orientation of the model being copied.
+                    // ImportModelImmediate re-imports at the file's default orientation, so
+                    // if the user hand-rotated the source (the selected root), capture that
+                    // rotation and stamp it onto each fresh copy's root (which is selected
+                    // right after import). The child mesh nodes already share the source's
+                    // import rotation, so this only adds the missing root rotation — no
+                    // double-rotation.
+                    Math::Quaternion refRot = Math::Quaternion::Identity();
+                    bool haveRef = false;
+                    if (m_World && m_PrimarySelected != ECS::INVALID_ENTITY && m_World->IsValid(m_PrimarySelected)) {
+                        if (auto* srcXf = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected)) {
+                            refRot = srcXf->rotation;
+                            haveRef = true;
+                        }
+                    }
                     int side = static_cast<int>(std::ceil(std::sqrt(static_cast<f32>(n))));
                     f32 off = static_cast<f32>(side - 1) * 0.5f * 2.5f;   // center the grid
                     for (int i = 0; i < n; ++i) {
                         f32 x = static_cast<f32>(i % side) * 2.5f - off;
                         f32 z = static_cast<f32>(i / side) * 2.5f - off;
                         ImportModelImmediate(m_LastImportedModelPath, Math::Vector3(x, 0.0f, z));
+                        // ImportModelImmediate selects the new root — align it to the source.
+                        if (haveRef && m_World && m_PrimarySelected != ECS::INVALID_ENTITY &&
+                            m_World->IsValid(m_PrimarySelected)) {
+                            if (auto* copyXf = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected))
+                                copyXf->rotation = refRot;
+                        }
                     }
                     applyStressAnim();
                 };
