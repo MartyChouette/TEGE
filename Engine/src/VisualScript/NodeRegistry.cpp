@@ -5335,10 +5335,10 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.keywords = {"navmesh", "navigation", "point", "walkable", "pathfinding"};
         def.evaluate = [](const ExecutionContext& ctx,
                           const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
-            // Navmesh query depends on runtime navmesh pointer; returns false if unavailable
             (void)ctx;
-            (void)inputs;
-            return false;
+            Math::Vector3 p = (!inputs.empty() && std::holds_alternative<Math::Vector3>(inputs[0]))
+                ? std::get<Math::Vector3>(inputs[0]) : Math::Vector3(0, 0, 0);
+            return Enjin::Scripting::VSNavmeshIsPointOn(p.x, p.y, p.z);
         };
         RegisterNode(def);
     }
@@ -9423,6 +9423,89 @@ void NodeRegistry::RegisterBuiltinNodes() {
             auto* bt = ctx.world ? ctx.world->GetComponent<ECS::BehaviorTreeComponent>(e) : nullptr;
             if (bt && !key.empty()) { auto* v = bt->blackboard.Get(key); if (v && std::holds_alternative<std::string>(*v)) return std::get<std::string>(*v); }
             return std::string("");
+        };
+        RegisterNode(def);
+    }
+
+    // =======================================================================
+    // Navmesh queries (docs/NODE_COVERAGE.md tier-2). Forward through the AI
+    // bindings' navmesh/pathfinder pointers + last-path buffer (VSNavmesh*).
+    // =======================================================================
+
+    // Has Navmesh (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NavmeshHasNavmesh;
+        def.displayName = "Has Navmesh";
+        def.description = "True if a navmesh + pathfinder are available";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.6f, 0.5f);
+        def.flags = NodeDefFlags::Pure;
+        def.outputs = {Bool("Has Navmesh", PK::Output)};
+        def.keywords = {"navmesh", "navigation", "pathfinding", "has"};
+        def.evaluate = [](const ExecutionContext&, const std::vector<ECS::VariableValue>&) -> ECS::VariableValue {
+            return Enjin::Scripting::VSNavmeshHasNavmesh();
+        };
+        RegisterNode(def);
+    }
+    // Find Path (flow: Start,End -> waypoint Count; stores the path for Get Waypoint)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NavmeshFindPath;
+        def.displayName = "Navmesh Find Path";
+        def.description = "Find a path from Start to End; outputs the waypoint count (read them with Get Waypoint)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.6f, 0.5f);
+        def.inputs = {FlowIn(), Vec3("Start", PK::Input), Vec3("End", PK::Input)};
+        def.outputs = {FlowOut(), Int("Waypoint Count", PK::Output)};
+        def.keywords = {"navmesh", "navigation", "pathfinding", "path", "find", "route"};
+        def.execute = [](ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            Math::Vector3 s = (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1])) ? std::get<Math::Vector3>(inputs[1]) : Math::Vector3(0,0,0);
+            Math::Vector3 e = (inputs.size() > 2 && std::holds_alternative<Math::Vector3>(inputs[2])) ? std::get<Math::Vector3>(inputs[2]) : Math::Vector3(0,0,0);
+            i32 count = Enjin::Scripting::VSNavmeshFindPath(s.x, s.y, s.z, e.x, e.y, e.z);
+            outputs.resize(1);
+            outputs[0] = count;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+    // Get Waypoint (pure: Index -> Position from the last Find Path)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NavmeshGetWaypoint;
+        def.displayName = "Navmesh Get Waypoint";
+        def.description = "World position of the waypoint at Index from the last Find Path";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.6f, 0.5f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {Int("Index", PK::Input, 0)};
+        def.outputs = {Vec3("Position", PK::Output)};
+        def.keywords = {"navmesh", "navigation", "pathfinding", "waypoint", "path"};
+        def.evaluate = [](const ExecutionContext&, const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            i32 index = (!inputs.empty() && std::holds_alternative<i32>(inputs[0])) ? std::get<i32>(inputs[0]) : 0;
+            f32 x, y, z;
+            Enjin::Scripting::VSNavmeshGetWaypoint(index, x, y, z);
+            return Math::Vector3(x, y, z);
+        };
+        RegisterNode(def);
+    }
+    // Path Exists (pure: Start,End -> bool)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NavmeshPathExists;
+        def.displayName = "Navmesh Path Exists";
+        def.description = "True if a path exists from Start to End (no allocation of the path)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.6f, 0.5f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {Vec3("Start", PK::Input), Vec3("End", PK::Input)};
+        def.outputs = {Bool("Exists", PK::Output)};
+        def.keywords = {"navmesh", "navigation", "pathfinding", "path", "exists", "reachable"};
+        def.evaluate = [](const ExecutionContext&, const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            Math::Vector3 s = (!inputs.empty() && std::holds_alternative<Math::Vector3>(inputs[0])) ? std::get<Math::Vector3>(inputs[0]) : Math::Vector3(0,0,0);
+            Math::Vector3 e = (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1])) ? std::get<Math::Vector3>(inputs[1]) : Math::Vector3(0,0,0);
+            return Enjin::Scripting::VSNavmeshPathExists(s.x, s.y, s.z, e.x, e.y, e.z);
         };
         RegisterNode(def);
     }

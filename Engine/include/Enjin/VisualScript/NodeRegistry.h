@@ -336,6 +336,10 @@ constexpr const char* BTGetBBString        = "BT_GetBlackboardString";
 
 // Navmesh
 constexpr const char* NavmeshIsPointOn     = "Navmesh_IsPointOnNavmesh";
+constexpr const char* NavmeshHasNavmesh    = "Navmesh_HasNavmesh";
+constexpr const char* NavmeshFindPath      = "Navmesh_FindPath";
+constexpr const char* NavmeshGetWaypoint   = "Navmesh_GetWaypoint";
+constexpr const char* NavmeshPathExists    = "Navmesh_PathExists";
 
 // State Machine
 constexpr const char* SMSetState           = "StateMachine_SetState";

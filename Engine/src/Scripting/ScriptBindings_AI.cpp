@@ -267,6 +267,41 @@ static f32 Navmesh_GetPathCost() {
     return s_LastPathResult.totalCost;
 }
 
+// ---------------------------------------------------------------------------
+// Public forwarders for VisualScript navmesh nodes. Reuse the same navmesh /
+// pathfinder pointers + last-path buffer the AngelScript API uses (set via
+// SetBindingsNavmesh at every call site), so node queries behave identically.
+// ---------------------------------------------------------------------------
+namespace Enjin { namespace Scripting {
+
+bool VSNavmeshHasNavmesh() { return s_BindingsNavmesh != nullptr && s_BindingsPathfinder != nullptr; }
+
+bool VSNavmeshIsPointOn(f32 x, f32 y, f32 z) {
+    return s_BindingsNavmesh ? s_BindingsNavmesh->IsPointOnNavmesh(Math::Vector3(x, y, z)) : false;
+}
+
+i32 VSNavmeshFindPath(f32 sx, f32 sy, f32 sz, f32 ex, f32 ey, f32 ez) {
+    s_LastPathResult = AI::PathResult{};
+    if (!s_BindingsPathfinder) return 0;
+    s_LastPathResult = s_BindingsPathfinder->FindPath(Math::Vector3(sx, sy, sz), Math::Vector3(ex, ey, ez));
+    return s_LastPathResult.success ? static_cast<i32>(s_LastPathResult.waypoints.size()) : 0;
+}
+
+bool VSNavmeshPathExists(f32 sx, f32 sy, f32 sz, f32 ex, f32 ey, f32 ez) {
+    return s_BindingsPathfinder
+        ? s_BindingsPathfinder->PathExists(Math::Vector3(sx, sy, sz), Math::Vector3(ex, ey, ez))
+        : false;
+}
+
+void VSNavmeshGetWaypoint(i32 index, f32& x, f32& y, f32& z) {
+    x = 0.0f; y = 0.0f; z = 0.0f;
+    if (index < 0 || index >= static_cast<i32>(s_LastPathResult.waypoints.size())) return;
+    const auto& w = s_LastPathResult.waypoints[static_cast<usize>(index)];
+    x = w.x; y = w.y; z = w.z;
+}
+
+} } // namespace Enjin::Scripting
+
 // ============================================================================
 // Registration
 // ============================================================================

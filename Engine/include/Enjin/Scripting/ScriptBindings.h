@@ -109,6 +109,14 @@ void VSAccessSetDyslexiaFont(bool v);      bool VSAccessGetDyslexiaFont();
 void VSAccessSetScreenReader(bool v);      bool VSAccessGetScreenReader();
 void VSAccessSave();
 
+// VisualScript navmesh node forwarders — reuse the AngelScript navmesh wiring
+// (navmesh + pathfinder pointers + last-path buffer). See ScriptBindings_AI.cpp.
+bool VSNavmeshHasNavmesh();
+bool VSNavmeshIsPointOn(f32 x, f32 y, f32 z);
+i32  VSNavmeshFindPath(f32 sx, f32 sy, f32 sz, f32 ex, f32 ey, f32 ez);
+bool VSNavmeshPathExists(f32 sx, f32 sy, f32 sz, f32 ex, f32 ey, f32 ez);
+void VSNavmeshGetWaypoint(i32 index, f32& x, f32& y, f32& z);
+
 // Registration for accessibility bindings (defined in ScriptBindings_Accessibility.cpp)
 void RegisterAccessibilityBindings(asIScriptEngine* engine);
 

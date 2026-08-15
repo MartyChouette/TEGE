@@ -1131,6 +1131,42 @@ ENJIN_TEST(BlackboardNodes, SetGetRoundTripPerType) {
 }
 
 // ===========================================================================
+// Navmesh query nodes (docs/NODE_COVERAGE.md tier-2)
+// ===========================================================================
+
+ENJIN_TEST(NavmeshNodes, RegisterAndSafeWithoutNavmesh) {
+    auto& reg = NodeRegistry::Instance();
+    // No SetBindingsNavmesh() called here, so every query returns a safe default.
+    const char* ids[] = {
+        NodeTypes::NavmeshHasNavmesh, NodeTypes::NavmeshFindPath,
+        NodeTypes::NavmeshGetWaypoint, NodeTypes::NavmeshPathExists,
+        NodeTypes::NavmeshIsPointOn,
+    };
+    for (const char* id : ids) ENJIN_ASSERT_NOT_NULL(reg.FindNode(id));
+
+    ExecutionContext ctx;
+    std::vector<VariableValue> outs;
+
+    VariableValue has = reg.FindNode(NodeTypes::NavmeshHasNavmesh)->evaluate(ctx, {});
+    ENJIN_ASSERT_TRUE(std::holds_alternative<bool>(has));
+    ENJIN_EXPECT_FALSE(std::get<bool>(has));
+
+    // Find Path with no navmesh -> 0 waypoints, no crash
+    reg.FindNode(NodeTypes::NavmeshFindPath)->execute(
+        ctx, { false, Math::Vector3(0,0,0), Math::Vector3(10,0,10) }, outs);
+    ENJIN_ASSERT_TRUE(!outs.empty() && std::holds_alternative<i32>(outs[0]));
+    ENJIN_EXPECT_EQ(std::get<i32>(outs[0]), 0);
+
+    // Get Waypoint out of range -> zero vector
+    VariableValue wp = reg.FindNode(NodeTypes::NavmeshGetWaypoint)->evaluate(ctx, { static_cast<i32>(0) });
+    ENJIN_ASSERT_TRUE(std::holds_alternative<Math::Vector3>(wp));
+    ENJIN_EXPECT_FLOAT_EQ(std::get<Math::Vector3>(wp).x, 0.0f);
+
+    VariableValue pe = reg.FindNode(NodeTypes::NavmeshPathExists)->evaluate(ctx, { Math::Vector3(0,0,0), Math::Vector3(1,0,1) });
+    ENJIN_EXPECT_FALSE(std::get<bool>(pe));
+}
+
+// ===========================================================================
 // Entry point
 // ===========================================================================
 
