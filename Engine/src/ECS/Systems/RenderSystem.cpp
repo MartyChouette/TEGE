@@ -7227,6 +7227,15 @@ void RenderSystem::CreatePipeline() {
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.msaaSamples = m_VulkanRenderer->GetMSAASamples();
     config.colorAttachmentCount = 2; // Swapchain MRT: color + velocity (main pass only; offscreen uses 1)
+    // Alpha blending on the color attachment so material opacity / AlphaMode::Blend
+    // actually renders transparent. This is a NO-OP for opaque geometry: with
+    // alpha=1.0 the blend is src*1 + dst*0 = src. The velocity attachment stays
+    // unblended (VulkanPipeline forces blendEnable=false on attachment 1). Depth
+    // write stays on — the render list draws opaque before blend, so a glass
+    // object correctly shows the opaque scene behind it (overlapping transparents
+    // fall back to sort order, the usual single-pass alpha-blend caveat; OIT is
+    // the separate path for order-independent cases).
+    config.alphaBlend = true;
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
     if (m_BindlessManager) m_Pipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
@@ -12501,6 +12510,9 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         config.polygonMode = m_WireframeMode ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
         config.msaaSamples = VK_SAMPLE_COUNT_1_BIT;  // Offscreen RT is always 1 sample
         config.colorAttachmentCount = 1; // Single color output (no MRT velocity — avoids NVIDIA teal)
+        // Match the main pipeline: enable alpha blending so transparent materials
+        // render see-through in the editor scene view too (no-op for opaque alpha=1).
+        config.alphaBlend = true;
 
         m_OffscreenPipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
     if (m_BindlessManager) m_OffscreenPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());

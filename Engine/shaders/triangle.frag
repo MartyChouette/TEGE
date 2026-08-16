@@ -1068,7 +1068,9 @@ void main() {
         // Alpha handling
         float alpha = mat_opacity * fragVertColor.a;
         int alphaMode = (mat_flags >> 8) & 0x3;
-        if (alphaMode == 1) {
+        if (alphaMode == 0) {
+            alpha = 1.0; // Opaque: ignore opacity so the now-blending pipeline can't make it see-through
+        } else if (alphaMode == 1) {
             if (alpha < mat_alphaCutoff) discard;
             alpha = 1.0;
         }
@@ -1747,7 +1749,9 @@ void main() {
     // Alpha handling
     float alpha = mat_opacity * fragVertColor.a;
     int alphaMode = (mat_flags >> 8) & 0x3;
-    if (alphaMode == 1) { // Mask mode
+    if (alphaMode == 0) {
+        alpha = 1.0; // Opaque: ignore opacity so the now-blending pipeline can't make it see-through
+    } else if (alphaMode == 1) { // Mask mode
         if (alpha < mat_alphaCutoff) {
             discard;
         }
