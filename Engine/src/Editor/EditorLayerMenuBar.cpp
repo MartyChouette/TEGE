@@ -700,7 +700,17 @@ void EditorLayer::DrawMenuBar() {
             auto createPrimitive = [&](const char* name, ECS::MeshComponent mesh) {
                 ECS::Entity entity = m_World->CreateEntity();
                 m_World->AddComponent<ECS::NameComponent>(entity, name);
-                m_World->AddComponent<ECS::TransformComponent>(entity);
+                auto& tf = m_World->AddComponent<ECS::TransformComponent>(entity);
+                // Spawn in front of the editor camera (at its orbit-pivot depth) so
+                // the new object lands in view. Spawning at the world origin — as
+                // this did — makes primitives "invisible" the moment the camera has
+                // been moved off origin, which is almost always. Falls back to the
+                // origin only when the camera isn't available.
+                if (m_Camera) {
+                    f32 dist = m_CameraController ? m_CameraController->GetOrbitDistance() : 6.0f;
+                    if (!(dist > 0.5f)) dist = 6.0f;
+                    tf.position = m_Camera->GetPosition() + m_Camera->GetForward() * dist;
+                }
                 m_World->AddComponent<ECS::MeshComponent>(entity, std::move(mesh));
                 m_World->AddComponent<ECS::MaterialComponent>(entity);
                 SelectEntity(entity); RecordLayerCreate(entity);
