@@ -3743,6 +3743,8 @@ void RenderSystem::Shutdown() {
     m_EntityPoseKey.clear();
 
     // Clean up pipeline
+    m_OffscreenTransparentPipeline.reset();
+    m_TransparentPipeline.reset();
     m_OffscreenPipeline.reset();
     m_Pipeline.reset();
     m_FragmentShader.reset();
@@ -4774,6 +4776,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
             {
             auto* spriteStorageVP = m_World->GetComponentStorage<Sprite2DComponent>();
+            bool vpTransparentBound = false;
             for (Entity entity : m_SortedRenderList) {
                 auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                 if (!xform) continue;
@@ -4790,6 +4793,7 @@ void RenderSystem::Update(f32 deltaTime) {
                 }
                 // Skip 2D sprites — rendered in sorted pass after 3D geometry
                 if (spriteStorageVP && spriteStorageVP->Has(entity)) continue;
+                BindGeometryPipelineForMaterial(commandBuffer, entity, m_Pipeline.get(), m_TransparentPipeline.get(), vpTransparentBound);
                 RenderEntity(entity);
             }
             }
@@ -4981,6 +4985,7 @@ void RenderSystem::Update(f32 deltaTime) {
         usize renderCount = m_SortedRenderList.size();
         constexpr usize PREFETCH_AHEAD = 4;
 
+        bool mainTransparentBound = false; // opaque geometry pipeline currently bound
         for (usize ri = 0; ri < renderCount; ++ri) {
             // Prefetch components for entities 4 ahead — loads into L1 cache
             // before they're needed, hiding memory latency
@@ -5039,6 +5044,7 @@ void RenderSystem::Update(f32 deltaTime) {
                 }
             }
 
+            BindGeometryPipelineForMaterial(commandBuffer, entity, m_Pipeline.get(), m_TransparentPipeline.get(), mainTransparentBound);
             RenderEntity(entity);
         }
         // Restore the full depth range if the last entity was a viewmodel
@@ -5373,6 +5379,15 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     // Cache storage pointers for the RenderToTarget entity loop
     auto* spriteStorageRT = m_World->GetComponentStorage<Sprite2DComponent>();
 
+    // Transparent geometry draws with the depth-write-OFF variant so glass doesn't
+    // cull what's behind it. The list is sorted opaque->blend, so this switches
+    // once at the boundary; the per-entity guard also copes with the unsorted
+    // first-frame fallback. Same shaders + layout, so bound descriptor sets and
+    // dynamic state survive the rebind. Null variant -> stay on the opaque pipeline.
+    Renderer::VulkanPipeline* rtTransparentPipeline = (targetPipeline == m_OffscreenPipeline.get())
+        ? m_OffscreenTransparentPipeline.get() : m_TransparentPipeline.get();
+    bool rtTransparentBound = false;
+
     // #1 arena (step 2): reset per-frame batch accumulation (keep capacity for reuse).
     if (m_UseBoneArena) {
         for (auto& b : m_ArenaBatches) b.instances.clear();
@@ -5425,6 +5440,16 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
 
             MaterialComponent* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
+
+            // Blended geometry uses the depth-write-OFF pipeline so it doesn't cull
+            // what's behind it; opaque uses the normal one. Switch only on change.
+            if (rtTransparentPipeline) {
+                bool wantTransparent = material && material->alphaMode == MaterialComponent::AlphaMode::Blend;
+                if (wantTransparent != rtTransparentBound) {
+                    (wantTransparent ? rtTransparentPipeline : targetPipeline)->Bind(commandBuffer);
+                    rtTransparentBound = wantTransparent;
+                }
+            }
 
             Renderer::Texture* boundTexture = nullptr;
             Renderer::Texture* texHeight = nullptr;
@@ -6220,6 +6245,9 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         // Render all entities using sorted render list (skip sprites — drawn in sorted pass)
         // Cache sprite storage pointer outside the loop to avoid per-entity type-ID hash
         auto* spriteStorageSS = m_World->GetComponentStorage<Sprite2DComponent>();
+        Renderer::VulkanPipeline* ssTransparentPipeline = (ssPipeline == m_OffscreenPipeline.get())
+            ? m_OffscreenTransparentPipeline.get() : m_TransparentPipeline.get();
+        bool ssTransparentBound = false;
         for (Entity entity : m_SortedRenderList) {
             // Skip invisible entities or entities without transform (cached storage)
             {
@@ -6229,6 +6257,8 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
 
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
             if (spriteStorageSS && spriteStorageSS->Has(entity)) continue;
+
+            BindGeometryPipelineForMaterial(commandBuffer, entity, ssPipeline, ssTransparentPipeline, ssTransparentBound);
 
             EntityRenderData* pRD = GetOrCreateRenderData(entity);
             if (!pRD) continue;
@@ -7242,6 +7272,17 @@ void RenderSystem::CreatePipeline() {
     if (!m_Pipeline->Create(config, m_VertexShader.get(), m_FragmentShader.get())) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create graphics pipeline");
         m_Pipeline.reset();
+    }
+
+    // Transparent variant: identical, but depth-write OFF so blended geometry
+    // (glass/windows) doesn't occlude what's behind it. Same shaders + layout, so
+    // the draw loop can switch to it mid-pass without rebinding descriptor sets.
+    config.depthWrite = false;
+    m_TransparentPipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
+    if (m_BindlessManager) m_TransparentPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
+    if (!m_TransparentPipeline->Create(config, m_VertexShader.get(), m_FragmentShader.get())) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create transparent graphics pipeline");
+        m_TransparentPipeline.reset();
     }
 }
 
@@ -9404,6 +9445,8 @@ void RenderSystem::RecreatePipelines(bool gpuAlreadyIdle) {
     }
 
     // Destroy all pipelines that share the descriptor set layout
+    m_OffscreenTransparentPipeline.reset();
+    m_TransparentPipeline.reset();
     m_OffscreenWireframeOverlayPipeline.reset();
     m_OffscreenOutlinePipeline.reset();
     m_OffscreenLinePipeline.reset();
@@ -9691,6 +9734,17 @@ void RenderSystem::SetViewmodelDepth(VkCommandBuffer cmd, bool viewmodel) {
     vp.minDepth = 0.0f;
     vp.maxDepth = viewmodel ? kViewmodelDepthMax : 1.0f;
     vkCmdSetViewport(cmd, 0, 1, &vp);
+}
+
+void RenderSystem::BindGeometryPipelineForMaterial(VkCommandBuffer cmd, Entity entity,
+        Renderer::VulkanPipeline* opaque, Renderer::VulkanPipeline* transparent, bool& transparentBound) {
+    if (!transparent) return; // creation failed -> stay on opaque (pre-transparency behavior)
+    auto* mat = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
+    bool want = mat && mat->alphaMode == MaterialComponent::AlphaMode::Blend;
+    if (want != transparentBound) {
+        (want ? transparent : opaque)->Bind(cmd);
+        transparentBound = want;
+    }
 }
 
 void RenderSystem::RenderEntity(Entity entity) {
@@ -12519,6 +12573,15 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         if (!m_OffscreenPipeline->Create(config, m_VertexShader.get(), m_FragmentShader.get())) {
             ENJIN_LOG_ERROR(Renderer, "Failed to create offscreen pipeline");
             m_OffscreenPipeline.reset();
+        }
+
+        // Transparent (depth-write OFF) variant for the editor/game-view offscreen pass.
+        config.depthWrite = false;
+        m_OffscreenTransparentPipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
+        if (m_BindlessManager) m_OffscreenTransparentPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
+        if (!m_OffscreenTransparentPipeline->Create(config, m_VertexShader.get(), m_FragmentShader.get())) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create offscreen transparent pipeline");
+            m_OffscreenTransparentPipeline.reset();
         }
     }
 

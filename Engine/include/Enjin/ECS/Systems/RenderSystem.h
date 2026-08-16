@@ -795,6 +795,12 @@ public:
 
 private:
     void RenderEntity(Entity entity);
+    // Switch the bound geometry pipeline to the depth-write-OFF `transparent` variant
+    // for AlphaMode::Blend entities (and back to `opaque` otherwise), only on change.
+    // `transparentBound` tracks the current state across a draw loop. No-op if
+    // `transparent` is null (creation failed) — stays on the opaque pipeline.
+    void BindGeometryPipelineForMaterial(VkCommandBuffer cmd, Entity entity,
+        Renderer::VulkanPipeline* opaque, Renderer::VulkanPipeline* transparent, bool& transparentBound);
     void RenderSprites();  // Sorted 2D sprite pass (after 3D geometry)
     void ClassifySceneComposition();  // Update m_SceneComposition if dirty
     void CreateDefaultMesh();
@@ -1085,6 +1091,13 @@ private:
     // Vulkan-specific rendering resources (advanced pipelines)
     std::unique_ptr<Renderer::VulkanPipeline> m_Pipeline;               // Vulkan main pipeline (kept for compatibility)
     std::unique_ptr<Renderer::VulkanPipeline> m_OffscreenPipeline;
+    // Depth-write-OFF variants of the two geometry pipelines. The sorted draw loop
+    // switches to these for AlphaMode::Blend entities (drawn after opaque) so glass
+    // tests depth but doesn't WRITE it — otherwise a transparent surface culls
+    // whatever is behind it. Null if creation failed (falls back to the opaque
+    // pipeline = pre-transparency behavior).
+    std::unique_ptr<Renderer::VulkanPipeline> m_TransparentPipeline;
+    std::unique_ptr<Renderer::VulkanPipeline> m_OffscreenTransparentPipeline;
     Renderer::MaterialSpecKey m_BoundSpecKey{0xFFFFFFFF}; // Currently bound variant key (invalid = force rebind)
     VkRenderPass m_OffscreenRenderPass = VK_NULL_HANDLE;
     std::unique_ptr<Renderer::VulkanShader> m_VertexShader;
