@@ -749,6 +749,7 @@ private:
     void DrawGrid();
     void FocusOnEntity(ECS::Entity entity);  // Center camera on entity
     void DrawMarqueeRect();                   // Draw rubber-band selection rectangle
+    void DrawSelectionHighlight();            // Projected bounding boxes for selection + descendants
     ImDrawList* GetViewportOverlayDrawList(); // Scene window draw list so overlays layer under dialogs
     void DrawMultiSelectInspector();          // Inspector view when multiple entities selected
 

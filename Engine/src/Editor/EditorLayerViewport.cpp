@@ -599,6 +599,84 @@ ImDrawList* EditorLayer::GetViewportOverlayDrawList() {
     return sceneWindow ? sceneWindow->DrawList : ImGui::GetForegroundDrawList();
 }
 
+void EditorLayer::DrawSelectionHighlight() {
+    // Reliable selection viz: project each selected entity's (and its descendants')
+    // world-space bounding box into the viewport overlay draw list — the same list
+    // the gizmo and marquee use, so it always renders regardless of the 3D pipeline.
+    // Selecting an import root marks every sub-piece, which is what "highlight the
+    // related items" means for a multi-part FBX. This intentionally replaces the
+    // inverted-hull outline pass, which drew at the same depth as compute-skinned
+    // meshes and produced no visible pixels.
+    if (!m_World || !m_Camera) return;
+    if (m_SelectedEntities.empty() && m_PrimarySelected == ECS::INVALID_ENTITY) return;
+
+    const f32 vpW = m_EditorViewportImageMaxX - m_EditorViewportImageMinX;
+    const f32 vpH = m_EditorViewportImageMaxY - m_EditorViewportImageMinY;
+    if (vpW <= 1.0f || vpH <= 1.0f) return;
+
+    Math::Matrix4 viewProj = m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix();
+    ImDrawList* dl = GetViewportOverlayDrawList();
+
+    // Gather selection + descendants (import root -> every piece), de-duplicated.
+    std::unordered_set<ECS::Entity> targets;
+    std::vector<ECS::Entity> stack;
+    auto seed = [&](ECS::Entity root) { if (root != ECS::INVALID_ENTITY) stack.push_back(root); };
+    for (ECS::Entity sel : m_SelectedEntities) seed(sel);
+    if (m_SelectedEntities.empty()) seed(m_PrimarySelected);
+    while (!stack.empty()) {
+        ECS::Entity e = stack.back(); stack.pop_back();
+        if (!m_World->IsValid(e) || !targets.insert(e).second) continue;
+        for (ECS::Entity c : ECS::GetChildren(m_World, e)) stack.push_back(c);
+    }
+
+    const ImU32 colPrimary = IM_COL32(255, 165,  0, 235); // bright orange = primary
+    const ImU32 colRelated = IM_COL32(255, 200, 90, 150); // softer = related pieces
+    static const int edges[12][2] = {
+        {0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4}, {0,4},{1,5},{2,6},{3,7}
+    };
+
+    for (ECS::Entity e : targets) {
+        auto* mesh = m_World->GetComponent<ECS::MeshComponent>(e);
+        if (!mesh || mesh->vertices.empty()) continue;
+
+        Math::Vector3 mn, mx;
+        if (mesh->aabbDirty) {
+            mn = Math::Vector3( 1e30f,  1e30f,  1e30f);
+            mx = Math::Vector3(-1e30f, -1e30f, -1e30f);
+            for (const auto& v : mesh->vertices) {
+                mn.x = std::min(mn.x, v.position.x); mn.y = std::min(mn.y, v.position.y); mn.z = std::min(mn.z, v.position.z);
+                mx.x = std::max(mx.x, v.position.x); mx.y = std::max(mx.y, v.position.y); mx.z = std::max(mx.z, v.position.z);
+            }
+            mesh->cachedAABBMin = mn; mesh->cachedAABBMax = mx; mesh->aabbDirty = false;
+        } else {
+            mn = mesh->cachedAABBMin; mx = mesh->cachedAABBMax;
+        }
+        if (mn.x > mx.x) continue; // no valid geometry bounds
+
+        Math::Matrix4 world = ECS::ComputeWorldMatrix(m_World, e);
+        const Math::Vector3 corners[8] = {
+            {mn.x,mn.y,mn.z},{mx.x,mn.y,mn.z},{mx.x,mx.y,mn.z},{mn.x,mx.y,mn.z},
+            {mn.x,mn.y,mx.z},{mx.x,mn.y,mx.z},{mx.x,mx.y,mx.z},{mn.x,mx.y,mx.z}
+        };
+        ImVec2 pts[8]; bool ok[8];
+        for (int i = 0; i < 8; ++i) {
+            Math::Vector4 wp   = world   * Math::Vector4(corners[i].x, corners[i].y, corners[i].z, 1.0f);
+            Math::Vector4 clip = viewProj * wp;
+            if (clip.w <= 0.001f) { ok[i] = false; continue; }
+            f32 nx = clip.x / clip.w, ny = clip.y / clip.w;
+            pts[i] = ImVec2((nx + 1.0f) * 0.5f * vpW + m_EditorViewportImageMinX,
+                            (ny + 1.0f) * 0.5f * vpH + m_EditorViewportImageMinY);
+            ok[i] = true;
+        }
+        const bool isPrimary = (e == m_PrimarySelected);
+        const ImU32 col = isPrimary ? colPrimary : colRelated;
+        const f32 thick  = isPrimary ? 2.0f : 1.5f;
+        for (const auto& ed : edges) {
+            if (ok[ed[0]] && ok[ed[1]]) dl->AddLine(pts[ed[0]], pts[ed[1]], col, thick);
+        }
+    }
+}
+
 void EditorLayer::DrawMarqueeRect() {
     if (!m_MarqueeDragging) return;
 
