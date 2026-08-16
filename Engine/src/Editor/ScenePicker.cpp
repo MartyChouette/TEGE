@@ -1,6 +1,7 @@
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Mesh.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Math/Math.h"
 #include <cfloat>
 
@@ -100,13 +101,12 @@ AABB ScenePicker::CalculateEntityAABB(ECS::World* world, ECS::Entity entity) {
         return aabb;
     }
 
-    // Calculate world transform matrix
-    Math::Matrix4 worldMatrix = Math::Matrix4::Identity();
-    if (transform) {
-        worldMatrix = Math::Matrix4::Translation(transform->position) *
-                      transform->rotation.ToMatrix() *
-                      Math::Matrix4::Scale(transform->scale);
-    }
+    // Full parent-chain world transform. Imported FBX parts are CHILD entities
+    // whose local positions are in native file units while the unit scale lives
+    // on the import ROOT, so a local-only matrix places the pick AABB far from
+    // where the piece actually renders and clicks miss it (same class of bug the
+    // gizmo had before de71504). ComputeWorldMatrix walks the parent chain.
+    Math::Matrix4 worldMatrix = ECS::ComputeWorldMatrix(world, entity);
 
     // Prefer the cached local AABB: transforming its 8 corners is correct even when the CPU
     // verts were freed, and far cheaper than looping every vertex on each pick.

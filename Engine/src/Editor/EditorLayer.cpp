@@ -1363,6 +1363,51 @@ void EditorLayer::Update(f32 deltaTime) {
             }
         }
 
+        // Arrow-key selection navigation (Up/Down = previous/next entity in
+        // hierarchy order). Active in the default editor, where full keyboard nav
+        // (which repurposes the arrows to nudge the gizmo) is off. Skipped while
+        // bone-cycling is consuming the arrows. Selection change flows straight to
+        // the viewport highlight, which reads the live selection every frame.
+        bool boneNavActive = false;
+        if (m_PrimarySelected != ECS::INVALID_ENTITY &&
+            m_World->HasComponent<ECS::AnimatorComponent>(m_PrimarySelected)) {
+            auto* ac = m_World->GetComponent<ECS::AnimatorComponent>(m_PrimarySelected);
+            boneNavActive = ac && ac->showBones && ac->selectedBoneIndex >= 0;
+        }
+        if (!m_EditorSettings.keyboardNavEnabled && !boneNavActive) {
+            bool navUp = Input::IsKeyPressed(KeyCode::Up);
+            bool navDown = Input::IsKeyPressed(KeyCode::Down);
+            if (navUp || navDown) {
+                // Flatten the scene into hierarchy order: parentless roots (by
+                // entity index) each followed by their subtree in child order.
+                std::vector<ECS::Entity> roots;
+                for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::TransformComponent>()) {
+                    if (ECS::GetParent(m_World, e) == ECS::INVALID_ENTITY) roots.push_back(e);
+                }
+                std::sort(roots.begin(), roots.end(), [](ECS::Entity a, ECS::Entity b) {
+                    return ECS::EntityIndex(a) < ECS::EntityIndex(b);
+                });
+                std::vector<ECS::Entity> order;
+                std::vector<ECS::Entity> stack(roots.rbegin(), roots.rend());
+                while (!stack.empty()) {
+                    ECS::Entity e = stack.back(); stack.pop_back();
+                    order.push_back(e);
+                    const auto& kids = ECS::GetChildren(m_World, e);
+                    for (auto it = kids.rbegin(); it != kids.rend(); ++it) stack.push_back(*it);
+                }
+                if (!order.empty()) {
+                    i32 cur = -1;
+                    for (i32 i = 0; i < static_cast<i32>(order.size()); ++i) {
+                        if (order[i] == m_PrimarySelected) { cur = i; break; }
+                    }
+                    i32 n = static_cast<i32>(order.size());
+                    i32 next = (cur < 0) ? (navUp ? n - 1 : 0)
+                                         : (navUp ? (cur - 1 + n) % n : (cur + 1) % n);
+                    SelectEntity(order[next]); // single-select → highlight follows
+                }
+            }
+        }
+
         // Keyboard gizmo nudge (arrow keys when entity selected)
         if (m_EditorSettings.keyboardNavEnabled) {
             HandleKeyboardGizmoNudge();
