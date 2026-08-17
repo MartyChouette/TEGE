@@ -1443,10 +1443,30 @@ void EditorLayer::DrawInspectorPanel() {
                 ImGui::Checkbox("Emitting", &em->emitting);
                 ImGui::DragFloat("Rate (/sec)", &em->spawnRate, 5.0f, 0.0f, 5000.0f);
                 ImGui::DragFloat3("Direction", &em->direction.x, 0.05f);
+
+                // Appearance + physics. The presets bake these; pick "Custom" to edit
+                // them. gravityScale/lifetime/etc. are honored per-particle by the
+                // compute simulation (0 gravity = float, <0 = rise like smoke).
+                if (em->preset == Effects::GPUParticlePreset::Custom) {
+                    ImGui::SeparatorText("Custom");
+                    ImGui::ColorEdit4("Color", &em->customColor.x);
+                    ImGui::DragFloat("Size", &em->customSize, 0.01f, 0.0f, 20.0f);
+                    ImGui::DragFloat("Lifetime (s)", &em->customLifetime, 0.05f, 0.0f, 60.0f);
+                    ImGui::DragFloat("Speed", &em->customSpeed, 0.05f, 0.0f, 100.0f);
+                    ImGui::DragFloat("Spread", &em->customSpread, 0.01f, 0.0f, 3.14159f);
+                    ImGui::DragFloat("Gravity Scale", &em->customGravityScale, 0.05f, -10.0f, 10.0f);
+                    ImGui::SetItemTooltip("1 = normal fall, 0 = float, negative = rise (smoke)");
+                    ImGui::DragFloat("Drag", &em->customDrag, 0.01f, 0.0f, 10.0f);
+                } else {
+                    ImGui::TextDisabled("Preset bakes color/size/lifetime/gravity.");
+                    ImGui::TextDisabled("Switch to Custom to edit them.");
+                }
+
                 if (ImGui::Button("Burst 500")) { em->burstCount = 500; em->burstNow = true; }
                 ImGui::SameLine();
                 if (ImGui::Button("Burst 5000")) { em->burstCount = 5000; em->burstNow = true; }
                 ImGui::TextDisabled("(sim + draw run entirely on the GPU)");
+                ImGui::TextDisabled("Note: particles are untextured soft sprites (color only).");
             }
         }
         if (m_World->HasComponent<ECS::RecordRewindComponent>(m_PrimarySelected)) {
