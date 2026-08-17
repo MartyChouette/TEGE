@@ -23,6 +23,7 @@ WebGPUPipelineManager::~WebGPUPipelineManager() {
 void WebGPUPipelineManager::Shutdown() {
     m_Pool.ForEach([](WebGPUPipelineSlot& slot) {
         if (slot.pipeline) { wgpuRenderPipelineRelease(slot.pipeline); slot.pipeline = nullptr; }
+        if (slot.computePipeline) { wgpuComputePipelineRelease(slot.computePipeline); slot.computePipeline = nullptr; }
     });
     m_Pool.Clear();
 }
@@ -236,10 +237,54 @@ GPUPipelineHandle WebGPUPipelineManager::CreateRenderPipeline(const GPURenderPip
     return GPUPipelineHandle{handle};
 }
 
+GPUPipelineHandle WebGPUPipelineManager::CreateComputePipeline(const GPUComputePipelineDesc& desc) {
+    WGPUShaderModule csModule = m_ShaderMgr->GetNativeShader(desc.computeShader);
+    if (!csModule) {
+        ENJIN_LOG_ERROR(Core, "WebGPUPipelineManager: Invalid compute shader handle");
+        return {};
+    }
+
+    // Explicit pipeline layout from the bind group layouts the shader reads.
+    WGPUPipelineLayout pipelineLayout = nullptr;
+    if (m_BindGroupMgr && !desc.bindGroupLayouts.empty()) {
+        std::vector<WGPUBindGroupLayout> nativeLayouts;
+        for (const auto& layoutHandle : desc.bindGroupLayouts) {
+            WGPUBindGroupLayout native = m_BindGroupMgr->GetNativeLayout(layoutHandle);
+            if (native) nativeLayouts.push_back(native);
+        }
+        if (nativeLayouts.size() == desc.bindGroupLayouts.size()) {
+            WGPUPipelineLayoutDescriptor layoutDesc = {};
+            layoutDesc.bindGroupLayoutCount = static_cast<u32>(nativeLayouts.size());
+            layoutDesc.bindGroupLayouts = nativeLayouts.data();
+            pipelineLayout = wgpuDeviceCreatePipelineLayout(m_Renderer->GetDevice(), &layoutDesc);
+        }
+    }
+
+    WGPUComputePipelineDescriptor pipelineDesc = {};
+    pipelineDesc.layout = pipelineLayout;  // nullptr = auto layout (fallback)
+    pipelineDesc.compute.module = csModule;
+    pipelineDesc.compute.entryPoint = wgpuStr(desc.entryPoint ? desc.entryPoint : "main");
+    if (desc.label) pipelineDesc.label = wgpuStr(desc.label);
+
+    WGPUComputePipeline pipeline = wgpuDeviceCreateComputePipeline(m_Renderer->GetDevice(), &pipelineDesc);
+    if (pipelineLayout) wgpuPipelineLayoutRelease(pipelineLayout);
+    if (!pipeline) {
+        ENJIN_LOG_ERROR(Core, "WebGPUPipelineManager: Compute pipeline creation failed%s%s",
+                        desc.label ? ": " : "", desc.label ? desc.label : "");
+        return {};
+    }
+
+    auto handle = m_Pool.Allocate();
+    auto* slot = m_Pool.Get(handle);
+    slot->computePipeline = pipeline;
+    return GPUPipelineHandle{handle};
+}
+
 void WebGPUPipelineManager::DestroyPipeline(GPUPipelineHandle handle) {
     auto* slot = m_Pool.Get(handle.id);
     if (!slot) return;
     if (slot->pipeline) { wgpuRenderPipelineRelease(slot->pipeline); slot->pipeline = nullptr; }
+    if (slot->computePipeline) { wgpuComputePipelineRelease(slot->computePipeline); slot->computePipeline = nullptr; }
     m_Pool.Free(handle.id);
 }
 
@@ -250,6 +295,11 @@ bool WebGPUPipelineManager::IsValid(GPUPipelineHandle handle) const {
 WGPURenderPipeline WebGPUPipelineManager::GetNativePipeline(GPUPipelineHandle handle) {
     auto* slot = m_Pool.Get(handle.id);
     return slot ? slot->pipeline : nullptr;
+}
+
+WGPUComputePipeline WebGPUPipelineManager::GetNativeComputePipeline(GPUPipelineHandle handle) {
+    auto* slot = m_Pool.Get(handle.id);
+    return slot ? slot->computePipeline : nullptr;
 }
 
 } // namespace Enjin::Renderer

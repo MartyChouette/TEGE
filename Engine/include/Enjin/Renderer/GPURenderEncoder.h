@@ -51,4 +51,23 @@ public:
     virtual void SetScissor(u32 x, u32 y, u32 width, u32 height) = 0;
 };
 
+// Abstract compute command encoder — records dispatches within a compute pass.
+// Vulkan binds compute directly via ComputePipelineHelper; WebGPU wraps
+// WGPUComputePassEncoder. Obtained from IRenderBackend::BeginComputePass(),
+// valid until EndComputePass().
+class ENJIN_API IComputeEncoder {
+public:
+    virtual ~IComputeEncoder() = default;
+
+    // Bind a compute pipeline (created via IGPUPipelineManager::CreateComputePipeline).
+    virtual void BindPipeline(GPUPipelineHandle pipeline) = 0;
+
+    // Bind a bind group (storage/uniform buffers the shader reads/writes).
+    virtual void SetBindGroup(u32 index, GPUBindGroupHandle group,
+                              u32 dynamicOffsetCount = 0, const u32* dynamicOffsets = nullptr) = 0;
+
+    // Dispatch groupsX*groupsY*groupsZ workgroups.
+    virtual void Dispatch(u32 groupsX, u32 groupsY = 1, u32 groupsZ = 1) = 0;
+};
+
 } // namespace Enjin::Renderer

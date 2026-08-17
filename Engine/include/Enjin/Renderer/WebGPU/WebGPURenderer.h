@@ -28,6 +28,7 @@ class WebGPUShaderManager;
 class WebGPUPipelineManager;
 class WebGPUBindGroupManager;
 class WebGPURenderEncoder;
+class WebGPUComputeEncoder;
 
 // WebGPU buffer handle returned by CreateBuffer — wraps GPU buffer with metadata.
 struct WebGPUBufferHandle {
@@ -158,6 +159,8 @@ public:
     IGPUBindGroupManager* GetBindGroupManager() override;
     IRenderEncoder* BeginRenderPass(const GPURenderPassDesc& desc) override;
     void EndRenderPass(IRenderEncoder* encoder) override;
+    IComputeEncoder* BeginComputePass() override;
+    void EndComputePass(IComputeEncoder* encoder) override;
 
 private:
     void CreateSwapChain();
@@ -212,6 +215,8 @@ private:
     std::unique_ptr<WebGPUPipelineManager> m_PipelineMgr;
     std::unique_ptr<WebGPUBindGroupManager> m_BindGroupMgr;
     std::unique_ptr<WebGPURenderEncoder> m_ActiveEncoder;
+    std::unique_ptr<WebGPUComputeEncoder> m_ActiveComputeEncoder;
+    WGPUComputePassEncoder m_ComputePassEncoder = nullptr;
 };
 
 } // namespace Renderer

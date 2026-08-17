@@ -11,6 +11,7 @@
 #include "Enjin/Renderer/WebGPU/WebGPUPipelineManager.h"
 #include "Enjin/Renderer/WebGPU/WebGPUBindGroupManager.h"
 #include "Enjin/Renderer/WebGPU/WebGPURenderEncoder.h"
+#include "Enjin/Renderer/WebGPU/WebGPUComputeEncoder.h"
 #include "Enjin/Platform/Window.h"
 #include "Enjin/Logging/Log.h"
 #include <emscripten.h>
@@ -692,6 +693,31 @@ void WebGPURenderer::EndRenderPass(IRenderEncoder* encoder) {
     if (m_ActiveEncoder.get() == encoder) {
         m_ActiveEncoder.reset();
     }
+}
+
+IComputeEncoder* WebGPURenderer::BeginComputePass() {
+    if (!m_CommandEncoder) return nullptr;      // no frame in flight
+    if (m_ComputePassEncoder) return nullptr;   // one compute pass at a time
+    // A compute pass cannot be open while a render pass is recording on the same encoder.
+    if (m_RenderPassEncoder) return nullptr;
+
+    WGPUComputePassDescriptor passDesc = {};
+    m_ComputePassEncoder = wgpuCommandEncoderBeginComputePass(m_CommandEncoder, &passDesc);
+    if (!m_ComputePassEncoder) return nullptr;
+
+    m_ActiveComputeEncoder = std::make_unique<WebGPUComputeEncoder>(
+        this, m_ComputePassEncoder, m_PipelineMgr.get(), m_BindGroupMgr.get());
+    return m_ActiveComputeEncoder.get();
+}
+
+void WebGPURenderer::EndComputePass(IComputeEncoder* encoder) {
+    if (m_ActiveComputeEncoder.get() != encoder) return;
+    if (m_ComputePassEncoder) {
+        wgpuComputePassEncoderEnd(m_ComputePassEncoder);
+        wgpuComputePassEncoderRelease(m_ComputePassEncoder);
+        m_ComputePassEncoder = nullptr;
+    }
+    m_ActiveComputeEncoder.reset();
 }
 
 } // namespace Renderer

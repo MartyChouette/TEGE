@@ -16,6 +16,7 @@ class WebGPUBindGroupManager;
 
 struct WebGPUPipelineSlot {
     WGPURenderPipeline pipeline = nullptr;
+    WGPUComputePipeline computePipeline = nullptr;  // set instead of pipeline for compute
 };
 
 class ENJIN_API WebGPUPipelineManager : public IGPUPipelineManager {
@@ -25,11 +26,14 @@ public:
     ~WebGPUPipelineManager() override;
 
     GPUPipelineHandle CreateRenderPipeline(const GPURenderPipelineDesc& desc) override;
+    GPUPipelineHandle CreateComputePipeline(const GPUComputePipelineDesc& desc) override;
     void DestroyPipeline(GPUPipelineHandle handle) override;
     bool IsValid(GPUPipelineHandle handle) const override;
 
     // Access native WGPURenderPipeline
     WGPURenderPipeline GetNativePipeline(GPUPipelineHandle handle);
+    // Access native WGPUComputePipeline (for handles created via CreateComputePipeline)
+    WGPUComputePipeline GetNativeComputePipeline(GPUPipelineHandle handle);
 
     void Shutdown();
 

@@ -245,6 +245,15 @@ struct GPURenderPipelineDesc {
     const char* label = nullptr;
 };
 
+// Compute pipeline: a single compute shader plus the bind group layouts it reads.
+// entryPoint defaults to "main" (matches the WGSL/GLSL convention used elsewhere).
+struct GPUComputePipelineDesc {
+    GPUShaderHandle computeShader;
+    std::vector<GPUBindGroupLayoutHandle> bindGroupLayouts;
+    const char* entryPoint = "main";
+    const char* label = nullptr;
+};
+
 struct GPUBindGroupLayoutEntry {
     u32 binding;
     GPUBindingType type;

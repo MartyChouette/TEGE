@@ -17,6 +17,11 @@ public:
     // that must have been created via the shader/bind group managers.
     virtual GPUPipelineHandle CreateRenderPipeline(const GPURenderPipelineDesc& desc) = 0;
 
+    // Create a compute pipeline from a backend-agnostic descriptor. Default returns an
+    // invalid handle; backends that support GPU compute (WebGPU) override this. The
+    // Vulkan path uses ComputePipelineHelper directly and does not need it.
+    virtual GPUPipelineHandle CreateComputePipeline(const GPUComputePipelineDesc& /*desc*/) { return {}; }
+
     // Destroy a pipeline.
     virtual void DestroyPipeline(GPUPipelineHandle handle) = 0;
 

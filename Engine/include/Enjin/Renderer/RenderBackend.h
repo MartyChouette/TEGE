@@ -18,6 +18,7 @@ class IGPUPipelineManager;
 class IGPUShaderManager;
 class IGPUBindGroupManager;
 class IRenderEncoder;
+class IComputeEncoder;
 
 // Build target platforms
 enum class BuildTarget : u8 {
@@ -102,6 +103,12 @@ public:
     // For the swapchain main pass, pass a default GPURenderPassDesc (width/height=0).
     virtual IRenderEncoder* BeginRenderPass(const GPURenderPassDesc& desc) { return nullptr; }
     virtual void EndRenderPass(IRenderEncoder* encoder) {}
+
+    // --- Compute pass management (backends without GPU compute return nullptr) ---
+    // Begins a compute pass on the frame's command encoder. Must be ended before any
+    // render pass finalizes the encoder. Vulkan returns nullptr (uses ComputePipelineHelper).
+    virtual IComputeEncoder* BeginComputePass() { return nullptr; }
+    virtual void EndComputePass(IComputeEncoder* encoder) {}
 };
 
 // Platform abstraction for input
