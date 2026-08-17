@@ -298,6 +298,13 @@ void ShaderGraphEditor::Render() {
         ImGui::TextColored(ImVec4(0.8f, 0.2f, 0.2f, 1.0f), "%zu error(s)",
                            m_LastResult.errors.size());
     }
+    // Compile the graph and bind it to the selected entity as a live custom shader.
+    // EditorLayer consumes the request (it owns the RenderSystem + selection).
+    ImGui::SameLine();
+    if (ImGui::Button("Apply to Selected Entity")) {
+        m_ApplyRequested = true;
+    }
+    ImGui::SetItemTooltip("Compile this graph and render it on the selected object");
     ImGui::Separator();
 
     // Code output window
@@ -1496,9 +1503,12 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
         "\n"
         "layout(location = 0) out vec4 outColor;\n"
         "\n"
+        // Match the real LightingUBO prefix so cameraPos lands at its true std140
+        // offset (16). ambientColor+ambientIntensity come first in the engine struct;
+        // declaring them here keeps cameraPos aligned (the rest of the UBO is unused).
         "layout(set = 0, binding = 1) uniform LightingUBO {\n"
-        "    vec3 cameraPos;\n"
-        "    // ... (simplified)\n"
+        "    vec3 ambientColor; float ambientIntensity;\n"
+        "    vec3 cameraPos; float _pad0;\n"
         "} lighting;\n"
         "\n"
         "layout(push_constant) uniform PushConstants {\n"

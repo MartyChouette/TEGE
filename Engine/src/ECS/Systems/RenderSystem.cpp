@@ -3748,6 +3748,8 @@ void RenderSystem::Shutdown() {
     m_EntityPoseKey.clear();
 
     // Clean up pipeline
+    m_EntityCustomShader.clear();
+    m_CustomShaderPipelines.clear();   // GPU already idle here (WaitForGPU above)
     m_OffscreenTransparentPipeline.reset();
     m_TransparentPipeline.reset();
     m_OffscreenPipeline.reset();
@@ -4787,6 +4789,7 @@ void RenderSystem::Update(f32 deltaTime) {
             {
             auto* spriteStorageVP = m_World->GetComponentStorage<Sprite2DComponent>();
             bool vpTransparentBound = false;
+            m_LastPipelineWasCustom = false;   // reset custom-shader pipeline tracking per loop
             for (Entity entity : m_SortedRenderList) {
                 auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                 if (!xform) continue;
@@ -4996,6 +4999,7 @@ void RenderSystem::Update(f32 deltaTime) {
         constexpr usize PREFETCH_AHEAD = 4;
 
         bool mainTransparentBound = false; // opaque geometry pipeline currently bound
+        m_LastPipelineWasCustom = false;   // reset custom-shader pipeline tracking per loop
         for (usize ri = 0; ri < renderCount; ++ri) {
             // Prefetch components for entities 4 ahead — loads into L1 cache
             // before they're needed, hiding memory latency
@@ -6265,6 +6269,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         Renderer::VulkanPipeline* ssTransparentPipeline = (ssPipeline == m_OffscreenPipeline.get())
             ? m_OffscreenTransparentPipeline.get() : m_TransparentPipeline.get();
         bool ssTransparentBound = false;
+        m_LastPipelineWasCustom = false;   // reset custom-shader pipeline tracking per loop
         for (Entity entity : m_SortedRenderList) {
             // Skip invisible entities or entities without transform (cached storage)
             {
@@ -9832,14 +9837,98 @@ void RenderSystem::SetViewmodelDepth(VkCommandBuffer cmd, bool viewmodel) {
     vkCmdSetViewport(cmd, 0, 1, &vp);
 }
 
+// FNV-ish combine of the two GLSL sources so identical shaders share one pipeline.
+static u64 HashCustomShaderSource(const std::string& v, const std::string& f) {
+    std::hash<std::string> h;
+    u64 a = h(v), b = h(f);
+    return a ^ (b + 0x9e3779b97f4a7c15ull + (a << 6) + (a >> 2));
+}
+
+Renderer::VulkanPipeline* RenderSystem::GetEntityCustomPipeline(Entity entity) {
+    if (m_EntityCustomShader.empty()) return nullptr;
+    auto eit = m_EntityCustomShader.find(static_cast<u32>(EntityIndex(entity)));
+    if (eit == m_EntityCustomShader.end()) return nullptr;
+    auto pit = m_CustomShaderPipelines.find(eit->second);
+    return (pit != m_CustomShaderPipelines.end()) ? pit->second.pipeline.get() : nullptr;
+}
+
+bool RenderSystem::HasEntityCustomShader(Entity entity) const {
+    return m_EntityCustomShader.count(static_cast<u32>(EntityIndex(entity))) != 0;
+}
+
+void RenderSystem::ClearEntityCustomShader(Entity entity) {
+    // Only drop the entity->shader link. The compiled pipeline stays cached (shared,
+    // bounded, freed at Shutdown) — a mid-session pipeline destroy would be frame-unsafe.
+    m_EntityCustomShader.erase(static_cast<u32>(EntityIndex(entity)));
+}
+
+bool RenderSystem::SetEntityCustomShader(Entity entity, const std::string& vertGLSL,
+                                         const std::string& fragGLSL, std::string& err) {
+    if (!m_VulkanRenderer || !m_Pipeline) { err = "Renderer not ready"; return false; }
+    u64 key = HashCustomShaderSource(vertGLSL, fragGLSL);
+
+    // Compile + build the pipeline only if this exact source hasn't been seen before.
+    if (m_CustomShaderPipelines.find(key) == m_CustomShaderPipelines.end()) {
+        auto* ctx = m_VulkanRenderer->GetContext();
+        CustomShaderPipeline entry;
+        entry.vs = std::make_unique<Renderer::VulkanShader>(ctx);
+        entry.fs = std::make_unique<Renderer::VulkanShader>(ctx);
+        if (!entry.vs->CompileFromGLSL(vertGLSL, VK_SHADER_STAGE_VERTEX_BIT)) {
+            err = "Vertex shader compile failed"; return false;
+        }
+        if (!entry.fs->CompileFromGLSL(fragGLSL, VK_SHADER_STAGE_FRAGMENT_BIT)) {
+            err = "Fragment shader compile failed"; return false;
+        }
+        // Mirror CreatePipeline's config so the custom pipeline is state-compatible
+        // with the main pass (MRT color+velocity, MSAA, alpha blend, depth on).
+        Renderer::PipelineConfig config;
+        config.renderPass = m_VulkanRenderer->GetRenderPass();
+        config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        config.depthTest = true;
+        config.depthWrite = true;
+        config.cullMode = m_BackfaceCulling ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
+        config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        config.polygonMode = VK_POLYGON_MODE_FILL;
+        config.msaaSamples = m_VulkanRenderer->GetMSAASamples();
+        config.colorAttachmentCount = 2;
+        config.alphaBlend = true;
+
+        entry.pipeline = std::make_unique<Renderer::VulkanPipeline>(ctx);
+        if (m_BindlessManager) entry.pipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
+        // Share the main pipeline's descriptor set layout: same set 0 + bindless set +
+        // push constant range, so switching to this mid-pass keeps bound sets valid and
+        // RenderEntity's descriptor/push-constant/VB-IB binding all stay correct.
+        if (!entry.pipeline->CreateWithLayout(config, entry.vs.get(), entry.fs.get(),
+                                              m_Pipeline->GetDescriptorSetLayout())) {
+            err = "Pipeline creation failed"; return false;
+        }
+        m_CustomShaderPipelines.emplace(key, std::move(entry));
+        ENJIN_LOG_INFO(Renderer, "Compiled custom shader pipeline (hash %llu)",
+                       static_cast<unsigned long long>(key));
+    }
+
+    m_EntityCustomShader[static_cast<u32>(EntityIndex(entity))] = key;
+    return true;
+}
+
 void RenderSystem::BindGeometryPipelineForMaterial(VkCommandBuffer cmd, Entity entity,
         Renderer::VulkanPipeline* opaque, Renderer::VulkanPipeline* transparent, bool& transparentBound) {
-    if (!transparent) return; // creation failed -> stay on opaque (pre-transparency behavior)
+    // Custom shader override: bind the entity's compiled pipeline (shares the main
+    // layout, so bound descriptor sets + push constants stay valid). Neither opaque nor
+    // transparent is bound after this, so m_LastPipelineWasCustom forces the next
+    // standard entity to rebind.
+    if (Renderer::VulkanPipeline* custom = GetEntityCustomPipeline(entity)) {
+        custom->Bind(cmd);
+        m_LastPipelineWasCustom = true;
+        return;
+    }
     auto* mat = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
-    bool want = mat && mat->alphaMode == MaterialComponent::AlphaMode::Blend;
-    if (want != transparentBound) {
-        (want ? transparent : opaque)->Bind(cmd);
+    bool want = transparent && mat && mat->alphaMode == MaterialComponent::AlphaMode::Blend;
+    if (m_LastPipelineWasCustom || want != transparentBound) {
+        Renderer::VulkanPipeline* target = want ? transparent : opaque;
+        if (target) target->Bind(cmd);
         transparentBound = want;
+        m_LastPipelineWasCustom = false;
     }
 }
 

@@ -116,6 +116,10 @@ public:
     // Code generation — topological sort + per-node GLSL emission
     ShaderCodeResult GenerateGLSL() const;
 
+    // The editor sets a request when "Apply to Selected Entity" is clicked; EditorLayer
+    // consumes it after Render() and compiles the graph onto the selected entity's material.
+    bool ConsumeApplyRequest() { bool r = m_ApplyRequested; m_ApplyRequested = false; return r; }
+
     // Save/Load (.enjshader JSON format)
     bool Save(const std::string& path) const;
     bool Load(const std::string& path);
@@ -130,6 +134,7 @@ private:
     // Last generation result for display
     ShaderCodeResult m_LastResult;
     bool m_ShowCodeWindow = false;
+    bool m_ApplyRequested = false;   // set by the "Apply to Selected Entity" button
 
     void DrawNode(ShaderGraphNode& node);
     void DrawConnections();

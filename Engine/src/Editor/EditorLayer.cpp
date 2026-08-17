@@ -3370,6 +3370,27 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // Graph editor windows (use IsOpen pattern, not panel bits)
     if (m_ShaderGraphEditor.IsOpen()) {
         m_ShaderGraphEditor.Render();
+        // "Apply to Selected Entity": compile the graph and bind it as a live custom
+        // shader on the current selection (RenderSystem shares the main pipeline layout).
+        if (m_ShaderGraphEditor.ConsumeApplyRequest()) {
+            if (m_RenderSystem && m_World && m_PrimarySelected != ECS::INVALID_ENTITY &&
+                m_World->IsValid(m_PrimarySelected)) {
+                auto code = m_ShaderGraphEditor.GenerateGLSL();
+                if (code.success) {
+                    std::string err;
+                    if (m_RenderSystem->SetEntityCustomShader(
+                            m_PrimarySelected, code.vertexCode, code.fragmentCode, err)) {
+                        ENJIN_LOG_INFO(Editor, "Applied shader graph to selected entity");
+                    } else {
+                        ENJIN_LOG_ERROR(Editor, "Custom shader apply failed: %s", err.c_str());
+                    }
+                } else {
+                    ENJIN_LOG_ERROR(Editor, "Shader graph has errors; not applied");
+                }
+            } else {
+                ENJIN_LOG_WARN(Editor, "Apply shader graph: select an entity first");
+            }
+        }
     }
     if (m_AudioGraphEditor.IsOpen()) {
         m_AudioGraphEditor.Render();

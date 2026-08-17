@@ -414,6 +414,19 @@ public:
     bool GetTextureMipmaps() const;
     u32  GetTextureWrap() const;
 
+#if !ENJIN_RENDERER_WEBGPU
+    // Compile GLSL (from the Shader Graph or hand-written) into a pipeline and bind it
+    // for this entity's draw instead of the default geometry pipeline. Pipelines are
+    // shared by source hash, so assigning the same shader to many entities costs ONE
+    // pipeline. Returns false + err on compile failure (entity keeps its old shader).
+    // Safe to call between frames from the editor; pipeline creation does not touch
+    // in-flight command buffers. Vulkan-only for now (web needs WGSL codegen).
+    bool SetEntityCustomShader(Entity entity, const std::string& vertGLSL,
+                               const std::string& fragGLSL, std::string& err);
+    void ClearEntityCustomShader(Entity entity);   // revert entity to the default pipeline
+    bool HasEntityCustomShader(Entity entity) const;
+#endif
+
     // Request a full deferred pipeline + descriptor-set recreation (processed at the
     // next FlushPendingChanges, before command recording). Same heal path as the
     // wireframe toggle. The editor calls this when a render target's render pass is
@@ -1111,6 +1124,22 @@ private:
     std::unique_ptr<Renderer::VulkanPipeline> m_TransparentPipeline;
     std::unique_ptr<Renderer::VulkanPipeline> m_OffscreenTransparentPipeline;
     Renderer::MaterialSpecKey m_BoundSpecKey{0xFFFFFFFF}; // Currently bound variant key (invalid = force rebind)
+
+#if !ENJIN_RENDERER_WEBGPU
+    // Custom per-material shaders (Shader Graph / hand-written GLSL). Pipelines are
+    // shared by GLSL source hash so N entities with the same shader reuse ONE pipeline
+    // (avoids per-entity pipeline thrash). Each shares the main geometry pipeline layout
+    // so it binds as a drop-in in the sorted draw loop. See SetEntityCustomShader.
+    struct CustomShaderPipeline {
+        std::unique_ptr<Renderer::VulkanShader> vs;
+        std::unique_ptr<Renderer::VulkanShader> fs;
+        std::unique_ptr<Renderer::VulkanPipeline> pipeline;
+    };
+    std::unordered_map<u64, CustomShaderPipeline> m_CustomShaderPipelines; // key = source hash
+    std::unordered_map<u32, u64> m_EntityCustomShader;                     // EntityIndex -> source hash
+    bool m_LastPipelineWasCustom = false;
+    Renderer::VulkanPipeline* GetEntityCustomPipeline(Entity entity);
+#endif
     VkRenderPass m_OffscreenRenderPass = VK_NULL_HANDLE;
     std::unique_ptr<Renderer::VulkanShader> m_VertexShader;
     std::unique_ptr<Renderer::VulkanShader> m_FragmentShader;
