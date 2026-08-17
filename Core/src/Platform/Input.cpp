@@ -137,7 +137,15 @@ namespace {
             s_WebKeysLatest[keyCode] = down;
             if (down) s_WebKeysDownLatch[keyCode] = true;
         }
-        // Prevent browser from scrolling on space/arrows when game has focus
+        // Let browser shortcuts through: function keys (F1-F12, so F12 DevTools /
+        // F5 reload / F11 fullscreen work) and any Ctrl/Cmd combo (DevTools,
+        // reload, tab switching). The key is still recorded above, so the game can
+        // read it too. preventDefault everything else so game keys (space/arrows/
+        // Tab) don't scroll the page or move focus while the game has focus.
+        bool isFunctionKey = (e->keyCode >= 112 && e->keyCode <= 123);
+        if (isFunctionKey || e->ctrlKey || e->metaKey) {
+            return EM_FALSE;
+        }
         return EM_TRUE;
     }
 
