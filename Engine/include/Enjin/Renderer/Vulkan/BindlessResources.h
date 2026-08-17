@@ -35,8 +35,31 @@ public:
     BindlessHandle RegisterTexture(VkImageView imageView, VkSampler sampler);
     BindlessHandle RegisterTexture(VulkanImage* image, VkSampler sampler = VK_NULL_HANDLE);
     void UnregisterTexture(BindlessHandle handle);
-    
-    // Create default sampler (linear filtering, repeat wrap)
+
+    // Global texture sampler settings. All material textures share one sampler
+    // built from this. filter: 0=Point(nearest), 1=Bilinear, 2=Trilinear.
+    // wrap: 0=Repeat, 1=Clamp, 2=Mirror. anisotropy: 0=off else 2/4/8/16.
+    struct SamplerConfig {
+        u32 filter = 2;       // trilinear
+        u32 wrap = 0;         // repeat
+        u32 anisotropy = 8;   // 8x
+        bool mipmaps = true;
+        bool operator==(const SamplerConfig& o) const {
+            return filter == o.filter && wrap == o.wrap &&
+                   anisotropy == o.anisotropy && mipmaps == o.mipmaps;
+        }
+        bool operator!=(const SamplerConfig& o) const { return !(*this == o); }
+    };
+    // Recreate the shared sampler from cfg and repoint every texture that uses the
+    // default sampler at it (no-op if cfg is unchanged). Safe to call each frame.
+    void SetSamplerConfig(const SamplerConfig& cfg);
+    const SamplerConfig& GetSamplerConfig() const { return m_SamplerConfig; }
+
+    // Build a VkSampler for a given config (caller owns it). Used for the shared
+    // default sampler and, later, per-material override samplers.
+    VkSampler CreateSampler(const SamplerConfig& cfg);
+
+    // Create default sampler (uses the current SamplerConfig)
     VkSampler CreateDefaultSampler();
 
     // Register buffer (returns handle for shader access)
@@ -79,6 +102,10 @@ private:
     };
     std::vector<TextureEntry> m_Textures;
     std::vector<BindlessHandle> m_FreeTextureSlots;
+
+    // Shared sampler every material texture uses (built from m_SamplerConfig).
+    SamplerConfig m_SamplerConfig;
+    VkSampler m_DefaultSampler = VK_NULL_HANDLE;
 
     struct BufferEntry {
         VkBuffer buffer = VK_NULL_HANDLE;

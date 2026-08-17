@@ -1282,6 +1282,61 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
             }
         }
 
+        // Texture Filtering (global sampler for all material textures).
+        // Lives on the RenderSystem's bindless sampler, not PostProcessSettings.
+        if (UI::SectionHeader("Texture Filtering") && m_RenderSystem) {
+            u32  curFilter = m_RenderSystem->GetTextureFilter();
+            u32  curAniso  = m_RenderSystem->GetTextureAnisotropy();
+            bool curMips   = m_RenderSystem->GetTextureMipmaps();
+            u32  curWrap   = m_RenderSystem->GetTextureWrap();
+            bool changed = false;
+
+            const char* filterModes[] = { "Point (Nearest)", "Bilinear", "Trilinear" };
+            int filter = static_cast<int>(curFilter);
+            if (filter < 0 || filter > 2) filter = 2;
+            if (ImGui::Combo("Filter", &filter, filterModes, IM_ARRAYSIZE(filterModes))) {
+                curFilter = static_cast<u32>(filter);
+                changed = true;
+            }
+            if (curFilter == 0)
+                ImGui::TextDisabled("Sharp, retro look. No smoothing between texels.");
+
+            // Anisotropy: stored as the max sample count (1 = off, else 2/4/8/16).
+            const char* anisoLabels[] = { "Off", "2x", "4x", "8x", "16x" };
+            const u32   anisoValues[] = { 1u, 2u, 4u, 8u, 16u };
+            int anisoIdx = 0;
+            for (int i = 0; i < IM_ARRAYSIZE(anisoValues); ++i)
+                if (curAniso == anisoValues[i]) { anisoIdx = i; break; }
+            if (ImGui::Combo("Anisotropy", &anisoIdx, anisoLabels, IM_ARRAYSIZE(anisoLabels))) {
+                curAniso = anisoValues[anisoIdx];
+                changed = true;
+            }
+            if (curFilter == 0 && curAniso > 1)
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
+                    "Anisotropy is ignored with Point filtering");
+
+            bool mips = curMips;
+            if (ImGui::Checkbox("Mipmaps", &mips)) {
+                curMips = mips;
+                changed = true;
+            }
+            if (!curMips)
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
+                    "Off = shimmer/grain on minified textures");
+
+            const char* wrapModes[] = { "Repeat", "Clamp", "Mirror" };
+            int wrap = static_cast<int>(curWrap);
+            if (wrap < 0 || wrap > 2) wrap = 0;
+            if (ImGui::Combo("Wrap", &wrap, wrapModes, IM_ARRAYSIZE(wrapModes))) {
+                curWrap = static_cast<u32>(wrap);
+                changed = true;
+            }
+
+            if (changed) {
+                m_RenderSystem->SetTextureFilterConfig(curFilter, curAniso, curMips, curWrap);
+            }
+        }
+
         // Temporal Upscaling
         if (UI::SectionHeader("Upscaling")) {
             // Build upscaler list based on which SDKs are available

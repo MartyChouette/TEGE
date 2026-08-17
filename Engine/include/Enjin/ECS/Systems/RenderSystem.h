@@ -404,6 +404,16 @@ public:
     bool IsWireframeEnabled() const { return m_WireframeMode; }
     void SetWireframeEnabled(bool enabled);
 
+    // Global texture filtering: filter 0=Point/1=Bilinear/2=Trilinear,
+    // anisotropy 0/2/4/8/16, wrap 0=Repeat/1=Clamp/2=Mirror. Reconfigures the
+    // shared bindless sampler (no-op on WebGPU / when unchanged).
+    void SetTextureFilterConfig(u32 filter, u32 anisotropy, bool mipmaps, u32 wrap);
+    // Read back the live global texture filter config (for UI display + scene capture).
+    u32  GetTextureFilter() const;
+    u32  GetTextureAnisotropy() const;
+    bool GetTextureMipmaps() const;
+    u32  GetTextureWrap() const;
+
     // Request a full deferred pipeline + descriptor-set recreation (processed at the
     // next FlushPendingChanges, before command recording). Same heal path as the
     // wireframe toggle. The editor calls this when a render target's render pass is

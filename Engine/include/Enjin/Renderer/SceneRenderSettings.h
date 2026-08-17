@@ -85,6 +85,12 @@ struct SceneRenderSettings {
     // Anti-Aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA, 4=MSAA 2x, 5=MSAA 4x, 6=MSAA 8x
     u32 aaMode = 1;  // Default: FXAA
 
+    // Global texture filtering (the shared bindless sampler all material textures use).
+    u32 textureFilter = 2;        // 0=Point (crisp/PSX), 1=Bilinear, 2=Trilinear
+    u32 textureAnisotropy = 8;    // 0=off, else 2/4/8/16 (only applies to Bilinear/Trilinear)
+    bool textureMipmaps = true;   // false = sample mip 0 only (raw PSX shimmer)
+    u32 textureWrap = 0;          // 0=Repeat, 1=Clamp, 2=Mirror
+
     // AA Comparison Mode (split-screen side-by-side AA comparison)
     bool aaComparisonEnabled = false;
     u32 aaComparisonModeLeft = 0;     // AA mode for left side (0=None, 1=FXAA, 2=TAA, 3=SMAA)

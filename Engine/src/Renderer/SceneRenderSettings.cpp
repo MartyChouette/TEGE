@@ -48,6 +48,10 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.cascadeProgressiveUpdate  = rs->IsCascadeProgressiveUpdate();
         s.cascadeFarUpdateInterval  = rs->GetCascadeFarUpdateInterval();
         s.wireframe            = rs->IsWireframeEnabled();
+        s.textureFilter        = rs->GetTextureFilter();
+        s.textureAnisotropy    = rs->GetTextureAnisotropy();
+        s.textureMipmaps       = rs->GetTextureMipmaps();
+        s.textureWrap          = rs->GetTextureWrap();
 #endif
         s.backfaceCulling      = rs->IsBackfaceCullingEnabled();
         s.ambientIntensity     = rs->GetAmbientIntensity();
@@ -386,6 +390,7 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetCascadeProgressiveUpdate(cascadeProgressiveUpdate);
         rs->SetCascadeFarUpdateInterval(cascadeFarUpdateInterval);
         rs->SetWireframeEnabled(wireframe);
+        rs->SetTextureFilterConfig(textureFilter, textureAnisotropy, textureMipmaps, textureWrap);
 #endif
         rs->SetBackfaceCullingEnabled(backfaceCulling);
         rs->SetAmbientIntensity(ambientIntensity);
@@ -1027,6 +1032,10 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
 
     // Anti-Aliasing
     j["aaMode"]            = s.aaMode;
+    j["textureFilter"]     = s.textureFilter;
+    j["textureAnisotropy"] = s.textureAnisotropy;
+    j["textureMipmaps"]    = s.textureMipmaps;
+    j["textureWrap"]       = s.textureWrap;
     j["aaComparisonEnabled"]    = s.aaComparisonEnabled;
     j["aaComparisonModeLeft"]   = s.aaComparisonModeLeft;
     j["aaComparisonModeRight"]  = s.aaComparisonModeRight;
@@ -1336,6 +1345,10 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
 
     // Anti-Aliasing
     if (j.contains("aaMode"))                 s.aaMode                 = j["aaMode"].get<u32>();
+    if (j.contains("textureFilter"))     s.textureFilter     = j["textureFilter"].get<u32>();
+    if (j.contains("textureAnisotropy")) s.textureAnisotropy = j["textureAnisotropy"].get<u32>();
+    if (j.contains("textureMipmaps"))    s.textureMipmaps    = j["textureMipmaps"].get<bool>();
+    if (j.contains("textureWrap"))       s.textureWrap       = j["textureWrap"].get<u32>();
     if (j.contains("aaComparisonEnabled"))    s.aaComparisonEnabled    = JB(j["aaComparisonEnabled"]);
     if (j.contains("aaComparisonModeLeft"))   s.aaComparisonModeLeft   = j["aaComparisonModeLeft"].get<u32>();
     if (j.contains("aaComparisonModeRight"))  s.aaComparisonModeRight  = j["aaComparisonModeRight"].get<u32>();

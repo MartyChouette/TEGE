@@ -53,6 +53,11 @@ void BindlessResourceManager::Shutdown() {
         m_DescriptorSetLayout = VK_NULL_HANDLE;
     }
 
+    if (m_DefaultSampler != VK_NULL_HANDLE) {
+        vkDestroySampler(m_Context->GetDevice(), m_DefaultSampler, nullptr);
+        m_DefaultSampler = VK_NULL_HANDLE;
+    }
+
     m_Textures.clear();
     m_Buffers.clear();
     m_FreeTextureSlots.clear();
@@ -108,45 +113,81 @@ BindlessHandle BindlessResourceManager::RegisterTexture(VulkanImage* image, VkSa
     return RegisterTexture(image->GetImageView(), sampler);
 }
 
-VkSampler BindlessResourceManager::CreateDefaultSampler() {
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    // Anisotropic filtering when supported — sharpens textures at grazing angles
-    // (floors/walls receding into the distance) instead of aliasing to static.
+VkSampler BindlessResourceManager::CreateSampler(const SamplerConfig& cfg) {
+    // filter: 0=Point (nearest), 1=Bilinear (linear, nearest-mip), 2=Trilinear (linear, linear-mip)
+    VkFilter f = (cfg.filter == 0) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+    VkSamplerMipmapMode mip = (cfg.filter == 2) ? VK_SAMPLER_MIPMAP_MODE_LINEAR
+                                                : VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    VkSamplerAddressMode wrap =
+        (cfg.wrap == 1) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE :
+        (cfg.wrap == 2) ? VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT :
+                          VK_SAMPLER_ADDRESS_MODE_REPEAT;
+
+    VkSamplerCreateInfo si{};
+    si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    si.magFilter = f;
+    si.minFilter = f;
+    si.addressModeU = si.addressModeV = si.addressModeW = wrap;
+    si.mipmapMode = mip;
+    si.mipLodBias = 0.0f;
+    si.minLod = 0.0f;
+    si.maxLod = cfg.mipmaps ? VK_LOD_CLAMP_NONE : 0.0f;  // off = clamp to mip 0 (raw PSX shimmer)
+    si.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    si.unnormalizedCoordinates = VK_FALSE;
+    si.compareEnable = VK_FALSE;
+    si.compareOp = VK_COMPARE_OP_ALWAYS;
+
+    // Anisotropy needs linear filtering (point sampling ignores it) and device support.
     VkPhysicalDeviceFeatures feats{};
     vkGetPhysicalDeviceFeatures(m_Context->GetPhysicalDevice(), &feats);
-    if (feats.samplerAnisotropy) {
+    if (cfg.anisotropy > 1 && cfg.filter != 0 && feats.samplerAnisotropy) {
         VkPhysicalDeviceProperties props{};
         vkGetPhysicalDeviceProperties(m_Context->GetPhysicalDevice(), &props);
-        float maxAniso = props.limits.maxSamplerAnisotropy < 8.0f ? props.limits.maxSamplerAnisotropy : 8.0f;
-        samplerInfo.anisotropyEnable = VK_TRUE;
-        samplerInfo.maxAnisotropy = maxAniso;
+        float a = static_cast<float>(cfg.anisotropy);
+        if (a > props.limits.maxSamplerAnisotropy) a = props.limits.maxSamplerAnisotropy;
+        si.anisotropyEnable = VK_TRUE;
+        si.maxAnisotropy = a;
     } else {
-        samplerInfo.anisotropyEnable = VK_FALSE;
-        samplerInfo.maxAnisotropy = 1.0f;
+        si.anisotropyEnable = VK_FALSE;
+        si.maxAnisotropy = 1.0f;
     }
-    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-    samplerInfo.unnormalizedCoordinates = VK_FALSE;
-    samplerInfo.compareEnable = VK_FALSE;
-    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    samplerInfo.mipLodBias = 0.0f;
-    samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = VK_LOD_CLAMP_NONE;  // sample the full mip chain (clamped per-texture to its level count)
-    
-    VkSampler sampler;
-    VkResult result = vkCreateSampler(m_Context->GetDevice(), &samplerInfo, nullptr, &sampler);
-    if (result != VK_SUCCESS) {
-        ENJIN_LOG_ERROR(Renderer, "Failed to create default sampler: %d", result);
+
+    VkSampler s = VK_NULL_HANDLE;
+    if (vkCreateSampler(m_Context->GetDevice(), &si, nullptr, &s) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create sampler");
         return VK_NULL_HANDLE;
     }
-    
-    return sampler;
+    return s;
+}
+
+VkSampler BindlessResourceManager::CreateDefaultSampler() {
+    if (m_DefaultSampler == VK_NULL_HANDLE) {
+        m_DefaultSampler = CreateSampler(m_SamplerConfig);
+    }
+    return m_DefaultSampler;  // shared — every texture that asks for the default uses this one
+}
+
+void BindlessResourceManager::SetSamplerConfig(const SamplerConfig& cfg) {
+    if (cfg == m_SamplerConfig && m_DefaultSampler != VK_NULL_HANDLE) return;  // no change
+    m_SamplerConfig = cfg;
+
+    VkSampler newSampler = CreateSampler(m_SamplerConfig);
+    if (newSampler == VK_NULL_HANDLE) return;
+
+    VkSampler oldSampler = m_DefaultSampler;
+    m_DefaultSampler = newSampler;
+
+    if (oldSampler != VK_NULL_HANDLE) {
+        // Filter changes are rare (a settings toggle), so a device wait is fine and
+        // keeps the descriptor refresh simple + correct. Repoint every texture on the
+        // old shared sampler, then destroy it.
+        vkDeviceWaitIdle(m_Context->GetDevice());
+        for (auto& t : m_Textures) {
+            if (t.valid && t.sampler == oldSampler) t.sampler = newSampler;
+        }
+        vkDestroySampler(m_Context->GetDevice(), oldSampler, nullptr);
+    }
+    m_Dirty = true;  // UpdateDescriptorSet rewrites the bindless descriptors with the new sampler
 }
 
 void BindlessResourceManager::UnregisterTexture(BindlessHandle handle) {

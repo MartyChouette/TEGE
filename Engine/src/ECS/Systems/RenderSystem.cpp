@@ -2870,6 +2870,11 @@ void RenderSystem::CreatePipeline() {}
 void RenderSystem::SetBackfaceCullingEnabled(bool enabled) { m_BackfaceCulling = enabled; }
 void RenderSystem::SetShadowDistance(f32 d) { m_ShadowDistance = d; }  // web: no ShadowMap object
 void RenderSystem::SetWireframeEnabled(bool enabled) { m_WireframeMode = enabled; }
+void RenderSystem::SetTextureFilterConfig(u32, u32, bool, u32) {}  // Vulkan-only (bindless sampler)
+u32  RenderSystem::GetTextureFilter() const { return 2; }
+u32  RenderSystem::GetTextureAnisotropy() const { return 8; }
+bool RenderSystem::GetTextureMipmaps() const { return true; }
+u32  RenderSystem::GetTextureWrap() const { return 0; }
 void RenderSystem::RequestPipelineRecreation() {}  // Vulkan-only heal; WebGPU rebuilds per-frame
 void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* /*sim*/) {}
 void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& /*w*/, bool /*r*/, u32, u32) {}
@@ -9300,6 +9305,29 @@ void RenderSystem::SetWireframeEnabled(bool enabled) {
     if (m_WireframeMode == enabled) return;
     m_WireframeMode = enabled;
     m_PendingRecreation = PendingRecreationType::PipelineOnly;
+}
+
+void RenderSystem::SetTextureFilterConfig(u32 filter, u32 anisotropy, bool mipmaps, u32 wrap) {
+    if (!m_BindlessManager) return;
+    Renderer::BindlessResourceManager::SamplerConfig cfg;
+    cfg.filter = filter;
+    cfg.anisotropy = anisotropy;
+    cfg.mipmaps = mipmaps;
+    cfg.wrap = wrap;
+    m_BindlessManager->SetSamplerConfig(cfg);
+}
+
+u32 RenderSystem::GetTextureFilter() const {
+    return m_BindlessManager ? m_BindlessManager->GetSamplerConfig().filter : 2;
+}
+u32 RenderSystem::GetTextureAnisotropy() const {
+    return m_BindlessManager ? m_BindlessManager->GetSamplerConfig().anisotropy : 8;
+}
+bool RenderSystem::GetTextureMipmaps() const {
+    return m_BindlessManager ? m_BindlessManager->GetSamplerConfig().mipmaps : true;
+}
+u32 RenderSystem::GetTextureWrap() const {
+    return m_BindlessManager ? m_BindlessManager->GetSamplerConfig().wrap : 0;
 }
 
 void RenderSystem::RequestPipelineRecreation() {
