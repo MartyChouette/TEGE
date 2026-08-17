@@ -235,7 +235,7 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CineComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::CineComponent>(e); },
             "cineComponent", DimensionTag::Only3D},
-        {"Text", "Rendering", nullptr,
+        {"Text", "UI", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TextComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TextComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TextComponent>(e); },
@@ -363,7 +363,7 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HealthComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::HealthComponent>(e); },
             "health"},
-        {"Swarm (crowd demo)", "Gameplay", nullptr,
+        {"Swarm (crowd demo)", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SwarmComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SwarmComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SwarmComponent>(e); },
@@ -458,7 +458,7 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SidechainComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SidechainComponent>(e); },
             "sidechain"},
-        {"Pose Library", "Gameplay", nullptr,
+        {"Pose Library", "3D / Animation", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PoseLibraryComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PoseLibraryComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::PoseLibraryComponent>(e); },
@@ -541,17 +541,17 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
         // "HUD Widget" removed from the Add Component menu: HUDSystem is
         // retired — HUD elements are authored as UICanvas (UI unification).
         // Legacy hudWidget data still loads and auto-migrates to canvases.
-        {"UI Canvas", "Gameplay", nullptr,
+        {"UI Canvas", "UI", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<GUI::UICanvasComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<GUI::UICanvasComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<GUI::UICanvasComponent>(e); },
             "uiCanvas"},
-        {"Cinematic Camera", "Gameplay", nullptr,
+        {"Cinematic Camera", "Rendering", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::CinematicCameraComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CinematicCameraComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::CinematicCameraComponent>(e); },
             "cinematicCamera"},
-        {"Tween", "Gameplay", nullptr,
+        {"Tween", "3D / Animation", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TweenComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TweenComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TweenComponent>(e); },
@@ -566,7 +566,7 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DialogueComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::DialogueComponent>(e); },
             "dialogue"},
-        {"Dialogue Box", "Gameplay", nullptr,
+        {"Dialogue Box", "UI", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DialogueBoxComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DialogueBoxComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::DialogueBoxComponent>(e); },
@@ -576,7 +576,7 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SaveDataComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SaveDataComponent>(e); },
             "saveData"},
-        {"Save/Load Menu", "Gameplay", nullptr,
+        {"Save/Load Menu", "UI", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SaveLoadMenuComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SaveLoadMenuComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SaveLoadMenuComponent>(e); },
@@ -669,12 +669,12 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             "audioListener"},
 
         // -- Visual --
-        {"Billboard", "Visual", nullptr,
+        {"Billboard", "Rendering", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::BillboardComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BillboardComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::BillboardComponent>(e); },
             "billboard"},
-        {"Particle Emitter", "Visual", nullptr,
+        {"Particle Emitter", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ParticleEmitterComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ParticleEmitterComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ParticleEmitterComponent>(e); },
@@ -731,7 +731,7 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TemperatureZoneComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TemperatureZoneComponent>(e); },
             "temperatureZone"},
-        {"Gravity Zone", "Effects", nullptr,
+        {"Gravity Zone", "Physics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::GravityZoneComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GravityZoneComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::GravityZoneComponent>(e); },
@@ -805,7 +805,7 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ScriptComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ScriptComponent>(e); },
             "scriptComponent"},
-        {"Notes", "Scripting", nullptr,
+        {"Notes", "Other", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::NotesComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::NotesComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::NotesComponent>(e); },
@@ -886,12 +886,12 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AnimatorComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::AnimatorComponent>(e); },
             "animator", DimensionTag::Only3D},
-        {"Terrain", "3D / Animation", nullptr,
+        {"Terrain", "Rendering", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TerrainComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TerrainComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TerrainComponent>(e); },
             "terrain", DimensionTag::Only3D},
-        {"Terrain 2D", "3D / Animation", nullptr,
+        {"Terrain 2D", "Rendering", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::Terrain2DComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Terrain2DComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::Terrain2DComponent>(e); },
@@ -941,7 +941,7 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TetherComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TetherComponent>(e); },
             "tether"},
-        {"Grabbable", "Effects", nullptr,
+        {"Grabbable", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::GrabbableComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GrabbableComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::GrabbableComponent>(e); },
@@ -3342,6 +3342,23 @@ void EditorLayer::DrawInspectorPanel() {
             if (hasFilter) {
                 std::stable_sort(visible.begin(), visible.end(),
                     [](const VisibleEntry& a, const VisibleEntry& b) { return a.score > b.score; });
+            } else {
+                // No filter: group by category so each header appears exactly once, in a
+                // canonical order — the registry list order no longer has to be grouped.
+                static const char* kCatOrder[] = {
+                    "Rendering", "UI", "3D / Animation", "Character Controller", "Physics",
+                    "Joints", "AI", "Gameplay", "Effects", "Audio", "2D Graphics",
+                    "Scripting", "Networking", "Puzzle", "Scene", "Other"
+                };
+                auto rank = [](const char* c) -> int {
+                    for (int i = 0; i < static_cast<int>(sizeof(kCatOrder) / sizeof(kCatOrder[0])); ++i)
+                        if (std::strcmp(c, kCatOrder[i]) == 0) return i;
+                    return 999; // unknown categories sink to the bottom
+                };
+                std::stable_sort(visible.begin(), visible.end(),
+                    [&](const VisibleEntry& a, const VisibleEntry& b) {
+                        return rank(a.entry->category) < rank(b.entry->category);
+                    });
             }
 
             // Clamp selection index
