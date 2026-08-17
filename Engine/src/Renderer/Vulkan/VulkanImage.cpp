@@ -135,12 +135,18 @@ bool VulkanImage::CreateFromData(
     m_Height = height;
     m_Format = format;
     
-    // Calculate mip levels
-    if (width == 0 || height == 0) {
-        m_MipLevels = 1;
-    } else {
-        m_MipLevels = static_cast<u32>(std::floor(std::log2(std::max(width, height)))) + 1;
+    // Calculate mip levels. A full chain only makes sense if the format can be
+    // linearly blitted (needed to downsample the levels). Otherwise stick to one
+    // mip so we never leave undefined levels for the sampler to read.
+    bool canMip = (width > 0 && height > 0);
+    if (canMip) {
+        VkFormatProperties fp{};
+        vkGetPhysicalDeviceFormatProperties(m_Context->GetPhysicalDevice(), format, &fp);
+        canMip = (fp.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0;
     }
+    m_MipLevels = canMip
+        ? static_cast<u32>(std::floor(std::log2(std::max(width, height)))) + 1
+        : 1;
     
     // Create staging buffer — S7: cast to VkDeviceSize before multiplication to prevent u32 overflow
     VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * channels;
@@ -289,24 +295,28 @@ bool VulkanImage::CreateFromData(
         vkCmdCopyBufferToImage(cmd, stagingBuffer, m_Image,
             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-        // Transition: TRANSFER_DST_OPTIMAL → SHADER_READ_ONLY_OPTIMAL
-        VkImageMemoryBarrier toShaderRead{};
-        toShaderRead.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        toShaderRead.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        toShaderRead.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        toShaderRead.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        toShaderRead.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        toShaderRead.image = m_Image;
-        toShaderRead.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        toShaderRead.subresourceRange.baseMipLevel = 0;
-        toShaderRead.subresourceRange.levelCount = m_MipLevels;
-        toShaderRead.subresourceRange.baseArrayLayer = 0;
-        toShaderRead.subresourceRange.layerCount = 1;
-        toShaderRead.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        toShaderRead.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        vkCmdPipelineBarrier(cmd,
-            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-            0, 0, nullptr, 0, nullptr, 1, &toShaderRead);
+        // Single-mip: mip 0 goes straight to shader-read. Multi-mip: leave all
+        // levels in TRANSFER_DST — GenerateMipmaps() (called below) downsamples the
+        // chain and transitions everything to shader-read itself.
+        if (m_MipLevels == 1) {
+            VkImageMemoryBarrier toShaderRead{};
+            toShaderRead.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            toShaderRead.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            toShaderRead.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            toShaderRead.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            toShaderRead.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            toShaderRead.image = m_Image;
+            toShaderRead.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            toShaderRead.subresourceRange.baseMipLevel = 0;
+            toShaderRead.subresourceRange.levelCount = 1;
+            toShaderRead.subresourceRange.baseArrayLayer = 0;
+            toShaderRead.subresourceRange.layerCount = 1;
+            toShaderRead.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            toShaderRead.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(cmd,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                0, 0, nullptr, 0, nullptr, 1, &toShaderRead);
+        }
 
         vkEndCommandBuffer(cmd);
 
@@ -325,6 +335,12 @@ bool VulkanImage::CreateFromData(
         vkQueueWaitIdle(m_Context->GetGraphicsQueue());
 
         vkDestroyCommandPool(m_Context->GetDevice(), tempPool, nullptr);
+
+        // Downsample the chain (the multi-mip path above left all levels in
+        // TRANSFER_DST). Without this, mips 1..N are undefined and textures alias
+        // into grainy static when minified — GenerateMipmaps fills them and moves
+        // everything to shader-read.
+        if (m_MipLevels > 1) GenerateMipmaps();
     }
 
     if (!CreateImageView()) {

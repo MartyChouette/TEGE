@@ -116,8 +116,20 @@ VkSampler BindlessResourceManager::CreateDefaultSampler() {
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.anisotropyEnable = VK_FALSE;
-    samplerInfo.maxAnisotropy = 1.0f;
+    // Anisotropic filtering when supported — sharpens textures at grazing angles
+    // (floors/walls receding into the distance) instead of aliasing to static.
+    VkPhysicalDeviceFeatures feats{};
+    vkGetPhysicalDeviceFeatures(m_Context->GetPhysicalDevice(), &feats);
+    if (feats.samplerAnisotropy) {
+        VkPhysicalDeviceProperties props{};
+        vkGetPhysicalDeviceProperties(m_Context->GetPhysicalDevice(), &props);
+        float maxAniso = props.limits.maxSamplerAnisotropy < 8.0f ? props.limits.maxSamplerAnisotropy : 8.0f;
+        samplerInfo.anisotropyEnable = VK_TRUE;
+        samplerInfo.maxAnisotropy = maxAniso;
+    } else {
+        samplerInfo.anisotropyEnable = VK_FALSE;
+        samplerInfo.maxAnisotropy = 1.0f;
+    }
     samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
     samplerInfo.unnormalizedCoordinates = VK_FALSE;
     samplerInfo.compareEnable = VK_FALSE;
@@ -125,7 +137,7 @@ VkSampler BindlessResourceManager::CreateDefaultSampler() {
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     samplerInfo.mipLodBias = 0.0f;
     samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = 0.0f;
+    samplerInfo.maxLod = VK_LOD_CLAMP_NONE;  // sample the full mip chain (clamped per-texture to its level count)
     
     VkSampler sampler;
     VkResult result = vkCreateSampler(m_Context->GetDevice(), &samplerInfo, nullptr, &sampler);
