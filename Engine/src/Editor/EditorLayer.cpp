@@ -781,6 +781,15 @@ void EditorLayer::Update(f32 deltaTime) {
     // feeding it an empty set (it produced no visible pixels for skinned meshes).
     if (m_RenderSystem) m_RenderSystem->SetHighlightEntities({});
 
+    // Keep material edits live in the editor viewport. The material SSBO the shader
+    // reads has a fast path that re-uploads cached values unless something marks it
+    // dirty, so inspector edits (color/opacity/roughness/textures/presets) only
+    // showed after Play forced a rebuild — and only some edit paths marked it dirty,
+    // which is why it was intermittent. In edit mode (not playing) mark it dirty
+    // every frame so every edit path refreshes immediately. Play keeps the cached
+    // fast path, so shipped-game performance is unaffected.
+    if (m_RenderSystem && !m_PlayMode.IsPlaying()) m_RenderSystem->MarkMaterialsDirty();
+
     // Deferred quit (Close() called during ImGui rendering crashes some drivers)
     if (m_PendingQuit) {
         m_PendingQuit = false;
