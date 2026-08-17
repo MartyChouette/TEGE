@@ -244,8 +244,13 @@ bool WebGPUParticleSystem::Initialize(const Effects::GPUEmitterConfig& config) {
         rp.bindGroupLayouts.push_back(m_DrawLayout);
         rp.topology = GPUPrimitiveTopology::TriangleList;
         rp.cullMode = GPUCullMode::None;
-        rp.depthTest = false;               // overlay pass has no depth (first-cut integration)
+        // The overlay pass carries the scene depth (Depth24PlusStencil8), so the pipeline
+        // MUST declare a matching depth state. Test against the scene (occluded by nearer
+        // geometry) but don't write depth (particles are transparent).
+        rp.depthTest = true;
         rp.depthWrite = false;
+        rp.depthCompare = GPUCompareFunction::LessEqual;
+        rp.depthFormat = GPUTextureFormat::Depth24PlusStencil8;
         rp.colorAttachmentCount = 1;
         rp.colorFormat = GPUTextureFormat::BGRA8Unorm;   // web swapchain format
         rp.alphaBlend = true;

@@ -955,9 +955,9 @@ public:
         ImGui::Render();
         ImDrawData* drawData = ImGui::GetDrawData();
         bool haveUI = drawData && drawData->TotalVtxCount > 0;
-        // Draw GPU particles into the overlay pass (loads the scene, no depth) then
-        // the UI on top. First-cut integration: particles are not depth-tested against
-        // the scene yet (they render over it); depth-correct is a follow-up.
+        // Draw GPU particles into the overlay pass (which carries the scene color +
+        // depth), then the UI on top. Particles depth-test against the scene (occluded
+        // by nearer geometry) but don't write depth.
         if (haveUI || m_Particles) {
             WGPURenderPassEncoder pass = m_Renderer->GetOrBeginUIOverlayPass();
             if (pass) {
