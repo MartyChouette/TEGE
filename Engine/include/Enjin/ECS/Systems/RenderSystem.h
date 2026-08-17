@@ -805,12 +805,14 @@ public:
 
 private:
     void RenderEntity(Entity entity);
+#if !ENJIN_RENDERER_WEBGPU
     // Switch the bound geometry pipeline to the depth-write-OFF `transparent` variant
     // for AlphaMode::Blend entities (and back to `opaque` otherwise), only on change.
     // `transparentBound` tracks the current state across a draw loop. No-op if
     // `transparent` is null (creation failed) — stays on the opaque pipeline.
     void BindGeometryPipelineForMaterial(VkCommandBuffer cmd, Entity entity,
         Renderer::VulkanPipeline* opaque, Renderer::VulkanPipeline* transparent, bool& transparentBound);
+#endif
     void RenderSprites();  // Sorted 2D sprite pass (after 3D geometry)
     void ClassifySceneComposition();  // Update m_SceneComposition if dirty
     void CreateDefaultMesh();
