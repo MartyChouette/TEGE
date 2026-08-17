@@ -222,6 +222,11 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["shadowDitherMode"] = material.shadowDitherMode;
     j["shadowDitherPattern"] = material.shadowDitherPattern;
     j["textureFilterOverride"] = material.textureFilterOverride;
+    if (!material.footstepSound.empty()) j["footstepSound"] = material.footstepSound;
+    if (!material.impactSound.empty())   j["impactSound"] = material.impactSound;
+    if (material.surfaceParticle != 0)   j["surfaceParticle"] = material.surfaceParticle;
+    j["footstepVolume"] = material.footstepVolume;
+    j["impactThreshold"] = material.impactThreshold;
     j["reflectivity"] = material.reflectivity;
     j["fresnelPower"] = material.fresnelPower;
     j["rimLightStrength"] = material.rimLightStrength;
@@ -485,6 +490,11 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("shadowDitherMode")) { u8 v = j["shadowDitherMode"].get<u8>(); if (v <= 3) material.shadowDitherMode = v; }
     if (j.contains("shadowDitherPattern")) { u8 v = j["shadowDitherPattern"].get<u8>(); if (v <= 7) material.shadowDitherPattern = v; }
     if (j.contains("textureFilterOverride")) { u8 v = j["textureFilterOverride"].get<u8>(); if (v <= 3) material.textureFilterOverride = v; }
+    if (j.contains("footstepSound")) material.footstepSound = j["footstepSound"].get<std::string>();
+    if (j.contains("impactSound"))   material.impactSound = j["impactSound"].get<std::string>();
+    if (j.contains("surfaceParticle")) { u8 v = j["surfaceParticle"].get<u8>(); if (v <= 6) material.surfaceParticle = v; }
+    if (j.contains("footstepVolume")) material.footstepVolume = j["footstepVolume"].get<f32>();
+    if (j.contains("impactThreshold")) material.impactThreshold = j["impactThreshold"].get<f32>();
     if (j.contains("reflectivity")) material.reflectivity = j["reflectivity"].get<f32>();
     if (j.contains("fresnelPower")) material.fresnelPower = j["fresnelPower"].get<f32>();
     if (j.contains("rimLightStrength")) material.rimLightStrength = j["rimLightStrength"].get<f32>();

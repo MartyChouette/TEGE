@@ -791,6 +791,44 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
             ImGui::TreePop();
         }
 
+        // Surface response: sound + particle this material makes when walked on or hit.
+        if (ImGui::TreeNode("Surface Response")) {
+            char footBuf[256];
+            strncpy(footBuf, material->footstepSound.c_str(), sizeof(footBuf) - 1);
+            footBuf[sizeof(footBuf) - 1] = '\0';
+            if (ImGui::InputText("Footstep Sound", footBuf, sizeof(footBuf)))
+                material->footstepSound = footBuf;
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH"))
+                    material->footstepSound = std::string(static_cast<const char*>(pl->Data));
+                ImGui::EndDragDropTarget();
+            }
+
+            char hitBuf[256];
+            strncpy(hitBuf, material->impactSound.c_str(), sizeof(hitBuf) - 1);
+            hitBuf[sizeof(hitBuf) - 1] = '\0';
+            if (ImGui::InputText("Impact Sound", hitBuf, sizeof(hitBuf)))
+                material->impactSound = hitBuf;
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH"))
+                    material->impactSound = std::string(static_cast<const char*>(pl->Data));
+                ImGui::EndDragDropTarget();
+            }
+
+            const char* particles[] = { "None", "Dust", "Grass", "Spark", "Splash", "Smoke", "Snow" };
+            int sp = static_cast<int>(material->surfaceParticle);
+            if (sp < 0 || sp > 6) sp = 0;
+            if (ImGui::Combo("Surface Particle", &sp, particles, IM_ARRAYSIZE(particles)))
+                material->surfaceParticle = static_cast<u8>(sp);
+            ImGui::SetItemTooltip("Bursts at the foot/contact when this surface is walked on or struck");
+
+            ImGui::SliderFloat("Footstep Volume", &material->footstepVolume, 0.0f, 1.0f, "%.2f");
+            ImGui::DragFloat("Impact Threshold", &material->impactThreshold, 0.1f, 0.0f, 50.0f);
+            ImGui::SetItemTooltip("Minimum collision speed (units/s) that fires the impact sound");
+
+            ImGui::TreePop();
+        }
+
         // Retro rendering effects (per-material)
         if (ImGui::TreeNode("Retro Effects")) {
             InspectorUndo::Checkbox(m_UndoRedo, "Flat Shading", &material->flatShading);

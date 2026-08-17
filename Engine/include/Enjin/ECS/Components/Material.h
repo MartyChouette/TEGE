@@ -138,6 +138,17 @@ struct MaterialComponent {
     std::string matcapTexturePath;    // Matcap (Material Capture): 2D texture indexed by view-space normal
     std::string heightTexturePath;
 
+    // ── Surface response (TotK-style): the sound + particle this surface makes ──
+    // Footstep fires while a character controller walks/runs on an entity with this
+    // material; impact fires when the surface is struck by a physics collision. Empty
+    // sound = silent. surfaceParticle bursts at the foot / contact point.
+    std::string footstepSound;         // per-footstep audio while walked/run on
+    std::string impactSound;           // audio when struck by a collision
+    // 0=None,1=Dust,2=Grass,3=Spark,4=Splash,5=Smoke,6=Snow (maps to a particle preset)
+    u8 surfaceParticle = 0;
+    f32 footstepVolume = 1.0f;
+    f32 impactThreshold = 3.0f;        // min collision speed (units/s) to fire the impact
+
     // Cached texture pointers (mutable - cache only, not part of component state)
     // Avoids per-frame string hash lookups in GetOrLoadTexture
     mutable Renderer::Texture* cachedBaseColorTexture = nullptr;
