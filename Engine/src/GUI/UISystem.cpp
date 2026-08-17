@@ -49,21 +49,21 @@ static void DrawCenteredText(ImDrawList* dl, const UIRect& rect, const char* tex
 
     ImFont* font = ImGui::GetFont();
 
-    // Shrink-to-fit: accessibility font scaling can push text past its widget
-    // rect (buttons/toggles keep their authored box) — clamp the effective size
-    // so letters stay inside the frame instead of spilling over its edges.
+    // Clamp the font so a single line can't be taller than the box.
     if (rect.h > 4.0f && fontSize > rect.h - 4.0f) {
         fontSize = rect.h - 4.0f;
     }
-    if (rect.w > 8.0f) {
-        ImVec2 fullSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, text);
-        if (fullSize.x > rect.w - 8.0f) {
-            fontSize *= (rect.w - 8.0f) / fullSize.x;
-        }
-    }
     if (fontSize < 6.0f) fontSize = 6.0f;
 
-    ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, text);
+    // Word-wrap to the box width instead of scaling the font down. A line wider
+    // than its box used to shrink the whole text (so a long email/letter/dialogue
+    // rendered smaller than a short one). Wrapping keeps every text block at the
+    // same authored size and matches how Unity's TextMeshPro laid it out. Short
+    // text (buttons, single-line labels) never reaches the wrap width, so it is
+    // unchanged; over-long single words fall back to ImGui's character wrapping.
+    f32 wrapWidth = (rect.w > 8.0f) ? rect.w - 8.0f : 0.0f;
+
+    ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, wrapWidth, text);
 
     f32 x = rect.x;
     f32 y = rect.y;
@@ -79,7 +79,9 @@ static void DrawCenteredText(ImDrawList* dl, const UIRect& rect, const char* tex
         case 2: y = rect.y + rect.h - textSize.y - 2.0f; break;      // bottom
     }
 
-    dl->AddText(font, fontSize, ImVec2(x, y), color, text);
+    // wrap_width is relative to the draw position; anchoring x to the left edge
+    // keeps the wrap column inside the box (centered short text doesn't wrap).
+    dl->AddText(font, fontSize, ImVec2(x, y), color, text, nullptr, wrapWidth);
 }
 
 // ============================================================================
