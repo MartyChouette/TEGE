@@ -1436,32 +1436,38 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (auto* em = m_World->GetComponent<ECS::GPUParticleEmitterComponent>(m_PrimarySelected)) {
             if (ImGui::CollapsingHeader("GPU Particle Emitter", ImGuiTreeNodeFlags_DefaultOpen)) {
-                int preset = static_cast<int>(em->preset);
-                const char* names[] = {"Custom","Smoke","Fire","Sparks","Blood","Mist","Spray","Dust","Magic","Snow"};
-                if (ImGui::Combo("Preset", &preset, names, IM_ARRAYSIZE(names)))
-                    em->preset = static_cast<Effects::GPUParticlePreset>(preset);
+                // Load Preset just FILLS the fields below (they stay editable), so
+                // gravity/size/lifetime are always visible. Index 0 is "-" (no-op).
+                int preset = 0;
+                const char* names[] = {"Load Preset...","Smoke","Fire","Sparks","Blood","Mist","Spray","Dust","Magic","Snow"};
+                if (ImGui::Combo("Load Preset", &preset, names, IM_ARRAYSIZE(names)) && preset > 0) {
+                    // names[1..9] map to GPUParticlePreset Smoke(1)..Snow(9).
+                    em->LoadPreset(static_cast<Effects::GPUParticlePreset>(preset));
+                }
+
                 ImGui::Checkbox("Emitting", &em->emitting);
                 ImGui::DragFloat("Rate (/sec)", &em->spawnRate, 5.0f, 0.0f, 5000.0f);
                 ImGui::DragFloat3("Direction", &em->direction.x, 0.05f);
 
-                // Appearance + physics. The presets bake these; pick "Custom" to edit
-                // them. gravityScale/lifetime/etc. are honored per-particle by the
-                // compute simulation (0 gravity = float, <0 = rise like smoke).
-                if (em->preset == Effects::GPUParticlePreset::Custom) {
-                    ImGui::SeparatorText("Custom");
-                    ImGui::ColorEdit4("Color", &em->customColor.x);
-                    ImGui::DragFloat("Size", &em->customSize, 0.01f, 0.0f, 20.0f);
-                    ImGui::DragFloat("Lifetime (s)", &em->customLifetime, 0.05f, 0.0f, 60.0f);
-                    ImGui::DragFloat("Speed", &em->customSpeed, 0.05f, 0.0f, 100.0f);
-                    ImGui::DragFloat("Spread", &em->customSpread, 0.01f, 0.0f, 3.14159f);
-                    ImGui::DragFloat("Gravity Scale", &em->customGravityScale, 0.05f, -10.0f, 10.0f);
-                    ImGui::SetItemTooltip("1 = normal fall, 0 = float, negative = rise (smoke)");
-                    ImGui::DragFloat("Drag", &em->customDrag, 0.01f, 0.0f, 10.0f);
-                } else {
-                    ImGui::TextDisabled("Preset bakes color/size/lifetime/gravity.");
-                    ImGui::TextDisabled("Switch to Custom to edit them.");
-                }
+                const char* shapes[] = {"Point","Sphere","Hemisphere","Cone","Box","Disc (2D)","Line (2D)"};
+                int shape = static_cast<int>(em->shape);
+                if (ImGui::Combo("Shape", &shape, shapes, IM_ARRAYSIZE(shapes)))
+                    em->shape = static_cast<ECS::EmitShape>(shape);
+                if (em->shape != ECS::EmitShape::Point)
+                    ImGui::DragFloat("Shape Size", &em->shapeSize, 0.02f, 0.0f, 50.0f);
 
+                // Always-visible spawn params (honored per-particle by the GPU sim).
+                ImGui::SeparatorText("Particle");
+                ImGui::ColorEdit4("Color", &em->customColor.x);
+                ImGui::DragFloat("Size", &em->customSize, 0.01f, 0.0f, 20.0f);
+                ImGui::DragFloat("Lifetime (s)", &em->customLifetime, 0.05f, 0.0f, 60.0f);
+                ImGui::DragFloat("Speed", &em->customSpeed, 0.05f, 0.0f, 100.0f);
+                ImGui::DragFloat("Spread", &em->customSpread, 0.01f, 0.0f, 3.14159f);
+                ImGui::DragFloat("Gravity Scale", &em->customGravityScale, 0.05f, -10.0f, 10.0f);
+                ImGui::SetItemTooltip("1 = normal fall, 0 = float, negative = rise (fire/smoke)");
+                ImGui::DragFloat("Drag", &em->customDrag, 0.01f, 0.0f, 10.0f);
+
+                ImGui::Spacing();
                 if (ImGui::Button("Burst 500")) { em->burstCount = 500; em->burstNow = true; }
                 ImGui::SameLine();
                 if (ImGui::Button("Burst 5000")) { em->burstCount = 5000; em->burstNow = true; }

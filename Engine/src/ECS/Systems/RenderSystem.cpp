@@ -5262,9 +5262,10 @@ void RenderSystem::TickGPUEmitters(f32 deltaTime) {
         Math::Vector3 pos(0.0f);
         if (auto* t = m_World->GetComponent<TransformComponent>(e)) pos = t->position;
 
+        const u8 shape = static_cast<u8>(em->shape);
         // One-shot burst (fired once, then cleared)
         if (em->burstNow && em->burstCount > 0) {
-            m_GPUParticleSystem->SpawnWithParams(em->burstCount, pos, em->direction, em->ResolveParams());
+            m_GPUParticleSystem->SpawnWithParams(em->burstCount, pos, em->direction, em->ResolveParams(), shape, em->shapeSize);
             em->burstNow = false;
         }
 
@@ -5275,7 +5276,7 @@ void RenderSystem::TickGPUEmitters(f32 deltaTime) {
             if (n > 0) {
                 em->accumulator -= static_cast<f32>(n);
                 if (n > 4096) n = 4096;   // clamp a single frame's spawn spike
-                m_GPUParticleSystem->SpawnWithParams(n, pos, em->direction, em->ResolveParams());
+                m_GPUParticleSystem->SpawnWithParams(n, pos, em->direction, em->ResolveParams(), shape, em->shapeSize);
             }
         }
     }

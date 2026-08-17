@@ -32,7 +32,8 @@ public:
 
     // Upload `count` fresh particles at position/direction with the given look.
     void SpawnWithParams(u32 count, const Math::Vector3& position,
-                         const Math::Vector3& direction, const Effects::ParticleSpawnParams& params);
+                         const Math::Vector3& direction, const Effects::ParticleSpawnParams& params,
+                         u8 shape = 0, f32 shapeSize = 0.0f);
 
     // Dispatch the compute sim for this frame (compute pass on the frame encoder).
     void Simulate(f32 deltaTime, u32 frameNumber, const Math::Vector3& windForce);

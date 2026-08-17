@@ -287,14 +287,15 @@ void WebGPUParticleSystem::Shutdown() {
 
 void WebGPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& position,
                                            const Math::Vector3& direction,
-                                           const Effects::ParticleSpawnParams& params) {
+                                           const Effects::ParticleSpawnParams& params,
+                                           u8 shape, f32 shapeSize) {
     if (!m_Initialized || count == 0) return;
     m_HasSpawned = true;
 
     std::vector<Effects::GPUParticle> fresh(count);
     for (u32 i = 0; i < count; ++i) {
         Effects::GPUParticle& p = fresh[i];
-        p.position = position;
+        p.position = position + Effects::ShapeSpawnOffset(shape, shapeSize, i);
         p.lifetime = params.lifetime * (0.7f + 0.6f * HashUnit(i * 2654435761u + 11u));
         p.age = 0.0f;
         f32 theta = static_cast<f32>(i) * 2.39996f;   // golden angle

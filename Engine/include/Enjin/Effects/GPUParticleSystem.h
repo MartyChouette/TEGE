@@ -52,7 +52,8 @@ public:
     // Spawn with explicit per-particle appearance/physics (this is what emitters
     // and presets use so different looks coexist in the one shared buffer).
     void SpawnWithParams(u32 count, const Math::Vector3& position,
-                         const Math::Vector3& direction, const ParticleSpawnParams& params);
+                         const Math::Vector3& direction, const ParticleSpawnParams& params,
+                         u8 shape = 0, f32 shapeSize = 0.0f);
 
     // Render: draw the particle SSBO as an instance-rate vertex buffer inside
     // the current (already begun) render pass. Dead slots collapse to

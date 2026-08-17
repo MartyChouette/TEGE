@@ -48,6 +48,11 @@ struct ParticleSpawnParams {
 ParticleSpawnParams PresetSpawnParams(GPUParticlePreset preset);
 const char* GPUParticlePresetName(GPUParticlePreset preset);
 
+// Per-particle spawn position offset for an emission shape (see ECS::EmitShape):
+// 0=Point,1=Sphere,2=Hemisphere,3=Cone,4=Box,5=Disc2D,6=Line2D. Point/Cone = no
+// offset (Cone is a velocity spread, not a volume). `size` is radius / half-extent.
+Math::Vector3 ShapeSpawnOffset(u8 shape, f32 size, u32 index);
+
 // Emitter configuration for GPU particles (uploaded to the sim's params UBO).
 struct GPUEmitterConfig {
     Math::Vector3 position = {0, 0, 0};

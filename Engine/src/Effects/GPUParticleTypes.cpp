@@ -1,10 +1,44 @@
 #include "Enjin/Effects/GPUParticleTypes.h"
+#include <cmath>
+#include <algorithm>
 
 // Backend-agnostic (no renderer guard): the preset table is shared by the Vulkan
 // and WebGPU particle systems and by the emitter component's ResolveParams().
 
 namespace Enjin {
 namespace Effects {
+
+static f32 ShapeHash(u32 n) {
+    n = (n << 13u) ^ n;
+    n = n * (n * n * 15731u + 789221u) + 1376312589u;
+    return static_cast<f32>(n & 0x7FFFFFFFu) / static_cast<f32>(0x7FFFFFFF);
+}
+
+Math::Vector3 ShapeSpawnOffset(u8 shape, f32 size, u32 index) {
+    if (shape == 0 || shape == 3 || size <= 0.0f) return Math::Vector3(0, 0, 0);  // Point / Cone
+    f32 a = ShapeHash(index * 3u + 1u);
+    f32 b = ShapeHash(index * 3u + 2u);
+    f32 c = ShapeHash(index * 3u + 3u);
+    switch (shape) {
+        case 1:   // Sphere
+        case 2: { // Hemisphere (y >= 0)
+            f32 u = a * 2.0f - 1.0f;
+            f32 t = b * 6.2831853f;
+            f32 r = size * std::cbrt(c);
+            f32 s = std::sqrt(std::max(0.0f, 1.0f - u * u));
+            f32 y = (shape == 2) ? std::fabs(u) : u;
+            return Math::Vector3(r * s * std::cos(t), r * y, r * s * std::sin(t));
+        }
+        case 4:   // Box
+            return Math::Vector3((a * 2 - 1) * size, (b * 2 - 1) * size, (c * 2 - 1) * size);
+        case 5:   // Disc (2D, XY plane)
+            return Math::Vector3((a * 2 - 1) * size, (b * 2 - 1) * size, 0.0f);
+        case 6:   // Line (2D, X axis)
+            return Math::Vector3((a * 2 - 1) * size, 0.0f, 0.0f);
+        default:
+            return Math::Vector3(0, 0, 0);
+    }
+}
 
 const char* GPUParticlePresetName(GPUParticlePreset p) {
     switch (p) {

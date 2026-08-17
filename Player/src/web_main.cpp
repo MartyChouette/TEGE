@@ -974,20 +974,28 @@ public:
     void DriveParticles(Enjin::f32 dt) {
         if (!m_Particles || !m_World) return;
 #if defined(ENJIN_WEBGPU_COMPUTE_SMOKETEST)
-        // Debug fountain (gated with the compute smoke test): a Fire emitter at a fixed
-        // point so the particle sim + draw path is visibly verifiable without authoring
-        // an emitter in the scene. Off in shipping builds.
-        m_Particles->SpawnWithParams(24, Enjin::Math::Vector3(0.0f, 1.0f, -3.0f),
-            Enjin::Math::Vector3(0.0f, 1.0f, 0.0f),
-            Enjin::Effects::PresetSpawnParams(Enjin::Effects::GPUParticlePreset::Fire));
+        // Debug fountain (gated with the compute smoke test): a Fire emitter 4 units in
+        // FRONT of the camera so it's unmissable in any scene, verifying the particle
+        // sim + draw path without authoring an emitter. Off in shipping builds.
+        if (m_Camera) {
+            Enjin::Math::Vector3 at = m_Camera->GetPosition() + m_Camera->GetForward() * 4.0f;
+            m_Particles->SpawnWithParams(40, at, Enjin::Math::Vector3(0.0f, 1.0f, 0.0f),
+                Enjin::Effects::PresetSpawnParams(Enjin::Effects::GPUParticlePreset::Fire));
+            static bool s_loggedFountain = false;
+            if (!s_loggedFountain) {
+                s_loggedFountain = true;
+                ENJIN_LOG_INFO(Player, "[particle-debug] Fire fountain spawning in front of the camera");
+            }
+        }
 #endif
         for (Enjin::ECS::Entity e : m_World->GetEntitiesWithComponent<Enjin::ECS::GPUParticleEmitterComponent>()) {
             auto* em = m_World->GetComponent<Enjin::ECS::GPUParticleEmitterComponent>(e);
             if (!em) continue;
             Enjin::Math::Vector3 pos(0.0f);
             if (auto* t = m_World->GetComponent<Enjin::ECS::TransformComponent>(e)) pos = t->position;
+            const Enjin::u8 shape = static_cast<Enjin::u8>(em->shape);
             if (em->burstNow && em->burstCount > 0) {
-                m_Particles->SpawnWithParams(em->burstCount, pos, em->direction, em->ResolveParams());
+                m_Particles->SpawnWithParams(em->burstCount, pos, em->direction, em->ResolveParams(), shape, em->shapeSize);
                 em->burstNow = false;
             }
             if (em->emitting && em->spawnRate > 0.0f) {
@@ -996,7 +1004,7 @@ public:
                 if (n > 0) {
                     em->accumulator -= static_cast<Enjin::f32>(n);
                     if (n > 4096) n = 4096;
-                    m_Particles->SpawnWithParams(n, pos, em->direction, em->ResolveParams());
+                    m_Particles->SpawnWithParams(n, pos, em->direction, em->ResolveParams(), shape, em->shapeSize);
                 }
             }
         }
