@@ -137,34 +137,34 @@ static void ValidateImportedMeshes(ECS::World* world, const ImportResult& result
             }
         }
 
-        // Check for AND STRIP degenerate (zero-area) triangles. They render nothing,
-        // waste memory, and wreck mesh simplification — the quadric collapse turns
-        // them into more degenerates until a LOD comes out with 0 triangles (invisible).
-        // Rebuild the index buffer keeping only real triangles. Vertices are left in
-        // place (orphans are harmless and cheaper than a full remap).
+        // Strip ONLY truly-degenerate triangles: a repeated index, an out-of-range
+        // index, or two coincident vertices. Do NOT use a small-area threshold —
+        // triangle area scales with mesh density, so on a dense high-poly mesh most
+        // real triangles are tiny (median ~1e-7 on a 2-unit model). Culling by area
+        // deletes real fine geometry and punches holes. A triangle with three
+        // distinct, non-coincident vertices is real, however small, so it stays.
         {
             std::vector<u32> cleanIndices;
             cleanIndices.reserve(mesh->indices.size());
             for (usize i = 0; i + 2 < mesh->indices.size(); i += 3) {
                 u32 i0 = mesh->indices[i], i1 = mesh->indices[i + 1], i2 = mesh->indices[i + 2];
                 if (i0 >= mesh->vertices.size() || i1 >= mesh->vertices.size() || i2 >= mesh->vertices.size()) {
-                    degenerateTriangles++; continue; // out-of-range index — drop it
+                    degenerateTriangles++; continue; // out-of-range index
+                }
+                if (i0 == i1 || i1 == i2 || i0 == i2) {
+                    degenerateTriangles++; continue; // repeated index — zero area by definition
                 }
                 const auto& v0 = mesh->vertices[i0].position;
                 const auto& v1 = mesh->vertices[i1].position;
                 const auto& v2 = mesh->vertices[i2].position;
-                Math::Vector3 edge1 = v1 - v0;
-                Math::Vector3 edge2 = v2 - v0;
-                Math::Vector3 cross = Math::Vector3(
-                    edge1.y * edge2.z - edge1.z * edge2.y,
-                    edge1.z * edge2.x - edge1.x * edge2.z,
-                    edge1.x * edge2.y - edge1.y * edge2.x);
-                f32 area2 = cross.x * cross.x + cross.y * cross.y + cross.z * cross.z;
-                if (area2 < 1e-12f) { degenerateTriangles++; continue; } // zero-area — drop it
+                if ((v0.x == v1.x && v0.y == v1.y && v0.z == v1.z) ||
+                    (v1.x == v2.x && v1.y == v2.y && v1.z == v2.z) ||
+                    (v0.x == v2.x && v0.y == v2.y && v0.z == v2.z)) {
+                    degenerateTriangles++; continue; // coincident vertices — zero area
+                }
                 cleanIndices.push_back(i0); cleanIndices.push_back(i1); cleanIndices.push_back(i2);
             }
-            // Only swap in the cleaned list if something real survives — never nuke a
-            // whole mesh down to nothing (that would be worse than the degenerates).
+            // Only swap in the cleaned list if real geometry survives.
             if (degenerateTriangles > 0 && cleanIndices.size() >= 3) {
                 mesh->indices = std::move(cleanIndices);
             }
