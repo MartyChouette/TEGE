@@ -32,11 +32,46 @@ struct VertexEqual {
     }
 };
 
+// Symmetric 4x4 error quadric (Garland-Heckbert). Stored as 10 doubles for the
+// upper triangle: layout [0 1 2 3 / 1 4 5 6 / 2 5 7 8 / 3 6 8 9]. Doubles because
+// accumulating hundreds of planes in float loses the precision the solve needs.
+struct Quadric {
+    double q[10] = {0,0,0,0,0,0,0,0,0,0};
+    void addPlane(double a, double b, double c, double d, double w = 1.0) {
+        q[0]+=w*a*a; q[1]+=w*a*b; q[2]+=w*a*c; q[3]+=w*a*d;
+        q[4]+=w*b*b; q[5]+=w*b*c; q[6]+=w*b*d;
+        q[7]+=w*c*c; q[8]+=w*c*d;
+        q[9]+=w*d*d;
+    }
+    void add(const Quadric& o) { for (int i = 0; i < 10; ++i) q[i] += o.q[i]; }
+    // v^T Q v for the homogeneous point (x,y,z,1) — the squared distance to the
+    // set of planes this quadric represents.
+    double error(double x, double y, double z) const {
+        return q[0]*x*x + 2*q[1]*x*y + 2*q[2]*x*z + 2*q[3]*x
+             + q[4]*y*y + 2*q[5]*y*z + 2*q[6]*y
+             + q[7]*z*z + 2*q[8]*z + q[9];
+    }
+    // Position minimizing the error (solve the 3x3 from the quadric's gradient).
+    // Returns false if the system is singular (flat/degenerate) — caller falls back.
+    bool solveOptimal(Math::Vector3& out) const {
+        double a=q[0], b=q[1], c=q[2], e=q[4], f=q[5], i=q[7];
+        double det = a*(e*i - f*f) - b*(b*i - f*c) + c*(b*f - e*c);
+        if (std::abs(det) < 1e-12) return false;
+        double bx=-q[3], by=-q[6], bz=-q[8], inv = 1.0/det;
+        double x = (bx*(e*i-f*f) - b*(by*i-f*bz) + c*(by*f-e*bz)) * inv;
+        double y = (a*(by*i-f*bz) - bx*(b*i-f*c) + c*(b*bz-by*c)) * inv;
+        double z = (a*(e*bz-by*f) - b*(b*bz-by*c) + bx*(b*f-e*c)) * inv;
+        out = Math::Vector3(static_cast<f32>(x), static_cast<f32>(y), static_cast<f32>(z));
+        return true;
+    }
+};
+
 // Edge collapse data
 struct EdgeCollapse {
-    u32 v0, v1;       // Vertices to collapse
-    f32 cost;          // Error cost of this collapse
+    u32 v0, v1;           // v1 collapses into v0 (v0 survives)
+    f32 cost;             // Quadric error of the collapse
     Math::Vector3 target; // Optimal collapse position
+    u32 ver0, ver1;       // Endpoint versions when queued — stale entries are skipped on pop
 
     bool operator>(const EdgeCollapse& other) const { return cost > other.cost; }
 };
@@ -65,130 +100,153 @@ ECS::MeshComponent MeshSimplifier::Simplify(const ECS::MeshComponent& source, f3
     // Working copies
     std::vector<ECS::MeshComponent::Vertex> vertices = source.vertices;
     std::vector<u32> indices = source.indices;
-    std::vector<bool> vertRemoved(vertCount, false);
-    std::vector<bool> triRemoved(triCount, false);
 
-    // Build edge set and compute collapse costs
-    // Use simple edge-length-based cost (approximation of QEM)
-    struct Edge {
-        u32 v0, v1;
-        bool operator==(const Edge& o) const {
-            return (v0 == o.v0 && v1 == o.v1) || (v0 == o.v1 && v1 == o.v0);
-        }
+    auto cross = [](const Math::Vector3& u, const Math::Vector3& v) {
+        return Math::Vector3(u.y*v.z - u.z*v.y, u.z*v.x - u.x*v.z, u.x*v.y - u.y*v.x);
     };
-    struct EdgeHash {
-        usize operator()(const Edge& e) const {
-            u32 lo = e.v0 < e.v1 ? e.v0 : e.v1;
-            u32 hi = e.v0 < e.v1 ? e.v1 : e.v0;
-            return std::hash<u64>()(static_cast<u64>(lo) | (static_cast<u64>(hi) << 32));
-        }
-    };
-
-    std::unordered_set<u64> edgeSet;
-    std::priority_queue<EdgeCollapse, std::vector<EdgeCollapse>, std::greater<EdgeCollapse>> pq;
-
     auto edgeKey = [](u32 a, u32 b) -> u64 {
-        u32 lo = a < b ? a : b;
-        u32 hi = a < b ? b : a;
+        u32 lo = a < b ? a : b, hi = a < b ? b : a;
         return static_cast<u64>(lo) | (static_cast<u64>(hi) << 32);
     };
 
-    // Collect all edges from triangles
+    // --- Per-vertex error quadrics from area-weighted face planes (Garland-Heckbert).
+    // Each face contributes its plane to its three vertices; larger faces weigh more,
+    // so flat regions accrue low error (cheap to collapse) and detail stays.
+    std::vector<Quadric> Q(vertCount);
+    std::unordered_map<u64, u32> edgeFaceCount;
+    edgeFaceCount.reserve(triCount * 3);
     for (u32 t = 0; t < triCount; ++t) {
-        u32 i0 = indices[t * 3 + 0];
-        u32 i1 = indices[t * 3 + 1];
-        u32 i2 = indices[t * 3 + 2];
+        u32 i0 = indices[t*3+0], i1 = indices[t*3+1], i2 = indices[t*3+2];
+        const Math::Vector3& p0 = vertices[i0].position;
+        const Math::Vector3& p1 = vertices[i1].position;
+        const Math::Vector3& p2 = vertices[i2].position;
+        Math::Vector3 n = cross(p1 - p0, p2 - p0);
+        f32 len = n.Length();
+        if (len < 1e-12f) continue; // degenerate face has no plane
+        n = n * (1.0f / len);
+        double d = -static_cast<double>(n.x*p0.x + n.y*p0.y + n.z*p0.z);
+        double w = 0.5 * static_cast<double>(len); // triangle area
+        Q[i0].addPlane(n.x, n.y, n.z, d, w);
+        Q[i1].addPlane(n.x, n.y, n.z, d, w);
+        Q[i2].addPlane(n.x, n.y, n.z, d, w);
+        edgeFaceCount[edgeKey(i0,i1)]++;
+        edgeFaceCount[edgeKey(i1,i2)]++;
+        edgeFaceCount[edgeKey(i2,i0)]++;
+    }
 
-        u64 edges[3] = { edgeKey(i0, i1), edgeKey(i1, i2), edgeKey(i2, i0) };
-        u32 pairs[3][2] = { {i0, i1}, {i1, i2}, {i2, i0} };
-
+    // Boundary preservation: an edge used by a single triangle is an open border.
+    // Add a plane perpendicular to that triangle through the edge, weighted heavily,
+    // so simplification can't erode the silhouette inward.
+    for (u32 t = 0; t < triCount; ++t) {
+        u32 tri[3] = { indices[t*3+0], indices[t*3+1], indices[t*3+2] };
+        Math::Vector3 fn = cross(vertices[tri[1]].position - vertices[tri[0]].position,
+                                 vertices[tri[2]].position - vertices[tri[0]].position);
+        if (fn.Length() < 1e-12f) continue;
+        fn = fn * (1.0f / fn.Length());
         for (int e = 0; e < 3; ++e) {
-            if (edgeSet.count(edges[e]) == 0) {
-                edgeSet.insert(edges[e]);
-
-                u32 v0 = pairs[e][0], v1 = pairs[e][1];
-                Math::Vector3 mid = (vertices[v0].position + vertices[v1].position) * 0.5f;
-                f32 edgeLen = (vertices[v0].position - vertices[v1].position).Length();
-
-                EdgeCollapse ec;
-                ec.v0 = v0;
-                ec.v1 = v1;
-                ec.cost = edgeLen;
-                ec.target = mid;
-                pq.push(ec);
-            }
+            u32 a = tri[e], b = tri[(e+1)%3];
+            if (edgeFaceCount[edgeKey(a,b)] != 1) continue; // interior edge
+            Math::Vector3 bn = cross(vertices[b].position - vertices[a].position, fn);
+            f32 bl = bn.Length();
+            if (bl < 1e-12f) continue;
+            bn = bn * (1.0f / bl);
+            double d = -static_cast<double>(bn.x*vertices[a].position.x + bn.y*vertices[a].position.y + bn.z*vertices[a].position.z);
+            constexpr double kBoundary = 1000.0;
+            Q[a].addPlane(bn.x, bn.y, bn.z, d, kBoundary);
+            Q[b].addPlane(bn.x, bn.y, bn.z, d, kBoundary);
         }
     }
 
-    // Remap table: vertex i -> its current representative
+    // Adjacency (neighbor sets), kept current across collapses so we can re-cost.
+    std::vector<std::unordered_set<u32>> adj(vertCount);
+    for (u32 t = 0; t < triCount; ++t) {
+        u32 i0 = indices[t*3+0], i1 = indices[t*3+1], i2 = indices[t*3+2];
+        if (i0==i1||i1==i2||i0==i2) continue;
+        adj[i0].insert(i1); adj[i1].insert(i0);
+        adj[i1].insert(i2); adj[i2].insert(i1);
+        adj[i2].insert(i0); adj[i0].insert(i2);
+    }
+
+    std::vector<u32> vertVersion(vertCount, 0);
+    std::vector<bool> vertRemoved(vertCount, false);
     std::vector<u32> remap(vertCount);
     for (u32 i = 0; i < vertCount; ++i) remap[i] = i;
 
-    auto findRoot = [&](u32 v) -> u32 {
-        while (remap[v] != v) v = remap[v];
-        return v;
+    std::priority_queue<EdgeCollapse, std::vector<EdgeCollapse>, std::greater<EdgeCollapse>> pq;
+    auto makeCollapse = [&](u32 a, u32 b) -> EdgeCollapse {
+        Quadric qs = Q[a]; qs.add(Q[b]);
+        Math::Vector3 opt;
+        if (!qs.solveOptimal(opt)) {
+            // Singular (flat/degenerate) — take the cheapest of the two endpoints or the midpoint.
+            Math::Vector3 pa = vertices[a].position, pb = vertices[b].position, mid = (pa + pb) * 0.5f;
+            double ea = qs.error(pa.x,pa.y,pa.z), eb = qs.error(pb.x,pb.y,pb.z), em = qs.error(mid.x,mid.y,mid.z);
+            opt = (ea <= eb && ea <= em) ? pa : (eb <= em ? pb : mid);
+        }
+        double c = qs.error(opt.x, opt.y, opt.z);
+        EdgeCollapse ec;
+        ec.v0 = a; ec.v1 = b; ec.cost = static_cast<f32>(c < 0.0 ? 0.0 : c); ec.target = opt;
+        ec.ver0 = vertVersion[a]; ec.ver1 = vertVersion[b];
+        return ec;
     };
 
-    u32 activeVerts = vertCount;
-
-    // Collapse edges until we hit target
-    while (activeVerts > targetVertCount && !pq.empty()) {
-        EdgeCollapse ec = pq.top();
-        pq.pop();
-
-        u32 rv0 = findRoot(ec.v0);
-        u32 rv1 = findRoot(ec.v1);
-
-        // Skip if already collapsed to same vertex
-        if (rv0 == rv1) continue;
-        if (vertRemoved[rv0] || vertRemoved[rv1]) continue;
-
-        // Collapse v1 into v0: move v0 to midpoint, redirect v1
-        vertices[rv0].position = ec.target;
-        // Blend normals
-        vertices[rv0].normal = (vertices[rv0].normal + vertices[rv1].normal);
-        f32 nLen = vertices[rv0].normal.Length();
-        if (nLen > 1e-6f) vertices[rv0].normal = vertices[rv0].normal * (1.0f / nLen);
-        // Average UVs
-        vertices[rv0].uv = (vertices[rv0].uv + vertices[rv1].uv) * 0.5f;
-
-        remap[rv1] = rv0;
-        vertRemoved[rv1] = true;
-        activeVerts--;
+    {
+        std::unordered_set<u64> seen;
+        seen.reserve(triCount * 3);
+        for (u32 v = 0; v < vertCount; ++v)
+            for (u32 n : adj[v])
+                if (seen.insert(edgeKey(v, n)).second) pq.push(makeCollapse(v, n));
     }
 
-    // Rebuild mesh with remapped indices, removing degenerate triangles
-    ECS::MeshComponent result;
+    u32 activeVerts = vertCount;
+    while (activeVerts > targetVertCount && !pq.empty()) {
+        EdgeCollapse ec = pq.top(); pq.pop();
+        u32 a = ec.v0, b = ec.v1;
+        if (a == b || vertRemoved[a] || vertRemoved[b]) continue;
+        if (vertVersion[a] != ec.ver0 || vertVersion[b] != ec.ver1) continue; // stale cost
 
-    // Build compacted vertex list
+        // Collapse b into a at the optimal point; merge quadrics + blend attributes.
+        Q[a].add(Q[b]);
+        vertices[a].position = ec.target;
+        Math::Vector3 nrm = vertices[a].normal + vertices[b].normal;
+        f32 nl = nrm.Length();
+        vertices[a].normal = (nl > 1e-6f) ? nrm * (1.0f/nl) : vertices[a].normal;
+        vertices[a].uv = (vertices[a].uv + vertices[b].uv) * 0.5f;
+
+        remap[b] = a;
+        vertRemoved[b] = true;
+        --activeVerts;
+
+        for (u32 n : adj[b]) {           // rewire b's neighbors onto a
+            if (n == a) continue;
+            adj[n].erase(b); adj[n].insert(a); adj[a].insert(n);
+        }
+        adj[a].erase(b);
+        adj[b].clear();
+
+        ++vertVersion[a];                // a changed — old queued edges are now stale
+        for (u32 n : adj[a])
+            if (!vertRemoved[n]) pq.push(makeCollapse(a, n));
+    }
+
+    // --- Rebuild: compact survivors, remap triangles, drop degenerates ---
+    auto findRoot = [&](u32 v) -> u32 { while (remap[v] != v) v = remap[v]; return v; };
+    ECS::MeshComponent result;
     std::vector<u32> vertexMap(vertCount, UINT32_MAX);
-    u32 newVertIdx = 0;
     for (u32 i = 0; i < vertCount; ++i) {
         u32 root = findRoot(i);
         if (vertexMap[root] == UINT32_MAX) {
-            vertexMap[root] = newVertIdx++;
+            vertexMap[root] = static_cast<u32>(result.vertices.size());
             result.vertices.push_back(vertices[root]);
         }
     }
-
-    // Remap and add non-degenerate triangles
     for (u32 t = 0; t < triCount; ++t) {
-        u32 i0 = findRoot(indices[t * 3 + 0]);
-        u32 i1 = findRoot(indices[t * 3 + 1]);
-        u32 i2 = findRoot(indices[t * 3 + 2]);
-
-        // Skip degenerate triangles
-        if (i0 == i1 || i1 == i2 || i0 == i2) continue;
-
-        u32 ni0 = vertexMap[i0];
-        u32 ni1 = vertexMap[i1];
-        u32 ni2 = vertexMap[i2];
-
-        if (ni0 == UINT32_MAX || ni1 == UINT32_MAX || ni2 == UINT32_MAX) continue;
-
-        result.indices.push_back(ni0);
-        result.indices.push_back(ni1);
-        result.indices.push_back(ni2);
+        u32 i0 = findRoot(indices[t*3+0]), i1 = findRoot(indices[t*3+1]), i2 = findRoot(indices[t*3+2]);
+        if (i0==i1 || i1==i2 || i0==i2) continue;
+        u32 n0 = vertexMap[i0], n1 = vertexMap[i1], n2 = vertexMap[i2];
+        if (n0==UINT32_MAX||n1==UINT32_MAX||n2==UINT32_MAX) continue;
+        result.indices.push_back(n0);
+        result.indices.push_back(n1);
+        result.indices.push_back(n2);
     }
 
     return result;
