@@ -11222,10 +11222,13 @@ std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::str
     m_TextureById.push_back(texture);
     m_TextureIdToPath.push_back(path);
 
-    // Register in bindless descriptor set for indexed texture access
+    // Register in bindless descriptor set for indexed texture access.
+    // Pass VK_NULL_HANDLE so the texture binds the shared global sampler and follows
+    // the Texture Filtering scene setting (the texture's own VulkanSampler is unused
+    // by the bindless path). Per-material override would swap in a distinct sampler here.
     if (m_BindlessManager && texture->IsValid()) {
         auto handle = m_BindlessManager->RegisterTexture(
-            texture->GetImageView(), texture->GetSampler());
+            texture->GetImageView(), VK_NULL_HANDLE);
         if (handle != UINT32_MAX) {
             m_TextureBindlessHandles[texture.get()] = handle;
         }

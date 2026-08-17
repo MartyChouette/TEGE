@@ -65,9 +65,18 @@ void BindlessResourceManager::Shutdown() {
 }
 
 BindlessHandle BindlessResourceManager::RegisterTexture(VkImageView imageView, VkSampler sampler) {
-    if (!imageView || !sampler) {
+    if (!imageView) {
         ENJIN_LOG_ERROR(Renderer, "Invalid texture parameters");
         return INVALID_BINDLESS_HANDLE;
+    }
+    // No sampler given: use the shared global sampler so this texture follows the
+    // Texture Filtering scene setting (SetSamplerConfig repoints all default-sampler
+    // textures when the filter changes).
+    if (sampler == VK_NULL_HANDLE) {
+        sampler = CreateDefaultSampler();
+        if (sampler == VK_NULL_HANDLE) {
+            return INVALID_BINDLESS_HANDLE;
+        }
     }
 
     BindlessHandle handle = INVALID_BINDLESS_HANDLE;
