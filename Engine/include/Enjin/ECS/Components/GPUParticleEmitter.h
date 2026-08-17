@@ -2,7 +2,7 @@
 
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Math/Vector.h"
-#include "Enjin/Effects/GPUParticleSystem.h"
+#include "Enjin/Effects/GPUParticleTypes.h"
 
 namespace Enjin {
 namespace ECS {
