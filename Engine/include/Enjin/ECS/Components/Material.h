@@ -70,6 +70,11 @@ struct MaterialComponent {
     // Cel shading
     u8 lightRampOverride = 0;  // 0=use global, 1-4=override (smooth/warm/cool/anime)
 
+    // Per-material texture filter override for this material's textures.
+    // 0=use global Texture Filtering setting, 1=Point (nearest, pixel-art),
+    // 2=Bilinear, 3=Trilinear. Anisotropy/mipmaps/wrap follow the global setting.
+    u8 textureFilterOverride = 0;
+
     // Dithered gradient rendering (flat shading + banded lighting with dither transitions)
     bool ditherGradient = false;
     u8 ditherGradientBands = 4;        // 2-8 color quantization bands

@@ -3914,6 +3914,11 @@ void RenderSystem::FlushPendingChanges() {
     // in-flight command buffer and hang the GPU at submit.
     EnsureMaterialSSBOCapacity();
 
+    // Register/refresh per-material texture-filter override samplers here (pre-recording,
+    // safe). Registering bindless textures or rewriting descriptors inside BuildMaterialSSBO
+    // (mid-recording) invalidates the in-flight command buffer.
+    EnsureOverrideTextureHandles();
+
     // Deferred RT bring-up: a scene enabled ray tracing after boot (init at
     // boot ran before any scene settings existed). Pipeline/descriptor
     // creation is only safe here, pre-recording. After init, set 0 is
@@ -9148,6 +9153,54 @@ void RenderSystem::EnsureMaterialSSBOCapacity() {
     m_MaterialSSBODirty = true;  // the freshly-created buffers must be repopulated
 }
 
+void RenderSystem::EnsureOverrideTextureHandles() {
+    // Frame-safe (pre-recording): register a distinct bindless slot for every texture
+    // used by a material that sets textureFilterOverride, built with an override sampler.
+    // BuildMaterialSSBO's lookupBindless then resolves those materials to the override
+    // slot instead of the shared global slot. Texture pointers are cached for the process
+    // lifetime (m_TextureById), so these handles stay valid like m_TextureBindlessHandles.
+    if (!m_BindlessManager || !m_World || !m_CachedMaterialStorage) return;
+
+    const auto& g = m_BindlessManager->GetSamplerConfig();  // companion aniso/mips/wrap
+
+    auto ensure = [&](Renderer::Texture* tex, u8 mode) {
+        if (!tex || tex->GetImageView() == VK_NULL_HANDLE) return;
+        Renderer::BindlessResourceManager::SamplerConfig cfg;
+        cfg.filter     = (mode == 1) ? 0u : (mode == 2) ? 1u : 2u;  // Point / Bilinear / Trilinear
+        cfg.wrap       = g.wrap;
+        cfg.mipmaps    = g.mipmaps;
+        cfg.anisotropy = (mode == 1) ? 1u : g.anisotropy;          // Point ignores anisotropy
+        u32 packed = (cfg.filter & 0x3) | ((cfg.wrap & 0x3) << 2)
+                   | ((cfg.mipmaps ? 1u : 0u) << 4) | ((cfg.anisotropy & 0x1F) << 5);
+        // Texture pointers are >=8-byte aligned, so the low 3 bits are free for the mode.
+        u64 key = (reinterpret_cast<uintptr_t>(tex) & ~static_cast<u64>(0x7)) | (mode & 0x7);
+
+        auto it = m_OverrideTextureHandles.find(key);
+        if (it == m_OverrideTextureHandles.end()) {
+            VkSampler s = m_BindlessManager->GetOrCreateSampler(cfg);
+            u32 h = m_BindlessManager->RegisterTexture(tex->GetImageView(), s);
+            if (h != UINT32_MAX) m_OverrideTextureHandles[key] = { h, packed };
+        } else if (it->second.builtConfigKey != packed) {
+            // Global companion settings changed: repoint the slot at the new sampler.
+            VkSampler s = m_BindlessManager->GetOrCreateSampler(cfg);
+            m_BindlessManager->SetTextureSampler(it->second.handle, s);
+            it->second.builtConfigKey = packed;
+        }
+    };
+
+    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+        MaterialComponent* m = m_CachedMaterialStorage->Get(entity);
+        if (!m || m->textureFilterOverride == 0) continue;
+        u8 mode = m->textureFilterOverride;
+        ensure(m->cachedBaseColorTexture, mode);
+        ensure(m->cachedHeightTexture, mode);
+        ensure(m->cachedNormalTexture, mode);
+        ensure(m->cachedMetallicRoughnessTexture, mode);
+        ensure(m->cachedEmissiveTexture, mode);
+        ensure(m->cachedMatcapTexture, mode);
+    }
+}
+
 void RenderSystem::BuildMaterialSSBO() {
     if (m_MaterialSSBOBuilt) return;
     m_MaterialSSBOBuilt = true;
@@ -9200,9 +9253,16 @@ void RenderSystem::BuildMaterialSSBO() {
         m_MaterialSSBOData.resize(totalBytes, 0);
     }
 
-    // Helper: look up bindless texture handle for a cached texture pointer
-    auto lookupBindless = [this](Renderer::Texture* tex) -> u32 {
+    // Helper: look up bindless texture handle for a cached texture pointer. When the
+    // material sets a filter override, prefer its override slot (registered frame-safely
+    // in EnsureOverrideTextureHandles); fall back to the shared global slot until then.
+    auto lookupBindless = [this](Renderer::Texture* tex, u8 overrideMode) -> u32 {
         if (!tex || !m_BindlessManager) return m_DefaultBindlessHandle;
+        if (overrideMode != 0) {
+            u64 key = (reinterpret_cast<uintptr_t>(tex) & ~static_cast<u64>(0x7)) | (overrideMode & 0x7);
+            auto oit = m_OverrideTextureHandles.find(key);
+            if (oit != m_OverrideTextureHandles.end()) return oit->second.handle;
+        }
         auto it = m_TextureBindlessHandles.find(tex);
         return (it != m_TextureBindlessHandles.end()) ? it->second : m_DefaultBindlessHandle;
     };
@@ -9216,12 +9276,13 @@ void RenderSystem::BuildMaterialSSBO() {
         if (material) {
             materialGPU = MaterialGPU::FromComponent(*material);
             // Populate bindless texture indices from cached texture pointers
-            materialGPU.baseColorTexIdx         = lookupBindless(material->cachedBaseColorTexture);
-            materialGPU.heightTexIdx            = lookupBindless(material->cachedHeightTexture);
-            materialGPU.normalTexIdx            = lookupBindless(material->cachedNormalTexture);
-            materialGPU.metallicRoughnessTexIdx = lookupBindless(material->cachedMetallicRoughnessTexture);
-            materialGPU.emissiveTexIdx          = lookupBindless(material->cachedEmissiveTexture);
-            materialGPU.matcapTexIdx            = lookupBindless(material->cachedMatcapTexture);
+            const u8 ofm = material->textureFilterOverride;
+            materialGPU.baseColorTexIdx         = lookupBindless(material->cachedBaseColorTexture, ofm);
+            materialGPU.heightTexIdx            = lookupBindless(material->cachedHeightTexture, ofm);
+            materialGPU.normalTexIdx            = lookupBindless(material->cachedNormalTexture, ofm);
+            materialGPU.metallicRoughnessTexIdx = lookupBindless(material->cachedMetallicRoughnessTexture, ofm);
+            materialGPU.emissiveTexIdx          = lookupBindless(material->cachedEmissiveTexture, ofm);
+            materialGPU.matcapTexIdx            = lookupBindless(material->cachedMatcapTexture, ofm);
         } else {
             MaterialComponent defaultMat;
             defaultMat.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);

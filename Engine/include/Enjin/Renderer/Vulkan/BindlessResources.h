@@ -59,6 +59,15 @@ public:
     // default sampler and, later, per-material override samplers.
     VkSampler CreateSampler(const SamplerConfig& cfg);
 
+    // Cached sampler for per-material filter overrides. The manager owns these and
+    // destroys them at Shutdown, so callers never free them. Distinct configs are
+    // few (a handful of override modes), so the cache stays tiny.
+    VkSampler GetOrCreateSampler(const SamplerConfig& cfg);
+
+    // Repoint an already-registered texture slot at a different sampler (used when a
+    // material override's derived config changes). Marks the descriptor set dirty.
+    void SetTextureSampler(BindlessHandle handle, VkSampler sampler);
+
     // Create default sampler (uses the current SamplerConfig)
     VkSampler CreateDefaultSampler();
 
@@ -106,6 +115,9 @@ private:
     // Shared sampler every material texture uses (built from m_SamplerConfig).
     SamplerConfig m_SamplerConfig;
     VkSampler m_DefaultSampler = VK_NULL_HANDLE;
+
+    // Cache of override samplers keyed by a packed SamplerConfig (see GetOrCreateSampler).
+    std::unordered_map<u32, VkSampler> m_SamplerCache;
 
     struct BufferEntry {
         VkBuffer buffer = VK_NULL_HANDLE;

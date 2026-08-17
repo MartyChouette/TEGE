@@ -1821,6 +1821,12 @@ private:
     std::unique_ptr<Renderer::BindlessResourceManager> m_BindlessManager;
     std::unordered_map<void*, u32> m_TextureBindlessHandles;  // Texture* -> bindless handle
     u32 m_DefaultBindlessHandle = UINT32_MAX;
+    // Per-material filter override: (Texture* ^ filterMode) -> {bindless handle, packed config
+    // it was built with}. Populated frame-safely in FlushPendingChanges (EnsureOverrideTextureHandles),
+    // read by BuildMaterialSSBO's lookupBindless. See MaterialComponent::textureFilterOverride.
+    struct OverrideHandle { u32 handle; u32 builtConfigKey; };
+    std::unordered_map<u64, OverrideHandle> m_OverrideTextureHandles;
+    void EnsureOverrideTextureHandles();
     u32 m_DenoiserType = 0;  // 0=SVGF, 1=OIDN, 2=OptiX
 
     // RT descriptor set layout and pool

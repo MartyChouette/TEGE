@@ -221,6 +221,7 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["vertexSnapResolution"] = material.vertexSnapResolution;
     j["shadowDitherMode"] = material.shadowDitherMode;
     j["shadowDitherPattern"] = material.shadowDitherPattern;
+    j["textureFilterOverride"] = material.textureFilterOverride;
     j["reflectivity"] = material.reflectivity;
     j["fresnelPower"] = material.fresnelPower;
     j["rimLightStrength"] = material.rimLightStrength;
@@ -483,6 +484,7 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("vertexSnapResolution")) { u8 v = j["vertexSnapResolution"].get<u8>(); if (v <= 31) material.vertexSnapResolution = v; }
     if (j.contains("shadowDitherMode")) { u8 v = j["shadowDitherMode"].get<u8>(); if (v <= 3) material.shadowDitherMode = v; }
     if (j.contains("shadowDitherPattern")) { u8 v = j["shadowDitherPattern"].get<u8>(); if (v <= 7) material.shadowDitherPattern = v; }
+    if (j.contains("textureFilterOverride")) { u8 v = j["textureFilterOverride"].get<u8>(); if (v <= 3) material.textureFilterOverride = v; }
     if (j.contains("reflectivity")) material.reflectivity = j["reflectivity"].get<f32>();
     if (j.contains("fresnelPower")) material.fresnelPower = j["fresnelPower"].get<f32>();
     if (j.contains("rimLightStrength")) material.rimLightStrength = j["rimLightStrength"].get<f32>();

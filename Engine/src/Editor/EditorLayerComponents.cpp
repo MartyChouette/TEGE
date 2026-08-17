@@ -635,6 +635,17 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
 
         // Texture paths
         if (ImGui::TreeNode("Textures")) {
+            // Per-material texture filter override. "Global" follows the scene's
+            // Rendering > Texture Filtering setting; the others force this material's
+            // textures to a specific filter (e.g. Point for crisp pixel-art).
+            const char* filterOverrides[] = { "Global", "Point (Nearest)", "Bilinear", "Trilinear" };
+            int filterOv = static_cast<int>(material->textureFilterOverride);
+            if (filterOv < 0 || filterOv > 3) filterOv = 0;
+            if (InspectorUndo::Combo(m_UndoRedo, "Filter", &filterOv, filterOverrides, 4)) {
+                material->textureFilterOverride = static_cast<u8>(filterOv);
+            }
+            ImGui::Spacing();
+
             // Helper: accept image drag-drop on last widget
             auto textureDrop = [&](std::string& pathField, i32& cacheField) {
                 if (ImGui::BeginDragDropTarget()) {

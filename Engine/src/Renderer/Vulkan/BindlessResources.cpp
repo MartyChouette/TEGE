@@ -58,6 +58,13 @@ void BindlessResourceManager::Shutdown() {
         m_DefaultSampler = VK_NULL_HANDLE;
     }
 
+    for (auto& kv : m_SamplerCache) {
+        if (kv.second != VK_NULL_HANDLE) {
+            vkDestroySampler(m_Context->GetDevice(), kv.second, nullptr);
+        }
+    }
+    m_SamplerCache.clear();
+
     m_Textures.clear();
     m_Buffers.clear();
     m_FreeTextureSlots.clear();
@@ -167,6 +174,26 @@ VkSampler BindlessResourceManager::CreateSampler(const SamplerConfig& cfg) {
         return VK_NULL_HANDLE;
     }
     return s;
+}
+
+VkSampler BindlessResourceManager::GetOrCreateSampler(const SamplerConfig& cfg) {
+    // Pack the config into a small key: filter(2) | wrap(2) | mipmaps(1) | anisotropy(5).
+    u32 key = (cfg.filter & 0x3)
+            | ((cfg.wrap & 0x3) << 2)
+            | ((cfg.mipmaps ? 1u : 0u) << 4)
+            | ((cfg.anisotropy & 0x1F) << 5);
+    auto it = m_SamplerCache.find(key);
+    if (it != m_SamplerCache.end()) return it->second;
+    VkSampler s = CreateSampler(cfg);
+    if (s != VK_NULL_HANDLE) m_SamplerCache[key] = s;
+    return s;
+}
+
+void BindlessResourceManager::SetTextureSampler(BindlessHandle handle, VkSampler sampler) {
+    if (handle >= m_Textures.size() || !m_Textures[handle].valid || sampler == VK_NULL_HANDLE) return;
+    if (m_Textures[handle].sampler == sampler) return;
+    m_Textures[handle].sampler = sampler;
+    m_Dirty = true;
 }
 
 VkSampler BindlessResourceManager::CreateDefaultSampler() {
