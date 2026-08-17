@@ -5,6 +5,7 @@
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/CameraController.h"
 #include "Enjin/ECS/Systems/ControllerSystem.h"
+#include "Enjin/Gameplay/SurfaceResponseSystem.h"
 #include "Enjin/ECS/Systems/FlowerSystem.h"
 #include "Enjin/ECS/Systems/TweenSystem.h"
 #include "Enjin/ECS/Systems/StateMachineSystem.h"
@@ -169,6 +170,9 @@ private:
 
     // Flower system for runtime
     ECS::FlowerSystem m_FlowerSystem;
+
+    // Surface response: material footstep/impact sound + particle (TotK-style)
+    Gameplay::SurfaceResponseSystem m_SurfaceResponseSystem;
 
     // Physics systems (created via factory)
     std::unique_ptr<Physics::IPhysicsBackend> m_Physics;

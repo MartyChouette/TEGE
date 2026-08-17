@@ -676,6 +676,10 @@ void PlayMode::Update(f32 deltaTime) {
             ENJIN_PROFILE_SCOPE("ECS");
             m_ControllerSystem.Update(deltaTime);
             m_FlowerSystem.Update(deltaTime);
+            // TotK-style surface response: footstep/impact sound + particle from
+            // the material of the surface walked on / struck. 3D physics path.
+            m_SurfaceResponseSystem.Initialize(&m_SimpleAudio, m_RenderSystem, m_Physics.get());
+            m_SurfaceResponseSystem.Update(m_World, deltaTime);
         }
 
         // Apply accessibility visual settings (colorblind filters, brightness,
