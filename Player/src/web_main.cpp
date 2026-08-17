@@ -22,6 +22,8 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/Renderer/WebGPU/WebGPURenderer.h"
+#include "Enjin/Renderer/WebGPU/WebGPUParticleSystem.h"
+#include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #if defined(ENJIN_WEBGPU_COMPUTE_SMOKETEST)
 #include "Enjin/Renderer/WebGPU/WebGPUComputeSmokeTest.h"
 #endif
@@ -505,6 +507,13 @@ public:
         m_RenderSystem->SetAssetReader(&m_AssetReader);
         m_RenderSystem->Initialize();
 
+        // GPU particles on web: same emitter component as desktop, driven each frame.
+        m_Particles = std::make_unique<Enjin::Renderer::WebGPUParticleSystem>(m_Renderer.get());
+        if (!m_Particles->Initialize()) {
+            ENJIN_LOG_WARN(Player, "WebGPU particle system init failed — GPU particles disabled");
+            m_Particles.reset();
+        }
+
         // Apply scene render settings (ambient, shadows, etc.)
         m_SceneRenderSettings.rtEnabled = false;
         m_SceneRenderSettings.ApplyToRuntime(m_RenderSystem, nullptr);
@@ -945,10 +954,50 @@ public:
 
         ImGui::Render();
         ImDrawData* drawData = ImGui::GetDrawData();
-        if (drawData && drawData->TotalVtxCount > 0) {
+        bool haveUI = drawData && drawData->TotalVtxCount > 0;
+        // Draw GPU particles into the overlay pass (loads the scene, no depth) then
+        // the UI on top. First-cut integration: particles are not depth-tested against
+        // the scene yet (they render over it); depth-correct is a follow-up.
+        if (haveUI || m_Particles) {
             WGPURenderPassEncoder pass = m_Renderer->GetOrBeginUIOverlayPass();
             if (pass) {
-                ImGui_ImplWGPU_RenderDrawData(drawData, pass);
+                if (m_Particles && m_Camera) {
+                    m_Particles->Render(pass, m_Camera->GetViewMatrix(), m_Camera->GetProjectionMatrix());
+                }
+                if (haveUI) ImGui_ImplWGPU_RenderDrawData(drawData, pass);
+            }
+        }
+    }
+
+    // Spawn from every GPUParticleEmitterComponent (burst + continuous), mirroring
+    // the desktop RenderSystem::TickGPUEmitters so the same emitter authors both.
+    void DriveParticles(Enjin::f32 dt) {
+        if (!m_Particles || !m_World) return;
+#if defined(ENJIN_WEBGPU_COMPUTE_SMOKETEST)
+        // Debug fountain (gated with the compute smoke test): a Fire emitter at a fixed
+        // point so the particle sim + draw path is visibly verifiable without authoring
+        // an emitter in the scene. Off in shipping builds.
+        m_Particles->SpawnWithParams(24, Enjin::Math::Vector3(0.0f, 1.0f, -3.0f),
+            Enjin::Math::Vector3(0.0f, 1.0f, 0.0f),
+            Enjin::Effects::PresetSpawnParams(Enjin::Effects::GPUParticlePreset::Fire));
+#endif
+        for (Enjin::ECS::Entity e : m_World->GetEntitiesWithComponent<Enjin::ECS::GPUParticleEmitterComponent>()) {
+            auto* em = m_World->GetComponent<Enjin::ECS::GPUParticleEmitterComponent>(e);
+            if (!em) continue;
+            Enjin::Math::Vector3 pos(0.0f);
+            if (auto* t = m_World->GetComponent<Enjin::ECS::TransformComponent>(e)) pos = t->position;
+            if (em->burstNow && em->burstCount > 0) {
+                m_Particles->SpawnWithParams(em->burstCount, pos, em->direction, em->ResolveParams());
+                em->burstNow = false;
+            }
+            if (em->emitting && em->spawnRate > 0.0f) {
+                em->accumulator += em->spawnRate * dt;
+                Enjin::u32 n = static_cast<Enjin::u32>(em->accumulator);
+                if (n > 0) {
+                    em->accumulator -= static_cast<Enjin::f32>(n);
+                    if (n > 4096) n = 4096;
+                    m_Particles->SpawnWithParams(n, pos, em->direction, em->ResolveParams());
+                }
             }
         }
     }
@@ -960,6 +1009,12 @@ public:
 
         // BeginFrame + render pass + EndFrame via RenderSystem::Update
         if (!m_Renderer->BeginFrameWebGPU()) return;
+        // GPU particles: spawn from emitters, then run the sim in a compute pass
+        // BEFORE any render pass opens (a compute pass can't overlap a render pass).
+        if (m_Particles) {
+            DriveParticles(m_LastDeltaTime);
+            m_Particles->Simulate(m_LastDeltaTime, m_ParticleFrame++, Enjin::Math::Vector3(0.0f, 0.0f, 0.0f));
+        }
         m_RenderSystem->FlushPendingChanges();
         m_RenderSystem->Update(0.0f);  // deltaTime handled separately in Update()
         // Fallback clear ONLY if nothing rendered to the swapchain (e.g. RenderSystem
@@ -1244,6 +1299,8 @@ private:
 
     // Renderer + render system
     std::unique_ptr<Enjin::Renderer::WebGPURenderer> m_Renderer;
+    std::unique_ptr<Enjin::Renderer::WebGPUParticleSystem> m_Particles;
+    Enjin::u32 m_ParticleFrame = 0;
     Enjin::ECS::RenderSystem* m_RenderSystem = nullptr;  // Owned by World
     std::unique_ptr<Enjin::Renderer::Camera> m_Camera;
     std::unique_ptr<Enjin::Renderer::CameraController> m_CameraController;
