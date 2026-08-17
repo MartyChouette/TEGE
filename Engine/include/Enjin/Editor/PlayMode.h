@@ -286,6 +286,12 @@ private:
         bool hadTransform = false;
         std::string name;       // For detecting entity ID recycling
         bool hadName = false;
+        // Rigidbody velocities: without these, physics-driven motion leaks across
+        // Play/Stop — the body keeps its last linear/angular velocity, so the next
+        // Play starts already spinning/drifting from the previous run.
+        Math::Vector3 linearVelocity = Math::Vector3(0.0f);
+        Math::Vector3 angularVelocity = Math::Vector3(0.0f);
+        bool hadRigidbody = false;
     };
     std::unordered_map<u64, EntitySnapshot> m_SavedEntityState;
     // Incremental capture (adr-0004 sibling — kills the play-start hitch): instead of

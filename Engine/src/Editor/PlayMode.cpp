@@ -894,6 +894,11 @@ void PlayMode::SaveEditorState() {
             snap.name = nc->name;
             snap.hadName = true;
         }
+        if (auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity)) {
+            snap.linearVelocity = rb->velocity;
+            snap.angularVelocity = rb->angularVelocity;
+            snap.hadRigidbody = true;
+        }
         m_SavedEntityState[static_cast<u64>(entity)] = snap;
     }
 
@@ -953,6 +958,12 @@ void PlayMode::RestoreEditorState() {
                 ++restored;
             }
         }
+        if (snap.hadRigidbody) {
+            if (auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity)) {
+                rb->velocity = snap.linearVelocity;        // else physics motion leaks into the next Play
+                rb->angularVelocity = snap.angularVelocity;
+            }
+        }
     }
 
     // Recreate the pre-play entities that died during play, from their incrementally
@@ -974,6 +985,12 @@ void PlayMode::RestoreEditorState() {
                 t->rotation = snap.rotation;
                 t->scale = snap.scale;
                 t->visible = snap.visible;
+            }
+            if (snapIt->second.hadRigidbody) {
+                if (auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(created)) {
+                    rb->velocity = snapIt->second.linearVelocity;
+                    rb->angularVelocity = snapIt->second.angularVelocity;
+                }
             }
         }
         ++recreated;
