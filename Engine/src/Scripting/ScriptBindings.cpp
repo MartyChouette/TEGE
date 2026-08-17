@@ -88,6 +88,10 @@ void SetBindingsEventBus(ScriptEventBus* bus) {
     s_BindingsEventBus = bus;
 }
 
+void ClearBindingsEventListeners() {
+    if (s_BindingsEventBus) s_BindingsEventBus->Clear();
+}
+
 void SetBindingsScriptEngine(ScriptEngine* engine) {
     s_BindingsScriptEngine = engine;
 }

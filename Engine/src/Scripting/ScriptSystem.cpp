@@ -1,5 +1,6 @@
 #include "Enjin/Scripting/ScriptSystem.h"
 #include "Enjin/Scripting/ScriptEngine.h"
+#include "Enjin/Scripting/ScriptBindings.h"   // ClearBindingsEventListeners on teardown
 #include "Enjin/ECS/Components/Skeleton.h"   // AnimatorComponent — animation-event wiring
 #include "Enjin/Scripting/ScriptPropertyParser.h"
 #include "Enjin/Scripting/CoroutineScheduler.h"
@@ -358,6 +359,12 @@ void ScriptSystem::ShutdownAllScripts() {
     }
 
     m_FixedTimeAccumulator = 0.0f;
+
+    // Release every Events_Listen callback/object the bus AddRef'd. Without this the
+    // delegates survive at ref count 1 to the engine's shutdown GC ("GC cannot
+    // destroy $func" spam + a close hitch), and listeners leak across Play/Stop.
+    Scripting::ClearBindingsEventListeners();
+
     ENJIN_LOG_INFO(Script, "All scripts shut down");
 }
 

@@ -72,6 +72,11 @@ void SetBindingsAudio(Audio::SimpleAudio* audio);
 void SetBindingsSceneManager(Scene::SceneManager* mgr);
 void SetBindingsCoroutineScheduler(CoroutineScheduler* scheduler);
 void SetBindingsEventBus(ScriptEventBus* bus);
+// Release every Events_Listen callback/object the bus holds. Call on script
+// teardown (Play->Stop) so the AddRef'd delegates don't survive to the engine's
+// shutdown GC (which then can't collect them: "GC cannot destroy $func") and so
+// listeners don't leak across play sessions.
+void ClearBindingsEventListeners();
 void SetBindingsScriptEngine(ScriptEngine* engine);
 void SetBindingsDialogueSystem(ECS::DialogueSystem* system);
 void SetBindingsRenderSystem(ECS::RenderSystem* renderSystem);
