@@ -48,6 +48,33 @@ def copy_artifacts():
                 print(f"Updated {fname} from build-web/bin/")
 
 
+def report_pak():
+    """Loudly report the game content the player will load, and warn if it's stale.
+
+    The player loads game.enjpak (scenes/assets), which is SEPARATE from the engine
+    wasm. Rebuilding the wasm does NOT update the game. This banner exists because
+    that split once caused hours of testing against a stale demo pak.
+    """
+    import datetime
+    pak = os.path.join(HERE, 'game.enjpak')
+    wasm = os.path.join(HERE, 'EnjinPlayer.wasm')
+    print("-" * 68)
+    if not os.path.exists(pak):
+        print("!! NO game.enjpak in web-demo/ — the player will have no game content.")
+        print("!! Build your project: editor Build Game (Output = web-demo), or")
+        print("!!   EnjinEditor --build-web <your.enjinproject>")
+        print("-" * 68)
+        return
+    pak_m = os.path.getmtime(pak)
+    when = datetime.datetime.fromtimestamp(pak_m).strftime('%Y-%m-%d %H:%M')
+    print(f"GAME CONTENT: game.enjpak   packed {when}   {os.path.getsize(pak)//1024} KB")
+    if os.path.exists(wasm) and pak_m < os.path.getmtime(wasm) - 3600:
+        print("!! WARNING: this pak is OLDER than the engine build — the scene you see may")
+        print("!! be STALE (not your latest project). Rebuild it: editor Build Game with")
+        print("!! Output = web-demo, or  EnjinEditor --build-web <your.enjinproject>")
+    print("-" * 68)
+
+
 def em_prefix(tool):
     """argv prefix to run an emscripten tool (emmake/emcmake).
 
@@ -188,6 +215,7 @@ def main():
     if args.build:
         build_player()
     copy_artifacts()
+    report_pak()
 
     PlayerHandler.coop = args.coop
     tunnel_proc = start_tunnel(args.port) if args.tunnel else None
