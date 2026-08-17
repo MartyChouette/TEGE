@@ -22,6 +22,9 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/Renderer/WebGPU/WebGPURenderer.h"
+#if defined(ENJIN_WEBGPU_COMPUTE_SMOKETEST)
+#include "Enjin/Renderer/WebGPU/WebGPUComputeSmokeTest.h"
+#endif
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/CameraController.h"
@@ -211,6 +214,12 @@ public:
                 return;
             }
             ENJIN_LOG_INFO(Player, "WebGPU renderer initialized");
+#if defined(ENJIN_WEBGPU_COMPUTE_SMOKETEST)
+            // One-shot verification of the GPU-compute path (device is ready here).
+            // Look for "[compute-smoke] PASS" in the browser console. Enable with
+            // -DENJIN_WEBGPU_COMPUTE_SMOKETEST=ON; off by default so the player stays clean.
+            Enjin::Renderer::RunWebGPUComputeSmokeTest(m_Renderer.get());
+#endif
             FinishInitialize();
         });
     }

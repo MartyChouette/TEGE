@@ -90,6 +90,14 @@ option(ENJIN_BUILD_HUB "Build the Enjin Hub launcher" OFF)
 option(ENJIN_BUILD_TESTS "Build unit tests" OFF)
 option(ENJIN_BUILD_EXAMPLES "Build example projects" OFF)
 
+# One-shot browser verification of the WebGPU GPU-compute path. When ON, the web
+# player runs a compute dispatch at startup and logs "[compute-smoke] PASS/FAIL"
+# to the console. Off by default so shipping builds stay clean.
+option(ENJIN_WEBGPU_COMPUTE_SMOKETEST "Run the WebGPU compute smoke test at web startup" OFF)
+if(ENJIN_WEBGPU_COMPUTE_SMOKETEST)
+    add_compile_definitions(ENJIN_WEBGPU_COMPUTE_SMOKETEST)
+endif()
+
 # Output directories
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
