@@ -31,6 +31,14 @@ struct LODComponent {
     f32 baseDistance = 10.0f;            // LOD 0 -> 1 transition distance
     f32 distanceMultiplier = 2.0f;       // Each level is N times farther
 
+    // Stable size of the ORIGINAL (LOD 0) mesh — largest AABB extent, set once at
+    // generation. The screen-size metric MUST use this, not the currently-active
+    // (possibly already-swapped) mesh's bounds: otherwise swapping a LOD changes
+    // the metric, the selection feeds back on itself, and it flickers every frame
+    // — rebuilding GPU buffers until the retired-buffer graveyard runs out of
+    // memory. 0 = unset (falls back to the live mesh bounds for old assets).
+    f32 sourceMaxExtent = 0.0f;
+
     // Runtime state
     i32 activeLOD = 0;                   // Currently displayed LOD level
     bool enabled = true;                 // LOD switching enabled

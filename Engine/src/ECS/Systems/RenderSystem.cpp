@@ -5013,9 +5013,16 @@ void RenderSystem::Update(f32 deltaTime) {
                                 Math::Abs(transform->scale.x),
                                 Math::Abs(transform->scale.y)),
                                 Math::Abs(transform->scale.z));
-                            // Use cached AABB extent as size estimate (if available)
+                            // Object size from the STABLE original-mesh extent, not the
+                            // currently-active (swapped) LOD mesh — using the live mesh
+                            // makes the metric depend on the LOD it just picked, so the
+                            // selection oscillates every frame and rebuilds buffers until
+                            // it OOMs. Fall back to the live AABB only for legacy LODs that
+                            // predate sourceMaxExtent.
                             f32 objectSize = scale;
-                            if (mesh) {
+                            if (lod->sourceMaxExtent > 0.0f) {
+                                objectSize = scale * lod->sourceMaxExtent;
+                            } else if (mesh) {
                                 Math::Vector3 extent = mesh->cachedAABBMax - mesh->cachedAABBMin;
                                 objectSize = scale * Math::Max(Math::Max(extent.x, extent.y), extent.z);
                             }

@@ -200,6 +200,21 @@ void MeshSimplifier::GenerateLODs(const ECS::MeshComponent& sourceMesh, ECS::LOD
     u32 sourceVerts = static_cast<u32>(sourceMesh.vertices.size());
     u32 sourceTris = static_cast<u32>(sourceMesh.indices.size() / 3);
 
+    // Stable source size for the LOD selection metric (largest AABB extent of the
+    // ORIGINAL mesh). Computed once here so the render-time metric never depends on
+    // whichever LOD mesh is currently swapped in (that feedback loop is what made
+    // LOD flicker and chug to a crash).
+    {
+        Math::Vector3 mn(1e30f, 1e30f, 1e30f), mx(-1e30f, -1e30f, -1e30f);
+        for (const auto& v : sourceMesh.vertices) {
+            mn.x = std::min(mn.x, v.position.x); mn.y = std::min(mn.y, v.position.y); mn.z = std::min(mn.z, v.position.z);
+            mx.x = std::max(mx.x, v.position.x); mx.y = std::max(mx.y, v.position.y); mx.z = std::max(mx.z, v.position.z);
+        }
+        Math::Vector3 ext = mx - mn;
+        lod.sourceMaxExtent = Math::Max(Math::Max(ext.x, ext.y), ext.z);
+        if (!(lod.sourceMaxExtent > 0.0f)) lod.sourceMaxExtent = 0.0f; // NaN/empty guard
+    }
+
     // Skip LOD generation for very large meshes to avoid long hangs
     if (sourceVerts > 100000) {
         ENJIN_LOG_WARN(Asset, "Skipping LOD generation for mesh with %u vertices (too large)", sourceVerts);
@@ -215,29 +230,33 @@ void MeshSimplifier::GenerateLODs(const ECS::MeshComponent& sourceMesh, ECS::LOD
 
     lod.levelCount = 0;
 
+    // A LOD level below this triangle count is useless (LOD 4 came out at 0 tris on
+    // a bad mesh, rendering nothing). Stop before emitting a destroyed level.
+    constexpr u32 kMinLODTriangles = 16;
+
     for (int i = 0; i < ECS::LODComponent::MAX_LEVELS; ++i) {
         f32 ratio = lod.reductionRatios[i];
 
+        ECS::MeshComponent lvlMesh = (i == 0) ? sourceMesh : Simplify(sourceMesh, ratio);
+        u32 tris = static_cast<u32>(lvlMesh.indices.size() / 3);
+
+        // Reject a level the simplifier destroyed. An empty/near-empty mesh renders
+        // as nothing, and its collapse to a tiny bound also drives LOD flicker. Keep
+        // the last good level as the coarsest LOD instead of shipping garbage.
+        if (i > 0 && tris < kMinLODTriangles) break;
+
         ECS::LODComponent::LODLevel& level = lod.levels[i];
         level.reductionRatio = ratio;
-
-        if (i == 0) {
-            // LOD 0 = original mesh
-            level.mesh = sourceMesh;
-        } else {
-            level.mesh = Simplify(sourceMesh, ratio);
-        }
-
+        level.mesh = std::move(lvlMesh);
         level.vertexCount = static_cast<u32>(level.mesh.vertices.size());
-        level.triangleCount = static_cast<u32>(level.mesh.indices.size() / 3);
-
+        level.triangleCount = tris;
         // Distance thresholds: base * multiplier^level
         level.maxDistance = lod.baseDistance * std::pow(lod.distanceMultiplier, static_cast<f32>(i));
 
         lod.levelCount++;
 
         // Don't generate further levels if mesh is already very simple
-        if (level.vertexCount <= 8 || level.triangleCount <= 4) {
+        if (level.vertexCount <= 8 || level.triangleCount <= kMinLODTriangles) {
             break;
         }
     }
