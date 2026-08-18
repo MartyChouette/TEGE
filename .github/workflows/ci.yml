@@ -12,9 +12,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Don't cancel in-flight main builds on new pushes - the Windows job takes
+# ~40 minutes and a busy push cadence would mean it NEVER completes. PRs still
+# cancel stale runs.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   windows-desktop:
