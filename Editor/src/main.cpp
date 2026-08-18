@@ -12,6 +12,9 @@
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Audio/AudioSystem.h"
 #include <iostream>
+#include <filesystem>
+#include "Enjin/Build/BuildPipeline.h"
+#include "Enjin/Build/BuildReport.h"
 #include <memory>
 #if defined(_WIN32)
     #ifndef WIN32_LEAN_AND_MEAN
@@ -333,6 +336,62 @@ int main(int argc, char* argv[]) {
             Enjin::Editor::EditorLayer::s_GoldenCapturePath = argv[++i];
         } else if (flag == "--golden-frames" && i + 1 < argc && argv[i + 1]) {
             Enjin::Editor::EditorLayer::s_GoldenCaptureFrame = std::atoi(argv[++i]);
+        }
+    }
+
+    // --build-web <project.enjinproject> [outDir]: HEADLESS. Pack the given project
+    // into <outDir>/game.enjpak (default outDir = web-demo) and exit — no window, no
+    // GPU. The web player fetches game.enjpak, so this is THE "build my game for web"
+    // step: it always packs the project you pass, so the web build can never serve
+    // stale content again. Uses Desktop packaging (pak only, no slow emscripten rebuild).
+    for (int i = 1; i < argc; i++) {
+        if (argv[i] && std::string(argv[i]) == "--build-web" && i + 1 < argc && argv[i + 1]) {
+            std::string projectPath = argv[i + 1];
+            std::string outDir = (i + 2 < argc && argv[i + 2] && argv[i + 2][0] != '-')
+                                     ? argv[i + 2] : std::string("web-demo");
+            Enjin::Build::BuildConfig cfg;
+            cfg.projectPath = projectPath;
+            cfg.outputDir = outDir;
+            cfg.target = Enjin::Build::BuildTargetPlatform::Desktop;   // pak only
+            cfg.packagingMode = Enjin::Build::PackagingMode::Packed;
+            Enjin::Build::BuildPipeline pipeline;
+            pipeline.SetProgressCallback([](const std::string& phase, float p) {
+                std::cout << "[build-web] " << phase << " " << int(p * 100.0f) << "%\n";
+            });
+            std::cout << "[build-web] packing '" << projectPath << "' -> "
+                      << outDir << "/game.enjpak\n";
+            Enjin::Build::BuildResult r = pipeline.Execute(cfg);
+            if (!r.success) {
+                std::cout << "[build-web] FAILED to pack the project (see messages above)\n";
+                return 1;
+            }
+            std::cout << "[build-web] packed " << r.filesPacked << " files -> "
+                      << outDir << "/game.enjpak\n";
+
+            // A web build is not done until the web PLAYER (wasm) is next to the pak.
+            // Reuse the already-built engine from build-web/bin — do NOT silently ship
+            // a pak with no player. If the engine isn't built, say exactly what to run.
+            namespace fs = std::filesystem;
+            bool haveWasm = false;
+            for (const char* f : {"EnjinPlayer.js", "EnjinPlayer.wasm"}) {
+                fs::path src = fs::path("build-web") / "bin" / f;
+                std::error_code ec;
+                if (fs::exists(src, ec)) {
+                    fs::copy_file(src, fs::path(outDir) / f, fs::copy_options::overwrite_existing, ec);
+                    if (!ec) haveWasm = true;
+                }
+            }
+            if (haveWasm) {
+                std::cout << "[build-web] DONE: web build ready in " << outDir
+                          << " (pak + player). Serve it and reload.\n";
+            } else {
+                std::cout << "[build-web] pak is ready, but NO web engine build was found at "
+                             "build-web/bin/EnjinPlayer.wasm.\n"
+                             "[build-web] Build the web engine once, then re-run this:\n"
+                             "[build-web]   emcmake cmake -B build-web -S . -DENJIN_PLATFORM_WEB=ON\n"
+                             "[build-web]   emmake cmake --build build-web --target EnjinPlayer\n";
+            }
+            return 0;
         }
     }
 
