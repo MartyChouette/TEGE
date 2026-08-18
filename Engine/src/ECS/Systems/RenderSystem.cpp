@@ -2886,7 +2886,6 @@ void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& /*w*/, b
 void RenderSystem::RenderGPUParticles() {}  // Vulkan-only (needs WebGPU compute first)
 void RenderSystem::SpawnGPUParticles(u32, const Math::Vector3&, const Math::Vector3&) {}
 void RenderSystem::TickGPUEmitters(f32) {}
-void RenderSystem::BeginFrame(f32) {}  // web: particle frame prep lives in web_main
 void RenderSystem::RenderParticles(u32, u32) {}
 void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem&, u32, u32) {}
 void RenderSystem::RenderFluid(u32, u32) {}
