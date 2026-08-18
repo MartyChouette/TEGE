@@ -1982,7 +1982,10 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // last, or before any hub frame ran) rendered BLACK until a play/stop
     // cycle happened to run Update without the skip flag. Idempotent per
     // frame; its internal skinning call no-ops after the line above.
-    if (m_RenderSystem) m_RenderSystem->RecordComputePrePass(m_LastDeltaTime);
+    if (m_RenderSystem) {
+        m_RenderSystem->BeginFrame(m_LastDeltaTime);
+        m_RenderSystem->RecordComputePrePass(m_LastDeltaTime);
+    }
 
     // --- Editor viewport: render scene from editor camera to offscreen RT ---
     // (Resize is handled by PrepareRenderTargets() before command buffer recording)

@@ -93,6 +93,7 @@ namespace Enjin { namespace Effects {
 #include <unordered_set>
 #include <memory>
 #include <vector>
+#include "Enjin/Effects/ParticleColliders.h"
 
 #if !ENJIN_RENDERER_WEBGPU
 // Forward declarations for RT subsystems and rendering infrastructure
@@ -769,6 +770,13 @@ public:
     // before reaching it — without it the fog volume never gets its one-shot
     // neutral clear and the PBR fog composite multiplies the scene toward
     // black. Idempotent per frame (flag reset in FlushPendingChanges).
+    // Per-frame CPU phase: runs EXACTLY ONCE per frame, before any view
+    // renders. Emitter spawn ticks, particle collider gather, and GPU impact
+    // readback/translation live here; the per-view render paths only read.
+    // Idempotent (guarded until FlushPendingChanges opens the next frame), and
+    // RecordComputePrePass self-calls it, so legacy callers stay correct.
+    void BeginFrame(f32 deltaTime);
+
     void RecordComputePrePass(f32 deltaTime);
 
     // RT subsystem accessors
@@ -1520,6 +1528,9 @@ private:
     bool m_SkipMainPassShadows = false; // When true, skip shadow passes in Update() (play mode)
     bool m_SkipMainPassRendering = false; // When true, skip geometry+effects in Update() (play mode — game view handles rendering)
     bool m_ComputePrePassDone = false;    // Per-frame guard for RecordComputePrePass (reset in FlushPendingChanges)
+    bool m_FramePrepDone = false;         // Per-frame guard for BeginFrame (reset in FlushPendingChanges)
+    f32 m_FrameEffectDt = 0.0f;           // dt for GPU effect sims (wall-clock fallback applied)
+    std::vector<Effects::ParticleColliderShape> m_FrameParticleColliders;  // gathered in BeginFrame
 
 #if !ENJIN_RENDERER_WEBGPU
     void BuildCullableObjectList();

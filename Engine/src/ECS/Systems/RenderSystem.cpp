@@ -2886,6 +2886,7 @@ void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& /*w*/, b
 void RenderSystem::RenderGPUParticles() {}  // Vulkan-only (needs WebGPU compute first)
 void RenderSystem::SpawnGPUParticles(u32, const Math::Vector3&, const Math::Vector3&) {}
 void RenderSystem::TickGPUEmitters(f32) {}
+void RenderSystem::BeginFrame(f32) {}  // web: particle frame prep lives in web_main
 void RenderSystem::RenderParticles(u32, u32) {}
 void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem&, u32, u32) {}
 void RenderSystem::RenderFluid(u32, u32) {}
@@ -3859,6 +3860,7 @@ void RenderSystem::FlushPendingChanges() {
 
     // New frame is about to record — allow the compute pre-pass to run once
     m_ComputePrePassDone = false;
+    m_FramePrepDone = false;
 
     // Reset per-thread secondary command pools for this frame. Safe here and
     // ONLY here: this code runs pre-recording (the mid-frame guard above
@@ -5140,7 +5142,10 @@ void RenderSystem::Update(f32 deltaTime) {
 }
 
 
-void RenderSystem::RecordComputePrePass(f32 deltaTime) {
+void RenderSystem::BeginFrame(f32 deltaTime) {
+    if (m_FramePrepDone) return;
+    m_FramePrepDone = true;
+
     // The player calls World::Update(0.0f) (gameplay dt is applied to its systems
     // separately), so a ZERO dt reached the GPU effect sims here and froze them in
     // exported games: particles never aged past the alpha fade-in (spawned, drawn,
@@ -5155,6 +5160,37 @@ void RenderSystem::RecordComputePrePass(f32 deltaTime) {
         s_LastTick = now;
         deltaTime = std::clamp(measured, 0.0f, 0.1f);
     }
+    m_FrameEffectDt = deltaTime;
+
+    if (!m_World) return;
+
+    // GPU particles: spawn ticks, collider gather, and impact readback are
+    // per-frame CPU state changes — they must never run per view.
+    if (m_GPUParticleSystem) {
+        TickGPUEmitters(deltaTime);
+        Effects::GatherParticleColliders(m_World, m_FrameParticleColliders);
+
+        u32 frameNumber = m_VulkanRenderer ? m_VulkanRenderer->GetCurrentFrameIndex() : 0u;
+        m_GPUParticleSystem->ReadbackImpacts(frameNumber);
+
+        // Translate strikes to emitter entities. APPEND; the consumer
+        // (SurfaceResponseSystem) takes + clears, and the cap stops growth
+        // when nothing consumes (edit mode).
+        for (const auto& hit : m_GPUParticleSystem->GetImpactEvents()) {
+            if (m_ParticleImpacts.size() >= 256) break;
+            Entity emitterEnt = INVALID_ENTITY;
+            for (Entity pe : m_World->GetEntitiesWithComponent<GPUParticleEmitterComponent>()) {
+                if (EntityIndex(pe) == hit.emitterKey) { emitterEnt = pe; break; }
+            }
+            m_ParticleImpacts.push_back({hit.position, hit.speed, emitterEnt});
+        }
+    }
+}
+
+void RenderSystem::RecordComputePrePass(f32 deltaTime) {
+    // Fallback for callers that don't run the explicit frame phase; idempotent.
+    BeginFrame(deltaTime);
+    deltaTime = m_FrameEffectDt;
     if (m_ComputePrePassDone) return;
     if (!m_VulkanRenderer || !m_World) return;
     m_ComputePrePassDone = true;
@@ -5286,27 +5322,12 @@ void RenderSystem::RecordComputePrePass(f32 deltaTime) {
             // History is maintained inside Update (copy 0 -> 1); no swap needed.
         }
 
-        // GPU particles: tick ECS emitters (spawn), then simulate all particles
+        // GPU particles: record the sim dispatch. Spawns, collider gather, and
+        // impact readback already happened in BeginFrame — this is record-only.
         if (m_GPUParticleSystem) {
-            TickGPUEmitters(deltaTime);
             Math::Vector3 wind(0.0f); // TODO: read from WindSystem
-            static thread_local std::vector<Effects::ParticleColliderShape> s_ParticleColliders;
-            Effects::GatherParticleColliders(m_World, s_ParticleColliders);
-            m_GPUParticleSystem->Simulate(computeCmd, deltaTime, frameNumber, wind, &s_ParticleColliders);
-
-            // Surface the sim's collider-strike events with the emitter entity
-            // resolved. APPEND, never clear: this records for every view (editor
-            // + game), and only the first Simulate of a frame drains the GPU
-            // buffer. The consumer (SurfaceResponseSystem) takes + clears; the
-            // cap below stops growth when nothing consumes (edit mode).
-            for (const auto& hit : m_GPUParticleSystem->GetImpactEvents()) {
-                if (m_ParticleImpacts.size() >= 256) break;
-                Entity emitterEnt = INVALID_ENTITY;
-                for (Entity pe : m_World->GetEntitiesWithComponent<GPUParticleEmitterComponent>()) {
-                    if (EntityIndex(pe) == hit.emitterKey) { emitterEnt = pe; break; }
-                }
-                m_ParticleImpacts.push_back({hit.position, hit.speed, emitterEnt});
-            }
+            m_GPUParticleSystem->Simulate(computeCmd, deltaTime, frameNumber, wind,
+                                          &m_FrameParticleColliders);
         }
     }
 }

@@ -55,6 +55,26 @@ struct EmitterParamsUBO {
 };
 static_assert(sizeof(EmitterParamsUBO) == 128, "must match particle_simulate.comp EmitterParams");
 
+void GPUParticleSystem::ReadbackImpacts(u32 frameNumber) {
+    m_ImpactEvents.clear();
+    if (!m_Initialized || !m_ImpactEventBuffer) return;
+    u8* base = static_cast<u8*>(m_ImpactEventBuffer->Map());
+    if (!base) return;
+    u32* counts = reinterpret_cast<u32*>(base);
+    u32 slot = frameNumber & 1u;
+    u32 n = std::min(counts[slot], kMaxImpactEvents);
+    const f32* ev = reinterpret_cast<const f32*>(base + 16u + slot * kMaxImpactEvents * 32u);
+    for (u32 i = 0; i < n; ++i) {
+        const f32* e = ev + i * 8u;
+        ParticleImpactEvent hit;
+        hit.position = Math::Vector3(e[0], e[1], e[2]);
+        hit.speed = e[3];
+        hit.emitterKey = (e[4] >= 0.0f) ? static_cast<u32>(e[4] + 0.5f) : 0xFFFFFFFFu;
+        m_ImpactEvents.push_back(hit);
+    }
+    counts[slot] = 0;
+}
+
 void GPUParticleSystem::Simulate(VkCommandBuffer cmd, f32 deltaTime, u32 frameNumber,
                                   const Math::Vector3& windForce,
                                   const std::vector<ParticleColliderShape>* colliders) {
@@ -116,28 +136,6 @@ void GPUParticleSystem::Simulate(VkCommandBuffer cmd, f32 deltaTime, u32 frameNu
     }
 
     if (!m_SimulateSetup.IsValid()) return;
-
-    // Read back impact events from the slot this frame parity wrote LAST time
-    // (two submitted frames ago -> its fence has been waited, and the in-flight
-    // frame writes the other slot, so reading + zeroing here cannot race).
-    m_ImpactEvents.clear();
-    if (m_ImpactEventBuffer) {
-        if (u8* base = static_cast<u8*>(m_ImpactEventBuffer->Map())) {
-            u32* counts = reinterpret_cast<u32*>(base);
-            u32 slot = frameNumber & 1u;
-            u32 n = std::min(counts[slot], kMaxImpactEvents);
-            const f32* ev = reinterpret_cast<const f32*>(base + 16u + slot * kMaxImpactEvents * 32u);
-            for (u32 i = 0; i < n; ++i) {
-                const f32* e = ev + i * 8u;
-                ParticleImpactEvent hit;
-                hit.position = Math::Vector3(e[0], e[1], e[2]);
-                hit.speed = e[3];
-                hit.emitterKey = (e[4] >= 0.0f) ? static_cast<u32>(e[4] + 0.5f) : 0xFFFFFFFFu;
-                m_ImpactEvents.push_back(hit);
-            }
-            counts[slot] = 0;
-        }
-    }
 
     // Reset alive count to 0 (atomic counter at offset 0 in alive buffer)
     vkCmdFillBuffer(cmd, m_AliveIndexBuffer->GetBuffer(), 0, sizeof(u32), 0);

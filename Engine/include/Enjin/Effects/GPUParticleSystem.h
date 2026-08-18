@@ -50,8 +50,11 @@ public:
                   const Math::Vector3& windForce,
                   const std::vector<ParticleColliderShape>* colliders = nullptr);
 
-    // Collider strikes read back from the sim (two frames of latency; the slot
-    // read at frame N was written by frame N-2, whose fence has been waited).
+    // Read collider strikes from the event slot this frame parity wrote last
+    // time (two submitted frames ago; that slot's fence has been waited and the
+    // in-flight frame writes the other slot, so read + zero cannot race). Call
+    // once per frame from the BeginFrame phase, before Simulate records.
+    void ReadbackImpacts(u32 frameNumber);
     const std::vector<ParticleImpactEvent>& GetImpactEvents() const { return m_ImpactEvents; }
 
     // Spawn new particles (CPU-side, uploads to staging region of particle SSBO)

@@ -1333,6 +1333,7 @@ public:
                     // by the skip flag (mid-frame guard), so materials/bindless
                     // must flush here — same contract as the editor loop.
                     m_RenderSystem->FlushPendingChanges();
+                    m_RenderSystem->BeginFrame(m_FrameDeltaTime);
                     // Compute pre-pass (fog froxels, DDGI, clustered lights,
                     // skinning, GPU particles) — Update() never reaches it
                     // when the skip flag is set. Without this the fog volume
