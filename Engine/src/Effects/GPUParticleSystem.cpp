@@ -214,6 +214,10 @@ void GPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& position
         p.softness = params.softness;
         p.texIndex = params.texIndex;
         p._pad0 = 0.0f;
+        p.collision = Math::Vector4(params.bounciness,
+                                    1.0f - params.friction,
+                                    params.collisionRadius,
+                                    params.collide ? 1.0f : 0.0f);
     }
 
     // Upload to SSBO at m_NextSpawnIndex

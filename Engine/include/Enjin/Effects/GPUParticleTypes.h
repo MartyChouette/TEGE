@@ -28,8 +28,11 @@ struct GPUParticle {
     f32 softness;       // 0 = hard edge, 1 = fully soft falloff
     f32 texIndex;       // bindless texture index for sprite==5 (<0 = none; desktop only)
     f32 _pad0;
+    // Collision response: x=bounciness, y=slide keep (1-friction), z=extra
+    // radius beyond the 0.02 skin, w=collide flag (0 = ignore world colliders).
+    Math::Vector4 collision;
 };
-static_assert(sizeof(GPUParticle) == 80, "GPUParticle must match the GLSL/WGSL layout");
+static_assert(sizeof(GPUParticle) == 96, "GPUParticle must match the GLSL/WGSL layout");
 
 // Named looks for the emitter (maps to a ParticleSpawnParams). "Custom" uses
 // the emitter component's own fields.
@@ -51,6 +54,12 @@ struct ParticleSpawnParams {
     u8 sprite = 0;             // sprite card (see GPUParticle::sprite)
     f32 softness = 1.0f;       // edge softness (1 = the classic soft glow)
     f32 texIndex = -1.0f;      // bindless texture index when sprite==5 (desktop)
+
+    // Collision vs world colliders (see GPUParticle::collision).
+    bool collide = true;
+    f32 bounciness = 0.35f;    // 0 = splat, 1 = superball
+    f32 friction = 0.3f;       // 0 = slide freely on contact, 1 = stop dead
+    f32 collisionRadius = 0.0f;  // extra collision radius (0 = point + skin)
 };
 
 // The canonical look for each preset.

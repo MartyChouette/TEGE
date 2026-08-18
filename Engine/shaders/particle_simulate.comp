@@ -18,6 +18,7 @@ struct Particle {
     float gravityScale;  // Per-particle gravity multiplier (0 = float, <0 = rise)
     float drag;          // Per-particle extra velocity damping (per second)
     vec4 spriteParams;   // x=sprite card, y=softness, z=bindless texIndex, w=pad (draw-only)
+    vec4 collision;      // x=bounciness, y=slide keep, z=extra radius, w=collide flag
 };
 
 layout(std430, set = 0, binding = 0) buffer ParticleBuffer {
@@ -121,19 +122,20 @@ void main() {
 
     // Position integration. With colliders present the motion is substepped so
     // a fast particle can't tunnel through a thin shape in one frame step.
-    uint substeps = (colliderCount > 0u) ? 4u : 1u;
+    uint substeps = (colliderCount > 0u && p.collision.w > 0.5) ? 4u : 1u;
     float stepDt = deltaTime / float(substeps);
     for (uint ss = 0u; ss < substeps; ++ss) {
     p.position += p.velocity * stepDt;
 
     // Collision: push out of world shapes and bounce (restitution 0.35,
     // tangential friction keeps 70% of slide velocity).
+    if (p.collision.w > 0.5) {
     for (uint s = 0u; s < colliderCount && s < 32u; ++s) {
         vec3 sc = shapes[s].posKind.xyz;
         int kind = int(shapes[s].posKind.w + 0.5);
         vec3 n = vec3(0.0);
         float pen = 0.0;
-        const float skin = 0.02;
+        float skin = 0.02 + p.collision.z;
 
         if (kind == 1) {                       // sphere
             vec3 d = p.position - sc;
@@ -168,10 +170,11 @@ void main() {
             float vn = dot(p.velocity, n);
             if (vn < 0.0) {
                 vec3 vTan = p.velocity - vn * n;
-                p.velocity = vTan * 0.7 - n * (vn * 0.35);
+                p.velocity = vTan * p.collision.y - n * (vn * p.collision.x);
             }
         }
     }
+    }   // collide flag
     }   // substeps
 
     // Color and size stay as baked at spawn (per-preset). The alpha fade over

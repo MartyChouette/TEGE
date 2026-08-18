@@ -53,6 +53,12 @@ struct GPUParticleEmitterComponent {
     // Runtime cache, not serialized.
     mutable i32 cachedSpriteTexIndex = -2;
 
+    // Collision vs world Box/Sphere/Capsule colliders (non-trigger, cap 32).
+    bool collide = true;
+    f32 bounciness = 0.35f;      // 0 = splat, 1 = superball
+    f32 friction = 0.3f;         // 0 = slide freely, 1 = stop dead on contact
+    f32 collisionRadius = 0.0f;  // 0 = collide as a point (+ small skin)
+
     // Runtime accumulator for fractional continuous spawns (not serialized).
     f32 accumulator = 0.0f;
 
@@ -68,6 +74,10 @@ struct GPUParticleEmitterComponent {
         p.drag = customDrag;
         p.sprite = sprite;
         p.softness = softness;
+        p.collide = collide;
+        p.bounciness = bounciness;
+        p.friction = friction;
+        p.collisionRadius = collisionRadius;
         return p;   // texIndex resolved by the render system (needs the texture cache)
     }
 

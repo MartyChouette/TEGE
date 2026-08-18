@@ -1138,6 +1138,10 @@ json SerializeGPUParticleEmitterComponent(const ECS::GPUParticleEmitterComponent
     j["drag"] = RF(e.customDrag);
     j["sprite"] = static_cast<u32>(e.sprite);
     j["softness"] = RF(e.softness);
+    j["collide"] = e.collide;
+    j["bounciness"] = RF(e.bounciness);
+    j["friction"] = RF(e.friction);
+    j["collisionRadius"] = RF(e.collisionRadius);
     if (!e.spriteTexturePath.empty()) j["spriteTexture"] = e.spriteTexturePath;
     return j;
 }
@@ -1160,6 +1164,10 @@ ECS::GPUParticleEmitterComponent DeserializeGPUParticleEmitterComponent(const js
     if (j.contains("sprite")) { u32 v = j["sprite"].get<u32>(); if (v <= 5) e.sprite = static_cast<u8>(v); }
     if (j.contains("softness")) e.softness = j["softness"].get<f32>();
     if (j.contains("spriteTexture")) e.spriteTexturePath = j["spriteTexture"].get<std::string>();
+    if (j.contains("collide")) e.collide = JB(j["collide"]);
+    if (j.contains("bounciness")) e.bounciness = j["bounciness"].get<f32>();
+    if (j.contains("friction")) e.friction = j["friction"].get<f32>();
+    if (j.contains("collisionRadius")) e.collisionRadius = j["collisionRadius"].get<f32>();
     return e;
 }
 

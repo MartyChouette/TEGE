@@ -1,5 +1,5 @@
-// GPU particle billboard draw (WebGPU). REFERENCE COPY of the embedded WGSL in
-// WebGPUParticleSystem.cpp -- keep the two in sync when editing.
+// GPU particle billboard draw (WebGPU). REFERENCE COPY of the embedded WGSL
+// in WebGPUParticleSystem.cpp -- keep the two in sync when editing.
 
 struct Particle {
     position : vec3<f32>, lifetime : f32,
@@ -7,6 +7,7 @@ struct Particle {
     color : vec4<f32>,
     size : f32, rotation : f32, gravityScale : f32, drag : f32,
     spriteParams : vec4<f32>,   // x=sprite card, y=softness, z=texIndex(unused on web), w=pad
+    collision : vec4<f32>,      // x=bounciness, y=slide keep, z=extra radius, w=collide flag
 };
 struct ViewProj { view : mat4x4<f32>, proj : mat4x4<f32>, };
 @group(0) @binding(0) var<uniform> ubo : ViewProj;

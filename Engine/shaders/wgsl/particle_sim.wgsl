@@ -7,6 +7,7 @@ struct Particle {
     color : vec4<f32>,
     size : f32, rotation : f32, gravityScale : f32, drag : f32,
     spriteParams : vec4<f32>,   // x=sprite card, y=softness, z=texIndex(unused on web), w=pad
+    collision : vec4<f32>,      // x=bounciness, y=slide keep, z=extra radius, w=collide flag
 };
 struct EmitterParams {
     emitterPosition : vec3<f32>, deltaTime : f32,
@@ -62,18 +63,19 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
 
     // Substep the motion when colliders exist so fast particles can't tunnel
     // through thin shapes in one frame step.
-    let substeps = select(1u, 4u, params.colliderCount > 0u);
+    let substeps = select(1u, 4u, params.colliderCount > 0u && p.collision.w > 0.5);
     let stepDt = params.deltaTime / f32(substeps);
     for (var ss = 0u; ss < substeps; ss = ss + 1u) {
     p.position = p.position + p.velocity * stepDt;
 
     // Collision: push out of world shapes and bounce (restitution 0.35, 70% slide).
+    if (p.collision.w > 0.5) {
     for (var s = 0u; s < params.colliderCount && s < 32u; s = s + 1u) {
         let sc = shapes[s].posKind.xyz;
         let kind = i32(shapes[s].posKind.w + 0.5);
         var n = vec3<f32>(0.0);
         var pen = 0.0;
-        let skin = 0.02;
+        let skin = 0.02 + p.collision.z;
         if (kind == 1) {
             let d = p.position - sc;
             let dist = length(d);
@@ -116,10 +118,11 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
             let vn = dot(p.velocity, n);
             if (vn < 0.0) {
                 let vTan = p.velocity - vn * n;
-                p.velocity = vTan * 0.7 - n * (vn * 0.35);
+                p.velocity = vTan * p.collision.y - n * (vn * p.collision.x);
             }
         }
     }
+    }   // collide flag
     }   // substeps
     particles[idx] = p;
 }

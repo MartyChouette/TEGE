@@ -1499,6 +1499,16 @@ void EditorLayer::DrawInspectorPanel() {
                 ImGui::DragFloat("Gravity Scale", &em->customGravityScale, 0.05f, -10.0f, 10.0f);
                 ImGui::SetItemTooltip("1 = normal fall, 0 = float, negative = rise (fire/smoke)");
                 ImGui::DragFloat("Drag", &em->customDrag, 0.01f, 0.0f, 10.0f);
+                ImGui::Checkbox("Collide", &em->collide);
+                ImGui::SetItemTooltip("Particles bounce off world Box/Sphere/Capsule colliders (non-trigger)");
+                if (em->collide) {
+                    ImGui::SliderFloat("Bounciness", &em->bounciness, 0.0f, 1.0f, "%.2f");
+                    ImGui::SetItemTooltip("0 = splat like dust, 1 = superball sparks");
+                    ImGui::SliderFloat("Friction", &em->friction, 0.0f, 1.0f, "%.2f");
+                    ImGui::SetItemTooltip("0 = skid along surfaces, 1 = stop dead on contact");
+                    ImGui::DragFloat("Radius", &em->collisionRadius, 0.01f, 0.0f, 2.0f);
+                    ImGui::SetItemTooltip("Collision size (0 = point). Match roughly half the particle Size\nso big particles don't sink in before reacting");
+                }
 
                 ImGui::Spacing();
                 if (ImGui::Button("Burst 500")) { em->burstCount = 500; em->burstNow = true; }
