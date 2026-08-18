@@ -435,7 +435,7 @@ void WebGPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& posit
         p.sprite = static_cast<f32>(params.sprite);
         p.softness = params.softness;
         p.texIndex = -1.0f;   // no bindless on web yet; card 5 falls back in-shader
-        p._pad0 = 0.0f;
+        p.emitterKey = params.emitterKey;
         p.collision = Math::Vector4(params.bounciness,
                                     1.0f - params.friction,
                                     params.collisionRadius,

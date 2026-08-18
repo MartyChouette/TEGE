@@ -1,6 +1,7 @@
 #include "Enjin/Gameplay/SurfaceResponseSystem.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
+#include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Gameplay.h"     // RigidbodyComponent
@@ -71,6 +72,25 @@ void SurfaceResponseSystem::OnFootstepEvent(World* world, Entity entity) {
 }
 
 void SurfaceResponseSystem::Update(World* world, f32 deltaTime) {
+    m_Clock += deltaTime;
+
+    // GPU particle impact sounds: the sim reports collider strikes (a couple of
+    // frames late, inaudible); play the owning emitter's impact sound there.
+    if (m_Render && m_Audio && world) {
+        std::vector<ECS::RenderSystem::ParticleImpact> taken = m_Render->TakeParticleImpacts();
+        for (const auto& hit : taken) {
+            if (hit.emitter == INVALID_ENTITY) continue;
+            auto* em = world->GetComponent<GPUParticleEmitterComponent>(hit.emitter);
+            if (!em || em->impactSound.empty() || hit.speed < em->impactMinSpeed) continue;
+            f32& next = m_ImpactNextAllowed[EntityIndex(hit.emitter)];
+            if (m_Clock < next) continue;
+            Audio::AudioClipHandle clip = GetClip(em->impactSound);
+            if (clip == Audio::INVALID_AUDIO_CLIP) continue;
+            m_Audio->PlayOneShot3D(clip, hit.position, em->impactVolume);
+            next = m_Clock + em->impactCooldown;
+        }
+    }
+
     if (!world) return;
 
     // --- Footsteps: grounded, moving rigidbodies step on the surface below them ---

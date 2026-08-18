@@ -612,6 +612,10 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
 void EditorLayer::SetRenderSystem(ECS::RenderSystem* renderSystem) {
     m_RenderSystem = renderSystem;
     m_ParallaxSystem.SetRenderSystem(renderSystem);
+    // InitializePlayMode() fires from SetCamera, BEFORE this setter runs, so
+    // PlayMode captured a null render system there — push the real one through
+    // (surface-response particles/impact sounds and cloth wind depend on it).
+    m_PlayMode.SetRenderSystem(renderSystem);
 
     // Wire fluid simulation into render system
     if (m_RenderSystem) {

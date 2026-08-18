@@ -1508,6 +1508,17 @@ void EditorLayer::DrawInspectorPanel() {
                     ImGui::SetItemTooltip("0 = skid along surfaces, 1 = stop dead on contact");
                     ImGui::DragFloat("Radius", &em->collisionRadius, 0.01f, 0.0f, 2.0f);
                     ImGui::SetItemTooltip("Collision size (0 = point). Match roughly half the particle Size\nso big particles don't sink in before reacting");
+                    char impactBuf[260];
+                    snprintf(impactBuf, sizeof(impactBuf), "%s", em->impactSound.c_str());
+                    if (ImGui::InputText("Impact Sound", impactBuf, sizeof(impactBuf))) em->impactSound = impactBuf;
+                    ImGui::SetItemTooltip("Audio file played where particles strike colliders (project-relative).\nEmpty = silent. Desktop builds for now.");
+                    if (!em->impactSound.empty()) {
+                        ImGui::SliderFloat("Impact Volume", &em->impactVolume, 0.0f, 2.0f, "%.2f");
+                        ImGui::DragFloat("Impact Min Speed", &em->impactMinSpeed, 0.05f, 0.5f, 30.0f);
+                        ImGui::SetItemTooltip("Strikes softer than this stay silent (m/s)");
+                        ImGui::DragFloat("Impact Cooldown", &em->impactCooldown, 0.01f, 0.0f, 2.0f);
+                        ImGui::SetItemTooltip("Minimum seconds between impact sounds from this emitter");
+                    }
                 }
 
                 ImGui::Spacing();

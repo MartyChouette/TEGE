@@ -82,13 +82,21 @@ void GPUParticleSystem::Simulate(VkCommandBuffer cmd, f32 deltaTime, u32 frameNu
         // 0=SSBO(particles), 1=SSBO(aliveIndexBuffer), 2=UBO(emitterParams)
         m_SimulateSetup.Create(m_Context, {
             {0, BT::StorageBuffer}, {1, BT::StorageBuffer}, {2, BT::UniformBuffer},
-            {3, BT::StorageBuffer}
+            {3, BT::StorageBuffer}, {4, BT::StorageBuffer}
         }, "particle_simulate.comp");
 
         if (!m_ColliderBuffer) {
             m_ColliderBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Context);
             m_ColliderBuffer->Create(kMaxParticleColliders * sizeof(ParticleColliderShape),
                                      Renderer::BufferUsage::Storage, true);
+        }
+        if (!m_ImpactEventBuffer) {
+            // Impact events: counts header + 2 slots x kMaxImpactEvents x 2 vec4s.
+            m_ImpactEventBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Context);
+            m_ImpactEventBuffer->Create(16u + 2u * kMaxImpactEvents * 32u,
+                                        Renderer::BufferUsage::Storage, true);
+            if (void* evz = m_ImpactEventBuffer->Map())
+                memset(evz, 0, 16u + 2u * kMaxImpactEvents * 32u);
         }
 
         VkDevice device = m_Context->GetDevice();
@@ -101,11 +109,35 @@ void GPUParticleSystem::Simulate(VkCommandBuffer cmd, f32 deltaTime, u32 frameNu
                                          VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
             m_SimulateSetup.WriteBuffer(device, 3, m_ColliderBuffer->GetBuffer(),
                                          kMaxParticleColliders * sizeof(ParticleColliderShape));
+            m_SimulateSetup.WriteBuffer(device, 4, m_ImpactEventBuffer->GetBuffer(),
+                                         16u + 2u * kMaxImpactEvents * 32u);
         }
         m_PipelineCreated = true;
     }
 
     if (!m_SimulateSetup.IsValid()) return;
+
+    // Read back impact events from the slot this frame parity wrote LAST time
+    // (two submitted frames ago -> its fence has been waited, and the in-flight
+    // frame writes the other slot, so reading + zeroing here cannot race).
+    m_ImpactEvents.clear();
+    if (m_ImpactEventBuffer) {
+        if (u8* base = static_cast<u8*>(m_ImpactEventBuffer->Map())) {
+            u32* counts = reinterpret_cast<u32*>(base);
+            u32 slot = frameNumber & 1u;
+            u32 n = std::min(counts[slot], kMaxImpactEvents);
+            const f32* ev = reinterpret_cast<const f32*>(base + 16u + slot * kMaxImpactEvents * 32u);
+            for (u32 i = 0; i < n; ++i) {
+                const f32* e = ev + i * 8u;
+                ParticleImpactEvent hit;
+                hit.position = Math::Vector3(e[0], e[1], e[2]);
+                hit.speed = e[3];
+                hit.emitterKey = (e[4] >= 0.0f) ? static_cast<u32>(e[4] + 0.5f) : 0xFFFFFFFFu;
+                m_ImpactEvents.push_back(hit);
+            }
+            counts[slot] = 0;
+        }
+    }
 
     // Reset alive count to 0 (atomic counter at offset 0 in alive buffer)
     vkCmdFillBuffer(cmd, m_AliveIndexBuffer->GetBuffer(), 0, sizeof(u32), 0);
@@ -213,7 +245,7 @@ void GPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& position
         p.sprite = static_cast<f32>(params.sprite);
         p.softness = params.softness;
         p.texIndex = params.texIndex;
-        p._pad0 = 0.0f;
+        p.emitterKey = params.emitterKey;
         p.collision = Math::Vector4(params.bounciness,
                                     1.0f - params.friction,
                                     params.collisionRadius,
@@ -432,6 +464,7 @@ void GPUParticleSystem::DestroyResources() {
     m_AliveIndexBuffer.reset();
     m_EmitterParamsUBO.reset();
     m_ColliderBuffer.reset();
+    m_ImpactEventBuffer.reset();
 }
 
 } // namespace Effects

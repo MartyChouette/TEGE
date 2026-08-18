@@ -59,6 +59,13 @@ struct GPUParticleEmitterComponent {
     f32 friction = 0.3f;         // 0 = slide freely, 1 = stop dead on contact
     f32 collisionRadius = 0.0f;  // 0 = collide as a point (+ small skin)
 
+    // Impact feedback: sound played where this emitter's particles strike a
+    // collider (the GPU sim reports strikes; desktop builds for now).
+    std::string impactSound;       // audio file (project-relative), empty = silent
+    f32 impactVolume = 1.0f;
+    f32 impactMinSpeed = 1.5f;     // ignore strikes softer than this (m/s)
+    f32 impactCooldown = 0.08f;    // min seconds between impact sounds
+
     // Runtime accumulator for fractional continuous spawns (not serialized).
     f32 accumulator = 0.0f;
 

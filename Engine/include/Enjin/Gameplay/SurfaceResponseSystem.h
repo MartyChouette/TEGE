@@ -55,6 +55,8 @@ private:
     Physics::IPhysicsBackend* m_Physics = nullptr;
 
     std::unordered_map<u32, WalkerState> m_State;                  // EntityIndex -> walker state
+    std::unordered_map<u32, f32> m_ImpactNextAllowed;              // EntityIndex -> next allowed play time
+    f32 m_Clock = 0.0f;
     std::unordered_map<std::string, Audio::AudioClipHandle> m_ClipCache;
 };
 

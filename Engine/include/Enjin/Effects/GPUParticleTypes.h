@@ -27,7 +27,7 @@ struct GPUParticle {
     f32 sprite;
     f32 softness;       // 0 = hard edge, 1 = fully soft falloff
     f32 texIndex;       // bindless texture index for sprite==5 (<0 = none; desktop only)
-    f32 _pad0;
+    f32 emitterKey;     // EntityIndex of the owning emitter (impact-event routing)
     // Collision response: x=bounciness, y=slide keep (1-friction), z=extra
     // radius beyond the 0.02 skin, w=collide flag (0 = ignore world colliders).
     Math::Vector4 collision;
@@ -55,12 +55,23 @@ struct ParticleSpawnParams {
     f32 softness = 1.0f;       // edge softness (1 = the classic soft glow)
     f32 texIndex = -1.0f;      // bindless texture index when sprite==5 (desktop)
 
+    f32 emitterKey = -1.0f;    // EntityIndex of the owning emitter entity
+
     // Collision vs world colliders (see GPUParticle::collision).
     bool collide = true;
     f32 bounciness = 0.35f;    // 0 = splat, 1 = superball
     f32 friction = 0.3f;       // 0 = slide freely on contact, 1 = stop dead
     f32 collisionRadius = 0.0f;  // extra collision radius (0 = point + skin)
 };
+
+// A collider strike reported by the GPU sim (read back two frames later).
+struct ParticleImpactEvent {
+    Math::Vector3 position;
+    f32 speed;        // impact speed along the surface normal (m/s)
+    u32 emitterKey;   // EntityIndex of the emitter that spawned the particle
+};
+// Max strikes recorded per frame (matches the shader-side cap).
+constexpr u32 kMaxImpactEvents = 64;
 
 // The canonical look for each preset.
 ParticleSpawnParams PresetSpawnParams(GPUParticlePreset preset);

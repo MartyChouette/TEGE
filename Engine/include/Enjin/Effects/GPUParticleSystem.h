@@ -50,6 +50,10 @@ public:
                   const Math::Vector3& windForce,
                   const std::vector<ParticleColliderShape>* colliders = nullptr);
 
+    // Collider strikes read back from the sim (two frames of latency; the slot
+    // read at frame N was written by frame N-2, whose fence has been waited).
+    const std::vector<ParticleImpactEvent>& GetImpactEvents() const { return m_ImpactEvents; }
+
     // Spawn new particles (CPU-side, uploads to staging region of particle SSBO)
     void Spawn(u32 count, const Math::Vector3& position, const Math::Vector3& direction);
 
@@ -105,6 +109,8 @@ private:
 
     // World collider shapes (host-visible SSBO, re-uploaded each frame)
     std::unique_ptr<Renderer::VulkanBuffer> m_ColliderBuffer;
+    std::unique_ptr<Renderer::VulkanBuffer> m_ImpactEventBuffer;   // host-visible, ping-ponged
+    std::vector<ParticleImpactEvent> m_ImpactEvents;
 
     // Compute pipeline (via helper)
     Renderer::ComputePipelineSetup m_SimulateSetup;

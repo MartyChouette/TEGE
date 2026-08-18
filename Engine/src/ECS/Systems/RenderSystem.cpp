@@ -5293,6 +5293,20 @@ void RenderSystem::RecordComputePrePass(f32 deltaTime) {
             static thread_local std::vector<Effects::ParticleColliderShape> s_ParticleColliders;
             Effects::GatherParticleColliders(m_World, s_ParticleColliders);
             m_GPUParticleSystem->Simulate(computeCmd, deltaTime, frameNumber, wind, &s_ParticleColliders);
+
+            // Surface the sim's collider-strike events with the emitter entity
+            // resolved. APPEND, never clear: this records for every view (editor
+            // + game), and only the first Simulate of a frame drains the GPU
+            // buffer. The consumer (SurfaceResponseSystem) takes + clears; the
+            // cap below stops growth when nothing consumes (edit mode).
+            for (const auto& hit : m_GPUParticleSystem->GetImpactEvents()) {
+                if (m_ParticleImpacts.size() >= 256) break;
+                Entity emitterEnt = INVALID_ENTITY;
+                for (Entity pe : m_World->GetEntitiesWithComponent<GPUParticleEmitterComponent>()) {
+                    if (EntityIndex(pe) == hit.emitterKey) { emitterEnt = pe; break; }
+                }
+                m_ParticleImpacts.push_back({hit.position, hit.speed, emitterEnt});
+            }
         }
     }
 }
@@ -5309,6 +5323,7 @@ void RenderSystem::TickGPUEmitters(f32 deltaTime) {
 
         const u8 shape = static_cast<u8>(em->shape);
         Effects::ParticleSpawnParams params = em->ResolveParams();
+        params.emitterKey = static_cast<f32>(EntityIndex(e));
 
         // Textured sprite card: resolve the emitter's texture path to a bindless
         // index once (cached; -1 = load failed, falls back to soft glow in-shader).

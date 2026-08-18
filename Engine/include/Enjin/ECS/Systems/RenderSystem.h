@@ -458,6 +458,19 @@ public:
     void SetAmbientColor(const Math::Vector3& color) { m_AmbientColor = color; }
 
     // Wind system (shared, not owned)
+    // A GPU particle strike on a world collider, with the emitter resolved.
+    struct ParticleImpact {
+        Math::Vector3 position;
+        f32 speed;             // impact speed along the surface normal (m/s)
+        ECS::Entity emitter;   // INVALID_ENTITY if the emitter no longer exists
+    };
+    // Drain the impacts recorded since the last take (consumer clears).
+    std::vector<ParticleImpact> TakeParticleImpacts() {
+        std::vector<ParticleImpact> out = std::move(m_ParticleImpacts);
+        m_ParticleImpacts.clear();
+        return out;
+    }
+
     void SetWindSystem(Effects::WindSystem* wind) { m_WindSystem = wind; }
     Effects::WindSystem* GetWindSystem() const { return m_WindSystem; }
 
@@ -1255,6 +1268,7 @@ private:
     bool m_BackfaceCulling = false;
     bool m_WireframeMode = false;
     Effects::WindSystem* m_WindSystem = nullptr;
+    std::vector<ParticleImpact> m_ParticleImpacts;
     bool m_RainActive = false;
     f32 m_AmbientIntensity = 1.0f;
     Math::Vector3 m_AmbientColor = Math::Vector3(0.1f, 0.1f, 0.15f);
