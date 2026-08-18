@@ -6151,7 +6151,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     RenderTrees(targetW, targetH);
     RenderParticles(targetW, targetH);
     RenderFluid(targetW, targetH);
-    RenderGPUParticles();
+    RenderGPUParticles(target->GetRenderPass(), 1);
 
     // Restore main pass camera, buffers, and descriptor sets
     m_Camera = prevCamera;
@@ -6567,7 +6567,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         RenderTrees(targetW, targetH);
         RenderParticles(targetW, targetH);
         RenderFluid(targetW, targetH);
-        RenderGPUParticles();
+        RenderGPUParticles(target->GetRenderPass(), 1);
     }
 
     // Restore main pass state
@@ -12582,7 +12582,7 @@ void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& weather,
                               viewportWidth, viewportHeight);
 }
 
-void RenderSystem::RenderGPUParticles() {
+void RenderSystem::RenderGPUParticles(VkRenderPass pass, u32 colorAttachments) {
     if (!m_GPUParticleSystem || !m_Renderer || !m_Initialized || !m_ActiveDescriptorSets || !m_Pipeline) return;
 
     // One-time proof-of-execution for headless debugging
@@ -12611,14 +12611,17 @@ void RenderSystem::RenderGPUParticles() {
     VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    // First use: create the draw pipeline against whichever pass the effect
-    // renderers were built for (offscreen in the editor, swapchain in the
-    // player). Creation mid-recording is legal; recreation happens only at the
-    // frame-safe RecreateEffectPipelinesForRenderPass.
-    VkRenderPass pass = m_OffscreenRenderPass ? m_OffscreenRenderPass
-                                              : m_VulkanRenderer->GetRenderPass();
-    u32 attachments = m_OffscreenRenderPass ? 1u : 2u;   // offscreen = single color, swapchain = MRT
-    m_GPUParticleSystem->EnsureDrawPipeline(pass, m_Pipeline->GetDescriptorSetLayout(), attachments);
+    // Select/create the draw pipeline for the pass we are RECORDING INTO right now
+    // (creation mid-recording is legal). The old heuristic preferred
+    // m_OffscreenRenderPass whenever the editor/PP flow had set it — but the player
+    // records the main pass straight to the swapchain, so the offscreen-built
+    // pipeline was pass-incompatible there and particles silently never drew in
+    // exported games. Call sites now state their pass explicitly.
+    if (pass == VK_NULL_HANDLE) {
+        pass = m_VulkanRenderer->GetRenderPass();   // swapchain main pass
+        colorAttachments = 2;                        // MRT: color + velocity
+    }
+    m_GPUParticleSystem->EnsureDrawPipeline(pass, m_Pipeline->GetDescriptorSetLayout(), colorAttachments);
 
     u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     m_GPUParticleSystem->Render(commandBuffer,

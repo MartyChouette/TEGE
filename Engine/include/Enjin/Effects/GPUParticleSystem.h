@@ -9,6 +9,7 @@
 #include "Enjin/Renderer/ComputePipelineHelper.h"
 #include <vulkan/vulkan.h>
 #include <memory>
+#include <vector>
 
 namespace Enjin {
 
@@ -100,11 +101,21 @@ private:
     Renderer::ComputePipelineSetup m_SimulateSetup;
     bool m_PipelineCreated = false;
 
-    // Draw pipeline (billboard from the particle buffer as instance VB)
+    // Draw pipelines (billboard from the particle buffer as instance VB).
+    // ONE PER RENDER PASS: a Vulkan pipeline is only valid in a compatible render
+    // pass, and particles draw into both the swapchain main pass (2-attachment MRT)
+    // and offscreen targets (1 attachment). A single cached pipeline built for one
+    // pass silently draws nothing in the other — that bug hid GPU particles in
+    // exported games while the editor (always offscreen) looked fine.
     std::unique_ptr<Renderer::VulkanShader> m_DrawVS;
     std::unique_ptr<Renderer::VulkanShader> m_DrawFS;
-    std::unique_ptr<Renderer::VulkanPipeline> m_DrawPipeline;
-    VkRenderPass m_DrawRenderPass = VK_NULL_HANDLE;
+    struct DrawPipelineEntry {
+        VkRenderPass pass = VK_NULL_HANDLE;
+        u32 attachments = 1;
+        std::unique_ptr<Renderer::VulkanPipeline> pipeline;
+    };
+    std::vector<DrawPipelineEntry> m_DrawPipelines;
+    Renderer::VulkanPipeline* m_CurrentDrawPipeline = nullptr;  // selected by EnsureDrawPipeline
 
     // Spawn tracking
     u32 m_NextSpawnIndex = 0;

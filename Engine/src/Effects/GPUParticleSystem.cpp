@@ -212,24 +212,37 @@ void GPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& position
 void GPUParticleSystem::EnsureDrawPipeline(VkRenderPass renderPass,
                                             VkDescriptorSetLayout sharedLayout,
                                             u32 colorAttachmentCount) {
-    if (!m_Initialized || m_DrawPipeline) return;
+    if (!m_Initialized || renderPass == VK_NULL_HANDLE) return;
 
-    m_DrawVS = std::make_unique<Renderer::VulkanShader>(m_Context);
-    if (!m_DrawVS->LoadFromSPIRV(
-            reinterpret_cast<const u8*>(Renderer::ShaderData::GpuParticleVertexShaderData),
-            Renderer::ShaderData::GpuParticleVertexShaderDataSize)) {
-        ENJIN_LOG_ERROR(Renderer, "GPUParticleSystem: failed to load draw vertex shader");
-        m_DrawVS.reset();
-        return;
+    // Already have a pipeline for THIS pass? Select it and we're done. Different
+    // passes are incompatible (swapchain MRT vs offscreen single-attachment), so
+    // each gets its own pipeline; the cache stays tiny (2-3 entries).
+    for (auto& e : m_DrawPipelines) {
+        if (e.pass == renderPass) {
+            m_CurrentDrawPipeline = e.pipeline.get();
+            return;
+        }
     }
-    m_DrawFS = std::make_unique<Renderer::VulkanShader>(m_Context);
-    if (!m_DrawFS->LoadFromSPIRV(
-            reinterpret_cast<const u8*>(Renderer::ShaderData::GpuParticleFragmentShaderData),
-            Renderer::ShaderData::GpuParticleFragmentShaderDataSize)) {
-        ENJIN_LOG_ERROR(Renderer, "GPUParticleSystem: failed to load draw fragment shader");
-        m_DrawVS.reset();
-        m_DrawFS.reset();
-        return;
+
+    if (!m_DrawVS) {
+        m_DrawVS = std::make_unique<Renderer::VulkanShader>(m_Context);
+        if (!m_DrawVS->LoadFromSPIRV(
+                reinterpret_cast<const u8*>(Renderer::ShaderData::GpuParticleVertexShaderData),
+                Renderer::ShaderData::GpuParticleVertexShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "GPUParticleSystem: failed to load draw vertex shader");
+            m_DrawVS.reset();
+            return;
+        }
+    }
+    if (!m_DrawFS) {
+        m_DrawFS = std::make_unique<Renderer::VulkanShader>(m_Context);
+        if (!m_DrawFS->LoadFromSPIRV(
+                reinterpret_cast<const u8*>(Renderer::ShaderData::GpuParticleFragmentShaderData),
+                Renderer::ShaderData::GpuParticleFragmentShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "GPUParticleSystem: failed to load draw fragment shader");
+            m_DrawFS.reset();
+            return;
+        }
     }
 
     // Single instance-rate binding: the particle SSBO itself (stride = GPUParticle).
@@ -265,39 +278,45 @@ void GPUParticleSystem::EnsureDrawPipeline(VkRenderPass renderPass,
     config.colorAttachmentCount = colorAttachmentCount;  // MRT rule (VUID-07609)
     config.customVertexInput = &vertexInput;
 
-    m_DrawPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Context);
-    if (!m_DrawPipeline->CreateWithLayout(config, m_DrawVS.get(), m_DrawFS.get(), sharedLayout)) {
+    auto pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Context);
+    if (!pipeline->CreateWithLayout(config, m_DrawVS.get(), m_DrawFS.get(), sharedLayout)) {
         ENJIN_LOG_ERROR(Renderer, "GPUParticleSystem: failed to create draw pipeline");
-        m_DrawPipeline.reset();
         return;
     }
-    m_DrawRenderPass = renderPass;
-    ENJIN_LOG_INFO(Renderer, "GPUParticleSystem: draw pipeline created (%u attachment(s))",
-                   colorAttachmentCount);
+    DrawPipelineEntry entry;
+    entry.pass = renderPass;
+    entry.attachments = colorAttachmentCount;
+    entry.pipeline = std::move(pipeline);
+    m_CurrentDrawPipeline = entry.pipeline.get();
+    m_DrawPipelines.push_back(std::move(entry));
+    ENJIN_LOG_INFO(Renderer, "GPUParticleSystem: draw pipeline created (%u attachment(s), %zu pass(es) cached)",
+                   colorAttachmentCount, m_DrawPipelines.size());
 }
 
 void GPUParticleSystem::RecreateDrawPipeline(VkRenderPass renderPass,
                                               VkDescriptorSetLayout sharedLayout,
                                               u32 colorAttachmentCount) {
     if (!m_Initialized) return;
-    // Frame-safe caller contract: GPU idle / not mid-recording.
-    m_DrawPipeline.reset();
+    // Frame-safe caller contract: GPU idle / not mid-recording. Drop every cached
+    // pipeline (any of their passes may have been destroyed); they lazily rebuild
+    // on next use per pass.
+    m_CurrentDrawPipeline = nullptr;
+    m_DrawPipelines.clear();
     m_DrawVS.reset();
     m_DrawFS.reset();
-    m_DrawRenderPass = VK_NULL_HANDLE;
     EnsureDrawPipeline(renderPass, sharedLayout, colorAttachmentCount);
 }
 
 void GPUParticleSystem::Render(VkCommandBuffer cmd, VkDescriptorSet sharedSet) {
-    if (!m_Initialized || !m_HasSpawned || !m_DrawPipeline) return;
+    if (!m_Initialized || !m_HasSpawned || !m_CurrentDrawPipeline) return;
 
     // The particle buffer doubles as an instance-rate vertex buffer; Simulate's
     // trailing barrier (COMPUTE -> VERTEX_INPUT) makes this read safe. Dead
     // slots collapse to degenerate quads in the vertex shader, so we can draw
     // maxParticles instances without any alive-count readback.
-    m_DrawPipeline->Bind(cmd);
+    m_CurrentDrawPipeline->Bind(cmd);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            m_DrawPipeline->GetLayout(), 0, 1, &sharedSet, 0, nullptr);
+                            m_CurrentDrawPipeline->GetLayout(), 0, 1, &sharedSet, 0, nullptr);
 
     VkBuffer vb = m_ParticleBuffer->GetBuffer();
     VkDeviceSize offset = 0;
@@ -369,10 +388,10 @@ void GPUParticleSystem::DestroyResources() {
     m_SimulateSetup.Destroy(device);
     m_PipelineCreated = false;
 
-    m_DrawPipeline.reset();
+    m_CurrentDrawPipeline = nullptr;
+    m_DrawPipelines.clear();
     m_DrawVS.reset();
     m_DrawFS.reset();
-    m_DrawRenderPass = VK_NULL_HANDLE;
 
     m_ParticleBuffer.reset();
     m_AliveIndexBuffer.reset();
