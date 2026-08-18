@@ -266,12 +266,15 @@ bool WebGPUParticleSystem::Initialize(const Effects::GPUEmitterConfig& config) {
         rp.bindGroupLayouts.push_back(m_DrawLayout);
         rp.topology = GPUPrimitiveTopology::TriangleList;
         rp.cullMode = GPUCullMode::None;
-        // The overlay pass carries the scene depth (Depth24PlusStencil8), so the pipeline
-        // MUST declare a matching depth state. Test against the scene (occluded by nearer
-        // geometry) but don't write depth (particles are transparent).
-        rp.depthTest = true;
+        // The overlay pass DECLARES a depth attachment (so the pipeline must too, for
+        // pass compatibility) — but the web scene renders into its own offscreen chain,
+        // so that swapchain depth buffer is never written by the scene and holds stale
+        // data. Testing against it silently killed every particle. Compare=Always:
+        // particles composite over the finished frame (like the UI). Real scene-depth
+        // occlusion on web means drawing inside the scene's offscreen pass — later.
+        rp.depthTest = true;                 // declare depth state (pass has the attachment)
         rp.depthWrite = false;
-        rp.depthCompare = GPUCompareFunction::LessEqual;
+        rp.depthCompare = GPUCompareFunction::Always;
         rp.depthFormat = GPUTextureFormat::Depth24PlusStencil8;
         rp.colorAttachmentCount = 1;
         rp.colorFormat = GPUTextureFormat::BGRA8Unorm;   // web swapchain format
