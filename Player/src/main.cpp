@@ -928,7 +928,7 @@ public:
         // material of the surface walked on / struck (3D physics path).
         m_SurfaceResponseSystem.Initialize(&m_SimpleAudio, m_RenderSystem, m_Physics.get());
         m_SurfaceResponseSystem.Update(m_World.get(), deltaTime);
-        m_ClothSystem.Update(m_World.get(), deltaTime);
+        m_ClothSystem.Update(m_World.get(), deltaTime, &m_WindSystem);
         // Update flower system viewport (full screen in player)
         if (m_Renderer) {
             auto ext = m_Renderer->GetSwapchainExtent();

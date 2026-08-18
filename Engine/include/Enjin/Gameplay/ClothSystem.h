@@ -5,6 +5,7 @@
 
 namespace Enjin {
 namespace ECS { class World; }
+namespace Effects { class WindSystem; }
 
 namespace Gameplay {
 
@@ -15,7 +16,9 @@ namespace Gameplay {
 // entity drags the cloth.
 class ENJIN_API ClothSystem {
 public:
-    void Update(ECS::World* world, f32 deltaTime);
+    // wind (optional) = the scene's live wind field; cloths with useWeatherWind
+    // sample it at their position unless a WeatherZone covers them (zone wins).
+    void Update(ECS::World* world, f32 deltaTime, const Effects::WindSystem* wind = nullptr);
 
     // Rebuild every cloth to its fresh, untorn grid. Called after play-stop
     // restores the world: the restore brings back component data but the GPU

@@ -34,7 +34,13 @@ struct ClothComponent {
     i32 iterations = 6;            // constraint solver passes (more = stiffer)
     f32 damping = 0.02f;           // velocity damping per step (0-0.2 sane)
     f32 gravityScale = 1.0f;
-    Math::Vector3 wind = {0, 0, 0};  // world-space wind force
+    Math::Vector3 wind = {0, 0, 0};  // world-space wind force (always applied, adds to weather)
+
+    // Take live wind from the scene's weather/wind system (gusts + turbulence).
+    // A WeatherZoneComponent covering the cloth overrides the global wind, so an
+    // indoor zone with windStrength 0 keeps interior cloth calm.
+    bool useWeatherWind = true;
+    f32 weatherWindScale = 1.0f;   // how strongly this fabric catches the wind
     ClothPin pin = ClothPin::TopEdge;
     bool tearable = false;
     f32 tearThreshold = 1.6f;      // stretch factor that snaps a constraint

@@ -1173,6 +1173,8 @@ json SerializeClothComponent(const ECS::ClothComponent& c) {
     j["damping"] = RF(c.damping);
     j["gravityScale"] = RF(c.gravityScale);
     j["wind"] = SerializeVector3(c.wind);
+    j["useWeatherWind"] = c.useWeatherWind;
+    j["weatherWindScale"] = RF(c.weatherWindScale);
     j["pin"] = static_cast<u32>(c.pin);
     j["tearable"] = c.tearable;
     j["tearThreshold"] = RF(c.tearThreshold);
@@ -1198,6 +1200,8 @@ ECS::ClothComponent DeserializeClothComponent(const json& j) {
     if (j.contains("damping")) c.damping = j["damping"].get<f32>();
     if (j.contains("gravityScale")) c.gravityScale = j["gravityScale"].get<f32>();
     if (j.contains("wind")) c.wind = DeserializeVector3(j["wind"]);
+    if (j.contains("useWeatherWind")) c.useWeatherWind = JB(j["useWeatherWind"]);
+    if (j.contains("weatherWindScale")) c.weatherWindScale = j["weatherWindScale"].get<f32>();
     if (j.contains("pin")) { u32 v = j["pin"].get<u32>(); if (v <= 4) c.pin = static_cast<ECS::ClothPin>(v); }
     if (j.contains("tearable")) c.tearable = JB(j["tearable"]);
     if (j.contains("tearThreshold")) c.tearThreshold = j["tearThreshold"].get<f32>();

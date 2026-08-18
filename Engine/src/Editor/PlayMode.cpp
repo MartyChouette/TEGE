@@ -685,7 +685,8 @@ void PlayMode::Update(f32 deltaTime) {
             // the material of the surface walked on / struck. 3D physics path.
             m_SurfaceResponseSystem.Initialize(&m_SimpleAudio, m_RenderSystem, m_Physics.get());
             m_SurfaceResponseSystem.Update(m_World, deltaTime);
-            m_ClothSystem.Update(m_World, deltaTime);
+            m_ClothSystem.Update(m_World, deltaTime,
+                                 m_RenderSystem ? m_RenderSystem->GetWindSystem() : nullptr);
         }
 
         // Apply accessibility visual settings (colorblind filters, brightness,

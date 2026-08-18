@@ -5,6 +5,8 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/ECS/Components/WeatherZone.h"
+#include "Enjin/Effects/Wind.h"
 #include "Enjin/Math/Matrix.h"
 #include <algorithm>
 #include <vector>
@@ -243,7 +245,7 @@ void ClothSystem::ResetAll(World* world) {
     }
 }
 
-void ClothSystem::Update(World* world, f32 deltaTime) {
+void ClothSystem::Update(World* world, f32 deltaTime, const Effects::WindSystem* wind) {
     if (!world || deltaTime <= 0.0f) return;
     f32 dt = std::min(deltaTime, 1.0f / 30.0f);   // clamp spiral-of-death steps
 
@@ -256,8 +258,31 @@ void ClothSystem::Update(World* world, f32 deltaTime) {
 
         Math::Matrix4 model = ComputeWorldMatrix(world, entity);
 
+        // Weather wind: the highest-priority weather zone covering the cloth wins
+        // (an indoor zone with windStrength 0 = calm interior); with no zone, the
+        // global wind field supplies gusts + turbulence at the cloth's position.
+        Math::Vector3 weatherWind(0.0f, 0.0f, 0.0f);
+        if (c->useWeatherWind) {
+            Math::Vector3 clothPos = XformPoint(model, Math::Vector3(0.0f, 0.0f, 0.0f));
+            bool inZone = false;
+            i32 bestPriority = 0;
+            for (Entity ze : world->GetEntitiesWithComponent<WeatherZoneComponent>()) {
+                auto* zone = world->GetComponent<WeatherZoneComponent>(ze);
+                auto* zxf = world->GetComponent<TransformComponent>(ze);
+                if (!zone || !zxf) continue;
+                if (!zone->ContainsPoint(zxf->position, clothPos)) continue;
+                if (!inZone || zone->priority > bestPriority) {
+                    inZone = true;
+                    bestPriority = zone->priority;
+                    weatherWind = zone->windDirection * zone->windStrength;
+                }
+            }
+            if (!inZone && wind) weatherWind = wind->GetWindAt(clothPos);
+            weatherWind = weatherWind * c->weatherWindScale;
+        }
+
         // Verlet integrate free points; pinned points snap to the transform.
-        Math::Vector3 accel = Math::Vector3(0.0f, -9.81f * c->gravityScale, 0.0f) + c->wind;
+        Math::Vector3 accel = Math::Vector3(0.0f, -9.81f * c->gravityScale, 0.0f) + c->wind + weatherWind;
         const f32 keep = 1.0f - std::clamp(c->damping, 0.0f, 0.5f);
         for (i32 i = 0; i < count; ++i) {
             if (c->invMass[i] == 0.0f) {

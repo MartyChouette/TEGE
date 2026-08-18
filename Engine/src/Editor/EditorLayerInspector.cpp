@@ -1526,6 +1526,13 @@ void EditorLayer::DrawInspectorPanel() {
                 ImGui::SliderFloat("Damping", &cl->damping, 0.0f, 0.2f, "%.3f");
                 ImGui::DragFloat("Gravity Scale", &cl->gravityScale, 0.05f, -2.0f, 5.0f);
                 ImGui::DragFloat3("Wind", &cl->wind.x, 0.1f);
+                ImGui::SetItemTooltip("Constant wind on this cloth only, added on top of weather wind");
+                ImGui::Checkbox("Weather Wind", &cl->useWeatherWind);
+                ImGui::SetItemTooltip("Cloth catches the scene's live wind (gusts + turbulence).\nA Weather Zone covering the cloth overrides it - wind strength 0 keeps indoor cloth calm.");
+                if (cl->useWeatherWind) {
+                    ImGui::DragFloat("Wind Catch", &cl->weatherWindScale, 0.05f, 0.0f, 5.0f);
+                    ImGui::SetItemTooltip("How strongly this fabric catches the weather wind (heavy canvas < light silk)");
+                }
                 ImGui::Checkbox("Tearable", &cl->tearable);
                 ImGui::SetItemTooltip("On = links stretched past the threshold snap and the fabric rips");
                 if (cl->tearable) {
