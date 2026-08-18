@@ -20,6 +20,7 @@
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Cloth.h"
 #include "Enjin/ECS/Components/DynamicDifficulty.h"
 #include "Enjin/ECS/Components/VisualScript.h"
 #include "Enjin/AI/BehaviorTree.h"
@@ -368,6 +369,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SwarmComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SwarmComponent>(e); },
             "swarm crowd agents boids instanced"},
+        {"Cloth", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ClothComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ClothComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ClothComponent>(e); },
+            "cloth fabric flag cape curtain banner tear rip softbody"},
         {"GPU Particle Emitter", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::GPUParticleEmitterComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GPUParticleEmitterComponent>(e); },
@@ -1500,6 +1506,34 @@ void EditorLayer::DrawInspectorPanel() {
                 if (ImGui::Button("Burst 5000")) { em->burstCount = 5000; em->burstNow = true; }
                 ImGui::TextDisabled("(sim + draw run entirely on the GPU)");
                 ImGui::TextDisabled("Note: particles are untextured soft sprites (color only).");
+            }
+        }
+        if (auto* cl = m_World->GetComponent<ECS::ClothComponent>(m_PrimarySelected)) {
+            if (ImGui::CollapsingHeader("Cloth", ImGuiTreeNodeFlags_DefaultOpen)) {
+                bool rebuild = false;
+                rebuild |= ImGui::DragFloat("Width", &cl->width, 0.05f, 0.1f, 50.0f);
+                rebuild |= ImGui::DragFloat("Height", &cl->height, 0.05f, 0.1f, 50.0f);
+                rebuild |= ImGui::DragInt("Res X", &cl->resX, 1, 2, 64);
+                rebuild |= ImGui::DragInt("Res Y", &cl->resY, 1, 2, 64);
+                const char* pins[] = {"Top Edge","Top Corners","Left Edge","All Corners","None"};
+                int pin = static_cast<int>(cl->pin);
+                if (ImGui::Combo("Pin", &pin, pins, IM_ARRAYSIZE(pins))) {
+                    cl->pin = static_cast<ECS::ClothPin>(pin);
+                    rebuild = true;
+                }
+                ImGui::DragInt("Iterations", &cl->iterations, 1, 1, 20);
+                ImGui::SetItemTooltip("Constraint solver passes: more = stiffer fabric");
+                ImGui::SliderFloat("Damping", &cl->damping, 0.0f, 0.2f, "%.3f");
+                ImGui::DragFloat("Gravity Scale", &cl->gravityScale, 0.05f, -2.0f, 5.0f);
+                ImGui::DragFloat3("Wind", &cl->wind.x, 0.1f);
+                ImGui::Checkbox("Tearable", &cl->tearable);
+                ImGui::SetItemTooltip("On = links stretched past the threshold snap and the fabric rips");
+                if (cl->tearable) {
+                    ImGui::DragFloat("Tear Threshold", &cl->tearThreshold, 0.02f, 1.1f, 5.0f);
+                    ImGui::SetItemTooltip("Stretch factor (x rest length) that snaps a link");
+                }
+                if (ImGui::Button("Reset Cloth") || rebuild) cl->initialized = false;
+                ImGui::TextDisabled("(simulates in Play mode; pinned points follow the entity)");
             }
         }
         if (m_World->HasComponent<ECS::RecordRewindComponent>(m_PrimarySelected)) {

@@ -6,6 +6,7 @@
 #include "Enjin/Renderer/CameraController.h"
 #include "Enjin/ECS/Systems/ControllerSystem.h"
 #include "Enjin/Gameplay/SurfaceResponseSystem.h"
+#include "Enjin/Gameplay/ClothSystem.h"
 #include "Enjin/ECS/Systems/FlowerSystem.h"
 #include "Enjin/ECS/Systems/TweenSystem.h"
 #include "Enjin/ECS/Systems/StateMachineSystem.h"
@@ -173,6 +174,9 @@ private:
 
     // Surface response: material footstep/impact sound + particle (TotK-style)
     Gameplay::SurfaceResponseSystem m_SurfaceResponseSystem;
+
+    // Grid cloth simulation (flags/capes/curtains, tearable)
+    Gameplay::ClothSystem m_ClothSystem;
 
     // Physics systems (created via factory)
     std::unique_ptr<Physics::IPhysicsBackend> m_Physics;

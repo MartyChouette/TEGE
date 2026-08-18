@@ -29,6 +29,7 @@
 #include "Enjin/ECS/Components/BoneAttachment.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
+#include "Enjin/ECS/Components/Cloth.h"
 #include "Enjin/ECS/Components/Lens.h"
 #include "Enjin/ECS/Components/CineComponent.h"
 #include "Enjin/ECS/Components/MorphTarget.h"
@@ -1160,6 +1161,38 @@ ECS::GPUParticleEmitterComponent DeserializeGPUParticleEmitterComponent(const js
     if (j.contains("softness")) e.softness = j["softness"].get<f32>();
     if (j.contains("spriteTexture")) e.spriteTexturePath = j["spriteTexture"].get<std::string>();
     return e;
+}
+
+json SerializeClothComponent(const ECS::ClothComponent& c) {
+    json j;
+    j["width"] = RF(c.width);
+    j["height"] = RF(c.height);
+    j["resX"] = c.resX;
+    j["resY"] = c.resY;
+    j["iterations"] = c.iterations;
+    j["damping"] = RF(c.damping);
+    j["gravityScale"] = RF(c.gravityScale);
+    j["wind"] = SerializeVector3(c.wind);
+    j["pin"] = static_cast<u32>(c.pin);
+    j["tearable"] = c.tearable;
+    j["tearThreshold"] = RF(c.tearThreshold);
+    return j;
+}
+
+ECS::ClothComponent DeserializeClothComponent(const json& j) {
+    ECS::ClothComponent c;
+    if (j.contains("width")) c.width = j["width"].get<f32>();
+    if (j.contains("height")) c.height = j["height"].get<f32>();
+    if (j.contains("resX")) c.resX = std::clamp(j["resX"].get<i32>(), 2, 128);
+    if (j.contains("resY")) c.resY = std::clamp(j["resY"].get<i32>(), 2, 128);
+    if (j.contains("iterations")) c.iterations = std::clamp(j["iterations"].get<i32>(), 1, 32);
+    if (j.contains("damping")) c.damping = j["damping"].get<f32>();
+    if (j.contains("gravityScale")) c.gravityScale = j["gravityScale"].get<f32>();
+    if (j.contains("wind")) c.wind = DeserializeVector3(j["wind"]);
+    if (j.contains("pin")) { u32 v = j["pin"].get<u32>(); if (v <= 4) c.pin = static_cast<ECS::ClothPin>(v); }
+    if (j.contains("tearable")) c.tearable = JB(j["tearable"]);
+    if (j.contains("tearThreshold")) c.tearThreshold = j["tearThreshold"].get<f32>();
+    return c;
 }
 
 json SerializeElementalVolumeComponent(const ECS::ElementalVolumeComponent& v) {
@@ -7263,6 +7296,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::GPUParticleEmitterComponent>(entity)) {
                 entityJson["gpuParticleEmitter"] = SerializeGPUParticleEmitterComponent(*m_World->GetComponent<ECS::GPUParticleEmitterComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::ClothComponent>(entity)) {
+                entityJson["cloth"] = SerializeClothComponent(*m_World->GetComponent<ECS::ClothComponent>(entity));
+            }
             if (m_World->HasComponent<ECS::ElementalVolumeComponent>(entity)) {
                 entityJson["elementalVolume"] = SerializeElementalVolumeComponent(*m_World->GetComponent<ECS::ElementalVolumeComponent>(entity));
             }
@@ -8067,6 +8103,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("gpuParticleEmitter")) {
                 m_World->AddComponent<ECS::GPUParticleEmitterComponent>(entity, DeserializeGPUParticleEmitterComponent(entityJson["gpuParticleEmitter"]));
             }
+            if (entityJson.contains("cloth")) {
+                m_World->AddComponent<ECS::ClothComponent>(entity, DeserializeClothComponent(entityJson["cloth"]));
+            }
             if (entityJson.contains("elementalVolume")) {
                 m_World->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(entityJson["elementalVolume"]));
             }
@@ -8723,6 +8762,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::GPUParticleEmitterComponent>(entity)) {
                 entityJson["gpuParticleEmitter"] = SerializeGPUParticleEmitterComponent(*m_World->GetComponent<ECS::GPUParticleEmitterComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::ClothComponent>(entity)) {
+                entityJson["cloth"] = SerializeClothComponent(*m_World->GetComponent<ECS::ClothComponent>(entity));
             }
             if (m_World->HasComponent<ECS::ElementalVolumeComponent>(entity)) {
                 entityJson["elementalVolume"] = SerializeElementalVolumeComponent(*m_World->GetComponent<ECS::ElementalVolumeComponent>(entity));
@@ -9448,6 +9490,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("gpuParticleEmitter")) {
                 m_World->AddComponent<ECS::GPUParticleEmitterComponent>(entity, DeserializeGPUParticleEmitterComponent(entityJson["gpuParticleEmitter"]));
             }
+            if (entityJson.contains("cloth")) {
+                m_World->AddComponent<ECS::ClothComponent>(entity, DeserializeClothComponent(entityJson["cloth"]));
+            }
             if (entityJson.contains("elementalVolume")) {
                 m_World->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(entityJson["elementalVolume"]));
             }
@@ -10007,6 +10052,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["elementalEmitter"] = SerializeElementalEmitterComponent(*world->GetComponent<ECS::ElementalEmitterComponent>(entity));
         if (world->HasComponent<ECS::GPUParticleEmitterComponent>(entity))
             entityJson["gpuParticleEmitter"] = SerializeGPUParticleEmitterComponent(*world->GetComponent<ECS::GPUParticleEmitterComponent>(entity));
+        if (world->HasComponent<ECS::ClothComponent>(entity))
+            entityJson["cloth"] = SerializeClothComponent(*world->GetComponent<ECS::ClothComponent>(entity));
         if (world->HasComponent<ECS::ElementalVolumeComponent>(entity))
             entityJson["elementalVolume"] = SerializeElementalVolumeComponent(*world->GetComponent<ECS::ElementalVolumeComponent>(entity));
         if (world->HasComponent<ECS::PostProcessVolumeComponent>(entity))
@@ -10418,6 +10465,9 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         }
         if (entityJson.contains("gpuParticleEmitter")) {
             world->AddComponent<ECS::GPUParticleEmitterComponent>(entity, DeserializeGPUParticleEmitterComponent(entityJson["gpuParticleEmitter"]));
+        }
+        if (entityJson.contains("cloth")) {
+            world->AddComponent<ECS::ClothComponent>(entity, DeserializeClothComponent(entityJson["cloth"]));
         }
         if (entityJson.contains("elementalVolume")) {
             world->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(entityJson["elementalVolume"]));
@@ -11045,6 +11095,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "elementalSurface") { world->AddComponent<ECS::ElementalSurfaceComponent>(entity, DeserializeElementalSurfaceComponent(j)); return true; }
         if (key == "elementalEmitter") { world->AddComponent<ECS::ElementalEmitterComponent>(entity, DeserializeElementalEmitterComponent(j)); return true; }
         if (key == "gpuParticleEmitter") { world->AddComponent<ECS::GPUParticleEmitterComponent>(entity, DeserializeGPUParticleEmitterComponent(j)); return true; }
+        if (key == "cloth") { world->AddComponent<ECS::ClothComponent>(entity, DeserializeClothComponent(j)); return true; }
         if (key == "elementalVolume") { world->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(j)); return true; }
         if (key == "postProcessVolume") { world->AddComponent<ECS::PostProcessVolumeComponent>(entity, DeserializePostProcessVolumeComponent(j)); return true; }
         if (key == "fluidVolume") { world->AddComponent<ECS::FluidVolumeComponent>(entity, DeserializeFluidVolumeComponent(j)); return true; }
@@ -11208,6 +11259,7 @@ bool SceneSerializer::RemoveOneComponent(ECS::World* world, ECS::Entity entity, 
         if (key == "elementalSurface") { world->RemoveComponent<ECS::ElementalSurfaceComponent>(entity); return true; }
         if (key == "elementalEmitter") { world->RemoveComponent<ECS::ElementalEmitterComponent>(entity); return true; }
         if (key == "gpuParticleEmitter") { world->RemoveComponent<ECS::GPUParticleEmitterComponent>(entity); return true; }
+        if (key == "cloth") { world->RemoveComponent<ECS::ClothComponent>(entity); return true; }
         if (key == "elementalVolume") { world->RemoveComponent<ECS::ElementalVolumeComponent>(entity); return true; }
         if (key == "postProcessVolume") { world->RemoveComponent<ECS::PostProcessVolumeComponent>(entity); return true; }
         if (key == "fluidVolume") { world->RemoveComponent<ECS::FluidVolumeComponent>(entity); return true; }

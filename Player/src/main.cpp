@@ -58,6 +58,7 @@
 #include "Enjin/Physics/PhysicsBackendType.h"
 #include "Enjin/ECS/Systems/ControllerSystem.h"
 #include "Enjin/Gameplay/SurfaceResponseSystem.h"
+#include "Enjin/Gameplay/ClothSystem.h"
 #include "Enjin/ECS/Systems/FlowerSystem.h"
 #include "Enjin/ECS/Systems/TweenSystem.h"
 #include "Enjin/ECS/Systems/StateMachineSystem.h"
@@ -927,6 +928,7 @@ public:
         // material of the surface walked on / struck (3D physics path).
         m_SurfaceResponseSystem.Initialize(&m_SimpleAudio, m_RenderSystem, m_Physics.get());
         m_SurfaceResponseSystem.Update(m_World.get(), deltaTime);
+        m_ClothSystem.Update(m_World.get(), deltaTime);
         // Update flower system viewport (full screen in player)
         if (m_Renderer) {
             auto ext = m_Renderer->GetSwapchainExtent();
@@ -2568,6 +2570,7 @@ private:
     // Gameplay systems
     Enjin::ECS::ControllerSystem m_ControllerSystem;
     Enjin::Gameplay::SurfaceResponseSystem m_SurfaceResponseSystem;
+    Enjin::Gameplay::ClothSystem m_ClothSystem;
     Enjin::ECS::FlowerSystem m_FlowerSystem;
     Enjin::ECS::TweenSystem m_TweenSystem;
     Enjin::ECS::StateMachineSystem m_StateMachineSystem;

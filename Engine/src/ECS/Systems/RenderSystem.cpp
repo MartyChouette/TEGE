@@ -2975,6 +2975,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include "Enjin/Renderer/VolumetricFog.h"
 #include "Enjin/Effects/GPUParticleSystem.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
+#include "Enjin/ECS/Components/Cloth.h"
 #endif
 #ifdef ENJIN_VISIBILITY_BUFFER
 #include "Enjin/Renderer/VisibilityBuffer/VisibilityBuffer.h"
@@ -4154,6 +4155,28 @@ void RenderSystem::Update(f32 deltaTime) {
                     // No existing buffer — will be created on next render via SetupEntityBuffers
                 }
                 jelly->meshDirty = false;
+            }
+        }
+
+        // Cloth dirty check: vertex-only re-upload each sim step; full buffer
+        // rebuild when a tear changed the index list (retire -> buffers recreate
+        // from the updated MeshComponent on next use, same as the terrain path).
+        for (Entity entity : m_World->GetEntitiesWithComponent<ClothComponent>()) {
+            auto* cloth = m_World->GetComponent<ClothComponent>(entity);
+            if (!cloth) continue;
+            if (cloth->topologyDirty) {
+                if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
+                    RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
+                cloth->topologyDirty = false;
+                cloth->meshDirty = false;
+            } else if (cloth->meshDirty) {
+                EntityRenderData* rd = GetRenderData(entity);
+                auto* clothMesh = m_World->GetComponent<MeshComponent>(entity);
+                if (rd && rd->vertexBuffer && clothMesh && !clothMesh->vertices.empty()) {
+                    usize dataSize = clothMesh->vertices.size() * sizeof(MeshComponent::Vertex);
+                    rd->vertexBuffer->UploadData(clothMesh->vertices.data(), dataSize);
+                }
+                cloth->meshDirty = false;
             }
         }
 
@@ -8448,6 +8471,7 @@ bool RenderSystem::IsPoolEligible(Entity entity) const {
     if (m_World->HasComponent<TerrainComponent>(entity)) return false;
     if (m_World->HasComponent<Terrain2DComponent>(entity)) return false;
     if (m_World->HasComponent<JellyMeshComponent>(entity)) return false;
+    if (m_World->HasComponent<ClothComponent>(entity)) return false;
     if (m_World->HasComponent<WaterVolumeComponent>(entity)) return false;
     if ((m_CachedWater3DStorage ? m_CachedWater3DStorage->Has(entity) : m_World->HasComponent<Water3DComponent>(entity))) return false;
     // Skinned meshes stay per-entity (bone deformation updates vertex data)
