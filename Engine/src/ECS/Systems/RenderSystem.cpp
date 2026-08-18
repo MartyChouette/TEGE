@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
+#include <chrono>
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Debug/Profiler.h"
 #include <cstdlib>   // getenv (GPU-particle headless test hook)
@@ -5112,6 +5113,20 @@ void RenderSystem::Update(f32 deltaTime) {
 
 
 void RenderSystem::RecordComputePrePass(f32 deltaTime) {
+    // The player calls World::Update(0.0f) (gameplay dt is applied to its systems
+    // separately), so a ZERO dt reached the GPU effect sims here and froze them in
+    // exported games: particles never aged past the alpha fade-in (spawned, drawn,
+    // permanently invisible) and the fog time stood still. The editor passes real
+    // dt, which is why everything looked fine there. When handed 0, fall back to a
+    // wall-clock delta so visual sims always advance regardless of the caller's
+    // dt convention.
+    if (deltaTime <= 0.0f) {
+        static auto s_LastTick = std::chrono::steady_clock::now();
+        auto now = std::chrono::steady_clock::now();
+        f32 measured = std::chrono::duration<f32>(now - s_LastTick).count();
+        s_LastTick = now;
+        deltaTime = std::clamp(measured, 0.0f, 0.1f);
+    }
     if (m_ComputePrePassDone) return;
     if (!m_VulkanRenderer || !m_World) return;
     m_ComputePrePassDone = true;
