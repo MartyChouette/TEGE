@@ -999,6 +999,71 @@ public:
             }
         }
 #endif
+        // Weather precipitation: rain/snow ride the GPU particle pool. The desktop
+        // instanced weather pass is a stub on the WebGPU backend, so until now the
+        // weather SIMULATED here but drew nothing. Spawned in a box above the
+        // camera so it always falls through the view; wind slants the fall.
+        if (m_Camera) {
+            const Enjin::f32 rain = m_WeatherSystem.GetRainIntensity();
+            const Enjin::f32 snow = m_WeatherSystem.GetSnowIntensity();
+            const Enjin::Math::Vector3 wind3 = m_WeatherSystem.GetWindDirection() * m_WeatherSystem.GetWindStrength();
+            const Enjin::Math::Vector3 spawnAt = m_Camera->GetPosition() + Enjin::Math::Vector3(wind3.x * -2.0f, 11.0f, wind3.z * -2.0f);
+            if (rain > 0.01f) {
+                m_RainAccum += rain * 700.0f * dt;
+                Enjin::u32 n = static_cast<Enjin::u32>(m_RainAccum);
+                if (n > 0) {
+                    m_RainAccum -= static_cast<Enjin::f32>(n);
+                    if (n > 1024) n = 1024;
+                    Enjin::Effects::ParticleSpawnParams p;
+                    p.color = {0.62f, 0.72f, 0.85f, 0.5f};
+                    p.size = 0.16f; p.sizeJitter = 0.3f;
+                    p.lifetime = 1.6f; p.speed = 14.0f; p.spread = 0.03f;
+                    p.gravityScale = 2.2f; p.drag = 0.0f;
+                    p.sprite = 3; p.softness = 0.4f;      // streak card
+                    p.fixedRotation = 0.0f;               // vertical streaks, not confetti
+                    p.collide = false;
+                    Enjin::Math::Vector3 dir(wind3.x * 0.06f, -1.0f, wind3.z * 0.06f);
+                    m_Particles->SpawnWithParams(n, spawnAt, dir, p, 4 /*box*/, 13.0f);
+                }
+            }
+            if (snow > 0.01f) {
+                m_SnowAccum += snow * 320.0f * dt;
+                Enjin::u32 n = static_cast<Enjin::u32>(m_SnowAccum);
+                if (n > 0) {
+                    m_SnowAccum -= static_cast<Enjin::f32>(n);
+                    if (n > 1024) n = 1024;
+                    Enjin::Effects::ParticleSpawnParams p;
+                    p.color = {1.0f, 1.0f, 1.0f, 0.85f};
+                    p.size = 0.07f; p.sizeJitter = 0.5f;
+                    p.lifetime = 6.0f; p.speed = 0.9f; p.spread = 0.5f;
+                    p.gravityScale = 0.12f; p.drag = 1.4f;
+                    p.sprite = 1; p.softness = 0.7f;
+                    p.collide = false;
+                    Enjin::Math::Vector3 dir(wind3.x * 0.2f, -1.0f, wind3.z * 0.2f);
+                    m_Particles->SpawnWithParams(n, spawnAt, dir, p, 4 /*box*/, 13.0f);
+                }
+            }
+        }
+
+        // Elemental fire: every fire light source gets a small continuous Fire
+        // plume (the desktop elemental particle pass is also a web stub).
+        if (!m_FireLights.empty()) {
+            m_FireAccum += 45.0f * dt;
+            Enjin::u32 per = static_cast<Enjin::u32>(m_FireAccum);
+            if (per > 0) {
+                m_FireAccum -= static_cast<Enjin::f32>(per);
+                if (per > 6) per = 6;
+                Enjin::Effects::ParticleSpawnParams fp =
+                    Enjin::Effects::PresetSpawnParams(Enjin::Effects::GPUParticlePreset::Fire);
+                fp.collide = false;
+                for (const auto& fl : m_FireLights) {
+                    fp.size = 0.28f + 0.12f * fl.intensity;
+                    m_Particles->SpawnWithParams(per, fl.position, Enjin::Math::Vector3(0.0f, 1.0f, 0.0f),
+                                                 fp, 1 /*sphere*/, 0.18f);
+                }
+            }
+        }
+
         for (Enjin::ECS::Entity e : m_World->GetEntitiesWithComponent<Enjin::ECS::GPUParticleEmitterComponent>()) {
             auto* em = m_World->GetComponent<Enjin::ECS::GPUParticleEmitterComponent>(e);
             if (!em) continue;
@@ -1374,6 +1439,9 @@ private:
     Enjin::Audio::SimpleAudio m_SimpleAudio;
     Enjin::Effects::WeatherSystem m_WeatherSystem;
     Enjin::Effects::WindSystem m_WindSystem;
+    Enjin::f32 m_RainAccum = 0.0f;   // weather-particle spawn accumulators (web precip)
+    Enjin::f32 m_SnowAccum = 0.0f;
+    Enjin::f32 m_FireAccum = 0.0f;
     Enjin::Effects::WorldTimeSystem m_WorldTime;
     Enjin::Effects::ParticleSystem m_ParticleSystem;
     Enjin::Effects::ElementalSystem m_ElementalSystem;

@@ -238,7 +238,8 @@ void GPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& position
         ) * params.speed;
         p.color = params.color;
         p.size = params.size * (1.0f - params.sizeJitter + 2.0f * params.sizeJitter * HashUnit(i * 40503u + 7u));
-        p.rotation = HashUnit(i * 22699u + 3u) * 6.2831853f;
+        p.rotation = (params.fixedRotation >= 0.0f) ? params.fixedRotation
+                     : HashUnit(i * 22699u + 3u) * 6.2831853f;
         p.gravityScale = params.gravityScale;
         p.drag = params.drag;
         p.sprite = static_cast<f32>(params.sprite);

@@ -442,7 +442,8 @@ void WebGPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& posit
             direction.z + sinf(phi) * sinf(theta) * params.spread) * params.speed;
         p.color = params.color;
         p.size = params.size * (1.0f - params.sizeJitter * 0.5f + params.sizeJitter * HashUnit(i * 40503u + 7u));
-        p.rotation = HashUnit(i * 22695477u + 3u) * 6.2831853f;
+        p.rotation = (params.fixedRotation >= 0.0f) ? params.fixedRotation
+                     : HashUnit(i * 22695477u + 3u) * 6.2831853f;
         p.gravityScale = params.gravityScale;
         p.drag = params.drag;
         p.sprite = static_cast<f32>(params.sprite);

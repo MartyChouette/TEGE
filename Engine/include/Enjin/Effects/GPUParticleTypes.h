@@ -56,6 +56,7 @@ struct ParticleSpawnParams {
     f32 texIndex = -1.0f;      // bindless texture index when sprite==5 (desktop)
 
     f32 emitterKey = -1.0f;    // EntityIndex of the owning emitter entity
+    f32 fixedRotation = -1.0f; // billboard rotation in radians; < 0 = random per particle
 
     // Collision vs world colliders (see GPUParticle::collision).
     bool collide = true;
