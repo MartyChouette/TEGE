@@ -1531,6 +1531,20 @@ void EditorLayer::DrawInspectorPanel() {
                 if (cl->tearable) {
                     ImGui::DragFloat("Tear Threshold", &cl->tearThreshold, 0.02f, 1.1f, 5.0f);
                     ImGui::SetItemTooltip("Stretch factor (x rest length) that snaps a link");
+                    rebuild |= ImGui::DragFloat("Pin Strength", &cl->pinStrength, 0.02f, 0.2f, 4.0f);
+                    ImGui::SetItemTooltip(">1 = reinforced stitching at the pins, <1 = fabric rips off its pins first");
+                    const char* seamModes[] = {"None","Vertical","Horizontal","Grid"};
+                    int sm = static_cast<int>(cl->seams);
+                    if (ImGui::Combo("Seams", &sm, seamModes, IM_ARRAYSIZE(seamModes))) {
+                        cl->seams = static_cast<ECS::ClothSeams>(sm);
+                        rebuild = true;
+                    }
+                    ImGui::SetItemTooltip("Sewn panels: tears run along the seam lines instead of spreading evenly");
+                    if (cl->seams != ECS::ClothSeams::None) {
+                        rebuild |= ImGui::DragInt("Seam Spacing", &cl->seamSpacing, 1, 2, 32);
+                        rebuild |= ImGui::DragFloat("Seam Strength", &cl->seamStrength, 0.05f, 1.0f, 5.0f);
+                        ImGui::SetItemTooltip("How much tougher the stitched links are than the fabric");
+                    }
                 }
                 ImGui::Checkbox("Collide", &cl->collide);
                 ImGui::SetItemTooltip("Push cloth points out of Box/Sphere/Capsule colliders");

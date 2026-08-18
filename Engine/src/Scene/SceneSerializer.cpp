@@ -1179,6 +1179,10 @@ json SerializeClothComponent(const ECS::ClothComponent& c) {
     j["collide"] = c.collide;
     j["collisionSkin"] = RF(c.collisionSkin);
     j["friction"] = RF(c.friction);
+    j["pinStrength"] = RF(c.pinStrength);
+    j["seams"] = static_cast<u32>(c.seams);
+    j["seamSpacing"] = c.seamSpacing;
+    j["seamStrength"] = RF(c.seamStrength);
     return j;
 }
 
@@ -1198,6 +1202,10 @@ ECS::ClothComponent DeserializeClothComponent(const json& j) {
     if (j.contains("collide")) c.collide = JB(j["collide"]);
     if (j.contains("collisionSkin")) c.collisionSkin = j["collisionSkin"].get<f32>();
     if (j.contains("friction")) c.friction = j["friction"].get<f32>();
+    if (j.contains("pinStrength")) c.pinStrength = j["pinStrength"].get<f32>();
+    if (j.contains("seams")) { u32 v = j["seams"].get<u32>(); if (v <= 3) c.seams = static_cast<ECS::ClothSeams>(v); }
+    if (j.contains("seamSpacing")) c.seamSpacing = std::clamp(j["seamSpacing"].get<i32>(), 2, 64);
+    if (j.contains("seamStrength")) c.seamStrength = j["seamStrength"].get<f32>();
     return c;
 }
 

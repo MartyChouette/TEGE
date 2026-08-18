@@ -62,10 +62,36 @@ void BuildCloth(World* world, Entity entity, ClothComponent& c) {
     c.prevPositions = c.positions;
 
     // Constraints: structural (right + down neighbors) and shear (diagonals).
+    // Per-link strength bakes the sewn-fabric layout: stitched links on seam
+    // lines are stronger, links beside a seam slightly weaker (stress
+    // concentrates next to stitching, so tears run along the panels), and
+    // links touching pinned points scale by pinStrength.
     c.constraints.clear();
+    const i32 spacing = std::max(c.seamSpacing, 2);
+    auto onSeamX = [&](i32 x) {
+        return (c.seams == ClothSeams::Vertical || c.seams == ClothSeams::Grid) &&
+               x > 0 && x < nx - 1 && (x % spacing) == 0;
+    };
+    auto onSeamY = [&](i32 y) {
+        return (c.seams == ClothSeams::Horizontal || c.seams == ClothSeams::Grid) &&
+               y > 0 && y < ny - 1 && (y % spacing) == 0;
+    };
+    auto nearSeam = [&](i32 x, i32 y) {
+        return onSeamX(x - 1) || onSeamX(x + 1) || onSeamY(y - 1) || onSeamY(y + 1);
+    };
     auto addC = [&](i32 a, i32 b) {
         f32 rest = (c.restLocal[a] - c.restLocal[b]).Length();
-        c.constraints.push_back({a, b, rest});
+        i32 ax = a % nx, ay = a / nx, bx = b % nx, by = b / nx;
+        f32 strength = 1.0f;
+        bool aOn = onSeamX(ax) || onSeamY(ay);
+        bool bOn = onSeamX(bx) || onSeamY(by);
+        if (aOn && bOn)
+            strength = c.seamStrength;                    // stitched link on the seam
+        else if (nearSeam(ax, ay) || nearSeam(bx, by))
+            strength = 0.85f;                             // weak line beside the stitching
+        if (c.invMass[a] == 0.0f || c.invMass[b] == 0.0f)
+            strength *= c.pinStrength;                    // links holding onto the pins
+        c.constraints.push_back({a, b, rest, strength});
     };
     for (i32 y = 0; y < ny; ++y)
         for (i32 x = 0; x < nx; ++x) {
@@ -254,7 +280,7 @@ void ClothSystem::Update(World* world, f32 deltaTime) {
                 f32 dist = delta.Length();
                 if (dist < 1e-6f) continue;
 
-                if (c->tearable && it == 0 && dist > con.rest * c->tearThreshold) {
+                if (c->tearable && it == 0 && dist > con.rest * c->tearThreshold * con.strength) {
                     // Snap: drop the constraint and every triangle on that edge.
                     for (auto& t : c->tris) {
                         if (!t.alive) continue;
