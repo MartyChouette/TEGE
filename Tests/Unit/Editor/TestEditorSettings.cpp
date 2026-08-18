@@ -12,14 +12,17 @@ using namespace Enjin::Editor;
 // Default Values
 // ===========================================================================
 
-ENJIN_TEST(Defaults, ThemeIsDark) {
+// The shipped defaults are Marty's authored preferences (2026-08-08 defaults
+// commit): SegaSaturn theme at 1.9 UI scale. These asserts lock THAT contract;
+// CI caught the old Dark/1.0 expectations failing ten days after the change.
+ENJIN_TEST(Defaults, ThemeIsSegaSaturn) {
     EditorSettings settings;
-    ENJIN_EXPECT_EQ((int)settings.theme, (int)EditorTheme::Dark);
+    ENJIN_EXPECT_EQ((int)settings.theme, (int)EditorTheme::SegaSaturn);
 }
 
-ENJIN_TEST(Defaults, UIScaleIsOne) {
+ENJIN_TEST(Defaults, UIScaleDefault) {
     EditorSettings settings;
-    ENJIN_EXPECT_FLOAT_EQ(settings.uiScale, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(settings.uiScale, 1.9f);
 }
 
 ENJIN_TEST(Defaults, AudioDefaults) {
@@ -214,8 +217,8 @@ ENJIN_TEST(MissingFile, LoadNonexistentReturnsFalse) {
     bool ok = settings.Load("this_file_does_not_exist_12345.json");
     ENJIN_EXPECT_FALSE(ok);
     // Defaults should still be intact
-    ENJIN_EXPECT_EQ((int)settings.theme, (int)EditorTheme::Dark);
-    ENJIN_EXPECT_FLOAT_EQ(settings.uiScale, 1.0f);
+    ENJIN_EXPECT_EQ((int)settings.theme, (int)EditorTheme::SegaSaturn);
+    ENJIN_EXPECT_FLOAT_EQ(settings.uiScale, 1.9f);
 }
 
 // ===========================================================================
