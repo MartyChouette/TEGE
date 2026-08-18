@@ -3,9 +3,11 @@
 #include "Enjin/ECS/Components/Cloth.h"
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Math/Matrix.h"
 #include <algorithm>
+#include <vector>
 #include <cmath>
 
 namespace Enjin {
@@ -109,6 +111,100 @@ void BuildCloth(World* world, Entity entity, ClothComponent& c) {
     c.topologyDirty = true;   // buffers must (re)build from the fresh mesh
 }
 
+// World-space collider shapes the cloth points push out of. Collider sizes are
+// WORLD SPACE by engine convention (no transform-scale multiply).
+struct ColliderShape {
+    enum class Kind : u8 { Box, Sphere, Capsule } kind;
+    Math::Vector3 pos;          // world center
+    Math::Quaternion rot;       // entity rotation (box axes / capsule axis)
+    Math::Vector3 half;         // box half extents
+    f32 radius = 0.0f;          // sphere/capsule
+    f32 halfHeight = 0.0f;      // capsule cylinder half-height
+};
+
+void GatherColliders(World* world, Entity skip, std::vector<ColliderShape>& out) {
+    out.clear();
+    for (Entity e : world->GetEntitiesWithComponent<BoxColliderComponent>()) {
+        if (EntityIndex(e) == EntityIndex(skip)) continue;
+        auto* col = world->GetComponent<BoxColliderComponent>(e);
+        auto* xf = world->GetComponent<TransformComponent>(e);
+        if (!col || !xf || col->isTrigger) continue;
+        ColliderShape s;
+        s.kind = ColliderShape::Kind::Box;
+        s.rot = xf->rotation;
+        s.pos = xf->position + xf->rotation.Rotate(col->center);
+        s.half = col->size * 0.5f;
+        out.push_back(s);
+    }
+    for (Entity e : world->GetEntitiesWithComponent<SphereColliderComponent>()) {
+        if (EntityIndex(e) == EntityIndex(skip)) continue;
+        auto* col = world->GetComponent<SphereColliderComponent>(e);
+        auto* xf = world->GetComponent<TransformComponent>(e);
+        if (!col || !xf || col->isTrigger) continue;
+        ColliderShape s;
+        s.kind = ColliderShape::Kind::Sphere;
+        s.pos = xf->position + xf->rotation.Rotate(col->center);
+        s.radius = col->radius;
+        out.push_back(s);
+    }
+    for (Entity e : world->GetEntitiesWithComponent<CapsuleColliderComponent>()) {
+        if (EntityIndex(e) == EntityIndex(skip)) continue;
+        auto* col = world->GetComponent<CapsuleColliderComponent>(e);
+        auto* xf = world->GetComponent<TransformComponent>(e);
+        if (!col || !xf || col->isTrigger) continue;
+        ColliderShape s;
+        s.kind = ColliderShape::Kind::Capsule;
+        s.rot = xf->rotation;
+        s.pos = xf->position + xf->rotation.Rotate(col->center);
+        s.radius = col->radius;
+        s.halfHeight = col->height * 0.5f;   // height = cylinder section only
+        out.push_back(s);
+    }
+}
+
+// Push a point out of a shape if inside (returns true on contact).
+bool ResolvePoint(const ColliderShape& s, Math::Vector3& p, f32 skin) {
+    switch (s.kind) {
+        case ColliderShape::Kind::Sphere: {
+            Math::Vector3 d = p - s.pos;
+            f32 dist = d.Length();
+            f32 r = s.radius + skin;
+            if (dist >= r) return false;
+            p = s.pos + (dist > 1e-6f ? d * (r / dist) : Math::Vector3(0, r, 0));
+            return true;
+        }
+        case ColliderShape::Kind::Capsule: {
+            Math::Vector3 axis = s.rot.Rotate(Math::Vector3(0, 1, 0));
+            Math::Vector3 d = p - s.pos;
+            f32 t = std::clamp(d.Dot(axis), -s.halfHeight, s.halfHeight);
+            Math::Vector3 closest = s.pos + axis * t;
+            Math::Vector3 rd = p - closest;
+            f32 dist = rd.Length();
+            f32 r = s.radius + skin;
+            if (dist >= r) return false;
+            p = closest + (dist > 1e-6f ? rd * (r / dist) : Math::Vector3(0, r, 0));
+            return true;
+        }
+        case ColliderShape::Kind::Box: {
+            Math::Quaternion invRot = s.rot.Inverse();
+            Math::Vector3 lp = invRot.Rotate(p - s.pos);
+            Math::Vector3 h = s.half + Math::Vector3(skin, skin, skin);
+            if (std::fabs(lp.x) >= h.x || std::fabs(lp.y) >= h.y || std::fabs(lp.z) >= h.z)
+                return false;
+            // Inside: push out along the axis of least penetration.
+            f32 px = h.x - std::fabs(lp.x);
+            f32 py = h.y - std::fabs(lp.y);
+            f32 pz = h.z - std::fabs(lp.z);
+            if (px <= py && px <= pz)      lp.x = (lp.x >= 0 ? h.x : -h.x);
+            else if (py <= px && py <= pz) lp.y = (lp.y >= 0 ? h.y : -h.y);
+            else                           lp.z = (lp.z >= 0 ? h.z : -h.z);
+            p = s.pos + s.rot.Rotate(lp);
+            return true;
+        }
+    }
+    return false;
+}
+
 } // namespace
 
 void ClothSystem::Update(World* world, f32 deltaTime) {
@@ -170,6 +266,25 @@ void ClothSystem::Update(World* world, f32 deltaTime) {
                 Math::Vector3 corr = delta * ((dist - con.rest) / (dist * wSum));
                 c->positions[con.a] = c->positions[con.a] + corr * wA;
                 c->positions[con.b] = c->positions[con.b] - corr * wB;
+            }
+        }
+
+        // Collision: push free points out of world colliders. Friction pulls the
+        // previous position toward the contact point, killing slide velocity.
+        if (c->collide) {
+            static thread_local std::vector<ColliderShape> s_Shapes;
+            GatherColliders(world, entity, s_Shapes);
+            if (!s_Shapes.empty()) {
+                f32 fr = std::clamp(c->friction, 0.0f, 1.0f);
+                for (i32 i = 0; i < count; ++i) {
+                    if (c->invMass[i] == 0.0f) continue;
+                    for (const auto& s : s_Shapes) {
+                        if (ResolvePoint(s, c->positions[i], c->collisionSkin)) {
+                            c->prevPositions[i] = c->prevPositions[i] +
+                                (c->positions[i] - c->prevPositions[i]) * fr;
+                        }
+                    }
+                }
             }
         }
 

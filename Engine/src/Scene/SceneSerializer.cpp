@@ -1176,6 +1176,9 @@ json SerializeClothComponent(const ECS::ClothComponent& c) {
     j["pin"] = static_cast<u32>(c.pin);
     j["tearable"] = c.tearable;
     j["tearThreshold"] = RF(c.tearThreshold);
+    j["collide"] = c.collide;
+    j["collisionSkin"] = RF(c.collisionSkin);
+    j["friction"] = RF(c.friction);
     return j;
 }
 
@@ -1192,6 +1195,9 @@ ECS::ClothComponent DeserializeClothComponent(const json& j) {
     if (j.contains("pin")) { u32 v = j["pin"].get<u32>(); if (v <= 4) c.pin = static_cast<ECS::ClothPin>(v); }
     if (j.contains("tearable")) c.tearable = JB(j["tearable"]);
     if (j.contains("tearThreshold")) c.tearThreshold = j["tearThreshold"].get<f32>();
+    if (j.contains("collide")) c.collide = JB(j["collide"]);
+    if (j.contains("collisionSkin")) c.collisionSkin = j["collisionSkin"].get<f32>();
+    if (j.contains("friction")) c.friction = j["friction"].get<f32>();
     return c;
 }
 

@@ -33,6 +33,9 @@ struct ClothComponent {
     ClothPin pin = ClothPin::TopEdge;
     bool tearable = false;
     f32 tearThreshold = 1.6f;      // stretch factor that snaps a constraint
+    bool collide = true;           // push points out of Box/Sphere/Capsule colliders
+    f32 collisionSkin = 0.04f;     // clearance kept off collider surfaces
+    f32 friction = 0.5f;           // 0 = slide freely on contact, 1 = stick
 
     // --- Runtime state (owned by ClothSystem; not serialized) ---
     struct Constraint { i32 a; i32 b; f32 rest; };

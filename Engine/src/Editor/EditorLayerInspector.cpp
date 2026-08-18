@@ -1532,6 +1532,12 @@ void EditorLayer::DrawInspectorPanel() {
                     ImGui::DragFloat("Tear Threshold", &cl->tearThreshold, 0.02f, 1.1f, 5.0f);
                     ImGui::SetItemTooltip("Stretch factor (x rest length) that snaps a link");
                 }
+                ImGui::Checkbox("Collide", &cl->collide);
+                ImGui::SetItemTooltip("Push cloth points out of Box/Sphere/Capsule colliders");
+                if (cl->collide) {
+                    ImGui::SliderFloat("Friction", &cl->friction, 0.0f, 1.0f, "%.2f");
+                    ImGui::DragFloat("Collision Skin", &cl->collisionSkin, 0.005f, 0.0f, 0.3f);
+                }
                 if (ImGui::Button("Reset Cloth") || rebuild) cl->initialized = false;
                 ImGui::TextDisabled("(simulates in Play mode; pinned points follow the entity)");
             }
