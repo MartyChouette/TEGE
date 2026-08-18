@@ -63,4 +63,6 @@ jobs:
         run: emcmake cmake -B build-web-ci -S . -DENJIN_PLATFORM_WEB=ON
 
       - name: Build
-        run: cmake --build build-web-ci --parallel
+        # Capped at 2 jobs: unbounded parallelism OOM-kills clang on the 4-core
+        # runner (exit 137) - the engine's big translation units eat RAM per job.
+        run: cmake --build build-web-ci --parallel 2
