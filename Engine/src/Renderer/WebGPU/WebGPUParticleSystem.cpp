@@ -401,6 +401,10 @@ static void DrawParticles(WebGPURenderer* renderer, GPUPipelineHandle pipeline,
                           WGPURenderPassEncoder pass, const Math::Matrix4& view,
                           const Math::Matrix4& proj, u32 instances) {
     struct { Math::Matrix4 view; Math::Matrix4 proj; } vp{view, proj};
+    // Same convention flip the web scene UBO applies: Vulkan-style proj (Y-down)
+    // -> WebGPU (Y-up). Without this the particle layer is vertically mirrored
+    // about the view center and appears to swim as the camera pitches.
+    vp.proj.m[5] = -vp.proj.m[5];
     renderer->GetBufferManager()->UploadData(viewProjUBO, &vp, sizeof(vp));
 
     auto* pipeMgr = static_cast<WebGPUPipelineManager*>(renderer->GetPipelineManager());
