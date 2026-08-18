@@ -51,12 +51,13 @@ struct EmitterParamsUBO {
     Math::Vector4 startColor;                                // 64..79
     Math::Vector4 endColor;                                  // 80..95
     f32 startSize; f32 endSize; f32 maxLifetime; f32 spawnRate;             // 96..111
-    f32 turbulenceStrength; f32 turbulenceFrequency; u32 frameNumber; f32 _pad; // 112..127
+    f32 turbulenceStrength; f32 turbulenceFrequency; u32 frameNumber; u32 colliderCount; // 112..127
 };
 static_assert(sizeof(EmitterParamsUBO) == 128, "must match particle_simulate.comp EmitterParams");
 
 void GPUParticleSystem::Simulate(VkCommandBuffer cmd, f32 deltaTime, u32 frameNumber,
-                                  const Math::Vector3& windForce) {
+                                  const Math::Vector3& windForce,
+                                  const std::vector<ParticleColliderShape>* colliders) {
     if (!m_Initialized) return;
 
     // Idle gate. Nothing spawns GPU particles yet (no ECS emitter wiring, no
@@ -80,8 +81,15 @@ void GPUParticleSystem::Simulate(VkCommandBuffer cmd, f32 deltaTime, u32 frameNu
         // particle_simulate.comp bindings:
         // 0=SSBO(particles), 1=SSBO(aliveIndexBuffer), 2=UBO(emitterParams)
         m_SimulateSetup.Create(m_Context, {
-            {0, BT::StorageBuffer}, {1, BT::StorageBuffer}, {2, BT::UniformBuffer}
+            {0, BT::StorageBuffer}, {1, BT::StorageBuffer}, {2, BT::UniformBuffer},
+            {3, BT::StorageBuffer}
         }, "particle_simulate.comp");
+
+        if (!m_ColliderBuffer) {
+            m_ColliderBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Context);
+            m_ColliderBuffer->Create(kMaxParticleColliders * sizeof(ParticleColliderShape),
+                                     Renderer::BufferUsage::Storage, true);
+        }
 
         VkDevice device = m_Context->GetDevice();
         if (m_SimulateSetup.IsValid()) {
@@ -91,6 +99,8 @@ void GPUParticleSystem::Simulate(VkCommandBuffer cmd, f32 deltaTime, u32 frameNu
             m_SimulateSetup.WriteBuffer(device, 1, m_AliveIndexBuffer->GetBuffer(), aliveSize);
             m_SimulateSetup.WriteBuffer(device, 2, m_EmitterParamsUBO->GetBuffer(), sizeof(EmitterParamsUBO),
                                          VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+            m_SimulateSetup.WriteBuffer(device, 3, m_ColliderBuffer->GetBuffer(),
+                                         kMaxParticleColliders * sizeof(ParticleColliderShape));
         }
         m_PipelineCreated = true;
     }
@@ -126,6 +136,12 @@ void GPUParticleSystem::Simulate(VkCommandBuffer cmd, f32 deltaTime, u32 frameNu
         params.turbulenceStrength  = m_Config.turbulenceStrength;
         params.turbulenceFrequency = m_Config.turbulenceFrequency;
         params.frameNumber         = frameNumber;
+        u32 nColliders = 0;
+        if (colliders && !colliders->empty() && m_ColliderBuffer) {
+            nColliders = std::min<u32>(static_cast<u32>(colliders->size()), kMaxParticleColliders);
+            m_ColliderBuffer->UploadData(colliders->data(), nColliders * sizeof(ParticleColliderShape));
+        }
+        params.colliderCount       = nColliders;
         m_EmitterParamsUBO->UploadData(&params, sizeof(params));
     }
 
@@ -411,6 +427,7 @@ void GPUParticleSystem::DestroyResources() {
     m_ParticleBuffer.reset();
     m_AliveIndexBuffer.reset();
     m_EmitterParamsUBO.reset();
+    m_ColliderBuffer.reset();
 }
 
 } // namespace Effects

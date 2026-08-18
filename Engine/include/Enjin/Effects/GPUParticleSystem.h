@@ -6,6 +6,7 @@
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Effects/GPUParticleTypes.h"   // shared GPUParticle / presets / config
+#include "Enjin/Effects/ParticleColliders.h"   // shapes particles bounce off
 #include "Enjin/Renderer/ComputePipelineHelper.h"
 #include <vulkan/vulkan.h>
 #include <memory>
@@ -43,9 +44,11 @@ public:
     bool Initialize(const GPUEmitterConfig& config = GPUEmitterConfig{});
     void Shutdown();
 
-    // Simulate: dispatch compute shader to update all particles
+    // Simulate: dispatch compute shader to update all particles. `colliders`
+    // (optional) are world shapes the particles bounce off this frame.
     void Simulate(VkCommandBuffer cmd, f32 deltaTime, u32 frameNumber,
-                  const Math::Vector3& windForce);
+                  const Math::Vector3& windForce,
+                  const std::vector<ParticleColliderShape>* colliders = nullptr);
 
     // Spawn new particles (CPU-side, uploads to staging region of particle SSBO)
     void Spawn(u32 count, const Math::Vector3& position, const Math::Vector3& direction);
@@ -99,6 +102,9 @@ private:
 
     // Emitter params UBO
     std::unique_ptr<Renderer::VulkanBuffer> m_EmitterParamsUBO;
+
+    // World collider shapes (host-visible SSBO, re-uploaded each frame)
+    std::unique_ptr<Renderer::VulkanBuffer> m_ColliderBuffer;
 
     // Compute pipeline (via helper)
     Renderer::ComputePipelineSetup m_SimulateSetup;

@@ -5,6 +5,7 @@
 #if ENJIN_PLATFORM_WEB
 
 #include "Enjin/Effects/GPUParticleTypes.h"
+#include "Enjin/Effects/ParticleColliders.h"
 #include "Enjin/Renderer/GPUTypes.h"
 #include "Enjin/Math/Matrix.h"
 #include <webgpu/webgpu.h>
@@ -35,6 +36,9 @@ public:
                          const Math::Vector3& direction, const Effects::ParticleSpawnParams& params,
                          u8 shape = 0, f32 shapeSize = 0.0f);
 
+    // World shapes the particles bounce off this frame (call before Simulate).
+    void SetColliders(const std::vector<Effects::ParticleColliderShape>& shapes);
+
     // Dispatch the compute sim for this frame (compute pass on the frame encoder).
     void Simulate(f32 deltaTime, u32 frameNumber, const Math::Vector3& windForce);
 
@@ -57,6 +61,8 @@ private:
     GPUBufferHandle m_ParticleBuffer;   // storage, maxParticles * 64 bytes
     GPUBufferHandle m_ParamsUBO;        // uniform, 128B (sim EmitterParams)
     GPUBufferHandle m_ViewProjUBO;      // uniform, 128B (draw: view + proj)
+    GPUBufferHandle m_ColliderBuffer;   // storage, world shapes for collision
+    u32 m_ColliderCount = 0;
 
     GPUShaderHandle m_SimShader;
     GPUShaderHandle m_DrawShader;

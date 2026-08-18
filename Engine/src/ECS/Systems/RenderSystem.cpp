@@ -2974,6 +2974,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include "Enjin/Renderer/DDGIProbeSystem.h"
 #include "Enjin/Renderer/VolumetricFog.h"
 #include "Enjin/Effects/GPUParticleSystem.h"
+#include "Enjin/Effects/ParticleColliders.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Cloth.h"
 #endif
@@ -5289,7 +5290,9 @@ void RenderSystem::RecordComputePrePass(f32 deltaTime) {
         if (m_GPUParticleSystem) {
             TickGPUEmitters(deltaTime);
             Math::Vector3 wind(0.0f); // TODO: read from WindSystem
-            m_GPUParticleSystem->Simulate(computeCmd, deltaTime, frameNumber, wind);
+            static thread_local std::vector<Effects::ParticleColliderShape> s_ParticleColliders;
+            Effects::GatherParticleColliders(m_World, s_ParticleColliders);
+            m_GPUParticleSystem->Simulate(computeCmd, deltaTime, frameNumber, wind, &s_ParticleColliders);
         }
     }
 }

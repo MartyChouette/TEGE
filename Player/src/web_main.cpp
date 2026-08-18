@@ -24,6 +24,7 @@
 #include "Enjin/Renderer/WebGPU/WebGPURenderer.h"
 #include "Enjin/Renderer/WebGPU/WebGPUParticleSystem.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
+#include "Enjin/Effects/ParticleColliders.h"
 #if defined(ENJIN_WEBGPU_COMPUTE_SMOKETEST)
 #include "Enjin/Renderer/WebGPU/WebGPUComputeSmokeTest.h"
 #endif
@@ -1031,6 +1032,9 @@ public:
         // BEFORE any render pass opens (a compute pass can't overlap a render pass).
         if (m_Particles) {
             DriveParticles(m_LastDeltaTime);
+            static std::vector<Enjin::Effects::ParticleColliderShape> s_ParticleColliders;
+            Enjin::Effects::GatherParticleColliders(m_World.get(), s_ParticleColliders);
+            m_Particles->SetColliders(s_ParticleColliders);
             m_Particles->Simulate(m_LastDeltaTime, m_ParticleFrame++, Enjin::Math::Vector3(0.0f, 0.0f, 0.0f));
         }
         m_RenderSystem->FlushPendingChanges();
