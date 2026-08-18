@@ -42,6 +42,11 @@ struct ClothComponent {
     f32 collisionSkin = 0.04f;     // clearance kept off collider surfaces
     f32 friction = 0.5f;           // 0 = slide freely on contact, 1 = stick
 
+    // Self-collision: cloth points repel each other so folded fabric stacks
+    // with thickness instead of passing through itself when it piles up.
+    bool selfCollide = true;
+    f32 thickness = 0.0f;          // 0 = auto (about half the grid spacing)
+
     // Sewn-fabric tear tuning (bakes into per-link strength at build time).
     f32 pinStrength = 1.0f;        // links touching pinned points: >1 reinforced, <1 rips off the pins first
     ClothSeams seams = ClothSeams::None;

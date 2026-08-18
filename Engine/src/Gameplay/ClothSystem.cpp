@@ -324,6 +324,36 @@ void ClothSystem::Update(World* world, f32 deltaTime) {
             }
         }
 
+        // Self-collision: push apart non-neighbor point pairs closer than the
+        // fabric thickness, so folds stack instead of interpenetrating. One pass
+        // per frame; O(n^2) with a cheap distance-squared early-out is fine at
+        // grid scales (a 24x24 sheet is ~165k pair checks of trivial math).
+        if (c->selfCollide) {
+            const i32 nx = c->resX;
+            f32 spacing = std::min(c->width / static_cast<f32>(std::max(c->resX - 1, 1)),
+                                   c->height / static_cast<f32>(std::max(c->resY - 1, 1)));
+            f32 thick = (c->thickness > 0.0f) ? c->thickness : spacing * 0.5f;
+            f32 thick2 = thick * thick;
+            for (i32 i = 0; i < count; ++i) {
+                i32 ix = i % nx, iy = i / nx;
+                for (i32 j = i + 1; j < count; ++j) {
+                    i32 jx = j % nx, jy = j / nx;
+                    // Immediate grid neighbors are held by constraints already.
+                    if (std::abs(ix - jx) + std::abs(iy - jy) < 2) continue;
+                    Math::Vector3 d = c->positions[j] - c->positions[i];
+                    f32 d2 = d.LengthSquared();
+                    if (d2 >= thick2 || d2 < 1e-12f) continue;
+                    f32 dist = std::sqrt(d2);
+                    f32 wI = c->invMass[i], wJ = c->invMass[j];
+                    f32 wSum = wI + wJ;
+                    if (wSum <= 0.0f) continue;
+                    Math::Vector3 corr = d * ((thick - dist) / (dist * wSum));
+                    c->positions[i] = c->positions[i] - corr * wI;
+                    c->positions[j] = c->positions[j] + corr * wJ;
+                }
+            }
+        }
+
         // Write back into the mesh (local space) + recompute normals.
         auto* mesh = world->GetComponent<MeshComponent>(entity);
         if (!mesh || mesh->vertices.size() != static_cast<usize>(count)) continue;

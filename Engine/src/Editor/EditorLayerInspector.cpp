@@ -1546,6 +1546,12 @@ void EditorLayer::DrawInspectorPanel() {
                         ImGui::SetItemTooltip("How much tougher the stitched links are than the fabric");
                     }
                 }
+                ImGui::Checkbox("Self Collide", &cl->selfCollide);
+                ImGui::SetItemTooltip("Folded fabric stacks with thickness instead of passing through itself");
+                if (cl->selfCollide) {
+                    ImGui::DragFloat("Thickness", &cl->thickness, 0.005f, 0.0f, 0.5f, cl->thickness <= 0.0f ? "auto" : "%.3f");
+                    ImGui::SetItemTooltip("0 = automatic (half the grid spacing)");
+                }
                 ImGui::Checkbox("Collide", &cl->collide);
                 ImGui::SetItemTooltip("Push cloth points out of Box/Sphere/Capsule colliders");
                 if (cl->collide) {
