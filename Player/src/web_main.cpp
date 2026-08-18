@@ -25,6 +25,7 @@
 #include "Enjin/Renderer/WebGPU/WebGPUParticleSystem.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/Effects/ParticleColliders.h"
+#include "Enjin/Renderer/WebGPU/WebGPUVegetationSystem.h"
 #if defined(ENJIN_WEBGPU_COMPUTE_SMOKETEST)
 #include "Enjin/Renderer/WebGPU/WebGPUComputeSmokeTest.h"
 #endif
@@ -509,6 +510,11 @@ public:
         m_RenderSystem->Initialize();
 
         // GPU particles on web: same emitter component as desktop, driven each frame.
+        m_Vegetation = std::make_unique<Enjin::Renderer::WebGPUVegetationSystem>();
+        if (!m_Vegetation->Initialize(m_Renderer.get())) {
+            ENJIN_LOG_WARN(Player, "Web vegetation unavailable (init failed) - flora volumes will not draw");
+            m_Vegetation.reset();
+        }
         m_Particles = std::make_unique<Enjin::Renderer::WebGPUParticleSystem>(m_Renderer.get());
         if (!m_Particles->Initialize()) {
             ENJIN_LOG_WARN(Player, "WebGPU particle system init failed — GPU particles disabled");
@@ -518,6 +524,14 @@ public:
             // overlay draw in RenderUIOverlay stays as the fallback for the direct-to-
             // swapchain path and no-ops when this ran.
             m_RenderSystem->SetWebScenePassHook([this](void* scenePass) {
+                // Vegetation first (opaque, depth-writing), then particles over it.
+                if (m_Vegetation && m_Camera) {
+                    Enjin::Math::Vector4 wv = m_WindSystem.GetWindVector();
+                    m_Vegetation->SetWind(Enjin::Math::Vector3(wv.x, wv.y, wv.z), wv.w);
+                    m_Vegetation->RenderScene(static_cast<WGPURenderPassEncoder>(scenePass),
+                                              m_Camera->GetViewMatrix(), m_Camera->GetProjectionMatrix(),
+                                              m_World.get());
+                }
                 if (m_Particles && m_Camera) {
                     m_Particles->RenderScene(static_cast<WGPURenderPassEncoder>(scenePass),
                                              m_Camera->GetViewMatrix(), m_Camera->GetProjectionMatrix());
@@ -1387,6 +1401,7 @@ private:
     // Renderer + render system
     std::unique_ptr<Enjin::Renderer::WebGPURenderer> m_Renderer;
     std::unique_ptr<Enjin::Renderer::WebGPUParticleSystem> m_Particles;
+    std::unique_ptr<Enjin::Renderer::WebGPUVegetationSystem> m_Vegetation;
     Enjin::u32 m_ParticleFrame = 0;
     Enjin::ECS::RenderSystem* m_RenderSystem = nullptr;  // Owned by World
     std::unique_ptr<Enjin::Renderer::Camera> m_Camera;
