@@ -16,6 +16,12 @@ namespace Gameplay {
 class ENJIN_API ClothSystem {
 public:
     void Update(ECS::World* world, f32 deltaTime);
+
+    // Rebuild every cloth to its fresh, untorn grid. Called after play-stop
+    // restores the world: the restore brings back component data but the GPU
+    // buffers still hold the last simulated/torn state, so the cloth must be
+    // rebuilt (and its buffers retired) or the tear survives into edit mode.
+    static void ResetAll(ECS::World* world);
 };
 
 } // namespace Gameplay

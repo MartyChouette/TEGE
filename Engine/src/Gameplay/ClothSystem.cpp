@@ -207,6 +207,16 @@ bool ResolvePoint(const ColliderShape& s, Math::Vector3& p, f32 skin) {
 
 } // namespace
 
+void ClothSystem::ResetAll(World* world) {
+    if (!world) return;
+    for (Entity entity : world->GetEntitiesWithComponent<ClothComponent>()) {
+        auto* c = world->GetComponent<ClothComponent>(entity);
+        if (!c) continue;
+        c->initialized = false;
+        BuildCloth(world, entity, *c);   // fresh grid + topologyDirty -> buffers rebuild
+    }
+}
+
 void ClothSystem::Update(World* world, f32 deltaTime) {
     if (!world || deltaTime <= 0.0f) return;
     f32 dt = std::min(deltaTime, 1.0f / 30.0f);   // clamp spiral-of-death steps

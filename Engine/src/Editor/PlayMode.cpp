@@ -608,6 +608,11 @@ void PlayMode::Stop() {
     // Restore the scene to its pre-play state
     RestoreEditorState();
 
+    // Cloth: the restore brings back component data, but the GPU vertex/index
+    // buffers still hold the simulated (possibly torn) fabric. Rebuild fresh
+    // grids so edit mode shows the authored cloth, not the last play's tears.
+    Gameplay::ClothSystem::ResetAll(m_World);
+
     // Tear down the physics backends so the next Play rebuilds every body from the
     // restored pre-play transforms. The backend is only (re)created when !m_Physics,
     // so without this it persists across plays and its dynamic bodies keep their
