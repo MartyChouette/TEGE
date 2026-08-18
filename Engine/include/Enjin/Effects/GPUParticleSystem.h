@@ -60,17 +60,20 @@ public:
     // the current (already begun) render pass. Dead slots collapse to
     // degenerate quads in the vertex shader, so no readback and no indirect
     // buffer are needed. Inherits the pass's dynamic viewport/scissor.
-    void Render(VkCommandBuffer cmd, VkDescriptorSet sharedSet);
+    void Render(VkCommandBuffer cmd, VkDescriptorSet sharedSet,
+                VkDescriptorSet bindlessSet = VK_NULL_HANDLE);
 
     // Create the draw pipeline if it doesn't exist yet (creation mid-recording
     // is legal; destruction is not — that's what RecreateDrawPipeline is for).
     void EnsureDrawPipeline(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout,
-                            u32 colorAttachmentCount);
+                            u32 colorAttachmentCount,
+                            VkDescriptorSetLayout bindlessLayout = VK_NULL_HANDLE);
 
     // Destroy + rebuild the draw pipeline for a new render pass. Call ONLY at
     // frame-safe times (RenderSystem::RecreateEffectPipelinesForRenderPass).
     void RecreateDrawPipeline(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout,
-                              u32 colorAttachmentCount);
+                              u32 colorAttachmentCount,
+                              VkDescriptorSetLayout bindlessLayout = VK_NULL_HANDLE);
 
     // Accessors
     u32 GetMaxParticles() const { return m_Config.maxParticles; }

@@ -29,6 +29,7 @@ struct Particle {
     velocity : vec3<f32>, age : f32,
     color : vec4<f32>,
     size : f32, rotation : f32, gravityScale : f32, drag : f32,
+    spriteParams : vec4<f32>,   // x=sprite card, y=softness, z=texIndex(unused on web), w=pad
 };
 struct EmitterParams {
     emitterPosition : vec3<f32>, deltaTime : f32,
@@ -80,6 +81,7 @@ struct Particle {
     velocity : vec3<f32>, age : f32,
     color : vec4<f32>,
     size : f32, rotation : f32, gravityScale : f32, drag : f32,
+    spriteParams : vec4<f32>,   // x=sprite card, y=softness, z=texIndex(unused on web), w=pad
 };
 struct ViewProj { view : mat4x4<f32>, proj : mat4x4<f32>, };
 @group(0) @binding(0) var<uniform> ubo : ViewProj;
@@ -89,6 +91,7 @@ struct VSOut {
     @location(0) uv : vec2<f32>,
     @location(1) color : vec4<f32>,
     @location(2) lifeT : f32,
+    @location(3) sprite : vec2<f32>,   // x=card, y=softness
 };
 @vertex
 fn vs_main(@builtin(vertex_index) vid : u32, @builtin(instance_index) iid : u32) -> VSOut {
@@ -98,6 +101,7 @@ fn vs_main(@builtin(vertex_index) vid : u32, @builtin(instance_index) iid : u32)
     if (!(lifetime > 0.0)) {
         out.pos = vec4<f32>(0.0, 0.0, 2.0, 1.0);
         out.uv = vec2<f32>(0.0); out.color = vec4<f32>(0.0); out.lifeT = 1.0;
+        out.sprite = vec2<f32>(0.0, 1.0);
         return out;
     }
     var corners = array<vec2<f32>, 6>(
@@ -117,16 +121,34 @@ fn vs_main(@builtin(vertex_index) vid : u32, @builtin(instance_index) iid : u32)
     out.color = p.color;
     let total = p.age + max(lifetime, 0.0001);
     out.lifeT = clamp(p.age / total, 0.0, 1.0);
+    out.sprite = vec2<f32>(p.spriteParams.x, p.spriteParams.y);
     return out;
 }
+fn spriteMask(card : i32, uv : vec2<f32>, softness : f32) -> f32 {
+    let c = uv - vec2<f32>(0.5);
+    var w = mix(0.02, 0.35, clamp(softness, 0.0, 1.0));
+    var d : f32;
+    if (card == 2) {                       // square
+        d = max(abs(c.x), abs(c.y));
+    } else if (card == 3) {                // streak
+        d = length(vec2<f32>(c.x * 3.0, c.y));
+    } else if (card == 4) {                // 4-point star
+        let ang = atan2(c.y, c.x);
+        d = length(c) * (1.0 + 1.2 * pow(abs(sin(2.0 * ang)), 2.0));
+    } else {                               // circles (0 soft / 1 hard; 5 texture falls back to soft)
+        d = length(c);
+        if (card == 1) { w = mix(0.02, 0.10, clamp(softness, 0.0, 1.0)); }
+    }
+    return 1.0 - smoothstep(0.5 - w, 0.5, d);
+}
+
 @fragment
 fn fs_main(in : VSOut) -> @location(0) vec4<f32> {
-    let dist = length(in.uv - vec2<f32>(0.5));
-    let falloff = smoothstep(0.5, 0.15, dist);
     let fadeIn = smoothstep(0.0, 0.08, in.lifeT);
     let fadeOut = 1.0 - smoothstep(0.55, 1.0, in.lifeT);
     let life = fadeIn * fadeOut;
-    let alpha = in.color.a * falloff * life;
+    let mask = spriteMask(i32(in.sprite.x + 0.5), in.uv, in.sprite.y);
+    let alpha = in.color.a * mask * life;
     if (alpha < 0.01) { discard; }
     return vec4<f32>(in.color.rgb, alpha);
 }
@@ -309,6 +331,10 @@ void WebGPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& posit
         p.rotation = HashUnit(i * 22695477u + 3u) * 6.2831853f;
         p.gravityScale = params.gravityScale;
         p.drag = params.drag;
+        p.sprite = static_cast<f32>(params.sprite);
+        p.softness = params.softness;
+        p.texIndex = -1.0f;   // no bindless on web yet; card 5 falls back in-shader
+        p._pad0 = 0.0f;
     }
 
     // Ring-buffer the writes into the particle SSBO (wrap at maxParticles).

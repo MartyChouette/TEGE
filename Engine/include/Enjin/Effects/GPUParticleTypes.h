@@ -11,7 +11,7 @@
 namespace Enjin {
 namespace Effects {
 
-// GPU particle data (must match the GLSL/WGSL struct exactly — 64 bytes).
+// GPU particle data (must match the GLSL/WGSL struct exactly — 80 bytes).
 struct GPUParticle {
     Math::Vector3 position;
     f32 lifetime;
@@ -22,8 +22,14 @@ struct GPUParticle {
     f32 rotation;
     f32 gravityScale;   // per-particle gravity multiplier (0 float, <0 rise)
     f32 drag;           // per-particle extra velocity damping / sec
+    // Sprite card: which mask the fragment shader draws for this particle.
+    // 0=SoftGlow 1=HardCircle 2=Square 3=Streak 4=Star 5=Textured(texIndex)
+    f32 sprite;
+    f32 softness;       // 0 = hard edge, 1 = fully soft falloff
+    f32 texIndex;       // bindless texture index for sprite==5 (<0 = none; desktop only)
+    f32 _pad0;
 };
-static_assert(sizeof(GPUParticle) == 64, "GPUParticle must match the GLSL/WGSL layout");
+static_assert(sizeof(GPUParticle) == 80, "GPUParticle must match the GLSL/WGSL layout");
 
 // Named looks for the emitter (maps to a ParticleSpawnParams). "Custom" uses
 // the emitter component's own fields.
@@ -42,6 +48,9 @@ struct ParticleSpawnParams {
     f32 gravityScale = 1.0f;   // 0 = float, <0 = rise (smoke)
     f32 drag = 0.0f;           // extra per-particle damping
     f32 sizeJitter = 0.3f;     // 0-1 random size variation
+    u8 sprite = 0;             // sprite card (see GPUParticle::sprite)
+    f32 softness = 1.0f;       // edge softness (1 = the classic soft glow)
+    f32 texIndex = -1.0f;      // bindless texture index when sprite==5 (desktop)
 };
 
 // The canonical look for each preset.

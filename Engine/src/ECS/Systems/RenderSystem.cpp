@@ -5278,9 +5278,26 @@ void RenderSystem::TickGPUEmitters(f32 deltaTime) {
         if (auto* t = m_World->GetComponent<TransformComponent>(e)) pos = t->position;
 
         const u8 shape = static_cast<u8>(em->shape);
+        Effects::ParticleSpawnParams params = em->ResolveParams();
+
+        // Textured sprite card: resolve the emitter's texture path to a bindless
+        // index once (cached; -1 = load failed, falls back to soft glow in-shader).
+        if (params.sprite == 5) {
+            if (em->cachedSpriteTexIndex == -2 && !em->spriteTexturePath.empty()) {
+                em->cachedSpriteTexIndex = -1;
+                auto tex = GetOrLoadTexture(em->spriteTexturePath);
+                if (tex && tex->IsValid()) {
+                    auto it = m_TextureBindlessHandles.find(tex.get());
+                    if (it != m_TextureBindlessHandles.end())
+                        em->cachedSpriteTexIndex = static_cast<i32>(it->second);
+                }
+            }
+            params.texIndex = static_cast<f32>(em->cachedSpriteTexIndex);
+        }
+
         // One-shot burst (fired once, then cleared)
         if (em->burstNow && em->burstCount > 0) {
-            m_GPUParticleSystem->SpawnWithParams(em->burstCount, pos, em->direction, em->ResolveParams(), shape, em->shapeSize);
+            m_GPUParticleSystem->SpawnWithParams(em->burstCount, pos, em->direction, params, shape, em->shapeSize);
             em->burstNow = false;
         }
 
@@ -5291,7 +5308,7 @@ void RenderSystem::TickGPUEmitters(f32 deltaTime) {
             if (n > 0) {
                 em->accumulator -= static_cast<f32>(n);
                 if (n > 4096) n = 4096;   // clamp a single frame's spawn spike
-                m_GPUParticleSystem->SpawnWithParams(n, pos, em->direction, em->ResolveParams(), shape, em->shapeSize);
+                m_GPUParticleSystem->SpawnWithParams(n, pos, em->direction, params, shape, em->shapeSize);
             }
         }
     }
@@ -12636,11 +12653,17 @@ void RenderSystem::RenderGPUParticles(VkRenderPass pass, u32 colorAttachments) {
         pass = m_VulkanRenderer->GetRenderPass();   // swapchain main pass
         colorAttachments = 2;                        // MRT: color + velocity
     }
-    m_GPUParticleSystem->EnsureDrawPipeline(pass, m_Pipeline->GetDescriptorSetLayout(), colorAttachments);
+    VkDescriptorSetLayout bindlessLayout = m_BindlessManager
+        ? m_BindlessManager->GetDescriptorSetLayout() : VK_NULL_HANDLE;
+    m_GPUParticleSystem->EnsureDrawPipeline(pass, m_Pipeline->GetDescriptorSetLayout(),
+                                            colorAttachments, bindlessLayout);
 
     u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
+    VkDescriptorSet bindlessSet = m_BindlessManager
+        ? m_BindlessManager->GetDescriptorSet() : VK_NULL_HANDLE;
     m_GPUParticleSystem->Render(commandBuffer,
-                                (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)]);
+                                (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)],
+                                bindlessSet);
 }
 
 void RenderSystem::SpawnGPUParticles(u32 count, const Math::Vector3& position,
@@ -12755,7 +12778,8 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         m_SpriteBatchRenderer->RecreateForRenderPass(renderPass, layout, 1);
     }
     if (m_GPUParticleSystem) {
-        m_GPUParticleSystem->RecreateDrawPipeline(renderPass, layout, 1);
+        m_GPUParticleSystem->RecreateDrawPipeline(renderPass, layout, 1,
+            m_BindlessManager ? m_BindlessManager->GetDescriptorSetLayout() : VK_NULL_HANDLE);
     }
 
     // Recreate main pipeline for offscreen render pass (fixes SRGB vs UNORM format mismatch

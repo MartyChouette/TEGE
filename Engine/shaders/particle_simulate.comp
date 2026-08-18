@@ -17,6 +17,7 @@ struct Particle {
     float rotation;      // Billboard rotation angle
     float gravityScale;  // Per-particle gravity multiplier (0 = float, <0 = rise)
     float drag;          // Per-particle extra velocity damping (per second)
+    vec4 spriteParams;   // x=sprite card, y=softness, z=bindless texIndex, w=pad (draw-only)
 };
 
 layout(std430, set = 0, binding = 0) buffer ParticleBuffer {

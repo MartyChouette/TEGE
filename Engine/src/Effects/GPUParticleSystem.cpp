@@ -194,6 +194,10 @@ void GPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& position
         p.rotation = HashUnit(i * 22699u + 3u) * 6.2831853f;
         p.gravityScale = params.gravityScale;
         p.drag = params.drag;
+        p.sprite = static_cast<f32>(params.sprite);
+        p.softness = params.softness;
+        p.texIndex = params.texIndex;
+        p._pad0 = 0.0f;
     }
 
     // Upload to SSBO at m_NextSpawnIndex
@@ -211,7 +215,8 @@ void GPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& position
 
 void GPUParticleSystem::EnsureDrawPipeline(VkRenderPass renderPass,
                                             VkDescriptorSetLayout sharedLayout,
-                                            u32 colorAttachmentCount) {
+                                            u32 colorAttachmentCount,
+                                            VkDescriptorSetLayout bindlessLayout) {
     if (!m_Initialized || renderPass == VK_NULL_HANDLE) return;
 
     // Already have a pipeline for THIS pass? Select it and we're done. Different
@@ -251,15 +256,17 @@ void GPUParticleSystem::EnsureDrawPipeline(VkRenderPass renderPass,
     binding.stride = sizeof(GPUParticle);
     binding.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
-    std::array<VkVertexInputAttributeDescription, 4> attrs{};
+    std::array<VkVertexInputAttributeDescription, 5> attrs{};
     // vec4 position + lifetime
     attrs[0] = {0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 0};
     // vec4 velocity + age
     attrs[1] = {1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 16};
     // vec4 color
     attrs[2] = {2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 32};
-    // vec4 size + rotation + pads
+    // vec4 size + rotation + gravityScale + drag
     attrs[3] = {3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 48};
+    // vec4 sprite card + softness + texIndex + pad
+    attrs[4] = {4, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 64};
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -279,6 +286,7 @@ void GPUParticleSystem::EnsureDrawPipeline(VkRenderPass renderPass,
     config.customVertexInput = &vertexInput;
 
     auto pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Context);
+    if (bindlessLayout != VK_NULL_HANDLE) pipeline->SetBindlessLayout(bindlessLayout);
     if (!pipeline->CreateWithLayout(config, m_DrawVS.get(), m_DrawFS.get(), sharedLayout)) {
         ENJIN_LOG_ERROR(Renderer, "GPUParticleSystem: failed to create draw pipeline");
         return;
@@ -295,7 +303,8 @@ void GPUParticleSystem::EnsureDrawPipeline(VkRenderPass renderPass,
 
 void GPUParticleSystem::RecreateDrawPipeline(VkRenderPass renderPass,
                                               VkDescriptorSetLayout sharedLayout,
-                                              u32 colorAttachmentCount) {
+                                              u32 colorAttachmentCount,
+                                              VkDescriptorSetLayout bindlessLayout) {
     if (!m_Initialized) return;
     // Frame-safe caller contract: GPU idle / not mid-recording. Drop every cached
     // pipeline (any of their passes may have been destroyed); they lazily rebuild
@@ -304,10 +313,11 @@ void GPUParticleSystem::RecreateDrawPipeline(VkRenderPass renderPass,
     m_DrawPipelines.clear();
     m_DrawVS.reset();
     m_DrawFS.reset();
-    EnsureDrawPipeline(renderPass, sharedLayout, colorAttachmentCount);
+    EnsureDrawPipeline(renderPass, sharedLayout, colorAttachmentCount, bindlessLayout);
 }
 
-void GPUParticleSystem::Render(VkCommandBuffer cmd, VkDescriptorSet sharedSet) {
+void GPUParticleSystem::Render(VkCommandBuffer cmd, VkDescriptorSet sharedSet,
+                                VkDescriptorSet bindlessSet) {
     if (!m_Initialized || !m_HasSpawned || !m_CurrentDrawPipeline) return;
 
     // The particle buffer doubles as an instance-rate vertex buffer; Simulate's
@@ -317,6 +327,11 @@ void GPUParticleSystem::Render(VkCommandBuffer cmd, VkDescriptorSet sharedSet) {
     m_CurrentDrawPipeline->Bind(cmd);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                             m_CurrentDrawPipeline->GetLayout(), 0, 1, &sharedSet, 0, nullptr);
+    // Set 1: bindless textures for Textured sprite cards (frag samples bindlessTextures[])
+    if (bindlessSet != VK_NULL_HANDLE) {
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_CurrentDrawPipeline->GetLayout(), 1, 1, &bindlessSet, 0, nullptr);
+    }
 
     VkBuffer vb = m_ParticleBuffer->GetBuffer();
     VkDeviceSize offset = 0;

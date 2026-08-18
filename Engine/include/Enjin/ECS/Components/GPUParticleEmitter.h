@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Effects/GPUParticleTypes.h"
+#include <string>
 
 namespace Enjin {
 namespace ECS {
@@ -43,6 +44,15 @@ struct GPUParticleEmitterComponent {
     f32 customGravityScale = -0.4f;   // <0 = rise (fire/smoke), 0 = float, 1 = fall
     f32 customDrag = 1.2f;
 
+    // Sprite card: what each particle looks like.
+    // 0=Soft Glow (classic), 1=Hard Circle, 2=Square, 3=Streak, 4=Star, 5=Texture
+    u8 sprite = 0;
+    f32 softness = 1.0f;              // 0 = hard edge, 1 = fully soft
+    std::string spriteTexturePath;    // image used when sprite == 5 (desktop)
+    // Resolved bindless index for spriteTexturePath (-2 = unresolved, -1 = failed).
+    // Runtime cache, not serialized.
+    mutable i32 cachedSpriteTexIndex = -2;
+
     // Runtime accumulator for fractional continuous spawns (not serialized).
     f32 accumulator = 0.0f;
 
@@ -56,7 +66,9 @@ struct GPUParticleEmitterComponent {
         p.spread = customSpread;
         p.gravityScale = customGravityScale;
         p.drag = customDrag;
-        return p;
+        p.sprite = sprite;
+        p.softness = softness;
+        return p;   // texIndex resolved by the render system (needs the texture cache)
     }
 
     // Copy a preset into the live fields (used by the editor's Load Preset).

@@ -13,6 +13,7 @@ layout(location = 0) in vec4 inPosLife;   // xyz = world position, w = lifetime
 layout(location = 1) in vec4 inVelAge;    // xyz = velocity,       w = age
 layout(location = 2) in vec4 inColor;     // premixed start->end color (incl alpha)
 layout(location = 3) in vec4 inSizeRot;   // x = size, y = rotation (radians)
+layout(location = 4) in vec4 inSprite;    // x = sprite card, y = softness, z = texIndex
 
 // Shared set-0 view/projection UBO (same binding the main pass uses)
 layout(binding = 0) uniform UniformBufferObject {
@@ -23,6 +24,7 @@ layout(binding = 0) uniform UniformBufferObject {
 layout(location = 0) out vec2 fragUV;
 layout(location = 1) out vec4 fragColor;
 layout(location = 2) out float fragLifeT;   // 0 at spawn -> 1 at death
+layout(location = 3) out vec4 fragSprite;   // sprite card / softness / texIndex
 
 // Two-triangle quad in [-0.5, 0.5]
 const vec2 kCorners[6] = vec2[6](
@@ -45,6 +47,7 @@ void main() {
         fragUV = vec2(0.0);
         fragColor = vec4(0.0);
         fragLifeT = 1.0;
+        fragSprite = vec4(0.0);
         return;
     }
 
@@ -63,6 +66,7 @@ void main() {
     gl_Position = ubo.proj * ubo.view * vec4(worldPos, 1.0);
     fragUV = kUVs[gl_VertexIndex];
     fragColor = inColor;
+    fragSprite = inSprite;
     // Life fraction from age vs remaining lifetime (drives the alpha fade)
     float total = age + max(lifetime, 0.0001);
     fragLifeT = clamp(age / total, 0.0, 1.0);

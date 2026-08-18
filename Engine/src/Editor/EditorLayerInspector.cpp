@@ -1458,7 +1458,34 @@ void EditorLayer::DrawInspectorPanel() {
 
                 // Always-visible spawn params (honored per-particle by the GPU sim).
                 ImGui::SeparatorText("Particle");
+                const char* sprites[] = {"Soft Glow","Hard Circle","Square","Streak","Star","Texture"};
+                int sprite = static_cast<int>(em->sprite);
+                if (sprite < 0 || sprite > 5) sprite = 0;
+                if (ImGui::Combo("Sprite", &sprite, sprites, IM_ARRAYSIZE(sprites)))
+                    em->sprite = static_cast<Enjin::u8>(sprite);
+                if (em->sprite == 5) {
+                    char texBuf[256];
+                    strncpy(texBuf, em->spriteTexturePath.c_str(), sizeof(texBuf) - 1);
+                    texBuf[sizeof(texBuf) - 1] = '\0';
+                    if (ImGui::InputText("Sprite Texture", texBuf, sizeof(texBuf))) {
+                        em->spriteTexturePath = texBuf;
+                        em->cachedSpriteTexIndex = -2;   // re-resolve
+                    }
+                    if (ImGui::BeginDragDropTarget()) {
+                        if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
+                            em->spriteTexturePath = std::string(static_cast<const char*>(pl->Data));
+                            em->cachedSpriteTexIndex = -2;
+                        }
+                        ImGui::EndDragDropTarget();
+                    }
+                    ImGui::TextDisabled("Image sprite (desktop; web falls back to Soft Glow)");
+                } else {
+                    ImGui::SliderFloat("Softness", &em->softness, 0.0f, 1.0f, "%.2f");
+                    ImGui::SetItemTooltip("0 = hard edge, 1 = fully soft falloff");
+                }
                 ImGui::ColorEdit4("Color", &em->customColor.x);
+                ImGui::SliderFloat("Opacity", &em->customColor.w, 0.0f, 1.0f, "%.2f");
+                ImGui::SetItemTooltip("Per-particle transparency (the color's alpha channel)");
                 ImGui::DragFloat("Size", &em->customSize, 0.01f, 0.0f, 20.0f);
                 ImGui::DragFloat("Lifetime (s)", &em->customLifetime, 0.05f, 0.0f, 60.0f);
                 ImGui::DragFloat("Speed", &em->customSpeed, 0.05f, 0.0f, 100.0f);
