@@ -1445,7 +1445,7 @@ void EditorLayer::DrawInspectorPanel() {
                 // Load Preset just FILLS the fields below (they stay editable), so
                 // gravity/size/lifetime are always visible. Index 0 is "-" (no-op).
                 int preset = 0;
-                const char* names[] = {"Load Preset...","Smoke","Fire","Sparks","Blood","Mist","Spray","Dust","Magic","Snow"};
+                const char* names[] = {"Load Preset...","Smoke","Fire","Sparks","Blood","Mist","Spray","Dust","Magic","Snow","Liquid"};
                 if (ImGui::Combo("Load Preset", &preset, names, IM_ARRAYSIZE(names)) && preset > 0) {
                     // names[1..9] map to GPUParticlePreset Smoke(1)..Snow(9).
                     em->LoadPreset(static_cast<Effects::GPUParticlePreset>(preset));
@@ -1518,6 +1518,14 @@ void EditorLayer::DrawInspectorPanel() {
                         ImGui::SetItemTooltip("Strikes softer than this stay silent (m/s)");
                         ImGui::DragFloat("Impact Cooldown", &em->impactCooldown, 0.01f, 0.0f, 2.0f);
                         ImGui::SetItemTooltip("Minimum seconds between impact sounds from this emitter");
+                    }
+                    ImGui::Checkbox("Leave Stains", &em->leaveStains);
+                    ImGui::SetItemTooltip("Particles leave a lasting mark where they strike (liquid, blood, paint).\nDesktop builds for now.");
+                    if (em->leaveStains) {
+                        ImGui::ColorEdit4("Stain Color", &em->stainColor.x);
+                        ImGui::DragFloat("Stain Size", &em->stainSize, 0.02f, 0.05f, 4.0f);
+                        ImGui::DragFloat("Stain Lifetime", &em->stainLifetime, 1.0f, 2.0f, 3600.0f);
+                        ImGui::SetItemTooltip("Seconds a stain lingers before fading");
                     }
                 }
 

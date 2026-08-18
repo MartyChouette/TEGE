@@ -115,6 +115,16 @@ void main() {
         return;
     }
 
+    // Stain (collision.w == 2): a surface mark, not a moving particle. No
+    // physics, no collision — it just ages in place (velocity holds the
+    // surface normal for the draw shader's orientation).
+    if (p.collision.w > 1.5) {
+        particles[idx] = p;
+        uint stainAlive = atomicAdd(aliveCount, 1u);
+        if (stainAlive < maxParticles) { aliveIndices[stainAlive] = idx; }
+        return;
+    }
+
     // Physics update — gravity is scaled per particle so presets differ
     // (sparks fall hard, smoke rises with a negative scale, mist floats at 0).
     vec3 acceleration = gravity * p.gravityScale;
@@ -187,7 +197,7 @@ void main() {
                     uint ei = atomicAdd(eventCounts[slot], 1u);
                     if (ei < 64u) {
                         events[(slot * 64u + ei) * 2u]      = vec4(p.position, impact);
-                        events[(slot * 64u + ei) * 2u + 1u] = vec4(p.spriteParams.w, 0, 0, 0);
+                        events[(slot * 64u + ei) * 2u + 1u] = vec4(p.spriteParams.w, n);
                     }
                 }
             }

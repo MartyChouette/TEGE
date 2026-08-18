@@ -66,6 +66,13 @@ struct GPUParticleEmitterComponent {
     f32 impactMinSpeed = 1.5f;     // ignore strikes softer than this (m/s)
     f32 impactCooldown = 0.08f;    // min seconds between impact sounds
 
+    // Stains: leave a lasting surface mark where particles strike (liquids,
+    // blood, paint). Desktop builds for now (needs the GPU impact readback).
+    bool leaveStains = false;
+    Math::Vector4 stainColor = {0.12f, 0.25f, 0.5f, 0.85f};
+    f32 stainSize = 0.35f;
+    f32 stainLifetime = 120.0f;    // seconds a stain lingers (fades out)
+
     // Runtime accumulator for fractional continuous spawns (not serialized).
     f32 accumulator = 0.0f;
 
@@ -95,6 +102,15 @@ struct GPUParticleEmitterComponent {
         customColor = p.color; customSize = p.size; customLifetime = p.lifetime;
         customSpeed = p.speed; customSpread = p.spread;
         customGravityScale = p.gravityScale; customDrag = p.drag;
+        sprite = p.sprite; softness = p.softness;
+        collide = p.collide; bounciness = p.bounciness; friction = p.friction;
+        if (ps == Effects::GPUParticlePreset::Liquid) {
+            // Liquids stain what they touch by default; stain = a darker,
+            // more opaque version of the droplet color.
+            leaveStains = true;
+            stainColor = Math::Vector4(customColor.x * 0.45f, customColor.y * 0.45f,
+                                       customColor.z * 0.55f, 0.85f);
+        }
     }
 };
 

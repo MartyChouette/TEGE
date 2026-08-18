@@ -52,6 +52,7 @@ const char* GPUParticlePresetName(GPUParticlePreset p) {
         case GPUParticlePreset::Dust:   return "Dust";
         case GPUParticlePreset::Magic:  return "Magic";
         case GPUParticlePreset::Snow:   return "Snow";
+        case GPUParticlePreset::Liquid: return "Liquid";
         default: return "Custom";
     }
 }
@@ -86,6 +87,13 @@ ParticleSpawnParams PresetSpawnParams(GPUParticlePreset preset) {
         case GPUParticlePreset::Snow:
             p.color = {1.0f, 1.0f, 1.0f, 0.9f}; p.size = 0.12f; p.lifetime = 6.0f;
             p.speed = 0.4f; p.spread = 0.6f; p.gravityScale = 0.15f; p.drag = 1.8f; p.sizeJitter = 0.4f; break;
+        case GPUParticlePreset::Liquid:
+            // Droplets: small hard circles that fall fast, splat instead of
+            // bouncing (low restitution), and cling to surfaces (high friction).
+            p.color = {0.30f, 0.55f, 0.95f, 0.8f}; p.size = 0.12f; p.lifetime = 2.2f;
+            p.speed = 4.5f; p.spread = 0.3f; p.gravityScale = 1.5f; p.drag = 0.08f;
+            p.sizeJitter = 0.5f; p.sprite = 1; p.softness = 0.35f;
+            p.collide = true; p.bounciness = 0.06f; p.friction = 0.7f; break;
         case GPUParticlePreset::Custom:
         default: break;   // defaults on the struct
     }

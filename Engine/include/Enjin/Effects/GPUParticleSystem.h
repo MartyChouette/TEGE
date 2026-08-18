@@ -55,6 +55,11 @@ public:
     // in-flight frame writes the other slot, so read + zero cannot race). Call
     // once per frame from the BeginFrame phase, before Simulate records.
     void ReadbackImpacts(u32 frameNumber);
+
+    // Write one surface-aligned stain particle into the pool (no simulation;
+    // ages in place and fades). normal = surface normal at the strike point.
+    void SpawnStain(const Math::Vector3& position, const Math::Vector3& normal,
+                    const Math::Vector4& color, f32 size, f32 lifetime);
     const std::vector<ParticleImpactEvent>& GetImpactEvents() const { return m_ImpactEvents; }
 
     // Spawn new particles (CPU-side, uploads to staging region of particle SSBO)

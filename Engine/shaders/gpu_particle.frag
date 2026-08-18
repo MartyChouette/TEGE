@@ -10,6 +10,7 @@ layout(location = 0) in vec2 fragUV;
 layout(location = 1) in vec4 fragColor;
 layout(location = 2) in float fragLifeT;
 layout(location = 3) in vec4 fragSprite;   // x = sprite card, y = softness, z = texIndex
+layout(location = 4) in float fragStain;   // 2 = surface stain
 
 layout(location = 0) out vec4 outColor;
 
@@ -41,6 +42,10 @@ void main() {
     float fadeIn = smoothstep(0.0, 0.08, fragLifeT);
     float fadeOut = 1.0 - smoothstep(0.55, 1.0, fragLifeT);
     float life = fadeIn * fadeOut;
+    if (fragStain > 1.5) {
+        // Stains appear instantly and only fade near the end of their life.
+        life = 1.0 - smoothstep(0.7, 1.0, fragLifeT);
+    }
 
     int card = int(fragSprite.x + 0.5);
     vec3 rgb = fragColor.rgb;

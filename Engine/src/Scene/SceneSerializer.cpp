@@ -1146,6 +1146,10 @@ json SerializeGPUParticleEmitterComponent(const ECS::GPUParticleEmitterComponent
     j["impactVolume"] = RF(e.impactVolume);
     j["impactMinSpeed"] = RF(e.impactMinSpeed);
     j["impactCooldown"] = RF(e.impactCooldown);
+    j["leaveStains"] = e.leaveStains;
+    j["stainColor"] = SerializeVector4(e.stainColor);
+    j["stainSize"] = RF(e.stainSize);
+    j["stainLifetime"] = RF(e.stainLifetime);
     if (!e.spriteTexturePath.empty()) j["spriteTexture"] = e.spriteTexturePath;
     return j;
 }
@@ -1176,6 +1180,10 @@ ECS::GPUParticleEmitterComponent DeserializeGPUParticleEmitterComponent(const js
     if (j.contains("impactVolume")) e.impactVolume = j["impactVolume"].get<f32>();
     if (j.contains("impactMinSpeed")) e.impactMinSpeed = j["impactMinSpeed"].get<f32>();
     if (j.contains("impactCooldown")) e.impactCooldown = j["impactCooldown"].get<f32>();
+    if (j.contains("leaveStains")) e.leaveStains = JB(j["leaveStains"]);
+    if (j.contains("stainColor")) e.stainColor = DeserializeVector4(j["stainColor"]);
+    if (j.contains("stainSize")) e.stainSize = j["stainSize"].get<f32>();
+    if (j.contains("stainLifetime")) e.stainLifetime = j["stainLifetime"].get<f32>();
     return e;
 }
 

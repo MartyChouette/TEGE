@@ -14,6 +14,7 @@ layout(location = 1) in vec4 inVelAge;    // xyz = velocity,       w = age
 layout(location = 2) in vec4 inColor;     // premixed start->end color (incl alpha)
 layout(location = 3) in vec4 inSizeRot;   // x = size, y = rotation (radians)
 layout(location = 4) in vec4 inSprite;    // x = sprite card, y = softness, z = texIndex
+layout(location = 5) in vec4 inCollision; // w = 2 -> stain (velocity = surface normal)
 
 // Shared set-0 view/projection UBO (same binding the main pass uses)
 layout(binding = 0) uniform UniformBufferObject {
@@ -25,6 +26,7 @@ layout(location = 0) out vec2 fragUV;
 layout(location = 1) out vec4 fragColor;
 layout(location = 2) out float fragLifeT;   // 0 at spawn -> 1 at death
 layout(location = 3) out vec4 fragSprite;   // sprite card / softness / texIndex
+layout(location = 4) out float fragStain;   // 2 = surface stain (own fade curve)
 
 // Two-triangle quad in [-0.5, 0.5]
 const vec2 kCorners[6] = vec2[6](
@@ -48,6 +50,7 @@ void main() {
         fragColor = vec4(0.0);
         fragLifeT = 1.0;
         fragSprite = vec4(0.0);
+        fragStain = 0.0;
         return;
     }
 
@@ -58,15 +61,26 @@ void main() {
     float s = sin(inSizeRot.y);
     corner = vec2(corner.x * c - corner.y * s, corner.x * s + corner.y * c);
 
-    // Billboard using camera axes from the view matrix
-    vec3 camRight = vec3(ubo.view[0][0], ubo.view[1][0], ubo.view[2][0]);
-    vec3 camUp    = vec3(ubo.view[0][1], ubo.view[1][1], ubo.view[2][1]);
-    vec3 worldPos = inPosLife.xyz + (camRight * corner.x + camUp * corner.y) * inSizeRot.x;
+    vec3 worldPos;
+    if (inCollision.w > 1.5) {
+        // Stain: lie flat on the surface (velocity carries the contact normal)
+        vec3 n = normalize(inVelAge.xyz);
+        vec3 helper = (abs(n.y) < 0.99) ? vec3(0, 1, 0) : vec3(1, 0, 0);
+        vec3 t = normalize(cross(n, helper));
+        vec3 b = cross(n, t);
+        worldPos = inPosLife.xyz + (t * corner.x + b * corner.y) * inSizeRot.x;
+    } else {
+        // Billboard using camera axes from the view matrix
+        vec3 camRight = vec3(ubo.view[0][0], ubo.view[1][0], ubo.view[2][0]);
+        vec3 camUp    = vec3(ubo.view[0][1], ubo.view[1][1], ubo.view[2][1]);
+        worldPos = inPosLife.xyz + (camRight * corner.x + camUp * corner.y) * inSizeRot.x;
+    }
 
     gl_Position = ubo.proj * ubo.view * vec4(worldPos, 1.0);
     fragUV = kUVs[gl_VertexIndex];
     fragColor = inColor;
     fragSprite = inSprite;
+    fragStain = inCollision.w;
     // Life fraction from age vs remaining lifetime (drives the alpha fade)
     float total = age + max(lifetime, 0.0001);
     fragLifeT = clamp(age / total, 0.0, 1.0);

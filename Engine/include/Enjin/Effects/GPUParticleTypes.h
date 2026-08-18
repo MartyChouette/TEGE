@@ -37,7 +37,7 @@ static_assert(sizeof(GPUParticle) == 96, "GPUParticle must match the GLSL/WGSL l
 // Named looks for the emitter (maps to a ParticleSpawnParams). "Custom" uses
 // the emitter component's own fields.
 enum class GPUParticlePreset : u8 {
-    Custom = 0, Smoke, Fire, Sparks, Blood, Mist, Spray, Dust, Magic, Snow, Count
+    Custom = 0, Smoke, Fire, Sparks, Blood, Mist, Spray, Dust, Magic, Snow, Liquid, Count
 };
 
 // Per-particle spawn appearance + physics, baked into each particle at spawn.
@@ -68,6 +68,7 @@ struct ParticleSpawnParams {
 struct ParticleImpactEvent {
     Math::Vector3 position;
     f32 speed;        // impact speed along the surface normal (m/s)
+    Math::Vector3 normal;   // contact normal (stain orientation)
     u32 emitterKey;   // EntityIndex of the emitter that spawned the particle
 };
 // Max strikes recorded per frame (matches the shader-side cap).

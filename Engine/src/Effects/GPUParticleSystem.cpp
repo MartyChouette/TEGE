@@ -69,6 +69,7 @@ void GPUParticleSystem::ReadbackImpacts(u32 frameNumber) {
         ParticleImpactEvent hit;
         hit.position = Math::Vector3(e[0], e[1], e[2]);
         hit.speed = e[3];
+        hit.normal = Math::Vector3(e[5], e[6], e[7]);
         hit.emitterKey = (e[4] >= 0.0f) ? static_cast<u32>(e[4] + 0.5f) : 0xFFFFFFFFu;
         m_ImpactEvents.push_back(hit);
     }
@@ -263,6 +264,32 @@ void GPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& position
     }
 }
 
+void GPUParticleSystem::SpawnStain(const Math::Vector3& position, const Math::Vector3& normal,
+                                    const Math::Vector4& color, f32 size, f32 lifetime) {
+    if (!m_Initialized || !m_ParticleBuffer) return;
+    m_HasSpawned = true;
+
+    GPUParticle p{};
+    // Lift off the surface slightly so the flat quad never z-fights it.
+    p.position = position + normal * 0.015f;
+    p.lifetime = lifetime;
+    p.age = 0.0f;
+    p.velocity = normal;   // draw shader orients the quad by this
+    p.color = color;
+    p.size = size * (0.75f + 0.5f * HashUnit(m_NextSpawnIndex * 2654435761u + 17u));
+    p.rotation = HashUnit(m_NextSpawnIndex * 40503u + 5u) * 6.2831853f;
+    p.gravityScale = 0.0f;
+    p.drag = 0.0f;
+    p.sprite = 1.0f;       // hard circle splat
+    p.softness = 0.55f;
+    p.texIndex = -1.0f;
+    p.emitterKey = -1.0f;  // stains never report impacts
+    p.collision = Math::Vector4(0.0f, 0.0f, 0.0f, 2.0f);
+
+    m_ParticleBuffer->UploadData(&p, sizeof(GPUParticle), m_NextSpawnIndex * sizeof(GPUParticle));
+    m_NextSpawnIndex = (m_NextSpawnIndex + 1u) % m_Config.maxParticles;
+}
+
 void GPUParticleSystem::EnsureDrawPipeline(VkRenderPass renderPass,
                                             VkDescriptorSetLayout sharedLayout,
                                             u32 colorAttachmentCount,
@@ -306,7 +333,7 @@ void GPUParticleSystem::EnsureDrawPipeline(VkRenderPass renderPass,
     binding.stride = sizeof(GPUParticle);
     binding.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
-    std::array<VkVertexInputAttributeDescription, 5> attrs{};
+    std::array<VkVertexInputAttributeDescription, 6> attrs{};
     // vec4 position + lifetime
     attrs[0] = {0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 0};
     // vec4 velocity + age
@@ -317,6 +344,8 @@ void GPUParticleSystem::EnsureDrawPipeline(VkRenderPass renderPass,
     attrs[3] = {3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 48};
     // vec4 sprite card + softness + texIndex + pad
     attrs[4] = {4, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 64};
+    // vec4 collision (w = 2 marks a surface-aligned stain)
+    attrs[5] = {5, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 80};
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;

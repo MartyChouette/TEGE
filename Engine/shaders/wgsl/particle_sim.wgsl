@@ -1,5 +1,5 @@
-// GPU particle simulation (WebGPU). REFERENCE COPY of the embedded WGSL in
-// WebGPUParticleSystem.cpp -- keep the two in sync when editing.
+// GPU particle simulation (WebGPU). REFERENCE COPY of the embedded WGSL
+// in WebGPUParticleSystem.cpp -- keep the two in sync when editing.
 
 struct Particle {
     position : vec3<f32>, lifetime : f32,
@@ -54,6 +54,10 @@ fn main(@builtin(global_invocation_id) gid : vec3<u32>) {
     p.lifetime = p.lifetime - params.deltaTime;
     p.age = p.age + params.deltaTime;
     if (p.lifetime <= 0.0) { particles[idx] = p; return; }
+    if (p.collision.w > 1.5) {   // stain: ages in place, no physics
+        particles[idx] = p;
+        return;
+    }
     var acc = params.gravity * p.gravityScale + params.windForce;
     if (params.turbulenceStrength > 0.0) {
         acc = acc + turb(p.position, params.turbulenceFrequency, params.turbulenceStrength, idx + params.frameNumber);

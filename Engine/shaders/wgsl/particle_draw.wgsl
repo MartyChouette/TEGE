@@ -39,9 +39,18 @@ fn vs_main(@builtin(vertex_index) vid : u32, @builtin(instance_index) iid : u32)
     var corner = corners[vid];
     let c = cos(p.rotation); let s = sin(p.rotation);
     corner = vec2<f32>(corner.x * c - corner.y * s, corner.x * s + corner.y * c);
-    let camRight = vec3<f32>(ubo.view[0][0], ubo.view[1][0], ubo.view[2][0]);
-    let camUp    = vec3<f32>(ubo.view[0][1], ubo.view[1][1], ubo.view[2][1]);
-    let worldPos = p.position + (camRight * corner.x + camUp * corner.y) * p.size;
+    var worldPos : vec3<f32>;
+    if (p.collision.w > 1.5) {   // stain: lie on the surface (velocity = normal)
+        let n = normalize(p.velocity);
+        let helper = select(vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(0.0, 1.0, 0.0), abs(n.y) < 0.99);
+        let t = normalize(cross(n, helper));
+        let b = cross(n, t);
+        worldPos = p.position + (t * corner.x + b * corner.y) * p.size;
+    } else {
+        let camRight = vec3<f32>(ubo.view[0][0], ubo.view[1][0], ubo.view[2][0]);
+        let camUp    = vec3<f32>(ubo.view[0][1], ubo.view[1][1], ubo.view[2][1]);
+        worldPos = p.position + (camRight * corner.x + camUp * corner.y) * p.size;
+    }
     out.pos = ubo.proj * ubo.view * vec4<f32>(worldPos, 1.0);
     out.uv = uvs[vid];
     out.color = p.color;

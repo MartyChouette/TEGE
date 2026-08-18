@@ -1531,6 +1531,8 @@ private:
     bool m_FramePrepDone = false;         // Per-frame guard for BeginFrame (reset in FlushPendingChanges)
     f32 m_FrameEffectDt = 0.0f;           // dt for GPU effect sims (wall-clock fallback applied)
     std::vector<Effects::ParticleColliderShape> m_FrameParticleColliders;  // gathered in BeginFrame
+    std::vector<Math::Vector3> m_RecentStains;   // dedup ring: no stains stacked on one spot
+    usize m_RecentStainCursor = 0;
 
 #if !ENJIN_RENDERER_WEBGPU
     void BuildCullableObjectList();

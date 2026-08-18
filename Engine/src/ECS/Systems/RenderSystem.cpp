@@ -5175,6 +5175,7 @@ void RenderSystem::BeginFrame(f32 deltaTime) {
         // Translate strikes to emitter entities. APPEND; the consumer
         // (SurfaceResponseSystem) takes + clears, and the cap stops growth
         // when nothing consumes (edit mode).
+        u32 stainsThisFrame = 0;
         for (const auto& hit : m_GPUParticleSystem->GetImpactEvents()) {
             if (m_ParticleImpacts.size() >= 256) break;
             Entity emitterEnt = INVALID_ENTITY;
@@ -5182,6 +5183,30 @@ void RenderSystem::BeginFrame(f32 deltaTime) {
                 if (EntityIndex(pe) == hit.emitterKey) { emitterEnt = pe; break; }
             }
             m_ParticleImpacts.push_back({hit.position, hit.speed, emitterEnt});
+
+            // Stains: liquids and the like mark the surface where they land.
+            if (emitterEnt != INVALID_ENTITY && stainsThisFrame < 8) {
+                auto* stainEm = m_World->GetComponent<GPUParticleEmitterComponent>(emitterEnt);
+                if (stainEm && stainEm->leaveStains) {
+                    // Don't stack stains on the same spot: the particle pipeline
+                    // blends additively, so overlaps blow out to white. Skip
+                    // strikes landing within ~half a stain of a recent one.
+                    f32 minDistSq = stainEm->stainSize * stainEm->stainSize * 0.36f;
+                    bool crowded = false;
+                    for (const auto& sp : m_RecentStains) {
+                        Math::Vector3 d = hit.position - sp;
+                        if (d.x * d.x + d.y * d.y + d.z * d.z < minDistSq) { crowded = true; break; }
+                    }
+                    if (!crowded) {
+                        m_GPUParticleSystem->SpawnStain(hit.position, hit.normal,
+                            stainEm->stainColor, stainEm->stainSize, stainEm->stainLifetime);
+                        if (m_RecentStains.size() < 64) m_RecentStains.push_back(hit.position);
+                        else { m_RecentStains[m_RecentStainCursor] = hit.position;
+                               m_RecentStainCursor = (m_RecentStainCursor + 1) % 64; }
+                        ++stainsThisFrame;
+                    }
+                }
+            }
         }
     }
 }
