@@ -97,9 +97,12 @@ Desktop.ini
 # Third-party dependencies (fetched by CMake / submodules)
 # imguizmo is committed directly — force-tracked, not affected by this rule
 # -----------------------------------------------------------------------------
-third_party/imgui/
-third_party/angelscript/
-third_party/nanosvg/
+# imgui/angelscript/nanosvg are VENDORED (tracked) as of 2026-08-18 so fresh
+# clones build - see third_party/VERSIONS.md. Only build litter is ignored.
+third_party/imgui/examples/
+third_party/imgui/docs/
+third_party/imgui/.github/
+third_party/imgui/misc/
 deps/
 _deps/
 external/
@@ -160,3 +163,6 @@ installer/output/
 
 # CMake-generated header in the web build tree (only build-web/bin binaries are tracked)
 build-web/Core/
+
+# third_party/imgui: parked local clone metadata (see third_party/VERSIONS.md)
+.git-local/
