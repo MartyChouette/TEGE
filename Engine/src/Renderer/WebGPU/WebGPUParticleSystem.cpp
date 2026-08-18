@@ -285,6 +285,16 @@ bool WebGPUParticleSystem::Initialize(const Effects::GPUEmitterConfig& config) {
         rp.blendState.dstAlpha = GPUBlendFactor::OneMinusSrcAlpha;
         rp.label = "particle-draw";
         m_DrawPipeline = pipeMgr->CreateRenderPipeline(rp);
+
+        // Scene-pass variant: the web scene renders MSAA 4x into an RGBA16Float HDR
+        // target with its OWN depth. Drawing there gives particles real depth
+        // occlusion and the same tonemapping as the rest of the scene.
+        GPURenderPipelineDesc sp = rp;
+        sp.colorFormat = GPUTextureFormat::RGBA16Float;
+        sp.sampleCount = 4;
+        sp.depthCompare = GPUCompareFunction::LessEqual;   // real scene depth here
+        sp.label = "particle-draw-scene";
+        m_ScenePipeline = pipeMgr->CreateRenderPipeline(sp);
     }
 
     if (!m_ComputePipeline.IsValid() || !m_DrawPipeline.IsValid()) {
@@ -302,7 +312,8 @@ void WebGPUParticleSystem::Shutdown() {
     auto* bufMgr = m_Renderer ? m_Renderer->GetBufferManager() : nullptr;
     auto* bgMgr  = m_Renderer ? m_Renderer->GetBindGroupManager() : nullptr;
     auto* pipeMgr = m_Renderer ? m_Renderer->GetPipelineManager() : nullptr;
-    if (pipeMgr) { pipeMgr->DestroyPipeline(m_ComputePipeline); pipeMgr->DestroyPipeline(m_DrawPipeline); }
+    if (pipeMgr) { pipeMgr->DestroyPipeline(m_ComputePipeline); pipeMgr->DestroyPipeline(m_DrawPipeline);
+                   pipeMgr->DestroyPipeline(m_ScenePipeline); }
     if (bgMgr)  { bgMgr->DestroyBindGroup(m_ComputeBindGroup); bgMgr->DestroyBindGroup(m_DrawBindGroup);
                   bgMgr->DestroyBindGroupLayout(m_ComputeLayout); bgMgr->DestroyBindGroupLayout(m_DrawLayout); }
     if (bufMgr) { bufMgr->DestroyBuffer(m_ParticleBuffer); bufMgr->DestroyBuffer(m_ParamsUBO);
@@ -385,22 +396,38 @@ void WebGPUParticleSystem::Simulate(f32 deltaTime, u32 frameNumber, const Math::
     m_Renderer->EndComputePass(enc);
 }
 
-void WebGPUParticleSystem::Render(WGPURenderPassEncoder pass, const Math::Matrix4& view,
-                                  const Math::Matrix4& proj) {
-    if (!m_Initialized || !m_HasSpawned || !pass) return;
-
+static void DrawParticles(WebGPURenderer* renderer, GPUPipelineHandle pipeline,
+                          GPUBindGroupHandle bindGroup, GPUBufferHandle viewProjUBO,
+                          WGPURenderPassEncoder pass, const Math::Matrix4& view,
+                          const Math::Matrix4& proj, u32 instances) {
     struct { Math::Matrix4 view; Math::Matrix4 proj; } vp{view, proj};
-    m_Renderer->GetBufferManager()->UploadData(m_ViewProjUBO, &vp, sizeof(vp));
+    renderer->GetBufferManager()->UploadData(viewProjUBO, &vp, sizeof(vp));
 
-    auto* pipeMgr = static_cast<WebGPUPipelineManager*>(m_Renderer->GetPipelineManager());
-    auto* bgMgr   = static_cast<WebGPUBindGroupManager*>(m_Renderer->GetBindGroupManager());
-    WGPURenderPipeline nativePipe = pipeMgr->GetNativePipeline(m_DrawPipeline);
-    WGPUBindGroup nativeBg = bgMgr->GetNativeGroup(m_DrawBindGroup);
+    auto* pipeMgr = static_cast<WebGPUPipelineManager*>(renderer->GetPipelineManager());
+    auto* bgMgr   = static_cast<WebGPUBindGroupManager*>(renderer->GetBindGroupManager());
+    WGPURenderPipeline nativePipe = pipeMgr->GetNativePipeline(pipeline);
+    WGPUBindGroup nativeBg = bgMgr->GetNativeGroup(bindGroup);
     if (!nativePipe || !nativeBg) return;
 
     wgpuRenderPassEncoderSetPipeline(pass, nativePipe);
     wgpuRenderPassEncoderSetBindGroup(pass, 0, nativeBg, 0, nullptr);
-    wgpuRenderPassEncoderDraw(pass, 6, m_Config.maxParticles, 0, 0);
+    wgpuRenderPassEncoderDraw(pass, 6, instances, 0, 0);
+}
+
+void WebGPUParticleSystem::RenderScene(WGPURenderPassEncoder pass, const Math::Matrix4& view,
+                                       const Math::Matrix4& proj) {
+    if (!m_Initialized || !m_HasSpawned || !pass || !m_ScenePipeline.IsValid()) return;
+    DrawParticles(m_Renderer, m_ScenePipeline, m_DrawBindGroup, m_ViewProjUBO,
+                  pass, view, proj, m_Config.maxParticles);
+    m_SceneDrewThisFrame = true;   // the overlay fallback skips this frame
+}
+
+void WebGPUParticleSystem::Render(WGPURenderPassEncoder pass, const Math::Matrix4& view,
+                                  const Math::Matrix4& proj) {
+    if (!m_Initialized || !m_HasSpawned || !pass) return;
+    if (m_SceneDrewThisFrame) { m_SceneDrewThisFrame = false; return; }
+    DrawParticles(m_Renderer, m_DrawPipeline, m_DrawBindGroup, m_ViewProjUBO,
+                  pass, view, proj, m_Config.maxParticles);
 }
 
 } // namespace Renderer

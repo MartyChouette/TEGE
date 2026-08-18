@@ -512,6 +512,16 @@ public:
         if (!m_Particles->Initialize()) {
             ENJIN_LOG_WARN(Player, "WebGPU particle system init failed — GPU particles disabled");
             m_Particles.reset();
+        } else {
+            // Draw particles inside the scene pass (real depth + scene tonemap). The
+            // overlay draw in RenderUIOverlay stays as the fallback for the direct-to-
+            // swapchain path and no-ops when this ran.
+            m_RenderSystem->SetWebScenePassHook([this](void* scenePass) {
+                if (m_Particles && m_Camera) {
+                    m_Particles->RenderScene(static_cast<WGPURenderPassEncoder>(scenePass),
+                                             m_Camera->GetViewMatrix(), m_Camera->GetProjectionMatrix());
+                }
+            });
         }
 
         // Apply scene render settings (ambient, shadows, etc.)

@@ -414,6 +414,12 @@ public:
     bool GetTextureMipmaps() const;
     u32  GetTextureWrap() const;
 
+#if ENJIN_RENDERER_WEBGPU
+    // Web: register a callback that draws into the scene pass (arg = the scene
+    // WGPURenderPassEncoder as void*) right before it ends — used for GPU particles.
+    void SetWebScenePassHook(std::function<void(void*)> hook) { m_WebScenePassHook = std::move(hook); }
+#endif
+
 #if !ENJIN_RENDERER_WEBGPU
     // Compile GLSL (from the Shader Graph or hand-written) into a pipeline and bind it
     // for this entity's draw instead of the default geometry pipeline. Pipelines are
@@ -1003,6 +1009,11 @@ private:
     std::unordered_map<std::string, Renderer::GPUTextureHandle> m_WebTextureCache;
     std::unordered_set<std::string> m_WebFailedTextures;  // don't retry failed loads
     Renderer::GPUTextureHandle WebGetOrLoadTexture(const std::string& path);
+
+    // Web scene-pass hook: invoked with the scene WGPURenderPassEncoder (as void*)
+    // right before the scene pass ends. The web player uses it to draw GPU particles
+    // with real scene depth. Public setter below.
+    std::function<void(void*)> m_WebScenePassHook;
 
     // Default bone buffer (single identity matrix for non-skinned meshes)
     Renderer::GPUBufferHandle m_WebDefaultBoneBuffer;

@@ -38,7 +38,13 @@ public:
     // Dispatch the compute sim for this frame (compute pass on the frame encoder).
     void Simulate(f32 deltaTime, u32 frameNumber, const Math::Vector3& windForce);
 
-    // Draw all particles into the given (already-begun) render pass.
+    // Draw all particles into the SCENE pass (MSAA 4x RGBA16Float + real scene depth):
+    // particles are depth-occluded by geometry and tonemapped with the scene.
+    void RenderScene(WGPURenderPassEncoder pass, const Math::Matrix4& view, const Math::Matrix4& proj);
+
+    // Fallback: draw into the swapchain overlay pass (no scene depth — composites on
+    // top). Used only when the scene renders directly to the swapchain (post-process
+    // off). No-ops if RenderScene already drew this frame.
     void Render(WGPURenderPassEncoder pass, const Math::Matrix4& view, const Math::Matrix4& proj);
 
     u32 GetMaxParticles() const { return m_Config.maxParticles; }
@@ -59,7 +65,9 @@ private:
     GPUBindGroupHandle m_ComputeBindGroup;
     GPUBindGroupHandle m_DrawBindGroup;
     GPUPipelineHandle m_ComputePipeline;
-    GPUPipelineHandle m_DrawPipeline;
+    GPUPipelineHandle m_DrawPipeline;        // overlay fallback (swapchain formats)
+    GPUPipelineHandle m_ScenePipeline;       // scene pass (RGBA16F, MSAA 4x, scene depth)
+    bool m_SceneDrewThisFrame = false;
 
     u32 m_NextSpawnIndex = 0;
     bool m_HasSpawned = false;

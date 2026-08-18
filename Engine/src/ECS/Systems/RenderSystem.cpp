@@ -2647,6 +2647,10 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // End scene render pass
     if (usePostProcess) {
+        // GPU particles draw INSIDE the scene pass (real depth occlusion + the same
+        // tonemap as the scene). The web player owns the particle system, so it
+        // registers this hook; the encoder is handed over just before the pass ends.
+        if (m_WebScenePassHook && scenePassEncoder) m_WebScenePassHook(scenePassEncoder);
         // End offscreen scene pass
         sceneEncoder.reset();  // Release encoder wrapper
         wgpuRenderPassEncoderEnd(scenePassEncoder);
