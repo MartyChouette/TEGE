@@ -20,6 +20,10 @@ public:
     // sample it at their position unless a WeatherZone covers them (zone wins).
     void Update(ECS::World* world, f32 deltaTime, const Effects::WindSystem* wind = nullptr);
 
+private:
+    f32 m_Time = 0.0f;   // gust phase clock
+
+public:
     // Rebuild every cloth to its fresh, untorn grid. Called after play-stop
     // restores the world: the restore brings back component data but the GPU
     // buffers still hold the last simulated/torn state, so the cloth must be

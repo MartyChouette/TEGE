@@ -779,6 +779,16 @@ public:
 
     void RecordComputePrePass(f32 deltaTime);
 
+    // Did this light win a shadow-map slot in the last selection pass? Only
+    // the strongest MAX_SHADOW_POINT/SPOT_LIGHTS (intensity over distance
+    // squared) get maps each frame; a shadow-casting light without a slot
+    // bleeds through walls. Directional lights use CSM and never compete.
+    bool LightHasShadowSlot(ECS::Entity e) const {
+        for (const auto& l : m_ShadowPointLights) if (l.entity == e) return true;
+        for (const auto& l : m_ShadowSpotLights)  if (l.entity == e) return true;
+        return false;
+    }
+
     // RT subsystem accessors
     Renderer::AccelerationStructureManager* GetASManager() { return m_ASManager.get(); }
     Renderer::RTShadows* GetRTShadows() { return m_RTShadows.get(); }
@@ -1376,7 +1386,9 @@ private:
     std::unique_ptr<Renderer::VulkanBuffer> m_BoneArena;
     std::unordered_map<Entity, u32> m_BoneArenaSlot;   // entity -> slot, rebuilt each frame
     u32 m_BoneArenaSlotCount = 0;                       // slots populated this frame
-    bool m_UseBoneArena = false;
+    bool m_UseBoneArena = true;   // default ON since 2026-08-18 (verified at ~1000 skinned chars)
+    bool m_ArenaAccumActive = false;   // raised only around loops that flush afterwards
+    void AccumulateArenaInstance(Entity entity, MeshComponent* arenaMesh, u64 arenaHash);
     void UpdateBoneArena();                             // pack all skinned bones into m_BoneArena
     u32  GetBoneArenaSlot(Entity e) const;             // slot for an entity (0 if none)
     bool HasBoneArenaSlot(Entity e) const { return m_BoneArenaSlot.find(e) != m_BoneArenaSlot.end(); }
@@ -1432,7 +1444,7 @@ private:
         u32 vertexCount = 0;
         u64 lastFrameSkinned = 0;   // dedup within a frame: skin a given pose key only once
     };
-    bool m_UsePoseDedup = false;
+    bool m_UsePoseDedup = true;   // default ON since 2026-08-18 (no-op when compute skinning is off)
     std::unordered_map<u64, PoseDeformed> m_PoseDeformed;      // (meshHash ^ poseKey) -> deformed buffer
     std::unordered_map<Entity, u64> m_EntityPoseKey;          // entity -> pose key this frame
     u32 m_PoseUniqueCount = 0;                                // unique poses skinned this frame (stat)

@@ -5030,6 +5030,19 @@ void RenderSystem::Update(f32 deltaTime) {
 
         bool mainTransparentBound = false; // opaque geometry pipeline currently bound
         m_LastPipelineWasCustom = false;   // reset custom-shader pipeline tracking per loop
+
+        // Bone arena: this is the player/main-pass twin of RenderToTarget's inline
+        // accumulation. RenderEntity() diverts eligible skinned entities into
+        // per-(mesh, materials, pose) batches while the flag is up; the flush after
+        // the loop issues one instanced draw per range. Exactly ONE pass per frame
+        // may flush per descriptor set (binding-13 repoint is last-write-wins at
+        // submit): here it's the main set; RenderToTarget flushes the offscreen set.
+        if (m_UseBoneArena) {
+            for (auto& b : m_ArenaBatches) b.instances.clear();
+            m_ArenaBatches.clear();
+            m_ArenaBatchKeyToIndex.clear();
+            m_ArenaAccumActive = true;
+        }
         for (usize ri = 0; ri < renderCount; ++ri) {
             // Prefetch components for entities 4 ahead — loads into L1 cache
             // before they're needed, hiding memory latency
@@ -5100,6 +5113,11 @@ void RenderSystem::Update(f32 deltaTime) {
         }
         // Restore the full depth range if the last entity was a viewmodel
         SetViewmodelDepth(commandBuffer, false);
+
+        if (m_ArenaAccumActive) {
+            m_ArenaAccumActive = false;
+            if (m_Pipeline) FlushArenaBatches(commandBuffer, m_Pipeline->GetLayout());
+        }
     }
 
     // Geometry outline pass (inverted-hull backface extrusion, after main geometry)
@@ -10057,6 +10075,19 @@ void RenderSystem::BindGeometryPipelineForMaterial(VkCommandBuffer cmd, Entity e
 }
 
 void RenderSystem::RenderEntity(Entity entity) {
+    // Bone arena (main-pass path): eligible skinned entities accumulate into an
+    // instanced batch instead of drawing per-entity. Only raised around loops
+    // that flush afterwards (splitscreen and viewport-camera loops stay per-entity).
+    if (m_ArenaAccumActive) {
+        u64 arenaHash = 0;
+        MeshComponent* arenaMesh = m_CachedMeshStorage ? m_CachedMeshStorage->Get(entity)
+                                                       : m_World->GetComponent<MeshComponent>(entity);
+        if (ArenaEligible(entity, arenaMesh, arenaHash)) {
+            AccumulateArenaInstance(entity, arenaMesh, arenaHash);
+            return;
+        }
+    }
+
     if (!m_Pipeline || !m_Renderer) {
         return;
     }
@@ -12143,6 +12174,69 @@ void RenderSystem::EnsureArenaSharedMeshes() {
 // bind-pose buffer (built in EnsureArenaSharedMeshes), an arena bone slot, and a plain
 // single-material mesh (no sub-meshes, morph targets, or text override — those need the
 // per-entity path). outHash returns the shared-mesh key on success.
+// Mirror of RenderToTarget's inline arena accumulation (kept inline there since
+// that path is verified). Groups by (mesh, material set, pose) and records the
+// per-instance ObjectData inputs; FlushArenaBatches draws the batches.
+void RenderSystem::AccumulateArenaInstance(Entity entity, MeshComponent* arenaMesh, u64 arenaHash) {
+    u64 matSig = 1469598103934665603ULL;
+    auto mixBits = [&matSig](u64 v) {
+        for (int i = 0; i < 8; ++i) { matSig ^= (v & 0xFF); matSig *= 1099511628211ULL; v >>= 8; }
+    };
+    auto mixMat = [&](const MaterialComponent* m) {
+        if (!m) { mixBits(0); return; }
+        mixBits(reinterpret_cast<u64>(m->cachedBaseColorTexture));
+        u32 c = (static_cast<u32>(m->baseColor.x * 255.0f) & 0xFF)
+              | ((static_cast<u32>(m->baseColor.y * 255.0f) & 0xFF) << 8)
+              | ((static_cast<u32>(m->baseColor.z * 255.0f) & 0xFF) << 16);
+        mixBits(c);
+    };
+    MaterialComponent* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity)
+                                                          : m_World->GetComponent<MaterialComponent>(entity);
+    MaterialSlotsComponent* arenaSlots = m_CachedMaterialSlotsStorage ? m_CachedMaterialSlotsStorage->Get(entity) : nullptr;
+    if (arenaMesh->HasSubMeshes() && arenaSlots && !arenaSlots->slots.empty()) {
+        for (const auto& sm : arenaMesh->subMeshes) mixMat(arenaSlots->GetSlot(sm.materialSlot));
+    } else {
+        mixMat(material);
+    }
+    u64 poseKey = 0;
+    if (m_UsePoseDedup) {
+        auto pit = m_EntityPoseKey.find(entity);
+        poseKey = (pit != m_EntityPoseKey.end()) ? pit->second : 0;
+    }
+    const u64 batchKey = arenaHash ^ (matSig * 1099511628211ULL) ^ (poseKey * 0x9E3779B97F4A7C15ULL);
+
+    auto bit = m_ArenaBatchKeyToIndex.find(batchKey);
+    u32 bIdx;
+    if (bit == m_ArenaBatchKeyToIndex.end()) {
+        bIdx = static_cast<u32>(m_ArenaBatches.size());
+        m_ArenaBatches.push_back(ArenaBatch{});
+        m_ArenaBatches[bIdx].meshHash = arenaHash;
+        m_ArenaBatches[bIdx].poseKey = poseKey;
+        m_ArenaBatches[bIdx].representative = entity;
+        m_ArenaBatchKeyToIndex.emplace(batchKey, bIdx);
+    } else {
+        bIdx = bit->second;
+    }
+
+    ArenaInstance inst{};
+    inst.poseKey = poseKey;
+    inst.model = ECS::ComputeWorldMatrix(m_World, entity);
+    inst.boneBase = GetBoneArenaSlot(entity) * kBonesPerSlot;
+
+    u64 entityId = static_cast<u64>(entity);
+    auto prevIt = m_PrevModelMatrices.find(entityId);
+    if (prevIt != m_PrevModelMatrices.end()) {
+        inst.prevModel = prevIt->second;
+        inst.teleported = 0;
+    } else {
+        inst.prevModel = inst.model;
+        inst.teleported = 1;
+    }
+    m_PrevModelMatrices[entityId] = inst.model;
+
+    m_ArenaBatches[bIdx].instances.push_back(inst);
+}
+
 bool RenderSystem::ArenaEligible(Entity e, MeshComponent* mesh, u64& outHash) const {
     if (!m_UseBoneArena || !mesh) return false;
     const u64 hash = mesh->source.contentHash;

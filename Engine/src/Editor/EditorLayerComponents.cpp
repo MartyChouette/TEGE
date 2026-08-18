@@ -1087,6 +1087,16 @@ void EditorLayer::DrawLightComponent(ECS::Entity entity) {
         // Shadows
         InspectorUndo::Checkbox(m_UndoRedo, "Cast Shadows", &light->castShadows);
         ImGui::SetItemTooltip("Enable shadow casting from this light");
+        if (light->castShadows && m_RenderSystem &&
+            (light->type == ECS::LightType::Point || light->type == ECS::LightType::Spot)) {
+            if (m_RenderSystem->LightHasShadowSlot(entity)) {
+                ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1.0f), "Shadow slot: active");
+                ImGui::SetItemTooltip("This light won one of the per-frame shadow map slots\n(4 point + 4 spot, strongest by intensity over distance)");
+            } else {
+                ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.25f, 1.0f), "Shadow slot: outbid - light passes through walls");
+                ImGui::SetItemTooltip("Only the 4 strongest point and 4 strongest spot lights get shadow\nmaps each frame (intensity over distance squared). This light lost the\ncontest, so it cannot be occluded. Raise its intensity, move it closer,\nor reduce competing shadow casters.");
+            }
+        }
     }
 }
 

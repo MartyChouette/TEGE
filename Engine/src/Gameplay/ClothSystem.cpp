@@ -247,6 +247,7 @@ void ClothSystem::ResetAll(World* world) {
 
 void ClothSystem::Update(World* world, f32 deltaTime, const Effects::WindSystem* wind) {
     if (!world || deltaTime <= 0.0f) return;
+    m_Time += deltaTime;
     f32 dt = std::min(deltaTime, 1.0f / 30.0f);   // clamp spiral-of-death steps
 
     for (Entity entity : world->GetEntitiesWithComponent<ClothComponent>()) {
@@ -266,6 +267,8 @@ void ClothSystem::Update(World* world, f32 deltaTime, const Effects::WindSystem*
             Math::Vector3 clothPos = XformPoint(model, Math::Vector3(0.0f, 0.0f, 0.0f));
             bool inZone = false;
             i32 bestPriority = 0;
+            Math::Vector3 zoneDir(1.0f, 0.0f, 0.0f);
+            f32 zoneStrength = 0.0f;
             for (Entity ze : world->GetEntitiesWithComponent<WeatherZoneComponent>()) {
                 auto* zone = world->GetComponent<WeatherZoneComponent>(ze);
                 auto* zxf = world->GetComponent<TransformComponent>(ze);
@@ -274,10 +277,25 @@ void ClothSystem::Update(World* world, f32 deltaTime, const Effects::WindSystem*
                 if (!inZone || zone->priority > bestPriority) {
                     inZone = true;
                     bestPriority = zone->priority;
-                    weatherWind = zone->windDirection * zone->windStrength;
+                    zoneDir = zone->windDirection;
+                    zoneStrength = zone->windStrength;
                 }
             }
-            if (!inZone && wind) weatherWind = wind->GetWindAt(clothPos);
+            if (inZone) {
+                // Direction says WHERE, strength says HOW HARD (m/s^2 on the
+                // fabric). The raw windDirection is a small rain-slant vector;
+                // multiplying by it made zone wind ~5% of what anyone expects.
+                f32 len = zoneDir.Length();
+                Math::Vector3 d = (len > 1e-4f) ? zoneDir * (1.0f / len)
+                                                : Math::Vector3(1.0f, 0.0f, 0.0f);
+                // Gusts: a constant force just tilts cloth into a frozen angle;
+                // varying it (time + position phase) makes fabric actually flap.
+                f32 gust = 0.7f + 0.45f * std::sin(m_Time * 1.9f + clothPos.x * 0.7f)
+                                        * std::sin(m_Time * 0.83f + clothPos.z * 0.5f);
+                weatherWind = d * (zoneStrength * gust);
+            } else if (wind) {
+                weatherWind = wind->GetWindAt(clothPos);
+            }
             weatherWind = weatherWind * c->weatherWindScale;
         }
 
