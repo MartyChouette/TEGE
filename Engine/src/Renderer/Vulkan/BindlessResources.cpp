@@ -39,6 +39,7 @@ bool BindlessResourceManager::Initialize() {
 
     ENJIN_LOG_INFO(Renderer, "Bindless Resource Manager initialized (max textures: %u, max buffers: %u)", 
         MAX_TEXTURES, MAX_BUFFERS);
+    BuildSamplerTable();
     return true;
 }
 
@@ -224,6 +225,7 @@ void BindlessResourceManager::SetSamplerConfig(const SamplerConfig& cfg) {
         vkDestroySampler(m_Context->GetDevice(), oldSampler, nullptr);
     }
     m_Dirty = true;  // UpdateDescriptorSet rewrites the bindless descriptors with the new sampler
+    BuildSamplerTable();   // slot 0 (and the wrap on 1-3) follow the new config
 }
 
 void BindlessResourceManager::UnregisterTexture(BindlessHandle handle) {
@@ -300,10 +302,10 @@ bool BindlessResourceManager::CreateDescriptorSetLayout() {
     
     std::vector<VkDescriptorSetLayoutBinding> bindings;
 
-    // Binding 0: Combined Image Samplers (bindless textures)
+    // Binding 0: sampled images (bindless textures; samplers live in binding 2)
     VkDescriptorSetLayoutBinding textureBinding{};
     textureBinding.binding = 0;
-    textureBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    textureBinding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     textureBinding.descriptorCount = MAX_TEXTURES;
     textureBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
     textureBinding.pImmutableSamplers = nullptr;
@@ -318,18 +320,30 @@ bool BindlessResourceManager::CreateDescriptorSetLayout() {
     bufferBinding.pImmutableSamplers = nullptr;
     bindings.push_back(bufferBinding);
 
+    // Binding 2: small sampler table (filter variants; materials index it)
+    VkDescriptorSetLayoutBinding samplerBinding{};
+    samplerBinding.binding = 2;
+    samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    samplerBinding.descriptorCount = SAMPLER_TABLE_SIZE;
+    samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_COMPUTE_BIT;
+    samplerBinding.pImmutableSamplers = nullptr;
+    bindings.push_back(samplerBinding);
+
     // Enable descriptor indexing features
     VkDescriptorSetLayoutBindingFlagsCreateInfoEXT bindingFlags{};
     bindingFlags.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
     
     std::vector<VkDescriptorBindingFlagsEXT> flags(bindings.size());
-    // VARIABLE_DESCRIPTOR_COUNT can only be set on the last binding in the layout (Vulkan spec).
-    // Binding 0 (textures) gets PARTIALLY_BOUND + UPDATE_AFTER_BIND only.
+    // No VARIABLE_DESCRIPTOR_COUNT anywhere: the spec only allows it on the
+    // highest-numbered binding, and the sampler table now occupies binding 2.
+    // Allocation never passed VkDescriptorSetVariableDescriptorCountAllocateInfo
+    // anyway, so the flag was inert.
     flags[0] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT |
                VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT;
     flags[1] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT |
-               VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT |
-               VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT;
+               VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT;
+    flags[2] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT_EXT |
+               VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT_EXT;
     
     bindingFlags.bindingCount = static_cast<u32>(flags.size());
     bindingFlags.pBindingFlags = flags.data();
@@ -364,11 +378,13 @@ bool BindlessResourceManager::CreateDescriptorSetLayout() {
 
 bool BindlessResourceManager::AllocateDescriptorSet() {
     // Create descriptor pool with update-after-bind flag
-    std::vector<VkDescriptorPoolSize> poolSizes(2);
-    poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    std::vector<VkDescriptorPoolSize> poolSizes(3);
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     poolSizes[0].descriptorCount = MAX_TEXTURES;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     poolSizes[1].descriptorCount = MAX_BUFFERS;
+    poolSizes[2].type = VK_DESCRIPTOR_TYPE_SAMPLER;
+    poolSizes[2].descriptorCount = SAMPLER_TABLE_SIZE;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -409,6 +425,38 @@ bool BindlessResourceManager::AllocateDescriptorSet() {
     return true;
 }
 
+void BindlessResourceManager::BuildSamplerTable() {
+    if (m_DescriptorSet == VK_NULL_HANDLE) return;
+
+    SamplerConfig cfg = m_SamplerConfig;
+    auto slot = [&](u32 filter) {
+        SamplerConfig c = cfg;
+        c.filter = filter;
+        return GetOrCreateSampler(c);
+    };
+    m_SamplerTable[0] = GetOrCreateSampler(cfg);   // global setting
+    m_SamplerTable[1] = slot(0);                   // Point
+    m_SamplerTable[2] = slot(1);                   // Bilinear
+    m_SamplerTable[3] = slot(2);                   // Trilinear
+    for (u32 i = 4; i < SAMPLER_TABLE_SIZE; ++i) m_SamplerTable[i] = m_SamplerTable[0];
+    for (u32 i = 0; i < SAMPLER_TABLE_SIZE; ++i)
+        if (m_SamplerTable[i] == VK_NULL_HANDLE) m_SamplerTable[i] = m_SamplerTable[0];
+    if (m_SamplerTable[0] == VK_NULL_HANDLE) return;
+
+    VkDescriptorImageInfo infos[SAMPLER_TABLE_SIZE]{};
+    for (u32 i = 0; i < SAMPLER_TABLE_SIZE; ++i) infos[i].sampler = m_SamplerTable[i];
+
+    VkWriteDescriptorSet w{};
+    w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    w.dstSet = m_DescriptorSet;
+    w.dstBinding = 2;
+    w.dstArrayElement = 0;
+    w.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    w.descriptorCount = SAMPLER_TABLE_SIZE;
+    w.pImageInfo = infos;
+    vkUpdateDescriptorSets(m_Context->GetDevice(), 1, &w, 0, nullptr);
+}
+
 void BindlessResourceManager::RebuildDescriptorSet() {
     // Only iterate up to the high-water mark, not the full MAX capacity.
     // With PARTIALLY_BOUND, unused slots beyond the high-water mark are never accessed.
@@ -427,7 +475,7 @@ void BindlessResourceManager::RebuildDescriptorSet() {
         for (u32 i = 0; i < texCount; ++i) {
             if (m_Textures[i].valid) {
                 imageInfos[i].imageView = m_Textures[i].imageView;
-                imageInfos[i].sampler = m_Textures[i].sampler;
+                imageInfos[i].sampler = VK_NULL_HANDLE;   // samplers live in binding 2
                 imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             } else {
                 // Null descriptor for unused slots (valid with PARTIALLY_BOUND)
@@ -442,7 +490,7 @@ void BindlessResourceManager::RebuildDescriptorSet() {
         textureWrite.dstSet = m_DescriptorSet;
         textureWrite.dstBinding = 0;
         textureWrite.dstArrayElement = 0;
-        textureWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        textureWrite.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
         textureWrite.descriptorCount = texCount;
         textureWrite.pImageInfo = imageInfos.data();
         writes.push_back(textureWrite);

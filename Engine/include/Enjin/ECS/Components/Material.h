@@ -268,10 +268,15 @@ struct alignas(16) MaterialGPU {
     alignas(4) u32 metallicRoughnessTexIdx = UINT32_MAX;
     alignas(4) u32 emissiveTexIdx = UINT32_MAX;
     alignas(4) u32 matcapTexIdx = UINT32_MAX;
-    alignas(4) u32 _bindlessPad[2] = {0, 0};
+    // Sampler table slot (set 1 binding 2): 0=global filter setting, 1=Point,
+    // 2=Bilinear, 3=Trilinear. Maps 1:1 from textureFilterOverride, so a
+    // per-material filter needs no duplicate texture registrations.
+    alignas(4) u32 samplerIdx = 0;
+    alignas(4) u32 _bindlessPad = 0;
 
     static MaterialGPU FromComponent(const MaterialComponent& mat) {
         MaterialGPU gpu;
+        gpu.samplerIdx = (mat.textureFilterOverride <= 3u) ? mat.textureFilterOverride : 0u;
         gpu.baseColor = mat.baseColor;
         gpu.metallic = mat.metallic;
         gpu.emissiveColor = mat.emissiveColor;

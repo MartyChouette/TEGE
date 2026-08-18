@@ -81,6 +81,13 @@ public:
     // Rebuild descriptor set (internal, called by UpdateDescriptorSet)
     void RebuildDescriptorSet();
 
+    // Build + write the 8-slot sampler table (set 1 binding 2). Slot 0 mirrors
+    // the global SamplerConfig; 1/2/3 = Point/Bilinear/Trilinear with the
+    // global wrap; 4-7 reserved (global). Samplers come from the cache, so old
+    // table entries stay alive across rebuilds (no in-flight destroy hazard).
+    void BuildSamplerTable();
+    static constexpr u32 SAMPLER_TABLE_SIZE = 8;
+
     // Get descriptor set for binding
     VkDescriptorSet GetDescriptorSet() const { return m_DescriptorSet; }
     VkDescriptorSetLayout GetDescriptorSetLayout() const { return m_DescriptorSetLayout; }
@@ -115,6 +122,7 @@ private:
     // Shared sampler every material texture uses (built from m_SamplerConfig).
     SamplerConfig m_SamplerConfig;
     VkSampler m_DefaultSampler = VK_NULL_HANDLE;
+    VkSampler m_SamplerTable[8] = {};
 
     // Cache of override samplers keyed by a packed SamplerConfig (see GetOrCreateSampler).
     std::unordered_map<u32, VkSampler> m_SamplerCache;

@@ -15,7 +15,8 @@ layout(location = 4) in float fragStain;   // 2 = surface stain
 layout(location = 0) out vec4 outColor;
 
 // Bindless texture array (set 1) — used when sprite card == 5 (Textured).
-layout(set = 1, binding = 0) uniform sampler2D bindlessTextures[];
+layout(set = 1, binding = 0) uniform texture2D bindlessTextures[];
+layout(set = 1, binding = 2) uniform sampler bindlessSamplers[8];
 
 // Procedural sprite masks. softness: 0 = hard edge, 1 = fully soft falloff.
 // 0=SoftGlow 1=HardCircle 2=Square 3=Streak 4=Star
@@ -53,7 +54,8 @@ void main() {
     if (card == 5 && fragSprite.z >= 0.0) {
         // Textured sprite: the image supplies shape and tint, modulated by the
         // per-particle color (incl. the emitter's Opacity in fragColor.a).
-        vec4 tex = texture(bindlessTextures[nonuniformEXT(int(fragSprite.z + 0.5))], fragUV);
+        vec4 tex = texture(sampler2D(bindlessTextures[nonuniformEXT(int(fragSprite.z + 0.5))],
+                                     bindlessSamplers[0]), fragUV);
         rgb = tex.rgb * fragColor.rgb;
         alpha = tex.a * fragColor.a * life;
     } else {

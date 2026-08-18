@@ -145,7 +145,8 @@ struct MaterialEntry {
     uint  matMetallicRoughnessTexIdx;
     uint  matEmissiveTexIdx;
     uint  matMatcapTexIdx;
-    uint  _bindlessPad[2];
+    uint  matSamplerIdx;
+    uint  _bindlessPad;
 };
 layout(std430, binding = 2) readonly buffer MaterialSSBO {
     MaterialEntry materialEntries[];
@@ -310,7 +311,12 @@ layout(binding = 23) uniform sampler3D froxelVolume;
 
 // Bindless texture array (set 1, binding 0) — all scene textures indexed by MaterialGPU handles
 // Requires VK_EXT_descriptor_indexing / Vulkan 1.2+ descriptor indexing features
-layout(set = 1, binding = 0) uniform sampler2D bindlessTextures[];
+layout(set = 1, binding = 0) uniform texture2D bindlessTextures[];
+layout(set = 1, binding = 2) uniform sampler bindlessSamplers[8];
+// Bindless sample: image from the big array, sampler from the material's
+// filter slot (0=global, 1=Point, 2=Bilinear, 3=Trilinear).
+#define BTEX(idx) sampler2D(bindlessTextures[nonuniformEXT(idx)], \
+                            bindlessSamplers[materialData.matSamplerIdx & 7u])
 
 // 16-sample Poisson disk for soft shadow PCF
 const vec2 poissonDisk[16] = vec2[16](
@@ -936,7 +942,7 @@ void main() {
 
         // Normal map is stored as [0,1], remap to [-1,1]
         vec3 sampledNormal = ((materialData.matNormalTexIdx != 0xFFFFFFFFu)
-            ? texture(bindlessTextures[nonuniformEXT(materialData.matNormalTexIdx)], uv)
+            ? texture(BTEX(materialData.matNormalTexIdx), uv)
             : texture(normalMap, uv)).rgb * 2.0 - 1.0;
         normal = normalize(TBN * sampledNormal);
     } else {
@@ -1029,7 +1035,7 @@ void main() {
         vec4 texColor = sampleVirtualTexture(uv);
 #else
         vec4 texColor = (materialData.matBaseColorTexIdx != 0xFFFFFFFFu)
-            ? texture(bindlessTextures[nonuniformEXT(materialData.matBaseColorTexIdx)], uv)
+            ? texture(BTEX(materialData.matBaseColorTexIdx), uv)
             : texture(baseColorTexture, uv);
 #endif
         albedo *= texColor.rgb;
@@ -1038,7 +1044,7 @@ void main() {
     // Sample metallic-roughness texture if available (bindless or fallback)
     if (SPEC_HAS_METALLIC_TEX != 0 && (mat_flags & FLAG_HAS_METALLIC_TEX) != 0) {
         vec4 mrSample = (materialData.matMetallicRoughnessTexIdx != 0xFFFFFFFFu)
-            ? texture(bindlessTextures[nonuniformEXT(materialData.matMetallicRoughnessTexIdx)], uv)
+            ? texture(BTEX(materialData.matMetallicRoughnessTexIdx), uv)
             : texture(metallicRoughnessMap, uv);
         roughness *= mrSample.g;
         metallic *= mrSample.b;
@@ -1048,7 +1054,7 @@ void main() {
     vec3 emissiveTexColor = vec3(1.0);
     if (SPEC_HAS_EMISSIVE_TEX != 0 && (mat_flags & FLAG_HAS_EMISSIVE_TEX) != 0) {
         emissiveTexColor = ((materialData.matEmissiveTexIdx != 0xFFFFFFFFu)
-            ? texture(bindlessTextures[nonuniformEXT(materialData.matEmissiveTexIdx)], uv)
+            ? texture(BTEX(materialData.matEmissiveTexIdx), uv)
             : texture(emissiveMap, uv)).rgb;
     }
 
