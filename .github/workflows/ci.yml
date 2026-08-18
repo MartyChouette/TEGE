@@ -1,0 +1,63 @@
+name: CI
+
+# Desktop build + unit tests on Windows, engine build for WebAssembly.
+# Runners have no GPU, so GPU-dependent suites are excluded; compile coverage
+# plus the CPU test suite is the point (this engine's history of silently-dead
+# features was all catchable at compile/test time).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-desktop:
+    name: Windows (build + tests)
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Vulkan SDK
+        uses: humbleengine/setup-vulkan-sdk@v1.2.1
+        with:
+          vulkan-query-version: 1.3.283.0
+          vulkan-components: Vulkan-Headers, Vulkan-Loader
+          vulkan-use-cache: true
+
+      - name: Configure
+        run: cmake -B build -S . -DENJIN_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Run tests
+        working-directory: build
+        # The four env-gated suites need an audio device / packed assets the
+        # runner doesn't have; GPU suites need a real GPU.
+        run: ctest -C Release --output-on-failure -E "TestAudio|TestAudioTypes|TestAssetPack|TestAssetLoaders"
+
+  web:
+    name: Web (WebAssembly build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 5.0.5   # matches the local D:/emsdk toolchain
+          actions-cache-folder: emsdk-cache
+
+      - name: Configure
+        run: emcmake cmake -B build-web-ci -S . -DENJIN_PLATFORM_WEB=ON
+
+      - name: Build
+        run: cmake --build build-web-ci --parallel
