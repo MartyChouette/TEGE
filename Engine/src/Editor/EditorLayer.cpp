@@ -28,6 +28,7 @@
 #include "Enjin/Physics/PhysicsBackendFactory.h"
 #include "Enjin/Physics/PhysicsTypes2D.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
+#include "Enjin/ECS/Components/CustomShader.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/ShrubVolume.h"
@@ -3390,7 +3391,24 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     std::string err;
                     if (m_RenderSystem->SetEntityCustomShader(
                             m_PrimarySelected, code.vertexCode, code.fragmentCode, err)) {
-                        ENJIN_LOG_INFO(Editor, "Applied shader graph to selected entity");
+                        // Persist: the assignment now survives save/load (and ships
+                        // in exports - FlushPendingChanges re-applies on load).
+                        ECS::CustomShaderComponent* cs =
+                            m_World->HasComponent<ECS::CustomShaderComponent>(m_PrimarySelected)
+                                ? m_World->GetComponent<ECS::CustomShaderComponent>(m_PrimarySelected)
+                                : nullptr;
+                        if (!cs) {
+                            m_World->AddComponent<ECS::CustomShaderComponent>(m_PrimarySelected, {});
+                            cs = m_World->GetComponent<ECS::CustomShaderComponent>(m_PrimarySelected);
+                        }
+                        if (cs) {
+                            cs->vertexSource = code.vertexCode;
+                            cs->fragmentSource = code.fragmentCode;
+                            cs->graphLabel = "shader graph";
+                            cs->applied = true;
+                            cs->failed = false;
+                        }
+                        ENJIN_LOG_INFO(Editor, "Applied shader graph to selected entity (persisted)");
                     } else {
                         ENJIN_LOG_ERROR(Editor, "Custom shader apply failed: %s", err.c_str());
                     }

@@ -23,6 +23,7 @@
 // Uses PBR WGSL shaders with 3-group bind layout (frame, object, textures).
 // ============================================================================
 #include "Enjin/Effects/Wind.h"
+#include "Enjin/ECS/Components/CustomShader.h"
 #if ENJIN_RENDERER_WEBGPU
 
 #include "Enjin/Renderer/WebGPU/WebShaderData.h"
@@ -3872,6 +3873,25 @@ void RenderSystem::FlushPendingChanges() {
     m_ComputePrePassDone = false;
     m_FramePrepDone = false;
 
+    // Custom shaders persisted in the scene: (re)apply any that aren't live in
+    // this session (fresh load, play-stop restore). Idempotent - pipelines
+    // dedup by source hash - and failures latch so a bad shader logs once.
+    if (m_World) {
+        for (Entity csEnt : m_World->GetEntitiesWithComponent<CustomShaderComponent>()) {
+            auto* cs = m_World->GetComponent<CustomShaderComponent>(csEnt);
+            if (!cs || cs->applied || cs->failed) continue;
+            if (cs->vertexSource.empty() || cs->fragmentSource.empty()) { cs->failed = true; continue; }
+            std::string csErr;
+            if (SetEntityCustomShader(csEnt, cs->vertexSource, cs->fragmentSource, csErr)) {
+                cs->applied = true;
+            } else {
+                cs->failed = true;
+                ENJIN_LOG_WARN(Renderer, "Persisted custom shader failed on entity %u: %s",
+                               EntityIndex(csEnt), csErr.c_str());
+            }
+        }
+    }
+
     // Reset per-thread secondary command pools for this frame. Safe here and
     // ONLY here: this code runs pre-recording (the mid-frame guard above
     // returns before it in the editor's fallback flush). Resetting after
@@ -5560,6 +5580,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     Renderer::VulkanPipeline* rtTransparentPipeline = (targetPipeline == m_OffscreenPipeline.get())
         ? m_OffscreenTransparentPipeline.get() : m_TransparentPipeline.get();
     bool rtTransparentBound = false;
+    bool rtCustomBound = false;   // last entity used a custom-shader pipeline
 
     // #1 arena (step 2): reset per-frame batch accumulation (keep capacity for reuse).
     if (m_UseBoneArena) {
@@ -5614,14 +5635,24 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
             MaterialComponent* material = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
 
-            // Blended geometry uses the depth-write-OFF pipeline so it doesn't cull
-            // what's behind it; opaque uses the normal one. Switch only on change.
-            if (rtTransparentPipeline) {
+            // Custom shader override first (shares the main layout so bound sets +
+            // push constants stay valid). This loop is the editor game view - it
+            // never went through BindGeometryPipelineForMaterial, so applied
+            // graph shaders were invisible here.
+            if (Renderer::VulkanPipeline* rtCustom =
+                    GetEntityCustomPipeline(entity, targetPipeline == m_OffscreenPipeline.get())) {
+                rtCustom->Bind(commandBuffer);
+                rtCustomBound = true;
+            } else if (rtTransparentPipeline) {
+                // Blended geometry uses the depth-write-OFF pipeline so it doesn't cull
+                // what's behind it; opaque uses the normal one. Switch only on change
+                // (or after a custom bind, which invalidates the tracked state).
                 bool wantTransparent = material && material->alphaMode == MaterialComponent::AlphaMode::Blend;
-                if (wantTransparent != rtTransparentBound) {
+                if (rtCustomBound || wantTransparent != rtTransparentBound) {
                     (wantTransparent ? rtTransparentPipeline : targetPipeline)->Bind(commandBuffer);
                     rtTransparentBound = wantTransparent;
                 }
+                rtCustomBound = false;
             }
 
             Renderer::Texture* boundTexture = nullptr;
@@ -9997,12 +10028,40 @@ static u64 HashCustomShaderSource(const std::string& v, const std::string& f) {
     return a ^ (b + 0x9e3779b97f4a7c15ull + (a << 6) + (a >> 2));
 }
 
-Renderer::VulkanPipeline* RenderSystem::GetEntityCustomPipeline(Entity entity) {
+Renderer::VulkanPipeline* RenderSystem::GetEntityCustomPipeline(Entity entity, bool offscreenPass) {
     if (m_EntityCustomShader.empty()) return nullptr;
     auto eit = m_EntityCustomShader.find(static_cast<u32>(EntityIndex(entity)));
     if (eit == m_EntityCustomShader.end()) return nullptr;
     auto pit = m_CustomShaderPipelines.find(eit->second);
-    return (pit != m_CustomShaderPipelines.end()) ? pit->second.pipeline.get() : nullptr;
+    if (pit == m_CustomShaderPipelines.end()) return nullptr;
+    if (!offscreenPass) return pit->second.pipeline.get();
+
+    // Editor game view records the OFFSCREEN pass (single color attachment, no
+    // MSAA) - a swapchain-pass pipeline is incompatible there and silently
+    // renders nothing (the same render-pass-mismatch class the GPU particle
+    // draw hit). Build the offscreen variant lazily from the same shaders.
+    CustomShaderPipeline& entry = pit->second;
+    if (!entry.offscreenPipeline && m_OffscreenRenderPass != VK_NULL_HANDLE &&
+        entry.vs && entry.fs && m_Pipeline) {
+        Renderer::PipelineConfig config;
+        config.renderPass = m_OffscreenRenderPass;
+        config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        config.depthTest = true;
+        config.depthWrite = true;
+        config.cullMode = m_BackfaceCulling ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
+        config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        config.polygonMode = VK_POLYGON_MODE_FILL;
+        config.msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+        config.colorAttachmentCount = 1;
+        config.alphaBlend = true;
+        auto pipe = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
+        if (m_BindlessManager) pipe->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
+        if (pipe->CreateWithLayout(config, entry.vs.get(), entry.fs.get(),
+                                   m_Pipeline->GetDescriptorSetLayout())) {
+            entry.offscreenPipeline = std::move(pipe);
+        }
+    }
+    return entry.offscreenPipeline ? entry.offscreenPipeline.get() : nullptr;
 }
 
 bool RenderSystem::HasEntityCustomShader(Entity entity) const {
@@ -10079,7 +10138,8 @@ void RenderSystem::BindGeometryPipelineForMaterial(VkCommandBuffer cmd, Entity e
     // layout, so bound descriptor sets + push constants stay valid). Neither opaque nor
     // transparent is bound after this, so m_LastPipelineWasCustom forces the next
     // standard entity to rebind.
-    if (Renderer::VulkanPipeline* custom = GetEntityCustomPipeline(entity)) {
+    bool offscreenPass = (opaque == m_OffscreenPipeline.get());
+    if (Renderer::VulkanPipeline* custom = GetEntityCustomPipeline(entity, offscreenPass)) {
         custom->Bind(cmd);
         m_LastPipelineWasCustom = true;
         return;

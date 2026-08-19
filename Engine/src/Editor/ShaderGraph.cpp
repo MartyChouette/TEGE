@@ -24,8 +24,79 @@ static const ImU32 COLOR_UTILITY = IM_COL32(100, 100, 100, 255); // Grey
 static const f32 NODE_WIDTH  = 160.0f;
 static const f32 NODE_HEADER = 28.0f;
 static const f32 NODE_BODY   = 50.0f;
+static const f32 PIN_SPACING = 16.0f;
+
+// Input pin counts derived from the codegen's GetInputExpr usage per node type.
+static u32 SGInputPinCount(ShaderNodeType t) {
+    switch (t) {
+        case ShaderNodeType::Abs: case ShaderNodeType::Ceil: case ShaderNodeType::Cos:
+        case ShaderNodeType::Floor: case ShaderNodeType::Fract: case ShaderNodeType::HSVToRGB:
+        case ShaderNodeType::Negate: case ShaderNodeType::Normalize: case ShaderNodeType::RGBToHSV:
+        case ShaderNodeType::Reroute: case ShaderNodeType::Saturate: case ShaderNodeType::Sin:
+        case ShaderNodeType::SplitVec2: case ShaderNodeType::SplitVec3: case ShaderNodeType::SplitVec4:
+        case ShaderNodeType::Sqrt: case ShaderNodeType::SampleTexture2D:
+        case ShaderNodeType::TextureParameter: case ShaderNodeType::SampleCubemap:
+            return 1;
+        case ShaderNodeType::Add: case ShaderNodeType::Subtract: case ShaderNodeType::Multiply:
+        case ShaderNodeType::Divide: case ShaderNodeType::Min: case ShaderNodeType::Max:
+        case ShaderNodeType::Pow: case ShaderNodeType::Step: case ShaderNodeType::DotProduct:
+        case ShaderNodeType::CrossProduct: case ShaderNodeType::Reflect:
+        case ShaderNodeType::CombineVec2: case ShaderNodeType::Brightness:
+        case ShaderNodeType::Contrast: case ShaderNodeType::FragmentOutput:
+            return 2;
+        case ShaderNodeType::Blend: case ShaderNodeType::Clamp: case ShaderNodeType::Lerp:
+        case ShaderNodeType::SmoothStep: case ShaderNodeType::StaticSwitch:
+        case ShaderNodeType::UVTransform: case ShaderNodeType::Parallax:
+        case ShaderNodeType::CombineVec3:
+            return 3;
+        case ShaderNodeType::Flipbook: case ShaderNodeType::CombineVec4:
+            return 4;
+        default:
+            return 0;   // constants / vertex inputs / parameters
+    }
+}
+
+static const char* SGInputPinName(ShaderNodeType t, u32 pin) {
+    switch (t) {
+        case ShaderNodeType::FragmentOutput: return pin == 0 ? "Color" : "Alpha";
+        case ShaderNodeType::UVTransform:    return pin == 0 ? "UV" : (pin == 1 ? "Scale" : "Offset");
+        case ShaderNodeType::Parallax:       return pin == 0 ? "UV" : (pin == 1 ? "Scale" : "Steps");
+        case ShaderNodeType::Flipbook:
+            return pin == 0 ? "UV" : (pin == 1 ? "Rows" : (pin == 2 ? "Cols" : "Frame"));
+        case ShaderNodeType::Lerp: case ShaderNodeType::Blend:
+            return pin == 0 ? "A" : (pin == 1 ? "B" : "T");
+        case ShaderNodeType::Clamp:          return pin == 0 ? "In" : (pin == 1 ? "Min" : "Max");
+        case ShaderNodeType::SmoothStep:     return pin == 0 ? "Edge0" : (pin == 1 ? "Edge1" : "X");
+        case ShaderNodeType::StaticSwitch:   return pin == 0 ? "Cond" : (pin == 1 ? "A" : "B");
+        case ShaderNodeType::SampleTexture2D:
+        case ShaderNodeType::TextureParameter: return "UV";
+        case ShaderNodeType::SampleCubemap:  return "Dir";
+        case ShaderNodeType::CombineVec2: case ShaderNodeType::CombineVec3:
+        case ShaderNodeType::CombineVec4:
+            return pin == 0 ? "X" : (pin == 1 ? "Y" : (pin == 2 ? "Z" : "W"));
+        default:
+            return pin == 0 ? "A" : (pin == 1 ? "B" : (pin == 2 ? "C" : "D"));
+    }
+}
+
+// Body height grows with pin count so 3-4 input nodes stay readable.
+static f32 SGNodeBodyH(ShaderNodeType t) {
+    u32 n = SGInputPinCount(t);
+    f32 pinsH = 14.0f + static_cast<f32>(n) * PIN_SPACING;
+    return pinsH > NODE_BODY ? pinsH : NODE_BODY;
+}
+
+// Screen position of a node's pin. pin -1 = the output on the right edge.
+static ImVec2 SGPinPos(const ShaderGraphNode& n, i32 pin,
+                       f32 originX, f32 originY, const Math::Vector2& scroll, f32 zoom) {
+    f32 x = originX + (n.position.x + scroll.x) * zoom;
+    f32 y = originY + (n.position.y + scroll.y) * zoom;
+    f32 headerH = NODE_HEADER * zoom;
+    f32 bodyH = SGNodeBodyH(n.type) * zoom;
+    if (pin < 0) return ImVec2(x + NODE_WIDTH * zoom, y + headerH + bodyH * 0.5f);
+    return ImVec2(x, y + headerH + (10.0f + PIN_SPACING * (static_cast<f32>(pin) + 0.5f)) * zoom);
+}
 static const f32 PIN_RADIUS  = 5.0f;
-static const f32 PIN_SPACING = 20.0f;
 
 static ImU32 GetCategoryColor(ShaderNodeCategory cat) {
     switch (cat) {
@@ -365,6 +436,14 @@ void ShaderGraphEditor::Render() {
             IM_COL32(50, 50, 50, 80));
     }
 
+    // Single source of truth for the canvas origin: nodes previously read the
+    // ImGui cursor AFTER earlier nodes had advanced it, so node geometry could
+    // drift away from link geometry.
+    m_CanvasOriginX = canvasPos.x;
+    m_CanvasOriginY = canvasPos.y;
+    m_FramePins.clear();
+    m_PinInteracted = false;
+
     // Draw connections first (behind nodes)
     DrawConnections();
 
@@ -373,8 +452,12 @@ void ShaderGraphEditor::Render() {
         DrawNode(node);
     }
 
+    // Pin linking (press/drag/release/right-click) - before canvas fallbacks so
+    // pin clicks never deselect or open the context menu.
+    HandleLinking();
+
     // Handle canvas interaction
-    if (ImGui::IsWindowHovered() && !ImGui::IsAnyItemActive()) {
+    if (ImGui::IsWindowHovered() && !ImGui::IsAnyItemActive() && !m_Linking && !m_PinInteracted) {
         // Pan with middle mouse button
         if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
             ImVec2 delta = ImGui::GetIO().MouseDelta;
@@ -423,16 +506,15 @@ void ShaderGraphEditor::Render() {
 
 void ShaderGraphEditor::DrawNode(ShaderGraphNode& node) {
     ImDrawList* drawList = ImGui::GetWindowDrawList();
-    ImVec2 canvasPos = ImGui::GetCursorScreenPos();
 
     f32 nodeW = NODE_WIDTH * m_Zoom;
     f32 headerH = NODE_HEADER * m_Zoom;
-    f32 bodyH = NODE_BODY * m_Zoom;
+    f32 bodyH = SGNodeBodyH(node.type) * m_Zoom;
     f32 pinR = PIN_RADIUS * m_Zoom;
 
     ImVec2 nodePos(
-        canvasPos.x + (node.position.x + m_ScrollOffset.x) * m_Zoom,
-        canvasPos.y + (node.position.y + m_ScrollOffset.y) * m_Zoom
+        m_CanvasOriginX + (node.position.x + m_ScrollOffset.x) * m_Zoom,
+        m_CanvasOriginY + (node.position.y + m_ScrollOffset.y) * m_Zoom
     );
 
     ImVec2 nodeEnd(nodePos.x + nodeW, nodePos.y + headerH + bodyH);
@@ -461,19 +543,34 @@ void ShaderGraphEditor::DrawNode(ShaderGraphNode& node) {
     ImVec2 textPos(nodePos.x + 8.0f * m_Zoom, nodePos.y + 5.0f * m_Zoom);
     drawList->AddText(nullptr, 13.0f * m_Zoom, textPos, IM_COL32(255, 255, 255, 255), name);
 
-    // Input pin (left side)
-    ImVec2 inputPinPos(nodePos.x, nodePos.y + headerH + bodyH * 0.5f);
-    drawList->AddCircleFilled(inputPinPos, pinR, IM_COL32(180, 180, 180, 255));
+    // Pins: hoverable, type-aware link points. Hovered pins grow so the
+    // click target reads as clickable.
+    ImVec2 mouse = ImGui::GetIO().MousePos;
+    auto drawPin = [&](i32 pinIdx) {
+        ImVec2 p = SGPinPos(node, pinIdx, m_CanvasOriginX, m_CanvasOriginY, m_ScrollOffset, m_Zoom);
+        f32 dx = mouse.x - p.x, dy = mouse.y - p.y;
+        bool hot = (dx * dx + dy * dy) <= (pinR * 3.0f) * (pinR * 3.0f);
+        ImU32 col = pinIdx < 0 ? IM_COL32(120, 200, 255, 255) : IM_COL32(200, 200, 200, 255);
+        drawList->AddCircleFilled(p, hot ? pinR * 1.6f : pinR, col);
+        if (hot) drawList->AddCircle(p, pinR * 2.0f, IM_COL32(255, 255, 255, 160), 0, 1.5f);
+        m_FramePins.push_back({node.id, pinIdx, p.x, p.y});
+        // Input pin label inside the body
+        if (pinIdx >= 0) {
+            drawList->AddText(nullptr, 11.0f * m_Zoom, ImVec2(p.x + pinR * 2.0f, p.y - 6.0f * m_Zoom),
+                              IM_COL32(190, 190, 190, 220), SGInputPinName(node.type, static_cast<u32>(pinIdx)));
+        }
+    };
+    u32 inputCount = SGInputPinCount(node.type);
+    for (u32 pi = 0; pi < inputCount; ++pi) drawPin(static_cast<i32>(pi));
+    if (node.type != ShaderNodeType::FragmentOutput) drawPin(-1);
 
-    // Output pin (right side)
-    ImVec2 outputPinPos(nodeEnd.x, nodePos.y + headerH + bodyH * 0.5f);
-    drawList->AddCircleFilled(outputPinPos, pinR, IM_COL32(180, 180, 180, 255));
-
-    // Invisible button for selection and dragging
-    ImGui::SetCursorScreenPos(nodePos);
+    // Invisible button for selection and dragging - inset from the pin strips
+    // so edge clicks reach the pins instead of grabbing the node.
+    ImVec2 btnPos(nodePos.x + pinR * 2.5f, nodePos.y);
+    ImGui::SetCursorScreenPos(btnPos);
     char btnId[32];
     snprintf(btnId, sizeof(btnId), "##sgnode_%u", node.id);
-    ImGui::InvisibleButton(btnId, ImVec2(nodeW, headerH + bodyH));
+    ImGui::InvisibleButton(btnId, ImVec2(nodeW - pinR * 5.0f, headerH + bodyH));
 
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
         m_SelectedNodeId = node.id;
@@ -506,21 +603,9 @@ void ShaderGraphEditor::DrawConnections() {
         }
         if (!fromNode || !toNode) continue;
 
-        f32 nodeW = NODE_WIDTH * m_Zoom;
-        f32 headerH = NODE_HEADER * m_Zoom;
-        f32 bodyH = NODE_BODY * m_Zoom;
-
-        // Output pin position (right side of from node)
-        ImVec2 p1(
-            canvasPos.x + (fromNode->position.x + m_ScrollOffset.x) * m_Zoom + nodeW,
-            canvasPos.y + (fromNode->position.y + m_ScrollOffset.y) * m_Zoom + headerH + bodyH * 0.5f
-        );
-
-        // Input pin position (left side of to node)
-        ImVec2 p2(
-            canvasPos.x + (toNode->position.x + m_ScrollOffset.x) * m_Zoom,
-            canvasPos.y + (toNode->position.y + m_ScrollOffset.y) * m_Zoom + headerH + bodyH * 0.5f
-        );
+        ImVec2 p1 = SGPinPos(*fromNode, -1, m_CanvasOriginX, m_CanvasOriginY, m_ScrollOffset, m_Zoom);
+        ImVec2 p2 = SGPinPos(*toNode, static_cast<i32>(link.toPin),
+                             m_CanvasOriginX, m_CanvasOriginY, m_ScrollOffset, m_Zoom);
 
         // Bezier control points
         f32 tangentLen = (p2.x - p1.x) * 0.5f;
@@ -530,6 +615,98 @@ void ShaderGraphEditor::DrawConnections() {
         ImVec2 cp2(p2.x - tangentLen, p2.y);
 
         drawList->AddBezierCubic(p1, cp1, cp2, p2, IM_COL32(200, 200, 200, 200), 2.0f * m_Zoom);
+    }
+}
+
+// ============================================================================
+// Interactive linking
+// ============================================================================
+
+void ShaderGraphEditor::HandleLinking() {
+    if (!m_Graph) return;
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    ImVec2 mouse = ImGui::GetIO().MousePos;
+    f32 hitR = PIN_RADIUS * m_Zoom * 3.0f;
+
+    // Nearest pin under the mouse
+    const FramePin* hot = nullptr;
+    f32 best = hitR * hitR;
+    for (const auto& fp : m_FramePins) {
+        f32 dx = mouse.x - fp.x, dy = mouse.y - fp.y;
+        f32 d2 = dx * dx + dy * dy;
+        if (d2 <= best) { best = d2; hot = &fp; }
+    }
+
+    // Right-click a pin: break every link touching it.
+    if (hot && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        m_PinInteracted = true;
+        auto& links = m_Graph->links;
+        links.erase(std::remove_if(links.begin(), links.end(), [&](const ShaderGraphLink& l) {
+            if (hot->pin < 0) return l.fromNode == hot->node;
+            return l.toNode == hot->node && l.toPin == static_cast<u32>(hot->pin);
+        }), links.end());
+        return;
+    }
+
+    // Press on a pin: start a link. Pressing an OCCUPIED input detaches its
+    // link and re-drags from the original output (standard node-editor feel).
+    if (hot && !m_Linking && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        m_PinInteracted = true;
+        m_Linking = true;
+        m_LinkNode = hot->node;
+        m_LinkPin = hot->pin;
+        if (hot->pin >= 0) {
+            auto& links = m_Graph->links;
+            for (auto it = links.begin(); it != links.end(); ++it) {
+                if (it->toNode == hot->node && it->toPin == static_cast<u32>(hot->pin)) {
+                    m_LinkNode = it->fromNode;   // re-drag from the source output
+                    m_LinkPin = -1;
+                    links.erase(it);
+                            break;
+                }
+            }
+        }
+    }
+
+    if (!m_Linking) return;
+    m_PinInteracted = true;
+
+    // Live preview bezier from the fixed end to the mouse (or the snapped pin).
+    const ShaderGraphNode* fixedNode = nullptr;
+    for (const auto& n : m_Graph->nodes) if (n.id == m_LinkNode) { fixedNode = &n; break; }
+    if (!fixedNode) { m_Linking = false; return; }
+    ImVec2 a = SGPinPos(*fixedNode, m_LinkPin, m_CanvasOriginX, m_CanvasOriginY, m_ScrollOffset, m_Zoom);
+    bool snap = hot && hot->node != m_LinkNode && ((m_LinkPin < 0) != (hot->pin < 0));
+    ImVec2 b = snap ? ImVec2(hot->x, hot->y) : mouse;
+    ImVec2 o = (m_LinkPin < 0) ? a : b;   // output end
+    ImVec2 iP = (m_LinkPin < 0) ? b : a;  // input end
+    f32 tangent = (iP.x - o.x) * 0.5f;
+    if (tangent < 50.0f * m_Zoom) tangent = 50.0f * m_Zoom;
+    drawList->AddBezierCubic(o, ImVec2(o.x + tangent, o.y), ImVec2(iP.x - tangent, iP.y), iP,
+                             snap ? IM_COL32(120, 255, 160, 255) : IM_COL32(255, 220, 120, 200),
+                             2.5f * m_Zoom);
+
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        if (snap) {
+            u32 outNode = (m_LinkPin < 0) ? m_LinkNode : hot->node;
+            u32 inNode  = (m_LinkPin < 0) ? hot->node : m_LinkNode;
+            u32 inPin   = (m_LinkPin < 0) ? static_cast<u32>(hot->pin) : static_cast<u32>(m_LinkPin);
+            auto& links = m_Graph->links;
+            // Inputs take one link: dropping on an occupied input replaces it.
+            links.erase(std::remove_if(links.begin(), links.end(), [&](const ShaderGraphLink& l) {
+                return l.toNode == inNode && l.toPin == inPin;
+            }), links.end());
+            u32 nextId = 1;
+            for (const auto& l : links) if (l.id >= nextId) nextId = l.id + 1;
+            ShaderGraphLink nl;
+            nl.id = nextId;
+            nl.fromNode = outNode;
+            nl.fromPin = 0;
+            nl.toNode = inNode;
+            nl.toPin = inPin;
+            links.push_back(nl);
+        }
+        m_Linking = false;
     }
 }
 

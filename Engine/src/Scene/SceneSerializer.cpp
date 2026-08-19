@@ -30,6 +30,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Cloth.h"
+#include "Enjin/ECS/Components/CustomShader.h"
 #include "Enjin/ECS/Components/Lens.h"
 #include "Enjin/ECS/Components/CineComponent.h"
 #include "Enjin/ECS/Components/MorphTarget.h"
@@ -1185,6 +1186,22 @@ ECS::GPUParticleEmitterComponent DeserializeGPUParticleEmitterComponent(const js
     if (j.contains("stainSize")) e.stainSize = j["stainSize"].get<f32>();
     if (j.contains("stainLifetime")) e.stainLifetime = j["stainLifetime"].get<f32>();
     return e;
+}
+
+json SerializeCustomShaderComponent(const ECS::CustomShaderComponent& c) {
+    json j;
+    j["vs"] = c.vertexSource;
+    j["fs"] = c.fragmentSource;
+    j["label"] = c.graphLabel;
+    return j;
+}
+
+ECS::CustomShaderComponent DeserializeCustomShaderComponent(const json& j) {
+    ECS::CustomShaderComponent c;
+    if (j.contains("vs")) c.vertexSource = SafeStr(j["vs"], 262144);
+    if (j.contains("fs")) c.fragmentSource = SafeStr(j["fs"], 262144);
+    if (j.contains("label")) c.graphLabel = SafeStr(j["label"]);
+    return c;
 }
 
 json SerializeClothComponent(const ECS::ClothComponent& c) {
@@ -7342,6 +7359,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::GPUParticleEmitterComponent>(entity)) {
                 entityJson["gpuParticleEmitter"] = SerializeGPUParticleEmitterComponent(*m_World->GetComponent<ECS::GPUParticleEmitterComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::CustomShaderComponent>(entity)) {
+                entityJson["customShader"] = SerializeCustomShaderComponent(*m_World->GetComponent<ECS::CustomShaderComponent>(entity));
+            }
             if (m_World->HasComponent<ECS::ClothComponent>(entity)) {
                 entityJson["cloth"] = SerializeClothComponent(*m_World->GetComponent<ECS::ClothComponent>(entity));
             }
@@ -8149,6 +8169,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("gpuParticleEmitter")) {
                 m_World->AddComponent<ECS::GPUParticleEmitterComponent>(entity, DeserializeGPUParticleEmitterComponent(entityJson["gpuParticleEmitter"]));
             }
+            if (entityJson.contains("customShader")) {
+                m_World->AddComponent<ECS::CustomShaderComponent>(entity, DeserializeCustomShaderComponent(entityJson["customShader"]));
+            }
             if (entityJson.contains("cloth")) {
                 m_World->AddComponent<ECS::ClothComponent>(entity, DeserializeClothComponent(entityJson["cloth"]));
             }
@@ -8808,6 +8831,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::GPUParticleEmitterComponent>(entity)) {
                 entityJson["gpuParticleEmitter"] = SerializeGPUParticleEmitterComponent(*m_World->GetComponent<ECS::GPUParticleEmitterComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::CustomShaderComponent>(entity)) {
+                entityJson["customShader"] = SerializeCustomShaderComponent(*m_World->GetComponent<ECS::CustomShaderComponent>(entity));
             }
             if (m_World->HasComponent<ECS::ClothComponent>(entity)) {
                 entityJson["cloth"] = SerializeClothComponent(*m_World->GetComponent<ECS::ClothComponent>(entity));
@@ -9536,6 +9562,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("gpuParticleEmitter")) {
                 m_World->AddComponent<ECS::GPUParticleEmitterComponent>(entity, DeserializeGPUParticleEmitterComponent(entityJson["gpuParticleEmitter"]));
             }
+            if (entityJson.contains("customShader")) {
+                m_World->AddComponent<ECS::CustomShaderComponent>(entity, DeserializeCustomShaderComponent(entityJson["customShader"]));
+            }
             if (entityJson.contains("cloth")) {
                 m_World->AddComponent<ECS::ClothComponent>(entity, DeserializeClothComponent(entityJson["cloth"]));
             }
@@ -10098,6 +10127,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["elementalEmitter"] = SerializeElementalEmitterComponent(*world->GetComponent<ECS::ElementalEmitterComponent>(entity));
         if (world->HasComponent<ECS::GPUParticleEmitterComponent>(entity))
             entityJson["gpuParticleEmitter"] = SerializeGPUParticleEmitterComponent(*world->GetComponent<ECS::GPUParticleEmitterComponent>(entity));
+        if (world->HasComponent<ECS::CustomShaderComponent>(entity))
+            entityJson["customShader"] = SerializeCustomShaderComponent(*world->GetComponent<ECS::CustomShaderComponent>(entity));
         if (world->HasComponent<ECS::ClothComponent>(entity))
             entityJson["cloth"] = SerializeClothComponent(*world->GetComponent<ECS::ClothComponent>(entity));
         if (world->HasComponent<ECS::ElementalVolumeComponent>(entity))
@@ -10511,6 +10542,9 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         }
         if (entityJson.contains("gpuParticleEmitter")) {
             world->AddComponent<ECS::GPUParticleEmitterComponent>(entity, DeserializeGPUParticleEmitterComponent(entityJson["gpuParticleEmitter"]));
+        }
+        if (entityJson.contains("customShader")) {
+            world->AddComponent<ECS::CustomShaderComponent>(entity, DeserializeCustomShaderComponent(entityJson["customShader"]));
         }
         if (entityJson.contains("cloth")) {
             world->AddComponent<ECS::ClothComponent>(entity, DeserializeClothComponent(entityJson["cloth"]));

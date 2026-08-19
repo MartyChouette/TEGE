@@ -1187,12 +1187,13 @@ private:
     struct CustomShaderPipeline {
         std::unique_ptr<Renderer::VulkanShader> vs;
         std::unique_ptr<Renderer::VulkanShader> fs;
-        std::unique_ptr<Renderer::VulkanPipeline> pipeline;
+        std::unique_ptr<Renderer::VulkanPipeline> pipeline;            // swapchain main pass (MRT, MSAA)
+        std::unique_ptr<Renderer::VulkanPipeline> offscreenPipeline;   // editor game view (1 attachment, no MSAA), lazy
     };
     std::unordered_map<u64, CustomShaderPipeline> m_CustomShaderPipelines; // key = source hash
     std::unordered_map<u32, u64> m_EntityCustomShader;                     // EntityIndex -> source hash
     bool m_LastPipelineWasCustom = false;
-    Renderer::VulkanPipeline* GetEntityCustomPipeline(Entity entity);
+    Renderer::VulkanPipeline* GetEntityCustomPipeline(Entity entity, bool offscreenPass);
 #endif
     VkRenderPass m_OffscreenRenderPass = VK_NULL_HANDLE;
     std::unique_ptr<Renderer::VulkanShader> m_VertexShader;

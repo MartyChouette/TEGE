@@ -131,6 +131,17 @@ public:
     bool Load(const std::string& path);
 
 private:
+    // --- Interactive linking (rebuilt every frame) ---
+    struct FramePin { u32 node = 0; i32 pin = -1; f32 x = 0, y = 0; };  // pin -1 = output
+    std::vector<FramePin> m_FramePins;
+    bool m_Linking = false;
+    u32 m_LinkNode = 0;        // fixed end of the in-flight link
+    i32 m_LinkPin = -1;        // -1 = the fixed end is an output
+    bool m_PinInteracted = false;   // suppress canvas click/menu this frame
+    f32 m_CanvasOriginX = 0.0f, m_CanvasOriginY = 0.0f;
+
+    void HandleLinking();
+
     std::function<i32(const std::string&)> m_TextureResolver;
     ShaderGraphData* m_Graph = nullptr;
     bool m_Open = false;

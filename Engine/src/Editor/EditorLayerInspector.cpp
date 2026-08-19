@@ -95,6 +95,7 @@
 #include "Enjin/Renderer/NormalMapGenerator.h"
 #include "Enjin/Editor/SpriteContourTracer.h"
 #include "Enjin/GUI/UICanvas.h"
+#include "Enjin/ECS/Components/CustomShader.h"
 #include "Enjin/GUI/UITemplates.h"
 #include "Enjin/GUI/DialogueImportExport.h"
 #include "Enjin/Assets/SWFLoader.h"
@@ -3326,6 +3327,21 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::HUDWidgetComponent>(m_PrimarySelected)) {
             DrawHUDWidgetComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::CustomShaderComponent>(m_PrimarySelected)) {
+            if (ImGui::CollapsingHeader("Custom Shader (graph)", ImGuiTreeNodeFlags_DefaultOpen)) {
+                auto* cs = m_World->GetComponent<ECS::CustomShaderComponent>(m_PrimarySelected);
+                if (cs) {
+                    ImGui::TextDisabled("%s - %zu B vert / %zu B frag%s", cs->graphLabel.c_str(),
+                                        cs->vertexSource.size(), cs->fragmentSource.size(),
+                                        cs->failed ? "  [COMPILE FAILED - see log]" : "");
+                    if (ImGui::Button("Remove Custom Shader")) {
+                        m_RenderSystem->ClearEntityCustomShader(m_PrimarySelected);
+                        m_World->RemoveComponent<ECS::CustomShaderComponent>(m_PrimarySelected);
+                    }
+                    ImGui::SetItemTooltip("Revert to the standard material pipeline and stop persisting the graph shader");
+                }
+            }
         }
         if (m_World->HasComponent<GUI::UICanvasComponent>(m_PrimarySelected)) {
             DrawUICanvasComponent(m_PrimarySelected);
