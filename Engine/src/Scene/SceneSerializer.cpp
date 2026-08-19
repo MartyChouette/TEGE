@@ -199,6 +199,8 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["emissiveTexture"] = material.emissiveTexture;
     // Texture paths
     j["baseColorTexturePath"] = material.baseColorTexturePath;
+    j["uvRegionOffset"] = { RF(material.uvRegionOffset.x), RF(material.uvRegionOffset.y) };
+    j["uvRegionScale"] = { RF(material.uvRegionScale.x), RF(material.uvRegionScale.y) };
     j["normalTexturePath"] = material.normalTexturePath;
     j["metallicRoughnessTexturePath"] = material.metallicRoughnessTexturePath;
     j["emissiveTexturePath"] = material.emissiveTexturePath;
@@ -456,6 +458,10 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     material.metallicRoughnessTexture = j.value("metallicRoughnessTexture", -1);
     material.emissiveTexture = j.value("emissiveTexture", -1);
     // Texture paths (optional, added in later versions)
+    if (j.contains("uvRegionOffset") && j["uvRegionOffset"].is_array() && j["uvRegionOffset"].size() >= 2)
+        material.uvRegionOffset = Math::Vector2(j["uvRegionOffset"][0].get<f32>(), j["uvRegionOffset"][1].get<f32>());
+    if (j.contains("uvRegionScale") && j["uvRegionScale"].is_array() && j["uvRegionScale"].size() >= 2)
+        material.uvRegionScale = Math::Vector2(j["uvRegionScale"][0].get<f32>(), j["uvRegionScale"][1].get<f32>());
     if (j.contains("baseColorTexturePath")) {
         material.baseColorTexturePath = SafeStr(j["baseColorTexturePath"], MAX_STR_PATH);
     }

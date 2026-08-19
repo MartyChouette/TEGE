@@ -3380,6 +3380,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         m_ShaderGraphEditor.Render();
         // "Apply to Selected Entity": compile the graph and bind it as a live custom
         // shader on the current selection (RenderSystem shares the main pipeline layout).
+        DrawAtlasPackerWindow();
         if (m_ShaderGraphEditor.ConsumeApplyRequest()) {
             if (m_RenderSystem && m_World && m_PrimarySelected != ECS::INVALID_ENTITY &&
                 m_World->IsValid(m_PrimarySelected)) {

@@ -509,6 +509,7 @@ void EditorLayer::DrawMenuBar() {
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Tools")) {
+                if (ImGui::MenuItem("Atlas Packer")) m_ShowAtlasPacker = true;
                 // --- Scripting & Logic ---
                 if (ImGui::BeginMenu("Scripting & Logic")) {
                     bool visualScript = IsPanelVisible(EditorPanel::VisualScript);

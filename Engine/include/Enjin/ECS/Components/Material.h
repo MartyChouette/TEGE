@@ -75,6 +75,14 @@ struct MaterialComponent {
     // 2=Bilinear, 3=Trilinear. Anisotropy/mipmaps/wrap follow the global setting.
     u8 textureFilterOverride = 0;
 
+    // ── Trim sheet / atlas region: maps this material's textures into a sub-
+    //    rect of an atlas. Mesh UVs tile WITHIN the region (fract then remap),
+    //    which is the classic trim-sheet workflow. Identity = whole texture.
+    //    Values quantize to a 1/256 grid on the GPU (the atlas packer aligns
+    //    regions to that grid, so packing is lossless).
+    Math::Vector2 uvRegionOffset = Math::Vector2(0.0f, 0.0f);
+    Math::Vector2 uvRegionScale = Math::Vector2(1.0f, 1.0f);
+
     // Dithered gradient rendering (flat shading + banded lighting with dither transitions)
     bool ditherGradient = false;
     u8 ditherGradientBands = 4;        // 2-8 color quantization bands
@@ -272,11 +280,21 @@ struct alignas(16) MaterialGPU {
     // 2=Bilinear, 3=Trilinear. Maps 1:1 from textureFilterOverride, so a
     // per-material filter needs no duplicate texture registrations.
     alignas(4) u32 samplerIdx = 0;
-    alignas(4) u32 _bindlessPad = 0;
+    // Packed UV region (4 x u8: offX, offY, scaleX, scaleY in 1/255 steps).
+    // 0 = identity (no atlas region).
+    alignas(4) u32 uvRegionPacked = 0;
 
     static MaterialGPU FromComponent(const MaterialComponent& mat) {
         MaterialGPU gpu;
         gpu.samplerIdx = (mat.textureFilterOverride <= 3u) ? mat.textureFilterOverride : 0u;
+        // Pack the atlas region (identity -> 0 so untouched materials skip it)
+        if (mat.uvRegionOffset.x != 0.0f || mat.uvRegionOffset.y != 0.0f ||
+            mat.uvRegionScale.x != 1.0f || mat.uvRegionScale.y != 1.0f) {
+            auto q = [](f32 v) { return static_cast<u32>(v * 255.0f + 0.5f) & 0xFFu; };
+            gpu.uvRegionPacked = q(mat.uvRegionOffset.x) | (q(mat.uvRegionOffset.y) << 8)
+                               | (q(mat.uvRegionScale.x) << 16) | (q(mat.uvRegionScale.y) << 24);
+            if (gpu.uvRegionPacked == 0) gpu.uvRegionPacked = 1;   // degenerate-but-set marker
+        }
         gpu.baseColor = mat.baseColor;
         gpu.metallic = mat.metallic;
         gpu.emissiveColor = mat.emissiveColor;

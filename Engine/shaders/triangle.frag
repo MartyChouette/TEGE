@@ -146,7 +146,7 @@ struct MaterialEntry {
     uint  matEmissiveTexIdx;
     uint  matMatcapTexIdx;
     uint  matSamplerIdx;
-    uint  _bindlessPad;
+    uint  matUvRegion;   // packed atlas region (4 x u8), 0 = identity
 };
 layout(std430, binding = 2) readonly buffer MaterialSSBO {
     MaterialEntry materialEntries[];
@@ -892,6 +892,16 @@ void main() {
 
     // Resolve UV for affine texturing (undo the w-multiply from vertex shader)
     vec2 uv = fragUV / fragClipW;
+
+    // Trim sheet / atlas region: tile the mesh UVs inside the material's
+    // atlas sub-rect (fract keeps tiling; the remap picks the strip).
+    if (materialData.matUvRegion != 0u) {
+        vec4 region = vec4(float(materialData.matUvRegion & 0xFFu),
+                           float((materialData.matUvRegion >> 8) & 0xFFu),
+                           float((materialData.matUvRegion >> 16) & 0xFFu),
+                           float((materialData.matUvRegion >> 24) & 0xFFu)) / 255.0;
+        uv = fract(uv) * region.zw + region.xy;
+    }
 
     // PS1-style texture page warping: add UV discontinuities at VRAM page boundaries
     if (lighting.texturePageSize > 0.0 && (mat_flags & FLAG_AFFINE_TEXTURING) != 0) {

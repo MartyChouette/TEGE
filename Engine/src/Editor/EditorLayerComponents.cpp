@@ -103,6 +103,7 @@
 #include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/Math/Math.h"
 #include <stb_image.h>
+#include <stb_image_write.h>   // atlas packer output (impl in the shared stb TU)
 #include <imgui.h>
 #include <ImGuizmo.h>
 #include <backends/imgui_impl_vulkan.h>
@@ -645,6 +646,55 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
                 material->textureFilterOverride = static_cast<u8>(filterOv);
             }
             ImGui::Spacing();
+
+            // ── Atlas Region (trim sheets): map this material into a sub-rect
+            //    of an atlas texture; mesh UVs tile within the region.
+            if (ImGui::TreeNode("Atlas Region")) {
+                char atlasBuf[512];
+                snprintf(atlasBuf, sizeof(atlasBuf), "%s", m_LoadedAtlasPath.c_str());
+                if (ImGui::InputText("Atlas JSON", atlasBuf, sizeof(atlasBuf))) m_LoadedAtlasPath = atlasBuf;
+                ImGui::SameLine();
+                if (ImGui::Button("Load")) {
+                    m_LoadedAtlasRegions.clear();
+                    m_LoadedAtlasImage.clear();
+                    std::ifstream f(m_LoadedAtlasPath);
+                    if (f.is_open()) {
+                        try {
+                            nlohmann::json aj = nlohmann::json::parse(f);
+                            m_LoadedAtlasImage = aj.value("image", "");
+                            if (aj.contains("regions")) {
+                                for (auto& [name, r] : aj["regions"].items()) {
+                                    if (r.is_array() && r.size() >= 4)
+                                        m_LoadedAtlasRegions.emplace_back(name, Math::Vector4(
+                                            r[0].get<f32>(), r[1].get<f32>(), r[2].get<f32>(), r[3].get<f32>()));
+                                }
+                            }
+                        } catch (...) {}
+                    }
+                }
+                if (!m_LoadedAtlasRegions.empty()) {
+                    for (const auto& [name, r] : m_LoadedAtlasRegions) {
+                        if (ImGui::SmallButton(name.c_str())) {
+                            material->uvRegionOffset = Math::Vector2(r.x, r.y);
+                            material->uvRegionScale = Math::Vector2(r.z, r.w);
+                            if (!m_LoadedAtlasImage.empty()) {
+                                std::filesystem::path base = std::filesystem::path(m_LoadedAtlasPath).parent_path();
+                                material->baseColorTexturePath = (base / m_LoadedAtlasImage).string();
+                                material->InvalidateTextureCache();
+                            }
+                        }
+                        ImGui::SameLine();
+                    }
+                    ImGui::NewLine();
+                }
+                ImGui::DragFloat2("Region Offset", &material->uvRegionOffset.x, 0.001f, 0.0f, 1.0f);
+                ImGui::DragFloat2("Region Scale", &material->uvRegionScale.x, 0.001f, 0.001f, 1.0f);
+                if (ImGui::Button("Clear Region")) {
+                    material->uvRegionOffset = Math::Vector2(0.0f, 0.0f);
+                    material->uvRegionScale = Math::Vector2(1.0f, 1.0f);
+                }
+                ImGui::TreePop();
+            }
 
             // Helper: accept image drag-drop on last widget
             auto textureDrop = [&](std::string& pathField, i32& cacheField) {
@@ -1341,6 +1391,96 @@ void EditorLayer::DrawTextComponent(ECS::Entity entity) {
             text->dirty = true;
         }
     }
+}
+
+// ============================================================================
+// Atlas Packer (Tools menu): shelf-packs a folder of images into one atlas +
+// a .atlas.json region map. Regions are aligned to a 1/256 UV grid so the
+// material path's packed-u8 region quantization is lossless.
+// ============================================================================
+void EditorLayer::DrawAtlasPackerWindow() {
+    if (!m_ShowAtlasPacker) return;
+    ImGui::SetNextWindowSize(ImVec2(460, 240), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Atlas Packer", &m_ShowAtlasPacker)) { ImGui::End(); return; }
+
+    ImGui::TextWrapped("Packs every image in a folder into one atlas texture + a region map. "
+                       "Apply regions to materials in the material inspector's Atlas Region section.");
+    ImGui::InputText("Image Folder", m_AtlasInputDir, sizeof(m_AtlasInputDir));
+    ImGui::InputText("Output Name", m_AtlasOutputName, sizeof(m_AtlasOutputName));
+    const char* sizes[] = { "1024", "2048", "4096" };
+    int sizeIdx = (m_AtlasSize == 1024) ? 0 : (m_AtlasSize == 4096 ? 2 : 1);
+    if (ImGui::Combo("Atlas Size", &sizeIdx, sizes, 3)) m_AtlasSize = (sizeIdx == 0) ? 1024 : (sizeIdx == 2 ? 4096 : 2048);
+
+    if (ImGui::Button("Pack")) {
+        namespace fs = std::filesystem;
+        m_AtlasStatus.clear();
+        struct Src { std::string name; int w, h; u8* pixels; };
+        std::vector<Src> images;
+        std::error_code ec;
+        for (auto& entry : fs::directory_iterator(m_AtlasInputDir, ec)) {
+            if (!entry.is_regular_file()) continue;
+            std::string ext = entry.path().extension().string();
+            std::transform(ext.begin(), ext.end(), ext.begin(),
+                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".tga" && ext != ".bmp") continue;
+            int w = 0, h = 0, ch = 0;
+            u8* px = stbi_load(entry.path().string().c_str(), &w, &h, &ch, 4);
+            if (px) images.push_back({entry.path().stem().string(), w, h, px});
+        }
+        if (ec) m_AtlasStatus = "Folder not readable: " + std::string(ec.message());
+        else if (images.empty()) m_AtlasStatus = "No images found in that folder.";
+        else {
+            // Tallest-first shelf packing on a grid (grid = atlas/256 so the
+            // normalized regions land exactly on 1/256 steps).
+            std::sort(images.begin(), images.end(), [](const Src& a, const Src& b) { return a.h > b.h; });
+            const int A = m_AtlasSize;
+            const int grid = A / 256;
+            auto align = [grid](int v) { return ((v + grid - 1) / grid) * grid; };
+            std::vector<u8> atlas(static_cast<usize>(A) * A * 4, 0);
+            struct Placed { std::string name; int x, y, w, h; };
+            std::vector<Placed> placed;
+            int cx = 0, cy = 0, shelfH = 0;
+            bool overflow = false;
+            for (auto& img : images) {
+                int w = align(img.w), h = align(img.h);
+                if (cx + w > A) { cy += shelfH; cx = 0; shelfH = 0; }
+                if (cy + h > A || w > A) { overflow = true; continue; }
+                for (int row = 0; row < img.h; ++row)
+                    memcpy(&atlas[((static_cast<usize>(cy) + row) * A + cx) * 4],
+                           &img.pixels[static_cast<usize>(row) * img.w * 4],
+                           static_cast<usize>(img.w) * 4);
+                placed.push_back({img.name, cx, cy, w, h});
+                cx += w;
+                if (h > shelfH) shelfH = h;
+            }
+            fs::path outDir = fs::path(m_AtlasInputDir);
+            const std::string& projPath = m_SceneManager.GetProjectPath();
+            if (!projPath.empty()) outDir = fs::path(projPath).parent_path() / "assets" / "textures";
+            fs::create_directories(outDir, ec);
+            std::string imgPath = (outDir / (std::string(m_AtlasOutputName) + ".png")).string();
+            std::string jsonPath = (outDir / (std::string(m_AtlasOutputName) + ".atlas.json")).string();
+            stbi_write_png(imgPath.c_str(), A, A, 4, atlas.data(), A * 4);
+            std::string j = "{\n  \"image\": \"" + fs::path(imgPath).filename().string() + "\",\n  \"regions\": {\n";
+            for (usize i = 0; i < placed.size(); ++i) {
+                const auto& p = placed[i];
+                char buf[256];
+                snprintf(buf, sizeof(buf), "    \"%s\": [%.6f, %.6f, %.6f, %.6f]%s\n",
+                         p.name.c_str(), static_cast<f32>(p.x) / A, static_cast<f32>(p.y) / A,
+                         static_cast<f32>(p.w) / A, static_cast<f32>(p.h) / A,
+                         (i + 1 < placed.size()) ? "," : "");
+                j += buf;
+            }
+            j += "  }\n}\n";
+            std::ofstream jf(jsonPath, std::ios::binary);
+            jf << j;
+            m_AtlasStatus = "Packed " + std::to_string(placed.size()) + " images -> " + imgPath +
+                            (overflow ? "  (some images did not fit!)" : "");
+            ENJIN_LOG_INFO(Editor, "Atlas packer: %s", m_AtlasStatus.c_str());
+        }
+        for (auto& img : images) stbi_image_free(img.pixels);
+    }
+    if (!m_AtlasStatus.empty()) ImGui::TextWrapped("%s", m_AtlasStatus.c_str());
+    ImGui::End();
 }
 
 void EditorLayer::DrawWeatherZoneComponent(ECS::Entity entity) {

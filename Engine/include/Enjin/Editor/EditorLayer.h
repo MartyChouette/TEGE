@@ -308,6 +308,20 @@ public:
     void PushConsoleMessage(LogLevel level, LogCategory category, const std::string& message);
 
 private:
+    // Atlas packer tool (Tools menu): packs a folder of images into one atlas
+    // texture + a .atlas.json region map for the material Atlas Region UI.
+    void DrawAtlasPackerWindow();
+    bool m_ShowAtlasPacker = false;
+    char m_AtlasInputDir[512] = {};
+    char m_AtlasOutputName[128] = "atlas";
+    int m_AtlasSize = 2048;
+    std::string m_AtlasStatus;
+
+    // Loaded atlas region map for the material inspector
+    std::string m_LoadedAtlasPath;
+    std::string m_LoadedAtlasImage;
+    std::vector<std::pair<std::string, Math::Vector4>> m_LoadedAtlasRegions;  // name -> x,y,w,h (normalized)
+
     void InitializePlayMode();
     void StartPlayMode();  // Starts play mode and applies game VSync settings
     void DrawMenuBar();
