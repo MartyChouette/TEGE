@@ -29,6 +29,13 @@ struct LightingUBO {
     spotColor: array<vec4<f32>, 4>,
     spotParams: array<vec4<f32>, 4>,
     windData: vec4<f32>,                 // xyz = wind dir * strength, w = wind clock
+    skyTop: vec4<f32>,                   // xyz zenith, w = configured flag
+    skyBottom: vec4<f32>,
+    skyHorizon: vec4<f32>,               // w = horizon haze
+    skySunDir: vec4<f32>,                // w = sun intensity
+    skySunColor: vec4<f32>,              // w = sun size
+    skyClouds: vec4<f32>,                // cov1, scale1, speed, cov2
+    skyCloudColor: vec4<f32>,            // w = scale2
 };
 
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;
@@ -1016,12 +1023,62 @@ struct ViewProjection {
     viewPos: vec3<f32>,
     time: f32,
 };
+struct LightingUBO {
+    lightDir: array<vec4<f32>, 8>,
+    lightColor: array<vec4<f32>, 8>,
+    lightParams: array<vec4<f32>, 8>,
+    ambientColor: vec4<f32>,
+    fogColor: vec4<f32>,
+    fogParams: vec4<f32>,
+    shadowParams: vec4<f32>,
+    lightCount: vec4<f32>,
+    spotPos: array<vec4<f32>, 4>,
+    spotDir: array<vec4<f32>, 4>,
+    spotColor: array<vec4<f32>, 4>,
+    spotParams: array<vec4<f32>, 4>,
+    windData: vec4<f32>,                 // xyz = wind dir * strength, w = wind clock
+    skyTop: vec4<f32>,                   // xyz zenith, w = configured flag
+    skyBottom: vec4<f32>,
+    skyHorizon: vec4<f32>,               // w = horizon haze
+    skySunDir: vec4<f32>,                // w = sun intensity
+    skySunColor: vec4<f32>,              // w = sun size
+    skyClouds: vec4<f32>,                // cov1, scale1, speed, cov2
+    skyCloudColor: vec4<f32>,            // w = scale2
+};
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;
+@group(0) @binding(1) var<uniform> lighting: LightingUBO;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) clipPos: vec4<f32>,
 };
+
+fn skyHash(p0: vec2<f32>) -> f32 {
+    var p = fract(p0 * vec2<f32>(123.34, 456.21));
+    p = p + dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+fn skyNoise(p: vec2<f32>) -> f32 {
+    let i = floor(p);
+    var f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    let a = skyHash(i);
+    let b = skyHash(i + vec2<f32>(1.0, 0.0));
+    let c = skyHash(i + vec2<f32>(0.0, 1.0));
+    let d = skyHash(i + vec2<f32>(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+fn skyFbm(p0: vec2<f32>) -> f32 {
+    var p = p0;
+    var v = 0.0;
+    var a = 0.5;
+    for (var i = 0; i < 4; i = i + 1) {
+        v = v + skyNoise(p) * a;
+        p = p * 2.03;
+        a = a * 0.5;
+    }
+    return v;
+}
 
 @vertex
 fn vs_main(@builtin(vertex_index) vertexIndex: u32) -> VertexOutput {
@@ -1052,16 +1109,65 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         invView[2][0] * viewDir.x + invView[2][1] * viewDir.y + invView[2][2] * viewDir.z
     ));
 
-    // Atmospheric gradient: horizon to zenith
+    // Palette: authored scene sky when configured, classic defaults otherwise
+    var horizon = vec3<f32>(0.6, 0.7, 0.85);
+    var zenith = vec3<f32>(0.25, 0.4, 0.75);
+    var ground = vec3<f32>(0.4, 0.45, 0.4);
+    let configured = lighting.skyTop.w > 0.5;
+    if (configured) {
+        zenith = lighting.skyTop.xyz;
+        ground = lighting.skyBottom.xyz;
+        horizon = lighting.skyHorizon.xyz;
+    }
     let t = clamp(worldDir.y * 0.5 + 0.5, 0.0, 1.0);
-    let horizon = vec3<f32>(0.6, 0.7, 0.85);    // light blue-gray at horizon
-    let zenith = vec3<f32>(0.25, 0.4, 0.75);     // deeper blue at top
-    let ground = vec3<f32>(0.4, 0.45, 0.4);      // muted green-gray below
     var sky = mix(horizon, zenith, pow(t, 0.8));
-    // Below horizon
     if (worldDir.y < 0.0) {
         let gt = clamp(-worldDir.y * 2.0, 0.0, 1.0);
         sky = mix(horizon, ground, gt);
+    }
+
+    if (configured) {
+        // Horizon haze
+        let haze = lighting.skyHorizon.w;
+        if (haze > 0.001) {
+            let band = pow(1.0 - clamp(abs(worldDir.y), 0.0, 1.0), 6.0);
+            sky = mix(sky, mix(sky, vec3<f32>(0.82, 0.86, 0.92), 0.6), band * haze);
+        }
+        // Sun disc + glow
+        let sunI = lighting.skySunDir.w;
+        if (sunI > 0.001) {
+            let sunDir = normalize(lighting.skySunDir.xyz);
+            let d = max(dot(worldDir, sunDir), 0.0);
+            let size = max(lighting.skySunColor.w, 0.001);
+            let disc = smoothstep(1.0 - size, 1.0 - size * 0.35, d);
+            let glow = pow(d, 48.0) * 0.35;
+            sky = sky + lighting.skySunColor.xyz * (disc + glow) * sunI;
+        }
+        // Cloud layers drifting with the wind
+        let upness = smoothstep(0.02, 0.18, worldDir.y);
+        if (upness > 0.0) {
+            var drift = lighting.windData.xz;
+            if (dot(drift, drift) < 1e-5) { drift = vec2<f32>(1.0, 0.35); }
+            drift = normalize(drift);
+            let plane = worldDir.xz / (worldDir.y + 0.18);
+            let time = lighting.windData.w;
+            let speed = lighting.skyClouds.z * 0.01;
+            let cov1 = lighting.skyClouds.x;
+            if (cov1 > 0.001) {
+                let p = plane * (2.0 * lighting.skyClouds.y) + drift * (time * speed);
+                let n = skyFbm(p);
+                let m = smoothstep(1.0 - cov1, 1.0 - cov1 + 0.28, n) * upness;
+                let lit2 = 0.75 + 0.25 * clamp(normalize(lighting.skySunDir.xyz).y, 0.0, 1.0);
+                sky = mix(sky, lighting.skyCloudColor.xyz * lit2, m * 0.85);
+            }
+            let cov2 = lighting.skyClouds.w;
+            if (cov2 > 0.001) {
+                let p2 = plane * (2.0 * lighting.skyCloudColor.w) + drift * (time * speed * 1.7) + vec2<f32>(37.7, 11.3);
+                let n2 = skyFbm(p2);
+                let m2 = smoothstep(1.0 - cov2, 1.0 - cov2 + 0.22, n2) * upness;
+                sky = mix(sky, lighting.skyCloudColor.xyz * 0.92, m2 * 0.55);
+            }
+        }
     }
     return vec4<f32>(sky, 1.0);
 }

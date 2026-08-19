@@ -36,6 +36,13 @@ struct LightingUBO {
     spotColor: array<vec4<f32>, 4>,      // color.rgb, intensity.w
     spotParams: array<vec4<f32>, 4>,     // innerCutoff.x, outerCutoff.y, linear.z, quadratic.w
     windData: vec4<f32>,                 // xyz = wind dir * strength, w = wind clock
+    skyTop: vec4<f32>,                   // xyz zenith, w = configured flag
+    skyBottom: vec4<f32>,
+    skyHorizon: vec4<f32>,               // w = horizon haze
+    skySunDir: vec4<f32>,                // w = sun intensity
+    skySunColor: vec4<f32>,              // w = sun size
+    skyClouds: vec4<f32>,                // cov1, scale1, speed, cov2
+    skyCloudColor: vec4<f32>,            // w = scale2
 };
 
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;

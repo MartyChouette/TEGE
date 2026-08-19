@@ -426,6 +426,7 @@ public:
                     Enjin::Scene::SceneSerializer serializer(m_World.get());
                     serializer.LoadFromString(sceneStr);
                     m_SceneRenderSettings = serializer.GetRenderSettings();
+                    if (m_RenderSystem) m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
                     sceneLoaded = true;
                     ENJIN_LOG_INFO(Player, "Loaded scene: %s", m_StartScene.c_str());
                     ShowWebContentWarnings(sceneStr);
@@ -443,6 +444,7 @@ public:
                     Enjin::Scene::SceneSerializer serializer(m_World.get());
                     serializer.LoadFromString(sceneStr);
                     m_SceneRenderSettings = serializer.GetRenderSettings();
+                    if (m_RenderSystem) m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
                     sceneLoaded = true;
                     ENJIN_LOG_INFO(Player, "Loaded loose scene: scene.enjin");
                     ShowWebContentWarnings(sceneStr);

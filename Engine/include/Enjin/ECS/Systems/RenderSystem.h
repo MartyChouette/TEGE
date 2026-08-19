@@ -94,6 +94,7 @@ namespace Enjin { namespace Effects {
 #include <memory>
 #include <vector>
 #include "Enjin/Effects/ParticleColliders.h"
+#include "Enjin/Renderer/Skybox.h"   // SkyboxConfig is backend-agnostic (class below is guarded)
 
 #if !ENJIN_RENDERER_WEBGPU
 // Forward declarations for RT subsystems and rendering infrastructure
@@ -480,6 +481,11 @@ public:
         return out;
     }
 
+#if ENJIN_RENDERER_WEBGPU
+    // Web variant: store the scene's sky config; the lighting-UBO fill reads it.
+    void SetSkybox(const Renderer::SkyboxConfig& config) { m_WebSkyConfig = config; m_WebSkyConfigured = true; }
+#endif
+
     void SetWindSystem(Effects::WindSystem* wind) { m_WindSystem = wind; }
     Effects::WindSystem* GetWindSystem() const { return m_WindSystem; }
 
@@ -728,6 +734,8 @@ public:
 
 #if !ENJIN_RENDERER_WEBGPU
     // Skybox
+    // (impl differs per backend: Vulkan bakes/applies deferred; web feeds the
+    // lighting UBO's sky block)
     void SetSkybox(const Renderer::SkyboxConfig& config);
     const Renderer::SkyboxConfig& GetSkyboxConfig() const { return m_Skybox.GetConfig(); }
     Renderer::Skybox* GetSkybox() { return &m_Skybox; }
@@ -1305,6 +1313,8 @@ private:
     bool m_BackfaceCulling = false;
     bool m_WireframeMode = false;
     Effects::WindSystem* m_WindSystem = nullptr;
+    Renderer::SkyboxConfig m_WebSkyConfig;   // web: scene sky (desktop uses m_Skybox)
+    bool m_WebSkyConfigured = false;
     std::vector<ParticleImpact> m_ParticleImpacts;
     std::vector<ECS::Entity> m_AnimFootsteps;
     bool m_RainActive = false;

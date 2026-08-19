@@ -83,7 +83,15 @@ struct WebLightingUBO {
     WebLightVec4 spotColor[4];             // 64   color.rgb, intensity.w
     WebLightVec4 spotParams[4];            // 64   innerCutoff.x, outerCutoff.y
     WebLightVec4 windData;                 // 16   xyz = wind dir * strength, w = wind clock
-};                                         // Total: 736 bytes
+    // Sky palette + atmosphere (mirrors the sky block in pbr.wgsl/SKY_WGSL)
+    WebLightVec4 skyTop;                   // xyz zenith color, w = configured flag
+    WebLightVec4 skyBottom;                // xyz ground-arc color
+    WebLightVec4 skyHorizon;               // xyz horizon color, w = horizon haze
+    WebLightVec4 skySunDir;                // xyz sun direction, w = sun intensity
+    WebLightVec4 skySunColor;              // xyz sun color, w = sun size
+    WebLightVec4 skyClouds;                // x cov1, y scale1, z speed, w cov2
+    WebLightVec4 skyCloudColor;            // xyz cloud color, w = scale2
+};                                         // Total: 848 bytes
 
 struct WebObjectDataUBO {
     alignas(16) Math::Matrix4 model;       // 64
@@ -1559,6 +1567,20 @@ void RenderSystem::Update(f32 deltaTime) {
             lit.windData = {wv.x, wv.y, wv.z, wv.w};
         } else {
             lit.windData = {0.0f, 0.0f, 0.0f, 0.0f};
+        }
+
+        // Scene sky -> the sky shader's palette + atmosphere block
+        {
+            const Renderer::SkyboxConfig& sc = m_WebSkyConfig;
+            f32 configured = (m_WebSkyConfigured &&
+                              sc.type != Renderer::SkyboxType::None) ? 1.0f : 0.0f;
+            lit.skyTop = {sc.topColor.x, sc.topColor.y, sc.topColor.z, configured};
+            lit.skyBottom = {sc.bottomColor.x, sc.bottomColor.y, sc.bottomColor.z, 0.0f};
+            lit.skyHorizon = {sc.horizonColor.x, sc.horizonColor.y, sc.horizonColor.z, sc.horizonHaze};
+            lit.skySunDir = {sc.sunDirection.x, sc.sunDirection.y, sc.sunDirection.z, sc.sunIntensity};
+            lit.skySunColor = {sc.sunColor.x, sc.sunColor.y, sc.sunColor.z, sc.sunSize};
+            lit.skyClouds = {sc.cloudCoverage, sc.cloudScale, sc.cloudSpeed, sc.cloud2Coverage};
+            lit.skyCloudColor = {sc.cloudColor.x, sc.cloudColor.y, sc.cloudColor.z, sc.cloud2Scale};
         }
 
         bufMgr->UploadData(m_WebLightingBuffer, &lit, sizeof(lit));
