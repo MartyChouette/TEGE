@@ -10,7 +10,7 @@
 
 namespace Enjin {
 namespace ECS { class World; class RenderSystem; }
-namespace Physics { class IPhysicsBackend; }
+namespace Physics { class IPhysicsBackend; class IPhysicsBackend2D; }
 
 namespace Gameplay {
 
@@ -25,8 +25,9 @@ namespace Gameplay {
 class ENJIN_API SurfaceResponseSystem {
 public:
     void Initialize(Audio::SimpleAudio* audio, ECS::RenderSystem* render,
-                    Physics::IPhysicsBackend* physics) {
-        m_Audio = audio; m_Render = render; m_Physics = physics;
+                    Physics::IPhysicsBackend* physics,
+                    Physics::IPhysicsBackend2D* physics2D = nullptr) {
+        m_Audio = audio; m_Render = render; m_Physics = physics; m_Physics2D = physics2D;
     }
 
     void Update(ECS::World* world, f32 deltaTime);
@@ -53,6 +54,7 @@ private:
     Audio::SimpleAudio* m_Audio = nullptr;
     ECS::RenderSystem* m_Render = nullptr;
     Physics::IPhysicsBackend* m_Physics = nullptr;
+    Physics::IPhysicsBackend2D* m_Physics2D = nullptr;
 
     std::unordered_map<u32, WalkerState> m_State;                  // EntityIndex -> walker state
     std::unordered_map<u32, f32> m_ImpactNextAllowed;              // EntityIndex -> next allowed play time

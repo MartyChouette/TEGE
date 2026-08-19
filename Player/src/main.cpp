@@ -926,7 +926,7 @@ public:
         m_ControllerSystem.Update(deltaTime);
         // TotK-style surface response: footstep/impact sound + particle from the
         // material of the surface walked on / struck (3D physics path).
-        m_SurfaceResponseSystem.Initialize(&m_SimpleAudio, m_RenderSystem, m_Physics.get());
+        m_SurfaceResponseSystem.Initialize(&m_SimpleAudio, m_RenderSystem, m_Physics.get(), m_Physics2D.get());
         m_SurfaceResponseSystem.Update(m_World.get(), deltaTime);
         m_ClothSystem.Update(m_World.get(), deltaTime, &m_WindSystem);
         // Update flower system viewport (full screen in player)

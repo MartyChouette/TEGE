@@ -2,6 +2,8 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
+#include "Enjin/Physics/IPhysicsBackend2D.h"
+#include "Enjin/Physics/PhysicsTypes2D.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Gameplay.h"     // RigidbodyComponent
@@ -154,6 +156,53 @@ void SurfaceResponseSystem::Update(World* world, f32 deltaTime) {
                 if (approach < mat->impactThreshold) break;   // too gentle to hear
                 EmitSurface(world, surf, ev.contactPoint, ev.normal, /*impact=*/true);
                 break;   // one impact sound per collision
+            }
+        }
+    }
+
+    // --- 2D footsteps (Box2D games): same distance cadence. One downward ray
+    // finds both groundedness AND the surface entity (2D raycasts skip sensors
+    // by design; the first hit that isn't the walker itself is the ground). ---
+    if (m_Physics2D) {
+        for (Entity e : world->GetEntitiesWithComponent<Physics::Body2DComponent>()) {
+            auto* b = world->GetComponent<Physics::Body2DComponent>(e);
+            auto* xf = world->GetComponent<TransformComponent>(e);
+            if (!b || !xf || b->isStatic || b->isSensor) continue;
+
+            WalkerState& st = m_State[EntityIndex(e)];
+            if (st.eventSuppress > 0.0f) st.eventSuppress -= deltaTime;
+
+            f32 hspeed = std::fabs(b->velocity.x);
+            Entity ground = INVALID_ENTITY;
+            Math::Vector2 groundPoint{0.0f, 0.0f};
+            if (hspeed >= kWalkMinSpeed) {
+                auto hits = m_Physics2D->RaycastAll(
+                    Math::Vector2(xf->position.x, xf->position.y),
+                    Math::Vector2(0.0f, -1.0f), kGroundProbe);
+                for (const auto& h : hits) {
+                    if (EntityIndex(h.entity) == EntityIndex(e)) continue;   // own collider
+                    ground = h.entity;
+                    groundPoint = h.point;
+                    break;
+                }
+            }
+            if (ground == INVALID_ENTITY) {
+                st.distanceSinceStep = 0.0f;
+                st.lastPos = xf->position;
+                st.haveLast = true;
+                continue;
+            }
+
+            if (st.haveLast) st.distanceSinceStep += std::fabs(xf->position.x - st.lastPos.x);
+            st.lastPos = xf->position;
+            st.haveLast = true;
+
+            if (st.eventSuppress <= 0.0f && st.distanceSinceStep >= kStepLength) {
+                st.distanceSinceStep = 0.0f;
+                st.eventSuppress = 0.0f;
+                EmitSurface(world, ground,
+                            Math::Vector3(groundPoint.x, groundPoint.y, xf->position.z),
+                            Math::Vector3(0.0f, 1.0f, 0.0f), /*impact=*/false);
             }
         }
     }
