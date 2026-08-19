@@ -42,6 +42,7 @@ struct SkyboxConfig {
     f32 cloud2Coverage = 0.0f;    // layer 2 (fine, high, faster)
     f32 cloud2Scale = 2.5f;
     f32 horizonHaze = 0.0f;       // bright band hugging the horizon
+    f32 cloudShadowStrength = 0.6f;  // how much passing clouds darken the ground (0 = off)
 };
 
 } // namespace Renderer

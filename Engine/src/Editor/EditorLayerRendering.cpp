@@ -2209,6 +2209,8 @@ void EditorLayer::DrawSettingsSection_Skybox() {
                 changed |= ImGui::SliderFloat("Cloud Scale", &config.cloudScale, 0.2f, 6.0f);
                 changed |= ImGui::SliderFloat("Cloud Speed", &config.cloudSpeed, 0.0f, 10.0f);
                 changed |= ImGui::ColorEdit3("Cloud Color", &config.cloudColor.x);
+                changed |= ImGui::SliderFloat("Cloud Shadows", &config.cloudShadowStrength, 0.0f, 1.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much passing clouds darken the ground (sun light only)");
             }
             changed |= ImGui::SliderFloat("High Clouds", &config.cloud2Coverage, 0.0f, 1.0f);
             if (config.cloud2Coverage > 0.001f) {

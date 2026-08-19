@@ -176,6 +176,12 @@ struct alignas(16) LightingUBO {
     DirectionalLightData directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLightData pointLights[MAX_POINT_LIGHTS];
     SpotLightData spotLights[MAX_SPOT_LIGHTS];
+
+    // Cloud shadows: passing sky clouds darken the sun's contribution.
+    // x = coverage, y = scale, z = shadow strength, w = drift speed.
+    // Appended LAST so every shader declaring the old block stays a valid
+    // prefix of the bigger buffer (only triangle.frag reads this field).
+    alignas(16) Math::Vector4 cloudShadowParams;
 };
 
 } // namespace ECS

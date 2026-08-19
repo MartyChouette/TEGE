@@ -99,6 +99,7 @@ layout(binding = 1) uniform LightingUBO {
     DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLight pointLights[MAX_POINT_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];
+    vec4 cloudShadowParams;      // x = coverage, y = scale, z = strength, w = speed
 } lighting;
 
 // Material via push constants (per-object data)
@@ -847,6 +848,33 @@ vec4 sampleVirtualTexture(vec2 uv) {
 }
 #endif
 
+// ── Cloud shadows: world-plane FBM matching the sky's cloud layer ──
+float csHash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+float csNoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = csHash(i), b = csHash(i + vec2(1, 0));
+    float c = csHash(i + vec2(0, 1)), d = csHash(i + vec2(1, 1));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+float CloudShadowFactor(vec2 xz) {
+    vec4 cp = lighting.cloudShadowParams;
+    vec2 drift = lighting.windData.xz;
+    if (dot(drift, drift) < 1e-5) drift = vec2(1.0, 0.35);
+    drift = normalize(drift);
+    // Same coverage/speed as the sky; world scale approximates a ~100-unit
+    // cloud altitude so shadow patches read as cloud-sized.
+    vec2 p = xz * (0.01 * max(cp.y, 0.05)) + drift * (lighting.windData.w * cp.w * 0.01);
+    float v = 0.0, a = 0.5;
+    for (int i = 0; i < 3; ++i) { v += csNoise(p) * a; p *= 2.03; a *= 0.5; }
+    float m = smoothstep(1.0 - cp.x, 1.0 - cp.x + 0.28, v);
+    return 1.0 - m * clamp(cp.z, 0.0, 1.0);
+}
+
 void main() {
 
     // Select this draw's material entry (adr-0003). Direct draws encode the
@@ -1194,6 +1222,11 @@ void main() {
                 }
 
                 shadow = (ditherFactor > ditherThreshold) ? 1.0 : (1.0 - lighting.shadowStrength);
+            }
+
+            // Passing clouds shade the sun (coverage 0 or strength 0 = off)
+            if (lighting.cloudShadowParams.x > 0.001 && lighting.cloudShadowParams.z > 0.001) {
+                shadow *= CloudShadowFactor(fragWorldPos.xz);
             }
         }
 

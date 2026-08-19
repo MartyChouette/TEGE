@@ -9215,6 +9215,13 @@ void RenderSystem::UpdateFrameUniforms() {
         lighting.windData = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
     }
 
+    {
+        // Cloud shadows follow the sky's cloud layer
+        const Renderer::SkyboxConfig& skyC = m_Skybox.GetConfig();
+        lighting.cloudShadowParams = {skyC.cloudCoverage, skyC.cloudScale,
+                                      skyC.cloudShadowStrength, skyC.cloudSpeed};
+    }
+
     lighting.fogParams = Math::Vector4(m_FogDensity, m_FogStart, m_FogEnd, m_FogHeightFalloff);
     lighting.fogColorSnow = Math::Vector4(m_FogColor.x, m_FogColor.y, m_FogColor.z, m_SnowIntensity);
 
