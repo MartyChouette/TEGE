@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
 #include <string>
+#include <functional>
 #include <vector>
 #include <unordered_map>
 
@@ -116,6 +117,11 @@ public:
     // Code generation — topological sort + per-node GLSL emission
     ShaderCodeResult GenerateGLSL() const;
 
+    // Resolves a texture path to a bindless array index (set 1 binding 0) at
+    // codegen time; wired by the editor to the render system's texture cache.
+    // Returns -1 when the texture can't load (nodes fall back to neutral gray).
+    void SetTextureResolver(std::function<i32(const std::string&)> r) { m_TextureResolver = std::move(r); }
+
     // The editor sets a request when "Apply to Selected Entity" is clicked; EditorLayer
     // consumes it after Render() and compiles the graph onto the selected entity's material.
     bool ConsumeApplyRequest() { bool r = m_ApplyRequested; m_ApplyRequested = false; return r; }
@@ -125,6 +131,7 @@ public:
     bool Load(const std::string& path);
 
 private:
+    std::function<i32(const std::string&)> m_TextureResolver;
     ShaderGraphData* m_Graph = nullptr;
     bool m_Open = false;
     u32 m_SelectedNodeId = 0;

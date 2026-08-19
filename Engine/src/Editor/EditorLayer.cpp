@@ -3382,6 +3382,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         if (m_ShaderGraphEditor.ConsumeApplyRequest()) {
             if (m_RenderSystem && m_World && m_PrimarySelected != ECS::INVALID_ENTITY &&
                 m_World->IsValid(m_PrimarySelected)) {
+                m_ShaderGraphEditor.SetTextureResolver([this](const std::string& p) {
+                    return m_RenderSystem ? m_RenderSystem->ResolveBindlessTextureIndex(p) : -1;
+                });
                 auto code = m_ShaderGraphEditor.GenerateGLSL();
                 if (code.success) {
                     std::string err;

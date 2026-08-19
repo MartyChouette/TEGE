@@ -1014,9 +1014,14 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
         }
     }
 
-    // --- Collect texture samplers ---
-    u32 samplerBinding = 3; // Start after existing bindings 0-2
-    std::unordered_map<u32, u32> nodeSamplerBinding;
+    // --- Resolve texture nodes to bindless indices ---
+    // The old approach declared per-node samplers at set-0 bindings 3+, which
+    // collide with the engine's own set-0 bindings (shadow maps, material SSBO)
+    // - the reason graph textures never worked. Textures now resolve to slots
+    // in the set-1 bindless array at codegen time and samples go through the
+    // sampler table the bindless migration added. -1 = unresolved (gray).
+    std::unordered_map<u32, i32> nodeTexIndex;
+    bool anyResolvedTexture = false;
     for (u32 nid : sorted) {
         auto it = nodeMap.find(nid);
         if (it == nodeMap.end() || !it->second) continue;
@@ -1025,9 +1030,20 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
             node->type == ShaderNodeType::SampleCubemap ||
             node->type == ShaderNodeType::TextureParameter ||
             node->type == ShaderNodeType::Parallax) {
-            nodeSamplerBinding[nid] = samplerBinding++;
+            i32 idx = -1;
+            if (m_TextureResolver && !node->texturePath.empty() &&
+                node->type != ShaderNodeType::SampleCubemap) {
+                idx = m_TextureResolver(node->texturePath);
+            }
+            nodeTexIndex[nid] = idx;
+            if (idx >= 0) anyResolvedTexture = true;
         }
     }
+    auto bindlessSampleExpr = [&nodeTexIndex](u32 nid) -> std::string {
+        auto it = nodeTexIndex.find(nid);
+        if (it == nodeTexIndex.end() || it->second < 0) return std::string();
+        return "sampler2D(bindlessTextures[" + std::to_string(it->second) + "], bindlessSamplers[0])";
+    };
 
     // --- Generate fragment shader body ---
     std::string body;
@@ -1092,9 +1108,6 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
                 break;
             case ShaderNodeType::FloatParameter:
                 body += "    float " + var + " = " + std::to_string(node->floatValue) + "; // param: " + node->parameterName + "\n";
-                break;
-            case ShaderNodeType::TextureParameter:
-                // Handled as sampler below
                 break;
 
             // --- Math ---
@@ -1214,18 +1227,20 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
             }
 
             // --- Texture ---
-            case ShaderNodeType::SampleTexture2D: {
+            case ShaderNodeType::SampleTexture2D:
+            case ShaderNodeType::TextureParameter: {
                 auto uv = GetInputExpr(graph, nid, 0, "fragUV");
-                auto it = nodeSamplerBinding.find(nid);
-                u32 bind = it != nodeSamplerBinding.end() ? it->second : 3;
-                body += "    vec4 " + var + " = texture(uSampler" + std::to_string(bind) + ", " + uv + ");\n";
+                std::string tex = bindlessSampleExpr(nid);
+                if (!tex.empty()) {
+                    body += "    vec4 " + var + " = texture(" + tex + ", " + uv + ");\n";
+                } else {
+                    body += "    vec4 " + var + " = vec4(0.5, 0.5, 0.5, 1.0); // texture not resolved\n";
+                }
                 break;
             }
             case ShaderNodeType::SampleCubemap: {
-                auto dir = GetInputExpr(graph, nid, 0, "fragNormal");
-                auto it = nodeSamplerBinding.find(nid);
-                u32 bind = it != nodeSamplerBinding.end() ? it->second : 3;
-                body += "    vec4 " + var + " = texture(uSamplerCube" + std::to_string(bind) + ", " + dir + ");\n";
+                // Cubemaps don't live in the 2D bindless array yet - neutral output.
+                body += "    vec4 " + var + " = vec4(0.5, 0.5, 0.5, 1.0); // cubemap sampling not supported yet\n";
                 break;
             }
             case ShaderNodeType::UVTransform: {
@@ -1241,8 +1256,8 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
                 auto steps = GetInputExpr(graph, nid, 2, "16.0");
                 // Parallax Occlusion Mapping: steep parallax + occlusion interpolation
                 // Uses height map sampler assigned to this node
-                std::string samplerName = "uSampler_" + std::to_string(nid);
-                if (nodeSamplerBinding.count(nid)) {
+                std::string samplerName = bindlessSampleExpr(nid);
+                if (!samplerName.empty()) {
                     body += "    vec2 " + var + ";\n";
                     body += "    {\n";
                     body += "        vec3 viewDir = normalize(fragTBN * (uCameraPos - fragWorldPos));\n";
@@ -1435,22 +1450,13 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
         }
     }
 
-    // --- Build sampler declarations ---
+    // --- Bindless texture declarations (set 1, shared with the main pass) ---
     std::string samplerDecls;
-    for (const auto& [nid, binding] : nodeSamplerBinding) {
-        auto nodeIt = nodeMap.find(nid);
-        if (nodeIt == nodeMap.end()) {
-            ENJIN_LOG_WARN(Editor, "ShaderGraph: Node %u referenced in sampler bindings not found in nodeMap, skipping", nid);
-            continue;
-        }
-        auto* node = nodeIt->second;
-        if (node->type == ShaderNodeType::SampleCubemap) {
-            samplerDecls += "layout(set = 0, binding = " + std::to_string(binding) +
-                ") uniform samplerCube uSamplerCube" + std::to_string(binding) + ";\n";
-        } else {
-            samplerDecls += "layout(set = 0, binding = " + std::to_string(binding) +
-                ") uniform sampler2D uSampler" + std::to_string(binding) + ";\n";
-        }
+    if (anyResolvedTexture) {
+        samplerDecls +=
+            "#extension GL_EXT_nonuniform_qualifier : enable\n"
+            "layout(set = 1, binding = 0) uniform texture2D bindlessTextures[];\n"
+            "layout(set = 1, binding = 2) uniform sampler bindlessSamplers[8];\n";
     }
 
     // --- Assemble vertex shader ---

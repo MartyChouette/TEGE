@@ -846,6 +846,11 @@ public:
     // Load or retrieve a cached texture (public wrapper for editor/tool use)
     std::shared_ptr<Renderer::Texture> LoadTexture(const std::string& path) { return GetOrLoadTexture(path); }
 
+    // Load (or fetch cached) a texture and return its bindless array index
+    // (set 1 binding 0), or -1 on failure. Used by the shader graph so texture
+    // nodes can bake their index at compile time.
+    i32 ResolveBindlessTextureIndex(const std::string& path);
+
     // Clear a path from the failed texture cache so it will be retried on next load
     void ClearFailedTexture(const std::string& path) { m_FailedTextures.erase(path); }
 #endif

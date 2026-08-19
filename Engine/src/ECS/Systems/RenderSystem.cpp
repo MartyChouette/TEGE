@@ -10015,6 +10015,15 @@ void RenderSystem::ClearEntityCustomShader(Entity entity) {
     m_EntityCustomShader.erase(static_cast<u32>(EntityIndex(entity)));
 }
 
+i32 RenderSystem::ResolveBindlessTextureIndex(const std::string& path) {
+    if (path.empty()) return -1;
+    auto tex = GetOrLoadTexture(path);
+    if (!tex || !tex->IsValid()) return -1;
+    auto it = m_TextureBindlessHandles.find(tex.get());
+    if (it == m_TextureBindlessHandles.end()) return -1;
+    return static_cast<i32>(it->second);
+}
+
 bool RenderSystem::SetEntityCustomShader(Entity entity, const std::string& vertGLSL,
                                          const std::string& fragGLSL, std::string& err) {
     if (!m_VulkanRenderer || !m_Pipeline) { err = "Renderer not ready"; return false; }
