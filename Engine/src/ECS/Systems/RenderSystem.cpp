@@ -13357,7 +13357,10 @@ void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
     bindings[0].binding = 0;
     bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     bindings[0].descriptorCount = 1;
-    bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    // Vertex reads the matrix; the fragment now reads the atmosphere params
+    // from the same block (VUID-07988: layout stages must cover shader usage,
+    // or the fragment silently reads zeros and no sun/clouds/haze render).
+    bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[1].binding = 1;
     bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     bindings[1].descriptorCount = 1;
