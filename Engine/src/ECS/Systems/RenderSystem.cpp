@@ -2896,6 +2896,7 @@ void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* /*sim*/) {}
 void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& /*w*/, bool /*r*/, u32, u32) {}
 void RenderSystem::RenderGPUParticles() {}  // Vulkan-only (needs WebGPU compute first)
 void RenderSystem::SpawnGPUParticles(u32, const Math::Vector3&, const Math::Vector3&) {}
+void RenderSystem::SpawnSurfaceBurst(u32, const Math::Vector3&, const Math::Vector3&, u8) {}
 void RenderSystem::TickGPUEmitters(f32) {}
 void RenderSystem::RenderParticles(u32, u32) {}
 void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem&, u32, u32) {}
@@ -12939,6 +12940,29 @@ void RenderSystem::RenderGPUParticles(VkRenderPass pass, u32 colorAttachments) {
     m_GPUParticleSystem->Render(commandBuffer,
                                 (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)],
                                 bindlessSet);
+}
+
+void RenderSystem::SpawnSurfaceBurst(u32 count, const Math::Vector3& position,
+                                     const Math::Vector3& direction, u8 surfaceParticle) {
+    if (!m_GPUParticleSystem) return;
+    Effects::ParticleSpawnParams p;
+    switch (surfaceParticle) {
+        case 1: p = Effects::PresetSpawnParams(Effects::GPUParticlePreset::Dust); break;
+        case 2: // Grass: dust motion with a leafy green tint
+            p = Effects::PresetSpawnParams(Effects::GPUParticlePreset::Dust);
+            p.color = {0.35f, 0.55f, 0.2f, 0.6f};
+            break;
+        case 3: p = Effects::PresetSpawnParams(Effects::GPUParticlePreset::Sparks); break;
+        case 4: p = Effects::PresetSpawnParams(Effects::GPUParticlePreset::Liquid); break;
+        case 5: p = Effects::PresetSpawnParams(Effects::GPUParticlePreset::Smoke); break;
+        case 6: p = Effects::PresetSpawnParams(Effects::GPUParticlePreset::Snow); break;
+        default: p = Effects::PresetSpawnParams(Effects::GPUParticlePreset::Dust); break;
+    }
+    // Surface bursts are small and near the ground: keep them shortlived and
+    // non-colliding so they never fight the surface they came from.
+    p.lifetime *= 0.5f;
+    p.collide = false;
+    m_GPUParticleSystem->SpawnWithParams(count, position, direction, p);
 }
 
 void RenderSystem::SpawnGPUParticles(u32 count, const Math::Vector3& position,

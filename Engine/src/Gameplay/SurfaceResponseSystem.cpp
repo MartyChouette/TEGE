@@ -49,7 +49,7 @@ void SurfaceResponseSystem::EmitSurface(World* world, Entity surface, const Math
         Math::Vector3 dir = normal;
         if (dir.x == 0.0f && dir.y == 0.0f && dir.z == 0.0f) dir = Math::Vector3(0, 1, 0);
         u32 count = impact ? 20u : 12u;
-        m_Render->SpawnGPUParticles(count, at, dir);
+        m_Render->SpawnSurfaceBurst(count, at, dir, mat->surfaceParticle);
     }
 }
 

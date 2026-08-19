@@ -553,6 +553,11 @@ public:
 #endif
     // Seed GPU particles (wakes the compute sim; Debug Workstation has a burst button)
     void SpawnGPUParticles(u32 count, const Math::Vector3& position, const Math::Vector3& direction);
+    // Material surface burst: maps the MaterialComponent surfaceParticle id
+    // (1=Dust,2=Grass,3=Spark,4=Splash,5=Smoke,6=Snow) to a particle preset so
+    // footsteps and impacts look like the surface instead of a generic puff.
+    void SpawnSurfaceBurst(u32 count, const Math::Vector3& position,
+                           const Math::Vector3& direction, u8 surfaceParticle);
     // Spawn every frame from GPUParticleEmitterComponent entities (continuous + burst)
     void TickGPUEmitters(f32 deltaTime);
     void RenderParticles(u32 viewportWidth = 0, u32 viewportHeight = 0);
