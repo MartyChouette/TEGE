@@ -4632,7 +4632,17 @@ void RenderSystem::Update(f32 deltaTime) {
     // and reallocate the animator storage, so looking up fresh each iteration avoids the
     // dangling-cached-animator crash class. No-op in the editor (no callback wired).
     for (auto& job : m_AnimJobs) {
-        if (AnimatorComponent* a = ResolveAnimator(job.entity)) a->animator.FlushEvents();
+        if (AnimatorComponent* a = ResolveAnimator(job.entity)) {
+            // Engine-level event routing before the script callback consumes the
+            // queue: "footstep" anim events drive the surface-response override
+            // (clip-authored cadence instead of the automatic distance-based one).
+            for (const auto& evName : a->animator.GetPendingEvents()) {
+                if (evName == "footstep" && m_AnimFootsteps.size() < 64) {
+                    m_AnimFootsteps.push_back(job.entity);
+                }
+            }
+            a->animator.FlushEvents();
+        }
     }
 
     // Classify scene composition (2D / 2.5D / 3D) before rendering decisions

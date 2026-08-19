@@ -414,6 +414,11 @@ public:
     // Safe to call every frame; no-op when nothing fired.
     void FlushEvents();
     bool HasPendingEvents() const { return !m_PendingEvents.empty(); }
+    // Events collected during the (possibly parallel) sample, not yet flushed.
+    // Read on the main thread before FlushEvents to route engine-level events
+    // (e.g. "footstep" -> SurfaceResponseSystem) without stealing the single
+    // script callback slot.
+    const std::vector<std::string>& GetPendingEvents() const { return m_PendingEvents; }
 
     // Accessors for serialization and editor
     const std::unordered_map<std::string, SkeletalAnimation>& GetAnimations() const { return m_Animations; }

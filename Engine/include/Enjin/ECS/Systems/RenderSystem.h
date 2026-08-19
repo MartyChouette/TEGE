@@ -465,6 +465,14 @@ public:
         f32 speed;             // impact speed along the surface normal (m/s)
         ECS::Entity emitter;   // INVALID_ENTITY if the emitter no longer exists
     };
+    // Entities whose animation fired a "footstep" event since the last take
+    // (consumed by SurfaceResponseSystem for the anim-event step override).
+    std::vector<ECS::Entity> TakeAnimFootsteps() {
+        std::vector<ECS::Entity> out = std::move(m_AnimFootsteps);
+        m_AnimFootsteps.clear();
+        return out;
+    }
+
     // Drain the impacts recorded since the last take (consumer clears).
     std::vector<ParticleImpact> TakeParticleImpacts() {
         std::vector<ParticleImpact> out = std::move(m_ParticleImpacts);
@@ -1293,6 +1301,7 @@ private:
     bool m_WireframeMode = false;
     Effects::WindSystem* m_WindSystem = nullptr;
     std::vector<ParticleImpact> m_ParticleImpacts;
+    std::vector<ECS::Entity> m_AnimFootsteps;
     bool m_RainActive = false;
     f32 m_AmbientIntensity = 1.0f;
     Math::Vector3 m_AmbientColor = Math::Vector3(0.1f, 0.1f, 0.15f);

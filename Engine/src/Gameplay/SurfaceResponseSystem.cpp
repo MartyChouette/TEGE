@@ -74,6 +74,15 @@ void SurfaceResponseSystem::OnFootstepEvent(World* world, Entity entity) {
 void SurfaceResponseSystem::Update(World* world, f32 deltaTime) {
     m_Clock += deltaTime;
 
+    // Animation-authored footsteps: a "footstep" event on a clip fires the step
+    // at the exact authored moment and briefly suppresses the automatic
+    // distance-based cadence (OnFootstepEvent handles the suppression).
+    if (m_Render && world) {
+        for (ECS::Entity stepper : m_Render->TakeAnimFootsteps()) {
+            OnFootstepEvent(world, stepper);
+        }
+    }
+
     // GPU particle impact sounds: the sim reports collider strikes (a couple of
     // frames late, inaudible); play the owning emitter's impact sound there.
     if (m_Render && m_Audio && world) {
