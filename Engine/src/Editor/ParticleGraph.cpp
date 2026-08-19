@@ -191,6 +191,11 @@ void ParticleGraphEditor::Render() {
             IM_COL32(50, 50, 50, 80));
     }
 
+    m_CanvasOriginX = canvasPos.x;
+    m_CanvasOriginY = canvasPos.y;
+    m_FramePins.clear();
+    m_PinInteracted = false;
+
     // Draw connections first (behind nodes)
     DrawConnections();
 
@@ -199,8 +204,10 @@ void ParticleGraphEditor::Render() {
         DrawNode(node);
     }
 
+    HandleLinking();
+
     // Handle canvas interaction
-    if (ImGui::IsWindowHovered() && !ImGui::IsAnyItemActive()) {
+    if (ImGui::IsWindowHovered() && !ImGui::IsAnyItemActive() && !m_Linking && !m_PinInteracted) {
         // Pan with middle mouse button
         if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
             ImVec2 delta = ImGui::GetIO().MouseDelta;
@@ -247,9 +254,34 @@ void ParticleGraphEditor::Render() {
 // Draw Node
 // ============================================================================
 
+// Flow-chain pin model: emitters produce, renderers consume, the rest do both.
+static bool PGHasInput(ParticleNodeType t) {
+    switch (t) {
+        case ParticleNodeType::PointEmitter: case ParticleNodeType::SphereEmitter:
+        case ParticleNodeType::BoxEmitter: case ParticleNodeType::ConeEmitter:
+        case ParticleNodeType::MeshEmitter:
+            return false;
+        default: return true;
+    }
+}
+static bool PGHasOutput(ParticleNodeType t) {
+    switch (t) {
+        case ParticleNodeType::BillboardRenderer: case ParticleNodeType::MeshRenderer:
+        case ParticleNodeType::TrailRenderer:
+            return false;
+        default: return true;
+    }
+}
+static ImVec2 PGPinPos(const ParticleGraphNode& n, i32 pin,
+                       f32 originX, f32 originY, const Math::Vector2& scroll, f32 zoom) {
+    f32 x = originX + (n.position.x + scroll.x) * zoom;
+    f32 y = originY + (n.position.y + scroll.y) * zoom + (NODE_HEADER + NODE_BODY * 0.5f) * zoom;
+    if (pin < 0) x += NODE_WIDTH * zoom;
+    return ImVec2(x, y);
+}
+
 void ParticleGraphEditor::DrawNode(ParticleGraphNode& node) {
     ImDrawList* drawList = ImGui::GetWindowDrawList();
-    ImVec2 canvasPos = ImGui::GetCursorScreenPos();
 
     f32 nodeW = NODE_WIDTH * m_Zoom;
     f32 headerH = NODE_HEADER * m_Zoom;
@@ -257,8 +289,8 @@ void ParticleGraphEditor::DrawNode(ParticleGraphNode& node) {
     f32 pinR = PIN_RADIUS * m_Zoom;
 
     ImVec2 nodePos(
-        canvasPos.x + (node.position.x + m_ScrollOffset.x) * m_Zoom,
-        canvasPos.y + (node.position.y + m_ScrollOffset.y) * m_Zoom
+        m_CanvasOriginX + (node.position.x + m_ScrollOffset.x) * m_Zoom,
+        m_CanvasOriginY + (node.position.y + m_ScrollOffset.y) * m_Zoom
     );
 
     ImVec2 nodeEnd(nodePos.x + nodeW, nodePos.y + headerH + bodyH);
@@ -286,19 +318,24 @@ void ParticleGraphEditor::DrawNode(ParticleGraphNode& node) {
     ImVec2 textPos(nodePos.x + 8.0f * m_Zoom, nodePos.y + 5.0f * m_Zoom);
     drawList->AddText(nullptr, 13.0f * m_Zoom, textPos, IM_COL32(255, 255, 255, 255), name);
 
-    // Input pin (left side)
-    ImVec2 inputPinPos(nodePos.x, nodePos.y + headerH + bodyH * 0.5f);
-    drawList->AddCircleFilled(inputPinPos, pinR, IM_COL32(180, 220, 220, 255));
+    // Pins: hoverable link points (grow on hover so they read as clickable)
+    ImVec2 mouse = ImGui::GetIO().MousePos;
+    auto drawPin = [&](i32 pinIdx, ImU32 col) {
+        ImVec2 p = PGPinPos(node, pinIdx, m_CanvasOriginX, m_CanvasOriginY, m_ScrollOffset, m_Zoom);
+        f32 dx = mouse.x - p.x, dy = mouse.y - p.y;
+        bool hot = (dx * dx + dy * dy) <= (pinR * 3.0f) * (pinR * 3.0f);
+        drawList->AddCircleFilled(p, hot ? pinR * 1.6f : pinR, col);
+        if (hot) drawList->AddCircle(p, pinR * 2.0f, IM_COL32(255, 255, 255, 160), 0, 1.5f);
+        m_FramePins.push_back({node.id, pinIdx, p.x, p.y});
+    };
+    if (PGHasInput(node.type)) drawPin(0, IM_COL32(180, 220, 220, 255));
+    if (PGHasOutput(node.type)) drawPin(-1, IM_COL32(220, 180, 180, 255));
 
-    // Output pin (right side)
-    ImVec2 outputPinPos(nodeEnd.x, nodePos.y + headerH + bodyH * 0.5f);
-    drawList->AddCircleFilled(outputPinPos, pinR, IM_COL32(220, 180, 180, 255));
-
-    // Invisible button for selection and dragging
-    ImGui::SetCursorScreenPos(nodePos);
+    // Invisible button for selection and dragging - inset from the pin strips
+    ImGui::SetCursorScreenPos(ImVec2(nodePos.x + pinR * 2.5f, nodePos.y));
     char btnId[32];
     snprintf(btnId, sizeof(btnId), "##pgnode_%u", node.id);
-    ImGui::InvisibleButton(btnId, ImVec2(nodeW, headerH + bodyH));
+    ImGui::InvisibleButton(btnId, ImVec2(nodeW - pinR * 5.0f, headerH + bodyH));
 
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) {
         m_SelectedNodeId = node.id;
@@ -315,11 +352,89 @@ void ParticleGraphEditor::DrawNode(ParticleGraphNode& node) {
 // Draw Connections
 // ============================================================================
 
+void ParticleGraphEditor::HandleLinking() {
+    if (!m_Graph) return;
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    ImVec2 mouse = ImGui::GetIO().MousePos;
+    f32 hitR = PIN_RADIUS * m_Zoom * 3.0f;
+
+    const FramePin* hot = nullptr;
+    f32 best = hitR * hitR;
+    for (const auto& fp : m_FramePins) {
+        f32 dx = mouse.x - fp.x, dy = mouse.y - fp.y;
+        f32 d2 = dx * dx + dy * dy;
+        if (d2 <= best) { best = d2; hot = &fp; }
+    }
+
+    if (hot && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        m_PinInteracted = true;
+        auto& links = m_Graph->links;
+        links.erase(std::remove_if(links.begin(), links.end(), [&](const ParticleGraphLink& l) {
+            if (hot->pin < 0) return l.fromNode == hot->node;
+            return l.toNode == hot->node;
+        }), links.end());
+        return;
+    }
+
+    if (hot && !m_Linking && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        m_PinInteracted = true;
+        m_Linking = true;
+        m_LinkNode = hot->node;
+        m_LinkPin = hot->pin;
+        if (hot->pin >= 0) {
+            auto& links = m_Graph->links;
+            for (auto it = links.begin(); it != links.end(); ++it) {
+                if (it->toNode == hot->node) {
+                    m_LinkNode = it->fromNode;   // detach and re-drag from the source
+                    m_LinkPin = -1;
+                    links.erase(it);
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!m_Linking) return;
+    m_PinInteracted = true;
+
+    const ParticleGraphNode* fixedNode = nullptr;
+    for (const auto& n : m_Graph->nodes) if (n.id == m_LinkNode) { fixedNode = &n; break; }
+    if (!fixedNode) { m_Linking = false; return; }
+    ImVec2 a = PGPinPos(*fixedNode, m_LinkPin, m_CanvasOriginX, m_CanvasOriginY, m_ScrollOffset, m_Zoom);
+    bool snap = hot && hot->node != m_LinkNode && ((m_LinkPin < 0) != (hot->pin < 0));
+    ImVec2 b = snap ? ImVec2(hot->x, hot->y) : mouse;
+    ImVec2 o = (m_LinkPin < 0) ? a : b;
+    ImVec2 iP = (m_LinkPin < 0) ? b : a;
+    f32 tangent = (iP.x - o.x) * 0.5f;
+    if (tangent < 50.0f * m_Zoom) tangent = 50.0f * m_Zoom;
+    drawList->AddBezierCubic(o, ImVec2(o.x + tangent, o.y), ImVec2(iP.x - tangent, iP.y), iP,
+                             snap ? IM_COL32(120, 255, 160, 255) : IM_COL32(255, 220, 120, 200),
+                             2.5f * m_Zoom);
+
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        if (snap) {
+            u32 outNode = (m_LinkPin < 0) ? m_LinkNode : hot->node;
+            u32 inNode  = (m_LinkPin < 0) ? hot->node : m_LinkNode;
+            auto& links = m_Graph->links;
+            links.erase(std::remove_if(links.begin(), links.end(), [&](const ParticleGraphLink& l) {
+                return l.toNode == inNode;
+            }), links.end());
+            ParticleGraphLink nl;
+            nl.id = m_Graph->nextLinkId++;
+            nl.fromNode = outNode;
+            nl.fromPin = 0;
+            nl.toNode = inNode;
+            nl.toPin = 0;
+            links.push_back(nl);
+        }
+        m_Linking = false;
+    }
+}
+
 void ParticleGraphEditor::DrawConnections() {
     if (!m_Graph) return;
 
     ImDrawList* drawList = ImGui::GetWindowDrawList();
-    ImVec2 canvasPos = ImGui::GetCursorScreenPos();
 
     for (const auto& link : m_Graph->links) {
         const ParticleGraphNode* fromNode = nullptr;
@@ -330,30 +445,13 @@ void ParticleGraphEditor::DrawConnections() {
         }
         if (!fromNode || !toNode) continue;
 
-        f32 nodeW = NODE_WIDTH * m_Zoom;
-        f32 headerH = NODE_HEADER * m_Zoom;
-        f32 bodyH = NODE_BODY * m_Zoom;
+        ImVec2 p1 = PGPinPos(*fromNode, -1, m_CanvasOriginX, m_CanvasOriginY, m_ScrollOffset, m_Zoom);
+        ImVec2 p2 = PGPinPos(*toNode, 0, m_CanvasOriginX, m_CanvasOriginY, m_ScrollOffset, m_Zoom);
 
-        // Output pin position (right side of from node)
-        ImVec2 p1(
-            canvasPos.x + (fromNode->position.x + m_ScrollOffset.x) * m_Zoom + nodeW,
-            canvasPos.y + (fromNode->position.y + m_ScrollOffset.y) * m_Zoom + headerH + bodyH * 0.5f
-        );
-
-        // Input pin position (left side of to node)
-        ImVec2 p2(
-            canvasPos.x + (toNode->position.x + m_ScrollOffset.x) * m_Zoom,
-            canvasPos.y + (toNode->position.y + m_ScrollOffset.y) * m_Zoom + headerH + bodyH * 0.5f
-        );
-
-        // Bezier control points
         f32 tangentLen = (p2.x - p1.x) * 0.5f;
         if (tangentLen < 50.0f * m_Zoom) tangentLen = 50.0f * m_Zoom;
-
         ImVec2 cp1(p1.x + tangentLen, p1.y);
         ImVec2 cp2(p2.x - tangentLen, p2.y);
-
-        // Particle links drawn in a warm cyan
         drawList->AddBezierCubic(p1, cp1, cp2, p2, IM_COL32(120, 200, 220, 200), 2.0f * m_Zoom);
     }
 }

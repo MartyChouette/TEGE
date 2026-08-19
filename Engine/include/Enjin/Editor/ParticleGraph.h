@@ -92,6 +92,16 @@ public:
     bool WasCompileRequested() { bool r = m_CompileRequested; m_CompileRequested = false; return r; }
 
 private:
+    // --- Interactive linking (rebuilt every frame) ---
+    struct FramePin { u32 node = 0; i32 pin = -1; f32 x = 0, y = 0; };  // pin -1 = output
+    std::vector<FramePin> m_FramePins;
+    bool m_Linking = false;
+    u32 m_LinkNode = 0;
+    i32 m_LinkPin = -1;
+    bool m_PinInteracted = false;
+    f32 m_CanvasOriginX = 0.0f, m_CanvasOriginY = 0.0f;
+    void HandleLinking();
+
     ParticleGraphData* m_Graph = nullptr;
     bool m_Open = false;
     bool m_CompileRequested = false;
