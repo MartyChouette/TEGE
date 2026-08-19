@@ -10,6 +10,7 @@
 #include "Enjin/Physics/PhysicsTypes2D.h"
 #include "Enjin/Animation/RagdollSystem.h"
 #include "Enjin/ECS/Components/Mesh.h"
+#include <algorithm>
 #include "Enjin/Math/Math.h"
 #include <stb_image.h>
 
@@ -73,6 +74,34 @@ void EditorLayer::DrawRigidbodyComponent(ECS::Entity entity) {
     }
 }
 
+// Mesh-local AABB scaled by the entity's scale. Collider sizes are WORLD SPACE
+// (Jolt/Box2D never multiply by transform scale), so "Fit to Mesh" bakes the
+// entity scale into the collider dims. Returns false when there is no mesh.
+static bool FitAABBFromMesh(ECS::World* world, ECS::Entity entity,
+                            Math::Vector3& outCenter, Math::Vector3& outExtents) {
+    auto* mesh = world->GetComponent<ECS::MeshComponent>(entity);
+    if (!mesh) return false;
+    Math::Vector3 mn = mesh->cachedAABBMin, mx = mesh->cachedAABBMax;
+    if (mn.x > mx.x || mn.y > mx.y || mn.z > mx.z) {   // cache dirty -> recompute
+        if (mesh->vertices.empty()) return false;
+        mn = mx = mesh->vertices[0].position;
+        for (const auto& v : mesh->vertices) {
+            mn.x = std::min(mn.x, v.position.x); mx.x = std::max(mx.x, v.position.x);
+            mn.y = std::min(mn.y, v.position.y); mx.y = std::max(mx.y, v.position.y);
+            mn.z = std::min(mn.z, v.position.z); mx.z = std::max(mx.z, v.position.z);
+        }
+    }
+    Math::Vector3 s(1.0f, 1.0f, 1.0f);
+    if (auto* t = world->GetComponent<ECS::TransformComponent>(entity)) s = t->scale;
+    outCenter = Math::Vector3((mn.x + mx.x) * 0.5f * s.x,
+                              (mn.y + mx.y) * 0.5f * s.y,
+                              (mn.z + mx.z) * 0.5f * s.z);
+    outExtents = Math::Vector3(std::max((mx.x - mn.x) * std::abs(s.x), 0.001f),
+                               std::max((mx.y - mn.y) * std::abs(s.y), 0.001f),
+                               std::max((mx.z - mn.z) * std::abs(s.z), 0.001f));
+    return true;
+}
+
 void EditorLayer::DrawBoxColliderComponent(ECS::Entity entity) {
     bool boxOpen = ImGui::CollapsingHeader("Box Collider", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("BoxColliderCtx")) {
@@ -115,6 +144,15 @@ void EditorLayer::DrawBoxColliderComponent(ECS::Entity entity) {
         }
 
         DrawCollisionFilteringUI(col->categoryBits, col->collisionMask);
+
+        if (ImGui::Button("Fit to Mesh##Box")) {
+            Math::Vector3 c, ext;
+            if (FitAABBFromMesh(m_World, entity, c, ext)) {
+                col->center = c;
+                col->size = ext;
+            }
+        }
+        ImGui::SetItemTooltip("Size the collider to the mesh bounds (entity scale baked in - collider sizes are world-space)");
     }
 }
 
@@ -303,6 +341,15 @@ void EditorLayer::DrawSphereColliderComponent(ECS::Entity entity) {
 
         DrawCollisionFilteringUI(col->categoryBits, col->collisionMask);
 
+        if (ImGui::Button("Fit to Mesh##Sphere")) {
+            Math::Vector3 c, ext;
+            if (FitAABBFromMesh(m_World, entity, c, ext)) {
+                col->center = c;
+                col->radius = std::max(ext.x, std::max(ext.y, ext.z)) * 0.5f;
+            }
+        }
+        ImGui::SetItemTooltip("Size the collider to the mesh bounds (radius = largest extent / 2)");
+
         if (ImGui::BeginPopupContextItem("SphereColliderContext")) {
             if (ImGui::MenuItem("Remove Component")) {
                 RemoveComponentWithUndo<ECS::SphereColliderComponent>(entity, "sphereCollider", "Sphere Collider");
@@ -328,7 +375,7 @@ void EditorLayer::DrawCapsuleColliderComponent(ECS::Entity entity) {
         InspectorUndo::DragFloat(m_UndoRedo, "Radius", &col->radius, 0.05f, 0.001f, 100.0f);
         ImGui::SetItemTooltip("Capsule hemisphere radius");
         InspectorUndo::DragFloat(m_UndoRedo, "Height", &col->height, 0.1f, 0.001f, 100.0f);
-        ImGui::SetItemTooltip("Total capsule height including hemispheres");
+        ImGui::SetItemTooltip("Cylinder section only (engine convention): total = height + 2 x radius");
 
         const char* directions[] = { "X", "Y", "Z" };
         int dir = static_cast<int>(col->direction);
@@ -349,6 +396,25 @@ void EditorLayer::DrawCapsuleColliderComponent(ECS::Entity entity) {
         }
 
         DrawCollisionFilteringUI(col->categoryBits, col->collisionMask);
+
+        if (ImGui::Button("Fit to Mesh##Capsule")) {
+            Math::Vector3 c, ext;
+            if (FitAABBFromMesh(m_World, entity, c, ext)) {
+                col->center = c;
+                // Axis extent along the capsule direction; radius from the other two.
+                f32 axisExt = ext.y, r1 = ext.x, r2 = ext.z;
+                if (col->direction == ECS::CapsuleColliderComponent::Direction::X) {
+                    axisExt = ext.x; r1 = ext.y; r2 = ext.z;
+                } else if (col->direction == ECS::CapsuleColliderComponent::Direction::Z) {
+                    axisExt = ext.z; r1 = ext.x; r2 = ext.y;
+                }
+                col->radius = std::max(r1, r2) * 0.5f;
+                // height = cylinder only (total = height + 2r), clamped so a
+                // squat mesh degrades to a sphere-ish capsule instead of inverting
+                col->height = std::max(axisExt - 2.0f * col->radius, 0.001f);
+            }
+        }
+        ImGui::SetItemTooltip("Size the collider to the mesh bounds. Fixes hovering characters:\ncapsule total height = height + 2 x radius, so height is fit as the cylinder section only");
 
         if (ImGui::BeginPopupContextItem("CapsuleColliderContext")) {
             if (ImGui::MenuItem("Remove Component")) {
