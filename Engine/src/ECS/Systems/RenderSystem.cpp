@@ -13430,7 +13430,8 @@ void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
     m_SkyboxUniformBuffers.resize(framesInFlight);
     for (u32 i = 0; i < framesInFlight; ++i) {
         m_SkyboxUniformBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
-        m_SkyboxUniformBuffers[i]->Create(sizeof(Math::Matrix4), Renderer::BufferUsage::Uniform, true);
+        m_SkyboxUniformBuffers[i]->Create(sizeof(Math::Matrix4) + 5 * sizeof(Math::Vector4),
+                                          Renderer::BufferUsage::Uniform, true);
     }
 
     ENJIN_LOG_INFO(Renderer, "Skybox pipeline created");
@@ -13458,8 +13459,27 @@ void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
     view.m[14] = 0.0f;
     Math::Matrix4 viewProj = m_Camera->GetProjectionMatrix() * view;
 
-    // Upload UBO
-    m_SkyboxUniformBuffers[currentFrame]->UploadData(&viewProj, sizeof(Math::Matrix4));
+    // Upload UBO: matrix + the live atmosphere parameters (mirrors skybox.frag's
+    // SkyUBO). Clouds take direction from the wind system and its clock.
+    struct SkyboxUBOData {
+        Math::Matrix4 viewProj;
+        Math::Vector4 sunDirTime;
+        Math::Vector4 sunColorSize;
+        Math::Vector4 cloudParams;
+        Math::Vector4 cloudColorHaze;
+        Math::Vector4 misc;
+    } skyData{};
+    const Renderer::SkyboxConfig& skyCfg = m_Skybox.GetConfig();
+    f32 skyTime = m_WindSystem ? m_WindSystem->GetTime() : 0.0f;
+    Math::Vector4 skyWind = m_WindSystem ? m_WindSystem->GetWindVector()
+                                         : Math::Vector4(1.0f, 0.0f, 0.35f, 0.0f);
+    skyData.viewProj = viewProj;
+    skyData.sunDirTime = {skyCfg.sunDirection.x, skyCfg.sunDirection.y, skyCfg.sunDirection.z, skyTime};
+    skyData.sunColorSize = {skyCfg.sunColor.x, skyCfg.sunColor.y, skyCfg.sunColor.z, skyCfg.sunSize};
+    skyData.cloudParams = {skyCfg.cloudCoverage, skyCfg.cloudScale, skyCfg.cloudSpeed, skyCfg.cloud2Coverage};
+    skyData.cloudColorHaze = {skyCfg.cloudColor.x, skyCfg.cloudColor.y, skyCfg.cloudColor.z, skyCfg.horizonHaze};
+    skyData.misc = {skyCfg.sunIntensity, skyCfg.cloud2Scale, skyWind.x, skyWind.z};
+    m_SkyboxUniformBuffers[currentFrame]->UploadData(&skyData, sizeof(skyData));
 
     // Rewrite the descriptor set ONLY when its contents actually changed (first use,
     // or the skybox cubemap / UBO buffer was recreated). Updating a set that is
@@ -13480,7 +13500,7 @@ void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
         VkDescriptorBufferInfo uboInfo{};
         uboInfo.buffer = uboBuffer;
         uboInfo.offset = 0;
-        uboInfo.range = sizeof(Math::Matrix4);
+        uboInfo.range = sizeof(Math::Matrix4) + 5 * sizeof(Math::Vector4);
 
         std::array<VkWriteDescriptorSet, 2> writes{};
         writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;

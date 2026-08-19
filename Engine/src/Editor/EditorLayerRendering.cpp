@@ -2195,6 +2195,29 @@ void EditorLayer::DrawSettingsSection_Skybox() {
             changed |= ImGui::SliderFloat("Rotation", &config.rotation, 0.0f, 360.0f, "%.1f deg");
         }
 
+        // Atmosphere: composited live over any sky type
+        if (config.type != Renderer::SkyboxType::None) {
+            ImGui::Separator();
+            ImGui::Text("Atmosphere:");
+            changed |= ImGui::SliderFloat("Sun Intensity", &config.sunIntensity, 0.0f, 3.0f);
+            if (config.sunIntensity > 0.001f) {
+                changed |= ImGui::SliderFloat("Sun Size", &config.sunSize, 0.005f, 0.3f);
+                changed |= ImGui::ColorEdit3("Sun Color", &config.sunColor.x);
+            }
+            changed |= ImGui::SliderFloat("Cloud Coverage", &config.cloudCoverage, 0.0f, 1.0f);
+            if (config.cloudCoverage > 0.001f) {
+                changed |= ImGui::SliderFloat("Cloud Scale", &config.cloudScale, 0.2f, 6.0f);
+                changed |= ImGui::SliderFloat("Cloud Speed", &config.cloudSpeed, 0.0f, 10.0f);
+                changed |= ImGui::ColorEdit3("Cloud Color", &config.cloudColor.x);
+            }
+            changed |= ImGui::SliderFloat("High Clouds", &config.cloud2Coverage, 0.0f, 1.0f);
+            if (config.cloud2Coverage > 0.001f) {
+                changed |= ImGui::SliderFloat("High Cloud Scale", &config.cloud2Scale, 0.5f, 10.0f);
+            }
+            changed |= ImGui::SliderFloat("Horizon Haze", &config.horizonHaze, 0.0f, 1.0f);
+            ImGui::SetItemTooltip("Bright atmospheric band hugging the horizon");
+        }
+
         if (changed) {
             m_RenderSystem->SetSkybox(config);
         }

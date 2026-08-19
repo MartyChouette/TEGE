@@ -29,6 +29,19 @@ struct SkyboxConfig {
     Math::Vector3 sunDirection = Math::Vector3(0.5f, 0.8f, 0.3f);
     Math::Vector3 solidColor = Math::Vector3(0.2f, 0.3f, 0.4f);
     f32 rotation = 0.0f;
+
+    // ── Atmosphere: sun disc + cloud layers + haze, composited LIVE by
+    //    skybox.frag over any sky type. Defaults = off (classic look). ──
+    f32 sunIntensity = 0.0f;      // 0 = no drawn sun disc
+    f32 sunSize = 0.045f;         // angular size of the disc
+    Math::Vector3 sunColor = Math::Vector3(1.0f, 0.95f, 0.85f);
+    f32 cloudCoverage = 0.0f;     // layer 1 (big, low): 0 = clear sky
+    f32 cloudScale = 1.0f;
+    f32 cloudSpeed = 1.0f;        // drift rate (direction follows the wind)
+    Math::Vector3 cloudColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+    f32 cloud2Coverage = 0.0f;    // layer 2 (fine, high, faster)
+    f32 cloud2Scale = 2.5f;
+    f32 horizonHaze = 0.0f;       // bright band hugging the horizon
 };
 
 } // namespace Renderer

@@ -7835,6 +7835,16 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             skyboxJson["solidColor"] = { RF(m_SkyboxConfig.solidColor.x), RF(m_SkyboxConfig.solidColor.y), RF(m_SkyboxConfig.solidColor.z) };
             skyboxJson["rotation"] = RF(m_SkyboxConfig.rotation);
             skyboxJson["sunDirection"] = { RF(m_SkyboxConfig.sunDirection.x), RF(m_SkyboxConfig.sunDirection.y), RF(m_SkyboxConfig.sunDirection.z) };
+            skyboxJson["sunIntensity"] = RF(m_SkyboxConfig.sunIntensity);
+            skyboxJson["sunSize"] = RF(m_SkyboxConfig.sunSize);
+            skyboxJson["sunColor"] = { RF(m_SkyboxConfig.sunColor.x), RF(m_SkyboxConfig.sunColor.y), RF(m_SkyboxConfig.sunColor.z) };
+            skyboxJson["cloudCoverage"] = RF(m_SkyboxConfig.cloudCoverage);
+            skyboxJson["cloudScale"] = RF(m_SkyboxConfig.cloudScale);
+            skyboxJson["cloudSpeed"] = RF(m_SkyboxConfig.cloudSpeed);
+            skyboxJson["cloudColor"] = { RF(m_SkyboxConfig.cloudColor.x), RF(m_SkyboxConfig.cloudColor.y), RF(m_SkyboxConfig.cloudColor.z) };
+            skyboxJson["cloud2Coverage"] = RF(m_SkyboxConfig.cloud2Coverage);
+            skyboxJson["cloud2Scale"] = RF(m_SkyboxConfig.cloud2Scale);
+            skyboxJson["horizonHaze"] = RF(m_SkyboxConfig.horizonHaze);
             json faces = json::array();
             for (const auto& p : m_SkyboxConfig.cubemapPaths) faces.push_back(p);
             skyboxJson["cubemapPaths"] = faces;
@@ -7976,6 +7986,16 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (sj.contains("solidColor") && sj["solidColor"].is_array() && sj["solidColor"].size() >= 3) { auto& a = sj["solidColor"]; m_SkyboxConfig.solidColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
             if (sj.contains("rotation")) m_SkyboxConfig.rotation = sj["rotation"].get<f32>();
             if (sj.contains("sunDirection") && sj["sunDirection"].is_array() && sj["sunDirection"].size() >= 3) { auto& a = sj["sunDirection"]; m_SkyboxConfig.sunDirection = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("sunIntensity")) m_SkyboxConfig.sunIntensity = sj["sunIntensity"].get<f32>();
+            if (sj.contains("sunSize")) m_SkyboxConfig.sunSize = sj["sunSize"].get<f32>();
+            if (sj.contains("sunColor") && sj["sunColor"].is_array() && sj["sunColor"].size() >= 3) { auto& a = sj["sunColor"]; m_SkyboxConfig.sunColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("cloudCoverage")) m_SkyboxConfig.cloudCoverage = sj["cloudCoverage"].get<f32>();
+            if (sj.contains("cloudScale")) m_SkyboxConfig.cloudScale = sj["cloudScale"].get<f32>();
+            if (sj.contains("cloudSpeed")) m_SkyboxConfig.cloudSpeed = sj["cloudSpeed"].get<f32>();
+            if (sj.contains("cloudColor") && sj["cloudColor"].is_array() && sj["cloudColor"].size() >= 3) { auto& a = sj["cloudColor"]; m_SkyboxConfig.cloudColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("cloud2Coverage")) m_SkyboxConfig.cloud2Coverage = sj["cloud2Coverage"].get<f32>();
+            if (sj.contains("cloud2Scale")) m_SkyboxConfig.cloud2Scale = sj["cloud2Scale"].get<f32>();
+            if (sj.contains("horizonHaze")) m_SkyboxConfig.horizonHaze = sj["horizonHaze"].get<f32>();
             if (sj.contains("cubemapPaths") && sj["cubemapPaths"].is_array()) {
                 for (usize i = 0; i < 6 && i < sj["cubemapPaths"].size(); ++i) {
                     m_SkyboxConfig.cubemapPaths[i] = SafeStr(sj["cubemapPaths"][i], MAX_STR_PATH);
@@ -9304,6 +9324,16 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             skyboxJson["solidColor"] = { RF(m_SkyboxConfig.solidColor.x), RF(m_SkyboxConfig.solidColor.y), RF(m_SkyboxConfig.solidColor.z) };
             skyboxJson["rotation"] = RF(m_SkyboxConfig.rotation);
             skyboxJson["sunDirection"] = { RF(m_SkyboxConfig.sunDirection.x), RF(m_SkyboxConfig.sunDirection.y), RF(m_SkyboxConfig.sunDirection.z) };
+            skyboxJson["sunIntensity"] = RF(m_SkyboxConfig.sunIntensity);
+            skyboxJson["sunSize"] = RF(m_SkyboxConfig.sunSize);
+            skyboxJson["sunColor"] = { RF(m_SkyboxConfig.sunColor.x), RF(m_SkyboxConfig.sunColor.y), RF(m_SkyboxConfig.sunColor.z) };
+            skyboxJson["cloudCoverage"] = RF(m_SkyboxConfig.cloudCoverage);
+            skyboxJson["cloudScale"] = RF(m_SkyboxConfig.cloudScale);
+            skyboxJson["cloudSpeed"] = RF(m_SkyboxConfig.cloudSpeed);
+            skyboxJson["cloudColor"] = { RF(m_SkyboxConfig.cloudColor.x), RF(m_SkyboxConfig.cloudColor.y), RF(m_SkyboxConfig.cloudColor.z) };
+            skyboxJson["cloud2Coverage"] = RF(m_SkyboxConfig.cloud2Coverage);
+            skyboxJson["cloud2Scale"] = RF(m_SkyboxConfig.cloud2Scale);
+            skyboxJson["horizonHaze"] = RF(m_SkyboxConfig.horizonHaze);
             json faces = json::array();
             for (const auto& p : m_SkyboxConfig.cubemapPaths) faces.push_back(p);
             skyboxJson["cubemapPaths"] = faces;
@@ -9379,6 +9409,16 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (sj.contains("solidColor") && sj["solidColor"].is_array() && sj["solidColor"].size() >= 3) { auto& a = sj["solidColor"]; m_SkyboxConfig.solidColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
             if (sj.contains("rotation")) m_SkyboxConfig.rotation = sj["rotation"].get<f32>();
             if (sj.contains("sunDirection") && sj["sunDirection"].is_array() && sj["sunDirection"].size() >= 3) { auto& a = sj["sunDirection"]; m_SkyboxConfig.sunDirection = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("sunIntensity")) m_SkyboxConfig.sunIntensity = sj["sunIntensity"].get<f32>();
+            if (sj.contains("sunSize")) m_SkyboxConfig.sunSize = sj["sunSize"].get<f32>();
+            if (sj.contains("sunColor") && sj["sunColor"].is_array() && sj["sunColor"].size() >= 3) { auto& a = sj["sunColor"]; m_SkyboxConfig.sunColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("cloudCoverage")) m_SkyboxConfig.cloudCoverage = sj["cloudCoverage"].get<f32>();
+            if (sj.contains("cloudScale")) m_SkyboxConfig.cloudScale = sj["cloudScale"].get<f32>();
+            if (sj.contains("cloudSpeed")) m_SkyboxConfig.cloudSpeed = sj["cloudSpeed"].get<f32>();
+            if (sj.contains("cloudColor") && sj["cloudColor"].is_array() && sj["cloudColor"].size() >= 3) { auto& a = sj["cloudColor"]; m_SkyboxConfig.cloudColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("cloud2Coverage")) m_SkyboxConfig.cloud2Coverage = sj["cloud2Coverage"].get<f32>();
+            if (sj.contains("cloud2Scale")) m_SkyboxConfig.cloud2Scale = sj["cloud2Scale"].get<f32>();
+            if (sj.contains("horizonHaze")) m_SkyboxConfig.horizonHaze = sj["horizonHaze"].get<f32>();
             if (sj.contains("cubemapPaths") && sj["cubemapPaths"].is_array()) {
                 for (usize i = 0; i < 6 && i < sj["cubemapPaths"].size(); ++i) {
                     m_SkyboxConfig.cubemapPaths[i] = SafeStr(sj["cubemapPaths"][i], MAX_STR_PATH);
