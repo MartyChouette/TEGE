@@ -80,6 +80,11 @@ public:
     void SetAssetRoot(const std::string& root) { m_AssetRoot = root; }
 
     // Set listener position (usually camera)
+    // Environmental reverb (Freeverb bus). Spatialized sounds route through it;
+    // 2D/UI/music stay dry. Zone systems set the target each frame - the DSP
+    // reads smoothed values on the audio thread. wetDry 0 = bypass.
+    void SetEnvironmentReverb(f32 wetDry, f32 roomSize, f32 damping, f32 decayTime, f32 preDelay);
+
     void SetListenerPosition(const Math::Vector3& position, const Math::Vector3& forward, const Math::Vector3& up);
 
     // Load audio clip from file

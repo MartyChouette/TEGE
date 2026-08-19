@@ -661,8 +661,11 @@ void AudioReactiveSystem::UpdateReverbZones(f32 deltaTime) {
     // Get listener position
     const Math::Vector3& listenerPos = m_ListenerPos;
 
-    // Find the highest-priority reverb zone the listener is inside
+    // Find the highest-priority reverb zone influencing the listener. Non-global
+    // zones fade in across blendRadius outside their shape so walking into a
+    // cave swells the echo instead of snapping it.
     ECS::ReverbZoneComponent* activeZone = nullptr;
+    f32 activeBlend = 0.0f;
     i32 bestPriority = -999999;
 
     for (auto entity : m_World->GetEntitiesWithComponent<ECS::ReverbZoneComponent>()) {
@@ -670,47 +673,62 @@ void AudioReactiveSystem::UpdateReverbZones(f32 deltaTime) {
         auto* rz = m_World->GetComponent<ECS::ReverbZoneComponent>(entity);
         if (!rz || !rz->isActive) continue;
 
+        f32 blend = 0.0f;
         if (rz->isGlobal) {
-            if (rz->priority > bestPriority) {
-                bestPriority = rz->priority;
-                activeZone = rz;
+            blend = 1.0f;
+        } else {
+            auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+            if (!transform) continue;
+            Math::Vector3 local = listenerPos - transform->position;
+            f32 outside = 0.0f;   // distance beyond the shape surface
+            if (rz->shape == ECS::ReverbZoneComponent::Shape::Sphere) {
+                f32 r = rz->halfExtents.x;
+                f32 d = local.Length();
+                outside = d - r;
+            } else {
+                Math::Vector3 q(std::fabs(local.x) - rz->halfExtents.x,
+                                std::fabs(local.y) - rz->halfExtents.y,
+                                std::fabs(local.z) - rz->halfExtents.z);
+                f32 qx = q.x > 0.0f ? q.x : 0.0f;
+                f32 qy = q.y > 0.0f ? q.y : 0.0f;
+                f32 qz = q.z > 0.0f ? q.z : 0.0f;
+                outside = std::sqrt(qx * qx + qy * qy + qz * qz);
             }
-            continue;
+            if (outside <= 0.0f) blend = 1.0f;
+            else if (rz->blendRadius > 0.001f && outside < rz->blendRadius)
+                blend = 1.0f - outside / rz->blendRadius;
         }
-
-        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
-        if (!transform) continue;
-
-        // Check if listener is inside the zone (box shape)
-        Math::Vector3 local = listenerPos - transform->position;
-        bool inside = std::fabs(local.x) <= rz->halfExtents.x &&
-                      std::fabs(local.y) <= rz->halfExtents.y &&
-                      std::fabs(local.z) <= rz->halfExtents.z;
-
-        if (inside && rz->priority > bestPriority) {
+        if (blend > 0.0f && (rz->priority > bestPriority ||
+                             (rz->priority == bestPriority && blend > activeBlend))) {
             bestPriority = rz->priority;
             activeZone = rz;
+            activeBlend = blend;
         }
     }
 
-    // Apply reverb parameters to the master bus EQ as an approximation
-    // (True reverb requires a delay-line DSP node — this simulates it via EQ)
-    Audio::AudioBus* masterBus = m_Audio->GetMixer().GetMasterBus();
-    if (masterBus && activeZone) {
-        // Simulate reverb via EQ: boost mids, reduce highs (damping), slight low boost
-        f32 wetDry = activeZone->wetDryMix;
-        masterBus->eqEnabled = (wetDry > 0.01f);
-        masterBus->eqLow.gain = wetDry * 2.0f * (1.0f - activeZone->damping);
-        masterBus->eqMid.gain = wetDry * 3.0f;
-        masterBus->eqMid.q = 0.5f + activeZone->roomSize * 2.0f;
-        masterBus->eqHigh.gain = -wetDry * 4.0f * activeZone->damping;
-    } else if (masterBus) {
-        // No active reverb zone — flatten EQ
-        masterBus->eqEnabled = false;
-        masterBus->eqLow.gain = 0.0f;
-        masterBus->eqMid.gain = 0.0f;
-        masterBus->eqHigh.gain = 0.0f;
+    // Resolve preset -> parameters (Custom keeps the authored fields).
+    f32 wet = 0.0f, room = 0.5f, damp = 0.5f, decayT = 1.5f, pre = 0.02f;
+    if (activeZone) {
+        using P = ECS::ReverbZoneComponent::Preset;
+        room = activeZone->roomSize; damp = activeZone->damping;
+        wet = activeZone->wetDryMix; decayT = activeZone->decayTime; pre = activeZone->preDelay;
+        switch (activeZone->preset) {
+            case P::SmallRoom:  room = 0.35f; damp = 0.5f;  wet = 0.22f; decayT = 0.8f; pre = 0.008f; break;
+            case P::LargeRoom:  room = 0.6f;  damp = 0.45f; wet = 0.3f;  decayT = 1.5f; pre = 0.015f; break;
+            case P::Hall:       room = 0.8f;  damp = 0.4f;  wet = 0.35f; decayT = 2.5f; pre = 0.025f; break;
+            case P::Cathedral:  room = 1.0f;  damp = 0.3f;  wet = 0.45f; decayT = 5.0f; pre = 0.04f;  break;
+            case P::Cave:       room = 0.9f;  damp = 0.2f;  wet = 0.5f;  decayT = 3.5f; pre = 0.03f;  break;
+            case P::Outdoors:   room = 0.2f;  damp = 0.8f;  wet = 0.08f; decayT = 0.4f; pre = 0.005f; break;
+            case P::Bathroom:   room = 0.3f;  damp = 0.1f;  wet = 0.5f;  decayT = 1.2f; pre = 0.005f; break;
+            case P::UnderWater: room = 0.8f;  damp = 0.95f; wet = 0.7f;  decayT = 3.0f; pre = 0.02f;  break;
+            case P::Custom: default: break;
+        }
+        wet *= activeBlend;
     }
+
+    // Feed the real Freeverb bus (SimpleAudio smooths on the audio thread).
+    m_Audio->SetEnvironmentReverb(wet, room, damp, decayT, pre);
+    (void)deltaTime;
 }
 
 // ============================================================================

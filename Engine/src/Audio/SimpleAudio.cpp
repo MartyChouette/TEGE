@@ -3,6 +3,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Logging/Log.h"
+#include <atomic>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -56,9 +57,129 @@ static ma_node_vtable g_binauralNodeVTable = {
 namespace Enjin {
 namespace Audio {
 
+// ============================================================================
+// Environmental reverb: classic Freeverb (8 parallel combs + 4 serial allpasses
+// per channel, mono-summed input, stereo-spread tunings) as a miniaudio node.
+// Spatialized sounds attach here instead of the endpoint; the node mixes
+// wet/dry and forwards to the endpoint. Parameters are atomics written by the
+// game thread and smoothed per block on the audio thread.
+// ============================================================================
+namespace {
+
+constexpr int kCombs = 8;
+constexpr int kAllpasses = 4;
+constexpr int kCombTuning[kCombs] = { 1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617 };
+constexpr int kAllpassTuning[kAllpasses] = { 556, 441, 341, 225 };
+constexpr int kStereoSpread = 23;
+constexpr float kFixedGain = 0.015f;   // classic Freeverb input gain
+
+struct ReverbChannel {
+    std::vector<float> comb[kCombs];
+    int combPos[kCombs] = {};
+    float combStore[kCombs] = {};
+    std::vector<float> allpass[kAllpasses];
+    int allpassPos[kAllpasses] = {};
+};
+
+struct ReverbNode {
+    ma_node_base base;
+    ReverbChannel ch[2];
+    std::vector<float> preDelayBuf;   // stereo interleaved
+    int preDelayPos = 0;
+    // Targets (game thread) and smoothed working values (audio thread)
+    std::atomic<float> tWet{0.0f}, tRoom{0.5f}, tDamp{0.5f}, tDecay{1.5f}, tPre{0.02f};
+    float wet = 0.0f, room = 0.5f, damp = 0.5f, pre = 0.02f, feedback = 0.8f;
+    ma_uint32 sampleRate = 48000;
+};
+
+static void reverb_node_process(ma_node* pNode, const float** ppFramesIn,
+                                ma_uint32* pFrameCountIn, float** ppFramesOut,
+                                ma_uint32* pFrameCountOut)
+{
+    (void)pFrameCountIn;
+    auto* rn = reinterpret_cast<ReverbNode*>(pNode);
+    const float* in = ppFramesIn[0];
+    float* out = ppFramesOut[0];
+    ma_uint32 frames = *pFrameCountOut;
+
+    // Smooth toward targets once per block (fast enough at typical block sizes)
+    const float a = 0.08f;
+    rn->wet  += (rn->tWet.load(std::memory_order_relaxed)  - rn->wet)  * a;
+    rn->room += (rn->tRoom.load(std::memory_order_relaxed) - rn->room) * a;
+    rn->damp += (rn->tDamp.load(std::memory_order_relaxed) - rn->damp) * a;
+    rn->pre  += (rn->tPre.load(std::memory_order_relaxed)  - rn->pre)  * a;
+    float decay = rn->tDecay.load(std::memory_order_relaxed);
+    float room01 = rn->room < 0.0f ? 0.0f : (rn->room > 1.0f ? 1.0f : rn->room);
+    float decayBoost = decay / 5.0f; if (decayBoost > 1.0f) decayBoost = 1.0f;
+    rn->feedback = 0.58f + 0.3f * room01 + 0.1f * decayBoost;
+    if (rn->feedback > 0.985f) rn->feedback = 0.985f;
+    float damp1 = rn->damp < 0.0f ? 0.0f : (rn->damp > 1.0f ? 1.0f : rn->damp);
+    float wet = rn->wet < 0.0f ? 0.0f : (rn->wet > 1.0f ? 1.0f : rn->wet);
+
+    if (wet < 0.005f) {   // bypass: straight copy
+        for (ma_uint32 i = 0; i < frames * 2; ++i) out[i] = in[i];
+        return;
+    }
+
+    const int preLen = static_cast<int>(rn->preDelayBuf.size() / 2);
+    int preSamples = static_cast<int>(rn->pre * static_cast<float>(rn->sampleRate));
+    if (preSamples >= preLen) preSamples = preLen - 1;
+    if (preSamples < 0) preSamples = 0;
+
+    for (ma_uint32 f = 0; f < frames; ++f) {
+        float dryL = in[f * 2], dryR = in[f * 2 + 1];
+
+        // Pre-delay the reverb feed
+        rn->preDelayBuf[rn->preDelayPos * 2]     = dryL;
+        rn->preDelayBuf[rn->preDelayPos * 2 + 1] = dryR;
+        int rd = rn->preDelayPos - preSamples;
+        if (rd < 0) rd += preLen;
+        float feed = (rn->preDelayBuf[rd * 2] + rn->preDelayBuf[rd * 2 + 1]) * kFixedGain;
+        rn->preDelayPos = (rn->preDelayPos + 1) % preLen;
+
+        float wetOut[2] = { 0.0f, 0.0f };
+        for (int c = 0; c < 2; ++c) {
+            ReverbChannel& rc = rn->ch[c];
+            float sum = 0.0f;
+            for (int i = 0; i < kCombs; ++i) {
+                std::vector<float>& buf = rc.comb[i];
+                int& pos = rc.combPos[i];
+                float output = buf[pos];
+                rc.combStore[i] = output * (1.0f - damp1) + rc.combStore[i] * damp1;
+                buf[pos] = feed + rc.combStore[i] * rn->feedback;
+                pos = (pos + 1) % static_cast<int>(buf.size());
+                sum += output;
+            }
+            for (int i = 0; i < kAllpasses; ++i) {
+                std::vector<float>& buf = rc.allpass[i];
+                int& pos = rc.allpassPos[i];
+                float bufOut = buf[pos];
+                buf[pos] = sum + bufOut * 0.5f;
+                sum = bufOut - sum;
+                pos = (pos + 1) % static_cast<int>(buf.size());
+            }
+            wetOut[c] = sum;
+        }
+        out[f * 2]     = dryL + wetOut[0] * wet * 3.0f;
+        out[f * 2 + 1] = dryR + wetOut[1] * wet * 3.0f;
+    }
+}
+
+static ma_node_vtable g_reverbNodeVTable = {
+    reverb_node_process,
+    nullptr,
+    1,   // input buses
+    1,   // output buses
+    MA_NODE_FLAG_CONTINUOUS_PROCESSING   // tail keeps ringing after inputs stop
+};
+
+} // namespace
+
 // pImpl holding the ma_engine
 struct SimpleAudio::Impl {
     ma_engine engine{};
+    ReverbNode reverb{};
+    bool reverbReady = false;
     bool initialized = false;
 };
 
@@ -89,6 +210,40 @@ bool SimpleAudio::Initialize() {
     // Initialize Steam Audio HRTF processor
     if (m_HRTFEnabled) {
         m_SteamAudio = std::make_unique<SteamAudioProcessor>();
+        // Environmental reverb bus: allocate Freeverb delay lines for the actual
+        // sample rate and splice the node in front of the endpoint. Spatialized
+        // sounds attach to this node; the rest stay directly on the endpoint.
+        {
+            ma_uint32 sr = ma_engine_get_sample_rate(&m_Impl->engine);
+            m_Impl->reverb.sampleRate = sr;
+            const float srScale = static_cast<float>(sr) / 44100.0f;
+            for (int c = 0; c < 2; ++c) {
+                for (int i = 0; i < kCombs; ++i) {
+                    int len = static_cast<int>(static_cast<float>(kCombTuning[i] + c * kStereoSpread) * srScale);
+                    m_Impl->reverb.ch[c].comb[i].assign(static_cast<usize>(len > 8 ? len : 8), 0.0f);
+                }
+                for (int i = 0; i < kAllpasses; ++i) {
+                    int len = static_cast<int>(static_cast<float>(kAllpassTuning[i] + c * kStereoSpread) * srScale);
+                    m_Impl->reverb.ch[c].allpass[i].assign(static_cast<usize>(len > 4 ? len : 4), 0.0f);
+                }
+            }
+            m_Impl->reverb.preDelayBuf.assign(static_cast<usize>(sr / 4) * 2, 0.0f);  // up to 250 ms
+
+            ma_node_config nodeCfg = ma_node_config_init();
+            ma_uint32 chans = 2;
+            nodeCfg.vtable = &g_reverbNodeVTable;
+            nodeCfg.pInputChannels = &chans;
+            nodeCfg.pOutputChannels = &chans;
+            if (ma_node_init(ma_engine_get_node_graph(&m_Impl->engine), &nodeCfg, nullptr,
+                             &m_Impl->reverb.base) == MA_SUCCESS) {
+                ma_node_attach_output_bus(&m_Impl->reverb.base, 0,
+                                          ma_engine_get_endpoint(&m_Impl->engine), 0);
+                m_Impl->reverbReady = true;
+            } else {
+                ENJIN_LOG_WARN(Audio, "Environmental reverb node init failed - sounds stay dry");
+            }
+        }
+
         ma_uint32 sampleRate = ma_engine_get_sample_rate(&m_Impl->engine);
         // Use engine's period size for frame size (typically 480 for 48kHz)
         ma_uint32 periodSize = 0;
@@ -123,12 +278,25 @@ void SimpleAudio::Shutdown() {
 #endif
 
     if (m_Impl && m_Impl->initialized) {
+        if (m_Impl->reverbReady) {
+            ma_node_uninit(&m_Impl->reverb.base, nullptr);
+            m_Impl->reverbReady = false;
+        }
         ma_engine_uninit(&m_Impl->engine);
         m_Impl->initialized = false;
     }
 
     m_Initialized = false;
     ENJIN_LOG_INFO(Audio, "SimpleAudio shutdown");
+}
+
+void SimpleAudio::SetEnvironmentReverb(f32 wetDry, f32 roomSize, f32 damping, f32 decayTime, f32 preDelay) {
+    if (!m_Impl || !m_Impl->reverbReady) return;
+    m_Impl->reverb.tWet.store(wetDry, std::memory_order_relaxed);
+    m_Impl->reverb.tRoom.store(roomSize, std::memory_order_relaxed);
+    m_Impl->reverb.tDamp.store(damping, std::memory_order_relaxed);
+    m_Impl->reverb.tDecay.store(decayTime, std::memory_order_relaxed);
+    m_Impl->reverb.tPre.store(preDelay, std::memory_order_relaxed);
 }
 
 void SimpleAudio::SetListenerPosition(const Math::Vector3& position, const Math::Vector3& forward, const Math::Vector3& up) {
@@ -399,6 +567,11 @@ SoundHandle SimpleAudio::Play3D(AudioClipHandle clip, const Math::Vector3& posit
             ma_sound_set_min_distance(maS, clampedMinDist);
             ma_sound_set_max_distance(maS, clampedMaxDist);
             ma_sound_set_attenuation_model(maS, ma_attenuation_model_inverse);
+            // World sounds take on the environment: route through the reverb
+            // bus (2D/UI/music stay attached to the endpoint = dry).
+            if (m_Impl->reverbReady) {
+                ma_node_attach_output_bus(maS, 0, &m_Impl->reverb.base, 0);
+            }
             sound.maSound = maS;
 
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
