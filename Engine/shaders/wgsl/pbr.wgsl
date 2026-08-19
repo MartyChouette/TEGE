@@ -142,7 +142,23 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
         skinnedTangent = skinNormalMat * in.tangent.xyz;
     }
 
-    let world_pos = object.model * vec4<f32>(skinnedPos, 1.0);
+    var world_pos = object.model * vec4<f32>(skinnedPos, 1.0);
+
+    // Water surface waves (FLAG_WATER_SURFACE = bit 5): the same Gerstner-lite
+    // displacement triangle.vert applies on desktop, so web water moves instead
+    // of rendering as a static slab. Fixed wind heading for now (the web
+    // lighting UBO carries no wind vector); ocean mode (bit 11) adds swell.
+    if ((object.flags & 32) != 0) {
+        let t = viewProj.time;
+        let windDir = vec2<f32>(0.62, 0.79);
+        let phase1 = dot(world_pos.xz, windDir * 0.3) + t * 1.2;
+        let phase2 = dot(world_pos.xz, vec2<f32>(-windDir.y, windDir.x) * 0.5) + t * 2.0;
+        var wave = sin(phase1) * 0.15 + sin(phase2) * 0.08;
+        if ((object.flags & 2048) != 0) {
+            wave = wave + sin(dot(world_pos.xz, windDir * 0.08) + t * 0.6) * 0.35;
+        }
+        world_pos.y = world_pos.y + wave;
+    }
     out.clip_position = viewProj.proj * viewProj.view * world_pos;
     out.world_pos = world_pos.xyz;
 
