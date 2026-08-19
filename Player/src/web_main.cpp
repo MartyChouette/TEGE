@@ -508,6 +508,7 @@ public:
         m_RenderSystem->SetCamera(m_Camera.get());
         m_RenderSystem->SetAssetReader(&m_AssetReader);
         m_RenderSystem->Initialize();
+        m_RenderSystem->SetWindSystem(&m_WindSystem);   // wind -> lighting UBO (water waves)
 
         // GPU particles on web: same emitter component as desktop, driven each frame.
         m_Vegetation = std::make_unique<Enjin::Renderer::WebGPUVegetationSystem>();

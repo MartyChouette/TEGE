@@ -22,6 +22,7 @@
 // WebGPU RenderSystem — renders entities through abstract backend interface.
 // Uses PBR WGSL shaders with 3-group bind layout (frame, object, textures).
 // ============================================================================
+#include "Enjin/Effects/Wind.h"
 #if ENJIN_RENDERER_WEBGPU
 
 #include "Enjin/Renderer/WebGPU/WebShaderData.h"
@@ -80,7 +81,8 @@ struct WebLightingUBO {
     WebLightVec4 spotDir[4];               // 64   direction.xyz
     WebLightVec4 spotColor[4];             // 64   color.rgb, intensity.w
     WebLightVec4 spotParams[4];            // 64   innerCutoff.x, outerCutoff.y
-};                                         // Total: 720 bytes
+    WebLightVec4 windData;                 // 16   xyz = wind dir * strength, w = wind clock
+};                                         // Total: 736 bytes
 
 struct WebObjectDataUBO {
     alignas(16) Math::Matrix4 model;       // 64
@@ -410,7 +412,7 @@ void RenderSystem::Initialize() {
     Renderer::GPUBindGroupLayoutDesc frameLayoutDesc;
     frameLayoutDesc.entries = {
         {0, BType::UniformBuffer, SStage::Vertex | SStage::Fragment, sizeof(WebViewProjectionUBO)},
-        {1, BType::UniformBuffer, SStage::Fragment, sizeof(WebLightingUBO)},
+        {1, BType::UniformBuffer, SStage::Vertex | SStage::Fragment, sizeof(WebLightingUBO)},  // vertex too: water waves
     };
     m_WebFrameLayout = bindMgr->CreateBindGroupLayout(frameLayoutDesc);
 
@@ -1548,6 +1550,14 @@ void RenderSystem::Update(f32 deltaTime) {
                 console.log('[SHADOW] dirCount=' + $0 + ' spotShadow=' + $1 + ' pointShadow=' + $2 +
                     ' strength=' + $3.toFixed(2));
             }, dirCount, spotShadowCount, pointShadowCount, lit.shadowParams.x);
+        }
+
+        // Wind for water waves (and anything else vertex-side that wants it)
+        if (m_WindSystem) {
+            Math::Vector4 wv = m_WindSystem->GetWindVector();
+            lit.windData = {wv.x, wv.y, wv.z, wv.w};
+        } else {
+            lit.windData = {0.0f, 0.0f, 0.0f, 0.0f};
         }
 
         bufMgr->UploadData(m_WebLightingBuffer, &lit, sizeof(lit));
@@ -2975,6 +2985,7 @@ void RenderSystem::SetUpscalerQuality(u32 quality) { m_UpscalerQuality = quality
 #include "Enjin/Renderer/VolumetricFog.h"
 #include "Enjin/Effects/GPUParticleSystem.h"
 #include "Enjin/Effects/ParticleColliders.h"
+#include "Enjin/Effects/Wind.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Cloth.h"
 #endif

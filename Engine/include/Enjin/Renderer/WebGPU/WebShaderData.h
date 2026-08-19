@@ -28,6 +28,7 @@ struct LightingUBO {
     spotDir: array<vec4<f32>, 4>,
     spotColor: array<vec4<f32>, 4>,
     spotParams: array<vec4<f32>, 4>,
+    windData: vec4<f32>,                 // xyz = wind dir * strength, w = wind clock
 };
 
 @group(0) @binding(0) var<uniform> viewProj: ViewProjection;
@@ -134,13 +135,20 @@ fn vs_main(in: VertexInput, @builtin(instance_index) instanceIdx: u32) -> Vertex
     // of rendering as a static slab. Fixed wind heading for now (the web
     // lighting UBO carries no wind vector); ocean mode (bit 11) adds swell.
     if ((object.flags & 32) != 0) {
-        let t = viewProj.time;
-        let windDir = vec2<f32>(0.62, 0.79);
-        let phase1 = dot(world_pos.xz, windDir * 0.3) + t * 1.2;
-        let phase2 = dot(world_pos.xz, vec2<f32>(-windDir.y, windDir.x) * 0.5) + t * 2.0;
-        var wave = sin(phase1) * 0.15 + sin(phase2) * 0.08;
+        // Wind-driven like desktop: heading + strength from the lighting UBO's
+        // wind vector; calm scenes fall back to a gentle default so water never
+        // freezes solid.
+        var t = lighting.windData.w;
+        if (t == 0.0) { t = viewProj.time; }
+        var wdir = lighting.windData.xz;
+        var wmag = length(wdir);
+        if (wmag < 0.05) { wdir = vec2<f32>(0.62, 0.79); wmag = 1.0; }
+        else { wdir = wdir / wmag; }
+        let phase1 = dot(world_pos.xz, wdir * 0.3) + t * 1.2;
+        let phase2 = dot(world_pos.xz, vec2<f32>(-wdir.y, wdir.x) * 0.5) + t * 2.0;
+        var wave = (sin(phase1) * 0.15 + sin(phase2) * 0.08) * wmag;
         if ((object.flags & 2048) != 0) {
-            wave = wave + sin(dot(world_pos.xz, windDir * 0.08) + t * 0.6) * 0.35;
+            wave = wave + sin(dot(world_pos.xz, wdir * 0.08) + t * 0.6) * 0.35 * wmag;
         }
         world_pos.y = world_pos.y + wave;
     }
