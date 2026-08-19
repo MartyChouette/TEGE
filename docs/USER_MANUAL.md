@@ -2064,6 +2064,19 @@ Configure the skybox from the **Settings** window, **Scene** tab (View > Setting
 | **Solid Color** | Single flat color fills the background. |
 | **Cubemap** | Six-face cubemap textures for realistic sky imagery. |
 
+#### Atmosphere (Sun, Clouds, Haze)
+
+Every sky type can layer live atmosphere on top, from the **Atmosphere** block in the same panel:
+
+| Setting | Description |
+|---------|-------------|
+| **Sun Intensity / Size / Color** | Draws a sun disc with glow at the Sun Direction. Intensity 0 disables it. |
+| **Cloud Coverage / Scale / Speed / Color** | A procedural cloud layer that drifts with the scene's wind direction. |
+| **High Clouds / Scale** | A second, finer, faster cloud layer above the first. |
+| **Horizon Haze** | A bright atmospheric band hugging the horizon. |
+
+Clouds animate on the wind clock, so cloth, flora, water waves, and clouds all move together. All settings serialize with the scene and work in exported games and web builds.
+
 #### Procedural Presets
 
 Five built-in presets that set colors and sun direction:
@@ -2280,6 +2293,66 @@ A global wind system drives environmental motion across the engine. Configure wi
 > **Tip:** For forests, use `TreeVolumeComponent` instead — it GPU-instances hundreds of procedural trees with built-in wind animation, seasonal color changes, and automatic collision generation. See [Section 5.22: Vegetation Components](#522-vegetation-components).
 
 ---
+
+### Reverb Zones (Environmental Acoustics)
+
+Add a **Reverb Zone** component to give an area real acoustics: every spatialized sound the listener hears inside the zone (footsteps, impacts, positional audio sources) takes on the zone's reverb. UI sounds and music stay dry.
+
+| Setting | Description |
+|---------|-------------|
+| **Preset** | Small Room, Large Room, Hall, Cathedral, Cave, Outdoors, Bathroom, UnderWater, or Custom. |
+| **Shape / Half Extents** | Box or sphere volume centered on the entity. |
+| **Blend Radius** | The reverb fades in across this distance outside the shape, so walking into a cave swells the echo. |
+| **Priority** | Higher-priority zones win where zones overlap. |
+| **Is Global** | Scene-wide default reverb when the listener is in no other zone. |
+
+Custom mode exposes room size, damping, wet/dry mix, decay time, and pre-delay directly.
+
+### GPU Particle Collision, Impact Sounds, and Stains
+
+GPU particle emitters collide with the world's Box, Sphere, and Capsule colliders (triggers are ignored). Per-emitter settings:
+
+| Setting | Description |
+|---------|-------------|
+| **Collide** | On by default. Off for effects that should pass through geometry (glow motes, ghosts). |
+| **Bounciness** | 0 = splat like dust, 1 = superball sparks. |
+| **Friction** | 0 = skid along surfaces, 1 = stop dead on contact. |
+| **Radius** | Collision size. 0 = point; set roughly half the particle Size so large particles do not sink in before reacting. |
+| **Impact Sound / Volume / Min Speed / Cooldown** | A sound played where particles strike, gated by impact speed and rate-limited. Desktop builds. |
+| **Leave Stains / Stain Color / Size / Lifetime** | Strikes leave a lasting surface mark (liquids, blood, paint) that fades over its lifetime. Desktop builds. |
+
+The **Liquid** preset combines these into ready-made droplets: heavy gravity, near-zero bounce, high friction, and stains enabled with a darker version of the droplet color.
+
+### Trim Sheets and Texture Atlases
+
+A trim sheet is one texture holding many reusable strips; an atlas packs many textures into one. Both use the material's **Atlas Region**:
+
+1. **Pack**: Tools > **Atlas Packer**. Point it at a folder of images, pick a size, hit Pack. It writes `<name>.png` and `<name>.atlas.json` into your project's `assets/textures/`.
+2. **Apply**: in any material's inspector, open **Atlas Region**, load the `.atlas.json`, and click a region name. The material gets the atlas texture and the region in one click.
+
+Mesh UVs tile *within* the region, so a strip repeats along a wall or pipe exactly like a dedicated texture would. Region Offset/Scale can also be dragged by hand; Clear Region reverts to the full texture.
+
+### Cloth
+
+The **Cloth** component simulates a pinned fabric grid: flags, capes, curtains, banners.
+
+| Setting | Description |
+|---------|-------------|
+| **Width / Height / Res X / Res Y** | Sheet size and simulation resolution. |
+| **Pin** | Which points are fixed: Top Edge, Top Corners, Left Edge, All Corners, None. Pinned points follow the entity. |
+| **Weather Wind / Wind Catch** | The cloth catches the scene's live wind (gusts included). A Weather Zone covering the cloth overrides the global wind - zone strength 0 keeps indoor cloth calm. The Wind field adds a constant local force on top. |
+| **Tearable / Tear Threshold** | Links stretched past the threshold snap and the fabric visibly rips. |
+| **Pin Strength / Seams** | Sewn-fabric tearing: reinforce or weaken the stitching at pins, and lay seam lines so tears run along panels. |
+| **Collide / Friction / Self Collide** | Push out of world colliders; folded fabric stacks with thickness instead of passing through itself. |
+
+### Surface Response (Material Sounds and Particles)
+
+Materials carry the sound and particle they make when walked on or struck (inspired by modern AAA surface systems). On any material: **Footstep Sound**, **Impact Sound**, **Impact Threshold**, **Footstep Volume**, and **Surface Particle** (Dust, Grass, Spark, Splash, Smoke, Snow - each bursts a matching particle look).
+
+- Footsteps fire automatically from movement cadence in both 3D and 2D games.
+- An animation clip can own the timing instead: add an event named `footstep` to the clip and steps fire at the authored frames.
+- Impacts fire from physics collisions harder than the material's threshold.
+- All of it takes on the acoustics of the current Reverb Zone.
 
 ## 9. Accessibility
 
@@ -3356,6 +3429,15 @@ Enjin supports loading SVG vector images at runtime via the integrated nanosvg l
 ---
 
 ## Appendix A: Shader Workflow
+
+### Shader Graph
+
+The Shader Graph editor builds custom material shaders from nodes:
+
+- **Connect nodes** by dragging from a pin to a compatible pin (outputs on the right, labeled inputs on the left). Dropping on an occupied input replaces its link; grabbing an occupied input detaches the link for re-routing; right-click a pin to break its links.
+- **Texture nodes** (Sample Texture 2D, Texture Param, Parallax) take a project-relative image path in their properties and sample it for real.
+- **Apply to Selected Entity** compiles the graph and binds it live. The assignment persists with the scene and ships in exported games; remove it from the entity's Custom Shader inspector section.
+
 
 Shaders are written in GLSL and stored in `Engine/shaders/`. They must be compiled to SPIR-V and then embedded in `ShaderData.h`.
 
