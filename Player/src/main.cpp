@@ -28,6 +28,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/TemperatureZone.h"
+#include "Enjin/ECS/Systems/DungeonGeneratorSystem.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/Effects/TreeRenderer.h"
 #include <climits>
@@ -2414,6 +2415,9 @@ private:
         } catch (const std::exception&) {
             // JSON parse failure for content warnings is non-fatal
         }
+
+        // Procedural dungeons: paint tilemaps for any generateOnStart generators
+        Enjin::ECS::DungeonGeneratorSystem::GenerateAll(m_World.get());
 
         // Build audio occlusion scene from colliders
 #ifdef ENJIN_AUDIO_STEAM_AUDIO

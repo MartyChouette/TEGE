@@ -1,5 +1,6 @@
 #include "Enjin/Editor/PlayMode.h"
 #include <filesystem>
+#include "Enjin/ECS/Systems/DungeonGeneratorSystem.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
@@ -215,6 +216,7 @@ void PlayMode::Play() {
     m_StreamingManager.SetEnabled(true);
     m_AISystem.SetEnabled(true);
     ENJIN_LOG_INFO(Editor, "PlayMode: Gameplay systems enabled");
+    ECS::DungeonGeneratorSystem::GenerateAll(m_World);   // fresh dungeons on play (generateOnStart)
     m_TweenSystem.PlayAll(m_World);
     Scripting::SetBindingsWorld(m_World);
     Scripting::SetBindingsDialogueSystem(&m_DialogueSystem);

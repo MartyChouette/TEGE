@@ -17,6 +17,8 @@
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/Swarm.h"
+#include "Enjin/ECS/Components/DungeonGenerator.h"
+#include "Enjin/ECS/Systems/DungeonGeneratorSystem.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -370,6 +372,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SwarmComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SwarmComponent>(e); },
             "swarm crowd agents boids instanced"},
+        {"Dungeon Generator", "Procedural", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DungeonGeneratorComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DungeonGeneratorComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::DungeonGeneratorComponent>(e); },
+            "procgen dungeon cave rooms tilemap random walk cellular bsp"},
         {"Cloth", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ClothComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ClothComponent>(e); },
@@ -1642,6 +1649,66 @@ void EditorLayer::DrawInspectorPanel() {
                 f32 swCol[3] = { sw->color.x, sw->color.y, sw->color.z };
                 if (ImGui::ColorEdit3("Color", swCol)) sw->color = Math::Vector3(swCol[0], swCol[1], swCol[2]);
                 ImGui::TextDisabled("(simulates in Play mode as instanced proxy cubes)");
+            }
+        }
+        if (auto* dg = m_World->GetComponent<ECS::DungeonGeneratorComponent>(m_PrimarySelected)) {
+            bool dgOpen = ImGui::CollapsingHeader("Dungeon Generator", ImGuiTreeNodeFlags_DefaultOpen);
+            bool dgRemoved = false;
+            if (ImGui::BeginPopupContextItem("DungeonGenCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::DungeonGeneratorComponent>(m_PrimarySelected, "dungeonGenerator", "Dungeon Generator");
+                    dgRemoved = true;
+                }
+                ImGui::EndPopup();
+            }
+            if (!dgRemoved && dgOpen) {
+                const char* algos[] = { "Random Walk (cave)", "Cellular (organic caves)", "BSP (rooms + corridors)" };
+                int a = static_cast<int>(dg->algorithm);
+                if (ImGui::Combo("Algorithm", &a, algos, IM_ARRAYSIZE(algos)))
+                    dg->algorithm = static_cast<ECS::DungeonGeneratorComponent::Algorithm>(a);
+
+                i32 w = static_cast<i32>(dg->width), h = static_cast<i32>(dg->height);
+                if (ImGui::DragInt("Width", &w, 1, 4, 512))  dg->width = static_cast<u32>(w < 4 ? 4 : w);
+                if (ImGui::DragInt("Height", &h, 1, 4, 512)) dg->height = static_cast<u32>(h < 4 ? 4 : h);
+                i32 seed = static_cast<i32>(dg->seed);
+                if (ImGui::DragInt("Seed (0 = random)", &seed, 1, 0, 2000000000)) dg->seed = static_cast<u32>(seed < 0 ? 0 : seed);
+
+                if (dg->algorithm == ECS::DungeonGeneratorComponent::Algorithm::RandomWalk) {
+                    i32 st = static_cast<i32>(dg->walkSteps);
+                    if (ImGui::DragInt("Walk Steps", &st, 10, 10, 100000)) dg->walkSteps = static_cast<u32>(st < 10 ? 10 : st);
+                    ImGui::SliderFloat("Turn Chance", &dg->walkTurnChance, 0.0f, 1.0f);
+                } else if (dg->algorithm == ECS::DungeonGeneratorComponent::Algorithm::Cellular) {
+                    i32 fp = static_cast<i32>(dg->fillPercent);
+                    if (ImGui::SliderInt("Fill %", &fp, 0, 100)) dg->fillPercent = static_cast<u32>(fp);
+                    i32 it = static_cast<i32>(dg->iterations);
+                    if (ImGui::SliderInt("Smoothing Passes", &it, 0, 12)) dg->iterations = static_cast<u32>(it);
+                } else {
+                    i32 mn = static_cast<i32>(dg->minRoomSize), mx = static_cast<i32>(dg->maxRoomSize);
+                    if (ImGui::DragInt("Min Room", &mn, 1, 2, 60)) dg->minRoomSize = static_cast<u32>(mn < 2 ? 2 : mn);
+                    if (ImGui::DragInt("Max Room", &mx, 1, 2, 60)) dg->maxRoomSize = static_cast<u32>(mx < 2 ? 2 : mx);
+                    i32 sd = static_cast<i32>(dg->splitDepth);
+                    if (ImGui::SliderInt("Split Depth", &sd, 1, 8)) dg->splitDepth = static_cast<u32>(sd);
+                    i32 cw = static_cast<i32>(dg->corridorWidth);
+                    if (ImGui::SliderInt("Corridor Width", &cw, 1, 6)) dg->corridorWidth = static_cast<u32>(cw);
+                }
+
+                ImGui::Separator();
+                ImGui::DragInt("Floor Tile", &dg->floorTile, 1, -1, 4096);
+                ImGui::DragInt("Wall Tile (-1 = empty)", &dg->wallTile, 1, -1, 4096);
+                ImGui::Checkbox("Fill Collision", &dg->fillCollision);
+                ImGui::Checkbox("Generate On Play Start", &dg->generateOnStart);
+
+                if (ImGui::Button("Generate Now")) {
+                    auto* tm = m_World->GetComponent<ECS::TilemapComponent>(m_PrimarySelected);
+                    if (!tm) { m_World->AddComponent<ECS::TilemapComponent>(m_PrimarySelected); tm = m_World->GetComponent<ECS::TilemapComponent>(m_PrimarySelected); }
+                    if (tm) {
+                        ECS::DungeonGeneratorSystem::Generate(*dg, *tm);
+                        ENJIN_LOG_INFO(Editor, "Generated dungeon (seed %u) into tilemap", dg->lastSeed);
+                    }
+                }
+                ImGui::SameLine();
+                ImGui::TextDisabled("seed used: %u", dg->lastSeed);
+                ImGui::TextDisabled("(paints this entity's Tilemap; add a Tilemap + tileset to see it)");
             }
         }
         if (m_World->HasComponent<ECS::VisualScriptComponent>(m_PrimarySelected)) {

@@ -13,6 +13,7 @@
 #include "Enjin/ECS/Components/Script.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/CustomShader.h"
+#include "Enjin/ECS/Components/DungeonGenerator.h"
 
 using namespace Enjin;
 using namespace Enjin::ECS;
@@ -1044,6 +1045,37 @@ ENJIN_TEST(CustomShader, GlslAndGraphRoundTrip) {
     ENJIN_EXPECT_EQ(g->graphJson, std::string("{\"name\":\"Test\",\"nodes\":[{\"id\":1}],\"links\":[]}"));
     // Runtime flags reset (re-applied by FlushPendingChanges, not serialized)
     ENJIN_EXPECT_FALSE(g->applied);
+}
+
+// ===========================================================================
+// DungeonGeneratorComponent (procgen suite)
+// ===========================================================================
+
+ENJIN_TEST(DungeonGenerator, FieldsRoundTrip) {
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& d = w1.AddComponent<DungeonGeneratorComponent>(e);
+    d.algorithm = DungeonGeneratorComponent::Algorithm::BSPRooms;
+    d.width = 80; d.height = 64; d.seed = 12345;
+    d.minRoomSize = 6; d.maxRoomSize = 14; d.splitDepth = 6; d.corridorWidth = 3;
+    d.floorTile = 2; d.wallTile = 7; d.fillCollision = false; d.generateOnStart = false;
+
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<DungeonGeneratorComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+
+    ENJIN_EXPECT_EQ((int)g->algorithm, (int)DungeonGeneratorComponent::Algorithm::BSPRooms);
+    ENJIN_EXPECT_EQ((int)g->width, 80);
+    ENJIN_EXPECT_EQ((int)g->height, 64);
+    ENJIN_EXPECT_EQ((int)g->seed, 12345);
+    ENJIN_EXPECT_EQ((int)g->splitDepth, 6);
+    ENJIN_EXPECT_EQ(g->floorTile, 2);
+    ENJIN_EXPECT_EQ(g->wallTile, 7);
+    ENJIN_EXPECT_FALSE(g->fillCollision);
+    ENJIN_EXPECT_FALSE(g->generateOnStart);
 }
 
 ENJIN_TEST_MAIN()

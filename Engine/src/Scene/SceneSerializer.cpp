@@ -31,6 +31,7 @@
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Cloth.h"
 #include "Enjin/ECS/Components/Swarm.h"
+#include "Enjin/ECS/Components/DungeonGenerator.h"
 #include "Enjin/ECS/Components/CustomShader.h"
 #include "Enjin/ECS/Components/Lens.h"
 #include "Enjin/ECS/Components/CineComponent.h"
@@ -1299,6 +1300,40 @@ ECS::SwarmComponent DeserializeSwarmComponent(const json& j) {
     if (j.contains("cubeSize")) s.cubeSize = j["cubeSize"].get<f32>();
     if (j.contains("color")) s.color = DeserializeVector3(j["color"]);
     return s;
+}
+
+json SerializeDungeonGeneratorComponent(const ECS::DungeonGeneratorComponent& d) {
+    json j;
+    j["algorithm"] = static_cast<u8>(d.algorithm);
+    j["width"] = d.width; j["height"] = d.height; j["seed"] = d.seed;
+    j["walkSteps"] = d.walkSteps; j["walkTurnChance"] = RF(d.walkTurnChance);
+    j["fillPercent"] = d.fillPercent; j["iterations"] = d.iterations;
+    j["minRoomSize"] = d.minRoomSize; j["maxRoomSize"] = d.maxRoomSize;
+    j["splitDepth"] = d.splitDepth; j["corridorWidth"] = d.corridorWidth;
+    j["floorTile"] = d.floorTile; j["wallTile"] = d.wallTile;
+    j["fillCollision"] = d.fillCollision; j["generateOnStart"] = d.generateOnStart;
+    return j;
+}
+
+ECS::DungeonGeneratorComponent DeserializeDungeonGeneratorComponent(const json& j) {
+    ECS::DungeonGeneratorComponent d;
+    if (j.contains("algorithm")) { u8 v = j["algorithm"].get<u8>(); if (v <= 2) d.algorithm = static_cast<ECS::DungeonGeneratorComponent::Algorithm>(v); }
+    if (j.contains("width")) d.width = std::clamp(j["width"].get<u32>(), 4u, 512u);
+    if (j.contains("height")) d.height = std::clamp(j["height"].get<u32>(), 4u, 512u);
+    if (j.contains("seed")) d.seed = j["seed"].get<u32>();
+    if (j.contains("walkSteps")) d.walkSteps = j["walkSteps"].get<u32>();
+    if (j.contains("walkTurnChance")) d.walkTurnChance = j["walkTurnChance"].get<f32>();
+    if (j.contains("fillPercent")) d.fillPercent = std::clamp(j["fillPercent"].get<u32>(), 0u, 100u);
+    if (j.contains("iterations")) d.iterations = j["iterations"].get<u32>();
+    if (j.contains("minRoomSize")) d.minRoomSize = j["minRoomSize"].get<u32>();
+    if (j.contains("maxRoomSize")) d.maxRoomSize = j["maxRoomSize"].get<u32>();
+    if (j.contains("splitDepth")) d.splitDepth = j["splitDepth"].get<u32>();
+    if (j.contains("corridorWidth")) d.corridorWidth = j["corridorWidth"].get<u32>();
+    if (j.contains("floorTile")) d.floorTile = j["floorTile"].get<i32>();
+    if (j.contains("wallTile")) d.wallTile = j["wallTile"].get<i32>();
+    if (j.contains("fillCollision")) d.fillCollision = JB(j["fillCollision"]);
+    if (j.contains("generateOnStart")) d.generateOnStart = JB(j["generateOnStart"]);
+    return d;
 }
 
 json SerializeElementalVolumeComponent(const ECS::ElementalVolumeComponent& v) {
@@ -7438,6 +7473,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::SwarmComponent>(entity)) {
                 entityJson["swarm"] = SerializeSwarmComponent(*m_World->GetComponent<ECS::SwarmComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::DungeonGeneratorComponent>(entity)) {
+                entityJson["dungeonGenerator"] = SerializeDungeonGeneratorComponent(*m_World->GetComponent<ECS::DungeonGeneratorComponent>(entity));
+            }
             if (m_World->HasComponent<ECS::ElementalVolumeComponent>(entity)) {
                 entityJson["elementalVolume"] = SerializeElementalVolumeComponent(*m_World->GetComponent<ECS::ElementalVolumeComponent>(entity));
             }
@@ -8277,6 +8315,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("swarm")) {
                 m_World->AddComponent<ECS::SwarmComponent>(entity, DeserializeSwarmComponent(entityJson["swarm"]));
             }
+            if (entityJson.contains("dungeonGenerator")) {
+                m_World->AddComponent<ECS::DungeonGeneratorComponent>(entity, DeserializeDungeonGeneratorComponent(entityJson["dungeonGenerator"]));
+            }
             if (entityJson.contains("elementalVolume")) {
                 m_World->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(entityJson["elementalVolume"]));
             }
@@ -8942,6 +8983,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::SwarmComponent>(entity)) {
                 entityJson["swarm"] = SerializeSwarmComponent(*m_World->GetComponent<ECS::SwarmComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::DungeonGeneratorComponent>(entity)) {
+                entityJson["dungeonGenerator"] = SerializeDungeonGeneratorComponent(*m_World->GetComponent<ECS::DungeonGeneratorComponent>(entity));
             }
             if (m_World->HasComponent<ECS::ElementalVolumeComponent>(entity)) {
                 entityJson["elementalVolume"] = SerializeElementalVolumeComponent(*m_World->GetComponent<ECS::ElementalVolumeComponent>(entity));
@@ -9702,6 +9746,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("swarm")) {
                 m_World->AddComponent<ECS::SwarmComponent>(entity, DeserializeSwarmComponent(entityJson["swarm"]));
             }
+            if (entityJson.contains("dungeonGenerator")) {
+                m_World->AddComponent<ECS::DungeonGeneratorComponent>(entity, DeserializeDungeonGeneratorComponent(entityJson["dungeonGenerator"]));
+            }
             if (entityJson.contains("elementalVolume")) {
                 m_World->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(entityJson["elementalVolume"]));
             }
@@ -10267,6 +10314,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["cloth"] = SerializeClothComponent(*world->GetComponent<ECS::ClothComponent>(entity));
         if (world->HasComponent<ECS::SwarmComponent>(entity))
             entityJson["swarm"] = SerializeSwarmComponent(*world->GetComponent<ECS::SwarmComponent>(entity));
+        if (world->HasComponent<ECS::DungeonGeneratorComponent>(entity))
+            entityJson["dungeonGenerator"] = SerializeDungeonGeneratorComponent(*world->GetComponent<ECS::DungeonGeneratorComponent>(entity));
         if (world->HasComponent<ECS::ElementalVolumeComponent>(entity))
             entityJson["elementalVolume"] = SerializeElementalVolumeComponent(*world->GetComponent<ECS::ElementalVolumeComponent>(entity));
         if (world->HasComponent<ECS::PostProcessVolumeComponent>(entity))
@@ -10688,6 +10737,9 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         if (entityJson.contains("swarm")) {
             world->AddComponent<ECS::SwarmComponent>(entity, DeserializeSwarmComponent(entityJson["swarm"]));
         }
+        if (entityJson.contains("dungeonGenerator")) {
+            world->AddComponent<ECS::DungeonGeneratorComponent>(entity, DeserializeDungeonGeneratorComponent(entityJson["dungeonGenerator"]));
+        }
         if (entityJson.contains("elementalVolume")) {
             world->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(entityJson["elementalVolume"]));
         }
@@ -10998,6 +11050,8 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
         return SerializeGPUParticleEmitterComponent(*world->GetComponent<ECS::GPUParticleEmitterComponent>(entity)).dump();
     if (key == "swarm" && world->HasComponent<ECS::SwarmComponent>(entity))
         return SerializeSwarmComponent(*world->GetComponent<ECS::SwarmComponent>(entity)).dump();
+    if (key == "dungeonGenerator" && world->HasComponent<ECS::DungeonGeneratorComponent>(entity))
+        return SerializeDungeonGeneratorComponent(*world->GetComponent<ECS::DungeonGeneratorComponent>(entity)).dump();
 
     if (!world || !world->IsValid(entity)) return "";
 
@@ -11320,6 +11374,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "gpuParticleEmitter") { world->AddComponent<ECS::GPUParticleEmitterComponent>(entity, DeserializeGPUParticleEmitterComponent(j)); return true; }
         if (key == "cloth") { world->AddComponent<ECS::ClothComponent>(entity, DeserializeClothComponent(j)); return true; }
         if (key == "swarm") { world->AddComponent<ECS::SwarmComponent>(entity, DeserializeSwarmComponent(j)); return true; }
+        if (key == "dungeonGenerator") { world->AddComponent<ECS::DungeonGeneratorComponent>(entity, DeserializeDungeonGeneratorComponent(j)); return true; }
         if (key == "elementalVolume") { world->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(j)); return true; }
         if (key == "postProcessVolume") { world->AddComponent<ECS::PostProcessVolumeComponent>(entity, DeserializePostProcessVolumeComponent(j)); return true; }
         if (key == "fluidVolume") { world->AddComponent<ECS::FluidVolumeComponent>(entity, DeserializeFluidVolumeComponent(j)); return true; }
@@ -11485,6 +11540,7 @@ bool SceneSerializer::RemoveOneComponent(ECS::World* world, ECS::Entity entity, 
         if (key == "gpuParticleEmitter") { world->RemoveComponent<ECS::GPUParticleEmitterComponent>(entity); return true; }
         if (key == "cloth") { world->RemoveComponent<ECS::ClothComponent>(entity); return true; }
         if (key == "swarm") { world->RemoveComponent<ECS::SwarmComponent>(entity); return true; }
+        if (key == "dungeonGenerator") { world->RemoveComponent<ECS::DungeonGeneratorComponent>(entity); return true; }
         if (key == "elementalVolume") { world->RemoveComponent<ECS::ElementalVolumeComponent>(entity); return true; }
         if (key == "postProcessVolume") { world->RemoveComponent<ECS::PostProcessVolumeComponent>(entity); return true; }
         if (key == "fluidVolume") { world->RemoveComponent<ECS::FluidVolumeComponent>(entity); return true; }
