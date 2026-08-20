@@ -15,6 +15,10 @@ struct CustomShaderComponent {
     std::string vertexSource;     // generated GLSL (serialized)
     std::string fragmentSource;   // generated GLSL (serialized)
     std::string graphLabel;       // which graph produced it (informational)
+    std::string graphJson;        // the editable node graph (serialized) — lets a
+                                  // scene reload restore the graph in the editor,
+                                  // not just the compiled GLSL. Empty = hand-authored
+                                  // GLSL with no graph behind it.
 
     // --- Runtime (not serialized) ---
     bool applied = false;   // pipeline is live this session

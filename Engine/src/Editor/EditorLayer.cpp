@@ -3403,6 +3403,41 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
 
     // Graph editor windows (use IsOpen pattern, not panel bits)
     if (m_ShaderGraphEditor.IsOpen()) {
+        // Restore an entity's saved graph into the editor. Two ways in, neither
+        // clobbers a graph you're actively building:
+        //  - auto: selecting an entity that has a stored graph loads it, but only
+        //    when the current editor graph is still the untouched default
+        //  - explicit: the "Load Graph from Selected" button always loads it
+        bool selHasGraph = false;
+        ECS::CustomShaderComponent* selCS = nullptr;
+        if (m_World && m_PrimarySelected != ECS::INVALID_ENTITY && m_World->IsValid(m_PrimarySelected)) {
+            selCS = m_World->GetComponent<ECS::CustomShaderComponent>(m_PrimarySelected);
+            selHasGraph = selCS && !selCS->graphJson.empty();
+        }
+        if (selHasGraph && m_PrimarySelected != m_ShaderGraphLoadedEntity &&
+            m_ShaderGraphEditor.IsDefaultGraph()) {
+            if (m_ShaderGraphEditor.FromJsonString(selCS->graphJson)) {
+                m_ShaderGraphLoadedEntity = m_PrimarySelected;
+                ENJIN_LOG_INFO(Editor, "Loaded stored shader graph from selected entity");
+            }
+        }
+
+        ImGui::Begin("Shader Graph Entity Link");
+        if (selHasGraph) {
+            ImGui::TextWrapped("Selected entity has a saved shader graph.");
+            if (ImGui::Button("Load Graph from Selected")) {
+                if (m_ShaderGraphEditor.FromJsonString(selCS->graphJson)) {
+                    m_ShaderGraphLoadedEntity = m_PrimarySelected;
+                    ENJIN_LOG_INFO(Editor, "Loaded stored shader graph from selected entity");
+                }
+            }
+        } else if (m_PrimarySelected != ECS::INVALID_ENTITY) {
+            ImGui::TextDisabled("Selected entity has no saved graph.");
+        } else {
+            ImGui::TextDisabled("Select an entity to link a graph.");
+        }
+        ImGui::End();
+
         m_ShaderGraphEditor.Render();
         // "Apply to Selected Entity": compile the graph and bind it as a live custom
         // shader on the current selection (RenderSystem shares the main pipeline layout).
@@ -3432,9 +3467,15 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                             cs->vertexSource = code.vertexCode;
                             cs->fragmentSource = code.fragmentCode;
                             cs->graphLabel = "shader graph";
+                            // Store the editable node graph too, so reopening the
+                            // scene restores the graph in the editor, not just the
+                            // compiled GLSL.
+                            cs->graphJson = m_ShaderGraphEditor.ToJsonString();
                             cs->applied = true;
                             cs->failed = false;
                         }
+                        // This graph now belongs to this entity — don't auto-reload over it
+                        m_ShaderGraphLoadedEntity = m_PrimarySelected;
                         ENJIN_LOG_INFO(Editor, "Applied shader graph to selected entity (persisted)");
                     } else {
                         ENJIN_LOG_ERROR(Editor, "Custom shader apply failed: %s", err.c_str());

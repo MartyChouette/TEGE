@@ -1719,8 +1719,8 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
 // Save/Load (.enjshader JSON format)
 // ============================================================================
 
-bool ShaderGraphEditor::Save(const std::string& path) const {
-    if (!m_Graph) return false;
+std::string ShaderGraphEditor::ToJsonString() const {
+    if (!m_Graph) return "";
 
     std::string json = "{\n";
     json += "  \"name\": \"" + m_Graph->name + "\",\n";
@@ -1758,7 +1758,12 @@ bool ShaderGraphEditor::Save(const std::string& path) const {
     }
     json += "  ]\n";
     json += "}\n";
+    return json;
+}
 
+bool ShaderGraphEditor::Save(const std::string& path) const {
+    if (!m_Graph) return false;
+    std::string json = ToJsonString();
     std::ofstream file(path);
     if (!file.is_open()) return false;
     file << json;
@@ -1767,11 +1772,15 @@ bool ShaderGraphEditor::Save(const std::string& path) const {
 
 bool ShaderGraphEditor::Load(const std::string& path) {
     if (!m_Graph) return false;
-
     std::ifstream file(path);
     if (!file.is_open()) return false;
     std::string json((std::istreambuf_iterator<char>(file)),
                       std::istreambuf_iterator<char>());
+    return FromJsonString(json);
+}
+
+bool ShaderGraphEditor::FromJsonString(const std::string& json) {
+    if (!m_Graph || json.empty()) return false;
 
     // Simple JSON parsing (reuse nlohmann if available, otherwise manual)
     // For robustness, use the same approach as other serializers in the engine
@@ -1817,6 +1826,13 @@ bool ShaderGraphEditor::Load(const std::string& path) {
         return false;
     }
     return true;
+}
+
+bool ShaderGraphEditor::IsDefaultGraph() const {
+    // "Untouched" = no nodes, or only the two default output stubs a fresh graph
+    // ships with. Keeps auto-load from clobbering a graph the user is building.
+    if (!m_Graph) return true;
+    return m_Graph->nodes.size() <= 2 && m_Graph->links.empty();
 }
 
 } // namespace Editor

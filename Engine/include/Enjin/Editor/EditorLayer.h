@@ -608,6 +608,10 @@ private:
     // Shader Graph editor
     ShaderGraphEditor m_ShaderGraphEditor;
     ShaderGraphData m_ShaderGraphData;
+    // Entity whose stored graph is currently loaded in the editor (auto-load
+    // guard so we only pull a selection's saved graph once, and never clobber
+    // an in-progress graph — see the restore block in the shader graph window).
+    ECS::Entity m_ShaderGraphLoadedEntity = ECS::INVALID_ENTITY;
 
     // Audio Event Graph editor
     AudioEventGraphEditor m_AudioGraphEditor;

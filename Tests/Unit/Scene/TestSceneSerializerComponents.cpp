@@ -12,6 +12,7 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Script.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
+#include "Enjin/ECS/Components/CustomShader.h"
 
 using namespace Enjin;
 using namespace Enjin::ECS;
@@ -1013,6 +1014,36 @@ ENJIN_TEST(WeatherZone, PrecipTexturePathsRoundTrip) {
     // Runtime cache must come back unresolved, not serialized
     ENJIN_EXPECT_EQ(g->cachedRainTexIndex, -2);
     ENJIN_EXPECT_EQ(g->cachedSnowTexIndex, -2);
+}
+
+// ===========================================================================
+// CustomShaderComponent — GLSL + editable graph JSON round-trip
+// ===========================================================================
+
+ENJIN_TEST(CustomShader, GlslAndGraphRoundTrip) {
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& cs = w1.AddComponent<CustomShaderComponent>(e);
+    cs.vertexSource = "void main(){ gl_Position = vec4(0); }";
+    cs.fragmentSource = "void main(){ outColor = vec4(1); }";
+    cs.graphLabel = "test graph";
+    cs.graphJson = "{\"name\":\"Test\",\"nodes\":[{\"id\":1}],\"links\":[]}";
+    cs.applied = true;   // runtime flag — must NOT survive
+
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<CustomShaderComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+
+    ENJIN_EXPECT_EQ(g->vertexSource, std::string("void main(){ gl_Position = vec4(0); }"));
+    ENJIN_EXPECT_EQ(g->fragmentSource, std::string("void main(){ outColor = vec4(1); }"));
+    ENJIN_EXPECT_EQ(g->graphLabel, std::string("test graph"));
+    // The editable graph survives so reopening the scene restores the node layout
+    ENJIN_EXPECT_EQ(g->graphJson, std::string("{\"name\":\"Test\",\"nodes\":[{\"id\":1}],\"links\":[]}"));
+    // Runtime flags reset (re-applied by FlushPendingChanges, not serialized)
+    ENJIN_EXPECT_FALSE(g->applied);
 }
 
 ENJIN_TEST_MAIN()

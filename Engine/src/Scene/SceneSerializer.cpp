@@ -1208,6 +1208,7 @@ json SerializeCustomShaderComponent(const ECS::CustomShaderComponent& c) {
     j["vs"] = c.vertexSource;
     j["fs"] = c.fragmentSource;
     j["label"] = c.graphLabel;
+    if (!c.graphJson.empty()) j["graph"] = c.graphJson;
     return j;
 }
 
@@ -1216,6 +1217,7 @@ ECS::CustomShaderComponent DeserializeCustomShaderComponent(const json& j) {
     if (j.contains("vs")) c.vertexSource = SafeStr(j["vs"], 262144);
     if (j.contains("fs")) c.fragmentSource = SafeStr(j["fs"], 262144);
     if (j.contains("label")) c.graphLabel = SafeStr(j["label"]);
+    if (j.contains("graph")) c.graphJson = SafeStr(j["graph"], 262144);
     return c;
 }
 

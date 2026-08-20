@@ -130,6 +130,18 @@ public:
     bool Save(const std::string& path) const;
     bool Load(const std::string& path);
 
+    // Same JSON as Save/Load but in-memory — used to persist the editable graph
+    // inside CustomShaderComponent so a scene reload restores the node layout,
+    // not just the compiled GLSL.
+    std::string ToJsonString() const;
+    bool FromJsonString(const std::string& json);
+
+    // Is the current graph the untouched default? (used to decide whether it is
+    // safe to auto-load a selected entity's stored graph without clobbering work)
+    bool IsDefaultGraph() const;
+
+    ShaderGraphData* GetGraph() const { return m_Graph; }
+
 private:
     // --- Interactive linking (rebuilt every frame) ---
     struct FramePin { u32 node = 0; i32 pin = -1; f32 x = 0, y = 0; };  // pin -1 = output
