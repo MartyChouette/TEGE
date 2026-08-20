@@ -42,6 +42,9 @@
 #include <imgui.h>
 #include <imgui_impl_wgpu.h>
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/WeatherZone.h"
+#include "Enjin/ECS/Components/TemperatureZone.h"
+#include <climits>
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/WorldTime.h"
@@ -746,6 +749,7 @@ public:
 
         m_WindSystem.Update(deltaTime);
         m_WorldTime.Update(deltaTime);
+        UpdateWeatherZones();
         if (m_Camera) {
             m_WeatherSystem.Update(deltaTime, m_Camera->GetPosition());
         }
@@ -1160,6 +1164,108 @@ public:
     }
 
 private:
+    // Zone-driven weather on web (mirrors desktop Player UpdateWeatherZones, minus
+    // the pieces web can't render: season state has no web TreeRenderer, water
+    // freeze has no web water surface). Feeds rain/snow intensity, fog, and the
+    // wind override; the existing GPU-particle precip spawn reads those back.
+    // Custom precip sprite textures are Phase 3 (WebGPU has no bindless path yet).
+    void UpdateWeatherZones() {
+        using namespace Enjin;
+        if (!m_World || !m_Camera || !m_RenderSystem) return;
+
+        Math::Vector3 camPos = m_Camera->GetPosition();
+
+        ECS::WeatherZoneComponent* activeWeatherZone = nullptr;
+        i32 bestWeatherPriority = INT_MIN;
+        for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::WeatherZoneComponent>()) {
+            auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
+            auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+            if (zone && zoneTransform && zone->priority > bestWeatherPriority) {
+                if (zone->ContainsPoint(zoneTransform->position, camPos)) {
+                    activeWeatherZone = zone;
+                    bestWeatherPriority = zone->priority;
+                }
+            }
+        }
+
+        ECS::TemperatureZoneComponent* activeTempZone = nullptr;
+        i32 bestTempPriority = INT_MIN;
+        for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::TemperatureZoneComponent>()) {
+            auto* zone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
+            auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+            if (zone && zoneTransform && zone->priority > bestTempPriority) {
+                if (zone->ContainsPoint(zoneTransform->position, camPos)) {
+                    activeTempZone = zone;
+                    bestTempPriority = zone->priority;
+                }
+            }
+        }
+
+        bool isRain = false;
+        bool hasPrecip = false;
+        if (activeWeatherZone && activeWeatherZone->weatherType > 0) {
+            Effects::WeatherType wType = static_cast<Effects::WeatherType>(activeWeatherZone->weatherType);
+            hasPrecip = (activeWeatherZone->weatherType == 2 || activeWeatherZone->weatherType == 3 ||
+                         activeWeatherZone->weatherType == 4 || activeWeatherZone->weatherType == 6);
+
+            if (hasPrecip && activeTempZone) {
+                f32 temp = activeTempZone->temperature;
+                f32 baseInt = (activeWeatherZone->weatherType == 4)
+                    ? activeWeatherZone->snowIntensity : activeWeatherZone->rainIntensity;
+                if (temp <= 0.0f) {
+                    m_WeatherSystem.SetWeather(Effects::WeatherType::Snow, 0.1f);
+                    m_WeatherSystem.SetRainIntensity(0.0f);
+                    m_WeatherSystem.SetSnowIntensity(baseInt);
+                } else if (temp <= 5.0f) {
+                    f32 blend = temp / 5.0f;
+                    m_WeatherSystem.SetWeather(wType, 0.1f);
+                    m_WeatherSystem.SetRainIntensity(baseInt * blend);
+                    m_WeatherSystem.SetSnowIntensity(baseInt * (1.0f - blend));
+                    isRain = (blend > 0.5f);
+                } else {
+                    m_WeatherSystem.SetWeather(
+                        activeWeatherZone->weatherType == 6 ? Effects::WeatherType::Storm : Effects::WeatherType::Rain, 0.1f);
+                    m_WeatherSystem.SetRainIntensity(baseInt);
+                    m_WeatherSystem.SetSnowIntensity(0.0f);
+                    isRain = true;
+                }
+            } else {
+                m_WeatherSystem.SetWeather(wType, 0.1f);
+                if (activeWeatherZone->weatherType == 4) {
+                    m_WeatherSystem.SetRainIntensity(0.0f);
+                    m_WeatherSystem.SetSnowIntensity(activeWeatherZone->snowIntensity);
+                } else {
+                    m_WeatherSystem.SetRainIntensity(activeWeatherZone->rainIntensity);
+                    m_WeatherSystem.SetSnowIntensity(0.0f);
+                    isRain = true;
+                }
+            }
+
+            m_WeatherSystem.SetFogDensity(activeWeatherZone->fogDensity);
+            m_WeatherSystem.SetFogColor(activeWeatherZone->fogColor);
+            m_WeatherSystem.SetFogStart(activeWeatherZone->fogStart);
+            m_WeatherSystem.SetFogEnd(activeWeatherZone->fogEnd);
+            m_WindSystem.SetZoneOverride(activeWeatherZone->windDirection, activeWeatherZone->windStrength);
+            m_WeatherSystem.SetWindDirection(activeWeatherZone->windDirection);
+            m_WeatherSystem.SetWindStrength(activeWeatherZone->windStrength);
+
+            m_RenderSystem->SetFogParams(activeWeatherZone->fogDensity,
+                                         activeWeatherZone->fogStart, activeWeatherZone->fogEnd, 0.1f);
+            m_RenderSystem->SetFogColor(activeWeatherZone->fogColor);
+        } else {
+            m_WindSystem.ClearZoneOverride();
+            f32 rain = m_WeatherSystem.GetRainIntensity();
+            f32 snow = m_WeatherSystem.GetSnowIntensity();
+            hasPrecip = (rain > 0.01f || snow > 0.01f);
+            isRain = rain >= snow;
+            m_RenderSystem->SetFogParams(m_WeatherSystem.GetFogDensity(),
+                                         m_WeatherSystem.GetFogStart(), m_WeatherSystem.GetFogEnd(), 0.1f);
+            m_RenderSystem->SetFogColor(m_WeatherSystem.GetFogColor());
+        }
+
+        m_RenderSystem->SetRainActive(hasPrecip && isRain);
+    }
+
     // Web accessibility persistence: /saves/accessibility.json on the IDBFS
     // mount (StartBoot). Desktop uses accessibility.json next to the exe.
     void LoadWebAccessibilitySettings() {
