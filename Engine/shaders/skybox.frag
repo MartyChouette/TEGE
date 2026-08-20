@@ -12,6 +12,7 @@ layout(binding = 0) uniform SkyUBO {
     vec4 cloudParams;     // x coverage1, y scale1, z speed, w coverage2
     vec4 cloudColorHaze;  // xyz cloud color, w horizon haze
     vec4 misc;            // x sun intensity, y scale2, z/w wind drift dir
+    vec4 cloudExtra;      // x cloud softness, yzw reserved
 } sky;
 layout(binding = 1) uniform samplerCube skybox;
 
@@ -32,8 +33,14 @@ float vnoise(vec2 p) {
 }
 float fbm(vec2 p) {
     float v = 0.0, a = 0.5;
-    for (int i = 0; i < 4; ++i) { v += vnoise(p) * a; p *= 2.03; a *= 0.5; }
+    for (int i = 0; i < 5; ++i) { v += vnoise(p) * a; p = p * 2.03 + 17.0; a *= 0.5; }
     return v;
+}
+// Domain-warped FBM: fluffier, less grid-aligned clouds (matches the 2D sky).
+float clouds(vec2 p) {
+    vec2 q = vec2(fbm(p), fbm(p + vec2(5.2, 1.3)));
+    vec2 r = vec2(fbm(p + 4.0 * q + vec2(1.7, 9.2)), fbm(p + 4.0 * q + vec2(8.3, 2.8)));
+    return fbm(p + 4.0 * r);
 }
 
 void main() {
@@ -68,19 +75,20 @@ void main() {
         vec2 plane = dir.xz / (dir.y + 0.18);
         float speed = sky.cloudParams.z * 0.01;
 
+        float edge = mix(0.02, 0.4, clamp(sky.cloudExtra.x, 0.0, 1.0));
         float cov1 = sky.cloudParams.x;
         if (cov1 > 0.001) {
             vec2 p = plane * (2.0 * sky.cloudParams.y) + windDrift * (time * speed);
-            float n = fbm(p);
-            float m = smoothstep(1.0 - cov1, 1.0 - cov1 + 0.28, n) * upness;
+            float n = clouds(p);
+            float m = smoothstep(1.0 - cov1, 1.0 - cov1 + edge, n) * upness;
             float lit = 0.75 + 0.25 * clamp(normalize(sky.sunDirTime.xyz).y, 0.0, 1.0);
             col = mix(col, sky.cloudColorHaze.xyz * lit, m * 0.85);
         }
         float cov2 = sky.cloudParams.w;
         if (cov2 > 0.001) {
             vec2 p2 = plane * (2.0 * sky.misc.y) + windDrift * (time * speed * 1.7) + vec2(37.7, 11.3);
-            float n2 = fbm(p2);
-            float m2 = smoothstep(1.0 - cov2, 1.0 - cov2 + 0.22, n2) * upness;
+            float n2 = clouds(p2);
+            float m2 = smoothstep(1.0 - cov2, 1.0 - cov2 + edge, n2) * upness;
             col = mix(col, sky.cloudColorHaze.xyz * 0.92, m2 * 0.55);
         }
     }

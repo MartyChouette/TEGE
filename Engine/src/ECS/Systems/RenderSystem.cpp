@@ -13864,7 +13864,7 @@ void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
     m_SkyboxUniformBuffers.resize(framesInFlight);
     for (u32 i = 0; i < framesInFlight; ++i) {
         m_SkyboxUniformBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_VulkanRenderer->GetContext());
-        m_SkyboxUniformBuffers[i]->Create(sizeof(Math::Matrix4) + 5 * sizeof(Math::Vector4),
+        m_SkyboxUniformBuffers[i]->Create(sizeof(Math::Matrix4) + 6 * sizeof(Math::Vector4),
                                           Renderer::BufferUsage::Uniform, true);
     }
 
@@ -13902,6 +13902,7 @@ void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
         Math::Vector4 cloudParams;
         Math::Vector4 cloudColorHaze;
         Math::Vector4 misc;
+        Math::Vector4 cloudExtra;   // x = cloud softness
     } skyData{};
     const Renderer::SkyboxConfig& skyCfg = m_Skybox.GetConfig();
     f32 skyTime = m_WindSystem ? m_WindSystem->GetTime() : 0.0f;
@@ -13913,6 +13914,7 @@ void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
     skyData.cloudParams = {skyCfg.cloudCoverage, skyCfg.cloudScale, skyCfg.cloudSpeed, skyCfg.cloud2Coverage};
     skyData.cloudColorHaze = {skyCfg.cloudColor.x, skyCfg.cloudColor.y, skyCfg.cloudColor.z, skyCfg.horizonHaze};
     skyData.misc = {skyCfg.sunIntensity, skyCfg.cloud2Scale, skyWind.x, skyWind.z};
+    skyData.cloudExtra = {skyCfg.cloudSoftness, 0.0f, 0.0f, 0.0f};
     m_SkyboxUniformBuffers[currentFrame]->UploadData(&skyData, sizeof(skyData));
 
     // Rewrite the descriptor set ONLY when its contents actually changed (first use,
@@ -13934,7 +13936,7 @@ void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
         VkDescriptorBufferInfo uboInfo{};
         uboInfo.buffer = uboBuffer;
         uboInfo.offset = 0;
-        uboInfo.range = sizeof(Math::Matrix4) + 5 * sizeof(Math::Vector4);
+        uboInfo.range = sizeof(Math::Matrix4) + 6 * sizeof(Math::Vector4);
 
         std::array<VkWriteDescriptorSet, 2> writes{};
         writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
