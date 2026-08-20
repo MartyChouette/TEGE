@@ -67,6 +67,7 @@ SHADERS_LIST = [
     ("shadow_mask.vert.spv",   "ShadowMaskVertexShaderData",     "uchar"),
     ("shadow_mask.frag.spv",   "ShadowMaskFragmentShaderData",   "uchar"),
     ("fullscreen.vert.spv",    "FullscreenVertexShaderData",     "uchar"),
+    ("sky2d.frag.spv",         "Sky2DFragmentShaderData",        "uchar"),
     ("fluid.vert.spv",         "FluidVertexShaderData",          "uchar"),
     ("fluid.frag.spv",         "FluidFragmentShaderData",        "uchar"),
     ("oit_composite.frag.spv", "OitCompositeFragmentShaderData", "uchar"),

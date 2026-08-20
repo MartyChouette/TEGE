@@ -1654,6 +1654,20 @@ private:
                       bool offscreenPass = false);
     void CreateSkyboxCubeVBO();
 
+    // 2D scene sky: full-screen authored backdrop behind sprites in Scene2D
+    // (the 3D skybox needs a perspective camera; this is screen-space). Shares
+    // the scene SkyboxConfig; only draws when the scene has a non-solid sky.
+    VkPipeline m_Sky2DPipeline = VK_NULL_HANDLE;
+    VkPipeline m_Sky2DPipelineOffscreen = VK_NULL_HANDLE;
+    VkPipelineLayout m_Sky2DPipelineLayout = VK_NULL_HANDLE;
+    void CreateSky2DPipeline(VkRenderPass renderPass = VK_NULL_HANDLE);
+    bool CreateSky2DPipelineVariant(VkRenderPass renderPass, u32 colorAttachmentCount,
+                                    VkSampleCountFlagBits samples, VkPipeline& outPipeline);
+    void Render2DSky(VkCommandBuffer commandBuffer,
+                     const VkViewport* viewportOverride = nullptr,
+                     const VkRect2D* scissorOverride = nullptr,
+                     bool offscreenPass = false);
+
     // Water surface mesh generation
     void EnsureWaterMeshes();
     void EnsureWater3DMeshes();

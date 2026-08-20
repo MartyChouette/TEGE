@@ -3374,6 +3374,7 @@ void RenderSystem::Initialize() {
     m_Skybox.Initialize(m_VulkanRenderer->GetContext());
     CreateSkyboxCubeVBO();
     CreateSkyboxPipeline();
+    CreateSky2DPipeline();   // full-screen authored sky for 2D scenes
 
     // Set up shader hot-reload (editor-only)
     FindShaderDirectory();
@@ -3756,6 +3757,18 @@ void RenderSystem::Shutdown() {
         if (m_SkyboxPipelineOffscreen != VK_NULL_HANDLE) {
             vkDestroyPipeline(device, m_SkyboxPipelineOffscreen, nullptr);
             m_SkyboxPipelineOffscreen = VK_NULL_HANDLE;
+        }
+        if (m_Sky2DPipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, m_Sky2DPipeline, nullptr);
+            m_Sky2DPipeline = VK_NULL_HANDLE;
+        }
+        if (m_Sky2DPipelineOffscreen != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, m_Sky2DPipelineOffscreen, nullptr);
+            m_Sky2DPipelineOffscreen = VK_NULL_HANDLE;
+        }
+        if (m_Sky2DPipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, m_Sky2DPipelineLayout, nullptr);
+            m_Sky2DPipelineLayout = VK_NULL_HANDLE;
         }
         if (m_SkyboxPipelineLayoutHandle != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(device, m_SkyboxPipelineLayoutHandle, nullptr);
@@ -5035,8 +5048,14 @@ void RenderSystem::Update(f32 deltaTime) {
         }
     }
 
-    // Render skybox first (behind all geometry)
-    RenderSkybox(commandBuffer);
+    // Render skybox first (behind all geometry). In a 2D scene the 3D skybox
+    // cube doesn't fill an ortho view, so a full-screen 2D sky draws the
+    // authored gradient/clouds backdrop instead.
+    if (m_SceneComposition.mode == SceneRenderMode::Scene2D) {
+        Render2DSky(commandBuffer);
+    } else {
+        RenderSkybox(commandBuffer);
+    }
 
     u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
 
@@ -5597,8 +5616,13 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     scissor.extent = { target->GetWidth(), target->GetHeight() };
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    // Render skybox in game view (pass viewport/scissor for render target dimensions)
-    RenderSkybox(commandBuffer, &viewport, &scissor, /*offscreenPass=*/true);
+    // Render skybox in game view (pass viewport/scissor for render target dimensions).
+    // 2D scenes get the full-screen 2D sky (ortho camera can't frame the cube).
+    if (m_SceneComposition.mode == SceneRenderMode::Scene2D) {
+        Render2DSky(commandBuffer, &viewport, &scissor, /*offscreenPass=*/true);
+    } else {
+        RenderSkybox(commandBuffer, &viewport, &scissor, /*offscreenPass=*/true);
+    }
 
     // Reset descriptor cache for this render pass
     m_LastBound.Reset(); m_GeometryPoolBound = false;
@@ -13377,6 +13401,15 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
         }
     }
 
+    // Offscreen 2D sky variant (same pass-mismatch reason as skybox above)
+    if (m_Sky2DPipelineLayout != VK_NULL_HANDLE) {
+        if (m_Sky2DPipelineOffscreen != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_VulkanRenderer->GetContext()->GetDevice(), m_Sky2DPipelineOffscreen, nullptr);
+            m_Sky2DPipelineOffscreen = VK_NULL_HANDLE;
+        }
+        CreateSky2DPipelineVariant(renderPass, 1, VK_SAMPLE_COUNT_1_BIT, m_Sky2DPipelineOffscreen);
+    }
+
     // Note: skybox pipeline is NOT recreated here — it was created for the swapchain
     // render pass in Initialize() and works in both passes via driver-level render pass
     // compatibility (SRGB/UNORM same memory layout). Destroying and recreating it here
@@ -13540,6 +13573,171 @@ bool RenderSystem::CreateSkyboxPipelineVariant(VkRenderPass renderPass, u32 colo
     pipelineInfo.subpass = 0;
 
     return vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &outPipeline) == VK_SUCCESS;
+}
+
+// --- 2D scene sky (full-screen authored backdrop) --------------------------
+
+struct Sky2DPushData {
+    Math::Vector4 topColor;      // rgb zenith, w = horizonHaze
+    Math::Vector4 horizonColor;  // rgb horizon, w = cloudSpeed
+    Math::Vector4 bottomColor;   // rgb ground-arc, w = cloudCoverage
+    Math::Vector4 cloudColor;    // rgb tint, w = cloud2Coverage
+    Math::Vector4 scaleWind;     // x cloudScale, y cloud2Scale, zw wind dir
+    Math::Vector4 timeMisc;      // x time, yzw reserved
+};
+
+void RenderSystem::CreateSky2DPipeline(VkRenderPass renderPass) {
+    if (!m_Renderer || !m_VulkanRenderer->GetContext()) return;
+    VkDevice device = m_VulkanRenderer->GetContext()->GetDevice();
+
+    if (m_Sky2DPipelineLayout == VK_NULL_HANDLE) {
+        VkPushConstantRange pcRange{};
+        pcRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        pcRange.offset = 0;
+        pcRange.size = sizeof(Sky2DPushData);   // 96 bytes, within the 128 min
+
+        VkPipelineLayoutCreateInfo layoutInfo{};
+        layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layoutInfo.pushConstantRangeCount = 1;
+        layoutInfo.pPushConstantRanges = &pcRange;
+        if (vkCreatePipelineLayout(device, &layoutInfo, nullptr, &m_Sky2DPipelineLayout) != VK_SUCCESS) {
+            ENJIN_LOG_WARN(Renderer, "Failed to create 2D sky pipeline layout");
+            return;
+        }
+    }
+
+    VkRenderPass mainPass = (renderPass != VK_NULL_HANDLE) ? renderPass : m_VulkanRenderer->GetRenderPass();
+    if (m_Sky2DPipeline == VK_NULL_HANDLE)
+        CreateSky2DPipelineVariant(mainPass, 2, m_VulkanRenderer->GetMSAASamples(), m_Sky2DPipeline);
+    if (m_OffscreenRenderPass != VK_NULL_HANDLE && m_Sky2DPipelineOffscreen == VK_NULL_HANDLE)
+        CreateSky2DPipelineVariant(m_OffscreenRenderPass, 1, VK_SAMPLE_COUNT_1_BIT, m_Sky2DPipelineOffscreen);
+}
+
+bool RenderSystem::CreateSky2DPipelineVariant(VkRenderPass renderPass, u32 colorAttachmentCount,
+                                              VkSampleCountFlagBits samples, VkPipeline& outPipeline) {
+    if (!m_Renderer || renderPass == VK_NULL_HANDLE || m_Sky2DPipelineLayout == VK_NULL_HANDLE)
+        return false;
+    auto* context = m_VulkanRenderer->GetContext();
+    VkDevice device = context->GetDevice();
+
+    Renderer::VulkanShader vert(context);
+    if (!vert.LoadFromSPIRV(reinterpret_cast<const u8*>(Renderer::ShaderData::FullscreenVertexShaderData),
+                            Renderer::ShaderData::FullscreenVertexShaderDataSize)) return false;
+    Renderer::VulkanShader frag(context);
+    if (!frag.LoadFromSPIRV(reinterpret_cast<const u8*>(Renderer::ShaderData::Sky2DFragmentShaderData),
+                            Renderer::ShaderData::Sky2DFragmentShaderDataSize)) return false;
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};   // fullscreen triangle: no vertex buffer
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkDynamicState dyn[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = 2;
+    dynamicState.pDynamicStates = dyn;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.rasterizationSamples = samples;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};   // background: no depth interaction
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_FALSE;
+    depthStencil.depthWriteEnable = VK_FALSE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+
+    std::array<VkPipelineColorBlendAttachmentState, 2> blend{};
+    blend[0].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    blend[1].colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.attachmentCount = (colorAttachmentCount <= 2) ? colorAttachmentCount : 2;
+    colorBlending.pAttachments = blend.data();
+
+    VkPipelineShaderStageCreateInfo stages[2]{};
+    stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = vert.GetModule();
+    stages[0].pName = "main";
+    stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = frag.GetModule();
+    stages[1].pName = "main";
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = stages;
+    pipelineInfo.pVertexInputState = &vertexInput;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = m_Sky2DPipelineLayout;
+    pipelineInfo.renderPass = renderPass;
+    pipelineInfo.subpass = 0;
+
+    return vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &outPipeline) == VK_SUCCESS;
+}
+
+void RenderSystem::Render2DSky(VkCommandBuffer commandBuffer, const VkViewport* viewportOverride,
+                               const VkRect2D* scissorOverride, bool offscreenPass) {
+    VkPipeline pipeline = offscreenPass ? m_Sky2DPipelineOffscreen : m_Sky2DPipeline;
+    if (pipeline == VK_NULL_HANDLE) return;
+
+    const Renderer::SkyboxConfig& cfg = m_Skybox.GetConfig();
+    // Only draw for procedural (gradient + atmosphere) skies — the authorable 2D
+    // backdrop. Solid-color / cubemap / None 2D scenes keep their clear color.
+    if (cfg.type != Renderer::SkyboxType::Procedural) return;
+
+    f32 time = m_WindSystem ? m_WindSystem->GetTime() : 0.0f;
+    Math::Vector4 wind = m_WindSystem ? m_WindSystem->GetWindVector()
+                                      : Math::Vector4(1.0f, 0.0f, 0.35f, 0.0f);
+
+    Sky2DPushData pc{};
+    pc.topColor     = {cfg.topColor.x, cfg.topColor.y, cfg.topColor.z, cfg.horizonHaze};
+    pc.horizonColor = {cfg.horizonColor.x, cfg.horizonColor.y, cfg.horizonColor.z, cfg.cloudSpeed};
+    pc.bottomColor  = {cfg.bottomColor.x, cfg.bottomColor.y, cfg.bottomColor.z, cfg.cloudCoverage};
+    pc.cloudColor   = {cfg.cloudColor.x, cfg.cloudColor.y, cfg.cloudColor.z, cfg.cloud2Coverage};
+    pc.scaleWind    = {cfg.cloudScale, cfg.cloud2Scale, wind.x, wind.z};
+    pc.timeMisc     = {time, 0.0f, 0.0f, 0.0f};
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+
+    VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
+    VkViewport vp{};
+    if (viewportOverride) { vp = *viewportOverride; }
+    else { vp.width = static_cast<f32>(extent.width); vp.height = static_cast<f32>(extent.height); vp.maxDepth = 1.0f; }
+    VkRect2D sc{};
+    if (scissorOverride) { sc = *scissorOverride; }
+    else { sc.extent = extent; }
+    vkCmdSetViewport(commandBuffer, 0, 1, &vp);
+    vkCmdSetScissor(commandBuffer, 0, 1, &sc);
+
+    vkCmdPushConstants(commandBuffer, m_Sky2DPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(pc), &pc);
+    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 }
 
 void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
