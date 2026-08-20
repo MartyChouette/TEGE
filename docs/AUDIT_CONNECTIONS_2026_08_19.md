@@ -33,7 +33,7 @@ Legend: FIXED = fixed today (uncommitted). OPEN = needs work, ranked within sect
 | 2.4 | `SetRainActive` (drives water ripple shader during rain) — editor sets it, Player never does. Rain in builds = no ripples. | EditorLayer.cpp:2528; no Player call | FIXED (Player UpdateWeatherZones) |
 | 2.5 | `TreeRenderer::SetSeasonState` — editor passes season to trees, Player computes seasons but never forwards them. Seasonal tree color/foliage frozen in builds. | EditorLayer.cpp:2520; no Player call | FIXED (Player UpdateWeatherZones; heat sources ported too) |
 | 2.6 | Temperature-driven water freeze/thaw — editor-only loop; water never freezes in builds. | EditorLayer.cpp:2432–2471; no Player equivalent | FIXED (Player UpdateWeatherZones) |
-| 2.7 | Web player: no weather zone logic at all, no SetRainActive, no season state (web precip rides the GPU particle pool off intensities only). | web_main.cpp | OPEN (web parity pass) |
+| 2.7 | Web player: no weather zone logic at all, no SetRainActive, no season state (web precip rides the GPU particle pool off intensities only). | web_main.cpp | PARTIAL 08-20 (019ab10): zone reading + fog + wind + SetRainActive ported (Phase 1). Still web-open: custom precip/veg textures (no WebGPU bindless), 2D veg mode, season state (no web TreeRenderer) — Phase 2/3. |
 
 ## 3. Rendering plumbing gaps
 
