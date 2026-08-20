@@ -346,7 +346,11 @@ void WebGPURenderer::CreateSwapChain() {
     config.width = m_SwapChainWidth;
     config.height = m_SwapChainHeight;
     config.presentMode = WGPUPresentMode_Fifo;
-    config.alphaMode = WGPUCompositeAlphaMode_Auto;
+    // Opaque, not Auto: the game canvas is fully opaque (postprocess forces
+    // alpha = 1). On WebKit/Safari "Auto" can resolve to premultiplied-alpha
+    // compositing, which dims the canvas against the page vs Chrome. Pinning
+    // Opaque keeps the two browsers 1:1.
+    config.alphaMode = WGPUCompositeAlphaMode_Opaque;
     wgpuSurfaceConfigure(m_Surface, &config);
 }
 
