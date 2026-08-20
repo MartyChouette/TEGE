@@ -722,13 +722,15 @@ void EditorLayer::DrawGizmos() {
         gizmoScale = transform->scale;
         transformCount = 1;
     } else {
-        // Multi-select: centroid position, primary entity rotation for local mode
+        // Multi-select: centroid position, primary entity rotation for local mode.
+        // Use WORLD positions (parent chain applied) so a centroid over children
+        // of a moved/scaled parent lands on the meshes, not at their raw local
+        // origins — same reasoning as the single-select world-matrix path below.
         for (ECS::Entity e : m_SelectedEntities) {
-            auto* t = m_World->GetComponent<ECS::TransformComponent>(e);
-            if (t) {
-                gizmoPos = gizmoPos + t->position;
-                transformCount++;
-            }
+            if (!m_World->GetComponent<ECS::TransformComponent>(e)) continue;
+            Math::Matrix4 world = ECS::ComputeWorldMatrix(m_World, e);
+            gizmoPos = gizmoPos + Math::Vector3(world.m[12], world.m[13], world.m[14]);
+            transformCount++;
         }
         if (transformCount == 0) return;
         gizmoPos = gizmoPos * (1.0f / static_cast<f32>(transformCount));
