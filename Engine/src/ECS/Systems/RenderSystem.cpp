@@ -3138,6 +3138,23 @@ void RenderSystem::Initialize() {
         ENJIN_LOG_WARN(Renderer, "Failed to load shadow vertex shader");
     }
 
+    // Alpha-cutout shadow variant: Mask-mode materials sample base color alpha
+    // so foliage/hair cards cast shaped shadows instead of full rectangles
+    m_ShadowMaskVertexShader = std::make_unique<Renderer::VulkanShader>(m_VulkanRenderer->GetContext());
+    if (!m_ShadowMaskVertexShader->LoadFromSPIRV(
+        reinterpret_cast<const u8*>(Renderer::ShaderData::ShadowMaskVertexShaderData),
+        Renderer::ShaderData::ShadowMaskVertexShaderDataSize)) {
+        ENJIN_LOG_WARN(Renderer, "Failed to load shadow mask vertex shader");
+        m_ShadowMaskVertexShader.reset();
+    }
+    m_ShadowMaskFragmentShader = std::make_unique<Renderer::VulkanShader>(m_VulkanRenderer->GetContext());
+    if (!m_ShadowMaskFragmentShader->LoadFromSPIRV(
+        reinterpret_cast<const u8*>(Renderer::ShaderData::ShadowMaskFragmentShaderData),
+        Renderer::ShaderData::ShadowMaskFragmentShaderDataSize)) {
+        ENJIN_LOG_WARN(Renderer, "Failed to load shadow mask fragment shader");
+        m_ShadowMaskFragmentShader.reset();
+    }
+
     // Initialize bindless resource manager BEFORE pipeline creation — pipelines
     // need the bindless descriptor set layout for set 1 in their pipeline layout.
     m_BindlessManager = std::make_unique<Renderer::BindlessResourceManager>(m_VulkanRenderer->GetContext());
@@ -3770,10 +3787,13 @@ void RenderSystem::Shutdown() {
 
     // Clean up shadow resources
     m_ShadowPipeline.reset();
+    m_ShadowMaskPipeline.reset();
     m_ShadowMap.reset();
     m_PointShadowPipeline.reset();
+    m_PointShadowMaskPipeline.reset();
     m_PointShadowMap.reset();
     m_SpotShadowPipeline.reset();
+    m_SpotShadowMaskPipeline.reset();
     m_SpotShadowMap.reset();
     m_ShadowDataBuffer.reset();
 
@@ -7556,6 +7576,19 @@ void RenderSystem::CreateShadowPipeline() {
         m_ShadowPipeline.reset();
         m_ShadowsEnabled = false;
     }
+
+    // Alpha-cutout variant: identical config plus the discard fragment stage.
+    // Needs the bindless layout (frag statically uses set 1).
+    m_ShadowMaskPipeline.reset();
+    if (m_ShadowPipeline && m_BindlessManager && m_ShadowMaskVertexShader && m_ShadowMaskFragmentShader) {
+        m_ShadowMaskPipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
+        m_ShadowMaskPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
+        if (!m_ShadowMaskPipeline->CreateWithLayout(config, m_ShadowMaskVertexShader.get(),
+                m_ShadowMaskFragmentShader.get(), m_Pipeline->GetDescriptorSetLayout())) {
+            ENJIN_LOG_WARN(Renderer, "Failed to create shadow mask pipeline — masked materials cast solid shadows");
+            m_ShadowMaskPipeline.reset();
+        }
+    }
 }
 
 void RenderSystem::CreateLinePipeline() {
@@ -11173,6 +11206,14 @@ void RenderSystem::RenderShadowPass() {
                 0, 1, &m_DescriptorSets[currentFrame],
                  0, nullptr
             );
+            // Set 1: bindless textures for the alpha-cutout variant
+            if (m_BindlessManager) {
+                VkDescriptorSet bindlessSet = m_BindlessManager->GetDescriptorSet();
+                if (bindlessSet != VK_NULL_HANDLE) {
+                    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        m_ShadowPipeline->GetLayout(), 1, 1, &bindlessSet, 0, nullptr);
+                }
+            }
         }
 
         // Caster cache was rebuilt before the loop (above) so the count is stable.
@@ -11231,13 +11272,24 @@ void RenderSystem::RenderShadowPass() {
                             0, 1, &m_DescriptorSets[frameIdx],
                              0, nullptr
                         );
+                        // Set 1: bindless textures for the alpha-cutout variant
+                        if (m_BindlessManager) {
+                            VkDescriptorSet bindlessSet = m_BindlessManager->GetDescriptorSet();
+                            if (bindlessSet != VK_NULL_HANDLE) {
+                                vkCmdBindDescriptorSets(secCmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    m_ShadowPipeline->GetLayout(), 1, 1, &bindlessSet, 0, nullptr);
+                            }
+                        }
                     }
                     bool secPoolBound = false;   // per-secondary bind state
+                    VkPipeline secBoundPipeline = m_ShadowPipeline->GetPipeline();
+                    VkPipeline secMaskPipeline = m_ShadowMaskPipeline ? m_ShadowMaskPipeline->GetPipeline() : VK_NULL_HANDLE;
                     for (u32 i = start; i < end; ++i) {
                         Entity entity = m_FrameShadowCasters[i];
                         auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                         if (xform && !xform->visible) continue;
-                        RenderEntityShadow(entity, secCmd, secPoolBound);
+                        RenderEntityShadow(entity, secCmd, secPoolBound,
+                                           m_ShadowPipeline->GetPipeline(), secMaskPipeline, secBoundPipeline);
                     }
 
                     vkEndCommandBuffer(secCmd);
@@ -11265,6 +11317,8 @@ void RenderSystem::RenderShadowPass() {
             // frame; the player path has no such reset). Same fix as secPoolBound
             // in the parallel branch above.
             bool serialPoolBound = false;
+            VkPipeline serialBoundPipeline = m_ShadowPipeline->GetPipeline();
+            VkPipeline serialMaskPipeline = m_ShadowMaskPipeline ? m_ShadowMaskPipeline->GetPipeline() : VK_NULL_HANDLE;
             for (usize si = 0; si < m_FrameShadowCasters.size(); ++si) {
                 if (si + 4 < m_FrameShadowCasters.size() && m_CachedTransformStorage) {
                     m_CachedTransformStorage->Prefetch(m_FrameShadowCasters[si + 4]);
@@ -11272,7 +11326,8 @@ void RenderSystem::RenderShadowPass() {
                 Entity entity = m_FrameShadowCasters[si];
                 auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                 if (xform && !xform->visible) continue;
-                RenderEntityShadow(entity, commandBuffer, serialPoolBound);
+                RenderEntityShadow(entity, commandBuffer, serialPoolBound,
+                                   m_ShadowPipeline->GetPipeline(), serialMaskPipeline, serialBoundPipeline);
             }
         }
 
@@ -11346,7 +11401,9 @@ void RenderSystem::RenderShadowPassForCamera(Renderer::Camera* camera) {
     m_Camera = prevCamera;
 }
 
-void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer, bool& poolBound) {
+void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer, bool& poolBound,
+                                      VkPipeline normalPipeline, VkPipeline maskPipeline,
+                                      VkPipeline& boundPipeline) {
     // Viewmodel entities cast no shadows: a wall-sized first-person gun
     // shadow gives the depth-remap trick away instantly
     if (m_CachedViewmodelStorage) {
@@ -11363,10 +11420,30 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
     if (!pRD) return;
     EntityRenderData& renderData = *pRD;
 
+    // Masked materials with a base color texture cast SHAPED shadows: switch to
+    // the cutout pipeline whose fragment stage discards below the alpha cutoff.
+    // Reads only (worker-thread safe per adr-0004); the bindless handle map is
+    // not mutated while shadow command buffers record.
+    i32 maskTexIndex = -1;
+    MaterialComponent* mat = m_CachedMaterialStorage ? m_CachedMaterialStorage->Get(entity) : nullptr;
+    if (mat && maskPipeline != VK_NULL_HANDLE &&
+        mat->alphaMode == MaterialComponent::AlphaMode::Mask && mat->cachedBaseColorTexture) {
+        auto texIt = m_TextureBindlessHandles.find(mat->cachedBaseColorTexture);
+        if (texIt != m_TextureBindlessHandles.end()) maskTexIndex = static_cast<i32>(texIt->second);
+    }
+    VkPipeline wantedPipeline = (maskTexIndex >= 0) ? maskPipeline : normalPipeline;
+    if (wantedPipeline != VK_NULL_HANDLE && wantedPipeline != boundPipeline) {
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, wantedPipeline);
+        boundPipeline = wantedPipeline;
+    }
+
     // Push pre-multiplied cascadeVP * model as the MVP matrix.
     // The shadow vertex shader reads this from push constants (first 64 bytes),
     // avoiding the HOST_COHERENT UBO race condition.
     Renderer::PushConstants pushConstants{};
+    pushConstants.opacity = mat ? mat->opacity : 1.0f;
+    pushConstants.alphaCutoff = mat ? mat->alphaCutoff : 0.5f;
+    pushConstants.surfaceParam1 = static_cast<f32>(maskTexIndex);  // cutout tex, -1 = solid
 
     // Skinned mesh handling: upload bone matrices and use identity model matrix
     // so shadow geometry matches the main pass's skinned positions.
@@ -11446,6 +11523,16 @@ void RenderSystem::CreatePointShadowPipeline() {
         ENJIN_LOG_ERROR(Renderer, "Failed to create point shadow pipeline");
         m_PointShadowPipeline.reset();
     }
+
+    m_PointShadowMaskPipeline.reset();
+    if (m_PointShadowPipeline && m_BindlessManager && m_ShadowMaskVertexShader && m_ShadowMaskFragmentShader) {
+        m_PointShadowMaskPipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
+        m_PointShadowMaskPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
+        if (!m_PointShadowMaskPipeline->CreateWithLayout(config, m_ShadowMaskVertexShader.get(),
+                m_ShadowMaskFragmentShader.get(), m_Pipeline->GetDescriptorSetLayout())) {
+            m_PointShadowMaskPipeline.reset();
+        }
+    }
 }
 
 void RenderSystem::CreateSpotShadowPipeline() {
@@ -11470,6 +11557,16 @@ void RenderSystem::CreateSpotShadowPipeline() {
             m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create spot shadow pipeline");
         m_SpotShadowPipeline.reset();
+    }
+
+    m_SpotShadowMaskPipeline.reset();
+    if (m_SpotShadowPipeline && m_BindlessManager && m_ShadowMaskVertexShader && m_ShadowMaskFragmentShader) {
+        m_SpotShadowMaskPipeline = std::make_unique<Renderer::VulkanPipeline>(m_VulkanRenderer->GetContext());
+        m_SpotShadowMaskPipeline->SetBindlessLayout(m_BindlessManager->GetDescriptorSetLayout());
+        if (!m_SpotShadowMaskPipeline->CreateWithLayout(config, m_ShadowMaskVertexShader.get(),
+                m_ShadowMaskFragmentShader.get(), m_Pipeline->GetDescriptorSetLayout())) {
+            m_SpotShadowMaskPipeline.reset();
+        }
     }
 }
 
@@ -11541,15 +11638,25 @@ void RenderSystem::RenderPointShadowPass() {
             {
                 vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                     m_PointShadowPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
+                if (m_BindlessManager) {
+                    VkDescriptorSet bindlessSet = m_BindlessManager->GetDescriptorSet();
+                    if (bindlessSet != VK_NULL_HANDLE) {
+                        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            m_PointShadowPipeline->GetLayout(), 1, 1, &bindlessSet, 0, nullptr);
+                    }
+                }
             }
 
             // Per-command-buffer bind state must be local, not the shared member
             // (stale-true across frames skips the pool VB/IB bind — see RenderShadowPass)
             bool facePoolBound = false;
+            VkPipeline faceBoundPipeline = m_PointShadowPipeline->GetPipeline();
+            VkPipeline faceMaskPipeline = m_PointShadowMaskPipeline ? m_PointShadowMaskPipeline->GetPipeline() : VK_NULL_HANDLE;
             for (Entity entity : m_FrameShadowCasters) {
                 auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
                 if (xform && !xform->visible) continue;
-                RenderEntityShadow(entity, commandBuffer, facePoolBound);
+                RenderEntityShadow(entity, commandBuffer, facePoolBound,
+                                   m_PointShadowPipeline->GetPipeline(), faceMaskPipeline, faceBoundPipeline);
             }
 
             m_PointShadowMap->EndFacePass(commandBuffer);
@@ -11580,15 +11687,25 @@ void RenderSystem::RenderSpotShadowPass() {
         {
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                 m_SpotShadowPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
+            if (m_BindlessManager) {
+                VkDescriptorSet bindlessSet = m_BindlessManager->GetDescriptorSet();
+                if (bindlessSet != VK_NULL_HANDLE) {
+                    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        m_SpotShadowPipeline->GetLayout(), 1, 1, &bindlessSet, 0, nullptr);
+                }
+            }
         }
 
         // Per-command-buffer bind state must be local, not the shared member
         // (stale-true across frames skips the pool VB/IB bind — see RenderShadowPass)
         bool spotPoolBound = false;
+        VkPipeline spotBoundPipeline = m_SpotShadowPipeline->GetPipeline();
+        VkPipeline spotMaskPipeline = m_SpotShadowMaskPipeline ? m_SpotShadowMaskPipeline->GetPipeline() : VK_NULL_HANDLE;
         for (Entity entity : m_FrameShadowCasters) {
             auto* xform = m_CachedTransformStorage ? m_CachedTransformStorage->Get(entity) : nullptr;
             if (xform && !xform->visible) continue;
-            RenderEntityShadow(entity, commandBuffer, spotPoolBound);
+            RenderEntityShadow(entity, commandBuffer, spotPoolBound,
+                               m_SpotShadowPipeline->GetPipeline(), spotMaskPipeline, spotBoundPipeline);
         }
 
         m_SpotShadowMap->EndPass(commandBuffer);

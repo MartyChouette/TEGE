@@ -41,7 +41,7 @@ Legend: FIXED = fixed today (uncommitted). OPEN = needs work, ranked within sect
 |---|---------|-------|--------|
 | 3.1 | Base color texture ALPHA was never sampled by the mesh shader — Mask/Blend tested only opacity × vertex color; any PNG with transparency rendered opaque. Engine-wide since forever. | triangle.frag (both alpha blocks) | FIXED (glTF semantics; Opaque unaffected) |
 | 3.2 | Web PBR shader (WGSL) almost certainly has the same texture-alpha gap as 3.1. | Engine/shaders/*.wgsl / embedded | ALREADY CORRECT — web pbr.wgsl multiplies baseColorSample.a and applies the cutoff; web was ahead of desktop |
-| 3.3 | Shadow pass ignores Mask cutout — masked quads (foliage cards, the goblin hair) cast full-rectangle shadows. | shadow.vert pipeline (no frag/alpha test) | OPEN |
+| 3.3 | Shadow pass ignores Mask cutout — masked quads (foliage cards, the goblin hair) cast full-rectangle shadows. | shadow.vert pipeline (no frag/alpha test) | FIXED 08-20 (shadow_mask.vert/frag cutout pipeline variant; per-draw switch in RenderEntityShadow for Mask+textured materials; wired into CSM + point + spot shadow passes incl. the parallel secondary-CB path; A/B probe-verified: opaque=solid rectangle, masked=hair silhouette) |
 | 3.4 | Vegetation custom-texture fields were dead (serialized + inspector-edited, never rendered; RT even skipped textured volumes). | grass/shrub/tree shaders + renderers | FIXED (bindless set-1 sampling, cutout, RT keeps geometry) |
 | 3.5 | Weather rain/snow had no texture support. | WeatherRenderer + new weather_particle.frag | FIXED (zone sprite pickers; note particle.frag is SHARED by ParticleRenderer/FluidRenderer — weather got its own shader after VUID-07988) |
 
@@ -73,7 +73,7 @@ Legend: FIXED = fixed today (uncommitted). OPEN = needs work, ranked within sect
 
 ## Fix pass 2026-08-19 (same evening)
 
-Everything above marked FIXED was done in the same session. Still OPEN: 1.7 stale-clamp hygiene (correct today, no data loss), 2.7 web parity pass, 3.3 shadow-pass mask cutout, Water3D ripple position (was 1.6), OIT fossil arrays.
+Everything above marked FIXED was done in the same session. Still OPEN: 1.7 stale-clamp hygiene (correct today, no data loss), 2.7 web parity pass, Water3D ripple position (was 1.6), OIT fossil arrays. (3.3 shadow-pass mask cutout FIXED 08-20.)
 
 ## Original suggested fix order
 

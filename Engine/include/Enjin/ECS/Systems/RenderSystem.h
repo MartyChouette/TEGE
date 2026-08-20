@@ -916,7 +916,13 @@ private:
     // member flag meant threads skipped the bind after another thread's
     // secondary bound it (indexed draws with no index buffer = driver crash
     // the moment a scene crossed the 32-shadow-caster parallel threshold).
-    void RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer, bool& poolBound);
+    // maskPipeline: alpha-cutout variant chosen per draw for Mask-mode materials
+    // with a base color texture (shaped shadows for foliage/hair cards).
+    // boundPipeline: per-command-buffer bind state (like poolBound) — callers
+    // initialize it to the pipeline they bound before the entity loop.
+    void RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer, bool& poolBound,
+                            VkPipeline normalPipeline, VkPipeline maskPipeline,
+                            VkPipeline& boundPipeline);
     // First-person viewmodel depth remap: entities tagged ViewmodelComponent
     // draw with the viewport depth range compressed to [0, kViewmodelDepthMax]
     // so they render in front of all world geometry and never visually clip
@@ -1228,6 +1234,8 @@ private:
     std::unique_ptr<Renderer::VulkanShader> m_VertexShader;
     std::unique_ptr<Renderer::VulkanShader> m_FragmentShader;
     std::unique_ptr<Renderer::VulkanShader> m_ShadowVertexShader;
+    std::unique_ptr<Renderer::VulkanShader> m_ShadowMaskVertexShader;    // UV passthrough variant
+    std::unique_ptr<Renderer::VulkanShader> m_ShadowMaskFragmentShader;  // alpha-cutout discard
 
     // Line rendering (editor grid)
     std::unique_ptr<Renderer::VulkanPipeline> m_LinePipeline;
@@ -1256,6 +1264,7 @@ private:
     // Shadow mapping
     std::unique_ptr<Renderer::ShadowMap> m_ShadowMap;
     std::unique_ptr<Renderer::VulkanPipeline> m_ShadowPipeline;
+    std::unique_ptr<Renderer::VulkanPipeline> m_ShadowMaskPipeline;  // alpha-cutout variant (same pass/config + frag)
     Math::Matrix4 m_CurrentCascadeVP;  // Set per-cascade in RenderShadowPass, read by RenderEntityShadow
     bool m_ShadowsEnabled = true;
     bool m_ShadowDescriptorsDirty = false;
@@ -1272,10 +1281,12 @@ private:
     // Point light shadow mapping (cubemap array, up to 4 lights)
     std::unique_ptr<Renderer::PointLightShadowMap> m_PointShadowMap;
     std::unique_ptr<Renderer::VulkanPipeline> m_PointShadowPipeline;
+    std::unique_ptr<Renderer::VulkanPipeline> m_PointShadowMaskPipeline;
 
     // Spot light shadow mapping (2D array, up to 4 lights)
     std::unique_ptr<Renderer::SpotLightShadowMap> m_SpotShadowMap;
     std::unique_ptr<Renderer::VulkanPipeline> m_SpotShadowPipeline;
+    std::unique_ptr<Renderer::VulkanPipeline> m_SpotShadowMaskPipeline;
 
     // Shadow data SSBO (uploaded per-frame with point/spot view-proj matrices)
     std::unique_ptr<Renderer::VulkanBuffer> m_ShadowDataBuffer;
