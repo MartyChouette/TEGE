@@ -73,7 +73,7 @@ Legend: FIXED = fixed today (uncommitted). OPEN = needs work, ranked within sect
 
 ## Fix pass 2026-08-19 (same evening)
 
-Everything above marked FIXED was done in the same session. Still OPEN: 1.7 stale-clamp hygiene (correct today, no data loss), 2.7 web parity pass, Water3D ripple position (was 1.6), OIT fossil arrays. (3.3 shadow-pass mask cutout FIXED 08-20.)
+Everything above marked FIXED was done in the same session. Still OPEN: 1.7 stale-clamp hygiene (correct today, no data loss), 2.7 web parity pass, Water3D ripple position (was 1.6 — REASSESSED 08-20: live gameplay water InteractiveWaterSystem::CreateSplash correctly maps world coords through the entity transform via WorldToGrid; the flagged settings.position path is dormant legacy Effects::Water/WaterInteraction, not worth fixing), OIT fossil arrays. (3.3 shadow-pass mask cutout FIXED 08-20.)
 
 ## Original suggested fix order
 
