@@ -28,6 +28,8 @@ public:
     void Update(f32 deltaTime) override;
     void Shutdown() override;
 
+    const std::vector<Contact2D>& GetBeginContacts() const override { return m_FrameBeginContacts; }
+
     void SetGravity(const Math::Vector2& gravity) override;
     Math::Vector2 GetGravity() const override;
 
@@ -105,6 +107,9 @@ private:
     // Contact tracking for enter/exit
     std::unordered_set<u64> m_ActiveContacts;
     std::unordered_set<u64> m_ActiveSensorContacts;
+
+    // Begin-touch contacts this frame (pollable companion to m_OnCollisionEnter)
+    std::vector<Contact2D> m_FrameBeginContacts;
 
     // Callbacks
     CollisionCallback m_OnCollisionEnter;

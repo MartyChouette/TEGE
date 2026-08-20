@@ -205,6 +205,28 @@ void SurfaceResponseSystem::Update(World* world, f32 deltaTime) {
                             Math::Vector3(0.0f, 1.0f, 0.0f), /*impact=*/false);
             }
         }
+
+        // --- 2D impacts: begin-touch collisions strike a surface hard enough to
+        // be heard. Same logic as the 3D impact path, over Box2D begin contacts. ---
+        for (const auto& c : m_Physics2D->GetBeginContacts()) {
+            Math::Vector2 va{0.0f, 0.0f}, vb{0.0f, 0.0f};
+            if (auto* ba = world->GetComponent<Physics::Body2DComponent>(c.entityA)) va = ba->velocity;
+            if (auto* bb = world->GetComponent<Physics::Body2DComponent>(c.entityB)) vb = bb->velocity;
+            f32 rx = va.x - vb.x, ry = va.y - vb.y;
+            f32 approach = std::sqrt(rx * rx + ry * ry);
+
+            // Prefer entityB (usually the struck/static surface); fire the first
+            // one that has an impact sound and was hit hard enough.
+            for (Entity surf : { c.entityB, c.entityA }) {
+                auto* mat = world->GetComponent<MaterialComponent>(surf);
+                if (!mat || mat->impactSound.empty()) continue;
+                if (approach < mat->impactThreshold) break;   // too gentle to hear
+                EmitSurface(world, surf,
+                            Math::Vector3(c.point.x, c.point.y, 0.0f),
+                            Math::Vector3(c.normal.x, c.normal.y, 0.0f), /*impact=*/true);
+                break;   // one impact sound per collision
+            }
+        }
     }
 }
 

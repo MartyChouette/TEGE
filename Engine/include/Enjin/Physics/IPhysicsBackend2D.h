@@ -44,6 +44,14 @@ public:
     virtual bool OverlapBox(const Math::Vector2& center, const Math::Vector2& halfExtents,
                             std::vector<ECS::Entity>& outEntities, u32 layerMask = 0xFFFFFFFF) const = 0;
 
+    // Begin-touch contacts recorded this frame (polling companion to the
+    // SetOnCollisionEnter callback — surface response reads these for 2D impact
+    // sounds without hijacking the gameplay callback). Cleared each step.
+    virtual const std::vector<Contact2D>& GetBeginContacts() const {
+        static const std::vector<Contact2D> empty;
+        return empty;
+    }
+
     // Callbacks
     using CollisionCallback = std::function<void(const Contact2D&)>;
     virtual void SetOnCollisionEnter(CollisionCallback cb) = 0;

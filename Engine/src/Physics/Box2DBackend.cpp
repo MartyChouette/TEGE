@@ -505,6 +505,7 @@ void Box2DBackend::ProcessEvents() {
 
     m_NewContactsCache.clear();
     auto& newContacts = m_NewContactsCache;
+    m_FrameBeginContacts.clear();
 
     // Begin touch events
     for (int i = 0; i < contacts.beginCount; ++i) {
@@ -532,6 +533,9 @@ void Box2DBackend::ProcessEvents() {
                 contact.normal = (len > 0.001f) ? diff * (1.0f / len) : Math::Vector2(0.0f, 1.0f);
             }
 
+            // Record for polling (surface-response impacts) before the callback,
+            // so both see the same fresh begin-touch set this frame
+            m_FrameBeginContacts.push_back(contact);
             if (m_OnCollisionEnter) m_OnCollisionEnter(contact);
         }
     }
