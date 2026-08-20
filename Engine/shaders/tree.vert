@@ -15,12 +15,12 @@ layout(push_constant) uniform PushConstants {
     float canopyRadius;    // roughness
     float trunkHeight;     // emissiveStrength
     float canopyOffset;    // opacity
-    float canopyBaseR;     // alphaCutoff (canopyBaseColor.r)
-    int flags;             // density
+    float canopyPacked;    // alphaCutoff (canopyBaseColor packed r*65536+g*256+b, 8-bit)
+    int flags;             // density (bit 30 = 2D mode)
     float windSwayStrength; // parallaxScale
-    float canopyBaseG;     // shoreWidth (canopyBaseColor.g)
-    float canopyBaseB;     // foamIntensity (canopyBaseColor.b)
-    float seasonFactor;    // foamScale -> 0=winter/bare, 1=full canopy
+    float barkTexIndex;    // surfaceParam1 (bindless index, -1 = procedural)
+    float canopyTexIndex;  // surfaceParam2 (bindless index, -1 = procedural)
+    float seasonFactor;    // surfaceParam3 -> 0=winter/bare, 1=full canopy
 } pushConstants;
 
 layout(binding = 0) uniform UniformBufferObject {
@@ -69,7 +69,7 @@ layout(binding = 1) uniform LightingUBO {
 
 layout(location = 0) out vec3 fragWorldPos;
 layout(location = 1) out vec3 fragNormal;
-layout(location = 2) out float fragUVy;
+layout(location = 2) out vec2 fragUV;
 
 float hash(uint n) {
     n = (n << 13u) ^ n;
@@ -80,16 +80,24 @@ float hash(uint n) {
 void main() {
     uint instanceID = gl_InstanceIndex;
 
+    // 2D scene mode (bit 30 of flags): scatter along X only and flatten onto the
+    // XY plane so trees read as a side-view row in front of an ortho camera
+    bool mode2D = (pushConstants.flags & (1 << 30)) != 0;
+
     float px = hash(instanceID * 3u + 0u) * 2.0 - 1.0;
     float pz = hash(instanceID * 3u + 1u) * 2.0 - 1.0;
-    float sizeVar = hash(instanceID * 3u + 2u) * 0.8 + 0.6;  // 0.6 - 1.4 size multiplier (wider variance)
+    // Per-instance size from the volume's authored min/max height scale,
+    // packed into flags bits 16-22 / 23-29 (0.05 steps; density = low 16 bits)
+    float minScale = float((pushConstants.flags >> 16) & 0x7F) / 20.0;
+    float maxScale = float((pushConstants.flags >> 23) & 0x7F) / 20.0;
+    float sizeVar = mix(minScale, maxScale, hash(instanceID * 3u + 2u));
     float rotAngle = hash(instanceID * 7u + 5u) * 6.28318;
 
     vec3 volumeCenter = pushConstants.model[3].xyz;
     float halfX = length(pushConstants.model[0].xyz);
     float halfZ = length(pushConstants.model[2].xyz);
 
-    vec3 treeOrigin = volumeCenter + vec3(px * halfX, 0.0, pz * halfZ);
+    vec3 treeOrigin = volumeCenter + vec3(px * halfX, 0.0, mode2D ? 0.0 : pz * halfZ);
 
     float tHeight = pushConstants.trunkHeight * sizeVar;
     float tWidth = pushConstants.trunkWidth * sizeVar;
@@ -144,8 +152,14 @@ void main() {
 
     vec3 worldPos = treeOrigin + rotatedPos + windDisplacement;
 
+    if (mode2D) {
+        // Flatten toward the volume's Z: keep a sliver of the crossed-quad depth
+        // so a tree's own quads don't z-fight, plus a stable per-instance offset
+        worldPos.z = volumeCenter.z + rotatedPos.z * 0.05 + pz * 0.1;
+    }
+
     // World curvature: bend geometry downward at distance from camera
-    if (lighting.worldCurvature.x > 0.0) {
+    if (lighting.worldCurvature.x > 0.0 && !mode2D) {
         vec2 delta = worldPos.xz - lighting.cameraPos.xz;
         worldPos.y -= lighting.worldCurvature.x * dot(delta, delta);
     }
@@ -153,6 +167,7 @@ void main() {
     gl_Position = ubo.proj * ubo.view * vec4(worldPos, 1.0);
 
     fragWorldPos = worldPos;
-    fragNormal = normalize(vec3(sinR, isCanopy ? 0.7 : 0.3, cosR));
-    fragUVy = inUV.y;
+    fragNormal = mode2D ? vec3(0.0, isCanopy ? 0.35 : 0.15, 0.94)
+                        : normalize(vec3(sinR, isCanopy ? 0.7 : 0.3, cosR));
+    fragUV = inUV;
 }

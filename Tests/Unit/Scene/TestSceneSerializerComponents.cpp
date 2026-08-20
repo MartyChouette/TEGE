@@ -11,6 +11,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Script.h"
+#include "Enjin/ECS/Components/WeatherZone.h"
 
 using namespace Enjin;
 using namespace Enjin::ECS;
@@ -950,6 +951,68 @@ ENJIN_TEST(Inventory, NestedSlotsAndScalarsRoundTrip) {
     ENJIN_EXPECT_EQ(g->slots[2].itemId, std::string("arrow"));
     ENJIN_EXPECT_EQ(g->slots[2].quantity, 60);
     ENJIN_EXPECT_EQ(g->slots[2].maxStack, 99);
+}
+
+// ===========================================================================
+// WeatherZoneComponent
+// ===========================================================================
+
+ENJIN_TEST(WeatherZone, SnowTypeSurvivesRoundTrip) {
+    // Regression: the deserializer capped weatherType at <= 3, silently
+    // reverting Snow (4), Fog (5), and Storm (6) zones to Clear on load
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& z = w1.AddComponent<WeatherZoneComponent>(e);
+    z.weatherType = 4;  // Snow
+    z.snowIntensity = 0.9f;
+
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<WeatherZoneComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+
+    ENJIN_EXPECT_EQ((int)g->weatherType, 4);
+    ENJIN_EXPECT_FLOAT_EQ(g->snowIntensity, 0.9f);
+}
+
+ENJIN_TEST(WeatherZone, StormTypeSurvivesRoundTrip) {
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& z = w1.AddComponent<WeatherZoneComponent>(e);
+    z.weatherType = 6;  // Storm
+
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<WeatherZoneComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+
+    ENJIN_EXPECT_EQ((int)g->weatherType, 6);
+}
+
+ENJIN_TEST(WeatherZone, PrecipTexturePathsRoundTrip) {
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& z = w1.AddComponent<WeatherZoneComponent>(e);
+    z.weatherType = 2;  // Rain
+    z.rainTexturePath = "textures/raindrop.png";
+    z.snowTexturePath = "textures/flake.png";
+
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<WeatherZoneComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+
+    ENJIN_EXPECT_EQ(g->rainTexturePath, std::string("textures/raindrop.png"));
+    ENJIN_EXPECT_EQ(g->snowTexturePath, std::string("textures/flake.png"));
+    // Runtime cache must come back unresolved, not serialized
+    ENJIN_EXPECT_EQ(g->cachedRainTexIndex, -2);
+    ENJIN_EXPECT_EQ(g->cachedSnowTexIndex, -2);
 }
 
 ENJIN_TEST_MAIN()

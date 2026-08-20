@@ -33,6 +33,7 @@ bool IsPinned(const ClothComponent& c, i32 x, i32 y) {
         case ClothPin::LeftEdge:   return x == 0;
         case ClothPin::AllCorners: return (y == 0 || y == c.resY - 1) && (x == 0 || x == c.resX - 1);
         case ClothPin::None:       return false;
+        case ClothPin::BottomEdge: return y == c.resY - 1;  // hair cards: anchor at the scalp, tips sway free
     }
     return false;
 }

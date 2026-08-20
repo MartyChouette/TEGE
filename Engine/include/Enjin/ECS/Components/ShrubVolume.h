@@ -31,8 +31,13 @@ struct ENJIN_API ShrubVolumeComponent {
     // Number of intersecting quads per shrub (star pattern)
     u32 quadsPerShrub = 3;
 
-    // Custom asset path (texture or model) — overrides procedural shrubs when non-empty
+    // Custom texture (image) — sampled onto the procedural quads when non-empty,
+    // with alpha-cutout so foliage sheets read as shaped leaves
     std::string customAssetPath;
+
+    // Runtime bindless texture index for customAssetPath (-2 = unresolved,
+    // -1 = none/failed). Not serialized; reset to -2 when the path changes.
+    i32 cachedTexIndex = -2;
 };
 
 } // namespace ECS

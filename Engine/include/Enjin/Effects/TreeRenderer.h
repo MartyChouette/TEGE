@@ -27,7 +27,10 @@ public:
     TreeRenderer() = default;
     ~TreeRenderer();
 
-    bool Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout);
+    // bindlessLayout: set-1 bindless texture layout for custom bark/canopy
+    // textures (VK_NULL_HANDLE = procedural-only, textures disabled)
+    bool Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout,
+                    VkDescriptorSetLayout bindlessLayout = VK_NULL_HANDLE);
     void Shutdown();
 
     void RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount = 2);
@@ -35,12 +38,16 @@ public:
     // Hot-reload shaders from disk (compile GLSL → SPIR-V, recreate pipeline)
     bool ReloadShaders(const std::string& shaderDir, VkDescriptorSetLayout sharedLayout);
 
+    // mode2D: scatter along X on the XY plane (2D scenes); bindlessSet: set-1
+    // textures for volumes with resolved bark/canopy textures
     void Render(VkCommandBuffer commandBuffer,
                 const std::vector<VkDescriptorSet>& descriptorSets,
                 u32 currentFrame,
                 ECS::World* world,
                 u32 viewportWidth = 0,
-                u32 viewportHeight = 0);
+                u32 viewportHeight = 0,
+                bool mode2D = false,
+                VkDescriptorSet bindlessSet = VK_NULL_HANDLE);
 
     // Generate box colliders at each tree trunk position within a volume
     void GenerateColliders(ECS::World* world, ECS::Entity volumeEntity);
@@ -56,6 +63,7 @@ private:
     void CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount = 2);
 
     Renderer::VulkanRenderer* m_Renderer = nullptr;
+    VkDescriptorSetLayout m_BindlessLayout = VK_NULL_HANDLE;
 
     std::unique_ptr<Renderer::VulkanBuffer> m_VertexBuffer;
     std::unique_ptr<Renderer::VulkanBuffer> m_IndexBuffer;

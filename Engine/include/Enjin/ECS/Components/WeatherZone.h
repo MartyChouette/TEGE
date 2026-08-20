@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
 #include <cmath>
+#include <string>
 
 namespace Enjin {
 namespace ECS {
@@ -30,6 +31,16 @@ struct ENJIN_API WeatherZoneComponent {
     // Wind
     Math::Vector3 windDirection = Math::Vector3(0.2f, 0.0f, 0.1f);
     f32 windStrength = 1.0f;
+
+    // Custom precipitation sprites (image paths). Empty = built-in procedural
+    // look (stretched streak for rain, radial glow for snow).
+    std::string rainTexturePath;
+    std::string snowTexturePath;
+
+    // Runtime bindless texture indices for the paths above (-2 = unresolved,
+    // -1 = none/failed). Not serialized; reset to -2 when a path changes.
+    i32 cachedRainTexIndex = -2;
+    i32 cachedSnowTexIndex = -2;
 
     // Lightning (for storms)
     bool lightningEnabled = true;

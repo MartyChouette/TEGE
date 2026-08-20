@@ -1522,6 +1522,38 @@ void EditorLayer::DrawWeatherZoneComponent(ECS::Entity entity) {
         if (zone->weatherType == 4) {
             InspectorUndo::SliderFloat(m_UndoRedo, "Snow Intensity", &zone->snowIntensity, 0.0f, 1.0f);
         }
+
+        // Custom precipitation sprites (either can show: temperature zones can
+        // flip rain to snow and back inside the same zone)
+        if (zone->weatherType == 2 || zone->weatherType == 3 || zone->weatherType == 4 || zone->weatherType == 6) {
+            auto drawSpritePicker = [&](const char* label, const char* id,
+                                        std::string& path, i32& cachedIndex) {
+                if (!path.empty()) {
+                    size_t lastSlash = path.find_last_of("/\\");
+                    std::string filename = (lastSlash != std::string::npos) ? path.substr(lastSlash + 1) : path;
+                    ImGui::Text("%s: %s", label, filename.c_str());
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton((std::string("Clear##") + id).c_str())) {
+                        path.clear();
+                        cachedIndex = -2;
+                    }
+                } else {
+                    if (ImGui::Button((std::string(label) + " Sprite...##" + id).c_str())) {
+                        std::string picked = FileDialog::OpenFile("Texture",
+                            {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
+                        if (!picked.empty()) {
+                            path = picked;
+                            cachedIndex = -2;
+                        }
+                    }
+                }
+            };
+            if (zone->weatherType != 4) {
+                drawSpritePicker("Rain", "WZRain", zone->rainTexturePath, zone->cachedRainTexIndex);
+            }
+            drawSpritePicker("Snow", "WZSnow", zone->snowTexturePath, zone->cachedSnowTexIndex);
+            ImGui::TextDisabled("Empty = built-in streak/flake look");
+        }
         if (zone->weatherType == 6) {
             InspectorUndo::Checkbox(m_UndoRedo, "Lightning Enabled", &zone->lightningEnabled);
             if (zone->lightningEnabled) {
@@ -1781,19 +1813,23 @@ void EditorLayer::DrawGrassVolumeComponent(ECS::Entity entity) {
         InspectorUndo::DragFloat(m_UndoRedo, "Wind Sway", &grass->windSwayStrength, 0.05f, 0.0f, 5.0f);
 
         ImGui::Separator();
-        ImGui::Text("Custom Asset");
+        ImGui::Text("Custom Texture");
         if (!grass->customAssetPath.empty()) {
             size_t lastSlash = grass->customAssetPath.find_last_of("/\\");
             std::string filename = (lastSlash != std::string::npos) ? grass->customAssetPath.substr(lastSlash + 1) : grass->customAssetPath;
-            ImGui::Text("Asset: %s", filename.c_str());
+            ImGui::Text("Texture: %s", filename.c_str());
             ImGui::SameLine();
             if (ImGui::SmallButton("X##GrassAsset")) {
                 grass->customAssetPath.clear();
+                grass->cachedTexIndex = -2;
             }
         } else {
-            if (ImGui::Button("Browse Custom Asset##Grass")) {
-                std::string path = FileDialog::OpenFile("Custom Grass Asset", {{ "Images/Models", "*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.gltf;*.glb;*.obj;*.fbx" }});
-                if (!path.empty()) grass->customAssetPath = path;
+            if (ImGui::Button("Browse Custom Texture##Grass")) {
+                std::string path = FileDialog::OpenFile("Custom Grass Texture", {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
+                if (!path.empty()) {
+                    grass->customAssetPath = path;
+                    grass->cachedTexIndex = -2;
+                }
             }
         }
 
@@ -1849,21 +1885,30 @@ void EditorLayer::DrawShrubVolumeComponent(ECS::Entity entity) {
 
         ImGui::Separator();
         InspectorUndo::DragFloat(m_UndoRedo, "Wind Sway", &shrub->windSwayStrength, 0.05f, 0.0f, 5.0f);
+        i32 shrubQuads = static_cast<i32>(shrub->quadsPerShrub);
+        if (ImGui::DragInt("Quads Per Shrub", &shrubQuads, 1, 1, 3)) {
+            shrub->quadsPerShrub = static_cast<u32>(shrubQuads < 1 ? 1 : (shrubQuads > 3 ? 3 : shrubQuads));
+        }
+        ImGui::SetItemTooltip("Crossed quads per shrub: 1 = flat card, 3 = full star");
 
         ImGui::Separator();
-        ImGui::Text("Custom Asset");
+        ImGui::Text("Custom Texture");
         if (!shrub->customAssetPath.empty()) {
             size_t lastSlash = shrub->customAssetPath.find_last_of("/\\");
             std::string filename = (lastSlash != std::string::npos) ? shrub->customAssetPath.substr(lastSlash + 1) : shrub->customAssetPath;
-            ImGui::Text("Asset: %s", filename.c_str());
+            ImGui::Text("Texture: %s", filename.c_str());
             ImGui::SameLine();
             if (ImGui::SmallButton("X##ShrubAsset")) {
                 shrub->customAssetPath.clear();
+                shrub->cachedTexIndex = -2;
             }
         } else {
-            if (ImGui::Button("Browse Custom Asset##Shrub")) {
-                std::string path = FileDialog::OpenFile("Custom Shrub Asset", {{ "Images/Models", "*.png;*.jpg;*.jpeg;*.bmp;*.tga;*.gltf;*.glb;*.obj;*.fbx" }});
-                if (!path.empty()) shrub->customAssetPath = path;
+            if (ImGui::Button("Browse Custom Texture##Shrub")) {
+                std::string path = FileDialog::OpenFile("Custom Shrub Texture", {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
+                if (!path.empty()) {
+                    shrub->customAssetPath = path;
+                    shrub->cachedTexIndex = -2;
+                }
             }
         }
 
@@ -1955,6 +2000,11 @@ void EditorLayer::DrawTreeVolumeComponent(ECS::Entity entity) {
         ImGui::DragFloat("Min Scale", &tree->minHeightScale, 0.05f, 0.1f, 2.0f);
         ImGui::DragFloat("Max Scale", &tree->maxHeightScale, 0.05f, 0.1f, 3.0f);
         if (tree->minHeightScale > tree->maxHeightScale) tree->maxHeightScale = tree->minHeightScale;
+        i32 treeCanopyQuads = static_cast<i32>(tree->canopyQuads);
+        if (ImGui::DragInt("Canopy Quads", &treeCanopyQuads, 1, 0, 3)) {
+            tree->canopyQuads = static_cast<u32>(treeCanopyQuads < 0 ? 0 : (treeCanopyQuads > 3 ? 3 : treeCanopyQuads));
+        }
+        ImGui::SetItemTooltip("Crossed canopy quads: 0 = bare trunk, 3 = full crown");
 
         ImGui::Separator();
         ImGui::DragFloat("Wind Sway", &tree->windSwayStrength, 0.05f, 0.0f, 5.0f);
@@ -1969,11 +2019,15 @@ void EditorLayer::DrawTreeVolumeComponent(ECS::Entity entity) {
             ImGui::SameLine();
             if (ImGui::SmallButton("X##BarkTex")) {
                 tree->barkTexturePath.clear();
+                tree->cachedBarkTexIndex = -2;
             }
         } else {
             if (ImGui::Button("Load Bark Texture")) {
                 std::string path = FileDialog::OpenFile("Bark Texture", {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
-                if (!path.empty()) tree->barkTexturePath = path;
+                if (!path.empty()) {
+                    tree->barkTexturePath = path;
+                    tree->cachedBarkTexIndex = -2;
+                }
             }
         }
         // Canopy texture
@@ -1984,11 +2038,15 @@ void EditorLayer::DrawTreeVolumeComponent(ECS::Entity entity) {
             ImGui::SameLine();
             if (ImGui::SmallButton("X##CanopyTex")) {
                 tree->canopyTexturePath.clear();
+                tree->cachedCanopyTexIndex = -2;
             }
         } else {
             if (ImGui::Button("Load Canopy Texture")) {
                 std::string path = FileDialog::OpenFile("Canopy Texture", {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
-                if (!path.empty()) tree->canopyTexturePath = path;
+                if (!path.empty()) {
+                    tree->canopyTexturePath = path;
+                    tree->cachedCanopyTexIndex = -2;
+                }
             }
         }
 
@@ -2104,7 +2162,41 @@ void EditorLayer::DrawTerrain2DComponent(ECS::Entity entity) {
 
         ImGui::DragFloat("Depth", &terrain->depth, 0.1f, 0.1f, 50.0f);
         ImGui::DragFloat("UV Scale", &terrain->uvScale, 0.01f, 0.01f, 10.0f);
-        ImGui::Checkbox("Auto Colliders", &terrain->autoColliders);
+
+        // Surface colliders: one thin static box per control-point segment,
+        // spawned as child-less collider entities (same pattern as tree trunks)
+        if (ImGui::Button("Generate Surface Colliders")) {
+            auto* terrainTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+            Math::Vector3 base = terrainTransform ? terrainTransform->position : Math::Vector3(0.0f);
+            u32 made = 0;
+            for (usize i = 0; i + 1 < terrain->controlPoints.size(); ++i) {
+                Math::Vector2 a = terrain->controlPoints[i];
+                Math::Vector2 b = terrain->controlPoints[i + 1];
+                Math::Vector2 mid = (a + b) * 0.5f;
+                f32 dx = b.x - a.x, dy = b.y - a.y;
+                f32 len = std::sqrt(dx * dx + dy * dy);
+                if (len < 0.001f) continue;
+                f32 angleDeg = std::atan2(dy, dx) * 57.29578f;
+
+                ECS::Entity col = m_World->CreateEntity();
+                ECS::NameComponent nameComp;
+                nameComp.name = "TerrainCollider_" + std::to_string(i);
+                m_World->AddComponent<ECS::NameComponent>(col, nameComp);
+
+                ECS::TransformComponent xform;
+                xform.position = base + Math::Vector3(mid.x, mid.y, 0.0f);
+                xform.rotation = Math::Quaternion::FromEuler(Math::Vector3(0.0f, 0.0f, angleDeg));
+                m_World->AddComponent<ECS::TransformComponent>(col, xform);
+
+                ECS::BoxColliderComponent box;
+                box.size = Math::Vector3(len, 0.2f, 1.0f);
+                box.isTrigger = false;
+                m_World->AddComponent<ECS::BoxColliderComponent>(col, box);
+                ++made;
+            }
+            ENJIN_LOG_INFO(Editor, "Generated %u terrain surface colliders", made);
+        }
+        ImGui::SetItemTooltip("Creates a thin static box collider along each surface segment");
 
         ImGui::Separator();
         ImGui::Checkbox("Edit Mode (Drag Points)", &m_TerrainEditMode);

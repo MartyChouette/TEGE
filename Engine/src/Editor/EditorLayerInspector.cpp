@@ -1442,7 +1442,16 @@ void EditorLayer::DrawInspectorPanel() {
             DrawHealthComponent(m_PrimarySelected);
         }
         if (auto* em = m_World->GetComponent<ECS::GPUParticleEmitterComponent>(m_PrimarySelected)) {
-            if (ImGui::CollapsingHeader("GPU Particle Emitter", ImGuiTreeNodeFlags_DefaultOpen)) {
+            bool emOpen = ImGui::CollapsingHeader("GPU Particle Emitter", ImGuiTreeNodeFlags_DefaultOpen);
+            bool emRemoved = false;
+            if (ImGui::BeginPopupContextItem("GPUEmitterCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::GPUParticleEmitterComponent>(m_PrimarySelected, "gpuParticleEmitter", "GPU Particle Emitter");
+                    emRemoved = true;
+                }
+                ImGui::EndPopup();
+            }
+            if (!emRemoved && emOpen) {
                 // Load Preset just FILLS the fields below (they stay editable), so
                 // gravity/size/lifetime are always visible. Index 0 is "-" (no-op).
                 int preset = 0;
@@ -1539,13 +1548,22 @@ void EditorLayer::DrawInspectorPanel() {
             }
         }
         if (auto* cl = m_World->GetComponent<ECS::ClothComponent>(m_PrimarySelected)) {
-            if (ImGui::CollapsingHeader("Cloth", ImGuiTreeNodeFlags_DefaultOpen)) {
+            bool clOpen = ImGui::CollapsingHeader("Cloth", ImGuiTreeNodeFlags_DefaultOpen);
+            bool clRemoved = false;
+            if (ImGui::BeginPopupContextItem("ClothCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::ClothComponent>(m_PrimarySelected, "cloth", "Cloth");
+                    clRemoved = true;
+                }
+                ImGui::EndPopup();
+            }
+            if (!clRemoved && clOpen) {
                 bool rebuild = false;
                 rebuild |= ImGui::DragFloat("Width", &cl->width, 0.05f, 0.1f, 50.0f);
                 rebuild |= ImGui::DragFloat("Height", &cl->height, 0.05f, 0.1f, 50.0f);
                 rebuild |= ImGui::DragInt("Res X", &cl->resX, 1, 2, 64);
                 rebuild |= ImGui::DragInt("Res Y", &cl->resY, 1, 2, 64);
-                const char* pins[] = {"Top Edge","Top Corners","Left Edge","All Corners","None"};
+                const char* pins[] = {"Top Edge","Top Corners","Left Edge","All Corners","None","Bottom Edge"};
                 int pin = static_cast<int>(cl->pin);
                 if (ImGui::Combo("Pin", &pin, pins, IM_ARRAYSIZE(pins))) {
                     cl->pin = static_cast<ECS::ClothPin>(pin);
@@ -1597,6 +1615,53 @@ void EditorLayer::DrawInspectorPanel() {
                 }
                 if (ImGui::Button("Reset Cloth") || rebuild) cl->initialized = false;
                 ImGui::TextDisabled("(simulates in Play mode; pinned points follow the entity)");
+            }
+        }
+        if (auto* sw = m_World->GetComponent<ECS::SwarmComponent>(m_PrimarySelected)) {
+            bool swOpen = ImGui::CollapsingHeader("Swarm", ImGuiTreeNodeFlags_DefaultOpen);
+            bool swRemoved = false;
+            if (ImGui::BeginPopupContextItem("SwarmCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::SwarmComponent>(m_PrimarySelected, "swarm", "Swarm");
+                    swRemoved = true;
+                }
+                ImGui::EndPopup();
+            }
+            if (!swRemoved && swOpen) {
+                i32 count = static_cast<i32>(sw->count);
+                if (ImGui::DragInt("Count", &count, 10, 1, 200000)) sw->count = static_cast<u32>(count < 1 ? 1 : count);
+                i32 renderCap = static_cast<i32>(sw->renderCap);
+                if (ImGui::DragInt("Render Cap", &renderCap, 10, 1, 200000)) sw->renderCap = static_cast<u32>(renderCap < 1 ? 1 : renderCap);
+                ImGui::SetItemTooltip("Max visible proxy cubes (sim count can exceed this)");
+                ImGui::DragFloat("Spawn Radius", &sw->spawnRadius, 0.5f, 0.5f, 500.0f);
+                ImGui::DragFloat("Max Speed", &sw->maxSpeed, 0.1f, 0.1f, 100.0f);
+                ImGui::DragFloat("Pull", &sw->pull, 0.05f, 0.0f, 20.0f);
+                ImGui::SetItemTooltip("Attraction toward this entity");
+                ImGui::SliderFloat("Damping", &sw->damping, 0.0f, 1.0f, "%.2f");
+                ImGui::DragFloat("Cube Size", &sw->cubeSize, 0.01f, 0.01f, 5.0f);
+                f32 swCol[3] = { sw->color.x, sw->color.y, sw->color.z };
+                if (ImGui::ColorEdit3("Color", swCol)) sw->color = Math::Vector3(swCol[0], swCol[1], swCol[2]);
+                ImGui::TextDisabled("(simulates in Play mode as instanced proxy cubes)");
+            }
+        }
+        if (m_World->HasComponent<ECS::VisualScriptComponent>(m_PrimarySelected)) {
+            bool vsOpen = ImGui::CollapsingHeader("Visual Script", ImGuiTreeNodeFlags_DefaultOpen);
+            bool vsRemoved = false;
+            if (ImGui::BeginPopupContextItem("VisualScriptCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::VisualScriptComponent>(m_PrimarySelected, "visualScript", "Visual Script");
+                    vsRemoved = true;
+                }
+                ImGui::EndPopup();
+            }
+            if (!vsRemoved && vsOpen) {
+                auto* vs = m_World->GetComponent<ECS::VisualScriptComponent>(m_PrimarySelected);
+                if (vs) {
+                    ImGui::Checkbox("Enabled", &vs->enabled);
+                    ImGui::Text("Nodes: %zu  Variables: %zu  Functions: %zu",
+                                vs->graph.GetNodes().size(), vs->variables.size(), vs->functions.size());
+                    ImGui::TextDisabled("(edit the graph in the Visual Script panel)");
+                }
             }
         }
         if (m_World->HasComponent<ECS::RecordRewindComponent>(m_PrimarySelected)) {

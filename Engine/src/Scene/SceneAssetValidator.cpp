@@ -7,6 +7,7 @@
 #include "Enjin/ECS/Components/TreeVolume.h"
 #include "Enjin/ECS/Components/ShrubVolume.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
+#include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/Platform/Paths.h"
 
 #include <filesystem>
@@ -110,6 +111,13 @@ std::vector<std::string> FindMissingAssetPaths(
         const auto* grass = world->GetComponent<ECS::GrassVolumeComponent>(entity);
         if (!grass) continue;
         check(grass->customAssetPath, entity, "grass asset", "GrassVolume");
+    }
+
+    for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::WeatherZoneComponent>()) {
+        const auto* zone = world->GetComponent<ECS::WeatherZoneComponent>(entity);
+        if (!zone) continue;
+        check(zone->rainTexturePath, entity, "weather sprite", "WeatherZone");
+        check(zone->snowTexturePath, entity, "weather sprite", "WeatherZone");
     }
 
     return warnings;

@@ -37,7 +37,10 @@ public:
     WeatherRenderer() = default;
     ~WeatherRenderer();
 
-    bool Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout);
+    // bindlessLayout: set-1 bindless texture layout for custom rain/snow sprites
+    // (VK_NULL_HANDLE = procedural-only, textures disabled)
+    bool Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout,
+                    VkDescriptorSetLayout bindlessLayout = VK_NULL_HANDLE);
     void Shutdown();
 
     // Recreate pipeline for a different render pass (e.g. render target vs swapchain)
@@ -55,7 +58,8 @@ public:
                 const WeatherSystem& weather,
                 bool isRain,
                 u32 viewportWidth = 0,
-                u32 viewportHeight = 0);
+                u32 viewportHeight = 0,
+                VkDescriptorSet bindlessSet = VK_NULL_HANDLE);
 
     // Reduced motion: cuts particles to 25%, disables stretch
     void SetReducedMotion(bool enabled) { m_ReducedMotion = enabled; }
@@ -68,6 +72,7 @@ private:
     void CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount = 2);
 
     Renderer::VulkanRenderer* m_Renderer = nullptr;
+    VkDescriptorSetLayout m_BindlessLayout = VK_NULL_HANDLE;
 
     // Shared quad mesh (4 vertices, 6 indices)
     std::unique_ptr<Renderer::VulkanBuffer> m_QuadVertexBuffer;

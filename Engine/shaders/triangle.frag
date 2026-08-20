@@ -1067,7 +1067,10 @@ void main() {
     float metallic = mat_metallic;
     float roughness = mat_roughness;
 
-    // Sample base color texture if available (bindless or fallback)
+    // Sample base color texture if available (bindless or fallback).
+    // Texture alpha participates in Mask/Blend alpha (glTF semantics) — a PNG
+    // with a transparent background cuts out without any extra setup.
+    float texAlpha = 1.0;
     if (SPEC_HAS_BASE_COLOR_TEX != 0 && (mat_flags & FLAG_HAS_BASE_COLOR_TEX) != 0) {
 #ifdef VIRTUAL_TEXTURING
         vec4 texColor = sampleVirtualTexture(uv);
@@ -1077,6 +1080,7 @@ void main() {
             : texture(baseColorTexture, uv);
 #endif
         albedo *= texColor.rgb;
+        texAlpha = texColor.a;
     }
 
     // Sample metallic-roughness texture if available (bindless or fallback)
@@ -1110,7 +1114,7 @@ void main() {
         // Gamma correction
         result = pow(result, vec3(1.0 / 2.2));
         // Alpha handling
-        float alpha = mat_opacity * fragVertColor.a;
+        float alpha = mat_opacity * fragVertColor.a * texAlpha;
         int alphaMode = (mat_flags >> 8) & 0x3;
         if (alphaMode == 0) {
             alpha = 1.0; // Opaque: ignore opacity so the now-blending pipeline can't make it see-through
@@ -1796,7 +1800,7 @@ void main() {
     }
 
     // Alpha handling
-    float alpha = mat_opacity * fragVertColor.a;
+    float alpha = mat_opacity * fragVertColor.a * texAlpha;
     int alphaMode = (mat_flags >> 8) & 0x3;
     if (alphaMode == 0) {
         alpha = 1.0; // Opaque: ignore opacity so the now-blending pipeline can't make it see-through

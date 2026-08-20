@@ -2288,6 +2288,13 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // Configure weather system from active zone
     bool hasWeatherParticles = false;
     bool isRain = false;
+
+    // 2D scenes get precipitation as an XY sheet falling down the screen
+    if (m_RenderSystem) {
+        m_WeatherSystem.SetMode2D(
+            m_RenderSystem->GetSceneComposition().mode != ECS::SceneRenderMode::Scene3D);
+    }
+
     if (activeWeatherZone && activeWeatherZone->weatherType > 0) {
         Effects::WeatherType wType = static_cast<Effects::WeatherType>(activeWeatherZone->weatherType);
 
@@ -2359,6 +2366,19 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         m_WeatherSystem.SetWindDirection(activeWeatherZone->windDirection);
         m_WeatherSystem.SetWindStrength(activeWeatherZone->windStrength);
 
+        // Custom rain/snow sprites: resolve zone texture paths to bindless indices
+        // once (cached; -1 = none/failed → built-in procedural look)
+        if (m_RenderSystem) {
+            if (activeWeatherZone->cachedRainTexIndex == -2)
+                activeWeatherZone->cachedRainTexIndex =
+                    m_RenderSystem->ResolveBindlessTextureIndex(activeWeatherZone->rainTexturePath);
+            if (activeWeatherZone->cachedSnowTexIndex == -2)
+                activeWeatherZone->cachedSnowTexIndex =
+                    m_RenderSystem->ResolveBindlessTextureIndex(activeWeatherZone->snowTexturePath);
+        }
+        m_WeatherSystem.SetRainTextureIndex(activeWeatherZone->cachedRainTexIndex);
+        m_WeatherSystem.SetSnowTextureIndex(activeWeatherZone->cachedSnowTexIndex);
+
         if (activeWeatherZone->lightningEnabled) {
             m_WeatherSystem.SetLightningInterval(
                 activeWeatherZone->lightningMinInterval,
@@ -2400,6 +2420,8 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         m_RenderSystem->SetSnowIntensity(snowAccum);
     } else {
         m_WeatherSystem.SetWeather(Effects::WeatherType::Clear, 0.5f);
+        m_WeatherSystem.SetRainTextureIndex(-1);
+        m_WeatherSystem.SetSnowTextureIndex(-1);
         m_WindSystem.ClearZoneOverride();
         m_RenderSystem->SetFogParams(0.0f, 20.0f, 100.0f, 0.1f);
         m_RenderSystem->SetFogColor(Math::Vector3(0.5f, 0.5f, 0.6f));
@@ -2667,15 +2689,19 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     if (useSplitscreen && !splitViewports.empty()) {
         m_RenderSystem->RenderSplitscreen(sceneTarget, splitViewports);
         if (hasWeatherParticles) {
-            m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight);
+            m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight,
+                                                   /*useOffscreenSets*/ true, /*viewport*/ 0);
         }
-        m_RenderSystem->RenderElementalParticles(m_ElementalSystem, rtWidth, rtHeight);
+        m_RenderSystem->RenderElementalParticles(m_ElementalSystem, rtWidth, rtHeight,
+                                                 /*useOffscreenSets*/ true, /*viewport*/ 0);
     } else {
         m_RenderSystem->RenderToTarget(sceneTarget, &gameCamera, 1);
         if (hasWeatherParticles) {
-            m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight);
+            m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight,
+                                                   /*useOffscreenSets*/ true, /*viewport*/ 1);
         }
-        m_RenderSystem->RenderElementalParticles(m_ElementalSystem, rtWidth, rtHeight);
+        m_RenderSystem->RenderElementalParticles(m_ElementalSystem, rtWidth, rtHeight,
+                                                 /*useOffscreenSets*/ true, /*viewport*/ 1);
     }
     sceneTarget->End(commandBuffer);
 

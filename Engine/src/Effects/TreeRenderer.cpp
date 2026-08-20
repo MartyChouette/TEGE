@@ -19,10 +19,12 @@ TreeRenderer::~TreeRenderer() {
     Shutdown();
 }
 
-bool TreeRenderer::Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout) {
+bool TreeRenderer::Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout,
+                              VkDescriptorSetLayout bindlessLayout) {
     if (m_Initialized) return true;
 
     m_Renderer = renderer;
+    m_BindlessLayout = bindlessLayout;
 
     CreateTreeMesh();
     CreatePipeline(sharedLayout);
@@ -150,6 +152,7 @@ void TreeRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
     config.customVertexInput = &vertexInput;
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (m_BindlessLayout != VK_NULL_HANDLE) m_Pipeline->SetBindlessLayout(m_BindlessLayout);
     if (!m_Pipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(), sharedLayout)) {
         ENJIN_LOG_ERROR(Renderer, "TreeRenderer: Failed to create pipeline");
         m_Pipeline.reset();
@@ -211,6 +214,7 @@ void TreeRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorS
     config.customVertexInput = &vertexInput;
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (m_BindlessLayout != VK_NULL_HANDLE) m_Pipeline->SetBindlessLayout(m_BindlessLayout);
     if (!m_Pipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(), sharedLayout)) {
         ENJIN_LOG_ERROR(Renderer, "TreeRenderer: Failed to create pipeline");
         m_Pipeline.reset();
@@ -227,7 +231,9 @@ void TreeRenderer::Render(VkCommandBuffer commandBuffer,
                            u32 currentFrame,
                            ECS::World* world,
                            u32 viewportWidth,
-                           u32 viewportHeight) {
+                           u32 viewportHeight,
+                           bool mode2D,
+                           VkDescriptorSet bindlessSet) {
     if (!m_Initialized || !m_Pipeline || !world) return;
 
     bool hasBound = false;
@@ -245,6 +251,12 @@ void TreeRenderer::Render(VkCommandBuffer commandBuffer,
 
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                 m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+
+            // Set 1: bindless textures for volumes with custom bark/canopy art
+            if (m_BindlessLayout != VK_NULL_HANDLE && bindlessSet != VK_NULL_HANDLE) {
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    m_Pipeline->GetLayout(), 1, 1, &bindlessSet, 0, nullptr);
+            }
 
             VkExtent2D extent;
             if (viewportWidth > 0 && viewportHeight > 0) {
@@ -323,6 +335,26 @@ void TreeRenderer::Render(VkCommandBuffer commandBuffer,
             canopyScale = 1.0f;
         }
 
+        // Canopy base color packed 8-bit r*65536+g*256+b into one float, freeing
+        // two push-constant slots for the bark/canopy texture indices
+        auto pack8 = [](f32 c) -> f32 {
+            f32 v = c < 0.0f ? 0.0f : (c > 1.0f ? 1.0f : c);
+            return static_cast<f32>(static_cast<u32>(v * 255.0f + 0.5f));
+        };
+        f32 canopyPacked = pack8(canopyBase.x) * 65536.0f + pack8(canopyBase.y) * 256.0f + pack8(canopyBase.z);
+
+        bool texturesUsable = (m_BindlessLayout != VK_NULL_HANDLE && bindlessSet != VK_NULL_HANDLE);
+        i32 barkIndex = texturesUsable && tree->cachedBarkTexIndex >= 0 ? tree->cachedBarkTexIndex : -1;
+        i32 canopyIndex = texturesUsable && tree->cachedCanopyTexIndex >= 0 ? tree->cachedCanopyTexIndex : -1;
+
+        // Height scale range packed into flags (7 bits each, 0.05 steps, 0-6.35):
+        // tree density is capped to 16 bits to make room — see tree.vert unpack
+        auto packScale = [](f32 s) -> i32 {
+            f32 v = s < 0.0f ? 0.0f : (s > 6.35f ? 6.35f : s);
+            return static_cast<i32>(v * 20.0f + 0.5f) & 0x7F;
+        };
+        u32 density16 = tree->density > 65535u ? 65535u : tree->density;
+
         // Pack tree parameters into push constants
         Renderer::PushConstants pc{};
         pc.model = model;
@@ -332,17 +364,25 @@ void TreeRenderer::Render(VkCommandBuffer commandBuffer,
         pc.roughness = tree->canopyRadius;
         pc.emissiveStrength = tree->trunkHeight;
         pc.opacity = tree->canopyOffset;
-        pc.alphaCutoff = canopyBase.x;  // Pack canopyBase R
-        pc.flags = static_cast<i32>(tree->density);
+        pc.alphaCutoff = canopyPacked;
+        pc.flags = static_cast<i32>(density16)
+                 | (packScale(tree->minHeightScale) << 16)
+                 | (packScale(tree->maxHeightScale) << 23)
+                 | (mode2D ? (1 << 30) : 0);
         pc.parallaxScale = tree->windSwayStrength;
-        pc.surfaceParam1 = canopyBase.y;   // Pack canopyBase G
-        pc.surfaceParam2 = canopyBase.z; // Pack canopyBase B
+        pc.surfaceParam1 = static_cast<f32>(barkIndex);
+        pc.surfaceParam2 = static_cast<f32>(canopyIndex);
         pc.surfaceParam3 = canopyScale;  // seasonFactor
 
         vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 
-        vkCmdDrawIndexed(commandBuffer, m_IndexCount, tree->density, 0, 0, 0);
+        // canopyQuads trims the draw to trunk (12 indices, first in the template)
+        // plus N canopy quads (24 indices each) — see VegTemplates::BuildTree
+        u32 canopyQuads = tree->canopyQuads > 3u ? 3u : tree->canopyQuads;
+        u32 indexCount = 12u + canopyQuads * 24u;
+        if (indexCount > m_IndexCount) indexCount = m_IndexCount;
+        vkCmdDrawIndexed(commandBuffer, indexCount, density16, 0, 0, 0);
     }
 }
 
@@ -367,7 +407,8 @@ void TreeRenderer::GenerateColliders(ECS::World* world, ECS::Entity volumeEntity
     for (u32 i = 0; i < tree->density; ++i) {
         f32 px = cpuHash(i * 3u + 0u) * 2.0f - 1.0f;
         f32 pz = cpuHash(i * 3u + 1u) * 2.0f - 1.0f;
-        f32 sizeVar = cpuHash(i * 3u + 2u) * 0.8f + 0.6f;
+        f32 minS = tree->minHeightScale, maxS = tree->maxHeightScale;
+        f32 sizeVar = minS + cpuHash(i * 3u + 2u) * (maxS - minS);
 
         Math::Vector3 treePos = volumeCenter + Math::Vector3(px * halfX, 0.0f, pz * halfZ);
 

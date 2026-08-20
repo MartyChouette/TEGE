@@ -6,6 +6,9 @@
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Scene/SceneSerializer.h"
 
+#include <filesystem>
+#include <memory>
+
 using namespace Enjin;
 using namespace Enjin::ECS;
 using namespace Enjin::Gameplay;
@@ -84,12 +87,28 @@ ENJIN_TEST(MetaKV, MapsAreAccessible) {
 // ===========================================================================
 
 ENJIN_TEST(SlotInfo, AllSlotsInitiallyEmpty) {
+    // Arrange: isolate from the user's REAL save directory — the default
+    // backend reads %APPDATA%\enjin\saves, so real play-session auto-saves
+    // made this test fail on developer machines
+    namespace fs = std::filesystem;
+    fs::path dir = fs::temp_directory_path() / "enjin_test_saves_empty";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir, ec);
+
     TieredSaveSystem save;
+    save.SetBackend(std::make_shared<LocalSaveBackend>(dir.string()));
+
+    // Act
     auto slots = save.GetAllSlots();
+
+    // Assert
     ENJIN_EXPECT_EQ(slots.size(), (size_t)TieredSaveSystem::MAX_SLOTS);
     for (auto& s : slots) {
         ENJIN_EXPECT_TRUE(s.isEmpty);
     }
+
+    fs::remove_all(dir, ec);
 }
 
 ENJIN_TEST(SlotInfo, SlotIndexRange) {

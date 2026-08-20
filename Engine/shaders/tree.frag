@@ -1,12 +1,17 @@
 #version 450
+#extension GL_EXT_nonuniform_qualifier : enable
 
 // Tree fragment shader - dual coloring: trunk vs canopy
 
 layout(location = 0) in vec3 fragWorldPos;
 layout(location = 1) in vec3 fragNormal;
-layout(location = 2) in float fragUVy;
+layout(location = 2) in vec2 fragUV;
 
 layout(location = 0) out vec4 outColor;
+
+// Bindless texture array (set 1) — used when bark/canopy tex index >= 0
+layout(set = 1, binding = 0) uniform texture2D bindlessTextures[];
+layout(set = 1, binding = 2) uniform sampler bindlessSamplers[8];
 
 #define MAX_DIRECTIONAL_LIGHTS 4
 #define MAX_POINT_LIGHTS 64
@@ -93,16 +98,16 @@ layout(push_constant) uniform PushConstants {
     float canopyRadius;
     float trunkHeight;
     float canopyOffset;
-    float canopyBaseR;
+    float canopyPacked;    // canopyBaseColor packed r*65536+g*256+b (8-bit channels)
     int flags;
     float windSwayStrength;
-    float canopyBaseG;
-    float canopyBaseB;
+    float barkTexIndex;    // bindless index, -1 = procedural
+    float canopyTexIndex;  // bindless index, -1 = procedural
     float seasonFactor;  // 0=bare, 1=full canopy
 } material;
 
 void main() {
-    bool isCanopy = fragUVy >= 0.5;
+    bool isCanopy = fragUV.y >= 0.5;
 
     // Discard canopy fragments when season has stripped the leaves
     if (isCanopy && material.seasonFactor < 0.05) {
@@ -112,11 +117,24 @@ void main() {
     vec3 albedo;
     if (isCanopy) {
         // Canopy: lerp base -> tip based on UV.y (0.5 = base, 1.0 = tip)
-        float canopyHeight = (fragUVy - 0.5) * 2.0;  // Remap to 0..1
-        vec3 canopyBaseColor = vec3(material.canopyBaseR, material.canopyBaseG, material.canopyBaseB);
+        float canopyHeight = (fragUV.y - 0.5) * 2.0;  // Remap to 0..1
+        float packed = material.canopyPacked;
+        vec3 canopyBaseColor = vec3(floor(packed / 65536.0),
+                                    floor(mod(packed, 65536.0) / 256.0),
+                                    mod(packed, 256.0)) / 255.0;
         // Ramp curve pow(0.5): the square-root curve gives the diamond crown more
         // visible mid-green surface area than a linear lerp
         albedo = mix(canopyBaseColor, material.canopyTipColor, pow(canopyHeight, 0.5));
+
+        // Custom canopy texture: remap the 0.5..1.0 canopy band to full texture V
+        // (flipped so the art reads upright), alpha-cutout for leaf sheets
+        if (material.canopyTexIndex >= 0.0) {
+            vec2 uv = vec2(fragUV.x, 1.0 - canopyHeight);
+            vec4 tex = texture(sampler2D(bindlessTextures[nonuniformEXT(int(material.canopyTexIndex + 0.5))],
+                                         bindlessSamplers[0]), uv);
+            if (tex.a < 0.5) discard;
+            albedo = tex.rgb;
+        }
 
         // Snow on canopy
         float snowIntensity = lighting.fogColorSnow.w;
@@ -126,6 +144,14 @@ void main() {
     } else {
         // Trunk: solid trunk color
         albedo = material.trunkColor;
+
+        // Custom bark texture: remap the 0..0.4 trunk band to full texture V (flipped)
+        if (material.barkTexIndex >= 0.0) {
+            vec2 uv = vec2(fragUV.x, 1.0 - fragUV.y / 0.4);
+            vec4 tex = texture(sampler2D(bindlessTextures[nonuniformEXT(int(material.barkTexIndex + 0.5))],
+                                         bindlessSamplers[0]), uv);
+            albedo = tex.rgb;
+        }
     }
 
     vec3 normal = normalize(fragNormal);

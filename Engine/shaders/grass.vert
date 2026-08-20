@@ -74,6 +74,7 @@ layout(binding = 1) uniform LightingUBO {
 layout(location = 0) out vec3 fragWorldPos;
 layout(location = 1) out vec3 fragNormal;
 layout(location = 2) out float fragHeightFraction;
+layout(location = 3) out vec2 fragUV;
 
 // Simple hash function for procedural placement
 float hash(uint n) {
@@ -84,6 +85,10 @@ float hash(uint n) {
 
 void main() {
     uint instanceID = gl_InstanceIndex;
+
+    // 2D scene mode (bit 30 of flags): scatter along X only and flatten onto the
+    // XY plane so blades read as a side-view row in front of an ortho camera
+    bool mode2D = (pushConstants.flags & (1 << 30)) != 0;
 
     // Procedural placement: hash instance ID to get (x, z) offset within volume
     float px = hash(instanceID * 3u + 0u) * 2.0 - 1.0;      // [-1, 1]
@@ -100,7 +105,7 @@ void main() {
     float halfZ = length(pushConstants.model[2].xyz);
 
     // World-space blade origin
-    vec3 bladeOrigin = volumeCenter + vec3(px * halfX, 0.0, pz * halfZ);
+    vec3 bladeOrigin = volumeCenter + vec3(px * halfX, 0.0, mode2D ? 0.0 : pz * halfZ);
 
     // Blade dimensions
     float bladeHeight = pushConstants.emissiveStrength + heightVar * pushConstants.opacity;
@@ -151,9 +156,15 @@ void main() {
 
     vec3 worldPos = bladeOrigin + rotatedPos + windDisplacement;
 
+    if (mode2D) {
+        // Flatten to the volume's Z with a tiny stable per-instance offset so
+        // overlapping blades don't z-fight
+        worldPos.z = volumeCenter.z + pz * 0.1;
+    }
+
     // Player stepping: grass bends away from player position
     float stepRadius = lighting.playerPosition.w;
-    if (stepRadius > 0.0) {
+    if (stepRadius > 0.0 && !mode2D) {
         vec2 toPlayer = worldPos.xz - lighting.playerPosition.xz;
         float dist = length(toPlayer);
         if (dist < stepRadius && dist > 0.001) {
@@ -164,7 +175,7 @@ void main() {
     }
 
     // World curvature: bend geometry downward at distance from camera
-    if (lighting.worldCurvature.x > 0.0) {
+    if (lighting.worldCurvature.x > 0.0 && !mode2D) {
         vec2 delta = worldPos.xz - lighting.cameraPos.xz;
         worldPos.y -= lighting.worldCurvature.x * dot(delta, delta);
     }
@@ -173,6 +184,7 @@ void main() {
 
     fragWorldPos = worldPos;
     // Approximate normal: blade faces camera (billboard-ish) with slight upward bias
-    fragNormal = normalize(vec3(sinR, 0.5, cosR));
+    fragNormal = mode2D ? vec3(0.0, 0.35, 0.94) : normalize(vec3(sinR, 0.5, cosR));
     fragHeightFraction = heightFraction;
+    fragUV = inUV;
 }

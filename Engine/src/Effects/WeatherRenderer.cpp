@@ -14,10 +14,12 @@ WeatherRenderer::~WeatherRenderer() {
     Shutdown();
 }
 
-bool WeatherRenderer::Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout) {
+bool WeatherRenderer::Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout,
+                                 VkDescriptorSetLayout bindlessLayout) {
     if (m_Initialized) return true;
 
     m_Renderer = renderer;
+    m_BindlessLayout = bindlessLayout;
 
     CreateQuadBuffers();
     CreateInstanceBuffer();
@@ -113,9 +115,9 @@ void WeatherRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescript
 
     m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
     if (!m_FragmentShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::ParticleFragmentShaderData),
-        Renderer::ShaderData::ParticleFragmentShaderDataSize)) {
-        ENJIN_LOG_ERROR(Renderer, "WeatherRenderer: Failed to load particle fragment shader");
+        reinterpret_cast<const u8*>(Renderer::ShaderData::WeatherParticleFragmentShaderData),
+        Renderer::ShaderData::WeatherParticleFragmentShaderDataSize)) {
+        ENJIN_LOG_ERROR(Renderer, "WeatherRenderer: Failed to load weather particle fragment shader");
         return;
     }
 
@@ -182,6 +184,7 @@ void WeatherRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescript
     config.customVertexInput = &vertexInput;
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (m_BindlessLayout != VK_NULL_HANDLE) m_Pipeline->SetBindlessLayout(m_BindlessLayout);
     if (!m_Pipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(), sharedLayout)) {
         ENJIN_LOG_ERROR(Renderer, "WeatherRenderer: Failed to create particle pipeline");
         m_Pipeline.reset();
@@ -198,7 +201,8 @@ void WeatherRenderer::Render(VkCommandBuffer commandBuffer,
                               const WeatherSystem& weather,
                               bool isRain,
                               u32 viewportWidth,
-                              u32 viewportHeight) {
+                              u32 viewportHeight,
+                              VkDescriptorSet bindlessSet) {
     if (!m_Initialized || !m_Pipeline) return;
 
     u32 particleCount = weather.GetActiveParticleCount();
@@ -248,6 +252,12 @@ void WeatherRenderer::Render(VkCommandBuffer commandBuffer,
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
         m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
+    // Set 1: bindless textures for custom rain/snow sprites
+    if (m_BindlessLayout != VK_NULL_HANDLE && bindlessSet != VK_NULL_HANDLE) {
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_Pipeline->GetLayout(), 1, 1, &bindlessSet, 0, nullptr);
+    }
+
     // Set viewport and scissor (use override dimensions if provided, else swapchain)
     VkExtent2D extent;
     if (viewportWidth > 0 && viewportHeight > 0) {
@@ -284,6 +294,12 @@ void WeatherRenderer::Render(VkCommandBuffer commandBuffer,
     pc.opacity = 1.0f;
     pc.flags = 0;
 
+    // Custom sprite: only advertise the texture when set 1 is actually bound,
+    // otherwise the shader would sample an unbound descriptor
+    i32 texIndex = isRain ? weather.GetRainTextureIndex() : weather.GetSnowTextureIndex();
+    if (m_BindlessLayout == VK_NULL_HANDLE || bindlessSet == VK_NULL_HANDLE) texIndex = -1;
+    pc.surfaceParam1 = static_cast<f32>(texIndex);
+
     vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 
@@ -304,7 +320,7 @@ bool WeatherRenderer::ReloadShaders(const std::string& shaderDir, VkDescriptorSe
     namespace fs = std::filesystem;
 
     std::string vertPath = (fs::path(shaderDir) / "particle.vert").string();
-    std::string fragPath = (fs::path(shaderDir) / "particle.frag").string();
+    std::string fragPath = (fs::path(shaderDir) / "weather_particle.frag").string();
 
     std::string vertSrc, fragSrc;
     { std::ifstream f(vertPath); if (!f.is_open()) return false; vertSrc.assign(std::istreambuf_iterator<char>(f), {}); }

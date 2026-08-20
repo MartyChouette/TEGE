@@ -123,6 +123,86 @@ ENJIN_TEST(WeatherSetter, SpawnHeight) {
 }
 
 // ===========================================================================
+// 2D scene mode: particles spawn in an XY sheet, no Z motion
+// ===========================================================================
+
+ENJIN_TEST(WeatherMode2D, DefaultOff) {
+    WeatherSystem ws;
+    ENJIN_EXPECT_FALSE(ws.GetMode2D());
+}
+
+ENJIN_TEST(WeatherMode2D, RainParticlesHaveNoZVelocity) {
+    WeatherSystem ws;
+    ws.Initialize(200);
+    ws.SetMode2D(true);
+    ws.SetWindDirection(Vector3(1.0f, 0.0f, 1.0f));  // Z wind must be ignored in 2D
+    ws.SetWindStrength(2.0f);
+    ws.SetWeather(WeatherType::HeavyRain, 0.0f);
+
+    Vector3 camPos(5.0f, 3.0f, 10.0f);
+    for (int i = 0; i < 60; ++i) ws.Update(1.0f / 60.0f, camPos);
+
+    ENJIN_ASSERT_TRUE(ws.GetActiveParticleCount() > 0);
+    const auto& particles = ws.GetParticles();
+    for (u32 i = 0; i < ws.GetActiveParticleCount(); ++i) {
+        ENJIN_EXPECT_FLOAT_EQ(particles[i].velocity.z, 0.0f);
+    }
+}
+
+ENJIN_TEST(WeatherMode2D, ParticlesSpawnInFrontOfCamera) {
+    WeatherSystem ws;
+    ws.Initialize(200);
+    ws.SetMode2D(true);
+    ws.SetWeather(WeatherType::Snow, 0.0f);
+
+    Vector3 camPos(0.0f, 0.0f, 10.0f);
+    for (int i = 0; i < 60; ++i) ws.Update(1.0f / 60.0f, camPos);
+
+    // 2D camera looks down -Z: every particle must sit in front of it (z < camZ)
+    ENJIN_ASSERT_TRUE(ws.GetActiveParticleCount() > 0);
+    const auto& particles = ws.GetParticles();
+    for (u32 i = 0; i < ws.GetActiveParticleCount(); ++i) {
+        ENJIN_EXPECT_TRUE(particles[i].position.z < camPos.z);
+    }
+}
+
+ENJIN_TEST(WeatherMode2D, Mode3DStillSpreadsInZ) {
+    WeatherSystem ws;
+    ws.Initialize(200);
+    ws.SetWeather(WeatherType::Snow, 0.0f);
+
+    Vector3 camPos(0.0f, 0.0f, 0.0f);
+    for (int i = 0; i < 60; ++i) ws.Update(1.0f / 60.0f, camPos);
+
+    // 3D mode spawns in a cylinder around the camera — some particles behind it
+    ENJIN_ASSERT_TRUE(ws.GetActiveParticleCount() > 0);
+    const auto& particles = ws.GetParticles();
+    bool anyBehind = false;
+    for (u32 i = 0; i < ws.GetActiveParticleCount(); ++i) {
+        if (particles[i].position.z > 0.0f) { anyBehind = true; break; }
+    }
+    ENJIN_EXPECT_TRUE(anyBehind);
+}
+
+// ===========================================================================
+// Custom precipitation sprites
+// ===========================================================================
+
+ENJIN_TEST(WeatherSprites, DefaultProceduralIndices) {
+    WeatherSystem ws;
+    ENJIN_EXPECT_EQ(ws.GetRainTextureIndex(), -1);
+    ENJIN_EXPECT_EQ(ws.GetSnowTextureIndex(), -1);
+}
+
+ENJIN_TEST(WeatherSprites, IndicesStored) {
+    WeatherSystem ws;
+    ws.SetRainTextureIndex(7);
+    ws.SetSnowTextureIndex(12);
+    ENJIN_EXPECT_EQ(ws.GetRainTextureIndex(), 7);
+    ENJIN_EXPECT_EQ(ws.GetSnowTextureIndex(), 12);
+}
+
+// ===========================================================================
 // Weather2D
 // ===========================================================================
 

@@ -1,12 +1,18 @@
 #version 450
+#extension GL_EXT_nonuniform_qualifier : enable
 
 // Shrub fragment shader - base-to-tip color lerp with Lambert diffuse
 
 layout(location = 0) in vec3 fragWorldPos;
 layout(location = 1) in vec3 fragNormal;
 layout(location = 2) in float fragHeightFraction;
+layout(location = 3) in vec2 fragUV;
 
 layout(location = 0) out vec4 outColor;
+
+// Bindless texture array (set 1) — used when texIndex >= 0 (custom shrub texture)
+layout(set = 1, binding = 0) uniform texture2D bindlessTextures[];
+layout(set = 1, binding = 2) uniform sampler bindlessSamplers[8];
 
 #define MAX_DIRECTIONAL_LIGHTS 4
 #define MAX_POINT_LIGHTS 64
@@ -96,7 +102,7 @@ layout(push_constant) uniform PushConstants {
     float alphaCutoff;
     int flags;
     float parallaxScale;
-    float _pad0;
+    float texIndex;    // custom texture bindless index, -1 = procedural colors
     float _pad1;
     float _pad2;
 } material;
@@ -115,6 +121,18 @@ void main() {
     // Ramp curve pow(0.6): push the darker ground tone toward the base so the
     // dome's lower mass reads as shadowed foliage
     vec3 albedo = mix(material.baseColor, tipColor, pow(height, 0.6));
+
+    // Custom texture: image replaces the procedural gradient, alpha-cutout so
+    // foliage sheets keep their shape. V flipped so the art reads upright.
+    if (material.texIndex >= 0.0) {
+        vec4 tex = texture(sampler2D(bindlessTextures[nonuniformEXT(int(material.texIndex + 0.5))],
+                                     bindlessSamplers[0]), vec2(fragUV.x, 1.0 - fragUV.y));
+        if (tex.a < 0.5) discard;
+        albedo = tex.rgb;
+        if (snowIntensity > 0.0) {
+            albedo = mix(albedo, vec3(0.93, 0.95, 0.98), snowIntensity * 0.5 * height);
+        }
+    }
 
     // Per-instance darkening for depth variety
     float darkAmount = max(-fragHeightFraction, 0.0) * 2.0;

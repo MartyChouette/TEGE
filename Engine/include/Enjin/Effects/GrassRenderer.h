@@ -27,7 +27,10 @@ public:
     GrassRenderer() = default;
     ~GrassRenderer();
 
-    bool Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout);
+    // bindlessLayout: set-1 bindless texture layout for custom grass textures
+    // (VK_NULL_HANDLE = procedural-only, textures disabled)
+    bool Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout,
+                    VkDescriptorSetLayout bindlessLayout = VK_NULL_HANDLE);
     void Shutdown();
 
     // Recreate pipeline for a different render pass (e.g. render target vs swapchain)
@@ -38,12 +41,16 @@ public:
 
     // Render all grass volumes in the scene
     // viewportWidth/Height: 0 = use swapchain extent, >0 = override (for render targets)
+    // mode2D: scatter along X on the XY plane (2D scenes); bindlessSet: set-1
+    // textures for volumes with a resolved custom texture
     void Render(VkCommandBuffer commandBuffer,
                 const std::vector<VkDescriptorSet>& descriptorSets,
                 u32 currentFrame,
                 ECS::World* world,
                 u32 viewportWidth = 0,
-                u32 viewportHeight = 0);
+                u32 viewportHeight = 0,
+                bool mode2D = false,
+                VkDescriptorSet bindlessSet = VK_NULL_HANDLE);
 
 private:
     void CreateBladeMesh();
@@ -51,6 +58,7 @@ private:
     void CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout, u32 colorAttachmentCount = 2);
 
     Renderer::VulkanRenderer* m_Renderer = nullptr;
+    VkDescriptorSetLayout m_BindlessLayout = VK_NULL_HANDLE;
 
     // Blade mesh (7 verts, tapered triangle strip)
     std::unique_ptr<Renderer::VulkanBuffer> m_BladeVertexBuffer;

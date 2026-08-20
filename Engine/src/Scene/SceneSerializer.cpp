@@ -30,6 +30,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Cloth.h"
+#include "Enjin/ECS/Components/Swarm.h"
 #include "Enjin/ECS/Components/CustomShader.h"
 #include "Enjin/ECS/Components/Lens.h"
 #include "Enjin/ECS/Components/CineComponent.h"
@@ -495,7 +496,10 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("stippleTransparency")) material.stippleTransparency = JB(j["stippleTransparency"]);
     if (j.contains("uvQuantize")) material.uvQuantize = JB(j["uvQuantize"]);
     if (j.contains("gouraudOnly")) material.gouraudOnly = JB(j["gouraudOnly"]);
-    if (j.contains("vertexSnapResolution")) { u8 v = j["vertexSnapResolution"].get<u8>(); if (v <= 31) material.vertexSnapResolution = v; }
+    // Full u8 range: the field is the RAW grid resolution (80-320-ish); the old
+    // <=31 guard confused it with the 5-bit packed shader value and silently
+    // reverted every authored value to the default on load
+    if (j.contains("vertexSnapResolution")) material.vertexSnapResolution = j["vertexSnapResolution"].get<u8>();
     if (j.contains("shadowDitherMode")) { u8 v = j["shadowDitherMode"].get<u8>(); if (v <= 3) material.shadowDitherMode = v; }
     if (j.contains("shadowDitherPattern")) { u8 v = j["shadowDitherPattern"].get<u8>(); if (v <= 7) material.shadowDitherPattern = v; }
     if (j.contains("textureFilterOverride")) { u8 v = j["textureFilterOverride"].get<u8>(); if (v <= 3) material.textureFilterOverride = v; }
@@ -723,13 +727,16 @@ json SerializeWeatherZoneComponent(const ECS::WeatherZoneComponent& zone) {
     j["windDirection"] = SerializeVector3(zone.windDirection);
     j["windStrength"] = RF(zone.windStrength);
     j["priority"] = zone.priority;
+    if (!zone.rainTexturePath.empty()) j["rainTexturePath"] = zone.rainTexturePath;
+    if (!zone.snowTexturePath.empty()) j["snowTexturePath"] = zone.snowTexturePath;
     return j;
 }
 
 ECS::WeatherZoneComponent DeserializeWeatherZoneComponent(const json& j) {
     ECS::WeatherZoneComponent zone;
     if (j.contains("halfExtents")) zone.halfExtents = DeserializeVector3(j["halfExtents"]);
-    if (j.contains("weatherType")) { u32 v = j["weatherType"].get<u32>(); if (v <= 3) zone.weatherType = v; }
+    // 6 = Storm is the highest WeatherType (the old <= 3 cap silently dropped Snow/Fog/Storm)
+    if (j.contains("weatherType")) { u32 v = j["weatherType"].get<u32>(); if (v <= 6) zone.weatherType = v; }
     if (j.contains("rainIntensity")) zone.rainIntensity = j["rainIntensity"].get<f32>();
     if (j.contains("snowIntensity")) zone.snowIntensity = j["snowIntensity"].get<f32>();
     if (j.contains("fogDensity")) zone.fogDensity = j["fogDensity"].get<f32>();
@@ -742,6 +749,8 @@ ECS::WeatherZoneComponent DeserializeWeatherZoneComponent(const json& j) {
     if (j.contains("windDirection")) zone.windDirection = DeserializeVector3(j["windDirection"]);
     if (j.contains("windStrength")) zone.windStrength = j["windStrength"].get<f32>();
     if (j.contains("priority")) zone.priority = j["priority"].get<i32>();
+    if (j.contains("rainTexturePath")) zone.rainTexturePath = SafeStr(j["rainTexturePath"], MAX_STR_PATH);
+    if (j.contains("snowTexturePath")) zone.snowTexturePath = SafeStr(j["snowTexturePath"], MAX_STR_PATH);
     return zone;
 }
 
@@ -1249,7 +1258,7 @@ ECS::ClothComponent DeserializeClothComponent(const json& j) {
     if (j.contains("wind")) c.wind = DeserializeVector3(j["wind"]);
     if (j.contains("useWeatherWind")) c.useWeatherWind = JB(j["useWeatherWind"]);
     if (j.contains("weatherWindScale")) c.weatherWindScale = j["weatherWindScale"].get<f32>();
-    if (j.contains("pin")) { u32 v = j["pin"].get<u32>(); if (v <= 4) c.pin = static_cast<ECS::ClothPin>(v); }
+    if (j.contains("pin")) { u32 v = j["pin"].get<u32>(); if (v <= 5) c.pin = static_cast<ECS::ClothPin>(v); }  // 5 = BottomEdge
     if (j.contains("tearable")) c.tearable = JB(j["tearable"]);
     if (j.contains("tearThreshold")) c.tearThreshold = j["tearThreshold"].get<f32>();
     if (j.contains("collide")) c.collide = JB(j["collide"]);
@@ -1262,6 +1271,32 @@ ECS::ClothComponent DeserializeClothComponent(const json& j) {
     if (j.contains("seamSpacing")) c.seamSpacing = std::clamp(j["seamSpacing"].get<i32>(), 2, 64);
     if (j.contains("seamStrength")) c.seamStrength = j["seamStrength"].get<f32>();
     return c;
+}
+
+json SerializeSwarmComponent(const ECS::SwarmComponent& s) {
+    json j;
+    j["count"] = s.count;
+    j["renderCap"] = s.renderCap;
+    j["spawnRadius"] = RF(s.spawnRadius);
+    j["maxSpeed"] = RF(s.maxSpeed);
+    j["pull"] = RF(s.pull);
+    j["damping"] = RF(s.damping);
+    j["cubeSize"] = RF(s.cubeSize);
+    j["color"] = SerializeVector3(s.color);
+    return j;
+}
+
+ECS::SwarmComponent DeserializeSwarmComponent(const json& j) {
+    ECS::SwarmComponent s;
+    if (j.contains("count")) s.count = std::clamp(j["count"].get<u32>(), 1u, 200000u);
+    if (j.contains("renderCap")) s.renderCap = std::clamp(j["renderCap"].get<u32>(), 1u, 200000u);
+    if (j.contains("spawnRadius")) s.spawnRadius = j["spawnRadius"].get<f32>();
+    if (j.contains("maxSpeed")) s.maxSpeed = j["maxSpeed"].get<f32>();
+    if (j.contains("pull")) s.pull = j["pull"].get<f32>();
+    if (j.contains("damping")) s.damping = j["damping"].get<f32>();
+    if (j.contains("cubeSize")) s.cubeSize = j["cubeSize"].get<f32>();
+    if (j.contains("color")) s.color = DeserializeVector3(j["color"]);
+    return s;
 }
 
 json SerializeElementalVolumeComponent(const ECS::ElementalVolumeComponent& v) {
@@ -1706,6 +1741,7 @@ json SerializePlatformer2D(const ECS::Platformer2DController& ctrl) {
     j["wallJumpForce"] = RF(ctrl.wallJumpForce);
     j["collisionRadius"] = RF(ctrl.collisionRadius);
     j["collisionHeight"] = RF(ctrl.collisionHeight);
+    j["groundCheckDistance"] = RF(ctrl.groundCheckDistance);
     return j;
 }
 
@@ -1726,6 +1762,7 @@ ECS::Platformer2DController DeserializePlatformer2D(const json& j) {
     if (j.contains("wallJumpForce")) ctrl.wallJumpForce = j["wallJumpForce"].get<f32>();
     if (j.contains("collisionRadius")) ctrl.collisionRadius = j["collisionRadius"].get<f32>();
     if (j.contains("collisionHeight")) ctrl.collisionHeight = j["collisionHeight"].get<f32>();
+    if (j.contains("groundCheckDistance")) ctrl.groundCheckDistance = j["groundCheckDistance"].get<f32>();
     return ctrl;
 }
 
@@ -1767,6 +1804,7 @@ json SerializeTopDown3D(const ECS::TopDown3DController& ctrl) {
     j["cameraHeight"] = RF(ctrl.cameraHeight);
     j["lockCameraToPlayer"] = ctrl.lockCameraToPlayer;
     j["enableClickToMove"] = ctrl.enableClickToMove;
+    j["arrivalThreshold"] = RF(ctrl.arrivalThreshold);
     j["enableDash"] = ctrl.enableDash;
     j["dashSpeed"] = RF(ctrl.dashSpeed);
     j["dashDuration"] = RF(ctrl.dashDuration);
@@ -1786,6 +1824,7 @@ ECS::TopDown3DController DeserializeTopDown3D(const json& j) {
     if (j.contains("cameraHeight")) ctrl.cameraHeight = j["cameraHeight"].get<f32>();
     if (j.contains("lockCameraToPlayer")) ctrl.lockCameraToPlayer = JB(j["lockCameraToPlayer"]);
     if (j.contains("enableClickToMove")) ctrl.enableClickToMove = JB(j["enableClickToMove"]);
+    if (j.contains("arrivalThreshold")) ctrl.arrivalThreshold = j["arrivalThreshold"].get<f32>();
     if (j.contains("enableDash")) ctrl.enableDash = JB(j["enableDash"]);
     if (j.contains("dashSpeed")) ctrl.dashSpeed = j["dashSpeed"].get<f32>();
     if (j.contains("dashDuration")) ctrl.dashDuration = j["dashDuration"].get<f32>();
@@ -1814,6 +1853,8 @@ json SerializeThirdPerson(const ECS::ThirdPersonController& ctrl) {
     j["cameraLerpSpeed"] = RF(ctrl.cameraLerpSpeed);
     j["enableCameraCollision"] = ctrl.enableCameraCollision;
     j["enableLockOn"] = ctrl.enableLockOn;
+    j["frameSide"] = static_cast<u8>(ctrl.frameSide);
+    j["frameHorizontalBias"] = RF(ctrl.frameHorizontalBias);
     return j;
 }
 
@@ -1839,6 +1880,8 @@ ECS::ThirdPersonController DeserializeThirdPerson(const json& j) {
     if (j.contains("cameraLerpSpeed")) ctrl.cameraLerpSpeed = j["cameraLerpSpeed"].get<f32>();
     if (j.contains("enableCameraCollision")) ctrl.enableCameraCollision = JB(j["enableCameraCollision"]);
     if (j.contains("enableLockOn")) ctrl.enableLockOn = JB(j["enableLockOn"]);
+    if (j.contains("frameSide")) { u8 v = j["frameSide"].get<u8>(); if (v <= 2) ctrl.frameSide = static_cast<ECS::ThirdPersonController::FrameSide>(v); }
+    if (j.contains("frameHorizontalBias")) ctrl.frameHorizontalBias = j["frameHorizontalBias"].get<f32>();
     return ctrl;
 }
 
@@ -2045,6 +2088,13 @@ json SerializeAudioSourceComponent(const ECS::AudioSourceComponent& audio) {
     j["priority"] = audio.priority;
     j["pitchMin"] = RF(audio.pitchMin);
     j["pitchMax"] = RF(audio.pitchMax);
+    j["volumeMin"] = RF(audio.volumeMin);
+    j["volumeMax"] = RF(audio.volumeMax);
+    if (!audio.clipVariations.empty()) j["clipVariations"] = audio.clipVariations;
+    j["noRepeat"] = audio.noRepeat;
+    j["usePooling"] = audio.usePooling;
+    j["poolSize"] = audio.poolSize;
+    if (!audio.audioDescription.empty()) j["audioDescription"] = audio.audioDescription;
     return j;
 }
 
@@ -2064,6 +2114,18 @@ ECS::AudioSourceComponent DeserializeAudioSourceComponent(const json& j) {
     if (j.contains("priority")) audio.priority = j["priority"].get<i32>();
     if (j.contains("pitchMin")) audio.pitchMin = j["pitchMin"].get<f32>();
     if (j.contains("pitchMax")) audio.pitchMax = j["pitchMax"].get<f32>();
+    if (j.contains("volumeMin")) audio.volumeMin = j["volumeMin"].get<f32>();
+    if (j.contains("volumeMax")) audio.volumeMax = j["volumeMax"].get<f32>();
+    if (j.contains("clipVariations") && j["clipVariations"].is_array()) {
+        for (const auto& c : j["clipVariations"]) {
+            if (audio.clipVariations.size() >= 64) break;
+            audio.clipVariations.push_back(SafeStr(c, MAX_STR_PATH));
+        }
+    }
+    if (j.contains("noRepeat")) audio.noRepeat = JB(j["noRepeat"]);
+    if (j.contains("usePooling")) audio.usePooling = JB(j["usePooling"]);
+    if (j.contains("poolSize")) { u32 v = j["poolSize"].get<u32>(); if (v >= 1 && v <= 64) audio.poolSize = v; }
+    if (j.contains("audioDescription")) audio.audioDescription = SafeStr(j["audioDescription"], 512);
     return audio;
 }
 
@@ -7371,6 +7433,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::ClothComponent>(entity)) {
                 entityJson["cloth"] = SerializeClothComponent(*m_World->GetComponent<ECS::ClothComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::SwarmComponent>(entity)) {
+                entityJson["swarm"] = SerializeSwarmComponent(*m_World->GetComponent<ECS::SwarmComponent>(entity));
+            }
             if (m_World->HasComponent<ECS::ElementalVolumeComponent>(entity)) {
                 entityJson["elementalVolume"] = SerializeElementalVolumeComponent(*m_World->GetComponent<ECS::ElementalVolumeComponent>(entity));
             }
@@ -8203,6 +8268,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("cloth")) {
                 m_World->AddComponent<ECS::ClothComponent>(entity, DeserializeClothComponent(entityJson["cloth"]));
             }
+            if (entityJson.contains("swarm")) {
+                m_World->AddComponent<ECS::SwarmComponent>(entity, DeserializeSwarmComponent(entityJson["swarm"]));
+            }
             if (entityJson.contains("elementalVolume")) {
                 m_World->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(entityJson["elementalVolume"]));
             }
@@ -8865,6 +8933,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::ClothComponent>(entity)) {
                 entityJson["cloth"] = SerializeClothComponent(*m_World->GetComponent<ECS::ClothComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::SwarmComponent>(entity)) {
+                entityJson["swarm"] = SerializeSwarmComponent(*m_World->GetComponent<ECS::SwarmComponent>(entity));
             }
             if (m_World->HasComponent<ECS::ElementalVolumeComponent>(entity)) {
                 entityJson["elementalVolume"] = SerializeElementalVolumeComponent(*m_World->GetComponent<ECS::ElementalVolumeComponent>(entity));
@@ -9618,6 +9689,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("cloth")) {
                 m_World->AddComponent<ECS::ClothComponent>(entity, DeserializeClothComponent(entityJson["cloth"]));
             }
+            if (entityJson.contains("swarm")) {
+                m_World->AddComponent<ECS::SwarmComponent>(entity, DeserializeSwarmComponent(entityJson["swarm"]));
+            }
             if (entityJson.contains("elementalVolume")) {
                 m_World->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(entityJson["elementalVolume"]));
             }
@@ -10181,6 +10255,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["customShader"] = SerializeCustomShaderComponent(*world->GetComponent<ECS::CustomShaderComponent>(entity));
         if (world->HasComponent<ECS::ClothComponent>(entity))
             entityJson["cloth"] = SerializeClothComponent(*world->GetComponent<ECS::ClothComponent>(entity));
+        if (world->HasComponent<ECS::SwarmComponent>(entity))
+            entityJson["swarm"] = SerializeSwarmComponent(*world->GetComponent<ECS::SwarmComponent>(entity));
         if (world->HasComponent<ECS::ElementalVolumeComponent>(entity))
             entityJson["elementalVolume"] = SerializeElementalVolumeComponent(*world->GetComponent<ECS::ElementalVolumeComponent>(entity));
         if (world->HasComponent<ECS::PostProcessVolumeComponent>(entity))
@@ -10599,6 +10675,9 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         if (entityJson.contains("cloth")) {
             world->AddComponent<ECS::ClothComponent>(entity, DeserializeClothComponent(entityJson["cloth"]));
         }
+        if (entityJson.contains("swarm")) {
+            world->AddComponent<ECS::SwarmComponent>(entity, DeserializeSwarmComponent(entityJson["swarm"]));
+        }
         if (entityJson.contains("elementalVolume")) {
             world->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(entityJson["elementalVolume"]));
         }
@@ -10905,6 +10984,10 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
     // keys must early-return here instead of extending it.
     if (key == "viewmodel" && world->HasComponent<ECS::ViewmodelComponent>(entity))
         return SerializeViewmodelComponent(*world->GetComponent<ECS::ViewmodelComponent>(entity)).dump();
+    if (key == "gpuParticleEmitter" && world->HasComponent<ECS::GPUParticleEmitterComponent>(entity))
+        return SerializeGPUParticleEmitterComponent(*world->GetComponent<ECS::GPUParticleEmitterComponent>(entity)).dump();
+    if (key == "swarm" && world->HasComponent<ECS::SwarmComponent>(entity))
+        return SerializeSwarmComponent(*world->GetComponent<ECS::SwarmComponent>(entity)).dump();
 
     if (!world || !world->IsValid(entity)) return "";
 
@@ -10968,8 +11051,8 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeElementalSurfaceComponent(*world->GetComponent<ECS::ElementalSurfaceComponent>(entity));
         else if (key == "elementalEmitter" && world->HasComponent<ECS::ElementalEmitterComponent>(entity))
             j = SerializeElementalEmitterComponent(*world->GetComponent<ECS::ElementalEmitterComponent>(entity));
-        // NOTE: gpuParticleEmitter intentionally NOT added to this else-if chain — it is
-        // at MSVC's block-nesting limit (C1061). Save/load covers it via the other paths.
+        // NOTE: gpuParticleEmitter/swarm live in the early-return section at the top
+        // of this function — the else-if chain is at MSVC's C1061 nesting limit.
         else if (key == "elementalVolume" && world->HasComponent<ECS::ElementalVolumeComponent>(entity))
             j = SerializeElementalVolumeComponent(*world->GetComponent<ECS::ElementalVolumeComponent>(entity));
         else if (key == "postProcessVolume" && world->HasComponent<ECS::PostProcessVolumeComponent>(entity))
@@ -11226,6 +11309,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "elementalEmitter") { world->AddComponent<ECS::ElementalEmitterComponent>(entity, DeserializeElementalEmitterComponent(j)); return true; }
         if (key == "gpuParticleEmitter") { world->AddComponent<ECS::GPUParticleEmitterComponent>(entity, DeserializeGPUParticleEmitterComponent(j)); return true; }
         if (key == "cloth") { world->AddComponent<ECS::ClothComponent>(entity, DeserializeClothComponent(j)); return true; }
+        if (key == "swarm") { world->AddComponent<ECS::SwarmComponent>(entity, DeserializeSwarmComponent(j)); return true; }
         if (key == "elementalVolume") { world->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(j)); return true; }
         if (key == "postProcessVolume") { world->AddComponent<ECS::PostProcessVolumeComponent>(entity, DeserializePostProcessVolumeComponent(j)); return true; }
         if (key == "fluidVolume") { world->AddComponent<ECS::FluidVolumeComponent>(entity, DeserializeFluidVolumeComponent(j)); return true; }
@@ -11390,6 +11474,7 @@ bool SceneSerializer::RemoveOneComponent(ECS::World* world, ECS::Entity entity, 
         if (key == "elementalEmitter") { world->RemoveComponent<ECS::ElementalEmitterComponent>(entity); return true; }
         if (key == "gpuParticleEmitter") { world->RemoveComponent<ECS::GPUParticleEmitterComponent>(entity); return true; }
         if (key == "cloth") { world->RemoveComponent<ECS::ClothComponent>(entity); return true; }
+        if (key == "swarm") { world->RemoveComponent<ECS::SwarmComponent>(entity); return true; }
         if (key == "elementalVolume") { world->RemoveComponent<ECS::ElementalVolumeComponent>(entity); return true; }
         if (key == "postProcessVolume") { world->RemoveComponent<ECS::PostProcessVolumeComponent>(entity); return true; }
         if (key == "fluidVolume") { world->RemoveComponent<ECS::FluidVolumeComponent>(entity); return true; }

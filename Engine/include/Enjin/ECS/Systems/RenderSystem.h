@@ -546,8 +546,12 @@ public:
     // Render weather particles, game particles, grass, shrubs, and trees
     // (call after scene geometry in main render pass)
     // viewportWidth/Height: 0 = swapchain, >0 = render target override
+    // useOffscreenSets: bind the offscreen (game camera) uniforms — required when
+    // drawing into a game-view render target after RenderToTarget has restored the
+    // main sets, otherwise particles project through the editor camera and vanish
     void RenderWeatherParticles(const Effects::WeatherSystem& weather, bool isRain,
-                                u32 viewportWidth = 0, u32 viewportHeight = 0);
+                                u32 viewportWidth = 0, u32 viewportHeight = 0,
+                                bool useOffscreenSets = false, u32 offscreenViewportIndex = 0);
     // GPU-compute particles: draw the sim's particle buffer (dormant until spawned).
     // `pass` = the render pass currently being recorded (VK_NULL_HANDLE = swapchain
     // main pass, 2 attachments). The draw pipeline must be compatible with the pass
@@ -567,8 +571,12 @@ public:
     // Spawn every frame from GPUParticleEmitterComponent entities (continuous + burst)
     void TickGPUEmitters(f32 deltaTime);
     void RenderParticles(u32 viewportWidth = 0, u32 viewportHeight = 0);
+    // useOffscreenSets: bind the offscreen (game camera) uniforms — required when
+    // drawing into a game-view render target after RenderToTarget restored the
+    // main sets (same wrong-camera failure the weather draw had)
     void RenderElementalParticles(const Effects::ElementalSystem& elementalSystem,
-                                  u32 viewportWidth = 0, u32 viewportHeight = 0);
+                                  u32 viewportWidth = 0, u32 viewportHeight = 0,
+                                  bool useOffscreenSets = false, u32 offscreenViewportIndex = 0);
     void RenderFluid(u32 viewportWidth = 0, u32 viewportHeight = 0);
     void RenderGrass(u32 viewportWidth = 0, u32 viewportHeight = 0);
     void RenderShrubs(u32 viewportWidth = 0, u32 viewportHeight = 0);

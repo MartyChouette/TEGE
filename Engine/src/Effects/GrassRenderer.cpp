@@ -15,10 +15,12 @@ GrassRenderer::~GrassRenderer() {
     Shutdown();
 }
 
-bool GrassRenderer::Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout) {
+bool GrassRenderer::Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout,
+                               VkDescriptorSetLayout bindlessLayout) {
     if (m_Initialized) return true;
 
     m_Renderer = renderer;
+    m_BindlessLayout = bindlessLayout;
 
     CreateBladeMesh();
     CreatePipeline(sharedLayout);
@@ -143,6 +145,7 @@ void GrassRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
     config.customVertexInput = &vertexInput;
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (m_BindlessLayout != VK_NULL_HANDLE) m_Pipeline->SetBindlessLayout(m_BindlessLayout);
     if (!m_Pipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(), sharedLayout)) {
         ENJIN_LOG_ERROR(Renderer, "GrassRenderer: Failed to create grass pipeline");
         m_Pipeline.reset();
@@ -205,6 +208,7 @@ void GrassRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptor
     config.customVertexInput = &vertexInput;
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (m_BindlessLayout != VK_NULL_HANDLE) m_Pipeline->SetBindlessLayout(m_BindlessLayout);
     if (!m_Pipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(), sharedLayout)) {
         ENJIN_LOG_ERROR(Renderer, "GrassRenderer: Failed to create grass pipeline");
         m_Pipeline.reset();
@@ -216,7 +220,9 @@ void GrassRenderer::Render(VkCommandBuffer commandBuffer,
                             u32 currentFrame,
                             ECS::World* world,
                             u32 viewportWidth,
-                            u32 viewportHeight) {
+                            u32 viewportHeight,
+                            bool mode2D,
+                            VkDescriptorSet bindlessSet) {
     if (!m_Initialized || !m_Pipeline || !world) return;
 
     bool hasBound = false;
@@ -235,6 +241,12 @@ void GrassRenderer::Render(VkCommandBuffer commandBuffer,
 
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                 m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+
+            // Set 1: bindless textures for volumes with a custom texture
+            if (m_BindlessLayout != VK_NULL_HANDLE && bindlessSet != VK_NULL_HANDLE) {
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                    m_Pipeline->GetLayout(), 1, 1, &bindlessSet, 0, nullptr);
+            }
 
             // Use override dimensions if provided, else swapchain
             VkExtent2D extent;
@@ -285,8 +297,11 @@ void GrassRenderer::Render(VkCommandBuffer commandBuffer,
         pc.emissiveStrength = grass->bladeHeight;
         pc.opacity = grass->bladeHeightVariance;
         pc.alphaCutoff = grass->bladeWidth;
-        pc.flags = static_cast<i32>(grass->density);
+        pc.flags = static_cast<i32>(grass->density) | (mode2D ? (1 << 30) : 0);
         pc.parallaxScale = grass->windSwayStrength;
+        i32 texIndex = grass->cachedTexIndex;
+        if (m_BindlessLayout == VK_NULL_HANDLE || bindlessSet == VK_NULL_HANDLE || texIndex < 0) texIndex = -1;
+        pc.surfaceParam1 = static_cast<f32>(texIndex);
 
         vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);

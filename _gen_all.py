@@ -47,6 +47,7 @@ SHADERS_LIST = [
     ("postprocess.frag.spv",   "PostProcessFragmentShaderData",  "uchar"),
     ("particle.vert.spv",      "ParticleVertexShaderData",       "uchar"),
     ("particle.frag.spv",      "ParticleFragmentShaderData",     "uchar"),
+    ("weather_particle.frag.spv", "WeatherParticleFragmentShaderData", "uchar"),
     ("grass.vert.spv",         "GrassVertexShaderData",          "uchar"),
     ("grass.frag.spv",         "GrassFragmentShaderData",        "uchar"),
     ("shrub.vert.spv",         "ShrubVertexShaderData",          "uchar"),

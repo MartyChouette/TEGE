@@ -61,6 +61,18 @@ public:
     f32 GetFogStart() const { return m_FogStart; }
     f32 GetFogEnd() const { return m_FogEnd; }
 
+    // Custom precipitation sprites (bindless texture indices resolved by the
+    // renderer host; -1 = built-in procedural look)
+    void SetRainTextureIndex(i32 index) { m_RainTexIndex = index; }
+    void SetSnowTextureIndex(i32 index) { m_SnowTexIndex = index; }
+    i32 GetRainTextureIndex() const { return m_RainTexIndex; }
+    i32 GetSnowTextureIndex() const { return m_SnowTexIndex; }
+
+    // 2D scene mode: particles spawn in an XY sheet around the camera and fall
+    // straight down the screen (no Z motion), for side-scroller/top-down scenes
+    void SetMode2D(bool enabled) { m_Mode2D = enabled; }
+    bool GetMode2D() const { return m_Mode2D; }
+
     // Wind affects rain/snow direction
     void SetWindDirection(const Math::Vector3& dir) { m_WindDirection = dir; }
     Math::Vector3 GetWindDirection() const { return m_WindDirection; }
@@ -120,6 +132,13 @@ private:
     // Wind
     Math::Vector3 m_WindDirection = Math::Vector3(0.2f, 0.0f, 0.1f);
     f32 m_WindStrength = 1.0f;
+
+    // Custom precipitation sprites (-1 = procedural)
+    i32 m_RainTexIndex = -1;
+    i32 m_SnowTexIndex = -1;
+
+    // 2D scene mode
+    bool m_Mode2D = false;
 
     // Spawn area
     f32 m_SpawnRadius = 50.0f;

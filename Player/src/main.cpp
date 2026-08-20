@@ -26,6 +26,11 @@
 #include "Enjin/GUI/UITemplates.h"
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/WeatherZone.h"
+#include "Enjin/ECS/Components/TemperatureZone.h"
+#include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/Effects/TreeRenderer.h"
+#include <climits>
 #include <imgui.h>
 #include <backends/imgui_impl_vulkan.h>
 #include "Enjin/Effects/Weather.h"
@@ -981,6 +986,7 @@ public:
         m_WindSystem.Update(deltaTime);
         m_WorldTime.Update(deltaTime);
         m_SeasonalWeather.Update(deltaTime, m_WorldTime.GetState(), m_WeatherSystem);
+        UpdateWeatherZones(deltaTime);
         if (m_Camera) {
             m_WeatherSystem.Update(deltaTime, m_Camera->GetPosition());
             m_StreamingManager.Update(m_Camera->GetPosition(), deltaTime);
@@ -1019,6 +1025,14 @@ public:
         // EditorLayer: fire emitters become transient point lights that light
         // surfaces here and participating media via clustered lighting.
         if (m_Camera && m_RenderSystem) {
+            // Fire thermal feedback into the wind system (editor parity)
+            m_WindSystem.ClearHeatSources();
+            const auto& elemPool = m_ElementalSystem.GetPool();
+            for (Enjin::u32 i = 0; i < elemPool.activeCount && i < 8192; ++i) {
+                if (elemPool.elements[i].x > 0.5f && elemPool.intensities[i] > 0.3f) {
+                    m_WindSystem.RegisterHeatSource(elemPool.positions[i], elemPool.intensities[i]);
+                }
+            }
             m_ElementalSystem.Update(m_World.get(), deltaTime, m_Camera->GetPosition());
             m_EffectsTime += deltaTime;
             m_ElementalSystem.BuildFireLights(m_EffectsTime, m_FireLights);
@@ -1734,6 +1748,231 @@ public:
     }
 
 private:
+    // Zone-driven weather (mirrors EditorLayer): pick the highest-priority
+    // WeatherZone containing the camera, configure the weather system, fog, and
+    // wind override, and hand the system to the render pass so precipitation
+    // actually draws in exported games. Without a zone, script-driven weather
+    // state is left untouched and still renders.
+    void UpdateWeatherZones(Enjin::f32 deltaTime) {
+        using namespace Enjin;
+        if (!m_World || !m_Camera || !m_RenderSystem) return;
+
+        Math::Vector3 camPos = m_Camera->GetPosition();
+
+        ECS::WeatherZoneComponent* activeWeatherZone = nullptr;
+        i32 bestWeatherPriority = INT_MIN;
+        for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::WeatherZoneComponent>()) {
+            auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
+            auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+            if (zone && zoneTransform && zone->priority > bestWeatherPriority) {
+                if (zone->ContainsPoint(zoneTransform->position, camPos)) {
+                    activeWeatherZone = zone;
+                    bestWeatherPriority = zone->priority;
+                }
+            }
+        }
+
+        ECS::TemperatureZoneComponent* activeTempZone = nullptr;
+        i32 bestTempPriority = INT_MIN;
+        for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::TemperatureZoneComponent>()) {
+            auto* zone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
+            auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+            if (zone && zoneTransform && zone->priority > bestTempPriority) {
+                if (zone->ContainsPoint(zoneTransform->position, camPos)) {
+                    activeTempZone = zone;
+                    bestTempPriority = zone->priority;
+                }
+            }
+        }
+
+        // 2D scenes get precipitation as an XY sheet falling down the screen
+        m_WeatherSystem.SetMode2D(
+            m_RenderSystem->GetSceneComposition().mode != ECS::SceneRenderMode::Scene3D);
+
+        bool hasWeatherParticles = false;
+        bool isRain = false;
+        if (activeWeatherZone && activeWeatherZone->weatherType > 0) {
+            Effects::WeatherType wType = static_cast<Effects::WeatherType>(activeWeatherZone->weatherType);
+
+            // Weather types: 2=Rain, 3=HeavyRain, 4=Snow, 6=Storm
+            bool hasPrecipitation = (activeWeatherZone->weatherType == 2 ||
+                                     activeWeatherZone->weatherType == 3 ||
+                                     activeWeatherZone->weatherType == 4 ||
+                                     activeWeatherZone->weatherType == 6);
+
+            if (hasPrecipitation && activeTempZone) {
+                f32 temp = activeTempZone->temperature;
+                if (temp <= 0.0f) {
+                    // Freezing: force snow regardless of weather zone type
+                    m_WeatherSystem.SetWeather(Effects::WeatherType::Snow, 0.1f);
+                    m_WeatherSystem.SetRainIntensity(0.0f);
+                    f32 snowInt = (activeWeatherZone->weatherType == 4)
+                        ? activeWeatherZone->snowIntensity
+                        : activeWeatherZone->rainIntensity;
+                    m_WeatherSystem.SetSnowIntensity(snowInt);
+                    isRain = false;
+                } else if (temp <= 5.0f) {
+                    // Near-freezing: sleet mix
+                    f32 blend = temp / 5.0f;
+                    f32 baseIntensity = (activeWeatherZone->weatherType == 4)
+                        ? activeWeatherZone->snowIntensity
+                        : activeWeatherZone->rainIntensity;
+                    m_WeatherSystem.SetWeather(wType, 0.1f);
+                    m_WeatherSystem.SetRainIntensity(baseIntensity * blend);
+                    m_WeatherSystem.SetSnowIntensity(baseIntensity * (1.0f - blend));
+                    isRain = (blend > 0.5f);
+                } else {
+                    // Warm: force rain regardless of weather zone type
+                    wType = (activeWeatherZone->weatherType == 6)
+                        ? Effects::WeatherType::Storm
+                        : Effects::WeatherType::Rain;
+                    m_WeatherSystem.SetWeather(wType, 0.1f);
+                    f32 rainInt = (activeWeatherZone->weatherType == 4)
+                        ? activeWeatherZone->snowIntensity
+                        : activeWeatherZone->rainIntensity;
+                    m_WeatherSystem.SetRainIntensity(rainInt);
+                    m_WeatherSystem.SetSnowIntensity(0.0f);
+                    isRain = true;
+                }
+            } else {
+                m_WeatherSystem.SetWeather(wType, 0.1f);
+
+                if (activeWeatherZone->weatherType == 2 || activeWeatherZone->weatherType == 3 ||
+                    activeWeatherZone->weatherType == 6) {
+                    m_WeatherSystem.SetRainIntensity(activeWeatherZone->rainIntensity);
+                    m_WeatherSystem.SetSnowIntensity(0.0f);
+                    isRain = true;
+                } else if (activeWeatherZone->weatherType == 4) {
+                    m_WeatherSystem.SetRainIntensity(0.0f);
+                    m_WeatherSystem.SetSnowIntensity(activeWeatherZone->snowIntensity);
+                } else {
+                    m_WeatherSystem.SetRainIntensity(0.0f);
+                    m_WeatherSystem.SetSnowIntensity(0.0f);
+                }
+            }
+            m_WeatherSystem.SetFogDensity(activeWeatherZone->fogDensity);
+            m_WeatherSystem.SetFogColor(activeWeatherZone->fogColor);
+            m_WeatherSystem.SetFogStart(activeWeatherZone->fogStart);
+            m_WeatherSystem.SetFogEnd(activeWeatherZone->fogEnd);
+
+            m_WindSystem.SetZoneOverride(activeWeatherZone->windDirection, activeWeatherZone->windStrength);
+            m_WeatherSystem.SetWindDirection(activeWeatherZone->windDirection);
+            m_WeatherSystem.SetWindStrength(activeWeatherZone->windStrength);
+
+            // Custom rain/snow sprites: resolve zone texture paths to bindless
+            // indices once (cached; -1 = none/failed → built-in procedural look)
+            if (activeWeatherZone->cachedRainTexIndex == -2)
+                activeWeatherZone->cachedRainTexIndex =
+                    m_RenderSystem->ResolveBindlessTextureIndex(activeWeatherZone->rainTexturePath);
+            if (activeWeatherZone->cachedSnowTexIndex == -2)
+                activeWeatherZone->cachedSnowTexIndex =
+                    m_RenderSystem->ResolveBindlessTextureIndex(activeWeatherZone->snowTexturePath);
+            m_WeatherSystem.SetRainTextureIndex(activeWeatherZone->cachedRainTexIndex);
+            m_WeatherSystem.SetSnowTextureIndex(activeWeatherZone->cachedSnowTexIndex);
+
+            if (activeWeatherZone->lightningEnabled) {
+                m_WeatherSystem.SetLightningInterval(
+                    activeWeatherZone->lightningMinInterval,
+                    activeWeatherZone->lightningMaxInterval);
+            }
+
+            hasWeatherParticles = hasPrecipitation;
+
+            m_RenderSystem->SetFogParams(activeWeatherZone->fogDensity,
+                                         activeWeatherZone->fogStart,
+                                         activeWeatherZone->fogEnd, 0.1f);
+            m_RenderSystem->SetFogColor(activeWeatherZone->fogColor);
+
+            // Snow intensity for surface accumulation (temperature-aware)
+            f32 snowAccum = 0.0f;
+            if (activeTempZone && hasPrecipitation) {
+                if (activeTempZone->temperature <= 0.0f) {
+                    snowAccum = (activeWeatherZone->weatherType == 4)
+                        ? activeWeatherZone->snowIntensity
+                        : activeWeatherZone->rainIntensity;
+                } else if (activeTempZone->temperature <= 5.0f) {
+                    f32 blend = activeTempZone->temperature / 5.0f;
+                    f32 intensity = (activeWeatherZone->weatherType == 4)
+                        ? activeWeatherZone->snowIntensity
+                        : activeWeatherZone->rainIntensity;
+                    snowAccum = intensity * (1.0f - blend);
+                }
+            } else if (activeWeatherZone->weatherType == 4) {
+                snowAccum = activeWeatherZone->snowIntensity;
+            }
+            m_RenderSystem->SetSnowIntensity(snowAccum);
+        } else {
+            // No zone: leave script/seasonal weather state alone, still render it
+            m_WindSystem.ClearZoneOverride();
+            m_WeatherSystem.SetRainTextureIndex(-1);
+            m_WeatherSystem.SetSnowTextureIndex(-1);
+
+            f32 rain = m_WeatherSystem.GetRainIntensity();
+            f32 snow = m_WeatherSystem.GetSnowIntensity();
+            hasWeatherParticles = (rain > 0.01f || snow > 0.01f);
+            isRain = rain >= snow;
+
+            m_RenderSystem->SetFogParams(m_WeatherSystem.GetFogDensity(),
+                                         m_WeatherSystem.GetFogStart(),
+                                         m_WeatherSystem.GetFogEnd(), 0.1f);
+            m_RenderSystem->SetFogColor(m_WeatherSystem.GetFogColor());
+            m_RenderSystem->SetSnowIntensity(snow);
+        }
+
+        if (hasWeatherParticles) {
+            m_RenderSystem->SetMainPassWeather(&m_WeatherSystem, isRain);
+        } else {
+            m_RenderSystem->ClearMainPassWeather();
+        }
+
+        // Rain drives the water ripple shader (editor parity)
+        m_RenderSystem->SetRainActive(hasWeatherParticles && isRain);
+
+        // Seasonal tree visuals (canopy color/scale) follow world time
+        if (auto* treeRenderer = m_RenderSystem->GetTreeRenderer()) {
+            treeRenderer->SetSeasonState(m_WorldTime.GetCurrentSeason(), m_WorldTime.GetSeasonProgress());
+        }
+
+        // Water freeze/thaw driven by temperature zones (editor parity)
+        for (ECS::Entity waterEntity : m_World->GetEntitiesWithComponent<ECS::WaterVolumeComponent>()) {
+            auto* waterVol = m_World->GetComponent<ECS::WaterVolumeComponent>(waterEntity);
+            auto* waterTransform = m_World->GetComponent<ECS::TransformComponent>(waterEntity);
+            if (!waterVol || !waterTransform) continue;
+
+            ECS::TemperatureZoneComponent* waterTempZone = nullptr;
+            i32 bestWaterTempPri = INT_MIN;
+            for (ECS::Entity tzEntity : m_World->GetEntitiesWithComponent<ECS::TemperatureZoneComponent>()) {
+                auto* tz = m_World->GetComponent<ECS::TemperatureZoneComponent>(tzEntity);
+                auto* tzTransform = m_World->GetComponent<ECS::TransformComponent>(tzEntity);
+                if (tz && tzTransform && tz->priority > bestWaterTempPri) {
+                    if (tz->ContainsPoint(tzTransform->position, waterTransform->position)) {
+                        waterTempZone = tz;
+                        bestWaterTempPri = tz->priority;
+                    }
+                }
+            }
+
+            if (waterTempZone && waterTempZone->IsFreezing()) {
+                waterVol->freezeProgress += waterVol->freezeRate * deltaTime;
+                if (waterVol->freezeProgress > 1.0f) waterVol->freezeProgress = 1.0f;
+            } else if (waterTempZone && waterTempZone->IsNearFreezing()) {
+                // Near-freezing (0-5C): lerp toward partial freeze (0.3)
+                f32 target = 0.3f;
+                if (waterVol->freezeProgress < target) {
+                    waterVol->freezeProgress += waterVol->freezeRate * 0.5f * deltaTime;
+                    if (waterVol->freezeProgress > target) waterVol->freezeProgress = target;
+                } else {
+                    waterVol->freezeProgress -= waterVol->thawRate * 0.5f * deltaTime;
+                    if (waterVol->freezeProgress < target) waterVol->freezeProgress = target;
+                }
+            } else {
+                waterVol->freezeProgress -= waterVol->thawRate * deltaTime;
+                if (waterVol->freezeProgress < 0.0f) waterVol->freezeProgress = 0.0f;
+            }
+            waterVol->isFrozen = (waterVol->freezeProgress >= 0.99f);
+        }
+    }
+
     void SetupSplashScreen() {
         if (!m_World || !m_RenderSystem) return;
 

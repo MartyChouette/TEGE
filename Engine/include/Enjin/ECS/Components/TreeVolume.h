@@ -54,6 +54,11 @@ struct ENJIN_API TreeVolumeComponent {
     // External art (texture paths for bark and canopy)
     std::string barkTexturePath;
     std::string canopyTexturePath;
+
+    // Runtime bindless texture indices for the paths above (-2 = unresolved,
+    // -1 = none/failed). Not serialized; reset to -2 when a path changes.
+    i32 cachedBarkTexIndex = -2;
+    i32 cachedCanopyTexIndex = -2;
 };
 
 } // namespace ECS

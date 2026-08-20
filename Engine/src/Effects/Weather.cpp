@@ -139,12 +139,19 @@ void WeatherSystem::SpawnRainParticle(const Math::Vector3& cameraPos) {
 
     WeatherParticle& p = m_Particles[m_ActiveParticles++];
 
-    // Spawn in a cylinder around camera
-    f32 angle = RandomFloat(0, Math::PI * 2.0f);
-    f32 dist = RandomFloat(0, m_SpawnRadius);
+    if (m_Mode2D) {
+        // 2D: spawn in an XY sheet spread across the view, staggered in front of
+        // the camera (which looks down -Z) so drops layer over the scene
+        p.position.x = cameraPos.x + RandomFloat(-m_SpawnRadius, m_SpawnRadius);
+        p.position.z = cameraPos.z - RandomFloat(1.0f, Math::Min(m_SpawnRadius, 30.0f));
+    } else {
+        // Spawn in a cylinder around camera
+        f32 angle = RandomFloat(0, Math::PI * 2.0f);
+        f32 dist = RandomFloat(0, m_SpawnRadius);
 
-    p.position.x = cameraPos.x + Math::Cos(angle) * dist;
-    p.position.z = cameraPos.z + Math::Sin(angle) * dist;
+        p.position.x = cameraPos.x + Math::Cos(angle) * dist;
+        p.position.z = cameraPos.z + Math::Sin(angle) * dist;
+    }
 
     // Distribute vertically so the volume is pre-filled with falling rain.
     // Bias toward the top so most drops enter naturally from above.
@@ -155,7 +162,7 @@ void WeatherSystem::SpawnRainParticle(const Math::Vector3& cameraPos) {
     // Rain falls fast with slight wind influence
     p.velocity.x = m_WindDirection.x * m_WindStrength * 2.0f;
     p.velocity.y = -15.0f - RandomFloat(0, 5.0f);  // Fast fall
-    p.velocity.z = m_WindDirection.z * m_WindStrength * 2.0f;
+    p.velocity.z = m_Mode2D ? 0.0f : m_WindDirection.z * m_WindStrength * 2.0f;
 
     p.lifetime = 3.0f;
     p.size = RandomFloat(0.02f, 0.05f);  // Thin streaks
@@ -167,11 +174,16 @@ void WeatherSystem::SpawnSnowParticle(const Math::Vector3& cameraPos) {
 
     WeatherParticle& p = m_Particles[m_ActiveParticles++];
 
-    f32 angle = RandomFloat(0, Math::PI * 2.0f);
-    f32 dist = RandomFloat(0, m_SpawnRadius);
+    if (m_Mode2D) {
+        p.position.x = cameraPos.x + RandomFloat(-m_SpawnRadius, m_SpawnRadius);
+        p.position.z = cameraPos.z - RandomFloat(1.0f, Math::Min(m_SpawnRadius, 30.0f));
+    } else {
+        f32 angle = RandomFloat(0, Math::PI * 2.0f);
+        f32 dist = RandomFloat(0, m_SpawnRadius);
 
-    p.position.x = cameraPos.x + Math::Cos(angle) * dist;
-    p.position.z = cameraPos.z + Math::Sin(angle) * dist;
+        p.position.x = cameraPos.x + Math::Cos(angle) * dist;
+        p.position.z = cameraPos.z + Math::Sin(angle) * dist;
+    }
 
     // Distribute vertically — gentler bias for snow since it falls slower
     f32 t = RandomFloat(0.0f, 1.0f);
@@ -181,7 +193,7 @@ void WeatherSystem::SpawnSnowParticle(const Math::Vector3& cameraPos) {
     // Snow falls slowly, drifts more with wind
     p.velocity.x = m_WindDirection.x * m_WindStrength * 3.0f + RandomFloat(-0.5f, 0.5f);
     p.velocity.y = -1.5f - RandomFloat(0, 1.0f);  // Slow fall
-    p.velocity.z = m_WindDirection.z * m_WindStrength * 3.0f + RandomFloat(-0.5f, 0.5f);
+    p.velocity.z = m_Mode2D ? 0.0f : m_WindDirection.z * m_WindStrength * 3.0f + RandomFloat(-0.5f, 0.5f);
 
     p.lifetime = 10.0f;
     p.size = RandomFloat(0.05f, 0.15f);  // Fluffy flakes
@@ -200,7 +212,7 @@ void WeatherSystem::UpdateParticles(f32 deltaTime, const Math::Vector3& cameraPo
         // Add some drift to snow
         if (p.velocity.y > -5.0f) {  // Snow (slower fall)
             p.velocity.x += RandomFloat(-0.1f, 0.1f) * deltaTime;
-            p.velocity.z += RandomFloat(-0.1f, 0.1f) * deltaTime;
+            if (!m_Mode2D) p.velocity.z += RandomFloat(-0.1f, 0.1f) * deltaTime;
         }
 
         // Check if particle should be removed

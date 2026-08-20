@@ -29,8 +29,13 @@ struct ENJIN_API GrassVolumeComponent {
     // Wind response
     f32 windSwayStrength = 1.0f;
 
-    // Custom asset path (texture or model) — overrides procedural grass when non-empty
+    // Custom texture (image) — sampled onto the procedural blades when non-empty,
+    // with alpha-cutout so foliage sheets read as shaped leaves
     std::string customAssetPath;
+
+    // Runtime bindless texture index for customAssetPath (-2 = unresolved,
+    // -1 = none/failed). Not serialized; reset to -2 when the path changes.
+    i32 cachedTexIndex = -2;
 };
 
 } // namespace ECS

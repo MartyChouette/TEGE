@@ -2915,13 +2915,13 @@ bool RenderSystem::GetTextureMipmaps() const { return true; }
 u32  RenderSystem::GetTextureWrap() const { return 0; }
 void RenderSystem::RequestPipelineRecreation() {}  // Vulkan-only heal; WebGPU rebuilds per-frame
 void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* /*sim*/) {}
-void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& /*w*/, bool /*r*/, u32, u32) {}
+void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& /*w*/, bool /*r*/, u32, u32, bool, u32) {}
 void RenderSystem::RenderGPUParticles() {}  // Vulkan-only (needs WebGPU compute first)
 void RenderSystem::SpawnGPUParticles(u32, const Math::Vector3&, const Math::Vector3&) {}
 void RenderSystem::SpawnSurfaceBurst(u32, const Math::Vector3&, const Math::Vector3&, u8) {}
 void RenderSystem::TickGPUEmitters(f32) {}
 void RenderSystem::RenderParticles(u32, u32) {}
-void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem&, u32, u32) {}
+void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem&, u32, u32, bool, u32) {}
 void RenderSystem::RenderFluid(u32, u32) {}
 void RenderSystem::RenderGrass(u32, u32) {}
 void RenderSystem::RenderShrubs(u32, u32) {}
@@ -3290,8 +3290,11 @@ void RenderSystem::Initialize() {
     CreateDefaultMesh();
 
     // Initialize weather particle renderer
+    VkDescriptorSetLayout effectsBindlessLayout =
+        m_BindlessManager ? m_BindlessManager->GetDescriptorSetLayout() : VK_NULL_HANDLE;
     m_WeatherRenderer = std::make_unique<Effects::WeatherRenderer>();
-    if (!m_WeatherRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout())) {
+    if (!m_WeatherRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout(),
+                                       effectsBindlessLayout)) {
         ENJIN_LOG_WARN(Renderer, "WeatherRenderer initialization failed, 3D particles disabled");
         m_WeatherRenderer.reset();
     }
@@ -3312,21 +3315,24 @@ void RenderSystem::Initialize() {
 
     // Initialize grass renderer
     m_GrassRenderer = std::make_unique<Effects::GrassRenderer>();
-    if (!m_GrassRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout())) {
+    if (!m_GrassRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout(),
+                                     effectsBindlessLayout)) {
         ENJIN_LOG_WARN(Renderer, "GrassRenderer initialization failed, grass disabled");
         m_GrassRenderer.reset();
     }
 
     // Initialize shrub renderer
     m_ShrubRenderer = std::make_unique<Effects::ShrubRenderer>();
-    if (!m_ShrubRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout())) {
+    if (!m_ShrubRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout(),
+                                     effectsBindlessLayout)) {
         ENJIN_LOG_WARN(Renderer, "ShrubRenderer initialization failed, shrubs disabled");
         m_ShrubRenderer.reset();
     }
 
     // Initialize tree renderer
     m_TreeRenderer = std::make_unique<Effects::TreeRenderer>();
-    if (!m_TreeRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout())) {
+    if (!m_TreeRenderer->Initialize(m_VulkanRenderer, m_Pipeline->GetDescriptorSetLayout(),
+                                    effectsBindlessLayout)) {
         ENJIN_LOG_WARN(Renderer, "TreeRenderer initialization failed, trees disabled");
         m_TreeRenderer.reset();
     }
@@ -9006,7 +9012,8 @@ void RenderSystem::UpdateFrameUniforms() {
         lighting.ddgiAtlasParams = Math::Vector4(0, 0, 0, 0);  // disabled
     }
 
-    // Scene2D fast path: skip light iteration, shadow data, wind — no consumers
+    // Scene2D fast path: skip light iteration and shadow data — no consumers.
+    // Wind still uploads: 2D vegetation volumes sway from the same windData.
     if (m_SceneComposition.mode == SceneRenderMode::Scene2D) {
         lighting.directionalLightCount = 0;
         lighting.pointLightCount = 0;
@@ -9016,6 +9023,7 @@ void RenderSystem::UpdateFrameUniforms() {
         lighting.spotShadowCount = 0;
         lighting.fogParams = Math::Vector4(m_FogDensity, m_FogStart, m_FogEnd, m_FogHeightFalloff);
         lighting.fogColorSnow = Math::Vector4(m_FogColor.x, m_FogColor.y, m_FogColor.z, m_SnowIntensity);
+        if (m_WindSystem) lighting.windData = m_WindSystem->GetWindVector();
         (*m_ActiveLightingBuffers)[GetActiveBufferIndex(currentFrame)]->UploadData(&lighting, sizeof(lighting));
         m_CachedLightingData = lighting;
         return;
@@ -12907,16 +12915,29 @@ void RenderSystem::EnsureWater3DMeshes() {
 }
 
 void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& weather, bool isRain,
-                                           u32 viewportWidth, u32 viewportHeight) {
+                                           u32 viewportWidth, u32 viewportHeight,
+                                           bool useOffscreenSets, u32 offscreenViewportIndex) {
     if (!m_WeatherRenderer || !m_Renderer || !m_Initialized || !m_ActiveDescriptorSets) return;
 
     VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
     u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
-    m_WeatherRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
-                              GetActiveBufferIndex(currentFrame), weather, isRain,
-                              viewportWidth, viewportHeight);
+
+    // Game-view path: RenderToTarget restored the main (editor camera) sets on
+    // return, but this draw records into the game render target — bind the
+    // offscreen sets holding the game camera's view/proj instead
+    const std::vector<VkDescriptorSet>* sets = m_ActiveDescriptorSets;
+    u32 setIndex = GetActiveBufferIndex(currentFrame);
+    if (useOffscreenSets && !m_OffscreenDescriptorSets.empty()) {
+        sets = &m_OffscreenDescriptorSets;
+        setIndex = GetOffscreenBufferIndex(currentFrame, offscreenViewportIndex);
+        if (setIndex >= m_OffscreenDescriptorSets.size()) return;
+    }
+
+    VkDescriptorSet bindlessSet = m_BindlessManager ? m_BindlessManager->GetDescriptorSet() : VK_NULL_HANDLE;
+    m_WeatherRenderer->Render(commandBuffer, *sets, setIndex, weather, isRain,
+                              viewportWidth, viewportHeight, bindlessSet);
 }
 
 void RenderSystem::RenderGPUParticles(VkRenderPass pass, u32 colorAttachments) {
@@ -13012,7 +13033,8 @@ void RenderSystem::RenderParticles(u32 viewportWidth, u32 viewportHeight) {
 }
 
 void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem& elementalSystem,
-                                             u32 viewportWidth, u32 viewportHeight) {
+                                             u32 viewportWidth, u32 viewportHeight,
+                                             bool useOffscreenSets, u32 offscreenViewportIndex) {
     if (!m_ParticleRenderer || !m_Renderer || !m_Initialized || !m_ActiveDescriptorSets) return;
     if (elementalSystem.GetActiveCount() == 0) return;
 
@@ -13020,8 +13042,18 @@ void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem& elem
     if (commandBuffer == VK_NULL_HANDLE) return;
 
     u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
-    m_ParticleRenderer->RenderElementalParticles(commandBuffer, *m_ActiveDescriptorSets,
-                                                  GetActiveBufferIndex(currentFrame), elementalSystem,
+
+    // Game-view path: bind the offscreen sets holding the game camera's
+    // view/proj (RenderToTarget restored the main/editor sets on return)
+    const std::vector<VkDescriptorSet>* sets = m_ActiveDescriptorSets;
+    u32 setIndex = GetActiveBufferIndex(currentFrame);
+    if (useOffscreenSets && !m_OffscreenDescriptorSets.empty()) {
+        sets = &m_OffscreenDescriptorSets;
+        setIndex = GetOffscreenBufferIndex(currentFrame, offscreenViewportIndex);
+        if (setIndex >= m_OffscreenDescriptorSets.size()) return;
+    }
+
+    m_ParticleRenderer->RenderElementalParticles(commandBuffer, *sets, setIndex, elementalSystem,
                                                   viewportWidth, viewportHeight);
 }
 
@@ -13049,10 +13081,19 @@ void RenderSystem::RenderGrass(u32 viewportWidth, u32 viewportHeight) {
     VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
+    // Resolve custom textures once (cached; -1 = load failed, procedural fallback)
+    for (Entity e : m_World->GetEntitiesWithComponent<GrassVolumeComponent>()) {
+        auto* g = m_World->GetComponent<GrassVolumeComponent>(e);
+        if (g && g->cachedTexIndex == -2)
+            g->cachedTexIndex = ResolveBindlessTextureIndex(g->customAssetPath);
+    }
+
+    bool mode2D = (m_SceneComposition.mode != SceneRenderMode::Scene3D);
+    VkDescriptorSet bindlessSet = m_BindlessManager ? m_BindlessManager->GetDescriptorSet() : VK_NULL_HANDLE;
     u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     m_GrassRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
                             GetActiveBufferIndex(currentFrame), m_World,
-                            viewportWidth, viewportHeight);
+                            viewportWidth, viewportHeight, mode2D, bindlessSet);
 }
 
 void RenderSystem::RenderShrubs(u32 viewportWidth, u32 viewportHeight) {
@@ -13061,10 +13102,18 @@ void RenderSystem::RenderShrubs(u32 viewportWidth, u32 viewportHeight) {
     VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
+    for (Entity e : m_World->GetEntitiesWithComponent<ShrubVolumeComponent>()) {
+        auto* s = m_World->GetComponent<ShrubVolumeComponent>(e);
+        if (s && s->cachedTexIndex == -2)
+            s->cachedTexIndex = ResolveBindlessTextureIndex(s->customAssetPath);
+    }
+
+    bool mode2D = (m_SceneComposition.mode != SceneRenderMode::Scene3D);
+    VkDescriptorSet bindlessSet = m_BindlessManager ? m_BindlessManager->GetDescriptorSet() : VK_NULL_HANDLE;
     u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     m_ShrubRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
                             GetActiveBufferIndex(currentFrame), m_World,
-                            viewportWidth, viewportHeight);
+                            viewportWidth, viewportHeight, mode2D, bindlessSet);
 }
 
 void RenderSystem::RenderTrees(u32 viewportWidth, u32 viewportHeight) {
@@ -13073,10 +13122,21 @@ void RenderSystem::RenderTrees(u32 viewportWidth, u32 viewportHeight) {
     VkCommandBuffer commandBuffer = m_VulkanRenderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
+    for (Entity e : m_World->GetEntitiesWithComponent<TreeVolumeComponent>()) {
+        auto* t = m_World->GetComponent<TreeVolumeComponent>(e);
+        if (!t) continue;
+        if (t->cachedBarkTexIndex == -2)
+            t->cachedBarkTexIndex = ResolveBindlessTextureIndex(t->barkTexturePath);
+        if (t->cachedCanopyTexIndex == -2)
+            t->cachedCanopyTexIndex = ResolveBindlessTextureIndex(t->canopyTexturePath);
+    }
+
+    bool mode2D = (m_SceneComposition.mode != SceneRenderMode::Scene3D);
+    VkDescriptorSet bindlessSet = m_BindlessManager ? m_BindlessManager->GetDescriptorSet() : VK_NULL_HANDLE;
     u32 currentFrame = m_VulkanRenderer->GetCurrentFrameIndex();
     m_TreeRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
                            GetActiveBufferIndex(currentFrame), m_World,
-                           viewportWidth, viewportHeight);
+                           viewportWidth, viewportHeight, mode2D, bindlessSet);
 }
 
 void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass) {
@@ -15789,7 +15849,7 @@ void RenderSystem::CollectVegetationRTInstances() {
             auto* g = m_World->GetComponent<GrassVolumeComponent>(e);
             auto* t = m_CachedTransformStorage ? m_CachedTransformStorage->Get(e) : nullptr;
             if (!g || !t || !t->visible) continue;
-            if (!g->customAssetPath.empty()) continue;  // custom asset overrides procedural
+            // customAssetPath is a texture on the procedural blades — geometry unchanged, keep in RT
 
             m_RTGrassGeom.blasId = m_ASManager->RegisterMesh(
                 m_RTGrassGeom.vtxAddr ^ 0x67726173u, m_RTGrassGeom.vtxAddr, m_RTGrassGeom.vertexCount,
@@ -15829,7 +15889,7 @@ void RenderSystem::CollectVegetationRTInstances() {
             auto* sh = m_World->GetComponent<ShrubVolumeComponent>(e);
             auto* t = m_CachedTransformStorage ? m_CachedTransformStorage->Get(e) : nullptr;
             if (!sh || !t || !t->visible) continue;
-            if (!sh->customAssetPath.empty()) continue;
+            // customAssetPath is a texture on the procedural quads — geometry unchanged, keep in RT
 
             m_RTShrubGeom.blasId = m_ASManager->RegisterMesh(
                 m_RTShrubGeom.vtxAddr ^ 0x73687275u, m_RTShrubGeom.vtxAddr, m_RTShrubGeom.vertexCount,
@@ -15911,7 +15971,9 @@ void RenderSystem::CollectVegetationRTInstances() {
             if (vegInstances >= kMaxVegInstances) break;
             f32 px = VegPlacementHash(i * 3u + 0u) * 2.0f - 1.0f;
             f32 pz = VegPlacementHash(i * 3u + 1u) * 2.0f - 1.0f;
-            f32 sizeVar = VegPlacementHash(i * 3u + 2u) * 0.8f + 0.6f;
+            // Mirror tree.vert: authored min/max height scale drives instance size
+            f32 sizeVar = tv->minHeightScale +
+                VegPlacementHash(i * 3u + 2u) * (tv->maxHeightScale - tv->minHeightScale);
             f32 rot = VegPlacementHash(i * 7u + 5u) * 6.28318f;
             Math::Vector3 origin = t->position +
                 Math::Vector3(px * tv->halfExtents.x, 0.0f, pz * tv->halfExtents.z);

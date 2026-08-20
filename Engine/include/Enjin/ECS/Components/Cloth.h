@@ -10,7 +10,9 @@ namespace ECS {
 
 // Which cloth points are fixed in place (they follow the entity's transform,
 // so moving the entity drags the cloth with it).
-enum class ClothPin : u8 { TopEdge, TopCorners, LeftEdge, AllCorners, None };
+// BottomEdge appended after None: enum values are serialized as ints, so new
+// entries must go at the END or existing scenes load the wrong pin mode
+enum class ClothPin : u8 { TopEdge, TopCorners, LeftEdge, AllCorners, None, BottomEdge };
 
 // Seam layout for sewn-fabric tearing: links ON a seam are stitched (stronger),
 // links right NEXT to a seam are slightly weaker (stress concentrates beside

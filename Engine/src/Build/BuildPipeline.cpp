@@ -397,6 +397,16 @@ bool BuildPipeline::ValidateAssets() {
                             validateAssetPath(shrub["customAssetPath"].get<std::string>(), m_TexturePaths, "shrub asset");
                         }
                     }
+
+                    // Weather zone custom precipitation sprites
+                    if (entity.contains("weatherZone")) {
+                        const auto& wz = entity["weatherZone"];
+                        for (const char* key : {"rainTexturePath", "snowTexturePath"}) {
+                            if (wz.contains(key)) {
+                                validateAssetPath(wz[key].get<std::string>(), m_TexturePaths, "weather sprite");
+                            }
+                        }
+                    }
                 }
             }
 
