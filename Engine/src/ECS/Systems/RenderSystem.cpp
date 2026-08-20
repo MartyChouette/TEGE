@@ -13596,11 +13596,25 @@ void RenderSystem::CreateSky2DPipeline(VkRenderPass renderPass) {
         pcRange.offset = 0;
         pcRange.size = sizeof(Sky2DPushData);   // 96 bytes, within the 128 min
 
+        // Set 1 = bindless textures (custom cloud texture). Set 0 is unused by the
+        // 2D sky but the bindless set must sit at index 1 to match the shader, so
+        // an empty set-0 layout precedes it.
+        VkDescriptorSetLayout emptyLayout = VK_NULL_HANDLE;
+        VkDescriptorSetLayoutCreateInfo emptyInfo{};
+        emptyInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        vkCreateDescriptorSetLayout(device, &emptyInfo, nullptr, &emptyLayout);
+        VkDescriptorSetLayout bindless = m_BindlessManager ? m_BindlessManager->GetDescriptorSetLayout() : VK_NULL_HANDLE;
+        VkDescriptorSetLayout sets[2] = { emptyLayout, bindless };
+
         VkPipelineLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layoutInfo.setLayoutCount = (bindless != VK_NULL_HANDLE) ? 2 : 0;
+        layoutInfo.pSetLayouts = (bindless != VK_NULL_HANDLE) ? sets : nullptr;
         layoutInfo.pushConstantRangeCount = 1;
         layoutInfo.pPushConstantRanges = &pcRange;
-        if (vkCreatePipelineLayout(device, &layoutInfo, nullptr, &m_Sky2DPipelineLayout) != VK_SUCCESS) {
+        VkResult lr = vkCreatePipelineLayout(device, &layoutInfo, nullptr, &m_Sky2DPipelineLayout);
+        if (emptyLayout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(device, emptyLayout, nullptr);
+        if (lr != VK_SUCCESS) {
             ENJIN_LOG_WARN(Renderer, "Failed to create 2D sky pipeline layout");
             return;
         }
@@ -13715,15 +13729,28 @@ void RenderSystem::Render2DSky(VkCommandBuffer commandBuffer, const VkViewport* 
     Math::Vector4 wind = m_WindSystem ? m_WindSystem->GetWindVector()
                                       : Math::Vector4(1.0f, 0.0f, 0.35f, 0.0f);
 
+    // Resolve the custom cloud texture to a bindless index once per path change.
+    VkDescriptorSet bindlessSet = m_BindlessManager ? m_BindlessManager->GetDescriptorSet() : VK_NULL_HANDLE;
+    if (cfg.cloudTexturePath != m_CloudTexPath) {
+        m_CloudTexPath = cfg.cloudTexturePath;
+        m_CloudTexIndex = ResolveBindlessTextureIndex(cfg.cloudTexturePath);
+    }
+    f32 cloudTexIdx = (bindlessSet != VK_NULL_HANDLE && m_CloudTexIndex >= 0)
+                      ? static_cast<f32>(m_CloudTexIndex) : -1.0f;
+
     Sky2DPushData pc{};
     pc.topColor     = {cfg.topColor.x, cfg.topColor.y, cfg.topColor.z, cfg.horizonHaze};
     pc.horizonColor = {cfg.horizonColor.x, cfg.horizonColor.y, cfg.horizonColor.z, cfg.cloudSpeed};
     pc.bottomColor  = {cfg.bottomColor.x, cfg.bottomColor.y, cfg.bottomColor.z, cfg.cloudCoverage};
     pc.cloudColor   = {cfg.cloudColor.x, cfg.cloudColor.y, cfg.cloudColor.z, cfg.cloud2Coverage};
     pc.scaleWind    = {cfg.cloudScale, cfg.cloud2Scale, wind.x, wind.z};
-    pc.timeMisc     = {time, 0.0f, 0.0f, 0.0f};
+    pc.timeMisc     = {time, cfg.cloudSoftness, cloudTexIdx, 0.0f};
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    if (bindlessSet != VK_NULL_HANDLE) {
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                m_Sky2DPipelineLayout, 1, 1, &bindlessSet, 0, nullptr);
+    }
 
     VkExtent2D extent = m_VulkanRenderer->GetSwapchainExtent();
     VkViewport vp{};

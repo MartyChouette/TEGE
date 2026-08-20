@@ -1660,6 +1660,10 @@ private:
     VkPipeline m_Sky2DPipeline = VK_NULL_HANDLE;
     VkPipeline m_Sky2DPipelineOffscreen = VK_NULL_HANDLE;
     VkPipelineLayout m_Sky2DPipelineLayout = VK_NULL_HANDLE;
+    // Custom cloud texture cache (SkyboxConfig is const via GetConfig): re-resolve
+    // the bindless index only when the authored path changes.
+    std::string m_CloudTexPath;
+    i32 m_CloudTexIndex = -1;
     void CreateSky2DPipeline(VkRenderPass renderPass = VK_NULL_HANDLE);
     bool CreateSky2DPipelineVariant(VkRenderPass renderPass, u32 colorAttachmentCount,
                                     VkSampleCountFlagBits samples, VkPipeline& outPipeline);

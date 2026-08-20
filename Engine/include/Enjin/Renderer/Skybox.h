@@ -43,6 +43,14 @@ struct SkyboxConfig {
     f32 cloud2Scale = 2.5f;
     f32 horizonHaze = 0.0f;       // bright band hugging the horizon
     f32 cloudShadowStrength = 0.6f;  // how much passing clouds darken the ground (0 = off)
+
+    // Cloud shape controls (2D sky; 3D compositor follow-up)
+    f32 cloudSoftness = 0.5f;     // 0 = crisp puffy edges, 1 = soft wispy haze
+    // Optional custom cloud texture: when set, its luminance drives the cloud
+    // mask (tiled + wind-drifted) instead of the procedural FBM, so authors can
+    // supply their own cloud shapes. Empty = procedural.
+    std::string cloudTexturePath;
+    i32 cachedCloudTexIndex = -2;  // runtime bindless index (-2 unresolved), not serialized
 };
 
 } // namespace Renderer

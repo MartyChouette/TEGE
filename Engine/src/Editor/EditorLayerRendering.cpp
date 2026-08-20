@@ -2216,6 +2216,25 @@ void EditorLayer::DrawSettingsSection_Skybox() {
             if (config.cloud2Coverage > 0.001f) {
                 changed |= ImGui::SliderFloat("High Cloud Scale", &config.cloud2Scale, 0.5f, 10.0f);
             }
+            // Cloud shape (used by the 2D scene sky): softness + optional custom
+            // texture. Empty texture = domain-warped procedural clouds.
+            if (config.cloudCoverage > 0.001f || config.cloud2Coverage > 0.001f) {
+                changed |= ImGui::SliderFloat("Cloud Softness", &config.cloudSoftness, 0.0f, 1.0f);
+                ImGui::SetItemTooltip("0 = crisp puffy edges, 1 = soft wispy haze (2D sky)");
+                if (!config.cloudTexturePath.empty()) {
+                    size_t sl = config.cloudTexturePath.find_last_of("/\\");
+                    std::string fn = (sl != std::string::npos) ? config.cloudTexturePath.substr(sl + 1) : config.cloudTexturePath;
+                    ImGui::Text("Cloud Texture: %s", fn.c_str());
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("X##CloudTex")) { config.cloudTexturePath.clear(); changed = true; }
+                } else {
+                    if (ImGui::Button("Custom Cloud Texture...")) {
+                        std::string p = FileDialog::OpenFile("Cloud Texture", {{ "Images", "*.png;*.jpg;*.jpeg;*.bmp;*.tga" }});
+                        if (!p.empty()) { config.cloudTexturePath = p; changed = true; }
+                    }
+                    ImGui::SetItemTooltip("Supply your own cloud shape; its brightness drives the clouds (2D sky)");
+                }
+            }
             changed |= ImGui::SliderFloat("Horizon Haze", &config.horizonHaze, 0.0f, 1.0f);
             ImGui::SetItemTooltip("Bright atmospheric band hugging the horizon");
         }

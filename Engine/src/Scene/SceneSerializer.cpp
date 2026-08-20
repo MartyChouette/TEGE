@@ -7919,6 +7919,8 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             skyboxJson["cloud2Scale"] = RF(m_SkyboxConfig.cloud2Scale);
             skyboxJson["horizonHaze"] = RF(m_SkyboxConfig.horizonHaze);
             skyboxJson["cloudShadowStrength"] = RF(m_SkyboxConfig.cloudShadowStrength);
+            skyboxJson["cloudSoftness"] = RF(m_SkyboxConfig.cloudSoftness);
+            if (!m_SkyboxConfig.cloudTexturePath.empty()) skyboxJson["cloudTexturePath"] = m_SkyboxConfig.cloudTexturePath;
             json faces = json::array();
             for (const auto& p : m_SkyboxConfig.cubemapPaths) faces.push_back(p);
             skyboxJson["cubemapPaths"] = faces;
@@ -8071,6 +8073,8 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (sj.contains("cloud2Scale")) m_SkyboxConfig.cloud2Scale = sj["cloud2Scale"].get<f32>();
             if (sj.contains("horizonHaze")) m_SkyboxConfig.horizonHaze = sj["horizonHaze"].get<f32>();
             if (sj.contains("cloudShadowStrength")) m_SkyboxConfig.cloudShadowStrength = sj["cloudShadowStrength"].get<f32>();
+            if (sj.contains("cloudSoftness")) m_SkyboxConfig.cloudSoftness = sj["cloudSoftness"].get<f32>();
+            if (sj.contains("cloudTexturePath")) m_SkyboxConfig.cloudTexturePath = SafeStr(sj["cloudTexturePath"], MAX_STR_PATH);
             if (sj.contains("cubemapPaths") && sj["cubemapPaths"].is_array()) {
                 for (usize i = 0; i < 6 && i < sj["cubemapPaths"].size(); ++i) {
                     m_SkyboxConfig.cubemapPaths[i] = SafeStr(sj["cubemapPaths"][i], MAX_STR_PATH);
@@ -9416,6 +9420,8 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             skyboxJson["cloud2Scale"] = RF(m_SkyboxConfig.cloud2Scale);
             skyboxJson["horizonHaze"] = RF(m_SkyboxConfig.horizonHaze);
             skyboxJson["cloudShadowStrength"] = RF(m_SkyboxConfig.cloudShadowStrength);
+            skyboxJson["cloudSoftness"] = RF(m_SkyboxConfig.cloudSoftness);
+            if (!m_SkyboxConfig.cloudTexturePath.empty()) skyboxJson["cloudTexturePath"] = m_SkyboxConfig.cloudTexturePath;
             json faces = json::array();
             for (const auto& p : m_SkyboxConfig.cubemapPaths) faces.push_back(p);
             skyboxJson["cubemapPaths"] = faces;
@@ -9502,6 +9508,8 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (sj.contains("cloud2Scale")) m_SkyboxConfig.cloud2Scale = sj["cloud2Scale"].get<f32>();
             if (sj.contains("horizonHaze")) m_SkyboxConfig.horizonHaze = sj["horizonHaze"].get<f32>();
             if (sj.contains("cloudShadowStrength")) m_SkyboxConfig.cloudShadowStrength = sj["cloudShadowStrength"].get<f32>();
+            if (sj.contains("cloudSoftness")) m_SkyboxConfig.cloudSoftness = sj["cloudSoftness"].get<f32>();
+            if (sj.contains("cloudTexturePath")) m_SkyboxConfig.cloudTexturePath = SafeStr(sj["cloudTexturePath"], MAX_STR_PATH);
             if (sj.contains("cubemapPaths") && sj["cubemapPaths"].is_array()) {
                 for (usize i = 0; i < 6 && i < sj["cubemapPaths"].size(); ++i) {
                     m_SkyboxConfig.cubemapPaths[i] = SafeStr(sj["cubemapPaths"][i], MAX_STR_PATH);
