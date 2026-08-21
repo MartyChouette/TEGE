@@ -887,11 +887,15 @@ ECS::MeshComponent MeshFactory::CreateSpriteQuad(f32 width, f32 height,
     f32 x1 = x0 + width;
     f32 y1 = y0 + height;
 
-    // Apply flipping by swapping UV coordinates
+    // Apply flipping by swapping UV coordinates.
+    // v0 is the BOTTOM vertex (y0), v1 the TOP vertex (y1). Images load top-left
+    // origin (V=0 = top row), and imported meshes render V=0 at their top, so the
+    // top vertex must sample uvTop to keep a sprite upright — otherwise the image
+    // comes in vertically flipped. flipY swaps back for explicit mirroring.
     f32 u0 = flipX ? uvRight : uvLeft;
     f32 u1 = flipX ? uvLeft : uvRight;
-    f32 v0 = flipY ? uvBottom : uvTop;
-    f32 v1 = flipY ? uvTop : uvBottom;
+    f32 v0 = flipY ? uvTop : uvBottom;
+    f32 v1 = flipY ? uvBottom : uvTop;
 
     Math::Vector3 normal(0.0f, 0.0f, 1.0f);
 
