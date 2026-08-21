@@ -4622,6 +4622,7 @@ void EditorLayer::SelectEntity(ECS::Entity entity, bool addToSelection) {
     }
     m_SelectedEntities.insert(entity);
     m_PrimarySelected = entity;
+    m_HierarchyScrollToSelected = true; // reveal the row in the Hierarchy next draw
     if (m_OnEntitySelected) m_OnEntitySelected(entity);
 
     // Accessibility announcement

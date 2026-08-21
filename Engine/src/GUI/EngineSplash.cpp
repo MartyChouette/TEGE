@@ -10,7 +10,8 @@
 namespace Enjin {
 namespace GUI {
 
-void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* creditLine) {
+void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* creditLine,
+                      ImFont* titleFont) {
     ImGuiIO& io = ImGui::GetIO();
     const f32 t = timeSeconds;
 
@@ -56,6 +57,7 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
     if (ImGui::Begin("##Splash", nullptr, flags)) {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImFont* font = ImGui::GetFont();
+        ImFont* tfont = titleFont ? titleFont : font;  // "TEGE" title = Playfair when provided
         f32 W = io.DisplaySize.x;
         f32 H = io.DisplaySize.y;
         ImVec2 center(W * 0.5f, H * 0.5f);
@@ -300,13 +302,13 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
 
         const char* title = "TEGE";
         f32 splashFontSize = 72.0f;
-        ImVec2 titleSz = font->CalcTextSizeA(splashFontSize, FLT_MAX, 0.0f, title);
+        ImVec2 titleSz = tfont->CalcTextSizeA(splashFontSize, FLT_MAX, 0.0f, title);
 
         {
             f32 revealT = easeOutCubic(timerRamp(1.0f, 1.6f));
             f32 titleScale = 0.9f + 0.1f * revealT;
             f32 scaledFontSize = splashFontSize * titleScale;
-            ImVec2 scaledSz = font->CalcTextSizeA(scaledFontSize, FLT_MAX, 0.0f, title);
+            ImVec2 scaledSz = tfont->CalcTextSizeA(scaledFontSize, FLT_MAX, 0.0f, title);
             ImVec2 titlePos(center.x - scaledSz.x * 0.5f, center.y - scaledSz.y * 0.5f - 10.0f);
             int titleAlpha = static_cast<int>(255 * revealT * ga);
 
@@ -324,15 +326,15 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                     int glowA = static_cast<int>((25 - layer * 7) * revealT * ga);
                     if (glowA > 0) {
                         u32 glowCol = IM_COL32(100, 160, 120, glowA);
-                        dl->AddText(nullptr, scaledFontSize, ImVec2(titlePos.x + off, titlePos.y), glowCol, title);
-                        dl->AddText(nullptr, scaledFontSize, ImVec2(titlePos.x - off, titlePos.y), glowCol, title);
-                        dl->AddText(nullptr, scaledFontSize, ImVec2(titlePos.x, titlePos.y + off), glowCol, title);
-                        dl->AddText(nullptr, scaledFontSize, ImVec2(titlePos.x, titlePos.y - off), glowCol, title);
+                        dl->AddText(tfont, scaledFontSize, ImVec2(titlePos.x + off, titlePos.y), glowCol, title);
+                        dl->AddText(tfont, scaledFontSize, ImVec2(titlePos.x - off, titlePos.y), glowCol, title);
+                        dl->AddText(tfont, scaledFontSize, ImVec2(titlePos.x, titlePos.y + off), glowCol, title);
+                        dl->AddText(tfont, scaledFontSize, ImVec2(titlePos.x, titlePos.y - off), glowCol, title);
                     }
                 }
 
                 // Main title text — sage green
-                dl->AddText(nullptr, scaledFontSize, titlePos,
+                dl->AddText(tfont, scaledFontSize, titlePos,
                     IM_COL32(199, 218, 196, titleAlpha), title);
 
                 // Shimmer: white highlight sweep at t=1.8→2.4
@@ -351,7 +353,7 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                             IM_COL32(255, 255, 255, shimmerA),
                             IM_COL32(255, 255, 255, shimmerA));
                         // Re-draw title on top so shimmer is blended behind letters
-                        dl->AddText(nullptr, scaledFontSize, titlePos,
+                        dl->AddText(tfont, scaledFontSize, titlePos,
                             IM_COL32(220, 235, 218, titleAlpha), title);
                     }
                 }

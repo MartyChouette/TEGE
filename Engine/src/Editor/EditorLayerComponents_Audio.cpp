@@ -7,6 +7,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/Math/Math.h"
+#include "Enjin/Editor/ComponentHelp.h"
 
 namespace Enjin {
 
@@ -25,6 +26,7 @@ void EditorLayer::DrawAudioSourceComponent(ECS::Entity entity) {
     if (audioOpen) {
         auto* audio = m_World->GetComponent<ECS::AudioSourceComponent>(entity);
         if (!audio) return;
+        DrawComponentHelp("audioSource", m_World, entity);
 
         // Clip path (would need file browser in real implementation)
         char pathBuffer[256];
@@ -128,6 +130,7 @@ void EditorLayer::DrawAudioListenerComponent(ECS::Entity entity) {
     if (ImGui::CollapsingHeader("Audio Listener", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* listener = m_World->GetComponent<ECS::AudioListenerComponent>(entity);
         if (!listener) return;
+        DrawComponentHelp("audioListener", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Active", &listener->isActive);
         InspectorUndo::DragFloat(m_UndoRedo, "Volume Scale", &listener->volumeScale, 0.01f, 0.0f, 2.0f);
@@ -157,6 +160,7 @@ void EditorLayer::DrawReverbZoneComponent(ECS::Entity entity) {
     if (open) {
         auto* rz = m_World->GetComponent<ECS::ReverbZoneComponent>(entity);
         if (!rz) return;
+        DrawComponentHelp("reverbZone", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Active##RZ", &rz->isActive);
         InspectorUndo::Checkbox(m_UndoRedo, "Global##RZ", &rz->isGlobal);
@@ -195,6 +199,7 @@ void EditorLayer::DrawAmbientSoundLayerComponent(ECS::Entity entity) {
     if (open) {
         auto* asl = m_World->GetComponent<ECS::AmbientSoundLayerComponent>(entity);
         if (!asl) return;
+        DrawComponentHelp("ambientSoundLayer", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Active##ASL", &asl->isActive);
         ImGui::DragFloat3("Half Extents##ASL", &asl->halfExtents.x, 0.5f, 0.1f, 100.0f);
@@ -245,6 +250,7 @@ void EditorLayer::DrawMusicZoneComponent(ECS::Entity entity) {
     if (open) {
         auto* mz = m_World->GetComponent<ECS::MusicZoneComponent>(entity);
         if (!mz) return;
+        DrawComponentHelp("musicZone", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Active##MZ", &mz->isActive);
 
@@ -271,6 +277,7 @@ void EditorLayer::DrawAudioSnapshotTriggerComponent(ECS::Entity entity) {
     if (open) {
         auto* st = m_World->GetComponent<ECS::AudioSnapshotTriggerComponent>(entity);
         if (!st) return;
+        DrawComponentHelp("audioSnapshotTrigger", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Active##ST", &st->isActive);
 
@@ -298,6 +305,7 @@ void EditorLayer::DrawAudioOcclusionComponent(ECS::Entity entity) {
     if (open) {
         auto* occ = m_World->GetComponent<ECS::AudioOcclusionComponent>(entity);
         if (!occ) return;
+        DrawComponentHelp("audioOcclusion", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled##Occ", &occ->enabled);
         InspectorUndo::DragFloat(m_UndoRedo, "LowPass Cutoff##Occ", &occ->lowPassCutoff, 10.0f, 100.0f, 20000.0f);
@@ -324,6 +332,7 @@ void EditorLayer::DrawLipSyncComponent(ECS::Entity entity) {
     if (open) {
         auto* ls = m_World->GetComponent<ECS::LipSyncComponent>(entity);
         if (!ls) return;
+        DrawComponentHelp("lipSync", m_World, entity);
 
         InspectorUndo::DragFloat(m_UndoRedo, "Blend Speed##LS", &ls->blendSpeed, 0.5f, 1.0f, 30.0f);
         InspectorUndo::Checkbox(m_UndoRedo, "Auto from Amplitude##LS", &ls->autoFromAmplitude);
@@ -356,6 +365,7 @@ void EditorLayer::DrawAudioReactiveComponent(ECS::Entity entity) {
     if (open) {
         auto* ar = m_World->GetComponent<ECS::AudioReactiveComponent>(entity);
         if (!ar) return;
+        DrawComponentHelp("audioReactive", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled##AR", &ar->enabled);
 
@@ -392,6 +402,7 @@ void EditorLayer::DrawAudioThresholdTriggerComponent(ECS::Entity entity) {
     if (open) {
         auto* trig = m_World->GetComponent<ECS::AudioThresholdTriggerComponent>(entity);
         if (!trig) return;
+        DrawComponentHelp("audioThresholdTrigger", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled##ATT", &trig->enabled);
 
@@ -426,6 +437,7 @@ void EditorLayer::DrawRTPCComponent(ECS::Entity entity) {
     if (open) {
         auto* rtpc = m_World->GetComponent<ECS::RTPCComponent>(entity);
         if (!rtpc) return;
+        DrawComponentHelp("rtpc", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled##RTPC", &rtpc->enabled);
 
@@ -480,6 +492,7 @@ void EditorLayer::DrawBeatClockComponent(ECS::Entity entity) {
     if (open) {
         auto* clock = m_World->GetComponent<ECS::BeatClockComponent>(entity);
         if (!clock) return;
+        DrawComponentHelp("beatClock", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Playing##BC", &clock->playing);
         InspectorUndo::DragFloat(m_UndoRedo, "BPM##BC", &clock->bpm, 1.0f, 20.0f, 300.0f);
@@ -520,6 +533,7 @@ void EditorLayer::DrawBeatSyncComponent(ECS::Entity entity) {
     if (open) {
         auto* sync = m_World->GetComponent<ECS::BeatSyncComponent>(entity);
         if (!sync) return;
+        DrawComponentHelp("beatSync", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled##BS", &sync->enabled);
 
@@ -561,6 +575,7 @@ void EditorLayer::DrawConductorComponent(ECS::Entity entity) {
     if (open) {
         auto* cond = m_World->GetComponent<ECS::ConductorComponent>(entity);
         if (!cond) return;
+        DrawComponentHelp("conductor", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled##Cond", &cond->enabled);
         InspectorUndo::DragFloat(m_UndoRedo, "Master Volume##Cond", &cond->masterVolume, 0.05f, 0.0f, 2.0f);
@@ -635,6 +650,7 @@ void EditorLayer::DrawAudioCollisionComponent(ECS::Entity entity) {
     if (open) {
         auto* ac = m_World->GetComponent<ECS::AudioCollisionComponent>(entity);
         if (!ac) return;
+        DrawComponentHelp("audioCollision", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled##AC", &ac->enabled);
 
@@ -708,6 +724,7 @@ void EditorLayer::DrawSidechainComponent(ECS::Entity entity) {
     if (open) {
         auto* sc = m_World->GetComponent<ECS::SidechainComponent>(entity);
         if (!sc) return;
+        DrawComponentHelp("sidechain", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled##SC", &sc->enabled);
 
@@ -746,6 +763,7 @@ void EditorLayer::DrawMIDIBindingComponent(ECS::Entity entity) {
     if (open) {
         auto* mb = m_World->GetComponent<ECS::MIDIBindingComponent>(entity);
         if (!mb) return;
+        DrawComponentHelp("midiBinding", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled##MIDI", &mb->enabled);
 
@@ -818,6 +836,7 @@ void EditorLayer::DrawAudioFidelityComponent(ECS::Entity entity) {
     if (open) {
         auto* af = m_World->GetComponent<ECS::AudioFidelityComponent>(entity);
         if (!af) return;
+        DrawComponentHelp("audioFidelity", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled##AF", &af->enabled);
 
@@ -911,6 +930,7 @@ void EditorLayer::DrawMaterialInteractionTableComponent(ECS::Entity entity) {
     if (open) {
         auto* mit = m_World->GetComponent<ECS::MaterialInteractionTableComponent>(entity);
         if (!mit) return;
+        DrawComponentHelp("materialInteractionTable", m_World, entity);
 
         ImGui::TextDisabled("Defines sound for each material pair (A x B).");
         ImGui::TextDisabled("Attach to one entity — shared by all AudioCollision components.");

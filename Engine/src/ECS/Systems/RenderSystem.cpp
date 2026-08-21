@@ -5495,6 +5495,19 @@ void RenderSystem::TickGPUEmitters(f32 deltaTime) {
 
         const u8 shape = static_cast<u8>(em->shape);
         Effects::ParticleSpawnParams params = em->ResolveParams();
+
+        // 2D mode: aim with a single Angle in the XY plane and keep particles planar.
+        const bool planar2D = em->emit2D;
+        Math::Vector3 dir = em->direction;
+        if (planar2D) {
+            f32 a = Math::Radians(em->angle2D);
+            dir = Math::Vector3(std::cos(a), std::sin(a), 0.0f);
+            // Sort layer -> small depth nudge so particles sit at the right layer vs
+            // sprites (2D camera is at +Z; larger Z = nearer/in front). Matches the
+            // Sprite2D sortingLayer/orderInLayer mental model.
+            pos.z += static_cast<f32>(em->sortingLayer) * 0.01f
+                   + static_cast<f32>(em->orderInLayer) * 0.0001f;
+        }
         params.emitterKey = static_cast<f32>(EntityIndex(e));
 
         // Textured sprite card: resolve the emitter's texture path to a bindless
@@ -5514,7 +5527,7 @@ void RenderSystem::TickGPUEmitters(f32 deltaTime) {
 
         // One-shot burst (fired once, then cleared)
         if (em->burstNow && em->burstCount > 0) {
-            m_GPUParticleSystem->SpawnWithParams(em->burstCount, pos, em->direction, params, shape, em->shapeSize);
+            m_GPUParticleSystem->SpawnWithParams(em->burstCount, pos, dir, params, shape, em->shapeSize, planar2D);
             em->burstNow = false;
         }
 
@@ -5525,7 +5538,7 @@ void RenderSystem::TickGPUEmitters(f32 deltaTime) {
             if (n > 0) {
                 em->accumulator -= static_cast<f32>(n);
                 if (n > 4096) n = 4096;   // clamp a single frame's spawn spike
-                m_GPUParticleSystem->SpawnWithParams(n, pos, em->direction, params, shape, em->shapeSize);
+                m_GPUParticleSystem->SpawnWithParams(n, pos, dir, params, shape, em->shapeSize, planar2D);
             }
         }
     }
@@ -13159,6 +13172,16 @@ void RenderSystem::SpawnSurfaceBurst(u32 count, const Math::Vector3& position,
 void RenderSystem::SpawnGPUParticles(u32 count, const Math::Vector3& position,
                                      const Math::Vector3& direction) {
     if (m_GPUParticleSystem) m_GPUParticleSystem->Spawn(count, position, direction);
+}
+
+void RenderSystem::SpawnGPUParticlePreset(u32 count, const Math::Vector3& position,
+                                          const Math::Vector3& direction,
+                                          Effects::GPUParticlePreset preset) {
+    // Fire-and-forget one-shot: drop `count` particles styled by `preset` into the
+    // shared GPU pool at `position`. No entity needed; they die by their lifetime.
+    if (m_GPUParticleSystem)
+        m_GPUParticleSystem->SpawnWithParams(count, position, direction,
+                                             Effects::PresetSpawnParams(preset));
 }
 
 void RenderSystem::RenderParticles(u32 viewportWidth, u32 viewportHeight) {

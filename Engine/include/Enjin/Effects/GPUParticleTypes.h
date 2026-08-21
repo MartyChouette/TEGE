@@ -37,7 +37,9 @@ static_assert(sizeof(GPUParticle) == 96, "GPUParticle must match the GLSL/WGSL l
 // Named looks for the emitter (maps to a ParticleSpawnParams). "Custom" uses
 // the emitter component's own fields.
 enum class GPUParticlePreset : u8 {
-    Custom = 0, Smoke, Fire, Sparks, Blood, Mist, Spray, Dust, Magic, Snow, Liquid, Count
+    // NOTE: append new presets BEFORE Count (values are serialized as u8).
+    // Impact/Pickup are one-shot event effects (hits, collisions, item pickups).
+    Custom = 0, Smoke, Fire, Sparks, Blood, Mist, Spray, Dust, Magic, Snow, Liquid, Impact, Pickup, Count
 };
 
 // Per-particle spawn appearance + physics, baked into each particle at spawn.

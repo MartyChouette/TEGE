@@ -548,6 +548,28 @@ void EditorLayer::DrawLayersPanel() {
     ImGui::End();
 }
 
+// Move an asset (file or folder) into destDir. Returns true if it moved. Guards
+// against no-ops, name clashes, and moving a folder into itself or a descendant.
+static bool MoveAssetIntoFolder(const std::string& src, const std::string& destDir) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    if (src.empty() || destDir.empty()) return false;
+    fs::path s(src), d(destDir);
+    if (!fs::exists(s, ec) || !fs::is_directory(d, ec)) return false;
+    if (fs::equivalent(s.parent_path(), d, ec)) return false;   // already in this folder
+    if (fs::equivalent(s, d, ec)) return false;                 // onto itself
+    if (fs::is_directory(s, ec)) {                              // into own descendant?
+        for (fs::path p = d; ; p = p.parent_path()) {
+            if (fs::equivalent(p, s, ec)) return false;
+            if (p == p.parent_path()) break;
+        }
+    }
+    fs::path dest = d / s.filename();
+    if (fs::exists(dest, ec)) return false;                     // name clash
+    fs::rename(s, dest, ec);
+    return !ec;
+}
+
 void EditorLayer::DrawAssetBrowserPanel() {
     bool panelOpen = true;
     ImGui::Begin("Asset Browser", &panelOpen);
@@ -823,6 +845,21 @@ void EditorLayer::DrawAssetBrowserPanel() {
                     m_AssetBrowserPath = entry.fullPath;
                     m_AssetBrowserCacheDirty = true;
                 }
+                // Drag a folder to move it; drop an asset onto a folder to move it inside.
+                if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+                    ImGui::SetDragDropPayload("ASSET_PATH", entry.fullPath.c_str(), entry.fullPath.size() + 1);
+                    ImGui::TextUnformatted(entry.name.c_str());
+                    ImGui::EndDragDropSource();
+                }
+                if (ImGui::BeginDragDropTarget()) {
+                    if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
+                        if (MoveAssetIntoFolder(std::string(static_cast<const char*>(pl->Data)), entry.fullPath)) {
+                            m_AssetBrowserSelected.clear();
+                            m_AssetBrowserCacheDirty = true;
+                        }
+                    }
+                    ImGui::EndDragDropTarget();
+                }
             } else {
                 // File: show thumbnail for images, type label for others
                 bool isImg = IsImage(entry.extension);
@@ -1039,6 +1076,21 @@ void EditorLayer::DrawAssetBrowserPanel() {
                         m_AssetBrowserPath = entry.fullPath;
                         m_AssetBrowserCacheDirty = true;
                     }
+                }
+                // Drag a folder to move it; drop an asset onto a folder to move it inside.
+                if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+                    ImGui::SetDragDropPayload("ASSET_PATH", entry.fullPath.c_str(), entry.fullPath.size() + 1);
+                    ImGui::Text("%s", entry.name.c_str());
+                    ImGui::EndDragDropSource();
+                }
+                if (ImGui::BeginDragDropTarget()) {
+                    if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH")) {
+                        if (MoveAssetIntoFolder(std::string(static_cast<const char*>(pl->Data)), entry.fullPath)) {
+                            m_AssetBrowserSelected.clear();
+                            m_AssetBrowserCacheDirty = true;
+                        }
+                    }
+                    ImGui::EndDragDropTarget();
                 }
             } else {
                 ImVec4 typeCol = GetTypeColor(entry.extension);

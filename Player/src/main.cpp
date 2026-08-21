@@ -1518,7 +1518,8 @@ public:
         }
 
         Enjin::GUI::DrawEngineSplash(m_EngineSplashTimer, kEngineSplashDuration,
-                                     kFadeStart, "made with");
+                                     kFadeStart, "made with",
+                                     m_ImGuiLayer ? m_ImGuiLayer->GetHeadingFont() : nullptr);
     }
 
     void DrawConsole(VkCommandBuffer) {

@@ -1,7 +1,9 @@
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Scripting/ASCallConv.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
+#include "Enjin/Effects/GPUParticleTypes.h"
 #include "Enjin/Renderer/PostProcessing.h"
+#include <cctype>
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Platform/Platform.h"
@@ -615,6 +617,35 @@ static bool PPVolume_IsGlobal(u64 entity) {
 }
 
 // ============================================================================
+// Fire-and-forget particle one-shots (sparks, hits, pickups) at a world point.
+static Effects::GPUParticlePreset ParseParticlePreset(const std::string& name) {
+    std::string s; s.reserve(name.size());
+    for (char c : name) s += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    using P = Effects::GPUParticlePreset;
+    if (s == "spark" || s == "sparks")                 return P::Sparks;
+    if (s == "impact" || s == "hit" || s == "collision") return P::Impact;
+    if (s == "pickup" || s == "collect" || s == "coin")  return P::Pickup;
+    if (s == "smoke")  return P::Smoke;
+    if (s == "fire")   return P::Fire;
+    if (s == "blood")  return P::Blood;
+    if (s == "mist")   return P::Mist;
+    if (s == "spray")  return P::Spray;
+    if (s == "dust")   return P::Dust;
+    if (s == "magic")  return P::Magic;
+    if (s == "snow")   return P::Snow;
+    if (s == "liquid") return P::Liquid;
+    return P::Sparks;
+}
+
+// Drop `count` particles styled by `preset` at (x,y,z). No entity, no cleanup —
+// they die by their own lifetime. Great for hits, sparks, and item pickups.
+static void Particles_OneShot(const std::string& preset, float x, float y, float z, int count) {
+    if (!s_BindingsRenderSystem || count <= 0) return;
+    s_BindingsRenderSystem->SpawnGPUParticlePreset(
+        static_cast<u32>(count), Math::Vector3(x, y, z), Math::Vector3(0.0f, 1.0f, 0.0f),
+        ParseParticlePreset(preset));
+}
+
 // Registration
 // ============================================================================
 
@@ -961,6 +992,11 @@ void RegisterRenderBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool PPVolume_IsGlobal(uint64)",
         ENJIN_AS_FN(PPVolume_IsGlobal), ENJIN_AS_CALL_CDECL));
+
+    // One-shot particle effects at a world point ("spark"/"impact"/"pickup"/...)
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Particles_OneShot(const string &in preset, float x, float y, float z, int count)",
+        ENJIN_AS_FN(Particles_OneShot), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting

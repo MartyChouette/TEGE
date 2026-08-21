@@ -53,6 +53,8 @@ const char* GPUParticlePresetName(GPUParticlePreset p) {
         case GPUParticlePreset::Magic:  return "Magic";
         case GPUParticlePreset::Snow:   return "Snow";
         case GPUParticlePreset::Liquid: return "Liquid";
+        case GPUParticlePreset::Impact: return "Impact";
+        case GPUParticlePreset::Pickup: return "Pickup";
         default: return "Custom";
     }
 }
@@ -94,6 +96,18 @@ ParticleSpawnParams PresetSpawnParams(GPUParticlePreset preset) {
             p.speed = 4.5f; p.spread = 0.3f; p.gravityScale = 1.5f; p.drag = 0.08f;
             p.sizeJitter = 0.5f; p.sprite = 1; p.softness = 0.35f;
             p.collide = true; p.bounciness = 0.06f; p.friction = 0.7f; break;
+        case GPUParticlePreset::Impact:
+            // Collision hit: a quick radial pop of hard little sparks that fly out,
+            // fall fast, and die almost immediately. Fire as a one-shot burst.
+            p.color = {1.0f, 0.9f, 0.55f, 1.0f}; p.size = 0.09f; p.lifetime = 0.4f;
+            p.speed = 7.0f; p.spread = 1.6f; p.gravityScale = 1.6f; p.drag = 0.5f;
+            p.sizeJitter = 0.7f; p.sprite = 1; p.softness = 0.2f; break;
+        case GPUParticlePreset::Pickup:
+            // Item collected: a cheerful upward sparkle of soft stars that rise and
+            // fade. Fire as a one-shot burst where the item was picked up.
+            p.color = {1.0f, 0.92f, 0.5f, 1.0f}; p.size = 0.16f; p.lifetime = 0.7f;
+            p.speed = 2.4f; p.spread = 0.7f; p.gravityScale = -0.5f; p.drag = 1.0f;
+            p.sizeJitter = 0.6f; p.sprite = 4; p.softness = 0.8f; break;
         case GPUParticlePreset::Custom:
         default: break;   // defaults on the struct
     }

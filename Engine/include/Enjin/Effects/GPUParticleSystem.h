@@ -67,9 +67,11 @@ public:
 
     // Spawn with explicit per-particle appearance/physics (this is what emitters
     // and presets use so different looks coexist in the one shared buffer).
+    // planar2D: keep spawns on the emitter's Z plane and emit a clean 2D fan
+    // around `direction` (used by 2D emitters so particles stay in the sprite plane).
     void SpawnWithParams(u32 count, const Math::Vector3& position,
                          const Math::Vector3& direction, const ParticleSpawnParams& params,
-                         u8 shape = 0, f32 shapeSize = 0.0f);
+                         u8 shape = 0, f32 shapeSize = 0.0f, bool planar2D = false);
 
     // Render: draw the particle SSBO as an instance-rate vertex buffer inside
     // the current (already begun) render pass. Dead slots collapse to

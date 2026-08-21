@@ -12,6 +12,7 @@
 #include "Enjin/ECS/Components/Mesh.h"
 #include <algorithm>
 #include "Enjin/Math/Math.h"
+#include "Enjin/Editor/ComponentHelp.h"
 #include <stb_image.h>
 
 namespace Enjin {
@@ -30,6 +31,7 @@ void EditorLayer::DrawRigidbodyComponent(ECS::Entity entity) {
     if (rbOpen) {
         auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
         if (!rb) return;
+        DrawComponentHelp("rigidbody", m_World, entity);
 
         // Body type
         const char* bodyTypes[] = { "Dynamic", "Kinematic", "Static" };
@@ -115,6 +117,7 @@ void EditorLayer::DrawBoxColliderComponent(ECS::Entity entity) {
     if (boxOpen) {
         auto* col = m_World->GetComponent<ECS::BoxColliderComponent>(entity);
         if (!col) return;
+        DrawComponentHelp("boxCollider", m_World, entity);
 
         f32 center[3] = { col->center.x, col->center.y, col->center.z };
         if (InspectorUndo::DragFloat3(m_UndoRedo, "Center", center,
@@ -169,6 +172,7 @@ void EditorLayer::DrawBody2DComponent(ECS::Entity entity) {
     if (open) {
         auto* body = m_World->GetComponent<Physics::Body2DComponent>(entity);
         if (!body) return;
+        DrawComponentHelp("body2D", m_World, entity);
 
         // Shape type
         const char* shapeNames[] = { "Circle", "Box", "Polygon", "Capsule" };
@@ -238,6 +242,7 @@ void EditorLayer::DrawJoint2DComponent(ECS::Entity entity) {
     if (open) {
         auto* joint = m_World->GetComponent<Physics::Joint2DComponent>(entity);
         if (!joint) return;
+        DrawComponentHelp("joint2D", m_World, entity);
 
         // Joint type
         const char* typeNames[] = { "Revolute", "Prismatic", "Distance", "Rope", "Weld" };
@@ -317,6 +322,7 @@ void EditorLayer::DrawSphereColliderComponent(ECS::Entity entity) {
     if (ImGui::CollapsingHeader("Sphere Collider", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* col = m_World->GetComponent<ECS::SphereColliderComponent>(entity);
         if (!col) return;
+        DrawComponentHelp("sphereCollider", m_World, entity);
 
         f32 center[3] = { col->center.x, col->center.y, col->center.z };
         if (InspectorUndo::DragFloat3(m_UndoRedo, "Center", center,
@@ -363,6 +369,7 @@ void EditorLayer::DrawCapsuleColliderComponent(ECS::Entity entity) {
     if (ImGui::CollapsingHeader("Capsule Collider", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* col = m_World->GetComponent<ECS::CapsuleColliderComponent>(entity);
         if (!col) return;
+        DrawComponentHelp("capsuleCollider", m_World, entity);
 
         f32 center[3] = { col->center.x, col->center.y, col->center.z };
         if (InspectorUndo::DragFloat3(m_UndoRedo, "Center", center,
@@ -438,6 +445,7 @@ void EditorLayer::DrawMeshColliderComponent(ECS::Entity entity) {
     if (meshOpen) {
         auto* col = m_World->GetComponent<ECS::MeshColliderComponent>(entity);
         if (!col) return;
+        DrawComponentHelp("meshCollider", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Convex", &col->convex);
         ImGui::SetItemTooltip("Convex hull (dynamic/static) or triangle mesh (static only)");
@@ -540,6 +548,7 @@ void EditorLayer::DrawTriggerZoneComponent(ECS::Entity entity) {
     if (ImGui::CollapsingHeader("Trigger Zone", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* zone = m_World->GetComponent<ECS::TriggerZoneComponent>(entity);
         if (!zone) return;
+        DrawComponentHelp("triggerZone", m_World, entity);
 
         const char* shapes[] = { "Box", "Sphere" };
         int shape = static_cast<int>(zone->shape);
@@ -586,6 +595,7 @@ void EditorLayer::DrawPerFrameColliderComponent(ECS::Entity entity) {
     if (open) {
         auto* pfc = m_World->GetComponent<ECS::PerFrameColliderComponent>(entity);
         if (!pfc) return;
+        DrawComponentHelp("perFrameCollider", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Auto Apply##PFC", &pfc->autoApply);
         if (ImGui::IsItemHovered()) {
@@ -640,6 +650,7 @@ void EditorLayer::DrawPolygonCollider2DComponent(ECS::Entity entity) {
     if (open) {
         auto* poly = m_World->GetComponent<ECS::PolygonCollider2DComponent>(entity);
         if (!poly) return;
+        DrawComponentHelp("polygonCollider2D", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Is Trigger##Poly2D", &poly->isTrigger);
 
@@ -712,6 +723,8 @@ void EditorLayer::DrawDistanceJointComponent(ECS::Entity entity) {
         auto* j = m_World->GetComponent<ECS::DistanceJointComponent>(entity);
         if (!j) return;
 
+        DrawComponentHelp("distanceJoint", m_World, entity);
+
         u64 eA = static_cast<u64>(j->entityA);
         u64 eB = static_cast<u64>(j->entityB);
         if (ImGui::InputScalar("Entity A##DistJoint", ImGuiDataType_U64, &eA)) {
@@ -757,6 +770,8 @@ void EditorLayer::DrawHingeJointComponent(ECS::Entity entity) {
     if (open) {
         auto* j = m_World->GetComponent<ECS::HingeJointComponent>(entity);
         if (!j) return;
+
+        DrawComponentHelp("hingeJoint", m_World, entity);
 
         u64 eA = static_cast<u64>(j->entityA);
         u64 eB = static_cast<u64>(j->entityB);
@@ -814,6 +829,8 @@ void EditorLayer::DrawBallSocketJointComponent(ECS::Entity entity) {
         auto* j = m_World->GetComponent<ECS::BallSocketJointComponent>(entity);
         if (!j) return;
 
+        DrawComponentHelp("ballSocketJoint", m_World, entity);
+
         u64 eA = static_cast<u64>(j->entityA);
         u64 eB = static_cast<u64>(j->entityB);
         if (ImGui::InputScalar("Entity A##BallSocket", ImGuiDataType_U64, &eA)) {
@@ -867,6 +884,8 @@ void EditorLayer::DrawSpringJointComponent(ECS::Entity entity) {
         auto* j = m_World->GetComponent<ECS::SpringJointComponent>(entity);
         if (!j) return;
 
+        DrawComponentHelp("springJoint", m_World, entity);
+
         u64 eA = static_cast<u64>(j->entityA);
         u64 eB = static_cast<u64>(j->entityB);
         if (ImGui::InputScalar("Entity A##SpringJoint", ImGuiDataType_U64, &eA)) {
@@ -915,6 +934,8 @@ void EditorLayer::DrawFixedJointComponent(ECS::Entity entity) {
         auto* j = m_World->GetComponent<ECS::FixedJointComponent>(entity);
         if (!j) return;
 
+        DrawComponentHelp("fixedJoint", m_World, entity);
+
         u64 eA = static_cast<u64>(j->entityA);
         u64 eB = static_cast<u64>(j->entityB);
         if (ImGui::InputScalar("Entity A##FixedJoint", ImGuiDataType_U64, &eA)) {
@@ -961,6 +982,8 @@ void EditorLayer::DrawSliderJointComponent(ECS::Entity entity) {
     if (open) {
         auto* j = m_World->GetComponent<ECS::SliderJointComponent>(entity);
         if (!j) return;
+
+        DrawComponentHelp("sliderJoint", m_World, entity);
 
         u64 eA = static_cast<u64>(j->entityA);
         u64 eB = static_cast<u64>(j->entityB);
@@ -1017,6 +1040,8 @@ void EditorLayer::DrawRagdollComponent(ECS::Entity entity) {
     if (open) {
         auto* r = m_World->GetComponent<ECS::RagdollComponent>(entity);
         if (!r) return;
+
+        DrawComponentHelp("ragdoll", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled##Ragdoll", &r->enabled);
         InspectorUndo::Checkbox(m_UndoRedo, "Auto Activate On Death", &r->autoActivateOnDeath);

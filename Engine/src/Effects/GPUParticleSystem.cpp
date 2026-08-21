@@ -217,9 +217,13 @@ void GPUParticleSystem::Spawn(u32 count, const Math::Vector3& position,
 void GPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& position,
                                          const Math::Vector3& direction,
                                          const ParticleSpawnParams& params,
-                                         u8 shape, f32 shapeSize) {
+                                         u8 shape, f32 shapeSize, bool planar2D) {
     if (!m_Initialized || count == 0) return;
     m_HasSpawned = true;   // wakes the simulation (see Simulate's idle gate)
+
+    // 2D fan: base heading from the (already planar) direction; each particle gets
+    // a random angular offset within +/- spread radians, all in the XY plane.
+    const f32 baseAngle = planar2D ? atan2f(direction.y, direction.x) : 0.0f;
 
     // Initialize particles in a staging region of the SSBO
     std::vector<GPUParticle> newParticles(count);
@@ -228,6 +232,14 @@ void GPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& position
         p.position = position + ShapeSpawnOffset(shape, shapeSize, i);
         p.lifetime = params.lifetime * (0.7f + 0.6f * HashUnit(i * 2654435761u + 11u));
         p.age = 0.0f;
+        if (planar2D) {
+            // Stay in the emitter's Z plane; emit a clean fan around the heading so
+            // the Angle control actually steers the particles (no +Y cone bias).
+            p.position.z = position.z;
+            f32 off = (HashUnit(i * 2246822519u + 5u) * 2.0f - 1.0f) * params.spread;
+            f32 a = baseAngle + off;
+            p.velocity = Math::Vector3(cosf(a), sinf(a), 0.0f) * params.speed;
+        } else {
         // Random velocity within a cone around direction
         f32 theta = static_cast<f32>(i) * 2.39996f; // golden angle
         f32 phi = params.spread * static_cast<f32>(i % 16) / 16.0f;
@@ -236,6 +248,7 @@ void GPUParticleSystem::SpawnWithParams(u32 count, const Math::Vector3& position
             direction.y + cosf(phi),
             direction.z + sinf(phi) * sinf(theta) * params.spread
         ) * params.speed;
+        }
         p.color = params.color;
         p.size = params.size * (1.0f - params.sizeJitter + 2.0f * params.sizeJitter * HashUnit(i * 40503u + 7u));
         p.rotation = (params.fixedRotation >= 0.0f) ? params.fixedRotation

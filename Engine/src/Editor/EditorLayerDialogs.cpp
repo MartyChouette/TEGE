@@ -320,7 +320,8 @@ void EditorLayer::DrawStatsOverlay() {
 
 
 void EditorLayer::DrawSplashScreen() {
-    GUI::DrawEngineSplash(m_SplashTimer, m_SplashDuration, m_SplashFadeStart, "by marty64");
+    GUI::DrawEngineSplash(m_SplashTimer, m_SplashDuration, m_SplashFadeStart, "by marty64",
+                          m_ImGuiLayer ? m_ImGuiLayer->GetHeadingFont() : nullptr);
 }
 
 

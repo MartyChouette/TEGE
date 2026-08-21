@@ -669,6 +669,12 @@ private:
     // Multi-select state
     std::unordered_set<ECS::Entity> m_SelectedEntities;
     ECS::Entity m_PrimarySelected = ECS::INVALID_ENTITY;
+    // When selection changes from outside the Hierarchy (e.g. viewport pick), the
+    // Hierarchy scrolls to reveal the selected row on its next draw.
+    bool m_HierarchyScrollToSelected = false;
+    // Inspector lock: pin the panel to one entity so it stops following selection.
+    bool m_InspectorLocked = false;
+    ECS::Entity m_InspectorLockedEntity = ECS::INVALID_ENTITY;
 
     // Inspector rotation edit cache. Euler angles are re-extracted from the
     // quaternion only when the selection or the quaternion changes externally,

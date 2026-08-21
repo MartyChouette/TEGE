@@ -1,5 +1,6 @@
 #include "Enjin/GUI/ImGuiLayer.h"
 #include "Enjin/GUI/EmbeddedFonts.h"
+#include "Enjin/GUI/EmbeddedPlayfair.h"
 #include "Enjin/Platform/Window.h"
 #include "Enjin/Logging/Log.h"
 
@@ -292,6 +293,12 @@ void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
         }
     }
     if (!m_HeadingFont) {
+        // Zero-config heading/title face: Playfair Display, a high-contrast serif
+        // that reads classier than the sans body font. Users can still override
+        // it via Settings > Font Library / heading font path.
+        m_HeadingFont = AddEmbeddedFont(io, PlayfairDisplayTTF, PlayfairDisplayTTFSize, fontConfig.headingFontSize);
+    }
+    if (!m_HeadingFont) {
         m_HeadingFont = AddEmbeddedFont(io, RobotoMediumTTF, RobotoMediumTTFSize, fontConfig.headingFontSize);
     }
     if (!m_HeadingFont) {
@@ -307,7 +314,7 @@ void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
         }
     }
     if (!m_H2Font) {
-        m_H2Font = AddEmbeddedFont(io, RobotoMediumTTF, RobotoMediumTTFSize, fontConfig.h2FontSize);
+        m_H2Font = AddEmbeddedFont(io, PlayfairDisplayTTF, PlayfairDisplayTTFSize, fontConfig.h2FontSize);
     }
 
     // Load small font (labels/hints — uses body font at smaller size)

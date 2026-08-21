@@ -26,9 +26,20 @@ struct GPUParticleEmitterComponent {
 
     bool emitting = true;          // continuous emission on/off
     f32 spawnRate = 200.0f;        // particles per second (continuous)
-    Math::Vector3 direction = {0.0f, 1.0f, 0.0f};  // emission direction
+    Math::Vector3 direction = {0.0f, 1.0f, 0.0f};  // emission direction (3D mode)
     EmitShape shape = EmitShape::Cone;
     f32 shapeSize = 0.5f;          // radius / half-extent of the emission volume
+
+    // 2D mode: keep particles in the emitter's Z plane and aim them with a single
+    // Angle (degrees, 0 = right, 90 = up) instead of a 3D direction vector. Makes
+    // particles behave predictably in 2D scenes and steer with the Angle control.
+    bool emit2D = false;
+    f32  angle2D = 90.0f;          // emission heading in degrees (2D mode)
+
+    // 2D sort layer (same idea as Sprite2D): higher = drawn in front. In 2D mode
+    // this nudges the particle depth so it sits at the right layer vs sprites.
+    i32 sortingLayer = 0;
+    i32 orderInLayer = 0;
 
     // One-shot burst: set burstCount and flip burstNow (the system fires it
     // once and clears the flag). Great for hits/explosions from script/nodes.

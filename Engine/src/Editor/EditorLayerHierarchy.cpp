@@ -408,6 +408,13 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
         name.c_str());
     bool opened = ImGui::TreeNodeEx((void*)(uintptr_t)entity, flags, "%s", labelBuf);
 
+    // If the selection just changed from outside the Hierarchy (viewport pick,
+    // undo, script), scroll this row into view so the highlight is visible.
+    if (m_HierarchyScrollToSelected && IsSelected(entity)) {
+        ImGui::SetScrollHereY(0.5f);
+        m_HierarchyScrollToSelected = false;
+    }
+
     // Dim locked-by-other entities
     if (entityLockedByOther) {
         ImVec2 rMin = ImGui::GetItemRectMin();

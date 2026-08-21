@@ -6,6 +6,8 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/RandomBag.h"
+#include "Enjin/ECS/Systems/RandomBagSystem.h"
 #include <angelscript.h>
 #include <cassert>
 
@@ -316,12 +318,63 @@ static int ProceduralGen_PrefabAssemble(int maxRooms, u32 seed) {
 }
 
 // ============================================================================
+// RandomBag — stream-feeder procgen. Pulls one authored item per call from the
+// entity's RandomBagComponent. Stateful (no-replacement modes draw a shuffled
+// queue). Missing component = safe empty/no-op.
+// ============================================================================
+static std::string RandomBag_Draw(u64 self) {
+    if (!s_BindingsWorld) return std::string();
+    if (auto* b = s_BindingsWorld->GetComponent<ECS::RandomBagComponent>(self))
+        return ECS::RandomBagSystem::Draw(*b);
+    return std::string();
+}
+static int RandomBag_DrawIndex(u64 self) {
+    if (!s_BindingsWorld) return -1;
+    if (auto* b = s_BindingsWorld->GetComponent<ECS::RandomBagComponent>(self))
+        return static_cast<int>(ECS::RandomBagSystem::DrawIndex(*b));
+    return -1;
+}
+static void RandomBag_Reset(u64 self) {
+    if (!s_BindingsWorld) return;
+    if (auto* b = s_BindingsWorld->GetComponent<ECS::RandomBagComponent>(self))
+        ECS::RandomBagSystem::Reset(*b);
+}
+static int RandomBag_Remaining(u64 self) {
+    if (!s_BindingsWorld) return 0;
+    if (auto* b = s_BindingsWorld->GetComponent<ECS::RandomBagComponent>(self))
+        return static_cast<int>(ECS::RandomBagSystem::Remaining(*b));
+    return 0;
+}
+static int RandomBag_Count(u64 self) {
+    if (!s_BindingsWorld) return 0;
+    if (auto* b = s_BindingsWorld->GetComponent<ECS::RandomBagComponent>(self))
+        return static_cast<int>(b->items.size());
+    return 0;
+}
+
+// ============================================================================
 // AngelScript Registration
 // ============================================================================
 namespace Enjin {
 namespace Scripting {
 
 void RegisterProceduralBindings(asIScriptEngine* engine) {
+    // RandomBag stream-feeder (author items in the editor, pull from script)
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "string RandomBag_Draw(uint64 self)",
+        ENJIN_AS_FN(RandomBag_Draw), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int RandomBag_DrawIndex(uint64 self)",
+        ENJIN_AS_FN(RandomBag_DrawIndex), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void RandomBag_Reset(uint64 self)",
+        ENJIN_AS_FN(RandomBag_Reset), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int RandomBag_Remaining(uint64 self)",
+        ENJIN_AS_FN(RandomBag_Remaining), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int RandomBag_Count(uint64 self)",
+        ENJIN_AS_FN(RandomBag_Count), ENJIN_AS_CALL_CDECL));
     // Grid generation algorithms
     AS_CHECK(engine->RegisterGlobalFunction(
         "void ProceduralGen_CellularAutomata(uint width, uint height, uint fillPct, uint smoothPasses, uint seed)",

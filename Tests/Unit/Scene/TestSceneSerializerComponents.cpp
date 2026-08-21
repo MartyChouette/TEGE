@@ -14,6 +14,8 @@
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/CustomShader.h"
 #include "Enjin/ECS/Components/DungeonGenerator.h"
+#include "Enjin/ECS/Components/RandomBag.h"
+#include "Enjin/ECS/Systems/RandomBagSystem.h"
 
 using namespace Enjin;
 using namespace Enjin::ECS;
@@ -1076,6 +1078,79 @@ ENJIN_TEST(DungeonGenerator, FieldsRoundTrip) {
     ENJIN_EXPECT_EQ(g->wallTile, 7);
     ENJIN_EXPECT_FALSE(g->fillCollision);
     ENJIN_EXPECT_FALSE(g->generateOnStart);
+}
+
+// ===========================================================================
+// RandomBagComponent (procgen suite, stream-feeder)
+// ===========================================================================
+
+ENJIN_TEST(RandomBag, FieldsRoundTrip) {
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& b = w1.AddComponent<RandomBagComponent>(e);
+    b.mode = RandomBagComponent::Mode::Deck;
+    b.seed = 777;
+    b.avoidImmediateRepeat = true;
+    b.items.push_back({"ace", 4.0f});
+    b.items.push_back({"king", 2.0f});
+    b.items.push_back({"joker", 1.0f});
+
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<RandomBagComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+
+    ENJIN_EXPECT_EQ((int)g->mode, (int)RandomBagComponent::Mode::Deck);
+    ENJIN_EXPECT_EQ((int)g->seed, 777);
+    ENJIN_EXPECT_TRUE(g->avoidImmediateRepeat);
+    ENJIN_ASSERT_EQ((int)g->items.size(), 3);
+    ENJIN_EXPECT_TRUE(g->items[0].name == "ace");
+    ENJIN_EXPECT_TRUE(g->items[1].name == "king");
+    ENJIN_EXPECT_TRUE(g->items[2].name == "joker");
+    ENJIN_EXPECT_TRUE(g->items[0].weight > 3.9f && g->items[0].weight < 4.1f);
+}
+
+ENJIN_TEST(RandomBag, NoReplaceDrawsEachItemOncePerCycle) {
+    // Arrange: a 3-item no-replacement bag with a fixed seed.
+    RandomBagComponent b;
+    b.mode = RandomBagComponent::Mode::NoReplace;
+    b.seed = 42;
+    b.items.push_back({"a", 1.0f});
+    b.items.push_back({"b", 1.0f});
+    b.items.push_back({"c", 1.0f});
+
+    // Act: draw one full cycle (3 draws).
+    int seenA = 0, seenB = 0, seenC = 0;
+    for (int i = 0; i < 3; ++i) {
+        std::string s = ECS::RandomBagSystem::Draw(b);
+        if (s == "a") ++seenA; else if (s == "b") ++seenB; else if (s == "c") ++seenC;
+    }
+
+    // Assert: every item appeared exactly once in the cycle (fair 7-bag property).
+    ENJIN_EXPECT_EQ(seenA, 1);
+    ENJIN_EXPECT_EQ(seenB, 1);
+    ENJIN_EXPECT_EQ(seenC, 1);
+}
+
+ENJIN_TEST(RandomBag, SameSeedReproducesSequence) {
+    // Arrange: two identical weighted bags with the same seed.
+    auto make = []() {
+        RandomBagComponent b;
+        b.mode = RandomBagComponent::Mode::Weighted;
+        b.seed = 99;
+        b.items.push_back({"x", 3.0f});
+        b.items.push_back({"y", 1.0f});
+        return b;
+    };
+    RandomBagComponent b1 = make();
+    RandomBagComponent b2 = make();
+
+    // Act + Assert: the two bags draw the same sequence.
+    for (int i = 0; i < 20; ++i) {
+        ENJIN_EXPECT_TRUE(ECS::RandomBagSystem::Draw(b1) == ECS::RandomBagSystem::Draw(b2));
+    }
 }
 
 ENJIN_TEST_MAIN()

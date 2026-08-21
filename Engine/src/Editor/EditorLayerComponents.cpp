@@ -107,6 +107,7 @@
 #include <imgui.h>
 #include <ImGuizmo.h>
 #include <backends/imgui_impl_vulkan.h>
+#include "Enjin/Editor/ComponentHelp.h"
 #include <vulkan/vulkan.h>
 #include <sstream>
 #include <fstream>
@@ -204,6 +205,7 @@ void EditorLayer::DrawTransformComponent(ECS::Entity entity) {
     if (UI::SectionHeader(hdr.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
         ECS::TransformComponent* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (!transform) return;
+        DrawComponentHelp("transform", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Visible", &transform->visible);
         ImGui::SetItemTooltip("Toggle entity visibility in the scene");
@@ -276,6 +278,7 @@ void EditorLayer::DrawMeshComponent(ECS::Entity entity) {
     if (meshOpen) {
         ECS::MeshComponent* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
         if (!mesh) return;
+        DrawComponentHelp("mesh", m_World, entity);
 
         ImGui::Text("Vertices: %zu", mesh->vertices.size());
         ImGui::Text("Indices: %zu", mesh->indices.size());
@@ -386,6 +389,7 @@ void EditorLayer::DrawLODComponent(ECS::Entity entity) {
     if (lodOpen) {
         ECS::LODComponent* lod = m_World->GetComponent<ECS::LODComponent>(entity);
         if (!lod) return;
+        DrawComponentHelp("lod", m_World, entity);
 
         if (!m_World->HasComponent<ECS::MeshComponent>(entity)) {
             ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "No MeshComponent — LOD requires a mesh to simplify");
@@ -450,6 +454,7 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
     if (matOpen) {
         ECS::MaterialComponent* material = m_World->GetComponent<ECS::MaterialComponent>(entity);
         if (!material) return;
+        DrawComponentHelp("material", m_World, entity);
 
         // Base color
         f32 baseColor[3] = { material->baseColor.x, material->baseColor.y, material->baseColor.z };
@@ -931,6 +936,7 @@ void EditorLayer::DrawMaterialSlotsComponent(ECS::Entity entity) {
             ImGui::TextDisabled("No material slots");
             return;
         }
+        DrawComponentHelp("materialSlots", m_World, entity);
 
         // Also get mesh to show sub-mesh names
         ECS::MeshComponent* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
@@ -1089,6 +1095,7 @@ void EditorLayer::DrawLightComponent(ECS::Entity entity) {
     if (lightOpen) {
         ECS::LightComponent* light = m_World->GetComponent<ECS::LightComponent>(entity);
         if (!light) return;
+        DrawComponentHelp("light", m_World, entity);
 
         // Light type
         const char* lightTypes[] = { "Directional", "Point", "Spot" };
@@ -1163,6 +1170,7 @@ void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
     if (camOpen) {
         ECS::CameraComponent* camera = m_World->GetComponent<ECS::CameraComponent>(entity);
         if (!camera) return;
+        DrawComponentHelp("camera", m_World, entity);
 
         // Camera preset dropdown
         {
@@ -1270,6 +1278,7 @@ void EditorLayer::DrawNotesComponent(ECS::Entity entity) {
     if (notesOpen) {
         ECS::NotesComponent* notes = m_World->GetComponent<ECS::NotesComponent>(entity);
         if (!notes) return;
+        DrawComponentHelp("notes", m_World, entity);
 
         // Multi-line text input for notes
         static char notesBuffer[4096];
@@ -1298,6 +1307,7 @@ void EditorLayer::DrawTextComponent(ECS::Entity entity) {
     if (textOpen) {
         ECS::TextComponent* text = m_World->GetComponent<ECS::TextComponent>(entity);
         if (!text) return;
+        DrawComponentHelp("text", m_World, entity);
 
         // Multi-line text input
         static char textBuffer[8192];
@@ -1496,6 +1506,7 @@ void EditorLayer::DrawWeatherZoneComponent(ECS::Entity entity) {
     if (wzOpen) {
         ECS::WeatherZoneComponent* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
         if (!zone) return;
+        DrawComponentHelp("weatherZone", m_World, entity);
 
         // Bounding box
         f32 extents[3] = { zone->halfExtents.x, zone->halfExtents.y, zone->halfExtents.z };
@@ -1604,6 +1615,7 @@ void EditorLayer::DrawWaterVolumeComponent(ECS::Entity entity) {
     if (wvOpen) {
         ECS::WaterVolumeComponent* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
         if (!volume) return;
+        DrawComponentHelp("waterVolume", m_World, entity);
 
         // Track changes that require mesh regeneration
         auto oldExtents = volume->halfExtents;
@@ -1706,6 +1718,7 @@ void EditorLayer::DrawWater3DComponent(ECS::Entity entity) {
     if (open) {
         auto* w = m_World->GetComponent<ECS::Water3DComponent>(entity);
         if (!w) return;
+        DrawComponentHelp("water3D", m_World, entity);
 
         auto oldW = w->settings.width;
         auto oldD = w->settings.depth;
@@ -1775,6 +1788,7 @@ void EditorLayer::DrawGrassVolumeComponent(ECS::Entity entity) {
     if (gvOpen) {
         ECS::GrassVolumeComponent* grass = m_World->GetComponent<ECS::GrassVolumeComponent>(entity);
         if (!grass) return;
+        DrawComponentHelp("grassVolume", m_World, entity);
 
         f32 extents[3] = { grass->halfExtents.x, grass->halfExtents.y, grass->halfExtents.z };
         if (InspectorUndo::DragFloat3(m_UndoRedo, "Half Extents", extents,
@@ -1851,6 +1865,7 @@ void EditorLayer::DrawShrubVolumeComponent(ECS::Entity entity) {
     if (svOpen) {
         ECS::ShrubVolumeComponent* shrub = m_World->GetComponent<ECS::ShrubVolumeComponent>(entity);
         if (!shrub) return;
+        DrawComponentHelp("shrubVolume", m_World, entity);
 
         f32 extents[3] = { shrub->halfExtents.x, shrub->halfExtents.y, shrub->halfExtents.z };
         if (InspectorUndo::DragFloat3(m_UndoRedo, "Half Extents", extents,
@@ -1930,6 +1945,7 @@ void EditorLayer::DrawTreeVolumeComponent(ECS::Entity entity) {
     if (tvOpen) {
         ECS::TreeVolumeComponent* tree = m_World->GetComponent<ECS::TreeVolumeComponent>(entity);
         if (!tree) return;
+        DrawComponentHelp("treeVolume", m_World, entity);
 
         f32 extents[3] = { tree->halfExtents.x, tree->halfExtents.y, tree->halfExtents.z };
         if (InspectorUndo::DragFloat3(m_UndoRedo, "Half Extents", extents,
@@ -2068,6 +2084,7 @@ void EditorLayer::DrawTerrainComponent(ECS::Entity entity) {
     if (open) {
         ECS::TerrainComponent* terrain = m_World->GetComponent<ECS::TerrainComponent>(entity);
         if (!terrain) return;
+        DrawComponentHelp("terrain", m_World, entity);
 
         int w = static_cast<int>(terrain->gridWidth);
         int h = static_cast<int>(terrain->gridHeight);
@@ -2159,6 +2176,7 @@ void EditorLayer::DrawTerrain2DComponent(ECS::Entity entity) {
     if (open) {
         ECS::Terrain2DComponent* terrain = m_World->GetComponent<ECS::Terrain2DComponent>(entity);
         if (!terrain) return;
+        DrawComponentHelp("terrain2d", m_World, entity);
 
         ImGui::DragFloat("Depth", &terrain->depth, 0.1f, 0.1f, 50.0f);
         ImGui::DragFloat("UV Scale", &terrain->uvScale, 0.01f, 0.01f, 10.0f);
@@ -2248,6 +2266,7 @@ void EditorLayer::DrawViewmodelComponent(ECS::Entity entity) {
     if (vmOpen) {
         ECS::ViewmodelComponent* vm = m_World->GetComponent<ECS::ViewmodelComponent>(entity);
         if (!vm) return;
+        DrawComponentHelp("viewmodel", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &vm->enabled);
 
@@ -2270,6 +2289,7 @@ void EditorLayer::DrawVegetationComponent(ECS::Entity entity) {
     if (vegOpen) {
         ECS::VegetationComponent* veg = m_World->GetComponent<ECS::VegetationComponent>(entity);
         if (!veg) return;
+        DrawComponentHelp("vegetation", m_World, entity);
 
         InspectorUndo::DragFloat(m_UndoRedo, "Sway Strength", &veg->swayStrength, 0.05f, 0.0f, 5.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Sway Frequency", &veg->swayFrequency, 0.05f, 0.0f, 5.0f);
@@ -2285,6 +2305,7 @@ void EditorLayer::DrawCameraTriggerComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Camera Trigger", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* trigger = m_World->GetComponent<ECS::CameraTriggerComponent>(entity);
         if (!trigger) return;
+        DrawComponentHelp("cameraTrigger", m_World, entity);
 
         // Half-extents
         f32 halfExt[3] = { trigger->halfExtents.x, trigger->halfExtents.y, trigger->halfExtents.z };
@@ -2352,6 +2373,7 @@ void EditorLayer::DrawTemperatureZoneComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Temperature Zone", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* tempZone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
         if (!tempZone) return;
+        DrawComponentHelp("temperatureZone", m_World, entity);
 
         // Half-extents
         f32 halfExt[3] = { tempZone->halfExtents.x, tempZone->halfExtents.y, tempZone->halfExtents.z };
@@ -2390,6 +2412,7 @@ void EditorLayer::DrawGravityZoneComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Gravity Zone", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* zone = m_World->GetComponent<ECS::GravityZoneComponent>(entity);
         if (!zone) return;
+        DrawComponentHelp("gravityZone", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Active##GravZone", &zone->isActive);
 
@@ -2487,6 +2510,7 @@ void EditorLayer::DrawReflectionProbeComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Reflection Probe", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* probe = m_World->GetComponent<ECS::ReflectionProbeComponent>(entity);
         if (!probe) return;
+        DrawComponentHelp("reflectionProbe", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Active##ReflProbe", &probe->isActive);
 
@@ -2580,6 +2604,7 @@ void EditorLayer::DrawFluidVolumeComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Fluid Volume", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* vol = m_World->GetComponent<ECS::FluidVolumeComponent>(entity);
         if (!vol) return;
+        DrawComponentHelp("fluidVolume", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Active##FluidVol", &vol->isActive);
 
@@ -2709,6 +2734,7 @@ void EditorLayer::DrawPlatformer2DController(ECS::Entity entity) {
     if (ctrlOpen) {
         auto* ctrl = m_World->GetComponent<ECS::Platformer2DController>(entity);
         if (!ctrl) return;
+        DrawComponentHelp("platformer2D", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &ctrl->isEnabled);
 
@@ -2801,6 +2827,7 @@ void EditorLayer::DrawTopDown2DController(ECS::Entity entity) {
     if (ctrlOpen) {
         auto* ctrl = m_World->GetComponent<ECS::TopDown2DController>(entity);
         if (!ctrl) return;
+        DrawComponentHelp("topDown2D", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &ctrl->isEnabled);
 
@@ -2871,6 +2898,7 @@ void EditorLayer::DrawTopDown3DController(ECS::Entity entity) {
     if (ctrlOpen) {
         auto* ctrl = m_World->GetComponent<ECS::TopDown3DController>(entity);
         if (!ctrl) return;
+        DrawComponentHelp("topDown3D", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &ctrl->isEnabled);
 
@@ -2948,6 +2976,7 @@ void EditorLayer::DrawThirdPersonController(ECS::Entity entity) {
     if (ctrlOpen) {
         auto* ctrl = m_World->GetComponent<ECS::ThirdPersonController>(entity);
         if (!ctrl) return;
+        DrawComponentHelp("thirdPerson", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &ctrl->isEnabled);
 
@@ -3046,6 +3075,7 @@ void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
     if (ctrlOpen) {
         auto* ctrl = m_World->GetComponent<ECS::FirstPersonController>(entity);
         if (!ctrl) return;
+        DrawComponentHelp("firstPerson", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &ctrl->isEnabled);
 
@@ -3162,6 +3192,7 @@ void EditorLayer::DrawHealthComponent(ECS::Entity entity) {
     if (healthOpen) {
         auto* health = m_World->GetComponent<ECS::HealthComponent>(entity);
         if (!health) return;
+        DrawComponentHelp("health", m_World, entity);
 
         // Health bar
         f32 healthPercent = health->GetHealthPercent();
@@ -3210,6 +3241,7 @@ void EditorLayer::DrawRecordRewindComponent(ECS::Entity entity) {
     if (open) {
         auto* rr = m_World->GetComponent<ECS::RecordRewindComponent>(entity);
         if (!rr) return;
+        DrawComponentHelp("recordRewind", m_World, entity);
 
         InspectorUndo::DragFloat(m_UndoRedo, "Max Duration (s)", &rr->maxDuration, 0.5f, 1.0f, 60.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Record Interval", &rr->recordInterval, 0.001f, 0.01f, 0.5f);
@@ -3267,6 +3299,7 @@ void EditorLayer::DrawSceneRewindComponent(ECS::Entity entity) {
     if (open) {
         auto* sr = m_World->GetComponent<ECS::SceneRewindComponent>(entity);
         if (!sr) return;
+        DrawComponentHelp("sceneRewind", m_World, entity);
 
         InspectorUndo::DragFloat(m_UndoRedo, "Max Duration (s)", &sr->maxDuration, 0.5f, 1.0f, 120.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Record Interval", &sr->recordInterval, 0.001f, 0.01f, 0.5f);
@@ -3337,6 +3370,7 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
     if (spriteOpen) {
         auto* sprite = m_World->GetComponent<ECS::Sprite2DComponent>(entity);
         if (!sprite) return;
+        DrawComponentHelp("sprite2D", m_World, entity);
 
         // Texture path
         char pathBuffer[256];
@@ -3651,6 +3685,7 @@ void EditorLayer::DrawAnimatedSprite2DComponent(ECS::Entity entity) {
     if (animOpen) {
         auto* anim = m_World->GetComponent<ECS::AnimatedSprite2DComponent>(entity);
         if (!anim) return;
+        DrawComponentHelp("animatedSprite2D", m_World, entity);
 
         // --- Feature 3: Animation preview widget ---
         auto* sprite = m_World->GetComponent<ECS::Sprite2DComponent>(entity);
@@ -3812,6 +3847,7 @@ void EditorLayer::DrawTilemapComponent(ECS::Entity entity) {
     if (tilemapOpen) {
         auto* tilemap = m_World->GetComponent<ECS::TilemapComponent>(entity);
         if (!tilemap) return;
+        DrawComponentHelp("tilemap", m_World, entity);
 
         // Tileset path
         char pathBuffer[256];
@@ -4014,6 +4050,7 @@ void EditorLayer::DrawStateMachineComponent(ECS::Entity entity) {
     if (smOpen) {
         auto* sm = m_World->GetComponent<ECS::StateMachineComponent>(entity);
         if (!sm) return;
+        DrawComponentHelp("stateMachine", m_World, entity);
 
         // Current state display
         if (!sm->states.empty()) {
@@ -4289,6 +4326,7 @@ void EditorLayer::DrawDialogueComponent(ECS::Entity entity) {
     if (dlgOpen) {
         auto* dialogue = m_World->GetComponent<ECS::DialogueComponent>(entity);
         if (!dialogue) return;
+        DrawComponentHelp("dialogue", m_World, entity);
 
         // Speaker name
         char nameBuffer[64];
@@ -4529,6 +4567,7 @@ void EditorLayer::DrawDamageComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Damage", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* dmg = m_World->GetComponent<ECS::DamageComponent>(entity);
         if (!dmg) return;
+        DrawComponentHelp("damage", m_World, entity);
 
         InspectorUndo::DragFloat(m_UndoRedo, "Damage", &dmg->damage, 0.5f, 0.0f, 10000.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Knockback Force", &dmg->knockbackForce, 0.5f, 0.0f, 1000.0f);
@@ -4559,6 +4598,7 @@ void EditorLayer::DrawInteractableComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Interactable", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* inter = m_World->GetComponent<ECS::InteractableComponent>(entity);
         if (!inter) return;
+        DrawComponentHelp("interactable", m_World, entity);
 
         char promptBuffer[256];
         strncpy(promptBuffer, inter->promptText.c_str(), sizeof(promptBuffer) - 1);
@@ -4601,6 +4641,7 @@ void EditorLayer::DrawPickupComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Pickup", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* pickup = m_World->GetComponent<ECS::PickupComponent>(entity);
         if (!pickup) return;
+        DrawComponentHelp("pickup", m_World, entity);
 
         const char* types[] = { "Health", "Ammo", "Coin", "Key", "Powerup", "Custom" };
         int type = static_cast<int>(pickup->type);
@@ -4662,6 +4703,7 @@ void EditorLayer::DrawInventoryComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Inventory", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* inv = m_World->GetComponent<ECS::InventoryComponent>(entity);
         if (!inv) return;
+        DrawComponentHelp("inventory", m_World, entity);
 
         int maxSlots = static_cast<int>(inv->maxSlots);
         if (ImGui::InputInt("Max Slots", &maxSlots)) {
@@ -4718,6 +4760,7 @@ void EditorLayer::DrawTimerComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Timer", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* timer = m_World->GetComponent<ECS::TimerComponent>(entity);
         if (!timer) return;
+        DrawComponentHelp("timer", m_World, entity);
 
         InspectorUndo::DragFloat(m_UndoRedo, "Duration", &timer->duration, 0.1f, 0.01f, 3600.0f);
         InspectorUndo::Checkbox(m_UndoRedo, "Loop", &timer->loop);
@@ -4746,6 +4789,7 @@ void EditorLayer::DrawGameOverComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Game Over", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* go = m_World->GetComponent<ECS::GameOverComponent>(entity);
         if (!go) return;
+        DrawComponentHelp("gameOver", m_World, entity);
 
         // Messages
         char victoryBuf[256];
@@ -4800,6 +4844,7 @@ void EditorLayer::DrawAIControllerComponent(ECS::Entity entity) {
     if (UI::SectionHeader("AI Controller", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* ai = m_World->GetComponent<ECS::AIControllerComponent>(entity);
         if (!ai) return;
+        DrawComponentHelp("aiController", m_World, entity);
 
         const char* states[] = { "Idle", "Patrol", "Chase", "Attack", "Flee", "Dead" };
         int state = static_cast<int>(ai->currentState);
@@ -4903,6 +4948,7 @@ void EditorLayer::DrawFollowTargetComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Follow Target", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* follow = m_World->GetComponent<ECS::FollowTargetComponent>(entity);
         if (!follow) return;
+        DrawComponentHelp("followTarget", m_World, entity);
 
         ImGui::Text("Target Entity: %llu", (unsigned long long)follow->target);
         InspectorUndo::DragFloat(m_UndoRedo, "Follow Distance", &follow->followDistance, 0.1f, 0.0f, 100.0f);
@@ -4935,6 +4981,7 @@ void EditorLayer::DrawLookAtTargetComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Look At Target", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* lookAt = m_World->GetComponent<ECS::LookAtTargetComponent>(entity);
         if (!lookAt) return;
+        DrawComponentHelp("lookAtTarget", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Use World Position", &lookAt->useWorldTarget);
         if (lookAt->useWorldTarget) {
@@ -4977,6 +5024,7 @@ void EditorLayer::DrawWaypointComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Waypoint", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* wp = m_World->GetComponent<ECS::WaypointComponent>(entity);
         if (!wp) return;
+        DrawComponentHelp("waypoint", m_World, entity);
 
         char idBuffer[128];
         strncpy(idBuffer, wp->waypointId.c_str(), sizeof(idBuffer) - 1);
@@ -5003,6 +5051,7 @@ void EditorLayer::DrawBillboardComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Billboard", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* bb = m_World->GetComponent<ECS::BillboardComponent>(entity);
         if (!bb) return;
+        DrawComponentHelp("billboard", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Face Camera", &bb->faceCamera);
         InspectorUndo::Checkbox(m_UndoRedo, "Lock Y Axis", &bb->lockY);
@@ -5021,6 +5070,7 @@ void EditorLayer::DrawParticleEmitterComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Particle Emitter", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* emitter = m_World->GetComponent<ECS::ParticleEmitterComponent>(entity);
         if (!emitter) return;
+        DrawComponentHelp("particleEmitter", m_World, entity);
 
         // Preset dropdown
         {
@@ -5119,6 +5169,7 @@ void EditorLayer::DrawCamera2DBoundsComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Camera 2D Bounds", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* bounds = m_World->GetComponent<ECS::Camera2DBoundsComponent>(entity);
         if (!bounds) return;
+        DrawComponentHelp("camera2DBounds", m_World, entity);
 
         // Bounds section
         if (ImGui::TreeNode("Bounds")) {
@@ -5259,6 +5310,7 @@ void EditorLayer::DrawTagComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Tags", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* tags = m_World->GetComponent<ECS::TagComponent>(entity);
         if (!tags) return;
+        DrawComponentHelp("tag", m_World, entity);
 
         for (usize i = 0; i < tags->tags.size(); ++i) {
             ImGui::PushID(static_cast<int>(i));
@@ -5294,6 +5346,7 @@ void EditorLayer::DrawSpawnPointComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Spawn Point", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* spawn = m_World->GetComponent<ECS::SpawnPointComponent>(entity);
         if (!spawn) return;
+        DrawComponentHelp("spawnPoint", m_World, entity);
 
         char idBuffer[128];
         strncpy(idBuffer, spawn->spawnId.c_str(), sizeof(idBuffer) - 1);
@@ -5334,6 +5387,7 @@ void EditorLayer::DrawLayerComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Layer", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* layer = m_World->GetComponent<ECS::LayerComponent>(entity);
         if (!layer) return;
+        DrawComponentHelp("layer", m_World, entity);
 
         int layerVal = static_cast<int>(layer->layer);
         if (ImGui::InputInt("Layer", &layerVal)) {
@@ -5360,6 +5414,7 @@ void EditorLayer::DrawStreamingVolumeComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Streaming Volume", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* vol = m_World->GetComponent<Scene::StreamingVolumeComponent>(entity);
         if (!vol) return;
+        DrawComponentHelp("streamingVolume", m_World, entity);
 
         char chunkBuf[256];
         strncpy(chunkBuf, vol->chunkId.c_str(), sizeof(chunkBuf) - 1);
@@ -5394,6 +5449,7 @@ void EditorLayer::DrawStreamingPortalComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Streaming Portal", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* portal = m_World->GetComponent<Scene::StreamingPortalComponent>(entity);
         if (!portal) return;
+        DrawComponentHelp("streamingPortal", m_World, entity);
 
         char chunkABuf[256], chunkBBuf[256];
         strncpy(chunkABuf, portal->chunkA.c_str(), sizeof(chunkABuf) - 1);
@@ -5425,6 +5481,7 @@ void EditorLayer::DrawCineComponent(ECS::Entity entity) {
     if (UI::SectionHeader(hdr.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* cine = m_World->GetComponent<ECS::CineComponent>(entity);
         if (!cine) return;
+        DrawComponentHelp("cineComponent", m_World, entity);
 
         ImGui::Checkbox("Enabled##CineComp", &cine->enabled);
 
@@ -5497,6 +5554,7 @@ void EditorLayer::DrawSaveDataComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Save Data", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* save = m_World->GetComponent<ECS::SaveDataComponent>(entity);
         if (!save) return;
+        DrawComponentHelp("saveData", m_World, entity);
 
         // Persistence tier dropdown
         const char* tierNames[] = { "Scene State", "Run State", "Meta Progression" };
@@ -5591,6 +5649,7 @@ void EditorLayer::DrawSaveLoadMenuComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Save/Load Menu", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* menu = m_World->GetComponent<ECS::SaveLoadMenuComponent>(entity);
         if (!menu) return;
+        DrawComponentHelp("saveLoadMenu", m_World, entity);
 
         ImGui::Checkbox("Show on Pause", &menu->showOnPause);
         ImGui::Checkbox("Allow Manual Save", &menu->allowManualSave);
@@ -5619,6 +5678,7 @@ void EditorLayer::DrawSkeletonComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Skeleton", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* skel = m_World->GetComponent<ECS::SkeletonComponent>(entity);
         if (!skel) return;
+        DrawComponentHelp("skeleton", m_World, entity);
 
         if (skel->skeleton) {
             ImGui::Text("Name: %s", skel->skeleton->name.empty() ? "(unnamed)" : skel->skeleton->name.c_str());
@@ -5651,6 +5711,7 @@ void EditorLayer::DrawJellyMeshComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Jelly Mesh", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* jelly = m_World->GetComponent<ECS::JellyMeshComponent>(entity);
         if (!jelly) return;
+        DrawComponentHelp("jellyMesh", m_World, entity);
 
         InspectorUndo::SliderFloat(m_UndoRedo, "Spring Stiffness##Jelly", &jelly->springStiffness, 1.0f, 200.0f);
         InspectorUndo::SliderFloat(m_UndoRedo, "Damping##Jelly", &jelly->damping, 0.1f, 20.0f);
@@ -5675,6 +5736,7 @@ void EditorLayer::DrawTetherComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Tether", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* tether = m_World->GetComponent<ECS::TetherComponent>(entity);
         if (!tether) return;
+        DrawComponentHelp("tether", m_World, entity);
 
         // Stem entity (for scoring)
         char stemLabel[128] = "None";
@@ -5737,6 +5799,7 @@ void EditorLayer::DrawGrabbableComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Grabbable", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* grab = m_World->GetComponent<ECS::GrabbableComponent>(entity);
         if (!grab) return;
+        DrawComponentHelp("grabbable", m_World, entity);
 
         InspectorUndo::DragFloat(m_UndoRedo, "Grab Spring", &grab->grabSpring, 1.0f, 1.0f, 500.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Grab Damper", &grab->grabDamper, 0.5f, 0.0f, 100.0f);
@@ -5762,6 +5825,7 @@ void EditorLayer::DrawFlowerStemComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Flower Stem", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* stem = m_World->GetComponent<ECS::FlowerStemComponent>(entity);
         if (!stem) return;
+        DrawComponentHelp("flowerStem", m_World, entity);
 
         InspectorUndo::SliderFloat(m_UndoRedo, "Healthy Bonus", &stem->healthyBonus, 0.0f, 50.0f);
         InspectorUndo::SliderFloat(m_UndoRedo, "Withered Penalty", &stem->witheredPenalty, 0.0f, 50.0f);
@@ -5795,6 +5859,7 @@ void EditorLayer::DrawFlowerParticleConfigComponent(ECS::Entity entity) {
     if (UI::SectionHeader("Flower Particle Config", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* cfg = m_World->GetComponent<ECS::FlowerParticleConfigComponent>(entity);
         if (!cfg) return;
+        DrawComponentHelp("flowerParticleConfig", m_World, entity);
 
         if (ImGui::TreeNode("Break Burst")) {
             InspectorUndo::DragInt(m_UndoRedo, "Count##breakBurst", &cfg->breakBurstCount, 1, 1, 100);
@@ -5987,6 +6052,7 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
     if (scriptOpen) {
         auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
         if (!sc) return;
+        DrawComponentHelp("scriptComponent", m_World, entity);
 
         // Draw each script attachment
         int removeIdx = -1;
@@ -6480,6 +6546,7 @@ void EditorLayer::DrawVehicleController(ECS::Entity entity) {
     if (ctrlOpen) {
         auto* ctrl = m_World->GetComponent<ECS::VehicleController>(entity);
         if (!ctrl) return;
+        DrawComponentHelp("vehicle", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &ctrl->isEnabled);
 
@@ -6564,6 +6631,7 @@ void EditorLayer::DrawSurfaceAlignedController(ECS::Entity entity) {
     if (ctrlOpen) {
         auto* ctrl = m_World->GetComponent<ECS::SurfaceAlignedController>(entity);
         if (!ctrl) return;
+        DrawComponentHelp("surfaceAligned", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &ctrl->isEnabled);
 
@@ -6634,6 +6702,7 @@ void EditorLayer::DrawPossessableComponent(ECS::Entity entity) {
     if (possOpen) {
         auto* poss = m_World->GetComponent<ECS::PossessableComponent>(entity);
         if (!poss) return;
+        DrawComponentHelp("possessable", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Is Possessed", &poss->isPossessed);
         InspectorUndo::Checkbox(m_UndoRedo, "Auto Detect Controller", &poss->autoDetect);
@@ -6672,6 +6741,7 @@ void EditorLayer::DrawLockComponent(ECS::Entity entity) {
     if (open) {
         auto* lock = m_World->GetComponent<ECS::LockComponent>(entity);
         if (!lock) return;
+        DrawComponentHelp("lock", m_World, entity);
 
         char keyBuf[128];
         strncpy(keyBuf, lock->requiredKey.c_str(), sizeof(keyBuf) - 1);
@@ -6729,6 +6799,7 @@ void EditorLayer::DrawPushableComponent(ECS::Entity entity) {
     if (open) {
         auto* push = m_World->GetComponent<ECS::PushableComponent>(entity);
         if (!push) return;
+        DrawComponentHelp("pushable", m_World, entity);
 
         InspectorUndo::DragFloat(m_UndoRedo, "Mass##Push", &push->mass, 0.1f, 0.01f, 1000.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Push Speed##Push", &push->pushSpeed, 0.1f, 0.0f, 50.0f);
@@ -6762,6 +6833,7 @@ void EditorLayer::DrawSwitchComponent(ECS::Entity entity) {
     if (open) {
         auto* sw = m_World->GetComponent<ECS::SwitchComponent>(entity);
         if (!sw) return;
+        DrawComponentHelp("switch", m_World, entity);
 
         const char* types[] = { "Pressure Plate", "Toggle", "One Shot", "Timed", "Sequence" };
         int typeIdx = static_cast<int>(sw->type);
@@ -6816,6 +6888,7 @@ void EditorLayer::DrawGoalZoneComponent(ECS::Entity entity) {
     if (open) {
         auto* goal = m_World->GetComponent<ECS::GoalZoneComponent>(entity);
         if (!goal) return;
+        DrawComponentHelp("goalZone", m_World, entity);
 
         const char* types[] = { "Push Target", "Stand On", "Item Deposit", "Checkpoint", "Level Exit" };
         int typeIdx = static_cast<int>(goal->type);
@@ -6864,6 +6937,7 @@ void EditorLayer::DrawConveyorComponent(ECS::Entity entity) {
     if (open) {
         auto* conv = m_World->GetComponent<ECS::ConveyorComponent>(entity);
         if (!conv) return;
+        DrawComponentHelp("conveyor", m_World, entity);
 
         f32 dir[3] = { conv->direction.x, conv->direction.y, conv->direction.z };
         InspectorUndo::DragFloat3(m_UndoRedo, "Direction##Conv", dir, [conv](f32 x, f32 y, f32 z) { conv->direction = Math::Vector3(x, y, z); }, 0.01f, -1.0f, 1.0f);
@@ -6888,6 +6962,7 @@ void EditorLayer::DrawTeleporterComponent(ECS::Entity entity) {
     if (open) {
         auto* tp = m_World->GetComponent<ECS::TeleporterComponent>(entity);
         if (!tp) return;
+        DrawComponentHelp("teleporter", m_World, entity);
 
         f32 targetPos[3] = { tp->targetPosition.x, tp->targetPosition.y, tp->targetPosition.z };
         InspectorUndo::DragFloat3(m_UndoRedo, "Target Position##Tele", targetPos, [tp](f32 x, f32 y, f32 z) { tp->targetPosition = Math::Vector3(x, y, z); }, 0.1f);
@@ -6917,6 +6992,7 @@ void EditorLayer::DrawDestructibleComponent(ECS::Entity entity) {
     if (open) {
         auto* dest = m_World->GetComponent<ECS::DestructibleComponent>(entity);
         if (!dest) return;
+        DrawComponentHelp("destructible", m_World, entity);
 
         InspectorUndo::DragFloat(m_UndoRedo, "Health##Dest", &dest->health, 0.1f, 0.0f, 10000.0f);
         InspectorUndo::Checkbox(m_UndoRedo, "Destroy On Hit##Dest", &dest->destroyOnHit);
@@ -6952,6 +7028,7 @@ void EditorLayer::DrawCurlNoiseFieldComponent(ECS::Entity entity) {
     if (open) {
         auto* cn = m_World->GetComponent<ECS::CurlNoiseFieldComponent>(entity);
         if (!cn) return;
+        DrawComponentHelp("curlNoiseField", m_World, entity);
 
         InspectorUndo::DragInt(m_UndoRedo, "Octaves##CNF", &cn->octaves, 1, 1, 8);
         InspectorUndo::DragFloat(m_UndoRedo, "Frequency##CNF", &cn->frequency, 0.01f, 0.01f, 10.0f);
@@ -7004,6 +7081,7 @@ void EditorLayer::DrawFractureConfigComponent(ECS::Entity entity) {
     if (open) {
         auto* fc = m_World->GetComponent<ECS::FractureConfigComponent>(entity);
         if (!fc) return;
+        DrawComponentHelp("fractureConfig", m_World, entity);
 
         i32 fragCount = static_cast<i32>(fc->fragmentCount);
         if (InspectorUndo::DragInt(m_UndoRedo, "Fragment Count##FC", &fragCount, 1, 2, 64)) {
@@ -7060,6 +7138,7 @@ void EditorLayer::DrawMovingPlatformComponent(ECS::Entity entity) {
     if (open) {
         auto* plat = m_World->GetComponent<ECS::MovingPlatformComponent>(entity);
         if (!plat) return;
+        DrawComponentHelp("movingPlatform", m_World, entity);
 
         // Waypoints list
         ImGui::Text("Waypoints: %zu", plat->waypoints.size());
@@ -7109,6 +7188,7 @@ void EditorLayer::DrawDamageResistanceComponent(ECS::Entity entity) {
     if (open) {
         auto* r = m_World->GetComponent<ECS::DamageResistanceComponent>(entity);
         if (!r) return;
+        DrawComponentHelp("damageResistance", m_World, entity);
         InspectorUndo::SliderFloat(m_UndoRedo, "Physical", &r->physicalMult, 0.0f, 3.0f, "%.2f");
         InspectorUndo::SliderFloat(m_UndoRedo, "Fire", &r->fireMult, 0.0f, 3.0f, "%.2f");
         InspectorUndo::SliderFloat(m_UndoRedo, "Ice", &r->iceMult, 0.0f, 3.0f, "%.2f");
@@ -7132,6 +7212,7 @@ void EditorLayer::DrawResourceComponent(ECS::Entity entity) {
     if (open) {
         auto* r = m_World->GetComponent<ECS::ResourceComponent>(entity);
         if (!r) return;
+        DrawComponentHelp("resource", m_World, entity);
 
         char buf[64];
         strncpy(buf, r->resourceName.c_str(), sizeof(buf) - 1);
@@ -7178,6 +7259,7 @@ void EditorLayer::DrawFootstepComponent(ECS::Entity entity) {
     if (open) {
         auto* f = m_World->GetComponent<ECS::FootstepComponent>(entity);
         if (!f) return;
+        DrawComponentHelp("footstep", m_World, entity);
 
         char walkBuf[256], runBuf[256];
         strncpy(walkBuf, f->defaultWalkSound.c_str(), sizeof(walkBuf) - 1); walkBuf[sizeof(walkBuf) - 1] = '\0';
@@ -7231,6 +7313,7 @@ void EditorLayer::DrawPoolableComponent(ECS::Entity entity) {
     if (open) {
         auto* p = m_World->GetComponent<ECS::PoolableComponent>(entity);
         if (!p) return;
+        DrawComponentHelp("poolable", m_World, entity);
 
         char buf[64];
         strncpy(buf, p->poolId.c_str(), sizeof(buf) - 1); buf[sizeof(buf) - 1] = '\0';
@@ -7254,6 +7337,7 @@ void EditorLayer::DrawQuestStateComponent(ECS::Entity entity) {
     if (open) {
         auto* q = m_World->GetComponent<ECS::QuestStateComponent>(entity);
         if (!q) return;
+        DrawComponentHelp("questState", m_World, entity);
 
         char buf[128];
         strncpy(buf, q->questId.c_str(), sizeof(buf) - 1); buf[sizeof(buf) - 1] = '\0';
@@ -7306,6 +7390,7 @@ void EditorLayer::DrawHUDWidgetComponent(ECS::Entity entity) {
     if (open) {
         auto* h = m_World->GetComponent<ECS::HUDWidgetComponent>(entity);
         if (!h) return;
+        DrawComponentHelp("hudWidget", m_World, entity);
 
         const char* types[] = { "Health Bar", "Resource Bar", "Label", "Objective Marker", "Crosshair", "Minimap" };
         int type = static_cast<int>(h->type);
@@ -7368,6 +7453,7 @@ void EditorLayer::DrawCinematicCameraComponent(ECS::Entity entity) {
     if (open) {
         auto* c = m_World->GetComponent<ECS::CinematicCameraComponent>(entity);
         if (!c) return;
+        DrawComponentHelp("cinematicCamera", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Loop", &c->loop);
         InspectorUndo::Checkbox(m_UndoRedo, "Auto Play", &c->autoPlay);
@@ -7443,6 +7529,7 @@ void EditorLayer::DrawTweenComponent(ECS::Entity entity) {
     if (open) {
         auto* tc = m_World->GetComponent<ECS::TweenComponent>(entity);
         if (!tc) return;
+        DrawComponentHelp("tween", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Auto-Play", &tc->autoPlay);
 
@@ -7566,6 +7653,7 @@ void EditorLayer::DrawAnimationRecorderComponent(ECS::Entity entity) {
     if (open) {
         auto* rec = m_World->GetComponent<ECS::AnimationRecorderComponent>(entity);
         if (!rec) return;
+        DrawComponentHelp("animationRecorder", m_World, entity);
 
         // Animation name input
         char nameBuf[128];
@@ -7886,6 +7974,7 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
 
     auto* canvas = m_World->GetComponent<GUI::UICanvasComponent>(entity);
     if (!canvas) return;
+    DrawComponentHelp("uiCanvas", m_World, entity);
 
     // --- Canvas Settings ---
     char nameBuf[128];
@@ -8672,6 +8761,7 @@ void EditorLayer::DrawQuestFlowComponent(ECS::Entity entity) {
 void EditorLayer::DrawNetworkIdentityComponent(ECS::Entity entity) {
     auto* net = m_World->GetComponent<ECS::NetworkIdentityComponent>(entity);
     if (!net) return;
+    DrawComponentHelp("networkIdentity", m_World, entity);
 
     bool open = UI::SectionHeader("[N] Network Identity", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
@@ -8696,6 +8786,7 @@ void EditorLayer::DrawNetworkIdentityComponent(ECS::Entity entity) {
 void EditorLayer::DrawNetworkTransformComponent(ECS::Entity entity) {
     auto* nt = m_World->GetComponent<ECS::NetworkTransformComponent>(entity);
     if (!nt) return;
+    DrawComponentHelp("networkTransform", m_World, entity);
 
     bool open = UI::SectionHeader("Network Transform", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
@@ -8733,6 +8824,7 @@ void EditorLayer::DrawElementalSurfaceComponent(ECS::Entity entity) {
     if (open) {
         auto* surface = m_World->GetComponent<ECS::ElementalSurfaceComponent>(entity);
         if (!surface) return;
+        DrawComponentHelp("elementalSurface", m_World, entity);
 
         InspectorUndo::SliderFloat(m_UndoRedo, "Flammability", &surface->flammability, 0.0f, 1.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Accumulation Rate", &surface->accumulationRate, 0.05f, 0.0f, 5.0f);
@@ -8776,6 +8868,7 @@ void EditorLayer::DrawElementalEmitterComponent(ECS::Entity entity) {
     if (open) {
         auto* emitter = m_World->GetComponent<ECS::ElementalEmitterComponent>(entity);
         if (!emitter) return;
+        DrawComponentHelp("elementalEmitter", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Active##ElemEmit", &emitter->active);
 
@@ -8830,6 +8923,7 @@ void EditorLayer::DrawElementalVolumeComponent(ECS::Entity entity) {
     if (open) {
         auto* vol = m_World->GetComponent<ECS::ElementalVolumeComponent>(entity);
         if (!vol) return;
+        DrawComponentHelp("elementalVolume", m_World, entity);
 
         f32 extents[3] = { vol->halfExtents.x, vol->halfExtents.y, vol->halfExtents.z };
         if (InspectorUndo::DragFloat3(m_UndoRedo, "Half Extents##ElemVol", extents,
@@ -8868,6 +8962,7 @@ void EditorLayer::DrawDynamicDifficultyComponent(ECS::Entity entity) {
     if (open) {
         auto* dd = m_World->GetComponent<ECS::DynamicDifficultyComponent>(entity);
         if (!dd) return;
+        DrawComponentHelp("dynamicDifficulty", m_World, entity);
 
         // --- Mode ---
         if (ImGui::TreeNodeEx("Mode", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -9048,6 +9143,7 @@ void EditorLayer::DrawArtStyleComponent(ECS::Entity entity) {
     if (open) {
         auto* as = m_World->GetComponent<ECS::ArtStyleComponent>(entity);
         if (!as) return;
+        DrawComponentHelp("artStyle", m_World, entity);
 
         // Style selector
         const char* styleNames[] = {
@@ -9284,6 +9380,7 @@ void EditorLayer::DrawBoneAttachmentComponent(ECS::Entity entity) {
 
     auto* ba = m_World->GetComponent<ECS::BoneAttachmentComponent>(entity);
     if (!ba) return;
+    DrawComponentHelp("boneAttachment", m_World, entity);
 
     // Target entity picker
     u64 targetId = static_cast<u64>(ba->targetEntity);

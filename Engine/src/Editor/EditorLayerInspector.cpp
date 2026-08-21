@@ -19,6 +19,9 @@
 #include "Enjin/ECS/Components/Swarm.h"
 #include "Enjin/ECS/Components/DungeonGenerator.h"
 #include "Enjin/ECS/Systems/DungeonGeneratorSystem.h"
+#include "Enjin/ECS/Components/RandomBag.h"
+#include "Enjin/ECS/Systems/RandomBagSystem.h"
+#include "Enjin/Editor/ComponentHelp.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
@@ -377,6 +380,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DungeonGeneratorComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::DungeonGeneratorComponent>(e); },
             "procgen dungeon cave rooms tilemap random walk cellular bsp"},
+        {"Random Bag", "Procedural", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::RandomBagComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::RandomBagComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::RandomBagComponent>(e); },
+            "procgen random bag weighted loot table tetris 7-bag deck shuffle spawn draw pull"},
         {"Cloth", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ClothComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ClothComponent>(e); },
@@ -1104,6 +1112,250 @@ static int ScoreComponentMatch(const ComponentEntry& entry, const char* filter) 
 }
 
 
+// Case-insensitive string equality, for matching a relation's partner label to
+// a present module's display name on the wiring board.
+static bool WiringLabelEq(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i)
+        if (std::tolower((unsigned char)a[i]) != std::tolower((unsigned char)b[i])) return false;
+    return true;
+}
+
+// Scale the alpha channel of a packed color (for fading the board in on flip).
+static ImU32 WiringFade(ImU32 col, float alpha) {
+    ImU32 a = (col >> IM_COL32_A_SHIFT) & 0xFF;
+    a = (ImU32)(a * (alpha < 0.0f ? 0.0f : (alpha > 1.0f ? 1.0f : alpha)));
+    return (col & ~(0xFFu << IM_COL32_A_SHIFT)) | (a << IM_COL32_A_SHIFT);
+}
+
+static ImU32 WiringCableColor(Editor::RelationKind k) {
+    using RK = Editor::RelationKind;
+    switch (k) {
+        case RK::Requires:       return IM_COL32(230,165, 75,255);
+        case RK::PairsWith:      return IM_COL32( 60,210,190,255);
+        case RK::Paints:         return IM_COL32( 90,160,240,255);
+        case RK::PulledByScript:
+        case RK::DrivenByScript: return IM_COL32(180,140,235,255);
+        case RK::FeedsRenderer:  return IM_COL32(120,200,140,255);
+        case RK::FeedsPhysics:   return IM_COL32(210,120,120,255);
+    }
+    return IM_COL32(150,150,150,255);
+}
+
+// Truncate a label with an ellipsis so it fits inside maxW pixels.
+static std::string WiringClip(const std::string& s, float maxW) {
+    if (ImGui::CalcTextSize(s.c_str()).x <= maxW) return s;
+    std::string out = s;
+    while (out.size() > 1 && ImGui::CalcTextSize((out + "...").c_str()).x > maxW) out.pop_back();
+    return out + "...";
+}
+
+// ---------------------------------------------------------------------------
+// Per-entity wiring board — the "back of the rack" (Reason-style flip target).
+// Draws the selected entity's components as modules and their ComponentHelp
+// relations as patch cables to partner modules or subsystem sinks (Renderer,
+// Physics, Input, ...). Read-only; cheap draw-list boxes + beziers, 120fps-safe.
+// Return codes: 0 = nothing, 1 = clicked a module (caller flips back to its
+// panel), 2 = open Visual Script editor, 3 = open Shader Graph editor.
+// ---------------------------------------------------------------------------
+enum class WiringAction : int { None = 0, FlipBack = 1, OpenVisualScript = 2, OpenShaderGraph = 3, OpenScript = 4 };
+
+static int DrawEntityWiringBoardImpl(ECS::World* world, ECS::Entity entity, float alpha, std::string* outPayload) {
+    if (!world) { ImGui::TextDisabled("No entity selected."); return 0; }
+
+    // Manual node positions (drag-to-rearrange), kept per session, keyed per entity.
+    static std::unordered_map<std::string, ImVec2> s_manual;
+    static bool s_dragMoved = false;
+    const std::string keyPre = std::to_string((unsigned long long)entity) + "|";
+
+    // Header: color legend (readability) + a reset for the drag layout.
+    struct LegendItem { Editor::RelationKind k; const char* name; };
+    static const LegendItem legend[] = {
+        { Editor::RelationKind::PairsWith,     "pairs" },
+        { Editor::RelationKind::Requires,      "needs" },
+        { Editor::RelationKind::Paints,        "paints" },
+        { Editor::RelationKind::PulledByScript,"script" },
+        { Editor::RelationKind::FeedsRenderer, "renderer" },
+        { Editor::RelationKind::FeedsPhysics,  "physics" },
+    };
+    for (int i = 0; i < (int)(sizeof(legend)/sizeof(legend[0])); ++i) {
+        if (i) ImGui::SameLine();
+        ImVec4 c = ImGui::ColorConvertU32ToFloat4(WiringCableColor(legend[i].k));
+        ImGui::TextColored(c, "--");
+        ImGui::SameLine(0.0f, 4.0f);
+        ImGui::TextDisabled("%s", legend[i].name);
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Reset layout")) {
+        for (auto it = s_manual.begin(); it != s_manual.end(); )
+            it = (it->first.rfind(keyPre, 0) == 0) ? s_manual.erase(it) : std::next(it);
+    }
+    ImGui::Spacing();
+
+    struct Node {
+        std::string label;
+        const Editor::ComponentHelp* help = nullptr;
+        bool isSink = false;
+        int  action = 0;       // WiringAction to fire when a sink is clicked (0 = none)
+        std::string payload;   // e.g. the .as path for a script sink
+        ImVec2 pos{}, size{};
+    };
+    std::vector<Node> nodes;
+    auto findByLabel = [&](const std::string& lbl) -> int {
+        for (int i = 0; i < (int)nodes.size(); ++i)
+            if (WiringLabelEq(nodes[i].label, lbl)) return i;
+        return -1;
+    };
+    auto addModule = [&](const char* label, const char* key) {
+        if (findByLabel(label) >= 0) return;
+        Node n; n.label = label; n.help = Editor::GetComponentHelp(key);
+        nodes.push_back(std::move(n));
+    };
+
+    // Present component modules. Transform isn't in the Add menu (it's implicit).
+    if (world->HasComponent<ECS::TransformComponent>(entity)) addModule("Transform", "transform");
+    for (const auto& ce : GetComponentEntries())
+        if (ce.hasComponent && ce.hasComponent(world, entity))
+            addModule(ce.displayName, ce.componentKey);
+    const int moduleCount = (int)nodes.size();
+
+    // Resolve relations into edges; unmatched targets become right-side sinks.
+    struct Edge { int from, to; Editor::RelationKind kind; };
+    std::vector<Edge> edges;
+    for (int i = 0; i < moduleCount; ++i) {
+        if (!nodes[i].help) continue;
+        for (const auto& rel : nodes[i].help->relations) {
+            if (rel.present && !rel.present(world, entity)) continue; // absent partner: don't clutter
+            int t = findByLabel(rel.label);
+            if (t < 0) { Node s; s.label = rel.label; s.isSink = true; nodes.push_back(std::move(s)); t = (int)nodes.size() - 1; }
+            edges.push_back({ i, t, rel.kind });
+        }
+    }
+
+    // Live node-map / asset cross-references: wire modules to the REAL graphs and
+    // script files this entity uses (reads actual component data, not authored).
+    auto addSinkEdge = [&](const char* fromLabel, const std::string& sinkLabel,
+                           Editor::RelationKind kind, int action = 0, const std::string& payload = "") {
+        int from = findByLabel(fromLabel);
+        if (from < 0) return;
+        Node s; s.label = sinkLabel; s.isSink = true; s.action = action; s.payload = payload;
+        nodes.push_back(std::move(s));
+        edges.push_back({ from, (int)nodes.size() - 1, kind });
+    };
+    if (auto* sc = world->GetComponent<ECS::ScriptComponent>(entity)) {
+        for (const auto& att : sc->scripts) {
+            std::string name = !att.className.empty() ? att.className
+                : std::filesystem::path(att.scriptPath).filename().string();
+            if (name.empty()) name = "script";
+            addSinkEdge("Script", name, Editor::RelationKind::DrivenByScript,
+                        (int)WiringAction::OpenScript, att.scriptPath);
+        }
+    }
+    if (auto* vs = world->GetComponent<ECS::VisualScriptComponent>(entity)) {
+        addSinkEdge("Visual Script",
+                    "Graph (" + std::to_string(vs->graph.GetNodes().size()) + " nodes)",
+                    Editor::RelationKind::DrivenByScript, (int)WiringAction::OpenVisualScript);
+    }
+    if (auto* cs = world->GetComponent<ECS::CustomShaderComponent>(entity)) {
+        std::string gl = cs->graphLabel.empty() ? std::string("Shader Graph")
+                                                 : ("Graph: " + cs->graphLabel);
+        addSinkEdge("Material", gl, Editor::RelationKind::FeedsRenderer, (int)WiringAction::OpenShaderGraph);
+    }
+
+    // Layout: modules stacked left, sinks stacked right; manual drags override.
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const float boxW = 156.0f, boxH = 30.0f, gapY = 12.0f;
+    const float availW = ImGui::GetContentRegionAvail().x;
+    const float leftX  = origin.x + 12.0f;
+    const float rightX = origin.x + availW - boxW - 12.0f;
+    float ly = origin.y + 6.0f, ry = origin.y + 6.0f;
+    for (auto& n : nodes) {
+        n.size = ImVec2(boxW, boxH);
+        if (n.isSink) { n.pos = ImVec2(rightX, ry); ry += boxH + gapY; }
+        else          { n.pos = ImVec2(leftX,  ly); ly += boxH + gapY; }
+        auto it = s_manual.find(keyPre + n.label);
+        if (it != s_manual.end()) n.pos = it->second;
+    }
+    float neededH = std::max(ly, ry) - origin.y + 6.0f;
+    if (neededH < 120.0f) neededH = 120.0f;
+    ImGui::Dummy(ImVec2(availW, neededH)); // reserve scroll height
+
+    // Interaction: an invisible button per node for hover, drag and click.
+    int hovered = -1, result = 0;
+    for (int i = 0; i < (int)nodes.size(); ++i) {
+        ImGui::SetCursorScreenPos(nodes[i].pos);
+        ImGui::PushID(i);
+        ImGui::InvisibleButton("##node", nodes[i].size);
+        if (ImGui::IsItemActivated()) s_dragMoved = false;
+        if (ImGui::IsItemActive()) {
+            ImVec2 md = ImGui::GetIO().MouseDelta;
+            if (md.x != 0.0f || md.y != 0.0f) {
+                s_dragMoved = true;
+                nodes[i].pos = ImVec2(nodes[i].pos.x + md.x, nodes[i].pos.y + md.y);
+                s_manual[keyPre + nodes[i].label] = nodes[i].pos; // persist (session)
+            }
+        }
+        if (ImGui::IsItemHovered()) {
+            hovered = i;
+            if (!nodes[i].isSink && nodes[i].help && nodes[i].help->whatItDoes)
+                ImGui::SetTooltip("%s\n(click to open  |  drag to move)", nodes[i].help->whatItDoes);
+            else if (nodes[i].isSink && nodes[i].action == (int)WiringAction::OpenScript)
+                ImGui::SetTooltip("%s\n(click to open the .as  |  drag to move)", nodes[i].payload.c_str());
+            else if (nodes[i].isSink && nodes[i].action != 0)
+                ImGui::SetTooltip("%s\n(click to open the editor  |  drag to move)", nodes[i].label.c_str());
+            else if (nodes[i].isSink)
+                ImGui::SetTooltip("%s (engine subsystem)", nodes[i].label.c_str());
+        }
+        if (ImGui::IsItemDeactivated() && !s_dragMoved) { // a click, not a drag
+            if (!nodes[i].isSink)          result = (int)WiringAction::FlipBack;
+            else if (nodes[i].action != 0) {
+                result = nodes[i].action;
+                if (outPayload) *outPayload = nodes[i].payload;
+            }
+        }
+        ImGui::PopID();
+    }
+
+    // Cables: fan the endpoints out per node so parallel cables don't overlap.
+    std::vector<int> outTot(nodes.size(), 0), inTot(nodes.size(), 0), outSeen(nodes.size(), 0), inSeen(nodes.size(), 0);
+    for (const auto& e : edges) { outTot[e.from]++; inTot[e.to]++; }
+    const float lane = 8.0f, maxOff = boxH * 0.5f - 5.0f;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    for (const auto& e : edges) {
+        bool lit = (hovered == e.from || hovered == e.to);
+        int oi = outSeen[e.from]++, ii = inSeen[e.to]++;
+        float aOff = (oi - (outTot[e.from] - 1) * 0.5f) * lane;
+        float bOff = (ii - (inTot[e.to]   - 1) * 0.5f) * lane;
+        aOff = std::max(-maxOff, std::min(maxOff, aOff));
+        bOff = std::max(-maxOff, std::min(maxOff, bOff));
+        ImVec2 a = ImVec2(nodes[e.from].pos.x + boxW, nodes[e.from].pos.y + boxH * 0.5f + aOff);
+        ImVec2 b = ImVec2(nodes[e.to].pos.x,          nodes[e.to].pos.y   + boxH * 0.5f + bOff);
+        float dx = (b.x - a.x) * 0.5f; if (dx < 40.0f) dx = 40.0f;
+        ImU32 c = WiringFade(WiringCableColor(e.kind), lit ? alpha : alpha * 0.8f);
+        dl->AddBezierCubic(a, ImVec2(a.x + dx, a.y), ImVec2(b.x - dx, b.y), b, c, lit ? 3.0f : 2.0f);
+        dl->AddCircleFilled(a, 3.0f, c);
+        dl->AddCircleFilled(b, 3.0f, c);
+    }
+    for (int i = 0; i < (int)nodes.size(); ++i) {
+        const Node& n = nodes[i];
+        bool hot = (hovered == i);
+        ImVec2 p0 = n.pos, p1 = ImVec2(n.pos.x + boxW, n.pos.y + boxH);
+        ImU32 fill   = WiringFade(n.isSink ? IM_COL32(40,44,54,255)
+                                           : (hot ? IM_COL32(70,76,92,255) : IM_COL32(54,58,70,255)), alpha);
+        ImU32 border = WiringFade(hot ? IM_COL32(150,195,255,255)
+                                      : (n.isSink ? IM_COL32(90,100,120,255) : IM_COL32(120,150,190,255)),
+                                  alpha);
+        dl->AddRectFilled(p0, p1, fill, 5.0f);
+        dl->AddRect(p0, p1, border, 5.0f, 0, hot ? 2.5f : 1.5f);
+        std::string label = WiringClip(n.label, boxW - 14.0f);
+        ImVec2 ts = ImGui::CalcTextSize(label.c_str());
+        ImVec2 tp = ImVec2(p0.x + (boxW - ts.x) * 0.5f, p0.y + (boxH - ts.y) * 0.5f);
+        dl->AddText(tp, WiringFade(IM_COL32(222,226,234,255), alpha), label.c_str());
+    }
+    if (moduleCount == 0) ImGui::TextDisabled("This entity has no components.");
+    return result;
+}
+
 void EditorLayer::DrawInspectorPanel() {
     ImGuiWindowFlags flags = 0;
     if (m_FocusMode) {
@@ -1117,6 +1369,33 @@ void EditorLayer::DrawInspectorPanel() {
 
     // Set proportional widget width so labels don't consume all space
     ImGui::PushItemWidth(ImGui::GetContentRegionAvail().x * 0.55f);
+
+    // --- Inspector lock: pin the panel to one entity so it stops following the
+    // selection. Toggle captures the current selection; while locked, the whole
+    // panel below runs against the pinned entity. ---
+    if (m_InspectorLocked && (!m_World || !m_World->IsValid(m_InspectorLockedEntity))) {
+        m_InspectorLocked = false; // the pinned entity went away
+        m_InspectorLockedEntity = ECS::INVALID_ENTITY;
+    }
+    if (ImGui::SmallButton(m_InspectorLocked ? "[L] Locked" : "[ ] Lock")) {
+        if (m_InspectorLocked) {
+            m_InspectorLocked = false; m_InspectorLockedEntity = ECS::INVALID_ENTITY;
+        } else if (m_PrimarySelected != ECS::INVALID_ENTITY) {
+            m_InspectorLocked = true; m_InspectorLockedEntity = m_PrimarySelected;
+        }
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Lock this Inspector to the current entity so it stops following what you select");
+    if (m_InspectorLocked) {
+        ImGui::SameLine();
+        std::string lnm = "entity";
+        if (auto* lnc = m_World ? m_World->GetComponent<ECS::NameComponent>(m_InspectorLockedEntity) : nullptr) lnm = lnc->name;
+        ImGui::TextColored(ImVec4(1.0f, 0.82f, 0.3f, 1.0f), "pinned to %s", lnm.c_str());
+    }
+    ImGui::Separator();
+    const bool inspLocked = m_InspectorLocked && m_World && m_World->IsValid(m_InspectorLockedEntity);
+    const ECS::Entity inspSavedPrimary = m_PrimarySelected;
+    if (inspLocked) m_PrimarySelected = m_InspectorLockedEntity;
 
     // Focus ring for keyboard navigation
     if (m_ShowFocusRing && m_FocusedPanel == FocusedPanel::Inspector) {
@@ -1139,7 +1418,7 @@ void EditorLayer::DrawInspectorPanel() {
         ImGui::Separator();
     }
 
-    if (m_SelectedEntities.size() > 1 && m_World) {
+    if (!inspLocked && m_SelectedEntities.size() > 1 && m_World) {
         // Multi-select inspector
         DrawMultiSelectInspector();
     } else if (m_PrimarySelected != ECS::INVALID_ENTITY && m_World) {
@@ -1233,6 +1512,61 @@ void EditorLayer::DrawInspectorPanel() {
         }
         ImGui::Separator();
 
+        // Reason-style flip: front = component panels, back = the wiring board
+        // ("the back of the rack"). Tab (when the Inspector is focused) or the
+        // button toggles; a quick alpha "turn" sells the flip. reducedMotion =
+        // instant swap. State is panel-local (one Inspector).
+        static bool  s_ShowWiring = false;
+        static float s_FlipAnim   = 0.0f;   // 0 = front panels, 1 = wiring board
+        if (ImGui::SmallButton(s_ShowWiring ? "< Back to Panels" : "Flip to Wiring >"))
+            s_ShowWiring = !s_ShowWiring;
+        ImGui::SameLine();
+        ImGui::TextDisabled(s_ShowWiring ? "the wiring behind this entity" : "Tab: see how this entity is wired");
+        if (ImGui::IsWindowFocused() && !ImGui::GetIO().WantTextInput &&
+            ImGui::IsKeyPressed(ImGuiKey_Tab, false))
+            s_ShowWiring = !s_ShowWiring;
+        {
+            float target = s_ShowWiring ? 1.0f : 0.0f;
+            if (m_EditorSettings.reducedMotion) {
+                s_FlipAnim = target;
+            } else {
+                float step = ImGui::GetIO().DeltaTime * 6.0f; // ~0.17s flip
+                if (s_FlipAnim < target) s_FlipAnim = std::min(target, s_FlipAnim + step);
+                else                     s_FlipAnim = std::max(target, s_FlipAnim - step);
+            }
+        }
+        ImGui::Separator();
+        const bool showWiring = s_FlipAnim >= 0.5f;
+        float contentAlpha = std::fabs(s_FlipAnim - 0.5f) * 2.0f; // 1 at ends, 0 mid-flip
+        if (contentAlpha < 0.05f) contentAlpha = 0.05f;
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * contentAlpha);
+        if (showWiring) {
+            std::string wiringPayload;
+            int act = DrawEntityWiringBoardImpl(m_World, m_PrimarySelected, contentAlpha, &wiringPayload);
+            if (act == (int)WiringAction::FlipBack) {
+                s_ShowWiring = false; // clicked a module: flip back to its panel
+            } else if (act == (int)WiringAction::OpenVisualScript) {
+                SetPanelVisibility(EditorPanel::VisualScript, true);
+            } else if (act == (int)WiringAction::OpenShaderGraph) {
+                m_ShaderGraphEditor.SetOpen(true);
+            } else if (act == (int)WiringAction::OpenScript && !wiringPayload.empty()) {
+                // Resolve the .as against the project root and open it in the OS editor.
+                std::string proj = m_SceneManager.GetProjectPath();
+                std::filesystem::path root = proj.empty()
+                    ? std::filesystem::current_path()
+                    : std::filesystem::path(proj).parent_path();
+                std::filesystem::path full = root / wiringPayload;
+                std::string abs = std::filesystem::absolute(full).string();
+#ifdef _WIN32
+                ShellExecuteA(nullptr, "open", abs.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+#elif defined(__APPLE__)
+                if (fork() == 0) { execlp("open", "open", abs.c_str(), (char*)nullptr); _exit(1); }
+#else
+                if (fork() == 0) { execlp("xdg-open", "xdg-open", abs.c_str(), (char*)nullptr); _exit(1); }
+#endif
+            }
+        } else {
+
         // Transform component
         if (m_World->HasComponent<ECS::TransformComponent>(m_PrimarySelected)) {
             DrawTransformComponent(m_PrimarySelected);
@@ -1270,6 +1604,7 @@ void EditorLayer::DrawInspectorPanel() {
             if (mrOpen) {
                 auto* mr = m_World->GetComponent<ECS::MeshRendererComponent>(m_PrimarySelected);
                 if (mr) {
+                    DrawComponentHelp("meshRenderer", m_World, m_PrimarySelected);
                     ImGui::Checkbox("Enabled##MR", &mr->enabled);
                     ImGui::Checkbox("Frustum Cull##MR", &mr->frustumCull);
                     ImGui::Checkbox("Occlusion Cull##MR", &mr->occlusionCull);
@@ -1459,10 +1794,11 @@ void EditorLayer::DrawInspectorPanel() {
                 ImGui::EndPopup();
             }
             if (!emRemoved && emOpen) {
+                DrawComponentHelp("gpuParticleEmitter", m_World, m_PrimarySelected);
                 // Load Preset just FILLS the fields below (they stay editable), so
                 // gravity/size/lifetime are always visible. Index 0 is "-" (no-op).
                 int preset = 0;
-                const char* names[] = {"Load Preset...","Smoke","Fire","Sparks","Blood","Mist","Spray","Dust","Magic","Snow","Liquid"};
+                const char* names[] = {"Load Preset...","Smoke","Fire","Sparks","Blood","Mist","Spray","Dust","Magic","Snow","Liquid","Impact","Pickup"};
                 if (ImGui::Combo("Load Preset", &preset, names, IM_ARRAYSIZE(names)) && preset > 0) {
                     // names[1..9] map to GPUParticlePreset Smoke(1)..Snow(9).
                     em->LoadPreset(static_cast<Effects::GPUParticlePreset>(preset));
@@ -1470,7 +1806,23 @@ void EditorLayer::DrawInspectorPanel() {
 
                 ImGui::Checkbox("Emitting", &em->emitting);
                 ImGui::DragFloat("Rate (/sec)", &em->spawnRate, 5.0f, 0.0f, 5000.0f);
-                ImGui::DragFloat3("Direction", &em->direction.x, 0.05f);
+
+                // 2D mode aims with a single Angle and keeps particles in the sprite
+                // plane; 3D mode uses the full direction vector.
+                ImGui::Checkbox("2D Mode", &em->emit2D);
+                if (ImGui::IsItemHovered())
+                    ImGui::SetItemTooltip("For 2D scenes: keep particles in this plane and aim with one Angle");
+                if (em->emit2D) {
+                    ImGui::SliderFloat("Angle", &em->angle2D, 0.0f, 360.0f, "%.0f deg");
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(0=right, 90=up)");
+                    ImGui::DragInt("Sorting Layer", &em->sortingLayer, 0.1f, -64, 64);
+                    ImGui::DragInt("Order In Layer", &em->orderInLayer, 0.1f, -512, 512);
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetItemTooltip("Higher draws in front. Match your sprites' layers to sit behind/in front of them.");
+                } else {
+                    ImGui::DragFloat3("Direction", &em->direction.x, 0.05f);
+                }
 
                 const char* shapes[] = {"Point","Sphere","Hemisphere","Cone","Box","Disc (2D)","Line (2D)"};
                 int shape = static_cast<int>(em->shape);
@@ -1565,6 +1917,7 @@ void EditorLayer::DrawInspectorPanel() {
                 ImGui::EndPopup();
             }
             if (!clRemoved && clOpen) {
+                DrawComponentHelp("cloth", m_World, m_PrimarySelected);
                 bool rebuild = false;
                 rebuild |= ImGui::DragFloat("Width", &cl->width, 0.05f, 0.1f, 50.0f);
                 rebuild |= ImGui::DragFloat("Height", &cl->height, 0.05f, 0.1f, 50.0f);
@@ -1635,6 +1988,7 @@ void EditorLayer::DrawInspectorPanel() {
                 ImGui::EndPopup();
             }
             if (!swRemoved && swOpen) {
+                DrawComponentHelp("swarm", m_World, m_PrimarySelected);
                 i32 count = static_cast<i32>(sw->count);
                 if (ImGui::DragInt("Count", &count, 10, 1, 200000)) sw->count = static_cast<u32>(count < 1 ? 1 : count);
                 i32 renderCap = static_cast<i32>(sw->renderCap);
@@ -1662,6 +2016,7 @@ void EditorLayer::DrawInspectorPanel() {
                 ImGui::EndPopup();
             }
             if (!dgRemoved && dgOpen) {
+                DrawComponentHelp("dungeonGenerator", m_World, m_PrimarySelected);
                 const char* algos[] = { "Random Walk (cave)", "Cellular (organic caves)", "BSP (rooms + corridors)" };
                 int a = static_cast<int>(dg->algorithm);
                 if (ImGui::Combo("Algorithm", &a, algos, IM_ARRAYSIZE(algos)))
@@ -1711,6 +2066,93 @@ void EditorLayer::DrawInspectorPanel() {
                 ImGui::TextDisabled("(paints this entity's Tilemap; add a Tilemap + tileset to see it)");
             }
         }
+        if (auto* bag = m_World->GetComponent<ECS::RandomBagComponent>(m_PrimarySelected)) {
+            bool bagOpen = ImGui::CollapsingHeader("Random Bag", ImGuiTreeNodeFlags_DefaultOpen);
+            bool bagRemoved = false;
+            if (ImGui::BeginPopupContextItem("RandomBagCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::RandomBagComponent>(m_PrimarySelected, "randomBag", "Random Bag");
+                    bagRemoved = true;
+                }
+                ImGui::EndPopup();
+            }
+            if (!bagRemoved && bagOpen) {
+                DrawComponentHelp("randomBag", m_World, m_PrimarySelected);
+
+                const char* modes[] = {
+                    "Uniform (equal chance, repeats)",
+                    "Weighted (by weight, repeats)",
+                    "No-Replace / 7-bag (each once, then reshuffle)",
+                    "Deck (each item 'weight' times, then reshuffle)"
+                };
+                int m = static_cast<int>(bag->mode);
+                if (ImGui::Combo("Mode", &m, modes, IM_ARRAYSIZE(modes)))
+                    bag->mode = static_cast<ECS::RandomBagComponent::Mode>(m);
+
+                const bool usesWeight = (bag->mode == ECS::RandomBagComponent::Mode::Weighted ||
+                                         bag->mode == ECS::RandomBagComponent::Mode::Deck);
+                const bool usesRepeatGuard = (bag->mode == ECS::RandomBagComponent::Mode::Uniform ||
+                                              bag->mode == ECS::RandomBagComponent::Mode::Weighted);
+
+                ImGui::Separator();
+                ImGui::TextDisabled(usesWeight ? "Items  (name + weight)" : "Items  (name)");
+                int removeIdx = -1;
+                for (int i = 0; i < static_cast<int>(bag->items.size()); ++i) {
+                    ImGui::PushID(i);
+                    char buf[128];
+                    std::snprintf(buf, sizeof(buf), "%s", bag->items[i].name.c_str());
+                    ImGui::SetNextItemWidth(usesWeight ? 150.0f : 220.0f);
+                    if (ImGui::InputText("##name", buf, sizeof(buf)))
+                        bag->items[i].name = buf;
+                    if (usesWeight) {
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(70.0f);
+                        ImGui::DragFloat("##w", &bag->items[i].weight, 0.1f, 0.0f, 100000.0f, "%.2f");
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("X")) removeIdx = i;
+                    ImGui::PopID();
+                }
+                if (removeIdx >= 0) bag->items.erase(bag->items.begin() + removeIdx);
+                if (ImGui::Button("+ Add Item")) {
+                    ECS::RandomBagComponent::Item it;
+                    it.name = "item" + std::to_string(bag->items.size());
+                    bag->items.push_back(it);
+                }
+
+                ImGui::Separator();
+                i32 seed = static_cast<i32>(bag->seed);
+                if (ImGui::DragInt("Seed (0 = random)", &seed, 1, 0, 2000000000))
+                    bag->seed = static_cast<u32>(seed < 0 ? 0 : seed);
+                if (usesRepeatGuard)
+                    ImGui::Checkbox("Avoid immediate repeat", &bag->avoidImmediateRepeat);
+
+                ImGui::Separator();
+                if (ImGui::Button("Test Draw")) {
+                    std::string r = ECS::RandomBagSystem::Draw(*bag);
+                    bag->editorPreview = r.empty() ? "(empty bag)" : r;
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Draw x10")) {
+                    std::string line;
+                    for (int k = 0; k < 10; ++k) {
+                        std::string r = ECS::RandomBagSystem::Draw(*bag);
+                        line += (r.empty() ? "-" : r);
+                        if (k < 9) line += ", ";
+                    }
+                    bag->editorPreview = line;
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Reset")) {
+                    ECS::RandomBagSystem::Reset(*bag);
+                    bag->editorPreview.clear();
+                }
+                if (!bag->editorPreview.empty()) {
+                    ImGui::TextWrapped("Drew: %s", bag->editorPreview.c_str());
+                }
+                ImGui::TextDisabled("remaining before reshuffle: %u", ECS::RandomBagSystem::Remaining(*bag));
+            }
+        }
         if (m_World->HasComponent<ECS::VisualScriptComponent>(m_PrimarySelected)) {
             bool vsOpen = ImGui::CollapsingHeader("Visual Script", ImGuiTreeNodeFlags_DefaultOpen);
             bool vsRemoved = false;
@@ -1724,6 +2166,7 @@ void EditorLayer::DrawInspectorPanel() {
             if (!vsRemoved && vsOpen) {
                 auto* vs = m_World->GetComponent<ECS::VisualScriptComponent>(m_PrimarySelected);
                 if (vs) {
+                    DrawComponentHelp("visualScript", m_World, m_PrimarySelected);
                     ImGui::Checkbox("Enabled", &vs->enabled);
                     ImGui::Text("Nodes: %zu  Variables: %zu  Functions: %zu",
                                 vs->graph.GetNodes().size(), vs->variables.size(), vs->functions.size());
@@ -1871,6 +2314,7 @@ void EditorLayer::DrawInspectorPanel() {
             } else if (ikOpen) {
                 auto* ik = m_World->GetComponent<ECS::LookAtIKComponent>(m_PrimarySelected);
                 if (ik) {
+                    DrawComponentHelp("lookAtIK", m_World, m_PrimarySelected);
                     ImGui::SeparatorText("Bones");
                     char headBone[128];
                     strncpy(headBone, ik->headBoneName.c_str(), sizeof(headBone) - 1);
@@ -1912,6 +2356,7 @@ void EditorLayer::DrawInspectorPanel() {
             } else if (ikOpen) {
                 auto* ik = m_World->GetComponent<ECS::InteractionIKComponent>(m_PrimarySelected);
                 if (ik) {
+                    DrawComponentHelp("interactionIK", m_World, m_PrimarySelected);
                     ImGui::SeparatorText("Bones");
                     char handBone[128];
                     strncpy(handBone, ik->handBoneName.c_str(), sizeof(handBone) - 1);
@@ -1965,6 +2410,7 @@ void EditorLayer::DrawInspectorPanel() {
             } else if (ikOpen) {
                 auto* ik = m_World->GetComponent<ECS::TwoBoneIKComponent>(m_PrimarySelected);
                 if (ik) {
+                    DrawComponentHelp("twoBoneIK", m_World, m_PrimarySelected);
                     ImGui::SeparatorText("Bone Chain");
                     char rootBone[128];
                     strncpy(rootBone, ik->rootBoneName.c_str(), sizeof(rootBone) - 1);
@@ -2056,6 +2502,7 @@ void EditorLayer::DrawInspectorPanel() {
             if (pmOpen) {
                 auto* pm = m_World->GetComponent<ECS::ParallaxMachineComponent>(m_PrimarySelected);
                 if (pm) {
+                    DrawComponentHelp("parallaxMachine", m_World, m_PrimarySelected);
                     ImGui::Checkbox("Enabled##Parallax", &pm->enabled);
                     ImGui::DragFloat("Global Speed##Parallax", &pm->globalSpeed, 0.01f, 0.0f, 10.0f, "%.2f");
                     ImGui::DragFloat2("Origin##Parallax", &pm->origin.x, 0.1f);
@@ -2167,6 +2614,7 @@ void EditorLayer::DrawInspectorPanel() {
             if (waterOpen) {
                 auto* iw = m_World->GetComponent<Effects::InteractiveWaterComponent>(m_PrimarySelected);
                 if (iw) {
+                    DrawComponentHelp("interactiveWater", m_World, m_PrimarySelected);
                     ImGui::Text("Grid");
                     ImGui::DragInt("Resolution", &iw->gridResolution, 1, 16, 256);
                     ImGui::DragFloat("Grid Size", &iw->gridSize, 0.1f, 1.0f, 200.0f);
@@ -2226,6 +2674,7 @@ void EditorLayer::DrawInspectorPanel() {
             if (interactorOpen) {
                 auto* wi = m_World->GetComponent<Effects::WaterInteractorComponent>(m_PrimarySelected);
                 if (wi) {
+                    DrawComponentHelp("waterInteractor", m_World, m_PrimarySelected);
                     ImGui::DragFloat("Splash Multiplier", &wi->splashMultiplier, 0.1f, 0.0f, 10.0f);
                     ImGui::DragFloat("Wake Width", &wi->wakeWidth, 0.1f, 0.0f, 5.0f);
                     ImGui::Checkbox("Generate Wake", &wi->generateWake);
@@ -2285,6 +2734,7 @@ void EditorLayer::DrawInspectorPanel() {
             if (animOpen) {
                 auto* animComp = m_World->GetComponent<ECS::AnimatorComponent>(m_PrimarySelected);
                 if (animComp) {
+                    DrawComponentHelp("animator", m_World, m_PrimarySelected);
                     auto& animator = animComp->animator;
                     const auto& animations = animator.GetAnimations();
 
@@ -3806,6 +4256,9 @@ void EditorLayer::DrawInspectorPanel() {
             m_ComponentSearchSelectedIndex = -1;
         }
 
+        } // end front-panel branch (else of the wiring flip)
+        ImGui::PopStyleVar(); // flip content alpha
+
         // VWS: fold whatever the inspector changed this frame into the active layer.
         // RecordEntityChanges is a no-op when nothing differs from the snapshot. The "before"
         // is the frozen pre-edit baseline, so the diff captures the whole edit cumulatively.
@@ -3841,6 +4294,8 @@ void EditorLayer::DrawInspectorPanel() {
     } else {
         DrawEmptyState("< >", "No Entity Selected", "Select an entity in the Hierarchy to inspect it");
     }
+
+    if (inspLocked) m_PrimarySelected = inspSavedPrimary; // restore real selection
 
     ImGui::PopItemWidth();
     ImGui::End();

@@ -322,20 +322,22 @@ void EditorLayer::DrawProjectHubInner() {
             // Dashboard mode: full-width, no sidebar, no centered title
             DrawHubLandingPage(drawList, area, 0.0f, 0.0f);
         } else {
-            // Wizard/Demos pages: draw centered title + sidebar
-            ImFont* font = ImGui::GetFont();
+            // Wizard/Demos pages: draw centered title + sidebar. The brand uses
+            // the heading typeface (Playfair Display) so it reads classier.
+            ImFont* font = (m_ImGuiLayer && m_ImGuiLayer->GetHeadingFont())
+                ? m_ImGuiLayer->GetHeadingFont() : ImGui::GetFont();
             f32 cx = io.DisplaySize.x * 0.5f;
             const char* title = "TEGE";
             f32 titleFontSize = 64.0f;
             ImVec2 titleSz = font->CalcTextSizeA(titleFontSize, FLT_MAX, 0.0f, title);
             ImVec2 titlePos(cx - titleSz.x * 0.5f, 28.0f);
-            drawList->AddText(nullptr, titleFontSize, titlePos,
+            drawList->AddText(font, titleFontSize, titlePos,
                 IM_COL32(199, 218, 196, 255), title);
 
             const char* subtitle = "Game Engine";
             f32 subFontSize = 24.0f;
             ImVec2 subSz = font->CalcTextSizeA(subFontSize, FLT_MAX, 0.0f, subtitle);
-            drawList->AddText(nullptr, subFontSize,
+            drawList->AddText(font, subFontSize,
                 ImVec2(cx - subSz.x * 0.5f, titlePos.y + titleSz.y + 2.0f),
                 IM_COL32(140, 160, 140, 160), subtitle);
 
@@ -633,6 +635,9 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
 void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*contentY*/, f32 /*sidebarW*/) {
     ImGuiIO& io = ImGui::GetIO();
     ImFont* font = ImGui::GetFont();
+    // Brand mark uses the heading typeface (Playfair Display) for a classier look.
+    ImFont* brandFont = (m_ImGuiLayer && m_ImGuiLayer->GetHeadingFont())
+        ? m_ImGuiLayer->GetHeadingFont() : font;
 
     // Thumbnail color palette for project cards
     static const ImU32 kProjectPalette[] = {
@@ -669,14 +674,14 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*c
     // Left: TEGE branding
     f32 brandFontSize = 64.0f;
     const char* brandText = "TEGE";
-    ImVec2 brandSz = font->CalcTextSizeA(brandFontSize, FLT_MAX, 0.0f, brandText);
+    ImVec2 brandSz = brandFont->CalcTextSizeA(brandFontSize, FLT_MAX, 0.0f, brandText);
     f32 brandY = (headerH - brandSz.y) * 0.5f;
-    dl->AddText(nullptr, brandFontSize, ImVec2(24.0f, brandY), IM_COL32(199, 218, 196, 255), brandText);
+    dl->AddText(brandFont, brandFontSize, ImVec2(24.0f, brandY), IM_COL32(199, 218, 196, 255), brandText);
 
     f32 subFontSize = 24.0f;
     const char* subText = "Game Engine";
-    ImVec2 subSz = font->CalcTextSizeA(subFontSize, FLT_MAX, 0.0f, subText);
-    dl->AddText(nullptr, subFontSize,
+    ImVec2 subSz = brandFont->CalcTextSizeA(subFontSize, FLT_MAX, 0.0f, subText);
+    dl->AddText(brandFont, subFontSize,
         ImVec2(24.0f + brandSz.x + 14.0f, brandY + brandSz.y - subSz.y - 2.0f),
         IM_COL32(140, 160, 140, 180), subText);
 

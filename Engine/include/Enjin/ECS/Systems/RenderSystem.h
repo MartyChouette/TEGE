@@ -58,6 +58,7 @@ namespace Enjin { namespace Effects {
     class FluidSimulation;
     class ElementalSystem;
     class GPUParticleSystem;
+    enum class GPUParticlePreset : unsigned char; // defined in Effects/GPUParticleTypes.h
     class SpriteBatchRenderer;
     class SpriteTextureAtlas;
     class GrassRenderer;
@@ -563,6 +564,9 @@ public:
 #endif
     // Seed GPU particles (wakes the compute sim; Debug Workstation has a burst button)
     void SpawnGPUParticles(u32 count, const Math::Vector3& position, const Math::Vector3& direction);
+    // Fire-and-forget one-shot styled by a preset (hits, sparks, pickups). No entity needed.
+    void SpawnGPUParticlePreset(u32 count, const Math::Vector3& position,
+                                const Math::Vector3& direction, Effects::GPUParticlePreset preset);
     // Material surface burst: maps the MaterialComponent surfaceParticle id
     // (1=Dust,2=Grass,3=Spark,4=Splash,5=Smoke,6=Snow) to a particle preset so
     // footsteps and impacts look like the surface instead of a generic puff.

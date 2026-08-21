@@ -2,6 +2,7 @@
 #include "Enjin/Editor/EditorWidgets.h"
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
+#include "Enjin/Editor/ComponentHelp.h"
 #include "Enjin/Renderer/Upscaling/IUpscaler.h"
 #include "Enjin/Core/Version.h"
 #include <GLFW/glfw3.h>
@@ -204,6 +205,7 @@ void EditorLayer::DrawPostProcessVolumeComponent(ECS::Entity entity) {
     if (UI::SectionHeader("[PP] Post-Process Volume", ImGuiTreeNodeFlags_DefaultOpen)) {
         auto* vol = m_World->GetComponent<ECS::PostProcessVolumeComponent>(entity);
         if (!vol) return;
+        DrawComponentHelp("postProcessVolume", m_World, entity);
 
         InspectorUndo::Checkbox(m_UndoRedo, "Active##PPVol", &vol->isActive);
         InspectorUndo::Checkbox(m_UndoRedo, "Global##PPVol", &vol->isGlobal);

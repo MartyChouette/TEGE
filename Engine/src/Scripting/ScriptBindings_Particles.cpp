@@ -4,6 +4,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include <angelscript.h>
 #include <cassert>
 
@@ -108,6 +109,13 @@ static void Particle_ApplyPreset(u64 entity, const std::string& preset) {
     if (emitter) ECS::ApplyParticlePreset(*emitter, preset);
 }
 
+// Fire a one-shot burst from an entity's GPU particle emitter (hits, sparks).
+static void GPUParticle_Burst(u64 entity, int count) {
+    if (!s_BindingsWorld || count <= 0) return;
+    auto* em = s_BindingsWorld->GetComponent<ECS::GPUParticleEmitterComponent>(entity);
+    if (em) { em->burstCount = static_cast<u32>(count); em->burstNow = true; }
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
@@ -151,6 +159,10 @@ void RegisterParticleBindings(asIScriptEngine* engine) {
     // Preset
     AS_CHECK(engine->RegisterGlobalFunction("void Particle_ApplyPreset(uint64, const string &in)",
         ENJIN_AS_FN(Particle_ApplyPreset), ENJIN_AS_CALL_CDECL));
+
+    // GPU emitter one-shot burst (fire a hit/spark from an entity's GPU emitter)
+    AS_CHECK(engine->RegisterGlobalFunction("void GPUParticle_Burst(uint64, int)",
+        ENJIN_AS_FN(GPUParticle_Burst), ENJIN_AS_CALL_CDECL));
 }
 
 } // namespace Scripting
