@@ -1362,4 +1362,57 @@ ENJIN_TEST(WFC, PermissiveSetAlwaysCollapses) {
     ENJIN_EXPECT_TRUE(identical);
 }
 
+ENJIN_TEST(WFC, Mode3DFieldsRoundTrip) {
+    // Arrange: a 3D-module WFC with a prefab tile and all six edge sockets set.
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& g = w1.AddComponent<WFCComponent>(e);
+    g.mode = WFCComponent::Mode::Modules3D;
+    g.width = 6; g.height = 5; g.depth = 4; g.cellSize = 2.5f; g.seed = 8080;
+    WFCComponent::Tile t; t.tileIndex = 0; t.prefabPath = "assets/block.enjprefab";
+    t.edges[0] = "n"; t.edges[1] = "e"; t.edges[2] = "s"; t.edges[3] = "w";
+    t.edges[4] = "up"; t.edges[5] = "dn";
+    g.tiles.push_back(t);
+
+    // Act
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+
+    // Assert
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* r = w2.GetComponent<WFCComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(r);
+    ENJIN_EXPECT_EQ((int)r->mode, (int)WFCComponent::Mode::Modules3D);
+    ENJIN_EXPECT_EQ((int)r->depth, 4);
+    ENJIN_EXPECT_TRUE(r->cellSize > 2.49f && r->cellSize < 2.51f);
+    ENJIN_ASSERT_EQ((int)r->tiles.size(), 1);
+    ENJIN_EXPECT_TRUE(r->tiles[0].prefabPath == "assets/block.enjprefab");
+    ENJIN_EXPECT_TRUE(r->tiles[0].edges[4] == "up");
+    ENJIN_EXPECT_TRUE(r->tiles[0].edges[5] == "dn");
+}
+
+// A permissive 3D module set with only air tiles (empty prefab) must collapse the
+// whole volume with no contradiction, placing zero prefabs (no asset files needed).
+ENJIN_TEST(WFC, Volume3DAirSetCollapses) {
+    // Arrange
+    World w;
+    Entity e = w.CreateEntity();
+    auto& g = w.AddComponent<WFCComponent>(e);
+    g.mode = WFCComponent::Mode::Modules3D;
+    g.width = 4; g.height = 4; g.depth = 3; g.seed = 3;
+    WFCComponent::Tile a; for (auto& s : a.edges) s = "x"; // all-air, all edges match
+    WFCComponent::Tile b; for (auto& s : b.edges) s = "x";
+    g.tiles.push_back(a);
+    g.tiles.push_back(b);
+
+    // Act
+    bool ok = ECS::WFCSystem::Generate(&w, e, g);
+
+    // Assert: volume collapses, and no modules are placed because every tile is air.
+    ENJIN_EXPECT_TRUE(ok);
+    ENJIN_EXPECT_TRUE(g.lastSuccess);
+    ENJIN_EXPECT_EQ((int)g.lastCount, 0);
+}
+
 ENJIN_TEST_MAIN()

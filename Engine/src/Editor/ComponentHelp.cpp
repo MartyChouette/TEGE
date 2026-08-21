@@ -69,8 +69,8 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
             }
         };
         r["wfc"] = {
-            "Fills a grid so every neighbour pairing is legal, into a Tilemap.",
-            "Add tiles, label their N/E/S/W edges, press Generate. Tiles touch where edge labels match.",
+            "Fills a grid so every neighbour pairing is legal (2D tiles or 3D modules).",
+            "Add tiles, label their edges, press Generate. 2D paints a Tilemap; 3D places a prefab per cell. Tiles touch where edge labels match.",
             "WFC_Generate(self);   // resolve from script (returns 1 on success)",
             {
                 { RelationKind::Paints, "Tilemap", Has<ECS::TilemapComponent>, Add<ECS::TilemapComponent> },

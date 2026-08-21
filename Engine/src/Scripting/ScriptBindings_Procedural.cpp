@@ -404,9 +404,8 @@ static int WFC_Generate(u64 self) {
     if (!s_BindingsWorld) return 0;
     auto* gen = s_BindingsWorld->GetComponent<ECS::WFCComponent>(self);
     if (!gen) return 0;
-    auto* tm = s_BindingsWorld->GetComponent<ECS::TilemapComponent>(self);
-    if (!tm) tm = &s_BindingsWorld->AddComponent<ECS::TilemapComponent>(self);
-    return ECS::WFCSystem::Generate(*gen, *tm) ? 1 : 0;
+    // Dispatches on mode: 2D paints the Tilemap, 3D places prefab modules.
+    return ECS::WFCSystem::Generate(s_BindingsWorld, self, *gen) ? 1 : 0;
 }
 
 // ============================================================================

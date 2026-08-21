@@ -1385,7 +1385,9 @@ ECS::RandomBagComponent DeserializeRandomBagComponent(const json& j) {
 
 json SerializeWFCComponent(const ECS::WFCComponent& g) {
     json j;
-    j["width"] = g.width; j["height"] = g.height;
+    j["mode"] = static_cast<u8>(g.mode);
+    j["width"] = g.width; j["height"] = g.height; j["depth"] = g.depth;
+    j["cellSize"] = RF(g.cellSize);
     j["seed"] = g.seed; j["maxBacktracks"] = g.maxBacktracks;
     j["retryOnFail"] = g.retryOnFail; j["maxRetries"] = g.maxRetries;
     j["fillCollision"] = g.fillCollision; j["generateOnStart"] = g.generateOnStart;
@@ -1393,8 +1395,10 @@ json SerializeWFCComponent(const ECS::WFCComponent& g) {
     for (const auto& t : g.tiles) {
         json tj;
         tj["tileIndex"] = t.tileIndex;
+        tj["prefabPath"] = t.prefabPath;
         tj["solid"] = t.solid;
-        tj["edges"] = json::array({ t.edges[0], t.edges[1], t.edges[2], t.edges[3] });
+        tj["edges"] = json::array({ t.edges[0], t.edges[1], t.edges[2],
+                                    t.edges[3], t.edges[4], t.edges[5] });
         tiles.push_back(tj);
     }
     j["tiles"] = tiles;
@@ -1403,8 +1407,11 @@ json SerializeWFCComponent(const ECS::WFCComponent& g) {
 
 ECS::WFCComponent DeserializeWFCComponent(const json& j) {
     ECS::WFCComponent g;
+    if (j.contains("mode")) { u8 v = j["mode"].get<u8>(); if (v <= 1) g.mode = static_cast<ECS::WFCComponent::Mode>(v); }
     if (j.contains("width")) g.width = std::clamp(j["width"].get<u32>(), 1u, 1024u);
     if (j.contains("height")) g.height = std::clamp(j["height"].get<u32>(), 1u, 1024u);
+    if (j.contains("depth")) g.depth = std::clamp(j["depth"].get<u32>(), 1u, 64u);
+    if (j.contains("cellSize")) g.cellSize = j["cellSize"].get<f32>();
     if (j.contains("seed")) g.seed = j["seed"].get<u32>();
     if (j.contains("maxBacktracks")) g.maxBacktracks = j["maxBacktracks"].get<u32>();
     if (j.contains("retryOnFail")) g.retryOnFail = JB(j["retryOnFail"]);
@@ -1418,10 +1425,11 @@ ECS::WFCComponent DeserializeWFCComponent(const json& j) {
             const auto& tj = arr[i];
             ECS::WFCComponent::Tile t;
             if (tj.contains("tileIndex")) t.tileIndex = tj["tileIndex"].get<i32>();
+            if (tj.contains("prefabPath") && tj["prefabPath"].is_string()) t.prefabPath = SafeStr(tj["prefabPath"]);
             if (tj.contains("solid")) t.solid = JB(tj["solid"]);
             if (tj.contains("edges") && tj["edges"].is_array()) {
                 const auto& ea = tj["edges"];
-                for (u32 e = 0; e < 4 && e < ea.size(); ++e)
+                for (u32 e = 0; e < 6 && e < ea.size(); ++e)
                     if (ea[e].is_string()) t.edges[e] = SafeStr(ea[e]);
             }
             g.tiles.push_back(std::move(t));

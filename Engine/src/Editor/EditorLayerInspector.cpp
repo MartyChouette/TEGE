@@ -2324,29 +2324,55 @@ void EditorLayer::DrawInspectorPanel() {
             if (!wfcRemoved && wfcOpen) {
                 DrawComponentHelp("wfc", m_World, m_PrimarySelected);
 
+                const char* modes[] = { "2D Tiles (paints a Tilemap)", "3D Modules (places prefabs)" };
+                int md = static_cast<int>(wfc->mode);
+                if (ImGui::Combo("Mode", &md, modes, IM_ARRAYSIZE(modes)))
+                    wfc->mode = static_cast<ECS::WFCComponent::Mode>(md);
+                const bool is3D = (wfc->mode == ECS::WFCComponent::Mode::Modules3D);
+
                 i32 ww = static_cast<i32>(wfc->width), wh = static_cast<i32>(wfc->height);
-                if (ImGui::DragInt("Width", &ww, 1, 1, 1024))  wfc->width  = static_cast<u32>(ww < 1 ? 1 : ww);
-                if (ImGui::DragInt("Height", &wh, 1, 1, 1024)) wfc->height = static_cast<u32>(wh < 1 ? 1 : wh);
+                if (ImGui::DragInt("Width",  &ww, 1, 1, is3D ? 64 : 1024)) wfc->width  = static_cast<u32>(ww < 1 ? 1 : ww);
+                if (ImGui::DragInt("Height", &wh, 1, 1, is3D ? 64 : 1024)) wfc->height = static_cast<u32>(wh < 1 ? 1 : wh);
+                if (is3D) {
+                    i32 wd = static_cast<i32>(wfc->depth);
+                    if (ImGui::DragInt("Depth (layers up)", &wd, 1, 1, 32)) wfc->depth = static_cast<u32>(wd < 1 ? 1 : wd);
+                    ImGui::DragFloat("Cell Size", &wfc->cellSize, 0.05f, 0.05f, 1000.0f, "%.2f");
+                }
 
                 ImGui::Separator();
-                ImGui::TextDisabled("Tiles  (edge sockets: N E S W — tiles touch where labels match)");
+                if (is3D)
+                    ImGui::TextDisabled("Tiles  (edge sockets N E S W Up Dn — modules touch where labels match; empty prefab = air)");
+                else
+                    ImGui::TextDisabled("Tiles  (edge sockets N E S W — tiles touch where labels match)");
+                const int edgeCount = is3D ? 6 : 4;
                 int removeIdx = -1;
                 for (int i = 0; i < static_cast<int>(wfc->tiles.size()); ++i) {
                     ImGui::PushID(i);
                     auto& t = wfc->tiles[i];
-                    ImGui::SetNextItemWidth(70.0f);
-                    ImGui::DragInt("tile", &t.tileIndex, 1, -1, 4096);
+                    if (is3D) {
+                        char pb[512];
+                        std::snprintf(pb, sizeof(pb), "%s", t.prefabPath.c_str());
+                        ImGui::SetNextItemWidth(150.0f);
+                        if (ImGui::InputText("prefab", pb, sizeof(pb))) t.prefabPath = pb;
+                        if (ImGui::BeginDragDropTarget()) {
+                            if (const ImGuiPayload* pl = ImGui::AcceptDragDropPayload("ASSET_PATH"))
+                                t.prefabPath = std::string(static_cast<const char*>(pl->Data));
+                            ImGui::EndDragDropTarget();
+                        }
+                    } else {
+                        ImGui::SetNextItemWidth(70.0f);
+                        ImGui::DragInt("tile", &t.tileIndex, 1, -1, 4096);
+                    }
                     ImGui::SameLine();
-                    const char* names[4] = { "N##n", "E##e", "S##s", "W##w" };
-                    for (int e = 0; e < 4; ++e) {
+                    const char* names[6] = { "N##n", "E##e", "S##s", "W##w", "Up##u", "Dn##d" };
+                    for (int e = 0; e < edgeCount; ++e) {
                         char eb[64];
                         std::snprintf(eb, sizeof(eb), "%s", t.edges[e].c_str());
-                        ImGui::SetNextItemWidth(52.0f);
+                        ImGui::SetNextItemWidth(46.0f);
                         if (ImGui::InputText(names[e], eb, sizeof(eb))) t.edges[e] = eb;
                         ImGui::SameLine();
                     }
-                    ImGui::Checkbox("solid", &t.solid);
-                    ImGui::SameLine();
+                    if (!is3D) { ImGui::Checkbox("solid", &t.solid); ImGui::SameLine(); }
                     if (ImGui::SmallButton("X")) removeIdx = i;
                     ImGui::PopID();
                 }
@@ -2354,28 +2380,27 @@ void EditorLayer::DrawInspectorPanel() {
                 if (ImGui::Button("+ Add Tile")) {
                     ECS::WFCComponent::Tile t;
                     t.tileIndex = static_cast<i32>(wfc->tiles.size());
-                    for (int e = 0; e < 4; ++e) t.edges[e] = "a";
+                    for (int e = 0; e < 6; ++e) t.edges[e] = "a";
                     wfc->tiles.push_back(t);
                 }
 
                 ImGui::Separator();
                 i32 seed = static_cast<i32>(wfc->seed);
                 if (ImGui::DragInt("Seed (0 = random)", &seed, 1, 0, 2000000000)) wfc->seed = static_cast<u32>(seed < 0 ? 0 : seed);
-                i32 bt = static_cast<i32>(wfc->maxBacktracks);
-                if (ImGui::DragInt("Max Backtracks", &bt, 1, 0, 100000)) wfc->maxBacktracks = static_cast<u32>(bt < 0 ? 0 : bt);
+                if (!is3D) {
+                    i32 bt = static_cast<i32>(wfc->maxBacktracks);
+                    if (ImGui::DragInt("Max Backtracks", &bt, 1, 0, 100000)) wfc->maxBacktracks = static_cast<u32>(bt < 0 ? 0 : bt);
+                }
                 ImGui::Checkbox("Retry On Fail (reseed)", &wfc->retryOnFail);
                 if (wfc->retryOnFail) {
                     i32 mr = static_cast<i32>(wfc->maxRetries);
                     if (ImGui::SliderInt("Max Retries", &mr, 1, 64)) wfc->maxRetries = static_cast<u32>(mr);
                 }
-                ImGui::Checkbox("Fill Collision (from 'solid')", &wfc->fillCollision);
+                if (!is3D) ImGui::Checkbox("Fill Collision (from 'solid')", &wfc->fillCollision);
                 ImGui::Checkbox("Generate On Play Start", &wfc->generateOnStart);
 
-                if (ImGui::Button("Generate Now")) {
-                    auto* tm = m_World->GetComponent<ECS::TilemapComponent>(m_PrimarySelected);
-                    if (!tm) { m_World->AddComponent<ECS::TilemapComponent>(m_PrimarySelected); tm = m_World->GetComponent<ECS::TilemapComponent>(m_PrimarySelected); }
-                    if (tm) ECS::WFCSystem::Generate(*wfc, *tm);
-                }
+                if (ImGui::Button("Generate Now"))
+                    ECS::WFCSystem::Generate(m_World, m_PrimarySelected, *wfc);
                 ImGui::SameLine();
                 if (wfc->lastSuccess)
                     ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "collapsed OK (seed %u)", wfc->lastSeed);
@@ -2385,7 +2410,10 @@ void EditorLayer::DrawInspectorPanel() {
                     ImGui::TextDisabled("add tiles, then Generate");
                 else
                     ImGui::TextDisabled("press Generate");
-                ImGui::TextDisabled("(paints this entity's Tilemap; add a Tilemap + tileset to see it)");
+                if (is3D)
+                    ImGui::TextDisabled("(places %u prefab modules as children; set a prefab per tile to see them)", wfc->lastCount);
+                else
+                    ImGui::TextDisabled("(paints this entity's Tilemap; add a Tilemap + tileset to see it)");
             }
         }
         if (m_World->HasComponent<ECS::VisualScriptComponent>(m_PrimarySelected)) {
