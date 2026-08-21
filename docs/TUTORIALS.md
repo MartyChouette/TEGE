@@ -2510,7 +2510,7 @@ The real power of Enjin comes from combining multiple systems. Here are some adv
 
 | Extension | Type | Description |
 |-----------|------|-------------|
-| `.enjscene` | Scene | Scene file (JSON) |
+| `.enjin` | Scene | Scene file (JSON) |
 | `.enjprefab` | Prefab | Reusable entity template |
 | `.enjpak` | Pack | Compiled asset package |
 | `.enjdlg` | Dialogue | Dialogue tree |

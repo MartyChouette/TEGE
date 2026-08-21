@@ -3416,7 +3416,7 @@ Files are automatically categorized and color-coded:
 |-------|-----------|-------|
 | **IMG** | .png, .jpg, .jpeg, .bmp, .tga, .svg | Teal |
 | **3D** | .gltf, .glb, .fbx, .obj, .dae | Blue |
-| **SCN** | .enjscene | Green |
+| **SCN** | .enjin | Green |
 | **SHD** | .vert, .frag, .comp, .glsl | Yellow |
 | **AS** | .as | Orange |
 | **SFX** | .wav, .mp3, .ogg, .flac | Purple |
