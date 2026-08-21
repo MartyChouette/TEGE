@@ -9,6 +9,10 @@
 #include "Enjin/ECS/Components/Gameplay.h"   // TilemapComponent, RigidbodyComponent
 #include "Enjin/ECS/Components/DungeonGenerator.h"
 #include "Enjin/ECS/Components/RandomBag.h"
+#include "Enjin/ECS/Components/Scatter.h"
+#include "Enjin/ECS/Components/TerrainGenerator.h"
+#include "Enjin/ECS/Components/Terrain.h"
+#include "Enjin/ECS/Components/WFC.h"
 #include <imgui.h>
 #include <string>
 #include <unordered_map>
@@ -43,6 +47,31 @@ static const std::unordered_map<std::string, ComponentHelp>& Registry() {
             "Builds a whole level once and paints it into a Tilemap.",
             "Pick an algorithm, press Generate Now, or let it run on play start.",
             nullptr,
+            {
+                { RelationKind::Paints, "Tilemap", Has<ECS::TilemapComponent>, Add<ECS::TilemapComponent> },
+            }
+        };
+        r["scatter"] = {
+            "Stamps copies of a prefab across a region (foliage, rocks, props).",
+            "Set a prefab, pick a distribution, press Generate Now. Instances are children of this entity.",
+            "Scatter_Generate(self);   // re-roll from script\n"
+            "Scatter_Clear(self);      // remove the batch",
+            {
+                { RelationKind::PairsWith, "Transform", Has<ECS::TransformComponent>, Add<ECS::TransformComponent> },
+            }
+        };
+        r["terrainGenerator"] = {
+            "Bakes a noise + erosion heightfield into a Terrain mesh.",
+            "Tune the FBM and erosion, press Generate Now, or let it run on play start.",
+            "TerrainGen_Generate(self);   // rebake from script",
+            {
+                { RelationKind::Paints, "Terrain", Has<ECS::TerrainComponent>, Add<ECS::TerrainComponent> },
+            }
+        };
+        r["wfc"] = {
+            "Fills a grid so every neighbour pairing is legal, into a Tilemap.",
+            "Add tiles, label their N/E/S/W edges, press Generate. Tiles touch where edge labels match.",
+            "WFC_Generate(self);   // resolve from script (returns 1 on success)",
             {
                 { RelationKind::Paints, "Tilemap", Has<ECS::TilemapComponent>, Add<ECS::TilemapComponent> },
             }

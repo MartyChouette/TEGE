@@ -8,6 +8,14 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/RandomBag.h"
 #include "Enjin/ECS/Systems/RandomBagSystem.h"
+#include "Enjin/ECS/Components/Scatter.h"
+#include "Enjin/ECS/Systems/ScatterSystem.h"
+#include "Enjin/ECS/Components/TerrainGenerator.h"
+#include "Enjin/ECS/Components/Terrain.h"
+#include "Enjin/ECS/Systems/TerrainGeneratorSystem.h"
+#include "Enjin/ECS/Components/WFC.h"
+#include "Enjin/ECS/Components/Gameplay.h"   // TilemapComponent
+#include "Enjin/ECS/Systems/WFCSystem.h"
 #include <angelscript.h>
 #include <cassert>
 
@@ -353,12 +361,79 @@ static int RandomBag_Count(u64 self) {
 }
 
 // ============================================================================
+// Scatter — space-builder procgen. Re-rolls the entity's ScatterComponent batch
+// (destroys the previous instances, places a fresh set). Missing component = no-op.
+// ============================================================================
+static int Scatter_Generate(u64 self) {
+    if (!s_BindingsWorld) return 0;
+    if (auto* sc = s_BindingsWorld->GetComponent<ECS::ScatterComponent>(self))
+        return static_cast<int>(ECS::ScatterSystem::Generate(s_BindingsWorld, self, *sc));
+    return 0;
+}
+static int Scatter_Clear(u64 self) {
+    if (!s_BindingsWorld) return 0;
+    return static_cast<int>(ECS::ScatterSystem::Clear(s_BindingsWorld, self));
+}
+static int Scatter_Count(u64 self) {
+    if (!s_BindingsWorld) return 0;
+    if (auto* sc = s_BindingsWorld->GetComponent<ECS::ScatterComponent>(self))
+        return static_cast<int>(sc->lastCount);
+    return 0;
+}
+
+// ============================================================================
+// TerrainGenerator — space-builder procgen. Rebakes the entity's terrain heightmap
+// from its TerrainGeneratorComponent (FBM + erosion). Creates a TerrainComponent if
+// the entity lacks one. Missing generator component = no-op returning its seed 0.
+// ============================================================================
+static int TerrainGen_Generate(u64 self) {
+    if (!s_BindingsWorld) return 0;
+    auto* gen = s_BindingsWorld->GetComponent<ECS::TerrainGeneratorComponent>(self);
+    if (!gen) return 0;
+    auto* terrain = s_BindingsWorld->GetComponent<ECS::TerrainComponent>(self);
+    if (!terrain) terrain = &s_BindingsWorld->AddComponent<ECS::TerrainComponent>(self);
+    return static_cast<int>(ECS::TerrainGeneratorSystem::Generate(*gen, *terrain));
+}
+
+// ============================================================================
+// WFC — constraint-based space-builder. Resolves the entity's WFCComponent into
+// its TilemapComponent (creating one if absent). Returns 1 on a full collapse, 0
+// on contradiction / missing component.
+// ============================================================================
+static int WFC_Generate(u64 self) {
+    if (!s_BindingsWorld) return 0;
+    auto* gen = s_BindingsWorld->GetComponent<ECS::WFCComponent>(self);
+    if (!gen) return 0;
+    auto* tm = s_BindingsWorld->GetComponent<ECS::TilemapComponent>(self);
+    if (!tm) tm = &s_BindingsWorld->AddComponent<ECS::TilemapComponent>(self);
+    return ECS::WFCSystem::Generate(*gen, *tm) ? 1 : 0;
+}
+
+// ============================================================================
 // AngelScript Registration
 // ============================================================================
 namespace Enjin {
 namespace Scripting {
 
 void RegisterProceduralBindings(asIScriptEngine* engine) {
+    // WFC constraint solver (author tiles+sockets in the editor, resolve from script)
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int WFC_Generate(uint64 self)",
+        ENJIN_AS_FN(WFC_Generate), ENJIN_AS_CALL_CDECL));
+    // Terrain space-builder (author in the editor, rebake from script)
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int TerrainGen_Generate(uint64 self)",
+        ENJIN_AS_FN(TerrainGen_Generate), ENJIN_AS_CALL_CDECL));
+    // Scatter space-builder (author in the editor, re-roll from script)
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int Scatter_Generate(uint64 self)",
+        ENJIN_AS_FN(Scatter_Generate), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int Scatter_Clear(uint64 self)",
+        ENJIN_AS_FN(Scatter_Clear), ENJIN_AS_CALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int Scatter_Count(uint64 self)",
+        ENJIN_AS_FN(Scatter_Count), ENJIN_AS_CALL_CDECL));
     // RandomBag stream-feeder (author items in the editor, pull from script)
     AS_CHECK(engine->RegisterGlobalFunction(
         "string RandomBag_Draw(uint64 self)",

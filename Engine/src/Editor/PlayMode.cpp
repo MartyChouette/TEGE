@@ -2,6 +2,9 @@
 #include <filesystem>
 #include "Enjin/ECS/Systems/DungeonGeneratorSystem.h"
 #include "Enjin/ECS/Systems/RandomBagSystem.h"
+#include "Enjin/ECS/Systems/ScatterSystem.h"
+#include "Enjin/ECS/Systems/TerrainGeneratorSystem.h"
+#include "Enjin/ECS/Systems/WFCSystem.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
@@ -219,6 +222,9 @@ void PlayMode::Play() {
     ENJIN_LOG_INFO(Editor, "PlayMode: Gameplay systems enabled");
     ECS::DungeonGeneratorSystem::GenerateAll(m_World);   // fresh dungeons on play (generateOnStart)
     ECS::RandomBagSystem::ResetAll(m_World);             // fresh bags on play (clears editor test-draw state)
+    ECS::ScatterSystem::GenerateAll(m_World);            // fresh scatter batches on play (generateOnStart)
+    ECS::TerrainGeneratorSystem::GenerateAll(m_World);   // fresh terrain bakes on play (generateOnStart)
+    ECS::WFCSystem::GenerateAll(m_World);                // fresh WFC layouts on play (generateOnStart)
     m_TweenSystem.PlayAll(m_World);
     Scripting::SetBindingsWorld(m_World);
     Scripting::SetBindingsDialogueSystem(&m_DialogueSystem);

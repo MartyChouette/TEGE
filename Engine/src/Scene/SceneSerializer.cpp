@@ -33,6 +33,9 @@
 #include "Enjin/ECS/Components/Swarm.h"
 #include "Enjin/ECS/Components/DungeonGenerator.h"
 #include "Enjin/ECS/Components/RandomBag.h"
+#include "Enjin/ECS/Components/Scatter.h"
+#include "Enjin/ECS/Components/TerrainGenerator.h"
+#include "Enjin/ECS/Components/WFC.h"
 #include "Enjin/ECS/Components/CustomShader.h"
 #include "Enjin/ECS/Components/Lens.h"
 #include "Enjin/ECS/Components/CineComponent.h"
@@ -1378,6 +1381,126 @@ ECS::RandomBagComponent DeserializeRandomBagComponent(const json& j) {
         }
     }
     return b;
+}
+
+json SerializeWFCComponent(const ECS::WFCComponent& g) {
+    json j;
+    j["width"] = g.width; j["height"] = g.height;
+    j["seed"] = g.seed; j["maxBacktracks"] = g.maxBacktracks;
+    j["retryOnFail"] = g.retryOnFail; j["maxRetries"] = g.maxRetries;
+    j["fillCollision"] = g.fillCollision; j["generateOnStart"] = g.generateOnStart;
+    json tiles = json::array();
+    for (const auto& t : g.tiles) {
+        json tj;
+        tj["tileIndex"] = t.tileIndex;
+        tj["solid"] = t.solid;
+        tj["edges"] = json::array({ t.edges[0], t.edges[1], t.edges[2], t.edges[3] });
+        tiles.push_back(tj);
+    }
+    j["tiles"] = tiles;
+    return j;
+}
+
+ECS::WFCComponent DeserializeWFCComponent(const json& j) {
+    ECS::WFCComponent g;
+    if (j.contains("width")) g.width = std::clamp(j["width"].get<u32>(), 1u, 1024u);
+    if (j.contains("height")) g.height = std::clamp(j["height"].get<u32>(), 1u, 1024u);
+    if (j.contains("seed")) g.seed = j["seed"].get<u32>();
+    if (j.contains("maxBacktracks")) g.maxBacktracks = j["maxBacktracks"].get<u32>();
+    if (j.contains("retryOnFail")) g.retryOnFail = JB(j["retryOnFail"]);
+    if (j.contains("maxRetries")) g.maxRetries = std::clamp(j["maxRetries"].get<u32>(), 1u, 1000u);
+    if (j.contains("fillCollision")) g.fillCollision = JB(j["fillCollision"]);
+    if (j.contains("generateOnStart")) g.generateOnStart = JB(j["generateOnStart"]);
+    if (j.contains("tiles") && j["tiles"].is_array()) {
+        const auto& arr = j["tiles"];
+        usize n = arr.size() > 4096 ? 4096 : arr.size(); // sanity cap
+        for (usize i = 0; i < n; ++i) {
+            const auto& tj = arr[i];
+            ECS::WFCComponent::Tile t;
+            if (tj.contains("tileIndex")) t.tileIndex = tj["tileIndex"].get<i32>();
+            if (tj.contains("solid")) t.solid = JB(tj["solid"]);
+            if (tj.contains("edges") && tj["edges"].is_array()) {
+                const auto& ea = tj["edges"];
+                for (u32 e = 0; e < 4 && e < ea.size(); ++e)
+                    if (ea[e].is_string()) t.edges[e] = SafeStr(ea[e]);
+            }
+            g.tiles.push_back(std::move(t));
+        }
+    }
+    return g;
+}
+
+json SerializeTerrainGeneratorComponent(const ECS::TerrainGeneratorComponent& t) {
+    json j;
+    j["gridWidth"] = t.gridWidth; j["gridHeight"] = t.gridHeight;
+    j["cellSize"] = RF(t.cellSize); j["maxHeight"] = RF(t.maxHeight);
+    j["ridged"] = t.ridged;
+    j["octaves"] = t.octaves; j["lacunarity"] = RF(t.lacunarity);
+    j["gain"] = RF(t.gain); j["frequency"] = RF(t.frequency);
+    j["ridgedPower"] = RF(t.ridgedPower);
+    j["hydraulic"] = t.hydraulic; j["hydraulicDroplets"] = t.hydraulicDroplets;
+    j["thermal"] = t.thermal; j["thermalIterations"] = t.thermalIterations;
+    j["talusAngle"] = RF(t.talusAngle);
+    j["seed"] = t.seed; j["generateOnStart"] = t.generateOnStart;
+    return j;
+}
+
+ECS::TerrainGeneratorComponent DeserializeTerrainGeneratorComponent(const json& j) {
+    ECS::TerrainGeneratorComponent t;
+    if (j.contains("gridWidth")) t.gridWidth = std::clamp(j["gridWidth"].get<u32>(), 4u, 1024u);
+    if (j.contains("gridHeight")) t.gridHeight = std::clamp(j["gridHeight"].get<u32>(), 4u, 1024u);
+    if (j.contains("cellSize")) t.cellSize = j["cellSize"].get<f32>();
+    if (j.contains("maxHeight")) t.maxHeight = j["maxHeight"].get<f32>();
+    if (j.contains("ridged")) t.ridged = JB(j["ridged"]);
+    if (j.contains("octaves")) t.octaves = std::clamp(j["octaves"].get<u32>(), 1u, 12u);
+    if (j.contains("lacunarity")) t.lacunarity = j["lacunarity"].get<f32>();
+    if (j.contains("gain")) t.gain = j["gain"].get<f32>();
+    if (j.contains("frequency")) t.frequency = j["frequency"].get<f32>();
+    if (j.contains("ridgedPower")) t.ridgedPower = j["ridgedPower"].get<f32>();
+    if (j.contains("hydraulic")) t.hydraulic = JB(j["hydraulic"]);
+    if (j.contains("hydraulicDroplets")) t.hydraulicDroplets = std::clamp(j["hydraulicDroplets"].get<u32>(), 1000u, 500000u);
+    if (j.contains("thermal")) t.thermal = JB(j["thermal"]);
+    if (j.contains("thermalIterations")) t.thermalIterations = std::clamp(j["thermalIterations"].get<u32>(), 1u, 1000u);
+    if (j.contains("talusAngle")) t.talusAngle = j["talusAngle"].get<f32>();
+    if (j.contains("seed")) t.seed = j["seed"].get<u32>();
+    if (j.contains("generateOnStart")) t.generateOnStart = JB(j["generateOnStart"]);
+    return t;
+}
+
+json SerializeScatterComponent(const ECS::ScatterComponent& s) {
+    json j;
+    j["distribution"] = static_cast<u8>(s.distribution);
+    j["plane"] = static_cast<u8>(s.plane);
+    j["prefabPath"] = s.prefabPath;
+    j["regionWidth"] = RF(s.regionWidth);
+    j["regionHeight"] = RF(s.regionHeight);
+    j["targetCount"] = s.targetCount;
+    j["minSpacing"] = RF(s.minSpacing);
+    j["scaleMin"] = RF(s.scaleMin);
+    j["scaleMax"] = RF(s.scaleMax);
+    j["randomYaw"] = s.randomYaw;
+    j["heightJitter"] = RF(s.heightJitter);
+    j["seed"] = s.seed;
+    j["generateOnStart"] = s.generateOnStart;
+    return j;
+}
+
+ECS::ScatterComponent DeserializeScatterComponent(const json& j) {
+    ECS::ScatterComponent s;
+    if (j.contains("distribution")) { u8 v = j["distribution"].get<u8>(); if (v <= 2) s.distribution = static_cast<ECS::ScatterComponent::Distribution>(v); }
+    if (j.contains("plane")) { u8 v = j["plane"].get<u8>(); if (v <= 1) s.plane = static_cast<ECS::ScatterComponent::Plane>(v); }
+    if (j.contains("prefabPath") && j["prefabPath"].is_string()) s.prefabPath = SafeStr(j["prefabPath"]);
+    if (j.contains("regionWidth")) s.regionWidth = std::clamp(j["regionWidth"].get<f32>(), 0.0f, 100000.0f);
+    if (j.contains("regionHeight")) s.regionHeight = std::clamp(j["regionHeight"].get<f32>(), 0.0f, 100000.0f);
+    if (j.contains("targetCount")) s.targetCount = std::clamp(j["targetCount"].get<u32>(), 0u, 20000u);
+    if (j.contains("minSpacing")) s.minSpacing = std::clamp(j["minSpacing"].get<f32>(), 0.05f, 100000.0f);
+    if (j.contains("scaleMin")) s.scaleMin = j["scaleMin"].get<f32>();
+    if (j.contains("scaleMax")) s.scaleMax = j["scaleMax"].get<f32>();
+    if (j.contains("randomYaw")) s.randomYaw = JB(j["randomYaw"]);
+    if (j.contains("heightJitter")) s.heightJitter = j["heightJitter"].get<f32>();
+    if (j.contains("seed")) s.seed = j["seed"].get<u32>();
+    if (j.contains("generateOnStart")) s.generateOnStart = JB(j["generateOnStart"]);
+    return s;
 }
 
 json SerializeElementalVolumeComponent(const ECS::ElementalVolumeComponent& v) {
@@ -7523,6 +7646,18 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::RandomBagComponent>(entity)) {
                 entityJson["randomBag"] = SerializeRandomBagComponent(*m_World->GetComponent<ECS::RandomBagComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::ScatterComponent>(entity)) {
+                entityJson["scatter"] = SerializeScatterComponent(*m_World->GetComponent<ECS::ScatterComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::TerrainGeneratorComponent>(entity)) {
+                entityJson["terrainGenerator"] = SerializeTerrainGeneratorComponent(*m_World->GetComponent<ECS::TerrainGeneratorComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::WFCComponent>(entity)) {
+                entityJson["wfc"] = SerializeWFCComponent(*m_World->GetComponent<ECS::WFCComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::ScatterInstanceComponent>(entity)) {
+                entityJson["scatterInstance"] = json::object();
+            }
             if (m_World->HasComponent<ECS::ElementalVolumeComponent>(entity)) {
                 entityJson["elementalVolume"] = SerializeElementalVolumeComponent(*m_World->GetComponent<ECS::ElementalVolumeComponent>(entity));
             }
@@ -8368,6 +8503,18 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("randomBag")) {
                 m_World->AddComponent<ECS::RandomBagComponent>(entity, DeserializeRandomBagComponent(entityJson["randomBag"]));
             }
+            if (entityJson.contains("scatter")) {
+                m_World->AddComponent<ECS::ScatterComponent>(entity, DeserializeScatterComponent(entityJson["scatter"]));
+            }
+            if (entityJson.contains("terrainGenerator")) {
+                m_World->AddComponent<ECS::TerrainGeneratorComponent>(entity, DeserializeTerrainGeneratorComponent(entityJson["terrainGenerator"]));
+            }
+            if (entityJson.contains("wfc")) {
+                m_World->AddComponent<ECS::WFCComponent>(entity, DeserializeWFCComponent(entityJson["wfc"]));
+            }
+            if (entityJson.contains("scatterInstance")) {
+                m_World->AddComponent<ECS::ScatterInstanceComponent>(entity);
+            }
             if (entityJson.contains("elementalVolume")) {
                 m_World->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(entityJson["elementalVolume"]));
             }
@@ -9039,6 +9186,18 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::RandomBagComponent>(entity)) {
                 entityJson["randomBag"] = SerializeRandomBagComponent(*m_World->GetComponent<ECS::RandomBagComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::ScatterComponent>(entity)) {
+                entityJson["scatter"] = SerializeScatterComponent(*m_World->GetComponent<ECS::ScatterComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::TerrainGeneratorComponent>(entity)) {
+                entityJson["terrainGenerator"] = SerializeTerrainGeneratorComponent(*m_World->GetComponent<ECS::TerrainGeneratorComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::WFCComponent>(entity)) {
+                entityJson["wfc"] = SerializeWFCComponent(*m_World->GetComponent<ECS::WFCComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::ScatterInstanceComponent>(entity)) {
+                entityJson["scatterInstance"] = json::object();
             }
             if (m_World->HasComponent<ECS::ElementalVolumeComponent>(entity)) {
                 entityJson["elementalVolume"] = SerializeElementalVolumeComponent(*m_World->GetComponent<ECS::ElementalVolumeComponent>(entity));
@@ -9805,6 +9964,18 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("randomBag")) {
                 m_World->AddComponent<ECS::RandomBagComponent>(entity, DeserializeRandomBagComponent(entityJson["randomBag"]));
             }
+            if (entityJson.contains("scatter")) {
+                m_World->AddComponent<ECS::ScatterComponent>(entity, DeserializeScatterComponent(entityJson["scatter"]));
+            }
+            if (entityJson.contains("terrainGenerator")) {
+                m_World->AddComponent<ECS::TerrainGeneratorComponent>(entity, DeserializeTerrainGeneratorComponent(entityJson["terrainGenerator"]));
+            }
+            if (entityJson.contains("wfc")) {
+                m_World->AddComponent<ECS::WFCComponent>(entity, DeserializeWFCComponent(entityJson["wfc"]));
+            }
+            if (entityJson.contains("scatterInstance")) {
+                m_World->AddComponent<ECS::ScatterInstanceComponent>(entity);
+            }
             if (entityJson.contains("elementalVolume")) {
                 m_World->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(entityJson["elementalVolume"]));
             }
@@ -10374,6 +10545,14 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["dungeonGenerator"] = SerializeDungeonGeneratorComponent(*world->GetComponent<ECS::DungeonGeneratorComponent>(entity));
         if (world->HasComponent<ECS::RandomBagComponent>(entity))
             entityJson["randomBag"] = SerializeRandomBagComponent(*world->GetComponent<ECS::RandomBagComponent>(entity));
+        if (world->HasComponent<ECS::ScatterComponent>(entity))
+            entityJson["scatter"] = SerializeScatterComponent(*world->GetComponent<ECS::ScatterComponent>(entity));
+        if (world->HasComponent<ECS::TerrainGeneratorComponent>(entity))
+            entityJson["terrainGenerator"] = SerializeTerrainGeneratorComponent(*world->GetComponent<ECS::TerrainGeneratorComponent>(entity));
+        if (world->HasComponent<ECS::WFCComponent>(entity))
+            entityJson["wfc"] = SerializeWFCComponent(*world->GetComponent<ECS::WFCComponent>(entity));
+        if (world->HasComponent<ECS::ScatterInstanceComponent>(entity))
+            entityJson["scatterInstance"] = json::object();
         if (world->HasComponent<ECS::ElementalVolumeComponent>(entity))
             entityJson["elementalVolume"] = SerializeElementalVolumeComponent(*world->GetComponent<ECS::ElementalVolumeComponent>(entity));
         if (world->HasComponent<ECS::PostProcessVolumeComponent>(entity))
@@ -10801,6 +10980,18 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         if (entityJson.contains("randomBag")) {
             world->AddComponent<ECS::RandomBagComponent>(entity, DeserializeRandomBagComponent(entityJson["randomBag"]));
         }
+        if (entityJson.contains("scatter")) {
+            world->AddComponent<ECS::ScatterComponent>(entity, DeserializeScatterComponent(entityJson["scatter"]));
+        }
+        if (entityJson.contains("terrainGenerator")) {
+            world->AddComponent<ECS::TerrainGeneratorComponent>(entity, DeserializeTerrainGeneratorComponent(entityJson["terrainGenerator"]));
+        }
+        if (entityJson.contains("wfc")) {
+            world->AddComponent<ECS::WFCComponent>(entity, DeserializeWFCComponent(entityJson["wfc"]));
+        }
+        if (entityJson.contains("scatterInstance")) {
+            world->AddComponent<ECS::ScatterInstanceComponent>(entity);
+        }
         if (entityJson.contains("elementalVolume")) {
             world->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(entityJson["elementalVolume"]));
         }
@@ -11115,6 +11306,12 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
         return SerializeDungeonGeneratorComponent(*world->GetComponent<ECS::DungeonGeneratorComponent>(entity)).dump();
     if (key == "randomBag" && world->HasComponent<ECS::RandomBagComponent>(entity))
         return SerializeRandomBagComponent(*world->GetComponent<ECS::RandomBagComponent>(entity)).dump();
+    if (key == "scatter" && world->HasComponent<ECS::ScatterComponent>(entity))
+        return SerializeScatterComponent(*world->GetComponent<ECS::ScatterComponent>(entity)).dump();
+    if (key == "terrainGenerator" && world->HasComponent<ECS::TerrainGeneratorComponent>(entity))
+        return SerializeTerrainGeneratorComponent(*world->GetComponent<ECS::TerrainGeneratorComponent>(entity)).dump();
+    if (key == "wfc" && world->HasComponent<ECS::WFCComponent>(entity))
+        return SerializeWFCComponent(*world->GetComponent<ECS::WFCComponent>(entity)).dump();
 
     if (!world || !world->IsValid(entity)) return "";
 
@@ -11439,6 +11636,9 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "swarm") { world->AddComponent<ECS::SwarmComponent>(entity, DeserializeSwarmComponent(j)); return true; }
         if (key == "dungeonGenerator") { world->AddComponent<ECS::DungeonGeneratorComponent>(entity, DeserializeDungeonGeneratorComponent(j)); return true; }
         if (key == "randomBag") { world->AddComponent<ECS::RandomBagComponent>(entity, DeserializeRandomBagComponent(j)); return true; }
+        if (key == "scatter") { world->AddComponent<ECS::ScatterComponent>(entity, DeserializeScatterComponent(j)); return true; }
+        if (key == "terrainGenerator") { world->AddComponent<ECS::TerrainGeneratorComponent>(entity, DeserializeTerrainGeneratorComponent(j)); return true; }
+        if (key == "wfc") { world->AddComponent<ECS::WFCComponent>(entity, DeserializeWFCComponent(j)); return true; }
         if (key == "elementalVolume") { world->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(j)); return true; }
         if (key == "postProcessVolume") { world->AddComponent<ECS::PostProcessVolumeComponent>(entity, DeserializePostProcessVolumeComponent(j)); return true; }
         if (key == "fluidVolume") { world->AddComponent<ECS::FluidVolumeComponent>(entity, DeserializeFluidVolumeComponent(j)); return true; }
@@ -11606,6 +11806,9 @@ bool SceneSerializer::RemoveOneComponent(ECS::World* world, ECS::Entity entity, 
         if (key == "swarm") { world->RemoveComponent<ECS::SwarmComponent>(entity); return true; }
         if (key == "dungeonGenerator") { world->RemoveComponent<ECS::DungeonGeneratorComponent>(entity); return true; }
         if (key == "randomBag") { world->RemoveComponent<ECS::RandomBagComponent>(entity); return true; }
+        if (key == "scatter") { world->RemoveComponent<ECS::ScatterComponent>(entity); return true; }
+        if (key == "terrainGenerator") { world->RemoveComponent<ECS::TerrainGeneratorComponent>(entity); return true; }
+        if (key == "wfc") { world->RemoveComponent<ECS::WFCComponent>(entity); return true; }
         if (key == "elementalVolume") { world->RemoveComponent<ECS::ElementalVolumeComponent>(entity); return true; }
         if (key == "postProcessVolume") { world->RemoveComponent<ECS::PostProcessVolumeComponent>(entity); return true; }
         if (key == "fluidVolume") { world->RemoveComponent<ECS::FluidVolumeComponent>(entity); return true; }

@@ -29,6 +29,9 @@
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include "Enjin/ECS/Systems/DungeonGeneratorSystem.h"
+#include "Enjin/ECS/Systems/ScatterSystem.h"
+#include "Enjin/ECS/Systems/TerrainGeneratorSystem.h"
+#include "Enjin/ECS/Systems/WFCSystem.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/Effects/TreeRenderer.h"
 #include <climits>
@@ -2419,6 +2422,12 @@ private:
 
         // Procedural dungeons: paint tilemaps for any generateOnStart generators
         Enjin::ECS::DungeonGeneratorSystem::GenerateAll(m_World.get());
+        // Procedural scatter: stamp prefab batches for any generateOnStart scatterers
+        Enjin::ECS::ScatterSystem::GenerateAll(m_World.get());
+        // Procedural terrain: bake heightmaps for any generateOnStart terrain generators
+        Enjin::ECS::TerrainGeneratorSystem::GenerateAll(m_World.get());
+        // Procedural WFC: resolve tile layouts for any generateOnStart WFC components
+        Enjin::ECS::WFCSystem::GenerateAll(m_World.get());
 
         // Build audio occlusion scene from colliders
 #ifdef ENJIN_AUDIO_STEAM_AUDIO

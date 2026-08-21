@@ -16,6 +16,12 @@
 #include "Enjin/ECS/Components/DungeonGenerator.h"
 #include "Enjin/ECS/Components/RandomBag.h"
 #include "Enjin/ECS/Systems/RandomBagSystem.h"
+#include "Enjin/ECS/Components/Scatter.h"
+#include "Enjin/ECS/Components/TerrainGenerator.h"
+#include "Enjin/ECS/Components/Terrain.h"
+#include "Enjin/ECS/Systems/TerrainGeneratorSystem.h"
+#include "Enjin/ECS/Components/WFC.h"
+#include "Enjin/ECS/Systems/WFCSystem.h"
 
 using namespace Enjin;
 using namespace Enjin::ECS;
@@ -1151,6 +1157,209 @@ ENJIN_TEST(RandomBag, SameSeedReproducesSequence) {
     for (int i = 0; i < 20; ++i) {
         ENJIN_EXPECT_TRUE(ECS::RandomBagSystem::Draw(b1) == ECS::RandomBagSystem::Draw(b2));
     }
+}
+
+// ===========================================================================
+// ScatterComponent (procgen suite, space-builder — prefab scatter)
+// ===========================================================================
+
+ENJIN_TEST(Scatter, FieldsRoundTrip) {
+    // Arrange
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& s = w1.AddComponent<ScatterComponent>(e);
+    s.distribution = ScatterComponent::Distribution::JitteredGrid;
+    s.plane = ScatterComponent::Plane::XY;
+    s.prefabPath = "assets/rock.enjprefab";
+    s.regionWidth = 33.0f; s.regionHeight = 21.0f;
+    s.targetCount = 128; s.minSpacing = 3.5f;
+    s.scaleMin = 0.5f; s.scaleMax = 1.75f;
+    s.randomYaw = false; s.heightJitter = 2.0f;
+    s.seed = 55555; s.generateOnStart = true;
+
+    // Act
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+
+    // Assert
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<ScatterComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+    ENJIN_EXPECT_EQ((int)g->distribution, (int)ScatterComponent::Distribution::JitteredGrid);
+    ENJIN_EXPECT_EQ((int)g->plane, (int)ScatterComponent::Plane::XY);
+    ENJIN_EXPECT_TRUE(g->prefabPath == "assets/rock.enjprefab");
+    ENJIN_EXPECT_TRUE(g->regionWidth > 32.9f && g->regionWidth < 33.1f);
+    ENJIN_EXPECT_EQ((int)g->targetCount, 128);
+    ENJIN_EXPECT_TRUE(g->minSpacing > 3.4f && g->minSpacing < 3.6f);
+    ENJIN_EXPECT_TRUE(g->scaleMax > 1.74f && g->scaleMax < 1.76f);
+    ENJIN_EXPECT_FALSE(g->randomYaw);
+    ENJIN_EXPECT_TRUE(g->heightJitter > 1.9f && g->heightJitter < 2.1f);
+    ENJIN_EXPECT_EQ((int)g->seed, 55555);
+    ENJIN_EXPECT_TRUE(g->generateOnStart);
+}
+
+// The spawned-instance marker must survive a round trip so a saved scatter batch
+// stays regenerable (regenerate finds and clears the marked children).
+ENJIN_TEST(Scatter, InstanceMarkerRoundTrips) {
+    // Arrange
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    w1.AddComponent<ScatterInstanceComponent>(e);
+
+    // Act
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+
+    // Assert
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    ENJIN_EXPECT_TRUE(w2.HasComponent<ScatterInstanceComponent>(e2));
+}
+
+// ===========================================================================
+// TerrainGeneratorComponent (procgen suite, space-builder — noise + erosion)
+// ===========================================================================
+
+ENJIN_TEST(TerrainGenerator, FieldsRoundTrip) {
+    // Arrange
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& t = w1.AddComponent<TerrainGeneratorComponent>(e);
+    t.gridWidth = 96; t.gridHeight = 80; t.cellSize = 2.0f; t.maxHeight = 45.0f;
+    t.ridged = true; t.octaves = 8; t.lacunarity = 2.3f; t.gain = 0.55f;
+    t.frequency = 1.5f; t.ridgedPower = 3.0f;
+    t.hydraulic = true; t.hydraulicDroplets = 90000;
+    t.thermal = true; t.thermalIterations = 60; t.talusAngle = 0.03f;
+    t.seed = 24680; t.generateOnStart = true;
+
+    // Act
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+
+    // Assert
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<TerrainGeneratorComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+    ENJIN_EXPECT_EQ((int)g->gridWidth, 96);
+    ENJIN_EXPECT_EQ((int)g->gridHeight, 80);
+    ENJIN_EXPECT_TRUE(g->maxHeight > 44.9f && g->maxHeight < 45.1f);
+    ENJIN_EXPECT_TRUE(g->ridged);
+    ENJIN_EXPECT_EQ((int)g->octaves, 8);
+    ENJIN_EXPECT_TRUE(g->hydraulic);
+    ENJIN_EXPECT_EQ((int)g->hydraulicDroplets, 90000);
+    ENJIN_EXPECT_TRUE(g->thermal);
+    ENJIN_EXPECT_EQ((int)g->thermalIterations, 60);
+    ENJIN_EXPECT_EQ((int)g->seed, 24680);
+    ENJIN_EXPECT_TRUE(g->generateOnStart);
+}
+
+// A bake produces a filled heightmap within [0, maxHeight], and the same seed is
+// reproducible.
+ENJIN_TEST(TerrainGenerator, GenerateFillsHeightmapInRange) {
+    // Arrange
+    TerrainGeneratorComponent gen;
+    gen.gridWidth = 32; gen.gridHeight = 32; gen.maxHeight = 10.0f;
+    gen.seed = 12321; gen.hydraulic = false; gen.thermal = false;
+    TerrainComponent terrain;
+
+    // Act
+    ECS::TerrainGeneratorSystem::Generate(gen, terrain);
+
+    // Assert
+    ENJIN_ASSERT_EQ((int)terrain.heightmap.size(), 32 * 32);
+    f32 mn = terrain.heightmap[0], mx = terrain.heightmap[0];
+    for (f32 v : terrain.heightmap) { if (v < mn) mn = v; if (v > mx) mx = v; }
+    ENJIN_EXPECT_TRUE(mn >= -0.001f);
+    ENJIN_EXPECT_TRUE(mx <= 10.001f);
+    ENJIN_EXPECT_TRUE(mx > mn);  // not flat
+    ENJIN_EXPECT_EQ((int)gen.lastSeed, 12321);
+
+    // Same seed reproduces the same field.
+    TerrainGeneratorComponent gen2 = gen;
+    TerrainComponent terrain2;
+    ECS::TerrainGeneratorSystem::Generate(gen2, terrain2);
+    ENJIN_ASSERT_EQ((int)terrain2.heightmap.size(), (int)terrain.heightmap.size());
+    bool identical = true;
+    for (usize i = 0; i < terrain.heightmap.size(); ++i)
+        if (terrain.heightmap[i] != terrain2.heightmap[i]) { identical = false; break; }
+    ENJIN_EXPECT_TRUE(identical);
+}
+
+// ===========================================================================
+// WFCComponent (procgen suite, space-builder — constraint tile solver)
+// ===========================================================================
+
+ENJIN_TEST(WFC, FieldsRoundTrip) {
+    // Arrange
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& g = w1.AddComponent<WFCComponent>(e);
+    g.width = 24; g.height = 18; g.seed = 4242; g.maxBacktracks = 500;
+    g.retryOnFail = true; g.maxRetries = 5; g.fillCollision = false;
+    g.generateOnStart = true;
+    WFCComponent::Tile t0; t0.tileIndex = 3; t0.solid = true;
+    t0.edges[0] = "road"; t0.edges[1] = "grass"; t0.edges[2] = "road"; t0.edges[3] = "grass";
+    WFCComponent::Tile t1; t1.tileIndex = 5;
+    t1.edges[0] = "grass"; t1.edges[1] = "grass"; t1.edges[2] = "grass"; t1.edges[3] = "grass";
+    g.tiles.push_back(t0);
+    g.tiles.push_back(t1);
+
+    // Act
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+
+    // Assert
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* r = w2.GetComponent<WFCComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(r);
+    ENJIN_EXPECT_EQ((int)r->width, 24);
+    ENJIN_EXPECT_EQ((int)r->height, 18);
+    ENJIN_EXPECT_EQ((int)r->seed, 4242);
+    ENJIN_EXPECT_TRUE(r->retryOnFail);
+    ENJIN_EXPECT_EQ((int)r->maxRetries, 5);
+    ENJIN_EXPECT_FALSE(r->fillCollision);
+    ENJIN_ASSERT_EQ((int)r->tiles.size(), 2);
+    ENJIN_EXPECT_EQ(r->tiles[0].tileIndex, 3);
+    ENJIN_EXPECT_TRUE(r->tiles[0].solid);
+    ENJIN_EXPECT_TRUE(r->tiles[0].edges[0] == "road");
+    ENJIN_EXPECT_TRUE(r->tiles[1].edges[1] == "grass");
+}
+
+// A permissive tile set (all edges match) must always collapse, fill the whole
+// tilemap with valid tile indices, and be reproducible for a fixed seed.
+ENJIN_TEST(WFC, PermissiveSetAlwaysCollapses) {
+    // Arrange: two tiles whose every edge shares the same socket, so any neighbour
+    // pairing is legal and the solver can never hit a contradiction.
+    WFCComponent gen;
+    gen.width = 8; gen.height = 8; gen.seed = 7;
+    WFCComponent::Tile a; a.tileIndex = 1; for (auto& s : a.edges) s = "x";
+    WFCComponent::Tile b; b.tileIndex = 2; for (auto& s : b.edges) s = "x";
+    gen.tiles.push_back(a);
+    gen.tiles.push_back(b);
+    TilemapComponent tm;
+
+    // Act
+    bool ok = ECS::WFCSystem::Generate(gen, tm);
+
+    // Assert
+    ENJIN_EXPECT_TRUE(ok);
+    ENJIN_EXPECT_TRUE(gen.lastSuccess);
+    ENJIN_ASSERT_EQ((int)tm.tiles.size(), 8 * 8);
+    bool allValid = true;
+    for (i32 v : tm.tiles) if (v != 1 && v != 2) { allValid = false; break; }
+    ENJIN_EXPECT_TRUE(allValid);
+
+    // Same seed reproduces the same layout.
+    WFCComponent gen2 = gen;
+    TilemapComponent tm2;
+    ECS::WFCSystem::Generate(gen2, tm2);
+    bool identical = (tm.tiles.size() == tm2.tiles.size());
+    for (usize i = 0; identical && i < tm.tiles.size(); ++i)
+        if (tm.tiles[i] != tm2.tiles[i]) identical = false;
+    ENJIN_EXPECT_TRUE(identical);
 }
 
 ENJIN_TEST_MAIN()

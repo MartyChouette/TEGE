@@ -21,6 +21,13 @@
 #include "Enjin/ECS/Systems/DungeonGeneratorSystem.h"
 #include "Enjin/ECS/Components/RandomBag.h"
 #include "Enjin/ECS/Systems/RandomBagSystem.h"
+#include "Enjin/ECS/Components/Scatter.h"
+#include "Enjin/ECS/Systems/ScatterSystem.h"
+#include "Enjin/ECS/Components/TerrainGenerator.h"
+#include "Enjin/ECS/Systems/TerrainGeneratorSystem.h"
+#include "Enjin/ECS/Components/Terrain.h"
+#include "Enjin/ECS/Components/WFC.h"
+#include "Enjin/ECS/Systems/WFCSystem.h"
 #include "Enjin/Editor/ComponentHelp.h"
 #include "Enjin/ECS/Components/GPUParticleEmitter.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
@@ -385,6 +392,21 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::RandomBagComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::RandomBagComponent>(e); },
             "procgen random bag weighted loot table tetris 7-bag deck shuffle spawn draw pull"},
+        {"Scatter", "Procedural", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ScatterComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ScatterComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ScatterComponent>(e); },
+            "procgen scatter prefab instance foliage rocks trees grass poisson blue-noise jitter grid distribute place spawn"},
+        {"Terrain Generator", "Procedural", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TerrainGeneratorComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TerrainGeneratorComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TerrainGeneratorComponent>(e); },
+            "procgen terrain generator heightmap fbm noise fractal ridged mountains hills erosion hydraulic thermal landscape"},
+        {"Wave Function Collapse", "Procedural", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::WFCComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::WFCComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::WFCComponent>(e); },
+            "procgen wfc wave function collapse constraint tile adjacency socket autotile carcassonne pattern"},
         {"Cloth", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ClothComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ClothComponent>(e); },
@@ -2151,6 +2173,219 @@ void EditorLayer::DrawInspectorPanel() {
                     ImGui::TextWrapped("Drew: %s", bag->editorPreview.c_str());
                 }
                 ImGui::TextDisabled("remaining before reshuffle: %u", ECS::RandomBagSystem::Remaining(*bag));
+            }
+        }
+        if (auto* sc = m_World->GetComponent<ECS::ScatterComponent>(m_PrimarySelected)) {
+            bool scOpen = ImGui::CollapsingHeader("Scatter", ImGuiTreeNodeFlags_DefaultOpen);
+            bool scRemoved = false;
+            if (ImGui::BeginPopupContextItem("ScatterCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    ECS::ScatterSystem::Clear(m_World, m_PrimarySelected); // drop the batch with the component
+                    RemoveComponentWithUndo<ECS::ScatterComponent>(m_PrimarySelected, "scatter", "Scatter");
+                    scRemoved = true;
+                }
+                ImGui::EndPopup();
+            }
+            if (!scRemoved && scOpen) {
+                DrawComponentHelp("scatter", m_World, m_PrimarySelected);
+
+                const char* dists[] = {
+                    "Uniform (random, may clump)",
+                    "Poisson (blue-noise, even spacing)",
+                    "Jittered Grid (regular but organic)"
+                };
+                int d = static_cast<int>(sc->distribution);
+                if (ImGui::Combo("Distribution", &d, dists, IM_ARRAYSIZE(dists)))
+                    sc->distribution = static_cast<ECS::ScatterComponent::Distribution>(d);
+
+                const char* planes[] = { "XZ (3D ground)", "XY (2D plane)" };
+                int pl = static_cast<int>(sc->plane);
+                if (ImGui::Combo("Plane", &pl, planes, IM_ARRAYSIZE(planes)))
+                    sc->plane = static_cast<ECS::ScatterComponent::Plane>(pl);
+
+                // Prefab path: text field + drop target for an .enjprefab from the browser.
+                char pbuf[512];
+                std::snprintf(pbuf, sizeof(pbuf), "%s", sc->prefabPath.c_str());
+                if (ImGui::InputText("Prefab", pbuf, sizeof(pbuf)))
+                    sc->prefabPath = pbuf;
+                if (ImGui::BeginDragDropTarget()) {
+                    if (const ImGuiPayload* pl2 = ImGui::AcceptDragDropPayload("ASSET_PATH"))
+                        sc->prefabPath = std::string(static_cast<const char*>(pl2->Data));
+                    ImGui::EndDragDropTarget();
+                }
+                ImGui::TextDisabled("(drop an .enjprefab here, or type its path)");
+
+                ImGui::Separator();
+                ImGui::DragFloat("Region Width",  &sc->regionWidth,  0.5f, 0.0f, 100000.0f, "%.1f");
+                ImGui::DragFloat("Region Height", &sc->regionHeight, 0.5f, 0.0f, 100000.0f, "%.1f");
+                if (sc->distribution == ECS::ScatterComponent::Distribution::Poisson) {
+                    ImGui::DragFloat("Min Spacing", &sc->minSpacing, 0.05f, 0.05f, 10000.0f, "%.2f");
+                    ImGui::TextDisabled("(Poisson fits as many as spacing allows)");
+                } else {
+                    i32 tc = static_cast<i32>(sc->targetCount);
+                    if (ImGui::DragInt("Count", &tc, 1, 0, 20000)) sc->targetCount = static_cast<u32>(tc < 0 ? 0 : tc);
+                }
+
+                ImGui::Separator();
+                ImGui::DragFloatRange2("Scale Range", &sc->scaleMin, &sc->scaleMax, 0.01f, 0.01f, 100.0f, "%.2f");
+                ImGui::Checkbox("Random Yaw", &sc->randomYaw);
+                ImGui::DragFloat("Height Jitter", &sc->heightJitter, 0.05f, 0.0f, 10000.0f, "%.2f");
+
+                ImGui::Separator();
+                i32 seed = static_cast<i32>(sc->seed);
+                if (ImGui::DragInt("Seed (0 = random)", &seed, 1, 0, 2000000000))
+                    sc->seed = static_cast<u32>(seed < 0 ? 0 : seed);
+                ImGui::Checkbox("Generate On Play Start", &sc->generateOnStart);
+
+                if (ImGui::Button("Generate Now")) {
+                    ECS::ScatterSystem::Generate(m_World, m_PrimarySelected, *sc);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Clear")) {
+                    ECS::ScatterSystem::Clear(m_World, m_PrimarySelected);
+                    sc->lastCount = 0;
+                }
+                ImGui::SameLine();
+                ImGui::TextDisabled("placed: %u  (seed %u)", sc->lastCount, sc->lastSeed);
+                ImGui::TextDisabled("(instances are children of this entity; set a prefab to see them)");
+            }
+        }
+        if (auto* tg = m_World->GetComponent<ECS::TerrainGeneratorComponent>(m_PrimarySelected)) {
+            bool tgOpen = ImGui::CollapsingHeader("Terrain Generator", ImGuiTreeNodeFlags_DefaultOpen);
+            bool tgRemoved = false;
+            if (ImGui::BeginPopupContextItem("TerrainGenCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::TerrainGeneratorComponent>(m_PrimarySelected, "terrainGenerator", "Terrain Generator");
+                    tgRemoved = true;
+                }
+                ImGui::EndPopup();
+            }
+            if (!tgRemoved && tgOpen) {
+                DrawComponentHelp("terrainGenerator", m_World, m_PrimarySelected);
+
+                i32 gw = static_cast<i32>(tg->gridWidth), gh = static_cast<i32>(tg->gridHeight);
+                if (ImGui::DragInt("Grid Width", &gw, 1, 4, 1024))  tg->gridWidth = static_cast<u32>(gw < 4 ? 4 : gw);
+                if (ImGui::DragInt("Grid Height", &gh, 1, 4, 1024)) tg->gridHeight = static_cast<u32>(gh < 4 ? 4 : gh);
+                ImGui::DragFloat("Cell Size", &tg->cellSize, 0.05f, 0.05f, 1000.0f, "%.2f");
+                ImGui::DragFloat("Max Height", &tg->maxHeight, 0.5f, 0.0f, 100000.0f, "%.1f");
+
+                ImGui::Separator();
+                ImGui::Checkbox("Ridged (mountains)", &tg->ridged);
+                i32 oct = static_cast<i32>(tg->octaves);
+                if (ImGui::SliderInt("Octaves", &oct, 1, 12)) tg->octaves = static_cast<u32>(oct);
+                ImGui::DragFloat("Lacunarity", &tg->lacunarity, 0.01f, 1.5f, 3.0f, "%.2f");
+                ImGui::DragFloat("Gain", &tg->gain, 0.01f, 0.2f, 0.8f, "%.2f");
+                ImGui::DragFloat("Frequency", &tg->frequency, 0.01f, 0.05f, 20.0f, "%.2f");
+                if (tg->ridged)
+                    ImGui::DragFloat("Ridge Sharpness", &tg->ridgedPower, 0.05f, 0.5f, 6.0f, "%.2f");
+
+                ImGui::Separator();
+                ImGui::Checkbox("Hydraulic Erosion (rain)", &tg->hydraulic);
+                if (tg->hydraulic) {
+                    i32 dr = static_cast<i32>(tg->hydraulicDroplets);
+                    if (ImGui::DragInt("Droplets", &dr, 1000, 1000, 500000)) tg->hydraulicDroplets = static_cast<u32>(dr < 1000 ? 1000 : dr);
+                }
+                ImGui::Checkbox("Thermal Erosion (slump)", &tg->thermal);
+                if (tg->thermal) {
+                    i32 it = static_cast<i32>(tg->thermalIterations);
+                    if (ImGui::SliderInt("Passes", &it, 1, 200)) tg->thermalIterations = static_cast<u32>(it);
+                    ImGui::DragFloat("Talus Angle", &tg->talusAngle, 0.005f, 0.001f, 1.0f, "%.3f");
+                }
+
+                ImGui::Separator();
+                i32 seed = static_cast<i32>(tg->seed);
+                if (ImGui::DragInt("Seed (0 = random)", &seed, 1, 0, 2000000000)) tg->seed = static_cast<u32>(seed < 0 ? 0 : seed);
+                ImGui::Checkbox("Generate On Play Start", &tg->generateOnStart);
+
+                if (ImGui::Button("Generate Now")) {
+                    auto* terrain = m_World->GetComponent<ECS::TerrainComponent>(m_PrimarySelected);
+                    if (!terrain) { m_World->AddComponent<ECS::TerrainComponent>(m_PrimarySelected); terrain = m_World->GetComponent<ECS::TerrainComponent>(m_PrimarySelected); }
+                    if (terrain) {
+                        ECS::TerrainGeneratorSystem::Generate(*tg, *terrain);
+                        ENJIN_LOG_INFO(Editor, "Generated terrain (seed %u)", tg->lastSeed);
+                    }
+                }
+                ImGui::SameLine();
+                ImGui::TextDisabled("seed used: %u", tg->lastSeed);
+                if (tg->hydraulic)
+                    ImGui::TextDisabled("(hydraulic erosion runs %u droplets — Generate may take a moment)", tg->hydraulicDroplets);
+            }
+        }
+        if (auto* wfc = m_World->GetComponent<ECS::WFCComponent>(m_PrimarySelected)) {
+            bool wfcOpen = ImGui::CollapsingHeader("Wave Function Collapse", ImGuiTreeNodeFlags_DefaultOpen);
+            bool wfcRemoved = false;
+            if (ImGui::BeginPopupContextItem("WFCCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::WFCComponent>(m_PrimarySelected, "wfc", "Wave Function Collapse");
+                    wfcRemoved = true;
+                }
+                ImGui::EndPopup();
+            }
+            if (!wfcRemoved && wfcOpen) {
+                DrawComponentHelp("wfc", m_World, m_PrimarySelected);
+
+                i32 ww = static_cast<i32>(wfc->width), wh = static_cast<i32>(wfc->height);
+                if (ImGui::DragInt("Width", &ww, 1, 1, 1024))  wfc->width  = static_cast<u32>(ww < 1 ? 1 : ww);
+                if (ImGui::DragInt("Height", &wh, 1, 1, 1024)) wfc->height = static_cast<u32>(wh < 1 ? 1 : wh);
+
+                ImGui::Separator();
+                ImGui::TextDisabled("Tiles  (edge sockets: N E S W — tiles touch where labels match)");
+                int removeIdx = -1;
+                for (int i = 0; i < static_cast<int>(wfc->tiles.size()); ++i) {
+                    ImGui::PushID(i);
+                    auto& t = wfc->tiles[i];
+                    ImGui::SetNextItemWidth(70.0f);
+                    ImGui::DragInt("tile", &t.tileIndex, 1, -1, 4096);
+                    ImGui::SameLine();
+                    const char* names[4] = { "N##n", "E##e", "S##s", "W##w" };
+                    for (int e = 0; e < 4; ++e) {
+                        char eb[64];
+                        std::snprintf(eb, sizeof(eb), "%s", t.edges[e].c_str());
+                        ImGui::SetNextItemWidth(52.0f);
+                        if (ImGui::InputText(names[e], eb, sizeof(eb))) t.edges[e] = eb;
+                        ImGui::SameLine();
+                    }
+                    ImGui::Checkbox("solid", &t.solid);
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("X")) removeIdx = i;
+                    ImGui::PopID();
+                }
+                if (removeIdx >= 0) wfc->tiles.erase(wfc->tiles.begin() + removeIdx);
+                if (ImGui::Button("+ Add Tile")) {
+                    ECS::WFCComponent::Tile t;
+                    t.tileIndex = static_cast<i32>(wfc->tiles.size());
+                    for (int e = 0; e < 4; ++e) t.edges[e] = "a";
+                    wfc->tiles.push_back(t);
+                }
+
+                ImGui::Separator();
+                i32 seed = static_cast<i32>(wfc->seed);
+                if (ImGui::DragInt("Seed (0 = random)", &seed, 1, 0, 2000000000)) wfc->seed = static_cast<u32>(seed < 0 ? 0 : seed);
+                i32 bt = static_cast<i32>(wfc->maxBacktracks);
+                if (ImGui::DragInt("Max Backtracks", &bt, 1, 0, 100000)) wfc->maxBacktracks = static_cast<u32>(bt < 0 ? 0 : bt);
+                ImGui::Checkbox("Retry On Fail (reseed)", &wfc->retryOnFail);
+                if (wfc->retryOnFail) {
+                    i32 mr = static_cast<i32>(wfc->maxRetries);
+                    if (ImGui::SliderInt("Max Retries", &mr, 1, 64)) wfc->maxRetries = static_cast<u32>(mr);
+                }
+                ImGui::Checkbox("Fill Collision (from 'solid')", &wfc->fillCollision);
+                ImGui::Checkbox("Generate On Play Start", &wfc->generateOnStart);
+
+                if (ImGui::Button("Generate Now")) {
+                    auto* tm = m_World->GetComponent<ECS::TilemapComponent>(m_PrimarySelected);
+                    if (!tm) { m_World->AddComponent<ECS::TilemapComponent>(m_PrimarySelected); tm = m_World->GetComponent<ECS::TilemapComponent>(m_PrimarySelected); }
+                    if (tm) ECS::WFCSystem::Generate(*wfc, *tm);
+                }
+                ImGui::SameLine();
+                if (wfc->lastSuccess)
+                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f), "collapsed OK (seed %u)", wfc->lastSeed);
+                else if (wfc->lastSeed != 0)
+                    ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "contradiction — loosen rules / more retries");
+                else if (wfc->tiles.empty())
+                    ImGui::TextDisabled("add tiles, then Generate");
+                else
+                    ImGui::TextDisabled("press Generate");
+                ImGui::TextDisabled("(paints this entity's Tilemap; add a Tilemap + tileset to see it)");
             }
         }
         if (m_World->HasComponent<ECS::VisualScriptComponent>(m_PrimarySelected)) {
