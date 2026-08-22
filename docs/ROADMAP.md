@@ -30,12 +30,15 @@ This document captures detailed technical plans, performance findings, and strat
 | **Renderer** | GPU-Driven Work Scheduling (indirect draw ✅, multi-draw ✅, async compute overlap ✅) | P3 |
 | ~~**Performance**~~ | ~~CPU Scalability Sprint — binary search keyframes, integer sprite sort, cache storage pointers, world matrix caching, bindless render path, batched material SSBO~~ | ~~P0~~ DONE |
 | **Release** | Splash screen (optional "Made with Enjin") | P2 |
+| **Platforms** | **Linux desktop — first-class build + CI + shipped binaries (see Big Platform Initiatives)** | **P1** |
+| **Platforms** | **Steam — Steamworks SDK, achievements/cloud/overlay, store depot pipeline** | **P1** |
+| **Platforms** | **Steam Deck — Verified target: Proton/native Linux, gamepad-first UI, 1280x800, small-text a11y** | **P1** |
+| **Platforms** | **VR/XR/AR — OpenXR path, stereo/multiview renderer, motion controllers (elevated from P4)** | **P1** |
+| **Platforms** | **Mobile (Android/iOS — render tiers, TBDR/tiled paths, touch input, on-screen controls) (elevated from P4)** | **P1** |
 | **Platforms** | macOS (MoltenVK) | P2 |
 | **Platforms** | Xbox Series X/S (GDK/D3D12) | P2 |
 | **Platforms** | PlayStation 5 (PSDK/AGC) | P3 |
 | **Platforms** | Nintendo Switch 2 (Vulkan 1.3) | P3 |
-| **Platforms** | Mobile (Android/iOS — render tiers, TBDR paths, touch input) | P4 |
-| **Platforms** | VR/XR (OpenXR) | P4 |
 
 ### Recently Completed
 
@@ -145,6 +148,58 @@ This document captures detailed technical plans, performance findings, and strat
 | **Gameplay** | GameOverComponent — victory/defeat conditions, delay, restart/menu buttons |
 | **Gameplay** | MeshColliderComponent — convex hull or triangle mesh collision from mesh vertices |
 | **Gameplay** | ParallaxMachineComponent — multi-layer parallax backgrounds for 2D scenes |
+
+---
+
+## Big Platform Initiatives (added 2026-08-21, P1)
+
+Two large multi-part initiatives promoted to the top of the platform work. Both are
+greenfield relative to the current Windows-first shipping story, but the Vulkan
+foundation, the multi-backend `IRenderBackend` seam, and the already-abstracted
+input layer make them tractable.
+
+### 1. Linux + Steam + Steam Deck
+
+The goal: TEGE builds, ships, and *feels native* on Linux and is Steam Deck Verified.
+
+- **Linux desktop as a first-class build.** It already compiles from source (GCC/Clang
+  + Vulkan). Elevate to: a CI job that builds AND runs `ctest` on Linux; shipped Linux
+  binaries in releases (not just source); an exported-game Linux player target
+  (`EnjinPlayer` for Linux, mirroring the Windows prebuilt); packaging (AppImage or a
+  tarball with the loose `assets/scripts/` layout).
+- **Steamworks integration.** Wrap the Steamworks SDK behind an optional `ISteam`
+  service: app-id init, achievements/stats, Steam Cloud saves (route the tiered save
+  system through it), rich presence, the overlay, and Input API for controller glyphs.
+  Keep it OFF by default / stubbed so non-Steam builds don't require the SDK.
+- **Steam Deck Verified checklist.** Runs under Proton first (validate the Windows
+  build on Deck), then a native Linux build. Gamepad-first: every menu fully navigable
+  with a controller (the accessibility motor layer already helps), default resolution
+  1280x800, readable text at that size (ties into the a11y text-scaling), suspend/resume
+  survival, and a controller glyph set. The exported game — not just the editor — is the
+  target here.
+- **Risk / unknowns:** audio backend parity on Linux (miniaudio is portable), file-path
+  case sensitivity (the `.enjin`/pak loaders must not assume Windows casing), and Proton
+  quirks for the Vulkan swapchain.
+
+### 2. AR / XR / VR + Mobile
+
+The goal: TEGE can output to a headset and to a phone, from the same project.
+
+- **VR/XR via OpenXR** (see the VR scoping note in session memory: ~2-3mo MVP, greenfield,
+  riskiest piece = swapchain-ownership flip). Add an `IXRBackend`: OpenXR session +
+  reference spaces, per-eye stereo/**multiview** rendering (the renderer currently assumes
+  a single view/proj — this is the core change), motion-controller input mapped through
+  the existing input abstraction, and a comfort/vignette layer (the a11y reduced-motion
+  toggle is a natural fit). WebXR as the browser counterpart once desktop OpenXR works.
+- **AR** rides on the same XR session model (passthrough + anchors) once the stereo/pose
+  plumbing exists; scope it as a follow-on to VR rather than a parallel track.
+- **Mobile (Android/iOS).** Vulkan on Android, MoltenVK/Metal on iOS. Needs: render tiers
+  + TBDR/tiled-friendly passes (avoid full-screen resolves the desktop path leans on),
+  touch input + on-screen virtual controls in the UI system, aggressive asset/memory
+  budgets, and a build/packaging path (Gradle/APK, Xcode). Touch is the input-layer piece;
+  the render-tier work overlaps with the Steam Deck "small GPU" tuning.
+- **Shared prerequisite:** both tracks need the renderer to stop assuming one camera/view.
+  Doing the multiview/stereo refactor once unblocks VR, AR, and cleaner mobile split-screen.
 
 ---
 
