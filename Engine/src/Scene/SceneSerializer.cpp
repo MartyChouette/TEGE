@@ -72,6 +72,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <string_view>
 
 using json = nlohmann::json;
 
@@ -7448,6 +7449,334 @@ SerializationResult SceneSerializer::Save(const std::string& filepath, const Ser
     return SaveEntities(filepath, m_World->GetAllEntities(), options);
 }
 
+// ----------------------------------------------------------------------------
+// Component (de)serialization registry - single source of truth. Each entry wires
+// a scene-JSON key to its component has / serialize / deserialize / remove ops.
+// The three per-key helpers below iterate this table, so a component is registered
+// ONCE instead of edited into a dozen hand-maintained else-if chains (which had hit
+// MSVC's C1061 nesting limit and silently dropped components). Uniform components
+// use ENJIN_SERDES; the few irregular ones are explicit entries.
+// ----------------------------------------------------------------------------
+struct ComponentSerdes {
+    const char* key;
+    bool (*has)(ECS::World*, ECS::Entity);
+    json (*ser)(ECS::World*, ECS::Entity);
+    void (*de)(ECS::World*, ECS::Entity, const json&);
+    void (*rem)(ECS::World*, ECS::Entity);
+};
+
+#define ENJIN_SERDES(KEY, TYPE, SERFN, DESERFN) ComponentSerdes{ KEY, [](ECS::World* w, ECS::Entity e){ return w->HasComponent<TYPE>(e); }, [](ECS::World* w, ECS::Entity e)->json{ return SERFN(*w->GetComponent<TYPE>(e)); }, [](ECS::World* w, ECS::Entity e, const json& j){ w->AddComponent<TYPE>(e, DESERFN(j)); }, [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<TYPE>(e); } }
+
+static const std::vector<ComponentSerdes>& ComponentRegistry() {
+    static const std::vector<ComponentSerdes> reg = {
+        ENJIN_SERDES("aiController", ECS::AIControllerComponent, SerializeAIControllerComponent, DeserializeAIControllerComponent),
+        ENJIN_SERDES("animatedSprite2D", ECS::AnimatedSprite2DComponent, SerializeAnimatedSprite2DComponent, DeserializeAnimatedSprite2DComponent),
+        ENJIN_SERDES("animationRecorder", ECS::AnimationRecorderComponent, SerializeAnimationRecorderComponent, DeserializeAnimationRecorderComponent),
+        ENJIN_SERDES("artStyle", ECS::ArtStyleComponent, SerializeArtStyleComponent, DeserializeArtStyleComponent),
+        ENJIN_SERDES("audioCollision", ECS::AudioCollisionComponent, SerializeAudioCollisionComponent, DeserializeAudioCollisionComponent),
+        ENJIN_SERDES("audioFidelity", ECS::AudioFidelityComponent, SerializeAudioFidelityComponent, DeserializeAudioFidelityComponent),
+        ENJIN_SERDES("audioListener", ECS::AudioListenerComponent, SerializeAudioListenerComponent, DeserializeAudioListenerComponent),
+        ENJIN_SERDES("audioOcclusion", ECS::AudioOcclusionComponent, SerializeAudioOcclusionComponent, DeserializeAudioOcclusionComponent),
+        ENJIN_SERDES("audioReactive", ECS::AudioReactiveComponent, SerializeAudioReactiveComponent, DeserializeAudioReactiveComponent),
+        ENJIN_SERDES("audioSnapshotTrigger", ECS::AudioSnapshotTriggerComponent, SerializeAudioSnapshotTriggerComponent, DeserializeAudioSnapshotTriggerComponent),
+        ENJIN_SERDES("audioSource", ECS::AudioSourceComponent, SerializeAudioSourceComponent, DeserializeAudioSourceComponent),
+        ENJIN_SERDES("audioThresholdTrigger", ECS::AudioThresholdTriggerComponent, SerializeAudioThresholdTriggerComponent, DeserializeAudioThresholdTriggerComponent),
+        ENJIN_SERDES("ballSocketJoint", ECS::BallSocketJointComponent, SerializeBallSocketJointComponent, DeserializeBallSocketJointComponent),
+        ENJIN_SERDES("beatClock", ECS::BeatClockComponent, SerializeBeatClockComponent, DeserializeBeatClockComponent),
+        ENJIN_SERDES("beatSync", ECS::BeatSyncComponent, SerializeBeatSyncComponent, DeserializeBeatSyncComponent),
+        ENJIN_SERDES("behaviorTree", ECS::BehaviorTreeComponent, SerializeBehaviorTreeComponent, DeserializeBehaviorTreeComponent),
+        ENJIN_SERDES("billboard", ECS::BillboardComponent, SerializeBillboardComponent, DeserializeBillboardComponent),
+        ENJIN_SERDES("body2D", Physics::Body2DComponent, SerializeBody2DComponent, DeserializeBody2DComponent),
+        ENJIN_SERDES("boxCollider", ECS::BoxColliderComponent, SerializeBoxColliderComponent, DeserializeBoxColliderComponent),
+        ENJIN_SERDES("camera", ECS::CameraComponent, SerializeCameraComponent, DeserializeCameraComponent),
+        ENJIN_SERDES("camera2DBounds", ECS::Camera2DBoundsComponent, SerializeCamera2DBoundsComponent, DeserializeCamera2DBoundsComponent),
+        ENJIN_SERDES("cameraTrigger", ECS::CameraTriggerComponent, SerializeCameraTriggerComponent, DeserializeCameraTriggerComponent),
+        ENJIN_SERDES("capsuleCollider", ECS::CapsuleColliderComponent, SerializeCapsuleColliderComponent, DeserializeCapsuleColliderComponent),
+        ENJIN_SERDES("cinematicCamera", ECS::CinematicCameraComponent, SerializeCinematicCameraComponent, DeserializeCinematicCameraComponent),
+        ENJIN_SERDES("cloth", ECS::ClothComponent, SerializeClothComponent, DeserializeClothComponent),
+        ENJIN_SERDES("conductor", ECS::ConductorComponent, SerializeConductorComponent, DeserializeConductorComponent),
+        ENJIN_SERDES("conveyor", ECS::ConveyorComponent, SerializeConveyorComponent, DeserializeConveyorComponent),
+        ENJIN_SERDES("curlNoiseField", ECS::CurlNoiseFieldComponent, SerializeCurlNoiseFieldComponent, DeserializeCurlNoiseFieldComponent),
+        ENJIN_SERDES("damage", ECS::DamageComponent, SerializeDamageComponent, DeserializeDamageComponent),
+        ENJIN_SERDES("damageResistance", ECS::DamageResistanceComponent, SerializeDamageResistanceComponent, DeserializeDamageResistanceComponent),
+        ENJIN_SERDES("destructible", ECS::DestructibleComponent, SerializeDestructibleComponent, DeserializeDestructibleComponent),
+        ENJIN_SERDES("dialogue", ECS::DialogueComponent, SerializeDialogueComponent, DeserializeDialogueComponent),
+        ENJIN_SERDES("dialogueBox", ECS::DialogueBoxComponent, SerializeDialogueBoxComponent, DeserializeDialogueBoxComponent),
+        ENJIN_SERDES("distanceJoint", ECS::DistanceJointComponent, SerializeDistanceJointComponent, DeserializeDistanceJointComponent),
+        ENJIN_SERDES("dungeonGenerator", ECS::DungeonGeneratorComponent, SerializeDungeonGeneratorComponent, DeserializeDungeonGeneratorComponent),
+        ENJIN_SERDES("dynamicDifficulty", ECS::DynamicDifficultyComponent, SerializeDynamicDifficultyComponent, DeserializeDynamicDifficultyComponent),
+        ENJIN_SERDES("elementalEmitter", ECS::ElementalEmitterComponent, SerializeElementalEmitterComponent, DeserializeElementalEmitterComponent),
+        ENJIN_SERDES("elementalSurface", ECS::ElementalSurfaceComponent, SerializeElementalSurfaceComponent, DeserializeElementalSurfaceComponent),
+        ENJIN_SERDES("elementalVolume", ECS::ElementalVolumeComponent, SerializeElementalVolumeComponent, DeserializeElementalVolumeComponent),
+        ENJIN_SERDES("firstPerson", ECS::FirstPersonController, SerializeFirstPerson, DeserializeFirstPerson),
+        ENJIN_SERDES("fixedJoint", ECS::FixedJointComponent, SerializeFixedJointComponent, DeserializeFixedJointComponent),
+        ENJIN_SERDES("flowerParticleConfig", ECS::FlowerParticleConfigComponent, SerializeFlowerParticleConfigComponent, DeserializeFlowerParticleConfigComponent),
+        ENJIN_SERDES("flowerStem", ECS::FlowerStemComponent, SerializeFlowerStemComponent, DeserializeFlowerStemComponent),
+        ENJIN_SERDES("fluidVolume", ECS::FluidVolumeComponent, SerializeFluidVolumeComponent, DeserializeFluidVolumeComponent),
+        ENJIN_SERDES("followTarget", ECS::FollowTargetComponent, SerializeFollowTargetComponent, DeserializeFollowTargetComponent),
+        ENJIN_SERDES("footstep", ECS::FootstepComponent, SerializeFootstepComponent, DeserializeFootstepComponent),
+        ENJIN_SERDES("fractureConfig", ECS::FractureConfigComponent, SerializeFractureConfigComponent, DeserializeFractureConfigComponent),
+        ENJIN_SERDES("gameOver", ECS::GameOverComponent, SerializeGameOverComponent, DeserializeGameOverComponent),
+        ENJIN_SERDES("goalZone", ECS::GoalZoneComponent, SerializeGoalZoneComponent, DeserializeGoalZoneComponent),
+        ENJIN_SERDES("gpuParticleEmitter", ECS::GPUParticleEmitterComponent, SerializeGPUParticleEmitterComponent, DeserializeGPUParticleEmitterComponent),
+        ENJIN_SERDES("grabbable", ECS::GrabbableComponent, SerializeGrabbableComponent, DeserializeGrabbableComponent),
+        ENJIN_SERDES("grassVolume", ECS::GrassVolumeComponent, SerializeGrassVolumeComponent, DeserializeGrassVolumeComponent),
+        ENJIN_SERDES("gravityZone", ECS::GravityZoneComponent, SerializeGravityZoneComponent, DeserializeGravityZoneComponent),
+        ENJIN_SERDES("health", ECS::HealthComponent, SerializeHealthComponent, DeserializeHealthComponent),
+        ENJIN_SERDES("hingeJoint", ECS::HingeJointComponent, SerializeHingeJointComponent, DeserializeHingeJointComponent),
+        ENJIN_SERDES("hudWidget", ECS::HUDWidgetComponent, SerializeHUDWidgetComponent, DeserializeHUDWidgetComponent),
+        ENJIN_SERDES("interactable", ECS::InteractableComponent, SerializeInteractableComponent, DeserializeInteractableComponent),
+        ENJIN_SERDES("interactiveWater", Effects::InteractiveWaterComponent, SerializeInteractiveWaterComponent, DeserializeInteractiveWaterComponent),
+        ENJIN_SERDES("inventory", ECS::InventoryComponent, SerializeInventoryComponent, DeserializeInventoryComponent),
+        ENJIN_SERDES("jellyMesh", ECS::JellyMeshComponent, SerializeJellyMeshComponent, DeserializeJellyMeshComponent),
+        ENJIN_SERDES("joint2D", Physics::Joint2DComponent, SerializeJoint2DComponent, DeserializeJoint2DComponent),
+        ENJIN_SERDES("lens", ECS::LensComponent, SerializeLensComponent, DeserializeLensComponent),
+        ENJIN_SERDES("light", ECS::LightComponent, SerializeLightComponent, DeserializeLightComponent),
+        ENJIN_SERDES("lock", ECS::LockComponent, SerializeLockComponent, DeserializeLockComponent),
+        ENJIN_SERDES("lod", ECS::LODComponent, SerializeLODComponent, DeserializeLODComponent),
+        ENJIN_SERDES("lookAtTarget", ECS::LookAtTargetComponent, SerializeLookAtTargetComponent, DeserializeLookAtTargetComponent),
+        ENJIN_SERDES("material", ECS::MaterialComponent, SerializeMaterialComponent, DeserializeMaterialComponent),
+        ENJIN_SERDES("materialInteractionTable", ECS::MaterialInteractionTableComponent, SerializeMaterialInteractionTableComponent, DeserializeMaterialInteractionTableComponent),
+        ENJIN_SERDES("materialSlots", ECS::MaterialSlotsComponent, SerializeMaterialSlotsComponent, DeserializeMaterialSlotsComponent),
+        ENJIN_SERDES("meshCollider", ECS::MeshColliderComponent, SerializeMeshColliderComponent, DeserializeMeshColliderComponent),
+        ENJIN_SERDES("meshRenderer", ECS::MeshRendererComponent, SerializeMeshRendererComponent, DeserializeMeshRendererComponent),
+        ENJIN_SERDES("midiBinding", ECS::MIDIBindingComponent, SerializeMIDIBindingComponent, DeserializeMIDIBindingComponent),
+        ComponentSerdes{ "morphTargets",
+            [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::MorphTargetComponent>(e); },
+            [](ECS::World* w, ECS::Entity e)->json{ return SerializeMorphTargetComponent(*w->GetComponent<ECS::MorphTargetComponent>(e), true); },
+            [](ECS::World* w, ECS::Entity e, const json& j){ w->AddComponent<ECS::MorphTargetComponent>(e, DeserializeMorphTargetComponent(j)); },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::MorphTargetComponent>(e); } },
+        ENJIN_SERDES("movingPlatform", ECS::MovingPlatformComponent, SerializeMovingPlatformComponent, DeserializeMovingPlatformComponent),
+        ENJIN_SERDES("musicZone", ECS::MusicZoneComponent, SerializeMusicZoneComponent, DeserializeMusicZoneComponent),
+        ENJIN_SERDES("name", ECS::NameComponent, SerializeNameComponent, DeserializeNameComponent),
+        ENJIN_SERDES("networkIdentity", ECS::NetworkIdentityComponent, SerializeNetworkIdentityComponent, DeserializeNetworkIdentityComponent),
+        ENJIN_SERDES("networkTransform", ECS::NetworkTransformComponent, SerializeNetworkTransformComponent, DeserializeNetworkTransformComponent),
+        ENJIN_SERDES("notes", ECS::NotesComponent, SerializeNotesComponent, DeserializeNotesComponent),
+        ENJIN_SERDES("parallaxMachine", ECS::ParallaxMachineComponent, SerializeParallaxMachineComponent, DeserializeParallaxMachineComponent),
+        ENJIN_SERDES("particleEmitter", ECS::ParticleEmitterComponent, SerializeParticleEmitterComponent, DeserializeParticleEmitterComponent),
+        ENJIN_SERDES("perFrameCollider", ECS::PerFrameColliderComponent, SerializePerFrameColliderComponent, DeserializePerFrameColliderComponent),
+        ENJIN_SERDES("pickup", ECS::PickupComponent, SerializePickupComponent, DeserializePickupComponent),
+        ENJIN_SERDES("platformer2D", ECS::Platformer2DController, SerializePlatformer2D, DeserializePlatformer2D),
+        ENJIN_SERDES("polygonCollider2D", ECS::PolygonCollider2DComponent, SerializePolygonCollider2DComponent, DeserializePolygonCollider2DComponent),
+        ENJIN_SERDES("poolable", ECS::PoolableComponent, SerializePoolableComponent, DeserializePoolableComponent),
+        ENJIN_SERDES("poseLibrary", ECS::PoseLibraryComponent, SerializePoseLibraryComponent, DeserializePoseLibraryComponent),
+        ENJIN_SERDES("possessable", ECS::PossessableComponent, SerializePossessable, DeserializePossessable),
+        ENJIN_SERDES("postProcessVolume", ECS::PostProcessVolumeComponent, SerializePostProcessVolumeComponent, DeserializePostProcessVolumeComponent),
+        ENJIN_SERDES("pushable", ECS::PushableComponent, SerializePushableComponent, DeserializePushableComponent),
+        ENJIN_SERDES("questFlow", ECS::QuestFlowComponent, SerializeQuestFlowComponent, DeserializeQuestFlowComponent),
+        ENJIN_SERDES("questState", ECS::QuestStateComponent, SerializeQuestStateComponent, DeserializeQuestStateComponent),
+        ENJIN_SERDES("ragdoll", ECS::RagdollComponent, SerializeRagdollComponent, DeserializeRagdollComponent),
+        ENJIN_SERDES("randomBag", ECS::RandomBagComponent, SerializeRandomBagComponent, DeserializeRandomBagComponent),
+        ENJIN_SERDES("recordRewind", ECS::RecordRewindComponent, SerializeRecordRewindComponent, DeserializeRecordRewindComponent),
+        ENJIN_SERDES("reflectionProbe", ECS::ReflectionProbeComponent, SerializeReflectionProbeComponent, DeserializeReflectionProbeComponent),
+        ENJIN_SERDES("resource", ECS::ResourceComponent, SerializeResourceComponent, DeserializeResourceComponent),
+        ENJIN_SERDES("reverbZone", ECS::ReverbZoneComponent, SerializeReverbZoneComponent, DeserializeReverbZoneComponent),
+        ENJIN_SERDES("rigidbody", ECS::RigidbodyComponent, SerializeRigidbodyComponent, DeserializeRigidbodyComponent),
+        ENJIN_SERDES("rtpc", ECS::RTPCComponent, SerializeRTPCComponent, DeserializeRTPCComponent),
+        ENJIN_SERDES("saveData", ECS::SaveDataComponent, SerializeSaveDataComponent, DeserializeSaveDataComponent),
+        ENJIN_SERDES("saveLoadMenu", ECS::SaveLoadMenuComponent, SerializeSaveLoadMenuComponent, DeserializeSaveLoadMenuComponent),
+        ENJIN_SERDES("scatter", ECS::ScatterComponent, SerializeScatterComponent, DeserializeScatterComponent),
+        ENJIN_SERDES("sceneRewind", ECS::SceneRewindComponent, SerializeSceneRewindComponent, DeserializeSceneRewindComponent),
+        ENJIN_SERDES("scriptComponent", ECS::ScriptComponent, SerializeScriptComponent, DeserializeScriptComponent),
+        ENJIN_SERDES("shrubVolume", ECS::ShrubVolumeComponent, SerializeShrubVolumeComponent, DeserializeShrubVolumeComponent),
+        ENJIN_SERDES("sidechain", ECS::SidechainComponent, SerializeSidechainComponent, DeserializeSidechainComponent),
+        ENJIN_SERDES("skeleton", ECS::SkeletonComponent, SerializeSkeletonComponent, DeserializeSkeletonComponent),
+        ENJIN_SERDES("sliderJoint", ECS::SliderJointComponent, SerializeSliderJointComponent, DeserializeSliderJointComponent),
+        ENJIN_SERDES("spawnPoint", ECS::SpawnPointComponent, SerializeSpawnPointComponent, DeserializeSpawnPointComponent),
+        ENJIN_SERDES("sphereCollider", ECS::SphereColliderComponent, SerializeSphereColliderComponent, DeserializeSphereColliderComponent),
+        ENJIN_SERDES("springJoint", ECS::SpringJointComponent, SerializeSpringJointComponent, DeserializeSpringJointComponent),
+        ENJIN_SERDES("sprite2D", ECS::Sprite2DComponent, SerializeSprite2DComponent, DeserializeSprite2DComponent),
+        ENJIN_SERDES("stateMachine", ECS::StateMachineComponent, SerializeStateMachineComponent, DeserializeStateMachineComponent),
+        ENJIN_SERDES("streamingPortal", Scene::StreamingPortalComponent, SerializeStreamingPortalComponent, DeserializeStreamingPortalComponent),
+        ENJIN_SERDES("streamingVolume", Scene::StreamingVolumeComponent, SerializeStreamingVolumeComponent, DeserializeStreamingVolumeComponent),
+        ENJIN_SERDES("surfaceAligned", ECS::SurfaceAlignedController, SerializeSurfaceAligned, DeserializeSurfaceAligned),
+        ENJIN_SERDES("swarm", ECS::SwarmComponent, SerializeSwarmComponent, DeserializeSwarmComponent),
+        ENJIN_SERDES("switch", ECS::SwitchComponent, SerializeSwitchComponent, DeserializeSwitchComponent),
+        ENJIN_SERDES("tag", ECS::TagComponent, SerializeTagComponent, DeserializeTagComponent),
+        ENJIN_SERDES("teleporter", ECS::TeleporterComponent, SerializeTeleporterComponent, DeserializeTeleporterComponent),
+        ENJIN_SERDES("temperatureZone", ECS::TemperatureZoneComponent, SerializeTemperatureZoneComponent, DeserializeTemperatureZoneComponent),
+        ENJIN_SERDES("terrain", ECS::TerrainComponent, SerializeTerrainComponent, DeserializeTerrainComponent),
+        ENJIN_SERDES("terrain2d", ECS::Terrain2DComponent, SerializeTerrain2DComponent, DeserializeTerrain2DComponent),
+        ENJIN_SERDES("terrainGenerator", ECS::TerrainGeneratorComponent, SerializeTerrainGeneratorComponent, DeserializeTerrainGeneratorComponent),
+        ENJIN_SERDES("tether", ECS::TetherComponent, SerializeTetherComponent, DeserializeTetherComponent),
+        ENJIN_SERDES("text", ECS::TextComponent, SerializeTextComponent, DeserializeTextComponent),
+        ENJIN_SERDES("thirdPerson", ECS::ThirdPersonController, SerializeThirdPerson, DeserializeThirdPerson),
+        ENJIN_SERDES("tilemap", ECS::TilemapComponent, SerializeTilemapComponent, DeserializeTilemapComponent),
+        ENJIN_SERDES("timer", ECS::TimerComponent, SerializeTimerComponent, DeserializeTimerComponent),
+        ENJIN_SERDES("topDown2D", ECS::TopDown2DController, SerializeTopDown2D, DeserializeTopDown2D),
+        ENJIN_SERDES("topDown3D", ECS::TopDown3DController, SerializeTopDown3D, DeserializeTopDown3D),
+        ENJIN_SERDES("transform", ECS::TransformComponent, SerializeTransformComponent, DeserializeTransformComponent),
+        ENJIN_SERDES("treeVolume", ECS::TreeVolumeComponent, SerializeTreeVolumeComponent, DeserializeTreeVolumeComponent),
+        ENJIN_SERDES("triggerZone", ECS::TriggerZoneComponent, SerializeTriggerZoneComponent, DeserializeTriggerZoneComponent),
+        ENJIN_SERDES("tween", ECS::TweenComponent, SerializeTweenComponent, DeserializeTweenComponent),
+        ENJIN_SERDES("uiCanvas", GUI::UICanvasComponent, SerializeUICanvasComponent, DeserializeUICanvasComponent),
+        ENJIN_SERDES("vegetation", ECS::VegetationComponent, SerializeVegetationComponent, DeserializeVegetationComponent),
+        ENJIN_SERDES("vehicle", ECS::VehicleController, SerializeVehicle, DeserializeVehicle),
+        ENJIN_SERDES("viewmodel", ECS::ViewmodelComponent, SerializeViewmodelComponent, DeserializeViewmodelComponent),
+        ENJIN_SERDES("visualScript", ECS::VisualScriptComponent, SerializeVisualScriptComponent, DeserializeVisualScriptComponent),
+        ENJIN_SERDES("water3D", ECS::Water3DComponent, SerializeWater3DComponent, DeserializeWater3DComponent),
+        ENJIN_SERDES("waterInteractor", Effects::WaterInteractorComponent, SerializeWaterInteractorComponent, DeserializeWaterInteractorComponent),
+        ENJIN_SERDES("waterVolume", ECS::WaterVolumeComponent, SerializeWaterVolumeComponent, DeserializeWaterVolumeComponent),
+        ENJIN_SERDES("waypoint", ECS::WaypointComponent, SerializeWaypointComponent, DeserializeWaypointComponent),
+        ENJIN_SERDES("weatherZone", ECS::WeatherZoneComponent, SerializeWeatherZoneComponent, DeserializeWeatherZoneComponent),
+        ENJIN_SERDES("wfc", ECS::WFCComponent, SerializeWFCComponent, DeserializeWFCComponent),
+        // --- special cases (behavior-identical to the old chains) ---
+        ComponentSerdes{ "stableId",
+            [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::StableIdComponent>(e); },
+            [](ECS::World* w, ECS::Entity e)->json{ json j; j["id"] = w->GetComponent<ECS::StableIdComponent>(e)->id; return j; },
+            [](ECS::World* w, ECS::Entity e, const json& j){ w->AddComponent<ECS::StableIdComponent>(e, ECS::StableIdComponent{ j.value("id", u64{0}) }); },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::StableIdComponent>(e); } },
+        ComponentSerdes{ "mesh",
+            [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::MeshComponent>(e); },
+            [](ECS::World* w, ECS::Entity e)->json{ return SerializeMeshComponent(*w->GetComponent<ECS::MeshComponent>(e), true); },
+            [](ECS::World* w, ECS::Entity e, const json& j){ w->AddComponent<ECS::MeshComponent>(e, DeserializeMeshComponent(j)); },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::MeshComponent>(e); } },
+        ComponentSerdes{ "animator",
+            [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::AnimatorComponent>(e); },
+            [](ECS::World* w, ECS::Entity e)->json{ return SerializeAnimatorComponent(*w->GetComponent<ECS::AnimatorComponent>(e)); },
+            [](ECS::World* w, ECS::Entity e, const json& j){
+                std::shared_ptr<Animation::Skeleton> skel;
+                if (w->HasComponent<ECS::SkeletonComponent>(e)) skel = w->GetComponent<ECS::SkeletonComponent>(e)->skeleton;
+                w->AddComponent<ECS::AnimatorComponent>(e, DeserializeAnimatorComponent(j, skel));
+            },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::AnimatorComponent>(e); } },
+        ComponentSerdes{ "boneAttachment",
+            [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::BoneAttachmentComponent>(e); },
+            [](ECS::World* w, ECS::Entity e)->json{
+                auto* ba = w->GetComponent<ECS::BoneAttachmentComponent>(e); json j;
+                j["targetEntity"] = static_cast<u64>(ba->targetEntity);
+                j["targetBoneName"] = ba->targetBoneName;
+                j["positionOffset"] = { ba->positionOffset.x, ba->positionOffset.y, ba->positionOffset.z };
+                j["rotationOffset"] = { ba->rotationOffset.x, ba->rotationOffset.y, ba->rotationOffset.z, ba->rotationOffset.w };
+                return j;
+            },
+            [](ECS::World* w, ECS::Entity e, const json& j){
+                auto& ba = w->AddComponent<ECS::BoneAttachmentComponent>(e);
+                if (j.contains("targetEntity")) ba.targetEntity = static_cast<ECS::Entity>(j["targetEntity"].get<u64>());
+                if (j.contains("targetBoneName")) ba.targetBoneName = j["targetBoneName"].get<std::string>();
+                if (j.contains("positionOffset") && j["positionOffset"].is_array() && j["positionOffset"].size() >= 3) {
+                    auto& a = j["positionOffset"]; ba.positionOffset = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
+                }
+                if (j.contains("rotationOffset") && j["rotationOffset"].is_array() && j["rotationOffset"].size() >= 4) {
+                    auto& a = j["rotationOffset"]; ba.rotationOffset = Math::Quaternion(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>(), a[3].get<f32>());
+                }
+            },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::BoneAttachmentComponent>(e); } },
+        // --- absorbed from the scene save/load loops (Stage 2): these were wired
+        // only in the loops, so the per-key helpers could not copy/undo them ---
+        ENJIN_SERDES("customShader", ECS::CustomShaderComponent, SerializeCustomShaderComponent, DeserializeCustomShaderComponent),
+        ENJIN_SERDES("layer", ECS::LayerComponent, SerializeLayerComponent, DeserializeLayerComponent),
+        ENJIN_SERDES("cineComponent", ECS::CineComponent, SerializeCineComponent, DeserializeCineComponent),
+        // scatterInstance: presence-only marker for procgen-spawned instances.
+        ComponentSerdes{ "scatterInstance",
+            [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::ScatterInstanceComponent>(e); },
+            [](ECS::World* w, ECS::Entity e)->json{ (void)w; (void)e; return json::object(); },
+            [](ECS::World* w, ECS::Entity e, const json& j){ (void)j; w->AddComponent<ECS::ScatterInstanceComponent>(e); },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::ScatterInstanceComponent>(e); } },
+        // prefabInstance: persisted link fields only (overrides map is runtime state).
+        ComponentSerdes{ "prefabInstance",
+            [](ECS::World* w, ECS::Entity e){ return w->HasComponent<Assets::PrefabInstanceComponent>(e); },
+            [](ECS::World* w, ECS::Entity e)->json{
+                auto* pi = w->GetComponent<Assets::PrefabInstanceComponent>(e); json j;
+                j["prefabId"] = pi->prefabId;
+                j["prefabPath"] = pi->prefabPath;
+                return j;
+            },
+            [](ECS::World* w, ECS::Entity e, const json& j){
+                auto& pi = w->AddComponent<Assets::PrefabInstanceComponent>(e);
+                pi.prefabId = j.value("prefabId", static_cast<u64>(0));
+                pi.prefabPath = j.value("prefabPath", std::string(""));
+            },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<Assets::PrefabInstanceComponent>(e); } },
+        ComponentSerdes{ "lookAtIK",
+            [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::LookAtIKComponent>(e); },
+            [](ECS::World* w, ECS::Entity e)->json{
+                auto* ik = w->GetComponent<ECS::LookAtIKComponent>(e); json j;
+                j["headBone"] = ik->headBoneName;
+                j["neckBone"] = ik->neckBoneName;
+                j["targetEntity"] = static_cast<u64>(ik->targetEntity);
+                j["targetPos"] = { ik->targetWorldPos.x, ik->targetWorldPos.y, ik->targetWorldPos.z };
+                j["useEntityTarget"] = ik->useEntityTarget;
+                j["maxRotation"] = ik->maxRotation;
+                j["smoothSpeed"] = ik->smoothSpeed;
+                j["lookWeight"] = ik->lookWeight;
+                return j;
+            },
+            [](ECS::World* w, ECS::Entity e, const json& ikJson){
+                auto& ik = w->AddComponent<ECS::LookAtIKComponent>(e);
+                if (ikJson.contains("headBone")) ik.headBoneName = ikJson["headBone"].get<std::string>();
+                if (ikJson.contains("neckBone")) ik.neckBoneName = ikJson["neckBone"].get<std::string>();
+                if (ikJson.contains("targetEntity")) ik.targetEntity = static_cast<ECS::Entity>(ikJson["targetEntity"].get<u64>());
+                if (ikJson.contains("targetPos") && ikJson["targetPos"].is_array() && ikJson["targetPos"].size() >= 3) {
+                    auto& arr = ikJson["targetPos"];
+                    ik.targetWorldPos = Math::Vector3(arr[0].get<f32>(), arr[1].get<f32>(), arr[2].get<f32>());
+                }
+                if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = JB(ikJson["useEntityTarget"]);
+                if (ikJson.contains("maxRotation")) ik.maxRotation = ikJson["maxRotation"].get<f32>();
+                if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
+                if (ikJson.contains("lookWeight")) ik.lookWeight = ikJson["lookWeight"].get<f32>();
+            },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::LookAtIKComponent>(e); } },
+        ComponentSerdes{ "interactionIK",
+            [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::InteractionIKComponent>(e); },
+            [](ECS::World* w, ECS::Entity e)->json{
+                auto* ik = w->GetComponent<ECS::InteractionIKComponent>(e); json j;
+                j["handBone"] = ik->handBoneName;
+                j["elbowBone"] = ik->elbowBoneName;
+                j["shoulderBone"] = ik->shoulderBoneName;
+                j["interactionRadius"] = ik->interactionRadius;
+                j["ikWeight"] = ik->ikWeight;
+                j["smoothSpeed"] = ik->smoothSpeed;
+                j["interactionTag"] = ik->interactionTag;
+                return j;
+            },
+            [](ECS::World* w, ECS::Entity e, const json& ikJson){
+                auto& ik = w->AddComponent<ECS::InteractionIKComponent>(e);
+                if (ikJson.contains("handBone")) ik.handBoneName = ikJson["handBone"].get<std::string>();
+                if (ikJson.contains("elbowBone")) ik.elbowBoneName = ikJson["elbowBone"].get<std::string>();
+                if (ikJson.contains("shoulderBone")) ik.shoulderBoneName = ikJson["shoulderBone"].get<std::string>();
+                if (ikJson.contains("interactionRadius")) ik.interactionRadius = ikJson["interactionRadius"].get<f32>();
+                if (ikJson.contains("ikWeight")) ik.ikWeight = ikJson["ikWeight"].get<f32>();
+                if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
+                if (ikJson.contains("interactionTag")) ik.interactionTag = ikJson["interactionTag"].get<std::string>();
+            },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::InteractionIKComponent>(e); } },
+        ComponentSerdes{ "twoBoneIK",
+            [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::TwoBoneIKComponent>(e); },
+            [](ECS::World* w, ECS::Entity e)->json{
+                auto* ik = w->GetComponent<ECS::TwoBoneIKComponent>(e); json j;
+                j["rootBone"] = ik->rootBoneName;
+                j["midBone"] = ik->midBoneName;
+                j["endBone"] = ik->endBoneName;
+                j["targetPos"] = { ik->targetPosition.x, ik->targetPosition.y, ik->targetPosition.z };
+                j["targetEntity"] = static_cast<u64>(ik->targetEntity);
+                j["useEntityTarget"] = ik->useEntityTarget;
+                j["weight"] = ik->weight;
+                j["poleVector"] = { ik->poleVector.x, ik->poleVector.y, ik->poleVector.z };
+                return j;
+            },
+            [](ECS::World* w, ECS::Entity e, const json& ikJson){
+                auto& ik = w->AddComponent<ECS::TwoBoneIKComponent>(e);
+                if (ikJson.contains("rootBone")) ik.rootBoneName = ikJson["rootBone"].get<std::string>();
+                if (ikJson.contains("midBone")) ik.midBoneName = ikJson["midBone"].get<std::string>();
+                if (ikJson.contains("endBone")) ik.endBoneName = ikJson["endBone"].get<std::string>();
+                if (ikJson.contains("targetPos") && ikJson["targetPos"].is_array() && ikJson["targetPos"].size() >= 3) {
+                    auto& a = ikJson["targetPos"];
+                    ik.targetPosition = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
+                }
+                if (ikJson.contains("targetEntity")) ik.targetEntity = static_cast<ECS::Entity>(ikJson["targetEntity"].get<u64>());
+                if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = JB(ikJson["useEntityTarget"]);
+                if (ikJson.contains("weight")) ik.weight = ikJson["weight"].get<f32>();
+                if (ikJson.contains("poleVector") && ikJson["poleVector"].is_array() && ikJson["poleVector"].size() >= 3) {
+                    auto& a = ikJson["poleVector"];
+                    ik.poleVector = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
+                }
+            },
+            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::TwoBoneIKComponent>(e); } },
+    };
+    return reg;
+}
+
 SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, const std::vector<ECS::Entity>& entities, const SerializationOptions& options) {
     if (!m_World) {
         SerializationResult result;
@@ -7521,600 +7850,25 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             entityJson["stableId"] = m_World->GetComponent<ECS::StableIdComponent>(entity)->id;
 
             // Serialize components
-            if (m_World->HasComponent<ECS::NameComponent>(entity)) {
-                const auto* name = m_World->GetComponent<ECS::NameComponent>(entity);
-                entityJson["name"] = SerializeNameComponent(*name);
+                        // Serialize components via the registry (single source of truth).
+            // mesh/morphTargets stay explicit below (they honor vertex-data options);
+            // stableId/id/parent are entity-level and written outside the registry.
+            for (const auto& reg : ComponentRegistry()) {
+                std::string_view rk(reg.key);
+                if (rk == "mesh" || rk == "morphTargets" || rk == "stableId") continue;
+                if (reg.has(m_World, entity)) entityJson[reg.key] = reg.ser(m_World, entity);
             }
-
-            if (m_World->HasComponent<ECS::TransformComponent>(entity)) {
-                const auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
-                entityJson["transform"] = SerializeTransformComponent(*transform);
-            }
-
-            if (m_World->HasComponent<ECS::MaterialComponent>(entity)) {
-                const auto* material = m_World->GetComponent<ECS::MaterialComponent>(entity);
-                entityJson["material"] = SerializeMaterialComponent(*material);
-            }
-
-            if (m_World->HasComponent<ECS::MaterialSlotsComponent>(entity)) {
-                const auto* matSlots = m_World->GetComponent<ECS::MaterialSlotsComponent>(entity);
-                entityJson["materialSlots"] = SerializeMaterialSlotsComponent(*matSlots);
-            }
-
             if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
                 const auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
                 entityJson["mesh"] = SerializeMeshComponent(*mesh, options.includeVertexData, options.useMeshReferences);
             }
-
-            if (m_World->HasComponent<ECS::SkeletonComponent>(entity)) {
-                const auto* skel = m_World->GetComponent<ECS::SkeletonComponent>(entity);
-                entityJson["skeleton"] = SerializeSkeletonComponent(*skel);
-            }
-
-            if (m_World->HasComponent<ECS::AnimatorComponent>(entity)) {
-                const auto* anim = m_World->GetComponent<ECS::AnimatorComponent>(entity);
-                entityJson["animator"] = SerializeAnimatorComponent(*anim);
-            }
-
-            if (m_World->HasComponent<ECS::LightComponent>(entity)) {
-                const auto* light = m_World->GetComponent<ECS::LightComponent>(entity);
-                entityJson["light"] = SerializeLightComponent(*light);
-            }
-
-            if (m_World->HasComponent<ECS::NotesComponent>(entity)) {
-                const auto* notes = m_World->GetComponent<ECS::NotesComponent>(entity);
-                entityJson["notes"] = SerializeNotesComponent(*notes);
-            }
-
-            if (m_World->HasComponent<ECS::TextComponent>(entity)) {
-                const auto* text = m_World->GetComponent<ECS::TextComponent>(entity);
-                entityJson["text"] = SerializeTextComponent(*text);
-            }
-
-            if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
-                const auto* camera = m_World->GetComponent<ECS::CameraComponent>(entity);
-                entityJson["camera"] = SerializeCameraComponent(*camera);
-            }
-
-            if (m_World->HasComponent<ECS::WeatherZoneComponent>(entity)) {
-                const auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
-                entityJson["weatherZone"] = SerializeWeatherZoneComponent(*zone);
-            }
-
-            if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
-                const auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
-                entityJson["waterVolume"] = SerializeWaterVolumeComponent(*volume);
-            }
-
-            if (m_World->HasComponent<ECS::Water3DComponent>(entity)) {
-                const auto* w3d = m_World->GetComponent<ECS::Water3DComponent>(entity);
-                entityJson["water3D"] = SerializeWater3DComponent(*w3d);
-            }
-
-            if (m_World->HasComponent<ECS::ShrubVolumeComponent>(entity)) {
-                const auto* shrub = m_World->GetComponent<ECS::ShrubVolumeComponent>(entity);
-                entityJson["shrubVolume"] = SerializeShrubVolumeComponent(*shrub);
-            }
-
-            if (m_World->HasComponent<ECS::TreeVolumeComponent>(entity)) {
-                const auto* tree = m_World->GetComponent<ECS::TreeVolumeComponent>(entity);
-                entityJson["treeVolume"] = SerializeTreeVolumeComponent(*tree);
-            }
-
-            if (m_World->HasComponent<ECS::TerrainComponent>(entity)) {
-                const auto* terrain = m_World->GetComponent<ECS::TerrainComponent>(entity);
-                entityJson["terrain"] = SerializeTerrainComponent(*terrain);
-            }
-
-            if (m_World->HasComponent<ECS::Terrain2DComponent>(entity)) {
-                const auto* terrain2d = m_World->GetComponent<ECS::Terrain2DComponent>(entity);
-                entityJson["terrain2d"] = SerializeTerrain2DComponent(*terrain2d);
-            }
-
-            if (m_World->HasComponent<ECS::CameraTriggerComponent>(entity)) {
-                const auto* trigger = m_World->GetComponent<ECS::CameraTriggerComponent>(entity);
-                entityJson["cameraTrigger"] = SerializeCameraTriggerComponent(*trigger);
-            }
-
-            if (m_World->HasComponent<ECS::TemperatureZoneComponent>(entity)) {
-                const auto* zone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
-                entityJson["temperatureZone"] = SerializeTemperatureZoneComponent(*zone);
-            }
-
-            if (m_World->HasComponent<ECS::GravityZoneComponent>(entity)) {
-                const auto* zone = m_World->GetComponent<ECS::GravityZoneComponent>(entity);
-                entityJson["gravityZone"] = SerializeGravityZoneComponent(*zone);
-            }
-
-            if (m_World->HasComponent<ECS::ReflectionProbeComponent>(entity)) {
-                entityJson["reflectionProbe"] = SerializeReflectionProbeComponent(*m_World->GetComponent<ECS::ReflectionProbeComponent>(entity));
-            }
-
-            if (m_World->HasComponent<ECS::ElementalSurfaceComponent>(entity)) {
-                entityJson["elementalSurface"] = SerializeElementalSurfaceComponent(*m_World->GetComponent<ECS::ElementalSurfaceComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ElementalEmitterComponent>(entity)) {
-                entityJson["elementalEmitter"] = SerializeElementalEmitterComponent(*m_World->GetComponent<ECS::ElementalEmitterComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::GPUParticleEmitterComponent>(entity)) {
-                entityJson["gpuParticleEmitter"] = SerializeGPUParticleEmitterComponent(*m_World->GetComponent<ECS::GPUParticleEmitterComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::CustomShaderComponent>(entity)) {
-                entityJson["customShader"] = SerializeCustomShaderComponent(*m_World->GetComponent<ECS::CustomShaderComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ClothComponent>(entity)) {
-                entityJson["cloth"] = SerializeClothComponent(*m_World->GetComponent<ECS::ClothComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::SwarmComponent>(entity)) {
-                entityJson["swarm"] = SerializeSwarmComponent(*m_World->GetComponent<ECS::SwarmComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::DungeonGeneratorComponent>(entity)) {
-                entityJson["dungeonGenerator"] = SerializeDungeonGeneratorComponent(*m_World->GetComponent<ECS::DungeonGeneratorComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::RandomBagComponent>(entity)) {
-                entityJson["randomBag"] = SerializeRandomBagComponent(*m_World->GetComponent<ECS::RandomBagComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ScatterComponent>(entity)) {
-                entityJson["scatter"] = SerializeScatterComponent(*m_World->GetComponent<ECS::ScatterComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::TerrainGeneratorComponent>(entity)) {
-                entityJson["terrainGenerator"] = SerializeTerrainGeneratorComponent(*m_World->GetComponent<ECS::TerrainGeneratorComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::WFCComponent>(entity)) {
-                entityJson["wfc"] = SerializeWFCComponent(*m_World->GetComponent<ECS::WFCComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ScatterInstanceComponent>(entity)) {
-                entityJson["scatterInstance"] = json::object();
-            }
-            if (m_World->HasComponent<ECS::ElementalVolumeComponent>(entity)) {
-                entityJson["elementalVolume"] = SerializeElementalVolumeComponent(*m_World->GetComponent<ECS::ElementalVolumeComponent>(entity));
-            }
-
-            if (m_World->HasComponent<ECS::PostProcessVolumeComponent>(entity)) {
-                const auto* vol = m_World->GetComponent<ECS::PostProcessVolumeComponent>(entity);
-                entityJson["postProcessVolume"] = SerializePostProcessVolumeComponent(*vol);
-            }
-
-            if (m_World->HasComponent<ECS::CineComponent>(entity)) {
-                entityJson["cineComponent"] = SerializeCineComponent(*m_World->GetComponent<ECS::CineComponent>(entity));
-            }
-
-            if (m_World->HasComponent<ECS::FluidVolumeComponent>(entity)) {
-                const auto* vol = m_World->GetComponent<ECS::FluidVolumeComponent>(entity);
-                entityJson["fluidVolume"] = SerializeFluidVolumeComponent(*vol);
-            }
-
-            // Character controllers
-            if (m_World->HasComponent<ECS::Platformer2DController>(entity)) {
-                entityJson["platformer2D"] = SerializePlatformer2D(*m_World->GetComponent<ECS::Platformer2DController>(entity));
-            }
-            if (m_World->HasComponent<ECS::TopDown2DController>(entity)) {
-                entityJson["topDown2D"] = SerializeTopDown2D(*m_World->GetComponent<ECS::TopDown2DController>(entity));
-            }
-            if (m_World->HasComponent<ECS::TopDown3DController>(entity)) {
-                entityJson["topDown3D"] = SerializeTopDown3D(*m_World->GetComponent<ECS::TopDown3DController>(entity));
-            }
-            if (m_World->HasComponent<ECS::ThirdPersonController>(entity)) {
-                entityJson["thirdPerson"] = SerializeThirdPerson(*m_World->GetComponent<ECS::ThirdPersonController>(entity));
-            }
-            if (m_World->HasComponent<ECS::FirstPersonController>(entity)) {
-                entityJson["firstPerson"] = SerializeFirstPerson(*m_World->GetComponent<ECS::FirstPersonController>(entity));
-            }
-            if (m_World->HasComponent<ECS::VehicleController>(entity)) {
-                entityJson["vehicle"] = SerializeVehicle(*m_World->GetComponent<ECS::VehicleController>(entity));
-            }
-            if (m_World->HasComponent<ECS::SurfaceAlignedController>(entity)) {
-                entityJson["surfaceAligned"] = SerializeSurfaceAligned(*m_World->GetComponent<ECS::SurfaceAlignedController>(entity));
-            }
-            if (m_World->HasComponent<ECS::NetworkIdentityComponent>(entity)) {
-                entityJson["networkIdentity"] = SerializeNetworkIdentityComponent(*m_World->GetComponent<ECS::NetworkIdentityComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::NetworkTransformComponent>(entity)) {
-                entityJson["networkTransform"] = SerializeNetworkTransformComponent(*m_World->GetComponent<ECS::NetworkTransformComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::PossessableComponent>(entity)) {
-                entityJson["possessable"] = SerializePossessable(*m_World->GetComponent<ECS::PossessableComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::LockComponent>(entity)) {
-                entityJson["lock"] = SerializeLockComponent(*m_World->GetComponent<ECS::LockComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::PushableComponent>(entity)) {
-                entityJson["pushable"] = SerializePushableComponent(*m_World->GetComponent<ECS::PushableComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::SwitchComponent>(entity)) {
-                entityJson["switch"] = SerializeSwitchComponent(*m_World->GetComponent<ECS::SwitchComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::GoalZoneComponent>(entity)) {
-                entityJson["goalZone"] = SerializeGoalZoneComponent(*m_World->GetComponent<ECS::GoalZoneComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ConveyorComponent>(entity)) {
-                entityJson["conveyor"] = SerializeConveyorComponent(*m_World->GetComponent<ECS::ConveyorComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::TeleporterComponent>(entity)) {
-                entityJson["teleporter"] = SerializeTeleporterComponent(*m_World->GetComponent<ECS::TeleporterComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::DestructibleComponent>(entity)) {
-                entityJson["destructible"] = SerializeDestructibleComponent(*m_World->GetComponent<ECS::DestructibleComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::CurlNoiseFieldComponent>(entity)) {
-                entityJson["curlNoiseField"] = SerializeCurlNoiseFieldComponent(*m_World->GetComponent<ECS::CurlNoiseFieldComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::FractureConfigComponent>(entity)) {
-                entityJson["fractureConfig"] = SerializeFractureConfigComponent(*m_World->GetComponent<ECS::FractureConfigComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::MovingPlatformComponent>(entity)) {
-                entityJson["movingPlatform"] = SerializeMovingPlatformComponent(*m_World->GetComponent<ECS::MovingPlatformComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ScriptComponent>(entity)) {
-                entityJson["scriptComponent"] = SerializeScriptComponent(*m_World->GetComponent<ECS::ScriptComponent>(entity));
-            }
-
-            // Hierarchy
             if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
                 entityJson["parent"] = static_cast<u64>(m_World->GetComponent<ECS::ParentComponent>(entity)->parent);
-            }
-
-            // Prefab instance link
-            if (m_World->HasComponent<Assets::PrefabInstanceComponent>(entity)) {
-                auto* pi = m_World->GetComponent<Assets::PrefabInstanceComponent>(entity);
-                json piJson;
-                piJson["prefabId"] = pi->prefabId;
-                piJson["prefabPath"] = pi->prefabPath;
-                entityJson["prefabInstance"] = piJson;
-            }
-
-            // IK Components
-            if (m_World->HasComponent<ECS::LookAtIKComponent>(entity)) {
-                auto* ik = m_World->GetComponent<ECS::LookAtIKComponent>(entity);
-                json ikJson;
-                ikJson["headBone"] = ik->headBoneName;
-                ikJson["neckBone"] = ik->neckBoneName;
-                ikJson["targetEntity"] = static_cast<u64>(ik->targetEntity);
-                ikJson["targetPos"] = { ik->targetWorldPos.x, ik->targetWorldPos.y, ik->targetWorldPos.z };
-                ikJson["useEntityTarget"] = ik->useEntityTarget;
-                ikJson["maxRotation"] = ik->maxRotation;
-                ikJson["smoothSpeed"] = ik->smoothSpeed;
-                ikJson["lookWeight"] = ik->lookWeight;
-                entityJson["lookAtIK"] = ikJson;
-            }
-            if (m_World->HasComponent<ECS::InteractionIKComponent>(entity)) {
-                auto* ik = m_World->GetComponent<ECS::InteractionIKComponent>(entity);
-                json ikJson;
-                ikJson["handBone"] = ik->handBoneName;
-                ikJson["elbowBone"] = ik->elbowBoneName;
-                ikJson["shoulderBone"] = ik->shoulderBoneName;
-                ikJson["interactionRadius"] = ik->interactionRadius;
-                ikJson["ikWeight"] = ik->ikWeight;
-                ikJson["smoothSpeed"] = ik->smoothSpeed;
-                ikJson["interactionTag"] = ik->interactionTag;
-                entityJson["interactionIK"] = ikJson;
-            }
-            if (m_World->HasComponent<ECS::TwoBoneIKComponent>(entity)) {
-                auto* ik = m_World->GetComponent<ECS::TwoBoneIKComponent>(entity);
-                json ikJson;
-                ikJson["rootBone"] = ik->rootBoneName;
-                ikJson["midBone"] = ik->midBoneName;
-                ikJson["endBone"] = ik->endBoneName;
-                ikJson["targetPos"] = { ik->targetPosition.x, ik->targetPosition.y, ik->targetPosition.z };
-                ikJson["targetEntity"] = static_cast<u64>(ik->targetEntity);
-                ikJson["useEntityTarget"] = ik->useEntityTarget;
-                ikJson["weight"] = ik->weight;
-                ikJson["poleVector"] = { ik->poleVector.x, ik->poleVector.y, ik->poleVector.z };
-                entityJson["twoBoneIK"] = ikJson;
-            }
-            if (m_World->HasComponent<ECS::BoneAttachmentComponent>(entity)) {
-                auto* ba = m_World->GetComponent<ECS::BoneAttachmentComponent>(entity);
-                json baJson;
-                baJson["targetEntity"] = static_cast<u64>(ba->targetEntity);
-                baJson["targetBoneName"] = ba->targetBoneName;
-                baJson["positionOffset"] = { ba->positionOffset.x, ba->positionOffset.y, ba->positionOffset.z };
-                baJson["rotationOffset"] = { ba->rotationOffset.x, ba->rotationOffset.y, ba->rotationOffset.z, ba->rotationOffset.w };
-                entityJson["boneAttachment"] = baJson;
-            }
-
-            // Audio Components
-            if (m_World->HasComponent<ECS::AudioSourceComponent>(entity)) {
-                const auto* audio = m_World->GetComponent<ECS::AudioSourceComponent>(entity);
-                entityJson["audioSource"] = SerializeAudioSourceComponent(*audio);
-            }
-            if (m_World->HasComponent<ECS::AudioListenerComponent>(entity)) {
-                const auto* listener = m_World->GetComponent<ECS::AudioListenerComponent>(entity);
-                entityJson["audioListener"] = SerializeAudioListenerComponent(*listener);
-            }
-
-            // Physics & Collision
-            if (m_World->HasComponent<ECS::RigidbodyComponent>(entity)) {
-                entityJson["rigidbody"] = SerializeRigidbodyComponent(*m_World->GetComponent<ECS::RigidbodyComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::BoxColliderComponent>(entity)) {
-                entityJson["boxCollider"] = SerializeBoxColliderComponent(*m_World->GetComponent<ECS::BoxColliderComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::PolygonCollider2DComponent>(entity)) {
-                entityJson["polygonCollider2D"] = SerializePolygonCollider2DComponent(*m_World->GetComponent<ECS::PolygonCollider2DComponent>(entity));
-            }
-            if (m_World->HasComponent<Physics::Body2DComponent>(entity)) {
-                entityJson["body2D"] = SerializeBody2DComponent(*m_World->GetComponent<Physics::Body2DComponent>(entity));
-            }
-            if (m_World->HasComponent<Physics::Joint2DComponent>(entity)) {
-                entityJson["joint2D"] = SerializeJoint2DComponent(*m_World->GetComponent<Physics::Joint2DComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::PerFrameColliderComponent>(entity)) {
-                entityJson["perFrameCollider"] = SerializePerFrameColliderComponent(*m_World->GetComponent<ECS::PerFrameColliderComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::SphereColliderComponent>(entity)) {
-                entityJson["sphereCollider"] = SerializeSphereColliderComponent(*m_World->GetComponent<ECS::SphereColliderComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::CapsuleColliderComponent>(entity)) {
-                entityJson["capsuleCollider"] = SerializeCapsuleColliderComponent(*m_World->GetComponent<ECS::CapsuleColliderComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::MeshColliderComponent>(entity)) {
-                entityJson["meshCollider"] = SerializeMeshColliderComponent(*m_World->GetComponent<ECS::MeshColliderComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::MeshRendererComponent>(entity)) {
-                entityJson["meshRenderer"] = SerializeMeshRendererComponent(*m_World->GetComponent<ECS::MeshRendererComponent>(entity));
-            }
-
-            // Health & Damage & Rewind
-            if (m_World->HasComponent<ECS::HealthComponent>(entity)) {
-                entityJson["health"] = SerializeHealthComponent(*m_World->GetComponent<ECS::HealthComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::RecordRewindComponent>(entity)) {
-                entityJson["recordRewind"] = SerializeRecordRewindComponent(*m_World->GetComponent<ECS::RecordRewindComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::SceneRewindComponent>(entity)) {
-                entityJson["sceneRewind"] = SerializeSceneRewindComponent(*m_World->GetComponent<ECS::SceneRewindComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::AudioReactiveComponent>(entity))
-                entityJson["audioReactive"] = SerializeAudioReactiveComponent(*m_World->GetComponent<ECS::AudioReactiveComponent>(entity));
-            if (m_World->HasComponent<ECS::AudioThresholdTriggerComponent>(entity))
-                entityJson["audioThresholdTrigger"] = SerializeAudioThresholdTriggerComponent(*m_World->GetComponent<ECS::AudioThresholdTriggerComponent>(entity));
-            if (m_World->HasComponent<ECS::RTPCComponent>(entity))
-                entityJson["rtpc"] = SerializeRTPCComponent(*m_World->GetComponent<ECS::RTPCComponent>(entity));
-            if (m_World->HasComponent<ECS::BeatClockComponent>(entity))
-                entityJson["beatClock"] = SerializeBeatClockComponent(*m_World->GetComponent<ECS::BeatClockComponent>(entity));
-            if (m_World->HasComponent<ECS::BeatSyncComponent>(entity))
-                entityJson["beatSync"] = SerializeBeatSyncComponent(*m_World->GetComponent<ECS::BeatSyncComponent>(entity));
-            if (m_World->HasComponent<ECS::ConductorComponent>(entity))
-                entityJson["conductor"] = SerializeConductorComponent(*m_World->GetComponent<ECS::ConductorComponent>(entity));
-            if (m_World->HasComponent<ECS::AudioCollisionComponent>(entity))
-                entityJson["audioCollision"] = SerializeAudioCollisionComponent(*m_World->GetComponent<ECS::AudioCollisionComponent>(entity));
-            if (m_World->HasComponent<ECS::SidechainComponent>(entity))
-                entityJson["sidechain"] = SerializeSidechainComponent(*m_World->GetComponent<ECS::SidechainComponent>(entity));
-            if (m_World->HasComponent<ECS::ReverbZoneComponent>(entity))
-                entityJson["reverbZone"] = SerializeReverbZoneComponent(*m_World->GetComponent<ECS::ReverbZoneComponent>(entity));
-            if (m_World->HasComponent<ECS::MusicZoneComponent>(entity))
-                entityJson["musicZone"] = SerializeMusicZoneComponent(*m_World->GetComponent<ECS::MusicZoneComponent>(entity));
-            if (m_World->HasComponent<ECS::AudioSnapshotTriggerComponent>(entity))
-                entityJson["audioSnapshotTrigger"] = SerializeAudioSnapshotTriggerComponent(*m_World->GetComponent<ECS::AudioSnapshotTriggerComponent>(entity));
-            if (m_World->HasComponent<ECS::AudioOcclusionComponent>(entity))
-                entityJson["audioOcclusion"] = SerializeAudioOcclusionComponent(*m_World->GetComponent<ECS::AudioOcclusionComponent>(entity));
-            if (m_World->HasComponent<ECS::PoseLibraryComponent>(entity))
-                entityJson["poseLibrary"] = SerializePoseLibraryComponent(*m_World->GetComponent<ECS::PoseLibraryComponent>(entity));
-            if (m_World->HasComponent<ECS::AudioFidelityComponent>(entity))
-                entityJson["audioFidelity"] = SerializeAudioFidelityComponent(*m_World->GetComponent<ECS::AudioFidelityComponent>(entity));
-            if (m_World->HasComponent<ECS::MIDIBindingComponent>(entity))
-                entityJson["midiBinding"] = SerializeMIDIBindingComponent(*m_World->GetComponent<ECS::MIDIBindingComponent>(entity));
-            if (m_World->HasComponent<ECS::MaterialInteractionTableComponent>(entity))
-                entityJson["materialInteractionTable"] = SerializeMaterialInteractionTableComponent(*m_World->GetComponent<ECS::MaterialInteractionTableComponent>(entity));
-            if (m_World->HasComponent<ECS::DamageComponent>(entity)) {
-                entityJson["damage"] = SerializeDamageComponent(*m_World->GetComponent<ECS::DamageComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::GameOverComponent>(entity)) {
-                entityJson["gameOver"] = SerializeGameOverComponent(*m_World->GetComponent<ECS::GameOverComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::LensComponent>(entity)) {
-                entityJson["lens"] = SerializeLensComponent(*m_World->GetComponent<ECS::LensComponent>(entity));
             }
             if (m_World->HasComponent<ECS::MorphTargetComponent>(entity)) {
                 entityJson["morphTargets"] = SerializeMorphTargetComponent(*m_World->GetComponent<ECS::MorphTargetComponent>(entity), options.includeVertexData);
             }
 
-            // Damage Resistance
-            if (m_World->HasComponent<ECS::DamageResistanceComponent>(entity)) {
-                entityJson["damageResistance"] = SerializeDamageResistanceComponent(*m_World->GetComponent<ECS::DamageResistanceComponent>(entity));
-            }
-
-            // Triggers & Interaction
-            if (m_World->HasComponent<ECS::TriggerZoneComponent>(entity)) {
-                entityJson["triggerZone"] = SerializeTriggerZoneComponent(*m_World->GetComponent<ECS::TriggerZoneComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::InteractableComponent>(entity)) {
-                entityJson["interactable"] = SerializeInteractableComponent(*m_World->GetComponent<ECS::InteractableComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::PickupComponent>(entity)) {
-                entityJson["pickup"] = SerializePickupComponent(*m_World->GetComponent<ECS::PickupComponent>(entity));
-            }
-
-            // Tags, Layers, Billboard
-            if (m_World->HasComponent<ECS::TagComponent>(entity)) {
-                entityJson["tag"] = SerializeTagComponent(*m_World->GetComponent<ECS::TagComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::LayerComponent>(entity)) {
-                entityJson["layer"] = SerializeLayerComponent(*m_World->GetComponent<ECS::LayerComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::BillboardComponent>(entity)) {
-                entityJson["billboard"] = SerializeBillboardComponent(*m_World->GetComponent<ECS::BillboardComponent>(entity));
-            }
-
-            // Particles
-            if (m_World->HasComponent<ECS::ParticleEmitterComponent>(entity)) {
-                entityJson["particleEmitter"] = SerializeParticleEmitterComponent(*m_World->GetComponent<ECS::ParticleEmitterComponent>(entity));
-            }
-
-            // 2D Rendering
-            if (m_World->HasComponent<ECS::Sprite2DComponent>(entity)) {
-                entityJson["sprite2D"] = SerializeSprite2DComponent(*m_World->GetComponent<ECS::Sprite2DComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::AnimatedSprite2DComponent>(entity)) {
-                entityJson["animatedSprite2D"] = SerializeAnimatedSprite2DComponent(*m_World->GetComponent<ECS::AnimatedSprite2DComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::TilemapComponent>(entity)) {
-                entityJson["tilemap"] = SerializeTilemapComponent(*m_World->GetComponent<ECS::TilemapComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::Camera2DBoundsComponent>(entity)) {
-                entityJson["camera2DBounds"] = SerializeCamera2DBoundsComponent(*m_World->GetComponent<ECS::Camera2DBoundsComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ParallaxMachineComponent>(entity)) {
-                entityJson["parallaxMachine"] = SerializeParallaxMachineComponent(*m_World->GetComponent<ECS::ParallaxMachineComponent>(entity));
-            }
-
-            // Logic
-            if (m_World->HasComponent<ECS::StateMachineComponent>(entity)) {
-                entityJson["stateMachine"] = SerializeStateMachineComponent(*m_World->GetComponent<ECS::StateMachineComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::DialogueComponent>(entity)) {
-                entityJson["dialogue"] = SerializeDialogueComponent(*m_World->GetComponent<ECS::DialogueComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::DialogueBoxComponent>(entity)) {
-                entityJson["dialogueBox"] = SerializeDialogueBoxComponent(*m_World->GetComponent<ECS::DialogueBoxComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::TweenComponent>(entity)) {
-                entityJson["tween"] = SerializeTweenComponent(*m_World->GetComponent<ECS::TweenComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::VisualScriptComponent>(entity)) {
-                entityJson["visualScript"] = SerializeVisualScriptComponent(*m_World->GetComponent<ECS::VisualScriptComponent>(entity));
-            }
-
-            // AI & Navigation
-            if (m_World->HasComponent<ECS::AIControllerComponent>(entity)) {
-                entityJson["aiController"] = SerializeAIControllerComponent(*m_World->GetComponent<ECS::AIControllerComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::BehaviorTreeComponent>(entity)) {
-                entityJson["behaviorTree"] = SerializeBehaviorTreeComponent(*m_World->GetComponent<ECS::BehaviorTreeComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::QuestFlowComponent>(entity)) {
-                entityJson["questFlow"] = SerializeQuestFlowComponent(*m_World->GetComponent<ECS::QuestFlowComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::FollowTargetComponent>(entity)) {
-                entityJson["followTarget"] = SerializeFollowTargetComponent(*m_World->GetComponent<ECS::FollowTargetComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::LookAtTargetComponent>(entity)) {
-                entityJson["lookAtTarget"] = SerializeLookAtTargetComponent(*m_World->GetComponent<ECS::LookAtTargetComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::WaypointComponent>(entity)) {
-                entityJson["waypoint"] = SerializeWaypointComponent(*m_World->GetComponent<ECS::WaypointComponent>(entity));
-            }
-
-            // Spawning & Timers
-            if (m_World->HasComponent<ECS::SpawnPointComponent>(entity)) {
-                entityJson["spawnPoint"] = SerializeSpawnPointComponent(*m_World->GetComponent<ECS::SpawnPointComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::TimerComponent>(entity)) {
-                entityJson["timer"] = SerializeTimerComponent(*m_World->GetComponent<ECS::TimerComponent>(entity));
-            }
-
-            // Streaming
-            if (m_World->HasComponent<Scene::StreamingVolumeComponent>(entity)) {
-                entityJson["streamingVolume"] = SerializeStreamingVolumeComponent(*m_World->GetComponent<Scene::StreamingVolumeComponent>(entity));
-            }
-            if (m_World->HasComponent<Scene::StreamingPortalComponent>(entity)) {
-                entityJson["streamingPortal"] = SerializeStreamingPortalComponent(*m_World->GetComponent<Scene::StreamingPortalComponent>(entity));
-            }
-
-            // Interactive Water
-            if (m_World->HasComponent<Effects::InteractiveWaterComponent>(entity)) {
-                entityJson["interactiveWater"] = SerializeInteractiveWaterComponent(*m_World->GetComponent<Effects::InteractiveWaterComponent>(entity));
-            }
-            if (m_World->HasComponent<Effects::WaterInteractorComponent>(entity)) {
-                entityJson["waterInteractor"] = SerializeWaterInteractorComponent(*m_World->GetComponent<Effects::WaterInteractorComponent>(entity));
-            }
-
-            // Inventory & Save Data
-            if (m_World->HasComponent<ECS::InventoryComponent>(entity)) {
-                entityJson["inventory"] = SerializeInventoryComponent(*m_World->GetComponent<ECS::InventoryComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::SaveDataComponent>(entity)) {
-                entityJson["saveData"] = SerializeSaveDataComponent(*m_World->GetComponent<ECS::SaveDataComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::SaveLoadMenuComponent>(entity)) {
-                entityJson["saveLoadMenu"] = SerializeSaveLoadMenuComponent(*m_World->GetComponent<ECS::SaveLoadMenuComponent>(entity));
-            }
-
-            // New Gameplay Components
-            if (m_World->HasComponent<ECS::ResourceComponent>(entity)) {
-                entityJson["resource"] = SerializeResourceComponent(*m_World->GetComponent<ECS::ResourceComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::FootstepComponent>(entity)) {
-                entityJson["footstep"] = SerializeFootstepComponent(*m_World->GetComponent<ECS::FootstepComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::PoolableComponent>(entity)) {
-                entityJson["poolable"] = SerializePoolableComponent(*m_World->GetComponent<ECS::PoolableComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::QuestStateComponent>(entity)) {
-                entityJson["questState"] = SerializeQuestStateComponent(*m_World->GetComponent<ECS::QuestStateComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::DynamicDifficultyComponent>(entity)) {
-                entityJson["dynamicDifficulty"] = SerializeDynamicDifficultyComponent(*m_World->GetComponent<ECS::DynamicDifficultyComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ArtStyleComponent>(entity)) {
-                entityJson["artStyle"] = SerializeArtStyleComponent(*m_World->GetComponent<ECS::ArtStyleComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::HUDWidgetComponent>(entity)) {
-                entityJson["hudWidget"] = SerializeHUDWidgetComponent(*m_World->GetComponent<ECS::HUDWidgetComponent>(entity));
-            }
-            if (m_World->HasComponent<GUI::UICanvasComponent>(entity)) {
-                entityJson["uiCanvas"] = SerializeUICanvasComponent(*m_World->GetComponent<GUI::UICanvasComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::CinematicCameraComponent>(entity)) {
-                entityJson["cinematicCamera"] = SerializeCinematicCameraComponent(*m_World->GetComponent<ECS::CinematicCameraComponent>(entity));
-            }
-
-            // Joint & Ragdoll Components
-            if (m_World->HasComponent<ECS::DistanceJointComponent>(entity)) {
-                entityJson["distanceJoint"] = SerializeDistanceJointComponent(*m_World->GetComponent<ECS::DistanceJointComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::HingeJointComponent>(entity)) {
-                entityJson["hingeJoint"] = SerializeHingeJointComponent(*m_World->GetComponent<ECS::HingeJointComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::BallSocketJointComponent>(entity)) {
-                entityJson["ballSocketJoint"] = SerializeBallSocketJointComponent(*m_World->GetComponent<ECS::BallSocketJointComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::SpringJointComponent>(entity)) {
-                entityJson["springJoint"] = SerializeSpringJointComponent(*m_World->GetComponent<ECS::SpringJointComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::FixedJointComponent>(entity)) {
-                entityJson["fixedJoint"] = SerializeFixedJointComponent(*m_World->GetComponent<ECS::FixedJointComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::SliderJointComponent>(entity)) {
-                entityJson["sliderJoint"] = SerializeSliderJointComponent(*m_World->GetComponent<ECS::SliderJointComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::RagdollComponent>(entity)) {
-                entityJson["ragdoll"] = SerializeRagdollComponent(*m_World->GetComponent<ECS::RagdollComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::AnimationRecorderComponent>(entity)) {
-                entityJson["animationRecorder"] = SerializeAnimationRecorderComponent(*m_World->GetComponent<ECS::AnimationRecorderComponent>(entity));
-            }
-
-            // Flower Components
-            if (m_World->HasComponent<ECS::JellyMeshComponent>(entity)) {
-                entityJson["jellyMesh"] = SerializeJellyMeshComponent(*m_World->GetComponent<ECS::JellyMeshComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::TetherComponent>(entity)) {
-                entityJson["tether"] = SerializeTetherComponent(*m_World->GetComponent<ECS::TetherComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::GrabbableComponent>(entity)) {
-                entityJson["grabbable"] = SerializeGrabbableComponent(*m_World->GetComponent<ECS::GrabbableComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::FlowerStemComponent>(entity)) {
-                entityJson["flowerStem"] = SerializeFlowerStemComponent(*m_World->GetComponent<ECS::FlowerStemComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::FlowerParticleConfigComponent>(entity)) {
-                entityJson["flowerParticleConfig"] = SerializeFlowerParticleConfigComponent(*m_World->GetComponent<ECS::FlowerParticleConfigComponent>(entity));
-            }
-
-            // LOD, Grass, Vegetation
-            if (m_World->HasComponent<ECS::LODComponent>(entity)) {
-                entityJson["lod"] = SerializeLODComponent(*m_World->GetComponent<ECS::LODComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::GrassVolumeComponent>(entity)) {
-                entityJson["grassVolume"] = SerializeGrassVolumeComponent(*m_World->GetComponent<ECS::GrassVolumeComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::VegetationComponent>(entity)) {
-                entityJson["vegetation"] = SerializeVegetationComponent(*m_World->GetComponent<ECS::VegetationComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ViewmodelComponent>(entity)) {
-                entityJson["viewmodel"] = SerializeViewmodelComponent(*m_World->GetComponent<ECS::ViewmodelComponent>(entity));
-            }
 
             entitiesArray.push_back(entityJson);
         }
@@ -8367,579 +8121,26 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             }
 
             // Deserialize components
-            if (entityJson.contains("name")) {
-                auto name = DeserializeNameComponent(entityJson["name"]);
-                m_World->AddComponent<ECS::NameComponent>(entity, name);
+                        // Deserialize components via the registry (single source of truth).
+            // mesh stays explicit below (IsValid guard); stableId/id/parent are
+            // entity-level and handled outside the registry.
+            for (const auto& reg : ComponentRegistry()) {
+                std::string_view rk(reg.key);
+                if (rk == "mesh" || rk == "stableId") continue;
+                auto regIt = entityJson.find(reg.key);
+                if (regIt != entityJson.end()) reg.de(m_World, entity, *regIt);
             }
-
-            if (entityJson.contains("transform")) {
-                auto transform = DeserializeTransformComponent(entityJson["transform"]);
-                m_World->AddComponent<ECS::TransformComponent>(entity, transform);
-            }
-
-            if (entityJson.contains("material")) {
-                auto material = DeserializeMaterialComponent(entityJson["material"]);
-                m_World->AddComponent<ECS::MaterialComponent>(entity, material);
-            }
-
-            if (entityJson.contains("materialSlots")) {
-                auto matSlots = DeserializeMaterialSlotsComponent(entityJson["materialSlots"]);
-                m_World->AddComponent<ECS::MaterialSlotsComponent>(entity, std::move(matSlots));
-            }
-
             if (entityJson.contains("mesh")) {
                 auto mesh = DeserializeMeshComponent(entityJson["mesh"]);
                 if (mesh.IsValid()) {
                     m_World->AddComponent<ECS::MeshComponent>(entity, mesh);
                 }
             }
-
-            // Skeleton must be deserialized before animator
-            std::shared_ptr<Animation::Skeleton> loadedSkeleton;
-            if (entityJson.contains("skeleton")) {
-                auto skelComp = DeserializeSkeletonComponent(entityJson["skeleton"]);
-                loadedSkeleton = skelComp.skeleton;
-                m_World->AddComponent<ECS::SkeletonComponent>(entity, skelComp);
-            }
-
-            if (entityJson.contains("animator")) {
-                auto animComp = DeserializeAnimatorComponent(entityJson["animator"], loadedSkeleton);
-                m_World->AddComponent<ECS::AnimatorComponent>(entity, std::move(animComp));
-            }
-
-            if (entityJson.contains("light")) {
-                auto light = DeserializeLightComponent(entityJson["light"]);
-                m_World->AddComponent<ECS::LightComponent>(entity, light);
-            }
-
-            if (entityJson.contains("notes")) {
-                auto notes = DeserializeNotesComponent(entityJson["notes"]);
-                m_World->AddComponent<ECS::NotesComponent>(entity, notes);
-            }
-
-            if (entityJson.contains("text")) {
-                auto text = DeserializeTextComponent(entityJson["text"]);
-                m_World->AddComponent<ECS::TextComponent>(entity, text);
-            }
-
-            if (entityJson.contains("camera")) {
-                auto camera = DeserializeCameraComponent(entityJson["camera"]);
-                m_World->AddComponent<ECS::CameraComponent>(entity, camera);
-            }
-
-            if (entityJson.contains("weatherZone")) {
-                auto zone = DeserializeWeatherZoneComponent(entityJson["weatherZone"]);
-                m_World->AddComponent<ECS::WeatherZoneComponent>(entity, zone);
-            }
-
-            if (entityJson.contains("waterVolume")) {
-                auto volume = DeserializeWaterVolumeComponent(entityJson["waterVolume"]);
-                m_World->AddComponent<ECS::WaterVolumeComponent>(entity, volume);
-            }
-
-            if (entityJson.contains("water3D")) {
-                m_World->AddComponent<ECS::Water3DComponent>(entity, DeserializeWater3DComponent(entityJson["water3D"]));
-            }
-
-            if (entityJson.contains("interactiveWater")) {
-                m_World->AddComponent<Effects::InteractiveWaterComponent>(entity, DeserializeInteractiveWaterComponent(entityJson["interactiveWater"]));
-            }
-            if (entityJson.contains("waterInteractor")) {
-                m_World->AddComponent<Effects::WaterInteractorComponent>(entity, DeserializeWaterInteractorComponent(entityJson["waterInteractor"]));
-            }
-
-            if (entityJson.contains("shrubVolume")) {
-                auto shrub = DeserializeShrubVolumeComponent(entityJson["shrubVolume"]);
-                m_World->AddComponent<ECS::ShrubVolumeComponent>(entity, shrub);
-            }
-
-            if (entityJson.contains("treeVolume")) {
-                auto tree = DeserializeTreeVolumeComponent(entityJson["treeVolume"]);
-                m_World->AddComponent<ECS::TreeVolumeComponent>(entity, tree);
-            }
-
-            if (entityJson.contains("terrain")) {
-                auto terrain = DeserializeTerrainComponent(entityJson["terrain"]);
-                m_World->AddComponent<ECS::TerrainComponent>(entity, terrain);
-            }
-
-            if (entityJson.contains("terrain2d")) {
-                auto terrain2d = DeserializeTerrain2DComponent(entityJson["terrain2d"]);
-                m_World->AddComponent<ECS::Terrain2DComponent>(entity, terrain2d);
-            }
-
-            if (entityJson.contains("cameraTrigger")) {
-                auto trigger = DeserializeCameraTriggerComponent(entityJson["cameraTrigger"]);
-                m_World->AddComponent<ECS::CameraTriggerComponent>(entity, trigger);
-            }
-
-            if (entityJson.contains("temperatureZone")) {
-                auto zone = DeserializeTemperatureZoneComponent(entityJson["temperatureZone"]);
-                m_World->AddComponent<ECS::TemperatureZoneComponent>(entity, zone);
-            }
-
-            if (entityJson.contains("gravityZone")) {
-                auto zone = DeserializeGravityZoneComponent(entityJson["gravityZone"]);
-                m_World->AddComponent<ECS::GravityZoneComponent>(entity, zone);
-            }
-
-            if (entityJson.contains("reflectionProbe")) {
-                m_World->AddComponent<ECS::ReflectionProbeComponent>(entity, DeserializeReflectionProbeComponent(entityJson["reflectionProbe"]));
-            }
-
-            if (entityJson.contains("elementalSurface")) {
-                m_World->AddComponent<ECS::ElementalSurfaceComponent>(entity, DeserializeElementalSurfaceComponent(entityJson["elementalSurface"]));
-            }
-            if (entityJson.contains("elementalEmitter")) {
-                m_World->AddComponent<ECS::ElementalEmitterComponent>(entity, DeserializeElementalEmitterComponent(entityJson["elementalEmitter"]));
-            }
-            if (entityJson.contains("gpuParticleEmitter")) {
-                m_World->AddComponent<ECS::GPUParticleEmitterComponent>(entity, DeserializeGPUParticleEmitterComponent(entityJson["gpuParticleEmitter"]));
-            }
-            if (entityJson.contains("customShader")) {
-                m_World->AddComponent<ECS::CustomShaderComponent>(entity, DeserializeCustomShaderComponent(entityJson["customShader"]));
-            }
-            if (entityJson.contains("cloth")) {
-                m_World->AddComponent<ECS::ClothComponent>(entity, DeserializeClothComponent(entityJson["cloth"]));
-            }
-            if (entityJson.contains("swarm")) {
-                m_World->AddComponent<ECS::SwarmComponent>(entity, DeserializeSwarmComponent(entityJson["swarm"]));
-            }
-            if (entityJson.contains("dungeonGenerator")) {
-                m_World->AddComponent<ECS::DungeonGeneratorComponent>(entity, DeserializeDungeonGeneratorComponent(entityJson["dungeonGenerator"]));
-            }
-            if (entityJson.contains("randomBag")) {
-                m_World->AddComponent<ECS::RandomBagComponent>(entity, DeserializeRandomBagComponent(entityJson["randomBag"]));
-            }
-            if (entityJson.contains("scatter")) {
-                m_World->AddComponent<ECS::ScatterComponent>(entity, DeserializeScatterComponent(entityJson["scatter"]));
-            }
-            if (entityJson.contains("terrainGenerator")) {
-                m_World->AddComponent<ECS::TerrainGeneratorComponent>(entity, DeserializeTerrainGeneratorComponent(entityJson["terrainGenerator"]));
-            }
-            if (entityJson.contains("wfc")) {
-                m_World->AddComponent<ECS::WFCComponent>(entity, DeserializeWFCComponent(entityJson["wfc"]));
-            }
-            if (entityJson.contains("scatterInstance")) {
-                m_World->AddComponent<ECS::ScatterInstanceComponent>(entity);
-            }
-            if (entityJson.contains("elementalVolume")) {
-                m_World->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(entityJson["elementalVolume"]));
-            }
-
-            if (entityJson.contains("postProcessVolume")) {
-                auto vol = DeserializePostProcessVolumeComponent(entityJson["postProcessVolume"]);
-                m_World->AddComponent<ECS::PostProcessVolumeComponent>(entity, vol);
-            }
-
-            if (entityJson.contains("fluidVolume")) {
-                auto vol = DeserializeFluidVolumeComponent(entityJson["fluidVolume"]);
-                m_World->AddComponent<ECS::FluidVolumeComponent>(entity, vol);
-            }
-
-            // Character controllers
-            if (entityJson.contains("platformer2D")) {
-                m_World->AddComponent<ECS::Platformer2DController>(entity, DeserializePlatformer2D(entityJson["platformer2D"]));
-            }
-            if (entityJson.contains("topDown2D")) {
-                m_World->AddComponent<ECS::TopDown2DController>(entity, DeserializeTopDown2D(entityJson["topDown2D"]));
-            }
-            if (entityJson.contains("topDown3D")) {
-                m_World->AddComponent<ECS::TopDown3DController>(entity, DeserializeTopDown3D(entityJson["topDown3D"]));
-            }
-            if (entityJson.contains("thirdPerson")) {
-                m_World->AddComponent<ECS::ThirdPersonController>(entity, DeserializeThirdPerson(entityJson["thirdPerson"]));
-            }
-            if (entityJson.contains("firstPerson")) {
-                m_World->AddComponent<ECS::FirstPersonController>(entity, DeserializeFirstPerson(entityJson["firstPerson"]));
-            }
-            if (entityJson.contains("vehicle")) {
-                m_World->AddComponent<ECS::VehicleController>(entity, DeserializeVehicle(entityJson["vehicle"]));
-            }
-            if (entityJson.contains("surfaceAligned")) {
-                m_World->AddComponent<ECS::SurfaceAlignedController>(entity, DeserializeSurfaceAligned(entityJson["surfaceAligned"]));
-            }
-            if (entityJson.contains("networkIdentity")) {
-                m_World->AddComponent<ECS::NetworkIdentityComponent>(entity, DeserializeNetworkIdentityComponent(entityJson["networkIdentity"]));
-            }
-            if (entityJson.contains("networkTransform")) {
-                m_World->AddComponent<ECS::NetworkTransformComponent>(entity, DeserializeNetworkTransformComponent(entityJson["networkTransform"]));
-            }
-            if (entityJson.contains("possessable")) {
-                m_World->AddComponent<ECS::PossessableComponent>(entity, DeserializePossessable(entityJson["possessable"]));
-            }
-            if (entityJson.contains("lock")) {
-                m_World->AddComponent<ECS::LockComponent>(entity, DeserializeLockComponent(entityJson["lock"]));
-            }
-            if (entityJson.contains("pushable")) {
-                m_World->AddComponent<ECS::PushableComponent>(entity, DeserializePushableComponent(entityJson["pushable"]));
-            }
-            if (entityJson.contains("switch")) {
-                m_World->AddComponent<ECS::SwitchComponent>(entity, DeserializeSwitchComponent(entityJson["switch"]));
-            }
-            if (entityJson.contains("goalZone")) {
-                m_World->AddComponent<ECS::GoalZoneComponent>(entity, DeserializeGoalZoneComponent(entityJson["goalZone"]));
-            }
-            if (entityJson.contains("conveyor")) {
-                m_World->AddComponent<ECS::ConveyorComponent>(entity, DeserializeConveyorComponent(entityJson["conveyor"]));
-            }
-            if (entityJson.contains("teleporter")) {
-                m_World->AddComponent<ECS::TeleporterComponent>(entity, DeserializeTeleporterComponent(entityJson["teleporter"]));
-            }
-            if (entityJson.contains("destructible")) {
-                m_World->AddComponent<ECS::DestructibleComponent>(entity, DeserializeDestructibleComponent(entityJson["destructible"]));
-            }
-            if (entityJson.contains("curlNoiseField")) {
-                m_World->AddComponent<ECS::CurlNoiseFieldComponent>(entity, DeserializeCurlNoiseFieldComponent(entityJson["curlNoiseField"]));
-            }
-            if (entityJson.contains("fractureConfig")) {
-                m_World->AddComponent<ECS::FractureConfigComponent>(entity, DeserializeFractureConfigComponent(entityJson["fractureConfig"]));
-            }
-            if (entityJson.contains("movingPlatform")) {
-                m_World->AddComponent<ECS::MovingPlatformComponent>(entity, DeserializeMovingPlatformComponent(entityJson["movingPlatform"]));
-            }
-            if (entityJson.contains("scriptComponent")) {
-                m_World->AddComponent<ECS::ScriptComponent>(entity, DeserializeScriptComponent(entityJson["scriptComponent"]));
-            }
-
-            // Hierarchy
             if (entityJson.contains("parent")) {
                 auto& pc = m_World->AddComponent<ECS::ParentComponent>(entity);
                 pc.parent = static_cast<ECS::Entity>(entityJson["parent"].get<u64>());
             }
 
-            // Prefab instance link
-            if (entityJson.contains("prefabInstance")) {
-                auto& pi = m_World->AddComponent<Assets::PrefabInstanceComponent>(entity);
-                const auto& piJson = entityJson["prefabInstance"];
-                pi.prefabId = piJson.value("prefabId", static_cast<u64>(0));
-                pi.prefabPath = piJson.value("prefabPath", std::string(""));
-            }
-
-            // IK Components
-            if (entityJson.contains("lookAtIK")) {
-                auto& ik = m_World->AddComponent<ECS::LookAtIKComponent>(entity);
-                auto& ikJson = entityJson["lookAtIK"];
-                if (ikJson.contains("headBone")) ik.headBoneName = ikJson["headBone"].get<std::string>();
-                if (ikJson.contains("neckBone")) ik.neckBoneName = ikJson["neckBone"].get<std::string>();
-                if (ikJson.contains("targetEntity")) ik.targetEntity = static_cast<ECS::Entity>(ikJson["targetEntity"].get<u64>());
-                if (ikJson.contains("targetPos") && ikJson["targetPos"].is_array() && ikJson["targetPos"].size() >= 3) {
-                    auto& arr = ikJson["targetPos"];
-                    ik.targetWorldPos = Math::Vector3(arr[0].get<f32>(), arr[1].get<f32>(), arr[2].get<f32>());
-                }
-                if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = JB(ikJson["useEntityTarget"]);
-                if (ikJson.contains("maxRotation")) ik.maxRotation = ikJson["maxRotation"].get<f32>();
-                if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
-                if (ikJson.contains("lookWeight")) ik.lookWeight = ikJson["lookWeight"].get<f32>();
-            }
-            if (entityJson.contains("interactionIK")) {
-                auto& ik = m_World->AddComponent<ECS::InteractionIKComponent>(entity);
-                auto& ikJson = entityJson["interactionIK"];
-                if (ikJson.contains("handBone")) ik.handBoneName = ikJson["handBone"].get<std::string>();
-                if (ikJson.contains("elbowBone")) ik.elbowBoneName = ikJson["elbowBone"].get<std::string>();
-                if (ikJson.contains("shoulderBone")) ik.shoulderBoneName = ikJson["shoulderBone"].get<std::string>();
-                if (ikJson.contains("interactionRadius")) ik.interactionRadius = ikJson["interactionRadius"].get<f32>();
-                if (ikJson.contains("ikWeight")) ik.ikWeight = ikJson["ikWeight"].get<f32>();
-                if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
-                if (ikJson.contains("interactionTag")) ik.interactionTag = ikJson["interactionTag"].get<std::string>();
-            }
-            if (entityJson.contains("twoBoneIK")) {
-                auto& ik = m_World->AddComponent<ECS::TwoBoneIKComponent>(entity);
-                auto& ikJson = entityJson["twoBoneIK"];
-                if (ikJson.contains("rootBone")) ik.rootBoneName = ikJson["rootBone"].get<std::string>();
-                if (ikJson.contains("midBone")) ik.midBoneName = ikJson["midBone"].get<std::string>();
-                if (ikJson.contains("endBone")) ik.endBoneName = ikJson["endBone"].get<std::string>();
-                if (ikJson.contains("targetPos") && ikJson["targetPos"].is_array() && ikJson["targetPos"].size() >= 3) {
-                    auto& a = ikJson["targetPos"];
-                    ik.targetPosition = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
-                }
-                if (ikJson.contains("targetEntity")) ik.targetEntity = static_cast<ECS::Entity>(ikJson["targetEntity"].get<u64>());
-                if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = JB(ikJson["useEntityTarget"]);
-                if (ikJson.contains("weight")) ik.weight = ikJson["weight"].get<f32>();
-                if (ikJson.contains("poleVector") && ikJson["poleVector"].is_array() && ikJson["poleVector"].size() >= 3) {
-                    auto& a = ikJson["poleVector"];
-                    ik.poleVector = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
-                }
-            }
-            if (entityJson.contains("boneAttachment")) {
-                auto& ba = m_World->AddComponent<ECS::BoneAttachmentComponent>(entity);
-                auto& baJson = entityJson["boneAttachment"];
-                if (baJson.contains("targetEntity")) ba.targetEntity = static_cast<ECS::Entity>(baJson["targetEntity"].get<u64>());
-                if (baJson.contains("targetBoneName")) ba.targetBoneName = baJson["targetBoneName"].get<std::string>();
-                if (baJson.contains("positionOffset") && baJson["positionOffset"].is_array() && baJson["positionOffset"].size() >= 3) {
-                    auto& a = baJson["positionOffset"];
-                    ba.positionOffset = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
-                }
-                if (baJson.contains("rotationOffset") && baJson["rotationOffset"].is_array() && baJson["rotationOffset"].size() >= 4) {
-                    auto& a = baJson["rotationOffset"];
-                    ba.rotationOffset = Math::Quaternion(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>(), a[3].get<f32>());
-                }
-            }
-
-            // Audio Components
-            if (entityJson.contains("audioSource")) {
-                auto audio = DeserializeAudioSourceComponent(entityJson["audioSource"]);
-                m_World->AddComponent<ECS::AudioSourceComponent>(entity, audio);
-            }
-            if (entityJson.contains("audioListener")) {
-                auto listener = DeserializeAudioListenerComponent(entityJson["audioListener"]);
-                m_World->AddComponent<ECS::AudioListenerComponent>(entity, listener);
-            }
-
-            // Physics & Collision
-            if (entityJson.contains("rigidbody")) {
-                m_World->AddComponent<ECS::RigidbodyComponent>(entity, DeserializeRigidbodyComponent(entityJson["rigidbody"]));
-            }
-            if (entityJson.contains("boxCollider")) {
-                m_World->AddComponent<ECS::BoxColliderComponent>(entity, DeserializeBoxColliderComponent(entityJson["boxCollider"]));
-            }
-            if (entityJson.contains("polygonCollider2D")) {
-                m_World->AddComponent<ECS::PolygonCollider2DComponent>(entity, DeserializePolygonCollider2DComponent(entityJson["polygonCollider2D"]));
-            }
-            if (entityJson.contains("body2D")) {
-                m_World->AddComponent<Physics::Body2DComponent>(entity, DeserializeBody2DComponent(entityJson["body2D"]));
-            }
-            if (entityJson.contains("joint2D")) {
-                m_World->AddComponent<Physics::Joint2DComponent>(entity, DeserializeJoint2DComponent(entityJson["joint2D"]));
-            }
-            if (entityJson.contains("perFrameCollider")) {
-                m_World->AddComponent<ECS::PerFrameColliderComponent>(entity, DeserializePerFrameColliderComponent(entityJson["perFrameCollider"]));
-            }
-            if (entityJson.contains("sphereCollider")) {
-                m_World->AddComponent<ECS::SphereColliderComponent>(entity, DeserializeSphereColliderComponent(entityJson["sphereCollider"]));
-            }
-            if (entityJson.contains("capsuleCollider")) {
-                m_World->AddComponent<ECS::CapsuleColliderComponent>(entity, DeserializeCapsuleColliderComponent(entityJson["capsuleCollider"]));
-            }
-            if (entityJson.contains("meshCollider")) {
-                m_World->AddComponent<ECS::MeshColliderComponent>(entity, DeserializeMeshColliderComponent(entityJson["meshCollider"]));
-            }
-            if (entityJson.contains("meshRenderer")) {
-                m_World->AddComponent<ECS::MeshRendererComponent>(entity, DeserializeMeshRendererComponent(entityJson["meshRenderer"]));
-            }
-
-            // Health & Damage & Rewind
-            if (entityJson.contains("health")) {
-                m_World->AddComponent<ECS::HealthComponent>(entity, DeserializeHealthComponent(entityJson["health"]));
-            }
-            if (entityJson.contains("recordRewind")) {
-                m_World->AddComponent<ECS::RecordRewindComponent>(entity, DeserializeRecordRewindComponent(entityJson["recordRewind"]));
-            }
-            if (entityJson.contains("sceneRewind")) {
-                m_World->AddComponent<ECS::SceneRewindComponent>(entity, DeserializeSceneRewindComponent(entityJson["sceneRewind"]));
-            }
-            if (entityJson.contains("damage")) {
-                m_World->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(entityJson["damage"]));
-            }
-            if (entityJson.contains("gameOver")) {
-                m_World->AddComponent<ECS::GameOverComponent>(entity, DeserializeGameOverComponent(entityJson["gameOver"]));
-            }
-            if (entityJson.contains("lens")) {
-                m_World->AddComponent<ECS::LensComponent>(entity, DeserializeLensComponent(entityJson["lens"]));
-            }
-            if (entityJson.contains("cineComponent")) {
-                m_World->AddComponent<ECS::CineComponent>(entity, DeserializeCineComponent(entityJson["cineComponent"]));
-            }
-            if (entityJson.contains("morphTargets")) {
-                m_World->AddComponent<ECS::MorphTargetComponent>(entity, DeserializeMorphTargetComponent(entityJson["morphTargets"]));
-            }
-            if (entityJson.contains("damageResistance")) {
-                m_World->AddComponent<ECS::DamageResistanceComponent>(entity, DeserializeDamageResistanceComponent(entityJson["damageResistance"]));
-            }
-
-            // Triggers & Interaction
-            if (entityJson.contains("triggerZone")) {
-                m_World->AddComponent<ECS::TriggerZoneComponent>(entity, DeserializeTriggerZoneComponent(entityJson["triggerZone"]));
-            }
-            if (entityJson.contains("interactable")) {
-                m_World->AddComponent<ECS::InteractableComponent>(entity, DeserializeInteractableComponent(entityJson["interactable"]));
-            }
-            if (entityJson.contains("pickup")) {
-                m_World->AddComponent<ECS::PickupComponent>(entity, DeserializePickupComponent(entityJson["pickup"]));
-            }
-
-            // Tags, Layers, Billboard
-            if (entityJson.contains("tag")) {
-                m_World->AddComponent<ECS::TagComponent>(entity, DeserializeTagComponent(entityJson["tag"]));
-            }
-            if (entityJson.contains("layer")) {
-                m_World->AddComponent<ECS::LayerComponent>(entity, DeserializeLayerComponent(entityJson["layer"]));
-            }
-            if (entityJson.contains("billboard")) {
-                m_World->AddComponent<ECS::BillboardComponent>(entity, DeserializeBillboardComponent(entityJson["billboard"]));
-            }
-
-            // Particles
-            if (entityJson.contains("particleEmitter")) {
-                m_World->AddComponent<ECS::ParticleEmitterComponent>(entity, DeserializeParticleEmitterComponent(entityJson["particleEmitter"]));
-            }
-
-            // 2D Rendering
-            if (entityJson.contains("sprite2D")) {
-                m_World->AddComponent<ECS::Sprite2DComponent>(entity, DeserializeSprite2DComponent(entityJson["sprite2D"]));
-            }
-            if (entityJson.contains("animatedSprite2D")) {
-                m_World->AddComponent<ECS::AnimatedSprite2DComponent>(entity, DeserializeAnimatedSprite2DComponent(entityJson["animatedSprite2D"]));
-            }
-            if (entityJson.contains("tilemap")) {
-                m_World->AddComponent<ECS::TilemapComponent>(entity, DeserializeTilemapComponent(entityJson["tilemap"]));
-            }
-            if (entityJson.contains("camera2DBounds")) {
-                m_World->AddComponent<ECS::Camera2DBoundsComponent>(entity, DeserializeCamera2DBoundsComponent(entityJson["camera2DBounds"]));
-            }
-            if (entityJson.contains("parallaxMachine")) {
-                m_World->AddComponent<ECS::ParallaxMachineComponent>(entity, DeserializeParallaxMachineComponent(entityJson["parallaxMachine"]));
-            }
-
-            // Logic
-            if (entityJson.contains("stateMachine")) {
-                m_World->AddComponent<ECS::StateMachineComponent>(entity, DeserializeStateMachineComponent(entityJson["stateMachine"]));
-            }
-            if (entityJson.contains("dialogue")) {
-                m_World->AddComponent<ECS::DialogueComponent>(entity, DeserializeDialogueComponent(entityJson["dialogue"]));
-            }
-            if (entityJson.contains("dialogueBox")) {
-                m_World->AddComponent<ECS::DialogueBoxComponent>(entity, DeserializeDialogueBoxComponent(entityJson["dialogueBox"]));
-            }
-            if (entityJson.contains("tween")) {
-                m_World->AddComponent<ECS::TweenComponent>(entity, DeserializeTweenComponent(entityJson["tween"]));
-            }
-            if (entityJson.contains("visualScript")) {
-                m_World->AddComponent<ECS::VisualScriptComponent>(entity, DeserializeVisualScriptComponent(entityJson["visualScript"]));
-            }
-
-            // AI & Navigation
-            if (entityJson.contains("aiController")) {
-                m_World->AddComponent<ECS::AIControllerComponent>(entity, DeserializeAIControllerComponent(entityJson["aiController"]));
-            }
-            if (entityJson.contains("behaviorTree")) {
-                m_World->AddComponent<ECS::BehaviorTreeComponent>(entity, DeserializeBehaviorTreeComponent(entityJson["behaviorTree"]));
-            }
-            if (entityJson.contains("questFlow")) {
-                m_World->AddComponent<ECS::QuestFlowComponent>(entity, DeserializeQuestFlowComponent(entityJson["questFlow"]));
-            }
-            if (entityJson.contains("followTarget")) {
-                m_World->AddComponent<ECS::FollowTargetComponent>(entity, DeserializeFollowTargetComponent(entityJson["followTarget"]));
-            }
-            if (entityJson.contains("lookAtTarget")) {
-                m_World->AddComponent<ECS::LookAtTargetComponent>(entity, DeserializeLookAtTargetComponent(entityJson["lookAtTarget"]));
-            }
-            if (entityJson.contains("waypoint")) {
-                m_World->AddComponent<ECS::WaypointComponent>(entity, DeserializeWaypointComponent(entityJson["waypoint"]));
-            }
-
-            // Spawning & Timers
-            if (entityJson.contains("spawnPoint")) {
-                m_World->AddComponent<ECS::SpawnPointComponent>(entity, DeserializeSpawnPointComponent(entityJson["spawnPoint"]));
-            }
-            if (entityJson.contains("timer")) {
-                m_World->AddComponent<ECS::TimerComponent>(entity, DeserializeTimerComponent(entityJson["timer"]));
-            }
-
-            // Streaming
-            if (entityJson.contains("streamingVolume")) {
-                m_World->AddComponent<Scene::StreamingVolumeComponent>(entity, DeserializeStreamingVolumeComponent(entityJson["streamingVolume"]));
-            }
-            if (entityJson.contains("streamingPortal")) {
-                m_World->AddComponent<Scene::StreamingPortalComponent>(entity, DeserializeStreamingPortalComponent(entityJson["streamingPortal"]));
-            }
-
-            // Inventory & Save Data
-            if (entityJson.contains("inventory")) {
-                m_World->AddComponent<ECS::InventoryComponent>(entity, DeserializeInventoryComponent(entityJson["inventory"]));
-            }
-            if (entityJson.contains("saveData")) {
-                m_World->AddComponent<ECS::SaveDataComponent>(entity, DeserializeSaveDataComponent(entityJson["saveData"]));
-            }
-            if (entityJson.contains("saveLoadMenu")) {
-                m_World->AddComponent<ECS::SaveLoadMenuComponent>(entity, DeserializeSaveLoadMenuComponent(entityJson["saveLoadMenu"]));
-            }
-
-            // New Gameplay Components
-            if (entityJson.contains("resource")) {
-                m_World->AddComponent<ECS::ResourceComponent>(entity, DeserializeResourceComponent(entityJson["resource"]));
-            }
-            if (entityJson.contains("footstep")) {
-                m_World->AddComponent<ECS::FootstepComponent>(entity, DeserializeFootstepComponent(entityJson["footstep"]));
-            }
-            if (entityJson.contains("poolable")) {
-                m_World->AddComponent<ECS::PoolableComponent>(entity, DeserializePoolableComponent(entityJson["poolable"]));
-            }
-            if (entityJson.contains("questState")) {
-                m_World->AddComponent<ECS::QuestStateComponent>(entity, DeserializeQuestStateComponent(entityJson["questState"]));
-            }
-            if (entityJson.contains("dynamicDifficulty")) {
-                m_World->AddComponent<ECS::DynamicDifficultyComponent>(entity, DeserializeDynamicDifficultyComponent(entityJson["dynamicDifficulty"]));
-            }
-            if (entityJson.contains("artStyle")) {
-                m_World->AddComponent<ECS::ArtStyleComponent>(entity, DeserializeArtStyleComponent(entityJson["artStyle"]));
-            }
-            if (entityJson.contains("hudWidget")) {
-                m_World->AddComponent<ECS::HUDWidgetComponent>(entity, DeserializeHUDWidgetComponent(entityJson["hudWidget"]));
-            }
-            if (entityJson.contains("uiCanvas")) {
-                m_World->AddComponent<GUI::UICanvasComponent>(entity, DeserializeUICanvasComponent(entityJson["uiCanvas"]));
-            }
-            if (entityJson.contains("cinematicCamera")) {
-                m_World->AddComponent<ECS::CinematicCameraComponent>(entity, DeserializeCinematicCameraComponent(entityJson["cinematicCamera"]));
-            }
-
-            // Joint & Ragdoll Components
-            if (entityJson.contains("distanceJoint")) {
-                m_World->AddComponent<ECS::DistanceJointComponent>(entity, DeserializeDistanceJointComponent(entityJson["distanceJoint"]));
-            }
-            if (entityJson.contains("hingeJoint")) {
-                m_World->AddComponent<ECS::HingeJointComponent>(entity, DeserializeHingeJointComponent(entityJson["hingeJoint"]));
-            }
-            if (entityJson.contains("ballSocketJoint")) {
-                m_World->AddComponent<ECS::BallSocketJointComponent>(entity, DeserializeBallSocketJointComponent(entityJson["ballSocketJoint"]));
-            }
-            if (entityJson.contains("springJoint")) {
-                m_World->AddComponent<ECS::SpringJointComponent>(entity, DeserializeSpringJointComponent(entityJson["springJoint"]));
-            }
-            if (entityJson.contains("fixedJoint")) {
-                m_World->AddComponent<ECS::FixedJointComponent>(entity, DeserializeFixedJointComponent(entityJson["fixedJoint"]));
-            }
-            if (entityJson.contains("sliderJoint")) {
-                m_World->AddComponent<ECS::SliderJointComponent>(entity, DeserializeSliderJointComponent(entityJson["sliderJoint"]));
-            }
-            if (entityJson.contains("ragdoll")) {
-                m_World->AddComponent<ECS::RagdollComponent>(entity, DeserializeRagdollComponent(entityJson["ragdoll"]));
-            }
-            if (entityJson.contains("animationRecorder")) {
-                m_World->AddComponent<ECS::AnimationRecorderComponent>(entity, DeserializeAnimationRecorderComponent(entityJson["animationRecorder"]));
-            }
-
-            // Flower Components
-            if (entityJson.contains("jellyMesh")) {
-                m_World->AddComponent<ECS::JellyMeshComponent>(entity, DeserializeJellyMeshComponent(entityJson["jellyMesh"]));
-            }
-            if (entityJson.contains("tether")) {
-                m_World->AddComponent<ECS::TetherComponent>(entity, DeserializeTetherComponent(entityJson["tether"]));
-            }
-            if (entityJson.contains("grabbable")) {
-                m_World->AddComponent<ECS::GrabbableComponent>(entity, DeserializeGrabbableComponent(entityJson["grabbable"]));
-            }
-            if (entityJson.contains("flowerStem")) {
-                m_World->AddComponent<ECS::FlowerStemComponent>(entity, DeserializeFlowerStemComponent(entityJson["flowerStem"]));
-            }
-            if (entityJson.contains("flowerParticleConfig")) {
-                m_World->AddComponent<ECS::FlowerParticleConfigComponent>(entity, DeserializeFlowerParticleConfigComponent(entityJson["flowerParticleConfig"]));
-            }
-
-            // LOD, Grass, Vegetation
-            if (entityJson.contains("lod")) {
-                m_World->AddComponent<ECS::LODComponent>(entity, DeserializeLODComponent(entityJson["lod"]));
-            }
-            if (entityJson.contains("grassVolume")) {
-                m_World->AddComponent<ECS::GrassVolumeComponent>(entity, DeserializeGrassVolumeComponent(entityJson["grassVolume"]));
-            }
-            if (entityJson.contains("vegetation")) {
-                m_World->AddComponent<ECS::VegetationComponent>(entity, DeserializeVegetationComponent(entityJson["vegetation"]));
-            }
-            if (entityJson.contains("viewmodel")) {
-                m_World->AddComponent<ECS::ViewmodelComponent>(entity, DeserializeViewmodelComponent(entityJson["viewmodel"]));
-            }
         }
 
         // Remap entity references (parent, IK target) from old IDs to new IDs
@@ -9062,596 +8263,25 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             entityJson["stableId"] = m_World->GetComponent<ECS::StableIdComponent>(entity)->id;
 
             // Serialize components
-            if (m_World->HasComponent<ECS::NameComponent>(entity)) {
-                const auto* name = m_World->GetComponent<ECS::NameComponent>(entity);
-                entityJson["name"] = SerializeNameComponent(*name);
+                        // Serialize components via the registry (single source of truth).
+            // mesh/morphTargets stay explicit below (they honor vertex-data options);
+            // stableId/id/parent are entity-level and written outside the registry.
+            for (const auto& reg : ComponentRegistry()) {
+                std::string_view rk(reg.key);
+                if (rk == "mesh" || rk == "morphTargets" || rk == "stableId") continue;
+                if (reg.has(m_World, entity)) entityJson[reg.key] = reg.ser(m_World, entity);
             }
-
-            if (m_World->HasComponent<ECS::TransformComponent>(entity)) {
-                const auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
-                entityJson["transform"] = SerializeTransformComponent(*transform);
-            }
-
-            if (m_World->HasComponent<ECS::MaterialComponent>(entity)) {
-                const auto* material = m_World->GetComponent<ECS::MaterialComponent>(entity);
-                entityJson["material"] = SerializeMaterialComponent(*material);
-            }
-
-            if (m_World->HasComponent<ECS::MaterialSlotsComponent>(entity)) {
-                const auto* matSlots = m_World->GetComponent<ECS::MaterialSlotsComponent>(entity);
-                entityJson["materialSlots"] = SerializeMaterialSlotsComponent(*matSlots);
-            }
-
             if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
                 const auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
                 entityJson["mesh"] = SerializeMeshComponent(*mesh, options.includeVertexData, options.useMeshReferences);
             }
-
-            if (m_World->HasComponent<ECS::SkeletonComponent>(entity)) {
-                const auto* skel = m_World->GetComponent<ECS::SkeletonComponent>(entity);
-                entityJson["skeleton"] = SerializeSkeletonComponent(*skel);
-            }
-
-            if (m_World->HasComponent<ECS::AnimatorComponent>(entity)) {
-                const auto* anim = m_World->GetComponent<ECS::AnimatorComponent>(entity);
-                entityJson["animator"] = SerializeAnimatorComponent(*anim);
-            }
-
-            if (m_World->HasComponent<ECS::LightComponent>(entity)) {
-                const auto* light = m_World->GetComponent<ECS::LightComponent>(entity);
-                entityJson["light"] = SerializeLightComponent(*light);
-            }
-
-            if (m_World->HasComponent<ECS::NotesComponent>(entity)) {
-                const auto* notes = m_World->GetComponent<ECS::NotesComponent>(entity);
-                entityJson["notes"] = SerializeNotesComponent(*notes);
-            }
-
-            if (m_World->HasComponent<ECS::TextComponent>(entity)) {
-                const auto* text = m_World->GetComponent<ECS::TextComponent>(entity);
-                entityJson["text"] = SerializeTextComponent(*text);
-            }
-
-            if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
-                const auto* camera = m_World->GetComponent<ECS::CameraComponent>(entity);
-                entityJson["camera"] = SerializeCameraComponent(*camera);
-            }
-
-            if (m_World->HasComponent<ECS::WeatherZoneComponent>(entity)) {
-                const auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
-                entityJson["weatherZone"] = SerializeWeatherZoneComponent(*zone);
-            }
-
-            if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
-                const auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
-                entityJson["waterVolume"] = SerializeWaterVolumeComponent(*volume);
-            }
-
-            if (m_World->HasComponent<ECS::Water3DComponent>(entity)) {
-                const auto* w3d = m_World->GetComponent<ECS::Water3DComponent>(entity);
-                entityJson["water3D"] = SerializeWater3DComponent(*w3d);
-            }
-
-            if (m_World->HasComponent<ECS::ShrubVolumeComponent>(entity)) {
-                const auto* shrub = m_World->GetComponent<ECS::ShrubVolumeComponent>(entity);
-                entityJson["shrubVolume"] = SerializeShrubVolumeComponent(*shrub);
-            }
-
-            if (m_World->HasComponent<ECS::TreeVolumeComponent>(entity)) {
-                const auto* tree = m_World->GetComponent<ECS::TreeVolumeComponent>(entity);
-                entityJson["treeVolume"] = SerializeTreeVolumeComponent(*tree);
-            }
-
-            if (m_World->HasComponent<ECS::TerrainComponent>(entity)) {
-                const auto* terrain = m_World->GetComponent<ECS::TerrainComponent>(entity);
-                entityJson["terrain"] = SerializeTerrainComponent(*terrain);
-            }
-
-            if (m_World->HasComponent<ECS::Terrain2DComponent>(entity)) {
-                const auto* terrain2d = m_World->GetComponent<ECS::Terrain2DComponent>(entity);
-                entityJson["terrain2d"] = SerializeTerrain2DComponent(*terrain2d);
-            }
-
-            if (m_World->HasComponent<ECS::CameraTriggerComponent>(entity)) {
-                const auto* trigger = m_World->GetComponent<ECS::CameraTriggerComponent>(entity);
-                entityJson["cameraTrigger"] = SerializeCameraTriggerComponent(*trigger);
-            }
-
-            if (m_World->HasComponent<ECS::TemperatureZoneComponent>(entity)) {
-                const auto* zone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
-                entityJson["temperatureZone"] = SerializeTemperatureZoneComponent(*zone);
-            }
-
-            if (m_World->HasComponent<ECS::GravityZoneComponent>(entity)) {
-                const auto* zone = m_World->GetComponent<ECS::GravityZoneComponent>(entity);
-                entityJson["gravityZone"] = SerializeGravityZoneComponent(*zone);
-            }
-
-            if (m_World->HasComponent<ECS::ReflectionProbeComponent>(entity)) {
-                entityJson["reflectionProbe"] = SerializeReflectionProbeComponent(*m_World->GetComponent<ECS::ReflectionProbeComponent>(entity));
-            }
-
-            if (m_World->HasComponent<ECS::ElementalSurfaceComponent>(entity)) {
-                entityJson["elementalSurface"] = SerializeElementalSurfaceComponent(*m_World->GetComponent<ECS::ElementalSurfaceComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ElementalEmitterComponent>(entity)) {
-                entityJson["elementalEmitter"] = SerializeElementalEmitterComponent(*m_World->GetComponent<ECS::ElementalEmitterComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::GPUParticleEmitterComponent>(entity)) {
-                entityJson["gpuParticleEmitter"] = SerializeGPUParticleEmitterComponent(*m_World->GetComponent<ECS::GPUParticleEmitterComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::CustomShaderComponent>(entity)) {
-                entityJson["customShader"] = SerializeCustomShaderComponent(*m_World->GetComponent<ECS::CustomShaderComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ClothComponent>(entity)) {
-                entityJson["cloth"] = SerializeClothComponent(*m_World->GetComponent<ECS::ClothComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::SwarmComponent>(entity)) {
-                entityJson["swarm"] = SerializeSwarmComponent(*m_World->GetComponent<ECS::SwarmComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::DungeonGeneratorComponent>(entity)) {
-                entityJson["dungeonGenerator"] = SerializeDungeonGeneratorComponent(*m_World->GetComponent<ECS::DungeonGeneratorComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::RandomBagComponent>(entity)) {
-                entityJson["randomBag"] = SerializeRandomBagComponent(*m_World->GetComponent<ECS::RandomBagComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ScatterComponent>(entity)) {
-                entityJson["scatter"] = SerializeScatterComponent(*m_World->GetComponent<ECS::ScatterComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::TerrainGeneratorComponent>(entity)) {
-                entityJson["terrainGenerator"] = SerializeTerrainGeneratorComponent(*m_World->GetComponent<ECS::TerrainGeneratorComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::WFCComponent>(entity)) {
-                entityJson["wfc"] = SerializeWFCComponent(*m_World->GetComponent<ECS::WFCComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ScatterInstanceComponent>(entity)) {
-                entityJson["scatterInstance"] = json::object();
-            }
-            if (m_World->HasComponent<ECS::ElementalVolumeComponent>(entity)) {
-                entityJson["elementalVolume"] = SerializeElementalVolumeComponent(*m_World->GetComponent<ECS::ElementalVolumeComponent>(entity));
-            }
-
-            if (m_World->HasComponent<ECS::PostProcessVolumeComponent>(entity)) {
-                const auto* vol = m_World->GetComponent<ECS::PostProcessVolumeComponent>(entity);
-                entityJson["postProcessVolume"] = SerializePostProcessVolumeComponent(*vol);
-            }
-
-            if (m_World->HasComponent<ECS::FluidVolumeComponent>(entity)) {
-                const auto* vol = m_World->GetComponent<ECS::FluidVolumeComponent>(entity);
-                entityJson["fluidVolume"] = SerializeFluidVolumeComponent(*vol);
-            }
-
-            // Character controllers
-            if (m_World->HasComponent<ECS::Platformer2DController>(entity)) {
-                entityJson["platformer2D"] = SerializePlatformer2D(*m_World->GetComponent<ECS::Platformer2DController>(entity));
-            }
-            if (m_World->HasComponent<ECS::TopDown2DController>(entity)) {
-                entityJson["topDown2D"] = SerializeTopDown2D(*m_World->GetComponent<ECS::TopDown2DController>(entity));
-            }
-            if (m_World->HasComponent<ECS::TopDown3DController>(entity)) {
-                entityJson["topDown3D"] = SerializeTopDown3D(*m_World->GetComponent<ECS::TopDown3DController>(entity));
-            }
-            if (m_World->HasComponent<ECS::ThirdPersonController>(entity)) {
-                entityJson["thirdPerson"] = SerializeThirdPerson(*m_World->GetComponent<ECS::ThirdPersonController>(entity));
-            }
-            if (m_World->HasComponent<ECS::FirstPersonController>(entity)) {
-                entityJson["firstPerson"] = SerializeFirstPerson(*m_World->GetComponent<ECS::FirstPersonController>(entity));
-            }
-            if (m_World->HasComponent<ECS::VehicleController>(entity)) {
-                entityJson["vehicle"] = SerializeVehicle(*m_World->GetComponent<ECS::VehicleController>(entity));
-            }
-            if (m_World->HasComponent<ECS::SurfaceAlignedController>(entity)) {
-                entityJson["surfaceAligned"] = SerializeSurfaceAligned(*m_World->GetComponent<ECS::SurfaceAlignedController>(entity));
-            }
-            if (m_World->HasComponent<ECS::NetworkIdentityComponent>(entity)) {
-                entityJson["networkIdentity"] = SerializeNetworkIdentityComponent(*m_World->GetComponent<ECS::NetworkIdentityComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::NetworkTransformComponent>(entity)) {
-                entityJson["networkTransform"] = SerializeNetworkTransformComponent(*m_World->GetComponent<ECS::NetworkTransformComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::PossessableComponent>(entity)) {
-                entityJson["possessable"] = SerializePossessable(*m_World->GetComponent<ECS::PossessableComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::LockComponent>(entity)) {
-                entityJson["lock"] = SerializeLockComponent(*m_World->GetComponent<ECS::LockComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::PushableComponent>(entity)) {
-                entityJson["pushable"] = SerializePushableComponent(*m_World->GetComponent<ECS::PushableComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::SwitchComponent>(entity)) {
-                entityJson["switch"] = SerializeSwitchComponent(*m_World->GetComponent<ECS::SwitchComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::GoalZoneComponent>(entity)) {
-                entityJson["goalZone"] = SerializeGoalZoneComponent(*m_World->GetComponent<ECS::GoalZoneComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ConveyorComponent>(entity)) {
-                entityJson["conveyor"] = SerializeConveyorComponent(*m_World->GetComponent<ECS::ConveyorComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::TeleporterComponent>(entity)) {
-                entityJson["teleporter"] = SerializeTeleporterComponent(*m_World->GetComponent<ECS::TeleporterComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::DestructibleComponent>(entity)) {
-                entityJson["destructible"] = SerializeDestructibleComponent(*m_World->GetComponent<ECS::DestructibleComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::CurlNoiseFieldComponent>(entity)) {
-                entityJson["curlNoiseField"] = SerializeCurlNoiseFieldComponent(*m_World->GetComponent<ECS::CurlNoiseFieldComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::FractureConfigComponent>(entity)) {
-                entityJson["fractureConfig"] = SerializeFractureConfigComponent(*m_World->GetComponent<ECS::FractureConfigComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::MovingPlatformComponent>(entity)) {
-                entityJson["movingPlatform"] = SerializeMovingPlatformComponent(*m_World->GetComponent<ECS::MovingPlatformComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ScriptComponent>(entity)) {
-                entityJson["scriptComponent"] = SerializeScriptComponent(*m_World->GetComponent<ECS::ScriptComponent>(entity));
-            }
-
-            // Hierarchy
             if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
                 entityJson["parent"] = static_cast<u64>(m_World->GetComponent<ECS::ParentComponent>(entity)->parent);
-            }
-
-            // Prefab instance link
-            if (m_World->HasComponent<Assets::PrefabInstanceComponent>(entity)) {
-                auto* pi = m_World->GetComponent<Assets::PrefabInstanceComponent>(entity);
-                json piJson;
-                piJson["prefabId"] = pi->prefabId;
-                piJson["prefabPath"] = pi->prefabPath;
-                entityJson["prefabInstance"] = piJson;
-            }
-
-            // IK Components
-            if (m_World->HasComponent<ECS::LookAtIKComponent>(entity)) {
-                auto* ik = m_World->GetComponent<ECS::LookAtIKComponent>(entity);
-                json ikJson;
-                ikJson["headBone"] = ik->headBoneName;
-                ikJson["neckBone"] = ik->neckBoneName;
-                ikJson["targetEntity"] = static_cast<u64>(ik->targetEntity);
-                ikJson["targetPos"] = { ik->targetWorldPos.x, ik->targetWorldPos.y, ik->targetWorldPos.z };
-                ikJson["useEntityTarget"] = ik->useEntityTarget;
-                ikJson["maxRotation"] = ik->maxRotation;
-                ikJson["smoothSpeed"] = ik->smoothSpeed;
-                ikJson["lookWeight"] = ik->lookWeight;
-                entityJson["lookAtIK"] = ikJson;
-            }
-            if (m_World->HasComponent<ECS::InteractionIKComponent>(entity)) {
-                auto* ik = m_World->GetComponent<ECS::InteractionIKComponent>(entity);
-                json ikJson;
-                ikJson["handBone"] = ik->handBoneName;
-                ikJson["elbowBone"] = ik->elbowBoneName;
-                ikJson["shoulderBone"] = ik->shoulderBoneName;
-                ikJson["interactionRadius"] = ik->interactionRadius;
-                ikJson["ikWeight"] = ik->ikWeight;
-                ikJson["smoothSpeed"] = ik->smoothSpeed;
-                ikJson["interactionTag"] = ik->interactionTag;
-                entityJson["interactionIK"] = ikJson;
-            }
-            if (m_World->HasComponent<ECS::TwoBoneIKComponent>(entity)) {
-                auto* ik = m_World->GetComponent<ECS::TwoBoneIKComponent>(entity);
-                json ikJson;
-                ikJson["rootBone"] = ik->rootBoneName;
-                ikJson["midBone"] = ik->midBoneName;
-                ikJson["endBone"] = ik->endBoneName;
-                ikJson["targetPos"] = { ik->targetPosition.x, ik->targetPosition.y, ik->targetPosition.z };
-                ikJson["targetEntity"] = static_cast<u64>(ik->targetEntity);
-                ikJson["useEntityTarget"] = ik->useEntityTarget;
-                ikJson["weight"] = ik->weight;
-                ikJson["poleVector"] = { ik->poleVector.x, ik->poleVector.y, ik->poleVector.z };
-                entityJson["twoBoneIK"] = ikJson;
-            }
-            if (m_World->HasComponent<ECS::BoneAttachmentComponent>(entity)) {
-                auto* ba = m_World->GetComponent<ECS::BoneAttachmentComponent>(entity);
-                json baJson;
-                baJson["targetEntity"] = static_cast<u64>(ba->targetEntity);
-                baJson["targetBoneName"] = ba->targetBoneName;
-                baJson["positionOffset"] = { ba->positionOffset.x, ba->positionOffset.y, ba->positionOffset.z };
-                baJson["rotationOffset"] = { ba->rotationOffset.x, ba->rotationOffset.y, ba->rotationOffset.z, ba->rotationOffset.w };
-                entityJson["boneAttachment"] = baJson;
-            }
-
-            // Audio Components
-            if (m_World->HasComponent<ECS::AudioSourceComponent>(entity)) {
-                const auto* audio = m_World->GetComponent<ECS::AudioSourceComponent>(entity);
-                entityJson["audioSource"] = SerializeAudioSourceComponent(*audio);
-            }
-            if (m_World->HasComponent<ECS::AudioListenerComponent>(entity)) {
-                const auto* listener = m_World->GetComponent<ECS::AudioListenerComponent>(entity);
-                entityJson["audioListener"] = SerializeAudioListenerComponent(*listener);
-            }
-
-            // Physics & Collision
-            if (m_World->HasComponent<ECS::RigidbodyComponent>(entity)) {
-                entityJson["rigidbody"] = SerializeRigidbodyComponent(*m_World->GetComponent<ECS::RigidbodyComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::BoxColliderComponent>(entity)) {
-                entityJson["boxCollider"] = SerializeBoxColliderComponent(*m_World->GetComponent<ECS::BoxColliderComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::PolygonCollider2DComponent>(entity)) {
-                entityJson["polygonCollider2D"] = SerializePolygonCollider2DComponent(*m_World->GetComponent<ECS::PolygonCollider2DComponent>(entity));
-            }
-            if (m_World->HasComponent<Physics::Body2DComponent>(entity)) {
-                entityJson["body2D"] = SerializeBody2DComponent(*m_World->GetComponent<Physics::Body2DComponent>(entity));
-            }
-            if (m_World->HasComponent<Physics::Joint2DComponent>(entity)) {
-                entityJson["joint2D"] = SerializeJoint2DComponent(*m_World->GetComponent<Physics::Joint2DComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::PerFrameColliderComponent>(entity)) {
-                entityJson["perFrameCollider"] = SerializePerFrameColliderComponent(*m_World->GetComponent<ECS::PerFrameColliderComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::SphereColliderComponent>(entity)) {
-                entityJson["sphereCollider"] = SerializeSphereColliderComponent(*m_World->GetComponent<ECS::SphereColliderComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::CapsuleColliderComponent>(entity)) {
-                entityJson["capsuleCollider"] = SerializeCapsuleColliderComponent(*m_World->GetComponent<ECS::CapsuleColliderComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::MeshColliderComponent>(entity)) {
-                entityJson["meshCollider"] = SerializeMeshColliderComponent(*m_World->GetComponent<ECS::MeshColliderComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::MeshRendererComponent>(entity)) {
-                entityJson["meshRenderer"] = SerializeMeshRendererComponent(*m_World->GetComponent<ECS::MeshRendererComponent>(entity));
-            }
-
-            // Health & Damage & Rewind
-            if (m_World->HasComponent<ECS::HealthComponent>(entity)) {
-                entityJson["health"] = SerializeHealthComponent(*m_World->GetComponent<ECS::HealthComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::RecordRewindComponent>(entity)) {
-                entityJson["recordRewind"] = SerializeRecordRewindComponent(*m_World->GetComponent<ECS::RecordRewindComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::SceneRewindComponent>(entity)) {
-                entityJson["sceneRewind"] = SerializeSceneRewindComponent(*m_World->GetComponent<ECS::SceneRewindComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::AudioReactiveComponent>(entity))
-                entityJson["audioReactive"] = SerializeAudioReactiveComponent(*m_World->GetComponent<ECS::AudioReactiveComponent>(entity));
-            if (m_World->HasComponent<ECS::AudioThresholdTriggerComponent>(entity))
-                entityJson["audioThresholdTrigger"] = SerializeAudioThresholdTriggerComponent(*m_World->GetComponent<ECS::AudioThresholdTriggerComponent>(entity));
-            if (m_World->HasComponent<ECS::RTPCComponent>(entity))
-                entityJson["rtpc"] = SerializeRTPCComponent(*m_World->GetComponent<ECS::RTPCComponent>(entity));
-            if (m_World->HasComponent<ECS::BeatClockComponent>(entity))
-                entityJson["beatClock"] = SerializeBeatClockComponent(*m_World->GetComponent<ECS::BeatClockComponent>(entity));
-            if (m_World->HasComponent<ECS::BeatSyncComponent>(entity))
-                entityJson["beatSync"] = SerializeBeatSyncComponent(*m_World->GetComponent<ECS::BeatSyncComponent>(entity));
-            if (m_World->HasComponent<ECS::ConductorComponent>(entity))
-                entityJson["conductor"] = SerializeConductorComponent(*m_World->GetComponent<ECS::ConductorComponent>(entity));
-            if (m_World->HasComponent<ECS::AudioCollisionComponent>(entity))
-                entityJson["audioCollision"] = SerializeAudioCollisionComponent(*m_World->GetComponent<ECS::AudioCollisionComponent>(entity));
-            if (m_World->HasComponent<ECS::SidechainComponent>(entity))
-                entityJson["sidechain"] = SerializeSidechainComponent(*m_World->GetComponent<ECS::SidechainComponent>(entity));
-            if (m_World->HasComponent<ECS::ReverbZoneComponent>(entity))
-                entityJson["reverbZone"] = SerializeReverbZoneComponent(*m_World->GetComponent<ECS::ReverbZoneComponent>(entity));
-            if (m_World->HasComponent<ECS::MusicZoneComponent>(entity))
-                entityJson["musicZone"] = SerializeMusicZoneComponent(*m_World->GetComponent<ECS::MusicZoneComponent>(entity));
-            if (m_World->HasComponent<ECS::AudioSnapshotTriggerComponent>(entity))
-                entityJson["audioSnapshotTrigger"] = SerializeAudioSnapshotTriggerComponent(*m_World->GetComponent<ECS::AudioSnapshotTriggerComponent>(entity));
-            if (m_World->HasComponent<ECS::AudioOcclusionComponent>(entity))
-                entityJson["audioOcclusion"] = SerializeAudioOcclusionComponent(*m_World->GetComponent<ECS::AudioOcclusionComponent>(entity));
-            if (m_World->HasComponent<ECS::PoseLibraryComponent>(entity))
-                entityJson["poseLibrary"] = SerializePoseLibraryComponent(*m_World->GetComponent<ECS::PoseLibraryComponent>(entity));
-            if (m_World->HasComponent<ECS::AudioFidelityComponent>(entity))
-                entityJson["audioFidelity"] = SerializeAudioFidelityComponent(*m_World->GetComponent<ECS::AudioFidelityComponent>(entity));
-            if (m_World->HasComponent<ECS::MIDIBindingComponent>(entity))
-                entityJson["midiBinding"] = SerializeMIDIBindingComponent(*m_World->GetComponent<ECS::MIDIBindingComponent>(entity));
-            if (m_World->HasComponent<ECS::MaterialInteractionTableComponent>(entity))
-                entityJson["materialInteractionTable"] = SerializeMaterialInteractionTableComponent(*m_World->GetComponent<ECS::MaterialInteractionTableComponent>(entity));
-            if (m_World->HasComponent<ECS::DamageComponent>(entity)) {
-                entityJson["damage"] = SerializeDamageComponent(*m_World->GetComponent<ECS::DamageComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::GameOverComponent>(entity)) {
-                entityJson["gameOver"] = SerializeGameOverComponent(*m_World->GetComponent<ECS::GameOverComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::LensComponent>(entity)) {
-                entityJson["lens"] = SerializeLensComponent(*m_World->GetComponent<ECS::LensComponent>(entity));
             }
             if (m_World->HasComponent<ECS::MorphTargetComponent>(entity)) {
                 entityJson["morphTargets"] = SerializeMorphTargetComponent(*m_World->GetComponent<ECS::MorphTargetComponent>(entity), options.includeVertexData);
             }
 
-            // Damage Resistance
-            if (m_World->HasComponent<ECS::DamageResistanceComponent>(entity)) {
-                entityJson["damageResistance"] = SerializeDamageResistanceComponent(*m_World->GetComponent<ECS::DamageResistanceComponent>(entity));
-            }
-
-            // Triggers & Interaction
-            if (m_World->HasComponent<ECS::TriggerZoneComponent>(entity)) {
-                entityJson["triggerZone"] = SerializeTriggerZoneComponent(*m_World->GetComponent<ECS::TriggerZoneComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::InteractableComponent>(entity)) {
-                entityJson["interactable"] = SerializeInteractableComponent(*m_World->GetComponent<ECS::InteractableComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::PickupComponent>(entity)) {
-                entityJson["pickup"] = SerializePickupComponent(*m_World->GetComponent<ECS::PickupComponent>(entity));
-            }
-
-            // Tags, Layers, Billboard
-            if (m_World->HasComponent<ECS::TagComponent>(entity)) {
-                entityJson["tag"] = SerializeTagComponent(*m_World->GetComponent<ECS::TagComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::LayerComponent>(entity)) {
-                entityJson["layer"] = SerializeLayerComponent(*m_World->GetComponent<ECS::LayerComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::BillboardComponent>(entity)) {
-                entityJson["billboard"] = SerializeBillboardComponent(*m_World->GetComponent<ECS::BillboardComponent>(entity));
-            }
-
-            // Particles
-            if (m_World->HasComponent<ECS::ParticleEmitterComponent>(entity)) {
-                entityJson["particleEmitter"] = SerializeParticleEmitterComponent(*m_World->GetComponent<ECS::ParticleEmitterComponent>(entity));
-            }
-
-            // 2D Rendering
-            if (m_World->HasComponent<ECS::Sprite2DComponent>(entity)) {
-                entityJson["sprite2D"] = SerializeSprite2DComponent(*m_World->GetComponent<ECS::Sprite2DComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::AnimatedSprite2DComponent>(entity)) {
-                entityJson["animatedSprite2D"] = SerializeAnimatedSprite2DComponent(*m_World->GetComponent<ECS::AnimatedSprite2DComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::TilemapComponent>(entity)) {
-                entityJson["tilemap"] = SerializeTilemapComponent(*m_World->GetComponent<ECS::TilemapComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::Camera2DBoundsComponent>(entity)) {
-                entityJson["camera2DBounds"] = SerializeCamera2DBoundsComponent(*m_World->GetComponent<ECS::Camera2DBoundsComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ParallaxMachineComponent>(entity)) {
-                entityJson["parallaxMachine"] = SerializeParallaxMachineComponent(*m_World->GetComponent<ECS::ParallaxMachineComponent>(entity));
-            }
-
-            // Logic
-            if (m_World->HasComponent<ECS::StateMachineComponent>(entity)) {
-                entityJson["stateMachine"] = SerializeStateMachineComponent(*m_World->GetComponent<ECS::StateMachineComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::DialogueComponent>(entity)) {
-                entityJson["dialogue"] = SerializeDialogueComponent(*m_World->GetComponent<ECS::DialogueComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::DialogueBoxComponent>(entity)) {
-                entityJson["dialogueBox"] = SerializeDialogueBoxComponent(*m_World->GetComponent<ECS::DialogueBoxComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::TweenComponent>(entity)) {
-                entityJson["tween"] = SerializeTweenComponent(*m_World->GetComponent<ECS::TweenComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::VisualScriptComponent>(entity)) {
-                entityJson["visualScript"] = SerializeVisualScriptComponent(*m_World->GetComponent<ECS::VisualScriptComponent>(entity));
-            }
-
-            // AI & Navigation
-            if (m_World->HasComponent<ECS::AIControllerComponent>(entity)) {
-                entityJson["aiController"] = SerializeAIControllerComponent(*m_World->GetComponent<ECS::AIControllerComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::BehaviorTreeComponent>(entity)) {
-                entityJson["behaviorTree"] = SerializeBehaviorTreeComponent(*m_World->GetComponent<ECS::BehaviorTreeComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::QuestFlowComponent>(entity)) {
-                entityJson["questFlow"] = SerializeQuestFlowComponent(*m_World->GetComponent<ECS::QuestFlowComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::FollowTargetComponent>(entity)) {
-                entityJson["followTarget"] = SerializeFollowTargetComponent(*m_World->GetComponent<ECS::FollowTargetComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::LookAtTargetComponent>(entity)) {
-                entityJson["lookAtTarget"] = SerializeLookAtTargetComponent(*m_World->GetComponent<ECS::LookAtTargetComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::WaypointComponent>(entity)) {
-                entityJson["waypoint"] = SerializeWaypointComponent(*m_World->GetComponent<ECS::WaypointComponent>(entity));
-            }
-
-            // Spawning & Timers
-            if (m_World->HasComponent<ECS::SpawnPointComponent>(entity)) {
-                entityJson["spawnPoint"] = SerializeSpawnPointComponent(*m_World->GetComponent<ECS::SpawnPointComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::TimerComponent>(entity)) {
-                entityJson["timer"] = SerializeTimerComponent(*m_World->GetComponent<ECS::TimerComponent>(entity));
-            }
-
-            // Streaming
-            if (m_World->HasComponent<Scene::StreamingVolumeComponent>(entity)) {
-                entityJson["streamingVolume"] = SerializeStreamingVolumeComponent(*m_World->GetComponent<Scene::StreamingVolumeComponent>(entity));
-            }
-            if (m_World->HasComponent<Scene::StreamingPortalComponent>(entity)) {
-                entityJson["streamingPortal"] = SerializeStreamingPortalComponent(*m_World->GetComponent<Scene::StreamingPortalComponent>(entity));
-            }
-
-            // Interactive Water
-            if (m_World->HasComponent<Effects::InteractiveWaterComponent>(entity)) {
-                entityJson["interactiveWater"] = SerializeInteractiveWaterComponent(*m_World->GetComponent<Effects::InteractiveWaterComponent>(entity));
-            }
-            if (m_World->HasComponent<Effects::WaterInteractorComponent>(entity)) {
-                entityJson["waterInteractor"] = SerializeWaterInteractorComponent(*m_World->GetComponent<Effects::WaterInteractorComponent>(entity));
-            }
-
-            // Inventory & Save Data
-            if (m_World->HasComponent<ECS::InventoryComponent>(entity)) {
-                entityJson["inventory"] = SerializeInventoryComponent(*m_World->GetComponent<ECS::InventoryComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::SaveDataComponent>(entity)) {
-                entityJson["saveData"] = SerializeSaveDataComponent(*m_World->GetComponent<ECS::SaveDataComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::SaveLoadMenuComponent>(entity)) {
-                entityJson["saveLoadMenu"] = SerializeSaveLoadMenuComponent(*m_World->GetComponent<ECS::SaveLoadMenuComponent>(entity));
-            }
-
-            // New Gameplay Components
-            if (m_World->HasComponent<ECS::ResourceComponent>(entity)) {
-                entityJson["resource"] = SerializeResourceComponent(*m_World->GetComponent<ECS::ResourceComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::FootstepComponent>(entity)) {
-                entityJson["footstep"] = SerializeFootstepComponent(*m_World->GetComponent<ECS::FootstepComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::PoolableComponent>(entity)) {
-                entityJson["poolable"] = SerializePoolableComponent(*m_World->GetComponent<ECS::PoolableComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::QuestStateComponent>(entity)) {
-                entityJson["questState"] = SerializeQuestStateComponent(*m_World->GetComponent<ECS::QuestStateComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::DynamicDifficultyComponent>(entity)) {
-                entityJson["dynamicDifficulty"] = SerializeDynamicDifficultyComponent(*m_World->GetComponent<ECS::DynamicDifficultyComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ArtStyleComponent>(entity)) {
-                entityJson["artStyle"] = SerializeArtStyleComponent(*m_World->GetComponent<ECS::ArtStyleComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::HUDWidgetComponent>(entity)) {
-                entityJson["hudWidget"] = SerializeHUDWidgetComponent(*m_World->GetComponent<ECS::HUDWidgetComponent>(entity));
-            }
-            if (m_World->HasComponent<GUI::UICanvasComponent>(entity)) {
-                entityJson["uiCanvas"] = SerializeUICanvasComponent(*m_World->GetComponent<GUI::UICanvasComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::CinematicCameraComponent>(entity)) {
-                entityJson["cinematicCamera"] = SerializeCinematicCameraComponent(*m_World->GetComponent<ECS::CinematicCameraComponent>(entity));
-            }
-
-            // Joint & Ragdoll Components
-            if (m_World->HasComponent<ECS::DistanceJointComponent>(entity)) {
-                entityJson["distanceJoint"] = SerializeDistanceJointComponent(*m_World->GetComponent<ECS::DistanceJointComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::HingeJointComponent>(entity)) {
-                entityJson["hingeJoint"] = SerializeHingeJointComponent(*m_World->GetComponent<ECS::HingeJointComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::BallSocketJointComponent>(entity)) {
-                entityJson["ballSocketJoint"] = SerializeBallSocketJointComponent(*m_World->GetComponent<ECS::BallSocketJointComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::SpringJointComponent>(entity)) {
-                entityJson["springJoint"] = SerializeSpringJointComponent(*m_World->GetComponent<ECS::SpringJointComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::FixedJointComponent>(entity)) {
-                entityJson["fixedJoint"] = SerializeFixedJointComponent(*m_World->GetComponent<ECS::FixedJointComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::SliderJointComponent>(entity)) {
-                entityJson["sliderJoint"] = SerializeSliderJointComponent(*m_World->GetComponent<ECS::SliderJointComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::RagdollComponent>(entity)) {
-                entityJson["ragdoll"] = SerializeRagdollComponent(*m_World->GetComponent<ECS::RagdollComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::AnimationRecorderComponent>(entity)) {
-                entityJson["animationRecorder"] = SerializeAnimationRecorderComponent(*m_World->GetComponent<ECS::AnimationRecorderComponent>(entity));
-            }
-
-            // Flower Components
-            if (m_World->HasComponent<ECS::JellyMeshComponent>(entity)) {
-                entityJson["jellyMesh"] = SerializeJellyMeshComponent(*m_World->GetComponent<ECS::JellyMeshComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::TetherComponent>(entity)) {
-                entityJson["tether"] = SerializeTetherComponent(*m_World->GetComponent<ECS::TetherComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::GrabbableComponent>(entity)) {
-                entityJson["grabbable"] = SerializeGrabbableComponent(*m_World->GetComponent<ECS::GrabbableComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::FlowerStemComponent>(entity)) {
-                entityJson["flowerStem"] = SerializeFlowerStemComponent(*m_World->GetComponent<ECS::FlowerStemComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::FlowerParticleConfigComponent>(entity)) {
-                entityJson["flowerParticleConfig"] = SerializeFlowerParticleConfigComponent(*m_World->GetComponent<ECS::FlowerParticleConfigComponent>(entity));
-            }
-
-            // LOD, Grass, Vegetation
-            if (m_World->HasComponent<ECS::LODComponent>(entity)) {
-                entityJson["lod"] = SerializeLODComponent(*m_World->GetComponent<ECS::LODComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::GrassVolumeComponent>(entity)) {
-                entityJson["grassVolume"] = SerializeGrassVolumeComponent(*m_World->GetComponent<ECS::GrassVolumeComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::VegetationComponent>(entity)) {
-                entityJson["vegetation"] = SerializeVegetationComponent(*m_World->GetComponent<ECS::VegetationComponent>(entity));
-            }
-            if (m_World->HasComponent<ECS::ViewmodelComponent>(entity)) {
-                entityJson["viewmodel"] = SerializeViewmodelComponent(*m_World->GetComponent<ECS::ViewmodelComponent>(entity));
-            }
 
             entitiesArray.push_back(entityJson);
         }
@@ -9828,576 +8458,26 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             }
 
             // Deserialize components
-            if (entityJson.contains("name")) {
-                auto name = DeserializeNameComponent(entityJson["name"]);
-                m_World->AddComponent<ECS::NameComponent>(entity, name);
+                        // Deserialize components via the registry (single source of truth).
+            // mesh stays explicit below (IsValid guard); stableId/id/parent are
+            // entity-level and handled outside the registry.
+            for (const auto& reg : ComponentRegistry()) {
+                std::string_view rk(reg.key);
+                if (rk == "mesh" || rk == "stableId") continue;
+                auto regIt = entityJson.find(reg.key);
+                if (regIt != entityJson.end()) reg.de(m_World, entity, *regIt);
             }
-
-            if (entityJson.contains("transform")) {
-                auto transform = DeserializeTransformComponent(entityJson["transform"]);
-                m_World->AddComponent<ECS::TransformComponent>(entity, transform);
-            }
-
-            if (entityJson.contains("material")) {
-                auto material = DeserializeMaterialComponent(entityJson["material"]);
-                m_World->AddComponent<ECS::MaterialComponent>(entity, material);
-            }
-
-            if (entityJson.contains("materialSlots")) {
-                auto matSlots = DeserializeMaterialSlotsComponent(entityJson["materialSlots"]);
-                m_World->AddComponent<ECS::MaterialSlotsComponent>(entity, std::move(matSlots));
-            }
-
             if (entityJson.contains("mesh")) {
                 auto mesh = DeserializeMeshComponent(entityJson["mesh"]);
                 if (mesh.IsValid()) {
                     m_World->AddComponent<ECS::MeshComponent>(entity, mesh);
                 }
             }
-
-            // Skeleton must be deserialized before animator
-            std::shared_ptr<Animation::Skeleton> loadedSkeleton;
-            if (entityJson.contains("skeleton")) {
-                auto skelComp = DeserializeSkeletonComponent(entityJson["skeleton"]);
-                loadedSkeleton = skelComp.skeleton;
-                m_World->AddComponent<ECS::SkeletonComponent>(entity, skelComp);
-            }
-
-            if (entityJson.contains("animator")) {
-                auto animComp = DeserializeAnimatorComponent(entityJson["animator"], loadedSkeleton);
-                m_World->AddComponent<ECS::AnimatorComponent>(entity, animComp);
-            }
-
-            if (entityJson.contains("light")) {
-                auto light = DeserializeLightComponent(entityJson["light"]);
-                m_World->AddComponent<ECS::LightComponent>(entity, light);
-            }
-
-            if (entityJson.contains("notes")) {
-                auto notes = DeserializeNotesComponent(entityJson["notes"]);
-                m_World->AddComponent<ECS::NotesComponent>(entity, notes);
-            }
-
-            if (entityJson.contains("text")) {
-                auto text = DeserializeTextComponent(entityJson["text"]);
-                m_World->AddComponent<ECS::TextComponent>(entity, text);
-            }
-
-            if (entityJson.contains("camera")) {
-                auto camera = DeserializeCameraComponent(entityJson["camera"]);
-                m_World->AddComponent<ECS::CameraComponent>(entity, camera);
-            }
-
-            if (entityJson.contains("weatherZone")) {
-                auto zone = DeserializeWeatherZoneComponent(entityJson["weatherZone"]);
-                m_World->AddComponent<ECS::WeatherZoneComponent>(entity, zone);
-            }
-
-            if (entityJson.contains("waterVolume")) {
-                auto volume = DeserializeWaterVolumeComponent(entityJson["waterVolume"]);
-                m_World->AddComponent<ECS::WaterVolumeComponent>(entity, volume);
-            }
-
-            if (entityJson.contains("water3D")) {
-                m_World->AddComponent<ECS::Water3DComponent>(entity, DeserializeWater3DComponent(entityJson["water3D"]));
-            }
-
-            if (entityJson.contains("interactiveWater")) {
-                m_World->AddComponent<Effects::InteractiveWaterComponent>(entity, DeserializeInteractiveWaterComponent(entityJson["interactiveWater"]));
-            }
-            if (entityJson.contains("waterInteractor")) {
-                m_World->AddComponent<Effects::WaterInteractorComponent>(entity, DeserializeWaterInteractorComponent(entityJson["waterInteractor"]));
-            }
-
-            if (entityJson.contains("shrubVolume")) {
-                auto shrub = DeserializeShrubVolumeComponent(entityJson["shrubVolume"]);
-                m_World->AddComponent<ECS::ShrubVolumeComponent>(entity, shrub);
-            }
-
-            if (entityJson.contains("treeVolume")) {
-                auto tree = DeserializeTreeVolumeComponent(entityJson["treeVolume"]);
-                m_World->AddComponent<ECS::TreeVolumeComponent>(entity, tree);
-            }
-
-            if (entityJson.contains("terrain")) {
-                auto terrain = DeserializeTerrainComponent(entityJson["terrain"]);
-                m_World->AddComponent<ECS::TerrainComponent>(entity, terrain);
-            }
-
-            if (entityJson.contains("terrain2d")) {
-                auto terrain2d = DeserializeTerrain2DComponent(entityJson["terrain2d"]);
-                m_World->AddComponent<ECS::Terrain2DComponent>(entity, terrain2d);
-            }
-
-            if (entityJson.contains("cameraTrigger")) {
-                auto trigger = DeserializeCameraTriggerComponent(entityJson["cameraTrigger"]);
-                m_World->AddComponent<ECS::CameraTriggerComponent>(entity, trigger);
-            }
-
-            if (entityJson.contains("temperatureZone")) {
-                auto zone = DeserializeTemperatureZoneComponent(entityJson["temperatureZone"]);
-                m_World->AddComponent<ECS::TemperatureZoneComponent>(entity, zone);
-            }
-
-            if (entityJson.contains("gravityZone")) {
-                auto zone = DeserializeGravityZoneComponent(entityJson["gravityZone"]);
-                m_World->AddComponent<ECS::GravityZoneComponent>(entity, zone);
-            }
-
-            if (entityJson.contains("reflectionProbe")) {
-                m_World->AddComponent<ECS::ReflectionProbeComponent>(entity, DeserializeReflectionProbeComponent(entityJson["reflectionProbe"]));
-            }
-
-            if (entityJson.contains("elementalSurface")) {
-                m_World->AddComponent<ECS::ElementalSurfaceComponent>(entity, DeserializeElementalSurfaceComponent(entityJson["elementalSurface"]));
-            }
-            if (entityJson.contains("elementalEmitter")) {
-                m_World->AddComponent<ECS::ElementalEmitterComponent>(entity, DeserializeElementalEmitterComponent(entityJson["elementalEmitter"]));
-            }
-            if (entityJson.contains("gpuParticleEmitter")) {
-                m_World->AddComponent<ECS::GPUParticleEmitterComponent>(entity, DeserializeGPUParticleEmitterComponent(entityJson["gpuParticleEmitter"]));
-            }
-            if (entityJson.contains("customShader")) {
-                m_World->AddComponent<ECS::CustomShaderComponent>(entity, DeserializeCustomShaderComponent(entityJson["customShader"]));
-            }
-            if (entityJson.contains("cloth")) {
-                m_World->AddComponent<ECS::ClothComponent>(entity, DeserializeClothComponent(entityJson["cloth"]));
-            }
-            if (entityJson.contains("swarm")) {
-                m_World->AddComponent<ECS::SwarmComponent>(entity, DeserializeSwarmComponent(entityJson["swarm"]));
-            }
-            if (entityJson.contains("dungeonGenerator")) {
-                m_World->AddComponent<ECS::DungeonGeneratorComponent>(entity, DeserializeDungeonGeneratorComponent(entityJson["dungeonGenerator"]));
-            }
-            if (entityJson.contains("randomBag")) {
-                m_World->AddComponent<ECS::RandomBagComponent>(entity, DeserializeRandomBagComponent(entityJson["randomBag"]));
-            }
-            if (entityJson.contains("scatter")) {
-                m_World->AddComponent<ECS::ScatterComponent>(entity, DeserializeScatterComponent(entityJson["scatter"]));
-            }
-            if (entityJson.contains("terrainGenerator")) {
-                m_World->AddComponent<ECS::TerrainGeneratorComponent>(entity, DeserializeTerrainGeneratorComponent(entityJson["terrainGenerator"]));
-            }
-            if (entityJson.contains("wfc")) {
-                m_World->AddComponent<ECS::WFCComponent>(entity, DeserializeWFCComponent(entityJson["wfc"]));
-            }
-            if (entityJson.contains("scatterInstance")) {
-                m_World->AddComponent<ECS::ScatterInstanceComponent>(entity);
-            }
-            if (entityJson.contains("elementalVolume")) {
-                m_World->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(entityJson["elementalVolume"]));
-            }
-
-            if (entityJson.contains("postProcessVolume")) {
-                auto vol = DeserializePostProcessVolumeComponent(entityJson["postProcessVolume"]);
-                m_World->AddComponent<ECS::PostProcessVolumeComponent>(entity, vol);
-            }
-
-            if (entityJson.contains("fluidVolume")) {
-                auto vol = DeserializeFluidVolumeComponent(entityJson["fluidVolume"]);
-                m_World->AddComponent<ECS::FluidVolumeComponent>(entity, vol);
-            }
-
-            // Character controllers
-            if (entityJson.contains("platformer2D")) {
-                m_World->AddComponent<ECS::Platformer2DController>(entity, DeserializePlatformer2D(entityJson["platformer2D"]));
-            }
-            if (entityJson.contains("topDown2D")) {
-                m_World->AddComponent<ECS::TopDown2DController>(entity, DeserializeTopDown2D(entityJson["topDown2D"]));
-            }
-            if (entityJson.contains("topDown3D")) {
-                m_World->AddComponent<ECS::TopDown3DController>(entity, DeserializeTopDown3D(entityJson["topDown3D"]));
-            }
-            if (entityJson.contains("thirdPerson")) {
-                m_World->AddComponent<ECS::ThirdPersonController>(entity, DeserializeThirdPerson(entityJson["thirdPerson"]));
-            }
-            if (entityJson.contains("firstPerson")) {
-                m_World->AddComponent<ECS::FirstPersonController>(entity, DeserializeFirstPerson(entityJson["firstPerson"]));
-            }
-            if (entityJson.contains("vehicle")) {
-                m_World->AddComponent<ECS::VehicleController>(entity, DeserializeVehicle(entityJson["vehicle"]));
-            }
-            if (entityJson.contains("surfaceAligned")) {
-                m_World->AddComponent<ECS::SurfaceAlignedController>(entity, DeserializeSurfaceAligned(entityJson["surfaceAligned"]));
-            }
-            if (entityJson.contains("networkIdentity")) {
-                m_World->AddComponent<ECS::NetworkIdentityComponent>(entity, DeserializeNetworkIdentityComponent(entityJson["networkIdentity"]));
-            }
-            if (entityJson.contains("networkTransform")) {
-                m_World->AddComponent<ECS::NetworkTransformComponent>(entity, DeserializeNetworkTransformComponent(entityJson["networkTransform"]));
-            }
-            if (entityJson.contains("possessable")) {
-                m_World->AddComponent<ECS::PossessableComponent>(entity, DeserializePossessable(entityJson["possessable"]));
-            }
-            if (entityJson.contains("lock")) {
-                m_World->AddComponent<ECS::LockComponent>(entity, DeserializeLockComponent(entityJson["lock"]));
-            }
-            if (entityJson.contains("pushable")) {
-                m_World->AddComponent<ECS::PushableComponent>(entity, DeserializePushableComponent(entityJson["pushable"]));
-            }
-            if (entityJson.contains("switch")) {
-                m_World->AddComponent<ECS::SwitchComponent>(entity, DeserializeSwitchComponent(entityJson["switch"]));
-            }
-            if (entityJson.contains("goalZone")) {
-                m_World->AddComponent<ECS::GoalZoneComponent>(entity, DeserializeGoalZoneComponent(entityJson["goalZone"]));
-            }
-            if (entityJson.contains("conveyor")) {
-                m_World->AddComponent<ECS::ConveyorComponent>(entity, DeserializeConveyorComponent(entityJson["conveyor"]));
-            }
-            if (entityJson.contains("teleporter")) {
-                m_World->AddComponent<ECS::TeleporterComponent>(entity, DeserializeTeleporterComponent(entityJson["teleporter"]));
-            }
-            if (entityJson.contains("destructible")) {
-                m_World->AddComponent<ECS::DestructibleComponent>(entity, DeserializeDestructibleComponent(entityJson["destructible"]));
-            }
-            if (entityJson.contains("curlNoiseField")) {
-                m_World->AddComponent<ECS::CurlNoiseFieldComponent>(entity, DeserializeCurlNoiseFieldComponent(entityJson["curlNoiseField"]));
-            }
-            if (entityJson.contains("fractureConfig")) {
-                m_World->AddComponent<ECS::FractureConfigComponent>(entity, DeserializeFractureConfigComponent(entityJson["fractureConfig"]));
-            }
-            if (entityJson.contains("movingPlatform")) {
-                m_World->AddComponent<ECS::MovingPlatformComponent>(entity, DeserializeMovingPlatformComponent(entityJson["movingPlatform"]));
-            }
-            if (entityJson.contains("scriptComponent")) {
-                m_World->AddComponent<ECS::ScriptComponent>(entity, DeserializeScriptComponent(entityJson["scriptComponent"]));
-            }
-
-            // Hierarchy
             if (entityJson.contains("parent")) {
                 auto& pc = m_World->AddComponent<ECS::ParentComponent>(entity);
                 pc.parent = static_cast<ECS::Entity>(entityJson["parent"].get<u64>());
             }
 
-            // Prefab instance link
-            if (entityJson.contains("prefabInstance")) {
-                auto& pi = m_World->AddComponent<Assets::PrefabInstanceComponent>(entity);
-                const auto& piJson = entityJson["prefabInstance"];
-                pi.prefabId = piJson.value("prefabId", static_cast<u64>(0));
-                pi.prefabPath = piJson.value("prefabPath", std::string(""));
-            }
-
-            // IK Components
-            if (entityJson.contains("lookAtIK")) {
-                auto& ik = m_World->AddComponent<ECS::LookAtIKComponent>(entity);
-                auto& ikJson = entityJson["lookAtIK"];
-                if (ikJson.contains("headBone")) ik.headBoneName = ikJson["headBone"].get<std::string>();
-                if (ikJson.contains("neckBone")) ik.neckBoneName = ikJson["neckBone"].get<std::string>();
-                if (ikJson.contains("targetEntity")) ik.targetEntity = static_cast<ECS::Entity>(ikJson["targetEntity"].get<u64>());
-                if (ikJson.contains("targetPos") && ikJson["targetPos"].is_array() && ikJson["targetPos"].size() >= 3) {
-                    auto& arr = ikJson["targetPos"];
-                    ik.targetWorldPos = Math::Vector3(arr[0].get<f32>(), arr[1].get<f32>(), arr[2].get<f32>());
-                }
-                if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = JB(ikJson["useEntityTarget"]);
-                if (ikJson.contains("maxRotation")) ik.maxRotation = ikJson["maxRotation"].get<f32>();
-                if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
-                if (ikJson.contains("lookWeight")) ik.lookWeight = ikJson["lookWeight"].get<f32>();
-            }
-            if (entityJson.contains("interactionIK")) {
-                auto& ik = m_World->AddComponent<ECS::InteractionIKComponent>(entity);
-                auto& ikJson = entityJson["interactionIK"];
-                if (ikJson.contains("handBone")) ik.handBoneName = ikJson["handBone"].get<std::string>();
-                if (ikJson.contains("elbowBone")) ik.elbowBoneName = ikJson["elbowBone"].get<std::string>();
-                if (ikJson.contains("shoulderBone")) ik.shoulderBoneName = ikJson["shoulderBone"].get<std::string>();
-                if (ikJson.contains("interactionRadius")) ik.interactionRadius = ikJson["interactionRadius"].get<f32>();
-                if (ikJson.contains("ikWeight")) ik.ikWeight = ikJson["ikWeight"].get<f32>();
-                if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
-                if (ikJson.contains("interactionTag")) ik.interactionTag = ikJson["interactionTag"].get<std::string>();
-            }
-            if (entityJson.contains("twoBoneIK")) {
-                auto& ik = m_World->AddComponent<ECS::TwoBoneIKComponent>(entity);
-                auto& ikJson = entityJson["twoBoneIK"];
-                if (ikJson.contains("rootBone")) ik.rootBoneName = ikJson["rootBone"].get<std::string>();
-                if (ikJson.contains("midBone")) ik.midBoneName = ikJson["midBone"].get<std::string>();
-                if (ikJson.contains("endBone")) ik.endBoneName = ikJson["endBone"].get<std::string>();
-                if (ikJson.contains("targetPos") && ikJson["targetPos"].is_array() && ikJson["targetPos"].size() >= 3) {
-                    auto& a = ikJson["targetPos"];
-                    ik.targetPosition = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
-                }
-                if (ikJson.contains("targetEntity")) ik.targetEntity = static_cast<ECS::Entity>(ikJson["targetEntity"].get<u64>());
-                if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = JB(ikJson["useEntityTarget"]);
-                if (ikJson.contains("weight")) ik.weight = ikJson["weight"].get<f32>();
-                if (ikJson.contains("poleVector") && ikJson["poleVector"].is_array() && ikJson["poleVector"].size() >= 3) {
-                    auto& a = ikJson["poleVector"];
-                    ik.poleVector = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
-                }
-            }
-            if (entityJson.contains("boneAttachment")) {
-                auto& ba = m_World->AddComponent<ECS::BoneAttachmentComponent>(entity);
-                auto& baJson = entityJson["boneAttachment"];
-                if (baJson.contains("targetEntity")) ba.targetEntity = static_cast<ECS::Entity>(baJson["targetEntity"].get<u64>());
-                if (baJson.contains("targetBoneName")) ba.targetBoneName = baJson["targetBoneName"].get<std::string>();
-                if (baJson.contains("positionOffset") && baJson["positionOffset"].is_array() && baJson["positionOffset"].size() >= 3) {
-                    auto& a = baJson["positionOffset"];
-                    ba.positionOffset = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
-                }
-                if (baJson.contains("rotationOffset") && baJson["rotationOffset"].is_array() && baJson["rotationOffset"].size() >= 4) {
-                    auto& a = baJson["rotationOffset"];
-                    ba.rotationOffset = Math::Quaternion(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>(), a[3].get<f32>());
-                }
-            }
-
-            // Audio Components
-            if (entityJson.contains("audioSource")) {
-                auto audio = DeserializeAudioSourceComponent(entityJson["audioSource"]);
-                m_World->AddComponent<ECS::AudioSourceComponent>(entity, audio);
-            }
-            if (entityJson.contains("audioListener")) {
-                auto listener = DeserializeAudioListenerComponent(entityJson["audioListener"]);
-                m_World->AddComponent<ECS::AudioListenerComponent>(entity, listener);
-            }
-
-            // Physics & Collision
-            if (entityJson.contains("rigidbody")) {
-                m_World->AddComponent<ECS::RigidbodyComponent>(entity, DeserializeRigidbodyComponent(entityJson["rigidbody"]));
-            }
-            if (entityJson.contains("boxCollider")) {
-                m_World->AddComponent<ECS::BoxColliderComponent>(entity, DeserializeBoxColliderComponent(entityJson["boxCollider"]));
-            }
-            if (entityJson.contains("polygonCollider2D")) {
-                m_World->AddComponent<ECS::PolygonCollider2DComponent>(entity, DeserializePolygonCollider2DComponent(entityJson["polygonCollider2D"]));
-            }
-            if (entityJson.contains("body2D")) {
-                m_World->AddComponent<Physics::Body2DComponent>(entity, DeserializeBody2DComponent(entityJson["body2D"]));
-            }
-            if (entityJson.contains("joint2D")) {
-                m_World->AddComponent<Physics::Joint2DComponent>(entity, DeserializeJoint2DComponent(entityJson["joint2D"]));
-            }
-            if (entityJson.contains("perFrameCollider")) {
-                m_World->AddComponent<ECS::PerFrameColliderComponent>(entity, DeserializePerFrameColliderComponent(entityJson["perFrameCollider"]));
-            }
-            if (entityJson.contains("sphereCollider")) {
-                m_World->AddComponent<ECS::SphereColliderComponent>(entity, DeserializeSphereColliderComponent(entityJson["sphereCollider"]));
-            }
-            if (entityJson.contains("capsuleCollider")) {
-                m_World->AddComponent<ECS::CapsuleColliderComponent>(entity, DeserializeCapsuleColliderComponent(entityJson["capsuleCollider"]));
-            }
-            if (entityJson.contains("meshCollider")) {
-                m_World->AddComponent<ECS::MeshColliderComponent>(entity, DeserializeMeshColliderComponent(entityJson["meshCollider"]));
-            }
-            if (entityJson.contains("meshRenderer")) {
-                m_World->AddComponent<ECS::MeshRendererComponent>(entity, DeserializeMeshRendererComponent(entityJson["meshRenderer"]));
-            }
-
-            // Health & Damage & Rewind
-            if (entityJson.contains("health")) {
-                m_World->AddComponent<ECS::HealthComponent>(entity, DeserializeHealthComponent(entityJson["health"]));
-            }
-            if (entityJson.contains("recordRewind")) {
-                m_World->AddComponent<ECS::RecordRewindComponent>(entity, DeserializeRecordRewindComponent(entityJson["recordRewind"]));
-            }
-            if (entityJson.contains("sceneRewind")) {
-                m_World->AddComponent<ECS::SceneRewindComponent>(entity, DeserializeSceneRewindComponent(entityJson["sceneRewind"]));
-            }
-            if (entityJson.contains("damage")) {
-                m_World->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(entityJson["damage"]));
-            }
-            if (entityJson.contains("gameOver")) {
-                m_World->AddComponent<ECS::GameOverComponent>(entity, DeserializeGameOverComponent(entityJson["gameOver"]));
-            }
-            if (entityJson.contains("lens")) {
-                m_World->AddComponent<ECS::LensComponent>(entity, DeserializeLensComponent(entityJson["lens"]));
-            }
-            if (entityJson.contains("morphTargets")) {
-                m_World->AddComponent<ECS::MorphTargetComponent>(entity, DeserializeMorphTargetComponent(entityJson["morphTargets"]));
-            }
-            if (entityJson.contains("damageResistance")) {
-                m_World->AddComponent<ECS::DamageResistanceComponent>(entity, DeserializeDamageResistanceComponent(entityJson["damageResistance"]));
-            }
-
-            // Triggers & Interaction
-            if (entityJson.contains("triggerZone")) {
-                m_World->AddComponent<ECS::TriggerZoneComponent>(entity, DeserializeTriggerZoneComponent(entityJson["triggerZone"]));
-            }
-            if (entityJson.contains("interactable")) {
-                m_World->AddComponent<ECS::InteractableComponent>(entity, DeserializeInteractableComponent(entityJson["interactable"]));
-            }
-            if (entityJson.contains("pickup")) {
-                m_World->AddComponent<ECS::PickupComponent>(entity, DeserializePickupComponent(entityJson["pickup"]));
-            }
-
-            // Tags, Layers, Billboard
-            if (entityJson.contains("tag")) {
-                m_World->AddComponent<ECS::TagComponent>(entity, DeserializeTagComponent(entityJson["tag"]));
-            }
-            if (entityJson.contains("layer")) {
-                m_World->AddComponent<ECS::LayerComponent>(entity, DeserializeLayerComponent(entityJson["layer"]));
-            }
-            if (entityJson.contains("billboard")) {
-                m_World->AddComponent<ECS::BillboardComponent>(entity, DeserializeBillboardComponent(entityJson["billboard"]));
-            }
-
-            // Particles
-            if (entityJson.contains("particleEmitter")) {
-                m_World->AddComponent<ECS::ParticleEmitterComponent>(entity, DeserializeParticleEmitterComponent(entityJson["particleEmitter"]));
-            }
-
-            // 2D Rendering
-            if (entityJson.contains("sprite2D")) {
-                m_World->AddComponent<ECS::Sprite2DComponent>(entity, DeserializeSprite2DComponent(entityJson["sprite2D"]));
-            }
-            if (entityJson.contains("animatedSprite2D")) {
-                m_World->AddComponent<ECS::AnimatedSprite2DComponent>(entity, DeserializeAnimatedSprite2DComponent(entityJson["animatedSprite2D"]));
-            }
-            if (entityJson.contains("tilemap")) {
-                m_World->AddComponent<ECS::TilemapComponent>(entity, DeserializeTilemapComponent(entityJson["tilemap"]));
-            }
-            if (entityJson.contains("camera2DBounds")) {
-                m_World->AddComponent<ECS::Camera2DBoundsComponent>(entity, DeserializeCamera2DBoundsComponent(entityJson["camera2DBounds"]));
-            }
-            if (entityJson.contains("parallaxMachine")) {
-                m_World->AddComponent<ECS::ParallaxMachineComponent>(entity, DeserializeParallaxMachineComponent(entityJson["parallaxMachine"]));
-            }
-
-            // Logic
-            if (entityJson.contains("stateMachine")) {
-                m_World->AddComponent<ECS::StateMachineComponent>(entity, DeserializeStateMachineComponent(entityJson["stateMachine"]));
-            }
-            if (entityJson.contains("dialogue")) {
-                m_World->AddComponent<ECS::DialogueComponent>(entity, DeserializeDialogueComponent(entityJson["dialogue"]));
-            }
-            if (entityJson.contains("dialogueBox")) {
-                m_World->AddComponent<ECS::DialogueBoxComponent>(entity, DeserializeDialogueBoxComponent(entityJson["dialogueBox"]));
-            }
-            if (entityJson.contains("tween")) {
-                m_World->AddComponent<ECS::TweenComponent>(entity, DeserializeTweenComponent(entityJson["tween"]));
-            }
-            if (entityJson.contains("visualScript")) {
-                m_World->AddComponent<ECS::VisualScriptComponent>(entity, DeserializeVisualScriptComponent(entityJson["visualScript"]));
-            }
-
-            // AI & Navigation
-            if (entityJson.contains("aiController")) {
-                m_World->AddComponent<ECS::AIControllerComponent>(entity, DeserializeAIControllerComponent(entityJson["aiController"]));
-            }
-            if (entityJson.contains("behaviorTree")) {
-                m_World->AddComponent<ECS::BehaviorTreeComponent>(entity, DeserializeBehaviorTreeComponent(entityJson["behaviorTree"]));
-            }
-            if (entityJson.contains("questFlow")) {
-                m_World->AddComponent<ECS::QuestFlowComponent>(entity, DeserializeQuestFlowComponent(entityJson["questFlow"]));
-            }
-            if (entityJson.contains("followTarget")) {
-                m_World->AddComponent<ECS::FollowTargetComponent>(entity, DeserializeFollowTargetComponent(entityJson["followTarget"]));
-            }
-            if (entityJson.contains("lookAtTarget")) {
-                m_World->AddComponent<ECS::LookAtTargetComponent>(entity, DeserializeLookAtTargetComponent(entityJson["lookAtTarget"]));
-            }
-            if (entityJson.contains("waypoint")) {
-                m_World->AddComponent<ECS::WaypointComponent>(entity, DeserializeWaypointComponent(entityJson["waypoint"]));
-            }
-
-            // Spawning & Timers
-            if (entityJson.contains("spawnPoint")) {
-                m_World->AddComponent<ECS::SpawnPointComponent>(entity, DeserializeSpawnPointComponent(entityJson["spawnPoint"]));
-            }
-            if (entityJson.contains("timer")) {
-                m_World->AddComponent<ECS::TimerComponent>(entity, DeserializeTimerComponent(entityJson["timer"]));
-            }
-
-            // Streaming
-            if (entityJson.contains("streamingVolume")) {
-                m_World->AddComponent<Scene::StreamingVolumeComponent>(entity, DeserializeStreamingVolumeComponent(entityJson["streamingVolume"]));
-            }
-            if (entityJson.contains("streamingPortal")) {
-                m_World->AddComponent<Scene::StreamingPortalComponent>(entity, DeserializeStreamingPortalComponent(entityJson["streamingPortal"]));
-            }
-
-            // Inventory & Save Data
-            if (entityJson.contains("inventory")) {
-                m_World->AddComponent<ECS::InventoryComponent>(entity, DeserializeInventoryComponent(entityJson["inventory"]));
-            }
-            if (entityJson.contains("saveData")) {
-                m_World->AddComponent<ECS::SaveDataComponent>(entity, DeserializeSaveDataComponent(entityJson["saveData"]));
-            }
-            if (entityJson.contains("saveLoadMenu")) {
-                m_World->AddComponent<ECS::SaveLoadMenuComponent>(entity, DeserializeSaveLoadMenuComponent(entityJson["saveLoadMenu"]));
-            }
-
-            // New Gameplay Components
-            if (entityJson.contains("resource")) {
-                m_World->AddComponent<ECS::ResourceComponent>(entity, DeserializeResourceComponent(entityJson["resource"]));
-            }
-            if (entityJson.contains("footstep")) {
-                m_World->AddComponent<ECS::FootstepComponent>(entity, DeserializeFootstepComponent(entityJson["footstep"]));
-            }
-            if (entityJson.contains("poolable")) {
-                m_World->AddComponent<ECS::PoolableComponent>(entity, DeserializePoolableComponent(entityJson["poolable"]));
-            }
-            if (entityJson.contains("questState")) {
-                m_World->AddComponent<ECS::QuestStateComponent>(entity, DeserializeQuestStateComponent(entityJson["questState"]));
-            }
-            if (entityJson.contains("dynamicDifficulty")) {
-                m_World->AddComponent<ECS::DynamicDifficultyComponent>(entity, DeserializeDynamicDifficultyComponent(entityJson["dynamicDifficulty"]));
-            }
-            if (entityJson.contains("artStyle")) {
-                m_World->AddComponent<ECS::ArtStyleComponent>(entity, DeserializeArtStyleComponent(entityJson["artStyle"]));
-            }
-            if (entityJson.contains("hudWidget")) {
-                m_World->AddComponent<ECS::HUDWidgetComponent>(entity, DeserializeHUDWidgetComponent(entityJson["hudWidget"]));
-            }
-            if (entityJson.contains("uiCanvas")) {
-                m_World->AddComponent<GUI::UICanvasComponent>(entity, DeserializeUICanvasComponent(entityJson["uiCanvas"]));
-            }
-            if (entityJson.contains("cinematicCamera")) {
-                m_World->AddComponent<ECS::CinematicCameraComponent>(entity, DeserializeCinematicCameraComponent(entityJson["cinematicCamera"]));
-            }
-
-            // Joint & Ragdoll Components
-            if (entityJson.contains("distanceJoint")) {
-                m_World->AddComponent<ECS::DistanceJointComponent>(entity, DeserializeDistanceJointComponent(entityJson["distanceJoint"]));
-            }
-            if (entityJson.contains("hingeJoint")) {
-                m_World->AddComponent<ECS::HingeJointComponent>(entity, DeserializeHingeJointComponent(entityJson["hingeJoint"]));
-            }
-            if (entityJson.contains("ballSocketJoint")) {
-                m_World->AddComponent<ECS::BallSocketJointComponent>(entity, DeserializeBallSocketJointComponent(entityJson["ballSocketJoint"]));
-            }
-            if (entityJson.contains("springJoint")) {
-                m_World->AddComponent<ECS::SpringJointComponent>(entity, DeserializeSpringJointComponent(entityJson["springJoint"]));
-            }
-            if (entityJson.contains("fixedJoint")) {
-                m_World->AddComponent<ECS::FixedJointComponent>(entity, DeserializeFixedJointComponent(entityJson["fixedJoint"]));
-            }
-            if (entityJson.contains("sliderJoint")) {
-                m_World->AddComponent<ECS::SliderJointComponent>(entity, DeserializeSliderJointComponent(entityJson["sliderJoint"]));
-            }
-            if (entityJson.contains("ragdoll")) {
-                m_World->AddComponent<ECS::RagdollComponent>(entity, DeserializeRagdollComponent(entityJson["ragdoll"]));
-            }
-            if (entityJson.contains("animationRecorder")) {
-                m_World->AddComponent<ECS::AnimationRecorderComponent>(entity, DeserializeAnimationRecorderComponent(entityJson["animationRecorder"]));
-            }
-
-            // Flower Components
-            if (entityJson.contains("jellyMesh")) {
-                m_World->AddComponent<ECS::JellyMeshComponent>(entity, DeserializeJellyMeshComponent(entityJson["jellyMesh"]));
-            }
-            if (entityJson.contains("tether")) {
-                m_World->AddComponent<ECS::TetherComponent>(entity, DeserializeTetherComponent(entityJson["tether"]));
-            }
-            if (entityJson.contains("grabbable")) {
-                m_World->AddComponent<ECS::GrabbableComponent>(entity, DeserializeGrabbableComponent(entityJson["grabbable"]));
-            }
-            if (entityJson.contains("flowerStem")) {
-                m_World->AddComponent<ECS::FlowerStemComponent>(entity, DeserializeFlowerStemComponent(entityJson["flowerStem"]));
-            }
-            if (entityJson.contains("flowerParticleConfig")) {
-                m_World->AddComponent<ECS::FlowerParticleConfigComponent>(entity, DeserializeFlowerParticleConfigComponent(entityJson["flowerParticleConfig"]));
-            }
-
-            // LOD, Grass, Vegetation
-            if (entityJson.contains("lod")) {
-                m_World->AddComponent<ECS::LODComponent>(entity, DeserializeLODComponent(entityJson["lod"]));
-            }
-            if (entityJson.contains("grassVolume")) {
-                m_World->AddComponent<ECS::GrassVolumeComponent>(entity, DeserializeGrassVolumeComponent(entityJson["grassVolume"]));
-            }
-            if (entityJson.contains("vegetation")) {
-                m_World->AddComponent<ECS::VegetationComponent>(entity, DeserializeVegetationComponent(entityJson["vegetation"]));
-            }
-            if (entityJson.contains("viewmodel")) {
-                m_World->AddComponent<ECS::ViewmodelComponent>(entity, DeserializeViewmodelComponent(entityJson["viewmodel"]));
-            }
         }
 
         // Remap entity references (parent, IK target) from old IDs to new IDs
@@ -10493,382 +8573,21 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
         entityJson["id"] = static_cast<u64>(entity);
 
         // Serialize all components (mirrors SaveEntities loop)
-        if (world->HasComponent<ECS::NameComponent>(entity))
-            entityJson["name"] = SerializeNameComponent(*world->GetComponent<ECS::NameComponent>(entity));
-        if (world->HasComponent<ECS::TransformComponent>(entity))
-            entityJson["transform"] = SerializeTransformComponent(*world->GetComponent<ECS::TransformComponent>(entity));
-        if (world->HasComponent<ECS::MaterialComponent>(entity))
-            entityJson["material"] = SerializeMaterialComponent(*world->GetComponent<ECS::MaterialComponent>(entity));
-        if (world->HasComponent<ECS::MaterialSlotsComponent>(entity))
-            entityJson["materialSlots"] = SerializeMaterialSlotsComponent(*world->GetComponent<ECS::MaterialSlotsComponent>(entity));
+                // Serialize components via the registry (single source of truth).
+        // mesh/morphTargets stay explicit below (they honor vertex-data options);
+        // stableId/id/parent are entity-level and written outside the registry.
+        for (const auto& reg : ComponentRegistry()) {
+            std::string_view rk(reg.key);
+            if (rk == "mesh" || rk == "morphTargets" || rk == "stableId") continue;
+            if (reg.has(world, entity)) entityJson[reg.key] = reg.ser(world, entity);
+        }
         if (world->HasComponent<ECS::MeshComponent>(entity))
             entityJson["mesh"] = SerializeMeshComponent(*world->GetComponent<ECS::MeshComponent>(entity), includeVertexData);
-        if (world->HasComponent<ECS::SkeletonComponent>(entity))
-            entityJson["skeleton"] = SerializeSkeletonComponent(*world->GetComponent<ECS::SkeletonComponent>(entity));
-        if (world->HasComponent<ECS::AnimatorComponent>(entity))
-            entityJson["animator"] = SerializeAnimatorComponent(*world->GetComponent<ECS::AnimatorComponent>(entity));
-        if (world->HasComponent<ECS::LightComponent>(entity))
-            entityJson["light"] = SerializeLightComponent(*world->GetComponent<ECS::LightComponent>(entity));
-        if (world->HasComponent<ECS::NotesComponent>(entity))
-            entityJson["notes"] = SerializeNotesComponent(*world->GetComponent<ECS::NotesComponent>(entity));
-        if (world->HasComponent<ECS::TextComponent>(entity))
-            entityJson["text"] = SerializeTextComponent(*world->GetComponent<ECS::TextComponent>(entity));
-        if (world->HasComponent<ECS::CameraComponent>(entity))
-            entityJson["camera"] = SerializeCameraComponent(*world->GetComponent<ECS::CameraComponent>(entity));
-        if (world->HasComponent<ECS::WeatherZoneComponent>(entity))
-            entityJson["weatherZone"] = SerializeWeatherZoneComponent(*world->GetComponent<ECS::WeatherZoneComponent>(entity));
-        if (world->HasComponent<ECS::WaterVolumeComponent>(entity))
-            entityJson["waterVolume"] = SerializeWaterVolumeComponent(*world->GetComponent<ECS::WaterVolumeComponent>(entity));
-        if (world->HasComponent<ECS::Water3DComponent>(entity))
-            entityJson["water3D"] = SerializeWater3DComponent(*world->GetComponent<ECS::Water3DComponent>(entity));
-        if (world->HasComponent<ECS::ShrubVolumeComponent>(entity))
-            entityJson["shrubVolume"] = SerializeShrubVolumeComponent(*world->GetComponent<ECS::ShrubVolumeComponent>(entity));
-        if (world->HasComponent<ECS::TreeVolumeComponent>(entity))
-            entityJson["treeVolume"] = SerializeTreeVolumeComponent(*world->GetComponent<ECS::TreeVolumeComponent>(entity));
-        if (world->HasComponent<ECS::TerrainComponent>(entity))
-            entityJson["terrain"] = SerializeTerrainComponent(*world->GetComponent<ECS::TerrainComponent>(entity));
-        if (world->HasComponent<ECS::Terrain2DComponent>(entity))
-            entityJson["terrain2d"] = SerializeTerrain2DComponent(*world->GetComponent<ECS::Terrain2DComponent>(entity));
-        if (world->HasComponent<ECS::CameraTriggerComponent>(entity))
-            entityJson["cameraTrigger"] = SerializeCameraTriggerComponent(*world->GetComponent<ECS::CameraTriggerComponent>(entity));
-        if (world->HasComponent<ECS::TemperatureZoneComponent>(entity))
-            entityJson["temperatureZone"] = SerializeTemperatureZoneComponent(*world->GetComponent<ECS::TemperatureZoneComponent>(entity));
-        if (world->HasComponent<ECS::GravityZoneComponent>(entity))
-            entityJson["gravityZone"] = SerializeGravityZoneComponent(*world->GetComponent<ECS::GravityZoneComponent>(entity));
-        if (world->HasComponent<ECS::ReflectionProbeComponent>(entity))
-            entityJson["reflectionProbe"] = SerializeReflectionProbeComponent(*world->GetComponent<ECS::ReflectionProbeComponent>(entity));
-        if (world->HasComponent<ECS::ElementalSurfaceComponent>(entity))
-            entityJson["elementalSurface"] = SerializeElementalSurfaceComponent(*world->GetComponent<ECS::ElementalSurfaceComponent>(entity));
-        if (world->HasComponent<ECS::ElementalEmitterComponent>(entity))
-            entityJson["elementalEmitter"] = SerializeElementalEmitterComponent(*world->GetComponent<ECS::ElementalEmitterComponent>(entity));
-        if (world->HasComponent<ECS::GPUParticleEmitterComponent>(entity))
-            entityJson["gpuParticleEmitter"] = SerializeGPUParticleEmitterComponent(*world->GetComponent<ECS::GPUParticleEmitterComponent>(entity));
-        if (world->HasComponent<ECS::CustomShaderComponent>(entity))
-            entityJson["customShader"] = SerializeCustomShaderComponent(*world->GetComponent<ECS::CustomShaderComponent>(entity));
-        if (world->HasComponent<ECS::ClothComponent>(entity))
-            entityJson["cloth"] = SerializeClothComponent(*world->GetComponent<ECS::ClothComponent>(entity));
-        if (world->HasComponent<ECS::SwarmComponent>(entity))
-            entityJson["swarm"] = SerializeSwarmComponent(*world->GetComponent<ECS::SwarmComponent>(entity));
-        if (world->HasComponent<ECS::DungeonGeneratorComponent>(entity))
-            entityJson["dungeonGenerator"] = SerializeDungeonGeneratorComponent(*world->GetComponent<ECS::DungeonGeneratorComponent>(entity));
-        if (world->HasComponent<ECS::RandomBagComponent>(entity))
-            entityJson["randomBag"] = SerializeRandomBagComponent(*world->GetComponent<ECS::RandomBagComponent>(entity));
-        if (world->HasComponent<ECS::ScatterComponent>(entity))
-            entityJson["scatter"] = SerializeScatterComponent(*world->GetComponent<ECS::ScatterComponent>(entity));
-        if (world->HasComponent<ECS::TerrainGeneratorComponent>(entity))
-            entityJson["terrainGenerator"] = SerializeTerrainGeneratorComponent(*world->GetComponent<ECS::TerrainGeneratorComponent>(entity));
-        if (world->HasComponent<ECS::WFCComponent>(entity))
-            entityJson["wfc"] = SerializeWFCComponent(*world->GetComponent<ECS::WFCComponent>(entity));
-        if (world->HasComponent<ECS::ScatterInstanceComponent>(entity))
-            entityJson["scatterInstance"] = json::object();
-        if (world->HasComponent<ECS::ElementalVolumeComponent>(entity))
-            entityJson["elementalVolume"] = SerializeElementalVolumeComponent(*world->GetComponent<ECS::ElementalVolumeComponent>(entity));
-        if (world->HasComponent<ECS::PostProcessVolumeComponent>(entity))
-            entityJson["postProcessVolume"] = SerializePostProcessVolumeComponent(*world->GetComponent<ECS::PostProcessVolumeComponent>(entity));
-        if (world->HasComponent<ECS::FluidVolumeComponent>(entity))
-            entityJson["fluidVolume"] = SerializeFluidVolumeComponent(*world->GetComponent<ECS::FluidVolumeComponent>(entity));
-        // Controllers
-        if (world->HasComponent<ECS::Platformer2DController>(entity))
-            entityJson["platformer2D"] = SerializePlatformer2D(*world->GetComponent<ECS::Platformer2DController>(entity));
-        if (world->HasComponent<ECS::TopDown2DController>(entity))
-            entityJson["topDown2D"] = SerializeTopDown2D(*world->GetComponent<ECS::TopDown2DController>(entity));
-        if (world->HasComponent<ECS::TopDown3DController>(entity))
-            entityJson["topDown3D"] = SerializeTopDown3D(*world->GetComponent<ECS::TopDown3DController>(entity));
-        if (world->HasComponent<ECS::ThirdPersonController>(entity))
-            entityJson["thirdPerson"] = SerializeThirdPerson(*world->GetComponent<ECS::ThirdPersonController>(entity));
-        if (world->HasComponent<ECS::FirstPersonController>(entity))
-            entityJson["firstPerson"] = SerializeFirstPerson(*world->GetComponent<ECS::FirstPersonController>(entity));
-        if (world->HasComponent<ECS::VehicleController>(entity))
-            entityJson["vehicle"] = SerializeVehicle(*world->GetComponent<ECS::VehicleController>(entity));
-        if (world->HasComponent<ECS::SurfaceAlignedController>(entity))
-            entityJson["surfaceAligned"] = SerializeSurfaceAligned(*world->GetComponent<ECS::SurfaceAlignedController>(entity));
-        if (world->HasComponent<ECS::NetworkIdentityComponent>(entity))
-            entityJson["networkIdentity"] = SerializeNetworkIdentityComponent(*world->GetComponent<ECS::NetworkIdentityComponent>(entity));
-        if (world->HasComponent<ECS::NetworkTransformComponent>(entity))
-            entityJson["networkTransform"] = SerializeNetworkTransformComponent(*world->GetComponent<ECS::NetworkTransformComponent>(entity));
-        if (world->HasComponent<ECS::PossessableComponent>(entity))
-            entityJson["possessable"] = SerializePossessable(*world->GetComponent<ECS::PossessableComponent>(entity));
-        // Puzzle
-        if (world->HasComponent<ECS::LockComponent>(entity))
-            entityJson["lock"] = SerializeLockComponent(*world->GetComponent<ECS::LockComponent>(entity));
-        if (world->HasComponent<ECS::PushableComponent>(entity))
-            entityJson["pushable"] = SerializePushableComponent(*world->GetComponent<ECS::PushableComponent>(entity));
-        if (world->HasComponent<ECS::SwitchComponent>(entity))
-            entityJson["switch"] = SerializeSwitchComponent(*world->GetComponent<ECS::SwitchComponent>(entity));
-        if (world->HasComponent<ECS::GoalZoneComponent>(entity))
-            entityJson["goalZone"] = SerializeGoalZoneComponent(*world->GetComponent<ECS::GoalZoneComponent>(entity));
-        if (world->HasComponent<ECS::ConveyorComponent>(entity))
-            entityJson["conveyor"] = SerializeConveyorComponent(*world->GetComponent<ECS::ConveyorComponent>(entity));
-        if (world->HasComponent<ECS::TeleporterComponent>(entity))
-            entityJson["teleporter"] = SerializeTeleporterComponent(*world->GetComponent<ECS::TeleporterComponent>(entity));
-        if (world->HasComponent<ECS::DestructibleComponent>(entity))
-            entityJson["destructible"] = SerializeDestructibleComponent(*world->GetComponent<ECS::DestructibleComponent>(entity));
-        if (world->HasComponent<ECS::CurlNoiseFieldComponent>(entity))
-            entityJson["curlNoiseField"] = SerializeCurlNoiseFieldComponent(*world->GetComponent<ECS::CurlNoiseFieldComponent>(entity));
-        if (world->HasComponent<ECS::FractureConfigComponent>(entity))
-            entityJson["fractureConfig"] = SerializeFractureConfigComponent(*world->GetComponent<ECS::FractureConfigComponent>(entity));
-        if (world->HasComponent<ECS::MovingPlatformComponent>(entity))
-            entityJson["movingPlatform"] = SerializeMovingPlatformComponent(*world->GetComponent<ECS::MovingPlatformComponent>(entity));
-        // Script
-        if (world->HasComponent<ECS::ScriptComponent>(entity))
-            entityJson["scriptComponent"] = SerializeScriptComponent(*world->GetComponent<ECS::ScriptComponent>(entity));
-        // Hierarchy
         if (world->HasComponent<ECS::ParentComponent>(entity))
             entityJson["parent"] = static_cast<u64>(world->GetComponent<ECS::ParentComponent>(entity)->parent);
-        // Prefab instance link
-        if (world->HasComponent<Assets::PrefabInstanceComponent>(entity)) {
-            auto* pi = world->GetComponent<Assets::PrefabInstanceComponent>(entity);
-            json piJson;
-            piJson["prefabId"] = pi->prefabId;
-            piJson["prefabPath"] = pi->prefabPath;
-            entityJson["prefabInstance"] = piJson;
-        }
-        // IK
-        if (world->HasComponent<ECS::LookAtIKComponent>(entity)) {
-            auto* ik = world->GetComponent<ECS::LookAtIKComponent>(entity);
-            json ikJson;
-            ikJson["headBone"] = ik->headBoneName;
-            ikJson["neckBone"] = ik->neckBoneName;
-            ikJson["targetEntity"] = static_cast<u64>(ik->targetEntity);
-            ikJson["targetPos"] = { ik->targetWorldPos.x, ik->targetWorldPos.y, ik->targetWorldPos.z };
-            ikJson["useEntityTarget"] = ik->useEntityTarget;
-            ikJson["maxRotation"] = ik->maxRotation;
-            ikJson["smoothSpeed"] = ik->smoothSpeed;
-            ikJson["lookWeight"] = ik->lookWeight;
-            entityJson["lookAtIK"] = ikJson;
-        }
-        if (world->HasComponent<ECS::InteractionIKComponent>(entity)) {
-            auto* ik = world->GetComponent<ECS::InteractionIKComponent>(entity);
-            json ikJson;
-            ikJson["handBone"] = ik->handBoneName;
-            ikJson["elbowBone"] = ik->elbowBoneName;
-            ikJson["shoulderBone"] = ik->shoulderBoneName;
-            ikJson["interactionRadius"] = ik->interactionRadius;
-            ikJson["ikWeight"] = ik->ikWeight;
-            ikJson["smoothSpeed"] = ik->smoothSpeed;
-            ikJson["interactionTag"] = ik->interactionTag;
-            entityJson["interactionIK"] = ikJson;
-        }
-        if (world->HasComponent<ECS::TwoBoneIKComponent>(entity)) {
-            auto* ik = world->GetComponent<ECS::TwoBoneIKComponent>(entity);
-            json ikJson;
-            ikJson["rootBone"] = ik->rootBoneName;
-            ikJson["midBone"] = ik->midBoneName;
-            ikJson["endBone"] = ik->endBoneName;
-            ikJson["targetPos"] = { ik->targetPosition.x, ik->targetPosition.y, ik->targetPosition.z };
-            ikJson["targetEntity"] = static_cast<u64>(ik->targetEntity);
-            ikJson["useEntityTarget"] = ik->useEntityTarget;
-            ikJson["weight"] = ik->weight;
-            ikJson["poleVector"] = { ik->poleVector.x, ik->poleVector.y, ik->poleVector.z };
-            entityJson["twoBoneIK"] = ikJson;
-        }
-        if (world->HasComponent<ECS::BoneAttachmentComponent>(entity)) {
-            auto* ba = world->GetComponent<ECS::BoneAttachmentComponent>(entity);
-            json baJson;
-            baJson["targetEntity"] = static_cast<u64>(ba->targetEntity);
-            baJson["targetBoneName"] = ba->targetBoneName;
-            baJson["positionOffset"] = { ba->positionOffset.x, ba->positionOffset.y, ba->positionOffset.z };
-            baJson["rotationOffset"] = { ba->rotationOffset.x, ba->rotationOffset.y, ba->rotationOffset.z, ba->rotationOffset.w };
-            entityJson["boneAttachment"] = baJson;
-        }
-        // Audio
-        if (world->HasComponent<ECS::AudioSourceComponent>(entity))
-            entityJson["audioSource"] = SerializeAudioSourceComponent(*world->GetComponent<ECS::AudioSourceComponent>(entity));
-        if (world->HasComponent<ECS::AudioListenerComponent>(entity))
-            entityJson["audioListener"] = SerializeAudioListenerComponent(*world->GetComponent<ECS::AudioListenerComponent>(entity));
-        // Physics
-        if (world->HasComponent<ECS::RigidbodyComponent>(entity))
-            entityJson["rigidbody"] = SerializeRigidbodyComponent(*world->GetComponent<ECS::RigidbodyComponent>(entity));
-        if (world->HasComponent<ECS::BoxColliderComponent>(entity))
-            entityJson["boxCollider"] = SerializeBoxColliderComponent(*world->GetComponent<ECS::BoxColliderComponent>(entity));
-        if (world->HasComponent<ECS::PolygonCollider2DComponent>(entity))
-            entityJson["polygonCollider2D"] = SerializePolygonCollider2DComponent(*world->GetComponent<ECS::PolygonCollider2DComponent>(entity));
-        if (world->HasComponent<Physics::Body2DComponent>(entity))
-            entityJson["body2D"] = SerializeBody2DComponent(*world->GetComponent<Physics::Body2DComponent>(entity));
-        if (world->HasComponent<Physics::Joint2DComponent>(entity))
-            entityJson["joint2D"] = SerializeJoint2DComponent(*world->GetComponent<Physics::Joint2DComponent>(entity));
-        if (world->HasComponent<ECS::PerFrameColliderComponent>(entity))
-            entityJson["perFrameCollider"] = SerializePerFrameColliderComponent(*world->GetComponent<ECS::PerFrameColliderComponent>(entity));
-        if (world->HasComponent<ECS::SphereColliderComponent>(entity))
-            entityJson["sphereCollider"] = SerializeSphereColliderComponent(*world->GetComponent<ECS::SphereColliderComponent>(entity));
-        if (world->HasComponent<ECS::CapsuleColliderComponent>(entity))
-            entityJson["capsuleCollider"] = SerializeCapsuleColliderComponent(*world->GetComponent<ECS::CapsuleColliderComponent>(entity));
-        if (world->HasComponent<ECS::MeshColliderComponent>(entity))
-            entityJson["meshCollider"] = SerializeMeshColliderComponent(*world->GetComponent<ECS::MeshColliderComponent>(entity));
-        if (world->HasComponent<ECS::MeshRendererComponent>(entity))
-            entityJson["meshRenderer"] = SerializeMeshRendererComponent(*world->GetComponent<ECS::MeshRendererComponent>(entity));
-        // Gameplay
-        if (world->HasComponent<ECS::HealthComponent>(entity))
-            entityJson["health"] = SerializeHealthComponent(*world->GetComponent<ECS::HealthComponent>(entity));
-        if (world->HasComponent<ECS::RecordRewindComponent>(entity))
-            entityJson["recordRewind"] = SerializeRecordRewindComponent(*world->GetComponent<ECS::RecordRewindComponent>(entity));
-        if (world->HasComponent<ECS::SceneRewindComponent>(entity))
-            entityJson["sceneRewind"] = SerializeSceneRewindComponent(*world->GetComponent<ECS::SceneRewindComponent>(entity));
-        if (world->HasComponent<ECS::AudioReactiveComponent>(entity))
-            entityJson["audioReactive"] = SerializeAudioReactiveComponent(*world->GetComponent<ECS::AudioReactiveComponent>(entity));
-        if (world->HasComponent<ECS::AudioThresholdTriggerComponent>(entity))
-            entityJson["audioThresholdTrigger"] = SerializeAudioThresholdTriggerComponent(*world->GetComponent<ECS::AudioThresholdTriggerComponent>(entity));
-        if (world->HasComponent<ECS::RTPCComponent>(entity))
-            entityJson["rtpc"] = SerializeRTPCComponent(*world->GetComponent<ECS::RTPCComponent>(entity));
-        if (world->HasComponent<ECS::BeatClockComponent>(entity))
-            entityJson["beatClock"] = SerializeBeatClockComponent(*world->GetComponent<ECS::BeatClockComponent>(entity));
-        if (world->HasComponent<ECS::BeatSyncComponent>(entity))
-            entityJson["beatSync"] = SerializeBeatSyncComponent(*world->GetComponent<ECS::BeatSyncComponent>(entity));
-        if (world->HasComponent<ECS::ConductorComponent>(entity))
-            entityJson["conductor"] = SerializeConductorComponent(*world->GetComponent<ECS::ConductorComponent>(entity));
-        if (world->HasComponent<ECS::AudioCollisionComponent>(entity))
-            entityJson["audioCollision"] = SerializeAudioCollisionComponent(*world->GetComponent<ECS::AudioCollisionComponent>(entity));
-        if (world->HasComponent<ECS::SidechainComponent>(entity))
-            entityJson["sidechain"] = SerializeSidechainComponent(*world->GetComponent<ECS::SidechainComponent>(entity));
-        if (world->HasComponent<ECS::ReverbZoneComponent>(entity))
-            entityJson["reverbZone"] = SerializeReverbZoneComponent(*world->GetComponent<ECS::ReverbZoneComponent>(entity));
-        if (world->HasComponent<ECS::MusicZoneComponent>(entity))
-            entityJson["musicZone"] = SerializeMusicZoneComponent(*world->GetComponent<ECS::MusicZoneComponent>(entity));
-        if (world->HasComponent<ECS::AudioSnapshotTriggerComponent>(entity))
-            entityJson["audioSnapshotTrigger"] = SerializeAudioSnapshotTriggerComponent(*world->GetComponent<ECS::AudioSnapshotTriggerComponent>(entity));
-        if (world->HasComponent<ECS::AudioOcclusionComponent>(entity))
-            entityJson["audioOcclusion"] = SerializeAudioOcclusionComponent(*world->GetComponent<ECS::AudioOcclusionComponent>(entity));
-        if (world->HasComponent<ECS::PoseLibraryComponent>(entity))
-            entityJson["poseLibrary"] = SerializePoseLibraryComponent(*world->GetComponent<ECS::PoseLibraryComponent>(entity));
-        if (world->HasComponent<ECS::AudioFidelityComponent>(entity))
-            entityJson["audioFidelity"] = SerializeAudioFidelityComponent(*world->GetComponent<ECS::AudioFidelityComponent>(entity));
-        if (world->HasComponent<ECS::MIDIBindingComponent>(entity))
-            entityJson["midiBinding"] = SerializeMIDIBindingComponent(*world->GetComponent<ECS::MIDIBindingComponent>(entity));
-        if (world->HasComponent<ECS::MaterialInteractionTableComponent>(entity))
-            entityJson["materialInteractionTable"] = SerializeMaterialInteractionTableComponent(*world->GetComponent<ECS::MaterialInteractionTableComponent>(entity));
-        if (world->HasComponent<ECS::DamageComponent>(entity))
-            entityJson["damage"] = SerializeDamageComponent(*world->GetComponent<ECS::DamageComponent>(entity));
-        if (world->HasComponent<ECS::GameOverComponent>(entity))
-            entityJson["gameOver"] = SerializeGameOverComponent(*world->GetComponent<ECS::GameOverComponent>(entity));
-        if (world->HasComponent<ECS::LensComponent>(entity))
-            entityJson["lens"] = SerializeLensComponent(*world->GetComponent<ECS::LensComponent>(entity));
         if (world->HasComponent<ECS::MorphTargetComponent>(entity))
             entityJson["morphTargets"] = SerializeMorphTargetComponent(*world->GetComponent<ECS::MorphTargetComponent>(entity), true);
-        if (world->HasComponent<ECS::DamageResistanceComponent>(entity))
-            entityJson["damageResistance"] = SerializeDamageResistanceComponent(*world->GetComponent<ECS::DamageResistanceComponent>(entity));
-        if (world->HasComponent<ECS::TriggerZoneComponent>(entity))
-            entityJson["triggerZone"] = SerializeTriggerZoneComponent(*world->GetComponent<ECS::TriggerZoneComponent>(entity));
-        if (world->HasComponent<ECS::InteractableComponent>(entity))
-            entityJson["interactable"] = SerializeInteractableComponent(*world->GetComponent<ECS::InteractableComponent>(entity));
-        if (world->HasComponent<ECS::PickupComponent>(entity))
-            entityJson["pickup"] = SerializePickupComponent(*world->GetComponent<ECS::PickupComponent>(entity));
-        if (world->HasComponent<ECS::TagComponent>(entity))
-            entityJson["tag"] = SerializeTagComponent(*world->GetComponent<ECS::TagComponent>(entity));
-        if (world->HasComponent<ECS::LayerComponent>(entity))
-            entityJson["layer"] = SerializeLayerComponent(*world->GetComponent<ECS::LayerComponent>(entity));
-        if (world->HasComponent<ECS::BillboardComponent>(entity))
-            entityJson["billboard"] = SerializeBillboardComponent(*world->GetComponent<ECS::BillboardComponent>(entity));
-        if (world->HasComponent<ECS::ParticleEmitterComponent>(entity))
-            entityJson["particleEmitter"] = SerializeParticleEmitterComponent(*world->GetComponent<ECS::ParticleEmitterComponent>(entity));
-        // 2D
-        if (world->HasComponent<ECS::Sprite2DComponent>(entity))
-            entityJson["sprite2D"] = SerializeSprite2DComponent(*world->GetComponent<ECS::Sprite2DComponent>(entity));
-        if (world->HasComponent<ECS::AnimatedSprite2DComponent>(entity))
-            entityJson["animatedSprite2D"] = SerializeAnimatedSprite2DComponent(*world->GetComponent<ECS::AnimatedSprite2DComponent>(entity));
-        if (world->HasComponent<ECS::TilemapComponent>(entity))
-            entityJson["tilemap"] = SerializeTilemapComponent(*world->GetComponent<ECS::TilemapComponent>(entity));
-        if (world->HasComponent<ECS::Camera2DBoundsComponent>(entity))
-            entityJson["camera2DBounds"] = SerializeCamera2DBoundsComponent(*world->GetComponent<ECS::Camera2DBoundsComponent>(entity));
-        if (world->HasComponent<ECS::ParallaxMachineComponent>(entity))
-            entityJson["parallaxMachine"] = SerializeParallaxMachineComponent(*world->GetComponent<ECS::ParallaxMachineComponent>(entity));
-        // State/Dialogue/Tween
-        if (world->HasComponent<ECS::StateMachineComponent>(entity))
-            entityJson["stateMachine"] = SerializeStateMachineComponent(*world->GetComponent<ECS::StateMachineComponent>(entity));
-        if (world->HasComponent<ECS::DialogueComponent>(entity))
-            entityJson["dialogue"] = SerializeDialogueComponent(*world->GetComponent<ECS::DialogueComponent>(entity));
-        if (world->HasComponent<ECS::DialogueBoxComponent>(entity))
-            entityJson["dialogueBox"] = SerializeDialogueBoxComponent(*world->GetComponent<ECS::DialogueBoxComponent>(entity));
-        if (world->HasComponent<ECS::TweenComponent>(entity))
-            entityJson["tween"] = SerializeTweenComponent(*world->GetComponent<ECS::TweenComponent>(entity));
-        if (world->HasComponent<ECS::VisualScriptComponent>(entity))
-            entityJson["visualScript"] = SerializeVisualScriptComponent(*world->GetComponent<ECS::VisualScriptComponent>(entity));
-        // AI
-        if (world->HasComponent<ECS::AIControllerComponent>(entity))
-            entityJson["aiController"] = SerializeAIControllerComponent(*world->GetComponent<ECS::AIControllerComponent>(entity));
-        if (world->HasComponent<ECS::BehaviorTreeComponent>(entity))
-            entityJson["behaviorTree"] = SerializeBehaviorTreeComponent(*world->GetComponent<ECS::BehaviorTreeComponent>(entity));
-        if (world->HasComponent<ECS::QuestFlowComponent>(entity))
-            entityJson["questFlow"] = SerializeQuestFlowComponent(*world->GetComponent<ECS::QuestFlowComponent>(entity));
-        if (world->HasComponent<ECS::FollowTargetComponent>(entity))
-            entityJson["followTarget"] = SerializeFollowTargetComponent(*world->GetComponent<ECS::FollowTargetComponent>(entity));
-        if (world->HasComponent<ECS::LookAtTargetComponent>(entity))
-            entityJson["lookAtTarget"] = SerializeLookAtTargetComponent(*world->GetComponent<ECS::LookAtTargetComponent>(entity));
-        if (world->HasComponent<ECS::WaypointComponent>(entity))
-            entityJson["waypoint"] = SerializeWaypointComponent(*world->GetComponent<ECS::WaypointComponent>(entity));
-        // Misc gameplay
-        if (world->HasComponent<ECS::SpawnPointComponent>(entity))
-            entityJson["spawnPoint"] = SerializeSpawnPointComponent(*world->GetComponent<ECS::SpawnPointComponent>(entity));
-        if (world->HasComponent<Scene::StreamingVolumeComponent>(entity))
-            entityJson["streamingVolume"] = SerializeStreamingVolumeComponent(*world->GetComponent<Scene::StreamingVolumeComponent>(entity));
-        if (world->HasComponent<Scene::StreamingPortalComponent>(entity))
-            entityJson["streamingPortal"] = SerializeStreamingPortalComponent(*world->GetComponent<Scene::StreamingPortalComponent>(entity));
-        if (world->HasComponent<Effects::InteractiveWaterComponent>(entity))
-            entityJson["interactiveWater"] = SerializeInteractiveWaterComponent(*world->GetComponent<Effects::InteractiveWaterComponent>(entity));
-        if (world->HasComponent<Effects::WaterInteractorComponent>(entity))
-            entityJson["waterInteractor"] = SerializeWaterInteractorComponent(*world->GetComponent<Effects::WaterInteractorComponent>(entity));
-        if (world->HasComponent<ECS::TimerComponent>(entity))
-            entityJson["timer"] = SerializeTimerComponent(*world->GetComponent<ECS::TimerComponent>(entity));
-        if (world->HasComponent<ECS::InventoryComponent>(entity))
-            entityJson["inventory"] = SerializeInventoryComponent(*world->GetComponent<ECS::InventoryComponent>(entity));
-        if (world->HasComponent<ECS::SaveDataComponent>(entity))
-            entityJson["saveData"] = SerializeSaveDataComponent(*world->GetComponent<ECS::SaveDataComponent>(entity));
-        if (world->HasComponent<ECS::SaveLoadMenuComponent>(entity))
-            entityJson["saveLoadMenu"] = SerializeSaveLoadMenuComponent(*world->GetComponent<ECS::SaveLoadMenuComponent>(entity));
-        if (world->HasComponent<ECS::ResourceComponent>(entity))
-            entityJson["resource"] = SerializeResourceComponent(*world->GetComponent<ECS::ResourceComponent>(entity));
-        if (world->HasComponent<ECS::FootstepComponent>(entity))
-            entityJson["footstep"] = SerializeFootstepComponent(*world->GetComponent<ECS::FootstepComponent>(entity));
-        if (world->HasComponent<ECS::PoolableComponent>(entity))
-            entityJson["poolable"] = SerializePoolableComponent(*world->GetComponent<ECS::PoolableComponent>(entity));
-        if (world->HasComponent<ECS::QuestStateComponent>(entity))
-            entityJson["questState"] = SerializeQuestStateComponent(*world->GetComponent<ECS::QuestStateComponent>(entity));
-        if (world->HasComponent<ECS::DynamicDifficultyComponent>(entity))
-            entityJson["dynamicDifficulty"] = SerializeDynamicDifficultyComponent(*world->GetComponent<ECS::DynamicDifficultyComponent>(entity));
-        if (world->HasComponent<ECS::ArtStyleComponent>(entity))
-            entityJson["artStyle"] = SerializeArtStyleComponent(*world->GetComponent<ECS::ArtStyleComponent>(entity));
-        if (world->HasComponent<ECS::HUDWidgetComponent>(entity))
-            entityJson["hudWidget"] = SerializeHUDWidgetComponent(*world->GetComponent<ECS::HUDWidgetComponent>(entity));
-        if (world->HasComponent<GUI::UICanvasComponent>(entity))
-            entityJson["uiCanvas"] = SerializeUICanvasComponent(*world->GetComponent<GUI::UICanvasComponent>(entity));
-        if (world->HasComponent<ECS::CinematicCameraComponent>(entity))
-            entityJson["cinematicCamera"] = SerializeCinematicCameraComponent(*world->GetComponent<ECS::CinematicCameraComponent>(entity));
-        // Joints
-        if (world->HasComponent<ECS::DistanceJointComponent>(entity))
-            entityJson["distanceJoint"] = SerializeDistanceJointComponent(*world->GetComponent<ECS::DistanceJointComponent>(entity));
-        if (world->HasComponent<ECS::HingeJointComponent>(entity))
-            entityJson["hingeJoint"] = SerializeHingeJointComponent(*world->GetComponent<ECS::HingeJointComponent>(entity));
-        if (world->HasComponent<ECS::BallSocketJointComponent>(entity))
-            entityJson["ballSocketJoint"] = SerializeBallSocketJointComponent(*world->GetComponent<ECS::BallSocketJointComponent>(entity));
-        if (world->HasComponent<ECS::SpringJointComponent>(entity))
-            entityJson["springJoint"] = SerializeSpringJointComponent(*world->GetComponent<ECS::SpringJointComponent>(entity));
-        if (world->HasComponent<ECS::FixedJointComponent>(entity))
-            entityJson["fixedJoint"] = SerializeFixedJointComponent(*world->GetComponent<ECS::FixedJointComponent>(entity));
-        if (world->HasComponent<ECS::SliderJointComponent>(entity))
-            entityJson["sliderJoint"] = SerializeSliderJointComponent(*world->GetComponent<ECS::SliderJointComponent>(entity));
-        if (world->HasComponent<ECS::RagdollComponent>(entity))
-            entityJson["ragdoll"] = SerializeRagdollComponent(*world->GetComponent<ECS::RagdollComponent>(entity));
-        if (world->HasComponent<ECS::AnimationRecorderComponent>(entity))
-            entityJson["animationRecorder"] = SerializeAnimationRecorderComponent(*world->GetComponent<ECS::AnimationRecorderComponent>(entity));
-        // Flower
-        if (world->HasComponent<ECS::JellyMeshComponent>(entity))
-            entityJson["jellyMesh"] = SerializeJellyMeshComponent(*world->GetComponent<ECS::JellyMeshComponent>(entity));
-        if (world->HasComponent<ECS::TetherComponent>(entity))
-            entityJson["tether"] = SerializeTetherComponent(*world->GetComponent<ECS::TetherComponent>(entity));
-        if (world->HasComponent<ECS::GrabbableComponent>(entity))
-            entityJson["grabbable"] = SerializeGrabbableComponent(*world->GetComponent<ECS::GrabbableComponent>(entity));
-        if (world->HasComponent<ECS::FlowerStemComponent>(entity))
-            entityJson["flowerStem"] = SerializeFlowerStemComponent(*world->GetComponent<ECS::FlowerStemComponent>(entity));
-        if (world->HasComponent<ECS::FlowerParticleConfigComponent>(entity))
-            entityJson["flowerParticleConfig"] = SerializeFlowerParticleConfigComponent(*world->GetComponent<ECS::FlowerParticleConfigComponent>(entity));
-        // LOD/Vegetation
-        if (world->HasComponent<ECS::LODComponent>(entity))
-            entityJson["lod"] = SerializeLODComponent(*world->GetComponent<ECS::LODComponent>(entity));
-        if (world->HasComponent<ECS::GrassVolumeComponent>(entity))
-            entityJson["grassVolume"] = SerializeGrassVolumeComponent(*world->GetComponent<ECS::GrassVolumeComponent>(entity));
-        if (world->HasComponent<ECS::VegetationComponent>(entity))
-            entityJson["vegetation"] = SerializeVegetationComponent(*world->GetComponent<ECS::VegetationComponent>(entity));
-        if (world->HasComponent<ECS::ViewmodelComponent>(entity))
-            entityJson["viewmodel"] = SerializeViewmodelComponent(*world->GetComponent<ECS::ViewmodelComponent>(entity));
+
 
         return entityJson.dump();
 
@@ -10886,175 +8605,18 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         ECS::Entity entity = world->CreateEntity();
 
         // Deserialize all components (mirrors LoadFromString entity loop)
-        if (entityJson.contains("name")) {
-            world->AddComponent<ECS::NameComponent>(entity, DeserializeNameComponent(entityJson["name"]));
-        }
-        if (entityJson.contains("transform")) {
-            world->AddComponent<ECS::TransformComponent>(entity, DeserializeTransformComponent(entityJson["transform"]));
-        }
-        if (entityJson.contains("material")) {
-            world->AddComponent<ECS::MaterialComponent>(entity, DeserializeMaterialComponent(entityJson["material"]));
-        }
-        if (entityJson.contains("materialSlots")) {
-            world->AddComponent<ECS::MaterialSlotsComponent>(entity,
-                DeserializeMaterialSlotsComponent(entityJson["materialSlots"]));
+                // Deserialize components via the registry (single source of truth).
+        // mesh stays explicit below (IsValid guard); stableId/id/parent are
+        // entity-level and handled outside the registry.
+        for (const auto& reg : ComponentRegistry()) {
+            std::string_view rk(reg.key);
+            if (rk == "mesh" || rk == "stableId") continue;
+            auto regIt = entityJson.find(reg.key);
+            if (regIt != entityJson.end()) reg.de(world, entity, *regIt);
         }
         if (entityJson.contains("mesh")) {
             world->AddComponent<ECS::MeshComponent>(entity, DeserializeMeshComponent(entityJson["mesh"]));
         }
-        // Skeleton must be deserialized before animator
-        std::shared_ptr<Animation::Skeleton> loadedSkeleton;
-        if (entityJson.contains("skeleton")) {
-            auto skelComp = DeserializeSkeletonComponent(entityJson["skeleton"]);
-            loadedSkeleton = skelComp.skeleton;
-            world->AddComponent<ECS::SkeletonComponent>(entity, skelComp);
-        }
-        if (entityJson.contains("animator")) {
-            auto animComp = DeserializeAnimatorComponent(entityJson["animator"], loadedSkeleton);
-            world->AddComponent<ECS::AnimatorComponent>(entity, std::move(animComp));
-        }
-        if (entityJson.contains("light")) {
-            world->AddComponent<ECS::LightComponent>(entity, DeserializeLightComponent(entityJson["light"]));
-        }
-        if (entityJson.contains("notes")) {
-            world->AddComponent<ECS::NotesComponent>(entity, DeserializeNotesComponent(entityJson["notes"]));
-        }
-        if (entityJson.contains("text")) {
-            world->AddComponent<ECS::TextComponent>(entity, DeserializeTextComponent(entityJson["text"]));
-        }
-        if (entityJson.contains("camera")) {
-            world->AddComponent<ECS::CameraComponent>(entity, DeserializeCameraComponent(entityJson["camera"]));
-        }
-        if (entityJson.contains("weatherZone")) {
-            world->AddComponent<ECS::WeatherZoneComponent>(entity, DeserializeWeatherZoneComponent(entityJson["weatherZone"]));
-        }
-        if (entityJson.contains("waterVolume")) {
-            world->AddComponent<ECS::WaterVolumeComponent>(entity, DeserializeWaterVolumeComponent(entityJson["waterVolume"]));
-        }
-        if (entityJson.contains("water3D")) {
-            world->AddComponent<ECS::Water3DComponent>(entity, DeserializeWater3DComponent(entityJson["water3D"]));
-        }
-        if (entityJson.contains("interactiveWater")) {
-            world->AddComponent<Effects::InteractiveWaterComponent>(entity, DeserializeInteractiveWaterComponent(entityJson["interactiveWater"]));
-        }
-        if (entityJson.contains("waterInteractor")) {
-            world->AddComponent<Effects::WaterInteractorComponent>(entity, DeserializeWaterInteractorComponent(entityJson["waterInteractor"]));
-        }
-        if (entityJson.contains("shrubVolume")) {
-            world->AddComponent<ECS::ShrubVolumeComponent>(entity, DeserializeShrubVolumeComponent(entityJson["shrubVolume"]));
-        }
-        if (entityJson.contains("treeVolume")) {
-            world->AddComponent<ECS::TreeVolumeComponent>(entity, DeserializeTreeVolumeComponent(entityJson["treeVolume"]));
-        }
-        if (entityJson.contains("terrain")) {
-            world->AddComponent<ECS::TerrainComponent>(entity, DeserializeTerrainComponent(entityJson["terrain"]));
-        }
-        if (entityJson.contains("terrain2d")) {
-            world->AddComponent<ECS::Terrain2DComponent>(entity, DeserializeTerrain2DComponent(entityJson["terrain2d"]));
-        }
-        if (entityJson.contains("cameraTrigger")) {
-            world->AddComponent<ECS::CameraTriggerComponent>(entity, DeserializeCameraTriggerComponent(entityJson["cameraTrigger"]));
-        }
-        if (entityJson.contains("temperatureZone")) {
-            world->AddComponent<ECS::TemperatureZoneComponent>(entity, DeserializeTemperatureZoneComponent(entityJson["temperatureZone"]));
-        }
-        if (entityJson.contains("gravityZone")) {
-            world->AddComponent<ECS::GravityZoneComponent>(entity, DeserializeGravityZoneComponent(entityJson["gravityZone"]));
-        }
-        if (entityJson.contains("reflectionProbe")) {
-            world->AddComponent<ECS::ReflectionProbeComponent>(entity, DeserializeReflectionProbeComponent(entityJson["reflectionProbe"]));
-        }
-        if (entityJson.contains("elementalSurface")) {
-            world->AddComponent<ECS::ElementalSurfaceComponent>(entity, DeserializeElementalSurfaceComponent(entityJson["elementalSurface"]));
-        }
-        if (entityJson.contains("elementalEmitter")) {
-            world->AddComponent<ECS::ElementalEmitterComponent>(entity, DeserializeElementalEmitterComponent(entityJson["elementalEmitter"]));
-        }
-        if (entityJson.contains("gpuParticleEmitter")) {
-            world->AddComponent<ECS::GPUParticleEmitterComponent>(entity, DeserializeGPUParticleEmitterComponent(entityJson["gpuParticleEmitter"]));
-        }
-        if (entityJson.contains("customShader")) {
-            world->AddComponent<ECS::CustomShaderComponent>(entity, DeserializeCustomShaderComponent(entityJson["customShader"]));
-        }
-        if (entityJson.contains("cloth")) {
-            world->AddComponent<ECS::ClothComponent>(entity, DeserializeClothComponent(entityJson["cloth"]));
-        }
-        if (entityJson.contains("swarm")) {
-            world->AddComponent<ECS::SwarmComponent>(entity, DeserializeSwarmComponent(entityJson["swarm"]));
-        }
-        if (entityJson.contains("dungeonGenerator")) {
-            world->AddComponent<ECS::DungeonGeneratorComponent>(entity, DeserializeDungeonGeneratorComponent(entityJson["dungeonGenerator"]));
-        }
-        if (entityJson.contains("randomBag")) {
-            world->AddComponent<ECS::RandomBagComponent>(entity, DeserializeRandomBagComponent(entityJson["randomBag"]));
-        }
-        if (entityJson.contains("scatter")) {
-            world->AddComponent<ECS::ScatterComponent>(entity, DeserializeScatterComponent(entityJson["scatter"]));
-        }
-        if (entityJson.contains("terrainGenerator")) {
-            world->AddComponent<ECS::TerrainGeneratorComponent>(entity, DeserializeTerrainGeneratorComponent(entityJson["terrainGenerator"]));
-        }
-        if (entityJson.contains("wfc")) {
-            world->AddComponent<ECS::WFCComponent>(entity, DeserializeWFCComponent(entityJson["wfc"]));
-        }
-        if (entityJson.contains("scatterInstance")) {
-            world->AddComponent<ECS::ScatterInstanceComponent>(entity);
-        }
-        if (entityJson.contains("elementalVolume")) {
-            world->AddComponent<ECS::ElementalVolumeComponent>(entity, DeserializeElementalVolumeComponent(entityJson["elementalVolume"]));
-        }
-        if (entityJson.contains("postProcessVolume")) {
-            world->AddComponent<ECS::PostProcessVolumeComponent>(entity, DeserializePostProcessVolumeComponent(entityJson["postProcessVolume"]));
-        }
-        if (entityJson.contains("fluidVolume")) {
-            world->AddComponent<ECS::FluidVolumeComponent>(entity, DeserializeFluidVolumeComponent(entityJson["fluidVolume"]));
-        }
-        // Controllers
-        if (entityJson.contains("platformer2D"))
-            world->AddComponent<ECS::Platformer2DController>(entity, DeserializePlatformer2D(entityJson["platformer2D"]));
-        if (entityJson.contains("topDown2D"))
-            world->AddComponent<ECS::TopDown2DController>(entity, DeserializeTopDown2D(entityJson["topDown2D"]));
-        if (entityJson.contains("topDown3D"))
-            world->AddComponent<ECS::TopDown3DController>(entity, DeserializeTopDown3D(entityJson["topDown3D"]));
-        if (entityJson.contains("thirdPerson"))
-            world->AddComponent<ECS::ThirdPersonController>(entity, DeserializeThirdPerson(entityJson["thirdPerson"]));
-        if (entityJson.contains("firstPerson"))
-            world->AddComponent<ECS::FirstPersonController>(entity, DeserializeFirstPerson(entityJson["firstPerson"]));
-        if (entityJson.contains("vehicle"))
-            world->AddComponent<ECS::VehicleController>(entity, DeserializeVehicle(entityJson["vehicle"]));
-        if (entityJson.contains("surfaceAligned"))
-            world->AddComponent<ECS::SurfaceAlignedController>(entity, DeserializeSurfaceAligned(entityJson["surfaceAligned"]));
-        if (entityJson.contains("networkIdentity"))
-            world->AddComponent<ECS::NetworkIdentityComponent>(entity, DeserializeNetworkIdentityComponent(entityJson["networkIdentity"]));
-        if (entityJson.contains("networkTransform"))
-            world->AddComponent<ECS::NetworkTransformComponent>(entity, DeserializeNetworkTransformComponent(entityJson["networkTransform"]));
-        if (entityJson.contains("possessable"))
-            world->AddComponent<ECS::PossessableComponent>(entity, DeserializePossessable(entityJson["possessable"]));
-        // Puzzle
-        if (entityJson.contains("lock"))
-            world->AddComponent<ECS::LockComponent>(entity, DeserializeLockComponent(entityJson["lock"]));
-        if (entityJson.contains("pushable"))
-            world->AddComponent<ECS::PushableComponent>(entity, DeserializePushableComponent(entityJson["pushable"]));
-        if (entityJson.contains("switch"))
-            world->AddComponent<ECS::SwitchComponent>(entity, DeserializeSwitchComponent(entityJson["switch"]));
-        if (entityJson.contains("goalZone"))
-            world->AddComponent<ECS::GoalZoneComponent>(entity, DeserializeGoalZoneComponent(entityJson["goalZone"]));
-        if (entityJson.contains("conveyor"))
-            world->AddComponent<ECS::ConveyorComponent>(entity, DeserializeConveyorComponent(entityJson["conveyor"]));
-        if (entityJson.contains("teleporter"))
-            world->AddComponent<ECS::TeleporterComponent>(entity, DeserializeTeleporterComponent(entityJson["teleporter"]));
-        if (entityJson.contains("destructible"))
-            world->AddComponent<ECS::DestructibleComponent>(entity, DeserializeDestructibleComponent(entityJson["destructible"]));
-        if (entityJson.contains("curlNoiseField"))
-            world->AddComponent<ECS::CurlNoiseFieldComponent>(entity, DeserializeCurlNoiseFieldComponent(entityJson["curlNoiseField"]));
-        if (entityJson.contains("fractureConfig"))
-            world->AddComponent<ECS::FractureConfigComponent>(entity, DeserializeFractureConfigComponent(entityJson["fractureConfig"]));
-        if (entityJson.contains("movingPlatform"))
-            world->AddComponent<ECS::MovingPlatformComponent>(entity, DeserializeMovingPlatformComponent(entityJson["movingPlatform"]));
-        // Script
-        if (entityJson.contains("scriptComponent"))
-            world->AddComponent<ECS::ScriptComponent>(entity, DeserializeScriptComponent(entityJson["scriptComponent"]));
-        // Hierarchy (parent reference â€" stored as entity ID, may need remapping by caller)
         if (entityJson.contains("parent")) {
             auto& pc = world->AddComponent<ECS::ParentComponent>(entity);
             pc.parent = static_cast<ECS::Entity>(entityJson["parent"].get<u64>());
@@ -11066,227 +8628,7 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
                 world->GetComponent<ECS::ChildrenComponent>(pc.parent)->children.push_back(entity);
             }
         }
-        // Prefab instance link
-        if (entityJson.contains("prefabInstance")) {
-            auto& pi = world->AddComponent<Assets::PrefabInstanceComponent>(entity);
-            const auto& piJson = entityJson["prefabInstance"];
-            pi.prefabId = piJson.value("prefabId", static_cast<u64>(0));
-            pi.prefabPath = piJson.value("prefabPath", std::string(""));
-        }
-        // IK
-        if (entityJson.contains("lookAtIK")) {
-            auto& ikJson = entityJson["lookAtIK"];
-            auto& ik = world->AddComponent<ECS::LookAtIKComponent>(entity);
-            if (ikJson.contains("headBone")) ik.headBoneName = ikJson["headBone"].get<std::string>();
-            if (ikJson.contains("neckBone")) ik.neckBoneName = ikJson["neckBone"].get<std::string>();
-            if (ikJson.contains("targetEntity")) ik.targetEntity = static_cast<ECS::Entity>(ikJson["targetEntity"].get<u64>());
-            if (ikJson.contains("targetPos") && ikJson["targetPos"].is_array() && ikJson["targetPos"].size() >= 3) { auto& a = ikJson["targetPos"]; ik.targetWorldPos = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
-            if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = JB(ikJson["useEntityTarget"]);
-            if (ikJson.contains("maxRotation")) ik.maxRotation = ikJson["maxRotation"].get<f32>();
-            if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
-            if (ikJson.contains("lookWeight")) ik.lookWeight = ikJson["lookWeight"].get<f32>();
-        }
-        if (entityJson.contains("interactionIK")) {
-            auto& ikJson = entityJson["interactionIK"];
-            auto& ik = world->AddComponent<ECS::InteractionIKComponent>(entity);
-            if (ikJson.contains("handBone")) ik.handBoneName = ikJson["handBone"].get<std::string>();
-            if (ikJson.contains("elbowBone")) ik.elbowBoneName = ikJson["elbowBone"].get<std::string>();
-            if (ikJson.contains("shoulderBone")) ik.shoulderBoneName = ikJson["shoulderBone"].get<std::string>();
-            if (ikJson.contains("interactionRadius")) ik.interactionRadius = ikJson["interactionRadius"].get<f32>();
-            if (ikJson.contains("ikWeight")) ik.ikWeight = ikJson["ikWeight"].get<f32>();
-            if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
-            if (ikJson.contains("interactionTag")) ik.interactionTag = ikJson["interactionTag"].get<std::string>();
-        }
-        if (entityJson.contains("twoBoneIK")) {
-            auto& ikJson = entityJson["twoBoneIK"];
-            auto& ik = world->AddComponent<ECS::TwoBoneIKComponent>(entity);
-            if (ikJson.contains("rootBone")) ik.rootBoneName = ikJson["rootBone"].get<std::string>();
-            if (ikJson.contains("midBone")) ik.midBoneName = ikJson["midBone"].get<std::string>();
-            if (ikJson.contains("endBone")) ik.endBoneName = ikJson["endBone"].get<std::string>();
-            if (ikJson.contains("targetPos") && ikJson["targetPos"].is_array() && ikJson["targetPos"].size() >= 3) {
-                auto& a = ikJson["targetPos"];
-                ik.targetPosition = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
-            }
-            if (ikJson.contains("targetEntity")) ik.targetEntity = static_cast<ECS::Entity>(ikJson["targetEntity"].get<u64>());
-            if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = ikJson["useEntityTarget"].get<bool>();
-            if (ikJson.contains("weight")) ik.weight = ikJson["weight"].get<f32>();
-            if (ikJson.contains("poleVector") && ikJson["poleVector"].is_array() && ikJson["poleVector"].size() >= 3) {
-                auto& a = ikJson["poleVector"];
-                ik.poleVector = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
-            }
-        }
-        if (entityJson.contains("boneAttachment")) {
-            auto& ba = world->AddComponent<ECS::BoneAttachmentComponent>(entity);
-            auto& baJson = entityJson["boneAttachment"];
-            if (baJson.contains("targetEntity")) ba.targetEntity = static_cast<ECS::Entity>(baJson["targetEntity"].get<u64>());
-            if (baJson.contains("targetBoneName")) ba.targetBoneName = baJson["targetBoneName"].get<std::string>();
-            if (baJson.contains("positionOffset") && baJson["positionOffset"].is_array() && baJson["positionOffset"].size() >= 3) {
-                auto& a = baJson["positionOffset"]; ba.positionOffset = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
-            }
-            if (baJson.contains("rotationOffset") && baJson["rotationOffset"].is_array() && baJson["rotationOffset"].size() >= 4) {
-                auto& a = baJson["rotationOffset"]; ba.rotationOffset = Math::Quaternion(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>(), a[3].get<f32>());
-            }
-        }
-        // Audio
-        if (entityJson.contains("audioSource"))
-            world->AddComponent<ECS::AudioSourceComponent>(entity, DeserializeAudioSourceComponent(entityJson["audioSource"]));
-        if (entityJson.contains("audioListener"))
-            world->AddComponent<ECS::AudioListenerComponent>(entity, DeserializeAudioListenerComponent(entityJson["audioListener"]));
-        // Physics
-        if (entityJson.contains("rigidbody"))
-            world->AddComponent<ECS::RigidbodyComponent>(entity, DeserializeRigidbodyComponent(entityJson["rigidbody"]));
-        if (entityJson.contains("boxCollider"))
-            world->AddComponent<ECS::BoxColliderComponent>(entity, DeserializeBoxColliderComponent(entityJson["boxCollider"]));
-        if (entityJson.contains("polygonCollider2D"))
-            world->AddComponent<ECS::PolygonCollider2DComponent>(entity, DeserializePolygonCollider2DComponent(entityJson["polygonCollider2D"]));
-        if (entityJson.contains("body2D"))
-            world->AddComponent<Physics::Body2DComponent>(entity, DeserializeBody2DComponent(entityJson["body2D"]));
-        if (entityJson.contains("joint2D"))
-            world->AddComponent<Physics::Joint2DComponent>(entity, DeserializeJoint2DComponent(entityJson["joint2D"]));
-        if (entityJson.contains("perFrameCollider"))
-            world->AddComponent<ECS::PerFrameColliderComponent>(entity, DeserializePerFrameColliderComponent(entityJson["perFrameCollider"]));
-        if (entityJson.contains("sphereCollider"))
-            world->AddComponent<ECS::SphereColliderComponent>(entity, DeserializeSphereColliderComponent(entityJson["sphereCollider"]));
-        if (entityJson.contains("capsuleCollider"))
-            world->AddComponent<ECS::CapsuleColliderComponent>(entity, DeserializeCapsuleColliderComponent(entityJson["capsuleCollider"]));
-        if (entityJson.contains("meshCollider"))
-            world->AddComponent<ECS::MeshColliderComponent>(entity, DeserializeMeshColliderComponent(entityJson["meshCollider"]));
-        if (entityJson.contains("meshRenderer"))
-            world->AddComponent<ECS::MeshRendererComponent>(entity, DeserializeMeshRendererComponent(entityJson["meshRenderer"]));
-        // Gameplay
-        if (entityJson.contains("health"))
-            world->AddComponent<ECS::HealthComponent>(entity, DeserializeHealthComponent(entityJson["health"]));
-        if (entityJson.contains("recordRewind"))
-            world->AddComponent<ECS::RecordRewindComponent>(entity, DeserializeRecordRewindComponent(entityJson["recordRewind"]));
-        if (entityJson.contains("sceneRewind"))
-            world->AddComponent<ECS::SceneRewindComponent>(entity, DeserializeSceneRewindComponent(entityJson["sceneRewind"]));
-        if (entityJson.contains("damage"))
-            world->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(entityJson["damage"]));
-        if (entityJson.contains("gameOver"))
-            world->AddComponent<ECS::GameOverComponent>(entity, DeserializeGameOverComponent(entityJson["gameOver"]));
-        if (entityJson.contains("lens"))
-            world->AddComponent<ECS::LensComponent>(entity, DeserializeLensComponent(entityJson["lens"]));
-        if (entityJson.contains("morphTargets"))
-            world->AddComponent<ECS::MorphTargetComponent>(entity, DeserializeMorphTargetComponent(entityJson["morphTargets"]));
-        if (entityJson.contains("damageResistance"))
-            world->AddComponent<ECS::DamageResistanceComponent>(entity, DeserializeDamageResistanceComponent(entityJson["damageResistance"]));
-        if (entityJson.contains("triggerZone"))
-            world->AddComponent<ECS::TriggerZoneComponent>(entity, DeserializeTriggerZoneComponent(entityJson["triggerZone"]));
-        if (entityJson.contains("interactable"))
-            world->AddComponent<ECS::InteractableComponent>(entity, DeserializeInteractableComponent(entityJson["interactable"]));
-        if (entityJson.contains("pickup"))
-            world->AddComponent<ECS::PickupComponent>(entity, DeserializePickupComponent(entityJson["pickup"]));
-        if (entityJson.contains("tag"))
-            world->AddComponent<ECS::TagComponent>(entity, DeserializeTagComponent(entityJson["tag"]));
-        if (entityJson.contains("layer"))
-            world->AddComponent<ECS::LayerComponent>(entity, DeserializeLayerComponent(entityJson["layer"]));
-        if (entityJson.contains("billboard"))
-            world->AddComponent<ECS::BillboardComponent>(entity, DeserializeBillboardComponent(entityJson["billboard"]));
-        if (entityJson.contains("particleEmitter"))
-            world->AddComponent<ECS::ParticleEmitterComponent>(entity, DeserializeParticleEmitterComponent(entityJson["particleEmitter"]));
-        // 2D
-        if (entityJson.contains("sprite2D"))
-            world->AddComponent<ECS::Sprite2DComponent>(entity, DeserializeSprite2DComponent(entityJson["sprite2D"]));
-        if (entityJson.contains("animatedSprite2D"))
-            world->AddComponent<ECS::AnimatedSprite2DComponent>(entity, DeserializeAnimatedSprite2DComponent(entityJson["animatedSprite2D"]));
-        if (entityJson.contains("tilemap"))
-            world->AddComponent<ECS::TilemapComponent>(entity, DeserializeTilemapComponent(entityJson["tilemap"]));
-        if (entityJson.contains("camera2DBounds"))
-            world->AddComponent<ECS::Camera2DBoundsComponent>(entity, DeserializeCamera2DBoundsComponent(entityJson["camera2DBounds"]));
-        if (entityJson.contains("parallaxMachine"))
-            world->AddComponent<ECS::ParallaxMachineComponent>(entity, DeserializeParallaxMachineComponent(entityJson["parallaxMachine"]));
-        // State/Dialogue/Tween
-        if (entityJson.contains("stateMachine"))
-            world->AddComponent<ECS::StateMachineComponent>(entity, DeserializeStateMachineComponent(entityJson["stateMachine"]));
-        if (entityJson.contains("dialogue"))
-            world->AddComponent<ECS::DialogueComponent>(entity, DeserializeDialogueComponent(entityJson["dialogue"]));
-        if (entityJson.contains("tween"))
-            world->AddComponent<ECS::TweenComponent>(entity, DeserializeTweenComponent(entityJson["tween"]));
-        if (entityJson.contains("visualScript"))
-            world->AddComponent<ECS::VisualScriptComponent>(entity, DeserializeVisualScriptComponent(entityJson["visualScript"]));
-        // AI
-        if (entityJson.contains("aiController"))
-            world->AddComponent<ECS::AIControllerComponent>(entity, DeserializeAIControllerComponent(entityJson["aiController"]));
-        if (entityJson.contains("behaviorTree"))
-            world->AddComponent<ECS::BehaviorTreeComponent>(entity, DeserializeBehaviorTreeComponent(entityJson["behaviorTree"]));
-        if (entityJson.contains("questFlow"))
-            world->AddComponent<ECS::QuestFlowComponent>(entity, DeserializeQuestFlowComponent(entityJson["questFlow"]));
-        if (entityJson.contains("followTarget"))
-            world->AddComponent<ECS::FollowTargetComponent>(entity, DeserializeFollowTargetComponent(entityJson["followTarget"]));
-        if (entityJson.contains("lookAtTarget"))
-            world->AddComponent<ECS::LookAtTargetComponent>(entity, DeserializeLookAtTargetComponent(entityJson["lookAtTarget"]));
-        if (entityJson.contains("waypoint"))
-            world->AddComponent<ECS::WaypointComponent>(entity, DeserializeWaypointComponent(entityJson["waypoint"]));
-        // Misc gameplay
-        if (entityJson.contains("spawnPoint"))
-            world->AddComponent<ECS::SpawnPointComponent>(entity, DeserializeSpawnPointComponent(entityJson["spawnPoint"]));
-        if (entityJson.contains("streamingVolume"))
-            world->AddComponent<Scene::StreamingVolumeComponent>(entity, DeserializeStreamingVolumeComponent(entityJson["streamingVolume"]));
-        if (entityJson.contains("streamingPortal"))
-            world->AddComponent<Scene::StreamingPortalComponent>(entity, DeserializeStreamingPortalComponent(entityJson["streamingPortal"]));
-        if (entityJson.contains("timer"))
-            world->AddComponent<ECS::TimerComponent>(entity, DeserializeTimerComponent(entityJson["timer"]));
-        if (entityJson.contains("inventory"))
-            world->AddComponent<ECS::InventoryComponent>(entity, DeserializeInventoryComponent(entityJson["inventory"]));
-        if (entityJson.contains("saveData"))
-            world->AddComponent<ECS::SaveDataComponent>(entity, DeserializeSaveDataComponent(entityJson["saveData"]));
-        if (entityJson.contains("saveLoadMenu"))
-            world->AddComponent<ECS::SaveLoadMenuComponent>(entity, DeserializeSaveLoadMenuComponent(entityJson["saveLoadMenu"]));
-        if (entityJson.contains("resource"))
-            world->AddComponent<ECS::ResourceComponent>(entity, DeserializeResourceComponent(entityJson["resource"]));
-        if (entityJson.contains("footstep"))
-            world->AddComponent<ECS::FootstepComponent>(entity, DeserializeFootstepComponent(entityJson["footstep"]));
-        if (entityJson.contains("poolable"))
-            world->AddComponent<ECS::PoolableComponent>(entity, DeserializePoolableComponent(entityJson["poolable"]));
-        if (entityJson.contains("questState"))
-            world->AddComponent<ECS::QuestStateComponent>(entity, DeserializeQuestStateComponent(entityJson["questState"]));
-        if (entityJson.contains("dynamicDifficulty"))
-            world->AddComponent<ECS::DynamicDifficultyComponent>(entity, DeserializeDynamicDifficultyComponent(entityJson["dynamicDifficulty"]));
-        if (entityJson.contains("artStyle"))
-            world->AddComponent<ECS::ArtStyleComponent>(entity, DeserializeArtStyleComponent(entityJson["artStyle"]));
-        if (entityJson.contains("hudWidget"))
-            world->AddComponent<ECS::HUDWidgetComponent>(entity, DeserializeHUDWidgetComponent(entityJson["hudWidget"]));
-        if (entityJson.contains("uiCanvas"))
-            world->AddComponent<GUI::UICanvasComponent>(entity, DeserializeUICanvasComponent(entityJson["uiCanvas"]));
-        if (entityJson.contains("cinematicCamera"))
-            world->AddComponent<ECS::CinematicCameraComponent>(entity, DeserializeCinematicCameraComponent(entityJson["cinematicCamera"]));
-        // Joints
-        if (entityJson.contains("distanceJoint"))
-            world->AddComponent<ECS::DistanceJointComponent>(entity, DeserializeDistanceJointComponent(entityJson["distanceJoint"]));
-        if (entityJson.contains("hingeJoint"))
-            world->AddComponent<ECS::HingeJointComponent>(entity, DeserializeHingeJointComponent(entityJson["hingeJoint"]));
-        if (entityJson.contains("ballSocketJoint"))
-            world->AddComponent<ECS::BallSocketJointComponent>(entity, DeserializeBallSocketJointComponent(entityJson["ballSocketJoint"]));
-        if (entityJson.contains("springJoint"))
-            world->AddComponent<ECS::SpringJointComponent>(entity, DeserializeSpringJointComponent(entityJson["springJoint"]));
-        if (entityJson.contains("fixedJoint"))
-            world->AddComponent<ECS::FixedJointComponent>(entity, DeserializeFixedJointComponent(entityJson["fixedJoint"]));
-        if (entityJson.contains("sliderJoint"))
-            world->AddComponent<ECS::SliderJointComponent>(entity, DeserializeSliderJointComponent(entityJson["sliderJoint"]));
-        if (entityJson.contains("ragdoll"))
-            world->AddComponent<ECS::RagdollComponent>(entity, DeserializeRagdollComponent(entityJson["ragdoll"]));
-        if (entityJson.contains("animationRecorder"))
-            world->AddComponent<ECS::AnimationRecorderComponent>(entity, DeserializeAnimationRecorderComponent(entityJson["animationRecorder"]));
-        // Flower
-        if (entityJson.contains("jellyMesh"))
-            world->AddComponent<ECS::JellyMeshComponent>(entity, DeserializeJellyMeshComponent(entityJson["jellyMesh"]));
-        if (entityJson.contains("tether"))
-            world->AddComponent<ECS::TetherComponent>(entity, DeserializeTetherComponent(entityJson["tether"]));
-        if (entityJson.contains("grabbable"))
-            world->AddComponent<ECS::GrabbableComponent>(entity, DeserializeGrabbableComponent(entityJson["grabbable"]));
-        if (entityJson.contains("flowerStem"))
-            world->AddComponent<ECS::FlowerStemComponent>(entity, DeserializeFlowerStemComponent(entityJson["flowerStem"]));
-        if (entityJson.contains("flowerParticleConfig"))
-            world->AddComponent<ECS::FlowerParticleConfigComponent>(entity, DeserializeFlowerParticleConfigComponent(entityJson["flowerParticleConfig"]));
-        // LOD/Vegetation
-        if (entityJson.contains("lod"))
-            world->AddComponent<ECS::LODComponent>(entity, DeserializeLODComponent(entityJson["lod"]));
-        if (entityJson.contains("grassVolume"))
-            world->AddComponent<ECS::GrassVolumeComponent>(entity, DeserializeGrassVolumeComponent(entityJson["grassVolume"]));
-        if (entityJson.contains("vegetation"))
-            world->AddComponent<ECS::VegetationComponent>(entity, DeserializeVegetationComponent(entityJson["vegetation"]));
-        if (entityJson.contains("viewmodel"))
-            world->AddComponent<ECS::ViewmodelComponent>(entity, DeserializeViewmodelComponent(entityJson["viewmodel"]));
+
 
         return entity;
 
@@ -11300,222 +8642,6 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
 // Static per-component serialization (for component remove undo)
 // ============================================================================
 
-// ----------------------------------------------------------------------------
-// Component (de)serialization registry - single source of truth. Each entry wires
-// a scene-JSON key to its component has / serialize / deserialize / remove ops.
-// The three per-key helpers below iterate this table, so a component is registered
-// ONCE instead of edited into a dozen hand-maintained else-if chains (which had hit
-// MSVC's C1061 nesting limit and silently dropped components). Uniform components
-// use ENJIN_SERDES; the few irregular ones are explicit entries.
-// ----------------------------------------------------------------------------
-struct ComponentSerdes {
-    const char* key;
-    bool (*has)(ECS::World*, ECS::Entity);
-    json (*ser)(ECS::World*, ECS::Entity);
-    void (*de)(ECS::World*, ECS::Entity, const json&);
-    void (*rem)(ECS::World*, ECS::Entity);
-};
-
-#define ENJIN_SERDES(KEY, TYPE, SERFN, DESERFN) ComponentSerdes{ KEY, [](ECS::World* w, ECS::Entity e){ return w->HasComponent<TYPE>(e); }, [](ECS::World* w, ECS::Entity e)->json{ return SERFN(*w->GetComponent<TYPE>(e)); }, [](ECS::World* w, ECS::Entity e, const json& j){ w->AddComponent<TYPE>(e, DESERFN(j)); }, [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<TYPE>(e); } }
-
-static const std::vector<ComponentSerdes>& ComponentRegistry() {
-    static const std::vector<ComponentSerdes> reg = {
-        ENJIN_SERDES("aiController", ECS::AIControllerComponent, SerializeAIControllerComponent, DeserializeAIControllerComponent),
-        ENJIN_SERDES("animatedSprite2D", ECS::AnimatedSprite2DComponent, SerializeAnimatedSprite2DComponent, DeserializeAnimatedSprite2DComponent),
-        ENJIN_SERDES("animationRecorder", ECS::AnimationRecorderComponent, SerializeAnimationRecorderComponent, DeserializeAnimationRecorderComponent),
-        ENJIN_SERDES("artStyle", ECS::ArtStyleComponent, SerializeArtStyleComponent, DeserializeArtStyleComponent),
-        ENJIN_SERDES("audioCollision", ECS::AudioCollisionComponent, SerializeAudioCollisionComponent, DeserializeAudioCollisionComponent),
-        ENJIN_SERDES("audioFidelity", ECS::AudioFidelityComponent, SerializeAudioFidelityComponent, DeserializeAudioFidelityComponent),
-        ENJIN_SERDES("audioListener", ECS::AudioListenerComponent, SerializeAudioListenerComponent, DeserializeAudioListenerComponent),
-        ENJIN_SERDES("audioOcclusion", ECS::AudioOcclusionComponent, SerializeAudioOcclusionComponent, DeserializeAudioOcclusionComponent),
-        ENJIN_SERDES("audioReactive", ECS::AudioReactiveComponent, SerializeAudioReactiveComponent, DeserializeAudioReactiveComponent),
-        ENJIN_SERDES("audioSnapshotTrigger", ECS::AudioSnapshotTriggerComponent, SerializeAudioSnapshotTriggerComponent, DeserializeAudioSnapshotTriggerComponent),
-        ENJIN_SERDES("audioSource", ECS::AudioSourceComponent, SerializeAudioSourceComponent, DeserializeAudioSourceComponent),
-        ENJIN_SERDES("audioThresholdTrigger", ECS::AudioThresholdTriggerComponent, SerializeAudioThresholdTriggerComponent, DeserializeAudioThresholdTriggerComponent),
-        ENJIN_SERDES("ballSocketJoint", ECS::BallSocketJointComponent, SerializeBallSocketJointComponent, DeserializeBallSocketJointComponent),
-        ENJIN_SERDES("beatClock", ECS::BeatClockComponent, SerializeBeatClockComponent, DeserializeBeatClockComponent),
-        ENJIN_SERDES("beatSync", ECS::BeatSyncComponent, SerializeBeatSyncComponent, DeserializeBeatSyncComponent),
-        ENJIN_SERDES("behaviorTree", ECS::BehaviorTreeComponent, SerializeBehaviorTreeComponent, DeserializeBehaviorTreeComponent),
-        ENJIN_SERDES("billboard", ECS::BillboardComponent, SerializeBillboardComponent, DeserializeBillboardComponent),
-        ENJIN_SERDES("body2D", Physics::Body2DComponent, SerializeBody2DComponent, DeserializeBody2DComponent),
-        ENJIN_SERDES("boxCollider", ECS::BoxColliderComponent, SerializeBoxColliderComponent, DeserializeBoxColliderComponent),
-        ENJIN_SERDES("camera", ECS::CameraComponent, SerializeCameraComponent, DeserializeCameraComponent),
-        ENJIN_SERDES("camera2DBounds", ECS::Camera2DBoundsComponent, SerializeCamera2DBoundsComponent, DeserializeCamera2DBoundsComponent),
-        ENJIN_SERDES("cameraTrigger", ECS::CameraTriggerComponent, SerializeCameraTriggerComponent, DeserializeCameraTriggerComponent),
-        ENJIN_SERDES("capsuleCollider", ECS::CapsuleColliderComponent, SerializeCapsuleColliderComponent, DeserializeCapsuleColliderComponent),
-        ENJIN_SERDES("cinematicCamera", ECS::CinematicCameraComponent, SerializeCinematicCameraComponent, DeserializeCinematicCameraComponent),
-        ENJIN_SERDES("cloth", ECS::ClothComponent, SerializeClothComponent, DeserializeClothComponent),
-        ENJIN_SERDES("conductor", ECS::ConductorComponent, SerializeConductorComponent, DeserializeConductorComponent),
-        ENJIN_SERDES("conveyor", ECS::ConveyorComponent, SerializeConveyorComponent, DeserializeConveyorComponent),
-        ENJIN_SERDES("curlNoiseField", ECS::CurlNoiseFieldComponent, SerializeCurlNoiseFieldComponent, DeserializeCurlNoiseFieldComponent),
-        ENJIN_SERDES("damage", ECS::DamageComponent, SerializeDamageComponent, DeserializeDamageComponent),
-        ENJIN_SERDES("damageResistance", ECS::DamageResistanceComponent, SerializeDamageResistanceComponent, DeserializeDamageResistanceComponent),
-        ENJIN_SERDES("destructible", ECS::DestructibleComponent, SerializeDestructibleComponent, DeserializeDestructibleComponent),
-        ENJIN_SERDES("dialogue", ECS::DialogueComponent, SerializeDialogueComponent, DeserializeDialogueComponent),
-        ENJIN_SERDES("dialogueBox", ECS::DialogueBoxComponent, SerializeDialogueBoxComponent, DeserializeDialogueBoxComponent),
-        ENJIN_SERDES("distanceJoint", ECS::DistanceJointComponent, SerializeDistanceJointComponent, DeserializeDistanceJointComponent),
-        ENJIN_SERDES("dungeonGenerator", ECS::DungeonGeneratorComponent, SerializeDungeonGeneratorComponent, DeserializeDungeonGeneratorComponent),
-        ENJIN_SERDES("dynamicDifficulty", ECS::DynamicDifficultyComponent, SerializeDynamicDifficultyComponent, DeserializeDynamicDifficultyComponent),
-        ENJIN_SERDES("elementalEmitter", ECS::ElementalEmitterComponent, SerializeElementalEmitterComponent, DeserializeElementalEmitterComponent),
-        ENJIN_SERDES("elementalSurface", ECS::ElementalSurfaceComponent, SerializeElementalSurfaceComponent, DeserializeElementalSurfaceComponent),
-        ENJIN_SERDES("elementalVolume", ECS::ElementalVolumeComponent, SerializeElementalVolumeComponent, DeserializeElementalVolumeComponent),
-        ENJIN_SERDES("firstPerson", ECS::FirstPersonController, SerializeFirstPerson, DeserializeFirstPerson),
-        ENJIN_SERDES("fixedJoint", ECS::FixedJointComponent, SerializeFixedJointComponent, DeserializeFixedJointComponent),
-        ENJIN_SERDES("flowerParticleConfig", ECS::FlowerParticleConfigComponent, SerializeFlowerParticleConfigComponent, DeserializeFlowerParticleConfigComponent),
-        ENJIN_SERDES("flowerStem", ECS::FlowerStemComponent, SerializeFlowerStemComponent, DeserializeFlowerStemComponent),
-        ENJIN_SERDES("fluidVolume", ECS::FluidVolumeComponent, SerializeFluidVolumeComponent, DeserializeFluidVolumeComponent),
-        ENJIN_SERDES("followTarget", ECS::FollowTargetComponent, SerializeFollowTargetComponent, DeserializeFollowTargetComponent),
-        ENJIN_SERDES("footstep", ECS::FootstepComponent, SerializeFootstepComponent, DeserializeFootstepComponent),
-        ENJIN_SERDES("fractureConfig", ECS::FractureConfigComponent, SerializeFractureConfigComponent, DeserializeFractureConfigComponent),
-        ENJIN_SERDES("gameOver", ECS::GameOverComponent, SerializeGameOverComponent, DeserializeGameOverComponent),
-        ENJIN_SERDES("goalZone", ECS::GoalZoneComponent, SerializeGoalZoneComponent, DeserializeGoalZoneComponent),
-        ENJIN_SERDES("gpuParticleEmitter", ECS::GPUParticleEmitterComponent, SerializeGPUParticleEmitterComponent, DeserializeGPUParticleEmitterComponent),
-        ENJIN_SERDES("grabbable", ECS::GrabbableComponent, SerializeGrabbableComponent, DeserializeGrabbableComponent),
-        ENJIN_SERDES("grassVolume", ECS::GrassVolumeComponent, SerializeGrassVolumeComponent, DeserializeGrassVolumeComponent),
-        ENJIN_SERDES("gravityZone", ECS::GravityZoneComponent, SerializeGravityZoneComponent, DeserializeGravityZoneComponent),
-        ENJIN_SERDES("health", ECS::HealthComponent, SerializeHealthComponent, DeserializeHealthComponent),
-        ENJIN_SERDES("hingeJoint", ECS::HingeJointComponent, SerializeHingeJointComponent, DeserializeHingeJointComponent),
-        ENJIN_SERDES("hudWidget", ECS::HUDWidgetComponent, SerializeHUDWidgetComponent, DeserializeHUDWidgetComponent),
-        ENJIN_SERDES("interactable", ECS::InteractableComponent, SerializeInteractableComponent, DeserializeInteractableComponent),
-        ENJIN_SERDES("interactiveWater", Effects::InteractiveWaterComponent, SerializeInteractiveWaterComponent, DeserializeInteractiveWaterComponent),
-        ENJIN_SERDES("inventory", ECS::InventoryComponent, SerializeInventoryComponent, DeserializeInventoryComponent),
-        ENJIN_SERDES("jellyMesh", ECS::JellyMeshComponent, SerializeJellyMeshComponent, DeserializeJellyMeshComponent),
-        ENJIN_SERDES("joint2D", Physics::Joint2DComponent, SerializeJoint2DComponent, DeserializeJoint2DComponent),
-        ENJIN_SERDES("lens", ECS::LensComponent, SerializeLensComponent, DeserializeLensComponent),
-        ENJIN_SERDES("light", ECS::LightComponent, SerializeLightComponent, DeserializeLightComponent),
-        ENJIN_SERDES("lock", ECS::LockComponent, SerializeLockComponent, DeserializeLockComponent),
-        ENJIN_SERDES("lod", ECS::LODComponent, SerializeLODComponent, DeserializeLODComponent),
-        ENJIN_SERDES("lookAtTarget", ECS::LookAtTargetComponent, SerializeLookAtTargetComponent, DeserializeLookAtTargetComponent),
-        ENJIN_SERDES("material", ECS::MaterialComponent, SerializeMaterialComponent, DeserializeMaterialComponent),
-        ENJIN_SERDES("materialInteractionTable", ECS::MaterialInteractionTableComponent, SerializeMaterialInteractionTableComponent, DeserializeMaterialInteractionTableComponent),
-        ENJIN_SERDES("materialSlots", ECS::MaterialSlotsComponent, SerializeMaterialSlotsComponent, DeserializeMaterialSlotsComponent),
-        ENJIN_SERDES("meshCollider", ECS::MeshColliderComponent, SerializeMeshColliderComponent, DeserializeMeshColliderComponent),
-        ENJIN_SERDES("meshRenderer", ECS::MeshRendererComponent, SerializeMeshRendererComponent, DeserializeMeshRendererComponent),
-        ENJIN_SERDES("midiBinding", ECS::MIDIBindingComponent, SerializeMIDIBindingComponent, DeserializeMIDIBindingComponent),
-        ComponentSerdes{ "morphTargets",
-            [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::MorphTargetComponent>(e); },
-            [](ECS::World* w, ECS::Entity e)->json{ return SerializeMorphTargetComponent(*w->GetComponent<ECS::MorphTargetComponent>(e), true); },
-            [](ECS::World* w, ECS::Entity e, const json& j){ w->AddComponent<ECS::MorphTargetComponent>(e, DeserializeMorphTargetComponent(j)); },
-            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::MorphTargetComponent>(e); } },
-        ENJIN_SERDES("movingPlatform", ECS::MovingPlatformComponent, SerializeMovingPlatformComponent, DeserializeMovingPlatformComponent),
-        ENJIN_SERDES("musicZone", ECS::MusicZoneComponent, SerializeMusicZoneComponent, DeserializeMusicZoneComponent),
-        ENJIN_SERDES("name", ECS::NameComponent, SerializeNameComponent, DeserializeNameComponent),
-        ENJIN_SERDES("networkIdentity", ECS::NetworkIdentityComponent, SerializeNetworkIdentityComponent, DeserializeNetworkIdentityComponent),
-        ENJIN_SERDES("networkTransform", ECS::NetworkTransformComponent, SerializeNetworkTransformComponent, DeserializeNetworkTransformComponent),
-        ENJIN_SERDES("notes", ECS::NotesComponent, SerializeNotesComponent, DeserializeNotesComponent),
-        ENJIN_SERDES("parallaxMachine", ECS::ParallaxMachineComponent, SerializeParallaxMachineComponent, DeserializeParallaxMachineComponent),
-        ENJIN_SERDES("particleEmitter", ECS::ParticleEmitterComponent, SerializeParticleEmitterComponent, DeserializeParticleEmitterComponent),
-        ENJIN_SERDES("perFrameCollider", ECS::PerFrameColliderComponent, SerializePerFrameColliderComponent, DeserializePerFrameColliderComponent),
-        ENJIN_SERDES("pickup", ECS::PickupComponent, SerializePickupComponent, DeserializePickupComponent),
-        ENJIN_SERDES("platformer2D", ECS::Platformer2DController, SerializePlatformer2D, DeserializePlatformer2D),
-        ENJIN_SERDES("polygonCollider2D", ECS::PolygonCollider2DComponent, SerializePolygonCollider2DComponent, DeserializePolygonCollider2DComponent),
-        ENJIN_SERDES("poolable", ECS::PoolableComponent, SerializePoolableComponent, DeserializePoolableComponent),
-        ENJIN_SERDES("poseLibrary", ECS::PoseLibraryComponent, SerializePoseLibraryComponent, DeserializePoseLibraryComponent),
-        ENJIN_SERDES("possessable", ECS::PossessableComponent, SerializePossessable, DeserializePossessable),
-        ENJIN_SERDES("postProcessVolume", ECS::PostProcessVolumeComponent, SerializePostProcessVolumeComponent, DeserializePostProcessVolumeComponent),
-        ENJIN_SERDES("pushable", ECS::PushableComponent, SerializePushableComponent, DeserializePushableComponent),
-        ENJIN_SERDES("questFlow", ECS::QuestFlowComponent, SerializeQuestFlowComponent, DeserializeQuestFlowComponent),
-        ENJIN_SERDES("questState", ECS::QuestStateComponent, SerializeQuestStateComponent, DeserializeQuestStateComponent),
-        ENJIN_SERDES("ragdoll", ECS::RagdollComponent, SerializeRagdollComponent, DeserializeRagdollComponent),
-        ENJIN_SERDES("randomBag", ECS::RandomBagComponent, SerializeRandomBagComponent, DeserializeRandomBagComponent),
-        ENJIN_SERDES("recordRewind", ECS::RecordRewindComponent, SerializeRecordRewindComponent, DeserializeRecordRewindComponent),
-        ENJIN_SERDES("reflectionProbe", ECS::ReflectionProbeComponent, SerializeReflectionProbeComponent, DeserializeReflectionProbeComponent),
-        ENJIN_SERDES("resource", ECS::ResourceComponent, SerializeResourceComponent, DeserializeResourceComponent),
-        ENJIN_SERDES("reverbZone", ECS::ReverbZoneComponent, SerializeReverbZoneComponent, DeserializeReverbZoneComponent),
-        ENJIN_SERDES("rigidbody", ECS::RigidbodyComponent, SerializeRigidbodyComponent, DeserializeRigidbodyComponent),
-        ENJIN_SERDES("rtpc", ECS::RTPCComponent, SerializeRTPCComponent, DeserializeRTPCComponent),
-        ENJIN_SERDES("saveData", ECS::SaveDataComponent, SerializeSaveDataComponent, DeserializeSaveDataComponent),
-        ENJIN_SERDES("saveLoadMenu", ECS::SaveLoadMenuComponent, SerializeSaveLoadMenuComponent, DeserializeSaveLoadMenuComponent),
-        ENJIN_SERDES("scatter", ECS::ScatterComponent, SerializeScatterComponent, DeserializeScatterComponent),
-        ENJIN_SERDES("sceneRewind", ECS::SceneRewindComponent, SerializeSceneRewindComponent, DeserializeSceneRewindComponent),
-        ENJIN_SERDES("scriptComponent", ECS::ScriptComponent, SerializeScriptComponent, DeserializeScriptComponent),
-        ENJIN_SERDES("shrubVolume", ECS::ShrubVolumeComponent, SerializeShrubVolumeComponent, DeserializeShrubVolumeComponent),
-        ENJIN_SERDES("sidechain", ECS::SidechainComponent, SerializeSidechainComponent, DeserializeSidechainComponent),
-        ENJIN_SERDES("skeleton", ECS::SkeletonComponent, SerializeSkeletonComponent, DeserializeSkeletonComponent),
-        ENJIN_SERDES("sliderJoint", ECS::SliderJointComponent, SerializeSliderJointComponent, DeserializeSliderJointComponent),
-        ENJIN_SERDES("spawnPoint", ECS::SpawnPointComponent, SerializeSpawnPointComponent, DeserializeSpawnPointComponent),
-        ENJIN_SERDES("sphereCollider", ECS::SphereColliderComponent, SerializeSphereColliderComponent, DeserializeSphereColliderComponent),
-        ENJIN_SERDES("springJoint", ECS::SpringJointComponent, SerializeSpringJointComponent, DeserializeSpringJointComponent),
-        ENJIN_SERDES("sprite2D", ECS::Sprite2DComponent, SerializeSprite2DComponent, DeserializeSprite2DComponent),
-        ENJIN_SERDES("stateMachine", ECS::StateMachineComponent, SerializeStateMachineComponent, DeserializeStateMachineComponent),
-        ENJIN_SERDES("streamingPortal", Scene::StreamingPortalComponent, SerializeStreamingPortalComponent, DeserializeStreamingPortalComponent),
-        ENJIN_SERDES("streamingVolume", Scene::StreamingVolumeComponent, SerializeStreamingVolumeComponent, DeserializeStreamingVolumeComponent),
-        ENJIN_SERDES("surfaceAligned", ECS::SurfaceAlignedController, SerializeSurfaceAligned, DeserializeSurfaceAligned),
-        ENJIN_SERDES("swarm", ECS::SwarmComponent, SerializeSwarmComponent, DeserializeSwarmComponent),
-        ENJIN_SERDES("switch", ECS::SwitchComponent, SerializeSwitchComponent, DeserializeSwitchComponent),
-        ENJIN_SERDES("tag", ECS::TagComponent, SerializeTagComponent, DeserializeTagComponent),
-        ENJIN_SERDES("teleporter", ECS::TeleporterComponent, SerializeTeleporterComponent, DeserializeTeleporterComponent),
-        ENJIN_SERDES("temperatureZone", ECS::TemperatureZoneComponent, SerializeTemperatureZoneComponent, DeserializeTemperatureZoneComponent),
-        ENJIN_SERDES("terrain", ECS::TerrainComponent, SerializeTerrainComponent, DeserializeTerrainComponent),
-        ENJIN_SERDES("terrain2d", ECS::Terrain2DComponent, SerializeTerrain2DComponent, DeserializeTerrain2DComponent),
-        ENJIN_SERDES("terrainGenerator", ECS::TerrainGeneratorComponent, SerializeTerrainGeneratorComponent, DeserializeTerrainGeneratorComponent),
-        ENJIN_SERDES("tether", ECS::TetherComponent, SerializeTetherComponent, DeserializeTetherComponent),
-        ENJIN_SERDES("text", ECS::TextComponent, SerializeTextComponent, DeserializeTextComponent),
-        ENJIN_SERDES("thirdPerson", ECS::ThirdPersonController, SerializeThirdPerson, DeserializeThirdPerson),
-        ENJIN_SERDES("tilemap", ECS::TilemapComponent, SerializeTilemapComponent, DeserializeTilemapComponent),
-        ENJIN_SERDES("timer", ECS::TimerComponent, SerializeTimerComponent, DeserializeTimerComponent),
-        ENJIN_SERDES("topDown2D", ECS::TopDown2DController, SerializeTopDown2D, DeserializeTopDown2D),
-        ENJIN_SERDES("topDown3D", ECS::TopDown3DController, SerializeTopDown3D, DeserializeTopDown3D),
-        ENJIN_SERDES("transform", ECS::TransformComponent, SerializeTransformComponent, DeserializeTransformComponent),
-        ENJIN_SERDES("treeVolume", ECS::TreeVolumeComponent, SerializeTreeVolumeComponent, DeserializeTreeVolumeComponent),
-        ENJIN_SERDES("triggerZone", ECS::TriggerZoneComponent, SerializeTriggerZoneComponent, DeserializeTriggerZoneComponent),
-        ENJIN_SERDES("tween", ECS::TweenComponent, SerializeTweenComponent, DeserializeTweenComponent),
-        ENJIN_SERDES("uiCanvas", GUI::UICanvasComponent, SerializeUICanvasComponent, DeserializeUICanvasComponent),
-        ENJIN_SERDES("vegetation", ECS::VegetationComponent, SerializeVegetationComponent, DeserializeVegetationComponent),
-        ENJIN_SERDES("vehicle", ECS::VehicleController, SerializeVehicle, DeserializeVehicle),
-        ENJIN_SERDES("viewmodel", ECS::ViewmodelComponent, SerializeViewmodelComponent, DeserializeViewmodelComponent),
-        ENJIN_SERDES("visualScript", ECS::VisualScriptComponent, SerializeVisualScriptComponent, DeserializeVisualScriptComponent),
-        ENJIN_SERDES("water3D", ECS::Water3DComponent, SerializeWater3DComponent, DeserializeWater3DComponent),
-        ENJIN_SERDES("waterInteractor", Effects::WaterInteractorComponent, SerializeWaterInteractorComponent, DeserializeWaterInteractorComponent),
-        ENJIN_SERDES("waterVolume", ECS::WaterVolumeComponent, SerializeWaterVolumeComponent, DeserializeWaterVolumeComponent),
-        ENJIN_SERDES("waypoint", ECS::WaypointComponent, SerializeWaypointComponent, DeserializeWaypointComponent),
-        ENJIN_SERDES("weatherZone", ECS::WeatherZoneComponent, SerializeWeatherZoneComponent, DeserializeWeatherZoneComponent),
-        ENJIN_SERDES("wfc", ECS::WFCComponent, SerializeWFCComponent, DeserializeWFCComponent),
-        // --- special cases (behavior-identical to the old chains) ---
-        ComponentSerdes{ "stableId",
-            [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::StableIdComponent>(e); },
-            [](ECS::World* w, ECS::Entity e)->json{ json j; j["id"] = w->GetComponent<ECS::StableIdComponent>(e)->id; return j; },
-            [](ECS::World* w, ECS::Entity e, const json& j){ w->AddComponent<ECS::StableIdComponent>(e, ECS::StableIdComponent{ j.value("id", u64{0}) }); },
-            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::StableIdComponent>(e); } },
-        ComponentSerdes{ "mesh",
-            [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::MeshComponent>(e); },
-            [](ECS::World* w, ECS::Entity e)->json{ return SerializeMeshComponent(*w->GetComponent<ECS::MeshComponent>(e), true); },
-            [](ECS::World* w, ECS::Entity e, const json& j){ w->AddComponent<ECS::MeshComponent>(e, DeserializeMeshComponent(j)); },
-            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::MeshComponent>(e); } },
-        ComponentSerdes{ "animator",
-            [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::AnimatorComponent>(e); },
-            [](ECS::World* w, ECS::Entity e)->json{ return SerializeAnimatorComponent(*w->GetComponent<ECS::AnimatorComponent>(e)); },
-            [](ECS::World* w, ECS::Entity e, const json& j){
-                std::shared_ptr<Animation::Skeleton> skel;
-                if (w->HasComponent<ECS::SkeletonComponent>(e)) skel = w->GetComponent<ECS::SkeletonComponent>(e)->skeleton;
-                w->AddComponent<ECS::AnimatorComponent>(e, DeserializeAnimatorComponent(j, skel));
-            },
-            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::AnimatorComponent>(e); } },
-        ComponentSerdes{ "boneAttachment",
-            [](ECS::World* w, ECS::Entity e){ return w->HasComponent<ECS::BoneAttachmentComponent>(e); },
-            [](ECS::World* w, ECS::Entity e)->json{
-                auto* ba = w->GetComponent<ECS::BoneAttachmentComponent>(e); json j;
-                j["targetEntity"] = static_cast<u64>(ba->targetEntity);
-                j["targetBoneName"] = ba->targetBoneName;
-                j["positionOffset"] = { ba->positionOffset.x, ba->positionOffset.y, ba->positionOffset.z };
-                j["rotationOffset"] = { ba->rotationOffset.x, ba->rotationOffset.y, ba->rotationOffset.z, ba->rotationOffset.w };
-                return j;
-            },
-            [](ECS::World* w, ECS::Entity e, const json& j){
-                auto& ba = w->AddComponent<ECS::BoneAttachmentComponent>(e);
-                if (j.contains("targetEntity")) ba.targetEntity = static_cast<ECS::Entity>(j["targetEntity"].get<u64>());
-                if (j.contains("targetBoneName")) ba.targetBoneName = j["targetBoneName"].get<std::string>();
-                if (j.contains("positionOffset") && j["positionOffset"].is_array() && j["positionOffset"].size() >= 3) {
-                    auto& a = j["positionOffset"]; ba.positionOffset = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>());
-                }
-                if (j.contains("rotationOffset") && j["rotationOffset"].is_array() && j["rotationOffset"].size() >= 4) {
-                    auto& a = j["rotationOffset"]; ba.rotationOffset = Math::Quaternion(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>(), a[3].get<f32>());
-                }
-            },
-            [](ECS::World* w, ECS::Entity e){ w->RemoveComponent<ECS::BoneAttachmentComponent>(e); } },
-    };
-    return reg;
-}
 
 std::vector<std::string> SceneSerializer::RegisteredComponentKeys() {
     std::vector<std::string> keys;

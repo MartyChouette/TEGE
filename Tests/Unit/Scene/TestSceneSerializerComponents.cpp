@@ -16,6 +16,7 @@
 #include "Enjin/ECS/Components/Script.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/CustomShader.h"
+#include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/DungeonGenerator.h"
 #include "Enjin/ECS/Components/RandomBag.h"
 #include "Enjin/ECS/Systems/RandomBagSystem.h"
@@ -1463,6 +1464,51 @@ ENJIN_TEST(SerdesRegistry, NoDuplicateKeys) {
         ENJIN_EXPECT_TRUE(seen.find(k) == seen.end());   // each key registered once
         seen.insert(k);
     }
+}
+
+// The full-scene save/load loops now run off the same registry. Before Stage 2,
+// 16 registered components (the audio suite among them) SAVED in the loops but
+// were missing from the LOAD chains -- authored components silently vanished on
+// scene reload. This round-trips a scene through SaveToString -> LoadFromString
+// with components from each previously-broken class.
+ENJIN_TEST(SerdesRegistry, FullSceneRoundTripCoversLoopOnlyComponents) {
+    // Arrange: an entity carrying an audio-family component (load-dropped before),
+    // a loop-only component (customShader), and an inline-form component (lookAtIK).
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& rz = w1.AddComponent<ReverbZoneComponent>(e);
+    rz.roomSize = 0.9f; rz.decayTime = 3.5f;
+    w1.AddComponent<CustomShaderComponent>(e);
+    auto& ik = w1.AddComponent<LookAtIKComponent>(e);
+    ik.headBoneName = "head"; ik.lookWeight = 0.75f;
+    auto& bc = w1.AddComponent<BeatClockComponent>(e);
+    bc.bpm = 128.0f;
+
+    // Act: full scene save + load (the loop paths, not the per-key helpers).
+    Scene::SceneSerializer ser(&w1);
+    std::string sceneJson = ser.SaveToString();
+    ENJIN_ASSERT_TRUE(!sceneJson.empty());
+    World w2;
+    Scene::SceneSerializer de(&w2);
+    auto result = de.LoadFromString(sceneJson);
+    ENJIN_ASSERT_TRUE(result.success);
+    ENJIN_ASSERT_TRUE(!result.entities.empty());
+    Entity e2 = result.entities[0];
+
+    // Assert: every component survived the loop round-trip with its data.
+    auto* rz2 = w2.GetComponent<ReverbZoneComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(rz2);   // was silently dropped on load before Stage 2
+    ENJIN_EXPECT_TRUE(rz2->roomSize > 0.89f && rz2->roomSize < 0.91f);
+    ENJIN_EXPECT_TRUE(rz2->decayTime > 3.49f && rz2->decayTime < 3.51f);
+    ENJIN_EXPECT_TRUE(w2.HasComponent<CustomShaderComponent>(e2));
+    auto* ik2 = w2.GetComponent<LookAtIKComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(ik2);
+    ENJIN_EXPECT_TRUE(ik2->headBoneName == "head");
+    ENJIN_EXPECT_TRUE(ik2->lookWeight > 0.74f && ik2->lookWeight < 0.76f);
+    auto* bc2 = w2.GetComponent<BeatClockComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(bc2);
+    ENJIN_EXPECT_TRUE(bc2->bpm > 127.9f && bc2->bpm < 128.1f);
 }
 
 ENJIN_TEST_MAIN()
