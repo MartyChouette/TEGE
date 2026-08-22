@@ -109,6 +109,11 @@ public:
     // of the dispatch above). Used by the layer system's instant toggle.
     static bool RemoveOneComponent(ECS::World* world, ECS::Entity entity, const std::string& key);
 
+    // Every scene-JSON component key handled by the (de)serialization registry.
+    // Exposed so tests can round-trip every registered component and catch a
+    // component that falls out of one of the dispatch paths.
+    static std::vector<std::string> RegisteredComponentKeys();
+
     // UI unification: convert legacy HUDWidgetComponents into per-entity
     // UICanvases (HUDSystem is retired). Runs after every scene load; the
     // UISystem also calls it as a self-healing backstop for templates or

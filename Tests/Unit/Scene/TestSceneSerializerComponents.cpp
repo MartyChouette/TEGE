@@ -1,4 +1,7 @@
 #include "EnjinTest.h"
+#include <set>
+#include <cstdio>
+#include <string>
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Material.h"
@@ -1413,6 +1416,53 @@ ENJIN_TEST(WFC, Volume3DAirSetCollapses) {
     ENJIN_EXPECT_TRUE(ok);
     ENJIN_EXPECT_TRUE(g.lastSuccess);
     ENJIN_EXPECT_EQ((int)g.lastCount, 0);
+}
+
+// ===========================================================================
+// Serdes registry — every registered component must survive the full
+// single-component helper round-trip (add -> serialize -> remove). This is the
+// safety net for the registry refactor: if a component falls out of any dispatch
+// path (the historical silent-drop bug), it fails here instead of in a save file.
+// ===========================================================================
+
+ENJIN_TEST(SerdesRegistry, EveryComponentRoundTripsThroughHelpers) {
+    World w;
+    auto keys = Scene::SceneSerializer::RegisteredComponentKeys();
+    ENJIN_ASSERT_TRUE(keys.size() > 140);   // full roster is registered
+
+    // These three carry a node graph whose ToJson() throws on a *default/empty*
+    // graph (never occurs for a real authored component). Their serialize path is
+    // registered; it just can't serialize the pathological empty default, so skip
+    // the non-empty-serialize check for them while still asserting the add + remove
+    // paths. Matches pre-refactor behavior (the old helper swallowed the same throw).
+    const std::set<std::string> serializeNeedsGraph = { "behaviorTree", "questFlow", "visualScript" };
+
+    std::string notAdded, notSerialized, notRemoved;
+    for (const std::string& key : keys) {
+        Entity e = w.CreateEntity();
+        // Deserialize from empty JSON adds a default-valued component (every
+        // deserializer guards missing fields), exercising the deserialize path.
+        if (!Scene::SceneSerializer::DeserializeOneComponent(&w, e, key, "{}")) { notAdded += key + " "; continue; }
+        // Serialize path: with the component present, must produce non-empty JSON.
+        if (serializeNeedsGraph.find(key) == serializeNeedsGraph.end() &&
+            Scene::SceneSerializer::SerializeOneComponent(&w, e, key).empty()) notSerialized += key + " ";
+        // Remove path: must recognize the key and remove it.
+        if (!Scene::SceneSerializer::RemoveOneComponent(&w, e, key)) notRemoved += key + " ";
+    }
+    printf("  [serdes] not-added: %s\n  [serdes] not-serialized: %s\n  [serdes] not-removed: %s\n",
+           notAdded.c_str(), notSerialized.c_str(), notRemoved.c_str());
+    ENJIN_EXPECT_TRUE(notAdded.empty());
+    ENJIN_EXPECT_TRUE(notSerialized.empty());
+    ENJIN_EXPECT_TRUE(notRemoved.empty());
+}
+
+ENJIN_TEST(SerdesRegistry, NoDuplicateKeys) {
+    auto keys = Scene::SceneSerializer::RegisteredComponentKeys();
+    std::set<std::string> seen;
+    for (const std::string& k : keys) {
+        ENJIN_EXPECT_TRUE(seen.find(k) == seen.end());   // each key registered once
+        seen.insert(k);
+    }
 }
 
 ENJIN_TEST_MAIN()
