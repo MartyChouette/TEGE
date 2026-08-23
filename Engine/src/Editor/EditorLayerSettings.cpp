@@ -1048,6 +1048,34 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
             ImGui::TreePop();
         }
 
+        // -- MCP Server --
+        if (ImGui::TreeNode("MCP Server")) {
+            if (ImGui::Checkbox("Enable MCP Server", &m_EditorSettings.mcpServerEnabled)) {
+                settingsChanged = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Let AI assistants drive this editor over localhost HTTP:\n"
+                                  "list entities, read/write components, control play mode,\n"
+                                  "capture the game view. Localhost only.");
+            }
+            if (m_EditorSettings.mcpServerEnabled) {
+                if (ImGui::InputInt("Port", &m_EditorSettings.mcpServerPort)) {
+                    m_EditorSettings.mcpServerPort =
+                        std::clamp(m_EditorSettings.mcpServerPort, 1024, 65535);
+                    settingsChanged = true;
+                }
+                if (m_McpServer.IsRunning()) {
+                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.5f, 1.0f),
+                                       "listening on http://127.0.0.1:%u/mcp", m_McpServer.GetPort());
+                    ImGui::TextDisabled("connect: claude mcp add --transport http tege http://127.0.0.1:%u/mcp",
+                                        m_McpServer.GetPort());
+                } else {
+                    ImGui::TextDisabled("starting...");
+                }
+            }
+            ImGui::TreePop();
+        }
+
         // -- Workflow --
         if (ImGui::TreeNode("Workflow")) {
             if (ImGui::Checkbox("Enable Drag-and-Drop Import", &m_EditorSettings.enableDragDropImport)) {

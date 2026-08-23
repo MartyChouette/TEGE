@@ -1,4 +1,5 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include <nlohmann/json.hpp>
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
@@ -890,6 +891,39 @@ void EditorLayer::Update(f32 deltaTime) {
                 ENJIN_LOG_INFO(Editor, "--play-cycle: re-entered play mode");
             }
         }
+    }
+
+    // MCP server: reconcile with the setting, pump queued tool calls onto this
+    // (the main) thread. adr-0004: all World mutation happens right here.
+    {
+        bool want = m_EditorSettings.mcpServerEnabled;
+        if (want && !m_McpServer.IsRunning()) {
+            m_McpServer.SetWorld(m_World);
+            m_McpServer.SetSceneInfoHook([this]() {
+                nlohmann::json j;
+                j["projectPath"] = m_SceneManager.GetProjectPath();
+                j["playState"] = m_PlayMode.IsPlaying() ? "playing"
+                               : m_PlayMode.IsPaused() ? "paused" : "stopped";
+                j["entityCount"] = m_World ? m_World->GetAllEntities().size() : 0;
+                return j.dump();
+            });
+            m_McpServer.SetPlayControlHook([this](const std::string& action) -> std::string {
+                if (action == "play")   { if (m_PlayMode.IsStopped()) { StartPlayMode(); return "playing"; } return "already in play mode"; }
+                if (action == "pause")  { if (m_PlayMode.IsPlaying()) { m_PlayMode.Pause(); return "paused"; } return "not playing"; }
+                if (action == "resume") { if (m_PlayMode.IsPaused()) { m_PlayMode.Resume(); return "resumed"; } return "not paused"; }
+                if (action == "stop")   { if (!m_PlayMode.IsStopped()) { m_PendingPlayStop = true; return "stopping"; } return "not in play mode"; }
+                return "unknown action '" + action + "' (play|pause|resume|stop)";
+            });
+            m_McpServer.SetCaptureHook([this]() -> std::string {
+                std::string base = (std::filesystem::temp_directory_path() / "tege_mcp_capture").string();
+                if (!CaptureGameViewToFile(base)) return "";
+                return base + ".png";
+            });
+            m_McpServer.Start(static_cast<u16>(m_EditorSettings.mcpServerPort));
+        } else if (!want && m_McpServer.IsRunning()) {
+            m_McpServer.Stop();
+        }
+        if (m_McpServer.IsRunning()) m_McpServer.PumpMainThread();
     }
 
     // --golden probe support: after the configured frame count, read back the
@@ -4771,12 +4805,23 @@ void EditorLayer::WriteGoldenCapture() {
     std::string basePath = s_GoldenCapturePath;
     s_GoldenCapturePath.clear();
 
+    CaptureGameViewToFile(basePath);
+
+    // Done - exit so the harness can move to the next scene
+    if (m_Window) m_Window->Close();
+}
+
+// Readback the game view and write <basePath>.png/.ppm. Shared by the --golden
+// probe harness (which exits afterward) and the MCP capture_view tool (which
+// does not). Returns false when there is nothing to read back.
+bool EditorLayer::CaptureGameViewToFile(const std::string& basePath) {
+    if (!m_GameViewRenderTarget) return false;
     std::vector<u8> pixels = m_GameViewRenderTarget->CaptureToPixels();
     u32 w = m_GameViewRenderTarget->GetWidth();
     u32 h = m_GameViewRenderTarget->GetHeight();
 
     if (pixels.empty() || w == 0 || h == 0) {
-        ENJIN_LOG_ERROR(Editor, "--golden: game view readback failed (%ux%u, %zu bytes)",
+        ENJIN_LOG_ERROR(Editor, "capture: game view readback failed (%ux%u, %zu bytes)",
                         w, h, pixels.size());
     } else {
         // PNG for human eyeballing/diffing
@@ -4798,12 +4843,10 @@ void EditorLayer::WriteGoldenCapture() {
             ppm.write(reinterpret_cast<const char*>(rgb.data()),
                       static_cast<std::streamsize>(rgb.size()));
         }
-        ENJIN_LOG_INFO(Editor, "--golden: captured %ux%u game view -> %s(.png/.ppm)",
+        ENJIN_LOG_INFO(Editor, "capture: %ux%u game view -> %s(.png/.ppm)",
                        w, h, basePath.c_str());
     }
-
-    // Done — exit so the harness can move to the next scene
-    if (m_Window) m_Window->Close();
+    return !pixels.empty() && w != 0 && h != 0;
 }
 
 } // namespace Editor

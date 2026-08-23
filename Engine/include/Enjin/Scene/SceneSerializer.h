@@ -114,6 +114,10 @@ public:
     // component that falls out of one of the dispatch paths.
     static std::vector<std::string> RegisteredComponentKeys();
 
+    // The registry keys PRESENT on one entity (cheap has-checks only). Powers
+    // introspection surfaces like the editor MCP server's list_entities.
+    static std::vector<std::string> ComponentKeysOn(ECS::World* world, ECS::Entity entity);
+
     // UI unification: convert legacy HUDWidgetComponents into per-entity
     // UICanvases (HUDSystem is retired). Runs after every scene load; the
     // UISystem also calls it as a self-healing backstop for templates or

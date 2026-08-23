@@ -8668,6 +8668,14 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
 // ============================================================================
 
 
+std::vector<std::string> SceneSerializer::ComponentKeysOn(ECS::World* world, ECS::Entity entity) {
+    std::vector<std::string> keys;
+    if (!world || !world->IsValid(entity)) return keys;
+    for (const auto& r : ComponentRegistry())
+        if (r.has(world, entity)) keys.emplace_back(r.key);
+    return keys;
+}
+
 std::vector<std::string> SceneSerializer::RegisteredComponentKeys() {
     std::vector<std::string> keys;
     for (const auto& r : ComponentRegistry()) keys.emplace_back(r.key);

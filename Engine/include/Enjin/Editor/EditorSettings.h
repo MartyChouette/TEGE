@@ -117,6 +117,11 @@ struct EditorSettings {
     bool debugRecordPlay = true;
     f32  debugRecordSeconds = 30.0f;   // ring buffer length (5-120s)
 
+    // MCP server: expose the running editor to AI assistants over localhost
+    // HTTP (entity/component CRUD, play control, screenshots). Off by default.
+    bool mcpServerEnabled = false;
+    i32  mcpServerPort = 8971;
+
     // Performance / Frame Rate
     FrameRateLimit editorFrameRateLimit = FrameRateLimit::Uncapped;
     bool editorVSync = false;

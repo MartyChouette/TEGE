@@ -349,6 +349,8 @@ bool EditorSettings::Save(const std::string& path) const {
         j["autoFocusMode"] = autoFocusMode;
         j["debugRecordPlay"] = debugRecordPlay;
         j["debugRecordSeconds"] = debugRecordSeconds;
+        j["mcpServerEnabled"] = mcpServerEnabled;
+        j["mcpServerPort"] = mcpServerPort;
 
         // Performance / Frame Rate
         j["editorFrameRateLimit"] = static_cast<u32>(editorFrameRateLimit);
@@ -527,6 +529,8 @@ bool EditorSettings::Load(const std::string& path) {
         if (j.contains("autoFocusMode")) autoFocusMode = j["autoFocusMode"].get<bool>();
         if (j.contains("debugRecordPlay")) debugRecordPlay = j["debugRecordPlay"].get<bool>();
         if (j.contains("debugRecordSeconds")) debugRecordSeconds = std::clamp(j["debugRecordSeconds"].get<f32>(), 5.0f, 120.0f);
+        if (j.contains("mcpServerEnabled")) mcpServerEnabled = j["mcpServerEnabled"].get<bool>();
+        if (j.contains("mcpServerPort")) mcpServerPort = std::clamp(j["mcpServerPort"].get<i32>(), 1024, 65535);
 
         // Performance / Frame Rate
         if (j.contains("editorFrameRateLimit")) {

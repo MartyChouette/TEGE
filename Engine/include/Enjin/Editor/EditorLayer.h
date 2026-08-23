@@ -12,6 +12,7 @@
 #include "Enjin/GUI/ImGuiLayer.h"
 #include "Enjin/Editor/PlayMode.h"
 #include "Enjin/Editor/EditorSettings.h"
+#include "Enjin/Editor/McpServer.h"
 #include "Enjin/Debug/Profiler.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Input/InputAction.h"
@@ -903,6 +904,9 @@ private:
     // Debug-recording timeline: how far back from "now" the paused scrubber sits
     // (seconds; 0 = live edge). Reset on play start and on resume.
     f32 m_DebugScrubOffset = 0.0f;
+    // MCP server (Settings > System > MCP Server): AI-assistant control surface.
+    McpServer m_McpServer;
+    bool m_McpDesiredRunning = false;   // reconcile setting <-> server each frame
     bool m_PendingPlayRestart = false;  // Set alongside m_PendingPlayStop to re-enter play mode
     bool m_PendingPlayStart = false;    // Deferred play mode start (for restart after stop)
     bool m_SkipNextRender = false;  // Skip one frame after Stop to let render caches refresh
@@ -1289,6 +1293,8 @@ private:
     // Golden-image capture (--golden): frame countdown + writer
     i32 m_GoldenFrameCounter = 0;
     void WriteGoldenCapture();
+    // Readback + write the game view as <basePath>.png/.ppm (no exit).
+    bool CaptureGameViewToFile(const std::string& basePath);
 
     // Floating viewport toolbar screen rect — picking/marquee must not fire
     // through its buttons (set each frame the toolbar draws)
