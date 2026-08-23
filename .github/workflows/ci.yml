@@ -1,9 +1,13 @@
 name: CI
 
 # Desktop build + unit tests on Windows, engine build for WebAssembly.
-# Runners have no GPU, so GPU-dependent suites are excluded; compile coverage
-# plus the CPU test suite is the point (this engine's history of silently-dead
-# features was all catchable at compile/test time).
+# Runners have no GPU, so GPU-dependent test suites are excluded — but the
+# render path still gets smoke coverage: after the build, the editor boots a
+# tiny checked-in scene (Tests/GoldenScene) on lavapipe (Mesa's software
+# Vulkan driver), renders 30 frames, and a checker asserts the capture is a
+# real image (not flat/black). This engine's worst historical bugs (fossil
+# shaders, dead render features) lived exactly where compile+CPU tests can't
+# see; this closes that gap without needing GPU runners.
 
 on:
   push:
@@ -45,6 +49,40 @@ jobs:
         # The four env-gated suites need an audio device / packed assets the
         # runner doesn't have; GPU suites need a real GPU.
         run: ctest -C Release --output-on-failure -E "TestAudio|TestAudioTypes|TestAssetPack|TestAssetLoaders"
+
+      - name: Install software Vulkan (lavapipe)
+        shell: pwsh
+        # mesa-dist-win ships lavapipe, Mesa's CPU Vulkan implementation. Pinned
+        # release; VK_DRIVER_FILES points the Vulkan loader at it in the next step.
+        run: |
+          curl.exe -sL -o mesa.7z https://github.com/pal1000/mesa-dist-win/releases/download/26.2.0/mesa3d-26.2.0-release-msvc.7z
+          7z x mesa.7z -omesa -y | Out-Null
+          if (-not (Test-Path "mesa\x64\lvp_icd.x86_64.json")) { throw "lavapipe ICD not found after extract" }
+
+      - name: Render smoke test (golden capture on lavapipe)
+        shell: pwsh
+        timeout-minutes: 15
+        env:
+          VK_DRIVER_FILES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
+          VK_ICD_FILENAMES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
+        # Boot the editor on the checked-in probe scene, auto-play, render 30
+        # frames, capture the game view, exit. The checker fails on a flat /
+        # black / white capture (= the render path silently died). Not a pixel
+        # diff on purpose: lavapipe's rasterization differs from real GPUs, so
+        # structural checks are what's stable.
+        run: |
+          New-Item -ItemType Directory -Force golden_out | Out-Null
+          & build\bin\Release\EnjinEditor.exe "${{ github.workspace }}\Tests\GoldenScene\GoldenScene.enjinproject" --play --golden "${{ github.workspace }}\golden_out\smoke" --golden-frames 30
+          if ($LASTEXITCODE -ne 0) { throw "editor exited with code $LASTEXITCODE" }
+          python Tests/GoldenScene/check_golden.py golden_out/smoke
+
+      - name: Upload golden capture
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-capture
+          path: golden_out/
+          if-no-files-found: ignore
 
   web:
     name: Web (WebAssembly build)

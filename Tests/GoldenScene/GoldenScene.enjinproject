@@ -1,0 +1,59 @@
+{
+  "audio": {
+    "enableHRTF": false,
+    "enableOcclusion": false,
+    "enableTransmission": false
+  },
+  "buildConfig": {
+    "fullscreen": false,
+    "windowHeight": 720,
+    "windowTitle": "Golden Scene",
+    "windowWidth": 1280
+  },
+  "collisionGroups": [
+    "Default",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "physicsBackend": 0,
+  "projectMode": 0,
+  "projectName": "GoldenScene",
+  "scenes": [
+    {
+      "buildIndex": 0,
+      "isStartScene": true,
+      "name": "Main",
+      "path": "scenes/Main.enjin"
+    }
+  ],
+  "version": "1.0"
+}

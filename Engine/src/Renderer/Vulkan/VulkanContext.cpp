@@ -218,12 +218,18 @@ bool VulkanContext::SelectPhysicalDevice() {
             score += 10000;
         } else if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
             score += 100;
+        } else if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU) {
+            score += 1;   // software rasterizer: strictly last resort
         }
 
-        // Bonus for ray tracing support
-        RTCapabilities rtCaps = RTCapabilities::Query(device);
-        if (rtCaps.supported) {
-            score += 1000;
+        // Bonus for ray tracing support. Not granted to CPU rasterizers: lavapipe
+        // advertises the RT extensions, and the bonus would rank it above a real
+        // integrated GPU (CPU ray tracing is unusably slow).
+        if (properties.deviceType != VK_PHYSICAL_DEVICE_TYPE_CPU) {
+            RTCapabilities rtCaps = RTCapabilities::Query(device);
+            if (rtCaps.supported) {
+                score += 1000;
+            }
         }
 
         if (score > bestScore) {
@@ -709,6 +715,14 @@ bool VulkanContext::IsDeviceSuitable(VkPhysicalDevice device) const {
 
     // Fallback to integrated GPU
     if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+        return true;
+    }
+
+    // Last resort: software rasterizers (lavapipe / SwiftShader report
+    // VK_PHYSICAL_DEVICE_TYPE_CPU). Slow, but lets headless environments with no
+    // GPU (CI runners, VMs, remote desktops) boot and render. Scoring in
+    // SelectPhysicalDevice keeps any real GPU ahead of these.
+    if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU) {
         return true;
     }
 
