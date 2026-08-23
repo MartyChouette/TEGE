@@ -263,6 +263,18 @@ bool VulkanContext::SelectPhysicalDevice() {
     // Query ray tracing capabilities
     m_RTCapabilities = RTCapabilities::Query(bestDevice);
 
+    // Software rasterizers (lavapipe/SwiftShader) ADVERTISE ray tracing, mesh
+    // shaders and device-generated commands, but those paths are unusably slow
+    // and less battle-tested there (the CI smoke run crashed mid-boot with them
+    // enabled). A CPU device gets the baseline pipeline only.
+    VkPhysicalDeviceProperties selProps;
+    vkGetPhysicalDeviceProperties(bestDevice, &selProps);
+    const bool isSoftwareDevice = (selProps.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU);
+    if (isSoftwareDevice && m_RTCapabilities.supported) {
+        ENJIN_LOG_INFO(Renderer, "Software rasterizer: disabling ray tracing / mesh shader / DGC feature paths");
+        m_RTCapabilities.supported = false;
+    }
+
     // Probe device extension support for optional features (VRS, DGC)
     {
         u32 extCount = 0;
@@ -309,6 +321,12 @@ bool VulkanContext::SelectPhysicalDevice() {
             ENJIN_LOG_INFO(Renderer, "VK_KHR_fragment_shading_rate not supported — VRS disabled");
         }
 #endif
+
+        if (isSoftwareDevice) {
+            m_DGCExtSupported = false;
+            m_DGCNVSupported = false;
+            m_MeshShaderSupported = false;
+        }
 
         if (m_DGCExtSupported) {
             ENJIN_LOG_INFO(Renderer, "VK_EXT_device_generated_commands supported");
