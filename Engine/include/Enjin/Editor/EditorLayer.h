@@ -1293,6 +1293,9 @@ private:
     // Golden-image capture (--golden): frame countdown + writer
     i32 m_GoldenFrameCounter = 0;
     void WriteGoldenCapture();
+    // Replay files: export the last session to <project>/replays/, replay the newest.
+    void ExportReplayToProject();
+    void PlayLatestReplay();
     // Readback + write the game view as <basePath>.png/.ppm (no exit).
     bool CaptureGameViewToFile(const std::string& basePath);
 

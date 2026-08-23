@@ -1239,6 +1239,25 @@ void EditorLayer::DrawMenuBar() {
                 ImGui::Dummy(ImVec2(ts.x + padX * 2.0f, btnH));
             }
 
+            // --- Replay export / playback (stopped only) ----------------------
+            // Every play session records its input stream; once stopped it can be
+            // exported as a shareable .tegereplay (plain JSON: scene snapshot +
+            // per-frame inputs+dt) or the newest one replayed deterministically.
+            if (stopped) {
+                if (m_PlayMode.HasRecording()) {
+                    ImGui::SameLine(0.0f, 8.0f);
+                    if (ImGui::SmallButton("Export Replay")) {
+                        ExportReplayToProject();
+                    }
+                    ImGui::SetItemTooltip("Save the last play session (inputs + scene) as a shareable replay file");
+                }
+                ImGui::SameLine(0.0f, 4.0f);
+                if (ImGui::SmallButton("Play Replay")) {
+                    PlayLatestReplay();
+                }
+                ImGui::SetItemTooltip("Replay the newest .tegereplay from this project's replays folder");
+            }
+
             // --- Debug-recording timeline -------------------------------------
             // While playing: a small REC readout. While paused: step-back /
             // step-forward buttons + a scrubber over the recorded buffer. Seeks

@@ -17,6 +17,7 @@
 #include "Enjin/ECS/Systems/AISystem.h"
 #include "Enjin/Networking/NetworkSystem.h"
 #include "Enjin/Gameplay/RecordRewindSystem.h"
+#include "Enjin/Gameplay/Replay.h"
 #include "Enjin/Audio/AudioReactiveSystem.h"
 #include "Enjin/Editor/AudioEventGraph.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
@@ -131,6 +132,18 @@ public:
     }
     ECS::Entity GetDebugRecorderEntity() const { return m_DebugRecorderEntity; }
 
+    // --- Replay (flagship #5 phase 2: shareable input-stream replays) ---
+    // Every play session records its input stream (cheap: sparse key lists) plus
+    // a compact scene snapshot; the pair replays the session deterministically
+    // (same build/machine - see Replay.h). The editor exports/loads the files.
+    const Gameplay::ReplayData& GetActiveRecording() const { return m_ActiveRecording; }
+    bool HasRecording() const { return !m_ActiveRecording.frames.empty(); }
+    // Begin replaying: the editor loads the replay's scene into the world first,
+    // then calls this. Play() runs with input injection until frames run out,
+    // then auto-pauses (step/scrub backward from there with the debug timeline).
+    void StartReplay(Gameplay::ReplayData&& data);
+    bool IsReplaying() const { return m_Replaying; }
+
     Audio::SimpleAudio* GetSimpleAudio() { return &m_SimpleAudio; }
     Effects::DestructibleSystem* GetDestructibleSystem() { return &m_DestructibleSystem; }
     Effects::InteractiveWaterSystem* GetInteractiveWaterSystem() { return &m_InteractiveWaterSystem; }
@@ -218,6 +231,10 @@ private:
     bool m_DebugRecordEnabled = true;
     f32  m_DebugRecordSeconds = 30.0f;
     ECS::Entity m_DebugRecorderEntity = ECS::INVALID_ENTITY;
+    Gameplay::ReplayData m_ActiveRecording;   // input stream of the current/last session
+    Gameplay::ReplayData m_ReplayData;        // stream being played back
+    bool  m_Replaying = false;
+    usize m_ReplayCursor = 0;
 
     // Audio-reactive system (beat sync, VU→visual, RTPC, threshold triggers)
     Audio::AudioReactiveSystem m_AudioReactiveSystem;

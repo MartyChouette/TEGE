@@ -111,6 +111,7 @@
 #include <fstream>
 #include <stb_image_write.h>  // --golden PNG capture (impl lives in the stb TU)
 #include <filesystem>
+#include "Enjin/Gameplay/Replay.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -4799,6 +4800,86 @@ void EditorLayer::SyncRuntimeAccessibility() {
 // ============================================================================
 // Golden-image capture (--golden)
 // ============================================================================
+
+// Export the last play session's replay (scene snapshot + input stream) to
+// <project>/replays/replay_<n>.tegereplay. Plain JSON per docs/OPENNESS.md.
+void EditorLayer::ExportReplayToProject() {
+    if (!m_PlayMode.HasRecording()) return;
+    std::filesystem::path root =
+        std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path();
+    if (root.empty()) root = std::filesystem::current_path();
+    std::filesystem::path dir = root / "replays";
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+
+    // Next free numbered slot (no wall-clock in the name: replays are data,
+    // and numbered names sort naturally in the browser)
+    int n = 1;
+    std::filesystem::path out;
+    do {
+        out = dir / ("replay_" + std::to_string(n++) + ".tegereplay");
+    } while (std::filesystem::exists(out) && n < 10000);
+
+    std::ofstream f(out, std::ios::binary);
+    if (!f.is_open()) {
+        ENJIN_LOG_ERROR(Editor, "Replay export: cannot open %s", out.string().c_str());
+        return;
+    }
+    std::string data = Gameplay::SerializeReplay(m_PlayMode.GetActiveRecording());
+    f.write(data.data(), static_cast<std::streamsize>(data.size()));
+    ENJIN_LOG_INFO(Editor, "Replay exported: %s (%zu frames, %zu bytes)",
+                   out.string().c_str(), m_PlayMode.GetActiveRecording().frames.size(),
+                   data.size());
+    ShowNotification("Replay exported to replays/" + out.filename().string(),
+                     NotificationType::Info);
+}
+
+// Load the newest .tegereplay from <project>/replays/, restore its scene
+// snapshot, and replay the input stream deterministically.
+void EditorLayer::PlayLatestReplay() {
+    std::filesystem::path root =
+        std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path();
+    if (root.empty()) root = std::filesystem::current_path();
+    std::filesystem::path dir = root / "replays";
+    std::filesystem::path newest;
+    std::filesystem::file_time_type newestTime{};
+    std::error_code ec;
+    for (const auto& e : std::filesystem::directory_iterator(dir, ec)) {
+        if (e.path().extension() == ".tegereplay") {
+            auto wt = std::filesystem::last_write_time(e.path(), ec);
+            if (newest.empty() || wt > newestTime) { newest = e.path(); newestTime = wt; }
+        }
+    }
+    if (newest.empty()) {
+        ShowNotification("No replays found in replays/ - play a session, then Export Replay",
+                         NotificationType::Warning);
+        return;
+    }
+    std::ifstream f(newest, std::ios::binary);
+    std::stringstream ss;
+    ss << f.rdbuf();
+    Gameplay::ReplayData data;
+    if (!Gameplay::ParseReplay(ss.str(), data)) {
+        ShowNotification("Could not parse " + newest.filename().string(),
+                         NotificationType::Error);
+        return;
+    }
+    if (!m_PlayMode.IsStopped()) m_PlayMode.Stop();
+    // Restore the recorded scene so the input stream lands on identical state.
+    if (!data.sceneJson.empty() && m_World) {
+        Scene::SceneSerializer ser(m_World);
+        auto res = ser.LoadFromString(data.sceneJson);
+        if (!res.success) {
+            ShowNotification("Replay scene failed to load: " + res.error,
+                             NotificationType::Error);
+            return;
+        }
+        ClearSelection();
+    }
+    ENJIN_LOG_INFO(Editor, "Replaying %s", newest.filename().string().c_str());
+    ShowNotification("Replaying " + newest.filename().string(), NotificationType::Info);
+    m_PlayMode.StartReplay(std::move(data));
+}
 
 void EditorLayer::WriteGoldenCapture() {
     // One shot: clear the trigger before anything can early-return

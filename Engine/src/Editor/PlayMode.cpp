@@ -230,6 +230,22 @@ void PlayMode::Play() {
     // session can be paused and stepped/scrubbed backward from the timeline.
     // Keyless (rewindKey -1): only the editor drives it, never gameplay input.
     // The entity is play-created, so Stop's scene restore removes it.
+    // Fresh input recording for this session (replay playback reuses its own
+    // stream instead). The scene snapshot is the compact form: mesh-by-reference,
+    // no vertex data - replays are shared alongside the project, not instead of it.
+    if (!m_Replaying) {
+        m_ActiveRecording = Gameplay::ReplayData{};
+        m_ActiveRecording.engineVersion = "0.9.7";
+        if (m_World) {
+            Scene::SceneSerializer ser(m_World);
+            Scene::SerializationOptions opts;
+            opts.prettyPrint = false;
+            opts.includeVertexData = false;
+            opts.useMeshReferences = true;
+            m_ActiveRecording.sceneJson = ser.SaveToString(opts);
+        }
+    }
+
     m_DebugRecorderEntity = ECS::INVALID_ENTITY;
     if (m_DebugRecordEnabled && m_World) {
         m_DebugRecorderEntity = m_World->CreateEntity();
@@ -503,7 +519,23 @@ void PlayMode::Resume() {
     ENJIN_LOG_INFO(Editor, "Play Mode Resumed");
 }
 
+void PlayMode::StartReplay(Gameplay::ReplayData&& data) {
+    m_ReplayData = std::move(data);
+    m_ReplayCursor = 0;
+    m_Replaying = true;
+    Input::SetReplayInjection(true);
+    ENJIN_LOG_INFO(Editor, "Replay starting: %zu frames at %.4fs/frame",
+                   m_ReplayData.frames.size(), m_ReplayData.fixedDt);
+    Play();
+}
+
 void PlayMode::Stop() {
+    if (m_Replaying) {
+        Input::SetReplayInjection(false);
+        m_Replaying = false;
+        m_ReplayCursor = 0;
+    }
+
     if (m_State.load(std::memory_order_relaxed) == PlayState::Stopped) {
         return;
     }
@@ -687,6 +719,38 @@ void PlayMode::Update(f32 deltaTime) {
     // Update controller system when playing
     if (m_State.load(std::memory_order_relaxed) == PlayState::Playing) {
         auto frameStart = std::chrono::high_resolution_clock::now();
+
+        // Replay determinism: recorded and replayed sessions step at the
+        // recording's fixed dt so the same input stream lands on the same
+        // simulation frames.
+        if (m_Replaying) {
+            if (m_ReplayCursor < m_ReplayData.frames.size()) {
+                const auto& rf = m_ReplayData.frames[m_ReplayCursor++];
+                deltaTime = rf.dt;   // replay the exact recorded dt stream
+                bool keys[512]; bool mouse[8]; Math::Vector2 mpos;
+                Gameplay::ReplayFrameToBuffers(rf, keys, mouse, mpos);
+                Input::InjectFrameState(keys, mouse, mpos);
+            } else {
+                // Stream exhausted: hold here so the timeline can inspect it.
+                Input::SetReplayInjection(false);
+                Pause();
+                ENJIN_LOG_INFO(Editor, "Replay finished (%zu frames) - paused at end",
+                               m_ReplayData.frames.size());
+                return;
+            }
+        } else {
+            // Record this frame's input + its real dt (sparse; capped ~20 min).
+            // Live play speed is untouched - determinism comes from replaying
+            // the same dt sequence, not from forcing one.
+            if (m_ActiveRecording.frames.size() < 72000u) {
+                bool keys[512]; bool mouse[8]; Math::Vector2 mpos;
+                Input::CaptureFrameState(keys, mouse, mpos);
+                Gameplay::ReplayFrame frame;
+                Gameplay::ReplayFrameFromBuffers(frame, keys, mouse, mpos);
+                frame.dt = deltaTime;
+                m_ActiveRecording.frames.push_back(std::move(frame));
+            }
+        }
 
         // Update input action map (polls input state for remappable actions)
         m_InputMap.Update(deltaTime);

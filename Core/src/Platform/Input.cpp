@@ -53,6 +53,12 @@ namespace {
     // Mouse position
     Math::Vector2 s_MousePosition = {};
     Math::Vector2 s_MousePositionPrev = {};
+
+    // Replay injection: forced per-frame state (see Input::SetReplayInjection)
+    bool s_ReplayInjection = false;
+    bool s_InjectedKeys[MAX_KEYS] = {};
+    bool s_InjectedMouse[MAX_MOUSE_BUTTONS] = {};
+    Math::Vector2 s_InjectedMousePos = {};
     Math::Vector2 s_MouseDelta = {};
 
     // Scroll delta (accumulated between frames)
@@ -270,23 +276,34 @@ void Input::Update() {
     }
     // For pointer-locked mode, prefer accumulated movementX/Y over position deltas.
 #else
-    if (!s_Window) return;
+    // Poll hardware only when a window exists; replay injection (below) and
+    // headless tests still work without one.
+    if (s_Window) {
+        // Poll keyboard state (GLFW keys are 32-348)
+        for (i32 key = GLFW_KEY_FIRST; key <= GLFW_KEY_LAST_VALID; ++key) {
+            s_KeysDown[key] = glfwGetKey(s_Window, key) == GLFW_PRESS;
+        }
 
-    // Poll keyboard state (GLFW keys are 32-348)
-    for (i32 key = GLFW_KEY_FIRST; key <= GLFW_KEY_LAST_VALID; ++key) {
-        s_KeysDown[key] = glfwGetKey(s_Window, key) == GLFW_PRESS;
+        // Poll mouse button state
+        for (i32 button = 0; button < MAX_MOUSE_BUTTONS; ++button) {
+            s_MouseButtonsDown[button] = glfwGetMouseButton(s_Window, button) == GLFW_PRESS;
+        }
+
+        // Update mouse position
+        double mx, my;
+        glfwGetCursorPos(s_Window, &mx, &my);
+        s_MousePosition = Math::Vector2(static_cast<f32>(mx), static_cast<f32>(my));
     }
-
-    // Poll mouse button state
-    for (i32 button = 0; button < MAX_MOUSE_BUTTONS; ++button) {
-        s_MouseButtonsDown[button] = glfwGetMouseButton(s_Window, button) == GLFW_PRESS;
-    }
-
-    // Update mouse position
-    double mx, my;
-    glfwGetCursorPos(s_Window, &mx, &my);
-    s_MousePosition = Math::Vector2(static_cast<f32>(mx), static_cast<f32>(my));
 #endif
+
+    // Replay injection: the recorded snapshot wins over whatever the hardware
+    // said this frame. Previous-frame state was already snapshotted above, so
+    // pressed/released edge queries work against the injected stream.
+    if (s_ReplayInjection) {
+        std::memcpy(s_KeysDown, s_InjectedKeys, sizeof(s_KeysDown));
+        std::memcpy(s_MouseButtonsDown, s_InjectedMouse, sizeof(s_MouseButtonsDown));
+        s_MousePosition = s_InjectedMousePos;
+    }
 
     // Calculate mouse delta
     if (s_FirstMouseMove) {
@@ -470,6 +487,29 @@ Math::Vector2 Input::GetMouseDelta() {
 
 Math::Vector2 Input::GetScrollDelta() {
     return s_ScrollDelta;
+}
+
+void Input::SetReplayInjection(bool enabled) {
+    s_ReplayInjection = enabled;
+    if (!enabled) {
+        std::memset(s_InjectedKeys, 0, sizeof(s_InjectedKeys));
+        std::memset(s_InjectedMouse, 0, sizeof(s_InjectedMouse));
+    }
+}
+
+bool Input::IsReplayInjectionActive() { return s_ReplayInjection; }
+
+void Input::InjectFrameState(const bool* keysDown, const bool* mouseDown,
+                             Math::Vector2 mousePos) {
+    if (keysDown) std::memcpy(s_InjectedKeys, keysDown, sizeof(s_InjectedKeys));
+    if (mouseDown) std::memcpy(s_InjectedMouse, mouseDown, sizeof(s_InjectedMouse));
+    s_InjectedMousePos = mousePos;
+}
+
+void Input::CaptureFrameState(bool* keysDown, bool* mouseDown, Math::Vector2& mousePos) {
+    if (keysDown) std::memcpy(keysDown, s_KeysDown, sizeof(s_KeysDown));
+    if (mouseDown) std::memcpy(mouseDown, s_MouseButtonsDown, sizeof(s_MouseButtonsDown));
+    mousePos = s_MousePosition;
 }
 
 void Input::SetMouseCaptured(bool captured) {

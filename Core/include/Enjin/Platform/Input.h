@@ -151,6 +151,20 @@ public:
     // Mouse scroll
     static Math::Vector2 GetScrollDelta();
 
+    // --- Replay injection (deterministic playback) ---
+    // When enabled, Update() keeps its previous-frame bookkeeping (so
+    // pressed/released edges work) but the CURRENT frame's key/mouse state is
+    // forced from the last injected snapshot instead of the hardware. Feed one
+    // snapshot per fixed-step frame to replay a recorded session exactly.
+    static void SetReplayInjection(bool enabled);
+    static bool IsReplayInjectionActive();
+    // keysDown: 512 bools indexed by KeyCode; mouseDown: 8 bools.
+    static void InjectFrameState(const bool* keysDown, const bool* mouseDown,
+                                 Math::Vector2 mousePos);
+    // Snapshot the live state (for the recorder). Buffers sized as above.
+    static void CaptureFrameState(bool* keysDown, bool* mouseDown,
+                                  Math::Vector2& mousePos);
+
     // Mouse capture (hide cursor and lock to window)
     static void SetMouseCaptured(bool captured);
     static bool IsMouseCaptured();
