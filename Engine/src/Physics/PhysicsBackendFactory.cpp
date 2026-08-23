@@ -37,7 +37,16 @@ std::unique_ptr<IPhysicsBackend> CreatePhysicsBackend(PhysicsBackendType type, S
         ENJIN_LOG_WARN(Physics, "Box2D is a 2D backend — cannot use for 3D physics");
     }
 
-    ENJIN_LOG_ERROR(Physics, "No 3D physics backend available");
+    // Auto in a 2D project goes without a 3D backend on purpose (mirrors the
+    // 2D factory below) - only an unfulfillable request is worth an error.
+    if (type != PhysicsBackendType::Auto) {
+        ENJIN_LOG_ERROR(Physics, "No 3D physics backend available");
+    }
+#ifndef ENJIN_PHYSICS_JOLT
+    else if (mode == Scene::ProjectMode::Mode3D || mode == Scene::ProjectMode::Mixed) {
+        ENJIN_LOG_ERROR(Physics, "3D project, but Jolt is not compiled in — no 3D physics backend");
+    }
+#endif
     return nullptr;
 }
 
@@ -65,6 +74,11 @@ std::unique_ptr<IPhysicsBackend2D> CreatePhysicsBackend2D(PhysicsBackendType typ
     if (type != PhysicsBackendType::Auto) {
         ENJIN_LOG_ERROR(Physics, "No 2D physics backend available");
     }
+#ifndef ENJIN_PHYSICS_BOX2D
+    else if (mode == Scene::ProjectMode::Mode2D || mode == Scene::ProjectMode::Mixed) {
+        ENJIN_LOG_ERROR(Physics, "2D project, but Box2D is not compiled in — no 2D physics backend");
+    }
+#endif
     return nullptr;
 }
 

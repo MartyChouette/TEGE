@@ -45,7 +45,7 @@
     ""
   ],
   "physicsBackend": 0,
-  "projectMode": 0,
+  "projectMode": 1,
   "projectName": "GoldenScene",
   "scenes": [
     {

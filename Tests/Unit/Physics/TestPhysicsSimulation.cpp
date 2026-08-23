@@ -13,6 +13,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Gameplay/GameplayLoop.h"
+#include "Enjin/Logging/Log.h"
 #include <cmath>
 #include <memory>
 
@@ -509,6 +510,56 @@ ENJIN_TEST(GameplayHazards, HazardOverlapDamagesPlayerWithoutSensorEvents) {
     auto* fhp = world.GetComponent<ECS::HealthComponent>(farPlayer);
     ENJIN_ASSERT_NOT_NULL(fhp);
     ENJIN_EXPECT_FLOAT_NEAR(fhp->currentHealth, 100.0f, 0.01f);
+}
+
+// ===========================================================================
+// Factory severity — Auto in a 2D project declines the 3D backend on purpose
+// (regression: this used to log "No 3D physics backend available" as an ERROR
+// at every 2D project play start)
+// ===========================================================================
+
+namespace {
+    int g_PhysicsErrorCount = 0;
+    void CountPhysicsErrors(LogLevel level, LogCategory category, const char*) {
+        if (level == LogLevel::Error && category == LogCategory::Physics)
+            ++g_PhysicsErrorCount;
+    }
+    // The logger silently drops everything (callback included) until
+    // Initialize is called; idempotent, so safe from every test.
+    void ArmPhysicsErrorCounter() {
+        Logger::Get().Initialize("test_physics_factory.log");
+        g_PhysicsErrorCount = 0;
+        Logger::Get().SetLogCallback(&CountPhysicsErrors);
+    }
+}
+
+ENJIN_TEST(PhysicsFactory, AutoIn2DProjectDeclines3DBackendWithoutError) {
+    // Arrange
+    ArmPhysicsErrorCounter();
+
+    // Act
+    auto backend = Physics::CreatePhysicsBackend(Physics::PhysicsBackendType::Auto,
+                                                 Scene::ProjectMode::Mode2D);
+
+    // Assert (callback restored first so a failing expect can't leak it)
+    Logger::Get().SetLogCallback(nullptr);
+    ENJIN_EXPECT_TRUE(backend == nullptr);
+    ENJIN_EXPECT_EQ(g_PhysicsErrorCount, 0);
+}
+
+ENJIN_TEST(PhysicsFactory, ExplicitBox2DFor3DPhysicsStillErrors) {
+    // Arrange: an explicit, unfulfillable request must keep its ERROR.
+    // This is also the positive control proving the counter actually fires.
+    ArmPhysicsErrorCounter();
+
+    // Act
+    auto backend = Physics::CreatePhysicsBackend(Physics::PhysicsBackendType::Box2D,
+                                                 Scene::ProjectMode::Mode3D);
+
+    // Assert
+    Logger::Get().SetLogCallback(nullptr);
+    ENJIN_EXPECT_TRUE(backend == nullptr);
+    ENJIN_EXPECT_TRUE(g_PhysicsErrorCount >= 1);
 }
 
 ENJIN_TEST_MAIN()
