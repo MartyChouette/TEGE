@@ -74,12 +74,23 @@ jobs:
           Copy-Item $dll.FullName build\bin\Release\
           Write-Host "staged $($dll.FullName)"
 
+      - name: Probe the staged Vulkan loader
+        shell: pwsh
+        env:
+          VK_DRIVER_FILES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
+        # Loads the staged dll directly and enumerates instance extensions - tells
+        # apart "dll cannot load" from "loader reports nothing" without guesswork.
+        run: |
+          Get-ChildItem build\bin\Release\vulkan-1.dll | Format-List Name,Length
+          python -c "import ctypes, ctypes.util, os; d = ctypes.WinDLL(os.path.abspath(r'build/bin/Release/vulkan-1.dll')); n = ctypes.c_uint32(0); r = d.vkEnumerateInstanceExtensionProperties(None, ctypes.byref(n), None); print('enumerate result', r, 'extension count', n.value)"
+
       - name: Render smoke test (golden capture on lavapipe)
         shell: pwsh
         timeout-minutes: 15
         env:
           VK_DRIVER_FILES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
           VK_ICD_FILENAMES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
+          VK_LOADER_DEBUG: error,warn
         # Boot the editor on the checked-in probe scene, auto-play, render 30
         # frames, capture the game view, exit. The checker fails on a flat /
         # black / white capture (= the render path silently died). Not a pixel

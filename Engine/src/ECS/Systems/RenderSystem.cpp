@@ -6414,8 +6414,10 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
     // Geometry outline pass (inverted-hull backface extrusion, after main geometry)
     RenderOutlinePassForTarget();
-    // Editor selection highlight (bright outline on selected entity + descendants)
-    RenderSelectionHighlight();
+    // Editor selection highlight (bright outline on selected entity + descendants).
+    // Scene view only (viewportIndex 0): the game view (1) must show the game as
+    // players will see it - no editor selection glow on particles or anything else.
+    if (viewportIndex == 0) RenderSelectionHighlight();
 
     // Sorted 2D sprite rendering pass (after 3D geometry)
     RenderSprites();

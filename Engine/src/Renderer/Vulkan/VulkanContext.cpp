@@ -639,7 +639,13 @@ std::vector<const char*> VulkanContext::GetRequiredExtensions() const {
     // glfwGetRequiredInstanceExtensions returns nullptr if Vulkan is not supported
     // (e.g., missing vulkan-1.dll or no Vulkan ICD installed)
     if (!glfwExtensions || glfwExtensionCount == 0) {
+        // Surface WHY: GLFW records a human-readable reason (loader missing,
+        // vkGetInstanceProcAddr not found, no WSI extensions...).
+        const char* glfwErr = nullptr;
+        int glfwCode = glfwGetError(&glfwErr);
         ENJIN_LOG_ERROR(Renderer, "GLFW returned no Vulkan instance extensions (Vulkan may not be available)");
+        ENJIN_LOG_ERROR(Renderer, "GLFW error 0x%x: %s", glfwCode, glfwErr ? glfwErr : "(no detail)");
+        ENJIN_LOG_ERROR(Renderer, "glfwVulkanSupported = %d", glfwVulkanSupported());
         return {};
     }
 
