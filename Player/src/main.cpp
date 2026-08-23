@@ -359,6 +359,9 @@ public:
         // Accessibility tab: the menu edits the live settings struct in place;
         // every change re-applies the boot-time consumers and persists.
         m_GameMenu.SetAccessibilitySettings(&m_AccessibilitySettings);
+        // Live preview split: hovering a visual setting shows the screen half
+        // without / half with the effect.
+        m_GameMenu.SetPostProcessing(m_PostProcessing.get());
         m_GameMenu.SetAccessibilityChangedCallback([this]() {
             ApplyAccessibilitySettings();
             SaveAccessibilitySettings();

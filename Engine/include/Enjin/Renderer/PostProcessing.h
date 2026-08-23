@@ -313,6 +313,16 @@ struct alignas(16) PostProcessSettings {
     alignas(4) f32 _rtHybridPad1 = 0.0f;
     alignas(4) f32 _rtHybridPad2 = 0.0f;
 
+    // Options-menu live preview split: everything left of the divider renders
+    // with the selected effect neutralized, so the player SEES what a setting
+    // does while hovering it. 0=off, 1=bloom, 2=vignette, 3=filmGrain,
+    // 4=chromaticAberration (reserved), 5=colorblind, 6=colorGrading
+    // (brightness/contrast). Must stay in lockstep with postprocess.frag.
+    alignas(4) u32 previewSplitEffect = 0;
+    alignas(4) f32 previewSplitDivider = 0.5f;
+    alignas(4) f32 _previewPad0 = 0.0f;
+    alignas(4) f32 _previewPad1 = 0.0f;
+
     // TAA config (CPU-side only — used by the TAA compute pass, not the post-process UBO)
     f32 taaSharpness   = 0.1f;     // Sharpening strength applied after TAA resolve (0 = off)
     f32 taaJitterScale = 1.0f;     // Jitter magnitude multiplier (1.0 = standard Halton)

@@ -250,6 +250,12 @@ layout(binding = 1) uniform PostProcessSettings {
     float _rtHybridPad0;
     float _rtHybridPad1;
     float _rtHybridPad2;
+
+    // Options-menu live preview split (lockstep with PostProcessing.h)
+    uint previewSplitEffect;      // 0=off, 1=bloom, 2=vignette, 3=grain, 4=chromatic, 5=colorblind, 6=grading
+    float previewSplitDivider;    // uv.x split point
+    float _previewPad0;
+    float _previewPad1;
 } settings;
 
 // LUT texture (binding 2)
@@ -387,6 +393,12 @@ vec3 applyToneMapping(vec3 color) {
 }
 
 // Vignette effect
+// Options-menu preview split: true when this fragment sits on the "without"
+// side of the divider for the effect being previewed.
+bool previewNeutralized(uint effect, vec2 uv) {
+    return settings.previewSplitEffect == effect && uv.x < settings.previewSplitDivider;
+}
+
 vec3 applyVignette(vec3 color, vec2 uv) {
     if (settings.vignetteEnabled == 0) return color;
 
@@ -1916,7 +1928,7 @@ void main() {
 
     // Bloom: HDR highlight glow, added before tone mapping so highlights bloom
     // in linear space.
-    color = applyBloom(color, uv);
+    if (!previewNeutralized(1u, uv)) color = applyBloom(color, uv);
 
     // Apply tone mapping
     if (settings.toneMappingMode != TONEMAP_NONE) {
@@ -1927,19 +1939,19 @@ void main() {
     color = applyLUT(color);
 
     // Apply color grading
-    color = applyColorGrading(color);
+    if (!previewNeutralized(6u, uv)) color = applyColorGrading(color);
 
     // Apply colorblind correction (after color grading, before vignette)
-    color = applyColorblindCorrection(color);
+    if (!previewNeutralized(5u, uv)) color = applyColorblindCorrection(color);
 
     // Apply cel outline (Sobel edge detection on depth)
     color = applyCelOutline(color, uv);
 
     // Apply vignette
-    color = applyVignette(color, uv);
+    if (!previewNeutralized(2u, uv)) color = applyVignette(color, uv);
 
     // Apply film grain
-    color = applyFilmGrain(color, uv);
+    if (!previewNeutralized(3u, uv)) color = applyFilmGrain(color, uv);
 
     // Light leak / film burn overlay
     color = applyLightLeak(color, uv);
@@ -1966,6 +1978,15 @@ void main() {
 
     // Full-screen stipple / dither (after palette lock, before gamma)
     color = applyStipple(color, screenPos);
+
+    // Options-menu preview split: thin white divider between the "without" and
+    // "with" halves (same treatment as the AA comparison line).
+    if (settings.previewSplitEffect != 0u) {
+        float previewPixel = 1.0 / float(settings.screenWidth);
+        if (abs(uv.x - settings.previewSplitDivider) < previewPixel) {
+            color = vec3(1.0);
+        }
+    }
 
     // HDR / SDR output
     if (settings.hdrOutputMode == HDR_OUTPUT_SCRGB) {

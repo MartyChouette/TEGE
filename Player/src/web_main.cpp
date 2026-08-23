@@ -891,6 +891,10 @@ public:
                 [this](const Enjin::GUI::UIEventData& e) {
                     m_SimpleAudio.SetChannelVolume(Enjin::Audio::AudioChannel::SFX, e.floatValue);
                 });
+            m_UISystem.GetEventBus().Listen("options_music_volume",
+                [this](const Enjin::GUI::UIEventData& e) {
+                    m_SimpleAudio.SetChannelVolume(Enjin::Audio::AudioChannel::Music, e.floatValue);
+                });
             m_UISystem.GetEventBus().Listen("options_fullscreen",
                 [](const Enjin::GUI::UIEventData& e) {
                     if (e.boolValue) {

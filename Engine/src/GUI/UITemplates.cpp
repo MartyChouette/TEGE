@@ -223,6 +223,29 @@ UICanvasComponent CreateOptionsMenu() {
         s->onValueChangedEvent = "options_sfx_volume";
     }
 
+    // Music Volume label + slider (desktop-menu parity; web routes it to the
+    // Music channel like SFX)
+    u32 musicLabel = canvas.AddElement(UIWidgetType::Label, "MusicLabel", panel);
+    {
+        auto* l = canvas.GetElement(musicLabel);
+        l->anchor.anchorMin = Math::Vector2(0.05f, 0.375f);
+        l->anchor.anchorMax = Math::Vector2(0.35f, 0.375f);
+        l->anchor.offsetLeft = 0; l->anchor.offsetRight = 0;
+        l->anchor.offsetTop = -10.0f; l->anchor.offsetBottom = 10.0f;
+        l->data.text = "Music Volume";
+        l->data.textAlignH = 0;
+    }
+    u32 musicSlider = canvas.AddElement(UIWidgetType::Slider, "MusicSlider", panel);
+    {
+        auto* s = canvas.GetElement(musicSlider);
+        s->anchor.anchorMin = Math::Vector2(0.38f, 0.375f);
+        s->anchor.anchorMax = Math::Vector2(0.92f, 0.375f);
+        s->anchor.offsetLeft = 0; s->anchor.offsetRight = 0;
+        s->anchor.offsetTop = -12.0f; s->anchor.offsetBottom = 12.0f;
+        s->data.sliderValue = 1.0f;
+        s->onValueChangedEvent = "options_music_volume";
+    }
+
     // Fullscreen checkbox
     u32 fullscreenCheck = canvas.AddElement(UIWidgetType::Checkbox, "Fullscreen", panel);
     {

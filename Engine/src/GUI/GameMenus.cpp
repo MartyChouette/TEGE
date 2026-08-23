@@ -1,4 +1,5 @@
 #include "Enjin/GUI/GameMenus.h"
+#include "Enjin/Renderer/PostProcessing.h"
 
 #include <algorithm>
 #include <array>
@@ -63,7 +64,24 @@ void GameMenuSystem::SetGameTitle(const std::string& title) {
     m_GameTitle = title;
 }
 
+// Activate the options-preview split for this frame: left of the divider
+// renders without the given effect. Cleared automatically next frame unless a
+// hovered control requests it again (see Render).
+void GameMenuSystem::RequestPreview(u32 effect) {
+    if (!m_PostProcessing) return;
+    auto& s = m_PostProcessing->GetSettings();
+    s.previewSplitEffect = effect;
+    s.previewSplitDivider = 0.5f;
+    m_PreviewRequested = true;
+}
+
 void GameMenuSystem::Render(f32 screenW, f32 screenH) {
+    // Preview split is a per-frame request: if no control asked for it since the
+    // last frame (menu closed, tab changed, cursor moved off), switch it off.
+    if (m_PostProcessing && !m_PreviewRequested)
+        m_PostProcessing->GetSettings().previewSplitEffect = 0;
+    m_PreviewRequested = false;
+
     switch (m_CurrentScreen) {
         case MenuScreen::MainMenu:   RenderMainMenu(screenW, screenH);  break;
         case MenuScreen::PauseMenu:  RenderPauseMenu(screenW, screenH); break;
@@ -355,7 +373,12 @@ void GameMenuSystem::RenderGraphics(f32 w, f32 h) {
 
     ImGui::Separator();
     ImGui::Text("Post-Processing");
-    ImGui::Checkbox("Bloom", &m_Graphics.bloom);
+    if (ImGui::Checkbox("Bloom", &m_Graphics.bloom) && m_PostProcessing) {
+        // Live-apply so the preview's right side tracks the checkbox immediately
+        // (Back still commits everything else as before).
+        m_PostProcessing->GetSettings().bloomEnabled = m_Graphics.bloom ? 1u : 0u;
+    }
+    if (ImGui::IsItemHovered() || ImGui::IsItemActive()) RequestPreview(1u);
     ImGui::Checkbox("FXAA", &m_Graphics.fxaa);
 
     ImGui::Separator();
@@ -407,11 +430,15 @@ void GameMenuSystem::RenderAccessibility(f32 w, f32 h) {
         a.colorblindMode = static_cast<Accessibility::ColorblindMode>(cbMode);
         changed = true;
     }
+    if (ImGui::IsItemHovered() || ImGui::IsItemActive()) RequestPreview(5u);
     if (a.colorblindMode != Accessibility::ColorblindMode::Off) {
         changed |= ImGui::SliderFloat("Correction Strength", &a.colorblindStrength, 0.0f, 1.0f, "%.2f");
+        if (ImGui::IsItemHovered() || ImGui::IsItemActive()) RequestPreview(5u);
     }
     changed |= ImGui::SliderFloat("Brightness", &a.screenBrightness, -0.5f, 0.5f, "%.2f");
+    if (ImGui::IsItemHovered() || ImGui::IsItemActive()) RequestPreview(6u);
     changed |= ImGui::SliderFloat("Contrast", &a.screenContrast, 0.5f, 2.0f, "%.2f");
+    if (ImGui::IsItemHovered() || ImGui::IsItemActive()) RequestPreview(6u);
     changed |= ImGui::SliderFloat("UI Font Scale", &a.fontScale, 0.5f, 3.0f, "%.2f");
 
     // --- Text & Reading ---
