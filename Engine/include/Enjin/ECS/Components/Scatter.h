@@ -26,7 +26,9 @@ struct ScatterComponent {
     enum class Distribution : u8 {
         Uniform = 0,   // random points, may clump
         Poisson,       // blue-noise, min spacing between points (natural)
-        JitteredGrid   // grid cells with a random offset (regular but not rigid)
+        JitteredGrid,  // grid cells with a random offset (regular but not rigid)
+        Voronoi        // random points relaxed toward their Voronoi cell centroids
+                       // (Lloyd's algorithm): organically even, softer than Poisson
     };
 
     // Which plane the points spread across, relative to this entity.
@@ -44,8 +46,9 @@ struct ScatterComponent {
 
     f32 regionWidth  = 20.0f;        // full extent of the region along the first axis (world units)
     f32 regionHeight = 20.0f;        // full extent along the second axis (Z for XZ, Y for XY)
-    u32 targetCount  = 40;           // desired instances (Uniform / JitteredGrid; Poisson fits as many as spacing allows)
+    u32 targetCount  = 40;           // desired instances (Uniform / JitteredGrid / Voronoi; Poisson fits as many as spacing allows)
     f32 minSpacing   = 2.0f;         // Poisson: minimum distance between points; also the grid cell hint for JitteredGrid
+    u32 relaxIterations = 3;         // Voronoi: Lloyd relaxation passes (0 = plain random, more = more even)
 
     // Per-instance randomization so the batch does not look cloned.
     f32  scaleMin     = 1.0f;        // uniform scale multiplier range applied to each instance

@@ -2192,7 +2192,8 @@ void EditorLayer::DrawInspectorPanel() {
                 const char* dists[] = {
                     "Uniform (random, may clump)",
                     "Poisson (blue-noise, even spacing)",
-                    "Jittered Grid (regular but organic)"
+                    "Jittered Grid (regular but organic)",
+                    "Voronoi (relaxed, organically even)"
                 };
                 int d = static_cast<int>(sc->distribution);
                 if (ImGui::Combo("Distribution", &d, dists, IM_ARRAYSIZE(dists)))
@@ -2224,6 +2225,11 @@ void EditorLayer::DrawInspectorPanel() {
                 } else {
                     i32 tc = static_cast<i32>(sc->targetCount);
                     if (ImGui::DragInt("Count", &tc, 1, 0, 20000)) sc->targetCount = static_cast<u32>(tc < 0 ? 0 : tc);
+                }
+                if (sc->distribution == ECS::ScatterComponent::Distribution::Voronoi) {
+                    i32 ri = static_cast<i32>(sc->relaxIterations);
+                    if (ImGui::SliderInt("Relax Iterations", &ri, 0, 16)) sc->relaxIterations = static_cast<u32>(ri);
+                    ImGui::TextDisabled("(0 = plain random; more passes spread points more evenly)");
                 }
 
                 ImGui::Separator();

@@ -1203,6 +1203,29 @@ ENJIN_TEST(Scatter, FieldsRoundTrip) {
     ENJIN_EXPECT_TRUE(g->generateOnStart);
 }
 
+ENJIN_TEST(Scatter, VoronoiModeRoundTrips) {
+    // Arrange: Voronoi distribution with a non-default relaxation count.
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& s = w1.AddComponent<ScatterComponent>(e);
+    s.distribution = ScatterComponent::Distribution::Voronoi;
+    s.relaxIterations = 7;
+    s.targetCount = 55;
+
+    // Act
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+
+    // Assert
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<ScatterComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+    ENJIN_EXPECT_EQ((int)g->distribution, (int)ScatterComponent::Distribution::Voronoi);
+    ENJIN_EXPECT_EQ((int)g->relaxIterations, 7);
+    ENJIN_EXPECT_EQ((int)g->targetCount, 55);
+}
+
 // The spawned-instance marker must survive a round trip so a saved scatter batch
 // stays regenerable (regenerate finds and clears the marked children).
 ENJIN_TEST(Scatter, InstanceMarkerRoundTrips) {

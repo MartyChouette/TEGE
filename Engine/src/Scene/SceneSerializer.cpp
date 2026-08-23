@@ -1485,6 +1485,7 @@ json SerializeScatterComponent(const ECS::ScatterComponent& s) {
     j["regionHeight"] = RF(s.regionHeight);
     j["targetCount"] = s.targetCount;
     j["minSpacing"] = RF(s.minSpacing);
+    j["relaxIterations"] = s.relaxIterations;
     j["scaleMin"] = RF(s.scaleMin);
     j["scaleMax"] = RF(s.scaleMax);
     j["randomYaw"] = s.randomYaw;
@@ -1496,13 +1497,14 @@ json SerializeScatterComponent(const ECS::ScatterComponent& s) {
 
 ECS::ScatterComponent DeserializeScatterComponent(const json& j) {
     ECS::ScatterComponent s;
-    if (j.contains("distribution")) { u8 v = j["distribution"].get<u8>(); if (v <= 2) s.distribution = static_cast<ECS::ScatterComponent::Distribution>(v); }
+    if (j.contains("distribution")) { u8 v = j["distribution"].get<u8>(); if (v <= 3) s.distribution = static_cast<ECS::ScatterComponent::Distribution>(v); }
     if (j.contains("plane")) { u8 v = j["plane"].get<u8>(); if (v <= 1) s.plane = static_cast<ECS::ScatterComponent::Plane>(v); }
     if (j.contains("prefabPath") && j["prefabPath"].is_string()) s.prefabPath = SafeStr(j["prefabPath"]);
     if (j.contains("regionWidth")) s.regionWidth = std::clamp(j["regionWidth"].get<f32>(), 0.0f, 100000.0f);
     if (j.contains("regionHeight")) s.regionHeight = std::clamp(j["regionHeight"].get<f32>(), 0.0f, 100000.0f);
     if (j.contains("targetCount")) s.targetCount = std::clamp(j["targetCount"].get<u32>(), 0u, 20000u);
     if (j.contains("minSpacing")) s.minSpacing = std::clamp(j["minSpacing"].get<f32>(), 0.05f, 100000.0f);
+    if (j.contains("relaxIterations")) s.relaxIterations = std::clamp(j["relaxIterations"].get<u32>(), 0u, 16u);
     if (j.contains("scaleMin")) s.scaleMin = j["scaleMin"].get<f32>();
     if (j.contains("scaleMax")) s.scaleMax = j["scaleMax"].get<f32>();
     if (j.contains("randomYaw")) s.randomYaw = JB(j["randomYaw"]);

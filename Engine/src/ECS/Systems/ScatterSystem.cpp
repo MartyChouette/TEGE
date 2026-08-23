@@ -8,6 +8,7 @@
 #include <cmath>
 #include <vector>
 #include <utility>
+#include <algorithm>
 
 namespace Enjin {
 namespace ECS {
@@ -68,6 +69,87 @@ static void SampleJitteredGrid(u32& rng, f32 w, f32 h, u32 count, std::vector<Pt
             ++placed;
         }
     }
+}
+
+// ---- Voronoi (Lloyd relaxation): random points nudged to their cell centroids.
+// Each pass assigns a coarse sample grid to its nearest point, then moves every
+// point to the centroid of the samples it owns. A few passes spread clumped
+// points into an organically even layout — softer than Poisson's hard minimum
+// spacing, and it always yields exactly `count` points. Nearest-point search
+// uses a bucket grid so a pass is O(samples), not O(samples * count).
+static void SampleVoronoi(u32& rng, f32 w, f32 h, u32 count, u32 relaxIterations,
+                          std::vector<Pt2>& out) {
+    if (count == 0 || w <= 0.0f || h <= 0.0f) return;
+    if (count > kMaxInstances) count = kMaxInstances;
+
+    // Start from plain uniform samples (in [0,w]x[0,h] space for simpler math).
+    std::vector<Pt2> pts;
+    pts.reserve(count);
+    for (u32 i = 0; i < count; ++i)
+        pts.push_back({ RandRange(rng, 0.0f, w), RandRange(rng, 0.0f, h) });
+
+    // Sample-grid resolution: ~16 samples per point, clamped so a pass stays cheap.
+    u32 res = static_cast<u32>(std::ceil(std::sqrt(static_cast<f32>(count) * 16.0f)));
+    res = std::clamp(res, 32u, 256u);
+    const f32 sx = w / static_cast<f32>(res);
+    const f32 sy = h / static_cast<f32>(res);
+
+    // Bucket grid over the points for nearest-point lookup (rebuilt each pass).
+    const u32 B = std::clamp(static_cast<u32>(std::sqrt(static_cast<f32>(count))), 1u, 64u);
+    std::vector<std::vector<u32>> buckets(static_cast<usize>(B) * B);
+    auto bucketOf = [&](f32 x, f32 y) {
+        u32 bx = std::min(B - 1, static_cast<u32>(x / w * static_cast<f32>(B)));
+        u32 by = std::min(B - 1, static_cast<u32>(y / h * static_cast<f32>(B)));
+        return static_cast<usize>(by) * B + bx;
+    };
+
+    const u32 iters = std::min(relaxIterations, 16u);
+    std::vector<f32> cx(count), cy(count);
+    std::vector<u32> cn(count);
+    for (u32 it = 0; it < iters; ++it) {
+        for (auto& b : buckets) b.clear();
+        for (u32 i = 0; i < count; ++i) buckets[bucketOf(pts[i].a, pts[i].b)].push_back(i);
+        std::fill(cx.begin(), cx.end(), 0.0f);
+        std::fill(cy.begin(), cy.end(), 0.0f);
+        std::fill(cn.begin(), cn.end(), 0u);
+
+        for (u32 gy = 0; gy < res; ++gy) {
+            for (u32 gx = 0; gx < res; ++gx) {
+                f32 px = (static_cast<f32>(gx) + 0.5f) * sx;
+                f32 py = (static_cast<f32>(gy) + 0.5f) * sy;
+                // Search the sample's bucket ring outward until a point is found,
+                // then one extra ring to guarantee the true nearest.
+                i32 bx = static_cast<i32>(px / w * static_cast<f32>(B));
+                i32 by = static_cast<i32>(py / h * static_cast<f32>(B));
+                u32 best = 0; f32 bestD = 3.4e38f; bool found = false;
+                for (i32 ring = 0; ring < static_cast<i32>(B); ++ring) {
+                    for (i32 dy = -ring; dy <= ring; ++dy) {
+                        for (i32 dx = -ring; dx <= ring; ++dx) {
+                            if (std::max(std::abs(dx), std::abs(dy)) != ring) continue;
+                            i32 nx = bx + dx, ny = by + dy;
+                            if (nx < 0 || ny < 0 || nx >= static_cast<i32>(B) || ny >= static_cast<i32>(B)) continue;
+                            for (u32 pi : buckets[static_cast<usize>(ny) * B + nx]) {
+                                f32 ddx = pts[pi].a - px, ddy = pts[pi].b - py;
+                                f32 d = ddx * ddx + ddy * ddy;
+                                if (d < bestD) { bestD = d; best = pi; }
+                            }
+                        }
+                    }
+                    if (found) break;             // finished the +1 guarantee ring
+                    if (bestD < 3.4e38f) found = true;  // found something: do one more ring
+                }
+                cx[best] += px; cy[best] += py; ++cn[best];
+            }
+        }
+        for (u32 i = 0; i < count; ++i) {
+            if (cn[i] == 0) continue;   // point owns no samples this pass; leave it
+            pts[i].a = cx[i] / static_cast<f32>(cn[i]);
+            pts[i].b = cy[i] / static_cast<f32>(cn[i]);
+        }
+    }
+
+    out.reserve(count);
+    for (const auto& p : pts) out.push_back({ p.a - w * 0.5f, p.b - h * 0.5f });
 }
 
 // ---- Poisson-disk (Bridson): blue-noise, every point >= radius apart --------
@@ -187,6 +269,8 @@ u32 ScatterSystem::Generate(World* world, Entity entity, ScatterComponent& scatt
             SamplePoisson(rng, w, h, scatter.minSpacing, points); break;
         case ScatterComponent::Distribution::JitteredGrid:
             SampleJitteredGrid(rng, w, h, scatter.targetCount, points); break;
+        case ScatterComponent::Distribution::Voronoi:
+            SampleVoronoi(rng, w, h, scatter.targetCount, scatter.relaxIterations, points); break;
     }
 
     f32 sMin = scatter.scaleMin, sMax = scatter.scaleMax;
