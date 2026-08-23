@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TEGE — Beginner's Guide &amp; Cheat Sheet</title>
+<meta name="description" content="The one page to start from. From 'just cloned it' to a running, exported game, then a quick reference.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Dusk — the TEGE palette (marty64.net/enjin) */
+  :root {
+    --bg: #23242f;
+    --bg-alt: #1c1d26;
+    --card: #2d2f3d;
+    --card-soft: #262835;
+    --green: #5f9b5c;
+    --green-deep: #8fc98b;
+    --green-btn: #4c8a49;
+    --green-soft: rgba(95, 155, 92, 0.18);
+    --text: #e8e9f0;
+    --text-muted: #b6b8c8;
+    --text-light: #8f91a3;
+    --border: #454759;
+    --border-soft: #3a3c4c;
+    --link: #8fa8ff;
+    --link-hover: #aabcff;
+    --accent-blue: #6f87e8;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3), 0 2px 12px rgba(0, 0, 0, 0.25);
+    --shadow-md: 0 6px 24px rgba(0, 0, 0, 0.4);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 2rem; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1100px 520px at 78% -8%, #282c3a 0%, rgba(40, 44, 58, 0) 60%),
+      radial-gradient(900px 480px at 0% 8%, #2a2836 0%, rgba(42, 40, 54, 0) 55%),
+      var(--bg);
+    background-attachment: fixed;
+    color: var(--text);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 16px;
+    line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- layout ---------- */
+  .wrap {
+    display: grid;
+    grid-template-columns: 252px minmax(0, 1fr);
+    gap: 3rem;
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 2rem 6rem;
+  }
+  main { min-width: 0; max-width: 780px; }
+
+  /* ---------- hero ---------- */
+  header.hero {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 4.5rem 2rem 3rem;
+  }
+  .hero-card {
+    background: linear-gradient(150deg, #2e303e 0%, #282a37 55%, #24262f 100%);
+    border: 1px solid var(--border-soft);
+    border-radius: 16px;
+    padding: 3rem 3rem 2.6rem;
+    box-shadow: var(--shadow-md);
+  }
+  .hero .brand {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: clamp(3.2rem, 8vw, 5rem);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    margin: 0;
+    color: var(--text);
+  }
+  .hero .brand span { color: var(--green-deep); }
+  .hero .subtitle {
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    color: var(--green-deep);
+    margin: 0.9rem 0 1.4rem;
+  }
+  .hero p.lede {
+    max-width: 690px;
+    font-size: 1.04rem;
+    color: var(--text-muted);
+    margin: 0;
+  }
+  .hero p.lede strong { color: var(--text); }
+  .hero .pills { margin-top: 1.6rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .pill {
+    font-size: 0.76rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 0.32rem 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--card-soft);
+    color: var(--text-muted);
+  }
+  .pill.flag {
+    border-color: rgba(95, 155, 92, 0.55);
+    background: var(--green-soft);
+    color: var(--green-deep);
+  }
+
+  /* ---------- toc ---------- */
+  nav.toc {
+    position: sticky;
+    top: 1.5rem;
+    align-self: start;
+    padding: 1.2rem 0.9rem 1.2rem 1.1rem;
+    background: var(--card);
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+    font-size: 0.85rem;
+    max-height: calc(100vh - 3rem);
+    overflow-y: auto;
+  }
+  nav.toc .toc-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--text-light);
+    margin: 0 0 0.7rem 0.5rem;
+  }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; }
+  nav.toc li { margin: 0; }
+  nav.toc a {
+    display: block;
+    padding: 0.34rem 0.55rem;
+    border-radius: 7px;
+    color: var(--text-muted);
+    text-decoration: none;
+  }
+  nav.toc a:hover { color: var(--green-deep); background: var(--green-soft); }
+  nav.toc a .num {
+    display: inline-block;
+    width: 1.5rem;
+    color: var(--green);
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+    font-size: 0.74rem;
+  }
+
+  /* ---------- typography ---------- */
+  h2 {
+    font-size: 1.55rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    margin: 3.2rem 0 1rem;
+    padding-top: 1.4rem;
+    border-top: 1px solid var(--border-soft);
+    color: var(--text);
+  }
+  section:first-of-type h2 { border-top: none; padding-top: 0; margin-top: 2.2rem; }
+  h2 .num {
+    color: var(--green);
+    font-size: 0.85rem;
+    font-weight: 700;
+    vertical-align: 0.35em;
+    letter-spacing: 0.12em;
+    margin-right: 0.6rem;
+    font-variant-numeric: tabular-nums;
+  }
+  h2 .flag-tag {
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--link);
+    border: 1px solid rgba(111, 135, 232, 0.5);
+    background: rgba(111, 135, 232, 0.12);
+    border-radius: 999px;
+    padding: 0.2rem 0.65rem;
+    margin-left: 0.6rem;
+    vertical-align: 0.35em;
+    white-space: nowrap;
+  }
+  h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin: 1.8rem 0 0.6rem;
+    color: var(--text);
+  }
+  h2 a.anchor, h3 a.anchor { color: inherit; text-decoration: none; }
+  h2 a.anchor:hover::after, h3 a.anchor:hover::after {
+    content: " #";
+    color: var(--text-light);
+    font-weight: 400;
+  }
+  p { margin: 0.8rem 0; }
+  a { color: var(--link); }
+  a:hover { color: var(--link-hover); }
+  strong { font-weight: 700; color: var(--text); }
+  main { color: var(--text-muted); }
+  ul, ol { padding-left: 1.4rem; margin: 0.8rem 0; }
+  li { margin: 0.35rem 0; }
+  ol.steps li { margin: 0.6rem 0; padding-left: 0.25rem; }
+  ol.steps li::marker { color: var(--green); font-weight: 700; }
+
+  /* ---------- code ---------- */
+  code {
+    font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+    font-size: 0.84em;
+    background: var(--bg-alt);
+    color: var(--green-deep);
+    padding: 0.13em 0.42em;
+    border-radius: 5px;
+    border: 1px solid var(--border-soft);
+  }
+  pre {
+    background: var(--bg-alt);
+    color: var(--text);
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    padding: 1.1rem 1.3rem;
+    overflow-x: auto;
+    box-shadow: var(--shadow-sm);
+    line-height: 1.55;
+    margin: 1.2rem 0;
+  }
+  pre code {
+    background: none;
+    border: none;
+    color: inherit;
+    padding: 0;
+    font-size: 0.84rem;
+  }
+  pre .cm { color: var(--text-light); }
+  pre .kw { color: var(--green-deep); }
+  pre .str { color: var(--link); }
+  pre .fn { color: var(--link); }
+  pre .prompt { color: var(--green); user-select: none; }
+
+  /* ---------- kbd ---------- */
+  kbd {
+    display: inline-block;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.74rem;
+    font-weight: 600;
+    line-height: 1;
+    padding: 0.32em 0.5em;
+    background: var(--card-soft);
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  /* ---------- tables ---------- */
+  .table-scroll {
+    overflow-x: auto;
+    margin: 1.2rem 0;
+    border-radius: 10px;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-soft);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card);
+    font-size: 0.92rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.65rem 0.9rem;
+    border-bottom: 1px solid var(--border-soft);
+    vertical-align: top;
+  }
+  tr:last-child td { border-bottom: none; }
+  th {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--green-deep);
+    background: var(--card-soft);
+  }
+  td { color: var(--text-muted); }
+  td strong { white-space: nowrap; }
+  tbody tr:hover { background: var(--card-soft); }
+
+  /* ---------- callouts ---------- */
+  .note, .warn {
+    margin: 1.2rem 0;
+    padding: 0.85rem 1.1rem;
+    border-radius: 0 8px 8px 0;
+    font-size: 0.94rem;
+    background: var(--card-soft);
+  }
+  .note { border-left: 3px solid var(--green); }
+  .warn { border-left: 3px solid var(--accent-blue); background: rgba(111, 135, 232, 0.1); }
+  .note p, .warn p { margin: 0.3rem 0; }
+  .callout-label {
+    display: block;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    margin-bottom: 0.2rem;
+  }
+  .note .callout-label { color: var(--green-deep); }
+  .warn .callout-label { color: var(--link); }
+
+  /* ---------- special blocks ---------- */
+  .presets { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0; }
+  .preset {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text);
+    padding: 0.45rem 1rem;
+    background: var(--card);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    box-shadow: var(--shadow-sm);
+  }
+  .arc {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 1.2rem 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+  .arc .step {
+    padding: 0.35rem 0.95rem;
+    background: var(--card);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    box-shadow: var(--shadow-sm);
+    color: var(--text);
+  }
+  .arc .sep { color: var(--green); }
+  .gotchas li { margin: 0.7rem 0; }
+  .pipeline {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.85rem;
+    color: var(--text);
+    background: var(--bg-alt);
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    padding: 0.9rem 1.2rem;
+    box-shadow: var(--shadow-sm);
+    overflow-x: auto;
+    white-space: nowrap;
+    margin: 1.2rem 0;
+  }
+  .pipeline .sep { color: var(--green); margin: 0 0.5rem; }
+
+  .refcard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1rem;
+    margin: 1.2rem 0;
+  }
+  .refcard .card {
+    background: var(--card);
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    box-shadow: var(--shadow-sm);
+    font-size: 0.9rem;
+  }
+  .refcard .card h4 {
+    margin: 0 0 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--green-deep);
+  }
+  .refcard .card p { margin: 0.4rem 0; }
+  .refcard .dot { color: var(--text-light); margin: 0 0.3rem; }
+
+  .next-docs { list-style: none; padding: 0; }
+  .next-docs li {
+    margin: 0.5rem 0;
+    padding: 0.7rem 1rem;
+    background: var(--card);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+  }
+  .next-docs code { background: none; border: none; padding: 0; font-weight: 600; color: var(--green-deep); }
+
+  footer {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 2rem;
+    color: var(--text-light);
+    font-size: 0.85rem;
+    border-top: 1px solid var(--border-soft);
+  }
+
+  @media (max-width: 900px) {
+    .wrap { grid-template-columns: 1fr; gap: 0; }
+    nav.toc { position: static; max-height: none; margin-bottom: 1rem; }
+    header.hero { padding-top: 2.5rem; }
+    .hero-card { padding: 2rem 1.5rem; }
+  }
+  @media print {
+    nav.toc { display: none; }
+    .wrap { display: block; }
+    pre { white-space: pre-wrap; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-card">
+    <h1 class="brand">TEGE<span>.</span></h1>
+    <p class="subtitle">Beginner's Guide &amp; Cheat Sheet</p>
+    <p class="lede">The one page to start from. It gets you from "just cloned it" to a running,
+    exported game, then stays open as a quick reference. Everything here is checked against the
+    actual engine (commit-current as of 2026-08-21), so where older docs disagree, trust this one.</p>
+    <p class="lede" style="margin-top:0.8rem;"><strong>TEGE (The Enjin Game Engine)</strong> is a
+    from-scratch C++20 / Vulkan game engine with a full ImGui editor, an Entity-Component-System
+    core, dual physics (Jolt 3D, Box2D 2D), AngelScript + visual scripting, and two flagship ideas:
+    <strong>any art style is a one-click preset</strong>, and <strong>every game ships accessible
+    by default</strong>.</p>
+    <div class="pills">
+      <span class="pill">C++20</span>
+      <span class="pill">Vulkan · WebGPU</span>
+      <span class="pill">ECS</span>
+      <span class="pill">Jolt 3D · Box2D 2D</span>
+      <span class="pill">AngelScript</span>
+      <span class="pill flag">One-click art styles</span>
+      <span class="pill flag">Accessible by default</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<nav class="toc" aria-label="Contents">
+  <p class="toc-title">Contents</p>
+  <ol>
+    <li><a href="#install"><span class="num">01</span>Install &amp; first launch</a></li>
+    <li><a href="#first-game"><span class="num">02</span>Ship your first game</a></li>
+    <li><a href="#editor"><span class="num">03</span>The editor at a glance</a></li>
+    <li><a href="#concepts"><span class="num">04</span>Core concepts</a></li>
+    <li><a href="#components"><span class="num">05</span>Component cheat sheet</a></li>
+    <li><a href="#art-styles"><span class="num">06</span>One-click art styles</a></li>
+    <li><a href="#scripting"><span class="num">07</span>Scripting quickstart</a></li>
+    <li><a href="#accessibility"><span class="num">08</span>Accessibility</a></li>
+    <li><a href="#export"><span class="num">09</span>Build &amp; export</a></li>
+    <li><a href="#gotchas"><span class="num">10</span>Gotchas</a></li>
+    <li><a href="#shaders"><span class="num">11</span>Shader edit workflow</a></li>
+    <li><a href="#refcard"><span class="num">12</span>Quick reference card</a></li>
+    <li><a href="#next"><span class="num">→</span>Where to go next</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<section id="install">
+  <h2><span class="num">01</span><a class="anchor" href="#install">Install &amp; first launch</a></h2>
+  <p><strong>You need:</strong> a C++20 compiler (MSVC on Windows / GCC or Clang on Linux),
+  CMake, and the Vulkan SDK. Windows is the primary platform; Linux builds from source.</p>
+<pre><code><span class="prompt">$</span> git clone https://github.com/MartyChouette/TEGE.git
+<span class="prompt">$</span> cd TEGE
+
+<span class="cm"># Windows (Visual Studio)</span>
+<span class="prompt">$</span> cd build &amp;&amp; cmake .. &amp;&amp; cmake --build . --config Release
+
+<span class="cm"># Linux / Mac</span>
+<span class="prompt">$</span> cd build &amp;&amp; cmake .. &amp;&amp; make -j$(nproc)</code></pre>
+  <p>Run the editor:</p>
+  <ul>
+    <li>Windows: <code>build/bin/Release/EnjinEditor.exe</code></li>
+    <li>Linux/Mac: <code>build/bin/EnjinEditor</code></li>
+  </ul>
+  <div class="note">
+    <span class="callout-label">Note</span>
+    <p>After adding new source files, re-run <code>cmake ..</code> in <code>build/</code> — the
+    build globs sources at configure time. If you touched shaders, see <a href="#shaders">§11</a>.</p>
+  </div>
+</section>
+
+<section id="first-game">
+  <h2><span class="num">02</span><a class="anchor" href="#first-game">Ship your first game in 10 minutes</a></h2>
+  <p>The fastest path to a real, playable, exported <code>.exe</code>:</p>
+  <ol class="steps">
+    <li><strong>Launch <code>EnjinEditor</code>.</strong> You land on the Project Hub.</li>
+    <li><strong>New Project → pick a template.</strong> Choose <strong>Coin Rush</strong> (a
+    complete collect-the-coins game) — not "Blank" for your first run.</li>
+    <li><strong>Press Play</strong> (the ▶ toolbar button, or the Play shortcut). Move with
+    WASD, collect coins. This is the actual game loop running.</li>
+    <li><strong>Press Stop.</strong> Any changes you made in Play mode roll back (scene edits
+    persist, play-state doesn't).</li>
+    <li><strong>Tweak something.</strong> Select the player in the Hierarchy, change a value in
+    the Inspector (movement speed on its Script, a Material colour, a Light).</li>
+    <li><strong>Build → Export.</strong> Configure output directory + window title, run the
+    build. TEGE packs your project into a <code>game.enjpak</code> and drops a standalone
+    player next to it.</li>
+    <li><strong>Run the exported <code>.exe</code>.</strong> That's your game, shipping without
+    the editor.</li>
+  </ol>
+  <p>That is the whole arc:</p>
+  <div class="arc">
+    <span class="step">template</span><span class="sep">→</span>
+    <span class="step">edit</span><span class="sep">→</span>
+    <span class="step">play</span><span class="sep">→</span>
+    <span class="step">export</span><span class="sep">→</span>
+    <span class="step">run</span>
+  </div>
+  <p>Everything below is detail on each step.</p>
+</section>
+
+<section id="editor">
+  <h2><span class="num">03</span><a class="anchor" href="#editor">The editor at a glance</a></h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Panel</th><th>What it's for</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Hierarchy</strong></td><td>The entity tree for the open scene. Select, parent, rename, delete.</td></tr>
+      <tr><td><strong>Inspector</strong></td><td>Components on the selected entity. Each panel is self-documenting (what it does, how to use it, a script snippet, what it connects to). Add Component is at the bottom.</td></tr>
+      <tr><td><strong>Viewport</strong></td><td>The 3D/2D scene. Fly with WASD + right-mouse. Gizmos move/rotate/scale the selection.</td></tr>
+      <tr><td><strong>Asset Browser</strong></td><td>Project files. Drag assets onto entities, the viewport, or component fields.</td></tr>
+      <tr><td><strong>Scene Settings</strong></td><td>Per-scene art style, sky, fog, post-processing.</td></tr>
+      <tr><td><strong>Console</strong> <kbd>`</kbd></td><td>Log output + commands.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3><a class="anchor" href="#editor">Keyboard shortcuts</a></h3>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Key</th><th>Action</th><th>Key</th><th>Action</th></tr></thead>
+    <tbody>
+      <tr><td><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></td><td>Translate / Rotate / Scale gizmo</td><td><kbd>F</kbd></td><td>Focus camera on selection</td></tr>
+      <tr><td><kbd>4</kbd></td><td>Toggle world/local gizmo space</td><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Duplicate selection</td></tr>
+      <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> + RMB</td><td>Fly camera</td><td><kbd>Delete</kbd></td><td>Delete selection</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>P</kbd></td><td>Command palette</td><td><kbd>`</kbd></td><td>Toggle console</td></tr>
+      <tr><td><kbd>F11</kbd></td><td>Fullscreen game view (while playing)</td><td><kbd>F1</kbd></td><td>Game Debug panel</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Exit fullscreen / focus mode</td><td><kbd>F2</kbd></td><td>Engine Debug Workstation</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="concepts">
+  <h2><span class="num">04</span><a class="anchor" href="#concepts">Core concepts</a></h2>
+  <ul>
+    <li><strong>Project</strong> — a <code>.enjinproject</code> file (JSON manifest) plus its
+    <code>assets/</code>, <code>scripts/</code>, and scene files. One project, many scenes.</li>
+    <li><strong>Scene</strong> — a <code>.enjin</code> file (JSON). A tree of entities. One
+    scene is the start scene (<code>isStartScene</code>); the build list controls
+    inclusion/order.</li>
+    <li><strong>Entity</strong> — a handle. Owns nothing by itself; it's the sum of its
+    components. IDs are generational — a destroyed-and-recreated entity is a
+    <em>different</em> handle.</li>
+    <li><strong>Component</strong> — plain data attached to an entity (Transform, Mesh,
+    Material, Light, Camera, Sprite2D, Rigidbody, Script, …). 140+ types.</li>
+    <li><strong>System</strong> — logic that runs over components each frame (rendering,
+    physics, scripting, animation).</li>
+  </ul>
+  <div class="note">
+    <span class="callout-label">File extensions</span>
+    <p><code>.enjinproject</code> = project, <code>.enjin</code> = scene. (There is no
+    <code>.enjscene</code>.) In scene JSON the script key is <code>scriptComponent</code>.</p>
+  </div>
+</section>
+
+<section id="components">
+  <h2><span class="num">05</span><a class="anchor" href="#components">Component cheat sheet</a></h2>
+  <p>The ones you'll use most:</p>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>Component</th><th>Does</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Transform</strong></td><td>Position / rotation / scale</td><td>Rotation is Euler degrees in the inspector. Parenting nests transforms.</td></tr>
+      <tr><td><strong>Mesh</strong></td><td>The 3D geometry drawn</td><td>Pair with a <strong>Material</strong>. <code>subMeshes</code> for multi-material.</td></tr>
+      <tr><td><strong>Material</strong></td><td>PBR look: colour, textures, roughness, metalness</td><td>Drives lit shading. Has a "Surface Response" block (footstep/impact sounds).</td></tr>
+      <tr><td><strong>Light</strong></td><td>Directional / point / spot</td><td><strong>No direction field</strong> — a directional light's aim comes from the Transform's rotation.</td></tr>
+      <tr><td><strong>Camera</strong></td><td>The view</td><td>One is the game camera. Perspective or orthographic (don't mix in one scene).</td></tr>
+      <tr><td><strong>Sprite2D</strong></td><td>A 2D image quad</td><td><code>flipX</code>/<code>flipY</code> toggles. Sorting layer + order control draw depth.</td></tr>
+      <tr><td><strong>Rigidbody / Colliders</strong></td><td>Physics body + shape</td><td>3D = Jolt, 2D = Box2D — never mix in one scene. Collider sizes are <strong>world-space</strong> (scale is ignored).</td></tr>
+      <tr><td><strong>Script</strong></td><td>Attaches an AngelScript behavior</td><td>See <a href="#scripting">§7</a>. Serialized under key <code>scriptComponent</code>.</td></tr>
+      <tr><td><strong>Tilemap</strong></td><td>2D tile grid</td><td>Painted by the Dungeon/WFC procgen components.</td></tr>
+      <tr><td><strong>Terrain</strong></td><td>Heightmesh</td><td>Painted by the Terrain Generator.</td></tr>
+      <tr><td><strong>Procgen suite</strong></td><td>DungeonGenerator, Scatter, TerrainGenerator, WFC (2D tiles + 3D modules), RandomBag</td><td>Each has a "Generate Now" button and a self-documenting panel.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Add a component via <strong>Add Component</strong> at the bottom of the Inspector (grouped
+  by category: Rendering, Physics, Effects, Procedural, UI, …). Every panel tells you what it
+  connects to and offers to add missing partners.</p>
+</section>
+
+<section id="art-styles">
+  <h2><span class="num">06</span><a class="anchor" href="#art-styles">One-click art styles</a><span class="flag-tag">flagship</span></h2>
+  <p><strong>Scene Settings → Art Style Preset.</strong> Pick a look from a dropdown and the
+  whole scene re-shades. Seven presets:</p>
+  <div class="presets">
+    <span class="preset">Realistic PBR</span>
+    <span class="preset">Classic Blinn-Phong</span>
+    <span class="preset">Hand-Painted</span>
+    <span class="preset">Toon / Anime</span>
+    <span class="preset">Low-Poly Retro</span>
+    <span class="preset">Pixel Art</span>
+    <span class="preset">NPR Sketch</span>
+  </div>
+  <p>Each preset is a bundle of shading model + post-processing settings (dithering, cel
+  outlines, crosshatch, palette). After applying one you can still hand-tune every value
+  underneath it — the preset is a starting point, not a lock.</p>
+</section>
+
+<section id="scripting">
+  <h2><span class="num">07</span><a class="anchor" href="#scripting">Scripting quickstart (AngelScript)</a></h2>
+  <p>Scripts live in your project's <code>scripts/</code> folder as <code>.as</code> files and
+  attach via a <strong>Script</strong> component. Every script is a class that inherits
+  <strong><code>TegeBehavior</code></strong>.</p>
+<pre><code><span class="kw">class</span> PlayerController : TegeBehavior {
+    [Property] <span class="kw">float</span> moveSpeed = 5.0f;   <span class="cm">// shows up as a slider in the Inspector</span>
+
+    <span class="kw">void</span> <span class="fn">OnStart</span>() {
+        <span class="cm">// called once when play begins</span>
+    }
+
+    <span class="kw">void</span> <span class="fn">OnUpdate</span>(<span class="kw">float</span> dt) {
+        Vector3 move = <span class="fn">Vector3</span>(0, 0, 0);
+        <span class="kw">if</span> (<span class="fn">Input_GetKey</span>(Key::W)) move.z -= 1;
+        <span class="kw">if</span> (<span class="fn">Input_GetKey</span>(Key::S)) move.z += 1;
+        <span class="kw">if</span> (<span class="fn">Input_GetKey</span>(Key::A)) move.x -= 1;
+        <span class="kw">if</span> (<span class="fn">Input_GetKey</span>(Key::D)) move.x += 1;
+
+        move = move.<span class="fn">Normalized</span>() * moveSpeed;
+        <span class="fn">SetPosition</span>(<span class="fn">GetPosition</span>() + move * dt);   <span class="cm">// TegeBehavior transform helpers</span>
+    }
+}</code></pre>
+  <p><strong>Lifecycle callbacks</strong> (override any): <code>OnCreate()</code>,
+  <code>OnStart()</code>, <code>OnUpdate(float dt)</code>, <code>OnFixedUpdate(float dt)</code>,
+  <code>OnLateUpdate(float dt)</code>, <code>OnDestroy()</code>.</p>
+  <p><strong>Built-in helpers on <code>TegeBehavior</code>:</strong>
+  <code>GetPosition()/SetPosition()</code>, <code>GetRotation()/SetRotation()</code>,
+  <code>GetScale()/SetScale()</code>, <code>GetName()</code>, <code>GetEntity()</code>,
+  <code>StartCoroutine("funcName")</code>.</p>
+  <p><strong>Common global API families</strong> (roughly 1,000+ bindings):
+  <code>Input_*</code>, <code>Entity_*</code>, <code>Physics_*</code>, <code>Camera_*</code>,
+  <code>Audio_*</code>, plus the procgen ones (<code>RandomBag_Draw</code>,
+  <code>Scatter_Generate</code>, <code>TerrainGen_Generate</code>, <code>WFC_Generate</code>).
+  The full reference is <code>docs/SCRIPTING_API.md</code>. Scripts are sandboxed
+  (1M-instruction limit) and <code>#include</code> is restricted to the script directory.</p>
+  <div class="note">
+    <span class="callout-label">Note</span>
+    <p>Module names are <code>parentDir_stem</code> (<code>scripts/Foo.as</code> → module
+    <code>scripts_Foo</code>).</p>
+  </div>
+</section>
+
+<section id="accessibility">
+  <h2><span class="num">08</span><a class="anchor" href="#accessibility">Accessibility</a><span class="flag-tag">flagship — on by default</span></h2>
+  <p>Every exported game carries an accessibility menu. What you get out of the box:</p>
+  <ul>
+    <li><strong>Vision:</strong> 8 colorblind correction modes (Protanopia, Deuteranopia,
+    Tritanopia, their -anomaly variants, Achromatopsia, Achromatomaly) with strength, plus
+    brightness/contrast and high-contrast themes.</li>
+    <li><strong>Reading:</strong> OpenDyslexic dyslexia-friendly font, text scaling.</li>
+    <li><strong>Motion:</strong> reduced-motion toggle (respected by animated UI).</li>
+    <li><strong>Motor:</strong> remappable input, one-handed presets, dwell-click (hover to
+    click), sticky/switch access.</li>
+    <li><strong>Audio &amp; narration:</strong> screen-reader / announcer TTS and a status bar
+    in exported games.</li>
+  </ul>
+  <p>You don't wire this up per game — it's engine-provided. Author your UI with the UICanvas
+  anchors and it inherits the accessibility layer. There's an <strong>Accessibility
+  Demo</strong> template that is exactly the public web demo.</p>
+</section>
+
+<section id="export">
+  <h2><span class="num">09</span><a class="anchor" href="#export">Build &amp; export your game</a></h2>
+  <ol class="steps">
+    <li><strong>Build → Export</strong> (or configure a <code>BuildConfig</code>: project path,
+    output dir, window title/size).</li>
+    <li>TEGE runs the <strong>BuildPipeline</strong>: packs assets + scripts into a
+    <code>game.enjpak</code>, emits loose <code>scripts/</code>,
+    <code>scripts/enjin_api/</code>, and <code>assets/</code> next to the exe, and copies a
+    prebuilt <strong><code>EnjinPlayer.exe</code></strong>.</li>
+    <li>The player loads <code>game.enjpak</code> from its own directory at startup.</li>
+  </ol>
+  <div class="warn">
+    <span class="callout-label">Watch out</span>
+    <p>If you changed engine code, rebuild the <code>EnjinPlayer</code> target too, or exports
+    ship a stale engine.</p>
+  </div>
+  <p><strong>Web:</strong> builds target WebAssembly + WebGPU via Emscripten
+  (<code>ENJIN_PLATFORM_WEB=ON</code>); output is
+  <code>build-web/bin/EnjinPlayer.{js,wasm}</code>. Best in Chrome/Edge (WebGPU).</p>
+</section>
+
+<section id="gotchas">
+  <h2><span class="num">10</span><a class="anchor" href="#gotchas">Gotchas that will bite you</a></h2>
+  <p>Keep these in mind:</p>
+  <ul class="gotchas">
+    <li><strong>Scene extension is <code>.enjin</code></strong>, project is
+    <code>.enjinproject</code>. No <code>.enjscene</code>.</li>
+    <li><strong>Directional lights have no direction field</strong> — rotate the light's
+    Transform.</li>
+    <li><strong>Collider sizes are world-space</strong> — Jolt/Box2D ignore Transform scale. A
+    <code>(50, 0.1, 50)</code> box is 50 units regardless of the entity's scale.</li>
+    <li><strong>Never mix 2D and 3D physics</strong> in one scene (Box2D vs Jolt are separate
+    worlds).</li>
+    <li><strong>Don't mix perspective and orthographic cameras</strong> in one scene.</li>
+    <li><strong>UICanvas anchors are Unity-style:</strong> <code>edge = anchor*parent +
+    offset</code>. A centered 200-wide element needs <code>offsetLeft=-100,
+    offsetRight=+100</code> (not <code>+100/-100</code>).</li>
+    <li><strong>Unknown entity keys in scene JSON are silently dropped</strong> on the next
+    save — if you hand-edit a scene, use the exact serializer keys.</li>
+    <li><strong>The editor auto-saves the open scene on a timer</strong> — don't edit a scene
+    file out-of-band while the editor is open on it.</li>
+  </ul>
+</section>
+
+<section id="shaders">
+  <h2><span class="num">11</span><a class="anchor" href="#shaders">Shader edit workflow</a></h2>
+  <p>Only if you touch <code>Engine/shaders/</code>. Editing a shader isn't just editing the
+  GLSL — the engine reads embedded SPIR-V:</p>
+  <div class="pipeline">
+    edit .glsl<span class="sep">→</span>glslangValidator -V<span class="sep">→</span>python _gen_all.py<span class="sep">→</span>rebuild engine
+  </div>
+  <p>After any change to a UBO/SSBO struct (<code>LightingUBO</code>,
+  <code>UniformBufferObject</code>, <code>MaterialGPU</code>, …), recompile <strong>all</strong>
+  affected shaders and regenerate <code>ShaderData.h</code>, or the GPU reads wrong offsets
+  (dark scenes, wrong colours, crashes). Ray-tracing shaders use
+  <code>glslc --target-env=vulkan1.2 -I.</code> then <code>python _gen_rt.py</code>.</p>
+</section>
+
+<section id="refcard">
+  <h2><span class="num">12</span><a class="anchor" href="#refcard">Quick reference card</a></h2>
+  <div class="refcard">
+    <div class="card">
+      <h4>Extensions</h4>
+      <p><code>.enjinproject</code> project<span class="dot">·</span><code>.enjin</code> scene<span class="dot">·</span><code>.enjprefab</code> prefab<span class="dot">·</span><code>.enjpak</code> packed game<span class="dot">·</span><code>.enjshader</code> shader graph</p>
+    </div>
+    <div class="card">
+      <h4>Build &amp; run</h4>
+      <p><strong>Build:</strong> <code>cd build &amp;&amp; cmake .. &amp;&amp; cmake --build . --config Release</code></p>
+      <p><strong>Editor:</strong> <code>build/bin/Release/EnjinEditor.exe</code></p>
+      <p><strong>Tests:</strong> <code>cd build &amp;&amp; ctest -C Release --output-on-failure</code> (needs <code>-DENJIN_BUILD_TESTS=ON</code> at configure)</p>
+    </div>
+    <div class="card">
+      <h4>Gizmos &amp; windows</h4>
+      <p><kbd>1</kbd> move<span class="dot">·</span><kbd>2</kbd> rotate<span class="dot">·</span><kbd>3</kbd> scale<span class="dot">·</span><kbd>4</kbd> space<span class="dot">·</span><kbd>F</kbd> focus<span class="dot">·</span><kbd>Ctrl</kbd>+<kbd>D</kbd> dup<span class="dot">·</span><kbd>Delete</kbd> delete</p>
+      <p><kbd>Ctrl</kbd>+<kbd>P</kbd> palette<span class="dot">·</span><kbd>`</kbd> console<span class="dot">·</span><kbd>F1</kbd> game debug<span class="dot">·</span><kbd>F2</kbd> engine debug<span class="dot">·</span><kbd>F11</kbd> fullscreen game</p>
+    </div>
+    <div class="card">
+      <h4>Scripting</h4>
+      <p><strong>Skeleton:</strong> <code>class Name : TegeBehavior { void OnUpdate(float dt) { … } }</code></p>
+      <p><strong>Input:</strong> <code>Input_GetKey(Key::W)</code></p>
+      <p><strong>Move:</strong> <code>SetPosition(GetPosition() + v*dt)</code></p>
+    </div>
+    <div class="card">
+      <h4>Physics</h4>
+      <p>3D = Jolt<span class="dot">·</span>2D = Box2D<span class="dot">·</span>never mix<span class="dot">·</span>collider sizes are world-space</p>
+    </div>
+    <div class="card">
+      <h4>Flagships</h4>
+      <p><strong>Art style:</strong> Scene Settings → Art Style Preset (7 presets)</p>
+      <p><strong>Accessibility:</strong> engine-provided menu in every export (8 colorblind modes, dyslexia font, motor + TTS)</p>
+    </div>
+  </div>
+</section>
+
+<section id="next">
+  <h2><span class="num">→</span><a class="anchor" href="#next">Where to go next</a></h2>
+  <ul class="next-docs">
+    <li><code>docs/USER_MANUAL.md</code> — the full component + editor reference (canonical manual).</li>
+    <li><code>docs/SCRIPTING_API.md</code> — every AngelScript binding.</li>
+    <li><code>docs/TUTORIALS.md</code> — step-by-step tutorials.</li>
+    <li><code>docs/BUILD.md</code> — detailed build/dependency guide.</li>
+    <li><code>docs/ARCHITECTURE.md</code> — how the engine is put together.</li>
+  </ul>
+</section>
+
+</main>
+</div>
+
+<footer>
+  TEGE — The Enjin Game Engine · Beginner's Guide &amp; Cheat Sheet · checked against the engine as of 2026-08-21
+</footer>
+
+</body>
+</html>
