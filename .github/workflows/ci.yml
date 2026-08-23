@@ -92,14 +92,12 @@ jobs:
       - name: Render smoke test (golden capture on lavapipe)
         shell: pwsh
         timeout-minutes: 15
-        # Experimental: does not fail the build yet. The long-hunted "mid-boot
-        # lavapipe crash" turned out to be no crash at all - EnjinEditor is a
-        # GUI-subsystem exe, PowerShell's call operator does not wait for those,
-        # $LASTEXITCODE stayed unset, the step threw instantly, and the runner
-        # killed the half-booted editor at step teardown. Piping stdout (below)
-        # forces a real wait. Kept non-blocking for one green run before it
-        # becomes a required check.
-        continue-on-error: true
+        # A required check since the first green run (2026-08-23). Historical
+        # note: the long-hunted "mid-boot lavapipe crash" was never a crash -
+        # EnjinEditor is a GUI-subsystem exe, PowerShell's call operator does
+        # not wait for those, $LASTEXITCODE stayed unset, the step threw
+        # instantly, and the runner killed the half-booted editor at step
+        # teardown. Piping stdout (below) forces a real wait.
         env:
           VK_DRIVER_FILES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
           VK_ICD_FILENAMES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
