@@ -35,6 +35,11 @@ This document captures detailed technical plans, performance findings, and strat
 | **Platforms** | **Steam Deck — Verified target: Proton/native Linux, gamepad-first UI, 1280x800, small-text a11y** | **P1** |
 | **Platforms** | **VR/XR/AR — OpenXR path, stereo/multiview renderer, motion controllers (elevated from P4)** | **P1** |
 | **Platforms** | **Mobile (Android/iOS — render tiers, TBDR/tiled paths, touch input, on-screen controls) (elevated from P4)** | **P1** |
+| **Flagship** | **Reverse-step debugging + shareable replays (see Flagship Initiatives #5)** | **P1** |
+| **Flagship** | **One-click web link + itch.io publish + portal presets (#6)** | **P1** |
+| **Flagship** | **MCP server for the editor (#7)** | **P1** |
+| **Flagship** | **Per-style splash + accessibility statement (#8)** | **P1** |
+| **Flagship** | **Gaussian splat import .ply/.spz with art styles (#9)** | **P1** |
 | **Platforms** | macOS (MoltenVK) | P2 |
 | **Platforms** | Xbox Series X/S (GDK/D3D12) | P2 |
 | **Platforms** | PlayStation 5 (PSDK/AGC) | P3 |
@@ -200,6 +205,95 @@ The goal: TEGE can output to a headset and to a phone, from the same project.
   the render-tier work overlaps with the Steam Deck "small GPU" tuning.
 - **Shared prerequisite:** both tracks need the renderer to stop assuming one camera/view.
   Doing the multiview/stereo refactor once unblocks VR, AR, and cleaner mobile split-screen.
+
+## Flagship Feature Initiatives (added 2026-08-23, P1)
+
+Continuing the initiative list (1–4 are the platform tracks above). These are the
+identity features: what makes TEGE's pitch bleeding-edge rather than catch-up.
+
+### 5. Reverse-step debugging + shareable replays — the flagship bleeding-edge claim
+
+Step BACKWARD through a running game frame by frame, and share a replay file that
+reproduces a session anywhere.
+- **Already in place:** `RecordRewindSystem` + `RecordRewindComponent` (per-entity
+  record/rewind), `PlayModeDiff` (what-changed tracking), and the procgen suite is
+  seeded-deterministic end to end (every generator reproduces from a u32 seed).
+- **To build:** an input-stream recorder (timestamped device events → the replay is
+  initial state + seed + inputs, tiny to share); a deterministic fixed-step play mode
+  (replays diverge without it — float math is fine same-machine, document cross-machine
+  caveats); a global snapshot ring buffer (every N frames) so reverse-step = restore
+  nearest snapshot + re-simulate forward; editor UI: a timeline scrubber in play mode
+  with step-back/step-forward buttons next to Play/Pause.
+- **Risk:** determinism discipline — any system reading wall-clock or unseeded RNG
+  breaks replays (the player's dt fallback, particle random seeds). Needs an audit
+  pass + a replay-divergence test harness. This is the hard 20%.
+- **Why flagship:** reverse-step + shareable repro turns every playtester into a bug
+  reporter with a perfect repro attached. No indie engine ships this.
+
+### 6. One-click shareable web link + itch.io publish + portal presets — the growth loop
+
+From editor to a URL someone can click, in one action.
+- **Already in place:** headless `--build-web` (project → game.enjpak), the web player
+  (WASM/WebGPU), and `HTML5Exporter` already packages a zip explicitly "for itch.io /
+  Newgrounds upload".
+- **To build:** itch.io publish via butler (bundle or detect the CLI; store the API key
+  in editor settings; Build → "Publish to itch.io" pushes the channel); a hosted
+  quick-share option (upload the web build to a TEGE share endpoint → short link, the
+  way the existing web demo is hosted); portal presets (itch / Newgrounds / Poki /
+  CrazyGames each want specific canvas sizing, SDK hooks, and cookie/audio autoplay
+  behavior — ship a preset dropdown that configures the export accordingly).
+- **Risk:** low technical, medium operational (hosting costs/abuse for quick-share;
+  butler auth UX). Start with itch.io butler — it is the 80% of the loop.
+
+### 7. MCP server for the editor
+
+Expose the editor over the Model Context Protocol so AI assistants can drive it:
+open/create projects, entity + component CRUD, scene queries, play control, golden
+screenshots, build/export.
+- **Already in place:** the string-keyed component serdes registry (SerializeOne/
+  DeserializeOne/RemoveOneComponent — a ready-made generic CRUD surface for every one
+  of ~160 components), the golden capture path (screenshots on demand), headless CLI
+  modes, and the HTTPClient. The engine is itself AI-assisted — this closes the loop.
+- **To build:** an MCP transport (stdio subprocess or local HTTP/SSE) hosting tools
+  like `list_entities`, `get_component`, `set_component`, `add_component`,
+  `spawn_prefab`, `enter_play`, `capture_view`, `build_web`; a main-thread command
+  queue so MCP calls marshal onto the editor loop (adr-0004: no off-thread mutation).
+- **Risk:** small. The registry did the hard part already. Security: bind localhost
+  only, opt-in setting.
+
+### 8. Per-style splash screens carrying the accessibility statement
+
+The "made with TEGE" card becomes a beautiful, art-style-matched moment that also
+states the accessibility commitment ("this game ships with colorblind modes, screen
+reader, remappable input...").
+- **Already in place:** `EngineSplash.cpp` (`DrawEngineSplash`, editor + player, font
+  injection), 7 art-style presets to key the visuals from, the a11y feature set to
+  describe, reduced-motion setting to respect.
+- **To build:** per-style splash variants (palette + typography + motion per preset:
+  PBR = cinematic fade, Pixel Art = dithered reveal, Toon = ink wipe...); the
+  accessibility statement line with an optional "press A for accessibility options"
+  hook straight into the GameMenus a11y tab; a Build setting to pick style/opt out.
+- **Risk:** none technical — design time. High identity value per hour spent.
+
+### 9. Gaussian splat import (.ply/.spz) with art styles applied
+
+Import 3D-scanned Gaussian splats and put them through the TEGE art-style grading —
+scanned reality rendered as toon, pixel art, or PS1.
+- **Already in place:** `.ply` parses today (as triangle meshes via Assimp — splat
+  .ply is a different schema: per-point position/scale/rotation/SH-color/opacity);
+  bindless textures, compute infrastructure (GPU particles prove the sim+draw path),
+  and the art-style/post pipeline to feed the result through.
+- **To build:** a splat loader (.ply splat schema + .spz compressed); a splat renderer
+  (GPU radix/bitonic depth sort per frame + instanced quad rasterization with
+  anisotropic 2D Gaussian evaluation — the established real-time approach; the GPU
+  particle system is the closest in-engine cousin); LOD/culling for multi-million-splat
+  scenes; then route the composite through the art-style + post stack (that last part
+  is nearly free — splats land in the same HDR buffer everything else grades from).
+- **Risk:** renderer-heavy (the sort at scale is the perf cliff), and splats bypass
+  the lighting model (they are baked radiance) — document that they take post-process
+  styling, not per-light styling, at first.
+- **Why flagship:** "scan your room, make it a PS1 level" is a one-sentence pitch
+  nobody else has.
 
 ---
 
