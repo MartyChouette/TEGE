@@ -61,12 +61,16 @@ jobs:
 
       - name: Stage Vulkan loader for the smoke test
         shell: pwsh
-        # The runner has no GPU drivers, so no system vulkan-1.dll exists. The
-        # setup-vulkan-sdk action built the loader; put it next to the editor so
-        # GLFW can find it (without it: "no Vulkan instance extensions" / -9).
+        # The runner has no GPU drivers, so no system vulkan-1.dll exists and GLFW
+        # cannot even query instance extensions. The SDK action's source-built
+        # loader turned out not to satisfy GLFW's probe, so stage the OFFICIAL
+        # LunarG runtime loader (the signed dll shipped games use) next to the
+        # editor instead.
         run: |
-          $dll = Get-ChildItem -Recurse "$env:VULKAN_SDK" -Filter vulkan-1.dll | Select-Object -First 1
-          if (-not $dll) { throw "vulkan-1.dll not found under VULKAN_SDK" }
+          curl.exe -sL -o vkrt.zip https://sdk.lunarg.com/sdk/download/latest/windows/vulkan-runtime-components.zip
+          Expand-Archive vkrt.zip -DestinationPath vkrt -Force
+          $dll = Get-ChildItem -Recurse vkrt -Filter vulkan-1.dll | Where-Object { $_.FullName -match '\\x64\\' } | Select-Object -First 1
+          if (-not $dll) { throw "x64 vulkan-1.dll not found in the runtime zip" }
           Copy-Item $dll.FullName build\bin\Release\
           Write-Host "staged $($dll.FullName)"
 
