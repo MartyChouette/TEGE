@@ -10,8 +10,44 @@
 namespace Enjin {
 namespace GUI {
 
+// Per-art-style splash palette: same composition, restyled. Indices match the
+// Art Style Preset dropdown (SceneRenderSettings artStylePreset 0-6).
+namespace {
+struct C3 { int r, g, b; };
+struct SplashPalette {
+    C3 bg;         // opaque backdrop
+    C3 structure;  // wireframe hexagons / rings / cool geometry
+    C3 accent;     // glows, mantra, flares (the "sage" family in the default)
+    C3 title;      // the TEGE wordmark
+    C3 spark;      // bright particles / paper tones
+};
+const SplashPalette kSplashPalettes[7] = {
+    // 0 Realistic PBR - the original steel-and-sage look
+    { {13,13,20},  {100,140,180}, {160,200,160}, {199,218,196}, {240,240,230} },
+    // 1 Classic Blinn-Phong - warm brass and amber
+    { {20,15,10},  {180,140,90},  {220,180,120}, {235,215,180}, {255,245,220} },
+    // 2 Hand-Painted - canvas and terracotta
+    { {24,18,16},  {170,120,100}, {200,160,120}, {230,205,180}, {250,240,225} },
+    // 3 Toon / Anime - ink night with a bold pop
+    { {10,10,14},  {90,110,220},  {255,90,140},  {250,250,255}, {255,255,255} },
+    // 4 Low-Poly Retro - PS1 dusk grays
+    { {14,16,22},  {110,120,150}, {130,180,190}, {200,210,220}, {230,235,240} },
+    // 5 Pixel Art - console palette greens and golds
+    { {8,8,12},    {80,200,120},  {240,160,60},  {240,240,220}, {255,255,255} },
+    // 6 NPR Sketch - graphite and warm paper
+    { {18,17,15},  {150,150,140}, {200,195,180}, {235,230,215}, {250,248,240} },
+};
+} // namespace
+
 void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* creditLine,
                       ImFont* titleFont) {
+    DrawEngineSplash(timeSeconds, duration, fadeStart, creditLine, titleFont, SplashOptions{});
+}
+
+void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* creditLine,
+                      ImFont* titleFont, const SplashOptions& opts) {
+    const SplashPalette& P = kSplashPalettes[opts.artStylePreset < 7u ? opts.artStylePreset : 0u];
+    const bool reduced = opts.reducedMotion;
     ImGuiIO& io = ImGui::GetIO();
     const f32 t = timeSeconds;
 
@@ -67,21 +103,22 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
         // 1a. Solid dark fill — stays fully opaque even during fade-out
         //     so the 3D scene never shows through
         dl->AddRectFilled(ImVec2(0, 0), ImVec2(W, H),
-            IM_COL32(13, 13, 20, 255));
+            IM_COL32(P.bg.r, P.bg.g, P.bg.b, 255));
 
         // 1b. Radial vignette with subtle breathing
-        f32 breath = 1.0f + 0.03f * std::sin(t * 0.8f);
+        f32 breath = reduced ? 1.0f : 1.0f + 0.03f * std::sin(t * 0.8f);
         for (int ring = 0; ring < 3; ring++) {
             f32 radius = (0.35f + ring * 0.15f) * std::min(W, H) * breath;
             int vigAlpha = static_cast<int>((20 - ring * 6) * ga);
             if (vigAlpha > 0) {
                 dl->AddCircle(center, radius,
-                    IM_COL32(100, 130, 180, vigAlpha), 64, 1.5f);
+                    IM_COL32(P.structure.r, P.structure.g, P.structure.b, vigAlpha), 64, 1.5f);
             }
         }
 
         // 1c. 12 wireframe hexagons — slowly rotating, drifting upward
-        for (int h = 0; h < 12; h++) {
+        // (decorative motion: skipped for reduced-motion players)
+        for (int h = 0; h < (reduced ? 0 : 12); h++) {
             f32 hx = hashFloat(h * 7 + 1) * W;
             f32 hy = hashFloat(h * 7 + 2) * H;
             hy = std::fmod(hy - t * (15.0f + hashFloat(h * 7 + 3) * 10.0f), H + 100.0f);
@@ -97,7 +134,7 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                 }
                 for (int v = 0; v < 6; v++) {
                     dl->AddLine(pts[v], pts[(v + 1) % 6],
-                        IM_COL32(100, 140, 180, hexAlpha), 1.0f);
+                        IM_COL32(P.structure.r, P.structure.g, P.structure.b, hexAlpha), 1.0f);
                 }
             }
         }
@@ -106,12 +143,12 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
 
         auto orbColor = [&](int idx) -> ImVec4 {
             f32 pick = hashFloat(idx * 13 + 100);
-            if (pick < 0.4f) return ImVec4(160, 200, 160, 1);
-            if (pick < 0.8f) return ImVec4(100, 140, 220, 1);
-            return ImVec4(220, 210, 190, 1);
+            if (pick < 0.4f) return ImVec4((f32)P.accent.r, (f32)P.accent.g, (f32)P.accent.b, 1);
+            if (pick < 0.8f) return ImVec4((f32)P.structure.r, (f32)P.structure.g, (f32)P.structure.b, 1);
+            return ImVec4((f32)P.spark.r, (f32)P.spark.g, (f32)P.spark.b, 1);
         };
 
-        for (int i = 0; i < 24; i++) {
+        for (int i = 0; i < (reduced ? 0 : 24); i++) {
             bool foreground = (i >= 16);
             f32 baseRadius = foreground ? (5.0f + hashFloat(i * 11 + 50) * 9.0f)
                                         : (3.0f + hashFloat(i * 11 + 50) * 5.0f);
@@ -179,8 +216,8 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                         ImVec2(dPos[d].x - diamondR, dPos[d].y)
                     };
                     dl->AddConvexPolyFilled(dp, 4,
-                        IM_COL32(160, 200, 160, dAlpha / 3));
-                    dl->AddPolyline(dp, 4, IM_COL32(160, 200, 160, dAlpha), ImDrawFlags_Closed, 1.5f);
+                        IM_COL32(P.accent.r, P.accent.g, P.accent.b, dAlpha / 3));
+                    dl->AddPolyline(dp, 4, IM_COL32(P.accent.r, P.accent.g, P.accent.b, dAlpha), ImDrawFlags_Closed, 1.5f);
                 }
             }
         }
@@ -203,8 +240,8 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                         tp[v] = ImVec2(tx + std::cos(a) * triR, ty + std::sin(a) * triR);
                     }
                     dl->AddConvexPolyFilled(tp, 3,
-                        IM_COL32(160, 200, 160, triAlpha / 2));
-                    dl->AddPolyline(tp, 3, IM_COL32(160, 200, 160, triAlpha), ImDrawFlags_Closed, 1.0f);
+                        IM_COL32(P.accent.r, P.accent.g, P.accent.b, triAlpha / 2));
+                    dl->AddPolyline(tp, 3, IM_COL32(P.accent.r, P.accent.g, P.accent.b, triAlpha), ImDrawFlags_Closed, 1.0f);
                 }
             }
         }
@@ -216,8 +253,8 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
             f32 pulse2 = 250.0f + 5.0f * std::sin(t * 1.2f + 1.5f);
             int ringA = static_cast<int>(40 * ringAlphaF * ga);
             if (ringA > 0) {
-                dl->AddCircle(center, pulse1, IM_COL32(100, 140, 200, ringA), 64, 1.0f);
-                dl->AddCircle(center, pulse2, IM_COL32(100, 140, 200, ringA / 2), 64, 1.0f);
+                if (!reduced) dl->AddCircle(center, pulse1, IM_COL32(P.structure.r, P.structure.g, P.structure.b, ringA), 64, 1.0f);
+                if (!reduced) dl->AddCircle(center, pulse2, IM_COL32(P.structure.r, P.structure.g, P.structure.b, ringA / 2), 64, 1.0f);
             }
         }
 
@@ -229,7 +266,7 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                 f32 margin = 60.0f;
                 f32 bLen = 40.0f;
                 f32 slideOff = (1.0f - bracketT) * 80.0f;
-                u32 bCol = IM_COL32(140, 170, 200, bAlpha);
+                u32 bCol = IM_COL32(P.structure.r, P.structure.g, P.structure.b, bAlpha);
                 dl->AddLine(ImVec2(margin - slideOff, margin - slideOff),
                             ImVec2(margin - slideOff + bLen, margin - slideOff), bCol, 1.5f);
                 dl->AddLine(ImVec2(margin - slideOff, margin - slideOff),
@@ -284,7 +321,7 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                         f32 off = g * 2.0f;
                         int glowA = static_cast<int>((6 + (3 - g) * 3) * wordAlpha * ga);
                         if (glowA > 0) {
-                            u32 glowCol = IM_COL32(120, 200, 150, glowA);
+                            u32 glowCol = IM_COL32(P.accent.r, P.accent.g, P.accent.b, glowA);
                             dl->AddText(nullptr, mantraFontSize, ImVec2(wordX + off, wordY), glowCol, mantraWords[w]);
                             dl->AddText(nullptr, mantraFontSize, ImVec2(wordX - off, wordY), glowCol, mantraWords[w]);
                             dl->AddText(nullptr, mantraFontSize, ImVec2(wordX, wordY + off), glowCol, mantraWords[w]);
@@ -293,7 +330,7 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                     }
                     // Main text — sage green
                     dl->AddText(nullptr, mantraFontSize, ImVec2(wordX, wordY),
-                        IM_COL32(160, 215, 170, mAlpha), mantraWords[w]);
+                        IM_COL32(P.accent.r, P.accent.g, P.accent.b, mAlpha), mantraWords[w]);
                 }
             }
         }
@@ -317,7 +354,7 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                 int haloA = static_cast<int>(30 * revealT * ga);
                 if (haloA > 0) {
                     dl->AddCircleFilled(ImVec2(center.x, center.y - 10.0f), scaledSz.x * 0.6f,
-                        IM_COL32(160, 200, 160, haloA), 32);
+                        IM_COL32(P.accent.r, P.accent.g, P.accent.b, haloA), 32);
                 }
 
                 // Multi-layer glow: 3 layers in 4 directions
@@ -325,7 +362,7 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                     f32 off = (layer + 1) * 2.5f;
                     int glowA = static_cast<int>((25 - layer * 7) * revealT * ga);
                     if (glowA > 0) {
-                        u32 glowCol = IM_COL32(100, 160, 120, glowA);
+                        u32 glowCol = IM_COL32(P.accent.r, P.accent.g, P.accent.b, glowA);
                         dl->AddText(tfont, scaledFontSize, ImVec2(titlePos.x + off, titlePos.y), glowCol, title);
                         dl->AddText(tfont, scaledFontSize, ImVec2(titlePos.x - off, titlePos.y), glowCol, title);
                         dl->AddText(tfont, scaledFontSize, ImVec2(titlePos.x, titlePos.y + off), glowCol, title);
@@ -335,7 +372,7 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
 
                 // Main title text — sage green
                 dl->AddText(tfont, scaledFontSize, titlePos,
-                    IM_COL32(199, 218, 196, titleAlpha), title);
+                    IM_COL32(P.title.r, P.title.g, P.title.b, titleAlpha), title);
 
                 // Shimmer: white highlight sweep at t=1.8→2.4
                 f32 shimmerT = timerRamp(1.8f, 2.4f);
@@ -354,7 +391,7 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                             IM_COL32(255, 255, 255, shimmerA));
                         // Re-draw title on top so shimmer is blended behind letters
                         dl->AddText(tfont, scaledFontSize, titlePos,
-                            IM_COL32(220, 235, 218, titleAlpha), title);
+                            IM_COL32(P.title.r, P.title.g, P.title.b, titleAlpha), title);
                     }
                 }
             }
@@ -373,17 +410,17 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                 // Glow line (wider, dimmer)
                 dl->AddLine(ImVec2(center.x - lineHalf, lineY1),
                             ImVec2(center.x + lineHalf, lineY1),
-                            IM_COL32(100, 160, 130, lineA / 3), 4.0f);
+                            IM_COL32(P.accent.r, P.accent.g, P.accent.b, lineA / 3), 4.0f);
                 dl->AddLine(ImVec2(center.x - lineHalf, lineY2),
                             ImVec2(center.x + lineHalf, lineY2),
-                            IM_COL32(100, 160, 130, lineA / 3), 4.0f);
+                            IM_COL32(P.accent.r, P.accent.g, P.accent.b, lineA / 3), 4.0f);
                 // Sharp line
                 dl->AddLine(ImVec2(center.x - lineHalf, lineY1),
                             ImVec2(center.x + lineHalf, lineY1),
-                            IM_COL32(160, 210, 170, lineA), 1.5f);
+                            IM_COL32(P.accent.r, P.accent.g, P.accent.b, lineA), 1.5f);
                 dl->AddLine(ImVec2(center.x - lineHalf, lineY2),
                             ImVec2(center.x + lineHalf, lineY2),
-                            IM_COL32(160, 210, 170, lineA), 1.5f);
+                            IM_COL32(P.accent.r, P.accent.g, P.accent.b, lineA), 1.5f);
 
                 // 5b. Diamond caps at endpoints
                 f32 capR = 4.0f;
@@ -392,7 +429,7 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                         ImVec2(cx2, cy2 - capR), ImVec2(cx2 + capR, cy2),
                         ImVec2(cx2, cy2 + capR), ImVec2(cx2 - capR, cy2)
                     };
-                    dl->AddConvexPolyFilled(dp, 4, IM_COL32(200, 230, 200, lineA));
+                    dl->AddConvexPolyFilled(dp, 4, IM_COL32(P.accent.r, P.accent.g, P.accent.b, lineA));
                 };
                 drawDiamondCap(center.x - lineHalf, lineY1);
                 drawDiamondCap(center.x + lineHalf, lineY1);
@@ -412,14 +449,14 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                     ImVec2(center.x - 240, center.y - 20),
                     ImVec2(center.x - 240, center.y + 20),
                     ImVec2(center.x - 200, center.y + 80),
-                    IM_COL32(140, 190, 160, bA), 1.5f, 20);
+                    IM_COL32(P.accent.r, P.accent.g, P.accent.b, bA), 1.5f, 20);
                 // Right curve
                 dl->AddBezierCubic(
                     ImVec2(center.x + 200, center.y - 80),
                     ImVec2(center.x + 240, center.y - 20),
                     ImVec2(center.x + 240, center.y + 20),
                     ImVec2(center.x + 200, center.y + 80),
-                    IM_COL32(140, 190, 160, bA), 1.5f, 20);
+                    IM_COL32(P.accent.r, P.accent.g, P.accent.b, bA), 1.5f, 20);
             }
         }
 
@@ -435,8 +472,8 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                     f32 sy = (center.y - 10.0f) + std::sin(angle) * dist;
                     bool isSage = (s % 2 == 0);
                     int sA = static_cast<int>((isSage ? 180 : 220) * sparkFade * ga);
-                    u32 sCol = isSage ? IM_COL32(160, 200, 160, sA)
-                                      : IM_COL32(240, 240, 230, sA);
+                    u32 sCol = isSage ? IM_COL32(P.accent.r, P.accent.g, P.accent.b, sA)
+                                      : IM_COL32(P.spark.r, P.spark.g, P.spark.b, sA);
                     // Sparkle dot
                     dl->AddCircleFilled(ImVec2(sx, sy), 2.5f, sCol, 8);
                     // Trail line back toward center
@@ -445,8 +482,7 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                         f32 tx = center.x + std::cos(angle) * trailDist;
                         f32 ty = (center.y - 10.0f) + std::sin(angle) * trailDist;
                         dl->AddLine(ImVec2(tx, ty), ImVec2(sx, sy),
-                            IM_COL32(isSage ? 160 : 240, isSage ? 200 : 240,
-                                     isSage ? 160 : 230, sA / 2), 1.0f);
+                            IM_COL32(isSage ? P.accent.r : P.spark.r, isSage ? P.accent.g : P.spark.g, isSage ? P.accent.b : P.spark.b, sA / 2), 1.0f);
                     }
                 }
             }
@@ -464,6 +500,19 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                 f32 slideY = center.y + 60.0f + (1.0f - creditT) * 15.0f;
                 dl->AddText(ImVec2(center.x - creditSz.x * 0.5f, slideY),
                     IM_COL32(160, 165, 180, creditA), credit);
+            }
+        }
+
+        // Accessibility statement — under the credit, accent-tinted.
+        // "Every player" is the point; it fades in with the credit line.
+        {
+            f32 a11yT = easeOutCubic(timerRamp(2.0f, 2.4f));
+            int a11yA = static_cast<int>(150 * a11yT * ga);
+            if (a11yA > 0 && opts.a11yLine != nullptr) {
+                ImVec2 sz = ImGui::CalcTextSize(opts.a11yLine);
+                f32 y = center.y + 84.0f + (1.0f - a11yT) * 10.0f;
+                dl->AddText(ImVec2(center.x - sz.x * 0.5f, y),
+                    IM_COL32(P.accent.r, P.accent.g, P.accent.b, a11yA), opts.a11yLine);
             }
         }
 
@@ -489,7 +538,7 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
             if (loaderA > 0) {
                 f32 loaderY = center.y + 100.0f;
                 f32 loaderR = 12.0f;
-                f32 arcStart = t * 4.0f;  // radians per second rotation
+                f32 arcStart = reduced ? -1.5f : t * 4.0f;  // static arc under reduced motion
                 f32 arcLen = 2.0944f;      // 120 degrees
                 int segments = 20;
                 for (int s = 0; s < segments; s++) {
@@ -501,7 +550,7 @@ void DrawEngineSplash(f32 timeSeconds, f32 duration, f32 fadeStart, const char* 
                     dl->AddLine(
                         ImVec2(center.x + std::cos(a1) * loaderR, loaderY + std::sin(a1) * loaderR),
                         ImVec2(center.x + std::cos(a2) * loaderR, loaderY + std::sin(a2) * loaderR),
-                        IM_COL32(160, 200, 160, sA), 2.0f);
+                        IM_COL32(P.accent.r, P.accent.g, P.accent.b, sA), 2.0f);
                 }
             }
         }

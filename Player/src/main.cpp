@@ -1523,9 +1523,14 @@ public:
             m_EngineSplashTimer = kFadeStart;   // skip straight to the fade-out
         }
 
+        Enjin::GUI::SplashOptions splashOpts;
+        splashOpts.artStylePreset = m_SceneArtStylePreset;
+        splashOpts.a11yLine = "playable by every player: colorblind modes, screen reader, remappable input";
+        splashOpts.reducedMotion = m_AccessibilitySettings.reducedMotion;
         Enjin::GUI::DrawEngineSplash(m_EngineSplashTimer, kEngineSplashDuration,
                                      kFadeStart, "made with",
-                                     m_ImGuiLayer ? m_ImGuiLayer->GetHeadingFont() : nullptr);
+                                     m_ImGuiLayer ? m_ImGuiLayer->GetHeadingFont() : nullptr,
+                                     splashOpts);
     }
 
     void DrawConsole(VkCommandBuffer) {
@@ -2393,6 +2398,7 @@ private:
             auto renderSettings = serializer.GetRenderSettings();
             renderSettings.ApplyToRuntime(m_RenderSystem,
                 m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            m_SceneArtStylePreset = renderSettings.artStylePreset;   // splash restyles to match
         }
 
         // Read content warning flags from scene JSON if present (Task #39).
@@ -2893,6 +2899,7 @@ private:
     Enjin::Accessibility::ContentWarningSystem m_ContentWarnings;
     Enjin::Accessibility::AccessibilityAnnouncer m_Announcer;
     Enjin::Accessibility::RuntimeAccessibilitySettings m_AccessibilitySettings;
+    Enjin::u32 m_SceneArtStylePreset = 0;   // from the loaded scene; keys the splash palette
     Enjin::Accessibility::FontLibrary m_FontLibrary;
 
     // Post-processing: settings for script bindings + the path tracer display draw
