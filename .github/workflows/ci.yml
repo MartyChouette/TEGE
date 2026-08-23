@@ -92,11 +92,13 @@ jobs:
       - name: Render smoke test (golden capture on lavapipe)
         shell: pwsh
         timeout-minutes: 15
-        # Experimental while the lavapipe boot crash is hunted: does not fail the
-        # build. Progress so far: driver registration (HKLM), loader staging,
-        # elevation rule, feature gating - the scene now loads and dies ~2.5s in
-        # during RT/post resize churn with no logged error. The crash dump below
-        # is the next lead.
+        # Experimental: does not fail the build yet. The long-hunted "mid-boot
+        # lavapipe crash" turned out to be no crash at all - EnjinEditor is a
+        # GUI-subsystem exe, PowerShell's call operator does not wait for those,
+        # $LASTEXITCODE stayed unset, the step threw instantly, and the runner
+        # killed the half-booted editor at step teardown. Piping stdout (below)
+        # forces a real wait. Kept non-blocking for one green run before it
+        # becomes a required check.
         continue-on-error: true
         env:
           VK_DRIVER_FILES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
@@ -109,7 +111,10 @@ jobs:
         # structural checks are what's stable.
         run: |
           New-Item -ItemType Directory -Force golden_out | Out-Null
-          & build\bin\Release\EnjinEditor.exe "${{ github.workspace }}\Tests\GoldenScene\GoldenScene.enjinproject" --play --golden "${{ github.workspace }}\golden_out\smoke" --golden-frames 30
+          # The pipeline is load-bearing: without it PowerShell does not wait for
+          # a GUI-subsystem exe and $LASTEXITCODE is never set. Piping stdout
+          # blocks until the editor closes its end, and streams the log live.
+          & build\bin\Release\EnjinEditor.exe "${{ github.workspace }}\Tests\GoldenScene\GoldenScene.enjinproject" --play --golden "${{ github.workspace }}\golden_out\smoke" --golden-frames 30 2>&1 | ForEach-Object { "$_" }
           if ($LASTEXITCODE -ne 0) { throw "editor exited with code $LASTEXITCODE" }
           python Tests/GoldenScene/check_golden.py golden_out/smoke
 

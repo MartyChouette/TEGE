@@ -68,18 +68,26 @@ void GameMenuSystem::SetGameTitle(const std::string& title) {
 // renders without the given effect. Cleared automatically next frame unless a
 // hovered control requests it again (see Render).
 void GameMenuSystem::RequestPreview(u32 effect) {
+// The full PostProcessing class exists only on the Vulkan backend; the web
+// renderer has its own post chain and no preview split yet.
+#if !ENJIN_RENDERER_WEBGPU
     if (!m_PostProcessing) return;
     auto& s = m_PostProcessing->GetSettings();
     s.previewSplitEffect = effect;
     s.previewSplitDivider = 0.5f;
     m_PreviewRequested = true;
+#else
+    (void)effect;
+#endif
 }
 
 void GameMenuSystem::Render(f32 screenW, f32 screenH) {
     // Preview split is a per-frame request: if no control asked for it since the
     // last frame (menu closed, tab changed, cursor moved off), switch it off.
+#if !ENJIN_RENDERER_WEBGPU
     if (m_PostProcessing && !m_PreviewRequested)
         m_PostProcessing->GetSettings().previewSplitEffect = 0;
+#endif
     m_PreviewRequested = false;
 
     switch (m_CurrentScreen) {
@@ -373,11 +381,16 @@ void GameMenuSystem::RenderGraphics(f32 w, f32 h) {
 
     ImGui::Separator();
     ImGui::Text("Post-Processing");
-    if (ImGui::Checkbox("Bloom", &m_Graphics.bloom) && m_PostProcessing) {
+    bool bloomToggled = ImGui::Checkbox("Bloom", &m_Graphics.bloom);
+#if !ENJIN_RENDERER_WEBGPU
+    if (bloomToggled && m_PostProcessing) {
         // Live-apply so the preview's right side tracks the checkbox immediately
         // (Back still commits everything else as before).
         m_PostProcessing->GetSettings().bloomEnabled = m_Graphics.bloom ? 1u : 0u;
     }
+#else
+    (void)bloomToggled;   // web applies bloom via the normal Back/apply path
+#endif
     if (ImGui::IsItemHovered() || ImGui::IsItemActive()) RequestPreview(1u);
     ImGui::Checkbox("FXAA", &m_Graphics.fxaa);
 
