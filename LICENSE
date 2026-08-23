@@ -3,14 +3,15 @@ Business Source License 1.1
 Parameters
 
 Licensor:             Marty64
-Licensed Work:        The Enjin Game Engine 0.8.0
+Licensed Work:        The Enjin Game Engine 0.9.7
                       The Licensed Work is (c) 2026 Marty64.
 Additional Use Grant: You may use the Licensed Work to create, develop,
                       and distribute games and interactive applications.
                       You may not use the Licensed Work to create, develop,
                       or distribute a competing game engine or game
                       development tool.
-Change Date:          2030-03-07
+Change Date:          2030-08-17 (four years after this release;
+                      each release carries its own Change Date)
 Change License:       Apache License, Version 2.0
 
 Terms

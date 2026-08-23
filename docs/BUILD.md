@@ -321,7 +321,11 @@ glslangValidator --target-env vulkan1.2 -V svgf_atrous.comp -o svgf_atrous.comp.
 glslangValidator --target-env vulkan1.2 -V rt_composite.comp -o rt_composite.comp.spv
 ```
 
-RT SPIR-V bytecodes are embedded into `RTShaderData.h`. The system currently has placeholder stubs — replace them with compiled bytecode to activate the RT pipeline.
+RT SPIR-V bytecodes ship pre-compiled and embedded in `RTShaderData.h` (27 shader
+arrays: rgen/rmiss/rchit ray shaders plus the SVGF/composite compute passes). The
+RT pipeline activates automatically on capable hardware — no manual compilation is
+needed to use it. The steps above are only for when you EDIT an RT shader: recompile
+the changed `.spv`, then regenerate the header with `python _gen_rt.py`.
 
 ### Embedding compiled SPIR-V
 

@@ -94,7 +94,7 @@ A comprehensive, hands-on guide to building games with the Enjin Engine. Each tu
 
 ### Step 1: Launch the Editor
 
-Run `EnjinEditor.exe`. The splash screen appears, followed by the **Template Selector** dialog. For this tutorial, select **Empty Scene** to start with a blank canvas.
+Run `EnjinEditor.exe`. The splash screen appears, followed by the **Template Selector** dialog. For this tutorial, select **Blank** to start with an empty canvas.
 
 ### Step 2: Create a Cube
 
@@ -116,7 +116,7 @@ Run `EnjinEditor.exe`. The splash screen appears, followed by the **Template Sel
 1. Right-click in Hierarchy > **Add Entity**. Rename it "Sun".
 2. Add a **LightComponent** to it.
 3. Set **Type** to `Directional`.
-4. Set **Direction** to `(-0.5, -1.0, -0.3)` for angled sunlight.
+4. Aim the light with the entity's **Transform > Rotation** — a directional light shines along its rotated forward axis (there is no separate Direction field). Try a Rotation of `(-50, 30, 0)` for angled sunlight.
 5. Set **Color** to warm white `(1.0, 0.95, 0.9)` and **Intensity** to `1.5`.
 
 ### Step 5: Add a Camera
@@ -231,9 +231,9 @@ Enjin uses a physically-based rendering (PBR) pipeline. Each `MaterialComponent`
 
 | Type | Description | Key Properties |
 |------|-------------|----------------|
-| **Directional** | Sun-like, infinite distance | Direction, Color, Intensity |
+| **Directional** | Sun-like, infinite distance | Transform rotation (aims it), Color, Intensity |
 | **Point** | Omnidirectional, falls off with distance | Position, Range, Color, Intensity |
-| **Spot** | Cone-shaped | Direction, Inner/Outer Cone Angle, Range |
+| **Spot** | Cone-shaped | Transform rotation (aims it), Inner/Outer Cone Angle, Range |
 
 ### Shadow Setup
 
