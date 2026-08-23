@@ -58,6 +58,11 @@ jobs:
           curl.exe -sL -o mesa.7z https://github.com/pal1000/mesa-dist-win/releases/download/26.2.0/mesa3d-26.2.0-release-msvc.7z
           7z x mesa.7z -omesa -y | Out-Null
           if (-not (Test-Path "mesa\x64\lvp_icd.x86_64.json")) { throw "lavapipe ICD not found after extract" }
+          # Runner jobs are ELEVATED, and the Vulkan loader ignores VK_DRIVER_FILES /
+          # VK_ICD_FILENAMES in elevated processes (secure-environment rule) - the
+          # diagnostics showed "Found no drivers" with registry-only scanning. Register
+          # the ICD in HKLM instead, which the loader always honors.
+          reg add "HKLM\SOFTWARE\Khronos\Vulkan\Drivers" /v "${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json" /t REG_DWORD /d 0 /f
 
       - name: Stage Vulkan loader for the smoke test
         shell: pwsh
