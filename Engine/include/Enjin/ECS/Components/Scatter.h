@@ -56,6 +56,14 @@ struct ScatterComponent {
     bool randomYaw    = true;        // random rotation around the plane normal
     f32  heightJitter = 0.0f;        // random offset along the plane normal (adds thickness/relief)
 
+    // Terrain conform (XZ plane only): drop each instance onto the surface of the
+    // TerrainComponent on THIS entity (put the Scatter on the terrain entity — both
+    // are local to the same transform, so the frames line up). Points outside the
+    // terrain's extent, or on slopes steeper than maxSlopeDeg, are culled.
+    // heightJitter still applies on top of the sampled height.
+    bool conformToTerrain = false;
+    f32  maxSlopeDeg      = 90.0f;   // 90 = keep everything; ~30 keeps trees off cliffs
+
     u32  seed            = 0;        // 0 = pick a fresh random seed each generate
     bool generateOnStart = false;    // regenerate when play begins (off by default — authored scatter usually persists)
 

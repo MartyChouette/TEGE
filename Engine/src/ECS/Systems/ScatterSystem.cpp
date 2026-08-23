@@ -276,6 +276,16 @@ u32 ScatterSystem::Generate(World* world, Entity entity, ScatterComponent& scatt
     f32 sMin = scatter.scaleMin, sMax = scatter.scaleMax;
     if (sMax < sMin) std::swap(sMin, sMax);
 
+    // Terrain conform: sample the surface of THIS entity's terrain (same local
+    // frame as the scatter offsets). XZ plane only.
+    const TerrainComponent* conformTerrain = nullptr;
+    if (scatter.conformToTerrain && scatter.plane == ScatterComponent::Plane::XZ) {
+        conformTerrain = world->GetComponent<TerrainComponent>(entity);
+        if (!conformTerrain)
+            ENJIN_LOG_WARN(Build, "Scatter: conformToTerrain is on but this entity has no "
+                                  "Terrain — add the Scatter to the terrain entity");
+    }
+
     u32 placed = 0;
     for (const Pt2& p : points) {
         if (placed >= kMaxInstances) break;
@@ -288,7 +298,15 @@ u32 ScatterSystem::Generate(World* world, Entity entity, ScatterComponent& scatt
         Math::Vector3 offset;
         Math::Vector3 rot;   // euler degrees; Instantiate converts + multiplies
         if (scatter.plane == ScatterComponent::Plane::XZ) {
-            offset = Math::Vector3(p.a, jitter, p.b);
+            f32 ground = 0.0f;
+            if (conformTerrain) {
+                f32 slopeDeg = 0.0f;
+                if (!SampleTerrainHeight(*conformTerrain, p.a, p.b, ground, slopeDeg))
+                    continue;   // off the terrain: cull
+                if (slopeDeg > scatter.maxSlopeDeg)
+                    continue;   // too steep: cull (keeps trees off cliffs)
+            }
+            offset = Math::Vector3(p.a, ground + jitter, p.b);
             if (scatter.randomYaw) rot.y = RandRange(rng, 0.0f, 360.0f);
         } else { // XY
             offset = Math::Vector3(p.a, p.b, jitter);
@@ -309,6 +327,36 @@ u32 ScatterSystem::Generate(World* world, Entity entity, ScatterComponent& scatt
     ENJIN_LOG_INFO(Build, "Scatter: placed %u instances of '%s' (seed %u)",
                    placed, scatter.prefabPath.c_str(), seed);
     return placed;
+}
+
+bool ScatterSystem::SampleTerrainHeight(const TerrainComponent& terrain, f32 x, f32 z,
+                                        f32& outHeight, f32& outSlopeDeg) {
+    const u32 w = terrain.gridWidth, h = terrain.gridHeight;
+    if (w < 2 || h < 2 || terrain.heightmap.size() < static_cast<usize>(w) * h) return false;
+    const f32 cell = terrain.cellSize > 1e-4f ? terrain.cellSize : 1.0f;
+    // CreateTerrain centres the mesh: grid (gx,gz) sits at (gx*cell - halfW, gz*cell - halfH).
+    const f32 halfW = (w - 1) * cell * 0.5f;
+    const f32 halfH = (h - 1) * cell * 0.5f;
+    const f32 fx = (x + halfW) / cell;
+    const f32 fz = (z + halfH) / cell;
+    if (fx < 0.0f || fz < 0.0f || fx > static_cast<f32>(w - 1) || fz > static_cast<f32>(h - 1))
+        return false;   // outside the terrain's extent
+
+    const u32 x0 = std::min(static_cast<u32>(fx), w - 2);
+    const u32 z0 = std::min(static_cast<u32>(fz), h - 2);
+    const f32 tx = fx - static_cast<f32>(x0);
+    const f32 tz = fz - static_cast<f32>(z0);
+    auto H = [&](u32 gx, u32 gz) { return terrain.heightmap[static_cast<usize>(gz) * w + gx]; };
+    const f32 h00 = H(x0, z0),     h10 = H(x0 + 1, z0);
+    const f32 h01 = H(x0, z0 + 1), h11 = H(x0 + 1, z0 + 1);
+    outHeight = h00 * (1 - tx) * (1 - tz) + h10 * tx * (1 - tz)
+              + h01 * (1 - tx) * tz       + h11 * tx * tz;
+
+    // Slope from the cell's edge gradients (world units per unit distance).
+    const f32 dx = ((h10 - h00) * (1 - tz) + (h11 - h01) * tz) / cell;
+    const f32 dz = ((h01 - h00) * (1 - tx) + (h11 - h10) * tx) / cell;
+    outSlopeDeg = std::atan(std::sqrt(dx * dx + dz * dz)) * 57.2957795f;
+    return true;
 }
 
 void ScatterSystem::GenerateAll(World* world) {

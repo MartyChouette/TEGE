@@ -2273,6 +2273,18 @@ void EditorLayer::DrawInspectorPanel() {
                 ImGui::DragFloatRange2("Scale Range", &sc->scaleMin, &sc->scaleMax, 0.01f, 0.01f, 100.0f, "%.2f");
                 ImGui::Checkbox("Random Yaw", &sc->randomYaw);
                 ImGui::DragFloat("Height Jitter", &sc->heightJitter, 0.05f, 0.0f, 10000.0f, "%.2f");
+                if (sc->plane == ECS::ScatterComponent::Plane::XZ) {
+                    ImGui::Checkbox("Conform To Terrain", &sc->conformToTerrain);
+                    if (sc->conformToTerrain) {
+                        ImGui::SliderFloat("Max Slope (deg)", &sc->maxSlopeDeg, 0.0f, 90.0f, "%.0f");
+                        const bool hasTerrain = m_World->HasComponent<ECS::TerrainComponent>(m_PrimarySelected);
+                        if (hasTerrain)
+                            ImGui::TextDisabled("(instances drop onto this entity's terrain; steeper cells are culled)");
+                        else
+                            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f),
+                                               "no Terrain on this entity — add the Scatter to the terrain entity");
+                    }
+                }
 
                 ImGui::Separator();
                 i32 seed = static_cast<i32>(sc->seed);
@@ -2333,6 +2345,16 @@ void EditorLayer::DrawInspectorPanel() {
                     i32 it = static_cast<i32>(tg->thermalIterations);
                     if (ImGui::SliderInt("Passes", &it, 1, 200)) tg->thermalIterations = static_cast<u32>(it);
                     ImGui::DragFloat("Talus Angle", &tg->talusAngle, 0.005f, 0.001f, 1.0f, "%.3f");
+                }
+
+                ImGui::Separator();
+                ImGui::Checkbox("Auto-Splat (paint by slope + height)", &tg->autoSplat);
+                if (tg->autoSplat) {
+                    ImGui::SliderFloat("Rock Slope (deg)", &tg->rockSlopeDeg, 5.0f, 80.0f, "%.0f");
+                    ImGui::SliderFloat("Snow Above (%)", &tg->snowHeightFrac, 0.0f, 1.0f, "%.2f");
+                    ImGui::SliderFloat("Shore Below (%)", &tg->shoreHeightFrac, 0.0f, 1.0f, "%.2f");
+                    ImGui::SliderFloat("Blend Softness", &tg->splatBlend, 0.0f, 0.5f, "%.2f");
+                    ImGui::TextDisabled("(layers: 0 base/grass, 1 rock, 2 snow, 3 shore — assign their textures on the Terrain)");
                 }
 
                 ImGui::Separator();

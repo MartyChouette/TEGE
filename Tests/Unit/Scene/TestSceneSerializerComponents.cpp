@@ -21,6 +21,7 @@
 #include "Enjin/ECS/Components/RandomBag.h"
 #include "Enjin/ECS/Systems/RandomBagSystem.h"
 #include "Enjin/ECS/Components/Scatter.h"
+#include "Enjin/ECS/Systems/ScatterSystem.h"
 #include "Enjin/ECS/Components/TerrainGenerator.h"
 #include "Enjin/ECS/Components/Terrain.h"
 #include "Enjin/ECS/Systems/TerrainGeneratorSystem.h"
@@ -1248,6 +1249,58 @@ ENJIN_TEST(Scatter, FieldsRoundTrip) {
     ENJIN_EXPECT_TRUE(g->generateOnStart);
 }
 
+ENJIN_TEST(Scatter, TerrainHeightSamplingIsBilinearAndBounded) {
+    // Arrange: a 3x3 terrain ramp, heights rising along +x: columns at 0, 10, 20.
+    TerrainComponent terrain;
+    terrain.gridWidth = 3; terrain.gridHeight = 3; terrain.cellSize = 2.0f;
+    terrain.heightmap = { 0, 10, 20,
+                          0, 10, 20,
+                          0, 10, 20 };
+
+    // Act + Assert: centre of the terrain (local 0,0) sits mid-ramp at height 10.
+    f32 height = -1.0f, slope = -1.0f;
+    ENJIN_ASSERT_TRUE(ECS::ScatterSystem::SampleTerrainHeight(terrain, 0.0f, 0.0f, height, slope));
+    ENJIN_EXPECT_TRUE(height > 9.9f && height < 10.1f);
+    // The ramp climbs 10 units per 2-unit cell -> slope = atan(5) = ~78.7 deg.
+    ENJIN_EXPECT_TRUE(slope > 78.0f && slope < 79.5f);
+
+    // Halfway between the first two columns: bilinear gives 5.
+    ENJIN_ASSERT_TRUE(ECS::ScatterSystem::SampleTerrainHeight(terrain, -1.0f, 0.0f, height, slope));
+    ENJIN_EXPECT_TRUE(height > 4.9f && height < 5.1f);
+
+    // Outside the extent (halfW = 2): rejected.
+    ENJIN_EXPECT_FALSE(ECS::ScatterSystem::SampleTerrainHeight(terrain, 5.0f, 0.0f, height, slope));
+
+    // A flat terrain reports ~zero slope.
+    TerrainComponent flat;
+    flat.gridWidth = 3; flat.gridHeight = 3; flat.cellSize = 1.0f;
+    flat.heightmap.assign(9, 4.0f);
+    ENJIN_ASSERT_TRUE(ECS::ScatterSystem::SampleTerrainHeight(flat, 0.5f, -0.5f, height, slope));
+    ENJIN_EXPECT_TRUE(height > 3.9f && height < 4.1f);
+    ENJIN_EXPECT_TRUE(slope < 0.1f);
+}
+
+ENJIN_TEST(Scatter, ConformFieldsRoundTrip) {
+    // Arrange
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& s = w1.AddComponent<ScatterComponent>(e);
+    s.conformToTerrain = true;
+    s.maxSlopeDeg = 33.0f;
+
+    // Act
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+
+    // Assert
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<ScatterComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+    ENJIN_EXPECT_TRUE(g->conformToTerrain);
+    ENJIN_EXPECT_TRUE(g->maxSlopeDeg > 32.9f && g->maxSlopeDeg < 33.1f);
+}
+
 ENJIN_TEST(Scatter, VoronoiModeRoundTrips) {
     // Arrange: Voronoi distribution with a non-default relaxation count.
     World w1;
@@ -1325,6 +1378,55 @@ ENJIN_TEST(TerrainGenerator, FieldsRoundTrip) {
     ENJIN_EXPECT_EQ((int)g->thermalIterations, 60);
     ENJIN_EXPECT_EQ((int)g->seed, 24680);
     ENJIN_EXPECT_TRUE(g->generateOnStart);
+}
+
+ENJIN_TEST(TerrainGenerator, AutoSplatWeightsAreNormalizedAndSlopeAware) {
+    // Arrange: a ridged bake (guaranteed steep areas) with auto-splat on.
+    TerrainGeneratorComponent gen;
+    gen.gridWidth = 48; gen.gridHeight = 48; gen.maxHeight = 30.0f;
+    gen.cellSize = 1.0f; gen.seed = 777; gen.ridged = true;
+    gen.autoSplat = true; gen.rockSlopeDeg = 30.0f;
+    TerrainComponent terrain;
+
+    // Act
+    ECS::TerrainGeneratorSystem::Generate(gen, terrain);
+
+    // Assert: every cell's 4 weights sum to ~1, and the bake produced both
+    // rock-dominant (steep) and base-dominant (flat) cells.
+    ENJIN_ASSERT_EQ((int)terrain.splatmap.size(), 48 * 48 * 4);
+    bool anyRock = false, anyBase = false;
+    for (usize i = 0; i < terrain.splatmap.size(); i += 4) {
+        f32 sum = terrain.splatmap[i] + terrain.splatmap[i+1] + terrain.splatmap[i+2] + terrain.splatmap[i+3];
+        ENJIN_EXPECT_TRUE(sum > 0.99f && sum < 1.01f);
+        if (terrain.splatmap[i+1] > 0.5f) anyRock = true;
+        if (terrain.splatmap[i]   > 0.5f) anyBase = true;
+    }
+    ENJIN_EXPECT_TRUE(anyRock);
+    ENJIN_EXPECT_TRUE(anyBase);
+}
+
+ENJIN_TEST(TerrainGenerator, AutoSplatFieldsRoundTrip) {
+    // Arrange
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& t = w1.AddComponent<TerrainGeneratorComponent>(e);
+    t.autoSplat = true; t.rockSlopeDeg = 42.0f; t.snowHeightFrac = 0.8f;
+    t.shoreHeightFrac = 0.2f; t.splatBlend = 0.25f;
+
+    // Act
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+
+    // Assert
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<TerrainGeneratorComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+    ENJIN_EXPECT_TRUE(g->autoSplat);
+    ENJIN_EXPECT_TRUE(g->rockSlopeDeg > 41.9f && g->rockSlopeDeg < 42.1f);
+    ENJIN_EXPECT_TRUE(g->snowHeightFrac > 0.79f && g->snowHeightFrac < 0.81f);
+    ENJIN_EXPECT_TRUE(g->shoreHeightFrac > 0.19f && g->shoreHeightFrac < 0.21f);
+    ENJIN_EXPECT_TRUE(g->splatBlend > 0.24f && g->splatBlend < 0.26f);
 }
 
 // A bake produces a filled heightmap within [0, maxHeight], and the same seed is

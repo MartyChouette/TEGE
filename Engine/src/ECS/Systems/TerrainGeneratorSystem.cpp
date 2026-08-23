@@ -3,6 +3,7 @@
 #include "Enjin/Procedural/ProceduralAlgorithms.h"
 #include <random>
 #include <algorithm>
+#include <cmath>
 
 namespace Enjin {
 namespace ECS {
@@ -66,10 +67,55 @@ u32 TerrainGeneratorSystem::Generate(TerrainGeneratorComponent& gen, TerrainComp
     for (usize i = 0; i < hm.size(); ++i)
         terrain.heightmap[i] = ((hm[i] - mn) / range) * gen.maxHeight;
 
-    // First splat layer covers everything (matches TerrainComponent::InitializeFlat).
     terrain.splatmap.assign(static_cast<usize>(w) * h * 4, 0.0f);
-    for (usize i = 0; i < static_cast<usize>(w) * h; ++i)
-        terrain.splatmap[i * 4 + 0] = 1.0f;
+    if (!gen.autoSplat) {
+        // First splat layer covers everything (matches TerrainComponent::InitializeFlat).
+        for (usize i = 0; i < static_cast<usize>(w) * h; ++i)
+            terrain.splatmap[i * 4 + 0] = 1.0f;
+    } else {
+        // Auto-splat: weight the 4 layers from slope + height.
+        //   layer 1 (rock)  - slope above rockSlopeDeg
+        //   layer 2 (snow)  - above snowHeightFrac, suppressed on steeps
+        //   layer 3 (shore) - below shoreHeightFrac, suppressed on steeps
+        //   layer 0 (base)  - whatever weight remains
+        auto smoothstep = [](f32 lo, f32 hi, f32 x) {
+            if (hi <= lo) return x >= hi ? 1.0f : 0.0f;
+            f32 t = std::clamp((x - lo) / (hi - lo), 0.0f, 1.0f);
+            return t * t * (3.0f - 2.0f * t);
+        };
+        const f32 cell = gen.cellSize > 1e-4f ? gen.cellSize : 1.0f;
+        const f32 blendSlope = std::max(1.0f, gen.rockSlopeDeg * gen.splatBlend);
+        const f32 blendH = std::max(0.01f, gen.splatBlend);
+        auto heightAt = [&](i32 x, i32 z) {
+            x = std::clamp(x, 0, static_cast<i32>(w) - 1);
+            z = std::clamp(z, 0, static_cast<i32>(h) - 1);
+            return terrain.heightmap[static_cast<usize>(z) * w + x];
+        };
+        for (u32 z = 0; z < h; ++z) {
+            for (u32 x = 0; x < w; ++x) {
+                // Central-difference slope in world units -> angle in degrees.
+                f32 dx = (heightAt(static_cast<i32>(x) + 1, z) - heightAt(static_cast<i32>(x) - 1, z)) / (2.0f * cell);
+                f32 dz = (heightAt(x, static_cast<i32>(z) + 1) - heightAt(x, static_cast<i32>(z) - 1)) / (2.0f * cell);
+                f32 slopeDeg = std::atan(std::sqrt(dx * dx + dz * dz)) * 57.2957795f;
+                f32 hFrac = gen.maxHeight > 1e-4f
+                              ? terrain.heightmap[static_cast<usize>(z) * w + x] / gen.maxHeight : 0.0f;
+
+                f32 rock = smoothstep(gen.rockSlopeDeg - blendSlope, gen.rockSlopeDeg + blendSlope, slopeDeg);
+                f32 flat = 1.0f - rock;
+                f32 snow = smoothstep(gen.snowHeightFrac - blendH, gen.snowHeightFrac + blendH, hFrac) * flat;
+                f32 shore = (1.0f - smoothstep(gen.shoreHeightFrac - blendH, gen.shoreHeightFrac + blendH, hFrac)) * flat;
+                f32 base = std::max(0.0f, 1.0f - rock - snow - shore);
+
+                f32 sum = base + rock + snow + shore;
+                if (sum < 1e-4f) { base = 1.0f; sum = 1.0f; }
+                usize idx = (static_cast<usize>(z) * w + x) * 4;
+                terrain.splatmap[idx + 0] = base / sum;
+                terrain.splatmap[idx + 1] = rock / sum;
+                terrain.splatmap[idx + 2] = snow / sum;
+                terrain.splatmap[idx + 3] = shore / sum;
+            }
+        }
+    }
 
     terrain.meshDirty = true;
     return seed;

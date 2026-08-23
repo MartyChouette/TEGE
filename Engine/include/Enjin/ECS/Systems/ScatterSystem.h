@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Enjin/ECS/Components/Scatter.h"
+#include "Enjin/ECS/Components/Terrain.h"
 #include "Enjin/ECS/Entity.h"
 
 namespace Enjin {
@@ -28,6 +29,13 @@ public:
     // Play-start pass: generate every ScatterComponent with generateOnStart set.
     // Main-thread only.
     static void GenerateAll(World* world);
+
+    // Sample a terrain's surface at a local XZ point (terrain-local frame, origin
+    // at its centre — the same frame scatter offsets use). Bilinear height, slope
+    // from central differences. Returns false when the point lies outside the
+    // terrain's extent. Public so the conform math is unit-testable.
+    static bool SampleTerrainHeight(const TerrainComponent& terrain, f32 x, f32 z,
+                                    f32& outHeight, f32& outSlopeDeg);
 };
 
 } // namespace ECS

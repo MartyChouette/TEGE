@@ -40,6 +40,17 @@ struct TerrainGeneratorComponent {
     u32  thermalIterations  = 40;
     f32  talusAngle         = 0.02f;  // max stable neighbour height diff (normalized units)
 
+    // --- Auto-splat (paint the 4 splat layers by slope + height) ---
+    // Layer 0 = base/grass (the remainder), layer 1 = rock (steep slopes),
+    // layer 2 = snow (high altitude, avoids steeps), layer 3 = shore/sand (low).
+    // Weights blend smoothly and feed the terrain's splatmap exactly like
+    // hand-painted values, so assigned layer textures pick them up unchanged.
+    bool autoSplat       = false;
+    f32  rockSlopeDeg    = 35.0f;  // slope (degrees) where rock takes over
+    f32  snowHeightFrac  = 0.70f;  // height fraction (0-1 of maxHeight) where snow starts
+    f32  shoreHeightFrac = 0.12f;  // height fraction below which shore/sand shows
+    f32  splatBlend      = 0.10f;  // transition softness (fraction of each threshold)
+
     u32  seed            = 0;    // 0 = pick a fresh random seed each generate
     bool generateOnStart = false; // rebake when play begins (off by default — authored terrain persists)
 

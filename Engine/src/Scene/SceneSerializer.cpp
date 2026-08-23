@@ -1461,6 +1461,9 @@ json SerializeTerrainGeneratorComponent(const ECS::TerrainGeneratorComponent& t)
     j["hydraulic"] = t.hydraulic; j["hydraulicDroplets"] = t.hydraulicDroplets;
     j["thermal"] = t.thermal; j["thermalIterations"] = t.thermalIterations;
     j["talusAngle"] = RF(t.talusAngle);
+    j["autoSplat"] = t.autoSplat; j["rockSlopeDeg"] = RF(t.rockSlopeDeg);
+    j["snowHeightFrac"] = RF(t.snowHeightFrac); j["shoreHeightFrac"] = RF(t.shoreHeightFrac);
+    j["splatBlend"] = RF(t.splatBlend);
     j["seed"] = t.seed; j["generateOnStart"] = t.generateOnStart;
     return j;
 }
@@ -1482,6 +1485,11 @@ ECS::TerrainGeneratorComponent DeserializeTerrainGeneratorComponent(const json& 
     if (j.contains("thermal")) t.thermal = JB(j["thermal"]);
     if (j.contains("thermalIterations")) t.thermalIterations = std::clamp(j["thermalIterations"].get<u32>(), 1u, 1000u);
     if (j.contains("talusAngle")) t.talusAngle = j["talusAngle"].get<f32>();
+    if (j.contains("autoSplat")) t.autoSplat = JB(j["autoSplat"]);
+    if (j.contains("rockSlopeDeg")) t.rockSlopeDeg = std::clamp(j["rockSlopeDeg"].get<f32>(), 0.0f, 89.0f);
+    if (j.contains("snowHeightFrac")) t.snowHeightFrac = std::clamp(j["snowHeightFrac"].get<f32>(), 0.0f, 1.0f);
+    if (j.contains("shoreHeightFrac")) t.shoreHeightFrac = std::clamp(j["shoreHeightFrac"].get<f32>(), 0.0f, 1.0f);
+    if (j.contains("splatBlend")) t.splatBlend = std::clamp(j["splatBlend"].get<f32>(), 0.0f, 0.5f);
     if (j.contains("seed")) t.seed = j["seed"].get<u32>();
     if (j.contains("generateOnStart")) t.generateOnStart = JB(j["generateOnStart"]);
     return t;
@@ -1501,6 +1509,8 @@ json SerializeScatterComponent(const ECS::ScatterComponent& s) {
     j["scaleMax"] = RF(s.scaleMax);
     j["randomYaw"] = s.randomYaw;
     j["heightJitter"] = RF(s.heightJitter);
+    j["conformToTerrain"] = s.conformToTerrain;
+    j["maxSlopeDeg"] = RF(s.maxSlopeDeg);
     j["seed"] = s.seed;
     j["generateOnStart"] = s.generateOnStart;
     return j;
@@ -1520,6 +1530,8 @@ ECS::ScatterComponent DeserializeScatterComponent(const json& j) {
     if (j.contains("scaleMax")) s.scaleMax = j["scaleMax"].get<f32>();
     if (j.contains("randomYaw")) s.randomYaw = JB(j["randomYaw"]);
     if (j.contains("heightJitter")) s.heightJitter = j["heightJitter"].get<f32>();
+    if (j.contains("conformToTerrain")) s.conformToTerrain = JB(j["conformToTerrain"]);
+    if (j.contains("maxSlopeDeg")) s.maxSlopeDeg = std::clamp(j["maxSlopeDeg"].get<f32>(), 0.0f, 90.0f);
     if (j.contains("seed")) s.seed = j["seed"].get<u32>();
     if (j.contains("generateOnStart")) s.generateOnStart = JB(j["generateOnStart"]);
     return s;
