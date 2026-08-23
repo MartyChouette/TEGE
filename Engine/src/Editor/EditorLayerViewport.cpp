@@ -874,12 +874,13 @@ void EditorLayer::DrawGizmos() {
                 ImGuizmo::DecomposeMatrixToComponents(newLocal.m, lt, lr, ls);
                 transform->position = Math::Vector3(lt[0], lt[1], lt[2]);
                 transform->scale = Math::Vector3(ls[0], ls[1], ls[2]);
-                f32 rx = Math::Radians(lr[0]);
-                f32 ry = Math::Radians(lr[1]);
-                f32 rz = Math::Radians(lr[2]);
-                transform->rotation = Math::Quaternion(Math::Vector3(0, 1, 0), ry)
-                                    * Math::Quaternion(Math::Vector3(1, 0, 0), rx)
-                                    * Math::Quaternion(Math::Vector3(0, 0, 1), rz);
+                // FromEuler (ZYX) is the exact inverse of ImGuizmo's decompose.
+                // The old hand-rolled Y*X*Z product was a different convention:
+                // any entity whose LOCAL rotation is compound (typically a child
+                // under a rotated parent) got its rotation rewritten wrongly on
+                // every gizmo drag - including pure translations.
+                transform->rotation = Math::Quaternion::FromEuler(Math::Vector3(
+                    Math::Radians(lr[0]), Math::Radians(lr[1]), Math::Radians(lr[2])));
                 if (m_CollabSystem.IsActive()) {
                     Math::Vector3 euler = transform->rotation.ToEuler();
                     m_CollabSystem.OnTransformChanged(m_PrimarySelected,
@@ -896,9 +897,9 @@ void EditorLayer::DrawGizmos() {
                                          t->scale.y * deltaScale.y,
                                          t->scale.z * deltaScale.z);
                 if (deltaRot.x != 0.0f || deltaRot.y != 0.0f || deltaRot.z != 0.0f) {
-                    Math::Quaternion dr = Math::Quaternion(Math::Vector3(0,1,0), Math::Radians(deltaRot.y))
-                                        * Math::Quaternion(Math::Vector3(1,0,0), Math::Radians(deltaRot.x))
-                                        * Math::Quaternion(Math::Vector3(0,0,1), Math::Radians(deltaRot.z));
+                    // Same convention as the decompose that produced the deltas.
+                    Math::Quaternion dr = Math::Quaternion::FromEuler(Math::Vector3(
+                        Math::Radians(deltaRot.x), Math::Radians(deltaRot.y), Math::Radians(deltaRot.z)));
                     t->rotation = dr * t->rotation;
                 }
                 if (m_CollabSystem.IsActive()) {
@@ -1038,9 +1039,8 @@ void EditorLayer::DrawGizmos() {
                 ECS::TransformComponent oldTransform;
                 oldTransform.position = Math::Vector3(oldT[0], oldT[1], oldT[2]);
                 oldTransform.scale = Math::Vector3(oldS[0], oldS[1], oldS[2]);
-                oldTransform.rotation = Math::Quaternion(Math::Vector3(0,1,0), Math::Radians(oldR[1]))
-                                      * Math::Quaternion(Math::Vector3(1,0,0), Math::Radians(oldR[0]))
-                                      * Math::Quaternion(Math::Vector3(0,0,1), Math::Radians(oldR[2]));
+                oldTransform.rotation = Math::Quaternion::FromEuler(Math::Vector3(
+                    Math::Radians(oldR[0]), Math::Radians(oldR[1]), Math::Radians(oldR[2])));
 
                 auto cmd = std::make_unique<TransformCommand>(m_World, m_PrimarySelected, oldTransform, *transform);
                 m_UndoRedo.Execute(std::move(cmd));
