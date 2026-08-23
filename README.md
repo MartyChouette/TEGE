@@ -13,11 +13,12 @@
 [![Vulkan 1.3](https://img.shields.io/badge/Vulkan-1.3-AC162C.svg?logo=vulkan&logoColor=white)](https://www.vulkan.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey.svg)]()
 [![CMake](https://img.shields.io/badge/Build-CMake-064F8C.svg?logo=cmake&logoColor=white)](https://cmake.org/)
-[![Tests](https://img.shields.io/badge/Tests-1900%2B_passing-brightgreen.svg)]()
+[![CI](https://github.com/MartyChouette/TEGE/actions/workflows/ci.yml/badge.svg)](https://github.com/MartyChouette/TEGE/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/Tests-2%2C000%2B_passing-brightgreen.svg)](https://github.com/MartyChouette/TEGE/actions/workflows/ci.yml)
 
 <br>
 
-[Website](https://www.marty64.net/enjin/) · [Download](https://www.marty64.net/enjin/TEGE-0.9.7.zip) · [Documentation](docs/) · [Build Guide](docs/BUILD.md) · [Scripting API](docs/SCRIPTING_API.md)
+[Website](https://www.marty64.net/enjin/) · [Download](https://github.com/MartyChouette/TEGE/releases/latest) · [Documentation](docs/) · [Build Guide](docs/BUILD.md) · [Scripting API](docs/SCRIPTING_API.md)
 
 </div>
 
@@ -60,7 +61,7 @@ The engine is free and open source now. A paid official 1.0 release (installer, 
 | **ECS Architecture** | Transform, mesh, material, lights, cameras, physics, AI, UI, audio, scripting, rewind, pose library -- all with inspector UI |
 | **Vulkan PBR Renderer** | Cascaded shadows, reflection probes, TAA/FXAA/SMAA, FSR 2 upscaling, experimental path tracer |
 | **8 Art Styles** | Realistic PBR, Blinn-Phong, Hand-Painted, Cel/Toon, Low-Poly Retro, Pixel Art, NPR Sketch, Analog -- one-click presets |
-| **Dual Scripting** | 1,000+ AngelScript bindings with hot-reload + visual scripting with 256 nodes and breakpoint debugging |
+| **Dual Scripting** | 1,100+ AngelScript bindings with hot-reload + visual scripting with 340+ nodes and breakpoint debugging |
 | **Dual Physics** | Jolt 5.2.0 (3D) + Box2D 3.0.0 (2D), 5 character controller types, joints, ragdolls, sensors |
 | **Ship Everywhere** | Standalone builds, HTML5/WebAssembly, Windows installer, Linux AppImage |
 | **Gameplay Systems** | Save/load, quests, dialogue trees (quest/cinematic/flag integration), record & rewind, destructibles, LAN multiplayer, localization, dynamic difficulty, pose library |
@@ -94,7 +95,7 @@ cmake --build . --config Release
 
 A pre-built Windows installer is available -- no build tools required:
 
-1. Download **[TEGE-0.9.7.zip](https://www.marty64.net/enjin/TEGE-0.9.7.zip)** from the website
+1. Download **[TEGE-0.9.7.zip](https://github.com/MartyChouette/TEGE/releases/latest)** from GitHub Releases (or [the website](https://www.marty64.net/enjin/))
 2. Run the installer -- it sets up the editor, player, and file associations (`.enjinproject`, `.enjin`)
 3. Launch TEGE from the Start Menu or desktop shortcut
 
@@ -145,7 +146,7 @@ Build with `-DENJIN_BUILD_EXAMPLES=ON`. See `Examples/Simple3D/`, `Examples/Simp
 - **Core** -- Hierarchy, inspector, viewport, play/pause/stop, undo/redo, cut/copy/paste, multi-select (Ctrl+click, Shift+range, marquee), entity icons
 - **Gizmos** -- Translate/rotate/scale via ImGuizmo, click-to-select, terrain sculpting (5 brush modes), stats overlay, wireframe toggle
 - **Visual Authoring** -- Shader Graph (54 nodes), Audio Event Graph, Particle Graph, Dialogue Tree Editor, Animation Graph, Vector Drawing Editor
-- **Visual Scripting** -- Blueprint-style editor, 256 nodes, breakpoint debugging (F9/F5/F10), execution profiler
+- **Visual Scripting** -- Blueprint-style editor, 340+ nodes, breakpoint debugging (F9/F5/F10), execution profiler
 - **Project Tools** -- Project Hub with 16 built-in starter templates (including "Components Only" and "Script Only" starting points), Template Creator, Template Marketplace
 - **Smart Features** -- Context-aware suggestions, Quick Setup Patterns, Command Palette (Ctrl+P), keyboard shortcuts help
 - **Debug** -- Game Debug Panel (F1), Debug Workstation (F2), Quake-style drop-down console (backtick, 60+ commands)
@@ -189,7 +190,7 @@ Build with `-DENJIN_BUILD_EXAMPLES=ON`. See `Examples/Simple3D/`, `Examples/Simp
 <summary><b>Scripting & Plugins</b></summary>
 <br>
 
-- **AngelScript** -- TegeBehavior base class, 1,000+ API bindings, hot-reload, coroutines, event system
+- **AngelScript** -- TegeBehavior base class, 1,100+ API bindings, hot-reload, coroutines, event system
 - **Visual Scripting** -- 256 node types, breakpoint debugging, execution profiler, latent nodes
 - **Plugin System** -- IPlugin interface, DLL/SO hot-reload with state save/restore
 - **DataAssets** -- Schema definitions with typed instances, JSON I/O, script bindings
@@ -278,7 +279,7 @@ All dependencies use permissive open-source licenses.
 | [Architecture](docs/ARCHITECTURE.md) | System design and diagrams |
 | [Build Guide](docs/BUILD.md) | Prerequisites and platform instructions |
 | [User Manual](docs/USER_MANUAL.md) | Editor walkthrough and component reference |
-| [Scripting API](docs/SCRIPTING_API.md) | Complete AngelScript reference (1,000+ bindings) |
+| [Scripting API](docs/SCRIPTING_API.md) | Complete AngelScript reference (1,100+ bindings) |
 | [Roadmap](docs/ROADMAP.md) | Planned work and progress |
 
 ---

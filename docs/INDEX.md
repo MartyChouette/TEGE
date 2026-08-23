@@ -27,14 +27,14 @@ See [About](../README.md#about) for the developer disclaimer.
 ## API Reference
 
 - **[API_REFERENCE.md](API_REFERENCE.md)** - C++ API documentation
-- **[SCRIPTING_API.md](SCRIPTING_API.md)** - AngelScript scripting API reference (~480 functions)
+- **[SCRIPTING_API.md](SCRIPTING_API.md)** - AngelScript scripting API reference (1,100+ functions)
 
 ## Key Systems
 
 | System | Header | Description |
 |--------|--------|-------------|
 | Scripting | `Enjin/Scripting/` | AngelScript VM, TegeBehavior, bindings, coroutines, events |
-| Physics | `Enjin/Physics/` | IPhysicsBackend abstraction, SimplePhysics (queries), PhysicsWorld (dynamics), ConstraintSolver (joints) |
+| Physics | `Enjin/Physics/` | IPhysicsBackend / IPhysicsBackend2D abstraction — Jolt v5.2 (3D) and Box2D v3 (2D), strictly separated per scene |
 | Profiler | `Enjin/Debug/Profiler.h` | Frame profiling, scope timers, ImGui overlay |
 | Plugins | `Enjin/Plugin/PluginSystem.h` | Dynamic library loading, manifest system |
 | Timeline | `Enjin/Animation/Timeline.h` | Property/event/animation tracks, keyframe sequencing |

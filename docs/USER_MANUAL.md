@@ -4,7 +4,7 @@ Enjin is an open-source (BSL 1.1) game engine built with C++20 and the Vulkan gr
 
 This manual covers everything you need to get started and build games with Enjin.
 
-> **Tutorials:** For hands-on, step-by-step tutorials covering all engine features (55 tutorials from basics to advanced topics), see [TUTORIALS.md](TUTORIALS.md).
+> **Tutorials:** For hands-on, step-by-step tutorials covering all engine features (54 tutorials from basics to advanced topics), see [TUTORIALS.md](TUTORIALS.md).
 
 ---
 
