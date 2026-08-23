@@ -114,6 +114,36 @@ i32 RandomBagSystem::DrawIndex(RandomBagComponent& bag) {
             bag.lastDrawn = static_cast<i32>(idx);
             return static_cast<i32>(idx);
         }
+        case RandomBagComponent::Mode::Markov: {
+            // First draw (or after Reset): items' own weights are the initial
+            // distribution. After that, the transition-matrix row of the current
+            // item supplies the weights. A missing/short matrix or an all-zero
+            // row falls back to uniform so unauthored states still draw.
+            auto weightAt = [&](u32 col) -> f32 {
+                if (bag.lastDrawn < 0)
+                    return bag.items[col].weight > 0.0f ? bag.items[col].weight : 0.0f;
+                usize idx = static_cast<usize>(bag.lastDrawn) * count + col;
+                if (idx >= bag.transitions.size()) return 1.0f;  // unauthored: uniform
+                f32 w = bag.transitions[idx];
+                return w > 0.0f ? w : 0.0f;
+            };
+            f32 total = 0.0f;
+            for (u32 i = 0; i < count; ++i) total += weightAt(i);
+            i32 pick;
+            if (total <= 0.0f) {
+                pick = static_cast<i32>(RandBelow(bag.rngState, count));  // dead row: uniform
+            } else {
+                f32 r = (static_cast<f32>(NextRand(bag.rngState)) / static_cast<f32>(0xFFFFFFFFu)) * total;
+                pick = static_cast<i32>(count) - 1;
+                for (u32 i = 0; i < count; ++i) {
+                    f32 w = weightAt(i);
+                    if (r < w) { pick = static_cast<i32>(i); break; }
+                    r -= w;
+                }
+            }
+            bag.lastDrawn = pick;
+            return pick;
+        }
     }
     return -1;
 }

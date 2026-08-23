@@ -2105,14 +2105,17 @@ void EditorLayer::DrawInspectorPanel() {
                     "Uniform (equal chance, repeats)",
                     "Weighted (by weight, repeats)",
                     "No-Replace / 7-bag (each once, then reshuffle)",
-                    "Deck (each item 'weight' times, then reshuffle)"
+                    "Deck (each item 'weight' times, then reshuffle)",
+                    "Markov (next draw depends on current item)"
                 };
                 int m = static_cast<int>(bag->mode);
                 if (ImGui::Combo("Mode", &m, modes, IM_ARRAYSIZE(modes)))
                     bag->mode = static_cast<ECS::RandomBagComponent::Mode>(m);
 
+                const bool isMarkov = (bag->mode == ECS::RandomBagComponent::Mode::Markov);
                 const bool usesWeight = (bag->mode == ECS::RandomBagComponent::Mode::Weighted ||
-                                         bag->mode == ECS::RandomBagComponent::Mode::Deck);
+                                         bag->mode == ECS::RandomBagComponent::Mode::Deck ||
+                                         isMarkov);   // Markov: weight = first-draw chance
                 const bool usesRepeatGuard = (bag->mode == ECS::RandomBagComponent::Mode::Uniform ||
                                               bag->mode == ECS::RandomBagComponent::Mode::Weighted);
 
@@ -2140,6 +2143,40 @@ void EditorLayer::DrawInspectorPanel() {
                     ECS::RandomBagComponent::Item it;
                     it.name = "item" + std::to_string(bag->items.size());
                     bag->items.push_back(it);
+                }
+
+                if (isMarkov && !bag->items.empty()) {
+                    ImGui::Separator();
+                    ImGui::TextDisabled("Transition matrix  (row = current item, columns = chance of NEXT item)");
+                    const int n = static_cast<int>(bag->items.size());
+                    // Keep the flattened matrix sized N x N, preserving authored values
+                    // when the item count changes (old size is always a perfect square).
+                    if (static_cast<int>(bag->transitions.size()) != n * n) {
+                        int oldN = static_cast<int>(std::round(std::sqrt(static_cast<double>(bag->transitions.size()))));
+                        std::vector<f32> next(static_cast<usize>(n) * n, 1.0f);
+                        for (int r = 0; r < std::min(oldN, n); ++r)
+                            for (int c = 0; c < std::min(oldN, n); ++c)
+                                next[static_cast<usize>(r) * n + c] = bag->transitions[static_cast<usize>(r) * oldN + c];
+                        bag->transitions = std::move(next);
+                    }
+                    for (int r = 0; r < n; ++r) {
+                        ImGui::PushID(1000 + r);
+                        ImGui::Text("%.10s ->", bag->items[r].name.c_str());
+                        for (int c = 0; c < n; ++c) {
+                            ImGui::SameLine();
+                            ImGui::SetNextItemWidth(46.0f);
+                            ImGui::DragFloat(("##t" + std::to_string(c)).c_str(),
+                                             &bag->transitions[static_cast<usize>(r) * n + c],
+                                             0.05f, 0.0f, 1000.0f, "%.1f");
+                            if (ImGui::IsItemHovered())
+                                ImGui::SetTooltip("%s -> %s", bag->items[r].name.c_str(), bag->items[c].name.c_str());
+                        }
+                        ImGui::PopID();
+                    }
+                    if (ImGui::SmallButton("Reset Matrix (uniform)")) {
+                        std::fill(bag->transitions.begin(), bag->transitions.end(), 1.0f);
+                    }
+                    ImGui::TextDisabled("(item weight above = FIRST draw; a row of zeros falls back to uniform)");
                 }
 
                 ImGui::Separator();

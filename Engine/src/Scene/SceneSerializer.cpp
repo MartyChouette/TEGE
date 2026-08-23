@@ -1354,6 +1354,11 @@ json SerializeRandomBagComponent(const ECS::RandomBagComponent& b) {
     j["mode"] = static_cast<u8>(b.mode);
     j["seed"] = b.seed;
     j["avoidImmediateRepeat"] = b.avoidImmediateRepeat;
+    if (!b.transitions.empty()) {
+        json ta = json::array();
+        for (f32 w : b.transitions) ta.push_back(RF(w));
+        j["transitions"] = ta;
+    }
     json items = json::array();
     for (const auto& it : b.items) {
         json ij;
@@ -1367,7 +1372,13 @@ json SerializeRandomBagComponent(const ECS::RandomBagComponent& b) {
 
 ECS::RandomBagComponent DeserializeRandomBagComponent(const json& j) {
     ECS::RandomBagComponent b;
-    if (j.contains("mode")) { u8 v = j["mode"].get<u8>(); if (v <= 3) b.mode = static_cast<ECS::RandomBagComponent::Mode>(v); }
+    if (j.contains("mode")) { u8 v = j["mode"].get<u8>(); if (v <= 4) b.mode = static_cast<ECS::RandomBagComponent::Mode>(v); }
+    if (j.contains("transitions") && j["transitions"].is_array()) {
+        const auto& ta = j["transitions"];
+        usize n = ta.size() > 4096 ? 4096 : ta.size();   // 64x64 matrix cap
+        b.transitions.reserve(n);
+        for (usize i = 0; i < n; ++i) b.transitions.push_back(ta[i].is_number() ? ta[i].get<f32>() : 1.0f);
+    }
     if (j.contains("seed")) b.seed = j["seed"].get<u32>();
     if (j.contains("avoidImmediateRepeat")) b.avoidImmediateRepeat = JB(j["avoidImmediateRepeat"]);
     if (j.contains("items") && j["items"].is_array()) {

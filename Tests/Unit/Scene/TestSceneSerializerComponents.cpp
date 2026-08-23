@@ -1122,6 +1122,51 @@ ENJIN_TEST(RandomBag, FieldsRoundTrip) {
     ENJIN_EXPECT_TRUE(g->items[0].weight > 3.9f && g->items[0].weight < 4.1f);
 }
 
+ENJIN_TEST(RandomBag, MarkovFollowsTransitionMatrix) {
+    // Arrange: 3 items with a forced cycle - a can only go to b, b only to c,
+    // c only to a. First draw is forced to "a" via the initial weights.
+    RandomBagComponent b;
+    b.mode = RandomBagComponent::Mode::Markov;
+    b.seed = 11;
+    b.items.push_back({"a", 1.0f});
+    b.items.push_back({"b", 0.0f});
+    b.items.push_back({"c", 0.0f});
+    b.transitions = { 0, 1, 0,    // a -> b
+                      0, 0, 1,    // b -> c
+                      1, 0, 0 };  // c -> a
+
+    // Act + Assert: draws must walk the strict cycle a, b, c, a, b, c...
+    const char* expect[] = { "a", "b", "c", "a", "b", "c" };
+    for (int i = 0; i < 6; ++i) {
+        ENJIN_EXPECT_TRUE(ECS::RandomBagSystem::Draw(b) == expect[i]);
+    }
+}
+
+ENJIN_TEST(RandomBag, MarkovTransitionsRoundTrip) {
+    // Arrange
+    World w1;
+    Entity e = w1.CreateEntity();
+    w1.AddComponent<TransformComponent>(e);
+    auto& b = w1.AddComponent<RandomBagComponent>(e);
+    b.mode = RandomBagComponent::Mode::Markov;
+    b.items.push_back({"x", 1.0f});
+    b.items.push_back({"y", 2.0f});
+    b.transitions = { 0.5f, 1.5f, 2.5f, 3.5f };
+
+    // Act
+    World w2;
+    Entity e2 = RoundTrip(w1, w2);
+
+    // Assert
+    ENJIN_ASSERT_NE(e2, INVALID_ENTITY);
+    auto* g = w2.GetComponent<RandomBagComponent>(e2);
+    ENJIN_ASSERT_NOT_NULL(g);
+    ENJIN_EXPECT_EQ((int)g->mode, (int)RandomBagComponent::Mode::Markov);
+    ENJIN_ASSERT_EQ((int)g->transitions.size(), 4);
+    ENJIN_EXPECT_TRUE(g->transitions[1] > 1.49f && g->transitions[1] < 1.51f);
+    ENJIN_EXPECT_TRUE(g->transitions[3] > 3.49f && g->transitions[3] < 3.51f);
+}
+
 ENJIN_TEST(RandomBag, NoReplaceDrawsEachItemOncePerCycle) {
     // Arrange: a 3-item no-replacement bag with a fixed seed.
     RandomBagComponent b;

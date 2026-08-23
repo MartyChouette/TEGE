@@ -22,7 +22,10 @@ struct RandomBagComponent {
         Uniform = 0,   // equal chance every pull, WITH replacement (plain dice roll)
         Weighted,      // chance proportional to each item's weight, WITH replacement (loot table)
         NoReplace,     // shuffle all items, draw each once, reshuffle when empty (Tetris 7-bag)
-        Deck           // like NoReplace but each item appears `weight` times (a deck of cards)
+        Deck,          // like NoReplace but each item appears `weight` times (a deck of cards)
+        Markov         // next draw depends on the CURRENT item via a transition matrix
+                       // (attack strings, music phrases, weather chains). Item weight =
+                       // the first-draw distribution; after that, the matrix row rules.
     };
 
     struct Item {
@@ -34,6 +37,12 @@ struct RandomBagComponent {
     std::vector<Item> items;
     u32 seed = 0;                     // 0 = pick a fresh non-deterministic seed on first draw / reset
     bool avoidImmediateRepeat = false; // Uniform/Weighted only: never return the same item twice in a row
+
+    // Markov only: flattened N x N transition weights, row = current item index,
+    // column = relative chance of drawing that item next. Missing/short data and
+    // all-zero rows fall back to uniform, so a fresh matrix behaves like Uniform
+    // until authored. Kept sized by the inspector as items are added/removed.
+    std::vector<f32> transitions;
 
     // ---- Runtime state (NOT serialized; rebuilt on first draw or Reset) ----
     bool  rngInitialized = false;
