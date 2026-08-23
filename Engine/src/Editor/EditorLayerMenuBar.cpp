@@ -1238,6 +1238,46 @@ void EditorLayer::DrawMenuBar() {
                             ImGui::GetColorU32(ImVec4(chip.x, chip.y, chip.z, 1.0f)), stateTxt);
                 ImGui::Dummy(ImVec2(ts.x + padX * 2.0f, btnH));
             }
+
+            // --- Debug-recording timeline -------------------------------------
+            // While playing: a small REC readout. While paused: step-back /
+            // step-forward buttons + a scrubber over the recorded buffer. Seeks
+            // restore whole-scene snapshots via the same machinery the gameplay
+            // rewind components use; resuming branches time from the scrub point.
+            if (!stopped && m_PlayMode.GetDebugRecorderEntity() != ECS::INVALID_ENTITY) {
+                auto* rewind = m_PlayMode.GetRecordRewindSystem();
+                f32 recorded = rewind ? rewind->GetSceneRecordedDuration() : 0.0f;
+                if (playing) m_DebugScrubOffset = 0.0f;   // any resume path returns the scrubber to the live edge
+                if (playing && recorded > 0.05f) {
+                    ImGui::SameLine(0.0f, 8.0f);
+                    ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.45f, 1.0f), "REC %.0fs", recorded);
+                    ImGui::SetItemTooltip("Debug recording: pause to step or scrub backward through time");
+                } else if (!playing && recorded > 0.05f && rewind) {
+                    const f32 stepDt = 1.0f / 30.0f;   // matches the recorder's snapshot cadence
+                    ImGui::SameLine(0.0f, 8.0f);
+                    if (ImGui::Button("|<##dbgback")) {
+                        m_DebugScrubOffset = std::min(m_DebugScrubOffset + stepDt, recorded);
+                        rewind->SeekSceneToTime(m_DebugScrubOffset);
+                    }
+                    ImGui::SetItemTooltip("Step one snapshot back in time");
+                    ImGui::SameLine(0.0f, 2.0f);
+                    if (ImGui::Button(">|##dbgfwd")) {
+                        m_DebugScrubOffset = std::max(m_DebugScrubOffset - stepDt, 0.0f);
+                        rewind->SeekSceneToTime(m_DebugScrubOffset);
+                    }
+                    ImGui::SetItemTooltip("Step one snapshot forward (toward the pause point)");
+                    ImGui::SameLine(0.0f, 6.0f);
+                    ImGui::SetNextItemWidth(180.0f);
+                    // Slider shows time-before-pause; drag left = further into the past.
+                    f32 back = m_DebugScrubOffset;
+                    if (ImGui::SliderFloat("##dbgscrub", &back, 0.0f, recorded, "-%.2fs")) {
+                        m_DebugScrubOffset = back;
+                        rewind->SeekSceneToTime(m_DebugScrubOffset);
+                    }
+                    ImGui::SetItemTooltip("Scrub backward through the recorded play session\n"
+                                          "Resume plays on from wherever you scrubbed to");
+                }
+            }
         }
 
         // Show collab status indicator

@@ -225,6 +225,25 @@ void PlayMode::Play() {
     ECS::ScatterSystem::GenerateAll(m_World);            // fresh scatter batches on play (generateOnStart)
     ECS::TerrainGeneratorSystem::GenerateAll(m_World);   // fresh terrain bakes on play (generateOnStart)
     ECS::WFCSystem::GenerateAll(m_World);                // fresh WFC layouts on play (generateOnStart)
+
+    // Editor debug recording: inject a hidden whole-scene recorder so the play
+    // session can be paused and stepped/scrubbed backward from the timeline.
+    // Keyless (rewindKey -1): only the editor drives it, never gameplay input.
+    // The entity is play-created, so Stop's scene restore removes it.
+    m_DebugRecorderEntity = ECS::INVALID_ENTITY;
+    if (m_DebugRecordEnabled && m_World) {
+        m_DebugRecorderEntity = m_World->CreateEntity();
+        auto& name = m_World->AddComponent<ECS::NameComponent>(m_DebugRecorderEntity);
+        name.name = "__DebugRecorder";
+        auto& sr = m_World->AddComponent<ECS::SceneRewindComponent>(m_DebugRecorderEntity);
+        sr.maxDuration = m_DebugRecordSeconds;
+        sr.recordInterval = 1.0f / 30.0f;   // finer than the gameplay default: smoother stepping
+        sr.rewindKey = -1;
+        sr.cooldown = 0.0f;
+        sr.charges = 0;
+        ENJIN_LOG_INFO(Editor, "PlayMode: debug recorder active (%.0fs buffer, 30 snapshots/s)",
+                       m_DebugRecordSeconds);
+    }
     m_TweenSystem.PlayAll(m_World);
     Scripting::SetBindingsWorld(m_World);
     Scripting::SetBindingsDialogueSystem(&m_DialogueSystem);

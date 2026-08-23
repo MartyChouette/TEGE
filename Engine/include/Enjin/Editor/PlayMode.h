@@ -121,6 +121,16 @@ public:
 
     Gameplay::RecordRewindSystem* GetRecordRewindSystem() { return &m_RecordRewindSystem; }
 
+    // Editor debug recording: when enabled, Play() injects a hidden scene-rewind
+    // recorder (entity "__DebugRecorder") so every play session records the whole
+    // scene, and the editor timeline can pause + step/scrub backward through it.
+    // The same machinery games use for rewind mechanics, driven programmatically.
+    void SetDebugRecording(bool enabled, f32 seconds) {
+        m_DebugRecordEnabled = enabled;
+        m_DebugRecordSeconds = seconds;
+    }
+    ECS::Entity GetDebugRecorderEntity() const { return m_DebugRecorderEntity; }
+
     Audio::SimpleAudio* GetSimpleAudio() { return &m_SimpleAudio; }
     Effects::DestructibleSystem* GetDestructibleSystem() { return &m_DestructibleSystem; }
     Effects::InteractiveWaterSystem* GetInteractiveWaterSystem() { return &m_InteractiveWaterSystem; }
@@ -205,6 +215,9 @@ private:
 
     // Record & Rewind (Braid / Sands of Time mechanic)
     Gameplay::RecordRewindSystem m_RecordRewindSystem;
+    bool m_DebugRecordEnabled = true;
+    f32  m_DebugRecordSeconds = 30.0f;
+    ECS::Entity m_DebugRecorderEntity = ECS::INVALID_ENTITY;
 
     // Audio-reactive system (beat sync, VU→visual, RTPC, threshold triggers)
     Audio::AudioReactiveSystem m_AudioReactiveSystem;

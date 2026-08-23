@@ -347,6 +347,8 @@ bool EditorSettings::Save(const std::string& path) const {
 
         // Play Mode
         j["autoFocusMode"] = autoFocusMode;
+        j["debugRecordPlay"] = debugRecordPlay;
+        j["debugRecordSeconds"] = debugRecordSeconds;
 
         // Performance / Frame Rate
         j["editorFrameRateLimit"] = static_cast<u32>(editorFrameRateLimit);
@@ -523,6 +525,8 @@ bool EditorSettings::Load(const std::string& path) {
 
         // Play Mode
         if (j.contains("autoFocusMode")) autoFocusMode = j["autoFocusMode"].get<bool>();
+        if (j.contains("debugRecordPlay")) debugRecordPlay = j["debugRecordPlay"].get<bool>();
+        if (j.contains("debugRecordSeconds")) debugRecordSeconds = std::clamp(j["debugRecordSeconds"].get<f32>(), 5.0f, 120.0f);
 
         // Performance / Frame Rate
         if (j.contains("editorFrameRateLimit")) {

@@ -111,6 +111,11 @@ struct EditorSettings {
 
     // Play Mode
     bool autoFocusMode = false;  // Auto-enter focus mode when pressing Play
+    // Debug recording: every play session records the whole scene (transforms,
+    // velocities, health) into a ring buffer so the timeline can pause and step
+    // or scrub backward. Same machinery as the gameplay rewind components.
+    bool debugRecordPlay = true;
+    f32  debugRecordSeconds = 30.0f;   // ring buffer length (5-120s)
 
     // Performance / Frame Rate
     FrameRateLimit editorFrameRateLimit = FrameRateLimit::Uncapped;

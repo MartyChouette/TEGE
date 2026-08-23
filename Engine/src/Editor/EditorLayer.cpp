@@ -646,6 +646,8 @@ void EditorLayer::StartPlayMode() {
     Scripting::SetBindingsSceneManager(&m_SceneManager);
     s_VisualScriptWater = &m_Water3D;
     m_CachedPlayerEntity = ECS::INVALID_ENTITY;
+    m_PlayMode.SetDebugRecording(m_EditorSettings.debugRecordPlay, m_EditorSettings.debugRecordSeconds);
+    m_DebugScrubOffset = 0.0f;
     m_PlayMode.Play();
     m_Telemetry.TrackPlayModeEnter();
     if (m_Announcer.enabled) m_Announcer.Announce("Play mode started", Accessibility::AnnouncePriority::Normal);

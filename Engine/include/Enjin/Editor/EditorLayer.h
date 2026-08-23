@@ -900,6 +900,9 @@ private:
     // Deferred play mode stop (set during Render, executed at start of next Update
     // to avoid dangling pointers from mid-frame World::Clear)
     bool m_PendingPlayStop = false;
+    // Debug-recording timeline: how far back from "now" the paused scrubber sits
+    // (seconds; 0 = live edge). Reset on play start and on resume.
+    f32 m_DebugScrubOffset = 0.0f;
     bool m_PendingPlayRestart = false;  // Set alongside m_PendingPlayStop to re-enter play mode
     bool m_PendingPlayStart = false;    // Deferred play mode start (for restart after stop)
     bool m_SkipNextRender = false;  // Skip one frame after Stop to let render caches refresh

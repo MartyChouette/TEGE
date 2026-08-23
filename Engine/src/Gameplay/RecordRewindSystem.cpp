@@ -223,7 +223,10 @@ void RecordRewindSystem::UpdateEntityRewind(f32 deltaTime) {
         if (rr->cooldownTimer > 0.0f) rr->cooldownTimer -= deltaTime;
 
         // Check rewind input
-        bool rewindHeld = Input::IsKeyDown(static_cast<KeyCode>(rr->rewindKey)) && rr->cooldownTimer <= 0.0f;
+        // rewindKey < 0 = no hold-to-rewind key (editor debug recorders are driven
+        // programmatically via Seek/StartSceneRewind, never by input)
+        bool rewindHeld = rr->rewindKey >= 0 &&
+            Input::IsKeyDown(static_cast<KeyCode>(rr->rewindKey)) && rr->cooldownTimer <= 0.0f;
 
         if (rewindHeld && !rr->history.Empty()) {
             if (!rr->rewinding) {
@@ -315,7 +318,8 @@ void RecordRewindSystem::UpdateSceneRewind(f32 deltaTime) {
         // Check rewind input
         bool canRewind = sr->cooldownTimer <= 0.0f &&
             (sr->charges == 0 || sr->chargesUsed < sr->charges);
-        bool rewindHeld = Input::IsKeyDown(static_cast<KeyCode>(sr->rewindKey)) && canRewind;
+        bool rewindHeld = sr->rewindKey >= 0 &&
+            Input::IsKeyDown(static_cast<KeyCode>(sr->rewindKey)) && canRewind;
 
         if (rewindHeld && !sr->history.Empty()) {
             // --- REWINDING ---

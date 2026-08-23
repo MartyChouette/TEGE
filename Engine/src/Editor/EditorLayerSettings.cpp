@@ -1031,6 +1031,20 @@ void EditorLayer::DrawSettingsSection_Accessibility() {
                 ImGui::SetTooltip("Automatically enter fullscreen focus mode when pressing Play");
             }
 
+            if (ImGui::Checkbox("Record Play Sessions", &m_EditorSettings.debugRecordPlay)) {
+                settingsChanged = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Record the whole scene during play so you can pause and step or\n"
+                                  "scrub backward through time from the toolbar timeline");
+            }
+            if (m_EditorSettings.debugRecordPlay) {
+                if (ImGui::SliderFloat("Recording Buffer (s)", &m_EditorSettings.debugRecordSeconds,
+                                       5.0f, 120.0f, "%.0f")) {
+                    settingsChanged = true;
+                }
+            }
+
             ImGui::TreePop();
         }
 

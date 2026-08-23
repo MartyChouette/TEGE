@@ -59,4 +59,47 @@ ENJIN_TEST(RewindSim, SeekIsSafeWithNoHistory) {
     ENJIN_EXPECT_FLOAT_NEAR(world.GetComponent<ECS::TransformComponent>(e)->position.x, 7.0f, 0.001f);
 }
 
+// The editor debug-recorder path: a keyless SceneRewindComponent (rewindKey -1,
+// the play-mode timeline configuration) records the whole scene, and
+// SeekSceneToTime restores a past frame - the machinery behind pause + step-back.
+ENJIN_TEST(RewindSim, KeylessSceneRecorderSeeksBackForDebugTimeline) {
+    // Arrange: one moving entity and the editor's keyless scene recorder.
+    ECS::World world;
+    ECS::Entity mover = world.CreateEntity();
+    auto& tf = world.AddComponent<ECS::TransformComponent>(mover);
+    tf.position = Math::Vector3(0.0f, 0.0f, 0.0f);
+
+    ECS::Entity recorder = world.CreateEntity();
+    auto& sr = world.AddComponent<ECS::SceneRewindComponent>(recorder);
+    sr.maxDuration = 10.0f;
+    sr.recordInterval = 1.0f / 30.0f;
+    sr.rewindKey = -1;
+
+    Gameplay::RecordRewindSystem system;
+    system.SetWorld(&world);
+
+    // Act: 2 simulated seconds at 30fps, moving +1 unit x per second.
+    const f32 dt = 1.0f / 30.0f;
+    for (int i = 0; i < 60; ++i) {
+        world.GetComponent<ECS::TransformComponent>(mover)->position.x += 1.0f * dt;
+        system.Update(dt);
+    }
+    f32 xAtEnd = world.GetComponent<ECS::TransformComponent>(mover)->position.x;
+    ENJIN_EXPECT_TRUE(xAtEnd > 1.9f && xAtEnd < 2.1f);
+
+    // Assert: seek 1s back restores ~the halfway position...
+    system.SeekSceneToTime(1.0f);
+    f32 xPast = world.GetComponent<ECS::TransformComponent>(mover)->position.x;
+    ENJIN_EXPECT_TRUE(xPast > 0.8f && xPast < 1.2f);
+
+    // ...seeking to the live edge returns to ~the end state...
+    system.SeekSceneToTime(0.0f);
+    f32 xLive = world.GetComponent<ECS::TransformComponent>(mover)->position.x;
+    ENJIN_EXPECT_TRUE(xLive > 1.8f && xLive < 2.1f);
+
+    // ...and the recorder reports a sensible scrubber range.
+    ENJIN_EXPECT_TRUE(system.GetSceneRecordedDuration() > 1.5f);
+    ENJIN_EXPECT_TRUE(system.GetSceneFrameCount() > 30);
+}
+
 ENJIN_TEST_MAIN()
