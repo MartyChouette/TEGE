@@ -59,6 +59,17 @@ jobs:
           7z x mesa.7z -omesa -y | Out-Null
           if (-not (Test-Path "mesa\x64\lvp_icd.x86_64.json")) { throw "lavapipe ICD not found after extract" }
 
+      - name: Stage Vulkan loader for the smoke test
+        shell: pwsh
+        # The runner has no GPU drivers, so no system vulkan-1.dll exists. The
+        # setup-vulkan-sdk action built the loader; put it next to the editor so
+        # GLFW can find it (without it: "no Vulkan instance extensions" / -9).
+        run: |
+          $dll = Get-ChildItem -Recurse "$env:VULKAN_SDK" -Filter vulkan-1.dll | Select-Object -First 1
+          if (-not $dll) { throw "vulkan-1.dll not found under VULKAN_SDK" }
+          Copy-Item $dll.FullName build\bin\Release\
+          Write-Host "staged $($dll.FullName)"
+
       - name: Render smoke test (golden capture on lavapipe)
         shell: pwsh
         timeout-minutes: 15
