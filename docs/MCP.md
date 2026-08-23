@@ -1,9 +1,12 @@
 # TEGE Editor MCP Server
 
-The editor can host a Model Context Protocol server so AI assistants (Claude
-Code, Claude Desktop, or any MCP client) can drive a **running editor**: inspect
-the scene, read and write any component, create entities, control play mode, and
-capture screenshots of the game view.
+The editor can host a [Model Context Protocol](https://modelcontextprotocol.io)
+server - MCP is an open, published protocol with many independent client
+implementations - so ANY MCP-speaking assistant or tool can drive a **running
+editor**: inspect the scene, read and write any component, create entities,
+control play mode, and capture screenshots of the game view. No vendor
+account, no cloud service, no telemetry: a plain JSON-RPC endpoint on your own
+machine, over an open protocol, speaking the engine's own open scene-JSON.
 
 ## Enable it
 
@@ -13,11 +16,14 @@ off by default.
 
 ## Connect
 
-```bash
-claude mcp add --transport http tege http://127.0.0.1:8971/mcp
-```
+Point any streamable-HTTP MCP client at the endpoint. For example:
 
-Any streamable-HTTP MCP client works — point it at the same URL.
+```bash
+# Claude Code
+claude mcp add --transport http tege http://127.0.0.1:8971/mcp
+
+# or any other MCP client - it is one HTTP URL
+```
 
 ## Tools
 

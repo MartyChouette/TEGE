@@ -166,3 +166,21 @@ build-web/Core/
 
 # third_party/imgui: parked local clone metadata (see third_party/VERSIONS.md)
 .git-local/
+
+# Probe / debug scripts (session tooling at repo root, never shipped)
+/_*.ps1
+/_*.py
+/_*.bat
+/_*.md
+/build_release.bat
+vk_layer_settings*.txt
+__pycache__/
+
+# Untracked upstream imgui clutter (only the vendored glfw+vulkan backends are tracked)
+third_party/imgui/backends/
+third_party/imgui/.editorconfig
+third_party/imgui/.gitattributes
+third_party/imgui/.gitignore
+third_party/imgui/docs/
+third_party/imgui/examples/
+third_party/imgui/misc/
