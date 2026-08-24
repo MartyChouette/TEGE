@@ -4217,6 +4217,14 @@ void RenderSystem::Update(f32 deltaTime) {
                 if (static_cast<usize>(EntityIndex(entity)) < m_EntityRenderData.size())
                     RetireEntityBuffers(m_EntityRenderData[static_cast<usize>(EntityIndex(entity))]);
                 terrain->meshDirty = false;
+                // The physics collider was cooked from the OLD terrain mesh -
+                // invalidate its cache so the backend re-cooks (and recreates
+                // the body) from this fresh geometry.
+                if (auto* mc = m_World->GetComponent<MeshColliderComponent>(entity)) {
+                    mc->generated = false;
+                    mc->vertices.clear();
+                    mc->indices.clear();
+                }
             }
         }
         for (Entity entity : m_World->GetEntitiesWithComponent<Terrain2DComponent>()) {

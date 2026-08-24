@@ -9,6 +9,9 @@
 #include "Enjin/ECS/Systems/TerrainGeneratorSystem.h"
 #include "Enjin/ECS/Systems/WFCSystem.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Terrain.h"
+#include "Enjin/ECS/Components/Mesh.h"
+#include "Enjin/Renderer/MeshFactory.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Effects/ParticleSystem.h"
@@ -251,6 +254,29 @@ void PlayMode::Play() {
     ECS::ScatterSystem::GenerateAll(m_World);            // fresh scatter batches on play (generateOnStart)
     ECS::TerrainGeneratorSystem::GenerateAll(m_World);   // fresh terrain bakes on play (generateOnStart)
     ECS::WFCSystem::GenerateAll(m_World);                // fresh WFC layouts on play (generateOnStart)
+
+    // Freshly generated terrain must reach physics THIS frame: the renderer's
+    // remesh runs later in the frame, but bodies cook on the first physics
+    // update - from the OLD MeshComponent. Rebuild the mesh now (meshDirty
+    // stays set so the renderer still re-uploads GPU buffers) and invalidate
+    // the mesh collider cache so it re-cooks from this geometry.
+    if (m_World) {
+        for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::TerrainComponent>()) {
+            auto* terr = m_World->GetComponent<ECS::TerrainComponent>(e);
+            if (!terr || !terr->meshDirty) continue;
+            auto mesh = Renderer::MeshFactory::CreateTerrain(*terr);
+            if (m_World->HasComponent<ECS::MeshComponent>(e)) {
+                *m_World->GetComponent<ECS::MeshComponent>(e) = std::move(mesh);
+            } else {
+                m_World->AddComponent<ECS::MeshComponent>(e, std::move(mesh));
+            }
+            if (auto* mc = m_World->GetComponent<ECS::MeshColliderComponent>(e)) {
+                mc->generated = false;
+                mc->vertices.clear();
+                mc->indices.clear();
+            }
+        }
+    }
 
     // Editor debug recording: inject a hidden whole-scene recorder so the play
     // session can be paused and stepped/scrubbed backward from the timeline.
@@ -712,6 +738,24 @@ void PlayMode::Stop() {
 
     // Restore the scene to its pre-play state
     RestoreEditorState();
+
+    // The hidden debug recorder is play-owned. "Scene changes persist on Stop"
+    // is the documented PlayMode contract, so play-created entities survive the
+    // restore - this one must clean up after itself or it leaks one entity per
+    // play press (and the autosave then bakes them into the scene file). Runs
+    // AFTER RestoreEditorState: before it, the destroy-observer would capture
+    // the recorder and the recreate pass would resurrect it. The sweep also
+    // heals scenes that collected recorders before this fix.
+    if (m_World) {
+        std::vector<ECS::Entity> strayRecorders;
+        for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::NameComponent>()) {
+            auto* nc = m_World->GetComponent<ECS::NameComponent>(e);
+            if (nc && nc->name == "__DebugRecorder") strayRecorders.push_back(e);
+        }
+        for (ECS::Entity e : strayRecorders) m_World->DestroyEntity(e);
+        if (!strayRecorders.empty()) m_World->FlushPendingDestructions();
+        m_DebugRecorderEntity = ECS::INVALID_ENTITY;
+    }
 
     // Cloth: the restore brings back component data, but the GPU vertex/index
     // buffers still hold the simulated (possibly torn) fabric. Rebuild fresh

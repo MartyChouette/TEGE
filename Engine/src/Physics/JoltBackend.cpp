@@ -356,6 +356,18 @@ void JoltBackend::SyncECSToJolt() {
 
     auto& bodyInterface = m_PhysicsSystem->GetBodyInterface();
 
+    // Recook invalidated mesh colliders: when the source mesh regenerates
+    // (terrain remesh, sculpting), the cache is cleared - drop the stale body
+    // here so the create loop below rebuilds it from the fresh geometry.
+    {
+        m_ToRemoveCache.clear();
+        for (auto& [entity, bodyID] : m_EntityToBody) {
+            auto* mc = m_World->GetComponent<ECS::MeshColliderComponent>(entity);
+            if (mc && mc->autoGenerate && !mc->generated) m_ToRemoveCache.push_back(entity);
+        }
+        for (ECS::Entity e : m_ToRemoveCache) DestroyBodyForEntity(e);
+    }
+
     // Create bodies for new entities
     for (ECS::Entity entity : m_CurrentEntitiesCache) {
         if (m_EntityToBody.find(entity) == m_EntityToBody.end()) {
@@ -511,6 +523,43 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
         // scale), so bake the entity's scale into the cached vertices — raw
         // mesh-local positions gave scaled imports (cm-unit FBX) colliders 100x
         // bigger than the displayed model.
+        // Staleness guard: the cached collider vertices are serialized with the
+        // scene ("avoid re-generating on load"), but the mesh they were cooked
+        // from may have changed since - terrain regenerates, brushes sculpt,
+        // imports get reimported. A stale cache means physics collides with a
+        // landscape that no longer exists (characters float over new valleys or
+        // sink into new hills). Cheap detection: vertex-count mismatch, or a
+        // sampled vertex that moved.
+        if (meshCol->autoGenerate && meshCol->generated) {
+            auto* liveMesh = m_World->GetComponent<ECS::MeshComponent>(entity);
+            if (liveMesh && liveMesh->IsValid()) {
+                bool stale = meshCol->vertices.size() != liveMesh->vertices.size();
+                if (!stale && !meshCol->vertices.empty()) {
+                    const Math::Matrix4 wmChk = ECS::ComputeWorldMatrix(m_World, entity);
+                    const Math::Vector3 sc(
+                        Math::Vector3(wmChk.m[0], wmChk.m[1], wmChk.m[2]).Length(),
+                        Math::Vector3(wmChk.m[4], wmChk.m[5], wmChk.m[6]).Length(),
+                        Math::Vector3(wmChk.m[8], wmChk.m[9], wmChk.m[10]).Length());
+                    const usize probes[3] = {0, meshCol->vertices.size() / 2, meshCol->vertices.size() - 1};
+                    for (usize pi : probes) {
+                        const auto& mv = liveMesh->vertices[pi].position;
+                        const Math::Vector3 expect(mv.x * sc.x, mv.y * sc.y, mv.z * sc.z);
+                        const Math::Vector3& have = meshCol->vertices[pi];
+                        if (Math::Abs(expect.x - have.x) > 0.001f ||
+                            Math::Abs(expect.y - have.y) > 0.001f ||
+                            Math::Abs(expect.z - have.z) > 0.001f) { stale = true; break; }
+                    }
+                }
+                if (stale) {
+                    ENJIN_LOG_INFO(Physics, "MeshCollider cache stale for entity %llu - re-cooking from current mesh",
+                                   static_cast<unsigned long long>(entity));
+                    meshCol->generated = false;
+                    meshCol->vertices.clear();
+                    meshCol->indices.clear();
+                }
+            }
+        }
+
         if (meshCol->autoGenerate && !meshCol->generated) {
             auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
             if (mesh) Assets::MeshAssetCache::Get().EnsureCpuData(*mesh);  // reload if CPU verts were freed after GPU upload

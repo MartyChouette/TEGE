@@ -4882,7 +4882,11 @@ void EditorLayer::SyncRuntimeAccessibility() {
 // Export the last play session's replay (scene snapshot + input stream) to
 // <project>/replays/replay_<n>.tegereplay. Plain JSON per docs/OPENNESS.md.
 void EditorLayer::ExportReplayToProject() {
-    if (!m_PlayMode.HasRecording()) return;
+    if (!m_PlayMode.HasRecording()) {
+        ShowNotification("Nothing recorded yet - press Play, do something, then Stop",
+                         NotificationType::Warning);
+        return;
+    }
     std::filesystem::path root =
         std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path();
     if (root.empty()) root = std::filesystem::current_path();
@@ -4908,7 +4912,8 @@ void EditorLayer::ExportReplayToProject() {
     ENJIN_LOG_INFO(Editor, "Replay exported: %s (%zu frames, %zu bytes)",
                    out.string().c_str(), m_PlayMode.GetActiveRecording().frames.size(),
                    data.size());
-    ShowNotification("Replay exported to replays/" + out.filename().string(),
+    ShowNotification("Replay exported to replays/" + out.filename().string() + " (" +
+                     std::to_string(m_PlayMode.GetActiveRecording().frames.size()) + " frames)",
                      NotificationType::Info);
 }
 
@@ -4940,6 +4945,11 @@ void EditorLayer::PlayLatestReplay() {
     if (!Gameplay::ParseReplay(ss.str(), data)) {
         ShowNotification("Could not parse " + newest.filename().string(),
                          NotificationType::Error);
+        return;
+    }
+    if (data.frames.empty()) {
+        ShowNotification(newest.filename().string() + " has no recorded frames - nothing to replay",
+                         NotificationType::Warning);
         return;
     }
     if (!m_PlayMode.IsStopped()) m_PlayMode.Stop();

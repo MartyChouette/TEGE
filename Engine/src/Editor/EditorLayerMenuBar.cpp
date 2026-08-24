@@ -1244,13 +1244,18 @@ void EditorLayer::DrawMenuBar() {
             // exported as a shareable .tegereplay (plain JSON: scene snapshot +
             // per-frame inputs+dt) or the newest one replayed deterministically.
             if (stopped) {
-                if (m_PlayMode.HasRecording()) {
-                    ImGui::SameLine(0.0f, 8.0f);
-                    if (ImGui::SmallButton("Export Replay")) {
-                        ExportReplayToProject();
-                    }
-                    ImGui::SetItemTooltip("Save the last play session (inputs + scene) as a shareable replay file");
+                // Always visible: a hidden button read as "my recording is gone".
+                // Without a recorded session it's disabled with the reason.
+                bool hasRec = m_PlayMode.HasRecording();
+                ImGui::SameLine(0.0f, 8.0f);
+                if (!hasRec) ImGui::BeginDisabled();
+                if (ImGui::SmallButton("Export Replay")) {
+                    ExportReplayToProject();
                 }
+                if (!hasRec) ImGui::EndDisabled();
+                ImGui::SetItemTooltip(hasRec
+                    ? "Save the last play session (inputs + scene) as a shareable replay file"
+                    : "Nothing recorded yet - press Play, do something, then Stop");
                 ImGui::SameLine(0.0f, 4.0f);
                 if (ImGui::SmallButton("Play Replay")) {
                     PlayLatestReplay();
