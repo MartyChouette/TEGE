@@ -606,9 +606,20 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     var color = fxaa(in.uv, texelSize);
     color = aces_tonemap(color);
-    color = (color - 0.5) * params.contrast + 0.5 + params.brightness;
-    color = applyColorblindCorrection(color);
+
+    // Options preview split: left of the divider shows the frame WITHOUT the
+    // previewed effect (5 = colorblind, 6 = brightness/contrast).
+    let previewLeft = params.previewEffect != 0u && in.uv.x < params.previewDivider;
+    if (!(previewLeft && params.previewEffect == 6u)) {
+        color = (color - 0.5) * params.contrast + 0.5 + params.brightness;
+    }
+    if (!(previewLeft && params.previewEffect == 5u)) {
+        color = applyColorblindCorrection(color);
+    }
     color = pow(color, vec3<f32>(1.0 / 2.2));
+    if (params.previewEffect != 0u && abs(in.uv.x - params.previewDivider) < texelSize.x) {
+        color = vec3<f32>(1.0, 1.0, 1.0);
+    }
     return vec4<f32>(saturate(color), 1.0);
 }
 )";

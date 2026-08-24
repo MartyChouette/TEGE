@@ -698,6 +698,13 @@ public:
         f32 colorblindStrength = 1.0f;
         f32 brightness = 0.0f;
         f32 contrast = 1.0f;
+        // Options preview split (web parity with the desktop menus): left of
+        // the divider renders WITHOUT the previewed effect. 0 = off,
+        // 5 = colorblind, 6 = brightness/contrast (the effects this pass owns).
+        u32 previewEffect = 0;
+        f32 previewDivider = 0.5f;
+        f32 _pad0 = 0.0f;
+        f32 _pad1 = 0.0f;
     };
     WebPPAccessibilityParams m_WebPPAccessibility;
     void SetWebAccessibility(u32 colorblindMode, f32 strength, f32 brightness, f32 contrast) {
@@ -705,6 +712,10 @@ public:
         m_WebPPAccessibility.colorblindStrength = strength;
         m_WebPPAccessibility.brightness = brightness;
         m_WebPPAccessibility.contrast = contrast;
+    }
+    void SetWebAccessibilityPreview(u32 effect, f32 divider) {
+        m_WebPPAccessibility.previewEffect = effect;
+        m_WebPPAccessibility.previewDivider = divider;
     }
 
     // Cel shading (lighting quantization)

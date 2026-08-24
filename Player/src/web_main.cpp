@@ -790,6 +790,14 @@ public:
                     m_AccessibilitySettings.colorblindStrength,
                     m_AccessibilitySettings.screenBrightness,
                     m_AccessibilitySettings.screenContrast);
+                // Options preview split: alive while the colorblind slider was
+                // touched recently (5 = colorblind in the post shader)
+                if (m_ColorblindPreviewTimer > 0.0f) {
+                    m_ColorblindPreviewTimer -= deltaTime;
+                    m_RenderSystem->SetWebAccessibilityPreview(5u, 0.5f);
+                } else {
+                    m_RenderSystem->SetWebAccessibilityPreview(0u, 0.5f);
+                }
             }
             m_UISystem.SetFontScale(m_AccessibilitySettings.fontScale);
             Enjin::Gameplay::GameplayLoop::CheckHazardOverlaps(m_World.get(), deltaTime, deferred);
@@ -837,7 +845,10 @@ public:
                     if (cc->fieldOfView > 0.0f) {
                         Enjin::f32 aspect = static_cast<Enjin::f32>(m_Renderer->GetSwapChainWidth()) /
                                      static_cast<Enjin::f32>(std::max(m_Renderer->GetSwapChainHeight(), 1u));
-                        m_Camera->SetPerspective(cc->fieldOfView, aspect, cc->nearPlane, cc->farPlane);
+                        // Options FOV override (desktop-menu parity): the slider
+                        // wins over the authored camera when the player set it.
+                        Enjin::f32 fov = (m_OptionsFov > 0.0f) ? m_OptionsFov : cc->fieldOfView;
+                        m_Camera->SetPerspective(fov, aspect, cc->nearPlane, cc->farPlane);
                     }
                 }
             }
@@ -885,6 +896,11 @@ public:
                 [this](const Enjin::GUI::UIEventData&) { ShowOptionsMenu(); });
             m_UISystem.GetEventBus().Listen("options_back",
                 [this](const Enjin::GUI::UIEventData&) { CloseOptionsMenu(true); });
+            m_UISystem.GetEventBus().Listen("options_fov",
+                [this](const Enjin::GUI::UIEventData& e) {
+                    // Slider is normalized; map to 40..120 degrees
+                    m_OptionsFov = 40.0f + e.floatValue * 80.0f;
+                });
             m_UISystem.GetEventBus().Listen("options_master_volume",
                 [this](const Enjin::GUI::UIEventData& e) { m_SimpleAudio.SetMasterVolume(e.floatValue); });
             m_UISystem.GetEventBus().Listen("options_sfx_volume",
@@ -921,6 +937,9 @@ public:
                     Enjin::u32 mode = static_cast<Enjin::u32>(e.floatValue * 8.0f + 0.5f);
                     if (mode > 8) mode = 8;
                     m_AccessibilitySettings.colorblindMode = static_cast<Enjin::Accessibility::ColorblindMode>(mode);
+                    // Desktop-menu parity: dragging the slider splits the screen,
+                    // left = without correction, right = with (fades after a beat)
+                    m_ColorblindPreviewTimer = 1.5f;
                     if (m_RenderSystem) {
                         m_RenderSystem->SetWebAccessibility(mode, m_AccessibilitySettings.colorblindStrength,
                             m_AccessibilitySettings.screenBrightness, m_AccessibilitySettings.screenContrast);
@@ -1549,6 +1568,8 @@ private:
     Enjin::Accessibility::SubtitleSystem m_SubtitleSystem;
     Enjin::Accessibility::AccessibilityAnnouncer m_Announcer;
     Enjin::Accessibility::RuntimeAccessibilitySettings m_AccessibilitySettings;
+    Enjin::f32 m_OptionsFov = 0.0f;   // options menu override; 0 = use the authored camera
+    Enjin::f32 m_ColorblindPreviewTimer = 0.0f;   // seconds of split-preview left after a slider change
     // One true UI source: the same UISystem that renders UICanvasComponent on
     // desktop renders it on web via ImGui's WebGPU backend (UI unification Phase 1).
     Enjin::GUI::UISystem m_UISystem;

@@ -259,6 +259,29 @@ UICanvasComponent CreateOptionsMenu() {
         c->onValueChangedEvent = "options_fullscreen";
     }
 
+    // Field of View label + slider (desktop-menu parity; 40..120 degrees,
+    // slider stores the normalized fraction)
+    u32 fovLabel = canvas.AddElement(UIWidgetType::Label, "FOVLabel", panel);
+    {
+        auto* l = canvas.GetElement(fovLabel);
+        l->anchor.anchorMin = Math::Vector2(0.05f, 0.505f);
+        l->anchor.anchorMax = Math::Vector2(0.35f, 0.505f);
+        l->anchor.offsetLeft = 0; l->anchor.offsetRight = 0;
+        l->anchor.offsetTop = -10.0f; l->anchor.offsetBottom = 10.0f;
+        l->data.text = "Field of View";
+        l->data.textAlignH = 0;
+    }
+    u32 fovSlider = canvas.AddElement(UIWidgetType::Slider, "FOVSlider", panel);
+    {
+        auto* s = canvas.GetElement(fovSlider);
+        s->anchor.anchorMin = Math::Vector2(0.38f, 0.505f);
+        s->anchor.anchorMax = Math::Vector2(0.92f, 0.505f);
+        s->anchor.offsetLeft = 0; s->anchor.offsetRight = 0;
+        s->anchor.offsetTop = -12.0f; s->anchor.offsetBottom = 12.0f;
+        s->data.sliderValue = 0.375f;   // (70 - 40) / 80 degrees
+        s->onValueChangedEvent = "options_fov";
+    }
+
     // VSync checkbox
     u32 vsyncCheck = canvas.AddElement(UIWidgetType::Checkbox, "VSync", panel);
     {
