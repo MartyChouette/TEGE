@@ -39,6 +39,7 @@ claude mcp add --transport http tege http://127.0.0.1:8971/mcp
 | `registered_component_keys` | Every key the engine can serialize (~160). |
 | `play_control` | `play` / `pause` / `resume` / `stop`. |
 | `capture_view` | Save the game view as PNG, returns the path. |
+| `spawn_prefab` | Instantiate a `.enjprefab` (project-relative path) at an optional position. |
 
 Component JSON uses the exact same schema as `.enjin` scene files — whatever the
 serializer writes, `set_component` accepts.

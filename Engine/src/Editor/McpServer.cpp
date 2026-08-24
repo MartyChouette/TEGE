@@ -77,6 +77,10 @@ static json ToolList() {
              json::array({"action"})),
         tool("capture_view", "Capture the game view to a PNG and return its file path.",
              json::object(), json::array()),
+        tool("spawn_prefab", "Instantiate a .enjprefab (project-relative path) at an optional position.",
+             {{"path", {{"type", "string"}, {"description", "prefab path relative to the project root"}}},
+              {"x", {{"type", "number"}}}, {"y", {{"type", "number"}}}, {"z", {{"type", "number"}}}},
+             json::array({"path"})),
     });
 }
 
@@ -94,9 +98,21 @@ json McpServerCallTool(McpServer* self, ECS::World* world,
                        const std::function<std::string()>& sceneInfo,
                        const std::function<std::string(const std::string&)>& playControl,
                        const std::function<std::string()>& capture,
+                       const std::function<std::string(const std::string&, f32, f32, f32)>& spawnPrefab,
                        const std::string& name, const json& args) {
     (void)self;
     auto needWorld = [&]() -> ECS::World* { return world; };
+
+    if (name == "spawn_prefab") {
+        if (!spawnPrefab) return ToolText("prefab spawning not available in this context", true);
+        std::string path = args.value("path", "");
+        if (path.empty()) return ToolText("error: 'path' is required", true);
+        std::string r = spawnPrefab(path,
+                                    args.value("x", 0.0f),
+                                    args.value("y", 0.0f),
+                                    args.value("z", 0.0f));
+        return ToolText(r, r.rfind("error", 0) == 0);
+    }
 
     if (name == "scene_info") {
         if (sceneInfo) return ToolText(sceneInfo());
@@ -229,7 +245,7 @@ std::string McpServer::HandleJsonRpc(const std::string& body) {
         json args = params.value("arguments", json::object());
         try {
             json r = McpServerCallTool(this, m_World, m_SceneInfo, m_PlayControl, m_Capture,
-                                       name, args);
+                                       m_SpawnPrefab, name, args);
             return result(std::move(r));
         } catch (const std::exception& e) {
             return result(ToolText(std::string("tool threw: ") + e.what(), true));

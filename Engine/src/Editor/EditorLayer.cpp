@@ -85,6 +85,7 @@
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Platform/FileDialog.h"
 #include "Enjin/Assets/Prefab.h"
+#include "Enjin/Platform/Paths.h"
 #include "Enjin/Build/BuildPipeline.h"
 #include "Enjin/Assets/DataAsset.h"
 #include "Enjin/Plugin/PluginRepository.h"
@@ -919,6 +920,21 @@ void EditorLayer::Update(f32 deltaTime) {
                 std::string base = (std::filesystem::temp_directory_path() / "tege_mcp_capture").string();
                 if (!CaptureGameViewToFile(base)) return "";
                 return base + ".png";
+            });
+            m_McpServer.SetSpawnPrefabHook([this](const std::string& relPath,
+                                                  f32 x, f32 y, f32 z) -> std::string {
+                if (!m_World) return "error: no world";
+                std::string projPath = m_SceneManager.GetProjectPath();
+                if (projPath.empty()) return "error: no project open";
+                std::string projDir = std::filesystem::path(projPath).parent_path().string();
+                std::string resolved = Platform::ResolveWithinRoot(projDir, relPath);
+                if (resolved.empty()) return "error: path escapes the project root";
+                auto prefab = Assets::PrefabManager::Get().LoadPrefab(resolved);
+                if (!prefab) return "error: could not load prefab '" + relPath + "'";
+                ECS::Entity e = Assets::PrefabManager::Get().Instantiate(
+                    m_World, *prefab, Math::Vector3(x, y, z));
+                if (e == ECS::INVALID_ENTITY) return "error: instantiate failed";
+                return "entity " + std::to_string(static_cast<u64>(e));
             });
             m_McpServer.Start(static_cast<u16>(m_EditorSettings.mcpServerPort));
         } else if (!want && m_McpServer.IsRunning()) {

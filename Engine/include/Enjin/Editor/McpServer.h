@@ -44,6 +44,9 @@ public:
     void SetSceneInfoHook(std::function<std::string()> hook) { m_SceneInfo = std::move(hook); }
     void SetPlayControlHook(std::function<std::string(const std::string&)> hook) { m_PlayControl = std::move(hook); }
     void SetCaptureHook(std::function<std::string()> hook) { m_Capture = std::move(hook); }
+    // (path, x, y, z) -> "entity <id>" or "error: ..." - the editor resolves the
+    // path inside the project root and instantiates via PrefabManager.
+    void SetSpawnPrefabHook(std::function<std::string(const std::string&, f32, f32, f32)> hook) { m_SpawnPrefab = std::move(hook); }
 
     // Bind 127.0.0.1 on preferredPort (tries the next few on conflict).
     // Returns the bound port, or 0 on failure.
@@ -76,6 +79,7 @@ private:
     std::function<std::string()> m_SceneInfo;
     std::function<std::string(const std::string&)> m_PlayControl;
     std::function<std::string()> m_Capture;
+    std::function<std::string(const std::string&, f32, f32, f32)> m_SpawnPrefab;
 
     std::thread m_Thread;
     std::atomic<bool> m_Running{false};
