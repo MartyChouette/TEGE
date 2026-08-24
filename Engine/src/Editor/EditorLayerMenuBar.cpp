@@ -1149,17 +1149,30 @@ void EditorLayer::DrawMenuBar() {
             const bool stopped = m_PlayMode.IsStopped();
             const bool playing = m_PlayMode.IsPlaying();
 
+            // --- Transport strip (DAW-style): step / play / stop / record dot /
+            // scrubber / export, visually grouped on one tinted slab so the
+            // whole record-and-replay story reads as one instrument.
             f32 badgeW = 0.0f;
             if (!stopped) {
                 badgeW = ImGui::CalcTextSize(playing ? "PLAYING" : "PAUSED").x + 16.0f + 8.0f;
             }
+            const f32 stepW = 26.0f;
+            // Width estimate for centering: transport grows while playing/paused
+            // (steps + REC + scrubber) and while stopped (export buttons + gear).
             f32 totalW = btnW + (stopped ? 0.0f : (4.0f + btnW)) + badgeW;
+            if (!stopped) totalW += (stepW + 4.0f) * 2.0f + 8.0f + 64.0f + 6.0f + 190.0f;
+            else totalW += 8.0f + 190.0f;
             f32 centerX = (ImGui::GetWindowWidth() - totalW) * 0.5f;
             if (centerX > ImGui::GetCursorPosX()) {
                 ImGui::SetCursorPosX(centerX);
             }
 
             ImDrawList* dl = ImGui::GetWindowDrawList();
+            // Background slab drawn beneath the transport once its extent is known
+            ImDrawListSplitter transportSplit;
+            transportSplit.Split(dl, 2);
+            transportSplit.SetCurrentChannel(dl, 1);
+            ImVec2 transportMin = ImGui::GetCursorScreenPos();
             const ImVec4 accent = ImGui::GetStyleColorVec4(ImGuiCol_CheckMark);
             const ImU32 accentCol = ImGui::GetColorU32(accent);
             const ImU32 textCol = ImGui::GetColorU32(ImGuiCol_Text);
@@ -1188,6 +1201,27 @@ void EditorLayer::DrawMenuBar() {
                 }
                 return clicked;
             };
+
+            // Recorder state used by the transport (step buttons + scrubber)
+            auto* rewind = m_PlayMode.GetRecordRewindSystem();
+            bool hasRecorder = !stopped && m_PlayMode.GetDebugRecorderEntity() != ECS::INVALID_ENTITY;
+            f32 recorded = (hasRecorder && rewind) ? rewind->GetSceneRecordedDuration() : 0.0f;
+            const f32 stepDt = 1.0f / 30.0f;   // matches the recorder's snapshot cadence
+            bool canStep = !stopped && !playing && recorded > 0.05f && rewind;
+            if (playing) m_DebugScrubOffset = 0.0f;   // any resume path returns the scrubber to the live edge
+
+            // Step back one snapshot (DAW frame-step); pause first to use it
+            if (!stopped) {
+                if (!canStep) ImGui::BeginDisabled();
+                if (ImGui::Button("|<##dbgback", ImVec2(stepW, btnH))) {
+                    m_DebugScrubOffset = std::min(m_DebugScrubOffset + stepDt, recorded);
+                    rewind->SeekSceneToTime(m_DebugScrubOffset);
+                }
+                if (!canStep) ImGui::EndDisabled();
+                ImGui::SetItemTooltip(canStep ? "Step one snapshot back in time"
+                                              : "Pause to step backward through time");
+                ImGui::SameLine(0.0f, 4.0f);
+            }
 
             if (stopped) {
                 if (iconButton("##playbtn", 0, accentCol)) {
@@ -1220,6 +1254,17 @@ void EditorLayer::DrawMenuBar() {
                     m_PendingPlayStop = true;
                 }
                 ImGui::SetItemTooltip("Stop and restore the scene");
+
+                // Step forward one snapshot (toward the pause point)
+                ImGui::SameLine(0.0f, 4.0f);
+                if (!canStep) ImGui::BeginDisabled();
+                if (ImGui::Button(">|##dbgfwd", ImVec2(stepW, btnH))) {
+                    m_DebugScrubOffset = std::max(m_DebugScrubOffset - stepDt, 0.0f);
+                    rewind->SeekSceneToTime(m_DebugScrubOffset);
+                }
+                if (!canStep) ImGui::EndDisabled();
+                ImGui::SetItemTooltip(canStep ? "Step one snapshot forward (toward the pause point)"
+                                              : "Pause to step through time");
             }
 
             // Play state chip: rounded pill, theme-tinted, reads at a glance
@@ -1239,13 +1284,55 @@ void EditorLayer::DrawMenuBar() {
                 ImGui::Dummy(ImVec2(ts.x + padX * 2.0f, btnH));
             }
 
-            // --- Replay export / playback (stopped only) ----------------------
+            // --- Record indicator + timeline scrubber -------------------------
+            if (!stopped && hasRecorder) {
+                // REC dot: solid red while recording (playing), dim while paused
+                ImGui::SameLine(0.0f, 8.0f);
+                {
+                    ImVec2 pos = ImGui::GetCursorScreenPos();
+                    f32 r = btnH * 0.18f;
+                    ImVec2 c(pos.x + r, pos.y + btnH * 0.5f);
+                    ImU32 recCol = playing ? ImGui::GetColorU32(ImVec4(0.95f, 0.30f, 0.28f, 1.0f))
+                                           : ImGui::GetColorU32(ImVec4(0.60f, 0.35f, 0.34f, 1.0f));
+                    dl->AddCircleFilled(c, r, recCol);
+                    char recTxt[32];
+                    snprintf(recTxt, sizeof(recTxt), " %d:%04.1f", (int)(recorded / 60.0f),
+                             recorded - 60.0f * (int)(recorded / 60.0f));
+                    dl->AddText(ImVec2(c.x + r + 3.0f, pos.y + (btnH - ImGui::GetTextLineHeight()) * 0.5f),
+                                ImGui::GetColorU32(ImGuiCol_Text), recTxt);
+                    f32 w = r * 2.0f + 3.0f + ImGui::CalcTextSize(recTxt).x;
+                    ImGui::Dummy(ImVec2(w, btnH));
+                    if (ImGui::IsItemHovered()) {
+                        if (playing) {
+                            ImGui::SetTooltip("Recording the whole scene (%.0fs buffer) - pause to scrub back",
+                                              m_EditorSettings.debugRecordSeconds);
+                        } else {
+                            ImGui::SetTooltip("Recorded buffer - step or scrub backward, resume to branch from there");
+                        }
+                    }
+                }
+
+                // Timeline: live while paused, read-only progress while playing
+                ImGui::SameLine(0.0f, 6.0f);
+                ImGui::SetNextItemWidth(180.0f);
+                f32 back = m_DebugScrubOffset;
+                if (!canStep) ImGui::BeginDisabled();
+                // Slider shows time-before-pause; drag left = further into the past.
+                if (ImGui::SliderFloat("##dbgscrub", &back, 0.0f, std::max(recorded, 0.05f), "-%.2fs")) {
+                    m_DebugScrubOffset = back;
+                    rewind->SeekSceneToTime(m_DebugScrubOffset);
+                }
+                if (!canStep) ImGui::EndDisabled();
+                ImGui::SetItemTooltip(canStep
+                    ? "Scrub backward through the recorded play session\nResume plays on from wherever you scrubbed to"
+                    : "Pause to scrub backward through the recording");
+            }
+
+            // --- Export / replay + recorder settings (stopped only) -----------
             // Every play session records its input stream; once stopped it can be
             // exported as a shareable .tegereplay (plain JSON: scene snapshot +
             // per-frame inputs+dt) or the newest one replayed deterministically.
             if (stopped) {
-                // Always visible: a hidden button read as "my recording is gone".
-                // Without a recorded session it's disabled with the reason.
                 bool hasRec = m_PlayMode.HasRecording();
                 ImGui::SameLine(0.0f, 8.0f);
                 if (!hasRec) ImGui::BeginDisabled();
@@ -1261,46 +1348,43 @@ void EditorLayer::DrawMenuBar() {
                     PlayLatestReplay();
                 }
                 ImGui::SetItemTooltip("Replay the newest .tegereplay from this project's replays folder");
+
+                ImGui::SameLine(0.0f, 4.0f);
+                if (ImGui::SmallButton("...##recset")) ImGui::OpenPopup("RecorderSettingsPopup");
+                ImGui::SetItemTooltip("Recorder settings");
+                if (ImGui::BeginPopup("RecorderSettingsPopup")) {
+                    ImGui::TextUnformatted("Recorder");
+                    ImGui::Separator();
+                    bool changed = false;
+                    changed |= ImGui::Checkbox("Record play sessions", &m_EditorSettings.debugRecordPlay);
+                    ImGui::SetItemTooltip("Keeps a rolling whole-scene recording during play so you can\n"
+                                          "pause and step or scrub backward through time");
+                    ImGui::SetNextItemWidth(160.0f);
+                    changed |= ImGui::SliderFloat("Buffer", &m_EditorSettings.debugRecordSeconds,
+                                                  5.0f, 120.0f, "%.0f s");
+                    ImGui::SetItemTooltip("How far back the timeline can scrub (30 snapshots/s)");
+                    ImGui::TextDisabled("Input replay is always recorded;");
+                    ImGui::TextDisabled("Export Replay saves it as a shareable file.");
+                    if (changed) {
+                        m_PlayMode.SetDebugRecording(m_EditorSettings.debugRecordPlay,
+                                                     m_EditorSettings.debugRecordSeconds);
+                        m_EditorSettings.Save();
+                    }
+                    ImGui::EndPopup();
+                }
             }
 
-            // --- Debug-recording timeline -------------------------------------
-            // While playing: a small REC readout. While paused: step-back /
-            // step-forward buttons + a scrubber over the recorded buffer. Seeks
-            // restore whole-scene snapshots via the same machinery the gameplay
-            // rewind components use; resuming branches time from the scrub point.
-            if (!stopped && m_PlayMode.GetDebugRecorderEntity() != ECS::INVALID_ENTITY) {
-                auto* rewind = m_PlayMode.GetRecordRewindSystem();
-                f32 recorded = rewind ? rewind->GetSceneRecordedDuration() : 0.0f;
-                if (playing) m_DebugScrubOffset = 0.0f;   // any resume path returns the scrubber to the live edge
-                if (playing && recorded > 0.05f) {
-                    ImGui::SameLine(0.0f, 8.0f);
-                    ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.45f, 1.0f), "REC %.0fs", recorded);
-                    ImGui::SetItemTooltip("Debug recording: pause to step or scrub backward through time");
-                } else if (!playing && recorded > 0.05f && rewind) {
-                    const f32 stepDt = 1.0f / 30.0f;   // matches the recorder's snapshot cadence
-                    ImGui::SameLine(0.0f, 8.0f);
-                    if (ImGui::Button("|<##dbgback")) {
-                        m_DebugScrubOffset = std::min(m_DebugScrubOffset + stepDt, recorded);
-                        rewind->SeekSceneToTime(m_DebugScrubOffset);
-                    }
-                    ImGui::SetItemTooltip("Step one snapshot back in time");
-                    ImGui::SameLine(0.0f, 2.0f);
-                    if (ImGui::Button(">|##dbgfwd")) {
-                        m_DebugScrubOffset = std::max(m_DebugScrubOffset - stepDt, 0.0f);
-                        rewind->SeekSceneToTime(m_DebugScrubOffset);
-                    }
-                    ImGui::SetItemTooltip("Step one snapshot forward (toward the pause point)");
-                    ImGui::SameLine(0.0f, 6.0f);
-                    ImGui::SetNextItemWidth(180.0f);
-                    // Slider shows time-before-pause; drag left = further into the past.
-                    f32 back = m_DebugScrubOffset;
-                    if (ImGui::SliderFloat("##dbgscrub", &back, 0.0f, recorded, "-%.2fs")) {
-                        m_DebugScrubOffset = back;
-                        rewind->SeekSceneToTime(m_DebugScrubOffset);
-                    }
-                    ImGui::SetItemTooltip("Scrub backward through the recorded play session\n"
-                                          "Resume plays on from wherever you scrubbed to");
-                }
+            // Close the transport slab: rounded background behind the whole strip
+            {
+                ImGui::SameLine(0.0f, 0.0f);
+                ImVec2 transportMax = ImGui::GetCursorScreenPos();
+                transportMax.y = transportMin.y + btnH;
+                ImGui::Dummy(ImVec2(0.0f, 0.0f));   // close the SameLine chain without a row break
+                transportSplit.SetCurrentChannel(dl, 0);
+                dl->AddRectFilled(ImVec2(transportMin.x - 6.0f, transportMin.y - 2.0f),
+                                  ImVec2(transportMax.x + 6.0f, transportMax.y + 2.0f),
+                                  ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.045f)), 6.0f);
+                transportSplit.Merge(dl);
             }
         }
 
