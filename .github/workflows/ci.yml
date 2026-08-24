@@ -103,17 +103,24 @@ jobs:
           VK_ICD_FILENAMES: ${{ github.workspace }}\mesa\x64\lvp_icd.x86_64.json
           VK_LOADER_DEBUG: error,warn
         # Boot the editor on the checked-in probe scene, auto-play, render 30
-        # frames, capture the game view, exit. The checker fails on a flat /
-        # black / white capture (= the render path silently died). Not a pixel
-        # diff on purpose: lavapipe's rasterization differs from real GPUs, so
-        # structural checks are what's stable.
+        # play-mode frames (the golden counter waits for play mode, so scripts,
+        # physics, and controllers are actually running), capture the game
+        # view, exit. Three gates: the checker fails on a flat / black / white
+        # capture (= the render path silently died), and the log must show the
+        # GoldenSmoke canary script running (= the AngelScript runtime compiles
+        # and executes scene scripts). Not a pixel diff on purpose: lavapipe's
+        # rasterization differs from real GPUs, so structural checks are what's
+        # stable.
         run: |
           New-Item -ItemType Directory -Force golden_out | Out-Null
           # The pipeline is load-bearing: without it PowerShell does not wait for
           # a GUI-subsystem exe and $LASTEXITCODE is never set. Piping stdout
           # blocks until the editor closes its end, and streams the log live.
-          & build\bin\Release\EnjinEditor.exe "${{ github.workspace }}\Tests\GoldenScene\GoldenScene.enjinproject" --play --golden "${{ github.workspace }}\golden_out\smoke" --golden-frames 30 2>&1 | ForEach-Object { "$_" }
+          & build\bin\Release\EnjinEditor.exe "${{ github.workspace }}\Tests\GoldenScene\GoldenScene.enjinproject" --play --golden "${{ github.workspace }}\golden_out\smoke" --golden-frames 30 2>&1 | Tee-Object -Variable editorLog | ForEach-Object { "$_" }
           if ($LASTEXITCODE -ne 0) { throw "editor exited with code $LASTEXITCODE" }
+          if (-not ($editorLog | Where-Object { "$_" -match "GoldenSmoke: script runtime is alive" })) {
+            throw "script canary never ran - the AngelScript runtime is broken in play mode"
+          }
           python Tests/GoldenScene/check_golden.py golden_out/smoke
 
       - name: Upload golden capture

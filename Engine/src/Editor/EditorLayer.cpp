@@ -928,10 +928,16 @@ void EditorLayer::Update(f32 deltaTime) {
     }
 
     // --golden probe support: after the configured frame count, read back the
-    // game view render target, write the reference images, and exit.
+    // game view render target, write the reference images, and exit. When
+    // --play was also passed, the count starts only once play mode is live -
+    // the auto-play countdown is 120 frames, so counting from boot meant short
+    // captures (CI uses 30) grabbed the EDIT-mode game view with scripts,
+    // physics, and controllers never having run.
     if (!s_GoldenCapturePath.empty() && m_RenderSystem && m_GameViewRenderTarget) {
-        if (++m_GoldenFrameCounter >= s_GoldenCaptureFrame) {
-            WriteGoldenCapture();
+        if (!s_AutoPlayRequested || m_PlayMode.IsPlaying()) {
+            if (++m_GoldenFrameCounter >= s_GoldenCaptureFrame) {
+                WriteGoldenCapture();
+            }
         }
     }
 

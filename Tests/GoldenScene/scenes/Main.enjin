@@ -78,6 +78,15 @@
      1.0,
      1.0
     ]
+   },
+   "scriptComponent": {
+    "scripts": [
+     {
+      "class": "GoldenSmoke",
+      "path": "scripts/GoldenSmoke.as",
+      "enabled": true
+     }
+    ]
    }
   },
   {

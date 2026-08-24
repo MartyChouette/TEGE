@@ -199,7 +199,10 @@ public:
     static inline std::string s_LaunchProjectPath;
     // Set by main() from --play: auto-enter play mode shortly after the launch
     // project's scene loads. For automated testing (e.g. validation probes).
+    // s_AutoPlayOnLaunch clears once play fires; s_AutoPlayRequested persists
+    // so the --golden counter knows to wait for play mode before counting.
     static inline bool s_AutoPlayOnLaunch = false;
+    static inline bool s_AutoPlayRequested = false;
     // Set by main() from --play-cycle <N>: stop/restart play mode every N
     // frames (skinned-mesh play-transition crash probe). 0 = off.
     static inline i32 s_PlayCycleFrames = 0;
